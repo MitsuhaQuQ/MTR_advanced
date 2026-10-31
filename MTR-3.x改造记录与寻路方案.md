@@ -224,7 +224,7 @@ CREATE TABLE entries (
 
 `:forge:runClient` 在 1.20.1 无法使用：common 和 forge 共用 `mtr.mappings` 等包，Forge 模块系统不允许拆分。合并源码集能绕过，但 `@ExpectPlatform` 不再被转换，所以没有采用。Forge 要用发布 jar 在真实环境验证。
 
-1.20.1 依赖固定为 Fabric Loader 0.14.22、Fabric API 0.85.0、Mod Menu 7.1.0、Architectury 9.1.12，因为更新的版本用了旧 Loom 不支持的 mixin remap type。
+1.20.1 依赖固定为 Fabric Loader 0.14.22、Fabric API 0.85.0、Mod Menu 7.1.0，因为更新的版本用了旧 Loom 不支持的 mixin remap type。Architectury 固定为 9.2.14，Forge 服务端已验证；Fabric 版运行时不依赖它。
 
 ---
 

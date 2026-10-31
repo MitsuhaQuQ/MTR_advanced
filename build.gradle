@@ -24,7 +24,7 @@ rootProject.ext.fabric_loader_version = [minecraft_version, is_1_20 ? "0.14.22" 
 rootProject.ext.forge_version = minecraft_version + "-" + getJson("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json")["promos"][minecraft_version + "-latest"]
 rootProject.ext.fabric_api_data = is_1_20 ? ["0.85.0+1.20.1", ""] as String[] : getModrinthData("fabric", minecraft_version, "fabric-api")
 rootProject.ext.mod_menu_data = is_1_20 ? ["7.1.0", ""] as String[] : getModrinthData("fabric", minecraft_version, "modmenu")
-rootProject.ext.architectury_data = is_1_20 ? ["9.1.12", ""] as String[] : getModrinthData("forge", minecraft_version, "architectury-api")
+rootProject.ext.architectury_data = is_1_20 ? ["9.2.14", ""] as String[] : getModrinthData("forge", minecraft_version, "architectury-api")
 
 rootProject.ext.architectury_id = minecraft_main_version == 16 ? "me.shedaniel" : "dev.architectury"
 rootProject.ext.variation = rootProject.properties.containsKey("variation") ? rootProject.getProperties().get("variation").toString() : "normal"
