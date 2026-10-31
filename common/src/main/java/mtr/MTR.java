@@ -359,6 +359,7 @@ public class MTR implements IPacket {
 			registerBlockEntityType.accept("arrival_projector_1_medium", BlockEntityTypes.ARRIVAL_PROJECTOR_1_MEDIUM_TILE_ENTITY);
 			registerBlockEntityType.accept("arrival_projector_1_large", BlockEntityTypes.ARRIVAL_PROJECTOR_1_LARGE_TILE_ENTITY);
 			registerBlockEntityType.accept("boat_node", BlockEntityTypes.BOAT_NODE_TILE_ENTITY);
+			registerBlockEntityType.accept("rail_node", BlockEntityTypes.RAIL_NODE_TILE_ENTITY);
 			registerBlockEntityType.accept("clock", BlockEntityTypes.CLOCK_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_1", BlockEntityTypes.PSD_DOOR_1_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_2", BlockEntityTypes.PSD_DOOR_2_TILE_ENTITY);

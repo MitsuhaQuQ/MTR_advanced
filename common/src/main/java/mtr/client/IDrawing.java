@@ -22,6 +22,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -126,6 +127,16 @@ public interface IDrawing {
 		vertexConsumer.vertex(pose.pose(), x2, y2, z2).color(r, g, b, 0xFF).normal(pose.normal(), 0, 1, 0).endVertex();
 	}
 
+	static void drawLineWorld(PoseStack matrices, MultiBufferSource vertexConsumers, double x1, double y1, double z1, double x2, double y2, double z2, int r, int g, int b) {
+		final VertexConsumer vertexConsumer = vertexConsumers.getBuffer(RenderType.lines());
+		matrices.pushPose();
+		translateWorldOrigin(matrices, x1, y1, z1);
+		final PoseStack.Pose pose = matrices.last();
+		vertexConsumer.vertex(pose.pose(), 0, 0, 0).color(r, g, b, 0xFF).normal(pose.normal(), 0, 1, 0).endVertex();
+		vertexConsumer.vertex(pose.pose(), (float) (x2 - x1), (float) (y2 - y1), (float) (z2 - z1)).color(r, g, b, 0xFF).normal(pose.normal(), 0, 1, 0).endVertex();
+		matrices.popPose();
+	}
+
 	static void drawRectangle(VertexConsumer vertexConsumer, double x1, double y1, double x2, double y2, int color) {
 		final int a = (color >> 24) & 0xFF;
 		final int r = (color >> 16) & 0xFF;
@@ -170,6 +181,24 @@ public interface IDrawing {
 		vertexConsumer.vertex(pose.pose(), x2, y2, z2).color(r, g, b, a).uv(u2, v2).overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light).normal(pose.normal(), vec3i.getX(), vec3i.getY(), vec3i.getZ()).endVertex();
 		vertexConsumer.vertex(pose.pose(), x3, y3, z3).color(r, g, b, a).uv(u2, v1).overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light).normal(pose.normal(), vec3i.getX(), vec3i.getY(), vec3i.getZ()).endVertex();
 		vertexConsumer.vertex(pose.pose(), x4, y4, z4).color(r, g, b, a).uv(u1, v1).overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light).normal(pose.normal(), vec3i.getX(), vec3i.getY(), vec3i.getZ()).endVertex();
+	}
+
+	static void drawTextureWorld(PoseStack matrices, VertexConsumer vertexConsumer, double x1, double y1, double z1, double x2, double y2, double z2, double x3, double y3, double z3, double x4, double y4, double z4, float u1, float v1, float u2, float v2, Direction facing, int color, int light) {
+		matrices.pushPose();
+		translateWorldOrigin(matrices, x1, y1, z1);
+		drawTexture(matrices, vertexConsumer,
+				0, 0, 0,
+				(float) (x2 - x1), (float) (y2 - y1), (float) (z2 - z1),
+				(float) (x3 - x1), (float) (y3 - y1), (float) (z3 - z1),
+				(float) (x4 - x1), (float) (y4 - y1), (float) (z4 - z1),
+				u1, v1, u2, v2, facing, color, light);
+		matrices.popPose();
+	}
+
+	static void translateWorldOrigin(PoseStack matrices, double x, double y, double z) {
+		// The render matrices originate at the camera, so that large world coordinates never reach the matrices as floats
+		final Vec3 cameraPosition = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+		matrices.translate(x - cameraPosition.x, y - cameraPosition.y, z - cameraPosition.z);
 	}
 
 	static void setPositionAndWidth(AbstractWidget widget, int x, int y, int widgetWidth) {

@@ -84,7 +84,7 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 		}
 
 		matrices.pushPose();
-		matrices.translate(x, y, z);
+		translateToWorld(train.getViewOffset(), x, y, z);
 		UtilitiesClient.rotateY(matrices, (float) Math.PI + yaw);
 		UtilitiesClient.rotateX(matrices, (float) Math.PI + (hasPitch ? pitch : 0));
 
@@ -171,7 +171,7 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 
 		if (trainProperties.isJacobsBogie) {
 			matrices.pushPose();
-			matrices.translate(x, y, z);
+			translateToWorld(train.getViewOffset(), x, y, z);
 			UtilitiesClient.rotateY(matrices, (float) Math.PI + yaw);
 			UtilitiesClient.rotateX(matrices, (float) Math.PI + ((pitch < 0 ? train.transportMode.hasPitchAscending : train.transportMode.hasPitchDescending) ? pitch : 0));
 			MODEL_BOGIE.render(matrices, vertexConsumers, light, 0);
@@ -230,8 +230,12 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 		return resolveTexture(isConnector ? gangwayConnectionId : trainBarrierId, textureId -> String.format("%s_%s_%s.png", textureId, isConnector ? "connector" : "barrier", partName));
 	}
 
-	private static void drawTexture(PoseStack matrices, VertexConsumer vertexConsumer, Vec3 pos1, Vec3 pos2, Vec3 pos3, Vec3 pos4, int light) {
-		mtr.client.IDrawing.drawTexture(matrices, vertexConsumer, (float) pos1.x, (float) pos1.y, (float) pos1.z, (float) pos2.x, (float) pos2.y, (float) pos2.z, (float) pos3.x, (float) pos3.y, (float) pos3.z, (float) pos4.x, (float) pos4.y, (float) pos4.z, 0, 0, 1, 1, Direction.UP, -1, light);
+	private void drawTexture(PoseStack matrices, VertexConsumer vertexConsumer, Vec3 pos1, Vec3 pos2, Vec3 pos3, Vec3 pos4, int light) {
+		if (train != null && train.getViewOffset() == null) {
+			mtr.client.IDrawing.drawTextureWorld(matrices, vertexConsumer, pos1.x, pos1.y, pos1.z, pos2.x, pos2.y, pos2.z, pos3.x, pos3.y, pos3.z, pos4.x, pos4.y, pos4.z, 0, 0, 1, 1, Direction.UP, -1, light);
+		} else {
+			mtr.client.IDrawing.drawTexture(matrices, vertexConsumer, (float) pos1.x, (float) pos1.y, (float) pos1.z, (float) pos2.x, (float) pos2.y, (float) pos2.z, (float) pos3.x, (float) pos3.y, (float) pos3.z, (float) pos4.x, (float) pos4.y, (float) pos4.z, 0, 0, 1, 1, Direction.UP, -1, light);
+		}
 	}
 
 	private static String resolvePath(String path) {

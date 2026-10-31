@@ -5,8 +5,11 @@ import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -36,6 +39,9 @@ public class DataCache {
 	protected final Set<Route> routes;
 	protected final Set<Depot> depots;
 	private final Set<LiftServer> liftsServer;
+
+	private static final int AREA_CELL_BITS = 8;
+	private static final int MAX_AREA_CELLS = 1024;
 
 	public DataCache(Set<Station> stations, Set<Platform> platforms, Set<Siding> sidings, Set<Route> routes, Set<Depot> depots, Set<LiftServer> lifts) {
 		this.stations = stations;
@@ -96,14 +102,28 @@ public class DataCache {
 			});
 
 			stationIdToConnectingStations.clear();
-			stations.forEach(station1 -> {
-				stationIdToConnectingStations.put(station1, new HashSet<>());
-				stations.forEach(station2 -> {
-					if (station1 != station2 && station1.intersecting(station2)) {
-						stationIdToConnectingStations.get(station1).add(station2);
-					}
-				});
+			stations.forEach(station -> stationIdToConnectingStations.put(station, new HashSet<>()));
+			final List<Station> sortedStations = new ArrayList<>();
+			stations.forEach(station -> {
+				if (AreaBase.nonNullCorners(station)) {
+					sortedStations.add(station);
+				}
 			});
+			sortedStations.sort(Comparator.comparingInt(DataCache::getMinX));
+			for (int i = 0; i < sortedStations.size(); i++) {
+				final Station station1 = sortedStations.get(i);
+				final int maxX = getMaxX(station1);
+				for (int j = i + 1; j < sortedStations.size(); j++) {
+					final Station station2 = sortedStations.get(j);
+					if (getMinX(station2) > maxX) {
+						break;
+					}
+					if (station1.intersecting(station2)) {
+						stationIdToConnectingStations.get(station1).add(station2);
+						stationIdToConnectingStations.get(station2).add(station1);
+					}
+				}
+			}
 
 			mapSavedRailIdToStation(platformIdToStation, platforms, stations);
 			mapSavedRailIdToStation(sidingIdToDepot, sidings, depots);
@@ -188,14 +208,61 @@ public class DataCache {
 
 	private static <U extends SavedRailBase, V extends AreaBase> void mapSavedRailIdToStation(Map<Long, V> map, Set<U> savedRails, Set<V> areas) {
 		map.clear();
-		savedRails.forEach(savedRail -> {
-			final BlockPos pos = savedRail.getMidPos();
-			for (final V area : areas) {
-				if (area.isTransportMode(savedRail.transportMode) && area.inArea(pos.getX(), pos.getZ())) {
-					map.put(savedRail.id, area);
-					break;
+
+		// Each cell lists the areas overlapping it, in the same order as the set, so that the first matching area is always the same one
+		final List<V> areaList = new ArrayList<>(areas);
+		final List<Integer> largeAreas = new ArrayList<>();
+		final Long2ObjectOpenHashMap<List<Integer>> grid = new Long2ObjectOpenHashMap<>();
+		for (int i = 0; i < areaList.size(); i++) {
+			final V area = areaList.get(i);
+			if (AreaBase.nonNullCorners(area)) {
+				final int cellX1 = getMinX(area) >> AREA_CELL_BITS;
+				final int cellX2 = getMaxX(area) >> AREA_CELL_BITS;
+				final int cellZ1 = Math.min(area.corner1.getB(), area.corner2.getB()) >> AREA_CELL_BITS;
+				final int cellZ2 = Math.max(area.corner1.getB(), area.corner2.getB()) >> AREA_CELL_BITS;
+				if ((long) (cellX2 - cellX1 + 1) * (cellZ2 - cellZ1 + 1) > MAX_AREA_CELLS) {
+					largeAreas.add(i);
+				} else {
+					for (int cellX = cellX1; cellX <= cellX2; cellX++) {
+						for (int cellZ = cellZ1; cellZ <= cellZ2; cellZ++) {
+							grid.computeIfAbsent(getCellKey(cellX, cellZ), key -> new ArrayList<>()).add(i);
+						}
+					}
 				}
 			}
+		}
+
+		savedRails.forEach(savedRail -> {
+			final BlockPos pos = savedRail.getMidPos();
+			final List<Integer> cellAreas = grid.get(getCellKey(pos.getX() >> AREA_CELL_BITS, pos.getZ() >> AREA_CELL_BITS));
+			final int index = Math.min(getFirstMatch(areaList, cellAreas, savedRail, pos), getFirstMatch(areaList, largeAreas, savedRail, pos));
+			if (index < areaList.size()) {
+				map.put(savedRail.id, areaList.get(index));
+			}
 		});
+	}
+
+	private static <U extends SavedRailBase, V extends AreaBase> int getFirstMatch(List<V> areaList, List<Integer> indices, U savedRail, BlockPos pos) {
+		if (indices != null) {
+			for (final int index : indices) {
+				final V area = areaList.get(index);
+				if (area.isTransportMode(savedRail.transportMode) && area.inArea(pos.getX(), pos.getZ())) {
+					return index;
+				}
+			}
+		}
+		return Integer.MAX_VALUE;
+	}
+
+	private static long getCellKey(int cellX, int cellZ) {
+		return ((long) cellX << 32) | (cellZ & 0xFFFFFFFFL);
+	}
+
+	private static int getMinX(AreaBase area) {
+		return Math.min(area.corner1.getA(), area.corner2.getA());
+	}
+
+	private static int getMaxX(AreaBase area) {
+		return Math.max(area.corner1.getA(), area.corner2.getA());
 	}
 }

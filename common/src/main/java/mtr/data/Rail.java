@@ -33,6 +33,7 @@ public class Rail extends SerializedDataBase {
 	private final boolean reverseT1, isStraight1, reverseT2, isStraight2;
 
 	private static final double ACCEPT_THRESHOLD = 1E-4;
+	private static final double ANGLE_THRESHOLD = 1E-9;
 	private static final int MIN_RADIUS = 2;
 	private static final int CABLE_CURVATURE_SCALE = 1000;
 	private static final int MAX_CABLE_DIP = 8;
@@ -81,7 +82,8 @@ public class Rail extends SerializedDataBase {
 
 		// Coordinate system translation and rotation
 		final Vec3 vecDifference = new Vec3(posEnd.getX() - posStart.getX(), 0, posEnd.getZ() - posStart.getZ());
-		final Vec3 vecDifferenceRotated = vecDifference.yRot((float) facingStart.angleRadians);
+		final double vecDifferenceRotatedX = vecDifference.x * facingStart.cos + vecDifference.z * facingStart.sin;
+		final double vecDifferenceRotatedZ = vecDifference.z * facingStart.cos - vecDifference.x * facingStart.sin;
 
 		// First we check the Delta Side > 0
 		// 1. If they are same angle
@@ -92,9 +94,9 @@ public class Rail extends SerializedDataBase {
 		// 3. a. If available -> (Segment First) r2 = dv / ( sin(diff) * tan(diff/2) ) = dv / ( 1 - cos(diff)
 		// 							for case 2, diff = 90 degrees, r = dv
 		//					-> (Circle First) r1 = ( dp - dv / tan(diff) ) / tan (diff/2)
-		// TODO 3. b. If not -> r = very complex one. In this case, we need two circles to connect.
-		final double deltaForward = vecDifferenceRotated.z;
-		final double deltaSide = vecDifferenceRotated.x;
+		// 3. b. If not -> Use two circles of different radii (see Biarc)
+		final double deltaForward = vecDifferenceRotatedZ;
+		final double deltaSide = vecDifferenceRotatedX;
 		if (facingStart.isParallel(facingEnd)) { // 1
 			if (Math.abs(deltaForward) < ACCEPT_THRESHOLD) { // 1. a.
 				h1 = facingStart.cos;
@@ -140,85 +142,86 @@ public class Rail extends SerializedDataBase {
 			}
 		} else { // 3.
 			// Check if it needs invert
-			final RailAngle newFacingStart = vecDifferenceRotated.x < -ACCEPT_THRESHOLD ? facingStart.getOpposite() : facingStart;
+			final RailAngle newFacingStart = vecDifferenceRotatedX < -ACCEPT_THRESHOLD ? facingStart.getOpposite() : facingStart;
 			final RailAngle newFacingEnd = facingEnd.cos * vecDifference.x + facingEnd.sin * vecDifference.z < -ACCEPT_THRESHOLD ? facingEnd.getOpposite() : facingEnd;
 			final double angleForward = Math.atan2(deltaForward, deltaSide);
 			final RailAngle railAngleDifference = newFacingEnd.sub(newFacingStart);
 			final double angleDifference = railAngleDifference.angleRadians;
 
-			if (Math.signum(angleForward) == Math.signum(angleDifference)) {
-				final double absAngleForward = Math.abs(angleForward);
+			final boolean sameSide = Math.signum(angleForward) == Math.signum(angleDifference);
+			final double absAngleForward = Math.abs(angleForward);
 
-				if (absAngleForward - Math.abs(angleDifference / 2) < ACCEPT_THRESHOLD) { // Segment First
-					final double offsetSide = Math.abs(deltaForward / railAngleDifference.halfTan);
-					final double remainingSide = deltaSide - offsetSide;
-					final double deltaXEnd = xStart + remainingSide * newFacingStart.cos;
-					final double deltaZEnd = zStart + remainingSide * newFacingStart.sin;
-					h1 = newFacingStart.cos;
-					k1 = newFacingStart.sin;
-					if (Math.abs(h1) >= 0.5 && Math.abs(k1) >= 0.5) {
-						r1 = (h1 * zStart - k1 * xStart) / h1 / h1;
-						tStart1 = xStart / h1;
-						tEnd1 = deltaXEnd / h1;
-					} else {
-						final double div = newFacingStart.add(newFacingStart).cos;
-						r1 = (h1 * zStart - k1 * xStart) / div;
-						tStart1 = (h1 * xStart - k1 * zStart) / div;
-						tEnd1 = (h1 * deltaXEnd - k1 * deltaZEnd) / div;
-					}
-					isStraight1 = true;
-					reverseT1 = tStart1 > tEnd1;
-					final double radius = deltaForward / (1 - railAngleDifference.cos);
-					r2 = Math.abs(radius);
-					h2 = deltaXEnd - radius * newFacingStart.sin;
-					k2 = deltaZEnd + radius * newFacingStart.cos;
-					reverseT2 = (deltaForward < 0);
-					tStart2 = getTBounds(deltaXEnd, h2, deltaZEnd, k2, r2);
-					tEnd2 = getTBounds(xEnd, h2, zEnd, k2, r2, tStart2, reverseT2);
-					isStraight2 = false;
-				} else if (absAngleForward - Math.abs(angleDifference) < ACCEPT_THRESHOLD) { // Circle First
-					final double crossSide = deltaForward / railAngleDifference.tan;
-					final double remainingSide = (deltaSide - crossSide) * (1 + railAngleDifference.cos);
-					final double remainingForward = (deltaSide - crossSide) * (railAngleDifference.sin);
-					final double deltaXEnd = xStart + remainingSide * newFacingStart.cos - remainingForward * newFacingStart.sin;
-					final double deltaZEnd = zStart + remainingSide * newFacingStart.sin + remainingForward * newFacingStart.cos;
-					final double radius = (deltaSide - deltaForward / railAngleDifference.tan) / railAngleDifference.halfTan;
-					r1 = Math.abs(radius);
-					h1 = xStart - radius * newFacingStart.sin;
-					k1 = zStart + radius * newFacingStart.cos;
-					isStraight1 = false;
-					reverseT1 = (deltaForward < 0);
-					tStart1 = getTBounds(xStart, h1, zStart, k1, r1);
-					tEnd1 = getTBounds(deltaXEnd, h1, deltaZEnd, k1, r1, tStart1, reverseT1);
-					h2 = newFacingEnd.cos;
-					k2 = newFacingEnd.sin;
-					if (Math.abs(h2) >= 0.5 && Math.abs(k2) >= 0.5) {
-						r2 = (h2 * deltaZEnd - k2 * deltaXEnd) / h2 / h2;
-						tStart2 = deltaXEnd / h2;
-						tEnd2 = xEnd / h2;
-					} else {
-						final double div = newFacingEnd.add(newFacingEnd).cos;
-						r2 = (h2 * deltaZEnd - k2 * deltaXEnd) / div;
-						tStart2 = (h2 * deltaXEnd - k2 * deltaZEnd) / div;
-						tEnd2 = (h2 * xEnd - k2 * zEnd) / div;
-					}
-					isStraight2 = true;
-					reverseT2 = tStart2 > tEnd2;
-				} else { // Out of available range
-					// TODO complex one. Normally we don't need it.
-					h1 = k1 = h2 = k2 = r1 = r2 = 0;
-					tStart1 = tStart2 = tEnd1 = tEnd2 = 0;
-					reverseT1 = false;
-					reverseT2 = false;
-					isStraight1 = isStraight2 = true;
+			if (sameSide && absAngleForward - Math.abs(angleDifference / 2) < ANGLE_THRESHOLD) { // Segment First
+				final double offsetSide = Math.abs(deltaForward / railAngleDifference.halfTan);
+				final double remainingSide = deltaSide - offsetSide;
+				final double deltaXEnd = xStart + remainingSide * newFacingStart.cos;
+				final double deltaZEnd = zStart + remainingSide * newFacingStart.sin;
+				h1 = newFacingStart.cos;
+				k1 = newFacingStart.sin;
+				if (Math.abs(h1) >= 0.5 && Math.abs(k1) >= 0.5) {
+					r1 = (h1 * zStart - k1 * xStart) / h1 / h1;
+					tStart1 = xStart / h1;
+					tEnd1 = deltaXEnd / h1;
+				} else {
+					final double div = newFacingStart.add(newFacingStart).cos;
+					r1 = (h1 * zStart - k1 * xStart) / div;
+					tStart1 = (h1 * xStart - k1 * zStart) / div;
+					tEnd1 = (h1 * deltaXEnd - k1 * deltaZEnd) / div;
 				}
-			} else {
-				// TODO 3. b. If not -> r = very complex one. Normally we don't need it.
-				h1 = k1 = h2 = k2 = r1 = r2 = 0;
-				tStart1 = tStart2 = tEnd1 = tEnd2 = 0;
-				reverseT1 = false;
-				reverseT2 = false;
-				isStraight1 = isStraight2 = true;
+				isStraight1 = true;
+				reverseT1 = tStart1 > tEnd1;
+				final double radius = deltaForward / (1 - railAngleDifference.cos);
+				r2 = Math.abs(radius);
+				h2 = deltaXEnd - radius * newFacingStart.sin;
+				k2 = deltaZEnd + radius * newFacingStart.cos;
+				reverseT2 = (deltaForward < 0);
+				tStart2 = getTBounds(deltaXEnd, h2, deltaZEnd, k2, r2);
+				tEnd2 = getTBounds(xEnd, h2, zEnd, k2, r2, tStart2, reverseT2);
+				isStraight2 = false;
+			} else if (sameSide && absAngleForward - Math.abs(angleDifference) < ANGLE_THRESHOLD) { // Circle First
+				final double crossSide = deltaForward / railAngleDifference.tan;
+				final double remainingSide = (deltaSide - crossSide) * (1 + railAngleDifference.cos);
+				final double remainingForward = (deltaSide - crossSide) * (railAngleDifference.sin);
+				final double deltaXEnd = xStart + remainingSide * newFacingStart.cos - remainingForward * newFacingStart.sin;
+				final double deltaZEnd = zStart + remainingSide * newFacingStart.sin + remainingForward * newFacingStart.cos;
+				final double radius = (deltaSide - deltaForward / railAngleDifference.tan) / railAngleDifference.halfTan;
+				r1 = Math.abs(radius);
+				h1 = xStart - radius * newFacingStart.sin;
+				k1 = zStart + radius * newFacingStart.cos;
+				isStraight1 = false;
+				reverseT1 = (deltaForward < 0);
+				tStart1 = getTBounds(xStart, h1, zStart, k1, r1);
+				tEnd1 = getTBounds(deltaXEnd, h1, deltaZEnd, k1, r1, tStart1, reverseT1);
+				h2 = newFacingEnd.cos;
+				k2 = newFacingEnd.sin;
+				if (Math.abs(h2) >= 0.5 && Math.abs(k2) >= 0.5) {
+					r2 = (h2 * deltaZEnd - k2 * deltaXEnd) / h2 / h2;
+					tStart2 = deltaXEnd / h2;
+					tEnd2 = xEnd / h2;
+				} else {
+					final double div = newFacingEnd.add(newFacingEnd).cos;
+					r2 = (h2 * deltaZEnd - k2 * deltaXEnd) / div;
+					tStart2 = (h2 * deltaXEnd - k2 * deltaZEnd) / div;
+					tEnd2 = (h2 * xEnd - k2 * zEnd) / div;
+				}
+				isStraight2 = true;
+				reverseT2 = tStart2 > tEnd2;
+			} else { // Curving in opposite directions, or out of the range of a single circle
+				final Biarc biarc = new Biarc(xStart, zStart, xEnd, zEnd, newFacingStart, newFacingEnd);
+				h1 = biarc.h1;
+				k1 = biarc.k1;
+				h2 = biarc.h2;
+				k2 = biarc.k2;
+				r1 = biarc.r1;
+				r2 = biarc.r2;
+				tStart1 = biarc.tStart1;
+				tStart2 = biarc.tStart2;
+				tEnd1 = biarc.tEnd1;
+				tEnd2 = biarc.tEnd2;
+				reverseT1 = biarc.reverseT1;
+				reverseT2 = biarc.reverseT2;
+				isStraight1 = biarc.isStraight;
+				isStraight2 = biarc.isStraight;
 			}
 		}
 	}
@@ -421,7 +424,7 @@ public class Rail extends SerializedDataBase {
 
 	private void renderSegment(double h, double k, double r, double tStart, double tEnd, double rawValueOffset, float offsetRadius1, float offsetRadius2, boolean reverseT, boolean isStraight, RenderRail callback) {
 		final double count = Math.abs(tEnd - tStart);
-		final double increment = count / Math.round(count);
+		final double increment = count / Math.max(1, Math.round(count));
 
 		for (double i = 0; i < count - 0.1; i += increment) {
 			final double t1 = (reverseT ? -1 : 1) * i + tStart;
@@ -439,22 +442,22 @@ public class Rail extends SerializedDataBase {
 	}
 
 	private RailAngle getRailAngle(boolean getEnd) {
-		final double start;
-		final double end;
-		if (getEnd) {
-			start = getLength();
-			end = start - ACCEPT_THRESHOLD;
-		} else {
-			start = 0;
-			end = ACCEPT_THRESHOLD;
-		}
-		final Vec3 pos1 = getPosition(start);
-		final Vec3 pos2 = getPosition(end);
-		return RailAngle.fromAngle((float) Math.toDegrees(Math.atan2(pos2.z - pos1.z, pos2.x - pos1.x)));
+		final boolean useSegment1 = getEnd ? Math.abs(tEnd2 - tStart2) < ACCEPT_THRESHOLD : Math.abs(tEnd1 - tStart1) >= ACCEPT_THRESHOLD;
+		final double h = useSegment1 ? h1 : h2;
+		final double k = useSegment1 ? k1 : k2;
+		final double r = useSegment1 ? r1 : r2;
+		final double t = useSegment1 ? getEnd ? tEnd1 : tStart1 : getEnd ? tEnd2 : tStart2;
+		final boolean reverseT = useSegment1 ? reverseT1 : reverseT2;
+		final boolean isStraight = useSegment1 ? isStraight1 : isStraight2;
+		// The direction is calculated exactly, since sampling positions is unreliable for very large radii
+		final double directionX = isStraight ? h : -Math.sin(t / r);
+		final double directionZ = isStraight ? k : Math.cos(t / r);
+		final int multiplier = reverseT != getEnd ? -1 : 1;
+		return RailAngle.fromAngle(Math.toDegrees(Math.atan2(multiplier * directionZ, multiplier * directionX)));
 	}
 
 	private static double getTBounds(double x, double h, double z, double k, double r) {
-		return Mth.atan2(z - k, x - h) * r;
+		return Math.atan2(z - k, x - h) * r;
 	}
 
 	private static double getTBounds(double x, double h, double z, double k, double r, double tStart, boolean reverse) {
@@ -465,6 +468,65 @@ public class Rail extends SerializedDataBase {
 			return t - 2 * Math.PI * r;
 		} else {
 			return t;
+		}
+	}
+
+	// Two tangent circles connecting any two positions and directions, with all fields being 0 if there is no usable solution
+	private static class Biarc {
+
+		private final double h1, k1, r1, tStart1, tEnd1;
+		private final double h2, k2, r2, tStart2, tEnd2;
+		private final boolean reverseT1, reverseT2, isStraight;
+
+		private Biarc(int xStart, int zStart, int xEnd, int zEnd, RailAngle facingStart, RailAngle facingEnd) {
+			final double differenceX = xEnd - xStart;
+			final double differenceZ = zEnd - zStart;
+			final double sumDirectionDifference = differenceX * (facingStart.cos + facingEnd.cos) + differenceZ * (facingStart.sin + facingEnd.sin);
+			final double directionFactor = 2 * (1 - (facingStart.cos * facingEnd.cos + facingStart.sin * facingEnd.sin));
+			final double differenceSquared = differenceX * differenceX + differenceZ * differenceZ;
+			final double divisor = sumDirectionDifference + Math.sqrt(sumDirectionDifference * sumDirectionDifference + directionFactor * differenceSquared);
+			final double tangentLength = divisor > ACCEPT_THRESHOLD ? differenceSquared / divisor : 0;
+
+			final double xMiddle = (xStart + xEnd + tangentLength * (facingStart.cos - facingEnd.cos)) / 2;
+			final double zMiddle = (zStart + zEnd + tangentLength * (facingStart.sin - facingEnd.sin)) / 2;
+			final double radius1 = getSignedRadius(xMiddle - xStart, zMiddle - zStart, facingStart);
+			final double radius2 = getSignedRadius(xMiddle - xEnd, zMiddle - zEnd, facingEnd);
+
+			final double tempH1 = xStart - radius1 * facingStart.sin;
+			final double tempK1 = zStart + radius1 * facingStart.cos;
+			final double tempR1 = Math.abs(radius1);
+			final double tempTStart1 = getTBounds(xStart, tempH1, zStart, tempK1, tempR1);
+			final double tempTEnd1 = getTBounds(xMiddle, tempH1, zMiddle, tempK1, tempR1, tempTStart1, radius1 < 0);
+			final double tempH2 = xEnd - radius2 * facingEnd.sin;
+			final double tempK2 = zEnd + radius2 * facingEnd.cos;
+			final double tempR2 = Math.abs(radius2);
+			final double tempTStart2 = getTBounds(xMiddle, tempH2, zMiddle, tempK2, tempR2);
+			final double tempTEnd2 = getTBounds(xEnd, tempH2, zEnd, tempK2, tempR2, tempTStart2, radius2 < 0);
+
+			if (radius1 == 0 || radius2 == 0 || Math.abs(tempTEnd1 - tempTStart1) > Math.PI * tempR1 || Math.abs(tempTEnd2 - tempTStart2) > Math.PI * tempR2) {
+				h1 = k1 = r1 = tStart1 = tEnd1 = h2 = k2 = r2 = tStart2 = tEnd2 = 0;
+				reverseT1 = reverseT2 = false;
+				isStraight = true;
+			} else {
+				h1 = tempH1;
+				k1 = tempK1;
+				r1 = tempR1;
+				tStart1 = tempTStart1;
+				tEnd1 = tempTEnd1;
+				h2 = tempH2;
+				k2 = tempK2;
+				r2 = tempR2;
+				tStart2 = tempTStart2;
+				tEnd2 = tempTEnd2;
+				reverseT1 = radius1 < 0;
+				reverseT2 = radius2 < 0;
+				isStraight = false;
+			}
+		}
+
+		private static double getSignedRadius(double chordX, double chordZ, RailAngle facing) {
+			final double perpendicular = chordZ * facing.cos - chordX * facing.sin;
+			return Math.abs(perpendicular) < ACCEPT_THRESHOLD * ACCEPT_THRESHOLD ? 0 : (chordX * chordX + chordZ * chordZ) / (2 * perpendicular);
 		}
 	}
 

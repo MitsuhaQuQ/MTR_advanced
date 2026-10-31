@@ -74,18 +74,19 @@ public class PathFinder {
 		for (int i = 0; i < 2; i++) {
 			final List<PathPart> path = new ArrayList<>();
 			final Set<BlockPos> turnBacks = new HashSet<>();
+			final Map<BlockPos, Set<RailAngle>> visited = new HashMap<>();
 			final List<BlockPos> startPositions = savedRailBaseStart.getOrderedPositions(savedRailBaseEndMidPos, i == 0);
 			path.add(new PathPart(null, startPositions.get(0), new ArrayList<>()));
-			addPathPart(rails, runways, startPositions.get(1), startPositions.get(0), path, turnBacks, comparator);
+			addPathPart(rails, runways, startPositions.get(1), startPositions.get(0), path, turnBacks, visited, comparator);
 
 			while (path.size() >= 2) {
 				final PathPart lastPathPart = path.get(path.size() - 1);
 
 				if (lastPathPart.otherOptions.isEmpty()) {
-					path.remove(lastPathPart);
+					path.remove(path.size() - 1);
 				} else {
 					final BlockPos newPos = lastPathPart.otherOptions.remove(0);
-					addPathPart(rails, runways, newPos, lastPathPart.pos, path, turnBacks, comparator);
+					addPathPart(rails, runways, newPos, lastPathPart.pos, path, turnBacks, visited, comparator);
 
 					if (savedRailBaseEnd.containsPos(newPos)) {
 						final List<PathData> railPath = new ArrayList<>();
@@ -109,7 +110,7 @@ public class PathFinder {
 
 									railPath.add(new PathData(new Rail(pos1, pathPart1.direction, cruisingPos1, pathPart1.direction.getOpposite(), dummyRailType, TransportMode.AIRPLANE), 0, 0, pos1, cruisingPos1, stopIndex));
 
-									final RailAngle expectedAngle = RailAngle.fromAngle((float) Math.toDegrees(Math.atan2(cruisingPos4.getZ() - cruisingPos1.getZ(), cruisingPos4.getX() - cruisingPos1.getX())));
+									final RailAngle expectedAngle = RailAngle.closestQuadrant((float) Math.toDegrees(Math.atan2(cruisingPos4.getZ() - cruisingPos1.getZ(), cruisingPos4.getX() - cruisingPos1.getX())));
 									final BlockPos cruisingPos2 = addAirplanePath(pathPart1.direction, cruisingPos1, expectedAngle, turnArc, railPath, dummyRailType, stopIndex, false);
 									final List<PathData> tempRailData = new ArrayList<>();
 									final BlockPos cruisingPos3 = addAirplanePath(pathPart2.direction.getOpposite(), cruisingPos4, expectedAngle.getOpposite(), turnArc, tempRailData, dummyRailType, stopIndex, true);
@@ -141,7 +142,7 @@ public class PathFinder {
 		return new ArrayList<>();
 	}
 
-	private static void addPathPart(Map<BlockPos, Map<BlockPos, Rail>> rails, Set<BlockPos> runways, BlockPos newPos, BlockPos lastPos, List<PathPart> path, Set<BlockPos> turnBacks, Function<Map<BlockPos, Rail>, Comparator<BlockPos>> comparator) {
+	private static void addPathPart(Map<BlockPos, Map<BlockPos, Rail>> rails, Set<BlockPos> runways, BlockPos newPos, BlockPos lastPos, List<PathPart> path, Set<BlockPos> turnBacks, Map<BlockPos, Set<RailAngle>> visited, Function<Map<BlockPos, Rail>, Comparator<BlockPos>> comparator) {
 		final Map<BlockPos, Rail> newConnections = rails.get(newPos);
 		final Rail oldRail = rails.get(lastPos).get(newPos);
 
@@ -151,6 +152,8 @@ public class PathFinder {
 
 		final RailAngle newDirection = oldRail == null ? newConnections.values().stream().map(rail -> rail.facingStart).findFirst().orElse(RailAngle.E) : oldRail.facingEnd.getOpposite();
 		final List<BlockPos> otherOptions = new ArrayList<>();
+		// A position and direction which was already explored can't lead to anything new, so it doesn't have to be explored again
+		final boolean alreadyVisited = visited.containsKey(newPos) && visited.get(newPos).contains(newDirection);
 
 		if (newConnections != null) {
 			final boolean canTurnBack = oldRail != null && oldRail.railType == RailType.TURN_BACK && !turnBacks.contains(newPos);
@@ -158,7 +161,7 @@ public class PathFinder {
 				otherOptions.addAll(runways);
 			} else {
 				newConnections.forEach((connectedPos, rail) -> {
-					if (canTurnBack || rail.railType != RailType.NONE && rail.facingStart != newDirection.getOpposite() && path.stream().noneMatch(pathPart -> pathPart.isSame(newPos, newDirection))) {
+					if (canTurnBack || rail.railType != RailType.NONE && rail.facingStart != newDirection.getOpposite() && !alreadyVisited) {
 						otherOptions.add(connectedPos);
 						if (canTurnBack) {
 							turnBacks.add(newPos);
@@ -171,6 +174,7 @@ public class PathFinder {
 		if (!otherOptions.isEmpty()) {
 			otherOptions.sort(comparator.apply(newConnections));
 			path.add(new PathPart(newDirection, newPos, otherOptions));
+			visited.computeIfAbsent(newPos, key -> new HashSet<>()).add(newDirection);
 		}
 	}
 
@@ -180,7 +184,7 @@ public class PathFinder {
 		RailAngle tempAngle = startAngle;
 		BlockPos tempPos = startPos;
 
-		for (int i = 0; i < RailAngle.values().length; i++) {
+		for (int i = 0; i < RailAngle.QUADRANTS; i++) {
 			if (tempAngle == expectedAngle) {
 				break;
 			}
@@ -212,10 +216,6 @@ public class PathFinder {
 			this.direction = direction;
 			this.pos = pos;
 			this.otherOptions = otherOptions;
-		}
-
-		private boolean isSame(BlockPos newPos, RailAngle newDirection) {
-			return newPos.equals(pos) && newDirection == direction;
 		}
 	}
 }

@@ -190,8 +190,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				if (!worldPlayer.getUUID().equals(player.getUUID())) {
 					Registry.sendToPlayer((ServerPlayer) worldPlayer, packetId, fullPacket);
 				}
-				railwayData.dataCache.sync();
 			});
+			railwayData.dataCache.sync();
 
 			if (packetId.equals(PACKET_UPDATE_STATION) || packetId.equals(PACKET_DELETE_STATION) || packetId.equals(PACKET_UPDATE_DEPOT) || packetId.equals(PACKET_DELETE_DEPOT)) {
 				try {

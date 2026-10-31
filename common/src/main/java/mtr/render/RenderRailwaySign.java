@@ -74,13 +74,13 @@ public class RenderRailwaySign<T extends BlockRailwaySign.TileEntityRailwaySign>
 		final StoredMatrixTransformations storedMatrixTransformations = new StoredMatrixTransformations();
 		storedMatrixTransformations.add(matricesNew -> {
 			if(facing.toString().equals("north")){
-				matricesNew.translate(0.5 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.515 + entity.getBlockPos().getZ());
+				IDrawing.translateWorldOrigin(matricesNew, 0.5 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.515 + entity.getBlockPos().getZ());
 			}else if(facing.toString().equals("south")){
-				matricesNew.translate(0.5 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.485 + entity.getBlockPos().getZ());
+				IDrawing.translateWorldOrigin(matricesNew, 0.5 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.485 + entity.getBlockPos().getZ());
 			}else if(facing.toString().equals("west")){
-				matricesNew.translate(0.515 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.5 + entity.getBlockPos().getZ());
+				IDrawing.translateWorldOrigin(matricesNew, 0.515 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.5 + entity.getBlockPos().getZ());
 			}else{
-				matricesNew.translate(0.485 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.5 + entity.getBlockPos().getZ());
+				IDrawing.translateWorldOrigin(matricesNew, 0.485 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.5 + entity.getBlockPos().getZ());
 			};
 			//matricesNew.translate(0.5 + entity.getBlockPos().getX(), 0.53125 + entity.getBlockPos().getY(), 0.5 + entity.getBlockPos().getZ());
 			UtilitiesClient.rotateYDegrees(matricesNew, -facing.toYRot());

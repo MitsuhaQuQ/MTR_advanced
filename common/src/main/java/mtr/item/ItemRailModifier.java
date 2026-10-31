@@ -43,6 +43,11 @@ public class ItemRailModifier extends ItemNodeModifierBase {
 	}
 
 	@Override
+	protected boolean canAlignNodes() {
+		return true;
+	}
+
+	@Override
 	protected void onConnect(Level world, ItemStack stack, TransportMode transportMode, BlockState stateStart, BlockState stateEnd, BlockPos posStart, BlockPos posEnd, RailAngle facingStart, RailAngle facingEnd, Player player, RailwayData railwayData) {
 		if (railType.hasSavedRail && (railwayData.hasSavedRail(posStart) || railwayData.hasSavedRail(posEnd))) {
 			if (player != null) {

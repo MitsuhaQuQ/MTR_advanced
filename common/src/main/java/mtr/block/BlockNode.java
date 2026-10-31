@@ -5,15 +5,19 @@ import mtr.data.RailAngle;
 import mtr.data.RailwayData;
 import mtr.data.TransportMode;
 import mtr.mappings.BlockDirectionalMapper;
+import mtr.mappings.BlockEntityClientSerializableMapper;
 import mtr.mappings.BlockEntityMapper;
 import mtr.mappings.EntityBlockMapper;
 import mtr.mappings.Text;
+import mtr.mappings.Utilities;
 import mtr.packet.PacketTrainDataGuiServer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -24,6 +28,8 @@ import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
@@ -37,6 +43,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
+import java.util.Locale;
 
 public class BlockNode extends BlockDirectionalMapper {
 
@@ -101,7 +108,53 @@ public class BlockNode extends BlockDirectionalMapper {
 		return (IBlock.getStatePropertySafe(state, BlockNode.FACING) ? 0 : 90) + (IBlock.getStatePropertySafe(state, BlockNode.IS_22_5) ? 22.5F : 0) + (IBlock.getStatePropertySafe(state, BlockNode.IS_45) ? 45 : 0);
 	}
 
-	public static class BlockBoatNode extends BlockNode implements EntityBlockMapper {
+	public static float getAngle(BlockGetter world, BlockPos pos, BlockState state) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		return entity instanceof TileEntityNode && ((TileEntityNode) entity).hasCustomAngle ? ((TileEntityNode) entity).customAngle : getAngle(state);
+	}
+
+	public static String getAngleText(float angle) {
+		return String.format(Locale.ENGLISH, "%.1f°", (angle % 180 + 180) % 180);
+	}
+
+	public static void setCustomAngle(BlockGetter world, BlockPos pos, float angle) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (entity instanceof TileEntityNode) {
+			((TileEntityNode) entity).setCustomAngle(angle);
+		}
+	}
+
+	public abstract static class BlockFreeAngleNode extends BlockNode implements EntityBlockMapper {
+
+		public BlockFreeAngleNode(TransportMode transportMode) {
+			super(transportMode);
+		}
+
+		@Override
+		public void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
+			if (!world.isClientSide && placer != null && placer.isShiftKeyDown()) {
+				final int angle = Math.round(Utilities.getYaw(placer)) + 90;
+				setCustomAngle(world, pos, angle);
+				if (placer instanceof Player) {
+					((Player) placer).displayClientMessage(Text.literal(getAngleText(angle)), true);
+				}
+			}
+		}
+	}
+
+	public static class BlockRailNode extends BlockFreeAngleNode {
+
+		public BlockRailNode() {
+			super(TransportMode.TRAIN);
+		}
+
+		@Override
+		public BlockEntityMapper createBlockEntity(BlockPos pos, BlockState state) {
+			return new TileEntityRailNode(pos, state);
+		}
+	}
+
+	public static class BlockBoatNode extends BlockFreeAngleNode {
 
 		public BlockBoatNode() {
 			super(TransportMode.BOAT);
@@ -128,7 +181,46 @@ public class BlockNode extends BlockDirectionalMapper {
 		}
 	}
 
-	public static class TileEntityBoatNode extends BlockEntityMapper {
+	public abstract static class TileEntityNode extends BlockEntityClientSerializableMapper {
+
+		private boolean hasCustomAngle;
+		private float customAngle;
+
+		private static final String KEY_CUSTOM_ANGLE = "custom_angle";
+
+		public TileEntityNode(BlockEntityType<?> type, BlockPos pos, BlockState state) {
+			super(type, pos, state);
+		}
+
+		@Override
+		public void readCompoundTag(CompoundTag compoundTag) {
+			hasCustomAngle = compoundTag.contains(KEY_CUSTOM_ANGLE);
+			customAngle = compoundTag.getFloat(KEY_CUSTOM_ANGLE);
+		}
+
+		@Override
+		public void writeCompoundTag(CompoundTag compoundTag) {
+			if (hasCustomAngle) {
+				compoundTag.putFloat(KEY_CUSTOM_ANGLE, customAngle);
+			}
+		}
+
+		private void setCustomAngle(float angle) {
+			hasCustomAngle = true;
+			customAngle = RailAngle.fromAngle(angle).angleDegrees;
+			setChanged();
+			syncData();
+		}
+	}
+
+	public static class TileEntityRailNode extends TileEntityNode {
+
+		public TileEntityRailNode(BlockPos pos, BlockState state) {
+			super(BlockEntityTypes.RAIL_NODE_TILE_ENTITY.get(), pos, state);
+		}
+	}
+
+	public static class TileEntityBoatNode extends TileEntityNode {
 
 		public TileEntityBoatNode(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.BOAT_NODE_TILE_ENTITY.get(), pos, state);

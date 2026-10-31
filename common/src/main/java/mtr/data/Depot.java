@@ -164,7 +164,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 7;
+		return super.messagePackLength() + 8;
 	}
 
 	@Override

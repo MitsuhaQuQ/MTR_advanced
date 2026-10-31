@@ -2,6 +2,7 @@ package mtr.item;
 
 import mtr.CreativeModeTabs;
 import mtr.block.BlockNode;
+import mtr.block.IBlock;
 import mtr.data.RailAngle;
 import mtr.data.RailwayData;
 import mtr.data.TransportMode;
@@ -67,10 +68,16 @@ public abstract class ItemNodeModifierBase extends ItemBlockClickingBase {
 
 			if (isConnector) {
 				if (!posStart.equals(posEnd)) {
-					final float angle1 = BlockNode.getAngle(stateStart);
-					final float angle2 = BlockNode.getAngle(stateEnd);
-
 					final float angleDifference = (float) Math.toDegrees(Math.atan2(posEnd.getZ() - posStart.getZ(), posEnd.getX() - posStart.getX()));
+
+					if (canAlignNodes() && player != null && player.isShiftKeyDown()) {
+						alignNode(world, posStart, stateStart, angleDifference);
+						alignNode(world, posEnd, stateEnd, angleDifference);
+					}
+
+					final float angle1 = BlockNode.getAngle(world, posStart, stateStart);
+					final float angle2 = BlockNode.getAngle(world, posEnd, stateEnd);
+
 					final RailAngle railAngleStart = RailAngle.fromAngle(angle1 + (RailAngle.similarFacing(angleDifference, angle1) ? 0 : 180));
 					final RailAngle railAngleEnd = RailAngle.fromAngle(angle2 + (RailAngle.similarFacing(angleDifference, angle2) ? 180 : 0));
 
@@ -100,7 +107,17 @@ public abstract class ItemNodeModifierBase extends ItemBlockClickingBase {
 		}
 	}
 
+	protected boolean canAlignNodes() {
+		return false;
+	}
+
 	protected abstract void onConnect(Level world, ItemStack stack, TransportMode transportMode, BlockState stateStart, BlockState stateEnd, BlockPos posStart, BlockPos posEnd, RailAngle facingStart, RailAngle facingEnd, Player player, RailwayData railwayData);
 
 	protected abstract void onRemove(Level world, BlockPos posStart, BlockPos posEnd, Player player, RailwayData railwayData);
+
+	private static void alignNode(Level world, BlockPos pos, BlockState state, float angle) {
+		if (!IBlock.getStatePropertySafe(state, BlockNode.IS_CONNECTED)) {
+			BlockNode.setCustomAngle(world, pos, angle);
+		}
+	}
 }

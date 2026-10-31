@@ -73,7 +73,7 @@ public interface Blocks {
 	RegistryObject<Block> PSD_GLASS_2 = new RegistryObject<>(() -> new BlockPSDGlass(1));
 	RegistryObject<Block> PSD_GLASS_END_2 = new RegistryObject<>(() -> new BlockPSDGlassEnd(1));
 	RegistryObject<Block> PSD_TOP = new RegistryObject<>(BlockPSDTop::new);
-	RegistryObject<Block> RAIL_NODE = new RegistryObject<>(() -> new BlockNode(TransportMode.TRAIN));
+	RegistryObject<Block> RAIL_NODE = new RegistryObject<>(BlockNode.BlockRailNode::new);
 	RegistryObject<Block> BOAT_NODE = new RegistryObject<>(BlockNode.BlockBoatNode::new);
 	RegistryObject<Block> CABLE_CAR_NODE_LOWER = new RegistryObject<>(() -> new BlockNode.BlockContinuousMovementNode(false, false));
 	RegistryObject<Block> CABLE_CAR_NODE_UPPER = new RegistryObject<>(() -> new BlockNode.BlockContinuousMovementNode(true, false));

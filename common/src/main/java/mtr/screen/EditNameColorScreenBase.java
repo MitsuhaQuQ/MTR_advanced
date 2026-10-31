@@ -78,7 +78,7 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 	}
 
 	protected void saveData() {
-		data.name = textFieldName.getValue();
+		data.name = IGui.textOrUntitled(textFieldName.getValue());
 		data.color = colorSelector.getColor();
 	}
 }

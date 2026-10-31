@@ -3,6 +3,7 @@ package mtr.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.MTRClient;
 import mtr.client.Config;
+import mtr.client.IDrawing;
 import mtr.data.RailwayData;
 import mtr.data.TrainClient;
 import mtr.entity.EntitySeat;
@@ -57,7 +58,8 @@ public abstract class TrainRendererBase {
 		matrices.translate(0, RenderTrains.PLAYER_RENDER_OFFSET, 0);
 		final Player renderPlayer = world.getPlayerByUUID(playerId);
 		if (renderPlayer != null && (!playerId.equals(player.getUUID()) || camera.isDetached())) {
-			entityRenderDispatcher.render(renderPlayer, playerPositionOffset.x, playerPositionOffset.y, playerPositionOffset.z, 0, 1, matrices, vertexConsumers, 0xF000F0);
+			final Vec3 renderOffset = viewOffset == null ? playerPositionOffset.subtract(camera.getPosition()) : playerPositionOffset;
+			entityRenderDispatcher.render(renderPlayer, renderOffset.x, renderOffset.y, renderOffset.z, 0, 1, matrices, vertexConsumers, 0xF000F0);
 		}
 		matrices.popPose();
 	}
@@ -81,6 +83,14 @@ public abstract class TrainRendererBase {
 
 	public static void setBatch(boolean isTranslucentBatch) {
 		TrainRendererBase.isTranslucentBatch = isTranslucentBatch;
+	}
+
+	public static void translateToWorld(Vec3 viewOffset, double x, double y, double z) {
+		if (viewOffset == null) {
+			IDrawing.translateWorldOrigin(matrices, x, y, z);
+		} else {
+			matrices.translate(x, y, z);
+		}
 	}
 
 	public static BlockPos applyAverageTransform(Vec3 viewOffset, double x, double y, double z) {
@@ -108,7 +118,8 @@ public abstract class TrainRendererBase {
 				offsetZ = cameraOffset.z;
 			}
 			final float cameraYaw = camera.getYRot();
-			matrices.translate(offsetX, offsetY, offsetZ);
+			final Vec3 cameraPosition = camera.getPosition();
+			matrices.translate(offsetX - cameraPosition.x, offsetY - cameraPosition.y, offsetZ - cameraPosition.z);
 			UtilitiesClient.rotateYDegrees(matrices, Utilities.getYaw(player) - cameraYaw + (Math.abs(Utilities.getYaw(player) - cameraYaw) > 90 ? 180 : 0));
 			matrices.translate(-viewOffset.x, -viewOffset.y, -viewOffset.z);
 		}

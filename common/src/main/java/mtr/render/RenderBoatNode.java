@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import mtr.block.BlockNode;
 import mtr.block.IBlock;
 import mtr.client.IDrawing;
-import mtr.mappings.BlockEntityRendererMapper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
@@ -15,7 +14,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
-public class RenderBoatNode extends BlockEntityRendererMapper<BlockNode.TileEntityBoatNode> {
+public class RenderBoatNode extends RenderNode<BlockNode.TileEntityBoatNode> {
 
 	public RenderBoatNode(BlockEntityRenderDispatcher dispatcher) {
 		super(dispatcher);
@@ -23,6 +22,8 @@ public class RenderBoatNode extends BlockEntityRendererMapper<BlockNode.TileEnti
 
 	@Override
 	public void render(BlockNode.TileEntityBoatNode entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
+		super.render(entity, tickDelta, matrices, vertexConsumers, light, overlay);
+
 		final Level world = entity.getLevel();
 		if (world == null) {
 			return;

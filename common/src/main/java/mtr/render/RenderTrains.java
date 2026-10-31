@@ -142,8 +142,6 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 		if (!backupRendering) {
 			matrices.popPose();
 			matrices.pushPose();
-			final Vec3 cameraPosition = client.gameRenderer.getMainCamera().getPosition();
-			matrices.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
 		}
 		matrices.pushPose();
 
@@ -241,7 +239,7 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 				return;
 			}
 
-			matrices.translate(x, y, z);
+			TrainRendererBase.translateToWorld(lift.getViewOffset(), x, y, z);
 			UtilitiesClient.rotateXDegrees(matrices, 180);
 			UtilitiesClient.rotateYDegrees(matrices, 180 + lift.facing.toYRot());
 			final int light = LightTexture.pack(world.getBrightness(LightLayer.BLOCK, posAverage), world.getBrightness(LightLayer.SKY, posAverage));
@@ -301,7 +299,7 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 							final int r = renderColors ? (rail.railType.color >> 16) & 0xFF : 0;
 							final int g = renderColors ? (rail.railType.color >> 8) & 0xFF : 0;
 							final int b = renderColors ? rail.railType.color & 0xFF : 0;
-							IDrawing.drawLine(matrices, vertexConsumers, (float) x1, (float) y1 + 0.5F, (float) z1, (float) x3, (float) y2 + 0.5F, (float) z3, r, g, b);
+							IDrawing.drawLineWorld(matrices, vertexConsumers, x1, y1 + 0.5, z1, x3, y2 + 0.5, z3, r, g, b);
 						}, 0, 0);
 					}
 
@@ -477,16 +475,16 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 			if (rail.railType == RailType.NONE) {
 				if (rail.transportMode != TransportMode.CABLE_CAR && renderColors) {
 					scheduleRender(new ResourceLocation("mtr:textures/block/one_way_rail_arrow.png"), false, QueuedRenderLayer.EXTERIOR, (matrices, vertexConsumer) -> {
-						IDrawing.drawTexture(matrices, vertexConsumer, (float) x1, (float) y1 + yOffset, (float) z1, (float) x2, (float) y1 + yOffset + SMALL_OFFSET, (float) z2, (float) x3, (float) y2 + yOffset, (float) z3, (float) x4, (float) y2 + yOffset + SMALL_OFFSET, (float) z4, 0, 0.25F, 1, 0.75F, Direction.UP, -1, light2);
-						IDrawing.drawTexture(matrices, vertexConsumer, (float) x2, (float) y1 + yOffset + SMALL_OFFSET, (float) z2, (float) x1, (float) y1 + yOffset, (float) z1, (float) x4, (float) y2 + yOffset + SMALL_OFFSET, (float) z4, (float) x3, (float) y2 + yOffset, (float) z3, 0, 0.25F, 1, 0.75F, Direction.UP, -1, light2);
+						IDrawing.drawTextureWorld(matrices, vertexConsumer, x1, y1 + yOffset, z1, x2, y1 + yOffset + SMALL_OFFSET, z2, x3, y2 + yOffset, z3, x4, y2 + yOffset + SMALL_OFFSET, z4, 0, 0.25F, 1, 0.75F, Direction.UP, -1, light2);
+						IDrawing.drawTextureWorld(matrices, vertexConsumer, x2, y1 + yOffset + SMALL_OFFSET, z2, x1, y1 + yOffset, z1, x4, y2 + yOffset + SMALL_OFFSET, z4, x3, y2 + yOffset, z3, 0, 0.25F, 1, 0.75F, Direction.UP, -1, light2);
 					});
 				}
 			} else {
 				final float textureOffset = (((int) (x1 + z1)) % 4) * 0.25F + (float) Config.trackTextureOffset() / Config.TRACK_OFFSET_COUNT;
 				final int color = renderColors || !Config.hideSpecialRailColors() && rail.railType.hasSavedRail ? rail.railType.color : -1;
 				scheduleRender(new ResourceLocation(texture), false, QueuedRenderLayer.EXTERIOR, (matrices, vertexConsumer) -> {
-					IDrawing.drawTexture(matrices, vertexConsumer, (float) x1, (float) y1 + yOffset, (float) z1, (float) x2, (float) y1 + yOffset + SMALL_OFFSET, (float) z2, (float) x3, (float) y2 + yOffset, (float) z3, (float) x4, (float) y2 + yOffset + SMALL_OFFSET, (float) z4, u1 < 0 ? 0 : u1, v1 < 0 ? 0.1875F + textureOffset : v1, u2 < 0 ? 1 : u2, v2 < 0 ? 0.3125F + textureOffset : v2, Direction.UP, color, light2);
-					IDrawing.drawTexture(matrices, vertexConsumer, (float) x2, (float) y1 + yOffset + SMALL_OFFSET, (float) z2, (float) x1, (float) y1 + yOffset, (float) z1, (float) x4, (float) y2 + yOffset + SMALL_OFFSET, (float) z4, (float) x3, (float) y2 + yOffset, (float) z3, u1 < 0 ? 0 : u1, v1 < 0 ? 0.1875F + textureOffset : v1, u2 < 0 ? 1 : u2, v2 < 0 ? 0.3125F + textureOffset : v2, Direction.UP, color, light2);
+					IDrawing.drawTextureWorld(matrices, vertexConsumer, x1, y1 + yOffset, z1, x2, y1 + yOffset + SMALL_OFFSET, z2, x3, y2 + yOffset, z3, x4, y2 + yOffset + SMALL_OFFSET, z4, u1 < 0 ? 0 : u1, v1 < 0 ? 0.1875F + textureOffset : v1, u2 < 0 ? 1 : u2, v2 < 0 ? 0.3125F + textureOffset : v2, Direction.UP, color, light2);
+					IDrawing.drawTextureWorld(matrices, vertexConsumer, x2, y1 + yOffset + SMALL_OFFSET, z2, x1, y1 + yOffset, z1, x4, y2 + yOffset + SMALL_OFFSET, z4, x3, y2 + yOffset, z3, u1 < 0 ? 0 : u1, v1 < 0 ? 0.1875F + textureOffset : v1, u2 < 0 ? 1 : u2, v2 < 0 ? 0.3125F + textureOffset : v2, Direction.UP, color, light2);
 				});
 			}
 		}, -railWidth, railWidth);
@@ -512,8 +510,8 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 				}
 				final int light2 = shouldGlow ? MAX_LIGHT_GLOWING : LightTexture.pack(world.getBrightness(LightLayer.BLOCK, pos2), world.getBrightness(LightLayer.SKY, pos2));
 
-				IDrawing.drawTexture(matrices, vertexConsumer, (float) x1, (float) y1, (float) z1, (float) x2, (float) y1 + SMALL_OFFSET, (float) z2, (float) x3, (float) y2, (float) z3, (float) x4, (float) y2 + SMALL_OFFSET, (float) z4, u1, 0, u2, 1, Direction.UP, color, light2);
-				IDrawing.drawTexture(matrices, vertexConsumer, (float) x4, (float) y2 + SMALL_OFFSET, (float) z4, (float) x3, (float) y2, (float) z3, (float) x2, (float) y1 + SMALL_OFFSET, (float) z2, (float) x1, (float) y1, (float) z1, u1, 0, u2, 1, Direction.UP, color, light2);
+				IDrawing.drawTextureWorld(matrices, vertexConsumer, x1, y1, z1, x2, y1 + SMALL_OFFSET, z2, x3, y2, z3, x4, y2 + SMALL_OFFSET, z4, u1, 0, u2, 1, Direction.UP, color, light2);
+				IDrawing.drawTextureWorld(matrices, vertexConsumer, x4, y2 + SMALL_OFFSET, z4, x3, y2, z3, x2, y1 + SMALL_OFFSET, z2, x1, y1, z1, u1, 0, u2, 1, Direction.UP, color, light2);
 			}, u1 - 1, u2 - 1);
 		}
 	}
