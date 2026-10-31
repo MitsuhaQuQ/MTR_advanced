@@ -19,6 +19,7 @@ def testServer = rootProject.properties.containsKey("testServer") ? rootProject.
 
 // The latest 1.20.1 dependencies need a newer Loom, which would affect every other version
 def is_1_20 = minecraft_main_version == 20
+rootProject.ext.is_1_20 = is_1_20
 rootProject.ext.fabric_loader_version = [minecraft_version, is_1_20 ? "0.14.22" : getJson("https://meta.fabricmc.net/v2/versions/loader/" + minecraft_version)[0]["loader"]["version"]]
 rootProject.ext.forge_version = minecraft_version + "-" + getJson("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json")["promos"][minecraft_version + "-latest"]
 rootProject.ext.fabric_api_data = is_1_20 ? ["0.85.0+1.20.1", ""] as String[] : getModrinthData("fabric", minecraft_version, "fabric-api")
@@ -182,6 +183,11 @@ task setupFiles() {
 		outputs.upToDateWhen { false }
 		from "resources/forge/" + (rootProject.variation == "lifts" ? "lifts" : "normal")
 		into "forge/src/main/resources"
+	}
+	if (is_1_20) {
+		fileTree("common/src/main/resources/data/mtr/loot_tables").include("**/*.json").each { file ->
+			file.write(file.getText("UTF-8").replace("\"minecraft:alternative\"", "\"minecraft:any_of\""), "UTF-8")
+		}
 	}
 
 	download {

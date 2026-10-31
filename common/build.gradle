@@ -7,6 +7,25 @@ architectury {
 	common()
 }
 
+// Default package tools crash the Architectury runtime transformer, which expects every class to be in a package
+jar {
+	exclude "FileGenerator*.class", "ModUpload*.class", "UpdateSolder*.class"
+}
+
+// The legacy_unicode font provider was removed in 1.20
+processResources {
+	if (rootProject.is_1_20) {
+		filesMatching("assets/mtr/font/mtr.json") {
+			filter { line ->
+				if (line.contains("\"template\"")) {
+					return null
+				}
+				return line.replace("\"legacy_unicode\"", "\"reference\"").replaceAll("\"sizes\".*", "\"id\": \"minecraft:include/unifont\"")
+			}
+		}
+	}
+}
+
 task moveCommonBuilds() {
 	doLast {
 		delete fileTree("../build/libs").matching {

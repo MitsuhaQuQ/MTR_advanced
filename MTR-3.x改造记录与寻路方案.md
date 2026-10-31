@@ -25,7 +25,7 @@
 | 闭塞改进、分段可视化、信号机绑定 | **未开始** | 不适用 | 不适用 |
 | 速度曲线 | **未开始** | 不适用 | 不适用 |
 | 纵曲线与缓和曲线 | **未开始** | 不适用 | 不适用 |
-| 移植到 1.20.1 | 已完成 | Fabric 服务端启动通过 | **客户端和 Forge 未测** |
+| 移植到 1.20.1 | 已完成 | Fabric 开发客户端可进世界，Forge 发布 jar 服务端可启动和保存 | **界面逐项和 Forge 客户端未测** |
 | ANTE 适配分支 | **未开始** | 不适用 | 不适用 |
 
 全版本构建结果（Fabric 和 Forge 均已构建）：
@@ -215,6 +215,14 @@ CREATE TABLE entries (
 | `Entity.level` 变私有 | `Compat.getLevel` |
 | `GuiGraphics` 取代 `GuiComponent` | `GuiCompat` 和 `ScreenBase`、`ButtonBase`、`CheckboxBase`、`SliderBase`、`WidgetBase` |
 | `Font.draw` 移除 | `GuiCompat.draw`，内部用 `drawInBatch`，PIDS 也走这里 |
+
+实测后补充修复：
+
+- `minecraft:alternative` 条件在 1.20 改名，构建时把掉落表替换为 `minecraft:any_of`，否则 17 种方块的掉落表加载失败。
+- `legacy_unicode` 字体提供器在 1.20 移除，`processResources` 时改为引用 `minecraft:include/unifont`，否则 `mtr:mtr` 字体加载失败。
+- 默认包的三个工具类不再进入 common jar，否则 Architectury 转换器会崩溃，`:fabric:runClient` 无法启动。
+
+`:forge:runClient` 在 1.20.1 无法使用：common 和 forge 共用 `mtr.mappings` 等包，Forge 模块系统不允许拆分。合并源码集能绕过，但 `@ExpectPlatform` 不再被转换，所以没有采用。Forge 要用发布 jar 在真实环境验证。
 
 1.20.1 依赖固定为 Fabric Loader 0.14.22、Fabric API 0.85.0、Mod Menu 7.1.0、Architectury 9.1.12，因为更新的版本用了旧 Loom 不支持的 mixin remap type。
 
@@ -457,6 +465,9 @@ Route
 - **车厂**：同一车厂的线路共用列车和路径，快慢车通常要分属不同车厂。
 - **理论时刻会有偏差**：时刻段按理论加减速计算，遇到闭塞等待时会偏离。
 - **显示**：PIDS 和报站都要识别“通过”，不能显示这趟车会停。
+- **通过时刻**：线路把某站标为通过，且经过的轨道上有站台时，才生成通过条目；没有站台的正线不显示。PIDS 显示通过时间，每块 PIDS 有“显示通过列车”开关。
+- **跳过通过条目**：网页到站表和乘客寻路都不使用通过条目。
+- **站台广播**：继续用“传感器 + 命令方块”，不改列车广播方块。时刻传感器要被通过列车触发，判断改为“剩余时间首次小于等于设定值”，并给 `ScheduleEntry` 增加列车 ID，同一趟车在同一站台只触发一次。升级后已有传感器也会被通过列车触发，可用线路过滤排除。
 - **存档兼容**：`Route` 的存档和网络包都要新增字段，旧版 MTR 读不到这些设置。
 - **与必经节点一起设计**：两者都改 `Route`，应避免存档格式改动两次。
 
@@ -836,7 +847,7 @@ T3    发车
 - 用 Java 8 运行 1.16.5。
 - 用真实大型存档测试迁移和性能。
 - 测试断电或强杀进程后的恢复。
-- 在 1.20.1 客户端逐个打开界面，确认绘制正常；在 Forge 上实际启动。
+- 在 1.20.1 客户端逐个打开界面，确认绘制正常；在 Forge 客户端上实际启动。
 
 ### 建议验证
 
@@ -863,6 +874,6 @@ JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\gtmp' ./gradlew.bat build -Pbu
 
 - 不带 `-PbuildVersion` 时默认构建 1.16.5。
 - `fabric`、`forge` 下的 `mappings` 是受版本控制的生成文件。提交前要用默认版本跑一次 Gradle，让它们回到 1.16.5 的内容。
-- 开发环境的 `runServer` 在 1.20.1 上会因 Architectury 转换器的 `removeDuplicates` 异常退出，尚未处理。
+- 1.20.1 的 `:fabric:runClient` 可用；`:forge:runClient` 不可用，原因见 2.9 节。
 - 每次运行 Gradle 都会重新生成 `mappings`、`Keys.java` 和 `src/main/resources`，不要把改动写进这些生成内容。
 - 产物在 `build/release/`。其中的旧版本 jar 不会被清理，使用前要确认是否是最新构建。
