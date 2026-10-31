@@ -1,17 +1,18 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;
 import mtr.client.ClientData;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.packet.IPacket;
 import net.minecraft.network.FriendlyByteBuf;
 
-public class RailActionsScreen extends ScreenMapper implements IGui, IPacket {
+public class RailActionsScreen extends ScreenBase implements IGui, IPacket {
 
 	final DashboardList railActionsList;
 
@@ -37,7 +38,7 @@ public class RailActionsScreen extends ScreenMapper implements IGui, IPacket {
 		try {
 			renderBackground(matrices);
 			railActionsList.render(matrices, font);
-			drawCenteredString(matrices, font, Text.translatable("gui.mtr.rail_actions"), width / 2, SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.rail_actions"), width / 2, SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
 			super.render(matrices, mouseX, mouseY, delta);
 		} catch (Exception e) {
 			e.printStackTrace();

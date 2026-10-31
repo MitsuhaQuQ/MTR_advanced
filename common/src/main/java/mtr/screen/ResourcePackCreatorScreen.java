@@ -1,5 +1,7 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -9,7 +11,6 @@ import mtr.client.DoorAnimationType;
 import mtr.client.IDrawing;
 import mtr.client.IResourcePackCreatorProperties;
 import mtr.data.*;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.model.ModelTrainBase;
@@ -30,7 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
 
-public class ResourcePackCreatorScreen extends ScreenMapper implements IResourcePackCreatorProperties, IGui, Icons {
+public class ResourcePackCreatorScreen extends ScreenBase implements IResourcePackCreatorProperties, IGui, Icons {
 
 	private int editingPartIndex = -1;
 
@@ -372,27 +373,27 @@ public class ResourcePackCreatorScreen extends ScreenMapper implements IResource
 		try {
 			if (guiCounter == 0 && minecraft != null) {
 				hideGui = minecraft.options.hideGui;
-				Gui.fill(matrices, 0, 0, width, height, ARGB_BLACK);
+				GuiCompat.fill(matrices, 0, 0, width, height, ARGB_BLACK);
 			}
 
-			Gui.fill(matrices, 0, 0, PANEL_WIDTH, height, ARGB_BACKGROUND);
-			Gui.fill(matrices, width - PANEL_WIDTH, 0, width, height, ARGB_BACKGROUND);
+			GuiCompat.fill(matrices, 0, 0, PANEL_WIDTH, height, ARGB_BACKGROUND);
+			GuiCompat.fill(matrices, width - PANEL_WIDTH, 0, width, height, ARGB_BACKGROUND);
 			availableModelPartsList.render(matrices, font);
 			usedModelPartsList.render(matrices, font);
 
 			super.render(matrices, mouseX, mouseY, delta);
 
 			if (isEditing()) {
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.editing_part", RenderTrains.creatorProperties.getPropertiesPartsArray().get(editingPartIndex).getAsJsonObject().get(KEY_PROPERTIES_NAME).getAsString()), PANEL_WIDTH / 2, TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.editing_part", RenderTrains.creatorProperties.getPropertiesPartsArray().get(editingPartIndex).getAsJsonObject().get(KEY_PROPERTIES_NAME).getAsString()), PANEL_WIDTH / 2, TEXT_PADDING, ARGB_WHITE);
 				if (colorSelectorDisplay.visible) {
-					drawString(matrices, font, Text.translatable(colorSelectorDisplayCjk.visible ? "gui.mtr.part_display_text_color_cjk" : "gui.mtr.part_display_text_color"), TEXT_PADDING, SQUARE_SIZE * 13 / 2 + TEXT_PADDING, ARGB_WHITE);
+					GuiCompat.drawString(matrices, font, Text.translatable(colorSelectorDisplayCjk.visible ? "gui.mtr.part_display_text_color_cjk" : "gui.mtr.part_display_text_color"), TEXT_PADDING, SQUARE_SIZE * 13 / 2 + TEXT_PADDING, ARGB_WHITE);
 				}
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.part_positions"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 3 + TEXT_PADDING, ARGB_WHITE);
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.part_whitelisted_cars"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 4 + TEXT_PADDING * 2 + TEXT_HEIGHT + TEXT_FIELD_PADDING, ARGB_WHITE);
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.part_blacklisted_cars"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 5 + TEXT_PADDING * 3 + TEXT_HEIGHT * 2 + TEXT_FIELD_PADDING * 2, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.part_positions"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 3 + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.part_whitelisted_cars"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 4 + TEXT_PADDING * 2 + TEXT_HEIGHT + TEXT_FIELD_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.part_blacklisted_cars"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 5 + TEXT_PADDING * 3 + TEXT_HEIGHT * 2 + TEXT_FIELD_PADDING * 2, ARGB_WHITE);
 			} else {
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.available_model_parts"), PANEL_WIDTH / 2, TEXT_PADDING, ARGB_WHITE);
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.used_model_parts"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 7 / 2 + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.available_model_parts"), PANEL_WIDTH / 2, TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.used_model_parts"), width - PANEL_WIDTH / 2, SQUARE_SIZE * 7 / 2 + TEXT_PADDING, ARGB_WHITE);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();

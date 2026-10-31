@@ -1,16 +1,17 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
 import net.minecraft.network.chat.Component;
 
-public abstract class EditNameColorScreenBase<T extends NameColorDataBase> extends ScreenMapper implements IGui, IPacket {
+public abstract class EditNameColorScreenBase<T extends NameColorDataBase> extends ScreenBase implements IGui, IPacket {
 
 	private int nameStart;
 	private int colorStart;
@@ -73,8 +74,8 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 	}
 
 	protected void renderTextFields(PoseStack matrices) {
-		drawCenteredString(matrices, font, nameText, (nameStart + colorStart) / 2, TEXT_PADDING, ARGB_WHITE);
-		drawCenteredString(matrices, font, colorText, (colorStart + colorEnd) / 2, TEXT_PADDING, ARGB_WHITE);
+		GuiCompat.drawCenteredString(matrices, font, nameText, (nameStart + colorStart) / 2, TEXT_PADDING, ARGB_WHITE);
+		GuiCompat.drawCenteredString(matrices, font, colorText, (colorStart + colorEnd) / 2, TEXT_PADDING, ARGB_WHITE);
 	}
 
 	protected void saveData() {

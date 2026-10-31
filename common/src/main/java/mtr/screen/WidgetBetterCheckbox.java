@@ -1,13 +1,14 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.CheckboxBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.data.IGui;
 import mtr.mappings.UtilitiesClient;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.network.chat.Component;
 
-public class WidgetBetterCheckbox extends Checkbox implements IGui {
+public class WidgetBetterCheckbox extends CheckboxBase implements IGui {
 
 	private final OnClick onClick;
 
@@ -26,7 +27,7 @@ public class WidgetBetterCheckbox extends Checkbox implements IGui {
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		super.render(matrices, mouseX, mouseY, delta);
 		if (visible) {
-			drawString(matrices, Minecraft.getInstance().font, getMessage(), UtilitiesClient.getWidgetX(this) + 24, UtilitiesClient.getWidgetY(this) + (height - 8) / 2, ARGB_WHITE);
+			GuiCompat.drawString(matrices, Minecraft.getInstance().font, getMessage(), UtilitiesClient.getWidgetX(this) + 24, UtilitiesClient.getWidgetY(this) + (height - 8) / 2, ARGB_WHITE);
 		}
 	}
 

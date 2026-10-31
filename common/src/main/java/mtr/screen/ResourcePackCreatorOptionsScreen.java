@@ -1,5 +1,7 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.CustomResources;
@@ -7,7 +9,6 @@ import mtr.client.ICustomResources;
 import mtr.client.IDrawing;
 import mtr.client.IResourcePackCreatorProperties;
 import mtr.data.IGui;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.render.RenderTrains;
@@ -18,7 +19,7 @@ import java.nio.file.Path;
 import java.util.Locale;
 import java.util.function.Consumer;
 
-public class ResourcePackCreatorOptionsScreen extends ScreenMapper implements IResourcePackCreatorProperties, ICustomResources, IGui {
+public class ResourcePackCreatorOptionsScreen extends ScreenBase implements IResourcePackCreatorProperties, ICustomResources, IGui {
 
 	private final ResourcePackCreatorScreen resourcePackCreatorScreen;
 
@@ -145,13 +146,13 @@ public class ResourcePackCreatorOptionsScreen extends ScreenMapper implements IR
 			renderBackground(matrices);
 			super.render(matrices, mouseX, mouseY, delta);
 			final int yStart = (height - SQUARE_SIZE * 10 - TEXT_FIELD_PADDING * 4) / 2;
-			drawString(matrices, font, FILE_MODEL_TEXT, SQUARE_SIZE, yStart + TEXT_PADDING, ARGB_WHITE);
-			drawString(matrices, font, FILE_PROPERTIES_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
-			drawString(matrices, font, FILE_TEXTURE_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 2 + TEXT_PADDING, ARGB_WHITE);
-			drawString(matrices, font, ID_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 7 / 2 + TEXT_FIELD_PADDING / 2 + TEXT_PADDING, ARGB_WHITE);
-			drawString(matrices, font, NAME_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 9 / 2 + TEXT_FIELD_PADDING * 3 / 2 + TEXT_PADDING, ARGB_WHITE);
-			drawString(matrices, font, GANGWAY_CONNECTION_ID_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 11 / 2 + TEXT_FIELD_PADDING * 5 / 2 + TEXT_PADDING, ARGB_WHITE);
-			drawString(matrices, font, TRAIN_BARRIER_ID_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 13 / 2 + TEXT_FIELD_PADDING * 7 / 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, FILE_MODEL_TEXT, SQUARE_SIZE, yStart + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, FILE_PROPERTIES_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, FILE_TEXTURE_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, ID_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 7 / 2 + TEXT_FIELD_PADDING / 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, NAME_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 9 / 2 + TEXT_FIELD_PADDING * 3 / 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, GANGWAY_CONNECTION_ID_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 11 / 2 + TEXT_FIELD_PADDING * 5 / 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, TRAIN_BARRIER_ID_TEXT, SQUARE_SIZE, yStart + SQUARE_SIZE * 13 / 2 + TEXT_FIELD_PADDING * 7 / 2 + TEXT_PADDING, ARGB_WHITE);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

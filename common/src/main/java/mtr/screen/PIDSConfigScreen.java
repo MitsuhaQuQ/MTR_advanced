@@ -1,5 +1,7 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
@@ -23,7 +25,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class PIDSConfigScreen extends ScreenMapper implements IGui, IPacket {
+public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 
 	private final BlockPos pos1;
 	private final BlockPos pos2;
@@ -189,12 +191,12 @@ public class PIDSConfigScreen extends ScreenMapper implements IGui, IPacket {
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		try {
 			renderBackground(matrices);
-			font.draw(matrices, Text.translatable("gui.mtr.display_page"), SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_PADDING, ARGB_WHITE);
-			font.draw(matrices, Text.translatable("gui.mtr.filtered_platforms", selectAllCheckbox.selected() ? 0 : filterPlatformIds.size()), SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_PADDING, ARGB_WHITE);
-			font.draw(matrices, messageText, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.display_page"), SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.filtered_platforms", selectAllCheckbox.selected() ? 0 : filterPlatformIds.size()), SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, messageText, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
 			final int maxPages = getMaxPages();
 			if (maxPages > 1) {
-				Gui.drawCenteredString(matrices, font, String.format("%s/%s", page + 1, maxPages), SQUARE_SIZE * 3 + font.width(messageText) + TEXT_PADDING, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, String.format("%s/%s", page + 1, maxPages), SQUARE_SIZE * 3 + font.width(messageText) + TEXT_PADDING, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
 			}
 			super.render(matrices, mouseX, mouseY, delta);
 		} catch (Exception e) {

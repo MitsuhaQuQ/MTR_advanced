@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
@@ -333,7 +334,9 @@ public class MTRClient implements IPacket {
 					Webserver.getWorlds = () -> minecraft.level == null ? new ArrayList<>() : Collections.singletonList(minecraft.level);
 					Webserver.getRoutes = railwayData -> ClientData.ROUTES;
 					Webserver.getDataCache = railwayData -> ClientData.DATA_CACHE;
-					Webserver.start(Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve("mtr_webserver_port.txt"));
+					final Path configPath = Minecraft.getInstance().gameDirectory.toPath().resolve("config");
+					SecurityConfig.load(configPath.resolve("mtr_security.json"));
+					Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 				}
 			}
 		});

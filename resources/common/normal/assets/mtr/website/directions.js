@@ -143,7 +143,7 @@ const FETCH_DATA = new FetchData(() => `${SETTINGS.url}route?dimension=${SETTING
 		const stationElement = document.createElement("div");
 		stationElement.className = "route_station_name_inner";
 		stationElement.innerHTML =
-			`<div class="route_segment_name">${start["station"]["name"].replace(/\|/g, " ")}</div>` +
+			`<div class="route_segment_name">${UTILITIES.escapeHtml(start["station"]["name"].replace(/\|/g, " "))}</div>` +
 			`<div class="route_segment_time">${getTimeString(totalDuration + initialWait)}</div>`;
 		resultElement.append(UTILITIES.getDrawStationElement(stationElement, null, firstColor));
 	}
@@ -206,7 +206,7 @@ const FETCH_DATA = new FetchData(() => `${SETTINGS.url}route?dimension=${SETTING
 		const stationElement = document.createElement("div");
 		stationElement.className = "route_station_name_inner";
 		stationElement.innerHTML =
-			`<div class="route_segment_name">${direction["station"]["name"].replace(/\|/g, " ")}</div>` +
+			`<div class="route_segment_name">${UTILITIES.escapeHtml(direction["station"]["name"].replace(/\|/g, " "))}</div>` +
 			`<div class="route_segment_time">${getTimeString(totalDuration + (nextColor == null ? 0 : getData(i + 1, "route", "wait")))}</div>`;
 		resultElement.append(UTILITIES.getDrawStationElement(stationElement, routeColor, nextColor));
 

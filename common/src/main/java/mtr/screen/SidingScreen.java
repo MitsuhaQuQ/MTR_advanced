@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.Icons;
@@ -150,13 +151,13 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		super.render(matrices, mouseX, mouseY, delta);
 		if (!isSelectingTrain) {
-			font.draw(matrices, SELECTED_TRAIN_TEXT, SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, SELECTED_TRAIN_TEXT, SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING + TEXT_PADDING, ARGB_WHITE);
 			if (showScheduleControls) {
-				font.draw(matrices, MAX_TRAINS_TEXT, SQUARE_SIZE, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
-				font.draw(matrices, ACCELERATION_CONSTANT_TEXT, SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.draw(matrices, font, MAX_TRAINS_TEXT, SQUARE_SIZE, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.draw(matrices, font, ACCELERATION_CONSTANT_TEXT, SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
 				if (buttonIsManual.selected()) {
-					font.draw(matrices, MAX_MANUAL_SPEED, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
-					font.draw(matrices, MANUAL_TO_AUTOMATIC_TIME, SQUARE_SIZE, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
+					GuiCompat.draw(matrices, font, MAX_MANUAL_SPEED, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
+					GuiCompat.draw(matrices, font, MANUAL_TO_AUTOMATIC_TIME, SQUARE_SIZE, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
 				}
 			}
 		} else {
@@ -292,10 +293,10 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		for (final FormattedCharSequence formattedCharSequence : splitText) {
 			final int nextY = newY + TEXT_HEIGHT + 2;
 			if (nextY > height - SQUARE_SIZE - TEXT_HEIGHT) {
-				font.draw(matrices, "...", width - DESCRIPTION_WIDTH - SQUARE_SIZE, newY, color);
+				GuiCompat.draw(matrices, font, "...", width - DESCRIPTION_WIDTH - SQUARE_SIZE, newY, color);
 				return height;
 			} else {
-				font.draw(matrices, formattedCharSequence, width - DESCRIPTION_WIDTH - SQUARE_SIZE, newY, color);
+				GuiCompat.draw(matrices, font, formattedCharSequence, width - DESCRIPTION_WIDTH - SQUARE_SIZE, newY, color);
 			}
 			newY = nextY;
 		}

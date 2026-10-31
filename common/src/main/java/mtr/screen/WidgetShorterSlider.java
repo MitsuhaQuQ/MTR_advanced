@@ -1,17 +1,18 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.SliderBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.data.IGui;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.screens.Screen;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public class WidgetShorterSlider extends AbstractSliderButton implements IGui {
+public class WidgetShorterSlider extends SliderBase implements IGui {
 
 	private final int maxValue;
 	private final int markerFrequency;
@@ -86,26 +87,26 @@ public class WidgetShorterSlider extends AbstractSliderButton implements IGui {
 		final Minecraft client = Minecraft.getInstance();
 		UtilitiesClient.beginDrawingTexture(WIDGETS_LOCATION);
 
-		blit(matrices, UtilitiesClient.getWidgetX(this), UtilitiesClient.getWidgetY(this), 0, 46, width / 2, height / 2);
-		blit(matrices, UtilitiesClient.getWidgetX(this), UtilitiesClient.getWidgetY(this) + height / 2, 0, 66 - height / 2, width / 2, height / 2);
-		blit(matrices, UtilitiesClient.getWidgetX(this) + width / 2, UtilitiesClient.getWidgetY(this), 200 - width / 2, 46, width / 2, height / 2);
-		blit(matrices, UtilitiesClient.getWidgetX(this) + width / 2, UtilitiesClient.getWidgetY(this) + height / 2, 200 - width / 2, 66 - height / 2, width / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this), UtilitiesClient.getWidgetY(this), 0, 46, width / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this), UtilitiesClient.getWidgetY(this) + height / 2, 0, 66 - height / 2, width / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + width / 2, UtilitiesClient.getWidgetY(this), 200 - width / 2, 46, width / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + width / 2, UtilitiesClient.getWidgetY(this) + height / 2, 200 - width / 2, 66 - height / 2, width / 2, height / 2);
 
 		final int v = UtilitiesClient.isHovered(this) ? 86 : 66;
 		final int xOffset = (width - SLIDER_WIDTH) * getIntValue() / maxValue;
-		blit(matrices, UtilitiesClient.getWidgetX(this) + xOffset, UtilitiesClient.getWidgetY(this), 0, v, SLIDER_WIDTH / 2, height / 2);
-		blit(matrices, UtilitiesClient.getWidgetX(this) + xOffset, UtilitiesClient.getWidgetY(this) + height / 2, 0, v + 20 - height / 2, SLIDER_WIDTH / 2, height / 2);
-		blit(matrices, UtilitiesClient.getWidgetX(this) + xOffset + SLIDER_WIDTH / 2, UtilitiesClient.getWidgetY(this), 200 - SLIDER_WIDTH / 2, v, SLIDER_WIDTH / 2, height / 2);
-		blit(matrices, UtilitiesClient.getWidgetX(this) + xOffset + SLIDER_WIDTH / 2, UtilitiesClient.getWidgetY(this) + height / 2, 200 - SLIDER_WIDTH / 2, v + 20 - height / 2, SLIDER_WIDTH / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + xOffset, UtilitiesClient.getWidgetY(this), 0, v, SLIDER_WIDTH / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + xOffset, UtilitiesClient.getWidgetY(this) + height / 2, 0, v + 20 - height / 2, SLIDER_WIDTH / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + xOffset + SLIDER_WIDTH / 2, UtilitiesClient.getWidgetY(this), 200 - SLIDER_WIDTH / 2, v, SLIDER_WIDTH / 2, height / 2);
+		GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + xOffset + SLIDER_WIDTH / 2, UtilitiesClient.getWidgetY(this) + height / 2, 200 - SLIDER_WIDTH / 2, v + 20 - height / 2, SLIDER_WIDTH / 2, height / 2);
 
-		drawString(matrices, client.font, getMessage().getString(), UtilitiesClient.getWidgetX(this) + width + TEXT_PADDING, UtilitiesClient.getWidgetY(this) + (height - TEXT_HEIGHT) / 2, ARGB_WHITE);
+		GuiCompat.drawString(matrices, client.font, getMessage().getString(), UtilitiesClient.getWidgetX(this) + width + TEXT_PADDING, UtilitiesClient.getWidgetY(this) + (height - TEXT_HEIGHT) / 2, ARGB_WHITE);
 
 		if (markerFrequency > 0) {
 			for (int i = 1; i <= maxValue / markerFrequency; i++) {
 				UtilitiesClient.beginDrawingTexture(WIDGETS_LOCATION);
 				final int xOffset1 = (width - SLIDER_WIDTH) * i * markerFrequency / maxValue;
-				blit(matrices, UtilitiesClient.getWidgetX(this) + xOffset1 + SLIDER_WIDTH / 3, UtilitiesClient.getWidgetY(this) + height, 10, 68, 2, TICK_HEIGHT);
-				drawCenteredString(matrices, client.font, String.valueOf(i * markerFrequency / markerDisplayedRatio), UtilitiesClient.getWidgetX(this) + xOffset1 + SLIDER_WIDTH / 2, UtilitiesClient.getWidgetY(this) + height + TICK_HEIGHT + 2, ARGB_WHITE);
+				GuiCompat.blit(matrices, WIDGETS_LOCATION, UtilitiesClient.getWidgetX(this) + xOffset1 + SLIDER_WIDTH / 3, UtilitiesClient.getWidgetY(this) + height, 10, 68, 2, TICK_HEIGHT);
+				GuiCompat.drawCenteredString(matrices, client.font, String.valueOf(i * markerFrequency / markerDisplayedRatio), UtilitiesClient.getWidgetX(this) + xOffset1 + SLIDER_WIDTH / 2, UtilitiesClient.getWidgetY(this) + height + TICK_HEIGHT + 2, ARGB_WHITE);
 			}
 		}
 	}

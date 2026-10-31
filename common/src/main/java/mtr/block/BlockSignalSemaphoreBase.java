@@ -1,5 +1,6 @@
 package mtr.block;
 
+import mtr.compat.Compat;
 import mtr.mappings.BlockDirectionalMapper;
 import mtr.mappings.BlockEntityMapper;
 import mtr.mappings.EntityBlockMapper;
@@ -18,7 +19,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 public abstract class BlockSignalSemaphoreBase extends BlockDirectionalMapper implements EntityBlockMapper {
 
 	public BlockSignalSemaphoreBase(Properties settings) {
-		super(settings);
+		super(Compat.noPistonPush(settings));
 	}
 
 	@Override
@@ -31,7 +32,6 @@ public abstract class BlockSignalSemaphoreBase extends BlockDirectionalMapper im
 		return Shapes.or(IBlock.getVoxelShapeByDirection(4, 4, 5, 12, 8, 11, IBlock.getStatePropertySafe(state, FACING)), Block.box(6, 0, 6, 10, 12, 10));
 	}
 
-	@Override
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}

@@ -1,5 +1,8 @@
 package mtr.screen;
 
+import mtr.compat.Compat;
+import mtr.compat.GuiCompat;
+import mtr.compat.WidgetBase;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -10,7 +13,6 @@ import mtr.data.*;
 import mtr.mappings.SelectableMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
-import mtr.mappings.WidgetMapper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.Gui;
@@ -30,7 +32,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 
-public class WidgetMap implements WidgetMapper, SelectableMapper, GuiEventListener, IGui {
+public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener, IGui {
 
 	private int x;
 	private int y;
@@ -93,7 +95,7 @@ public class WidgetMap implements WidgetMapper, SelectableMapper, GuiEventListen
 		for (int i = topLeft.getA(); i <= bottomRight.getA(); i += increment) {
 			for (int j = topLeft.getB(); j <= bottomRight.getB(); j += increment) {
 				if (world != null) {
-					final int color = divideColorRGB(world.getBlockState(RailwayData.newBlockPos(i, world.getHeight(Heightmap.Types.MOTION_BLOCKING, i, j) - 1, j)).getBlock().defaultMaterialColor().col, 2);
+					final int color = divideColorRGB(Compat.getColor(world.getBlockState(RailwayData.newBlockPos(i, world.getHeight(Heightmap.Types.MOTION_BLOCKING, i, j) - 1, j)).getBlock()), 2);
 					drawRectangleFromWorldCoords(buffer, i, j, i + increment, j + increment, ARGB_BLACK | color);
 				}
 			}
@@ -140,9 +142,9 @@ public class WidgetMap implements WidgetMapper, SelectableMapper, GuiEventListen
 		UtilitiesClient.finishDrawingRectangle();
 
 		if (mapState == MapState.EDITING_AREA) {
-			Gui.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_area").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_area").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		} else if (mapState == MapState.EDITING_ROUTE) {
-			Gui.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_route").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_route").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		}
 
 		if (scale >= 8) {
@@ -177,7 +179,7 @@ public class WidgetMap implements WidgetMapper, SelectableMapper, GuiEventListen
 		immediate.endBatch();
 
 		final String mousePosText = String.format("(%s, %s)", RailwayData.round(mouseWorldPos.getA(), 1), RailwayData.round(mouseWorldPos.getB(), 1));
-		Gui.drawString(matrices, textRenderer, mousePosText, x + width - TEXT_PADDING - textRenderer.width(mousePosText), y + TEXT_PADDING, ARGB_WHITE);
+		GuiCompat.drawString(matrices, textRenderer, mousePosText, x + width - TEXT_PADDING - textRenderer.width(mousePosText), y + TEXT_PADDING, ARGB_WHITE);
 	}
 
 	@Override
@@ -365,7 +367,7 @@ public class WidgetMap implements WidgetMapper, SelectableMapper, GuiEventListen
 		final int savedRailCount = savedRails.size();
 		for (int i = 0; i < savedRailCount; i++) {
 			final int index = i;
-			drawFromWorldCoords(savedRailPos.getX() + 0.5, savedRailPos.getZ() + (i + 0.5) / savedRailCount, (x1, y1) -> Gui.drawCenteredString(matrices, textRenderer, savedRails.get(index).name, x + x1.intValue(), y + y1.intValue() - TEXT_HEIGHT / 2, ARGB_WHITE));
+			drawFromWorldCoords(savedRailPos.getX() + 0.5, savedRailPos.getZ() + (i + 0.5) / savedRailCount, (x1, y1) -> GuiCompat.drawCenteredString(matrices, textRenderer, savedRails.get(index).name, x + x1.intValue(), y + y1.intValue() - TEXT_HEIGHT / 2, ARGB_WHITE));
 		}
 	}
 

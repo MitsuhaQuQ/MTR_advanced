@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
@@ -93,7 +94,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 			renderTextFields(matrices);
 
 			if (textFieldLightRailRouteNumber.visible) {
-				drawString(matrices, font, lightRailRouteNumberText, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawString(matrices, font, lightRailRouteNumberText, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
 			}
 
 			super.render(matrices, mouseX, mouseY, delta);

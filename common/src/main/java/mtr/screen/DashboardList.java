@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
@@ -150,7 +151,7 @@ public class DashboardList implements IGui {
 	}
 
 	public void render(PoseStack matrices, Font textRenderer) {
-		Gui.drawCenteredString(matrices, textRenderer, String.format("%s/%s", page + 1, totalPages), x + SQUARE_SIZE * 2, y + TEXT_PADDING + TEXT_FIELD_PADDING / 2, ARGB_WHITE);
+		GuiCompat.drawCenteredString(matrices, textRenderer, String.format("%s/%s", page + 1, totalPages), x + SQUARE_SIZE * 2, y + TEXT_PADDING + TEXT_FIELD_PADDING / 2, ARGB_WHITE);
 		final int itemsToShow = itemsToShow();
 		for (int i = 0; i < itemsToShow; i++) {
 			if (i + itemsToShow * page < dataFiltered.size()) {
@@ -175,7 +176,7 @@ public class DashboardList implements IGui {
 				if (textWidth > availableSpace) {
 					matrices.scale((float) availableSpace / textWidth, 1, 1);
 				}
-				textRenderer.draw(matrices, drawString, 0, y + drawY, ARGB_WHITE);
+				GuiCompat.draw(matrices, textRenderer, drawString, 0, y + drawY, ARGB_WHITE);
 				matrices.popPose();
 			}
 		}

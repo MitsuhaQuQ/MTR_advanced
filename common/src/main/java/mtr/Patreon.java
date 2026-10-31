@@ -18,6 +18,9 @@ import java.util.function.Consumer;
 
 public class Patreon implements Keys, IGui, Comparable<Patreon> {
 
+	private static final int CONNECT_TIMEOUT_MILLIS = 10000;
+	private static final int READ_TIMEOUT_MILLIS = 20000;
+
 	public final String name;
 	public final String tierTitle;
 	public final int tierAmount;
@@ -64,6 +67,8 @@ public class Patreon implements Keys, IGui, Comparable<Patreon> {
 		try {
 			final HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
 			connection.setUseCaches(false);
+			connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
+			connection.setReadTimeout(READ_TIMEOUT_MILLIS);
 
 			for (int i = 0; i < requestProperties.length / 2; i++) {
 				connection.setRequestProperty(requestProperties[2 * i], requestProperties[2 * i + 1]);

@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.SecurityConfig;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import io.netty.buffer.Unpooled;
@@ -99,7 +100,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		trainPositions.add(new HashMap<>());
 
 		final ResourceLocation dimensionLocation = world.dimension().location();
-		final Path savePath = ((ServerLevel) world).getServer().getWorldPath(LevelResource.ROOT).resolve("mtr").resolve(dimensionLocation.getNamespace()).resolve(dimensionLocation.getPath());
+		final Path savePath = ((ServerLevel) world).getServer().getWorldPath(LevelResource.ROOT).resolve("mtr").resolve(dimensionLocation.getNamespace()).resolve(dimensionLocation.getPath().replace("..", "_"));
 
 		railwayDataFileSaveModule = new RailwayDataFileSaveModule(this, world, rails, savePath, signalBlocks);
 		railwayDataLoggingModule = new RailwayDataLoggingModule(this, world, rails, savePath);
@@ -474,6 +475,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public void disconnectPlayer(Player player) {
+		final UUID uuid = player.getUUID();
+		sidings.forEach(siding -> siding.removeRider(uuid));
+		lifts.forEach(lift -> lift.ridingEntities.remove(uuid));
 		railwayDataCoolDownModule.onPlayerDisconnect(player);
 		playerLastUpdatedPositions.remove(player);
 	}
@@ -721,7 +725,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public static boolean hasNoPermission(ServerPlayer serverPlayer) {
-		return !hasPermission(serverPlayer.gameMode.getGameModeForPlayer());
+		return !hasPermission(serverPlayer.gameMode.getGameModeForPlayer()) || !serverPlayer.hasPermissions(SecurityConfig.editPermissionLevel);
 	}
 
 	public static boolean hasPermission(GameType gameType) {

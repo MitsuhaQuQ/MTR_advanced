@@ -14,6 +14,8 @@ import java.util.function.Consumer;
 
 public abstract class PacketTrainDataBase implements IPacket {
 
+	private static final int MAX_DATA_COUNT = 100000;
+
 	protected static <T extends NameColorDataBase, U extends ReentrantBlockableEventLoop<? extends Runnable>> void updateData(Set<T> dataSet, Map<Long, T> cacheMap, U minecraft, FriendlyByteBuf packet, PacketCallback packetCallback, BiFunction<Long, TransportMode, T> createDataWithId, BiConsumer<T, List<String>> dataCallback) {
 		final FriendlyByteBuf packetFullCopy = new FriendlyByteBuf(packet.copy());
 		final long id = packet.readLong();
@@ -21,24 +23,28 @@ public abstract class PacketTrainDataBase implements IPacket {
 		final String key = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 		final FriendlyByteBuf packetCopy = new FriendlyByteBuf(packet.copy());
 		minecraft.execute(() -> {
-			final T data = cacheMap.get(id);
-			if (data == null) {
-				if (createDataWithId != null) {
-					final T newData = createDataWithId.apply(id, transportMode);
-					dataSet.add(newData);
-					newData.update(key, packetCopy);
+			try {
+				final T data = cacheMap.get(id);
+				if (data == null) {
+					if (createDataWithId != null && dataSet.size() < MAX_DATA_COUNT) {
+						final T newData = createDataWithId.apply(id, transportMode);
+						dataSet.add(newData);
+						newData.update(key, packetCopy);
+						if (dataCallback != null) {
+							dataCallback.accept(newData, new ArrayList<>());
+						}
+					}
+				} else {
+					final List<String> oldData = dataCallback == null ? new ArrayList<>() : RailwayDataLoggingModule.getData(data);
+					data.update(key, packetCopy);
 					if (dataCallback != null) {
-						dataCallback.accept(newData, new ArrayList<>());
+						dataCallback.accept(data, oldData);
 					}
 				}
-			} else {
-				final List<String> oldData = dataCallback == null ? new ArrayList<>() : RailwayDataLoggingModule.getData(data);
-				data.update(key, packetCopy);
-				if (dataCallback != null) {
-					dataCallback.accept(data, oldData);
-				}
+				packetCallback.packetCallback(packetCopy, packetFullCopy);
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-			packetCallback.packetCallback(packetCopy, packetFullCopy);
 		});
 	}
 
@@ -46,14 +52,18 @@ public abstract class PacketTrainDataBase implements IPacket {
 		final FriendlyByteBuf packetFullCopy = new FriendlyByteBuf(packet.copy());
 		final long id = packet.readLong();
 		minecraft.execute(() -> {
-			final T data = cacheMap.get(id);
-			if (data != null) {
-				if (dataCallback != null) {
-					dataCallback.accept(data);
+			try {
+				final T data = cacheMap.get(id);
+				if (data != null) {
+					if (dataCallback != null) {
+						dataCallback.accept(data);
+					}
+					dataSet.remove(data);
 				}
-				dataSet.remove(data);
+				packetCallback.packetCallback(null, packetFullCopy);
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-			packetCallback.packetCallback(null, packetFullCopy);
 		});
 	}
 

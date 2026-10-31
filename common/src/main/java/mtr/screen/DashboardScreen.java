@@ -1,10 +1,11 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.data.*;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
@@ -20,7 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class DashboardScreen extends ScreenMapper implements IGui, IPacket {
+public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 	private SelectedTab selectedTab;
 	private AreaBase editingArea;
@@ -152,7 +153,7 @@ public class DashboardScreen extends ScreenMapper implements IGui, IPacket {
 			widgetMap.render(matrices, mouseX, mouseY, delta);
 			matrices.pushPose();
 			matrices.translate(0, 0, 500);
-			Gui.fill(matrices, 0, 0, PANEL_WIDTH, height, ARGB_BACKGROUND);
+			GuiCompat.fill(matrices, 0, 0, PANEL_WIDTH, height, ARGB_BACKGROUND);
 			dashboardList.render(matrices, font);
 			super.render(matrices, mouseX, mouseY, delta);
 			matrices.popPose();

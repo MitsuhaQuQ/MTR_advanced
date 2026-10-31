@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.data.Platform;
 import mtr.data.TransportMode;
@@ -28,7 +29,7 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		super.render(matrices, mouseX, mouseY, delta);
 		if (showScheduleControls) {
-			font.draw(matrices, DWELL_TIME_TEXT, SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, DWELL_TIME_TEXT, SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING + TEXT_PADDING, ARGB_WHITE);
 		}
 	}
 

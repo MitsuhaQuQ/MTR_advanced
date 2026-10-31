@@ -15,16 +15,16 @@ public class InfoServletHandler extends HttpServlet {
 
 	@Override
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) {
-		final AsyncContext asyncContext = request.startAsync();
+		final AsyncContext asyncContext = IServletHandler.startAsync(request);
 
-		Webserver.callback.accept(() -> {
+		Webserver.runSafely(() -> {
 			final JsonArray dataArray = new JsonArray();
 
 			Webserver.getWorlds.get().forEach(world -> {
 				final RailwayData railwayData = RailwayData.getInstance(world);
 				final JsonArray playersArray = new JsonArray();
 
-				if (railwayData != null) {
+				if (railwayData != null && Webserver.canExposePlayers()) {
 					world.players().forEach(player -> {
 						final JsonObject dataObject = new JsonObject();
 						dataObject.addProperty("player", player.getName().getString());

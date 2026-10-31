@@ -1,5 +1,7 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.block.BlockTrainSensorBase;
 import mtr.client.ClientData;
@@ -7,7 +9,6 @@ import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
 import mtr.data.Route;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
@@ -22,7 +23,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.*;
 
-public abstract class TrainSensorScreenBase extends ScreenMapper implements IGui, IPacket {
+public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, IPacket {
 
 	private boolean stoppedOnly;
 	private boolean movingOnly;
@@ -117,15 +118,15 @@ public abstract class TrainSensorScreenBase extends ScreenMapper implements IGui
 		try {
 			renderBackground(matrices);
 			for (int i = 0; i < textFieldCount; i++) {
-				font.draw(matrices, textFieldLabels[i], SQUARE_SIZE + (float) (width / 2 - SQUARE_SIZE) * i, SQUARE_SIZE, ARGB_WHITE);
+				GuiCompat.draw(matrices, font, textFieldLabels[i], SQUARE_SIZE + (float) (width / 2 - SQUARE_SIZE) * i, SQUARE_SIZE, ARGB_WHITE);
 			}
-			font.draw(matrices, Text.translatable("gui.mtr.filtered_routes", filterRouteIds.size()), SQUARE_SIZE, yStart + TEXT_PADDING, ARGB_WHITE);
-			font.draw(matrices, Text.translatable(filterRouteIds.isEmpty() ? "gui.mtr.filtered_routes_empty" : "gui.mtr.filtered_routes_condition"), SQUARE_SIZE, yStart + SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.filtered_routes", filterRouteIds.size()), SQUARE_SIZE, yStart + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, Text.translatable(filterRouteIds.isEmpty() ? "gui.mtr.filtered_routes_empty" : "gui.mtr.filtered_routes_condition"), SQUARE_SIZE, yStart + SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
 			int i = 0;
 			for (final long routeId : filterRouteIds) {
 				final Route route = ClientData.DATA_CACHE.routeIdMap.get(routeId);
 				if (route != null) {
-					font.draw(matrices, Text.literal(IGui.formatStationName(route.name)), SQUARE_SIZE, yStart + SQUARE_SIZE * 3 + TEXT_PADDING + i, ARGB_WHITE);
+					GuiCompat.draw(matrices, font, Text.literal(IGui.formatStationName(route.name)), SQUARE_SIZE, yStart + SQUARE_SIZE * 3 + TEXT_PADDING + i, ARGB_WHITE);
 				}
 				i += TEXT_HEIGHT;
 			}

@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.data.DataConverter;
@@ -105,7 +106,7 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 
 	@Override
 	protected void renderAdditional(PoseStack matrices) {
-		Gui.fill(matrices, availableSoundsList.x, availableSoundsList.y, availableSoundsList.x + availableSoundsList.width, availableSoundsList.y + availableSoundsList.height, ARGB_BACKGROUND);
+		GuiCompat.fill(matrices, availableSoundsList.x, availableSoundsList.y, availableSoundsList.x + availableSoundsList.width, availableSoundsList.y + availableSoundsList.height, ARGB_BACKGROUND);
 		availableSoundsList.render(matrices, font);
 	}
 

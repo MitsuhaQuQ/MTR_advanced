@@ -1,5 +1,7 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.data.IGui;
 import mtr.mappings.ScreenMapper;
@@ -10,7 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
-public class FileUploaderScreen extends ScreenMapper implements IGui {
+public class FileUploaderScreen extends ScreenBase implements IGui {
 
 	private final ScreenMapper screen;
 	private final Consumer<List<Path>> filesCallback;
@@ -26,7 +28,7 @@ public class FileUploaderScreen extends ScreenMapper implements IGui {
 		try {
 			renderBackground(matrices);
 			super.render(matrices, mouseX, mouseY, delta);
-			drawCenteredString(matrices, font, Text.translatable("gui.mtr.drag_file_to_upload"), width / 2, (height - TEXT_HEIGHT) / 2, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.drag_file_to_upload"), width / 2, (height - TEXT_HEIGHT) / 2, ARGB_WHITE);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

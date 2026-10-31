@@ -1,5 +1,6 @@
 package mtr.block;
 
+import mtr.compat.Compat;
 import mtr.Items;
 import mtr.mappings.HorizontalBlockWithSoftLanding;
 import net.minecraft.core.BlockPos;
@@ -14,8 +15,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
-import net.minecraft.world.level.material.Material;
-import net.minecraft.world.level.material.MaterialColor;
+import mtr.compat.Material;
+import mtr.compat.MaterialColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -26,7 +27,7 @@ public abstract class BlockEscalatorBase extends HorizontalBlockWithSoftLanding 
 	public static final EnumProperty<EnumEscalatorOrientation> ORIENTATION = EnumProperty.create("orientation", EnumEscalatorOrientation.class);
 
 	protected BlockEscalatorBase() {
-		super(Properties.of(Material.METAL, MaterialColor.COLOR_GRAY).requiresCorrectToolForDrops().strength(2).noOcclusion());
+		super(Compat.noPistonPush(Material.properties(Material.METAL, MaterialColor.COLOR_GRAY).requiresCorrectToolForDrops().strength(2).noOcclusion()));
 	}
 
 	@Override
@@ -64,7 +65,6 @@ public abstract class BlockEscalatorBase extends HorizontalBlockWithSoftLanding 
 		return new ItemStack(asItem());
 	}
 
-	@Override
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}

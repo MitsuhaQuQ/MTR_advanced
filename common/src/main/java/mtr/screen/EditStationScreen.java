@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
@@ -134,15 +135,15 @@ public class EditStationScreen extends EditNameColorScreenBase<Station> {
 			renderBackground(matrices);
 			renderTextFields(matrices);
 
-			vLine(matrices, width / 2, EXIT_PANELS_START - SQUARE_SIZE, height, ARGB_WHITE_TRANSLUCENT);
+			GuiCompat.vLine(matrices, width / 2, EXIT_PANELS_START - SQUARE_SIZE, height, ARGB_WHITE_TRANSLUCENT);
 
 			exitParentList.render(matrices, font);
 			exitDestinationList.render(matrices, font);
 
-			drawCenteredString(matrices, font, stationZoneText, width / 8 * 7, TEXT_PADDING, ARGB_WHITE);
-			drawCenteredString(matrices, font, exitParentsText, width / 4, EXIT_PANELS_START - SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, stationZoneText, width / 8 * 7, TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, exitParentsText, width / 4, EXIT_PANELS_START - SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
 			if (parentExists()) {
-				drawCenteredString(matrices, font, exitDestinationsText, 3 * width / 4, EXIT_PANELS_START - SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, exitDestinationsText, 3 * width / 4, EXIT_PANELS_START - SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
 			}
 
 			super.render(matrices, mouseX, mouseY, delta);

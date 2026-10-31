@@ -21,10 +21,9 @@ public class RouteFinderServletHandler extends HttpServlet {
 
 	@Override
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) {
-		final AsyncContext asyncContext = request.startAsync();
-		asyncContext.setTimeout(-1);
+		final AsyncContext asyncContext = IServletHandler.startAsync(request);
 
-		Webserver.callback.accept(() -> {
+		Webserver.runSafely(() -> {
 			final List<String> errors = new ArrayList<>();
 			final String parameterStartPlayer = request.getParameter("startPlayer");
 			final String parameterEndPlayer = request.getParameter("endPlayer");
@@ -122,7 +121,7 @@ public class RouteFinderServletHandler extends HttpServlet {
 	}
 
 	private static PositionInfo getPosition(Level world, RailwayData railwayData, String parameterPlayer, String parameterStation, String parameterPos, boolean isStart, List<String> errors) {
-		if (parameterPlayer != null) {
+		if (parameterPlayer != null && Webserver.canExposePlayers()) {
 			for (final Player player : world.players()) {
 				final String playerName = player.getName().getString();
 				if (playerName.equalsIgnoreCase(parameterPlayer)) {

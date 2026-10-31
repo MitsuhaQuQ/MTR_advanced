@@ -16,9 +16,9 @@ public class DelaysServletHandler extends HttpServlet {
 
 	@Override
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) {
-		final AsyncContext asyncContext = request.startAsync();
+		final AsyncContext asyncContext = IServletHandler.startAsync(request);
 
-		Webserver.callback.accept(() -> {
+		Webserver.runSafely(() -> {
 			final JsonArray dataArray = new JsonArray();
 
 			Webserver.getWorlds.get().forEach(world -> {

@@ -1,12 +1,12 @@
 package mtr.screen;
 
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.data.DataConverter;
 import mtr.data.IGui;
 import mtr.data.LiftClient;
 import mtr.data.NameColorDataBase;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.packet.PacketTrainDataGuiClient;
 import mtr.render.RenderTrains;
@@ -15,7 +15,7 @@ import net.minecraft.core.BlockPos;
 import java.util.ArrayList;
 import java.util.List;
 
-public class LiftSelectionScreen extends ScreenMapper implements IGui {
+public class LiftSelectionScreen extends ScreenBase implements IGui {
 
 	private final DashboardList selectionList;
 	private final List<BlockPos> floorLevels = new ArrayList<>();

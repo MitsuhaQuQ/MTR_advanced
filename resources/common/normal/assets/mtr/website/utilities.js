@@ -1,5 +1,7 @@
 const TAN_22_5 = Math.tan(Math.PI / 8);
+const HTML_ESCAPES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"};
 const UTILITIES = {
+	escapeHtml: text => String(text).replace(/[&<>"']/g, character => HTML_ESCAPES[character]),
 	isBetween: (x, a, b) => x >= Math.min(a, b) && x < Math.max(a, b),
 	runForTime: (object, callback, onComplete) => {
 		const time = Date.now();

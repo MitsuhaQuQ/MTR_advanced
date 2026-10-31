@@ -35,6 +35,7 @@ shadowJar {
 	classifier "dev-shadow"
 	relocate "javax.servlet", "mtr.libraries.javax.servlet"
 	relocate "org.eclipse", "mtr.libraries.org.eclipse"
+	exclude "FileGenerator*.class", "ModUpload*.class", "UpdateSolder*.class"
 }
 
 remapJar {

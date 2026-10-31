@@ -25,11 +25,11 @@ public class ArrivalsServletHandler extends HttpServlet {
 		} catch (Exception ignored) {
 		}
 
-		final AsyncContext asyncContext = request.startAsync();
+		final AsyncContext asyncContext = IServletHandler.startAsync(request);
 		final long stationIdFinal = stationId;
 		final long worldIndexFinal = worldIndex;
 
-		Webserver.callback.accept(() -> {
+		Webserver.runSafely(() -> {
 			final JsonArray dataArray = new JsonArray();
 
 			final int[] worldIndexCounter = {0};

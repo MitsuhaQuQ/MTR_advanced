@@ -1,11 +1,13 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ButtonBase;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
-import mtr.mappings.ButtonMapper;
 import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -20,7 +22,7 @@ import java.util.Locale;
 import java.util.Random;
 import java.util.function.Consumer;
 
-public class WidgetColorSelector extends ButtonMapper implements IGui {
+public class WidgetColorSelector extends ButtonBase implements IGui {
 
 	private int color;
 	private final ScreenMapper screen;
@@ -47,7 +49,7 @@ public class WidgetColorSelector extends ButtonMapper implements IGui {
 		super.render(matrices, mouseX, mouseY, delta);
 		if (visible) {
 			final int margin = hasMargin ? 1 : 0;
-			Gui.fill(matrices, UtilitiesClient.getWidgetX(this) - margin, UtilitiesClient.getWidgetY(this) - margin, UtilitiesClient.getWidgetX(this) + width + margin, UtilitiesClient.getWidgetY(this) + height + margin, ARGB_BLACK | color);
+			GuiCompat.fill(matrices, UtilitiesClient.getWidgetX(this) - margin, UtilitiesClient.getWidgetY(this) - margin, UtilitiesClient.getWidgetX(this) + width + margin, UtilitiesClient.getWidgetY(this) + height + margin, ARGB_BLACK | color);
 		}
 	}
 
@@ -74,7 +76,7 @@ public class WidgetColorSelector extends ButtonMapper implements IGui {
 		color = clampedColor;
 	}
 
-	private static class ColorSelectorScreen extends ScreenMapper {
+	private static class ColorSelectorScreen extends ScreenBase {
 
 		private float hue;
 		private float saturation;
@@ -140,8 +142,8 @@ public class WidgetColorSelector extends ButtonMapper implements IGui {
 				final int mainWidth = getMainWidth();
 				final int mainHeight = getMainHeight();
 
-				drawCenteredString(matrices, font, Text.translatable("gui.mtr.color"), SQUARE_SIZE * 4 + mainWidth + RIGHT_WIDTH / 2, SQUARE_SIZE, ARGB_WHITE);
-				drawCenteredString(matrices, font, "RGB", SQUARE_SIZE * 4 + mainWidth + RIGHT_WIDTH / 2, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.color"), SQUARE_SIZE * 4 + mainWidth + RIGHT_WIDTH / 2, SQUARE_SIZE, ARGB_WHITE);
+				GuiCompat.drawCenteredString(matrices, font, "RGB", SQUARE_SIZE * 4 + mainWidth + RIGHT_WIDTH / 2, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING, ARGB_WHITE);
 
 				final Tesselator tesselator = Tesselator.getInstance();
 				final BufferBuilder buffer = tesselator.getBuilder();

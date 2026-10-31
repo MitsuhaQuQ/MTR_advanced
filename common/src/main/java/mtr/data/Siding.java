@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import org.msgpack.core.MessagePacker;
@@ -44,6 +45,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_TRAIN_ID = "train_custom_id";
 	private static final String KEY_UNLIMITED_TRAINS = "unlimited_trains";
 	private static final String KEY_MAX_TRAINS = "max_trains";
+	private static final int MAX_TRAINS = 999;
+	private static final int MAX_UNLIMITED_TRAINS = 4096;
 	private static final String KEY_IS_MANUAL = "is_manual";
 	private static final String KEY_MAX_MANUAL_SPEED = "max_manual_speed";
 	private static final String KEY_PATH = "path";
@@ -188,11 +191,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				dwellTime = packet.readInt();
 				dwellTime = transportMode.continuousMovement ? 1 : dwellTime;
 				unlimitedTrains = packet.readBoolean() || transportMode.continuousMovement;
-				maxTrains = packet.readInt();
+				maxTrains = Mth.clamp(packet.readInt(), -1, MAX_TRAINS);
 				isManual = packet.readBoolean();
 				maxManualSpeed = packet.readInt();
 				final float newAccelerationConstant = RailwayData.round(packet.readFloat(), 3);
-				accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : newAccelerationConstant;
+				accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : Float.isNaN(newAccelerationConstant) ? Train.ACCELERATION_DEFAULT : Mth.clamp(newAccelerationConstant, Train.MIN_ACCELERATION, Train.MAX_ACCELERATION);
 				if (packet.readBoolean()) {
 					trains.clear();
 				}
@@ -246,6 +249,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	public float getAccelerationConstant() {
 		return accelerationConstant;
+	}
+
+	public void removeRider(UUID uuid) {
+		trains.forEach(train -> train.ridingEntities.remove(uuid));
 	}
 
 	public void setSidingData(Level world, Depot depot, Map<BlockPos, Map<BlockPos, Rail>> rails) {
@@ -387,7 +394,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 		}
 
-		if (trainCars > 0 && (trains.isEmpty() || spawnTrain && (unlimitedTrains || trains.size() <= maxTrains))) {
+		if (trainCars > 0 && (trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
 			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 			trains.add(train);
 		}

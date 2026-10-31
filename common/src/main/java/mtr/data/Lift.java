@@ -10,6 +10,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.msgpack.core.MessagePacker;
@@ -19,6 +20,8 @@ import java.io.IOException;
 import java.util.*;
 
 public abstract class Lift extends NameColorDataBase implements IPacket {
+
+	private static final int MAX_LIFT_DIMENSION = 16;
 
 	public int liftHeight;
 	public int liftWidth;
@@ -196,12 +199,12 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 	@Override
 	public void update(String key, FriendlyByteBuf packet) {
 		if (KEY_LIFT_UPDATE.equals(key)) {
-			liftHeight = packet.readInt();
-			liftWidth = packet.readInt();
-			liftDepth = packet.readInt();
-			liftOffsetX = packet.readInt();
-			liftOffsetY = packet.readInt();
-			liftOffsetZ = packet.readInt();
+			liftHeight = Mth.clamp(packet.readInt(), 1, MAX_LIFT_DIMENSION);
+			liftWidth = Mth.clamp(packet.readInt(), 1, MAX_LIFT_DIMENSION);
+			liftDepth = Mth.clamp(packet.readInt(), 1, MAX_LIFT_DIMENSION);
+			liftOffsetX = Mth.clamp(packet.readInt(), -MAX_LIFT_DIMENSION, MAX_LIFT_DIMENSION);
+			liftOffsetY = Mth.clamp(packet.readInt(), -MAX_LIFT_DIMENSION, MAX_LIFT_DIMENSION);
+			liftOffsetZ = Mth.clamp(packet.readInt(), -MAX_LIFT_DIMENSION, MAX_LIFT_DIMENSION);
 			isDoubleSided = packet.readBoolean();
 			liftStyle = EnumHelper.valueOf(LiftStyle.TRANSPARENT, packet.readUtf(PACKET_STRING_READ_LENGTH));
 			facing = Direction.fromYRot(packet.readInt());

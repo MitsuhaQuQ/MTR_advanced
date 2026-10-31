@@ -21,9 +21,9 @@ const ACTIONS = {
 		for (const nameSplitIndex in nameSplit) {
 			const namePart = nameSplit[nameSplitIndex];
 			if (UTILITIES.isCJK(namePart)) {
-				stationNameHtml += "<h1>" + namePart + "</h1>";
+				stationNameHtml += "<h1>" + UTILITIES.escapeHtml(namePart) + "</h1>";
 			} else {
-				stationNameHtml += "<h2>" + namePart + "</h2>";
+				stationNameHtml += "<h2>" + UTILITIES.escapeHtml(namePart) + "</h2>";
 			}
 		}
 
@@ -135,7 +135,7 @@ const ACTIONS = {
 		element.onclick = () => ACTIONS.onClickStation(stationId);
 		element.innerHTML =
 			(color == null ? "" : `<span class="station" style="background: ${UTILITIES.convertColor(color)}"></span>`) +
-			`<span class="text">${name.replace(/\|/g, " ")}</span>`;
+			`<span class="text">${UTILITIES.escapeHtml(name.replace(/\|/g, " "))}</span>`;
 		return element;
 	},
 	getRouteElement: (routeId, color, name, number, type, visible, showColor, elementId, forceClick) => {
@@ -152,7 +152,7 @@ const ACTIONS = {
 		element.innerHTML =
 			`<span class="line" style="background: ${UTILITIES.convertColor(showColor ? color : UTILITIES.getColorStyle("--textColorDisabled"))}"></span>` +
 			`<span class="${showColor ? "text" : "text_disabled"} material-icons tight">${UTILITIES.routeTypes[type]}</span>` +
-			`<span class="${showColor ? "text" : "text_disabled"}">${number}${number ? " " : ""}${name}</span>`;
+			`<span class="${showColor ? "text" : "text_disabled"}">${UTILITIES.escapeHtml(number)}${number ? " " : ""}${UTILITIES.escapeHtml(name)}</span>`;
 		return element;
 	},
 	getClosestInterchangeOnRoute: (route, thisStation) => {
@@ -192,9 +192,9 @@ const FETCH_ARRIVAL_DATA = new FetchData(() => SETTINGS.url + "arrivals?worldInd
 				`<div class="arrival">` +
 				`<span class="arrival_text left_align material-icons tight" style="width: ${circular === "" ? 0 : 5}%">${circular === "" ? "" : circular === "cw" ? "rotate_right" : "rotate_left"}</span>` +
 				`<span class="arrival_text left_align" style="width: ${circular === "" ? 70 : 65}%">` +
-				(route.length === 0 ? "" : routeNumberSplit[Math.floor(currentMillis / 3000) % routeNumberSplit.length] + " ") + destinationSplit[Math.floor(currentMillis / 3000) % destinationSplit.length] +
+				UTILITIES.escapeHtml((route.length === 0 ? "" : routeNumberSplit[Math.floor(currentMillis / 3000) % routeNumberSplit.length] + " ") + destinationSplit[Math.floor(currentMillis / 3000) % destinationSplit.length]) +
 				`</span>` +
-				`<span class="arrival_text" style="width: 10%">${platform}</span>` +
+				`<span class="arrival_text" style="width: 10%">${UTILITIES.escapeHtml(platform)}</span>` +
 				`<span class="arrival_text right_align" style="width: 20%; text-align: right">${arrivalDifference < 0 ? "" : UTILITIES.formatTime(arrivalDifference)}</span>` +
 				`</div>`;
 			arrivalsHtml[color]["count"]++;
@@ -304,9 +304,9 @@ const onClickLine = (routeId, color, forceClick) => {
 		for (const nameSplitIndex in nameSplit) {
 			const namePart = nameSplit[nameSplitIndex];
 			if (UTILITIES.isCJK(namePart)) {
-				routeNameHtml += "<h1>" + namePart + "</h1>";
+				routeNameHtml += "<h1>" + UTILITIES.escapeHtml(namePart) + "</h1>";
 			} else {
-				routeNameHtml += "<h2>" + namePart + "</h2>";
+				routeNameHtml += "<h2>" + UTILITIES.escapeHtml(namePart) + "</h2>";
 			}
 		}
 
@@ -362,7 +362,7 @@ const onClickLine = (routeId, color, forceClick) => {
 };
 const addRouteHeader = (element, number, destination, circular, routeName) => {
 	const headerElement = document.createElement("h3");
-	headerElement.innerHTML = number.replace(/\|/g, " ") + `<span class="material-icons tight">${circular === "" ? "chevron_right" : circular === "cw" ? "rotate_right" : "rotate_left"}</span>` + destination.replace(/\|/g, " ");
+	headerElement.innerHTML = UTILITIES.escapeHtml(number.replace(/\|/g, " ")) + `<span class="material-icons tight">${circular === "" ? "chevron_right" : circular === "cw" ? "rotate_right" : "rotate_left"}</span>` + UTILITIES.escapeHtml(destination.replace(/\|/g, " "));
 	element.appendChild(headerElement);
 
 	const routeNameSplit = routeName.split("||");

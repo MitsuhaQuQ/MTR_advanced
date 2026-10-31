@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
-import net.minecraft.world.level.material.MaterialColor;
+import mtr.compat.MaterialColor;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;

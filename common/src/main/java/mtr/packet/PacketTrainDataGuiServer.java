@@ -1,5 +1,6 @@
 package mtr.packet;
 
+import mtr.compat.Compat;
 import io.netty.buffer.Unpooled;
 import mtr.Keys;
 import mtr.Registry;
@@ -29,6 +30,11 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class PacketTrainDataGuiServer extends PacketTrainDataBase {
+
+	private static final int MAX_LIST_SIZE = 4096;
+	private static final int MAX_STRING_LIST_SIZE = 256;
+	private static final int MAX_EDIT_DISTANCE = 64;
+	private static final int TICKET_MACHINE_DISTANCE = 6;
 
 	private static final int PACKET_CHUNK_SIZE = (int) Math.pow(2, 14); // 16384
 
@@ -179,7 +185,12 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			return;
 		}
 
-		final Level world = player.level;
+		// An ID of 0 would be randomised separately by the server and every client
+		if (!isDelete && packet.getLong(packet.readerIndex()) == 0) {
+			return;
+		}
+
+		final Level world = Compat.getLevel(player);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		if (railwayData == null) {
 			return;
@@ -224,11 +235,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void generatePathC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
-		final Level world = player.level;
+		if (RailwayData.hasNoPermission(player)) {
+			return;
+		}
+
+		final Level world = Compat.getLevel(player);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		if (railwayData != null) {
 			final long depotId = packet.readLong();
-			minecraftServer.execute(() -> railwayData.railwayDataPathGenerationModule.generatePath(minecraftServer, depotId));
+			PacketGuard.execute(minecraftServer, () -> railwayData.railwayDataPathGenerationModule.generatePath(minecraftServer, depotId));
 		}
 	}
 
@@ -237,16 +252,16 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			return;
 		}
 
-		final Level world = player.level;
+		final Level world = Compat.getLevel(player);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		if (railwayData != null) {
 			final long depotId = packet.readLong();
-			final int sidingCount = packet.readInt();
+			final int sidingCount = PacketGuard.readCount(packet, Long.BYTES, MAX_LIST_SIZE);
 			final Set<Long> sidingIds = new HashSet<>();
 			for (int i = 0; i < sidingCount; i++) {
 				sidingIds.add(packet.readLong());
 			}
-			minecraftServer.execute(() -> {
+			PacketGuard.execute(minecraftServer, () -> {
 				final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
 				if (depot != null) {
 					railwayData.resetTrainDelays(depot);
@@ -264,20 +279,23 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	public static void receiveTrainSensorC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final BlockPos pos = packet.readBlockPos();
 		final Set<Long> filterIds = new HashSet<>();
-		final int filterLength = packet.readInt();
+		final int filterLength = PacketGuard.readCount(packet, Long.BYTES, MAX_LIST_SIZE);
 		for (int i = 0; i < filterLength; i++) {
 			filterIds.add(packet.readLong());
 		}
 		final boolean stoppedOnly = packet.readBoolean();
 		final boolean movingOnly = packet.readBoolean();
 		final int number = packet.readInt();
-		final int stringCount = packet.readInt();
+		final int stringCount = PacketGuard.readCount(packet, 1, MAX_STRING_LIST_SIZE);
 		final String[] strings = new String[stringCount];
 		for (int i = 0; i < stringCount; i++) {
 			strings[i] = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 		}
-		minecraftServer.execute(() -> {
-			final BlockEntity entity = player.level.getBlockEntity(pos);
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, pos)) {
+				return;
+			}
+			final BlockEntity entity = Compat.getLevel(player).getBlockEntity(pos);
 			if (entity instanceof BlockTrainSensorBase.TileEntityTrainSensorBase) {
 				setTileEntityDataAndWriteUpdate(player, entity2 -> entity2.setData(filterIds, stoppedOnly, movingOnly, number, strings), (BlockTrainSensorBase.TileEntityTrainSensorBase) entity);
 			}
@@ -289,8 +307,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final String floorNumber = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 		final String floorDescription = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 		final boolean shouldDing = packet.readBoolean();
-		minecraftServer.execute(() -> {
-			final BlockEntity entity = player.level.getBlockEntity(pos);
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, pos)) {
+				return;
+			}
+			final BlockEntity entity = Compat.getLevel(player).getBlockEntity(pos);
 			if (entity instanceof BlockLiftTrackFloor.TileEntityLiftTrackFloor) {
 				setTileEntityDataAndWriteUpdate(player, entity2 -> entity2.setData(floorNumber, floorDescription, shouldDing), (BlockLiftTrackFloor.TileEntityLiftTrackFloor) entity);
 			}
@@ -299,25 +320,28 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	public static void receiveSignIdsC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final BlockPos signPos = packet.readBlockPos();
-		final int selectedIdsLength = packet.readInt();
+		final int selectedIdsLength = PacketGuard.readCount(packet, Long.BYTES, MAX_LIST_SIZE);
 		final Set<Long> selectedIds = new HashSet<>();
 		for (int i = 0; i < selectedIdsLength; i++) {
 			selectedIds.add(packet.readLong());
 		}
-		final int signLength = packet.readInt();
+		final int signLength = PacketGuard.readCount(packet, 1, MAX_STRING_LIST_SIZE);
 		final String[] signIds = new String[signLength];
 		for (int i = 0; i < signLength; i++) {
 			final String signId = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 			signIds[i] = signId.isEmpty() ? null : signId;
 		}
 
-		minecraftServer.execute(() -> {
-			final BlockEntity entity = player.level.getBlockEntity(signPos);
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, signPos)) {
+				return;
+			}
+			final BlockEntity entity = Compat.getLevel(player).getBlockEntity(signPos);
 			if (entity instanceof BlockRailwaySign.TileEntityRailwaySign) {
 				setTileEntityDataAndWriteUpdate(player, entity2 -> entity2.setData(selectedIds, signIds), (BlockRailwaySign.TileEntityRailwaySign) entity);
 			} else if (entity instanceof BlockRouteSignBase.TileEntityRouteSignBase) {
 				final long platformId = selectedIds.isEmpty() ? 0 : (long) selectedIds.toArray()[0];
-				final BlockEntity entityAbove = player.level.getBlockEntity(signPos.above());
+				final BlockEntity entityAbove = Compat.getLevel(player).getBlockEntity(signPos.above());
 				if (entityAbove instanceof BlockRouteSignBase.TileEntityRouteSignBase) {
 					setTileEntityDataAndWriteUpdate(player, entity2 -> entity2.setPlatformId(platformId), ((BlockRouteSignBase.TileEntityRouteSignBase) entityAbove), (BlockRouteSignBase.TileEntityRouteSignBase) entity);
 				} else {
@@ -328,22 +352,22 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void receiveDriveTrainC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
-		final RailwayData railwayData = RailwayData.getInstance(player.level);
-		if (railwayData != null) {
+		final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+		if (railwayData != null && Train.isHoldingKey(player)) {
 			final boolean pressingAccelerate = packet.readBoolean();
 			final boolean pressingBrake = packet.readBoolean();
 			final boolean pressingDoors = packet.readBoolean();
-			minecraftServer.execute(() -> railwayData.railwayDataDriveTrainModule.drive(player, pressingAccelerate, pressingBrake, pressingDoors));
+			PacketGuard.execute(minecraftServer, () -> railwayData.railwayDataDriveTrainModule.drive(player, pressingAccelerate, pressingBrake, pressingDoors));
 		}
 	}
 
 	public static void receivePressLiftButtonC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
-		final RailwayData railwayData = RailwayData.getInstance(player.level);
+		final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 		if (railwayData != null) {
 			final long id = packet.readLong();
 			final int floor = packet.readInt();
 
-			minecraftServer.execute(() -> {
+			PacketGuard.execute(minecraftServer, () -> {
 				final Lift lift = railwayData.dataCache.liftsServerIdMap.get(id);
 				if (lift != null) {
 					lift.pressButton(floor);
@@ -353,17 +377,25 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void receiveAddBalanceC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
-		final int addAmount = packet.readInt();
+		packet.readInt(); // The amount is calculated by the server
 		final int emeralds = packet.readInt();
+		final int index = Integer.numberOfTrailingZeros(emeralds);
 
-		minecraftServer.execute(() -> {
-			final Level world = player.level;
+		if (emeralds <= 0 || Integer.bitCount(emeralds) != 1 || index >= TicketSystem.ADD_BALANCE_OPTIONS) {
+			return;
+		}
 
-			TicketSystem.addObjectivesIfMissing(world);
-			Score balanceScore = TicketSystem.getPlayerScore(world, player, TicketSystem.BALANCE_OBJECTIVE);
-			balanceScore.setScore(balanceScore.getScore() + addAmount);
+		PacketGuard.execute(minecraftServer, () -> {
+			final Level world = Compat.getLevel(player);
+
+			if (!isNearTicketMachine(world, player.blockPosition()) || Utilities.getInventory(player).countItem(Items.EMERALD) < emeralds) {
+				return;
+			}
 
 			ContainerHelper.clearOrCountMatchingItems(Utilities.getInventory(player), itemStack -> itemStack.getItem() == Items.EMERALD, emeralds, false);
+			TicketSystem.addObjectivesIfMissing(world);
+			final Score balanceScore = TicketSystem.getPlayerScore(world, player, TicketSystem.BALANCE_OBJECTIVE);
+			balanceScore.setScore((int) Math.min(Integer.MAX_VALUE, (long) balanceScore.getScore() + TicketSystem.getAddAmount(index)));
 			world.playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.BLOCKS, 1, 1);
 		});
 	}
@@ -371,31 +403,35 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	public static void receivePIDSMessageC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final BlockPos pos1 = packet.readBlockPos();
 		final BlockPos pos2 = packet.readBlockPos();
-		final int maxMessages = packet.readInt();
+		final int maxMessages = PacketGuard.readCount(packet, 1, MAX_STRING_LIST_SIZE);
 		final String[] messages = new String[maxMessages];
 		for (int i = 0; i < maxMessages; i++) {
 			messages[i] = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 		}
-		final int maxArrivals = packet.readInt();
+		final int maxArrivals = PacketGuard.readCount(packet, 1, MAX_STRING_LIST_SIZE);
 		final boolean[] hideArrivals = new boolean[maxArrivals];
 		for (int i = 0; i < maxArrivals; i++) {
 			hideArrivals[i] = packet.readBoolean();
 		}
-		final int platformIdCount = packet.readInt();
+		final int platformIdCount = PacketGuard.readCount(packet, Long.BYTES, MAX_LIST_SIZE);
 		final Set<Long> platformIds = new HashSet<>();
 		for (int i = 0; i < platformIdCount; i++) {
 			platformIds.add(packet.readLong());
 		}
 		final int arrivalPage = packet.readInt();
-		minecraftServer.execute(() -> {
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, pos1) || !canEditBlock(player, pos2)) {
+				return;
+			}
+
 			final List<IPIDS.TileEntityPIDS> entities = new ArrayList<>();
 
-			final BlockEntity entity1 = player.level.getBlockEntity(pos1);
+			final BlockEntity entity1 = Compat.getLevel(player).getBlockEntity(pos1);
 			if (entity1 instanceof IPIDS.TileEntityPIDS) {
 				entities.add((IPIDS.TileEntityPIDS) entity1);
 			}
 
-			final BlockEntity entity2 = player.level.getBlockEntity(pos2);
+			final BlockEntity entity2 = Compat.getLevel(player).getBlockEntity(pos2);
 			if (entity2 instanceof IPIDS.TileEntityPIDS) {
 				entities.add((IPIDS.TileEntityPIDS) entity2);
 			}
@@ -406,14 +442,17 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	public static void receiveArrivalProjectorMessageC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final BlockPos pos = packet.readBlockPos();
-		final int platformIdCount = packet.readInt();
+		final int platformIdCount = PacketGuard.readCount(packet, Long.BYTES, MAX_LIST_SIZE);
 		final Set<Long> platformIds = new HashSet<>();
 		for (int i = 0; i < platformIdCount; i++) {
 			platformIds.add(packet.readLong());
 		}
 		final int displayPage = packet.readInt();
-		minecraftServer.execute(() -> {
-			final BlockEntity entity = player.level.getBlockEntity(pos);
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, pos)) {
+				return;
+			}
+			final BlockEntity entity = Compat.getLevel(player).getBlockEntity(pos);
 			if (entity instanceof BlockArrivalProjectorBase.TileEntityArrivalProjectorBase) {
 				setTileEntityDataAndWriteUpdate(player, entity2 -> entity2.setData(platformIds, displayPage), ((BlockArrivalProjectorBase.TileEntityArrivalProjectorBase) entity));
 			}
@@ -425,11 +464,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			return;
 		}
 
-		final Level world = player.level;
+		final Level world = Compat.getLevel(player);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		if (railwayData != null) {
 			final boolean useTimeAndWindSync = packet.readBoolean();
-			minecraftServer.execute(() -> {
+			PacketGuard.execute(minecraftServer, () -> {
 				final boolean useTimeAndWindSyncOld = railwayData.getUseTimeAndWindSync();
 				railwayData.setUseTimeAndWindSync(useTimeAndWindSync);
 				final String key = "\"use_time_and_wind_sync\":";
@@ -438,41 +477,71 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		}
 	}
 
-	public static void receiveRemoveRailAction(MinecraftServer minecraftServer, Player player, FriendlyByteBuf packet) {
-		final Level world = player.level;
+	public static void receiveRemoveRailAction(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		if (RailwayData.hasNoPermission(player)) {
+			return;
+		}
+
+		final Level world = Compat.getLevel(player);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		if (railwayData != null) {
 			final long id = packet.readLong();
-			minecraftServer.execute(() -> railwayData.railwayDataRailActionsModule.removeRailAction(id));
+			PacketGuard.execute(minecraftServer, () -> railwayData.railwayDataRailActionsModule.removeRailAction(id));
 		}
 	}
 
 	public static void receiveUpdateTrainPassengerPosition(MinecraftServer minecraftServer, Player player, FriendlyByteBuf packet) {
-		final FriendlyByteBuf packetFullCopy = new FriendlyByteBuf(packet.copy());
-		minecraftServer.execute(() -> player.level.players().forEach(sendPlayer -> {
-			if (sendPlayer != player) {
-				Registry.sendToPlayer((ServerPlayer) sendPlayer, PACKET_UPDATE_TRAIN_PASSENGER_POSITION, packetFullCopy);
-			}
-		}));
+		relayPassengerPosition(minecraftServer, player, packet, PACKET_UPDATE_TRAIN_PASSENGER_POSITION);
 	}
 
 	public static void receiveUpdateLiftPassengerPosition(MinecraftServer minecraftServer, Player player, FriendlyByteBuf packet) {
-		final FriendlyByteBuf packetFullCopy = new FriendlyByteBuf(packet.copy());
-		minecraftServer.execute(() -> player.level.players().forEach(sendPlayer -> {
-			if (sendPlayer != player) {
-				Registry.sendToPlayer((ServerPlayer) sendPlayer, PACKET_UPDATE_LIFT_PASSENGER_POSITION, packetFullCopy);
-			}
-		}));
+		relayPassengerPosition(minecraftServer, player, packet, PACKET_UPDATE_LIFT_PASSENGER_POSITION);
 	}
 
 	public static void receiveUpdateEntitySeatPassengerPosition(MinecraftServer minecraftServer, Player player, FriendlyByteBuf packet) {
-		final RailwayData railwayData = RailwayData.getInstance(player.level);
+		final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 		if (railwayData != null) {
 			final double x = packet.readDouble();
 			final double y = packet.readDouble();
 			final double z = packet.readDouble();
-			minecraftServer.execute(() -> railwayData.railwayDataCoolDownModule.moveSeat(player, x, y, z));
+			if (Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z)) {
+				PacketGuard.execute(minecraftServer, () -> railwayData.railwayDataCoolDownModule.moveSeat(player, x, y, z));
+			}
 		}
+	}
+
+	private static void relayPassengerPosition(MinecraftServer minecraftServer, Player player, FriendlyByteBuf packet, ResourceLocation packetId) {
+		final long id = packet.readLong();
+		final float percentageX = packet.readFloat();
+		final float percentageZ = packet.readFloat();
+		final UUID uuid = packet.readUUID();
+
+		// The forwarded packet is rebuilt so that clients only ever receive well-formed data about the sender
+		if (uuid.equals(player.getUUID()) && Float.isFinite(percentageX) && Float.isFinite(percentageZ)) {
+			final FriendlyByteBuf newPacket = new FriendlyByteBuf(Unpooled.buffer());
+			newPacket.writeLong(id);
+			newPacket.writeFloat(percentageX);
+			newPacket.writeFloat(percentageZ);
+			newPacket.writeUUID(uuid);
+			PacketGuard.execute(minecraftServer, () -> Compat.getLevel(player).players().forEach(sendPlayer -> {
+				if (sendPlayer != player) {
+					Registry.sendToPlayer((ServerPlayer) sendPlayer, packetId, newPacket);
+				}
+			}));
+		}
+	}
+
+	private static boolean canEditBlock(ServerPlayer player, BlockPos pos) {
+		return !RailwayData.hasNoPermission(player) && Compat.getLevel(player).hasChunkAt(pos) && player.blockPosition().distSqr(pos) <= MAX_EDIT_DISTANCE * MAX_EDIT_DISTANCE;
+	}
+
+	private static boolean isNearTicketMachine(Level world, BlockPos pos) {
+		for (final BlockPos checkPos : BlockPos.betweenClosed(pos.offset(-TICKET_MACHINE_DISTANCE, -TICKET_MACHINE_DISTANCE, -TICKET_MACHINE_DISTANCE), pos.offset(TICKET_MACHINE_DISTANCE, TICKET_MACHINE_DISTANCE, TICKET_MACHINE_DISTANCE))) {
+			if (world.getBlockState(checkPos).getBlock() instanceof BlockTicketMachine) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static <T extends SerializedDataBase> void serializeData(FriendlyByteBuf packet, Collection<T> objects) {
@@ -502,7 +571,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	@SafeVarargs
 	private static <T extends BlockEntityMapper> void setTileEntityDataAndWriteUpdate(ServerPlayer player, Consumer<T> setData, T... entities) {
-		final RailwayData railwayData = RailwayData.getInstance(player.level);
+		final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 
 		if (railwayData != null && entities.length > 0) {
 			final CompoundTag compoundTagOld = new CompoundTag();

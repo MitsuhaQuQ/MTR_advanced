@@ -1,14 +1,15 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import net.minecraft.client.gui.components.Button;
 
-public class DeleteConfirmationScreen extends ScreenMapper implements IGui {
+public class DeleteConfirmationScreen extends ScreenBase implements IGui {
 
 	private final Runnable deleteCallback;
 	private final String name;
@@ -44,7 +45,7 @@ public class DeleteConfirmationScreen extends ScreenMapper implements IGui {
 		try {
 			renderBackground(matrices);
 			super.render(matrices, mouseX, mouseY, delta);
-			drawCenteredString(matrices, font, Text.translatable("gui.mtr.delete_confirmation", IGui.formatStationName(name)), width / 2, height / 2 - SQUARE_SIZE * 2 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.delete_confirmation", IGui.formatStationName(name)), width / 2, height / 2 - SQUARE_SIZE * 2 + TEXT_PADDING, ARGB_WHITE);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

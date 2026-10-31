@@ -12,7 +12,13 @@ import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 
 public class TicketSystem {
 
+	public static int getAddAmount(int index) {
+		return (int) Math.ceil(Math.pow(2, index) * (EMERALD_TO_DOLLAR + index));
+	}
+
 	public static final String BALANCE_OBJECTIVE = "mtr_balance";
+	public static final int ADD_BALANCE_OPTIONS = 10;
+	private static final int EMERALD_TO_DOLLAR = 10;
 	private static final String ENTRY_ZONE_OBJECTIVE = "mtr_entry_zone";
 	private static final int BASE_FARE = 2;
 	private static final int ZONE_FARE = 1;

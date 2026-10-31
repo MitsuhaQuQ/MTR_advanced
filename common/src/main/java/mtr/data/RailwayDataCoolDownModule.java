@@ -22,6 +22,7 @@ public class RailwayDataCoolDownModule extends RailwayDataModuleBase {
 	private final Map<Player, Integer> playerShiftCoolDowns = new HashMap<>();
 
 	public static final int SHIFT_ACTIVATE_TICKS = 30;
+	private static final int MAX_SEAT_DISTANCE = 64;
 
 	public RailwayDataCoolDownModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		super(railwayData, world, rails);
@@ -77,6 +78,9 @@ public class RailwayDataCoolDownModule extends RailwayDataModuleBase {
 	}
 
 	public void onPlayerDisconnect(Player player) {
+		updatePlayerRiding(player, 0);
+		playerRidingCoolDown.remove(player);
+		playerRidingRoute.remove(player);
 		playerSeats.remove(player);
 		playerSeatCoolDowns.remove(player);
 		playerShiftCoolDowns.remove(player);
@@ -115,7 +119,7 @@ public class RailwayDataCoolDownModule extends RailwayDataModuleBase {
 
 	public void moveSeat(Player player, double x, double y, double z) {
 		final EntitySeat entitySeat = playerSeats.get(player);
-		if (entitySeat != null) {
+		if (entitySeat != null && playerRidingCoolDown.containsKey(player) && player.position().distanceToSqr(x, y, z) <= MAX_SEAT_DISTANCE * MAX_SEAT_DISTANCE) {
 			player.startRiding(entitySeat);
 			entitySeat.setPos(x, y, z);
 		}

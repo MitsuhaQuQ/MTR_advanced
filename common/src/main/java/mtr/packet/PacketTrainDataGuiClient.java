@@ -30,6 +30,8 @@ import java.util.function.BiFunction;
 
 public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 
+	private static final int MAX_CHUNKS = 1 << 16;
+
 	private static final Map<Integer, ByteBuf> TEMP_PACKETS_RECEIVER = new HashMap<>();
 	private static long tempPacketId = 0;
 	private static int expectedSize = 0;
@@ -189,9 +191,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 
 	public static void createSignalS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final long id = packet.readLong();
-		final DyeColor dyeColor = DyeColor.values()[packet.readInt()];
+		final int dyeColorIndex = packet.readInt();
 		final UUID rail = packet.readUUID();
-		minecraftClient.execute(() -> ClientData.SIGNAL_BLOCKS.add(id, dyeColor, rail));
+		if (dyeColorIndex >= 0 && dyeColorIndex < DyeColor.values().length) {
+			minecraftClient.execute(() -> ClientData.SIGNAL_BLOCKS.add(id, DyeColor.values()[dyeColorIndex], rail));
+		}
 	}
 
 	public static void removeNodeS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
@@ -232,6 +236,10 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final int chunk = packet.readInt();
 		final boolean complete = packet.readBoolean();
 
+		if (chunk < 0 || chunk >= MAX_CHUNKS) {
+			return;
+		}
+
 		if (tempPacketId != id) {
 			TEMP_PACKETS_RECEIVER.clear();
 			tempPacketId = id;
@@ -247,15 +255,21 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		if (TEMP_PACKETS_RECEIVER.size() == expectedSize) {
 			final FriendlyByteBuf newPacket = new FriendlyByteBuf(Unpooled.buffer());
 			for (int i = 0; i < expectedSize; i++) {
+				if (!TEMP_PACKETS_RECEIVER.containsKey(i)) {
+					TEMP_PACKETS_RECEIVER.clear();
+					return;
+				}
 				newPacket.writeBytes(TEMP_PACKETS_RECEIVER.get(i));
 			}
 			TEMP_PACKETS_RECEIVER.clear();
 
-			try {
-				minecraftClient.execute(() -> ClientData.receivePacket(newPacket));
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+			minecraftClient.execute(() -> {
+				try {
+					ClientData.receivePacket(newPacket);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
 		}
 	}
 

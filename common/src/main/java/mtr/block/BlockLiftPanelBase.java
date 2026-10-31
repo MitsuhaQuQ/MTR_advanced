@@ -1,5 +1,6 @@
 package mtr.block;
 
+import mtr.compat.Compat;
 import mtr.Items;
 import mtr.MTR;
 import mtr.mappings.*;
@@ -26,8 +27,8 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
-import net.minecraft.world.level.material.Material;
-import net.minecraft.world.level.material.MaterialColor;
+import mtr.compat.Material;
+import mtr.compat.MaterialColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -46,7 +47,7 @@ public abstract class BlockLiftPanelBase extends BlockDirectionalMapper implemen
 	public static final BooleanProperty TEMP = BooleanProperty.create("temp");
 
 	public BlockLiftPanelBase(boolean isOdd, boolean isFlat) {
-		super(Properties.of(Material.METAL, MaterialColor.COLOR_GRAY).requiresCorrectToolForDrops().strength(2).lightLevel(state -> 5));
+		super(Compat.noPistonPush(Material.properties(Material.METAL, MaterialColor.COLOR_GRAY).requiresCorrectToolForDrops().strength(2).lightLevel(state -> 5)));
 		this.isOdd = isOdd;
 		this.isFlat = isFlat;
 	}
@@ -123,7 +124,6 @@ public abstract class BlockLiftPanelBase extends BlockDirectionalMapper implemen
 		super.playerWillDestroy(world, pos, state, player);
 	}
 
-	@Override
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}

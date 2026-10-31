@@ -1,5 +1,6 @@
 package mtr.entity;
 
+import mtr.compat.Compat;
 import mtr.EntityTypes;
 import mtr.data.RailwayData;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -39,9 +40,9 @@ public class EntitySeat extends EntityBase {
 
 	@Override
 	public void tick() {
-		if (level.isClientSide) {
+		if (Compat.getLevel(this).isClientSide) {
 			if (clientPlayer == null) {
-				clientPlayer = entityData == null ? null : entityData.get(PLAYER_ID).map(value -> level.getPlayerByUUID(value)).orElse(null);
+				clientPlayer = entityData == null ? null : entityData.get(PLAYER_ID).map(value -> Compat.getLevel(this).getPlayerByUUID(value)).orElse(null);
 			}
 
 			if (clientPlayer == null || hasPassenger(clientPlayer)) {
@@ -57,7 +58,7 @@ public class EntitySeat extends EntityBase {
 					setPos(player.getX(), player.getY(), player.getZ());
 				}
 
-				final RailwayData railwayData = RailwayData.getInstance(level);
+				final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(this));
 				if (railwayData != null) {
 					railwayData.railwayDataCoolDownModule.updatePlayerSeatCoolDown(player);
 				}

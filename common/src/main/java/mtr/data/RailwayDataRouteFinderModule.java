@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongAVLTreeSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 
 import java.util.*;
@@ -305,6 +306,8 @@ public class RailwayDataRouteFinderModule extends RailwayDataModuleBase {
 
 	private static class RouteFinderRequest {
 
+		private static final int MAX_TICK_TIME = 20;
+
 		private final BlockPos startPos;
 		private final BlockPos endPos;
 		private final int maxTickTime;
@@ -313,7 +316,7 @@ public class RailwayDataRouteFinderModule extends RailwayDataModuleBase {
 		private RouteFinderRequest(BlockPos startPos, BlockPos endPos, int maxTickTime, BiConsumer<List<RouteFinderData>, Integer> callback) {
 			this.startPos = startPos;
 			this.endPos = endPos;
-			this.maxTickTime = Math.max(2, maxTickTime);
+			this.maxTickTime = Mth.clamp(maxTickTime, 2, MAX_TICK_TIME);
 			this.callback = callback;
 		}
 	}

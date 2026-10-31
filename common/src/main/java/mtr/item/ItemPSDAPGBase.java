@@ -1,5 +1,6 @@
 package mtr.item;
 
+import mtr.compat.Compat;
 import mtr.Blocks;
 import mtr.CreativeModeTabs;
 import mtr.block.BlockPSDAPGBase;
@@ -131,7 +132,7 @@ public class ItemPSDAPGBase extends ItemWithCreativeTabBase implements IBlock {
 			}
 
 			for (int y = 0; y < height; y++) {
-				if (!world.getBlockState(offsetPos.above(y)).getMaterial().isReplaceable()) {
+				if (!Compat.isReplaceable(world.getBlockState(offsetPos.above(y)))) {
 					return true;
 				}
 			}

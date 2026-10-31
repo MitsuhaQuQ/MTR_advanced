@@ -45,15 +45,15 @@ const init = () => {
 						const noRoute = name === "" && destination === "";
 						playerListElement.innerHTML +=
 							`<div class="player text">` +
-							`<img src="https://minotar.net/avatar/${player}" alt=""/>` +
-							`<span style="${noRoute ? "" : "max-width: 6em; min-width: 6em; overflow: hidden"}">&nbsp;&nbsp;&nbsp;${player}</span>` +
+							`<img src="https://minotar.net/avatar/${encodeURIComponent(player)}" alt=""/>` +
+							`<span style="${noRoute ? "" : "max-width: 6em; min-width: 6em; overflow: hidden"}">&nbsp;&nbsp;&nbsp;${UTILITIES.escapeHtml(player)}</span>` +
 							`<div class="player_route" style="display: ${noRoute ? "none" : ""}; border-left: 0.3em solid ${UTILITIES.convertColor(color)}">` +
 							`<div class="arrival">` +
-							`<span class="arrival_text">&nbsp;${number.replace(/\|/g, " ")} ${name.split("||")[0].replace(/\|/g, " ")}</span>` +
+							`<span class="arrival_text">&nbsp;${UTILITIES.escapeHtml(number.replace(/\|/g, " "))} ${UTILITIES.escapeHtml(name.split("||")[0].replace(/\|/g, " "))}</span>` +
 							`</div>` +
 							`<div class="arrival">` +
 							`<span class="material-icons small">${circular === "" ? "chevron_right" : circular === "cw" ? "rotate_right" : "rotate_left"}</span>` +
-							`<span class="arrival_text">${destination.replace(/\|/g, " ")}</span>` +
+							`<span class="arrival_text">${UTILITIES.escapeHtml(destination.replace(/\|/g, " "))}</span>` +
 							`</div>` +
 							`</div>` +
 							`</div>`;

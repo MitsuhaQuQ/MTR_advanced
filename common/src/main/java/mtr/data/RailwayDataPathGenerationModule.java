@@ -10,6 +10,11 @@ import java.util.Map;
 
 public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 
+	private final Map<Long, Long> lastRequestMillis = new HashMap<>();
+
+	private static final int MIN_REQUEST_INTERVAL_MILLIS = 1000;
+	private static final int MAX_THREADS = 4;
+
 	private final Map<Long, Thread> generatingPathThreads = new HashMap<>();
 
 	public RailwayDataPathGenerationModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails) {
@@ -18,6 +23,13 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 
 	public void generatePath(MinecraftServer minecraftServer, long depotId) {
 		generatingPathThreads.keySet().removeIf(id -> !generatingPathThreads.get(id).isAlive());
+		final long millis = System.currentTimeMillis();
+		if (millis - lastRequestMillis.getOrDefault(depotId, 0L) < MIN_REQUEST_INTERVAL_MILLIS || !generatingPathThreads.containsKey(depotId) && generatingPathThreads.size() >= MAX_THREADS) {
+			PacketTrainDataGuiServer.generatePathS2C(world, depotId, 0);
+			return;
+		}
+		lastRequestMillis.put(depotId, millis);
+
 		final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
 		if (depot != null) {
 			if (generatingPathThreads.containsKey(depotId)) {

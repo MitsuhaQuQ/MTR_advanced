@@ -48,6 +48,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private static final int THRESHOLD_ABOVE_MAX_BUILD_HEIGHT = 64;
 
 	private static final String KEY_ROUTE_IDS = "route_ids";
+	private static final int MAX_DEPARTURES = 4096;
+	private static final int MAX_ROUTES = 1024;
 	private static final String KEY_USE_REAL_TIME = "use_real_time";
 	private static final String KEY_FREQUENCIES = "frequencies";
 	private static final String KEY_DEPARTURES = "departures";
@@ -211,12 +213,18 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			departures.clear();
 			final int departuresCount = packet.readInt();
 			for (int i = 0; i < departuresCount; i++) {
-				departures.add(packet.readInt());
+				final int departure = packet.readInt();
+				if (i < MAX_DEPARTURES) {
+					departures.add(departure);
+				}
 			}
 			routeIds.clear();
 			final int routeIdCount = packet.readInt();
 			for (int i = 0; i < routeIdCount; i++) {
-				routeIds.add(packet.readLong());
+				final long routeId = packet.readLong();
+				if (i < MAX_ROUTES) {
+					routeIds.add(routeId);
+				}
 			}
 			repeatInfinitely = packet.readBoolean();
 			cruisingAltitude = packet.readInt();

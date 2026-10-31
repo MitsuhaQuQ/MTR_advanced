@@ -1,5 +1,6 @@
 package mtr.block;
 
+import mtr.compat.Compat;
 import mtr.mappings.BlockDirectionalMapper;
 import mtr.mappings.EntityBlockMapper;
 import net.minecraft.core.BlockPos;
@@ -18,7 +19,7 @@ public abstract class BlockSignalLightBase extends BlockDirectionalMapper implem
 	private final int shapeHeight;
 
 	public BlockSignalLightBase(Properties settings, int shapeX, int shapeHeight) {
-		super(settings);
+		super(Compat.noPistonPush(settings));
 		this.shapeX = shapeX;
 		this.shapeHeight = shapeHeight;
 	}
@@ -39,7 +40,6 @@ public abstract class BlockSignalLightBase extends BlockDirectionalMapper implem
 		return IBlock.getVoxelShapeByDirection(shapeX, 0, 5, 16 - shapeX, shapeHeight, 11, IBlock.getStatePropertySafe(state, FACING));
 	}
 
-	@Override
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}

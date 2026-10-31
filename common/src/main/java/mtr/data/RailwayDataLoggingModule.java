@@ -1,6 +1,7 @@
 package mtr.data;
 
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CollectionTag;
 import net.minecraft.nbt.CompoundTag;
@@ -145,7 +146,7 @@ public class RailwayDataLoggingModule extends RailwayDataModuleBase {
 		compoundTag.getAllKeys().forEach(key -> {
 			final String value = convertTag(compoundTag.get(key));
 			if (value != null) {
-				dataList.add(String.format("%s:%s", key, value));
+				dataList.add(String.format("%s:%s", new JsonPrimitive(key), value));
 			}
 		});
 
@@ -166,7 +167,7 @@ public class RailwayDataLoggingModule extends RailwayDataModuleBase {
 			} else if (tag instanceof NumericTag) {
 				return ((NumericTag) tag).getAsNumber().toString();
 			} else {
-				return tempValue.isEmpty() ? "\"\"" : tempValue;
+				return new JsonPrimitive(tempValue).toString();
 			}
 		}
 
@@ -174,7 +175,9 @@ public class RailwayDataLoggingModule extends RailwayDataModuleBase {
 	}
 
 	private static String formatString(String text) {
-		return String.format("\"%s\"", text.replace("\"", "\"\""));
+		final String newText = text.replace("\r", " ").replace("\"", "\"\"");
+		// Stops spreadsheet software from treating player-controlled text as a formula
+		return String.format(newText.matches("(?s)^[=+\\-@\t].*") ? "\"'%s\"" : "\"%s\"", newText);
 	}
 
 	private enum LoggingEditType {

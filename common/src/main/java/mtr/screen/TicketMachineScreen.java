@@ -1,9 +1,11 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
-import mtr.mappings.ScreenMapper;
+import mtr.data.TicketSystem;
 import mtr.mappings.Text;
 import mtr.mappings.Utilities;
 import mtr.mappings.UtilitiesClient;
@@ -13,13 +15,12 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Items;
 
-public class TicketMachineScreen extends ScreenMapper implements IGui, IPacket {
+public class TicketMachineScreen extends ScreenBase implements IGui, IPacket {
 
 	private final Button[] buttons = new Button[BUTTON_COUNT];
 	private final Component balanceText;
 
-	private static final int EMERALD_TO_DOLLAR = 10;
-	private static final int BUTTON_COUNT = 10;
+	private static final int BUTTON_COUNT = TicketSystem.ADD_BALANCE_OPTIONS;
 	private static final int BUTTON_WIDTH = 80;
 
 	public TicketMachineScreen(int balance) {
@@ -64,11 +65,11 @@ public class TicketMachineScreen extends ScreenMapper implements IGui, IPacket {
 		try {
 			renderBackground(matrices);
 			final Component emeraldsText = Text.translatable("gui.mtr.emeralds", getEmeraldCount());
-			font.draw(matrices, balanceText, TEXT_PADDING, TEXT_PADDING, ARGB_WHITE);
-			font.draw(matrices, emeraldsText, width - TEXT_PADDING - font.width(emeraldsText), TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, balanceText, TEXT_PADDING, TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, emeraldsText, width - TEXT_PADDING - font.width(emeraldsText), TEXT_PADDING, ARGB_WHITE);
 
 			for (int i = 0; i < BUTTON_COUNT; i++) {
-				font.draw(matrices, Text.translatable("gui.mtr.add_balance_for_emeralds", getAddAmount(i), (int) Math.pow(2, i)), TEXT_PADDING, (i + 1) * SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.add_balance_for_emeralds", getAddAmount(i), (int) Math.pow(2, i)), TEXT_PADDING, (i + 1) * SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
 			}
 
 			super.render(matrices, mouseX, mouseY, delta);
@@ -91,6 +92,6 @@ public class TicketMachineScreen extends ScreenMapper implements IGui, IPacket {
 	}
 
 	private static int getAddAmount(int index) {
-		return (int) Math.ceil(Math.pow(2, index) * (EMERALD_TO_DOLLAR + index));
+		return TicketSystem.getAddAmount(index);
 	}
 }

@@ -1,10 +1,11 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.block.BlockLiftTrackFloor;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
-import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -14,7 +15,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
-public class LiftTrackFloorScreen extends ScreenMapper implements IGui, IPacket {
+public class LiftTrackFloorScreen extends ScreenBase implements IGui, IPacket {
 
 	private final WidgetBetterTextField textFieldFloorNumber;
 	private final WidgetBetterTextField textFieldFloorDescription;
@@ -91,8 +92,8 @@ public class LiftTrackFloorScreen extends ScreenMapper implements IGui, IPacket 
 			renderBackground(matrices);
 			final int startX = (width - textWidth - TEXT_PADDING - TEXT_FIELD_WIDTH) / 2;
 			final int startY = (height - SQUARE_SIZE * 3 - TEXT_FIELD_PADDING * 2) / 2;
-			font.draw(matrices, TEXT_FLOOR_NUMBER, startX, startY + TEXT_FIELD_PADDING / 2F + TEXT_PADDING, ARGB_WHITE);
-			font.draw(matrices, TEXT_FLOOR_DESCRIPTION, startX, startY + SQUARE_SIZE + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, TEXT_FLOOR_NUMBER, startX, startY + TEXT_FIELD_PADDING / 2F + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, TEXT_FLOOR_DESCRIPTION, startX, startY + SQUARE_SIZE + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
 			super.render(matrices, mouseX, mouseY, delta);
 		} catch (Exception e) {
 			e.printStackTrace();

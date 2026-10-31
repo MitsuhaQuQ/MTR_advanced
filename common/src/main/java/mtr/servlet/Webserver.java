@@ -1,6 +1,7 @@
 package mtr.servlet;
 
 import mtr.MTR;
+import mtr.SecurityConfig;
 import mtr.data.DataCache;
 import mtr.data.RailwayData;
 import mtr.data.Route;
@@ -10,11 +11,13 @@ import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.DefaultServlet;
+import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
+import javax.servlet.DispatcherType;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,8 +50,9 @@ public abstract class Webserver {
 				e.printStackTrace();
 			}
 		}
+		context.addFilter(new FilterHolder(new WebSecurityFilter()), "/*", EnumSet.of(DispatcherType.REQUEST));
 		final ServletHolder servletHolder = new ServletHolder("default", DefaultServlet.class);
-		servletHolder.setInitParameter("dirAllowed", "true");
+		servletHolder.setInitParameter("dirAllowed", "false");
 		servletHolder.setInitParameter("cacheControl", "max-age=0,public");
 		context.addServlet(servletHolder, "/");
 		context.addServlet(DataServletHandler.class, "/data");
@@ -58,7 +62,26 @@ public abstract class Webserver {
 		context.addServlet(RouteFinderServletHandler.class, "/route");
 	}
 
+	public static void runSafely(Runnable runnable) {
+		callback.accept(() -> {
+			try {
+				runnable.run();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
+	}
+
+	public static boolean canExposePlayers() {
+		return SecurityConfig.isLoopbackBinding() || !SecurityConfig.webserverToken.isEmpty();
+	}
+
 	public static void start(Path path) {
+		stop();
+		if (!SecurityConfig.webserverEnabled) {
+			return;
+		}
+
 		int port = 8888;
 		try {
 			port = Mth.clamp(Integer.parseInt(String.join("", Files.readAllLines(path)).replaceAll("\\D", "")), 1025, 65535);
@@ -69,6 +92,7 @@ public abstract class Webserver {
 				e.printStackTrace();
 			}
 		}
+		serverConnector.setHost(SecurityConfig.webserverBindHost);
 		serverConnector.setPort(port);
 		try {
 			webServer.start();
@@ -79,7 +103,9 @@ public abstract class Webserver {
 
 	public static void stop() {
 		try {
-			webServer.stop();
+			if (webServer.isStarted() || webServer.isStarting()) {
+				webServer.stop();
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

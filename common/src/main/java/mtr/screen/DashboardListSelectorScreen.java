@@ -1,5 +1,7 @@
 package mtr.screen;
 
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
@@ -14,7 +16,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-public class DashboardListSelectorScreen extends ScreenMapper implements IGui {
+public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 
 	private final DashboardList availableList;
 	private final DashboardList selectedList;
@@ -77,8 +79,8 @@ public class DashboardListSelectorScreen extends ScreenMapper implements IGui {
 			availableList.render(matrices, font);
 			selectedList.render(matrices, font);
 			super.render(matrices, mouseX, mouseY, delta);
-			drawCenteredString(matrices, font, Text.translatable("gui.mtr.available"), width / 2 - PANEL_WIDTH / 2 - SQUARE_SIZE, SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
-			drawCenteredString(matrices, font, Text.translatable("gui.mtr.selected"), width / 2 + PANEL_WIDTH / 2 + SQUARE_SIZE, SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.available"), width / 2 - PANEL_WIDTH / 2 - SQUARE_SIZE, SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.selected"), width / 2 + PANEL_WIDTH / 2 + SQUARE_SIZE, SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

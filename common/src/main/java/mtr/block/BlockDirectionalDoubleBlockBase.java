@@ -1,5 +1,6 @@
 package mtr.block;
 
+import mtr.compat.Compat;
 import mtr.mappings.BlockDirectionalMapper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -19,7 +20,7 @@ import net.minecraft.world.level.material.PushReaction;
 public abstract class BlockDirectionalDoubleBlockBase extends BlockDirectionalMapper implements IBlock {
 
 	public BlockDirectionalDoubleBlockBase(Properties settings) {
-		super(settings);
+		super(Compat.noPistonPush(settings));
 	}
 
 	@Override
@@ -66,7 +67,6 @@ public abstract class BlockDirectionalDoubleBlockBase extends BlockDirectionalMa
 		return state;
 	}
 
-	@Override
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}

@@ -14,6 +14,8 @@ import java.util.function.Consumer;
 
 public final class Route extends NameColorDataBase implements IGui {
 
+	private static final int MAX_PLATFORMS = 1024;
+
 	public RouteType routeType;
 	public boolean isLightRailRoute;
 	public boolean isHidden;
@@ -158,7 +160,9 @@ public final class Route extends NameColorDataBase implements IGui {
 				for (int i = 0; i < platformCount; i++) {
 					final RoutePlatform routePlatform = new RoutePlatform(packet.readLong());
 					routePlatform.customDestination = packet.readUtf(PACKET_STRING_READ_LENGTH);
-					platformIds.add(routePlatform);
+					if (i < MAX_PLATFORMS) {
+						platformIds.add(routePlatform);
+					}
 				}
 				break;
 			case KEY_IS_LIGHT_RAIL_ROUTE:
