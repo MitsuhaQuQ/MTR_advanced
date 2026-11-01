@@ -2,6 +2,7 @@ package mtr.block;
 
 import mtr.compat.Compat;
 import mtr.BlockEntityTypes;
+import mtr.Items;
 import mtr.data.RailAngle;
 import mtr.data.RailwayData;
 import mtr.data.TransportMode;
@@ -18,6 +19,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -39,6 +43,7 @@ import net.minecraft.world.level.material.Fluids;
 import mtr.compat.Material;
 import mtr.compat.MaterialColor;
 import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -139,6 +144,21 @@ public class BlockNode extends BlockDirectionalMapper {
 					((Player) placer).displayClientMessage(Text.literal(getAngleText(angle)), true);
 				}
 			}
+		}
+
+		@Override
+		public InteractionResult use(BlockState state, Level world, BlockPos pos, Player player, InteractionHand interactionHand, BlockHitResult blockHitResult) {
+			// Other items must pass through, otherwise rail connectors can't be used on the node
+			if (!player.isHolding(Items.BRUSH.get())) {
+				return InteractionResult.PASS;
+			}
+			return IBlock.checkHoldingBrush(world, player, () -> {
+				if (IBlock.getStatePropertySafe(state, IS_CONNECTED)) {
+					player.displayClientMessage(Text.literal("Connected nodes can't be rotated / 已连接的节点不能修改角度"), true);
+				} else {
+					PacketTrainDataGuiServer.openNodeAngleScreenS2C((ServerPlayer) player, pos);
+				}
+			});
 		}
 	}
 

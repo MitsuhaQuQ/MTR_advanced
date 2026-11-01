@@ -80,7 +80,7 @@ public class WidgetBetterTextField extends EditBox implements IGui {
 	}
 
 	public enum TextFieldFilter {
-		POSITIVE_INTEGER("\\D"), INTEGER("[^-\\d]"), HEX("[^\\dA-F]"), LETTER("[^A-Z]");
+		POSITIVE_INTEGER("\\D"), INTEGER("[^-\\d]"), DECIMAL("[^\\d.]"), HEX("[^\\dA-F]"), LETTER("[^A-Z]");
 
 		private final String filter;
 

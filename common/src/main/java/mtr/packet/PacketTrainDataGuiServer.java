@@ -7,6 +7,7 @@ import mtr.Registry;
 import mtr.block.*;
 import mtr.data.*;
 import mtr.mappings.BlockEntityMapper;
+import mtr.mappings.Text;
 import mtr.mappings.Utilities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -22,6 +23,7 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.scores.Score;
 
 import java.util.*;
@@ -67,6 +69,12 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(blockPos);
 		Registry.sendToPlayer(player, PACKET_OPEN_TRAIN_SENSOR_SCREEN, packet);
+	}
+
+	public static void openNodeAngleScreenS2C(ServerPlayer player, BlockPos blockPos) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBlockPos(blockPos);
+		Registry.sendToPlayer(player, PACKET_OPEN_NODE_ANGLE_SCREEN, packet);
 	}
 
 	public static void openLiftTrackFloorScreenS2C(ServerPlayer player, BlockPos blockPos) {
@@ -298,6 +306,22 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final BlockEntity entity = Compat.getLevel(player).getBlockEntity(pos);
 			if (entity instanceof BlockTrainSensorBase.TileEntityTrainSensorBase) {
 				setTileEntityDataAndWriteUpdate(player, entity2 -> entity2.setData(filterIds, stoppedOnly, movingOnly, number, strings), (BlockTrainSensorBase.TileEntityTrainSensorBase) entity);
+			}
+		});
+	}
+
+	public static void receiveNodeAngleC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final BlockPos pos = packet.readBlockPos();
+		final float angle = packet.readFloat();
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, pos) || !Float.isFinite(angle)) {
+				return;
+			}
+			final Level world = Compat.getLevel(player);
+			final BlockState state = world.getBlockState(pos);
+			if (state.getBlock() instanceof BlockNode.BlockFreeAngleNode && !IBlock.getStatePropertySafe(state, BlockNode.IS_CONNECTED)) {
+				BlockNode.setCustomAngle(world, pos, angle);
+				player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
 			}
 		});
 	}

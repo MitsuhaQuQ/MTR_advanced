@@ -105,6 +105,22 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		});
 	}
 
+	public static void openNodeAngleScreenS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final BlockPos pos = packet.readBlockPos();
+		minecraftClient.execute(() -> {
+			if (!(minecraftClient.screen instanceof NodeAngleScreen)) {
+				UtilitiesClient.setScreen(minecraftClient, new NodeAngleScreen(pos));
+			}
+		});
+	}
+
+	public static void sendNodeAngleC2S(BlockPos pos, float angle) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBlockPos(pos);
+		packet.writeFloat(angle);
+		RegistryClient.sendToServer(PACKET_UPDATE_NODE_ANGLE, packet);
+	}
+
 	public static void openLiftTrackFloorS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final BlockPos pos = packet.readBlockPos();
 		minecraftClient.execute(() -> {
