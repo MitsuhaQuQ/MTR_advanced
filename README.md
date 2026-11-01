@@ -1,141 +1,141 @@
 # MTR Advanced
 
-基于 [Minecraft Transit Railway](https://github.com/Minecraft-Transit-Railway/Minecraft-Transit-Railway) 3.x 的改进分支。基线版本是 `3.2.2-hotfix-1`，当前版本是 `3.2.2-hotfix-2`，以 Minecraft 1.20.1 为主要版本。
+An improved fork of [Minecraft Transit Railway](https://github.com/Minecraft-Transit-Railway/Minecraft-Transit-Railway) 3.x. It is based on `3.2.2-hotfix-1`, the current version is `3.2.2-hotfix-2`, and Minecraft 1.20.1 is the main target.
 
-目标是让 MTR 从“能跑车”变成“能按真实线路运营”：路线可控、时刻可信、列车行为可预测。
+The goal is to take MTR from running trains to operating a real network: routes you can control, timetables you can trust and trains that behave predictably.
 
-这个分支不是官方版本。版本号保持 `3.2.2` 是为了兼容依赖它的扩展模组，后续改动只增加 hotfix 序号。
+This is not an official release. The version stays at `3.2.2` so that add-on mods that depend on it keep working, and later changes only raise the hotfix number.
 
-## 已完成的改进
+## Completed improvements
 
-**轨道和节点**
+**Rails and nodes**
 
-- 轨道方向从固定 16 个方向改为 0.1° 精度，修复长距离几何问题，并加入双圆弧连接。
-- 手持刷子右键节点，可以输入精确角度。已连接的节点改角度后，相连轨道会立即重建，不用拆轨。
-- 手持轨道工具时显示节点方向线；手持刷子时悬浮显示角度和相连轨道的坡度。
-- 节点转动时拦截会让轨道回头绕圈的角度，错误提示发到聊天栏。
+- Rail directions go from 16 fixed directions to 0.1° precision, with long-distance geometry fixes and two-arc connections.
+- Right-click a node with the brush to enter an exact angle. Connected rails are rebuilt immediately, so there is no need to remove them first.
+- Holding a rail tool shows node direction lines. Holding the brush shows the angle and the slope of connected rails.
+- Node rotation rejects angles that would make a rail double back on itself, and reports the error in chat.
 
-**寻路和路线**
+**Pathfinding and routes**
 
-- 新增确定性寻路，同样的线网和线路得到同样的路线。新建车厂默认使用，已有车厂保留旧算法，可以在车厂界面切换。
-- 节点可以标记为关键节点，在仪表盘地图上点选为线路的必经节点。
-- 仪表盘地图显示全线网轨道、线路走向、车厂和折返路径，地图数据在本地缓存，只传输变化的部分。
-- 刷新路径时，运行中的列车保留原位，不再全部跳走。
-- 寻路失败时保留旧路径，车厂界面显示失败原因；轨道改动后提示路径已过期。
+- New deterministic pathfinding: the same network and routes always give the same path. New depots use it by default, existing depots keep the old algorithm, and the depot screen can switch between them.
+- Nodes can be marked as key nodes and picked on the dashboard map as nodes a route must pass through.
+- The dashboard map shows the whole rail network, route paths, depots and turn-back paths. Map data is cached locally and only changes are transferred.
+- Running trains stay where they are when paths are refreshed, rather than all jumping away.
+- When pathfinding fails, the old path is kept and the depot screen shows the reason. Changing the rails shows that a path is out of date.
 
-**线路运行**
+**Route operation**
 
-- 线路可以设置某站通过，也可以按线路设置门全开时间。
-- 通过站不开门，不进 PIDS 和报站，时刻自动更新。
-- 停站时间下限改为 8.5 秒。原版停站过短时门不会打开，低于下限的旧设置在刷新路径后提升到 8.5 秒。
-- 时刻传感器改为剩余时间首次达到设定值时触发，同一列车的同一次到站只触发一次。
+- A route can pass through a station without stopping, and can set its own door-open time per station.
+- Passed stations don't open doors and don't appear in PIDS or announcements, and times update automatically.
+- The minimum dwell time is now 8.5 seconds. Doors never opened on very short dwells in the original, so older settings below the minimum are raised to 8.5 seconds when paths are refreshed.
+- Timetable sensors now fire when the remaining time first reaches the set value, and only once for each arrival of a train.
 
-**时刻表**
+**Timetables**
 
-- 线路可以设置时刻表，界面参考日本电车的行路单，逐站填写到发时刻。最快时刻由路径、限速和车型算出，不在车厂路径里的线路也能算，留空的时刻自动推算。
-- 规定发车时刻的站按时发车，没有规定的站停站可以波动。晚点时缩短停站，不低于 8.5 秒。
-- 列车自动接下一班，车数由时刻表决定。首末站相同的环线不回车厂，收车时才回去。
-- 折返后按反方向线路自己的班次运行，在折返线或站台上等到时刻再走。
-- 车型可以限定可跑种别，比如普通、急行一组，快速、特急一组，时刻表按组挑选。
-- 待避站可以勾选等后车超过，有等待上限。PIDS 显示晚点分钟数。
+- Routes can have a timetable, in a screen modelled on Japanese train running sheets, with arrival and departure times for each stop. The fastest times come from the path, speed limits and vehicle, and also work for routes that aren't in a depot's path. Blank times are worked out automatically.
+- Stops with a set departure time leave on time. Other stops can vary. Late trains shorten their dwell, but not below 8.5 seconds.
+- Trains take the next service by themselves, and the timetable decides how many trains run. Loop lines with the same first and last stop stay out of the depot until the end of service.
+- After turning back, trains follow the services of the opposite route, waiting on the turn-back track or at the platform until it is time to leave.
+- Vehicles can be limited to certain service types, for example local and express in one group and rapid and limited express in another. The timetable picks services by group.
+- A stop can be set to wait for a following train to overtake, with a limit on the wait. PIDS shows how many minutes a train is late.
 
-**线路分组**
+**Line groups**
 
-- 同一线路的上下行和不同种别归为一组，在总列表折叠，行路单里切换方向。名字不用完全相同。
-- 导乘板、PIDS、线路图和附属模组读到的都是组的颜色，取组内按名称排在第一条线路的颜色。其他线路自己的颜色留给以后自动绘制运行图。
-- 识别词在 `config/mtr_line_words.json`，可以增删，多人游戏以服务端的文件为准；也可以直接填写线路所属的组。
-- 线路可以一键复制，方便配置不同的时刻表。
+- The two directions and different service types of a line form one group, which folds up in the main list and switches direction in the running sheet. Their names don't have to match exactly.
+- Signs, PIDS, route maps and add-on mods all read the group colour, which is the colour of the first route in the group by name. The colours of the other routes are kept for drawing train diagrams automatically in the future.
+- The words that identify directions and service types are in `config/mtr_line_words.json` and can be changed. In multiplayer, the file on the server is used. A route's group can also be filled in directly.
+- Routes can be duplicated in one click, which makes it easy to set up different timetables.
 
-**仪表盘**
+**Dashboard**
 
-- 列表改为按行滚动，有滚动条，搜索支持多个关键词。
-- 可以在地图上点击线路或车站范围，在左侧列表定位。
+- Lists scroll by row, have a scrollbar and can be searched with several keywords.
+- Click a route or a station area on the map to find it in the list on the left.
 
-**模拟验证**
+**Simulation**
 
-- 增加不依赖 Minecraft 的运用和时刻模拟器，用单元测试验证车底运用、时刻和晚点恢复规则。它还没有接入游戏，游戏内的车底运用现在用更简单的在线预约。
+- A vehicle scheduling and timetable simulator that doesn't depend on Minecraft checks the rules for vehicle working, timing and delay recovery in unit tests. It isn't connected to the game yet. The game uses simpler online booking of services for now.
 
-**渲染**
+**Rendering**
 
-- 修复远离世界原点时，列车和显示屏随视角抖动的精度问题。
+- Fixes the precision problem that made trains and displays shake with the camera far from the world origin.
 
-**存储和可靠性**
+**Storage and reliability**
 
-- 用 SQLite 集中保存线路数据，提供多份快照和损坏恢复，并能从旧格式迁移。
-- 修复 macOS 杂项文件导致存档载入崩溃，以及空名称数据不保存的问题。
+- Railway data is kept in a single SQLite database, with rotating snapshots, recovery from corruption and migration from the old format.
+- Fixes a crash when loading saves with macOS metadata files, and empty names no longer stop data from being saved.
 
-**性能**
+**Performance**
 
-- 优化列车寻路、数据同步和保存循环。合成基准中，20,000 段单线寻路从 468 ms 降到 32 ms，不可达场景不再长时间搜索。
+- Optimises train pathfinding, data sync and the save loop. In a synthetic benchmark, pathfinding along a 20,000-segment single line went from 468 ms to 32 ms, and unreachable targets no longer cause long searches.
 
-**安全**
+**Security**
 
-- 加固网络数据包入口、服务端权限和数值校验，以及内置 Web 服务。配置文件是 `config/mtr_security.json`。
+- Hardens the network packet entry points, server permissions, value checks and the built-in web server. The configuration file is `config/mtr_security.json`.
 
-**平台**
+**Platforms**
 
-- 支持 Minecraft 1.20.1 的 Fabric 和 Forge，Architectury 更新到 9.2.14。
-- 支持的版本是 1.16.5、1.17.1、1.18.2、1.19.4、1.20.1，1.19 只保留 1.19.4。
-- ANTE 并入核心，一个 jar 同时包含 MTR 和 ANTE。1.17.1 及以上含 ANTE；1.16.5 缺少 ANTE 需要的着色器，只有 MTR 本体。
-- 增加网络协议版本，不兼容的客户端和服务端在连接时会提示。
-- 新建车厂默认使用现实时间发车。
+- Supports Fabric and Forge on Minecraft 1.20.1, with Architectury updated to 9.2.14.
+- Supported versions are 1.16.5, 1.17.1, 1.18.2, 1.19.4 and 1.20.1. Of the 1.19 versions, only 1.19.4 remains.
+- ANTE is merged into the core, so one jar contains both MTR and ANTE. This applies to 1.17.1 and later. 1.16.5 lacks the shaders ANTE needs, so it only has MTR.
+- Adds a network protocol version, so incompatible clients and servers get a message when connecting.
+- New depots use real-world time for departures by default.
 
-## 路线图
+## Roadmap
 
-| 阶段 | 内容 | 状态 |
+| Stage | Content | Status |
 |---|---|---|
-| 0 | 扩展模组适配，ANTE 并入核心 | 打包和运行逻辑已完成，`Rail` 留到第 4 阶段 |
-| 0.5 | 基础定义和模拟验证：线路时刻表、车次、车底运用、停服恢复、新数据格式 | 模拟器已完成 |
-| 1 | 寻路基础：状态图、确定性 A*、必经节点、刷新路径时列车保留原位已完成；寻路边界（节点或一段轨道）、区间缓存未做 | 进行中 |
-| 2 | 线路级运行：停车或通过、门全开时间已完成；折返停留时间、车站多范围、PIDS 显示通过列车已完成；站台时刻列表已完成；通过限速未做 | 进行中 |
-| 3 | 闭塞修复：占用登记、出厂检查、制动距离前瞻、整段高亮 | 已完成 |
-| 4 | 轨道几何：节点坡度、纵曲线、缓和曲线 | 未开始 |
-| 5 | 速度曲线：TPS 补偿已完成；由限速、加减速度和时刻共同决定速度、提前减速未做 | 进行中 |
-| 6 | 闭塞分区：虚拟分区、信号机绑定、单线方向预约、竞争点优先度 | 未开始 |
-| 7 | 定点运行：线路时刻表、定点发车、车底运用、折返班次、车型种别组已完成最小版本；按星期选表、多张表、终点站折返选择、跨线直通、冲突检查未做 | 进行中 |
-| 8 | 联锁：待避已完成最小版本；完整联锁和缓急接续未做 | 进行中 |
-| 9 | 时刻边界、切断直通、回送、列车优先度 | 未开始 |
-| 10 | 最终验证 | 未开始 |
+| 0 | Add-on compatibility, merging ANTE into the core | Packaging and running logic done, `Rail` left for stage 4 |
+| 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Simulator done |
+| 1 | Pathfinding base: state graph, deterministic A*, required nodes and keeping trains in place on refresh are done; path boundaries (a node or a stretch of rail) and section caching are not | In progress |
+| 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
+| 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
+| 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
+| 5 | Speed curves: TPS compensation is done; setting speed from limits, acceleration and timetable, and braking early, are not | In progress |
+| 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
+| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services and vehicle service type groups are done; timetables by weekday, multiple timetables, choosing the turn-back at terminals, through services and conflict checks are not | In progress |
+| 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
+| 9 | Timetable boundaries, splitting through services, deadheading, train priority | Not started |
+| 10 | Final verification | Not started |
 
-完整的设计、规则和验证记录见 [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md)。大规模使用时要逐项检查的行为见 [MTR-测试项目清单.md](MTR-测试项目清单.md)。
+The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese).
 
-## 项目复杂度
+## Project complexity
 
-并入 ANTE 后，common 模块有约 12 万行 Java，其中 ANTE 约 3.4 万行。核心难点不是代码量，而是这些系统互相耦合：
+With ANTE merged, the common module has about 120,000 lines of Java, of which ANTE is about 34,000. The main difficulty isn't the amount of code, but how closely these systems depend on each other:
 
-- **几何、路径、时刻和闭塞是一条链**：改轨道形状会影响长度，长度影响时刻，时刻影响闭塞，闭塞又反过来影响实际运行。
-- **服务端和客户端都在模拟列车**：运行逻辑要两边一致，否则列车会抖动或跳位。
-- **多版本和多加载器**：同一份代码要适配不同的 Minecraft 版本、Fabric 和 Forge，部分 API 在 1.20 有破坏性变化。
-- **存档和网络兼容**：真实存档要能迁移，改错格式就可能损坏玩家的线网。
-- **扩展模组**：ANTE 部分功能仍通过 mixin 修改内部类，MSD、YJCM 等附属模组直接调用内部方法和字段，改一个方法签名就可能在载入时崩溃。
-- **运营规则本身复杂**：时刻表、车底周转、越行、缓急接续和跨线直通，都是铁路行业的专业问题，规则之间还会互相牵制。
+- **Geometry, paths, timing and blocks form a chain**: changing the shape of a rail changes its length, length changes timing, timing changes block use, and blocks in turn affect how trains actually run.
+- **Both server and client simulate trains**: the running logic has to match on both sides, or trains shake or jump.
+- **Several versions and loaders**: the same code has to work on different Minecraft versions and on both Fabric and Forge, and some APIs have breaking changes in 1.20.
+- **Save and network compatibility**: real saves have to migrate, and a format mistake can damage a player's network.
+- **Add-on mods**: parts of ANTE still change internal classes through mixins, and add-ons like MSD and YJCM call internal methods and fields directly, so changing one method signature can cause a crash on load.
+- **Operating rules are complex in themselves**: timetables, vehicle working, overtaking, timed connections and through services are specialist railway problems, and the rules constrain each other.
 
-## AI 协助开发
+## AI-assisted development
 
-本项目使用 AI 编程助手（Claude Code）协助开发。对这种规模的个人项目，AI 协助是现实的必要条件：
+This project is developed with an AI coding assistant, Claude Code. For a personal project of this size, AI assistance is a practical necessity:
 
-- **理解成本**：改动常常要同时读懂几何、网络、渲染和存档代码，一个人逐一追踪的时间成本很高。
-- **跨文件改动**：一次 1.20.1 移植就涉及几十个文件和版本兼容层，手工完成容易遗漏。
-- **设计推演**：时刻表和闭塞规则的漏洞，可以在写代码前对照实际代码反复检查，减少返工。
-- **验证**：几何测试、性能基准和多版本构建可以频繁运行，降低回归风险。
+- **Understanding cost**: a change often needs geometry, network, rendering and save code to be understood at once, which takes one person a long time to trace.
+- **Changes across files**: the 1.20.1 port alone touched dozens of files and the version compatibility layer, where manual work easily misses something.
+- **Working through designs**: gaps in timetable and block rules can be checked against the real code before writing anything, which reduces rework.
+- **Verification**: geometry tests, performance benchmarks and multi-version builds can run often, which lowers the risk of regressions.
 
-分工上，需求、运营规则和最终取舍由项目作者决定，游戏内实测也由作者完成；AI 负责读代码、实现、构建和记录。AI 的输出不等于正确结果，所以文档里区分了已实测、仅构建通过和尚未验证的内容，未经实测的功能都会明确标注。
+The project author decides the requirements, operating rules and final trade-offs, and does the in-game testing. The AI reads code, implements, builds and keeps records. AI output isn't automatically correct, so the documents separate what was tested in game, what only builds and what hasn't been verified, and anything not tested in game is clearly marked.
 
-## 构建
+## Building
 
-需要 JDK 17。
+JDK 17 is required.
 
 ```bash
 ./gradlew build -PbuildVersion=1.20.1 -x test
 ```
 
-产物在 `build/release/`。不带 `-PbuildVersion` 时构建 1.16.5。提交前要用默认版本跑一次 Gradle，让生成的 mappings 回到默认内容。
+The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-Fabric 版需要安装 [Fabric API](https://modrinth.com/mod/fabric-api)，Forge 版需要安装 Forge 版的 [Architectury API](https://modrinth.com/mod/architectury-api)。客户端和服务端要使用同一协议版本的 jar，当前协议版本是 11。含 ANTE 的 jar 约 136 MB。
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 11. Jars with ANTE are about 136 MB.
 
-## 许可证和致谢
+## License and credits
 
-本项目使用 MIT 许可证，见 [LICENSE](LICENSE)。
+This project uses the MIT License. See [LICENSE](LICENSE).
 
-- Minecraft Transit Railway：Copyright (c) 2022 Jonathan Ho
-- 本分支的改动：MitsuhaQuQ
+- Minecraft Transit Railway: Copyright (c) 2022 Jonathan Ho
+- Changes in this fork: MitsuhaQuQ
