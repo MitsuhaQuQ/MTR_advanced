@@ -566,6 +566,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		float timeOld = 0;
 		long savedRailBaseIdOld = 0;
 		double distanceSum2 = 0;
+		boolean startNewSegment = false;
 		for (int i = 0; i < path.size(); i++) {
 			if (railProgress >= nextStoppingDistance) {
 				if (stoppingDistances.isEmpty()) {
@@ -591,8 +592,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 					speedChange = 0;
 				}
 
-				if (timeSegments.isEmpty() || timeSegments.get(timeSegments.size() - 1).speedChange != speedChange) {
+				if (startNewSegment || timeSegments.isEmpty() || timeSegments.get(timeSegments.size() - 1).speedChange != speedChange) {
 					timeSegments.add(new TimeSegment(railProgress, speed, time, speedChange, accelerationConstant));
+					startNewSegment = false;
 				}
 
 				railProgress = Math.min(railProgress + speed, distanceSum2);
@@ -601,7 +603,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				final TimeSegment timeSegment = timeSegments.get(timeSegments.size() - 1);
 				timeSegment.endRailProgress = railProgress;
 				timeSegment.endTime = time;
-				timeSegment.savedRailBaseId = nextStoppingDistance != distanceSum1 && railProgress == distanceSum2 && pathData.dwellTime > 0 ? pathData.savedRailBaseId : 0;
+				timeSegment.pass = railProgress == distanceSum2 && isPassingPlatform(path, i);
+				timeSegment.savedRailBaseId = timeSegment.pass || nextStoppingDistance != distanceSum1 && railProgress == distanceSum2 && pathData.dwellTime > 0 ? pathData.savedRailBaseId : 0;
+				// The next rail would otherwise extend this segment and clear the platform
+				startNewSegment = timeSegment.pass;
 			}
 
 			time += pathData.dwellTime * 5;
@@ -625,10 +630,19 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 	}
 
+	/**
+	 * Rails after a stop or a reversal also carry the ID of that platform, so only the first rail with the ID counts.
+	 */
+	public static boolean isPassingPlatform(List<PathData> path, int index) {
+		final PathData pathData = path.get(index);
+		return index > 0 && pathData.dwellTime == 0 && pathData.savedRailBaseId != 0 && pathData.rail.railType == RailType.PLATFORM && path.get(index - 1).savedRailBaseId != pathData.savedRailBaseId;
+	}
+
 	public static class TimeSegment {
 
 		public double endRailProgress;
 		public long savedRailBaseId;
+		public boolean pass;
 		public long routeId;
 		public int currentStationIndex;
 		public float endTime;

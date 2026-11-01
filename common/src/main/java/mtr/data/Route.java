@@ -34,6 +34,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_WAYPOINTS = "waypoints";
 	private static final String KEY_PASS_STATIONS = "pass_stations";
 	private static final String KEY_DWELL_OVERRIDES = "dwell_overrides";
+	private static final String KEY_TURN_BACK_DWELLS = "turn_back_dwells";
 	private static final String KEY_ROUTE_TYPE = "route_type";
 	private static final String KEY_IS_LIGHT_RAIL_ROUTE = "is_light_rail_route";
 	private static final String KEY_LIGHT_RAIL_ROUTE_NUMBER = "light_rail_route_number";
@@ -83,6 +84,13 @@ public final class Route extends NameColorDataBase implements IGui {
 				platformIds.get(dwellIndex[0]).dwellOverride = dwellOverride.asIntegerValue().asInt();
 			}
 			dwellIndex[0]++;
+		});
+		final int[] turnBackIndex = {0};
+		messagePackHelper.iterateArrayValue(KEY_TURN_BACK_DWELLS, turnBackDwell -> {
+			if (turnBackIndex[0] < platformIds.size()) {
+				platformIds.get(turnBackIndex[0]).turnBackDwell = turnBackDwell.asIntegerValue().asInt();
+			}
+			turnBackIndex[0]++;
 		});
 
 		final int[] platformIndex = {0};
@@ -163,6 +171,11 @@ public final class Route extends NameColorDataBase implements IGui {
 			messagePacker.packInt(routePlatform.dwellOverride);
 		}
 
+		messagePacker.packString(KEY_TURN_BACK_DWELLS).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packInt(routePlatform.turnBackDwell);
+		}
+
 		messagePacker.packString(KEY_WAYPOINTS).packArrayHeader(platformIds.size());
 		for (final RoutePlatform routePlatform : platformIds) {
 			messagePacker.packArrayHeader(routePlatform.waypoints.size());
@@ -181,7 +194,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 11;
+		return super.messagePackLength() + 12;
 	}
 
 	@Override
@@ -280,6 +293,42 @@ public final class Route extends NameColorDataBase implements IGui {
 		return Math.max((int) Math.floor(dwell / 2D - DOOR_CYCLE_SECONDS), 0);
 	}
 
+	/**
+	 * @return the stops of this route in order, as {@link RoutePlatform}, with the key nodes between them as {@link BlockPos}
+	 */
+	public List<Object> getEntries() {
+		final List<Object> entries = new ArrayList<>();
+		platformIds.forEach(routePlatform -> {
+			entries.add(routePlatform);
+			entries.addAll(routePlatform.waypoints);
+		});
+		return entries;
+	}
+
+	/**
+	 * Key nodes belong to the section after a stop, so any placed before the first stop move to just after it.
+	 */
+	public void setEntries(List<Object> entries) {
+		final List<RoutePlatform> newPlatforms = new ArrayList<>();
+		final List<BlockPos> beforeFirstStop = new ArrayList<>();
+		for (final Object entry : entries) {
+			if (entry instanceof RoutePlatform) {
+				final RoutePlatform routePlatform = (RoutePlatform) entry;
+				routePlatform.waypoints.clear();
+				if (newPlatforms.isEmpty()) {
+					routePlatform.waypoints.addAll(beforeFirstStop);
+				}
+				newPlatforms.add(routePlatform);
+			} else if (newPlatforms.isEmpty()) {
+				beforeFirstStop.add((BlockPos) entry);
+			} else if (newPlatforms.get(newPlatforms.size() - 1).waypoints.size() < MAX_WAYPOINTS) {
+				newPlatforms.get(newPlatforms.size() - 1).waypoints.add((BlockPos) entry);
+			}
+		}
+		platformIds.clear();
+		platformIds.addAll(newPlatforms);
+	}
+
 	public int getPlatformIdIndex(long platformId) {
 		for (int i = 0; i < platformIds.size(); i++) {
 			if (platformIds.get(i).platformId == platformId) {
@@ -333,6 +382,10 @@ public final class Route extends NameColorDataBase implements IGui {
 		 * The stop time for this route in half seconds, or 0 to use the platform's own.
 		 */
 		public int dwellOverride;
+		/**
+		 * How long trains wait at a turn back before the next platform in half seconds, or 0 to turn back at once.
+		 */
+		public int turnBackDwell;
 
 		public RoutePlatform(long platformId) {
 			this.platformId = platformId;
@@ -349,6 +402,7 @@ public final class Route extends NameColorDataBase implements IGui {
 			}
 			pass = packet.readBoolean();
 			dwellOverride = Math.max(0, Math.min(packet.readInt(), MAX_DWELL_OVERRIDE));
+			turnBackDwell = Math.max(0, Math.min(packet.readInt(), MAX_DWELL_OVERRIDE));
 		}
 
 		private void writeWaypoints(FriendlyByteBuf packet) {
@@ -356,6 +410,7 @@ public final class Route extends NameColorDataBase implements IGui {
 			waypoints.forEach(waypoint -> packet.writeLong(waypoint.asLong()));
 			packet.writeBoolean(pass);
 			packet.writeInt(dwellOverride);
+			packet.writeInt(turnBackDwell);
 		}
 	}
 

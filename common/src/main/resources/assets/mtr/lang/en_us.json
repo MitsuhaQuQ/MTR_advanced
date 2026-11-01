@@ -802,5 +802,17 @@
 	"gui.mtr.path_failure_disconnected": "Refresh failed: stations are not connected",
 	"gui.mtr.path_failure_no_route": "Refresh failed: no route in the direction of travel",
 	"gui.mtr.path_stale": "Rails changed, path out of date",
-	"gui.mtr.rail_would_loop": "This angle would turn the rail back on itself"
+	"gui.mtr.rail_would_loop": "This angle would turn the rail back on itself",
+	"gui.mtr.turn_back_dwell": "Wait at turn back after this stop (seconds)",
+	"gui.mtr.station_area": "Area %s/%s",
+	"gui.mtr.add_station_area": "Add area",
+	"gui.mtr.remove_station_area": "Remove area",
+	"gui.mtr.platform_station": "Belongs to: %s",
+	"gui.mtr.platform_station_auto": "Belongs to: automatic",
+	"gui.mtr.station_overlap_notice": "%s platform(s) overlap another station. Edit them in the list to choose one.",
+	"gui.mtr.show_passing_trains": "Show passing trains",
+	"gui.mtr.passing": "Passing: %s",
+	"gui.mtr.passing_cjk": "%s 通过",
+	"gui.mtr.edit_route_key_nodes": "Click platforms or key nodes to add them to the route",
+	"gui.mtr.key_node_entry": "Key node (%s, %s, %s)"
 }

@@ -9,6 +9,7 @@ import net.minecraft.util.Tuple;
 import java.awt.*;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -46,7 +47,11 @@ public interface IUpdateWebMap {
 			final Tuple<Integer, Integer> corner2 = area.corner2;
 			final BlockPos areaPos = area.getCenter();
 			if (corner1 != null && corner2 != null && areaPos != null) {
-				areaCallback.areaCallback(area.id + "_" + System.currentTimeMillis(), IGui.formatStationName(area.name), new Color(area.color), corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB(), areaPos.getX(), areaPos.getZ());
+				final List<int[]> rectangles = area.getRectangles();
+				for (int i = 0; i < rectangles.size(); i++) {
+					final int[] rectangle = rectangles.get(i);
+					areaCallback.areaCallback(area.id + "_" + i + "_" + System.currentTimeMillis(), IGui.formatStationName(area.name), new Color(area.color), rectangle[0], rectangle[1], rectangle[2], rectangle[3], areaPos.getX(), areaPos.getZ());
+				}
 			}
 		});
 	}

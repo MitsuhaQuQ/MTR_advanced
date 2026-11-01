@@ -128,7 +128,9 @@ public class ClientCache extends DataCache implements IGui {
 		if (!stationIdToPlatforms.containsKey(stationId)) {
 			final Station station = stationIdMap.get(stationId);
 			if (station != null) {
-				stationIdToPlatforms.put(stationId, areaIdToSavedRails(station, platforms));
+				final Map<Long, Platform> stationPlatforms = areaIdToSavedRails(station, platforms);
+				stationPlatforms.values().removeIf(platform -> platformIdToStation.get(platform.id) != station);
+				stationIdToPlatforms.put(stationId, stationPlatforms);
 			} else {
 				stationIdToPlatforms.put(stationId, new HashMap<>());
 			}
@@ -464,6 +466,24 @@ public class ClientCache extends DataCache implements IGui {
 		} else {
 			return dynamicResource;
 		}
+	}
+
+	/**
+	 * Unlike {@link #requestStationIdToPlatforms}, this includes platforms belonging to an overlapping station.
+	 */
+	public Map<Long, Platform> getPlatformsInArea(Station station) {
+		return areaIdToSavedRails(station, platforms);
+	}
+
+	public List<Station> getStationsAt(BlockPos pos) {
+		final List<Station> stationsAtPos = new ArrayList<>();
+		stations.forEach(station -> {
+			if (station.inArea(pos.getX(), pos.getZ())) {
+				stationsAtPos.add(station);
+			}
+		});
+		stationsAtPos.sort(Comparator.comparingLong(station -> station.id));
+		return stationsAtPos;
 	}
 
 	private static <U extends AreaBase, V extends SavedRailBase> Map<Long, V> areaIdToSavedRails(U area, Set<V> savedRails) {

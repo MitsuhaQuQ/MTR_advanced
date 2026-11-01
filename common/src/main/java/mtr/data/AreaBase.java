@@ -9,6 +9,8 @@ import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -105,7 +107,27 @@ public abstract class AreaBase extends NameColorDataBase {
 	}
 
 	public boolean intersecting(AreaBase areaBase) {
-		return nonNullCorners(this) && nonNullCorners(areaBase) && (inThis(areaBase) || areaBase.inThis(this));
+		if (nonNullCorners(this) && nonNullCorners(areaBase)) {
+			for (final int[] rectangle1 : getRectangles()) {
+				for (final int[] rectangle2 : areaBase.getRectangles()) {
+					if (rangesOverlap(rectangle1[0], rectangle1[2], rectangle2[0], rectangle2[2]) && rangesOverlap(rectangle1[1], rectangle1[3], rectangle2[1], rectangle2[3])) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @return every rectangle of this area as {x1, z1, x2, z2}
+	 */
+	public List<int[]> getRectangles() {
+		final List<int[]> rectangles = new ArrayList<>();
+		if (nonNullCorners(this)) {
+			rectangles.add(new int[]{corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB()});
+		}
+		return rectangles;
 	}
 
 	public BlockPos getCenter() {
@@ -117,8 +139,8 @@ public abstract class AreaBase extends NameColorDataBase {
 		corner2 = corner2a == 0 && corner2b == 0 ? null : new Tuple<>(corner2a, corner2b);
 	}
 
-	private boolean inThis(AreaBase areaBase) {
-		return inArea(areaBase.corner1.getA(), areaBase.corner1.getB()) || inArea(areaBase.corner1.getA(), areaBase.corner2.getB()) || inArea(areaBase.corner2.getA(), areaBase.corner1.getB()) || inArea(areaBase.corner2.getA(), areaBase.corner2.getB());
+	private static boolean rangesOverlap(int a1, int a2, int b1, int b2) {
+		return Math.min(a1, a2) <= Math.max(b1, b2) && Math.min(b1, b2) <= Math.max(a1, a2);
 	}
 
 	public static boolean nonNullCorners(AreaBase station) {

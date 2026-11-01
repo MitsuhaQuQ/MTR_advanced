@@ -93,6 +93,10 @@ public class TrainServer extends Train {
 					return false;
 				}
 			} else {
+				// Turn backs have no platform, so a long wait there must not open the doors
+				if (path.get(nextStoppingIndex).savedRailBaseId == 0) {
+					return false;
+				}
 				final int dwellTicks = path.get(nextStoppingIndex).dwellTime * 10;
 				final float maxDoorMoveTime = Math.min(DOOR_MOVE_TIME, dwellTicks / 2 - DOOR_DELAY);
 				return elapsedDwellTicks >= DOOR_DELAY && elapsedDwellTicks < dwellTicks - DOOR_DELAY - maxDoorMoveTime;
@@ -290,7 +294,7 @@ public class TrainServer extends Train {
 
 					if (isOnRoute || nextDepartureTicks >= 0) {
 						final long arrivalMillis = currentMillis + (long) ((timeSegment.endTime + offsetTime - currentTime) * Depot.MILLIS_PER_TICK);
-						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id));
+						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass));
 						if (!isRepeat()) {
 							addSchedule.run();
 							addSchedule = null;

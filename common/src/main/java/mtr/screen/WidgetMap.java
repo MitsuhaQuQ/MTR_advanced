@@ -55,8 +55,8 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private final OnDrawCorners onDrawCorners;
 	private final Runnable onDrawCornersMouseRelease;
 	private final Consumer<Long> onClickAddPlatformToRoute;
-	private List<BlockPos> pickedWaypoints;
-	private Consumer<BlockPos> onClickKeyNode;
+	private final Consumer<BlockPos> onClickAddKeyNodeToRoute;
+	private String areaNotice = "";
 	private Supplier<Collection<Route>> routesToDraw = Collections::emptyList;
 	private final Consumer<SavedRailBase> onClickEditSavedRail;
 	private final BiFunction<Double, Double, Boolean> isRestrictedMouseArea;
@@ -77,11 +77,12 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private static final int SCALE_UPPER_LIMIT = 64;
 	private static final double SCALE_LOWER_LIMIT = 1 / 128D;
 
-	public WidgetMap(TransportMode transportMode, OnDrawCorners onDrawCorners, Runnable onDrawCornersMouseRelease, Consumer<Long> onClickAddPlatformToRoute, Consumer<SavedRailBase> onClickEditSavedRail, BiFunction<Double, Double, Boolean> isRestrictedMouseArea) {
+	public WidgetMap(TransportMode transportMode, OnDrawCorners onDrawCorners, Runnable onDrawCornersMouseRelease, Consumer<Long> onClickAddPlatformToRoute, Consumer<BlockPos> onClickAddKeyNodeToRoute, Consumer<SavedRailBase> onClickEditSavedRail, BiFunction<Double, Double, Boolean> isRestrictedMouseArea) {
 		this.transportMode = transportMode;
 		this.onDrawCorners = onDrawCorners;
 		this.onDrawCornersMouseRelease = onDrawCornersMouseRelease;
 		this.onClickAddPlatformToRoute = onClickAddPlatformToRoute;
+		this.onClickAddKeyNodeToRoute = onClickAddKeyNodeToRoute;
 		this.onClickEditSavedRail = onClickEditSavedRail;
 		this.isRestrictedMouseArea = isRestrictedMouseArea;
 
@@ -129,7 +130,9 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 				ClientData.DATA_CACHE.getPosToPlatforms(transportMode).forEach((platformPos, platforms) -> drawRectangleFromWorldCoords(buffer, platformPos.getX(), platformPos.getZ(), platformPos.getX() + 1, platformPos.getZ() + 1, ARGB_WHITE));
 				for (final Station station : ClientData.STATIONS) {
 					if (AreaBase.nonNullCorners(station)) {
-						drawRectangleFromWorldCoords(buffer, station.corner1, station.corner2, ARGB_BLACK_TRANSLUCENT + station.color);
+						for (final int[] rectangle : station.getRectangles()) {
+							drawRectangleFromWorldCoords(buffer, new Tuple<>(rectangle[0], rectangle[1]), new Tuple<>(rectangle[2], rectangle[3]), ARGB_BLACK_TRANSLUCENT + station.color);
+						}
 					}
 				}
 				mouseOnSavedRail(mouseWorldPos, (savedRail, x1, z1, x2, z2) -> drawRectangleFromWorldCoords(buffer, x1, z1, x2, z2, ARGB_WHITE), true);
@@ -167,8 +170,11 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 
 		if (mapState == MapState.EDITING_AREA) {
 			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_area").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+			if (!areaNotice.isEmpty()) {
+				GuiCompat.drawString(matrices, textRenderer, areaNotice, x + TEXT_PADDING, y + TEXT_PADDING + SQUARE_SIZE, ARGB_KEY_NODE);
+			}
 		} else if (mapState == MapState.EDITING_ROUTE) {
-			GuiCompat.drawString(matrices, textRenderer, pickedWaypoints == null ? Text.translatable("gui.mtr.edit_route").getString() : Text.translatable("gui.mtr.pick_waypoints", pickedWaypoints.size()).getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_route_key_nodes").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		}
 
 		if (scale >= 8) {
@@ -200,12 +206,17 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 				}
 			}
 		}
-		if (pickedWaypoints != null) {
-			for (int i = 0; i < pickedWaypoints.size(); i++) {
-				final String waypointNumber = String.valueOf(i + 1);
-				final BlockPos pos = pickedWaypoints.get(i);
-				drawFromWorldCoords(pos.getX() + 0.5, pos.getZ() + 0.5, (x1, y1) -> IDrawing.drawStringWithFont(matrices, textRenderer, immediate, waypointNumber, x + x1.floatValue(), y + y1.floatValue() - (float) KEY_NODE_MARKER_PIXELS * 2, MAX_LIGHT_GLOWING));
-			}
+		if (mapState == MapState.EDITING_ROUTE) {
+			routesToDraw.get().forEach(route -> {
+				final List<Object> entries = route.getEntries();
+				for (int i = 0; i < entries.size(); i++) {
+					if (entries.get(i) instanceof BlockPos) {
+						final String entryNumber = String.valueOf(i + 1);
+						final BlockPos pos = (BlockPos) entries.get(i);
+						drawFromWorldCoords(pos.getX() + 0.5, pos.getZ() + 0.5, (x1, y1) -> IDrawing.drawStringWithFont(matrices, textRenderer, immediate, entryNumber, x + x1.floatValue(), y + y1.floatValue() - (float) KEY_NODE_MARKER_PIXELS * 2, MAX_LIGHT_GLOWING));
+					}
+				}
+			});
 		}
 		immediate.endBatch();
 
@@ -248,9 +259,12 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 					drawArea2 = null;
 				} else if (mapState == MapState.EDITING_ROUTE) {
 					final Tuple<Double, Double> mouseWorldPos = coordsToWorldPos(mouseX - x, mouseY - y);
-					if (pickedWaypoints == null) {
-						mouseOnSavedRail(mouseWorldPos, (savedRail, x1, z1, x2, z2) -> onClickAddPlatformToRoute.accept(savedRail.id), true);
-					} else {
+					final boolean[] clickedPlatform = {false};
+					mouseOnSavedRail(mouseWorldPos, (savedRail, x1, z1, x2, z2) -> {
+						clickedPlatform[0] = true;
+						onClickAddPlatformToRoute.accept(savedRail.id);
+					}, true);
+					if (!clickedPlatform[0]) {
 						clickKeyNode(mouseWorldPos);
 					}
 				} else {
@@ -321,26 +335,25 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		drawArea2 = editingArea.corner2;
 	}
 
-	public void startEditingRoute() {
-		mapState = MapState.EDITING_ROUTE;
+	public void setDrawArea(Tuple<Integer, Integer> corner1, Tuple<Integer, Integer> corner2) {
+		drawArea1 = corner1;
+		drawArea2 = corner2;
 	}
 
-	public void startPickingWaypoints(List<BlockPos> waypoints, Consumer<BlockPos> onClickKeyNode) {
-		pickedWaypoints = waypoints;
-		this.onClickKeyNode = onClickKeyNode;
+	public void setAreaNotice(String areaNotice) {
+		this.areaNotice = areaNotice;
+	}
+
+	public void startEditingRoute() {
+		mapState = MapState.EDITING_ROUTE;
 	}
 
 	public void setRoutesToDraw(Supplier<Collection<Route>> routesToDraw) {
 		this.routesToDraw = routesToDraw;
 	}
 
-	public void stopPickingWaypoints() {
-		pickedWaypoints = null;
-	}
-
 	public void stopEditing() {
 		mapState = MapState.DEFAULT;
-		pickedWaypoints = null;
 	}
 
 	public void setShowStations(boolean showStations) {
@@ -487,7 +500,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 
 	private void clickKeyNode(Tuple<Double, Double> mouseWorldPos) {
 		final double maxDistance = KEY_NODE_CLICK_PIXELS / scale;
-		ClientData.KEY_NODES.stream().filter(pos -> Math.hypot(pos.getX() + 0.5 - mouseWorldPos.getA(), pos.getZ() + 0.5 - mouseWorldPos.getB()) <= maxDistance).min(Comparator.comparingDouble((BlockPos pos) -> Math.hypot(pos.getX() + 0.5 - mouseWorldPos.getA(), pos.getZ() + 0.5 - mouseWorldPos.getB())).thenComparingLong(BlockPos::asLong)).ifPresent(onClickKeyNode);
+		ClientData.KEY_NODES.stream().filter(pos -> Math.hypot(pos.getX() + 0.5 - mouseWorldPos.getA(), pos.getZ() + 0.5 - mouseWorldPos.getB()) <= maxDistance).min(Comparator.comparingDouble((BlockPos pos) -> Math.hypot(pos.getX() + 0.5 - mouseWorldPos.getA(), pos.getZ() + 0.5 - mouseWorldPos.getB())).thenComparingLong(BlockPos::asLong)).ifPresent(onClickAddKeyNodeToRoute);
 	}
 
 	private Tuple<Double, Double> coordsToWorldPos(double mouseX, double mouseY) {

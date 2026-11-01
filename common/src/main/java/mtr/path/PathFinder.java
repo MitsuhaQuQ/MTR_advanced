@@ -83,8 +83,23 @@ public class PathFinder {
 					final int dwellTime = pass ? 0 : pathData.rail.transportMode.continuousMovement ? stopTime : Math.max(stopTime, Route.MIN_STOP_DWELL);
 					path.set(j, new PathData(pathData.rail, pathData.savedRailBaseId, dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
 					pathIndex = j + 1;
+					if (routePlatform.turnBackDwell > 0) {
+						applyTurnBackDwell(path, pathIndex, routePlatform.turnBackDwell);
+					}
 					break;
 				}
+			}
+		}
+	}
+
+	private static void applyTurnBackDwell(List<PathData> path, int startIndex, int turnBackDwell) {
+		for (int i = startIndex; i < path.size(); i++) {
+			final PathData pathData = path.get(i);
+			if (pathData.dwellTime > 0) {
+				if (pathData.savedRailBaseId != 0) {
+					return;
+				}
+				path.set(i, new PathData(pathData.rail, 0, turnBackDwell, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
 			}
 		}
 	}

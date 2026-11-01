@@ -181,7 +181,7 @@ public class RailwayDataRouteFinderModule extends RailwayDataModuleBase {
 				if (scheduleEntries != null) {
 					int lastDeparture = Integer.MIN_VALUE;
 					for (final ScheduleEntry scheduleEntry : scheduleEntries) {
-						if (connectionDetails.durationInfo.containsKey(scheduleEntry.routeId)) {
+						if (!scheduleEntry.pass && connectionDetails.durationInfo.containsKey(scheduleEntry.routeId)) {
 							final int delay = (int) ((scheduleEntry.arrivalMillis - startMillis) / Depot.MILLIS_PER_TICK - elapsedTime);
 							final int newDuration = connectionDetails.durationInfo.get(scheduleEntry.routeId) + delay;
 							lastDeparture = Math.max(lastDeparture, delay);

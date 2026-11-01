@@ -22,10 +22,12 @@ public interface IPIDS extends IBlock {
 		private final boolean[] hideArrival = new boolean[getMaxArrivals()];
 		private final Set<Long> platformIds = new HashSet<>();
 		private int displayPage = 0;
+		private boolean showPassingTrains;
 		private static final String KEY_MESSAGE = "message";
 		private static final String KEY_HIDE_ARRIVAL = "hide_arrival";
 		private static final String KEY_PLATFORM_IDS = "platform_ids";
 		private static final String KEY_DISPLAY_PAGE = "display_page";
+		private static final String KEY_SHOW_PASSING_TRAINS = "show_passing_trains";
 
 		public TileEntityPIDS(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 			super(type, pos, state);
@@ -45,6 +47,7 @@ public interface IPIDS extends IBlock {
 				platformIds.add(platformId);
 			}
 			displayPage = compoundTag.getInt(KEY_DISPLAY_PAGE);
+			showPassingTrains = compoundTag.getBoolean(KEY_SHOW_PASSING_TRAINS);
 		}
 
 		@Override
@@ -57,10 +60,16 @@ public interface IPIDS extends IBlock {
 			}
 			compoundTag.putLongArray(KEY_PLATFORM_IDS, new ArrayList<>(platformIds));
 			compoundTag.putInt(KEY_DISPLAY_PAGE, displayPage);
+			compoundTag.putBoolean(KEY_SHOW_PASSING_TRAINS, showPassingTrains);
 		}
 
 		public AABB getRenderBoundingBox() {
 			return new AABB(Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
+		}
+
+		public void setData(String[] messages, boolean[] hideArrival, Set<Long> platformIds, int displayPage, boolean showPassingTrains) {
+			this.showPassingTrains = showPassingTrains;
+			setData(messages, hideArrival, platformIds, displayPage);
 		}
 
 		public void setData(String[] messages, boolean[] hideArrival, Set<Long> platformIds, int displayPage) {
@@ -83,6 +92,10 @@ public interface IPIDS extends IBlock {
 
 		public int getDisplayPage() {
 			return displayPage;
+		}
+
+		public boolean getShowPassingTrains() {
+			return showPassingTrains;
 		}
 
 		public Set<Long> getPlatformIds() {

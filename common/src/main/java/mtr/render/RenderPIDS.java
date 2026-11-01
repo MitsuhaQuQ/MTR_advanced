@@ -206,7 +206,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 					final boolean useCustomMessage;
 
 					// Get current schedule
-					final List<Route.RoutePlatform> stations = route == null ? null : route.platformIds.subList(currentSchedule.currentStationIndex + 1, route.platformIds.size());
+					final List<Route.RoutePlatform> stations = route == null ? null : getCallingStations(route, currentSchedule.currentStationIndex);
 					final int callingAtMaxPages = stations == null || !renderSingle ? 1 : (int) Math.max(Math.ceil(stations.size() / (float) STATIONS_PER_PAGE), 1);
 					final int callingAtPage = callingAtMaxPages == 1 ? 0 : (int) Math.floor(MTRClient.getGameTick() / (float) SWITCH_PAGE_TICKS) % callingAtMaxPages;
 
@@ -409,11 +409,12 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 						// Render destination
 						matrixStackHolder.push();
 						matrices.translate(destinationStart, 0, 0);
-						final int destinationWidth = textRenderer.width(destinationString);
+						final String shownDestination = currentSchedule.pass && !destinationString.isEmpty() ? Text.translatable(isCJK ? "gui.mtr.passing_cjk" : "gui.mtr.passing").getString() : destinationString;
+						final int destinationWidth = textRenderer.width(shownDestination);
 						if (destinationWidth > newDestinationMaxWidth) {
 							matrices.scale(newDestinationMaxWidth / destinationWidth, 1, 1);
 						}
-						GuiCompat.draw(matrices, textRenderer, destinationString, 0, 0, seconds > 0 ? textColor : firstTrainColor);
+						GuiCompat.draw(matrices, textRenderer, shownDestination, 0, 0, seconds > 0 ? textColor : firstTrainColor);
 						matrixStackHolder.pop();
 
 						// Render arrival time
@@ -444,6 +445,16 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 		}
 
 		matrixStackHolder.popAll();
+	}
+
+	private static List<Route.RoutePlatform> getCallingStations(Route route, int currentStationIndex) {
+		final List<Route.RoutePlatform> stations = new ArrayList<>();
+		for (int i = currentStationIndex + 1; i < route.platformIds.size(); i++) {
+			if (!route.platformIds.get(i).pass) {
+				stations.add(route.platformIds.get(i));
+			}
+		}
+		return stations;
 	}
 
 	public List<ScheduleEntry> getSchedules(T entity, BlockPos pos, final Map<Long, String> platformIdToName) {
@@ -489,6 +500,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 				platformIds = new HashSet<>();
 		}
 
+		final boolean showPassingTrains = entity instanceof IPIDS.TileEntityPIDS && ((IPIDS.TileEntityPIDS) entity).getShowPassingTrains();
 		schedules = new HashSet<>();
 		platforms.values().forEach(platform -> {
 			if (platformIds.isEmpty() || platformIds.contains(platform.id)) {
@@ -496,7 +508,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 				if (scheduleForPlatform != null) {
 					scheduleForPlatform.forEach(scheduleEntry -> {
 						final Route route = ClientData.DATA_CACHE.routeIdMap.get(scheduleEntry.routeId);
-						if (route != null && (renderType.showTerminatingPlatforms || scheduleEntry.currentStationIndex < route.platformIds.size() - 1)) {
+						if (route != null && (showPassingTrains || !scheduleEntry.pass) && (renderType.showTerminatingPlatforms || scheduleEntry.currentStationIndex < route.platformIds.size() - 1)) {
 							schedules.add(scheduleEntry);
 							platformIdToName.put(platform.id, platform.name);
 						}

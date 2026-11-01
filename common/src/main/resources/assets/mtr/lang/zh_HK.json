@@ -706,7 +706,6 @@
 	"train.mtr.sp1900_small": "SP1900 （小型）",
 	"train.mtr.spruce_boat": "雲杉木船",
 	"gui.mtr.use_deterministic_path": "使用確定性尋路",
-	"gui.mtr.pick_waypoints": "點擊關鍵節點：到下一站的必經節點（%s）",
 	"gui.mtr.pass_station": "本站通過，不停車",
 	"gui.mtr.dwell_override": "本路線門全開時間（秒）",
 	"gui.mtr.path_failure_old_search": "刷新失敗：必經節點需要開啟確定性尋路",
@@ -715,5 +714,17 @@
 	"gui.mtr.path_failure_no_route": "刷新失敗：按行進方向走不通",
 	"gui.mtr.path_stale": "軌道已變動，路徑已過期",
 	"gui.mtr.rail_would_loop": "這個角度會讓軌道掉頭繞圈",
-	"gui.mtr.platform_or_siding_exists": "無法修改：節點連著月台或存車線"
+	"gui.mtr.platform_or_siding_exists": "無法修改：節點連著月台或存車線",
+	"gui.mtr.turn_back_dwell": "本站之後折返停留時間（秒）",
+	"gui.mtr.station_area": "範圍 %s/%s",
+	"gui.mtr.add_station_area": "新增範圍",
+	"gui.mtr.remove_station_area": "刪除範圍",
+	"gui.mtr.platform_station": "所屬車站：%s",
+	"gui.mtr.platform_station_auto": "所屬車站：自動",
+	"gui.mtr.station_overlap_notice": "%s 個月台與其他車站重疊，請在清單中編輯並指定所屬車站",
+	"gui.mtr.show_passing_trains": "顯示通過列車",
+	"gui.mtr.passing": "通過",
+	"gui.mtr.passing_cjk": "通過",
+	"gui.mtr.edit_route_key_nodes": "點擊月台或關鍵節點加入路線",
+	"gui.mtr.key_node_entry": "關鍵節點 (%s, %s, %s)"
 }

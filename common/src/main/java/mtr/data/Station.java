@@ -17,9 +17,16 @@ public final class Station extends AreaBase {
 
 	public int zone;
 	public final Map<String, List<String>> exits = new HashMap<>();
+	/**
+	 * Rectangles as {x1, z1, x2, z2} in addition to the corners, which older data and other mods read.
+	 */
+	public final List<int[]> extraAreas = new ArrayList<>();
+
+	public static final int MAX_EXTRA_AREAS = 15;
 
 	private static final String KEY_ZONE = "zone";
 	private static final String KEY_EXITS = "exits";
+	private static final String KEY_EXTRA_AREAS = "extra_areas";
 
 	private static final String KEY_EXIT_EDIT_PARENT = "exit_edit_parent";
 	private static final String KEY_EXIT_DELETE_PARENT = "exit_delete_parent";
@@ -45,6 +52,12 @@ public final class Station extends AreaBase {
 			}
 			exits.put(entry.getKey().asStringValue().asString(), destinations);
 		});
+
+		final List<Integer> values = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_EXTRA_AREAS, value -> values.add(value.asIntegerValue().asInt()));
+		for (int i = 0; i + 3 < values.size() && extraAreas.size() < MAX_EXTRA_AREAS; i += 4) {
+			extraAreas.add(new int[]{values.get(i), values.get(i + 1), values.get(i + 2), values.get(i + 3)});
+		}
 	}
 
 	@Deprecated
@@ -76,6 +89,7 @@ public final class Station extends AreaBase {
 			}
 			exits.put(parent, destinations);
 		}
+		readExtraAreas(packet);
 	}
 
 	@Override
@@ -94,11 +108,18 @@ public final class Station extends AreaBase {
 				messagePacker.packString(destination);
 			}
 		}
+
+		messagePacker.packString(KEY_EXTRA_AREAS).packArrayHeader(extraAreas.size() * 4);
+		for (final int[] extraArea : extraAreas) {
+			for (final int value : extraArea) {
+				messagePacker.packInt(value);
+			}
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 2;
+		return super.messagePackLength() + 3;
 	}
 
 	@Override
@@ -111,6 +132,7 @@ public final class Station extends AreaBase {
 			packet.writeInt(destinations.size());
 			destinations.forEach(packet::writeUtf);
 		});
+		writeExtraAreas(packet);
 	}
 
 	@Override
@@ -134,6 +156,9 @@ public final class Station extends AreaBase {
 					}
 				}
 				break;
+			case KEY_EXTRA_AREAS:
+				readExtraAreas(packet);
+				break;
 			case KEY_ZONE:
 				name = packet.readUtf(PACKET_STRING_READ_LENGTH);
 				color = packet.readInt();
@@ -148,6 +173,55 @@ public final class Station extends AreaBase {
 	@Override
 	protected boolean hasTransportMode() {
 		return false;
+	}
+
+	@Override
+	public boolean inArea(int x, int z) {
+		if (super.inArea(x, z)) {
+			return true;
+		}
+		for (final int[] extraArea : extraAreas) {
+			if (RailwayData.isBetween(x, extraArea[0], extraArea[2]) && RailwayData.isBetween(z, extraArea[1], extraArea[3])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public List<int[]> getRectangles() {
+		final List<int[]> rectangles = super.getRectangles();
+		rectangles.addAll(extraAreas);
+		return rectangles;
+	}
+
+	public void setExtraAreas(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_EXTRA_AREAS);
+		writeExtraAreas(packet);
+		sendPacket.accept(packet);
+	}
+
+	private void readExtraAreas(FriendlyByteBuf packet) {
+		extraAreas.clear();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			final int[] extraArea = {packet.readInt(), packet.readInt(), packet.readInt(), packet.readInt()};
+			if (i < MAX_EXTRA_AREAS) {
+				extraAreas.add(extraArea);
+			}
+		}
+	}
+
+	private void writeExtraAreas(FriendlyByteBuf packet) {
+		packet.writeInt(extraAreas.size());
+		extraAreas.forEach(extraArea -> {
+			for (final int value : extraArea) {
+				packet.writeInt(value);
+			}
+		});
 	}
 
 	public void setZone(Consumer<FriendlyByteBuf> sendPacket) {

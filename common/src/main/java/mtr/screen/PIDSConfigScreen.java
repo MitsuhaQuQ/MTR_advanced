@@ -37,11 +37,13 @@ public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 	private final Component messageText = Text.translatable("gui.mtr.pids_message");
 	private final Component hideArrivalText = Text.translatable("gui.mtr.hide_arrival");
 	private final WidgetBetterCheckbox selectAllCheckbox;
+	private final WidgetBetterCheckbox checkboxShowPassingTrains;
 	private final Button filterButton;
 	private final ImageButton buttonPrevPage;
 	private final ImageButton buttonNextPage;
 	private final Set<Long> filterPlatformIds;
 	private final int displayPage;
+	private final boolean showPassingTrains;
 	private final int maxArrivals;
 	private final int linesPerArrival;
 	private int page = 0;
@@ -64,6 +66,9 @@ public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 		selectAllCheckbox = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.automatically_detect_nearby_platform"), checked -> {
 		});
 
+		checkboxShowPassingTrains = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.show_passing_trains"), checked -> {
+		});
+
 		textFieldMessages = new WidgetBetterTextField[maxArrivals * linesPerArrival];
 		for (int i = 0; i < maxArrivals * linesPerArrival; i++) {
 			textFieldMessages[i] = new WidgetBetterTextField("", MAX_MESSAGE_LENGTH);
@@ -82,6 +87,7 @@ public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 		if (world == null) {
 			filterPlatformIds = new HashSet<>();
 			displayPage = 0;
+			showPassingTrains = false;
 		} else {
 			final BlockEntity entity = world.getBlockEntity(pos1);
 			if (entity instanceof IPIDS.TileEntityPIDS) {
@@ -93,9 +99,11 @@ public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 					hideArrival[i] = ((IPIDS.TileEntityPIDS) entity).getHideArrival(i);
 				}
 				displayPage = ((IPIDS.TileEntityPIDS) entity).getDisplayPage();
+				showPassingTrains = ((IPIDS.TileEntityPIDS) entity).getShowPassingTrains();
 			} else {
 				filterPlatformIds = new HashSet<>();
 				displayPage = 0;
+				showPassingTrains = false;
 			}
 		}
 
@@ -120,6 +128,10 @@ public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(displayPageInput, SQUARE_SIZE + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 5 + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
 		displayPageInput.setValue(String.valueOf(displayPage + 1));
 		addDrawableChild(displayPageInput);
+
+		IDrawing.setPositionAndWidth(checkboxShowPassingTrains, SQUARE_SIZE + PANEL_WIDTH / 2, SQUARE_SIZE * 5, PANEL_WIDTH);
+		checkboxShowPassingTrains.setChecked(showPassingTrains);
+		addDrawableChild(checkboxShowPassingTrains);
 
 		IDrawing.setPositionAndWidth(buttonPrevPage, customMessageWidth, SQUARE_SIZE * 7, SQUARE_SIZE);
 		addDrawableChild(buttonPrevPage);
@@ -183,7 +195,7 @@ public class PIDSConfigScreen extends ScreenBase implements IGui, IPacket {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		PacketTrainDataGuiClient.sendPIDSConfigC2S(pos1, pos2, messages, hideArrival, filterPlatformIds, displayPage);
+		PacketTrainDataGuiClient.sendPIDSConfigC2S(pos1, pos2, messages, hideArrival, filterPlatformIds, displayPage, checkboxShowPassingTrains.selected());
 		super.onClose();
 	}
 

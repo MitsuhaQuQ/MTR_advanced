@@ -22,8 +22,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
@@ -31,6 +29,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private AreaBase editingArea;
 	private Route editingRoute;
 	private int editingRoutePlatformIndex;
+	private List<Object> routeEntries = new ArrayList<>();
 	private boolean isNew;
 
 	private final TransportMode transportMode;
@@ -52,7 +51,12 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 	private final WidgetBetterTextField textFieldName;
 	private final WidgetBetterTextField textFieldCustomDestination;
+	private final Button buttonStationArea;
+	private final Button buttonAddStationArea;
+	private final Button buttonRemoveStationArea;
+	private int editingAreaIndex;
 	private final WidgetBetterTextField textFieldDwellOverride;
+	private final WidgetBetterTextField textFieldTurnBackDwell;
 	private final WidgetBetterCheckbox checkboxPassStation;
 	private final WidgetColorSelector colorSelector;
 
@@ -60,6 +64,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 	public static final int MAX_COLOR_ZONE_LENGTH = 6;
 	private static final int COLOR_WIDTH = 48;
+	private static final int ARGB_KEY_NODE = 0xFFFFFF00;
 
 	public DashboardScreen(TransportMode transportMode, boolean useTimeAndWindSync) {
 		super(Text.literal(""));
@@ -68,10 +73,11 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldName = new WidgetBetterTextField(Text.translatable("gui.mtr.name").getString());
 		textFieldCustomDestination = new WidgetBetterTextField(Text.translatable("gui.mtr.custom_destination_suggestion").getString());
 		textFieldDwellOverride = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, Text.translatable("gui.mtr.dwell_override").getString(), 4);
+		textFieldTurnBackDwell = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, Text.translatable("gui.mtr.turn_back_dwell").getString(), 4);
 		checkboxPassStation = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.pass_station"), checked -> {
 		});
 		colorSelector = new WidgetColorSelector(this, true, this::toggleButtons);
-		widgetMap = new WidgetMap(transportMode, this::onDrawCorners, this::onDrawCornersMouseRelease, this::onClickAddPlatformToRoute, this::onClickEditSavedRail, colorSelector::isMouseOver);
+		widgetMap = new WidgetMap(transportMode, this::onDrawCorners, this::onDrawCornersMouseRelease, this::onClickAddPlatformToRoute, this::onClickAddKeyNodeToRoute, this::onClickEditSavedRail, colorSelector::isMouseOver);
 		widgetMap.setRoutesToDraw(this::getRoutesToDraw);
 		MapDataCache.open();
 
@@ -87,6 +93,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		buttonDoneEditingRouteDestination = UtilitiesClient.newButton(Text.translatable("gui.done"), button -> onDoneEditingRouteDestination());
 		buttonZoomIn = UtilitiesClient.newButton(Text.literal("+"), button -> widgetMap.scale(1));
 		buttonZoomOut = UtilitiesClient.newButton(Text.literal("-"), button -> widgetMap.scale(-1));
+		buttonStationArea = UtilitiesClient.newButton(Text.literal(""), button -> selectStationArea((editingAreaIndex + 1) % (((Station) editingArea).extraAreas.size() + 1)));
+		buttonAddStationArea = UtilitiesClient.newButton(Text.translatable("gui.mtr.add_station_area"), button -> selectStationArea(((Station) editingArea).extraAreas.size() + 1));
+		buttonRemoveStationArea = UtilitiesClient.newButton(Text.translatable("gui.mtr.remove_station_area"), button -> removeStationArea());
 		buttonRailActions = UtilitiesClient.newButton(Text.translatable("gui.mtr.rail_actions_button"), button -> {
 			if (minecraft != null) {
 				UtilitiesClient.setScreen(minecraft, new RailActionsScreen());
@@ -126,10 +135,14 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(buttonRailActions, width - SQUARE_SIZE * 10, bottomRowY, SQUARE_SIZE * 5);
 		IDrawing.setPositionAndWidth(buttonOptions, width - SQUARE_SIZE * 5, bottomRowY, SQUARE_SIZE * 3);
 
+		IDrawing.setPositionAndWidth(buttonStationArea, 0, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
+		IDrawing.setPositionAndWidth(buttonAddStationArea, PANEL_WIDTH / 3, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
+		IDrawing.setPositionAndWidth(buttonRemoveStationArea, PANEL_WIDTH * 2 / 3, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
 		IDrawing.setPositionAndWidth(textFieldName, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, PANEL_WIDTH - COLOR_WIDTH - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldCustomDestination, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldDwellOverride, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING * 3 / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
-		IDrawing.setPositionAndWidth(checkboxPassStation, 0, bottomRowY - SQUARE_SIZE * 3 - TEXT_FIELD_PADDING * 2, PANEL_WIDTH);
+		IDrawing.setPositionAndWidth(textFieldTurnBackDwell, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE * 3 - TEXT_FIELD_PADDING * 5 / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(checkboxPassStation, 0, bottomRowY - SQUARE_SIZE * 4 - TEXT_FIELD_PADDING * 3, PANEL_WIDTH);
 		IDrawing.setPositionAndWidth(colorSelector, PANEL_WIDTH - COLOR_WIDTH + TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, COLOR_WIDTH - TEXT_FIELD_PADDING);
 
 		dashboardList.x = 0;
@@ -152,11 +165,15 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		addDrawableChild(buttonZoomIn);
 		addDrawableChild(buttonZoomOut);
 		addDrawableChild(buttonRailActions);
+		addDrawableChild(buttonStationArea);
+		addDrawableChild(buttonAddStationArea);
+		addDrawableChild(buttonRemoveStationArea);
 		addDrawableChild(buttonOptions);
 
 		addDrawableChild(textFieldName);
 		addDrawableChild(textFieldCustomDestination);
 		addDrawableChild(textFieldDwellOverride);
+		addDrawableChild(textFieldTurnBackDwell);
 		addDrawableChild(checkboxPassStation);
 		addDrawableChild(colorSelector);
 	}
@@ -193,6 +210,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldName.tick();
 		textFieldCustomDestination.tick();
 		textFieldDwellOverride.tick();
+		textFieldTurnBackDwell.tick();
 		dashboardList.tick();
 
 		try {
@@ -201,28 +219,21 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 					if (editingArea == null) {
 						dashboardList.setData(ClientData.STATIONS, true, true, true, false, false, true);
 					} else {
-						final Map<Long, Platform> platformData = ClientData.DATA_CACHE.requestStationIdToPlatforms(editingArea.id);
+						final Map<Long, Platform> platformData = editingArea instanceof Station ? ClientData.DATA_CACHE.getPlatformsInArea((Station) editingArea) : ClientData.DATA_CACHE.requestStationIdToPlatforms(editingArea.id);
 						dashboardList.setData(platformData == null ? new ArrayList<>() : new ArrayList<>(platformData.values()), true, false, true, false, false, false);
+						if (platformData != null) {
+							final long unassigned = platformData.values().stream().filter(platform -> platform.stationId == 0 && ClientData.DATA_CACHE.getStationsAt(platform.getMidPos()).size() > 1).count();
+							widgetMap.setAreaNotice(unassigned > 0 ? Text.translatable("gui.mtr.station_overlap_notice", unassigned).getString() : "");
+						}
 					}
 					break;
 				case ROUTES:
 					if (editingRoute == null) {
 						dashboardList.setData(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES), false, true, true, false, false, true);
 					} else {
-						final List<DataConverter> routeData = editingRoute.platformIds.stream().map(platformId -> {
-							final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId.platformId);
-							if (platform == null) {
-								return null;
-							} else {
-								final String customDestinationPrefix = platformId.customDestination.isEmpty() ? "" : Route.destinationIsReset(platformId.customDestination) ? "\"" : "*";
-								final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platform.id);
-								if (station != null) {
-									return new DataConverter(String.format("%s%s (%s)", customDestinationPrefix, station.name, platform.name), station.color);
-								} else {
-									return new DataConverter(String.format("%s(%s)", customDestinationPrefix, platform.name), 0);
-								}
-							}
-						}).filter(Objects::nonNull).collect(Collectors.toList());
+						routeEntries = editingRoute.getEntries();
+						final List<DataConverter> routeData = new ArrayList<>();
+						routeEntries.forEach(entry -> routeData.add(getRouteEntryRow(entry)));
 						dashboardList.setData(routeData, false, false, true, true, false, true);
 					}
 					break;
@@ -303,7 +314,12 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 					if (editingRoute == null && data instanceof Route) {
 						UtilitiesClient.setScreen(minecraft, new EditRouteScreen((Route) data, this));
 					} else {
-						startEditingRouteDestination(index);
+						final Object entry = routeEntries.get(index);
+						if (entry instanceof BlockPos) {
+							widgetMap.find((BlockPos) entry);
+						} else {
+							startEditingRouteDestination(editingRoute.platformIds.indexOf(entry));
+						}
 					}
 					break;
 				case DEPOTS:
@@ -323,7 +339,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 	private void onSort() {
 		if (selectedTab == SelectedTab.ROUTES && editingRoute != null) {
-			editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+			saveRouteEntries();
 		}
 	}
 
@@ -349,9 +365,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 							}, IGui.formatStationName(route.name), this));
 						}
 					} else {
-						editingRoute.platformIds.remove(index);
-						editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
-						PacketTrainDataGuiClient.requestMapRouteC2S(editingRoute.id);
+						routeEntries.remove(index);
+						saveRouteEntries();
 					}
 					break;
 				case DEPOTS:
@@ -369,12 +384,38 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		}
 	}
 
-	private List<Route.RoutePlatform> getList() {
-		return editingRoute == null ? new ArrayList<>() : editingRoute.platformIds;
+	private List<Object> getList() {
+		return editingRoute == null ? new ArrayList<>() : routeEntries;
+	}
+
+	private DataConverter getRouteEntryRow(Object entry) {
+		if (entry instanceof BlockPos) {
+			final BlockPos pos = (BlockPos) entry;
+			return new DataConverter(Text.translatable("gui.mtr.key_node_entry", pos.getX(), pos.getY(), pos.getZ()).getString(), ARGB_KEY_NODE & 0xFFFFFF);
+		}
+		final Route.RoutePlatform routePlatform = (Route.RoutePlatform) entry;
+		final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
+		if (platform == null) {
+			return new DataConverter("", 0);
+		}
+		final String customDestinationPrefix = routePlatform.customDestination.isEmpty() ? "" : Route.destinationIsReset(routePlatform.customDestination) ? "\"" : "*";
+		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platform.id);
+		if (station != null) {
+			return new DataConverter(String.format("%s%s (%s)", customDestinationPrefix, station.name, platform.name), station.color);
+		} else {
+			return new DataConverter(String.format("%s(%s)", customDestinationPrefix, platform.name), 0);
+		}
+	}
+
+	private void saveRouteEntries() {
+		editingRoute.setEntries(routeEntries);
+		editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		PacketTrainDataGuiClient.requestMapRouteC2S(editingRoute.id);
 	}
 
 	private void startEditingArea(AreaBase editingArea, boolean isNew) {
 		this.editingArea = editingArea;
+		editingAreaIndex = 0;
 		editingRoute = null;
 		this.isNew = isNew;
 
@@ -404,23 +445,58 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			textFieldCustomDestination.setValue(editingRoute.platformIds.get(index).customDestination);
 			final int dwellOverride = editingRoute.platformIds.get(index).dwellOverride;
 			textFieldDwellOverride.setValue(dwellOverride > 0 ? String.valueOf(Route.getDoorOpenSeconds(dwellOverride)) : "");
+			final int turnBackDwell = editingRoute.platformIds.get(index).turnBackDwell;
+			textFieldTurnBackDwell.setValue(turnBackDwell > 0 ? String.valueOf(turnBackDwell / 2) : "");
 			checkboxPassStation.setChecked(editingRoute.platformIds.get(index).pass);
-			if (!isNew && index < editingRoute.platformIds.size() - 1) {
-				final List<BlockPos> waypoints = editingRoute.platformIds.get(index).waypoints;
-				widgetMap.startPickingWaypoints(waypoints, pos -> onClickKeyNode(waypoints, pos));
-			}
 		}
 		toggleButtons();
 	}
 
 	private void onDrawCorners(Tuple<Integer, Integer> corner1, Tuple<Integer, Integer> corner2) {
-		editingArea.corner1 = corner1;
-		editingArea.corner2 = corner2;
+		if (editingAreaIndex > 0) {
+			final List<int[]> extraAreas = ((Station) editingArea).extraAreas;
+			final int[] extraArea = {corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB()};
+			if (editingAreaIndex > extraAreas.size()) {
+				extraAreas.add(extraArea);
+			} else {
+				extraAreas.set(editingAreaIndex - 1, extraArea);
+			}
+		} else {
+			editingArea.corner1 = corner1;
+			editingArea.corner2 = corner2;
+		}
 		toggleButtons();
 	}
 
 	private void onDrawCornersMouseRelease() {
-		editingArea.setCorners(packet -> PacketTrainDataGuiClient.sendUpdate(editingArea instanceof Station ? PACKET_UPDATE_STATION : PACKET_UPDATE_DEPOT, packet));
+		if (editingAreaIndex > 0) {
+			((Station) editingArea).setExtraAreas(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		} else {
+			editingArea.setCorners(packet -> PacketTrainDataGuiClient.sendUpdate(editingArea instanceof Station ? PACKET_UPDATE_STATION : PACKET_UPDATE_DEPOT, packet));
+		}
+	}
+
+	private void selectStationArea(int index) {
+		final Station station = (Station) editingArea;
+		editingAreaIndex = index;
+		if (index == 0) {
+			widgetMap.setDrawArea(station.corner1, station.corner2);
+		} else if (index > station.extraAreas.size()) {
+			widgetMap.setDrawArea(null, null);
+		} else {
+			final int[] extraArea = station.extraAreas.get(index - 1);
+			widgetMap.setDrawArea(new Tuple<>(extraArea[0], extraArea[1]), new Tuple<>(extraArea[2], extraArea[3]));
+		}
+		toggleButtons();
+	}
+
+	private void removeStationArea() {
+		final Station station = (Station) editingArea;
+		if (editingAreaIndex > 0 && editingAreaIndex <= station.extraAreas.size()) {
+			station.extraAreas.remove(editingAreaIndex - 1);
+			station.setExtraAreas(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		}
+		selectStationArea(editingAreaIndex - 1);
 	}
 
 	private void onClickAddPlatformToRoute(long platformId) {
@@ -475,16 +551,15 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		return editingRoute == null ? ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES) : Collections.singletonList(editingRoute);
 	}
 
-	private void onClickKeyNode(List<BlockPos> waypoints, BlockPos pos) {
-		if (!waypoints.remove(pos) && waypoints.size() < Route.MAX_WAYPOINTS) {
-			waypoints.add(pos);
+	private void onClickAddKeyNodeToRoute(BlockPos pos) {
+		if (!editingRoute.platformIds.isEmpty()) {
+			routeEntries = editingRoute.getEntries();
+			routeEntries.add(pos);
+			saveRouteEntries();
 		}
-		editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
-		PacketTrainDataGuiClient.requestMapRouteC2S(editingRoute.id);
 	}
 
 	private void onDoneEditingRouteDestination() {
-		widgetMap.stopPickingWaypoints();
 		if (isValidRoutePlatformIndex()) {
 			final Route.RoutePlatform routePlatform = editingRoute.platformIds.get(editingRoutePlatformIndex);
 			routePlatform.customDestination = textFieldCustomDestination.getValue();
@@ -492,6 +567,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			try {
 				final String dwellText = textFieldDwellOverride.getValue();
 				routePlatform.dwellOverride = dwellText.isEmpty() ? 0 : Route.getDwellFromDoorOpenSeconds(Integer.parseInt(dwellText));
+				final String turnBackText = textFieldTurnBackDwell.getValue();
+				routePlatform.turnBackDwell = turnBackText.isEmpty() ? 0 : Integer.parseInt(turnBackText) * 2;
 			} catch (NumberFormatException ignored) {
 			}
 			editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
@@ -500,6 +577,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void stopEditing() {
+		widgetMap.setAreaNotice("");
 		editingArea = null;
 		editingRoute = null;
 		widgetMap.stopEditing();
@@ -524,11 +602,22 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 		final boolean showTextFields = ((selectedTab == SelectedTab.STATIONS || selectedTab == SelectedTab.DEPOTS) && editingArea != null) || (selectedTab == SelectedTab.ROUTES && editingRoute != null && !showRouteDestinationFields);
 		textFieldName.visible = showTextFields;
+		final boolean showStationAreas = selectedTab == SelectedTab.STATIONS && editingArea instanceof Station;
+		buttonStationArea.visible = showStationAreas;
+		buttonAddStationArea.visible = showStationAreas;
+		buttonRemoveStationArea.visible = showStationAreas;
+		if (showStationAreas) {
+			final int extraAreaCount = ((Station) editingArea).extraAreas.size();
+			buttonStationArea.setMessage(Text.translatable("gui.mtr.station_area", editingAreaIndex + 1, Math.max(extraAreaCount + 1, editingAreaIndex + 1)));
+			buttonAddStationArea.active = AreaBase.nonNullCorners(editingArea) && extraAreaCount < Station.MAX_EXTRA_AREAS && editingAreaIndex <= extraAreaCount;
+			buttonRemoveStationArea.active = editingAreaIndex > 0;
+		}
 		textFieldCustomDestination.visible = showRouteDestinationFields;
 		textFieldDwellOverride.visible = showRouteDestinationFields;
+		textFieldTurnBackDwell.visible = showRouteDestinationFields;
 		checkboxPassStation.visible = showRouteDestinationFields && editingRoutePlatformIndex > 0 && editingRoutePlatformIndex < editingRoute.platformIds.size() - 1;
 		colorSelector.visible = showTextFields;
-		dashboardList.height = height - SQUARE_SIZE * 2 - (showTextFields || showRouteDestinationFields ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) - (showRouteDestinationFields ? (SQUARE_SIZE + TEXT_FIELD_PADDING) * 2 : 0);
+		dashboardList.height = height - SQUARE_SIZE * 2 - (showTextFields || showRouteDestinationFields ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) - (showRouteDestinationFields ? (SQUARE_SIZE + TEXT_FIELD_PADDING) * 3 : 0) - (showStationAreas ? SQUARE_SIZE + TEXT_FIELD_PADDING / 2 : 0);
 	}
 
 	private enum SelectedTab {STATIONS, ROUTES, DEPOTS}

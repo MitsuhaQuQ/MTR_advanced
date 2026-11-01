@@ -1,6 +1,5 @@
 {
   "gui.mtr.use_deterministic_path": "使用确定性寻路",
-  "gui.mtr.pick_waypoints": "点击关键节点：到下一站的必经节点（%s）",
   "gui.mtr.pass_station": "本站通过，不停车",
   "gui.mtr.dwell_override": "本线路门全开时间（秒）",
   "gui.mtr.path_failure_old_search": "刷新失败：必经节点需要开启确定性寻路",
@@ -9,5 +8,17 @@
   "gui.mtr.path_failure_no_route": "刷新失败：按行进方向走不通",
   "gui.mtr.path_stale": "轨道已变动，路径已过期",
   "gui.mtr.rail_would_loop": "这个角度会让轨道掉头绕圈",
-  "gui.mtr.platform_or_siding_exists": "无法修改：节点连着站台或存车线"
+  "gui.mtr.platform_or_siding_exists": "无法修改：节点连着站台或存车线",
+  "gui.mtr.turn_back_dwell": "本站之后折返停留时间（秒）",
+  "gui.mtr.station_area": "范围 %s/%s",
+  "gui.mtr.add_station_area": "添加范围",
+  "gui.mtr.remove_station_area": "删除范围",
+  "gui.mtr.platform_station": "所属车站：%s",
+  "gui.mtr.platform_station_auto": "所属车站：自动",
+  "gui.mtr.station_overlap_notice": "%s 个站台与其他车站重叠，请在列表中编辑并指定所属车站",
+  "gui.mtr.show_passing_trains": "显示通过列车",
+  "gui.mtr.passing": "通过",
+  "gui.mtr.passing_cjk": "通过",
+  "gui.mtr.edit_route_key_nodes": "点击站台或关键节点加入线路",
+  "gui.mtr.key_node_entry": "关键节点 (%s, %s, %s)"
 }

@@ -12,7 +12,7 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 5;
+	int PROTOCOL_VERSION = 6;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 

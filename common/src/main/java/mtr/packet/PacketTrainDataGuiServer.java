@@ -511,6 +511,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			platformIds.add(packet.readLong());
 		}
 		final int arrivalPage = packet.readInt();
+		final boolean showPassingTrains = packet.readBoolean();
 		PacketGuard.execute(minecraftServer, () -> {
 			if (!canEditBlock(player, pos1) || !canEditBlock(player, pos2)) {
 				return;
@@ -528,7 +529,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				entities.add((IPIDS.TileEntityPIDS) entity2);
 			}
 
-			setTileEntityDataAndWriteUpdate(player, entity -> entity.setData(messages, hideArrivals, platformIds, arrivalPage), entities.toArray(new IPIDS.TileEntityPIDS[0]));
+			setTileEntityDataAndWriteUpdate(player, entity -> entity.setData(messages, hideArrivals, platformIds, arrivalPage, showPassingTrains), entities.toArray(new IPIDS.TileEntityPIDS[0]));
 		});
 	}
 

@@ -48,7 +48,7 @@ public class ArrivalsServletHandler extends HttpServlet {
 						for (final ScheduleEntry scheduleEntry : scheduleEntries) {
 							final DataCache dataCache = railwayData.dataCache;
 							final Route route = dataCache.routeIdMap.get(scheduleEntry.routeId);
-							if (route != null && scheduleEntry.currentStationIndex < route.platformIds.size() - 1) {
+							if (!scheduleEntry.pass && route != null && scheduleEntry.currentStationIndex < route.platformIds.size() - 1) {
 								final JsonObject scheduleObject = new JsonObject();
 								scheduleObject.addProperty("arrival", scheduleEntry.arrivalMillis);
 								scheduleObject.addProperty("name", route.name);

@@ -126,6 +126,13 @@ public class DataCache {
 			}
 
 			mapSavedRailIdToStation(platformIdToStation, platforms, stations);
+			platforms.forEach(platform -> {
+				final Station station = stationIdMap.get(platform.stationId);
+				final BlockPos pos = platform.getMidPos();
+				if (station != null && station.inArea(pos.getX(), pos.getZ())) {
+					platformIdToStation.put(platform.id, station);
+				}
+			});
 			mapSavedRailIdToStation(sidingIdToDepot, sidings, depots);
 
 			blockPosToPlatformId.clear();
@@ -215,17 +222,17 @@ public class DataCache {
 		final Long2ObjectOpenHashMap<List<Integer>> grid = new Long2ObjectOpenHashMap<>();
 		for (int i = 0; i < areaList.size(); i++) {
 			final V area = areaList.get(i);
-			if (AreaBase.nonNullCorners(area)) {
-				final int cellX1 = getMinX(area) >> AREA_CELL_BITS;
-				final int cellX2 = getMaxX(area) >> AREA_CELL_BITS;
-				final int cellZ1 = Math.min(area.corner1.getB(), area.corner2.getB()) >> AREA_CELL_BITS;
-				final int cellZ2 = Math.max(area.corner1.getB(), area.corner2.getB()) >> AREA_CELL_BITS;
+			for (final int[] rectangle : area.getRectangles()) {
+				final int cellX1 = Math.min(rectangle[0], rectangle[2]) >> AREA_CELL_BITS;
+				final int cellX2 = Math.max(rectangle[0], rectangle[2]) >> AREA_CELL_BITS;
+				final int cellZ1 = Math.min(rectangle[1], rectangle[3]) >> AREA_CELL_BITS;
+				final int cellZ2 = Math.max(rectangle[1], rectangle[3]) >> AREA_CELL_BITS;
 				if ((long) (cellX2 - cellX1 + 1) * (cellZ2 - cellZ1 + 1) > MAX_AREA_CELLS) {
-					largeAreas.add(i);
+					addOnce(largeAreas, i);
 				} else {
 					for (int cellX = cellX1; cellX <= cellX2; cellX++) {
 						for (int cellZ = cellZ1; cellZ <= cellZ2; cellZ++) {
-							grid.computeIfAbsent(getCellKey(cellX, cellZ), key -> new ArrayList<>()).add(i);
+							addOnce(grid.computeIfAbsent(getCellKey(cellX, cellZ), key -> new ArrayList<>()), i);
 						}
 					}
 				}
@@ -254,15 +261,21 @@ public class DataCache {
 		return Integer.MAX_VALUE;
 	}
 
+	private static void addOnce(List<Integer> indices, int index) {
+		if (indices.isEmpty() || indices.get(indices.size() - 1) != index) {
+			indices.add(index);
+		}
+	}
+
 	private static long getCellKey(int cellX, int cellZ) {
 		return ((long) cellX << 32) | (cellZ & 0xFFFFFFFFL);
 	}
 
 	private static int getMinX(AreaBase area) {
-		return Math.min(area.corner1.getA(), area.corner2.getA());
+		return area.getRectangles().stream().mapToInt(rectangle -> Math.min(rectangle[0], rectangle[2])).min().orElse(0);
 	}
 
 	private static int getMaxX(AreaBase area) {
-		return Math.max(area.corner1.getA(), area.corner2.getA());
+		return area.getRectangles().stream().mapToInt(rectangle -> Math.max(rectangle[0], rectangle[2])).max().orElse(0);
 	}
 }

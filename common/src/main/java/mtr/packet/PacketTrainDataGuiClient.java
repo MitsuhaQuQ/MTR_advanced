@@ -479,7 +479,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		RegistryClient.sendToServer(PACKET_ADD_BALANCE, packet);
 	}
 
-	public static void sendPIDSConfigC2S(BlockPos pos1, BlockPos pos2, String[] messages, boolean[] hideArrival, Set<Long> filterPlatformIds, int displayPage) {
+	public static void sendPIDSConfigC2S(BlockPos pos1, BlockPos pos2, String[] messages, boolean[] hideArrival, Set<Long> filterPlatformIds, int displayPage, boolean showPassingTrains) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos1);
 		packet.writeBlockPos(pos2);
@@ -494,6 +494,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		packet.writeInt(filterPlatformIds.size());
 		filterPlatformIds.forEach(packet::writeLong);
 		packet.writeInt(displayPage);
+		packet.writeBoolean(showPassingTrains);
 		RegistryClient.sendToServer(PACKET_PIDS_UPDATE, packet);
 	}
 
