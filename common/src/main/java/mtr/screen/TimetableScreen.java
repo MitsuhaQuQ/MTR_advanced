@@ -12,6 +12,7 @@ import mtr.data.Platform;
 import mtr.data.Route;
 import mtr.data.RouteTimetable;
 import mtr.data.Station;
+import mtr.data.TimetableConflicts;
 import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -23,7 +24,10 @@ import net.minecraft.util.FormattedCharSequence;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -42,6 +46,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private int columnDeparture;
 	private int columnPass;
 	private int columnOvertake;
+	private int checkedKey;
 
 	private Route route;
 	private final ScreenMapper previousScreen;
@@ -51,7 +56,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private final WidgetBetterTextField textFieldService;
 	private final Button buttonAddService;
 	private final Button buttonClear;
+	private final Button buttonCheckConflicts;
 	private final DashboardList servicesList;
+	private final Set<String> conflictServices = new HashSet<>();
 	private final WidgetBetterTextField[] textFieldsArrival = new WidgetBetterTextField[MAX_ROWS];
 	private final WidgetBetterTextField[] textFieldsDeparture = new WidgetBetterTextField[MAX_ROWS];
 	private final WidgetBetterCheckbox[] checkboxesPass = new WidgetBetterCheckbox[MAX_ROWS];
@@ -68,6 +75,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private static final int CHECKBOX_COLUMN_WIDTH = SQUARE_SIZE + TEXT_PADDING * 2;
 	private static final int MAX_DIRECTION_WIDTH = 120;
 	private static final int MARGIN_FIELD_WIDTH = SQUARE_SIZE * 2;
+	private static final int CHECK_BUTTON_WIDTH = 100;
 	private static final int ROWS_Y = SQUARE_SIZE * 2 + TEXT_PADDING;
 	private static final int ARGB_WARNING = 0xFFFF5555;
 	private static final int ARGB_FIELD_TEXT = 0xFFE0E0E0;
@@ -94,7 +102,13 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			route.timetable.services.clear();
 			updateList();
 		});
+		buttonCheckConflicts = UtilitiesClient.newButton(Text.translatable("gui.mtr.timetable_check_conflicts"), button -> {
+			saveRoute();
+			requestConflicts();
+		});
 		servicesList = new DashboardList(this::onSelectService, null, null, null, null, this::onDeleteService, null, () -> "", text -> {
+		});
+		servicesList.setRowStyle(data -> IGui.formatStationName(data.name), data -> false, data -> conflictServices.contains(data.name) ? ARGB_WARNING & 0xFFFFFF : data.color, data -> {
 		});
 
 		for (int i = 0; i < MAX_ROWS; i++) {
@@ -183,7 +197,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			addDrawableChild(checkboxesOvertake[i]);
 		}
 
+		IDrawing.setPositionAndWidth(buttonCheckConflicts, width - CHECK_BUTTON_WIDTH, getMarginY(), CHECK_BUTTON_WIDTH);
+		addDrawableChild(buttonCheckConflicts);
+
 		updateList();
+		requestConflicts();
 	}
 
 	@Override
@@ -196,6 +214,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			textFieldsDeparture[i].tick();
 		}
 		updateSuggestions();
+		updateConflictServices();
 	}
 
 	@Override
@@ -236,6 +255,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			for (int i = 0; i < hintLines.size(); i++) {
 				GuiCompat.draw(matrices, font, hintLines.get(i), rightX, height - (TEXT_HEIGHT + 1) * (hintLines.size() - i), hasTimes ? ARGB_LIGHT_GRAY : ARGB_WARNING);
 			}
+			drawConflictText(matrices, rightX, getMarginY() + SQUARE_SIZE + TEXT_PADDING / 2);
 
 			super.render(matrices, mouseX, mouseY, delta);
 		} catch (Exception e) {
@@ -296,7 +316,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private int getMarginY() {
-		return height - SQUARE_SIZE - (TEXT_HEIGHT + 1) * getHintLines(hintText).size() - TEXT_PADDING;
+		return height - SQUARE_SIZE - (TEXT_HEIGHT + 1) * (getHintLines(hintText).size() + 1) - TEXT_PADDING;
 	}
 
 	private void saveRoute() {
@@ -328,6 +348,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		PacketTrainDataGuiClient.requestTimetableTimesC2S(route.id);
 		updateDirectionText();
 		updateList();
+		requestConflicts();
 	}
 
 	private void updateDirectionText() {
@@ -346,7 +367,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		final String stationName = IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name));
 		final int rightX = LIST_WIDTH + TEXT_PADDING;
 
-		GuiCompat.draw(matrices, font, font.plainSubstrByWidth(stationName, columnPlatform - rightX - TEXT_PADDING), rightX, y, ARGB_WHITE);
+		GuiCompat.draw(matrices, font, font.plainSubstrByWidth(stationName, columnPlatform - rightX - TEXT_PADDING), rightX, y, hasConflict(index) ? ARGB_WARNING : ARGB_WHITE);
 		GuiCompat.draw(matrices, font, platform == null ? "" : font.plainSubstrByWidth(platform.name, PLATFORM_WIDTH - TEXT_PADDING), columnPlatform, y, ARGB_LIGHT_GRAY);
 		GuiCompat.draw(matrices, font, hasTimes ? formatDuration(plan.fastestArrivalMillis) : "-", columnFastest, y, tooFast ? ARGB_WARNING : ARGB_LIGHT_GRAY);
 
@@ -368,22 +389,87 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private List<RouteTimetable.StopPlan> getPlans() {
-		final long[][] times = hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null;
-		final List<RouteTimetable.StopPlan> plans = new ArrayList<>();
-		long lastTime = 0;
-		for (int i = 0; i < route.platformIds.size(); i++) {
-			final Route.RoutePlatform routePlatform = route.platformIds.get(i);
-			final boolean hasTime = times != null && times[i][0] >= 0;
-			final long arrival = hasTime ? times[i][0] : lastTime;
-			// The times from the server stay as they were until the path is refreshed
-			final long departure = !hasTime ? lastTime : isPass(i) ? arrival : times[i][1];
-			lastTime = departure;
-			plans.add(new RouteTimetable.StopPlan(arrival, departure, routePlatform.getArrival(), routePlatform.getDeparture(), routePlatform.overtake));
+		return RouteTimetable.getStopPlans(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin());
+	}
+
+	private void requestConflicts() {
+		checkedKey = getCheckKey();
+		PacketTrainDataGuiClient.requestTimetableConflictsC2S(route.id);
+	}
+
+	/**
+	 * Changes with anything that moves the times, so a result that no longer applies doesn't stay on screen.
+	 */
+	private int getCheckKey() {
+		int key = Objects.hash(route.id, parseMargin(), route.timetable.services);
+		for (final Route.RoutePlatform routePlatform : route.platformIds) {
+			key = key * 31 + Objects.hash(routePlatform.getArrival(), routePlatform.getDeparture(), routePlatform.pass);
 		}
-		final RouteTimetable timetable = new RouteTimetable();
-		timetable.marginPercent = parseMargin();
-		timetable.applyPlan(plans);
-		return plans;
+		return key;
+	}
+
+	private TimetableConflicts.Result getConflictResult() {
+		return checkedKey == getCheckKey() ? ClientData.TIMETABLE_CONFLICTS.get(route.id) : null;
+	}
+
+	private List<TimetableConflicts.Conflict> getServiceConflicts(TimetableConflicts.Result result) {
+		return result.conflicts.stream().filter(conflict -> conflict.service == baseMillis || conflict.otherRouteId == route.id && conflict.otherService == baseMillis).collect(Collectors.toList());
+	}
+
+	private boolean hasConflict(int index) {
+		final TimetableConflicts.Result result = getConflictResult();
+		return result != null && getServiceConflicts(result).stream().anyMatch(conflict -> conflict.stopIndex == index);
+	}
+
+	private void updateConflictServices() {
+		conflictServices.clear();
+		final TimetableConflicts.Result result = getConflictResult();
+		if (result != null) {
+			result.conflicts.forEach(conflict -> {
+				conflictServices.add(EditDepotScreen.formatTime(conflict.service));
+				if (conflict.otherRouteId == route.id) {
+					conflictServices.add(EditDepotScreen.formatTime(conflict.otherService));
+				}
+			});
+		}
+	}
+
+	private void drawConflictText(PoseStack matrices, int x, int y) {
+		final TimetableConflicts.Result result = getConflictResult();
+		final Component text;
+		if (checkedKey != getCheckKey()) {
+			text = Text.translatable("gui.mtr.timetable_conflicts_outdated");
+		} else if (result == null) {
+			text = Text.translatable("gui.mtr.timetable_conflicts_checking");
+		} else if (result.conflicts.isEmpty()) {
+			text = result.uncheckedRoutes > 0 ? Text.translatable("gui.mtr.timetable_conflicts_unchecked", result.uncheckedRoutes) : Text.translatable("gui.mtr.timetable_conflicts_none");
+		} else {
+			text = getConflictSummary(result);
+		}
+		final boolean isWarning = result != null && (!result.conflicts.isEmpty() || result.uncheckedRoutes > 0);
+		GuiCompat.draw(matrices, font, font.plainSubstrByWidth(text.getString(), width - x - TEXT_PADDING), x, y, isWarning ? ARGB_WARNING : ARGB_LIGHT_GRAY);
+	}
+
+	private Component getConflictSummary(TimetableConflicts.Result result) {
+		final String count = result.conflicts.size() >= TimetableConflicts.MAX_CONFLICTS ? result.conflicts.size() + "+" : String.valueOf(result.conflicts.size());
+		final List<TimetableConflicts.Conflict> serviceConflicts = getServiceConflicts(result);
+		if (serviceConflicts.isEmpty()) {
+			return Text.translatable("gui.mtr.timetable_conflicts_other_services", count);
+		}
+
+		final TimetableConflicts.Conflict conflict = serviceConflicts.get(0);
+		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(conflict.platformId);
+		final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(conflict.platformId);
+		final Route otherRoute = ClientData.DATA_CACHE.routeIdMap.get(conflict.otherRouteId);
+		final int otherService = conflict.otherRouteId == route.id && conflict.otherService == baseMillis ? conflict.service : conflict.otherService;
+		return Text.translatable(
+				"gui.mtr.timetable_conflicts_found",
+				count,
+				IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name)),
+				platform == null ? "" : platform.name,
+				IGui.textOrUntitled(otherRoute == null ? "" : IGui.formatStationName(otherRoute.name)),
+				EditDepotScreen.formatTime(otherService)
+		);
 	}
 
 	private int parseMargin() {

@@ -43,6 +43,7 @@ public final class ClientData {
 	public static final Map<Long, long[]> MAP_SIDINGS = new HashMap<>();
 	public static final Set<Long> STALE_DEPOTS = new HashSet<>();
 	public static final Map<Long, long[][]> TIMETABLE_TIMES = new HashMap<>();
+	public static final Map<Long, TimetableConflicts.Result> TIMETABLE_CONFLICTS = new HashMap<>();
 	public static final Map<UUID, Boolean> OCCUPIED_RAILS = new HashMap<>();
 	public static final Map<BlockPos, Map<BlockPos, Rail>> RAILS = new HashMap<>();
 	public static final Set<TrainClient> TRAINS = new HashSet<>();

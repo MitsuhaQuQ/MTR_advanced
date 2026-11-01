@@ -205,6 +205,24 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		minecraftClient.execute(() -> ClientData.TIMETABLE_TIMES.put(routeId, times));
 	}
 
+	public static void requestTimetableConflictsC2S(long routeId) {
+		ClientData.TIMETABLE_CONFLICTS.remove(routeId);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(routeId);
+		RegistryClient.sendToServer(PACKET_TIMETABLE_CONFLICTS, packet);
+	}
+
+	public static void receiveTimetableConflictsS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final long routeId = packet.readLong();
+		final int uncheckedRoutes = packet.readInt();
+		final int conflictCount = packet.readInt();
+		final List<TimetableConflicts.Conflict> conflicts = new ArrayList<>();
+		for (int i = 0; i < conflictCount; i++) {
+			conflicts.add(new TimetableConflicts.Conflict(packet.readInt(), packet.readInt(), packet.readLong(), packet.readInt(), packet.readLong()));
+		}
+		minecraftClient.execute(() -> ClientData.TIMETABLE_CONFLICTS.put(routeId, new TimetableConflicts.Result(conflicts, uncheckedRoutes)));
+	}
+
 	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
