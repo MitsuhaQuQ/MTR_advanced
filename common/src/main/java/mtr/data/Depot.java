@@ -60,6 +60,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 	public Depot(TransportMode transportMode) {
 		super(transportMode);
+		useRealTime = !transportMode.continuousMovement;
 	}
 
 	public Depot(long id, TransportMode transportMode) {
