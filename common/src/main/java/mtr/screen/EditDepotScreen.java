@@ -35,6 +35,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	private final Button buttonGenerateRoute;
 	private final Button buttonClearTrains;
 	private final WidgetBetterCheckbox checkboxRepeatIndefinitely;
+	private final WidgetBetterCheckbox checkboxDeterministicPath;
 	private final WidgetBetterTextField textFieldCruisingAltitude;
 	private final DashboardList departuresList;
 
@@ -112,6 +113,11 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			depot.clientPathGenerationSuccessfulSegments = -1;
 			PacketTrainDataGuiClient.generatePathC2S(depot.id);
 		});
+		checkboxDeterministicPath = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.use_deterministic_path"), button -> {
+			saveData();
+			depot.clientPathGenerationSuccessfulSegments = -1;
+			PacketTrainDataGuiClient.generatePathC2S(depot.id);
+		});
 		textFieldCruisingAltitude = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, String.valueOf(Depot.DEFAULT_CRUISING_ALTITUDE), 5);
 	}
 
@@ -123,8 +129,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		IDrawing.setPositionAndWidth(buttonEditInstructions, rightPanelsX, PANELS_START, buttonWidth * 2);
 		IDrawing.setPositionAndWidth(buttonGenerateRoute, rightPanelsX, PANELS_START + SQUARE_SIZE, buttonWidth * (showScheduleControls ? 1 : 2));
 		IDrawing.setPositionAndWidth(buttonClearTrains, rightPanelsX + buttonWidth, PANELS_START + SQUARE_SIZE, buttonWidth);
-		IDrawing.setPositionAndWidth(checkboxRepeatIndefinitely, rightPanelsX, PANELS_START + SQUARE_SIZE * 2 + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0), buttonWidth * 2);
+		IDrawing.setPositionAndWidth(checkboxDeterministicPath, rightPanelsX, PANELS_START + SQUARE_SIZE * 2, buttonWidth * 2);
+		IDrawing.setPositionAndWidth(checkboxRepeatIndefinitely, rightPanelsX, PANELS_START + SQUARE_SIZE * (showDeterministicPath() ? 3 : 2) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0), buttonWidth * 2);
 		checkboxRepeatIndefinitely.setChecked(data.repeatInfinitely);
+		checkboxDeterministicPath.setChecked(data.useDeterministicPath);
 
 		final int cruisingAltitudeTextWidth = font.width(cruisingAltitudeText) + TEXT_PADDING * 2;
 		IDrawing.setPositionAndWidth(textFieldCruisingAltitude, rightPanelsX + Math.min(cruisingAltitudeTextWidth, buttonWidth * 2 - SQUARE_SIZE * 3) + TEXT_FIELD_PADDING / 2, PANELS_START + SQUARE_SIZE * 2 + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 3 - TEXT_FIELD_PADDING);
@@ -162,6 +170,9 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			addDrawableChild(buttonReset);
 			addDrawableChild(buttonClearTrains);
 			addDrawableChild(checkboxRepeatIndefinitely);
+		}
+		if (showDeterministicPath()) {
+			addDrawableChild(checkboxDeterministicPath);
 		}
 		if (showCruisingAltitude) {
 			addDrawableChild(textFieldCruisingAltitude);
@@ -213,7 +224,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 			super.render(matrices, mouseX, mouseY, delta);
 
-			final int yStartRightPane = PANELS_START + SQUARE_SIZE * (checkboxRepeatIndefinitely.visible ? 3 : 2) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) + TEXT_PADDING;
+			final int yStartRightPane = PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) + TEXT_PADDING;
 			if (showCruisingAltitude) {
 				GuiCompat.draw(matrices, font, cruisingAltitudeText, rightPanelsX + TEXT_PADDING, PANELS_START + SQUARE_SIZE * 2 + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
 			}
@@ -257,10 +268,15 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		return super.mouseScrolled(mouseX, mouseY, amount);
 	}
 
+	private boolean showDeterministicPath() {
+		return showScheduleControls && !showCruisingAltitude;
+	}
+
 	@Override
 	protected void saveData() {
 		super.saveData();
 		data.repeatInfinitely = checkboxRepeatIndefinitely.visible && checkboxRepeatIndefinitely.selected();
+		data.useDeterministicPath = !showDeterministicPath() || checkboxDeterministicPath.selected();
 		try {
 			data.cruisingAltitude = Integer.parseInt(textFieldCruisingAltitude.getValue());
 		} catch (Exception e) {

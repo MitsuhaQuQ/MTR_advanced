@@ -1,6 +1,7 @@
 package mtr.data;
 
 import io.netty.buffer.Unpooled;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import org.msgpack.core.MessagePacker;
@@ -15,6 +16,7 @@ import java.util.function.Consumer;
 public final class Route extends NameColorDataBase implements IGui {
 
 	private static final int MAX_PLATFORMS = 1024;
+	private static final int MAX_WAYPOINTS = 64;
 
 	public RouteType routeType;
 	public boolean isLightRailRoute;
@@ -26,6 +28,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
+	private static final String KEY_WAYPOINTS = "waypoints";
 	private static final String KEY_ROUTE_TYPE = "route_type";
 	private static final String KEY_IS_LIGHT_RAIL_ROUTE = "is_light_rail_route";
 	private static final String KEY_LIGHT_RAIL_ROUTE_NUMBER = "light_rail_route_number";
@@ -62,6 +65,14 @@ public final class Route extends NameColorDataBase implements IGui {
 			platformIds.get(i).customDestination = customDestinations.get(i);
 		}
 
+		final int[] platformIndex = {0};
+		messagePackHelper.iterateArrayValue(KEY_WAYPOINTS, waypoints -> {
+			if (platformIndex[0] < platformIds.size()) {
+				waypoints.asArrayValue().forEach(waypoint -> platformIds.get(platformIndex[0]).waypoints.add(BlockPos.of(waypoint.asIntegerValue().asLong())));
+			}
+			platformIndex[0]++;
+		});
+
 		routeType = EnumHelper.valueOf(RouteType.NORMAL, messagePackHelper.getString(KEY_ROUTE_TYPE));
 		isLightRailRoute = messagePackHelper.getBoolean(KEY_IS_LIGHT_RAIL_ROUTE);
 		isHidden = messagePackHelper.getBoolean(KEY_IS_ROUTE_HIDDEN);
@@ -96,6 +107,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		for (int i = 0; i < platformCount; i++) {
 			final RoutePlatform routePlatform = new RoutePlatform(packet.readLong());
 			routePlatform.customDestination = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			routePlatform.readWaypoints(packet);
 			platformIds.add(routePlatform);
 		}
 
@@ -121,6 +133,14 @@ public final class Route extends NameColorDataBase implements IGui {
 			messagePacker.packString(routePlatform.customDestination);
 		}
 
+		messagePacker.packString(KEY_WAYPOINTS).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packArrayHeader(routePlatform.waypoints.size());
+			for (final BlockPos waypoint : routePlatform.waypoints) {
+				messagePacker.packLong(waypoint.asLong());
+			}
+		}
+
 		messagePacker.packString(KEY_ROUTE_TYPE).packString(routeType.toString());
 		messagePacker.packString(KEY_IS_LIGHT_RAIL_ROUTE).packBoolean(isLightRailRoute);
 		messagePacker.packString(KEY_IS_ROUTE_HIDDEN).packBoolean(isHidden);
@@ -131,7 +151,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 8;
+		return super.messagePackLength() + 9;
 	}
 
 	@Override
@@ -141,6 +161,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		platformIds.forEach(routePlatform -> {
 			packet.writeLong(routePlatform.platformId);
 			packet.writeUtf(routePlatform.customDestination);
+			routePlatform.writeWaypoints(packet);
 		});
 
 		packet.writeUtf(routeType.toString());
@@ -160,6 +181,7 @@ public final class Route extends NameColorDataBase implements IGui {
 				for (int i = 0; i < platformCount; i++) {
 					final RoutePlatform routePlatform = new RoutePlatform(packet.readLong());
 					routePlatform.customDestination = packet.readUtf(PACKET_STRING_READ_LENGTH);
+					routePlatform.readWaypoints(packet);
 					if (i < MAX_PLATFORMS) {
 						platformIds.add(routePlatform);
 					}
@@ -195,6 +217,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		platformIds.forEach(routePlatform -> {
 			packet.writeLong(routePlatform.platformId);
 			packet.writeUtf(routePlatform.customDestination);
+			routePlatform.writeWaypoints(packet);
 		});
 		sendPacket.accept(packet);
 	}
@@ -256,10 +279,29 @@ public final class Route extends NameColorDataBase implements IGui {
 
 		public String customDestination;
 		public final long platformId;
+		/**
+		 * Rail nodes a train must pass between this platform and the next one, without stopping.
+		 */
+		public final List<BlockPos> waypoints = new ArrayList<>();
 
 		public RoutePlatform(long platformId) {
 			this.platformId = platformId;
 			customDestination = "";
+		}
+
+		private void readWaypoints(FriendlyByteBuf packet) {
+			final int waypointCount = packet.readInt();
+			for (int i = 0; i < waypointCount; i++) {
+				final long waypoint = packet.readLong();
+				if (i < MAX_WAYPOINTS) {
+					waypoints.add(BlockPos.of(waypoint));
+				}
+			}
+		}
+
+		private void writeWaypoints(FriendlyByteBuf packet) {
+			packet.writeInt(waypoints.size());
+			waypoints.forEach(waypoint -> packet.writeLong(waypoint.asLong()));
 		}
 	}
 

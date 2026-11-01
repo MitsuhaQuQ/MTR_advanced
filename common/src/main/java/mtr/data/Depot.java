@@ -3,7 +3,9 @@ package mtr.data;
 import io.netty.buffer.Unpooled;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.PathData;
+import mtr.path.DeterministicPathFinder;
 import mtr.path.PathFinder;
+import mtr.path.RailGraph;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -24,6 +26,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	public long lastDeployedMillis;
 	public boolean useRealTime;
 	public boolean repeatInfinitely;
+	public boolean useDeterministicPath = true;
 	public int cruisingAltitude = DEFAULT_CRUISING_ALTITUDE;
 	private int deployIndex;
 	private int departureOffset;
@@ -57,6 +60,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
+	private static final String KEY_USE_DETERMINISTIC_PATH = "use_deterministic_path";
 
 	public Depot(TransportMode transportMode) {
 		super(transportMode);
@@ -87,6 +91,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		deployIndex = messagePackHelper.getInt(KEY_DEPLOY_INDEX);
 		repeatInfinitely = messagePackHelper.getBoolean(KEY_REPEAT_INFINITELY);
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
+		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 	}
 
@@ -107,6 +112,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		deployIndex = compoundTag.getInt(KEY_DEPLOY_INDEX);
 		repeatInfinitely = compoundTag.getBoolean(KEY_REPEAT_INFINITELY);
 		cruisingAltitude = compoundTag.getInt(KEY_CRUISING_ALTITUDE);
+		useDeterministicPath = false;
 	}
 
 	public Depot(FriendlyByteBuf packet) {
@@ -132,6 +138,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		deployIndex = packet.readInt();
 		repeatInfinitely = packet.readBoolean();
 		cruisingAltitude = packet.readInt();
+		useDeterministicPath = packet.readBoolean();
 	}
 
 	@Override
@@ -153,6 +160,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		messagePacker.packString(KEY_USE_REAL_TIME).packBoolean(useRealTime);
 		messagePacker.packString(KEY_REPEAT_INFINITELY).packBoolean(repeatInfinitely);
 		messagePacker.packString(KEY_CRUISING_ALTITUDE).packInt(cruisingAltitude);
+		messagePacker.packString(KEY_USE_DETERMINISTIC_PATH).packBoolean(useDeterministicPath);
 
 		messagePacker.packString(KEY_FREQUENCIES).packArrayHeader(HOURS_IN_DAY);
 		for (int i = 0; i < HOURS_IN_DAY; i++) {
@@ -167,7 +175,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 8;
+		return super.messagePackLength() + 9;
 	}
 
 	@Override
@@ -195,6 +203,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		packet.writeInt(deployIndex);
 		packet.writeBoolean(repeatInfinitely);
 		packet.writeInt(cruisingAltitude);
+		packet.writeBoolean(useDeterministicPath);
 	}
 
 	@Override
@@ -229,6 +238,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			}
 			repeatInfinitely = packet.readBoolean();
 			cruisingAltitude = packet.readInt();
+			useDeterministicPath = packet.readBoolean();
 		} else {
 			super.update(key, packet);
 		}
@@ -270,11 +280,13 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		routeIds.forEach(packet::writeLong);
 		packet.writeBoolean(repeatInfinitely);
 		packet.writeInt(cruisingAltitude);
+		packet.writeBoolean(useDeterministicPath);
 		sendPacket.accept(packet);
 	}
 
 	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Set<Siding> sidings, Consumer<Thread> callback) {
 		final List<SavedRailBase> platformsInRoute = new ArrayList<>();
+		final List<List<BlockPos>> sectionWaypoints = new ArrayList<>();
 
 		routeIds.forEach(routeId -> {
 			final Route route = dataCache.routeIdMap.get(routeId);
@@ -283,6 +295,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 					final Platform platform = dataCache.platformIdMap.get(platformId.platformId);
 					if (platform != null && (platformsInRoute.isEmpty() || platform.id != platformsInRoute.get(platformsInRoute.size() - 1).id)) {
 						platformsInRoute.add(platform);
+						sectionWaypoints.add(platformId.waypoints);
 					}
 				});
 			}
@@ -290,10 +303,12 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 		final boolean useFastSpeed = cruisingAltitude >= world.getMaxBuildHeight() + THRESHOLD_ABOVE_MAX_BUILD_HEIGHT;
 
+		final RailGraph<Rail> graph = getPathGraph(rails);
+
 		final Thread thread = new Thread(() -> {
 			try {
 				final List<PathData> tempPath = new ArrayList<>();
-				final int successfulSegmentsMain = PathFinder.findPath(tempPath, rails, platformsInRoute, 1, cruisingAltitude, useFastSpeed);
+				final int successfulSegmentsMain = PathFinder.findPath(tempPath, rails, graph, platformsInRoute, sectionWaypoints, 1, cruisingAltitude, useFastSpeed);
 				final int[] successfulSegments = new int[]{Integer.MAX_VALUE};
 
 				sidings.forEach(siding -> {
@@ -301,7 +316,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 					if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
 						final SavedRailBase firstPlatform = platformsInRoute.isEmpty() ? null : platformsInRoute.get(0);
 						final SavedRailBase lastPlatform = platformsInRoute.isEmpty() ? null : platformsInRoute.get(platformsInRoute.size() - 1);
-						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed);
+						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, graph, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed);
 						if (result < successfulSegments[0]) {
 							successfulSegments[0] = result;
 						}
@@ -318,6 +333,13 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		});
 		callback.accept(thread);
 		thread.start();
+	}
+
+	/**
+	 * Must be called on the server thread. Null selects the old search, which airplanes and cable cars always use.
+	 */
+	public RailGraph<Rail> getPathGraph(Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		return useDeterministicPath && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails) : null;
 	}
 
 	public void requestDeploy(long sidingId, TrainServer train) {

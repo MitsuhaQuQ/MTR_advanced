@@ -1,0 +1,137 @@
+package mtr.path;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Read-only snapshot of the rail connections, independent of Minecraft so it can be searched from another thread.
+ * A search state is a directed connection, which fixes both the node and the direction of travel.
+ */
+public final class RailGraph<R> {
+
+	public final List<Connection<R>> connections;
+	private final Map<Long, List<Connection<R>>> outgoing = new HashMap<>();
+	private final Map<Long, Connection<R>> reverse = new HashMap<>();
+	private final Map<Long, List<Connection<R>>> byNode = new HashMap<>();
+	final double maxChordPerCost;
+
+	private RailGraph(List<Connection<R>> sortedConnections) {
+		connections = Collections.unmodifiableList(sortedConnections);
+		final Map<String, Connection<R>> byEnds = new HashMap<>();
+		double tempMaxChordPerCost = 0;
+
+		for (int i = 0; i < connections.size(); i++) {
+			final Connection<R> connection = connections.get(i);
+			connection.index = i;
+			outgoing.computeIfAbsent(connection.fromPos, key -> new ArrayList<>()).add(connection);
+			byNode.computeIfAbsent(connection.toPos, key -> new ArrayList<>()).add(connection);
+			byEnds.put(connection.fromPos + ">" + connection.toPos, connection);
+			if (connection.cost > 0) {
+				tempMaxChordPerCost = Math.max(tempMaxChordPerCost, connection.chordTo(connection.fromX, connection.fromZ) / connection.cost);
+			}
+		}
+
+		connections.forEach(connection -> {
+			final Connection<R> opposite = byEnds.get(connection.toPos + ">" + connection.fromPos);
+			if (opposite != null) {
+				reverse.put(connection.key(), opposite);
+			}
+		});
+		maxChordPerCost = tempMaxChordPerCost;
+	}
+
+	List<Connection<R>> outgoing(long pos) {
+		return outgoing.getOrDefault(pos, Collections.emptyList());
+	}
+
+	Connection<R> reverseOf(Connection<R> connection) {
+		return reverse.get(connection.key());
+	}
+
+	public Connection<R> find(long fromPos, long toPos) {
+		for (final Connection<R> connection : outgoing(fromPos)) {
+			if (connection.toPos == toPos) {
+				return connection;
+			}
+		}
+		return null;
+	}
+
+	public boolean hasNode(long pos) {
+		return outgoing.containsKey(pos) || byNode.containsKey(pos);
+	}
+
+	public enum Kind {
+		NORMAL, PLATFORM, TURN_BACK, DISABLED
+	}
+
+	public static final class Connection<R> {
+
+		public final long fromPos;
+		public final long toPos;
+		public final R rail;
+		public final Kind kind;
+		public final double cost;
+		final int fromX;
+		final int fromZ;
+		final int toX;
+		final int toY;
+		final int toZ;
+		private final int startFacing;
+		private final int endFacing;
+		private int index;
+
+		private Connection(long fromPos, int fromX, int fromZ, int startFacing, long toPos, int toX, int toY, int toZ, int endFacing, Kind kind, double cost, R rail) {
+			this.fromPos = fromPos;
+			this.fromX = fromX;
+			this.fromZ = fromZ;
+			this.startFacing = startFacing;
+			this.toPos = toPos;
+			this.toX = toX;
+			this.toY = toY;
+			this.toZ = toZ;
+			this.endFacing = endFacing;
+			this.kind = kind;
+			this.cost = cost;
+			this.rail = rail;
+		}
+
+		int index() {
+			return index;
+		}
+
+		boolean continuesFrom(Connection<R> previous) {
+			return kind != Kind.DISABLED && startFacing != previous.endFacing;
+		}
+
+		double chordTo(int x, int z) {
+			final double differenceX = x - toX;
+			final double differenceZ = z - toZ;
+			return Math.sqrt(differenceX * differenceX + differenceZ * differenceZ);
+		}
+
+		private long key() {
+			return index;
+		}
+	}
+
+	public static final class Builder<R> {
+
+		private final List<Connection<R>> connections = new ArrayList<>();
+
+		public Builder<R> add(long fromPos, int fromX, int fromZ, int startFacing, long toPos, int toX, int toY, int toZ, int endFacing, Kind kind, double cost, R rail) {
+			connections.add(new Connection<>(fromPos, fromX, fromZ, startFacing, toPos, toX, toY, toZ, endFacing, kind, cost, rail));
+			return this;
+		}
+
+		public RailGraph<R> build() {
+			final List<Connection<R>> sorted = new ArrayList<>(connections);
+			sorted.sort(Comparator.<Connection<R>>comparingInt(connection -> connection.fromX).thenComparingInt(connection -> connection.fromZ).thenComparingLong(connection -> connection.fromPos).thenComparingInt(connection -> connection.toX).thenComparingInt(connection -> connection.toZ).thenComparingLong(connection -> connection.toPos));
+			return new RailGraph<>(sorted);
+		}
+	}
+}

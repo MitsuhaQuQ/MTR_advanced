@@ -201,6 +201,15 @@ task setupFiles() {
 		from(zipTree("common/src/main/java/mtr/mappings/lang.zip"))
 		into "common/src/main/resources/assets/mtr/lang"
 	}
+	// Strings added by this project are kept outside the Crowdin pack and merged over it
+	fileTree("common/src/main/lang").include("*.json").each { file ->
+		def target = new File(rootDir, "common/src/main/resources/assets/mtr/lang/${file.name}")
+		def text = target.getText("UTF-8")
+		def lineBreak = System.lineSeparator()
+		def lastEntryEnd = text.lastIndexOf('"') + 1
+		def added = new JsonSlurper().parse(file, "UTF-8").findAll { key, value -> !text.contains("\"${key}\":") }.collect { key, value -> ",${lineBreak}	\"${key}\": \"${value}\"" }.join("")
+		target.setText(text.substring(0, lastEntryEnd) + added + text.substring(lastEntryEnd), "UTF-8")
+	}
 
 	copy {
 		outputs.upToDateWhen { false }

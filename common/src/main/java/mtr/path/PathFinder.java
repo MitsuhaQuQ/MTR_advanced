@@ -42,6 +42,10 @@ public class PathFinder {
 		return savedRailBases.size();
 	}
 
+	public static int findPath(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, List<SavedRailBase> savedRailBases, List<List<BlockPos>> sectionWaypoints, int stopIndexOffset, int cruisingAltitude, boolean useFastSpeed) {
+		return graph == null ? findPath(path, rails, savedRailBases, stopIndexOffset, cruisingAltitude, useFastSpeed) : DeterministicPathFinder.findPath(path, graph, savedRailBases, sectionWaypoints, stopIndexOffset);
+	}
+
 	public static void appendPath(List<PathData> path, List<PathData> partialPath) {
 		if (partialPath.isEmpty()) {
 			path.clear();
