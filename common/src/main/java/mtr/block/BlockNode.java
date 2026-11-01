@@ -152,13 +152,7 @@ public class BlockNode extends BlockDirectionalMapper {
 			if (!player.isHolding(Items.BRUSH.get())) {
 				return InteractionResult.PASS;
 			}
-			return IBlock.checkHoldingBrush(world, player, () -> {
-				if (IBlock.getStatePropertySafe(state, IS_CONNECTED)) {
-					player.displayClientMessage(Text.literal("Connected nodes can't be rotated / 已连接的节点不能修改角度"), true);
-				} else {
-					PacketTrainDataGuiServer.openNodeAngleScreenS2C((ServerPlayer) player, pos);
-				}
-			});
+			return IBlock.checkHoldingBrush(world, player, () -> PacketTrainDataGuiServer.openNodeAngleScreenS2C((ServerPlayer) player, pos));
 		}
 	}
 

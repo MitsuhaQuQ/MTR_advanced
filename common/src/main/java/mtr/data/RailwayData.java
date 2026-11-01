@@ -423,6 +423,50 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		return newId;
 	}
 
+	// Returns a translation key describing the problem, or null if the rails could be rebuilt
+	public String rotateNodeRails(Player player, BlockPos pos, RailAngle angle) {
+		final Map<BlockPos, Rail> connections = rails.get(pos);
+		if (connections == null || connections.isEmpty()) {
+			return null;
+		}
+		if (hasSavedRail(pos)) {
+			return "gui.mtr.platform_or_siding_exists";
+		}
+
+		final Map<BlockPos, Rail> newRails = new HashMap<>();
+		final Map<BlockPos, Rail> newBackwardsRails = new HashMap<>();
+		for (final Map.Entry<BlockPos, Rail> entry : connections.entrySet()) {
+			final BlockPos posEnd = entry.getKey();
+			final Rail rail = entry.getValue();
+			final Rail backwardsRail = DataCache.tryGet(rails, posEnd, pos);
+			if (backwardsRail == null) {
+				return "gui.mtr.invalid_orientation";
+			}
+
+			// A node has no front or back, so each rail keeps leaving from the side it already uses
+			final RailAngle facing = angle.cos * rail.facingStart.cos + angle.sin * rail.facingStart.sin >= 0 ? angle : angle.getOpposite();
+			final Rail newRail = new Rail(pos, facing, posEnd, rail.facingEnd, rail.railType, rail.transportMode);
+			final Rail newBackwardsRail = new Rail(posEnd, rail.facingEnd, pos, facing, backwardsRail.railType, rail.transportMode);
+			if (!newRail.goodRadius() || !newBackwardsRail.goodRadius()) {
+				return "gui.mtr.radius_too_small";
+			}
+			if (!newRail.isValid() || !newBackwardsRail.isValid()) {
+				return "gui.mtr.invalid_orientation";
+			}
+			newRails.put(posEnd, newRail);
+			newBackwardsRails.put(posEnd, newBackwardsRail);
+		}
+
+		newRails.forEach((posEnd, newRail) -> {
+			final Rail newBackwardsRail = newBackwardsRails.get(posEnd);
+			rails.get(pos).put(posEnd, newRail);
+			rails.get(posEnd).put(pos, newBackwardsRail);
+			PacketTrainDataGuiServer.createRailS2C(world, newRail.transportMode, pos, posEnd, newRail, newBackwardsRail, 0);
+		});
+		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, new ArrayList<>(), Collections.singletonList(String.format("angle:%s", angle.angleDegrees)), pos);
+		return null;
+	}
+
 	public long addSignal(Player player, DyeColor color, BlockPos posStart, BlockPos posEnd) {
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, SignalBlocks.SignalBlock.class, new ArrayList<>(), Collections.singletonList(String.format("color:%s", color)), posStart, posEnd);
 		return signalBlocks.add(0, color, PathData.getRailProduct(posStart, posEnd));

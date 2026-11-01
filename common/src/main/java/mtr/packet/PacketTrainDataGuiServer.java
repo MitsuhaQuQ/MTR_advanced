@@ -319,9 +319,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			}
 			final Level world = Compat.getLevel(player);
 			final BlockState state = world.getBlockState(pos);
-			if (state.getBlock() instanceof BlockNode.BlockFreeAngleNode && !IBlock.getStatePropertySafe(state, BlockNode.IS_CONNECTED)) {
-				BlockNode.setCustomAngle(world, pos, angle);
-				player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
+			final RailwayData railwayData = RailwayData.getInstance(world);
+			if (railwayData != null && state.getBlock() instanceof BlockNode.BlockFreeAngleNode) {
+				final String error = railwayData.rotateNodeRails(player, pos, RailAngle.fromAngle(angle));
+				if (error == null) {
+					BlockNode.setCustomAngle(world, pos, angle);
+					player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
+				} else {
+					player.displayClientMessage(Text.translatable(error), true);
+				}
 			}
 		});
 	}
