@@ -74,32 +74,15 @@ public class PathFinder {
 		int pathIndex = 0;
 		for (int i = 0; i < routePlatforms.size(); i++) {
 			final Route.RoutePlatform routePlatform = routePlatforms.get(i);
-			final boolean pass = routePlatform.pass && i > 0 && i < routePlatforms.size() - 1;
+			final boolean canPass = i > 0 && i < routePlatforms.size() - 1;
 			for (int j = pathIndex; j < path.size(); j++) {
 				final PathData pathData = path.get(j);
 				if (pathData.savedRailBaseId == routePlatform.platformId && pathData.dwellTime > 0) {
-					final int stopTime = routePlatform.dwellOverride > 0 ? routePlatform.dwellOverride : pathData.dwellTime;
-					// Doors have no time to open during a shorter stop. Cable cars keep moving through platforms.
-					final int dwellTime = pass ? 0 : pathData.rail.transportMode.continuousMovement ? stopTime : Math.max(stopTime, Route.MIN_STOP_DWELL);
+					final int dwellTime = routePlatform.getStopDwell(canPass, pathData.dwellTime, pathData.rail.transportMode.continuousMovement);
 					path.set(j, new PathData(pathData.rail, pathData.savedRailBaseId, dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
 					pathIndex = j + 1;
-					if (routePlatform.turnBackDwell > 0) {
-						applyTurnBackDwell(path, pathIndex, routePlatform.turnBackDwell);
-					}
 					break;
 				}
-			}
-		}
-	}
-
-	private static void applyTurnBackDwell(List<PathData> path, int startIndex, int turnBackDwell) {
-		for (int i = startIndex; i < path.size(); i++) {
-			final PathData pathData = path.get(i);
-			if (pathData.dwellTime > 0) {
-				if (pathData.savedRailBaseId != 0) {
-					return;
-				}
-				path.set(i, new PathData(pathData.rail, 0, turnBackDwell, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
 			}
 		}
 	}
@@ -184,7 +167,7 @@ public class PathFinder {
 								}
 							} else {
 								final boolean turningBack = rail.railType == RailType.TURN_BACK && j < path.size() - 2 && path.get(j + 2).pos.equals(pos1);
-								railPath.add(new PathData(rail, j == 0 ? savedRailBaseStart.id : 0, turningBack ? 1 : 0, pos1, pos2, stopIndex));
+								railPath.add(new PathData(rail, j == 0 ? savedRailBaseStart.id : 0, turningBack ? rail.getTurnBackDwellTime() : 0, pos1, pos2, stopIndex));
 							}
 						}
 

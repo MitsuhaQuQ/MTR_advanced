@@ -475,6 +475,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			if (newRail.turnsBack(pos, posEnd) || newBackwardsRail.turnsBack(posEnd, pos)) {
 				return "gui.mtr.rail_would_loop";
 			}
+			newRail.turnBackDwell = rail.turnBackDwell;
+			newBackwardsRail.turnBackDwell = backwardsRail.turnBackDwell;
 			newRails.put(posEnd, newRail);
 			newBackwardsRails.put(posEnd, newBackwardsRail);
 		}
@@ -487,6 +489,20 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		});
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, new ArrayList<>(), Collections.singletonList(String.format("angle:%s", angle.angleDegrees)), pos);
 		return null;
+	}
+
+	public void setTurnBackDwell(BlockPos pos, int turnBackDwell) {
+		final Map<BlockPos, Rail> connections = rails.get(pos);
+		if (connections != null) {
+			connections.forEach((posEnd, rail) -> {
+				final Rail backwardsRail = DataCache.tryGet(rails, posEnd, pos);
+				if (backwardsRail != null && (rail.railType == RailType.TURN_BACK || backwardsRail.railType == RailType.TURN_BACK) && rail.turnBackDwell != turnBackDwell) {
+					rail.turnBackDwell = turnBackDwell;
+					backwardsRail.turnBackDwell = turnBackDwell;
+					PacketTrainDataGuiServer.createRailS2C(world, rail.transportMode, pos, posEnd, rail, backwardsRail, 0);
+				}
+			});
+		}
 	}
 
 	public long addSignal(Player player, DyeColor color, BlockPos posStart, BlockPos posEnd) {

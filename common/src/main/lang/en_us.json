@@ -9,7 +9,6 @@
   "gui.mtr.path_stale": "Rails changed, path out of date",
   "gui.mtr.rail_would_loop": "This angle would turn the rail back on itself",
   "gui.mtr.platform_or_siding_exists": "Can't change: a platform or siding is connected",
-  "gui.mtr.turn_back_dwell": "Wait at turn back after this stop (seconds)",
   "gui.mtr.station_area": "Area %s/%s",
   "gui.mtr.add_station_area": "Add area",
   "gui.mtr.remove_station_area": "Remove area",
@@ -20,5 +19,11 @@
   "gui.mtr.passing": "Passing",
   "gui.mtr.passing_cjk": "通过",
   "gui.mtr.edit_route_key_nodes": "Click platforms or key nodes to add them to the route",
-  "gui.mtr.key_node_entry": "Key node (%s, %s, %s)"
+  "gui.mtr.key_node_entry": "Key node (%s, %s, %s)",
+  "gui.mtr.platform_schedule_title": "Trains at this platform",
+  "gui.mtr.platform_schedule_empty": "No routes use this platform",
+  "gui.mtr.platform_schedule_pass": "%s  stop %s/%s  passes",
+  "gui.mtr.platform_schedule_stop": "%s  stop %s/%s  doors open %s s, stop %s s (%s)",
+  "gui.mtr.dwell_source_route": "route",
+  "gui.mtr.dwell_source_platform": "platform"
 }

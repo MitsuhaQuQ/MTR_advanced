@@ -6,7 +6,9 @@ import mtr.data.RailType;
 import mtr.data.Route;
 import mtr.data.Siding;
 import mtr.data.TransportMode;
+import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -36,23 +38,16 @@ class StopSettingsTest {
 	}
 
 	@Test
-	void turnBackWaitsOnlyBeforeTheNextPlatform() {
+	void turnBackWaitBelongsToTheRail() {
 		final Rail rail = new Rail(START, RailAngle.fromAngle(90), END, RailAngle.fromAngle(270), RailType.TURN_BACK, TransportMode.TRAIN);
-		final List<PathData> path = new ArrayList<>();
-		path.add(new PathData(rail, PLATFORM_ID, 40, START, END, 0));
-		path.add(new PathData(rail, 0, 1, START, END, 1));
-		path.add(new PathData(rail, NEXT_PLATFORM_ID, 40, START, END, 1));
-		path.add(new PathData(rail, 0, 1, START, END, 2));
+		assertEquals(1, rail.getTurnBackDwellTime());
 
-		final Route.RoutePlatform routePlatform = new Route.RoutePlatform(PLATFORM_ID);
-		routePlatform.turnBackDwell = 120;
-		final List<Route.RoutePlatform> routePlatforms = new ArrayList<>();
-		routePlatforms.add(routePlatform);
-		routePlatforms.add(new Route.RoutePlatform(NEXT_PLATFORM_ID));
-		PathFinder.applyStopSettings(path, routePlatforms);
+		rail.turnBackDwell = 120;
+		assertEquals(120, rail.getTurnBackDwellTime());
 
-		assertEquals(120, path.get(1).dwellTime);
-		assertEquals(1, path.get(3).dwellTime);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		rail.writePacket(packet);
+		assertEquals(120, new Rail(packet).turnBackDwell);
 	}
 
 	@Test
@@ -65,6 +60,17 @@ class StopSettingsTest {
 		assertFalse(Siding.isPassingPlatform(path, 0));
 		assertFalse(Siding.isPassingPlatform(path, 1));
 		assertTrue(Siding.isPassingPlatform(path, 2));
+	}
+
+	@Test
+	void stopDwellFollowsTheRouteSettings() {
+		final Route.RoutePlatform routePlatform = new Route.RoutePlatform(PLATFORM_ID);
+		assertEquals(40, routePlatform.getStopDwell(true, 40, false));
+		routePlatform.dwellOverride = 60;
+		assertEquals(60, routePlatform.getStopDwell(true, 40, false));
+		routePlatform.pass = true;
+		assertEquals(0, routePlatform.getStopDwell(true, 40, false));
+		assertEquals(60, routePlatform.getStopDwell(false, 40, false));
 	}
 
 	private static int applyTo(int dwellTime, TransportMode transportMode) {

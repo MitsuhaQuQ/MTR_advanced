@@ -371,6 +371,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final BlockPos pos = packet.readBlockPos();
 		final float angle = packet.readFloat();
 		final boolean isKeyNode = packet.readBoolean();
+		final int turnBackDwell = packet.readInt();
 		PacketGuard.execute(minecraftServer, () -> {
 			if (!canEditBlock(player, pos) || !Float.isFinite(angle)) {
 				return;
@@ -389,6 +390,9 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				} else {
 					// The node renderer rewrites the action bar every frame, so this has to go to chat to be seen
 					player.displayClientMessage(Text.translatable(error), false);
+				}
+				if (turnBackDwell >= 0) {
+					railwayData.setTurnBackDwell(pos, Math.min(turnBackDwell, Rail.MAX_TURN_BACK_DWELL));
 				}
 			}
 		});

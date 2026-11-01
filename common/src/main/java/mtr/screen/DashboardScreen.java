@@ -56,7 +56,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonRemoveStationArea;
 	private int editingAreaIndex;
 	private final WidgetBetterTextField textFieldDwellOverride;
-	private final WidgetBetterTextField textFieldTurnBackDwell;
 	private final WidgetBetterCheckbox checkboxPassStation;
 	private final WidgetColorSelector colorSelector;
 
@@ -73,7 +72,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldName = new WidgetBetterTextField(Text.translatable("gui.mtr.name").getString());
 		textFieldCustomDestination = new WidgetBetterTextField(Text.translatable("gui.mtr.custom_destination_suggestion").getString());
 		textFieldDwellOverride = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, Text.translatable("gui.mtr.dwell_override").getString(), 4);
-		textFieldTurnBackDwell = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, Text.translatable("gui.mtr.turn_back_dwell").getString(), 4);
 		checkboxPassStation = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.pass_station"), checked -> {
 		});
 		colorSelector = new WidgetColorSelector(this, true, this::toggleButtons);
@@ -141,8 +139,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(textFieldName, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, PANEL_WIDTH - COLOR_WIDTH - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldCustomDestination, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldDwellOverride, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING * 3 / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
-		IDrawing.setPositionAndWidth(textFieldTurnBackDwell, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE * 3 - TEXT_FIELD_PADDING * 5 / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
-		IDrawing.setPositionAndWidth(checkboxPassStation, 0, bottomRowY - SQUARE_SIZE * 4 - TEXT_FIELD_PADDING * 3, PANEL_WIDTH);
+		IDrawing.setPositionAndWidth(checkboxPassStation, 0, bottomRowY - SQUARE_SIZE * 3 - TEXT_FIELD_PADDING * 2, PANEL_WIDTH);
 		IDrawing.setPositionAndWidth(colorSelector, PANEL_WIDTH - COLOR_WIDTH + TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, COLOR_WIDTH - TEXT_FIELD_PADDING);
 
 		dashboardList.x = 0;
@@ -173,7 +170,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		addDrawableChild(textFieldName);
 		addDrawableChild(textFieldCustomDestination);
 		addDrawableChild(textFieldDwellOverride);
-		addDrawableChild(textFieldTurnBackDwell);
 		addDrawableChild(checkboxPassStation);
 		addDrawableChild(colorSelector);
 	}
@@ -210,7 +206,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldName.tick();
 		textFieldCustomDestination.tick();
 		textFieldDwellOverride.tick();
-		textFieldTurnBackDwell.tick();
 		dashboardList.tick();
 
 		try {
@@ -445,8 +440,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			textFieldCustomDestination.setValue(editingRoute.platformIds.get(index).customDestination);
 			final int dwellOverride = editingRoute.platformIds.get(index).dwellOverride;
 			textFieldDwellOverride.setValue(dwellOverride > 0 ? String.valueOf(Route.getDoorOpenSeconds(dwellOverride)) : "");
-			final int turnBackDwell = editingRoute.platformIds.get(index).turnBackDwell;
-			textFieldTurnBackDwell.setValue(turnBackDwell > 0 ? String.valueOf(turnBackDwell / 2) : "");
 			checkboxPassStation.setChecked(editingRoute.platformIds.get(index).pass);
 		}
 		toggleButtons();
@@ -567,8 +560,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			try {
 				final String dwellText = textFieldDwellOverride.getValue();
 				routePlatform.dwellOverride = dwellText.isEmpty() ? 0 : Route.getDwellFromDoorOpenSeconds(Integer.parseInt(dwellText));
-				final String turnBackText = textFieldTurnBackDwell.getValue();
-				routePlatform.turnBackDwell = turnBackText.isEmpty() ? 0 : Integer.parseInt(turnBackText) * 2;
 			} catch (NumberFormatException ignored) {
 			}
 			editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
@@ -614,10 +605,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		}
 		textFieldCustomDestination.visible = showRouteDestinationFields;
 		textFieldDwellOverride.visible = showRouteDestinationFields;
-		textFieldTurnBackDwell.visible = showRouteDestinationFields;
 		checkboxPassStation.visible = showRouteDestinationFields && editingRoutePlatformIndex > 0 && editingRoutePlatformIndex < editingRoute.platformIds.size() - 1;
 		colorSelector.visible = showTextFields;
-		dashboardList.height = height - SQUARE_SIZE * 2 - (showTextFields || showRouteDestinationFields ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) - (showRouteDestinationFields ? (SQUARE_SIZE + TEXT_FIELD_PADDING) * 3 : 0) - (showStationAreas ? SQUARE_SIZE + TEXT_FIELD_PADDING / 2 : 0);
+		dashboardList.height = height - SQUARE_SIZE * 2 - (showTextFields || showRouteDestinationFields ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) - (showRouteDestinationFields ? (SQUARE_SIZE + TEXT_FIELD_PADDING) * 2 : 0) - (showStationAreas ? SQUARE_SIZE + TEXT_FIELD_PADDING / 2 : 0);
 	}
 
 	private enum SelectedTab {STATIONS, ROUTES, DEPOTS}

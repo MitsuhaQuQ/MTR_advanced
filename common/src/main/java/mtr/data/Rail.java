@@ -27,6 +27,10 @@ public class Rail extends SerializedDataBase {
 	public final TransportMode transportMode;
 	public final RailAngle facingStart;
 	public final RailAngle facingEnd;
+	/**
+	 * How long trains wait before turning back on this rail in half seconds, or 0 to turn back at once.
+	 */
+	public int turnBackDwell;
 	private final double h1, k1, r1, tStart1, tEnd1;
 	private final double h2, k2, r2, tStart2, tEnd2;
 	private final int yStart, yEnd;
@@ -35,6 +39,7 @@ public class Rail extends SerializedDataBase {
 	private static final double ACCEPT_THRESHOLD = 1E-4;
 	private static final double ANGLE_THRESHOLD = 1E-9;
 	private static final int MIN_RADIUS = 2;
+	public static final int MAX_TURN_BACK_DWELL = 7200;
 	private static final int TURN_BACK_CHECK_STEPS = 256;
 	private static final double TURN_BACK_TOLERANCE = 0.5;
 	private static final int CABLE_CURVATURE_SCALE = 1000;
@@ -58,6 +63,7 @@ public class Rail extends SerializedDataBase {
 	private static final String KEY_IS_STRAIGHT_2 = "is_straight_2";
 	private static final String KEY_RAIL_TYPE = "rail_type";
 	private static final String KEY_TRANSPORT_MODE = "transport_mode";
+	private static final String KEY_TURN_BACK_DWELL = "turn_back_dwell";
 
 	// for curves:
 	// x = h + r*cos(T)
@@ -252,6 +258,7 @@ public class Rail extends SerializedDataBase {
 		isStraight2 = messagePackHelper.getBoolean(KEY_IS_STRAIGHT_2);
 		railType = EnumHelper.valueOf(RailType.IRON, messagePackHelper.getString(KEY_RAIL_TYPE));
 		transportMode = EnumHelper.valueOf(TransportMode.TRAIN, messagePackHelper.getString(KEY_TRANSPORT_MODE));
+		turnBackDwell = messagePackHelper.getInt(KEY_TURN_BACK_DWELL);
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
@@ -301,6 +308,7 @@ public class Rail extends SerializedDataBase {
 		isStraight2 = packet.readBoolean();
 		railType = EnumHelper.valueOf(RailType.IRON, packet.readUtf(PACKET_STRING_READ_LENGTH));
 		transportMode = EnumHelper.valueOf(TransportMode.TRAIN, packet.readUtf(PACKET_STRING_READ_LENGTH));
+		turnBackDwell = packet.readInt();
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
@@ -326,11 +334,12 @@ public class Rail extends SerializedDataBase {
 		messagePacker.packString(KEY_IS_STRAIGHT_2).packBoolean(isStraight2);
 		messagePacker.packString(KEY_RAIL_TYPE).packString(railType.toString());
 		messagePacker.packString(KEY_TRANSPORT_MODE).packString(transportMode.toString());
+		messagePacker.packString(KEY_TURN_BACK_DWELL).packInt(turnBackDwell);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 18;
+		return 19;
 	}
 
 	@Override
@@ -353,6 +362,14 @@ public class Rail extends SerializedDataBase {
 		packet.writeBoolean(isStraight2);
 		packet.writeUtf(railType.toString());
 		packet.writeUtf(transportMode.toString());
+		packet.writeInt(turnBackDwell);
+	}
+
+	/**
+	 * A path needs a stop time above 0 for the train to stop and reverse at all.
+	 */
+	public int getTurnBackDwellTime() {
+		return Math.max(turnBackDwell, 1);
 	}
 
 	public Vec3 getPosition(double rawValue) {

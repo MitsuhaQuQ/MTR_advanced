@@ -715,7 +715,6 @@
 	"gui.mtr.path_stale": "轨道已变动，路径已过期",
 	"gui.mtr.rail_would_loop": "这个角度会让轨道掉头绕圈",
 	"gui.mtr.platform_or_siding_exists": "无法修改：节点连着站台或存车线",
-	"gui.mtr.turn_back_dwell": "本站之后折返停留时间（秒）",
 	"gui.mtr.station_area": "范围 %s/%s",
 	"gui.mtr.add_station_area": "添加范围",
 	"gui.mtr.remove_station_area": "删除范围",
@@ -726,5 +725,11 @@
 	"gui.mtr.passing": "通过",
 	"gui.mtr.passing_cjk": "通过",
 	"gui.mtr.edit_route_key_nodes": "点击站台或关键节点加入线路",
-	"gui.mtr.key_node_entry": "关键节点 (%s, %s, %s)"
+	"gui.mtr.key_node_entry": "关键节点 (%s, %s, %s)",
+	"gui.mtr.platform_schedule_title": "本站台时刻",
+	"gui.mtr.platform_schedule_empty": "没有线路经过本站台",
+	"gui.mtr.platform_schedule_pass": "%s  第 %s/%s 站  通过",
+	"gui.mtr.platform_schedule_stop": "%s  第 %s/%s 站  门全开 %s 秒，停站 %s 秒（%s）",
+	"gui.mtr.dwell_source_route": "线路设置",
+	"gui.mtr.dwell_source_platform": "站台默认"
 }

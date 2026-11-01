@@ -34,7 +34,6 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_WAYPOINTS = "waypoints";
 	private static final String KEY_PASS_STATIONS = "pass_stations";
 	private static final String KEY_DWELL_OVERRIDES = "dwell_overrides";
-	private static final String KEY_TURN_BACK_DWELLS = "turn_back_dwells";
 	private static final String KEY_ROUTE_TYPE = "route_type";
 	private static final String KEY_IS_LIGHT_RAIL_ROUTE = "is_light_rail_route";
 	private static final String KEY_LIGHT_RAIL_ROUTE_NUMBER = "light_rail_route_number";
@@ -84,13 +83,6 @@ public final class Route extends NameColorDataBase implements IGui {
 				platformIds.get(dwellIndex[0]).dwellOverride = dwellOverride.asIntegerValue().asInt();
 			}
 			dwellIndex[0]++;
-		});
-		final int[] turnBackIndex = {0};
-		messagePackHelper.iterateArrayValue(KEY_TURN_BACK_DWELLS, turnBackDwell -> {
-			if (turnBackIndex[0] < platformIds.size()) {
-				platformIds.get(turnBackIndex[0]).turnBackDwell = turnBackDwell.asIntegerValue().asInt();
-			}
-			turnBackIndex[0]++;
 		});
 
 		final int[] platformIndex = {0};
@@ -171,11 +163,6 @@ public final class Route extends NameColorDataBase implements IGui {
 			messagePacker.packInt(routePlatform.dwellOverride);
 		}
 
-		messagePacker.packString(KEY_TURN_BACK_DWELLS).packArrayHeader(platformIds.size());
-		for (final RoutePlatform routePlatform : platformIds) {
-			messagePacker.packInt(routePlatform.turnBackDwell);
-		}
-
 		messagePacker.packString(KEY_WAYPOINTS).packArrayHeader(platformIds.size());
 		for (final RoutePlatform routePlatform : platformIds) {
 			messagePacker.packArrayHeader(routePlatform.waypoints.size());
@@ -194,7 +181,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 12;
+		return super.messagePackLength() + 11;
 	}
 
 	@Override
@@ -382,14 +369,23 @@ public final class Route extends NameColorDataBase implements IGui {
 		 * The stop time for this route in half seconds, or 0 to use the platform's own.
 		 */
 		public int dwellOverride;
-		/**
-		 * How long trains wait at a turn back before the next platform in half seconds, or 0 to turn back at once.
-		 */
-		public int turnBackDwell;
 
 		public RoutePlatform(long platformId) {
 			this.platformId = platformId;
 			customDestination = "";
+		}
+
+		/**
+		 * @param canPass false for the first and last stops of a route
+		 * @return the stop time trains actually use here in half seconds, or 0 when they pass
+		 */
+		public int getStopDwell(boolean canPass, int platformDwell, boolean continuousMovement) {
+			if (pass && canPass) {
+				return 0;
+			}
+			final int stopTime = dwellOverride > 0 ? dwellOverride : platformDwell;
+			// Doors have no time to open during a shorter stop. Cable cars keep moving through platforms.
+			return continuousMovement ? stopTime : Math.max(stopTime, MIN_STOP_DWELL);
 		}
 
 		private void readWaypoints(FriendlyByteBuf packet) {
@@ -402,7 +398,6 @@ public final class Route extends NameColorDataBase implements IGui {
 			}
 			pass = packet.readBoolean();
 			dwellOverride = Math.max(0, Math.min(packet.readInt(), MAX_DWELL_OVERRIDE));
-			turnBackDwell = Math.max(0, Math.min(packet.readInt(), MAX_DWELL_OVERRIDE));
 		}
 
 		private void writeWaypoints(FriendlyByteBuf packet) {
@@ -410,7 +405,6 @@ public final class Route extends NameColorDataBase implements IGui {
 			waypoints.forEach(waypoint -> packet.writeLong(waypoint.asLong()));
 			packet.writeBoolean(pass);
 			packet.writeInt(dwellOverride);
-			packet.writeInt(turnBackDwell);
 		}
 	}
 

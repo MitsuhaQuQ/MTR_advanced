@@ -82,7 +82,7 @@ public final class DeterministicPathFinder {
 				path.add(new PathData(connection.rail, savedRailBases.get(reached).id, 0, startPos, endPos, stopIndexOffset + reached));
 			} else {
 				final boolean turningBack = connection.kind == Kind.TURN_BACK && i + 1 < result.steps.size() && result.steps.get(i + 1).connection.toPos == connection.fromPos;
-				path.add(new PathData(connection.rail, 0, turningBack ? 1 : 0, startPos, endPos, stopIndexOffset + reached));
+				path.add(new PathData(connection.rail, 0, turningBack ? connection.rail.getTurnBackDwellTime() : 0, startPos, endPos, stopIndexOffset + reached));
 			}
 		}
 

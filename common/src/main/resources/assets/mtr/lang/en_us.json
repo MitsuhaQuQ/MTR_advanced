@@ -814,5 +814,11 @@
 	"gui.mtr.passing": "Passing: %s",
 	"gui.mtr.passing_cjk": "%s 通过",
 	"gui.mtr.edit_route_key_nodes": "Click platforms or key nodes to add them to the route",
-	"gui.mtr.key_node_entry": "Key node (%s, %s, %s)"
+	"gui.mtr.key_node_entry": "Key node (%s, %s, %s)",
+	"gui.mtr.platform_schedule_title": "Trains at this platform",
+	"gui.mtr.platform_schedule_empty": "No routes use this platform",
+	"gui.mtr.platform_schedule_pass": "%s  stop %s/%s  passes",
+	"gui.mtr.platform_schedule_stop": "%s  stop %s/%s  doors open %s s, stop %s s (%s)",
+	"gui.mtr.dwell_source_route": "route",
+	"gui.mtr.dwell_source_platform": "platform"
 }

@@ -183,11 +183,12 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		});
 	}
 
-	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode) {
+	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
 		packet.writeFloat(angle);
 		packet.writeBoolean(isKeyNode);
+		packet.writeInt(turnBackDwell);
 		RegistryClient.sendToServer(PACKET_UPDATE_NODE_ANGLE, packet);
 	}
 

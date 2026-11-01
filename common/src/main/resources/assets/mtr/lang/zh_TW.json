@@ -715,7 +715,6 @@
 	"gui.mtr.path_stale": "軌道已變動，路徑已過期",
 	"gui.mtr.rail_would_loop": "這個角度會讓軌道掉頭繞圈",
 	"gui.mtr.platform_or_siding_exists": "無法修改：節點連著月台或存車線",
-	"gui.mtr.turn_back_dwell": "本站之後折返停留時間（秒）",
 	"gui.mtr.station_area": "範圍 %s/%s",
 	"gui.mtr.add_station_area": "新增範圍",
 	"gui.mtr.remove_station_area": "刪除範圍",
@@ -726,5 +725,11 @@
 	"gui.mtr.passing": "通過",
 	"gui.mtr.passing_cjk": "通過",
 	"gui.mtr.edit_route_key_nodes": "點擊月台或關鍵節點加入路線",
-	"gui.mtr.key_node_entry": "關鍵節點 (%s, %s, %s)"
+	"gui.mtr.key_node_entry": "關鍵節點 (%s, %s, %s)",
+	"gui.mtr.platform_schedule_title": "本月台時刻",
+	"gui.mtr.platform_schedule_empty": "沒有路線經過本月台",
+	"gui.mtr.platform_schedule_pass": "%s  第 %s/%s 站  通過",
+	"gui.mtr.platform_schedule_stop": "%s  第 %s/%s 站  門全開 %s 秒，停站 %s 秒（%s）",
+	"gui.mtr.dwell_source_route": "路線設定",
+	"gui.mtr.dwell_source_platform": "月台預設"
 }
