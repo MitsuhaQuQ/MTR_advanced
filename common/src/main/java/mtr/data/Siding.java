@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import mtr.packet.IPacket;
 import mtr.path.PathData;
 import mtr.path.PathFinder;
+import mtr.path.PathRelocator;
 import mtr.path.RailGraph;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -32,6 +33,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private int maxManualSpeed;
 	private int repeatIndex1;
 	private int repeatIndex2;
+	private boolean trainsRelocated;
 	private float accelerationConstant;
 
 	public final float railLength;
@@ -331,6 +333,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		minecraftServer.execute(() -> {
 			try {
+				// A failed search keeps the old path and every train, and only the failure is reported
+				if (tempPath.isEmpty() && firstPlatform != null && path.size() > 1) {
+					return;
+				}
+
+				final List<String> oldRails = getRailKeys(path);
+				final List<Double> oldDistances = new ArrayList<>(distances);
+
 				path.clear();
 				if (tempPath.isEmpty()) {
 					generateDefaultPath(rails);
@@ -344,12 +354,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				platformTimes.putAll(tempPlatformTimes);
 				generateDistances();
 
-				if (tempRepeatIndex1 != repeatIndex1 || tempRepeatIndex2 != repeatIndex2) {
-					trains.clear();
-				}
-
 				repeatIndex1 = tempRepeatIndex1;
 				repeatIndex2 = tempRepeatIndex2;
+				if (!tempPath.isEmpty()) {
+					relocateTrains(oldRails, oldDistances);
+				}
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -358,9 +367,37 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return successfulSegments;
 	}
 
+	private void relocateTrains(List<String> oldRails, List<Double> oldDistances) {
+		final List<String> newRails = getRailKeys(path);
+		final List<Double> newDistances = new ArrayList<>(distances);
+		trains.removeIf(train -> {
+			if (!train.getIsOnRoute()) {
+				train.relocate(train.getRailProgress(), 0, repeatIndex1, repeatIndex2);
+				return false;
+			}
+			final PathRelocator.Position position = PathRelocator.locate(oldRails, oldDistances, newRails, newDistances, train.getRailProgress());
+			if (position != null) {
+				train.relocate(position.railProgress, position.railIndex, repeatIndex1, repeatIndex2);
+			}
+			return position == null;
+		});
+		trainsRelocated = true;
+	}
+
+	private static List<String> getRailKeys(List<PathData> path) {
+		final List<String> rails = new ArrayList<>();
+		path.forEach(pathData -> rails.add(pathData.startingPos.asLong() + ">" + pathData.getLastPos().asLong()));
+		return rails;
+	}
+
 	public void simulateTrain(DataCache dataCache, RailwayDataDriveTrainModule railwayDataDriveTrainModule, List<Map<UUID, Long>> trainPositions, SignalBlocks signalBlocks, Map<Player, Set<TrainServer>> trainsInPlayerRange, Set<TrainServer> trainsToSync, Map<Long, List<ScheduleEntry>> schedulesForPlatform, Map<Long, Map<BlockPos, TrainDelay>> trainDelays) {
 		if (depot == null) {
 			return;
+		}
+
+		if (trainsRelocated) {
+			trainsToSync.addAll(trains);
+			trainsRelocated = false;
 		}
 
 		int trainsAtDepot = 0;

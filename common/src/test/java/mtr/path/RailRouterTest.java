@@ -178,6 +178,15 @@ class RailRouterTest {
 	}
 
 	@Test
+	void oldSearchFindsTheSectionItCannotFollow() {
+		assertEquals(1, PathFinder.findSectionWithWaypoints(Arrays.asList(Collections.emptyList(), Collections.singletonList("node"), Collections.emptyList()), 3));
+		assertEquals(-1, PathFinder.findSectionWithWaypoints(Arrays.asList(Collections.emptyList(), Collections.emptyList()), 2));
+		// The last stop has no next section, so anything left on it is ignored
+		assertEquals(-1, PathFinder.findSectionWithWaypoints(Arrays.asList(Collections.emptyList(), Collections.singletonList("node")), 2));
+		assertEquals(-1, PathFinder.findSectionWithWaypoints(null, 2));
+	}
+
+	@Test
 	void largeGridRoutesQuickly() {
 		final List<Object[]> rails = new ArrayList<>();
 		final int size = 200;

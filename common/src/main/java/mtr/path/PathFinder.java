@@ -43,7 +43,28 @@ public class PathFinder {
 	}
 
 	public static int findPath(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, List<SavedRailBase> savedRailBases, List<List<BlockPos>> sectionWaypoints, int stopIndexOffset, int cruisingAltitude, boolean useFastSpeed) {
-		return graph == null ? findPath(path, rails, savedRailBases, stopIndexOffset, cruisingAltitude, useFastSpeed) : DeterministicPathFinder.findPath(path, graph, savedRailBases, sectionWaypoints, stopIndexOffset);
+		if (graph != null) {
+			return DeterministicPathFinder.findPath(path, graph, savedRailBases, sectionWaypoints, stopIndexOffset);
+		}
+
+		// The old search can't follow waypoints, and ignoring them would silently run a different route
+		final int sectionWithWaypoints = findSectionWithWaypoints(sectionWaypoints, savedRailBases.size());
+		if (sectionWithWaypoints >= 0) {
+			path.clear();
+			return sectionWithWaypoints + 1;
+		}
+		return findPath(path, rails, savedRailBases, stopIndexOffset, cruisingAltitude, useFastSpeed);
+	}
+
+	public static <T> int findSectionWithWaypoints(List<List<T>> sectionWaypoints, int savedRailCount) {
+		if (sectionWaypoints != null) {
+			for (int i = 0; i < Math.min(sectionWaypoints.size(), savedRailCount - 1); i++) {
+				if (!sectionWaypoints.get(i).isEmpty()) {
+					return i;
+				}
+			}
+		}
+		return -1;
 	}
 
 	public static void appendPath(List<PathData> path, List<PathData> partialPath) {

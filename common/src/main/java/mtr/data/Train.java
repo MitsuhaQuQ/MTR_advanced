@@ -53,8 +53,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	public final List<PathData> path;
 
 	protected final List<Double> distances;
-	protected final int repeatIndex1;
-	protected final int repeatIndex2;
+	protected int repeatIndex1;
+	protected int repeatIndex2;
 	protected final Set<UUID> ridingEntities = new HashSet<>();
 	protected final SimpleContainer inventory;
 

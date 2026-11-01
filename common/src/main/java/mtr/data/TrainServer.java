@@ -351,6 +351,23 @@ public class TrainServer extends Train {
 		}
 	}
 
+	/**
+	 * Moves this train onto a new path without replacing it, so riders, cargo and door state all stay.
+	 */
+	public void relocate(double newRailProgress, int railIndex, int newRepeatIndex1, int newRepeatIndex2) {
+		railProgress = newRailProgress;
+		repeatIndex1 = newRepeatIndex1;
+		repeatIndex2 = newRepeatIndex2;
+		nextStoppingIndex = path.size() - 1;
+		for (int i = railIndex; i < path.size(); i++) {
+			if (path.get(i).dwellTime > 0) {
+				nextStoppingIndex = i;
+				break;
+			}
+		}
+		nextPlatformIndex = nextStoppingIndex;
+	}
+
 	public void deployTrain() {
 		canDeploy = true;
 	}
