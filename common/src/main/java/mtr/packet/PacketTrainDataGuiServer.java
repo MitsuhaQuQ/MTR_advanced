@@ -30,6 +30,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.scores.Score;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -48,6 +49,12 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeUtf(IPacket.getNetworkVersion());
 		Registry.sendToPlayer(player, PACKET_VERSION_CHECK, packet);
+	}
+
+	public static void lineWordsS2C(ServerPlayer player) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeByteArray(LineWords.getWordsJson().getBytes(StandardCharsets.UTF_8));
+		Registry.sendToPlayer(player, PACKET_LINE_WORDS, packet);
 	}
 
 	public static void openDashboardScreenS2C(ServerPlayer player, TransportMode transportMode, boolean useTimeAndWindSync) {

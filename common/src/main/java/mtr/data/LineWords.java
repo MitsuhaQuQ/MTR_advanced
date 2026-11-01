@@ -27,6 +27,7 @@ public final class LineWords {
 	private static volatile Pattern startPattern;
 	private static volatile Pattern endPattern;
 	private static volatile Pattern servicePattern;
+	private static volatile String wordsJson = "{}";
 
 	public static final String FILE_NAME = "mtr_line_words.json";
 
@@ -72,6 +73,25 @@ public final class LineWords {
 				System.out.println("Failed to read Minecraft Transit Railway line words from " + path);
 				e.printStackTrace();
 			}
+		}
+	}
+
+	/**
+	 * @return the words in use, which the server sends to players so that everyone sorts routes into the same lines
+	 */
+	public static String getWordsJson() {
+		return wordsJson;
+	}
+
+	/**
+	 * Uses the words of the server the player joined instead of the local file. If they can't be read, the words stay as they were.
+	 */
+	public static void setWordsFromServer(String json) {
+		try {
+			setWords(json);
+		} catch (Exception e) {
+			System.out.println("Failed to read Minecraft Transit Railway line words from the server");
+			e.printStackTrace();
 		}
 	}
 
@@ -134,6 +154,7 @@ public final class LineWords {
 			endPattern = Pattern.compile("[" + SEPARATORS + "]*[" + OPEN_BRACKETS + "]?\\s*" + wordGroup + "[线線]?\\s*[" + CLOSE_BRACKETS + "]?$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 			startPattern = Pattern.compile("^[" + OPEN_BRACKETS + "]?\\s*" + wordGroup + "\\s*[" + CLOSE_BRACKETS + SEPARATORS + "]+", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 		}
+		wordsJson = json;
 	}
 
 	/**

@@ -139,6 +139,14 @@ task testServer {
 				overwrite true
 				retries - 1
 			}
+			if (!rootProject.architectury_fabric_url.isEmpty()) {
+				download {
+					src rootProject.architectury_fabric_url
+					dest "fabric/server/mods/architectury.jar"
+					overwrite true
+					retries - 1
+				}
+			}
 			download {
 				src "https://meta.fabricmc.net/v2/versions/loader/${rootProject.fabric_loader_version[0]}/${rootProject.fabric_loader_version[1]}/0.11.1/server/jar"
 				dest "fabric/server/fabric-server.jar"

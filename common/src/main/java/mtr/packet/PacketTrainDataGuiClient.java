@@ -26,6 +26,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BiFunction;
 
@@ -36,6 +37,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	private static final Map<Integer, ByteBuf> TEMP_PACKETS_RECEIVER = new HashMap<>();
 	private static long tempPacketId = 0;
 	private static int expectedSize = 0;
+
+	public static void receiveLineWordsS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final String words = new String(packet.readByteArray(), StandardCharsets.UTF_8);
+		minecraftClient.execute(() -> LineWords.setWordsFromServer(words));
+	}
 
 	public static void openVersionCheckS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String version = packet.readUtf();

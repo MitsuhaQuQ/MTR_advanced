@@ -12,9 +12,10 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 10;
+	int PROTOCOL_VERSION = 11;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
+	ResourceLocation PACKET_LINE_WORDS = new ResourceLocation(MTR.MOD_ID, "packet_line_words");
 
 	ResourceLocation PACKET_OPEN_DASHBOARD_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_dashboard_screen");
 	ResourceLocation PACKET_OPEN_PIDS_CONFIG_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_pids_config_screen");

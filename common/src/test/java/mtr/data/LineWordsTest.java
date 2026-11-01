@@ -75,6 +75,33 @@ class LineWordsTest {
 	}
 
 	@Test
+	void wordsInUseCanBeSentToAPlayer() throws IOException {
+		final String json = "{\"serviceWords\": [\"甲\"]}";
+		LineWords.load(write(json));
+
+		assertEquals(json, LineWords.getWordsJson());
+	}
+
+	@Test
+	void wordsFromTheServerReplaceTheFile() throws IOException {
+		LineWords.load(write("{\"serviceWords\": [\"甲\"]}"));
+		LineWords.setWordsFromServer("{\"serviceWords\": [\"乙\"]}");
+
+		assertEquals("1号线", LineWords.removeFromEnds("1号线 乙"));
+		assertEquals("1号线 甲", LineWords.removeFromEnds("1号线 甲"));
+	}
+
+	@Test
+	void brokenWordsFromTheServerKeepTheWordsInUse() throws IOException {
+		final String json = "{\"serviceWords\": [\"甲\"]}";
+		LineWords.load(write(json));
+		LineWords.setWordsFromServer("not json");
+
+		assertEquals("1号线", LineWords.removeFromEnds("1号线 甲"));
+		assertEquals(json, LineWords.getWordsJson());
+	}
+
+	@Test
 	void noWordsLeavesNamesAlone() throws IOException {
 		LineWords.load(write("{}"));
 

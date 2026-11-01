@@ -246,6 +246,7 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerEntityRenderer(EntityTypes.LiftType.SIZE_4_4_DOUBLE_SIDED.registryObject.get(), RenderLift::new);
 
 		RegistryClient.registerNetworkReceiver(PACKET_VERSION_CHECK, packet -> PacketTrainDataGuiClient.openVersionCheckS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_LINE_WORDS, packet -> PacketTrainDataGuiClient.receiveLineWordsS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_CHUNK_S2C, packet -> PacketTrainDataGuiClient.receiveChunk(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_DASHBOARD_SCREEN, packet -> PacketTrainDataGuiClient.openDashboardScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_PIDS_CONFIG_SCREEN, packet -> PacketTrainDataGuiClient.openPIDSConfigScreenS2C(Minecraft.getInstance(), packet));
@@ -342,7 +343,6 @@ public class MTRClient implements IPacket {
 					Webserver.getDataCache = railwayData -> ClientData.DATA_CACHE;
 					final Path configPath = Minecraft.getInstance().gameDirectory.toPath().resolve("config");
 					SecurityConfig.load(configPath.resolve("mtr_security.json"));
-					LineWords.load(configPath.resolve(LineWords.FILE_NAME));
 					Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 				}
 			}
