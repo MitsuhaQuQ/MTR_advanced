@@ -40,6 +40,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private final List<PathData> path = new ArrayList<>();
 	private final List<Double> distances = new ArrayList<>();
 	private final List<TimeSegment> timeSegments = new ArrayList<>();
+	/**
+	 * A field rather than a parameter of simulateTrain, which ANTE injects into by its signature.
+	 */
+	public float ticksElapsed = 1;
 	private final Map<Long, Map<Long, Float>> platformTimes = new HashMap<>();
 	private final Set<TrainServer> trains = new HashSet<>();
 
@@ -410,7 +414,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				trainsToSync.add(train);
 			}
 
-			if (train.simulateTrain(world, 1, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
+			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
 			}
 

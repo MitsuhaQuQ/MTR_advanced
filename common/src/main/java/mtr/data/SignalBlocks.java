@@ -80,6 +80,9 @@ public class SignalBlocks {
 			return;
 		}
 
+		// The rail under a train always counts, or a train that entered a taken signal block would be invisible to others
+		trainPositions.get(1).putIfAbsent(currentRail, trainId);
+
 		final Set<UUID> railsToAdd = new HashSet<>();
 		railsToAdd.add(currentRail);
 

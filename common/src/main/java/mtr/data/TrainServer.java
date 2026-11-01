@@ -175,7 +175,8 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean canDeploy(Depot depot) {
-		if (path.size() > 1 && depot != null) {
+		// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift
+		if (path.size() > 1 && depot != null && !isRailOccupied(1)) {
 			depot.requestDeploy(sidingId, this);
 		}
 		return canDeploy;
@@ -183,20 +184,27 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean isRailBlocked(int checkIndex) {
+		if (isRailOccupied(checkIndex)) {
+			if (routeId != 0) {
+				final BlockPos startingPos = path.get(checkIndex).startingPos;
+				if (!trainDelays.containsKey(routeId)) {
+					trainDelays.put(routeId, new HashMap<>());
+				}
+				if (!trainDelays.get(routeId).containsKey(startingPos)) {
+					trainDelays.get(routeId).put(startingPos, new TrainDelay());
+				}
+				trainDelays.get(routeId).get(startingPos).delaying();
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private boolean isRailOccupied(int checkIndex) {
 		if (!transportMode.continuousMovement && trainPositions != null && checkIndex < path.size()) {
-			final PathData pathData = path.get(checkIndex);
-			final UUID railProduct = pathData.getRailProduct();
+			final UUID railProduct = path.get(checkIndex).getRailProduct();
 			for (final Map<UUID, Long> trainPositionsMap : trainPositions) {
 				if (trainPositionsMap.containsKey(railProduct) && trainPositionsMap.get(railProduct) != id) {
-					if (routeId != 0) {
-						if (!trainDelays.containsKey(routeId)) {
-							trainDelays.put(routeId, new HashMap<>());
-						}
-						if (!trainDelays.get(routeId).containsKey(pathData.startingPos)) {
-							trainDelays.get(routeId).put(pathData.startingPos, new TrainDelay());
-						}
-						trainDelays.get(routeId).get(pathData.startingPos).delaying();
-					}
 					return true;
 				}
 			}

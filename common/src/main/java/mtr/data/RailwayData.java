@@ -74,6 +74,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final RailwayDataFileSaveModule railwayDataFileSaveModule;
 
 	private final List<Map<UUID, Long>> trainPositions = new ArrayList<>(2);
+	private final TickCompensator tickCompensator = new TickCompensator();
 	private final Map<Player, BlockPos> playerLastUpdatedPositions = new HashMap<>();
 	private final List<Player> playersToSyncSchedules = new ArrayList<>();
 	private final UpdateNearbyMovingObjects<TrainServer> updateNearbyTrains;
@@ -320,8 +321,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		trainPositions.add(new HashMap<>());
 		schedulesForPlatform.clear();
 		signalBlocks.resetOccupied();
+		final float ticksElapsed = tickCompensator.nextTick(System.currentTimeMillis());
 		sidings.forEach(siding -> {
 			siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails);
+			siding.ticksElapsed = ticksElapsed;
 			siding.simulateTrain(dataCache, railwayDataDriveTrainModule, trainPositions, signalBlocks, updateNearbyTrains.newDataSetInPlayerRange, updateNearbyTrains.dataSetToSync, schedulesForPlatform, trainDelays);
 		});
 		depots.forEach(depot -> depot.deployTrain(this, world));

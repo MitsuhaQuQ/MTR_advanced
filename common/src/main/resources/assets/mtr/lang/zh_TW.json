@@ -731,5 +731,8 @@
 	"gui.mtr.platform_schedule_pass": "%s  第 %s/%s 站  通過",
 	"gui.mtr.platform_schedule_stop": "%s  第 %s/%s 站  門全開 %s 秒，停站 %s 秒（%s）",
 	"gui.mtr.dwell_source_route": "路線設定",
-	"gui.mtr.dwell_source_platform": "月台預設"
+	"gui.mtr.dwell_source_platform": "月台預設",
+	"gui.mtr.rail_info": "軌道：%s 格，限速 %s km/h，%s，訊號分區 %s 個",
+	"gui.mtr.rail_free": "空閒",
+	"gui.mtr.rail_occupied": "佔用"
 }

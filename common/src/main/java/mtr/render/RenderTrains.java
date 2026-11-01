@@ -257,6 +257,8 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 			matrices.popPose();
 		}, newLastFrameDuration));
 
+		RenderRailInspect.render(matrices, vertexConsumers, player, MTRClient.getGameTick());
+
 		final boolean renderColors = isHoldingRailRelated(player);
 		final int maxRailDistance = renderDistanceChunks * 16;
 		final Map<UUID, RailType> renderedRailMap = new HashMap<>();

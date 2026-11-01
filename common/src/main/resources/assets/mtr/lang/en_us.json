@@ -820,5 +820,8 @@
 	"gui.mtr.platform_schedule_pass": "%s  stop %s/%s  passes",
 	"gui.mtr.platform_schedule_stop": "%s  stop %s/%s  doors open %s s, stop %s s (%s)",
 	"gui.mtr.dwell_source_route": "route",
-	"gui.mtr.dwell_source_platform": "platform"
+	"gui.mtr.dwell_source_platform": "platform",
+	"gui.mtr.rail_info": "Rail: %s blocks, limit %s km/h, %s, signal blocks: %s",
+	"gui.mtr.rail_free": "free",
+	"gui.mtr.rail_occupied": "occupied"
 }

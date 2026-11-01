@@ -24,6 +24,7 @@ import org.msgpack.value.Value;
 
 import java.io.*;
 import java.util.*;
+import java.util.function.IntPredicate;
 
 public abstract class Train extends NameColorDataBase implements IPacket {
 
@@ -66,6 +67,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	public static final int DOOR_MOVE_TIME = 64;
 	protected static final int MAX_CHECK_DISTANCE = 32;
 	protected static final int DOOR_DELAY = 20;
+	private static final double BRAKING_MARGIN = 2;
 
 	private static final String KEY_SPEED = "speed";
 	private static final String KEY_RAIL_PROGRESS = "rail_progress";
@@ -384,13 +386,40 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	public final int getIndex(double tempRailProgress, boolean roundDown) {
-		for (int i = 0; i < path.size(); i++) {
-			final double tempDistance = distances.get(i);
+		return findIndex(distances, path.size(), tempRailProgress, roundDown);
+	}
+
+	/**
+	 * @return the first rail ending after the progress, or the last rail. Distances never decrease along a path.
+	 */
+	public static int findIndex(List<Double> distances, int size, double tempRailProgress, boolean roundDown) {
+		int low = 0;
+		int high = size;
+		while (low < high) {
+			final int middle = (low + high) >>> 1;
+			final double tempDistance = distances.get(middle);
 			if (tempRailProgress < tempDistance || roundDown && tempRailProgress == tempDistance) {
+				high = middle;
+			} else {
+				low = middle + 1;
+			}
+		}
+		return Math.min(low, size - 1);
+	}
+
+	/**
+	 * Looks along the path for a blocked rail the train must start braking for. The next rail is always checked.
+	 *
+	 * @param lastIndex the last rail worth checking, which is the next stop
+	 * @return the blocked rail, or -1
+	 */
+	public static int findBlockedIndex(List<Double> distances, int headIndex, int lastIndex, double railProgress, double lookAhead, IntPredicate isBlocked) {
+		for (int i = headIndex + 1; i == headIndex + 1 || i <= lastIndex && distances.get(i - 1) - railProgress <= lookAhead; i++) {
+			if (isBlocked.test(i)) {
 				return i;
 			}
 		}
-		return path.size() - 1;
+		return -1;
 	}
 
 	public final float getRailSpeed(int railIndex) {
@@ -498,9 +527,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 						}
 					} else {
 						if (!world.isClientSide()) {
-							final int checkIndex = getIndex(0, spacing, true) + 1;
-							if (isRailBlocked(checkIndex)) {
-								nextStoppingIndex = checkIndex - 1;
+							final int lastCheckIndex = nextPlatformIndex > 0 ? Math.min(nextPlatformIndex, path.size() - 1) : path.size() - 1;
+							final double brakingDistance = 0.5 * speed * speed / accelerationConstant + speed * ticksElapsed + BRAKING_MARGIN;
+							final int blockedIndex = findBlockedIndex(distances, getIndex(0, spacing, true), lastCheckIndex, railProgress, brakingDistance, this::isRailBlocked);
+							if (blockedIndex >= 0) {
+								nextStoppingIndex = blockedIndex - 1;
 							} else if (nextPlatformIndex > 0 && nextPlatformIndex < path.size()) {
 								nextStoppingIndex = nextPlatformIndex;
 								if (manualNotch < -2) {
