@@ -1,9 +1,18 @@
 package mtr.packet;
 
+import mtr.Keys;
 import mtr.MTR;
 import net.minecraft.resources.ResourceLocation;
 
 public interface IPacket {
+
+	// Added to the version string so that clients without a protocol version also see a mismatch
+	static String getNetworkVersion() {
+		return Keys.MOD_VERSION.split("-hotfix-")[0] + "-protocol-" + PROTOCOL_VERSION;
+	}
+
+	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
+	int PROTOCOL_VERSION = 1;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 

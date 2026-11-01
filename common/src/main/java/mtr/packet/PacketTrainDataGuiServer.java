@@ -2,7 +2,6 @@ package mtr.packet;
 
 import mtr.compat.Compat;
 import io.netty.buffer.Unpooled;
-import mtr.Keys;
 import mtr.Registry;
 import mtr.block.*;
 import mtr.data.*;
@@ -42,7 +41,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	public static void versionCheckS2C(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-		packet.writeUtf(Keys.MOD_VERSION.split("-hotfix-")[0]);
+		packet.writeUtf(IPacket.getNetworkVersion());
 		Registry.sendToPlayer(player, PACKET_VERSION_CHECK, packet);
 	}
 

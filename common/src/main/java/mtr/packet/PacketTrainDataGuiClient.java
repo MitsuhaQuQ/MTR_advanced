@@ -2,7 +2,6 @@ package mtr.packet;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import mtr.Keys;
 import mtr.RegistryClient;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
@@ -39,18 +38,19 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void openVersionCheckS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String version = packet.readUtf();
 		minecraftClient.execute(() -> {
-			if (!Keys.MOD_VERSION.split("-hotfix-")[0].equals(version)) {
+			final String clientVersion = IPacket.getNetworkVersion();
+			if (!clientVersion.equals(version)) {
 				final ClientPacketListener connection = minecraftClient.getConnection();
 				if (connection != null) {
 					final int widthDifference1 = minecraftClient.font.width(Text.translatable("gui.mtr.mismatched_versions_your_version")) - minecraftClient.font.width(Text.translatable("gui.mtr.mismatched_versions_server_version"));
-					final int widthDifference2 = minecraftClient.font.width(Keys.MOD_VERSION) - minecraftClient.font.width(version);
+					final int widthDifference2 = minecraftClient.font.width(clientVersion) - minecraftClient.font.width(version);
 					final int spaceWidth = minecraftClient.font.width(" ");
 
 					final StringBuilder text = new StringBuilder();
 					for (int i = 0; i < -widthDifference1 / spaceWidth; i++) {
 						text.append(" ");
 					}
-					text.append(Text.translatable("gui.mtr.mismatched_versions_your_version", Keys.MOD_VERSION).getString());
+					text.append(Text.translatable("gui.mtr.mismatched_versions_your_version", clientVersion).getString());
 					for (int i = 0; i < -widthDifference2 / spaceWidth; i++) {
 						text.append(" ");
 					}
