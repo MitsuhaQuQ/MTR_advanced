@@ -1,0 +1,44 @@
+<svg width="1000" height="1000" viewBox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 蓝绿渐变定义 -->
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#00FF87"/>
+    </linearGradient>
+    
+    <!-- 网格纹理 -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="white" stroke-width="4" opacity="0.2"/>
+    </pattern>
+  </defs>
+
+  <!-- 背景圆 -->
+  <circle cx="500" cy="500" r="480" fill="url(#mainGradient)" opacity="0.9"/>
+  
+  <!-- 核心圆环 -->
+  <circle cx="500" cy="500" r="360" fill="none" stroke="#FFFFFF" stroke-width="20" opacity="0.3"/>
+  
+  <!-- 立体环 -->
+  <g transform="rotate(-45 500 500)">
+    <path d="M500,150a350,350 0 1,1 0,700a350,350 0 1,1 0,-700" 
+          fill="none" 
+          stroke="url(#mainGradient)" 
+          stroke-width="80"
+          stroke-linecap="round"/>
+  </g>
+
+  <!-- 中心能量核 -->
+  <g transform="scale(0.8)" opacity="0.95">
+    <circle cx="500" cy="500" r="180" fill="white"/>
+    <circle cx="500" cy="500" r="160" fill="url(#grid)"/>
+    <circle cx="500" cy="500" r="140" fill="none" stroke="#00FF87" stroke-width="10"/>
+  </g>
+
+  <!-- 科技光点 -->
+  <g fill="#FFFFFF" opacity="0.7">
+    <circle cx="680" cy="320" r="12"/>
+    <circle cx="320" cy="680" r="12"/>
+    <circle cx="760" cy="500" r="8"/>
+    <circle cx="500" cy="240" r="8"/>
+  </g>
+</svg>

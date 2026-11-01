@@ -7,6 +7,20 @@ loom {
 	}
 }
 
+if (rootProject.has_ante) {
+	loom {
+		accessWidenerPath = project(":common").loom.accessWidenerPath
+
+		forge {
+			mixinConfig "mtrsteamloco.mixins.json"
+			convertAccessWideners = true
+			extraAccessWideners.add loom.accessWidenerPath.get().asFile.name
+		}
+	}
+} else {
+	sourceSets.main.java.exclude "cn/**"
+}
+
 architectury {
 	platformSetupLoomIde()
 	forge()
@@ -15,6 +29,7 @@ architectury {
 configurations {
 	common
 	shadowCommon
+	clothConfigJar
 	compileClasspath.extendsFrom common
 	runtimeClasspath.extendsFrom common
 	developmentForge.extendsFrom common
@@ -26,6 +41,13 @@ dependencies {
 
 	common(project(path: ":common", configuration: "namedElements")) { transitive false }
 	shadowCommon(project(path: ":common", configuration: "transformProductionForge")) { transitive = false }
+
+	if (rootProject.has_ante) {
+		modApi("me.shedaniel.cloth:cloth-config-forge:${rootProject.cloth_config_version}") { transitive false }
+		modApi("me.shedaniel.cloth:basic-math:0.6.1") { transitive false }
+		clothConfigJar("me.shedaniel.cloth:cloth-config-forge:${rootProject.cloth_config_version}") { transitive = false }
+		clothConfigJar("me.shedaniel.cloth:basic-math:0.6.1") { transitive false }
+	}
 }
 
 processResources {
@@ -38,6 +60,23 @@ processResources {
 
 shadowJar {
 	exclude "fabric.mod.json"
+	exclude "*.bmp"
+	exclude "module-info.class"
+	exclude "META-INF/versions/*/module-info.class"
+	exclude "**/*.kotlin_metadata"
+	exclude "**/*.kotlin_module"
+	exclude "**/*.kotlin_builtins"
+	// The shadow plugin can't read classes for Java 21 and later. GraalJS falls back to its Java 17 classes without them.
+	exclude "META-INF/versions/2?/**"
+
+	zip64 true
+	mergeServiceFiles()
+	relocate "de.javagl", "vendor.cn.zbx1425.sowcerext.de.javagl"
+	relocate "com.github.stuxuhai", "vendor.cn.zbx1425.mtrsteamloco.com.github.stuxuhai"
+	relocate "me.shedaniel", "cn.zbx1425.mtrsteamloco.vendor.me.shedaniel"
+	from project.configurations.clothConfigJar.files.collect {
+		zipTree(it).matching { include "me/shedaniel/clothconfig2/**", "me/shedaniel/math/**", "assets/cloth-config2/**" }
+	}
 
 	configurations = [project.configurations.shadowCommon]
 	classifier "dev-shadow"
@@ -50,6 +89,48 @@ remapJar {
 	input.set shadowJar.archiveFile
 	dependsOn shadowJar
 	classifier null
+
+	// Loom writes Forge names only for mixins in this project, so the ANTE refmap from common still has Fabric names
+	doLast {
+		if (!rootProject.has_ante) {
+			return
+		}
+		def tiny = net.fabricmc.loom.LoomGradleExtension.get(project).mappingsProvider.tinyMappingsWithSrg.toFile()
+		def jarUri = URI.create("jar:" + archiveFile.get().asFile.toURI())
+		def fileSystem = java.nio.file.FileSystems.newFileSystem(jarUri, [:])
+		try {
+			def refmap = fileSystem.getPath("mixins.mtrsteamloco.refmap.json")
+			java.nio.file.Files.write(refmap, convertRefmapToSrg(new String(java.nio.file.Files.readAllBytes(refmap), "UTF-8"), tiny).getBytes("UTF-8"))
+		} finally {
+			fileSystem.close()
+		}
+	}
+}
+
+static String convertRefmapToSrg(String refmapText, File tinyFile) {
+	def classes = [:]
+	def members = [:]
+	int fromColumn = -1
+	int toColumn = -1
+	tinyFile.eachLine("UTF-8") { line ->
+		def parts = line.split("	", -1)
+		if (parts[0] == "tiny") {
+			fromColumn = parts.findIndexOf { it == "intermediary" } - 3
+			toColumn = parts.findIndexOf { it == "srg" } - 3
+		} else if (parts[0] == "c") {
+			classes[parts[1 + fromColumn]] = parts[1 + toColumn]
+		} else if (parts.length > 3 && parts[0] == "" && (parts[1] == "m" || parts[1] == "f")) {
+			members[parts[3 + fromColumn]] = parts[3 + toColumn]
+		}
+	}
+
+	def convert = { String value ->
+		value.replaceAll('net/minecraft/class_\\d+(\\$class_\\d+)*') { match -> classes[match[0]] ?: match[0] }.replaceAll('\\b(method|field|comp)_\\d+') { match -> members[match[0]] ?: match[0] }
+	}
+
+	def refmap = new groovy.json.JsonSlurper().parseText(refmapText)
+	def converted = refmap.mappings.collectEntries { mixin, entries -> [mixin, entries.collectEntries { key, value -> [key, convert(value)] }] }
+	return groovy.json.JsonOutput.toJson([mappings: converted, data: [searge: converted]])
 }
 
 components.java {

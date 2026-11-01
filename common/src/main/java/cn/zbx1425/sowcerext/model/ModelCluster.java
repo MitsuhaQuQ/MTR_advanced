@@ -1,0 +1,153 @@
+package cn.zbx1425.sowcerext.model;
+
+import cn.zbx1425.sowcer.batch.BatchManager;
+import cn.zbx1425.sowcer.batch.EnqueueProp;
+import cn.zbx1425.sowcer.batch.ShaderProp;
+import cn.zbx1425.sowcer.model.Model;
+import cn.zbx1425.sowcer.model.VertArrays;
+import cn.zbx1425.sowcer.util.AttrUtil;
+import cn.zbx1425.sowcer.util.DrawContext;
+import cn.zbx1425.sowcer.vertex.VertAttrMapping;
+import cn.zbx1425.sowcer.vertex.VertAttrState;
+import cn.zbx1425.sowcer.math.Matrix4f;
+import cn.zbx1425.sowcerext.model.integration.BufferSourceProxy;
+import cn.zbx1425.sowcerext.reuse.ModelManager;
+import net.minecraft.resources.ResourceLocation;
+
+import java.io.Closeable;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+public class ModelCluster implements Closeable {
+
+    public final VertArrays uploadedOpaqueParts;
+    public final RawModel opaqueParts;
+    public final VertArrays uploadedTranslucentParts;
+    public final RawModel translucentParts;
+
+    public ModelCluster(RawModel source, VertAttrMapping mapping, ModelManager modelManager) {
+        this.translucentParts = new RawModel();
+        this.opaqueParts = new RawModel();
+        for (RawMesh mesh : source.meshList.values()) {
+            if (mesh.materialProp.translucent) {
+                translucentParts.append(mesh);
+            } else {
+                opaqueParts.append(mesh);
+            }
+        }
+        this.uploadedOpaqueParts = VertArrays.createAll(
+                modelManager.uploadModel(opaqueParts), mapping, null);
+        this.uploadedTranslucentParts = VertArrays.createAll(
+                modelManager.uploadModel(translucentParts), mapping, null);
+    }
+
+    public ModelCluster(RawModel source, VertAttrMapping mapping) {
+        // Untracked variant
+        this.translucentParts = new RawModel();
+        this.opaqueParts = new RawModel();
+        for (RawMesh mesh : source.meshList.values()) {
+            if (mesh.materialProp.translucent) {
+                translucentParts.append(mesh);
+            } else {
+                opaqueParts.append(mesh);
+            }
+        }
+        this.uploadedOpaqueParts = VertArrays.createAll(
+                opaqueParts.upload(mapping), mapping, null);
+        this.uploadedTranslucentParts = VertArrays.createAll(
+                translucentParts.upload(mapping), mapping, null);
+    }
+
+    public static Supplier<ModelCluster> prepare(RawModel source, VertAttrMapping mapping, Consumer<Model> modelTracker) {
+        RawModel translucentParts = new RawModel();
+        RawModel opaqueParts = new RawModel();
+        for (RawMesh mesh : source.meshList.values()) {
+            if (mesh.materialProp.translucent) {
+                translucentParts.append(mesh);
+            } else {
+                opaqueParts.append(mesh);
+            }
+        }
+        Supplier<Model> opaqueUpload = opaqueParts.uploadAsync(mapping);
+        Supplier<Model> translucentUpload = translucentParts.uploadAsync(mapping);
+        return () -> {
+            Model opaqueModel = opaqueUpload.get();
+            Model translucentModel = translucentUpload.get();
+            modelTracker.accept(opaqueModel);
+            modelTracker.accept(translucentModel);
+            return new ModelCluster(VertArrays.createAll(opaqueModel, mapping, null), opaqueParts,
+                    VertArrays.createAll(translucentModel, mapping, null), translucentParts);
+        };
+    }
+
+    private ModelCluster(VertArrays uploadedOpaqueParts, RawModel opaqueParts, VertArrays uploadedTranslucentParts, RawModel translucentParts) {
+        this.uploadedOpaqueParts = uploadedOpaqueParts;
+        this.opaqueParts = opaqueParts;
+        this.uploadedTranslucentParts = uploadedTranslucentParts;
+        this.translucentParts = translucentParts;
+    }
+
+    public void enqueueOpaqueGl(BatchManager batchManager, Matrix4f pose, int light, int overlay, DrawContext drawContext) {
+        int shaderLightmapUV = AttrUtil.exchangeLightmapUVBits(light);
+        batchManager.enqueue(uploadedOpaqueParts, new EnqueueProp(
+                new VertAttrState()
+                        .setColor(255, 255, 255, 255).setOverlayUV(overlay)
+                        .setLightmapUV(shaderLightmapUV).setModelMatrix(pose)
+        ), ShaderProp.DEFAULT);
+    }
+
+    public void enqueueOpaqueBlaze(BufferSourceProxy vertexConsumers, Matrix4f pose, int light, int overlay, DrawContext drawContext) {
+        opaqueParts.writeBlazeBuffer(vertexConsumers, pose, light, overlay, drawContext);
+    }
+
+    public void enqueueTranslucentGl(BatchManager batchManager, Matrix4f matrix4f, int light, int overlay, DrawContext drawContext) {
+        int shaderLightmapUV = AttrUtil.exchangeLightmapUVBits(light);
+        batchManager.enqueue(uploadedTranslucentParts, new EnqueueProp(
+                new VertAttrState()
+                        .setColor(255, 255, 255, 255).setOverlayUV(overlay)
+                        .setLightmapUV(shaderLightmapUV).setModelMatrix(matrix4f)
+        ), ShaderProp.DEFAULT);
+    }
+
+    public void enqueueTranslucentBlaze(BufferSourceProxy vertexConsumers, Matrix4f pose, int light, int overlay, DrawContext drawContext) {
+        translucentParts.writeBlazeBuffer(vertexConsumers, pose, light, overlay, drawContext);
+    }
+
+    public void setMatixProcess(Function<Matrix4f, Matrix4f> matrixProcess) {
+        opaqueParts.setMatixProcess(matrixProcess);
+        translucentParts.setMatixProcess(matrixProcess);
+        uploadedOpaqueParts.setMatixProcess(matrixProcess);
+        uploadedTranslucentParts.setMatixProcess(matrixProcess);
+    }
+
+    @Override
+    public void close() {
+        uploadedOpaqueParts.close();
+        uploadedTranslucentParts.close();
+    }
+
+
+    public void replaceTexture(String oldTexture, ResourceLocation newTexture) {
+        uploadedOpaqueParts.replaceTexture(oldTexture, newTexture);
+        opaqueParts.replaceTexture(oldTexture, newTexture);
+        uploadedTranslucentParts.replaceTexture(oldTexture, newTexture);
+        translucentParts.replaceTexture(oldTexture, newTexture);
+    }
+
+    public void replaceAllTexture(ResourceLocation newTexture) {
+        uploadedOpaqueParts.replaceAllTexture(newTexture);
+        opaqueParts.replaceAllTexture(newTexture);
+        uploadedTranslucentParts.replaceAllTexture(newTexture);
+        translucentParts.replaceAllTexture(newTexture);
+    }
+
+    public ModelCluster copyForMaterialChanges() {
+        return new ModelCluster(
+                uploadedOpaqueParts.copyForMaterialChanges(),
+                opaqueParts.copyForMaterialChanges(),
+                uploadedTranslucentParts.copyForMaterialChanges(),
+                translucentParts.copyForMaterialChanges()
+        );
+    }
+}

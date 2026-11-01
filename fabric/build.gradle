@@ -1,5 +1,13 @@
 import org.apache.tools.ant.filters.ReplaceTokens
 
+if (rootProject.has_ante) {
+	loom {
+		accessWidenerPath = project(":common").loom.accessWidenerPath
+	}
+} else {
+	sourceSets.main.java.exclude "cn/**"
+}
+
 architectury {
 	platformSetupLoomIde()
 	fabric()
@@ -8,6 +16,7 @@ architectury {
 configurations {
 	common
 	shadowCommon
+	clothConfigJar
 	compileClasspath.extendsFrom common
 	runtimeClasspath.extendsFrom common
 	developmentFabric.extendsFrom common
@@ -20,6 +29,13 @@ dependencies {
 
 	common(project(path: ":common", configuration: "namedElements")) { transitive false }
 	shadowCommon(project(path: ":common", configuration: "transformProductionFabric")) { transitive false }
+
+	if (rootProject.has_ante) {
+		modApi("me.shedaniel.cloth:cloth-config-fabric:${rootProject.cloth_config_version}") { transitive false }
+		modApi("me.shedaniel.cloth:basic-math:0.6.1") { transitive false }
+		clothConfigJar("me.shedaniel.cloth:cloth-config-fabric:${rootProject.cloth_config_version}") { transitive false }
+		clothConfigJar("me.shedaniel.cloth:basic-math:0.6.1") { transitive false }
+	}
 }
 
 processResources {
@@ -31,6 +47,22 @@ processResources {
 }
 
 shadowJar {
+	exclude "*.bmp"
+	exclude "**/*.kotlin_metadata"
+	exclude "**/*.kotlin_module"
+	exclude "**/*.kotlin_builtins"
+	// The shadow plugin can't read classes for Java 21 and later. GraalJS falls back to its Java 17 classes without them.
+	exclude "META-INF/versions/2?/**"
+
+	zip64 true
+	mergeServiceFiles()
+	relocate "de.javagl", "vendor.cn.zbx1425.sowcerext.de.javagl"
+	relocate "com.github.stuxuhai", "vendor.cn.zbx1425.mtrsteamloco.com.github.stuxuhai"
+	relocate "me.shedaniel", "cn.zbx1425.mtrsteamloco.vendor.me.shedaniel"
+	from project.configurations.clothConfigJar.files.collect {
+		zipTree(it).matching { include "me/shedaniel/clothconfig2/**", "me/shedaniel/math/**", "assets/cloth-config2/**" }
+	}
+
 	configurations = [project.configurations.shadowCommon]
 	classifier "dev-shadow"
 	relocate "javax.servlet", "mtr.libraries.javax.servlet"

@@ -1,6 +1,9 @@
 {
 	"schemaVersion": 1,
 	"id": "mtr",
+	"provides": [
+		"mtrsteamloco"
+	],
 	"version": "${version}",
 	"name": "Minecraft Transit Railway",
 	"description": "A Minecraft mod that adds automated train systems into the game.",
@@ -16,18 +19,24 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"mtr.MTRFabric"
+			"mtr.MTRFabric",
+			"cn.zbx1425.mtrsteamloco.fabric.MainFabric"
 		],
 		"client": [
-			"mtr.MTRFabricClient"
+			"mtr.MTRFabricClient",
+			"cn.zbx1425.mtrsteamloco.fabric.MainFabricClient"
 		],
 		"modmenu": [
-			"mtr.ModMenuConfig"
+			"mtr.ModMenuConfig",
+			"cn.zbx1425.mtrsteamloco.fabric.ModMenuApiImpl"
 		]
 	},
 	"mixins": [
-		"mtr.mixins.json"
+		"mtr.mixins.json",
+		"mtrsteamloco.mixins.json",
+		"mtrsteamloco_fabric.mixins.json"
 	],
+	"accessWidener": "mtrsteamloco_filtered.accesswidener",
 	"depends": {
 		"fabric": "*",
 		"minecraft": "*"

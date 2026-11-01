@@ -30,3 +30,44 @@ mandatory = true
 versionRange = "[1.26.37,)"
 ordering = "AFTER"
 side = "BOTH"
+
+[[mods]]
+modId = "mtrsteamloco"
+version = "${version}"
+displayName = "Aphrodite's Nemo's Transit Expansion"
+displayURL = "https://aphrodite281.github.io/mtr-ante/"
+
+authors = "Zbx1425, Aphrodite281"
+description = "Various experimental addon functionalities made by Zbx1425 and Aphrodite281 for the Minecraft Transit Railway mod."
+logoFile = "icon.png"
+
+displayTest = "IGNORE_ALL_VERSION"
+
+[[dependencies.mtrsteamloco]]
+modId = "forge"
+mandatory = true
+versionRange = "[36,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mtrsteamloco]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.16.5,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mtrsteamloco]]
+modId = "architectury"
+mandatory = true
+versionRange = "[1.26.37,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.mtrsteamloco]]
+modId = "mtr"
+mandatory = true
+versionRange = "[0,)"
+ordering = "AFTER"
+side = "BOTH"
+

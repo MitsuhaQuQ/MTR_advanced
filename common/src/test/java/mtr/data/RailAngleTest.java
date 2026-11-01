@@ -20,6 +20,13 @@ class RailAngleTest {
 	}
 
 	@Test
+	void floatAndDoubleAnglesGiveTheSameInstance() {
+		for (float degrees = -720; degrees < 720; degrees += 0.25F) {
+			assertSame(RailAngle.fromAngle((double) degrees), RailAngle.fromAngle(degrees), String.valueOf(degrees));
+		}
+	}
+
+	@Test
 	void facingStaysOnTheNearSideWhenTurningSlightly() {
 		assertSame(RailAngle.fromAngle(10), RailAngle.fromAngle(10).getRotatedFacing(RailAngle.E, RailAngle.E));
 		assertSame(RailAngle.fromAngle(190), RailAngle.fromAngle(10).getRotatedFacing(RailAngle.E, RailAngle.W));

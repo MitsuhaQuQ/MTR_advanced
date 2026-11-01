@@ -13,8 +13,9 @@ def default_minecraft_version = "1.16.5"
 def minecraft_version = rootProject.properties.containsKey("buildVersion") ? rootProject.getProperties().get("buildVersion").toString() : default_minecraft_version
 def minecraft_main_version = minecraft_version.split("\\.")[1] as int
 def patreon_api_key = rootProject.properties.containsKey("patreonApiKey") ? rootProject.getProperties().get("patreonApiKey").toString() : ""
-def is_1_19_3 = minecraft_version == "1.19.3" || minecraft_version == "1.19.4"
-def parchment_version = getXml("https://ldtteam.jfrog.io/artifactory/parchmentmc-internal/org/parchmentmc/data/parchment-${is_1_19_3 ? "1.19.3" : minecraft_version}/maven-metadata.xml").versioning.release
+// 1.19.4 keeps using the Parchment data for 1.19.3
+def is_1_19_4 = minecraft_version == "1.19.4"
+def parchment_version = getXml("https://ldtteam.jfrog.io/artifactory/parchmentmc-internal/org/parchmentmc/data/parchment-${is_1_19_4 ? "1.19.3" : minecraft_version}/maven-metadata.xml").versioning.release
 def testServer = rootProject.properties.containsKey("testServer") ? rootProject.getProperties().get("testServer").toString() : ""
 
 // The latest 1.20.1 dependencies need a newer Loom, which would affect every other version
@@ -26,9 +27,13 @@ rootProject.ext.fabric_api_data = is_1_20 ? ["0.85.0+1.20.1", ""] as String[] : 
 rootProject.ext.mod_menu_data = is_1_20 ? ["7.1.0", ""] as String[] : getModrinthData("fabric", minecraft_version, "modmenu")
 rootProject.ext.architectury_data = is_1_20 ? ["9.2.14", ""] as String[] : getModrinthData("forge", minecraft_version, "architectury-api")
 
+rootProject.ext.minecraft_version_int = minecraft_version.split("\\.")[0] + minecraft_version.split("\\.")[1].padLeft(2, "0") + (minecraft_version.split("\\.").length > 2 ? minecraft_version.split("\\.")[2].padLeft(2, "0") : "00")
+rootProject.ext.cloth_config_version = ["1.16.5": "4.17.101", "1.17.1": "5.3.63", "1.18.2": "6.5.102", "1.19.4": "10.1.105", "1.20.1": "11.1.106"][minecraft_version]
 rootProject.ext.architectury_id = minecraft_main_version == 16 ? "me.shedaniel" : "dev.architectury"
 rootProject.ext.variation = rootProject.properties.containsKey("variation") ? rootProject.getProperties().get("variation").toString() : "normal"
 rootProject.ext.variation_header = rootProject.variation == "normal" ? "MTR" : rootProject.variation == "server" ? "MTR-server" : "Modern-Elevators-Escalators"
+// ANTE needs the shaders added in 1.17, so 1.16.5 is built without it
+rootProject.ext.has_ante = minecraft_main_version >= 17 && rootProject.variation == "normal"
 
 architectury {
 	minecraft = minecraft_version
@@ -54,7 +59,7 @@ subprojects {
 		minecraft "com.mojang:minecraft:${minecraft_version}"
 		mappings loom.layered() {
 			officialMojangMappings()
-			parchment("org.parchmentmc.data:parchment-${is_1_19_3 ? "1.19.3" : minecraft_version}:${parchment_version}@zip")
+			parchment("org.parchmentmc.data:parchment-${is_1_19_4 ? "1.19.3" : minecraft_version}:${parchment_version}@zip")
 		}
 		implementation name: "Dynmap-3.2.1"
 		implementation name: "BlueMapAPI-2.1.1"
@@ -71,6 +76,26 @@ subprojects {
 		implementation "com.hierynomus:sshj:0.41.2"
 		implementation "org.xerial:sqlite-jdbc:3.46.1.3"
 		implementation "com.github.jonafanho:Minecraft-Mod-API-Tools:${rootProject.minecraft_mod_api_tools_version}"
+		implementation "org.joml:joml:1.10.5"
+		if (rootProject.has_ante) {
+			annotationProcessor "systems.manifold:manifold-preprocessor:${rootProject.manifold_version}"
+			compileOnly "com.github.stuxuhai:jpinyin:1.1.7"
+			compileOnly "me.shedaniel.cloth:basic-math:0.6.1"
+		}
+		// Loom can't read the Java 21 classes in these jars, so they stay off the classpath used for remapping
+		if (rootProject.has_ante && name == "common") {
+			compileOnly "org.graalvm.polyglot:polyglot:${rootProject.graaljs_version}"
+			compileOnly "org.graalvm.polyglot:js:${rootProject.graaljs_version}"
+			compileOnly "org.graalvm.truffle:truffle-api:${rootProject.graaljs_version}"
+			compileOnly "org.graalvm.truffle:truffle-runtime:${rootProject.graaljs_version}"
+		}
+		if (rootProject.has_ante && (name == "fabric" || name == "forge")) {
+			shadowCommon "org.graalvm.polyglot:polyglot:${rootProject.graaljs_version}"
+			shadowCommon "org.graalvm.polyglot:js:${rootProject.graaljs_version}"
+			shadowCommon "org.graalvm.truffle:truffle-api:${rootProject.graaljs_version}"
+			shadowCommon "org.graalvm.truffle:truffle-runtime:${rootProject.graaljs_version}"
+			shadowCommon "com.github.stuxuhai:jpinyin:1.1.7"
+		}
 		shadowCommon "org.eclipse.jetty:jetty-http:9.4.58.v20250814"
 		shadowCommon "org.eclipse.jetty:jetty-io:9.4.58.v20250814"
 		shadowCommon "org.eclipse.jetty:jetty-security:9.4.58.v20250814"
@@ -93,7 +118,7 @@ task setupFiles() {
 	System.out.println("Parchment: " + parchment_version)
 
 	download {
-		src "https://github.com/jonafanho/Minecraft-Mappings/archive/refs/heads/${is_1_19_3 ? minecraft_version : "1." + minecraft_main_version}.zip"
+		src "https://github.com/jonafanho/Minecraft-Mappings/archive/refs/heads/${is_1_19_4 ? minecraft_version : "1." + minecraft_main_version}.zip"
 		dest "common/src/main/java/mtr/mappings/mappings.zip"
 		overwrite true
 		retries - 1
@@ -149,6 +174,17 @@ task setupFiles() {
 			from "resources/common/normal"
 			into "common/src/main/resources"
 		}
+		if (rootProject.has_ante) {
+			copy {
+				outputs.upToDateWhen { false }
+				from "resources/common/ante"
+				into "common/src/main/resources"
+			}
+		} else {
+			delete fileTree("common/src/main/resources/assets/mtrsteamloco")
+			delete "common/src/main/resources/mtrsteamloco.mixins.json"
+			delete "common/src/main/resources/assets/mtr/font/noto-sans-cjk-tc-medium.otf"
+		}
 	}
 	if (rootProject.variation == "normal" || rootProject.variation == "server") {
 		download {
@@ -183,6 +219,18 @@ task setupFiles() {
 		outputs.upToDateWhen { false }
 		from "resources/forge/" + (rootProject.variation == "lifts" ? "lifts" : "normal")
 		into "forge/src/main/resources"
+	}
+	if (!rootProject.has_ante && rootProject.variation != "lifts") {
+		copy {
+			outputs.upToDateWhen { false }
+			from "resources/fabric/no-ante"
+			into "fabric/src/main/resources"
+		}
+		copy {
+			outputs.upToDateWhen { false }
+			from "resources/forge/no-ante"
+			into "forge/src/main/resources"
+		}
 	}
 	if (is_1_20) {
 		fileTree("common/src/main/resources/data/mtr/loot_tables").include("**/*.json").each { file ->
@@ -220,6 +268,13 @@ task setupFiles() {
 	}
 	copy {
 		outputs.upToDateWhen { false }
+		from "common/src/main/BuildConfigTemplate.java"
+		into "common/src/main/java/cn/zbx1425/mtrsteamloco"
+		filter(ReplaceTokens, tokens: ["version": rootProject.ante_version + "+" + minecraft_version, "protocol_version": rootProject.ante_protocol_version, "build_time": java.time.Instant.now().epochSecond.toString()])
+		rename "(.+)Template.java", "\$1.java"
+	}
+	copy {
+		outputs.upToDateWhen { false }
 		from "common/src/main/latest.json"
 		into "build/latest"
 		filter(ReplaceTokens, tokens: ["version": rootProject.mod_version])
@@ -242,7 +297,7 @@ task setupFiles() {
 		outputs.upToDateWhen { false }
 		from "forge/src/main/LevelRendererMixinTemplate.java"
 		into "forge/src/main/java/mtr/mixin"
-		filter(ReplaceTokens, tokens: ["path": is_1_19_3 || is_1_20 ? "org.joml" : "com.mojang.math"])
+		filter(ReplaceTokens, tokens: ["path": is_1_19_4 || is_1_20 ? "org.joml" : "com.mojang.math"])
 		rename "(.+)Template.java", "\$1.java"
 	}
 
@@ -273,6 +328,8 @@ allprojects {
 		maven { url = "https://jitpack.io/" }
 		maven { url = "https://maven.terraformersmc.com/" }
 		maven { url = "https://maven.parchmentmc.org/" }
+		maven { url = "https://maven.shedaniel.me/" }
+		mavenCentral()
 		flatDir {
 			dirs "../libs"
 		}
@@ -290,6 +347,11 @@ allprojects {
 			options.release = 16
 		} else {
 			options.release = 17
+		}
+
+		// ANTE switches between Minecraft versions with #if blocks
+		if (rootProject.has_ante && name == "compileJava") {
+			options.compilerArgs += ["-Xplugin:Manifold", "-AMC_VERSION=" + rootProject.minecraft_version_int]
 		}
 	}
 

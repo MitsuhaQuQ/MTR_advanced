@@ -101,6 +101,13 @@ public final class RailAngle {
 		return fromUnits(Math.round(angleDegrees * UNITS_PER_DEGREE));
 	}
 
+	/**
+	 * Addons built against the original float version call this, so it must stay even though nothing here needs it.
+	 */
+	public static RailAngle fromAngle(float angleDegrees) {
+		return fromAngle((double) angleDegrees);
+	}
+
 	public static RailAngle closestQuadrant(float angleDegrees) {
 		return fromQuadrant(getQuadrant(angleDegrees, true));
 	}

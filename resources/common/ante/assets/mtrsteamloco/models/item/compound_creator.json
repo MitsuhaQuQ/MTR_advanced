@@ -1,0 +1,14 @@
+{
+    "parent": "item/generated",
+    "textures": {
+      "layer0": "mtrsteamloco:item/compound_creator"
+    },
+    "overrides": [
+      {
+        "predicate": {
+          "mtr:selected": 1
+        },
+        "model": "mtrsteamloco:item/compound_creator_selected"
+      }
+    ]
+}

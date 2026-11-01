@@ -541,7 +541,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 						}
 
 						final double stoppingDistance = distances.get(nextStoppingIndex) - railProgress;
-						if (!transportMode.continuousMovement && stoppingDistance < 0.5 * speed * speed / accelerationConstant) {
+						if (!transportMode.continuousMovement && stoppingDistance < 0.5 * speed * speed / accelerationConstant && mustStop(nextStoppingIndex)) {
 							speed = stoppingDistance <= 0 ? Train.ACCELERATION_DEFAULT : (float) Math.max(speed - (0.5 * speed * speed / stoppingDistance) * ticksElapsed, Train.ACCELERATION_DEFAULT);
 							manualNotch = -3;
 						} else {
@@ -567,11 +567,21 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 						tempDoorOpen = transportMode.continuousMovement && openDoors();
 					}
 
+					// A loop joins back onto itself, so the train keeps running instead of stopping at the end of the path
+					if (loopsWithoutReversing() && railProgress + speed * ticksElapsed >= distances.get(repeatIndex2)) {
+						railProgress += distances.get(repeatIndex1 - 1) - distances.get(repeatIndex2 - 1);
+						continueWithoutStopping(world);
+					}
+
 					railProgress += speed * ticksElapsed;
 					if (!transportMode.continuousMovement && railProgress > distances.get(nextStoppingIndex)) {
-						railProgress = distances.get(nextStoppingIndex);
-						speed = 0;
-						manualNotch = -2;
+						if (mustStop(nextStoppingIndex)) {
+							railProgress = distances.get(nextStoppingIndex);
+							speed = 0;
+							manualNotch = -2;
+						} else {
+							continueWithoutStopping(world);
+						}
 					}
 
 					tempDoorValue = Mth.clamp(doorValue + ticksElapsed * (doorTarget ? 1 : -1) / DOOR_MOVE_TIME, 0, 1);
@@ -677,6 +687,32 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected abstract boolean openDoors(Level world, Block block, BlockPos checkPos, int dwellTicks);
 
 	protected abstract double asin(double value);
+
+	/**
+	 * Only a manual train may run through a stop, unless the rails end there or the next one is blocked.
+	 */
+	private boolean mustStop(int stopIndex) {
+		if (!isCurrentlyManual) {
+			return true;
+		}
+		final boolean railsEnd;
+		if (isRepeat() && stopIndex >= repeatIndex2 && distances.size() > repeatIndex1) {
+			railsEnd = path.get(repeatIndex2).isOppositeRail(path.get(repeatIndex1));
+		} else {
+			railsEnd = stopIndex >= distances.size() - 1 || path.get(stopIndex).isOppositeRail(path.get(stopIndex + 1));
+		}
+		return railsEnd || isRailBlocked(stopIndex + 1);
+	}
+
+	private boolean loopsWithoutReversing() {
+		return isRepeat() && repeatIndex2 > repeatIndex1 && repeatIndex2 < distances.size() && !path.get(repeatIndex2).isOppositeRail(path.get(repeatIndex1));
+	}
+
+	private void continueWithoutStopping(Level world) {
+		final float oldSpeed = speed;
+		startUp(world, trainCars, spacing, false);
+		speed = oldSpeed;
+	}
 
 	private boolean isOppositeRail() {
 		return path.size() > nextStoppingIndex + 1 && railProgress == distances.get(nextStoppingIndex) && path.get(nextStoppingIndex).isOppositeRail(path.get(nextStoppingIndex + 1));

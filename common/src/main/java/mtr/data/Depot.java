@@ -287,21 +287,49 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	}
 
 	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Set<Siding> sidings, Consumer<Thread> callback) {
-		final List<SavedRailBase> platformsInRoute = new ArrayList<>();
-		final List<List<BlockPos>> sectionWaypoints = new ArrayList<>();
-		final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
+		final List<SavedRailBase> platformsMerged = new ArrayList<>();
+		final List<List<SavedRailBase>> platformsInRoute = new ArrayList<>();
+		final List<List<PathData>> pathsInRoute = new ArrayList<>();
+		final List<List<List<BlockPos>>> waypointsInRoute = new ArrayList<>();
+		final List<List<Route.RoutePlatform>> stopSettingsInRoute = new ArrayList<>();
 
 		routeIds.forEach(routeId -> {
 			final Route route = dataCache.routeIdMap.get(routeId);
 			if (route != null) {
-				route.platformIds.forEach(platformId -> {
-					final Platform platform = dataCache.platformIdMap.get(platformId.platformId);
-					if (platform != null && (platformsInRoute.isEmpty() || platform.id != platformsInRoute.get(platformsInRoute.size() - 1).id)) {
-						platformsInRoute.add(platform);
-						sectionWaypoints.add(platformId.waypoints);
-						stopSettings.add(platformId);
+				final List<PathData> routePath = new ArrayList<>();
+				route.getPathData().forEach(pathData -> routePath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+				final List<SavedRailBase> routePlatforms = new ArrayList<>();
+				final List<List<BlockPos>> routeWaypoints = new ArrayList<>();
+				final List<Route.RoutePlatform> routeStopSettings = new ArrayList<>();
+
+				if (routePath.isEmpty()) {
+					route.platformIds.forEach(platformId -> {
+						final Platform platform = dataCache.platformIdMap.get(platformId.platformId);
+						if (platform != null) {
+							routePlatforms.add(platform);
+							routeWaypoints.add(platformId.waypoints);
+							routeStopSettings.add(platformId);
+							if (platformsMerged.isEmpty() || platform.id != platformsMerged.get(platformsMerged.size() - 1).id) {
+								platformsMerged.add(platform);
+							}
+						}
+					});
+				} else {
+					for (int i = 0; i < route.platformIds.size(); i++) {
+						final Platform platform = dataCache.platformIdMap.get(route.platformIds.get(i).platformId);
+						if (platform != null) {
+							routePlatforms.add(platform);
+							if (i != 0 || platformsMerged.isEmpty() || platform.id != platformsMerged.get(platformsMerged.size() - 1).id) {
+								platformsMerged.add(platform);
+							}
+						}
 					}
-				});
+				}
+
+				platformsInRoute.add(routePlatforms);
+				pathsInRoute.add(routePath);
+				waypointsInRoute.add(routeWaypoints);
+				stopSettingsInRoute.add(routeStopSettings);
 			}
 		});
 
@@ -312,17 +340,65 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		final Thread thread = new Thread(() -> {
 			try {
 				final List<PathData> tempPath = new ArrayList<>();
-				final int successfulSegmentsMain = PathFinder.findPath(tempPath, rails, graph, platformsInRoute, sectionWaypoints, 1, cruisingAltitude, useFastSpeed);
-				final PathFailure failure = tempPath.isEmpty() ? PathFailure.diagnose(graph, platformsInRoute, sectionWaypoints, successfulSegmentsMain) : PathFailure.NONE;
-				PathFinder.applyStopSettings(tempPath, stopSettings);
+				PathFailure failure = PathFailure.NONE;
+				SavedRailBase lastPlatform = null;
+
+				for (int i = 0; i < pathsInRoute.size(); i++) {
+					final List<SavedRailBase> platforms = platformsInRoute.get(i);
+					if (lastPlatform != null && !platforms.isEmpty() && platforms.get(0) != lastPlatform) {
+						final List<PathData> connectingPath = new ArrayList<>();
+						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
+						tempPath.addAll(connectingPath);
+					}
+					if (!platforms.isEmpty()) {
+						lastPlatform = platforms.get(platforms.size() - 1);
+					}
+
+					final List<PathData> routePath = pathsInRoute.get(i);
+					if (routePath.isEmpty()) {
+						final int reached = PathFinder.findPath(routePath, rails, graph, platforms, waypointsInRoute.get(i), 1, cruisingAltitude, useFastSpeed);
+						if (routePath.isEmpty() && platforms.size() >= 2) {
+							failure = PathFailure.diagnose(graph, platforms, waypointsInRoute.get(i), reached);
+							tempPath.clear();
+							break;
+						}
+						PathFinder.applyStopSettings(routePath, stopSettingsInRoute.get(i));
+					}
+
+					if (routePath.size() > 2) {
+						final PathData first = routePath.get(0);
+						final PathData last = tempPath.isEmpty() ? null : tempPath.get(tempPath.size() - 1);
+						if (last != null) {
+							if (first.isOppositeRail(last)) {
+								first.dwellTime = 0;
+								first.savedRailBaseId = 0;
+							} else if (first.isSameRail(last)) {
+								routePath.remove(0);
+							}
+						}
+						tempPath.addAll(routePath);
+					}
+				}
+
+				int stopIndex = 1;
+				for (int i = 1; i < tempPath.size(); i++) {
+					final PathData pathData = tempPath.get(i);
+					// Passed platforms have no stop time but still count, as route indices include them
+					if (pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && tempPath.get(i - 1).rail.railType != RailType.PLATFORM) {
+						stopIndex++;
+					}
+					pathData.stopIndex = stopIndex;
+				}
+
 				final int[] successfulSegments = new int[]{Integer.MAX_VALUE};
+				final int successfulSegmentsMain = platformsMerged.size();
 
 				sidings.forEach(siding -> {
 					final BlockPos sidingMidPos = siding.getMidPos();
 					if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
-						final SavedRailBase firstPlatform = platformsInRoute.isEmpty() ? null : platformsInRoute.get(0);
-						final SavedRailBase lastPlatform = platformsInRoute.isEmpty() ? null : platformsInRoute.get(platformsInRoute.size() - 1);
-						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, graph, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed);
+						final SavedRailBase firstPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(0);
+						final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
+						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, graph, firstPlatform, finalPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed);
 						if (result < successfulSegments[0]) {
 							successfulSegments[0] = result;
 						}

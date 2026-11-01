@@ -1,6 +1,7 @@
 package mtr.data;
 
 import io.netty.buffer.Unpooled;
+import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -28,6 +29,10 @@ public final class Route extends NameColorDataBase implements IGui {
 	public CircularState circularState;
 	public String lightRailRouteNumber;
 	public final List<RoutePlatform> platformIds;
+	/**
+	 * A path drawn by hand, which replaces the path search for this route when not empty.
+	 */
+	private List<PathData> pathData = new ArrayList<>();
 
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
@@ -40,6 +45,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_IS_ROUTE_HIDDEN = "is_route_hidden";
 	private static final String KEY_DISABLE_NEXT_STATION_ANNOUNCEMENTS = "disable_next_station_announcements";
 	private static final String KEY_CIRCULAR_STATE = "circular_state";
+	private static final String KEY_CUSTOM_PATH = "ante_path";
 
 	public Route(TransportMode transportMode) {
 		this(0, transportMode);
@@ -99,6 +105,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		disableNextStationAnnouncements = messagePackHelper.getBoolean(KEY_DISABLE_NEXT_STATION_ANNOUNCEMENTS);
 		lightRailRouteNumber = messagePackHelper.getString(KEY_LIGHT_RAIL_ROUTE_NUMBER);
 		circularState = EnumHelper.valueOf(CircularState.NONE, messagePackHelper.getString(KEY_CIRCULAR_STATE));
+		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 	}
 
 	@Deprecated
@@ -137,6 +144,11 @@ public final class Route extends NameColorDataBase implements IGui {
 		disableNextStationAnnouncements = packet.readBoolean();
 		lightRailRouteNumber = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		circularState = EnumHelper.valueOf(CircularState.NONE, packet.readUtf(PACKET_STRING_READ_LENGTH));
+
+		final int pathSize = packet.readInt();
+		for (int i = 0; i < pathSize; i++) {
+			pathData.add(new PathData(packet));
+		}
 	}
 
 	@Override
@@ -177,11 +189,19 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePacker.packString(KEY_DISABLE_NEXT_STATION_ANNOUNCEMENTS).packBoolean(disableNextStationAnnouncements);
 		messagePacker.packString(KEY_LIGHT_RAIL_ROUTE_NUMBER).packString(lightRailRouteNumber);
 		messagePacker.packString(KEY_CIRCULAR_STATE).packString(circularState.toString());
+
+		if (!pathData.isEmpty()) {
+			messagePacker.packString(KEY_CUSTOM_PATH).packArrayHeader(pathData.size());
+			for (final PathData data : pathData) {
+				messagePacker.packMapHeader(data.messagePackLength());
+				data.toMessagePack(messagePacker);
+			}
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 11;
+		return super.messagePackLength() + 11 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	@Override
@@ -200,6 +220,9 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeBoolean(disableNextStationAnnouncements);
 		packet.writeUtf(lightRailRouteNumber);
 		packet.writeUtf(circularState.toString());
+
+		packet.writeInt(pathData.size());
+		pathData.forEach(data -> data.writePacket(packet));
 	}
 
 	@Override
@@ -314,6 +337,24 @@ public final class Route extends NameColorDataBase implements IGui {
 		}
 		platformIds.clear();
 		platformIds.addAll(newPlatforms);
+	}
+
+	public List<PathData> getPathData() {
+		return pathData;
+	}
+
+	/**
+	 * Adds a stop for every platform the path enters, apart from turning back over the same platform.
+	 */
+	public void setPathData(List<PathData> pathData) {
+		PathData last = null;
+		for (final PathData data : pathData) {
+			if (data.rail.railType == RailType.PLATFORM && data.savedRailBaseId != 0 && (last == null || !last.isOppositeRail(data))) {
+				platformIds.add(new RoutePlatform(data.savedRailBaseId));
+			}
+			last = data;
+		}
+		this.pathData = pathData;
 	}
 
 	public int getPlatformIdIndex(long platformId) {

@@ -17,9 +17,9 @@ import java.util.UUID;
 public class PathData extends SerializedDataBase {
 
 	public final Rail rail;
-	public final long savedRailBaseId;
-	public final int dwellTime;
-	public final int stopIndex;
+	public long savedRailBaseId;
+	public int dwellTime;
+	public int stopIndex;
 
 	public final BlockPos startingPos;
 	private final BlockPos endingPos;
