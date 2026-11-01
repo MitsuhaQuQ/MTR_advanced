@@ -62,8 +62,8 @@ public class RouteTimetable {
 
 	/**
 	 * Works out the times of a whole trip. A stop without a set time follows the stop before it, so changing a time also
-	 * moves every automatic time after it. Set times count from where their own route starts, as a route after a turn back
-	 * has no way to know when the trip started.
+	 * moves every automatic time after it. Set times count from where their own route starts, because a route after a turn
+	 * back runs by its own services, and doesn't know when the trip started.
 	 *
 	 * @param stops the stops of the trip in order, starting at the first stop
 	 */
@@ -79,9 +79,26 @@ public class RouteTimetable {
 				routeStart = stop.arrivalMillis;
 			}
 			stop.departureMillis = stop.setDepartureSeconds >= 0 ? Math.max(routeStart + stop.setDepartureSeconds * 1000L, stop.arrivalMillis) : stop.arrivalMillis + stop.fastestDepartureMillis - stop.fastestArrivalMillis;
-			stop.isTimed = i == 0 || stop.overtake || stop.setDepartureSeconds >= 0;
+			stop.routeStartMillis = routeStart;
+			stop.isTimed = i == 0 || stop.overtake || stop.setDepartureSeconds >= 0 || stop.waitsForService;
 			lastFastestDeparture = stop.fastestDepartureMillis;
 			lastDeparture = stop.departureMillis;
+		}
+	}
+
+	/**
+	 * Marks turn back rails just before a route with services of its own, where a train waits so it reaches that route on time.
+	 *
+	 * @param stops       the stops of the trip in order, after {@link #applyPlan(List)}
+	 * @param isTurnBacks for each stop, true if it is not at a platform
+	 */
+	public static void linkTurnBacks(List<StopPlan> stops, List<Boolean> isTurnBacks) {
+		for (int i = 0; i < stops.size() - 1; i++) {
+			final StopPlan nextStop = stops.get(i + 1);
+			if (isTurnBacks.get(i) && nextStop.startsRoute && nextStop.waitsForService) {
+				stops.get(i).nextRouteStart = nextStop;
+				stops.get(i).isTimed = true;
+			}
 		}
 	}
 
@@ -137,6 +154,19 @@ public class RouteTimetable {
 		 * The next route of the trip starts here, so times from here on count from this stop.
 		 */
 		public boolean startsRoute;
+		/**
+		 * The route starting here, which is only known on the server.
+		 */
+		public Route route;
+		/**
+		 * The route starting here has services of its own, which the train waits for here.
+		 */
+		public boolean waitsForService;
+		public long routeStartMillis;
+		/**
+		 * This is a turn back rail, and the next stop starts a route with services of its own.
+		 */
+		public StopPlan nextRouteStart;
 		public long arrivalMillis;
 		public long departureMillis;
 		/**

@@ -20,6 +20,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 
 	private final Component lightRailRouteNumberText = Text.translatable("gui.mtr.light_rail_route_number");
 	private final Component lineNameText = Text.translatable("gui.mtr.route_line_name");
+	private final Component serviceTypeText = Text.translatable("gui.mtr.route_service_type");
 
 	private final WidgetBetterTextField textFieldLightRailRouteNumber;
 	private final Button buttonRouteType;
@@ -31,10 +32,12 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 	private final Button buttonTimetable;
 	private final Button buttonDuplicate;
 	private final WidgetBetterTextField textFieldLineName;
+	private final WidgetBetterTextField textFieldServiceType;
 
 	private final boolean isCircular;
 
 	private static final int CHECKBOX_WIDTH = 160;
+	private static final int RIGHT_COLUMN_X = SQUARE_SIZE * 2 + CHECKBOX_WIDTH;
 
 	public EditRouteScreen(Route route, DashboardScreen dashboardScreen) {
 		super(route, dashboardScreen, "gui.mtr.route_name", "gui.mtr.route_color");
@@ -70,6 +73,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 			}
 		});
 		textFieldLineName = new WidgetBetterTextField(Route.getAutoLineName(route.name));
+		textFieldServiceType = new WidgetBetterTextField(LineWords.findServiceWord(route.name));
 
 		if (route.platformIds.size() > 0) {
 			final Station firstStation = ClientData.DATA_CACHE.platformIdToStation.get(route.getFirstPlatformId());
@@ -95,10 +99,14 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 
 		IDrawing.setPositionAndWidth(buttonIsClockwiseRoute, SQUARE_SIZE, SQUARE_SIZE * 9 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
 		IDrawing.setPositionAndWidth(buttonIsAntiClockwiseRoute, SQUARE_SIZE, SQUARE_SIZE * 10 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
-		IDrawing.setPositionAndWidth(buttonTimetable, SQUARE_SIZE, SQUARE_SIZE * 11 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
-		IDrawing.setPositionAndWidth(buttonDuplicate, SQUARE_SIZE, SQUARE_SIZE * 12 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
-		IDrawing.setPositionAndWidth(textFieldLineName, SQUARE_SIZE * 2 + CHECKBOX_WIDTH + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING / 2, CHECKBOX_WIDTH - TEXT_FIELD_PADDING);
+		// These sit beside the other options, as the left column already runs off the bottom of a small window
+		final int rightColumnWidth = getRightColumnWidth();
+		IDrawing.setPositionAndWidth(textFieldLineName, RIGHT_COLUMN_X + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING / 2, rightColumnWidth - TEXT_FIELD_PADDING);
 		textFieldLineName.setValue(data.lineName);
+		IDrawing.setPositionAndWidth(textFieldServiceType, RIGHT_COLUMN_X + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 6 + TEXT_FIELD_PADDING / 2, rightColumnWidth - TEXT_FIELD_PADDING);
+		textFieldServiceType.setValue(data.serviceType);
+		IDrawing.setPositionAndWidth(buttonTimetable, RIGHT_COLUMN_X, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING, rightColumnWidth);
+		IDrawing.setPositionAndWidth(buttonDuplicate, RIGHT_COLUMN_X, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING, rightColumnWidth);
 
 		if (data.transportMode.hasRouteTypeVariation) {
 			addDrawableChild(buttonRouteType);
@@ -116,6 +124,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		}
 		addDrawableChild(buttonDuplicate);
 		addDrawableChild(textFieldLineName);
+		addDrawableChild(textFieldServiceType);
 
 		setIsLightRailRoute(data.isLightRailRoute);
 		setIsRouteHidden(data.isHidden);
@@ -130,7 +139,8 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 			renderBackground(matrices);
 			renderTextFields(matrices);
 
-			GuiCompat.drawString(matrices, font, lineNameText, SQUARE_SIZE * 2 + CHECKBOX_WIDTH, SQUARE_SIZE * 3 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, font.plainSubstrByWidth(lineNameText.getString(), getRightColumnWidth()), RIGHT_COLUMN_X, SQUARE_SIZE * 3 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawString(matrices, font, font.plainSubstrByWidth(serviceTypeText.getString(), getRightColumnWidth()), RIGHT_COLUMN_X, SQUARE_SIZE * 5 + TEXT_PADDING, ARGB_WHITE);
 			if (textFieldLightRailRouteNumber.visible) {
 				GuiCompat.drawString(matrices, font, lightRailRouteNumberText, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
 			}
@@ -151,6 +161,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		data.isHidden = buttonIsRouteHidden.selected();
 		data.disableNextStationAnnouncements = buttonDisableNextStationAnnouncements.selected();
 		data.lineName = textFieldLineName.getValue().trim();
+		data.serviceType = textFieldServiceType.getValue().trim();
 
 		if (isCircular) {
 			data.circularState = buttonIsClockwiseRoute.selected() ? Route.CircularState.CLOCKWISE : buttonIsAntiClockwiseRoute.selected() ? Route.CircularState.ANTICLOCKWISE : Route.CircularState.NONE;
@@ -159,12 +170,21 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		}
 
 		data.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		ClientData.DATA_CACHE.sync();
+	}
 
-		// Every route of a line shares its colour, so changing one changes them all
-		ClientData.getFilteredDataSet(data.transportMode, ClientData.ROUTES).stream().filter(route -> route != data && route.color != data.color && route.isSameLine(data)).forEach(route -> {
-			route.color = data.color;
-			route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
-		});
+	@Override
+	protected int getEditedColor() {
+		return data.getOwnColor();
+	}
+
+	@Override
+	protected void setEditedColor(int color) {
+		data.setOwnColor(color);
+	}
+
+	private int getRightColumnWidth() {
+		return Math.max(SQUARE_SIZE * 2, Math.min(CHECKBOX_WIDTH, width - RIGHT_COLUMN_X - SQUARE_SIZE));
 	}
 
 	private void setRouteTypeText(TransportMode transportMode, RouteType newRouteType) {

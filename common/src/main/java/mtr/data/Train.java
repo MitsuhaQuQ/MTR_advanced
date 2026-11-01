@@ -516,6 +516,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 								onLapComplete();
 							}
 
+							if (elapsedDwellTicks == 0) {
+								onStopReached();
+							}
+
 							if (elapsedDwellTicks < totalDwellTicks - DOOR_MOVE_TIME - DOOR_DELAY - ticksElapsed || !railBlocked && !isHeldAtStop()) {
 								elapsedDwellTicks += ticksElapsed;
 							}
@@ -675,6 +679,12 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * Called as a repeating train starts its next lap, before it looks for its next stop.
 	 */
 	protected void onLapComplete() {
+	}
+
+	/**
+	 * Called while a train has just stopped, before its stop time starts counting, which can be more than once.
+	 */
+	protected void onStopReached() {
 	}
 
 	/**

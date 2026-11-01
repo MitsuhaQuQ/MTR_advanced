@@ -2,6 +2,11 @@ package mtr.data;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -58,6 +63,72 @@ class RouteLineTest {
 	void differentLinesAreKeptApart() {
 		assertFalse(route("1号线 上行").isSameLine(route("2号线 上行")));
 		assertFalse(route("1号线").isSameLine(null));
+	}
+
+	@Test
+	void everyRouteOfALineShowsTheColorOfItsFirstRoute() {
+		final Route down = route("1号线 下行");
+		final Route up = route("1号线 上行");
+		final Route other = route("2号线");
+		down.setOwnColor(0x111111);
+		up.setOwnColor(0x222222);
+		other.setOwnColor(0x333333);
+
+		Route.applyLineColors(Arrays.asList(down, up, other));
+
+		assertEquals(0x222222, down.color);
+		assertEquals(0x222222, up.color);
+		assertEquals(0x333333, other.color);
+		assertEquals(0x111111, down.getOwnColor());
+		assertEquals(0x222222, up.getOwnColor());
+	}
+
+	@Test
+	void routesSavedWithoutAnOwnColorKeepTheColorTheyHad() {
+		final Route route1 = route("1号线 上行");
+		final Route route2 = route("1号线 下行");
+		route1.color = 0x111111;
+		route2.color = 0x222222;
+
+		Route.applyLineColors(Arrays.asList(route1, route2));
+		Route.applyLineColors(Arrays.asList(route1, route2));
+
+		assertEquals(0x111111, route1.getOwnColor());
+		assertEquals(0x222222, route2.getOwnColor());
+		assertEquals(0x111111, route2.color);
+	}
+
+	@Test
+	void serviceTypeComesFromTheNameUnlessSet() {
+		assertEquals("快速", route("1号线 快速 上行").getServiceType());
+		assertEquals("express", route("Line 1 Express").getServiceType());
+		assertEquals("", route("1号线 上行").getServiceType());
+
+		final Route route = route("1号线 快速");
+		route.serviceType = " 通勤 ";
+		assertEquals("通勤", route.getServiceType());
+	}
+
+	@Test
+	void serviceTypesAreSplitByCommonSeparators() {
+		final Set<String> serviceTypes = new HashSet<>(Arrays.asList("普通", "急行", "local"));
+		assertEquals(serviceTypes, Depot.parseServiceTypes("普通,急行，LOCAL"));
+		assertEquals(serviceTypes, Depot.parseServiceTypes(" 普通、急行 local "));
+		assertTrue(Depot.parseServiceTypes("  ").isEmpty());
+	}
+
+	@Test
+	void vehiclesOnlyRunTheirServiceTypes() {
+		final Route local = route("1号线 普通");
+		final Route express = route("1号线 急行");
+		final Route rapid = route("1号线 快速");
+		final Route limited = route("1号线 特急");
+		final Route other = route("1号线");
+		final List<Route> routes = Arrays.asList(local, express, rapid, limited, other);
+
+		assertEquals(Arrays.asList(local, express, other), Depot.filterRoutes(routes, Depot.parseServiceTypes("普通,急行")));
+		assertEquals(Arrays.asList(rapid, limited, other), Depot.filterRoutes(routes, Depot.parseServiceTypes("快速,特急")));
+		assertEquals(routes, Depot.filterRoutes(routes, Depot.parseServiceTypes("")));
 	}
 
 	@Test

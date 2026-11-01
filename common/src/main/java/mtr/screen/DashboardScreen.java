@@ -67,7 +67,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final Set<String> expandedLines = new HashSet<>();
 	private final Map<Long, String> lineHeaderRows = new HashMap<>();
 	private final Set<Long> lineChildRows = new HashSet<>();
-	private final Map<Long, Integer> routeColors = new HashMap<>();
 
 	public static final int MAX_COLOR_ZONE_LENGTH = 6;
 	private static final int COLOR_WIDTH = 48;
@@ -125,8 +124,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			final long headerId = getLineHeaderId(lineKey);
 			dashboardList.selectItem(lineHeaderRows.containsKey(headerId) ? headerId : route.id);
 		});
-		widgetMap.setRouteColors(routeColors);
-		dashboardList.setRowStyle(this::getRowLabel, data -> lineHeaderRows.containsKey(data.id), data -> routeColors.getOrDefault(data.id, data.color), this::onClickLineHeader);
+		dashboardList.setRowStyle(this::getRowLabel, data -> lineHeaderRows.containsKey(data.id), this::getRowColor, this::onClickLineHeader);
 		widgetMap.setStationPicking(() -> selectedTab == SelectedTab.STATIONS && editingArea == null, station -> {
 			widgetMap.setSelectedStation(station.id);
 			dashboardList.selectItem(station.id);
@@ -237,7 +235,6 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldCustomDestination.tick();
 		textFieldDwellOverride.tick();
 		dashboardList.tick();
-		updateRouteColors();
 
 		try {
 			switch (selectedTab) {
@@ -332,15 +329,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		return lineKey.hashCode() & 0xFFFFFFFFL | 1L << 40;
 	}
 
-	/**
-	 * A line takes the colour of its first route, so routes saved with different colours still look like one line.
-	 */
-	private void updateRouteColors() {
-		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
-		Collections.sort(routes);
-		final Map<String, Integer> lineColors = new HashMap<>();
-		routeColors.clear();
-		routes.forEach(route -> routeColors.put(route.id, lineColors.computeIfAbsent(route.getLineKey(), key -> route.color)));
+	private int getRowColor(NameColorDataBase data) {
+		return data instanceof Route && lineChildRows.contains(data.id) ? ((Route) data).getOwnColor() : data.color;
 	}
 
 	private String getRowLabel(NameColorDataBase data) {
@@ -535,7 +525,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		editingRoutePlatformIndex = -1;
 
 		textFieldName.setValue(editingRoute.name);
-		colorSelector.setColor(editingRoute.color);
+		colorSelector.setColor(editingRoute.getOwnColor());
 
 		widgetMap.startEditingRoute();
 		toggleButtons();
@@ -639,8 +629,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			}
 		}
 		editingRoute.name = IGui.textOrUntitled(textFieldName.getValue());
-		editingRoute.color = colorSelector.getColor();
+		editingRoute.setOwnColor(colorSelector.getColor());
 		editingRoute.setNameColor(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		editingRoute.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		ClientData.DATA_CACHE.sync();
 		stopEditing();
 	}
 

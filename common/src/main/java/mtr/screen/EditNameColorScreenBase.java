@@ -67,7 +67,7 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 		IDrawing.setPositionAndWidth(colorSelector, colorStart + TEXT_FIELD_PADDING / 2, yStart, colorEnd - colorStart - TEXT_FIELD_PADDING);
 
 		textFieldName.setValue(data.name);
-		colorSelector.setColor(data.color);
+		colorSelector.setColor(getEditedColor());
 
 		addDrawableChild(textFieldName);
 		addDrawableChild(colorSelector);
@@ -80,6 +80,14 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 
 	protected void saveData() {
 		data.name = IGui.textOrUntitled(textFieldName.getValue());
-		data.color = colorSelector.getColor();
+		setEditedColor(colorSelector.getColor());
+	}
+
+	protected int getEditedColor() {
+		return data.color;
+	}
+
+	protected void setEditedColor(int color) {
+		data.color = color;
 	}
 }

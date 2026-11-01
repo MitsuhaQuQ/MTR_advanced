@@ -26,7 +26,6 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	public int clientPathGenerationSuccessfulSegments;
 	public PathFailure clientPathFailure = PathFailure.NONE;
 	public long lastDeployedMillis;
-	private long lastDeployedTripMillis;
 	public boolean useRealTime;
 	public boolean repeatInfinitely;
 	public boolean useDeterministicPath = true;
@@ -39,11 +38,16 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	public final Map<Long, Map<Long, Float>> platformTimes = new HashMap<>();
 	public final List<Integer> departures = new ArrayList<>();
 	public final List<Integer> tempDepartures = new ArrayList<>();
+	/**
+	 * The types of service each vehicle may run by vehicle ID, as text like {@code local, express}. Without one it runs everything.
+	 */
+	public final Map<String, String> vehicleServiceTypes = new HashMap<>();
 
 	private final int[] frequencies = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
-	private RouteTimetable timetable;
-	private final List<Route> timetableRoutes = new ArrayList<>();
+	private DataCache dataCache;
+	private final Map<String, List<Route>> trainRoutes = new HashMap<>();
+	private final Map<Long, Long> lastDeployedTrips = new HashMap<>();
 	private Set<Long> reservedTrips = new HashSet<>();
 	private Set<Long> newReservedTrips = new HashSet<>();
 
@@ -68,7 +72,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private static final String KEY_FREQUENCIES = "frequencies";
 	private static final String KEY_DEPARTURES = "departures";
 	private static final String KEY_LAST_DEPLOYED = "last_deployed";
-	private static final String KEY_LAST_DEPLOYED_TRIP = "last_deployed_trip";
+	private static final String KEY_LAST_DEPLOYED_TRIPS = "last_deployed_trips";
+	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
@@ -105,7 +110,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
-		lastDeployedTripMillis = messagePackHelper.getLong(KEY_LAST_DEPLOYED_TRIP);
+		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
+		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
 	}
 
 	@Deprecated
@@ -152,6 +158,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		repeatInfinitely = packet.readBoolean();
 		cruisingAltitude = packet.readInt();
 		useDeterministicPath = packet.readBoolean();
+		readVehicleServiceTypes(packet);
 	}
 
 	@Override
@@ -159,7 +166,10 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		toReducedMessagePack(messagePacker);
 		messagePacker.packString(KEY_DEPLOY_INDEX).packInt(deployIndex);
 		messagePacker.packString(KEY_LAST_DEPLOYED).packLong(System.currentTimeMillis() - lastDeployedMillis);
-		messagePacker.packString(KEY_LAST_DEPLOYED_TRIP).packLong(lastDeployedTripMillis);
+		messagePacker.packString(KEY_LAST_DEPLOYED_TRIPS).packMapHeader(lastDeployedTrips.size());
+		for (final Map.Entry<Long, Long> entry : lastDeployedTrips.entrySet()) {
+			messagePacker.packString(String.valueOf(entry.getKey())).packLong(entry.getValue());
+		}
 	}
 
 	@Override
@@ -185,11 +195,16 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		for (final int departure : departures) {
 			messagePacker.packInt(departure);
 		}
+
+		messagePacker.packString(KEY_VEHICLE_SERVICE_TYPES).packMapHeader(vehicleServiceTypes.size());
+		for (final Map.Entry<String, String> entry : vehicleServiceTypes.entrySet()) {
+			messagePacker.packString(entry.getKey()).packString(entry.getValue());
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 10;
+		return super.messagePackLength() + 11;
 	}
 
 	@Override
@@ -218,6 +233,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		packet.writeBoolean(repeatInfinitely);
 		packet.writeInt(cruisingAltitude);
 		packet.writeBoolean(useDeterministicPath);
+		writeVehicleServiceTypes(packet);
 	}
 
 	@Override
@@ -253,6 +269,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			repeatInfinitely = packet.readBoolean();
 			cruisingAltitude = packet.readInt();
 			useDeterministicPath = packet.readBoolean();
+			readVehicleServiceTypes(packet);
 		} else {
 			super.update(key, packet);
 		}
@@ -295,131 +312,38 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		packet.writeBoolean(repeatInfinitely);
 		packet.writeInt(cruisingAltitude);
 		packet.writeBoolean(useDeterministicPath);
+		writeVehicleServiceTypes(packet);
 		sendPacket.accept(packet);
 	}
 
 	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Set<Siding> sidings, Consumer<Thread> callback) {
-		final List<SavedRailBase> platformsMerged = new ArrayList<>();
-		final List<List<SavedRailBase>> platformsInRoute = new ArrayList<>();
-		final List<List<PathData>> pathsInRoute = new ArrayList<>();
-		final List<List<List<BlockPos>>> waypointsInRoute = new ArrayList<>();
-		final List<List<Route.RoutePlatform>> stopSettingsInRoute = new ArrayList<>();
-
-		routeIds.forEach(routeId -> {
-			final Route route = dataCache.routeIdMap.get(routeId);
-			if (route != null) {
-				final List<PathData> routePath = new ArrayList<>();
-				route.getPathData().forEach(pathData -> routePath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
-				final List<SavedRailBase> routePlatforms = new ArrayList<>();
-				final List<List<BlockPos>> routeWaypoints = new ArrayList<>();
-				final List<Route.RoutePlatform> routeStopSettings = new ArrayList<>();
-
-				if (routePath.isEmpty()) {
-					route.platformIds.forEach(platformId -> {
-						final Platform platform = dataCache.platformIdMap.get(platformId.platformId);
-						if (platform != null) {
-							routePlatforms.add(platform);
-							routeWaypoints.add(platformId.waypoints);
-							routeStopSettings.add(platformId);
-							if (platformsMerged.isEmpty() || platform.id != platformsMerged.get(platformsMerged.size() - 1).id) {
-								platformsMerged.add(platform);
-							}
-						}
-					});
-				} else {
-					for (int i = 0; i < route.platformIds.size(); i++) {
-						final Platform platform = dataCache.platformIdMap.get(route.platformIds.get(i).platformId);
-						if (platform != null) {
-							routePlatforms.add(platform);
-							if (i != 0 || platformsMerged.isEmpty() || platform.id != platformsMerged.get(platformsMerged.size() - 1).id) {
-								platformsMerged.add(platform);
-							}
-						}
-					}
-				}
-
-				platformsInRoute.add(routePlatforms);
-				pathsInRoute.add(routePath);
-				waypointsInRoute.add(routeWaypoints);
-				stopSettingsInRoute.add(routeStopSettings);
+		// Vehicles only run some types of service, so each group of them gets a path of its own routes
+		final Map<Set<String>, List<Siding>> sidingGroups = new LinkedHashMap<>();
+		sidings.forEach(siding -> {
+			final BlockPos sidingMidPos = siding.getMidPos();
+			if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
+				sidingGroups.computeIfAbsent(getServiceTypes(siding.getTrainId()), key -> new ArrayList<>()).add(siding);
 			}
 		});
+		if (sidingGroups.isEmpty()) {
+			sidingGroups.put(Collections.emptySet(), new ArrayList<>());
+		}
 
 		final boolean useFastSpeed = cruisingAltitude >= world.getMaxBuildHeight() + THRESHOLD_ABOVE_MAX_BUILD_HEIGHT;
-		// A timetabled line that ends where it starts runs lap after lap, and only returns to the depot when service ends
-		final boolean repeatPath = repeatInfinitely || findTimetable(dataCache) != null && platformsMerged.size() > 1 && platformsMerged.get(0).id == platformsMerged.get(platformsMerged.size() - 1).id;
+		final List<MainPath> mainPaths = new ArrayList<>();
+		sidingGroups.forEach((serviceTypes, sidingGroup) -> mainPaths.add(new MainPath(filterRoutes(getRoutes(dataCache), serviceTypes), sidingGroup, dataCache)));
 
 		final RailGraph<Rail> graph = getPathGraph(rails);
 
 		final Thread thread = new Thread(() -> {
 			try {
-				final List<PathData> tempPath = new ArrayList<>();
+				int successfulSegments = Integer.MAX_VALUE;
 				PathFailure failure = PathFailure.NONE;
-				SavedRailBase lastPlatform = null;
-
-				for (int i = 0; i < pathsInRoute.size(); i++) {
-					final List<SavedRailBase> platforms = platformsInRoute.get(i);
-					if (lastPlatform != null && !platforms.isEmpty() && platforms.get(0) != lastPlatform) {
-						final List<PathData> connectingPath = new ArrayList<>();
-						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
-						tempPath.addAll(connectingPath);
-					}
-					if (!platforms.isEmpty()) {
-						lastPlatform = platforms.get(platforms.size() - 1);
-					}
-
-					final List<PathData> routePath = pathsInRoute.get(i);
-					if (routePath.isEmpty()) {
-						final int reached = PathFinder.findPath(routePath, rails, graph, platforms, waypointsInRoute.get(i), 1, cruisingAltitude, useFastSpeed);
-						if (routePath.isEmpty() && platforms.size() >= 2) {
-							failure = PathFailure.diagnose(graph, platforms, waypointsInRoute.get(i), reached);
-							tempPath.clear();
-							break;
-						}
-						PathFinder.applyStopSettings(routePath, stopSettingsInRoute.get(i));
-					}
-
-					if (routePath.size() > 2) {
-						final PathData first = routePath.get(0);
-						final PathData last = tempPath.isEmpty() ? null : tempPath.get(tempPath.size() - 1);
-						if (last != null) {
-							if (first.isOppositeRail(last)) {
-								first.dwellTime = 0;
-								first.savedRailBaseId = 0;
-							} else if (first.isSameRail(last)) {
-								routePath.remove(0);
-							}
-						}
-						tempPath.addAll(routePath);
-					}
+				for (final MainPath mainPath : mainPaths) {
+					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed));
+					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
 				}
-
-				int stopIndex = 1;
-				for (int i = 1; i < tempPath.size(); i++) {
-					final PathData pathData = tempPath.get(i);
-					// Passed platforms have no stop time but still count, as route indices include them
-					if (pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && tempPath.get(i - 1).rail.railType != RailType.PLATFORM) {
-						stopIndex++;
-					}
-					pathData.stopIndex = stopIndex;
-				}
-
-				final int[] successfulSegments = new int[]{Integer.MAX_VALUE};
-				final int successfulSegmentsMain = platformsMerged.size();
-
-				sidings.forEach(siding -> {
-					final BlockPos sidingMidPos = siding.getMidPos();
-					if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
-						final SavedRailBase firstPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(0);
-						final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed);
-						if (result < successfulSegments[0]) {
-							successfulSegments[0] = result;
-						}
-					}
-				});
-
-				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments[0], failure);
+				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -452,11 +376,10 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		newReservedTrips = oldReservedTrips;
 		newReservedTrips.clear();
 
-		timetable = findTimetable(railwayData.dataCache);
-		timetableRoutes.clear();
-		timetableRoutes.addAll(getRoutes(railwayData.dataCache));
+		dataCache = railwayData.dataCache;
+		trainRoutes.clear();
 
-		if (!deployableSidings.isEmpty() && (timetable != null || getMillisUntilDeploy(1) == 0)) {
+		if (!deployableSidings.isEmpty()) {
 			final List<Siding> sidingsInDepot = railwayData.sidings.stream().filter(siding -> {
 				final BlockPos sidingPos = siding.getMidPos();
 				return siding.isTransportMode(transportMode) && inArea(sidingPos.getX(), sidingPos.getZ());
@@ -465,9 +388,14 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			final int sidingsInDepotSize = sidingsInDepot.size();
 			for (int i = deployIndex; i < deployIndex + sidingsInDepotSize; i++) {
 				final TrainServer train = deployableSidings.get(sidingsInDepot.get(i % sidingsInDepotSize).id);
+				if (train == null) {
+					continue;
+				}
+				final RouteTimetable timetable = getTimetable(train.trainId);
+				final Route firstRoute = timetable == null ? null : getTrainRoutes(train.trainId).get(0);
 				final long currentMillis = System.currentTimeMillis();
-				final long tripMillis = train == null || timetable == null ? 0 : timetable.getLatestService(Math.max(lastDeployedTripMillis, currentMillis - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS), currentMillis + train.getLeadMillis() + DEPLOY_MARGIN_MILLIS, this::isTripReserved);
-				if (train != null && (timetable == null || tripMillis != 0)) {
+				final long tripMillis = timetable == null ? 0 : timetable.getLatestService(Math.max(lastDeployedTrips.getOrDefault(firstRoute.id, 0L), currentMillis - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS), currentMillis + train.getLeadMillis() + DEPLOY_MARGIN_MILLIS, millis -> isTripReserved(firstRoute.id, millis));
+				if (timetable == null ? getMillisUntilDeploy(1) == 0 : tripMillis != 0) {
 					lastDeployedMillis = currentMillis;
 					deployIndex++;
 					if (deployIndex >= sidingsInDepotSize) {
@@ -476,9 +404,9 @@ public class Depot extends AreaBase implements IReducedSaveData {
 					if (timetable == null) {
 						train.deployTrain();
 					} else {
-						lastDeployedTripMillis = tripMillis;
-						reserveTrip(tripMillis);
-						train.deployTrain(tripMillis);
+						lastDeployedTrips.put(firstRoute.id, tripMillis);
+						reserveTrip(firstRoute.id, tripMillis);
+						train.deployTrain(tripMillis, firstRoute.id);
 					}
 					break;
 				}
@@ -489,27 +417,37 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		deployableSidings.clear();
 	}
 
+	/**
+	 * @return the timetable of the depot's first route, for showing that departures follow a timetable
+	 */
 	public RouteTimetable findTimetable(DataCache dataCache) {
-		final Route firstRoute = routeIds.isEmpty() ? null : dataCache.routeIdMap.get(routeIds.get(0));
-		return firstRoute != null && supportsTimetable(transportMode) && firstRoute.timetable.isActive() ? firstRoute.timetable : null;
-	}
-
-	public static boolean supportsTimetable(TransportMode transportMode) {
-		return !transportMode.continuousMovement && transportMode != TransportMode.AIRPLANE;
+		final List<Route> routes = getRoutes(dataCache);
+		return routes.isEmpty() ? null : getActiveTimetable(routes.get(0));
 	}
 
 	/**
-	 * @return the timetable sending out this depot's trains, which belongs to its first route
+	 * @return the timetable sending out this vehicle, which belongs to the first route it runs
 	 */
-	public RouteTimetable getTimetable() {
-		return timetable;
+	public RouteTimetable getTimetable(String trainId) {
+		final List<Route> routes = getTrainRoutes(trainId);
+		return routes.isEmpty() ? null : getActiveTimetable(routes.get(0));
+	}
+
+	private RouteTimetable getActiveTimetable(Route route) {
+		return supportsTimetable(transportMode) && route.timetable.isActive() ? route.timetable : null;
 	}
 
 	/**
-	 * @return the routes trains of this depot run through, in order
+	 * @return the routes this vehicle runs through, in order, kept for one tick as this is needed for every train
 	 */
-	public List<Route> getTimetableRoutes() {
-		return timetableRoutes;
+	public List<Route> getTrainRoutes(String trainId) {
+		final List<Route> routes = trainRoutes.get(trainId);
+		if (routes != null) {
+			return routes;
+		}
+		final List<Route> newRoutes = dataCache == null ? new ArrayList<>() : getRoutes(trainId, dataCache);
+		trainRoutes.put(trainId, newRoutes);
+		return newRoutes;
 	}
 
 	public List<Route> getRoutes(DataCache dataCache) {
@@ -523,39 +461,104 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		return routes;
 	}
 
-	public void reserveTrip(long tripMillis) {
+	public List<Route> getRoutes(String trainId, DataCache dataCache) {
+		return filterRoutes(getRoutes(dataCache), getServiceTypes(trainId));
+	}
+
+	/**
+	 * @return the IDs of the routes a vehicle runs, which is what stop indices on its path count through
+	 */
+	public List<Long> getRouteIds(String trainId, DataCache dataCache) {
+		if (getServiceTypes(trainId).isEmpty()) {
+			return routeIds;
+		}
+		final List<Long> newRouteIds = new ArrayList<>();
+		getRoutes(trainId, dataCache).forEach(route -> newRouteIds.add(route.id));
+		return newRouteIds;
+	}
+
+	public Set<String> getServiceTypes(String trainId) {
+		return parseServiceTypes(vehicleServiceTypes.getOrDefault(trainId, ""));
+	}
+
+	public static Set<String> parseServiceTypes(String text) {
+		final Set<String> serviceTypes = new TreeSet<>();
+		for (final String serviceType : text.split("[,，、;；\\s]+")) {
+			if (!serviceType.isEmpty()) {
+				serviceTypes.add(serviceType.toLowerCase(Locale.ENGLISH));
+			}
+		}
+		return serviceTypes;
+	}
+
+	/**
+	 * A route with no type of service can be run by every vehicle, so a line doesn't stop working by leaving it out.
+	 */
+	public static List<Route> filterRoutes(List<Route> routes, Set<String> serviceTypes) {
+		return serviceTypes.isEmpty() ? routes : routes.stream().filter(route -> route.getServiceType().isEmpty() || serviceTypes.contains(route.getServiceType())).collect(Collectors.toList());
+	}
+
+	public void setVehicleServiceTypes(String trainId, String text, Consumer<FriendlyByteBuf> sendPacket) {
+		if (parseServiceTypes(text).isEmpty()) {
+			vehicleServiceTypes.remove(trainId);
+		} else {
+			vehicleServiceTypes.put(trainId, text.trim());
+		}
+		setData(sendPacket);
+	}
+
+	public static boolean supportsTimetable(TransportMode transportMode) {
+		return !transportMode.continuousMovement && transportMode != TransportMode.AIRPLANE;
+	}
+
+	public void reserveTrip(long routeId, long tripMillis) {
 		if (tripMillis != 0) {
-			newReservedTrips.add(tripMillis);
+			newReservedTrips.add(getTripKey(routeId, tripMillis));
 		}
 	}
 
 	/**
-	 * @return the first service from this time on that no train has taken, or 0 if a train would wait too long for it
+	 * @return the first service of this vehicle's first route from this time on that no train has taken, or 0 if a train would wait too long for it
 	 */
-	public long findNextTrip(long readyMillis) {
-		final long tripMillis = timetable == null ? 0 : timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, this::isTripReserved);
-		reserveTrip(tripMillis);
-		return tripMillis;
-	}
-
-	private boolean isTripReserved(long tripMillis) {
-		return reservedTrips.contains(tripMillis) || newReservedTrips.contains(tripMillis);
+	public long findNextTrip(String trainId, long readyMillis) {
+		final List<Route> routes = getTrainRoutes(trainId);
+		return routes.isEmpty() ? 0 : findNextService(routes.get(0), readyMillis);
 	}
 
 	/**
-	 * Like {@link #getNextDepartureMillis()}, using the timetable if there is one, which skips services already taken.
+	 * @return the first service of this route from this time on that no train has taken, or 0 if a train would wait too long for it
 	 */
-	public int getNextDepartureMillis(long leadMillis) {
+	public long findNextService(Route route, long readyMillis) {
+		final long tripMillis = route.timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> isTripReserved(route.id, millis));
+		reserveTrip(route.id, tripMillis);
+		return tripMillis;
+	}
+
+	private boolean isTripReserved(long routeId, long tripMillis) {
+		final long tripKey = getTripKey(routeId, tripMillis);
+		return reservedTrips.contains(tripKey) || newReservedTrips.contains(tripKey);
+	}
+
+	private static long getTripKey(long routeId, long tripMillis) {
+		return routeId * 31 + tripMillis;
+	}
+
+	/**
+	 * Like {@link #getNextDepartureMillis()}, using the vehicle's timetable if it has one, which skips services already taken.
+	 */
+	public int getNextDepartureMillis(String trainId, long leadMillis) {
+		final RouteTimetable timetable = getTimetable(trainId);
 		if (timetable == null) {
 			return getNextDepartureMillis();
 		}
 
 		departureOffset++;
+		final long firstRouteId = getTrainRoutes(trainId).get(0).id;
 		final long currentMillis = System.currentTimeMillis();
 		long fromMillis = currentMillis + leadMillis;
 		long tripMillis = 0;
 		for (int i = 0; i < departureOffset; i++) {
-			tripMillis = timetable.getNextService(fromMillis, currentMillis + MILLISECONDS_PER_DAY, this::isTripReserved);
+			tripMillis = timetable.getNextService(fromMillis, currentMillis + MILLISECONDS_PER_DAY, millis -> isTripReserved(firstRouteId, millis));
 			if (tripMillis == 0) {
 				return -1;
 			}
@@ -627,5 +630,146 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			newTime += MILLISECONDS_PER_DAY;
 		}
 		return newTime;
+	}
+
+	private void readVehicleServiceTypes(FriendlyByteBuf packet) {
+		vehicleServiceTypes.clear();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			final String trainId = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			final String serviceTypes = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			if (i < MAX_ROUTES) {
+				vehicleServiceTypes.put(trainId, serviceTypes);
+			}
+		}
+	}
+
+	private void writeVehicleServiceTypes(FriendlyByteBuf packet) {
+		packet.writeInt(vehicleServiceTypes.size());
+		vehicleServiceTypes.forEach((trainId, serviceTypes) -> {
+			packet.writeUtf(trainId);
+			packet.writeUtf(serviceTypes);
+		});
+	}
+
+	/**
+	 * The path through some of the depot's routes, shared by the sidings whose vehicles run those routes.
+	 */
+	private class MainPath {
+
+		private PathFailure failure = PathFailure.NONE;
+
+		private final List<Siding> sidings;
+		private final boolean repeatPath;
+		private final List<SavedRailBase> platformsMerged = new ArrayList<>();
+		private final List<List<SavedRailBase>> platformsInRoute = new ArrayList<>();
+		private final List<List<PathData>> pathsInRoute = new ArrayList<>();
+		private final List<List<List<BlockPos>>> waypointsInRoute = new ArrayList<>();
+		private final List<List<Route.RoutePlatform>> stopSettingsInRoute = new ArrayList<>();
+
+		private MainPath(List<Route> routes, List<Siding> sidings, DataCache dataCache) {
+			this.sidings = sidings;
+
+			routes.forEach(route -> {
+				final List<PathData> routePath = new ArrayList<>();
+				route.getPathData().forEach(pathData -> routePath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+				final List<SavedRailBase> routePlatforms = new ArrayList<>();
+				final List<List<BlockPos>> routeWaypoints = new ArrayList<>();
+				final List<Route.RoutePlatform> routeStopSettings = new ArrayList<>();
+
+				if (routePath.isEmpty()) {
+					route.platformIds.forEach(platformId -> {
+						final Platform platform = dataCache.platformIdMap.get(platformId.platformId);
+						if (platform != null) {
+							routePlatforms.add(platform);
+							routeWaypoints.add(platformId.waypoints);
+							routeStopSettings.add(platformId);
+							if (platformsMerged.isEmpty() || platform.id != platformsMerged.get(platformsMerged.size() - 1).id) {
+								platformsMerged.add(platform);
+							}
+						}
+					});
+				} else {
+					for (int i = 0; i < route.platformIds.size(); i++) {
+						final Platform platform = dataCache.platformIdMap.get(route.platformIds.get(i).platformId);
+						if (platform != null) {
+							routePlatforms.add(platform);
+							if (i != 0 || platformsMerged.isEmpty() || platform.id != platformsMerged.get(platformsMerged.size() - 1).id) {
+								platformsMerged.add(platform);
+							}
+						}
+					}
+				}
+
+				platformsInRoute.add(routePlatforms);
+				pathsInRoute.add(routePath);
+				waypointsInRoute.add(routeWaypoints);
+				stopSettingsInRoute.add(routeStopSettings);
+			});
+
+			// A timetabled line that ends where it starts runs lap after lap, and only returns to the depot when service ends
+			final boolean hasTimetable = !routes.isEmpty() && getActiveTimetable(routes.get(0)) != null;
+			repeatPath = repeatInfinitely || hasTimetable && platformsMerged.size() > 1 && platformsMerged.get(0).id == platformsMerged.get(platformsMerged.size() - 1).id;
+		}
+
+		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<PathData> tempPath = new ArrayList<>();
+			SavedRailBase lastPlatform = null;
+
+			for (int i = 0; i < pathsInRoute.size(); i++) {
+				final List<SavedRailBase> platforms = platformsInRoute.get(i);
+				if (lastPlatform != null && !platforms.isEmpty() && platforms.get(0) != lastPlatform) {
+					final List<PathData> connectingPath = new ArrayList<>();
+					PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
+					tempPath.addAll(connectingPath);
+				}
+				if (!platforms.isEmpty()) {
+					lastPlatform = platforms.get(platforms.size() - 1);
+				}
+
+				final List<PathData> routePath = pathsInRoute.get(i);
+				if (routePath.isEmpty()) {
+					final int reached = PathFinder.findPath(routePath, rails, graph, platforms, waypointsInRoute.get(i), 1, cruisingAltitude, useFastSpeed);
+					if (routePath.isEmpty() && platforms.size() >= 2) {
+						failure = PathFailure.diagnose(graph, platforms, waypointsInRoute.get(i), reached);
+						tempPath.clear();
+						break;
+					}
+					PathFinder.applyStopSettings(routePath, stopSettingsInRoute.get(i));
+				}
+
+				if (routePath.size() > 2) {
+					final PathData first = routePath.get(0);
+					final PathData last = tempPath.isEmpty() ? null : tempPath.get(tempPath.size() - 1);
+					if (last != null) {
+						if (first.isOppositeRail(last)) {
+							first.dwellTime = 0;
+							first.savedRailBaseId = 0;
+						} else if (first.isSameRail(last)) {
+							routePath.remove(0);
+						}
+					}
+					tempPath.addAll(routePath);
+				}
+			}
+
+			int stopIndex = 1;
+			for (int i = 1; i < tempPath.size(); i++) {
+				final PathData pathData = tempPath.get(i);
+				// Passed platforms have no stop time but still count, as route indices include them
+				if (pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && tempPath.get(i - 1).rail.railType != RailType.PLATFORM) {
+					stopIndex++;
+				}
+				pathData.stopIndex = stopIndex;
+			}
+
+			int successfulSegments = Integer.MAX_VALUE;
+			for (final Siding siding : sidings) {
+				final SavedRailBase firstPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(0);
+				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
+				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed));
+			}
+			return successfulSegments;
+		}
 	}
 }

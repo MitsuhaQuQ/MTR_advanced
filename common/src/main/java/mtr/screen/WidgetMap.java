@@ -69,7 +69,6 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private String selectedLineKey = "";
 	private List<Route> hoveredRoutes = Collections.emptyList();
 	private Set<String> hoveredLineKeys = Collections.emptySet();
-	private Map<Long, Integer> routeColors = Collections.emptyMap();
 	private BooleanSupplier canPickStation = () -> false;
 	private Consumer<Station> onPickStation = station -> {
 	};
@@ -159,7 +158,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 				routesToDraw.get().forEach(route -> {
 					final String lineKey = route.getLineKey();
 					if (lineKey.equals(selectedLineKey) || hoveredLineKeys.contains(lineKey)) {
-						drawRouteNodes(buffer, getRouteNodes(route), ROUTE_HIGHLIGHT_PIXELS, ARGB_BLACK | getRouteColor(route));
+						drawRouteNodes(buffer, getRouteNodes(route), ROUTE_HIGHLIGHT_PIXELS, ARGB_BLACK | route.color);
 					}
 				});
 			}
@@ -427,13 +426,6 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	}
 
 	/**
-	 * @param routeColors the colour to draw each route with by route ID, as routes of a line are all drawn in one colour
-	 */
-	public void setRouteColors(Map<Long, Integer> routeColors) {
-		this.routeColors = routeColors;
-	}
-
-	/**
 	 * Lets stations be chosen on the map by clicking any of their areas.
 	 */
 	public void setStationPicking(BooleanSupplier canPickStation, Consumer<Station> onPickStation) {
@@ -505,7 +497,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			final Depot depot = ClientData.DATA_CACHE.sidingIdToDepot.get(sidingId);
 			if (depot != null && depot.isTransportMode(transportMode) && nodes.length > 1 && (mapState != MapState.EDITING_ROUTE || routes.stream().anyMatch(route -> depot.routeIds.contains(route.id)))) {
 				final Route firstRoute = depot.routeIds.isEmpty() ? null : ClientData.DATA_CACHE.routeIdMap.get(depot.routeIds.get(0));
-				drawNodes(buffer, nodes, ARGB_ROUTE_LINE_ALPHA | (firstRoute == null ? depot.color : getRouteColor(firstRoute)) & 0xFFFFFF);
+				drawNodes(buffer, nodes, ARGB_ROUTE_LINE_ALPHA | (firstRoute == null ? depot.color : firstRoute.color) & 0xFFFFFF);
 			}
 		});
 	}
@@ -520,11 +512,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	}
 
 	private void drawRoute(BufferBuilder buffer, Route route) {
-		drawRouteNodes(buffer, getRouteNodes(route), ROUTE_LINE_PIXELS, ARGB_ROUTE_LINE_ALPHA | getRouteColor(route) & 0xFFFFFF);
-	}
-
-	private int getRouteColor(Route route) {
-		return routeColors.getOrDefault(route.id, route.color);
+		drawRouteNodes(buffer, getRouteNodes(route), ROUTE_LINE_PIXELS, ARGB_ROUTE_LINE_ALPHA | route.color & 0xFFFFFF);
 	}
 
 	private void drawRouteNodes(BufferBuilder buffer, List<BlockPos> nodes, double thickness, int color) {

@@ -46,5 +46,7 @@
   "gui.mtr.map_pick_station": "点击车站范围在列表中定位，重叠处再点切换下一个",
   "gui.mtr.duplicate_route": "复制线路",
   "gui.mtr.route_line_name": "所属线路（留空按名称识别）",
-  "gui.mtr.timetable_diagram_color": "运行图颜色（留空用组色）"
+  "gui.mtr.route_service_type": "种别（留空按名称识别）",
+  "gui.mtr.vehicle_service_types": "可跑种别",
+  "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改后刷新车厂路径"
 }

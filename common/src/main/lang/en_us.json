@@ -46,5 +46,7 @@
   "gui.mtr.map_pick_station": "Click a station area to find it in the list. Click again where areas overlap for the next one.",
   "gui.mtr.duplicate_route": "Duplicate route",
   "gui.mtr.route_line_name": "Line (empty: from the name)",
-  "gui.mtr.timetable_diagram_color": "Diagram colour (empty: line colour)"
+  "gui.mtr.route_service_type": "Service type (empty: from the name)",
+  "gui.mtr.vehicle_service_types": "Service types",
+  "gui.mtr.vehicle_service_types_suggestion": "All, or like local, express. Refresh the path after changing"
 }

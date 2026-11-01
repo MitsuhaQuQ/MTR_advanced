@@ -325,7 +325,7 @@ public abstract class TrainClientMixin extends Train implements IGui{
 		if (depot == null || routeIds.isEmpty()) {
 			final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
 			depot = siding == null ? null : ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
-			routeIds = depot == null ? new ArrayList<>() : depot.routeIds;
+			routeIds = depot == null ? new ArrayList<>() : depot.getRouteIds(((Train) (Object) this).trainId, ClientData.DATA_CACHE);
 			if (depot != null) {
 				depot.lastDeployedMillis = System.currentTimeMillis();
 			}

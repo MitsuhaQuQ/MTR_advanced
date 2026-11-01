@@ -9,6 +9,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RouteTimetableTest {
@@ -156,6 +158,62 @@ class RouteTimetableTest {
 		assertEquals(160000, turnBack.departureMillis);
 		assertEquals(300000, stops.get(2).arrivalMillis);
 		assertEquals(340000, stops.get(2).departureMillis);
+	}
+
+	@Test
+	void stopsKnowWhereTheirRouteStarts() {
+		final RouteTimetable timetable = timetable(10);
+		timetable.marginPercent = 0;
+		final RouteTimetable.StopPlan routeStart = stop(100, 130, -1, -1, false);
+		routeStart.startsRoute = true;
+		final List<RouteTimetable.StopPlan> stops = Arrays.asList(stop(0, 30, -1, -1, false), routeStart, stop(230, 260, -1, -1, false));
+		timetable.applyPlan(stops);
+
+		assertEquals(0, stops.get(0).routeStartMillis);
+		assertEquals(100000, stops.get(1).routeStartMillis);
+		assertEquals(100000, stops.get(2).routeStartMillis);
+	}
+
+	@Test
+	void aRouteWithServicesIsWaitedFor() {
+		final RouteTimetable timetable = timetable(10);
+		final RouteTimetable.StopPlan routeStart = stop(100, 130, -1, -1, false);
+		routeStart.startsRoute = true;
+		routeStart.waitsForService = true;
+		final List<RouteTimetable.StopPlan> stops = Arrays.asList(stop(0, 30, -1, -1, false), routeStart);
+		timetable.applyPlan(stops);
+
+		assertTrue(routeStart.isTimed);
+	}
+
+	@Test
+	void aTurnBackRailBeforeARouteWithServicesIsWhereTheTrainWaits() {
+		final RouteTimetable timetable = timetable(10);
+		final RouteTimetable.StopPlan turnBack = stop(60, 70, -1, -1, false);
+		final RouteTimetable.StopPlan routeStart = stop(100, 130, -1, -1, false);
+		routeStart.startsRoute = true;
+		routeStart.waitsForService = true;
+		final List<RouteTimetable.StopPlan> stops = Arrays.asList(stop(0, 30, -1, -1, false), turnBack, routeStart);
+		timetable.applyPlan(stops);
+		RouteTimetable.linkTurnBacks(stops, Arrays.asList(false, true, false));
+
+		assertTrue(turnBack.isTimed);
+		assertSame(routeStart, turnBack.nextRouteStart);
+		assertNull(stops.get(0).nextRouteStart);
+	}
+
+	@Test
+	void aTurnBackRailBeforeARouteWithoutServicesDoesNotWait() {
+		final RouteTimetable timetable = timetable(10);
+		final RouteTimetable.StopPlan turnBack = stop(60, 70, -1, -1, false);
+		final RouteTimetable.StopPlan routeStart = stop(100, 130, -1, -1, false);
+		routeStart.startsRoute = true;
+		final List<RouteTimetable.StopPlan> stops = Arrays.asList(stop(0, 30, -1, -1, false), turnBack, routeStart);
+		timetable.applyPlan(stops);
+		RouteTimetable.linkTurnBacks(stops, Arrays.asList(false, true, false));
+
+		assertFalse(turnBack.isTimed);
+		assertNull(turnBack.nextRouteStart);
 	}
 
 	@Test

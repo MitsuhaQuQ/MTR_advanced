@@ -60,6 +60,7 @@ public class DataCache {
 			mapIds(routeIdMap, routes);
 			mapIds(depotIdMap, depots);
 			mapIds(liftsServerIdMap, liftsServer);
+			Route.applyLineColors(routes);
 
 			routeIdToOneDepot.clear();
 			routes.forEach(route -> route.platformIds.removeIf(platformId -> !platformIdMap.containsKey(platformId.platformId)));

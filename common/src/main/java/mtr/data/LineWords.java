@@ -12,6 +12,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -24,6 +26,7 @@ public final class LineWords {
 	private static volatile Path configPath;
 	private static volatile Pattern startPattern;
 	private static volatile Pattern endPattern;
+	private static volatile Pattern servicePattern;
 
 	public static final String FILE_NAME = "mtr_line_words.json";
 
@@ -73,6 +76,20 @@ public final class LineWords {
 	}
 
 	/**
+	 * @return the type of service named in the text in lower case, or empty if there is none
+	 */
+	public static String findServiceWord(String text) {
+		final Pattern pattern = servicePattern;
+		if (pattern != null) {
+			final Matcher matcher = pattern.matcher(text);
+			if (matcher.find()) {
+				return matcher.group().toLowerCase(Locale.ENGLISH);
+			}
+		}
+		return "";
+	}
+
+	/**
 	 * Removes these words from both ends of the text until there are none left there.
 	 */
 	public static String removeFromEnds(String text) {
@@ -104,18 +121,26 @@ public final class LineWords {
 
 	private static void setWords(String json) {
 		final JsonObject jsonObject = new JsonParser().parse(json).getAsJsonObject();
-		final List<String> words = new ArrayList<>();
+		final List<String> serviceWords = new ArrayList<>();
+		addWords(jsonObject, KEY_SERVICE_WORDS, serviceWords);
+		final List<String> words = new ArrayList<>(serviceWords);
 		addWords(jsonObject, KEY_DIRECTION_WORDS, words);
-		addWords(jsonObject, KEY_SERVICE_WORDS, words);
+		servicePattern = serviceWords.isEmpty() ? null : Pattern.compile(getWordGroup(serviceWords), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 		if (words.isEmpty()) {
 			startPattern = null;
 			endPattern = null;
 		} else {
-			// Longer words come first, so "upbound" isn't read as "up"
-			final String wordGroup = words.stream().distinct().sorted(Comparator.comparingInt(String::length).reversed()).map(LineWords::toRegex).collect(Collectors.joining("|", "(", ")"));
+			final String wordGroup = getWordGroup(words);
 			endPattern = Pattern.compile("[" + SEPARATORS + "]*[" + OPEN_BRACKETS + "]?\\s*" + wordGroup + "[线線]?\\s*[" + CLOSE_BRACKETS + "]?$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 			startPattern = Pattern.compile("^[" + OPEN_BRACKETS + "]?\\s*" + wordGroup + "\\s*[" + CLOSE_BRACKETS + SEPARATORS + "]+", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 		}
+	}
+
+	/**
+	 * Longer words come first, so "upbound" isn't read as "up".
+	 */
+	private static String getWordGroup(List<String> words) {
+		return words.stream().distinct().sorted(Comparator.comparingInt(String::length).reversed()).map(LineWords::toRegex).collect(Collectors.joining("|", "(", ")"));
 	}
 
 	private static void addWords(JsonObject jsonObject, String key, List<String> words) {

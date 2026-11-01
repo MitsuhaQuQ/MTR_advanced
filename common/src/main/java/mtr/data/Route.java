@@ -10,6 +10,9 @@ import org.msgpack.value.Value;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,9 +44,14 @@ public final class Route extends NameColorDataBase implements IGui {
 	 */
 	public String lineName = "";
 	/**
-	 * The colour of this route on a future running diagram, or -1 to use the colour of the line. Nothing else reads this.
+	 * This route's own colour, for a future running diagram. {@link #color} is the colour of its whole line, which is what
+	 * signs and everything else show, including addons reading that field.
 	 */
-	public int diagramColor = -1;
+	private int ownColor = -1;
+	/**
+	 * The type of service, such as local or express, or empty to work it out from the name.
+	 */
+	public String serviceType = "";
 
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
@@ -65,6 +73,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_OVERTAKES = "overtakes";
 	private static final String KEY_LINE_NAME = "line_name";
 	private static final String KEY_DIAGRAM_COLOR = "diagram_color";
+	private static final String KEY_SERVICE_TYPE = "service_type";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
 
@@ -127,7 +136,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		lightRailRouteNumber = messagePackHelper.getString(KEY_LIGHT_RAIL_ROUTE_NUMBER);
 		circularState = EnumHelper.valueOf(CircularState.NONE, messagePackHelper.getString(KEY_CIRCULAR_STATE));
 		lineName = messagePackHelper.getString(KEY_LINE_NAME);
-		diagramColor = messagePackHelper.getInt(KEY_DIAGRAM_COLOR, -1);
+		ownColor = messagePackHelper.getInt(KEY_DIAGRAM_COLOR, -1);
+		serviceType = messagePackHelper.getString(KEY_SERVICE_TYPE);
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
@@ -192,6 +202,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		lightRailRouteNumber = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		circularState = EnumHelper.valueOf(CircularState.NONE, packet.readUtf(PACKET_STRING_READ_LENGTH));
 		lineName = packet.readUtf(PACKET_STRING_READ_LENGTH);
+		serviceType = packet.readUtf(PACKET_STRING_READ_LENGTH);
+		ownColor = packet.readInt();
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
@@ -239,7 +251,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePacker.packString(KEY_LIGHT_RAIL_ROUTE_NUMBER).packString(lightRailRouteNumber);
 		messagePacker.packString(KEY_CIRCULAR_STATE).packString(circularState.toString());
 		messagePacker.packString(KEY_LINE_NAME).packString(lineName);
-		messagePacker.packString(KEY_DIAGRAM_COLOR).packInt(diagramColor);
+		messagePacker.packString(KEY_DIAGRAM_COLOR).packInt(getOwnColor());
+		messagePacker.packString(KEY_SERVICE_TYPE).packString(serviceType);
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
@@ -272,7 +285,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 19 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 20 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	@Override
@@ -292,6 +305,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeUtf(lightRailRouteNumber);
 		packet.writeUtf(circularState.toString());
 		packet.writeUtf(lineName);
+		packet.writeUtf(serviceType);
+		packet.writeInt(ownColor);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
@@ -324,6 +339,8 @@ public final class Route extends NameColorDataBase implements IGui {
 				disableNextStationAnnouncements = packet.readBoolean();
 				circularState = EnumHelper.valueOf(CircularState.NONE, packet.readUtf(PACKET_STRING_READ_LENGTH));
 				lineName = packet.readUtf(PACKET_STRING_READ_LENGTH);
+				serviceType = packet.readUtf(PACKET_STRING_READ_LENGTH);
+				ownColor = packet.readInt();
 				break;
 			case KEY_TIMETABLE_SERVICES:
 				readTimetable(packet);
@@ -375,6 +392,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeBoolean(disableNextStationAnnouncements);
 		packet.writeUtf(circularState.toString());
 		packet.writeUtf(lineName);
+		packet.writeUtf(serviceType);
+		packet.writeInt(ownColor);
 		sendPacket.accept(packet);
 	}
 
@@ -402,7 +421,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		route.circularState = circularState;
 		route.lightRailRouteNumber = lightRailRouteNumber;
 		route.lineName = lineName;
-		route.diagramColor = diagramColor;
+		route.ownColor = ownColor;
+		route.serviceType = serviceType;
 		route.pathData = new ArrayList<>(pathData);
 		platformIds.forEach(routePlatform -> {
 			final RoutePlatform newRoutePlatform = new RoutePlatform(routePlatform.platformId);
@@ -430,6 +450,41 @@ public final class Route extends NameColorDataBase implements IGui {
 	 */
 	public String getLineKey() {
 		return getLineName().toLowerCase(Locale.ENGLISH);
+	}
+
+	/**
+	 * @return the type of service in lower case, or empty if the route doesn't have one
+	 */
+	public String getServiceType() {
+		final String setServiceType = serviceType.trim().toLowerCase(Locale.ENGLISH);
+		return setServiceType.isEmpty() ? LineWords.findServiceWord(name.split("\\|\\|", -1)[0]) : setServiceType;
+	}
+
+	/**
+	 * Routes saved before they had their own colour use the colour they had.
+	 */
+	public int getOwnColor() {
+		return ownColor < 0 ? color : ownColor;
+	}
+
+	public void setOwnColor(int ownColor) {
+		this.ownColor = ownColor;
+		color = ownColor;
+	}
+
+	/**
+	 * Gives each route the colour of its line, which is the own colour of the line's first route by name.
+	 */
+	public static void applyLineColors(Collection<Route> routes) {
+		final List<Route> sortedRoutes = new ArrayList<>(routes);
+		sortedRoutes.sort(Comparator.comparing((Route route) -> route.name.toLowerCase(Locale.ENGLISH)).thenComparingLong(route -> route.id));
+		sortedRoutes.forEach(route -> {
+			if (route.ownColor < 0) {
+				route.ownColor = route.color;
+			}
+		});
+		final Map<String, Integer> lineColors = new HashMap<>();
+		sortedRoutes.forEach(route -> route.color = lineColors.computeIfAbsent(route.transportMode + route.getLineKey(), key -> route.ownColor));
 	}
 
 	public boolean isSameLine(Route route) {
@@ -565,7 +620,6 @@ public final class Route extends NameColorDataBase implements IGui {
 	private void readTimetable(FriendlyByteBuf packet) {
 		timetable.enabled = packet.readBoolean();
 		timetable.marginPercent = packet.readInt();
-		diagramColor = Math.max(-1, Math.min(packet.readInt(), 0xFFFFFF));
 		timetable.services.clear();
 		final int serviceCount = packet.readInt();
 		for (int i = 0; i < serviceCount; i++) {
@@ -595,7 +649,6 @@ public final class Route extends NameColorDataBase implements IGui {
 	private void writeTimetable(FriendlyByteBuf packet) {
 		packet.writeBoolean(timetable.enabled);
 		packet.writeInt(timetable.marginPercent);
-		packet.writeInt(diagramColor);
 		packet.writeInt(timetable.services.size());
 		timetable.services.forEach(packet::writeInt);
 

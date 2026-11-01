@@ -735,15 +735,20 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				plannedKey = newKey;
 				plans.clear();
 				final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
+				final List<Boolean> isTurnBacks = new ArrayList<>();
 				matchRouteStops(routes, (stop, routeStop) -> {
 					final Route.RoutePlatform arrivalStop = routeStop == null ? null : routeStop.arrivalStop;
 					final Route.RoutePlatform departureStop = routeStop == null ? null : routeStop.departureStop;
 					final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, arrivalStop == null ? -1 : arrivalStop.getArrival(), departureStop == null ? -1 : departureStop.getDeparture(), departureStop != null && departureStop.overtake);
 					stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
+					stopPlan.route = stopPlan.startsRoute ? routeStop.departureRoute : null;
+					stopPlan.waitsForService = stopPlan.startsRoute && routeStop.departureRoute.timetable.isActive();
 					stopPlans.add(stopPlan);
+					isTurnBacks.add(stop.platformId == 0);
 					plans.put(stop.index, stopPlan);
 				});
 				timetable.applyPlan(stopPlans);
+				RouteTimetable.linkTurnBacks(stopPlans, isTurnBacks);
 			}
 			return plans.get(index);
 		}

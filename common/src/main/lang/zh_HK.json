@@ -46,5 +46,7 @@
   "gui.mtr.map_pick_station": "點擊車站範圍在列表中定位，重疊處再點切換下一個",
   "gui.mtr.duplicate_route": "複製路線",
   "gui.mtr.route_line_name": "所屬路線（留空按名稱識別）",
-  "gui.mtr.timetable_diagram_color": "運行圖顏色（留空用組色）"
+  "gui.mtr.route_service_type": "種別（留空按名稱識別）",
+  "gui.mtr.vehicle_service_types": "可跑種別",
+  "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改後刷新車廠路徑"
 }

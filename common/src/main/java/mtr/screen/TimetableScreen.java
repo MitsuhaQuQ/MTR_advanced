@@ -19,6 +19,7 @@ import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,6 +35,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private int rowCount;
 	private int baseMillis;
 	private boolean isBinding;
+	private int directionWidth;
 	private int columnPlatform;
 	private int columnFastest;
 	private int columnArrival;
@@ -46,7 +48,6 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonDirection;
 	private final WidgetBetterCheckbox checkboxEnabled;
 	private final WidgetBetterTextField textFieldMargin;
-	private final WidgetBetterTextField textFieldDiagramColor;
 	private final WidgetBetterTextField textFieldService;
 	private final Button buttonAddService;
 	private final Button buttonClear;
@@ -57,20 +58,17 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private final WidgetBetterCheckbox[] checkboxesOvertake = new WidgetBetterCheckbox[MAX_ROWS];
 
 	private final Component marginText = Text.translatable("gui.mtr.timetable_margin");
-	private final Component diagramColorText = Text.translatable("gui.mtr.timetable_diagram_color");
 	private final Component hintText = Text.translatable("gui.mtr.timetable_hint");
 
 	private static final int MAX_ROWS = 32;
-	private static final int LIST_WIDTH = 110;
+	private static final int LIST_WIDTH = 130;
 	private static final int TIME_WIDTH = 58;
 	private static final int FASTEST_WIDTH = 44;
 	private static final int PLATFORM_WIDTH = 30;
 	private static final int CHECKBOX_COLUMN_WIDTH = SQUARE_SIZE + TEXT_PADDING * 2;
-	private static final int DIRECTION_WIDTH = 120;
-	private static final int DIAGRAM_COLOR_FIELD_WIDTH = SQUARE_SIZE * 3;
+	private static final int MAX_DIRECTION_WIDTH = 120;
 	private static final int MARGIN_FIELD_WIDTH = SQUARE_SIZE * 2;
 	private static final int ROWS_Y = SQUARE_SIZE * 2 + TEXT_PADDING;
-	private static final int HINT_LINES = 3;
 	private static final int ARGB_WARNING = 0xFFFF5555;
 	private static final int ARGB_FIELD_TEXT = 0xFFE0E0E0;
 
@@ -83,7 +81,6 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		checkboxEnabled = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.timetable_enabled"), checked -> {
 		});
 		textFieldMargin = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, String.valueOf(RouteTimetable.DEFAULT_MARGIN_PERCENT), 3);
-		textFieldDiagramColor = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.HEX, "", 6);
 		textFieldService = new WidgetBetterTextField("[^\\d:+* ]", "07:10:00 + 10 * 00:03:00", 25);
 		buttonAddService = UtilitiesClient.newButton(Text.literal("+"), button -> {
 			EditDepotScreen.applyDepartures(textFieldService.getValue(), service -> {
@@ -141,7 +138,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		columnArrival = columnDeparture - TIME_WIDTH;
 		columnFastest = columnArrival - FASTEST_WIDTH;
 		columnPlatform = columnFastest - PLATFORM_WIDTH;
-		rowCount = Math.max(1, Math.min(MAX_ROWS, (height - ROWS_Y - SQUARE_SIZE * 2 - (TEXT_HEIGHT + TEXT_PADDING) * HINT_LINES) / SQUARE_SIZE));
+		rowCount = Math.max(1, Math.min(MAX_ROWS, (getMarginY() - ROWS_Y) / SQUARE_SIZE));
 		scroll = 0;
 
 		servicesList.x = 0;
@@ -158,18 +155,15 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonAddService.active = false;
 
 		final boolean hasDirections = getLineRoutes().size() > 1;
-		final int directionWidth = hasDirections ? DIRECTION_WIDTH : 0;
+		directionWidth = hasDirections ? Math.min(MAX_DIRECTION_WIDTH, (width - rightX) / 2 - TEXT_PADDING) : 0;
 		IDrawing.setPositionAndWidth(buttonDirection, rightX, 0, directionWidth);
 		buttonDirection.visible = hasDirections;
-		IDrawing.setPositionAndWidth(checkboxEnabled, rightX + directionWidth + TEXT_PADDING, 0, columnFastest - rightX - directionWidth);
+		IDrawing.setPositionAndWidth(checkboxEnabled, rightX + directionWidth + TEXT_PADDING, 0, width - rightX - directionWidth - TEXT_PADDING);
 		checkboxEnabled.setChecked(route.timetable.enabled);
-		IDrawing.setPositionAndWidth(textFieldMargin, width - MARGIN_FIELD_WIDTH + TEXT_FIELD_PADDING / 2, TEXT_FIELD_PADDING / 2, MARGIN_FIELD_WIDTH - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(textFieldMargin, rightX + font.width(marginText) + TEXT_PADDING * 2 + TEXT_FIELD_PADDING / 2, getMarginY() + TEXT_FIELD_PADDING / 2, MARGIN_FIELD_WIDTH - TEXT_FIELD_PADDING);
 		textFieldMargin.setValue(String.valueOf(route.timetable.marginPercent));
-		IDrawing.setPositionAndWidth(textFieldDiagramColor, rightX + font.width(diagramColorText) + TEXT_PADDING * 2 + TEXT_FIELD_PADDING / 2, getDiagramColorY() + TEXT_FIELD_PADDING / 2, DIAGRAM_COLOR_FIELD_WIDTH - TEXT_FIELD_PADDING);
-		updateDiagramColorField();
 		updateDirectionText();
 
-		addDrawableChild(textFieldDiagramColor);
 		addDrawableChild(buttonDirection);
 		addDrawableChild(buttonClear);
 		addDrawableChild(textFieldService);
@@ -197,7 +191,6 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		servicesList.tick();
 		textFieldService.tick();
 		textFieldMargin.tick();
-		textFieldDiagramColor.tick();
 		for (int i = 0; i < rowCount; i++) {
 			textFieldsArrival[i].tick();
 			textFieldsDeparture[i].tick();
@@ -214,7 +207,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 
 			final int rightX = LIST_WIDTH + TEXT_PADDING;
 			final int headerY = SQUARE_SIZE + TEXT_PADDING;
-			GuiCompat.draw(matrices, font, marginText, width - MARGIN_FIELD_WIDTH - font.width(marginText) - TEXT_PADDING, TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, marginText, rightX, getMarginY() + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_station"), rightX, headerY, ARGB_LIGHT_GRAY);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_platform"), columnPlatform, headerY, ARGB_LIGHT_GRAY);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_fastest"), columnFastest, headerY, ARGB_LIGHT_GRAY);
@@ -239,11 +232,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 				}
 			}
 
-			GuiCompat.draw(matrices, font, diagramColorText, rightX, getDiagramColorY() + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
-
-			final String[] hintLines = (hasTimes ? hintText : Text.translatable("gui.mtr.timetable_no_path")).getString().split("\\|");
-			for (int i = 0; i < hintLines.length; i++) {
-				GuiCompat.draw(matrices, font, hintLines[i], rightX, height - (TEXT_HEIGHT + TEXT_PADDING) * (HINT_LINES - i), hasTimes ? ARGB_LIGHT_GRAY : ARGB_WARNING);
+			final List<FormattedCharSequence> hintLines = getHintLines(hasTimes ? hintText : Text.translatable("gui.mtr.timetable_no_path"));
+			for (int i = 0; i < hintLines.size(); i++) {
+				GuiCompat.draw(matrices, font, hintLines.get(i), rightX, height - (TEXT_HEIGHT + 1) * (hintLines.size() - i), hasTimes ? ARGB_LIGHT_GRAY : ARGB_WARNING);
 			}
 
 			super.render(matrices, mouseX, mouseY, delta);
@@ -293,6 +284,21 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		return IGui.formatStationName(route.name) + (lastStation == null ? "" : " \u2192 " + IGui.formatStationName(lastStation.name));
 	}
 
+	/**
+	 * The hints go below the table, and wrap to the width of the window, so the table gets whatever height is left.
+	 */
+	private List<FormattedCharSequence> getHintLines(Component text) {
+		final List<FormattedCharSequence> lines = new ArrayList<>();
+		for (final String line : text.getString().split("\\|")) {
+			lines.addAll(font.split(Text.literal(line), width - LIST_WIDTH - TEXT_PADDING * 2));
+		}
+		return lines;
+	}
+
+	private int getMarginY() {
+		return height - SQUARE_SIZE - (TEXT_HEIGHT + 1) * getHintLines(hintText).size() - TEXT_PADDING;
+	}
+
 	private void saveRoute() {
 		route.timetable.enabled = checkboxEnabled.selected();
 		try {
@@ -301,20 +307,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			route.timetable.marginPercent = RouteTimetable.DEFAULT_MARGIN_PERCENT;
 		}
 		route.timetable.sanitize();
-		try {
-			route.diagramColor = textFieldDiagramColor.getValue().isEmpty() ? -1 : Integer.parseInt(textFieldDiagramColor.getValue(), 16);
-		} catch (NumberFormatException e) {
-			route.diagramColor = -1;
-		}
 		route.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
-	}
-
-	private int getDiagramColorY() {
-		return height - SQUARE_SIZE - (TEXT_HEIGHT + TEXT_PADDING) * HINT_LINES;
-	}
-
-	private void updateDiagramColorField() {
-		textFieldDiagramColor.setValue(route.diagramColor < 0 ? "" : String.format("%06X", route.diagramColor));
 	}
 
 	/**
@@ -332,15 +325,18 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		scroll = 0;
 		checkboxEnabled.setChecked(route.timetable.enabled);
 		textFieldMargin.setValue(String.valueOf(route.timetable.marginPercent));
-		updateDiagramColorField();
 		PacketTrainDataGuiClient.requestTimetableTimesC2S(route.id);
 		updateDirectionText();
 		updateList();
 	}
 
 	private void updateDirectionText() {
-		final String text = getDirectionText(route);
-		buttonDirection.setMessage(Text.literal(font.plainSubstrByWidth(text, DIRECTION_WIDTH - TEXT_PADDING * 2)));
+		// The line is the same for every direction, so the button only needs what tells them apart
+		final Station lastStation = ClientData.DATA_CACHE.platformIdToStation.get(route.getLastPlatformId());
+		final String text = lastStation == null ? IGui.formatStationName(route.name) : (route.getServiceType() + " → " + lastStation.name.split("\\|")[0]).trim();
+		final int availableWidth = directionWidth - TEXT_PADDING * 4;
+		final boolean isTooLong = font.width(text) > availableWidth;
+		buttonDirection.setMessage(Text.literal(isTooLong ? font.plainSubstrByWidth(text, availableWidth - font.width("...")) + "..." : text));
 	}
 
 	private void drawRow(PoseStack matrices, int index, RouteTimetable.StopPlan plan, int y, boolean hasTimes, boolean tooFast) {

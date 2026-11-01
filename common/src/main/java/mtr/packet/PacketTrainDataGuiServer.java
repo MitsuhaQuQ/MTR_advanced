@@ -383,8 +383,9 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			if (route != null) {
 				for (final Siding siding : railwayData.sidings) {
 					final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
-					if (depot != null && depot.routeIds.contains(routeId) && !siding.getStopTimes().isEmpty()) {
-						sendTimetableTimes(player, routeId, siding.getStopTimes().getFastestTimes(route, depot.getRoutes(railwayData.dataCache)));
+					final List<Route> routes = depot == null ? Collections.emptyList() : depot.getRoutes(siding.getTrainId(), railwayData.dataCache);
+					if (routes.contains(route) && !siding.getStopTimes().isEmpty()) {
+						sendTimetableTimes(player, routeId, siding.getStopTimes().getFastestTimes(route, routes));
 						return;
 					}
 				}
