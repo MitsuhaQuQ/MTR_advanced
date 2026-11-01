@@ -13,6 +13,8 @@ import mtr.render.JonModelTrainRenderer;
 import mtr.render.RenderTrains;
 import mtr.sound.JonTrainSound;
 import mtr.sound.bve.BveTrainSound;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.apache.commons.lang3.StringUtils;
@@ -27,6 +29,9 @@ import java.util.function.Function;
 
 public class CustomResources implements IResourcePackCreatorProperties, ICustomResources {
 
+	private static final Logger LOGGER = LogManager.getLogger("MTR");
+	private static final int SLOW_TRAIN_MILLIS = 1000;
+
 	public static final Map<String, CustomSign> CUSTOM_SIGNS = new HashMap<>();
 	private static final List<Consumer<ResourceManager>> RELOAD_LISTENERS = new ArrayList<>();
 
@@ -36,10 +41,12 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 		ClientData.DATA_CACHE.resetFonts();
 		CUSTOM_SIGNS.clear();
 		final List<String> customTrains = new ArrayList<>();
+		final long reloadStartMillis = System.currentTimeMillis();
 
 		readResource(manager, MTR.MOD_ID + ":" + CUSTOM_RESOURCES_ID + ".json", jsonConfig -> {
 			try {
 				jsonConfig.get(CUSTOM_TRAINS_KEY).getAsJsonObject().entrySet().forEach(entry -> {
+					final long trainStartMillis = System.currentTimeMillis();
 					try {
 						final JsonObject jsonObject = entry.getValue().getAsJsonObject();
 						final String name = getOrDefault(jsonObject, CUSTOM_TRAINS_NAME, entry.getKey(), JsonElement::getAsString);
@@ -110,7 +117,11 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 							}));
 						}
 					} catch (Exception e) {
-						e.printStackTrace();
+						LOGGER.error("Failed to load custom train {}", entry.getKey(), e);
+					}
+					final long trainMillis = System.currentTimeMillis() - trainStartMillis;
+					if (trainMillis >= SLOW_TRAIN_MILLIS) {
+						LOGGER.warn("Custom train {} took {} ms to load", entry.getKey(), trainMillis);
 					}
 				});
 			} catch (Exception ignored) {
@@ -138,6 +149,7 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 
 		RELOAD_LISTENERS.forEach(resourceManagerConsumer -> resourceManagerConsumer.accept(manager));
 
+		LOGGER.info("Loaded {} custom train(s) in {} ms", customTrains.size(), System.currentTimeMillis() - reloadStartMillis);
 		System.out.println("Loaded " + customTrains.size() + " custom train(s)");
 		customTrains.forEach(System.out::println);
 		System.out.println("Loaded " + CUSTOM_SIGNS.size() + " custom sign(s)");
