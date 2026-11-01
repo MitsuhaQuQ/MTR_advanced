@@ -61,6 +61,16 @@ class RouteTimetableSaveTest {
 	}
 
 	@Test
+	void diagramColorSurvivesSavingAndStartsUnset() throws IOException {
+		final Route route = new Route(1, TransportMode.TRAIN);
+		assertEquals(-1, saveAndLoad(route).diagramColor);
+
+		route.diagramColor = 0xABCDEF;
+		assertEquals(0xABCDEF, saveAndLoad(route).diagramColor);
+		assertEquals(0xABCDEF, route.duplicate().diagramColor);
+	}
+
+	@Test
 	void routeWithoutATimetableStaysOff() throws IOException {
 		final Route newRoute = saveAndLoad(new Route(1, TransportMode.TRAIN));
 

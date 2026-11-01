@@ -43,7 +43,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private final int[] frequencies = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
 	private RouteTimetable timetable;
-	private Route timetableRoute;
+	private final List<Route> timetableRoutes = new ArrayList<>();
 	private Set<Long> reservedTrips = new HashSet<>();
 	private Set<Long> newReservedTrips = new HashSet<>();
 
@@ -453,7 +453,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		newReservedTrips.clear();
 
 		timetable = findTimetable(railwayData.dataCache);
-		timetableRoute = timetable == null ? null : railwayData.dataCache.routeIdMap.get(routeIds.get(0));
+		timetableRoutes.clear();
+		timetableRoutes.addAll(getRoutes(railwayData.dataCache));
 
 		if (!deployableSidings.isEmpty() && (timetable != null || getMillisUntilDeploy(1) == 0)) {
 			final List<Siding> sidingsInDepot = railwayData.sidings.stream().filter(siding -> {
@@ -504,8 +505,22 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		return timetable;
 	}
 
-	public Route getTimetableRoute() {
-		return timetableRoute;
+	/**
+	 * @return the routes trains of this depot run through, in order
+	 */
+	public List<Route> getTimetableRoutes() {
+		return timetableRoutes;
+	}
+
+	public List<Route> getRoutes(DataCache dataCache) {
+		final List<Route> routes = new ArrayList<>();
+		routeIds.forEach(routeId -> {
+			final Route route = dataCache.routeIdMap.get(routeId);
+			if (route != null) {
+				routes.add(route);
+			}
+		});
+		return routes;
 	}
 
 	public void reserveTrip(long tripMillis) {

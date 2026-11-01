@@ -34,7 +34,7 @@
   "gui.mtr.timetable_margin": "时刻余量 (%%)",
   "gui.mtr.timetable_hint": "到达留空：按上一站自动推算。发车留空：停站时长可以波动。|填写发车时刻就固定停站时长。最快一列变红：快过列车能跑的速度。|待避：最多多等 5 分钟，让应当超过本车的列车先过。改通过或启用、关闭时刻表后要刷新车厂路径。",
   "gui.mtr.timetable_depot_active": "发车按线路时刻表",
-  "gui.mtr.timetable_no_path": "要显示最快时刻，请先刷新以这条线路为第一条线路的车厂路径。",
+  "gui.mtr.timetable_no_path": "算不出最快时刻，请确认各站之间的轨道相连。",
   "gui.mtr.timetable_station": "车站",
   "gui.mtr.timetable_platform": "站台",
   "gui.mtr.timetable_fastest": "最快",
@@ -45,5 +45,6 @@
   "gui.mtr.map_pick_route": "点击线路色带定位线路组，重叠处再点切换下一组",
   "gui.mtr.map_pick_station": "点击车站范围在列表中定位，重叠处再点切换下一个",
   "gui.mtr.duplicate_route": "复制线路",
-  "gui.mtr.route_line_name": "所属线路（留空按名称识别）"
+  "gui.mtr.route_line_name": "所属线路（留空按名称识别）",
+  "gui.mtr.timetable_diagram_color": "运行图颜色（留空用组色）"
 }

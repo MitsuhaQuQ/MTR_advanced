@@ -2,6 +2,7 @@ package mtr;
 
 import mtr.compat.Compat;
 import mtr.data.Depot;
+import mtr.data.LineWords;
 import mtr.data.RailwayData;
 import mtr.data.Route;
 import mtr.data.Station;
@@ -498,6 +499,7 @@ public class MTR implements IPacket {
 				Webserver.getDataCache = railwayData -> railwayData == null ? null : railwayData.dataCache;
 				final Path configPath = minecraftServer.getServerDirectory().toPath().resolve("config");
 				SecurityConfig.load(configPath.resolve("mtr_security.json"));
+				LineWords.load(configPath.resolve(LineWords.FILE_NAME));
 				Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 			});
 			Registry.registerServerStoppingEvent(minecraftServer -> Webserver.stop());

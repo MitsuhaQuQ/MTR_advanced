@@ -76,6 +76,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	public DashboardScreen(TransportMode transportMode, boolean useTimeAndWindSync) {
 		super(Text.literal(""));
 		this.transportMode = transportMode;
+		LineWords.reload();
 
 		textFieldName = new WidgetBetterTextField(Text.translatable("gui.mtr.name").getString());
 		textFieldCustomDestination = new WidgetBetterTextField(Text.translatable("gui.mtr.custom_destination_suggestion").getString());
@@ -125,7 +126,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			dashboardList.selectItem(lineHeaderRows.containsKey(headerId) ? headerId : route.id);
 		});
 		widgetMap.setRouteColors(routeColors);
-		dashboardList.setRowStyle(this::getRowLabel, data -> lineHeaderRows.containsKey(data.id), data -> routeColors.getOrDefault(data.id, data.color));
+		dashboardList.setRowStyle(this::getRowLabel, data -> lineHeaderRows.containsKey(data.id), data -> routeColors.getOrDefault(data.id, data.color), this::onClickLineHeader);
 		widgetMap.setStationPicking(() -> selectedTab == SelectedTab.STATIONS && editingArea == null, station -> {
 			widgetMap.setSelectedStation(station.id);
 			dashboardList.selectItem(station.id);
@@ -217,6 +218,11 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	@Override
 	public void mouseMoved(double mouseX, double mouseY) {
 		dashboardList.mouseMoved(mouseX, mouseY);
+	}
+
+	@Override
+	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		return button == 0 && dashboardList.mouseClicked(mouseX, mouseY) || super.mouseClicked(mouseX, mouseY, button);
 	}
 
 	@Override
@@ -312,6 +318,16 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		dashboardList.setData(rows, true, true, true, false, false, true);
 	}
 
+	private void onClickLineHeader(NameColorDataBase data) {
+		final String lineKey = lineHeaderRows.get(data.id);
+		if (lineKey != null) {
+			if (!expandedLines.remove(lineKey)) {
+				expandedLines.add(lineKey);
+			}
+			updateRouteRows();
+		}
+	}
+
 	private static long getLineHeaderId(String lineKey) {
 		return lineKey.hashCode() & 0xFFFFFFFFL | 1L << 40;
 	}
@@ -346,13 +362,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 	private void onFind(NameColorDataBase data, int index) {
 		if (selectedTab == SelectedTab.ROUTES) {
-			final String lineKey = lineHeaderRows.get(data.id);
-			if (lineKey != null) {
-				if (!expandedLines.remove(lineKey)) {
-					expandedLines.add(lineKey);
-				}
-				updateRouteRows();
-			} else if (data instanceof Route) {
+			if (data instanceof Route) {
 				final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(((Route) data).getFirstPlatformId());
 				if (platform != null) {
 					widgetMap.find(platform.getMidPos());

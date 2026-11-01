@@ -40,6 +40,10 @@ public final class Route extends NameColorDataBase implements IGui {
 	 * The line this route belongs to, or empty to work it out from the name.
 	 */
 	public String lineName = "";
+	/**
+	 * The colour of this route on a future running diagram, or -1 to use the colour of the line. Nothing else reads this.
+	 */
+	public int diagramColor = -1;
 
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
@@ -60,9 +64,9 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
 	private static final String KEY_OVERTAKES = "overtakes";
 	private static final String KEY_LINE_NAME = "line_name";
+	private static final String KEY_DIAGRAM_COLOR = "diagram_color";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
-	private static final Pattern DIRECTION_PATTERN = Pattern.compile("[\\s\\-_/:：·・]*[(（\\[【]?\\s*(上行|下行|內環|内环|外環|外环|内回り?|外回り?|上り|下り|(?<![a-z])(up|down|upbound|downbound|inbound|outbound|northbound|southbound|eastbound|westbound|clockwise|anticlockwise|counterclockwise))\\s*[)）\\]】]?$", Pattern.CASE_INSENSITIVE);
 
 	public Route(TransportMode transportMode) {
 		this(0, transportMode);
@@ -123,6 +127,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		lightRailRouteNumber = messagePackHelper.getString(KEY_LIGHT_RAIL_ROUTE_NUMBER);
 		circularState = EnumHelper.valueOf(CircularState.NONE, messagePackHelper.getString(KEY_CIRCULAR_STATE));
 		lineName = messagePackHelper.getString(KEY_LINE_NAME);
+		diagramColor = messagePackHelper.getInt(KEY_DIAGRAM_COLOR, -1);
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
@@ -234,6 +239,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePacker.packString(KEY_LIGHT_RAIL_ROUTE_NUMBER).packString(lightRailRouteNumber);
 		messagePacker.packString(KEY_CIRCULAR_STATE).packString(circularState.toString());
 		messagePacker.packString(KEY_LINE_NAME).packString(lineName);
+		messagePacker.packString(KEY_DIAGRAM_COLOR).packInt(diagramColor);
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
@@ -266,7 +272,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 18 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 19 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	@Override
@@ -396,6 +402,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		route.circularState = circularState;
 		route.lightRailRouteNumber = lightRailRouteNumber;
 		route.lineName = lineName;
+		route.diagramColor = diagramColor;
 		route.pathData = new ArrayList<>(pathData);
 		platformIds.forEach(routePlatform -> {
 			final RoutePlatform newRoutePlatform = new RoutePlatform(routePlatform.platformId);
@@ -430,14 +437,15 @@ public final class Route extends NameColorDataBase implements IGui {
 	}
 
 	/**
-	 * Removes what only tells routes of one line apart: anything after {@code ||}, the copy suffix and direction words.
+	 * Removes what only tells routes of one line apart: anything after {@code ||}, the copy suffix, and the {@link LineWords}
+	 * at either end of the name.
 	 */
 	public static String getAutoLineName(String name) {
 		final String[] languages = name.split("\\|\\|", -1)[0].split("\\|", -1);
 		for (int i = 0; i < languages.length; i++) {
 			final String withoutSuffix = DUPLICATE_PATTERN.matcher(languages[i].trim()).replaceAll("");
-			final String withoutDirection = DIRECTION_PATTERN.matcher(withoutSuffix).replaceAll("").trim();
-			languages[i] = withoutDirection.isEmpty() ? withoutSuffix : withoutDirection;
+			final String lineName = LineWords.removeFromEnds(withoutSuffix);
+			languages[i] = lineName.isEmpty() ? withoutSuffix : lineName;
 		}
 		return String.join("|", languages);
 	}
@@ -557,6 +565,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private void readTimetable(FriendlyByteBuf packet) {
 		timetable.enabled = packet.readBoolean();
 		timetable.marginPercent = packet.readInt();
+		diagramColor = Math.max(-1, Math.min(packet.readInt(), 0xFFFFFF));
 		timetable.services.clear();
 		final int serviceCount = packet.readInt();
 		for (int i = 0; i < serviceCount; i++) {
@@ -586,6 +595,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private void writeTimetable(FriendlyByteBuf packet) {
 		packet.writeBoolean(timetable.enabled);
 		packet.writeInt(timetable.marginPercent);
+		packet.writeInt(diagramColor);
 		packet.writeInt(timetable.services.size());
 		timetable.services.forEach(packet::writeInt);
 

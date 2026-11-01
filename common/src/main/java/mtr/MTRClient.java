@@ -342,6 +342,7 @@ public class MTRClient implements IPacket {
 					Webserver.getDataCache = railwayData -> ClientData.DATA_CACHE;
 					final Path configPath = Minecraft.getInstance().gameDirectory.toPath().resolve("config");
 					SecurityConfig.load(configPath.resolve("mtr_security.json"));
+					LineWords.load(configPath.resolve(LineWords.FILE_NAME));
 					Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 				}
 			}

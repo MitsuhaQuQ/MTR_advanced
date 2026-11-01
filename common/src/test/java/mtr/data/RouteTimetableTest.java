@@ -144,6 +144,21 @@ class RouteTimetableTest {
 	}
 
 	@Test
+	void timesOfALaterRouteCountFromWhereThatRouteStarts() {
+		final RouteTimetable timetable = timetable(10);
+		timetable.marginPercent = 0;
+		final RouteTimetable.StopPlan turnBack = stop(100, 130, -1, 60, false);
+		turnBack.startsRoute = true;
+		final List<RouteTimetable.StopPlan> stops = Arrays.asList(stop(0, 30, -1, -1, false), turnBack, stop(230, 260, 200, 240, false));
+		timetable.applyPlan(stops);
+
+		assertEquals(100000, turnBack.arrivalMillis);
+		assertEquals(160000, turnBack.departureMillis);
+		assertEquals(300000, stops.get(2).arrivalMillis);
+		assertEquals(340000, stops.get(2).departureMillis);
+	}
+
+	@Test
 	void trainsOnALoopCoverEveryServiceWithTheFewestTrains() {
 		final RouteTimetable timetable = new RouteTimetable();
 		timetable.enabled = true;

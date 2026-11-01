@@ -1,6 +1,10 @@
 package mtr.packet;
 
+import mtr.path.DeterministicPathFinder;
+import mtr.path.PathData;
 import mtr.path.PathFailure;
+import mtr.path.PathFinder;
+import mtr.path.RailGraph;
 import mtr.compat.Compat;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
@@ -368,7 +372,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	/**
-	 * Sends the fastest time at each stop of a route, from a siding of the depot running it as its first route.
+	 * Sends the fastest time at each stop of a route. A route can be part of a depot's path, or run by no depot at all, as
+	 * with the way back after a turn back, and then its path is found just for this.
 	 */
 	public static void receiveTimetableTimesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final long routeId = packet.readLong();
@@ -376,21 +381,66 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			final Route route = railwayData == null ? null : railwayData.dataCache.routeIdMap.get(routeId);
 			if (route != null) {
-				final Siding.StopTimes stopTimes = railwayData.sidings.stream().filter(siding -> {
+				for (final Siding siding : railwayData.sidings) {
 					final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
-					return depot != null && !depot.routeIds.isEmpty() && depot.routeIds.get(0) == routeId && !siding.getStopTimes().isEmpty();
-				}).findFirst().map(Siding::getStopTimes).orElse(null);
-				final long[][] times = stopTimes == null ? new long[0][] : stopTimes.getFastestTimes(route.platformIds.size());
-				final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
-				response.writeLong(routeId);
-				response.writeInt(times.length);
-				for (final long[] stopTime : times) {
-					response.writeLong(stopTime[0]);
-					response.writeLong(stopTime[1]);
+					if (depot != null && depot.routeIds.contains(routeId) && !siding.getStopTimes().isEmpty()) {
+						sendTimetableTimes(player, routeId, siding.getStopTimes().getFastestTimes(route, depot.getRoutes(railwayData.dataCache)));
+						return;
+					}
 				}
-				Registry.sendToPlayer(player, PACKET_TIMETABLE_TIMES, response);
+				calculateTimetableTimes(minecraftServer, player, railwayData, route);
 			}
 		});
+	}
+
+	private static void calculateTimetableTimes(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, Route route) {
+		final List<SavedRailBase> platforms = new ArrayList<>();
+		final List<List<BlockPos>> waypoints = new ArrayList<>();
+		final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
+		route.platformIds.forEach(routePlatform -> {
+			final Platform platform = railwayData.dataCache.platformIdMap.get(routePlatform.platformId);
+			if (platform != null) {
+				platforms.add(platform);
+				waypoints.add(new ArrayList<>(routePlatform.waypoints));
+				stopSettings.add(routePlatform);
+			}
+		});
+
+		// The train running the other direction of the line is the best guess for the train running this one
+		final Siding siding = railwayData.sidings.stream().filter(testSiding -> {
+			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(testSiding.id);
+			return depot != null && depot.getRoutes(railwayData.dataCache).stream().anyMatch(route::isSameLine);
+		}).findFirst().orElseGet(() -> railwayData.sidings.stream().filter(testSiding -> testSiding.isTransportMode(route.transportMode)).findFirst().orElse(null));
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		final RailGraph<Rail> graph = route.transportMode == TransportMode.AIRPLANE || route.transportMode.continuousMovement ? null : DeterministicPathFinder.compile(rails);
+
+		if (siding == null || platforms.size() < 2) {
+			sendTimetableTimes(player, route.id, new long[0][]);
+			return;
+		}
+
+		new Thread(() -> {
+			try {
+				final List<PathData> path = new ArrayList<>();
+				PathFinder.findPath(path, rails, graph, platforms, waypoints, 1, Depot.DEFAULT_CRUISING_ALTITUDE, false);
+				PathFinder.applyStopSettings(path, stopSettings);
+				final long[][] times = path.isEmpty() ? new long[0][] : siding.calculateStopTimes(path).getFastestTimes(route, Collections.singletonList(route));
+				minecraftServer.execute(() -> sendTimetableTimes(player, route.id, times));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}).start();
+	}
+
+	private static void sendTimetableTimes(ServerPlayer player, long routeId, long[][] times) {
+		final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
+		response.writeLong(routeId);
+		response.writeInt(times.length);
+		for (final long[] stopTime : times) {
+			response.writeLong(stopTime[0]);
+			response.writeLong(stopTime[1]);
+		}
+		Registry.sendToPlayer(player, PACKET_TIMETABLE_TIMES, response);
 	}
 
 	public static void receiveNodeAngleC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {

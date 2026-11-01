@@ -282,6 +282,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		return compoundTag;
 	}
 
+	public Map<BlockPos, Map<BlockPos, Rail>> getRails() {
+		return rails;
+	}
+
 	public void simulateTrains() {
 		final List<? extends Player> players = world.players();
 		players.forEach(player -> {

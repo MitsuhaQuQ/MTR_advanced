@@ -34,7 +34,7 @@
   "gui.mtr.timetable_margin": "Extra time (%%)",
   "gui.mtr.timetable_hint": "Empty arrival: worked out from the stop before. Empty departure: stop time may vary.|Set a departure to fix the stop time. Red: faster than the train can run.|Overtake: wait up to 5 min for the train due to pass. Refresh the depot path after changing Pass or turning this on or off.",
   "gui.mtr.timetable_depot_active": "Departures follow the route timetable",
-  "gui.mtr.timetable_no_path": "Generate the path of a depot that has this as its first route to see the fastest times.",
+  "gui.mtr.timetable_no_path": "Could not work out the fastest times. Check that the rails connect every stop.",
   "gui.mtr.timetable_station": "Station",
   "gui.mtr.timetable_platform": "Plat.",
   "gui.mtr.timetable_fastest": "Fastest",
@@ -45,5 +45,6 @@
   "gui.mtr.map_pick_route": "Click a coloured line to find that line. Click again where lines overlap for the next one.",
   "gui.mtr.map_pick_station": "Click a station area to find it in the list. Click again where areas overlap for the next one.",
   "gui.mtr.duplicate_route": "Duplicate route",
-  "gui.mtr.route_line_name": "Line (empty: from the name)"
+  "gui.mtr.route_line_name": "Line (empty: from the name)",
+  "gui.mtr.timetable_diagram_color": "Diagram colour (empty: line colour)"
 }

@@ -62,18 +62,23 @@ public class RouteTimetable {
 
 	/**
 	 * Works out the times of a whole trip. A stop without a set time follows the stop before it, so changing a time also
-	 * moves every automatic time after it.
+	 * moves every automatic time after it. Set times count from where their own route starts, as a route after a turn back
+	 * has no way to know when the trip started.
 	 *
 	 * @param stops the stops of the trip in order, starting at the first stop
 	 */
 	public void applyPlan(List<StopPlan> stops) {
 		long lastFastestDeparture = 0;
 		long lastDeparture = 0;
+		long routeStart = 0;
 		for (int i = 0; i < stops.size(); i++) {
 			final StopPlan stop = stops.get(i);
 			final long automaticArrival = i == 0 ? 0 : lastDeparture + addMargin(stop.fastestArrivalMillis - lastFastestDeparture);
-			stop.arrivalMillis = i > 0 && stop.setArrivalSeconds >= 0 ? stop.setArrivalSeconds * 1000L : automaticArrival;
-			stop.departureMillis = stop.setDepartureSeconds >= 0 ? Math.max(stop.setDepartureSeconds * 1000L, stop.arrivalMillis) : stop.arrivalMillis + stop.fastestDepartureMillis - stop.fastestArrivalMillis;
+			stop.arrivalMillis = i > 0 && stop.setArrivalSeconds >= 0 ? routeStart + stop.setArrivalSeconds * 1000L : automaticArrival;
+			if (stop.startsRoute) {
+				routeStart = stop.arrivalMillis;
+			}
+			stop.departureMillis = stop.setDepartureSeconds >= 0 ? Math.max(routeStart + stop.setDepartureSeconds * 1000L, stop.arrivalMillis) : stop.arrivalMillis + stop.fastestDepartureMillis - stop.fastestArrivalMillis;
 			stop.isTimed = i == 0 || stop.overtake || stop.setDepartureSeconds >= 0;
 			lastFastestDeparture = stop.fastestDepartureMillis;
 			lastDeparture = stop.departureMillis;
@@ -128,6 +133,10 @@ public class RouteTimetable {
 		public final int setArrivalSeconds;
 		public final int setDepartureSeconds;
 		public final boolean overtake;
+		/**
+		 * The next route of the trip starts here, so times from here on count from this stop.
+		 */
+		public boolean startsRoute;
 		public long arrivalMillis;
 		public long departureMillis;
 		/**

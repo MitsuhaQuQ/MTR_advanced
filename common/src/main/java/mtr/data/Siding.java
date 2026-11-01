@@ -18,6 +18,7 @@ import org.msgpack.value.Value;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
@@ -480,6 +481,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return stopTimes;
 	}
 
+	/**
+	 * Times a path with this siding's train, for a route no depot runs on its own.
+	 */
+	public StopTimes calculateStopTimes(List<PathData> newPath) {
+		final StopTimes newStopTimes = new StopTimes();
+		generateTimeSegments(newPath, new ArrayList<>(), new HashMap<>(), newStopTimes);
+		return newStopTimes;
+	}
+
 	public long[] getPathNodes() {
 		if (path.isEmpty()) {
 			return new long[0];
@@ -629,7 +639,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 			final boolean isPlatformStop = pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0;
 			if (pathData.dwellTime > 0 || isPassingPlatform(path, i)) {
-				stopTimes.add(i, isPlatformStop ? pathData.stopIndex - 1 : -1, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
+				stopTimes.add(i, isPlatformStop ? pathData.savedRailBaseId : 0, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
 			}
 
 			time += pathData.dwellTime * 5;
@@ -668,15 +678,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		private int firstIndex = -1;
 		private float firstArrival;
-		private Route plannedRoute;
-		private int plannedRevision;
+		private long plannedKey;
 		private final List<Stop> stops = new ArrayList<>();
 		private final Map<Integer, RouteTimetable.StopPlan> plans = new HashMap<>();
 
 		private void clear() {
 			firstIndex = -1;
 			firstArrival = 0;
-			plannedRoute = null;
+			plannedKey = 0;
 			stops.clear();
 			plans.clear();
 		}
@@ -688,13 +697,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			stops.addAll(stopTimes.stops);
 		}
 
-		private void add(int index, int routeStopIndex, float arrival, float departure, boolean isFirstStop) {
+		private void add(int index, long platformId, float arrival, float departure, boolean isFirstStop) {
 			if (firstIndex < 0 && isFirstStop) {
 				firstIndex = index;
 				firstArrival = arrival;
 			}
 			if (firstIndex >= 0) {
-				stops.add(new Stop(index, routeStopIndex, (long) ((arrival - firstArrival) * Depot.MILLIS_PER_TICK), (long) ((departure - firstArrival) * Depot.MILLIS_PER_TICK)));
+				stops.add(new Stop(index, platformId, (long) ((arrival - firstArrival) * Depot.MILLIS_PER_TICK), (long) ((departure - firstArrival) * Depot.MILLIS_PER_TICK)));
 			}
 		}
 
@@ -714,54 +723,129 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		/**
+		 * @param routes the routes the path runs through, in order
 		 * @return the planned times of a stop on the path, or null if the path has no such stop
 		 */
-		public RouteTimetable.StopPlan getPlan(Route route, int index) {
-			if (plannedRoute != route || plannedRevision != route.timetable.revision) {
-				plannedRoute = route;
-				plannedRevision = route.timetable.revision;
+		public RouteTimetable.StopPlan getPlan(List<Route> routes, RouteTimetable timetable, int index) {
+			long newKey = 1;
+			for (final Route route : routes) {
+				newKey = newKey * 31 + route.id + route.timetable.revision;
+			}
+			if (newKey != plannedKey) {
+				plannedKey = newKey;
 				plans.clear();
 				final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
-				stops.forEach(stop -> {
-					final boolean hasRouteStop = stop.routeStopIndex >= 0 && stop.routeStopIndex < route.platformIds.size();
-					final Route.RoutePlatform routePlatform = hasRouteStop ? route.platformIds.get(stop.routeStopIndex) : null;
-					final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, routePlatform == null ? -1 : routePlatform.getArrival(), routePlatform == null ? -1 : routePlatform.getDeparture(), routePlatform != null && routePlatform.overtake);
+				matchRouteStops(routes, (stop, routeStop) -> {
+					final Route.RoutePlatform arrivalStop = routeStop == null ? null : routeStop.arrivalStop;
+					final Route.RoutePlatform departureStop = routeStop == null ? null : routeStop.departureStop;
+					final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, arrivalStop == null ? -1 : arrivalStop.getArrival(), departureStop == null ? -1 : departureStop.getDeparture(), departureStop != null && departureStop.overtake);
+					stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
 					stopPlans.add(stopPlan);
 					plans.put(stop.index, stopPlan);
 				});
-				route.timetable.applyPlan(stopPlans);
+				timetable.applyPlan(stopPlans);
 			}
 			return plans.get(index);
 		}
 
 		/**
-		 * @return the fastest arrival and departure of each stop of the first route, or -1 for stops not on the path
+		 * @param routes the routes this path runs through, in order
+		 * @return the fastest arrival and departure at each stop of the route counted from reaching its first stop, or -1 for stops not found
 		 */
-		public long[][] getFastestTimes(int stopCount) {
+		public long[][] getFastestTimes(Route route, List<Route> routes) {
+			final int stopCount = route.platformIds.size();
 			final long[][] times = new long[stopCount][];
 			for (int i = 0; i < stopCount; i++) {
 				times[i] = new long[]{-1, -1};
 			}
-			stops.forEach(stop -> {
-				if (stop.routeStopIndex >= 0 && stop.routeStopIndex < stopCount && times[stop.routeStopIndex][0] < 0) {
-					times[stop.routeStopIndex] = new long[]{stop.arrivalMillis, stop.departureMillis};
+			matchRouteStops(routes, (stop, routeStop) -> {
+				if (routeStop != null && routeStop.departureRoute == route && times[routeStop.departureIndex][0] < 0) {
+					times[routeStop.departureIndex] = new long[]{stop.arrivalMillis, stop.departureMillis};
+				} else if (routeStop != null && routeStop.arrivalRoute == route && times[routeStop.arrivalIndex][0] < 0) {
+					times[routeStop.arrivalIndex] = new long[]{stop.arrivalMillis, stop.arrivalMillis};
 				}
 			});
+
+			long start = -1;
+			for (final long[] stopTime : times) {
+				if (stopTime[0] >= 0) {
+					start = start < 0 ? stopTime[0] : start;
+					stopTime[0] -= start;
+					stopTime[1] -= start;
+				}
+			}
 			return times;
+		}
+
+		/**
+		 * Goes through the stops of the path, finding each one in the routes by platform in order. A platform where one
+		 * route ends and the next one starts is one stop on the path, and gets its arrival and departure from different routes.
+		 */
+		private void matchRouteStops(List<Route> routes, BiConsumer<Stop, RouteStop> consumer) {
+			final List<RouteStop> routeStops = new ArrayList<>();
+			Route lastRoute = null;
+			for (final Route route : routes) {
+				for (int i = 0; i < route.platformIds.size(); i++) {
+					final Route.RoutePlatform routePlatform = route.platformIds.get(i);
+					final RouteStop lastStop = routeStops.isEmpty() ? null : routeStops.get(routeStops.size() - 1);
+					if (i == 0 && lastStop != null && lastStop.arrivalRoute == lastRoute && lastStop.platformId == routePlatform.platformId) {
+						routeStops.set(routeStops.size() - 1, new RouteStop(lastStop.arrivalRoute, lastStop.arrivalIndex, route, 0, true));
+					} else {
+						routeStops.add(new RouteStop(route, i, route, i, i == 0 && lastRoute != null));
+					}
+				}
+				lastRoute = route;
+			}
+
+			int nextRouteStop = 0;
+			for (final Stop stop : stops) {
+				RouteStop matchedStop = null;
+				for (int i = nextRouteStop; stop.platformId != 0 && i < routeStops.size(); i++) {
+					if (routeStops.get(i).platformId == stop.platformId) {
+						matchedStop = routeStops.get(i);
+						nextRouteStop = i + 1;
+						break;
+					}
+				}
+				consumer.accept(stop, matchedStop);
+			}
 		}
 
 		private static class Stop {
 
 			private final int index;
-			private final int routeStopIndex;
+			private final long platformId;
 			private final long arrivalMillis;
 			private final long departureMillis;
 
-			private Stop(int index, int routeStopIndex, long arrivalMillis, long departureMillis) {
+			private Stop(int index, long platformId, long arrivalMillis, long departureMillis) {
 				this.index = index;
-				this.routeStopIndex = routeStopIndex;
+				this.platformId = platformId;
 				this.arrivalMillis = arrivalMillis;
 				this.departureMillis = departureMillis;
+			}
+		}
+
+		private static class RouteStop {
+
+			private final long platformId;
+			private final Route arrivalRoute;
+			private final int arrivalIndex;
+			private final Route departureRoute;
+			private final int departureIndex;
+			private final Route.RoutePlatform arrivalStop;
+			private final Route.RoutePlatform departureStop;
+			private final boolean startsRoute;
+
+			private RouteStop(Route arrivalRoute, int arrivalIndex, Route departureRoute, int departureIndex, boolean startsRoute) {
+				this.arrivalRoute = arrivalRoute;
+				this.arrivalIndex = arrivalIndex;
+				this.departureRoute = departureRoute;
+				this.departureIndex = departureIndex;
+				this.startsRoute = startsRoute;
+				arrivalStop = arrivalRoute.platformIds.get(arrivalIndex);
+				departureStop = departureRoute.platformIds.get(departureIndex);
+				platformId = arrivalStop.platformId;
 			}
 		}
 	}

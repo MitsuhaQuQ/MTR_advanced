@@ -25,6 +25,26 @@ class RouteLineTest {
 	}
 
 	@Test
+	void serviceTypesOfALineMatch() {
+		assertTrue(route("1号线 快速 上行").isSameLine(route("1号线 普通 下行")));
+		assertTrue(route("快速 中央線").isSameLine(route("各停 中央線")));
+		assertTrue(route("中央線（特急）").isSameLine(route("中央線")));
+		assertTrue(route("Line 1 Express|1号线 快速").isSameLine(route("Line 1 Local|1号线 普通")));
+	}
+
+	@Test
+	void wordsInsideANameAreNotCut() {
+		assertEquals("快速路", Route.getAutoLineName("快速路"));
+		assertEquals("Expressway", Route.getAutoLineName("Expressway"));
+		assertEquals("Localhost", Route.getAutoLineName("Localhost"));
+	}
+
+	@Test
+	void aNameOfOnlyServiceWordsStays() {
+		assertEquals("快速 上行", Route.getAutoLineName("快速 上行"));
+	}
+
+	@Test
 	void textAfterTheDoubleBarIsIgnored() {
 		assertTrue(route("1号线||往A").isSameLine(route("1号线||往B")));
 	}

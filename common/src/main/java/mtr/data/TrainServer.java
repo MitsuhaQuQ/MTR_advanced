@@ -529,8 +529,8 @@ public class TrainServer extends Train {
 	}
 
 	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
-		final Route route = depot == null ? null : depot.getTimetableRoute();
-		return tripMillis == 0 || route == null || stopTimes == null ? null : stopTimes.getPlan(route, stopIndex);
+		final RouteTimetable timetable = depot == null ? null : depot.getTimetable();
+		return tripMillis == 0 || timetable == null || stopTimes == null ? null : stopTimes.getPlan(depot.getTimetableRoutes(), timetable, stopIndex);
 	}
 
 	private long getPlannedArrivalMillis(int stopIndex) {

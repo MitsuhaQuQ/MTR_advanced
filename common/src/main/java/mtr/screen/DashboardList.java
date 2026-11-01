@@ -60,6 +60,8 @@ public class DashboardList implements IGui {
 	private Function<NameColorDataBase, String> rowLabel = data -> IGui.formatStationName(data.name);
 	private Predicate<NameColorDataBase> isHeaderRow = data -> false;
 	private ToIntFunction<NameColorDataBase> rowColor = data -> data.color;
+	private Consumer<NameColorDataBase> onClickHeaderRow = data -> {
+	};
 
 	private boolean hasFind;
 	private boolean hasDrawArea;
@@ -155,14 +157,16 @@ public class DashboardList implements IGui {
 	}
 
 	/**
-	 * @param rowLabel    the text of each row
-	 * @param isHeaderRow true for rows that stand for a group, which only have the find button
-	 * @param rowColor    the colour of each row
+	 * @param rowLabel         the text of each row
+	 * @param isHeaderRow      true for rows that stand for a group, which have no buttons and are clicked instead
+	 * @param rowColor         the colour of each row
+	 * @param onClickHeaderRow what clicking a header row does
 	 */
-	public void setRowStyle(Function<NameColorDataBase, String> rowLabel, Predicate<NameColorDataBase> isHeaderRow, ToIntFunction<NameColorDataBase> rowColor) {
+	public void setRowStyle(Function<NameColorDataBase, String> rowLabel, Predicate<NameColorDataBase> isHeaderRow, ToIntFunction<NameColorDataBase> rowColor, Consumer<NameColorDataBase> onClickHeaderRow) {
 		this.rowLabel = rowLabel;
 		this.isHeaderRow = isHeaderRow;
 		this.rowColor = rowColor;
+		this.onClickHeaderRow = onClickHeaderRow;
 	}
 
 	public void setData(Set<? extends NameColorDataBase> dataSet, boolean hasFind, boolean hasDrawArea, boolean hasEdit, boolean hasSort, boolean hasAdd, boolean hasDelete) {
@@ -270,7 +274,7 @@ public class DashboardList implements IGui {
 			final boolean hasSortFiltered = hasSort && dataSize == dataSorted.size();
 			if (hoverIndex >= 0 && hoverIndex + scroll < dataSize) {
 				final boolean isHeader = isHeaderRow.test(dataSorted.get(dataFiltered.get(hoverIndex + scroll)));
-				buttonFind.visible = hasFind;
+				buttonFind.visible = hasFind && !isHeader;
 				buttonDrawArea.visible = hasDrawArea && !isHeader;
 				buttonEdit.visible = hasEdit && !isHeader;
 				buttonUp.visible = hasSortFiltered && !isHeader;
@@ -291,6 +295,23 @@ public class DashboardList implements IGui {
 				IDrawing.setPositionAndWidth(buttonDelete, x + rowWidth - SQUARE_SIZE, renderOffset, SQUARE_SIZE);
 			}
 		}
+	}
+
+	/**
+	 * @return true if this click landed on a header row
+	 */
+	public boolean mouseClicked(double mouseX, double mouseY) {
+		if (mouseX >= x && mouseX < x + getRowWidth() && mouseY >= y + TOP_OFFSET && mouseY < y + TOP_OFFSET + SQUARE_SIZE * itemsToShow()) {
+			final int index = ((int) mouseY - y - TOP_OFFSET) / SQUARE_SIZE + scroll;
+			if (index >= 0 && index < dataFiltered.size()) {
+				final NameColorDataBase data = dataSorted.get(dataFiltered.get(index));
+				if (isHeaderRow.test(data)) {
+					onClickHeaderRow.accept(data);
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	public void mouseScrolled(double mouseX, double mouseY, double amount) {

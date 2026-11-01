@@ -1,0 +1,12 @@
+{
+  "directionWords": [
+    "上行", "下行", "内环", "外环", "內環", "外環", "内回", "外回", "内回り", "外回り", "上り", "下り",
+    "up", "down", "upbound", "downbound", "inbound", "outbound",
+    "northbound", "southbound", "eastbound", "westbound",
+    "clockwise", "anticlockwise", "counterclockwise"
+  ],
+  "serviceWords": [
+    "普通", "各停", "各駅停車", "区间", "區間", "区間", "准急", "準急", "急行", "快速", "快车", "快車", "特快", "特急", "直达", "直達", "通勤", "大站",
+    "local", "rapid", "express", "limited"
+  ]
+}
