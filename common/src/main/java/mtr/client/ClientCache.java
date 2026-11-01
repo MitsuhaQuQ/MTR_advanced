@@ -86,7 +86,7 @@ public class ClientCache extends DataCache implements IGui {
 						if (!stationIdToRoutes.containsKey(station.id)) {
 							stationIdToRoutes.put(station.id, new HashMap<>());
 						}
-						stationIdToRoutes.get(station.id).put(route.color, new ColorNameTuple(route.color, route.name.split("\\|\\|")[0]));
+						stationIdToRoutes.get(station.id).put(route.color, new ColorNameTuple(route.color, route.name.split("\\|\\|")[0], route.getLineKey()));
 					}
 				});
 			}
@@ -542,10 +542,16 @@ public class ClientCache extends DataCache implements IGui {
 
 		public final int color;
 		public final String name;
+		public final String lineKey;
 
 		public ColorNameTuple(int color, String name) {
+			this(color, name, name);
+		}
+
+		public ColorNameTuple(int color, String name, String lineKey) {
 			this.color = color;
 			this.name = name;
+			this.lineKey = lineKey;
 		}
 	}
 

@@ -270,9 +270,10 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 						final Component arrivalText;
 						// Get arrival time
 						final int seconds = (int) ((currentSchedule.arrivalMillis - System.currentTimeMillis()) / 1000);
+						final int delayMinutes = currentSchedule.getDelayMinutes();
 						if (seconds >= 60) {
 							if ((arrivalLine == 1 && renderVertical) || (arrivalLine == 0 && renderSingle) || renderClassic) {
-								arrivalText = Text.translatable(isCJK ? "gui.mtr.arrival_min_cjk" : "gui.mtr.arrival_min", seconds / 60).append(appendDotAfterMin && !isCJK ? "." : "");
+								arrivalText = Text.translatable(isCJK ? "gui.mtr.arrival_min_cjk" : "gui.mtr.arrival_min", seconds / 60).append(appendDotAfterMin && !isCJK ? "." : "").append(delayMinutes > 0 ? " +" + delayMinutes : "");
 							} else {
 								arrivalText = Text.literal("");
 							}

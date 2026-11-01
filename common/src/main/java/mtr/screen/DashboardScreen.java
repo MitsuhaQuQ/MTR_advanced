@@ -20,8 +20,12 @@ import net.minecraft.util.Tuple;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
@@ -60,6 +64,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final WidgetColorSelector colorSelector;
 
 	private final DashboardList dashboardList;
+	private final Set<String> expandedLines = new HashSet<>();
+	private final Map<Long, String> lineHeaderRows = new HashMap<>();
+	private final Set<Long> lineChildRows = new HashSet<>();
+	private final Map<Long, Integer> routeColors = new HashMap<>();
 
 	public static final int MAX_COLOR_ZONE_LENGTH = 6;
 	private static final int COLOR_WIDTH = 48;
@@ -106,6 +114,22 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		});
 
 		dashboardList = new DashboardList(this::onFind, this::onDrawArea, this::onEdit, this::onSort, null, this::onDelete, this::getList, () -> ClientData.DASHBOARD_SEARCH, text -> ClientData.DASHBOARD_SEARCH = text);
+
+		widgetMap.setRoutePicking(() -> selectedTab == SelectedTab.ROUTES && editingRoute == null, route -> {
+			final String lineKey = route.getLineKey();
+			widgetMap.setSelectedLine(lineKey);
+			dashboardList.clearSearch();
+			ClientData.DASHBOARD_SEARCH = "";
+			updateRouteRows();
+			final long headerId = getLineHeaderId(lineKey);
+			dashboardList.selectItem(lineHeaderRows.containsKey(headerId) ? headerId : route.id);
+		});
+		widgetMap.setRouteColors(routeColors);
+		dashboardList.setRowStyle(this::getRowLabel, data -> lineHeaderRows.containsKey(data.id), data -> routeColors.getOrDefault(data.id, data.color));
+		widgetMap.setStationPicking(() -> selectedTab == SelectedTab.STATIONS && editingArea == null, station -> {
+			widgetMap.setSelectedStation(station.id);
+			dashboardList.selectItem(station.id);
+		});
 
 		onSelectTab(SelectedTab.STATIONS);
 	}
@@ -207,6 +231,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldCustomDestination.tick();
 		textFieldDwellOverride.tick();
 		dashboardList.tick();
+		updateRouteColors();
 
 		try {
 			switch (selectedTab) {
@@ -224,7 +249,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 					break;
 				case ROUTES:
 					if (editingRoute == null) {
-						dashboardList.setData(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES), false, true, true, false, false, true);
+						updateRouteRows();
 					} else {
 						routeEntries = editingRoute.getEntries();
 						final List<DataConverter> routeData = new ArrayList<>();
@@ -251,8 +276,67 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		return false;
 	}
 
+	/**
+	 * Routes of one line are folded into a row of their own, unless searching, when every route has to be findable.
+	 */
+	private void updateRouteRows() {
+		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
+		Collections.sort(routes);
+		lineHeaderRows.clear();
+		lineChildRows.clear();
+
+		if (!ClientData.DASHBOARD_SEARCH.isEmpty()) {
+			dashboardList.setData(routes, true, true, true, false, false, true);
+			return;
+		}
+
+		final Map<String, List<Route>> lines = new LinkedHashMap<>();
+		routes.forEach(route -> lines.computeIfAbsent(route.getLineKey(), key -> new ArrayList<>()).add(route));
+
+		final List<NameColorDataBase> rows = new ArrayList<>();
+		lines.forEach((lineKey, lineRoutes) -> {
+			final Route firstRoute = lineRoutes.get(0);
+			if (lineRoutes.size() == 1) {
+				rows.add(firstRoute);
+			} else {
+				final boolean isExpanded = expandedLines.contains(lineKey);
+				final long headerId = getLineHeaderId(lineKey);
+				lineHeaderRows.put(headerId, lineKey);
+				rows.add(new DataConverter(headerId, String.format("[%s] %s (%s)", isExpanded ? "-" : "+", firstRoute.getLineName(), lineRoutes.size()), firstRoute.color));
+				if (isExpanded) {
+					lineRoutes.forEach(route -> lineChildRows.add(route.id));
+					rows.addAll(lineRoutes);
+				}
+			}
+		});
+		dashboardList.setData(rows, true, true, true, false, false, true);
+	}
+
+	private static long getLineHeaderId(String lineKey) {
+		return lineKey.hashCode() & 0xFFFFFFFFL | 1L << 40;
+	}
+
+	/**
+	 * A line takes the colour of its first route, so routes saved with different colours still look like one line.
+	 */
+	private void updateRouteColors() {
+		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
+		Collections.sort(routes);
+		final Map<String, Integer> lineColors = new HashMap<>();
+		routeColors.clear();
+		routes.forEach(route -> routeColors.put(route.id, lineColors.computeIfAbsent(route.getLineKey(), key -> route.color)));
+	}
+
+	private String getRowLabel(NameColorDataBase data) {
+		final boolean isChild = selectedTab == SelectedTab.ROUTES && editingRoute == null && data instanceof Route && lineChildRows.contains(data.id);
+		return isChild ? "    " + TimetableScreen.getDirectionText((Route) data) : IGui.formatStationName(data.name);
+	}
+
 	private void onSelectTab(SelectedTab tab) {
 		selectedTab = tab;
+		widgetMap.setSelectedLine("");
+		widgetMap.setSelectedStation(0);
+		dashboardList.clearSelectedItem();
 		buttonTabStations.active = tab != SelectedTab.STATIONS;
 		buttonTabRoutes.active = tab != SelectedTab.ROUTES;
 		buttonTabDepots.active = tab != SelectedTab.DEPOTS;
@@ -261,7 +345,20 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void onFind(NameColorDataBase data, int index) {
-		if (selectedTab == SelectedTab.STATIONS || selectedTab == SelectedTab.DEPOTS) {
+		if (selectedTab == SelectedTab.ROUTES) {
+			final String lineKey = lineHeaderRows.get(data.id);
+			if (lineKey != null) {
+				if (!expandedLines.remove(lineKey)) {
+					expandedLines.add(lineKey);
+				}
+				updateRouteRows();
+			} else if (data instanceof Route) {
+				final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(((Route) data).getFirstPlatformId());
+				if (platform != null) {
+					widgetMap.find(platform.getMidPos());
+				}
+			}
+		} else if (selectedTab == SelectedTab.STATIONS || selectedTab == SelectedTab.DEPOTS) {
 			if (editingArea == null && data instanceof AreaBase) {
 				final AreaBase area = (AreaBase) data;
 				if (AreaBase.nonNullCorners(area)) {

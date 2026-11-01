@@ -26,6 +26,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	public int clientPathGenerationSuccessfulSegments;
 	public PathFailure clientPathFailure = PathFailure.NONE;
 	public long lastDeployedMillis;
+	private long lastDeployedTripMillis;
 	public boolean useRealTime;
 	public boolean repeatInfinitely;
 	public boolean useDeterministicPath = true;
@@ -41,6 +42,10 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 	private final int[] frequencies = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
+	private RouteTimetable timetable;
+	private Route timetableRoute;
+	private Set<Long> reservedTrips = new HashSet<>();
+	private Set<Long> newReservedTrips = new HashSet<>();
 
 	public static final int HOURS_IN_DAY = 24;
 	public static final int TRAIN_FREQUENCY_MULTIPLIER = 4;
@@ -51,6 +56,10 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private static final int TICKS_PER_DAY = HOURS_IN_DAY * TICKS_PER_HOUR;
 	private static final int CONTINUOUS_MOVEMENT_FREQUENCY = 8000;
 	private static final int THRESHOLD_ABOVE_MAX_BUILD_HEIGHT = 64;
+	/**
+	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
+	 */
+	private static final int DEPLOY_MARGIN_MILLIS = 15000;
 
 	private static final String KEY_ROUTE_IDS = "route_ids";
 	private static final int MAX_DEPARTURES = 4096;
@@ -59,6 +68,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private static final String KEY_FREQUENCIES = "frequencies";
 	private static final String KEY_DEPARTURES = "departures";
 	private static final String KEY_LAST_DEPLOYED = "last_deployed";
+	private static final String KEY_LAST_DEPLOYED_TRIP = "last_deployed_trip";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
@@ -95,6 +105,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
+		lastDeployedTripMillis = messagePackHelper.getLong(KEY_LAST_DEPLOYED_TRIP);
 	}
 
 	@Deprecated
@@ -148,6 +159,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		toReducedMessagePack(messagePacker);
 		messagePacker.packString(KEY_DEPLOY_INDEX).packInt(deployIndex);
 		messagePacker.packString(KEY_LAST_DEPLOYED).packLong(System.currentTimeMillis() - lastDeployedMillis);
+		messagePacker.packString(KEY_LAST_DEPLOYED_TRIP).packLong(lastDeployedTripMillis);
 	}
 
 	@Override
@@ -177,12 +189,12 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 9;
+		return super.messagePackLength() + 10;
 	}
 
 	@Override
 	public int reducedMessagePackLength() {
-		return messagePackLength() - 2;
+		return messagePackLength() - 3;
 	}
 
 	@Override
@@ -334,6 +346,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		});
 
 		final boolean useFastSpeed = cruisingAltitude >= world.getMaxBuildHeight() + THRESHOLD_ABOVE_MAX_BUILD_HEIGHT;
+		// A timetabled line that ends where it starts runs lap after lap, and only returns to the depot when service ends
+		final boolean repeatPath = repeatInfinitely || findTimetable(dataCache) != null && platformsMerged.size() > 1 && platformsMerged.get(0).id == platformsMerged.get(platformsMerged.size() - 1).id;
 
 		final RailGraph<Rail> graph = getPathGraph(rails);
 
@@ -398,7 +412,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 					if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
 						final SavedRailBase firstPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 						final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, graph, firstPlatform, finalPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed);
+						final int result = siding.generateRoute(minecraftServer, tempPath, successfulSegmentsMain, rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed);
 						if (result < successfulSegments[0]) {
 							successfulSegments[0] = result;
 						}
@@ -433,7 +447,15 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			generateTempDepartures(world);
 		}
 
-		if (!deployableSidings.isEmpty() && getMillisUntilDeploy(1) == 0) {
+		final Set<Long> oldReservedTrips = reservedTrips;
+		reservedTrips = newReservedTrips;
+		newReservedTrips = oldReservedTrips;
+		newReservedTrips.clear();
+
+		timetable = findTimetable(railwayData.dataCache);
+		timetableRoute = timetable == null ? null : railwayData.dataCache.routeIdMap.get(routeIds.get(0));
+
+		if (!deployableSidings.isEmpty() && (timetable != null || getMillisUntilDeploy(1) == 0)) {
 			final List<Siding> sidingsInDepot = railwayData.sidings.stream().filter(siding -> {
 				final BlockPos sidingPos = siding.getMidPos();
 				return siding.isTransportMode(transportMode) && inArea(sidingPos.getX(), sidingPos.getZ());
@@ -442,13 +464,21 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			final int sidingsInDepotSize = sidingsInDepot.size();
 			for (int i = deployIndex; i < deployIndex + sidingsInDepotSize; i++) {
 				final TrainServer train = deployableSidings.get(sidingsInDepot.get(i % sidingsInDepotSize).id);
-				if (train != null) {
-					lastDeployedMillis = System.currentTimeMillis();
+				final long currentMillis = System.currentTimeMillis();
+				final long tripMillis = train == null || timetable == null ? 0 : timetable.getLatestService(Math.max(lastDeployedTripMillis, currentMillis - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS), currentMillis + train.getLeadMillis() + DEPLOY_MARGIN_MILLIS, this::isTripReserved);
+				if (train != null && (timetable == null || tripMillis != 0)) {
+					lastDeployedMillis = currentMillis;
 					deployIndex++;
 					if (deployIndex >= sidingsInDepotSize) {
 						deployIndex = 0;
 					}
-					train.deployTrain();
+					if (timetable == null) {
+						train.deployTrain();
+					} else {
+						lastDeployedTripMillis = tripMillis;
+						reserveTrip(tripMillis);
+						train.deployTrain(tripMillis);
+					}
 					break;
 				}
 			}
@@ -456,6 +486,67 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 		departureOffset = 0;
 		deployableSidings.clear();
+	}
+
+	public RouteTimetable findTimetable(DataCache dataCache) {
+		final Route firstRoute = routeIds.isEmpty() ? null : dataCache.routeIdMap.get(routeIds.get(0));
+		return firstRoute != null && supportsTimetable(transportMode) && firstRoute.timetable.isActive() ? firstRoute.timetable : null;
+	}
+
+	public static boolean supportsTimetable(TransportMode transportMode) {
+		return !transportMode.continuousMovement && transportMode != TransportMode.AIRPLANE;
+	}
+
+	/**
+	 * @return the timetable sending out this depot's trains, which belongs to its first route
+	 */
+	public RouteTimetable getTimetable() {
+		return timetable;
+	}
+
+	public Route getTimetableRoute() {
+		return timetableRoute;
+	}
+
+	public void reserveTrip(long tripMillis) {
+		if (tripMillis != 0) {
+			newReservedTrips.add(tripMillis);
+		}
+	}
+
+	/**
+	 * @return the first service from this time on that no train has taken, or 0 if a train would wait too long for it
+	 */
+	public long findNextTrip(long readyMillis) {
+		final long tripMillis = timetable == null ? 0 : timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, this::isTripReserved);
+		reserveTrip(tripMillis);
+		return tripMillis;
+	}
+
+	private boolean isTripReserved(long tripMillis) {
+		return reservedTrips.contains(tripMillis) || newReservedTrips.contains(tripMillis);
+	}
+
+	/**
+	 * Like {@link #getNextDepartureMillis()}, using the timetable if there is one, which skips services already taken.
+	 */
+	public int getNextDepartureMillis(long leadMillis) {
+		if (timetable == null) {
+			return getNextDepartureMillis();
+		}
+
+		departureOffset++;
+		final long currentMillis = System.currentTimeMillis();
+		long fromMillis = currentMillis + leadMillis;
+		long tripMillis = 0;
+		for (int i = 0; i < departureOffset; i++) {
+			tripMillis = timetable.getNextService(fromMillis, currentMillis + MILLISECONDS_PER_DAY, this::isTripReserved);
+			if (tripMillis == 0) {
+				return -1;
+			}
+			fromMillis = tripMillis + 1;
+		}
+		return (int) (tripMillis - leadMillis - currentMillis);
 	}
 
 	public int getNextDepartureMillis() {

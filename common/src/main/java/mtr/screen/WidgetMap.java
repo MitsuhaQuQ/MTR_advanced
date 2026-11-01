@@ -25,16 +25,21 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.level.levelgen.Heightmap;
 
+import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.function.Supplier;
 
 
@@ -58,6 +63,25 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private final Consumer<BlockPos> onClickAddKeyNodeToRoute;
 	private String areaNotice = "";
 	private Supplier<Collection<Route>> routesToDraw = Collections::emptyList;
+	private BooleanSupplier canPickRoute = () -> false;
+	private Consumer<Route> onPickRoute = route -> {
+	};
+	private String selectedLineKey = "";
+	private List<Route> hoveredRoutes = Collections.emptyList();
+	private Set<String> hoveredLineKeys = Collections.emptySet();
+	private Map<Long, Integer> routeColors = Collections.emptyMap();
+	private BooleanSupplier canPickStation = () -> false;
+	private Consumer<Station> onPickStation = station -> {
+	};
+	private long selectedStationId;
+	private List<Station> hoveredStations = Collections.emptyList();
+	private double hoverMouseX = -1;
+	private double hoverMouseY = -1;
+	private double hoverScale;
+	private double hoverCenterX;
+	private double hoverCenterY;
+	private double pressMouseX;
+	private double pressMouseY;
 	private final Consumer<SavedRailBase> onClickEditSavedRail;
 	private final BiFunction<Double, Double, Boolean> isRestrictedMouseArea;
 	private final ClientLevel world;
@@ -69,7 +93,11 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private static final double RAIL_LINE_PIXELS = 1;
 	private static final double ROUTE_STOP_MARKER_PIXELS = 4;
 	private static final double ROUTE_LINE_PIXELS = 2;
+	private static final double ROUTE_HIGHLIGHT_PIXELS = 4;
+	private static final double ROUTE_PICK_PIXELS = 5;
+	private static final double CLICK_MAX_MOVE_PIXELS = 3;
 	private static final int ARGB_RAIL_LINE = 0x50FFFFFF;
+	private static final int ARGB_AREA_HIGHLIGHT = 0x50FFFFFF;
 	private static final int ARGB_ROUTE_LINE_ALPHA = 0xB0000000;
 	private static final int ARGB_KEY_NODE = 0xFFFFFF00;
 	private static final int ARGB_KEY_NODE_PICKED = 0xFF00FF00;
@@ -126,12 +154,24 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			drawRails(buffer);
 			drawDepotPaths(buffer);
 			routesToDraw.get().forEach(route -> drawRoute(buffer, route));
+			updateHoveredRoutes(mouseX, mouseY, mouseWorldPos);
+			if (!selectedLineKey.isEmpty() || !hoveredRoutes.isEmpty()) {
+				routesToDraw.get().forEach(route -> {
+					final String lineKey = route.getLineKey();
+					if (lineKey.equals(selectedLineKey) || hoveredLineKeys.contains(lineKey)) {
+						drawRouteNodes(buffer, getRouteNodes(route), ROUTE_HIGHLIGHT_PIXELS, ARGB_BLACK | getRouteColor(route));
+					}
+				});
+			}
 			if (showStations) {
 				ClientData.DATA_CACHE.getPosToPlatforms(transportMode).forEach((platformPos, platforms) -> drawRectangleFromWorldCoords(buffer, platformPos.getX(), platformPos.getZ(), platformPos.getX() + 1, platformPos.getZ() + 1, ARGB_WHITE));
 				for (final Station station : ClientData.STATIONS) {
 					if (AreaBase.nonNullCorners(station)) {
 						for (final int[] rectangle : station.getRectangles()) {
 							drawRectangleFromWorldCoords(buffer, new Tuple<>(rectangle[0], rectangle[1]), new Tuple<>(rectangle[2], rectangle[3]), ARGB_BLACK_TRANSLUCENT + station.color);
+							if (station.id == selectedStationId || hoveredStations.contains(station)) {
+								drawRectangleFromWorldCoords(buffer, new Tuple<>(rectangle[0], rectangle[1]), new Tuple<>(rectangle[2], rectangle[3]), ARGB_AREA_HIGHLIGHT);
+							}
 						}
 					}
 				}
@@ -175,6 +215,10 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			}
 		} else if (mapState == MapState.EDITING_ROUTE) {
 			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_route_key_nodes").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+		} else if (canPickRoute.getAsBoolean()) {
+			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_route").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+		} else if (canPickStation.getAsBoolean()) {
+			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_station").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		}
 
 		if (scale >= 8) {
@@ -220,6 +264,12 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		}
 		immediate.endBatch();
 
+		if (!hoveredRoutes.isEmpty() || !hoveredStations.isEmpty()) {
+			final String names = hoveredRoutes.isEmpty() ? hoveredStations.stream().map(station -> IGui.formatStationName(station.name)).collect(Collectors.joining(" / ")) : hoveredRoutes.stream().map(route -> IGui.formatStationName(route.getLineName())).collect(Collectors.joining(" / "));
+			final int textX = Math.min(mouseX + TEXT_PADDING * 2, x + width - textRenderer.width(names) - TEXT_PADDING);
+			GuiCompat.drawString(matrices, textRenderer, names, textX, mouseY - TEXT_HEIGHT - TEXT_PADDING, ARGB_WHITE);
+		}
+
 		final String mousePosText = String.format("(%s, %s)", RailwayData.round(mouseWorldPos.getA(), 1), RailwayData.round(mouseWorldPos.getB(), 1));
 		GuiCompat.drawString(matrices, textRenderer, mousePosText, x + width - TEXT_PADDING - textRenderer.width(mousePosText), y + TEXT_PADDING, ARGB_WHITE);
 	}
@@ -246,6 +296,12 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	public boolean mouseReleased(double mouseX, double mouseY, int button) {
 		if (mapState == MapState.EDITING_AREA) {
 			onDrawCornersMouseRelease.run();
+		} else if (isMouseOver(mouseX, mouseY) && Math.hypot(mouseX - pressMouseX, mouseY - pressMouseY) <= CLICK_MAX_MOVE_PIXELS) {
+			if (canPickRoute.getAsBoolean()) {
+				pickRoute(coordsToWorldPos(mouseX - x, mouseY - y));
+			} else if (canPickStation.getAsBoolean()) {
+				pickStation(coordsToWorldPos(mouseX - x, mouseY - y));
+			}
 		}
 		return true;
 	}
@@ -253,6 +309,8 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		if (isMouseOver(mouseX, mouseY)) {
+			pressMouseX = mouseX;
+			pressMouseY = mouseY;
 			if (ClientData.hasPermission()) {
 				if (mapState == MapState.EDITING_AREA) {
 					drawArea1 = coordsToWorldPos((int) (mouseX - x), (int) (mouseY - y));
@@ -356,6 +414,37 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		mapState = MapState.DEFAULT;
 	}
 
+	/**
+	 * Lets routes be chosen on the map by the coloured lines they are drawn with.
+	 */
+	public void setRoutePicking(BooleanSupplier canPickRoute, Consumer<Route> onPickRoute) {
+		this.canPickRoute = canPickRoute;
+		this.onPickRoute = onPickRoute;
+	}
+
+	public void setSelectedLine(String selectedLineKey) {
+		this.selectedLineKey = selectedLineKey;
+	}
+
+	/**
+	 * @param routeColors the colour to draw each route with by route ID, as routes of a line are all drawn in one colour
+	 */
+	public void setRouteColors(Map<Long, Integer> routeColors) {
+		this.routeColors = routeColors;
+	}
+
+	/**
+	 * Lets stations be chosen on the map by clicking any of their areas.
+	 */
+	public void setStationPicking(BooleanSupplier canPickStation, Consumer<Station> onPickStation) {
+		this.canPickStation = canPickStation;
+		this.onPickStation = onPickStation;
+	}
+
+	public void setSelectedStation(long selectedStationId) {
+		this.selectedStationId = selectedStationId;
+	}
+
 	public void setShowStations(boolean showStations) {
 		this.showStations = showStations;
 	}
@@ -416,7 +505,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			final Depot depot = ClientData.DATA_CACHE.sidingIdToDepot.get(sidingId);
 			if (depot != null && depot.isTransportMode(transportMode) && nodes.length > 1 && (mapState != MapState.EDITING_ROUTE || routes.stream().anyMatch(route -> depot.routeIds.contains(route.id)))) {
 				final Route firstRoute = depot.routeIds.isEmpty() ? null : ClientData.DATA_CACHE.routeIdMap.get(depot.routeIds.get(0));
-				drawNodes(buffer, nodes, ARGB_ROUTE_LINE_ALPHA | (firstRoute == null ? depot.color : firstRoute.color) & 0xFFFFFF);
+				drawNodes(buffer, nodes, ARGB_ROUTE_LINE_ALPHA | (firstRoute == null ? depot.color : getRouteColor(firstRoute)) & 0xFFFFFF);
 			}
 		});
 	}
@@ -424,36 +513,147 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private void drawNodes(BufferBuilder buffer, long[] nodes, int color) {
 		BlockPos lastNode = BlockPos.of(nodes[0]);
 		for (int i = 1; i < nodes.length; i++) {
-			lastNode = drawRouteSegment(buffer, lastNode, BlockPos.of(nodes[i]), color);
+			final BlockPos node = BlockPos.of(nodes[i]);
+			drawRouteSegment(buffer, lastNode, node, ROUTE_LINE_PIXELS, color);
+			lastNode = node;
 		}
 	}
 
 	private void drawRoute(BufferBuilder buffer, Route route) {
-		final int color = ARGB_ROUTE_LINE_ALPHA | route.color & 0xFFFFFF;
-		final long[] nodes = ClientData.MAP_ROUTES.get(route.id);
-		if (nodes != null && nodes.length > 1) {
-			drawNodes(buffer, nodes, color);
-			return;
-		}
+		drawRouteNodes(buffer, getRouteNodes(route), ROUTE_LINE_PIXELS, ARGB_ROUTE_LINE_ALPHA | getRouteColor(route) & 0xFFFFFF);
+	}
 
-		// A route without a traced path falls back to straight lines between its stops
-		BlockPos lastPos = null;
-		for (final Route.RoutePlatform routePlatform : route.platformIds) {
-			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
-			if (platform != null) {
-				lastPos = drawRouteSegment(buffer, lastPos, platform.getMidPos(), color);
-				for (final BlockPos waypoint : routePlatform.waypoints) {
-					lastPos = drawRouteSegment(buffer, lastPos, waypoint, color);
-				}
-			}
+	private int getRouteColor(Route route) {
+		return routeColors.getOrDefault(route.id, route.color);
+	}
+
+	private void drawRouteNodes(BufferBuilder buffer, List<BlockPos> nodes, double thickness, int color) {
+		for (int i = 1; i < nodes.size(); i++) {
+			drawRouteSegment(buffer, nodes.get(i - 1), nodes.get(i), thickness, color);
 		}
 	}
 
-	private BlockPos drawRouteSegment(BufferBuilder buffer, BlockPos lastPos, BlockPos pos, int color) {
-		if (lastPos != null) {
-			drawLineFromWorldCoords(buffer, lastPos.getX() + 0.5, lastPos.getZ() + 0.5, pos.getX() + 0.5, pos.getZ() + 0.5, ROUTE_LINE_PIXELS, color);
+	private void drawRouteSegment(BufferBuilder buffer, BlockPos lastPos, BlockPos pos, double thickness, int color) {
+		drawLineFromWorldCoords(buffer, lastPos.getX() + 0.5, lastPos.getZ() + 0.5, pos.getX() + 0.5, pos.getZ() + 0.5, thickness, color);
+	}
+
+	private static List<BlockPos> getRouteNodes(Route route) {
+		final List<BlockPos> routeNodes = new ArrayList<>();
+		final long[] nodes = ClientData.MAP_ROUTES.get(route.id);
+		if (nodes != null && nodes.length > 1) {
+			for (final long node : nodes) {
+				routeNodes.add(BlockPos.of(node));
+			}
+			return routeNodes;
 		}
-		return pos;
+
+		// A route without a traced path falls back to straight lines between its stops
+		for (final Route.RoutePlatform routePlatform : route.platformIds) {
+			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
+			if (platform != null) {
+				routeNodes.add(platform.getMidPos());
+				routeNodes.addAll(routePlatform.waypoints);
+			}
+		}
+		return routeNodes;
+	}
+
+	private void updateHoveredRoutes(int mouseX, int mouseY, Tuple<Double, Double> mouseWorldPos) {
+		final boolean pickRoutes = canPickRoute.getAsBoolean();
+		final boolean pickStations = canPickStation.getAsBoolean();
+		if (!pickRoutes && !pickStations || !isMouseOver(mouseX, mouseY)) {
+			hoveredRoutes = Collections.emptyList();
+			hoveredLineKeys = Collections.emptySet();
+			hoveredStations = Collections.emptyList();
+			hoverMouseX = -1;
+		} else if (mouseX != hoverMouseX || mouseY != hoverMouseY || scale != hoverScale || centerX != hoverCenterX || centerY != hoverCenterY) {
+			hoverMouseX = mouseX;
+			hoverMouseY = mouseY;
+			hoverScale = scale;
+			hoverCenterX = centerX;
+			hoverCenterY = centerY;
+			hoveredRoutes = pickRoutes ? getRoutesAt(mouseWorldPos) : Collections.emptyList();
+			hoveredLineKeys = hoveredRoutes.stream().map(Route::getLineKey).collect(Collectors.toSet());
+			hoveredStations = pickStations ? getStationsAt(mouseWorldPos) : Collections.emptyList();
+		}
+	}
+
+	/**
+	 * @return the stations with an area at this position, in an order that doesn't change between clicks
+	 */
+	private static List<Station> getStationsAt(Tuple<Double, Double> worldPos) {
+		final List<Station> stations = new ArrayList<>();
+		for (final Station station : ClientData.STATIONS) {
+			if (AreaBase.nonNullCorners(station)) {
+				for (final int[] rectangle : station.getRectangles()) {
+					if (RailwayData.isBetween(worldPos.getA(), rectangle[0], rectangle[2]) && RailwayData.isBetween(worldPos.getB(), rectangle[1], rectangle[3])) {
+						stations.add(station);
+						break;
+					}
+				}
+			}
+		}
+		stations.sort(Comparator.comparingLong(station -> station.id));
+		return stations;
+	}
+
+	private void pickStation(Tuple<Double, Double> worldPos) {
+		final List<Station> stations = getStationsAt(worldPos);
+		if (!stations.isEmpty()) {
+			int selectedIndex = -1;
+			for (int i = 0; i < stations.size(); i++) {
+				if (stations.get(i).id == selectedStationId) {
+					selectedIndex = i;
+				}
+			}
+			onPickStation.accept(stations.get((selectedIndex + 1) % stations.size()));
+		}
+	}
+
+	/**
+	 * @return one route for each line drawn near this position, with the closest first
+	 */
+	private List<Route> getRoutesAt(Tuple<Double, Double> worldPos) {
+		final double maxDistance = ROUTE_PICK_PIXELS / scale;
+		final Map<Route, Double> distances = new HashMap<>();
+		routesToDraw.get().forEach(route -> {
+			final List<BlockPos> nodes = getRouteNodes(route);
+			double routeDistance = Double.POSITIVE_INFINITY;
+			for (int i = 1; i < nodes.size(); i++) {
+				routeDistance = Math.min(routeDistance, getDistanceToSegment(worldPos.getA(), worldPos.getB(), nodes.get(i - 1), nodes.get(i)));
+			}
+			if (routeDistance <= maxDistance) {
+				distances.put(route, routeDistance);
+			}
+		});
+		final Set<String> lineKeys = new HashSet<>();
+		return distances.keySet().stream().sorted(Comparator.comparingDouble((Route route) -> distances.get(route)).thenComparingLong(route -> route.id)).filter(route -> lineKeys.add(route.getLineKey())).collect(Collectors.toList());
+	}
+
+	private static double getDistanceToSegment(double pointX, double pointZ, BlockPos pos1, BlockPos pos2) {
+		final double x1 = pos1.getX() + 0.5;
+		final double z1 = pos1.getZ() + 0.5;
+		final double differenceX = pos2.getX() - pos1.getX();
+		final double differenceZ = pos2.getZ() - pos1.getZ();
+		final double lengthSquared = differenceX * differenceX + differenceZ * differenceZ;
+		final double progress = lengthSquared == 0 ? 0 : Mth.clamp(((pointX - x1) * differenceX + (pointZ - z1) * differenceZ) / lengthSquared, 0, 1);
+		return Math.hypot(x1 + differenceX * progress - pointX, z1 + differenceZ * progress - pointZ);
+	}
+
+	/**
+	 * Clicking again where lines overlap moves on to the next one, so every line sharing a rail can be reached.
+	 */
+	private void pickRoute(Tuple<Double, Double> worldPos) {
+		final List<Route> routes = getRoutesAt(worldPos);
+		if (!routes.isEmpty()) {
+			int selectedIndex = -1;
+			for (int i = 0; i < routes.size(); i++) {
+				if (routes.get(i).getLineKey().equals(selectedLineKey)) {
+					selectedIndex = i;
+				}
+			}
+			onPickRoute.accept(routes.get((selectedIndex + 1) % routes.size()));
+		}
 	}
 
 	private void drawLineFromWorldCoords(BufferBuilder buffer, double posX1, double posZ1, double posX2, double posZ2, double thickness, int color) {

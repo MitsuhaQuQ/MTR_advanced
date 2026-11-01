@@ -367,6 +367,32 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		});
 	}
 
+	/**
+	 * Sends the fastest time at each stop of a route, from a siding of the depot running it as its first route.
+	 */
+	public static void receiveTimetableTimesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final long routeId = packet.readLong();
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			final Route route = railwayData == null ? null : railwayData.dataCache.routeIdMap.get(routeId);
+			if (route != null) {
+				final Siding.StopTimes stopTimes = railwayData.sidings.stream().filter(siding -> {
+					final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
+					return depot != null && !depot.routeIds.isEmpty() && depot.routeIds.get(0) == routeId && !siding.getStopTimes().isEmpty();
+				}).findFirst().map(Siding::getStopTimes).orElse(null);
+				final long[][] times = stopTimes == null ? new long[0][] : stopTimes.getFastestTimes(route.platformIds.size());
+				final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
+				response.writeLong(routeId);
+				response.writeInt(times.length);
+				for (final long[] stopTime : times) {
+					response.writeLong(stopTime[0]);
+					response.writeLong(stopTime[1]);
+				}
+				Registry.sendToPlayer(player, PACKET_TIMETABLE_TIMES, response);
+			}
+		});
+	}
+
 	public static void receiveNodeAngleC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final BlockPos pos = packet.readBlockPos();
 		final float angle = packet.readFloat();

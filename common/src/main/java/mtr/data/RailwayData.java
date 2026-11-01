@@ -80,6 +80,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final UpdateNearbyMovingObjects<TrainServer> updateNearbyTrains;
 	private final UpdateNearbyMovingObjects<LiftServer> updateNearbyLifts;
 	private final Map<Long, List<ScheduleEntry>> schedulesForPlatform = new HashMap<>();
+	private final Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 	private final Map<Long, Map<BlockPos, TrainDelay>> trainDelays = new HashMap<>();
 
 	private static final int RAIL_UPDATE_DISTANCE = 128;
@@ -319,12 +320,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		updateNearbyTrains.startTick();
 		trainPositions.remove(0);
 		trainPositions.add(new HashMap<>());
+		lastSchedulesForPlatform.clear();
+		lastSchedulesForPlatform.putAll(schedulesForPlatform);
 		schedulesForPlatform.clear();
 		signalBlocks.resetOccupied();
 		final float ticksElapsed = tickCompensator.nextTick(System.currentTimeMillis());
 		sidings.forEach(siding -> {
 			siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails);
 			siding.ticksElapsed = ticksElapsed;
+			siding.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			siding.simulateTrain(dataCache, railwayDataDriveTrainModule, trainPositions, signalBlocks, updateNearbyTrains.newDataSetInPlayerRange, updateNearbyTrains.dataSetToSync, schedulesForPlatform, trainDelays);
 		});
 		depots.forEach(depot -> depot.deployTrain(this, world));

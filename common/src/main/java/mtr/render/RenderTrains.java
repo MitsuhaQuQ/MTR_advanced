@@ -205,9 +205,8 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 					messages.add(IGui.insertTranslation("gui.mtr.connecting_station_part_cjk", "gui.mtr.connecting_station_part", 1, IGui.mergeStationsWithCommas(connectingStationList)));
 				}
 
-				final String thisRouteSplit = thisRoute.name.split("\\|\\|")[0];
 				final String nextRouteSplit = nextRoute == null ? null : nextRoute.name.split("\\|\\|")[0];
-				if (lastStation != null && nextStation.id == lastStation.id && nextRoute != null && !nextRoute.platformIds.isEmpty() && !nextRouteSplit.equals(thisRouteSplit)) {
+				if (lastStation != null && nextStation.id == lastStation.id && nextRoute != null && !nextRoute.platformIds.isEmpty() && !thisRoute.isSameLine(nextRoute)) {
 					final Station nextFinalStation = ClientData.DATA_CACHE.platformIdToStation.get(nextRoute.getLastPlatformId());
 					if (nextFinalStation != null) {
 						final String modeString = thisRoute.transportMode.toString().toLowerCase(Locale.ENGLISH);
@@ -427,14 +426,11 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 	}
 
 	public static String getInterchangeRouteNames(Station station, Route thisRoute, Route nextRoute) {
-		final String thisRouteSplit = thisRoute.name.split("\\|\\|")[0];
-		final String nextRouteSplit = nextRoute == null ? null : nextRoute.name.split("\\|\\|")[0];
+		final String thisLine = thisRoute.getLineKey();
+		final String nextLine = nextRoute == null ? null : nextRoute.getLineKey();
 		final Map<Integer, ClientCache.ColorNameTuple> routesInStation = ClientData.DATA_CACHE.stationIdToRoutes.get(station.id);
 		if (routesInStation != null) {
-			final List<String> interchangeRoutes = routesInStation.values().stream().filter(interchangeRoute -> {
-				final String routeName = interchangeRoute.name.split("\\|\\|")[0];
-				return !routeName.equals(thisRouteSplit) && !routeName.equals(nextRouteSplit);
-			}).map(interchangeRoute -> interchangeRoute.name).collect(Collectors.toList());
+			final List<String> interchangeRoutes = routesInStation.values().stream().filter(interchangeRoute -> !interchangeRoute.lineKey.equals(thisLine) && !interchangeRoute.lineKey.equals(nextLine)).map(interchangeRoute -> interchangeRoute.name).collect(Collectors.toList());
 			return IGui.mergeStationsWithCommas(interchangeRoutes);
 		} else {
 			return "";

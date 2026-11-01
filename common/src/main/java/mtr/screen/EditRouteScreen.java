@@ -19,6 +19,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 	private RouteType routeType;
 
 	private final Component lightRailRouteNumberText = Text.translatable("gui.mtr.light_rail_route_number");
+	private final Component lineNameText = Text.translatable("gui.mtr.route_line_name");
 
 	private final WidgetBetterTextField textFieldLightRailRouteNumber;
 	private final Button buttonRouteType;
@@ -27,6 +28,9 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 	private final WidgetBetterCheckbox buttonDisableNextStationAnnouncements;
 	private final WidgetBetterCheckbox buttonIsClockwiseRoute;
 	private final WidgetBetterCheckbox buttonIsAntiClockwiseRoute;
+	private final Button buttonTimetable;
+	private final Button buttonDuplicate;
+	private final WidgetBetterTextField textFieldLineName;
 
 	private final boolean isCircular;
 
@@ -42,6 +46,30 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		buttonDisableNextStationAnnouncements = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.disable_next_station_announcements"), this::setDisableNextStationAnnouncements);
 		buttonIsClockwiseRoute = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_clockwise_route"), this::setIsClockwise);
 		buttonIsAntiClockwiseRoute = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_anticlockwise_route"), this::setIsAntiClockwise);
+		buttonTimetable = UtilitiesClient.newButton(Text.translatable("gui.mtr.timetable"), button -> {
+			saveData();
+			if (minecraft != null) {
+				UtilitiesClient.setScreen(minecraft, new TimetableScreen(data, this));
+			}
+		});
+
+		buttonDuplicate = UtilitiesClient.newButton(Text.translatable("gui.mtr.duplicate_route"), button -> {
+			saveData();
+			final Route newRoute = data.duplicate();
+			ClientData.ROUTES.add(newRoute);
+			newRoute.setNameColor(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+			newRoute.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+			newRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+			newRoute.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+			if (!newRoute.getPathData().isEmpty()) {
+				newRoute.setCustomPath(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+			}
+			PacketTrainDataGuiClient.requestMapRouteC2S(newRoute.id);
+			if (minecraft != null) {
+				UtilitiesClient.setScreen(minecraft, new EditRouteScreen(newRoute, dashboardScreen));
+			}
+		});
+		textFieldLineName = new WidgetBetterTextField(Route.getAutoLineName(route.name));
 
 		if (route.platformIds.size() > 0) {
 			final Station firstStation = ClientData.DATA_CACHE.platformIdToStation.get(route.getFirstPlatformId());
@@ -67,6 +95,10 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 
 		IDrawing.setPositionAndWidth(buttonIsClockwiseRoute, SQUARE_SIZE, SQUARE_SIZE * 9 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
 		IDrawing.setPositionAndWidth(buttonIsAntiClockwiseRoute, SQUARE_SIZE, SQUARE_SIZE * 10 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
+		IDrawing.setPositionAndWidth(buttonTimetable, SQUARE_SIZE, SQUARE_SIZE * 11 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
+		IDrawing.setPositionAndWidth(buttonDuplicate, SQUARE_SIZE, SQUARE_SIZE * 12 + TEXT_FIELD_PADDING, CHECKBOX_WIDTH);
+		IDrawing.setPositionAndWidth(textFieldLineName, SQUARE_SIZE * 2 + CHECKBOX_WIDTH + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING / 2, CHECKBOX_WIDTH - TEXT_FIELD_PADDING);
+		textFieldLineName.setValue(data.lineName);
 
 		if (data.transportMode.hasRouteTypeVariation) {
 			addDrawableChild(buttonRouteType);
@@ -79,6 +111,11 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 			addDrawableChild(buttonIsClockwiseRoute);
 			addDrawableChild(buttonIsAntiClockwiseRoute);
 		}
+		if (Depot.supportsTimetable(data.transportMode)) {
+			addDrawableChild(buttonTimetable);
+		}
+		addDrawableChild(buttonDuplicate);
+		addDrawableChild(textFieldLineName);
 
 		setIsLightRailRoute(data.isLightRailRoute);
 		setIsRouteHidden(data.isHidden);
@@ -93,6 +130,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 			renderBackground(matrices);
 			renderTextFields(matrices);
 
+			GuiCompat.drawString(matrices, font, lineNameText, SQUARE_SIZE * 2 + CHECKBOX_WIDTH, SQUARE_SIZE * 3 + TEXT_PADDING, ARGB_WHITE);
 			if (textFieldLightRailRouteNumber.visible) {
 				GuiCompat.drawString(matrices, font, lightRailRouteNumberText, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
 			}
@@ -112,6 +150,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		data.lightRailRouteNumber = textFieldLightRailRouteNumber.getValue();
 		data.isHidden = buttonIsRouteHidden.selected();
 		data.disableNextStationAnnouncements = buttonDisableNextStationAnnouncements.selected();
+		data.lineName = textFieldLineName.getValue().trim();
 
 		if (isCircular) {
 			data.circularState = buttonIsClockwiseRoute.selected() ? Route.CircularState.CLOCKWISE : buttonIsAntiClockwiseRoute.selected() ? Route.CircularState.ANTICLOCKWISE : Route.CircularState.NONE;
@@ -120,6 +159,12 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		}
 
 		data.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+
+		// Every route of a line shares its colour, so changing one changes them all
+		ClientData.getFilteredDataSet(data.transportMode, ClientData.ROUTES).stream().filter(route -> route != data && route.color != data.color && route.isSameLine(data)).forEach(route -> {
+			route.color = data.color;
+			route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		});
 	}
 
 	private void setRouteTypeText(TransportMode transportMode, RouteType newRouteType) {

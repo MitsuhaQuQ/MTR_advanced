@@ -513,9 +513,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 								} else {
 									railProgress = distances.get(repeatIndex1);
 								}
+								onLapComplete();
 							}
 
-							if (elapsedDwellTicks < totalDwellTicks - DOOR_MOVE_TIME - DOOR_DELAY - ticksElapsed || !railBlocked) {
+							if (elapsedDwellTicks < totalDwellTicks - DOOR_MOVE_TIME - DOOR_DELAY - ticksElapsed || !railBlocked && !isHeldAtStop()) {
 								elapsedDwellTicks += ticksElapsed;
 							}
 
@@ -570,6 +571,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 					// A loop joins back onto itself, so the train keeps running instead of stopping at the end of the path
 					if (loopsWithoutReversing() && railProgress + speed * ticksElapsed >= distances.get(repeatIndex2)) {
 						railProgress += distances.get(repeatIndex1 - 1) - distances.get(repeatIndex2 - 1);
+						onLapComplete();
 						continueWithoutStopping(world);
 					}
 
@@ -667,6 +669,19 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 	protected boolean isRepeat() {
 		return repeatIndex1 > 0 && repeatIndex2 > 0;
+	}
+
+	/**
+	 * Called as a repeating train starts its next lap, before it looks for its next stop.
+	 */
+	protected void onLapComplete() {
+	}
+
+	/**
+	 * While true, a stopped train keeps its doors open and doesn't leave, the same way as when the rail ahead is blocked.
+	 */
+	protected boolean isHeldAtStop() {
+		return false;
 	}
 
 	protected abstract void simulateCar(

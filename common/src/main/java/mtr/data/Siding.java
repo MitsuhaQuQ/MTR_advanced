@@ -40,10 +40,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private final List<PathData> path = new ArrayList<>();
 	private final List<Double> distances = new ArrayList<>();
 	private final List<TimeSegment> timeSegments = new ArrayList<>();
+	private final StopTimes stopTimes = new StopTimes();
 	/**
 	 * A field rather than a parameter of simulateTrain, which ANTE injects into by its signature.
 	 */
 	public float ticksElapsed = 1;
+	/**
+	 * The schedules of the last tick, which are complete unlike the ones still being filled in by this tick's trains.
+	 */
+	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 	private final Map<Long, Map<Long, Float>> platformTimes = new HashMap<>();
 	private final Set<TrainServer> trains = new HashSet<>();
 
@@ -94,7 +99,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		messagePackHelper.iterateArrayValue(KEY_PATH, pathSection -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(pathSection))));
 
-		generateTimeSegments(path, timeSegments, platformTimes);
+		generateTimeSegments(path, timeSegments, platformTimes, stopTimes);
 
 		messagePackHelper.iterateArrayValue(KEY_TRAINS, value -> trains.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
 		generateDistances();
@@ -120,7 +125,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			path.add(new PathData(tagPath.getCompound(KEY_PATH + i)));
 		}
 
-		generateTimeSegments(path, timeSegments, platformTimes);
+		generateTimeSegments(path, timeSegments, platformTimes, stopTimes);
 
 		final CompoundTag tagTrains = compoundTag.getCompound(KEY_TRAINS);
 		tagTrains.getAllKeys().forEach(key -> trains.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, tagTrains.getCompound(key))));
@@ -333,7 +338,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		final List<TimeSegment> tempTimeSegments = new ArrayList<>();
 		final Map<Long, Map<Long, Float>> tempPlatformTimes = new HashMap<>();
-		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes);
+		final StopTimes tempStopTimes = new StopTimes();
+		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes, tempStopTimes);
 
 		minecraftServer.execute(() -> {
 			try {
@@ -354,6 +360,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 				timeSegments.clear();
 				timeSegments.addAll(tempTimeSegments);
+				stopTimes.copyFrom(tempStopTimes);
 				platformTimes.clear();
 				platformTimes.putAll(tempPlatformTimes);
 				generateDistances();
@@ -414,6 +421,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				trainsToSync.add(train);
 			}
 
+			train.stopTimes = stopTimes;
+			train.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
 			}
@@ -465,6 +474,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			final Rail rail = DataCache.tryGet(rails, pathData.startingPos, pathData.getLastPos());
 			return rail == null || rail.railType != pathData.rail.railType || rail.facingStart != pathData.rail.facingStart || rail.facingEnd != pathData.rail.facingEnd || Math.abs(rail.getLength() - pathData.rail.getLength()) > 0.01;
 		});
+	}
+
+	public StopTimes getStopTimes() {
+		return stopTimes;
 	}
 
 	public long[] getPathNodes() {
@@ -550,8 +563,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 	}
 
-	private void generateTimeSegments(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes) {
+	private void generateTimeSegments(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes, StopTimes stopTimes) {
 		timeSegments.clear();
+		stopTimes.clear();
 
 		double distanceSum1 = 0;
 		final List<Double> stoppingDistances = new ArrayList<>();
@@ -613,6 +627,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				startNewSegment = timeSegment.pass;
 			}
 
+			final boolean isPlatformStop = pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0;
+			if (pathData.dwellTime > 0 || isPassingPlatform(path, i)) {
+				stopTimes.add(i, isPlatformStop ? pathData.stopIndex - 1 : -1, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
+			}
+
 			time += pathData.dwellTime * 5;
 
 			if (pathData.savedRailBaseId != 0) {
@@ -640,6 +659,111 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	public static boolean isPassingPlatform(List<PathData> path, int index) {
 		final PathData pathData = path.get(index);
 		return index > 0 && pathData.dwellTime == 0 && pathData.savedRailBaseId != 0 && pathData.rail.railType == RailType.PLATFORM && path.get(index - 1).savedRailBaseId != pathData.savedRailBaseId;
+	}
+
+	/**
+	 * When a train reaches and leaves each stop of a path, at the fastest it can run.
+	 */
+	public static class StopTimes {
+
+		private int firstIndex = -1;
+		private float firstArrival;
+		private Route plannedRoute;
+		private int plannedRevision;
+		private final List<Stop> stops = new ArrayList<>();
+		private final Map<Integer, RouteTimetable.StopPlan> plans = new HashMap<>();
+
+		private void clear() {
+			firstIndex = -1;
+			firstArrival = 0;
+			plannedRoute = null;
+			stops.clear();
+			plans.clear();
+		}
+
+		private void copyFrom(StopTimes stopTimes) {
+			clear();
+			firstIndex = stopTimes.firstIndex;
+			firstArrival = stopTimes.firstArrival;
+			stops.addAll(stopTimes.stops);
+		}
+
+		private void add(int index, int routeStopIndex, float arrival, float departure, boolean isFirstStop) {
+			if (firstIndex < 0 && isFirstStop) {
+				firstIndex = index;
+				firstArrival = arrival;
+			}
+			if (firstIndex >= 0) {
+				stops.add(new Stop(index, routeStopIndex, (long) ((arrival - firstArrival) * Depot.MILLIS_PER_TICK), (long) ((departure - firstArrival) * Depot.MILLIS_PER_TICK)));
+			}
+		}
+
+		public boolean isEmpty() {
+			return firstIndex < 0;
+		}
+
+		public int getFirstIndex() {
+			return firstIndex;
+		}
+
+		/**
+		 * @return the time needed to reach the first platform from the siding
+		 */
+		public long getLeadMillis() {
+			return (long) (firstArrival * Depot.MILLIS_PER_TICK);
+		}
+
+		/**
+		 * @return the planned times of a stop on the path, or null if the path has no such stop
+		 */
+		public RouteTimetable.StopPlan getPlan(Route route, int index) {
+			if (plannedRoute != route || plannedRevision != route.timetable.revision) {
+				plannedRoute = route;
+				plannedRevision = route.timetable.revision;
+				plans.clear();
+				final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
+				stops.forEach(stop -> {
+					final boolean hasRouteStop = stop.routeStopIndex >= 0 && stop.routeStopIndex < route.platformIds.size();
+					final Route.RoutePlatform routePlatform = hasRouteStop ? route.platformIds.get(stop.routeStopIndex) : null;
+					final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, routePlatform == null ? -1 : routePlatform.getArrival(), routePlatform == null ? -1 : routePlatform.getDeparture(), routePlatform != null && routePlatform.overtake);
+					stopPlans.add(stopPlan);
+					plans.put(stop.index, stopPlan);
+				});
+				route.timetable.applyPlan(stopPlans);
+			}
+			return plans.get(index);
+		}
+
+		/**
+		 * @return the fastest arrival and departure of each stop of the first route, or -1 for stops not on the path
+		 */
+		public long[][] getFastestTimes(int stopCount) {
+			final long[][] times = new long[stopCount][];
+			for (int i = 0; i < stopCount; i++) {
+				times[i] = new long[]{-1, -1};
+			}
+			stops.forEach(stop -> {
+				if (stop.routeStopIndex >= 0 && stop.routeStopIndex < stopCount && times[stop.routeStopIndex][0] < 0) {
+					times[stop.routeStopIndex] = new long[]{stop.arrivalMillis, stop.departureMillis};
+				}
+			});
+			return times;
+		}
+
+		private static class Stop {
+
+			private final int index;
+			private final int routeStopIndex;
+			private final long arrivalMillis;
+			private final long departureMillis;
+
+			private Stop(int index, int routeStopIndex, long arrivalMillis, long departureMillis) {
+				this.index = index;
+				this.routeStopIndex = routeStopIndex;
+				this.arrivalMillis = arrivalMillis;
+				this.departureMillis = departureMillis;
+			}
+		}
 	}
 
 	public static class TimeSegment {

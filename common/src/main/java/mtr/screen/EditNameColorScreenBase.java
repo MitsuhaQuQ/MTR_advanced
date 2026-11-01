@@ -18,7 +18,7 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 	private int colorEnd;
 
 	protected final T data;
-	private final DashboardScreen dashboardScreen;
+	protected final DashboardScreen dashboardScreen;
 	private final Component nameText;
 	private final Component colorText;
 

@@ -16,6 +16,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntConsumer;
 
 public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
@@ -234,7 +235,9 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			final Component text;
 			data.generateTempDepartures(Minecraft.getInstance().level);
 			final int nextDepartureMillis = data.getMillisUntilDeploy(1);
-			if (nextDepartureMillis >= 0) {
+			if (data.findTimetable(ClientData.DATA_CACHE) != null) {
+				text = Text.translatable("gui.mtr.timetable_depot_active");
+			} else if (nextDepartureMillis >= 0) {
 				final long hour = TimeUnit.MILLISECONDS.toHours(nextDepartureMillis);
 				final long minute = TimeUnit.MILLISECONDS.toMinutes(nextDepartureMillis) % 60;
 				final long second = TimeUnit.MILLISECONDS.toSeconds(nextDepartureMillis) % 60;
@@ -324,9 +327,30 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	}
 
 	private void updateList() {
+		departuresList.setData(getDepartureList(data.departures), false, false, false, false, false, true);
+		data.generateTempDepartures(Minecraft.getInstance().level);
+	}
+
+	private boolean checkDeparture(String text, boolean addToList, boolean removeFromList) {
+		final boolean isValid = applyDepartures(text, departure -> {
+			if (addToList) {
+				if (!data.departures.contains(departure)) {
+					data.departures.add(departure);
+				}
+			} else if (removeFromList) {
+				data.departures.remove((Integer) departure);
+			}
+		});
+		if (isValid && (addToList || removeFromList)) {
+			updateList();
+		}
+		return isValid;
+	}
+
+	public static List<NameColorDataBase> getDepartureList(List<Integer> departures) {
 		final List<NameColorDataBase> departureData = new ArrayList<>();
 		final long offset = System.currentTimeMillis() / Depot.MILLISECONDS_PER_DAY * Depot.MILLISECONDS_PER_DAY;
-		data.departures.stream().map(departure -> {
+		departures.stream().map(departure -> {
 			final Calendar calendar = Calendar.getInstance();
 			calendar.setTimeInMillis(departure + offset);
 			return calendar;
@@ -341,11 +365,24 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			final int second = calendar.get(Calendar.SECOND);
 			departureData.add(new DataConverter(String.format("%2s:%2s:%2s", hour, minute, second).replace(' ', '0'), 0));
 		});
-		departuresList.setData(departureData, false, false, false, false, false, true);
-		data.generateTempDepartures(Minecraft.getInstance().level);
+		return departureData;
 	}
 
-	private boolean checkDeparture(String text, boolean addToList, boolean removeFromList) {
+	/**
+	 * @return a time of day saved in UTC as text in the local time zone
+	 */
+	public static String formatTime(long millis) {
+		final Calendar calendar = Calendar.getInstance();
+		calendar.setTimeInMillis(System.currentTimeMillis() / Depot.MILLISECONDS_PER_DAY * Depot.MILLISECONDS_PER_DAY + Math.floorMod(millis, (long) Depot.MILLISECONDS_PER_DAY));
+		return String.format("%02d:%02d:%02d", calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), calendar.get(Calendar.SECOND));
+	}
+
+	/**
+	 * Reads text like {@code 07:10:00} or {@code 07:10:00 + 10 * 00:03:00}, giving each time to the consumer.
+	 *
+	 * @return false if the text is not valid
+	 */
+	public static boolean applyDepartures(String text, IntConsumer consumer) {
 		try {
 			final String[] departureSplit = text.replace(" ", "").split("\\+");
 			final String[] timeSplit1 = departureSplit[0].split(":");
@@ -368,18 +405,8 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 				interval = 0;
 			}
 
-			if (addToList || removeFromList) {
-				for (int i = 0; i < multiple; i++) {
-					final int rawDeparture = (departure + i * interval) % Depot.MILLISECONDS_PER_DAY;
-					if (addToList) {
-						if (!data.departures.contains(rawDeparture)) {
-							data.departures.add(rawDeparture);
-						}
-					} else {
-						data.departures.remove((Integer) rawDeparture);
-					}
-				}
-				updateList();
+			for (int i = 0; i < multiple; i++) {
+				consumer.accept((departure + i * interval) % Depot.MILLISECONDS_PER_DAY);
 			}
 
 			return true;

@@ -183,6 +183,22 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		});
 	}
 
+	public static void requestTimetableTimesC2S(long routeId) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(routeId);
+		RegistryClient.sendToServer(PACKET_TIMETABLE_TIMES, packet);
+	}
+
+	public static void receiveTimetableTimesS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final long routeId = packet.readLong();
+		final int stopCount = packet.readInt();
+		final long[][] times = new long[stopCount][];
+		for (int i = 0; i < stopCount; i++) {
+			times[i] = new long[]{packet.readLong(), packet.readLong()};
+		}
+		minecraftClient.execute(() -> ClientData.TIMETABLE_TIMES.put(routeId, times));
+	}
+
 	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);

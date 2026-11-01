@@ -11,8 +11,10 @@ import org.msgpack.value.Value;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 public final class Route extends NameColorDataBase implements IGui {
 
@@ -33,6 +35,11 @@ public final class Route extends NameColorDataBase implements IGui {
 	 * A path drawn by hand, which replaces the path search for this route when not empty.
 	 */
 	private List<PathData> pathData = new ArrayList<>();
+	public final RouteTimetable timetable = new RouteTimetable();
+	/**
+	 * The line this route belongs to, or empty to work it out from the name.
+	 */
+	public String lineName = "";
 
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
@@ -46,6 +53,16 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_DISABLE_NEXT_STATION_ANNOUNCEMENTS = "disable_next_station_announcements";
 	private static final String KEY_CIRCULAR_STATE = "circular_state";
 	private static final String KEY_CUSTOM_PATH = "ante_path";
+	private static final String KEY_TIMETABLE_ENABLED = "timetable_enabled";
+	private static final String KEY_TIMETABLE_MARGIN = "timetable_margin";
+	private static final String KEY_TIMETABLE_SERVICES = "timetable_services";
+	private static final String KEY_PLAN_ARRIVALS = "plan_arrivals";
+	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
+	private static final String KEY_OVERTAKES = "overtakes";
+	private static final String KEY_LINE_NAME = "line_name";
+	private static final String DUPLICATE_SUFFIX = "_duplicate";
+	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
+	private static final Pattern DIRECTION_PATTERN = Pattern.compile("[\\s\\-_/:：·・]*[(（\\[【]?\\s*(上行|下行|內環|内环|外環|外环|内回り?|外回り?|上り|下り|(?<![a-z])(up|down|upbound|downbound|inbound|outbound|northbound|southbound|eastbound|westbound|clockwise|anticlockwise|counterclockwise))\\s*[)）\\]】]?$", Pattern.CASE_INSENSITIVE);
 
 	public Route(TransportMode transportMode) {
 		this(0, transportMode);
@@ -105,7 +122,32 @@ public final class Route extends NameColorDataBase implements IGui {
 		disableNextStationAnnouncements = messagePackHelper.getBoolean(KEY_DISABLE_NEXT_STATION_ANNOUNCEMENTS);
 		lightRailRouteNumber = messagePackHelper.getString(KEY_LIGHT_RAIL_ROUTE_NUMBER);
 		circularState = EnumHelper.valueOf(CircularState.NONE, messagePackHelper.getString(KEY_CIRCULAR_STATE));
+		lineName = messagePackHelper.getString(KEY_LINE_NAME);
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
+		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
+		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> timetable.services.add(service.asIntegerValue().asInt()));
+		timetable.sanitize();
+
+		final int[] planIndex = {0, 0, 0};
+		messagePackHelper.iterateArrayValue(KEY_PLAN_ARRIVALS, value -> {
+			if (planIndex[0] < platformIds.size()) {
+				platformIds.get(planIndex[0]).setArrival(value.asIntegerValue().asInt());
+			}
+			planIndex[0]++;
+		});
+		messagePackHelper.iterateArrayValue(KEY_PLAN_DEPARTURES, value -> {
+			if (planIndex[1] < platformIds.size()) {
+				platformIds.get(planIndex[1]).setDeparture(value.asIntegerValue().asInt());
+			}
+			planIndex[1]++;
+		});
+		messagePackHelper.iterateArrayValue(KEY_OVERTAKES, value -> {
+			if (planIndex[2] < platformIds.size()) {
+				platformIds.get(planIndex[2]).overtake = value.asBooleanValue().getBoolean();
+			}
+			planIndex[2]++;
+		});
 	}
 
 	@Deprecated
@@ -144,11 +186,13 @@ public final class Route extends NameColorDataBase implements IGui {
 		disableNextStationAnnouncements = packet.readBoolean();
 		lightRailRouteNumber = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		circularState = EnumHelper.valueOf(CircularState.NONE, packet.readUtf(PACKET_STRING_READ_LENGTH));
+		lineName = packet.readUtf(PACKET_STRING_READ_LENGTH);
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
 			pathData.add(new PathData(packet));
 		}
+		readTimetable(packet);
 	}
 
 	@Override
@@ -189,6 +233,27 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePacker.packString(KEY_DISABLE_NEXT_STATION_ANNOUNCEMENTS).packBoolean(disableNextStationAnnouncements);
 		messagePacker.packString(KEY_LIGHT_RAIL_ROUTE_NUMBER).packString(lightRailRouteNumber);
 		messagePacker.packString(KEY_CIRCULAR_STATE).packString(circularState.toString());
+		messagePacker.packString(KEY_LINE_NAME).packString(lineName);
+
+		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
+		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
+		messagePacker.packString(KEY_TIMETABLE_SERVICES).packArrayHeader(timetable.services.size());
+		for (final int service : timetable.services) {
+			messagePacker.packInt(service);
+		}
+
+		messagePacker.packString(KEY_PLAN_ARRIVALS).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packInt(routePlatform.getArrival());
+		}
+		messagePacker.packString(KEY_PLAN_DEPARTURES).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packInt(routePlatform.getDeparture());
+		}
+		messagePacker.packString(KEY_OVERTAKES).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packBoolean(routePlatform.overtake);
+		}
 
 		if (!pathData.isEmpty()) {
 			messagePacker.packString(KEY_CUSTOM_PATH).packArrayHeader(pathData.size());
@@ -201,7 +266,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 11 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 18 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	@Override
@@ -220,9 +285,11 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeBoolean(disableNextStationAnnouncements);
 		packet.writeUtf(lightRailRouteNumber);
 		packet.writeUtf(circularState.toString());
+		packet.writeUtf(lineName);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
+		writeTimetable(packet);
 	}
 
 	@Override
@@ -239,6 +306,7 @@ public final class Route extends NameColorDataBase implements IGui {
 						platformIds.add(routePlatform);
 					}
 				}
+				timetable.revision++;
 				break;
 			case KEY_IS_LIGHT_RAIL_ROUTE:
 				name = packet.readUtf(PACKET_STRING_READ_LENGTH);
@@ -249,6 +317,18 @@ public final class Route extends NameColorDataBase implements IGui {
 				isHidden = packet.readBoolean();
 				disableNextStationAnnouncements = packet.readBoolean();
 				circularState = EnumHelper.valueOf(CircularState.NONE, packet.readUtf(PACKET_STRING_READ_LENGTH));
+				lineName = packet.readUtf(PACKET_STRING_READ_LENGTH);
+				break;
+			case KEY_TIMETABLE_SERVICES:
+				readTimetable(packet);
+				break;
+			case KEY_CUSTOM_PATH:
+				final List<PathData> newPathData = new ArrayList<>();
+				final int newPathSize = packet.readInt();
+				for (int i = 0; i < newPathSize; i++) {
+					newPathData.add(new PathData(packet));
+				}
+				pathData = newPathData;
 				break;
 			default:
 				super.update(key, packet);
@@ -288,6 +368,86 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeBoolean(isHidden);
 		packet.writeBoolean(disableNextStationAnnouncements);
 		packet.writeUtf(circularState.toString());
+		packet.writeUtf(lineName);
+		sendPacket.accept(packet);
+	}
+
+	public void setCustomPath(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_CUSTOM_PATH);
+		packet.writeInt(pathData.size());
+		pathData.forEach(data -> data.writePacket(packet));
+		sendPacket.accept(packet);
+	}
+
+	/**
+	 * @return a new route with everything this one has, so it can be given a different timetable
+	 */
+	public Route duplicate() {
+		final Route route = new Route(transportMode);
+		route.name = name + DUPLICATE_SUFFIX;
+		route.color = color;
+		route.routeType = routeType;
+		route.isLightRailRoute = isLightRailRoute;
+		route.isHidden = isHidden;
+		route.disableNextStationAnnouncements = disableNextStationAnnouncements;
+		route.circularState = circularState;
+		route.lightRailRouteNumber = lightRailRouteNumber;
+		route.lineName = lineName;
+		route.pathData = new ArrayList<>(pathData);
+		platformIds.forEach(routePlatform -> {
+			final RoutePlatform newRoutePlatform = new RoutePlatform(routePlatform.platformId);
+			newRoutePlatform.customDestination = routePlatform.customDestination;
+			newRoutePlatform.waypoints.addAll(routePlatform.waypoints);
+			newRoutePlatform.pass = routePlatform.pass;
+			newRoutePlatform.dwellOverride = routePlatform.dwellOverride;
+			newRoutePlatform.overtake = routePlatform.overtake;
+			newRoutePlatform.setArrival(routePlatform.getArrival());
+			newRoutePlatform.setDeparture(routePlatform.getDeparture());
+			route.platformIds.add(newRoutePlatform);
+		});
+		route.timetable.enabled = timetable.enabled;
+		route.timetable.marginPercent = timetable.marginPercent;
+		route.timetable.services.addAll(timetable.services);
+		return route;
+	}
+
+	public String getLineName() {
+		return lineName.trim().isEmpty() ? getAutoLineName(name) : lineName.trim();
+	}
+
+	/**
+	 * Compare these to tell if routes are the same line, such as the two directions of a train turning back.
+	 */
+	public String getLineKey() {
+		return getLineName().toLowerCase(Locale.ENGLISH);
+	}
+
+	public boolean isSameLine(Route route) {
+		return route != null && getLineKey().equals(route.getLineKey());
+	}
+
+	/**
+	 * Removes what only tells routes of one line apart: anything after {@code ||}, the copy suffix and direction words.
+	 */
+	public static String getAutoLineName(String name) {
+		final String[] languages = name.split("\\|\\|", -1)[0].split("\\|", -1);
+		for (int i = 0; i < languages.length; i++) {
+			final String withoutSuffix = DUPLICATE_PATTERN.matcher(languages[i].trim()).replaceAll("");
+			final String withoutDirection = DIRECTION_PATTERN.matcher(withoutSuffix).replaceAll("").trim();
+			languages[i] = withoutDirection.isEmpty() ? withoutSuffix : withoutDirection;
+		}
+		return String.join("|", languages);
+	}
+
+	public void setTimetable(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_TIMETABLE_SERVICES);
+		writeTimetable(packet);
 		sendPacket.accept(packet);
 	}
 
@@ -394,6 +554,50 @@ public final class Route extends NameColorDataBase implements IGui {
 		return destination.equals("\\r") || destination.equals("\\reset");
 	}
 
+	private void readTimetable(FriendlyByteBuf packet) {
+		timetable.enabled = packet.readBoolean();
+		timetable.marginPercent = packet.readInt();
+		timetable.services.clear();
+		final int serviceCount = packet.readInt();
+		for (int i = 0; i < serviceCount; i++) {
+			final int service = packet.readInt();
+			if (i < RouteTimetable.MAX_SERVICES) {
+				timetable.services.add(service);
+			}
+		}
+		timetable.sanitize();
+
+		final int stopCount = packet.readInt();
+		for (int i = 0; i < stopCount; i++) {
+			final int arrival = packet.readInt();
+			final int departure = packet.readInt();
+			final boolean overtake = packet.readBoolean();
+			final boolean pass = packet.readBoolean();
+			if (i < platformIds.size()) {
+				platformIds.get(i).setArrival(arrival);
+				platformIds.get(i).setDeparture(departure);
+				platformIds.get(i).overtake = overtake;
+				platformIds.get(i).pass = pass;
+			}
+		}
+		timetable.revision++;
+	}
+
+	private void writeTimetable(FriendlyByteBuf packet) {
+		packet.writeBoolean(timetable.enabled);
+		packet.writeInt(timetable.marginPercent);
+		packet.writeInt(timetable.services.size());
+		timetable.services.forEach(packet::writeInt);
+
+		packet.writeInt(platformIds.size());
+		platformIds.forEach(routePlatform -> {
+			packet.writeInt(routePlatform.getArrival());
+			packet.writeInt(routePlatform.getDeparture());
+			packet.writeBoolean(routePlatform.overtake);
+			packet.writeBoolean(routePlatform.pass);
+		});
+	}
+
 	public static class RoutePlatform {
 
 		public String customDestination;
@@ -410,6 +614,12 @@ public final class Route extends NameColorDataBase implements IGui {
 		 * The stop time for this route in half seconds, or 0 to use the platform's own.
 		 */
 		public int dwellOverride;
+		/**
+		 * The train waits here for trains that should pass it before it leaves, on another platform of this station.
+		 */
+		public boolean overtake;
+		private int arrival = -1;
+		private int departure = -1;
 
 		public RoutePlatform(long platformId) {
 			this.platformId = platformId;
@@ -429,6 +639,28 @@ public final class Route extends NameColorDataBase implements IGui {
 			return continuousMovement ? stopTime : Math.max(stopTime, MIN_STOP_DWELL);
 		}
 
+		/**
+		 * @return the timetable's arrival in seconds from reaching the first stop, or -1 to work it out
+		 */
+		public int getArrival() {
+			return arrival;
+		}
+
+		public void setArrival(int arrival) {
+			this.arrival = Math.max(-1, Math.min(arrival, RouteTimetable.MAX_STOP_SECONDS));
+		}
+
+		/**
+		 * @return the timetable's departure in seconds from reaching the first stop, or -1 to let the stop time vary
+		 */
+		public int getDeparture() {
+			return departure;
+		}
+
+		public void setDeparture(int departure) {
+			this.departure = Math.max(-1, Math.min(departure, RouteTimetable.MAX_STOP_SECONDS));
+		}
+
 		private void readWaypoints(FriendlyByteBuf packet) {
 			final int waypointCount = packet.readInt();
 			for (int i = 0; i < waypointCount; i++) {
@@ -439,6 +671,9 @@ public final class Route extends NameColorDataBase implements IGui {
 			}
 			pass = packet.readBoolean();
 			dwellOverride = Math.max(0, Math.min(packet.readInt(), MAX_DWELL_OVERRIDE));
+			setArrival(packet.readInt());
+			setDeparture(packet.readInt());
+			overtake = packet.readBoolean();
 		}
 
 		private void writeWaypoints(FriendlyByteBuf packet) {
@@ -446,6 +681,9 @@ public final class Route extends NameColorDataBase implements IGui {
 			waypoints.forEach(waypoint -> packet.writeLong(waypoint.asLong()));
 			packet.writeBoolean(pass);
 			packet.writeInt(dwellOverride);
+			packet.writeInt(arrival);
+			packet.writeInt(departure);
+			packet.writeBoolean(overtake);
 		}
 	}
 

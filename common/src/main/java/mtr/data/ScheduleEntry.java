@@ -10,14 +10,23 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 	public final int currentStationIndex;
 	public final long trainId;
 	public final boolean pass;
+	/**
+	 * The arrival planned by the timetable, or 0 for a train without one.
+	 */
+	public final long scheduledMillis;
 
 	public ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass) {
+		this(arrivalMillis, trainCars, routeId, currentStationIndex, trainId, pass, 0);
+	}
+
+	public ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass, long scheduledMillis) {
 		this.arrivalMillis = arrivalMillis;
 		this.trainCars = trainCars;
 		this.routeId = routeId;
 		this.currentStationIndex = currentStationIndex;
 		this.trainId = trainId;
 		this.pass = pass;
+		this.scheduledMillis = scheduledMillis;
 	}
 
 	public ScheduleEntry(FriendlyByteBuf packet) {
@@ -27,6 +36,7 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		currentStationIndex = packet.readInt();
 		trainId = packet.readLong();
 		pass = packet.readBoolean();
+		scheduledMillis = packet.readLong();
 	}
 
 	public void writePacket(FriendlyByteBuf packet) {
@@ -36,6 +46,14 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		packet.writeInt(currentStationIndex);
 		packet.writeLong(trainId);
 		packet.writeBoolean(pass);
+		packet.writeLong(scheduledMillis);
+	}
+
+	/**
+	 * @return how many whole minutes this train is behind its timetable
+	 */
+	public int getDelayMinutes() {
+		return scheduledMillis == 0 ? 0 : (int) Math.max(0, (arrivalMillis - scheduledMillis) / 60000);
 	}
 
 	@Override
