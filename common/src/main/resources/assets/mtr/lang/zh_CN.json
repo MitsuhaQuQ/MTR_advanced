@@ -705,5 +705,6 @@
 	"train.mtr.sp1900_mini": "SP1900 （迷你）",
 	"train.mtr.sp1900_small": "SP1900 （小型）",
 	"train.mtr.spruce_boat": "云杉木船",
-	"gui.mtr.use_deterministic_path": "使用确定性寻路"
+	"gui.mtr.use_deterministic_path": "使用确定性寻路",
+	"gui.mtr.pick_waypoints": "点击关键节点：到下一站的必经节点（%s）"
 }

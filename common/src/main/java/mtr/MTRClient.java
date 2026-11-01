@@ -253,6 +253,9 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_RAILWAY_SIGN_SCREEN, packet -> PacketTrainDataGuiClient.openRailwaySignScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_TICKET_MACHINE_SCREEN, packet -> PacketTrainDataGuiClient.openTicketMachineScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_TRAIN_SENSOR_SCREEN, packet -> PacketTrainDataGuiClient.openTrainSensorScreenS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_MAP_DIGEST, packet -> PacketTrainDataGuiClient.receiveMapDigestS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_MAP_DATA, packet -> PacketTrainDataGuiClient.receiveMapDataS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_SET_KEY_NODE, packet -> PacketTrainDataGuiClient.setKeyNodeS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_NODE_ANGLE_SCREEN, packet -> PacketTrainDataGuiClient.openNodeAngleScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_RESOURCE_PACK_CREATOR_SCREEN, packet -> PacketTrainDataGuiClient.openResourcePackCreatorScreen(Minecraft.getInstance()));
 		RegistryClient.registerNetworkReceiver(PACKET_ANNOUNCE, packet -> PacketTrainDataGuiClient.announceS2C(Minecraft.getInstance(), packet));

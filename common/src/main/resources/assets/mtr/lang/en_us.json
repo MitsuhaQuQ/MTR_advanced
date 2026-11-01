@@ -793,5 +793,6 @@
 	"train.mtr.sp1900_mini": "SP1900 (Mini)",
 	"train.mtr.sp1900_small": "SP1900 (Small)",
 	"train.mtr.spruce_boat": "Spruce Boat",
-	"gui.mtr.use_deterministic_path": "Use deterministic routing"
+	"gui.mtr.use_deterministic_path": "Use deterministic routing",
+	"gui.mtr.pick_waypoints": "Click key nodes: waypoints to next stop (%s)"
 }

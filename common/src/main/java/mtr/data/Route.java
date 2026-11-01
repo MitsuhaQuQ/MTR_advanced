@@ -16,7 +16,7 @@ import java.util.function.Consumer;
 public final class Route extends NameColorDataBase implements IGui {
 
 	private static final int MAX_PLATFORMS = 1024;
-	private static final int MAX_WAYPOINTS = 64;
+	public static final int MAX_WAYPOINTS = 64;
 
 	public RouteType routeType;
 	public boolean isLightRailRoute;

@@ -97,6 +97,10 @@ public class PathData extends SerializedDataBase {
 		packet.writeLong(endingPos.asLong());
 	}
 
+	public BlockPos getLastPos() {
+		return endingPos;
+	}
+
 	public boolean isSameRail(PathData pathData) {
 		return startingPos.equals(pathData.startingPos) && endingPos.equals(pathData.endingPos);
 	}

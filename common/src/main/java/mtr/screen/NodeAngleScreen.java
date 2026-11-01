@@ -2,6 +2,7 @@ package mtr.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.block.BlockNode;
+import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
@@ -23,6 +24,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private final float angle;
 	private final WidgetBetterTextField textFieldAngle = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
 	private final WidgetBetterTextField textFieldTransition = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
+	private final WidgetBetterCheckbox checkboxKeyNode = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal("Key node / 关键节点"), checked -> {
+	});
 	private final Button buttonSet;
 	private final Button buttonCancel;
 
@@ -31,7 +34,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int ROW_HEIGHT = SQUARE_SIZE + TEXT_FIELD_PADDING;
 	private static final int ROW_ANGLE = 0;
 	private static final int ROW_TRANSITION = 1;
-	private static final int ROW_BUTTONS = 2;
+	private static final int ROW_KEY_NODE = 2;
+	private static final int ROW_BUTTONS = 3;
 	private static final Component LABEL_ANGLE = Text.literal("Angle / 角度 (0-180°)");
 	private static final Component LABEL_TRANSITION = Text.literal("Transition / 缓和曲线 (Not available)");
 
@@ -50,6 +54,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		final int fieldX = SQUARE_SIZE + LABEL_WIDTH + TEXT_FIELD_PADDING / 2;
 		IDrawing.setPositionAndWidth(textFieldAngle, fieldX, getRowY(ROW_ANGLE) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldTransition, fieldX, getRowY(ROW_TRANSITION) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(checkboxKeyNode, SQUARE_SIZE, getRowY(ROW_KEY_NODE), PANEL_WIDTH);
+		checkboxKeyNode.setChecked(ClientData.KEY_NODES.contains(pos));
 		IDrawing.setPositionAndWidth(buttonSet, SQUARE_SIZE, getRowY(ROW_BUTTONS), PANEL_WIDTH / 2);
 		IDrawing.setPositionAndWidth(buttonCancel, SQUARE_SIZE + PANEL_WIDTH / 2, getRowY(ROW_BUTTONS), PANEL_WIDTH / 2);
 
@@ -59,6 +65,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 
 		addDrawableChild(textFieldAngle);
 		addDrawableChild(textFieldTransition);
+		addDrawableChild(checkboxKeyNode);
 		addDrawableChild(buttonSet);
 		addDrawableChild(buttonCancel);
 	}
@@ -87,7 +94,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 
 	private void onSet() {
 		try {
-			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()));
+			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected());
 			onClose();
 		} catch (NumberFormatException ignored) {
 		}

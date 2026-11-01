@@ -413,6 +413,18 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return Math.max(2, railLength) >= spacing;
 	}
 
+	public long[] getPathNodes() {
+		if (path.isEmpty()) {
+			return new long[0];
+		}
+		final long[] nodes = new long[path.size() + 1];
+		for (int i = 0; i < path.size(); i++) {
+			nodes[i] = path.get(i).startingPos.asLong();
+		}
+		nodes[path.size()] = path.get(path.size() - 1).getLastPos().asLong();
+		return nodes;
+	}
+
 	public int getMaxTrains() {
 		return maxTrains;
 	}

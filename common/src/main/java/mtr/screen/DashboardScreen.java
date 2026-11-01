@@ -5,6 +5,7 @@ import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
+import mtr.client.MapDataCache;
 import mtr.data.*;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -13,9 +14,12 @@ import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,6 +67,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldCustomDestination = new WidgetBetterTextField(Text.translatable("gui.mtr.custom_destination_suggestion").getString());
 		colorSelector = new WidgetColorSelector(this, true, this::toggleButtons);
 		widgetMap = new WidgetMap(transportMode, this::onDrawCorners, this::onDrawCornersMouseRelease, this::onClickAddPlatformToRoute, this::onClickEditSavedRail, colorSelector::isMouseOver);
+		widgetMap.setRoutesToDraw(this::getRoutesToDraw);
+		MapDataCache.open();
 
 		buttonTabStations = UtilitiesClient.newButton(Text.translatable("gui.mtr.stations"), button -> onSelectTab(SelectedTab.STATIONS));
 		buttonTabRoutes = UtilitiesClient.newButton(Text.translatable("gui.mtr.routes"), button -> onSelectTab(SelectedTab.ROUTES));
@@ -335,6 +341,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 					} else {
 						editingRoute.platformIds.remove(index);
 						editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+						PacketTrainDataGuiClient.requestMapRouteC2S(editingRoute.id);
 					}
 					break;
 				case DEPOTS:
@@ -385,6 +392,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		editingRoutePlatformIndex = index;
 		if (isValidRoutePlatformIndex()) {
 			textFieldCustomDestination.setValue(editingRoute.platformIds.get(index).customDestination);
+			if (!isNew && index < editingRoute.platformIds.size() - 1) {
+				final List<BlockPos> waypoints = editingRoute.platformIds.get(index).waypoints;
+				widgetMap.startPickingWaypoints(waypoints, pos -> onClickKeyNode(waypoints, pos));
+			}
 		}
 		toggleButtons();
 	}
@@ -402,6 +413,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private void onClickAddPlatformToRoute(long platformId) {
 		editingRoute.platformIds.add(new Route.RoutePlatform(platformId));
 		editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		PacketTrainDataGuiClient.requestMapRouteC2S(editingRoute.id);
 	}
 
 	private void onClickEditSavedRail(SavedRailBase savedRail) {
@@ -443,7 +455,23 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		stopEditing();
 	}
 
+	private Collection<Route> getRoutesToDraw() {
+		if (selectedTab == SelectedTab.DEPOTS) {
+			return Collections.emptyList();
+		}
+		return editingRoute == null ? ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES) : Collections.singletonList(editingRoute);
+	}
+
+	private void onClickKeyNode(List<BlockPos> waypoints, BlockPos pos) {
+		if (!waypoints.remove(pos) && waypoints.size() < Route.MAX_WAYPOINTS) {
+			waypoints.add(pos);
+		}
+		editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		PacketTrainDataGuiClient.requestMapRouteC2S(editingRoute.id);
+	}
+
 	private void onDoneEditingRouteDestination() {
+		widgetMap.stopPickingWaypoints();
 		if (isValidRoutePlatformIndex()) {
 			editingRoute.platformIds.get(editingRoutePlatformIndex).customDestination = textFieldCustomDestination.getValue();
 			editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));

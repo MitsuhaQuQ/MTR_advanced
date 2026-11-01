@@ -444,6 +444,9 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_DELETE_DEPOT, (minecraftServer, player, packet) -> PacketTrainDataGuiServer.receiveUpdateOrDeleteC2S(minecraftServer, player, packet, PACKET_DELETE_DEPOT, railwayData -> railwayData.depots, railwayData -> railwayData.dataCache.depotIdMap, null, true));
 		PacketGuard.register(PACKET_UPDATE_TRAIN_SENSOR, PacketTrainDataGuiServer::receiveTrainSensorC2S);
 		PacketGuard.register(PACKET_UPDATE_NODE_ANGLE, PacketTrainDataGuiServer::receiveNodeAngleC2S);
+		PacketGuard.register(PACKET_REQUEST_MAP_RAILS, PacketTrainDataGuiServer::receiveRequestMapRailsC2S);
+		PacketGuard.register(PACKET_REQUEST_MAP_ROUTE, PacketTrainDataGuiServer::receiveRequestMapRouteC2S);
+		PacketGuard.register(PACKET_MAP_WANTED, PacketTrainDataGuiServer::receiveMapWantedC2S);
 		PacketGuard.register(PACKET_REMOVE_RAIL_ACTION, PacketTrainDataGuiServer::receiveRemoveRailAction);
 		PacketGuard.register(PACKET_UPDATE_TRAIN_PASSENGER_POSITION, PacketTrainDataGuiServer::receiveUpdateTrainPassengerPosition);
 		PacketGuard.register(PACKET_UPDATE_LIFT_PASSENGER_POSITION, PacketTrainDataGuiServer::receiveUpdateLiftPassengerPosition);

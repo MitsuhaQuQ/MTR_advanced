@@ -37,6 +37,10 @@ public final class ClientData {
 	public static final Set<Depot> DEPOTS = new HashSet<>();
 	public static final Set<LiftClient> LIFTS = new HashSet<>();
 	public static final SignalBlocks SIGNAL_BLOCKS = new SignalBlocks();
+	public static final Set<BlockPos> KEY_NODES = new HashSet<>();
+	public static final List<MapRail> MAP_RAILS = new ArrayList<>();
+	public static final Map<Long, long[]> MAP_ROUTES = new HashMap<>();
+	public static final Map<Long, long[]> MAP_SIDINGS = new HashMap<>();
 	public static final Map<UUID, Boolean> OCCUPIED_RAILS = new HashMap<>();
 	public static final Map<BlockPos, Map<BlockPos, Rail>> RAILS = new HashMap<>();
 	public static final Set<TrainClient> TRAINS = new HashSet<>();
@@ -272,6 +276,11 @@ public final class ClientData {
 		clearAndAddAll(DEPOTS, deserializeData(packetCopy, Depot::new));
 		clearAndAddAll(LIFTS, deserializeData(packetCopy, LiftClient::new));
 		clearAndAddAll(SIGNAL_BLOCKS.signalBlocks, deserializeData(packetCopy, SignalBlocks.SignalBlock::new));
+		KEY_NODES.clear();
+		final int keyNodeCount = packetCopy.readInt();
+		for (int i = 0; i < keyNodeCount; i++) {
+			KEY_NODES.add(packetCopy.readBlockPos());
+		}
 
 		TRAINS.clear();
 		ClientData.DATA_CACHE.sync();
@@ -324,6 +333,23 @@ public final class ClientData {
 			objects.add(supplier.apply(packet));
 		}
 		return objects;
+	}
+
+	public static class MapRail {
+
+		public final int x1;
+		public final int z1;
+		public final int x2;
+		public final int z2;
+		public final TransportMode transportMode;
+
+		public MapRail(BlockPos pos1, BlockPos pos2, TransportMode transportMode) {
+			x1 = pos1.getX();
+			z1 = pos1.getZ();
+			x2 = pos2.getX();
+			z2 = pos2.getZ();
+			this.transportMode = transportMode;
+		}
 	}
 
 	private static <U> void clearAndAddAll(Collection<U> target, Collection<U> source) {

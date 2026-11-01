@@ -141,6 +141,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, PACKET_UPDATE_RAIL_ACTIONS, packet));
 	}
 
+	public static void setKeyNodeS2C(Level world, BlockPos pos, boolean isKeyNode) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBlockPos(pos);
+		packet.writeBoolean(isKeyNode);
+		world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, PACKET_SET_KEY_NODE, packet));
+	}
+
 	public static void removeNodeS2C(Level world, BlockPos pos) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
@@ -169,7 +176,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, PACKET_REMOVE_SIGNALS, packet));
 	}
 
-	public static void sendAllInChunks(ServerPlayer player, Set<Station> stations, Set<Platform> platforms, Set<Siding> sidings, Set<Route> routes, Set<Depot> depots, Set<LiftServer> lifts, SignalBlocks signalBlocks) {
+	public static void sendAllInChunks(ServerPlayer player, Set<Station> stations, Set<Platform> platforms, Set<Siding> sidings, Set<Route> routes, Set<Depot> depots, Set<LiftServer> lifts, SignalBlocks signalBlocks, Set<BlockPos> keyNodes) {
 		final long tempPacketId = new Random().nextLong();
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 
@@ -180,6 +187,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		serializeData(packet, depots);
 		serializeData(packet, lifts);
 		serializeData(packet, signalBlocks.signalBlocks);
+		packet.writeInt(keyNodes.size());
+		keyNodes.forEach(packet::writeBlockPos);
 
 		int i = 0;
 		while (!sendChunk(player, packet, tempPacketId, i)) {
@@ -309,9 +318,45 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		});
 	}
 
+	public static void receiveRequestMapRailsC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) {
+				railwayData.sendMapRails(player);
+			}
+		});
+	}
+
+	public static void receiveRequestMapRouteC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final long routeId = packet.readLong();
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) {
+				railwayData.sendMapRoute(player, routeId);
+			}
+		});
+	}
+
+	public static void receiveMapWantedC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final int kind = packet.readByte();
+		final boolean isLast = packet.readBoolean();
+		final int count = PacketGuard.readCount(packet, Long.BYTES, Short.MAX_VALUE);
+		final long[] keys = new long[count];
+		for (int i = 0; i < count; i++) {
+			keys[i] = packet.readLong();
+		}
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) {
+				railwayData.sendMapEntries(player, kind, isLast, keys);
+			}
+		});
+	}
+
 	public static void receiveNodeAngleC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final BlockPos pos = packet.readBlockPos();
 		final float angle = packet.readFloat();
+		final boolean isKeyNode = packet.readBoolean();
 		PacketGuard.execute(minecraftServer, () -> {
 			if (!canEditBlock(player, pos) || !Float.isFinite(angle)) {
 				return;
@@ -320,7 +365,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final BlockState state = world.getBlockState(pos);
 			final RailwayData railwayData = RailwayData.getInstance(world);
 			if (railwayData != null && state.getBlock() instanceof BlockNode.BlockFreeAngleNode) {
-				final String error = railwayData.rotateNodeRails(player, pos, RailAngle.fromAngle(angle));
+				railwayData.setKeyNode(pos, isKeyNode);
+				// Setting only the key node option must not touch the rails
+				final RailAngle newAngle = RailAngle.fromAngle(angle);
+				if (newAngle.isParallel(RailAngle.fromAngle(BlockNode.getAngle(world, pos, state)))) {
+					return;
+				}
+				final String error = railwayData.rotateNodeRails(player, pos, newAngle);
 				if (error == null) {
 					BlockNode.setCustomAngle(world, pos, angle);
 					player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);

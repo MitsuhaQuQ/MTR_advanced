@@ -1,5 +1,7 @@
 package mtr.data;
 
+import mtr.path.RailGraph;
+import mtr.path.DeterministicPathFinder;
 import mtr.SecurityConfig;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -36,6 +38,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class RailwayData extends PersistentStateMapper implements IPacket {
@@ -43,6 +46,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public final Set<Station> stations = new HashSet<>();
 	public final Set<Platform> platforms = new HashSet<>();
 	public final Set<Siding> sidings = new HashSet<>();
+	public final Set<BlockPos> keyNodes = new HashSet<>();
 	public final Set<Route> routes = new HashSet<>();
 	public final Set<Depot> depots = new HashSet<>();
 	public final Set<LiftServer> lifts = new HashSet<>();
@@ -62,6 +66,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Level world;
 	private final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 	private final SignalBlocks signalBlocks = new SignalBlocks();
+	private final Map<UUID, Long> lastMapRailsRequestMillis = new HashMap<>();
+	private final Map<UUID, Long> lastMapRouteRequestMillis = new HashMap<>();
+	private final Map<UUID, Map<Integer, Map<Long, long[]>>> pendingMapEntries = new ConcurrentHashMap<>();
+	private RailGraph<Rail> mapGraph;
 
 	private final RailwayDataFileSaveModule railwayDataFileSaveModule;
 
@@ -80,6 +88,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private static final int DATA_VERSION = 1;
 
 	private static final String NAME = "mtr_train_data";
+	private static final int MAP_RAILS_REQUEST_INTERVAL_MILLIS = 5000;
+	private static final int MAP_ROUTE_REQUEST_INTERVAL_MILLIS = 50;
+	private static final int MAP_DIGEST_BATCH_SIZE = 20000;
+	private static final int MAX_MAP_ENTRY_LONGS = 100000;
 	private static final String KEY_RAW_MESSAGE_PACK = "raw_message_pack";
 	private static final String KEY_DATA_VERSION = "mtr_data_version";
 	private static final String KEY_STATIONS = "stations";
@@ -399,7 +411,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public void onPlayerJoin(ServerPlayer serverPlayer) {
-		PacketTrainDataGuiServer.sendAllInChunks(serverPlayer, stations, platforms, sidings, routes, depots, lifts, signalBlocks);
+		PacketTrainDataGuiServer.sendAllInChunks(serverPlayer, stations, platforms, sidings, routes, depots, lifts, signalBlocks, keyNodes);
 		railwayDataCoolDownModule.onPlayerJoin(serverPlayer);
 	}
 
@@ -433,6 +445,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			return "gui.mtr.platform_or_siding_exists";
 		}
 
+		final BlockPos referencePos = Collections.min(connections.keySet(), Comparator.comparingLong(BlockPos::asLong));
+		final RailAngle referenceFacing = connections.get(referencePos).facingStart;
 		final Map<BlockPos, Rail> newRails = new HashMap<>();
 		final Map<BlockPos, Rail> newBackwardsRails = new HashMap<>();
 		for (final Map.Entry<BlockPos, Rail> entry : connections.entrySet()) {
@@ -444,7 +458,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			}
 
 			// A node has no front or back, so each rail keeps leaving from the side it already uses
-			final RailAngle facing = angle.cos * rail.facingStart.cos + angle.sin * rail.facingStart.sin >= 0 ? angle : angle.getOpposite();
+			final RailAngle facing = angle.getRotatedFacing(referenceFacing, rail.facingStart);
 			final Rail newRail = new Rail(pos, facing, posEnd, rail.facingEnd, rail.railType, rail.transportMode);
 			final Rail newBackwardsRail = new Rail(posEnd, rail.facingEnd, pos, facing, backwardsRail.railType, rail.transportMode);
 			if (!newRail.goodRadius() || !newBackwardsRail.goodRadius()) {
@@ -475,10 +489,154 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public void removeNode(Player player, BlockPos pos, TransportMode transportMode) {
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, Collections.singletonList(String.format("type:%s", transportMode)), new ArrayList<>(), pos);
 		removeNode(world, rails, pos);
+		setKeyNode(pos, false);
 		validateData();
 		final FriendlyByteBuf packet = signalBlocks.getValidationPacket(rails);
 		if (packet != null) {
 			world.players().forEach(player2 -> Registry.sendToPlayer((ServerPlayer) player2, PACKET_REMOVE_SIGNALS, packet));
+		}
+	}
+
+	public void sendMapRails(ServerPlayer player) {
+		final long millis = System.currentTimeMillis();
+		if (millis - lastMapRailsRequestMillis.getOrDefault(player.getUUID(), 0L) < MAP_RAILS_REQUEST_INTERVAL_MILLIS) {
+			return;
+		}
+		lastMapRailsRequestMillis.put(player.getUUID(), millis);
+
+		final Map<Long, List<Long>> regions = new HashMap<>();
+		rails.forEach((startPos, railMap) -> railMap.forEach((endPos, rail) -> {
+			// Each connection is stored once in each direction
+			if (startPos.asLong() < endPos.asLong()) {
+				final List<Long> region = regions.computeIfAbsent(MapSyncData.regionKey(startPos.getX(), startPos.getZ()), key -> new ArrayList<>());
+				region.add(startPos.asLong());
+				region.add(endPos.asLong());
+				region.add((long) rail.transportMode.ordinal());
+			}
+		}));
+		final Map<Long, long[]> railPayloads = MapSyncData.toPayloads(regions);
+		final Map<Long, Long> railHashes = new HashMap<>();
+		railPayloads.forEach((key, payload) -> railHashes.put(key, MapSyncData.hashRails(payload)));
+		storeAndSendDigest(player, MapSyncData.KIND_RAILS, railPayloads, railHashes);
+
+		// Generated paths include the runs to and from the depot and any turn back rails
+		final Map<Long, long[]> sidingPayloads = new HashMap<>();
+		final Map<Long, Long> sidingHashes = new HashMap<>();
+		sidings.forEach(siding -> {
+			final long[] nodes = siding.getPathNodes();
+			sidingPayloads.put(siding.id, nodes);
+			sidingHashes.put(siding.id, MapSyncData.hashRoute(nodes));
+		});
+		storeAndSendDigest(player, MapSyncData.KIND_SIDINGS, sidingPayloads, sidingHashes);
+
+		mapGraph = DeterministicPathFinder.compile(rails);
+		final RailGraph<Rail> graph = mapGraph;
+		final List<MapRouteQuery> queries = new ArrayList<>();
+		routes.forEach(route -> queries.add(new MapRouteQuery(route, dataCache)));
+		final Thread thread = new Thread(() -> {
+			final Map<Long, long[]> routePayloads = new HashMap<>();
+			final Map<Long, Long> routeHashes = new HashMap<>();
+			queries.forEach(query -> {
+				final long[] nodes = query.findNodes(graph);
+				routePayloads.put(query.routeId, nodes);
+				routeHashes.put(query.routeId, MapSyncData.hashRoute(nodes));
+			});
+			storeAndSendDigest(player, MapSyncData.KIND_ROUTES, routePayloads, routeHashes);
+		});
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void storeAndSendDigest(ServerPlayer player, int kind, Map<Long, long[]> payloads, Map<Long, Long> hashes) {
+		pendingMapEntries.computeIfAbsent(player.getUUID(), key -> new ConcurrentHashMap<>()).put(kind, new ConcurrentHashMap<>(payloads));
+		final List<Long> keys = new ArrayList<>(payloads.keySet());
+		int start = 0;
+		do {
+			final int end = Math.min(start + MAP_DIGEST_BATCH_SIZE, keys.size());
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+			packet.writeByte(kind);
+			packet.writeBoolean(end == keys.size());
+			packet.writeInt(end - start);
+			for (int i = start; i < end; i++) {
+				packet.writeLong(keys.get(i));
+				packet.writeLong(hashes.get(keys.get(i)));
+			}
+			Registry.sendToPlayer(player, PACKET_MAP_DIGEST, packet);
+			start = end;
+		} while (start < keys.size());
+	}
+
+	public void sendMapEntries(ServerPlayer player, int kind, boolean isLast, long[] keys) {
+		final Map<Integer, Map<Long, long[]>> pendingKinds = pendingMapEntries.get(player.getUUID());
+		final Map<Long, long[]> pending = pendingKinds == null ? null : pendingKinds.get(kind);
+		if (pending != null) {
+			for (final long key : keys) {
+				// Removing each entry as it is served means a client can't ask for the same data twice
+				final long[] payload = pending.remove(key);
+				if (payload != null) {
+					sendMapEntry(player, kind, key, payload);
+				}
+			}
+			if (isLast) {
+				pendingKinds.remove(kind);
+			}
+		}
+	}
+
+	private static void sendMapEntry(ServerPlayer player, int kind, long key, long[] payload) {
+		final boolean tooLarge = payload.length > MAX_MAP_ENTRY_LONGS;
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeByte(kind);
+		packet.writeLong(key);
+		packet.writeLong(kind == MapSyncData.KIND_RAILS ? MapSyncData.hashRails(payload) : MapSyncData.hashRoute(payload));
+		packet.writeInt(tooLarge ? 0 : payload.length);
+		if (!tooLarge) {
+			for (final long value : payload) {
+				packet.writeLong(value);
+			}
+		}
+		Registry.sendToPlayer(player, PACKET_MAP_DATA, packet);
+	}
+
+	public void sendMapRoute(ServerPlayer player, long routeId) {
+		final Route route = dataCache.routeIdMap.get(routeId);
+		final long millis = System.currentTimeMillis();
+		if (route != null && mapGraph != null && millis - lastMapRouteRequestMillis.getOrDefault(player.getUUID(), 0L) >= MAP_ROUTE_REQUEST_INTERVAL_MILLIS) {
+			lastMapRouteRequestMillis.put(player.getUUID(), millis);
+			sendMapEntry(player, MapSyncData.KIND_ROUTES, routeId, new MapRouteQuery(route, dataCache).findNodes(mapGraph));
+		}
+	}
+
+	/**
+	 * A copy of what is needed to trace one route for the dashboard, which is safe to search from another thread.
+	 */
+	private static class MapRouteQuery {
+
+		private final long routeId;
+		private final boolean canTrace;
+		private final List<SavedRailBase> platforms = new ArrayList<>();
+		private final List<List<BlockPos>> sectionWaypoints = new ArrayList<>();
+
+		private MapRouteQuery(Route route, DataCache dataCache) {
+			routeId = route.id;
+			canTrace = route.transportMode != TransportMode.AIRPLANE && !route.transportMode.continuousMovement;
+			route.platformIds.forEach(routePlatform -> {
+				final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
+				if (platform != null && (platforms.isEmpty() || platform.id != platforms.get(platforms.size() - 1).id)) {
+					platforms.add(platform);
+					sectionWaypoints.add(new ArrayList<>(routePlatform.waypoints));
+				}
+			});
+		}
+
+		private long[] findNodes(RailGraph<Rail> graph) {
+			return canTrace ? DeterministicPathFinder.findNodes(graph, platforms, sectionWaypoints) : new long[0];
+		}
+	}
+
+	public void setKeyNode(BlockPos pos, boolean isKeyNode) {
+		if (isKeyNode ? keyNodes.add(pos) : keyNodes.remove(pos)) {
+			PacketTrainDataGuiServer.setKeyNodeS2C(world, pos, isKeyNode);
 		}
 	}
 

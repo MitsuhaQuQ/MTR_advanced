@@ -89,6 +89,23 @@ public final class DeterministicPathFinder {
 		return savedRailBases.size();
 	}
 
+	/**
+	 * @return the nodes passed in order, or an empty array when the route can't be completed
+	 */
+	public static long[] findNodes(RailGraph<Rail> graph, List<SavedRailBase> savedRailBases, List<List<BlockPos>> sectionWaypoints) {
+		final List<PathData> path = new ArrayList<>();
+		findPath(path, graph, savedRailBases, sectionWaypoints, 0);
+		if (path.isEmpty()) {
+			return new long[0];
+		}
+		final long[] nodes = new long[path.size() + 1];
+		for (int i = 0; i < path.size(); i++) {
+			nodes[i] = path.get(i).startingPos.asLong();
+		}
+		nodes[path.size()] = path.get(path.size() - 1).getLastPos().asLong();
+		return nodes;
+	}
+
 	private static Kind getKind(RailType railType) {
 		if (railType == RailType.NONE) {
 			return Kind.DISABLED;

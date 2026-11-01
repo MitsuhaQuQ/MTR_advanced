@@ -65,6 +65,16 @@ public final class RailAngle {
 		return fromUnits(units - railAngle.units);
 	}
 
+	/**
+	 * Gets the facing of a rail after its node turns to this angle. Rails are compared with a rail of the same node
+	 * and not with the new angle, because at a quarter turn both sides are equally close to the new angle.
+	 */
+	public RailAngle getRotatedFacing(RailAngle referenceFacing, RailAngle railFacing) {
+		final RailAngle referenceNewFacing = cos * referenceFacing.cos + sin * referenceFacing.sin >= 0 ? this : getOpposite();
+		final boolean sameSide = railFacing.cos * referenceFacing.cos + railFacing.sin * referenceFacing.sin >= 0;
+		return sameSide ? referenceNewFacing : referenceNewFacing.getOpposite();
+	}
+
 	public boolean isParallel(RailAngle railAngle) {
 		return this == railAngle || this == railAngle.getOpposite();
 	}

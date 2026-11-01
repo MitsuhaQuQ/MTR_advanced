@@ -7,6 +7,7 @@ import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
 import mtr.client.ClientData;
+import mtr.client.MapDataCache;
 import mtr.client.IDrawing;
 import mtr.data.*;
 import mtr.mappings.RegistryUtilities;
@@ -114,10 +115,66 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		});
 	}
 
-	public static void sendNodeAngleC2S(BlockPos pos, float angle) {
+	public static void requestMapRouteC2S(long routeId) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(routeId);
+		RegistryClient.sendToServer(PACKET_REQUEST_MAP_ROUTE, packet);
+	}
+
+	public static void requestMapRailsC2S() {
+		RegistryClient.sendToServer(PACKET_REQUEST_MAP_RAILS, new FriendlyByteBuf(Unpooled.buffer()));
+	}
+
+	public static void receiveMapDigestS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final int kind = packet.readByte();
+		final boolean isLast = packet.readBoolean();
+		final int count = packet.readInt();
+		final long[] keys = new long[count];
+		final long[] hashes = new long[count];
+		for (int i = 0; i < count; i++) {
+			keys[i] = packet.readLong();
+			hashes[i] = packet.readLong();
+		}
+		minecraftClient.execute(() -> MapDataCache.receiveDigest(kind, isLast, keys, hashes));
+	}
+
+	public static void sendMapWantedC2S(int kind, boolean isLast, List<Long> keys) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeByte(kind);
+		packet.writeBoolean(isLast);
+		packet.writeInt(keys.size());
+		keys.forEach(packet::writeLong);
+		RegistryClient.sendToServer(PACKET_MAP_WANTED, packet);
+	}
+
+	public static void receiveMapDataS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final int kind = packet.readByte();
+		final long key = packet.readLong();
+		final long hash = packet.readLong();
+		final long[] payload = new long[packet.readInt()];
+		for (int i = 0; i < payload.length; i++) {
+			payload[i] = packet.readLong();
+		}
+		minecraftClient.execute(() -> MapDataCache.receiveData(kind, key, hash, payload));
+	}
+
+	public static void setKeyNodeS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final BlockPos pos = packet.readBlockPos();
+		final boolean isKeyNode = packet.readBoolean();
+		minecraftClient.execute(() -> {
+			if (isKeyNode) {
+				ClientData.KEY_NODES.add(pos);
+			} else {
+				ClientData.KEY_NODES.remove(pos);
+			}
+		});
+	}
+
+	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
 		packet.writeFloat(angle);
+		packet.writeBoolean(isKeyNode);
 		RegistryClient.sendToServer(PACKET_UPDATE_NODE_ANGLE, packet);
 	}
 

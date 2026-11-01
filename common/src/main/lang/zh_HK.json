@@ -1,3 +1,4 @@
 {
-  "gui.mtr.use_deterministic_path": "使用確定性尋路"
+  "gui.mtr.use_deterministic_path": "使用確定性尋路",
+  "gui.mtr.pick_waypoints": "點擊關鍵節點：到下一站的必經節點（%s）"
 }

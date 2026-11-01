@@ -12,7 +12,7 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 2;
+	int PROTOCOL_VERSION = 3;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 
@@ -23,6 +23,12 @@ public interface IPacket {
 	ResourceLocation PACKET_OPEN_TICKET_MACHINE_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_ticket_machine_screen");
 	ResourceLocation PACKET_OPEN_TRAIN_SENSOR_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_train_sensor_screen");
 	ResourceLocation PACKET_OPEN_NODE_ANGLE_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_node_angle_screen");
+	ResourceLocation PACKET_SET_KEY_NODE = new ResourceLocation(MTR.MOD_ID, "packet_set_key_node");
+	ResourceLocation PACKET_REQUEST_MAP_RAILS = new ResourceLocation(MTR.MOD_ID, "packet_request_map_rails");
+	ResourceLocation PACKET_MAP_DIGEST = new ResourceLocation(MTR.MOD_ID, "packet_map_digest");
+	ResourceLocation PACKET_MAP_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_map_wanted");
+	ResourceLocation PACKET_MAP_DATA = new ResourceLocation(MTR.MOD_ID, "packet_map_data");
+	ResourceLocation PACKET_REQUEST_MAP_ROUTE = new ResourceLocation(MTR.MOD_ID, "packet_request_map_route");
 	ResourceLocation PACKET_OPEN_LIFT_TRACK_FLOOR_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_lift_track_floor_screen");
 	ResourceLocation PACKET_OPEN_LIFT_CUSTOMIZATION_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_lift_customization_screen");
 	ResourceLocation PACKET_OPEN_RESOURCE_PACK_CREATOR_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_resource_pack_creator_screen");

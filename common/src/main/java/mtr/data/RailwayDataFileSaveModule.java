@@ -35,6 +35,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private final List<Long> dirtyLiftIds = new ArrayList<>();
 	private final List<BlockPos> dirtyRailPositions = new ArrayList<>();
 	private final List<SignalBlocks.SignalBlock> dirtySignalBlocks = new ArrayList<>();
+	private final List<BlockPos> dirtyKeyNodes = new ArrayList<>();
 
 	private final Map<String, Integer> existingFiles = new HashMap<>();
 	private final Set<String> checkFilesToDelete = new LinkedHashSet<>();
@@ -50,7 +51,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private static final String TYPE_LIFTS = "lifts";
 	private static final String TYPE_RAILS = "rails";
 	private static final String TYPE_SIGNAL_BLOCKS = "signal-blocks";
-	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS};
+	private static final String TYPE_KEY_NODES = "key-nodes";
+	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES};
 
 	public RailwayDataFileSaveModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, Path savePath, SignalBlocks signalBlocks) {
 		super(railwayData, world, rails);
@@ -75,6 +77,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		readMessagePackFromFile(TYPE_LIFTS, LiftServer::new, railwayData.lifts::add, true);
 		readMessagePackFromFile(TYPE_RAILS, RailEntry::new, railEntry -> rails.put(railEntry.pos, railEntry.connections), true);
 		readMessagePackFromFile(TYPE_SIGNAL_BLOCKS, SignalBlocks.SignalBlock::new, signalBlocks.signalBlocks::add, true);
+		readMessagePackFromFile(TYPE_KEY_NODES, KeyNode::new, keyNode -> railwayData.keyNodes.add(keyNode.pos), true);
 
 		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location());
 		canAutoSave = true;
@@ -91,6 +94,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		dirtyLiftIds.clear();
 		dirtyRailPositions.clear();
 		dirtySignalBlocks.clear();
+		dirtyKeyNodes.clear();
 		checkFilesToDelete.clear();
 		autoSave();
 		while (true) {
@@ -124,6 +128,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			dirtyLiftIds.addAll(railwayData.dataCache.liftsServerIdMap.keySet());
 			dirtyRailPositions.addAll(rails.keySet());
 			dirtySignalBlocks.addAll(signalBlocks.signalBlocks);
+			dirtyKeyNodes.addAll(railwayData.keyNodes);
 			checkFilesToDelete.addAll(existingFiles.keySet());
 			dataStore.backup();
 		}
@@ -155,8 +160,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			if (hasSpareTime) {
 				hasSpareTime = writeDirtyDataToFile(dirtySignalBlocks, signalBlock -> signalBlock, signalBlock -> signalBlock.id, TYPE_SIGNAL_BLOCKS);
 			}
+			if (hasSpareTime) {
+				hasSpareTime = writeDirtyDataToFile(dirtyKeyNodes, pos -> railwayData.keyNodes.contains(pos) ? new KeyNode(pos) : null, BlockPos::asLong, TYPE_KEY_NODES);
+			}
 
-			final boolean doneWriting = dirtyStationIds.isEmpty() && dirtyPlatformIds.isEmpty() && dirtySidingIds.isEmpty() && dirtyRouteIds.isEmpty() && dirtyDepotIds.isEmpty() && dirtyLiftIds.isEmpty() && dirtyRailPositions.isEmpty() && dirtySignalBlocks.isEmpty();
+			final boolean doneWriting = dirtyStationIds.isEmpty() && dirtyPlatformIds.isEmpty() && dirtySidingIds.isEmpty() && dirtyRouteIds.isEmpty() && dirtyDepotIds.isEmpty() && dirtyLiftIds.isEmpty() && dirtyRailPositions.isEmpty() && dirtySignalBlocks.isEmpty() && dirtyKeyNodes.isEmpty();
 			if (hasSpareTime && !checkFilesToDelete.isEmpty() && doneWriting) {
 				final String key = checkFilesToDelete.iterator().next();
 				checkFilesToDelete.remove(key);
