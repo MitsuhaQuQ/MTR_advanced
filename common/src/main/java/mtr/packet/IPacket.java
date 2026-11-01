@@ -12,7 +12,7 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 3;
+	int PROTOCOL_VERSION = 5;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 
@@ -28,6 +28,7 @@ public interface IPacket {
 	ResourceLocation PACKET_MAP_DIGEST = new ResourceLocation(MTR.MOD_ID, "packet_map_digest");
 	ResourceLocation PACKET_MAP_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_map_wanted");
 	ResourceLocation PACKET_MAP_DATA = new ResourceLocation(MTR.MOD_ID, "packet_map_data");
+	ResourceLocation PACKET_STALE_DEPOTS = new ResourceLocation(MTR.MOD_ID, "packet_stale_depots");
 	ResourceLocation PACKET_REQUEST_MAP_ROUTE = new ResourceLocation(MTR.MOD_ID, "packet_request_map_route");
 	ResourceLocation PACKET_OPEN_LIFT_TRACK_FLOOR_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_lift_track_floor_screen");
 	ResourceLocation PACKET_OPEN_LIFT_CUSTOMIZATION_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_lift_customization_screen");

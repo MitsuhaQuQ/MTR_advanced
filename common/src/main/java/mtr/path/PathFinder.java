@@ -67,6 +67,28 @@ public class PathFinder {
 		return -1;
 	}
 
+	/**
+	 * Applies the stop settings of a route to a found path. The first and last stops of a route can't be passed.
+	 */
+	public static void applyStopSettings(List<PathData> path, List<Route.RoutePlatform> routePlatforms) {
+		int pathIndex = 0;
+		for (int i = 0; i < routePlatforms.size(); i++) {
+			final Route.RoutePlatform routePlatform = routePlatforms.get(i);
+			final boolean pass = routePlatform.pass && i > 0 && i < routePlatforms.size() - 1;
+			for (int j = pathIndex; j < path.size(); j++) {
+				final PathData pathData = path.get(j);
+				if (pathData.savedRailBaseId == routePlatform.platformId && pathData.dwellTime > 0) {
+					final int stopTime = routePlatform.dwellOverride > 0 ? routePlatform.dwellOverride : pathData.dwellTime;
+					// Doors have no time to open during a shorter stop. Cable cars keep moving through platforms.
+					final int dwellTime = pass ? 0 : pathData.rail.transportMode.continuousMovement ? stopTime : Math.max(stopTime, Route.MIN_STOP_DWELL);
+					path.set(j, new PathData(pathData.rail, pathData.savedRailBaseId, dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
+					pathIndex = j + 1;
+					break;
+				}
+			}
+		}
+	}
+
 	public static void appendPath(List<PathData> path, List<PathData> partialPath) {
 		if (partialPath.isEmpty()) {
 			path.clear();

@@ -27,6 +27,12 @@ public final class RailRouter {
 			throw new IllegalArgumentException("A route starts on a saved rail and needs a second target");
 		}
 
+		for (int i = 1; i < targets.size(); i++) {
+			if (!graph.isConnected(targets.get(0).pos1, targets.get(i).pos1)) {
+				return new Result<>(Collections.emptyList(), i);
+			}
+		}
+
 		final Map<Long, State<R>> best = new HashMap<>();
 		final PriorityQueue<State<R>> queue = new PriorityQueue<>((state1, state2) -> {
 			final int compare = Double.compare(state1.estimate, state2.estimate);

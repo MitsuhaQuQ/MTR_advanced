@@ -9,6 +9,7 @@ import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 import org.apache.commons.lang3.StringUtils;
@@ -247,6 +248,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			for (int i = 0; i < stringSplit.length; i++) {
 				GuiCompat.draw(matrices, font, stringSplit[i], rightPanelsX + TEXT_PADDING, yStartRightPane + SQUARE_SIZE * 2 + (TEXT_HEIGHT + TEXT_PADDING) * i, ARGB_WHITE);
 			}
+			final String pathStatus = getPathStatusText();
+			if (!pathStatus.isEmpty()) {
+				GuiCompat.draw(matrices, font, Text.literal(pathStatus), rightPanelsX + TEXT_PADDING, yStartRightPane + SQUARE_SIZE * 2 + (TEXT_HEIGHT + TEXT_PADDING) * stringSplit.length, ARGB_LIGHT_GRAY);
+			}
 
 			if (showScheduleControls && !data.useRealTime) {
 				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.game_time"), sliderX / 2, SQUARE_SIZE + TEXT_PADDING, ARGB_LIGHT_GRAY);
@@ -266,6 +271,22 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
 		departuresList.mouseScrolled(mouseX, mouseY, amount);
 		return super.mouseScrolled(mouseX, mouseY, amount);
+	}
+
+	private String getPathStatusText() {
+		final BlockPos pos = BlockPos.of(data.clientPathFailure.pos);
+		switch (data.clientPathFailure.type) {
+			case OLD_SEARCH:
+				return Text.translatable("gui.mtr.path_failure_old_search").getString();
+			case MISSING_WAYPOINT:
+				return Text.translatable("gui.mtr.path_failure_missing_waypoint", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
+			case DISCONNECTED:
+				return Text.translatable("gui.mtr.path_failure_disconnected").getString();
+			case NO_ROUTE:
+				return Text.translatable("gui.mtr.path_failure_no_route").getString();
+			default:
+				return ClientData.STALE_DEPOTS.contains(data.id) ? Text.translatable("gui.mtr.path_stale").getString() : "";
+		}
 	}
 
 	private boolean showDeterministicPath() {

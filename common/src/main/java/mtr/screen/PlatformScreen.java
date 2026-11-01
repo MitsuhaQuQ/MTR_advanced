@@ -3,6 +3,7 @@ package mtr.screen;
 import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.data.Platform;
+import mtr.data.Route;
 import mtr.data.TransportMode;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -23,6 +24,14 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		super.init();
 		UtilitiesClient.setWidgetY(sliderDwellTimeMin, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING);
 		UtilitiesClient.setWidgetY(sliderDwellTimeSec, SQUARE_SIZE * 5 / 2 + TEXT_FIELD_PADDING);
+	}
+
+	@Override
+	public void tick() {
+		super.tick();
+		if (!savedRailBase.transportMode.continuousMovement && sliderDwellTimeMin.getIntValue() == 0 && sliderDwellTimeSec.getIntValue() < Route.MIN_STOP_DWELL) {
+			sliderDwellTimeSec.setValue(Route.MIN_STOP_DWELL);
+		}
 	}
 
 	@Override

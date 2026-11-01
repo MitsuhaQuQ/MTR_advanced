@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.PathData;
 import mtr.path.DeterministicPathFinder;
+import mtr.path.PathFailure;
 import mtr.path.PathFinder;
 import mtr.path.RailGraph;
 import net.minecraft.core.BlockPos;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 public class Depot extends AreaBase implements IReducedSaveData {
 
 	public int clientPathGenerationSuccessfulSegments;
+	public PathFailure clientPathFailure = PathFailure.NONE;
 	public long lastDeployedMillis;
 	public boolean useRealTime;
 	public boolean repeatInfinitely;
@@ -287,6 +289,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Set<Siding> sidings, Consumer<Thread> callback) {
 		final List<SavedRailBase> platformsInRoute = new ArrayList<>();
 		final List<List<BlockPos>> sectionWaypoints = new ArrayList<>();
+		final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
 
 		routeIds.forEach(routeId -> {
 			final Route route = dataCache.routeIdMap.get(routeId);
@@ -296,6 +299,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 					if (platform != null && (platformsInRoute.isEmpty() || platform.id != platformsInRoute.get(platformsInRoute.size() - 1).id)) {
 						platformsInRoute.add(platform);
 						sectionWaypoints.add(platformId.waypoints);
+						stopSettings.add(platformId);
 					}
 				});
 			}
@@ -309,6 +313,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			try {
 				final List<PathData> tempPath = new ArrayList<>();
 				final int successfulSegmentsMain = PathFinder.findPath(tempPath, rails, graph, platformsInRoute, sectionWaypoints, 1, cruisingAltitude, useFastSpeed);
+				final PathFailure failure = tempPath.isEmpty() ? PathFailure.diagnose(graph, platformsInRoute, sectionWaypoints, successfulSegmentsMain) : PathFailure.NONE;
+				PathFinder.applyStopSettings(tempPath, stopSettings);
 				final int[] successfulSegments = new int[]{Integer.MAX_VALUE};
 
 				sidings.forEach(siding -> {
@@ -323,7 +329,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 					}
 				});
 
-				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments[0]);
+				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments[0], failure);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (Exception e) {
 				e.printStackTrace();

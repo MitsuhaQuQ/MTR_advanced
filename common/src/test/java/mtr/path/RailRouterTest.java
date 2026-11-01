@@ -187,6 +187,16 @@ class RailRouterTest {
 	}
 
 	@Test
+	void connectedComponentsIgnoreDirection() {
+		final List<Object[]> rails = twoBranches();
+		add(rails, 500, 0, 510, 0, Kind.PLATFORM, SPEED);
+		final RailGraph<String> graph = graph(rails);
+		assertTrue(graph.isConnected(pos(0, 0), pos(140, 0)));
+		assertFalse(graph.isConnected(pos(0, 0), pos(500, 0)));
+		assertFalse(graph.isConnected(pos(0, 0), pos(999, 999)));
+	}
+
+	@Test
 	void largeGridRoutesQuickly() {
 		final List<Object[]> rails = new ArrayList<>();
 		final int size = 200;

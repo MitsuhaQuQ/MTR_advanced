@@ -41,6 +41,7 @@ public final class ClientData {
 	public static final List<MapRail> MAP_RAILS = new ArrayList<>();
 	public static final Map<Long, long[]> MAP_ROUTES = new HashMap<>();
 	public static final Map<Long, long[]> MAP_SIDINGS = new HashMap<>();
+	public static final Set<Long> STALE_DEPOTS = new HashSet<>();
 	public static final Map<UUID, Boolean> OCCUPIED_RAILS = new HashMap<>();
 	public static final Map<BlockPos, Map<BlockPos, Rail>> RAILS = new HashMap<>();
 	public static final Set<TrainClient> TRAINS = new HashSet<>();

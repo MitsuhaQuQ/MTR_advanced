@@ -436,6 +436,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	// Returns a translation key describing the problem, or null if the rails could be rebuilt
+	public boolean isNodeFacing(BlockPos pos, RailAngle angle) {
+		final Map<BlockPos, Rail> connections = rails.get(pos);
+		return connections != null && !connections.isEmpty() && connections.values().stream().allMatch(rail -> rail.facingStart.isParallel(angle));
+	}
+
 	public String rotateNodeRails(Player player, BlockPos pos, RailAngle angle) {
 		final Map<BlockPos, Rail> connections = rails.get(pos);
 		if (connections == null || connections.isEmpty()) {
@@ -466,6 +471,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			}
 			if (!newRail.isValid() || !newBackwardsRail.isValid()) {
 				return "gui.mtr.invalid_orientation";
+			}
+			if (newRail.turnsBack(pos, posEnd) || newBackwardsRail.turnsBack(posEnd, pos)) {
+				return "gui.mtr.rail_would_loop";
 			}
 			newRails.put(posEnd, newRail);
 			newBackwardsRails.put(posEnd, newBackwardsRail);
@@ -528,6 +536,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			sidingHashes.put(siding.id, MapSyncData.hashRoute(nodes));
 		});
 		storeAndSendDigest(player, MapSyncData.KIND_SIDINGS, sidingPayloads, sidingHashes);
+
+		final Set<Long> staleDepots = new HashSet<>();
+		sidings.forEach(siding -> {
+			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
+			if (depot != null && siding.isPathStale(rails)) {
+				staleDepots.add(depot.id);
+			}
+		});
+		PacketTrainDataGuiServer.sendStaleDepotsS2C(player, staleDepots);
 
 		mapGraph = DeterministicPathFinder.compile(rails);
 		final RailGraph<Rail> graph = mapGraph;
@@ -884,7 +901,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				}
 				if (stopIndex < sum) {
 					final Station thisStation = dataCache.platformIdToStation.get(thisRoute.platformIds.get(difference).platformId);
-					final Station nextStation = difference < thisRoute.platformIds.size() - 1 ? dataCache.platformIdToStation.get(thisRoute.platformIds.get(difference + 1).platformId) : null;
+					int nextStationIndex = difference + 1;
+				while (nextStationIndex < thisRoute.platformIds.size() - 1 && thisRoute.platformIds.get(nextStationIndex).pass) {
+					nextStationIndex++;
+				}
+				final Station nextStation = nextStationIndex < thisRoute.platformIds.size() ? dataCache.platformIdToStation.get(thisRoute.platformIds.get(nextStationIndex).platformId) : null;
 					final Station lastStation = thisRoute.platformIds.isEmpty() ? null : dataCache.platformIdToStation.get(thisRoute.getLastPlatformId());
 					routeAndStationsCallback.routeAndStationsCallback(difference, thisRoute, nextRoute, thisStation, nextStation, lastStation);
 					return true;

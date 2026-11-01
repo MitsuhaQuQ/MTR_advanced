@@ -290,7 +290,7 @@ public class TrainServer extends Train {
 
 					if (isOnRoute || nextDepartureTicks >= 0) {
 						final long arrivalMillis = currentMillis + (long) ((timeSegment.endTime + offsetTime - currentTime) * Depot.MILLIS_PER_TICK);
-						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex));
+						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id));
 						if (!isRepeat()) {
 							addSchedule.run();
 							addSchedule = null;

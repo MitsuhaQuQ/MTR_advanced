@@ -47,6 +47,9 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 	public static class TileEntityTrainScheduleSensor extends TileEntityTrainSensorBase implements TickableMapper {
 
 		private int seconds = 10;
+		private long lastTrainId;
+		private long lastArrivalMillis;
+		private static final long SAME_ARRIVAL_MILLIS = 30000;
 		private static final String KEY_SECONDS = "seconds";
 
 		public TileEntityTrainScheduleSensor(BlockPos pos, BlockState state) {
@@ -76,6 +79,18 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 		public void setData(Set<Long> filterRouteIds, boolean stoppedOnly, boolean movingOnly, int number, String... strings) {
 			seconds = number;
 			setData(filterRouteIds, stoppedOnly, movingOnly);
+		}
+
+		/**
+		 * The estimated arrival moves as a train runs, so one train and one arrival must only fire once.
+		 */
+		private boolean isNewTrain(ScheduleEntry scheduleEntry) {
+			if (scheduleEntry.trainId == lastTrainId && Math.abs(scheduleEntry.arrivalMillis - lastArrivalMillis) < SAME_ARRIVAL_MILLIS) {
+				return false;
+			}
+			lastTrainId = scheduleEntry.trainId;
+			lastArrivalMillis = scheduleEntry.arrivalMillis;
+			return true;
 		}
 
 		public int getSeconds() {
@@ -115,7 +130,10 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 				});
 				if (!scheduleList.isEmpty()) {
 					Collections.sort(scheduleList);
-					if ((scheduleList.get(0).arrivalMillis - System.currentTimeMillis()) / 1000 == ((TileEntityTrainScheduleSensor) blockEntity).seconds) {
+					final TileEntityTrainScheduleSensor sensor = (TileEntityTrainScheduleSensor) blockEntity;
+					final ScheduleEntry scheduleEntry = scheduleList.get(0);
+					final long remainingMillis = scheduleEntry.arrivalMillis - System.currentTimeMillis();
+					if (remainingMillis >= 0 && remainingMillis / 1000 <= sensor.seconds && sensor.isNewTrain(scheduleEntry)) {
 						((BlockTrainScheduleSensor) block).power(world, state, pos);
 					}
 				}

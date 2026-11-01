@@ -450,6 +450,19 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return Math.max(2, railLength) >= spacing;
 	}
 
+	/**
+	 * True when a rail of the generated path was removed or reshaped since the path was generated.
+	 */
+	public boolean isPathStale(Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		if (transportMode == TransportMode.AIRPLANE || path.size() < 2) {
+			return false;
+		}
+		return path.stream().anyMatch(pathData -> {
+			final Rail rail = DataCache.tryGet(rails, pathData.startingPos, pathData.getLastPos());
+			return rail == null || rail.railType != pathData.rail.railType || rail.facingStart != pathData.rail.facingStart || rail.facingEnd != pathData.rail.facingEnd || Math.abs(rail.getLength() - pathData.rail.getLength()) > 0.01;
+		});
+	}
+
 	public long[] getPathNodes() {
 		if (path.isEmpty()) {
 			return new long[0];

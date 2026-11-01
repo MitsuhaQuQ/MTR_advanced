@@ -52,6 +52,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 	private final WidgetBetterTextField textFieldName;
 	private final WidgetBetterTextField textFieldCustomDestination;
+	private final WidgetBetterTextField textFieldDwellOverride;
+	private final WidgetBetterCheckbox checkboxPassStation;
 	private final WidgetColorSelector colorSelector;
 
 	private final DashboardList dashboardList;
@@ -65,6 +67,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 		textFieldName = new WidgetBetterTextField(Text.translatable("gui.mtr.name").getString());
 		textFieldCustomDestination = new WidgetBetterTextField(Text.translatable("gui.mtr.custom_destination_suggestion").getString());
+		textFieldDwellOverride = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, Text.translatable("gui.mtr.dwell_override").getString(), 4);
+		checkboxPassStation = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.pass_station"), checked -> {
+		});
 		colorSelector = new WidgetColorSelector(this, true, this::toggleButtons);
 		widgetMap = new WidgetMap(transportMode, this::onDrawCorners, this::onDrawCornersMouseRelease, this::onClickAddPlatformToRoute, this::onClickEditSavedRail, colorSelector::isMouseOver);
 		widgetMap.setRoutesToDraw(this::getRoutesToDraw);
@@ -123,6 +128,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 		IDrawing.setPositionAndWidth(textFieldName, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, PANEL_WIDTH - COLOR_WIDTH - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldCustomDestination, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(textFieldDwellOverride, TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING * 3 / 2, PANEL_WIDTH - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(checkboxPassStation, 0, bottomRowY - SQUARE_SIZE * 3 - TEXT_FIELD_PADDING * 2, PANEL_WIDTH);
 		IDrawing.setPositionAndWidth(colorSelector, PANEL_WIDTH - COLOR_WIDTH + TEXT_FIELD_PADDING / 2, bottomRowY - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, COLOR_WIDTH - TEXT_FIELD_PADDING);
 
 		dashboardList.x = 0;
@@ -149,6 +156,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
 		addDrawableChild(textFieldName);
 		addDrawableChild(textFieldCustomDestination);
+		addDrawableChild(textFieldDwellOverride);
+		addDrawableChild(checkboxPassStation);
 		addDrawableChild(colorSelector);
 	}
 
@@ -183,6 +192,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	public void tick() {
 		textFieldName.tick();
 		textFieldCustomDestination.tick();
+		textFieldDwellOverride.tick();
 		dashboardList.tick();
 
 		try {
@@ -392,6 +402,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		editingRoutePlatformIndex = index;
 		if (isValidRoutePlatformIndex()) {
 			textFieldCustomDestination.setValue(editingRoute.platformIds.get(index).customDestination);
+			final int dwellOverride = editingRoute.platformIds.get(index).dwellOverride;
+			textFieldDwellOverride.setValue(dwellOverride > 0 ? String.valueOf(Route.getDoorOpenSeconds(dwellOverride)) : "");
+			checkboxPassStation.setChecked(editingRoute.platformIds.get(index).pass);
 			if (!isNew && index < editingRoute.platformIds.size() - 1) {
 				final List<BlockPos> waypoints = editingRoute.platformIds.get(index).waypoints;
 				widgetMap.startPickingWaypoints(waypoints, pos -> onClickKeyNode(waypoints, pos));
@@ -473,7 +486,14 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private void onDoneEditingRouteDestination() {
 		widgetMap.stopPickingWaypoints();
 		if (isValidRoutePlatformIndex()) {
-			editingRoute.platformIds.get(editingRoutePlatformIndex).customDestination = textFieldCustomDestination.getValue();
+			final Route.RoutePlatform routePlatform = editingRoute.platformIds.get(editingRoutePlatformIndex);
+			routePlatform.customDestination = textFieldCustomDestination.getValue();
+			routePlatform.pass = checkboxPassStation.visible && checkboxPassStation.selected();
+			try {
+				final String dwellText = textFieldDwellOverride.getValue();
+				routePlatform.dwellOverride = dwellText.isEmpty() ? 0 : Route.getDwellFromDoorOpenSeconds(Integer.parseInt(dwellText));
+			} catch (NumberFormatException ignored) {
+			}
 			editingRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 		}
 		startEditingRoute(editingRoute, isNew);
@@ -505,8 +525,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		final boolean showTextFields = ((selectedTab == SelectedTab.STATIONS || selectedTab == SelectedTab.DEPOTS) && editingArea != null) || (selectedTab == SelectedTab.ROUTES && editingRoute != null && !showRouteDestinationFields);
 		textFieldName.visible = showTextFields;
 		textFieldCustomDestination.visible = showRouteDestinationFields;
+		textFieldDwellOverride.visible = showRouteDestinationFields;
+		checkboxPassStation.visible = showRouteDestinationFields && editingRoutePlatformIndex > 0 && editingRoutePlatformIndex < editingRoute.platformIds.size() - 1;
 		colorSelector.visible = showTextFields;
-		dashboardList.height = height - SQUARE_SIZE * 2 - (showTextFields || showRouteDestinationFields ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0);
+		dashboardList.height = height - SQUARE_SIZE * 2 - (showTextFields || showRouteDestinationFields ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) - (showRouteDestinationFields ? (SQUARE_SIZE + TEXT_FIELD_PADDING) * 2 : 0);
 	}
 
 	private enum SelectedTab {STATIONS, ROUTES, DEPOTS}

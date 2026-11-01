@@ -12,6 +12,7 @@ import mtr.client.IDrawing;
 import mtr.data.*;
 import mtr.mappings.RegistryUtilities;
 import mtr.mappings.Text;
+import mtr.path.PathFailure;
 import mtr.mappings.UtilitiesClient;
 import mtr.screen.*;
 import net.minecraft.client.Minecraft;
@@ -119,6 +120,18 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(routeId);
 		RegistryClient.sendToServer(PACKET_REQUEST_MAP_ROUTE, packet);
+	}
+
+	public static void receiveStaleDepotsS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final Set<Long> depotIds = new HashSet<>();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			depotIds.add(packet.readLong());
+		}
+		minecraftClient.execute(() -> {
+			ClientData.STALE_DEPOTS.clear();
+			ClientData.STALE_DEPOTS.addAll(depotIds);
+		});
 	}
 
 	public static void requestMapRailsC2S() {
@@ -397,10 +410,13 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void generatePathS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final long depotId = packet.readLong();
 		final int successfulSegments = packet.readInt();
+		final PathFailure failure = new PathFailure(PathFailure.Type.values()[packet.readByte()], packet.readLong());
 		minecraftClient.execute(() -> {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
 				depot.clientPathGenerationSuccessfulSegments = successfulSegments;
+				depot.clientPathFailure = failure;
+				ClientData.STALE_DEPOTS.remove(depotId);
 			}
 		});
 	}

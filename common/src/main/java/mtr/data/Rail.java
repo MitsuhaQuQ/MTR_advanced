@@ -35,6 +35,8 @@ public class Rail extends SerializedDataBase {
 	private static final double ACCEPT_THRESHOLD = 1E-4;
 	private static final double ANGLE_THRESHOLD = 1E-9;
 	private static final int MIN_RADIUS = 2;
+	private static final int TURN_BACK_CHECK_STEPS = 256;
+	private static final double TURN_BACK_TOLERANCE = 0.5;
 	private static final int CABLE_CURVATURE_SCALE = 1000;
 	private static final int MAX_CABLE_DIP = 8;
 
@@ -151,7 +153,11 @@ public class Rail extends SerializedDataBase {
 			final boolean sameSide = Math.signum(angleForward) == Math.signum(angleDifference);
 			final double absAngleForward = Math.abs(angleForward);
 
-			if (sameSide && absAngleForward - Math.abs(angleDifference / 2) < ANGLE_THRESHOLD) { // Segment First
+			// A node sitting exactly on the other node's axis would need a circle of no size, so a biarc is used instead
+			final boolean segmentFirstFits = Math.abs(deltaForward / (1 - railAngleDifference.cos)) >= MIN_RADIUS;
+			final boolean circleFirstFits = Math.abs((deltaSide - deltaForward / railAngleDifference.tan) / railAngleDifference.halfTan) >= MIN_RADIUS;
+
+			if (sameSide && segmentFirstFits && absAngleForward - Math.abs(angleDifference / 2) < ANGLE_THRESHOLD) { // Segment First
 				final double offsetSide = Math.abs(deltaForward / railAngleDifference.halfTan);
 				final double remainingSide = deltaSide - offsetSide;
 				final double deltaXEnd = xStart + remainingSide * newFacingStart.cos;
@@ -178,7 +184,7 @@ public class Rail extends SerializedDataBase {
 				tStart2 = getTBounds(deltaXEnd, h2, deltaZEnd, k2, r2);
 				tEnd2 = getTBounds(xEnd, h2, zEnd, k2, r2, tStart2, reverseT2);
 				isStraight2 = false;
-			} else if (sameSide && absAngleForward - Math.abs(angleDifference) < ANGLE_THRESHOLD) { // Circle First
+			} else if (sameSide && circleFirstFits && absAngleForward - Math.abs(angleDifference) < ANGLE_THRESHOLD) { // Circle First
 				final double crossSide = deltaForward / railAngleDifference.tan;
 				final double remainingSide = (deltaSide - crossSide) * (1 + railAngleDifference.cos);
 				final double remainingForward = (deltaSide - crossSide) * (railAngleDifference.sin);
@@ -369,6 +375,25 @@ public class Rail extends SerializedDataBase {
 	public void render(RenderRail callback, float offsetRadius1, float offsetRadius2) {
 		renderSegment(h1, k1, r1, tStart1, tEnd1, 0, offsetRadius1, offsetRadius2, reverseT1, isStraight1, callback);
 		renderSegment(h2, k2, r2, tStart2, tEnd2, Math.abs(tEnd1 - tStart1), offsetRadius1, offsetRadius2, reverseT2, isStraight2, callback);
+	}
+
+	/**
+	 * True if the rail runs backwards anywhere along the line between its two ends.
+	 */
+	public boolean turnsBack(BlockPos posStart, BlockPos posEnd) {
+		final double differenceX = posEnd.getX() - posStart.getX();
+		final double differenceZ = posEnd.getZ() - posStart.getZ();
+		final double length = getLength();
+		double furthest = Double.NEGATIVE_INFINITY;
+		for (int i = 0; i <= TURN_BACK_CHECK_STEPS; i++) {
+			final Vec3 position = getPosition(length * i / TURN_BACK_CHECK_STEPS);
+			final double progress = position.x * differenceX + position.z * differenceZ;
+			if (progress < furthest - TURN_BACK_TOLERANCE * Math.hypot(differenceX, differenceZ)) {
+				return true;
+			}
+			furthest = Math.max(furthest, progress);
+		}
+		return false;
 	}
 
 	public boolean goodRadius() {

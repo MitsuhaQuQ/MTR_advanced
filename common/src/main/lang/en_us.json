@@ -1,4 +1,13 @@
 {
   "gui.mtr.use_deterministic_path": "Use deterministic routing",
-  "gui.mtr.pick_waypoints": "Click key nodes: waypoints to next stop (%s)"
+  "gui.mtr.pick_waypoints": "Click key nodes: waypoints to next stop (%s)",
+  "gui.mtr.pass_station": "Run through without stopping",
+  "gui.mtr.dwell_override": "Doors fully open for this route (seconds)",
+  "gui.mtr.path_failure_old_search": "Refresh failed: this depot needs deterministic routing for waypoints",
+  "gui.mtr.path_failure_missing_waypoint": "Refresh failed: waypoint %s has no rail",
+  "gui.mtr.path_failure_disconnected": "Refresh failed: stations are not connected",
+  "gui.mtr.path_failure_no_route": "Refresh failed: no route in the direction of travel",
+  "gui.mtr.path_stale": "Rails changed, path out of date",
+  "gui.mtr.rail_would_loop": "This angle would turn the rail back on itself",
+  "gui.mtr.platform_or_siding_exists": "Can't change: a platform or siding is connected"
 }

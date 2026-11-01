@@ -8,12 +8,14 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 	public final int trainCars;
 	public final long routeId;
 	public final int currentStationIndex;
+	public final long trainId;
 
-	public ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex) {
+	public ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId) {
 		this.arrivalMillis = arrivalMillis;
 		this.trainCars = trainCars;
 		this.routeId = routeId;
 		this.currentStationIndex = currentStationIndex;
+		this.trainId = trainId;
 	}
 
 	public ScheduleEntry(FriendlyByteBuf packet) {
@@ -21,6 +23,7 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		trainCars = packet.readInt();
 		routeId = packet.readLong();
 		currentStationIndex = packet.readInt();
+		trainId = packet.readLong();
 	}
 
 	public void writePacket(FriendlyByteBuf packet) {
@@ -28,6 +31,7 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		packet.writeInt(trainCars);
 		packet.writeLong(routeId);
 		packet.writeInt(currentStationIndex);
+		packet.writeLong(trainId);
 	}
 
 	@Override

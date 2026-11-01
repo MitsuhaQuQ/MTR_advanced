@@ -17,6 +17,9 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	private static final int MAX_PLATFORMS = 1024;
 	public static final int MAX_WAYPOINTS = 64;
+	public static final int MIN_STOP_DWELL = 17;
+	private static final int MAX_DWELL_OVERRIDE = 7200;
+	private static final double DOOR_CYCLE_SECONDS = 8.4;
 
 	public RouteType routeType;
 	public boolean isLightRailRoute;
@@ -29,6 +32,8 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
 	private static final String KEY_WAYPOINTS = "waypoints";
+	private static final String KEY_PASS_STATIONS = "pass_stations";
+	private static final String KEY_DWELL_OVERRIDES = "dwell_overrides";
 	private static final String KEY_ROUTE_TYPE = "route_type";
 	private static final String KEY_IS_LIGHT_RAIL_ROUTE = "is_light_rail_route";
 	private static final String KEY_LIGHT_RAIL_ROUTE_NUMBER = "light_rail_route_number";
@@ -64,6 +69,21 @@ public final class Route extends NameColorDataBase implements IGui {
 		for (int i = 0; i < Math.min(platformIds.size(), customDestinations.size()); i++) {
 			platformIds.get(i).customDestination = customDestinations.get(i);
 		}
+
+		final int[] passIndex = {0};
+		messagePackHelper.iterateArrayValue(KEY_PASS_STATIONS, pass -> {
+			if (passIndex[0] < platformIds.size()) {
+				platformIds.get(passIndex[0]).pass = pass.asBooleanValue().getBoolean();
+			}
+			passIndex[0]++;
+		});
+		final int[] dwellIndex = {0};
+		messagePackHelper.iterateArrayValue(KEY_DWELL_OVERRIDES, dwellOverride -> {
+			if (dwellIndex[0] < platformIds.size()) {
+				platformIds.get(dwellIndex[0]).dwellOverride = dwellOverride.asIntegerValue().asInt();
+			}
+			dwellIndex[0]++;
+		});
 
 		final int[] platformIndex = {0};
 		messagePackHelper.iterateArrayValue(KEY_WAYPOINTS, waypoints -> {
@@ -133,6 +153,16 @@ public final class Route extends NameColorDataBase implements IGui {
 			messagePacker.packString(routePlatform.customDestination);
 		}
 
+		messagePacker.packString(KEY_PASS_STATIONS).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packBoolean(routePlatform.pass);
+		}
+
+		messagePacker.packString(KEY_DWELL_OVERRIDES).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packInt(routePlatform.dwellOverride);
+		}
+
 		messagePacker.packString(KEY_WAYPOINTS).packArrayHeader(platformIds.size());
 		for (final RoutePlatform routePlatform : platformIds) {
 			messagePacker.packArrayHeader(routePlatform.waypoints.size());
@@ -151,7 +181,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 9;
+		return super.messagePackLength() + 11;
 	}
 
 	@Override
@@ -238,6 +268,18 @@ public final class Route extends NameColorDataBase implements IGui {
 		sendPacket.accept(packet);
 	}
 
+	/**
+	 * Converts the time doors stay fully open into a stop time in half seconds. Opening, closing and the delays around
+	 * them take 8.4 seconds, which is rounded up to the 0.5 second steps of a stop time.
+	 */
+	public static int getDwellFromDoorOpenSeconds(int doorOpenSeconds) {
+		return (int) Math.ceil((Math.max(doorOpenSeconds, 0) + DOOR_CYCLE_SECONDS) * 2);
+	}
+
+	public static int getDoorOpenSeconds(int dwell) {
+		return Math.max((int) Math.floor(dwell / 2D - DOOR_CYCLE_SECONDS), 0);
+	}
+
 	public int getPlatformIdIndex(long platformId) {
 		for (int i = 0; i < platformIds.size(); i++) {
 			if (platformIds.get(i).platformId == platformId) {
@@ -283,6 +325,14 @@ public final class Route extends NameColorDataBase implements IGui {
 		 * Rail nodes a train must pass between this platform and the next one, without stopping.
 		 */
 		public final List<BlockPos> waypoints = new ArrayList<>();
+		/**
+		 * Trains run through without stopping, while the station stays on the route.
+		 */
+		public boolean pass;
+		/**
+		 * The stop time for this route in half seconds, or 0 to use the platform's own.
+		 */
+		public int dwellOverride;
 
 		public RoutePlatform(long platformId) {
 			this.platformId = platformId;
@@ -297,11 +347,15 @@ public final class Route extends NameColorDataBase implements IGui {
 					waypoints.add(BlockPos.of(waypoint));
 				}
 			}
+			pass = packet.readBoolean();
+			dwellOverride = Math.max(0, Math.min(packet.readInt(), MAX_DWELL_OVERRIDE));
 		}
 
 		private void writeWaypoints(FriendlyByteBuf packet) {
 			packet.writeInt(waypoints.size());
 			waypoints.forEach(waypoint -> packet.writeLong(waypoint.asLong()));
+			packet.writeBoolean(pass);
+			packet.writeInt(dwellOverride);
 		}
 	}
 

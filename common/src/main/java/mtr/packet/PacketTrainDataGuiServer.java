@@ -1,5 +1,6 @@
 package mtr.packet;
 
+import mtr.path.PathFailure;
 import mtr.compat.Compat;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
@@ -148,6 +149,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, PACKET_SET_KEY_NODE, packet));
 	}
 
+	public static void sendStaleDepotsS2C(ServerPlayer player, Set<Long> depotIds) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeInt(depotIds.size());
+		depotIds.forEach(packet::writeLong);
+		Registry.sendToPlayer(player, PACKET_STALE_DEPOTS, packet);
+	}
+
 	public static void removeNodeS2C(Level world, BlockPos pos) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
@@ -244,9 +252,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments) {
+		generatePathS2C(world, depotId, successfulSegments, PathFailure.NONE);
+	}
+
+	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
+		packet.writeByte(failure.type.ordinal());
+		packet.writeLong(failure.pos);
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 
@@ -368,15 +382,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				railwayData.setKeyNode(pos, isKeyNode);
 				// Setting only the key node option must not touch the rails
 				final RailAngle newAngle = RailAngle.fromAngle(angle);
-				if (newAngle.isParallel(RailAngle.fromAngle(BlockNode.getAngle(world, pos, state)))) {
-					return;
-				}
-				final String error = railwayData.rotateNodeRails(player, pos, newAngle);
+				final String error = railwayData.isNodeFacing(pos, newAngle) ? null : railwayData.rotateNodeRails(player, pos, newAngle);
 				if (error == null) {
 					BlockNode.setCustomAngle(world, pos, angle);
 					player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
 				} else {
-					player.displayClientMessage(Text.translatable(error), true);
+					// The node renderer rewrites the action bar every frame, so this has to go to chat to be seen
+					player.displayClientMessage(Text.translatable(error), false);
 				}
 			}
 		});

@@ -1,4 +1,13 @@
 {
   "gui.mtr.use_deterministic_path": "使用确定性寻路",
-  "gui.mtr.pick_waypoints": "点击关键节点：到下一站的必经节点（%s）"
+  "gui.mtr.pick_waypoints": "点击关键节点：到下一站的必经节点（%s）",
+  "gui.mtr.pass_station": "本站通过，不停车",
+  "gui.mtr.dwell_override": "本线路门全开时间（秒）",
+  "gui.mtr.path_failure_old_search": "刷新失败：必经节点需要开启确定性寻路",
+  "gui.mtr.path_failure_missing_waypoint": "刷新失败：必经节点 %s 没有轨道",
+  "gui.mtr.path_failure_disconnected": "刷新失败：车站之间没有连通",
+  "gui.mtr.path_failure_no_route": "刷新失败：按行进方向走不通",
+  "gui.mtr.path_stale": "轨道已变动，路径已过期",
+  "gui.mtr.rail_would_loop": "这个角度会让轨道掉头绕圈",
+  "gui.mtr.platform_or_siding_exists": "无法修改：节点连着站台或存车线"
 }

@@ -17,6 +17,7 @@ public final class RailGraph<R> {
 	private final Map<Long, List<Connection<R>>> outgoing = new HashMap<>();
 	private final Map<Long, Connection<R>> reverse = new HashMap<>();
 	private final Map<Long, List<Connection<R>>> byNode = new HashMap<>();
+	private final Map<Long, Long> components = new HashMap<>();
 	final double maxChordPerCost;
 
 	private RailGraph(List<Connection<R>> sortedConnections) {
@@ -42,6 +43,26 @@ public final class RailGraph<R> {
 			}
 		});
 		maxChordPerCost = tempMaxChordPerCost;
+		// One way rails still connect their ends here, so this only rules out routes that can't exist
+		connections.forEach(connection -> components.put(findComponent(connection.fromPos), findComponent(connection.toPos)));
+	}
+
+	private long findComponent(long pos) {
+		long root = pos;
+		while (components.containsKey(root) && components.get(root) != root) {
+			root = components.get(root);
+		}
+		long current = pos;
+		while (current != root) {
+			final long next = components.getOrDefault(current, root);
+			components.put(current, root);
+			current = next;
+		}
+		return root;
+	}
+
+	public boolean isConnected(long pos1, long pos2) {
+		return hasNode(pos1) && hasNode(pos2) && findComponent(pos1) == findComponent(pos2);
 	}
 
 	List<Connection<R>> outgoing(long pos) {
