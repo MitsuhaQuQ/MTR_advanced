@@ -175,13 +175,16 @@ public class TrainServer extends Train {
 	protected void onStopReached() {
 		final RouteTimetable.StopPlan stopPlan = getStopPlan(getPlanIndex(nextStoppingIndex));
 		final RouteTimetable.StopPlan startPlan = stopPlan == null || stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
-		if (startPlan != null && startPlan.startsRoute && startPlan.routeStartMillis != routeStartMillis) {
+		if (startPlan != null && startPlan.startsRoute && startPlan.route.id != tripRouteId) {
 			final long plannedStartMillis = getPlannedMillis(startPlan.routeStartMillis);
 			final long readyMillis = System.currentTimeMillis() + startPlan.arrivalMillis - stopPlan.arrivalMillis;
 			final long serviceMillis = startPlan.waitsForService ? depot.findNextService(startPlan.route, Math.max(plannedStartMillis, readyMillis)) : 0;
 			tripMillis = serviceMillis == 0 ? plannedStartMillis : serviceMillis;
 			tripRouteId = startPlan.route.id;
-			routeStartMillis = startPlan.routeStartMillis;
+			// The plan follows the route and table the train is on now, which can move where this route starts in it
+			final RouteTimetable.StopPlan newStopPlan = getStopPlan(getPlanIndex(nextStoppingIndex));
+			final RouteTimetable.StopPlan newStartPlan = newStopPlan == null || newStopPlan.startsRoute ? newStopPlan : newStopPlan.nextRouteStart;
+			routeStartMillis = (newStartPlan == null ? startPlan : newStartPlan).routeStartMillis;
 			// How long this route waited changes when the lap ends
 			nextTripMillis = 0;
 			reserveNextTrip();
@@ -573,7 +576,23 @@ public class TrainServer extends Train {
 
 	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
 		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
-		return tripMillis == 0 || timetable == null || stopTimes == null ? null : stopTimes.getPlan(depot.getTrainRoutes(trainId), timetable, stopIndex);
+		if (tripMillis == 0 || timetable == null || stopTimes == null) {
+			return null;
+		}
+		final List<Route> routes = depot.getTrainRoutes(trainId);
+		return stopTimes.getPlan(routes, timetable, stopIndex, tripRouteId, getTripTable(routes));
+	}
+
+	/**
+	 * @return the table of the current route that the current service belongs to
+	 */
+	private int getTripTable(List<Route> routes) {
+		for (final Route route : routes) {
+			if (route.id == tripRouteId) {
+				return route.timetable.getTableIndex(tripMillis);
+			}
+		}
+		return 0;
 	}
 
 	/**

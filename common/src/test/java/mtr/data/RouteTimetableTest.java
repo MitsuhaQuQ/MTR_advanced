@@ -37,6 +37,89 @@ class RouteTimetableTest {
 		assertEquals(RouteTimetable.MAX_MARGIN_PERCENT, timetable.marginPercent);
 	}
 
+	/**
+	 * Monday the 5th of January 2026 at midnight in UTC.
+	 */
+	private static final long MONDAY = 20458 * DAY;
+	private static final int WEEKDAYS = 0b0011111;
+	private static final int WEEKENDS = 0b1100000;
+
+	private static void setUtc() {
+		TimetableConfig.set("UTC", 0);
+	}
+
+	private static RouteTimetable weekTimetable() {
+		final RouteTimetable weekday = timetable(10);
+		weekday.weekdays = WEEKDAYS;
+		final RouteTimetable weekend = timetable(20, 40);
+		weekend.weekdays = WEEKENDS;
+		weekday.addTable(weekend);
+		weekday.sanitize();
+		return weekday;
+	}
+
+	@Test
+	void servicesOnlyRunOnTheDaysOfTheirTable() {
+		setUtc();
+		final RouteTimetable timetable = weekTimetable();
+		final long friday = MONDAY + 4 * DAY;
+		final long saturday = MONDAY + 5 * DAY;
+
+		assertEquals(friday + 10 * MINUTE, timetable.getNextService(friday, friday + DAY, time -> false));
+		assertEquals(0, timetable.getNextService(friday + 11 * MINUTE, saturday, time -> false));
+		assertEquals(saturday + 20 * MINUTE, timetable.getNextService(saturday, saturday + DAY, time -> false));
+		assertEquals(saturday + 40 * MINUTE, timetable.getLatestService(saturday, saturday + DAY, time -> false));
+	}
+
+	@Test
+	void aServiceBelongsToTheTableRunningThatDay() {
+		setUtc();
+		final RouteTimetable timetable = weekTimetable();
+
+		assertEquals(0, timetable.getTableIndex(MONDAY + 10 * MINUTE));
+		assertEquals(1, timetable.getTableIndex(MONDAY + 5 * DAY + 20 * MINUTE));
+	}
+
+	@Test
+	void aTableWithAServiceOnlyCountsOnItsOwnDays() {
+		setUtc();
+		final RouteTimetable first = timetable(10);
+		first.weekdays = WEEKDAYS;
+		final RouteTimetable second = timetable(10);
+		first.addTable(second);
+		first.sanitize();
+
+		assertEquals(0, first.getTableIndex(MONDAY + 10 * MINUTE));
+		assertEquals(1, first.getTableIndex(MONDAY + 5 * DAY + 10 * MINUTE));
+	}
+
+	@Test
+	void disabledTablesLeaveNoServices() {
+		setUtc();
+		final RouteTimetable timetable = timetable(10);
+		timetable.weekdays = 0;
+
+		assertEquals(0, timetable.getNextService(MONDAY, MONDAY + 7 * DAY, time -> false));
+	}
+
+	@Test
+	void aTimetableWithServicesOnlyInALaterTableIsActive() {
+		final RouteTimetable timetable = timetable();
+		timetable.addTable(timetable(10));
+
+		assertTrue(timetable.isActive());
+	}
+
+	@Test
+	void theNumberOfTablesIsLimited() {
+		final RouteTimetable timetable = timetable();
+		for (int i = 0; i < RouteTimetable.MAX_TABLES + 5; i++) {
+			timetable.addTable(new RouteTimetable());
+		}
+
+		assertEquals(RouteTimetable.MAX_TABLES, timetable.getTableCount());
+	}
+
 	@Test
 	void emptyOrDisabledTimetableIsNotActive() {
 		assertFalse(timetable().isActive());

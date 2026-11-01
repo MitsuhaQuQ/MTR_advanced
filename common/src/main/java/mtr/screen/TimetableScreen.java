@@ -47,6 +47,8 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private int columnPass;
 	private int columnOvertake;
 	private int checkedKey;
+	private int tableIndex;
+	private boolean hasInitialized;
 
 	private Route route;
 	private final ScreenMapper previousScreen;
@@ -57,6 +59,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonAddService;
 	private final Button buttonClear;
 	private final Button buttonCheckConflicts;
+	private final Button buttonTable;
+	private final Button buttonAddTable;
+	private final Button buttonDeleteTable;
+	private final Button[] buttonsWeekday = new Button[DAYS_PER_WEEK];
+	private final WidgetBetterTextField textFieldTableName;
 	private final DashboardList servicesList;
 	private final Set<String> conflictServices = new HashSet<>();
 	private final WidgetBetterTextField[] textFieldsArrival = new WidgetBetterTextField[MAX_ROWS];
@@ -76,7 +83,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private static final int MAX_DIRECTION_WIDTH = 120;
 	private static final int MARGIN_FIELD_WIDTH = SQUARE_SIZE * 2;
 	private static final int CHECK_BUTTON_WIDTH = 100;
-	private static final int ROWS_Y = SQUARE_SIZE * 2 + TEXT_PADDING;
+	private static final int DAYS_PER_WEEK = 7;
+	private static final int TABLE_BUTTON_WIDTH = SQUARE_SIZE * 2;
+	private static final int ROWS_Y = SQUARE_SIZE * 3 + TEXT_PADDING;
 	private static final int ARGB_WARNING = 0xFFFF5555;
 	private static final int ARGB_FIELD_TEXT = 0xFFE0E0E0;
 
@@ -92,16 +101,38 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		textFieldService = new WidgetBetterTextField("[^\\d:+* ]", "07:10:00 + 10 * 00:03:00", 25);
 		buttonAddService = UtilitiesClient.newButton(Text.literal("+"), button -> {
 			EditDepotScreen.applyDepartures(textFieldService.getValue(), service -> {
-				if (route.timetable.services.size() < RouteTimetable.MAX_SERVICES && !route.timetable.services.contains(service)) {
-					route.timetable.services.add(service);
+				if (getTable().services.size() < RouteTimetable.MAX_SERVICES && !getTable().services.contains(service)) {
+					getTable().services.add(service);
 				}
 			});
 			updateList();
 		});
 		buttonClear = UtilitiesClient.newButton(Text.translatable("gui.mtr.reset_sign"), button -> {
-			route.timetable.services.clear();
+			getTable().services.clear();
 			updateList();
 		});
+		buttonTable = UtilitiesClient.newButton(Text.literal(""), button -> selectTable((tableIndex + 1) % route.timetable.getTableCount()));
+		buttonAddTable = UtilitiesClient.newButton(Text.literal("+"), button -> {
+			saveTableFields();
+			final int newTable = route.addTable(tableIndex);
+			if (newTable >= 0) {
+				tableIndex = newTable;
+				onTableChanged();
+			}
+		});
+		buttonDeleteTable = UtilitiesClient.newButton(Text.literal("-"), button -> {
+			route.removeTable(tableIndex);
+			tableIndex--;
+			onTableChanged();
+		});
+		textFieldTableName = new WidgetBetterTextField(Text.translatable("gui.mtr.timetable_table_name").getString());
+		for (int i = 0; i < DAYS_PER_WEEK; i++) {
+			final int day = i;
+			buttonsWeekday[i] = UtilitiesClient.newButton(Text.literal(""), button -> {
+				getTable().weekdays ^= 1 << day;
+				updateTableWidgets();
+			});
+		}
 		buttonCheckConflicts = UtilitiesClient.newButton(Text.translatable("gui.mtr.timetable_check_conflicts"), button -> {
 			saveRoute();
 			requestConflicts();
@@ -123,9 +154,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 					final Route.RoutePlatform routePlatform = route.platformIds.get(index);
 					routePlatform.pass = checked;
 					if (checked) {
-						// A train running through can't keep to a departure time or wait
-						routePlatform.setDeparture(-1);
-						routePlatform.overtake = false;
+						// A train running through can't keep to a departure time or wait, whichever table it runs to
+						for (int j = 0; j < route.timetable.getTableCount(); j++) {
+							routePlatform.setDeparture(j, -1);
+							routePlatform.setOvertake(j, false);
+						}
 					}
 					bindRows();
 				}
@@ -133,7 +166,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			checkboxesOvertake[i] = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal(""), checked -> {
 				final int index = scroll + row;
 				if (!isBinding && index < route.platformIds.size()) {
-					route.platformIds.get(index).overtake = checked;
+					route.platformIds.get(index).setOvertake(tableIndex, checked);
 				}
 			});
 		}
@@ -175,9 +208,30 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(checkboxEnabled, rightX + directionWidth + TEXT_PADDING, 0, width - rightX - directionWidth - TEXT_PADDING);
 		checkboxEnabled.setChecked(route.timetable.enabled);
 		IDrawing.setPositionAndWidth(textFieldMargin, rightX + font.width(marginText) + TEXT_PADDING * 2 + TEXT_FIELD_PADDING / 2, getMarginY() + TEXT_FIELD_PADDING / 2, MARGIN_FIELD_WIDTH - TEXT_FIELD_PADDING);
-		textFieldMargin.setValue(String.valueOf(route.timetable.marginPercent));
 		updateDirectionText();
 
+		final int weekdaysX = width - SQUARE_SIZE * DAYS_PER_WEEK;
+		IDrawing.setPositionAndWidth(buttonTable, rightX, SQUARE_SIZE, TABLE_BUTTON_WIDTH);
+		IDrawing.setPositionAndWidth(textFieldTableName, rightX + TABLE_BUTTON_WIDTH + TEXT_FIELD_PADDING / 2, SQUARE_SIZE + TEXT_FIELD_PADDING / 2, weekdaysX - rightX - TABLE_BUTTON_WIDTH - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(buttonAddTable, weekdaysX - SQUARE_SIZE * 2, SQUARE_SIZE, SQUARE_SIZE);
+		IDrawing.setPositionAndWidth(buttonDeleteTable, weekdaysX - SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+		for (int i = 0; i < DAYS_PER_WEEK; i++) {
+			IDrawing.setPositionAndWidth(buttonsWeekday[i], weekdaysX + SQUARE_SIZE * i, SQUARE_SIZE, SQUARE_SIZE);
+			addDrawableChild(buttonsWeekday[i]);
+		}
+		// Resizing the window comes through here too, and shouldn't lose what was typed
+		if (hasInitialized) {
+			saveTableFields();
+		}
+		hasInitialized = true;
+		textFieldMargin.setValue(String.valueOf(getTable().marginPercent));
+		textFieldTableName.setValue(getTable().name);
+		updateTableWidgets();
+
+		addDrawableChild(buttonTable);
+		addDrawableChild(textFieldTableName);
+		addDrawableChild(buttonAddTable);
+		addDrawableChild(buttonDeleteTable);
 		addDrawableChild(buttonDirection);
 		addDrawableChild(buttonClear);
 		addDrawableChild(textFieldService);
@@ -209,6 +263,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		servicesList.tick();
 		textFieldService.tick();
 		textFieldMargin.tick();
+		textFieldTableName.tick();
 		for (int i = 0; i < rowCount; i++) {
 			textFieldsArrival[i].tick();
 			textFieldsDeparture[i].tick();
@@ -225,7 +280,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			servicesList.render(matrices, font);
 
 			final int rightX = LIST_WIDTH + TEXT_PADDING;
-			final int headerY = SQUARE_SIZE + TEXT_PADDING;
+			final int headerY = SQUARE_SIZE * 2 + TEXT_PADDING;
 			GuiCompat.draw(matrices, font, marginText, rightX, getMarginY() + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_station"), rightX, headerY, ARGB_LIGHT_GRAY);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_platform"), columnPlatform, headerY, ARGB_LIGHT_GRAY);
@@ -321,13 +376,42 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 
 	private void saveRoute() {
 		route.timetable.enabled = checkboxEnabled.selected();
-		try {
-			route.timetable.marginPercent = Integer.parseInt(textFieldMargin.getValue());
-		} catch (NumberFormatException e) {
-			route.timetable.marginPercent = RouteTimetable.DEFAULT_MARGIN_PERCENT;
-		}
+		saveTableFields();
 		route.timetable.sanitize();
 		route.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+	}
+
+	private RouteTimetable getTable() {
+		return route.timetable.getTable(tableIndex);
+	}
+
+	private void saveTableFields() {
+		getTable().marginPercent = parseMargin();
+		getTable().name = textFieldTableName.getValue();
+	}
+
+	private void selectTable(int newTableIndex) {
+		saveTableFields();
+		tableIndex = newTableIndex;
+		onTableChanged();
+	}
+
+	private void onTableChanged() {
+		textFieldMargin.setValue(String.valueOf(getTable().marginPercent));
+		textFieldTableName.setValue(getTable().name);
+		updateTableWidgets();
+		updateList();
+	}
+
+	private void updateTableWidgets() {
+		final int tableCount = route.timetable.getTableCount();
+		buttonTable.setMessage(Text.literal((tableIndex + 1) + "/" + tableCount));
+		buttonTable.active = tableCount > 1;
+		buttonAddTable.active = tableCount < RouteTimetable.MAX_TABLES;
+		buttonDeleteTable.active = tableIndex > 0;
+		for (int i = 0; i < DAYS_PER_WEEK; i++) {
+			buttonsWeekday[i].setMessage(Text.literal((getTable().runsOn(i) ? "§a" : "§8") + Text.translatable("gui.mtr.timetable_weekday_" + i).getString()));
+		}
 	}
 
 	/**
@@ -343,11 +427,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		final List<Route> routes = getLineRoutes();
 		route = routes.get((routes.indexOf(route) + 1) % routes.size());
 		scroll = 0;
+		tableIndex = 0;
 		checkboxEnabled.setChecked(route.timetable.enabled);
-		textFieldMargin.setValue(String.valueOf(route.timetable.marginPercent));
 		PacketTrainDataGuiClient.requestTimetableTimesC2S(route.id);
 		updateDirectionText();
-		updateList();
+		onTableChanged();
 		requestConflicts();
 	}
 
@@ -389,7 +473,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private List<RouteTimetable.StopPlan> getPlans() {
-		return RouteTimetable.getStopPlans(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin());
+		return RouteTimetable.getStopPlans(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin(), tableIndex);
 	}
 
 	private void requestConflicts() {
@@ -401,9 +485,13 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	 * Changes with anything that moves the times, so a result that no longer applies doesn't stay on screen.
 	 */
 	private int getCheckKey() {
-		int key = Objects.hash(route.id, parseMargin(), route.timetable.services);
-		for (final Route.RoutePlatform routePlatform : route.platformIds) {
-			key = key * 31 + Objects.hash(routePlatform.getArrival(), routePlatform.getDeparture(), routePlatform.pass);
+		int key = Long.hashCode(route.id);
+		for (int i = 0; i < route.timetable.getTableCount(); i++) {
+			final RouteTimetable table = route.timetable.getTable(i);
+			key = key * 31 + Objects.hash(i == tableIndex ? parseMargin() : table.marginPercent, table.weekdays, table.services);
+			for (final Route.RoutePlatform routePlatform : route.platformIds) {
+				key = key * 31 + Objects.hash(routePlatform.getArrival(i), routePlatform.getDeparture(i), routePlatform.pass);
+			}
 		}
 		return key;
 	}
@@ -413,7 +501,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private List<TimetableConflicts.Conflict> getServiceConflicts(TimetableConflicts.Result result) {
-		return result.conflicts.stream().filter(conflict -> conflict.service == baseMillis || conflict.otherRouteId == route.id && conflict.otherService == baseMillis).collect(Collectors.toList());
+		return result.conflicts.stream().filter(conflict -> conflict.table == tableIndex && conflict.service == baseMillis || conflict.otherRouteId == route.id && conflict.otherService == baseMillis).collect(Collectors.toList());
 	}
 
 	private boolean hasConflict(int index) {
@@ -426,7 +514,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		final TimetableConflicts.Result result = getConflictResult();
 		if (result != null) {
 			result.conflicts.forEach(conflict -> {
-				conflictServices.add(EditDepotScreen.formatTime(conflict.service));
+				if (conflict.table == tableIndex) {
+					conflictServices.add(EditDepotScreen.formatTime(conflict.service));
+				}
 				if (conflict.otherRouteId == route.id) {
 					conflictServices.add(EditDepotScreen.formatTime(conflict.otherService));
 				}
@@ -493,12 +583,12 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			checkboxesPass[i].visible = hasStop && index > 0 && index < stopCount - 1;
 			checkboxesOvertake[i].visible = hasStop && index > 0 && index < stopCount - 1 && !isPass(index);
 
-			textFieldsArrival[i].setValue(!hasStop || routePlatform.getArrival() < 0 ? "" : EditDepotScreen.formatTime(baseMillis + routePlatform.getArrival() * 1000L));
-			textFieldsDeparture[i].setValue(!hasStop || routePlatform.getDeparture() < 0 ? "" : EditDepotScreen.formatTime(baseMillis + routePlatform.getDeparture() * 1000L));
+			textFieldsArrival[i].setValue(!hasStop || routePlatform.getArrival(tableIndex) < 0 ? "" : EditDepotScreen.formatTime(baseMillis + routePlatform.getArrival(tableIndex) * 1000L));
+			textFieldsDeparture[i].setValue(!hasStop || routePlatform.getDeparture(tableIndex) < 0 ? "" : EditDepotScreen.formatTime(baseMillis + routePlatform.getDeparture(tableIndex) * 1000L));
 			textFieldsArrival[i].setTextColor(ARGB_FIELD_TEXT);
 			textFieldsDeparture[i].setTextColor(ARGB_FIELD_TEXT);
 			checkboxesPass[i].setChecked(hasStop && routePlatform.pass);
-			checkboxesOvertake[i].setChecked(hasStop && routePlatform.overtake);
+			checkboxesOvertake[i].setChecked(hasStop && routePlatform.getOvertake(tableIndex));
 		}
 		isBinding = false;
 		updateSuggestions();
@@ -533,11 +623,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		updateSuggestions();
 	}
 
-	private static void setTime(Route.RoutePlatform routePlatform, boolean isArrival, int seconds) {
+	private void setTime(Route.RoutePlatform routePlatform, boolean isArrival, int seconds) {
 		if (isArrival) {
-			routePlatform.setArrival(seconds);
+			routePlatform.setArrival(tableIndex, seconds);
 		} else {
-			routePlatform.setDeparture(seconds);
+			routePlatform.setDeparture(tableIndex, seconds);
 		}
 	}
 
@@ -547,14 +637,14 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void onDeleteService(NameColorDataBase data, int index) {
-		EditDepotScreen.applyDepartures(data.name, service -> route.timetable.services.remove((Integer) service));
+		EditDepotScreen.applyDepartures(data.name, service -> getTable().services.remove((Integer) service));
 		updateList();
 	}
 
 	private void updateList() {
-		servicesList.setData(EditDepotScreen.getDepartureList(route.timetable.services), true, false, false, false, false, true);
-		if (!route.timetable.services.contains(baseMillis)) {
-			baseMillis = route.timetable.services.isEmpty() ? 0 : route.timetable.services.stream().min(Integer::compareTo).orElse(0);
+		servicesList.setData(EditDepotScreen.getDepartureList(getTable().services), true, false, false, false, false, true);
+		if (!getTable().services.contains(baseMillis)) {
+			baseMillis = getTable().services.isEmpty() ? 0 : getTable().services.stream().min(Integer::compareTo).orElse(0);
 		}
 		bindRows();
 	}

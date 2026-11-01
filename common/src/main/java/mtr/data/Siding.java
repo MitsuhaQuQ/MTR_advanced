@@ -680,7 +680,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		private float firstArrival;
 		private long plannedKey;
 		private final List<Stop> stops = new ArrayList<>();
-		private final Map<Integer, RouteTimetable.StopPlan> plans = new HashMap<>();
+		private final Map<Long, Map<Integer, RouteTimetable.StopPlan>> plans = new HashMap<>();
 
 		private void clear() {
 			firstIndex = -1;
@@ -723,10 +723,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		/**
-		 * @param routes the routes the path runs through, in order
+		 * @param routes  the routes the path runs through, in order
+		 * @param routeId the route the train is on
+		 * @param table   the table of that route the train is running to. Other routes use their first table until the train gets to them.
 		 * @return the planned times of a stop on the path, or null if the path has no such stop
 		 */
-		public RouteTimetable.StopPlan getPlan(List<Route> routes, RouteTimetable timetable, int index) {
+		public RouteTimetable.StopPlan getPlan(List<Route> routes, RouteTimetable timetable, int index, long routeId, int table) {
 			long newKey = 1;
 			for (final Route route : routes) {
 				newKey = newKey * 31 + route.id + route.timetable.revision;
@@ -734,23 +736,32 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (newKey != plannedKey) {
 				plannedKey = newKey;
 				plans.clear();
-				final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
-				final List<Boolean> isTurnBacks = new ArrayList<>();
-				matchRouteStops(routes, (stop, routeStop) -> {
-					final Route.RoutePlatform arrivalStop = routeStop == null ? null : routeStop.arrivalStop;
-					final Route.RoutePlatform departureStop = routeStop == null ? null : routeStop.departureStop;
-					final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, arrivalStop == null ? -1 : arrivalStop.getArrival(), departureStop == null ? -1 : departureStop.getDeparture(), departureStop != null && departureStop.overtake);
-					stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
-					stopPlan.route = stopPlan.startsRoute ? routeStop.departureRoute : null;
-					stopPlan.waitsForService = stopPlan.startsRoute && routeStop.departureRoute.timetable.isActive();
-					stopPlans.add(stopPlan);
-					isTurnBacks.add(stop.platformId == 0);
-					plans.put(stop.index, stopPlan);
-				});
-				timetable.applyPlan(stopPlans);
-				RouteTimetable.linkTurnBacks(stopPlans, isTurnBacks);
 			}
-			return plans.get(index);
+			return plans.computeIfAbsent(routeId * 31 + table, key -> makePlans(routes, timetable, routeId, table)).get(index);
+		}
+
+		private Map<Integer, RouteTimetable.StopPlan> makePlans(List<Route> routes, RouteTimetable timetable, long routeId, int table) {
+			final Map<Integer, RouteTimetable.StopPlan> newPlans = new HashMap<>();
+			final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
+			final List<Boolean> isTurnBacks = new ArrayList<>();
+			matchRouteStops(routes, (stop, routeStop) -> {
+				final Route.RoutePlatform arrivalStop = routeStop == null ? null : routeStop.arrivalStop;
+				final Route.RoutePlatform departureStop = routeStop == null ? null : routeStop.departureStop;
+				final int arrivalTable = routeStop != null && routeStop.arrivalRoute.id == routeId ? table : 0;
+				final int departureTable = routeStop != null && routeStop.departureRoute.id == routeId ? table : 0;
+				final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, arrivalStop == null ? -1 : arrivalStop.getArrival(arrivalTable), departureStop == null ? -1 : departureStop.getDeparture(departureTable), departureStop != null && departureStop.getOvertake(departureTable));
+				stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
+				stopPlan.route = stopPlan.startsRoute ? routeStop.departureRoute : null;
+				stopPlan.waitsForService = stopPlan.startsRoute && routeStop.departureRoute.timetable.isActive();
+				stopPlans.add(stopPlan);
+				isTurnBacks.add(stop.platformId == 0);
+				newPlans.put(stop.index, stopPlan);
+			});
+			final Route currentRoute = routes.stream().filter(route -> route.id == routeId).findFirst().orElse(null);
+			// The extra time of the route the train is on, which is what the running sheet of that route shows
+			(currentRoute == null ? timetable : currentRoute.timetable.getTable(table)).applyPlan(stopPlans);
+			RouteTimetable.linkTurnBacks(stopPlans, isTurnBacks);
+			return newPlans;
 		}
 
 		/**

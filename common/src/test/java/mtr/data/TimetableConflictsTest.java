@@ -150,6 +150,56 @@ class TimetableConflictsTest {
 	}
 
 	@Test
+	void tablesOnDifferentDaysDoNotConflict() {
+		final long[][] oneStop = {{0, 2L * MINUTE}};
+		final List<Route.RoutePlatform> stops = Collections.singletonList(new Route.RoutePlatform(PLATFORM_1));
+		final TimetableConflicts.RouteTimes weekdays = new TimetableConflicts.RouteTimes(ROUTE_A, stops);
+		weekdays.addTable(0, 0b0011111, Collections.singletonList(10 * MINUTE), 0, oneStop);
+		final TimetableConflicts.RouteTimes weekends = new TimetableConflicts.RouteTimes(ROUTE_B, stops);
+		weekends.addTable(0, 0b1100000, Collections.singletonList(10 * MINUTE), 0, oneStop);
+
+		assertTrue(check(weekdays, weekends).isEmpty());
+	}
+
+	@Test
+	void tablesSharingADayConflict() {
+		final long[][] oneStop = {{0, 2L * MINUTE}};
+		final List<Route.RoutePlatform> stops = Collections.singletonList(new Route.RoutePlatform(PLATFORM_1));
+		final TimetableConflicts.RouteTimes route = new TimetableConflicts.RouteTimes(ROUTE_A, stops);
+		route.addTable(0, 0b0011111, Collections.singletonList(30 * MINUTE), 0, oneStop);
+		route.addTable(1, 0b1100000, Collections.singletonList(10 * MINUTE), 0, oneStop);
+		final TimetableConflicts.RouteTimes other = new TimetableConflicts.RouteTimes(ROUTE_B, stops);
+		other.addTable(0, 0b0100000, Collections.singletonList(10 * MINUTE), 0, oneStop);
+
+		final List<TimetableConflicts.Conflict> conflicts = check(route, other);
+		assertEquals(1, conflicts.size());
+		assertEquals(1, conflicts.get(0).table);
+	}
+
+	@Test
+	void aConflictOnSeveralDaysCountsOnce() {
+		final long[][] oneStop = {{0, 2L * MINUTE}};
+		final List<Route.RoutePlatform> stops = Collections.singletonList(new Route.RoutePlatform(PLATFORM_1));
+		final TimetableConflicts.RouteTimes route = new TimetableConflicts.RouteTimes(ROUTE_A, stops);
+		route.addTable(0, RouteTimetable.ALL_WEEKDAYS, Collections.singletonList(10 * MINUTE), 0, oneStop);
+		final TimetableConflicts.RouteTimes other = new TimetableConflicts.RouteTimes(ROUTE_B, stops);
+		other.addTable(0, 0b0011111, Collections.singletonList(10 * MINUTE), 0, oneStop);
+		other.addTable(1, 0b1100000, Collections.singletonList(50 * MINUTE), 0, oneStop);
+
+		assertEquals(1, check(route, other).size());
+	}
+
+	@Test
+	void aServiceInTwoTablesOnTheSameDayRunsFromTheFirst() {
+		final List<Route.RoutePlatform> stops = Collections.singletonList(new Route.RoutePlatform(PLATFORM_1));
+		final TimetableConflicts.RouteTimes route = new TimetableConflicts.RouteTimes(ROUTE_A, stops);
+		route.addTable(0, RouteTimetable.ALL_WEEKDAYS, Collections.singletonList(10 * MINUTE), 0, new long[][]{{0, MINUTE}});
+		route.addTable(1, RouteTimetable.ALL_WEEKDAYS, Collections.singletonList(10 * MINUTE), 0, new long[][]{{0, MINUTE}});
+
+		assertTrue(check(route).isEmpty());
+	}
+
+	@Test
 	void theNumberOfConflictsIsLimited() {
 		final List<Integer> serviceList = new ArrayList<>();
 		for (int i = 0; i < 1000; i++) {

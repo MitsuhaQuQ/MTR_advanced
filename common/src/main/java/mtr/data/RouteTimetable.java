@@ -1,6 +1,7 @@
 package mtr.data;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.LongPredicate;
 import java.util.stream.Collectors;
@@ -8,17 +9,30 @@ import java.util.stream.Collectors;
 /**
  * The services of a route, each being the planned arrival at the first stop in UTC milliseconds of the day, like
  * {@link Depot#departures}. The times at later stops come from the generated path.
+ * <p>
+ * This is a route's first table, which also holds its other tables, as a route can run differently on different days. Each
+ * table has its own services and times at each stop.
  */
 public class RouteTimetable {
 
 	public boolean enabled;
 	public int marginPercent = DEFAULT_MARGIN_PERCENT;
 	public final List<Integer> services = new ArrayList<>();
+	public String name = "";
+	/**
+	 * The days this table runs on, with the lowest bit for Monday. See {@link TimetableConfig#getWeekday(long)}.
+	 */
+	public int weekdays = ALL_WEEKDAYS;
 	/**
 	 * Changes whenever the times of this timetable change, so plans made from it can be rebuilt.
 	 */
 	public int revision;
+	private final List<RouteTimetable> otherTables = new ArrayList<>();
+	private final List<Integer> allServices = new ArrayList<>();
 
+	public static final int MAX_TABLES = 16;
+	public static final int MAX_NAME_LENGTH = 32;
+	public static final int ALL_WEEKDAYS = 0b1111111;
 	public static final int MAX_SERVICES = 4096;
 	/**
 	 * The largest time of a stop in seconds from reaching the first stop.
@@ -40,7 +54,7 @@ public class RouteTimetable {
 	public static final long MAX_DEPLOY_DELAY_MILLIS = 10 * 60 * 1000;
 
 	public boolean isActive() {
-		return enabled && !services.isEmpty();
+		return enabled && getTables().stream().anyMatch(table -> !table.services.isEmpty());
 	}
 
 	/**
@@ -51,6 +65,83 @@ public class RouteTimetable {
 		services.clear();
 		services.addAll(newServices);
 		marginPercent = Math.max(0, Math.min(marginPercent, MAX_MARGIN_PERCENT));
+		weekdays &= ALL_WEEKDAYS;
+		name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
+
+		otherTables.forEach(RouteTimetable::sanitize);
+		allServices.clear();
+		allServices.addAll(getTables().stream().flatMap(table -> table.services.stream()).distinct().sorted().collect(Collectors.toList()));
+	}
+
+	/**
+	 * @return every table of the route, starting with this one
+	 */
+	public List<RouteTimetable> getTables() {
+		final List<RouteTimetable> tables = new ArrayList<>();
+		tables.add(this);
+		tables.addAll(otherTables);
+		return tables;
+	}
+
+	public int getTableCount() {
+		return otherTables.size() + 1;
+	}
+
+	/**
+	 * @return the table with this index, or this one if there is no such table
+	 */
+	public RouteTimetable getTable(int index) {
+		return index >= 1 && index <= otherTables.size() ? otherTables.get(index - 1) : this;
+	}
+
+	public void addTable(RouteTimetable table) {
+		if (getTableCount() < MAX_TABLES) {
+			otherTables.add(table);
+		}
+	}
+
+	/**
+	 * Other than the first table, which holds the rest. Use {@link Route#removeTable(int)} to remove the table's stop times too.
+	 */
+	public void removeTable(int index) {
+		if (index >= 1 && index <= otherTables.size()) {
+			otherTables.remove(index - 1);
+		}
+	}
+
+	public void clearOtherTables() {
+		otherTables.clear();
+	}
+
+	public boolean runsOn(int weekday) {
+		return (weekdays >> weekday & 1) != 0;
+	}
+
+	/**
+	 * @param serviceMillis a service as a full timestamp
+	 * @return the table this service belongs to on its day, which is the first one if several have it
+	 */
+	public int getTableIndex(long serviceMillis) {
+		return Math.max(0, findTableIndex(serviceMillis));
+	}
+
+	private int findTableIndex(long serviceMillis) {
+		if (otherTables.isEmpty() && weekdays == ALL_WEEKDAYS) {
+			return 0;
+		}
+		final int weekday = TimetableConfig.getWeekday(serviceMillis);
+		final int service = (int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final List<RouteTimetable> tables = getTables();
+		for (int i = 0; i < tables.size(); i++) {
+			if (tables.get(i).runsOn(weekday) && Collections.binarySearch(tables.get(i).services, service) >= 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private List<Integer> getAllServices() {
+		return otherTables.isEmpty() ? services : allServices;
 	}
 
 	/**
@@ -93,8 +184,9 @@ public class RouteTimetable {
 	 * @param stops         the stops of the route
 	 * @param times         the fastest arrival and departure at each stop, with -1 for stops not found, or null if there are none yet
 	 * @param marginPercent the extra time to plan for
+	 * @param table         the index of the table to take the times at each stop from
 	 */
-	public static List<StopPlan> getStopPlans(List<Route.RoutePlatform> stops, long[][] times, int marginPercent) {
+	public static List<StopPlan> getStopPlans(List<Route.RoutePlatform> stops, long[][] times, int marginPercent, int table) {
 		final List<StopPlan> plans = new ArrayList<>();
 		long lastTime = 0;
 		for (int i = 0; i < stops.size(); i++) {
@@ -104,7 +196,7 @@ public class RouteTimetable {
 			final long arrival = hasTime ? times[i][0] : lastTime;
 			final long departure = !hasTime ? lastTime : isPass ? arrival : times[i][1];
 			lastTime = departure;
-			plans.add(new StopPlan(arrival, departure, stop.getArrival(), stop.getDeparture(), stop.overtake));
+			plans.add(new StopPlan(arrival, departure, stop.getArrival(table), stop.getDeparture(table), stop.getOvertake(table)));
 		}
 		final RouteTimetable timetable = new RouteTimetable();
 		timetable.marginPercent = marginPercent;
@@ -133,13 +225,14 @@ public class RouteTimetable {
 	 */
 	public long getNextService(long fromMillis, long beforeMillis, LongPredicate isTaken) {
 		final long lastDay = Math.floorDiv(beforeMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final List<Integer> runningServices = getAllServices();
 		for (long day = Math.floorDiv(fromMillis, (long) Depot.MILLISECONDS_PER_DAY); day <= lastDay; day++) {
-			for (final int service : services) {
+			for (final int service : runningServices) {
 				final long serviceMillis = day * Depot.MILLISECONDS_PER_DAY + service;
 				if (serviceMillis >= beforeMillis) {
 					return 0;
 				}
-				if (serviceMillis >= fromMillis && !isTaken.test(serviceMillis)) {
+				if (serviceMillis >= fromMillis && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
 					return serviceMillis;
 				}
 			}
@@ -152,13 +245,14 @@ public class RouteTimetable {
 	 */
 	public long getLatestService(long afterMillis, long latestMillis, LongPredicate isTaken) {
 		final long firstDay = Math.floorDiv(afterMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final List<Integer> runningServices = getAllServices();
 		for (long day = Math.floorDiv(latestMillis, (long) Depot.MILLISECONDS_PER_DAY); day >= firstDay; day--) {
-			for (int i = services.size() - 1; i >= 0; i--) {
-				final long serviceMillis = day * Depot.MILLISECONDS_PER_DAY + services.get(i);
+			for (int i = runningServices.size() - 1; i >= 0; i--) {
+				final long serviceMillis = day * Depot.MILLISECONDS_PER_DAY + runningServices.get(i);
 				if (serviceMillis <= afterMillis) {
 					return 0;
 				}
-				if (serviceMillis <= latestMillis && !isTaken.test(serviceMillis)) {
+				if (serviceMillis <= latestMillis && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
 					return serviceMillis;
 				}
 			}

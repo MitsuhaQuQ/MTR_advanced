@@ -6,6 +6,7 @@ import mtr.data.LineWords;
 import mtr.data.RailwayData;
 import mtr.data.Route;
 import mtr.data.Station;
+import mtr.data.TimetableConfig;
 import mtr.mappings.BlockEntityMapper;
 import mtr.packet.IPacket;
 import mtr.packet.PacketGuard;
@@ -475,6 +476,7 @@ public class MTR implements IPacket {
 		Registry.registerPlayerJoinEvent(player -> {
 			PacketTrainDataGuiServer.versionCheckS2C(player);
 			PacketTrainDataGuiServer.lineWordsS2C(player);
+			PacketTrainDataGuiServer.timetableConfigS2C(player);
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData != null) {
 				railwayData.onPlayerJoin(player);
@@ -502,6 +504,7 @@ public class MTR implements IPacket {
 				final Path configPath = minecraftServer.getServerDirectory().toPath().resolve("config");
 				SecurityConfig.load(configPath.resolve("mtr_security.json"));
 				LineWords.load(configPath.resolve(LineWords.FILE_NAME));
+				TimetableConfig.load(configPath.resolve(TimetableConfig.FILE_NAME));
 				Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 			});
 			Registry.registerServerStoppingEvent(minecraftServer -> Webserver.stop());

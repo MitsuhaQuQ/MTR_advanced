@@ -47,6 +47,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	private static final int PACKET_CHUNK_SIZE = (int) Math.pow(2, 14); // 16384
 	private static final Set<UUID> PLAYERS_CHECKING_CONFLICTS = ConcurrentHashMap.newKeySet();
+	private static final Map<UUID, Long> WAITING_CONFLICT_CHECKS = new ConcurrentHashMap<>();
 
 	public static void versionCheckS2C(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -58,6 +59,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeByteArray(LineWords.getWordsJson().getBytes(StandardCharsets.UTF_8));
 		Registry.sendToPlayer(player, PACKET_LINE_WORDS, packet);
+	}
+
+	public static void timetableConfigS2C(ServerPlayer player) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeUtf(TimetableConfig.getTimeZoneId());
+		packet.writeInt(TimetableConfig.getDayStartHour());
+		Registry.sendToPlayer(player, PACKET_TIMETABLE_CONFIG, packet);
 	}
 
 	public static void openDashboardScreenS2C(ServerPlayer player, TransportMode transportMode, boolean useTimeAndWindSync) {
@@ -407,69 +415,90 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 */
 	public static void receiveTimetableConflictsC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final long routeId = packet.readLong();
-		PacketGuard.execute(minecraftServer, () -> {
-			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
-			final Route route = railwayData == null ? null : railwayData.dataCache.routeIdMap.get(routeId);
-			if (route == null || PLAYERS_CHECKING_CONFLICTS.contains(player.getUUID())) {
-				return;
+		PacketGuard.execute(minecraftServer, () -> checkTimetableConflicts(minecraftServer, player, routeId));
+	}
+
+	/**
+	 * A check asked for during another one runs after it, as the times may have changed since that one started.
+	 */
+	private static void checkTimetableConflicts(MinecraftServer minecraftServer, ServerPlayer player, long routeId) {
+		final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+		final Route route = railwayData == null ? null : railwayData.dataCache.routeIdMap.get(routeId);
+		if (route == null) {
+			return;
+		}
+		if (PLAYERS_CHECKING_CONFLICTS.contains(player.getUUID())) {
+			WAITING_CONFLICT_CHECKS.put(player.getUUID(), routeId);
+			return;
+		}
+
+		final Set<Long> platformIds = new HashSet<>();
+		route.platformIds.forEach(routePlatform -> platformIds.add(routePlatform.platformId));
+		final List<Route> routes = new ArrayList<>();
+		routes.add(route);
+		railwayData.routes.forEach(testRoute -> {
+			if (testRoute != route && testRoute.timetable.isActive() && testRoute.platformIds.stream().anyMatch(routePlatform -> platformIds.contains(routePlatform.platformId))) {
+				routes.add(testRoute);
 			}
-
-			final Set<Long> platformIds = new HashSet<>();
-			route.platformIds.forEach(routePlatform -> platformIds.add(routePlatform.platformId));
-			final List<Route> routes = new ArrayList<>();
-			routes.add(route);
-			railwayData.routes.forEach(testRoute -> {
-				if (testRoute != route && testRoute.timetable.isActive() && testRoute.platformIds.stream().anyMatch(routePlatform -> platformIds.contains(routePlatform.platformId))) {
-					routes.add(testRoute);
-				}
-			});
-
-			final Map<Long, Long> nextRouteIds = getNextRouteIds(railwayData);
-			final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
-			final Map<Route, long[][]> knownTimes = new HashMap<>();
-			final Map<Route, Supplier<long[][]>> timeFinders = new HashMap<>();
-			final RailGraph<Rail>[] graph = new RailGraph[1];
-			routes.forEach(testRoute -> {
-				final long[][] times = getDepotTimes(railwayData, testRoute);
-				if (times == null) {
-					if (graph[0] == null && canUseRailGraph(route)) {
-						graph[0] = DeterministicPathFinder.compile(rails);
-					}
-					final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, testRoute, rails, graph[0]);
-					if (timeFinder != null) {
-						timeFinders.put(testRoute, timeFinder);
-					}
-				} else {
-					knownTimes.put(testRoute, times);
-				}
-			});
-
-			PLAYERS_CHECKING_CONFLICTS.add(player.getUUID());
-			new Thread(() -> {
-				try {
-					final List<TimetableConflicts.RouteTimes> routeTimes = new ArrayList<>();
-					int uncheckedRoutes = 0;
-					for (final Route testRoute : routes) {
-						final Supplier<long[][]> timeFinder = timeFinders.get(testRoute);
-						final long[][] times = timeFinder == null ? knownTimes.get(testRoute) : timeFinder.get();
-						if (times == null || times.length != testRoute.platformIds.size()) {
-							uncheckedRoutes++;
-						} else {
-							final TimetableConflicts.RouteTimes newRouteTimes = new TimetableConflicts.RouteTimes(testRoute.id, testRoute.platformIds, testRoute.timetable.services, testRoute.timetable.marginPercent, times);
-							newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
-							routeTimes.add(newRouteTimes);
-						}
-					}
-					final List<TimetableConflicts.Conflict> conflicts = TimetableConflicts.check(routeId, routeTimes);
-					final int finalUncheckedRoutes = uncheckedRoutes;
-					minecraftServer.execute(() -> sendTimetableConflicts(player, routeId, conflicts, finalUncheckedRoutes));
-				} catch (Exception e) {
-					e.printStackTrace();
-				} finally {
-					PLAYERS_CHECKING_CONFLICTS.remove(player.getUUID());
-				}
-			}).start();
 		});
+
+		final Map<Long, Long> nextRouteIds = getNextRouteIds(railwayData);
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		final Map<Route, long[][]> knownTimes = new HashMap<>();
+		final Map<Route, Supplier<long[][]>> timeFinders = new HashMap<>();
+		final RailGraph<Rail>[] graph = new RailGraph[1];
+		routes.forEach(testRoute -> {
+			final long[][] times = getDepotTimes(railwayData, testRoute);
+			if (times == null) {
+				if (graph[0] == null && canUseRailGraph(route)) {
+					graph[0] = DeterministicPathFinder.compile(rails);
+				}
+				final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, testRoute, rails, graph[0]);
+				if (timeFinder != null) {
+					timeFinders.put(testRoute, timeFinder);
+				}
+			} else {
+				knownTimes.put(testRoute, times);
+			}
+		});
+
+		PLAYERS_CHECKING_CONFLICTS.add(player.getUUID());
+		new Thread(() -> {
+			try {
+				final List<TimetableConflicts.RouteTimes> routeTimes = new ArrayList<>();
+				int uncheckedRoutes = 0;
+				for (final Route testRoute : routes) {
+					final Supplier<long[][]> timeFinder = timeFinders.get(testRoute);
+					final long[][] times = timeFinder == null ? knownTimes.get(testRoute) : timeFinder.get();
+					if (times == null || times.length != testRoute.platformIds.size()) {
+						uncheckedRoutes++;
+					} else {
+						// Stops the path doesn't reach are left out of the check, so the route only counts as partly checked
+						if (Arrays.stream(times).anyMatch(stopTime -> stopTime[0] < 0)) {
+							uncheckedRoutes++;
+						}
+						final TimetableConflicts.RouteTimes newRouteTimes = new TimetableConflicts.RouteTimes(testRoute.id, testRoute.platformIds);
+						for (int i = 0; i < testRoute.timetable.getTableCount(); i++) {
+							final RouteTimetable table = testRoute.timetable.getTable(i);
+							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times);
+						}
+						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
+						routeTimes.add(newRouteTimes);
+					}
+				}
+				final List<TimetableConflicts.Conflict> conflicts = TimetableConflicts.check(routeId, routeTimes);
+				final int finalUncheckedRoutes = uncheckedRoutes;
+				minecraftServer.execute(() -> sendTimetableConflicts(player, routeId, conflicts, finalUncheckedRoutes));
+			} catch (Exception e) {
+				e.printStackTrace();
+			} finally {
+				PLAYERS_CHECKING_CONFLICTS.remove(player.getUUID());
+				final Long waitingRouteId = WAITING_CONFLICT_CHECKS.remove(player.getUUID());
+				if (waitingRouteId != null) {
+					minecraftServer.execute(() -> checkTimetableConflicts(minecraftServer, player, waitingRouteId));
+				}
+			}
+		}).start();
 	}
 
 	/**
@@ -570,6 +599,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		response.writeInt(uncheckedRoutes);
 		response.writeInt(conflicts.size());
 		conflicts.forEach(conflict -> {
+			response.writeInt(conflict.table);
 			response.writeInt(conflict.stopIndex);
 			response.writeInt(conflict.service);
 			response.writeLong(conflict.otherRouteId);

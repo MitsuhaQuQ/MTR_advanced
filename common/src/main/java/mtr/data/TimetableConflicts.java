@@ -1,18 +1,22 @@
 package mtr.data;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Finds services that need the same platform at the same time, so a timetable that can't work shows up before trains run it.
- * Times repeat every day, so the check runs around midnight too. Depots with departures instead of a timetable are not part of it.
+ * Each day of the week is checked with the tables running that day, and times run around midnight into the same day's tables.
+ * Depots with departures instead of a timetable are not part of it.
  */
 public final class TimetableConflicts {
 
@@ -21,6 +25,8 @@ public final class TimetableConflicts {
 	 */
 	public static final long MIN_PLATFORM_GAP_MILLIS = 30 * 1000;
 	public static final int MAX_CONFLICTS = 256;
+
+	private static final int DAYS_PER_WEEK = 7;
 
 	private TimetableConflicts() {
 	}
@@ -40,21 +46,36 @@ public final class TimetableConflicts {
 			}
 		});
 
+		final Set<Conflict> conflicts = new LinkedHashSet<>();
+		final Set<String> checkedDays = new HashSet<>();
+		for (int weekday = 0; weekday < DAYS_PER_WEEK; weekday++) {
+			final int day = weekday;
+			// Days running the same tables have the same conflicts
+			if (checkedDays.add(routes.stream().map(route -> route.getTableKey(day)).collect(Collectors.joining(",")))) {
+				checkDay(routeId, routes, routeMap, platformIds, day, conflicts);
+			}
+		}
+
+		final List<Conflict> sortedConflicts = new ArrayList<>(conflicts);
+		sortedConflicts.sort(Comparator.<Conflict>comparingInt(conflict -> conflict.table).thenComparingInt(conflict -> conflict.service).thenComparingInt(conflict -> conflict.stopIndex));
+		return sortedConflicts;
+	}
+
+	private static void checkDay(long routeId, List<RouteTimes> routes, Map<Long, RouteTimes> routeMap, Set<Long> platformIds, int weekday, Set<Conflict> conflicts) {
 		final Map<Long, List<Occupation>> occupations = new HashMap<>();
 		final Set<ServiceStop> linkedStops = new HashSet<>();
-		routes.forEach(route -> linkTurnBacks(route, routeMap.get(route.nextRouteId), platformIds, occupations, linkedStops));
-		routes.forEach(route -> route.forEachStop((service, stopIndex, arrival, departure) -> {
-			final ServiceStop stop = new ServiceStop(route.routeId, service, stopIndex);
-			final long platformId = route.platformIds.get(stopIndex);
-			if (platformIds.contains(platformId) && !linkedStops.contains(stop)) {
-				occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, departure, Collections.singletonList(stop)));
+		routes.forEach(route -> linkTurnBacks(route, routeMap.get(route.nextRouteId), weekday, platformIds, occupations, linkedStops));
+		routes.forEach(route -> route.getServices(weekday).forEach(serviceTimes -> {
+			for (int i = 0; i < serviceTimes.arrivals.length; i++) {
+				final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, i);
+				final long platformId = route.platformIds.get(i);
+				if (serviceTimes.arrivals[i] >= 0 && platformIds.contains(platformId) && !linkedStops.contains(stop)) {
+					final long arrival = serviceTimes.getArrival(i);
+					occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, arrival + serviceTimes.departures[i] - serviceTimes.arrivals[i], Collections.singletonList(stop)));
+				}
 			}
 		}));
-
-		final List<Conflict> conflicts = new ArrayList<>();
 		occupations.forEach((platformId, platformOccupations) -> findConflicts(routeId, platformId, platformOccupations, conflicts));
-		conflicts.sort(Comparator.<Conflict>comparingInt(conflict -> conflict.service).thenComparingInt(conflict -> conflict.stopIndex));
-		return conflicts.size() > MAX_CONFLICTS ? new ArrayList<>(conflicts.subList(0, MAX_CONFLICTS)) : conflicts;
 	}
 
 	/**
@@ -62,47 +83,48 @@ public final class TimetableConflicts {
 	 * train fits depends on when these two line up, not just on how often they run. Each train takes the first service
 	 * nobody has taken, like {@link Depot#findNextService}.
 	 */
-	private static void linkTurnBacks(RouteTimes route, RouteTimes nextRoute, Set<Long> platformIds, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops) {
+	private static void linkTurnBacks(RouteTimes route, RouteTimes nextRoute, int weekday, Set<Long> platformIds, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops) {
 		if (nextRoute == null || route.platformIds.isEmpty() || nextRoute.platformIds.isEmpty()) {
 			return;
 		}
 		final int lastIndex = route.platformIds.size() - 1;
 		final long platformId = route.platformIds.get(lastIndex);
-		if (platformId != nextRoute.platformIds.get(0) || !platformIds.contains(platformId) || route.arrivals[lastIndex] < 0 || nextRoute.departures[0] < 0) {
+		if (platformId != nextRoute.platformIds.get(0) || !platformIds.contains(platformId)) {
 			return;
 		}
 
-		final List<Integer> nextServices = new ArrayList<>(nextRoute.services);
-		Collections.sort(nextServices);
-		final List<long[]> arrivals = new ArrayList<>();
-		route.services.forEach(service -> arrivals.add(new long[]{Math.floorMod(service + route.arrivals[lastIndex], (long) Depot.MILLISECONDS_PER_DAY), service}));
-		arrivals.sort(Comparator.comparingLong(arrival -> arrival[0]));
+		final List<ServiceTimes> services = route.getServices(weekday).stream().filter(serviceTimes -> serviceTimes.arrivals[lastIndex] >= 0).collect(Collectors.toList());
+		services.sort(Comparator.comparingLong(serviceTimes -> serviceTimes.getArrival(lastIndex)));
+		final List<ServiceTimes> nextServices = nextRoute.getServices(weekday).stream().filter(serviceTimes -> serviceTimes.departures[0] >= 0).collect(Collectors.toList());
 
-		for (final long[] arrival : arrivals) {
-			final ServiceStop stop = new ServiceStop(route.routeId, (int) arrival[1], lastIndex);
+		for (final ServiceTimes serviceTimes : services) {
+			final long arrival = serviceTimes.getArrival(lastIndex);
+			final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, lastIndex);
 			long bestWait = Long.MAX_VALUE;
 			ServiceStop bestStop = null;
-			for (final int nextService : nextServices) {
-				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextService, 0);
-				final long wait = Math.floorMod(nextService - arrival[0], (long) Depot.MILLISECONDS_PER_DAY);
+			ServiceTimes bestService = null;
+			for (final ServiceTimes nextServiceTimes : nextServices) {
+				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
+				final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) Depot.MILLISECONDS_PER_DAY);
 				if (wait < bestWait && wait <= RouteTimetable.MAX_LAYOVER_MILLIS && !linkedStops.contains(nextStop) && !nextStop.equals(stop)) {
 					bestWait = wait;
 					bestStop = nextStop;
+					bestService = nextServiceTimes;
 				}
 			}
 			if (bestStop != null) {
 				linkedStops.add(stop);
 				linkedStops.add(bestStop);
-				final long leaving = arrival[0] + bestWait + nextRoute.departures[0] - nextRoute.arrivals[0];
+				final long leaving = arrival + bestWait + bestService.departures[0] - bestService.arrivals[0];
 				final List<ServiceStop> stops = new ArrayList<>();
 				stops.add(stop);
 				stops.add(bestStop);
-				occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival[0], leaving, stops));
+				occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, leaving, stops));
 			}
 		}
 	}
 
-	private static void findConflicts(long routeId, long platformId, List<Occupation> occupations, List<Conflict> conflicts) {
+	private static void findConflicts(long routeId, long platformId, List<Occupation> occupations, Collection<Conflict> conflicts) {
 		occupations.sort(Comparator.comparingLong(occupation -> occupation.start));
 		final int size = occupations.size();
 		for (int i = 0; i < size && conflicts.size() < MAX_CONFLICTS; i++) {
@@ -118,21 +140,16 @@ public final class TimetableConflicts {
 		}
 	}
 
-	private static void addConflict(long routeId, long platformId, Occupation occupation1, Occupation occupation2, List<Conflict> conflicts) {
+	private static void addConflict(long routeId, long platformId, Occupation occupation1, Occupation occupation2, Collection<Conflict> conflicts) {
 		if (Collections.disjoint(occupation1.stops, occupation2.stops)) {
 			final ServiceStop stop1 = occupation1.getStop(routeId);
 			final ServiceStop stop2 = occupation2.getStop(routeId);
 			if (stop1 != null) {
-				conflicts.add(new Conflict(stop1.stopIndex, stop1.service, occupation2.stops.get(0).routeId, occupation2.stops.get(0).service, platformId));
+				conflicts.add(new Conflict(stop1.table, stop1.stopIndex, stop1.service, occupation2.stops.get(0).routeId, occupation2.stops.get(0).service, platformId));
 			} else if (stop2 != null) {
-				conflicts.add(new Conflict(stop2.stopIndex, stop2.service, occupation1.stops.get(0).routeId, occupation1.stops.get(0).service, platformId));
+				conflicts.add(new Conflict(stop2.table, stop2.stopIndex, stop2.service, occupation1.stops.get(0).routeId, occupation1.stops.get(0).service, platformId));
 			}
 		}
-	}
-
-	@FunctionalInterface
-	private interface StopConsumer {
-		void accept(int service, int stopIndex, long arrival, long departure);
 	}
 
 	/**
@@ -145,42 +162,64 @@ public final class TimetableConflicts {
 		 * The route the same train runs next.
 		 */
 		public long nextRouteId;
+		private final List<Route.RoutePlatform> stops;
 		private final List<Long> platformIds = new ArrayList<>();
-		private final List<Integer> services;
-		private final long[] arrivals;
-		private final long[] departures;
+		private final List<TableTimes> tables = new ArrayList<>();
+
+		public RouteTimes(long routeId, List<Route.RoutePlatform> stops) {
+			this.routeId = routeId;
+			this.stops = new ArrayList<>(stops);
+			stops.forEach(stop -> platformIds.add(stop.platformId));
+		}
+
+		/**
+		 * A route with one table running every day.
+		 */
+		public RouteTimes(long routeId, List<Route.RoutePlatform> stops, List<Integer> services, int marginPercent, long[][] times) {
+			this(routeId, stops);
+			addTable(0, RouteTimetable.ALL_WEEKDAYS, services, marginPercent, times);
+		}
 
 		/**
 		 * @param times the fastest arrival and departure at each stop, with -1 for stops not found
 		 */
-		public RouteTimes(long routeId, List<Route.RoutePlatform> stops, List<Integer> services, int marginPercent, long[][] times) {
-			this.routeId = routeId;
-			this.services = new ArrayList<>(services);
-			stops.forEach(stop -> platformIds.add(stop.platformId));
-			final List<RouteTimetable.StopPlan> plans = RouteTimetable.getStopPlans(stops, times, marginPercent);
-			arrivals = new long[plans.size()];
-			departures = new long[plans.size()];
+		public void addTable(int table, int weekdays, List<Integer> services, int marginPercent, long[][] times) {
+			final List<RouteTimetable.StopPlan> plans = RouteTimetable.getStopPlans(stops, times, marginPercent, table);
+			final long[] arrivals = new long[plans.size()];
+			final long[] departures = new long[plans.size()];
 			for (int i = 0; i < plans.size(); i++) {
 				final boolean hasTime = times[i][0] >= 0;
 				arrivals[i] = hasTime ? plans.get(i).arrivalMillis : -1;
 				departures[i] = hasTime ? plans.get(i).departureMillis : -1;
 			}
+			tables.add(new TableTimes(table, weekdays, services, arrivals, departures));
 		}
 
-		private void forEachStop(StopConsumer consumer) {
-			services.forEach(service -> {
-				for (int i = 0; i < arrivals.length; i++) {
-					if (arrivals[i] >= 0) {
-						final long arrival = Math.floorMod(service + arrivals[i], (long) Depot.MILLISECONDS_PER_DAY);
-						consumer.accept(service, i, arrival, arrival + departures[i] - arrivals[i]);
-					}
+		private String getTableKey(int weekday) {
+			return tables.stream().filter(table -> table.runsOn(weekday)).map(table -> String.valueOf(table.table)).collect(Collectors.joining("/"));
+		}
+
+		/**
+		 * @return the services of a day, each from the first table that has it, like the service a train actually runs
+		 */
+		private List<ServiceTimes> getServices(int weekday) {
+			final List<ServiceTimes> services = new ArrayList<>();
+			final Set<Integer> foundServices = new HashSet<>();
+			tables.stream().filter(table -> table.runsOn(weekday)).forEach(table -> table.services.forEach(service -> {
+				if (foundServices.add(service)) {
+					services.add(new ServiceTimes(table.table, service, table.arrivals, table.departures));
 				}
-			});
+			}));
+			return services;
 		}
 	}
 
 	public static class Conflict {
 
+		/**
+		 * The table of the checked route with this service.
+		 */
+		public final int table;
 		/**
 		 * The stop of the checked route where this happens.
 		 */
@@ -190,12 +229,27 @@ public final class TimetableConflicts {
 		public final int otherService;
 		public final long platformId;
 
-		public Conflict(int stopIndex, int service, long otherRouteId, int otherService, long platformId) {
+		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId) {
+			this.table = table;
 			this.stopIndex = stopIndex;
 			this.service = service;
 			this.otherRouteId = otherRouteId;
 			this.otherService = otherService;
 			this.platformId = platformId;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			if (!(object instanceof Conflict)) {
+				return false;
+			}
+			final Conflict conflict = (Conflict) object;
+			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId);
 		}
 	}
 
@@ -213,6 +267,49 @@ public final class TimetableConflicts {
 		public Result(List<Conflict> conflicts, int uncheckedRoutes) {
 			this.conflicts = conflicts;
 			this.uncheckedRoutes = uncheckedRoutes;
+		}
+	}
+
+	private static class TableTimes {
+
+		private final int table;
+		private final int weekdays;
+		private final List<Integer> services;
+		private final long[] arrivals;
+		private final long[] departures;
+
+		private TableTimes(int table, int weekdays, List<Integer> services, long[] arrivals, long[] departures) {
+			this.table = table;
+			this.weekdays = weekdays;
+			this.services = new ArrayList<>(services);
+			this.arrivals = arrivals;
+			this.departures = departures;
+		}
+
+		private boolean runsOn(int weekday) {
+			return (weekdays >> weekday & 1) != 0;
+		}
+	}
+
+	private static class ServiceTimes {
+
+		private final int table;
+		private final int service;
+		private final long[] arrivals;
+		private final long[] departures;
+
+		private ServiceTimes(int table, int service, long[] arrivals, long[] departures) {
+			this.table = table;
+			this.service = service;
+			this.arrivals = arrivals;
+			this.departures = departures;
+		}
+
+		/**
+		 * @return the time of day this service reaches a stop
+		 */
+		private long getArrival(int stopIndex) {
+			return Math.floorMod(service + arrivals[stopIndex], (long) Depot.MILLISECONDS_PER_DAY);
 		}
 	}
 
@@ -236,11 +333,13 @@ public final class TimetableConflicts {
 	private static class ServiceStop {
 
 		private final long routeId;
+		private final int table;
 		private final int service;
 		private final int stopIndex;
 
-		private ServiceStop(long routeId, int service, int stopIndex) {
+		private ServiceStop(long routeId, int table, int service, int stopIndex) {
 			this.routeId = routeId;
+			this.table = table;
 			this.service = service;
 			this.stopIndex = stopIndex;
 		}
@@ -251,12 +350,12 @@ public final class TimetableConflicts {
 				return false;
 			}
 			final ServiceStop stop = (ServiceStop) object;
-			return routeId == stop.routeId && service == stop.service && stopIndex == stop.stopIndex;
+			return routeId == stop.routeId && table == stop.table && service == stop.service && stopIndex == stop.stopIndex;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(routeId, service, stopIndex);
+			return Objects.hash(routeId, table, service, stopIndex);
 		}
 	}
 }

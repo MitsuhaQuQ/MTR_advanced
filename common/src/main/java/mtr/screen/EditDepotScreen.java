@@ -351,7 +351,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		final List<NameColorDataBase> departureData = new ArrayList<>();
 		final long offset = System.currentTimeMillis() / Depot.MILLISECONDS_PER_DAY * Depot.MILLISECONDS_PER_DAY;
 		departures.stream().map(departure -> {
-			final Calendar calendar = Calendar.getInstance();
+			final Calendar calendar = Calendar.getInstance(TimetableConfig.getTimeZone());
 			calendar.setTimeInMillis(departure + offset);
 			return calendar;
 		}).sorted(Comparator.comparingInt(calendar -> {
@@ -369,10 +369,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	}
 
 	/**
-	 * @return a time of day saved in UTC as text in the local time zone
+	 * @return a time of day saved in UTC as text in the configured time zone
 	 */
 	public static String formatTime(long millis) {
-		final Calendar calendar = Calendar.getInstance();
+		final Calendar calendar = Calendar.getInstance(TimetableConfig.getTimeZone());
 		calendar.setTimeInMillis(System.currentTimeMillis() / Depot.MILLISECONDS_PER_DAY * Depot.MILLISECONDS_PER_DAY + Math.floorMod(millis, (long) Depot.MILLISECONDS_PER_DAY));
 		return String.format("%02d:%02d:%02d", calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), calendar.get(Calendar.SECOND));
 	}
@@ -386,7 +386,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		try {
 			final String[] departureSplit = text.replace(" ", "").split("\\+");
 			final String[] timeSplit1 = departureSplit[0].split(":");
-			final Calendar calendar = Calendar.getInstance();
+			final Calendar calendar = Calendar.getInstance(TimetableConfig.getTimeZone());
 			calendar.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timeSplit1[0]) % 24);
 			calendar.set(Calendar.MINUTE, Integer.parseInt(timeSplit1[1]) % 60);
 			calendar.set(Calendar.SECOND, Integer.parseInt(timeSplit1[2]) % 60);

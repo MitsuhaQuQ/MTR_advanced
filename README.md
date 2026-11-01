@@ -39,6 +39,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - Vehicles can be limited to certain service types, for example local and express in one group and rapid and limited express in another. The timetable picks services by group.
 - A stop can be set to wait for a following train to overtake, with a limit on the wait. PIDS shows how many minutes a train is late.
 - The running sheet checks for services that need the same platform at the same time, including trains turning back on the platform they arrived at.
+- A route can have up to 16 tables, each with its own days of the week, services and stop times. Times are saved in UTC. The time zone and the hour a new operating day starts are in `config/mtr_timetable.json`, and in multiplayer the server's file is used. Last trains after midnight count as the day before.
 
 **Line groups**
 
@@ -93,7 +94,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
 | 5 | Speed curves: TPS compensation is done; setting speed from limits, acceleration and timetable, and braking early, are not | In progress |
 | 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
-| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups and platform conflict checks are done; timetables by weekday, multiple timetables, choosing the turn-back at terminals, through services and conflict checks for turn-back tracks are not | In progress |
+| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform conflict checks and multiple timetables by weekday are done; choosing the turn-back at terminals, through services, loops entered part way round and conflict checks for turn-back tracks are not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
 | 9 | Timetable boundaries, splitting through services, deadheading, train priority | Not started |
 | 10 | Final verification | Not started |
@@ -132,7 +133,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 12. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 13. Jars with ANTE are about 136 MB.
 
 ## License and credits
 

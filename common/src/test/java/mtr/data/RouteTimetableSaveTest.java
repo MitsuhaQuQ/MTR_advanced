@@ -27,6 +27,123 @@ class RouteTimetableSaveTest {
 	}
 
 	@Test
+	void everyTableSurvivesSaving() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.timetable.enabled = true;
+		route.timetable.name = "weekdays";
+		route.timetable.weekdays = 0b0011111;
+		route.timetable.services.add(1000);
+		route.platformIds.get(1).setArrival(100);
+
+		assertEquals(1, route.addTable(0));
+		final RouteTimetable weekend = route.timetable.getTable(1);
+		weekend.name = "weekends";
+		weekend.weekdays = 0b1100000;
+		weekend.marginPercent = 20;
+		weekend.services.addAll(Arrays.asList(2000, 3000));
+		route.platformIds.get(1).setArrival(1, 200);
+		route.platformIds.get(1).setDeparture(1, 260);
+		route.platformIds.get(1).setOvertake(1, true);
+
+		final Route newRoute = saveAndLoad(route);
+		assertEquals(2, newRoute.timetable.getTableCount());
+		assertEquals("weekdays", newRoute.timetable.name);
+		assertEquals(0b0011111, newRoute.timetable.weekdays);
+		assertEquals(100, newRoute.platformIds.get(1).getArrival());
+		assertEquals(-1, newRoute.platformIds.get(1).getDeparture());
+		assertFalse(newRoute.platformIds.get(1).overtake);
+
+		final RouteTimetable newWeekend = newRoute.timetable.getTable(1);
+		assertEquals("weekends", newWeekend.name);
+		assertEquals(0b1100000, newWeekend.weekdays);
+		assertEquals(20, newWeekend.marginPercent);
+		assertEquals(weekend.services, newWeekend.services);
+		assertEquals(200, newRoute.platformIds.get(1).getArrival(1));
+		assertEquals(260, newRoute.platformIds.get(1).getDeparture(1));
+		assertTrue(newRoute.platformIds.get(1).getOvertake(1));
+	}
+
+	@Test
+	void aNewTableStartsFromTheTimesOfAnotherOne() {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.get(0).setArrival(100);
+		route.timetable.marginPercent = 15;
+		route.timetable.services.add(1000);
+
+		final int table = route.addTable(0);
+		assertEquals(100, route.platformIds.get(0).getArrival(table));
+		assertEquals(15, route.timetable.getTable(table).marginPercent);
+		assertTrue(route.timetable.getTable(table).services.isEmpty());
+
+		route.platformIds.get(0).setArrival(table, 200);
+		assertEquals(100, route.platformIds.get(0).getArrival());
+	}
+
+	@Test
+	void removingATableRemovesItsTimes() {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.addTable(0);
+		route.addTable(0);
+		route.platformIds.get(0).setArrival(1, 100);
+		route.platformIds.get(0).setArrival(2, 200);
+
+		route.removeTable(1);
+		assertEquals(2, route.timetable.getTableCount());
+		assertEquals(200, route.platformIds.get(0).getArrival(1));
+
+		route.removeTable(0);
+		assertEquals(2, route.timetable.getTableCount());
+	}
+
+	@Test
+	void duplicatingARouteCopiesEveryTable() {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.addTable(0);
+		route.timetable.getTable(1).services.add(2000);
+		route.platformIds.get(0).setArrival(1, 100);
+
+		final Route copy = route.duplicate();
+		assertEquals(2, copy.timetable.getTableCount());
+		assertEquals(2000, (int) copy.timetable.getTable(1).services.get(0));
+		assertEquals(100, copy.platformIds.get(0).getArrival(1));
+
+		copy.platformIds.get(0).setArrival(1, 300);
+		assertEquals(100, route.platformIds.get(0).getArrival(1));
+	}
+
+	@Test
+	void timesGoWithTheirPlatformWhenStopsChange() {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.platformIds.add(new Route.RoutePlatform(3));
+		route.addTable(0);
+		route.platformIds.get(1).setArrival(100);
+		route.platformIds.get(1).setDeparture(1, 200);
+		route.platformIds.get(1).setOvertake(1, true);
+		route.platformIds.remove(0);
+		route.platformIds.add(new Route.RoutePlatform(4));
+
+		route.setPlatformIds(packet -> {
+			packet.readLong();
+			packet.readUtf();
+			route.update(packet.readUtf(), packet);
+		});
+
+		assertEquals(3, route.platformIds.size());
+		assertEquals(2, route.platformIds.get(0).platformId);
+		assertEquals(100, route.platformIds.get(0).getArrival());
+		assertEquals(200, route.platformIds.get(0).getDeparture(1));
+		assertTrue(route.platformIds.get(0).getOvertake(1));
+		assertEquals(-1, route.platformIds.get(2).getArrival());
+	}
+
+	@Test
 	void timetableSurvivesSaving() throws IOException {
 		final Route route = new Route(1, TransportMode.TRAIN);
 		route.timetable.enabled = true;

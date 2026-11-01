@@ -68,6 +68,9 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_TIMETABLE_ENABLED = "timetable_enabled";
 	private static final String KEY_TIMETABLE_MARGIN = "timetable_margin";
 	private static final String KEY_TIMETABLE_SERVICES = "timetable_services";
+	private static final String KEY_TIMETABLE_NAME = "timetable_name";
+	private static final String KEY_TIMETABLE_WEEKDAYS = "timetable_weekdays";
+	private static final String KEY_TIMETABLE_TABLES = "timetable_tables";
 	private static final String KEY_PLAN_ARRIVALS = "plan_arrivals";
 	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
 	private static final String KEY_OVERTAKES = "overtakes";
@@ -142,7 +145,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> timetable.services.add(service.asIntegerValue().asInt()));
-		timetable.sanitize();
+		timetable.name = messagePackHelper.getString(KEY_TIMETABLE_NAME);
+		timetable.weekdays = messagePackHelper.getInt(KEY_TIMETABLE_WEEKDAYS, RouteTimetable.ALL_WEEKDAYS);
 
 		final int[] planIndex = {0, 0, 0};
 		messagePackHelper.iterateArrayValue(KEY_PLAN_ARRIVALS, value -> {
@@ -163,6 +167,9 @@ public final class Route extends NameColorDataBase implements IGui {
 			}
 			planIndex[2]++;
 		});
+
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_TABLES, value -> readTable(new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value))));
+		timetable.sanitize();
 	}
 
 	@Deprecated
@@ -274,6 +281,13 @@ public final class Route extends NameColorDataBase implements IGui {
 			messagePacker.packBoolean(routePlatform.overtake);
 		}
 
+		messagePacker.packString(KEY_TIMETABLE_NAME).packString(timetable.name);
+		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(timetable.weekdays);
+		messagePacker.packString(KEY_TIMETABLE_TABLES).packArrayHeader(timetable.getTableCount() - 1);
+		for (int i = 1; i < timetable.getTableCount(); i++) {
+			writeTable(messagePacker, i);
+		}
+
 		if (!pathData.isEmpty()) {
 			messagePacker.packString(KEY_CUSTOM_PATH).packArrayHeader(pathData.size());
 			for (final PathData data : pathData) {
@@ -285,7 +299,92 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 20 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 23 + (pathData.isEmpty() ? 0 : 1);
+	}
+
+	private void readTable(MessagePackHelper messagePackHelper) {
+		final RouteTimetable table = new RouteTimetable();
+		table.name = messagePackHelper.getString(KEY_TIMETABLE_NAME);
+		table.weekdays = messagePackHelper.getInt(KEY_TIMETABLE_WEEKDAYS, RouteTimetable.ALL_WEEKDAYS);
+		table.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> table.services.add(service.asIntegerValue().asInt()));
+		timetable.addTable(table);
+
+		final int tableIndex = timetable.getTableCount() - 1;
+		final int[] planIndex = {0, 0, 0};
+		messagePackHelper.iterateArrayValue(KEY_PLAN_ARRIVALS, value -> {
+			if (planIndex[0] < platformIds.size()) {
+				platformIds.get(planIndex[0]).setArrival(tableIndex, value.asIntegerValue().asInt());
+			}
+			planIndex[0]++;
+		});
+		messagePackHelper.iterateArrayValue(KEY_PLAN_DEPARTURES, value -> {
+			if (planIndex[1] < platformIds.size()) {
+				platformIds.get(planIndex[1]).setDeparture(tableIndex, value.asIntegerValue().asInt());
+			}
+			planIndex[1]++;
+		});
+		messagePackHelper.iterateArrayValue(KEY_OVERTAKES, value -> {
+			if (planIndex[2] < platformIds.size()) {
+				platformIds.get(planIndex[2]).setOvertake(tableIndex, value.asBooleanValue().getBoolean());
+			}
+			planIndex[2]++;
+		});
+	}
+
+	private void writeTable(MessagePacker messagePacker, int tableIndex) throws IOException {
+		final RouteTimetable table = timetable.getTable(tableIndex);
+		messagePacker.packMapHeader(7);
+		messagePacker.packString(KEY_TIMETABLE_NAME).packString(table.name);
+		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(table.weekdays);
+		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(table.marginPercent);
+		messagePacker.packString(KEY_TIMETABLE_SERVICES).packArrayHeader(table.services.size());
+		for (final int service : table.services) {
+			messagePacker.packInt(service);
+		}
+		messagePacker.packString(KEY_PLAN_ARRIVALS).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packInt(routePlatform.getArrival(tableIndex));
+		}
+		messagePacker.packString(KEY_PLAN_DEPARTURES).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packInt(routePlatform.getDeparture(tableIndex));
+		}
+		messagePacker.packString(KEY_OVERTAKES).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packBoolean(routePlatform.getOvertake(tableIndex));
+		}
+	}
+
+	/**
+	 * Adds a table with no services, starting from the stop times of another one.
+	 *
+	 * @return the index of the new table, or -1 if the route has as many as it can
+	 */
+	public int addTable(int copiedTable) {
+		if (timetable.getTableCount() >= RouteTimetable.MAX_TABLES) {
+			return -1;
+		}
+		final RouteTimetable table = new RouteTimetable();
+		table.marginPercent = timetable.getTable(copiedTable).marginPercent;
+		timetable.addTable(table);
+		final int tableIndex = timetable.getTableCount() - 1;
+		platformIds.forEach(routePlatform -> {
+			routePlatform.setArrival(tableIndex, routePlatform.getArrival(copiedTable));
+			routePlatform.setDeparture(tableIndex, routePlatform.getDeparture(copiedTable));
+			routePlatform.setOvertake(tableIndex, routePlatform.getOvertake(copiedTable));
+		});
+		return tableIndex;
+	}
+
+	/**
+	 * Removes a table other than the first one, along with its times at each stop.
+	 */
+	public void removeTable(int tableIndex) {
+		if (tableIndex >= 1 && tableIndex < timetable.getTableCount()) {
+			timetable.removeTable(tableIndex);
+			platformIds.forEach(routePlatform -> routePlatform.removeTable(tableIndex));
+		}
 	}
 
 	@Override
@@ -317,12 +416,14 @@ public final class Route extends NameColorDataBase implements IGui {
 	public void update(String key, FriendlyByteBuf packet) {
 		switch (key) {
 			case KEY_PLATFORM_IDS:
+				final List<RoutePlatform> oldPlatforms = new ArrayList<>(platformIds);
 				platformIds.clear();
 				final int platformCount = packet.readInt();
 				for (int i = 0; i < platformCount; i++) {
 					final RoutePlatform routePlatform = new RoutePlatform(packet.readLong());
 					routePlatform.customDestination = packet.readUtf(PACKET_STRING_READ_LENGTH);
 					routePlatform.readWaypoints(packet);
+					routePlatform.takeTimes(oldPlatforms);
 					if (i < MAX_PLATFORMS) {
 						platformIds.add(routePlatform);
 					}
@@ -430,14 +531,25 @@ public final class Route extends NameColorDataBase implements IGui {
 			newRoutePlatform.waypoints.addAll(routePlatform.waypoints);
 			newRoutePlatform.pass = routePlatform.pass;
 			newRoutePlatform.dwellOverride = routePlatform.dwellOverride;
-			newRoutePlatform.overtake = routePlatform.overtake;
-			newRoutePlatform.setArrival(routePlatform.getArrival());
-			newRoutePlatform.setDeparture(routePlatform.getDeparture());
+			for (int i = 0; i < timetable.getTableCount(); i++) {
+				newRoutePlatform.setArrival(i, routePlatform.getArrival(i));
+				newRoutePlatform.setDeparture(i, routePlatform.getDeparture(i));
+				newRoutePlatform.setOvertake(i, routePlatform.getOvertake(i));
+			}
 			route.platformIds.add(newRoutePlatform);
 		});
 		route.timetable.enabled = timetable.enabled;
-		route.timetable.marginPercent = timetable.marginPercent;
-		route.timetable.services.addAll(timetable.services);
+		timetable.getTables().forEach(table -> {
+			final RouteTimetable newTable = table == timetable ? route.timetable : new RouteTimetable();
+			newTable.name = table.name;
+			newTable.weekdays = table.weekdays;
+			newTable.marginPercent = table.marginPercent;
+			newTable.services.addAll(table.services);
+			if (table != timetable) {
+				route.timetable.addTable(newTable);
+			}
+		});
+		route.timetable.sanitize();
 		return route;
 	}
 
@@ -619,46 +731,76 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	private void readTimetable(FriendlyByteBuf packet) {
 		timetable.enabled = packet.readBoolean();
-		timetable.marginPercent = packet.readInt();
-		timetable.services.clear();
-		final int serviceCount = packet.readInt();
-		for (int i = 0; i < serviceCount; i++) {
-			final int service = packet.readInt();
-			if (i < RouteTimetable.MAX_SERVICES) {
-				timetable.services.add(service);
+		timetable.clearOtherTables();
+		platformIds.forEach(RoutePlatform::clearOtherTables);
+
+		final int tableCount = packet.readInt();
+		for (int i = 0; i < tableCount; i++) {
+			final RouteTimetable table = i == 0 ? timetable : new RouteTimetable();
+			readTableHeader(packet, table);
+			if (i > 0) {
+				timetable.addTable(table);
+			}
+
+			final int stopCount = packet.readInt();
+			for (int j = 0; j < stopCount; j++) {
+				final int arrival = packet.readInt();
+				final int departure = packet.readInt();
+				final boolean overtake = packet.readBoolean();
+				if (j < platformIds.size() && i < RouteTimetable.MAX_TABLES) {
+					platformIds.get(j).setArrival(i, arrival);
+					platformIds.get(j).setDeparture(i, departure);
+					platformIds.get(j).setOvertake(i, overtake);
+				}
 			}
 		}
 		timetable.sanitize();
 
 		final int stopCount = packet.readInt();
 		for (int i = 0; i < stopCount; i++) {
-			final int arrival = packet.readInt();
-			final int departure = packet.readInt();
-			final boolean overtake = packet.readBoolean();
 			final boolean pass = packet.readBoolean();
 			if (i < platformIds.size()) {
-				platformIds.get(i).setArrival(arrival);
-				platformIds.get(i).setDeparture(departure);
-				platformIds.get(i).overtake = overtake;
 				platformIds.get(i).pass = pass;
 			}
 		}
 		timetable.revision++;
 	}
 
+	private static void readTableHeader(FriendlyByteBuf packet, RouteTimetable table) {
+		table.name = packet.readUtf(PACKET_STRING_READ_LENGTH);
+		table.weekdays = packet.readInt();
+		table.marginPercent = packet.readInt();
+		table.services.clear();
+		final int serviceCount = packet.readInt();
+		for (int i = 0; i < serviceCount; i++) {
+			final int service = packet.readInt();
+			if (i < RouteTimetable.MAX_SERVICES) {
+				table.services.add(service);
+			}
+		}
+	}
+
 	private void writeTimetable(FriendlyByteBuf packet) {
 		packet.writeBoolean(timetable.enabled);
-		packet.writeInt(timetable.marginPercent);
-		packet.writeInt(timetable.services.size());
-		timetable.services.forEach(packet::writeInt);
+		packet.writeInt(timetable.getTableCount());
+		for (int i = 0; i < timetable.getTableCount(); i++) {
+			final RouteTimetable table = timetable.getTable(i);
+			packet.writeUtf(table.name);
+			packet.writeInt(table.weekdays);
+			packet.writeInt(table.marginPercent);
+			packet.writeInt(table.services.size());
+			table.services.forEach(packet::writeInt);
+
+			packet.writeInt(platformIds.size());
+			for (final RoutePlatform routePlatform : platformIds) {
+				packet.writeInt(routePlatform.getArrival(i));
+				packet.writeInt(routePlatform.getDeparture(i));
+				packet.writeBoolean(routePlatform.getOvertake(i));
+			}
+		}
 
 		packet.writeInt(platformIds.size());
-		platformIds.forEach(routePlatform -> {
-			packet.writeInt(routePlatform.getArrival());
-			packet.writeInt(routePlatform.getDeparture());
-			packet.writeBoolean(routePlatform.overtake);
-			packet.writeBoolean(routePlatform.pass);
-		});
+		platformIds.forEach(routePlatform -> packet.writeBoolean(routePlatform.pass));
 	}
 
 	public static class RoutePlatform {
@@ -683,6 +825,10 @@ public final class Route extends NameColorDataBase implements IGui {
 		public boolean overtake;
 		private int arrival = -1;
 		private int departure = -1;
+		/**
+		 * The times of this stop in the tables after the first one.
+		 */
+		private final List<RoutePlatform> otherTimes = new ArrayList<>();
 
 		public RoutePlatform(long platformId) {
 			this.platformId = platformId;
@@ -722,6 +868,81 @@ public final class Route extends NameColorDataBase implements IGui {
 
 		public void setDeparture(int departure) {
 			this.departure = Math.max(-1, Math.min(departure, RouteTimetable.MAX_STOP_SECONDS));
+		}
+
+		public int getArrival(int table) {
+			return table == 0 ? arrival : getOtherTimes(table).getArrival();
+		}
+
+		public void setArrival(int table, int arrival) {
+			if (table == 0) {
+				setArrival(arrival);
+			} else {
+				getOtherTimes(table).setArrival(arrival);
+			}
+		}
+
+		public int getDeparture(int table) {
+			return table == 0 ? departure : getOtherTimes(table).getDeparture();
+		}
+
+		public void setDeparture(int table, int departure) {
+			if (table == 0) {
+				setDeparture(departure);
+			} else {
+				getOtherTimes(table).setDeparture(departure);
+			}
+		}
+
+		public boolean getOvertake(int table) {
+			return table == 0 ? overtake : getOtherTimes(table).overtake;
+		}
+
+		public void setOvertake(int table, boolean overtake) {
+			if (table == 0) {
+				this.overtake = overtake;
+			} else {
+				getOtherTimes(table).overtake = overtake;
+			}
+		}
+
+		/**
+		 * Keeps the times of a stop when the stops of a route change, which go with the platform and not its place in the route.
+		 *
+		 * @param stops the old stops, with the one taken from removed so a platform used twice keeps both sets of times
+		 */
+		private void takeTimes(List<RoutePlatform> stops) {
+			for (int i = 0; i < stops.size(); i++) {
+				final RoutePlatform stop = stops.get(i);
+				if (stop.platformId == platformId) {
+					arrival = stop.arrival;
+					departure = stop.departure;
+					overtake = stop.overtake;
+					otherTimes.addAll(stop.otherTimes);
+					stops.remove(i);
+					return;
+				}
+			}
+		}
+
+		private void removeTable(int table) {
+			if (table >= 1 && table <= otherTimes.size()) {
+				otherTimes.remove(table - 1);
+			}
+		}
+
+		private void clearOtherTables() {
+			otherTimes.clear();
+		}
+
+		/**
+		 * Stops added after a table have no times for it yet, so they start out blank like any other new stop.
+		 */
+		private RoutePlatform getOtherTimes(int table) {
+			while (otherTimes.size() < table) {
+				otherTimes.add(new RoutePlatform(platformId));
+			}
+			return otherTimes.get(table - 1);
 		}
 
 		private void readWaypoints(FriendlyByteBuf packet) {

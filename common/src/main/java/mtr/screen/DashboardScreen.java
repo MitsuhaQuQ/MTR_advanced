@@ -75,9 +75,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	public DashboardScreen(TransportMode transportMode, boolean useTimeAndWindSync) {
 		super(Text.literal(""));
 		this.transportMode = transportMode;
-		// On a server the words come from the server, so the local file is left out
+		// On a server these come from the server, so the local files are left out
 		if (Minecraft.getInstance().hasSingleplayerServer()) {
 			LineWords.reload();
+			TimetableConfig.reload();
 		}
 
 		textFieldName = new WidgetBetterTextField(Text.translatable("gui.mtr.name").getString());

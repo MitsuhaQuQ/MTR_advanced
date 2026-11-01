@@ -43,6 +43,18 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		minecraftClient.execute(() -> LineWords.setWordsFromServer(words));
 	}
 
+	public static void receiveTimetableConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final String timeZone = packet.readUtf();
+		final int dayStartHour = packet.readInt();
+		minecraftClient.execute(() -> {
+			try {
+				TimetableConfig.set(timeZone, dayStartHour);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
+	}
+
 	public static void openVersionCheckS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String version = packet.readUtf();
 		minecraftClient.execute(() -> {
@@ -218,7 +230,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final int conflictCount = packet.readInt();
 		final List<TimetableConflicts.Conflict> conflicts = new ArrayList<>();
 		for (int i = 0; i < conflictCount; i++) {
-			conflicts.add(new TimetableConflicts.Conflict(packet.readInt(), packet.readInt(), packet.readLong(), packet.readInt(), packet.readLong()));
+			conflicts.add(new TimetableConflicts.Conflict(packet.readInt(), packet.readInt(), packet.readInt(), packet.readLong(), packet.readInt(), packet.readLong()));
 		}
 		minecraftClient.execute(() -> ClientData.TIMETABLE_CONFLICTS.put(routeId, new TimetableConflicts.Result(conflicts, uncheckedRoutes)));
 	}
