@@ -99,6 +99,18 @@ public final class EditorActions implements IPacket {
 				route.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
+			case "platforms":
+				final String platformsError = changePlatforms(route, operation.getAsJsonArray("platforms"));
+				if (platformsError != null) {
+					return platformsError;
+				}
+				route.editorManaged = true;
+				route.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				route.setCustomPath(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				// Times are kept by stop, and the server drops those of a stop whose platform changed, so they are sent again
+				route.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				return null;
 			case "managed":
 				route.editorManaged = operation.get("managed").getAsBoolean();
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
@@ -216,6 +228,56 @@ public final class EditorActions implements IPacket {
 		createdObject.addProperty("index", index);
 		createdObject.addProperty("id", String.valueOf(newRoute.id));
 		created.add(createdObject);
+		return null;
+	}
+
+	/**
+	 * Moves stops of a route to other tracks of the same station, from those the server found for each stop. Everything
+	 * else of a stop stays, its set times included.
+	 *
+	 * @return why it can't, or null once the route has been changed
+	 */
+	private static String changePlatforms(Route route, JsonArray platforms) {
+		final int stopCount = route.platformIds.size();
+		if (platforms == null || platforms.size() != stopCount) {
+			return "车站和游戏里的不一致，可能刚在游戏里改过，请刷新";
+		}
+		final long[] platformIds = new long[stopCount];
+		for (int i = 0; i < stopCount; i++) {
+			final long platformId = parseId(platforms.get(i).getAsString());
+			platformIds[i] = platformId;
+			if (Arrays.stream(ClientData.PATH_REGIONS.getCandidates(route.id, i, route.platformIds.get(i).platformId)).noneMatch(candidate -> candidate == platformId)) {
+				return String.format("第 %s 站选的股道不在可选的站台里，可能轨道或寻路边界刚改过，请刷新", i + 1);
+			}
+		}
+
+		final int tableCount = route.timetable.getTableCount();
+		boolean changed = false;
+		for (int i = 0; i < stopCount; i++) {
+			final Route.RoutePlatform oldStop = route.platformIds.get(i);
+			if (oldStop.platformId == platformIds[i]) {
+				continue;
+			}
+			final Route.RoutePlatform newStop = new Route.RoutePlatform(platformIds[i]);
+			newStop.customDestination = oldStop.customDestination;
+			newStop.waypoints.addAll(oldStop.waypoints);
+			newStop.dwellOverride = oldStop.dwellOverride;
+			newStop.pass = oldStop.pass;
+			for (int j = 0; j < tableCount; j++) {
+				newStop.setArrival(j, oldStop.getArrival(j));
+				newStop.setDeparture(j, oldStop.getDeparture(j));
+				newStop.setOvertake(j, oldStop.getOvertake(j));
+			}
+			if (route.timetable.entryPlatformId == oldStop.platformId) {
+				route.timetable.entryPlatformId = platformIds[i];
+			}
+			route.platformIds.set(i, newStop);
+			changed = true;
+		}
+		// A drawn path follows the old tracks
+		if (changed) {
+			route.getPathData().clear();
+		}
 		return null;
 	}
 

@@ -124,6 +124,11 @@
 		const operations = [], owners = [];
 		Object.entries(draft.routes).forEach(([id, entry]) => {
 			let base = entry.base;
+			if (entry.platforms) {
+				operations.push({ type: "platforms", route: id, base, force: Boolean(entry.force), platforms: entry.platforms });
+				owners.push(id);
+				base = undefined;
+			}
 			if (entry.timetable) {
 				operations.push({ type: "timetable", route: id, base, force: Boolean(entry.force), timetable: entry.timetable });
 				owners.push(id);
@@ -1296,17 +1301,8 @@
 		const renderPicker = form => {
 			const dirs = directions(form), r = dirs[Math.min(pickDir, dirs.length - 1)], picked = choices.get(r.id), color = form.color.value;
 			form.querySelector(".dir-tabs").innerHTML = dirs.length > 1 ? dirs.map((d, i) => `<button type="button" class="table-chip${d === r ? " on" : ""}" data-dir="${i}">${escapeHtml(routeTitle(d))}</button>`).join("") : "";
-			form.querySelector("#dlg-pick").innerHTML = r.stops.map((stop, i) => {
-				const choice = picked[i], end = i === 0 || i === r.stops.length - 1;
-				const chips = (stop.candidates && stop.candidates.length ? stop.candidates : [{ id: stop.platformId, name: stop.platform, passingTrack: stop.passingTrack }]).map(c => {
-					const on = c.id === choice.platformId;
-					const what = !on ? "点这里走这一股" : end ? "首末站，停车" : choice.stop ? "停车，再点一次改为通过" : "通过，再点一次改为停车";
-					return `<button type="button" class="table-chip track${on ? " on" : ""}${on && !choice.stop ? " pass" : ""}" style="${on ? `background:${color};border-color:${color}` : ""}" data-stop="${i}" data-track="${c.id}" title="${escapeHtml(what)}">${escapeHtml(c.name || "?")}${c.passingTrack ? " 待避" : ""}${on ? (choice.stop || end ? " · 停" : " · 过") : ""}</button>`;
-				}).join("");
-				return `<div class="track-row"><span class="track-station">${escapeHtml(shortName(stop.name))}</span>${chips}</div>`;
-			}).join("");
-			const passed = r.stops.filter((stop, i) => !picked[i].stop && i > 0 && i < r.stops.length - 1).map(stop => shortName(stop.name));
-			form.querySelector("#dlg-pick-summary").textContent = `${dirs.length > 1 ? routeTitle(r) + "：" : ""}停 ${r.stops.length - passed.length} 站${passed.length ? `，通过 ${passed.length} 站：${passed.join("、")}` : "，全部停车"}`;
+			form.querySelector("#dlg-pick").innerHTML = trackRowsHtml(r, picked, color);
+			form.querySelector("#dlg-pick-summary").textContent = (dirs.length > 1 ? routeTitle(r) + "：" : "") + stopsSummary(r, picked);
 		};
 		openDialog("新建种别", `
 			<div class="row"><label>照着 <select name="base">${line.routes.filter(r => r.stops.length > 1).map(r => `<option value="${r.id}"${r === base0 ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("")}</select></label></div>
@@ -1361,14 +1357,81 @@
 			}
 			const chip = e.target.closest("[data-track]");
 			if (!chip) return;
-			const r = directions(form)[Math.min(pickDir, directions(form).length - 1)], i = +chip.dataset.stop, choice = choices.get(r.id)[i];
-			if (choice.platformId === chip.dataset.track) {
-				if (i > 0 && i < r.stops.length - 1) choice.stop = !choice.stop;
-			} else {
-				choice.platformId = chip.dataset.track;
-				choice.stop = true;
-			}
+			const r = directions(form)[Math.min(pickDir, directions(form).length - 1)];
+			pickTrack(r, choices.get(r.id), +chip.dataset.stop, chip.dataset.track);
 			renderPicker(form);
+		});
+	}
+
+	/**
+	 * The track picker: a row for each station with a chip for each track the game found for it (same station, same region,
+	 * reachable from the stations around it). Picks are {platformId, stop} for each stop.
+	 */
+	function trackRowsHtml(r, picked, color) {
+		return r.stops.map((stop, i) => {
+			const choice = picked[i], end = i === 0 || i === r.stops.length - 1;
+			const chips = (stop.candidates && stop.candidates.length ? stop.candidates : [{ id: stop.platformId, name: stop.platform, passingTrack: stop.passingTrack }]).map(c => {
+				const on = c.id === choice.platformId;
+				const what = !on ? "点这里走这一股" : end ? "首末站，停车" : choice.stop ? "停车，再点一次改为通过" : "通过，再点一次改为停车";
+				return `<button type="button" class="table-chip track${on ? " on" : ""}${on && !choice.stop ? " pass" : ""}" style="${on ? `background:${color};border-color:${color}` : ""}" data-stop="${i}" data-track="${c.id}" title="${escapeHtml(what)}">${escapeHtml(c.name || "?")}${c.passingTrack ? " 待避" : ""}${on ? (choice.stop || end ? " · 停" : " · 过") : ""}</button>`;
+			}).join("");
+			return `<div class="track-row"><span class="track-station">${escapeHtml(shortName(stop.name))}</span>${chips}</div>`;
+		}).join("");
+	}
+
+	function stopsSummary(r, picked) {
+		const passed = r.stops.filter((stop, i) => !picked[i].stop && i > 0 && i < r.stops.length - 1).map(stop => shortName(stop.name));
+		return `停 ${r.stops.length - passed.length} 站${passed.length ? `，通过 ${passed.length} 站：${passed.join("、")}` : "，全部停车"}`;
+	}
+
+	/** A click on a track: the first picks it and stops there, the next switches between stopping and passing. */
+	function pickTrack(r, picked, i, trackId) {
+		const choice = picked[i];
+		if (choice.platformId === trackId) {
+			if (i > 0 && i < r.stops.length - 1) choice.stop = !choice.stop;
+		} else {
+			choice.platformId = trackId;
+			choice.stop = true;
+		}
+	}
+
+	/** The platform each stop uses, with a track change waiting in the draft. */
+	const platformsOf = r => draftOf(r) && draftOf(r).platforms ? draftOf(r).platforms : r.stops.map(stop => stop.platformId);
+
+	/**
+	 * Changes which track a route uses at each station, and where it stops or passes. The stations and their order stay as
+	 * they are in the game, where the dashboard changes them.
+	 */
+	function stopsDialog(r) {
+		const platforms = platformsOf(r), pass = timetableOf(r).pass;
+		const picked = r.stops.map((stop, i) => ({ platformId: platforms[i], stop: !pass[i] }));
+		const color = colorOf(r.color);
+		openDialog(`停站：${escapeHtml(routeTitle(r))}`, `
+			<div class="picker">
+				<p class="hint">点一股走这一股，再点一次在停车和通过之间切换，首末站只能停车。只列同一车站、同一寻路区域、前后站开得到的站台。车站的先后和增删在游戏的仪表盘里改。</p>
+				<div class="track-rows" id="dlg-pick"></div>
+				<div class="hint" id="dlg-pick-summary"></div>
+			</div>
+			<p class="hint">改股道会清掉线路手画的路径，应用后要刷新车厂路径。</p>`, "确定", () => {
+			const newPlatforms = picked.map(choice => choice.platformId);
+			const entry = draftEntry(r);
+			if (newPlatforms.every((id, i) => id === r.stops[i].platformId)) delete entry.platforms;
+			else entry.platforms = newPlatforms;
+			tidyDraft(r.id);
+			editTimetable(r, timetable => {
+				timetable.pass = picked.map((choice, i) => !choice.stop && i > 0 && i < r.stops.length - 1);
+			});
+		}, form => {
+			form.querySelector("#dlg-pick").innerHTML = trackRowsHtml(r, picked, color);
+			form.querySelector("#dlg-pick-summary").textContent = stopsSummary(r, picked);
+		});
+		const form = dialog.querySelector("form");
+		form.addEventListener("click", e => {
+			const chip = e.target.closest("[data-track]");
+			if (!chip) return;
+			pickTrack(r, picked, +chip.dataset.stop, chip.dataset.track);
+			form.querySelector("#dlg-pick").innerHTML = trackRowsHtml(r, picked, color);
+			form.querySelector("#dlg-pick-summary").textContent = stopsSummary(r, picked);
 		});
 	}
 
@@ -1551,7 +1614,7 @@
 		const { line, route, created } = el.dataset;
 		const r = route && data.routeById.get(route);
 		const items = line ? [["新建种别…", data.canEdit ? () => newTypeDialog(line, null) : null]]
-			: r ? [["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null]]
+			: r ? [["编辑停站…", data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], ["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null]]
 				: created ? [["删除这个新建的种别", () => removeCreated(created)]] : null;
 		if (!items) return;
 		e.preventDefault();
