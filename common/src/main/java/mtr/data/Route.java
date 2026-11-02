@@ -73,6 +73,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_TIMETABLE_TABLES = "timetable_tables";
 	private static final String KEY_ENTRY_PLATFORM = "entry_platform";
 	private static final String KEY_TIMETABLE_LINKS = "timetable_links";
+	private static final long TIMETABLE_LINKS_MARKER = -5;
 	private static final String KEY_PLAN_ARRIVALS = "plan_arrivals";
 	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
 	private static final String KEY_OVERTAKES = "overtakes";
@@ -311,18 +312,25 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
 		final List<Long> values = new ArrayList<>();
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_LINKS, value -> values.add(value.asIntegerValue().asLong()));
-		for (int i = 0; i + 3 < values.size(); i += 4) {
-			table.links.put(values.get(i).intValue(), new RouteTimetable.ServiceLink(values.get(i + 1), values.get(i + 2).intValue(), values.get(i + 3).intValue()));
+		// Older saves have no marker and no joining stop. A service is never negative, so the marker can't be mistaken for one.
+		final boolean hasToStop = !values.isEmpty() && values.get(0) == TIMETABLE_LINKS_MARKER;
+		final int size = hasToStop ? 5 : 4;
+		for (int i = hasToStop ? 1 : 0; i + size - 1 < values.size(); i += size) {
+			table.links.put(values.get(i).intValue(), new RouteTimetable.ServiceLink(values.get(i + 1), values.get(i + 2).intValue(), values.get(i + 3).intValue(), hasToStop ? values.get(i + 4).intValue() : 0));
 		}
 	}
 
 	private static void writeLinks(MessagePacker messagePacker, RouteTimetable table) throws IOException {
-		messagePacker.packString(KEY_TIMETABLE_LINKS).packArrayHeader(table.links.size() * 4);
+		messagePacker.packString(KEY_TIMETABLE_LINKS).packArrayHeader(table.links.isEmpty() ? 0 : table.links.size() * 5 + 1);
+		if (!table.links.isEmpty()) {
+			messagePacker.packLong(TIMETABLE_LINKS_MARKER);
+		}
 		for (final Map.Entry<Integer, RouteTimetable.ServiceLink> entry : table.links.entrySet()) {
 			messagePacker.packLong(entry.getKey());
 			messagePacker.packLong(entry.getValue().routeId);
 			messagePacker.packLong(entry.getValue().service);
 			messagePacker.packLong(entry.getValue().fromStop);
+			messagePacker.packLong(entry.getValue().toStop);
 		}
 	}
 
@@ -832,7 +840,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		final int linkCount = packet.readInt();
 		for (int i = 0; i < linkCount; i++) {
 			final int service = packet.readInt();
-			final RouteTimetable.ServiceLink link = new RouteTimetable.ServiceLink(packet.readLong(), packet.readInt(), packet.readInt());
+			final RouteTimetable.ServiceLink link = new RouteTimetable.ServiceLink(packet.readLong(), packet.readInt(), packet.readInt(), packet.readInt());
 			if (i < RouteTimetable.MAX_SERVICES) {
 				table.links.put(service, link);
 			}
@@ -856,6 +864,7 @@ public final class Route extends NameColorDataBase implements IGui {
 				packet.writeLong(link.routeId);
 				packet.writeInt(link.service);
 				packet.writeInt(link.fromStop);
+				packet.writeInt(link.toStop);
 			});
 
 			packet.writeInt(platformIds.size());

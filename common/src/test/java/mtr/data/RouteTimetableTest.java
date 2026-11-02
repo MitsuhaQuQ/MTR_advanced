@@ -3,12 +3,16 @@ package mtr.data;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -148,6 +152,53 @@ class RouteTimetableTest {
 		assertEquals(1, weekday.getLink(MONDAY + 10 * MINUTE).routeId);
 		assertEquals(2, weekday.getLink(MONDAY + 5 * DAY + 10 * MINUTE).routeId);
 		assertNull(weekday.getLink(MONDAY + 11 * MINUTE));
+	}
+
+	private static Route linkedRoute(int service, long nextRouteId, int nextService) {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.timetable.services.add(service);
+		route.timetable.links.put(service, new RouteTimetable.ServiceLink(nextRouteId, nextService, -1));
+		return route;
+	}
+
+	@Test
+	void linksAreFollowedFromRouteToRoute() {
+		final Map<Long, Route> routes = new HashMap<>();
+		routes.put(2L, linkedRoute(200, 3, 300));
+		final Route lastRoute = new Route(TransportMode.TRAIN);
+		lastRoute.timetable.services.add(300);
+		routes.put(3L, lastRoute);
+
+		final List<RouteTimetable.ServiceLink> links = RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routes::get);
+
+		assertEquals(2, links.size());
+		assertEquals(3, links.get(1).routeId);
+		assertEquals(300, links.get(1).service);
+	}
+
+	@Test
+	void linksInACircleEnd() {
+		final Map<Long, Route> routes = new HashMap<>();
+		routes.put(2L, linkedRoute(200, 3, 300));
+		routes.put(3L, linkedRoute(300, 2, 200));
+
+		assertEquals(RouteTimetable.MAX_TRIP_LINKS, RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routes::get).size());
+	}
+
+	@Test
+	void aLinkToARouteThatIsGoneEndsTheChain() {
+		assertEquals(1, RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), new HashMap<Long, Route>()::get).size());
+	}
+
+	@Test
+	void waysThroughHaveTheirOwnKeys() {
+		final RouteTimetable.ServiceLink first = new RouteTimetable.ServiceLink(2, 200, -1);
+		final String key = Siding.TripTail.getKey(Collections.singletonList(first));
+
+		assertEquals(key, Siding.TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 900, -1))));
+		assertNotEquals(key, Siding.TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 200, 3))));
+		assertNotEquals(key, Siding.TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 200, -1, 3))));
+		assertNotEquals(key, Siding.TripTail.getKey(Arrays.asList(first, new RouteTimetable.ServiceLink(3, 300, -1))));
 	}
 
 	@Test

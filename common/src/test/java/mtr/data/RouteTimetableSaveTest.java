@@ -140,6 +140,16 @@ class RouteTimetableSaveTest {
 	}
 
 	@Test
+	void theStopJoiningALoopIsSaved() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.timetable.services.add(1000);
+		route.timetable.links.put(1000, new RouteTimetable.ServiceLink(55, 9000, -1, 4));
+
+		assertEquals(4, saveAndLoad(route).timetable.links.get(1000).toStop);
+	}
+
+	@Test
 	void linksOfRemovedServicesGoAway() {
 		final RouteTimetable timetable = new RouteTimetable();
 		timetable.services.add(1000);

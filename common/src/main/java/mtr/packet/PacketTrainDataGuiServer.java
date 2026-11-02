@@ -434,10 +434,26 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 		final Set<Long> platformIds = new HashSet<>();
 		route.platformIds.forEach(routePlatform -> platformIds.add(routePlatform.platformId));
+		// Routes on the same turn back rail matter too, and the route before it may have no platform in common
+		final Map<Long, Set<TimetableConflicts.TurnBack>> turnBacks = getTurnBacks(railwayData);
+		final Set<UUID> turnBackRails = new HashSet<>();
+		turnBacks.forEach((testRouteId, routeTurnBacks) -> routeTurnBacks.forEach(turnBack -> {
+			if (testRouteId == routeId || turnBack.nextRouteId == routeId) {
+				turnBackRails.add(turnBack.rail);
+			}
+		}));
+		final Set<Long> turnBackRouteIds = new HashSet<>();
+		turnBacks.forEach((testRouteId, routeTurnBacks) -> routeTurnBacks.forEach(turnBack -> {
+			if (turnBackRails.contains(turnBack.rail)) {
+				turnBackRouteIds.add(testRouteId);
+				turnBackRouteIds.add(turnBack.nextRouteId);
+			}
+		}));
+
 		final List<Route> routes = new ArrayList<>();
 		routes.add(route);
 		railwayData.routes.forEach(testRoute -> {
-			if (testRoute != route && testRoute.timetable.isActive() && testRoute.platformIds.stream().anyMatch(routePlatform -> platformIds.contains(routePlatform.platformId))) {
+			if (testRoute != route && testRoute.timetable.isActive() && (turnBackRouteIds.contains(testRoute.id) || testRoute.platformIds.stream().anyMatch(routePlatform -> platformIds.contains(routePlatform.platformId)))) {
 				routes.add(testRoute);
 			}
 		});
@@ -483,6 +499,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times);
 						}
 						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
+						turnBacks.getOrDefault(testRoute.id, Collections.emptySet()).forEach(newRouteTimes::addTurnBack);
 						routeTimes.add(newRouteTimes);
 					}
 				}
@@ -518,6 +535,17 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			}
 		});
 		return nextRouteIds;
+	}
+
+	private static Map<Long, Set<TimetableConflicts.TurnBack>> getTurnBacks(RailwayData railwayData) {
+		final Map<Long, Set<TimetableConflicts.TurnBack>> turnBacks = new HashMap<>();
+		railwayData.sidings.forEach(siding -> {
+			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
+			if (depot != null && !siding.getStopTimes().isEmpty()) {
+				siding.getStopTimes().getTurnBacks(depot.getRoutes(siding.getTrainId(), railwayData.dataCache)).forEach(turnBack -> turnBacks.computeIfAbsent(turnBack.routeId, key -> new HashSet<>()).add(turnBack));
+			}
+		});
+		return turnBacks;
 	}
 
 	/**

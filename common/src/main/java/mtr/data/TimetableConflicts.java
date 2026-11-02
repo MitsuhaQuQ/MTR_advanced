@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +47,13 @@ public final class TimetableConflicts {
 			}
 		});
 
+		final Set<UUID> turnBackRails = new HashSet<>();
+		routes.forEach(route -> route.turnBacks.forEach(turnBack -> {
+			if (route.routeId == routeId || turnBack.nextRouteId == routeId) {
+				turnBackRails.add(turnBack.rail);
+			}
+		}));
+
 		final Set<Conflict> conflicts = new LinkedHashSet<>();
 		final Set<String> checkedDays = new HashSet<>();
 		for (int weekday = 0; weekday < DAYS_PER_WEEK; weekday++) {
@@ -53,6 +61,7 @@ public final class TimetableConflicts {
 			// Days running the same tables have the same conflicts
 			if (checkedDays.add(routes.stream().map(route -> route.getTableKey(day)).collect(Collectors.joining(",")))) {
 				checkDay(routeId, routes, routeMap, platformIds, day, conflicts);
+				checkTurnBacks(routeId, routes, routeMap, turnBackRails, day, conflicts);
 			}
 		}
 
@@ -64,7 +73,12 @@ public final class TimetableConflicts {
 	private static void checkDay(long routeId, List<RouteTimes> routes, Map<Long, RouteTimes> routeMap, Set<Long> platformIds, int weekday, Set<Conflict> conflicts) {
 		final Map<Long, List<Occupation>> occupations = new HashMap<>();
 		final Set<ServiceStop> linkedStops = new HashSet<>();
-		routes.forEach(route -> linkTurnBacks(route, routeMap.get(route.nextRouteId), weekday, platformIds, occupations, linkedStops));
+		routes.forEach(route -> {
+			// A train going by way of a turn back rail leaves the platform in between
+			if (route.turnBacks.stream().noneMatch(turnBack -> turnBack.nextRouteId == route.nextRouteId)) {
+				linkTurnBacks(route, routeMap.get(route.nextRouteId), weekday, platformIds, occupations, linkedStops);
+			}
+		});
 		routes.forEach(route -> route.getServices(weekday).forEach(serviceTimes -> {
 			for (int i = 0; i < serviceTimes.arrivals.length; i++) {
 				final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, i);
@@ -100,28 +114,74 @@ public final class TimetableConflicts {
 		for (final ServiceTimes serviceTimes : services) {
 			final long arrival = serviceTimes.getArrival(lastIndex);
 			final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, lastIndex);
-			long bestWait = Long.MAX_VALUE;
-			ServiceStop bestStop = null;
-			ServiceTimes bestService = null;
-			for (final ServiceTimes nextServiceTimes : nextServices) {
+			final ServiceTimes nextServiceTimes = findNextService(nextRoute, nextServices, arrival, stop, linkedStops);
+			if (nextServiceTimes != null) {
 				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
-				final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) Depot.MILLISECONDS_PER_DAY);
-				if (wait < bestWait && wait <= RouteTimetable.MAX_LAYOVER_MILLIS && !linkedStops.contains(nextStop) && !nextStop.equals(stop)) {
-					bestWait = wait;
-					bestStop = nextStop;
-					bestService = nextServiceTimes;
-				}
-			}
-			if (bestStop != null) {
 				linkedStops.add(stop);
-				linkedStops.add(bestStop);
-				final long leaving = arrival + bestWait + bestService.departures[0] - bestService.arrivals[0];
+				linkedStops.add(nextStop);
+				final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) Depot.MILLISECONDS_PER_DAY);
+				final long leaving = arrival + wait + nextServiceTimes.departures[0] - nextServiceTimes.arrivals[0];
 				final List<ServiceStop> stops = new ArrayList<>();
 				stops.add(stop);
-				stops.add(bestStop);
+				stops.add(nextStop);
 				occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, leaving, stops));
 			}
 		}
+	}
+
+	/**
+	 * A train stays on a turn back rail until it is time to run to the first stop of its next service, so like a platform
+	 * where a train turns back, what matters is how the two routes line up. The platforms of these services are used as usual.
+	 */
+	private static void checkTurnBacks(long routeId, List<RouteTimes> routes, Map<Long, RouteTimes> routeMap, Set<UUID> turnBackRails, int weekday, Set<Conflict> conflicts) {
+		final Map<UUID, List<Occupation>> occupations = new HashMap<>();
+		final Set<ServiceStop> linkedStops = new HashSet<>();
+		routes.forEach(route -> route.turnBacks.forEach(turnBack -> {
+			if (turnBackRails.contains(turnBack.rail)) {
+				addTurnBack(route, turnBack, routeMap.get(turnBack.nextRouteId), weekday, occupations.computeIfAbsent(turnBack.rail, key -> new ArrayList<>()), linkedStops);
+			}
+		}));
+		occupations.values().forEach(railOccupations -> findConflicts(routeId, 0, railOccupations, conflicts));
+	}
+
+	private static void addTurnBack(RouteTimes route, TurnBack turnBack, RouteTimes nextRoute, int weekday, List<Occupation> occupations, Set<ServiceStop> linkedStops) {
+		final List<ServiceTimes> services = route.getServices(weekday).stream().filter(serviceTimes -> serviceTimes.departures[turnBack.stopIndex] >= 0).collect(Collectors.toList());
+		services.sort(Comparator.comparingLong(turnBack::getArrival));
+		final List<ServiceTimes> nextServices = nextRoute == null ? Collections.emptyList() : nextRoute.getServices(weekday).stream().filter(serviceTimes -> serviceTimes.arrivals[0] >= 0).collect(Collectors.toList());
+
+		for (final ServiceTimes serviceTimes : services) {
+			final long arrival = turnBack.getArrival(serviceTimes);
+			final long earliestStart = arrival + turnBack.dwellMillis + turnBack.runOutMillis;
+			final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, turnBack.stopIndex);
+			final List<ServiceStop> stops = new ArrayList<>();
+			stops.add(stop);
+			final ServiceTimes nextServiceTimes = findNextService(nextRoute, nextServices, earliestStart, stop, linkedStops);
+			long leaving = arrival + turnBack.dwellMillis;
+			if (nextServiceTimes != null) {
+				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
+				linkedStops.add(nextStop);
+				stops.add(nextStop);
+				leaving += Math.floorMod(nextServiceTimes.service - earliestStart, (long) Depot.MILLISECONDS_PER_DAY);
+			}
+			occupations.add(new Occupation(arrival, leaving, stops));
+		}
+	}
+
+	/**
+	 * @return the first service from {@code earliestMillis} that no train has taken, within the time a train waits for one
+	 */
+	private static ServiceTimes findNextService(RouteTimes nextRoute, List<ServiceTimes> nextServices, long earliestMillis, ServiceStop stop, Set<ServiceStop> linkedStops) {
+		long bestWait = Long.MAX_VALUE;
+		ServiceTimes bestService = null;
+		for (final ServiceTimes nextServiceTimes : nextServices) {
+			final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
+			final long wait = Math.floorMod(nextServiceTimes.service - earliestMillis, (long) Depot.MILLISECONDS_PER_DAY);
+			if (wait < bestWait && wait <= RouteTimetable.MAX_LAYOVER_MILLIS && !linkedStops.contains(nextStop) && !nextStop.equals(stop)) {
+				bestWait = wait;
+				bestService = nextServiceTimes;
+			}
+		}
+		return bestService;
 	}
 
 	private static void findConflicts(long routeId, long platformId, List<Occupation> occupations, Collection<Conflict> conflicts) {
@@ -165,6 +225,7 @@ public final class TimetableConflicts {
 		private final List<Route.RoutePlatform> stops;
 		private final List<Long> platformIds = new ArrayList<>();
 		private final List<TableTimes> tables = new ArrayList<>();
+		private final List<TurnBack> turnBacks = new ArrayList<>();
 
 		public RouteTimes(long routeId, List<Route.RoutePlatform> stops) {
 			this.routeId = routeId;
@@ -195,6 +256,10 @@ public final class TimetableConflicts {
 			tables.add(new TableTimes(table, weekdays, services, arrivals, departures));
 		}
 
+		public void addTurnBack(TurnBack turnBack) {
+			turnBacks.add(turnBack);
+		}
+
 		private String getTableKey(int weekday) {
 			return tables.stream().filter(table -> table.runsOn(weekday)).map(table -> String.valueOf(table.table)).collect(Collectors.joining("/"));
 		}
@@ -214,6 +279,54 @@ public final class TimetableConflicts {
 		}
 	}
 
+	/**
+	 * A turn back rail a route uses after one of its stops, and how long it takes to get there and away.
+	 */
+	public static class TurnBack {
+
+		public final long routeId;
+		public final UUID rail;
+		/**
+		 * The stop of this route before the turn back rail.
+		 */
+		public final int stopIndex;
+		/**
+		 * The route the train runs next, or 0 if the train just carries on.
+		 */
+		public final long nextRouteId;
+		public final long runInMillis;
+		public final long dwellMillis;
+		public final long runOutMillis;
+
+		public TurnBack(long routeId, UUID rail, int stopIndex, long nextRouteId, long runInMillis, long dwellMillis, long runOutMillis) {
+			this.routeId = routeId;
+			this.rail = rail;
+			this.stopIndex = stopIndex;
+			this.nextRouteId = nextRouteId;
+			this.runInMillis = runInMillis;
+			this.dwellMillis = dwellMillis;
+			this.runOutMillis = runOutMillis;
+		}
+
+		private long getArrival(ServiceTimes serviceTimes) {
+			return Math.floorMod(serviceTimes.service + serviceTimes.departures[stopIndex] + runInMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			if (!(object instanceof TurnBack)) {
+				return false;
+			}
+			final TurnBack turnBack = (TurnBack) object;
+			return routeId == turnBack.routeId && rail.equals(turnBack.rail) && stopIndex == turnBack.stopIndex && nextRouteId == turnBack.nextRouteId;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(routeId, rail, stopIndex, nextRouteId);
+		}
+	}
+
 	public static class Conflict {
 
 		/**
@@ -227,6 +340,9 @@ public final class TimetableConflicts {
 		public final int service;
 		public final long otherRouteId;
 		public final int otherService;
+		/**
+		 * Where this happens, or 0 for a turn back rail.
+		 */
 		public final long platformId;
 
 		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId) {

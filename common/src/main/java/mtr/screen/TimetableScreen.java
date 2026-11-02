@@ -62,6 +62,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonEntryStop;
 	private final Button buttonLinkRoute;
 	private final Button buttonLinkStop;
+	private final Button buttonLinkEntry;
 	private final Button buttonClearLink;
 	private final WidgetBetterTextField textFieldLinkService;
 	private final List<Long> linkRouteIds = new ArrayList<>();
@@ -152,7 +153,20 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 				while (nextStop < route.platformIds.size() - 1 && route.platformIds.get(nextStop).pass) {
 					nextStop++;
 				}
-				getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, link.service, nextStop < route.platformIds.size() - 1 ? nextStop : -1));
+				getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, link.service, nextStop < route.platformIds.size() - 1 ? nextStop : -1, link.toStop));
+				updateLinkWidgets();
+			}
+		});
+		buttonLinkEntry = UtilitiesClient.newButton(Text.literal(""), button -> {
+			final RouteTimetable.ServiceLink link = getTable().links.get(baseMillis);
+			final Route linkRoute = link == null ? null : ClientData.DATA_CACHE.routeIdMap.get(link.routeId);
+			if (linkRoute != null) {
+				// A loop can be joined at any stop that isn't passed, or at the first stop like any other route
+				int nextStop = link.toStop + 1;
+				while (nextStop < linkRoute.platformIds.size() - 1 && linkRoute.platformIds.get(nextStop).pass) {
+					nextStop++;
+				}
+				getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, link.service, link.fromStop, nextStop < linkRoute.platformIds.size() - 1 ? nextStop : 0));
 				updateLinkWidgets();
 			}
 		});
@@ -311,10 +325,12 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(textFieldLinkService, rightX + CHECK_BUTTON_WIDTH + TEXT_FIELD_PADDING / 2, linkY + TEXT_FIELD_PADDING / 2, TIME_WIDTH - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(buttonLinkStop, rightX + CHECK_BUTTON_WIDTH + TIME_WIDTH, linkY, CHECK_BUTTON_WIDTH);
 		IDrawing.setPositionAndWidth(buttonClearLink, rightX + CHECK_BUTTON_WIDTH * 2 + TIME_WIDTH, linkY, SQUARE_SIZE);
+		IDrawing.setPositionAndWidth(buttonLinkEntry, rightX + CHECK_BUTTON_WIDTH * 2 + TIME_WIDTH + SQUARE_SIZE, linkY, CHECK_BUTTON_WIDTH);
 		addDrawableChild(buttonLinkRoute);
 		addDrawableChild(textFieldLinkService);
 		addDrawableChild(buttonLinkStop);
 		addDrawableChild(buttonClearLink);
+		addDrawableChild(buttonLinkEntry);
 
 		updateList();
 		requestConflicts();
@@ -445,7 +461,8 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			// The closest service after this one is the likely choice, and it can be changed afterwards
 			final RouteTimetable.ServiceLink link = getTable().links.get(baseMillis);
 			final int service = linkRoute.timetable.services.stream().filter(testService -> testService >= baseMillis).min(Integer::compareTo).orElse(linkRoute.timetable.services.stream().min(Integer::compareTo).orElse(baseMillis));
-			getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(linkRoute.id, service, link == null ? -1 : link.fromStop));
+			final boolean isSameRoute = link != null && link.routeId == linkRoute.id;
+			getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(linkRoute.id, service, link == null ? -1 : link.fromStop, isSameRoute ? link.toStop : 0));
 		}
 		updateLinkWidgets();
 	}
@@ -453,7 +470,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private void onLinkServiceChanged(String text) {
 		final RouteTimetable.ServiceLink link = getTable().links.get(baseMillis);
 		if (link != null && !isBinding) {
-			final boolean isValid = text.length() == 8 && EditDepotScreen.applyDepartures(text, service -> getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, service, link.fromStop)));
+			final boolean isValid = text.length() == 8 && EditDepotScreen.applyDepartures(text, service -> getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, service, link.fromStop, link.toStop)));
 			textFieldLinkService.setTextColor(isValid ? ARGB_FIELD_TEXT : ARGB_WARNING);
 		}
 	}
@@ -469,6 +486,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		textFieldLinkService.visible = link != null;
 		buttonLinkStop.visible = link != null && route.isLoop();
 		buttonClearLink.visible = link != null;
+		buttonLinkEntry.visible = linkRoute != null && linkRoute.isLoop();
 
 		final boolean wasBinding = isBinding;
 		isBinding = true;
@@ -480,6 +498,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			final Station station = link.fromStop < 0 ? null : ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(Math.min(link.fromStop, route.platformIds.size() - 1)).platformId);
 			final String stopName = link.fromStop < 0 ? Text.translatable("gui.mtr.timetable_link_last_stop").getString() : IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name));
 			buttonLinkStop.setMessage(Text.literal(fitButtonText(Text.translatable("gui.mtr.timetable_link_stop", stopName).getString())));
+		}
+		if (linkRoute != null && linkRoute.isLoop()) {
+			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(linkRoute.platformIds.get(Math.min(link.toStop, linkRoute.platformIds.size() - 1)).platformId);
+			final String stopName = link.toStop == 0 ? Text.translatable("gui.mtr.timetable_entry_first_stop").getString() : IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name));
+			buttonLinkEntry.setMessage(Text.literal(fitButtonText(Text.translatable("gui.mtr.timetable_link_entry", stopName).getString())));
 		}
 	}
 
@@ -674,10 +697,14 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		}
 
 		final TimetableConflicts.Conflict conflict = serviceConflicts.get(0);
-		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(conflict.platformId);
-		final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(conflict.platformId);
 		final Route otherRoute = ClientData.DATA_CACHE.routeIdMap.get(conflict.otherRouteId);
 		final int otherService = conflict.otherRouteId == route.id && conflict.otherService == baseMillis ? conflict.service : conflict.otherService;
+		if (conflict.platformId == 0) {
+			return Text.translatable("gui.mtr.timetable_conflicts_found_turn_back", count, IGui.textOrUntitled(otherRoute == null ? "" : IGui.formatStationName(otherRoute.name)), EditDepotScreen.formatTime(otherService));
+		}
+
+		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(conflict.platformId);
+		final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(conflict.platformId);
 		return Text.translatable(
 				"gui.mtr.timetable_conflicts_found",
 				count,

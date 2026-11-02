@@ -534,7 +534,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		return tripMillis;
 	}
 
-	private boolean isTripReserved(long routeId, long tripMillis) {
+	public boolean isTripReserved(long routeId, long tripMillis) {
 		final long tripKey = getTripKey(routeId, tripMillis);
 		return reservedTrips.contains(tripKey) || newReservedTrips.contains(tripKey);
 	}
@@ -725,8 +725,8 @@ public class Depot extends AreaBase implements IReducedSaveData {
 		}
 
 		/**
-		 * Finds where services of the last route carry on onto other routes. Each place only needs one path, however many
-		 * services use it. A route that can't be reached is left out, and its services stay on the main path.
+		 * Finds where services of the last route carry on onto other routes. Each way through only needs one path, however
+		 * many services use it. A route that can't be reached is left out, and its services stay on the main path.
 		 */
 		private List<Siding.TripTail> getTripTails(List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<Siding.TripTail> tripTails = new ArrayList<>();
@@ -737,8 +737,9 @@ public class Depot extends AreaBase implements IReducedSaveData {
 
 			final Set<String> keys = new HashSet<>();
 			lastRoute.timetable.getTables().forEach(table -> table.links.values().forEach(link -> {
-				if (keys.add(Siding.TripTail.getKey(link.routeId, link.fromStop))) {
-					final Siding.TripTail tripTail = getTripTail(lastRoute, link, mainPath, rails, graph, useFastSpeed);
+				final List<RouteTimetable.ServiceLink> links = RouteTimetable.getLinkChain(link, dataCache.routeIdMap::get);
+				if (keys.add(Siding.TripTail.getKey(links))) {
+					final Siding.TripTail tripTail = getTripTail(lastRoute, links, mainPath, rails, graph, useFastSpeed);
 					if (tripTail != null) {
 						tripTails.add(tripTail);
 					}
@@ -747,54 +748,135 @@ public class Depot extends AreaBase implements IReducedSaveData {
 			return tripTails;
 		}
 
-		private Siding.TripTail getTripTail(Route lastRoute, RouteTimetable.ServiceLink link, List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-			final Route nextRoute = dataCache.routeIdMap.get(link.routeId);
-			final boolean isCut = link.fromStop >= 0 && link.fromStop < lastRoute.platformIds.size() - 1;
-			final int leaveStop = isCut ? link.fromStop : lastRoute.platformIds.size() - 1;
-			final Platform leavePlatform = lastRoute.platformIds.isEmpty() ? null : dataCache.platformIdMap.get(lastRoute.platformIds.get(leaveStop).platformId);
-			final int leaveRail = isCut ? Siding.getStopRail(mainPath, lastRoute.platformIds, leaveStop) : mainPath.size() - 1;
-			if (nextRoute == null || nextRoute.platformIds.isEmpty() || nextRoute.transportMode != transportMode || leavePlatform == null || leaveRail < 0) {
+		private Siding.TripTail getTripTail(Route lastRoute, List<RouteTimetable.ServiceLink> links, List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final int leaveRail = isCut(lastRoute, links.get(0)) ? Siding.getStopRail(mainPath, lastRoute.platformIds, links.get(0).fromStop) : mainPath.size() - 1;
+			if (leaveRail < 0) {
 				return null;
 			}
 
-			final List<SavedRailBase> nextPlatforms = new ArrayList<>();
-			final List<List<BlockPos>> nextWaypoints = new ArrayList<>();
-			final List<Route.RoutePlatform> nextStopSettings = new ArrayList<>();
-			nextRoute.platformIds.forEach(routePlatform -> {
-				final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
-				if (platform != null) {
-					nextPlatforms.add(platform);
-					nextWaypoints.add(routePlatform.waypoints);
-					nextStopSettings.add(routePlatform);
-				}
-			});
-			if (nextPlatforms.size() < 2) {
-				return null;
-			}
-
+			final List<Route> tripRoutes = new ArrayList<>(mainRoutes);
+			final Map<Long, Integer> cutStops = new HashMap<>();
 			final List<PathData> tailPath = new ArrayList<>();
-			if (nextPlatforms.get(0).id != leavePlatform.id) {
-				PathFinder.findPath(tailPath, rails, graph, Arrays.asList(leavePlatform, nextPlatforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
-				if (tailPath.isEmpty()) {
+			Route previousRoute = lastRoute;
+			SavedRailBase lastPlatform = null;
+			int lapStart = Siding.TripTail.NO_RAIL;
+			int entryRail = Siding.TripTail.NO_RAIL;
+			boolean isLapReversed = false;
+
+			for (int i = 0; i < links.size(); i++) {
+				final RouteTimetable.ServiceLink link = links.get(i);
+				final RouteTimetable.ServiceLink nextLink = i + 1 < links.size() ? links.get(i + 1) : null;
+				final Route nextRoute = dataCache.routeIdMap.get(link.routeId);
+				final boolean isCut = isCut(previousRoute, link);
+				final int leaveStop = isCut ? link.fromStop : previousRoute.platformIds.size() - 1;
+				final Platform leavePlatform = previousRoute.platformIds.isEmpty() ? null : dataCache.platformIdMap.get(previousRoute.platformIds.get(leaveStop).platformId);
+				if (nextRoute == null || nextRoute.platformIds.isEmpty() || nextRoute.transportMode != transportMode || leavePlatform == null) {
 					return null;
 				}
-			}
-			final List<PathData> routePath = new ArrayList<>();
-			PathFinder.findPath(routePath, rails, graph, nextPlatforms, nextWaypoints, 1, cruisingAltitude, useFastSpeed);
-			if (routePath.size() <= 2) {
-				return null;
-			}
-			PathFinder.applyStopSettings(routePath, nextStopSettings);
+				if (isCut) {
+					cutStops.put(previousRoute.id, leaveStop);
+				}
 
-			// Stops are counted through every route of the depot in full, so the next route starts after all of them
+				final List<SavedRailBase> nextPlatforms = new ArrayList<>();
+				final List<List<BlockPos>> nextWaypoints = new ArrayList<>();
+				final List<Route.RoutePlatform> nextStopSettings = new ArrayList<>();
+				nextRoute.platformIds.forEach(routePlatform -> {
+					final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
+					if (platform != null) {
+						nextPlatforms.add(platform);
+						nextWaypoints.add(routePlatform.waypoints);
+						nextStopSettings.add(routePlatform);
+					}
+				});
+				if (nextPlatforms.size() < 2) {
+					return null;
+				}
+
+				// A train on a loop at the end of its trip stays on it, and can join it at any stop
+				final boolean isLap = nextLink == null && nextRoute.isLoop() && getActiveTimetable(nextRoute) != null;
+				final int entryStop = isLap && nextPlatforms.size() == nextRoute.platformIds.size() && link.toStop > 0 && link.toStop < nextPlatforms.size() - 1 ? link.toStop : 0;
+				final SavedRailBase entryPlatform = nextPlatforms.get(entryStop);
+
+				if (entryPlatform.id != leavePlatform.id) {
+					final List<PathData> connectingPath = new ArrayList<>();
+					PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(leavePlatform, entryPlatform), null, 1, cruisingAltitude, useFastSpeed);
+					if (connectingPath.isEmpty()) {
+						return null;
+					}
+					PathFinder.appendPath(tailPath, connectingPath);
+				}
+				final List<PathData> routePath = new ArrayList<>();
+				PathFinder.findPath(routePath, rails, graph, nextPlatforms, nextWaypoints, 1, cruisingAltitude, useFastSpeed);
+				if (routePath.size() <= 2) {
+					return null;
+				}
+				PathFinder.applyStopSettings(routePath, nextStopSettings);
+
+				// Stops are counted through every route before this one in full, so this route starts after all of them
+				tripRoutes.add(nextRoute);
+				int stopIndex = getStopCount(tripRoutes) + 1;
+				for (int j = 0; j < routePath.size(); j++) {
+					final PathData pathData = routePath.get(j);
+					if (j > 0 && pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && routePath.get(j - 1).rail.railType != RailType.PLATFORM) {
+						stopIndex++;
+					}
+					pathData.stopIndex = stopIndex;
+				}
+
+				if (entryStop > 0) {
+					final int joinRail = Siding.getStopRail(routePath, nextRoute.platformIds, entryStop);
+					if (joinRail < 0) {
+						return null;
+					}
+					final List<PathData> joinPath = new ArrayList<>();
+					for (int j = joinRail; j < routePath.size(); j++) {
+						final PathData pathData = routePath.get(j);
+						joinPath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
+					}
+					entryRail = tailPath.size() - 1;
+					addToTail(tailPath, mainPath.get(leaveRail), joinPath);
+				}
+
+				final List<PathData> usedPath;
+				if (nextLink != null && isCut(nextRoute, nextLink)) {
+					final int cutRail = Siding.getStopRail(routePath, nextRoute.platformIds, nextLink.fromStop);
+					if (cutRail < 0) {
+						return null;
+					}
+					usedPath = new ArrayList<>(routePath.subList(0, cutRail + 1));
+				} else {
+					usedPath = routePath;
+				}
+
+				if (isLap) {
+					final PathData lastRail = tailPath.isEmpty() ? mainPath.get(leaveRail) : tailPath.get(tailPath.size() - 1);
+					lapStart = tailPath.size() - 1;
+					isLapReversed = usedPath.get(0).isOppositeRail(lastRail);
+				}
+				addToTail(tailPath, mainPath.get(leaveRail), usedPath);
+
+				previousRoute = nextRoute;
+				lastPlatform = nextPlatforms.get(nextPlatforms.size() - 1);
+			}
+
+			final List<Long> tripRouteIds = new ArrayList<>();
+			tripRoutes.forEach(route -> tripRouteIds.add(route.id));
+			return new Siding.TripTail(Siding.TripTail.getKey(links), tripRouteIds, cutStops, leaveRail, tailPath, lastPlatform, lapStart, isLapReversed, entryRail);
+		}
+
+		private boolean isCut(Route route, RouteTimetable.ServiceLink link) {
+			return link.fromStop >= 0 && link.fromStop < route.platformIds.size() - 1;
+		}
+
+		/**
+		 * @return the number of stops before the last route of these routes
+		 */
+		private int getStopCount(List<Route> routes) {
 			int stopCount = 0;
 			Route previousRoute = null;
-			final List<Route> tripRoutes = new ArrayList<>(mainRoutes);
-			tripRoutes.add(nextRoute);
-			final List<Long> tripRouteIds = new ArrayList<>();
-			for (final Route route : tripRoutes) {
-				tripRouteIds.add(route.id);
-				if (route != nextRoute) {
+			for (int i = 0; i < routes.size(); i++) {
+				final Route route = routes.get(i);
+				if (i < routes.size() - 1) {
 					stopCount += route.platformIds.size();
 				}
 				if (previousRoute != null && previousRoute.getLastPlatformId() == route.getFirstPlatformId()) {
@@ -802,26 +884,19 @@ public class Depot extends AreaBase implements IReducedSaveData {
 				}
 				previousRoute = route;
 			}
-			int stopIndex = stopCount + 1;
-			for (int i = 0; i < routePath.size(); i++) {
-				final PathData pathData = routePath.get(i);
-				if (i > 0 && pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && routePath.get(i - 1).rail.railType != RailType.PLATFORM) {
-					stopIndex++;
-				}
-				pathData.stopIndex = stopIndex;
-			}
+			return stopCount;
+		}
 
-			final PathData first = routePath.get(0);
-			final PathData last = tailPath.isEmpty() ? mainPath.get(leaveRail) : tailPath.get(tailPath.size() - 1);
+		private void addToTail(List<PathData> tailPath, PathData lastMainRail, List<PathData> newPath) {
+			final PathData first = newPath.get(0);
+			final PathData last = tailPath.isEmpty() ? lastMainRail : tailPath.get(tailPath.size() - 1);
 			if (first.isOppositeRail(last)) {
 				first.dwellTime = 0;
 				first.savedRailBaseId = 0;
 			} else if (first.isSameRail(last)) {
-				routePath.remove(0);
+				newPath.remove(0);
 			}
-			tailPath.addAll(routePath);
-
-			return new Siding.TripTail(tripRouteIds, isCut ? lastRoute.id : 0, isCut ? link.fromStop : -1, leaveRail, tailPath, nextPlatforms.get(nextPlatforms.size() - 1));
+			tailPath.addAll(newPath);
 		}
 
 		/**

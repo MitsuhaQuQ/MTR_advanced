@@ -6,7 +6,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.LongFunction;
 import java.util.function.LongPredicate;
 import java.util.stream.Collectors;
 
@@ -68,6 +70,14 @@ public class RouteTimetable {
 	 * A service still waiting for a train after this long is dropped, so a train never runs far behind on purpose.
 	 */
 	public static final long MAX_DEPLOY_DELAY_MILLIS = 10 * 60 * 1000;
+	/**
+	 * A train this close to its time after a restart stays where it is, as a train running a little late can catch up.
+	 */
+	public static final long ALIGN_TOLERANCE_MILLIS = 60 * 1000;
+	/**
+	 * How many more routes one train runs through after the routes of its depot. This also ends services linked in a circle.
+	 */
+	public static final int MAX_TRIP_LINKS = 7;
 
 	public boolean isActive() {
 		return enabled && getTables().stream().anyMatch(table -> !table.services.isEmpty());
@@ -143,6 +153,32 @@ public class RouteTimetable {
 	 */
 	public ServiceLink getLink(long serviceMillis) {
 		return getTable(getTableIndex(serviceMillis)).links.get((int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY));
+	}
+
+	/**
+	 * @return the service a service of this route carries on onto on any day, or null. Unlike {@link #getLink(long)} this
+	 * doesn't need the day, as a path is made for a service before it runs.
+	 */
+	public ServiceLink getLinkOfService(int service) {
+		return getTables().stream().map(table -> table.links.get(service)).filter(Objects::nonNull).findFirst().orElse(null);
+	}
+
+	/**
+	 * @return this link and the ones following it, as far as a train can run in one go
+	 */
+	public static List<ServiceLink> getLinkChain(ServiceLink firstLink, LongFunction<Route> getRoute) {
+		final List<ServiceLink> links = new ArrayList<>();
+		links.add(firstLink);
+		while (links.size() < MAX_TRIP_LINKS) {
+			final ServiceLink link = links.get(links.size() - 1);
+			final Route route = getRoute.apply(link.routeId);
+			final ServiceLink nextLink = route == null ? null : route.timetable.getLinkOfService(link.service);
+			if (nextLink == null) {
+				break;
+			}
+			links.add(nextLink);
+		}
+		return links;
 	}
 
 	public boolean runsOn(int weekday) {
@@ -317,11 +353,20 @@ public class RouteTimetable {
 		 * The stop of this route where the train leaves it, or -1 for the last stop.
 		 */
 		public final int fromStop;
+		/**
+		 * The stop of a loop at the end of the trip where the train joins it, or 0 for the first stop.
+		 */
+		public final int toStop;
 
 		public ServiceLink(long routeId, int service, int fromStop) {
+			this(routeId, service, fromStop, 0);
+		}
+
+		public ServiceLink(long routeId, int service, int fromStop, int toStop) {
 			this.routeId = routeId;
 			this.service = service;
 			this.fromStop = fromStop;
+			this.toStop = toStop;
 		}
 	}
 

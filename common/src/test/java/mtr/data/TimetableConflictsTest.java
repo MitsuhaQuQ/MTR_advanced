@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +37,79 @@ class TimetableConflictsTest {
 
 	private static List<TimetableConflicts.Conflict> check(TimetableConflicts.RouteTimes... routes) {
 		return TimetableConflicts.check(ROUTE_A, Arrays.asList(routes));
+	}
+
+	/**
+	 * Route A running into the turn back rail a minute after leaving its last stop, then a minute out to route B.
+	 */
+	private static TimetableConflicts.TurnBack turnBack(UUID rail, long routeId, long nextRouteId) {
+		return new TimetableConflicts.TurnBack(routeId, rail, 1, nextRouteId, MINUTE, 0, MINUTE);
+	}
+
+	private static TimetableConflicts.RouteTimes routeA(UUID rail, int... serviceMinutes) {
+		final TimetableConflicts.RouteTimes route = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), serviceMinutes);
+		route.addTurnBack(turnBack(rail, ROUTE_A, ROUTE_B));
+		return route;
+	}
+
+	private static TimetableConflicts.RouteTimes routeB(int... serviceMinutes) {
+		return route(ROUTE_B, new long[]{PLATFORM_3}, new long[][]{{0, 0}}, serviceMinutes);
+	}
+
+	@Test
+	void trainsOnOneTurnBackRailConflict() {
+		// Both trains are in at 15 and 25, and the first one only leaves for its service at 29
+		final List<TimetableConflicts.Conflict> conflicts = check(routeA(new UUID(1, 1), 10, 20), routeB(30, 40));
+
+		assertEquals(1, conflicts.size());
+		assertEquals(0, conflicts.get(0).platformId);
+		assertEquals(1, conflicts.get(0).stopIndex);
+		assertEquals(10 * MINUTE, conflicts.get(0).service);
+	}
+
+	@Test
+	void trainsLeavingTheTurnBackRailInTimeHaveNoConflict() {
+		assertTrue(check(routeA(new UUID(1, 1), 10, 20), routeB(17, 27)).isEmpty());
+	}
+
+	@Test
+	void theRouteAfterTheTurnBackRailSeesTheConflict() {
+		final List<TimetableConflicts.Conflict> conflicts = TimetableConflicts.check(ROUTE_B, Arrays.asList(routeA(new UUID(1, 1), 10, 20), routeB(30, 40)));
+
+		assertEquals(1, conflicts.size());
+		assertEquals(0, conflicts.get(0).stopIndex);
+		assertEquals(30 * MINUTE, conflicts.get(0).service);
+		assertEquals(ROUTE_A, conflicts.get(0).otherRouteId);
+	}
+
+	@Test
+	void routesOnDifferentTurnBackRailsHaveNoConflict() {
+		final TimetableConflicts.RouteTimes other = route(3, new long[]{PLATFORM_3, PLATFORM_1}, times(), 20);
+		other.addTurnBack(turnBack(new UUID(2, 2), 3, 0));
+		assertTrue(check(routeA(new UUID(1, 1), 10), other, routeB(30)).isEmpty());
+	}
+
+	@Test
+	void anotherRouteOnTheTurnBackRailConflicts() {
+		final TimetableConflicts.RouteTimes other = route(3, new long[]{PLATFORM_3, 14}, times(), 20);
+		other.addTurnBack(turnBack(new UUID(1, 1), 3, 0));
+
+		final List<TimetableConflicts.Conflict> conflicts = check(routeA(new UUID(1, 1), 10), other, routeB(40));
+
+		assertEquals(1, conflicts.size());
+		assertEquals(3, conflicts.get(0).otherRouteId);
+	}
+
+	@Test
+	void aTrainUsingATurnBackRailLeavesItsPlatform() {
+		// Route A ends where route B starts, but the train goes by way of the rail in between, so another service fits in between
+		final TimetableConflicts.RouteTimes routeA = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 10);
+		routeA.nextRouteId = ROUTE_B;
+		routeA.addTurnBack(turnBack(new UUID(1, 1), ROUTE_A, ROUTE_B));
+		final TimetableConflicts.RouteTimes routeB = route(ROUTE_B, new long[]{PLATFORM_2, PLATFORM_3}, times(), 30);
+		final TimetableConflicts.RouteTimes other = route(3, new long[]{PLATFORM_2}, new long[][]{{0, MINUTE}}, 20);
+
+		assertTrue(check(routeA, routeB, other).isEmpty());
 	}
 
 	@Test
