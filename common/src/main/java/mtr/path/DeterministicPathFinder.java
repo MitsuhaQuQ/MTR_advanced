@@ -1,5 +1,6 @@
 package mtr.path;
 
+import mtr.advanced.PathBoundaries;
 import mtr.data.Platform;
 import mtr.data.Rail;
 import mtr.data.RailType;
@@ -32,6 +33,15 @@ public final class DeterministicPathFinder {
 				getKind(rail.railType), rail.getLength() / rail.railType.maxBlocksPerTick, rail
 		)));
 		return builder.build();
+	}
+
+	/**
+	 * Like {@link #compile(Map)}, with searches kept to the regions of the pathfinding boundaries.
+	 */
+	public static RailGraph<Rail> compile(Map<BlockPos, Map<BlockPos, Rail>> rails, PathBoundaries boundaries) {
+		final RailGraph<Rail> graph = compile(rails);
+		graph.setRegions(boundaries);
+		return graph;
 	}
 
 	/**

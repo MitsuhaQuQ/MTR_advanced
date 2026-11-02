@@ -491,7 +491,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final long[][] times = getDepotTimes(railwayData, testRoute);
 			if (times == null) {
 				if (graph[0] == null && canUseRailGraph(route)) {
-					graph[0] = DeterministicPathFinder.compile(rails);
+					graph[0] = DeterministicPathFinder.compile(rails, railwayData.pathBoundaries);
 				}
 				final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, testRoute, rails, graph[0]);
 				if (timeFinder != null) {
@@ -595,7 +595,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	private static void calculateTimetableTimes(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, Route route) {
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
-		final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, route, rails, canUseRailGraph(route) ? DeterministicPathFinder.compile(rails) : null);
+		final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, route, rails, canUseRailGraph(route) ? DeterministicPathFinder.compile(rails, railwayData.pathBoundaries) : null);
 
 		if (timeFinder == null) {
 			sendTimetableTimes(player, route.id, new long[0][]);
@@ -702,6 +702,25 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				if (turnBackDwell >= 0) {
 					railwayData.setTurnBackDwell(pos, Math.min(turnBackDwell, Rail.MAX_TURN_BACK_DWELL));
 				}
+			}
+		});
+	}
+
+	/**
+	 * Sets or clears a pathfinding boundary on a node, or on the rail from it to another node when the second position
+	 * is sent.
+	 */
+	public static void receivePathBoundaryC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final BlockPos pos1 = packet.readBlockPos();
+		final BlockPos pos2 = packet.readBoolean() ? packet.readBlockPos() : null;
+		final boolean isBoundary = packet.readBoolean();
+		PacketGuard.execute(minecraftServer, () -> {
+			if (!canEditBlock(player, pos1) || RailwayData.hasNoPermission(player)) {
+				return;
+			}
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) {
+				railwayData.setPathBoundary(player, pos1, pos2, isBoundary);
 			}
 		});
 	}

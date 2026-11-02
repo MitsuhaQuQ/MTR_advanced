@@ -1020,7 +1020,7 @@
 					return `<td class="${classes}" data-svc="${s.id}" data-stop="${i}" data-kind="${passes ? "pass" : kind}" title="${title}" tabindex="0">${text}</td>`;
 				}).join("");
 				const label = { dep: "发", arr: "到", pass: "通过" }[kind];
-				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${stop.boundary ? "（时刻边界，可以在这里接出或接入）" : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> 界</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="车厂的列车从这里接入环线"> 入</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
+				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${escapeHtml(trackTitle(stop))}${stop.boundary ? "（时刻边界，可以在这里接出或接入）" : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> 界</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="车厂的列车从这里接入环线"> 入</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
 			});
 		});
 		view.innerHTML = tools + `<table class="tt">${head}<tbody>${rows.join("")}</tbody></table>`;
@@ -1158,6 +1158,13 @@
 
 	// ---------- Loops ----------
 	const isLoop = r => r.stops.length > 2 && r.stops[0].platformId === r.stops[r.stops.length - 1].platformId;
+
+	/** The platform a stop uses and the others the track picker could offer there (same station, region and reachable). */
+	function trackTitle(stop) {
+		const trackName = c => `${c.name || "?"}${c.passingTrack ? "（待避线）" : ""}`;
+		const others = (stop.candidates || []).filter(c => c.id !== stop.platformId);
+		return ` 站台 ${trackName({ name: stop.platform, passingTrack: stop.passingTrack })}${others.length ? `；还可停 ${others.map(trackName).join("、")}` : ""}`;
+	}
 
 	/** The stop where trains from the depot join a loop, which is its first stop unless another is set. */
 	function loopEntryStop(r) {

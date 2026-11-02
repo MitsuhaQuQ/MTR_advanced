@@ -12,7 +12,7 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 19;
+	int PROTOCOL_VERSION = 20;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 	ResourceLocation PACKET_LINE_WORDS = new ResourceLocation(MTR.MOD_ID, "packet_line_words");
@@ -27,6 +27,8 @@ public interface IPacket {
 	ResourceLocation PACKET_OPEN_TRAIN_SENSOR_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_train_sensor_screen");
 	ResourceLocation PACKET_OPEN_NODE_ANGLE_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_node_angle_screen");
 	ResourceLocation PACKET_SET_KEY_NODE = new ResourceLocation(MTR.MOD_ID, "packet_set_key_node");
+	ResourceLocation PACKET_PATH_REGIONS = new ResourceLocation(MTR.MOD_ID, "packet_path_regions");
+	ResourceLocation PACKET_UPDATE_PATH_BOUNDARY = new ResourceLocation(MTR.MOD_ID, "packet_update_path_boundary");
 	ResourceLocation PACKET_REQUEST_MAP_RAILS = new ResourceLocation(MTR.MOD_ID, "packet_request_map_rails");
 	ResourceLocation PACKET_MAP_DIGEST = new ResourceLocation(MTR.MOD_ID, "packet_map_digest");
 	ResourceLocation PACKET_MAP_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_map_wanted");

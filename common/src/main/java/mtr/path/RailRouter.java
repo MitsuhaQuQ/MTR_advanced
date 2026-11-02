@@ -1,9 +1,11 @@
 package mtr.path;
 
+import mtr.advanced.PathRegions;
 import mtr.path.RailGraph.Connection;
 import mtr.path.RailGraph.Kind;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +35,7 @@ public final class RailRouter {
 			}
 		}
 
+		final BitSet[] legs = getLegRegions(graph, targets);
 		final Map<Long, State<R>> best = new HashMap<>();
 		final PriorityQueue<State<R>> queue = new PriorityQueue<>((state1, state2) -> {
 			final int compare = Double.compare(state1.estimate, state2.estimate);
@@ -48,8 +51,8 @@ public final class RailRouter {
 		if (forward == null || backward == null) {
 			return new Result<>(Collections.emptyList(), 0);
 		}
-		push(graph, targets, best, queue, null, forward, 1, 0, false);
-		push(graph, targets, best, queue, null, backward, 1, 0, false);
+		push(graph, targets, legs, best, queue, null, forward, 1, 0, false);
+		push(graph, targets, legs, best, queue, null, backward, 1, 0, false);
 
 		int mostCompleted = 1;
 		while (!queue.isEmpty()) {
@@ -66,7 +69,7 @@ public final class RailRouter {
 			if (state.justCompletedRail) {
 				final Connection<R> opposite = graph.reverseOf(connection);
 				if (opposite != null) {
-					push(graph, targets, best, queue, state, opposite, state.completed, state.cost + opposite.cost + TURN_BACK_PENALTY, true);
+					push(graph, targets, legs, best, queue, state, opposite, state.completed, state.cost + opposite.cost + TURN_BACK_PENALTY, true);
 				}
 			}
 
@@ -76,7 +79,7 @@ public final class RailRouter {
 					final boolean reversing = next.toPos == connection.fromPos;
 					final boolean isTarget = targets.get(state.completed).matches(next);
 					final double penalty = (reversing ? TURN_BACK_PENALTY : 0) + (next.kind == Kind.PLATFORM && !isTarget ? OTHER_PLATFORM_PENALTY : 0);
-					push(graph, targets, best, queue, state, next, state.completed, state.cost + next.cost + penalty, false);
+					push(graph, targets, legs, best, queue, state, next, state.completed, state.cost + next.cost + penalty, false);
 				}
 			}
 		}
@@ -84,7 +87,27 @@ public final class RailRouter {
 		return new Result<>(Collections.emptyList(), mostCompleted);
 	}
 
-	private static <R> void push(RailGraph<R> graph, List<Target> targets, Map<Long, State<R>> best, PriorityQueue<State<R>> queue, State<R> parent, Connection<R> connection, int completedBefore, double cost, boolean reversal) {
+	/**
+	 * With pathfinding boundaries, each part of the route between two targets stays in the regions of its ends.
+	 *
+	 * @return the regions allowed while heading for each target, or null when the graph has no boundaries
+	 */
+	private static <R> BitSet[] getLegRegions(RailGraph<R> graph, List<Target> targets) {
+		final PathRegions regions = graph.getRegions();
+		if (regions == null) {
+			return null;
+		}
+		final BitSet[] legs = new BitSet[targets.size()];
+		for (int i = 1; i < targets.size(); i++) {
+			legs[i] = PathRegions.legRegions(targets.get(i - 1).getRegions(graph, regions), targets.get(i).getRegions(graph, regions));
+		}
+		return legs;
+	}
+
+	private static <R> void push(RailGraph<R> graph, List<Target> targets, BitSet[] legs, Map<Long, State<R>> best, PriorityQueue<State<R>> queue, State<R> parent, Connection<R> connection, int completedBefore, double cost, boolean reversal) {
+		if (legs != null && !graph.getRegions().allows(connection, legs[completedBefore])) {
+			return;
+		}
 		int completed = completedBefore;
 		boolean completedRail = false;
 		int completedTarget = -1;
@@ -156,6 +179,10 @@ public final class RailRouter {
 
 		public boolean isRail() {
 			return rail;
+		}
+
+		private int[] getRegions(RailGraph<?> graph, PathRegions regions) {
+			return rail ? regions.railRegions(graph, pos1, pos2) : regions.nodeRegions(pos1);
 		}
 
 		private boolean matches(Connection<?> connection) {

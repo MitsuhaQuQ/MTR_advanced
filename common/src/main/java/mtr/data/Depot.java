@@ -1,6 +1,7 @@
 package mtr.data;
 
 import io.netty.buffer.Unpooled;
+import mtr.advanced.PathBoundaries;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.PathData;
 import mtr.path.DeterministicPathFinder;
@@ -341,7 +342,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final List<MainPath> mainPaths = new ArrayList<>();
 		sidingGroups.forEach((serviceTypes, sidingGroup) -> mainPaths.add(new MainPath(filterRoutes(getRoutes(dataCache), serviceTypes), sidingGroup, dataCache)));
 
-		final RailGraph<Rail> graph = getPathGraph(rails);
+		final RailwayData railwayData = RailwayData.getInstance(world);
+		final RailGraph<Rail> graph = getPathGraph(rails, railwayData == null ? null : railwayData.pathBoundaries);
 
 		final Thread thread = new Thread(() -> {
 			try {
@@ -367,7 +369,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Must be called on the server thread. Null selects the old search, which airplanes and cable cars always use.
 	 */
 	public RailGraph<Rail> getPathGraph(Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		return useDeterministicPath && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails) : null;
+		return getPathGraph(rails, null);
+	}
+
+	/**
+	 * Like {@link #getPathGraph(Map)}, kept to the regions of the pathfinding boundaries.
+	 */
+	public RailGraph<Rail> getPathGraph(Map<BlockPos, Map<BlockPos, Rail>> rails, PathBoundaries boundaries) {
+		return useDeterministicPath && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails, boundaries) : null;
 	}
 
 	public void requestDeploy(long sidingId, TrainServer train) {

@@ -1,5 +1,6 @@
 package mtr.path;
 
+import mtr.advanced.PathRegions;
 import mtr.data.Rail;
 import mtr.data.SavedRailBase;
 import net.minecraft.core.BlockPos;
@@ -44,9 +45,23 @@ public final class PathFailure {
 				}
 			}
 		}
-		final long startPos = savedRailBases.get(section).getOrderedPositions(BlockPos.ZERO, false).get(0).asLong();
-		final long endPos = savedRailBases.get(section + 1).getOrderedPositions(BlockPos.ZERO, false).get(0).asLong();
-		return new PathFailure(graph.isConnected(startPos, endPos) ? Type.NO_ROUTE : Type.DISCONNECTED, 0);
+		final List<BlockPos> startPositions = savedRailBases.get(section).getOrderedPositions(BlockPos.ZERO, false);
+		final List<BlockPos> endPositions = savedRailBases.get(section + 1).getOrderedPositions(BlockPos.ZERO, false);
+		final long startPos = startPositions.get(0).asLong();
+		final long endPos = endPositions.get(0).asLong();
+		if (!graph.isConnected(startPos, endPos)) {
+			return new PathFailure(Type.DISCONNECTED, 0);
+		}
+		// Stations in regions that don't touch can only be reached through waypoints on the boundaries between them
+		final PathRegions regions = graph.getRegions();
+		if (regions != null && (sectionWaypoints == null || section >= sectionWaypoints.size() || sectionWaypoints.get(section).isEmpty())) {
+			final int[] startRegions = regions.railRegions(graph, startPos, startPositions.get(1).asLong());
+			final int[] endRegions = regions.railRegions(graph, endPos, endPositions.get(1).asLong());
+			if (!PathRegions.shares(startRegions, endRegions)) {
+				return new PathFailure(Type.BOUNDARY, endPos);
+			}
+		}
+		return new PathFailure(Type.NO_ROUTE, 0);
 	}
 
 	public enum Type {
@@ -58,6 +73,10 @@ public final class PathFailure {
 		/**
 		 * A turn back rail a route lists can't be reached, or not from the same rails as the first one, and trains don't use it.
 		 */
-		TURN_BACK_UNUSED
+		TURN_BACK_UNUSED,
+		/**
+		 * The next station is in another region of the pathfinding boundaries, and nothing says where to cross.
+		 */
+		BOUNDARY
 	}
 }

@@ -22,10 +22,17 @@ public final class Platform extends SavedRailBase {
 	 * {@link mtr.advanced.TimetableBoundaries}.
 	 */
 	public boolean timetableBoundary;
+	/**
+	 * A passing track (a siding road at a station, 待避线) rather than a main line track. Players set it, so it is never
+	 * guessed: the editor's track picker and track diagram tell the two apart, and only stations with a passing track can
+	 * have a train overtaken.
+	 */
+	public boolean passingTrack;
 
 	private static final String KEY_DWELL_TIME = "dwell_time";
 	private static final String KEY_STATION_ID = "station_id";
 	private static final String KEY_TIMETABLE_BOUNDARY = "timetable_boundary";
+	private static final String KEY_PASSING_TRACK = "passing_track";
 
 	public Platform(long id, TransportMode transportMode, BlockPos pos1, BlockPos pos2) {
 		super(id, transportMode, pos1, pos2);
@@ -40,6 +47,7 @@ public final class Platform extends SavedRailBase {
 		final MessagePackHelper messagePackHelper = new MessagePackHelper(map);
 		stationId = messagePackHelper.getLong(KEY_STATION_ID);
 		timetableBoundary = messagePackHelper.getBoolean(KEY_TIMETABLE_BOUNDARY);
+		passingTrack = messagePackHelper.getBoolean(KEY_PASSING_TRACK);
 	}
 
 	@Deprecated
@@ -51,6 +59,7 @@ public final class Platform extends SavedRailBase {
 		super(packet);
 		stationId = packet.readLong();
 		timetableBoundary = packet.readBoolean();
+		passingTrack = packet.readBoolean();
 	}
 
 	@Override
@@ -58,11 +67,12 @@ public final class Platform extends SavedRailBase {
 		super.toMessagePack(messagePacker);
 		messagePacker.packString(KEY_STATION_ID).packLong(stationId);
 		messagePacker.packString(KEY_TIMETABLE_BOUNDARY).packBoolean(timetableBoundary);
+		messagePacker.packString(KEY_PASSING_TRACK).packBoolean(passingTrack);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 2;
+		return super.messagePackLength() + 3;
 	}
 
 	@Override
@@ -70,6 +80,7 @@ public final class Platform extends SavedRailBase {
 		super.writePacket(packet);
 		packet.writeLong(stationId);
 		packet.writeBoolean(timetableBoundary);
+		packet.writeBoolean(passingTrack);
 	}
 
 	@Override
@@ -78,6 +89,8 @@ public final class Platform extends SavedRailBase {
 			stationId = packet.readLong();
 		} else if (KEY_TIMETABLE_BOUNDARY.equals(key)) {
 			timetableBoundary = packet.readBoolean();
+		} else if (KEY_PASSING_TRACK.equals(key)) {
+			passingTrack = packet.readBoolean();
 		} else if (KEY_DWELL_TIME.equals(key)) {
 			name = packet.readUtf(PACKET_STRING_READ_LENGTH);
 			color = packet.readInt();
@@ -105,6 +118,16 @@ public final class Platform extends SavedRailBase {
 		packet.writeUtf(transportMode.toString());
 		packet.writeUtf(KEY_TIMETABLE_BOUNDARY);
 		packet.writeBoolean(timetableBoundary);
+		sendPacket.accept(packet);
+	}
+
+	public void setPassingTrack(boolean newPassingTrack, Consumer<FriendlyByteBuf> sendPacket) {
+		passingTrack = newPassingTrack;
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_PASSING_TRACK);
+		packet.writeBoolean(passingTrack);
 		sendPacket.accept(packet);
 	}
 

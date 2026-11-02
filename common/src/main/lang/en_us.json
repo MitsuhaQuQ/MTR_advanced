@@ -1,5 +1,5 @@
 {
-  "gui.mtr.platform_timetable_boundary_on": "Timetable boundary: yes (services can leave or join routes here)",
+  "gui.mtr.platform_timetable_boundary_on": "Timetable boundary: yes",
   "gui.mtr.platform_timetable_boundary_off": "Timetable boundary: no",
   "gui.mtr.timetable_editor_managed": "This route is managed in the advanced editor, so it can only be viewed here. The editor can hand it back to in-game editing.",
   "gui.mtr.advanced_editor": "Advanced Editor",
@@ -81,5 +81,12 @@
   "gui.mtr.route_line_name": "Line (empty: from the name)",
   "gui.mtr.route_service_type": "Service type (empty: from the name)",
   "gui.mtr.vehicle_service_types": "Service types",
-  "gui.mtr.vehicle_service_types_suggestion": "All, or like local, express. Refresh the path after changing"
+  "gui.mtr.vehicle_service_types_suggestion": "All, or like local, express. Refresh the path after changing",
+  "gui.mtr.platform_main_track": "Track: main line",
+  "gui.mtr.platform_passing_track": "Track: passing track",
+  "gui.mtr.path_failure_boundary": "Refresh failed: the next station is past a pathfinding boundary. Add the boundary node near %s as a waypoint",
+  "gui.mtr.region_filter_off": "Region filter (%s regions)",
+  "gui.mtr.region_filter_on": "Showing %s region(s), click to clear",
+  "gui.mtr.region_uncut": ", %s uncut",
+  "gui.mtr.region_missing": ", %s without rails"
 }

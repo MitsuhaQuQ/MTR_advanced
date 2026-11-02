@@ -37,6 +37,7 @@ public final class EditorData {
 		// Local time of day is UTC time of day plus this
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
 		data.addProperty("canEdit", ClientData.hasPermission());
+		data.addProperty("regionCount", ClientData.PATH_REGIONS.regionCount);
 
 		final List<Route> routes = ClientData.ROUTES.stream().filter(route -> !route.isHidden).sorted(Comparator.comparing((Route route) -> route.name).thenComparingLong(route -> route.id)).collect(Collectors.toList());
 		final JsonArray routesArray = new JsonArray();
@@ -97,6 +98,20 @@ public final class EditorData {
 			stopObject.addProperty("name", station == null ? "" : station.name);
 			stopObject.addProperty("platform", platform == null ? "" : platform.name);
 			stopObject.addProperty("pass", routePlatform.pass);
+			stopObject.addProperty("passingTrack", platform != null && platform.passingTrack);
+			// The tracks the track picker offers here: the same station, the same region, and reachable from the stops around
+			final JsonArray candidatesArray = new JsonArray();
+			for (final long candidateId : ClientData.PATH_REGIONS.getCandidates(route.id, i, routePlatform.platformId)) {
+				final Platform candidate = ClientData.DATA_CACHE.platformIdMap.get(candidateId);
+				if (candidate != null) {
+					final JsonObject candidateObject = new JsonObject();
+					candidateObject.addProperty("id", String.valueOf(candidateId));
+					candidateObject.addProperty("name", candidate.name);
+					candidateObject.addProperty("passingTrack", candidate.passingTrack);
+					candidatesArray.add(candidateObject);
+				}
+			}
+			stopObject.add("candidates", candidatesArray);
 			stopsArray.add(stopObject);
 		}
 		routeObject.add("stops", stopsArray);

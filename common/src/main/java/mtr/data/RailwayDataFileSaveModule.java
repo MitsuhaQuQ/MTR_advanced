@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.advanced.PathBoundaries;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.level.Level;
@@ -36,6 +37,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private final List<BlockPos> dirtyRailPositions = new ArrayList<>();
 	private final List<SignalBlocks.SignalBlock> dirtySignalBlocks = new ArrayList<>();
 	private final List<BlockPos> dirtyKeyNodes = new ArrayList<>();
+	private final List<Long> dirtyBoundaryNodes = new ArrayList<>();
+	private final List<UUID> dirtyBoundarySegments = new ArrayList<>();
 
 	private final Map<String, Integer> existingFiles = new HashMap<>();
 	private final Set<String> checkFilesToDelete = new LinkedHashSet<>();
@@ -52,7 +55,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private static final String TYPE_RAILS = "rails";
 	private static final String TYPE_SIGNAL_BLOCKS = "signal-blocks";
 	private static final String TYPE_KEY_NODES = "key-nodes";
-	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES};
+	private static final String TYPE_BOUNDARY_NODES = "boundary-nodes";
+	private static final String TYPE_BOUNDARY_SEGMENTS = "boundary-segments";
+	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES, TYPE_BOUNDARY_NODES, TYPE_BOUNDARY_SEGMENTS};
 
 	public RailwayDataFileSaveModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, Path savePath, SignalBlocks signalBlocks) {
 		super(railwayData, world, rails);
@@ -78,6 +83,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		readMessagePackFromFile(TYPE_RAILS, RailEntry::new, railEntry -> rails.put(railEntry.pos, railEntry.connections), true);
 		readMessagePackFromFile(TYPE_SIGNAL_BLOCKS, SignalBlocks.SignalBlock::new, signalBlocks.signalBlocks::add, true);
 		readMessagePackFromFile(TYPE_KEY_NODES, KeyNode::new, keyNode -> railwayData.keyNodes.add(keyNode.pos), true);
+		readMessagePackFromFile(TYPE_BOUNDARY_NODES, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.nodes.add(entry.node), true);
+		readMessagePackFromFile(TYPE_BOUNDARY_SEGMENTS, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.segments.add(entry.segment), true);
 
 		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location());
 		canAutoSave = true;
@@ -95,6 +102,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		dirtyRailPositions.clear();
 		dirtySignalBlocks.clear();
 		dirtyKeyNodes.clear();
+		dirtyBoundaryNodes.clear();
+		dirtyBoundarySegments.clear();
 		checkFilesToDelete.clear();
 		autoSave();
 		while (true) {
@@ -129,6 +138,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			dirtyRailPositions.addAll(rails.keySet());
 			dirtySignalBlocks.addAll(signalBlocks.signalBlocks);
 			dirtyKeyNodes.addAll(railwayData.keyNodes);
+			dirtyBoundaryNodes.addAll(railwayData.pathBoundaries.nodes);
+			dirtyBoundarySegments.addAll(railwayData.pathBoundaries.segments);
 			checkFilesToDelete.addAll(existingFiles.keySet());
 			dataStore.backup();
 		}
@@ -163,8 +174,14 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			if (hasSpareTime) {
 				hasSpareTime = writeDirtyDataToFile(dirtyKeyNodes, pos -> railwayData.keyNodes.contains(pos) ? new KeyNode(pos) : null, BlockPos::asLong, TYPE_KEY_NODES);
 			}
+			if (hasSpareTime) {
+				hasSpareTime = writeDirtyDataToFile(dirtyBoundaryNodes, pos -> railwayData.pathBoundaries.nodes.contains(pos) ? new PathBoundaries.Entry(pos) : null, pos -> pos, TYPE_BOUNDARY_NODES);
+			}
+			if (hasSpareTime) {
+				hasSpareTime = writeDirtyDataToFile(dirtyBoundarySegments, segment -> railwayData.pathBoundaries.segments.contains(segment) ? new PathBoundaries.Entry(segment) : null, segment -> new PathBoundaries.Entry(segment).getId(), TYPE_BOUNDARY_SEGMENTS);
+			}
 
-			final boolean doneWriting = dirtyStationIds.isEmpty() && dirtyPlatformIds.isEmpty() && dirtySidingIds.isEmpty() && dirtyRouteIds.isEmpty() && dirtyDepotIds.isEmpty() && dirtyLiftIds.isEmpty() && dirtyRailPositions.isEmpty() && dirtySignalBlocks.isEmpty() && dirtyKeyNodes.isEmpty();
+			final boolean doneWriting = dirtyStationIds.isEmpty() && dirtyPlatformIds.isEmpty() && dirtySidingIds.isEmpty() && dirtyRouteIds.isEmpty() && dirtyDepotIds.isEmpty() && dirtyLiftIds.isEmpty() && dirtyRailPositions.isEmpty() && dirtySignalBlocks.isEmpty() && dirtyKeyNodes.isEmpty() && dirtyBoundaryNodes.isEmpty() && dirtyBoundarySegments.isEmpty();
 			if (hasSpareTime && !checkFilesToDelete.isEmpty() && doneWriting) {
 				final String key = checkFilesToDelete.iterator().next();
 				checkFilesToDelete.remove(key);

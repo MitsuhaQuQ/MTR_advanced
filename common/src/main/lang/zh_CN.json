@@ -1,5 +1,5 @@
 {
-  "gui.mtr.platform_timetable_boundary_on": "时刻边界：是（班次可以在这里接出或接入其他线路）",
+  "gui.mtr.platform_timetable_boundary_on": "时刻边界：是（可接出接入）",
   "gui.mtr.platform_timetable_boundary_off": "时刻边界：否",
   "gui.mtr.timetable_editor_managed": "这条线路由高级编辑器管理，这里只能查看。可以在高级编辑器里把它交回游戏内编辑。",
   "gui.mtr.advanced_editor": "高级编辑器",
@@ -81,5 +81,12 @@
   "gui.mtr.route_line_name": "所属线路（留空按名称识别）",
   "gui.mtr.route_service_type": "种别（留空按名称识别）",
   "gui.mtr.vehicle_service_types": "可跑种别",
-  "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改后刷新车厂路径"
+  "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改后刷新车厂路径",
+  "gui.mtr.platform_main_track": "轨道：正线",
+  "gui.mtr.platform_passing_track": "轨道：待避线",
+  "gui.mtr.path_failure_boundary": "刷新失败：下一站在寻路边界的另一侧，请把 %s 附近的边界节点设为必经节点",
+  "gui.mtr.region_filter_off": "区域筛选（%s 个区域）",
+  "gui.mtr.region_filter_on": "只显示 %s 个区域，点击取消",
+  "gui.mtr.region_uncut": "，%s 处未切开",
+  "gui.mtr.region_missing": "，%s 处没有轨道"
 }

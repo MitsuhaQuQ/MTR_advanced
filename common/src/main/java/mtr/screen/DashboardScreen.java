@@ -4,6 +4,8 @@ import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.advanced.AdvancedEditing;
+import mtr.advanced.PathRegions;
+import mtr.advanced.RegionData;
 import mtr.client.ClientData;
 import mtr.client.editor.EditorServer;
 import mtr.client.IDrawing;
@@ -20,11 +22,8 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.function.Function;
 
 public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
@@ -52,6 +51,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonRailActions;
 	private final Button buttonOptions;
 	private final Button buttonAdvancedEditor;
+	private final Button buttonRegionFilter;
+	// The regions of the pathfinding boundaries the lists are cut down to, or null for everything
+	private int[] regionFilter;
+	private long pickedStationId;
 
 	private final WidgetBetterTextField textFieldName;
 	private final WidgetBetterTextField textFieldCustomDestination;
@@ -122,6 +125,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			}
 		});
 
+		buttonRegionFilter = UtilitiesClient.newButton(Text.literal(""), button -> toggleRegionFilter());
+
 		dashboardList = new DashboardList(this::onFind, this::onDrawArea, this::onEdit, this::onSort, null, this::onDelete, this::getList, () -> ClientData.DASHBOARD_SEARCH, text -> ClientData.DASHBOARD_SEARCH = text);
 
 		widgetMap.setRoutePicking(() -> selectedTab == SelectedTab.ROUTES && editingRoute == null, route -> {
@@ -139,6 +144,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		widgetMap.setStationPicking(() -> selectedTab == SelectedTab.STATIONS && editingArea == null, station -> {
 			widgetMap.setSelectedStation(station.id);
 			dashboardList.selectItem(station.id);
+			pickedStationId = station.id;
 		});
 		widgetMap.setDepotPicking(() -> selectedTab == SelectedTab.DEPOTS && editingArea == null, depot -> {
 			widgetMap.setSelectedDepot(depot.id);
@@ -170,6 +176,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(buttonZoomOut, width - SQUARE_SIZE, bottomRowY, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonRailActions, width - SQUARE_SIZE * 10, bottomRowY, SQUARE_SIZE * 5);
 		IDrawing.setPositionAndWidth(buttonAdvancedEditor, width - SQUARE_SIZE * 15, bottomRowY, SQUARE_SIZE * 5);
+		IDrawing.setPositionAndWidth(buttonRegionFilter, width - SQUARE_SIZE * 22, bottomRowY, SQUARE_SIZE * 7);
 		IDrawing.setPositionAndWidth(buttonOptions, width - SQUARE_SIZE * 5, bottomRowY, SQUARE_SIZE * 3);
 
 		IDrawing.setPositionAndWidth(buttonStationArea, 0, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
@@ -206,6 +213,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		addDrawableChild(buttonRemoveStationArea);
 		addDrawableChild(buttonOptions);
 		addDrawableChild(buttonAdvancedEditor);
+		addDrawableChild(buttonRegionFilter);
 
 		addDrawableChild(textFieldName);
 		addDrawableChild(textFieldCustomDestination);
@@ -252,12 +260,13 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		textFieldCustomDestination.tick();
 		textFieldDwellOverride.tick();
 		dashboardList.tick();
+		updateRegionFilterButton();
 
 		try {
 			switch (selectedTab) {
 				case STATIONS:
 					if (editingArea == null) {
-						dashboardList.setData(ClientData.STATIONS, true, true, true, false, false, true);
+						dashboardList.setData(filterByRegion(ClientData.STATIONS, station -> ClientData.DATA_CACHE.requestStationIdToPlatforms(station.id), true), true, true, true, false, false, true);
 					} else {
 						final Map<Long, Platform> platformData = editingArea instanceof Station ? ClientData.DATA_CACHE.getPlatformsInArea((Station) editingArea) : ClientData.DATA_CACHE.requestStationIdToPlatforms(editingArea.id);
 						dashboardList.setData(platformData == null ? new ArrayList<>() : new ArrayList<>(platformData.values()), true, false, true, false, false, false);
@@ -279,7 +288,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 					break;
 				case DEPOTS:
 					if (editingArea == null) {
-						dashboardList.setData(ClientData.getFilteredDataSet(transportMode, ClientData.DEPOTS), true, true, true, false, false, true);
+						dashboardList.setData(filterByRegion(ClientData.getFilteredDataSet(transportMode, ClientData.DEPOTS), depot -> ClientData.DATA_CACHE.requestDepotIdToSidings(depot.id), false), true, true, true, false, false, true);
 					} else {
 						final Map<Long, Siding> sidingData = ClientData.DATA_CACHE.requestDepotIdToSidings(editingArea.id);
 						dashboardList.setData(sidingData == null ? new ArrayList<>() : new ArrayList<>(sidingData.values()), true, false, true, false, false, false);
@@ -301,6 +310,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	 */
 	private void updateRouteRows() {
 		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
+		if (regionFilter != null) {
+			routes.removeIf(route -> route.platformIds.stream().noneMatch(routePlatform -> PathRegions.shares(regionFilter, ClientData.PATH_REGIONS.platformRegions.getOrDefault(routePlatform.platformId, new int[0]))));
+		}
 		Collections.sort(routes);
 
 		if (ClientData.DASHBOARD_SEARCH.isEmpty()) {
@@ -309,6 +321,59 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			lineRows.clear();
 			dashboardList.setData(routes, true, true, true, false, false, true);
 		}
+	}
+
+	/**
+	 * Picks the regions of the station picked last on the map or in the list, or goes back to showing everything (design
+	 * document 5.13). Regions aren't named or saved, so changing the network only changes what a new pick gives.
+	 */
+	private void toggleRegionFilter() {
+		if (regionFilter != null) {
+			regionFilter = null;
+		} else {
+			final Map<Long, Platform> platforms = ClientData.DATA_CACHE.requestStationIdToPlatforms(pickedStationId);
+			final Set<Integer> regions = new TreeSet<>();
+			if (platforms != null) {
+				platforms.keySet().forEach(platformId -> {
+					for (final int region : ClientData.PATH_REGIONS.platformRegions.getOrDefault(platformId, new int[0])) {
+						regions.add(region);
+					}
+				});
+			}
+			regionFilter = regions.isEmpty() ? null : regions.stream().mapToInt(Integer::intValue).toArray();
+		}
+		dashboardList.clearSelectedItem();
+	}
+
+	private void updateRegionFilterButton() {
+		final RegionData regionData = ClientData.PATH_REGIONS;
+		final int uncut = regionData.uncutNodes.size() + regionData.uncutSegments.size();
+		final int missing = regionData.missingNodes.size() + regionData.missingSegments.size();
+		final String problems = (uncut > 0 ? Text.translatable("gui.mtr.region_uncut", uncut).getString() : "") + (missing > 0 ? Text.translatable("gui.mtr.region_missing", missing).getString() : "");
+		if (regionFilter != null) {
+			buttonRegionFilter.setMessage(Text.translatable("gui.mtr.region_filter_on", regionFilter.length));
+		} else {
+			buttonRegionFilter.setMessage(Text.literal(Text.translatable("gui.mtr.region_filter_off", regionData.regionCount).getString() + problems));
+		}
+		buttonRegionFilter.active = regionFilter != null || pickedStationId != 0;
+	}
+
+	/**
+	 * Stations and depots without any platform or siding yet aren't part of any region, so they are always shown.
+	 */
+	private <T extends NameColorDataBase, U extends SavedRailBase> Set<T> filterByRegion(Set<T> data, Function<T, Map<Long, U>> getSavedRails, boolean isPlatform) {
+		if (regionFilter == null) {
+			return data;
+		}
+		final Map<Long, int[]> regions = isPlatform ? ClientData.PATH_REGIONS.platformRegions : ClientData.PATH_REGIONS.sidingRegions;
+		final Set<T> filtered = new HashSet<>();
+		data.forEach(item -> {
+			final Map<Long, U> savedRails = getSavedRails.apply(item);
+			if (savedRails == null || savedRails.isEmpty() || savedRails.keySet().stream().anyMatch(id -> PathRegions.shares(regionFilter, regions.getOrDefault(id, new int[0])))) {
+				filtered.add(item);
+			}
+		});
+		return filtered;
 	}
 
 	private void onClickLineHeader(NameColorDataBase data) {
@@ -346,6 +411,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		} else if (selectedTab == SelectedTab.STATIONS || selectedTab == SelectedTab.DEPOTS) {
 			if (editingArea == null && data instanceof AreaBase) {
 				final AreaBase area = (AreaBase) data;
+				if (data instanceof Station) {
+					pickedStationId = data.id;
+				}
 				if (AreaBase.nonNullCorners(area)) {
 					widgetMap.find(area.corner1.getA(), area.corner1.getB(), area.corner2.getA(), area.corner2.getB());
 				}

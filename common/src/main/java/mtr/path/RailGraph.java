@@ -1,5 +1,8 @@
 package mtr.path;
 
+import mtr.advanced.PathBoundaries;
+import mtr.advanced.PathRegions;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -19,6 +22,10 @@ public final class RailGraph<R> {
 	private final Map<Long, List<Connection<R>>> byNode = new HashMap<>();
 	private final Map<Long, Long> components = new HashMap<>();
 	final double maxChordPerCost;
+	/**
+	 * The regions searches are kept to, or null when there are no pathfinding boundaries.
+	 */
+	private PathRegions regions;
 
 	private RailGraph(List<Connection<R>> sortedConnections) {
 		connections = Collections.unmodifiableList(sortedConnections);
@@ -65,8 +72,20 @@ public final class RailGraph<R> {
 		return hasNode(pos1) && hasNode(pos2) && findComponent(pos1) == findComponent(pos2);
 	}
 
-	List<Connection<R>> outgoing(long pos) {
+	public List<Connection<R>> outgoing(long pos) {
 		return outgoing.getOrDefault(pos, Collections.emptyList());
+	}
+
+	public PathRegions getRegions() {
+		return regions;
+	}
+
+	/**
+	 * Keeps searches to the regions of the pathfinding boundaries. Without boundaries the regions only repeat the
+	 * connected parts, so they are left out.
+	 */
+	public void setRegions(PathBoundaries boundaries) {
+		regions = boundaries == null || boundaries.isEmpty() ? null : PathRegions.compute(this, boundaries);
 	}
 
 	Connection<R> reverseOf(Connection<R> connection) {
@@ -121,11 +140,11 @@ public final class RailGraph<R> {
 			this.rail = rail;
 		}
 
-		int index() {
+		public int index() {
 			return index;
 		}
 
-		boolean continuesFrom(Connection<R> previous) {
+		public boolean continuesFrom(Connection<R> previous) {
 			return kind != Kind.DISABLED && startFacing != previous.endFacing;
 		}
 

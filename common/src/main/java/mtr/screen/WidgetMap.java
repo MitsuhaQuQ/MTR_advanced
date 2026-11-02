@@ -369,7 +369,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	/**
 	 * The bottom right corner holds the dashboard's buttons, from the advanced editor to zoom, so clicks there go to them.
 	 */
-	private static final int BOTTOM_BUTTONS_WIDTH = SQUARE_SIZE * 15;
+	private static final int BOTTOM_BUTTONS_WIDTH = SQUARE_SIZE * 22;
 
 	@Override
 	public boolean isMouseOver(double mouseX, double mouseY) {

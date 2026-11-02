@@ -1,0 +1,181 @@
+package mtr.advanced;
+
+import mtr.path.RailGraph;
+import mtr.path.RailGraph.Kind;
+import mtr.path.RailRouter;
+import mtr.path.RailRouter.Result;
+import mtr.path.RailRouter.Target;
+import org.junit.jupiter.api.Test;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class PathRegionsTest {
+
+	private static final int EAST = 0;
+	private static final int WEST = 1;
+
+	private static long pos(int x, int z) {
+		return x * 100000L + z;
+	}
+
+	/**
+	 * Both directions of a rail running east from the first node, like {@code RailRouterTest}.
+	 */
+	private static void add(RailGraph.Builder<String> builder, int x1, int z1, int x2, int z2, Kind kind, double speed) {
+		final double cost = Math.hypot(x2 - x1, z2 - z1) / speed;
+		builder.add(pos(x1, z1), x1, z1, EAST, pos(x2, z2), x2, 0, z2, WEST, kind, cost, x1 + "," + z1 + ">" + x2 + "," + z2);
+		builder.add(pos(x2, z2), x2, z2, WEST, pos(x1, z1), x1, 0, z1, EAST, kind, cost, x2 + "," + z2 + ">" + x1 + "," + z1);
+	}
+
+	private static Target saved(int x1, int z1, int x2, int z2) {
+		return Target.rail(pos(x1, z1), x1, z1, pos(x2, z2), x2, z2);
+	}
+
+	private static List<String> names(Result<String> result) {
+		return result.steps.stream().map(step -> step.connection.rail).collect(Collectors.toList());
+	}
+
+	/**
+	 * Line X runs from platform (0,0)-(10,0) to platform (100,0)-(110,0) on a slow direct rail. A fast detour leaves at
+	 * (10,0), runs along line Y from (20,50) to (90,50), and comes back at (100,0).
+	 */
+	private static RailGraph.Builder<String> twoLines() {
+		final RailGraph.Builder<String> builder = new RailGraph.Builder<>();
+		add(builder, 0, 0, 10, 0, Kind.PLATFORM, 2);
+		add(builder, 10, 0, 100, 0, Kind.NORMAL, 0.5);
+		add(builder, 100, 0, 110, 0, Kind.PLATFORM, 2);
+		add(builder, 10, 0, 20, 50, Kind.NORMAL, 8);
+		add(builder, 20, 50, 90, 50, Kind.NORMAL, 8);
+		add(builder, 90, 50, 100, 0, Kind.NORMAL, 8);
+		return builder;
+	}
+
+	private static PathBoundaries yCutOff() {
+		final PathBoundaries boundaries = new PathBoundaries();
+		boundaries.nodes.add(pos(20, 50));
+		boundaries.nodes.add(pos(90, 50));
+		return boundaries;
+	}
+
+	@Test
+	void withoutBoundariesTheRegionsAreTheConnectedParts() {
+		final RailGraph.Builder<String> builder = twoLines();
+		add(builder, 500, 500, 510, 500, Kind.PLATFORM, 2);
+		final RailGraph<String> graph = builder.build();
+		final PathRegions regions = PathRegions.compute(graph, new PathBoundaries());
+		assertEquals(2, regions.count);
+		assertTrue(regions.uncutNodes.isEmpty());
+
+		// Searches don't change at all without boundaries
+		graph.setRegions(new PathBoundaries());
+		assertNull(graph.getRegions());
+		assertTrue(names(RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0)))).contains("20,50>90,50"));
+	}
+
+	@Test
+	void boundaryNodesCutOffARegionAndBelongToBothSides() {
+		final RailGraph<String> graph = twoLines().build();
+		final PathRegions regions = PathRegions.compute(graph, yCutOff());
+		assertEquals(2, regions.count);
+		assertEquals(2, regions.nodeRegions(pos(20, 50)).length);
+		assertEquals(1, regions.nodeRegions(pos(0, 0)).length);
+		assertFalse(PathRegions.shares(regions.railRegions(graph, pos(20, 50), pos(90, 50)), regions.railRegions(graph, pos(0, 0), pos(10, 0))));
+		assertTrue(regions.uncutNodes.isEmpty());
+	}
+
+	@Test
+	void searchesStayInTheRegionOfBothEnds() {
+		final RailGraph<String> graph = twoLines().build();
+		graph.setRegions(yCutOff());
+		final List<String> path = names(RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0))));
+		assertFalse(path.isEmpty());
+		assertFalse(path.contains("20,50>90,50"));
+		assertTrue(path.contains("10,0>100,0"));
+	}
+
+	@Test
+	void searchesCanCrossIntoTheNextRegion() {
+		final RailGraph<String> graph = twoLines().build();
+		graph.setRegions(yCutOff());
+		final Result<String> result = RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(20, 50, 90, 50)));
+		assertTrue(result.isSuccess());
+		assertTrue(names(result).contains("10,0>20,50"));
+	}
+
+	@Test
+	void boundaryRailsBelongToBothSides() {
+		final RailGraph<String> graph = twoLines().build();
+		final PathBoundaries boundaries = new PathBoundaries();
+		// Cutting the slow rail and the detour leaves the two stations apart
+		boundaries.segments.add(PathBoundaries.segmentKey(pos(10, 0), pos(100, 0)));
+		boundaries.segments.add(PathBoundaries.segmentKey(pos(90, 50), pos(100, 0)));
+		final PathRegions regions = PathRegions.compute(graph, boundaries);
+		assertEquals(2, regions.count);
+		assertEquals(2, regions.railRegions(graph, pos(10, 0), pos(100, 0)).length);
+		assertTrue(regions.uncutSegments.isEmpty());
+	}
+
+	@Test
+	void reportsBoundariesThatDoNotCutAnything() {
+		final RailGraph<String> graph = twoLines().build();
+		final PathBoundaries boundaries = new PathBoundaries();
+		// The detour still joins both sides of the slow rail
+		boundaries.segments.add(PathBoundaries.segmentKey(pos(10, 0), pos(100, 0)));
+		boundaries.nodes.add(pos(5000, 0));
+		final PathRegions regions = PathRegions.compute(graph, boundaries);
+		assertEquals(1, regions.count);
+		assertEquals(Collections.singletonList(PathBoundaries.segmentKey(pos(10, 0), pos(100, 0))), regions.uncutSegments);
+		assertEquals(Collections.singletonList(pos(5000, 0)), regions.missingNodes);
+	}
+
+	/**
+	 * A station with a main line platform, a passing track platform beside it, and a platform of another line inside the
+	 * station area which isn't connected at all.
+	 */
+	private static RailGraph.Builder<String> stationWithPassingTrack(boolean passingTrackRejoins) {
+		final RailGraph.Builder<String> builder = new RailGraph.Builder<>();
+		add(builder, 0, 0, 10, 0, Kind.PLATFORM, 2);
+		add(builder, 10, 0, 80, 0, Kind.NORMAL, 2);
+		add(builder, 80, 0, 90, 0, Kind.NORMAL, 2);
+		add(builder, 90, 0, 100, 0, Kind.PLATFORM, 2);
+		add(builder, 100, 0, 110, 0, Kind.NORMAL, 2);
+		add(builder, 80, 0, 90, 10, Kind.NORMAL, 2);
+		add(builder, 90, 10, 100, 10, Kind.PLATFORM, 2);
+		if (passingTrackRejoins) {
+			add(builder, 100, 10, 110, 0, Kind.NORMAL, 2);
+		}
+		add(builder, 110, 0, 120, 0, Kind.NORMAL, 2);
+		add(builder, 120, 0, 130, 0, Kind.PLATFORM, 2);
+		add(builder, 90, 100, 100, 100, Kind.PLATFORM, 2);
+		return builder;
+	}
+
+	private static RegionData candidates(boolean passingTrackRejoins) {
+		final List<RegionComputer.SavedRail> platforms = Arrays.asList(
+				new RegionComputer.SavedRail(1, pos(0, 0), pos(10, 0), 10, 0),
+				new RegionComputer.SavedRail(2, pos(90, 0), pos(100, 0), 20, 0),
+				new RegionComputer.SavedRail(3, pos(90, 10), pos(100, 10), 20, 0),
+				new RegionComputer.SavedRail(4, pos(90, 100), pos(100, 100), 20, 0),
+				new RegionComputer.SavedRail(5, pos(120, 0), pos(130, 0), 30, 0)
+		);
+		final List<RegionComputer.RouteStops> routes = Collections.singletonList(new RegionComputer.RouteStops(100, new long[]{1, 2, 5}));
+		return RegionComputer.compute(stationWithPassingTrack(passingTrackRejoins).build(), new PathBoundaries(), platforms, new ArrayList<>(), routes);
+	}
+
+	@Test
+	void offersOnlyPlatformsOfTheSameLineThatTrainsCanRunThrough() {
+		final RegionData data = candidates(true);
+		assertArrayEquals(new long[]{2, 3}, data.getCandidates(100, 1, 2));
+		// Stations with one platform of the line offer only that one
+		assertArrayEquals(new long[]{1}, data.getCandidates(100, 0, 1));
+		assertEquals(2, data.regionCount);
+	}
+
+	@Test
+	void leavesOutPlatformsThatDoNotLeadToTheNextStop() {
+		assertArrayEquals(new long[]{2}, candidates(false).getCandidates(100, 1, 2));
+	}
+}

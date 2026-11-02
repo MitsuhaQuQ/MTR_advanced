@@ -2,6 +2,7 @@ package mtr.client;
 
 import mtr.KeyMappings;
 import mtr.MTRClient;
+import mtr.advanced.RegionData;
 import mtr.data.*;
 import mtr.mappings.Text;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -38,6 +39,10 @@ public final class ClientData {
 	public static final Set<LiftClient> LIFTS = new HashSet<>();
 	public static final SignalBlocks SIGNAL_BLOCKS = new SignalBlocks();
 	public static final Set<BlockPos> KEY_NODES = new HashSet<>();
+	/**
+	 * The pathfinding boundaries and the regions they make, sent by the server whenever they change.
+	 */
+	public static RegionData PATH_REGIONS = RegionData.EMPTY;
 	public static final List<MapRail> MAP_RAILS = new ArrayList<>();
 	public static final Map<Long, long[]> MAP_ROUTES = new HashMap<>();
 	public static final Map<Long, long[]> MAP_SIDINGS = new HashMap<>();

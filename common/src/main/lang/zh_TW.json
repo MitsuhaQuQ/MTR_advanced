@@ -1,5 +1,5 @@
 {
-  "gui.mtr.platform_timetable_boundary_on": "時刻邊界：是（班次可以在這裡接出或接入其他路線）",
+  "gui.mtr.platform_timetable_boundary_on": "時刻邊界：是（可接出接入）",
   "gui.mtr.platform_timetable_boundary_off": "時刻邊界：否",
   "gui.mtr.timetable_editor_managed": "這條路線由進階編輯器管理，這裡只能查看。可以在進階編輯器裡把它交回遊戲內編輯。",
   "gui.mtr.advanced_editor": "進階編輯器",
@@ -81,5 +81,12 @@
   "gui.mtr.route_line_name": "所屬路線（留空按名稱識別）",
   "gui.mtr.route_service_type": "種別（留空按名稱識別）",
   "gui.mtr.vehicle_service_types": "可跑種別",
-  "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改後刷新車廠路徑"
+  "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改後刷新車廠路徑",
+  "gui.mtr.platform_main_track": "軌道：正線",
+  "gui.mtr.platform_passing_track": "軌道：待避線",
+  "gui.mtr.path_failure_boundary": "刷新失敗：下一站在尋路邊界的另一側，請把 %s 附近的邊界節點設為必經節點",
+  "gui.mtr.region_filter_off": "區域篩選（%s 個區域）",
+  "gui.mtr.region_filter_on": "只顯示 %s 個區域，點擊取消",
+  "gui.mtr.region_uncut": "，%s 處未切開",
+  "gui.mtr.region_missing": "，%s 處沒有軌道"
 }

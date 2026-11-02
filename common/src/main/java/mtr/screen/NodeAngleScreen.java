@@ -10,6 +10,8 @@ import mtr.data.IGui;
 import mtr.data.Rail;
 import mtr.data.RailAngle;
 import mtr.data.RailType;
+import mtr.advanced.PathBoundaries;
+import mtr.advanced.RegionData;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -19,6 +21,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 
 public class NodeAngleScreen extends ScreenBase implements IGui {
@@ -31,6 +36,11 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	});
 	private final WidgetBetterTextField textFieldTurnBack = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "0", MAX_VALUE_LENGTH);
 	private final Rail turnBackRail;
+	private final WidgetBetterCheckbox checkboxBoundary = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal("Path boundary / 寻路边界（寻路不穿过这个节点）"), checked -> {
+	});
+	// The rails from this node, each of which can be a pathfinding boundary on its own
+	private final List<BlockPos> connectedNodes = new ArrayList<>();
+	private final List<WidgetBetterCheckbox> checkboxSegments = new ArrayList<>();
 	private final Button buttonSet;
 	private final Button buttonCancel;
 
@@ -41,7 +51,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int ROW_TRANSITION = 1;
 	private static final int ROW_KEY_NODE = 2;
 	private static final int ROW_TURN_BACK = 3;
-	private static final int ROW_BUTTONS = 4;
+	private static final int ROW_BOUNDARY = 4;
+	private static final int ROW_SEGMENTS = 5;
 	private static final Component LABEL_ANGLE = Text.literal("Angle / 角度 (-180~180°)");
 	private static final Component LABEL_TRANSITION = Text.literal("Transition / 缓和曲线 (Not available)");
 	private static final Component LABEL_TURN_BACK = Text.literal("Turn back wait / 折返停留 (s)");
@@ -53,6 +64,13 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		final RailAngle facing = Rail.getNodeFacing(ClientData.RAILS.get(pos));
 		angle = facing != null ? facing.angleDegrees : world == null ? 0 : BlockNode.getAngle(world, pos, world.getBlockState(pos));
 		turnBackRail = getTurnBackRail(pos);
+		final Map<BlockPos, Rail> connections = ClientData.RAILS.get(pos);
+		if (connections != null) {
+			connectedNodes.addAll(connections.keySet());
+			connectedNodes.sort(Comparator.comparingDouble((BlockPos endPos) -> endPos.distSqr(pos)).thenComparingLong(BlockPos::asLong));
+		}
+		connectedNodes.forEach(endPos -> checkboxSegments.add(new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal(String.format("Boundary rail to / 边界轨道 → %s, %s, %s", endPos.getX(), endPos.getY(), endPos.getZ())), checked -> {
+		})));
 		buttonSet = UtilitiesClient.newButton(Text.literal("Set / 设定"), button -> onSet());
 		buttonCancel = UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose());
 	}
@@ -67,8 +85,15 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		checkboxKeyNode.setChecked(ClientData.KEY_NODES.contains(pos));
 		IDrawing.setPositionAndWidth(textFieldTurnBack, fieldX, getRowY(ROW_TURN_BACK) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
 		textFieldTurnBack.setValue(turnBackRail == null || turnBackRail.turnBackDwell == 0 ? "" : String.valueOf(turnBackRail.turnBackDwell / 2));
-		IDrawing.setPositionAndWidth(buttonSet, SQUARE_SIZE, getRowY(ROW_BUTTONS), PANEL_WIDTH / 2);
-		IDrawing.setPositionAndWidth(buttonCancel, SQUARE_SIZE + PANEL_WIDTH / 2, getRowY(ROW_BUTTONS), PANEL_WIDTH / 2);
+		final RegionData regionData = ClientData.PATH_REGIONS;
+		IDrawing.setPositionAndWidth(checkboxBoundary, SQUARE_SIZE, getRowY(ROW_BOUNDARY), PANEL_WIDTH);
+		checkboxBoundary.setChecked(regionData.boundaries.nodes.contains(pos.asLong()));
+		for (int i = 0; i < checkboxSegments.size(); i++) {
+			IDrawing.setPositionAndWidth(checkboxSegments.get(i), SQUARE_SIZE, getRowY(ROW_SEGMENTS + i), PANEL_WIDTH);
+			checkboxSegments.get(i).setChecked(regionData.boundaries.isSegment(pos.asLong(), connectedNodes.get(i).asLong()));
+		}
+		IDrawing.setPositionAndWidth(buttonSet, SQUARE_SIZE, getRowY(getButtonsRow()), PANEL_WIDTH / 2);
+		IDrawing.setPositionAndWidth(buttonCancel, SQUARE_SIZE + PANEL_WIDTH / 2, getRowY(getButtonsRow()), PANEL_WIDTH / 2);
 
 		textFieldAngle.setValue(BlockNode.getAngleValue(angle));
 		textFieldTransition.setValue("0");
@@ -80,6 +105,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		if (turnBackRail != null) {
 			addDrawableChild(textFieldTurnBack);
 		}
+		addDrawableChild(checkboxBoundary);
+		checkboxSegments.forEach(this::addDrawableChild);
 		addDrawableChild(buttonSet);
 		addDrawableChild(buttonCancel);
 	}
@@ -99,6 +126,10 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			if (turnBackRail != null) {
 				GuiCompat.draw(matrices, font, LABEL_TURN_BACK, SQUARE_SIZE, getRowY(ROW_TURN_BACK) + TEXT_PADDING, ARGB_WHITE);
 			}
+			final String boundaryStatus = getBoundaryStatus();
+			if (boundaryStatus != null) {
+				GuiCompat.draw(matrices, font, boundaryStatus, SQUARE_SIZE, getRowY(getButtonsRow() + 1) + TEXT_PADDING, ARGB_LIGHT_GRAY);
+			}
 			super.render(matrices, mouseX, mouseY, delta);
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -115,6 +146,15 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			final String turnBackText = textFieldTurnBack.getValue();
 			final int turnBackDwell = turnBackRail == null ? -1 : turnBackText.isEmpty() ? 0 : Integer.parseInt(turnBackText) * 2;
 			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell);
+			final PathBoundaries boundaries = ClientData.PATH_REGIONS.boundaries;
+			if (checkboxBoundary.selected() != boundaries.nodes.contains(pos.asLong())) {
+				PacketTrainDataGuiClient.sendPathBoundaryC2S(pos, null, checkboxBoundary.selected());
+			}
+			for (int i = 0; i < checkboxSegments.size(); i++) {
+				if (checkboxSegments.get(i).selected() != boundaries.isSegment(pos.asLong(), connectedNodes.get(i).asLong())) {
+					PacketTrainDataGuiClient.sendPathBoundaryC2S(pos, connectedNodes.get(i), checkboxSegments.get(i).selected());
+				}
+			}
 			onClose();
 		} catch (NumberFormatException ignored) {
 		}
@@ -132,6 +172,31 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			}
 		}
 		return null;
+	}
+
+	private int getButtonsRow() {
+		return ROW_SEGMENTS + checkboxSegments.size();
+	}
+
+	/**
+	 * Warns about boundaries here that don't cut anything, since the two regions would then be one.
+	 */
+	private String getBoundaryStatus() {
+		final RegionData regionData = ClientData.PATH_REGIONS;
+		final long node = pos.asLong();
+		// At a turnout a node boundary separates every branch from the others, which is rarely what is wanted
+		if (checkboxBoundary.selected() && connectedNodes.size() > 2) {
+			return "Turnout: use a boundary rail / 这是道岔，节点边界会把每个分支都切开，请改为勾选下面的某一条边界轨道";
+		}
+		if (regionData.uncutNodes.contains(node)) {
+			return "Both sides still connected / 两侧仍有别的连接，这个节点边界没有切开";
+		}
+		for (final BlockPos endPos : connectedNodes) {
+			if (regionData.uncutSegments.contains(PathBoundaries.segmentKey(node, endPos.asLong()))) {
+				return "Both sides still connected / 两侧仍有别的连接，这段边界轨道没有切开";
+			}
+		}
+		return regionData.boundaries.isEmpty() ? null : String.format("Regions / 区域 %s 个", regionData.regionCount);
 	}
 
 	private static int getRowY(int row) {

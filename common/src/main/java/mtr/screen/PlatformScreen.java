@@ -25,8 +25,10 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	private final List<Station> stationsHere;
 	private final Button buttonStation;
 	private final Button buttonBoundary;
+	private final Button buttonTrackType;
 	private long selectedStationId;
 	private boolean timetableBoundary;
+	private boolean passingTrack;
 	private int firstVisibleRow;
 	private final List<Route> rowRoutes = new ArrayList<>();
 	private final List<Integer> rowIndices = new ArrayList<>();
@@ -43,6 +45,11 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		buttonBoundary = UtilitiesClient.newButton(Text.literal(""), button -> {
 			timetableBoundary = !timetableBoundary;
 			updateBoundaryButton();
+		});
+		passingTrack = savedRailBase.passingTrack;
+		buttonTrackType = UtilitiesClient.newButton(Text.literal(""), button -> {
+			passingTrack = !passingTrack;
+			updateTrackTypeButton();
 		});
 
 		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
@@ -72,6 +79,10 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		buttonBoundary.setMessage(Text.translatable(timetableBoundary ? "gui.mtr.platform_timetable_boundary_on" : "gui.mtr.platform_timetable_boundary_off"));
 	}
 
+	private void updateTrackTypeButton() {
+		buttonTrackType.setMessage(Text.translatable(passingTrack ? "gui.mtr.platform_passing_track" : "gui.mtr.platform_main_track"));
+	}
+
 	private void updateStationButton() {
 		final Station station = ClientData.DATA_CACHE.stationIdMap.get(selectedStationId);
 		buttonStation.setMessage(station == null ? Text.translatable("gui.mtr.platform_station_auto") : Text.translatable("gui.mtr.platform_station", station.name));
@@ -89,9 +100,15 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		}
 		if (showScheduleControls) {
 			// Where services can leave or join a route part of the way along, see TimetableBoundaries
-			IDrawing.setPositionAndWidth(buttonBoundary, SQUARE_SIZE, (stationsHere.size() > 1 ? SQUARE_SIZE * 9 / 2 : SQUARE_SIZE * 7 / 2) + TEXT_FIELD_PADDING, width - SQUARE_SIZE * 2);
+			final int rowY = (stationsHere.size() > 1 ? SQUARE_SIZE * 9 / 2 : SQUARE_SIZE * 7 / 2) + TEXT_FIELD_PADDING;
+			final int halfWidth = (width - SQUARE_SIZE * 2) / 2;
+			IDrawing.setPositionAndWidth(buttonBoundary, SQUARE_SIZE, rowY, halfWidth);
 			updateBoundaryButton();
 			addDrawableChild(buttonBoundary);
+			// Main line or passing track, for the advanced editor's track picker and overtaking checks
+			IDrawing.setPositionAndWidth(buttonTrackType, SQUARE_SIZE + halfWidth, rowY, halfWidth);
+			updateTrackTypeButton();
+			addDrawableChild(buttonTrackType);
 		}
 	}
 
@@ -172,6 +189,9 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		}
 		if (timetableBoundary != savedRailBase.timetableBoundary) {
 			savedRailBase.setTimetableBoundary(timetableBoundary, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
+		}
+		if (passingTrack != savedRailBase.passingTrack) {
+			savedRailBase.setPassingTrack(passingTrack, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
 		}
 		super.onClose();
 	}

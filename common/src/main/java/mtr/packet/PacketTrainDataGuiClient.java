@@ -3,6 +3,7 @@ package mtr.packet;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;
+import mtr.advanced.RegionData;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
@@ -204,6 +205,22 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 				ClientData.KEY_NODES.remove(pos);
 			}
 		});
+	}
+
+	public static void receivePathRegionsS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final RegionData regionData = RegionData.read(packet);
+		minecraftClient.execute(() -> ClientData.PATH_REGIONS = regionData);
+	}
+
+	public static void sendPathBoundaryC2S(BlockPos pos1, BlockPos pos2, boolean isBoundary) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBlockPos(pos1);
+		packet.writeBoolean(pos2 != null);
+		if (pos2 != null) {
+			packet.writeBlockPos(pos2);
+		}
+		packet.writeBoolean(isBoundary);
+		RegistryClient.sendToServer(PACKET_UPDATE_PATH_BOUNDARY, packet);
 	}
 
 	public static void requestTimetableTimesC2S(long routeId) {

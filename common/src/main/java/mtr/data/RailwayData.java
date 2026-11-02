@@ -1,5 +1,7 @@
 package mtr.data;
 
+import mtr.advanced.PathBoundaries;
+import mtr.advanced.PathRegionSync;
 import mtr.path.RailGraph;
 import mtr.path.DeterministicPathFinder;
 import mtr.SecurityConfig;
@@ -47,6 +49,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public final Set<Platform> platforms = new HashSet<>();
 	public final Set<Siding> sidings = new HashSet<>();
 	public final Set<BlockPos> keyNodes = new HashSet<>();
+	public final PathBoundaries pathBoundaries = new PathBoundaries();
 	public final Set<Route> routes = new HashSet<>();
 	public final Set<Depot> depots = new HashSet<>();
 	public final Set<LiftServer> lifts = new HashSet<>();
@@ -70,6 +73,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Map<UUID, Long> lastMapRouteRequestMillis = new HashMap<>();
 	private final Map<UUID, Map<Integer, Map<Long, long[]>>> pendingMapEntries = new ConcurrentHashMap<>();
 	private RailGraph<Rail> mapGraph;
+	private final PathRegionSync pathRegionSync = new PathRegionSync(pathBoundaries);
 
 	private final RailwayDataFileSaveModule railwayDataFileSaveModule;
 
@@ -344,6 +348,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		railwayDataDriveTrainModule.tick();
 		railwayDataRailActionsModule.tick();
 		railwayDataRouteFinderModule.tick();
+		pathRegionSync.tick(world, this, rails);
 		updateNearbyTrains.tick();
 		updateNearbyLifts.tick();
 
@@ -423,6 +428,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	public void onPlayerJoin(ServerPlayer serverPlayer) {
 		PacketTrainDataGuiServer.sendAllInChunks(serverPlayer, stations, platforms, sidings, routes, depots, lifts, signalBlocks, keyNodes);
+		pathRegionSync.send(serverPlayer);
 		railwayDataCoolDownModule.onPlayerJoin(serverPlayer);
 	}
 
@@ -526,6 +532,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, Collections.singletonList(String.format("type:%s", transportMode)), new ArrayList<>(), pos);
 		removeNode(world, rails, pos);
 		setKeyNode(pos, false);
+		// A boundary on a rail that was only taken away stays, as the rail is often laid again, but nothing is left of a node
+		pathBoundaries.nodes.remove(pos.asLong());
+		pathBoundaries.segments.removeIf(segment -> segment.getMostSignificantBits() == pos.asLong() || segment.getLeastSignificantBits() == pos.asLong());
 		validateData();
 		final FriendlyByteBuf packet = signalBlocks.getValidationPacket(rails);
 		if (packet != null) {
@@ -574,7 +583,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		});
 		PacketTrainDataGuiServer.sendStaleDepotsS2C(player, staleDepots);
 
-		mapGraph = DeterministicPathFinder.compile(rails);
+		mapGraph = DeterministicPathFinder.compile(rails, pathBoundaries);
 		final RailGraph<Rail> graph = mapGraph;
 		final List<MapRouteQuery> queries = new ArrayList<>();
 		routes.forEach(route -> queries.add(new MapRouteQuery(route, dataCache)));
@@ -682,6 +691,34 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public void setKeyNode(BlockPos pos, boolean isKeyNode) {
 		if (isKeyNode ? keyNodes.add(pos) : keyNodes.remove(pos)) {
 			PacketTrainDataGuiServer.setKeyNodeS2C(world, pos, isKeyNode);
+		}
+	}
+
+	/**
+	 * Marks a node, or the rail from it to another node when {@code pos2} isn't null, as a pathfinding boundary. Players
+	 * get the new regions with the next {@link PathRegionSync} check.
+	 */
+	public void setPathBoundary(Player player, BlockPos pos1, BlockPos pos2, boolean isBoundary) {
+		if (pos2 != null && !containsRail(pos1, pos2)) {
+			return;
+		}
+		if (isBoundary && pathBoundaries.nodes.size() + pathBoundaries.segments.size() >= PathBoundaries.MAX_BOUNDARIES) {
+			return;
+		}
+		final boolean changed;
+		if (pos2 == null) {
+			changed = isBoundary ? pathBoundaries.nodes.add(pos1.asLong()) : pathBoundaries.nodes.remove(pos1.asLong());
+		} else {
+			final UUID segment = PathBoundaries.segmentKey(pos1.asLong(), pos2.asLong());
+			changed = isBoundary ? pathBoundaries.segments.add(segment) : pathBoundaries.segments.remove(segment);
+		}
+		if (changed) {
+			final List<String> dataList = Collections.singletonList(String.format("path_boundary:%s", isBoundary));
+			if (pos2 == null) {
+				railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, new ArrayList<>(), dataList, pos1);
+			} else {
+				railwayDataLoggingModule.addEvent((ServerPlayer) player, Rail.class, new ArrayList<>(), dataList, pos1, pos2);
+			}
 		}
 	}
 
