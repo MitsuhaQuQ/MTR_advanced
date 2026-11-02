@@ -14,8 +14,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Keeps the players' {@link RegionData} up to date. A cheap fingerprint of the rails, boundaries, platforms and routes
@@ -64,14 +66,23 @@ public final class PathRegionSync {
 
 		final Thread thread = new Thread(() -> {
 			RegionData data = null;
+			PhysicalGraph physicalGraph = null;
 			try {
 				data = RegionComputer.compute(graph, boundariesCopy, platforms, sidings, routes);
+				final Map<UUID, Long> savedRails = new HashMap<>();
+				platforms.forEach(platform -> savedRails.put(PathBoundaries.segmentKey(platform.pos1, platform.pos2), platform.id));
+				sidings.forEach(siding -> savedRails.put(PathBoundaries.segmentKey(siding.pos1, siding.pos2), siding.id));
+				physicalGraph = PhysicalGraph.compute(graph, PathRegions.compute(graph, boundariesCopy), boundariesCopy, savedRails);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 			final RegionData finalData = data;
+			final PhysicalGraph finalGraph = physicalGraph;
 			minecraftServer.execute(() -> {
 				computing = false;
+				if (finalGraph != null) {
+					railwayData.graphRecords.setGraph(finalGraph);
+				}
 				if (finalData != null) {
 					latest = finalData;
 					computed = true;

@@ -42,6 +42,7 @@ public final class EditorDuties implements IPacket {
 				final JsonObject dayObject = new JsonObject();
 				dayObject.addProperty("days", day.weekdays);
 				dayObject.addProperty("stay", day.stayOnLine);
+				dayObject.addProperty("next", day.nextSlot);
 				final JsonArray segmentsArray = new JsonArray();
 				day.segments.forEach(segment -> {
 					final JsonObject segmentObject = new JsonObject();
@@ -98,6 +99,10 @@ public final class EditorDuties implements IPacket {
 					}
 					usedDays |= day.weekdays;
 					day.stayOnLine = dayObject.get("stay").getAsBoolean();
+					day.nextSlot = day.stayOnLine && dayObject.has("next") ? dayObject.get("next").getAsInt() : -1;
+					if (day.nextSlot >= slotsArray.size() || day.nextSlot < -1) {
+						return String.format("%s 车 %s 过夜后接的库位不存在", sidingName, i + 1);
+					}
 					final JsonArray segmentsArray = dayObject.getAsJsonArray("segments");
 					if (segmentsArray.size() > DepotDuties.MAX_SEGMENTS) {
 						return String.format("%s 车 %s 一天最多跑 %s 班", sidingName, i + 1, DepotDuties.MAX_SEGMENTS);
@@ -114,6 +119,16 @@ public final class EditorDuties implements IPacket {
 					slot.days.add(day);
 				}
 				slots.add(slot);
+			}
+			// Two trains staying overnight can't both take over the same slot the next day
+			for (int weekday = 0; weekday < 7; weekday++) {
+				final Set<Integer> takenSlots = new HashSet<>();
+				for (int i = 0; i < slots.size(); i++) {
+					final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
+					if (day != null && day.stayOnLine && !day.segments.isEmpty() && !takenSlots.add(day.nextSlot < 0 ? i : day.nextSlot)) {
+						return String.format("%s 有两列过夜的车第二天接同一个库位（车 %s）", sidingName, (day.nextSlot < 0 ? i : day.nextSlot) + 1);
+					}
+				}
 			}
 			if (!slots.isEmpty()) {
 				duties.sidings.put(sidingId, slots);

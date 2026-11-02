@@ -90,5 +90,6 @@
   "gui.mtr.region_uncut": "，%s 處未切開",
   "gui.mtr.region_missing": "，%s 處沒有軌道",
   "gui.mtr.use_speed_curves": "使用速度曲線：提前減速、按時刻控速（改後刷新路徑）",
-  "gui.mtr.deceleration": "減速 %s m/s²"
+  "gui.mtr.deceleration": "減速 %s m/s²",
+  "gui.mtr.path_failure_duty": "有運用的路徑走不通，這列車那幾天不出庫，請在進階編輯器裡檢查運用"
 }

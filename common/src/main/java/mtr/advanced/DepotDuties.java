@@ -27,6 +27,11 @@ public final class DepotDuties {
 	public static final int MAX_DAYS = 7;
 	public static final int MAX_SEGMENTS = 128;
 	public static final int ALL_WEEKDAYS = 0x7F;
+	/**
+	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started
+	 * with the mode, a boolean, so it reads as 0 or 1 there.
+	 */
+	private static final int FORMAT_VERSION = 2;
 
 	public boolean isEmpty() {
 		return sidings.values().stream().allMatch(List::isEmpty);
@@ -57,6 +62,7 @@ public final class DepotDuties {
 	}
 
 	public void write(FriendlyByteBuf packet) {
+		packet.writeByte(FORMAT_VERSION);
 		packet.writeBoolean(diagramMode);
 		packet.writeVarInt(sidings.size());
 		sidings.forEach((sidingId, slots) -> {
@@ -67,7 +73,9 @@ public final class DepotDuties {
 	}
 
 	public void read(FriendlyByteBuf packet) {
-		diagramMode = packet.readBoolean();
+		final int first = packet.readUnsignedByte();
+		final boolean hasVersion = first >= FORMAT_VERSION;
+		diagramMode = hasVersion ? packet.readBoolean() : first != 0;
 		sidings.clear();
 		final int sidingCount = limit(packet.readVarInt(), 1 << 16);
 		for (int i = 0; i < sidingCount; i++) {
@@ -75,7 +83,7 @@ public final class DepotDuties {
 			final int slotCount = limit(packet.readVarInt(), MAX_SLOTS);
 			final List<Slot> slots = new ArrayList<>();
 			for (int j = 0; j < slotCount; j++) {
-				slots.add(Slot.read(packet));
+				slots.add(Slot.read(packet, hasVersion));
 			}
 			if (!slots.isEmpty()) {
 				sidings.put(sidingId, slots);
@@ -133,6 +141,7 @@ public final class DepotDuties {
 			days.forEach(day -> {
 				packet.writeByte(day.weekdays);
 				packet.writeBoolean(day.stayOnLine);
+				packet.writeVarInt(day.nextSlot + 1);
 				packet.writeVarInt(day.segments.size());
 				day.segments.forEach(segment -> {
 					packet.writeLong(segment.routeId);
@@ -144,6 +153,13 @@ public final class DepotDuties {
 		}
 
 		public static Slot read(FriendlyByteBuf packet) {
+			return read(packet, true);
+		}
+
+		/**
+		 * @param hasNextSlot false for data saved before overnight trains could pick their next duty
+		 */
+		public static Slot read(FriendlyByteBuf packet, boolean hasNextSlot) {
 			final Slot slot = new Slot();
 			final int dayCount = limit(packet.readVarInt(), MAX_DAYS);
 			int usedDays = 0;
@@ -153,6 +169,7 @@ public final class DepotDuties {
 				day.weekdays = packet.readByte() & ALL_WEEKDAYS & ~usedDays;
 				usedDays |= day.weekdays;
 				day.stayOnLine = packet.readBoolean();
+				day.nextSlot = hasNextSlot ? Math.min(packet.readVarInt(), MAX_SLOTS) - 1 : -1;
 				final int segmentCount = limit(packet.readVarInt(), MAX_SEGMENTS);
 				for (int j = 0; j < segmentCount; j++) {
 					day.segments.add(new Segment(packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt() - 1));
@@ -175,6 +192,10 @@ public final class DepotDuties {
 		 * After the last segment the train stays on the line overnight, and the next day's duty carries on from there.
 		 */
 		public boolean stayOnLine;
+		/**
+		 * For a train staying on the line, the slot of the same siding whose next day's duty it runs, or -1 for its own.
+		 */
+		public int nextSlot = -1;
 		public final List<Segment> segments = new ArrayList<>();
 	}
 

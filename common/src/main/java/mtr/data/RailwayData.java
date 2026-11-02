@@ -1,6 +1,8 @@
 package mtr.data;
 
+import mtr.advanced.GraphRecords;
 import mtr.advanced.PathBoundaries;
+import mtr.advanced.RunReservations;
 import mtr.advanced.PathRegionSync;
 import mtr.path.RailGraph;
 import mtr.path.DeterministicPathFinder;
@@ -50,6 +52,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public final Set<Siding> sidings = new HashSet<>();
 	public final Set<BlockPos> keyNodes = new HashSet<>();
 	public final PathBoundaries pathBoundaries = new PathBoundaries();
+	/**
+	 * The compressed network and the paths found on it, which the save loop writes into the database. See {@link GraphRecords}.
+	 */
+	public final GraphRecords graphRecords = new GraphRecords();
+	/**
+	 * Keeps trains running by duties from meeting head on. See {@link RunReservations}.
+	 */
+	public final RunReservations runReservations = new RunReservations();
 	public final Set<Route> routes = new HashSet<>();
 	public final Set<Depot> depots = new HashSet<>();
 	public final Set<LiftServer> lifts = new HashSet<>();
@@ -291,6 +301,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public void simulateTrains() {
+		simulateTrains((rail, startPos, endPos, playerPos) -> new AABB(startPos, endPos).inflate(RAIL_UPDATE_DISTANCE).contains(playerPos));
+	}
+
+	/**
+	 * ANTE's rails can have shapes of their own, so its mixin calls this with its own way of telling which rails are near a
+	 * player. Everything else of a tick is the same, so nothing added here is lost when ANTE is in.
+	 */
+	public void simulateTrains(RailNearPlayer isNearPlayer) {
+		runReservations.tick();
 		final List<? extends Player> players = world.players();
 		players.forEach(player -> {
 			final BlockPos playerBlockPos = player.blockPosition();
@@ -299,7 +318,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			if (!playerLastUpdatedPositions.containsKey(player) || playerLastUpdatedPositions.get(player).distManhattan(playerBlockPos) > PLAYER_MOVE_UPDATE_THRESHOLD) {
 				final Map<BlockPos, Map<BlockPos, Rail>> railsToAdd = new HashMap<>();
 				rails.forEach((startPos, blockPosRailMap) -> blockPosRailMap.forEach((endPos, rail) -> {
-					if (new AABB(startPos, endPos).inflate(RAIL_UPDATE_DISTANCE).contains(playerPos)) {
+					if (isNearPlayer.test(rail, startPos, endPos, playerPos)) {
 						if (!railsToAdd.containsKey(startPos)) {
 							railsToAdd.put(startPos, new HashMap<>());
 						}
@@ -374,7 +393,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 			final Set<UUID> railsToAdd = new HashSet<>();
 			rails.forEach((startPos, blockPosRailMap) -> blockPosRailMap.forEach((endPos, rail) -> {
-				if (new AABB(startPos, endPos).inflate(RAIL_UPDATE_DISTANCE).contains(playerPos)) {
+				if (isNearPlayer.test(rail, startPos, endPos, playerPos)) {
 					railsToAdd.add(PathData.getRailProduct(startPos, endPos));
 				}
 			}));
@@ -424,6 +443,12 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		prevSidingCount = sidings.size();
 
 		railwayDataFileSaveModule.autoSaveTick();
+	}
+
+	@FunctionalInterface
+	public interface RailNearPlayer {
+
+		boolean test(Rail rail, BlockPos startPos, BlockPos endPos, Vec3 playerPos);
 	}
 
 	public void onPlayerJoin(ServerPlayer serverPlayer) {
@@ -592,6 +617,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			final Map<Long, Long> routeHashes = new HashMap<>();
 			queries.forEach(query -> {
 				final long[] nodes = query.findNodes(graph);
+				graphRecords.addPath("route:" + query.routeId, GraphRecords.getMoves(nodes));
 				routePayloads.put(query.routeId, nodes);
 				routeHashes.put(query.routeId, MapSyncData.hashRoute(nodes));
 			});

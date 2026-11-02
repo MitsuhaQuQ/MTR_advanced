@@ -315,6 +315,8 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 				return Text.translatable("gui.mtr.path_failure_turn_back", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
 			case TURN_BACK_UNUSED:
 				return Text.translatable("gui.mtr.path_failure_turn_back_unused", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
+			case DUTY:
+				return Text.translatable("gui.mtr.path_failure_duty").getString();
 			case BOUNDARY:
 				return Text.translatable("gui.mtr.path_failure_boundary", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
 			default:

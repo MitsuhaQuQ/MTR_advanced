@@ -90,5 +90,6 @@
   "gui.mtr.region_uncut": "，%s 处未切开",
   "gui.mtr.region_missing": "，%s 处没有轨道",
   "gui.mtr.use_speed_curves": "使用速度曲线：提前减速、按时刻控速（改后刷新路径）",
-  "gui.mtr.deceleration": "减速 %s m/s²"
+  "gui.mtr.deceleration": "减速 %s m/s²",
+  "gui.mtr.path_failure_duty": "有运用的路径走不通，这列车那几天不出库，请在高级编辑器里检查运用"
 }

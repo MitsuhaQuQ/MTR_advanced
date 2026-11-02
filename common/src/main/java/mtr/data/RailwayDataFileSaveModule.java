@@ -86,6 +86,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		readMessagePackFromFile(TYPE_BOUNDARY_NODES, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.nodes.add(entry.node), true);
 		readMessagePackFromFile(TYPE_BOUNDARY_SEGMENTS, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.segments.add(entry.segment), true);
 
+		railwayData.graphRecords.load(dataStore);
+
 		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location());
 		canAutoSave = true;
 		dataLoaded = true;
@@ -226,6 +228,12 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 						trainDelays.remove(routeId);
 					}
 				}
+			}
+
+			try {
+				railwayData.graphRecords.flush(dataStore);
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
 
 			try {

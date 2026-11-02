@@ -1,6 +1,7 @@
 package mtr.data;
 
 import mtr.TrigCache;
+import mtr.advanced.RunReservations;
 import mtr.advanced.SpeedCurves;
 import mtr.block.*;
 import mtr.mappings.Utilities;
@@ -38,6 +39,7 @@ public class TrainServer extends Train {
 	private Depot depot;
 	private DataCache dataCache;
 	private final TrainService service;
+	private Level world;
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
 	private int pathRepeatIndex2;
@@ -71,6 +73,7 @@ public class TrainServer extends Train {
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
 		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service.setSiding(sidingId);
 	}
 
 	public TrainServer(
@@ -89,6 +92,7 @@ public class TrainServer extends Train {
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
 		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service.setSiding(sidingId);
 		service.read(new MessagePackHelper(map));
 	}
 
@@ -109,6 +113,7 @@ public class TrainServer extends Train {
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
 		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service.setSiding(sidingId);
 	}
 
 	@Override
@@ -139,6 +144,18 @@ public class TrainServer extends Train {
 	protected boolean isHeldAtStop() {
 		if (isCurrentlyManual) {
 			return false;
+		}
+		// A train on a duty stays overnight at its last stop, waits for each segment's planned departure, and doesn't leave
+		// onto rails another train of a duty has booked the other way
+		if (service.isStayingOnLine()) {
+			return true;
+		}
+		final long dutyDepartureMillis = service.getDutyDepartureMillis();
+		if (dutyDepartureMillis > 0 && System.currentTimeMillis() < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
+			return true;
+		}
+		if (service.isOnDuty() && !bookRun(nextStoppingIndex + 1, true)) {
+			return true;
 		}
 		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
 		if (stopPlan != null && stopPlan.isTimed) {
@@ -377,7 +394,13 @@ public class TrainServer extends Train {
 		final boolean oldStopped = speed == 0;
 		final boolean oldDoorOpen = doorTarget;
 
+		this.world = world;
+		service.updateOvernight();
 		simulateTrain(world, ticksElapsed, depot);
+		// Rails the train has passed are let go, and the rest of its run stays booked
+		if (isOnRoute && speed > 0 && service.isOnDuty()) {
+			bookRun(getIndex(railProgress, false), false);
+		}
 
 		service.update(isOnRoute);
 
@@ -553,6 +576,50 @@ public class TrainServer extends Train {
 	public void deployTrain(long newTripMillis, long routeId) {
 		canDeploy = true;
 		service.deploy(newTripMillis, routeId);
+	}
+
+	/**
+	 * Sends this train out for a slot's duty. See {@link TrainService#deployDuty}.
+	 */
+	public void deployDuty(int slot, long dayStart, Siding.TripPath dutyPath) {
+		canDeploy = true;
+		service.deployDuty(slot, dayStart, dutyPath);
+	}
+
+	@Override
+	protected boolean keepsOnLineAtEnd() {
+		return service.endsOnLine();
+	}
+
+	/**
+	 * Books, with the train's direction, the two way rails from a rail of its path to its next stop, so no other train of a
+	 * duty runs onto them the other way (design document 6.12, block E2).
+	 *
+	 * @param check true to only book when nothing is booked the other way
+	 * @return false if something is
+	 */
+	private boolean bookRun(int fromIndex, boolean check) {
+		final RailwayData railwayData = world == null ? null : RailwayData.getInstance(world);
+		if (railwayData == null) {
+			return true;
+		}
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		final List<RunReservations.Move> moves = new ArrayList<>();
+		for (int i = Math.max(fromIndex, 0); i < path.size(); i++) {
+			final PathData pathData = path.get(i);
+			final Rail backwards = DataCache.tryGet(rails, pathData.getLastPos(), pathData.startingPos);
+			if (backwards != null && backwards.railType != RailType.NONE) {
+				moves.add(new RunReservations.Move(pathData.startingPos.asLong(), pathData.getLastPos().asLong()));
+			}
+			if (pathData.dwellTime > 0 && i >= nextStoppingIndex) {
+				break;
+			}
+		}
+		if (check && !railwayData.runReservations.canBook(id, moves)) {
+			return false;
+		}
+		railwayData.runReservations.book(id, moves);
+		return true;
 	}
 
 	/**

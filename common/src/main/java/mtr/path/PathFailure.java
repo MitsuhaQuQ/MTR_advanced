@@ -77,6 +77,10 @@ public final class PathFailure {
 		/**
 		 * The next station is in another region of the pathfinding boundaries, and nothing says where to cross.
 		 */
-		BOUNDARY
+		BOUNDARY,
+		/**
+		 * The path of a duty of a depot running by its duties can't be found, so that train doesn't go out on those days.
+		 */
+		DUTY
 	}
 }

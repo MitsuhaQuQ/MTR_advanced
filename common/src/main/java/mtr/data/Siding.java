@@ -1,5 +1,7 @@
 package mtr.data;
 
+import mtr.advanced.DutyShapes;
+import mtr.advanced.GraphRecords;
 import mtr.advanced.ServiceExceptions;
 import mtr.advanced.SpeedCurves;
 import mtr.advanced.SpeedProfile;
@@ -91,6 +93,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_TRIP_TURN_BACK = "trip_turn_back";
 	private static final String KEY_TRIP_TURN_BACK_STOPS = "trip_turn_back_stops";
 	private static final String KEY_TRIP_CHANGE_STOP = "trip_change_stop";
+	private static final String KEY_TRIP_DUTY_STARTS = "trip_duty_starts";
+	private static final String KEY_TRIP_DUTY_STAYS = "trip_duty_stays";
 	private static final String KEY_TURN_BACK_POINTS = "turn_back_points";
 	private static final String KEY_TURN_BACK_STOPS = "turn_back_stops";
 	private static final String KEY_BASE_TRAIN_TYPE = "train_type";
@@ -400,6 +404,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @param depotReturns     for trains staying on the line, where they can go back to the depot after a route
 	 */
 	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail> tripTails, List<TurnBackSection> turnBackSections, List<DepotReturn> depotReturns) {
+		return generateRoute(minecraftServer, mainPath, successfulSegmentsMain, rails, graph, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, new ArrayList<>());
+	}
+
+	/**
+	 * @param dutyPlans the paths of the duties of this siding's trains, for a depot running by its duties
+	 */
+	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail> tripTails, List<TurnBackSection> turnBackSections, List<DepotReturn> depotReturns, List<DutyPlan> dutyPlans) {
 		final List<PathData> tempPath = new ArrayList<>();
 		final Map<String, TripPath> tempTripPaths = new HashMap<>();
 		final int successfulSegments;
@@ -479,6 +490,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final Map<Long, Map<Long, Float>> tempPlatformTimes = new HashMap<>();
 		final StopTimes tempStopTimes = new StopTimes();
 		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes, tempStopTimes, tempLoopJoinIndex, tempRepeatIndex2);
+		final List<String> failedDuties = new ArrayList<>();
+		dutyPlans.forEach(dutyPlan -> {
+			if (!addDutyPath(tempTripPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed)) {
+				failedDuties.add(dutyPlan.key);
+			}
+		});
+		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		final TurnBacks newTurnBacks = tempTurnBacks;
 
 		minecraftServer.execute(() -> {
@@ -511,6 +529,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				tripPaths.clear();
 				tripPaths.putAll(tempTripPaths);
 				turnBacks = newTurnBacks;
+				recordPaths();
 				if (!tempPath.isEmpty()) {
 					relocateTrains(oldRails, oldDistances);
 				}
@@ -520,6 +539,74 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 
 		return successfulSegments;
+	}
+
+	/**
+	 * The path of a duty from this siding (design document 6.12, block E2): out to its first stop, unless the train starts
+	 * where it stayed overnight, its segments, and back to the siding unless it stays on the line.
+	 *
+	 * @return false if a part of it can't be found
+	 */
+	private boolean addDutyPath(Map<String, TripPath> tempTripPaths, DutyPlan dutyPlan, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed) {
+		final List<PathData> dutyPath = new ArrayList<>();
+		if (!dutyPlan.startsOnLine) {
+			PathFinder.findPath(dutyPath, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
+			if (dutyPath.isEmpty()) {
+				return false;
+			}
+		}
+		final List<PathData> body = new ArrayList<>();
+		dutyPlan.body.forEach(pathData -> body.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+		// The first stop of the duty keeps its own stop time, not the one the way out of the siding found
+		final int bodyStart;
+		if (!dutyPath.isEmpty() && dutyPath.get(dutyPath.size() - 1).isSameRail(body.get(0))) {
+			bodyStart = dutyPath.size() - 1;
+			dutyPath.set(bodyStart, body.get(0));
+			dutyPath.addAll(body.subList(1, body.size()));
+		} else {
+			bodyStart = dutyPath.size();
+			dutyPath.addAll(body);
+		}
+		if (!dutyPlan.staysOnLine) {
+			final List<PathData> pathToDepot = new ArrayList<>();
+			PathFinder.findPath(pathToDepot, rails, graph, Arrays.asList(dutyPlan.lastPlatform, this), null, 0, cruisingAltitude, useFastSpeed);
+			if (pathToDepot.isEmpty()) {
+				return false;
+			}
+			PathFinder.appendPath(dutyPath, pathToDepot);
+		}
+
+		int stopIndex = 1;
+		for (int i = 1; i < dutyPath.size(); i++) {
+			final PathData pathData = dutyPath.get(i);
+			if (pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && dutyPath.get(i - 1).rail.railType != RailType.PLATFORM) {
+				stopIndex++;
+			}
+			pathData.stopIndex = stopIndex;
+		}
+		final int[] dutyStarts = new int[dutyPlan.segmentStarts.length];
+		for (int i = 0; i < dutyStarts.length; i++) {
+			dutyStarts[i] = dutyPlan.segmentStarts[i] + bodyStart;
+		}
+		final TripPath newTripPath = new TripPath(dutyPlan, dutyStarts, dutyPath);
+		newTripPath.generateTimes(this);
+		tempTripPaths.put(dutyPlan.key, newTripPath);
+		return true;
+	}
+
+	/**
+	 * Hands the paths of this siding to the graph records, which write them into the database. See {@link GraphRecords}.
+	 */
+	private void recordPaths() {
+		final RailwayData railwayData = world == null ? null : RailwayData.getInstance(world);
+		if (railwayData != null) {
+			railwayData.graphRecords.addPath("siding:" + id, GraphRecords.getMoves(path));
+			tripPaths.forEach((key, tripPath) -> railwayData.graphRecords.addPath("siding:" + id + ":" + key, GraphRecords.getMoves(tripPath.path)));
+		}
+	}
+
+	public Map<String, TripPath> getTripPaths() {
+		return Collections.unmodifiableMap(tripPaths);
 	}
 
 	private void addTripPath(Map<String, TripPath> tempTripPaths, List<PathData> pathBeforeMain, List<PathData> mainPath, TripTail tripTail, int leaveRail, List<PathData> pathToDepot, int joinIndex, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
@@ -686,7 +773,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 		}
 
-		if (trainCars > 0 && (trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
+		// A depot running by its duties has a train for each slot of the siding
+		final boolean runsByDuties = depot.duties.diagramMode;
+		final int dutySlots = depot.duties.getSlots(id).size();
+		if (trainCars > 0 && (runsByDuties ? dutySlots > 0 && (trains.isEmpty() || spawnTrain && trains.size() < dutySlots) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
 			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 			trains.add(train);
 		}
@@ -1107,6 +1197,46 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * The way from the last stop of a route on the main path to the first stop of the next route, while paths are generated,
 	 * with a way round each turn back rail the route lists after its last stop.
 	 */
+	/**
+	 * What a depot worked out for the path of a duty, shared by its sidings: the duty's segments joined up from its first stop
+	 * to its last, with what the plans of a path need to know about the routes it runs. Each siding adds its own way out and
+	 * back (design document 6.12, block E2).
+	 */
+	public static class DutyPlan {
+
+		public final String key;
+		public final List<Long> routeIds;
+		public final Map<Long, Integer> cutStops;
+		public final Map<Long, Integer> entryStops;
+		public final Map<Long, List<PathData>> entryLeads;
+		/**
+		 * From the first stop of the duty to its last.
+		 */
+		public final List<PathData> body;
+		/**
+		 * The rail of {@link #body} at the first stop of each segment.
+		 */
+		public final int[] segmentStarts;
+		public final SavedRailBase firstPlatform;
+		public final SavedRailBase lastPlatform;
+		public final boolean startsOnLine;
+		public final boolean staysOnLine;
+
+		public DutyPlan(String key, List<Long> routeIds, Map<Long, Integer> cutStops, Map<Long, Integer> entryStops, Map<Long, List<PathData>> entryLeads, List<PathData> body, int[] segmentStarts, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean startsOnLine, boolean staysOnLine) {
+			this.key = key;
+			this.routeIds = routeIds;
+			this.cutStops = cutStops;
+			this.entryStops = entryStops;
+			this.entryLeads = entryLeads;
+			this.body = body;
+			this.segmentStarts = segmentStarts;
+			this.firstPlatform = firstPlatform;
+			this.lastPlatform = lastPlatform;
+			this.startsOnLine = startsOnLine;
+			this.staysOnLine = staysOnLine;
+		}
+	}
+
 	public static class TurnBackSection {
 
 		private final int start;
@@ -1495,8 +1625,43 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		private final Map<Long, List<PathData>> entryLeads = new HashMap<>();
 		private final int joinIndex;
 		private final int lapEnd;
+		/**
+		 * For the path of a duty, the rail of the first stop of each segment, or null for other paths.
+		 */
+		public final int[] dutyStarts;
+		/**
+		 * The path of a duty ends at its last stop, where the train stays overnight.
+		 */
+		public final boolean staysOnLine;
+
+		/**
+		 * The path of a duty (design document 6.12, block E2).
+		 */
+		private TripPath(DutyPlan dutyPlan, int[] dutyStarts, List<PathData> path) {
+			key = dutyPlan.key;
+			tripKey = dutyPlan.key;
+			turnBackStops = new int[0];
+			turnBackPoint = -1;
+			turnBackWay = -1;
+			changeStop = -1;
+			routeIds.addAll(dutyPlan.routeIds);
+			cutStops.putAll(dutyPlan.cutStops);
+			entryStops.putAll(dutyPlan.entryStops);
+			entryLeads.putAll(dutyPlan.entryLeads);
+			joinIndex = 0;
+			lapEnd = 0;
+			this.path.addAll(path);
+			repeatIndex1 = 0;
+			repeatIndex2 = 0;
+			lapStop = 0;
+			entryRail = -1;
+			this.dutyStarts = dutyStarts;
+			staysOnLine = dutyPlan.staysOnLine;
+		}
 
 		private TripPath(String key, int turnBackPoint, int turnBackWay, int[] turnBackStops, TripTail tripTail, int joinIndex, int lapEnd, int tailStart, int repeatEnd, List<PathData> path) {
+			dutyStarts = null;
+			staysOnLine = false;
 			this.key = key;
 			tripKey = tripTail.key;
 			this.turnBackStops = turnBackStops;
@@ -1521,6 +1686,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * The usual path of the depot with another way round a turn back point.
 		 */
 		private TripPath(String key, int turnBackPoint, int turnBackWay, int[] turnBackStops, int joinIndex, int repeatIndex1, int repeatIndex2, int changeStop, List<PathData> path) {
+			dutyStarts = null;
+			staysOnLine = false;
 			this.key = key;
 			tripKey = "";
 			this.turnBackStops = turnBackStops;
@@ -1581,6 +1748,28 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				i += 3 + count * 2;
 			}
 			messagePackHelper.iterateArrayValue(KEY_PATH, value -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
+			final List<Integer> starts = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_TRIP_DUTY_STARTS, value -> starts.add(value.asIntegerValue().asInt()));
+			dutyStarts = key.startsWith(DutyShapes.KEY_PREFIX) ? starts.stream().mapToInt(Integer::intValue).toArray() : null;
+			staysOnLine = messagePackHelper.getBoolean(KEY_TRIP_DUTY_STAYS);
+		}
+
+		/**
+		 * The path of a duty worked out elsewhere, for running services without a world.
+		 */
+		static TripPath ofDuty(DutyPlan dutyPlan, int[] dutyStarts, List<PathData> path, StopTimes newStopTimes) {
+			final TripPath tripPath = new TripPath(dutyPlan, dutyStarts, path);
+			tripPath.stopTimes.copyFrom(newStopTimes);
+			tripPath.stopTimes.cutStops.clear();
+			tripPath.stopTimes.cutStops.putAll(tripPath.cutStops);
+			tripPath.stopTimes.entryStops.clear();
+			tripPath.stopTimes.entryStops.putAll(tripPath.entryStops);
+			tripPath.stopTimes.firstRouteJoined = true;
+			return tripPath;
+		}
+
+		public boolean isDuty() {
+			return dutyStarts != null;
 		}
 
 		/**
@@ -1645,6 +1834,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			});
 			stopTimes.entryStops.clear();
 			stopTimes.entryStops.putAll(entryStops);
+			stopTimes.firstRouteJoined = isDuty();
 			stopTimes.entryTimes.clear();
 			stopTimes.entryTimes.putAll(entryTimes);
 			stopTimes.tailJoinStart = entryRail;
@@ -1660,7 +1850,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		private void toMessagePack(MessagePacker messagePacker) throws IOException {
-			messagePacker.packMapHeader(15);
+			messagePacker.packMapHeader(17);
 			messagePacker.packString(KEY_TRIP_KEY).packString(key);
 			messagePacker.packString(KEY_TRIP_CHANGE_STOP).packInt(changeStop);
 			messagePacker.packString(KEY_TRIP_BASE).packString(tripKey);
@@ -1698,6 +1888,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			for (final long value : entryValues) {
 				messagePacker.packLong(value);
 			}
+			messagePacker.packString(KEY_TRIP_DUTY_STARTS).packArrayHeader(dutyStarts == null ? 0 : dutyStarts.length);
+			if (dutyStarts != null) {
+				for (final int start : dutyStarts) {
+					messagePacker.packInt(start);
+				}
+			}
+			messagePacker.packString(KEY_TRIP_DUTY_STAYS).packBoolean(staysOnLine);
 			RailwayData.writeMessagePackDataset(messagePacker, path, KEY_PATH);
 		}
 	}
@@ -1708,6 +1905,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	public static class StopTimes {
 
 		private int firstIndex = -1;
+		/**
+		 * The path is a duty's, whose first route can be joined part of the way along, unlike the first route of a depot's path.
+		 */
+		private boolean firstRouteJoined;
 		private float firstArrival;
 		private long plannedKey;
 		/**
@@ -1780,6 +1981,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			clear();
 			firstIndex = stopTimes.firstIndex;
 			firstArrival = stopTimes.firstArrival;
+			firstRouteJoined = stopTimes.firstRouteJoined;
 			joinIndex = stopTimes.joinIndex;
 			joinArrival = stopTimes.joinArrival;
 			cutStops.clear();
@@ -1944,6 +2146,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		/**
+		 * @return for a duty whose first segment joins its route part of the way along, the planned time from that route's first
+		 * stop to where the train joins it
+		 */
+		public long getEntryOffsetMillis(Route route, int entryStop, int table, int service) {
+			final Map<Integer, ServiceExceptions.StopException> stopExceptions = service < 0 || table >= route.timetable.getTableCount() ? null : route.timetable.getTable(table).exceptions.get(service);
+			return getEntryOffset(route, entryStop, table, stopExceptions);
+		}
+
+		/**
 		 * A route joined part of the way along still runs to the times of its services, which count from its first stop.
 		 *
 		 * @return the planned time from the first stop of the route to the stop where the train joins it
@@ -2026,7 +2237,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			for (final Route route : routes) {
 				final int stopCount = cutStops.containsKey(route.id) ? Math.min(cutStops.get(route.id) + 1, route.platformIds.size()) : route.platformIds.size();
 				// A route joined part of the way along starts at the stop where the train joins it
-				final int firstStop = lastRoute == null ? 0 : Math.min(entryStops.getOrDefault(route.id, 0), Math.max(0, stopCount - 1));
+				// A duty's first segment can join its route part of the way along too
+				final int firstStop = lastRoute == null && !firstRouteJoined ? 0 : Math.min(entryStops.getOrDefault(route.id, 0), Math.max(0, stopCount - 1));
 				for (int i = firstStop; i < stopCount; i++) {
 					final Route.RoutePlatform routePlatform = route.platformIds.get(i);
 					final RouteStop lastStop = routeStops.isEmpty() ? null : routeStops.get(routeStops.size() - 1);

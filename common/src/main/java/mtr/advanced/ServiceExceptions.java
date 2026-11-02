@@ -17,8 +17,8 @@ import java.util.Map;
  * Everything that works out planned times goes through {@link #applyTo(RouteTimetable.StopPlan, StopException, StopException)},
  * so the train, the PIDS and the conflict check all agree.
  * <p>
- * Passing or stopping for one service only changes the times for now. The train still stops where its path does, until
- * paths are made for each service.
+ * In a depot running by its duties each duty has a path of its own (see {@link DutyShapes}), so passing or stopping for one
+ * service is where the train really stops. Elsewhere it only changes the times, and the train stops where its path does.
  */
 public interface ServiceExceptions {
 

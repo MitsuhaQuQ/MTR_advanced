@@ -1369,7 +1369,7 @@
 	function dutyForEditing(depot, slot, weekday) {
 		const group = dayGroup(depot, weekday), current = dutyOn(slot, weekday);
 		if (current && current.days === group) return current;
-		const made = { days: group, stay: current ? current.stay : false, segments: current ? current.segments.map(segment => ({ ...segment })) : [] };
+		const made = { days: group, stay: current ? current.stay : false, next: current && current.next !== undefined ? current.next : -1, segments: current ? current.segments.map(segment => ({ ...segment })) : [] };
 		slot.forEach(day => { day.days &= ~group; });
 		for (let i = slot.length - 1; i >= 0; i--) if (!slot[i].days) slot.splice(i, 1);
 		slot.push(made);
@@ -1427,10 +1427,24 @@
 			}
 		});
 		if (day.stay) {
-			const next = dutyOn(slots[index], (weekday + 1) % 7);
-			if (!next || !next.segments.length) problems.push({ i: -1, text: "留在线上过夜，但第二天没有运用" });
+			const target = nextSlotOf(day, index);
+			const next = slots[target] ? dutyOn(slots[target], (weekday + 1) % 7) : null;
+			if (!next || !next.segments.length) problems.push({ i: -1, text: `留在线上过夜，但第二天接的车 ${target + 1} 没有运用` });
+			else if (dutyEndStation(day) !== dutyStartStation(next)) problems.push({ i: -1, text: `第二天接的车 ${target + 1} 的运用不从这里出发` });
+			if (slots.some((slot, other) => other !== index && dutyOn(slot, weekday) && dutyOn(slot, weekday).stay && nextSlotOf(dutyOn(slot, weekday), other) === target)) problems.push({ i: -1, text: `还有一列过夜的车第二天也接车 ${target + 1}` });
 		}
 		return problems;
+	}
+
+	/** The slot a train staying overnight runs the next day: the one chosen, or its own. */
+	const nextSlotOf = (day, index) => day.next !== undefined && day.next >= 0 ? day.next : index;
+	function dutyEndStation(day) {
+		const segment = day.segments[day.segments.length - 1], r = segment && data.routeById.get(segment.route);
+		return r ? (r.stops[lastStopOf(segment, r)] || {}).station : null;
+	}
+	function dutyStartStation(day) {
+		const segment = day.segments[0], r = segment && data.routeById.get(segment.route);
+		return r ? (r.stops[segment.from] || {}).station : null;
 	}
 
 	function selectSlot(depotId, sidingId, index) {
@@ -1503,8 +1517,13 @@
 			<dt>方式</dt><dd>${dutiesOf(depot).mode === "diagram" ? "按运用图" : "在线预约（运用先存着，按运用运行要等以后）"}</dd></dl>
 			${rows ? `<ol class="duty">${rows}</ol>` : `<p class="hint">这天没有运用，在运行图上点班次加进来。</p>`}
 			${problemAt(-1)}
-			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> 跑完最后一班留在线上过夜（第二天从这里接着跑）</label>` : ""}
-			<p class="hint">选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 ${daysText(group)} 这几天（表的组合相同）。按 Esc 取消选择。</p></div>`;
+			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> 跑完最后一班留在线上过夜</label>` : ""}
+			${day && day.stay ? `<label>第二天接着跑 <select data-duty-next>${slots.map((slot, i) => {
+				const next = dutyOn(slot, (state.weekday + 1) % 7);
+				const fits = next && next.segments.length && dutyStartStation(next) === dutyEndStation(day);
+				return `<option value="${i}"${nextSlotOf(day, state.slot.index) === i ? " selected" : ""}>车 ${i + 1}${i === state.slot.index ? "（自己）" : ""}${fits ? "" : next && next.segments.length ? "（不从这里出发）" : "（没有运用）"}</option>`;
+			}).join("")}</select></label>` : ""}
+			<p class="hint">选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 ${daysText(group)} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。</p></div>`;
 	}
 
 	/** A first draft of a depot's duties from its timetables, put in the draft to look over before applying. */
@@ -1965,6 +1984,10 @@
 	});
 	$("inspector").addEventListener("change", e => {
 		const depot = state.slot && depotById(state.slot.depot);
+		if (e.target.matches("[data-duty-next]") && depot) {
+			const next = Number(e.target.value);
+			editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).next = next === state.slot.index ? -1 : next; });
+		}
 		if (e.target.matches("[data-duty-stay]") && depot) {
 			const stay = e.target.checked;
 			editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).stay = stay; });

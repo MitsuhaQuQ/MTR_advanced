@@ -90,5 +90,6 @@
   "gui.mtr.region_uncut": ", %s uncut",
   "gui.mtr.region_missing": ", %s without rails",
   "gui.mtr.use_speed_curves": "Speed curves: brake ahead, keep to time (refresh path)",
-  "gui.mtr.deceleration": "Braking %s m/s²"
+  "gui.mtr.deceleration": "Braking %s m/s²",
+  "gui.mtr.path_failure_duty": "The path of a duty can't be found, and its train doesn't go out on those days. Check the duties in the advanced editor"
 }

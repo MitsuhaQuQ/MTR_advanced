@@ -457,6 +457,14 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		return newProgress - railProgress;
 	}
 
+	/**
+	 * @return true if the end of the path is a stop on the line rather than the way into the siding, as for a train staying
+	 * there overnight
+	 */
+	protected boolean keepsOnLineAtEnd() {
+		return false;
+	}
+
 	public final boolean getIsOnRoute() {
 		return isOnRoute;
 	}
@@ -607,7 +615,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 				// How far a train on its speed curve moves this tick, or -1 to move at its speed
 				double curveAdvance = -1;
 
-				if (railProgress >= distances.get(distances.size() - 1) - (railLength - trainCars * spacing) / 2) {
+				if (railProgress >= distances.get(distances.size() - 1) - (railLength - trainCars * spacing) / 2 && !keepsOnLineAtEnd()) {
 					isOnRoute = false;
 					manualNotch = -2;
 					ridingEntities.clear();

@@ -1,10 +1,13 @@
 package mtr.data;
 
+import mtr.advanced.DepotDuties;
+import mtr.advanced.DutyShapes;
 import mtr.path.PathData;
 import org.msgpack.core.MessagePacker;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +73,19 @@ public class TrainService {
 	 */
 	private int turnBackStop = -1;
 	private final List<Route> tripRoutes = new ArrayList<>();
+	private long sidingId;
+	/**
+	 * In a depot running by its duties, the slot whose duty the train is running, or -1 (design document 6.12, block E2).
+	 */
+	private int dutySlot = -1;
+	/**
+	 * When the operating day of that duty started, as a full timestamp.
+	 */
+	private long dutyDayStart;
+	/**
+	 * The segment of the duty the train is on.
+	 */
+	private int dutyIndex;
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
 	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
@@ -80,7 +96,10 @@ public class TrainService {
 	private static final String KEY_TRIP_PATH = "trip_path";
 	private static final String KEY_LINKED_SERVICE = "linked_service";
 	private static final String KEY_LINKED_ROUTE = "linked_route";
-	public static final int SAVED_KEYS = 9;
+	private static final String KEY_DUTY_SLOT = "duty_slot";
+	private static final String KEY_DUTY_DAY_START = "duty_day_start";
+	private static final String KEY_DUTY_INDEX = "duty_index";
+	public static final int SAVED_KEYS = 12;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
 	 */
@@ -101,6 +120,9 @@ public class TrainService {
 		routeStartMillis = messagePackHelper.getLong(KEY_ROUTE_START_MILLIS);
 		nextTripMillis = messagePackHelper.getLong(KEY_NEXT_TRIP_MILLIS);
 		isJoiningLoop = messagePackHelper.getBoolean(KEY_IS_JOINING_LOOP);
+		dutySlot = messagePackHelper.getInt(KEY_DUTY_SLOT, -1);
+		dutyDayStart = messagePackHelper.getLong(KEY_DUTY_DAY_START);
+		dutyIndex = messagePackHelper.getInt(KEY_DUTY_INDEX);
 		needsAlignment = tripMillis != 0;
 		setLastLap(messagePackHelper.getBoolean(KEY_IS_LAST_LAP));
 	}
@@ -115,6 +137,13 @@ public class TrainService {
 		messagePacker.packString(KEY_TRIP_PATH).packString(tripPathKey);
 		messagePacker.packString(KEY_LINKED_SERVICE).packInt(linkedService);
 		messagePacker.packString(KEY_LINKED_ROUTE).packLong(linkedRouteId);
+		messagePacker.packString(KEY_DUTY_SLOT).packInt(dutySlot);
+		messagePacker.packString(KEY_DUTY_DAY_START).packLong(dutyDayStart);
+		messagePacker.packString(KEY_DUTY_INDEX).packInt(dutyIndex);
+	}
+
+	public void setSiding(long newSidingId) {
+		sidingId = newSidingId;
 	}
 
 	/**
@@ -133,6 +162,10 @@ public class TrainService {
 	 */
 	public void update(boolean isOnRoute) {
 		if (isOnRoute) {
+			// Duties say which train runs what, so nothing is reserved for others to see
+			if (isOnDuty()) {
+				return;
+			}
 			reserveTrip(tripRouteId, tripMillis);
 			if (nextTripMillis != 0) {
 				final Route lapRoute = getLapRoute();
@@ -140,7 +173,9 @@ public class TrainService {
 					reserveTrip(lapRoute.id, nextTripMillis);
 				}
 			}
-		} else if (tripMillis != 0 || isLastLap || tripPath != null) {
+		} else if (tripMillis != 0 || isLastLap || tripPath != null || dutySlot >= 0) {
+			dutySlot = -1;
+			dutyIndex = 0;
 			tripMillis = 0;
 			nextTripMillis = 0;
 			routeStartMillis = 0;
@@ -186,6 +221,13 @@ public class TrainService {
 	public void onStopReached() {
 		final int nextStoppingIndex = vehicle.getNextStoppingIndex();
 		turnBackStop = -1;
+		// On a duty the next segment's service is already chosen, and starts at that segment's first stop
+		if (isOnDuty()) {
+			while (dutyIndex + 1 < tripPath.dutyStarts.length && nextStoppingIndex >= tripPath.dutyStarts[dutyIndex + 1]) {
+				startDutySegment(dutyIndex + 1);
+			}
+			return;
+		}
 		// The first stop of a joined loop ends the service the train joined, like the end of any lap
 		if (isJoiningLoop && stopTimes != null && nextStoppingIndex >= getJoinEndIndex()) {
 			isJoiningLoop = false;
@@ -233,6 +275,12 @@ public class TrainService {
 	 */
 	public void alignToTimetable(boolean canAlign) {
 		needsAlignment = false;
+		if (isOnDuty()) {
+			if (canAlign) {
+				alignDuty();
+			}
+			return;
+		}
 		if (!canAlign || tripMillis == 0 || stopTimes == null || depot.getTimetable(trainId) == null) {
 			return;
 		}
@@ -263,6 +311,62 @@ public class TrainService {
 		if (!isSameService) {
 			vehicle.returnToDepot();
 		}
+	}
+
+	/**
+	 * A train on a duty goes to where its duty has it by now: the latest segment that has started, and on it the first stop
+	 * it hasn't left yet, or the last free stop before that. Before the duty starts it waits at its first stop; after the
+	 * duty it goes back to the depot, or to its last stop when it stays there overnight.
+	 */
+	private void alignDuty() {
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		final int[] starts = tripPath.dutyStarts;
+		if (segments.size() != starts.length || segments.isEmpty()) {
+			vehicle.returnToDepot();
+			return;
+		}
+		final long currentMillis = clock.getAsLong();
+		int index = 0;
+		for (int i = segments.size() - 1; i > 0; i--) {
+			if (DutyShapes.getServiceMillis(dutyDayStart, segments.get(i).service) <= currentMillis) {
+				index = i;
+				break;
+			}
+		}
+		startDutySegment(index);
+
+		final List<PathData> path = vehicle.getPath();
+		int stopIndex = -1;
+		for (int i = starts[index]; i < path.size() && stopIndex < 0; i++) {
+			if (path.get(i).dwellTime > 0 && path.get(i).rail.railType != RailType.SIDING) {
+				while (dutyIndex + 1 < starts.length && i >= starts[dutyIndex + 1]) {
+					startDutySegment(dutyIndex + 1);
+				}
+				final RouteTimetable.StopPlan stopPlan = getStopPlan(i);
+				if (stopPlan != null && getPlannedMillis(stopPlan.departureMillis) + RouteTimetable.ALIGN_TOLERANCE_MILLIS > currentMillis) {
+					stopIndex = i;
+				}
+			}
+		}
+		if (stopIndex < 0) {
+			if (!tripPath.staysOnLine) {
+				vehicle.returnToDepot();
+				return;
+			}
+			stopIndex = path.size() - 1;
+		}
+		for (int i = stopIndex; i >= starts[0]; i--) {
+			if (path.get(i).dwellTime > 0 && vehicle.isStopFree(i)) {
+				int segment = 0;
+				while (segment + 1 < starts.length && i >= starts[segment + 1]) {
+					segment++;
+				}
+				startDutySegment(segment);
+				vehicle.moveToStop(i);
+				return;
+			}
+		}
+		vehicle.returnToDepot();
 	}
 
 	/**
@@ -433,6 +537,140 @@ public class TrainService {
 		isJoiningLoop = stopTimes != null && stopTimes.hasJoinStops();
 		updateTripPath();
 		reserveNextTrip();
+	}
+
+	/**
+	 * Sends this train out for a slot's duty (design document 6.12, block E2).
+	 *
+	 * @param dayStart when the operating day of the duty started
+	 */
+	public void deployDuty(int slot, long dayStart, Siding.TripPath dutyPath) {
+		dutySlot = slot;
+		dutyDayStart = dayStart;
+		isJoiningLoop = false;
+		linkedService = -1;
+		linkedRouteId = 0;
+		useTripPath(dutyPath);
+		startDutySegment(0);
+	}
+
+	/**
+	 * @return true if the train runs a duty, which decides every service it runs
+	 */
+	public boolean isOnDuty() {
+		return dutySlot >= 0 && tripPath != null && tripPath.isDuty();
+	}
+
+	/**
+	 * @return true while a train that stays on the line overnight is at its last stop, waiting for the next day
+	 */
+	public boolean isStayingOnLine() {
+		return isOnDuty() && tripPath.staysOnLine && vehicle.getNextStoppingIndex() >= vehicle.getPath().size() - 1;
+	}
+
+	/**
+	 * @return true on the path of a duty that ends on the line, whose end is a stop rather than the way into the siding
+	 */
+	public boolean endsOnLine() {
+		return isOnDuty() && tripPath.staysOnLine;
+	}
+
+	/**
+	 * @return at the first stop of a segment of the duty, when the train leaves, or 0
+	 */
+	public long getDutyDepartureMillis() {
+		if (!isOnDuty()) {
+			return 0;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		for (final int start : tripPath.dutyStarts) {
+			if (start == stopIndex) {
+				final RouteTimetable.StopPlan stopPlan = getStopPlan(stopIndex);
+				return stopPlan == null ? 0 : getPlannedMillis(stopPlan.departureMillis);
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Once a new operating day starts, a train that stayed on the line overnight takes over the duty of the slot chosen for
+	 * it, which starts where it is. If that duty doesn't start here, as the duties have changed since, it goes back to the
+	 * depot.
+	 */
+	public void updateOvernight() {
+		if (!isOnDuty() || !tripPath.staysOnLine || vehicle.getNextStoppingIndex() < vehicle.getPath().size() - 1) {
+			return;
+		}
+		final long dayStart = DutyShapes.getDayStart(clock.getAsLong());
+		if (dayStart <= dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2) {
+			return;
+		}
+		final DepotDuties.DayDuty day = getDutyDay();
+		final List<DepotDuties.Slot> slots = depot.getDutySlots(sidingId);
+		final int nextSlot = day == null ? -1 : DutyShapes.getNextSlot(day, dutySlot);
+		final int weekday = TimetableConfig.getWeekday(dayStart);
+		final String key = nextSlot < 0 || routes == null ? null : DutyShapes.getSlotKey(slots, nextSlot, weekday, routes);
+		final Siding.TripPath nextPath = key == null ? null : tripPaths.get(key);
+		final List<PathData> path = vehicle.getPath();
+		final long dayNumber = DutyShapes.getDayNumber(dayStart);
+		if (nextPath == null || nextPath.path.isEmpty() || nextPath.path.get(0).savedRailBaseId != path.get(path.size() - 1).savedRailBaseId || depot.hasDutyRun(sidingId, nextSlot, dayNumber)) {
+			System.out.println("A train staying on the line overnight has no duty starting where it is, and goes back to the depot: " + key);
+			vehicle.returnToDepot();
+			return;
+		}
+		depot.markDutyRun(sidingId, nextSlot, dayNumber);
+		dutySlot = nextSlot;
+		dutyDayStart = dayStart;
+		tripPath = nextPath;
+		tripPathKey = nextPath.key;
+		stopTimes = nextPath.stopTimes;
+		tripRoutes.clear();
+		vehicle.changePath(nextPath, 0);
+		startDutySegment(0);
+	}
+
+	/**
+	 * Moves the train onto a segment of its duty: its route, and its service on the duty's day.
+	 */
+	private void startDutySegment(int index) {
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (index >= segments.size() || tripPath == null) {
+			return;
+		}
+		dutyIndex = index;
+		final DepotDuties.Segment segment = segments.get(index);
+		tripRouteId = segment.routeId;
+		tripMillis = DutyShapes.getServiceMillis(dutyDayStart, segment.service);
+		nextTripMillis = 0;
+		if (index == 0) {
+			// Plans count from the first stop of the path, which for a route joined part of the way along is later than its service
+			routeStartMillis = 0;
+			final Route route = routes == null ? null : routes.apply(segment.routeId);
+			if (route != null && segment.fromStop > 0 && stopTimes != null) {
+				tripMillis += stopTimes.getEntryOffsetMillis(route, segment.fromStop, route.timetable.getTableIndex(tripMillis), segment.service);
+			}
+		} else {
+			final RouteTimetable.StopPlan stopPlan = getStopPlan(tripPath.dutyStarts[index]);
+			final RouteTimetable.StopPlan startPlan = stopPlan == null || stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
+			routeStartMillis = startPlan == null ? 0 : startPlan.routeStartMillis;
+		}
+	}
+
+	private DepotDuties.DayDuty getDutyDay() {
+		if (depot == null || dutySlot < 0) {
+			return null;
+		}
+		final List<DepotDuties.Slot> slots = depot.getDutySlots(sidingId);
+		return dutySlot < slots.size() ? slots.get(dutySlot).getDuty(TimetableConfig.getWeekday(dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2)) : null;
+	}
+
+	private List<DepotDuties.Segment> getDutySegments() {
+		final DepotDuties.DayDuty day = getDutyDay();
+		return day == null ? Collections.emptyList() : day.segments;
+	}
+
+	public int getDutySlot() {
+		return dutySlot;
 	}
 
 	/**
@@ -690,7 +928,8 @@ public class TrainService {
 	}
 
 	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
-		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
+		final Route dutyRoute = isOnDuty() && routes != null ? routes.apply(tripRouteId) : null;
+		final RouteTimetable timetable = dutyRoute != null ? dutyRoute.timetable : depot == null ? null : depot.getTimetable(trainId);
 		if (tripMillis == 0 || timetable == null || stopTimes == null) {
 			return null;
 		}
@@ -835,6 +1074,20 @@ public class TrainService {
 		 */
 		default boolean keepsTrainsOnLine() {
 			return false;
+		}
+
+		/**
+		 * @return the slots of a siding in a depot running by its duties
+		 */
+		default List<DepotDuties.Slot> getDutySlots(long sidingId) {
+			return Collections.emptyList();
+		}
+
+		default boolean hasDutyRun(long sidingId, int slot, long day) {
+			return false;
+		}
+
+		default void markDutyRun(long sidingId, int slot, long day) {
 		}
 	}
 }

@@ -2,6 +2,7 @@ package mtr.data;
 
 import io.netty.buffer.Unpooled;
 import mtr.advanced.DepotDuties;
+import mtr.advanced.DutyShapes;
 import mtr.advanced.PathBoundaries;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.PathData;
@@ -58,6 +59,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Which services each train runs, set in the advanced editor. See {@link DepotDuties}.
 	 */
 	public final DepotDuties duties = new DepotDuties();
+	/**
+	 * The operating day each slot last ran its duty, as "siding:slot", so a duty runs once a day however its train gets to it.
+	 */
+	private final Map<String, Long> dutyRunDays = new HashMap<>();
 
 	private final int[] frequencies = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
@@ -95,6 +100,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_DUTIES = "duties";
 	private static final String KEY_DUTY_MODE = "duty_mode";
 	private static final String KEY_DUTY_SLOT = "duty_slot";
+	private static final String KEY_DUTY_RUN_DAYS = "duty_run_days";
+	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
 	private static final String DUTY_MODE_DIAGRAM = "diagram";
 	private static final String DUTY_MODE_ONLINE = "online";
 
@@ -140,6 +147,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			duties.fromBytes(dutiesValue.asBinaryValue().asByteArray());
 		}
 		duties.diagramMode = DUTY_MODE_DIAGRAM.equals(messagePackHelper.getString(KEY_DUTY_MODE));
+		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
 	}
 
 	@Deprecated
@@ -201,6 +209,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		for (final Map.Entry<Long, Long> entry : lastDeployedTrips.entrySet()) {
 			messagePacker.packString(String.valueOf(entry.getKey())).packLong(entry.getValue());
 		}
+		messagePacker.packString(KEY_DUTY_RUN_DAYS).packMapHeader(dutyRunDays.size());
+		for (final Map.Entry<String, Long> entry : dutyRunDays.entrySet()) {
+			messagePacker.packString(entry.getKey()).packLong(entry.getValue());
+		}
 	}
 
 	@Override
@@ -242,12 +254,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 15;
+		return super.messagePackLength() + 16;
 	}
 
 	@Override
 	public int reducedMessagePackLength() {
-		return messagePackLength() - 3;
+		return messagePackLength() - 4;
 	}
 
 	@Override
@@ -468,6 +480,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		dataCache = railwayData.dataCache;
 		trainRoutes.clear();
 
+		if (duties.diagramMode) {
+			deployDutyTrain(railwayData);
+			departureOffset = 0;
+			deployableSidings.clear();
+			return;
+		}
+
 		if (!deployableSidings.isEmpty()) {
 			final List<Siding> sidingsInDepot = railwayData.sidings.stream().filter(siding -> {
 				final BlockPos sidingPos = siding.getMidPos();
@@ -504,6 +523,72 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		departureOffset = 0;
 		deployableSidings.clear();
+	}
+
+	/**
+	 * A depot running by its duties sends out a train for each slot whose duty starts from the siding today, when its first
+	 * service is due, once a day (design document 6.12, block E2). Slots whose duty a train staying overnight takes over are
+	 * left to that train. One train leaves a tick, the one due first.
+	 */
+	private void deployDutyTrain(RailwayData railwayData) {
+		final long currentMillis = System.currentTimeMillis();
+		final long dayStart = DutyShapes.getDayStart(currentMillis);
+		final long day = DutyShapes.getDayNumber(dayStart);
+		final int weekday = TimetableConfig.getWeekday(currentMillis);
+		TrainServer bestTrain = null;
+		Siding.TripPath bestPath = null;
+		long bestSidingId = 0;
+		int bestSlot = -1;
+		long bestDepartureMillis = Long.MAX_VALUE;
+		for (final Map.Entry<Long, TrainServer> entry : new TreeMap<>(deployableSidings).entrySet()) {
+			final Siding siding = railwayData.dataCache.sidingIdMap.get(entry.getKey());
+			final List<DepotDuties.Slot> slots = duties.getSlots(entry.getKey());
+			if (siding == null) {
+				continue;
+			}
+			for (int i = 0; i < slots.size(); i++) {
+				final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
+				if (duty == null || duty.segments.isEmpty() || hasDutyRun(siding.id, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
+					continue;
+				}
+				final String key = DutyShapes.getSlotKey(slots, i, weekday, railwayData.dataCache.routeIdMap::get);
+				final Siding.TripPath dutyPath = key == null ? null : siding.getTripPaths().get(key);
+				if (dutyPath == null) {
+					continue;
+				}
+				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - dutyPath.stopTimes.getLeadMillis() - DUTY_DEPLOY_MARGIN_MILLIS;
+				if (currentMillis >= departureMillis && currentMillis <= departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS && departureMillis < bestDepartureMillis) {
+					bestTrain = entry.getValue();
+					bestPath = dutyPath;
+					bestSidingId = siding.id;
+					bestSlot = i;
+					bestDepartureMillis = departureMillis;
+				}
+			}
+		}
+		if (bestTrain != null) {
+			markDutyRun(bestSidingId, bestSlot, day);
+			lastDeployedMillis = currentMillis;
+			bestTrain.deployDuty(bestSlot, dayStart, bestPath);
+		}
+	}
+
+	@Override
+	public List<DepotDuties.Slot> getDutySlots(long sidingId) {
+		return duties.getSlots(sidingId);
+	}
+
+	@Override
+	public boolean hasDutyRun(long sidingId, int slot, long day) {
+		final Long runDay = dutyRunDays.get(sidingId + ":" + slot);
+		return runDay != null && runDay == day;
+	}
+
+	@Override
+	public void markDutyRun(long sidingId, int slot, long day) {
+		dutyRunDays.put(sidingId + ":" + slot, day);
+		// Days long gone don't need remembering
+		dutyRunDays.values().removeIf(runDay -> runDay < day - 2);
 	}
 
 	/**
@@ -984,6 +1069,152 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			return new Siding.TripTail(Siding.TripTail.getKey(links), tripRouteIds, cutStops, leaveRail, tailPath, lastPlatform, lapStart, isLapReversed, entryRail, entryStops, entryLeads);
 		}
 
+		/**
+		 * Each shape of duty a siding's slots run, once (design document 6.12, block E2).
+		 */
+		private List<Siding.DutyPlan> getDutyPlans(Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<Siding.DutyPlan> dutyPlans = new ArrayList<>();
+			final Set<String> keys = new HashSet<>();
+			final List<DepotDuties.Slot> slots = duties.getSlots(siding.id);
+			for (int i = 0; i < slots.size(); i++) {
+				for (int weekday = 0; weekday < 7; weekday++) {
+					final String key = DutyShapes.getSlotKey(slots, i, weekday, dataCache.routeIdMap::get);
+					if (key == null || !keys.add(key)) {
+						continue;
+					}
+					final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
+					final Siding.DutyPlan dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
+					if (dutyPlan == null) {
+						failure = new PathFailure(PathFailure.Type.DUTY, 0);
+					} else {
+						dutyPlans.add(dutyPlan);
+					}
+				}
+			}
+			return dutyPlans;
+		}
+
+		/**
+		 * Joins up a duty's segments: each service from where it joins its route to where it leaves, with the stops it passes
+		 * passed, which is how a single service's passing or stopping becomes real, then on to the next segment the way the
+		 * depot's own path would turn back.
+		 *
+		 * @return the plan, or null if a part of it can't be found
+		 */
+		private Siding.DutyPlan getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<PathData> body = new ArrayList<>();
+			final int[] segmentStarts = new int[segments.size()];
+			final List<Long> routeIds = new ArrayList<>();
+			final Map<Long, Integer> cutStops = new HashMap<>();
+			final Map<Long, Integer> entryStops = new HashMap<>();
+			final Map<Long, List<PathData>> entryLeads = new HashMap<>();
+			SavedRailBase firstPlatform = null;
+			SavedRailBase lastPlatform = null;
+			Route previousRoute = null;
+			boolean previousRanToEnd = false;
+
+			for (int k = 0; k < segments.size(); k++) {
+				final DepotDuties.Segment segment = segments.get(k);
+				final Route route = dataCache.routeIdMap.get(segment.routeId);
+				if (route == null || route.transportMode != transportMode || route.platformIds.size() < 2) {
+					return null;
+				}
+				final int firstStop = DutyShapes.getFirstStop(route, segment);
+				final int lastStop = DutyShapes.getLastStop(route, segment);
+				final boolean[] pass = DutyShapes.getPassFlags(route, segment, weekday);
+				final List<SavedRailBase> platforms = new ArrayList<>();
+				final List<List<BlockPos>> waypoints = new ArrayList<>();
+				final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
+				for (int i = firstStop; i <= lastStop; i++) {
+					final Route.RoutePlatform routePlatform = route.platformIds.get(i);
+					final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
+					if (platform == null) {
+						return null;
+					}
+					platforms.add(platform);
+					waypoints.add(routePlatform.waypoints);
+					final Route.RoutePlatform stopSetting = new Route.RoutePlatform(routePlatform.platformId);
+					stopSetting.pass = pass[i - firstStop];
+					stopSetting.dwellOverride = routePlatform.dwellOverride;
+					stopSettings.add(stopSetting);
+				}
+				final List<PathData> segmentPath = new ArrayList<>();
+				PathFinder.findPath(segmentPath, rails, graph, platforms, waypoints, 1, cruisingAltitude, useFastSpeed);
+				if (segmentPath.size() < 2) {
+					return null;
+				}
+				PathFinder.applyStopSettings(segmentPath, stopSettings);
+
+				if (lastPlatform != null && lastPlatform.id != platforms.get(0).id) {
+					final List<PathData> connectingPath = new ArrayList<>();
+					// After running a route to its end the train turns back the way the route lists, like the depot's own path
+					final List<BlockPos> turnBackNodes = previousRanToEnd ? getTurnBackNodes(previousRoute, graph) : Collections.emptyList();
+					if (turnBackNodes.isEmpty()) {
+						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
+					} else {
+						final Siding.TurnBackSection turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
+						if (turnBackSection != null) {
+							connectingPath.addAll(turnBackSection.getDefaultWay());
+						}
+					}
+					if (connectingPath.isEmpty()) {
+						return null;
+					}
+					PathFinder.appendPath(body, connectingPath);
+				}
+
+				final PathData first = segmentPath.get(0);
+				final PathData last = body.isEmpty() ? null : body.get(body.size() - 1);
+				if (last != null && first.isSameRail(last)) {
+					segmentStarts[k] = body.size() - 1;
+					body.set(body.size() - 1, first);
+					body.addAll(segmentPath.subList(1, segmentPath.size()));
+				} else if (last != null && first.isOppositeRail(last)) {
+					// Turning back on the platform: the stop is the arrival there, and the platform reversed is only the way out
+					first.dwellTime = 0;
+					first.savedRailBaseId = 0;
+					segmentStarts[k] = body.size() - 1;
+					body.addAll(segmentPath);
+				} else {
+					segmentStarts[k] = body.size();
+					body.addAll(segmentPath);
+				}
+
+				if (firstPlatform == null) {
+					firstPlatform = platforms.get(0);
+				}
+				lastPlatform = platforms.get(platforms.size() - 1);
+				routeIds.add(route.id);
+				if (lastStop < route.platformIds.size() - 1) {
+					cutStops.putIfAbsent(route.id, lastStop);
+				}
+				if (firstStop > 0 && !entryStops.containsKey(route.id)) {
+					// The plan of a route joined part of the way along counts from its first stop, so the way there is timed too
+					final List<SavedRailBase> leadPlatforms = new ArrayList<>();
+					final List<List<BlockPos>> leadWaypoints = new ArrayList<>();
+					final List<Route.RoutePlatform> leadSettings = new ArrayList<>();
+					for (int i = 0; i <= firstStop; i++) {
+						final Platform platform = dataCache.platformIdMap.get(route.platformIds.get(i).platformId);
+						if (platform != null) {
+							leadPlatforms.add(platform);
+							leadWaypoints.add(route.platformIds.get(i).waypoints);
+							leadSettings.add(route.platformIds.get(i));
+						}
+					}
+					final List<PathData> leadPath = new ArrayList<>();
+					PathFinder.findPath(leadPath, rails, graph, leadPlatforms, leadWaypoints, 1, cruisingAltitude, useFastSpeed);
+					if (leadPath.size() >= 2 && leadPlatforms.size() == firstStop + 1) {
+						PathFinder.applyStopSettings(leadPath, leadSettings);
+						entryStops.put(route.id, firstStop);
+						entryLeads.put(route.id, leadPath);
+					}
+				}
+				previousRoute = route;
+				previousRanToEnd = lastStop == route.platformIds.size() - 1;
+			}
+			return new Siding.DutyPlan(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
+		}
+
 		private boolean isCut(Route route, RouteTimetable.ServiceLink link) {
 			return link.fromStop >= 0 && link.fromStop < route.platformIds.size() - 1;
 		}
@@ -1175,7 +1406,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (final Siding siding : sidings) {
 				final SavedRailBase firstPlatform = entryPlatform != null ? entryPlatform : platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns));
+				final List<Siding.DutyPlan> dutyPlans = duties.diagramMode ? getDutyPlans(siding, rails, graph, useFastSpeed) : new ArrayList<>();
+				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans));
 			}
 			return successfulSegments;
 		}

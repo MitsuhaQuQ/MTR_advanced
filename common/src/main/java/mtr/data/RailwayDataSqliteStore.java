@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,6 +51,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	private static final String BACKUP_EXTENSION = ".db";
 	private static final String TEMPORARY_EXTENSION = ".tmp";
 	private static final String KEY_MIGRATED = "migrated";
+	private static final String KEY_GRAPH_FINGERPRINT = "graph_fingerprint";
 	private static final long BACKUP_INTERVAL_MILLIS = 60 * 60 * 1000;
 	private static final int BACKUPS_TO_KEEP = 5;
 	private static final int BACKUP_WAIT_SECONDS = 60;
@@ -72,6 +74,9 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.execute("PRAGMA synchronous=NORMAL");
 			statement.execute("CREATE TABLE IF NOT EXISTS entries (type TEXT NOT NULL, id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (type, id)) WITHOUT ROWID");
 			statement.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+			// Our own tables for the physical network, apart from the entries of the data itself
+			statement.execute("CREATE TABLE IF NOT EXISTS graph_sections (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS graph_paths (owner TEXT PRIMARY KEY, graph_fingerprint INTEGER NOT NULL, data BLOB NOT NULL)");
 		}
 		connection.setAutoCommit(false);
 
@@ -107,6 +112,57 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 		deleteStatement.setLong(2, id);
 		deleteStatement.executeUpdate();
 		hasPendingChanges = true;
+	}
+
+	@Override
+	public void replaceGraphSections(Map<Long, byte[]> sections, long fingerprint) throws Exception {
+		try (final Statement statement = connection.createStatement()) {
+			statement.execute("DELETE FROM graph_sections");
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT INTO graph_sections (id, data) VALUES (?, ?)")) {
+			for (final Map.Entry<Long, byte[]> entry : sections.entrySet()) {
+				statement.setLong(1, entry.getKey());
+				statement.setBytes(2, entry.getValue());
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)")) {
+			statement.setString(1, KEY_GRAPH_FINGERPRINT);
+			statement.setString(2, String.valueOf(fingerprint));
+			statement.executeUpdate();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void writeGraphPath(String owner, long fingerprint, byte[] data) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO graph_paths (owner, graph_fingerprint, data) VALUES (?, ?, ?)")) {
+			statement.setString(1, owner);
+			statement.setLong(2, fingerprint);
+			statement.setBytes(3, data);
+			statement.executeUpdate();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void forEachGraphSection(BiConsumer<Long, byte[]> consumer) throws Exception {
+		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT id, data FROM graph_sections")) {
+			while (resultSet.next()) {
+				consumer.accept(resultSet.getLong(1), resultSet.getBytes(2));
+			}
+		}
+	}
+
+	@Override
+	public long getGraphFingerprint() throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT value FROM meta WHERE key = ?")) {
+			statement.setString(1, KEY_GRAPH_FINGERPRINT);
+			try (final ResultSet resultSet = statement.executeQuery()) {
+				return resultSet.next() ? Long.parseLong(resultSet.getString(1)) : 0;
+			}
+		}
 	}
 
 	@Override

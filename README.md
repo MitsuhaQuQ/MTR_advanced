@@ -63,7 +63,8 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - Changes are saved as a draft as they are made and only sent to the game with Apply, through the game's own packets. A route changed in the game since the draft is reported as a conflict. Routes managed in the editor can only be viewed in the game's timetable screen.
 - For loops, it shows how the trains go round lap after lap, the way the game runs them.
 - New service types are made in the page from an existing route, picking each stop's track from the platforms the game finds for it, and an existing route's tracks and stops can be changed the same way. The order of stations always comes from the route's path.
-- Depots keep vehicle working: which services each train of each siding runs, by groups of weekdays. A first draft is worked out in one click, and services are added to a train by clicking them on the diagram, with checks for missed connections and double assignment. Trains still take services by online booking until running by vehicle working is done.
+- Depots keep vehicle working: which services each train of each siding runs, by groups of weekdays. A first draft is worked out in one click, and services are added to a train by clicking them on the diagram, with checks for missed connections and double assignment. Depots set to run by vehicle working send out a train for each slot when its first service is due, and the train runs exactly the services of its duty, so services nobody is given don't run. Each shape of duty gets a path of its own, so a single service's passing or stopping is real there. Trains booking single-track stretches with their direction keep two of them from meeting head on, and a train staying on the line overnight takes over the duty chosen for it the next day.
+- The server keeps the compressed rail network (sections between junctions and stations, with their length at each speed limit) and the sections each path runs through in tables of its own in the save's SQLite database.
 
 **Speed curves**
 
@@ -134,7 +135,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 The stages above describe the work as a whole. This is the order it is being done in:
 
 1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
-2. The rest of the advanced editor: trains running by the vehicle working set in the page, with paths made for each service and trains staying on the line overnight.
+2. Test in game the speed curves and running by vehicle working, which are written but untested.
 3. Run logic, part 2: move train movement out of the Minecraft classes, together with running by vehicle working and before speed curves and block sections change it.
 4. Turning back at a platform with the actual platform on PIDS, and empty services.
 5. Speed curves (including speed limits when passing stations), block sections, interlocking, splitting through services and deadheading.
@@ -178,7 +179,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 22. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 23. Jars with ANTE are about 136 MB.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 
