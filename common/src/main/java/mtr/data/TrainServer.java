@@ -148,7 +148,7 @@ public class TrainServer extends Train {
 			}
 		}
 		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
-		return !transportMode.continuousMovement && service.chooseTurnBack();
+		return !transportMode.continuousMovement && (service.chooseDepotReturn() || service.chooseTurnBack());
 	}
 
 	@Override

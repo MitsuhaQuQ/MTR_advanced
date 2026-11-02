@@ -38,6 +38,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	private final Button buttonClearTrains;
 	private final WidgetBetterCheckbox checkboxRepeatIndefinitely;
 	private final WidgetBetterCheckbox checkboxDeterministicPath;
+	private final WidgetBetterCheckbox checkboxCycleRoutes;
 	private final WidgetBetterTextField textFieldCruisingAltitude;
 	private final DashboardList departuresList;
 
@@ -120,6 +121,11 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			depot.clientPathGenerationSuccessfulSegments = -1;
 			PacketTrainDataGuiClient.generatePathC2S(depot.id);
 		});
+		checkboxCycleRoutes = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.cycle_routes"), button -> {
+			saveData();
+			depot.clientPathGenerationSuccessfulSegments = -1;
+			PacketTrainDataGuiClient.generatePathC2S(depot.id);
+		});
 		textFieldCruisingAltitude = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, String.valueOf(Depot.DEFAULT_CRUISING_ALTITUDE), 5);
 	}
 
@@ -133,7 +139,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		IDrawing.setPositionAndWidth(buttonClearTrains, rightPanelsX + buttonWidth, PANELS_START + SQUARE_SIZE, buttonWidth);
 		IDrawing.setPositionAndWidth(checkboxDeterministicPath, rightPanelsX, PANELS_START + SQUARE_SIZE * 2, buttonWidth * 2);
 		IDrawing.setPositionAndWidth(checkboxRepeatIndefinitely, rightPanelsX, PANELS_START + SQUARE_SIZE * (showDeterministicPath() ? 3 : 2) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0), buttonWidth * 2);
+		// Only one of the two shows, so they share a row: a loop repeats by itself, and other routes can be made to go round
+		IDrawing.setPositionAndWidth(checkboxCycleRoutes, rightPanelsX, PANELS_START + SQUARE_SIZE * (showDeterministicPath() ? 3 : 2) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0), buttonWidth * 2);
 		checkboxRepeatIndefinitely.setChecked(data.repeatInfinitely);
+		checkboxCycleRoutes.setChecked(data.cycleRoutes);
 		checkboxDeterministicPath.setChecked(data.useDeterministicPath);
 
 		final int cruisingAltitudeTextWidth = font.width(cruisingAltitudeText) + TEXT_PADDING * 2;
@@ -172,6 +181,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			addDrawableChild(buttonReset);
 			addDrawableChild(buttonClearTrains);
 			addDrawableChild(checkboxRepeatIndefinitely);
+			addDrawableChild(checkboxCycleRoutes);
 		}
 		if (showDeterministicPath()) {
 			addDrawableChild(checkboxDeterministicPath);
@@ -197,10 +207,12 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 		if (data.routeIds.isEmpty()) {
 			checkboxRepeatIndefinitely.visible = false;
+			checkboxCycleRoutes.visible = false;
 		} else {
 			final Route firstRoute = ClientData.DATA_CACHE.routeIdMap.get(data.routeIds.get(0));
 			final Route lastRoute = ClientData.DATA_CACHE.routeIdMap.get(data.routeIds.get(data.routeIds.size() - 1));
 			checkboxRepeatIndefinitely.visible = firstRoute != null && lastRoute != null && !firstRoute.platformIds.isEmpty() && !lastRoute.platformIds.isEmpty() && firstRoute.getFirstPlatformId() == lastRoute.getLastPlatformId();
+			checkboxCycleRoutes.visible = !checkboxRepeatIndefinitely.visible;
 		}
 	}
 
@@ -226,7 +238,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 			super.render(matrices, mouseX, mouseY, delta);
 
-			final int yStartRightPane = PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) + TEXT_PADDING;
+			final int yStartRightPane = PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible || checkboxCycleRoutes.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) + TEXT_PADDING;
 			if (showCruisingAltitude) {
 				GuiCompat.draw(matrices, font, cruisingAltitudeText, rightPanelsX + TEXT_PADDING, PANELS_START + SQUARE_SIZE * 2 + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
 			}
@@ -304,6 +316,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	protected void saveData() {
 		super.saveData();
 		data.repeatInfinitely = checkboxRepeatIndefinitely.visible && checkboxRepeatIndefinitely.selected();
+		data.cycleRoutes = checkboxCycleRoutes.visible && checkboxCycleRoutes.selected();
 		data.useDeterministicPath = !showDeterministicPath() || checkboxDeterministicPath.selected();
 		try {
 			data.cruisingAltitude = Integer.parseInt(textFieldCruisingAltitude.getValue());

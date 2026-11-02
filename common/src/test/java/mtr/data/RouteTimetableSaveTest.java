@@ -7,6 +7,7 @@ import org.msgpack.core.MessageUnpacker;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -137,6 +138,29 @@ class RouteTimetableSaveTest {
 		final Route copy = route.duplicate();
 		assertEquals(9000, copy.timetable.links.get(1000).service);
 		assertEquals(8000, copy.timetable.getTable(1).links.get(4000).service);
+	}
+
+	@Test
+	void servicesEndingAtTheDepotSurviveSaving() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.timetable.services.addAll(Arrays.asList(1000, 2000));
+		route.timetable.returnServices.add(2000);
+		route.addTable(0);
+		route.timetable.getTable(1).services.add(4000);
+		route.timetable.getTable(1).returnServices.add(4000);
+
+		final Route newRoute = saveAndLoad(route);
+		assertEquals(Collections.singleton(2000), newRoute.timetable.returnServices);
+		assertEquals(Collections.singleton(4000), newRoute.timetable.getTable(1).returnServices);
+		assertTrue(newRoute.timetable.isReturnService(20458L * Depot.MILLISECONDS_PER_DAY + 2000));
+		assertFalse(newRoute.timetable.isReturnService(20458L * Depot.MILLISECONDS_PER_DAY + 1000));
+		assertEquals(Collections.singleton(4000), route.duplicate().timetable.getTable(1).returnServices);
+
+		// A removed service no longer ends at the depot
+		route.timetable.services.remove((Integer) 2000);
+		route.timetable.sanitize();
+		assertTrue(route.timetable.returnServices.isEmpty());
 	}
 
 	@Test

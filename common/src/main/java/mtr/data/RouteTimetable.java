@@ -41,6 +41,10 @@ public class RouteTimetable {
 	 * Services of this table that carry on onto a service of another route, by the service they continue from.
 	 */
 	public final Map<Integer, ServiceLink> links = new HashMap<>();
+	/**
+	 * Services of this table after which the train goes back to the depot, for depots whose trains otherwise stay on the line.
+	 */
+	public final Set<Integer> returnServices = new HashSet<>();
 	private final List<RouteTimetable> otherTables = new ArrayList<>();
 	private final List<Integer> allServices = new ArrayList<>();
 	/**
@@ -62,6 +66,10 @@ public class RouteTimetable {
 	public static final long MAX_OVERTAKE_WAIT_MILLIS = 5 * 60 * 1000;
 	public static final int DEFAULT_MARGIN_PERCENT = 5;
 	public static final int MAX_MARGIN_PERCENT = 100;
+	/**
+	 * How far ahead a train that stays on the line looks for its next service, which is the first train of the next day at most.
+	 */
+	public static final long MAX_STAY_MILLIS = 8L * Depot.MILLISECONDS_PER_DAY;
 	/**
 	 * A train with a longer wait until its next service returns to the depot instead.
 	 */
@@ -94,6 +102,7 @@ public class RouteTimetable {
 		weekdays &= ALL_WEEKDAYS;
 		name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
 		links.keySet().retainAll(services);
+		returnServices.retainAll(services);
 
 		otherTables.forEach(RouteTimetable::sanitize);
 		allServices.clear();
@@ -153,6 +162,14 @@ public class RouteTimetable {
 	 */
 	public ServiceLink getLink(long serviceMillis) {
 		return getTable(getTableIndex(serviceMillis)).links.get((int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY));
+	}
+
+	/**
+	 * @param serviceMillis a service as a full timestamp
+	 * @return true if the train goes back to the depot after this service
+	 */
+	public boolean isReturnService(long serviceMillis) {
+		return getTable(getTableIndex(serviceMillis)).returnServices.contains((int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY));
 	}
 
 	/**

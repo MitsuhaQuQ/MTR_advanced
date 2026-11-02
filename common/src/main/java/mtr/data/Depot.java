@@ -29,6 +29,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	public boolean useRealTime;
 	public boolean repeatInfinitely;
 	public boolean useDeterministicPath = true;
+	/**
+	 * Trains turn back from the last route onto the first one and stay on the line, only going back to the depot after a service
+	 * marked for it. Without a next service soon, they wait on the line for it, however long that is.
+	 */
+	public boolean cycleRoutes;
 	public int cruisingAltitude = DEFAULT_CRUISING_ALTITUDE;
 	private int deployIndex;
 	private int departureOffset;
@@ -74,6 +79,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
 	private static final String KEY_USE_DETERMINISTIC_PATH = "use_deterministic_path";
+	private static final String KEY_CYCLE_ROUTES = "cycle_routes";
 
 	public Depot(TransportMode transportMode) {
 		super(transportMode);
@@ -105,6 +111,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		repeatInfinitely = messagePackHelper.getBoolean(KEY_REPEAT_INFINITELY);
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
+		cycleRoutes = messagePackHelper.getBoolean(KEY_CYCLE_ROUTES);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
@@ -154,6 +161,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		repeatInfinitely = packet.readBoolean();
 		cruisingAltitude = packet.readInt();
 		useDeterministicPath = packet.readBoolean();
+		cycleRoutes = packet.readBoolean();
 		readVehicleServiceTypes(packet);
 	}
 
@@ -181,6 +189,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePacker.packString(KEY_REPEAT_INFINITELY).packBoolean(repeatInfinitely);
 		messagePacker.packString(KEY_CRUISING_ALTITUDE).packInt(cruisingAltitude);
 		messagePacker.packString(KEY_USE_DETERMINISTIC_PATH).packBoolean(useDeterministicPath);
+		messagePacker.packString(KEY_CYCLE_ROUTES).packBoolean(cycleRoutes);
 
 		messagePacker.packString(KEY_FREQUENCIES).packArrayHeader(HOURS_IN_DAY);
 		for (int i = 0; i < HOURS_IN_DAY; i++) {
@@ -200,7 +209,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 11;
+		return super.messagePackLength() + 12;
 	}
 
 	@Override
@@ -229,6 +238,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(repeatInfinitely);
 		packet.writeInt(cruisingAltitude);
 		packet.writeBoolean(useDeterministicPath);
+		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
 	}
 
@@ -265,6 +275,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			repeatInfinitely = packet.readBoolean();
 			cruisingAltitude = packet.readInt();
 			useDeterministicPath = packet.readBoolean();
+			cycleRoutes = packet.readBoolean();
 			readVehicleServiceTypes(packet);
 		} else {
 			super.update(key, packet);
@@ -308,6 +319,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(repeatInfinitely);
 		packet.writeInt(cruisingAltitude);
 		packet.writeBoolean(useDeterministicPath);
+		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
 		sendPacket.accept(packet);
 	}
@@ -522,12 +534,18 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	/**
-	 * @return the first service of this route from this time on that no train has taken, or 0 if a train would wait too long for it
+	 * @return the first service of this route from this time on that no train has taken, or 0 if a train would wait too long for
+	 * it. A train that stays on the line waits for its next service however long that is.
 	 */
 	public long findNextService(Route route, long readyMillis) {
-		final long tripMillis = route.timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> isTripReserved(route.id, millis));
+		final long tripMillis = route.timetable.getNextService(readyMillis, readyMillis + (cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS), millis -> isTripReserved(route.id, millis));
 		reserveTrip(route.id, tripMillis);
 		return tripMillis;
+	}
+
+	@Override
+	public boolean keepsTrainsOnLine() {
+		return cycleRoutes;
 	}
 
 	public boolean isTripReserved(long routeId, long tripMillis) {
@@ -658,6 +676,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private final List<Siding> sidings;
 		private final boolean repeatPath;
 		/**
+		 * The path turns back from the last route to the first stop of the first one, so trains go round without the depot.
+		 */
+		private final boolean closesPath;
+		/**
 		 * The loop that trains join part of the way round, with the stop where they join it.
 		 */
 		private final Route loopRoute;
@@ -714,7 +736,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			// A timetabled line that ends where it starts runs lap after lap, and only returns to the depot when service ends
 			final boolean hasTimetable = !routes.isEmpty() && getActiveTimetable(routes.get(0)) != null;
-			repeatPath = repeatInfinitely || hasTimetable && platformsMerged.size() > 1 && platformsMerged.get(0).id == platformsMerged.get(platformsMerged.size() - 1).id;
+			closesPath = cycleRoutes && platformsMerged.size() > 1 && platformsMerged.get(0).id != platformsMerged.get(platformsMerged.size() - 1).id;
+			if (closesPath) {
+				platformsMerged.add(platformsMerged.get(0));
+			}
+			repeatPath = repeatInfinitely || closesPath || hasTimetable && platformsMerged.size() > 1 && platformsMerged.get(0).id == platformsMerged.get(platformsMerged.size() - 1).id;
 			final boolean canJoinLoop = routes.size() == 1 && repeatPath && hasTimetable && routes.get(0).getPathData().isEmpty();
 			loopRoute = canJoinLoop ? routes.get(0) : null;
 			loopEntryStop = canJoinLoop ? routes.get(0).getLoopEntryStop() : 0;
@@ -905,6 +931,37 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		/**
+		 * Adds the way from the last stop of a route to the first stop of the next one, round the turn back rails the route lists
+		 * after its last stop if it has any.
+		 *
+		 * @param routeBefore the route whose last stop this is, or -1 if it has no stops
+		 * @return false if none of the turn back rails can be reached, which fails the path
+		 */
+		private boolean addConnection(List<PathData> tempPath, SavedRailBase from, SavedRailBase to, int routeBefore, List<Siding.TurnBackSection> turnBackSections, List<Siding.DepotReturn> depotReturns, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final int start = tempPath.size();
+			final List<BlockPos> turnBackNodes = routeBefore >= 0 ? getTurnBackNodes(mainRoutes.get(routeBefore), graph) : Collections.emptyList();
+			final List<PathData> connectingPath = new ArrayList<>();
+			if (turnBackNodes.isEmpty()) {
+				PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(from, to), null, 1, cruisingAltitude, useFastSpeed);
+			} else {
+				final Siding.TurnBackSection turnBackSection = findTurnBackSection(from, to, turnBackNodes, start, rails, graph, useFastSpeed);
+				if (turnBackSection == null) {
+					failure = new PathFailure(PathFailure.Type.TURN_BACK, turnBackNodes.get(0).asLong());
+					tempPath.clear();
+					return false;
+				}
+				connectingPath.addAll(turnBackSection.getDefaultWay());
+				turnBackSections.add(turnBackSection);
+			}
+			tempPath.addAll(connectingPath);
+			// Only trains staying on the line need a way back to the depot after a route
+			if (cycleRoutes && routeBefore >= 0 && !connectingPath.isEmpty()) {
+				depotReturns.add(new Siding.DepotReturn(routeBefore, start, connectingPath, from));
+			}
+			return true;
+		}
+
+		/**
 		 * Nodes a route lists after its last stop are the ends of the turn back rails it can use there, in the order trains try them.
 		 */
 		private List<BlockPos> getTurnBackNodes(Route route, RailGraph<Rail> graph) {
@@ -955,25 +1012,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<PathData> tempPath = new ArrayList<>();
 			final List<Siding.TurnBackSection> turnBackSections = new ArrayList<>();
+			final List<Siding.DepotReturn> depotReturns = new ArrayList<>();
 			SavedRailBase lastPlatform = null;
 
 			for (int i = 0; i < pathsInRoute.size(); i++) {
 				final List<SavedRailBase> platforms = platformsInRoute.get(i);
 				if (lastPlatform != null && !platforms.isEmpty() && platforms.get(0) != lastPlatform) {
-					final List<BlockPos> turnBackNodes = i > 0 && !platformsInRoute.get(i - 1).isEmpty() ? getTurnBackNodes(mainRoutes.get(i - 1), graph) : Collections.emptyList();
-					if (turnBackNodes.isEmpty()) {
-						final List<PathData> connectingPath = new ArrayList<>();
-						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
-						tempPath.addAll(connectingPath);
-					} else {
-						final Siding.TurnBackSection turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, tempPath.size(), rails, graph, useFastSpeed);
-						if (turnBackSection == null) {
-							failure = new PathFailure(PathFailure.Type.TURN_BACK, turnBackNodes.get(0).asLong());
-							tempPath.clear();
-							break;
-						}
-						tempPath.addAll(turnBackSection.getDefaultWay());
-						turnBackSections.add(turnBackSection);
+					final int routeBefore = i > 0 && !platformsInRoute.get(i - 1).isEmpty() ? i - 1 : -1;
+					if (!addConnection(tempPath, lastPlatform, platforms.get(0), routeBefore, turnBackSections, depotReturns, rails, graph, useFastSpeed)) {
+						break;
 					}
 				}
 				if (!platforms.isEmpty()) {
@@ -1006,6 +1053,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			}
 
+			// Trains staying on the line turn back from the last route onto the first one, and a lap ends at its first stop
+			if (closesPath && !tempPath.isEmpty() && lastPlatform != null && !addConnection(tempPath, lastPlatform, platformsMerged.get(0), pathsInRoute.size() - 1, turnBackSections, depotReturns, rails, graph, useFastSpeed)) {
+				tempPath.clear();
+			}
+
 			int stopIndex = 1;
 			for (int i = 1; i < tempPath.size(); i++) {
 				final PathData pathData = tempPath.get(i);
@@ -1016,6 +1068,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				pathData.stopIndex = stopIndex;
 			}
 			turnBackSections.forEach(turnBackSection -> turnBackSection.numberStops(tempPath));
+			if (closesPath && !tempPath.isEmpty()) {
+				// The end of a lap is the first stop again, which is where the stations are counted from
+				final int firstStopIndex = tempPath.get(0).stopIndex;
+				tempPath.get(tempPath.size() - 1).stopIndex = firstStopIndex;
+				if (!turnBackSections.isEmpty()) {
+					turnBackSections.get(turnBackSections.size() - 1).setEndStopIndex(tempPath.size(), firstStopIndex);
+				}
+			}
+			depotReturns.forEach(depotReturn -> depotReturn.findStop(tempPath));
 
 			final List<PathData> loopJoinPath = getLoopJoinPath(tempPath);
 			final SavedRailBase entryPlatform = loopJoinPath.isEmpty() ? null : platformsInRoute.get(0).get(loopEntryStop);
@@ -1025,7 +1086,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (final Siding siding : sidings) {
 				final SavedRailBase firstPlatform = entryPlatform != null ? entryPlatform : platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections));
+				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns));
 			}
 			return successfulSegments;
 		}

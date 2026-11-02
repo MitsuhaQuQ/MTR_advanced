@@ -66,6 +66,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonLinkStop;
 	private final Button buttonLinkEntry;
 	private final Button buttonClearLink;
+	private final Button buttonReturnToDepot;
 	private final WidgetBetterTextField textFieldLinkService;
 	private final List<Long> linkRouteIds = new ArrayList<>();
 	private final Button buttonTable;
@@ -174,6 +175,12 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		});
 		buttonClearLink = UtilitiesClient.newButton(Text.literal("X"), button -> {
 			getTable().links.remove(baseMillis);
+			updateLinkWidgets();
+		});
+		buttonReturnToDepot = UtilitiesClient.newButton(Text.literal(""), button -> {
+			if (!getTable().returnServices.remove(baseMillis)) {
+				getTable().returnServices.add(baseMillis);
+			}
 			updateLinkWidgets();
 		});
 		buttonTable = UtilitiesClient.newButton(Text.literal(""), button -> selectTable((tableIndex + 1) % route.timetable.getTableCount()));
@@ -328,11 +335,14 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(buttonLinkStop, rightX + CHECK_BUTTON_WIDTH + TIME_WIDTH, linkY, CHECK_BUTTON_WIDTH);
 		IDrawing.setPositionAndWidth(buttonClearLink, rightX + CHECK_BUTTON_WIDTH * 2 + TIME_WIDTH, linkY, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonLinkEntry, rightX + CHECK_BUTTON_WIDTH * 2 + TIME_WIDTH + SQUARE_SIZE, linkY, CHECK_BUTTON_WIDTH);
+		// In the place of the next service's time, as a service running through to another route doesn't go back to the depot
+		IDrawing.setPositionAndWidth(buttonReturnToDepot, rightX + CHECK_BUTTON_WIDTH, linkY, CHECK_BUTTON_WIDTH);
 		addDrawableChild(buttonLinkRoute);
 		addDrawableChild(textFieldLinkService);
 		addDrawableChild(buttonLinkStop);
 		addDrawableChild(buttonClearLink);
 		addDrawableChild(buttonLinkEntry);
+		addDrawableChild(buttonReturnToDepot);
 
 		updateList();
 		requestConflicts();
@@ -489,6 +499,8 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonLinkStop.visible = link != null && route.isLoop();
 		buttonClearLink.visible = link != null;
 		buttonLinkEntry.visible = linkRoute != null && linkRoute.isLoop();
+		buttonReturnToDepot.visible = hasService && link == null;
+		buttonReturnToDepot.setMessage(Text.literal(fitButtonText(Text.translatable(getTable().returnServices.contains(baseMillis) ? "gui.mtr.timetable_return_depot" : "gui.mtr.timetable_stay_on_line").getString())));
 
 		final boolean wasBinding = isBinding;
 		isBinding = true;

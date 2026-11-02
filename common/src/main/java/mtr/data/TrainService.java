@@ -367,6 +367,44 @@ public class TrainService {
 	}
 
 	/**
+	 * A train of a depot whose trains stay on the line goes back to it after a service marked for that. At the last stop of the
+	 * service's route it changes onto the way back, which turns back where the train always does and then heads for the depot.
+	 *
+	 * @return true if the train has just changed paths, so it waits a moment at the stop
+	 */
+	public boolean chooseDepotReturn() {
+		if (depot == null || !depot.keepsTrainsOnLine() || tripMillis == 0 || isOnTrip() || tripPath != null && tripPath.changeStop >= 0) {
+			return false;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		final List<PathData> path = vehicle.getPath();
+		if (stopIndex < 0 || stopIndex >= path.size()) {
+			return false;
+		}
+		final long platformId = path.get(stopIndex).savedRailBaseId;
+		final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
+		for (int i = 0; i < trainRoutes.size(); i++) {
+			final Route route = trainRoutes.get(i);
+			if (route.id == tripRouteId && !route.platformIds.isEmpty() && route.getLastPlatformId() == platformId && route.timetable.isReturnService(tripMillis)) {
+				final Siding.TripPath returnPath = tripPaths.get(Siding.TripPath.getDepotReturnKey(i));
+				if (returnPath != null) {
+					tripPath = returnPath;
+					tripPathKey = returnPath.key;
+					stopTimes = returnPath.stopTimes;
+					tripRoutes.clear();
+					turnBackStop = -1;
+					// The service after this lap is left for another train
+					nextTripMillis = 0;
+					vehicle.changePath(returnPath, returnPath.changeStop);
+					setLastLap(false);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * A train leaves the siding so it reaches its first stop when the service is planned to, or a little late, but never
 	 * for a service the depot has already sent a train out after, so services aren't run out of order.
 	 *
@@ -790,5 +828,13 @@ public class TrainService {
 		void reserveTrip(long routeId, long tripMillis);
 
 		boolean isTripReserved(long routeId, long tripMillis);
+
+		/**
+		 * @return true if trains turn back from the last route onto the first one instead of going back to the depot, and wait
+		 * on the line for their next service however long that is
+		 */
+		default boolean keepsTrainsOnLine() {
+			return false;
+		}
 	}
 }

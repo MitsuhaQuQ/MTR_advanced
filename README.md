@@ -27,6 +27,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 **Route operation**
 
 - A route can pass through a station without stopping, and can set its own door-open time per station.
+- A depot can keep its trains on the line: after the last route they turn back onto the first one, and without a next service soon they wait on the line for it. A service can be marked to end at the depot, and the train then goes back after turning back as usual.
 - A route can list several reversing sidings after its last stop. A train about to leave the terminal takes the first one that is free and keeps it until it is through, or waits at the platform if all of them are taken.
 - Passed stations don't open doors and don't appear in PIDS or announcements, and times update automatically.
 - The minimum dwell time is now 8.5 seconds. Doors never opened on very short dwells in the original, so older settings below the minimum are raised to 8.5 seconds when paths are refreshed.
@@ -109,13 +110,15 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 
 The stages above describe the work as a whole. This is the order it is being done in:
 
-1. Finish what is in progress: commit the load memory work, then test signed node angles and the latest timetable work in game.
-2. Run logic, part 1: move decisions about services (taking the next service, changing routes, aligning after a restart) out of the Minecraft classes, so a whole day of a network can be simulated in automated tests. Done in code: the decisions are in `TrainService`, with tests for aligning after a restart, a whole day on a loop, sending trains out, turning back and through services. Tested in game.
-3. Choosing the turn-back at terminals, starting with reversing sidings after the platform. Done in code: a route lists reversing sidings as key nodes after its last stop, and a train about to leave the terminal takes the first one that is free, or waits at the platform if none is. The timetable check counts them together. Not yet tested in game.
-4. Path boundaries as a dashboard filter.
-5. Run logic, part 2: move train movement out of the Minecraft classes, before speed curves and block sections change it.
+1. Test in game what is written but untested: choosing between reversing sidings, depots keeping trains on the line, the server jar and the latest timetable fixes. Then build the other four Minecraft versions, which haven't been built since these changes.
+2. Design the running diagram as a whole, without code yet: how trains are worked, when they leave and return to the depot, leaving a service empty after turning back, where trains wait, and turning back at a platform. These are being added one at a time and have started to depend on each other.
+3. Path boundaries as a dashboard filter.
+4. Run logic, part 2: move train movement out of the Minecraft classes, before speed curves and block sections change it.
+5. What the running diagram design decides, such as turning back at a platform with the actual platform on PIDS, and empty services.
 6. Speed curves (including speed limits when passing stations), block sections, interlocking and timetable boundaries.
 7. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
+
+Run logic part 1 (service decisions in `TrainService`, tested in game) and choosing between reversing sidings after a terminal are done.
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
@@ -153,7 +156,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 15. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 16. Jars with ANTE are about 136 MB.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 

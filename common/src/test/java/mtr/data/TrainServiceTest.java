@@ -289,6 +289,53 @@ class TrainServiceTest {
 		assertEquals(3, train.nextStoppingIndex);
 	}
 
+	@Test
+	void aTrainOnTheLineGoesBackToTheDepotAfterAServiceMarkedForIt() {
+		final Line line = new Line();
+		line.depot.keepsTrainsOnLine = true;
+		line.route.timetable.returnServices.add((int) (8 * HOUR));
+		final Siding.TripPath wayBack = Siding.TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		line.tripPaths.put(wayBack.key, wayBack);
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+
+		// Only at the last stop of the route
+		train.nextStoppingIndex = 2;
+		assertFalse(train.service.chooseDepotReturn());
+
+		train.nextStoppingIndex = 3;
+		assertTrue(train.service.chooseDepotReturn());
+		assertSame(wayBack, train.followed);
+		assertEquals(3, train.nextStoppingIndex);
+		assertEquals(0, train.service.getNextTripMillis());
+		assertFalse(train.service.chooseDepotReturn());
+	}
+
+	@Test
+	void aTrainOnTheLineStaysOnItAfterAServiceNotMarked() {
+		final Line line = new Line();
+		line.depot.keepsTrainsOnLine = true;
+		line.route.timetable.returnServices.add((int) (8 * HOUR));
+		final Siding.TripPath wayBack = Siding.TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		line.tripPaths.put(wayBack.key, wayBack);
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
+
+		train.nextStoppingIndex = 3;
+		assertFalse(train.service.chooseDepotReturn());
+		assertNull(train.followed);
+	}
+
+	@Test
+	void aDepotWhoseTrainsGoBackAnywayIgnoresTheMark() {
+		final Line line = new Line();
+		line.route.timetable.returnServices.add((int) (8 * HOUR));
+		final Siding.TripPath wayBack = Siding.TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		line.tripPaths.put(wayBack.key, wayBack);
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+
+		train.nextStoppingIndex = 3;
+		assertFalse(train.service.chooseDepotReturn());
+	}
+
 	/**
 	 * A depot and its siding, with the routes it runs.
 	 */
@@ -570,6 +617,7 @@ class TrainServiceTest {
 
 		private final List<Route> routes;
 		private final Set<Long> reservedTrips = new HashSet<>();
+		boolean keepsTrainsOnLine;
 
 		private FakeDepot(List<Route> routes) {
 			this.routes = routes;
@@ -588,6 +636,11 @@ class TrainServiceTest {
 		@Override
 		public long findNextTrip(String trainId, long readyMillis) {
 			return findNextService(routes.get(0), readyMillis);
+		}
+
+		@Override
+		public boolean keepsTrainsOnLine() {
+			return keepsTrainsOnLine;
 		}
 
 		@Override
