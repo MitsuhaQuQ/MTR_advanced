@@ -19,7 +19,8 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 
 - New deterministic pathfinding: the same network and routes always give the same path. New depots use it by default, existing depots keep the old algorithm, and the depot screen can switch between them.
 - Nodes can be marked as key nodes and picked on the dashboard map as nodes a route must pass through.
-- The dashboard map shows the whole rail network, route paths, depots and turn-back paths. Map data is cached locally and only changes are transferred.
+- The dashboard map shows the whole rail network, route paths, depots and turn-back paths. Map data is cached in a local SQLite file and only changes are transferred.
+- The map remembers terrain. Each time the dashboard opens, the loaded chunks update what was stored, so the map isn't limited to the area around the player.
 - Running trains stay where they are when paths are refreshed, rather than all jumping away.
 - When pathfinding fails, the old path is kept and the depot screen shows the reason. Changing the rails shows that a path is out of date.
 
@@ -38,8 +39,9 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - After turning back, trains follow the services of the opposite route, waiting on the turn-back track or at the platform until it is time to leave.
 - Vehicles can be limited to certain service types, for example local and express in one group and rapid and limited express in another. The timetable picks services by group.
 - A stop can be set to wait for a following train to overtake, with a limit on the wait. PIDS shows how many minutes a train is late.
-- The running sheet checks for services that need the same platform at the same time, including trains turning back on the platform they arrived at.
-- A service can carry on onto a service of another route, such as a loop's 07:00 running through to another line at 07:32, and can leave a loop at any stop. Trains from the depot can join a loop at a chosen stop, keeping to the timetable from there.
+- The running sheet checks for services that need the same platform or turn-back rail at the same time, including trains turning back on the platform they arrived at.
+- A service can carry on onto a service of another route, such as a loop's 07:00 running through to another line at 07:32, and that service can carry on again, up to seven times. A train can leave a loop at any stop, and join a loop at a chosen stop, either from the depot or at the end of a through service, where it stays on the loop until service ends.
+- After a restart, trains don't try to catch up. Each one goes straight to the stop the timetable has it at by then.
 - A route can have up to 16 tables, each with its own days of the week, services and stop times. Times are saved in UTC. The time zone and the hour a new operating day starts are in `config/mtr_timetable.json`, and in multiplayer the server's file is used. Last trains after midnight count as the day before.
 
 **Line groups**
@@ -52,7 +54,8 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 **Dashboard**
 
 - Lists scroll by row, have a scrollbar and can be searched with several keywords.
-- Click a route or a station area on the map to find it in the list on the left.
+- Click a route, a station area or a depot area on the map to find it in the list on the left.
+- Lists for choosing routes, such as a depot's instructions, fold each line like the routes page and show where each route goes, so the two directions of a line can be told apart.
 
 **Simulation**
 
@@ -89,16 +92,30 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 |---|---|---|
 | 0 | Add-on compatibility, merging ANTE into the core | Packaging and running logic done, `Rail` left for stage 4 |
 | 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Simulator done |
-| 1 | Pathfinding base: state graph, deterministic A*, required nodes and keeping trains in place on refresh are done; path boundaries (a node or a stretch of rail) and section caching are not | In progress |
+| 1 | Pathfinding base: state graph, deterministic A*, required nodes and keeping trains in place on refresh are done. Path boundaries (a node or a stretch of rail) are next: first they split the network into areas that filter the dashboard when there are many stations, then they limit pathfinding, with section caching | In progress |
 | 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
 | 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
 | 5 | Speed curves: TPS compensation is done; setting speed from limits, acceleration and timetable, and braking early, are not | In progress |
 | 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
-| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform conflict checks, multiple timetables by weekday, loops joined part way round and two-part through services are done; choosing the turn-back at terminals, through services with more parts and conflict checks for turn-back tracks are not | In progress |
+| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services and aligning after a restart are done; choosing the turn-back at terminals is not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
 | 9 | Timetable boundaries, splitting through services, deadheading, train priority | Not started |
+| 9.5 | Custom announcements: audio added by hand for automatic announcements, uploaded to the server, then synced to clients and cached locally | Not started |
 | 10 | Final verification | Not started |
+
+### Current priorities
+
+The stages above describe the work as a whole. This is the order it is being done in:
+
+1. Finish what is in progress: in-game testing of the latest timetable work and fixes, then commit it.
+2. Faster resource pack loading: parse JSON in parallel, copy models less and time what isn't measured yet.
+3. Run logic, part 1: move decisions about services (taking the next service, changing routes, aligning after a restart) out of the Minecraft classes, so a whole day of a network can be simulated in automated tests.
+4. Choosing the turn-back at terminals, starting with reversing sidings after the platform.
+5. Path boundaries as a dashboard filter.
+6. Run logic, part 2: move train movement out of the Minecraft classes, before speed curves and block sections change it.
+7. Speed curves, block sections, interlocking and timetable boundaries.
+8. Caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
 
 The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese).
 
@@ -134,7 +151,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 14. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 15. Jars with ANTE are about 136 MB.
 
 ## License and credits
 
