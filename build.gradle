@@ -35,6 +35,25 @@ rootProject.ext.variation = rootProject.properties.containsKey("variation") ? ro
 rootProject.ext.variation_header = rootProject.variation == "normal" ? "MTR" : rootProject.variation == "server" ? "MTR-server" : "Modern-Elevators-Escalators"
 // ANTE needs the shaders added in 1.17, so 1.16.5 is built without it
 rootProject.ext.has_ante = minecraft_main_version >= 17 && rootProject.variation == "normal"
+// The server jar is the same build without what only clients use: fonts, sounds, textures, models and the script engine of ANTE
+rootProject.ext.server_jar_excludes = [
+		"assets/*/font/**", "assets/*/sounds/**", "assets/*/textures/**", "assets/*/models/**", "assets/*/blockstates/**",
+		"assets/*/particles/**", "assets/*/scripts/**", "assets/minecraft/atlases/**",
+		"org/graalvm/**", "com/oracle/**", "META-INF/versions/*/org/graalvm/**", "META-INF/versions/*/com/oracle/**",
+		"META-INF/graalvm/**", "META-INF/native-image/**", "META-INF/upgrade/**",
+		"META-INF/services/com.oracle.*", "META-INF/services/org.graalvm.*",
+		"cn/zbx1425/mtrsteamloco/mixin/FQ*", "mtrsteamloco.mixins.json"
+]
+
+/**
+ * Writes the ANTE mixin config for the server jar, without the mixins into the script engine, which that jar leaves out.
+ */
+rootProject.ext.writeServerMixinConfig = { File source, File target ->
+	def config = new groovy.json.JsonSlurper().parse(source)
+	config.mixins = config.mixins.findAll { !it.startsWith("FQ") }
+	target.parentFile.mkdirs()
+	target.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(config))
+}
 
 architectury {
 	minecraft = minecraft_version

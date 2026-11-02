@@ -82,6 +82,32 @@ components.java {
 	}
 }
 
+task serverMixinConfig {
+	def source = file("../resources/common/ante/mtrsteamloco.mixins.json")
+	def target = file("build/serverJar/mtrsteamloco.mixins.json")
+	inputs.file source
+	outputs.file target
+	onlyIf { rootProject.has_ante }
+	doLast {
+		rootProject.writeServerMixinConfig(source, target)
+	}
+}
+
+task serverJar(type: Zip) {
+	dependsOn remapJar, serverMixinConfig
+	from(zipTree(remapJar.archiveFile)) {
+		exclude rootProject.server_jar_excludes
+	}
+	if (rootProject.has_ante) {
+		from "build/serverJar"
+	}
+	archiveFileName = remapJar.archiveFileName.map { it.replace(".jar", "-server.jar") }
+	destinationDirectory = file("build/libs")
+	zip64 true
+}
+
+build.dependsOn serverJar
+
 task moveFabricBuilds() {
 	doLast {
 		delete fileTree("../build/release").matching {
@@ -95,7 +121,7 @@ task moveFabricBuilds() {
 		}
 		copy {
 			from "build/libs"
-			include "*${rootProject.mod_version}.jar"
+			include "*${rootProject.mod_version}.jar", "*${rootProject.mod_version}-server.jar"
 			into "../build/release"
 			rename "(.+)", "${rootProject.variation_header}-\$1"
 		}
