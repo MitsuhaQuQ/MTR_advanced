@@ -1,4 +1,5 @@
 {
+  "gui.mtr.timetable_editor_managed": "This route is managed in the advanced editor, so it can only be viewed here. The editor can hand it back to in-game editing.",
   "gui.mtr.advanced_editor": "Advanced Editor",
   "gui.mtr.use_deterministic_path": "Use deterministic routing",
   "gui.mtr.pass_station": "Run through without stopping",

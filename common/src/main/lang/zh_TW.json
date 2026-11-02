@@ -1,4 +1,5 @@
 {
+  "gui.mtr.timetable_editor_managed": "這條路線由進階編輯器管理，這裡只能查看。可以在進階編輯器裡把它交回遊戲內編輯。",
   "gui.mtr.advanced_editor": "進階編輯器",
   "gui.mtr.use_deterministic_path": "使用確定性尋路",
   "gui.mtr.pass_station": "本站通過，不停車",

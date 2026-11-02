@@ -10,7 +10,7 @@
 <header class="top">
 	<button class="tree-toggle" id="btn-tree" aria-controls="tree" aria-expanded="true" title="显示或收起线路和车厂">☰</button>
 	<h1>MTR 高级编辑器</h1>
-	<span class="tag">只读</span>
+	<span class="tag" id="draft-tag">没有草稿</span>
 	<span class="spacer"></span>
 	<label class="day">运行日
 		<select id="day">
@@ -23,6 +23,7 @@
 			<option value="6">周日</option>
 		</select>
 	</label>
+	<button id="btn-apply" class="primary" disabled title="把草稿发给游戏">应用</button>
 </header>
 
 <div class="app">

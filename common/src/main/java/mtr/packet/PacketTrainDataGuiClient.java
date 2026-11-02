@@ -43,6 +43,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		minecraftClient.execute(() -> LineWords.setWordsFromServer(words));
 	}
 
+	public static void receiveEditPermissionS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final boolean hasPermissionLevel = packet.readBoolean();
+		minecraftClient.execute(() -> ClientData.hasEditPermissionLevel = hasPermissionLevel);
+	}
+
 	public static void receiveTimetableConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String timeZone = packet.readUtf();
 		final int dayStartHour = packet.readInt();

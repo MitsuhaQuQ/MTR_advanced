@@ -3,8 +3,9 @@ package mtr.screen;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
+import mtr.advanced.AdvancedEditing;
 import mtr.client.ClientData;
-import mtr.client.EditorServer;
+import mtr.client.editor.EditorServer;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
 import mtr.data.*;
@@ -133,6 +134,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			dashboardList.selectItem(lineRows.hasHeader(headerId) ? headerId : route.id);
 		});
 		dashboardList.setRowStyle(this::getRowLabel, lineRows::isHeader, lineRows::getColor, this::onClickLineHeader);
+		// The stops of a route the advanced editor manages are changed there
+		dashboardList.setLockedRows(data -> data instanceof Route && AdvancedEditing.isLockedInGame((Route) data));
 		widgetMap.setStationPicking(() -> selectedTab == SelectedTab.STATIONS && editingArea == null, station -> {
 			widgetMap.setSelectedStation(station.id);
 			dashboardList.selectItem(station.id);
@@ -362,7 +365,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 				}
 				break;
 			case ROUTES:
-				if (data instanceof Route) {
+				if (data instanceof Route && !AdvancedEditing.isLockedInGame((Route) data)) {
 					startEditingRoute((Route) data, false);
 				}
 				break;

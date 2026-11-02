@@ -1,6 +1,7 @@
 package mtr.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import mtr.advanced.AdvancedEditing;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
@@ -268,7 +269,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 
 		IDrawing.setPositionAndWidth(buttonClear, 0, 0, LIST_WIDTH);
 		IDrawing.setPositionAndWidth(textFieldService, TEXT_FIELD_PADDING / 2, height - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, LIST_WIDTH - TEXT_FIELD_PADDING - SQUARE_SIZE);
-		textFieldService.setResponder(text -> buttonAddService.active = EditDepotScreen.applyDepartures(text, service -> {
+		textFieldService.setResponder(text -> buttonAddService.active = !isLocked() && EditDepotScreen.applyDepartures(text, service -> {
 		}));
 		IDrawing.setPositionAndWidth(buttonAddService, LIST_WIDTH - SQUARE_SIZE, height - SQUARE_SIZE - TEXT_FIELD_PADDING / 2, SQUARE_SIZE);
 		buttonAddService.active = false;
@@ -346,6 +347,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 
 		updateList();
 		requestConflicts();
+		updateLocked();
 	}
 
 	@Override
@@ -397,9 +399,10 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 				}
 			}
 
-			final List<FormattedCharSequence> hintLines = getHintLines(hasTimes ? hintText : Text.translatable("gui.mtr.timetable_no_path"));
+			final boolean isLocked = isLocked();
+			final List<FormattedCharSequence> hintLines = getHintLines(isLocked ? Text.translatable("gui.mtr.timetable_editor_managed") : hasTimes ? hintText : Text.translatable("gui.mtr.timetable_no_path"));
 			for (int i = 0; i < hintLines.size(); i++) {
-				GuiCompat.draw(matrices, font, hintLines.get(i), rightX, height - (TEXT_HEIGHT + 1) * (hintLines.size() - i), hasTimes ? ARGB_LIGHT_GRAY : ARGB_WARNING);
+				GuiCompat.draw(matrices, font, hintLines.get(i), rightX, height - (TEXT_HEIGHT + 1) * (hintLines.size() - i), hasTimes && !isLocked ? ARGB_LIGHT_GRAY : ARGB_WARNING);
 			}
 			drawConflictText(matrices, rightX, getMarginY() + SQUARE_SIZE * 2 + TEXT_PADDING / 2);
 
@@ -501,6 +504,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonLinkEntry.visible = linkRoute != null && linkRoute.isLoop();
 		buttonReturnToDepot.visible = hasService && link == null;
 		buttonReturnToDepot.setMessage(Text.literal(fitButtonText(Text.translatable(getTable().returnServices.contains(baseMillis) ? "gui.mtr.timetable_return_depot" : "gui.mtr.timetable_stay_on_line").getString())));
+		updateLocked();
 
 		final boolean wasBinding = isBinding;
 		isBinding = true;
@@ -526,6 +530,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void saveRoute() {
+		if (isLocked()) {
+			return;
+		}
 		route.timetable.enabled = checkboxEnabled.selected();
 		saveTableFields();
 		route.timetable.sanitize();
@@ -562,6 +569,43 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonDeleteTable.active = tableIndex > 0;
 		for (int i = 0; i < DAYS_PER_WEEK; i++) {
 			buttonsWeekday[i].setMessage(Text.literal((getTable().runsOn(i) ? "§a" : "§8") + Text.translatable("gui.mtr.timetable_weekday_" + i).getString()));
+		}
+		updateLocked();
+	}
+
+	private boolean isLocked() {
+		return AdvancedEditing.isLockedInGame(route);
+	}
+
+	/**
+	 * A route the advanced editor manages can still be looked through here, by table, direction and service, but not changed.
+	 * Controls that are sometimes unavailable anyway are only switched off, so they come back the way their own update left
+	 * them when the next route isn't locked.
+	 */
+	private void updateLocked() {
+		final boolean canEdit = !isLocked();
+		checkboxEnabled.active = canEdit;
+		buttonAddService.active &= canEdit;
+		buttonClear.active = canEdit;
+		buttonEntryStop.active = canEdit;
+		buttonLinkRoute.active = canEdit;
+		buttonLinkStop.active = canEdit;
+		buttonLinkEntry.active = canEdit;
+		buttonClearLink.active = canEdit;
+		buttonReturnToDepot.active = canEdit;
+		buttonAddTable.active &= canEdit;
+		buttonDeleteTable.active &= canEdit;
+		for (final Button button : buttonsWeekday) {
+			button.active = canEdit;
+		}
+		for (final WidgetBetterTextField textField : new WidgetBetterTextField[]{textFieldMargin, textFieldService, textFieldLinkService, textFieldTableName}) {
+			textField.setEditable(canEdit);
+		}
+		for (int i = 0; i < MAX_ROWS; i++) {
+			textFieldsArrival[i].setEditable(canEdit);
+			textFieldsDeparture[i].setEditable(canEdit);
+			checkboxesPass[i].active = canEdit;
+			checkboxesOvertake[i].active = canEdit;
 		}
 	}
 
@@ -805,6 +849,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void onDeleteService(NameColorDataBase data, int index) {
+		if (isLocked()) {
+			return;
+		}
 		EditDepotScreen.applyDepartures(data.name, service -> getTable().services.remove((Integer) service));
 		updateList();
 	}

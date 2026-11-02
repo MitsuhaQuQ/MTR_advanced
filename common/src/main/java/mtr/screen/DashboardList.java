@@ -59,6 +59,7 @@ public class DashboardList implements IGui {
 	private long selectedItemId = NO_SELECTION;
 	private Function<NameColorDataBase, String> rowLabel = data -> IGui.formatStationName(data.name);
 	private Predicate<NameColorDataBase> isHeaderRow = data -> false;
+	private Predicate<NameColorDataBase> isLockedRow = data -> false;
 	private ToIntFunction<NameColorDataBase> rowColor = data -> data.color;
 	private Consumer<NameColorDataBase> onClickHeaderRow = data -> {
 	};
@@ -161,6 +162,13 @@ public class DashboardList implements IGui {
 		this.isHeaderRow = isHeaderRow;
 		this.rowColor = rowColor;
 		this.onClickHeaderRow = onClickHeaderRow;
+	}
+
+	/**
+	 * @param isLockedRow true for rows whose draw area button is shown but can't be used
+	 */
+	public void setLockedRows(Predicate<NameColorDataBase> isLockedRow) {
+		this.isLockedRow = isLockedRow;
 	}
 
 	public void setData(Set<? extends NameColorDataBase> dataSet, boolean hasFind, boolean hasDrawArea, boolean hasEdit, boolean hasSort, boolean hasAdd, boolean hasDelete) {
@@ -280,7 +288,9 @@ public class DashboardList implements IGui {
 			final int dataSize = dataFiltered.size();
 			final boolean hasSortFiltered = hasSort && dataSize == dataSorted.size();
 			if (hoverIndex >= 0 && hoverIndex + scroll < dataSize) {
-				final boolean isHeader = isHeaderRow.test(dataSorted.get(dataFiltered.get(hoverIndex + scroll)));
+				final NameColorDataBase hoverData = dataSorted.get(dataFiltered.get(hoverIndex + scroll));
+				final boolean isHeader = isHeaderRow.test(hoverData);
+				buttonDrawArea.active = !isLockedRow.test(hoverData);
 				buttonFind.visible = hasFind && !isHeader;
 				buttonDrawArea.visible = hasDrawArea && !isHeader;
 				buttonEdit.visible = hasEdit && !isHeader;

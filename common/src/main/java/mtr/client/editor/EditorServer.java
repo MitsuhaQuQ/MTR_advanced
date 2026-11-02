@@ -1,5 +1,7 @@
-package mtr.client;
+package mtr.client.editor;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import mtr.MTR;
 import net.minecraft.client.Minecraft;
 import org.eclipse.jetty.server.Connector;
@@ -22,15 +24,20 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * The advanced editor: a web page this client serves to itself in the system browser. It is separate from the map web
@@ -47,6 +54,8 @@ public final class EditorServer {
 	private static final String LOOPBACK = "127.0.0.1";
 	private static final String KEY_HEADER = "X-MTR-Editor-Key";
 	private static final long DATA_TIMEOUT_SECONDS = 10;
+	private static final int MAX_BODY_BYTES = 4 * 1024 * 1024;
+	private static final String DRAFTS_FOLDER = "mtr_editor_drafts";
 	private static final String CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 	/**
@@ -110,6 +119,8 @@ public final class EditorServer {
 		context.addServlet(servletHolder, "/");
 		context.addServlet(new ServletHolder(new DataServlet(false)), "/api/data");
 		context.addServlet(new ServletHolder(new DataServlet(true)), "/api/revision");
+		context.addServlet(new ServletHolder(new ApplyServlet()), "/api/apply");
+		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		server.setHandler(context);
 		server.start();
 	}
@@ -119,7 +130,72 @@ public final class EditorServer {
 	}
 
 	/**
-	 * The page itself is open to this computer, but the data needs the key, which the page reads from its address.
+	 * @return true if a request comes from the editor's own page, which a page on another site can't pretend to be
+	 */
+	private static boolean isOwnOrigin(String origin) {
+		final ServerConnector serverConnector = connector;
+		if (origin == null || serverConnector == null) {
+			return false;
+		}
+		final int port = serverConnector.getLocalPort();
+		return origin.equals("http://" + LOOPBACK + ":" + port) || origin.equals("http://localhost:" + port);
+	}
+
+	/**
+	 * Runs on the game thread, which owns the data, and waits for the result.
+	 */
+	private static <T> T onGameThread(Supplier<T> supplier) throws Exception {
+		return CompletableFuture.supplyAsync(supplier, Minecraft.getInstance()).get(DATA_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+	}
+
+	private static void sendJson(HttpServletResponse response, String content) throws IOException {
+		response.setStatus(HttpServletResponse.SC_OK);
+		response.setContentType("application/json");
+		response.setCharacterEncoding("UTF-8");
+		response.setHeader("Cache-Control", "no-store");
+		response.getWriter().write(content);
+	}
+
+	/**
+	 * @return the body as text, or null if it is too big
+	 */
+	private static String readBody(HttpServletRequest request) throws IOException {
+		final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+		final byte[] buffer = new byte[8192];
+		try (final InputStream inputStream = request.getInputStream()) {
+			int read;
+			while ((read = inputStream.read(buffer)) > 0) {
+				if (outputStream.size() + read > MAX_BODY_BYTES) {
+					return null;
+				}
+				outputStream.write(buffer, 0, read);
+			}
+		}
+		return new String(outputStream.toByteArray(), StandardCharsets.UTF_8);
+	}
+
+	/**
+	 * Drafts are kept apart for each world and server, under the game's config folder, so they survive closing the page and
+	 * restarting the game.
+	 */
+	private static Path getDraftPath() {
+		final Minecraft minecraft = Minecraft.getInstance();
+		final String world;
+		if (minecraft.getSingleplayerServer() != null) {
+			world = "world-" + minecraft.getSingleplayerServer().getWorldData().getLevelName();
+		} else if (minecraft.getCurrentServer() != null) {
+			world = "server-" + minecraft.getCurrentServer().ip;
+		} else {
+			world = "unknown";
+		}
+		// Names can have characters a file name can't, so a hash tells apart names that clean up the same
+		final String fileName = world.replaceAll("[^A-Za-z0-9._-]", "_") + "-" + Integer.toHexString(world.hashCode()) + ".json";
+		return minecraft.gameDirectory.toPath().resolve("config").resolve(DRAFTS_FOLDER).resolve(fileName);
+	}
+
+	/**
+	 * The page itself is open to this computer, but the data needs the key, which the page reads from its address. Changes
+	 * also have to come from the editor's own page as JSON, so another site can't send them through the browser.
 	 */
 	private static class EditorFilter implements Filter {
 
@@ -142,22 +218,24 @@ public final class EditorServer {
 
 			final String host = request.getServerName() == null ? "" : request.getServerName().toLowerCase(Locale.ENGLISH);
 			final String method = request.getMethod();
-			if (!"GET".equals(method) && !"HEAD".equals(method)) {
+			final boolean isApi = request.getServletPath().startsWith("/api/");
+			final boolean isRead = "GET".equals(method) || "HEAD".equals(method);
+			final String contentType = request.getContentType();
+			if (!isRead && !(isApi && ("POST".equals(method) || "PUT".equals(method)))) {
 				response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
 			} else if (!host.equals(LOOPBACK) && !host.equals("localhost")) {
 				// Blocks DNS rebinding, where a website points its own domain at this server
 				response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			} else if (request.getServletPath().startsWith("/api/") && !matchesKey(request.getHeader(KEY_HEADER))) {
+			} else if (isApi && !matchesKey(request.getHeader(KEY_HEADER))) {
 				response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+			} else if (!isRead && (!isOwnOrigin(request.getHeader("Origin")) || contentType == null || !contentType.toLowerCase(Locale.ENGLISH).startsWith("application/json"))) {
+				response.sendError(HttpServletResponse.SC_FORBIDDEN);
 			} else {
 				filterChain.doFilter(servletRequest, servletResponse);
 			}
 		}
 	}
 
-	/**
-	 * Reads the data on the game thread, which owns it.
-	 */
 	private static class DataServlet extends HttpServlet {
 
 		private final boolean revisionOnly;
@@ -170,20 +248,89 @@ public final class EditorServer {
 		protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
 			final String content;
 			try {
-				content = CompletableFuture.supplyAsync(() -> {
+				content = onGameThread(() -> {
 					final String data = EditorData.build().toString();
 					return revisionOnly ? String.format("{\"revision\":%s}", data.hashCode()) : data;
-				}, Minecraft.getInstance()).get(DATA_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+				});
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 				return;
 			}
-			response.setStatus(HttpServletResponse.SC_OK);
-			response.setContentType("application/json");
-			response.setCharacterEncoding("UTF-8");
-			response.setHeader("Cache-Control", "no-store");
-			response.getWriter().write(content);
+			sendJson(response, content);
+		}
+	}
+
+	/**
+	 * Sends the page's changes to the server through the game's packets. See {@link EditorActions}.
+	 */
+	private static class ApplyServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final JsonObject requestObject;
+			try {
+				requestObject = new JsonParser().parse(body).getAsJsonObject();
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			final String content;
+			try {
+				content = onGameThread(() -> EditorActions.apply(requestObject).toString());
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				return;
+			}
+			sendJson(response, content);
+		}
+	}
+
+	/**
+	 * The page's draft, saved as the page sends it, as only the page reads it back.
+	 */
+	private static class DraftServlet extends HttpServlet {
+
+		@Override
+		protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			try {
+				final Path path = onGameThread(EditorServer::getDraftPath);
+				sendJson(response, Files.exists(path) ? new String(Files.readAllBytes(path), StandardCharsets.UTF_8) : "{}");
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+
+		@Override
+		protected void doPut(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			try {
+				// Only JSON is kept, so a broken draft never gets in the way of opening the editor
+				new JsonParser().parse(body).getAsJsonObject();
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				final Path path = onGameThread(EditorServer::getDraftPath);
+				Files.createDirectories(path.getParent());
+				Files.write(path, body.getBytes(StandardCharsets.UTF_8));
+				sendJson(response, "{\"ok\":true}");
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
 		}
 	}
 }

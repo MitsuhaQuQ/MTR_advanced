@@ -52,6 +52,10 @@ public final class Route extends NameColorDataBase implements IGui {
 	 * The type of service, such as local or express, or empty to work it out from the name.
 	 */
 	public String serviceType = "";
+	/**
+	 * Set up in the advanced editor, so the game's own timetable controls only show it. See {@link mtr.client.editor.EditorServer}.
+	 */
+	public boolean editorManaged;
 
 	private static final String KEY_PLATFORM_IDS = "platform_ids";
 	private static final String KEY_CUSTOM_DESTINATIONS = "custom_destinations";
@@ -81,6 +85,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_LINE_NAME = "line_name";
 	private static final String KEY_DIAGRAM_COLOR = "diagram_color";
 	private static final String KEY_SERVICE_TYPE = "service_type";
+	private static final String KEY_EDITOR_MANAGED = "editor_managed";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
 
@@ -145,6 +150,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		lineName = messagePackHelper.getString(KEY_LINE_NAME);
 		ownColor = messagePackHelper.getInt(KEY_DIAGRAM_COLOR, -1);
 		serviceType = messagePackHelper.getString(KEY_SERVICE_TYPE);
+		editorManaged = messagePackHelper.getBoolean(KEY_EDITOR_MANAGED);
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
@@ -218,6 +224,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		lineName = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		serviceType = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		ownColor = packet.readInt();
+		editorManaged = packet.readBoolean();
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
@@ -267,6 +274,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePacker.packString(KEY_LINE_NAME).packString(lineName);
 		messagePacker.packString(KEY_DIAGRAM_COLOR).packInt(getOwnColor());
 		messagePacker.packString(KEY_SERVICE_TYPE).packString(serviceType);
+		messagePacker.packString(KEY_EDITOR_MANAGED).packBoolean(editorManaged);
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
@@ -309,7 +317,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 26 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 27 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -473,6 +481,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeUtf(lineName);
 		packet.writeUtf(serviceType);
 		packet.writeInt(ownColor);
+		packet.writeBoolean(editorManaged);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
@@ -509,6 +518,7 @@ public final class Route extends NameColorDataBase implements IGui {
 				lineName = packet.readUtf(PACKET_STRING_READ_LENGTH);
 				serviceType = packet.readUtf(PACKET_STRING_READ_LENGTH);
 				ownColor = packet.readInt();
+				editorManaged = packet.readBoolean();
 				break;
 			case KEY_TIMETABLE_SERVICES:
 				readTimetable(packet);
@@ -562,6 +572,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		packet.writeUtf(lineName);
 		packet.writeUtf(serviceType);
 		packet.writeInt(ownColor);
+		packet.writeBoolean(editorManaged);
 		sendPacket.accept(packet);
 	}
 

@@ -34,6 +34,11 @@
 	if (location.hash) history.replaceState(null, "", location.pathname);
 
 	let data = null, revision = null, lastLoaded = 0, connection = "connecting";
+	/**
+	 * Changes not yet applied to the game, saved as they are made so closing the page or the game doesn't lose them. Each
+	 * route's entry keeps the revision it was made from, so a change made in the game since is noticed before applying.
+	 */
+	let draft = { routes: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -56,7 +61,117 @@
 		return response.json();
 	}
 
-	async function poll() {
+	async function sendJson(path, method, body) {
+		const response = await fetch(path, { method, headers: { "X-MTR-Editor-Key": key, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+		if (!response.ok) throw new Error(String(response.status));
+		return response.json();
+	}
+
+	async function loadDraft() {
+		try {
+			const saved = await fetchJson("api/draft");
+			draft = saved && saved.routes ? saved : { routes: {} };
+		} catch (e) {
+			draft = { routes: {} };
+		}
+		draftLoaded = true;
+	}
+
+	/** Saves the draft shortly after the last change, so typing doesn't write it on every key. */
+	function saveDraft() {
+		clearTimeout(draftTimer);
+		draftTimer = setTimeout(() => sendJson("api/draft", "PUT", draft).catch(() => {}), 400);
+		renderDraftState();
+	}
+
+	const draftCount = () => Object.keys(draft.routes).length;
+	const draftOf = r => draft.routes[r.id];
+	const draftEntry = r => draft.routes[r.id] || (draft.routes[r.id] = { base: r.revision });
+	/** A route's entry goes once nothing is left in it but where it came from. */
+	function tidyDraft(id) {
+		const entry = draft.routes[id];
+		if (entry && Object.keys(entry).every(k => k === "base" || k === "force" || k === "error" || k === "conflict")) delete draft.routes[id];
+	}
+	const isManaged = r => draftOf(r) && "managed" in draftOf(r) ? draftOf(r).managed : r.editorManaged;
+
+	function setManaged(r, managed) {
+		const entry = draftEntry(r);
+		if (managed === r.editorManaged) delete entry.managed;
+		else entry.managed = managed;
+		delete entry.error;
+		tidyDraft(r.id);
+		saveDraft();
+		renderAll();
+	}
+
+	/** Sends the draft to the game. What the game takes leaves the draft; what it doesn't stays, with the reason. */
+	async function applyDraft() {
+		if (applying || !draftCount()) return;
+		const operations = [], owners = [];
+		Object.entries(draft.routes).forEach(([id, entry]) => {
+			let base = entry.base;
+			if (entry.timetable) {
+				operations.push({ type: "timetable", route: id, base, force: Boolean(entry.force), timetable: entry.timetable });
+				owners.push(id);
+				// The timetable changes the revision, so what follows for the route doesn't check it again
+				base = undefined;
+			}
+			if ("managed" in entry) {
+				operations.push({ type: "managed", route: id, base, force: Boolean(entry.force), managed: entry.managed });
+				owners.push(id);
+			}
+		});
+		applying = true;
+		renderDraftState();
+		try {
+			const result = await sendJson("api/apply", "POST", { operations });
+			const failed = new Set();
+			(result.errors || []).forEach(error => {
+				if (error.index < 0) return;
+				const id = owners[error.index];
+				failed.add(id);
+				const entry = draft.routes[id];
+				if (!entry) return;
+				entry.conflict = error.message === "CONFLICT";
+				entry.error = entry.conflict ? "游戏里的这条线路在草稿之后改过" : error.message;
+			});
+			owners.forEach(id => { if (!failed.has(id)) delete draft.routes[id]; });
+			applyResult = { ok: result.ok, general: (result.errors || []).filter(error => error.index < 0).map(error => error.message), applied: owners.filter(id => !failed.has(id)).length };
+		} catch (e) {
+			applyResult = { ok: false, general: [e.message === "401" ? "页面的链接已经失效" : "发送失败，游戏可能已经关闭"], applied: 0 };
+		}
+		applying = false;
+		saveDraft();
+		revision = null;
+		poll(true);
+		renderAll();
+	}
+
+	/** Keeps the draft over what changed in the game, or drops the draft for the game's version. */
+	function resolveConflict(id, keep) {
+		const entry = draft.routes[id], r = data && data.routeById.get(id);
+		if (!entry) return;
+		if (keep) {
+			entry.force = true;
+			if (r) entry.base = r.revision;
+			delete entry.conflict;
+			delete entry.error;
+		} else {
+			delete draft.routes[id];
+		}
+		saveDraft();
+		renderAll();
+	}
+
+	function renderDraftState() {
+		const count = draftCount();
+		const tag = $("draft-tag");
+		tag.textContent = applying ? "正在应用…" : count ? `草稿 ${count} 条线路` : "没有草稿";
+		tag.classList.toggle("has-draft", count > 0);
+		$("btn-apply").disabled = applying || !count || !(data && data.canEdit);
+	}
+
+	async function poll(once) {
 		try {
 			const result = await fetchJson("api/revision");
 			if (result.revision !== revision) {
@@ -70,7 +185,8 @@
 		}
 		renderBanner();
 		renderStatus();
-		setTimeout(poll, POLL_MILLIS);
+		renderDraftState();
+		if (!once) setTimeout(poll, POLL_MILLIS);
 	}
 
 	/** The routes of each line, the stations of its diagram, and each route's services on the chosen day. */
@@ -206,7 +322,7 @@
 				parts.push(`<ul>`);
 				line.routes.forEach(r => {
 					const routeOpen = state.openNodes.has("route:" + r.id) || state.route === r.id;
-					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label">${escapeHtml(routeTitle(r))}</span><span class="count">${r.services.length}</span>`, false)}`);
+					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label">${escapeHtml(routeTitle(r))}</span>${draftOf(r) ? `<span class="draft-dot" title="有没应用的草稿">•</span>` : ""}<span class="count">${r.services.length}</span>`, false)}`);
 					if (routeOpen) {
 						parts.push(`<ul>`);
 						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">汇总时刻表</span>`, state.route === r.id && state.view === "table")}</li>`);
@@ -563,7 +679,10 @@
 			return;
 		}
 		const services = r.services;
-		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${WEEKDAY_NAMES[state.weekday]} · ${services.length} 班${r.hasTimes ? "" : " · 正在向服务端取各站时刻"}</span></div>`;
+		const managed = isManaged(r), pending = draftOf(r) && "managed" in draftOf(r);
+		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${WEEKDAY_NAMES[state.weekday]} · ${services.length} 班${r.hasTimes ? "" : " · 正在向服务端取各站时刻"}</span>
+			<span class="pill${managed ? " managed" : ""}" title="由高级编辑器管理的线路，游戏里的时刻表和停站只能查看">${managed ? "由高级编辑器管理" : "游戏内可编辑"}${pending ? "（草稿）" : ""}</span>
+			<button data-managed="${!managed}" ${data.canEdit ? "" : "disabled"}>${managed ? "交回游戏内编辑" : "改由高级编辑器管理"}</button></div>`;
 		if (!services.length) {
 			view.innerHTML = tools + `<div class="table-empty">这条线路${WEEKDAY_NAMES[state.weekday]}没有班次</div>`;
 			return;
@@ -613,10 +732,27 @@
 			offline: "连不上游戏。游戏关了，或者离开了这个世界。请在游戏的仪表盘里重新点“高级编辑器”。",
 		};
 		const missingTimes = data && data.routes.some(r => !r.hasTimes && r.timetable);
-		const text = !key ? messages.key : messages[connection] || (missingTimes ? "部分线路还没有各站时刻，正在向服务端取，取到之前按虚线画。" : "");
-		banner.hidden = !text;
-		banner.textContent = text;
-		banner.classList.toggle("warn", Boolean(messages[connection]) || !key);
+		const problem = !key ? messages.key : messages[connection];
+		const failed = Object.entries(draft.routes).filter(([, entry]) => entry.error);
+		let html = "";
+		if (problem) {
+			html = escapeHtml(problem);
+		} else if (data && !data.canEdit) {
+			html = "没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。";
+		} else if (applyResult && (!applyResult.ok || failed.length)) {
+			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : "已删除的线路";
+			html = `应用了 ${applyResult.applied} 条线路，下面的没有应用，留在草稿里：<ul>`
+				+ applyResult.general.map(message => `<li>${escapeHtml(message)}</li>`).join("")
+				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}${entry.conflict ? `<button data-keep="${id}">保留草稿</button><button data-drop="${id}">用游戏里的</button>` : ""}</li>`).join("")
+				+ "</ul>";
+		} else if (applyResult && applyResult.ok) {
+			html = `已应用 ${applyResult.applied} 条线路。`;
+		} else if (missingTimes) {
+			html = "部分线路还没有各站时刻，正在向服务端取，取到之前按虚线画。";
+		}
+		banner.hidden = !html;
+		banner.innerHTML = html;
+		banner.classList.toggle("warn", Boolean(problem) || Boolean(data && !data.canEdit) || Boolean(applyResult && (!applyResult.ok || failed.length)));
 	}
 
 	function renderStatus() {
@@ -662,6 +798,14 @@
 	$("tab-diagram").addEventListener("click", () => { state.view = "diagram"; renderAll(); });
 	$("tab-table").addEventListener("click", () => { state.view = "table"; renderAll(); });
 	$("btn-split").addEventListener("click", () => { state.split = !state.split; renderAll(); });
+	$("btn-apply").addEventListener("click", applyDraft);
+	$("banner").addEventListener("click", e => {
+		const target = e.target.closest("[data-open-route], [data-keep], [data-drop]");
+		if (!target) return;
+		if (target.dataset.keep) resolveConflict(target.dataset.keep, true);
+		else if (target.dataset.drop) resolveConflict(target.dataset.drop, false);
+		else if (data && data.routeById.get(target.dataset.openRoute)) openView("table", data.routeById.get(target.dataset.openRoute).lineKey, target.dataset.openRoute);
+	});
 	$("btn-zoom-in").addEventListener("click", () => zoom(1));
 	$("btn-zoom-out").addEventListener("click", () => zoom(-1));
 	$("day").addEventListener("change", e => {
@@ -673,6 +817,12 @@
 		renderAll();
 	});
 	$("view-table").addEventListener("click", e => {
+		const managedButton = e.target.closest("[data-managed]");
+		if (managedButton) {
+			const line = currentLine(), r = state.route ? data.routeById.get(state.route) : line && line.routes[0];
+			if (r) setManaged(r, managedButton.dataset.managed === "true");
+			return;
+		}
 		const el = e.target.closest("[data-svc]");
 		if (el) selectService(el.dataset.svc === state.selected ? null : el.dataset.svc, true);
 	});
@@ -737,6 +887,7 @@
 	state.viewStart = 2 * 3600000;
 	renderAll();
 	(async () => {
+		await loadDraft();
 		await poll();
 	})();
 	// Pick today once the first data arrives, which tells when the operating day starts

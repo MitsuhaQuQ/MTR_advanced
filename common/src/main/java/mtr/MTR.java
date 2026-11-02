@@ -477,6 +477,7 @@ public class MTR implements IPacket {
 			PacketTrainDataGuiServer.versionCheckS2C(player);
 			PacketTrainDataGuiServer.lineWordsS2C(player);
 			PacketTrainDataGuiServer.timetableConfigS2C(player);
+			PacketTrainDataGuiServer.editPermissionS2C(player);
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData != null) {
 				railwayData.onPlayerJoin(player);

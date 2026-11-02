@@ -38,6 +38,8 @@ button, select {
 	background: var(--panel); border: 1px solid var(--grid-strong); border-radius: 6px; padding: 4px 10px; cursor: pointer;
 }
 button:hover, select:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+button:disabled { opacity: .45; cursor: default; }
 button:focus-visible, select:focus-visible, .tree .node:focus-visible, td:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
 
 .top {
@@ -46,6 +48,13 @@ button:focus-visible, select:focus-visible, .tree .node:focus-visible, td:focus-
 }
 .top h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .02em; }
 .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--grid-strong); border-radius: 999px; padding: 1px 8px; }
+.tag.has-draft { color: var(--sel); border-color: var(--sel); }
+/* Routes with changes not applied to the game yet */
+.tree .draft-dot { color: var(--sel); font-weight: 700; flex: none; }
+.pill.managed { color: var(--accent); }
+.banner ul { margin: 4px 0 0; padding-left: 18px; }
+.banner button { font-size: 12px; padding: 1px 8px; margin-left: 6px; }
+.banner a { color: inherit; text-decoration: underline; cursor: pointer; }
 .top .spacer { flex: 1; }
 .top .day { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 

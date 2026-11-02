@@ -8,6 +8,7 @@ import mtr.path.RailGraph;
 import mtr.compat.Compat;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
+import mtr.SecurityConfig;
 import mtr.block.*;
 import mtr.data.*;
 import mtr.mappings.BlockEntityMapper;
@@ -68,7 +69,19 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		Registry.sendToPlayer(player, PACKET_TIMETABLE_CONFIG, packet);
 	}
 
+	/**
+	 * The client only knows the game mode, so this tells it whether the permission level the server asks for lets it edit,
+	 * as the server ignores changes it isn't allowed to make without saying so.
+	 */
+	public static void editPermissionS2C(ServerPlayer player) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBoolean(player.hasPermissions(SecurityConfig.editPermissionLevel));
+		Registry.sendToPlayer(player, PACKET_EDIT_PERMISSION, packet);
+	}
+
 	public static void openDashboardScreenS2C(ServerPlayer player, TransportMode transportMode, boolean useTimeAndWindSync) {
+		// The permission level can change while playing
+		editPermissionS2C(player);
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeUtf(transportMode.toString());
 		packet.writeBoolean(useTimeAndWindSync);

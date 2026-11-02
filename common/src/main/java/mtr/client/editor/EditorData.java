@@ -1,8 +1,9 @@
-package mtr.client;
+package mtr.client.editor;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import mtr.data.*;
+import mtr.client.ClientData;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
 
@@ -34,6 +35,7 @@ public final class EditorData {
 		data.addProperty("dayStartMillis", dayStartMillis);
 		// Local time of day is UTC time of day plus this
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
+		data.addProperty("canEdit", ClientData.hasPermission());
 
 		final List<Route> routes = ClientData.ROUTES.stream().filter(route -> !route.isHidden).sorted(Comparator.comparing((Route route) -> route.name).thenComparingLong(route -> route.id)).collect(Collectors.toList());
 		final JsonArray routesArray = new JsonArray();
@@ -76,12 +78,17 @@ public final class EditorData {
 		routeObject.addProperty("lineColor", route.color);
 		routeObject.addProperty("circular", route.circularState != Route.CircularState.NONE);
 		routeObject.addProperty("timetable", route.timetable.enabled);
+		routeObject.addProperty("entryPlatform", String.valueOf(route.timetable.entryPlatformId));
+		routeObject.addProperty("editorManaged", route.editorManaged);
+		routeObject.addProperty("revision", getRevision(route));
 
 		final JsonArray stopsArray = new JsonArray();
 		route.platformIds.forEach(routePlatform -> {
 			final JsonObject stopObject = new JsonObject();
 			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(routePlatform.platformId);
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
+			stopObject.addProperty("platformId", String.valueOf(routePlatform.platformId));
+			stopObject.addProperty("dwellOverride", routePlatform.dwellOverride);
 			stopObject.addProperty("station", station == null ? "" : String.valueOf(station.id));
 			stopObject.addProperty("name", station == null ? "" : station.name);
 			stopObject.addProperty("platform", platform == null ? "" : platform.name);
@@ -93,7 +100,17 @@ public final class EditorData {
 		final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
 		final boolean hasTimes = times != null && times.length == route.platformIds.size();
 		routeObject.addProperty("hasTimes", hasTimes);
-		if (!hasTimes) {
+		if (hasTimes) {
+			// The fastest arrival and departure at each stop, which set times can't be earlier than
+			final JsonArray fastestArray = new JsonArray();
+			for (final long[] stopTimes : times) {
+				final JsonArray stopArray = new JsonArray();
+				stopArray.add(stopTimes[0]);
+				stopArray.add(stopTimes[1]);
+				fastestArray.add(stopArray);
+			}
+			routeObject.add("fastest", fastestArray);
+		} else {
 			requestTimes(route.id);
 		}
 
@@ -119,6 +136,19 @@ public final class EditorData {
 			});
 			tableObject.add("plans", plansArray);
 
+			// The times set at each stop in seconds from the first stop, or -1 to follow the stop before, and whether the
+			// train waits there to be overtaken
+			final JsonArray setTimesArray = new JsonArray();
+			final int tableIndex = i;
+			route.platformIds.forEach(routePlatform -> {
+				final JsonObject stopObject = new JsonObject();
+				stopObject.addProperty("arrival", routePlatform.getArrival(tableIndex));
+				stopObject.addProperty("departure", routePlatform.getDeparture(tableIndex));
+				stopObject.addProperty("overtake", routePlatform.getOvertake(tableIndex));
+				setTimesArray.add(stopObject);
+			});
+			tableObject.add("stops", setTimesArray);
+
 			final JsonArray linksArray = new JsonArray();
 			table.links.forEach((service, link) -> {
 				final JsonObject linkObject = new JsonObject();
@@ -137,6 +167,17 @@ public final class EditorData {
 		}
 		routeObject.add("tables", tablesArray);
 		return routeObject;
+	}
+
+	/**
+	 * @return text that changes whenever anything the editor can change on the route does, made from the same packets that
+	 * send those changes, so a draft made before another change in the game is noticed before it overwrites it
+	 */
+	public static String getRevision(Route route) {
+		final int[] hash = {Boolean.hashCode(route.editorManaged)};
+		route.setTimetable(packet -> hash[0] = hash[0] * 31 + packet.nioBuffer().hashCode());
+		route.setPlatformIds(packet -> hash[0] = hash[0] * 31 + packet.nioBuffer().hashCode());
+		return Integer.toHexString(hash[0]);
 	}
 
 	private static void requestTimes(long routeId) {

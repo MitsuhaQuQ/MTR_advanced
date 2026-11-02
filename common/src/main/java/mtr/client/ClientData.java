@@ -309,6 +309,11 @@ public final class ClientData {
 		return PLAYER_RIDING_COOL_DOWN.containsKey(uuid);
 	}
 
+	/**
+	 * Whether the server's permission level lets this player edit, which the server sends. See {@link mtr.SecurityConfig#editPermissionLevel}.
+	 */
+	public static boolean hasEditPermissionLevel = true;
+
 	public static boolean hasPermission() {
 		final LocalPlayer player = Minecraft.getInstance().player;
 		if (player == null) {
@@ -322,7 +327,7 @@ public final class ClientData {
 		if (playerInfo == null) {
 			return false;
 		}
-		return RailwayData.hasPermission(playerInfo.getGameMode());
+		return hasEditPermissionLevel && RailwayData.hasPermission(playerInfo.getGameMode());
 	}
 
 	public static float getShiftHoldingTicks() {
