@@ -43,6 +43,8 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - A stop can be set to wait for a following train to overtake, with a limit on the wait. PIDS shows how many minutes a train is late.
 - The running sheet checks for services that need the same platform or turn-back rail at the same time, including trains turning back on the platform they arrived at.
 - A service can carry on onto a service of another route, such as a loop's 07:00 running through to another line at 07:32, and that service can carry on again, up to seven times. A train can leave a loop at any stop, and join a loop at a chosen stop, either from the depot or at the end of a through service, where it stays on the loop until service ends.
+- Platforms can be marked as timetable boundaries. A service can leave its route or join another one part of the way along only at a boundary it stops at; joining a route part of the way along keeps to that route's service times, worked out from its first stop. Without boundaries, only the last stop runs on to the first.
+- A single service can run differently from its table at some stops: its own running time, stop time, waiting to be overtaken, or passing or stopping. Passing or stopping only changes the times for now; the train still stops where the depot's path does.
 - After a restart, trains don't try to catch up. Each one goes straight to the stop the timetable has it at by then.
 - A route can have up to 16 tables, each with its own days of the week, services and stop times. Times are saved in UTC. The time zone and the hour a new operating day starts are in `config/mtr_timetable.json`, and in multiplayer the server's file is used. Last trains after midnight count as the day before.
 
@@ -52,6 +54,14 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - Signs, PIDS, route maps and add-on mods all read the group colour, which is the colour of the first route in the group by name. The colours of the other routes are kept for drawing train diagrams automatically in the future.
 - The words that identify directions and service types are in `config/mtr_line_words.json` and can be changed. In multiplayer, the file on the server is used. A route's group can also be filled in directly.
 - Routes can be duplicated in one click, which makes it easy to set up different timetables.
+
+**Advanced editor**
+
+- The dashboard's Advanced Editor button opens a page in the system browser, served by the client to this computer only, with a key for the session. It is separate from the map web server.
+- A tree of lines, routes and depots, a running diagram of each line, and each route's timetable laid out like a printed one, for any day of the week.
+- Timetables are edited in the page: typing times in cells, right-click menus for passing, waiting and pushing a change to later services, dragging stop ends on the diagram, adding and copying tables and services, and making through links in bulk. Times are worked out in the page the same way as in the game.
+- Changes are saved as a draft as they are made and only sent to the game with Apply, through the game's own packets. A route changed in the game since the draft is reported as a conflict. Routes managed in the editor can only be viewed in the game's timetable screen.
+- For loops, it shows how the trains go round lap after lap, the way the game runs them.
 
 **Dashboard**
 
@@ -94,7 +104,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 |---|---|---|
 | 0 | Add-on compatibility, merging ANTE into the core | Packaging and running logic done, `Rail` left for stage 4 |
 | 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Simulator done |
-| 1 | Pathfinding base: state graph, deterministic A*, required nodes and keeping trains in place on refresh are done. Path boundaries (a node or a stretch of rail) are next: first they split the network into areas that filter the dashboard when there are many stations, then they limit pathfinding, with section caching | In progress |
+| 1 | Pathfinding base: state graph, deterministic A*, required nodes and keeping trains in place on refresh are done. Path boundaries (a node or a stretch of rail) are next, as part of the advanced editor's line abstraction: they split the network into areas that filter the dashboard and pick each route's platforms at shared stations, then limit pathfinding, with section caching | In progress |
 | 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
 | 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
@@ -102,7 +112,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 | 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
 | 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services, aligning after a restart and choosing between reversing sidings after a terminal are done; choosing between platforms to turn back on is not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
-| 9 | Timetable boundaries, splitting through services, deadheading, train priority | Not started |
+| 9 | Timetable boundaries at platforms are done; splitting through services, deadheading, train priority and boundaries on turn-back rails are not | In progress |
 | 9.5 | Custom announcements: audio added by hand for automatic announcements, uploaded to the server, then synced to clients and cached locally | Not started |
 | 10 | Final verification | Not started |
 
@@ -110,15 +120,14 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 
 The stages above describe the work as a whole. This is the order it is being done in:
 
-1. Test in game what is written but untested: choosing between reversing sidings, depots keeping trains on the line, the server jar and the latest timetable fixes. Then build the other four Minecraft versions, which haven't been built since these changes.
-2. Design the running diagram as a whole, without code yet: how trains are worked, when they leave and return to the depot, leaving a service empty after turning back, where trains wait, and turning back at a platform. These are being added one at a time and have started to depend on each other.
-3. Path boundaries as a dashboard filter.
-4. Run logic, part 2: move train movement out of the Minecraft classes, before speed curves and block sections change it.
-5. What the running diagram design decides, such as turning back at a platform with the actual platform on PIDS, and empty services.
-6. Speed curves (including speed limits when passing stations), block sections, interlocking and timetable boundaries.
-7. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
+1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
+2. The rest of the advanced editor: line abstraction with path boundaries and areas, new service types made in the page, then vehicle working assigned on the running diagram and trains running by it, with paths made for each service.
+3. Run logic, part 2: move train movement out of the Minecraft classes, together with running by vehicle working and before speed curves and block sections change it.
+4. Turning back at a platform with the actual platform on PIDS, and empty services.
+5. Speed curves (including speed limits when passing stations), block sections, interlocking, splitting through services and deadheading.
+6. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
 
-Run logic part 1 (service decisions in `TrainService`, tested in game) and choosing between reversing sidings after a terminal are done.
+Run logic part 1 (service decisions in `TrainService`, tested in game), choosing between reversing sidings after a terminal, the running diagram design, and the advanced editor's first three parts (writing to the game, timetable editing with single-service exceptions, timetable boundaries) are done. The editor's parts aren't tested in game yet.
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
@@ -156,7 +165,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 16. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 19. Jars with ANTE are about 136 MB.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 
