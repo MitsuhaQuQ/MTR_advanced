@@ -20,12 +20,8 @@ import net.minecraft.util.Tuple;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 
@@ -64,9 +60,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final WidgetColorSelector colorSelector;
 
 	private final DashboardList dashboardList;
-	private final Set<String> expandedLines = new HashSet<>();
-	private final Map<Long, String> lineHeaderRows = new HashMap<>();
-	private final Set<Long> lineChildRows = new HashSet<>();
+	private final LineRows lineRows = new LineRows();
 
 	public static final int MAX_COLOR_ZONE_LENGTH = 6;
 	private static final int COLOR_WIDTH = 48;
@@ -125,13 +119,17 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			dashboardList.clearSearch();
 			ClientData.DASHBOARD_SEARCH = "";
 			updateRouteRows();
-			final long headerId = getLineHeaderId(lineKey);
-			dashboardList.selectItem(lineHeaderRows.containsKey(headerId) ? headerId : route.id);
+			final long headerId = LineRows.getHeaderId(lineKey);
+			dashboardList.selectItem(lineRows.hasHeader(headerId) ? headerId : route.id);
 		});
-		dashboardList.setRowStyle(this::getRowLabel, data -> lineHeaderRows.containsKey(data.id), this::getRowColor, this::onClickLineHeader);
+		dashboardList.setRowStyle(this::getRowLabel, lineRows::isHeader, lineRows::getColor, this::onClickLineHeader);
 		widgetMap.setStationPicking(() -> selectedTab == SelectedTab.STATIONS && editingArea == null, station -> {
 			widgetMap.setSelectedStation(station.id);
 			dashboardList.selectItem(station.id);
+		});
+		widgetMap.setDepotPicking(() -> selectedTab == SelectedTab.DEPOTS && editingArea == null, depot -> {
+			widgetMap.setSelectedDepot(depot.id);
+			dashboardList.selectItem(depot.id);
 		});
 
 		onSelectTab(SelectedTab.STATIONS);
@@ -289,56 +287,23 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private void updateRouteRows() {
 		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
 		Collections.sort(routes);
-		lineHeaderRows.clear();
-		lineChildRows.clear();
 
-		if (!ClientData.DASHBOARD_SEARCH.isEmpty()) {
+		if (ClientData.DASHBOARD_SEARCH.isEmpty()) {
+			dashboardList.setData(lineRows.getRows(routes), true, true, true, false, false, true);
+		} else {
+			lineRows.clear();
 			dashboardList.setData(routes, true, true, true, false, false, true);
-			return;
 		}
-
-		final Map<String, List<Route>> lines = new LinkedHashMap<>();
-		routes.forEach(route -> lines.computeIfAbsent(route.getLineKey(), key -> new ArrayList<>()).add(route));
-
-		final List<NameColorDataBase> rows = new ArrayList<>();
-		lines.forEach((lineKey, lineRoutes) -> {
-			final Route firstRoute = lineRoutes.get(0);
-			if (lineRoutes.size() == 1) {
-				rows.add(firstRoute);
-			} else {
-				final boolean isExpanded = expandedLines.contains(lineKey);
-				final long headerId = getLineHeaderId(lineKey);
-				lineHeaderRows.put(headerId, lineKey);
-				rows.add(new DataConverter(headerId, String.format("[%s] %s (%s)", isExpanded ? "-" : "+", firstRoute.getLineName(), lineRoutes.size()), firstRoute.color));
-				if (isExpanded) {
-					lineRoutes.forEach(route -> lineChildRows.add(route.id));
-					rows.addAll(lineRoutes);
-				}
-			}
-		});
-		dashboardList.setData(rows, true, true, true, false, false, true);
 	}
 
 	private void onClickLineHeader(NameColorDataBase data) {
-		final String lineKey = lineHeaderRows.get(data.id);
-		if (lineKey != null) {
-			if (!expandedLines.remove(lineKey)) {
-				expandedLines.add(lineKey);
-			}
+		if (lineRows.toggle(data)) {
 			updateRouteRows();
 		}
 	}
 
-	private static long getLineHeaderId(String lineKey) {
-		return lineKey.hashCode() & 0xFFFFFFFFL | 1L << 40;
-	}
-
-	private int getRowColor(NameColorDataBase data) {
-		return data instanceof Route && lineChildRows.contains(data.id) ? ((Route) data).getOwnColor() : data.color;
-	}
-
 	private String getRowLabel(NameColorDataBase data) {
-		final boolean isChild = selectedTab == SelectedTab.ROUTES && editingRoute == null && data instanceof Route && lineChildRows.contains(data.id);
+		final boolean isChild = selectedTab == SelectedTab.ROUTES && editingRoute == null && lineRows.isChild(data);
 		return isChild ? "    " + TimetableScreen.getDirectionText((Route) data) : IGui.formatStationName(data.name);
 	}
 
@@ -346,6 +311,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		selectedTab = tab;
 		widgetMap.setSelectedLine("");
 		widgetMap.setSelectedStation(0);
+		widgetMap.setSelectedDepot(0);
 		dashboardList.clearSelectedItem();
 		buttonTabStations.active = tab != SelectedTab.STATIONS;
 		buttonTabRoutes.active = tab != SelectedTab.ROUTES;

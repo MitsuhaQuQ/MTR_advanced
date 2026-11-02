@@ -7,6 +7,7 @@ import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
+import mtr.data.Route;
 import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -28,6 +29,12 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 	private final Collection<Long> selectedIds;
 	private final boolean isSingleSelect;
 	private final boolean canRepeat;
+	/**
+	 * Lists of routes look like the routes page of the dashboard, as routes of one line in opposite directions tend to look alike.
+	 */
+	private final boolean isRouteList;
+	private final LineRows lineRows = new LineRows();
+	private String lastSearch = "";
 
 	public DashboardListSelectorScreen(Runnable onClose, List<NameColorDataBase> allData, Collection<Long> selectedIds, boolean isSingleSelect, boolean canRepeat) {
 		this(null, onClose, allData, selectedIds, isSingleSelect, canRepeat);
@@ -49,6 +56,16 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 		availableList = new DashboardList(null, null, null, null, this::onAdd, null, null, () -> ClientData.ROUTES_PLATFORMS_SEARCH, text -> ClientData.ROUTES_PLATFORMS_SEARCH = text);
 		selectedList = new DashboardList(null, null, null, this::updateList, null, this::onDelete, () -> selectedIds instanceof ArrayList ? (List<Long>) selectedIds : new ArrayList<>(), () -> ClientData.ROUTES_PLATFORMS_SELECTED_SEARCH, text -> ClientData.ROUTES_PLATFORMS_SELECTED_SEARCH = text);
 		buttonDone = UtilitiesClient.newButton(Text.translatable("gui.done"), button -> onClose());
+
+		isRouteList = !allData.isEmpty() && allData.stream().allMatch(data -> data instanceof Route);
+		if (isRouteList) {
+			availableList.setRowStyle(data -> (lineRows.isChild(data) ? "    " : "") + getRouteLabel(data), lineRows::isHeader, lineRows::getColor, data -> {
+				lineRows.toggle(data);
+				updateList();
+			});
+			selectedList.setRowStyle(this::getRouteLabel, data -> false, data -> ((Route) data).getOwnColor(), data -> {
+			});
+		}
 	}
 
 	@Override
@@ -70,6 +87,9 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 	public void tick() {
 		availableList.tick();
 		selectedList.tick();
+		if (isRouteList && !lastSearch.equals(ClientData.ROUTES_PLATFORMS_SEARCH)) {
+			updateList();
+		}
 	}
 
 	@Override
@@ -128,8 +148,21 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 			allData.stream().filter(data -> data.id == selectedId).findFirst().ifPresent(selectedData::add);
 		}
 
-		availableList.setData(availableData, false, false, false, false, true, false);
+		// Searching has to find every route, even in a closed line
+		lastSearch = ClientData.ROUTES_PLATFORMS_SEARCH;
+		if (isRouteList && lastSearch.isEmpty()) {
+			final List<Route> routes = new ArrayList<>();
+			availableData.forEach(data -> routes.add((Route) data));
+			availableList.setData(lineRows.getRows(routes), false, false, false, false, true, false);
+		} else {
+			lineRows.clear();
+			availableList.setData(availableData, false, false, false, false, true, false);
+		}
 		selectedList.setData(selectedData, false, false, false, canRepeat, false, true);
+	}
+
+	private String getRouteLabel(NameColorDataBase data) {
+		return data instanceof Route ? TimetableScreen.getDirectionText((Route) data) : IGui.formatStationName(data.name);
 	}
 
 	private void onAdd(NameColorDataBase data, int index) {

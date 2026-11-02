@@ -5,34 +5,41 @@ import mtr.data.TransportMode;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.storage.LevelResource;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 
 /**
  * Keeps the network map on disk. The server lists a hash for each map entry, and only entries whose hash differs are
  * transferred. Hashes are compared, not trusted to a version number, so a wrong or stale file only costs a transfer.
+ * The file also holds the terrain of {@link MapTerrainCache}. It is only touched from one thread, away from the game.
  */
 public final class MapDataCache {
 
-	private static final int FILE_VERSION = 2;
 	private static final int MAX_WANTED_PER_PACKET = 3000;
 	private static final String CACHE_DIRECTORY = "mtr_map_cache";
+	private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+		final Thread thread = new Thread(runnable, "MTR Map Cache");
+		thread.setDaemon(true);
+		return thread;
+	});
 
 	private static final List<Map<Long, Entry>> ENTRIES = new ArrayList<>();
 	private static final List<Map<Long, Long>> DIGESTS = new ArrayList<>();
 	private static final int[] PENDING = new int[MapSyncData.KIND_COUNT];
 	private static String cacheName;
+	private static MapCacheDatabase database;
 
 	static {
 		for (int i = 0; i < MapSyncData.KIND_COUNT; i++) {
@@ -50,7 +57,20 @@ public final class MapDataCache {
 			cacheName = newCacheName;
 			load();
 		}
+		final Minecraft client = Minecraft.getInstance();
+		if (client.player != null) {
+			MapTerrainCache.startScan(client.player.blockPosition().getX() >> 4, client.player.blockPosition().getZ() >> 4);
+		}
 		PacketTrainDataGuiClient.requestMapRailsC2S();
+	}
+
+	public static void writeTiles(Map<Long, int[]> tiles) {
+		runOnDatabase(() -> {
+			if (database != null) {
+				database.writeTiles(tiles);
+				database.commit();
+			}
+		});
 	}
 
 	public static void receiveDigest(int kind, boolean isLast, long[] keys, long[] hashes) {
@@ -63,7 +83,21 @@ public final class MapDataCache {
 		}
 
 		final Map<Long, Entry> entries = ENTRIES.get(kind);
-		entries.keySet().removeIf(key -> !digest.containsKey(key));
+		final List<Long> removedKeys = new ArrayList<>();
+		entries.keySet().forEach(key -> {
+			if (!digest.containsKey(key)) {
+				removedKeys.add(key);
+			}
+		});
+		entries.keySet().removeAll(removedKeys);
+		if (!removedKeys.isEmpty()) {
+			runOnDatabase(() -> {
+				if (database != null) {
+					database.deleteEntries(kind, removedKeys);
+					database.commit();
+				}
+			});
+		}
 		final List<Long> wanted = new ArrayList<>();
 		digest.forEach((key, hash) -> {
 			final Entry entry = entries.get(key);
@@ -87,20 +121,30 @@ public final class MapDataCache {
 	}
 
 	public static void receiveData(int kind, long key, long hash, long[] payload) {
-		ENTRIES.get(kind).put(key, new Entry(hash, payload));
+		final Entry entry = new Entry(hash, payload);
+		ENTRIES.get(kind).put(key, entry);
+		runOnDatabase(() -> {
+			if (database != null) {
+				database.writeEntry(kind, key, hash, entry.payload);
+			}
+		});
 		if (PENDING[kind] > 0) {
 			PENDING[kind]--;
 			if (PENDING[kind] == 0) {
 				finish(kind);
 			}
 		} else {
-			publish(kind);
+			finish(kind);
 		}
 	}
 
 	private static void finish(int kind) {
 		publish(kind);
-		save();
+		runOnDatabase(() -> {
+			if (database != null) {
+				database.commit();
+			}
+		});
 	}
 
 	private static void publish(int kind) {
@@ -118,73 +162,114 @@ public final class MapDataCache {
 		}
 	}
 
+	/**
+	 * Each world has its own folder with a file for each dimension. A world on this computer goes by its save folder, as
+	 * different saves can have the same name, and a server goes by its address.
+	 */
 	private static String getCacheName() {
 		final Minecraft client = Minecraft.getInstance();
-		final String world = client.getSingleplayerServer() != null ? client.getSingleplayerServer().getMotd() : client.getCurrentServer() != null ? client.getCurrentServer().ip : "unknown";
-		final String dimension = client.level == null ? "" : client.level.dimension().location().toString();
-		return Integer.toHexString((world + "|" + dimension).hashCode());
+		final Path savePath = client.getSingleplayerServer() == null ? null : client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().getFileName();
+		final String world = savePath != null ? "saves-" + savePath : client.getCurrentServer() != null ? "server-" + client.getCurrentServer().ip : "unknown";
+		final String dimension = client.level == null ? "unknown" : client.level.dimension().location().toString();
+		return MapCacheDatabase.getSafeName(world) + "/" + MapCacheDatabase.getSafeName(dimension);
 	}
 
-	private static File getCacheFile() {
-		return new File(new File(Minecraft.getInstance().gameDirectory, CACHE_DIRECTORY), cacheName + ".bin");
+	private static File getCacheDirectory() {
+		return new File(Minecraft.getInstance().gameDirectory, CACHE_DIRECTORY);
 	}
 
+	/**
+	 * Opens the file of this world and shows what it has straight away. The entries are read before the server is asked for
+	 * its list, so nothing already on disk is sent again. There can be a lot of terrain, so that comes in behind them.
+	 */
 	private static void load() {
 		ENTRIES.forEach(Map::clear);
-		final File file = getCacheFile();
-		if (file.isFile()) {
-			try (final DataInputStream stream = new DataInputStream(new GZIPInputStream(new FileInputStream(file)))) {
-				if (stream.readInt() == FILE_VERSION) {
-					for (int kind = 0; kind < MapSyncData.KIND_COUNT; kind++) {
-						final int entryCount = stream.readInt();
-						for (int i = 0; i < entryCount; i++) {
-							final long key = stream.readLong();
-							final long hash = stream.readLong();
-							final long[] payload = new long[stream.readInt()];
-							for (int j = 0; j < payload.length; j++) {
-								payload[j] = stream.readLong();
-							}
-							ENTRIES.get(kind).put(key, new Entry(hash, payload));
-						}
-					}
+		MapTerrainCache.clear();
+		final Path directory = getCacheDirectory().toPath();
+		final Path path = directory.resolve(cacheName + ".db");
+		final List<Object[]> savedEntries = new ArrayList<>();
+		try {
+			EXECUTOR.submit(() -> {
+				closeDatabase();
+				try {
+					deleteOldFiles(directory);
+					database = new MapCacheDatabase(path);
+					database.readEntries((kind, key, hash, payload) -> savedEntries.add(new Object[]{kind, key, hash, payload}));
+				} catch (Exception e) {
+					e.printStackTrace();
+					savedEntries.clear();
+					replaceDatabase(path);
 				}
-			} catch (Exception e) {
-				e.printStackTrace();
-				ENTRIES.forEach(Map::clear);
-			}
+			}).get();
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
+
+		savedEntries.forEach(entry -> ENTRIES.get((int) entry[0]).put((long) entry[1], new Entry((long) entry[2], (long[]) entry[3])));
 		for (int kind = 0; kind < MapSyncData.KIND_COUNT; kind++) {
 			publish(kind);
 		}
+
+		runOnDatabase(() -> {
+			if (database != null) {
+				database.readTiles(MapTerrainCache::addSavedTile);
+			}
+		});
 	}
 
-	private static void save() {
-		final File file = getCacheFile();
-		final List<Map<Long, Entry>> snapshot = new ArrayList<>();
-		ENTRIES.forEach(entries -> snapshot.add(new HashMap<>(entries)));
-		final Thread thread = new Thread(() -> {
+	/**
+	 * A file that can't be read is unusable, and without SQLite the map still works, just without keeping anything.
+	 */
+	private static void replaceDatabase(Path path) {
+		closeDatabase();
+		try {
+			Files.deleteIfExists(path);
+			database = new MapCacheDatabase(path);
+		} catch (Exception | LinkageError e) {
+			e.printStackTrace();
+		}
+	}
+
+	/**
+	 * Files used to sit directly in this folder, named by a hash that same-named worlds shared. They hold nothing that can't
+	 * be sent or scanned again.
+	 */
+	private static void deleteOldFiles(Path directory) throws IOException {
+		if (Files.isDirectory(directory)) {
+			final List<Path> oldFiles = new ArrayList<>();
+			try (final Stream<Path> files = Files.list(directory)) {
+				files.filter(Files::isRegularFile).forEach(oldFiles::add);
+			}
+			for (final Path oldFile : oldFiles) {
+				Files.deleteIfExists(oldFile);
+			}
+		}
+	}
+
+	private static void closeDatabase() {
+		if (database != null) {
 			try {
-				file.getParentFile().mkdirs();
-				try (final DataOutputStream stream = new DataOutputStream(new GZIPOutputStream(new FileOutputStream(file)))) {
-					stream.writeInt(FILE_VERSION);
-					for (final Map<Long, Entry> entries : snapshot) {
-						stream.writeInt(entries.size());
-						for (final Map.Entry<Long, Entry> entry : entries.entrySet()) {
-							stream.writeLong(entry.getKey());
-							stream.writeLong(entry.getValue().hash);
-							stream.writeInt(entry.getValue().payload.length);
-							for (final long value : entry.getValue().payload) {
-								stream.writeLong(value);
-							}
-						}
-					}
-				}
+				database.close();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			database = null;
+		}
+	}
+
+	private static void runOnDatabase(DatabaseTask task) {
+		EXECUTOR.execute(() -> {
+			try {
+				task.run();
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		});
-		thread.setDaemon(true);
-		thread.start();
+	}
+
+	@FunctionalInterface
+	private interface DatabaseTask {
+		void run() throws Exception;
 	}
 
 	private static final class Entry {

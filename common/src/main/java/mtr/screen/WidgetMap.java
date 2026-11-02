@@ -1,6 +1,5 @@
 package mtr.screen;
 
-import mtr.compat.Compat;
 import mtr.compat.GuiCompat;
 import mtr.compat.WidgetBase;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -9,6 +8,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
+import mtr.client.MapTerrainCache;
 import mtr.data.*;
 import mtr.mappings.SelectableMapper;
 import mtr.mappings.Text;
@@ -23,7 +23,6 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Tuple;
-import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
@@ -74,6 +73,11 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	};
 	private long selectedStationId;
 	private List<Station> hoveredStations = Collections.emptyList();
+	private BooleanSupplier canPickDepot = () -> false;
+	private Consumer<Depot> onPickDepot = depot -> {
+	};
+	private long selectedDepotId;
+	private List<Depot> hoveredDepots = Collections.emptyList();
 	private double hoverMouseX = -1;
 	private double hoverMouseY = -1;
 	private double hoverScale;
@@ -135,13 +139,17 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		UtilitiesClient.beginDrawingRectangle(buffer);
 		RenderSystem.enableBlend();
 
+		if (world != null) {
+			MapTerrainCache.scan(world);
+		}
+
 		final Tuple<Integer, Integer> topLeft = coordsToWorldPos(0, 0);
 		final Tuple<Integer, Integer> bottomRight = coordsToWorldPos(width, height);
 		final int increment = scale >= 1 ? 1 : (int) Math.ceil(1 / scale);
 		for (int i = topLeft.getA(); i <= bottomRight.getA(); i += increment) {
 			for (int j = topLeft.getB(); j <= bottomRight.getB(); j += increment) {
 				if (world != null) {
-					final int color = divideColorRGB(Compat.getColor(world.getBlockState(RailwayData.newBlockPos(i, world.getHeight(Heightmap.Types.MOTION_BLOCKING, i, j) - 1, j)).getBlock()), 2);
+					final int color = divideColorRGB(MapTerrainCache.getColor(world, i, j), 2);
 					drawRectangleFromWorldCoords(buffer, i, j, i + increment, j + increment, ARGB_BLACK | color);
 				}
 			}
@@ -180,6 +188,9 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 				for (final Depot depot : ClientData.DEPOTS) {
 					if (depot.isTransportMode(transportMode) && AreaBase.nonNullCorners(depot)) {
 						drawRectangleFromWorldCoords(buffer, depot.corner1, depot.corner2, ARGB_BLACK_TRANSLUCENT + depot.color);
+						if (depot.id == selectedDepotId || hoveredDepots.contains(depot)) {
+							drawRectangleFromWorldCoords(buffer, depot.corner1, depot.corner2, ARGB_AREA_HIGHLIGHT);
+						}
 					}
 				}
 				mouseOnSavedRail(mouseWorldPos, (savedRail, x1, z1, x2, z2) -> drawRectangleFromWorldCoords(buffer, x1, z1, x2, z2, ARGB_WHITE), false);
@@ -218,6 +229,8 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_route").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		} else if (canPickStation.getAsBoolean()) {
 			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_station").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+		} else if (canPickDepot.getAsBoolean()) {
+			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_depot").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		}
 
 		if (scale >= 8) {
@@ -263,8 +276,9 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		}
 		immediate.endBatch();
 
-		if (!hoveredRoutes.isEmpty() || !hoveredStations.isEmpty()) {
-			final String names = hoveredRoutes.isEmpty() ? hoveredStations.stream().map(station -> IGui.formatStationName(station.name)).collect(Collectors.joining(" / ")) : hoveredRoutes.stream().map(route -> IGui.formatStationName(route.getLineName())).collect(Collectors.joining(" / "));
+		if (!hoveredRoutes.isEmpty() || !hoveredStations.isEmpty() || !hoveredDepots.isEmpty()) {
+			final List<? extends AreaBase> hoveredAreas = hoveredStations.isEmpty() ? hoveredDepots : hoveredStations;
+			final String names = hoveredRoutes.isEmpty() ? hoveredAreas.stream().map(area -> IGui.formatStationName(area.name)).collect(Collectors.joining(" / ")) : hoveredRoutes.stream().map(route -> IGui.formatStationName(route.getLineName())).collect(Collectors.joining(" / "));
 			final int textX = Math.min(mouseX + TEXT_PADDING * 2, x + width - textRenderer.width(names) - TEXT_PADDING);
 			GuiCompat.drawString(matrices, textRenderer, names, textX, mouseY - TEXT_HEIGHT - TEXT_PADDING, ARGB_WHITE);
 		}
@@ -299,7 +313,9 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			if (canPickRoute.getAsBoolean()) {
 				pickRoute(coordsToWorldPos(mouseX - x, mouseY - y));
 			} else if (canPickStation.getAsBoolean()) {
-				pickStation(coordsToWorldPos(mouseX - x, mouseY - y));
+				pickArea(getStationsAt(coordsToWorldPos(mouseX - x, mouseY - y)), selectedStationId, onPickStation);
+			} else if (canPickDepot.getAsBoolean()) {
+				pickArea(getDepotsAt(coordsToWorldPos(mouseX - x, mouseY - y)), selectedDepotId, onPickDepot);
 			}
 		}
 		return true;
@@ -437,6 +453,15 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		this.selectedStationId = selectedStationId;
 	}
 
+	public void setDepotPicking(BooleanSupplier canPickDepot, Consumer<Depot> onPickDepot) {
+		this.canPickDepot = canPickDepot;
+		this.onPickDepot = onPickDepot;
+	}
+
+	public void setSelectedDepot(long selectedDepotId) {
+		this.selectedDepotId = selectedDepotId;
+	}
+
 	public void setShowStations(boolean showStations) {
 		this.showStations = showStations;
 	}
@@ -549,10 +574,12 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private void updateHoveredRoutes(int mouseX, int mouseY, Tuple<Double, Double> mouseWorldPos) {
 		final boolean pickRoutes = canPickRoute.getAsBoolean();
 		final boolean pickStations = canPickStation.getAsBoolean();
-		if (!pickRoutes && !pickStations || !isMouseOver(mouseX, mouseY)) {
+		final boolean pickDepots = canPickDepot.getAsBoolean();
+		if (!pickRoutes && !pickStations && !pickDepots || !isMouseOver(mouseX, mouseY)) {
 			hoveredRoutes = Collections.emptyList();
 			hoveredLineKeys = Collections.emptySet();
 			hoveredStations = Collections.emptyList();
+			hoveredDepots = Collections.emptyList();
 			hoverMouseX = -1;
 		} else if (mouseX != hoverMouseX || mouseY != hoverMouseY || scale != hoverScale || centerX != hoverCenterX || centerY != hoverCenterY) {
 			hoverMouseX = mouseX;
@@ -563,6 +590,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			hoveredRoutes = pickRoutes ? getRoutesAt(mouseWorldPos) : Collections.emptyList();
 			hoveredLineKeys = hoveredRoutes.stream().map(Route::getLineKey).collect(Collectors.toSet());
 			hoveredStations = pickStations ? getStationsAt(mouseWorldPos) : Collections.emptyList();
+			hoveredDepots = pickDepots ? getDepotsAt(mouseWorldPos) : Collections.emptyList();
 		}
 	}
 
@@ -585,16 +613,32 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		return stations;
 	}
 
-	private void pickStation(Tuple<Double, Double> worldPos) {
-		final List<Station> stations = getStationsAt(worldPos);
-		if (!stations.isEmpty()) {
+	/**
+	 * @return the depots of this transport mode with an area at this position, in an order that doesn't change between clicks
+	 */
+	private List<Depot> getDepotsAt(Tuple<Double, Double> worldPos) {
+		final List<Depot> depots = new ArrayList<>();
+		for (final Depot depot : ClientData.DEPOTS) {
+			if (depot.isTransportMode(transportMode) && AreaBase.nonNullCorners(depot) && RailwayData.isBetween(worldPos.getA(), depot.corner1.getA(), depot.corner2.getA()) && RailwayData.isBetween(worldPos.getB(), depot.corner1.getB(), depot.corner2.getB())) {
+				depots.add(depot);
+			}
+		}
+		depots.sort(Comparator.comparingLong(depot -> depot.id));
+		return depots;
+	}
+
+	/**
+	 * Picks the area after the selected one, so clicking again where areas overlap goes through all of them.
+	 */
+	private static <T extends AreaBase> void pickArea(List<T> areas, long selectedId, Consumer<T> onPick) {
+		if (!areas.isEmpty()) {
 			int selectedIndex = -1;
-			for (int i = 0; i < stations.size(); i++) {
-				if (stations.get(i).id == selectedStationId) {
+			for (int i = 0; i < areas.size(); i++) {
+				if (areas.get(i).id == selectedId) {
 					selectedIndex = i;
 				}
 			}
-			onPickStation.accept(stations.get((selectedIndex + 1) % stations.size()));
+			onPick.accept(areas.get((selectedIndex + 1) % areas.size()));
 		}
 	}
 
