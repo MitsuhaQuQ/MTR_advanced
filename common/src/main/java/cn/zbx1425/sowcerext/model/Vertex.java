@@ -5,7 +5,6 @@ import cn.zbx1425.sowcer.math.Vector3f;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Objects;
 
 public class Vertex {
 
@@ -47,11 +46,22 @@ public class Vertex {
 
     @Override
     public int hashCode() {
-        return Objects.hash(position, normal, u, v);
+        // Called for every vertex of models with millions of faces, so this must not allocate
+        int result = position.hashCode();
+        result = 31 * result + normal.hashCode();
+        result = 31 * result + Float.hashCode(u);
+        return 31 * result + Float.hashCode(v);
     }
 
     public Vertex copy() {
-        Vertex clone = new Vertex(position.copy(), normal.copy());
+        return copyWithNormal(normal.copy());
+    }
+
+    /**
+     * @param newNormal used as it is, so nothing else should hold it
+     */
+    public Vertex copyWithNormal(Vector3f newNormal) {
+        Vertex clone = new Vertex(position.copy(), newNormal);
         clone.u = u;
         clone.v = v;
         clone.color = color;

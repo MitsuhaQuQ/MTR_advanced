@@ -19,6 +19,7 @@ import mtr.mappings.Utilities;
 import mtr.mappings.UtilitiesClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -31,8 +32,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -60,7 +61,8 @@ public class CustomResourcesMixin {
     @Inject(at = @At("TAIL"), method = "reload(Lnet/minecraft/server/packs/resources/ResourceManager;)V")
     private static void reloadTail(ResourceManager manager, CallbackInfo ci) {
         DeferredModelUpload.finish();
-        ObjModelLoader.setPreloadedModels(Map.of());
+        ObjModelLoader.clearPreloadedModels();
+        TrainModelPreloader.clearJson();
         LoadTimings.report();
         CustomResources.resetComponents();
         if (!MtrModelRegistryUtil.loadingErrorList.isEmpty()) {
@@ -75,32 +77,63 @@ public class CustomResourcesMixin {
     private static void readResource(ResourceManager manager, String path, Consumer<JsonObject> callback, CallbackInfo ci) {
         if (path.toLowerCase(Locale.ROOT).endsWith(".obj") || path.contains("|")) {
             JsonObject dummyBbData = MtrModelRegistryUtil.createDummyBbDataPack(path, capturedTextureId, capturedFlipV, captureBbModelPreload);
-            callback.accept(dummyBbData);
+            readDepth++;
+            try {
+                callback.accept(dummyBbData);
+            } finally {
+                readDepth--;
+            }
             ci.cancel();
             return;
         }
 
         ResourceLocation location = new ResourceLocation(path);
+        // The custom resources file holds the trains, whose model file holds their properties, which is where a train is built
+        readDepth++;
+        List<JsonObject> preloaded = TrainModelPreloader.takeJson(location);
         try {
-            UtilitiesClient.getResources(manager, location).forEach(resource -> {
-                try (final InputStream stream = Utilities.getInputStream(resource)) {
-                    long jsonStartNanos = System.nanoTime();
-                    JsonObject modelObject = new JsonParser().parse(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
-                    LoadTimings.add("json", jsonStartNanos);
-                    if (path.toLowerCase(Locale.ROOT).endsWith(".bbmodel")) {
-                        JsonObject dummyBbData = MtrModelRegistryUtil.createDummyBbDataPack(path, capturedTextureId, capturedFlipV, captureBbModelPreload);
-                        modelObject.add("dummyBbData", dummyBbData);
-                    }
-                    callback.accept(modelObject);
-                } catch (Exception e) { Main.LOGGER.error("On behalf of MTR: Parsing JSON " + path, e); }
-                try {
-                    Utilities.closeResource(resource);
-                } catch (IOException e) { Main.LOGGER.error("On behalf of MTR: Closing resource " + path, e); }
-            });
+            if (preloaded == null) {
+                long lookupStartNanos = System.nanoTime();
+                List<Resource> resources = UtilitiesClient.getResources(manager, location);
+                LoadTimings.add("jsonLookup", lookupStartNanos);
+                resources.forEach(resource -> {
+                    try (final InputStream stream = Utilities.getInputStream(resource)) {
+                        long jsonStartNanos = System.nanoTime();
+                        JsonObject modelObject = new JsonParser().parse(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
+                        LoadTimings.add("json", jsonStartNanos);
+                        acceptJson(path, modelObject, callback);
+                    } catch (Exception e) { Main.LOGGER.error("On behalf of MTR: Parsing JSON " + path, e); }
+                    try {
+                        Utilities.closeResource(resource);
+                    } catch (IOException e) { Main.LOGGER.error("On behalf of MTR: Closing resource " + path, e); }
+                });
+            } else {
+                for (JsonObject modelObject : preloaded) {
+                    try {
+                        acceptJson(path, modelObject, callback);
+                    } catch (Exception e) { Main.LOGGER.error("On behalf of MTR: Parsing JSON " + path, e); }
+                }
+            }
         } catch (Exception ignored) { }
+        readDepth--;
         ci.cancel();
     }
 
+    @Unique
+    private static void acceptJson(String path, JsonObject modelObject, Consumer<JsonObject> callback) {
+        if (path.toLowerCase(Locale.ROOT).endsWith(".bbmodel")) {
+            JsonObject dummyBbData = MtrModelRegistryUtil.createDummyBbDataPack(path, capturedTextureId, capturedFlipV, captureBbModelPreload);
+            modelObject.add("dummyBbData", dummyBbData);
+        }
+        long buildStartNanos = System.nanoTime();
+        callback.accept(modelObject);
+        if (readDepth == TRAIN_BUILD_READ_DEPTH) {
+            LoadTimings.add("trainBuild", buildStartNanos);
+        }
+    }
+
+    @Unique private static final int TRAIN_BUILD_READ_DEPTH = 3;
+    @Unique private static int readDepth = 0;
     @Unique private static String capturedTextureId = "";
     @Unique private static boolean capturedFlipV = false;
     @Unique private static boolean captureBbModelPreload = false;

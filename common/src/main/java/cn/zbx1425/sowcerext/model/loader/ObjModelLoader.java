@@ -25,10 +25,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.io.InputStream;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ObjModelLoader {
 
-    private static volatile Map<ResourceLocation, Map<String, RawModel>> preloadedModels = Map.of();
+    private static final Map<ResourceLocation, PreloadedModels> PRELOADED_MODELS = new ConcurrentHashMap<>();
 
     public static RawModel loadModel(InputStream obj, InputStream mtl, ResourceLocation location, AtlasManager atlasManager) throws IOException {
         Obj srcObj = ObjReader.read(obj);
@@ -63,35 +65,71 @@ public class ObjModelLoader {
     }
 
     public static void setPreloadedModels(Map<ResourceLocation, Map<String, RawModel>> models) {
-        preloadedModels = models;
+        PRELOADED_MODELS.clear();
+        models.forEach((location, parts) -> PRELOADED_MODELS.put(location, new PreloadedModels(parts)));
+    }
+
+    /**
+     * Makes copies of a preloaded file ahead of time, so they can be made on worker threads. The parsed file stays as it is,
+     * as scripts can ask for files too, and nothing says how many times before they run.
+     */
+    public static void prepareCopies(ResourceLocation location, int count) {
+        PreloadedModels preloaded = PRELOADED_MODELS.get(location);
+        if (preloaded == null) return;
+        for (int i = 0; i < count; i++) {
+            preloaded.copies.add(copyModels(preloaded.models));
+        }
+    }
+
+    public static void clearPreloadedModels() {
+        PRELOADED_MODELS.clear();
     }
 
     public static Map<String, RawModel> loadModels(ResourceManager resourceManager, ResourceLocation objLocation, AtlasManager atlasManager) throws IOException {
-        Map<String, RawModel> preloaded = preloadedModels.get(objLocation);
+        PreloadedModels preloaded = PRELOADED_MODELS.get(objLocation);
         if (preloaded == null) return parseModels(resourceManager, objLocation, atlasManager);
 
         // Callers transform the models in place, and several trains can share one file
+        Map<String, RawModel> preparedCopy = preloaded.copies.poll();
+        if (preparedCopy != null) return preparedCopy;
+
         long startNanos = System.nanoTime();
-        HashMap<String, RawModel> result = new HashMap<>();
-        for (Map.Entry<String, RawModel> entry : preloaded.entrySet()) {
-            result.put(entry.getKey(), entry.getValue().copy());
-        }
+        Map<String, RawModel> result = copyModels(preloaded.models);
         LoadTimings.add("objCopy", startNanos);
         return result;
     }
 
-    public static Map<String, RawModel> parseModels(ResourceManager resourceManager, ResourceLocation objLocation, AtlasManager atlasManager) throws IOException {
-        Obj srcObj = ObjReader.read(Utilities.getInputStream(resourceManager.getResource(objLocation)));
-        Map<String, Mtl> materials = loadMaterials(resourceManager, srcObj, objLocation);
+    private static Map<String, RawModel> copyModels(Map<String, RawModel> models) {
+        HashMap<String, RawModel> result = new HashMap<>();
+        for (Map.Entry<String, RawModel> entry : models.entrySet()) {
+            result.put(entry.getKey(), entry.getValue().copy());
+        }
+        return result;
+    }
 
+    public static Map<String, RawModel> parseModels(ResourceManager resourceManager, ResourceLocation objLocation, AtlasManager atlasManager) throws IOException {
+        long startNanos = System.nanoTime();
+        Obj srcObj;
+        try (InputStream stream = Utilities.getInputStream(resourceManager.getResource(objLocation))) {
+            srcObj = ObjReader.read(stream);
+        }
+        LoadTimings.add("objRead", startNanos);
+
+        startNanos = System.nanoTime();
+        Map<String, Mtl> materials = loadMaterials(resourceManager, srcObj, objLocation);
+        LoadTimings.add("objMaterials", startNanos);
+
+        startNanos = System.nanoTime();
         HashMap<String, RawModel> result = new HashMap<>();
         Map<String, Obj> groupObjs = ObjSplitting.splitByGroups(srcObj);
+        LoadTimings.add("objSplit", startNanos);
         for (Map.Entry<String, Obj> groupEntry : groupObjs.entrySet()) {
             RawModel model = loadModel(groupEntry.getValue(), objLocation, materials, atlasManager);
             String compliantKey = groupEntry.getKey().toLowerCase(Locale.ROOT).replace('\\', '/').replaceAll("[^a-z0-9/._-]", "_");
             model.sourceLocation = new ResourceLocation(objLocation.getNamespace(), objLocation.getPath() + "/" + compliantKey);
             result.put(groupEntry.getKey(), model);
         }
+        LoadTimings.add("objConvert", startNanos);
         return result;
     }
 
@@ -141,7 +179,9 @@ public class ObjModelLoader {
                 materialProp.attrState.setColor(255, 255, 255, 255);
             }
 
+            long startNanos = System.nanoTime();
             Obj renderObjMesh = ObjUtils.convertToRenderable(entry.getValue());
+            LoadTimings.add("objRenderable", startNanos);
             RawMesh mesh = new RawMesh(materialProp);
             mesh.setRenderType(meshRenderType);
             for (int i = 0; i < renderObjMesh.getNumVertices(); ++i) {
@@ -174,8 +214,12 @@ public class ObjModelLoader {
             model.append(mesh);
         }
 
+        long startNanos = System.nanoTime();
         model.generateNormals();
+        LoadTimings.add("objNormals", startNanos);
+        startNanos = System.nanoTime();
         model.distinct();
+        LoadTimings.add("objDistinct", startNanos);
         return model;
     }
 
@@ -281,6 +325,16 @@ public class ObjModelLoader {
         }
     }
 
+
+    private static class PreloadedModels {
+
+        private final Map<String, RawModel> models;
+        private final Queue<Map<String, RawModel>> copies = new ConcurrentLinkedQueue<>();
+
+        private PreloadedModels(Map<String, RawModel> models) {
+            this.models = models;
+        }
+    }
 
     private static class ZeroFloatTuple implements FloatTuple {
 

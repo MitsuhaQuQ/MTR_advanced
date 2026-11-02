@@ -106,35 +106,29 @@ public class RawMesh {
         // if (vertices.size() > 10000 || faces.size() > 10000) return;
         // if (vertices.size() > 0) return;
 
-        final List<Vertex> distinctVertices = new ArrayList<>(vertices.size());
-        final HashMap<Vertex, Integer> verticesLookup = new HashMap<>(vertices.size());
-        final LinkedHashSet<Face> distinctFaces = new LinkedHashSet<>(faces.size());
+        final DistinctList<Vertex> distinctVertices = new DistinctList<>(vertices.size());
+        final DistinctList<Face> distinctFaces = new DistinctList<>(faces.size());
 
         for (Face face : faces) {
             for (int i = 0; i < face.vertices.length; ++i) {
-                Vertex vertex = vertices.get(face.vertices[i]);
-                int newIndex;
-                if (verticesLookup.containsKey(vertex)) {
-                    newIndex = verticesLookup.get(vertex);
-                } else {
-                    distinctVertices.add(vertex);
-                    newIndex = distinctVertices.size() - 1;
-                    verticesLookup.put(vertex, newIndex);
-                }
-                face.vertices[i] = newIndex;
+                face.vertices[i] = distinctVertices.add(vertices.get(face.vertices[i]));
             }
             distinctFaces.add(face);
         }
 
+        // Meshes can share these lists as well as the faces changed above, so the lists have to stay the same objects
         vertices.clear();
-        vertices.addAll(distinctVertices);
+        vertices.addAll(distinctVertices.items);
         faces.clear();
-        faces.addAll(distinctFaces);
+        faces.addAll(distinctFaces.items);
     }
 
-    /** Generates normals for vertices without a normal vector. Produces duplicate vertices. */
+    /**
+     * Generates normals for vertices without a normal vector. Produces duplicate vertices, and vertices that already have a
+     * normal are the same object in several places, so {@link #distinct()} has to run before any vertex is changed.
+     */
     public void generateNormals() {
-        final List<Vertex> newVertices = new ArrayList<>(vertices.size());
+        final List<Vertex> newVertices = new ArrayList<>(faces.size() * 3);
         for (Face face : faces) {
             if (face.vertices.length >= 3) {
                 int i0 = face.vertices[0];
@@ -156,26 +150,64 @@ public class RawMesh {
                     float my = (float) (ny * t);
                     float mz = (float) (nz * t);
                     for (int j = 0; j < face.vertices.length; j++) {
-                        Vertex newVert = vertices.get(face.vertices[j]).copy();
-                        if (vecIsZero(newVert.normal)) {
-                            newVert.normal = new Vector3f(mx, my, mz);
-                        }
-                        newVertices.add(newVert);
+                        Vertex vertex = vertices.get(face.vertices[j]);
+                        newVertices.add(vecIsZero(vertex.normal) ? vertex.copyWithNormal(new Vector3f(mx, my, mz)) : vertex);
                         face.vertices[j] = newVertices.size() - 1;
                     }
                 } else {
                     for (int j = 0; j < face.vertices.length; j++) {
-                        Vertex newVert = vertices.get(face.vertices[j]).copy();
-                        if (vecIsZero(vertices.get(face.vertices[j]).normal)) {
-                            newVert.normal = new Vector3f(0.0f, 1.0f, 0.0f);
-                        }
-                        newVertices.add(newVert);
+                        Vertex vertex = vertices.get(face.vertices[j]);
+                        newVertices.add(vecIsZero(vertex.normal) ? vertex.copyWithNormal(new Vector3f(0.0f, 1.0f, 0.0f)) : vertex);
                         face.vertices[j] = newVertices.size() - 1;
                     }
                 }
             }
         }
         vertices = newVertices;
+    }
+
+    /**
+     * Keeps the first of equal items in order. Models can have millions of faces, where a hash map's entries and boxed
+     * indices cost more than the search itself, so this only keeps one int for each slot.
+     */
+    private static final class DistinctList<T> {
+
+        private static final int HASH_MULTIPLIER = 0x9E3779B9;
+        private static final int MIN_BITS = 4;
+
+        private final List<T> items;
+        private final int[] slots;
+        private final int shift;
+
+        /**
+         * @param maxItems the most items this will hold, which keeps the slots at most half full
+         */
+        private DistinctList(int maxItems) {
+            items = new ArrayList<>(maxItems);
+            final int bits = Math.max(MIN_BITS, Integer.SIZE - Integer.numberOfLeadingZeros(maxItems) + 1);
+            slots = new int[1 << bits];
+            shift = Integer.SIZE - bits;
+        }
+
+        /**
+         * @return where this item or an equal one is in the list
+         */
+        private int add(T item) {
+            int slot = item.hashCode() * HASH_MULTIPLIER >>> shift;
+            while (true) {
+                // Slots hold the index plus one, so that zero is empty
+                final int index = slots[slot] - 1;
+                if (index < 0) {
+                    items.add(item);
+                    slots[slot] = items.size();
+                    return items.size() - 1;
+                }
+                if (items.get(index).equals(item)) {
+                    return index;
+                }
+                slot = slot + 1 & slots.length - 1;
+            }
+        }
     }
 
     public void upload(Mesh mesh, VertAttrMapping mapping) {
