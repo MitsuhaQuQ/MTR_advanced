@@ -1,4 +1,5 @@
 {
+  "gui.mtr.advanced_editor": "高级编辑器",
   "gui.mtr.use_deterministic_path": "使用确定性寻路",
   "gui.mtr.pass_station": "本站通过，不停车",
   "gui.mtr.dwell_override": "本线路门全开时间（秒）",

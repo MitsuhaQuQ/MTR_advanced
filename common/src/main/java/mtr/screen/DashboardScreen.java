@@ -4,6 +4,7 @@ import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
+import mtr.client.EditorServer;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
 import mtr.data.*;
@@ -11,6 +12,7 @@ import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.components.Button;
@@ -48,6 +50,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonZoomOut;
 	private final Button buttonRailActions;
 	private final Button buttonOptions;
+	private final Button buttonAdvancedEditor;
 
 	private final WidgetBetterTextField textFieldName;
 	private final WidgetBetterTextField textFieldCustomDestination;
@@ -111,6 +114,13 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			}
 		});
 
+		buttonAdvancedEditor = UtilitiesClient.newButton(Text.translatable("gui.mtr.advanced_editor"), button -> {
+			final String url = EditorServer.open();
+			if (url != null) {
+				Util.getPlatform().openUri(url);
+			}
+		});
+
 		dashboardList = new DashboardList(this::onFind, this::onDrawArea, this::onEdit, this::onSort, null, this::onDelete, this::getList, () -> ClientData.DASHBOARD_SEARCH, text -> ClientData.DASHBOARD_SEARCH = text);
 
 		widgetMap.setRoutePicking(() -> selectedTab == SelectedTab.ROUTES && editingRoute == null, route -> {
@@ -156,6 +166,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(buttonZoomIn, width - SQUARE_SIZE * 2, bottomRowY, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonZoomOut, width - SQUARE_SIZE, bottomRowY, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonRailActions, width - SQUARE_SIZE * 10, bottomRowY, SQUARE_SIZE * 5);
+		IDrawing.setPositionAndWidth(buttonAdvancedEditor, width - SQUARE_SIZE * 15, bottomRowY, SQUARE_SIZE * 5);
 		IDrawing.setPositionAndWidth(buttonOptions, width - SQUARE_SIZE * 5, bottomRowY, SQUARE_SIZE * 3);
 
 		IDrawing.setPositionAndWidth(buttonStationArea, 0, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
@@ -191,6 +202,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		addDrawableChild(buttonAddStationArea);
 		addDrawableChild(buttonRemoveStationArea);
 		addDrawableChild(buttonOptions);
+		addDrawableChild(buttonAdvancedEditor);
 
 		addDrawableChild(textFieldName);
 		addDrawableChild(textFieldCustomDestination);

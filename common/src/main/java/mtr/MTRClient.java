@@ -3,6 +3,7 @@ package mtr;
 import mtr.block.*;
 import mtr.client.ClientData;
 import mtr.client.Config;
+import mtr.client.EditorServer;
 import mtr.client.IDrawing;
 import mtr.data.*;
 import mtr.item.ItemBlockClickingBase;
@@ -317,6 +318,8 @@ public class MTRClient implements IPacket {
 
 		RegistryClient.registerPlayerJoinEvent(player -> {
 			Config.refreshProperties();
+			// An editor page left open from another world stops working
+			EditorServer.stop();
 
 			isReplayMod = player.getClass().toGenericString().toLowerCase(Locale.ENGLISH).contains("replaymod");
 			try {

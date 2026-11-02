@@ -1,4 +1,5 @@
 {
+  "gui.mtr.advanced_editor": "Advanced Editor",
   "gui.mtr.use_deterministic_path": "Use deterministic routing",
   "gui.mtr.pass_station": "Run through without stopping",
   "gui.mtr.dwell_override": "Doors fully open for this route (seconds)",

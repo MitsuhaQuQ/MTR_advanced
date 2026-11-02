@@ -1,4 +1,5 @@
 {
+  "gui.mtr.advanced_editor": "進階編輯器",
   "gui.mtr.use_deterministic_path": "使用確定性尋路",
   "gui.mtr.pass_station": "本站通過，不停車",
   "gui.mtr.dwell_override": "本路線門全開時間（秒）",

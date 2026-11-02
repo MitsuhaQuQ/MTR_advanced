@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>MTR 高级编辑器</title>
+	<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header class="top">
+	<button class="tree-toggle" id="btn-tree" aria-controls="tree" aria-expanded="true" title="显示或收起线路和车厂">☰</button>
+	<h1>MTR 高级编辑器</h1>
+	<span class="tag">只读</span>
+	<span class="spacer"></span>
+	<label class="day">运行日
+		<select id="day">
+			<option value="0">周一</option>
+			<option value="1">周二</option>
+			<option value="2">周三</option>
+			<option value="3">周四</option>
+			<option value="4">周五</option>
+			<option value="5">周六</option>
+			<option value="6">周日</option>
+		</select>
+	</label>
+</header>
+
+<div class="app">
+	<nav class="tree" id="tree" aria-label="线路和车厂"></nav>
+	<div class="scrim" id="scrim"></div>
+	<main>
+		<div class="tabs" role="tablist">
+			<button class="tab" id="tab-table" role="tab" aria-selected="false">汇总时刻表</button>
+			<button class="tab" id="tab-diagram" role="tab" aria-selected="true">运行图</button>
+			<button id="btn-split" aria-pressed="false" title="运行图在上，时刻表在下" hidden>上下显示</button>
+			<span class="crumb" id="crumb"></span>
+			<span class="tools">
+				<button id="btn-zoom-out" title="缩小时间轴">−</button>
+				<button id="btn-zoom-in" title="放大时间轴">＋</button>
+			</span>
+		</div>
+		<div class="banner" id="banner" hidden></div>
+		<section class="view diagram" id="view-diagram">
+			<div class="canvas-wrap" id="canvas-wrap"><canvas id="canvas" aria-label="运行图"></canvas></div>
+			<aside class="inspector" id="inspector"></aside>
+		</section>
+		<section class="view table-view" id="view-table" hidden></section>
+	</main>
+</div>
+
+<footer class="status" id="status"></footer>
+<div class="tooltip" id="tooltip" hidden></div>
+<script src="editor.js"></script>
+</body>
+</html>
