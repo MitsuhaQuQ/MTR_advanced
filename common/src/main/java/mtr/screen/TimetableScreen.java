@@ -680,7 +680,8 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private List<RouteTimetable.StopPlan> getPlans() {
-		return RouteTimetable.getStopPlans(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin(), tableIndex);
+		// The selected service's own times, where it runs differently from the table
+		return RouteTimetable.getStopPlans(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin(), tableIndex, getTable().exceptions.get(baseMillis));
 	}
 
 	private void requestConflicts() {

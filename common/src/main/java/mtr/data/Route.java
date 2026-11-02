@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.advanced.ServiceExceptions;
 import io.netty.buffer.Unpooled;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
@@ -79,6 +80,7 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_TIMETABLE_LINKS = "timetable_links";
 	private static final long TIMETABLE_LINKS_MARKER = -5;
 	private static final String KEY_TIMETABLE_RETURNS = "timetable_returns";
+	private static final String KEY_TIMETABLE_EXCEPTIONS = "timetable_exceptions";
 	private static final String KEY_PLAN_ARRIVALS = "plan_arrivals";
 	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
 	private static final String KEY_OVERTAKES = "overtakes";
@@ -160,6 +162,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		timetable.entryPlatformId = messagePackHelper.getLong(KEY_ENTRY_PLATFORM);
 		readLinks(messagePackHelper, timetable);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_RETURNS, value -> timetable.returnServices.add(value.asIntegerValue().asInt()));
+		readExceptions(messagePackHelper, timetable);
 
 		final int[] planIndex = {0, 0, 0};
 		messagePackHelper.iterateArrayValue(KEY_PLAN_ARRIVALS, value -> {
@@ -182,6 +185,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		});
 
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_TABLES, value -> readTable(new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value))));
+		timetable.getTables().forEach(table -> ServiceExceptions.limitStops(table, platformIds.size()));
 		timetable.sanitize();
 	}
 
@@ -301,6 +305,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePacker.packString(KEY_ENTRY_PLATFORM).packLong(timetable.entryPlatformId);
 		writeLinks(messagePacker, timetable);
 		writeReturns(messagePacker, timetable);
+		writeExceptions(messagePacker, timetable);
 		messagePacker.packString(KEY_TIMETABLE_TABLES).packArrayHeader(timetable.getTableCount() - 1);
 		for (int i = 1; i < timetable.getTableCount(); i++) {
 			writeTable(messagePacker, i);
@@ -317,7 +322,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 27 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 28 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -342,6 +347,20 @@ public final class Route extends NameColorDataBase implements IGui {
 			messagePacker.packLong(entry.getValue().service);
 			messagePacker.packLong(entry.getValue().fromStop);
 			messagePacker.packLong(entry.getValue().toStop);
+		}
+	}
+
+	private static void readExceptions(MessagePackHelper messagePackHelper, RouteTimetable table) {
+		final List<Integer> values = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_EXCEPTIONS, value -> values.add(value.asIntegerValue().asInt()));
+		ServiceExceptions.fromInts(values, table);
+	}
+
+	private static void writeExceptions(MessagePacker messagePacker, RouteTimetable table) throws IOException {
+		final int[] values = ServiceExceptions.toInts(table);
+		messagePacker.packString(KEY_TIMETABLE_EXCEPTIONS).packArrayHeader(values.length);
+		for (final int value : values) {
+			messagePacker.packInt(value);
 		}
 	}
 
@@ -381,6 +400,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> table.services.add(service.asIntegerValue().asInt()));
 		readLinks(messagePackHelper, table);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_RETURNS, value -> table.returnServices.add(value.asIntegerValue().asInt()));
+		readExceptions(messagePackHelper, table);
 		timetable.addTable(table);
 
 		final int tableIndex = timetable.getTableCount() - 1;
@@ -407,9 +427,10 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	private void writeTable(MessagePacker messagePacker, int tableIndex) throws IOException {
 		final RouteTimetable table = timetable.getTable(tableIndex);
-		messagePacker.packMapHeader(9);
+		messagePacker.packMapHeader(10);
 		writeLinks(messagePacker, table);
 		writeReturns(messagePacker, table);
+		writeExceptions(messagePacker, table);
 		messagePacker.packString(KEY_TIMETABLE_NAME).packString(table.name);
 		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(table.weekdays);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(table.marginPercent);
@@ -504,6 +525,7 @@ public final class Route extends NameColorDataBase implements IGui {
 						platformIds.add(routePlatform);
 					}
 				}
+				ServiceExceptions.remapStops(this, oldPlatforms);
 				timetable.revision++;
 				break;
 			case KEY_IS_LIGHT_RAIL_ROUTE:
@@ -626,6 +648,7 @@ public final class Route extends NameColorDataBase implements IGui {
 			newTable.services.addAll(table.services);
 			newTable.links.putAll(table.links);
 			newTable.returnServices.addAll(table.returnServices);
+			ServiceExceptions.copy(table, newTable);
 			if (table != timetable) {
 				route.timetable.addTable(newTable);
 			}
@@ -836,6 +859,7 @@ public final class Route extends NameColorDataBase implements IGui {
 				}
 			}
 		}
+		timetable.getTables().forEach(table -> ServiceExceptions.limitStops(table, platformIds.size()));
 		timetable.sanitize();
 
 		final int stopCount = packet.readInt();
@@ -877,6 +901,7 @@ public final class Route extends NameColorDataBase implements IGui {
 				table.returnServices.add(service);
 			}
 		}
+		ServiceExceptions.read(packet, table);
 	}
 
 	private void writeTimetable(FriendlyByteBuf packet) {
@@ -900,6 +925,7 @@ public final class Route extends NameColorDataBase implements IGui {
 			});
 			packet.writeInt(table.returnServices.size());
 			table.returnServices.forEach(packet::writeInt);
+			ServiceExceptions.write(packet, table);
 
 			packet.writeInt(platformIds.size());
 			for (final RoutePlatform routePlatform : platformIds) {

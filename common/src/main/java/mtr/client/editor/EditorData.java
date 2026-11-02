@@ -163,6 +163,34 @@ public final class EditorData {
 			final JsonArray returnsArray = new JsonArray();
 			table.returnServices.forEach(returnsArray::add);
 			tableObject.add("returns", returnsArray);
+
+			// Stops where one service runs differently, with its own times worked out
+			final JsonArray exceptionsArray = new JsonArray();
+			table.exceptions.forEach((service, stopExceptions) -> {
+				final JsonObject exceptionObject = new JsonObject();
+				exceptionObject.addProperty("service", service);
+				final JsonArray exceptionStopsArray = new JsonArray();
+				stopExceptions.forEach((stop, stopException) -> {
+					final JsonObject stopObject = new JsonObject();
+					stopObject.addProperty("stop", stop);
+					stopObject.addProperty("run", stopException.runSeconds);
+					stopObject.addProperty("dwell", stopException.dwellSeconds);
+					stopObject.addProperty("pass", stopException.pass);
+					stopObject.addProperty("overtake", stopException.overtake);
+					exceptionStopsArray.add(stopObject);
+				});
+				exceptionObject.add("stops", exceptionStopsArray);
+				final JsonArray servicePlansArray = new JsonArray();
+				RouteTimetable.getStopPlans(route.platformIds, hasTimes ? times : null, table.marginPercent, tableIndex, stopExceptions).forEach(plan -> {
+					final JsonArray planArray = new JsonArray();
+					planArray.add(plan.arrivalMillis);
+					planArray.add(plan.departureMillis);
+					servicePlansArray.add(planArray);
+				});
+				exceptionObject.add("plans", servicePlansArray);
+				exceptionsArray.add(exceptionObject);
+			});
+			tableObject.add("exceptions", exceptionsArray);
 			tablesArray.add(tableObject);
 		}
 		routeObject.add("tables", tablesArray);

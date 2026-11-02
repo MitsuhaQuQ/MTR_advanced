@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.advanced.ServiceExceptions;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -45,6 +46,10 @@ public class RouteTimetable {
 	 * Services of this table after which the train goes back to the depot, for depots whose trains otherwise stay on the line.
 	 */
 	public final Set<Integer> returnServices = new HashSet<>();
+	/**
+	 * Stops where a service of this table runs differently, by service and then by stop. See {@link ServiceExceptions}.
+	 */
+	public final Map<Integer, Map<Integer, ServiceExceptions.StopException>> exceptions = new HashMap<>();
 	private final List<RouteTimetable> otherTables = new ArrayList<>();
 	private final List<Integer> allServices = new ArrayList<>();
 	/**
@@ -103,6 +108,7 @@ public class RouteTimetable {
 		name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
 		links.keySet().retainAll(services);
 		returnServices.retainAll(services);
+		ServiceExceptions.sanitize(this);
 
 		otherTables.forEach(RouteTimetable::sanitize);
 		allServices.clear();
@@ -250,13 +256,25 @@ public class RouteTimetable {
 		for (int i = 0; i < stops.size(); i++) {
 			final StopPlan stop = stops.get(i);
 			final long automaticArrival = i == 0 ? 0 : lastDeparture + addMargin(stop.fastestArrivalMillis - lastFastestDeparture);
-			stop.arrivalMillis = i > 0 && stop.setArrivalSeconds >= 0 ? routeStart + stop.setArrivalSeconds * 1000L : automaticArrival;
+			if (i > 0 && stop.exceptionRunMillis >= 0) {
+				// One service's own running time, which counts from leaving the stop before rather than from the route start
+				stop.arrivalMillis = lastDeparture + stop.exceptionRunMillis;
+			} else {
+				stop.arrivalMillis = i > 0 && stop.setArrivalSeconds >= 0 ? routeStart + stop.setArrivalSeconds * 1000L : automaticArrival;
+			}
 			if (stop.startsRoute) {
 				routeStart = stop.arrivalMillis;
 			}
-			stop.departureMillis = stop.setDepartureSeconds >= 0 ? Math.max(routeStart + stop.setDepartureSeconds * 1000L, stop.arrivalMillis) : stop.arrivalMillis + stop.fastestDepartureMillis - stop.fastestArrivalMillis;
+			final long automaticDwell = stop.exceptionPass == 0 && stop.fastestDepartureMillis == stop.fastestArrivalMillis ? ServiceExceptions.ADDED_STOP_MILLIS : stop.fastestDepartureMillis - stop.fastestArrivalMillis;
+			if (stop.exceptionDwellMillis >= 0) {
+				stop.departureMillis = stop.arrivalMillis + stop.exceptionDwellMillis;
+			} else if (stop.exceptionPass == 1 && i > 0 && i < stops.size() - 1) {
+				stop.departureMillis = stop.arrivalMillis;
+			} else {
+				stop.departureMillis = stop.setDepartureSeconds >= 0 ? Math.max(routeStart + stop.setDepartureSeconds * 1000L, stop.arrivalMillis) : stop.arrivalMillis + automaticDwell;
+			}
 			stop.routeStartMillis = routeStart;
-			stop.isTimed = i == 0 || stop.overtake || stop.setDepartureSeconds >= 0 || stop.waitsForService;
+			stop.isTimed = i == 0 || stop.overtake || stop.setDepartureSeconds >= 0 || stop.waitsForService || stop.exceptionDwellMillis >= 0;
 			lastFastestDeparture = stop.fastestDepartureMillis;
 			lastDeparture = stop.departureMillis;
 		}
@@ -272,6 +290,13 @@ public class RouteTimetable {
 	 * @param table         the index of the table to take the times at each stop from
 	 */
 	public static List<StopPlan> getStopPlans(List<Route.RoutePlatform> stops, long[][] times, int marginPercent, int table) {
+		return getStopPlans(stops, times, marginPercent, table, null);
+	}
+
+	/**
+	 * @param stopExceptions where one service runs differently, by stop, or null for the table's own times
+	 */
+	public static List<StopPlan> getStopPlans(List<Route.RoutePlatform> stops, long[][] times, int marginPercent, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
 		final List<StopPlan> plans = new ArrayList<>();
 		long lastTime = 0;
 		for (int i = 0; i < stops.size(); i++) {
@@ -283,6 +308,7 @@ public class RouteTimetable {
 			lastTime = departure;
 			plans.add(new StopPlan(arrival, departure, stop.getArrival(table), stop.getDeparture(table), stop.getOvertake(table)));
 		}
+		ServiceExceptions.applyTo(plans, stopExceptions);
 		final RouteTimetable timetable = new RouteTimetable();
 		timetable.marginPercent = marginPercent;
 		timetable.applyPlan(plans);
@@ -396,7 +422,17 @@ public class RouteTimetable {
 		public final long fastestDepartureMillis;
 		public final int setArrivalSeconds;
 		public final int setDepartureSeconds;
-		public final boolean overtake;
+		/**
+		 * Whether the train waits here to be overtaken, which one service can change. See {@link ServiceExceptions}.
+		 */
+		public boolean overtake;
+		/**
+		 * One service's own running time to this stop, stop time here, and whether it passes (1) or stops (0), or -1 to
+		 * follow the table. See {@link ServiceExceptions}.
+		 */
+		public long exceptionRunMillis = -1;
+		public long exceptionDwellMillis = -1;
+		public int exceptionPass = -1;
 		/**
 		 * The next route of the trip starts here, so times from here on count from this stop.
 		 */

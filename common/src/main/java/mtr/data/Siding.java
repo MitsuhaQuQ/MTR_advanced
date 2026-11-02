@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.advanced.ServiceExceptions;
 import io.netty.buffer.Unpooled;
 import mtr.packet.IPacket;
 import mtr.path.PathData;
@@ -1653,9 +1654,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * @param routes  the routes the path runs through, in order
 		 * @param routeId the route the train is on
 		 * @param table   the table of that route the train is running to. Other routes use their first table until the train gets to them.
+		 * @param service the service of that route, for the stops where it runs differently from its table, or -1
 		 * @return the planned times of a stop on the path, or null if the path has no such stop
 		 */
-		public RouteTimetable.StopPlan getPlan(List<Route> routes, RouteTimetable timetable, int index, long routeId, int table) {
+		public RouteTimetable.StopPlan getPlan(List<Route> routes, RouteTimetable timetable, int index, long routeId, int table, int service) {
 			long newKey = 1;
 			for (final Route route : routes) {
 				newKey = newKey * 31 + route.id + route.timetable.revision;
@@ -1664,10 +1666,25 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				plannedKey = newKey;
 				plans.clear();
 			}
-			return plans.computeIfAbsent(routeId * 31 + table, key -> makePlans(routes, timetable, routeId, table)).get(joinStopLaps.getOrDefault(index, index));
+			final Map<Integer, ServiceExceptions.StopException> stopExceptions = getStopExceptions(routes, routeId, table, service);
+			// Services with exceptions have their own plans; the rest of the table shares one
+			final long planKey = (routeId * 31 + table) * 31 + (stopExceptions == null ? -1 : service);
+			return plans.computeIfAbsent(planKey, key -> makePlans(routes, timetable, routeId, table, stopExceptions)).get(joinStopLaps.getOrDefault(index, index));
 		}
 
-		private Map<Integer, RouteTimetable.StopPlan> makePlans(List<Route> routes, RouteTimetable timetable, long routeId, int table) {
+		private static Map<Integer, ServiceExceptions.StopException> getStopExceptions(List<Route> routes, long routeId, int table, int service) {
+			if (service < 0) {
+				return null;
+			}
+			for (final Route route : routes) {
+				if (route.id == routeId) {
+					return route.timetable.getTable(table).exceptions.get(service);
+				}
+			}
+			return null;
+		}
+
+		private Map<Integer, RouteTimetable.StopPlan> makePlans(List<Route> routes, RouteTimetable timetable, long routeId, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
 			final Map<Integer, RouteTimetable.StopPlan> newPlans = new HashMap<>();
 			final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
 			final List<Boolean> isTurnBacks = new ArrayList<>();
@@ -1677,6 +1694,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				final int arrivalTable = routeStop != null && routeStop.arrivalRoute.id == routeId ? table : 0;
 				final int departureTable = routeStop != null && routeStop.departureRoute.id == routeId ? table : 0;
 				final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, arrivalStop == null ? -1 : arrivalStop.getArrival(arrivalTable), departureStop == null ? -1 : departureStop.getDeparture(departureTable), departureStop != null && departureStop.getOvertake(departureTable));
+				if (stopExceptions != null && routeStop != null) {
+					ServiceExceptions.applyTo(stopPlan, routeStop.arrivalRoute.id == routeId ? stopExceptions.get(routeStop.arrivalIndex) : null, routeStop.departureRoute.id == routeId ? stopExceptions.get(routeStop.departureIndex) : null);
+				}
 				stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
 				stopPlan.route = stopPlan.startsRoute ? routeStop.departureRoute : null;
 				stopPlan.waitsForService = stopPlan.startsRoute && routeStop.departureRoute.timetable.isActive();

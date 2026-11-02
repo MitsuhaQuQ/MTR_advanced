@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.advanced.ServiceExceptions;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -283,7 +284,23 @@ public final class TimetableConflicts {
 		 * @param times the fastest arrival and departure at each stop, with -1 for stops not found
 		 */
 		public void addTable(int table, int weekdays, List<Integer> services, int marginPercent, long[][] times) {
-			final List<RouteTimetable.StopPlan> plans = RouteTimetable.getStopPlans(stops, times, marginPercent, table);
+			addTable(table, weekdays, services, marginPercent, times, Collections.emptyMap());
+		}
+
+		/**
+		 * @param exceptions the stops where services of the table run differently, which get times of their own
+		 */
+		public void addTable(int table, int weekdays, List<Integer> services, int marginPercent, long[][] times, Map<Integer, Map<Integer, ServiceExceptions.StopException>> exceptions) {
+			final long[][] tableTimes = getTimes(times, RouteTimetable.getStopPlans(stops, times, marginPercent, table));
+			final TableTimes tableTimesObject = new TableTimes(table, weekdays, services, tableTimes[0], tableTimes[1]);
+			exceptions.forEach((service, stopExceptions) -> tableTimesObject.serviceTimes.put(service, getTimes(times, RouteTimetable.getStopPlans(stops, times, marginPercent, table, stopExceptions))));
+			tables.add(tableTimesObject);
+		}
+
+		/**
+		 * @return the arrivals and departures, with -1 for stops the path doesn't reach
+		 */
+		private static long[][] getTimes(long[][] times, List<RouteTimetable.StopPlan> plans) {
 			final long[] arrivals = new long[plans.size()];
 			final long[] departures = new long[plans.size()];
 			for (int i = 0; i < plans.size(); i++) {
@@ -291,7 +308,7 @@ public final class TimetableConflicts {
 				arrivals[i] = hasTime ? plans.get(i).arrivalMillis : -1;
 				departures[i] = hasTime ? plans.get(i).departureMillis : -1;
 			}
-			tables.add(new TableTimes(table, weekdays, services, arrivals, departures));
+			return new long[][]{arrivals, departures};
 		}
 
 		public void addTurnBack(TurnBack turnBack) {
@@ -310,7 +327,8 @@ public final class TimetableConflicts {
 			final Set<Integer> foundServices = new HashSet<>();
 			tables.stream().filter(table -> table.runsOn(weekday)).forEach(table -> table.services.forEach(service -> {
 				if (foundServices.add(service)) {
-					services.add(new ServiceTimes(table.table, service, table.arrivals, table.departures));
+					final long[][] serviceTimes = table.serviceTimes.get(service);
+					services.add(new ServiceTimes(table.table, service, serviceTimes == null ? table.arrivals : serviceTimes[0], serviceTimes == null ? table.departures : serviceTimes[1]));
 				}
 			}));
 			return services;
@@ -447,6 +465,10 @@ public final class TimetableConflicts {
 		private final List<Integer> services;
 		private final long[] arrivals;
 		private final long[] departures;
+		/**
+		 * The arrivals and departures of services with exceptions, which differ from the table's.
+		 */
+		private final Map<Integer, long[][]> serviceTimes = new HashMap<>();
 
 		private TableTimes(int table, int weekdays, List<Integer> services, long[] arrivals, long[] departures) {
 			this.table = table;

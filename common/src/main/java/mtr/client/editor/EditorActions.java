@@ -3,11 +3,15 @@ package mtr.client.editor;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import mtr.advanced.ServiceExceptions;
 import mtr.client.ClientData;
 import mtr.data.Route;
 import mtr.data.RouteTimetable;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Applies the advanced editor's changes. Each change is checked here first, then made to this client's copy and sent with
@@ -142,6 +146,26 @@ public final class EditorActions implements IPacket {
 			});
 			table.returnServices.clear();
 			tableObject.getAsJsonArray("returns").forEach(service -> table.returnServices.add(service.getAsInt()));
+			table.exceptions.clear();
+			if (tableObject.has("exceptions")) {
+				tableObject.getAsJsonArray("exceptions").forEach(exceptionElement -> {
+					final JsonObject exceptionObject = exceptionElement.getAsJsonObject();
+					final Map<Integer, ServiceExceptions.StopException> stopExceptions = new HashMap<>();
+					exceptionObject.getAsJsonArray("stops").forEach(stopElement -> {
+						final JsonObject stopObject = stopElement.getAsJsonObject();
+						final int stop = stopObject.get("stop").getAsInt();
+						if (stop >= 0 && stop < stopCount) {
+							final ServiceExceptions.StopException stopException = new ServiceExceptions.StopException();
+							stopException.runSeconds = stopObject.get("run").getAsInt();
+							stopException.dwellSeconds = stopObject.get("dwell").getAsInt();
+							stopException.pass = stopObject.get("pass").getAsInt();
+							stopException.overtake = stopObject.get("overtake").getAsInt();
+							stopExceptions.put(stop, stopException);
+						}
+					});
+					table.exceptions.put(exceptionObject.get("service").getAsInt(), stopExceptions);
+				});
+			}
 			final JsonArray stops = tableObject.getAsJsonArray("stops");
 			for (int j = 0; j < stopCount; j++) {
 				final JsonObject stop = stops.get(j).getAsJsonObject();

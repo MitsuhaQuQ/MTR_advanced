@@ -650,7 +650,7 @@ public class TrainService {
 		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
 		if (stopTimes.hasJoinStops() && timetable != null) {
 			final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
-			final RouteTimetable.StopPlan stopPlan = stopTimes.getPlan(trainRoutes, timetable, stopTimes.getFirstJoinStopLapIndex(), trainRoutes.get(0).id, 0);
+			final RouteTimetable.StopPlan stopPlan = stopTimes.getPlan(trainRoutes, timetable, stopTimes.getFirstJoinStopLapIndex(), trainRoutes.get(0).id, 0, -1);
 			return stopTimes.getLeadMillis() - (stopPlan == null ? 0 : stopPlan.arrivalMillis);
 		}
 		return stopTimes.getLeadMillis();
@@ -695,7 +695,7 @@ public class TrainService {
 			return null;
 		}
 		final List<Route> newTripRoutes = getTripRoutes();
-		return stopTimes.getPlan(newTripRoutes, timetable, stopIndex, tripRouteId, getTripTable(newTripRoutes));
+		return stopTimes.getPlan(newTripRoutes, timetable, stopIndex, tripRouteId, getTripTable(newTripRoutes), (int) Math.floorMod(tripMillis, (long) Depot.MILLISECONDS_PER_DAY));
 	}
 
 	/**
