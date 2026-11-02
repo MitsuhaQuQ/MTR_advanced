@@ -459,10 +459,14 @@ public class RawMesh {
             }
         }
 
-        compactVertices = newVertices;
-        compactFaces = newFaces;
+        compactVertices = CompactArrays.share(newVertices);
+        compactFaces = CompactArrays.share(newFaces);
         vertices = new ArrayList<>();
         faces = new ArrayList<>();
+    }
+
+    boolean sharesCompactDataWith(RawMesh other) {
+        return compactVertices != null && compactVertices == other.compactVertices && compactFaces == other.compactFaces;
     }
 
     public int getVertexCount() {
@@ -533,9 +537,22 @@ public class RawMesh {
         }
     }
 
+    /**
+     * A compact mesh stays compact, as parsed models are copied from several threads and need to stay small.
+     */
     public RawMesh copy() {
-        expand();
         RawMesh result = new RawMesh(this.materialProp.copy());
+        if (compactFaces != null) {
+            result.vertices = new ArrayList<>(getVertexCount());
+            for (int i = 0; i < getVertexCount(); i++) {
+                result.vertices.add(getCompactVertex(i));
+            }
+            result.faces = new ArrayList<>(getFaceCount());
+            for (int i = 0; i < compactFaces.length; i += VERTICES_PER_FACE) {
+                result.faces.add(new Face(new int[]{compactFaces[i], compactFaces[i + 1], compactFaces[i + 2]}));
+            }
+            return result;
+        }
         for (Vertex vertex : this.vertices) result.vertices.add(vertex.copy());
         for (Face face : this.faces) result.faces.add(face.copy());
         return result;

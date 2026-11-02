@@ -16,9 +16,11 @@ import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RawMeshTest {
 
@@ -137,6 +139,66 @@ class RawMeshTest {
 
 		assertEquals(expected.vertices, copy.vertices);
 		assertEquals(expected.faces, copy.faces);
+	}
+
+	@Test
+	void copyingACompactMeshLeavesItCompact() {
+		final RawMesh mesh = compactableMesh();
+		mesh.compact();
+
+		mesh.copy();
+
+		assertEquals(0, mesh.vertices.size());
+		assertEquals(3, mesh.getVertexCount());
+	}
+
+	@Test
+	void changingACopyOfACompactMeshLeavesTheMeshAlone() {
+		final RawMesh mesh = compactableMesh();
+		mesh.compact();
+
+		mesh.copy().applyTranslation(100F, 0F, 0F);
+
+		assertEquals(new Vector3f(1F, 2F, 3F), mesh.copy().vertices.get(0).position);
+	}
+
+	@Test
+	void meshesWithTheSameGeometryShareTheirData() {
+		final RawMesh mesh = compactableMesh();
+		final RawMesh other = compactableMesh();
+
+		mesh.compact();
+		other.compact();
+
+		assertTrue(mesh.sharesCompactDataWith(other));
+		assertEquals(2, blazeFaces(other, new Matrix4f()).size());
+		CompactArrays.clear();
+	}
+
+	@Test
+	void meshesWithDifferentGeometryKeepTheirOwnData() {
+		final RawMesh mesh = compactableMesh();
+		final RawMesh other = compactableMesh();
+		other.vertices.get(0).u = 0.125F;
+
+		mesh.compact();
+		other.compact();
+
+		assertFalse(mesh.sharesCompactDataWith(other));
+		CompactArrays.clear();
+	}
+
+	@Test
+	void changingACopyOfSharedDataLeavesTheOtherMeshAlone() {
+		final RawMesh mesh = compactableMesh();
+		final RawMesh other = compactableMesh();
+		mesh.compact();
+		other.compact();
+
+		mesh.copy().applyTranslation(100F, 0F, 0F);
+
+		assertEquals(new Vector3f(1F, 2F, 3F), other.copy().vertices.get(0).position);
+		CompactArrays.clear();
 	}
 
 	@Test

@@ -2,6 +2,7 @@ package cn.zbx1425.mtrsteamloco.render.integration;
 
 import cn.zbx1425.mtrsteamloco.Main;
 import cn.zbx1425.mtrsteamloco.MainClient;
+import cn.zbx1425.sowcerext.model.RawMesh;
 import cn.zbx1425.sowcerext.model.RawModel;
 import cn.zbx1425.sowcerext.model.loader.ObjModelLoader;
 import cn.zbx1425.sowcerext.reuse.AtlasManager;
@@ -40,6 +41,10 @@ import java.util.stream.Collectors;
 public class TrainModelPreloader {
 
     private static final int MAX_THREADS = 24;
+    /**
+     * A model with millions of faces takes gigabytes while it is being parsed, so a small heap can't run many at once.
+     */
+    private static final long HEAP_PER_THREAD_BYTES = 3L << 29;
     private static final int TIMEOUT_MINUTES = 5;
     private static final int SLOWEST_FILES_TO_LOG = 10;
 
@@ -60,7 +65,10 @@ public class TrainModelPreloader {
             tasks.add(() -> {
                 long fileStartMillis = System.currentTimeMillis();
                 try {
-                    results.put(objLocation, ObjModelLoader.parseModels(resourceManager, objLocation, atlasManager));
+                    // These stay until the reload ends, and trains only copy them
+                    Map<String, RawModel> models = ObjModelLoader.parseModels(resourceManager, objLocation, atlasManager);
+                    models.values().forEach(RawModel::compact);
+                    results.put(objLocation, models);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 } finally {
@@ -83,14 +91,15 @@ public class TrainModelPreloader {
     }
 
     private static int getThreadCount() {
-        return Math.max(1, Math.min(Runtime.getRuntime().availableProcessors() - 1, MAX_THREADS));
+        final int threadsForHeap = (int) (Runtime.getRuntime().maxMemory() / HEAP_PER_THREAD_BYTES);
+        return Math.max(1, Math.min(Math.min(Runtime.getRuntime().availableProcessors() - 1, MAX_THREADS), threadsForHeap));
     }
 
     private static int getFaceCount(Map<String, RawModel> models) {
         if (models == null) return 0;
         return models.values().stream()
                 .flatMap(model -> model.meshList.values().stream())
-                .mapToInt(mesh -> mesh.faces.size())
+                .mapToInt(RawMesh::getFaceCount)
                 .sum();
     }
 

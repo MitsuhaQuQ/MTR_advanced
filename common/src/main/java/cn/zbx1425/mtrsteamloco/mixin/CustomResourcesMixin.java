@@ -9,6 +9,7 @@ import cn.zbx1425.mtrsteamloco.render.integration.MtrModelRegistryUtil;
 import cn.zbx1425.mtrsteamloco.render.integration.TrainModelPreloader;
 import cn.zbx1425.sowcer.ContextCapability;
 import cn.zbx1425.sowcer.util.GlStateTracker;
+import cn.zbx1425.sowcerext.model.CompactArrays;
 import cn.zbx1425.sowcerext.model.loader.ObjModelLoader;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -62,6 +63,7 @@ public class CustomResourcesMixin {
     private static void reloadTail(ResourceManager manager, CallbackInfo ci) {
         DeferredModelUpload.finish();
         ObjModelLoader.clearPreloadedModels();
+        Main.LOGGER.info("Shared geometry saved " + CompactArrays.clear() / (1024 * 1024) + " MB");
         // Most of what a reload allocates is garbage by now, and only a full collection hands the memory back
         long gcStartNanos = System.nanoTime();
         System.gc();

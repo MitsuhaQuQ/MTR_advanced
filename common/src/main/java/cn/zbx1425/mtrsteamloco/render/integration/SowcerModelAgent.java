@@ -24,7 +24,7 @@ public class SowcerModelAgent extends ModelMapper {
         this.bbCoords = bbCoords;
         if (DeferredModelUpload.isActive() && rawModel.sourceLocation == null) {
             this.pendingModel = rawModel;
-            DeferredModelUpload.add(this);
+            DeferredModelUpload.add(this, rawModel);
         } else {
             long startNanos = System.nanoTime();
             this.uploadedModel = MainClient.modelManager.uploadVertArrays(rawModel);
