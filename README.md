@@ -11,7 +11,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 **Rails and nodes**
 
 - Rail directions go from 16 fixed directions to 0.1° precision, with long-distance geometry fixes and two-arc connections.
-- Right-click a node with the brush to enter an exact angle. Connected rails are rebuilt immediately, so there is no need to remove them first.
+- Right-click a node with the brush to enter an exact angle from -180° to 180°. Rails stay on the side of the node they leave from, and connected rails are rebuilt immediately, so there is no need to remove them first.
 - Holding a rail tool shows node direction lines. Holding the brush shows the angle and the slope of connected rails.
 - Node rotation rejects angles that would make a rail double back on itself, and reports the error in chat.
 
@@ -109,7 +109,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 The stages above describe the work as a whole. This is the order it is being done in:
 
 1. Finish what is in progress: in-game testing of the latest timetable work and fixes, then commit it.
-2. Faster resource pack loading: parse JSON in parallel, copy models less and time what isn't measured yet.
+2. Faster resource pack loading, by doing less work when parsing OBJ models.
 3. Run logic, part 1: move decisions about services (taking the next service, changing routes, aligning after a restart) out of the Minecraft classes, so a whole day of a network can be simulated in automated tests.
 4. Choosing the turn-back at terminals, starting with reversing sidings after the platform.
 5. Path boundaries as a dashboard filter.
