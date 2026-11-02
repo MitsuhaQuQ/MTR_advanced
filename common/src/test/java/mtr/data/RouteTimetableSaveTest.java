@@ -117,6 +117,74 @@ class RouteTimetableSaveTest {
 	}
 
 	@Test
+	void servicesCarryingOnSurviveSaving() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.timetable.services.addAll(Arrays.asList(1000, 2000));
+		route.timetable.links.put(1000, new RouteTimetable.ServiceLink(55, 9000, 3));
+		route.addTable(0);
+		route.timetable.getTable(1).services.add(4000);
+		route.timetable.getTable(1).links.put(4000, new RouteTimetable.ServiceLink(66, 8000, -1));
+
+		final Route newRoute = saveAndLoad(route);
+		final RouteTimetable.ServiceLink link = newRoute.timetable.links.get(1000);
+		assertEquals(55, link.routeId);
+		assertEquals(9000, link.service);
+		assertEquals(3, link.fromStop);
+		assertEquals(66, newRoute.timetable.getTable(1).links.get(4000).routeId);
+		assertEquals(-1, newRoute.timetable.getTable(1).links.get(4000).fromStop);
+
+		final Route copy = route.duplicate();
+		assertEquals(9000, copy.timetable.links.get(1000).service);
+		assertEquals(8000, copy.timetable.getTable(1).links.get(4000).service);
+	}
+
+	@Test
+	void linksOfRemovedServicesGoAway() {
+		final RouteTimetable timetable = new RouteTimetable();
+		timetable.services.add(1000);
+		timetable.links.put(1000, new RouteTimetable.ServiceLink(55, 9000, -1));
+		timetable.links.put(2000, new RouteTimetable.ServiceLink(55, 9000, -1));
+		timetable.sanitize();
+
+		assertEquals(1, timetable.links.size());
+		assertTrue(timetable.links.containsKey(1000));
+	}
+
+	@Test
+	void theJoinStopOfALoopSurvivesSaving() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.platformIds.add(new Route.RoutePlatform(3));
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.timetable.entryPlatformId = 3;
+
+		final Route newRoute = saveAndLoad(route);
+		assertEquals(2, newRoute.getLoopEntryStop());
+	}
+
+	@Test
+	void onlyALoopCanBeJoinedPartOfTheWayRound() {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.platformIds.add(new Route.RoutePlatform(3));
+		route.timetable.entryPlatformId = 2;
+		assertEquals(0, route.getLoopEntryStop());
+
+		route.platformIds.add(new Route.RoutePlatform(1));
+		assertEquals(1, route.getLoopEntryStop());
+
+		route.platformIds.get(1).pass = true;
+		assertEquals(0, route.getLoopEntryStop());
+		route.platformIds.get(1).pass = false;
+
+		route.timetable.entryPlatformId = 99;
+		assertEquals(0, route.getLoopEntryStop());
+	}
+
+	@Test
 	void timesGoWithTheirPlatformWhenStopsChange() {
 		final Route route = new Route(TransportMode.TRAIN);
 		route.platformIds.add(new Route.RoutePlatform(1));

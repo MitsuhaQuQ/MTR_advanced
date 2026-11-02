@@ -61,6 +61,13 @@ public class DataCache {
 			mapIds(depotIdMap, depots);
 			mapIds(liftsServerIdMap, liftsServer);
 			Route.applyLineColors(routes);
+			routes.forEach(route -> route.timetable.clearLinkedServices());
+			routes.forEach(route -> route.timetable.getTables().forEach(table -> table.links.values().forEach(link -> {
+				final Route linkedRoute = routeIdMap.get(link.routeId);
+				if (linkedRoute != null) {
+					linkedRoute.timetable.addLinkedService(link.service);
+				}
+			})));
 
 			routeIdToOneDepot.clear();
 			routes.forEach(route -> route.platformIds.removeIf(platformId -> !platformIdMap.containsKey(platformId.platformId)));

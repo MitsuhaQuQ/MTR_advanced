@@ -71,6 +71,8 @@ public final class Route extends NameColorDataBase implements IGui {
 	private static final String KEY_TIMETABLE_NAME = "timetable_name";
 	private static final String KEY_TIMETABLE_WEEKDAYS = "timetable_weekdays";
 	private static final String KEY_TIMETABLE_TABLES = "timetable_tables";
+	private static final String KEY_ENTRY_PLATFORM = "entry_platform";
+	private static final String KEY_TIMETABLE_LINKS = "timetable_links";
 	private static final String KEY_PLAN_ARRIVALS = "plan_arrivals";
 	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
 	private static final String KEY_OVERTAKES = "overtakes";
@@ -147,6 +149,8 @@ public final class Route extends NameColorDataBase implements IGui {
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> timetable.services.add(service.asIntegerValue().asInt()));
 		timetable.name = messagePackHelper.getString(KEY_TIMETABLE_NAME);
 		timetable.weekdays = messagePackHelper.getInt(KEY_TIMETABLE_WEEKDAYS, RouteTimetable.ALL_WEEKDAYS);
+		timetable.entryPlatformId = messagePackHelper.getLong(KEY_ENTRY_PLATFORM);
+		readLinks(messagePackHelper, timetable);
 
 		final int[] planIndex = {0, 0, 0};
 		messagePackHelper.iterateArrayValue(KEY_PLAN_ARRIVALS, value -> {
@@ -283,6 +287,8 @@ public final class Route extends NameColorDataBase implements IGui {
 
 		messagePacker.packString(KEY_TIMETABLE_NAME).packString(timetable.name);
 		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(timetable.weekdays);
+		messagePacker.packString(KEY_ENTRY_PLATFORM).packLong(timetable.entryPlatformId);
+		writeLinks(messagePacker, timetable);
 		messagePacker.packString(KEY_TIMETABLE_TABLES).packArrayHeader(timetable.getTableCount() - 1);
 		for (int i = 1; i < timetable.getTableCount(); i++) {
 			writeTable(messagePacker, i);
@@ -299,7 +305,46 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 23 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 25 + (pathData.isEmpty() ? 0 : 1);
+	}
+
+	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
+		final List<Long> values = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_LINKS, value -> values.add(value.asIntegerValue().asLong()));
+		for (int i = 0; i + 3 < values.size(); i += 4) {
+			table.links.put(values.get(i).intValue(), new RouteTimetable.ServiceLink(values.get(i + 1), values.get(i + 2).intValue(), values.get(i + 3).intValue()));
+		}
+	}
+
+	private static void writeLinks(MessagePacker messagePacker, RouteTimetable table) throws IOException {
+		messagePacker.packString(KEY_TIMETABLE_LINKS).packArrayHeader(table.links.size() * 4);
+		for (final Map.Entry<Integer, RouteTimetable.ServiceLink> entry : table.links.entrySet()) {
+			messagePacker.packLong(entry.getKey());
+			messagePacker.packLong(entry.getValue().routeId);
+			messagePacker.packLong(entry.getValue().service);
+			messagePacker.packLong(entry.getValue().fromStop);
+		}
+	}
+
+	/**
+	 * Trains from the depot can join a timetabled loop part of the way round, keeping to the timetable from that stop. This
+	 * only works on a loop where the first and last stops are the same, and at a stop where trains actually stop.
+	 *
+	 * @return the stop where trains join this route, or 0 for the first stop
+	 */
+	public int getLoopEntryStop() {
+		if (timetable.entryPlatformId != 0 && isLoop()) {
+			for (int i = 1; i < platformIds.size() - 1; i++) {
+				if (platformIds.get(i).platformId == timetable.entryPlatformId) {
+					return platformIds.get(i).pass ? 0 : i;
+				}
+			}
+		}
+		return 0;
+	}
+
+	public boolean isLoop() {
+		return platformIds.size() > 2 && getFirstPlatformId() == getLastPlatformId();
 	}
 
 	private void readTable(MessagePackHelper messagePackHelper) {
@@ -308,6 +353,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		table.weekdays = messagePackHelper.getInt(KEY_TIMETABLE_WEEKDAYS, RouteTimetable.ALL_WEEKDAYS);
 		table.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> table.services.add(service.asIntegerValue().asInt()));
+		readLinks(messagePackHelper, table);
 		timetable.addTable(table);
 
 		final int tableIndex = timetable.getTableCount() - 1;
@@ -334,7 +380,8 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	private void writeTable(MessagePacker messagePacker, int tableIndex) throws IOException {
 		final RouteTimetable table = timetable.getTable(tableIndex);
-		messagePacker.packMapHeader(7);
+		messagePacker.packMapHeader(8);
+		writeLinks(messagePacker, table);
 		messagePacker.packString(KEY_TIMETABLE_NAME).packString(table.name);
 		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(table.weekdays);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(table.marginPercent);
@@ -539,12 +586,14 @@ public final class Route extends NameColorDataBase implements IGui {
 			route.platformIds.add(newRoutePlatform);
 		});
 		route.timetable.enabled = timetable.enabled;
+		route.timetable.entryPlatformId = timetable.entryPlatformId;
 		timetable.getTables().forEach(table -> {
 			final RouteTimetable newTable = table == timetable ? route.timetable : new RouteTimetable();
 			newTable.name = table.name;
 			newTable.weekdays = table.weekdays;
 			newTable.marginPercent = table.marginPercent;
 			newTable.services.addAll(table.services);
+			newTable.links.putAll(table.links);
 			if (table != timetable) {
 				route.timetable.addTable(newTable);
 			}
@@ -731,6 +780,7 @@ public final class Route extends NameColorDataBase implements IGui {
 
 	private void readTimetable(FriendlyByteBuf packet) {
 		timetable.enabled = packet.readBoolean();
+		timetable.entryPlatformId = packet.readLong();
 		timetable.clearOtherTables();
 		platformIds.forEach(RoutePlatform::clearOtherTables);
 
@@ -778,10 +828,20 @@ public final class Route extends NameColorDataBase implements IGui {
 				table.services.add(service);
 			}
 		}
+		table.links.clear();
+		final int linkCount = packet.readInt();
+		for (int i = 0; i < linkCount; i++) {
+			final int service = packet.readInt();
+			final RouteTimetable.ServiceLink link = new RouteTimetable.ServiceLink(packet.readLong(), packet.readInt(), packet.readInt());
+			if (i < RouteTimetable.MAX_SERVICES) {
+				table.links.put(service, link);
+			}
+		}
 	}
 
 	private void writeTimetable(FriendlyByteBuf packet) {
 		packet.writeBoolean(timetable.enabled);
+		packet.writeLong(timetable.entryPlatformId);
 		packet.writeInt(timetable.getTableCount());
 		for (int i = 0; i < timetable.getTableCount(); i++) {
 			final RouteTimetable table = timetable.getTable(i);
@@ -790,6 +850,13 @@ public final class Route extends NameColorDataBase implements IGui {
 			packet.writeInt(table.marginPercent);
 			packet.writeInt(table.services.size());
 			table.services.forEach(packet::writeInt);
+			packet.writeInt(table.links.size());
+			table.links.forEach((service, link) -> {
+				packet.writeInt(service);
+				packet.writeLong(link.routeId);
+				packet.writeInt(link.service);
+				packet.writeInt(link.fromStop);
+			});
 
 			packet.writeInt(platformIds.size());
 			for (final RoutePlatform routePlatform : platformIds) {

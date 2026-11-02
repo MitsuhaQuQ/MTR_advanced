@@ -268,7 +268,7 @@ public class TrainClient extends Train implements IGui {
 		if (depot == null || routeIds.isEmpty()) {
 			final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
 			depot = siding == null ? null : ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
-			routeIds = depot == null ? new ArrayList<>() : depot.getRouteIds(trainId, ClientData.DATA_CACHE);
+			routeIds = !tripRouteIds.isEmpty() ? new ArrayList<>(tripRouteIds) : depot == null ? new ArrayList<>() : depot.getRouteIds(trainId, ClientData.DATA_CACHE);
 			if (depot != null) {
 				depot.lastDeployedMillis = System.currentTimeMillis();
 			}
@@ -334,6 +334,15 @@ public class TrainClient extends Train implements IGui {
 		path.addAll(train.path);
 		distances.addAll(train.distances);
 		ridingEntities.addAll(train.ridingEntities);
+
+		// Going onto or off a service running through to another line changes the routes the train announces
+		if (!tripRouteIds.equals(train.tripRouteIds)) {
+			tripRouteIds.clear();
+			tripRouteIds.addAll(train.tripRouteIds);
+			routeIds = new ArrayList<>();
+		}
+		repeatIndex1 = train.repeatIndex1;
+		repeatIndex2 = train.repeatIndex2;
 
 		speed = train.speed;
 		railProgress = train.railProgress;

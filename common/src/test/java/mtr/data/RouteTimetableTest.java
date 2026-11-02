@@ -121,6 +121,44 @@ class RouteTimetableTest {
 	}
 
 	@Test
+	void servicesThatOnlyContinueAnotherRouteGetNoTrainOfTheirOwn() {
+		final RouteTimetable timetable = timetable(10, 20);
+		timetable.addLinkedService((int) (10 * MINUTE));
+
+		assertEquals(START + 20 * MINUTE, timetable.getNextService(START, START + DAY, time -> false));
+		assertEquals(START + 20 * MINUTE, timetable.getLatestService(START, START + 15 * MINUTE + 10 * MINUTE, time -> false));
+		assertEquals(0, timetable.getLatestService(START, START + 15 * MINUTE, time -> false));
+
+		timetable.clearLinkedServices();
+		assertEquals(START + 10 * MINUTE, timetable.getNextService(START, START + DAY, time -> false));
+	}
+
+	@Test
+	void aLinkIsFoundFromTheServiceOfItsDay() {
+		TimetableConfig.set("UTC", 0);
+		final RouteTimetable weekday = timetable(10);
+		weekday.weekdays = WEEKDAYS;
+		weekday.links.put((int) (10 * MINUTE), new RouteTimetable.ServiceLink(1, 0, -1));
+		final RouteTimetable weekend = timetable(10);
+		weekend.weekdays = WEEKENDS;
+		weekend.links.put((int) (10 * MINUTE), new RouteTimetable.ServiceLink(2, 0, -1));
+		weekday.addTable(weekend);
+		weekday.sanitize();
+
+		assertEquals(1, weekday.getLink(MONDAY + 10 * MINUTE).routeId);
+		assertEquals(2, weekday.getLink(MONDAY + 5 * DAY + 10 * MINUTE).routeId);
+		assertNull(weekday.getLink(MONDAY + 11 * MINUTE));
+	}
+
+	@Test
+	void aLinkedServiceIsTheOneClosestToThePlan() {
+		assertEquals(START + 30 * MINUTE, RouteTimetable.getClosestService(START + 20 * MINUTE, (int) (30 * MINUTE)));
+		assertEquals(START + 30 * MINUTE, RouteTimetable.getClosestService(START + 40 * MINUTE, (int) (30 * MINUTE)));
+		assertEquals(START + DAY + 5 * MINUTE, RouteTimetable.getClosestService(START + DAY - MINUTE, (int) (5 * MINUTE)));
+		assertEquals(START - 5 * MINUTE, RouteTimetable.getClosestService(START + MINUTE, (int) (DAY - 5 * MINUTE)));
+	}
+
+	@Test
 	void emptyOrDisabledTimetableIsNotActive() {
 		assertFalse(timetable().isActive());
 		final RouteTimetable timetable = timetable(10);

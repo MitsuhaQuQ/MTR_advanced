@@ -51,9 +51,13 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	public final boolean isManualAllowed;
 	public final int maxManualSpeed;
 	public final int manualToAutomaticTime;
-	public final List<PathData> path;
+	public List<PathData> path;
 
-	protected final List<Double> distances;
+	protected List<Double> distances;
+	/**
+	 * The routes of the path, when it isn't the usual path of the depot, such as a service running through to another line.
+	 */
+	protected final List<Long> tripRouteIds = new ArrayList<>();
 	protected int repeatIndex1;
 	protected int repeatIndex2;
 	protected final Set<UUID> ridingEntities = new HashSet<>();
@@ -222,6 +226,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		}
 		repeatIndex1 = packet.readInt();
 		repeatIndex2 = packet.readInt();
+		final int tripRouteCount = packet.readInt();
+		for (int i = 0; i < tripRouteCount; i++) {
+			tripRouteIds.add(packet.readLong());
+		}
 
 		sidingId = packet.readLong();
 		railLength = RailwayData.round(packet.readFloat(), 3);
@@ -314,6 +322,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		}
 		packet.writeInt(repeatIndex1);
 		packet.writeInt(repeatIndex2);
+		packet.writeInt(tripRouteIds.size());
+		tripRouteIds.forEach(packet::writeLong);
 
 		packet.writeLong(sidingId);
 		packet.writeFloat(railLength);

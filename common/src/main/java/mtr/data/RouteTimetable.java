@@ -2,7 +2,11 @@ package mtr.data;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.LongPredicate;
 import java.util.stream.Collectors;
 
@@ -20,6 +24,10 @@ public class RouteTimetable {
 	public final List<Integer> services = new ArrayList<>();
 	public String name = "";
 	/**
+	 * On a loop, the platform where trains from the depot join it instead of its first stop, or 0. See {@link Route#getLoopEntryStop()}.
+	 */
+	public long entryPlatformId;
+	/**
 	 * The days this table runs on, with the lowest bit for Monday. See {@link TimetableConfig#getWeekday(long)}.
 	 */
 	public int weekdays = ALL_WEEKDAYS;
@@ -27,8 +35,16 @@ public class RouteTimetable {
 	 * Changes whenever the times of this timetable change, so plans made from it can be rebuilt.
 	 */
 	public int revision;
+	/**
+	 * Services of this table that carry on onto a service of another route, by the service they continue from.
+	 */
+	public final Map<Integer, ServiceLink> links = new HashMap<>();
 	private final List<RouteTimetable> otherTables = new ArrayList<>();
 	private final List<Integer> allServices = new ArrayList<>();
+	/**
+	 * Services that only run as the continuation of a service of another route, so no depot sends a train for them.
+	 */
+	private final Set<Integer> linkedServices = new HashSet<>();
 
 	public static final int MAX_TABLES = 16;
 	public static final int MAX_NAME_LENGTH = 32;
@@ -67,6 +83,7 @@ public class RouteTimetable {
 		marginPercent = Math.max(0, Math.min(marginPercent, MAX_MARGIN_PERCENT));
 		weekdays &= ALL_WEEKDAYS;
 		name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
+		links.keySet().retainAll(services);
 
 		otherTables.forEach(RouteTimetable::sanitize);
 		allServices.clear();
@@ -111,6 +128,21 @@ public class RouteTimetable {
 
 	public void clearOtherTables() {
 		otherTables.clear();
+	}
+
+	public void clearLinkedServices() {
+		linkedServices.clear();
+	}
+
+	public void addLinkedService(int service) {
+		linkedServices.add(service);
+	}
+
+	/**
+	 * @return the service this one carries on onto, or null if the train doesn't leave this route's path
+	 */
+	public ServiceLink getLink(long serviceMillis) {
+		return getTable(getTableIndex(serviceMillis)).links.get((int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY));
 	}
 
 	public boolean runsOn(int weekday) {
@@ -232,7 +264,7 @@ public class RouteTimetable {
 				if (serviceMillis >= beforeMillis) {
 					return 0;
 				}
-				if (serviceMillis >= fromMillis && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
+				if (serviceMillis >= fromMillis && !linkedServices.contains(service) && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
 					return serviceMillis;
 				}
 			}
@@ -252,12 +284,45 @@ public class RouteTimetable {
 				if (serviceMillis <= afterMillis) {
 					return 0;
 				}
-				if (serviceMillis <= latestMillis && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
+				if (serviceMillis <= latestMillis && !linkedServices.contains(runningServices.get(i)) && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
 					return serviceMillis;
 				}
 			}
 		}
 		return 0;
+	}
+
+	/**
+	 * @return the time of this service closest to a planned time as a full timestamp
+	 */
+	public static long getClosestService(long plannedMillis, int service) {
+		final long dayMillis = plannedMillis - Math.floorMod(plannedMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		long closest = dayMillis + service;
+		for (final long day : new long[]{-Depot.MILLISECONDS_PER_DAY, Depot.MILLISECONDS_PER_DAY}) {
+			if (Math.abs(dayMillis + day + service - plannedMillis) < Math.abs(closest - plannedMillis)) {
+				closest = dayMillis + day + service;
+			}
+		}
+		return closest;
+	}
+
+	/**
+	 * A service carrying on onto a service of another route, such as a loop's 07:00 running through to another line at 07:32.
+	 */
+	public static class ServiceLink {
+
+		public final long routeId;
+		public final int service;
+		/**
+		 * The stop of this route where the train leaves it, or -1 for the last stop.
+		 */
+		public final int fromStop;
+
+		public ServiceLink(long routeId, int service, int fromStop) {
+			this.routeId = routeId;
+			this.service = service;
+			this.fromStop = fromStop;
+		}
 	}
 
 	/**
