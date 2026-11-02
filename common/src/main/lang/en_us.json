@@ -1,4 +1,6 @@
 {
+  "gui.mtr.platform_timetable_boundary_on": "Timetable boundary: yes (services can leave or join routes here)",
+  "gui.mtr.platform_timetable_boundary_off": "Timetable boundary: no",
   "gui.mtr.timetable_editor_managed": "This route is managed in the advanced editor, so it can only be viewed here. The editor can hand it back to in-game editing.",
   "gui.mtr.advanced_editor": "Advanced Editor",
   "gui.mtr.use_deterministic_path": "Use deterministic routing",

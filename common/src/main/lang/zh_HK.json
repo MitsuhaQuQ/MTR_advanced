@@ -1,4 +1,6 @@
 {
+  "gui.mtr.platform_timetable_boundary_on": "時刻邊界：是（班次可以在這裡接出或接入其他路線）",
+  "gui.mtr.platform_timetable_boundary_off": "時刻邊界：否",
   "gui.mtr.timetable_editor_managed": "這條路線由進階編輯器管理，這裡只能查看。可以在進階編輯器裡把它交回遊戲內編輯。",
   "gui.mtr.advanced_editor": "進階編輯器",
   "gui.mtr.use_deterministic_path": "使用確定性尋路",

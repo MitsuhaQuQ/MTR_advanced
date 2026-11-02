@@ -76,6 +76,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_TRIP_REPEAT_2 = "trip_repeat_2";
 	private static final String KEY_TRIP_LAP_STOP = "trip_lap_stop";
 	private static final String KEY_TRIP_ENTRY_RAIL = "trip_entry_rail";
+	private static final String KEY_TRIP_ENTRIES = "trip_entries";
 	private static final String KEY_TRIP_BASE = "trip_base";
 	private static final String KEY_TRIP_TURN_BACK = "trip_turn_back";
 	private static final String KEY_TRIP_TURN_BACK_STOPS = "trip_turn_back_stops";
@@ -908,6 +909,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		private final int lapStart;
 		private final boolean isLapReversed;
 		private final int entryRail;
+		private final Map<Long, Integer> entryStops;
+		private final Map<Long, List<PathData>> entryLeads;
+
+		public TripTail(String key, List<Long> routeIds, Map<Long, Integer> cutStops, int leaveRail, List<PathData> path, SavedRailBase lastPlatform, int lapStart, boolean isLapReversed, int entryRail) {
+			this(key, routeIds, cutStops, leaveRail, path, lastPlatform, lapStart, isLapReversed, entryRail, new HashMap<>(), new HashMap<>());
+		}
 
 		/**
 		 * @param key           the key of this way through, see {@link #getKey(List)}
@@ -919,8 +926,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * @param lapStart      for a loop at the end, the rail of {@code path} where its first stop is, or {@link #NO_RAIL}
 		 * @param isLapReversed true if a train at the end of a lap goes back along the rail it came in on
 		 * @param entryRail     the rail of {@code path} where a train joins that loop part of the way round, or {@link #NO_RAIL}
+		 * @param entryStops    for routes other than such a loop joined part of the way along, the stop where the train joins them
+		 * @param entryLeads    for those routes, the path from their first stop to that stop, which the train doesn't run but
+		 *                      plans by, as its service counts from the first stop
 		 */
-		public TripTail(String key, List<Long> routeIds, Map<Long, Integer> cutStops, int leaveRail, List<PathData> path, SavedRailBase lastPlatform, int lapStart, boolean isLapReversed, int entryRail) {
+		public TripTail(String key, List<Long> routeIds, Map<Long, Integer> cutStops, int leaveRail, List<PathData> path, SavedRailBase lastPlatform, int lapStart, boolean isLapReversed, int entryRail, Map<Long, Integer> entryStops, Map<Long, List<PathData>> entryLeads) {
 			this.key = key;
 			this.routeIds = routeIds;
 			this.cutStops = cutStops;
@@ -930,6 +940,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			this.lapStart = lapStart;
 			this.isLapReversed = isLapReversed;
 			this.entryRail = entryRail;
+			this.entryStops = entryStops;
+			this.entryLeads = entryLeads;
 		}
 
 		/**
@@ -1330,6 +1342,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 */
 		public final int changeStop;
 		private final Map<Long, Integer> cutStops = new HashMap<>();
+		/**
+		 * Routes the trip joins part of the way along, by the stop where it joins, with the fastest times of each from its
+		 * first stop to there. See {@link TripTail#entryLeads}.
+		 */
+		private final Map<Long, Integer> entryStops = new HashMap<>();
+		private final Map<Long, long[][]> entryTimes = new HashMap<>();
+		private final Map<Long, List<PathData>> entryLeads = new HashMap<>();
 		private final int joinIndex;
 		private final int lapEnd;
 
@@ -1342,6 +1361,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			changeStop = -1;
 			routeIds.addAll(tripTail.routeIds);
 			cutStops.putAll(tripTail.cutStops);
+			entryStops.putAll(tripTail.entryStops);
+			entryLeads.putAll(tripTail.entryLeads);
 			this.joinIndex = joinIndex;
 			this.lapEnd = lapEnd;
 			this.path.addAll(path);
@@ -1398,6 +1419,23 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			repeatIndex2 = messagePackHelper.getInt(KEY_TRIP_REPEAT_2);
 			lapStop = messagePackHelper.getInt(KEY_TRIP_LAP_STOP);
 			entryRail = messagePackHelper.getInt(KEY_TRIP_ENTRY_RAIL, -1);
+			// Each route as its id, the stop, how many stops, then the arrival and departure at each
+			final List<Long> entryValues = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_TRIP_ENTRIES, value -> entryValues.add(value.asIntegerValue().asLong()));
+			for (int i = 0; i + 2 < entryValues.size(); ) {
+				final long routeId = entryValues.get(i);
+				final int count = entryValues.get(i + 2).intValue();
+				if (count < 0 || i + 3 + count * 2 > entryValues.size()) {
+					break;
+				}
+				entryStops.put(routeId, entryValues.get(i + 1).intValue());
+				final long[][] times = new long[count][];
+				for (int j = 0; j < count; j++) {
+					times[j] = new long[]{entryValues.get(i + 3 + j * 2), entryValues.get(i + 4 + j * 2)};
+				}
+				entryTimes.put(routeId, times);
+				i += 3 + count * 2;
+			}
 			messagePackHelper.iterateArrayValue(KEY_PATH, value -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		}
 
@@ -1412,6 +1450,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			tripPath.stopTimes.copyFrom(newStopTimes);
 			tripPath.stopTimes.cutStops.clear();
 			tripPath.stopTimes.cutStops.putAll(tripPath.cutStops);
+			tripPath.stopTimes.entryStops.clear();
+			tripPath.stopTimes.entryStops.putAll(tripPath.entryStops);
 			return tripPath;
 		}
 
@@ -1452,6 +1492,17 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		private void generateTimes(Siding siding) {
 			stopTimes.cutStops.clear();
 			stopTimes.cutStops.putAll(cutStops);
+			// The way from the first stop of a route joined part of the way along is only run in thought, for its plan
+			entryLeads.forEach((routeId, lead) -> {
+				final StopTimes leadTimes = siding.calculateStopTimes(lead);
+				if (leadTimes.stops.size() == entryStops.getOrDefault(routeId, -1) + 1) {
+					entryTimes.put(routeId, leadTimes.stops.stream().map(stop -> new long[]{stop.arrivalMillis, stop.departureMillis}).toArray(long[][]::new));
+				}
+			});
+			stopTimes.entryStops.clear();
+			stopTimes.entryStops.putAll(entryStops);
+			stopTimes.entryTimes.clear();
+			stopTimes.entryTimes.putAll(entryTimes);
 			stopTimes.tailJoinStart = entryRail;
 			stopTimes.tailJoinEnd = entryRail < 0 ? 0 : lapStop;
 			stopTimes.tailLapEnd = repeatIndex2;
@@ -1465,7 +1516,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		private void toMessagePack(MessagePacker messagePacker) throws IOException {
-			messagePacker.packMapHeader(14);
+			messagePacker.packMapHeader(15);
 			messagePacker.packString(KEY_TRIP_KEY).packString(key);
 			messagePacker.packString(KEY_TRIP_CHANGE_STOP).packInt(changeStop);
 			messagePacker.packString(KEY_TRIP_BASE).packString(tripKey);
@@ -1489,6 +1540,20 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			messagePacker.packString(KEY_TRIP_REPEAT_2).packInt(repeatIndex2);
 			messagePacker.packString(KEY_TRIP_LAP_STOP).packInt(lapStop);
 			messagePacker.packString(KEY_TRIP_ENTRY_RAIL).packInt(entryRail);
+			final List<Long> entryValues = new ArrayList<>();
+			entryTimes.forEach((routeId, times) -> {
+				entryValues.add(routeId);
+				entryValues.add((long) entryStops.getOrDefault(routeId, 0));
+				entryValues.add((long) times.length);
+				for (final long[] time : times) {
+					entryValues.add(time[0]);
+					entryValues.add(time[1]);
+				}
+			});
+			messagePacker.packString(KEY_TRIP_ENTRIES).packArrayHeader(entryValues.size());
+			for (final long value : entryValues) {
+				messagePacker.packLong(value);
+			}
 			RailwayData.writeMessagePackDataset(messagePacker, path, KEY_PATH);
 		}
 	}
@@ -1524,6 +1589,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		private final List<Stop> tailJoinStops = new ArrayList<>();
 		private final Map<Integer, Integer> joinStopLaps = new HashMap<>();
 		private final Map<Long, Map<Integer, RouteTimetable.StopPlan>> plans = new HashMap<>();
+		/**
+		 * Routes joined part of the way along: the stop where the train joins, and the fastest times from the first stop.
+		 */
+		private final Map<Long, Integer> entryStops = new HashMap<>();
+		private final Map<Long, long[][]> entryTimes = new HashMap<>();
 
 		/**
 		 * Stop times of a path worked out elsewhere, for running services without a world.
@@ -1536,6 +1606,17 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				stopTimes.add((int) stops[i][0], stops[i][1], null, stops[i][2], stops[i][3], i == 0);
 			}
 			return stopTimes;
+		}
+
+		/**
+		 * A route the path joins part of the way along, for running services without a world.
+		 *
+		 * @param times the fastest arrival and departure at each stop of the route up to that stop, from its first stop
+		 */
+		void setEntry(long routeId, int stop, long[][] times) {
+			entryStops.put(routeId, stop);
+			entryTimes.put(routeId, times);
+			plans.clear();
 		}
 
 		private void clear() {
@@ -1559,6 +1640,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			joinArrival = stopTimes.joinArrival;
 			cutStops.clear();
 			cutStops.putAll(stopTimes.cutStops);
+			entryStops.clear();
+			entryStops.putAll(stopTimes.entryStops);
+			entryTimes.clear();
+			entryTimes.putAll(stopTimes.entryTimes);
 			tailJoinStart = stopTimes.tailJoinStart;
 			tailJoinEnd = stopTimes.tailJoinEnd;
 			tailLapEnd = stopTimes.tailLapEnd;
@@ -1698,6 +1783,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 					ServiceExceptions.applyTo(stopPlan, routeStop.arrivalRoute.id == routeId ? stopExceptions.get(routeStop.arrivalIndex) : null, routeStop.departureRoute.id == routeId ? stopExceptions.get(routeStop.departureIndex) : null);
 				}
 				stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
+				if (stopPlan.startsRoute && routeStop.departureIndex > 0) {
+					stopPlan.routeStartOffsetMillis = getEntryOffset(routeStop.departureRoute, routeStop.departureIndex, departureTable, routeStop.departureRoute.id == routeId ? stopExceptions : null);
+				}
 				stopPlan.route = stopPlan.startsRoute ? routeStop.departureRoute : null;
 				stopPlan.waitsForService = stopPlan.startsRoute && routeStop.departureRoute.timetable.isActive();
 				stopPlans.add(stopPlan);
@@ -1709,6 +1797,23 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			(currentRoute == null ? timetable : currentRoute.timetable.getTable(table)).applyPlan(stopPlans);
 			RouteTimetable.linkTurnBacks(stopPlans, isTurnBacks);
 			return newPlans;
+		}
+
+		/**
+		 * A route joined part of the way along still runs to the times of its services, which count from its first stop.
+		 *
+		 * @return the planned time from the first stop of the route to the stop where the train joins it
+		 */
+		private long getEntryOffset(Route route, int entryStop, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
+			final long[][] leadTimes = entryTimes.get(route.id);
+			if (leadTimes == null || entryStop >= route.platformIds.size()) {
+				return 0;
+			}
+			final long[][] times = new long[route.platformIds.size()][];
+			for (int i = 0; i < times.length; i++) {
+				times[i] = i < leadTimes.length ? leadTimes[i] : new long[]{-1, -1};
+			}
+			return RouteTimetable.getStopPlans(route.platformIds, times, route.timetable.getTable(table).marginPercent, table, stopExceptions).get(entryStop).arrivalMillis;
 		}
 
 		/**
@@ -1776,13 +1881,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			Route lastRoute = null;
 			for (final Route route : routes) {
 				final int stopCount = cutStops.containsKey(route.id) ? Math.min(cutStops.get(route.id) + 1, route.platformIds.size()) : route.platformIds.size();
-				for (int i = 0; i < stopCount; i++) {
+				// A route joined part of the way along starts at the stop where the train joins it
+				final int firstStop = lastRoute == null ? 0 : Math.min(entryStops.getOrDefault(route.id, 0), Math.max(0, stopCount - 1));
+				for (int i = firstStop; i < stopCount; i++) {
 					final Route.RoutePlatform routePlatform = route.platformIds.get(i);
 					final RouteStop lastStop = routeStops.isEmpty() ? null : routeStops.get(routeStops.size() - 1);
-					if (i == 0 && lastStop != null && lastStop.arrivalRoute == lastRoute && lastStop.platformId == routePlatform.platformId) {
-						routeStops.set(routeStops.size() - 1, new RouteStop(lastStop.arrivalRoute, lastStop.arrivalIndex, route, 0, true));
+					if (i == firstStop && lastStop != null && lastStop.arrivalRoute == lastRoute && lastStop.platformId == routePlatform.platformId) {
+						routeStops.set(routeStops.size() - 1, new RouteStop(lastStop.arrivalRoute, lastStop.arrivalIndex, route, firstStop, true));
 					} else {
-						routeStops.add(new RouteStop(route, i, route, i, i == 0 && lastRoute != null));
+						routeStops.add(new RouteStop(route, i, route, i, i == firstStop && lastRoute != null));
 					}
 				}
 				lastRoute = route;

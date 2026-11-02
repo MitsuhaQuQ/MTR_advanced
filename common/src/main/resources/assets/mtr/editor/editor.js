@@ -15,6 +15,8 @@
 	const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
 	// The same as ServiceExceptions.ADDED_STOP_MILLIS and RouteTimetable.MAX_SERVICES in the game
 	const ADDED_STOP_MILLIS = 30000, MAX_SERVICES = 4096, MAX_TABLES = 16;
+	// RouteTimetable.MAX_LAYOVER_MILLIS and MAX_STAY_MILLIS: how long a train waits for its next lap before going back to the depot
+	const MAX_LAYOVER_MILLIS = 30 * 60000, MAX_STAY_MILLIS = 8 * DAY;
 	// 1 January 1970, the first day of the epoch, was a Thursday
 	const FIRST_DAY_WEEKDAY = 3;
 
@@ -51,6 +53,8 @@
 		selected: null,
 		// A route all of whose services are selected, by double clicking one, so a drag changes the whole table
 		selectedRoute: null,
+		// The stop a service leaves from, picked before choosing the stop of another route it joins
+		pendingExit: null,
 		weekday: 0,
 		split: true,
 		treeOpen: true,
@@ -764,6 +768,8 @@
 		ctx.clip();
 		const services = line.routes.flatMap(r => r.services);
 		const selectedRoute = state.route;
+		const loopNext = new Map();
+		line.routes.filter(isLoop).forEach(r => loopRuns(r).next.forEach((following, id) => loopNext.set(id, following)));
 		services.sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
 		services.forEach(s => {
 			const times = timesOf(s);
@@ -791,7 +797,7 @@
 			ctx.setLineDash([]);
 			// Where the train carries on onto another route, or goes back to the depot
 			const [ex, ey] = points[points.length - 1];
-			if (s.link || s.returns) {
+			if (s.link || s.returns && !loopNext.has(s.id)) {
 				const next = s.link && data.routeById.get(s.link.route);
 				ctx.fillStyle = s.link ? c.ink : c.muted;
 				ctx.font = `11px ${css("--font-ui")}`;
@@ -799,6 +805,27 @@
 				ctx.fillText(s.link ? "→ " + (next ? shortName(next.name) : "?") : "回库", ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4));
 			}
 			ctx.globalAlpha = 1;
+			// On a loop, the wait at the first stop for the next lap, along the bottom row where the lap ends
+			const nextLap = loopNext.get(s.id);
+			if (nextLap) {
+				const endX = points[points.length - 1][0], endY = points[points.length - 1][1], startX = xOf(timesOf(nextLap)[0][1]);
+				ctx.globalAlpha = dim ? 0.25 : 0.8;
+				ctx.strokeStyle = colorOf(s.route.color);
+				ctx.lineWidth = isSelected ? 2 : 1;
+				ctx.setLineDash([3, 3]);
+				ctx.beginPath();
+				ctx.moveTo(endX, endY);
+				ctx.lineTo(startX, endY);
+				ctx.stroke();
+				ctx.setLineDash([]);
+				if (state.pxPerMin >= 4) {
+					ctx.fillStyle = c.muted;
+					ctx.font = `10px ${css("--font-num")}`;
+					ctx.textAlign = "left";
+					ctx.fillText("↻" + clock(nextLap.start), startX + 2, endY - 3);
+				}
+				ctx.globalAlpha = 1;
+			}
 			// A square at the end of each stop of a selected service, dragged to change how long it stops there
 			if (isSelected) {
 				timesOf(s).forEach((t, i) => {
@@ -904,6 +931,8 @@
 				${s.link ? `<dt>接续</dt><dd>${escapeHtml(next ? routeTitle(next) : "?")} ${clock(mod(s.link.toService - data.dayStartMillis, DAY))}</dd>` : ""}
 				${s.returns ? `<dt>之后</dt><dd>回库</dd>` : ""}</dl>${stopsHtml(s)}</div>`);
 		}
+		const loopRoute = s && isLoop(s.route) ? s.route : state.route && data && data.routeById.get(state.route) && isLoop(data.routeById.get(state.route)) ? data.routeById.get(state.route) : null;
+		if (loopRoute) parts.push(loopPanel(loopRoute));
 		const line = currentLine();
 		if (line) {
 			parts.push(`<h2>线路</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${r.services.length} 班</dd>`).join("")}</dl></div>`);
@@ -983,13 +1012,15 @@
 					const t = allTimes[j][i], plan = s.plans[i], exception = s.exceptions && s.exceptions.get(i);
 					const passes = kind !== "pass" && plan.passes;
 					const changed = exception && (kind === "dep" ? exception.dwell >= 0 : exception.run >= 0) || exception && exception.pass >= 0;
-					const classes = [isSelected(s) ? "hl" : "", kind === "pass" || passes ? "pass" : "", changed ? "exc" : "", kind !== "dep" && plan.tooFast ? "fast" : "", kind === "dep" && plan.overtake ? "wait" : "", exception && exception.pass >= 0 ? "pending-run" : ""].filter(Boolean).join(" ");
+					const leaves = s.link && kind !== "dep" && (s.link.fromStop < 0 ? i === r.stops.length - 1 : s.link.fromStop === i);
+					const picked = state.pendingExit && state.pendingExit.id === s.id && state.pendingExit.index === i && kind !== "dep";
+					const classes = [isSelected(s) ? "hl" : "", kind === "pass" || passes ? "pass" : "", changed ? "exc" : "", kind !== "dep" && plan.tooFast ? "fast" : "", kind === "dep" && plan.overtake ? "wait" : "", exception && exception.pass >= 0 ? "pending-run" : "", leaves ? "out" : "", picked ? "pending" : ""].filter(Boolean).join(" ");
 					const title = exception && exception.pass >= 0 ? "只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车" : plan.tooFast && kind !== "dep" ? "快过最快时刻，列车跑不到" : "";
 					const text = passes ? (kind === "arr" ? "↓ " + clock(t[0], true) : "レ") : clock(kind === "dep" ? t[1] : t[0], true);
 					return `<td class="${classes}" data-svc="${s.id}" data-stop="${i}" data-kind="${passes ? "pass" : kind}" title="${title}" tabindex="0">${text}</td>`;
 				}).join("");
 				const label = { dep: "发", arr: "到", pass: "通过" }[kind];
-				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}">${escapeHtml(shortName(stop.name))}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
+				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${stop.boundary ? "（时刻边界，可以在这里接出或接入）" : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> 界</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="车厂的列车从这里接入环线"> 入</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
 			});
 		});
 		view.innerHTML = tools + `<table class="tt">${head}<tbody>${rows.join("")}</tbody></table>`;
@@ -1089,6 +1120,8 @@
 				});
 			}]);
 			if (s.exceptions) items.push(["清除这一班的全部例外", () => edit(table => { table.exceptions = table.exceptions.filter(x => x.service !== s.service); })]);
+			if (s.link) items.push(["清除这一班的直通", () => edit(table => { table.links = table.links.filter(link => link.service !== s.service); })]);
+			items.push(["批量新建直通关系…", () => throughDialog(s.route)]);
 		} else {
 			if (middle) {
 				const routePasses = timetableOf(s.route).pass[stop];
@@ -1106,8 +1139,157 @@
 				setStopException(table, s.service, stop, { run: -1, dwell: -1 });
 			})]);
 			if (exception) items.push(["恢复按表的时刻", () => edit(table => setStopException(table, s.service, stop, { run: -1, dwell: -1, pass: -1, overtake: -1 }))]);
+			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`设为出库列车接入这条环线的站`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
+			if (isLoop(s.route) && loopEntryStop(s.route) === stop && stop > 0) items.push(["出库列车改回从首站接入", () => editTimetable(s.route, timetable => { timetable.entryPlatform = "0"; })]);
+			// Through running: leave at the last stop or a boundary, join at the first stop or a boundary
+			if (stop === n - 1 || isBoundary(s.route, stop) && !plan.passes) items.push([`设为接出点（从${stopName(s.route, stop)}直通到别的线路）`, () => {
+				state.pendingExit = { id: s.id, stop: stop === n - 1 ? -1 : stop, index: stop };
+				renderAll();
+			}]);
+			const pending = state.pendingExit && findService(state.pendingExit.id);
+			if (pending && pending.route !== s.route && (stop === 0 || isBoundary(s.route, stop))) items.push([`设为接入点（${clock(pending.start)} 班从${stopName(pending.route, state.pendingExit.index)}接到这里）`, () => {
+				setLink(pending, state.pendingExit.stop, s, stop);
+				state.pendingExit = null;
+				renderAll();
+			}]);
 		}
 		if (items.length) openMenu(e.clientX, e.clientY, items);
+	}
+
+	// ---------- Loops ----------
+	const isLoop = r => r.stops.length > 2 && r.stops[0].platformId === r.stops[r.stops.length - 1].platformId;
+
+	/** The stop where trains from the depot join a loop, which is its first stop unless another is set. */
+	function loopEntryStop(r) {
+		const platformId = timetableOf(r).entryPlatform;
+		const stop = r.stops.findIndex((s, i) => i > 0 && i < r.stops.length - 1 && s.platformId === platformId);
+		return stop > 0 && !timetableOf(r).pass[stop] ? stop : 0;
+	}
+
+	/**
+	 * How the trains of a loop go round on the chosen day, the way the game runs them: when a lap ends at the first stop,
+	 * the train takes the first free service from then, waiting at most the layover (longer when its depot keeps trains on
+	 * the line), and otherwise goes back to the depot. A service no lap ends in time for takes a train from the depot.
+	 * Services running through to another route or going back to the depot end the train's laps.
+	 *
+	 * @return the service each lap carries on into, and the trains as lists of services
+	 */
+	function loopRuns(r) {
+		const n = r.stops.length, services = r.services;
+		const keepsOnLine = data.depots.some(depot => depot.cycleRoutes && depot.routes.includes(r.id));
+		const maxWait = keepsOnLine ? MAX_STAY_MILLIS : MAX_LAYOVER_MILLIS;
+		const next = new Map(), taken = new Set();
+		services.filter(s => !s.link && !s.returns).map(s => ({ s, end: timesOf(s)[n - 1][0] })).sort((a, b) => a.end - b.end).forEach(({ s, end }) => {
+			const following = services.find(o => o !== s && !taken.has(o.id) && o.start >= end && o.start - end <= maxWait);
+			if (following) {
+				taken.add(following.id);
+				next.set(s.id, following);
+			}
+		});
+		const trains = services.filter(s => !taken.has(s.id)).map(first => {
+			const laps = [first];
+			while (next.has(laps[laps.length - 1].id)) laps.push(next.get(laps[laps.length - 1].id));
+			return laps;
+		});
+		return { next, trains, maxWait };
+	}
+
+	function loopPanel(r) {
+		const runs = loopRuns(r), entry = loopEntryStop(r);
+		const ending = s => s.link ? `→ ${escapeHtml(routeTitle(data.routeById.get(s.link.route) || r))}` : runs.maxWait > MAX_LAYOVER_MILLIS ? "留在线上" : "回库";
+		const lines = runs.trains.slice(0, 40).map((laps, i) => `<div><span class="train">车 ${i + 1}：</span>${laps.map(s => clock(s.start)).join(" → ")} <span class="end">${ending(laps[laps.length - 1])}</span></div>`).join("");
+		return `<h2>环线运行（${WEEKDAY_NAMES[state.weekday]}）</h2><div class="card"><div class="title">${escapeHtml(routeTitle(r))}</div>
+			<dl class="kv"><dt>列车</dt><dd>${runs.trains.length} 列跑 ${r.services.length} 班</dd><dt>出库接入</dt><dd>${escapeHtml(stopName(r, entry))}${entry ? "" : "（首站）"}</dd>
+			<dt>等下一圈</dt><dd>最多 ${runs.maxWait > MAX_LAYOVER_MILLIS ? "8 天（车厂不回库）" : "30 分钟"}</dd></dl>
+			<div class="laps">${lines}${runs.trains.length > 40 ? "<div>…</div>" : ""}</div>
+			<p class="hint">每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。</p></div>`;
+	}
+
+	/** @return true if a service can leave this route here, or join it, apart from the last and first stops */
+	const isBoundary = (r, stop) => Boolean(r.stops[stop] && r.stops[stop].boundary);
+	const stopName = (r, stop) => shortName(r.stops[stop].name);
+
+	/** Sets where a service runs through to, replacing any link it had. @param fromStop the stop it leaves, or -1 for the last */
+	function setLink(s, fromStop, target, toStop) {
+		editTimetable(s.route, timetable => {
+			const table = timetable.tables[s.tableIndex];
+			table.links = table.links.filter(link => link.service !== s.service);
+			table.links.push({ service: s.service, route: target.route.id, toService: target.service, fromStop, toStop });
+			// A service running through doesn't go back to the depot
+			table.returns = table.returns.filter(service => service !== s.service);
+		});
+	}
+
+	/**
+	 * Through links in bulk: each service of one route in a time range carries on as the first service of another route it
+	 * can catch, leaving at its last stop or a boundary and joining at the first stop or a boundary.
+	 */
+	function throughDialog(fromRoute) {
+		const routes = data.routes.filter(r => r.stops.length > 1);
+		if (routes.length < 2) return;
+		const a0 = fromRoute || (state.route && data.routeById.get(state.route)) || routes[0];
+		const lastName = r => r.stops[r.stops.length - 1].station;
+		const b0 = routes.find(r => r !== a0 && r.stops[0].station === lastName(a0)) || routes.find(r => r !== a0);
+		const routeOptions = (list, selected) => list.map(r => `<option value="${r.id}"${r.id === selected ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("");
+		// The last stop and boundaries to leave from; the first stop and boundaries to join at
+		const exitOptions = r => [`<option value="-1">${escapeHtml(stopName(r, r.stops.length - 1))}（末站）</option>`, ...r.stops.map((_, i) => i).filter(i => isBoundary(r, i)).map(i => `<option value="${i}">${escapeHtml(stopName(r, i))}（时刻边界）</option>`)].join("");
+		const entryOptions = r => [`<option value="0">${escapeHtml(stopName(r, 0))}（首站）</option>`, ...r.stops.map((_, i) => i).filter(i => isBoundary(r, i)).map(i => `<option value="${i}">${escapeHtml(stopName(r, i))}（时刻边界）</option>`)].join("");
+		let lastFrom = null, lastTo = null;
+		const pairs = form => {
+			const a = data.routeById.get(form.from.value), b = data.routeById.get(form.to.value);
+			if (!a || !b) return null;
+			const fromStop = +form.fromStop.value, toStop = +form.toStop.value;
+			const exitIndex = fromStop < 0 ? a.stops.length - 1 : fromStop;
+			const t1 = parseClock(form.t1.value), t2 = parseClock(form.t2.value), gap = Math.max(0, +form.gap.value || 0) * 60000, wait = Math.max(+form.wait.value || 0, 0) * 60000 + gap;
+			if (t1 === null || t2 === null) return null;
+			// Times of day as the clock shows them, compared within the operating day
+			const local = s => mod(s.start + data.dayStartMillis + data.offsetMillis, DAY);
+			const used = new Set(b.services.map(s => s.service).filter(service => a.services.some(s => !form.replace.checked && s.link && s.link.route === b.id && s.link.toService === service)));
+			const result = [];
+			a.services.filter(s => local(s) >= t1 && local(s) <= t2 && (form.replace.checked || !s.link)).forEach(s => {
+				const out = timesOf(s)[exitIndex][0];
+				const next = b.services.filter(o => !used.has(o.service)).map(o => ({ o, time: timesOf(o)[toStop][1] }))
+					.filter(x => x.time >= out + gap && x.time <= out + wait).sort((x, y) => x.time - y.time)[0];
+				if (!next) return;
+				used.add(next.o.service);
+				result.push({ s, out, to: next.o, into: next.time });
+			});
+			return { result, fromStop, toStop, a, b, exitIndex };
+		};
+		openDialog("新建直通关系", `
+			<div class="row"><label>从 <select name="from">${routeOptions(routes, a0.id)}</select></label><label>在 <select name="fromStop"></select> 接出</label></div>
+			<div class="row"><label>到 <select name="to">${routeOptions(routes.filter(r => r !== a0), b0.id)}</select></label><label>在 <select name="toStop"></select> 接入</label></div>
+			<div class="row"><label>首站发车在 <input name="t1" value="05:00" size="6"> 到 <input name="t2" value="26:00" size="6"> 之间（${WEEKDAY_NAMES[state.weekday]}的表）</label></div>
+			<div class="row"><label>衔接至少 <input name="gap" type="number" value="3" min="0" max="60" style="width:4.5em"> 分钟，最多再等 <input name="wait" type="number" value="12" min="0" max="120" style="width:4.5em"> 分钟</label></div>
+			<label><input type="checkbox" name="replace"> 替换这些班次原有的直通</label>
+			<p class="preview" id="dialog-preview"></p>
+			<p class="hint">中途接出和接入只能在游戏里标了时刻边界的站台（站台界面里设置）；没有边界的线路只能末站接首站。每一班接上对方能赶上的第一班，同一班不接两次，等太久的不接。</p>`, "新建", form => {
+			const found = pairs(form);
+			if (!found) return "时刻写成 07:10";
+			if (!found.result.length) return "没有能接上的班次";
+			found.result.forEach(x => setLink(x.s, found.fromStop, x.to, found.toStop));
+		}, form => {
+			if (form.from.value !== lastFrom) {
+				lastFrom = form.from.value;
+				const a = data.routeById.get(lastFrom);
+				form.fromStop.innerHTML = exitOptions(a);
+				const to = form.to.value;
+				form.to.innerHTML = routeOptions(routes.filter(r => r !== a), to && to !== a.id ? to : routes.find(r => r !== a).id);
+				lastTo = null;
+			}
+			if (form.to.value !== lastTo) {
+				lastTo = form.to.value;
+				form.toStop.innerHTML = entryOptions(data.routeById.get(lastTo));
+			}
+			const found = pairs(form), preview = $("dialog-preview");
+			if (!found) {
+				preview.textContent = "时刻写成 07:10";
+				return;
+			}
+			preview.textContent = found.result.length
+				? `${found.result.length} 对：\n` + found.result.slice(0, 8).map(x => `${clock(x.s.start)} 班 ${stopName(found.a, found.exitIndex)} ${clock(x.out)} 到 → ${clock(x.to.start)} 班 ${stopName(found.b, found.toStop)} ${clock(x.into)} 发`).join("\n") + (found.result.length > 8 ? "\n…" : "")
+				: "没有能接上的班次";
+		});
 	}
 
 	function addServices() {
@@ -1155,6 +1337,9 @@
 		let html = "";
 		if (problem) {
 			html = escapeHtml(problem);
+		} else if (state.pendingExit && findService(state.pendingExit.id)) {
+			const s = findService(state.pendingExit.id);
+			html = `已设接出点：<b>${clock(s.start)} ${escapeHtml(routeTitle(s.route))}</b> 在 <b>${escapeHtml(stopName(s.route, state.pendingExit.index))}</b>。打开目标线路的时刻表，右键首站或时刻边界站的一格，选“设为接入点”。<button data-cancel-exit>取消</button>`;
 		} else if (data && !data.canEdit) {
 			html = "没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。";
 		} else if (applyResult && (!applyResult.ok || failed.length)) {
@@ -1217,7 +1402,21 @@
 	$("tab-table").addEventListener("click", () => { state.view = "table"; renderAll(); });
 	$("btn-split").addEventListener("click", () => { state.split = !state.split; renderAll(); });
 	$("btn-apply").addEventListener("click", applyDraft);
+	$("btn-new").addEventListener("click", e => {
+		e.stopPropagation();
+		const box = e.currentTarget.getBoundingClientRect();
+		const r = data && (state.route ? data.routeById.get(state.route) : currentLine() && currentLine().routes[0]);
+		openMenu(box.left, box.bottom + 4, [
+			["时刻表…", r ? () => tableDialog(r, -1) : null],
+			["直通关系…", data && data.routes.length > 1 ? () => throughDialog(r) : null],
+		]);
+	});
 	$("banner").addEventListener("click", e => {
+		if (e.target.closest("[data-cancel-exit]")) {
+			state.pendingExit = null;
+			renderAll();
+			return;
+		}
 		const target = e.target.closest("[data-open-route], [data-keep], [data-drop]");
 		if (!target) return;
 		if (target.dataset.keep) resolveConflict(target.dataset.keep, true);

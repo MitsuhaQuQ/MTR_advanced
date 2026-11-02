@@ -9,6 +9,7 @@ import mtr.compat.Compat;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.SecurityConfig;
+import mtr.advanced.TimetableBoundaries;
 import mtr.block.*;
 import mtr.data.*;
 import mtr.mappings.BlockEntityMapper;
@@ -256,12 +257,22 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		}
 
 		final PacketCallback packetCallback = (updatePacket, fullPacket) -> {
+			// Read before the packet is passed on, which can move where it reads from
+			final long updatedId = fullPacket.getLong(fullPacket.readerIndex());
 			world.players().forEach(worldPlayer -> {
 				if (!worldPlayer.getUUID().equals(player.getUUID())) {
 					Registry.sendToPlayer((ServerPlayer) worldPlayer, packetId, fullPacket);
 				}
 			});
 			railwayData.dataCache.sync();
+
+			// Links have to follow the timetable boundaries, which the game's screens and the editor already check
+			if (packetId.equals(PACKET_UPDATE_ROUTE)) {
+				final Route route = railwayData.dataCache.routeIdMap.get(updatedId);
+				if (route != null && TimetableBoundaries.sanitizeLinks(route, railwayData.dataCache.routeIdMap::get, railwayData.dataCache.platformIdMap::get)) {
+					route.setTimetable(correctedPacket -> world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, PACKET_UPDATE_ROUTE, correctedPacket)));
+				}
+			}
 
 			if (packetId.equals(PACKET_UPDATE_STATION) || packetId.equals(PACKET_DELETE_STATION) || packetId.equals(PACKET_UPDATE_DEPOT) || packetId.equals(PACKET_DELETE_DEPOT)) {
 				try {

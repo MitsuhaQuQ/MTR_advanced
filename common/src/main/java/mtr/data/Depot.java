@@ -778,6 +778,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			final List<Route> tripRoutes = new ArrayList<>(mainRoutes);
 			final Map<Long, Integer> cutStops = new HashMap<>();
+			final Map<Long, Integer> entryStops = new HashMap<>();
+			final Map<Long, List<PathData>> entryLeads = new HashMap<>();
 			final List<PathData> tailPath = new ArrayList<>();
 			Route previousRoute = lastRoute;
 			SavedRailBase lastPlatform = null;
@@ -814,9 +816,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					return null;
 				}
 
-				// A train on a loop at the end of its trip stays on it, and can join it at any stop
+				// A train on a loop at the end of its trip stays on it, and can join it at any stop. Other routes can be joined
+				// part of the way along at a timetable boundary, which the links were checked against when they were saved.
 				final boolean isLap = nextLink == null && nextRoute.isLoop() && getActiveTimetable(nextRoute) != null;
-				final int entryStop = isLap && nextPlatforms.size() == nextRoute.platformIds.size() && link.toStop > 0 && link.toStop < nextPlatforms.size() - 1 ? link.toStop : 0;
+				final int entryStop = nextPlatforms.size() == nextRoute.platformIds.size() && link.toStop > 0 && link.toStop < nextPlatforms.size() - 1 ? link.toStop : 0;
 				final SavedRailBase entryPlatform = nextPlatforms.get(entryStop);
 
 				if (entryPlatform.id != leavePlatform.id) {
@@ -854,11 +857,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					pathData.stopIndex = stopIndex;
 				}
 
-				if (entryStop > 0) {
-					final int joinRail = Siding.getStopRail(routePath, nextRoute.platformIds, entryStop);
-					if (joinRail < 0) {
-						return null;
-					}
+				final int joinRail = entryStop > 0 ? Siding.getStopRail(routePath, nextRoute.platformIds, entryStop) : 0;
+				if (joinRail < 0) {
+					return null;
+				}
+				if (entryStop > 0 && isLap) {
 					final List<PathData> joinPath = new ArrayList<>();
 					for (int j = joinRail; j < routePath.size(); j++) {
 						final PathData pathData = routePath.get(j);
@@ -866,17 +869,22 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					}
 					entryRail = tailPath.size() - 1;
 					addToTail(tailPath, mainPath.get(leaveRail), joinPath);
+				} else if (entryStop > 0) {
+					// The train runs from the stop where it joins, and plans by the way from the first stop to there
+					entryStops.put(nextRoute.id, entryStop);
+					entryLeads.put(nextRoute.id, new ArrayList<>(routePath.subList(0, joinRail + 1)));
 				}
 
 				final List<PathData> usedPath;
+				final int usedStart = isLap ? 0 : joinRail;
 				if (nextLink != null && isCut(nextRoute, nextLink)) {
 					final int cutRail = Siding.getStopRail(routePath, nextRoute.platformIds, nextLink.fromStop);
-					if (cutRail < 0) {
+					if (cutRail <= usedStart) {
 						return null;
 					}
-					usedPath = new ArrayList<>(routePath.subList(0, cutRail + 1));
+					usedPath = new ArrayList<>(routePath.subList(usedStart, cutRail + 1));
 				} else {
-					usedPath = routePath;
+					usedPath = new ArrayList<>(routePath.subList(usedStart, routePath.size()));
 				}
 
 				if (isLap) {
@@ -892,7 +900,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			final List<Long> tripRouteIds = new ArrayList<>();
 			tripRoutes.forEach(route -> tripRouteIds.add(route.id));
-			return new Siding.TripTail(Siding.TripTail.getKey(links), tripRouteIds, cutStops, leaveRail, tailPath, lastPlatform, lapStart, isLapReversed, entryRail);
+			return new Siding.TripTail(Siding.TripTail.getKey(links), tripRouteIds, cutStops, leaveRail, tailPath, lastPlatform, lapStart, isLapReversed, entryRail, entryStops, entryLeads);
 		}
 
 		private boolean isCut(Route route, RouteTimetable.ServiceLink link) {

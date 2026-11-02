@@ -263,7 +263,8 @@ public class RouteTimetable {
 				stop.arrivalMillis = i > 0 && stop.setArrivalSeconds >= 0 ? routeStart + stop.setArrivalSeconds * 1000L : automaticArrival;
 			}
 			if (stop.startsRoute) {
-				routeStart = stop.arrivalMillis;
+				// A route joined part of the way along started before this stop
+				routeStart = stop.arrivalMillis - stop.routeStartOffsetMillis;
 			}
 			final long automaticDwell = stop.exceptionPass == 0 && stop.fastestDepartureMillis == stop.fastestArrivalMillis ? ServiceExceptions.ADDED_STOP_MILLIS : stop.fastestDepartureMillis - stop.fastestArrivalMillis;
 			if (stop.exceptionDwellMillis >= 0) {
@@ -431,6 +432,10 @@ public class RouteTimetable {
 		 * follow the table. See {@link ServiceExceptions}.
 		 */
 		public long exceptionRunMillis = -1;
+		/**
+		 * Where the train joins a route part of the way along, the planned time from that route's first stop to here.
+		 */
+		public long routeStartOffsetMillis;
 		public long exceptionDwellMillis = -1;
 		public int exceptionPass = -1;
 		/**

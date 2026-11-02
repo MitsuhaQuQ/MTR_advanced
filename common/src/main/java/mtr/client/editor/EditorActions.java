@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import mtr.advanced.ServiceExceptions;
+import mtr.advanced.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.data.Route;
 import mtr.data.RouteTimetable;
@@ -116,8 +117,10 @@ public final class EditorActions implements IPacket {
 				return String.format("一张表最多 %s 个班次", RouteTimetable.MAX_SERVICES);
 			}
 			for (final JsonElement linkElement : table.getAsJsonArray("links")) {
-				if (!ClientData.DATA_CACHE.routeIdMap.containsKey(parseId(getString(linkElement.getAsJsonObject(), "route")))) {
-					return "直通到的线路不存在";
+				final JsonObject link = linkElement.getAsJsonObject();
+				final String error = TimetableBoundaries.checkLink(route, new RouteTimetable.ServiceLink(parseId(getString(link, "route")), link.get("toService").getAsInt(), link.get("fromStop").getAsInt(), link.get("toStop").getAsInt()), ClientData.DATA_CACHE.routeIdMap::get, ClientData.DATA_CACHE.platformIdMap::get);
+				if (error != null) {
+					return error;
 				}
 			}
 		}

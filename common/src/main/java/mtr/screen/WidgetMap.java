@@ -366,9 +366,14 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		return true;
 	}
 
+	/**
+	 * The bottom right corner holds the dashboard's buttons, from the advanced editor to zoom, so clicks there go to them.
+	 */
+	private static final int BOTTOM_BUTTONS_WIDTH = SQUARE_SIZE * 15;
+
 	@Override
 	public boolean isMouseOver(double mouseX, double mouseY) {
-		return mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height && !(mouseX >= x + width - SQUARE_SIZE * 10 && mouseY >= y + height - SQUARE_SIZE) && !isRestrictedMouseArea.apply(mouseX, mouseY);
+		return mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height && !(mouseX >= x + width - BOTTOM_BUTTONS_WIDTH && mouseY >= y + height - SQUARE_SIZE) && !isRestrictedMouseArea.apply(mouseX, mouseY);
 	}
 
 	public void setFocused(boolean focused) {

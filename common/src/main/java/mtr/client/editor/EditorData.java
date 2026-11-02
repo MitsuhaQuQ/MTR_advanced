@@ -3,6 +3,7 @@ package mtr.client.editor;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import mtr.data.*;
+import mtr.advanced.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
@@ -83,8 +84,11 @@ public final class EditorData {
 		routeObject.addProperty("revision", getRevision(route));
 
 		final JsonArray stopsArray = new JsonArray();
-		route.platformIds.forEach(routePlatform -> {
+		for (int i = 0; i < route.platformIds.size(); i++) {
+			final Route.RoutePlatform routePlatform = route.platformIds.get(i);
 			final JsonObject stopObject = new JsonObject();
+			// Where a service can leave or join this route part of the way along
+			stopObject.addProperty("boundary", TimetableBoundaries.isBoundaryStop(route, i, ClientData.DATA_CACHE.platformIdMap::get));
 			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(routePlatform.platformId);
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
 			stopObject.addProperty("platformId", String.valueOf(routePlatform.platformId));
@@ -94,7 +98,7 @@ public final class EditorData {
 			stopObject.addProperty("platform", platform == null ? "" : platform.name);
 			stopObject.addProperty("pass", routePlatform.pass);
 			stopsArray.add(stopObject);
-		});
+		}
 		routeObject.add("stops", stopsArray);
 
 		final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
