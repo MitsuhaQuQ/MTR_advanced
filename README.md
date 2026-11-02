@@ -109,7 +109,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 The stages above describe the work as a whole. This is the order it is being done in:
 
 1. Finish what is in progress: commit the load memory work, then test signed node angles and the latest timetable work in game.
-2. Run logic, part 1: move decisions about services (taking the next service, changing routes, aligning after a restart) out of the Minecraft classes, so a whole day of a network can be simulated in automated tests.
+2. Run logic, part 1: move decisions about services (taking the next service, changing routes, aligning after a restart) out of the Minecraft classes, so a whole day of a network can be simulated in automated tests. Done in code: the decisions are in `TrainService`, with tests for aligning after a restart, a whole day on a loop, sending trains out, turning back and through services. Tested in game.
 3. Choosing the turn-back at terminals, starting with reversing sidings after the platform.
 4. Path boundaries as a dashboard filter.
 5. Run logic, part 2: move train movement out of the Minecraft classes, before speed curves and block sections change it.

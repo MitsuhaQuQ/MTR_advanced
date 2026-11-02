@@ -36,50 +36,13 @@ public class TrainServer extends Train {
 	private int manualCoolDown;
 	private Depot depot;
 	private DataCache dataCache;
-	/**
-	 * The planned arrival at the first stop of the current service as a full timestamp, or 0 without a timetable.
-	 */
-	private long tripMillis;
-	private long tripRouteId;
-	/**
-	 * When the current service's route starts, in the same time as the stop plans. A route after a turn back has its own service.
-	 */
-	private long routeStartMillis;
-	/**
-	 * The service this train runs after the current lap, reserved up front so the depot doesn't send a train for it.
-	 */
-	private long nextTripMillis;
-	/**
-	 * With no service left for this train, it leaves the loop and returns to the depot after this lap.
-	 */
-	private boolean isLastLap;
-	/**
-	 * Still on the way round a loop to its first stop, having joined it part of the way round.
-	 */
-	private boolean isJoiningLoop;
-	/**
-	 * Just loaded from a save, when the time the world was stopped for still has to be dealt with.
-	 */
-	private boolean needsAlignment;
+	private final TrainService service;
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
 	private int pathRepeatIndex2;
-	public Siding.StopTimes stopTimes;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
-	/**
-	 * The path of the current service when it isn't the usual path of the depot, which is kept to go back to.
-	 */
-	private Siding.TripPath tripPath;
-	private String tripPathKey = "";
-	/**
-	 * The next route of the trip and the service to run on it.
-	 */
-	private int linkedService = -1;
-	private long linkedRouteId;
-	private Map<String, Siding.TripPath> tripPaths = new HashMap<>();
 	private List<Siding.TimeSegment> timeSegments;
-	private final List<Route> tripRoutes = new ArrayList<>();
 	private final List<PathData> depotPath;
 	private final List<Double> depotDistances;
 	private final List<Siding.TimeSegment> depotTimeSegments;
@@ -91,16 +54,6 @@ public class TrainServer extends Train {
 	private static final int DOOR_CLOSE_MILLIS = (DOOR_MOVE_TIME + DOOR_DELAY) * Depot.MILLIS_PER_TICK;
 	private static final int MIN_DWELL_TICKS = Route.MIN_STOP_DWELL * 10;
 
-	private static final String KEY_TRIP_MILLIS = "trip_millis";
-	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
-	private static final String KEY_IS_LAST_LAP = "is_last_lap";
-	private static final String KEY_TRIP_ROUTE_ID = "trip_route_id";
-	private static final String KEY_ROUTE_START_MILLIS = "route_start_millis";
-	private static final String KEY_IS_JOINING_LOOP = "is_joining_loop";
-	private static final String KEY_TRIP_PATH = "trip_path";
-	private static final String KEY_LINKED_SERVICE = "linked_service";
-	private static final String KEY_LINKED_ROUTE = "linked_route";
-
 	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<Siding.TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
 		super(id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, manualToAutomaticTime);
 		this.timeSegments = timeSegments;
@@ -111,6 +64,7 @@ public class TrainServer extends Train {
 		depotTimeSegments = timeSegments;
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
+		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
 	}
 
 	public TrainServer(
@@ -128,17 +82,8 @@ public class TrainServer extends Train {
 		depotTimeSegments = timeSegments;
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
-		final MessagePackHelper messagePackHelper = new MessagePackHelper(map);
-		tripPathKey = messagePackHelper.getString(KEY_TRIP_PATH);
-		linkedService = messagePackHelper.getInt(KEY_LINKED_SERVICE, -1);
-		linkedRouteId = messagePackHelper.getLong(KEY_LINKED_ROUTE);
-		tripMillis = messagePackHelper.getLong(KEY_TRIP_MILLIS);
-		tripRouteId = messagePackHelper.getLong(KEY_TRIP_ROUTE_ID);
-		routeStartMillis = messagePackHelper.getLong(KEY_ROUTE_START_MILLIS);
-		nextTripMillis = messagePackHelper.getLong(KEY_NEXT_TRIP_MILLIS);
-		isJoiningLoop = messagePackHelper.getBoolean(KEY_IS_JOINING_LOOP);
-		needsAlignment = tripMillis != 0;
-		setLastLap(messagePackHelper.getBoolean(KEY_IS_LAST_LAP));
+		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service.read(new MessagePackHelper(map));
 	}
 
 	@Deprecated
@@ -157,119 +102,52 @@ public class TrainServer extends Train {
 		depotTimeSegments = timeSegments;
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
+		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
 	}
 
 	@Override
 	public void toMessagePack(MessagePacker messagePacker) throws IOException {
 		super.toMessagePack(messagePacker);
-		messagePacker.packString(KEY_TRIP_MILLIS).packLong(tripMillis);
-		messagePacker.packString(KEY_NEXT_TRIP_MILLIS).packLong(nextTripMillis);
-		messagePacker.packString(KEY_IS_LAST_LAP).packBoolean(isLastLap);
-		messagePacker.packString(KEY_TRIP_ROUTE_ID).packLong(tripRouteId);
-		messagePacker.packString(KEY_ROUTE_START_MILLIS).packLong(routeStartMillis);
-		messagePacker.packString(KEY_IS_JOINING_LOOP).packBoolean(isJoiningLoop);
-		messagePacker.packString(KEY_TRIP_PATH).packString(tripPathKey);
-		messagePacker.packString(KEY_LINKED_SERVICE).packInt(linkedService);
-		messagePacker.packString(KEY_LINKED_ROUTE).packLong(linkedRouteId);
+		service.write(messagePacker);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 9;
+		return super.messagePackLength() + TrainService.SAVED_KEYS;
 	}
 
 	@Override
 	public int getTotalDwellTicks() {
 		final int dwellTicks = super.getTotalDwellTicks();
-		final RouteTimetable.StopPlan stopPlan = isCurrentlyManual ? null : getStopPlan(getPlanIndex(nextStoppingIndex));
+		final RouteTimetable.StopPlan stopPlan = isCurrentlyManual ? null : service.getPlanAt(nextStoppingIndex);
 		if (stopPlan == null) {
 			return dwellTicks;
 		} else {
 			// A late train shortens its stop to catch up, without going below the time doors need
-			final long ticksAtStop = (long) elapsedDwellTicks + (getPlannedMillis(stopPlan.departureMillis) - System.currentTimeMillis()) / Depot.MILLIS_PER_TICK;
+			final long ticksAtStop = (long) elapsedDwellTicks + (service.getPlannedMillis(stopPlan.departureMillis) - System.currentTimeMillis()) / Depot.MILLIS_PER_TICK;
 			return (int) Math.max(Math.min(dwellTicks, ticksAtStop), Math.min(dwellTicks, MIN_DWELL_TICKS));
 		}
 	}
 
 	@Override
 	protected boolean isHeldAtStop() {
-		final RouteTimetable.StopPlan stopPlan = isCurrentlyManual ? null : getStopPlan(getPlanIndex(nextStoppingIndex));
+		final RouteTimetable.StopPlan stopPlan = isCurrentlyManual ? null : service.getPlanAt(nextStoppingIndex);
 		if (stopPlan == null || !stopPlan.isTimed) {
 			return false;
 		}
 		final long currentMillis = System.currentTimeMillis();
-		final long departureMillis = getPlannedMillis(stopPlan.departureMillis);
-		return currentMillis < departureMillis - DOOR_CLOSE_MILLIS || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && isOvertakingTrainComing(getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis);
+		final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
+		return currentMillis < departureMillis - DOOR_CLOSE_MILLIS || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && isOvertakingTrainComing(service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis);
 	}
 
 	@Override
 	protected void onLapComplete() {
-		final Route lapRoute = tripPath == null ? null : getLapRoute();
-		if (lapRoute != null) {
-			tripMillis = nextTripMillis == 0 ? findLapService(lapRoute, System.currentTimeMillis()) : nextTripMillis;
-			tripRouteId = lapRoute.id;
-			nextTripMillis = 0;
-			final RouteTimetable.StopPlan lapPlan = getStopPlan(tripPath.lapStop);
-			routeStartMillis = lapPlan == null ? 0 : lapPlan.routeStartMillis;
-			reserveNextTrip();
-			return;
-		}
-
-		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
-		routeStartMillis = 0;
-		if (timetable == null) {
-			tripMillis = 0;
-			nextTripMillis = 0;
-			setLastLap(false);
-		} else {
-			// A train looping since before the timetable was added joins it here
-			tripMillis = nextTripMillis == 0 ? depot.findNextTrip(trainId, System.currentTimeMillis()) : nextTripMillis;
-			tripRouteId = depot.getTrainRoutes(trainId).get(0).id;
-			nextTripMillis = 0;
-			updateTripPath();
-			reserveNextTrip();
-		}
+		service.onLapComplete();
 	}
 
-	/**
-	 * Reaching the start of the next route on the path, or the turn back rail just before it, moves the train onto that route's
-	 * next service. The train then waits for it here, so a train with a turn back rail doesn't hold up the platform. Without a
-	 * service it carries on with the time it has.
-	 */
 	@Override
 	protected void onStopReached() {
-		// The first stop of a joined loop ends the service the train joined, like the end of any lap
-		if (isJoiningLoop && stopTimes != null && nextStoppingIndex >= getJoinEndIndex()) {
-			isJoiningLoop = false;
-			onLapComplete();
-		}
-
-		if (tripPath != null && nextStoppingIndex == tripPath.entryRail && !isJoiningLoop) {
-			joinLapRoute();
-			return;
-		}
-
-		final RouteTimetable.StopPlan stopPlan = getStopPlan(getPlanIndex(nextStoppingIndex));
-		final RouteTimetable.StopPlan startPlan = stopPlan == null || stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
-		if (startPlan != null && startPlan.startsRoute && startPlan.route.id != tripRouteId) {
-			final long plannedStartMillis = getPlannedMillis(startPlan.routeStartMillis);
-			final long readyMillis = System.currentTimeMillis() + startPlan.arrivalMillis - stopPlan.arrivalMillis;
-			final boolean isLinked = tripPath != null && linkedService >= 0 && startPlan.route.id == linkedRouteId;
-			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService(startPlan.route, Math.max(plannedStartMillis, readyMillis));
-			tripMillis = serviceMillis == 0 ? plannedStartMillis : serviceMillis;
-			tripRouteId = startPlan.route.id;
-			if (isLinked) {
-				setNextLink(startPlan.route);
-			}
-			updateTripPath();
-			// The plan follows the route and table the train is on now, which can move where this route starts in it
-			final RouteTimetable.StopPlan newStopPlan = getStopPlan(getPlanIndex(nextStoppingIndex));
-			final RouteTimetable.StopPlan newStartPlan = newStopPlan == null || newStopPlan.startsRoute ? newStopPlan : newStopPlan.nextRouteStart;
-			routeStartMillis = (newStartPlan == null ? startPlan : newStartPlan).routeStartMillis;
-			// How long this route waited changes when the lap ends
-			nextTripMillis = 0;
-			reserveNextTrip();
-		}
+		service.onStopReached();
 	}
 
 	@Override
@@ -460,6 +338,7 @@ public class TrainServer extends Train {
 		this.trainDelays = trainDelays;
 		this.depot = depot;
 		this.dataCache = dataCache;
+		setNetwork();
 		final int oldStoppingIndex = nextStoppingIndex;
 		final int oldPassengerCount = ridingEntities.size();
 		final boolean oldIsCurrentlyManual = isCurrentlyManual;
@@ -468,24 +347,9 @@ public class TrainServer extends Train {
 
 		simulateTrain(world, ticksElapsed, depot);
 
-		if (isOnRoute) {
-			reserveTrip(tripRouteId, tripMillis);
-			if (nextTripMillis != 0) {
-				final Route lapRoute = getLapRoute();
-				if (lapRoute != null) {
-					reserveTrip(lapRoute.id, nextTripMillis);
-				}
-			}
-		} else if (tripMillis != 0 || isLastLap || tripPath != null) {
-			tripMillis = 0;
-			nextTripMillis = 0;
-			routeStartMillis = 0;
-			isJoiningLoop = false;
-			leaveTripPath();
-			setLastLap(false);
-		}
+		service.update(isOnRoute);
 
-		final int nextDepartureTicks = isOnRoute ? 0 : stopTimes == null ? depot.getNextDepartureMillis() : depot.getNextDepartureMillis(trainId, getLeadMillis());
+		final int nextDepartureTicks = isOnRoute ? 0 : service.getStopTimes() == null ? depot.getNextDepartureMillis() : depot.getNextDepartureMillis(trainId, getLeadMillis());
 		final long currentMillis = System.currentTimeMillis() - (long) (elapsedDwellTicks * Depot.MILLIS_PER_TICK) + (long) Math.max(0, nextDepartureTicks);
 
 		double currentTime = -1;
@@ -505,7 +369,7 @@ public class TrainServer extends Train {
 			Runnable addSchedule = null;
 			routeId = 0;
 			// A trip ending with a loop only comes round again on the loop, so the rest of the trip must not be counted twice
-			final boolean startsOver = isRepeat() && tripPath == null;
+			final boolean startsOver = isRepeat() && !service.isOnTripPath();
 			for (int i = startingIndex; i < timeSegments.size() + (startsOver ? timeSegments.size() : 0); i++) {
 				final Siding.TimeSegment timeSegment = timeSegments.get(i % timeSegments.size());
 
@@ -531,7 +395,7 @@ public class TrainServer extends Train {
 
 					if (isOnRoute || nextDepartureTicks >= 0) {
 						final long estimatedMillis = currentMillis + (long) ((timeSegment.endTime + offsetTime - currentTime) * Depot.MILLIS_PER_TICK);
-						final long scheduledMillis = i < timeSegments.size() ? getPlannedArrivalMillis(getIndex(timeSegment.endRailProgress, true)) : 0;
+						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getIndex(timeSegment.endRailProgress, true)) : 0;
 						// The estimate doesn't know about waiting for the timetable at earlier stops
 						final long arrivalMillis = Math.max(estimatedMillis, scheduledMillis);
 						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis));
@@ -598,143 +462,18 @@ public class TrainServer extends Train {
 	}
 
 	public boolean needsAlignment() {
-		return needsAlignment;
+		return service.needsAlignment();
 	}
 
 	/**
-	 * A stopped world doesn't catch up on the time it lost. A train goes straight to the stop it should be at by now, on the
-	 * service it is running if that has not ended, or else on the service that is running now. If that stop is taken it goes
-	 * to the last free one before it and runs late from there. A train with nothing to run goes back to the depot.
+	 * See {@link TrainService#alignToTimetable(boolean)}.
 	 */
 	public void alignToTimetable(Depot depot, DataCache dataCache, List<Map<UUID, Long>> trainPositions) {
-		needsAlignment = false;
 		this.depot = depot;
 		this.dataCache = dataCache;
 		this.trainPositions = trainPositions;
-		if (!isOnRoute || isCurrentlyManual || transportMode.continuousMovement || tripMillis == 0 || stopTimes == null || depot.getTimetable(trainId) == null) {
-			return;
-		}
-
-		final long currentMillis = System.currentTimeMillis();
-		int stopIndex = findRunningStop(nextStoppingIndex, currentMillis);
-		final boolean isSameService = stopIndex >= 0;
-		if (!isSameService) {
-			if (!takeRunningService(currentMillis)) {
-				returnToDepot();
-				return;
-			}
-			stopIndex = findRunningStop(stopTimes.getFirstIndex(), currentMillis);
-		}
-
-		// A train staying on its service is already at the first stop it can use
-		final int firstIndex = isSameService ? nextStoppingIndex + 1 : stopTimes.getFirstIndex();
-		for (int i = stopIndex; i >= firstIndex && i >= 0; i--) {
-			if (path.get(i).dwellTime > 0 && isStopFree(i)) {
-				moveToStop(i);
-				nextTripMillis = 0;
-				reserveNextTrip();
-				return;
-			}
-		}
-		if (!isSameService) {
-			returnToDepot();
-		}
-	}
-
-	/**
-	 * @return the first stop from this one that the current service has not left yet, or a route after this one the train
-	 * can start, or -1 if the service is over
-	 */
-	private int findRunningStop(int fromIndex, long currentMillis) {
-		final int endIndex = isRepeat() ? repeatIndex2 : path.size();
-		for (int i = Math.max(fromIndex, 0); i < endIndex; i++) {
-			if (path.get(i).dwellTime > 0) {
-				if (path.get(i).rail.railType == RailType.SIDING || isJoiningLoop && i >= getJoinEndIndex()) {
-					return -1;
-				}
-				// Turn backs on the way out of the depot have no plan
-				final RouteTimetable.StopPlan stopPlan = getStopPlan(i);
-				if (stopPlan == null) {
-					continue;
-				}
-				if (getPlannedMillis(stopPlan.departureMillis) + RouteTimetable.ALIGN_TOLERANCE_MILLIS > currentMillis) {
-					return i;
-				}
-				final RouteTimetable.StopPlan startPlan = stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
-				if (startPlan != null && startPlan.startsRoute && startPlan.route.id != tripRouteId) {
-					final Route route = startPlan.route;
-					return !startPlan.waitsForService || route.timetable.getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.id, millis)) != 0 ? i : -1;
-				}
-			}
-		}
-		return -1;
-	}
-
-	/**
-	 * Moves on to the service that should be under way, or the next one if none is. A train on the path of a service running
-	 * through to another route goes back to the depot instead, as its path only suits that service.
-	 *
-	 * @return false if there is no service for this train
-	 */
-	private boolean takeRunningService(long currentMillis) {
-		final List<Route> routes = depot.getTrainRoutes(trainId);
-		if (tripPath != null || routes.isEmpty()) {
-			return false;
-		}
-
-		final Route firstRoute = routes.get(0);
-		final RouteTimetable timetable = depot.getTimetable(trainId);
-		final long runningMillis = timetable.getLatestService(currentMillis - stopTimes.getDurationMillis(), currentMillis, millis -> depot.isTripReserved(firstRoute.id, millis));
-		final long newTripMillis = runningMillis == 0 ? timetable.getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(firstRoute.id, millis)) : runningMillis;
-		if (newTripMillis == 0) {
-			return false;
-		}
-
-		tripMillis = newTripMillis;
-		tripRouteId = firstRoute.id;
-		routeStartMillis = 0;
-		nextTripMillis = 0;
-		isJoiningLoop = false;
-		depot.reserveTrip(tripRouteId, tripMillis);
-		updateTripPath();
-		return true;
-	}
-
-	/**
-	 * @return true if the whole train fits behind the end of this stop's rail without touching another train
-	 */
-	private boolean isStopFree(int stopIndex) {
-		double remainingLength = trainCars * spacing;
-		for (int i = stopIndex; i >= 0 && remainingLength > 0; i--) {
-			if (isRailOccupied(i)) {
-				return false;
-			}
-			remainingLength -= path.get(i).rail.getLength();
-		}
-		return true;
-	}
-
-	private void moveToStop(int stopIndex) {
-		// Every turn back on the way swaps which end of the train leads
-		reversed = false;
-		for (int i = 0; i < stopIndex; i++) {
-			if (path.get(i).isOppositeRail(path.get(i + 1))) {
-				reversed = !reversed;
-			}
-		}
-		railProgress = distances.get(stopIndex);
-		speed = 0;
-		manualNotch = -2;
-		elapsedDwellTicks = 0;
-		nextStoppingIndex = stopIndex;
-		nextPlatformIndex = stopIndex;
-	}
-
-	private void returnToDepot() {
-		isOnRoute = false;
-		manualNotch = -2;
-		speed = 0;
-		ridingEntities.clear();
+		setNetwork();
+		service.alignToTimetable(isOnRoute && !isCurrentlyManual && !transportMode.continuousMovement);
 	}
 
 	/**
@@ -746,7 +485,7 @@ public class TrainServer extends Train {
 		pathRepeatIndex2 = newRepeatIndex2;
 		depotRepeatIndex1 = newRepeatIndex1;
 		depotRepeatIndex2 = newRepeatIndex2;
-		setLastLap(isLastLap);
+		setLastLap(service.isLastLap());
 		nextStoppingIndex = path.size() - 1;
 		for (int i = railIndex; i < path.size(); i++) {
 			if (path.get(i).dwellTime > 0) {
@@ -762,17 +501,18 @@ public class TrainServer extends Train {
 	}
 
 	/**
+	 * See {@link TrainService#findDeployService(long)}.
+	 */
+	public long findDeployService(long lastDeployedMillis) {
+		return service.findDeployService(lastDeployedMillis);
+	}
+
+	/**
 	 * Sends this train out for a service of the timetable.
 	 */
 	public void deployTrain(long newTripMillis, long routeId) {
 		canDeploy = true;
-		tripMillis = newTripMillis;
-		tripRouteId = routeId;
-		routeStartMillis = 0;
-		nextTripMillis = 0;
-		isJoiningLoop = stopTimes != null && stopTimes.hasJoinStops();
-		updateTripPath();
-		reserveNextTrip();
+		service.deploy(newTripMillis, routeId);
 	}
 
 	/**
@@ -780,12 +520,11 @@ public class TrainServer extends Train {
 	 * @param newTripPaths   the paths of services leaving it
 	 */
 	public void setStopTimes(Siding.StopTimes depotStopTimes, Map<String, Siding.TripPath> newTripPaths) {
-		stopTimes = tripPath == null ? depotStopTimes : tripPath.stopTimes;
-		tripPaths = newTripPaths;
+		service.setStopTimes(depotStopTimes, newTripPaths);
 	}
 
 	public boolean isOnTripPath() {
-		return tripPath != null;
+		return service.isOnTripPath();
 	}
 
 	public void setDepotRepeatIndices(int newRepeatIndex1, int newRepeatIndex2) {
@@ -799,256 +538,26 @@ public class TrainServer extends Train {
 	 * @return false if that path no longer exists
 	 */
 	public boolean restoreTripPath(Map<String, Siding.TripPath> newTripPaths) {
-		if (tripPathKey.isEmpty()) {
-			return true;
-		}
-		final Siding.TripPath newTripPath = newTripPaths.get(tripPathKey);
-		if (newTripPath == null) {
-			return false;
-		}
-		final boolean oldIsLastLap = isLastLap;
-		final long oldNextTripMillis = nextTripMillis;
-		useTripPath(newTripPath);
-		nextTripMillis = oldNextTripMillis;
-		setLastLap(oldIsLastLap);
-		if (linkedService >= 0 && linkedRouteId == 0) {
-			linkedRouteId = newTripPath.routeIds.get(newTripPath.routeIds.size() - 1);
-		}
-		return true;
+		return service.restoreTripPath(newTripPaths);
 	}
 
 	/**
-	 * Moves the train onto the path of a service running through to another route. The path is the same up to where the train
-	 * leaves the usual one, so this works wherever the train is. A loop joined part of the way round changes over at its first stop.
-	 */
-	private void updateTripPath() {
-		if (tripPath != null || isJoiningLoop || depot == null || tripMillis == 0) {
-			return;
-		}
-		final List<Route> routes = depot.getTrainRoutes(trainId);
-		final Route lastRoute = routes.isEmpty() ? null : routes.get(routes.size() - 1);
-		if (lastRoute != null && lastRoute.id == tripRouteId) {
-			final RouteTimetable.ServiceLink link = lastRoute.timetable.getLink(tripMillis);
-			final Siding.TripPath newTripPath = link == null || dataCache == null ? null : tripPaths.get(Siding.TripTail.getKey(RouteTimetable.getLinkChain(link, dataCache.routeIdMap::get)));
-			if (newTripPath != null) {
-				linkedService = link.service;
-				linkedRouteId = link.routeId;
-				useTripPath(newTripPath);
-			}
-		}
-	}
-
-	private void useTripPath(Siding.TripPath newTripPath) {
-		tripPath = newTripPath;
-		tripPathKey = newTripPath.key;
-		path = newTripPath.path;
-		distances = newTripPath.distances;
-		timeSegments = newTripPath.timeSegments;
-		stopTimes = newTripPath.stopTimes;
-		tripRouteIds.clear();
-		tripRouteIds.addAll(newTripPath.routeIds);
-		tripRoutes.clear();
-		pathRepeatIndex1 = newTripPath.repeatIndex1;
-		pathRepeatIndex2 = newTripPath.repeatIndex2;
-		nextTripMillis = 0;
-		setLastLap(false);
-		syncRepeatIndices = true;
-	}
-
-	private void leaveTripPath() {
-		if (tripPath != null) {
-			tripPath = null;
-			tripPathKey = "";
-			linkedService = -1;
-			linkedRouteId = 0;
-			path = depotPath;
-			distances = depotDistances;
-			timeSegments = depotTimeSegments;
-			tripRouteIds.clear();
-			tripRoutes.clear();
-			pathRepeatIndex1 = depotRepeatIndex1;
-			pathRepeatIndex2 = depotRepeatIndex2;
-			syncRepeatIndices = true;
-		}
-	}
-
-	/**
-	 * After taking a service of a route of the trip, finds the service that follows it.
-	 */
-	private void setNextLink(Route route) {
-		final RouteTimetable.ServiceLink link = route.timetable.getLinkOfService(linkedService);
-		linkedRouteId = link == null ? 0 : link.routeId;
-		linkedService = link == null ? -1 : link.service;
-	}
-
-	/**
-	 * Reaching the stop where the trip joins a loop part of the way round. Like a train from the depot joining a loop, the
-	 * train reaches this stop when that service would, and that service ends at the first stop of the loop.
-	 */
-	private void joinLapRoute() {
-		final Route lapRoute = getLapRoute();
-		if (lapRoute != null && linkedService >= 0) {
-			final long currentMillis = System.currentTimeMillis();
-			tripRouteId = lapRoute.id;
-			tripMillis = RouteTimetable.getClosestService(currentMillis, linkedService);
-			final RouteTimetable.StopPlan stopPlan = getStopPlan(nextStoppingIndex);
-			if (stopPlan != null) {
-				routeStartMillis = stopPlan.routeStartMillis;
-				tripMillis = RouteTimetable.getClosestService(currentMillis - (stopPlan.arrivalMillis - routeStartMillis), linkedService);
-			}
-			linkedService = -1;
-			linkedRouteId = 0;
-			isJoiningLoop = true;
-			nextTripMillis = 0;
-			reserveNextTrip();
-		}
-	}
-
-	/**
-	 * @return the route the train keeps lapping, or null if the trip doesn't end with one
-	 */
-	private Route getLapRoute() {
-		final List<Route> routes = getTripRoutes();
-		if (routes.isEmpty()) {
-			return null;
-		}
-		return tripPath == null ? routes.get(0) : pathRepeatIndex2 > 0 ? routes.get(routes.size() - 1) : null;
-	}
-
-	/**
-	 * @return the rail where a train that joined a loop part of the way round has come to its first stop
-	 */
-	private int getJoinEndIndex() {
-		return tripPath != null && tripPath.entryRail >= 0 && tripRouteId == getLastTripRouteId() ? tripPath.lapStop : stopTimes.getFirstIndex();
-	}
-
-	private long getLastTripRouteId() {
-		return tripPath.routeIds.get(tripPath.routeIds.size() - 1);
-	}
-
-	/**
-	 * The route may be run from another depot, which has to know not to send a train for this service.
-	 */
-	private void reserveTrip(long newRouteId, long newTripMillis) {
-		depot.reserveTrip(newRouteId, newTripMillis);
-		final Depot routeDepot = tripPath == null || dataCache == null ? null : dataCache.routeIdToOneDepot.get(newRouteId);
-		if (routeDepot != null && routeDepot != depot) {
-			routeDepot.reserveTrip(newRouteId, newTripMillis);
-		}
-	}
-
-	/**
-	 * @return the next service of the loop a trip ends with that no train has taken, including trains of that route's own depot
-	 */
-	private long findLapService(Route route, long readyMillis) {
-		final Depot routeDepot = dataCache == null ? null : dataCache.routeIdToOneDepot.get(route.id);
-		final long newTripMillis = route.timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.id, millis) || routeDepot != null && routeDepot.isTripReserved(route.id, millis));
-		if (newTripMillis != 0) {
-			reserveTrip(route.id, newTripMillis);
-		}
-		return newTripMillis;
-	}
-
-	/**
-	 * @return the routes of the path the train is on
-	 */
-	private List<Route> getTripRoutes() {
-		if (tripPath == null) {
-			return depot.getTrainRoutes(trainId);
-		}
-		if (tripRoutes.isEmpty() && dataCache != null) {
-			tripPath.routeIds.forEach(routeId -> {
-				final Route route = dataCache.routeIdMap.get(routeId);
-				if (route != null) {
-					tripRoutes.add(route);
-				}
-			});
-		}
-		return tripRoutes;
-	}
-
-	/**
-	 * @return the time from leaving the siding until the planned arrival at the first stop of a service. A train joining a
-	 * loop part of the way round reaches its first stop after that time, so this can be negative.
+	 * See {@link TrainService#getLeadMillis()}.
 	 */
 	public long getLeadMillis() {
-		if (stopTimes == null) {
-			return 0;
-		}
-		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
-		if (stopTimes.hasJoinStops() && timetable != null) {
-			final List<Route> routes = depot.getTrainRoutes(trainId);
-			final RouteTimetable.StopPlan stopPlan = stopTimes.getPlan(routes, timetable, stopTimes.getFirstJoinStopLapIndex(), routes.get(0).id, 0);
-			return stopTimes.getLeadMillis() - (stopPlan == null ? 0 : stopPlan.arrivalMillis);
-		}
-		return stopTimes.getLeadMillis();
+		return service.getLeadMillis();
 	}
 
-	private void reserveNextTrip() {
-		if (pathRepeatIndex1 > 0 && pathRepeatIndex2 > 0) {
-			// On the way to a loop at the end of a trip there is no lap to plan yet
-			if (tripPath != null && tripRouteId != getLastTripRouteId()) {
-				return;
-			}
-			final RouteTimetable.StopPlan lastStopPlan = getStopPlan(pathRepeatIndex2);
-			final long lapEndMillis = lastStopPlan == null ? 0 : getPlannedMillis(lastStopPlan.arrivalMillis);
-			nextTripMillis = lastStopPlan == null ? 0 : tripPath == null ? depot.findNextTrip(trainId, lapEndMillis) : findLapService(getLapRoute(), lapEndMillis);
-			setLastLap(nextTripMillis == 0);
-		}
+	private void setNetwork() {
+		service.setNetwork(depot, dataCache == null ? null : dataCache.routeIdMap::get, dataCache == null ? null : dataCache.routeIdToOneDepot::get);
 	}
 
-	private void setLastLap(boolean newIsLastLap) {
-		isLastLap = newIsLastLap;
+	private void setLastLap(boolean isLastLap) {
 		final int newRepeatIndex1 = isLastLap ? 0 : pathRepeatIndex1;
 		final int newRepeatIndex2 = isLastLap ? 0 : pathRepeatIndex2;
 		syncRepeatIndices = syncRepeatIndices || repeatIndex1 != newRepeatIndex1 || repeatIndex2 != newRepeatIndex2;
 		repeatIndex1 = newRepeatIndex1;
 		repeatIndex2 = newRepeatIndex2;
-	}
-
-	/**
-	 * The stop at the end of a lap is also the first stop of the next one, which is the service the train is on by then.
-	 */
-	private int getPlanIndex(int stopIndex) {
-		return isRepeat() && stopIndex >= repeatIndex2 && stopTimes != null ? tripPath == null ? stopTimes.getFirstIndex() : tripPath.lapStop : stopIndex;
-	}
-
-	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
-		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
-		if (tripMillis == 0 || timetable == null || stopTimes == null) {
-			return null;
-		}
-		final List<Route> routes = getTripRoutes();
-		return stopTimes.getPlan(routes, timetable, stopIndex, tripRouteId, getTripTable(routes));
-	}
-
-	/**
-	 * @return the table of the current route that the current service belongs to
-	 */
-	private int getTripTable(List<Route> routes) {
-		for (final Route route : routes) {
-			if (route.id == tripRouteId) {
-				return route.timetable.getTableIndex(tripMillis);
-			}
-		}
-		return 0;
-	}
-
-	/**
-	 * @param planMillis a time from a stop plan
-	 * @return the same time on the current service as a full timestamp
-	 */
-	private long getPlannedMillis(long planMillis) {
-		return tripMillis + planMillis - routeStartMillis;
-	}
-
-	private long getPlannedArrivalMillis(int stopIndex) {
-		if (isRepeat() && stopIndex >= repeatIndex2 || isJoiningLoop && stopTimes != null && stopIndex == getJoinEndIndex()) {
-			return nextTripMillis;
-		} else {
-			final RouteTimetable.StopPlan stopPlan = getStopPlan(stopIndex);
-			return stopPlan == null ? 0 : getPlannedMillis(stopPlan.arrivalMillis);
-		}
 	}
 
 	/**
@@ -1105,6 +614,95 @@ public class TrainServer extends Train {
 					return;
 				}
 			}
+		}
+	}
+
+	private class ServiceVehicle implements TrainService.Vehicle {
+
+		@Override
+		public List<PathData> getPath() {
+			return path;
+		}
+
+		@Override
+		public int getNextStoppingIndex() {
+			return nextStoppingIndex;
+		}
+
+		@Override
+		public boolean isRepeat() {
+			return TrainServer.this.isRepeat();
+		}
+
+		@Override
+		public int getRepeatIndex2() {
+			return repeatIndex2;
+		}
+
+		@Override
+		public int getPathRepeatIndex1() {
+			return pathRepeatIndex1;
+		}
+
+		@Override
+		public int getPathRepeatIndex2() {
+			return pathRepeatIndex2;
+		}
+
+		@Override
+		public void setLastLap(boolean isLastLap) {
+			TrainServer.this.setLastLap(isLastLap);
+		}
+
+		@Override
+		public void followPath(Siding.TripPath tripPath) {
+			path = tripPath == null ? depotPath : tripPath.path;
+			distances = tripPath == null ? depotDistances : tripPath.distances;
+			timeSegments = tripPath == null ? depotTimeSegments : tripPath.timeSegments;
+			tripRouteIds.clear();
+			if (tripPath != null) {
+				tripRouteIds.addAll(tripPath.routeIds);
+			}
+			pathRepeatIndex1 = tripPath == null ? depotRepeatIndex1 : tripPath.repeatIndex1;
+			pathRepeatIndex2 = tripPath == null ? depotRepeatIndex2 : tripPath.repeatIndex2;
+			syncRepeatIndices = true;
+		}
+
+		@Override
+		public boolean isStopFree(int stopIndex) {
+			double remainingLength = trainCars * spacing;
+			for (int i = stopIndex; i >= 0 && remainingLength > 0; i--) {
+				if (isRailOccupied(i)) {
+					return false;
+				}
+				remainingLength -= path.get(i).rail.getLength();
+			}
+			return true;
+		}
+
+		@Override
+		public void moveToStop(int stopIndex) {
+			// Every turn back on the way swaps which end of the train leads
+			reversed = false;
+			for (int i = 0; i < stopIndex; i++) {
+				if (path.get(i).isOppositeRail(path.get(i + 1))) {
+					reversed = !reversed;
+				}
+			}
+			railProgress = distances.get(stopIndex);
+			speed = 0;
+			manualNotch = -2;
+			elapsedDwellTicks = 0;
+			nextStoppingIndex = stopIndex;
+			nextPlatformIndex = stopIndex;
+		}
+
+		@Override
+		public void returnToDepot() {
+			isOnRoute = false;
+			manualNotch = -2;
+			speed = 0;
+			ridingEntities.clear();
 		}
 	}
 }

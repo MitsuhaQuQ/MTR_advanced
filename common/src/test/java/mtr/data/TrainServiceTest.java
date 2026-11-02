@@ -1,0 +1,491 @@
+package mtr.data;
+
+import mtr.path.PathData;
+import net.minecraft.core.BlockPos;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Runs services the way a train on a path does, without a world.
+ */
+class TrainServiceTest {
+
+	private static final long SECOND = 1000;
+	private static final long MINUTE = 60 * SECOND;
+	private static final long HOUR = 60 * MINUTE;
+	/**
+	 * Monday the 5th of January 2026 at midnight in UTC.
+	 */
+	private static final long MONDAY = 20458L * Depot.MILLISECONDS_PER_DAY;
+	private static final int TICKS_PER_MINUTE = (int) (MINUTE / Depot.MILLIS_PER_TICK);
+
+	private long now;
+
+	@BeforeEach
+	void setUtc() {
+		TimetableConfig.set("UTC", 0);
+	}
+
+	@Test
+	void aTrainStillOnItsServiceGoesToTheStopItShouldBeAt() {
+		final Line line = new Line();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+
+		now = MONDAY + 8 * HOUR + 3 * MINUTE;
+		train.service.alignToTimetable(true);
+
+		// The first stop was left at 08:00:10 and the second is left at 08:02:10, both more than a minute ago at most
+		assertEquals(2, train.movedTo);
+		assertEquals(MONDAY + 8 * HOUR, train.service.getTripMillis());
+	}
+
+	@Test
+	void aTrainWhoseServiceHasEndedTakesTheOneRunningNow() {
+		final Line line = new Line();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+
+		now = MONDAY + 9 * HOUR + 3 * MINUTE;
+		train.service.alignToTimetable(true);
+
+		assertEquals(MONDAY + 9 * HOUR, train.service.getTripMillis());
+		assertEquals(2, train.movedTo);
+		assertTrue(line.depot.isTripReserved(line.route.id, MONDAY + 9 * HOUR));
+	}
+
+	@Test
+	void aTrainGoesBackToTheLastFreeStop() {
+		final Line line = new Line();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		train.takenStops.add(2);
+
+		now = MONDAY + 9 * HOUR + 3 * MINUTE;
+		train.service.alignToTimetable(true);
+
+		assertEquals(1, train.movedTo);
+	}
+
+	@Test
+	void twoTrainsDoNotTakeTheSameService() {
+		final Line line = new Line();
+		final FakeTrain train1 = line.deploy(MONDAY + 8 * HOUR);
+		final FakeTrain train2 = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
+
+		now = MONDAY + 9 * HOUR + 3 * MINUTE;
+		train1.service.alignToTimetable(true);
+		train2.service.alignToTimetable(true);
+
+		assertEquals(MONDAY + 9 * HOUR, train1.service.getTripMillis());
+		// The 09:00 service is taken, so the other train waits at the first stop for the 09:10 one
+		assertEquals(MONDAY + 9 * HOUR + 10 * MINUTE, train2.service.getTripMillis());
+		assertEquals(1, train2.movedTo);
+	}
+
+	@Test
+	void aTrainWithNothingToRunGoesBackToTheDepot() {
+		final Line line = new Line();
+		final FakeTrain train = line.deploy(MONDAY + 23 * HOUR + 50 * MINUTE);
+
+		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 2 * HOUR;
+		train.service.alignToTimetable(true);
+
+		assertTrue(train.returned);
+		assertEquals(-1, train.movedTo);
+	}
+
+	@Test
+	void aTrainAtTheDepotIsNotMoved() {
+		final Line line = new Line();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+
+		now = MONDAY + 9 * HOUR + 3 * MINUTE;
+		train.service.alignToTimetable(false);
+
+		assertEquals(-1, train.movedTo);
+		assertFalse(train.returned);
+		assertEquals(MONDAY + 8 * HOUR, train.service.getTripMillis());
+	}
+
+	@Test
+	void oneTrainOnALoopRunsEveryServiceOfTheDay() {
+		final Loop loop = new Loop(6);
+		final List<Long> taken = loop.runDay(Collections.singletonList(loop.deploy(MONDAY + 6 * HOUR)));
+
+		assertEquals(loop.getServices(), taken);
+	}
+
+	@Test
+	void twoTrainsOnALoopShareTheServicesOfTheDay() {
+		final Loop loop = new Loop(16);
+		final FakeTrain train1 = loop.deploy(MONDAY + 6 * HOUR);
+		final FakeTrain train2 = loop.deploy(MONDAY + 6 * HOUR + 10 * MINUTE);
+		final List<Long> taken = loop.runDay(Arrays.asList(train1, train2));
+
+		final List<Long> sorted = new ArrayList<>(taken);
+		Collections.sort(sorted);
+		assertEquals(loop.getServices(), sorted);
+		assertEquals(taken.size(), new HashSet<>(taken).size());
+		assertTrue(train1.lastLap);
+		assertTrue(train2.lastLap);
+	}
+
+	@Test
+	void aTrainLeavesForTheLatestServiceItCanStillReach() {
+		final Line line = new Line();
+		final FakeTrain train = line.newTrain();
+
+		now = MONDAY + 8 * HOUR + 30 * SECOND;
+		assertEquals(MONDAY + 8 * HOUR, train.service.findDeployService(0));
+
+		// Once the 08:00 service is taken, the 07:50 one is too long ago to run
+		line.depot.reserveTrip(line.route.id, MONDAY + 8 * HOUR);
+		assertEquals(0, train.service.findDeployService(0));
+
+		// A train doesn't leave early for the 08:10 service, nor go back to one before the last service sent out
+		now = MONDAY + 8 * HOUR + 5 * MINUTE;
+		assertEquals(0, train.service.findDeployService(MONDAY + 8 * HOUR));
+		now = MONDAY + 8 * HOUR + 9 * MINUTE + 50 * SECOND;
+		assertEquals(MONDAY + 8 * HOUR + 10 * MINUTE, train.service.findDeployService(MONDAY + 8 * HOUR));
+	}
+
+	@Test
+	void aTrainTurningBackTakesTheNextServiceTheOtherWay() {
+		final Route up = makeRoute(1, 0, 1, 2, 3);
+		final Route down = makeRoute(2, 5, 3, 2, 1);
+		final Network network = new Network(Arrays.asList(up, down), makePath(7), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 2, 6), stop(5, 1, 8)), 0, 0);
+		final FakeTrain train = network.deploy(MONDAY + 8 * HOUR);
+		network.depot.reserveTrip(down.id, MONDAY + 8 * HOUR + 5 * MINUTE);
+
+		now = MONDAY + 8 * HOUR + 4 * MINUTE;
+		train.nextStoppingIndex = 3;
+		train.service.onStopReached();
+
+		// The 08:05 service the other way has a train already
+		assertEquals(down.id, train.service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 15 * MINUTE, train.service.getTripMillis());
+		assertTrue(network.depot.isTripReserved(down.id, MONDAY + 8 * HOUR + 15 * MINUTE));
+		assertEquals(MONDAY + 8 * HOUR + 17 * MINUTE, train.service.getPlannedArrivalMillis(4));
+	}
+
+	@Test
+	void aServiceRunningThroughTakesItsOwnPathAndTheLinkedService() {
+		final Route line1 = makeRoute(1, 0, 1, 2, 3);
+		final Route line2 = makeRoute(2, 6, 3, 4);
+		final int linkedService = (int) (8 * HOUR + 6 * MINUTE);
+		line1.timetable.links.put((int) (8 * HOUR), new RouteTimetable.ServiceLink(line2.id, linkedService, -1));
+		line2.timetable.addLinkedService(linkedService);
+		final Line line = new Line(line1);
+		line.addRoute(line2);
+		final String key = Siding.TripTail.getKey(Collections.singletonList(line1.timetable.getLink(MONDAY + 8 * HOUR)));
+		final List<PathData> tripRails = makePath(6);
+		final Siding.TripTail tripTail = new Siding.TripTail(key, Arrays.asList(line1.id, line2.id), new HashMap<>(), 3, tripRails.subList(3, 6), null, Siding.TripTail.NO_RAIL, false, Siding.TripTail.NO_RAIL);
+		final Siding.TripPath tripPath = Siding.TripPath.of(tripTail, tripRails, 3, 0, Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 8)));
+		line.tripPaths.put(key, tripPath);
+
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		assertSame(tripPath, train.followed);
+
+		now = MONDAY + 8 * HOUR + 4 * MINUTE;
+		train.nextStoppingIndex = 3;
+		train.service.onStopReached();
+
+		assertEquals(line2.id, train.service.getTripRouteId());
+		assertEquals(MONDAY + linkedService, train.service.getTripMillis());
+		assertEquals(MONDAY + 8 * HOUR + 10 * MINUTE, train.service.getPlannedArrivalMillis(4));
+
+		// The next service has no link, so its train keeps to the usual path
+		final FakeTrain other = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
+		assertNull(other.followed);
+		assertEquals(line1.id, other.service.getTripRouteId());
+	}
+
+	/**
+	 * A depot and its siding, with the routes it runs.
+	 */
+	private class Network {
+
+		final Map<Long, Route> routes = new HashMap<>();
+		final FakeDepot depot;
+		final List<PathData> path;
+		final Siding.StopTimes stopTimes;
+		final Map<String, Siding.TripPath> tripPaths = new HashMap<>();
+		final int repeatIndex1;
+		final int repeatIndex2;
+
+		Network(List<Route> depotRoutes, List<PathData> path, Siding.StopTimes stopTimes, int repeatIndex1, int repeatIndex2) {
+			depot = new FakeDepot(depotRoutes);
+			depotRoutes.forEach(this::addRoute);
+			this.path = path;
+			this.stopTimes = stopTimes;
+			this.repeatIndex1 = repeatIndex1;
+			this.repeatIndex2 = repeatIndex2;
+		}
+
+		/**
+		 * Adds a route of the network, which may be run from another depot.
+		 */
+		void addRoute(Route route) {
+			routes.put(route.id, route);
+		}
+
+		FakeTrain newTrain() {
+			final FakeTrain train = new FakeTrain(path, repeatIndex1, repeatIndex2);
+			train.service.setNetwork(depot, routes::get, null);
+			train.service.setStopTimes(stopTimes, tripPaths);
+			return train;
+		}
+
+		FakeTrain deploy(long tripMillis) {
+			final FakeTrain train = newTrain();
+			final long routeId = depot.routes.get(0).id;
+			depot.reserveTrip(routeId, tripMillis);
+			now = tripMillis;
+			train.service.deploy(tripMillis, routeId);
+			train.nextStoppingIndex = 1;
+			return train;
+		}
+	}
+
+	/**
+	 * Three stops 2 minutes apart, with a service every 10 minutes from 06:00 to 23:50.
+	 */
+	private class Line extends Network {
+
+		final Route route;
+
+		Line() {
+			this(makeRoute(1, 0, 1, 2, 3));
+		}
+
+		Line(Route route) {
+			super(Collections.singletonList(route), makePath(5), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4)), 0, 0);
+			this.route = route;
+		}
+	}
+
+	/**
+	 * Three stops round a loop, with a service every 10 minutes from 06:00 to 23:50.
+	 */
+	private class Loop extends Network {
+
+		/**
+		 * @param lapMinutes the time from the first stop round to it again
+		 */
+		Loop(int lapMinutes) {
+			super(Collections.singletonList(makeRoute(1, 0, 1, 2, 3, 1)), makePath(6), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, lapMinutes / 3), stop(3, 3, lapMinutes * 2 / 3), stop(4, 1, lapMinutes)), 1, 4);
+		}
+
+		/**
+		 * Brings each train round to the end of its lap when it is planned to get there, until every train has run its last lap.
+		 *
+		 * @return the services the trains ran, in the order they started them
+		 */
+		List<Long> runDay(List<FakeTrain> trains) {
+			final List<Long> taken = new ArrayList<>();
+			trains.forEach(train -> taken.add(train.service.getTripMillis()));
+			final Set<FakeTrain> running = new HashSet<>(trains);
+			while (!running.isEmpty()) {
+				FakeTrain next = null;
+				long nextMillis = Long.MAX_VALUE;
+				for (final FakeTrain train : running) {
+					final long lapEndMillis = train.service.getPlannedMillis(train.service.getPlanAt(1).arrivalMillis) + stopTimes.getDurationMillis();
+					if (lapEndMillis < nextMillis) {
+						next = train;
+						nextMillis = lapEndMillis;
+					}
+				}
+				now = nextMillis;
+				if (next.lastLap) {
+					running.remove(next);
+				} else {
+					next.service.onLapComplete();
+					taken.add(next.service.getTripMillis());
+				}
+			}
+			return taken;
+		}
+
+		List<Long> getServices() {
+			final List<Long> services = new ArrayList<>();
+			for (long millis = 6 * HOUR; millis < 24 * HOUR; millis += 10 * MINUTE) {
+				services.add(MONDAY + millis);
+			}
+			return services;
+		}
+	}
+
+	private static long[] stop(int rail, long platformId, int minutes) {
+		final long arrival = (long) minutes * TICKS_PER_MINUTE;
+		return new long[]{rail, platformId, arrival, arrival + 10 * SECOND / Depot.MILLIS_PER_TICK};
+	}
+
+	/**
+	 * @param firstMinute the minute past each hour of the services, which run every 10 minutes from 06:00 until midnight
+	 */
+	private static Route makeRoute(long id, int firstMinute, long... platformIds) {
+		final Route route = new Route(id, TransportMode.TRAIN);
+		for (final long platformId : platformIds) {
+			route.platformIds.add(new Route.RoutePlatform(platformId));
+		}
+		route.timetable.enabled = true;
+		route.timetable.marginPercent = 0;
+		for (long millis = 6 * HOUR + firstMinute * MINUTE; millis < 24 * HOUR; millis += 10 * MINUTE) {
+			route.timetable.services.add((int) millis);
+		}
+		route.timetable.sanitize();
+		return route;
+	}
+
+	/**
+	 * @return a path from a siding through platforms to another siding, with each platform the same as its rail
+	 */
+	private static List<PathData> makePath(int rails) {
+		final List<PathData> path = new ArrayList<>();
+		for (int i = 0; i < rails; i++) {
+			final BlockPos start = new BlockPos(i * 20, 64, 0);
+			final BlockPos end = new BlockPos(i * 20 + 20, 64, 0);
+			final boolean isSiding = i == 0 || i == rails - 1;
+			final Rail rail = new Rail(start, RailAngle.E, end, RailAngle.W, isSiding ? RailType.SIDING : RailType.PLATFORM, TransportMode.TRAIN);
+			path.add(new PathData(rail, isSiding ? 0 : i, i == 0 ? 0 : 10, start, end, i));
+		}
+		return path;
+	}
+
+	private class FakeTrain implements TrainService.Vehicle {
+
+		final TrainService service;
+		final List<PathData> path;
+		final int pathRepeatIndex1;
+		final int pathRepeatIndex2;
+		final Set<Integer> takenStops = new HashSet<>();
+		int nextStoppingIndex;
+		boolean lastLap;
+		int movedTo = -1;
+		boolean returned;
+		Siding.TripPath followed;
+
+		FakeTrain(List<PathData> path, int pathRepeatIndex1, int pathRepeatIndex2) {
+			this.path = path;
+			this.pathRepeatIndex1 = pathRepeatIndex1;
+			this.pathRepeatIndex2 = pathRepeatIndex2;
+			service = new TrainService("train", this, () -> now);
+		}
+
+		@Override
+		public List<PathData> getPath() {
+			return path;
+		}
+
+		@Override
+		public int getNextStoppingIndex() {
+			return nextStoppingIndex;
+		}
+
+		@Override
+		public boolean isRepeat() {
+			return !lastLap && pathRepeatIndex1 > 0 && pathRepeatIndex2 > 0;
+		}
+
+		@Override
+		public int getRepeatIndex2() {
+			return lastLap ? 0 : pathRepeatIndex2;
+		}
+
+		@Override
+		public int getPathRepeatIndex1() {
+			return pathRepeatIndex1;
+		}
+
+		@Override
+		public int getPathRepeatIndex2() {
+			return pathRepeatIndex2;
+		}
+
+		@Override
+		public void setLastLap(boolean isLastLap) {
+			lastLap = isLastLap;
+		}
+
+		@Override
+		public void followPath(Siding.TripPath tripPath) {
+			followed = tripPath;
+		}
+
+		@Override
+		public boolean isStopFree(int stopIndex) {
+			return !takenStops.contains(stopIndex);
+		}
+
+		@Override
+		public void moveToStop(int stopIndex) {
+			movedTo = stopIndex;
+			nextStoppingIndex = stopIndex;
+		}
+
+		@Override
+		public void returnToDepot() {
+			returned = true;
+		}
+	}
+
+	/**
+	 * Takes services like a depot, except that it never forgets one.
+	 */
+	private static class FakeDepot implements TrainService.Board {
+
+		private final List<Route> routes;
+		private final Set<Long> reservedTrips = new HashSet<>();
+
+		private FakeDepot(List<Route> routes) {
+			this.routes = routes;
+		}
+
+		@Override
+		public RouteTimetable getTimetable(String trainId) {
+			return routes.get(0).timetable;
+		}
+
+		@Override
+		public List<Route> getTrainRoutes(String trainId) {
+			return routes;
+		}
+
+		@Override
+		public long findNextTrip(String trainId, long readyMillis) {
+			return findNextService(routes.get(0), readyMillis);
+		}
+
+		@Override
+		public long findNextService(Route route, long readyMillis) {
+			final long tripMillis = route.timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> isTripReserved(route.id, millis));
+			reserveTrip(route.id, tripMillis);
+			return tripMillis;
+		}
+
+		@Override
+		public void reserveTrip(long routeId, long tripMillis) {
+			if (tripMillis != 0) {
+				reservedTrips.add(routeId * 31 + tripMillis);
+			}
+		}
+
+		@Override
+		public boolean isTripReserved(long routeId, long tripMillis) {
+			return reservedTrips.contains(routeId * 31 + tripMillis);
+		}
+	}
+}

@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-public class Depot extends AreaBase implements IReducedSaveData {
+public class Depot extends AreaBase implements IReducedSaveData, TrainService.Board {
 
 	public int clientPathGenerationSuccessfulSegments;
 	public PathFailure clientPathFailure = PathFailure.NONE;
@@ -60,10 +60,6 @@ public class Depot extends AreaBase implements IReducedSaveData {
 	private static final int TICKS_PER_DAY = HOURS_IN_DAY * TICKS_PER_HOUR;
 	private static final int CONTINUOUS_MOVEMENT_FREQUENCY = 8000;
 	private static final int THRESHOLD_ABOVE_MAX_BUILD_HEIGHT = 64;
-	/**
-	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
-	 */
-	private static final int DEPLOY_MARGIN_MILLIS = 15000;
 
 	private static final String KEY_ROUTE_IDS = "route_ids";
 	private static final int MAX_DEPARTURES = 4096;
@@ -394,7 +390,7 @@ public class Depot extends AreaBase implements IReducedSaveData {
 				final RouteTimetable timetable = getTimetable(train.trainId);
 				final Route firstRoute = timetable == null ? null : getTrainRoutes(train.trainId).get(0);
 				final long currentMillis = System.currentTimeMillis();
-				final long tripMillis = timetable == null ? 0 : timetable.getLatestService(Math.max(lastDeployedTrips.getOrDefault(firstRoute.id, 0L), currentMillis + Math.min(train.getLeadMillis(), 0) - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS), currentMillis + train.getLeadMillis() + DEPLOY_MARGIN_MILLIS, millis -> isTripReserved(firstRoute.id, millis));
+				final long tripMillis = timetable == null ? 0 : train.findDeployService(lastDeployedTrips.getOrDefault(firstRoute.id, 0L));
 				if (timetable == null ? getMillisUntilDeploy(1) == 0 : tripMillis != 0) {
 					lastDeployedMillis = currentMillis;
 					deployIndex++;

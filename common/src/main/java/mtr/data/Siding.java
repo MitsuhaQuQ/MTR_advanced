@@ -901,6 +901,20 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			messagePackHelper.iterateArrayValue(KEY_PATH, value -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		}
 
+		/**
+		 * A path worked out elsewhere, for running services without a world.
+		 *
+		 * @param tailStart the rail of {@code path} where the tail of the trip starts
+		 * @param repeatEnd for a loop at the end, the rail where a lap ends, or 0
+		 */
+		static TripPath of(TripTail tripTail, List<PathData> path, int tailStart, int repeatEnd, StopTimes newStopTimes) {
+			final TripPath tripPath = new TripPath(tripTail, 0, 0, tailStart, repeatEnd, path);
+			tripPath.stopTimes.copyFrom(newStopTimes);
+			tripPath.stopTimes.cutStops.clear();
+			tripPath.stopTimes.cutStops.putAll(tripPath.cutStops);
+			return tripPath;
+		}
+
 		private void generateTimes(Siding siding) {
 			stopTimes.cutStops.clear();
 			stopTimes.cutStops.putAll(cutStops);
@@ -969,6 +983,19 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		private final List<Stop> tailJoinStops = new ArrayList<>();
 		private final Map<Integer, Integer> joinStopLaps = new HashMap<>();
 		private final Map<Long, Map<Integer, RouteTimetable.StopPlan>> plans = new HashMap<>();
+
+		/**
+		 * Stop times of a path worked out elsewhere, for running services without a world.
+		 *
+		 * @param stops for each stop in order, its rail on the path, its platform, and its arrival and departure in ticks from leaving the siding
+		 */
+		static StopTimes of(long[]... stops) {
+			final StopTimes stopTimes = new StopTimes();
+			for (int i = 0; i < stops.length; i++) {
+				stopTimes.add((int) stops[i][0], stops[i][1], null, stops[i][2], stops[i][3], i == 0);
+			}
+			return stopTimes;
+		}
 
 		private void clear() {
 			firstIndex = -1;
