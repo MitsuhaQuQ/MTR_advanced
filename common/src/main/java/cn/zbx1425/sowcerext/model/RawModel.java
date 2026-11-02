@@ -97,7 +97,7 @@ public class RawModel {
     public int getVertexCount() {
         int result = 0;
         for (RawMesh mesh : meshList.values()) {
-            result += mesh.vertices.size();
+            result += mesh.getVertexCount();
         }
         return result;
     }
@@ -105,7 +105,7 @@ public class RawModel {
     public int getFaceCount() {
         int result = 0;
         for (RawMesh mesh : meshList.values()) {
-            result += mesh.faces.size();
+            result += mesh.getFaceCount();
         }
         return result;
     }
@@ -152,6 +152,10 @@ public class RawModel {
 
     public void triangulate() {
         for (RawMesh mesh : meshList.values()) mesh.triangulate();
+    }
+
+    public void compact() {
+        for (RawMesh mesh : meshList.values()) mesh.compact();
     }
 
     public void applyShear(Vector3f dir, Vector3f shear, float ratio) {

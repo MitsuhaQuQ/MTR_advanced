@@ -28,6 +28,14 @@ public class RawMesh {
     public final MaterialProp materialProp;
     public List<Vertex> vertices = new ArrayList<>();
     public List<Face> faces = new ArrayList<>();
+    /**
+     * What is left of the vertices and faces after {@link #compact()}, or null before it.
+     */
+    private float[] compactVertices;
+    private int[] compactFaces;
+
+    private static final int FLOATS_PER_VERTEX = 8;
+    private static final int VERTICES_PER_FACE = 3;
 
     public RawMesh(MaterialProp materialProp) {
         this.materialProp = materialProp;
@@ -420,8 +428,97 @@ public class RawMesh {
         }
     }
 
+    /**
+     * Swaps the vertices and faces for arrays once a mesh is uploaded, as an object for each vertex takes several times the
+     * memory, and models can have millions of them. Only {@link #writeBlazeBuffer} still reads the mesh after that, which
+     * is what shader packs need. The lists are replaced and not cleared, as other meshes can share them.
+     */
+    public void compact() {
+        if (compactFaces != null || faces.stream().anyMatch(face -> face.vertices.length != VERTICES_PER_FACE)) {
+            return;
+        }
+
+        final float[] newVertices = new float[vertices.size() * FLOATS_PER_VERTEX];
+        int vertexIndex = 0;
+        for (Vertex vertex : vertices) {
+            newVertices[vertexIndex++] = vertex.position.x();
+            newVertices[vertexIndex++] = vertex.position.y();
+            newVertices[vertexIndex++] = vertex.position.z();
+            newVertices[vertexIndex++] = vertex.normal.x();
+            newVertices[vertexIndex++] = vertex.normal.y();
+            newVertices[vertexIndex++] = vertex.normal.z();
+            newVertices[vertexIndex++] = vertex.u;
+            newVertices[vertexIndex++] = vertex.v;
+        }
+
+        final int[] newFaces = new int[faces.size() * VERTICES_PER_FACE];
+        int faceIndex = 0;
+        for (Face face : faces) {
+            for (int vertex : face.vertices) {
+                newFaces[faceIndex++] = vertex;
+            }
+        }
+
+        compactVertices = newVertices;
+        compactFaces = newFaces;
+        vertices = new ArrayList<>();
+        faces = new ArrayList<>();
+    }
+
+    public int getVertexCount() {
+        return compactVertices == null ? vertices.size() : compactVertices.length / FLOATS_PER_VERTEX;
+    }
+
+    public int getFaceCount() {
+        return compactFaces == null ? faces.size() : compactFaces.length / VERTICES_PER_FACE;
+    }
+
+    private Vertex getCompactVertex(int index) {
+        final int offset = index * FLOATS_PER_VERTEX;
+        final Vertex vertex = new Vertex(
+                new Vector3f(compactVertices[offset], compactVertices[offset + 1], compactVertices[offset + 2]),
+                new Vector3f(compactVertices[offset + 3], compactVertices[offset + 4], compactVertices[offset + 5])
+        );
+        vertex.u = compactVertices[offset + 6];
+        vertex.v = compactVertices[offset + 7];
+        return vertex;
+    }
+
+    /**
+     * Gets the lists back for the few things that need them. Colour and light aren't kept, as they don't affect a mesh once uploaded.
+     */
+    private void expand() {
+        if (compactFaces != null) {
+            final List<Vertex> newVertices = new ArrayList<>(getVertexCount());
+            for (int i = 0; i < getVertexCount(); i++) {
+                newVertices.add(getCompactVertex(i));
+            }
+            final List<Face> newFaces = new ArrayList<>(getFaceCount());
+            for (int i = 0; i < compactFaces.length; i += VERTICES_PER_FACE) {
+                newFaces.add(new Face(new int[]{compactFaces[i], compactFaces[i + 1], compactFaces[i + 2]}));
+            }
+            vertices = newVertices;
+            faces = newFaces;
+            compactVertices = null;
+            compactFaces = null;
+        }
+    }
+
     public void writeBlazeBuffer(FaceList vertexConsumer, Matrix4f matrix, int color, int light, int overlay, DrawContext drawContext) {
-        drawContext.recordBlazeAction(faces.size());
+        drawContext.recordBlazeAction(getFaceCount());
+        if (compactFaces != null) {
+            for (int i = 0; i < compactFaces.length; i += VERTICES_PER_FACE) {
+                final Vertex[] transformedVertices = new Vertex[VERTICES_PER_FACE];
+                for (int j = 0; j < VERTICES_PER_FACE; j++) {
+                    final Vertex vertex = getCompactVertex(compactFaces[i + j]);
+                    transformedVertices[j] = new Vertex(matrix.transform(vertex.position), matrix.transform3(vertex.normal));
+                    transformedVertices[j].u = vertex.u;
+                    transformedVertices[j].v = vertex.v;
+                }
+                vertexConsumer.addFace(transformedVertices, color, light, overlay);
+            }
+            return;
+        }
         for (Face face : faces) {
             assert face.vertices.length == 3;
             Vertex[] transformedVertices = new Vertex[face.vertices.length];
@@ -437,6 +534,7 @@ public class RawMesh {
     }
 
     public RawMesh copy() {
+        expand();
         RawMesh result = new RawMesh(this.materialProp.copy());
         for (Vertex vertex : this.vertices) result.vertices.add(vertex.copy());
         for (Face face : this.faces) result.faces.add(face.copy());
@@ -447,10 +545,13 @@ public class RawMesh {
         RawMesh result = new RawMesh(this.materialProp.copy());
         result.vertices = vertices;
         result.faces = faces;
+        result.compactVertices = compactVertices;
+        result.compactFaces = compactFaces;
         return result;
     }
 
     public void serializeTo(DataOutputStream dos) throws IOException {
+        expand();
         materialProp.serializeTo(dos);
         dos.writeInt(vertices.size());
         for (Vertex vertex : vertices) vertex.serializeTo(dos);

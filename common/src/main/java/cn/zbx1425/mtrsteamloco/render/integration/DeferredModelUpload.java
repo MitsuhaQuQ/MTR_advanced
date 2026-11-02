@@ -61,6 +61,12 @@ public class DeferredModelUpload {
             }
         }
         LoadTimings.add("uploadGl", startNanos);
+
+        startNanos = System.nanoTime();
+        List<Runnable> compactTasks = new ArrayList<>(PENDING.size());
+        PENDING.forEach(agent -> compactTasks.add(agent::compactModel));
+        TrainModelPreloader.runParallel(compactTasks);
+        LoadTimings.add("compact", startNanos);
         PENDING.clear();
     }
 }

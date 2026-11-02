@@ -39,7 +39,6 @@ class ObjModelLoaderTest {
 	@Test
 	void everyUseGetsItsOwnCopy() throws IOException {
 		final RawModel model = preload();
-		ObjModelLoader.prepareCopies(LOCATION, 1);
 
 		final RawModel first = load();
 		final RawModel second = load();
@@ -52,9 +51,8 @@ class ObjModelLoaderTest {
 	}
 
 	@Test
-	void usesNobodyCountedStillGetCopiesWithoutParsingAgain() throws IOException {
+	void anyNumberOfUsesWorksWithoutParsingAgain() throws IOException {
 		final RawModel model = preload();
-		ObjModelLoader.prepareCopies(LOCATION, 2);
 
 		// There is no resource manager here, so parsing the file would throw
 		for (int i = 0; i < 5; i++) {
@@ -63,21 +61,8 @@ class ObjModelLoaderTest {
 	}
 
 	@Test
-	void workingWithoutPreparedCopiesIsFine() throws IOException {
-		final RawModel model = preload();
-
-		assertNotSame(model, load());
-	}
-
-	@Test
-	void preparingCopiesOfAFileThatIsNotLoadedDoesNothing() {
-		ObjModelLoader.prepareCopies(LOCATION, 2);
-	}
-
-	@Test
 	void callersCanChangeTheMapTheyAreGiven() throws IOException {
 		preload();
-		ObjModelLoader.prepareCopies(LOCATION, 1);
 
 		ObjModelLoader.loadModels(null, LOCATION, null).clear();
 

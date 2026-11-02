@@ -25,12 +25,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.io.InputStream;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ObjModelLoader {
 
-    private static final Map<ResourceLocation, PreloadedModels> PRELOADED_MODELS = new ConcurrentHashMap<>();
+    private static volatile Map<ResourceLocation, Map<String, RawModel>> preloadedModels = Map.of();
 
     public static RawModel loadModel(InputStream obj, InputStream mtl, ResourceLocation location, AtlasManager atlasManager) throws IOException {
         Obj srcObj = ObjReader.read(obj);
@@ -65,45 +63,25 @@ public class ObjModelLoader {
     }
 
     public static void setPreloadedModels(Map<ResourceLocation, Map<String, RawModel>> models) {
-        PRELOADED_MODELS.clear();
-        models.forEach((location, parts) -> PRELOADED_MODELS.put(location, new PreloadedModels(parts)));
-    }
-
-    /**
-     * Makes copies of a preloaded file ahead of time, so they can be made on worker threads. The parsed file stays as it is,
-     * as scripts can ask for files too, and nothing says how many times before they run.
-     */
-    public static void prepareCopies(ResourceLocation location, int count) {
-        PreloadedModels preloaded = PRELOADED_MODELS.get(location);
-        if (preloaded == null) return;
-        for (int i = 0; i < count; i++) {
-            preloaded.copies.add(copyModels(preloaded.models));
-        }
+        preloadedModels = models;
     }
 
     public static void clearPreloadedModels() {
-        PRELOADED_MODELS.clear();
+        preloadedModels = Map.of();
     }
 
     public static Map<String, RawModel> loadModels(ResourceManager resourceManager, ResourceLocation objLocation, AtlasManager atlasManager) throws IOException {
-        PreloadedModels preloaded = PRELOADED_MODELS.get(objLocation);
+        Map<String, RawModel> preloaded = preloadedModels.get(objLocation);
         if (preloaded == null) return parseModels(resourceManager, objLocation, atlasManager);
 
-        // Callers transform the models in place, and several trains can share one file
-        Map<String, RawModel> preparedCopy = preloaded.copies.poll();
-        if (preparedCopy != null) return preparedCopy;
-
+        // Callers transform the models in place, and several trains can share one file. Scripts can ask for these files too,
+        // which nothing can count before they run, so the parsed models stay until the reload ends.
         long startNanos = System.nanoTime();
-        Map<String, RawModel> result = copyModels(preloaded.models);
-        LoadTimings.add("objCopy", startNanos);
-        return result;
-    }
-
-    private static Map<String, RawModel> copyModels(Map<String, RawModel> models) {
         HashMap<String, RawModel> result = new HashMap<>();
-        for (Map.Entry<String, RawModel> entry : models.entrySet()) {
+        for (Map.Entry<String, RawModel> entry : preloaded.entrySet()) {
             result.put(entry.getKey(), entry.getValue().copy());
         }
+        LoadTimings.add("objCopy", startNanos);
         return result;
     }
 
@@ -325,16 +303,6 @@ public class ObjModelLoader {
         }
     }
 
-
-    private static class PreloadedModels {
-
-        private final Map<String, RawModel> models;
-        private final Queue<Map<String, RawModel>> copies = new ConcurrentLinkedQueue<>();
-
-        private PreloadedModels(Map<String, RawModel> models) {
-            this.models = models;
-        }
-    }
 
     private static class ZeroFloatTuple implements FloatTuple {
 

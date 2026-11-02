@@ -42,6 +42,12 @@ public class SowcerModelAgent extends ModelMapper {
         this.pendingModel = null;
     }
 
+    public void compactModel() {
+        if (uploadedModel != null) {
+            uploadedModel.compact();
+        }
+    }
+
     @Override
     public void render(PoseStack matrices, VertexConsumer vertices, float x, float y, float z, float rotateY, int light, int overlay) {
         if (uploadedModel == null) return;

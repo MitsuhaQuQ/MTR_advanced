@@ -62,7 +62,10 @@ public class CustomResourcesMixin {
     private static void reloadTail(ResourceManager manager, CallbackInfo ci) {
         DeferredModelUpload.finish();
         ObjModelLoader.clearPreloadedModels();
-        TrainModelPreloader.clearJson();
+        // Most of what a reload allocates is garbage by now, and only a full collection hands the memory back
+        long gcStartNanos = System.nanoTime();
+        System.gc();
+        LoadTimings.add("gc", gcStartNanos);
         LoadTimings.report();
         CustomResources.resetComponents();
         if (!MtrModelRegistryUtil.loadingErrorList.isEmpty()) {
@@ -90,30 +93,21 @@ public class CustomResourcesMixin {
         ResourceLocation location = new ResourceLocation(path);
         // The custom resources file holds the trains, whose model file holds their properties, which is where a train is built
         readDepth++;
-        List<JsonObject> preloaded = TrainModelPreloader.takeJson(location);
         try {
-            if (preloaded == null) {
-                long lookupStartNanos = System.nanoTime();
-                List<Resource> resources = UtilitiesClient.getResources(manager, location);
-                LoadTimings.add("jsonLookup", lookupStartNanos);
-                resources.forEach(resource -> {
-                    try (final InputStream stream = Utilities.getInputStream(resource)) {
-                        long jsonStartNanos = System.nanoTime();
-                        JsonObject modelObject = new JsonParser().parse(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
-                        LoadTimings.add("json", jsonStartNanos);
-                        acceptJson(path, modelObject, callback);
-                    } catch (Exception e) { Main.LOGGER.error("On behalf of MTR: Parsing JSON " + path, e); }
-                    try {
-                        Utilities.closeResource(resource);
-                    } catch (IOException e) { Main.LOGGER.error("On behalf of MTR: Closing resource " + path, e); }
-                });
-            } else {
-                for (JsonObject modelObject : preloaded) {
-                    try {
-                        acceptJson(path, modelObject, callback);
-                    } catch (Exception e) { Main.LOGGER.error("On behalf of MTR: Parsing JSON " + path, e); }
-                }
-            }
+            long lookupStartNanos = System.nanoTime();
+            List<Resource> resources = UtilitiesClient.getResources(manager, location);
+            LoadTimings.add("jsonLookup", lookupStartNanos);
+            resources.forEach(resource -> {
+                try (final InputStream stream = Utilities.getInputStream(resource)) {
+                    long jsonStartNanos = System.nanoTime();
+                    JsonObject modelObject = new JsonParser().parse(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
+                    LoadTimings.add("json", jsonStartNanos);
+                    acceptJson(path, modelObject, callback);
+                } catch (Exception e) { Main.LOGGER.error("On behalf of MTR: Parsing JSON " + path, e); }
+                try {
+                    Utilities.closeResource(resource);
+                } catch (IOException e) { Main.LOGGER.error("On behalf of MTR: Closing resource " + path, e); }
+            });
         } catch (Exception ignored) { }
         readDepth--;
         ci.cancel();

@@ -1,7 +1,10 @@
 package cn.zbx1425.sowcerext.model;
 
 import cn.zbx1425.sowcer.batch.MaterialProp;
+import cn.zbx1425.sowcer.math.Matrix4f;
 import cn.zbx1425.sowcer.math.Vector3f;
+import cn.zbx1425.sowcer.util.DrawContext;
+import cn.zbx1425.sowcerext.model.integration.FaceList;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -62,6 +65,99 @@ class RawMeshTest {
 		}
 		mesh.vertices = distinctVertices;
 		mesh.faces = new ArrayList<>(distinctFaces);
+	}
+
+	private static List<Vertex[]> blazeFaces(RawMesh mesh, Matrix4f matrix) {
+		final List<Vertex[]> faces = new ArrayList<>();
+		mesh.writeBlazeBuffer(new FaceList(null, false) {
+			@Override
+			public void addFace(Vertex[] vertices, int color, int light, int overlay) {
+				faces.add(vertices);
+			}
+		}, matrix, 0, 0, 0, new DrawContext());
+		return faces;
+	}
+
+	private static RawMesh compactableMesh() {
+		final Vertex first = new Vertex(new Vector3f(1F, 2F, 3F), new Vector3f(0F, 1F, 0F));
+		first.u = 0.25F;
+		first.v = 0.75F;
+		final Vertex second = new Vertex(new Vector3f(4F, 5F, 6F), new Vector3f(1F, 0F, 0F));
+		second.u = 0.5F;
+		final Vertex third = new Vertex(new Vector3f(7F, 8F, 9F), new Vector3f(0F, 0F, 1F));
+		third.v = 1F;
+		return mesh(list(first, second, third), new int[]{0, 1, 2}, new int[]{2, 1, 0});
+	}
+
+	@Test
+	void aCompactMeshDrawsTheSameAsBefore() {
+		final Matrix4f matrix = Matrix4f.translation(10F, 20F, 30F);
+		final List<Vertex[]> expected = blazeFaces(compactableMesh(), matrix);
+		final RawMesh mesh = compactableMesh();
+
+		mesh.compact();
+		final List<Vertex[]> faces = blazeFaces(mesh, matrix);
+
+		assertEquals(0, mesh.vertices.size());
+		assertEquals(0, mesh.faces.size());
+		assertEquals(3, mesh.getVertexCount());
+		assertEquals(2, mesh.getFaceCount());
+		assertEquals(expected.size(), faces.size());
+		for (int i = 0; i < expected.size(); i++) {
+			assertArrayEquals(expected.get(i), faces.get(i));
+		}
+	}
+
+	@Test
+	void aMeshSharingListsKeepsThemWhenTheOtherIsCompacted() {
+		final RawMesh mesh = compactableMesh();
+		final RawMesh other = mesh.copyForMaterialChanges();
+
+		mesh.compact();
+
+		assertEquals(3, other.vertices.size());
+		assertEquals(2, other.faces.size());
+	}
+
+	@Test
+	void aCopyOfACompactMeshSharesItsData() {
+		final RawMesh mesh = compactableMesh();
+		mesh.compact();
+
+		assertEquals(2, blazeFaces(mesh.copyForMaterialChanges(), new Matrix4f()).size());
+	}
+
+	@Test
+	void copyingACompactMeshGivesTheVerticesBack() {
+		final RawMesh expected = compactableMesh();
+		final RawMesh mesh = compactableMesh();
+		mesh.compact();
+
+		final RawMesh copy = mesh.copy();
+
+		assertEquals(expected.vertices, copy.vertices);
+		assertEquals(expected.faces, copy.faces);
+	}
+
+	@Test
+	void meshesWithoutTrianglesStayAsTheyAre() {
+		final RawMesh mesh = mesh(list(vertex(1, 0, 0), vertex(2, 0, 0), vertex(3, 0, 0), vertex(4, 0, 0)), new int[]{0, 1, 2, 3});
+
+		mesh.compact();
+
+		assertEquals(4, mesh.vertices.size());
+		assertEquals(1, mesh.faces.size());
+	}
+
+	@Test
+	void compactingTwiceIsFine() {
+		final RawMesh mesh = compactableMesh();
+
+		mesh.compact();
+		mesh.compact();
+
+		assertEquals(3, mesh.getVertexCount());
+		assertEquals(2, mesh.getFaceCount());
 	}
 
 	@Test

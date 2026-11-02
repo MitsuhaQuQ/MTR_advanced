@@ -114,6 +114,14 @@ public class ModelCluster implements Closeable {
         translucentParts.writeBlazeBuffer(vertexConsumers, pose, light, overlay, drawContext);
     }
 
+    /**
+     * Only for models nothing reads the vertices of again, see {@link RawMesh#compact()}.
+     */
+    public void compact() {
+        opaqueParts.compact();
+        translucentParts.compact();
+    }
+
     public void setMatixProcess(Function<Matrix4f, Matrix4f> matrixProcess) {
         opaqueParts.setMatixProcess(matrixProcess);
         translucentParts.setMatixProcess(matrixProcess);
