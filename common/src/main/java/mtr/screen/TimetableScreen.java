@@ -12,6 +12,7 @@ import mtr.data.Platform;
 import mtr.data.Route;
 import mtr.data.RouteTimetable;
 import mtr.data.Station;
+import mtr.data.TimetableConfig;
 import mtr.data.TimetableConflicts;
 import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
@@ -24,6 +25,7 @@ import net.minecraft.util.FormattedCharSequence;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -798,7 +800,8 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	private void updateList() {
 		servicesList.setData(EditDepotScreen.getDepartureList(getTable().services), true, false, false, false, false, true);
 		if (!getTable().services.contains(baseMillis)) {
-			baseMillis = getTable().services.isEmpty() ? 0 : getTable().services.stream().min(Integer::compareTo).orElse(0);
+			// The first train of the operating day, as times are saved in UTC and the smallest one can be any time of the local day
+			baseMillis = getTable().services.stream().min(Comparator.comparingLong((Integer service) -> TimetableConfig.getTimeInDay(service))).orElse(TimetableConfig.getDayStartMillis());
 		}
 		bindRows();
 	}

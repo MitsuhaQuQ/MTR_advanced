@@ -93,6 +93,25 @@ public final class TimetableConfig {
 	}
 
 	/**
+	 * @param millis a time of day saved in UTC
+	 * @return how long after the start of its operating day this time is, so services sort in the order trains run them
+	 */
+	public static long getTimeInDay(long millis) {
+		return Math.floorMod(millis + getOffsetMillis() - dayStartHour * MILLIS_PER_HOUR, (long) Depot.MILLISECONDS_PER_DAY);
+	}
+
+	/**
+	 * @return the time of day in UTC when an operating day starts
+	 */
+	public static int getDayStartMillis() {
+		return (int) Math.floorMod(dayStartHour * MILLIS_PER_HOUR - getOffsetMillis(), (long) Depot.MILLISECONDS_PER_DAY);
+	}
+
+	private static long getOffsetMillis() {
+		return timeZone.getRules().getOffset(Instant.now()).getTotalSeconds() * 1000L;
+	}
+
+	/**
 	 * A train running after midnight still belongs to the day it started in, like the last trains of a real timetable.
 	 *
 	 * @return the day of the week in the operating day of this time, from 0 for Monday

@@ -354,16 +354,12 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	public static List<NameColorDataBase> getDepartureList(List<Integer> departures) {
 		final List<NameColorDataBase> departureData = new ArrayList<>();
 		final long offset = System.currentTimeMillis() / Depot.MILLISECONDS_PER_DAY * Depot.MILLISECONDS_PER_DAY;
-		departures.stream().map(departure -> {
+		// In the order trains run them, so last trains after midnight come at the end
+		departures.stream().sorted(Comparator.comparingLong((Integer service) -> TimetableConfig.getTimeInDay(service))).map(departure -> {
 			final Calendar calendar = Calendar.getInstance(TimetableConfig.getTimeZone());
 			calendar.setTimeInMillis(departure + offset);
 			return calendar;
-		}).sorted(Comparator.comparingInt(calendar -> {
-			final int hour = calendar.get(Calendar.HOUR_OF_DAY);
-			final int minute = calendar.get(Calendar.MINUTE);
-			final int second = calendar.get(Calendar.SECOND);
-			return hour * 3600 + minute * 60 + second;
-		})).forEach(calendar -> {
+		}).forEach(calendar -> {
 			final int hour = calendar.get(Calendar.HOUR_OF_DAY);
 			final int minute = calendar.get(Calendar.MINUTE);
 			final int second = calendar.get(Calendar.SECOND);

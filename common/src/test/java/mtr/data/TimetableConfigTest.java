@@ -67,6 +67,18 @@ class TimetableConfigTest {
 	}
 
 	@Test
+	void servicesSortFromTheStartOfTheOperatingDay() {
+		TimetableConfig.set("Asia/Tokyo", 3);
+
+		// 03:00 in Tokyo is 18:00 in UTC, and midnight in UTC is 09:00 there
+		assertEquals(18 * HOUR, TimetableConfig.getDayStartMillis());
+		assertEquals(0, TimetableConfig.getTimeInDay(18 * HOUR));
+		assertEquals(6 * HOUR, TimetableConfig.getTimeInDay(0));
+		// A last train at 02:00 the next morning comes at the end of the day
+		assertEquals(23 * HOUR, TimetableConfig.getTimeInDay(17 * HOUR));
+	}
+
+	@Test
 	void missingFileIsCreatedWithThisComputersTimeZone() throws IOException {
 		final Path path = folder.resolve("sub").resolve(TimetableConfig.FILE_NAME);
 		TimetableConfig.load(path);
