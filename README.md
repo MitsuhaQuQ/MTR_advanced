@@ -65,6 +65,11 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - New service types are made in the page from an existing route, picking each stop's track from the platforms the game finds for it, and an existing route's tracks and stops can be changed the same way. The order of stations always comes from the route's path.
 - Depots keep vehicle working: which services each train of each siding runs, by groups of weekdays. A first draft is worked out in one click, and services are added to a train by clicking them on the diagram, with checks for missed connections and double assignment. Trains still take services by online booking until running by vehicle working is done.
 
+**Speed curves**
+
+- Depots can run their trains on speed curves, which new depots do by default. Trains slow down before a slower rail or a stop instead of after, keep to the lowest limit of every rail they are on, and speed up and brake at separate rates set for each siding.
+- Running times for timetables come from the same curves along each route's own path, so they match how trains run and don't wait for the depot's path to be refreshed. With time to spare, trains cruise slower to arrive on time; when late, they run as fast as they can to catch up.
+
 **Path boundaries**
 
 - A node, or one rail from a node, can be marked as a path boundary in the node screen. At a turnout, mark the rail rather than the node. The server splits the network into regions at the boundaries and warns about boundaries that don't cut anything.
@@ -116,7 +121,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 | 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
 | 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
-| 5 | Speed curves: TPS compensation is done; setting speed from limits, acceleration and timetable, and braking early, are not | In progress |
+| 5 | Speed curves: TPS compensation and a first version of speed curves (braking ahead of slower rails and stops, separate acceleration and braking, cruising slower to keep time and catching up when late) are done; curvature, vertical curves and passing speed limits are not | In progress |
 | 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
 | 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services, aligning after a restart and choosing between reversing sidings after a terminal are done; choosing between platforms to turn back on is not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
@@ -173,7 +178,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 21. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 22. Jars with ANTE are about 136 MB.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 

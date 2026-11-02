@@ -39,6 +39,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	private final WidgetBetterCheckbox checkboxRepeatIndefinitely;
 	private final WidgetBetterCheckbox checkboxDeterministicPath;
 	private final WidgetBetterCheckbox checkboxCycleRoutes;
+	private final WidgetBetterCheckbox checkboxSpeedCurves;
 	private final WidgetBetterTextField textFieldCruisingAltitude;
 	private final DashboardList departuresList;
 
@@ -126,6 +127,11 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			depot.clientPathGenerationSuccessfulSegments = -1;
 			PacketTrainDataGuiClient.generatePathC2S(depot.id);
 		});
+		checkboxSpeedCurves = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.use_speed_curves"), button -> {
+			saveData();
+			depot.clientPathGenerationSuccessfulSegments = -1;
+			PacketTrainDataGuiClient.generatePathC2S(depot.id);
+		});
 		textFieldCruisingAltitude = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, String.valueOf(Depot.DEFAULT_CRUISING_ALTITUDE), 5);
 	}
 
@@ -144,6 +150,8 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		checkboxRepeatIndefinitely.setChecked(data.repeatInfinitely);
 		checkboxCycleRoutes.setChecked(data.cycleRoutes);
 		checkboxDeterministicPath.setChecked(data.useDeterministicPath);
+		IDrawing.setPositionAndWidth(checkboxSpeedCurves, rightPanelsX, getSpeedCurvesRowY(), buttonWidth * 2);
+		checkboxSpeedCurves.setChecked(data.speedCurves);
 
 		final int cruisingAltitudeTextWidth = font.width(cruisingAltitudeText) + TEXT_PADDING * 2;
 		IDrawing.setPositionAndWidth(textFieldCruisingAltitude, rightPanelsX + Math.min(cruisingAltitudeTextWidth, buttonWidth * 2 - SQUARE_SIZE * 3) + TEXT_FIELD_PADDING / 2, PANELS_START + SQUARE_SIZE * 2 + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 3 - TEXT_FIELD_PADDING);
@@ -182,6 +190,9 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			addDrawableChild(buttonClearTrains);
 			addDrawableChild(checkboxRepeatIndefinitely);
 			addDrawableChild(checkboxCycleRoutes);
+			if (showSpeedCurves()) {
+				addDrawableChild(checkboxSpeedCurves);
+			}
 		}
 		if (showDeterministicPath()) {
 			addDrawableChild(checkboxDeterministicPath);
@@ -214,6 +225,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			checkboxRepeatIndefinitely.visible = firstRoute != null && lastRoute != null && !firstRoute.platformIds.isEmpty() && !lastRoute.platformIds.isEmpty() && firstRoute.getFirstPlatformId() == lastRoute.getLastPlatformId();
 			checkboxCycleRoutes.visible = !checkboxRepeatIndefinitely.visible;
 		}
+		UtilitiesClient.setWidgetY(checkboxSpeedCurves, getSpeedCurvesRowY());
 	}
 
 	@Override
@@ -238,7 +250,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 			super.render(matrices, mouseX, mouseY, delta);
 
-			final int yStartRightPane = PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible || checkboxCycleRoutes.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0) + TEXT_PADDING;
+			final int yStartRightPane = getSpeedCurvesRowY() + (showSpeedCurves() ? SQUARE_SIZE : 0) + TEXT_PADDING;
 			if (showCruisingAltitude) {
 				GuiCompat.draw(matrices, font, cruisingAltitudeText, rightPanelsX + TEXT_PADDING, PANELS_START + SQUARE_SIZE * 2 + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
 			}
@@ -310,6 +322,17 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		}
 	}
 
+	/**
+	 * Cable cars and lifts move steadily, so speed curves don't apply to them.
+	 */
+	private boolean showSpeedCurves() {
+		return showScheduleControls && !data.transportMode.continuousMovement;
+	}
+
+	private int getSpeedCurvesRowY() {
+		return PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible || checkboxCycleRoutes.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0);
+	}
+
 	private boolean showDeterministicPath() {
 		return showScheduleControls && !showCruisingAltitude;
 	}
@@ -320,6 +343,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		data.repeatInfinitely = checkboxRepeatIndefinitely.visible && checkboxRepeatIndefinitely.selected();
 		data.cycleRoutes = checkboxCycleRoutes.visible && checkboxCycleRoutes.selected();
 		data.useDeterministicPath = !showDeterministicPath() || checkboxDeterministicPath.selected();
+		data.speedCurves = showSpeedCurves() ? checkboxSpeedCurves.selected() : data.speedCurves;
 		try {
 			data.cruisingAltitude = Integer.parseInt(textFieldCruisingAltitude.getValue());
 		} catch (Exception e) {

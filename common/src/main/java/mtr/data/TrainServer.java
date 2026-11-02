@@ -1,6 +1,7 @@
 package mtr.data;
 
 import mtr.TrigCache;
+import mtr.advanced.SpeedCurves;
 import mtr.block.*;
 import mtr.mappings.Utilities;
 import mtr.path.PathData;
@@ -172,7 +173,27 @@ public class TrainServer extends Train {
 			reversed = !reversed;
 		}
 		nextStoppingIndex = getNextStoppingIndex();
+		cruiseCap = getCruiseCap();
 		super.startUp(world, trainCars, trainSpacing, isOppositeRail);
+	}
+
+	/**
+	 * With time to spare before the planned arrival at the next stop, the train cruises slower to arrive on time instead of
+	 * early. A late train gets no cap and runs as fast as it can to catch up (design document 8.2).
+	 */
+	private float getCruiseCap() {
+		if (!usesSpeedCurve() || nextStoppingIndex >= path.size()) {
+			return Float.POSITIVE_INFINITY;
+		}
+		final long plannedMillis = service.getPlannedArrivalMillis(nextStoppingIndex);
+		final SpeedCurves curves = getSpeedCurves();
+		final SpeedCurves.Run run = curves.getRun(railProgress);
+		// A train starting again after waiting behind another one is late already, and catches up as fast as it can
+		if (plannedMillis <= 0 || run == null || run.stopRailIndex != nextStoppingIndex || Math.abs(railProgress - run.fastest.startPosition) > 1) {
+			return Float.POSITIVE_INFINITY;
+		}
+		final double ticks = (plannedMillis - System.currentTimeMillis()) / (double) Depot.MILLIS_PER_TICK;
+		return (float) run.findCap(ticks, curves.minSpeed);
 	}
 
 	@Override

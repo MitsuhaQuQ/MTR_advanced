@@ -2,6 +2,8 @@ package mtr.data;
 
 import mtr.Items;
 import mtr.Keys;
+import mtr.advanced.SpeedCurves;
+import mtr.advanced.SpeedProfile;
 import mtr.block.BlockPSDAPGBase;
 import mtr.block.BlockPlatform;
 import mtr.packet.IPacket;
@@ -39,6 +41,23 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected boolean isOnRoute = false;
 	protected boolean isCurrentlyManual;
 	protected int manualNotch;
+	/**
+	 * Whether the train follows speed curves (design document section 8), set by its depot. See {@link SpeedCurves}.
+	 */
+	protected boolean useSpeedCurve;
+	protected float decelerationConstant = ACCELERATION_DEFAULT;
+	/**
+	 * The cruising speed for the run to the next stop, lowered so the train arrives on time, or infinity for none.
+	 */
+	protected float cruiseCap = Float.POSITIVE_INFINITY;
+	private SpeedCurves speedCurves;
+	private List<PathData> speedCurvesPath;
+	private int speedCurvesSize;
+	private double speedCurvesLength;
+	private float speedCurvesDeceleration;
+	private SpeedProfile cappedProfile;
+	private SpeedCurves.Run cappedRun;
+	private float cappedCap;
 
 	public final long sidingId;
 	public final String trainId;
@@ -72,6 +91,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected static final int MAX_CHECK_DISTANCE = 32;
 	protected static final int DOOR_DELAY = 20;
 	private static final double BRAKING_MARGIN = 2;
+	private static final double CURVE_SPEED_TOLERANCE = 1E-3;
 
 	private static final String KEY_SPEED = "speed";
 	private static final String KEY_RAIL_PROGRESS = "rail_progress";
@@ -259,6 +279,9 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		for (int i = 0; i < ridingEntitiesCount; i++) {
 			ridingEntities.add(packet.readUUID());
 		}
+		useSpeedCurve = packet.readBoolean();
+		decelerationConstant = packet.readFloat();
+		cruiseCap = packet.readFloat();
 
 		inventory = null;
 	}
@@ -345,11 +368,93 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeBoolean(doorTarget);
 		packet.writeInt(ridingEntities.size());
 		ridingEntities.forEach(packet::writeUUID);
+		packet.writeBoolean(useSpeedCurve);
+		packet.writeFloat(decelerationConstant);
+		packet.writeFloat(cruiseCap);
 	}
 
 	@Override
 	protected final boolean hasTransportMode() {
 		return false;
+	}
+
+	/**
+	 * Called by the siding every tick with its depot's setting and its train's braking.
+	 */
+	public final void setSpeedCurve(boolean useSpeedCurve, float decelerationConstant) {
+		this.useSpeedCurve = useSpeedCurve;
+		this.decelerationConstant = decelerationConstant <= 0 ? accelerationConstant : decelerationConstant;
+	}
+
+	public final boolean usesSpeedCurve() {
+		return useSpeedCurve && !isCurrentlyManual && !transportMode.continuousMovement;
+	}
+
+	/**
+	 * @return the curves of the current path, worked out again when the path or the braking changes
+	 */
+	protected final SpeedCurves getSpeedCurves() {
+		final double length = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
+		if (speedCurves == null || speedCurvesPath != path || speedCurvesSize != path.size() || speedCurvesLength != length || speedCurvesDeceleration != decelerationConstant) {
+			speedCurves = SpeedCurves.of(path, transportMode, (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
+			speedCurvesPath = path;
+			speedCurvesSize = path.size();
+			speedCurvesLength = length;
+			speedCurvesDeceleration = decelerationConstant;
+			cappedProfile = null;
+		}
+		return speedCurves;
+	}
+
+	protected final void invalidateSpeedCurves() {
+		speedCurves = null;
+	}
+
+	/**
+	 * @return the curve for the run the train is on, cruising slower when it has time to spare
+	 */
+	private SpeedProfile getRunProfile(SpeedCurves.Run run) {
+		if (Float.isInfinite(cruiseCap)) {
+			return run.fastest;
+		}
+		if (cappedProfile == null || cappedRun != run || cappedCap != cruiseCap) {
+			cappedProfile = run.withCap(cruiseCap);
+			cappedRun = run;
+			cappedCap = cruiseCap;
+		}
+		return cappedProfile;
+	}
+
+	/**
+	 * Moves the train along its speed curve. A train on the curve with nothing in the way moves exactly as the curve says,
+	 * so it arrives when the timetable worked out. Off the curve, held back by a train ahead or catching up after, it
+	 * speeds up and brakes at its own rates, never faster than the curve.
+	 *
+	 * @param stoppingDistance where the train has to stop, which is nearer than the end of the run when the line ahead is taken
+	 * @return how far the train moves
+	 */
+	private double followSpeedCurve(float ticksElapsed, double stoppingDistance) {
+		final SpeedCurves.Run run = getSpeedCurves().getRun(railProgress);
+		if (run == null) {
+			return speed * ticksElapsed;
+		}
+		final SpeedProfile profile = getRunProfile(run);
+		final double curveSpeed = profile.getSpeed(railProgress);
+		final boolean stopsEarly = stoppingDistance < profile.endPosition - CURVE_SPEED_TOLERANCE;
+		final double blockSpeed = stopsEarly ? Math.sqrt(2 * decelerationConstant * Math.max(0, stoppingDistance - railProgress)) : Double.POSITIVE_INFINITY;
+		final double furthest = profile.advance(railProgress, ticksElapsed);
+		final double newProgress;
+		if (blockSpeed >= curveSpeed - CURVE_SPEED_TOLERANCE && speed >= curveSpeed - CURVE_SPEED_TOLERANCE) {
+			newProgress = stopsEarly ? Math.min(furthest, stoppingDistance) : furthest;
+			speed = (float) profile.getSpeed(newProgress);
+		} else {
+			final double limit = Math.min(curveSpeed, blockSpeed);
+			final double newSpeed = speed < limit ? Math.min(speed + accelerationConstant * ticksElapsed, limit) : Math.max(limit, speed - decelerationConstant * ticksElapsed);
+			newProgress = Math.min(Math.min(railProgress + (speed + newSpeed) / 2 * ticksElapsed, furthest), stopsEarly ? stoppingDistance : Double.POSITIVE_INFINITY);
+			speed = (float) Math.max(newSpeed, newProgress < (stopsEarly ? stoppingDistance : profile.endPosition) ? ACCELERATION_DEFAULT / 10 : 0);
+		}
+		manualNotch = speed > curveSpeed - CURVE_SPEED_TOLERANCE ? 0 : 2;
+		return newProgress - railProgress;
 	}
 
 	public final boolean getIsOnRoute() {
@@ -499,6 +604,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 				}
 			} else {
 				final float newAcceleration = accelerationConstant * ticksElapsed;
+				// How far a train on its speed curve moves this tick, or -1 to move at its speed
+				double curveAdvance = -1;
 
 				if (railProgress >= distances.get(distances.size() - 1) - (railLength - trainCars * spacing) / 2) {
 					isOnRoute = false;
@@ -544,7 +651,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 					} else {
 						if (!world.isClientSide()) {
 							final int lastCheckIndex = nextPlatformIndex > 0 ? Math.min(nextPlatformIndex, path.size() - 1) : path.size() - 1;
-							final double brakingDistance = 0.5 * speed * speed / accelerationConstant + speed * ticksElapsed + BRAKING_MARGIN;
+							final double brakingDistance = 0.5 * speed * speed / (usesSpeedCurve() ? decelerationConstant : accelerationConstant) + speed * ticksElapsed + BRAKING_MARGIN;
 							final int blockedIndex = findBlockedIndex(distances, getIndex(0, spacing, true), lastCheckIndex, railProgress, brakingDistance, this::isRailBlocked);
 							if (blockedIndex >= 0) {
 								nextStoppingIndex = blockedIndex - 1;
@@ -557,7 +664,9 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 						}
 
 						final double stoppingDistance = distances.get(nextStoppingIndex) - railProgress;
-						if (!transportMode.continuousMovement && stoppingDistance < 0.5 * speed * speed / accelerationConstant && mustStop(nextStoppingIndex)) {
+						if (usesSpeedCurve()) {
+							curveAdvance = followSpeedCurve(ticksElapsed, distances.get(nextStoppingIndex));
+						} else if (!transportMode.continuousMovement && stoppingDistance < 0.5 * speed * speed / accelerationConstant && mustStop(nextStoppingIndex)) {
 							speed = stoppingDistance <= 0 ? Train.ACCELERATION_DEFAULT : (float) Math.max(speed - (0.5 * speed * speed / stoppingDistance) * ticksElapsed, Train.ACCELERATION_DEFAULT);
 							manualNotch = -3;
 						} else {
@@ -584,13 +693,13 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 					}
 
 					// A loop joins back onto itself, so the train keeps running instead of stopping at the end of the path
-					if (loopsWithoutReversing() && railProgress + speed * ticksElapsed >= distances.get(repeatIndex2)) {
+					if (loopsWithoutReversing() && railProgress + (curveAdvance >= 0 ? curveAdvance : speed * ticksElapsed) >= distances.get(repeatIndex2)) {
 						railProgress += distances.get(repeatIndex1 - 1) - distances.get(repeatIndex2 - 1);
 						onLapComplete();
 						continueWithoutStopping(world);
 					}
 
-					railProgress += speed * ticksElapsed;
+					railProgress += curveAdvance >= 0 ? curveAdvance : speed * ticksElapsed;
 					if (!transportMode.continuousMovement && railProgress > distances.get(nextStoppingIndex)) {
 						if (mustStop(nextStoppingIndex)) {
 							railProgress = distances.get(nextStoppingIndex);

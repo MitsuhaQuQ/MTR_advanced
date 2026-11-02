@@ -354,6 +354,11 @@ public class TrainClient extends Train implements IGui {
 		isOnRoute = train.isOnRoute;
 		isCurrentlyManual = train.isCurrentlyManual;
 		manualNotch = train.manualNotch;
+		useSpeedCurve = train.useSpeedCurve;
+		decelerationConstant = train.decelerationConstant;
+		cruiseCap = train.cruiseCap;
+		// The path is refilled in place, so the curves can't tell it changed
+		invalidateSpeedCurves();
 	}
 
 	public final float speedChange() {

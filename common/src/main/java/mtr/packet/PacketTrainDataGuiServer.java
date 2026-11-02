@@ -576,14 +576,16 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	/**
-	 * @return the fastest times of a route from the path of a depot, or null if no depot has a path with this route
+	 * @return the fastest times of a route from the path of a depot, or null if no depot has a path with this route or the
+	 * depot runs on speed curves
 	 */
 	private static long[][] getDepotTimes(RailwayData railwayData, Route route) {
 		for (final Siding siding : railwayData.sidings) {
 			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
 			final List<Route> routes = depot == null ? Collections.emptyList() : depot.getRoutes(siding.getTrainId(), railwayData.dataCache);
 			if (routes.contains(route) && !siding.getStopTimes().isEmpty()) {
-				return siding.getStopTimes().getFastestTimes(route, routes);
+				// On speed curves the times follow from the route's own path, so they don't wait for the depot's path to be refreshed
+				return depot.speedCurves ? null : siding.getStopTimes().getFastestTimes(route, routes);
 			}
 		}
 		return null;

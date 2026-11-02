@@ -88,5 +88,7 @@
   "gui.mtr.region_filter_off": "区域筛选（%s 个区域）",
   "gui.mtr.region_filter_on": "只显示 %s 个区域，点击取消",
   "gui.mtr.region_uncut": "，%s 处未切开",
-  "gui.mtr.region_missing": "，%s 处没有轨道"
+  "gui.mtr.region_missing": "，%s 处没有轨道",
+  "gui.mtr.use_speed_curves": "使用速度曲线：提前减速、按时刻控速（改后刷新路径）",
+  "gui.mtr.deceleration": "减速 %s m/s²"
 }

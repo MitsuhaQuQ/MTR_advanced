@@ -88,5 +88,7 @@
   "gui.mtr.region_filter_off": "Region filter (%s regions)",
   "gui.mtr.region_filter_on": "Showing %s region(s), click to clear",
   "gui.mtr.region_uncut": ", %s uncut",
-  "gui.mtr.region_missing": ", %s without rails"
+  "gui.mtr.region_missing": ", %s without rails",
+  "gui.mtr.use_speed_curves": "Speed curves: brake ahead, keep to time (refresh path)",
+  "gui.mtr.deceleration": "Braking %s m/s²"
 }

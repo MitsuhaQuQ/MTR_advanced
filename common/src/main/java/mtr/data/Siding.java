@@ -1,6 +1,8 @@
 package mtr.data;
 
 import mtr.advanced.ServiceExceptions;
+import mtr.advanced.SpeedCurves;
+import mtr.advanced.SpeedProfile;
 import io.netty.buffer.Unpooled;
 import mtr.packet.IPacket;
 import mtr.path.PathData;
@@ -42,6 +44,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private boolean trainsRelocated;
 	private int ticksSinceLoad;
 	private float accelerationConstant;
+	/**
+	 * How fast trains brake, or 0 to brake as fast as they speed up.
+	 */
+	private float decelerationConstant;
+	/**
+	 * Whether the depot runs this siding's trains on speed curves, which the times of the paths follow too.
+	 */
+	private boolean useSpeedCurve;
 
 	public final float railLength;
 	private final List<PathData> path = new ArrayList<>();
@@ -97,6 +107,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_LOOP_JOIN_INDEX = "loop_join_index";
 	private static final String KEY_TRAINS = "trains";
 	private static final String KEY_ACCELERATION_CONSTANT = "acceleration_constant";
+	private static final String KEY_DECELERATION_CONSTANT = "deceleration_constant";
 
 	public Siding(long id, TransportMode transportMode, BlockPos pos1, BlockPos pos2, float railLength) {
 		super(id, transportMode, pos1, pos2);
@@ -128,6 +139,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		loopJoinIndex = messagePackHelper.getInt(KEY_LOOP_JOIN_INDEX);
 		final float tempAccelerationConstant = RailwayData.round(messagePackHelper.getFloat(KEY_ACCELERATION_CONSTANT, Train.ACCELERATION_DEFAULT), 3);
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant <= 0 ? Train.ACCELERATION_DEFAULT : tempAccelerationConstant;
+		decelerationConstant = clampDeceleration(messagePackHelper.getFloat(KEY_DECELERATION_CONSTANT, 0));
 
 		messagePackHelper.iterateArrayValue(KEY_PATH, pathSection -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(pathSection))));
 
@@ -183,6 +195,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		maxManualSpeed = packet.readInt();
 		final float tempAccelerationConstant = RailwayData.round(packet.readFloat(), 3);
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant <= 0 ? Train.ACCELERATION_DEFAULT : tempAccelerationConstant;
+		decelerationConstant = clampDeceleration(packet.readFloat());
 	}
 
 	@Override
@@ -206,6 +219,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		messagePacker.packString(KEY_REPEAT_INDEX_2).packInt(repeatIndex2);
 		messagePacker.packString(KEY_LOOP_JOIN_INDEX).packInt(loopJoinIndex);
 		messagePacker.packString(KEY_ACCELERATION_CONSTANT).packFloat(accelerationConstant);
+		messagePacker.packString(KEY_DECELERATION_CONSTANT).packFloat(decelerationConstant);
 		RailwayData.writeMessagePackDataset(messagePacker, path, KEY_PATH);
 		messagePacker.packString(KEY_TRIP_PATHS).packArrayHeader(tripPaths.size());
 		for (final TripPath tripPath : tripPaths.values()) {
@@ -216,7 +230,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 16;
+		return super.messagePackLength() + 17;
 	}
 
 	@Override
@@ -235,11 +249,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		packet.writeBoolean(isManual);
 		packet.writeInt(maxManualSpeed);
 		packet.writeFloat(accelerationConstant);
+		packet.writeFloat(decelerationConstant);
 	}
 
 	@Override
 	public void update(String key, FriendlyByteBuf packet) {
 		switch (key) {
+			case KEY_DECELERATION_CONSTANT:
+				decelerationConstant = clampDeceleration(packet.readFloat());
+				break;
 			case KEY_BASE_TRAIN_TYPE:
 				setTrainDetails(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readUtf(PACKET_STRING_READ_LENGTH), false);
 				trains.clear();
@@ -310,6 +328,27 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return accelerationConstant;
 	}
 
+	/**
+	 * @return how fast trains brake, which is how fast they speed up unless set
+	 */
+	public float getDecelerationConstant() {
+		return decelerationConstant <= 0 ? accelerationConstant : decelerationConstant;
+	}
+
+	public void setDecelerationConstant(float newDecelerationConstant, Consumer<FriendlyByteBuf> sendPacket) {
+		decelerationConstant = clampDeceleration(newDecelerationConstant);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_DECELERATION_CONSTANT);
+		packet.writeFloat(decelerationConstant);
+		sendPacket.accept(packet);
+	}
+
+	private static float clampDeceleration(float value) {
+		return Float.isNaN(value) || value <= 0 ? 0 : Mth.clamp(RailwayData.round(value, 3), Train.MIN_ACCELERATION, Train.MAX_ACCELERATION);
+	}
+
 	public void removeRider(UUID uuid) {
 		trains.forEach(train -> train.ridingEntities.remove(uuid));
 	}
@@ -326,6 +365,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (path.isEmpty()) {
 				generateDefaultPath(rails);
 				generateDistances();
+			}
+			// Turning speed curves on or off changes how long the path takes
+			if (depot.speedCurves != useSpeedCurve) {
+				useSpeedCurve = depot.speedCurves;
+				generateTimeSegments(path, timeSegments, platformTimes, stopTimes, loopJoinIndex, repeatIndex2);
+				tripPaths.values().forEach(tripPath -> tripPath.generateTimes(this));
 			}
 			depot.platformTimes.clear();
 			depot.platformTimes.putAll(platformTimes);
@@ -613,6 +658,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 
 			train.setStopTimes(stopTimes, tripPaths, turnBacks);
+			train.setSpeedCurve(useSpeedCurve, getDecelerationConstant());
 			train.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
@@ -774,6 +820,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		timeSegments.clear();
 		stopTimes.clear();
 		stopTimes.joinIndex = joinIndex;
+		if (useSpeedCurve && !transportMode.continuousMovement && !path.isEmpty()) {
+			generateCurveTimes(path, timeSegments, platformTimes, stopTimes);
+			stopTimes.linkJoinStops(lapEndIndex);
+			return;
+		}
 
 		double distanceSum1 = 0;
 		final List<Double> stoppingDistances = new ArrayList<>();
@@ -862,6 +913,99 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		stopTimes.linkJoinStops(lapEndIndex);
+	}
+
+	/**
+	 * Times a path with speed curves (design document section 8), so the times are the ones trains on the curves run to.
+	 * Gives the same kinds of results as the step by step timing: a time segment for each part with one acceleration,
+	 * ending at each stop and each platform passed, the time of each stop, and the times between platforms.
+	 */
+	private void generateCurveTimes(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes, StopTimes stopTimes) {
+		final int spacing = TrainType.getSpacing(baseTrainType);
+		final SpeedCurves curves = SpeedCurves.of(path, transportMode, (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, getDecelerationConstant());
+		final double[] railEnds = new double[path.size()];
+		double distance = 0;
+		for (int i = 0; i < path.size(); i++) {
+			distance += path.get(i).rail.getLength();
+			railEnds[i] = distance;
+		}
+		final double totalDistance = distance;
+
+		// When each run leaves, after the stops before it
+		final double[] runStarts = new double[curves.runs.size()];
+		double ticks = 0;
+		for (int i = 0; i < curves.runs.size(); i++) {
+			runStarts[i] = ticks;
+			final SpeedCurves.Run run = curves.runs.get(i);
+			ticks += run.fastest.getDuration() + path.get(run.stopRailIndex).dwellTime * 10;
+		}
+
+		int runIndex = 0;
+		for (final SpeedCurves.Run run : curves.runs) {
+			// Segments end where the train stops or passes a platform, so arrivals can be read off them
+			final TreeMap<Double, Integer> ends = new TreeMap<>();
+			for (int i = 0; i <= run.stopRailIndex; i++) {
+				if (railEnds[i] > run.fastest.startPosition && railEnds[i] <= run.fastest.endPosition && (isPassingPlatform(path, i) || i == run.stopRailIndex)) {
+					ends.put(railEnds[i], i);
+				}
+			}
+			final List<double[]> pieces = run.fastest.getPieces();
+			for (int p = 0; p < pieces.size(); p++) {
+				final double[] piece = pieces.get(p);
+				final double pieceEnd = p + 1 < pieces.size() ? pieces.get(p + 1)[0] : run.fastest.endPosition;
+				double start = piece[0];
+				for (final Map.Entry<Double, Integer> end : ends.subMap(piece[0], false, pieceEnd, true).entrySet()) {
+					addCurveSegment(timeSegments, run.fastest, piece, start, end.getKey(), runStarts[runIndex], path, end.getValue(), totalDistance);
+					start = end.getKey();
+				}
+				if (pieceEnd > start + 1E-6) {
+					addCurveSegment(timeSegments, run.fastest, piece, start, pieceEnd, runStarts[runIndex], path, -1, totalDistance);
+				}
+			}
+			runIndex++;
+		}
+
+		long savedRailBaseIdOld = 0;
+		float timeOld = 0;
+		runIndex = 0;
+		for (int i = 0; i < path.size(); i++) {
+			while (runIndex < curves.runs.size() - 1 && curves.runs.get(runIndex).stopRailIndex < i) {
+				runIndex++;
+			}
+			final SpeedCurves.Run run = curves.runs.get(runIndex);
+			final PathData pathData = path.get(i);
+			final float time = (float) (runStarts[runIndex] + run.fastest.getTime(railEnds[i]));
+			final boolean isPlatformStop = pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0;
+			if (pathData.dwellTime > 0 || isPassingPlatform(path, i)) {
+				final boolean isTurnBack = !isPlatformStop && i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1));
+				stopTimes.add(i, isPlatformStop ? pathData.savedRailBaseId : 0, isTurnBack ? pathData.getRailProduct() : null, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
+			}
+			if (pathData.savedRailBaseId != 0) {
+				final float middle = time + pathData.dwellTime * 5;
+				if (savedRailBaseIdOld != 0) {
+					platformTimes.computeIfAbsent(savedRailBaseIdOld, key -> new HashMap<>()).put(pathData.savedRailBaseId, middle - timeOld);
+				}
+				savedRailBaseIdOld = pathData.savedRailBaseId;
+				timeOld = middle;
+			}
+		}
+	}
+
+	/**
+	 * @param railIndex the rail whose end the segment ends at, or -1
+	 */
+	private void addCurveSegment(List<TimeSegment> timeSegments, SpeedProfile profile, double[] piece, double start, double end, double runStart, List<PathData> path, int railIndex, double totalDistance) {
+		final double acceleration = piece[3];
+		final int speedChange = acceleration > 1E-9 ? 1 : acceleration < -1E-9 ? -1 : 0;
+		final TimeSegment timeSegment = new TimeSegment(start, (float) profile.getSpeed(start), (float) (runStart + profile.getTime(start)), speedChange, (float) Math.abs(acceleration));
+		timeSegment.endRailProgress = end;
+		timeSegment.endTime = (float) (runStart + profile.getTime(end));
+		if (railIndex >= 0) {
+			final PathData pathData = path.get(railIndex);
+			timeSegment.pass = isPassingPlatform(path, railIndex);
+			timeSegment.savedRailBaseId = timeSegment.pass || pathData.dwellTime > 0 && end < totalDistance ? pathData.savedRailBaseId : 0;
+		}
+		timeSegments.add(timeSegment);
 	}
 
 	/**

@@ -36,6 +36,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * marked for it. Without a next service soon, they wait on the line for it, however long that is.
 	 */
 	public boolean cycleRoutes;
+	/**
+	 * Trains run on speed curves (design document section 8), braking ahead of slower rails and cruising slower to keep
+	 * time. Depots made before this keep the old way of running until it is turned on.
+	 */
+	public boolean speedCurves;
 	public int cruisingAltitude = DEFAULT_CRUISING_ALTITUDE;
 	private int deployIndex;
 	private int departureOffset;
@@ -86,6 +91,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
 	private static final String KEY_USE_DETERMINISTIC_PATH = "use_deterministic_path";
 	private static final String KEY_CYCLE_ROUTES = "cycle_routes";
+	private static final String KEY_SPEED_CURVES = "speed_curves";
 	private static final String KEY_DUTIES = "duties";
 	private static final String KEY_DUTY_MODE = "duty_mode";
 	private static final String KEY_DUTY_SLOT = "duty_slot";
@@ -95,10 +101,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	public Depot(TransportMode transportMode) {
 		super(transportMode);
 		useRealTime = !transportMode.continuousMovement;
+		speedCurves = true;
 	}
 
 	public Depot(long id, TransportMode transportMode) {
 		super(id, transportMode);
+		speedCurves = true;
 	}
 
 	public Depot(Map<String, Value> map) {
@@ -123,6 +131,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
 		cycleRoutes = messagePackHelper.getBoolean(KEY_CYCLE_ROUTES);
+		speedCurves = messagePackHelper.getBoolean(KEY_SPEED_CURVES);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
@@ -180,6 +189,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		cycleRoutes = packet.readBoolean();
 		readVehicleServiceTypes(packet);
 		duties.read(packet);
+		speedCurves = packet.readBoolean();
 	}
 
 	@Override
@@ -207,6 +217,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePacker.packString(KEY_CRUISING_ALTITUDE).packInt(cruisingAltitude);
 		messagePacker.packString(KEY_USE_DETERMINISTIC_PATH).packBoolean(useDeterministicPath);
 		messagePacker.packString(KEY_CYCLE_ROUTES).packBoolean(cycleRoutes);
+		messagePacker.packString(KEY_SPEED_CURVES).packBoolean(speedCurves);
 
 		messagePacker.packString(KEY_FREQUENCIES).packArrayHeader(HOURS_IN_DAY);
 		for (int i = 0; i < HOURS_IN_DAY; i++) {
@@ -231,7 +242,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 14;
+		return super.messagePackLength() + 15;
 	}
 
 	@Override
@@ -263,6 +274,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
 		duties.write(packet);
+		packet.writeBoolean(speedCurves);
 	}
 
 	@Override
@@ -300,6 +312,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			useDeterministicPath = packet.readBoolean();
 			cycleRoutes = packet.readBoolean();
 			readVehicleServiceTypes(packet);
+			speedCurves = packet.readBoolean();
 		} else if (KEY_DUTY_MODE.equals(key)) {
 			duties.diagramMode = packet.readBoolean();
 		} else if (KEY_DUTY_SLOT.equals(key)) {
@@ -351,6 +364,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(useDeterministicPath);
 		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
+		packet.writeBoolean(speedCurves);
 		sendPacket.accept(packet);
 	}
 
