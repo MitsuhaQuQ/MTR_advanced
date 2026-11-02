@@ -62,6 +62,14 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 - Timetables are edited in the page: typing times in cells, right-click menus for passing, waiting and pushing a change to later services, dragging stop ends on the diagram, adding and copying tables and services, and making through links in bulk. Times are worked out in the page the same way as in the game.
 - Changes are saved as a draft as they are made and only sent to the game with Apply, through the game's own packets. A route changed in the game since the draft is reported as a conflict. Routes managed in the editor can only be viewed in the game's timetable screen.
 - For loops, it shows how the trains go round lap after lap, the way the game runs them.
+- New service types are made in the page from an existing route, picking each stop's track from the platforms the game finds for it, and an existing route's tracks and stops can be changed the same way. The order of stations always comes from the route's path.
+- Depots keep vehicle working: which services each train of each siding runs, by groups of weekdays. A first draft is worked out in one click, and services are added to a train by clicking them on the diagram, with checks for missed connections and double assignment. Trains still take services by online booking until running by vehicle working is done.
+
+**Path boundaries**
+
+- A node, or one rail from a node, can be marked as a path boundary in the node screen. At a turnout, mark the rail rather than the node. The server splits the network into regions at the boundaries and warns about boundaries that don't cut anything.
+- Route searches stay in the regions of each stretch's ends, so they can cross into the next region but not wander through unrelated ones. Without boundaries, pathfinding is unchanged.
+- The dashboard can filter stations, routes and depots to the regions of a picked station. Platforms can be set as main line or passing tracks.
 
 **Dashboard**
 
@@ -104,7 +112,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 |---|---|---|
 | 0 | Add-on compatibility, merging ANTE into the core | Packaging and running logic done, `Rail` left for stage 4 |
 | 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Simulator done |
-| 1 | Pathfinding base: state graph, deterministic A*, required nodes and keeping trains in place on refresh are done. Path boundaries (a node or a stretch of rail) are next, as part of the advanced editor's line abstraction: they split the network into areas that filter the dashboard and pick each route's platforms at shared stations, then limit pathfinding, with section caching | In progress |
+| 1 | Pathfinding base: state graph, deterministic A*, required nodes, keeping trains in place on refresh, and path boundaries with regions that limit pathfinding and pick each route's platforms at shared stations are done; section caching is not | In progress |
 | 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
 | 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
@@ -121,13 +129,13 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 The stages above describe the work as a whole. This is the order it is being done in:
 
 1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
-2. The rest of the advanced editor: line abstraction with path boundaries and areas, new service types made in the page, then vehicle working assigned on the running diagram and trains running by it, with paths made for each service.
+2. The rest of the advanced editor: trains running by the vehicle working set in the page, with paths made for each service and trains staying on the line overnight.
 3. Run logic, part 2: move train movement out of the Minecraft classes, together with running by vehicle working and before speed curves and block sections change it.
 4. Turning back at a platform with the actual platform on PIDS, and empty services.
 5. Speed curves (including speed limits when passing stations), block sections, interlocking, splitting through services and deadheading.
 6. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
 
-Run logic part 1 (service decisions in `TrainService`, tested in game), choosing between reversing sidings after a terminal, the running diagram design, and the advanced editor's first three parts (writing to the game, timetable editing with single-service exceptions, timetable boundaries) are done. The editor's parts aren't tested in game yet.
+Run logic part 1 (service decisions in `TrainService`, tested in game), choosing between reversing sidings after a terminal, the running diagram design, and the advanced editor's parts up to vehicle working (writing to the game, timetable editing with single-service exceptions, timetable boundaries, path boundaries and regions, new service types, vehicle working data and generation) are done. Path boundaries, new service types and vehicle working have had a first quick test in game; their behaviour is still being watched.
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
@@ -165,7 +173,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 19. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 21. Jars with ANTE are about 136 MB.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 
