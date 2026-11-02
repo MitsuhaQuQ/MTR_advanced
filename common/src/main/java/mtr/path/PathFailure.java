@@ -50,6 +50,14 @@ public final class PathFailure {
 	}
 
 	public enum Type {
-		NONE, OLD_SEARCH, MISSING_WAYPOINT, DISCONNECTED, NO_ROUTE
+		NONE, OLD_SEARCH, MISSING_WAYPOINT, DISCONNECTED, NO_ROUTE,
+		/**
+		 * No turn back rail a route lists can be reached, at the first one.
+		 */
+		TURN_BACK,
+		/**
+		 * A turn back rail a route lists can't be reached, or not from the same rails as the first one, and trains don't use it.
+		 */
+		TURN_BACK_UNUSED
 	}
 }

@@ -27,6 +27,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 **Route operation**
 
 - A route can pass through a station without stopping, and can set its own door-open time per station.
+- A route can list several reversing sidings after its last stop. A train about to leave the terminal takes the first one that is free and keeps it until it is through, or waits at the platform if all of them are taken.
 - Passed stations don't open doors and don't appear in PIDS or announcements, and times update automatically.
 - The minimum dwell time is now 8.5 seconds. Doors never opened on very short dwells in the original, so older settings below the minimum are raised to 8.5 seconds when paths are refreshed.
 - Timetable sensors now fire when the remaining time first reaches the set value, and only once for each arrival of a train.
@@ -98,7 +99,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
 | 5 | Speed curves: TPS compensation is done; setting speed from limits, acceleration and timetable, and braking early, are not | In progress |
 | 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
-| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services and aligning after a restart are done; choosing the turn-back at terminals is not | In progress |
+| 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services, aligning after a restart and choosing between reversing sidings after a terminal are done; choosing between platforms to turn back on is not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
 | 9 | Timetable boundaries, splitting through services, deadheading, train priority | Not started |
 | 9.5 | Custom announcements: audio added by hand for automatic announcements, uploaded to the server, then synced to clients and cached locally | Not started |
@@ -110,7 +111,7 @@ The stages above describe the work as a whole. This is the order it is being don
 
 1. Finish what is in progress: commit the load memory work, then test signed node angles and the latest timetable work in game.
 2. Run logic, part 1: move decisions about services (taking the next service, changing routes, aligning after a restart) out of the Minecraft classes, so a whole day of a network can be simulated in automated tests. Done in code: the decisions are in `TrainService`, with tests for aligning after a restart, a whole day on a loop, sending trains out, turning back and through services. Tested in game.
-3. Choosing the turn-back at terminals, starting with reversing sidings after the platform.
+3. Choosing the turn-back at terminals, starting with reversing sidings after the platform. Done in code: a route lists reversing sidings as key nodes after its last stop, and a train about to leave the terminal takes the first one that is free, or waits at the platform if none is. The timetable check counts them together. Not yet tested in game.
 4. Path boundaries as a dashboard filter.
 5. Run logic, part 2: move train movement out of the Minecraft classes, before speed curves and block sections change it.
 6. Speed curves (including speed limits when passing stations), block sections, interlocking and timetable boundaries.
@@ -153,6 +154,8 @@ JDK 17 is required.
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
 The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 15. Jars with ANTE are about 136 MB.
+
+Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 
 ## License and credits
 

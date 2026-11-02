@@ -287,6 +287,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 				return Text.translatable("gui.mtr.path_failure_disconnected").getString();
 			case NO_ROUTE:
 				return Text.translatable("gui.mtr.path_failure_no_route").getString();
+			case TURN_BACK:
+				return Text.translatable("gui.mtr.path_failure_turn_back", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
+			case TURN_BACK_UNUSED:
+				return Text.translatable("gui.mtr.path_failure_turn_back_unused", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
 			default:
 				return ClientData.STALE_DEPOTS.contains(data.id) ? Text.translatable("gui.mtr.path_stale").getString() : "";
 		}

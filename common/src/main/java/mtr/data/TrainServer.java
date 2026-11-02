@@ -40,6 +40,11 @@ public class TrainServer extends Train {
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
 	private int pathRepeatIndex2;
+	/**
+	 * The turn back rails kept for this train, until it reaches {@link #turnBackUntil} on its path.
+	 */
+	private List<UUID> turnBackRails = Collections.emptyList();
+	private int turnBackUntil;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
 	private List<Siding.TimeSegment> timeSegments;
@@ -131,13 +136,19 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean isHeldAtStop() {
-		final RouteTimetable.StopPlan stopPlan = isCurrentlyManual ? null : service.getPlanAt(nextStoppingIndex);
-		if (stopPlan == null || !stopPlan.isTimed) {
+		if (isCurrentlyManual) {
 			return false;
 		}
-		final long currentMillis = System.currentTimeMillis();
-		final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
-		return currentMillis < departureMillis - DOOR_CLOSE_MILLIS || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && isOvertakingTrainComing(service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis);
+		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
+		if (stopPlan != null && stopPlan.isTimed) {
+			final long currentMillis = System.currentTimeMillis();
+			final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
+			if (currentMillis < departureMillis - DOOR_CLOSE_MILLIS || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && isOvertakingTrainComing(service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
+				return true;
+			}
+		}
+		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
+		return !transportMode.continuousMovement && service.chooseTurnBack();
 	}
 
 	@Override
@@ -369,7 +380,7 @@ public class TrainServer extends Train {
 			Runnable addSchedule = null;
 			routeId = 0;
 			// A trip ending with a loop only comes round again on the loop, so the rest of the trip must not be counted twice
-			final boolean startsOver = isRepeat() && !service.isOnTripPath();
+			final boolean startsOver = isRepeat() && !service.isOnTrip();
 			for (int i = startingIndex; i < timeSegments.size() + (startsOver ? timeSegments.size() : 0); i++) {
 				final Siding.TimeSegment timeSegment = timeSegments.get(i % timeSegments.size());
 
@@ -458,6 +469,14 @@ public class TrainServer extends Train {
 					signalBlocks.occupy(pathData.getRailProduct(), trainPositions, id);
 				}
 			}
+
+			if (!turnBackRails.isEmpty()) {
+				if (!isOnRoute || tailIndex >= turnBackUntil) {
+					turnBackRails = Collections.emptyList();
+				} else if (trainPositions.size() > 1) {
+					turnBackRails.forEach(rail -> trainPositions.get(1).putIfAbsent(rail, id));
+				}
+			}
 		}
 	}
 
@@ -521,6 +540,13 @@ public class TrainServer extends Train {
 	 */
 	public void setStopTimes(Siding.StopTimes depotStopTimes, Map<String, Siding.TripPath> newTripPaths) {
 		service.setStopTimes(depotStopTimes, newTripPaths);
+	}
+
+	/**
+	 * @param turnBacks where trains of the siding can turn back on more than one rail
+	 */
+	public void setStopTimes(Siding.StopTimes depotStopTimes, Map<String, Siding.TripPath> newTripPaths, Siding.TurnBacks turnBacks) {
+		service.setStopTimes(depotStopTimes, newTripPaths, turnBacks);
 	}
 
 	public boolean isOnTripPath() {
@@ -666,6 +692,36 @@ public class TrainServer extends Train {
 			pathRepeatIndex1 = tripPath == null ? depotRepeatIndex1 : tripPath.repeatIndex1;
 			pathRepeatIndex2 = tripPath == null ? depotRepeatIndex2 : tripPath.repeatIndex2;
 			syncRepeatIndices = true;
+		}
+
+		@Override
+		public void changePath(Siding.TripPath tripPath, int newStopIndex) {
+			final double distanceToStop = distances.get(nextStoppingIndex) - railProgress;
+			followPath(tripPath);
+			railProgress = distances.get(newStopIndex) - distanceToStop;
+			nextStoppingIndex = newStopIndex;
+			nextPlatformIndex = newStopIndex;
+		}
+
+		@Override
+		public boolean isTurnBackFree(List<UUID> rails) {
+			if (trainPositions != null) {
+				for (final UUID rail : rails) {
+					for (final Map<UUID, Long> trainPositionsMap : trainPositions) {
+						final Long otherId = trainPositionsMap.get(rail);
+						if (otherId != null && otherId != id) {
+							return false;
+						}
+					}
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public void reserveTurnBack(List<UUID> rails, int untilIndex) {
+			turnBackRails = rails;
+			turnBackUntil = untilIndex;
 		}
 
 		@Override

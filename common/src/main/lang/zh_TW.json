@@ -4,6 +4,8 @@
   "gui.mtr.dwell_override": "本路線門全開時間（秒）",
   "gui.mtr.path_failure_old_search": "刷新失敗：必經節點需要開啟確定性尋路",
   "gui.mtr.path_failure_missing_waypoint": "刷新失敗：必經節點 %s 沒有軌道",
+  "gui.mtr.path_failure_turn_back": "刷新失敗：終點後的折返線都走不通，第一條在 %s",
+  "gui.mtr.path_failure_turn_back_unused": "折返線 %s 走不通，或進出折返的軌道和第一條不同，列車不會使用",
   "gui.mtr.path_failure_disconnected": "刷新失敗：車站之間沒有連通",
   "gui.mtr.path_failure_no_route": "刷新失敗：按行進方向走不通",
   "gui.mtr.path_stale": "軌道已變動，路徑已過期",

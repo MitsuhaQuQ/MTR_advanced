@@ -4,6 +4,8 @@
   "gui.mtr.dwell_override": "Doors fully open for this route (seconds)",
   "gui.mtr.path_failure_old_search": "Refresh failed: this depot needs deterministic routing for waypoints",
   "gui.mtr.path_failure_missing_waypoint": "Refresh failed: waypoint %s has no rail",
+  "gui.mtr.path_failure_turn_back": "Refresh failed: no turn back rail after the last stop can be reached, starting at %s",
+  "gui.mtr.path_failure_turn_back_unused": "Turn back rail at %s can't be reached the same way as the first one, and is not used",
   "gui.mtr.path_failure_disconnected": "Refresh failed: stations are not connected",
   "gui.mtr.path_failure_no_route": "Refresh failed: no route in the direction of travel",
   "gui.mtr.path_stale": "Rails changed, path out of date",

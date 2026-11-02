@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +34,8 @@ class TrainServiceTest {
 	 */
 	private static final long MONDAY = 20458L * Depot.MILLISECONDS_PER_DAY;
 	private static final int TICKS_PER_MINUTE = (int) (MINUTE / Depot.MILLIS_PER_TICK);
+	private static final List<UUID> FIRST_TURN_BACK = Collections.singletonList(new UUID(0, 1));
+	private static final List<UUID> SECOND_TURN_BACK = Collections.singletonList(new UUID(0, 2));
 
 	private long now;
 
@@ -213,6 +216,79 @@ class TrainServiceTest {
 		assertEquals(line1.id, other.service.getTripRouteId());
 	}
 
+	@Test
+	void aTrainTurnsBackOnTheFirstFreeTurnBackRail() {
+		final TurnBackLine line = new TurnBackLine();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		train.nextStoppingIndex = 3;
+
+		assertFalse(train.service.chooseTurnBack());
+		assertEquals(0, train.pathChanges);
+		assertEquals(FIRST_TURN_BACK, train.reserved);
+		assertEquals(5, train.reservedUntil);
+
+		// Once taken, the turn back rail is kept for the train however long it still waits
+		train.takenRails.addAll(FIRST_TURN_BACK);
+		assertFalse(train.service.chooseTurnBack());
+	}
+
+	@Test
+	void aTrainTakesTheNextTurnBackRailWhenTheFirstIsTaken() {
+		final TurnBackLine line = new TurnBackLine();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		train.nextStoppingIndex = 3;
+		train.takenRails.addAll(FIRST_TURN_BACK);
+
+		// The train waits a moment after changing paths, so it leaves along the new one
+		assertTrue(train.service.chooseTurnBack());
+		assertSame(line.secondWay, train.followed);
+		assertEquals(SECOND_TURN_BACK, train.reserved);
+		assertEquals(6, train.reservedUntil);
+		assertFalse(train.service.chooseTurnBack());
+
+		// The longer way round puts the next route's stops one rail further on, and they still get the next service
+		now = MONDAY + 8 * HOUR + 7 * MINUTE;
+		train.nextStoppingIndex = 5;
+		train.service.onStopReached();
+		assertEquals(line.down.id, train.service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 9 * MINUTE, train.service.getTripMillis());
+		assertEquals(MONDAY + 8 * HOUR + 9 * MINUTE, train.service.getPlannedArrivalMillis(6));
+	}
+
+	@Test
+	void aTrainWaitsWhileEveryTurnBackRailIsTaken() {
+		final TurnBackLine line = new TurnBackLine();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		train.nextStoppingIndex = 3;
+		train.takenRails.addAll(FIRST_TURN_BACK);
+		train.takenRails.addAll(SECOND_TURN_BACK);
+
+		assertTrue(train.service.chooseTurnBack());
+		assertEquals(0, train.pathChanges);
+		assertNull(train.reserved);
+
+		train.takenRails.removeAll(SECOND_TURN_BACK);
+		assertTrue(train.service.chooseTurnBack());
+		assertSame(line.secondWay, train.followed);
+	}
+
+	@Test
+	void aTrainOnTheOtherWayRoundGoesBackToTheUsualPathWhenItsTurnBackRailIsFree() {
+		final TurnBackLine line = new TurnBackLine();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		train.nextStoppingIndex = 3;
+		train.takenRails.addAll(FIRST_TURN_BACK);
+		train.service.chooseTurnBack();
+
+		// Coming round to the same stop again, now with the first turn back rail free
+		train.takenRails.clear();
+		train.service.onStopReached();
+		assertTrue(train.service.chooseTurnBack());
+		assertEquals(2, train.pathChanges);
+		assertNull(train.followed);
+		assertEquals(3, train.nextStoppingIndex);
+	}
+
 	/**
 	 * A depot and its siding, with the routes it runs.
 	 */
@@ -223,6 +299,7 @@ class TrainServiceTest {
 		final List<PathData> path;
 		final Siding.StopTimes stopTimes;
 		final Map<String, Siding.TripPath> tripPaths = new HashMap<>();
+		Siding.TurnBacks turnBacks = Siding.TurnBacks.NONE;
 		final int repeatIndex1;
 		final int repeatIndex2;
 
@@ -245,7 +322,7 @@ class TrainServiceTest {
 		FakeTrain newTrain() {
 			final FakeTrain train = new FakeTrain(path, repeatIndex1, repeatIndex2);
 			train.service.setNetwork(depot, routes::get, null);
-			train.service.setStopTimes(stopTimes, tripPaths);
+			train.service.setStopTimes(stopTimes, tripPaths, turnBacks);
 			return train;
 		}
 
@@ -274,6 +351,28 @@ class TrainServiceTest {
 		Line(Route route) {
 			super(Collections.singletonList(route), makePath(5), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4)), 0, 0);
 			this.route = route;
+		}
+	}
+
+	/**
+	 * Three stops one way and three the other, with two turn back rails between. The second way round has one rail more.
+	 */
+	private class TurnBackLine extends Network {
+
+
+		final Route down;
+		final Siding.TripPath secondWay;
+
+		TurnBackLine() {
+			this(makeRoute(1, 0, 1, 2, 3), makeRoute(2, 9, 4, 5, 6));
+		}
+
+		private TurnBackLine(Route up, Route down) {
+			super(Arrays.asList(up, down), makePath(9), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 0, 6), stop(5, 4, 8), stop(6, 5, 10), stop(7, 6, 12)), 0, 0);
+			this.down = down;
+			secondWay = Siding.TripPath.ofTurnBack(0, 1, new int[]{3}, makePath(10), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(5, 0, 7), stop(6, 4, 9), stop(7, 5, 11), stop(8, 6, 13)));
+			tripPaths.put(secondWay.key, secondWay);
+			turnBacks = Siding.TurnBacks.of(new int[]{3}, new Siding.TurnBackPoint(Arrays.asList(FIRST_TURN_BACK, SECOND_TURN_BACK), new int[]{2, 3}, 0));
 		}
 	}
 
@@ -377,6 +476,10 @@ class TrainServiceTest {
 		int movedTo = -1;
 		boolean returned;
 		Siding.TripPath followed;
+		int pathChanges;
+		final Set<UUID> takenRails = new HashSet<>();
+		List<UUID> reserved;
+		int reservedUntil;
 
 		FakeTrain(List<PathData> path, int pathRepeatIndex1, int pathRepeatIndex2) {
 			this.path = path;
@@ -423,6 +526,24 @@ class TrainServiceTest {
 		@Override
 		public void followPath(Siding.TripPath tripPath) {
 			followed = tripPath;
+		}
+
+		@Override
+		public void changePath(Siding.TripPath tripPath, int newStopIndex) {
+			followed = tripPath;
+			nextStoppingIndex = newStopIndex;
+			pathChanges++;
+		}
+
+		@Override
+		public boolean isTurnBackFree(List<UUID> rails) {
+			return rails.stream().noneMatch(takenRails::contains);
+		}
+
+		@Override
+		public void reserveTurnBack(List<UUID> rails, int untilIndex) {
+			reserved = rails;
+			reservedUntil = untilIndex;
 		}
 
 		@Override

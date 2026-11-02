@@ -530,7 +530,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 								onStopReached();
 							}
 
-							if (elapsedDwellTicks < totalDwellTicks - DOOR_MOVE_TIME - DOOR_DELAY - ticksElapsed || !railBlocked && !isHeldAtStop()) {
+							// Holding can change the way the train leaves by, so it is checked even while the usual way is blocked
+							if (elapsedDwellTicks < totalDwellTicks - DOOR_MOVE_TIME - DOOR_DELAY - ticksElapsed || !isHeldAtStop() && !railBlocked) {
 								elapsedDwellTicks += ticksElapsed;
 							}
 

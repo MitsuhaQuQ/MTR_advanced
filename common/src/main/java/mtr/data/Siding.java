@@ -61,6 +61,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * The paths of services leaving the usual path for another route, by {@link TripTail#getKey()}.
 	 */
 	private final Map<String, TripPath> tripPaths = new HashMap<>();
+	private TurnBacks turnBacks = TurnBacks.NONE;
 
 	private static final String KEY_RAIL_LENGTH = "rail_length";
 	private static final String KEY_TRIP_PATHS = "trip_paths";
@@ -74,6 +75,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_TRIP_REPEAT_2 = "trip_repeat_2";
 	private static final String KEY_TRIP_LAP_STOP = "trip_lap_stop";
 	private static final String KEY_TRIP_ENTRY_RAIL = "trip_entry_rail";
+	private static final String KEY_TRIP_BASE = "trip_base";
+	private static final String KEY_TRIP_TURN_BACK = "trip_turn_back";
+	private static final String KEY_TRIP_TURN_BACK_STOPS = "trip_turn_back_stops";
+	private static final String KEY_TURN_BACK_POINTS = "turn_back_points";
+	private static final String KEY_TURN_BACK_STOPS = "turn_back_stops";
 	private static final String KEY_BASE_TRAIN_TYPE = "train_type";
 	private static final String KEY_TRAIN_ID = "train_custom_id";
 	private static final String KEY_UNLIMITED_TRAINS = "unlimited_trains";
@@ -123,6 +129,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		messagePackHelper.iterateArrayValue(KEY_PATH, pathSection -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(pathSection))));
 
 		generateTimeSegments(path, timeSegments, platformTimes, stopTimes, loopJoinIndex, repeatIndex2);
+		turnBacks = TurnBacks.read(messagePackHelper);
 
 		messagePackHelper.iterateArrayValue(KEY_TRIP_PATHS, value -> {
 			final TripPath tripPath = new TripPath(new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value)));
@@ -201,11 +208,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		for (final TripPath tripPath : tripPaths.values()) {
 			tripPath.toMessagePack(messagePacker);
 		}
+		turnBacks.write(messagePacker);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 14;
+		return super.messagePackLength() + 16;
 	}
 
 	@Override
@@ -336,12 +344,20 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @param tripTails     where services leave the main path for another route
 	 */
 	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail> tripTails) {
+		return generateRoute(minecraftServer, mainPath, successfulSegmentsMain, rails, graph, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, new ArrayList<>());
+	}
+
+	/**
+	 * @param turnBackSections where the main path can turn back on more than one rail, with its stops numbered
+	 */
+	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail> tripTails, List<TurnBackSection> turnBackSections) {
 		final List<PathData> tempPath = new ArrayList<>();
 		final Map<String, TripPath> tempTripPaths = new HashMap<>();
 		final int successfulSegments;
 		final int tempRepeatIndex1;
 		final int tempRepeatIndex2;
 		final int tempLoopJoinIndex;
+		TurnBacks tempTurnBacks = TurnBacks.NONE;
 
 		if (firstPlatform == null || lastPlatform == null) {
 			successfulSegments = 0;
@@ -373,22 +389,17 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				tempRepeatIndex1 = repeatInfinitely ? tempPath.size() - (tempPath.get(tempPath.size() - 1).isOppositeRail(mainPath.get(0)) ? 0 : 1) : 0;
 				final List<PathData> pathBeforeMain = new ArrayList<>(tempPath);
 				PathFinder.appendPath(tempPath, mainPath);
+				// Rails of the main path are this far along the whole path, which starts the same way for every service
+				final int mainOffset = tempPath.size() - mainPath.size();
 
+				final Map<String, List<PathData>> tripPathsToDepot = new HashMap<>();
 				for (final TripTail tripTail : tripTails) {
-					final List<PathData> tripPath = new ArrayList<>(pathBeforeMain);
-					PathFinder.appendPath(tripPath, new ArrayList<>(mainPath.subList(0, tripTail.leaveRail + 1)));
-					final int lapEnd = tripPath.size() - 1;
-					final int tailStart = tripPath.size() - (tripPath.get(lapEnd).isSameRail(tripTail.path.get(0)) ? 1 : 0);
-					PathFinder.appendPath(tripPath, tripTail.path);
-					final int repeatEnd = tripPath.size() - 1;
 					final List<PathData> pathToDepot = new ArrayList<>();
 					PathFinder.findPath(pathToDepot, rails, graph, Arrays.asList(tripTail.lastPlatform, this), null, 0, cruisingAltitude, useFastSpeed);
 					// A way back is needed, and without it the service stays on the main path
 					if (!pathToDepot.isEmpty()) {
-						PathFinder.appendPath(tripPath, pathToDepot);
-						final TripPath newTripPath = new TripPath(tripTail, tempLoopJoinIndex, lapEnd, tailStart, repeatEnd, tripPath);
-						newTripPath.generateTimes(this);
-						tempTripPaths.put(newTripPath.key, newTripPath);
+						tripPathsToDepot.put(tripTail.key, pathToDepot);
+						addTripPath(tempTripPaths, pathBeforeMain, mainPath, tripTail, tripTail.leaveRail, pathToDepot, tempLoopJoinIndex, tripTail.key, -1, -1, getTurnBackStops(turnBackSections, mainOffset, tripTail.leaveRail, -1, 0));
 					}
 				}
 
@@ -406,6 +417,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 					tempRepeatIndex2 = repeatInfinitely ? tempPath.size() - 1 : 0;
 					PathFinder.appendPath(tempPath, pathLastPlatformToDepot);
 					successfulSegments = successfulSegmentsMain + 2;
+					if (!turnBackSections.isEmpty()) {
+						addTurnBackPaths(tempTripPaths, pathBeforeMain, mainPath, pathLastPlatformToDepot, mainOffset, turnBackSections, tripTails, tripPathsToDepot, tempLoopJoinIndex, tempRepeatIndex1, tempRepeatIndex2);
+						tempTurnBacks = TurnBacks.fromSections(turnBackSections, getTurnBackStops(turnBackSections, mainOffset, Integer.MAX_VALUE, -1, 0));
+					}
 				}
 			}
 		}
@@ -414,6 +429,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final Map<Long, Map<Long, Float>> tempPlatformTimes = new HashMap<>();
 		final StopTimes tempStopTimes = new StopTimes();
 		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes, tempStopTimes, tempLoopJoinIndex, tempRepeatIndex2);
+		final TurnBacks newTurnBacks = tempTurnBacks;
 
 		minecraftServer.execute(() -> {
 			try {
@@ -444,6 +460,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				loopJoinIndex = tempLoopJoinIndex;
 				tripPaths.clear();
 				tripPaths.putAll(tempTripPaths);
+				turnBacks = newTurnBacks;
 				if (!tempPath.isEmpty()) {
 					relocateTrains(oldRails, oldDistances);
 				}
@@ -453,6 +470,65 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 
 		return successfulSegments;
+	}
+
+	private void addTripPath(Map<String, TripPath> tempTripPaths, List<PathData> pathBeforeMain, List<PathData> mainPath, TripTail tripTail, int leaveRail, List<PathData> pathToDepot, int joinIndex, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
+		final List<PathData> tripPath = new ArrayList<>(pathBeforeMain);
+		PathFinder.appendPath(tripPath, new ArrayList<>(mainPath.subList(0, leaveRail + 1)));
+		final int lapEnd = tripPath.size() - 1;
+		final int tailStart = tripPath.size() - (tripPath.get(lapEnd).isSameRail(tripTail.path.get(0)) ? 1 : 0);
+		PathFinder.appendPath(tripPath, tripTail.path);
+		final int repeatEnd = tripPath.size() - 1;
+		PathFinder.appendPath(tripPath, pathToDepot);
+		final TripPath newTripPath = new TripPath(key, turnBackPoint, turnBackWay, turnBackStops, tripTail, joinIndex, lapEnd, tailStart, repeatEnd, tripPath);
+		newTripPath.generateTimes(this);
+		tempTripPaths.put(key, newTripPath);
+	}
+
+	/**
+	 * Each way round a turn back point that the main path doesn't take gets a path of its own, for the usual path and for
+	 * every service running through to another route after the point. Only the rails of that way round are different, so a
+	 * train can change onto one of these paths at the stop before the point.
+	 */
+	private void addTurnBackPaths(Map<String, TripPath> tempTripPaths, List<PathData> pathBeforeMain, List<PathData> mainPath, List<PathData> pathToDepot, int mainOffset, List<TurnBackSection> turnBackSections, List<TripTail> tripTails, Map<String, List<PathData>> tripPathsToDepot, int joinIndex, int newRepeatIndex1, int newRepeatIndex2) {
+		for (int point = 0; point < turnBackSections.size(); point++) {
+			final TurnBackSection section = turnBackSections.get(point);
+			for (int way = 0; way < section.ways.size(); way++) {
+				if (way != section.defaultWay && section.ways.get(way) != null) {
+					final List<PathData> newMainPath = section.getMainPath(mainPath, way);
+					final int extraRails = section.ways.get(way).size() - section.getLength();
+					final List<PathData> newPath = new ArrayList<>(pathBeforeMain);
+					PathFinder.appendPath(newPath, newMainPath);
+					PathFinder.appendPath(newPath, pathToDepot);
+					final String key = TripPath.getTurnBackKey("", point, way);
+					final TripPath turnBackPath = new TripPath(key, point, way, getTurnBackStops(turnBackSections, mainOffset, Integer.MAX_VALUE, point, extraRails), joinIndex, newRepeatIndex1, newRepeatIndex2 == 0 ? 0 : newRepeatIndex2 + extraRails, newPath);
+					turnBackPath.generateTimes(this);
+					tempTripPaths.put(key, turnBackPath);
+
+					for (final TripTail tripTail : tripTails) {
+						final List<PathData> tripPathToDepot = tripPathsToDepot.get(tripTail.key);
+						if (tripPathToDepot != null && tripTail.leaveRail >= section.getEnd()) {
+							addTripPath(tempTripPaths, pathBeforeMain, newMainPath, tripTail, tripTail.leaveRail + extraRails, tripPathToDepot, joinIndex, TripPath.getTurnBackKey(tripTail.key, point, way), point, way, getTurnBackStops(turnBackSections, mainOffset, tripTail.leaveRail, point, extraRails));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * @param leaveRail     where the path leaves the main path, as a rail of the main path
+	 * @param changedPoint  the point where the path takes another way round, or -1
+	 * @param extraRails    how many more rails that way round has
+	 * @return the rail of the stop before each turn back point on the path, or -1 for points it doesn't pass
+	 */
+	private static int[] getTurnBackStops(List<TurnBackSection> turnBackSections, int mainOffset, int leaveRail, int changedPoint, int extraRails) {
+		final int[] stops = new int[turnBackSections.size()];
+		for (int i = 0; i < turnBackSections.size(); i++) {
+			final TurnBackSection section = turnBackSections.get(i);
+			stops[i] = section.getEnd() <= leaveRail ? mainOffset + section.stopRail + (changedPoint >= 0 && i > changedPoint ? extraRails : 0) : -1;
+		}
+		return stops;
 	}
 
 	private void relocateTrains(List<String> oldRails, List<Double> oldDistances) {
@@ -509,7 +585,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				trainsToSync.add(train);
 			}
 
-			train.setStopTimes(stopTimes, tripPaths);
+			train.setStopTimes(stopTimes, tripPaths, turnBacks);
 			train.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
@@ -566,6 +642,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	public StopTimes getStopTimes() {
 		return stopTimes;
+	}
+
+	/**
+	 * @return the turn back rails a train can use instead of this one of the usual path, in the order trains try them
+	 */
+	public List<UUID> getTurnBackCandidates(UUID rail) {
+		return turnBacks.getCandidates(rail);
 	}
 
 	/**
@@ -839,6 +922,287 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
+	 * The way from the last stop of a route on the main path to the first stop of the next route, while paths are generated,
+	 * with a way round each turn back rail the route lists after its last stop.
+	 */
+	public static class TurnBackSection {
+
+		private final int start;
+		private final List<List<PathData>> ways;
+		private final int defaultWay;
+		private int stopRail;
+
+		/**
+		 * @param start      the rail of the main path where the way from the stop starts
+		 * @param ways       for each turn back rail in order, the way from the stop to the next one, or null if it can't be used
+		 * @param defaultWay the way the main path takes
+		 */
+		public TurnBackSection(int start, List<List<PathData>> ways, int defaultWay) {
+			this.start = start;
+			this.ways = ways;
+			this.defaultWay = defaultWay;
+		}
+
+		public List<PathData> getDefaultWay() {
+			return ways.get(defaultWay);
+		}
+
+		/**
+		 * Numbers the stops of the other ways round like the main path, which must be numbered already.
+		 */
+		public void numberStops(List<PathData> mainPath) {
+			stopRail = Math.max(start - 1, 0);
+			while (stopRail > 0 && mainPath.get(stopRail).dwellTime == 0) {
+				stopRail--;
+			}
+			for (int i = 0; i < ways.size(); i++) {
+				final List<PathData> way = ways.get(i);
+				if (way != null && i != defaultWay) {
+					PathData previous = start > 0 ? mainPath.get(start - 1) : way.get(0);
+					int stopIndex = previous.stopIndex;
+					for (final PathData pathData : way) {
+						if (pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && previous.rail.railType != RailType.PLATFORM) {
+							stopIndex++;
+						}
+						pathData.stopIndex = stopIndex;
+						previous = pathData;
+					}
+				}
+			}
+		}
+
+		private int getLength() {
+			return getDefaultWay().size();
+		}
+
+		/**
+		 * @return the last rail of this section on the main path
+		 */
+		private int getEnd() {
+			return start + getLength() - 1;
+		}
+
+		private List<PathData> getMainPath(List<PathData> mainPath, int way) {
+			final List<PathData> newMainPath = new ArrayList<>(mainPath.subList(0, start));
+			newMainPath.addAll(ways.get(way));
+			newMainPath.addAll(mainPath.subList(start + getLength(), mainPath.size()));
+			return newMainPath;
+		}
+	}
+
+	/**
+	 * Where trains of a siding can turn back on more than one rail after the last stop of a route. At each of these points
+	 * a train takes the first turn back rail that is free as it leaves the stop. The paths of the ways round that the usual
+	 * path doesn't take are kept with the paths of services, by {@link TripPath#getTurnBackKey}.
+	 */
+	public static class TurnBacks {
+
+		public static final TurnBacks NONE = new TurnBacks(new ArrayList<>(), new int[0]);
+
+		private final List<TurnBackPoint> points;
+		/**
+		 * The rail of the stop before each point on the usual path.
+		 */
+		private final int[] depotStops;
+
+		private TurnBacks(List<TurnBackPoint> points, int[] depotStops) {
+			this.points = points;
+			this.depotStops = depotStops;
+		}
+
+		private static TurnBacks fromSections(List<TurnBackSection> turnBackSections, int[] depotStops) {
+			final List<TurnBackPoint> points = new ArrayList<>();
+			turnBackSections.forEach(section -> points.add(new TurnBackPoint(section)));
+			return new TurnBacks(points, depotStops);
+		}
+
+		/**
+		 * Turn back points worked out elsewhere, for running services without a world.
+		 */
+		static TurnBacks of(int[] depotStops, TurnBackPoint... points) {
+			return new TurnBacks(Arrays.asList(points), depotStops);
+		}
+
+		private static TurnBacks read(MessagePackHelper messagePackHelper) {
+			final List<TurnBackPoint> points = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_TURN_BACK_POINTS, value -> {
+				final List<Long> values = new ArrayList<>();
+				value.asArrayValue().forEach(pointValue -> values.add(pointValue.asIntegerValue().asLong()));
+				points.add(TurnBackPoint.read(values));
+			});
+			final List<Integer> stops = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_TURN_BACK_STOPS, value -> stops.add(value.asIntegerValue().asInt()));
+			return points.size() == stops.size() && !points.isEmpty() ? new TurnBacks(points, stops.stream().mapToInt(Integer::intValue).toArray()) : NONE;
+		}
+
+		private void write(MessagePacker messagePacker) throws IOException {
+			messagePacker.packString(KEY_TURN_BACK_POINTS).packArrayHeader(points.size());
+			for (final TurnBackPoint point : points) {
+				final List<Long> values = point.write();
+				messagePacker.packArrayHeader(values.size());
+				for (final long value : values) {
+					messagePacker.packLong(value);
+				}
+			}
+			messagePacker.packString(KEY_TURN_BACK_STOPS).packArrayHeader(depotStops.length);
+			for (final int stop : depotStops) {
+				messagePacker.packInt(stop);
+			}
+		}
+
+		/**
+		 * @param stops the stops of the path the train is on, or null for the usual path
+		 * @return the point after this stop, or -1 if there is none
+		 */
+		public int getPoint(int[] stops, int stopIndex) {
+			final int[] pathStops = stops == null ? depotStops : stops;
+			for (int i = 0; i < pathStops.length && i < points.size(); i++) {
+				if (pathStops[i] == stopIndex) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		/**
+		 * @param stops the stops of a path, or null for the usual path
+		 * @return the rail of the stop before this point on that path, or -1 if the path doesn't pass it
+		 */
+		public int getStop(int[] stops, int point) {
+			final int[] pathStops = stops == null ? depotStops : stops;
+			return point < pathStops.length ? pathStops[point] : -1;
+		}
+
+		public TurnBackPoint get(int point) {
+			return points.get(point);
+		}
+
+		private List<UUID> getCandidates(UUID rail) {
+			for (final TurnBackPoint point : points) {
+				final List<UUID> defaultRails = point.rails.get(point.defaultWay);
+				if (defaultRails != null && defaultRails.contains(rail)) {
+					final List<UUID> candidates = new ArrayList<>();
+					point.rails.forEach(rails -> {
+						if (rails != null && !rails.isEmpty()) {
+							candidates.add(rails.get(0));
+						}
+					});
+					return candidates;
+				}
+			}
+			return Collections.singletonList(rail);
+		}
+	}
+
+	public static class TurnBackPoint {
+
+		/**
+		 * For each way round in order, the rails where a train turns back, or null if it can't be used.
+		 */
+		private final List<List<UUID>> rails;
+		/**
+		 * For each way round, the number of rails from the stop to the first stop of the next route.
+		 */
+		private final int[] lengths;
+		public final int defaultWay;
+
+		/**
+		 * @param rails   for each way round in order, the rails where a train turns back, or null if it can't be used
+		 * @param lengths for each way round, the number of rails from the stop to the first stop of the next route
+		 */
+		TurnBackPoint(List<List<UUID>> rails, int[] lengths, int defaultWay) {
+			this.rails = rails;
+			this.lengths = lengths;
+			this.defaultWay = defaultWay;
+		}
+
+		private TurnBackPoint(TurnBackSection section) {
+			rails = new ArrayList<>();
+			lengths = new int[section.ways.size()];
+			for (int i = 0; i < section.ways.size(); i++) {
+				final List<PathData> way = section.ways.get(i);
+				if (way == null) {
+					rails.add(null);
+				} else {
+					final List<UUID> wayRails = new ArrayList<>();
+					for (int j = 1; j < way.size() - 1; j++) {
+						if (way.get(j).isOppositeRail(way.get(j + 1))) {
+							wayRails.add(way.get(j).getRailProduct());
+						}
+					}
+					// A way round without turning back, like a loop, is kept clear as a whole
+					if (wayRails.isEmpty()) {
+						for (int j = 1; j < way.size() - 1; j++) {
+							wayRails.add(way.get(j).getRailProduct());
+						}
+					}
+					rails.add(wayRails);
+					lengths[i] = section.start - section.stopRail + way.size() - 1;
+				}
+			}
+			defaultWay = section.defaultWay;
+		}
+
+		private static TurnBackPoint read(List<Long> values) {
+			final int defaultWay = values.get(0).intValue();
+			final int wayCount = values.get(1).intValue();
+			final List<List<UUID>> rails = new ArrayList<>();
+			final int[] lengths = new int[wayCount];
+			int index = 2;
+			for (int i = 0; i < wayCount; i++) {
+				lengths[i] = values.get(index++).intValue();
+				final int railCount = values.get(index++).intValue();
+				if (railCount < 0) {
+					rails.add(null);
+				} else {
+					final List<UUID> wayRails = new ArrayList<>();
+					for (int j = 0; j < railCount; j++) {
+						wayRails.add(new UUID(values.get(index++), values.get(index++)));
+					}
+					rails.add(wayRails);
+				}
+			}
+			return new TurnBackPoint(rails, lengths, defaultWay);
+		}
+
+		private List<Long> write() {
+			final List<Long> values = new ArrayList<>();
+			values.add((long) defaultWay);
+			values.add((long) rails.size());
+			for (int i = 0; i < rails.size(); i++) {
+				final List<UUID> wayRails = rails.get(i);
+				values.add((long) lengths[i]);
+				values.add(wayRails == null ? -1L : wayRails.size());
+				if (wayRails != null) {
+					wayRails.forEach(rail -> {
+						values.add(rail.getMostSignificantBits());
+						values.add(rail.getLeastSignificantBits());
+					});
+				}
+			}
+			return values;
+		}
+
+		public int getWayCount() {
+			return rails.size();
+		}
+
+		/**
+		 * @return the rails where a train taking this way round turns back, or null if it can't be used
+		 */
+		public List<UUID> getRails(int way) {
+			return rails.get(way);
+		}
+
+		/**
+		 * @return the number of rails from the stop to the first stop of the next route this way round
+		 */
+		public int getLength(int way) {
+			return lengths[way];
+		}
+	}
+
+	/**
 	 * A path of a service that isn't the usual path of the depot. Trains use it from the moment they start that service.
 	 */
 	public static class TripPath {
@@ -862,12 +1226,29 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * The rail where the train joins that loop part of the way round, or -1 if it joins at the first stop.
 		 */
 		public final int entryRail;
+		/**
+		 * The key of the service running through to another route, or empty for the usual path of the depot.
+		 */
+		public final String tripKey;
+		/**
+		 * The rail of the stop before each {@link TurnBacks} point, or -1 for a point this path doesn't pass.
+		 */
+		public final int[] turnBackStops;
+		/**
+		 * The point where this path takes another way round than the usual one, and which way, or -1.
+		 */
+		public final int turnBackPoint;
+		public final int turnBackWay;
 		private final Map<Long, Integer> cutStops = new HashMap<>();
 		private final int joinIndex;
 		private final int lapEnd;
 
-		private TripPath(TripTail tripTail, int joinIndex, int lapEnd, int tailStart, int repeatEnd, List<PathData> path) {
-			key = tripTail.key;
+		private TripPath(String key, int turnBackPoint, int turnBackWay, int[] turnBackStops, TripTail tripTail, int joinIndex, int lapEnd, int tailStart, int repeatEnd, List<PathData> path) {
+			this.key = key;
+			tripKey = tripTail.key;
+			this.turnBackStops = turnBackStops;
+			this.turnBackPoint = turnBackPoint;
+			this.turnBackWay = turnBackWay;
 			routeIds.addAll(tripTail.routeIds);
 			cutStops.putAll(tripTail.cutStops);
 			this.joinIndex = joinIndex;
@@ -880,8 +1261,34 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			entryRail = tripTail.entryRail == TripTail.NO_RAIL ? -1 : tripTail.entryRail + tailStart;
 		}
 
+		/**
+		 * The usual path of the depot with another way round a turn back point.
+		 */
+		private TripPath(String key, int turnBackPoint, int turnBackWay, int[] turnBackStops, int joinIndex, int repeatIndex1, int repeatIndex2, List<PathData> path) {
+			this.key = key;
+			tripKey = "";
+			this.turnBackStops = turnBackStops;
+			this.turnBackPoint = turnBackPoint;
+			this.turnBackWay = turnBackWay;
+			this.joinIndex = joinIndex;
+			lapEnd = repeatIndex2;
+			this.path.addAll(path);
+			this.repeatIndex1 = repeatIndex1;
+			this.repeatIndex2 = repeatIndex2;
+			lapStop = 0;
+			entryRail = -1;
+		}
+
 		private TripPath(MessagePackHelper messagePackHelper) {
 			key = messagePackHelper.getString(KEY_TRIP_KEY);
+			tripKey = messagePackHelper.getString(KEY_TRIP_BASE, key);
+			final List<Integer> stops = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_TRIP_TURN_BACK_STOPS, value -> stops.add(value.asIntegerValue().asInt()));
+			turnBackStops = stops.stream().mapToInt(Integer::intValue).toArray();
+			final List<Integer> turnBack = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_TRIP_TURN_BACK, value -> turnBack.add(value.asIntegerValue().asInt()));
+			turnBackPoint = turnBack.size() == 2 ? turnBack.get(0) : -1;
+			turnBackWay = turnBack.size() == 2 ? turnBack.get(1) : -1;
 			messagePackHelper.iterateArrayValue(KEY_TRIP_ROUTE_IDS, value -> routeIds.add(value.asIntegerValue().asLong()));
 			final long oldCutRouteId = messagePackHelper.getLong(KEY_TRIP_CUT_ROUTE);
 			if (oldCutRouteId != 0) {
@@ -908,11 +1315,28 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * @param repeatEnd for a loop at the end, the rail where a lap ends, or 0
 		 */
 		static TripPath of(TripTail tripTail, List<PathData> path, int tailStart, int repeatEnd, StopTimes newStopTimes) {
-			final TripPath tripPath = new TripPath(tripTail, 0, 0, tailStart, repeatEnd, path);
+			final TripPath tripPath = new TripPath(tripTail.key, -1, -1, new int[0], tripTail, 0, 0, tailStart, repeatEnd, path);
 			tripPath.stopTimes.copyFrom(newStopTimes);
 			tripPath.stopTimes.cutStops.clear();
 			tripPath.stopTimes.cutStops.putAll(tripPath.cutStops);
 			return tripPath;
+		}
+
+		/**
+		 * The usual path with another way round a turn back point, worked out elsewhere, for running services without a world.
+		 */
+		static TripPath ofTurnBack(int point, int way, int[] turnBackStops, List<PathData> path, StopTimes newStopTimes) {
+			final TripPath tripPath = new TripPath(getTurnBackKey("", point, way), point, way, turnBackStops, 0, 0, 0, path);
+			tripPath.stopTimes.copyFrom(newStopTimes);
+			return tripPath;
+		}
+
+		/**
+		 * @param tripKey the key of the service running through to another route, or empty for the usual path of the depot
+		 * @return the key of the path that takes this way round this turn back point
+		 */
+		public static String getTurnBackKey(String tripKey, int point, int way) {
+			return tripKey + "|" + point + ":" + way;
 		}
 
 		private void generateTimes(Siding siding) {
@@ -931,8 +1355,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		private void toMessagePack(MessagePacker messagePacker) throws IOException {
-			messagePacker.packMapHeader(10);
+			messagePacker.packMapHeader(13);
 			messagePacker.packString(KEY_TRIP_KEY).packString(key);
+			messagePacker.packString(KEY_TRIP_BASE).packString(tripKey);
+			messagePacker.packString(KEY_TRIP_TURN_BACK).packArrayHeader(2).packInt(turnBackPoint).packInt(turnBackWay);
+			messagePacker.packString(KEY_TRIP_TURN_BACK_STOPS).packArrayHeader(turnBackStops.length);
+			for (final int stop : turnBackStops) {
+				messagePacker.packInt(stop);
+			}
 			messagePacker.packString(KEY_TRIP_ROUTE_IDS).packArrayHeader(routeIds.size());
 			for (final long routeId : routeIds) {
 				messagePacker.packLong(routeId);

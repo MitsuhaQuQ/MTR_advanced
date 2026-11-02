@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 
@@ -50,8 +51,10 @@ public class TrainService {
 	 */
 	private boolean needsAlignment;
 	private Siding.StopTimes stopTimes;
+	private Siding.StopTimes depotStopTimes;
 	/**
-	 * The path of the current service when it isn't the usual path of the depot, which is kept to go back to.
+	 * The path the train is on when it isn't the usual path of the depot, for a service running through to another route or
+	 * for another way round a turn back point. The usual path is kept to go back to.
 	 */
 	private Siding.TripPath tripPath;
 	private String tripPathKey = "";
@@ -61,6 +64,11 @@ public class TrainService {
 	private int linkedService = -1;
 	private long linkedRouteId;
 	private Map<String, Siding.TripPath> tripPaths = new HashMap<>();
+	private Siding.TurnBacks turnBacks = Siding.TurnBacks.NONE;
+	/**
+	 * The stop where the train has taken a turn back rail of the point after it, or -1.
+	 */
+	private int turnBackStop = -1;
 	private final List<Route> tripRoutes = new ArrayList<>();
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
@@ -143,7 +151,7 @@ public class TrainService {
 	}
 
 	public void onLapComplete() {
-		final Route lapRoute = tripPath == null ? null : getLapRoute();
+		final Route lapRoute = isOnTrip() ? getLapRoute() : null;
 		if (lapRoute != null) {
 			tripMillis = nextTripMillis == 0 ? findLapService(lapRoute, clock.getAsLong()) : nextTripMillis;
 			tripRouteId = lapRoute.id;
@@ -177,6 +185,7 @@ public class TrainService {
 	 */
 	public void onStopReached() {
 		final int nextStoppingIndex = vehicle.getNextStoppingIndex();
+		turnBackStop = -1;
 		// The first stop of a joined loop ends the service the train joined, like the end of any lap
 		if (isJoiningLoop && stopTimes != null && nextStoppingIndex >= getJoinEndIndex()) {
 			isJoiningLoop = false;
@@ -294,7 +303,7 @@ public class TrainService {
 	 */
 	private boolean takeRunningService(long currentMillis) {
 		final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
-		if (tripPath != null || trainRoutes.isEmpty()) {
+		if (isOnTrip() || trainRoutes.isEmpty()) {
 			return false;
 		}
 
@@ -313,6 +322,47 @@ public class TrainService {
 		isJoiningLoop = false;
 		depot.reserveTrip(tripRouteId, tripMillis);
 		updateTripPath();
+		return true;
+	}
+
+	/**
+	 * At the last stop of a route that can turn back on more than one rail, takes the first of them that is free as the train
+	 * is about to leave, and keeps it for the train until it is through. Each way round has a path of its own, which is the
+	 * same as the one the train is on up to this stop, so the train changes onto it here.
+	 *
+	 * @return true while the train has to wait at the stop, as every way round is taken or it has only just changed paths
+	 */
+	public boolean chooseTurnBack() {
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (turnBackStop == stopIndex) {
+			return false;
+		}
+		final int point = turnBacks.getPoint(tripPath == null ? null : tripPath.turnBackStops, stopIndex);
+		if (point < 0) {
+			return false;
+		}
+
+		final Siding.TurnBackPoint turnBackPoint = turnBacks.get(point);
+		final String tripKey = isOnTrip() ? tripPath.tripKey : "";
+		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
+			final List<UUID> rails = turnBackPoint.getRails(way);
+			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
+			final Siding.TripPath newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(Siding.TripPath.getTurnBackKey(tripKey, point, way));
+			if (rails != null && (newPath != null || isDefaultWay && tripKey.isEmpty()) && vehicle.isTurnBackFree(rails)) {
+				final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
+				turnBackStop = newStopIndex;
+				vehicle.reserveTurnBack(rails, newStopIndex + turnBackPoint.getLength(way));
+				if (newPath == tripPath) {
+					return false;
+				}
+				tripPath = newPath;
+				tripPathKey = newPath == null ? "" : newPath.key;
+				stopTimes = newPath == null ? depotStopTimes : newPath.stopTimes;
+				vehicle.changePath(newPath, newStopIndex);
+				setLastLap(isLastLap);
+				return true;
+			}
+		}
 		return true;
 	}
 
@@ -351,17 +401,36 @@ public class TrainService {
 	 * @param depotStopTimes the stop times of the usual path of the siding
 	 * @param newTripPaths   the paths of services leaving it
 	 */
-	public void setStopTimes(Siding.StopTimes depotStopTimes, Map<String, Siding.TripPath> newTripPaths) {
-		stopTimes = tripPath == null ? depotStopTimes : tripPath.stopTimes;
+	public void setStopTimes(Siding.StopTimes newDepotStopTimes, Map<String, Siding.TripPath> newTripPaths) {
+		setStopTimes(newDepotStopTimes, newTripPaths, Siding.TurnBacks.NONE);
+	}
+
+	/**
+	 * @param newTurnBacks where trains of the siding can turn back on more than one rail
+	 */
+	public void setStopTimes(Siding.StopTimes newDepotStopTimes, Map<String, Siding.TripPath> newTripPaths, Siding.TurnBacks newTurnBacks) {
+		depotStopTimes = newDepotStopTimes;
+		stopTimes = tripPath == null ? newDepotStopTimes : tripPath.stopTimes;
 		tripPaths = newTripPaths;
+		turnBacks = newTurnBacks;
 	}
 
 	public Siding.StopTimes getStopTimes() {
 		return stopTimes;
 	}
 
+	/**
+	 * @return true if the train isn't on the usual path of the depot, which it then keeps until it is back
+	 */
 	public boolean isOnTripPath() {
 		return tripPath != null;
+	}
+
+	/**
+	 * @return true if the train runs a service through to another route
+	 */
+	public boolean isOnTrip() {
+		return tripPath != null && !tripPath.tripKey.isEmpty();
 	}
 
 	public boolean isLastLap() {
@@ -397,7 +466,7 @@ public class TrainService {
 	 * leaves the usual one, so this works wherever the train is. A loop joined part of the way round changes over at its first stop.
 	 */
 	private void updateTripPath() {
-		if (tripPath != null || isJoiningLoop || depot == null || tripMillis == 0) {
+		if (isOnTrip() || isJoiningLoop || depot == null || tripMillis == 0) {
 			return;
 		}
 		final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
@@ -405,10 +474,12 @@ public class TrainService {
 		if (lastRoute != null && lastRoute.id == tripRouteId) {
 			final RouteTimetable.ServiceLink link = lastRoute.timetable.getLink(tripMillis);
 			final Siding.TripPath newTripPath = link == null || routes == null ? null : tripPaths.get(Siding.TripTail.getKey(RouteTimetable.getLinkChain(link, routes)));
-			if (newTripPath != null) {
+			// A train that went another way round a turn back point keeps to it, as it may be past the point already
+			final Siding.TripPath turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(Siding.TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
+			if (turnBackPath != null) {
 				linkedService = link.service;
 				linkedRouteId = link.routeId;
-				useTripPath(newTripPath);
+				useTripPath(turnBackPath);
 			}
 		}
 	}
@@ -424,6 +495,7 @@ public class TrainService {
 	}
 
 	private void leaveTripPath() {
+		turnBackStop = -1;
 		if (tripPath != null) {
 			tripPath = null;
 			tripPathKey = "";
@@ -474,7 +546,7 @@ public class TrainService {
 		if (newTripRoutes.isEmpty()) {
 			return null;
 		}
-		return tripPath == null ? newTripRoutes.get(0) : vehicle.getPathRepeatIndex2() > 0 ? newTripRoutes.get(newTripRoutes.size() - 1) : null;
+		return !isOnTrip() ? newTripRoutes.get(0) : vehicle.getPathRepeatIndex2() > 0 ? newTripRoutes.get(newTripRoutes.size() - 1) : null;
 	}
 
 	/**
@@ -493,7 +565,7 @@ public class TrainService {
 	 */
 	private void reserveTrip(long newRouteId, long newTripMillis) {
 		depot.reserveTrip(newRouteId, newTripMillis);
-		final Board routeDepot = tripPath == null || routeDepots == null ? null : routeDepots.apply(newRouteId);
+		final Board routeDepot = !isOnTrip() || routeDepots == null ? null : routeDepots.apply(newRouteId);
 		if (routeDepot != null && routeDepot != depot) {
 			routeDepot.reserveTrip(newRouteId, newTripMillis);
 		}
@@ -515,7 +587,7 @@ public class TrainService {
 	 * @return the routes of the path the train is on
 	 */
 	private List<Route> getTripRoutes() {
-		if (tripPath == null) {
+		if (!isOnTrip()) {
 			return depot.getTrainRoutes(trainId);
 		}
 		if (tripRoutes.isEmpty() && routes != null) {
@@ -550,12 +622,12 @@ public class TrainService {
 		final int pathRepeatIndex2 = vehicle.getPathRepeatIndex2();
 		if (vehicle.getPathRepeatIndex1() > 0 && pathRepeatIndex2 > 0) {
 			// On the way to a loop at the end of a trip there is no lap to plan yet
-			if (tripPath != null && tripRouteId != getLastTripRouteId()) {
+			if (isOnTrip() && tripRouteId != getLastTripRouteId()) {
 				return;
 			}
 			final RouteTimetable.StopPlan lastStopPlan = getStopPlan(pathRepeatIndex2);
 			final long lapEndMillis = lastStopPlan == null ? 0 : getPlannedMillis(lastStopPlan.arrivalMillis);
-			nextTripMillis = lastStopPlan == null ? 0 : tripPath == null ? depot.findNextTrip(trainId, lapEndMillis) : findLapService(getLapRoute(), lapEndMillis);
+			nextTripMillis = lastStopPlan == null ? 0 : !isOnTrip() ? depot.findNextTrip(trainId, lapEndMillis) : findLapService(getLapRoute(), lapEndMillis);
 			setLastLap(nextTripMillis == 0);
 		}
 	}
@@ -576,7 +648,7 @@ public class TrainService {
 	 * The stop at the end of a lap is also the first stop of the next one, which is the service the train is on by then.
 	 */
 	private int getPlanIndex(int stopIndex) {
-		return vehicle.isRepeat() && stopIndex >= vehicle.getRepeatIndex2() && stopTimes != null ? tripPath == null ? stopTimes.getFirstIndex() : tripPath.lapStop : stopIndex;
+		return vehicle.isRepeat() && stopIndex >= vehicle.getRepeatIndex2() && stopTimes != null ? !isOnTrip() ? stopTimes.getFirstIndex() : tripPath.lapStop : stopIndex;
 	}
 
 	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
@@ -661,6 +733,24 @@ public class TrainService {
 		 * @param tripPath the path of a service running through to another route, or null for the usual path of the depot
 		 */
 		void followPath(Siding.TripPath tripPath);
+
+		/**
+		 * Moves the train, stopped before a turn back point, onto a path that is the same from there to the point.
+		 *
+		 * @param tripPath     the new path, or null for the usual path of the depot
+		 * @param newStopIndex the rail of the same stop on the new path
+		 */
+		void changePath(Siding.TripPath tripPath, int newStopIndex);
+
+		/**
+		 * @return true if no other train is on these rails or has them kept for itself
+		 */
+		boolean isTurnBackFree(List<UUID> rails);
+
+		/**
+		 * Keeps these rails for the train until it reaches this rail of its path.
+		 */
+		void reserveTurnBack(List<UUID> rails, int untilIndex);
 
 		/**
 		 * @return true if the whole train fits behind the end of this stop's rail without touching another train

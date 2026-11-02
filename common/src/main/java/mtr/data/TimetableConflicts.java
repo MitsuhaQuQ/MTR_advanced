@@ -50,7 +50,7 @@ public final class TimetableConflicts {
 		final Set<UUID> turnBackRails = new HashSet<>();
 		routes.forEach(route -> route.turnBacks.forEach(turnBack -> {
 			if (route.routeId == routeId || turnBack.nextRouteId == routeId) {
-				turnBackRails.add(turnBack.rail);
+				turnBackRails.addAll(turnBack.candidates);
 			}
 		}));
 
@@ -132,16 +132,54 @@ public final class TimetableConflicts {
 	/**
 	 * A train stays on a turn back rail until it is time to run to the first stop of its next service, so like a platform
 	 * where a train turns back, what matters is how the two routes line up. The platforms of these services are used as usual.
+	 * A train with more than one turn back rail takes the first one free when it gets there, so it only conflicts when every
+	 * one of them is taken.
 	 */
 	private static void checkTurnBacks(long routeId, List<RouteTimes> routes, Map<Long, RouteTimes> routeMap, Set<UUID> turnBackRails, int weekday, Set<Conflict> conflicts) {
 		final Map<UUID, List<Occupation>> occupations = new HashMap<>();
+		final List<Occupation> choosingOccupations = new ArrayList<>();
 		final Set<ServiceStop> linkedStops = new HashSet<>();
 		routes.forEach(route -> route.turnBacks.forEach(turnBack -> {
-			if (turnBackRails.contains(turnBack.rail)) {
-				addTurnBack(route, turnBack, routeMap.get(turnBack.nextRouteId), weekday, occupations.computeIfAbsent(turnBack.rail, key -> new ArrayList<>()), linkedStops);
+			if (turnBack.candidates.stream().anyMatch(turnBackRails::contains)) {
+				addTurnBack(route, turnBack, routeMap.get(turnBack.nextRouteId), weekday, turnBack.candidates.size() > 1 ? choosingOccupations : occupations.computeIfAbsent(turnBack.rail, key -> new ArrayList<>()), linkedStops);
 			}
 		}));
 		occupations.values().forEach(railOccupations -> findConflicts(routeId, 0, railOccupations, conflicts));
+
+		choosingOccupations.sort(Comparator.comparingLong(occupation -> occupation.start));
+		for (final Occupation occupation : choosingOccupations) {
+			Occupation firstOverlap = null;
+			UUID freeRail = null;
+			for (final UUID rail : occupation.candidates) {
+				final Occupation overlap = findOverlap(occupation, occupations.getOrDefault(rail, Collections.emptyList()));
+				if (overlap == null) {
+					freeRail = rail;
+					break;
+				} else if (firstOverlap == null) {
+					firstOverlap = overlap;
+				}
+			}
+			if (freeRail != null) {
+				occupations.computeIfAbsent(freeRail, key -> new ArrayList<>()).add(occupation);
+			} else if (firstOverlap != null && conflicts.size() < MAX_CONFLICTS) {
+				addConflict(routeId, 0, occupation, firstOverlap, conflicts);
+			}
+		}
+	}
+
+	/**
+	 * @return an occupation too close to this one, including across midnight, or null if there is none
+	 */
+	private static Occupation findOverlap(Occupation occupation, List<Occupation> otherOccupations) {
+		for (final Occupation otherOccupation : otherOccupations) {
+			for (int day = -1; day <= 1; day++) {
+				final long offset = day * Depot.MILLISECONDS_PER_DAY;
+				if (otherOccupation.start + offset < occupation.end + MIN_PLATFORM_GAP_MILLIS && occupation.start < otherOccupation.end + offset + MIN_PLATFORM_GAP_MILLIS) {
+					return otherOccupation;
+				}
+			}
+		}
+		return null;
 	}
 
 	private static void addTurnBack(RouteTimes route, TurnBack turnBack, RouteTimes nextRoute, int weekday, List<Occupation> occupations, Set<ServiceStop> linkedStops) {
@@ -163,7 +201,7 @@ public final class TimetableConflicts {
 				stops.add(nextStop);
 				leaving += Math.floorMod(nextServiceTimes.service - earliestStart, (long) Depot.MILLISECONDS_PER_DAY);
 			}
-			occupations.add(new Occupation(arrival, leaving, stops));
+			occupations.add(new Occupation(arrival, leaving, stops, turnBack.candidates));
 		}
 	}
 
@@ -297,6 +335,10 @@ public final class TimetableConflicts {
 		public final long runInMillis;
 		public final long dwellMillis;
 		public final long runOutMillis;
+		/**
+		 * The turn back rails a train can use here, in the order it tries them, which is only this one unless the route lists more.
+		 */
+		private List<UUID> candidates;
 
 		public TurnBack(long routeId, UUID rail, int stopIndex, long nextRouteId, long runInMillis, long dwellMillis, long runOutMillis) {
 			this.routeId = routeId;
@@ -306,6 +348,18 @@ public final class TimetableConflicts {
 			this.runInMillis = runInMillis;
 			this.dwellMillis = dwellMillis;
 			this.runOutMillis = runOutMillis;
+			candidates = Collections.singletonList(rail);
+		}
+
+		/**
+		 * @param newCandidates the turn back rails a train can use here, in the order it tries them, including this one
+		 */
+		public void setCandidates(List<UUID> newCandidates) {
+			candidates = newCandidates.contains(rail) ? new ArrayList<>(newCandidates) : Collections.singletonList(rail);
+		}
+
+		public List<UUID> getCandidates() {
+			return candidates;
 		}
 
 		private long getArrival(ServiceTimes serviceTimes) {
@@ -434,11 +488,20 @@ public final class TimetableConflicts {
 		private final long start;
 		private final long end;
 		private final List<ServiceStop> stops;
+		/**
+		 * For a train that can turn back on more than one rail, those rails in the order it tries them.
+		 */
+		private final List<UUID> candidates;
 
 		private Occupation(long start, long end, List<ServiceStop> stops) {
+			this(start, end, stops, Collections.emptyList());
+		}
+
+		private Occupation(long start, long end, List<ServiceStop> stops, List<UUID> candidates) {
 			this.start = start;
 			this.end = end;
 			this.stops = stops;
+			this.candidates = candidates;
 		}
 
 		private ServiceStop getStop(long routeId) {

@@ -795,7 +795,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 				if (entryPlatform.id != leavePlatform.id) {
 					final List<PathData> connectingPath = new ArrayList<>();
-					PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(leavePlatform, entryPlatform), null, 1, cruisingAltitude, useFastSpeed);
+					// A through service turns back on the first turn back rail the route lists, without choosing between them
+					final List<BlockPos> turnBackNodes = isCut ? Collections.emptyList() : getTurnBackNodes(previousRoute, graph);
+					if (turnBackNodes.isEmpty()) {
+						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(leavePlatform, entryPlatform), null, 1, cruisingAltitude, useFastSpeed);
+					} else {
+						final Siding.TurnBackSection turnBackSection = findTurnBackSection(leavePlatform, entryPlatform, turnBackNodes, 0, rails, graph, useFastSpeed);
+						if (turnBackSection != null) {
+							connectingPath.addAll(turnBackSection.getDefaultWay());
+						}
+					}
 					if (connectingPath.isEmpty()) {
 						return null;
 					}
@@ -896,6 +905,39 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		/**
+		 * Nodes a route lists after its last stop are the ends of the turn back rails it can use there, in the order trains try them.
+		 */
+		private List<BlockPos> getTurnBackNodes(Route route, RailGraph<Rail> graph) {
+			// The old search can't follow nodes
+			return graph == null || route.platformIds.isEmpty() ? Collections.emptyList() : route.platformIds.get(route.platformIds.size() - 1).waypoints;
+		}
+
+		/**
+		 * Finds a way from one stop to the next round each turn back node. Every way round has to leave the first stop and reach
+		 * the next one along the same rails as the first way that can be used, so a train can take any of them from the stop.
+		 *
+		 * @param start where the ways round start on the main path
+		 * @return the ways round, or null if none of them can be used
+		 */
+		private Siding.TurnBackSection findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<List<PathData>> ways = new ArrayList<>();
+			int defaultWay = -1;
+			for (final BlockPos node : nodes) {
+				final List<PathData> way = new ArrayList<>();
+				PathFinder.findPath(way, rails, graph, Arrays.asList(from, to), Collections.singletonList(Collections.singletonList(node)), 1, cruisingAltitude, useFastSpeed);
+				final List<PathData> firstWay = defaultWay < 0 ? null : ways.get(defaultWay);
+				final boolean canUse = way.size() >= 2 && (firstWay == null || way.get(0).isSameRail(firstWay.get(0)) && way.get(way.size() - 1).isSameRail(firstWay.get(firstWay.size() - 1)));
+				ways.add(canUse ? way : null);
+				if (!canUse) {
+					failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, node.asLong());
+				} else if (defaultWay < 0) {
+					defaultWay = ways.size() - 1;
+				}
+			}
+			return defaultWay < 0 ? null : new Siding.TurnBackSection(start, ways, defaultWay);
+		}
+
+		/**
 		 * @return the part of the loop from the stop where trains join it to the end of the path, or empty if they join at the first stop
 		 */
 		private List<PathData> getLoopJoinPath(List<PathData> mainPath) {
@@ -912,14 +954,27 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<PathData> tempPath = new ArrayList<>();
+			final List<Siding.TurnBackSection> turnBackSections = new ArrayList<>();
 			SavedRailBase lastPlatform = null;
 
 			for (int i = 0; i < pathsInRoute.size(); i++) {
 				final List<SavedRailBase> platforms = platformsInRoute.get(i);
 				if (lastPlatform != null && !platforms.isEmpty() && platforms.get(0) != lastPlatform) {
-					final List<PathData> connectingPath = new ArrayList<>();
-					PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
-					tempPath.addAll(connectingPath);
+					final List<BlockPos> turnBackNodes = i > 0 && !platformsInRoute.get(i - 1).isEmpty() ? getTurnBackNodes(mainRoutes.get(i - 1), graph) : Collections.emptyList();
+					if (turnBackNodes.isEmpty()) {
+						final List<PathData> connectingPath = new ArrayList<>();
+						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
+						tempPath.addAll(connectingPath);
+					} else {
+						final Siding.TurnBackSection turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, tempPath.size(), rails, graph, useFastSpeed);
+						if (turnBackSection == null) {
+							failure = new PathFailure(PathFailure.Type.TURN_BACK, turnBackNodes.get(0).asLong());
+							tempPath.clear();
+							break;
+						}
+						tempPath.addAll(turnBackSection.getDefaultWay());
+						turnBackSections.add(turnBackSection);
+					}
 				}
 				if (!platforms.isEmpty()) {
 					lastPlatform = platforms.get(platforms.size() - 1);
@@ -960,6 +1015,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				pathData.stopIndex = stopIndex;
 			}
+			turnBackSections.forEach(turnBackSection -> turnBackSection.numberStops(tempPath));
 
 			final List<PathData> loopJoinPath = getLoopJoinPath(tempPath);
 			final SavedRailBase entryPlatform = loopJoinPath.isEmpty() ? null : platformsInRoute.get(0).get(loopEntryStop);
@@ -969,7 +1025,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (final Siding siding : sidings) {
 				final SavedRailBase firstPlatform = entryPlatform != null ? entryPlatform : platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails));
+				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections));
 			}
 			return successfulSegments;
 		}

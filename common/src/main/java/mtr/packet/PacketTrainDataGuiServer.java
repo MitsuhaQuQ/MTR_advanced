@@ -439,12 +439,12 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final Set<UUID> turnBackRails = new HashSet<>();
 		turnBacks.forEach((testRouteId, routeTurnBacks) -> routeTurnBacks.forEach(turnBack -> {
 			if (testRouteId == routeId || turnBack.nextRouteId == routeId) {
-				turnBackRails.add(turnBack.rail);
+				turnBackRails.addAll(turnBack.getCandidates());
 			}
 		}));
 		final Set<Long> turnBackRouteIds = new HashSet<>();
 		turnBacks.forEach((testRouteId, routeTurnBacks) -> routeTurnBacks.forEach(turnBack -> {
-			if (turnBackRails.contains(turnBack.rail)) {
+			if (turnBack.getCandidates().stream().anyMatch(turnBackRails::contains)) {
 				turnBackRouteIds.add(testRouteId);
 				turnBackRouteIds.add(turnBack.nextRouteId);
 			}
@@ -542,7 +542,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		railwayData.sidings.forEach(siding -> {
 			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
 			if (depot != null && !siding.getStopTimes().isEmpty()) {
-				siding.getStopTimes().getTurnBacks(depot.getRoutes(siding.getTrainId(), railwayData.dataCache)).forEach(turnBack -> turnBacks.computeIfAbsent(turnBack.routeId, key -> new HashSet<>()).add(turnBack));
+				siding.getStopTimes().getTurnBacks(depot.getRoutes(siding.getTrainId(), railwayData.dataCache)).forEach(turnBack -> {
+					turnBack.setCandidates(siding.getTurnBackCandidates(turnBack.rail));
+					turnBacks.computeIfAbsent(turnBack.routeId, key -> new HashSet<>()).add(turnBack);
+				});
 			}
 		});
 		return turnBacks;
