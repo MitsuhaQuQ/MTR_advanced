@@ -140,6 +140,15 @@ table.tt th.svc-head.hl { background: color-mix(in srgb, var(--sel) 24%, var(--p
 .tt-tools .err { color: var(--warn); font-size: 12px; }
 .table-chip { font-size: 12px; padding: 2px 8px; }
 .table-chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+/* The track picker of a new type: one row per station, a chip per track it can use */
+.track-rows { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; border: 1px solid var(--grid); border-radius: 8px; padding: 6px 8px; }
+.track-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.track-station { min-width: 6em; font-size: 13px; }
+.table-chip.track.on { color: #fff; }
+.table-chip.track.pass { opacity: .55; border-style: dashed; }
+.picker { display: flex; flex-direction: column; gap: 6px; }
+.picker-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dir-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 /* Times one service has of its own, and where it waits to be overtaken */
 table.tt td.exc { color: var(--sel); font-weight: 500; }
 table.tt td.fast { color: var(--warn); font-weight: 500; }

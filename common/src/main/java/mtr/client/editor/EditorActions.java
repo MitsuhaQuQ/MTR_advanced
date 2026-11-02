@@ -6,12 +6,17 @@ import com.google.gson.JsonObject;
 import mtr.advanced.ServiceExceptions;
 import mtr.advanced.TimetableBoundaries;
 import mtr.client.ClientData;
+import mtr.data.Depot;
+import mtr.data.Platform;
 import mtr.data.Route;
 import mtr.data.RouteTimetable;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,14 +26,17 @@ import java.util.Map;
 public final class EditorActions implements IPacket {
 
 	private static final int MAX_OPERATIONS = 512;
+	private static final int MAX_NAME_LENGTH = 256;
+	private static final int MAX_SERVICE_TYPE_LENGTH = 32;
 
 	/**
 	 * @param request {@code {operations: [...]}}, each with a {@code type}, the {@code route} id, and the revision the page
 	 *                based it on, which stops a change made from data that has changed in the game since
-	 * @return {@code {ok, applied: [operation index], errors: [{index, route, message}]}}
+	 * @return {@code {ok, applied: [operation index], created: [{index, id}], errors: [{index, route, message}]}}
 	 */
 	public static JsonObject apply(JsonObject request) {
 		final JsonArray applied = new JsonArray();
+		final JsonArray created = new JsonArray();
 		final JsonArray errors = new JsonArray();
 		final JsonArray operations = request.has("operations") ? request.getAsJsonArray("operations") : new JsonArray();
 
@@ -42,7 +50,7 @@ public final class EditorActions implements IPacket {
 				final String routeId = getString(operation, "route");
 				String error;
 				try {
-					error = applyOperation(operation);
+					error = applyOperation(operation, i, created);
 				} catch (Exception e) {
 					e.printStackTrace();
 					error = "修改的格式不对";
@@ -58,6 +66,7 @@ public final class EditorActions implements IPacket {
 		final JsonObject result = new JsonObject();
 		result.addProperty("ok", errors.size() == 0);
 		result.add("applied", applied);
+		result.add("created", created);
 		result.add("errors", errors);
 		return result;
 	}
@@ -65,10 +74,14 @@ public final class EditorActions implements IPacket {
 	/**
 	 * @return why the change couldn't be made, or null if it was sent
 	 */
-	private static String applyOperation(JsonObject operation) {
+	private static String applyOperation(JsonObject operation, int index, JsonArray created) {
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
 		if (route == null) {
 			return "找不到这条线路，可能已被删除";
+		}
+		// A new type is made from the route it copies, which doesn't change, so it isn't checked against a revision
+		if ("newRoute".equals(getString(operation, "type"))) {
+			return createRoute(route, operation, index, created);
 		}
 		final boolean force = operation.has("force") && operation.get("force").getAsBoolean();
 		if (!force && operation.has("base") && !getString(operation, "base").equals(EditorData.getRevision(route))) {
@@ -93,6 +106,117 @@ public final class EditorActions implements IPacket {
 			default:
 				return "不认识的修改类型";
 		}
+	}
+
+	/**
+	 * A new type (种别) of a line, copied from one of its routes: the same stations, each at a track the player picked from
+	 * those the server found for it (same station, same region, reachable, see {@link mtr.advanced.RegionComputer}), with its
+	 * own name, colour, stops and services. Its set times start empty, since its stops differ from the route it copies.
+	 */
+	private static String createRoute(Route source, JsonObject operation, int index, JsonArray created) {
+		final String name = getString(operation, "name").trim();
+		final String serviceType = getString(operation, "serviceType").trim();
+		if (name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
+			return "线路名不能为空，也不能太长";
+		}
+		if (serviceType.isEmpty() || serviceType.length() > MAX_SERVICE_TYPE_LENGTH) {
+			return "种别名不能为空，也不能太长";
+		}
+		final JsonArray stops = operation.getAsJsonArray("stops");
+		final int stopCount = source.platformIds.size();
+		if (stops == null || stops.size() != stopCount) {
+			return "车站和游戏里的不一致，可能刚在游戏里改过，请刷新";
+		}
+		final long[] platformIds = new long[stopCount];
+		final boolean[] pass = new boolean[stopCount];
+		for (int i = 0; i < stopCount; i++) {
+			final JsonObject stop = stops.get(i).getAsJsonObject();
+			final long sourcePlatformId = source.platformIds.get(i).platformId;
+			platformIds[i] = parseId(getString(stop, "platformId"));
+			pass[i] = stop.get("pass").getAsBoolean() && i > 0 && i < stopCount - 1;
+			final long platformId = platformIds[i];
+			if (Arrays.stream(ClientData.PATH_REGIONS.getCandidates(source.id, i, sourcePlatformId)).noneMatch(candidate -> candidate == platformId)) {
+				return String.format("第 %s 站选的股道不在可选的站台里，可能轨道或寻路边界刚改过，请刷新", i + 1);
+			}
+			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId);
+			if (platform == null) {
+				return String.format("第 %s 站的站台已经不在了", i + 1);
+			}
+		}
+		final Depot depot = operation.has("depot") ? ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot"))) : null;
+		if (depot != null && depot.transportMode != source.transportMode) {
+			return "车厂和线路的交通方式不同";
+		}
+
+		final Route newRoute = source.duplicate();
+		newRoute.name = name;
+		newRoute.serviceType = serviceType;
+		newRoute.lineName = source.getLineName();
+		if (operation.has("color")) {
+			// The line keeps the colour of its first route, which applyLineColors gives back to this one
+			newRoute.setOwnColor(operation.get("color").getAsInt() & 0xFFFFFF);
+		}
+		newRoute.editorManaged = true;
+
+		// The platform of a stop can't be changed in place, so each stop is made again with what it had
+		final List<Route.RoutePlatform> oldStops = new ArrayList<>(newRoute.platformIds);
+		newRoute.platformIds.clear();
+		boolean changedTrack = false;
+		for (int i = 0; i < stopCount; i++) {
+			final Route.RoutePlatform oldStop = oldStops.get(i);
+			final Route.RoutePlatform newStop = new Route.RoutePlatform(platformIds[i]);
+			newStop.customDestination = oldStop.customDestination;
+			newStop.waypoints.addAll(oldStop.waypoints);
+			newStop.dwellOverride = oldStop.dwellOverride;
+			newStop.pass = pass[i];
+			newRoute.platformIds.add(newStop);
+			changedTrack |= platformIds[i] != oldStop.platformId;
+		}
+		// A drawn path follows the old tracks
+		if (changedTrack) {
+			newRoute.getPathData().clear();
+		}
+		if (newRoute.platformIds.stream().noneMatch(routePlatform -> routePlatform.platformId == newRoute.timetable.entryPlatformId)) {
+			newRoute.timetable.entryPlatformId = 0;
+		}
+
+		final JsonArray services = operation.has("services") ? operation.getAsJsonArray("services") : new JsonArray();
+		final int servicesTable = operation.has("table") ? operation.get("table").getAsInt() : 0;
+		if (services.size() > RouteTimetable.MAX_SERVICES) {
+			return String.format("一张表最多 %s 个班次", RouteTimetable.MAX_SERVICES);
+		}
+		for (int i = 0; i < newRoute.timetable.getTableCount(); i++) {
+			final RouteTimetable table = newRoute.timetable.getTable(i);
+			table.services.clear();
+			table.links.clear();
+			table.returnServices.clear();
+			table.exceptions.clear();
+			if (i == servicesTable) {
+				services.forEach(service -> table.services.add(Math.floorMod(service.getAsInt(), Depot.MILLISECONDS_PER_DAY)));
+			}
+		}
+		newRoute.timetable.sanitize();
+
+		ClientData.ROUTES.add(newRoute);
+		newRoute.setNameColor(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		newRoute.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		newRoute.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		newRoute.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		if (!newRoute.getPathData().isEmpty()) {
+			newRoute.setCustomPath(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+		}
+		if (depot != null) {
+			depot.routeIds.add(newRoute.id);
+			depot.setData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
+			PacketTrainDataGuiClient.generatePathC2S(depot.id);
+		}
+		ClientData.DATA_CACHE.sync();
+
+		final JsonObject createdObject = new JsonObject();
+		createdObject.addProperty("index", index);
+		createdObject.addProperty("id", String.valueOf(newRoute.id));
+		created.add(createdObject);
+		return null;
 	}
 
 	/**

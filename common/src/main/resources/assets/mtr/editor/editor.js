@@ -44,7 +44,7 @@
 	 * Changes not yet applied to the game, saved as they are made so closing the page or the game doesn't lose them. Each
 	 * route's entry keeps the revision it was made from, so a change made in the game since is noticed before applying.
 	 */
-	let draft = { routes: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [] }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -84,6 +84,7 @@
 		} catch (e) {
 			draft = { routes: {} };
 		}
+		if (!Array.isArray(draft.created)) draft.created = [];
 		draftLoaded = true;
 	}
 
@@ -94,7 +95,10 @@
 		renderDraftState();
 	}
 
-	const draftCount = () => Object.keys(draft.routes).length;
+	// New types wait in the draft too, as what to make, until they are applied
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length;
+	// The route to show once the game has made a new one
+	let pendingOpen = null;
 	const draftOf = r => draft.routes[r.id];
 	const draftEntry = r => draft.routes[r.id] || (draft.routes[r.id] = { base: r.revision });
 	/** A route's entry goes once nothing is left in it but where it came from. */
@@ -131,21 +135,31 @@
 				owners.push(id);
 			}
 		});
+		draft.created.forEach(made => {
+			operations.push({ type: "newRoute", route: made.source, name: made.name, serviceType: made.serviceType, color: made.color, stops: made.stops, services: made.services, table: made.table, depot: made.depot || "" });
+			owners.push(made);
+		});
 		applying = true;
 		renderDraftState();
 		try {
 			const result = await sendJson("api/apply", "POST", { operations });
+			(result.created || []).forEach(made => { if (!pendingOpen) pendingOpen = made.id; });
 			const failed = new Set();
 			(result.errors || []).forEach(error => {
 				if (error.index < 0) return;
 				const id = owners[error.index];
 				failed.add(id);
+				if (typeof id === "object") {
+					id.error = error.message;
+					return;
+				}
 				const entry = draft.routes[id];
 				if (!entry) return;
 				entry.conflict = error.message === "CONFLICT";
 				entry.error = entry.conflict ? "游戏里的这条线路在草稿之后改过" : error.message;
 			});
-			owners.forEach(id => { if (!failed.has(id)) delete draft.routes[id]; });
+			owners.forEach(id => { if (!failed.has(id) && typeof id === "string") delete draft.routes[id]; });
+			draft.created = draft.created.filter(made => failed.has(made));
 			applyResult = { ok: result.ok, general: (result.errors || []).filter(error => error.index < 0).map(error => error.message), applied: owners.filter(id => !failed.has(id)).length };
 		} catch (e) {
 			applyResult = { ok: false, general: [e.message === "401" ? "页面的链接已经失效" : "发送失败，游戏可能已经关闭"], applied: 0 };
@@ -176,7 +190,7 @@
 	function renderDraftState() {
 		const count = draftCount();
 		const tag = $("draft-tag");
-		tag.textContent = applying ? "正在应用…" : count ? `草稿 ${count} 条线路` : "没有草稿";
+		tag.textContent = applying ? "正在应用…" : count ? `草稿 ${count} 项` : "没有草稿";
 		tag.classList.toggle("has-draft", count > 0);
 		$("btn-apply").disabled = applying || !count || !(data && data.canEdit);
 	}
@@ -215,6 +229,13 @@
 		if (state.route && !data.routeById.has(state.route)) state.route = null;
 		if (state.selected && !findService(state.selected)) state.selected = null;
 		buildServices();
+		if (pendingOpen && data.routeById.has(pendingOpen)) {
+			const made = data.routeById.get(pendingOpen);
+			pendingOpen = null;
+			state.line = made.lineKey;
+			state.route = made.id;
+			state.view = "table";
+		}
 		renderAll();
 	}
 
@@ -595,6 +616,9 @@
 						parts.push(`</ul>`);
 					}
 					parts.push(`</li>`);
+				});
+				draft.created.filter(made => made.lineKey === line.key).forEach(made => {
+					parts.push(`<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || "新建的种别，应用后才在游戏里出现；右键删除")}">${made.error ? "!" : "•"}</span>`, false)}</li>`);
 				});
 				parts.push(`</ul>`);
 			}
@@ -1231,6 +1255,129 @@
 	 * Through links in bulk: each service of one route in a time range carries on as the first service of another route it
 	 * can catch, leaving at its last stop or a boundary and joining at the first stop or a boundary.
 	 */
+	// ---------- New types ----------
+	/** The route of the same line running the other way, with the stations of this one in reverse. */
+	function counterpartOf(r) {
+		const line = data.lines.find(l => l.key === r.lineKey);
+		if (!line || r.stops.length < 2) return null;
+		const first = r.stops[0].station, last = r.stops[r.stops.length - 1].station;
+		const others = line.routes.filter(o => o !== r && o.stops.length === r.stops.length && o.stops[0].station === last && o.stops[o.stops.length - 1].station === first);
+		return others.find(o => o.serviceType === r.serviceType) || others[0] || null;
+	}
+
+	/** A name for the new type: the route's name with its type word swapped, or the type added after it. */
+	function typedName(r, type) {
+		const word = r.serviceType;
+		return word && r.name.toLowerCase().includes(word) ? r.name.slice(0, r.name.toLowerCase().indexOf(word)) + type + r.name.slice(r.name.toLowerCase().indexOf(word) + word.length) : `${r.name} ${type}`;
+	}
+
+	/**
+	 * A new type of a line, copied from one of its routes (design document 6.12, block D). Each station offers the tracks
+	 * the game found for it: the same station, the same region of the pathfinding boundaries, and reachable from the
+	 * stations around it, so platforms of other lines at an interchange aren't offered.
+	 */
+	function newTypeDialog(lineKey, baseRoute) {
+		const line = data.lines.find(l => l.key === lineKey) || currentLine();
+		if (!line) return;
+		const base0 = baseRoute && baseRoute.lineKey === line.key ? baseRoute : line.routes.find(r => r.stops.length > 1);
+		if (!base0) return;
+		// The track and stop picked at each station, for each direction being made
+		let choices = new Map(), lastBase = null, pickDir = 0;
+		const resetChoices = base => {
+			choices = new Map();
+			[base, counterpartOf(base)].filter(Boolean).forEach(r => choices.set(r.id, r.stops.map(stop => ({ platformId: stop.platformId, stop: !stop.pass }))));
+			pickDir = 0;
+		};
+		const directions = form => {
+			const base = data.routeById.get(form.base.value), other = counterpartOf(base);
+			return form.both.checked && other ? [base, other] : [base];
+		};
+		const depots = r => data.depots.filter(depot => depot.routes.includes(r.id));
+		const renderPicker = form => {
+			const dirs = directions(form), r = dirs[Math.min(pickDir, dirs.length - 1)], picked = choices.get(r.id), color = form.color.value;
+			form.querySelector(".dir-tabs").innerHTML = dirs.length > 1 ? dirs.map((d, i) => `<button type="button" class="table-chip${d === r ? " on" : ""}" data-dir="${i}">${escapeHtml(routeTitle(d))}</button>`).join("") : "";
+			form.querySelector("#dlg-pick").innerHTML = r.stops.map((stop, i) => {
+				const choice = picked[i], end = i === 0 || i === r.stops.length - 1;
+				const chips = (stop.candidates && stop.candidates.length ? stop.candidates : [{ id: stop.platformId, name: stop.platform, passingTrack: stop.passingTrack }]).map(c => {
+					const on = c.id === choice.platformId;
+					const what = !on ? "点这里走这一股" : end ? "首末站，停车" : choice.stop ? "停车，再点一次改为通过" : "通过，再点一次改为停车";
+					return `<button type="button" class="table-chip track${on ? " on" : ""}${on && !choice.stop ? " pass" : ""}" style="${on ? `background:${color};border-color:${color}` : ""}" data-stop="${i}" data-track="${c.id}" title="${escapeHtml(what)}">${escapeHtml(c.name || "?")}${c.passingTrack ? " 待避" : ""}${on ? (choice.stop || end ? " · 停" : " · 过") : ""}</button>`;
+				}).join("");
+				return `<div class="track-row"><span class="track-station">${escapeHtml(shortName(stop.name))}</span>${chips}</div>`;
+			}).join("");
+			const passed = r.stops.filter((stop, i) => !picked[i].stop && i > 0 && i < r.stops.length - 1).map(stop => shortName(stop.name));
+			form.querySelector("#dlg-pick-summary").textContent = `${dirs.length > 1 ? routeTitle(r) + "：" : ""}停 ${r.stops.length - passed.length} 站${passed.length ? `，通过 ${passed.length} 站：${passed.join("、")}` : "，全部停车"}`;
+		};
+		openDialog("新建种别", `
+			<div class="row"><label>照着 <select name="base">${line.routes.filter(r => r.stops.length > 1).map(r => `<option value="${r.id}"${r === base0 ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("")}</select></label></div>
+			<label><input type="checkbox" name="both" checked> 上下行一起建</label>
+			<div class="row"><label>种别 <input name="type" required placeholder="急行" maxlength="16" size="8" autocomplete="off"></label>
+			<label>颜色 <input type="color" name="color" value="#2f9e55"></label></div>
+			<label>线路名 <input name="name" maxlength="128" size="28" autocomplete="off" placeholder="按照着的线路和种别自动起名"></label>
+			<div class="picker">
+				<div class="picker-head"><b>股道</b><span class="dir-tabs"></span></div>
+				<p class="hint">每站列出这条线在这一站能停的股道：同一车站、同一寻路区域、从前后站开得到的站台，换乘站别的线路的站台不列。点一股走这一股，再点一次在停车和通过之间切换。股道不对时，在游戏里设寻路边界或站台的正线、待避线。</p>
+				<div class="track-rows" id="dlg-pick"></div>
+				<div class="hint" id="dlg-pick-summary"></div>
+			</div>
+			<label>班次 <input name="pattern" placeholder="可以留空，例如 08:05 + 12 * 00:30" autocomplete="off"></label>
+			<label>加入车厂 <select name="depot"></select></label>
+			<p class="hint">车站、区间和停站时间照着选的线路。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。</p>`, "新建", form => {
+			const type = form.type.value.trim();
+			if (!type) return "写上种别名，例如 急行";
+			const times = form.pattern.value.trim() ? parsePattern(form.pattern.value) : [];
+			if (!times) return PATTERN_HINT;
+			const color = parseInt(form.color.value.slice(1), 16);
+			directions(form).forEach((r, i) => {
+				const name = i === 0 && form.name.value.trim() ? form.name.value.trim() : typedName(r, type);
+				const table = Math.max(0, timetableOf(r).tables.findIndex(t => t.weekdays >> state.weekday & 1));
+				draft.created.push({
+					key: "n" + Date.now().toString(36) + i, source: r.id, lineKey: r.lineKey, name, serviceType: type, color,
+					stops: choices.get(r.id).map((choice, k) => ({ platformId: choice.platformId, pass: !choice.stop && k > 0 && k < r.stops.length - 1 })),
+					services: times, table, depot: form.depot.value,
+				});
+			});
+			state.openNodes.add("line:" + line.key);
+			saveDraft();
+			renderAll();
+		}, form => {
+			if (form.base.value !== lastBase) {
+				lastBase = form.base.value;
+				resetChoices(data.routeById.get(lastBase));
+				const list = depots(data.routeById.get(lastBase));
+				form.depot.innerHTML = list.map(depot => `<option value="${depot.id}">${escapeHtml(shortName(depot.name))}</option>`).join("") + `<option value="">不加入，之后在游戏里加</option>`;
+			}
+			form.both.disabled = !counterpartOf(data.routeById.get(form.base.value));
+			form.name.placeholder = form.type.value.trim() ? typedName(data.routeById.get(form.base.value), form.type.value.trim()) : "按照着的线路和种别自动起名";
+			renderPicker(form);
+		});
+		const form = dialog.querySelector("form");
+		form.addEventListener("click", e => {
+			const tab = e.target.closest("[data-dir]");
+			if (tab) {
+				pickDir = +tab.dataset.dir;
+				renderPicker(form);
+				return;
+			}
+			const chip = e.target.closest("[data-track]");
+			if (!chip) return;
+			const r = directions(form)[Math.min(pickDir, directions(form).length - 1)], i = +chip.dataset.stop, choice = choices.get(r.id)[i];
+			if (choice.platformId === chip.dataset.track) {
+				if (i > 0 && i < r.stops.length - 1) choice.stop = !choice.stop;
+			} else {
+				choice.platformId = chip.dataset.track;
+				choice.stop = true;
+			}
+			renderPicker(form);
+		});
+	}
+
+	function removeCreated(key) {
+		draft.created = draft.created.filter(made => made.key !== key);
+		saveDraft();
+		renderAll();
+	}
+
 	function throughDialog(fromRoute) {
 		const routes = data.routes.filter(r => r.stops.length > 1);
 		if (routes.length < 2) return;
@@ -1397,6 +1544,19 @@
 
 	// ---------- Events ----------
 	$("tree").addEventListener("click", e => onTreeClick(e.target));
+	// Right-click a line for a new type, a route for a new table or a type copied from it, a new type for removing it
+	$("tree").addEventListener("contextmenu", e => {
+		const el = e.target.closest(".node");
+		if (!el || !data) return;
+		const { line, route, created } = el.dataset;
+		const r = route && data.routeById.get(route);
+		const items = line ? [["新建种别…", data.canEdit ? () => newTypeDialog(line, null) : null]]
+			: r ? [["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null]]
+				: created ? [["删除这个新建的种别", () => removeCreated(created)]] : null;
+		if (!items) return;
+		e.preventDefault();
+		openMenu(e.clientX, e.clientY, items);
+	});
 	$("tree").addEventListener("keydown", e => {
 		if (e.key === "Enter" || e.key === " ") {
 			e.preventDefault();
@@ -1414,6 +1574,7 @@
 		const box = e.currentTarget.getBoundingClientRect();
 		const r = data && (state.route ? data.routeById.get(state.route) : currentLine() && currentLine().routes[0]);
 		openMenu(box.left, box.bottom + 4, [
+			["种别…", r && data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
 			["时刻表…", r ? () => tableDialog(r, -1) : null],
 			["直通关系…", data && data.routes.length > 1 ? () => throughDialog(r) : null],
 		]);
