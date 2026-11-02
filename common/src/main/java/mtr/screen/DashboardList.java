@@ -141,13 +141,7 @@ public class DashboardList implements IGui {
 		UtilitiesClient.setWidgetX(textFieldSearch, x + SQUARE_SIZE * 4 + TEXT_FIELD_PADDING / 2);
 
 		final String text = textFieldSearch.getValue();
-		final String[] keywords = text.toLowerCase(Locale.ENGLISH).trim().split("\\s+");
-		dataFiltered.clear();
-		for (int i = 0; i < dataSorted.size(); i++) {
-			if (matchesKeywords(dataSorted.get(i).name, keywords)) {
-				dataFiltered.add(i);
-			}
-		}
+		filterData();
 
 		if (!text.equals(lastSearch)) {
 			lastSearch = text;
@@ -184,6 +178,19 @@ public class DashboardList implements IGui {
 		this.hasSort = hasPermission && hasSort;
 		this.hasAdd = hasPermission && hasAdd;
 		this.hasDelete = hasPermission && hasDelete;
+		// The rows shown point into the data, so they have to change with it, before the mouse or a frame reads them
+		filterData();
+		setScroll(scroll);
+	}
+
+	private void filterData() {
+		final String[] keywords = textFieldSearch.getValue().toLowerCase(Locale.ENGLISH).trim().split("\\s+");
+		dataFiltered.clear();
+		for (int i = 0; i < dataSorted.size(); i++) {
+			if (matchesKeywords(dataSorted.get(i).name, keywords)) {
+				dataFiltered.add(i);
+			}
+		}
 	}
 
 	public void render(PoseStack matrices, Font textRenderer) {
