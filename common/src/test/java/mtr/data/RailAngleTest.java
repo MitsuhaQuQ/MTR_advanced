@@ -31,4 +31,16 @@ class RailAngleTest {
 		assertSame(RailAngle.fromAngle(10), RailAngle.fromAngle(10).getRotatedFacing(RailAngle.E, RailAngle.E));
 		assertSame(RailAngle.fromAngle(190), RailAngle.fromAngle(10).getRotatedFacing(RailAngle.E, RailAngle.W));
 	}
+
+	@Test
+	void anAngleTypedTheOtherWayRoundKeepsRailsOnTheirSides() {
+		assertSame(RailAngle.fromAngle(10), RailAngle.fromAngle(-170).getRotatedFacing(RailAngle.E, RailAngle.E));
+		assertSame(RailAngle.fromAngle(-170), RailAngle.fromAngle(-170).getRotatedFacing(RailAngle.E, RailAngle.W));
+	}
+
+	@Test
+	void anglesAreTheSameWithEitherSign() {
+		assertSame(RailAngle.fromAngle(190), RailAngle.fromAngle(-170));
+		assertSame(RailAngle.fromAngle(180), RailAngle.fromAngle(-180));
+	}
 }

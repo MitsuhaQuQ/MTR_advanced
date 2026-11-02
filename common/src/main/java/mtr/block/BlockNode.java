@@ -20,6 +20,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -119,7 +120,15 @@ public class BlockNode extends BlockDirectionalMapper {
 	}
 
 	public static String getAngleText(float angle) {
-		return String.format(Locale.ENGLISH, "%.1f°", (angle % 180 + 180) % 180);
+		return getAngleValue(angle) + "°";
+	}
+
+	/**
+	 * @return the angle from -180 to 180 as it is shown and typed
+	 */
+	public static String getAngleValue(float angle) {
+		final float wrappedAngle = Mth.wrapDegrees(angle);
+		return String.format(Locale.ENGLISH, "%.1f", wrappedAngle <= -180 ? 180 : wrappedAngle);
 	}
 
 	public static void setCustomAngle(BlockGetter world, BlockPos pos, float angle) {

@@ -8,6 +8,7 @@ import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import mtr.data.IGui;
 import mtr.data.Rail;
+import mtr.data.RailAngle;
 import mtr.data.RailType;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -18,14 +19,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 
-import java.util.Locale;
 import java.util.Map;
 
 public class NodeAngleScreen extends ScreenBase implements IGui {
 
 	private final BlockPos pos;
 	private final float angle;
-	private final WidgetBetterTextField textFieldAngle = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
+	private final WidgetBetterTextField textFieldAngle = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", MAX_VALUE_LENGTH);
 	private final WidgetBetterTextField textFieldTransition = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
 	private final WidgetBetterCheckbox checkboxKeyNode = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal("Key node / 关键节点"), checked -> {
 	});
@@ -42,7 +42,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int ROW_KEY_NODE = 2;
 	private static final int ROW_TURN_BACK = 3;
 	private static final int ROW_BUTTONS = 4;
-	private static final Component LABEL_ANGLE = Text.literal("Angle / 角度 (0-180°)");
+	private static final Component LABEL_ANGLE = Text.literal("Angle / 角度 (-180~180°)");
 	private static final Component LABEL_TRANSITION = Text.literal("Transition / 缓和曲线 (Not available)");
 	private static final Component LABEL_TURN_BACK = Text.literal("Turn back wait / 折返停留 (s)");
 
@@ -50,7 +50,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		super(Text.literal(""));
 		this.pos = pos;
 		final Level world = Minecraft.getInstance().level;
-		angle = world == null ? 0 : BlockNode.getAngle(world, pos, world.getBlockState(pos));
+		final RailAngle facing = Rail.getNodeFacing(ClientData.RAILS.get(pos));
+		angle = facing != null ? facing.angleDegrees : world == null ? 0 : BlockNode.getAngle(world, pos, world.getBlockState(pos));
 		turnBackRail = getTurnBackRail(pos);
 		buttonSet = UtilitiesClient.newButton(Text.literal("Set / 设定"), button -> onSet());
 		buttonCancel = UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose());
@@ -69,7 +70,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		IDrawing.setPositionAndWidth(buttonSet, SQUARE_SIZE, getRowY(ROW_BUTTONS), PANEL_WIDTH / 2);
 		IDrawing.setPositionAndWidth(buttonCancel, SQUARE_SIZE + PANEL_WIDTH / 2, getRowY(ROW_BUTTONS), PANEL_WIDTH / 2);
 
-		textFieldAngle.setValue(String.format(Locale.ENGLISH, "%.1f", (angle % 180 + 180) % 180));
+		textFieldAngle.setValue(BlockNode.getAngleValue(angle));
 		textFieldTransition.setValue("0");
 		textFieldTransition.setEditable(false);
 

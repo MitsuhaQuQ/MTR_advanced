@@ -301,10 +301,8 @@ public abstract class RailMixin implements RailExtraSupplier {
         this.facingEnd = facingEnd;
         this.posStart = posStart;
         this.posEnd = posEnd;
-
-        if (transportMode == TransportMode.TRAIN) {
-            genForSegmentsAndArcs();
-        }
+        // The shape from the constructor is kept. Calculating it again gave the same curve where it worked, and curves that
+        // ran backwards at large angles.
     }
 
     private void genForSegmentsAndArcs() {

@@ -461,8 +461,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			return "gui.mtr.platform_or_siding_exists";
 		}
 
-		final BlockPos referencePos = Collections.min(connections.keySet(), Comparator.comparingLong(BlockPos::asLong));
-		final RailAngle referenceFacing = connections.get(referencePos).facingStart;
+		final RailAngle referenceFacing = Rail.getNodeFacing(connections);
 		final Map<BlockPos, Rail> newRails = new HashMap<>();
 		final Map<BlockPos, Rail> newBackwardsRails = new HashMap<>();
 		for (final Map.Entry<BlockPos, Rail> entry : connections.entrySet()) {
@@ -474,16 +473,18 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			}
 
 			// A node has no front or back, so each rail keeps leaving from the side it already uses
-			final RailAngle facing = angle.getRotatedFacing(referenceFacing, rail.facingStart);
-			final Rail newRail = new Rail(pos, facing, posEnd, rail.facingEnd, rail.railType, rail.transportMode);
-			final Rail newBackwardsRail = new Rail(posEnd, rail.facingEnd, pos, facing, backwardsRail.railType, rail.transportMode);
+			final RailAngle facing = angle.getRotatedFacing(referenceFacing, rail.getLeavingFacing());
+			final RailAngle facingEnd = rail.getArrivingFacing();
+			final Rail newRail = new Rail(pos, facing, posEnd, facingEnd, rail.railType, rail.transportMode);
+			final Rail newBackwardsRail = new Rail(posEnd, facingEnd, pos, facing, backwardsRail.railType, rail.transportMode);
 			if (!newRail.goodRadius() || !newBackwardsRail.goodRadius()) {
 				return "gui.mtr.radius_too_small";
 			}
 			if (!newRail.isValid() || !newBackwardsRail.isValid()) {
 				return "gui.mtr.invalid_orientation";
 			}
-			if (newRail.turnsBack(pos, posEnd) || newBackwardsRail.turnsBack(posEnd, pos)) {
+			// Curves of more than a quarter turn, which turnouts and balloon loops can have, run backwards from the start
+			if (!rail.turnsBack(pos, posEnd) && (newRail.turnsBack(pos, posEnd) || newBackwardsRail.turnsBack(posEnd, pos))) {
 				return "gui.mtr.rail_would_loop";
 			}
 			newRail.turnBackDwell = rail.turnBackDwell;

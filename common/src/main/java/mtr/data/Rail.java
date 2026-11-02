@@ -162,6 +162,13 @@ public class Rail extends SerializedDataBase {
 			// A node sitting exactly on the other node's axis would need a circle of no size, so a biarc is used instead
 			final boolean segmentFirstFits = Math.abs(deltaForward / (1 - railAngleDifference.cos)) >= MIN_RADIUS;
 			final boolean circleFirstFits = Math.abs((deltaSide - deltaForward / railAngleDifference.tan) / railAngleDifference.halfTan) >= MIN_RADIUS;
+			// A node nearly on the other node's axis makes the circle go past the end, and the straight part would then come back
+			final double circleSide = deltaSide - deltaForward / railAngleDifference.tan;
+			final double circleEndSide = circleSide * (1 + railAngleDifference.cos);
+			final double circleEndForward = circleSide * railAngleDifference.sin;
+			final double circleEndX = xStart + circleEndSide * newFacingStart.cos - circleEndForward * newFacingStart.sin;
+			final double circleEndZ = zStart + circleEndSide * newFacingStart.sin + circleEndForward * newFacingStart.cos;
+			final boolean circleFirstStopsInTime = (xEnd - circleEndX) * newFacingEnd.cos + (zEnd - circleEndZ) * newFacingEnd.sin >= -ACCEPT_THRESHOLD;
 
 			if (sameSide && segmentFirstFits && absAngleForward - Math.abs(angleDifference / 2) < ANGLE_THRESHOLD) { // Segment First
 				final double offsetSide = Math.abs(deltaForward / railAngleDifference.halfTan);
@@ -190,13 +197,10 @@ public class Rail extends SerializedDataBase {
 				tStart2 = getTBounds(deltaXEnd, h2, deltaZEnd, k2, r2);
 				tEnd2 = getTBounds(xEnd, h2, zEnd, k2, r2, tStart2, reverseT2);
 				isStraight2 = false;
-			} else if (sameSide && circleFirstFits && absAngleForward - Math.abs(angleDifference) < ANGLE_THRESHOLD) { // Circle First
-				final double crossSide = deltaForward / railAngleDifference.tan;
-				final double remainingSide = (deltaSide - crossSide) * (1 + railAngleDifference.cos);
-				final double remainingForward = (deltaSide - crossSide) * (railAngleDifference.sin);
-				final double deltaXEnd = xStart + remainingSide * newFacingStart.cos - remainingForward * newFacingStart.sin;
-				final double deltaZEnd = zStart + remainingSide * newFacingStart.sin + remainingForward * newFacingStart.cos;
-				final double radius = (deltaSide - deltaForward / railAngleDifference.tan) / railAngleDifference.halfTan;
+			} else if (sameSide && circleFirstFits && circleFirstStopsInTime && absAngleForward - Math.abs(angleDifference) < ANGLE_THRESHOLD) { // Circle First
+				final double deltaXEnd = circleEndX;
+				final double deltaZEnd = circleEndZ;
+				final double radius = circleSide / railAngleDifference.halfTan;
 				r1 = Math.abs(radius);
 				h1 = xStart - radius * newFacingStart.sin;
 				k1 = zStart + radius * newFacingStart.cos;
@@ -392,6 +396,37 @@ public class Rail extends SerializedDataBase {
 	public void render(RenderRail callback, float offsetRadius1, float offsetRadius2) {
 		renderSegment(h1, k1, r1, tStart1, tEnd1, 0, offsetRadius1, offsetRadius2, reverseT1, isStraight1, callback);
 		renderSegment(h2, k2, r2, tStart2, tEnd2, Math.abs(tEnd1 - tStart1), offsetRadius1, offsetRadius2, reverseT2, isStraight2, callback);
+	}
+
+	/**
+	 * A node is a line with two sides, so the angle of a node with rails means the facing of one of them. Always using the
+	 * same one keeps the number the same on the client and the server.
+	 *
+	 * @param connections the rails leaving a node
+	 * @return the facing of the node, or null if it has no rails
+	 */
+	public static RailAngle getNodeFacing(Map<BlockPos, Rail> connections) {
+		return connections == null || connections.isEmpty() ? null : connections.get(Collections.min(connections.keySet(), Comparator.comparingLong(BlockPos::asLong))).getLeavingFacing();
+	}
+
+	/**
+	 * The facing saved with a rail can point either way along the node's line, as the shape only uses it as a line.
+	 *
+	 * @return the way this rail really leaves its start
+	 */
+	public RailAngle getLeavingFacing() {
+		return matchDirection(facingStart, getRailAngle(false));
+	}
+
+	/**
+	 * @return the way from the end of this rail back along it, which is how the end of a rail is given
+	 */
+	public RailAngle getArrivingFacing() {
+		return matchDirection(facingEnd, getRailAngle(true));
+	}
+
+	private static RailAngle matchDirection(RailAngle facing, RailAngle direction) {
+		return facing.cos * direction.cos + facing.sin * direction.sin >= 0 ? facing : facing.getOpposite();
 	}
 
 	/**

@@ -66,8 +66,10 @@ public final class RailAngle {
 	}
 
 	/**
-	 * Gets the facing of a rail after its node turns to this angle. Rails are compared with a rail of the same node
-	 * and not with the new angle, because at a quarter turn both sides are equally close to the new angle.
+	 * Gets the facing of a rail after its node turns to this angle. A rail always runs towards its other end, so it can't
+	 * swap sides and stays on the near side of the new angle, even for an angle typed the other way round. Rails are
+	 * compared with a rail of the same node and not with the new angle, because at a quarter turn both sides are equally
+	 * close to the new angle.
 	 */
 	public RailAngle getRotatedFacing(RailAngle referenceFacing, RailAngle railFacing) {
 		final RailAngle referenceNewFacing = cos * referenceFacing.cos + sin * referenceFacing.sin >= 0 ? this : getOpposite();

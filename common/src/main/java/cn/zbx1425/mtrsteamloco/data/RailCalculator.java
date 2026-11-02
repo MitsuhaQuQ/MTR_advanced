@@ -5,6 +5,8 @@ import java.util.ArrayList;
 
 public class RailCalculator {
     public static final double PRECISION = 1e-3;
+    private static final double MIN_TANGENT_LENGTH = 1e-2;
+    private static final double MIN_RADIUS = 2;
 
     public static class Vec2 {
         public final double x, z;
@@ -319,6 +321,10 @@ public class RailCalculator {
     public static Group calculate(double startX, double startZ, double endX, double endZ, double startAngle, double endAngle) {
         Group group = _calculate(startX, startZ, endX, endZ, startAngle, endAngle);
 
+        // Nearly the same shape as above, with the corner of a curve too small to run on. The biarc handles these too.
+        if (group != null && (isTooTight(group.first) || isTooTight(group.second))) {
+            return null;
+        }
         return group;
 
         // if (group == null) return Group.EMPTY;
@@ -328,6 +334,10 @@ public class RailCalculator {
         // }
         // // pl("无效的section");
         // return Group.EMPTY;
+    }
+
+    private static boolean isTooTight(Section section) {
+        return !section.isStraight && section.r < MIN_RADIUS;
     }
 
     public static Group segment(double startX, double startZ, double endX, double endZ) {
@@ -416,6 +426,12 @@ public class RailCalculator {
 
         Vec2 vMS = S.sub(M);
         Vec2 vME = E.sub(M);
+
+        // A node on the other node's axis puts the intersection on that node, where rounding alone decides the checks
+        // below. It needs an S curve, which is left to the biarc that MTR already calculated.
+        if (vMS.length() < MIN_TANGENT_LENGTH || vME.length() < MIN_TANGENT_LENGTH) {
+            return null;
+        }
 
         // Both tangents must reach the intersection going forwards, otherwise one arc and one segment would loop back
         // and an S curve is needed. Null keeps the biarc that MTR already calculated.

@@ -8,6 +8,7 @@ import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.Rail;
+import mtr.data.RailAngle;
 import mtr.mappings.BlockEntityRendererMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -67,13 +68,16 @@ public class RenderNode<T extends BlockNode.TileEntityNode> extends BlockEntityR
 		final float y = IBlock.getStatePropertySafe(state, BlockNode.IS_CONNECTED) ? LINE_Y_CONNECTED : LINE_Y_NOT_CONNECTED;
 		IDrawing.drawLine(matrices, vertexConsumers, 0.5F - offsetX, y, 0.5F - offsetZ, 0.5F + offsetX, y, 0.5F + offsetZ, 0xFF, 0xFF, 0);
 
+		// Connected nodes show the way their rails face, the same number the brush screen uses
+		final RailAngle facing = Rail.getNodeFacing(ClientData.RAILS.get(pos));
+		final String angleText = BlockNode.getAngleText(facing == null ? angle : facing.angleDegrees);
 		final HitResult hitResult = Minecraft.getInstance().hitResult;
 		if (hitResult instanceof BlockHitResult && ((BlockHitResult) hitResult).getBlockPos().equals(pos)) {
-			player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
+			player.displayClientMessage(Text.literal(angleText), true);
 		}
 
 		if (holdingBrush && player.blockPosition().distSqr(pos) <= MAX_TEXT_DISTANCE * MAX_TEXT_DISTANCE) {
-			renderText(matrices, vertexConsumers, BlockNode.getAngleText(angle), getSlopeText(pos), y + TEXT_Y_OFFSET);
+			renderText(matrices, vertexConsumers, angleText, getSlopeText(pos), y + TEXT_Y_OFFSET);
 		}
 	}
 
