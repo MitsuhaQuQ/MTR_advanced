@@ -146,6 +146,14 @@ table.tt th.svc-head.hl { background: color-mix(in srgb, var(--sel) 24%, var(--p
 .track-station { min-width: 6em; font-size: 13px; }
 .table-chip.track.on { color: #fff; }
 .table-chip.track.pass { opacity: .55; border-style: dashed; }
+/* A train's duty: its services in order */
+ol.duty { margin: 6px 0; padding-left: 20px; font-size: 12px; line-height: 1.7; }
+ol.duty .num { font-family: var(--font-num); }
+ol.duty .muted { color: var(--muted); }
+ol.duty .err, .card > .err { color: var(--warn); font-size: 11px; }
+button.link { border: 0; background: transparent; color: var(--muted); padding: 0 4px; cursor: pointer; }
+button.link:hover { color: var(--warn); }
+.count.warn { color: var(--warn); }
 .picker { display: flex; flex-direction: column; gap: 6px; }
 .picker-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .dir-tabs { display: flex; gap: 4px; flex-wrap: wrap; }

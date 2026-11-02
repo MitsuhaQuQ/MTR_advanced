@@ -62,6 +62,8 @@ public final class EditorData {
 				sidingsArray.add(sidingObject);
 			});
 			depotObject.add("sidings", sidingsArray);
+			// Which services each train of the depot runs, see DepotDuties
+			depotObject.add("duties", EditorDuties.toJson(depot.duties));
 			depotsArray.add(depotObject);
 		});
 		data.add("depots", depotsArray);

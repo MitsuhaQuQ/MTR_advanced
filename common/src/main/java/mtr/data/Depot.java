@@ -1,6 +1,7 @@
 package mtr.data;
 
 import io.netty.buffer.Unpooled;
+import mtr.advanced.DepotDuties;
 import mtr.advanced.PathBoundaries;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.PathData;
@@ -48,6 +49,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * The types of service each vehicle may run by vehicle ID, as text like {@code local, express}. Without one it runs everything.
 	 */
 	public final Map<String, String> vehicleServiceTypes = new HashMap<>();
+	/**
+	 * Which services each train runs, set in the advanced editor. See {@link DepotDuties}.
+	 */
+	public final DepotDuties duties = new DepotDuties();
 
 	private final int[] frequencies = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
@@ -81,6 +86,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
 	private static final String KEY_USE_DETERMINISTIC_PATH = "use_deterministic_path";
 	private static final String KEY_CYCLE_ROUTES = "cycle_routes";
+	private static final String KEY_DUTIES = "duties";
+	private static final String KEY_DUTY_MODE = "duty_mode";
+	private static final String KEY_DUTY_SLOT = "duty_slot";
+	private static final String DUTY_MODE_DIAGRAM = "diagram";
+	private static final String DUTY_MODE_ONLINE = "online";
 
 	public Depot(TransportMode transportMode) {
 		super(transportMode);
@@ -116,6 +126,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
+		final Value dutiesValue = map.get(KEY_DUTIES);
+		if (dutiesValue != null && dutiesValue.isBinaryValue()) {
+			duties.fromBytes(dutiesValue.asBinaryValue().asByteArray());
+		}
+		duties.diagramMode = DUTY_MODE_DIAGRAM.equals(messagePackHelper.getString(KEY_DUTY_MODE));
 	}
 
 	@Deprecated
@@ -164,6 +179,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		useDeterministicPath = packet.readBoolean();
 		cycleRoutes = packet.readBoolean();
 		readVehicleServiceTypes(packet);
+		duties.read(packet);
 	}
 
 	@Override
@@ -206,11 +222,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		for (final Map.Entry<String, String> entry : vehicleServiceTypes.entrySet()) {
 			messagePacker.packString(entry.getKey()).packString(entry.getValue());
 		}
+
+		final byte[] dutyBytes = duties.toBytes();
+		messagePacker.packString(KEY_DUTIES).packBinaryHeader(dutyBytes.length);
+		messagePacker.writePayload(dutyBytes);
+		messagePacker.packString(KEY_DUTY_MODE).packString(duties.diagramMode ? DUTY_MODE_DIAGRAM : DUTY_MODE_ONLINE);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 12;
+		return super.messagePackLength() + 14;
 	}
 
 	@Override
@@ -241,6 +262,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(useDeterministicPath);
 		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
+		duties.write(packet);
 	}
 
 	@Override
@@ -278,6 +300,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			useDeterministicPath = packet.readBoolean();
 			cycleRoutes = packet.readBoolean();
 			readVehicleServiceTypes(packet);
+		} else if (KEY_DUTY_MODE.equals(key)) {
+			duties.diagramMode = packet.readBoolean();
+		} else if (KEY_DUTY_SLOT.equals(key)) {
+			final long sidingId = packet.readLong();
+			final int slotCount = packet.readVarInt();
+			final int index = packet.readVarInt() - 1;
+			duties.setSlot(sidingId, slotCount, index, index >= 0 ? DepotDuties.Slot.read(packet) : null);
 		} else {
 			super.update(key, packet);
 		}
@@ -322,6 +351,35 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(useDeterministicPath);
 		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
+		sendPacket.accept(packet);
+	}
+
+	public void setDutyMode(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_DUTY_MODE);
+		packet.writeBoolean(duties.diagramMode);
+		sendPacket.accept(packet);
+	}
+
+	/**
+	 * Sends how many slots a siding has and one of them, or none when {@code index} is -1. A slot at a time keeps each
+	 * packet well under the size a client may send.
+	 */
+	public void setDutySlot(long sidingId, int index, Consumer<FriendlyByteBuf> sendPacket) {
+		final List<DepotDuties.Slot> slots = duties.getSlots(sidingId);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_DUTY_SLOT);
+		packet.writeLong(sidingId);
+		packet.writeVarInt(slots.size());
+		final boolean hasSlot = index >= 0 && index < slots.size();
+		packet.writeVarInt(hasSlot ? index + 1 : 0);
+		if (hasSlot) {
+			slots.get(index).write(packet);
+		}
 		sendPacket.accept(packet);
 	}
 

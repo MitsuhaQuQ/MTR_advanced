@@ -75,6 +75,10 @@ public final class EditorActions implements IPacket {
 	 * @return why the change couldn't be made, or null if it was sent
 	 */
 	private static String applyOperation(JsonObject operation, int index, JsonArray created) {
+		// A depot's duties belong to the depot, not to a route
+		if ("duties".equals(getString(operation, "type"))) {
+			return EditorDuties.apply(operation);
+		}
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
 		if (route == null) {
 			return "找不到这条线路，可能已被删除";
