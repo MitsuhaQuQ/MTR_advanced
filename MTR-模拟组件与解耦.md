@@ -81,7 +81,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 
 | 类 | 行数 | 依赖 | 级别 | 去向 |
 |---|---|---|---|---|
-| `data/TrainService` | 1093 | `PathData`、`Siding.TripPath`、`Route`、`RouteTimetable`、`DepotDuties`、`DutyShapes`、msgpack | B | 组件 `sim`（S3）。`Vehicle` 接口改用 `TrackView` 和组件的车次路径 |
+| `transitsim.sim.TrainService`（原 `data/TrainService`） | 1139 | `PlanTrack`、`PlanRoute`、`TripPath`、`StopTimes`、`RouteTimetable`、`DepotDuties`、`DutyShapes`、`transitsim.io` | A | **已在组件**（S3c）；路径元素是泛型 `T extends PlanTrack`，宿主用 `TrainService<PathData>`；`Vehicle<T>`、`Board` 接口用组件的 `PlanRoute`；存档用 `KeyedReader`、`KeyedWriter`，`TrainServer` 照旧写同样的 12 个键 |
 | `Siding.StopTimes`、`Siding.TripPath`、`TurnBack*`、`DepotReturn`、`DutyPlan`、`TimeSegment` | 约 1200（在 `Siding` 内） | 嵌在依赖 Minecraft 的 `Siding` 里 | B（逻辑本身不需要世界） | 抽成组件 `plan` 和 `sim` 的独立类（S3），`Siding` 只留路径生成的调度和存档 |
 | `transitsim.sim.RunReservations`（原 `advanced/RunReservations`） | 168（F1 后） | 组件的 `RailKeys` | A | **已在组件**（S0） |
 | `transitsim.network.RailKeys` | 16 | 无 | A | **已在组件**（S0）：两个节点之间轨道的键，原来是 `PathBoundaries.segmentKey`，`RunReservations` 搬进组件时发现它暗中依赖这个方法 |
@@ -90,7 +90,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `data/TrainServer` | 852 | `Level`、方块实体、漏斗、玩家 | C | 占用、出车、方向预约、扣车拆进组件（S2 至 S4）；门、乘客、传感器、漏斗留在宿主 |
 | `data/TrainClient` | 402 | 客户端渲染、声音 | C | 留在宿主；G2 起按运行段自己算位置 |
 | `data/Siding` | 2343 | `Level`、`MinecraftServer`、网络包 | C | 内部的时刻和路径类拆出（S3），其余留在宿主 |
-| `data/Depot` | 1415 | `Level`、`MinecraftServer`、网络包 | C | 出车判断拆成组件的 `DepotDispatcher`（S3）；`MainPath` 寻路调度留在宿主 |
+| `data/Depot` | 1372 | `Level`、`MinecraftServer`、网络包 | C | 出车判断已拆成组件的 `transitsim.sim.DepotDispatcher`（S3c）：车次预约、各线路上次派出的班次、运用的出车记录、下一班的出车时间、按运用出车时选哪个库位；`Depot` 留 `MainPath` 寻路调度、存档（这些记录仍存在原来的键里）和让列车出库 |
 | `data/RailwayData` | 1196 | 服务端、玩家、存档 | C | 留在宿主：持有组件实例，每 tick 驱动和查询 |
 
 **合计**：
@@ -152,7 +152,7 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 | `transitsim.sim.RunReservationsTest`（组件） | 带方向的区间预约 |
 | `advanced/ServiceExceptionsTest`、`advanced/TimetableBoundariesTest` | 班次例外、时刻边界 |
 | `advanced/DutyGeneratorTest`、`advanced/DutyShapesTest` | 运用生成、运用形状、旧格式读入 |
-| `data/TrainServiceTest`、`data/DutyRunTest` | 班次决策、停服对齐、环线全天、按运用运行 |
+| `transitsim.sim.TrainServiceTest`、`DutyRunTest`（原在 common） | 班次决策、停服对齐、环线全天、按运用运行；S3c 起在组件里跑，用组件的测试替身 `TestRoute`、`TestTrack`，不需要 Minecraft |
 | `data/RouteTimetableTest`、`data/TimetableConflictsTest`、`data/TimetableConfigTest` | 时刻表、冲突检查、时区 |
 
 **列车推进**（2.2 节的规则部分）：S2a 起有组件里的逐 tick 对照测试 `TrainMotionEquivalenceTest`（12 项），新旧规则在合成路径上跑同一组场景（站停、折返、两种环线、闭塞、扣车、速度曲线和巡航上限、手动驾驶、缆车、回库、留在线上、客户端），每 tick 比较全部状态，步长 1 和 1.7 各一遍。宿主的钩子由测试替身 `MotionFixture` 模拟。
@@ -431,7 +431,8 @@ S0 之前，已经不依赖世界的部件：
 | S3a 前半：时刻表、例外、运营日、运用进组件 | 完成：新包 `transitsim.plan`（`RouteTimetable`、`ServiceExceptions`、`OperatingDay`、`DepotDuties`、视图 `PlanRoute`、`PlanStop`）和 `transitsim.io`（`BinaryReader`、`BinaryWriter`、`ByteArrayBinary`）；宿主改为直接用组件的类，`TimetableConfig` 只读写配置文件，`advanced/PacketBinary` 把 `FriendlyByteBuf` 交给组件；网络包和存档字节不变，协议版本不变。顺手修了构建顺序：`common` 的生产转换要等组件的 jar 构建完（`common/build.gradle`） | 1.20.1 | 组件 122 项、common 243 项全过（新增 `PacketBinaryTest` 3 项，`RouteTimetableSaveTest` 照旧通过）；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
 | S3a 后半：时刻边界、运用形状、冲突检查进组件 | 完成：`TimetableBoundaries`、`DutyShapes`、`TimetableConflicts` 进 `transitsim.plan`；`PlanRoute` 加站序、是否环线、运输方式；宿主 `advanced/PlanAdapters` 给出哪些站台是时刻边界。`DutyGenerator` 留在宿主，它是从车厂和存车线读数据、交给组件规划器的适配器。这些类的测试暂时还在 common，因为它们用 MTR 的 `Route`、`Platform` 造输入，S3c 有了组件自己的测试替身后再搬 | 1.20.1 | 组件 122 项、common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
 | S3b：车次和停站时刻进组件 | 完成：`Siding` 的九个内部类（`TripPath`、`StopTimes`、`TimeSegment`、`TripTail`、`DutyPlan`、`TurnBackSection`、`DepotReturn`、`TurnBacks`、`TurnBackPoint`）进 `transitsim.plan`；新增轨道视图 `PlanTrack`（`PathData` 实现）、`TimeGenerator`、`transitsim.io.KeyedReader`/`KeyedWriter`（宿主 `advanced/MessagePackKeyed`）。`Siding` 从 2355 行减到约 1140 行，只留路径生成、存档和同步。存档的键、顺序和数值写法不变 | 1.20.1 | 组件和 common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
-| S3c 至 S6、全链路场景 | 未开始 | | | | |
+| S3c：班次决策和出车进组件 | 完成：`TrainService` 进 `transitsim.sim`（泛型 `T extends PlanTrack`，用 `PlanRoute`）；新增 `DepotDispatcher`，`Depot` 的车次预约、上次派出班次、运用出车记录和选库位都转调它；`PlanTrack` 加 `isSidingTrack`，`PlanRoute` 加默认的 `getLastPlatformId`，`KeyedWriter` 加 `writeLong`。`TrainServiceTest`、`DutyRunTest`（27 项）搬进组件，用测试替身 `TestRoute`、`TestTrack`。存档的键和写法不变 | 1.20.1 | 组件 152 项（含合并进来的寻路 3 项）、common 216 项全过；组件单独离线构建通过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
+| S3d 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

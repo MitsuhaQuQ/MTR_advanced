@@ -20,6 +20,11 @@ public interface PlanTrack {
 	boolean isPlatformTrack();
 
 	/**
+	 * @return true if this track is a siding of a depot
+	 */
+	boolean isSidingTrack();
+
+	/**
 	 * @return the platform or siding this track belongs to, or 0
 	 */
 	long getStopId();

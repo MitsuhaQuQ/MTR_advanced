@@ -131,6 +131,11 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	}
 
 	@Override
+	public boolean isSidingTrack() {
+		return rail.railType == RailType.SIDING;
+	}
+
+	@Override
 	public long getStopId() {
 		return savedRailBaseId;
 	}

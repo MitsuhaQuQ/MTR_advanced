@@ -1,5 +1,8 @@
 package mtr.data;
 
+import transitsim.sim.DepotDispatcher;
+import transitsim.sim.TrainService;
+import transitsim.plan.PlanRoute;
 import transitsim.plan.DepotReturn;
 import transitsim.plan.DutyPlan;
 import transitsim.plan.TripPath;
@@ -70,15 +73,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	/**
 	 * The operating day each slot last ran its duty, as "siding:slot", so a duty runs once a day however its train gets to it.
 	 */
-	private final Map<String, Long> dutyRunDays = new HashMap<>();
 
 	private final int[] frequencies = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
 	private DataCache dataCache;
 	private final Map<String, List<Route>> trainRoutes = new HashMap<>();
-	private final Map<Long, Long> lastDeployedTrips = new HashMap<>();
-	private Set<Long> reservedTrips = new HashSet<>();
-	private Set<Long> newReservedTrips = new HashSet<>();
+	/**
+	 * Which services trains have taken and which duties have run; saved here, decided in the component.
+	 */
+	private final DepotDispatcher dispatcher = new DepotDispatcher();
 
 	public static final int HOURS_IN_DAY = 24;
 	public static final int TRAIN_FREQUENCY_MULTIPLIER = 4;
@@ -109,7 +112,6 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_DUTY_MODE = "duty_mode";
 	private static final String KEY_DUTY_SLOT = "duty_slot";
 	private static final String KEY_DUTY_RUN_DAYS = "duty_run_days";
-	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
 	private static final String DUTY_MODE_DIAGRAM = "diagram";
 	private static final String DUTY_MODE_ONLINE = "online";
 
@@ -148,14 +150,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		cycleRoutes = messagePackHelper.getBoolean(KEY_CYCLE_ROUTES);
 		speedCurves = messagePackHelper.getBoolean(KEY_SPEED_CURVES);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
-		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
+		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> dispatcher.lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
 		final Value dutiesValue = map.get(KEY_DUTIES);
 		if (dutiesValue != null && dutiesValue.isBinaryValue()) {
 			duties.fromBytes(dutiesValue.asBinaryValue().asByteArray());
 		}
 		duties.diagramMode = DUTY_MODE_DIAGRAM.equals(messagePackHelper.getString(KEY_DUTY_MODE));
-		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
+		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dispatcher.dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
 	}
 
 	@Deprecated
@@ -213,12 +215,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		toReducedMessagePack(messagePacker);
 		messagePacker.packString(KEY_DEPLOY_INDEX).packInt(deployIndex);
 		messagePacker.packString(KEY_LAST_DEPLOYED).packLong(System.currentTimeMillis() - lastDeployedMillis);
-		messagePacker.packString(KEY_LAST_DEPLOYED_TRIPS).packMapHeader(lastDeployedTrips.size());
-		for (final Map.Entry<Long, Long> entry : lastDeployedTrips.entrySet()) {
+		messagePacker.packString(KEY_LAST_DEPLOYED_TRIPS).packMapHeader(dispatcher.lastDeployedTrips.size());
+		for (final Map.Entry<Long, Long> entry : dispatcher.lastDeployedTrips.entrySet()) {
 			messagePacker.packString(String.valueOf(entry.getKey())).packLong(entry.getValue());
 		}
-		messagePacker.packString(KEY_DUTY_RUN_DAYS).packMapHeader(dutyRunDays.size());
-		for (final Map.Entry<String, Long> entry : dutyRunDays.entrySet()) {
+		messagePacker.packString(KEY_DUTY_RUN_DAYS).packMapHeader(dispatcher.dutyRunDays.size());
+		for (final Map.Entry<String, Long> entry : dispatcher.dutyRunDays.entrySet()) {
 			messagePacker.packString(entry.getKey()).packLong(entry.getValue());
 		}
 	}
@@ -483,10 +485,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			generateTempDepartures(world);
 		}
 
-		final Set<Long> oldReservedTrips = reservedTrips;
-		reservedTrips = newReservedTrips;
-		newReservedTrips = oldReservedTrips;
-		newReservedTrips.clear();
+		dispatcher.startTick();
 
 		dataCache = railwayData.dataCache;
 		trainRoutes.clear();
@@ -513,7 +512,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final RouteTimetable timetable = getTimetable(train.trainId);
 				final Route firstRoute = timetable == null ? null : getTrainRoutes(train.trainId).get(0);
 				final long currentMillis = System.currentTimeMillis();
-				final long tripMillis = timetable == null ? 0 : train.findDeployService(lastDeployedTrips.getOrDefault(firstRoute.id, 0L));
+				final long tripMillis = timetable == null ? 0 : train.findDeployService(dispatcher.lastDeployedTrips.getOrDefault(firstRoute.id, 0L));
 				if (timetable == null ? getMillisUntilDeploy(1) == 0 : tripMillis != 0) {
 					lastDeployedMillis = currentMillis;
 					deployIndex++;
@@ -523,7 +522,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					if (timetable == null) {
 						train.deployTrain();
 					} else {
-						lastDeployedTrips.put(firstRoute.id, tripMillis);
+						dispatcher.lastDeployedTrips.put(firstRoute.id, tripMillis);
 						reserveTrip(firstRoute.id, tripMillis);
 						train.deployTrain(tripMillis, firstRoute.id);
 					}
@@ -537,50 +536,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	/**
-	 * A depot running by its duties sends out a train for each slot whose duty starts from the siding today, when its first
-	 * service is due, once a day (design document 6.12, block E2). Slots whose duty a train staying overnight takes over are
-	 * left to that train. One train leaves a tick, the one due first.
+	 * See {@link DepotDispatcher#findDutyDeploy}.
 	 */
 	private void deployDutyTrain(RailwayData railwayData) {
 		final long currentMillis = System.currentTimeMillis();
-		final long dayStart = DutyShapes.getDayStart(currentMillis);
-		final long day = DutyShapes.getDayNumber(dayStart);
-		final int weekday = TimetableConfig.getWeekday(currentMillis);
-		TrainServer bestTrain = null;
-		TripPath<PathData> bestPath = null;
-		long bestSidingId = 0;
-		int bestSlot = -1;
-		long bestDepartureMillis = Long.MAX_VALUE;
-		for (final Map.Entry<Long, TrainServer> entry : new TreeMap<>(deployableSidings).entrySet()) {
-			final Siding siding = railwayData.dataCache.sidingIdMap.get(entry.getKey());
-			final List<DepotDuties.Slot> slots = duties.getSlots(entry.getKey());
-			if (siding == null) {
-				continue;
-			}
-			for (int i = 0; i < slots.size(); i++) {
-				final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
-				if (duty == null || duty.segments.isEmpty() || hasDutyRun(siding.id, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
-					continue;
-				}
-				final String key = DutyShapes.getSlotKey(slots, i, weekday, railwayData.dataCache.routeIdMap::get);
-				final TripPath<PathData> dutyPath = key == null ? null : siding.getTripPaths().get(key);
-				if (dutyPath == null) {
-					continue;
-				}
-				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - dutyPath.stopTimes.getLeadMillis() - DUTY_DEPLOY_MARGIN_MILLIS;
-				if (currentMillis >= departureMillis && currentMillis <= departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS && departureMillis < bestDepartureMillis) {
-					bestTrain = entry.getValue();
-					bestPath = dutyPath;
-					bestSidingId = siding.id;
-					bestSlot = i;
-					bestDepartureMillis = departureMillis;
-				}
-			}
-		}
-		if (bestTrain != null) {
-			markDutyRun(bestSidingId, bestSlot, day);
+		final DepotDispatcher.DutyDeploy<PathData> deploy = dispatcher.findDutyDeploy(currentMillis, new TreeSet<>(deployableSidings.keySet()), duties, sidingId -> {
+			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
+			return siding == null ? null : siding.getTripPaths();
+		}, railwayData.dataCache.routeIdMap::get);
+		if (deploy != null) {
 			lastDeployedMillis = currentMillis;
-			bestTrain.deployDuty(bestSlot, dayStart, bestPath);
+			deployableSidings.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dayStart, deploy.path);
 		}
 	}
 
@@ -591,15 +557,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public boolean hasDutyRun(long sidingId, int slot, long day) {
-		final Long runDay = dutyRunDays.get(sidingId + ":" + slot);
-		return runDay != null && runDay == day;
+		return dispatcher.hasDutyRun(sidingId, slot, day);
 	}
 
 	@Override
 	public void markDutyRun(long sidingId, int slot, long day) {
-		dutyRunDays.put(sidingId + ":" + slot, day);
-		// Days long gone don't need remembering
-		dutyRunDays.values().removeIf(runDay -> runDay < day - 2);
+		dispatcher.markDutyRun(sidingId, slot, day);
 	}
 
 	/**
@@ -697,9 +660,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	public void reserveTrip(long routeId, long tripMillis) {
-		if (tripMillis != 0) {
-			newReservedTrips.add(getTripKey(routeId, tripMillis));
-		}
+		dispatcher.reserveTrip(routeId, tripMillis);
 	}
 
 	/**
@@ -714,10 +675,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * @return the first service of this route from this time on that no train has taken, or 0 if a train would wait too long for
 	 * it. A train that stays on the line waits for its next service however long that is.
 	 */
-	public long findNextService(Route route, long readyMillis) {
-		final long tripMillis = route.timetable.getNextService(readyMillis, readyMillis + (cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS), millis -> isTripReserved(route.id, millis));
-		reserveTrip(route.id, tripMillis);
-		return tripMillis;
+	public long findNextService(PlanRoute route, long readyMillis) {
+		return dispatcher.findNextService(route, readyMillis, cycleRoutes);
 	}
 
 	@Override
@@ -726,12 +685,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	public boolean isTripReserved(long routeId, long tripMillis) {
-		final long tripKey = getTripKey(routeId, tripMillis);
-		return reservedTrips.contains(tripKey) || newReservedTrips.contains(tripKey);
-	}
-
-	private static long getTripKey(long routeId, long tripMillis) {
-		return routeId * 31 + tripMillis;
+		return dispatcher.isTripReserved(routeId, tripMillis);
 	}
 
 	/**
@@ -744,18 +698,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		departureOffset++;
-		final long firstRouteId = getTrainRoutes(trainId).get(0).id;
-		final long currentMillis = System.currentTimeMillis();
-		long fromMillis = currentMillis + leadMillis;
-		long tripMillis = 0;
-		for (int i = 0; i < departureOffset; i++) {
-			tripMillis = timetable.getNextService(fromMillis, currentMillis + MILLISECONDS_PER_DAY, millis -> isTripReserved(firstRouteId, millis));
-			if (tripMillis == 0) {
-				return -1;
-			}
-			fromMillis = tripMillis + 1;
-		}
-		return (int) (tripMillis - leadMillis - currentMillis);
+		return dispatcher.getNextDepartureMillis(timetable, getTrainRoutes(trainId).get(0).id, System.currentTimeMillis(), leadMillis, departureOffset);
 	}
 
 	public int getNextDepartureMillis() {

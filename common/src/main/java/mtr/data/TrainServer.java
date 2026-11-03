@@ -1,5 +1,7 @@
 package mtr.data;
 
+import transitsim.sim.TrainService;
+import mtr.advanced.MessagePackKeyed;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TimeSegment;
 import transitsim.plan.TripPath;
@@ -44,7 +46,7 @@ public class TrainServer extends Train {
 	private int manualCoolDown;
 	private Depot depot;
 	private DataCache dataCache;
-	private final TrainService service;
+	private final TrainService<PathData> service;
 	private Level world;
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
@@ -83,7 +85,7 @@ public class TrainServer extends Train {
 		depotTimeSegments = timeSegments;
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
-		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
 	}
 
@@ -102,9 +104,9 @@ public class TrainServer extends Train {
 		depotTimeSegments = timeSegments;
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
-		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
-		service.read(new MessagePackHelper(map));
+		service.read(new MessagePackKeyed.Reader(new MessagePackHelper(map)));
 	}
 
 	@Deprecated
@@ -123,14 +125,14 @@ public class TrainServer extends Train {
 		depotTimeSegments = timeSegments;
 		depotRepeatIndex1 = repeatIndex1;
 		depotRepeatIndex2 = repeatIndex2;
-		service = new TrainService(trainId, new ServiceVehicle(), System::currentTimeMillis);
+		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
 	}
 
 	@Override
 	public void toMessagePack(MessagePacker messagePacker) throws IOException {
 		super.toMessagePack(messagePacker);
-		service.write(messagePacker);
+		service.write(new MessagePackKeyed.Writer(messagePacker));
 	}
 
 	@Override
@@ -802,7 +804,7 @@ public class TrainServer extends Train {
 		}
 	}
 
-	private class ServiceVehicle implements TrainService.Vehicle {
+	private class ServiceVehicle implements TrainService.Vehicle<PathData> {
 
 		@Override
 		public List<PathData> getPath() {

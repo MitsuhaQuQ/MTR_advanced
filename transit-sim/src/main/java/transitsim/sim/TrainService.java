@@ -1,15 +1,18 @@
-package mtr.data;
+package transitsim.sim;
 
+import transitsim.io.KeyedReader;
+import transitsim.io.KeyedWriter;
+import transitsim.plan.DepotDuties;
+import transitsim.plan.DutyShapes;
+import transitsim.plan.OperatingDay;
+import transitsim.plan.PlanRoute;
+import transitsim.plan.PlanTrack;
+import transitsim.plan.RouteTimetable;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
 import transitsim.plan.TurnBackPoint;
 import transitsim.plan.TurnBacks;
-import transitsim.plan.RouteTimetable;
-import transitsim.plan.DepotDuties;
-import transitsim.plan.DutyShapes;
-import mtr.path.PathData;
-import org.msgpack.core.MessagePacker;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -26,13 +29,13 @@ import java.util.function.LongSupplier;
  * running through to another route and lining up with the timetable after a restart. Moving the train is left to the
  * {@link Vehicle}, so whole days of running can be tested without a world.
  */
-public class TrainService {
+public class TrainService<T extends PlanTrack> {
 
 	private final String trainId;
-	private final Vehicle vehicle;
+	private final Vehicle<T> vehicle;
 	private final LongSupplier clock;
 	private Board depot;
-	private LongFunction<Route> routes;
+	private LongFunction<? extends PlanRoute> routes;
 	private LongFunction<? extends Board> routeDepots;
 	/**
 	 * The planned arrival at the first stop of the current service as a full timestamp, or 0 without a timetable.
@@ -65,20 +68,20 @@ public class TrainService {
 	 * The path the train is on when it isn't the usual path of the depot, for a service running through to another route or
 	 * for another way round a turn back point. The usual path is kept to go back to.
 	 */
-	private TripPath<PathData> tripPath;
+	private TripPath<T> tripPath;
 	private String tripPathKey = "";
 	/**
 	 * The next route of the trip and the service to run on it.
 	 */
 	private int linkedService = -1;
 	private long linkedRouteId;
-	private Map<String, TripPath<PathData>> tripPaths = new HashMap<>();
+	private Map<String, TripPath<T>> tripPaths = new HashMap<>();
 	private TurnBacks turnBacks = TurnBacks.NONE;
 	/**
 	 * The stop where the train has taken a turn back rail of the point after it, or -1.
 	 */
 	private int turnBackStop = -1;
-	private final List<Route> tripRoutes = new ArrayList<>();
+	private final List<PlanRoute> tripRoutes = new ArrayList<>();
 	private long sidingId;
 	/**
 	 * In a depot running by its duties, the slot whose duty the train is running, or -1 (design document 6.12, block E2).
@@ -121,43 +124,43 @@ public class TrainService {
 	 */
 	private static final int DEPLOY_MARGIN_MILLIS = 15000;
 
-	public TrainService(String trainId, Vehicle vehicle, LongSupplier clock) {
+	public TrainService(String trainId, Vehicle<T> vehicle, LongSupplier clock) {
 		this.trainId = trainId;
 		this.vehicle = vehicle;
 		this.clock = clock;
 	}
 
-	public void read(MessagePackHelper messagePackHelper) {
-		tripPathKey = messagePackHelper.getString(KEY_TRIP_PATH);
-		linkedService = messagePackHelper.getInt(KEY_LINKED_SERVICE, -1);
-		linkedRouteId = messagePackHelper.getLong(KEY_LINKED_ROUTE);
-		tripMillis = messagePackHelper.getLong(KEY_TRIP_MILLIS);
-		tripRouteId = messagePackHelper.getLong(KEY_TRIP_ROUTE_ID);
-		routeStartMillis = messagePackHelper.getLong(KEY_ROUTE_START_MILLIS);
-		nextTripMillis = messagePackHelper.getLong(KEY_NEXT_TRIP_MILLIS);
-		isJoiningLoop = messagePackHelper.getBoolean(KEY_IS_JOINING_LOOP);
-		dutySlot = messagePackHelper.getInt(KEY_DUTY_SLOT, -1);
-		dutyDayStart = messagePackHelper.getLong(KEY_DUTY_DAY_START);
-		dutyIndex = messagePackHelper.getInt(KEY_DUTY_INDEX);
+	public void read(KeyedReader reader) {
+		tripPathKey = reader.getString(KEY_TRIP_PATH, "");
+		linkedService = reader.getInt(KEY_LINKED_SERVICE, -1);
+		linkedRouteId = reader.getLong(KEY_LINKED_ROUTE, 0);
+		tripMillis = reader.getLong(KEY_TRIP_MILLIS, 0);
+		tripRouteId = reader.getLong(KEY_TRIP_ROUTE_ID, 0);
+		routeStartMillis = reader.getLong(KEY_ROUTE_START_MILLIS, 0);
+		nextTripMillis = reader.getLong(KEY_NEXT_TRIP_MILLIS, 0);
+		isJoiningLoop = reader.getBoolean(KEY_IS_JOINING_LOOP, false);
+		dutySlot = reader.getInt(KEY_DUTY_SLOT, -1);
+		dutyDayStart = reader.getLong(KEY_DUTY_DAY_START, 0);
+		dutyIndex = reader.getInt(KEY_DUTY_INDEX, 0);
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
 		isLeavingForDuty = dutySlot >= 0;
 		needsAlignment = tripMillis != 0;
-		setLastLap(messagePackHelper.getBoolean(KEY_IS_LAST_LAP));
+		setLastLap(reader.getBoolean(KEY_IS_LAST_LAP, false));
 	}
 
-	public void write(MessagePacker messagePacker) throws IOException {
-		messagePacker.packString(KEY_TRIP_MILLIS).packLong(tripMillis);
-		messagePacker.packString(KEY_NEXT_TRIP_MILLIS).packLong(nextTripMillis);
-		messagePacker.packString(KEY_IS_LAST_LAP).packBoolean(isLastLap);
-		messagePacker.packString(KEY_TRIP_ROUTE_ID).packLong(tripRouteId);
-		messagePacker.packString(KEY_ROUTE_START_MILLIS).packLong(routeStartMillis);
-		messagePacker.packString(KEY_IS_JOINING_LOOP).packBoolean(isJoiningLoop);
-		messagePacker.packString(KEY_TRIP_PATH).packString(tripPathKey);
-		messagePacker.packString(KEY_LINKED_SERVICE).packInt(linkedService);
-		messagePacker.packString(KEY_LINKED_ROUTE).packLong(linkedRouteId);
-		messagePacker.packString(KEY_DUTY_SLOT).packInt(dutySlot);
-		messagePacker.packString(KEY_DUTY_DAY_START).packLong(dutyDayStart);
-		messagePacker.packString(KEY_DUTY_INDEX).packInt(dutyIndex);
+	public void write(KeyedWriter writer) throws IOException {
+		writer.writeLong(KEY_TRIP_MILLIS, tripMillis);
+		writer.writeLong(KEY_NEXT_TRIP_MILLIS, nextTripMillis);
+		writer.writeBoolean(KEY_IS_LAST_LAP, isLastLap);
+		writer.writeLong(KEY_TRIP_ROUTE_ID, tripRouteId);
+		writer.writeLong(KEY_ROUTE_START_MILLIS, routeStartMillis);
+		writer.writeBoolean(KEY_IS_JOINING_LOOP, isJoiningLoop);
+		writer.writeString(KEY_TRIP_PATH, tripPathKey);
+		writer.writeInt(KEY_LINKED_SERVICE, linkedService);
+		writer.writeLong(KEY_LINKED_ROUTE, linkedRouteId);
+		writer.writeInt(KEY_DUTY_SLOT, dutySlot);
+		writer.writeLong(KEY_DUTY_DAY_START, dutyDayStart);
+		writer.writeInt(KEY_DUTY_INDEX, dutyIndex);
 	}
 
 	public void setSiding(long newSidingId) {
@@ -168,7 +171,7 @@ public class TrainService {
 	 * @param newRoutes      finds a route by ID, or null if the routes aren't known yet
 	 * @param newRouteDepots finds the depot running a route, or null if the routes aren't known yet
 	 */
-	public void setNetwork(Board newDepot, LongFunction<Route> newRoutes, LongFunction<? extends Board> newRouteDepots) {
+	public void setNetwork(Board newDepot, LongFunction<? extends PlanRoute> newRoutes, LongFunction<? extends Board> newRouteDepots) {
 		depot = newDepot;
 		routes = newRoutes;
 		routeDepots = newRouteDepots;
@@ -191,9 +194,9 @@ public class TrainService {
 			}
 			reserveTrip(tripRouteId, tripMillis);
 			if (nextTripMillis != 0) {
-				final Route lapRoute = getLapRoute();
+				final PlanRoute lapRoute = getLapRoute();
 				if (lapRoute != null) {
-					reserveTrip(lapRoute.id, nextTripMillis);
+					reserveTrip(lapRoute.getRouteId(), nextTripMillis);
 				}
 			}
 		} else if (tripMillis != 0 || isLastLap || tripPath != null || dutySlot >= 0) {
@@ -211,10 +214,10 @@ public class TrainService {
 	}
 
 	public void onLapComplete() {
-		final Route lapRoute = isOnTrip() ? getLapRoute() : null;
+		final PlanRoute lapRoute = isOnTrip() ? getLapRoute() : null;
 		if (lapRoute != null) {
 			tripMillis = nextTripMillis == 0 ? findLapService(lapRoute, clock.getAsLong()) : nextTripMillis;
-			tripRouteId = lapRoute.id;
+			tripRouteId = lapRoute.getRouteId();
 			nextTripMillis = 0;
 			final RouteTimetable.StopPlan lapPlan = getStopPlan(tripPath.lapStop);
 			routeStartMillis = lapPlan == null ? 0 : lapPlan.routeStartMillis;
@@ -231,7 +234,7 @@ public class TrainService {
 		} else {
 			// A train looping since before the timetable was added joins it here
 			tripMillis = nextTripMillis == 0 ? depot.findNextTrip(trainId, clock.getAsLong()) : nextTripMillis;
-			tripRouteId = depot.getTrainRoutes(trainId).get(0).id;
+			tripRouteId = depot.getTrainRoutes(trainId).get(0).getRouteId();
 			nextTripMillis = 0;
 			updateTripPath();
 			reserveNextTrip();
@@ -270,11 +273,11 @@ public class TrainService {
 			final long plannedStartMillis = getPlannedMillis(startPlan.routeStartMillis);
 			final long readyMillis = clock.getAsLong() + startPlan.arrivalMillis - stopPlan.arrivalMillis;
 			final boolean isLinked = tripPath != null && linkedService >= 0 && startPlan.route.getRouteId() == linkedRouteId;
-			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService((Route) startPlan.route, Math.max(plannedStartMillis, readyMillis));
+			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService(startPlan.route, Math.max(plannedStartMillis, readyMillis));
 			tripMillis = serviceMillis == 0 ? plannedStartMillis : serviceMillis;
 			tripRouteId = startPlan.route.getRouteId();
 			if (isLinked) {
-				setNextLink((Route) startPlan.route);
+				setNextLink(startPlan.route);
 			}
 			updateTripPath();
 			// The plan follows the route and table the train is on now, which can move where this route starts in it
@@ -323,10 +326,10 @@ public class TrainService {
 		}
 
 		// A train staying on its service is already at the first stop it can use
-		final List<PathData> path = vehicle.getPath();
+		final List<T> path = vehicle.getPath();
 		final int firstIndex = isSameService ? nextStoppingIndex + 1 : stopTimes.getFirstIndex();
 		for (int i = stopIndex; i >= firstIndex && i >= 0; i--) {
-			if (path.get(i).dwellTime > 0 && vehicle.isStopFree(i)) {
+			if (path.get(i).getDwellTime() > 0 && vehicle.isStopFree(i)) {
 				vehicle.moveToStop(i);
 				nextTripMillis = 0;
 				reserveNextTrip();
@@ -360,10 +363,10 @@ public class TrainService {
 		}
 		startDutySegment(index);
 
-		final List<PathData> path = vehicle.getPath();
+		final List<T> path = vehicle.getPath();
 		int stopIndex = -1;
 		for (int i = starts[index]; i < path.size() && stopIndex < 0; i++) {
-			if (path.get(i).dwellTime > 0 && path.get(i).rail.railType != RailType.SIDING) {
+			if (path.get(i).getDwellTime() > 0 && !path.get(i).isSidingTrack()) {
 				while (dutyIndex + 1 < starts.length && i >= starts[dutyIndex + 1]) {
 					startDutySegment(dutyIndex + 1);
 				}
@@ -381,7 +384,7 @@ public class TrainService {
 			stopIndex = path.size() - 1;
 		}
 		for (int i = stopIndex; i >= starts[0]; i--) {
-			if (path.get(i).dwellTime > 0 && vehicle.isStopFree(i)) {
+			if (path.get(i).getDwellTime() > 0 && vehicle.isStopFree(i)) {
 				int segment = 0;
 				while (segment + 1 < starts.length && i >= starts[segment + 1]) {
 					segment++;
@@ -399,11 +402,11 @@ public class TrainService {
 	 * can start, or -1 if the service is over
 	 */
 	private int findRunningStop(int fromIndex, long currentMillis) {
-		final List<PathData> path = vehicle.getPath();
+		final List<T> path = vehicle.getPath();
 		final int endIndex = vehicle.isRepeat() ? vehicle.getRepeatIndex2() : path.size();
 		for (int i = Math.max(fromIndex, 0); i < endIndex; i++) {
-			if (path.get(i).dwellTime > 0) {
-				if (path.get(i).rail.railType == RailType.SIDING || isJoiningLoop && i >= getJoinEndIndex()) {
+			if (path.get(i).getDwellTime() > 0) {
+				if (path.get(i).isSidingTrack() || isJoiningLoop && i >= getJoinEndIndex()) {
 					return -1;
 				}
 				// Turn backs on the way out of the depot have no plan
@@ -416,8 +419,8 @@ public class TrainService {
 				}
 				final RouteTimetable.StopPlan startPlan = stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
 				if (startPlan != null && startPlan.startsRoute && startPlan.route.getRouteId() != tripRouteId) {
-					final Route route = (Route) startPlan.route;
-					return !startPlan.waitsForService || route.timetable.getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.id, millis)) != 0 ? i : -1;
+					final PlanRoute route = startPlan.route;
+					return !startPlan.waitsForService || route.getTimetable().getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.getRouteId(), millis)) != 0 ? i : -1;
 				}
 			}
 		}
@@ -431,21 +434,21 @@ public class TrainService {
 	 * @return false if there is no service for this train
 	 */
 	private boolean takeRunningService(long currentMillis) {
-		final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
+		final List<? extends PlanRoute> trainRoutes = depot.getTrainRoutes(trainId);
 		if (isOnTrip() || trainRoutes.isEmpty()) {
 			return false;
 		}
 
-		final Route firstRoute = trainRoutes.get(0);
+		final PlanRoute firstRoute = trainRoutes.get(0);
 		final RouteTimetable timetable = depot.getTimetable(trainId);
-		final long runningMillis = timetable.getLatestService(currentMillis - stopTimes.getDurationMillis(), currentMillis, millis -> depot.isTripReserved(firstRoute.id, millis));
-		final long newTripMillis = runningMillis == 0 ? timetable.getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(firstRoute.id, millis)) : runningMillis;
+		final long runningMillis = timetable.getLatestService(currentMillis - stopTimes.getDurationMillis(), currentMillis, millis -> depot.isTripReserved(firstRoute.getRouteId(), millis));
+		final long newTripMillis = runningMillis == 0 ? timetable.getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(firstRoute.getRouteId(), millis)) : runningMillis;
 		if (newTripMillis == 0) {
 			return false;
 		}
 
 		tripMillis = newTripMillis;
-		tripRouteId = firstRoute.id;
+		tripRouteId = firstRoute.getRouteId();
 		routeStartMillis = 0;
 		nextTripMillis = 0;
 		isJoiningLoop = false;
@@ -476,7 +479,7 @@ public class TrainService {
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
-			final TripPath<PathData> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
 			if (rails != null && (newPath != null || isDefaultWay && tripKey.isEmpty()) && vehicle.isTurnBackFree(rails)) {
 				final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
 				turnBackStop = newStopIndex;
@@ -506,16 +509,16 @@ public class TrainService {
 			return false;
 		}
 		final int stopIndex = vehicle.getNextStoppingIndex();
-		final List<PathData> path = vehicle.getPath();
+		final List<T> path = vehicle.getPath();
 		if (stopIndex < 0 || stopIndex >= path.size()) {
 			return false;
 		}
-		final long platformId = path.get(stopIndex).savedRailBaseId;
-		final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
+		final long platformId = path.get(stopIndex).getStopId();
+		final List<? extends PlanRoute> trainRoutes = depot.getTrainRoutes(trainId);
 		for (int i = 0; i < trainRoutes.size(); i++) {
-			final Route route = trainRoutes.get(i);
-			if (route.id == tripRouteId && !route.platformIds.isEmpty() && route.getLastPlatformId() == platformId && route.timetable.isReturnService(tripMillis)) {
-				final TripPath<PathData> returnPath = tripPaths.get(TripPath.getDepotReturnKey(i));
+			final PlanRoute route = trainRoutes.get(i);
+			if (route.getRouteId() == tripRouteId && !route.getStops().isEmpty() && route.getLastPlatformId() == platformId && route.getTimetable().isReturnService(tripMillis)) {
+				final TripPath<T> returnPath = tripPaths.get(TripPath.getDepotReturnKey(i));
 				if (returnPath != null) {
 					tripPath = returnPath;
 					tripPathKey = returnPath.key;
@@ -545,10 +548,10 @@ public class TrainService {
 		if (timetable == null) {
 			return 0;
 		}
-		final Route firstRoute = depot.getTrainRoutes(trainId).get(0);
+		final PlanRoute firstRoute = depot.getTrainRoutes(trainId).get(0);
 		final long currentMillis = clock.getAsLong();
 		final long leadMillis = getLeadMillis();
-		return timetable.getLatestService(Math.max(lastDeployedMillis, currentMillis + Math.min(leadMillis, 0) - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS), currentMillis + leadMillis + DEPLOY_MARGIN_MILLIS, millis -> depot.isTripReserved(firstRoute.id, millis));
+		return timetable.getLatestService(Math.max(lastDeployedMillis, currentMillis + Math.min(leadMillis, 0) - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS), currentMillis + leadMillis + DEPLOY_MARGIN_MILLIS, millis -> depot.isTripReserved(firstRoute.getRouteId(), millis));
 	}
 
 	/**
@@ -569,7 +572,7 @@ public class TrainService {
 	 *
 	 * @param dayStart when the operating day of the duty started
 	 */
-	public void deployDuty(int slot, long dayStart, TripPath<PathData> dutyPath) {
+	public void deployDuty(int slot, long dayStart, TripPath<T> dutyPath) {
 		dutySlot = slot;
 		dutyDayStart = dayStart;
 		dutyDay = readDutyDay();
@@ -629,19 +632,19 @@ public class TrainService {
 			return;
 		}
 		final long dayStart = DutyShapes.getDayStart(clock.getAsLong());
-		if (dayStart <= dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2) {
+		if (dayStart <= dutyDayStart + OperatingDay.MILLIS_PER_DAY / 2) {
 			return;
 		}
 		// The new day is where an edit takes effect, so which slot comes next is read as the depot has it now
 		final DepotDuties.DayDuty day = readDutyDay();
 		final List<DepotDuties.Slot> slots = depot.getDutySlots(sidingId);
 		final int nextSlot = day == null ? -1 : DutyShapes.getNextSlot(day, dutySlot);
-		final int weekday = TimetableConfig.getWeekday(dayStart);
+		final int weekday = OperatingDay.getWeekday(dayStart);
 		final String key = nextSlot < 0 || routes == null ? null : DutyShapes.getSlotKey(slots, nextSlot, weekday, routes);
-		final TripPath<PathData> nextPath = key == null ? null : tripPaths.get(key);
-		final List<PathData> path = vehicle.getPath();
+		final TripPath<T> nextPath = key == null ? null : tripPaths.get(key);
+		final List<T> path = vehicle.getPath();
 		final long dayNumber = DutyShapes.getDayNumber(dayStart);
-		if (nextPath == null || nextPath.path.isEmpty() || nextPath.path.get(0).savedRailBaseId != path.get(path.size() - 1).savedRailBaseId || depot.hasDutyRun(sidingId, nextSlot, dayNumber)) {
+		if (nextPath == null || nextPath.path.isEmpty() || nextPath.path.get(0).getStopId() != path.get(path.size() - 1).getStopId() || depot.hasDutyRun(sidingId, nextSlot, dayNumber)) {
 			System.out.println("A train staying on the line overnight has no duty starting where it is, and goes back to the depot: " + key);
 			vehicle.returnToDepot();
 			return;
@@ -674,9 +677,9 @@ public class TrainService {
 		if (index == 0) {
 			// Plans count from the first stop of the path, which for a route joined part of the way along is later than its service
 			routeStartMillis = 0;
-			final Route route = routes == null ? null : routes.apply(segment.routeId);
+			final PlanRoute route = routes == null ? null : routes.apply(segment.routeId);
 			if (route != null && segment.fromStop > 0 && stopTimes != null) {
-				tripMillis += stopTimes.getEntryOffsetMillis(route, segment.fromStop, route.timetable.getTableIndex(tripMillis), segment.service);
+				tripMillis += stopTimes.getEntryOffsetMillis(route, segment.fromStop, route.getTimetable().getTableIndex(tripMillis), segment.service);
 			}
 		} else {
 			final RouteTimetable.StopPlan stopPlan = getStopPlan(tripPath.dutyStarts[index]);
@@ -703,7 +706,7 @@ public class TrainService {
 			return null;
 		}
 		final List<DepotDuties.Slot> slots = depot.getDutySlots(sidingId);
-		final DepotDuties.DayDuty day = dutySlot < slots.size() ? slots.get(dutySlot).getDuty(TimetableConfig.getWeekday(dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2)) : null;
+		final DepotDuties.DayDuty day = dutySlot < slots.size() ? slots.get(dutySlot).getDuty(OperatingDay.getWeekday(dutyDayStart + OperatingDay.MILLIS_PER_DAY / 2)) : null;
 		return day == null ? null : day.copy();
 	}
 
@@ -720,14 +723,14 @@ public class TrainService {
 	 * @param depotStopTimes the stop times of the usual path of the siding
 	 * @param newTripPaths   the paths of services leaving it
 	 */
-	public void setStopTimes(StopTimes newDepotStopTimes, Map<String, TripPath<PathData>> newTripPaths) {
+	public void setStopTimes(StopTimes newDepotStopTimes, Map<String, TripPath<T>> newTripPaths) {
 		setStopTimes(newDepotStopTimes, newTripPaths, TurnBacks.NONE);
 	}
 
 	/**
 	 * @param newTurnBacks where trains of the siding can turn back on more than one rail
 	 */
-	public void setStopTimes(StopTimes newDepotStopTimes, Map<String, TripPath<PathData>> newTripPaths, TurnBacks newTurnBacks) {
+	public void setStopTimes(StopTimes newDepotStopTimes, Map<String, TripPath<T>> newTripPaths, TurnBacks newTurnBacks) {
 		depotStopTimes = newDepotStopTimes;
 		stopTimes = tripPath == null ? newDepotStopTimes : tripPath.stopTimes;
 		tripPaths = newTripPaths;
@@ -761,11 +764,11 @@ public class TrainService {
 	 *
 	 * @return false if that path no longer exists
 	 */
-	public boolean restoreTripPath(Map<String, TripPath<PathData>> newTripPaths) {
+	public boolean restoreTripPath(Map<String, TripPath<T>> newTripPaths) {
 		if (tripPathKey.isEmpty()) {
 			return true;
 		}
-		final TripPath<PathData> newTripPath = newTripPaths.get(tripPathKey);
+		final TripPath<T> newTripPath = newTripPaths.get(tripPathKey);
 		if (newTripPath == null) {
 			return false;
 		}
@@ -788,16 +791,16 @@ public class TrainService {
 		if (isOnTrip() || isJoiningLoop || depot == null || tripMillis == 0) {
 			return;
 		}
-		final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
-		final Route lastRoute = trainRoutes.isEmpty() ? null : trainRoutes.get(trainRoutes.size() - 1);
-		if (lastRoute != null && lastRoute.id == tripRouteId) {
-			final RouteTimetable.ServiceLink link = lastRoute.timetable.getLink(tripMillis);
-			final TripPath<PathData> newTripPath = link == null || routes == null ? null : tripPaths.get(TripTail.getKey(RouteTimetable.getLinkChain(link, routeId -> {
-				final Route route = routes.apply(routeId);
-				return route == null ? null : route.timetable;
+		final List<? extends PlanRoute> trainRoutes = depot.getTrainRoutes(trainId);
+		final PlanRoute lastRoute = trainRoutes.isEmpty() ? null : trainRoutes.get(trainRoutes.size() - 1);
+		if (lastRoute != null && lastRoute.getRouteId() == tripRouteId) {
+			final RouteTimetable.ServiceLink link = lastRoute.getTimetable().getLink(tripMillis);
+			final TripPath<T> newTripPath = link == null || routes == null ? null : tripPaths.get(TripTail.getKey(RouteTimetable.getLinkChain(link, routeId -> {
+				final PlanRoute route = routes.apply(routeId);
+				return route == null ? null : route.getTimetable();
 			})));
 			// A train that went another way round a turn back point keeps to it, as it may be past the point already
-			final TripPath<PathData> turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
+			final TripPath<T> turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
 			if (turnBackPath != null) {
 				linkedService = link.service;
 				linkedRouteId = link.routeId;
@@ -806,7 +809,7 @@ public class TrainService {
 		}
 	}
 
-	private void useTripPath(TripPath<PathData> newTripPath) {
+	private void useTripPath(TripPath<T> newTripPath) {
 		tripPath = newTripPath;
 		tripPathKey = newTripPath.key;
 		stopTimes = newTripPath.stopTimes;
@@ -831,8 +834,8 @@ public class TrainService {
 	/**
 	 * After taking a service of a route of the trip, finds the service that follows it.
 	 */
-	private void setNextLink(Route route) {
-		final RouteTimetable.ServiceLink link = route.timetable.getLinkOfService(linkedService);
+	private void setNextLink(PlanRoute route) {
+		final RouteTimetable.ServiceLink link = route.getTimetable().getLinkOfService(linkedService);
 		linkedRouteId = link == null ? 0 : link.routeId;
 		linkedService = link == null ? -1 : link.service;
 	}
@@ -842,10 +845,10 @@ public class TrainService {
 	 * train reaches this stop when that service would, and that service ends at the first stop of the loop.
 	 */
 	private void joinLapRoute() {
-		final Route lapRoute = getLapRoute();
+		final PlanRoute lapRoute = getLapRoute();
 		if (lapRoute != null && linkedService >= 0) {
 			final long currentMillis = clock.getAsLong();
-			tripRouteId = lapRoute.id;
+			tripRouteId = lapRoute.getRouteId();
 			tripMillis = RouteTimetable.getClosestService(currentMillis, linkedService);
 			final RouteTimetable.StopPlan stopPlan = getStopPlan(vehicle.getNextStoppingIndex());
 			if (stopPlan != null) {
@@ -863,8 +866,8 @@ public class TrainService {
 	/**
 	 * @return the route the train keeps lapping, or null if the trip doesn't end with one
 	 */
-	private Route getLapRoute() {
-		final List<Route> newTripRoutes = getTripRoutes();
+	private PlanRoute getLapRoute() {
+		final List<? extends PlanRoute> newTripRoutes = getTripRoutes();
 		if (newTripRoutes.isEmpty()) {
 			return null;
 		}
@@ -896,11 +899,11 @@ public class TrainService {
 	/**
 	 * @return the next service of the loop a trip ends with that no train has taken, including trains of that route's own depot
 	 */
-	private long findLapService(Route route, long readyMillis) {
-		final Board routeDepot = routeDepots == null ? null : routeDepots.apply(route.id);
-		final long newTripMillis = route.timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.id, millis) || routeDepot != null && routeDepot.isTripReserved(route.id, millis));
+	private long findLapService(PlanRoute route, long readyMillis) {
+		final Board routeDepot = routeDepots == null ? null : routeDepots.apply(route.getRouteId());
+		final long newTripMillis = route.getTimetable().getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.getRouteId(), millis) || routeDepot != null && routeDepot.isTripReserved(route.getRouteId(), millis));
 		if (newTripMillis != 0) {
-			reserveTrip(route.id, newTripMillis);
+			reserveTrip(route.getRouteId(), newTripMillis);
 		}
 		return newTripMillis;
 	}
@@ -908,13 +911,13 @@ public class TrainService {
 	/**
 	 * @return the routes of the path the train is on
 	 */
-	private List<Route> getTripRoutes() {
+	private List<? extends PlanRoute> getTripRoutes() {
 		if (!isOnTrip()) {
 			return depot.getTrainRoutes(trainId);
 		}
 		if (tripRoutes.isEmpty() && routes != null) {
 			tripPath.routeIds.forEach(routeId -> {
-				final Route route = routes.apply(routeId);
+				final PlanRoute route = routes.apply(routeId);
 				if (route != null) {
 					tripRoutes.add(route);
 				}
@@ -933,8 +936,8 @@ public class TrainService {
 		}
 		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
 		if (stopTimes.hasJoinStops() && timetable != null) {
-			final List<Route> trainRoutes = depot.getTrainRoutes(trainId);
-			final RouteTimetable.StopPlan stopPlan = stopTimes.getPlan(trainRoutes, timetable, stopTimes.getFirstJoinStopLapIndex(), trainRoutes.get(0).id, 0, -1);
+			final List<? extends PlanRoute> trainRoutes = depot.getTrainRoutes(trainId);
+			final RouteTimetable.StopPlan stopPlan = stopTimes.getPlan(trainRoutes, timetable, stopTimes.getFirstJoinStopLapIndex(), trainRoutes.get(0).getRouteId(), 0, -1);
 			return stopTimes.getLeadMillis() - (stopPlan == null ? 0 : stopPlan.arrivalMillis);
 		}
 		return stopTimes.getLeadMillis();
@@ -974,22 +977,22 @@ public class TrainService {
 	}
 
 	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
-		final Route dutyRoute = isOnDuty() && routes != null ? routes.apply(tripRouteId) : null;
-		final RouteTimetable timetable = dutyRoute != null ? dutyRoute.timetable : depot == null ? null : depot.getTimetable(trainId);
+		final PlanRoute dutyRoute = isOnDuty() && routes != null ? routes.apply(tripRouteId) : null;
+		final RouteTimetable timetable = dutyRoute != null ? dutyRoute.getTimetable() : depot == null ? null : depot.getTimetable(trainId);
 		if (tripMillis == 0 || timetable == null || stopTimes == null) {
 			return null;
 		}
-		final List<Route> newTripRoutes = getTripRoutes();
-		return stopTimes.getPlan(newTripRoutes, timetable, stopIndex, tripRouteId, getTripTable(newTripRoutes), (int) Math.floorMod(tripMillis, (long) Depot.MILLISECONDS_PER_DAY));
+		final List<? extends PlanRoute> newTripRoutes = getTripRoutes();
+		return stopTimes.getPlan(newTripRoutes, timetable, stopIndex, tripRouteId, getTripTable(newTripRoutes), (int) Math.floorMod(tripMillis, (long) OperatingDay.MILLIS_PER_DAY));
 	}
 
 	/**
 	 * @return the table of the current route that the current service belongs to
 	 */
-	private int getTripTable(List<Route> newTripRoutes) {
-		for (final Route route : newTripRoutes) {
-			if (route.id == tripRouteId) {
-				return route.timetable.getTableIndex(tripMillis);
+	private int getTripTable(List<? extends PlanRoute> newTripRoutes) {
+		for (final PlanRoute route : newTripRoutes) {
+			if (route.getRouteId() == tripRouteId) {
+				return route.getTimetable().getTableIndex(tripMillis);
 			}
 		}
 		return 0;
@@ -1027,9 +1030,9 @@ public class TrainService {
 	/**
 	 * What the train does when told to by its service.
 	 */
-	public interface Vehicle {
+	public interface Vehicle<T extends PlanTrack> {
 
-		List<PathData> getPath();
+		List<T> getPath();
 
 		int getNextStoppingIndex();
 
@@ -1055,7 +1058,7 @@ public class TrainService {
 		/**
 		 * @param tripPath the path of a service running through to another route, or null for the usual path of the depot
 		 */
-		void followPath(TripPath<PathData> tripPath);
+		void followPath(TripPath<T> tripPath);
 
 		/**
 		 * Moves the train, stopped before a turn back point, onto a path that is the same from there to the point.
@@ -1063,7 +1066,7 @@ public class TrainService {
 		 * @param tripPath     the new path, or null for the usual path of the depot
 		 * @param newStopIndex the rail of the same stop on the new path
 		 */
-		void changePath(TripPath<PathData> tripPath, int newStopIndex);
+		void changePath(TripPath<T> tripPath, int newStopIndex);
 
 		/**
 		 * @return true if no other train is on these rails or has them kept for itself
@@ -1098,7 +1101,7 @@ public class TrainService {
 		/**
 		 * @return the routes this vehicle runs through, in order
 		 */
-		List<Route> getTrainRoutes(String trainId);
+		List<? extends PlanRoute> getTrainRoutes(String trainId);
 
 		/**
 		 * @return the first service of this vehicle's first route from this time on that no train has taken, which is then taken, or 0 if a train would wait too long for it
@@ -1108,7 +1111,7 @@ public class TrainService {
 		/**
 		 * @return the first service of this route from this time on that no train has taken, which is then taken, or 0 if a train would wait too long for it
 		 */
-		long findNextService(Route route, long readyMillis);
+		long findNextService(PlanRoute route, long readyMillis);
 
 		void reserveTrip(long routeId, long tripMillis);
 

@@ -25,4 +25,12 @@ public interface PlanRoute {
 	 * Which kind of vehicle runs the route, only compared between routes.
 	 */
 	int getTransportModeId();
+
+	/**
+	 * @return the platform of the last stop, or 0 if the route has no stops
+	 */
+	default long getLastPlatformId() {
+		final List<? extends PlanStop> stops = getStops();
+		return stops.isEmpty() ? 0 : stops.get(stops.size() - 1).getPlatformId();
+	}
 }

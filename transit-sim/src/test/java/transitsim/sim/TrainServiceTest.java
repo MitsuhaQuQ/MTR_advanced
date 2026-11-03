@@ -1,13 +1,13 @@
-package mtr.data;
+package transitsim.sim;
 
+import transitsim.plan.OperatingDay;
+import transitsim.plan.PlanRoute;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
 import transitsim.plan.TurnBackPoint;
 import transitsim.plan.TurnBacks;
 import transitsim.plan.RouteTimetable;
-import mtr.path.PathData;
-import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,13 +33,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TrainServiceTest {
 
 	private static final long SECOND = 1000;
+	private static final int MILLIS_PER_TICK = 50;
 	private static final long MINUTE = 60 * SECOND;
 	private static final long HOUR = 60 * MINUTE;
 	/**
 	 * Monday the 5th of January 2026 at midnight in UTC.
 	 */
-	private static final long MONDAY = 20458L * Depot.MILLISECONDS_PER_DAY;
-	private static final int TICKS_PER_MINUTE = (int) (MINUTE / Depot.MILLIS_PER_TICK);
+	private static final long MONDAY = 20458L * OperatingDay.MILLIS_PER_DAY;
+	private static final int TICKS_PER_MINUTE = (int) (MINUTE / MILLIS_PER_TICK);
 	private static final List<UUID> FIRST_TURN_BACK = Collections.singletonList(new UUID(0, 1));
 	private static final List<UUID> SECOND_TURN_BACK = Collections.singletonList(new UUID(0, 2));
 
@@ -47,7 +48,7 @@ class TrainServiceTest {
 
 	@BeforeEach
 	void setUtc() {
-		TimetableConfig.set("UTC", 0);
+		OperatingDay.set("UTC", 0);
 	}
 
 	@Test
@@ -109,7 +110,7 @@ class TrainServiceTest {
 		final Line line = new Line();
 		final FakeTrain train = line.deploy(MONDAY + 23 * HOUR + 50 * MINUTE);
 
-		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 2 * HOUR;
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + 2 * HOUR;
 		train.service.alignToTimetable(true);
 
 		assertTrue(train.returned);
@@ -173,8 +174,8 @@ class TrainServiceTest {
 
 	@Test
 	void aTrainTurningBackTakesTheNextServiceTheOtherWay() {
-		final Route up = makeRoute(1, 0, 1, 2, 3);
-		final Route down = makeRoute(2, 5, 3, 2, 1);
+		final TestRoute up = makeRoute(1, 0, 1, 2, 3);
+		final TestRoute down = makeRoute(2, 5, 3, 2, 1);
 		final Network network = new Network(Arrays.asList(up, down), makePath(7), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 2, 6), stop(5, 1, 8)), 0, 0);
 		final FakeTrain train = network.deploy(MONDAY + 8 * HOUR);
 		network.depot.reserveTrip(down.id, MONDAY + 8 * HOUR + 5 * MINUTE);
@@ -192,17 +193,17 @@ class TrainServiceTest {
 
 	@Test
 	void aServiceRunningThroughTakesItsOwnPathAndTheLinkedService() {
-		final Route line1 = makeRoute(1, 0, 1, 2, 3);
-		final Route line2 = makeRoute(2, 6, 3, 4);
+		final TestRoute line1 = makeRoute(1, 0, 1, 2, 3);
+		final TestRoute line2 = makeRoute(2, 6, 3, 4);
 		final int linkedService = (int) (8 * HOUR + 6 * MINUTE);
 		line1.timetable.links.put((int) (8 * HOUR), new RouteTimetable.ServiceLink(line2.id, linkedService, -1));
 		line2.timetable.addLinkedService(linkedService);
 		final Line line = new Line(line1);
 		line.addRoute(line2);
 		final String key = TripTail.getKey(Collections.singletonList(line1.timetable.getLink(MONDAY + 8 * HOUR)));
-		final List<PathData> tripRails = makePath(6);
-		final TripTail<PathData, SavedRailBase> tripTail = new TripTail<>(key, Arrays.asList(line1.id, line2.id), new HashMap<>(), 3, tripRails.subList(3, 6), null, TripTail.NO_RAIL, false, TripTail.NO_RAIL);
-		final TripPath<PathData> tripPath = TripPath.of(tripTail, tripRails, 3, 0, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 8)));
+		final List<TestTrack> tripRails = makePath(6);
+		final TripTail<TestTrack, Object> tripTail = new TripTail<>(key, Arrays.asList(line1.id, line2.id), new HashMap<>(), 3, tripRails.subList(3, 6), null, TripTail.NO_RAIL, false, TripTail.NO_RAIL);
+		final TripPath<TestTrack> tripPath = TripPath.of(tripTail, tripRails, 3, 0, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 8)));
 		line.tripPaths.put(key, tripPath);
 
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
@@ -300,7 +301,7 @@ class TrainServiceTest {
 		final Line line = new Line();
 		line.depot.keepsTrainsOnLine = true;
 		line.route.timetable.returnServices.add((int) (8 * HOUR));
-		final TripPath<PathData> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		final TripPath<TestTrack> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
 		line.tripPaths.put(wayBack.key, wayBack);
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
 
@@ -321,7 +322,7 @@ class TrainServiceTest {
 		final Line line = new Line();
 		line.depot.keepsTrainsOnLine = true;
 		line.route.timetable.returnServices.add((int) (8 * HOUR));
-		final TripPath<PathData> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		final TripPath<TestTrack> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
 		line.tripPaths.put(wayBack.key, wayBack);
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
 
@@ -334,7 +335,7 @@ class TrainServiceTest {
 	void aDepotWhoseTrainsGoBackAnywayIgnoresTheMark() {
 		final Line line = new Line();
 		line.route.timetable.returnServices.add((int) (8 * HOUR));
-		final TripPath<PathData> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		final TripPath<TestTrack> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
 		line.tripPaths.put(wayBack.key, wayBack);
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
 
@@ -347,16 +348,16 @@ class TrainServiceTest {
 	 */
 	private class Network {
 
-		final Map<Long, Route> routes = new HashMap<>();
+		final Map<Long, TestRoute> routes = new HashMap<>();
 		final FakeDepot depot;
-		final List<PathData> path;
+		final List<TestTrack> path;
 		final StopTimes stopTimes;
-		final Map<String, TripPath<PathData>> tripPaths = new HashMap<>();
+		final Map<String, TripPath<TestTrack>> tripPaths = new HashMap<>();
 		TurnBacks turnBacks = TurnBacks.NONE;
 		final int repeatIndex1;
 		final int repeatIndex2;
 
-		Network(List<Route> depotRoutes, List<PathData> path, StopTimes stopTimes, int repeatIndex1, int repeatIndex2) {
+		Network(List<TestRoute> depotRoutes, List<TestTrack> path, StopTimes stopTimes, int repeatIndex1, int repeatIndex2) {
 			depot = new FakeDepot(depotRoutes);
 			depotRoutes.forEach(this::addRoute);
 			this.path = path;
@@ -368,7 +369,7 @@ class TrainServiceTest {
 		/**
 		 * Adds a route of the network, which may be run from another depot.
 		 */
-		void addRoute(Route route) {
+		void addRoute(TestRoute route) {
 			routes.put(route.id, route);
 		}
 
@@ -395,13 +396,13 @@ class TrainServiceTest {
 	 */
 	private class Line extends Network {
 
-		final Route route;
+		final TestRoute route;
 
 		Line() {
 			this(makeRoute(1, 0, 1, 2, 3));
 		}
 
-		Line(Route route) {
+		Line(TestRoute route) {
 			super(Collections.singletonList(route), makePath(5), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4)), 0, 0);
 			this.route = route;
 		}
@@ -413,14 +414,14 @@ class TrainServiceTest {
 	private class TurnBackLine extends Network {
 
 
-		final Route down;
-		final TripPath<PathData> secondWay;
+		final TestRoute down;
+		final TripPath<TestTrack> secondWay;
 
 		TurnBackLine() {
 			this(makeRoute(1, 0, 1, 2, 3), makeRoute(2, 9, 4, 5, 6));
 		}
 
-		private TurnBackLine(Route up, Route down) {
+		private TurnBackLine(TestRoute up, TestRoute down) {
 			super(Arrays.asList(up, down), makePath(9), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 0, 6), stop(5, 4, 8), stop(6, 5, 10), stop(7, 6, 12)), 0, 0);
 			this.down = down;
 			secondWay = TripPath.ofTurnBack(0, 1, new int[]{3}, makePath(10), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(5, 0, 7), stop(6, 4, 9), stop(7, 5, 11), stop(8, 6, 13)));
@@ -482,17 +483,14 @@ class TrainServiceTest {
 
 	private static long[] stop(int rail, long platformId, int minutes) {
 		final long arrival = (long) minutes * TICKS_PER_MINUTE;
-		return new long[]{rail, platformId, arrival, arrival + 10 * SECOND / Depot.MILLIS_PER_TICK};
+		return new long[]{rail, platformId, arrival, arrival + 10 * SECOND / MILLIS_PER_TICK};
 	}
 
 	/**
 	 * @param firstMinute the minute past each hour of the services, which run every 10 minutes from 06:00 until midnight
 	 */
-	private static Route makeRoute(long id, int firstMinute, long... platformIds) {
-		final Route route = new Route(id, TransportMode.TRAIN);
-		for (final long platformId : platformIds) {
-			route.platformIds.add(new Route.RoutePlatform(platformId));
-		}
+	private static TestRoute makeRoute(long id, int firstMinute, long... platformIds) {
+		final TestRoute route = new TestRoute(id, platformIds);
 		route.timetable.enabled = true;
 		route.timetable.marginPercent = 0;
 		for (long millis = 6 * HOUR + firstMinute * MINUTE; millis < 24 * HOUR; millis += 10 * MINUTE) {
@@ -505,22 +503,19 @@ class TrainServiceTest {
 	/**
 	 * @return a path from a siding through platforms to another siding, with each platform the same as its rail
 	 */
-	private static List<PathData> makePath(int rails) {
-		final List<PathData> path = new ArrayList<>();
+	private static List<TestTrack> makePath(int rails) {
+		final List<TestTrack> path = new ArrayList<>();
 		for (int i = 0; i < rails; i++) {
-			final BlockPos start = new BlockPos(i * 20, 64, 0);
-			final BlockPos end = new BlockPos(i * 20 + 20, 64, 0);
 			final boolean isSiding = i == 0 || i == rails - 1;
-			final Rail rail = new Rail(start, RailAngle.E, end, RailAngle.W, isSiding ? RailType.SIDING : RailType.PLATFORM, TransportMode.TRAIN);
-			path.add(new PathData(rail, isSiding ? 0 : i, i == 0 ? 0 : 10, start, end, i));
+			path.add(new TestTrack(i * 20, i * 20 + 20, isSiding, isSiding ? 0 : i, i == 0 ? 0 : 10, i));
 		}
 		return path;
 	}
 
-	private class FakeTrain implements TrainService.Vehicle {
+	private class FakeTrain implements TrainService.Vehicle<TestTrack> {
 
-		final TrainService service;
-		final List<PathData> path;
+		final TrainService<TestTrack> service;
+		final List<TestTrack> path;
 		final int pathRepeatIndex1;
 		final int pathRepeatIndex2;
 		final Set<Integer> takenStops = new HashSet<>();
@@ -528,21 +523,21 @@ class TrainServiceTest {
 		boolean lastLap;
 		int movedTo = -1;
 		boolean returned;
-		TripPath<PathData> followed;
+		TripPath<TestTrack> followed;
 		int pathChanges;
 		final Set<UUID> takenRails = new HashSet<>();
 		List<UUID> reserved;
 		int reservedUntil;
 
-		FakeTrain(List<PathData> path, int pathRepeatIndex1, int pathRepeatIndex2) {
+		FakeTrain(List<TestTrack> path, int pathRepeatIndex1, int pathRepeatIndex2) {
 			this.path = path;
 			this.pathRepeatIndex1 = pathRepeatIndex1;
 			this.pathRepeatIndex2 = pathRepeatIndex2;
-			service = new TrainService("train", this, () -> now);
+			service = new TrainService<>("train", this, () -> now);
 		}
 
 		@Override
-		public List<PathData> getPath() {
+		public List<TestTrack> getPath() {
 			return path;
 		}
 
@@ -577,12 +572,12 @@ class TrainServiceTest {
 		}
 
 		@Override
-		public void followPath(TripPath<PathData> tripPath) {
+		public void followPath(TripPath<TestTrack> tripPath) {
 			followed = tripPath;
 		}
 
 		@Override
-		public void changePath(TripPath<PathData> tripPath, int newStopIndex) {
+		public void changePath(TripPath<TestTrack> tripPath, int newStopIndex) {
 			followed = tripPath;
 			nextStoppingIndex = newStopIndex;
 			pathChanges++;
@@ -621,11 +616,11 @@ class TrainServiceTest {
 	 */
 	private static class FakeDepot implements TrainService.Board {
 
-		private final List<Route> routes;
+		private final List<TestRoute> routes;
 		private final Set<Long> reservedTrips = new HashSet<>();
 		boolean keepsTrainsOnLine;
 
-		private FakeDepot(List<Route> routes) {
+		private FakeDepot(List<TestRoute> routes) {
 			this.routes = routes;
 		}
 
@@ -635,7 +630,7 @@ class TrainServiceTest {
 		}
 
 		@Override
-		public List<Route> getTrainRoutes(String trainId) {
+		public List<TestRoute> getTrainRoutes(String trainId) {
 			return routes;
 		}
 
@@ -650,7 +645,8 @@ class TrainServiceTest {
 		}
 
 		@Override
-		public long findNextService(Route route, long readyMillis) {
+		public long findNextService(PlanRoute planRoute, long readyMillis) {
+			final TestRoute route = (TestRoute) planRoute;
 			final long tripMillis = route.timetable.getNextService(readyMillis, readyMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> isTripReserved(route.id, millis));
 			reserveTrip(route.id, tripMillis);
 			return tripMillis;

@@ -12,6 +12,8 @@ public interface KeyedWriter {
 
 	void writeInt(String key, int value) throws IOException;
 
+	void writeLong(String key, long value) throws IOException;
+
 	void writeBoolean(String key, boolean value) throws IOException;
 
 	void writeInts(String key, int[] values) throws IOException;

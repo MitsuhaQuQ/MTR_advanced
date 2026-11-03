@@ -1,13 +1,13 @@
-package mtr.data;
+package transitsim.sim;
 
+import transitsim.plan.OperatingDay;
+import transitsim.plan.PlanRoute;
 import transitsim.plan.DutyPlan;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TripPath;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.DutyShapes;
-import mtr.path.PathData;
-import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,20 +21,21 @@ import static org.junit.jupiter.api.Assertions.*;
 class DutyRunTest {
 
 	private static final long SECOND = 1000;
+	private static final int MILLIS_PER_TICK = 50;
 	private static final long MINUTE = 60 * SECOND;
 	private static final long HOUR = 60 * MINUTE;
-	private static final long MONDAY = 20458L * Depot.MILLISECONDS_PER_DAY;
-	private static final int TICKS_PER_MINUTE = (int) (MINUTE / Depot.MILLIS_PER_TICK);
+	private static final long MONDAY = 20458L * OperatingDay.MILLIS_PER_DAY;
+	private static final int TICKS_PER_MINUTE = (int) (MINUTE / MILLIS_PER_TICK);
 	private static final long SIDING_ID = 100;
 
 	private long now;
-	private final Map<Long, Route> routes = new HashMap<>();
+	private final Map<Long, TestRoute> routes = new HashMap<>();
 	private final DutyDepot depot = new DutyDepot();
-	private final Map<String, TripPath<PathData>> tripPaths = new HashMap<>();
+	private final Map<String, TripPath<TestTrack>> tripPaths = new HashMap<>();
 
 	@BeforeEach
 	void setUp() {
-		TimetableConfig.set("UTC", 0);
+		OperatingDay.set("UTC", 0);
 		routes.put(1L, makeRoute(1, 1, 2, 3));
 		routes.put(2L, makeRoute(2, 4, 5));
 		routes.put(3L, makeRoute(3, 3, 2, 1));
@@ -43,11 +44,8 @@ class DutyRunTest {
 	/**
 	 * Services every 10 minutes from 06:00.
 	 */
-	private static Route makeRoute(long id, long... platformIds) {
-		final Route route = new Route(id, TransportMode.TRAIN);
-		for (final long platformId : platformIds) {
-			route.platformIds.add(new Route.RoutePlatform(platformId));
-		}
+	private static TestRoute makeRoute(long id, long... platformIds) {
+		final TestRoute route = new TestRoute(id, platformIds);
 		route.timetable.enabled = true;
 		route.timetable.marginPercent = 0;
 		for (long millis = 6 * HOUR; millis < 24 * HOUR; millis += 10 * MINUTE) {
@@ -60,20 +58,17 @@ class DutyRunTest {
 	/**
 	 * @param platformIds each rail's platform, with 0 for a siding at either end
 	 */
-	private static List<PathData> makePath(long... platformIds) {
-		final List<PathData> path = new ArrayList<>();
+	private static List<TestTrack> makePath(long... platformIds) {
+		final List<TestTrack> path = new ArrayList<>();
 		for (int i = 0; i < platformIds.length; i++) {
-			final BlockPos start = new BlockPos(i * 20, 64, 0);
-			final BlockPos end = new BlockPos(i * 20 + 20, 64, 0);
-			final Rail rail = new Rail(start, RailAngle.E, end, RailAngle.W, platformIds[i] == 0 ? RailType.SIDING : RailType.PLATFORM, TransportMode.TRAIN);
-			path.add(new PathData(rail, platformIds[i], i == 0 ? 0 : 10, start, end, i));
+			path.add(new TestTrack(i * 20, i * 20 + 20, platformIds[i] == 0, platformIds[i], i == 0 ? 0 : 10, i));
 		}
 		return path;
 	}
 
 	private static long[] stop(int rail, long platformId, int minutes) {
 		final long arrival = (long) minutes * TICKS_PER_MINUTE;
-		return new long[]{rail, platformId, arrival, arrival + 10 * SECOND / Depot.MILLIS_PER_TICK};
+		return new long[]{rail, platformId, arrival, arrival + 10 * SECOND / MILLIS_PER_TICK};
 	}
 
 	private static DepotDuties.DayDuty day(boolean stay, int nextSlot, DepotDuties.Segment... segments) {
@@ -95,18 +90,18 @@ class DutyRunTest {
 		depot.slots = slots;
 	}
 
-	private TripPath<PathData> addPath(int slot, int weekday, int[] starts, List<PathData> path, long[]... stops) {
+	private TripPath<TestTrack> addPath(int slot, int weekday, int[] starts, List<TestTrack> path, long[]... stops) {
 		final String key = DutyShapes.getSlotKey(depot.slots, slot, weekday, routes::get);
 		final DepotDuties.DayDuty day = depot.slots.get(slot).getDuty(weekday);
 		final List<Long> routeIds = new ArrayList<>();
 		day.segments.forEach(segment -> routeIds.add(segment.routeId));
-		final DutyPlan<PathData, SavedRailBase> dutyPlan = new DutyPlan<>(key, routeIds, new HashMap<>(), new HashMap<>(), new HashMap<>(), path, starts, null, null, false, day.stayOnLine);
-		final TripPath<PathData> tripPath = TripPath.ofDuty(dutyPlan, starts, path, StopTimes.of(stops));
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, routeIds, new HashMap<>(), new HashMap<>(), new HashMap<>(), path, starts, null, null, false, day.stayOnLine);
+		final TripPath<TestTrack> tripPath = TripPath.ofDuty(dutyPlan, starts, path, StopTimes.of(stops));
 		tripPaths.put(key, tripPath);
 		return tripPath;
 	}
 
-	private FakeTrain newTrain(List<PathData> path) {
+	private FakeTrain newTrain(List<TestTrack> path) {
 		final FakeTrain train = new FakeTrain(path);
 		train.service.setSiding(SIDING_ID);
 		train.service.setNetwork(depot, routes::get, null);
@@ -115,12 +110,12 @@ class DutyRunTest {
 	}
 
 	/**
-	 * Route 1 from 08:00, then on along route 2 from 08:20.
+	 * TestRoute 1 from 08:00, then on along route 2 from 08:20.
 	 */
-	private TripPath<PathData> twoRoutes(FakeTrain[] train) {
+	private TripPath<TestTrack> twoRoutes(FakeTrain[] train) {
 		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
-		final List<PathData> path = makePath(0, 1, 2, 3, 4, 5, 0);
-		final TripPath<PathData> tripPath = addPath(0, 0, new int[]{1, 4}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 20), stop(5, 5, 22));
+		final List<TestTrack> path = makePath(0, 1, 2, 3, 4, 5, 0);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1, 4}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 20), stop(5, 5, 22));
 		train[0] = newTrain(path);
 		return tripPath;
 	}
@@ -128,7 +123,7 @@ class DutyRunTest {
 	@Test
 	void runsTheServicesOfItsDuty() {
 		final FakeTrain[] train = new FakeTrain[1];
-		final TripPath<PathData> tripPath = twoRoutes(train);
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train[0].service.deployDuty(0, MONDAY, tripPath);
 		assertSame(tripPath, train[0].followed);
@@ -155,7 +150,7 @@ class DutyRunTest {
 	void keepsItsDutyWhileWaitingToLeave() {
 		// The run out of the siding is granted a tick later at the earliest, and the train keeps its duty meanwhile
 		final FakeTrain[] train = new FakeTrain[1];
-		final TripPath<PathData> tripPath = twoRoutes(train);
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train[0].service.deployDuty(0, MONDAY, tripPath);
 		for (int tick = 0; tick < 100; tick++) {
@@ -174,7 +169,7 @@ class DutyRunTest {
 	void keepsItsDutyWhenTheDutiesAreEdited() {
 		// F2, R04 of the architecture review: a duty under way runs as it was when the train took it on
 		final FakeTrain[] train = new FakeTrain[1];
-		final TripPath<PathData> tripPath = twoRoutes(train);
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train[0].service.deployDuty(0, MONDAY, tripPath);
 		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1)));
@@ -196,7 +191,7 @@ class DutyRunTest {
 	@Test
 	void takesTheEditedDutyTheNextTime() {
 		final FakeTrain[] train = new FakeTrain[1];
-		final TripPath<PathData> tripPath = twoRoutes(train);
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train[0].service.deployDuty(0, MONDAY, tripPath);
 		train[0].service.update(true);
@@ -204,12 +199,12 @@ class DutyRunTest {
 		assertFalse(train[0].service.isOnDuty());
 		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1)));
 
-		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 7 * HOUR + 58 * MINUTE;
-		train[0].service.deployDuty(0, MONDAY + Depot.MILLISECONDS_PER_DAY, tripPath);
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY + OperatingDay.MILLIS_PER_DAY, tripPath);
 		train[0].nextStoppingIndex = 4;
-		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 8 * HOUR + 38 * MINUTE;
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + 8 * HOUR + 38 * MINUTE;
 		train[0].service.onStopReached();
-		assertEquals(MONDAY + Depot.MILLISECONDS_PER_DAY + 8 * HOUR + 40 * MINUTE, train[0].service.getTripMillis());
+		assertEquals(MONDAY + OperatingDay.MILLIS_PER_DAY + 8 * HOUR + 40 * MINUTE, train[0].service.getTripMillis());
 	}
 
 	@Test
@@ -219,16 +214,16 @@ class DutyRunTest {
 				day(true, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
 				day(false, -1, new DepotDuties.Segment(3, (int) (7 * HOUR), 0, -1))
 		);
-		final List<PathData> stayPath = makePath(0, 1, 2, 3);
-		final TripPath<PathData> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
 		final FakeTrain train = newTrain(stayPath);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train.service.deployDuty(0, MONDAY, tripPath);
 		train.nextStoppingIndex = 3;
 
 		depot.slots.get(0).days.get(0).nextSlot = 1;
-		final TripPath<PathData> nextPath = addPath(1, 1, new int[]{0}, makePath(3, 2, 1, 0), stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4));
-		now = MONDAY + Depot.MILLISECONDS_PER_DAY + HOUR;
+		final TripPath<TestTrack> nextPath = addPath(1, 1, new int[]{0}, makePath(3, 2, 1, 0), stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4));
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
 		train.service.updateOvernight();
 		assertSame(nextPath, train.followed);
 		assertEquals(1, train.service.getDutySlot());
@@ -237,8 +232,8 @@ class DutyRunTest {
 	@Test
 	void changesSegmentEvenOnTheSameRoute() {
 		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(1, (int) (8 * HOUR + 30 * MINUTE), 0, -1)));
-		final List<PathData> path = makePath(0, 1, 2, 3, 1, 2, 3, 0);
-		final TripPath<PathData> tripPath = addPath(0, 0, new int[]{1, 4}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 1, 20), stop(5, 2, 22), stop(6, 3, 24));
+		final List<TestTrack> path = makePath(0, 1, 2, 3, 1, 2, 3, 0);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1, 4}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 1, 20), stop(5, 2, 22), stop(6, 3, 24));
 		final FakeTrain train = newTrain(path);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train.service.deployDuty(0, MONDAY, tripPath);
@@ -251,7 +246,7 @@ class DutyRunTest {
 	@Test
 	void linesUpWithItsDutyAfterARestart() {
 		final FakeTrain[] train = new FakeTrain[1];
-		final TripPath<PathData> tripPath = twoRoutes(train);
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train[0].service.deployDuty(0, MONDAY, tripPath);
 		now = MONDAY + 8 * HOUR + 20 * MINUTE + 30 * SECOND;
@@ -270,9 +265,9 @@ class DutyRunTest {
 				day(true, 1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
 				day(false, -1, new DepotDuties.Segment(3, (int) (7 * HOUR), 0, -1))
 		);
-		final List<PathData> stayPath = makePath(0, 1, 2, 3);
-		final TripPath<PathData> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
-		final TripPath<PathData> nextPath = addPath(1, 1, new int[]{0}, makePath(3, 2, 1, 0), stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4));
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final TripPath<TestTrack> nextPath = addPath(1, 1, new int[]{0}, makePath(3, 2, 1, 0), stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4));
 		final FakeTrain train = newTrain(stayPath);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train.service.deployDuty(0, MONDAY, tripPath);
@@ -284,13 +279,13 @@ class DutyRunTest {
 		train.service.updateOvernight();
 		assertEquals(0, train.service.getDutySlot());
 
-		now = MONDAY + Depot.MILLISECONDS_PER_DAY + HOUR;
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
 		train.service.updateOvernight();
 		assertSame(nextPath, train.followed);
 		assertEquals(0, train.nextStoppingIndex);
 		assertEquals(1, train.service.getDutySlot());
-		assertEquals(MONDAY + Depot.MILLISECONDS_PER_DAY + 7 * HOUR, train.service.getTripMillis());
-		assertTrue(depot.hasDutyRun(SIDING_ID, 1, DutyShapes.getDayNumber(MONDAY + Depot.MILLISECONDS_PER_DAY)));
+		assertEquals(MONDAY + OperatingDay.MILLIS_PER_DAY + 7 * HOUR, train.service.getTripMillis());
+		assertTrue(depot.hasDutyRun(SIDING_ID, 1, DutyShapes.getDayNumber(MONDAY + OperatingDay.MILLIS_PER_DAY)));
 	}
 
 	@Test
@@ -299,34 +294,34 @@ class DutyRunTest {
 				day(true, 1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
 				day(false, -1, new DepotDuties.Segment(2, (int) (7 * HOUR), 0, -1))
 		);
-		final List<PathData> stayPath = makePath(0, 1, 2, 3);
-		final TripPath<PathData> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
 		addPath(1, 1, new int[]{1}, makePath(0, 4, 5, 0), stop(1, 4, 0), stop(2, 5, 2));
 		final FakeTrain train = newTrain(stayPath);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train.service.deployDuty(0, MONDAY, tripPath);
 		train.nextStoppingIndex = 3;
-		now = MONDAY + Depot.MILLISECONDS_PER_DAY + HOUR;
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
 		train.service.updateOvernight();
 		assertTrue(train.returned);
 	}
 
-	private class FakeTrain implements TrainService.Vehicle {
+	private class FakeTrain implements TrainService.Vehicle<TestTrack> {
 
-		final TrainService service;
-		final List<PathData> path;
+		final TrainService<TestTrack> service;
+		final List<TestTrack> path;
 		int nextStoppingIndex;
 		int movedTo = -1;
 		boolean returned;
-		TripPath<PathData> followed;
+		TripPath<TestTrack> followed;
 
-		FakeTrain(List<PathData> path) {
+		FakeTrain(List<TestTrack> path) {
 			this.path = path;
-			service = new TrainService("train", this, () -> now);
+			service = new TrainService<>("train", this, () -> now);
 		}
 
 		@Override
-		public List<PathData> getPath() {
+		public List<TestTrack> getPath() {
 			return followed == null ? path : followed.path;
 		}
 
@@ -360,12 +355,12 @@ class DutyRunTest {
 		}
 
 		@Override
-		public void followPath(TripPath<PathData> tripPath) {
+		public void followPath(TripPath<TestTrack> tripPath) {
 			followed = tripPath;
 		}
 
 		@Override
-		public void changePath(TripPath<PathData> tripPath, int newStopIndex) {
+		public void changePath(TripPath<TestTrack> tripPath, int newStopIndex) {
 			followed = tripPath;
 			nextStoppingIndex = newStopIndex;
 		}
@@ -408,7 +403,7 @@ class DutyRunTest {
 		}
 
 		@Override
-		public List<Route> getTrainRoutes(String trainId) {
+		public List<TestRoute> getTrainRoutes(String trainId) {
 			return Collections.singletonList(routes.get(1L));
 		}
 
@@ -418,7 +413,8 @@ class DutyRunTest {
 		}
 
 		@Override
-		public long findNextService(Route route, long readyMillis) {
+		public long findNextService(PlanRoute planRoute, long readyMillis) {
+			final TestRoute route = (TestRoute) planRoute;
 			return 0;
 		}
 

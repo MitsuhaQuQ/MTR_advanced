@@ -83,6 +83,11 @@ public final class MessagePackKeyed {
 		}
 
 		@Override
+		public void writeLong(String key, long value) throws IOException {
+			messagePacker.packString(key).packLong(value);
+		}
+
+		@Override
 		public void writeBoolean(String key, boolean value) throws IOException {
 			messagePacker.packString(key).packBoolean(value);
 		}
