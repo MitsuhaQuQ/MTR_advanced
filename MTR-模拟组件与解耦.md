@@ -277,6 +277,7 @@ MTR4 把模拟拆成独立的 Transport Simulation Core（`org.mtr.core`，MIT �
 
 ## 4. 约束和风险
 
+- **自己的接口**（2026-11-03）：本分支（MTM）自己实现的部分可以在 MTR 的基础上定义自己的接口（类、数据结构、网络包、命令、配置、编辑器接口），不必沿用 MTR 原有的定义。附属模组直接用到的 MTR 公开字段和方法仍然保留（见下一条 ABI），新功能不必再套进 MTR 的旧接口里。
 - **附属模组 ABI**：附属模组直接读写 `Train` 的字段和方法。字段保留，只改写入方式；每一步都扫描 MSD、YJCM、Metropolis、SHMetro。
 - **ANTE 的运行逻辑**（2026-11-03 调整）：ANTE 里和列车运行有关的注入（`TrainMixin`、`TrainClientMixin`、`SidingMixin` 对推进和调度的注入，`RailwayDataMixin` 的每 tick 入口）不再要求保持兼容，我们的实现取代它们，需要时可以直接删掉或改写。ANTE 的渲染、模型、声音、脚本等其余部分照旧保留，改到它们用到的类时仍要核对注入点。
   - 2026-11-03 核对时的注入点：`TrainMixin` 注入构造、`toMessagePack`、`messagePackLength`、`writePacket`、`scanDoors`、`convertMaxManualSpeed`；`TrainClientMixin` 注入 `TrainClient.simulateTrain` 的入口；`SidingMixin` 注入 `Siding.simulateTrain` 的入口；`RailwayDataMixin` 委托给 `RailwayData.simulateTrains(RailNearPlayer)`，并按名字和类型引用 `trainPositions`。

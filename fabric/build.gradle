@@ -40,11 +40,22 @@ dependencies {
 	}
 }
 
-processResources {
-	inputs.property "version", project.version
+// A mod of its own nested in the jar, so the mod list shows this fork's version as MTM_Logic beside MTR's
+task mtmLogicJar(type: Jar) {
+	inputs.property "mtm_version", rootProject.mtm_version
+	archiveFileName = "mtm_logic.jar"
+	destinationDirectory = file("build/mtmLogic")
+	from("../resources/fabric/mtm_logic") {
+		expand "version": rootProject.mtm_version
+	}
+}
 
+processResources {
+	inputs.property "version", rootProject.mod_version
+
+	// The version shown is MTR's own, which add-ons depend on; this fork's version is shown by MTM_Logic
 	filesMatching("fabric.mod.json") {
-		expand "version": project.version
+		expand "version": rootProject.mod_version
 	}
 }
 
@@ -76,6 +87,10 @@ remapJar {
 	input.set shadowJar.archiveFile
 	dependsOn shadowJar
 	classifier null
+	// Nested here rather than in the resources, as the shadow plugin unpacks jars it copies; Loom also lists it in fabric.mod.json
+	if (rootProject.variation != "lifts") {
+		nestedJars.from(mtmLogicJar)
+	}
 }
 
 components.java {
@@ -113,7 +128,7 @@ build.dependsOn serverJar
 task moveFabricBuilds() {
 	doLast {
 		delete fileTree("../build/release").matching {
-			include "**/${rootProject.variation_header}-fabric*"
+			include "**/${rootProject.variation_header}-fabric*", "**/MTR3-MTM-*-fabric-*"
 		}
 		delete fileTree("../build/libs").matching {
 			include "**/${rootProject.variation_header}-fabric*"
@@ -125,7 +140,12 @@ task moveFabricBuilds() {
 			from "build/libs"
 			include "*${rootProject.mod_version}.jar", "*${rootProject.mod_version}-server.jar"
 			into "../build/release"
-			rename "(.+)", "${rootProject.variation_header}-\$1"
+			if (rootProject.variation == "normal") {
+				// MTR3-MTM-<this fork's version>-fabric-<Minecraft version>.jar
+				rename { fileName -> "MTR3-MTM-${rootProject.mtm_version}-fabric-${rootProject.minecraft_version}" + (fileName.endsWith("-server.jar") ? "-server.jar" : ".jar") }
+			} else {
+				rename "(.+)", "${rootProject.variation_header}-\$1"
+			}
 		}
 		if (rootProject.variation == "normal") {
 			copy {

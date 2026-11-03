@@ -157,10 +157,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		Registry.sendToPlayer(player, PACKET_OPEN_RESOURCE_PACK_CREATOR_SCREEN, packet);
 	}
 
-	public static void announceS2C(ServerPlayer player, String message, ResourceLocation soundId) {
+	/**
+	 * @param soundString what to play, as the announcer keeps it ({@link mtr.audio.AnnouncementSound})
+	 */
+	public static void announceS2C(ServerPlayer player, String message, String soundString) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeUtf(message);
-		packet.writeUtf(soundId == null ? "" : soundId.toString());
+		packet.writeUtf(soundString);
 		Registry.sendToPlayer(player, PACKET_ANNOUNCE, packet);
 	}
 

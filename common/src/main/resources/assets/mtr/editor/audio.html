@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>MTR 报站音频</title>
+	<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header class="top">
+	<a class="button-link" href="index.html" title="回到运行图和时刻表">← 高级编辑器</a>
+	<h1>报站音频</h1>
+	<span class="tag" id="usage"></span>
+	<span class="spacer"></span>
+	<input type="file" id="file" accept=".ogg,audio/ogg" multiple hidden>
+	<button id="btn-upload" class="primary" disabled>上传音频</button>
+</header>
+
+<main class="audio-page">
+	<div class="banner" id="banner" hidden></div>
+	<section class="audio-body">
+		<p class="hint" id="limits"></p>
+		<ul class="audio-requests" id="requests"></ul>
+		<table class="audio-list">
+			<thead>
+			<tr><th>名称</th><th>时长</th><th>大小</th><th>上传者</th><th>上传时间</th><th>本机</th><th></th></tr>
+			</thead>
+			<tbody id="entries"></tbody>
+		</table>
+		<p class="hint" id="empty" hidden>服务器上还没有报站音频。</p>
+	</section>
+</main>
+
+<footer class="status" id="status"></footer>
+<audio id="player" hidden></audio>
+<script src="audio.js"></script>
+</body>
+</html>

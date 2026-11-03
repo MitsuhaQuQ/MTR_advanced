@@ -1,5 +1,6 @@
 package mtr.client;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import mtr.Patreon;
@@ -12,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class Config {
 
@@ -26,6 +28,9 @@ public class Config {
 	private static int trackTextureOffset;
 	private static int dynamicTextureResolution = 2;
 	private static int trainRenderDistanceRatio = 7;
+	// Announcers can name a web address, which would make this client contact any site, so it is off unless the player turns it on for chosen sites
+	private static boolean networkAudioEnabled;
+	private static List<String> networkAudioAllowedHosts = Collections.emptyList();
 
 	public static final List<Patreon> PATREON_LIST = new ArrayList<>();
 	public static final int TRACK_OFFSET_COUNT = 32;
@@ -42,6 +47,8 @@ public class Config {
 	private static final String TRACK_TEXTURE_OFFSET = "track_texture_offset";
 	private static final String DYNAMIC_TEXTURE_RESOLUTION = "dynamic texture resolution";
 	private static final String TRAIN_RENDER_DISTANCE_RATIO = "train_render_distance_ratio";
+	private static final String NETWORK_AUDIO_ENABLED = "network_audio_enabled";
+	private static final String NETWORK_AUDIO_ALLOWED_HOSTS = "network_audio_allowed_hosts";
 
 	public static boolean useMTRFont() {
 		return useMTRFont;
@@ -85,6 +92,17 @@ public class Config {
 
 	public static int trainRenderDistanceRatio() {
 		return trainRenderDistanceRatio;
+	}
+
+	public static boolean networkAudioEnabled() {
+		return networkAudioEnabled;
+	}
+
+	/**
+	 * @return the sites, in lowercase, that announcers may play audio from; a site also allows its subdomains
+	 */
+	public static List<String> networkAudioAllowedHosts() {
+		return networkAudioAllowedHosts;
 	}
 
 	public static boolean setUseMTRFont(boolean value) {
@@ -194,6 +212,21 @@ public class Config {
 				trainRenderDistanceRatio = Mth.clamp(jsonConfig.get(TRAIN_RENDER_DISTANCE_RATIO).getAsInt(), 0, TRAIN_RENDER_DISTANCE_RATIO_COUNT - 1);
 			} catch (Exception ignored) {
 			}
+			try {
+				networkAudioEnabled = jsonConfig.get(NETWORK_AUDIO_ENABLED).getAsBoolean();
+			} catch (Exception ignored) {
+			}
+			try {
+				final List<String> hosts = new ArrayList<>();
+				jsonConfig.getAsJsonArray(NETWORK_AUDIO_ALLOWED_HOSTS).forEach(host -> {
+					final String cleanHost = host.getAsString().trim().toLowerCase(Locale.ENGLISH);
+					if (!cleanHost.isEmpty()) {
+						hosts.add(cleanHost);
+					}
+				});
+				networkAudioAllowedHosts = Collections.unmodifiableList(hosts);
+			} catch (Exception ignored) {
+			}
 		} catch (Exception e) {
 			writeToFile();
 			e.printStackTrace();
@@ -213,6 +246,10 @@ public class Config {
 		jsonConfig.addProperty(TRACK_TEXTURE_OFFSET, trackTextureOffset);
 		jsonConfig.addProperty(DYNAMIC_TEXTURE_RESOLUTION, dynamicTextureResolution);
 		jsonConfig.addProperty(TRAIN_RENDER_DISTANCE_RATIO, trainRenderDistanceRatio);
+		jsonConfig.addProperty(NETWORK_AUDIO_ENABLED, networkAudioEnabled);
+		final JsonArray hosts = new JsonArray();
+		networkAudioAllowedHosts.forEach(hosts::add);
+		jsonConfig.add(NETWORK_AUDIO_ALLOWED_HOSTS, hosts);
 
 		try {
 			Files.write(CONFIG_FILE_PATH, Collections.singleton(RailwayData.prettyPrint(jsonConfig)));

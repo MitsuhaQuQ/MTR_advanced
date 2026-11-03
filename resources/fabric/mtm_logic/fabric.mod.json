@@ -1,0 +1,12 @@
+{
+	"schemaVersion": 1,
+	"id": "mtm_logic",
+	"version": "${version}",
+	"name": "MTM_Logic",
+	"description": "The version of this fork's own logic (the transit-sim component, the advanced editor and the rest of MTM), shown apart from the MTR version add-ons depend on.",
+	"license": "MIT",
+	"environment": "*",
+	"depends": {
+		"mtr": "*"
+	}
+}

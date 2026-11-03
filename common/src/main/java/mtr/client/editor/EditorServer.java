@@ -3,6 +3,8 @@ package mtr.client.editor;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import mtr.MTR;
+import mtr.audio.AudioFiles;
+import mtr.client.AudioCache;
 import net.minecraft.client.Minecraft;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
@@ -59,7 +61,7 @@ public final class EditorServer {
 	private static final int MAX_BODY_BYTES = 4 * 1024 * 1024;
 	private static final int MAX_LAYOUT_TRACKS = 64;
 	private static final String DRAFTS_FOLDER = "mtr_editor_drafts";
-	private static final String CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+	private static final String CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 	/**
 	 * Starts the server if it isn't running.
@@ -127,6 +129,8 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
 		context.addServlet(new ServletHolder(new RouteLayoutServlet()), "/api/route-layout");
+		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
+		context.addServlet(new ServletHolder(new AudioFileServlet()), "/api/audio-file");
 		server.setHandler(context);
 		server.start();
 	}
@@ -411,6 +415,86 @@ public final class EditorServer {
 				return;
 			}
 			sendJson(response, layout.toString());
+		}
+	}
+
+	/**
+	 * The announcement audio list, and adding or deleting a file ({@link EditorAudio}). The game answers an upload or a
+	 * deletion later, and the page sees it in the list it reads again.
+	 */
+	private static class AudioServlet extends HttpServlet {
+
+		@Override
+		protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			try {
+				sendJson(response, onGameThread(() -> EditorAudio.build().toString()));
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final String action;
+			final String name;
+			final String value;
+			try {
+				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				action = requestObject.get("action").getAsString();
+				name = requestObject.has("name") ? requestObject.get("name").getAsString() : "";
+				value = requestObject.get("upload".equals(action) ? "data" : "key").getAsString();
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			if (!"upload".equals(action) && !"delete".equals(action)) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				sendJson(response, onGameThread(() -> ("upload".equals(action) ? EditorAudio.upload(name, value) : EditorAudio.delete(value)).toString()));
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+	}
+
+	/**
+	 * A file this client has, for the page to play. One that isn't here yet is asked for, and the page tries again.
+	 */
+	private static class AudioFileServlet extends HttpServlet {
+
+		@Override
+		protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String hash = request.getParameter("hash");
+			if (!AudioFiles.isHash(hash)) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			final byte[] bytes;
+			try {
+				bytes = onGameThread(() -> AudioCache.read(hash));
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				return;
+			}
+			if (bytes == null) {
+				response.sendError(HttpServletResponse.SC_NOT_FOUND);
+				return;
+			}
+			response.setStatus(HttpServletResponse.SC_OK);
+			response.setContentType("audio/ogg");
+			response.setHeader("Cache-Control", "no-store");
+			response.setContentLength(bytes.length);
+			response.getOutputStream().write(bytes);
 		}
 	}
 

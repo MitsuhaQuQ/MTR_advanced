@@ -7,6 +7,7 @@ import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.Lift;
 import mtr.data.LiftClient;
+import mtr.data.Train;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
@@ -33,6 +34,10 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 	private final Button buttonOffsetYAdd;
 	private final Button buttonOffsetZMinus;
 	private final Button buttonOffsetZAdd;
+	private final Button buttonMaxSpeedMinus;
+	private final Button buttonMaxSpeedAdd;
+	private final Button buttonAccelerationMinus;
+	private final Button buttonAccelerationAdd;
 	private final WidgetBetterCheckbox buttonIsDoubleSided;
 	private final Button buttonLiftStyle;
 	private final Button buttonRotateAnticlockwise;
@@ -43,6 +48,9 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 	private static final int MIN_DIMENSION = 2;
 	private static final int MAX_DIMENSION = 16;
 	private static final int MAX_OFFSET = 16;
+	// Max speed changes in steps of 0.025 m/tick (0.5 m/s), acceleration in steps of 0.001 m/tick^2 (0.4 m/s^2)
+	private static final int MAX_SPEED_STEPS = 40;
+	private static final int ACCELERATION_STEPS = 1000;
 
 	public LiftCustomizationScreen(LiftClient lift) {
 		super(Text.literal(""));
@@ -96,6 +104,22 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 			lift.liftOffsetZ = Math.min(MAX_OFFSET * 2, lift.liftOffsetZ + 1);
 			updateControls();
 		});
+		buttonMaxSpeedMinus = UtilitiesClient.newButton(Text.literal("-"), button -> {
+			lift.liftMaxSpeed = Lift.clampMaxSpeed((Math.round(lift.liftMaxSpeed * MAX_SPEED_STEPS) - 1D) / MAX_SPEED_STEPS);
+			updateControls();
+		});
+		buttonMaxSpeedAdd = UtilitiesClient.newButton(Text.literal("+"), button -> {
+			lift.liftMaxSpeed = Lift.clampMaxSpeed((Math.round(lift.liftMaxSpeed * MAX_SPEED_STEPS) + 1D) / MAX_SPEED_STEPS);
+			updateControls();
+		});
+		buttonAccelerationMinus = UtilitiesClient.newButton(Text.literal("-"), button -> {
+			lift.liftAcceleration = Lift.clampAcceleration((Math.round(lift.liftAcceleration * ACCELERATION_STEPS) - 1D) / ACCELERATION_STEPS);
+			updateControls();
+		});
+		buttonAccelerationAdd = UtilitiesClient.newButton(Text.literal("+"), button -> {
+			lift.liftAcceleration = Lift.clampAcceleration((Math.round(lift.liftAcceleration * ACCELERATION_STEPS) + 1D) / ACCELERATION_STEPS);
+			updateControls();
+		});
 		final Component doubleSidedText = Text.translatable("gui.mtr.lift_is_double_sided");
 		final Component rotateAnticlockwiseText = Text.translatable("gui.mtr.rotate_anticlockwise");
 		final Component rotateClockwiseText = Text.translatable("gui.mtr.rotate_clockwise");
@@ -108,7 +132,8 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 		buttonRotateClockwise = UtilitiesClient.newButton(rotateClockwiseText, button -> lift.facing = lift.facing.getClockWise());
 
 		font = Minecraft.getInstance().font;
-		width1 = Math.max(Math.max(SQUARE_SIZE * 3, font.width(doubleSidedText)), Math.max(font.width(rotateAnticlockwiseText), font.width(rotateClockwiseText))) + TEXT_PADDING * 2;
+		final int speedTextWidth = Math.max(font.width(getMaxSpeedText(Lift.MAX_SPEED_MAX)), font.width(getAccelerationText(Train.MAX_ACCELERATION))) + SQUARE_SIZE;
+		width1 = Math.max(Math.max(Math.max(SQUARE_SIZE * 3, speedTextWidth), font.width(doubleSidedText)), Math.max(font.width(rotateAnticlockwiseText), font.width(rotateClockwiseText))) + TEXT_PADDING * 2;
 		width2 = width1 + SQUARE_SIZE;
 	}
 
@@ -128,10 +153,14 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 		IDrawing.setPositionAndWidth(buttonOffsetYAdd, width1, SQUARE_SIZE * 4, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonOffsetZMinus, 0, SQUARE_SIZE * 5, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonOffsetZAdd, width1, SQUARE_SIZE * 5, SQUARE_SIZE);
-		IDrawing.setPositionAndWidth(buttonIsDoubleSided, 0, SQUARE_SIZE * 7, width2);
-		IDrawing.setPositionAndWidth(buttonLiftStyle, 0, SQUARE_SIZE * 8, width2);
-		IDrawing.setPositionAndWidth(buttonRotateAnticlockwise, 0, SQUARE_SIZE * 9, width2);
-		IDrawing.setPositionAndWidth(buttonRotateClockwise, 0, SQUARE_SIZE * 10, width2);
+		IDrawing.setPositionAndWidth(buttonMaxSpeedMinus, 0, SQUARE_SIZE * 7, SQUARE_SIZE);
+		IDrawing.setPositionAndWidth(buttonMaxSpeedAdd, width1, SQUARE_SIZE * 7, SQUARE_SIZE);
+		IDrawing.setPositionAndWidth(buttonAccelerationMinus, 0, SQUARE_SIZE * 8, SQUARE_SIZE);
+		IDrawing.setPositionAndWidth(buttonAccelerationAdd, width1, SQUARE_SIZE * 8, SQUARE_SIZE);
+		IDrawing.setPositionAndWidth(buttonIsDoubleSided, 0, SQUARE_SIZE * 10, width2);
+		IDrawing.setPositionAndWidth(buttonLiftStyle, 0, SQUARE_SIZE * 11, width2);
+		IDrawing.setPositionAndWidth(buttonRotateAnticlockwise, 0, SQUARE_SIZE * 12, width2);
+		IDrawing.setPositionAndWidth(buttonRotateClockwise, 0, SQUARE_SIZE * 13, width2);
 
 		addDrawableChild(buttonHeightMinus);
 		addDrawableChild(buttonHeightAdd);
@@ -145,6 +174,10 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 		addDrawableChild(buttonOffsetYAdd);
 		addDrawableChild(buttonOffsetZMinus);
 		addDrawableChild(buttonOffsetZAdd);
+		addDrawableChild(buttonMaxSpeedMinus);
+		addDrawableChild(buttonMaxSpeedAdd);
+		addDrawableChild(buttonAccelerationMinus);
+		addDrawableChild(buttonAccelerationAdd);
 		addDrawableChild(buttonIsDoubleSided);
 //		addDrawableChild(buttonLiftStyle);
 		addDrawableChild(buttonRotateAnticlockwise);
@@ -163,6 +196,8 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.offset_x", lift.liftOffsetX / 2F), width2 / 2, SQUARE_SIZE * 3 + TEXT_PADDING, ARGB_WHITE);
 			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.offset_y", lift.liftOffsetY), width2 / 2, SQUARE_SIZE * 4 + TEXT_PADDING, ARGB_WHITE);
 			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.offset_z", lift.liftOffsetZ / 2F), width2 / 2, SQUARE_SIZE * 5 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, getMaxSpeedText(lift.liftMaxSpeed), width2 / 2, SQUARE_SIZE * 7 + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.drawCenteredString(matrices, font, getAccelerationText(lift.liftAcceleration), width2 / 2, SQUARE_SIZE * 8 + TEXT_PADDING, ARGB_WHITE);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -192,7 +227,19 @@ public class LiftCustomizationScreen extends ScreenBase implements IGui, IPacket
 		buttonOffsetYAdd.active = lift.liftOffsetY < MAX_OFFSET;
 		buttonOffsetZMinus.active = lift.liftOffsetZ > -MAX_OFFSET * 2;
 		buttonOffsetZAdd.active = lift.liftOffsetZ < MAX_OFFSET * 2;
+		buttonMaxSpeedMinus.active = lift.liftMaxSpeed > Lift.MAX_SPEED_MIN + 1E-6;
+		buttonMaxSpeedAdd.active = lift.liftMaxSpeed < Lift.MAX_SPEED_MAX - 1E-6;
+		buttonAccelerationMinus.active = lift.liftAcceleration > Train.MIN_ACCELERATION + 1E-6;
+		buttonAccelerationAdd.active = lift.liftAcceleration < Train.MAX_ACCELERATION - 1E-6;
 		buttonIsDoubleSided.setChecked(lift.isDoubleSided);
 		buttonLiftStyle.setMessage(Text.translatable("gui.mtr.lift_style", Text.translatable("gui.mtr.lift_style_" + lift.liftStyle.toString().toLowerCase(Locale.ENGLISH))));
+	}
+
+	private static Component getMaxSpeedText(double maxSpeed) {
+		return Text.translatable("gui.mtr.lift_max_speed", String.format(Locale.ENGLISH, "%.1f", maxSpeed * 20));
+	}
+
+	private static Component getAccelerationText(double acceleration) {
+		return Text.translatable("gui.mtr.lift_acceleration", String.format(Locale.ENGLISH, "%.1f", acceleration * 400));
 	}
 }

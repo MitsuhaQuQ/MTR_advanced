@@ -2,21 +2,26 @@ package mtr.screen;
 
 import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
+import mtr.audio.AnnouncementSound;
 import mtr.block.BlockTrainAnnouncer;
+import mtr.client.AnnouncementPlayer;
+import mtr.client.AudioCache;
 import mtr.data.DataConverter;
 import mtr.data.RailwayData;
-import mtr.mappings.RegistryUtilities;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class TrainAnnouncerScreen extends TrainSensorScreenBase {
@@ -24,13 +29,13 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 	private final String initialMessage;
 	private final String initialSoundIdString;
 	private final DashboardList availableSoundsList;
+	private final Map<String, String> uploadedSounds = new HashMap<>();
 
 	private static final int MAX_MESSAGE_LENGTH = 256;
-
 	public TrainAnnouncerScreen(BlockPos pos) {
 		super(pos, true,
 				new Tuple<>(new WidgetBetterTextField("", MAX_MESSAGE_LENGTH), Text.translatable("gui.mtr.announcement_message")),
-				new Tuple<>(new WidgetBetterTextField("", MAX_MESSAGE_LENGTH), Text.translatable("gui.mtr.sound_file"))
+				new Tuple<>(new WidgetBetterTextField("", AnnouncementSound.MAX_LENGTH), Text.translatable("gui.mtr.sound_file"))
 		);
 
 		minecraft = Minecraft.getInstance();
@@ -50,16 +55,27 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 		}
 
 		availableSoundsList = new DashboardList((data, color) -> {
-			final String soundIdString = data.name;
-			if (!soundIdString.isEmpty() && world != null && minecraft.player != null) {
-				world.playLocalSound(pos, RegistryUtilities.createSoundEvent(new ResourceLocation(soundIdString)), SoundSource.BLOCKS, 1000000, 1, false);
+			if (world != null && minecraft.player != null) {
+				AnnouncementPlayer.play(getSoundString(data.name), pos);
 			}
 		}, null, null, null, (data, color) -> {
-			textFields[1].setValue(data.name);
+			textFields[1].setValue(getSoundString(data.name));
 			setListVisibility(false);
 		}, null, null, () -> "", text -> {
 		}, false);
-		availableSoundsList.setData(Minecraft.getInstance().getSoundManager().getAvailableSounds().stream().map(soundId -> new DataConverter(soundId.toString(), ARGB_BACKGROUND)).sorted().collect(Collectors.toList()), true, false, false, false, true, false);
+		// The server's own files come first, by name; the field gets what to save
+		final List<DataConverter> sounds = new ArrayList<>();
+		AudioCache.ENTRIES.stream().sorted(Comparator.comparing(AudioCache.Entry::getReference)).forEach(entry -> {
+			final String label = Text.translatable("gui.mtr.uploaded_audio", entry.getReference()).getString();
+			uploadedSounds.put(label, entry.getReference());
+			sounds.add(new DataConverter(label, ARGB_BACKGROUND));
+		});
+		sounds.addAll(Minecraft.getInstance().getSoundManager().getAvailableSounds().stream().map(soundId -> new DataConverter(soundId.toString(), ARGB_BACKGROUND)).sorted().collect(Collectors.toList()));
+		availableSoundsList.setData(sounds, true, false, false, false, true, false);
+	}
+
+	private String getSoundString(String label) {
+		return uploadedSounds.getOrDefault(label, label);
 	}
 
 	@Override

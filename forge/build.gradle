@@ -21,6 +21,11 @@ if (rootProject.has_ante) {
 	sourceSets.main.java.exclude "cn/**"
 }
 
+// The MTM_Logic entry in the mod list belongs to MTR, not to the lifts-only mod
+if (rootProject.variation == "lifts") {
+	sourceSets.main.java.exclude "mtr/mtm/**"
+}
+
 architectury {
 	platformSetupLoomIde()
 	forge()
@@ -53,10 +58,12 @@ dependencies {
 }
 
 processResources {
-	inputs.property "version", project.version
+	inputs.property "version", rootProject.mod_version
+	inputs.property "mtm_version", rootProject.mtm_version
 
+	// The version shown is MTR's own, which add-ons depend on; this fork's version is shown by MTM_Logic
 	filesMatching("META-INF/mods.toml") {
-		expand "version": project.version
+		expand "version": rootProject.mod_version, "mtm_version": rootProject.mtm_version
 	}
 }
 
@@ -170,7 +177,7 @@ build.dependsOn serverJar
 task moveForgeBuilds() {
 	doLast {
 		delete fileTree("../build/release").matching {
-			include "**/${rootProject.variation_header}-forge*"
+			include "**/${rootProject.variation_header}-forge*", "**/MTR3-MTM-*-forge-*"
 		}
 		delete fileTree("../build/libs").matching {
 			include "**/${rootProject.variation_header}-forge*"
@@ -182,7 +189,12 @@ task moveForgeBuilds() {
 			from "build/libs"
 			include "*${rootProject.mod_version}.jar", "*${rootProject.mod_version}-server.jar"
 			into "../build/release"
-			rename "(.+)", "${rootProject.variation_header}-\$1"
+			if (rootProject.variation == "normal") {
+				// MTR3-MTM-<this fork's version>-forge-<Minecraft version>.jar
+				rename { fileName -> "MTR3-MTM-${rootProject.mtm_version}-forge-${rootProject.minecraft_version}" + (fileName.endsWith("-server.jar") ? "-server.jar" : ".jar") }
+			} else {
+				rename "(.+)", "${rootProject.variation_header}-\$1"
+			}
 		}
 		if (rootProject.variation == "normal") {
 			copy {

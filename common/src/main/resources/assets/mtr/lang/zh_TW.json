@@ -298,6 +298,8 @@
 	"gui.mtr.offset_x": "X 偏移： %s",
 	"gui.mtr.offset_y": "Y 偏移： %s",
 	"gui.mtr.offset_z": "Z 偏移： %s",
+	"gui.mtr.lift_max_speed": "最高速度：%s m/s",
+	"gui.mtr.lift_acceleration": "加速度：%s m/s²",
 	"gui.mtr.path_found": "主路徑生成成功",
 	"gui.mtr.path_generating": "%s前開始生成路徑",
 	"gui.mtr.path_not_found_between": "在|> %s|> %s|與|> %s|之間找不到路徑",

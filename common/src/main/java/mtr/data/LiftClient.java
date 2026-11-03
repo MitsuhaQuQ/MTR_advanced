@@ -65,6 +65,8 @@ public class LiftClient extends Lift {
 		isDoubleSided = lift.isDoubleSided;
 		liftStyle = lift.liftStyle;
 		facing = lift.facing;
+		liftMaxSpeed = lift.liftMaxSpeed;
+		liftAcceleration = lift.liftAcceleration;
 
 		currentPositionX = lift.currentPositionX;
 		currentPositionY = lift.currentPositionY;
@@ -98,6 +100,8 @@ public class LiftClient extends Lift {
 		packet.writeBoolean(isDoubleSided);
 		packet.writeUtf(liftStyle.toString());
 		packet.writeInt(Math.round(facing.toYRot()));
+		packet.writeDouble(liftMaxSpeed);
+		packet.writeDouble(liftAcceleration);
 		sendPacket.accept(packet);
 	}
 

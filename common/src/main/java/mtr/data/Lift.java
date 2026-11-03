@@ -23,6 +23,10 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 
 	private static final int MAX_LIFT_DIMENSION = 16;
 
+	public static final double MAX_SPEED_DEFAULT = 1; // m/tick
+	public static final double MAX_SPEED_MIN = 0.025; // m/tick
+	public static final double MAX_SPEED_MAX = 1; // m/tick
+
 	public int liftHeight;
 	public int liftWidth;
 	public int liftDepth;
@@ -32,6 +36,8 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 	public boolean isDoubleSided;
 	public LiftStyle liftStyle;
 	public Direction facing;
+	public double liftMaxSpeed;
+	public double liftAcceleration;
 
 	protected double currentPositionX;
 	protected double currentPositionY;
@@ -64,6 +70,9 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 	private static final String KEY_CURRENT_POSITION_Z = "current_position_z";
 	private static final String KEY_RIDING_ENTITIES = "riding_entities";
 	private static final String KEY_FLOORS = "floors";
+	// Same keys and units (m/tick, m/tick^2) as MTR 3.5.0, so lifts from its saves keep their settings
+	private static final String KEY_LIFT_MAX_SPEED = "max_speed";
+	private static final String KEY_LIFT_ACCELERATION = "acceleration";
 
 	public Lift(BlockPos pos, Direction facing) {
 		liftHeight = 4;
@@ -75,6 +84,8 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 		isDoubleSided = false;
 		liftStyle = LiftStyle.TRANSPARENT;
 		this.facing = facing;
+		liftMaxSpeed = MAX_SPEED_DEFAULT;
+		liftAcceleration = Train.ACCELERATION_DEFAULT;
 		currentPositionX = pos.getX();
 		currentPositionY = pos.getY();
 		currentPositionZ = pos.getZ();
@@ -94,6 +105,8 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 		isDoubleSided = messagePackHelper.getBoolean(KEY_IS_DOUBLE_SIDED);
 		liftStyle = EnumHelper.valueOf(LiftStyle.TRANSPARENT, messagePackHelper.getString(KEY_LIFT_STYLE));
 		facing = Direction.fromYRot(messagePackHelper.getInt(KEY_FACING));
+		liftMaxSpeed = clampMaxSpeed(messagePackHelper.getDouble(KEY_LIFT_MAX_SPEED, MAX_SPEED_DEFAULT));
+		liftAcceleration = clampAcceleration(messagePackHelper.getDouble(KEY_LIFT_ACCELERATION, Train.ACCELERATION_DEFAULT));
 		currentPositionX = messagePackHelper.getDouble(KEY_CURRENT_POSITION_X);
 		currentPositionY = messagePackHelper.getDouble(KEY_CURRENT_POSITION_Y);
 		currentPositionZ = messagePackHelper.getDouble(KEY_CURRENT_POSITION_Z);
@@ -117,6 +130,8 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 		isDoubleSided = packet.readBoolean();
 		liftStyle = EnumHelper.valueOf(LiftStyle.TRANSPARENT, packet.readUtf(PACKET_STRING_READ_LENGTH));
 		facing = Direction.fromYRot(packet.readInt());
+		liftMaxSpeed = packet.readDouble();
+		liftAcceleration = packet.readDouble();
 		currentPositionX = packet.readDouble();
 		currentPositionY = packet.readDouble();
 		currentPositionZ = packet.readDouble();
@@ -163,11 +178,13 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 		for (final BlockPos floor : floors) {
 			messagePacker.packLong(floor.asLong());
 		}
+		messagePacker.packString(KEY_LIFT_MAX_SPEED).packDouble(liftMaxSpeed);
+		messagePacker.packString(KEY_LIFT_ACCELERATION).packDouble(liftAcceleration);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 14;
+		return super.messagePackLength() + 16;
 	}
 
 	@Override
@@ -182,6 +199,8 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 		packet.writeBoolean(isDoubleSided);
 		packet.writeUtf(liftStyle.toString());
 		packet.writeInt(Math.round(facing.toYRot()));
+		packet.writeDouble(liftMaxSpeed);
+		packet.writeDouble(liftAcceleration);
 		packet.writeDouble(currentPositionX);
 		packet.writeDouble(currentPositionY);
 		packet.writeDouble(currentPositionZ);
@@ -208,6 +227,8 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 			isDoubleSided = packet.readBoolean();
 			liftStyle = EnumHelper.valueOf(LiftStyle.TRANSPARENT, packet.readUtf(PACKET_STRING_READ_LENGTH));
 			facing = Direction.fromYRot(packet.readInt());
+			liftMaxSpeed = clampMaxSpeed(packet.readDouble());
+			liftAcceleration = clampAcceleration(packet.readDouble());
 		} else {
 			super.update(key, packet);
 		}
@@ -312,10 +333,10 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 						}
 					}
 				} else {
-					if (stoppingDistance < 0.5 * speed * speed / Train.ACCELERATION_DEFAULT) {
+					if (stoppingDistance < 0.5 * speed * speed / liftAcceleration) {
 						speed = Math.max(speed - 0.5 * speed * speed / stoppingDistance * ticksElapsed, Train.ACCELERATION_DEFAULT);
 					} else {
-						speed = Math.min(speed + Train.ACCELERATION_DEFAULT * ticksElapsed, 1);
+						speed = Math.min(speed + liftAcceleration * ticksElapsed, liftMaxSpeed);
 					}
 
 					currentPositionY += speed * liftDirection.speedMultiplier * ticksElapsed;
@@ -335,6 +356,14 @@ public abstract class Lift extends NameColorDataBase implements IPacket {
 				backCanOpen = checkDoor(world, false);
 			}
 		}
+	}
+
+	public static double clampMaxSpeed(double value) {
+		return Double.isFinite(value) ? Mth.clamp(value, MAX_SPEED_MIN, MAX_SPEED_MAX) : MAX_SPEED_DEFAULT;
+	}
+
+	public static double clampAcceleration(double value) {
+		return Double.isFinite(value) ? Mth.clamp(value, Train.MIN_ACCELERATION, Train.MAX_ACCELERATION) : Train.ACCELERATION_DEFAULT;
 	}
 
 	protected float getYaw() {

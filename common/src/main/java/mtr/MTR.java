@@ -1,5 +1,6 @@
 package mtr;
 
+import mtr.audio.AudioServer;
 import mtr.compat.Compat;
 import mtr.data.Depot;
 import mtr.data.LineWords;
@@ -9,6 +10,7 @@ import mtr.data.Route;
 import mtr.data.Station;
 import mtr.data.TimetableConfig;
 import mtr.mappings.BlockEntityMapper;
+import mtr.mappings.RegistryUtilities;
 import mtr.packet.IPacket;
 import mtr.packet.PacketGuard;
 import mtr.packet.PacketTrainDataGuiServer;
@@ -462,6 +464,10 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_USE_LEGACY_MOTION, PacketTrainDataGuiServer::receiveUseLegacyMotionC2S);
 		PacketGuard.register(PACKET_TIMETABLE_CONFLICTS, PacketTrainDataGuiServer::receiveTimetableConflictsC2S);
 		PacketGuard.register(PACKET_PRESS_LIFT_BUTTON, PacketTrainDataGuiServer::receivePressLiftButtonC2S);
+		PacketGuard.register(PACKET_AUDIO_UPLOAD, AudioServer::receiveUploadC2S);
+		PacketGuard.register(PACKET_AUDIO_DELETE, AudioServer::receiveDeleteC2S);
+		PacketGuard.register(PACKET_AUDIO_WANTED, AudioServer::receiveWantedC2S);
+		RegistryUtilities.registerCommand(AudioServer::registerCommand);
 
 		Registry.registerTickEvent(minecraftServer -> {
 			minecraftServer.getAllLevels().forEach(serverWorld -> {
@@ -470,6 +476,7 @@ public class MTR implements IPacket {
 					railwayData.simulateTrains();
 				}
 			});
+			AudioServer.tick(minecraftServer);
 
 			gameTick++;
 
@@ -484,6 +491,7 @@ public class MTR implements IPacket {
 			PacketTrainDataGuiServer.timetableConfigS2C(player);
 			PacketTrainDataGuiServer.motionConfigS2C(player);
 			PacketTrainDataGuiServer.editPermissionS2C(player);
+			AudioServer.sendList(player);
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData != null) {
 				railwayData.onPlayerJoin(player);
@@ -495,6 +503,7 @@ public class MTR implements IPacket {
 				railwayData.disconnectPlayer(player);
 			}
 			PacketGuard.forget(player);
+			AudioServer.forget(player);
 		});
 
 		if (!Keys.LIFTS_ONLY) {
@@ -514,8 +523,12 @@ public class MTR implements IPacket {
 				TimetableConfig.load(configPath.resolve(TimetableConfig.FILE_NAME));
 				MotionConfig.load(configPath.resolve(MotionConfig.FILE_NAME));
 				Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
+				AudioServer.open(minecraftServer);
 			});
-			Registry.registerServerStoppingEvent(minecraftServer -> Webserver.stop());
+			Registry.registerServerStoppingEvent(minecraftServer -> {
+				Webserver.stop();
+				AudioServer.close();
+			});
 		}
 	}
 

@@ -4,7 +4,7 @@ An improved fork of [Minecraft Transit Railway](https://github.com/Minecraft-Tra
 
 The goal is to take MTR from running trains to operating a real network: routes you can control, timetables you can trust and trains that behave predictably.
 
-This is not an official release. The version stays at `3.2.2` so that add-on mods that depend on it keep working, and later changes only raise the hotfix number.
+This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, version `3.2.2`, so that add-on mods that depend on MTR 3.2.x keep working; this fork's own version is shown as a second entry, MTM_Logic (`0.1.0` and up). The released jars are named like `MTR3-MTM-0.1.0-fabric-1.20.1.jar`.
 
 ## Completed improvements
 
@@ -180,7 +180,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 27. Jars with ANTE are about 136 MB.
+The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 29. Jars with ANTE are about 136 MB.
 
 The simulation component in `transit-sim` is a plain Java project without Minecraft (Java 8 by default, raised when needed), built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 

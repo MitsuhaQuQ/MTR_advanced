@@ -9,6 +9,7 @@ import mtr.advanced.StationLayouts;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
+import mtr.client.AnnouncementPlayer;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
@@ -362,13 +363,12 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 
 	public static void announceS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String message = packet.readUtf();
-		final String soundIdString = packet.readUtf();
+		final String soundString = packet.readUtf();
 		minecraftClient.execute(() -> {
 			IDrawing.narrateOrAnnounce(message);
-			final ClientLevel world = minecraftClient.level;
 			final LocalPlayer player = minecraftClient.player;
-			if (!soundIdString.isEmpty() && world != null && player != null) {
-				world.playLocalSound(player.blockPosition(), RegistryUtilities.createSoundEvent(new ResourceLocation(soundIdString)), SoundSource.BLOCKS, 1000000, 1, false);
+			if (player != null) {
+				AnnouncementPlayer.play(soundString, player.blockPosition());
 			}
 		});
 	}

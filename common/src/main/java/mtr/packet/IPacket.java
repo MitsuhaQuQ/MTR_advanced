@@ -12,7 +12,7 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 27;
+	int PROTOCOL_VERSION = 29;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 	ResourceLocation PACKET_LINE_WORDS = new ResourceLocation(MTR.MOD_ID, "packet_line_words");
@@ -94,6 +94,13 @@ public interface IPacket {
 	ResourceLocation PACKET_TIMETABLE_CONFLICTS = new ResourceLocation(MTR.MOD_ID, "packet_timetable_conflicts");
 	ResourceLocation PACKET_UPDATE_NODE_ANGLE = new ResourceLocation(MTR.MOD_ID, "packet_update_node_angle");
 	ResourceLocation PACKET_UPDATE_LIFT_TRACK_FLOOR = new ResourceLocation(MTR.MOD_ID, "packet_update_lift_track_floor");
+
+	ResourceLocation PACKET_AUDIO_LIST = new ResourceLocation(MTR.MOD_ID, "packet_audio_list");
+	ResourceLocation PACKET_AUDIO_RESULT = new ResourceLocation(MTR.MOD_ID, "packet_audio_result");
+	ResourceLocation PACKET_AUDIO_DATA = new ResourceLocation(MTR.MOD_ID, "packet_audio_data");
+	ResourceLocation PACKET_AUDIO_UPLOAD = new ResourceLocation(MTR.MOD_ID, "packet_audio_upload");
+	ResourceLocation PACKET_AUDIO_DELETE = new ResourceLocation(MTR.MOD_ID, "packet_audio_delete");
+	ResourceLocation PACKET_AUDIO_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_audio_wanted");
 
 	int MAX_PACKET_BYTES = 1048576;
 }
