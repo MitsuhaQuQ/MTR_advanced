@@ -33,8 +33,8 @@ public final class MotionConfig {
 	private static volatile Path configPath;
 	private static volatile boolean useLegacyMotion;
 	private static volatile boolean useLegacyMotionClient;
-	private static volatile int componentDrive = COMPONENT_DRIVE_COMPARE;
-	private static volatile int componentDriveClient = COMPONENT_DRIVE_COMPARE;
+	private static volatile int componentDrive = COMPONENT_DRIVE_ON;
+	private static volatile int componentDriveClient = COMPONENT_DRIVE_ON;
 
 	private MotionConfig() {
 	}
@@ -48,10 +48,10 @@ public final class MotionConfig {
 			if (Files.exists(path)) {
 				final JsonObject jsonObject = new JsonParser().parse(new String(Files.readAllBytes(path), StandardCharsets.UTF_8)).getAsJsonObject();
 				useLegacyMotion = jsonObject.has(KEY_USE_LEGACY_MOTION) && jsonObject.get(KEY_USE_LEGACY_MOTION).getAsBoolean();
-				componentDrive = jsonObject.has(KEY_COMPONENT_DRIVE) ? clampComponentDrive(jsonObject.get(KEY_COMPONENT_DRIVE).getAsInt()) : COMPONENT_DRIVE_COMPARE;
+				componentDrive = jsonObject.has(KEY_COMPONENT_DRIVE) ? clampComponentDrive(jsonObject.get(KEY_COMPONENT_DRIVE).getAsInt()) : COMPONENT_DRIVE_ON;
 			} else {
 				useLegacyMotion = false;
-				componentDrive = COMPONENT_DRIVE_COMPARE;
+				componentDrive = COMPONENT_DRIVE_ON;
 				write(path);
 			}
 		} catch (Exception e) {
@@ -101,7 +101,7 @@ public final class MotionConfig {
 	}
 
 	private static int clampComponentDrive(int value) {
-		return value < 0 || value >= COMPONENT_DRIVE_COUNT ? COMPONENT_DRIVE_COMPARE : value;
+		return value < 0 || value >= COMPONENT_DRIVE_COUNT ? COMPONENT_DRIVE_ON : value;
 	}
 
 	private static void write(Path path) throws Exception {

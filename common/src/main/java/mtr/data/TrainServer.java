@@ -4,6 +4,8 @@ import transitsim.sim.TrainService;
 import transitsim.io.BinaryKeyed;
 import transitsim.io.ByteArrayBinary;
 import transitsim.sim.RunRecord;
+import transitsim.sim.SimDataset;
+import transitsim.sim.TickRunner;
 import mtr.advanced.MessagePackKeyed;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TimeSegment;
@@ -81,6 +83,13 @@ public class TrainServer extends Train {
 	 * first tick, as the simulation does (see {@link transitsim.sim.RunRecord.TrainRecord#cruiseCap}).
 	 */
 	private boolean cruiseCapMissing;
+	/**
+	 * The component's train this one shows while the simulator runs its siding (G1), or null while the game moves it, and
+	 * its service as last copied in.
+	 */
+	private TickRunner<SimDataset.DataTrack>.HeadlessTrain simulated;
+	private byte[] simulatedService = new byte[0];
+	private Map<String, TripPath<PathData>> lastTripPaths = Collections.emptyMap();
 
 	/**
 	 * The cruising cap the train set off with (G0, contracts document 6.4): without it, a train carrying on from a save gets
@@ -291,19 +300,88 @@ public class TrainServer extends Train {
 	@Override
 	protected boolean isRailBlocked(int checkIndex) {
 		if (isRailOccupied(checkIndex)) {
-			if (routeId != 0) {
-				final BlockPos startingPos = path.get(checkIndex).startingPos;
-				if (!trainDelays.containsKey(routeId)) {
-					trainDelays.put(routeId, new HashMap<>());
-				}
-				if (!trainDelays.get(routeId).containsKey(startingPos)) {
-					trainDelays.get(routeId).put(startingPos, new TrainDelay());
-				}
-				trainDelays.get(routeId).get(startingPos).delaying();
-			}
+			markDelay(checkIndex);
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Marks the train held up before this rail, for the delays shown on the route.
+	 */
+	private void markDelay(int checkIndex) {
+		if (routeId != 0 && checkIndex < path.size()) {
+			final BlockPos startingPos = path.get(checkIndex).startingPos;
+			if (!trainDelays.containsKey(routeId)) {
+				trainDelays.put(routeId, new HashMap<>());
+			}
+			if (!trainDelays.get(routeId).containsKey(startingPos)) {
+				trainDelays.get(routeId).put(startingPos, new TrainDelay());
+			}
+			trainDelays.get(routeId).get(startingPos).delaying();
+		}
+	}
+
+	/**
+	 * Shows the component's train instead of moving this one (G1), or with null goes back to moving it, carrying on from
+	 * where the component had it.
+	 */
+	public void setSimulated(TickRunner<SimDataset.DataTrack>.HeadlessTrain newSimulated) {
+		simulated = newSimulated;
+		movedBySimulator = newSimulated != null;
+		if (newSimulated == null) {
+			simulatedService = new byte[0];
+		}
+	}
+
+	/**
+	 * Copies in the state of the component's train: its service and path when they changed, and where it is, how fast it
+	 * goes, its stops and doors. What the simulator has as the train's is only shown here (A06).
+	 */
+	private void showSimulated() {
+		final TickRunner<SimDataset.DataTrack>.HeadlessTrain train = simulated;
+		final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
+		try {
+			train.service.write(values);
+		} catch (IOException ignored) {
+		}
+		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		final byte[] serviceBytes = writer.toBytes();
+		if (!Arrays.equals(serviceBytes, simulatedService)) {
+			simulatedService = serviceBytes;
+			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(serviceBytes)));
+			final String key = service.getTripPathKey();
+			final TripPath<PathData> tripPath = key.isEmpty() ? null : lastTripPaths.get(key);
+			if ((tripPath == null ? depotPath : tripPath.path) != path) {
+				new ServiceVehicle().followPath(tripPath);
+			}
+		}
+		final boolean wasOnRoute = isOnRoute;
+		speed = train.getSpeed();
+		railProgress = train.getRailProgress();
+		elapsedDwellTicks = train.getElapsedDwellTicks();
+		nextStoppingIndex = train.getNextStoppingIndex();
+		nextPlatformIndex = train.getNextPlatformIndex();
+		reversed = train.isReversed();
+		isOnRoute = train.isOnRoute();
+		doorTarget = train.getDoorTarget();
+		doorValue = train.getDoorValue();
+		cruiseCap = (float) train.getCruiseCap();
+		cruiseCapMissing = false;
+		if (repeatIndex1 != train.getRepeatIndex1() || repeatIndex2 != train.getRepeatIndex2()) {
+			repeatIndex1 = train.getRepeatIndex1();
+			repeatIndex2 = train.getRepeatIndex2();
+			syncRepeatIndices = true;
+		}
+		turnBackRails = train.getTurnBackRails();
+		turnBackUntil = train.getTurnBackUntil();
+		if (wasOnRoute && !isOnRoute) {
+			ridingEntities.clear();
+		}
+		if (train.getBlockedRail() >= 0) {
+			markDelay(train.getBlockedRail());
+		}
 	}
 
 	private boolean isRailOccupied(int checkIndex) {
@@ -358,17 +436,21 @@ public class TrainServer extends Train {
 		final boolean oldDoorOpen = doorTarget;
 
 		this.world = world;
-		service.updateOvernight();
-		if (cruiseCapMissing) {
-			cruiseCapMissing = false;
-			if (isOnRoute && speed > 0) {
-				cruiseCap = getCruiseCap();
+		if (simulated != null) {
+			showSimulated();
+			simulateTrain(world, ticksElapsed, depot);
+		} else {
+			service.updateOvernight();
+			if (cruiseCapMissing) {
+				cruiseCapMissing = false;
+				if (isOnRoute && speed > 0) {
+					cruiseCap = getCruiseCap();
+				}
 			}
+			simulateTrain(world, ticksElapsed, depot);
+			holdRun();
+			service.update(isOnRoute);
 		}
-		simulateTrain(world, ticksElapsed, depot);
-		holdRun();
-
-		service.update(isOnRoute);
 
 		final int nextDepartureTicks = isOnRoute ? 0 : service.getStopTimes() == null ? depot.getNextDepartureMillis() : depot.getNextDepartureMillis(trainId, getLeadMillis());
 		final long currentMillis = System.currentTimeMillis() - (long) (elapsedDwellTicks * Depot.MILLIS_PER_TICK) + (long) Math.max(0, nextDepartureTicks);
@@ -655,6 +737,7 @@ public class TrainServer extends Train {
 	 * @param newTripPaths   the paths of services leaving it
 	 */
 	public void setStopTimes(StopTimes depotStopTimes, Map<String, TripPath<PathData>> newTripPaths) {
+		lastTripPaths = newTripPaths;
 		service.setStopTimes(depotStopTimes, newTripPaths);
 	}
 
@@ -662,6 +745,7 @@ public class TrainServer extends Train {
 	 * @param turnBacks where trains of the siding can turn back on more than one rail
 	 */
 	public void setStopTimes(StopTimes depotStopTimes, Map<String, TripPath<PathData>> newTripPaths, TurnBacks turnBacks) {
+		lastTripPaths = newTripPaths;
 		service.setStopTimes(depotStopTimes, newTripPaths, turnBacks);
 	}
 

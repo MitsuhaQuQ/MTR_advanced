@@ -83,6 +83,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Which services trains have taken and which duties have run; saved here, decided in the component.
 	 */
 	private final DepotDispatcher dispatcher = new DepotDispatcher();
+	/**
+	 * Whether the component's simulator sends out the depot's trains (G1).
+	 */
+	public boolean runBySimulator;
 
 	public static final int HOURS_IN_DAY = 24;
 	public static final int TRAIN_FREQUENCY_MULTIPLIER = 4;
@@ -467,6 +471,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Adds the services the depot sent out last, and the days its duties ran, to a record of the trains (G0), under one of
 	 * its sidings.
 	 */
+	/**
+	 * Takes what the simulator's depot sent out last and the days its duties ran (G1), so they are saved, and carried on
+	 * from when the simulator starts again.
+	 */
+	public void copyDispatcher(DepotDispatcher simulated) {
+		dispatcher.lastDeployedTrips.clear();
+		dispatcher.lastDeployedTrips.putAll(simulated.lastDeployedTrips);
+		dispatcher.dutyRunDays.clear();
+		dispatcher.dutyRunDays.putAll(simulated.dutyRunDays);
+	}
+
 	public void recordDispatcher(RunRecord record, long sidingId) {
 		record.lastDeployedTrips.put(sidingId, new TreeMap<>(dispatcher.lastDeployedTrips));
 		record.dutyRunDays.put(sidingId, new TreeMap<>(dispatcher.dutyRunDays));
@@ -527,6 +542,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	public void deployTrain(RailwayData railwayData, Level world) {
 		if (isDirty) {
 			generateTempDepartures(world);
+		}
+
+		// The simulator sends out the trains of its depots (G1)
+		if (runBySimulator) {
+			deployableSidings.clear();
+			return;
 		}
 
 		dispatcher.startTick();

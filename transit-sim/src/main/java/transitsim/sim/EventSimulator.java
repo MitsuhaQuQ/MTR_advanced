@@ -41,6 +41,10 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 	private final Map<Long, Boolean> doorsOpen = new TreeMap<>();
 	private int motionEventsRead;
 	private long cursor;
+	/**
+	 * Whether it runs for as long as the game does, keeping nothing it would only need for forks and snapshots (G1).
+	 */
+	private boolean live;
 
 	/**
 	 * @param start makes the start of the simulation, each time with routes and trains of its own
@@ -108,6 +112,29 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		return runner.getMillis();
 	}
 
+	/**
+	 * Has it run as long as the game does (G1): the inputs applied aren't kept, so it can't be forked or snapshotted, and
+	 * events are kept only until {@link #forgetEvents}.
+	 */
+	public void setLive() {
+		live = true;
+		applied.clear();
+	}
+
+	/**
+	 * Lets go of the events up to this cursor, once the host has handled them, and of what it kept for trains that have
+	 * gone.
+	 */
+	public void forgetEvents(long throughCursor) {
+		int count = 0;
+		while (count < events.size() && events.get(count).cursor <= throughCursor) {
+			count++;
+		}
+		events.subList(0, count).clear();
+		eventSequences.keySet().removeIf(trainId -> !runner.hasTrain(trainId));
+		doorsOpen.keySet().removeIf(trainId -> !runner.hasTrain(trainId));
+	}
+
 	@Override
 	public void submit(HostInput input) {
 		inputs.add(input);
@@ -144,6 +171,9 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 
 	@Override
 	public EventSimulator<T> fork() {
+		if (live) {
+			throw new IllegalStateException("A live simulator keeps no inputs to fork from");
+		}
 		final EventSimulator<T> fork = new EventSimulator<>(start, skipping, true);
 		applied.forEach(fork::submit);
 		inputs.forEach(fork::submit);
@@ -153,6 +183,9 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 
 	@Override
 	public SimulationSnapshot snapshot() {
+		if (live) {
+			throw new IllegalStateException("A live simulator keeps no inputs to snapshot");
+		}
 		final List<HostInput> allInputs = new ArrayList<>(applied);
 		final List<HostInput> pending = new ArrayList<>(inputs);
 		Collections.sort(pending);
@@ -185,7 +218,9 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 	}
 
 	private void apply(HostInput input, long tickMillis) {
-		applied.add(input);
+		if (!live) {
+			applied.add(input);
+		}
 		// Trains left alone catch up under the old inputs, and work out again under the new ones
 		runner.catchUpAll();
 		if (input instanceof HostInput.Hold) {

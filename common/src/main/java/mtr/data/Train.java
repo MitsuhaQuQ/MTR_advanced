@@ -51,6 +51,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * The cruising speed for the run to the next stop, lowered so the train arrives on time, or infinity for none.
 	 */
 	protected float cruiseCap = Float.POSITIVE_INFINITY;
+	/**
+	 * Whether the component's simulator moves the train (G1): its state is then copied in each tick, and the train only
+	 * does what needs the world, such as its cars, riders and doors.
+	 */
+	protected boolean movedBySimulator;
 	private SpeedCurves speedCurves;
 	private List<PathData> speedCurvesPath;
 	private int speedCurvesSize;
@@ -572,7 +577,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			// The rules moving the train are in the component (decoupling document 2.2); the old ones stay for comparing
 			motionWorld = world;
 			motionDepot = depot;
-			final int totalDwellTicks = MotionConfig.useLegacyMotion(world.isClientSide()) ? LegacyTrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed) : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
+			final int totalDwellTicks = movedBySimulator ? motion.getTotalDwellTicks() : MotionConfig.useLegacyMotion(world.isClientSide()) ? LegacyTrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed) : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
 			if (totalDwellTicks < 0) {
 				return;
 			}

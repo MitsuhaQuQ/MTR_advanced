@@ -802,6 +802,13 @@ public class TrainService<T extends PlanTrack> {
 	/**
 	 * @return true if the train isn't on the usual path of the depot, which it then keeps until it is back
 	 */
+	/**
+	 * @return the key of the path of the service the train is on, or empty for the usual path of its siding
+	 */
+	public String getTripPathKey() {
+		return tripPathKey;
+	}
+
 	public boolean isOnTripPath() {
 		return tripPath != null;
 	}

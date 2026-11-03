@@ -540,6 +540,10 @@ public final class TickRunner<T extends RunTrack> {
 		return Collections.unmodifiableList(events);
 	}
 
+	public boolean hasTrain(long trainId) {
+		return trainsById.containsKey(trainId);
+	}
+
 	/**
 	 * @return the train that has the rail now, as the game's train positions would have it, or 0 if nothing has it
 	 */
@@ -1908,6 +1912,28 @@ public final class TickRunner<T extends RunTrack> {
 				blockedRail = rail;
 			}
 			return blocked;
+		}
+
+		public long getSidingId() {
+			return sidingRun.sidingId;
+		}
+
+		/**
+		 * @return the rails it keeps for turning back, until its tail reaches {@link #getTurnBackUntil}
+		 */
+		public List<UUID> getTurnBackRails() {
+			return turnBackRails;
+		}
+
+		public int getTurnBackUntil() {
+			return turnBackUntil;
+		}
+
+		/**
+		 * @return the services its depot sent out last and the days its duties ran, as the game's depot saves them
+		 */
+		public DepotDispatcher getDispatcher() {
+			return sidingRun.depot.dispatcher;
 		}
 
 		/**

@@ -3,6 +3,7 @@ package mtr.data;
 import transitsim.plan.DepotReturn;
 import transitsim.sim.SimDataset;
 import transitsim.sim.RunRecord;
+import transitsim.sim.TickRunner;
 import transitsim.io.BinaryKeyed;
 import transitsim.io.ByteArrayBinary;
 import java.util.function.Function;
@@ -64,6 +65,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private int loopJoinIndex;
 	private boolean trainsRelocated;
+	/**
+	 * Whether the component's simulator runs the siding's trains (G1): it sends them out and takes them back, and the
+	 * siding's trains only show its trains.
+	 */
+	private boolean runBySimulator;
 	private int ticksSinceLoad;
 	private float accelerationConstant;
 	/**
@@ -751,8 +757,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			trainsRelocated = false;
 		}
 
-		// Train positions and the routes of the depot are known once every siding has run for a tick
-		if (ticksSinceLoad < 2 && ++ticksSinceLoad == 2) {
+		// Train positions and the routes of the depot are known once every siding has run for a tick; the simulator puts
+		// its trains where the plan has them itself
+		if (ticksSinceLoad < 2 && ++ticksSinceLoad == 2 && !runBySimulator) {
 			trains.stream().filter(TrainServer::needsAlignment).sorted(Comparator.comparingDouble(train -> -train.getRailProgress())).forEach(train -> train.alignToTimetable(depot, dataCache, trainPositions));
 			trainsToSync.addAll(trains);
 		}
@@ -777,6 +784,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				train.drainMotionEvents(motionEvents);
 			}
 
+			if (runBySimulator) {
+				if (trainPositions != null && !transportMode.continuousMovement) {
+					train.writeTrainPositions(trainPositions, signalBlocks);
+				}
+				continue;
+			}
+
 			if (train.closeToDepot(train.spacing * trainCars)) {
 				spawnTrain = false;
 			}
@@ -797,6 +811,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (trainPositions != null && !transportMode.continuousMovement) {
 				train.writeTrainPositions(trainPositions, signalBlocks);
 			}
+		}
+
+		if (runBySimulator) {
+			return;
 		}
 
 		// A depot running by its duties has a train for each slot of the siding
@@ -852,6 +870,48 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		);
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
+	}
+
+	public boolean isRunBySimulator() {
+		return runBySimulator;
+	}
+
+	/**
+	 * @return whether the siding's path was found again since its last tick, which moved its trains
+	 */
+	public boolean hasTrainsRelocated() {
+		return trainsRelocated;
+	}
+
+	/**
+	 * Has the siding's trains show the simulator's trains of the siding (G1): a train for each of them, with the same ID,
+	 * and none other.
+	 */
+	public void showSimulatedTrains(List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> simulatedTrains) {
+		runBySimulator = true;
+		final Map<Long, TickRunner<SimDataset.DataTrack>.HeadlessTrain> byId = new HashMap<>();
+		simulatedTrains.forEach(train -> byId.put(train.id, train));
+		trains.removeIf(train -> !byId.containsKey(train.id));
+		final Set<Long> shown = new HashSet<>();
+		trains.forEach(train -> {
+			shown.add(train.id);
+			train.setSimulated(byId.get(train.id));
+		});
+		byId.forEach((simulatedId, simulatedTrain) -> {
+			if (!shown.contains(simulatedId)) {
+				final TrainServer train = new TrainServer(simulatedId, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
+				train.setSimulated(simulatedTrain);
+				trains.add(train);
+			}
+		});
+	}
+
+	/**
+	 * The game moves the siding's trains again, from where the simulator had them.
+	 */
+	public void stopSimulated() {
+		runBySimulator = false;
+		trains.forEach(train -> train.setSimulated(null));
 	}
 
 	public void forEachTrain(Consumer<TrainServer> consumer) {
