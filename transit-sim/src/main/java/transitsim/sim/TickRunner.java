@@ -117,6 +117,35 @@ public final class TickRunner<T extends RunTrack> {
 		return Collections.unmodifiableList(events);
 	}
 
+	/**
+	 * @return the train with this ID, or null
+	 */
+	public HeadlessTrain getTrain(long trainId) {
+		for (final SidingRun sidingRun : sidings.values()) {
+			for (final HeadlessTrain train : sidingRun.trains) {
+				if (train.id == trainId) {
+					return train;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Takes a train away, which gives up everything it holds. Its siding makes a new one when it needs it.
+	 *
+	 * @return false if there is no such train
+	 */
+	public boolean removeTrain(long trainId) {
+		for (final SidingRun sidingRun : sidings.values()) {
+			if (sidingRun.trains.removeIf(train -> train.id == trainId)) {
+				reservations.release(trainId);
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public List<HeadlessTrain> getTrains() {
 		final List<HeadlessTrain> trains = new ArrayList<>();
 		sidings.values().forEach(sidingRun -> trains.addAll(sidingRun.trains));
@@ -281,6 +310,10 @@ public final class TickRunner<T extends RunTrack> {
 		private int grantedRunEnd = -1;
 		private int requestedRunEnd = -1;
 		private long eventSequence;
+		/**
+		 * Why the host holds the train at its stops, or null.
+		 */
+		private String hostHold;
 		private SpeedCurves curves;
 		private List<T> curvesPath;
 		private SpeedCurves.Run cappedRun;
@@ -302,12 +335,22 @@ public final class TickRunner<T extends RunTrack> {
 			service.setNetwork(sidingRun.depot, routes, null);
 		}
 
-		public double getRailProgressNow() {
-			return railProgress;
+		/**
+		 * Keeps the train at its next stop with its doors open, or lets it go again with null.
+		 */
+		public void setHostHold(String reason) {
+			hostHold = reason;
 		}
 
-		public boolean isOnRouteNow() {
-			return onRoute;
+		public String getHostHold() {
+			return hostHold;
+		}
+
+		/**
+		 * @return the rail of the path the head is on
+		 */
+		public int getHeadRail() {
+			return path.isEmpty() ? 0 : MotionConstants.findIndex(this, railProgress, false);
 		}
 
 		private void simulate() {
@@ -706,7 +749,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean isHeldAtStop() {
-			return TrainRules.isHeldAtStop(this);
+			return hostHold != null || TrainRules.isHeldAtStop(this);
 		}
 
 		@Override
