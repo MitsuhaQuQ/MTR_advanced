@@ -53,11 +53,11 @@ class SimulatorEquivalenceTest {
 	@Test
 	void mostTicksOfADayAreSkipped() {
 		final long end = MONDAY + 23 * HOUR;
-		final EventSimulator<ScenarioTrack> everyTick = new EventSimulator<>(new ScenarioLine(2400, 6, 6).runner, false);
+		final EventSimulator<ScenarioTrack> everyTick = new EventSimulator<>(() -> new ScenarioLine(2400, 6, 6).runner, false);
 		final long start1 = System.nanoTime();
 		everyTick.advanceTo(end);
 		final long everyTickNanos = System.nanoTime() - start1;
-		final EventSimulator<ScenarioTrack> skipping = new EventSimulator<>(new ScenarioLine(2400, 6, 6).runner, true);
+		final EventSimulator<ScenarioTrack> skipping = new EventSimulator<>(() -> new ScenarioLine(2400, 6, 6).runner, true);
 		final long start2 = System.nanoTime();
 		skipping.advanceTo(end);
 		final long skippingNanos = System.nanoTime() - start2;
@@ -69,8 +69,8 @@ class SimulatorEquivalenceTest {
 	}
 
 	private static void assertSame(double between, int trainCars, int maxTrains, long end, Consumer<EventSimulator<ScenarioTrack>> inputs) {
-		final EventSimulator<ScenarioTrack> everyTick = new EventSimulator<>(new ScenarioLine(between, trainCars, maxTrains).runner, false);
-		final EventSimulator<ScenarioTrack> skipping = new EventSimulator<>(new ScenarioLine(between, trainCars, maxTrains).runner, true);
+		final EventSimulator<ScenarioTrack> everyTick = new EventSimulator<>(() -> new ScenarioLine(between, trainCars, maxTrains).runner, false);
+		final EventSimulator<ScenarioTrack> skipping = new EventSimulator<>(() -> new ScenarioLine(between, trainCars, maxTrains).runner, true);
 		inputs.accept(everyTick);
 		inputs.accept(skipping);
 		everyTick.advanceTo(end);

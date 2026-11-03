@@ -10,7 +10,7 @@ public final class SimEvent {
 	 * In the fixed order events of the same moment sort in.
 	 */
 	public enum Kind {
-		ARRIVE, PASS, RETURNED, DOORS_CLOSE, HELD, RELEASED, DEADLOCK, SEGMENT_REPLACED, DOORS_OPEN, DEPART
+		ARRIVE, PASS, RETURNED, DOORS_CLOSE, HELD, RELEASED, CONFLICT, DEADLOCK, SEGMENT_REPLACED, DOORS_OPEN, DEPART
 	}
 
 	public final long cursor;
@@ -26,11 +26,15 @@ public final class SimEvent {
 	 */
 	public final int rail;
 	/**
-	 * Why the train was held, or empty.
+	 * Why the train was held, or what the conflict was, or empty.
 	 */
 	public final String reason;
+	/**
+	 * The event happened in a fork of the simulation, so it is a prediction the host acts on in no way (6.2, rule 3).
+	 */
+	public final boolean predicted;
 
-	SimEvent(long cursor, long time, Kind kind, long trainId, long sequence, int rail, String reason) {
+	SimEvent(long cursor, long time, Kind kind, long trainId, long sequence, int rail, String reason, boolean predicted) {
 		this.cursor = cursor;
 		this.time = time;
 		this.kind = kind;
@@ -38,6 +42,7 @@ public final class SimEvent {
 		this.sequence = sequence;
 		this.rail = rail;
 		this.reason = reason;
+		this.predicted = predicted;
 	}
 
 	@Override

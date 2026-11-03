@@ -45,4 +45,15 @@ public interface Simulator {
 	 * @return the events after it, up to the simulation time now, in their order (7.1, rule 3)
 	 */
 	List<SimEvent> events(long afterCursor);
+
+	/**
+	 * A simulation of its own from the state now, for predictions (6.2): it shares nothing that changes with this one, its
+	 * events are marked as predicted, and it can be given inputs this one never gets.
+	 */
+	Simulator fork();
+
+	/**
+	 * What it takes to carry on from now later, as after the server stops (6.4).
+	 */
+	SimulationSnapshot snapshot();
 }

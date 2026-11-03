@@ -141,11 +141,10 @@ class SimulatorPropertiesTest {
 
 	@Test
 	void aPlanPublishedWhileTrainsRunIsTheSameAsChangingItBetweenTicks() {
-		final ScenarioLine line = new ScenarioLine(400, 2, 4);
-		final EventSimulator<ScenarioTrack> simulator = new EventSimulator<>(line.runner);
-		simulator.submit(new HostInput.PublishPlan(MONDAY + 6 * HOUR + 21 * MINUTE, 1, () -> {
-			line.up.timetable.marginPercent = 40;
-			line.up.timetable.revision++;
+		final EventSimulator<ScenarioTrack> simulator = simulator();
+		simulator.submit(new HostInput.PublishPlan(MONDAY + 6 * HOUR + 21 * MINUTE, 1, routes -> {
+			routes.apply(1).getTimetable().marginPercent = 40;
+			routes.apply(1).getTimetable().revision++;
 		}));
 		simulator.advanceTo(END);
 		final ScenarioLine edited = new ScenarioLine(400, 2, 4);
@@ -158,13 +157,13 @@ class SimulatorPropertiesTest {
 
 	@Test
 	void theSimulatorRunsTrainsAsTheTickRunnerDoes() {
-		final EventSimulator<ScenarioTrack> simulator = new EventSimulator<>(new ScenarioLine(2400, 6, 6).runner);
+		final EventSimulator<ScenarioTrack> simulator = new EventSimulator<>(() -> new ScenarioLine(2400, 6, 6).runner);
 		simulator.advanceTo(END);
 		assertEquals(new ScenarioLine(2400, 6, 6).run(END), toStops(simulator));
 	}
 
 	private static EventSimulator<ScenarioTrack> simulator() {
-		return new EventSimulator<>(new ScenarioLine(400, 2, 4).runner);
+		return new EventSimulator<>(() -> new ScenarioLine(400, 2, 4).runner);
 	}
 
 	/**

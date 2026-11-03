@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Supplier;
 
 /**
  * The simulator of the contracts document (section 9) over a {@link TickRunner} (S4c). Time steps on the runner's ticks,
@@ -23,24 +24,54 @@ import java.util.TreeMap;
 public final class EventSimulator<T extends RunTrack> implements Simulator {
 
 	private final TickRunner<T> runner;
+	/**
+	 * Makes the simulation's start again, with its own routes and trains, for forks and for carrying on from a snapshot.
+	 */
+	private final Supplier<TickRunner<T>> start;
+	private final boolean skipping;
+	private final boolean predicted;
 	private final PriorityQueue<HostInput> inputs = new PriorityQueue<>();
+	/**
+	 * The inputs applied so far, in their order.
+	 */
+	private final List<HostInput> applied = new ArrayList<>();
 	private final List<SimEvent> events = new ArrayList<>();
 	private final Map<Long, Long> eventSequences = new HashMap<>();
 	private final Map<Long, Boolean> doorsOpen = new TreeMap<>();
 	private int motionEventsRead;
 	private long cursor;
 
-	public EventSimulator(TickRunner<T> runner) {
-		this(runner, true);
+	/**
+	 * @param start makes the start of the simulation, each time with routes and trains of its own
+	 */
+	public EventSimulator(Supplier<TickRunner<T>> start) {
+		this(start, true);
 	}
 
 	/**
 	 * @param skipping false to run every tick, for comparing with skipping
 	 */
-	public EventSimulator(TickRunner<T> runner, boolean skipping) {
-		this.runner = runner;
+	public EventSimulator(Supplier<TickRunner<T>> start, boolean skipping) {
+		this(start, skipping, false);
+	}
+
+	private EventSimulator(Supplier<TickRunner<T>> start, boolean skipping, boolean predicted) {
+		this.start = start;
+		this.skipping = skipping;
+		this.predicted = predicted;
+		runner = start.get();
 		runner.setSkipping(skipping);
 		runner.setAfterTick(this::collectEvents);
+	}
+
+	/**
+	 * Carries on a simulation from a snapshot, running its inputs again from the start (6.4).
+	 */
+	public static <T extends RunTrack> EventSimulator<T> restore(Supplier<TickRunner<T>> start, SimulationSnapshot snapshot) {
+		final EventSimulator<T> simulator = new EventSimulator<>(start);
+		snapshot.inputs.forEach(simulator::submit);
+		simulator.advanceTo(snapshot.time);
+		return simulator;
 	}
 
 	public TickRunner<T> getRunner() {
@@ -87,6 +118,28 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 	}
 
 	@Override
+	public EventSimulator<T> fork() {
+		final EventSimulator<T> fork = new EventSimulator<>(start, skipping, true);
+		applied.forEach(fork::submit);
+		inputs.forEach(fork::submit);
+		fork.advanceTo(getTime());
+		return fork;
+	}
+
+	@Override
+	public SimulationSnapshot snapshot() {
+		final List<HostInput> allInputs = new ArrayList<>(applied);
+		final List<HostInput> pending = new ArrayList<>(inputs);
+		Collections.sort(pending);
+		allInputs.addAll(pending);
+		return new SimulationSnapshot(getTime(), allInputs, cursor);
+	}
+
+	public boolean isPrediction() {
+		return predicted;
+	}
+
+	@Override
 	public List<SimEvent> events(long afterCursor) {
 		final List<SimEvent> newEvents = new ArrayList<>();
 		// Events are in cursor order, so the first one after the cursor is found by halving
@@ -107,6 +160,7 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 	}
 
 	private void apply(HostInput input, long tickMillis) {
+		applied.add(input);
 		if (input instanceof HostInput.Hold) {
 			final HostInput.Hold hold = (HostInput.Hold) input;
 			final TickRunner<T>.HeadlessTrain train = runner.getTrain(hold.trainId);
@@ -128,7 +182,33 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 			final HostInput.ExternalOccupancy occupancy = (HostInput.ExternalOccupancy) input;
 			runner.occupyUntil(occupancy.rail, occupancy.untilTime);
 		} else if (input instanceof HostInput.PublishPlan) {
-			((HostInput.PublishPlan) input).change.run();
+			((HostInput.PublishPlan) input).change.accept(runner.getRoutes());
+		} else if (input instanceof HostInput.PublishNetwork) {
+			publishNetwork(((HostInput.PublishNetwork) input).removedTracks, tickMillis);
+		}
+	}
+
+	/**
+	 * A train with a removed track ahead stops short of it and is reported; one standing on one is taken off for the host
+	 * to put somewhere else (5.1, rule 5).
+	 */
+	private void publishNetwork(Set<java.util.UUID> removedTracks, long tickMillis) {
+		runner.removeTracks(removedTracks);
+		for (final TickRunner<T>.HeadlessTrain train : runner.getTrains()) {
+			if (!train.isOnRoute()) {
+				continue;
+			}
+			final int removedRail = train.findRemovedRail();
+			if (removedRail < 0) {
+				continue;
+			}
+			if (train.isOnRemovedTrack()) {
+				addEvent(tickMillis, SimEvent.Kind.CONFLICT, train.id, removedRail, "track removed under the train");
+				runner.removeTrain(train.id);
+				doorsOpen.remove(train.id);
+			} else {
+				addEvent(tickMillis, SimEvent.Kind.CONFLICT, train.id, removedRail, "track removed ahead");
+			}
 		}
 	}
 
@@ -191,6 +271,6 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 
 	private void addEvent(long millis, SimEvent.Kind kind, long trainId, int rail, String reason) {
 		final long sequence = eventSequences.merge(trainId, 1L, Long::sum);
-		events.add(new SimEvent(++cursor, millis, kind, trainId, sequence, rail, kind == SimEvent.Kind.HELD && reason.isEmpty() && rail >= 0 ? "blocked" : reason));
+		events.add(new SimEvent(++cursor, millis, kind, trainId, sequence, rail, kind == SimEvent.Kind.HELD && reason.isEmpty() && rail >= 0 ? "blocked" : reason, predicted));
 	}
 }

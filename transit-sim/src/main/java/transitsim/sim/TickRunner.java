@@ -86,6 +86,26 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * Tracks gone from the network, which no train runs onto (contracts document 5.1, rule 5).
+	 */
+	private final Set<UUID> removedTracks = new HashSet<>();
+
+	public LongFunction<? extends PlanRoute> getRoutes() {
+		return routes;
+	}
+
+	/**
+	 * Takes tracks out of the network. Trains stop short of them; the caller deals with trains standing on them.
+	 */
+	public void removeTracks(Set<UUID> tracks) {
+		removedTracks.addAll(tracks);
+	}
+
+	public boolean isRemoved(UUID track) {
+		return removedTracks.contains(track);
+	}
+
+	/**
 	 * Takes a rail from now until this time, as a train driven by hand or another train the host moves would.
 	 */
 	public void occupyUntil(UUID rail, long untilMillis) {
@@ -242,6 +262,10 @@ public final class TickRunner<T extends RunTrack> {
 		final PlanRoute firstRoute = depot.getRoutes().get(0);
 		for (final SidingRun sidingRun : ready) {
 			final HeadlessTrain train = sidingRun.waitingTrain;
+			// A siding whose path runs over a track gone from the network sends no more trains
+			if (train.findRemovedRail() >= 0) {
+				continue;
+			}
 			final long tripMillis = train.service.findDeployService(depot.dispatcher.lastDeployedTrips.getOrDefault(firstRoute.getRouteId(), 0L));
 			if (tripMillis != 0) {
 				depot.dispatcher.lastDeployedTrips.put(firstRoute.getRouteId(), tripMillis);
@@ -449,10 +473,10 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		/**
-		 * @return the rail of the path the head is on
+		 * @return the rail of the path the head is on, which for a train standing at the end of a rail is that rail
 		 */
 		public int getHeadRail() {
-			return path.isEmpty() ? 0 : MotionConstants.findIndex(this, railProgress, false);
+			return path.isEmpty() ? 0 : Math.max(0, MotionConstants.findIndex(this, railProgress, true));
 		}
 
 		private void simulate() {
@@ -615,7 +639,35 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		private boolean isRailOccupied(int index) {
-			return index < path.size() && occupancy.isTakenByOther(path.get(index).getTrackKey(), id);
+			return index < path.size() && (occupancy.isTakenByOther(path.get(index).getTrackKey(), id) || removedTracks.contains(path.get(index).getTrackKey()));
+		}
+
+		/**
+		 * @return true if the train stands on a track gone from the network, counted from tail to head the way what it takes
+		 * is
+		 */
+		public boolean isOnRemovedTrack() {
+			final int headIndex = MotionConstants.findIndex(this, railProgress, true);
+			final int tailIndex = MotionConstants.findIndex(this, railProgress - siding.trainCars * siding.spacing, false);
+			for (int i = Math.max(tailIndex, 0); i <= headIndex && i < path.size(); i++) {
+				if (removedTracks.contains(path.get(i).getTrackKey())) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * @return the first rail of the path from the tail on whose track is gone from the network, or -1
+		 */
+		public int findRemovedRail() {
+			final int tailIndex = Math.max(0, MotionConstants.findIndex(this, railProgress - siding.trainCars * siding.spacing, true));
+			for (int i = onRoute ? tailIndex : 0; i < path.size(); i++) {
+				if (removedTracks.contains(path.get(i).getTrackKey())) {
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		private void holdRun() {

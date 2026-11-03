@@ -223,7 +223,7 @@ G0 要先证明现在的存档格式（`TrainServer`、`TrainService` 存的字�
 | 项 | 现状 |
 |---|---|
 | 恢复 | `TrainService.alignToTimetable` 按时刻表对齐，被占时退到前面的空闲车站（`isStopFree`）；许可在停服后自然为空，因为方向预约不存档 |
-| 预测 | 没有分支，PIDS 的到达时间按计划和晚点估算 |
+| 预测 | S4d：组件的 `Simulator.fork()` 按重放得到独立分支，事件标为预测；游戏里 PIDS 的到达时间仍按计划和晚点估算 |
 
 ## 7. 事件和副作用（审查 A07）
 
