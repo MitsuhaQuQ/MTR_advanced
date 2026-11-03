@@ -8,7 +8,7 @@ public enum DoorAnimationType {
 	STANDARD_SLOW(0.5F),
 	CONSTANT(0.5F),
 	PLUG_FAST(0.5F),
-	PLUG_SLOW(2),
+	PLUG_SLOW(1),
 	BOUNCY_1(0.5F),
 	BOUNCY_2(0.5F),
 	MLR(0.7F),
@@ -26,7 +26,7 @@ public enum DoorAnimationType {
 			case PLUG_FAST:
 				return value < 0.05 ? -value * 20 - 0.01F : -1.01F;
 			case PLUG_SLOW:
-				return smoothEnds(-0.01F, -1.01F, 0, 0.1F, value);
+				return linear(-0.01F, -1.01F, 0, 0.1F, value);
 			default:
 				return 0;
 		}
@@ -37,18 +37,14 @@ public enum DoorAnimationType {
 			case CONSTANT:
 				return doorMax * Mth.clamp(value, 0, 1) / duration;
 			case PLUG_FAST:
-				return smoothEnds(-doorMax, doorMax, -duration, duration, value);
+				// At a constant speed
+				return linear(0, doorMax, 0, duration, value);
 			case PLUG_SLOW:
+				// At a constant speed in one slide without stopping: 1.6 seconds to open and 2.4 seconds to close, 4 seconds in all
 				if (opening) {
-					return smoothEnds(0, doorMax, 0.05F, 0.5F, value);
+					return linear(0, doorMax, 0.05F, 0.5F, value);
 				} else {
-					if (value > 0.5) {
-						return smoothEnds(2, doorMax, 0.5F, 1, value);
-					} else if (value < 0.3) {
-						return smoothEnds(0, 2, 0.05F, 0.3F, value);
-					} else {
-						return 2;
-					}
+					return linear(0, doorMax, 0.05F, 0.8F, value);
 				}
 			case BOUNCY_1:
 				if (opening) {
@@ -138,6 +134,10 @@ public enum DoorAnimationType {
 			default:
 				return smoothEnds(0, doorMax, 0, duration, value);
 		}
+	}
+
+	private static float linear(float startValue, float endValue, float startTime, float endTime, float time) {
+		return startValue + (endValue - startValue) * Mth.clamp((time - startTime) / (endTime - startTime), 0, 1);
 	}
 
 	private static float smoothEnds(float startValue, float endValue, float startTime, float endTime, float time) {
