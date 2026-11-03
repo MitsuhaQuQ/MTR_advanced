@@ -1,7 +1,6 @@
 package mtr.data;
 
 import mtr.TrigCache;
-import mtr.advanced.RunReservations;
 import mtr.advanced.SpeedCurves;
 import mtr.block.*;
 import mtr.mappings.Utilities;
@@ -22,6 +21,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.sim.RunReservations;
 
 import java.io.IOException;
 import java.util.*;

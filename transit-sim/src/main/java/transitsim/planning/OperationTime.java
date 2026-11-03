@@ -1,4 +1,4 @@
-package mtr.operation;
+package transitsim.planning;
 
 import java.time.DayOfWeek;
 import java.time.Instant;

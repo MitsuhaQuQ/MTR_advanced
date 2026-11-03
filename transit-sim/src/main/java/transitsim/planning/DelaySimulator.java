@@ -1,8 +1,8 @@
-package mtr.operation;
+package transitsim.planning;
 
-import mtr.operation.OperationPlan.Duty;
-import mtr.operation.OperationPlan.Trip;
-import mtr.operation.OperationPlan.TripStop;
+import transitsim.planning.OperationPlan.Duty;
+import transitsim.planning.OperationPlan.Trip;
+import transitsim.planning.OperationPlan.TripStop;
 
 /**
  * Carries lateness along a duty without any track detail. Running times stay as planned, so a train only recovers

@@ -1,12 +1,12 @@
-package mtr.operation;
+package transitsim.planning;
 
-import mtr.operation.OperationPlan.Duty;
-import mtr.operation.OperationPlan.Issue;
-import mtr.operation.OperationPlan.IssueType;
-import mtr.operation.OperationPlan.Phase;
-import mtr.operation.OperationPlan.PhaseType;
-import mtr.operation.OperationPlan.Trip;
-import mtr.operation.OperationPlan.TripStop;
+import transitsim.planning.OperationPlan.Duty;
+import transitsim.planning.OperationPlan.Issue;
+import transitsim.planning.OperationPlan.IssueType;
+import transitsim.planning.OperationPlan.Phase;
+import transitsim.planning.OperationPlan.PhaseType;
+import transitsim.planning.OperationPlan.Trip;
+import transitsim.planning.OperationPlan.TripStop;
 
 import java.util.ArrayList;
 import java.util.Comparator;

@@ -1,4 +1,6 @@
-package mtr.advanced;
+package transitsim.sim;
+
+import transitsim.network.RailKeys;
 
 import java.util.HashMap;
 import java.util.List;
@@ -62,7 +64,7 @@ public final class RunReservations {
 		public final boolean forwards;
 
 		public Move(long fromPos, long toPos) {
-			rail = PathBoundaries.segmentKey(fromPos, toPos);
+			rail = RailKeys.of(fromPos, toPos);
 			forwards = fromPos < toPos;
 		}
 	}

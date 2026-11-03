@@ -1,11 +1,10 @@
 package mtr.data;
 
+import io.netty.buffer.Unpooled;
 import mtr.advanced.DutyShapes;
 import mtr.advanced.GraphRecords;
 import mtr.advanced.ServiceExceptions;
 import mtr.advanced.SpeedCurves;
-import mtr.advanced.SpeedProfile;
-import io.netty.buffer.Unpooled;
 import mtr.packet.IPacket;
 import mtr.path.PathData;
 import mtr.path.PathFinder;
@@ -20,6 +19,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.motion.SpeedProfile;
 
 import java.io.IOException;
 import java.util.*;

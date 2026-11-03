@@ -3,7 +3,6 @@ package mtr.data;
 import mtr.Items;
 import mtr.Keys;
 import mtr.advanced.SpeedCurves;
-import mtr.advanced.SpeedProfile;
 import mtr.block.BlockPSDAPGBase;
 import mtr.block.BlockPlatform;
 import mtr.packet.IPacket;
@@ -23,6 +22,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.motion.SpeedProfile;
 
 import java.io.*;
 import java.util.*;

@@ -3,6 +3,7 @@ package mtr.advanced;
 import mtr.data.RailType;
 import mtr.data.TransportMode;
 import mtr.path.PathData;
+import transitsim.motion.SpeedProfile;
 
 import java.util.ArrayList;
 import java.util.Collections;

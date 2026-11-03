@@ -41,6 +41,8 @@ dependencies {
 
 	common(project(path: ":common", configuration: "namedElements")) { transitive false }
 	shadowCommon(project(path: ":common", configuration: "transformProductionForge")) { transitive = false }
+	implementation project(":transit-sim")
+	shadowCommon(project(":transit-sim")) { transitive false }
 
 	if (rootProject.has_ante) {
 		modApi("me.shedaniel.cloth:cloth-config-forge:${rootProject.cloth_config_version}") { transitive false }

@@ -1,11 +1,11 @@
-package mtr.operation;
+package transitsim.planning;
 
-import mtr.operation.OperationPlan.Duty;
-import mtr.operation.OperationPlan.IssueType;
-import mtr.operation.OperationPlan.Phase;
-import mtr.operation.OperationPlan.PhaseType;
-import mtr.operation.PlanAlignment.Placement;
 import org.junit.jupiter.api.Test;
+import transitsim.planning.OperationPlan.Duty;
+import transitsim.planning.OperationPlan.IssueType;
+import transitsim.planning.OperationPlan.Phase;
+import transitsim.planning.OperationPlan.PhaseType;
+import transitsim.planning.PlanAlignment.Placement;
 
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -15,14 +15,14 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
-import static mtr.operation.OperationTime.ALL_DAYS;
-import static mtr.operation.OperationTime.DAY_MILLIS;
-import static mtr.operation.OperationTime.HOUR_MILLIS;
-import static mtr.operation.OperationTime.MINUTE_MILLIS;
-import static mtr.operation.OperationTime.SECOND_MILLIS;
-import static mtr.operation.OperationTime.WEEKDAYS;
-import static mtr.operation.OperationTime.WEEKENDS;
-import static mtr.operation.OperationTime.WEEK_MILLIS;
+import static transitsim.planning.OperationTime.ALL_DAYS;
+import static transitsim.planning.OperationTime.DAY_MILLIS;
+import static transitsim.planning.OperationTime.HOUR_MILLIS;
+import static transitsim.planning.OperationTime.MINUTE_MILLIS;
+import static transitsim.planning.OperationTime.SECOND_MILLIS;
+import static transitsim.planning.OperationTime.WEEKDAYS;
+import static transitsim.planning.OperationTime.WEEKENDS;
+import static transitsim.planning.OperationTime.WEEK_MILLIS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

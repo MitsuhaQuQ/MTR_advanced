@@ -59,7 +59,10 @@ architectury {
 	minecraft = minecraft_version
 }
 
-subprojects {
+// The simulation component runs without Minecraft, so it is a plain Java project kept out of everything Minecraft below
+def isComponent = { project -> project.name == "transit-sim" }
+
+configure(subprojects.findAll { !isComponent(it) }) {
 	apply plugin: "dev.architectury.loom"
 	apply plugin: "com.github.johnrengelman.shadow"
 
@@ -339,7 +342,9 @@ task setupFiles() {
 }
 
 allprojects {
-	apply plugin: "architectury-plugin"
+	if (!isComponent(project)) {
+		apply plugin: "architectury-plugin"
+	}
 
 	version = minecraft_version + "-" + rootProject.mod_version
 	group = rootProject.maven_group
@@ -357,6 +362,12 @@ allprojects {
 
 	tasks.withType(JavaCompile) {
 		options.encoding = "UTF-8"
+
+		// The component stays on Java 8 for every Minecraft version
+		if (isComponent(project)) {
+			options.release = 8
+			return
+		}
 
 		if (minecraft_main_version == 16) {
 			def targetVersion = 8
@@ -376,6 +387,9 @@ allprojects {
 	}
 
 	afterEvaluate {
+		if (isComponent(it)) {
+			return
+		}
 		for (def task in it.tasks) {
 			if (task != rootProject.tasks.setupFiles) {
 				task.dependsOn rootProject.tasks.setupFiles

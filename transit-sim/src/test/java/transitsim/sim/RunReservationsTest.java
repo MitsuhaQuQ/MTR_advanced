@@ -1,4 +1,4 @@
-package mtr.advanced;
+package transitsim.sim;
 
 import org.junit.jupiter.api.Test;
 

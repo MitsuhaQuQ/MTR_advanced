@@ -5,6 +5,7 @@ import mtr.data.SerializedDataBase;
 import net.minecraft.network.FriendlyByteBuf;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.network.RailKeys;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -31,7 +32,7 @@ public final class PathBoundaries {
 	public static final int MAX_BOUNDARIES = 65536;
 
 	public static UUID segmentKey(long pos1, long pos2) {
-		return new UUID(Math.min(pos1, pos2), Math.max(pos1, pos2));
+		return RailKeys.of(pos1, pos2);
 	}
 
 	public boolean isEmpty() {

@@ -1,10 +1,10 @@
 package mtr.advanced;
 
-import mtr.operation.DutyPlanner;
-import mtr.operation.OperationNetwork;
-import mtr.operation.OperationPlan;
-import mtr.operation.OperationTime;
-import mtr.operation.TimetableService;
+import transitsim.planning.DutyPlanner;
+import transitsim.planning.OperationNetwork;
+import transitsim.planning.OperationPlan;
+import transitsim.planning.OperationTime;
+import transitsim.planning.TimetableService;
 
 import java.util.*;
 

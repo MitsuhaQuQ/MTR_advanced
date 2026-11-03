@@ -1,8 +1,8 @@
-package mtr.operation;
+package transitsim.planning;
 
-import mtr.operation.OperationPlan.Duty;
-import mtr.operation.OperationPlan.Phase;
-import mtr.operation.OperationPlan.PhaseType;
+import transitsim.planning.OperationPlan.Duty;
+import transitsim.planning.OperationPlan.Phase;
+import transitsim.planning.OperationPlan.PhaseType;
 
 import java.util.ArrayList;
 import java.util.Comparator;

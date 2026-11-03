@@ -17,6 +17,7 @@ dependencies {
 	if (rootProject.has_ante) {
 		modApi("me.shedaniel.cloth:cloth-config:${rootProject.cloth_config_version}") { transitive = false }
 	}
+	api project(":transit-sim")
 	testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.10.2"
 }

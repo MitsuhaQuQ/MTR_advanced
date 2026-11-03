@@ -1,4 +1,4 @@
-package mtr.advanced;
+package transitsim.motion;
 
 import java.util.ArrayList;
 import java.util.Arrays;

@@ -7,6 +7,7 @@ pluginManagement {
 	}
 }
 
+include("transit-sim")
 include("common")
 include("fabric")
 include("forge")
