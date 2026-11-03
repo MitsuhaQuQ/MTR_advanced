@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.advanced.LiveSimulation;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import io.netty.buffer.Unpooled;
@@ -99,6 +100,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * {@link #trainPositions} is its two ticks, as the rest of the code has always used them.
 	 */
 	private final Occupancy occupancy = new Occupancy();
+	private final LiveSimulation liveSimulation = new LiveSimulation();
 	private final List<Map<UUID, Long>> trainPositions = occupancy.getTicks();
 	/**
 	 * What happened to the trains this tick, collected from every siding and handled together at the end of the tick
@@ -366,6 +368,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		schedulesForPlatform.clear();
 		signalBlocks.resetOccupied();
 		final float ticksElapsed = tickCompensator.nextTick(System.currentTimeMillis());
+		// The component's simulator moves on first, seeing the game's trains where they were at the end of the last tick (G1)
+		liveSimulation.tick(this, trainPositions);
 		// In a fixed order, so a tick runs the same way each time (fix F1, R03 of the architecture review)
 		sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> {
 			siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails);

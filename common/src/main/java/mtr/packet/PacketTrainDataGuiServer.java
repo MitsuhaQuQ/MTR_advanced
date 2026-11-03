@@ -82,6 +82,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	public static void motionConfigS2C(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBoolean(MotionConfig.useLegacyMotion(false));
+		packet.writeInt(MotionConfig.getComponentDrive(false));
 		Registry.sendToPlayer(player, PACKET_MOTION_CONFIG, packet);
 	}
 
@@ -969,16 +970,24 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final Level world = Compat.getLevel(player);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		final boolean useLegacyMotion = packet.readBoolean();
+		final int componentDrive = packet.readInt();
 		PacketGuard.execute(minecraftServer, () -> {
 			final boolean useLegacyMotionOld = MotionConfig.useLegacyMotion(false);
-			if (useLegacyMotionOld == useLegacyMotion) {
+			final int componentDriveOld = MotionConfig.getComponentDrive(false);
+			if (useLegacyMotionOld == useLegacyMotion && componentDriveOld == componentDrive) {
 				return;
 			}
-			MotionConfig.setUseLegacyMotion(useLegacyMotion);
-			System.out.println("Minecraft Transit Railway: " + player.getName().getString() + " switched trains to the " + (useLegacyMotion ? "old" : "new") + " motion rules");
+			MotionConfig.set(useLegacyMotion, componentDrive);
+			if (useLegacyMotionOld != useLegacyMotion) {
+				System.out.println("Minecraft Transit Railway: " + player.getName().getString() + " switched trains to the " + (useLegacyMotion ? "old" : "new") + " motion rules");
+			}
+			if (componentDriveOld != MotionConfig.getComponentDrive(false)) {
+				System.out.println("Minecraft Transit Railway: " + player.getName().getString() + " set the component's simulator to " + new String[]{"off", "compare", "run trains"}[MotionConfig.getComponentDrive(false)]);
+			}
 			if (railwayData != null) {
 				final String key = "\"use_legacy_motion\":";
-				railwayData.railwayDataLoggingModule.addEvent(player, RailwayData.class, Collections.singletonList(key + useLegacyMotionOld), Collections.singletonList(key + useLegacyMotion));
+				final String driveKey = "\"component_drive\":";
+				railwayData.railwayDataLoggingModule.addEvent(player, RailwayData.class, Collections.singletonList(key + useLegacyMotionOld + "," + driveKey + componentDriveOld), Collections.singletonList(key + useLegacyMotion + "," + driveKey + MotionConfig.getComponentDrive(false)));
 			}
 			minecraftServer.getPlayerList().getPlayers().forEach(PacketTrainDataGuiServer::motionConfigS2C);
 		});

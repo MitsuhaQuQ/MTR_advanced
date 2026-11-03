@@ -33,6 +33,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 
 	private final WidgetBetterCheckbox checkboxUseTimeAndWindSync;
 	private final WidgetBetterCheckbox checkboxUseLegacyMotion;
+	private final Button buttonComponentDrive;
 	private final Button buttonUseMTRFont;
 	private final Button buttonShowAnnouncementMessages;
 	private final Button buttonUseTTSAnnouncements;
@@ -65,6 +66,13 @@ public class ConfigScreen extends ScreenBase implements IGui {
 
 		checkboxUseTimeAndWindSync = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.use_time_and_wind_sync"), PacketTrainDataGuiClient::sendUseTimeAndWindSyncC2S);
 		checkboxUseLegacyMotion = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.use_legacy_motion"), PacketTrainDataGuiClient::sendUseLegacyMotionC2S);
+		// Off, comparing with the game, running the trains, in turn; the server sends the setting back to everyone
+		buttonComponentDrive = UtilitiesClient.newButton(BUTTON_HEIGHT, Text.literal(""), button -> {
+			final int componentDrive = (MotionConfig.getComponentDrive(true) + 1) % MotionConfig.COMPONENT_DRIVE_COUNT;
+			MotionConfig.setClient(MotionConfig.useLegacyMotion(true), componentDrive);
+			PacketTrainDataGuiClient.sendMotionConfigC2S(MotionConfig.useLegacyMotion(true), componentDrive);
+			setComponentDriveText(button);
+		});
 
 		buttonUseMTRFont = UtilitiesClient.newButton(BUTTON_HEIGHT, Text.literal(""), button -> {
 			useMTRFont = Config.setUseMTRFont(!useMTRFont);
@@ -123,6 +131,8 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			checkboxUseTimeAndWindSync.setChecked(useTimeAndWindSync);
 			IDrawing.setPositionAndWidth(checkboxUseLegacyMotion, SQUARE_SIZE, SQUARE_SIZE * 2, width);
 			checkboxUseLegacyMotion.setChecked(MotionConfig.useLegacyMotion(true));
+			IDrawing.setPositionAndWidth(buttonComponentDrive, SQUARE_SIZE, SQUARE_SIZE * 3, width - SQUARE_SIZE * 3 - BUTTON_WIDTH);
+			setComponentDriveText(buttonComponentDrive);
 			offsetY = SQUARE_SIZE * 2;
 		} else {
 			offsetY = 0;
@@ -162,6 +172,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 		if (hasTimeAndWindControls) {
 			addDrawableChild(checkboxUseTimeAndWindSync);
 			addDrawableChild(checkboxUseLegacyMotion);
+			addDrawableChild(buttonComponentDrive);
 		}
 		addDrawableChild(buttonUseMTRFont);
 		if (!Keys.LIFTS_ONLY) {
@@ -242,6 +253,10 @@ public class ConfigScreen extends ScreenBase implements IGui {
 		ClientData.DATA_CACHE.sync();
 		ClientData.DATA_CACHE.refreshDynamicResources();
 		ClientData.SIGNAL_BLOCKS.writeCache();
+	}
+
+	private static void setComponentDriveText(Button button) {
+		button.setMessage(Text.translatable("gui.mtr.component_drive", Text.translatable("gui.mtr.component_drive_" + MotionConfig.getComponentDrive(true))));
 	}
 
 	private static void setButtonText(Button button, boolean state) {

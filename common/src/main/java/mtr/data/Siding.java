@@ -854,6 +854,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return sidingData;
 	}
 
+	public void forEachTrain(Consumer<TrainServer> consumer) {
+		trains.stream().sorted(Comparator.comparingLong(train -> train.id)).forEach(consumer);
+	}
+
 	/**
 	 * Adds the siding's trains to a record of them (G0), leaving out the ones driven by hand, which the simulator doesn't
 	 * move.

@@ -30,6 +30,13 @@ public final class SimExport {
 	 * @return the world's routes, depots and sidings in the component's format
 	 */
 	public static byte[] build(RailwayData railwayData) {
+		return toDataset(railwayData).toBytes();
+	}
+
+	/**
+	 * @return the world's routes, depots, sidings, signal blocks and trains, read on the server thread
+	 */
+	public static SimDataset toDataset(RailwayData railwayData) {
 		final SimDataset dataset = new SimDataset();
 		railwayData.routes.stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> dataset.routes.add(new SimDataset.RouteData(route)));
 		railwayData.depots.stream().sorted(Comparator.comparingLong(depot -> depot.id)).forEach(depot -> dataset.depots.add(new SimDataset.DepotData(depot.id, toArray(depot.routeIds), depot.cycleRoutes, depot.duties.diagramMode ? depot.duties.toBytes() : new byte[0])));
@@ -51,7 +58,7 @@ public final class SimExport {
 		});
 		dataset.trains = trains;
 		dataset.signalBlocks.addAll(railwayData.getSignalBlocks().getBlockRails());
-		return dataset.toBytes();
+		return dataset;
 	}
 
 	public static List<SimDataset.DataTrack> toTracks(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails) {

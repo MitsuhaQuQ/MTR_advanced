@@ -28,6 +28,13 @@ public final class SimInputs {
 	private long sequence;
 
 	/**
+	 * @return the next sequence number, for other inputs of the host so they don't share one with these
+	 */
+	public long nextSequence() {
+		return sequence++;
+	}
+
+	/**
 	 * @param time       the time of the tick
 	 * @param occupancy  the rails taken this tick, each with the train that has it, as the game's train positions have them
 	 * @param isExternal whether the simulator leaves a train alone
