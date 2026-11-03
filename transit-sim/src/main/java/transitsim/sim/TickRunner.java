@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,7 +32,13 @@ import java.util.function.LongFunction;
 /**
  * Runs trains tick by tick the way the game's server does, without a world (S4a): each siding's trains in turn by
  * {@link TrainMotion}, {@link TrainRules} and {@link TrainService}, then the runs asked for, then the depots sending trains
- * out. Rails taken are kept in an {@link Occupancy} and runs of trains on duties in {@link RunReservations}.
+ * out. Rails are taken the way an {@link Occupancy} has them and runs of trains on duties are kept in
+ * {@link RunReservations}.
+ * <p>
+ * Skipping (S4c2, S4f), a train is only moved in the ticks in which something can change for it. In the others it only
+ * goes on along its segment or stands, which it catches up on when it is next moved or looked at. A train left alone is
+ * woken when a rail it looked at is taken or let go, when the services its depot has taken change, and for every input.
+ * Ticks in which no train moves are skipped altogether. The results are the same as moving every train in every tick.
  * <p>
  * It is what the event driven simulator is compared against, and runs the fixed whole-chain scenarios. Left out, as they
  * need a world or a player: signal blocks spanning several rails, manual driving, passengers, doors' platforms, and
@@ -39,29 +46,83 @@ import java.util.function.LongFunction;
  */
 public final class TickRunner<T extends RunTrack> {
 
-	public final Occupancy occupancy = new Occupancy();
 	public final RunReservations reservations = new RunReservations();
 	private final Map<Long, SidingRun> sidings = new TreeMap<>();
+	/**
+	 * Each depot once, in the order of its first siding, and its sidings in order.
+	 */
+	private final List<DepotBoard> depots = new ArrayList<>();
+	private final Map<DepotBoard, List<SidingRun>> depotSidings = new HashMap<>();
+	private final Map<Long, HeadlessTrain> trainsById = new HashMap<>();
 	private final List<MotionEvent> events = new ArrayList<>();
 	/**
 	 * Rails taken by something the runner doesn't move, such as a driven train, until a time.
 	 */
 	private final Map<UUID, Long> externalUntil = new TreeMap<>();
+	/**
+	 * What has each rail, as an {@link Occupancy} has it in this tick and the one before.
+	 */
+	private final Map<UUID, RailEntry> rails = new HashMap<>();
+	/**
+	 * Rails whose occupants changed since the end of the last tick.
+	 */
+	private final List<RailEntry> changedRails = new ArrayList<>();
+	/**
+	 * Tracks gone from the network, which no train runs onto (contracts document 5.1, rule 5).
+	 */
+	private final Set<UUID> removedTracks = new HashSet<>();
+	/**
+	 * The trains moved in this tick, in the order they moved.
+	 */
+	private final List<HeadlessTrain> movedTrains = new ArrayList<>();
+	/**
+	 * Trains taken away in this tick, whose rails stay taken until its end.
+	 */
+	private final List<HeadlessTrain> removedTrains = new ArrayList<>();
+	/**
+	 * Trains whose services reserved while they were left alone are let go when the depots start their tick, as the
+	 * services they reserved in every tick would be.
+	 */
+	private final List<HeadlessTrain> standingDrops = new ArrayList<>();
+	/**
+	 * The depots a train that was moved in this tick could leave from.
+	 */
+	private final Set<DepotBoard> readyDepots = new HashSet<>();
 	private final LongFunction<? extends PlanRoute> routes;
 	private long millis;
 	private long nextTrainId = 1;
 	/**
-	 * Whether ticks in which nothing can change are skipped (S4c2).
+	 * Whether trains are left alone in ticks in which nothing can change for them (S4c2, S4f).
 	 */
 	private boolean skipping;
 	private Runnable afterTick = () -> {
 	};
 	private long skippedTicks;
+	private long trainTicks;
+	/**
+	 * The last tick run, so the depots forget the services reserved in the ticks before a skip.
+	 */
+	private long lastTickMillis;
+	private boolean inTick;
+	/**
+	 * How far the tick has got through the trains in their order: trains after this one still move in it.
+	 */
+	private Occupant tickPosition = Occupant.FIRST;
+	private HeadlessTrain movingTrain;
+	/**
+	 * The train working out how long it can be left alone, which watches the rails it looks at.
+	 */
+	private HeadlessTrain quietTrain;
 
 	/**
 	 * The occupant of rails taken from outside.
 	 */
 	public static final long EXTERNAL_OCCUPANT = -1;
+	private static final long TICK = MotionConstants.MILLIS_PER_TICK;
+	/**
+	 * The longest a standing train is left alone before it works out again how long it stands, ten minutes.
+	 */
+	private static final long MAX_STANDING_TICKS = 12000;
 
 	/**
 	 * @param startMillis the time of the first tick, as the timetable counts it
@@ -69,6 +130,7 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	public TickRunner(long startMillis, LongFunction<? extends PlanRoute> routes) {
 		millis = startMillis;
+		lastTickMillis = startMillis;
 		this.routes = routes;
 	}
 
@@ -82,13 +144,16 @@ public final class TickRunner<T extends RunTrack> {
 	public SidingRun addSiding(long sidingId, DepotBoard depot, Siding<T> siding) {
 		final SidingRun sidingRun = new SidingRun(sidingId, depot, siding);
 		sidings.put(sidingId, sidingRun);
+		depots.clear();
+		depotSidings.clear();
+		sidings.values().forEach(eachSidingRun -> {
+			if (!depotSidings.containsKey(eachSidingRun.depot)) {
+				depots.add(eachSidingRun.depot);
+			}
+			depotSidings.computeIfAbsent(eachSidingRun.depot, key -> new ArrayList<>()).add(eachSidingRun);
+		});
 		return sidingRun;
 	}
-
-	/**
-	 * Tracks gone from the network, which no train runs onto (contracts document 5.1, rule 5).
-	 */
-	private final Set<UUID> removedTracks = new HashSet<>();
 
 	public LongFunction<? extends PlanRoute> getRoutes() {
 		return routes;
@@ -98,7 +163,9 @@ public final class TickRunner<T extends RunTrack> {
 	 * Takes tracks out of the network. Trains stop short of them; the caller deals with trains standing on them.
 	 */
 	public void removeTracks(Set<UUID> tracks) {
+		catchUpAll();
 		removedTracks.addAll(tracks);
+		wakeAll();
 	}
 
 	public boolean isRemoved(UUID track) {
@@ -110,11 +177,12 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	public void occupyUntil(UUID rail, long untilMillis) {
 		externalUntil.put(rail, untilMillis);
+		addOccupant(rail, Occupant.EXTERNAL);
 	}
 
 	/**
-	 * Skips ticks in which nothing can change, which gives the same results as running every tick (S4c2). Off, the
-	 * runner runs every tick, as the game does.
+	 * Leaves trains alone in ticks in which nothing can change for them, which gives the same results as moving every
+	 * train in every tick (S4c2, S4f). Off, the runner moves every train in every tick, as the game does.
 	 */
 	public void setSkipping(boolean skipping) {
 		this.skipping = skipping;
@@ -128,22 +196,35 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
-	 * @return how many ticks were skipped since the start
+	 * @return how many ticks were skipped since the start, with no train moving in them
 	 */
 	public long getSkippedTicks() {
 		return skippedTicks;
 	}
 
 	/**
-	 * Runs ticks until this time.
+	 * @return how many times a train was moved through a tick since the start
+	 */
+	public long getTrainTicks() {
+		return trainTicks;
+	}
+
+	/**
+	 * Runs ticks until this time. Trains left alone are brought up to it when they are looked at through
+	 * {@link #getTrain} or {@link #getTrains}.
 	 */
 	public void runUntil(long endMillis) {
-		while (millis + MotionConstants.MILLIS_PER_TICK <= endMillis) {
+		while (millis + TICK <= endMillis) {
 			if (skipping) {
-				// The last tick before the end is always run, so the state there is what running every tick gives
-				final long quiet = Math.min(getQuietTicks(), (endMillis - millis) / MotionConstants.MILLIS_PER_TICK - 1);
-				if (quiet > 0) {
-					skip(quiet);
+				final long nextMillis = getNextTickMillis();
+				final long lastMillis = millis + (endMillis - millis) / TICK * TICK;
+				final long toMillis = Math.min(nextMillis - TICK, lastMillis);
+				if (toMillis > millis) {
+					skippedTicks += (toMillis - millis) / TICK;
+					millis = toMillis;
+				}
+				if (nextMillis > lastMillis) {
+					break;
 				}
 			}
 			tick();
@@ -151,51 +232,89 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
-	 * @return how many of the next ticks are sure to change nothing but where trains are along their segments and how long
-	 * they have stood, so they can be skipped, or 0
+	 * @return the next tick in which a train has to move or something taken from outside is let go
 	 */
-	private long getQuietTicks() {
-		long quiet = Long.MAX_VALUE;
+	private long getNextTickMillis() {
+		// What everybody has must be seen as the tick before once, and services let go when the depots next start their tick
+		if (!changedRails.isEmpty() || !standingDrops.isEmpty()) {
+			return millis + TICK;
+		}
+		long nextMillis = Long.MAX_VALUE;
 		for (final long untilMillis : externalUntil.values()) {
 			// Something taken from outside is let go in the first tick after its time
-			quiet = Math.min(quiet, (untilMillis - millis) / MotionConstants.MILLIS_PER_TICK);
+			nextMillis = Math.min(nextMillis, millis + Math.max(1, (untilMillis - millis) / TICK + 1) * TICK);
 		}
 		for (final SidingRun sidingRun : sidings.values()) {
-			quiet = Math.min(quiet, sidingRun.getQuietTicks());
-			if (quiet <= 0) {
-				return 0;
-			}
+			nextMillis = Math.min(nextMillis, sidingRun.dueMillis);
 		}
-		return quiet;
-	}
-
-	/**
-	 * Moves on this many ticks in which nothing changes but where trains are along their segments and how long they have
-	 * stood. Nobody crosses from one rail to another meanwhile, so what is taken stays the same.
-	 */
-	private void skip(long ticks) {
-		millis += ticks * MotionConstants.MILLIS_PER_TICK;
-		skippedTicks += ticks;
-		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(train -> train.skip(ticks)));
+		return Math.max(nextMillis, millis + TICK);
 	}
 
 	public void tick() {
-		millis += MotionConstants.MILLIS_PER_TICK;
-		occupancy.nextTick();
-		externalUntil.values().removeIf(untilMillis -> untilMillis < millis);
-		externalUntil.keySet().forEach(rail -> occupancy.occupy(rail, EXTERNAL_OCCUPANT));
-		final Map<DepotBoard, List<SidingRun>> deployable = new HashMap<>();
-		sidings.values().forEach(sidingRun -> sidingRun.tick(deployable));
-		reservations.resolve(millis);
-		// Each depot once, in the order of its first siding
-		final List<DepotBoard> depots = new ArrayList<>();
-		sidings.values().forEach(sidingRun -> {
-			if (!depots.contains(sidingRun.depot)) {
-				depots.add(sidingRun.depot);
+		millis += TICK;
+		inTick = true;
+		tickPosition = Occupant.FIRST;
+		if (lastTickMillis != millis - TICK) {
+			// A depot forgets the services no train reserved in the tick before, and in the ticks skipped only trains left alone did
+			depots.forEach(depot -> {
+				depot.dispatcher.startTick();
+				depot.dispatcher.startTick();
+			});
+		}
+		final Iterator<Map.Entry<UUID, Long>> iterator = externalUntil.entrySet().iterator();
+		while (iterator.hasNext()) {
+			final Map.Entry<UUID, Long> entry = iterator.next();
+			if (entry.getValue() < millis) {
+				iterator.remove();
+				removeOccupant(entry.getKey(), Occupant.EXTERNAL);
 			}
-		});
-		depots.forEach(depot -> deploy(depot, deployable.getOrDefault(depot, Collections.emptyList())));
+		}
+		movedTrains.clear();
+		readyDepots.clear();
+		for (final SidingRun sidingRun : sidings.values()) {
+			if (!skipping || sidingRun.dueMillis <= millis) {
+				sidingRun.tick();
+			}
+		}
+		movingTrain = null;
+		tickPosition = Occupant.LAST;
+		reservations.resolve(millis);
+		standingDrops.forEach(HeadlessTrain::dropStandingTrips);
+		standingDrops.clear();
+		depots.forEach(this::deploy);
+		endTick();
+		inTick = false;
+		lastTickMillis = millis;
 		afterTick.run();
+	}
+
+	/**
+	 * What everybody has at the end of the tick is what the next one sees as taken the tick before. Then the trains moved
+	 * work out how long they can be left alone.
+	 */
+	private void endTick() {
+		for (final RailEntry entry : changedRails) {
+			entry.before = entry.now.isEmpty() ? Collections.emptyList() : new ArrayList<>(entry.now);
+			entry.changed = false;
+		}
+		changedRails.clear();
+		removedTrains.forEach(HeadlessTrain::dropRails);
+		removedTrains.clear();
+		for (final DepotBoard depot : depots) {
+			if (depot.changed) {
+				depot.changed = false;
+				depotSidings.get(depot).forEach(sidingRun -> sidingRun.trains.forEach(train -> {
+					if (!train.onRoute) {
+						wake(train);
+					}
+				}));
+			}
+		}
+		for (final SidingRun sidingRun : sidings.values()) {
+			if (sidingRun.tickMillis == millis) {
+				sidingRun.endTick();
+			}
+		}
 	}
 
 	/**
@@ -206,17 +325,14 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
-	 * @return the train with this ID, or null
+	 * @return the train with this ID as it is now, or null
 	 */
 	public HeadlessTrain getTrain(long trainId) {
-		for (final SidingRun sidingRun : sidings.values()) {
-			for (final HeadlessTrain train : sidingRun.trains) {
-				if (train.id == trainId) {
-					return train;
-				}
-			}
+		final HeadlessTrain train = trainsById.get(trainId);
+		if (train != null) {
+			train.catchUp(millis);
 		}
-		return null;
+		return train;
 	}
 
 	/**
@@ -225,25 +341,148 @@ public final class TickRunner<T extends RunTrack> {
 	 * @return false if there is no such train
 	 */
 	public boolean removeTrain(long trainId) {
-		for (final SidingRun sidingRun : sidings.values()) {
-			if (sidingRun.trains.removeIf(train -> train.id == trainId)) {
-				reservations.release(trainId);
-				return true;
-			}
+		final HeadlessTrain train = trainsById.remove(trainId);
+		if (train == null) {
+			return false;
 		}
-		return false;
+		train.sidingRun.trains.remove(train);
+		train.removed = true;
+		reservations.release(trainId);
+		// The rails it had stay taken as the tick before for one more tick, and its services until the depots start that tick
+		train.dropRails();
+		standingDrops.add(train);
+		return true;
 	}
 
+	/**
+	 * @return the trains as they are now
+	 */
 	public List<HeadlessTrain> getTrains() {
+		catchUpAll();
 		final List<HeadlessTrain> trains = new ArrayList<>();
 		sidings.values().forEach(sidingRun -> trains.addAll(sidingRun.trains));
 		return trains;
 	}
 
 	/**
+	 * @return the trains moved in the last tick that are still there, which are the only ones anything can have changed for
+	 */
+	public List<HeadlessTrain> getMovedTrains() {
+		final List<HeadlessTrain> trains = new ArrayList<>();
+		movedTrains.forEach(train -> {
+			if (!train.removed) {
+				trains.add(train);
+			}
+		});
+		return trains;
+	}
+
+	/**
+	 * Brings every train left alone up to now, as before an input changes what they go by.
+	 */
+	public void catchUpAll() {
+		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(train -> train.catchUp(millis)));
+	}
+
+	/**
+	 * Moves every train in the next tick, as after an input.
+	 */
+	public void wakeAll() {
+		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(this::wake));
+	}
+
+	/**
+	 * Has a train left alone moved in this tick if it hasn't had its turn in it yet, or else in the next one.
+	 */
+	private void wake(HeadlessTrain train) {
+		if (train == movingTrain || train.removed) {
+			return;
+		}
+		final long dueMillis = inTick && train.occupant.compareTo(tickPosition) > 0 ? millis : millis + TICK;
+		train.dueMillis = Math.min(train.dueMillis, dueMillis);
+		train.sidingRun.dueMillis = Math.min(train.sidingRun.dueMillis, dueMillis);
+	}
+
+	private RailEntry getEntry(UUID rail) {
+		return rails.computeIfAbsent(rail, key -> new RailEntry());
+	}
+
+	private void addOccupant(UUID rail, Occupant occupant) {
+		final RailEntry entry = getEntry(rail);
+		int index = 0;
+		while (index < entry.now.size() && entry.now.get(index).compareTo(occupant) < 0) {
+			index++;
+		}
+		if (index < entry.now.size() && entry.now.get(index) == occupant) {
+			return;
+		}
+		entry.now.add(index, occupant);
+		railChanged(entry);
+	}
+
+	private void removeOccupant(UUID rail, Occupant occupant) {
+		final RailEntry entry = rails.get(rail);
+		if (entry != null && entry.now.remove(occupant)) {
+			railChanged(entry);
+		}
+	}
+
+	private void railChanged(RailEntry entry) {
+		if (!entry.changed) {
+			entry.changed = true;
+			changedRails.add(entry);
+		}
+		entry.watchers.forEach(this::wake);
+	}
+
+	/**
+	 * Whether something other than this train has the rail, as {@link Occupancy#isTakenByOther} has it: taken in the tick
+	 * before, or in this tick by something that moved first. A train working out how long it can be left alone sees what
+	 * everybody had at the end of this tick, and watches the rail.
+	 */
+	private boolean isTakenByOther(UUID rail, HeadlessTrain train) {
+		if (quietTrain == train) {
+			final RailEntry entry = getEntry(rail);
+			if (!entry.watchers.contains(train)) {
+				entry.watchers.add(train);
+				train.watched.add(entry);
+			}
+			return !entry.before.isEmpty() && entry.before.get(0) != train.occupant;
+		}
+		final RailEntry entry = rails.get(rail);
+		return entry != null && (!entry.before.isEmpty() && entry.before.get(0) != train.occupant || !entry.now.isEmpty() && entry.now.get(0).compareTo(train.occupant) < 0);
+	}
+
+	/**
 	 * Sends out one train of the depot that is ready, for the first service of the timetable no train has taken, as the
 	 * game's depot does. A depot running by duties sends the train of the duty due first.
 	 */
+	private void deploy(DepotBoard depot) {
+		if (skipping && !readyDepots.contains(depot) && !depot.changed && !depot.duties.diagramMode) {
+			// The trains left alone that could leave can't yet, and no service was taken or let go meanwhile
+			depot.dispatcher.startTick();
+			return;
+		}
+		// Every train that could leave, the ones left alone as well
+		final List<SidingRun> ready = new ArrayList<>();
+		for (final SidingRun sidingRun : depotSidings.get(depot)) {
+			if (sidingRun.tickMillis == millis) {
+				for (int i = 0; i < sidingRun.readyCount; i++) {
+					ready.add(sidingRun);
+				}
+			} else {
+				sidingRun.waitingTrain = null;
+				for (final HeadlessTrain train : sidingRun.trains) {
+					if (train.requestedDeploy) {
+						sidingRun.waitingTrain = train;
+						ready.add(sidingRun);
+					}
+				}
+			}
+		}
+		deploy(depot, ready);
+	}
+
 	private void deploy(DepotBoard depot, List<SidingRun> ready) {
 		depot.dispatcher.startTick();
 		if (depot.duties.diagramMode) {
@@ -251,7 +490,11 @@ public final class TickRunner<T extends RunTrack> {
 			ready.forEach(sidingRun -> readyTrains.put(sidingRun.sidingId, sidingRun.waitingTrain));
 			final DepotDispatcher.DutyDeploy<T> deploy = depot.dispatcher.findDutyDeploy(millis, readyTrains.keySet(), depot.duties, sidingId -> sidings.containsKey(sidingId) ? sidings.get(sidingId).siding.tripPaths : null, routes);
 			if (deploy != null) {
-				readyTrains.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dayStart, deploy.path);
+				final HeadlessTrain train = readyTrains.get(deploy.sidingId);
+				train.catchUp(millis);
+				train.deployDuty(deploy.slot, deploy.dayStart, deploy.path);
+				depot.changed = true;
+				wake(train);
 			}
 			return;
 		}
@@ -268,13 +511,61 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			final long tripMillis = train.service.findDeployService(depot.dispatcher.lastDeployedTrips.getOrDefault(firstRoute.getRouteId(), 0L));
 			if (tripMillis != 0) {
+				train.catchUp(millis);
 				depot.dispatcher.lastDeployedTrips.put(firstRoute.getRouteId(), tripMillis);
 				depot.reserveTrip(firstRoute.getRouteId(), tripMillis);
 				train.canDeploy = true;
 				train.service.deploy(tripMillis, firstRoute.getRouteId());
+				depot.changed = true;
+				wake(train);
 				break;
 			}
 		}
+	}
+
+	/**
+	 * Where something comes in the order things take rails in each tick: rails taken from outside first, then trains by
+	 * siding and, as a siding keeps its trains in the order it made them, by ID.
+	 */
+	private static final class Occupant implements Comparable<Occupant> {
+
+		private final long sidingId;
+		private final long trainId;
+
+		private static final Occupant FIRST = new Occupant(Long.MIN_VALUE, Long.MIN_VALUE);
+		private static final Occupant EXTERNAL = new Occupant(Long.MIN_VALUE, EXTERNAL_OCCUPANT);
+		private static final Occupant LAST = new Occupant(Long.MAX_VALUE, Long.MAX_VALUE);
+
+		private Occupant(long sidingId, long trainId) {
+			this.sidingId = sidingId;
+			this.trainId = trainId;
+		}
+
+		@Override
+		public int compareTo(Occupant occupant) {
+			final int bySiding = Long.compare(sidingId, occupant.sidingId);
+			return bySiding != 0 ? bySiding : Long.compare(trainId, occupant.trainId);
+		}
+	}
+
+	/**
+	 * A rail, what has it and who watches it.
+	 */
+	private final class RailEntry {
+
+		/**
+		 * What has the rail now, in order, so the first is the one {@link Occupancy} would have.
+		 */
+		private final List<Occupant> now = new ArrayList<>(2);
+		/**
+		 * What had it at the end of the last tick.
+		 */
+		private List<Occupant> before = Collections.emptyList();
+		/**
+		 * Trains left alone that looked at the rail, which are woken when what has it changes.
+		 */
+		private final List<HeadlessTrain> watchers = new ArrayList<>(1);
+		private boolean changed;
 	}
 
 	/**
@@ -339,51 +630,42 @@ public final class TickRunner<T extends RunTrack> {
 		public final Siding<T> siding;
 		private final List<HeadlessTrain> trains = new ArrayList<>();
 		private HeadlessTrain waitingTrain;
+		/**
+		 * How many of its trains asked to leave in its last tick.
+		 */
+		private int readyCount;
+		/**
+		 * The next tick in which one of its trains moves or it may make or clear away a train.
+		 */
+		private long dueMillis;
+		private long tickMillis;
 
 		private SidingRun(long sidingId, DepotBoard depot, Siding<T> siding) {
 			this.sidingId = sidingId;
 			this.depot = depot;
 			this.siding = siding;
+			dueMillis = millis + TICK;
 		}
 
-		/**
-		 * @return how many of the next ticks change nothing for this siding and its trains, or 0
-		 */
-		private long getQuietTicks() {
-			// Trains by duties, a siding about to make or clear away a train, or two trains in the same place change at once
-			if (depot.duties.diagramMode || trains.isEmpty()) {
-				return 0;
-			}
-			int trainsAtDepot = 0;
-			boolean spawnTrain = true;
-			final Set<Long> railProgressSet = new HashSet<>();
-			long quiet = Long.MAX_VALUE;
-			for (final HeadlessTrain train : trains) {
-				if (!train.onRoute || train.railProgress < siding.spacing * siding.trainCars + siding.railLength) {
-					spawnTrain = false;
-				}
-				if (!train.onRoute && ++trainsAtDepot > 1 || !railProgressSet.add(Math.round(train.railProgress * 10))) {
-					return 0;
-				}
-				quiet = Math.min(quiet, train.getQuietTicks());
-				if (quiet <= 0) {
-					return 0;
-				}
-			}
-			return spawnTrain && trains.size() <= siding.maxTrains ? 0 : quiet;
-		}
-
-		private void tick(Map<DepotBoard, List<SidingRun>> deployable) {
+		private void tick() {
+			tickMillis = millis;
 			waitingTrain = null;
+			readyCount = 0;
 			int trainsAtDepot = 0;
 			boolean spawnTrain = true;
 			final List<HeadlessTrain> trainsToRemove = new ArrayList<>();
 			for (final HeadlessTrain train : trains) {
-				train.service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
-				train.simulate();
+				tickPosition = train.occupant;
+				// A train left alone asks to leave as it did when it last moved
+				if (!skipping || train.dueMillis <= millis) {
+					train.move();
+					if (train.requestedDeploy) {
+						readyDepots.add(depot);
+					}
+				}
 				if (train.requestedDeploy) {
 					waitingTrain = train;
-					deployable.computeIfAbsent(depot, key -> new ArrayList<>()).add(this);
+					readyCount++;
 				}
 				if (!train.onRoute || train.railProgress < siding.spacing * siding.trainCars + siding.railLength) {
 					spawnTrain = false;
@@ -391,13 +673,61 @@ public final class TickRunner<T extends RunTrack> {
 				if (!train.onRoute && ++trainsAtDepot > 1) {
 					trainsToRemove.add(train);
 				}
-				train.writePositions();
 			}
-			trains.removeAll(trainsToRemove);
+			movingTrain = null;
+			for (final HeadlessTrain train : trainsToRemove) {
+				trains.remove(train);
+				trainsById.remove(train.id);
+				train.removed = true;
+				removedTrains.add(train);
+				standingDrops.add(train);
+			}
 			final int dutySlots = depot.duties.getSlots(sidingId).size();
 			if (depot.duties.diagramMode ? dutySlots > 0 && (trains.isEmpty() || spawnTrain && trains.size() < dutySlots) : trains.isEmpty() || spawnTrain && trains.size() <= siding.maxTrains) {
-				trains.add(new HeadlessTrain(nextTrainId++, this));
+				final HeadlessTrain train = new HeadlessTrain(nextTrainId++, this);
+				trains.add(train);
+				trainsById.put(train.id, train);
 			}
+		}
+
+		/**
+		 * Works out when the siding and the trains moved in its tick are next due.
+		 */
+		private void endTick() {
+			final boolean everyTrain = needsEveryTrain();
+			long nextMillis = everyTrain ? millis + TICK : Long.MAX_VALUE;
+			for (final HeadlessTrain train : trains) {
+				if (train.movedMillis == millis) {
+					train.updateDue();
+				}
+				if (everyTrain) {
+					train.dueMillis = Math.min(train.dueMillis, millis + TICK);
+				}
+				nextMillis = Math.min(nextMillis, train.dueMillis);
+			}
+			dueMillis = nextMillis;
+		}
+
+		/**
+		 * @return true if all its trains move in the next tick: trains by duties, a siding about to make or clear away a
+		 * train, or two trains in the same place, which change at once
+		 */
+		private boolean needsEveryTrain() {
+			if (!skipping || depot.duties.diagramMode || trains.isEmpty()) {
+				return true;
+			}
+			int trainsAtDepot = 0;
+			boolean spawnTrain = true;
+			final Set<Long> railProgressSet = new HashSet<>();
+			for (final HeadlessTrain train : trains) {
+				if (!train.onRoute || train.railProgress < siding.spacing * siding.trainCars + siding.railLength) {
+					spawnTrain = false;
+				}
+				if (!train.onRoute && ++trainsAtDepot > 1 || !railProgressSet.add(Math.round(train.railProgress * 10))) {
+					return true;
+				}
+			}
+			return spawnTrain && trains.size() <= siding.maxTrains;
 		}
 	}
 
@@ -445,10 +775,38 @@ public final class TickRunner<T extends RunTrack> {
 		private SpeedCurves.Run cappedRun;
 		private float cappedCap;
 		private SpeedProfile cappedProfile;
+		private final Occupant occupant;
+		/**
+		 * The time its state is for, which for a train left alone is earlier than now.
+		 */
+		private long syncedMillis;
+		/**
+		 * The next tick it moves in, and the last one it moved in.
+		 */
+		private long dueMillis;
+		private long movedMillis;
+		private boolean removed;
+		/**
+		 * The rails it has, and the ones it looked at while working out how long it can be left alone.
+		 */
+		private List<UUID> heldRails = Collections.emptyList();
+		private final List<RailEntry> watched = new ArrayList<>();
+		/**
+		 * The services it reserved in its last tick, and the ones kept reserved for it while it is left alone.
+		 */
+		private List<Long> recordedTrips = Collections.emptyList();
+		private List<Long> standingTrips = Collections.emptyList();
+		/**
+		 * What it goes by while it stands at a stop and is left alone.
+		 */
+		private Standing standing;
 
 		private HeadlessTrain(long id, SidingRun sidingRun) {
 			this.id = id;
 			this.sidingRun = sidingRun;
+			occupant = new Occupant(sidingRun.sidingId, id);
+			syncedMillis = millis;
+			dueMillis = millis + TICK;
 			siding = sidingRun.siding;
 			path = siding.path;
 			distances = siding.distances;
@@ -479,32 +837,131 @@ public final class TickRunner<T extends RunTrack> {
 			return path.isEmpty() ? 0 : Math.max(0, MotionConstants.findIndex(this, railProgress, true));
 		}
 
+		/**
+		 * Moves the train through this tick, first catching up on the ticks it was left alone.
+		 */
+		private void move() {
+			catchUp(millis - TICK);
+			movingTrain = this;
+			dueMillis = Long.MAX_VALUE;
+			movedMillis = millis;
+			trainTicks++;
+			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
+			simulate();
+			syncedMillis = millis;
+			writePositions();
+			movedTrains.add(this);
+			if (!standingTrips.isEmpty()) {
+				standingDrops.add(this);
+			}
+		}
+
+		/**
+		 * Brings a train left alone on to this time, as if it had moved through every tick: it only went along its segment
+		 * or stood.
+		 */
+		private void catchUp(long toMillis) {
+			if (toMillis > syncedMillis) {
+				// The rules count from the clock as it was at the end of the ticks left out
+				final long currentMillis = millis;
+				millis = toMillis;
+				skip((toMillis - syncedMillis) / TICK);
+				millis = currentMillis;
+				syncedMillis = toMillis;
+			}
+		}
+
 		private void simulate() {
 			requestedDeploy = false;
 			service.updateOvernight();
 			TrainMotion.tick(this, this, this, this, this, 1);
 			holdRun();
+			// What it reserves now it reserves again in every tick it is left alone
+			final List<Long> trips = new ArrayList<>(2);
+			sidingRun.depot.record(trips);
 			service.update(onRoute);
+			sidingRun.depot.record(null);
+			if (!trips.equals(recordedTrips)) {
+				recordedTrips = trips;
+				sidingRun.depot.changed = true;
+			}
 		}
 
 		private void writePositions() {
 			if (path.isEmpty()) {
 				return;
 			}
+			final List<UUID> newRails = new ArrayList<>(2);
 			final int headIndex = MotionConstants.findIndex(this, railProgress, true);
 			final int tailIndex = MotionConstants.findIndex(this, railProgress - siding.trainCars * siding.spacing, false);
 			for (int i = tailIndex; i <= headIndex; i++) {
 				final T track = path.get(i);
-				if (i > 0 && track.getStopId() != sidingRun.sidingId && track.hasSignal()) {
-					occupancy.occupy(track.getTrackKey(), id);
+				if (i > 0 && track.getStopId() != sidingRun.sidingId && track.hasSignal() && !newRails.contains(track.getTrackKey())) {
+					newRails.add(track.getTrackKey());
 				}
 			}
 			if (!turnBackRails.isEmpty()) {
 				if (!onRoute || tailIndex >= turnBackUntil) {
 					turnBackRails = Collections.emptyList();
 				} else {
-					turnBackRails.forEach(rail -> occupancy.getTicks().get(1).putIfAbsent(rail, id));
+					turnBackRails.forEach(rail -> {
+						if (!newRails.contains(rail)) {
+							newRails.add(rail);
+						}
+					});
 				}
+			}
+			if (!newRails.equals(heldRails)) {
+				heldRails.forEach(rail -> {
+					if (!newRails.contains(rail)) {
+						removeOccupant(rail, occupant);
+					}
+				});
+				newRails.forEach(rail -> {
+					if (!heldRails.contains(rail)) {
+						addOccupant(rail, occupant);
+					}
+				});
+				heldRails = newRails;
+			}
+		}
+
+		/**
+		 * Lets go of its rails and stops watching, once it is taken away.
+		 */
+		private void dropRails() {
+			heldRails.forEach(rail -> removeOccupant(rail, occupant));
+			heldRails = Collections.emptyList();
+			unwatch();
+		}
+
+		private void unwatch() {
+			watched.forEach(entry -> entry.watchers.remove(this));
+			watched.clear();
+		}
+
+		private void dropStandingTrips() {
+			sidingRun.depot.dispatcher.removeStandingTrips(standingTrips);
+			standingTrips = Collections.emptyList();
+		}
+
+		/**
+		 * Works out, at the end of a tick it moved in, the next tick it has to move in, and keeps its services reserved
+		 * until then.
+		 */
+		private void updateDue() {
+			unwatch();
+			standing = null;
+			long quiet = 0;
+			if (skipping) {
+				quietTrain = this;
+				quiet = getQuietTicks();
+				quietTrain = null;
+			}
+			dueMillis = Math.min(dueMillis, quiet >= (Long.MAX_VALUE - millis) / TICK - 1 ? Long.MAX_VALUE : millis + (quiet + 1) * TICK);
+			if (dueMillis > millis + TICK && !recordedTrips.isEmpty()) {
+				standingTrips = recordedTrips;
+				sidingRun.depot.dispatcher.addStandingTrips(standingTrips);
 			}
 		}
 
@@ -514,7 +971,7 @@ public final class TickRunner<T extends RunTrack> {
 		 */
 		private long getQuietTicks() {
 			// A new train gets its stop times in its first tick, and works out when to leave from them
-			if (!siding.usesSpeedCurve || path.isEmpty() || service.isOnDuty() || service.getStopTimes() == null) {
+			if (!siding.usesSpeedCurve || path.isEmpty() || service.isOnDuty() || sidingRun.depot.duties.diagramMode || service.getStopTimes() == null) {
 				return 0;
 			}
 			final int trainLength = siding.trainCars * siding.spacing;
@@ -533,7 +990,7 @@ public final class TickRunner<T extends RunTrack> {
 				}
 				return Long.MAX_VALUE;
 			}
-			if (doorValue != (doorTarget ? 1 : 0) || nextStoppingIndex >= path.size()) {
+			if (nextStoppingIndex >= path.size()) {
 				return 0;
 			}
 			if (railProgress >= distances.get(distances.size() - 1) - (siding.railLength - trainLength) / 2 && !keepsOnLineAtEnd()) {
@@ -542,36 +999,26 @@ public final class TickRunner<T extends RunTrack> {
 			if (speed <= 0) {
 				return getStandingQuietTicks();
 			}
-			return getMovingQuietTicks(trainLength);
+			return doorValue != (doorTarget ? 1 : 0) ? 0 : getMovingQuietTicks(trainLength);
 		}
 
 		private long getStandingQuietTicks() {
-			final int headIndex = MotionConstants.findIndex(this, railProgress, true);
-			final boolean isOppositeRail = headIndex + 1 < path.size() && headIndex >= 0 && isOppositeRail(headIndex, headIndex + 1);
-			final boolean railBlocked = isRailOccupied(headIndex + (isOppositeRail ? 2 : 1));
-			final int totalDwellTicks = getTotalDwellTicks();
-			if (totalDwellTicks == 0) {
-				// Stopped short of a taken rail, which stays taken while nobody moves from one rail to another
-				return railBlocked && !doorTarget ? Long.MAX_VALUE : 0;
+			standing = new Standing();
+			if (getTotalDwellTicks() == 0) {
+				// Stopped short of a taken rail, which stays taken until something moves off it
+				return standing.blocked && !doorTarget ? Long.MAX_VALUE : 0;
 			}
-			if (elapsedDwellTicks == 0 || isRepeat()) {
+			if (isRepeat()) {
 				return 0;
 			}
-			// A late train's stop time follows the clock, which moves differently from the time it has stood
-			final int pathDwellTicks = path.get(nextStoppingIndex).getDwellTime() * 10;
-			final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
-			if (stopPlan != null && elapsedDwellTicks + (service.getPlannedMillis(stopPlan.departureMillis) - millis) / MotionConstants.MILLIS_PER_TICK < pathDwellTicks) {
-				return 0;
-			}
-			// Stays short of the next time the doors move or the train may be held or leave
-			final float maxDoorMoveTime = Math.min(MotionConstants.DOOR_MOVE_TIME, totalDwellTicks / 2 - MotionConstants.DOOR_DELAY);
-			long quiet = Long.MAX_VALUE;
-			for (final double threshold : new double[]{MotionConstants.DOOR_DELAY, totalDwellTicks - MotionConstants.DOOR_DELAY - maxDoorMoveTime, totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1}) {
-				if (threshold > elapsedDwellTicks) {
-					quiet = Math.min(quiet, (long) Math.floor(threshold - elapsedDwellTicks) - 2);
+			float elapsed = elapsedDwellTicks;
+			for (long ticks = 1; ticks <= MAX_STANDING_TICKS; ticks++) {
+				elapsed = standing.step(elapsed, millis + ticks * TICK);
+				if (elapsed < 0) {
+					return ticks - 1;
 				}
 			}
-			return quiet == Long.MAX_VALUE ? 0 : Math.max(0, quiet);
+			return MAX_STANDING_TICKS;
 		}
 
 		private long getMovingQuietTicks(int trainLength) {
@@ -625,7 +1072,21 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			if (speed <= 0) {
 				if (getTotalDwellTicks() > 0) {
-					elapsedDwellTicks += ticks;
+					// As it stood in each of the ticks; the clock is at the end of them
+					for (long tick = 1; tick <= ticks; tick++) {
+						elapsedDwellTicks = standing.step(elapsedDwellTicks, millis - (ticks - tick) * TICK);
+						if (elapsedDwellTicks < 0) {
+							throw new IllegalStateException("Train " + id + " was left alone through a tick that changed it");
+						}
+					}
+				}
+				// The doors slide a sixty-fourth in every tick, which adds up the same in one go
+				if (doorValue != (doorTarget ? 1 : 0)) {
+					final float step = (float) (doorTarget ? 1 : -1) / MotionConstants.DOOR_MOVE_TIME;
+					if (doorTarget || MotionConstants.clamp(doorValue + step, 0, 1) != 0) {
+						manualNotch = -2;
+					}
+					doorValue = MotionConstants.clamp(doorValue + step * ticks, 0, 1);
 				}
 				return;
 			}
@@ -638,8 +1099,67 @@ public final class TickRunner<T extends RunTrack> {
 			speed = lastSpeed;
 		}
 
+		/**
+		 * What a train standing at a stop goes by, which stays the same while it stands: its stop time, its planned
+		 * departure, what holds it and whether the way on is taken (S4f). From these it goes on from tick to tick by the same
+		 * rules {@link TrainMotion} and {@link TrainRules} have, much quicker than moving it.
+		 */
+		private final class Standing {
+
+			private final int dwellTicks;
+			private final boolean planned;
+			private final long departureMillis;
+			private final boolean timed;
+			private final boolean atPlatform;
+			private final boolean blocked;
+			private final boolean hostHeld;
+			/**
+			 * Whether asking if the train is held changes nothing and only depends on the clock.
+			 */
+			private final boolean heldByClock;
+
+			private Standing() {
+				dwellTicks = path.get(nextStoppingIndex).getDwellTime() * 10;
+				final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
+				planned = stopPlan != null;
+				departureMillis = planned ? service.getPlannedMillis(stopPlan.departureMillis) : 0;
+				timed = planned && stopPlan.isTimed;
+				atPlatform = getStopId(nextStoppingIndex) != 0;
+				final int headIndex = MotionConstants.findIndex(HeadlessTrain.this, railProgress, true);
+				final boolean isOppositeRail = headIndex + 1 < path.size() && headIndex >= 0 && isOppositeRail(headIndex, headIndex + 1);
+				blocked = isRailOccupied(headIndex + (isOppositeRail ? 2 : 1));
+				hostHeld = hostHold != null;
+				// Overtaking trains aren't followed here, so only choosing a way on or a duty asks anything else
+				heldByClock = hostHeld || !service.isStayingOnLine() && service.getDutyDepartureMillis() <= 0 && !service.isOnDuty() && !service.mayChooseWayAtStop();
+			}
+
+			private int getTotalDwellTicks(float elapsed, long atMillis) {
+				return planned ? TrainRules.getTotalDwellTicks(dwellTicks, elapsed, departureMillis, atMillis) : dwellTicks;
+			}
+
+			/**
+			 * One tick of {@link TrainMotion} for a train standing at its stop.
+			 *
+			 * @return the time stood after the tick at this time, or -1 if the train has to move through it: its doors open or
+			 * close, it leaves, or it asks something that can change more than the time it has stood
+			 */
+			private float step(float elapsed, long atMillis) {
+				final int totalDwellTicks = getTotalDwellTicks(elapsed, atMillis);
+				if (elapsed == 0) {
+					return -1;
+				}
+				final boolean beforeHolding = elapsed < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1F;
+				if (!beforeHolding && !heldByClock) {
+					return -1;
+				}
+				final float newElapsed = beforeHolding || !(hostHeld || timed && TrainRules.isWaitingForDeparture(departureMillis, atMillis)) && !blocked ? elapsed + 1F : elapsed;
+				final boolean doorsOpen = atPlatform && TrainRules.areDoorsOpen(newElapsed, getTotalDwellTicks(newElapsed, atMillis));
+				return doorsOpen != doorTarget || newElapsed >= totalDwellTicks && !blocked ? -1 : newElapsed;
+			}
+		}
+
 		private boolean isRailOccupied(int index) {
-			return index < path.size() && (occupancy.isTakenByOther(path.get(index).getTrackKey(), id) || removedTracks.contains(path.get(index).getTrackKey()));
+			return index < path.size() && (isTakenByOther(path.get(index).getTrackKey(), this) || removedTracks.contains(path.get(index).getTrackKey()));
 		}
 
 		/**
@@ -1123,7 +1643,7 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public boolean isTurnBackFree(List<UUID> rails) {
 			for (final UUID rail : rails) {
-				if (occupancy.isTakenByOther(rail, id)) {
+				if (isTakenByOther(rail, this)) {
 					return false;
 				}
 			}

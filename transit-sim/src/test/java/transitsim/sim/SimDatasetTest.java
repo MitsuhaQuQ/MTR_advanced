@@ -55,14 +55,42 @@ class SimDatasetTest {
 	}
 
 	/**
+	 * Trains left alone (S4f) end up where moving every train in every tick puts them, on lines busy enough for trains to
+	 * wait behind each other and run late.
+	 */
+	@Test
+	void leavingTrainsAloneChangesNothing() {
+		for (final int maxTrains : new int[]{4, 8}) {
+			final byte[] bytes = lines(3, 400, 2, maxTrains, 3).toBytes();
+			final long start = MONDAY + 4 * HOUR + 50 * MINUTE;
+			final EventSimulator<SimDataset.DataTrack> everyTick = new EventSimulator<>(SimDataset.start(bytes, start), false);
+			final EventSimulator<SimDataset.DataTrack> skipping = new EventSimulator<>(SimDataset.start(bytes, start), true);
+			for (long time = start + 7 * MINUTE; time <= start + 4 * HOUR; time += 7 * MINUTE + 1234) {
+				everyTick.advanceTo(time);
+				skipping.advanceTo(time);
+				for (final TickRunner<SimDataset.DataTrack>.HeadlessTrain train : everyTick.getRunner().getTrains()) {
+					assertEquals(everyTick.query(train.id), skipping.query(train.id), ScenarioLine.clock(time) + " train " + train.id);
+				}
+				assertEquals(everyTick.getRunner().getTrains().size(), skipping.getRunner().getTrains().size());
+			}
+			assertEquals(describe(everyTick.events(0)), describe(skipping.events(0)));
+			assertTrue(skipping.getRunner().getTrainTicks() * 3 < everyTick.getRunner().getTrainTicks(), skipping.getRunner().getTrainTicks() + " " + everyTick.getRunner().getTrainTicks());
+		}
+	}
+
+	private static List<String> describe(List<SimEvent> events) {
+		return events.stream().map(event -> ScenarioLine.clock(event.time) + " " + event.kind + " " + event.trainId + " " + event.rail + " " + event.reason).collect(Collectors.toList());
+	}
+
+	/**
 	 * The benchmark of contracts document 8.1, which takes a while, so it only runs when asked for:
 	 * {@code ./gradlew -p transit-sim test -Dbenchmark=true --tests '*SimDatasetTest*'}.
 	 */
 	@Test
 	@EnabledIfSystemProperty(named = "benchmark", matches = "true")
 	void aBigNetworkRunsADay() {
-		// 25 long lines with a service every 3 minutes each way from 05:00 until midnight
-		final byte[] bytes = lines(25, 2400, 6, 12, 3).toBytes();
+		// 40 long lines with a service every 3 minutes each way from 05:00 until midnight, 200 trains in all
+		final byte[] bytes = lines(40, 2400, 6, 12, 3).toBytes();
 		final long start = MONDAY + 3 * HOUR;
 		final long buildStart = System.nanoTime();
 		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(bytes, start));
@@ -73,8 +101,21 @@ class SimDatasetTest {
 		simulator.events(0).forEach(event -> trains.add(event.trainId));
 		final long departures = simulator.events(0).stream().filter(event -> event.kind == SimEvent.Kind.DEPART).count();
 		final double skipped = 100.0 * simulator.getRunner().getSkippedTicks() / (24 * HOUR / 50);
-		System.out.printf("Big network: %d trains, %d departures, built in %d ms, a day simulated in %d ms, %.1f%% of ticks skipped%n", trains.size(), departures, (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, skipped);
-		assertTrue(trains.size() >= 100, String.valueOf(trains.size()));
+		final double moved = 100.0 * simulator.getRunner().getTrainTicks() / (24 * HOUR / 50) / trains.size();
+		System.out.printf("Big network: %d trains, %d departures, built in %d ms, a day simulated in %d ms, %.1f%% of ticks skipped, trains moved in %.1f%% of ticks%n", trains.size(), departures, (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, skipped, moved);
+		// The same day again one game tick at a time, as the game would run it
+		final EventSimulator<SimDataset.DataTrack> stepped = new EventSimulator<>(SimDataset.start(bytes, start));
+		final long[] stepNanos = new long[(int) (24 * HOUR / 50)];
+		for (int i = 0; i < stepNanos.length; i++) {
+			final long stepStart = System.nanoTime();
+			stepped.advanceTo(start + (i + 1) * 50L);
+			stepNanos[i] = System.nanoTime() - stepStart;
+		}
+		final long steppedTotal = Arrays.stream(stepNanos).sum();
+		Arrays.sort(stepNanos);
+		System.out.printf("One tick at a time: %d ms in all, 99th percentile %.3f ms, longest %.3f ms%n", steppedTotal / 1000000, stepNanos[stepNanos.length * 99 / 100] / 1E6, stepNanos[stepNanos.length - 1] / 1E6);
+		assertEquals(simulator.events(0).size(), stepped.events(0).size());
+		assertTrue(trains.size() >= 200, String.valueOf(trains.size()));
 		assertTrue(simulator.events(0).stream().noneMatch(event -> event.kind == SimEvent.Kind.DEADLOCK));
 	}
 

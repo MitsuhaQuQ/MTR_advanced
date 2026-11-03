@@ -26,6 +26,15 @@ public final class DepotBoard implements TrainService.Board {
 	 * Trains turn back from the last route onto the first instead of going back to the depot.
 	 */
 	public boolean cycleRoutes;
+	/**
+	 * Whether the services taken changed in this tick, so trains waiting to be sent out work out again when they can go
+	 * (S4f).
+	 */
+	boolean changed;
+	/**
+	 * Where the services reserved are written down as well, while a train reserves its services for the tick.
+	 */
+	private List<Long> recorder;
 
 	public DepotBoard(List<? extends PlanRoute> routes) {
 		this.routes.addAll(routes);
@@ -61,12 +70,23 @@ public final class DepotBoard implements TrainService.Board {
 
 	@Override
 	public long findNextService(PlanRoute route, long readyMillis) {
+		changed = true;
 		return dispatcher.findNextService(route, readyMillis, cycleRoutes);
 	}
 
 	@Override
 	public void reserveTrip(long routeId, long tripMillis) {
 		dispatcher.reserveTrip(routeId, tripMillis);
+		if (recorder != null && tripMillis != 0) {
+			recorder.add(DepotDispatcher.getTripKey(routeId, tripMillis));
+		}
+	}
+
+	/**
+	 * Writes down the services reserved from now on into this list, or stops with null.
+	 */
+	void record(List<Long> newRecorder) {
+		recorder = newRecorder;
 	}
 
 	@Override

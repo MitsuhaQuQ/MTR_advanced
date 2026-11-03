@@ -36,9 +36,23 @@ public final class TrainRules {
 		if (stopPlan == null) {
 			return dwellTicks;
 		} else {
-			final long ticksAtStop = (long) state.getElapsedDwellTicks() + (train.getService().getPlannedMillis(stopPlan.departureMillis) - train.getMillis()) / MotionConstants.MILLIS_PER_TICK;
-			return (int) Math.max(Math.min(dwellTicks, ticksAtStop), Math.min(dwellTicks, MIN_DWELL_TICKS));
+			return getTotalDwellTicks(dwellTicks, state.getElapsedDwellTicks(), train.getService().getPlannedMillis(stopPlan.departureMillis), train.getMillis());
 		}
+	}
+
+	/**
+	 * {@link #getTotalDwellTicks(Train, int)} for a stop with a planned departure, from what it goes by.
+	 */
+	public static int getTotalDwellTicks(int dwellTicks, float elapsedDwellTicks, long departureMillis, long currentMillis) {
+		final long ticksAtStop = (long) elapsedDwellTicks + (departureMillis - currentMillis) / MotionConstants.MILLIS_PER_TICK;
+		return (int) Math.max(Math.min(dwellTicks, ticksAtStop), Math.min(dwellTicks, MIN_DWELL_TICKS));
+	}
+
+	/**
+	 * @return true while a train at a timed stop waits for its planned departure
+	 */
+	public static boolean isWaitingForDeparture(long departureMillis, long currentMillis) {
+		return currentMillis < departureMillis - DOOR_CLOSE_MILLIS;
 	}
 
 	/**
@@ -64,7 +78,7 @@ public final class TrainRules {
 		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
 		if (stopPlan != null && stopPlan.isTimed) {
 			final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
-			if (currentMillis < departureMillis - DOOR_CLOSE_MILLIS || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && train.isOvertakingTrainComing(train.getStopId(nextStoppingIndex), service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
+			if (isWaitingForDeparture(departureMillis, currentMillis) || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && train.isOvertakingTrainComing(train.getStopId(nextStoppingIndex), service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
 				return true;
 			}
 		}
@@ -124,11 +138,18 @@ public final class TrainRules {
 			if (train.getStopId(state.getNextStoppingIndex()) == 0) {
 				return false;
 			}
-			final int dwellTicks = train.getTotalDwellTicks();
-			final float maxDoorMoveTime = Math.min(MotionConstants.DOOR_MOVE_TIME, dwellTicks / 2 - MotionConstants.DOOR_DELAY);
-			final float elapsedDwellTicks = state.getElapsedDwellTicks();
-			return elapsedDwellTicks >= MotionConstants.DOOR_DELAY && elapsedDwellTicks < dwellTicks - MotionConstants.DOOR_DELAY - maxDoorMoveTime;
+			return areDoorsOpen(state.getElapsedDwellTicks(), train.getTotalDwellTicks());
 		}
+	}
+
+	/**
+	 * Whether the doors of a train stopped at a platform are open this long into its stop.
+	 *
+	 * @param dwellTicks the stop time, as {@link #getTotalDwellTicks(Train, int)} works it out
+	 */
+	public static boolean areDoorsOpen(float elapsedDwellTicks, int dwellTicks) {
+		final float maxDoorMoveTime = Math.min(MotionConstants.DOOR_MOVE_TIME, dwellTicks / 2 - MotionConstants.DOOR_DELAY);
+		return elapsedDwellTicks >= MotionConstants.DOOR_DELAY && elapsedDwellTicks < dwellTicks - MotionConstants.DOOR_DELAY - maxDoorMoveTime;
 	}
 
 	/**

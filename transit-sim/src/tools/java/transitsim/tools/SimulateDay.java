@@ -72,7 +72,7 @@ public final class SimulateDay {
 		System.out.printf("%d trains ran; %s%n", trains.size(), kinds);
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
 		final long ticks = 24 * HOUR / 50;
-		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks);
+		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, trains moved in %.2f%% of ticks%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, trains.isEmpty() ? 0 : 100.0 * simulator.getRunner().getTrainTicks() / ticks / trains.size());
 	}
 
 	private static byte[] read(String path) throws Exception {

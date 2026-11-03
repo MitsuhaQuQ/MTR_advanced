@@ -161,6 +161,8 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 
 	private void apply(HostInput input, long tickMillis) {
 		applied.add(input);
+		// Trains left alone catch up under the old inputs, and work out again under the new ones
+		runner.catchUpAll();
 		if (input instanceof HostInput.Hold) {
 			final HostInput.Hold hold = (HostInput.Hold) input;
 			final TickRunner<T>.HeadlessTrain train = runner.getTrain(hold.trainId);
@@ -186,6 +188,7 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		} else if (input instanceof HostInput.PublishNetwork) {
 			publishNetwork(((HostInput.PublishNetwork) input).removedTracks, tickMillis);
 		}
+		runner.wakeAll();
 	}
 
 	/**
@@ -227,7 +230,8 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 			}
 		}
 		motionEventsRead = motionEvents.size();
-		for (final TickRunner<T>.HeadlessTrain train : runner.getTrains()) {
+		// Doors only change on trains that moved
+		for (final TickRunner<T>.HeadlessTrain train : runner.getMovedTrains()) {
 			final boolean open = train.getDoorTarget();
 			final Boolean wasOpen = doorsOpen.put(train.id, open);
 			if (wasOpen != null && wasOpen != open) {

@@ -512,6 +512,33 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
+	 * @return true if {@link #chooseTurnBack} or {@link #chooseDepotReturn} may do something at the next stop, so whether the
+	 * train may leave there has to be asked every tick (S4f)
+	 */
+	public boolean mayChooseWayAtStop() {
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (turnBackStop != stopIndex && turnBacks.getPoint(tripPath == null ? null : tripPath.turnBackStops, stopIndex) >= 0) {
+			return true;
+		}
+		if (depot == null || !depot.keepsTrainsOnLine() || tripMillis == 0 || isOnTrip() || tripPath != null && tripPath.changeStop >= 0) {
+			return false;
+		}
+		final List<T> path = vehicle.getPath();
+		if (stopIndex < 0 || stopIndex >= path.size()) {
+			return false;
+		}
+		final long platformId = path.get(stopIndex).getStopId();
+		final List<? extends PlanRoute> trainRoutes = depot.getTrainRoutes(trainId);
+		for (int i = 0; i < trainRoutes.size(); i++) {
+			final PlanRoute route = trainRoutes.get(i);
+			if (route.getRouteId() == tripRouteId && !route.getStops().isEmpty() && route.getLastPlatformId() == platformId && route.getTimetable().isReturnService(tripMillis) && tripPaths.get(TripPath.getDepotReturnKey(i)) != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * A train of a depot whose trains stay on the line goes back to it after a service marked for that. At the last stop of the
 	 * service's route it changes onto the way back, which turns back where the train always does and then heads for the depot.
 	 *

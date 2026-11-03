@@ -35,6 +35,11 @@ public class DepotDispatcher {
 	 */
 	private Set<Long> reservedTrips = new HashSet<>();
 	private Set<Long> newReservedTrips = new HashSet<>();
+	/**
+	 * Services reserved by trains the simulator doesn't move every tick, which would reserve them again in each one (S4f),
+	 * counted by how many trains reserve them.
+	 */
+	private final Map<Long, Integer> standingTrips = new HashMap<>();
 
 	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
 
@@ -56,7 +61,20 @@ public class DepotDispatcher {
 
 	public boolean isTripReserved(long routeId, long tripMillis) {
 		final long tripKey = getTripKey(routeId, tripMillis);
-		return reservedTrips.contains(tripKey) || newReservedTrips.contains(tripKey);
+		return reservedTrips.contains(tripKey) || newReservedTrips.contains(tripKey) || standingTrips.containsKey(tripKey);
+	}
+
+	/**
+	 * Keeps services reserved every tick until {@link #removeStandingTrips} for a train that isn't moved every tick.
+	 *
+	 * @param tripKeys what {@link #getTripKey} gives for each service
+	 */
+	public void addStandingTrips(Collection<Long> tripKeys) {
+		tripKeys.forEach(tripKey -> standingTrips.merge(tripKey, 1, Integer::sum));
+	}
+
+	public void removeStandingTrips(Collection<Long> tripKeys) {
+		tripKeys.forEach(tripKey -> standingTrips.computeIfPresent(tripKey, (key, count) -> count > 1 ? count - 1 : null));
 	}
 
 	/**
@@ -141,7 +159,7 @@ public class DepotDispatcher {
 		return best;
 	}
 
-	private static long getTripKey(long routeId, long tripMillis) {
+	public static long getTripKey(long routeId, long tripMillis) {
 		return routeId * 31 + tripMillis;
 	}
 
