@@ -21,9 +21,31 @@ tasks.withType(JavaCompile) {
 
 test {
 	useJUnitPlatform()
+	// -Dbenchmark=true runs the benchmarks too
+	systemProperty "benchmark", System.getProperty("benchmark", "false")
 	testLogging {
 		events "failed"
 		exceptionFormat "full"
 		showStandardStreams = true
 	}
+}
+
+// The day tool reads a world's database, so it has a source set of its own: nothing of it, nor SQLite, goes into the
+// component's jar or the mod. It is only built when it is run:
+//   ./gradlew -p transit-sim simulateDay --args="path/to/mtr.db [yyyy-mm-dd] [time zone] [day start hour] [--events]"
+sourceSets {
+	tools {
+		java.srcDir "src/tools/java"
+		compileClasspath += sourceSets.main.output
+		runtimeClasspath += sourceSets.main.output
+	}
+}
+
+dependencies {
+	toolsImplementation "org.xerial:sqlite-jdbc:3.46.1.3"
+}
+
+tasks.register("simulateDay", JavaExec) {
+	classpath = sourceSets.tools.runtimeClasspath
+	mainClass = "transitsim.tools.SimulateDay"
 }

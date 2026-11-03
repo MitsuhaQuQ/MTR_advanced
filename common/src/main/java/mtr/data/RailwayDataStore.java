@@ -33,6 +33,13 @@ public interface RailwayDataStore {
 	default void forEachGraphSection(BiConsumer<Long, byte[]> consumer) throws Exception {
 	}
 
+	/**
+	 * Replaces what the component's simulator needs of the world (S4e), which the day tool reads. Only the SQLite store
+	 * keeps it.
+	 */
+	default void writeSimulationData(byte[] data) throws Exception {
+	}
+
 	default long getGraphFingerprint() throws Exception {
 		return 0;
 	}

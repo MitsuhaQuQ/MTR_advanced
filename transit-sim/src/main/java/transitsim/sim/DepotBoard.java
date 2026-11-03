@@ -5,7 +5,9 @@ import transitsim.plan.PlanRoute;
 import transitsim.plan.RouteTimetable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A depot as its trains see it when it runs without a world: its routes, the services its trains have taken and its
@@ -16,6 +18,10 @@ public final class DepotBoard implements TrainService.Board {
 	public final DepotDispatcher dispatcher = new DepotDispatcher();
 	public final DepotDuties duties = new DepotDuties();
 	private final List<PlanRoute> routes = new ArrayList<>();
+	/**
+	 * The routes of vehicles that only run some types of service, by the vehicle, when they aren't all the depot's.
+	 */
+	private final Map<String, List<PlanRoute>> trainRoutes = new HashMap<>();
 	/**
 	 * Trains turn back from the last route onto the first instead of going back to the depot.
 	 */
@@ -29,19 +35,28 @@ public final class DepotBoard implements TrainService.Board {
 		return routes;
 	}
 
-	@Override
-	public RouteTimetable getTimetable(String trainId) {
-		return routes.isEmpty() || !routes.get(0).getTimetable().isActive() ? null : routes.get(0).getTimetable();
+	/**
+	 * Gives a vehicle routes of its own, as for one that only runs some types of service.
+	 */
+	public void setTrainRoutes(String trainId, List<? extends PlanRoute> newRoutes) {
+		trainRoutes.put(trainId, new ArrayList<>(newRoutes));
 	}
 
 	@Override
-	public List<? extends PlanRoute> getTrainRoutes(String trainId) {
-		return routes;
+	public RouteTimetable getTimetable(String trainId) {
+		final List<PlanRoute> vehicleRoutes = getTrainRoutes(trainId);
+		return vehicleRoutes.isEmpty() || !vehicleRoutes.get(0).getTimetable().isActive() ? null : vehicleRoutes.get(0).getTimetable();
+	}
+
+	@Override
+	public List<PlanRoute> getTrainRoutes(String trainId) {
+		return trainRoutes.getOrDefault(trainId, routes);
 	}
 
 	@Override
 	public long findNextTrip(String trainId, long readyMillis) {
-		return routes.isEmpty() ? 0 : findNextService(routes.get(0), readyMillis);
+		final List<PlanRoute> vehicleRoutes = getTrainRoutes(trainId);
+		return vehicleRoutes.isEmpty() ? 0 : findNextService(vehicleRoutes.get(0), readyMillis);
 	}
 
 	@Override

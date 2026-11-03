@@ -1,6 +1,7 @@
 package mtr.data;
 
 import mtr.advanced.PathBoundaries;
+import mtr.advanced.SimExport;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.level.Level;
@@ -25,6 +26,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private int filesWritten;
 	private int filesDeleted;
 	private long autoSaveStartMillis;
+	/**
+	 * What was last written for the day tool, so an unchanged world isn't written again.
+	 */
+	private int lastSimulationHash;
 
 	private final SignalBlocks signalBlocks;
 
@@ -232,6 +237,18 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 
 			try {
 				railwayData.graphRecords.flush(dataStore);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+
+			// What the component's day tool simulates, written again only when it changed
+			try {
+				final byte[] simulationData = SimExport.build(railwayData);
+				final int simulationHash = Arrays.hashCode(simulationData);
+				if (simulationHash != lastSimulationHash) {
+					dataStore.writeSimulationData(simulationData);
+					lastSimulationHash = simulationHash;
+				}
 			} catch (Exception e) {
 				e.printStackTrace();
 			}

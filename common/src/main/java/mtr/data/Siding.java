@@ -1,6 +1,10 @@
 package mtr.data;
 
 import transitsim.plan.DepotReturn;
+import transitsim.sim.SimDataset;
+import transitsim.io.BinaryKeyed;
+import transitsim.io.ByteArrayBinary;
+import java.util.function.Function;
 import transitsim.plan.PathTimes;
 import transitsim.plan.DutyPlan;
 import transitsim.plan.StopTimes;
@@ -822,6 +826,40 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			final Rail rail = DataCache.tryGet(rails, pathData.startingPos, pathData.getLastPos());
 			return rail == null || rail.railType != pathData.rail.railType || rail.facingStart != pathData.rail.facingStart || rail.facingEnd != pathData.rail.facingEnd || Math.abs(rail.getLength() - pathData.rail.getLength()) > 0.01;
 		});
+	}
+
+	/**
+	 * @param routeIds        the routes the siding's trains run, in order
+	 * @param toTracks        turns a path into the component's tracks
+	 * @return the siding as the component's simulator needs it (S4e), or null without a path or trains
+	 */
+	public SimDataset.SidingData toSimulation(long depotId, long[] routeIds, Function<List<PathData>, List<SimDataset.DataTrack>> toTracks) {
+		if (path.isEmpty() || trainCars <= 0) {
+			return null;
+		}
+		final ByteArrayBinary.Writer turnBacksWriter = new ByteArrayBinary.Writer();
+		final BinaryKeyed.Writer turnBacksValues = new BinaryKeyed.Writer();
+		try {
+			turnBacks.write(turnBacksValues);
+		} catch (IOException ignored) {
+		}
+		turnBacksValues.writeTo(turnBacksWriter);
+		final SimDataset.SidingData sidingData = new SimDataset.SidingData(
+				id, depotId, routeIds, trainCars, TrainType.getSpacing(baseTrainType), railLength, accelerationConstant, getDecelerationConstant(),
+				unlimitedTrains ? SimDataset.UNLIMITED_TRAINS : maxTrains, useSpeedCurve && !transportMode.continuousMovement, RailType.getDefaultMaxBlocksPerTick(transportMode),
+				repeatIndex1, repeatIndex2, loopJoinIndex, toTracks.apply(path), turnBacksWriter.toBytes()
+		);
+		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> {
+			final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
+			try {
+				tripPath.write(values);
+			} catch (IOException ignored) {
+			}
+			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+			values.writeTo(writer);
+			sidingData.tripPaths.add(new SimDataset.TripPathData(writer.toBytes(), toTracks.apply(tripPath.path)));
+		});
+		return sidingData;
 	}
 
 	public StopTimes getStopTimes() {

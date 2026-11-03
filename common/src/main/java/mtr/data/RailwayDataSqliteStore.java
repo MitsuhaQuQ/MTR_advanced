@@ -77,6 +77,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			// Our own tables for the physical network, apart from the entries of the data itself
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_sections (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_paths (owner TEXT PRIMARY KEY, graph_fingerprint INTEGER NOT NULL, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS sim_data (key TEXT PRIMARY KEY, data BLOB NOT NULL)");
 		}
 		connection.setAutoCommit(false);
 
@@ -144,6 +145,14 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.executeUpdate();
 		}
 		hasPendingChanges = true;
+	}
+
+	@Override
+	public void writeSimulationData(byte[] data) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO sim_data (key, data) VALUES ('world', ?)")) {
+			statement.setBytes(1, data);
+			statement.executeUpdate();
+		}
 	}
 
 	@Override

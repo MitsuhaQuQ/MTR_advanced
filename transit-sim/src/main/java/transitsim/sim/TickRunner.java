@@ -255,13 +255,13 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			return;
 		}
-		final RouteTimetable timetable = depot.getTimetable("");
-		if (timetable == null) {
-			return;
-		}
-		final PlanRoute firstRoute = depot.getRoutes().get(0);
 		for (final SidingRun sidingRun : ready) {
 			final HeadlessTrain train = sidingRun.waitingTrain;
+			final RouteTimetable timetable = depot.getTimetable(sidingRun.siding.trainId);
+			if (timetable == null) {
+				continue;
+			}
+			final PlanRoute firstRoute = depot.getTrainRoutes(sidingRun.siding.trainId).get(0);
 			// A siding whose path runs over a track gone from the network sends no more trains
 			if (train.findRemovedRail() >= 0) {
 				continue;
@@ -524,7 +524,7 @@ public final class TickRunner<T extends RunTrack> {
 				}
 				if (path.size() > 1 && !isRailOccupied(1)) {
 					// Waiting to be sent out, which can only be once a service comes near enough
-					final List<PlanRoute> depotRoutes = sidingRun.depot.getRoutes();
+					final List<PlanRoute> depotRoutes = sidingRun.depot.getTrainRoutes(siding.trainId);
 					if (depotRoutes.isEmpty()) {
 						return Long.MAX_VALUE;
 					}
