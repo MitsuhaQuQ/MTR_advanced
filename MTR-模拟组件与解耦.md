@@ -341,7 +341,7 @@ F1、F2 会改游戏里的行为，要补游戏内测试。S0 至 S3 不改行�
 | **C 契约**（已完成） | 写定契约，只写文档和接口草案：`MTR-模拟组件契约.md` | S1 至 S4、G0 至 G4 的每一步都能对上契约里的条款（契约文档第 10 节） |
 | **S1 线网和资源**（已完成） | 组件的线网：`RailGraph`、`RailRouter`、`Boundaries`、`PathRegions`、`RegionComputer`、`RegionData`；线网快照 `Network`（区间、资源、版本，不可变）和压缩 `NetworkBuilder`；`TrackView`、`SpeedCurves`、`PathRelocator`。宿主留下适配器 `RailNetworks`、`TrackViews`、`RegionDataPackets` | 线网相关测试都在组件里通过；`graph_*` 表的内容由组件格式写入，旧数据能读 |
 
-**闸门**：T79 至 T89 实测通过，或者剩下的问题已经列明、不影响基线；之前测出的 bug 都已在现有代码里修好。
+**闸门**：T79 至 T89 实测通过，或者剩下的问题已经列明、不影响基线；之前测出的 bug 都已在现有代码里修好。速度曲线 T79 至 T82 已通过（2026-11-03），还剩 E2 的 T83 至 T89。
 
 **阶段二：分离（游戏内只修 bug，不加运行规则功能）**
 
@@ -390,7 +390,7 @@ S0 之前，已经不依赖世界的部件：
 | 部件 | 代码 | 构建 | 单测 | 小场景实测 | 规模实测 |
 |---|---|---|---|---|---|
 | 班次决策移到 `TrainService`（`Vehicle`、`Board` 接口，可换时钟） | 完成 | 1.20.1 | 通过 | 通过（2026-11-02） | 未做 |
-| 速度曲线（`SpeedProfile`、`SpeedCurves`） | 完成（`79599eb`） | 1.20.1 | 通过 | 未测（T79 至 T82） | 未做 |
+| 速度曲线（`SpeedProfile`、`SpeedCurves`） | 完成（`79599eb`） | 1.20.1 | 通过 | 实测通过（T79 至 T82，2026-11-03） | 未做 |
 | 线网压缩和路径区间序列（`PhysicalGraph`、`GraphRecords`、SQLite 表） | 完成（`a5fe8ce`） | 1.20.1 | 通过 | 未测（C15） | 未做 |
 | 方向预约（`RunReservations`） | 完成（`a5fe8ce`），R01 至 R03 由 F1 修好 | 1.20.1 | 通过 | 未测（T86） | 未做 |
 | ANTE 每 tick 入口改为委托（`RailwayData.simulateTrains(RailNearPlayer)`） | 完成（`a5fe8ce`） | 1.20.1 | 不适用 | 未测（T89） | 未做 |
