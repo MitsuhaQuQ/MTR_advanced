@@ -1,7 +1,5 @@
-package mtr.path;
+package transitsim.network;
 
-import mtr.advanced.PathBoundaries;
-import mtr.advanced.PathRegions;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -84,7 +82,7 @@ public final class RailGraph<R> {
 	 * Keeps searches to the regions of the pathfinding boundaries. Without boundaries the regions only repeat the
 	 * connected parts, so they are left out.
 	 */
-	public void setRegions(PathBoundaries boundaries) {
+	public void setRegions(Boundaries boundaries) {
 		regions = boundaries == null || boundaries.isEmpty() ? null : PathRegions.compute(this, boundaries);
 	}
 

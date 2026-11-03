@@ -3,6 +3,7 @@ package mtr.path;
 import mtr.data.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
+import transitsim.network.RailGraph;
 
 import java.util.*;
 import java.util.function.Function;

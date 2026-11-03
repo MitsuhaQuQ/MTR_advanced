@@ -1,9 +1,10 @@
 package mtr.path;
 
-import mtr.advanced.PathRegions;
 import mtr.data.Rail;
 import mtr.data.SavedRailBase;
 import net.minecraft.core.BlockPos;
+import transitsim.network.PathRegions;
+import transitsim.network.RailGraph;
 
 import java.util.List;
 

@@ -4,12 +4,10 @@ import io.netty.buffer.Unpooled;
 import mtr.advanced.DutyShapes;
 import mtr.advanced.GraphRecords;
 import mtr.advanced.ServiceExceptions;
-import mtr.advanced.SpeedCurves;
+import mtr.advanced.TrackViews;
 import mtr.packet.IPacket;
 import mtr.path.PathData;
 import mtr.path.PathFinder;
-import mtr.path.PathRelocator;
-import mtr.path.RailGraph;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -19,7 +17,10 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.motion.PathRelocator;
+import transitsim.motion.SpeedCurves;
 import transitsim.motion.SpeedProfile;
+import transitsim.network.RailGraph;
 
 import java.io.IOException;
 import java.util.*;
@@ -1012,7 +1013,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private void generateCurveTimes(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes, StopTimes stopTimes) {
 		final int spacing = TrainType.getSpacing(baseTrainType);
-		final SpeedCurves curves = SpeedCurves.of(path, transportMode, (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, getDecelerationConstant());
+		final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, transportMode), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, getDecelerationConstant());
 		final double[] railEnds = new double[path.size()];
 		double distance = 0;
 		for (int i = 0; i < path.size(); i++) {

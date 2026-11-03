@@ -126,7 +126,7 @@ public final class EditorActions implements IPacket {
 
 	/**
 	 * A new type (种别) of a line, copied from one of its routes: the same stations, each at a track the player picked from
-	 * those the server found for it (same station, same region, reachable, see {@link mtr.advanced.RegionComputer}), with its
+	 * those the server found for it (same station, same region, reachable, see {@link transitsim.network.RegionComputer}), with its
 	 * own name, colour, stops and services. Its set times start empty, since its stops differ from the route it copies.
 	 */
 	private static String createRoute(Route source, JsonObject operation, int index, JsonArray created) {

@@ -1,15 +1,13 @@
 package mtr.screen;
 
-import mtr.compat.GuiCompat;
-import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.advanced.AdvancedEditing;
-import mtr.advanced.PathRegions;
-import mtr.advanced.RegionData;
 import mtr.client.ClientData;
-import mtr.client.editor.EditorServer;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
+import mtr.client.editor.EditorServer;
+import mtr.compat.GuiCompat;
+import mtr.compat.ScreenBase;
 import mtr.data.*;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -21,6 +19,8 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
+import transitsim.network.PathRegions;
+import transitsim.network.RegionData;
 
 import java.util.*;
 import java.util.function.Function;

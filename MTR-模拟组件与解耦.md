@@ -1,6 +1,6 @@
 # MTR 运行模拟组件：分离现状与目标架构
 
-- **最后更新**：2026-11-03。F1、F2、S0、C 已完成，契约见 `MTR-模拟组件契约.md`；F1 复审的两处问题已修（7.4 节）。开发顺序已按架构审查调整（第 5 节），审查的处理见第 7 节
+- **最后更新**：2026-11-03。F1、F2、S0、C、S1 已完成，契约见 `MTR-模拟组件契约.md`；F1 复审的两处问题已修（7.4 节）。开发顺序已按架构审查调整（第 5 节），审查的处理见第 7 节
 - **相关文档**：
   - 设计文档 `MTR-3.x改造记录与寻路方案.md`：第 11 节当前优先级是开发顺序；11.5 节是架构摘要；8.5 节是速度曲线；6.12 节是运行图和运用。
 - **维护规则**：每完成一个 S 或 G 步骤，更新第 2 节的分离状态表和第 6 节的进度。
@@ -32,19 +32,19 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 
 | 类 | 行数 | 依赖 | 级别 | 去向 |
 |---|---|---|---|---|
-| `path/PathRelocator` | 82 | 无 | A | 组件 `motion`（S1） |
-| `path/RailGraph<R>` | 177 | `PathBoundaries`、`PathRegions` | B | 组件 `network`，类型参数换成组件的区间（S1） |
-| `path/RailRouter` | 251 | `RailGraph`、`PathRegions` | B（只差 `RailGraph`） | 组件 `network`（S1） |
-| `path/DeterministicPathFinder` | 128 | `BlockPos`、`Rail`、`Platform`、`SavedRailBase` | B | 拆开：从 `Rail` 建图的部分是宿主适配器，寻路部分进组件（S1） |
+| `transitsim.motion.PathRelocator`（原 `path/PathRelocator`） | 82 | 无 | A | **已在组件**（S1） |
+| `transitsim.network.RailGraph<R>`（原 `path/RailGraph`） | 175 | `Boundaries`、`PathRegions` | A | **已在组件**（S1）；轨道的载荷 `R` 仍由宿主给，MTR 用 `Rail` |
+| `transitsim.network.RailRouter`（原 `path/RailRouter`） | 250 | `RailGraph`、`PathRegions` | A | **已在组件**（S1） |
+| `path/DeterministicPathFinder` | 128 | `BlockPos`、`Rail`、`Platform`、`SavedRailBase` | B | 留在宿主：从 `Rail` 建 `RailGraph` 的适配器，寻路部分已在组件（`RailRouter`） |
 | `path/PathData` | 121 | `BlockPos`、`Rail`、NBT、`FriendlyByteBuf` | B | 留在宿主，适配器把它换成组件的 `TrackView`（S1） |
-| `path/PathFailure` | 86 | `BlockPos`、`Rail` | B | 失败类型进组件，定位信息留在宿主（S1） |
+| `path/PathFailure` | 86 | `BlockPos`、`Rail` | B | 留在宿主：带位置，给车厂界面显示；失败类型以后需要时再进组件 |
 | `path/PathFinder` | 266 | `Rail`、`Vec3` | B | 旧寻路，留在宿主，不迁移 |
-| `advanced/PathBoundaries` | 131 | `FriendlyByteBuf`、msgpack | B | 边界集合进组件，存档读写留在宿主（S1）。`segmentKey` 已改为调用组件的 `RailKeys` |
-| `advanced/PathRegions` | 252 | `RailGraph` | B（只差 `RailGraph`） | 组件 `network`（S1） |
-| `advanced/RegionComputer` | 151 | `RailGraph` | B | 组件 `network`（S1） |
-| `advanced/RegionData` | 167 | `FriendlyByteBuf` | B | 同步包，留在宿主 |
-| `advanced/PhysicalGraph` | 352 | `Rail`、`RailType`、`RailGraph` | B | 拆开：从 `Rail` 压缩的部分是宿主适配器；`Section`、`SectionPath` 和二进制格式进组件 `network` 和 `io`（S1） |
-| `advanced/GraphRecords` | 126 | `RailwayDataStore`、`PathData` | B | 记录队列进组件；SQLite 读写留在宿主，经组件的 `io` 格式（S1） |
+| `advanced/PathBoundaries` | 119 | 组件的 `Boundaries`、`FriendlyByteBuf`、msgpack | B | S1 后只剩存档和网络包，数据部分 `transitsim.network.Boundaries`（36 行）已在组件，`PathBoundaries extends Boundaries` |
+| `transitsim.network.PathRegions`（原 `advanced/PathRegions`） | 251 | `RailGraph`、`Boundaries` | A | **已在组件**（S1） |
+| `transitsim.network.RegionComputer`（原 `advanced/RegionComputer`） | 150 | `RailGraph` | A | **已在组件**（S1） |
+| `transitsim.network.RegionData`（原 `advanced/RegionData`） | 53 | `Boundaries` | A | **已在组件**（S1）；网络包读写拆到宿主的 `advanced/RegionDataPackets` |
+| `transitsim.network.Network`、`NetworkBuilder`、`Resource`、`SectionType`、`RailAttributes`（原 `advanced/PhysicalGraph`） | 约 590 | 无 | A | **已在组件**（S1）：线网快照、压缩算法（对任意 `RailGraph<R>`，轨道属性由宿主通过 `RailAttributes` 给）、资源、版本。宿主只剩 `advanced/RailNetworks`（用 `Rail` 实现属性） |
+| `advanced/GraphRecords` | 126 | `RailwayDataStore`、`PathData`、组件的 `Network` | B | 留在宿主：SQLite 读写，内容格式由组件的 `Network.Section`、`SectionPath` 定义 |
 | `advanced/PathRegionSync` | 132 | `MinecraftServer`、`ServerPlayer`、网络包 | C | 留在宿主：后台计算触发和同步 |
 
 **速度和运动**
@@ -52,7 +52,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | 类 | 行数 | 依赖 | 级别 | 去向 |
 |---|---|---|---|---|
 | `transitsim.motion.SpeedProfile`（原 `advanced/SpeedProfile`） | 234 | 无 | A | **已在组件**（S0） |
-| `advanced/SpeedCurves` | 174 | `PathData`、`RailType`、`TransportMode` | B | 改读 `TrackView` 后进组件 `motion`（S1） |
+| `transitsim.motion.SpeedCurves`、`TrackView`（原 `advanced/SpeedCurves`） | 168 + 57 | 无 | A | **已在组件**（S1），改读 `TrackView`；宿主的 `advanced/TrackViews` 从 `PathData` 构造 |
 | `data/TickCompensator` | 29 | 无 | A | G4 之后只给旧逻辑用，留在宿主 |
 | `data/TransportMode` | 24 | 无 | A | 组件只需要其中"是否连续运动"等几个属性，用组件自己的枚举 |
 | `data/RailType` | 46 | `MaterialColor` | B | 组件只要限速和能否加速，由适配器写进区间 |
@@ -88,8 +88,8 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `data/RailwayData` | 1196 | 服务端、玩家、存档 | C | 留在宿主：持有组件实例，每 tick 驱动和查询 |
 
 **合计**：
-- A 级约 1500 行，可以直接搬，其中约 1290 行已在 S0 搬进组件；
-- B 级约 5000 行，要先换类型；
+- A 级约 1500 行，可以直接搬，已在 S0 搬进组件；S1 又把线网、寻路、区域和速度曲线约 1900 行搬了进去（含新写的快照、资源和 `TrackView`）；
+- B 级原有约 5000 行，S1 后还剩约 3100 行，主要是运行图（S3）和 `TrainService`；
 - C 级里要拆出规则的，主要是 `Train.simulateTrain` 的推进部分、`TrainServer` 的占用和出车，以及 `Siding` 里约 1200 行的时刻和路径类。
 
 ### 2.2 `Train.simulateTrain` 的组成
@@ -134,10 +134,10 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 | 测试 | 覆盖 |
 |---|---|
 | `transitsim.planning.OperationSimulatorTest`（组件） | 运用规划、确定性、跨午夜、晚点恢复、对齐 |
-| `path/RailRouterTest`、`path/PathRelocatorTest`、`path/StopSettingsTest` | 确定性寻路、刷新时列车保留原位、停站设置 |
-| `advanced/PathRegionsTest` | 寻路边界和区域划分 |
-| `advanced/PhysicalGraphTest` | 区间压缩、限速分段、ID 稳定、路径换算、读写 |
-| `transitsim.motion.SpeedProfileTest`（组件，5 项）、`advanced/SpeedCurvesTest`（2 项） | 速度曲线、巡航上限；按轨道限速和折返分段 |
+| `transitsim.network.RailRouterTest`、`transitsim.motion.PathRelocatorTest`（组件）、`path/StopSettingsTest`、`path/PathFinderTest` | 确定性寻路、刷新时列车保留原位、停站设置、旧寻路 |
+| `transitsim.network.PathRegionsTest`（组件） | 寻路边界和区域划分 |
+| `transitsim.network.NetworkTest`（组件，7 项）、`advanced/RailNetworksTest`（5 项） | 区间压缩、限速分段、ID 稳定、路径换算、读写、旧格式读入、四种资源的划分、版本和只读；`Rail` 的适配 |
+| `transitsim.motion.SpeedProfileTest`（组件，5 项）、`transitsim.motion.SpeedCurvesTest`（组件，3 项）、`advanced/SpeedCurvesTest`（2 项） | 速度曲线、巡航上限；按轨道限速和折返分段；`PathData` 的适配 |
 | `transitsim.sim.RunReservationsTest`（组件） | 带方向的区间预约 |
 | `advanced/ServiceExceptionsTest`、`advanced/TimetableBoundariesTest` | 班次例外、时刻边界 |
 | `advanced/DutyGeneratorTest`、`advanced/DutyShapesTest` | 运用生成、运用形状、旧格式读入 |
@@ -312,7 +312,7 @@ F1、F2 会改游戏里的行为，要补游戏内测试。S0 至 S3 不改行�
 | **F2 运用快照** | R04 的最小修复：列车出库或接过夜运用时，复制当天的运用段，此后只读这份；改了运用，第二天或刷新路径后才生效。时刻表的版本隔离放到 S3 | `DutyRunTest` 加"跑到一半改运用"的场景 |
 | **S0 骨架** | 建子项目并接进构建；原样搬入 `SpeedProfile`、`RunReservations`、`mtr/operation`。**补完**（R05）：组件能单独、离线构建和测试（`transit-sim/settings.gradle`，仓库和 Java 8 设置写在组件自己的 `build.gradle` 里）；根 `build.gradle` 的 `getJson`、`getXml` 改为有限重试并设超时 | jar 里有组件的类；五个版本都能编译；断网时 `./gradlew -p transit-sim test` 能跑 |
 | **C 契约**（已完成） | 写定契约，只写文档和接口草案：`MTR-模拟组件契约.md` | S1 至 S4、G0 至 G4 的每一步都能对上契约里的条款（契约文档第 10 节） |
-| **S1 线网和资源** | 组件的 `Network`：有向拓扑、区间、边界、区域、`RailGraph`、`RailRouter`、路径到几何的映射，以及资源定义（轨道段、道岔冲突区、单线方向区段、站台）；线网快照带版本，不可变。`PhysicalGraph` 拆成适配器和组件模型；`TrackView`、`SpeedCurves` 进组件 | 线网相关测试都移到组件里通过；`graph_*` 表由组件格式写入，旧数据能读 |
+| **S1 线网和资源**（已完成） | 组件的线网：`RailGraph`、`RailRouter`、`Boundaries`、`PathRegions`、`RegionComputer`、`RegionData`；线网快照 `Network`（区间、资源、版本，不可变）和压缩 `NetworkBuilder`；`TrackView`、`SpeedCurves`、`PathRelocator`。宿主留下适配器 `RailNetworks`、`TrackViews`、`RegionDataPackets` | 线网相关测试都在组件里通过；`graph_*` 表的内容由组件格式写入，旧数据能读 |
 
 **闸门**：T79 至 T89 实测通过，或者剩下的问题已经列明、不影响基线；之前测出的 bug 都已在现有代码里修好。
 
@@ -376,7 +376,8 @@ S0 之前，已经不依赖世界的部件：
 | F2 运用快照 | 完成：`TrainService` 出库和接过夜运用时复制当天的运用（`DepotDuties.DayDuty.copy`），快照不存档，重启后重读 | 1.20.1 | 组件 33 项、common 258 项全过（`DutyRunTest` 新增 3 项：跑到一半改或删运用、下次出库用新运用、过夜接班读新选择）；ABI 扫描无缺失；Fabric、Forge 服务端启动正常 | 不单独测（随 T84、T87、T88） | 未做 |
 | S0 骨架 | 完成：搬类部分（`6052077`）；组件独立构建，根构建联网改为有限重试加超时（R05） | 五个版本编译通过（1.16.5、1.17.1、1.18.2、1.19.4 是 `e5673c0` 以后第一次）；六个 jar 都含组件的类 | 282 项全过（组件 27、common 255）；ABI 扫描无缺失；Fabric、Forge 服务端启动正常。补完后：组件在只有 `gradlew`、`gradle/`、`transit-sim/` 的目录里用 `--offline` 单独构建，测试全过，字节码是 Java 8（版本 52）；补完后五个版本都构建通过（组件 35 项、common 259 项全过），ABI 扫描无缺失，服务端启动正常 | 不改行为，不单独测 | 不适用 |
 | C 契约 | 完成：`MTR-模拟组件契约.md`（时间、状态归属、资源、版本、运行/预测/恢复、事件、性能、接口草案，各节附现状对照） | 不适用 | 不适用 | 不适用 | 不适用 |
-| S1 至 S6、全链路场景 | 未开始 | | | | |
+| S1 线网和资源 | 完成：线网、寻路、区域、速度曲线进组件；新的线网快照带资源（轨道段、道岔冲突区、单线方向区段、站台泊位）和发布序号；资源只定义，还没有地方用（S4 用）。路径到几何的对应仍是 `RailGraph` 里宿主给的轨道载荷 | 1.20.1 | 组件 71 项、common 233 项全过；组件单独离线构建通过；`SpeedCurvesTest`、`RailNetworksTest` 期望值不变；ABI 扫描无缺失；Fabric、Forge 服务端启动正常 | 不改行为，不单独测 | 不适用 |
+| S2 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

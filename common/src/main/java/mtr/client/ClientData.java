@@ -2,7 +2,6 @@ package mtr.client;
 
 import mtr.KeyMappings;
 import mtr.MTRClient;
-import mtr.advanced.RegionData;
 import mtr.data.*;
 import mtr.mappings.Text;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -13,6 +12,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.player.Player;
+import transitsim.network.RegionData;
 
 import java.util.*;
 import java.util.function.Function;

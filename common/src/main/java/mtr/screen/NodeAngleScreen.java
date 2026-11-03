@@ -1,6 +1,7 @@
 package mtr.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import mtr.advanced.PathBoundaries;
 import mtr.block.BlockNode;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
@@ -10,8 +11,6 @@ import mtr.data.IGui;
 import mtr.data.Rail;
 import mtr.data.RailAngle;
 import mtr.data.RailType;
-import mtr.advanced.PathBoundaries;
-import mtr.advanced.RegionData;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -20,6 +19,8 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
+import transitsim.network.Boundaries;
+import transitsim.network.RegionData;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -146,7 +147,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			final String turnBackText = textFieldTurnBack.getValue();
 			final int turnBackDwell = turnBackRail == null ? -1 : turnBackText.isEmpty() ? 0 : Integer.parseInt(turnBackText) * 2;
 			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell);
-			final PathBoundaries boundaries = ClientData.PATH_REGIONS.boundaries;
+			final Boundaries boundaries = ClientData.PATH_REGIONS.boundaries;
 			if (checkboxBoundary.selected() != boundaries.nodes.contains(pos.asLong())) {
 				PacketTrainDataGuiClient.sendPathBoundaryC2S(pos, null, checkboxBoundary.selected());
 			}

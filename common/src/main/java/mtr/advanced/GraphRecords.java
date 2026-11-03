@@ -2,6 +2,7 @@ package mtr.advanced;
 
 import mtr.data.RailwayDataStore;
 import mtr.path.PathData;
+import transitsim.network.Network;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,23 +17,23 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public final class GraphRecords {
 
-	private volatile PhysicalGraph graph;
+	private volatile Network graph;
 	private volatile boolean graphChanged;
 	private final ConcurrentLinkedQueue<PendingPath> pendingPaths = new ConcurrentLinkedQueue<>();
-	private final Map<Long, PhysicalGraph.Section> loadedSections = new TreeMap<>();
+	private final Map<Long, Network.Section> loadedSections = new TreeMap<>();
 	private long loadedFingerprint;
 
 	private static final int MAX_PENDING_PATHS = 65536;
 
-	public void setGraph(PhysicalGraph newGraph) {
-		final PhysicalGraph oldGraph = graph;
+	public void setGraph(Network newGraph) {
+		final Network oldGraph = graph;
 		if (oldGraph == null || oldGraph.getFingerprint() != newGraph.getFingerprint()) {
 			graph = newGraph;
 			graphChanged = true;
 		}
 	}
 
-	public PhysicalGraph getGraph() {
+	public Network getGraph() {
 		return graph;
 	}
 
@@ -49,7 +50,7 @@ public final class GraphRecords {
 	 * Writes what changed. Paths found before the first graph wait for it.
 	 */
 	public void flush(RailwayDataStore store) throws Exception {
-		final PhysicalGraph currentGraph = graph;
+		final Network currentGraph = graph;
 		if (currentGraph == null) {
 			return;
 		}
@@ -75,7 +76,7 @@ public final class GraphRecords {
 			loadedFingerprint = store.getGraphFingerprint();
 			store.forEachGraphSection((id, data) -> {
 				try {
-					loadedSections.put(id, PhysicalGraph.Section.fromBytes(id, data));
+					loadedSections.put(id, Network.Section.fromBytes(id, data));
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
@@ -85,7 +86,7 @@ public final class GraphRecords {
 		}
 	}
 
-	public Map<Long, PhysicalGraph.Section> getLoadedSections() {
+	public Map<Long, Network.Section> getLoadedSections() {
 		return loadedSections;
 	}
 

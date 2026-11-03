@@ -3,18 +3,18 @@ package mtr.packet;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;
-import mtr.advanced.RegionData;
+import mtr.advanced.RegionDataPackets;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
 import mtr.client.ClientData;
-import mtr.client.MapDataCache;
 import mtr.client.IDrawing;
+import mtr.client.MapDataCache;
 import mtr.data.*;
 import mtr.mappings.RegistryUtilities;
 import mtr.mappings.Text;
-import mtr.path.PathFailure;
 import mtr.mappings.UtilitiesClient;
+import mtr.path.PathFailure;
 import mtr.screen.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -26,6 +26,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import transitsim.network.RegionData;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -208,7 +209,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	}
 
 	public static void receivePathRegionsS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
-		final RegionData regionData = RegionData.read(packet);
+		final RegionData regionData = RegionDataPackets.read(packet);
 		minecraftClient.execute(() -> ClientData.PATH_REGIONS = regionData);
 	}
 

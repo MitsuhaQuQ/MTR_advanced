@@ -1,11 +1,9 @@
-package mtr.advanced;
+package transitsim.network;
 
-import mtr.path.RailGraph;
-import mtr.path.RailGraph.Kind;
-import mtr.path.RailRouter;
-import mtr.path.RailRouter.Result;
-import mtr.path.RailRouter.Target;
 import org.junit.jupiter.api.Test;
+import transitsim.network.RailGraph.Kind;
+import transitsim.network.RailRouter.Result;
+import transitsim.network.RailRouter.Target;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -53,8 +51,8 @@ class PathRegionsTest {
 		return builder;
 	}
 
-	private static PathBoundaries yCutOff() {
-		final PathBoundaries boundaries = new PathBoundaries();
+	private static Boundaries yCutOff() {
+		final Boundaries boundaries = new Boundaries();
 		boundaries.nodes.add(pos(20, 50));
 		boundaries.nodes.add(pos(90, 50));
 		return boundaries;
@@ -65,12 +63,12 @@ class PathRegionsTest {
 		final RailGraph.Builder<String> builder = twoLines();
 		add(builder, 500, 500, 510, 500, Kind.PLATFORM, 2);
 		final RailGraph<String> graph = builder.build();
-		final PathRegions regions = PathRegions.compute(graph, new PathBoundaries());
+		final PathRegions regions = PathRegions.compute(graph, new Boundaries());
 		assertEquals(2, regions.count);
 		assertTrue(regions.uncutNodes.isEmpty());
 
 		// Searches don't change at all without boundaries
-		graph.setRegions(new PathBoundaries());
+		graph.setRegions(new Boundaries());
 		assertNull(graph.getRegions());
 		assertTrue(names(RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0)))).contains("20,50>90,50"));
 	}
@@ -108,10 +106,10 @@ class PathRegionsTest {
 	@Test
 	void boundaryRailsBelongToBothSides() {
 		final RailGraph<String> graph = twoLines().build();
-		final PathBoundaries boundaries = new PathBoundaries();
+		final Boundaries boundaries = new Boundaries();
 		// Cutting the slow rail and the detour leaves the two stations apart
-		boundaries.segments.add(PathBoundaries.segmentKey(pos(10, 0), pos(100, 0)));
-		boundaries.segments.add(PathBoundaries.segmentKey(pos(90, 50), pos(100, 0)));
+		boundaries.segments.add(RailKeys.of(pos(10, 0), pos(100, 0)));
+		boundaries.segments.add(RailKeys.of(pos(90, 50), pos(100, 0)));
 		final PathRegions regions = PathRegions.compute(graph, boundaries);
 		assertEquals(2, regions.count);
 		assertEquals(2, regions.railRegions(graph, pos(10, 0), pos(100, 0)).length);
@@ -121,13 +119,13 @@ class PathRegionsTest {
 	@Test
 	void reportsBoundariesThatDoNotCutAnything() {
 		final RailGraph<String> graph = twoLines().build();
-		final PathBoundaries boundaries = new PathBoundaries();
+		final Boundaries boundaries = new Boundaries();
 		// The detour still joins both sides of the slow rail
-		boundaries.segments.add(PathBoundaries.segmentKey(pos(10, 0), pos(100, 0)));
+		boundaries.segments.add(RailKeys.of(pos(10, 0), pos(100, 0)));
 		boundaries.nodes.add(pos(5000, 0));
 		final PathRegions regions = PathRegions.compute(graph, boundaries);
 		assertEquals(1, regions.count);
-		assertEquals(Collections.singletonList(PathBoundaries.segmentKey(pos(10, 0), pos(100, 0))), regions.uncutSegments);
+		assertEquals(Collections.singletonList(RailKeys.of(pos(10, 0), pos(100, 0))), regions.uncutSegments);
 		assertEquals(Collections.singletonList(pos(5000, 0)), regions.missingNodes);
 	}
 
@@ -162,7 +160,7 @@ class PathRegionsTest {
 				new RegionComputer.SavedRail(5, pos(120, 0), pos(130, 0), 30, 0)
 		);
 		final List<RegionComputer.RouteStops> routes = Collections.singletonList(new RegionComputer.RouteStops(100, new long[]{1, 2, 5}));
-		return RegionComputer.compute(stationWithPassingTrack(passingTrackRejoins).build(), new PathBoundaries(), platforms, new ArrayList<>(), routes);
+		return RegionComputer.compute(stationWithPassingTrack(passingTrackRejoins).build(), new Boundaries(), platforms, new ArrayList<>(), routes);
 	}
 
 	@Test

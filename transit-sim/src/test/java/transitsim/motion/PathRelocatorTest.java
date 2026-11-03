@@ -1,7 +1,7 @@
-package mtr.path;
+package transitsim.motion;
 
-import mtr.path.PathRelocator.Position;
 import org.junit.jupiter.api.Test;
+import transitsim.motion.PathRelocator.Position;
 
 import java.util.ArrayList;
 import java.util.Arrays;

@@ -5,29 +5,19 @@ import mtr.data.SerializedDataBase;
 import net.minecraft.network.FriendlyByteBuf;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.network.Boundaries;
 import transitsim.network.RailKeys;
 
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
- * Where players cut the rail network for pathfinding (design document 5.13): at a node, or along the rail between two
- * connected nodes. Routes don't search across a boundary, and the dashboard and editor use the regions it makes. This is
- * separate from the timetable boundaries of platforms.
+ * Where players cut the rail network for pathfinding (design document 5.13), with nodes as
+ * {@link net.minecraft.core.BlockPos#asLong()}: the boundaries of the simulation component, saved and sent to players.
+ * The dashboard and editor use the regions it makes. This is separate from the timetable boundaries of platforms.
  */
-public final class PathBoundaries {
-
-	/**
-	 * Node positions, as {@link net.minecraft.core.BlockPos#asLong()}.
-	 */
-	public final Set<Long> nodes = new HashSet<>();
-	/**
-	 * Rails between two nodes, both directions together, keyed like {@link mtr.path.PathData#getRailProduct}.
-	 */
-	public final Set<UUID> segments = new HashSet<>();
+public final class PathBoundaries extends Boundaries {
 
 	public static final int MAX_BOUNDARIES = 65536;
 
@@ -35,14 +25,7 @@ public final class PathBoundaries {
 		return RailKeys.of(pos1, pos2);
 	}
 
-	public boolean isEmpty() {
-		return nodes.isEmpty() && segments.isEmpty();
-	}
-
-	public boolean isSegment(long pos1, long pos2) {
-		return !segments.isEmpty() && segments.contains(segmentKey(pos1, pos2));
-	}
-
+	@Override
 	public PathBoundaries copy() {
 		final PathBoundaries copy = new PathBoundaries();
 		copy.nodes.addAll(nodes);
@@ -51,10 +34,14 @@ public final class PathBoundaries {
 	}
 
 	public void write(FriendlyByteBuf packet) {
-		packet.writeInt(nodes.size());
-		nodes.forEach(packet::writeLong);
-		packet.writeInt(segments.size());
-		segments.forEach(packet::writeUUID);
+		write(this, packet);
+	}
+
+	public static void write(Boundaries boundaries, FriendlyByteBuf packet) {
+		packet.writeInt(boundaries.nodes.size());
+		boundaries.nodes.forEach(packet::writeLong);
+		packet.writeInt(boundaries.segments.size());
+		boundaries.segments.forEach(packet::writeUUID);
 	}
 
 	public static PathBoundaries read(FriendlyByteBuf packet) {

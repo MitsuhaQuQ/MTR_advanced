@@ -18,7 +18,7 @@ public interface RailwayDataStore {
 	void close() throws Exception;
 
 	/**
-	 * Replaces the compressed rail network (see {@link mtr.advanced.PhysicalGraph}). Only the SQLite store keeps it, in its
+	 * Replaces the compressed rail network (see {@link transitsim.network.Network}). Only the SQLite store keeps it, in its
 	 * own tables; the fallback of separate files doesn't.
 	 */
 	default void replaceGraphSections(Map<Long, byte[]> sections, long fingerprint) throws Exception {

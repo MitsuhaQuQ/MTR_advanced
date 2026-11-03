@@ -1,6 +1,5 @@
-package mtr.advanced;
+package transitsim.network;
 
-import mtr.path.RailGraph;
 
 import java.util.*;
 
@@ -17,7 +16,7 @@ public final class RegionComputer {
 	private RegionComputer() {
 	}
 
-	public static <R> RegionData compute(RailGraph<R> graph, PathBoundaries boundaries, List<SavedRail> platforms, List<SavedRail> sidings, List<RouteStops> routes) {
+	public static <R> RegionData compute(RailGraph<R> graph, Boundaries boundaries, List<SavedRail> platforms, List<SavedRail> sidings, List<RouteStops> routes) {
 		final PathRegions regions = PathRegions.compute(graph, boundaries);
 
 		final Map<Long, int[]> platformRegions = new HashMap<>();
@@ -73,11 +72,11 @@ public final class RegionComputer {
 		final SavedRail previous = stopIndex > 0 ? platformMap.get(routePlatformIds[stopIndex - 1]) : null;
 		if (previous != null && previous.id != platform.id) {
 			final Set<UUID> reached = reachableRails(graph, regions, previous, PathRegions.legRegions(platformRegions.get(previous.id), stopRegions));
-			others.removeIf(other -> !reached.contains(PathBoundaries.segmentKey(other.pos1, other.pos2)));
+			others.removeIf(other -> !reached.contains(RailKeys.of(other.pos1, other.pos2)));
 		}
 		final SavedRail next = stopIndex + 1 < routePlatformIds.length ? platformMap.get(routePlatformIds[stopIndex + 1]) : null;
 		if (next != null && next.id != platform.id) {
-			final UUID nextKey = PathBoundaries.segmentKey(next.pos1, next.pos2);
+			final UUID nextKey = RailKeys.of(next.pos1, next.pos2);
 			others.removeIf(other -> !reachableRails(graph, regions, other, PathRegions.legRegions(platformRegions.get(other.id), platformRegions.get(next.id))).contains(nextKey));
 		}
 		if (others.isEmpty()) {
@@ -95,7 +94,7 @@ public final class RegionComputer {
 	/**
 	 * Follows the rails from a platform in both directions, the way a train can run without reversing.
 	 *
-	 * @return every rail reached, keyed like {@link PathBoundaries#segmentKey}
+	 * @return every rail reached, keyed like {@link Boundaries#segmentKey}
 	 */
 	private static <R> Set<UUID> reachableRails(RailGraph<R> graph, PathRegions regions, SavedRail start, BitSet allowed) {
 		final Set<UUID> reached = new HashSet<>();
@@ -108,7 +107,7 @@ public final class RegionComputer {
 		}
 		while (!queue.isEmpty() && visited.size() < MAX_SEARCH_CONNECTIONS) {
 			final RailGraph.Connection<R> connection = queue.poll();
-			reached.add(PathBoundaries.segmentKey(connection.fromPos, connection.toPos));
+			reached.add(RailKeys.of(connection.fromPos, connection.toPos));
 			for (final RailGraph.Connection<R> next : graph.outgoing(connection.toPos)) {
 				if (next.toPos != connection.fromPos && next.continuesFrom(connection) && regions.allows(next, allowed) && visited.add(next.index())) {
 					queue.add(next);

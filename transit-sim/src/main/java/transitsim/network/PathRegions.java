@@ -1,6 +1,5 @@
-package mtr.advanced;
+package transitsim.network;
 
-import mtr.path.RailGraph;
 
 import java.util.*;
 
@@ -33,7 +32,7 @@ public final class PathRegions {
 		this.connectionRegions = connectionRegions;
 	}
 
-	public static <R> PathRegions compute(RailGraph<R> graph, PathBoundaries boundaries) {
+	public static <R> PathRegions compute(RailGraph<R> graph, Boundaries boundaries) {
 		final List<RailGraph.Connection<R>> connections = graph.connections;
 
 		// Each rail is stored once in each direction, and both make one edge
@@ -43,7 +42,7 @@ public final class PathRegions {
 		final Map<Long, List<Integer>> nodeEdges = new LinkedHashMap<>();
 		for (int i = 0; i < connections.size(); i++) {
 			final RailGraph.Connection<R> connection = connections.get(i);
-			final UUID key = PathBoundaries.segmentKey(connection.fromPos, connection.toPos);
+			final UUID key = RailKeys.of(connection.fromPos, connection.toPos);
 			Integer edge = edgeIndices.get(key);
 			if (edge == null) {
 				edge = edges.size();

@@ -1,8 +1,7 @@
-package mtr.path;
+package transitsim.network;
 
-import mtr.advanced.PathRegions;
-import mtr.path.RailGraph.Connection;
-import mtr.path.RailGraph.Kind;
+import transitsim.network.RailGraph.Connection;
+import transitsim.network.RailGraph.Kind;
 
 import java.util.ArrayList;
 import java.util.BitSet;

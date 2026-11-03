@@ -6,12 +6,16 @@ import mtr.Registry;
 import mtr.data.*;
 import mtr.packet.IPacket;
 import mtr.path.DeterministicPathFinder;
-import mtr.path.RailGraph;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import transitsim.network.Network;
+import transitsim.network.PathRegions;
+import transitsim.network.RailGraph;
+import transitsim.network.RegionComputer;
+import transitsim.network.RegionData;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,6 +34,10 @@ public final class PathRegionSync {
 	private boolean computed;
 	private boolean computing;
 	private RegionData latest = RegionData.EMPTY;
+	/**
+	 * The order networks are published in (contracts document 5.1).
+	 */
+	private long networkVersion;
 
 	private static final int CHECK_INTERVAL_TICKS = 40;
 
@@ -53,6 +61,7 @@ public final class PathRegionSync {
 		fingerprint = newFingerprint;
 		computing = true;
 		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
+		final long version = ++networkVersion;
 		final PathBoundaries boundariesCopy = boundaries.copy();
 		final List<RegionComputer.SavedRail> platforms = new ArrayList<>();
 		railwayData.platforms.forEach(platform -> {
@@ -66,22 +75,22 @@ public final class PathRegionSync {
 
 		final Thread thread = new Thread(() -> {
 			RegionData data = null;
-			PhysicalGraph physicalGraph = null;
+			Network network = null;
 			try {
 				data = RegionComputer.compute(graph, boundariesCopy, platforms, sidings, routes);
 				final Map<UUID, Long> savedRails = new HashMap<>();
 				platforms.forEach(platform -> savedRails.put(PathBoundaries.segmentKey(platform.pos1, platform.pos2), platform.id));
 				sidings.forEach(siding -> savedRails.put(PathBoundaries.segmentKey(siding.pos1, siding.pos2), siding.id));
-				physicalGraph = PhysicalGraph.compute(graph, PathRegions.compute(graph, boundariesCopy), boundariesCopy, savedRails);
+				network = RailNetworks.compress(graph, PathRegions.compute(graph, boundariesCopy), boundariesCopy, savedRails, version);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 			final RegionData finalData = data;
-			final PhysicalGraph finalGraph = physicalGraph;
+			final Network finalNetwork = network;
 			minecraftServer.execute(() -> {
 				computing = false;
-				if (finalGraph != null) {
-					railwayData.graphRecords.setGraph(finalGraph);
+				if (finalNetwork != null) {
+					railwayData.graphRecords.setGraph(finalNetwork);
 				}
 				if (finalData != null) {
 					latest = finalData;
@@ -97,7 +106,7 @@ public final class PathRegionSync {
 	public void send(ServerPlayer player) {
 		if (computed) {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-			latest.write(packet);
+			RegionDataPackets.write(latest, packet);
 			Registry.sendToPlayer(player, IPacket.PACKET_PATH_REGIONS, packet);
 		}
 	}

@@ -7,6 +7,7 @@ import mtr.data.TransportMode;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
+import transitsim.motion.SpeedCurves;
 import transitsim.motion.SpeedProfile;
 
 import java.util.ArrayList;
@@ -34,7 +35,7 @@ class SpeedCurvesTest {
 		path.add(rail(120, 160, RailType.WOODEN, 0));
 		path.add(rail(160, 260, RailType.IRON, 0));
 		path.add(rail(260, 300, RailType.PLATFORM, 40));
-		final SpeedCurves curves = SpeedCurves.of(path, TransportMode.TRAIN, 15, 30, ACCELERATION, DECELERATION);
+		final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, TransportMode.TRAIN), 15, 30, ACCELERATION, DECELERATION);
 		assertEquals(1, curves.runs.size());
 		final SpeedProfile profile = curves.runs.get(0).fastest;
 		final double wooden = RailType.WOODEN.maxBlocksPerTick;
@@ -54,7 +55,7 @@ class SpeedCurvesTest {
 		path.add(platform);
 		path.add(new PathData(platform.rail, 0, 0, platform.getLastPos(), platform.startingPos, 0));
 		path.add(rail(160, 260, RailType.IRON, 0));
-		final SpeedCurves curves = SpeedCurves.of(path, TransportMode.TRAIN, 15, 30, ACCELERATION, DECELERATION);
+		final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, TransportMode.TRAIN), 15, 30, ACCELERATION, DECELERATION);
 		assertEquals(2, curves.runs.size());
 		assertEquals(160, curves.runs.get(0).fastest.endPosition, TOLERANCE);
 		assertEquals(190, curves.runs.get(1).fastest.startPosition, TOLERANCE);

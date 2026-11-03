@@ -1,9 +1,4 @@
-package mtr.advanced;
-
-import mtr.data.RailType;
-import mtr.data.TransportMode;
-import mtr.path.PathData;
-import transitsim.motion.SpeedProfile;
+package transitsim.motion;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,20 +32,18 @@ public final class SpeedCurves {
 	 * @param startPosition where the head starts, in the siding
 	 * @param trainLength   the length of the train, which is how far the head moves at a reversal
 	 */
-	public static SpeedCurves of(List<PathData> path, TransportMode transportMode, double startPosition, double trainLength, double acceleration, double deceleration) {
-		final double minSpeed = RailType.getDefaultMaxBlocksPerTick(transportMode);
-		final int count = path.size();
+	public static SpeedCurves of(TrackView track, double startPosition, double trainLength, double acceleration, double deceleration) {
+		final double minSpeed = track.minSpeed;
+		final int count = track.size();
 		final double[] ends = new double[count];
 		final double[] limits = new double[count];
 		double distance = 0;
 		double lastLimit = minSpeed;
 		for (int i = 0; i < count; i++) {
-			final PathData pathData = path.get(i);
-			distance += pathData.rail.getLength();
+			distance += track.getLength(i);
 			ends[i] = distance;
-			final RailType railType = pathData.rail.railType;
-			if (railType.canAccelerate) {
-				lastLimit = Math.max(railType.maxBlocksPerTick, minSpeed);
+			if (track.getLimit(i) >= 0) {
+				lastLimit = Math.max(track.getLimit(i), minSpeed);
 			}
 			limits[i] = lastLimit;
 		}
@@ -58,9 +51,9 @@ public final class SpeedCurves {
 		final List<Run> runs = new ArrayList<>();
 		double runStart = startPosition;
 		for (int i = 0; i < count; i++) {
-			if (path.get(i).dwellTime > 0 || i == count - 1) {
+			if (track.isStop(i) || i == count - 1) {
 				runs.add(new Run(runStart, Math.max(runStart, ends[i]), i, ends, limits, trainLength, acceleration, deceleration));
-				runStart = ends[i] + (i + 1 < count && path.get(i).isOppositeRail(path.get(i + 1)) ? trainLength : 0);
+				runStart = ends[i] + (i + 1 < count && track.reversesAfter(i) ? trainLength : 0);
 			}
 		}
 		return new SpeedCurves(runs, acceleration, deceleration, minSpeed);

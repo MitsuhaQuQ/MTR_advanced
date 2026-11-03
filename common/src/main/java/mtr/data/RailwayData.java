@@ -15,7 +15,6 @@ import mtr.mappings.Utilities;
 import mtr.packet.*;
 import mtr.path.DeterministicPathFinder;
 import mtr.path.PathData;
-import mtr.path.RailGraph;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -36,6 +35,7 @@ import org.msgpack.core.MessagePack;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.core.MessageUnpacker;
 import org.msgpack.value.Value;
+import transitsim.network.RailGraph;
 import transitsim.sim.RunReservations;
 
 import java.io.File;

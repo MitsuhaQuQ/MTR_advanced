@@ -1,9 +1,9 @@
-package mtr.path;
+package transitsim.network;
 
-import mtr.path.RailGraph.Kind;
-import mtr.path.RailRouter.Result;
-import mtr.path.RailRouter.Target;
 import org.junit.jupiter.api.Test;
+import transitsim.network.RailGraph.Kind;
+import transitsim.network.RailRouter.Result;
+import transitsim.network.RailRouter.Target;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -175,15 +175,6 @@ class RailRouterTest {
 		add(rails, 50, 0, 60, 0, Kind.PLATFORM, SPEED);
 		final Result<String> result = RailRouter.route(graph(rails), Arrays.asList(saved(0, 0, 10, 0), saved(50, 0, 60, 0)));
 		assertTrue(names(result).contains("20,0>30,10"));
-	}
-
-	@Test
-	void oldSearchFindsTheSectionItCannotFollow() {
-		assertEquals(1, PathFinder.findSectionWithWaypoints(Arrays.asList(Collections.emptyList(), Collections.singletonList("node"), Collections.emptyList()), 3));
-		assertEquals(-1, PathFinder.findSectionWithWaypoints(Arrays.asList(Collections.emptyList(), Collections.emptyList()), 2));
-		// The last stop has no next section, so anything left on it is ignored
-		assertEquals(-1, PathFinder.findSectionWithWaypoints(Arrays.asList(Collections.emptyList(), Collections.singletonList("node")), 2));
-		assertEquals(-1, PathFinder.findSectionWithWaypoints(null, 2));
 	}
 
 	@Test

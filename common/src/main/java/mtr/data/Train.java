@@ -2,7 +2,7 @@ package mtr.data;
 
 import mtr.Items;
 import mtr.Keys;
-import mtr.advanced.SpeedCurves;
+import mtr.advanced.TrackViews;
 import mtr.block.BlockPSDAPGBase;
 import mtr.block.BlockPlatform;
 import mtr.packet.IPacket;
@@ -22,6 +22,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.motion.SpeedCurves;
 import transitsim.motion.SpeedProfile;
 
 import java.io.*;
@@ -396,7 +397,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected final SpeedCurves getSpeedCurves() {
 		final double length = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
 		if (speedCurves == null || speedCurvesPath != path || speedCurvesSize != path.size() || speedCurvesLength != length || speedCurvesDeceleration != decelerationConstant) {
-			speedCurves = SpeedCurves.of(path, transportMode, (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
+			speedCurves = SpeedCurves.of(TrackViews.of(path, transportMode), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
 			speedCurvesPath = path;
 			speedCurvesSize = path.size();
 			speedCurvesLength = length;

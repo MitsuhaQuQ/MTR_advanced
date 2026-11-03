@@ -1,4 +1,4 @@
-package mtr.path;
+package transitsim.motion;
 
 import java.util.ArrayList;
 import java.util.List;
