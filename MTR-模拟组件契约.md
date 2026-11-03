@@ -69,6 +69,11 @@
    - **移除** `Remove(train)`：列车被删除，或因重叠、刷新路径被清掉，这时组件释放它的一切；
    - **扣车 / 放行**、**换运用** 等运营操作也走命令。
 5. **附属模组**：G1 前要逐个核对 MSD、YJCM、Metropolis、SHMetro 有没有写 `Train` 字段。写的地方要么改成命令，要么在文档里写明"G1 以后不生效"。只做 ABI 扫描不够，还要做行为验证。
+   - **G1d 的核对结果**（扫描四个 jar 的字节码，1.20.1 版本）：都不写 `Train` 的字段，也不调改变列车状态的方法。
+     - MSD-Addon 1.3.5、SHMetro 1.0.1：没有用到 `Train`。
+     - YJCM 1.2.4：只调静态方法 `Train.isHoldingKey`（玩家手里有没有钥匙），和列车状态无关。
+     - Metropolis 0.4.0：混入 `Train.scanDoors` 和 `TrainServer.openDoors` 的返回处，调 `skipScanBlocks`、`openDoors`，读 `doorValue`，用来开关它的站台门。组件驱动的车照样走宿主的车厢计算，这两处照样被调用，读到的门开度是组件投影的值，所以行为不变（U76 里一起验证）。
+   - 以后新的附属模组若直接写投影字段（速度、`rail_progress`、门等），在组件驱动的存车线上下一 tick 就被覆盖。
 
 ### 3.2 状态清单（G1 起）
 
