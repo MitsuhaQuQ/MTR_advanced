@@ -135,7 +135,7 @@ This is not an official release. The version stays at `3.2.2` so that add-on mod
 The stages above describe the work as a whole. This is the order it is being done in:
 
 1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
-2. Test in game the speed curves and running by vehicle working, which are written but untested.
+2. Fix two safety problems an architecture review found in running by vehicle working: a train held between stations, or with its tail still on a rail, can lose its booking of a single-track stretch. Then test in game the speed curves and running by vehicle working. Until what is written is tested, no new running rules are added to the current code; they wait for the component below.
 3. Move the simulation into a component of its own that runs timetables, vehicle workings and the rail network without Minecraft, so it can be reused by the web editor, a command line tool and tests. `MTR-模拟组件与解耦.md` records what is already separated and the target architecture. MTR becomes one host of it: it turns its rails, routes and depots into the component's data, asks where each train should be at the current time, and draws the trains, opens the doors and carries the passengers.
 4. Simulated running in the web editor, with lateness, held trains and conflicts shown against the timetable.
 5. Trains in game placed by the component from the real time instead of moving tick by tick.
@@ -181,6 +181,8 @@ JDK 17 is required.
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
 The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 23. Jars with ANTE are about 136 MB.
+
+The simulation component in `transit-sim` is a plain Java 8 project without Minecraft, built into the Fabric and Forge jars; `./gradlew :transit-sim:test` runs its tests.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 
