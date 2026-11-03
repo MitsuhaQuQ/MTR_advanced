@@ -29,8 +29,12 @@ public final class TrainState {
 	 * The service it runs as a timestamp, or 0.
 	 */
 	public final long tripMillis;
+	/**
+	 * Whether the host has taken the train over, so this is how it was when it was taken (G0).
+	 */
+	public final boolean takenOver;
 
-	TrainState(long trainId, int rail, double position, double speed, boolean onRoute, boolean stopped, boolean doorsOpen, String heldBy, long tripMillis) {
+	TrainState(long trainId, int rail, double position, double speed, boolean onRoute, boolean stopped, boolean doorsOpen, String heldBy, long tripMillis, boolean takenOver) {
 		this.trainId = trainId;
 		this.rail = rail;
 		this.position = position;
@@ -40,6 +44,7 @@ public final class TrainState {
 		this.doorsOpen = doorsOpen;
 		this.heldBy = heldBy;
 		this.tripMillis = tripMillis;
+		this.takenOver = takenOver;
 	}
 
 	@Override
@@ -48,7 +53,7 @@ public final class TrainState {
 			return false;
 		}
 		final TrainState other = (TrainState) object;
-		return trainId == other.trainId && rail == other.rail && position == other.position && speed == other.speed && onRoute == other.onRoute && stopped == other.stopped && doorsOpen == other.doorsOpen && (heldBy == null ? other.heldBy == null : heldBy.equals(other.heldBy)) && tripMillis == other.tripMillis;
+		return trainId == other.trainId && rail == other.rail && position == other.position && speed == other.speed && onRoute == other.onRoute && stopped == other.stopped && doorsOpen == other.doorsOpen && (heldBy == null ? other.heldBy == null : heldBy.equals(other.heldBy)) && tripMillis == other.tripMillis && takenOver == other.takenOver;
 	}
 
 	@Override
@@ -58,6 +63,6 @@ public final class TrainState {
 
 	@Override
 	public String toString() {
-		return trainId + " rail " + rail + " at " + position + " speed " + speed + (onRoute ? "" : " in depot") + (doorsOpen ? " doors open" : "") + (heldBy == null ? "" : " held " + heldBy);
+		return trainId + " rail " + rail + " at " + position + " speed " + speed + (onRoute ? "" : " in depot") + (doorsOpen ? " doors open" : "") + (heldBy == null ? "" : " held " + heldBy) + (takenOver ? " taken over" : "");
 	}
 }

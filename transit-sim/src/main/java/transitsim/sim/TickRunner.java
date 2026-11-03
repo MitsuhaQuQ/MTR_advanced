@@ -60,6 +60,11 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	private final Map<UUID, Long> externalUntil = new TreeMap<>();
 	/**
+	 * The rails of trains the runner doesn't move, by their IDs, and who stands for each of them on the rails (G0).
+	 */
+	private final Map<Long, Set<UUID>> externalTrainRails = new HashMap<>();
+	private final Map<Long, Occupant> externalTrainOccupants = new HashMap<>();
+	/**
 	 * What has each rail, as an {@link Occupancy} has it in this tick and the one before.
 	 */
 	private final Map<UUID, RailEntry> rails = new HashMap<>();
@@ -179,6 +184,70 @@ public final class TickRunner<T extends RunTrack> {
 	public void occupyUntil(UUID rail, long untilMillis) {
 		externalUntil.put(rail, untilMillis);
 		addOccupant(rail, Occupant.EXTERNAL);
+	}
+
+	/**
+	 * The rails a train the runner doesn't move has now, in place of the ones it had (G0). Like rails taken from outside,
+	 * they come before any train's in a tick.
+	 */
+	public void setExternalTrain(long trainId, Set<UUID> newRails) {
+		final Occupant occupant = externalTrainOccupants.computeIfAbsent(trainId, key -> new Occupant(Long.MIN_VALUE, key == Long.MIN_VALUE ? Long.MIN_VALUE + 1 : key));
+		final Set<UUID> oldRails = externalTrainRails.getOrDefault(trainId, Collections.emptySet());
+		oldRails.forEach(rail -> {
+			if (!newRails.contains(rail)) {
+				removeOccupant(rail, occupant);
+			}
+		});
+		newRails.forEach(rail -> {
+			if (!oldRails.contains(rail)) {
+				addOccupant(rail, occupant);
+			}
+		});
+		if (newRails.isEmpty()) {
+			externalTrainRails.remove(trainId);
+			externalTrainOccupants.remove(trainId);
+		} else {
+			externalTrainRails.put(trainId, new HashSet<>(newRails));
+		}
+	}
+
+	/**
+	 * Stops moving a train, as the host has taken it over (3.1, rule 4). Its rails stay taken, as an external train's.
+	 *
+	 * @return false if there is no such train
+	 */
+	public boolean takeOver(long trainId) {
+		final HeadlessTrain train = getTrain(trainId);
+		if (train == null || train.takenOver) {
+			return false;
+		}
+		final Set<UUID> heldRails = new HashSet<>(train.heldRails);
+		train.dropRails();
+		train.takenOver = true;
+		train.requestedDeploy = false;
+		train.dueMillis = Long.MAX_VALUE;
+		train.dropStandingTrips();
+		reservations.release(trainId);
+		setExternalTrain(trainId, heldRails);
+		return true;
+	}
+
+	/**
+	 * Moves a train taken over again from where the host left it (3.1, rule 4): its run is worked out afresh from there and
+	 * its runs asked for again. The rails reported for it go, and it takes its own from the next tick.
+	 *
+	 * @return false if there is no such train taken over
+	 */
+	public boolean release(long trainId, double railProgress, float speed) {
+		final HeadlessTrain train = trainsById.get(trainId);
+		if (train == null || !train.takenOver) {
+			return false;
+		}
+		setExternalTrain(trainId, Collections.emptySet());
+		train.takenOver = false;
+		train.placeAt(railProgress, speed);
+		wake(train);
+		return true;
 	}
 
 	/**
@@ -403,7 +472,7 @@ public final class TickRunner<T extends RunTrack> {
 	 * Has a train left alone moved in this tick if it hasn't had its turn in it yet, or else in the next one.
 	 */
 	private void wake(HeadlessTrain train) {
-		if (train == movingTrain || train.removed) {
+		if (train == movingTrain || train.removed || train.takenOver) {
 			return;
 		}
 		final long dueMillis = inTick && train.occupant.compareTo(tickPosition) > 0 ? millis : millis + TICK;
@@ -669,8 +738,8 @@ public final class TickRunner<T extends RunTrack> {
 			final List<HeadlessTrain> trainsToRemove = new ArrayList<>();
 			for (final HeadlessTrain train : trains) {
 				tickPosition = train.occupant;
-				// A train left alone asks to leave as it did when it last moved
-				if (!skipping || train.dueMillis <= millis) {
+				// A train left alone asks to leave as it did when it last moved; one taken over doesn't move at all
+				if (!train.takenOver && (!skipping || train.dueMillis <= millis)) {
 					train.move();
 					if (train.requestedDeploy) {
 						readyDepots.add(depot);
@@ -713,7 +782,7 @@ public final class TickRunner<T extends RunTrack> {
 				if (train.movedMillis == millis) {
 					train.updateDue();
 				}
-				if (everyTrain) {
+				if (everyTrain && !train.takenOver) {
 					train.dueMillis = Math.min(train.dueMillis, millis + TICK);
 				}
 				nextMillis = Math.min(nextMillis, train.dueMillis);
@@ -800,6 +869,10 @@ public final class TickRunner<T extends RunTrack> {
 		private long movedMillis;
 		private boolean removed;
 		/**
+		 * Whether the host has taken the train over, so it doesn't move (G0).
+		 */
+		private boolean takenOver;
+		/**
 		 * The rails it has, and the ones it looked at while working out how long it can be left alone.
 		 */
 		private List<UUID> heldRails = Collections.emptyList();
@@ -830,6 +903,36 @@ public final class TickRunner<T extends RunTrack> {
 			service = new TrainService<>(siding.trainId, this, () -> millis);
 			service.setSiding(sidingRun.sidingId);
 			service.setNetwork(sidingRun.depot, routes, null);
+		}
+
+		public boolean isTakenOver() {
+			return takenOver;
+		}
+
+		/**
+		 * Puts the train somewhere along its path at a speed, as the host gives it back: its next stop, cruising cap and run
+		 * are worked out afresh from there, and the runs it held are asked for again.
+		 */
+		private void placeAt(double newRailProgress, float newSpeed) {
+			railProgress = newRailProgress;
+			speed = Math.max(0, newSpeed);
+			onRoute = true;
+			runSegment = null;
+			elapsedDwellTicks = 0;
+			doorTarget = false;
+			doorValue = 0;
+			manualNotch = speed > 0 ? 0 : -2;
+			grantedRunEnd = -1;
+			requestedRunEnd = -1;
+			nextStoppingIndex = TrainRules.findNextStoppingIndex(this, MotionConstants.findIndex(this, railProgress, false));
+			nextPlatformIndex = nextStoppingIndex;
+			// A stopped train counts as standing at its stop, so one given back anywhere else sets off as it does from a stop
+			if (speed <= 0 && Math.abs(distances.get(nextStoppingIndex) - railProgress) > 1E-3) {
+				speed = MotionConstants.ACCELERATION_DEFAULT;
+			}
+			cruiseCap = TrainRules.getCruiseCap(this);
+			syncedMillis = millis;
+			dueMillis = millis + TICK;
 		}
 
 		/**
@@ -874,7 +977,9 @@ public final class TickRunner<T extends RunTrack> {
 		 * or stood.
 		 */
 		private void catchUp(long toMillis) {
-			if (toMillis > syncedMillis) {
+			if (takenOver) {
+				syncedMillis = toMillis;
+			} else if (toMillis > syncedMillis) {
 				// The rules count from the clock as it was at the end of the ticks left out
 				final long currentMillis = millis;
 				millis = toMillis;

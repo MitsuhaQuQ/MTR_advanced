@@ -108,7 +108,7 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		if (train == null) {
 			return null;
 		}
-		return new TrainState(train.id, train.getHeadRail(), train.getRailProgress(), train.getSpeed(), train.isOnRoute(), train.getSpeed() == 0, train.getDoorTarget(), train.getHostHold(), train.service.getTripMillis());
+		return new TrainState(train.id, train.getHeadRail(), train.getRailProgress(), train.getSpeed(), train.isOnRoute(), train.getSpeed() == 0, train.getDoorTarget(), train.getHostHold(), train.service.getTripMillis(), train.isTakenOver());
 	}
 
 	@Override
@@ -183,6 +183,14 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		} else if (input instanceof HostInput.ExternalOccupancy) {
 			final HostInput.ExternalOccupancy occupancy = (HostInput.ExternalOccupancy) input;
 			runner.occupyUntil(occupancy.rail, occupancy.untilTime);
+		} else if (input instanceof HostInput.ExternalTrain) {
+			final HostInput.ExternalTrain externalTrain = (HostInput.ExternalTrain) input;
+			runner.setExternalTrain(externalTrain.trainId, externalTrain.rails);
+		} else if (input instanceof HostInput.TakeOver) {
+			runner.takeOver(((HostInput.TakeOver) input).trainId);
+		} else if (input instanceof HostInput.Release) {
+			final HostInput.Release release = (HostInput.Release) input;
+			runner.release(release.trainId, release.railProgress, release.speed);
 		} else if (input instanceof HostInput.PublishPlan) {
 			((HostInput.PublishPlan) input).change.accept(runner.getRoutes());
 		} else if (input instanceof HostInput.PublishNetwork) {

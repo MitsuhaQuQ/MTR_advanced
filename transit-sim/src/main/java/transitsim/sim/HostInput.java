@@ -83,6 +83,54 @@ public abstract class HostInput implements Comparable<HostInput> {
 	}
 
 	/**
+	 * The rails a train the simulation doesn't move has now (G0), such as one driven by hand or of a depot still on the old
+	 * rules, in place of the ones it had before. No rails means it has gone. A train taken over is reported this way too.
+	 */
+	public static final class ExternalTrain extends HostInput {
+
+		public final long trainId;
+		public final Set<UUID> rails;
+
+		public ExternalTrain(long time, long sequence, long trainId, Set<UUID> rails) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.rails = Collections.unmodifiableSet(new HashSet<>(rails));
+		}
+	}
+
+	/**
+	 * The host takes a train over (3.1, rule 4), as a player starts driving it: the simulation stops moving it and keeps
+	 * the rails it has taken as an external train's, until the host reports them with {@link ExternalTrain}.
+	 */
+	public static final class TakeOver extends HostInput {
+
+		public final long trainId;
+
+		public TakeOver(long time, long sequence, long trainId) {
+			super(time, sequence);
+			this.trainId = trainId;
+		}
+	}
+
+	/**
+	 * The host gives a train it took over back (3.1, rule 4), where it is now along its path and at its speed. The
+	 * simulation works out its run from there and asks for its runs again.
+	 */
+	public static final class Release extends HostInput {
+
+		public final long trainId;
+		public final double railProgress;
+		public final float speed;
+
+		public Release(long time, long sequence, long trainId, double railProgress, float speed) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.railProgress = railProgress;
+			this.speed = speed;
+		}
+	}
+
+	/**
 	 * A new version of the plan, made by changing the timetables of the simulation's routes in place and counting up their
 	 * revisions. Trains running a service keep the version they started it with (5.1, rule 3). The change is given the
 	 * routes of the simulation it is applied to, so a fork replaying it changes its own.
