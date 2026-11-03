@@ -136,7 +136,7 @@ The stages above describe the work as a whole. This is the order it is being don
 
 1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
 2. Test in game the speed curves and running by vehicle working, which are written but untested.
-3. Move the simulation into a component of its own that runs timetables, vehicle workings and the rail network without Minecraft, so it can be reused by the web editor, a command line tool and tests. MTR becomes one host of it: it turns its rails, routes and depots into the component's data, asks where each train should be at the current time, and draws the trains, opens the doors and carries the passengers.
+3. Move the simulation into a component of its own that runs timetables, vehicle workings and the rail network without Minecraft, so it can be reused by the web editor, a command line tool and tests. `MTR-模拟组件与解耦.md` records what is already separated and the target architecture. MTR becomes one host of it: it turns its rails, routes and depots into the component's data, asks where each train should be at the current time, and draws the trains, opens the doors and carries the passengers.
 4. Simulated running in the web editor, with lateness, held trains and conflicts shown against the timetable.
 5. Trains in game placed by the component from the real time instead of moving tick by tick.
 6. Then, written in the component first: speed limits when passing stations, block sections, turning back at a platform, interlocking, splitting through services and deadheading.
