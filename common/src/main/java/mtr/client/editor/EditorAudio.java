@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import mtr.audio.AudioFiles;
 import mtr.client.AudioCache;
+import mtr.data.TranslatedMessage;
 
 import java.util.Base64;
 
@@ -24,6 +25,7 @@ public final class EditorAudio {
 		jsonObject.addProperty("maxSeconds", AudioCache.maxSeconds);
 		jsonObject.addProperty("maxTotalBytes", AudioCache.maxTotalBytes);
 		jsonObject.addProperty("totalBytes", AudioCache.totalBytes);
+		jsonObject.addProperty("language", EditorData.getLanguage());
 
 		final JsonArray entries = new JsonArray();
 		AudioCache.ENTRIES.forEach(entry -> {
@@ -50,7 +52,7 @@ public final class EditorAudio {
 			requestObject.addProperty("name", request.name);
 			requestObject.addProperty("done", request.done);
 			requestObject.addProperty("ok", request.ok);
-			requestObject.addProperty("message", request.message);
+			requestObject.addProperty("message", TranslatedMessage.decode(request.message));
 			requests.add(requestObject);
 		});
 		jsonObject.add("requests", requests);
@@ -67,13 +69,13 @@ public final class EditorAudio {
 			try {
 				bytes = Base64.getDecoder().decode(data);
 			} catch (IllegalArgumentException e) {
-				throw new AudioFiles.InvalidAudioException("文件读取失败");
+				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_read_failed"));
 			}
 			jsonObject.addProperty("id", AudioCache.upload(name, bytes));
 			jsonObject.addProperty("ok", true);
 		} catch (AudioFiles.InvalidAudioException e) {
 			jsonObject.addProperty("ok", false);
-			jsonObject.addProperty("message", e.getMessage());
+			jsonObject.addProperty("message", TranslatedMessage.decode(e.getMessage()));
 		}
 		return jsonObject;
 	}
@@ -86,7 +88,7 @@ public final class EditorAudio {
 		final AudioCache.Entry entry = AudioCache.ENTRIES.stream().filter(checkEntry -> checkEntry.getKey().equals(key)).findFirst().orElse(null);
 		if (entry == null) {
 			jsonObject.addProperty("ok", false);
-			jsonObject.addProperty("message", "没有这个音频");
+			jsonObject.addProperty("message", TranslatedMessage.get("gui.mtr.audio_missing"));
 		} else {
 			jsonObject.addProperty("id", AudioCache.delete(entry));
 			jsonObject.addProperty("ok", true);

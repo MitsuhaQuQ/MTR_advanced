@@ -11,8 +11,8 @@
 	// Room below the last station for the labels of trains carrying on to another route
 	const LABEL_W = 120, AXIS_H = 28, MIN_ROW_GAP = 22, PAD_BOTTOM = 30;
 	const ZOOMS = [0.5, 1, 2, 3, 4, 6, 8, 12, 16];
-	const WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-	const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
+	const WEEKDAY_NAMES = translatedList(["周一", "周二", "周三", "周四", "周五", "周六", "周日"]);
+	const WEEKDAY_SHORT = translatedList(["一", "二", "三", "四", "五", "六", "日"]);
 	// The same as RouteTimetable.MAX_SERVICES and MAX_TABLES in the game
 	const MAX_SERVICES = 4096, MAX_TABLES = 16;
 	// RouteTimetable.MAX_LAYOVER_MILLIS and MAX_STAY_MILLIS: how long a train waits for its next lap before going back to the depot
@@ -26,7 +26,7 @@
 	const colorOf = value => "#" + (value & 0xFFFFFF).toString(16).padStart(6, "0");
 	const mod = (a, b) => ((a % b) + b) % b;
 	// Names written as "中文|English" show their first part
-	const shortName = name => String(name || "").split("||")[0].split("|")[0] || "（未命名）";
+	const shortName = name => String(name || "").split("||")[0].split("|")[0] || tr("（未命名）");
 
 	const key = (() => {
 		const match = location.hash.match(/key=([0-9a-f]+)/);
@@ -182,14 +182,14 @@
 				const entry = draft.routes[id];
 				if (!entry) return;
 				entry.conflict = error.message === "CONFLICT";
-				entry.error = entry.conflict ? "游戏里的这条线路在草稿之后改过" : error.message;
+				entry.error = entry.conflict ? tr("游戏里的这条线路在草稿之后改过") : error.message;
 			});
 			owners.forEach(id => { if (!failed.has(id) && typeof id === "string") delete draft.routes[id]; });
 			draft.created = draft.created.filter(made => failed.has(made));
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
 			applyResult = { ok: result.ok, general: (result.errors || []).filter(error => error.index < 0).map(error => error.message), applied: owners.filter(id => !failed.has(id)).length };
 		} catch (e) {
-			applyResult = { ok: false, general: [e.message === "401" ? "页面的链接已经失效" : "发送失败，游戏可能已经关闭"], applied: 0 };
+			applyResult = { ok: false, general: [e.message === "401" ? tr("页面的链接已经失效") : tr("发送失败，游戏可能已经关闭")], applied: 0 };
 		}
 		applying = false;
 		saveDraft();
@@ -217,14 +217,14 @@
 	function renderDraftState() {
 		const count = draftCount();
 		const tag = $("draft-tag");
-		tag.textContent = applying ? "正在应用…" : count ? `草稿 ${count} 项` : "没有草稿";
+		tag.textContent = applying ? tr("正在应用…") : count ? `${tr("草稿 {0} 项", count)}` : tr("没有草稿");
 		tag.classList.toggle("has-draft", count > 0);
 		$("btn-apply").disabled = applying || !count || !(data && data.canEdit);
 		const selected = data && state.route && data.routeById.get(state.route);
 		const button = $("btn-delete");
-		button.textContent = selected && isDeleted(selected) ? "取消删除" : "删除种别";
+		button.textContent = selected && isDeleted(selected) ? tr("取消删除") : tr("删除种别");
 		button.disabled = !selected || !data.canEdit;
-		button.title = selected ? (isDeleted(selected) ? "不删除" : "删除") + "“" + routeTitle(selected) + "”" : "先选中一个种别";
+		button.title = selected ? (isDeleted(selected) ? tr("不删除") : tr("删除")) + "“" + routeTitle(selected) + "”" : tr("先选中一个种别");
 	}
 
 	async function poll(once) {
@@ -247,6 +247,7 @@
 
 	/** The routes of each line, the stations of its diagram, and each route's services on the chosen day. */
 	function setData(newData) {
+		I18N.setLanguage(newData.language);
 		data = newData;
 		lastLoaded = Date.now();
 		data.routeById = new Map(data.routes.map(r => [r.id, r]));
@@ -422,8 +423,8 @@
 	const timesOf = s => s.plans.map(plan => [s.start + plan.arrival, s.start + plan.departure]);
 
 	// ---------- Editing ----------
-	const daysText = mask => mask ? WEEKDAY_SHORT.filter((_, i) => mask >> i & 1).join("") : "不运行";
-	const tableName = (table, index) => table.name || "表 " + (index + 1);
+	const daysText = mask => mask ? WEEKDAY_SHORT.filter((_, i) => mask >> i & 1).join(trc("weekday separator", "")) : tr("不运行");
+	const tableName = (table, index) => table.name || tr("表 ") + (index + 1);
 
 	/** Sorted the same way however it was made, so a draft changed back to the game's matches it. */
 	function normalize(timetable) {
@@ -487,7 +488,7 @@
 	/** Moves a service to another time, with what belongs to it. @return why it can't, or nothing */
 	function retimeService(table, oldService, newService) {
 		if (oldService === newService) return;
-		if (table.services.includes(newService)) return "这张表已经有这个时刻的班次";
+		if (table.services.includes(newService)) return tr("这张表已经有这个时刻的班次");
 		table.services[table.services.indexOf(oldService)] = newService;
 		table.links.forEach(link => { if (link.service === oldService) link.service = newService; });
 		table.returns = table.returns.map(service => service === oldService ? newService : service);
@@ -517,7 +518,7 @@
 		return near + mod(local - oldLocal + DAY / 2, DAY) - DAY / 2;
 	}
 
-	const PATTERN_HINT = "写成 07:10，或 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）";
+	const PATTERN_HINT = tr("写成 07:10，或 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
 	/** @return the services, in UTC milliseconds of the day, that a pattern like "07:10 + 10 * 00:03" stands for */
 	function parsePattern(value) {
 		const text = value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFF10 + 48)).replace(/[：]/g, ":").replace(/＋/g, "+").replace(/[＊×]/g, "*");
@@ -557,7 +558,7 @@
 	function openDialog(title, body, okLabel, onOk, onInput) {
 		closeMenu();
 		dialog.innerHTML = `<form method="dialog"><h2>${title}</h2>${body}<p class="err" id="dialog-error"></p>
-			<div class="actions"><button value="cancel" formnovalidate>取消</button><button class="primary" value="ok">${okLabel}</button></div></form>`;
+			<div class="actions"><button value="cancel" formnovalidate>${tr("取消")}</button><button class="primary" value="ok">${okLabel}</button></div></form>`;
 		const form = dialog.querySelector("form");
 		form.addEventListener("submit", e => {
 			if (!e.submitter || e.submitter.value !== "ok") return;
@@ -582,16 +583,16 @@
 	function tableDialog(r, tableIndex) {
 		const timetable = timetableOf(r), isNew = tableIndex < 0, table = isNew ? null : timetable.tables[tableIndex];
 		const line = data.lines.find(l => l.key === r.lineKey);
-		openDialog(isNew ? "新建时刻表" : "时刻表设置", `
-			<label>表名 <input name="name" maxlength="32" value="${escapeHtml(table ? table.name : "")}" placeholder="休日"></label>
-			<fieldset id="dialog-days"><legend>运行的星期</legend></fieldset>
-			${isNew ? `<label>班次 <select name="copy"><option value="-1">空表</option>${timetable.tables.map((t, i) => `<option value="${i}">复制“${escapeHtml(tableName(t, i))}”的班次</option>`).join("")}</select></label>
-			<label><input type="checkbox" name="all" ${line && line.routes.length > 1 ? "checked" : "disabled"}> ${escapeHtml(shortName(r.line))}的全部线路一起建</label>` : ""}
-			<p class="hint">一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。</p>`, isNew ? "新建" : "确定", form => {
+		openDialog(isNew ? tr("新建时刻表") : tr("时刻表设置"), `
+			<label>${tr("表名")} <input name="name" maxlength="32" value="${escapeHtml(table ? table.name : "")}" placeholder="${tr("休日")}"></label>
+			<fieldset id="dialog-days"><legend>${tr("运行的星期")}</legend></fieldset>
+			${isNew ? `<label>${tr("班次")} <select name="copy"><option value="-1">${tr("空表")}</option>${timetable.tables.map((t, i) => `<option value="${i}">${tr("复制“{0}”的班次", escapeHtml(tableName(t, i)))}</option>`).join("")}</select></label>
+			<label><input type="checkbox" name="all" ${line && line.routes.length > 1 ? "checked" : "disabled"}> ${tr("{0}的全部线路一起建", escapeHtml(shortName(r.line)))}</label>` : ""}
+			<p class="hint">${tr("一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。")}</p>`, isNew ? tr("新建") : tr("确定"), form => {
 			const mask = [...form.querySelectorAll("#dialog-days input:checked")].reduce((m, input) => m | 1 << +input.value, 0);
 			const name = form.name.value.trim();
 			const routes = isNew && form.all && form.all.checked ? line.routes : [r];
-			if (isNew && routes.some(route => timetableOf(route).tables.length >= MAX_TABLES)) return `一条线路最多 ${MAX_TABLES} 张表`;
+			if (isNew && routes.some(route => timetableOf(route).tables.length >= MAX_TABLES)) return `${tr("一条线路最多 {0} 张表", MAX_TABLES)}`;
 			routes.forEach(route => editTimetable(route, edited => {
 				edited.tables.forEach((t, i) => { if (i !== tableIndex) t.weekdays &= ~mask; });
 				if (isNew) {
@@ -612,10 +613,10 @@
 		}, form => {
 			const ticked = new Set([...form.querySelectorAll("#dialog-days input:checked")].map(input => input.value));
 			const first = !form.querySelector("#dialog-days input");
-			form.querySelector("#dialog-days").innerHTML = `<legend>运行的星期</legend>` + WEEKDAY_SHORT.map((day, i) => {
+			form.querySelector("#dialog-days").innerHTML = `<legend>${tr("运行的星期")}</legend>` + WEEKDAY_SHORT.map((day, i) => {
 				const owner = timetable.tables.findIndex(t => t.weekdays >> i & 1);
 				const checked = first ? table && table.weekdays >> i & 1 : ticked.has(String(i));
-				return `<label><input type="checkbox" value="${i}" ${checked ? "checked" : ""}>周${day}<span class="owner">${owner < 0 ? "无" : escapeHtml(tableName(timetable.tables[owner], owner))}</span></label>`;
+				return `<label><input type="checkbox" value="${i}" ${checked ? "checked" : ""}>${tr("周{0}", day)}<span class="owner">${owner < 0 ? tr("无") : escapeHtml(tableName(timetable.tables[owner], owner))}</span></label>`;
 			}).join("");
 		});
 	}
@@ -644,12 +645,12 @@
 	function renderTree() {
 		const tree = $("tree");
 		if (!data) {
-			tree.innerHTML = `<div class="empty">正在读取…</div>`;
+			tree.innerHTML = `<div class="empty">${tr("正在读取…")}</div>`;
 			return;
 		}
 		const node = (attrs, caret, content, active) => `<div class="node${active ? " active" : ""}" tabindex="0" ${attrs}><span class="caret">${caret}</span>${content}</div>`;
-		const parts = [`<div class="section">线路</div><ul>`];
-		if (!data.lines.length) parts.push(`<li class="empty">没有线路</li>`);
+		const parts = [`<div class="section">${tr("线路")}</div><ul>`];
+		if (!data.lines.length) parts.push(`<li class="empty">${tr("没有线路")}</li>`);
 		data.lines.forEach(line => {
 			const open = state.openNodes.has("line:" + line.key) || line.key === state.line;
 			const count = line.routes.reduce((a, r) => a + r.services.length, 0);
@@ -658,42 +659,42 @@
 				parts.push(`<ul>`);
 				line.routes.forEach(r => {
 					const routeOpen = state.openNodes.has("route:" + r.id) || state.route === r.id;
-					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || "将删除：按“应用”后从游戏里删掉，右键取消")}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="有没应用的草稿">•</span>` : ""}${problemDot(r)}<span class="count">${r.services.length}</span>`, false)}`);
+					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || tr("将删除：按“应用”后从游戏里删掉，右键取消"))}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="${tr("有没应用的草稿")}">•</span>` : ""}${problemDot(r)}<span class="count">${r.services.length}</span>`, false)}`);
 					if (routeOpen) {
 						parts.push(`<ul>`);
-						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">汇总时刻表</span>`, state.route === r.id && state.view === "table")}</li>`);
-						parts.push(`<li>${node(`data-route="${r.id}" data-view="diagram"`, "", `<span class="label leaf">运行图</span>`, state.route === r.id && state.view === "diagram")}</li>`);
+						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">${tr("汇总时刻表")}</span>`, state.route === r.id && state.view === "table")}</li>`);
+						parts.push(`<li>${node(`data-route="${r.id}" data-view="diagram"`, "", `<span class="label leaf">${tr("运行图")}</span>`, state.route === r.id && state.view === "diagram")}</li>`);
 						parts.push(`</ul>`);
 					}
 					parts.push(`</li>`);
 				});
 				draft.created.filter(made => made.lineKey === line.key).forEach(made => {
-					parts.push(`<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || "新建的种别，应用后才在游戏里出现；右键删除")}">${made.error ? "!" : "•"}</span>`, false)}</li>`);
+					parts.push(`<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || tr("新建的种别，应用后才在游戏里出现；右键删除"))}">${made.error ? "!" : "•"}</span>`, false)}</li>`);
 				});
 				parts.push(`</ul>`);
 			}
 			parts.push(`</li>`);
 		});
-		parts.push(`</ul><div class="section">车厂</div><ul>`);
-		if (!data.depots.length) parts.push(`<li class="empty">没有车厂</li>`);
+		parts.push(`</ul><div class="section">${tr("车厂")}</div><ul>`);
+		if (!data.depots.length) parts.push(`<li class="empty">${tr("没有车厂")}</li>`);
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || "运用有没应用的草稿")}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.mode === "diagram" ? "按运用图" : "在线预约"}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
-				if (!depot.sidings.length) parts.push(`<li class="empty">没有存车线</li>`);
+				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
 				depot.sidings.forEach(siding => {
 					const slots = duties.sidings[siding.id] || [];
 					const over = siding.maxTrains >= 0 && slots.length > siding.maxTrains;
-					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, slots.length ? "▾" : "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || "存车线")}</span><span class="count${over ? " warn" : ""}">${slots.length}/${siding.maxTrains < 0 ? "不限" : siding.maxTrains}</span>`, false)}`);
+					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, slots.length ? "▾" : "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || tr("存车线"))}</span><span class="count${over ? " warn" : ""}">${slots.length}/${siding.maxTrains < 0 ? tr("不限") : siding.maxTrains}</span>`, false)}`);
 					if (slots.length) {
 						parts.push(`<ul>`);
 						slots.forEach((slot, index) => {
 							const day = dutyOn(slot, state.weekday);
 							const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
 							const problems = day ? dutyProblems(depot, siding.id, index, state.weekday).length : 0;
-							parts.push(`<li>${node(`data-slot="${index}" data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">车 ${index + 1}</span>${problems ? `<span class="draft-dot" title="运用有问题">!</span>` : ""}<span class="count">${day ? day.segments.length + " 班" + (day.stay ? " 留" : "") : "休"}</span>`, active)}</li>`);
+							parts.push(`<li>${node(`data-slot="${index}" data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">${tr("车 {0}", index + 1)}</span>${problems ? `<span class="draft-dot" title="${tr("运用有问题")}">!</span>` : ""}<span class="count">${day ? day.segments.length + tr(" 班") + (day.stay ? tr(" 留") : "") : tr("休")}</span>`, active)}</li>`);
 						});
 						parts.push(`</ul>`);
 					}
@@ -815,7 +816,7 @@
 		if (!layout) {
 			ctx.fillStyle = c.muted;
 			ctx.font = `13px ${css("--font-ui")}`;
-			ctx.fillText(data ? "没有线路" : "正在读取…", 16, 32);
+			ctx.fillText(data ? tr("没有线路") : tr("正在读取…"), 16, 32);
 			return;
 		}
 		const { line, ys } = layout;
@@ -913,7 +914,7 @@
 				ctx.fillStyle = s.link ? c.ink : c.muted;
 				ctx.font = `11px ${css("--font-ui")}`;
 				ctx.textAlign = "left";
-				ctx.fillText(s.link ? "→ " + (next ? shortName(next.name) : "?") : "回库", ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4));
+				ctx.fillText(s.link ? "→ " + (next ? shortName(next.name) : "?") : tr("回库"), ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4));
 			}
 			ctx.globalAlpha = 1;
 			// On a loop, the wait at the first stop for the next lap, along the bottom row where the lap ends
@@ -969,7 +970,7 @@
 			ctx.fillStyle = c.warn;
 			ctx.font = `bold 11px ${css("--font-ui")}`;
 			ctx.textAlign = "right";
-			ctx.fillText(`车 ${state.slot.index + 1}`, slotPoints[0].start[0] - 4, slotPoints[0].start[1] - 4);
+			ctx.fillText(`${tr("车 {0}", state.slot.index + 1)}`, slotPoints[0].start[0] - 4, slotPoints[0].start[1] - 4);
 		}
 		ctx.restore();
 
@@ -1056,21 +1057,21 @@
 		if (state.slot && data) parts.push(dutyPanel());
 		if (s) {
 			const next = s.link && data.routeById.get(s.link.route);
-			parts.push(`<h2>选中的班次</h2><div class="card"><div class="title"><span class="swatch" style="display:inline-block;width:12px;height:4px;background:${colorOf(s.route.color)}"></span>${escapeHtml(routeTitle(s.route))}</div>
-				<dl class="kv"><dt>班次</dt><dd>${clock(s.start)}</dd><dt>表</dt><dd>${escapeHtml(s.table.name || "表 " + (s.tableIndex + 1))}</dd>
-				${s.link ? `<dt>接续</dt><dd>${escapeHtml(next ? routeTitle(next) : "?")} ${clock(mod(s.link.toService - data.dayStartMillis, DAY))}</dd>` : ""}
-				${s.returns ? `<dt>之后</dt><dd>回库</dd>` : ""}</dl>${stopsHtml(s)}</div>`);
+			parts.push(`<h2>${tr("选中的班次")}</h2><div class="card"><div class="title"><span class="swatch" style="display:inline-block;width:12px;height:4px;background:${colorOf(s.route.color)}"></span>${escapeHtml(routeTitle(s.route))}</div>
+				<dl class="kv"><dt>${tr("班次")}</dt><dd>${clock(s.start)}</dd><dt>${tr("表")}</dt><dd>${escapeHtml(s.table.name || tr("表 ") + (s.tableIndex + 1))}</dd>
+				${s.link ? `<dt>${tr("接续")}</dt><dd>${escapeHtml(next ? routeTitle(next) : "?")} ${clock(mod(s.link.toService - data.dayStartMillis, DAY))}</dd>` : ""}
+				${s.returns ? `<dt>${tr("之后")}</dt><dd>${tr("回库")}</dd>` : ""}</dl>${stopsHtml(s)}</div>`);
 		}
 		const loopRoute = s && isLoop(s.route) ? s.route : state.route && data && data.routeById.get(state.route) && isLoop(data.routeById.get(state.route)) ? data.routeById.get(state.route) : null;
 		if (loopRoute) parts.push(loopPanel(loopRoute));
 		const line = currentLine();
 		if (line) {
-			parts.push(`<h2>线路</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${r.services.length} 班 <button type="button" class="link" data-route-diagram="${r.id}" title="整条线路的配线图">配线图</button></dd>`).join("")}</dl></div>`);
+			parts.push(`<h2>${tr("线路")}</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${tr("{0} 班", r.services.length)} <button type="button" class="link" data-route-diagram="${r.id}" title="${tr("整条线路的配线图")}">${tr("配线图")}</button></dd>`).join("")}</dl></div>`);
 			// Tracks that don't run along the rails, which make the diagram jump about, are listed until they are put right
 			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
-			if (troubled.length) parts.push(`<h2>股道问题</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">右键线路“编辑停站…”在连通图上改股道。</p></div>`);
+			if (troubled.length) parts.push(`<h2>${tr("股道问题")}</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">${tr("右键线路“编辑停站…”在连通图上改股道。")}</p></div>`);
 		}
-		parts.push(`<p class="hint">滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。<br>单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。<br>时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。</p>`);
+		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
 		inspector.innerHTML = parts.join("");
 	}
 
@@ -1114,26 +1115,26 @@
 		const line = currentLine();
 		const r = state.route ? data.routeById.get(state.route) : line && line.routes[0];
 		if (!r) {
-			view.innerHTML = `<div class="table-empty">在左边选一条线路的汇总时刻表</div>`;
+			view.innerHTML = `<div class="table-empty">${tr("在左边选一条线路的汇总时刻表")}</div>`;
 			return;
 		}
 		const services = r.services;
 		const timetable = timetableOf(r), today = timetable.tables.findIndex(table => table.weekdays >> state.weekday & 1);
 		const managed = isManaged(r), pending = draftOf(r) && "managed" in draftOf(r), drafted = Boolean(draftOf(r) && draftOf(r).timetable);
-		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${WEEKDAY_NAMES[state.weekday]} · ${services.length} 班${r.hasTimes ? "" : " · 正在向服务端取各站时刻"}${drafted ? " · 有没应用的草稿" : ""}</span>
-			<span class="pill${managed ? " managed" : ""}" title="由高级编辑器管理的线路，游戏里的时刻表和停站只能查看">${managed ? "由高级编辑器管理" : "游戏内可编辑"}${pending ? "（草稿）" : ""}</span>
-			<button data-managed="${!managed}">${managed ? "交回游戏内编辑" : "改由高级编辑器管理"}</button></div>
-			<div class="tt-tools"><span class="hint" style="flex:none">表</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="切到这张表运行的第一天；右键改名、改星期或删除">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>＋ 新建表</button>
-			${today >= 0 ? `<label class="hint">余裕 <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
-			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> 启用时刻表</label></div>
-			${today >= 0 ? `<div class="tt-tools"><label for="add-service">添加班次</label><input id="add-service" placeholder="07:10 + 10 * 00:03" autocomplete="off"><button data-add-service>添加</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${WEEKDAY_NAMES[state.weekday]}没有表，这一天不运行。${escapeHtml(tableMessage)}</span></div>`}`;
+		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>
+			<span class="pill${managed ? " managed" : ""}" title="${tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}">${managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}${pending ? tr("（草稿）") : ""}</span>
+			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button></div>
+			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
+			${today >= 0 ? `<label class="hint">${tr("余裕")} <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
+			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
+			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="07:10 + 10 * 00:03" autocomplete="off"><button data-add-service>${tr("添加")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
 		if (!services.length) {
-			view.innerHTML = tools + `<div class="table-empty">这条线路${WEEKDAY_NAMES[state.weekday]}没有班次</div>`;
+			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
 			return;
 		}
 		const multipleTables = timetable.tables.length > 1;
 		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute;
-		const head = `<thead><tr><th class="st">车站</th><th class="kind"></th>${services.map(s => `<th class="svc-head${isSelected(s) ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="点这里改班次时刻；右键更多"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="有只改这一班的例外"> *</span>` : ""}</span>${multipleTables ? `<span class="note">${escapeHtml(tableName(s.table, s.tableIndex))}</span>` : ""}${s.link ? `<span class="note">直通</span>` : s.returns ? `<span class="note">回库</span>` : ""}</th>`).join("")}</tr></thead>`;
+		const head = `<thead><tr><th class="st">${tr("车站")}</th><th class="kind"></th>${services.map(s => `<th class="svc-head${isSelected(s) ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${multipleTables ? `<span class="note">${escapeHtml(tableName(s.table, s.tableIndex))}</span>` : ""}${s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`).join("")}</tr></thead>`;
 		const allTimes = services.map(timesOf);
 		const rows = [];
 		r.stops.forEach((stop, i) => {
@@ -1148,12 +1149,12 @@
 					const leaves = s.link && kind !== "dep" && (s.link.fromStop < 0 ? i === r.stops.length - 1 : s.link.fromStop === i);
 					const picked = state.pendingExit && state.pendingExit.id === s.id && state.pendingExit.index === i && kind !== "dep";
 					const classes = [isSelected(s) ? "hl" : "", kind === "pass" || passes ? "pass" : "", changed ? "exc" : "", kind !== "dep" && plan.tooFast ? "fast" : "", kind === "dep" && plan.overtake ? "wait" : "", exception && exception.pass >= 0 ? "pending-run" : "", leaves ? "out" : "", picked ? "pending" : ""].filter(Boolean).join(" ");
-					const title = exception && exception.pass >= 0 ? "只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车" : plan.tooFast && kind !== "dep" ? "快过最快时刻，列车跑不到" : "";
+					const title = exception && exception.pass >= 0 ? tr("只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车") : plan.tooFast && kind !== "dep" ? tr("快过最快时刻，列车跑不到") : "";
 					const text = passes ? (kind === "arr" ? "↓ " + clock(t[0], true) : "レ") : clock(kind === "dep" ? t[1] : t[0], true);
 					return `<td class="${classes}" data-svc="${s.id}" data-stop="${i}" data-kind="${passes ? "pass" : kind}" title="${title}" tabindex="0">${text}</td>`;
 				}).join("");
-				const label = { dep: "发", arr: "到", pass: "通过" }[kind];
-				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${escapeHtml(trackTitle(stop))}${stop.boundary ? "（时刻边界，可以在这里接出或接入）" : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> 界</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="车厂的列车从这里接入环线"> 入</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
+				const label = { dep: tr("发"), arr: trc("arrival", "到"), pass: tr("通过") }[kind];
+				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${escapeHtml(trackTitle(stop))}${stop.boundary ? tr("（时刻边界，可以在这里接出或接入）") : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> ${tr("界")}</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="${tr("车厂的列车从这里接入环线")}"> ${tr("入")}</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
 			});
 		});
 		view.innerHTML = tools + `<table class="tt">${head}<tbody>${rows.join("")}</tbody></table>`;
@@ -1177,7 +1178,7 @@
 		if (!s || kind === "pass" && cell.textContent === "レ" || cell.querySelector("input")) return;
 		const t = timesOf(s)[stop], old = kind === "dep" ? t[1] : t[0];
 		const target = cell.tagName === "TH" ? cell.querySelector(".time") : cell;
-		target.innerHTML = `<input value="${clock(old, true)}" aria-label="时刻">`;
+		target.innerHTML = `<input value="${clock(old, true)}" aria-label="${tr("时刻")}">`;
 		const input = target.querySelector("input");
 		input.focus();
 		input.select();
@@ -1238,10 +1239,10 @@
 		const items = [];
 		const edit = change => editTimetable(s.route, timetable => change(timetable.tables[s.tableIndex], timetable));
 		if (cell.tagName === "TH") {
-			items.push(["删除这一班", () => edit(table => removeService(table, s.service))]);
-			if (!s.link) items.push([s.returns ? "跑完这一班不回库" : "跑完这一班回库", () => edit(table => { table.returns = s.returns ? table.returns.filter(x => x !== s.service) : [...table.returns, s.service]; })]);
-			if (later.length) items.push([`这一班和之后的 ${later.length} 班一起平移…`, () => {
-				const minutes = Number(prompt("平移多少分钟？负数是提前", "5"));
+			items.push([tr("删除这一班"), () => edit(table => removeService(table, s.service))]);
+			if (!s.link) items.push([s.returns ? tr("跑完这一班不回库") : tr("跑完这一班回库"), () => edit(table => { table.returns = s.returns ? table.returns.filter(x => x !== s.service) : [...table.returns, s.service]; })]);
+			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => {
+				const minutes = Number(prompt(tr("平移多少分钟？负数是提前"), "5"));
 				if (!minutes) return;
 				edit(table => {
 					const shift = Math.round(minutes * 60000);
@@ -1252,35 +1253,35 @@
 					}
 				});
 			}]);
-			if (s.exceptions) items.push(["清除这一班的全部例外", () => edit(table => { table.exceptions = table.exceptions.filter(x => x.service !== s.service); })]);
-			if (s.link) items.push(["清除这一班的直通", () => edit(table => { table.links = table.links.filter(link => link.service !== s.service); })]);
-			items.push(["批量新建直通关系…", () => throughDialog(s.route)]);
+			if (s.exceptions) items.push([tr("清除这一班的全部例外"), () => edit(table => { table.exceptions = table.exceptions.filter(x => x.service !== s.service); })]);
+			if (s.link) items.push([tr("清除这一班的直通"), () => edit(table => { table.links = table.links.filter(link => link.service !== s.service); })]);
+			items.push([tr("批量新建直通关系…"), () => throughDialog(s.route)]);
 		} else {
 			if (middle) {
 				const routePasses = timetableOf(s.route).pass[stop];
-				items.push([plan.passes ? "改为在这一站停车（只改这一班）" : "设为通过这一站（只改这一班）", () => edit(table => setStopException(table, s.service, stop, { pass: plan.passes === routePasses ? (plan.passes ? 0 : 1) : -1, dwell: -1 }))]);
-				if (!plan.passes) items.push([plan.overtake ? "取消待避（只改这一班）" : "设为待避（只改这一班，在这一站等后车通过）", () => edit(table => {
+				items.push([plan.passes ? tr("改为在这一站停车（只改这一班）") : tr("设为通过这一站（只改这一班）"), () => edit(table => setStopException(table, s.service, stop, { pass: plan.passes === routePasses ? (plan.passes ? 0 : 1) : -1, dwell: -1 }))]);
+				if (!plan.passes) items.push([plan.overtake ? tr("取消待避（只改这一班）") : tr("设为待避（只改这一班，在这一站等后车通过）"), () => edit(table => {
 					const tableOvertake = table.stops[stop].overtake;
 					setStopException(table, s.service, stop, { overtake: !plan.overtake === tableOvertake ? -1 : plan.overtake ? 0 : 1 });
 				})]);
 			}
-			if (exception && later.length) items.push([`把这一格的例外推到之后的 ${later.length} 班`, () => edit(table => later.forEach(o => setStopException(table, o.service, stop, { run: exception.run, dwell: exception.dwell, pass: exception.pass, overtake: exception.overtake })))]);
-			if (exception && (exception.dwell >= 0 || exception.run >= 0)) items.push(["把这一班的这个时刻改成整张表的", () => edit(table => {
+			if (exception && later.length) items.push([`${tr("把这一格的例外推到之后的 {0} 班", later.length)}`, () => edit(table => later.forEach(o => setStopException(table, o.service, stop, { run: exception.run, dwell: exception.dwell, pass: exception.pass, overtake: exception.overtake })))]);
+			if (exception && (exception.dwell >= 0 || exception.run >= 0)) items.push([tr("把这一班的这个时刻改成整张表的"), () => edit(table => {
 				// Set times count from the first stop, which is where the table's plan starts
 				if (exception.run >= 0) table.stops[stop].arrival = Math.round((s.plans[stop - 1].departure + exception.run * 1000) / 1000);
 				if (exception.dwell >= 0) table.stops[stop].departure = Math.round((s.plans[stop].arrival + exception.dwell * 1000) / 1000);
 				setStopException(table, s.service, stop, { run: -1, dwell: -1 });
 			})]);
-			if (exception) items.push(["恢复按表的时刻", () => edit(table => setStopException(table, s.service, stop, { run: -1, dwell: -1, pass: -1, overtake: -1 }))]);
-			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`设为出库列车接入这条环线的站`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
-			if (isLoop(s.route) && loopEntryStop(s.route) === stop && stop > 0) items.push(["出库列车改回从首站接入", () => editTimetable(s.route, timetable => { timetable.entryPlatform = "0"; })]);
+			if (exception) items.push([tr("恢复按表的时刻"), () => edit(table => setStopException(table, s.service, stop, { run: -1, dwell: -1, pass: -1, overtake: -1 }))]);
+			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`${tr("设为出库列车接入这条环线的站")}`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
+			if (isLoop(s.route) && loopEntryStop(s.route) === stop && stop > 0) items.push([tr("出库列车改回从首站接入"), () => editTimetable(s.route, timetable => { timetable.entryPlatform = "0"; })]);
 			// Through running: leave at the last stop or a boundary, join at the first stop or a boundary
-			if (stop === n - 1 || isBoundary(s.route, stop) && !plan.passes) items.push([`设为接出点（从${stopName(s.route, stop)}直通到别的线路）`, () => {
+			if (stop === n - 1 || isBoundary(s.route, stop) && !plan.passes) items.push([`${tr("设为接出点（从{0}直通到别的线路）", stopName(s.route, stop))}`, () => {
 				state.pendingExit = { id: s.id, stop: stop === n - 1 ? -1 : stop, index: stop };
 				renderAll();
 			}]);
 			const pending = state.pendingExit && findService(state.pendingExit.id);
-			if (pending && pending.route !== s.route && (stop === 0 || isBoundary(s.route, stop))) items.push([`设为接入点（${clock(pending.start)} 班从${stopName(pending.route, state.pendingExit.index)}接到这里）`, () => {
+			if (pending && pending.route !== s.route && (stop === 0 || isBoundary(s.route, stop))) items.push([`${tr("设为接入点（{0} 班从{1}接到这里）", clock(pending.start), stopName(pending.route, state.pendingExit.index))}`, () => {
 				setLink(pending, state.pendingExit.stop, s, stop);
 				state.pendingExit = null;
 				renderAll();
@@ -1294,9 +1295,9 @@
 
 	/** The platform a stop uses and the other tracks of its station on the same rails. */
 	function trackTitle(stop) {
-		const trackName = c => `${c.name || "?"}${c.passingTrack ? "（待避线）" : ""}`;
+		const trackName = c => `${c.name || "?"}${c.passingTrack ? tr("（待避线）") : ""}`;
 		const others = (stop.candidates || []).filter(c => c.id !== stop.platformId);
-		return ` 站台 ${trackName({ name: stop.platform, passingTrack: stop.passingTrack })}${others.length ? `；还可停 ${others.map(trackName).join("、")}` : ""}`;
+		return ` ${tr("站台 {0}{1}", trackName({ name: stop.platform, passingTrack: stop.passingTrack }), others.length ? `${tr("；还可停 {0}", others.map(trackName).join("、"))}` : "")}`;
 	}
 
 	/** The stop where trains from the depot join a loop, which is its first stop unless another is set. */
@@ -1336,13 +1337,13 @@
 
 	function loopPanel(r) {
 		const runs = loopRuns(r), entry = loopEntryStop(r);
-		const ending = s => s.link ? `→ ${escapeHtml(routeTitle(data.routeById.get(s.link.route) || r))}` : runs.maxWait > MAX_LAYOVER_MILLIS ? "留在线上" : "回库";
-		const lines = runs.trains.slice(0, 40).map((laps, i) => `<div><span class="train">车 ${i + 1}：</span>${laps.map(s => clock(s.start)).join(" → ")} <span class="end">${ending(laps[laps.length - 1])}</span></div>`).join("");
-		return `<h2>环线运行（${WEEKDAY_NAMES[state.weekday]}）</h2><div class="card"><div class="title">${escapeHtml(routeTitle(r))}</div>
-			<dl class="kv"><dt>列车</dt><dd>${runs.trains.length} 列跑 ${r.services.length} 班</dd><dt>出库接入</dt><dd>${escapeHtml(stopName(r, entry))}${entry ? "" : "（首站）"}</dd>
-			<dt>等下一圈</dt><dd>最多 ${runs.maxWait > MAX_LAYOVER_MILLIS ? "8 天（车厂不回库）" : "30 分钟"}</dd></dl>
+		const ending = s => s.link ? `→ ${escapeHtml(routeTitle(data.routeById.get(s.link.route) || r))}` : runs.maxWait > MAX_LAYOVER_MILLIS ? tr("留在线上") : tr("回库");
+		const lines = runs.trains.slice(0, 40).map((laps, i) => `<div><span class="train">${tr("车 {0}：", i + 1)}</span>${laps.map(s => clock(s.start)).join(" → ")} <span class="end">${ending(laps[laps.length - 1])}</span></div>`).join("");
+		return `<h2>${tr("环线运行（{0}）", WEEKDAY_NAMES[state.weekday])}</h2><div class="card"><div class="title">${escapeHtml(routeTitle(r))}</div>
+			<dl class="kv"><dt>${tr("列车")}</dt><dd>${tr("{0} 列跑 {1} 班", runs.trains.length, r.services.length)}</dd><dt>${tr("出库接入")}</dt><dd>${escapeHtml(stopName(r, entry))}${entry ? "" : tr("（首站）")}</dd>
+			<dt>${tr("等下一圈")}</dt><dd>${tr("最多 {0}", runs.maxWait > MAX_LAYOVER_MILLIS ? tr("8 天（车厂不回库）") : tr("30 分钟"))}</dd></dl>
 			<div class="laps">${lines}${runs.trains.length > 40 ? "<div>…</div>" : ""}</div>
-			<p class="hint">每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。</p></div>`;
+			<p class="hint">${tr("每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。")}</p></div>`;
 	}
 
 	/** @return true if a service can leave this route here, or join it, apart from the last and first stops */
@@ -1448,24 +1449,24 @@
 		day.segments.forEach((segment, i) => {
 			const s = segmentService(segment);
 			if (!s) {
-				problems.push({ i, text: "这一班当天不运行，可能时刻表改过" });
+				problems.push({ i, text: tr("这一班当天不运行，可能时刻表改过") });
 				return;
 			}
-			if (!depot.routes.includes(segment.route)) problems.push({ i, text: "线路不在这个车厂" });
-			if ((assigned.get(segmentKey(segment)) || []).length > 1) problems.push({ i, text: "这一班也分给了别的车" });
+			if (!depot.routes.includes(segment.route)) problems.push({ i, text: tr("线路不在这个车厂") });
+			if ((assigned.get(segmentKey(segment)) || []).length > 1) problems.push({ i, text: tr("这一班也分给了别的车") });
 			const before = day.segments[i - 1], beforeService = before && segmentService(before);
 			if (beforeService) {
 				const endStop = beforeService.route.stops[lastStopOf(before, beforeService.route)], startStop = s.route.stops[segment.from];
-				if (segmentEnd(before) > segmentStart(segment)) problems.push({ i, text: "衔接时间不够，上一班还没到" });
-				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `站台对不上：上一班在${shortName(endStop.name)}结束` });
+				if (segmentEnd(before) > segmentStart(segment)) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
+				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` });
 			}
 		});
 		if (day.stay) {
 			const target = nextSlotOf(day, index);
 			const next = slots[target] ? dutyOn(slots[target], (weekday + 1) % 7) : null;
-			if (!next || !next.segments.length) problems.push({ i: -1, text: `留在线上过夜，但第二天接的车 ${target + 1} 没有运用` });
-			else if (dutyEndStation(day) !== dutyStartStation(next)) problems.push({ i: -1, text: `第二天接的车 ${target + 1} 的运用不从这里出发` });
-			if (slots.some((slot, other) => other !== index && dutyOn(slot, weekday) && dutyOn(slot, weekday).stay && nextSlotOf(dutyOn(slot, weekday), other) === target)) problems.push({ i: -1, text: `还有一列过夜的车第二天也接车 ${target + 1}` });
+			if (!next || !next.segments.length) problems.push({ i: -1, text: `${tr("留在线上过夜，但第二天接的车 {0} 没有运用", target + 1)}` });
+			else if (dutyEndStation(day) !== dutyStartStation(next)) problems.push({ i: -1, text: `${tr("第二天接的车 {0} 的运用不从这里出发", target + 1)}` });
+			if (slots.some((slot, other) => other !== index && dutyOn(slot, weekday) && dutyOn(slot, weekday).stay && nextSlotOf(dutyOn(slot, weekday), other) === target)) problems.push({ i: -1, text: `${tr("还有一列过夜的车第二天也接车 {0}", target + 1)}` });
 		}
 		return problems;
 	}
@@ -1503,7 +1504,7 @@
 		const depot = depotById(state.slot.depot);
 		if (!depot) return;
 		if (!depot.routes.includes(s.route.id)) {
-			dutyNotice = `${routeTitle(s.route)} 不在车厂“${shortName(depot.name)}”里，先在游戏里把线路加进车厂。`;
+			dutyNotice = `${tr("{0} 不在车厂“{1}”里，先在游戏里把线路加进车厂。", routeTitle(s.route), shortName(depot.name))}`;
 			renderBanner();
 			return;
 		}
@@ -1516,7 +1517,7 @@
 			const at = day.segments.findIndex(other => segmentKey(other) === segmentKey(segment));
 			if (at >= 0) {
 				day.segments.splice(at, 1);
-				return `${clock(s.start)} ${routeTitle(s.route)} 已从车 ${state.slot.index + 1} 移出，按运用图时这一班不运行。`;
+				return `${tr("{0} {1} 已从车 {2} 移出，按运用图时这一班不运行。", clock(s.start), routeTitle(s.route), state.slot.index + 1)}`;
 			}
 			let moved = "";
 			Object.entries(duties.sidings).forEach(([siding, otherSlots]) => otherSlots.forEach((slot, index) => {
@@ -1525,11 +1526,11 @@
 				const found = other.segments.findIndex(o => segmentKey(o) === segmentKey(segment));
 				if (found >= 0) {
 					dutyForEditing(depot, slot, state.weekday).segments.splice(found, 1);
-					moved = `，从车 ${index + 1} 移过来`;
+					moved = `${tr("，从车 {0} 移过来", index + 1)}`;
 				}
 			}));
 			day.segments.push(segment);
-			return `${clock(s.start)} ${routeTitle(s.route)} 加进车 ${state.slot.index + 1}${moved}。`;
+			return `${tr("{0} {1} 加进车 {2}{3}。", clock(s.start), routeTitle(s.route), state.slot.index + 1, moved)}`;
 		});
 	}
 
@@ -1543,43 +1544,43 @@
 		const problemAt = i => problems.filter(p => p.i === i).map(p => `<div class="err">${escapeHtml(p.text)}</div>`).join("");
 		const rows = day ? day.segments.map((segment, i) => {
 			const s = segmentService(segment), r = data.routeById.get(segment.route);
-			const where = r ? `${shortName(r.stops[segment.from] ? r.stops[segment.from].name : "?")} → ${shortName(r.stops[lastStopOf(segment, r)] ? r.stops[lastStopOf(segment, r)].name : "?")}` : "已删除的线路";
-			return `<li><span class="num">${s ? clock(segmentStart(segment)) + "–" + clock(segmentEnd(segment)) : "--:--"}</span> ${escapeHtml(r ? shortName(r.name) : "?")} <span class="muted">${escapeHtml(where)}</span><button class="link" data-remove-segment="${i}" title="移出这一班">×</button>${problemAt(i)}</li>`;
+			const where = r ? `${shortName(r.stops[segment.from] ? r.stops[segment.from].name : "?")} → ${shortName(r.stops[lastStopOf(segment, r)] ? r.stops[lastStopOf(segment, r)].name : "?")}` : tr("已删除的线路");
+			return `<li><span class="num">${s ? clock(segmentStart(segment)) + "–" + clock(segmentEnd(segment)) : "--:--"}</span> ${escapeHtml(r ? shortName(r.name) : "?")} <span class="muted">${escapeHtml(where)}</span><button class="link" data-remove-segment="${i}" title="${tr("移出这一班")}">×</button>${problemAt(i)}</li>`;
 		}).join("") : "";
-		return `<h2>运用：车 ${state.slot.index + 1}</h2><div class="card"><div class="title">${escapeHtml(shortName(depot.name))} · ${escapeHtml(shortName(siding.name) || "存车线")}</div>
-			<dl class="kv"><dt>运行日</dt><dd>${daysText(group)}${day && day.days !== group ? `（现在和 ${daysText(day.days & ~group)} 共用，改了会分开）` : ""}</dd>
-			<dt>方式</dt><dd>${dutiesOf(depot).mode === "diagram" ? "按运用图" : "在线预约（运用先存着，按运用运行要等以后）"}</dd></dl>
-			${rows ? `<ol class="duty">${rows}</ol>` : `<p class="hint">这天没有运用，在运行图上点班次加进来。</p>`}
+		return `<h2>${tr("运用：车 {0}", state.slot.index + 1)}</h2><div class="card"><div class="title">${escapeHtml(shortName(depot.name))} · ${escapeHtml(shortName(siding.name) || tr("存车线"))}</div>
+			<dl class="kv"><dt>${tr("运行日")}</dt><dd>${daysText(group)}${day && day.days !== group ? `${tr("（现在和 {0} 共用，改了会分开）", daysText(day.days & ~group))}` : ""}</dd>
+			<dt>${tr("方式")}</dt><dd>${dutiesOf(depot).mode === "diagram" ? tr("按运用图") : tr("在线预约（运用先存着，按运用运行要等以后）")}</dd></dl>
+			${rows ? `<ol class="duty">${rows}</ol>` : `<p class="hint">${tr("这天没有运用，在运行图上点班次加进来。")}</p>`}
 			${problemAt(-1)}
-			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> 跑完最后一班留在线上过夜</label>` : ""}
-			${day && day.stay ? `<label>第二天接着跑 <select data-duty-next>${slots.map((slot, i) => {
+			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> ${tr("跑完最后一班留在线上过夜")}</label>` : ""}
+			${day && day.stay ? `<label>${tr("第二天接着跑")} <select data-duty-next>${slots.map((slot, i) => {
 				const next = dutyOn(slot, (state.weekday + 1) % 7);
 				const fits = next && next.segments.length && dutyStartStation(next) === dutyEndStation(day);
-				return `<option value="${i}"${nextSlotOf(day, state.slot.index) === i ? " selected" : ""}>车 ${i + 1}${i === state.slot.index ? "（自己）" : ""}${fits ? "" : next && next.segments.length ? "（不从这里出发）" : "（没有运用）"}</option>`;
+				return `<option value="${i}"${nextSlotOf(day, state.slot.index) === i ? " selected" : ""}>${tr("车 {0}{1}{2}", i + 1, i === state.slot.index ? tr("（自己）") : "", fits ? "" : next && next.segments.length ? tr("（不从这里出发）") : tr("（没有运用）"))}</option>`;
 			}).join("")}</select></label>` : ""}
-			<p class="hint">选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 ${daysText(group)} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。</p></div>`;
+			<p class="hint">${tr("选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 {0} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。", daysText(group))}</p></div>`;
 	}
 
 	/** A first draft of a depot's duties from its timetables, put in the draft to look over before applying. */
 	async function generateDuties(depot) {
-		if (draft.duties[depot.id] && !confirm(`用自动生成的运用替换“${shortName(depot.name)}”草稿里的运用？`)) return;
-		if (!draft.duties[depot.id] && Object.values((depot.duties || { sidings: {} }).sidings).some(slots => slots.length) && !confirm(`用自动生成的运用替换“${shortName(depot.name)}”现在的运用？应用前都还在草稿里。`)) return;
-		dutyNotice = "正在生成运用…";
+		if (draft.duties[depot.id] && !confirm(`${tr("用自动生成的运用替换“{0}”草稿里的运用？", shortName(depot.name))}`)) return;
+		if (!draft.duties[depot.id] && Object.values((depot.duties || { sidings: {} }).sidings).some(slots => slots.length) && !confirm(`${tr("用自动生成的运用替换“{0}”现在的运用？应用前都还在草稿里。", shortName(depot.name))}`)) return;
+		dutyNotice = tr("正在生成运用…");
 		renderBanner();
 		try {
 			const result = await sendJson("api/plan-duties", "POST", { depot: depot.id });
 			if (result.noSidings) {
-				dutyNotice = "这个车厂没有存车线，生成不了运用。";
+				dutyNotice = tr("这个车厂没有存车线，生成不了运用。");
 			} else {
 				editDuties(depot, duties => {
 					duties.sidings = result.duties.sidings;
 				});
-				dutyNotice = `已生成：最多同时 ${result.trains} 列车在线上。` + (result.uncovered ? `有 ${result.uncovered} 班没有车可派，存车线放的车不够。` : "")
-					+ (result.missingTimes.length ? `${result.missingTimes.join("、")} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。` : "")
-					+ (result.issues.length ? `其他问题：${result.issues.slice(0, 3).join("；")}` : "") + "先检查一遍，再按“应用”。";
+				dutyNotice = `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
+					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
+					+ (result.issues.length ? `${tr("其他问题：{0}", result.issues.slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
 			}
 		} catch (e) {
-			dutyNotice = "生成失败：" + (e.message === "401" ? "页面的链接已经失效" : "游戏可能已经关闭");
+			dutyNotice = tr("生成失败：") + (e.message === "401" ? tr("页面的链接已经失效") : tr("游戏可能已经关闭"));
 		}
 		renderAll();
 	}
@@ -1631,7 +1632,7 @@
 
 	const isUsable = s => Boolean(topo.platforms[s >> 1] && topo.platforms[s >> 1].ways[s & 1].usable);
 	const platformLabel = i => topo.platforms[i].name || "?";
-	const stationLabel = i => shortName(topo.platforms[i].stationName) || "（不属于车站）";
+	const stationLabel = i => shortName(topo.platforms[i].stationName) || tr("（不属于车站）");
 	/** The tracks of a platform's station on the same rails, by name so they keep their rows whichever is picked. */
 	function stationTracks(i) {
 		const p = topo.platforms[i];
@@ -1821,24 +1822,24 @@
 		if (cached && cached.key === key) return cached.problems;
 		const problems = [];
 		const tracks = ids.map(id => topo.index.has(id) ? topo.index.get(id) : -1);
-		const name = i => shortName(r.stops[i].name) || `第 ${i + 1} 站`;
-		tracks.forEach((p, i) => { if (p < 0) problems.push({ stop: i, level: "error", text: `${name(i)}的站台没有轨道` }); });
+		const name = i => shortName(r.stops[i].name) || `${tr("第 {0} 站", i + 1)}`;
+		tracks.forEach((p, i) => { if (p < 0) problems.push({ stop: i, level: "error", text: `${tr("{0}的站台没有轨道", name(i))}` }); });
 		if (!problems.length && tracks.length > 1) {
 			const network = topo.platforms[tracks[0]].network;
-			tracks.forEach((p, i) => { if (topo.platforms[p].network !== network) problems.push({ stop: i, level: "error", text: `${name(i)}的站台和首站不在同一个线网里（轨道没有连起来）` }); });
+			tracks.forEach((p, i) => { if (topo.platforms[p].network !== network) problems.push({ stop: i, level: "error", text: `${tr("{0}的站台和首站不在同一个线网里（轨道没有连起来）", name(i))}` }); });
 		}
 		if (!problems.length && tracks.length > 1) {
 			const solution = solveStops(tracks.map(p => [p]), null, null);
 			if (!solution.ok) {
 				for (let i = 0; i + 1 < tracks.length; i++) {
-					if (legCost(tracks[i], tracks[i + 1]) === Infinity) problems.push({ stop: i + 1, level: "error", text: `${name(i)}到${name(i + 1)}沿轨道走不通` });
+					if (legCost(tracks[i], tracks[i + 1]) === Infinity) problems.push({ stop: i + 1, level: "error", text: `${tr("{0}到{1}沿轨道走不通", name(i), name(i + 1))}` });
 				}
-				if (!problems.length) problems.push({ stop: 0, level: "error", text: "各站单独走得通，连起来要在中途反复掉头才行" });
+				if (!problems.length) problems.push({ stop: 0, level: "error", text: tr("各站单独走得通，连起来要在中途反复掉头才行") });
 			} else {
-				solution.reversals.forEach(i => problems.push({ stop: i, level: "warn", text: `在${name(i)}掉头` }));
+				solution.reversals.forEach(i => problems.push({ stop: i, level: "warn", text: `${tr("在{0}掉头", name(i))}` }));
 				for (let i = 0; i + 1 < tracks.length; i++) {
 					const best = Math.min(...stationTracks(tracks[i]).flatMap(p => stationTracks(tracks[i + 1]).map(q => legCost(p, q))));
-					if (isFinite(best) && solution.legs[i] > best * 1.5 + 50) problems.push({ stop: i + 1, level: "warn", text: `${name(i)}到${name(i + 1)}绕路：换股可以近得多` });
+					if (isFinite(best) && solution.legs[i] > best * 1.5 + 50) problems.push({ stop: i + 1, level: "warn", text: `${tr("{0}到{1}绕路：换股可以近得多", name(i), name(i + 1))}` });
 				}
 			}
 		}
@@ -1855,7 +1856,7 @@
 	 */
 	function topologyHtml(model) {
 		const n = model.layers.length;
-		if (!n) return `<p class="hint">没有车站。</p>`;
+		if (!n) return `<p class="hint">${tr("没有车站。")}</p>`;
 		const solution = solveStops(model.layers, model.picks, model.pins);
 		const reversals = new Set();
 		if (solution.ok && solution.picks.every((p, i) => p === model.picks[i])) solution.reversals.forEach(i => reversals.add(i));
@@ -1863,7 +1864,7 @@
 		const rows = Math.max(...model.layers.map(l => l.length));
 		const width = pad * 2 + n * colW - (colW - cellW), height = head + rows * rowH + 28;
 		const x = i => pad + i * colW, y = k => head + k * rowH;
-		const parts = [`<svg class="topo" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="group" aria-label="站台连通图">`];
+		const parts = [`<svg class="topo" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="group" aria-label="${tr("站台连通图")}">`];
 		for (let i = 0; i + 1 < n; i++) {
 			model.layers[i].forEach((p, a) => model.layers[i + 1].forEach((q, b) => {
 				if (legCost(p, q) === Infinity) return;
@@ -1874,16 +1875,16 @@
 		model.layers.forEach((tracks, i) => {
 			const end = i === 0 || i === n - 1;
 			const open = model.diagram && model.diagram.stop === i;
-			parts.push(`<g class="station-head${open ? " open" : ""}" data-station-col="${i}" tabindex="0"><title>${open ? "收起配线图" : "看这一站的配线图"}</title><text x="${x(i) + cellW / 2}" y="14" class="station">${escapeHtml(stationLabel(tracks[0]))} ${open ? "▴" : "▾"}</text></g>`);
-			if (reversals.has(i)) parts.push(`<text x="${x(i) + cellW / 2}" y="30" class="turn">↶ 掉头</text>`);
+			parts.push(`<g class="station-head${open ? " open" : ""}" data-station-col="${i}" tabindex="0"><title>${open ? tr("收起配线图") : tr("看这一站的配线图")}</title><text x="${x(i) + cellW / 2}" y="14" class="station">${escapeHtml(stationLabel(tracks[0]))} ${open ? "▴" : "▾"}</text></g>`);
+			if (reversals.has(i)) parts.push(`<text x="${x(i) + cellW / 2}" y="30" class="turn">${tr("↶ 掉头")}</text>`);
 			tracks.forEach((p, k) => {
 				const on = model.picks[i] === p, pinned = model.pins.has(i) && model.pins.get(i) === p, ok = solution.feasible[i].has(p);
 				const classes = ["track", on ? "on" : "", pinned ? "pinned" : "", ok ? "" : "dead"].filter(Boolean).join(" ");
-				const title = `${platformLabel(p)}${topo.platforms[p].passingTrack ? "（待避线）" : ""}：${pinned ? "已固定，点一下取消" : ok ? "点一下固定走这一股" : "和其他站连不起来，点一下仍可固定"}`;
-				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(k) + 14}">${pinned ? "● " : ""}${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? " 待避" : ""}</text></g>`);
+				const title = `${platformLabel(p)}${topo.platforms[p].passingTrack ? tr("（待避线）") : ""}：${pinned ? tr("已固定，点一下取消") : ok ? tr("点一下固定走这一股") : tr("和其他站连不起来，点一下仍可固定")}`;
+				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(k) + 14}">${pinned ? "● " : ""}${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? tr(" 待避") : ""}</text></g>`);
 			});
 			const stops = model.stop[i] || end;
-			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? "首末站，停车" : stops ? "停车，点一下改为通过" : "通过，点一下改为停车"}</title><text x="${x(i) + cellW / 2}" y="${height - 8}">${stops ? "停" : "过"}</text></g>`);
+			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? tr("首末站，停车") : stops ? tr("停车，点一下改为通过") : tr("通过，点一下改为停车")}</title><text x="${x(i) + cellW / 2}" y="${height - 8}">${stops ? tr("停") : tr("过")}</text></g>`);
 		});
 		parts.push(`</svg>`);
 		model.solution = solution;
@@ -1899,14 +1900,14 @@
 			const result = await sendJson("api/layout", "POST", { station: diagram.station, margin: diagram.margin, tracks: model.layers[diagram.stop].map(p => topo.platforms[p].id) });
 			if (model.diagram !== diagram) return;
 			if (!result.ready) {
-				diagram.error = "正在读取轨道…";
+				diagram.error = tr("正在读取轨道…");
 				if (tries < 8) setTimeout(() => loadDiagram(model, diagram, tries + 1), 600);
-				else diagram.error = "服务端没有回应，稍后再点一次站名";
+				else diagram.error = tr("服务端没有回应，稍后再点一次站名");
 			} else {
 				diagram.data = result;
 			}
 		} catch (e) {
-			if (model.diagram === diagram) diagram.error = "读取配线图失败";
+			if (model.diagram === diagram) diagram.error = tr("读取配线图失败");
 		}
 		if (model.onChange && model.diagram === diagram) model.onChange();
 	}
@@ -1917,8 +1918,8 @@
 	 */
 	function stationDiagramHtml(model) {
 		const diagram = model.diagram, i = diagram.stop, n = model.layers.length;
-		const head = `<div class="diagram-head"><b>${escapeHtml(stationLabel(model.layers[i][0]))} 配线图</b><span class="tools"><button type="button" data-zoom="in" title="放大">＋</button><button type="button" data-zoom="out" title="缩小">−</button></span></div>`;
-		if (!diagram.data) return `<div class="layout">${head}<p class="hint">${escapeHtml(diagram.error || "正在读取…")}</p></div>`;
+		const head = `<div class="diagram-head"><b>${tr("{0} 配线图", escapeHtml(stationLabel(model.layers[i][0])))}</b><span class="tools"><button type="button" data-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-zoom="out" title="${tr("缩小")}">−</button></span></div>`;
+		if (!diagram.data) return `<div class="layout">${head}<p class="hint">${escapeHtml(diagram.error || tr("正在读取…"))}</p></div>`;
 		const data = diagram.data;
 		const station = topo.platforms[model.layers[i][0]].station;
 		const tracks = new Set(model.layers[i].map(p => topo.platforms[p].id));
@@ -1949,7 +1950,7 @@
 		const viewW = maxX - minX, viewH = Math.max(maxY - minY, viewW * 0.3);
 		const width = 560, height = Math.round(Math.min(360, Math.max(160, width * viewH / viewW)));
 		const unit = Math.max(viewW / width, viewH / height);
-		const parts = [`<svg class="layout-svg" viewBox="${minX} ${minY} ${viewW} ${viewH}" width="100%" style="aspect-ratio:${width} / ${height}" preserveAspectRatio="xMidYMid meet" data-unit="${unit}" role="img" aria-label="配线图">`];
+		const parts = [`<svg class="layout-svg" viewBox="${minX} ${minY} ${viewW} ${viewH}" width="100%" style="aspect-ratio:${width} / ${height}" preserveAspectRatio="xMidYMid meet" data-unit="${unit}" role="img" aria-label="${tr("配线图")}">`];
 		// Each rail along its curve, as the server sampled it
 		data.rails.forEach(r => {
 			const points = [];
@@ -1967,8 +1968,8 @@
 			const on = ours && model.picks[i] === index, pinned = ours && model.pins.get(i) === index;
 			const dead = ours && solution && !solution.feasible[i].has(index);
 			const classes = ["platform", ours ? "ours" : "other", on ? "on" : "", pinned ? "pinned" : "", dead ? "dead" : ""].filter(Boolean).join(" ");
-			const label = `${pinned ? "● " : ""}${p.name || "?"}${p.passingTrack ? " 待避" : ""}${!ours && p.stationName && p.station !== station ? " · " + shortName(p.stationName) : ""}`;
-			const title = ours ? `${p.name || "?"}：${pinned ? "已固定，点一下取消" : dead ? "和其他站连不起来，点一下仍可固定" : "点一下固定走这一股"}` : `${shortName(p.stationName) || "不属于车站"} ${p.name || "?"}${p.station === station ? "：和这条线的轨道不连" : ""}`;
+			const label = `${pinned ? "● " : ""}${p.name || "?"}${p.passingTrack ? tr(" 待避") : ""}${!ours && p.stationName && p.station !== station ? " · " + shortName(p.stationName) : ""}`;
+			const title = ours ? `${p.name || "?"}：${pinned ? tr("已固定，点一下取消") : dead ? tr("和其他站连不起来，点一下仍可固定") : tr("点一下固定走这一股")}` : `${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.station === station ? tr("：和这条线的轨道不连") : ""}`;
 			// The name goes before the left end, where tracks side by side don't crowd it
 			const start = a[0] <= b[0] ? a : b;
 			parts.push(`<g class="${classes}"${ours ? ` data-stop="${i}" data-track="${index}" tabindex="0"` : ""}><title>${escapeHtml(title)}</title><line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="${unit * (on ? 7 : 5)}"${on ? ` style="stroke:${model.color}"` : ""}${dead ? ` stroke-dasharray="${unit * 4} ${unit * 3}"` : ""}/><text x="${start[0] - unit * 6}" y="${start[1] + unit * 4}" font-size="${unit * 11}" text-anchor="end">${escapeHtml(label)}</text></g>`);
@@ -1976,7 +1977,7 @@
 		parts.push(`</svg>`);
 		const before = i > 0 ? `← ${escapeHtml(stationLabel(model.layers[i - 1][0]))}` : "";
 		const after = i + 1 < n ? `${escapeHtml(stationLabel(model.layers[i + 1][0]))} →` : "";
-		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">轨道太多，只画了一部分。</p>` : ""}<p class="hint">列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。</p></div>`;
+		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : ""}<p class="hint">${tr("列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。")}</p></div>`;
 	}
 
 	/** Dragging a track diagram moves it, kept in the picker's model so it stays where it was left. */
@@ -2044,7 +2045,7 @@
 		} else {
 			model.picks[i] = p;
 			const names = [...model.pins.keys()].sort((a, b) => a - b).map(k => stationLabel(model.layers[k][0]));
-			model.conflict = `固定的站台连不起来：${names.join("、")}。取消其中一个再试。`;
+			model.conflict = `${tr("固定的站台连不起来：{0}。取消其中一个再试。", names.join("、"))}`;
 		}
 		return true;
 	}
@@ -2091,7 +2092,7 @@
 	function stopsSummaryOf(model) {
 		const n = model.layers.length;
 		const passed = model.layers.filter((tracks, i) => !model.stop[i] && i > 0 && i < n - 1).map(tracks => stationLabel(tracks[0]));
-		return `${n} 站，停 ${n - passed.length} 站${passed.length ? `，通过 ${passed.length} 站：${passed.join("、")}` : "，全部停车"}`;
+		return `${tr("{0} 站，停 {1} 站{2}", n, n - passed.length, passed.length ? `${tr("，通过 {0} 站：{1}", passed.length, passed.join("、"))}` : tr("，全部停车"))}`;
 	}
 
 	function counterpartOf(r) {
@@ -2145,7 +2146,7 @@
 			models = [];
 			routeError = "";
 			if (!from || !to || from === to) {
-				routeError = "选好不同的起点站和终点站";
+				routeError = tr("选好不同的起点站和终点站");
 				return;
 			}
 			const color = form.color.value;
@@ -2170,14 +2171,14 @@
 			const startTracks = startTrack ? [+startTrack] : tracksOf(from);
 			const forward = make(startTracks, tracksOf(to), vias, base, startTrack ? +startTrack : -1);
 			if (!forward) {
-				routeError = `从${shortName(stations.find(o => o.station === from).name)}${vias.length ? "经过选的途经站" : ""}到${shortName(stations.find(o => o.station === to).name)}沿轨道走不通`;
+				routeError = `${tr("从{0}{1}到{2}沿轨道走不通", shortName(stations.find(o => o.station === from).name), vias.length ? tr("经过选的途经站") : "", shortName(stations.find(o => o.station === to).name))}`;
 				return;
 			}
 			models.push(forward);
 			if (both) {
 				const backward = make(tracksOf(to), tracksOf(from), vias.slice().reverse(), counterpartOf(base), -1);
 				if (backward) models.push(backward);
-				else routeError = "反方向沿轨道走不通，只建这个方向";
+				else routeError = tr("反方向沿轨道走不通，只建这个方向");
 			}
 		};
 		const renderPicker = form => {
@@ -2187,35 +2188,35 @@
 				m.onChange = () => renderPicker(form);
 			});
 			const stationOptions = selected => stations.map(s => `<option value="${s.station}"${s.station === selected ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
-			form.querySelector("#dlg-vias").innerHTML = vias.map((station, k) => `<button type="button" class="table-chip" data-via="${k}" title="点一下去掉">${escapeHtml((stations.find(o => o.station === station) || { name: "?" }).name)} ✕</button>`).join("") + `<select name="addVia"><option value="">＋ 途经站…</option>${stationOptions("")}</select>`;
+			form.querySelector("#dlg-vias").innerHTML = vias.map((station, k) => `<button type="button" class="table-chip" data-via="${k}" title="${tr("点一下去掉")}">${escapeHtml((stations.find(o => o.station === station) || { name: "?" }).name)} ✕</button>`).join("") + `<select name="addVia"><option value="">${tr("＋ 途经站…")}</option>${stationOptions("")}</select>`;
 			const model = models[Math.min(pickDir, models.length - 1)];
 			form.querySelector(".dir-tabs").innerHTML = models.length > 1 ? models.map((m, i) => `<button type="button" class="table-chip${i === pickDir ? " on" : ""}" data-dir="${i}">${escapeHtml(stationLabel(m.picks[0]))} → ${escapeHtml(stationLabel(m.picks[m.picks.length - 1]))}</button>`).join("") : "";
 			form.querySelector("#dlg-pick").innerHTML = model ? topologyHtml(model) : "";
 			form.querySelector("#dlg-pick-summary").textContent = model ? stopsSummaryOf(model) : "";
 			form.querySelector("#dlg-route-error").textContent = routeError;
 		};
-		openDialog("新建种别", `
-			<div class="row"><label>线路组 <select name="base">${line.routes.filter(r => r.stops.length > 1).map(r => `<option value="${r.id}"${r === base0 ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("")}</select></label></div>
-			<div class="row"><label>起点 <select name="from"></select></label><label>站台 <select name="fromTrack"></select></label><label>终点 <select name="to"></select></label></div>
+		openDialog(tr("新建种别"), `
+			<div class="row"><label>${tr("线路组")} <select name="base">${line.routes.filter(r => r.stops.length > 1).map(r => `<option value="${r.id}"${r === base0 ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("")}</select></label></div>
+			<div class="row"><label>${tr("起点")} <select name="from"></select></label><label>${tr("站台")} <select name="fromTrack"></select></label><label>${tr("终点")} <select name="to"></select></label></div>
 			<div class="row vias" id="dlg-vias"></div>
-			<label><input type="checkbox" name="both" checked> 反方向一起建</label>
-			<div class="row"><label>种别 <input name="type" required placeholder="急行" maxlength="16" size="8" autocomplete="off"></label>
-			<label>颜色 <input type="color" name="color" value="#2f9e55"></label></div>
-			<label>线路名 <input name="name" maxlength="128" size="28" autocomplete="off" placeholder="按线路组和种别自动起名"></label>
+			<label><input type="checkbox" name="both" checked> ${tr("反方向一起建")}</label>
+			<div class="row"><label>${tr("种别")} <input name="type" required placeholder="${tr("急行")}" maxlength="16" size="8" autocomplete="off"></label>
+			<label>${tr("颜色")} <input type="color" name="color" value="#2f9e55"></label></div>
+			<label>${tr("线路名")} <input name="name" maxlength="128" size="28" autocomplete="off" placeholder="${tr("按线路组和种别自动起名")}"></label>
 			<div class="picker">
-				<div class="picker-head"><b>车站和股道</b><span class="dir-tabs"></span></div>
-				<p class="hint">车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站，不照抄现有线路。只列和起点轨道连在一起的车站。连线表示列车不掉头能开过去；点一股固定它，其他站自动换成走得通的股道；最下一行点一下在停车和通过之间切换。</p>
+				<div class="picker-head"><b>${tr("车站和股道")}</b><span class="dir-tabs"></span></div>
+				<p class="hint">${tr("车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站，不照抄现有线路。只列和起点轨道连在一起的车站。连线表示列车不掉头能开过去；点一股固定它，其他站自动换成走得通的股道；最下一行点一下在停车和通过之间切换。")}</p>
 				<p class="err" id="dlg-route-error"></p>
 				<div id="dlg-pick"></div>
 				<div class="hint" id="dlg-pick-summary"></div>
 			</div>
-			<label>班次 <input name="pattern" placeholder="可以留空，例如 08:05 + 12 * 00:30" autocomplete="off"></label>
-			<label>加入车厂 <select name="depot"></select></label>
-			<p class="hint">线路组的这条线路给出颜色、时刻表和车厂。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。</p>`, "新建", form => {
+			<label>${tr("班次")} <input name="pattern" placeholder="${tr("可以留空，例如 08:05 + 12 * 00:30")}" autocomplete="off"></label>
+			<label>${tr("加入车厂")} <select name="depot"></select></label>
+			<p class="hint">${tr("线路组的这条线路给出颜色、时刻表和车厂。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。")}</p>`, tr("新建"), form => {
 			const type = form.type.value.trim();
-			if (!type) return "写上种别名，例如 急行";
-			if (!models.length) return routeError || "选好起点和终点";
-			if (models.some(m => m.conflict)) return "有固定的股道连不起来";
+			if (!type) return tr("写上种别名，例如 急行");
+			if (!models.length) return routeError || tr("选好起点和终点");
+			if (models.some(m => m.conflict)) return tr("有固定的股道连不起来");
 			const times = form.pattern.value.trim() ? parsePattern(form.pattern.value) : [];
 			if (!times) return PATTERN_HINT;
 			const color = parseInt(form.color.value.slice(1), 16);
@@ -2245,17 +2246,17 @@
 				form.to.innerHTML = stations.map(s => `<option value="${s.station}"${s.station === station(base.stops.length - 1) ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
 				form.fromTrack.dataset.station = "";
 				const list = data.depots.filter(depot => depot.routes.includes(base.id));
-				form.depot.innerHTML = list.map(depot => `<option value="${depot.id}">${escapeHtml(shortName(depot.name))}</option>`).join("") + `<option value="">不加入，之后在游戏里加</option>`;
+				form.depot.innerHTML = list.map(depot => `<option value="${depot.id}">${escapeHtml(shortName(depot.name))}</option>`).join("") + `<option value="">${tr("不加入，之后在游戏里加")}</option>`;
 			}
 			if (form.fromTrack.dataset.station !== form.from.value) {
 				form.fromTrack.dataset.station = form.from.value;
-				form.fromTrack.innerHTML = `<option value="">任一股</option>` + tracksOf(form.from.value).map(p => `<option value="${p}">${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? " 待避" : ""}</option>`).join("");
+				form.fromTrack.innerHTML = `<option value="">${tr("任一股")}</option>` + tracksOf(form.from.value).map(p => `<option value="${p}">${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? tr(" 待避") : ""}</option>`).join("");
 			}
 			if (form.addVia && form.addVia.value) {
 				vias.push(form.addVia.value);
 				form.addVia.value = "";
 			}
-			form.name.placeholder = form.type.value.trim() ? typedName(data.routeById.get(form.base.value), form.type.value.trim()) : "按线路组和种别自动起名";
+			form.name.placeholder = form.type.value.trim() ? typedName(data.routeById.get(form.base.value), form.type.value.trim()) : tr("按线路组和种别自动起名");
 			renderPicker(form);
 		});
 		const form = dialog.querySelector("form");
@@ -2290,28 +2291,28 @@
 		const ids = platformsOf(r), pass = timetableOf(r).pass;
 		const tracks = ids.map(id => topo.index.has(id) ? topo.index.get(id) : -1);
 		if (tracks.some(p => p < 0)) {
-			openDialog(`停站：${escapeHtml(routeTitle(r))}`, `<p class="err">有车站的站台没有轨道，没法按轨道选股道。先在游戏里把站台放回轨道上。</p>`, "关闭", () => {});
+			openDialog(`${tr("停站：{0}", escapeHtml(routeTitle(r)))}`, `<p class="err">${tr("有车站的站台没有轨道，没法按轨道选股道。先在游戏里把站台放回轨道上。")}</p>`, tr("关闭"), () => {});
 			return;
 		}
 		const model = topologyModel(tracks, r.stops.map((stop, i) => !pass[i]), colorOf(r.color));
 		const problemsHtml = () => {
 			const problems = routeProblems(r);
-			return problems.length ? `<ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>` : `<p class="hint">现在的股道沿轨道走得通，没有掉头和绕路。</p>`;
+			return problems.length ? `<ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>` : `<p class="hint">${tr("现在的股道沿轨道走得通，没有掉头和绕路。")}</p>`;
 		};
 		const render = form => {
 			form.querySelector("#dlg-problems").innerHTML = problemsHtml();
 			form.querySelector("#dlg-pick").innerHTML = topologyHtml(model);
 			form.querySelector("#dlg-pick-summary").textContent = stopsSummaryOf(model);
 		};
-		openDialog(`停站：${escapeHtml(routeTitle(r))}`, `
+		openDialog(`${tr("停站：{0}", escapeHtml(routeTitle(r)))}`, `
 			<div id="dlg-problems"></div>
 			<div class="picker">
-				<p class="hint">连线表示列车不掉头能开过去。点一股固定它，其他站自动换成走得通、改动最少的股道；最下一行点一下在停车和通过之间切换。车站的先后和增删在游戏的仪表盘里改。</p>
+				<p class="hint">${tr("连线表示列车不掉头能开过去。点一股固定它，其他站自动换成走得通、改动最少的股道；最下一行点一下在停车和通过之间切换。车站的先后和增删在游戏的仪表盘里改。")}</p>
 				<div id="dlg-pick"></div>
 				<div class="hint" id="dlg-pick-summary"></div>
 			</div>
-			<p class="hint">改股道会清掉线路手画的路径，应用后要刷新车厂路径。</p>`, "确定", () => {
-			if (model.conflict) return "有固定的股道连不起来";
+			<p class="hint">${tr("改股道会清掉线路手画的路径，应用后要刷新车厂路径。")}</p>`, tr("确定"), () => {
+			if (model.conflict) return tr("有固定的股道连不起来");
 			const newPlatforms = model.picks.map(p => topo.platforms[p].id);
 			const entry = draftEntry(r);
 			if (newPlatforms.every((id, i) => id === r.stops[i].platformId)) delete entry.platforms;
@@ -2348,9 +2349,9 @@
 			try {
 				const result = await sendJson("api/route-layout", "POST", { route: r.id, halfWidth: view.halfWidth, fresh });
 				if (!result.ready) {
-					view.error = "正在沿路径取轨道…";
+					view.error = tr("正在沿路径取轨道…");
 					if (view.tries++ < 15) setTimeout(() => load(form, false), 700);
-					else view.error = "服务端没有回应，关掉再打开试试";
+					else view.error = tr("服务端没有回应，关掉再打开试试");
 				} else {
 					// The first time, the whole line fits the width of the dialog
 					if (!view.data && result.found && result.length > 0) view.scale = Math.max(0.05, Math.min(8, (form.querySelector("#dlg-route-diagram").clientWidth - 56) / result.length));
@@ -2358,15 +2359,15 @@
 					view.error = "";
 				}
 			} catch (e) {
-				view.error = "读取线路配线图失败";
+				view.error = tr("读取线路配线图失败");
 			}
 			if (dialog.open) render(form);
 		};
-		openDialog(`线路配线图：${escapeHtml(routeTitle(r))}`, `
-			<div class="diagram-head"><span class="hint">沿这条线路在游戏里的路径拉直，从左往右是行车方向，上方是行车方向的左侧。按游戏里已应用的线路画，草稿里的股道改动应用后才显示。</span>
-				<span class="tools"><button type="button" data-route-zoom="in" title="放大">＋</button><button type="button" data-route-zoom="out" title="缩小">−</button>
-				<button type="button" data-route-side="1" title="侧向不放大">1×</button><button type="button" data-route-side="2" title="侧向放大 2 倍">2×</button><button type="button" data-route-side="3" title="侧向放大 3 倍">3×</button></span></div>
-			<div id="dlg-route-diagram"></div>`, "关闭", () => {});
+		openDialog(`${tr("线路配线图：{0}", escapeHtml(routeTitle(r)))}`, `
+			<div class="diagram-head"><span class="hint">${tr("沿这条线路在游戏里的路径拉直，从左往右是行车方向，上方是行车方向的左侧。按游戏里已应用的线路画，草稿里的股道改动应用后才显示。")}</span>
+				<span class="tools"><button type="button" data-route-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-route-zoom="out" title="${tr("缩小")}">−</button>
+				<button type="button" data-route-side="1" title="${tr("侧向不放大")}">1×</button><button type="button" data-route-side="2" title="${tr("侧向放大 2 倍")}">2×</button><button type="button" data-route-side="3" title="${tr("侧向放大 3 倍")}">3×</button></span></div>
+			<div id="dlg-route-diagram"></div>`, tr("关闭"), () => {});
 		dialog.classList.add("wide");
 		dialog.addEventListener("close", () => dialog.classList.remove("wide"), { once: true });
 		const form = dialog.querySelector("form");
@@ -2391,8 +2392,8 @@
 
 	function routeDiagramHtml(r, view) {
 		const result = view.data;
-		if (!result) return `<p class="hint">${escapeHtml(view.error || "正在读取…")}</p>`;
-		if (!result.found) return `<p class="err">沿轨道寻不出这条线路的路径。先右键线路"编辑停站…"，在连通图里修好股道。</p>`;
+		if (!result) return `<p class="hint">${escapeHtml(view.error || tr("正在读取…"))}</p>`;
+		if (!result.found) return `<p class="err">${tr("沿轨道寻不出这条线路的路径。先右键线路“编辑停站…”，在连通图里修好股道。")}</p>`;
 		const pad = 24, head = 44, sidePx = view.side * 2;
 		const width = Math.round(result.length * view.scale + pad * 2), middle = head + result.halfWidth * sidePx;
 		const height = middle + result.halfWidth * sidePx + 16;
@@ -2402,7 +2403,7 @@
 		const problems = new Map();
 		routeProblems(r).forEach(p => { if (!problems.has(p.stop) || p.level === "error") problems.set(p.stop, p.level); });
 		const pass = timetableOf(r).pass;
-		const parts = [`<svg class="route-diagram" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="线路配线图">`];
+		const parts = [`<svg class="route-diagram" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${tr("线路配线图")}">`];
 		parts.push(`<line x1="${x(0)}" y1="${middle}" x2="${x(result.length)}" y2="${middle}" class="route-path" style="stroke:${color}"/>`);
 		result.rails.forEach(piece => {
 			const points = [];
@@ -2413,21 +2414,21 @@
 		result.platforms.forEach(p => {
 			const ours = routePlatforms.has(p.id);
 			const line = p.line;
-			parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || "不属于车站"} ${p.name || "?"}${p.passingTrack ? "（待避线）" : ""}`)}</title><line x1="${x(line[0])}" y1="${y(line[1])}" x2="${x(line[2])}" y2="${y(line[3])}"${ours ? ` style="stroke:${color}"` : ""}/>${ours ? `<text x="${((+x(line[0]) + +x(line[2])) / 2).toFixed(1)}" y="${(Math.min(+y(line[1]), +y(line[3])) - 4).toFixed(1)}">${escapeHtml(p.name || "?")}</text>` : ""}</g>`);
+			parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.passingTrack ? tr("（待避线）") : ""}`)}</title><line x1="${x(line[0])}" y1="${y(line[1])}" x2="${x(line[2])}" y2="${y(line[3])}"${ours ? ` style="stroke:${color}"` : ""}/>${ours ? `<text x="${((+x(line[0]) + +x(line[2])) / 2).toFixed(1)}" y="${(Math.min(+y(line[1]), +y(line[3])) - 4).toFixed(1)}">${escapeHtml(p.name || "?")}</text>` : ""}</g>`);
 		});
 		result.stops.forEach((s, i) => {
 			if (s < 0) return;
 			const level = problems.get(i);
 			const passes = pass[i] && i > 0 && i < result.stops.length - 1;
 			const classes = ["stop-mark", passes ? "passes" : "", level || ""].filter(Boolean).join(" ");
-			parts.push(`<g class="${classes}" data-route-stop="${i}" tabindex="0"><title>${escapeHtml(`${shortName(r.stops[i].name) || "第 " + (i + 1) + " 站"}${passes ? "（通过）" : ""}${level ? "：股道有问题" : ""}，点一下打开这一站`)}</title><line x1="${x(s)}" y1="${head - 6}" x2="${x(s)}" y2="${height - 10}"/><text x="${x(s)}" y="${head - 12}">${escapeHtml(shortName(r.stops[i].name) || "?")}</text></g>`);
+			parts.push(`<g class="${classes}" data-route-stop="${i}" tabindex="0"><title>${escapeHtml(`${tr("{0}{1}{2}，点一下打开这一站", shortName(r.stops[i].name) || tr("第 {0} 站", i + 1), passes ? tr("（通过）") : "", level ? tr("：股道有问题") : "")}`)}</title><line x1="${x(s)}" y1="${head - 6}" x2="${x(s)}" y2="${height - 10}"/><text x="${x(s)}" y="${head - 12}">${escapeHtml(shortName(r.stops[i].name) || "?")}</text></g>`);
 		});
 		parts.push(`</svg>`);
 		const missing = result.stops.filter(s => s < 0).length;
 		return `<div class="route-diagram-wrap">${parts.join("")}</div>`
-			+ (missing ? `<p class="hint">有 ${missing} 站的站台不在路径上，没有标出。</p>` : "")
-			+ (result.truncated ? `<p class="hint">轨道太多，只画了一部分。</p>` : "")
-			+ `<p class="hint">全长约 ${Math.round(result.length)} 格，路径两侧各 ${result.halfWidth} 格以内的轨道。红色、黄色的站名是股道有问题的站。</p>`;
+			+ (missing ? `<p class="hint">${tr("有 {0} 站的站台不在路径上，没有标出。", missing)}</p>` : "")
+			+ (result.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : "")
+			+ `<p class="hint">${tr("全长约 {0} 格，路径两侧各 {1} 格以内的轨道。红色、黄色的站名是股道有问题的站。", Math.round(result.length), result.halfWidth)}</p>`;
 	}
 
 	/**
@@ -2442,13 +2443,13 @@
 		}))));
 		const links = data.routes.filter(other => other !== r).reduce((count, other) => count + other.services.filter(s => s.link && s.link.route === r.id).length, 0);
 		const notes = [];
-		if (depots.length) notes.push(`车厂 ${depots.map(escapeHtml).join("、")} 跑这个种别，删除后不再跑它，要刷新车厂路径`);
-		if (segments) notes.push(`运用里有 ${segments} 班是它的，这些运用会走不通，要改运用`);
-		if (links) notes.push(`别的种别有 ${links} 班直通到它，这些直通会失效`);
-		openDialog("删除种别", `
-			<p>删除 <b>${escapeHtml(routeTitle(r))}</b>：它的车站、停站设置和全部时刻表都从游戏里删掉，不能恢复。</p>
+		if (depots.length) notes.push(`${tr("车厂 {0} 跑这个种别，删除后不再跑它，要刷新车厂路径", depots.map(escapeHtml).join("、"))}`);
+		if (segments) notes.push(`${tr("运用里有 {0} 班是它的，这些运用会走不通，要改运用", segments)}`);
+		if (links) notes.push(`${tr("别的种别有 {0} 班直通到它，这些直通会失效", links)}`);
+		openDialog(tr("删除种别"), `
+			<p>${tr("删除")} <b>${escapeHtml(routeTitle(r))}</b>${tr("：它的车站、停站设置和全部时刻表都从游戏里删掉，不能恢复。")}</p>
 			${notes.length ? `<ul class="warn">${notes.map(note => `<li>${note}</li>`).join("")}</ul>` : ""}
-			<p class="hint">先放在草稿里，按“应用”才删除。应用之前可以右键取消。这个种别别的没应用的改动也一起丢掉。</p>`, "删除", () => {
+			<p class="hint">${tr("先放在草稿里，按“应用”才删除。应用之前可以右键取消。这个种别别的没应用的改动也一起丢掉。")}</p>`, tr("删除"), () => {
 			const entry = draftEntry(r);
 			entry.deleted = true;
 			delete entry.error;
@@ -2481,8 +2482,8 @@
 		const b0 = routes.find(r => r !== a0 && r.stops[0].station === lastName(a0)) || routes.find(r => r !== a0);
 		const routeOptions = (list, selected) => list.map(r => `<option value="${r.id}"${r.id === selected ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("");
 		// The last stop and boundaries to leave from; the first stop and boundaries to join at
-		const exitOptions = r => [`<option value="-1">${escapeHtml(stopName(r, r.stops.length - 1))}（末站）</option>`, ...r.stops.map((_, i) => i).filter(i => isBoundary(r, i)).map(i => `<option value="${i}">${escapeHtml(stopName(r, i))}（时刻边界）</option>`)].join("");
-		const entryOptions = r => [`<option value="0">${escapeHtml(stopName(r, 0))}（首站）</option>`, ...r.stops.map((_, i) => i).filter(i => isBoundary(r, i)).map(i => `<option value="${i}">${escapeHtml(stopName(r, i))}（时刻边界）</option>`)].join("");
+		const exitOptions = r => [`<option value="-1">${tr("{0}（末站）", escapeHtml(stopName(r, r.stops.length - 1)))}</option>`, ...r.stops.map((_, i) => i).filter(i => isBoundary(r, i)).map(i => `<option value="${i}">${tr("{0}（时刻边界）", escapeHtml(stopName(r, i)))}</option>`)].join("");
+		const entryOptions = r => [`<option value="0">${tr("{0}（首站）", escapeHtml(stopName(r, 0)))}</option>`, ...r.stops.map((_, i) => i).filter(i => isBoundary(r, i)).map(i => `<option value="${i}">${tr("{0}（时刻边界）", escapeHtml(stopName(r, i)))}</option>`)].join("");
 		let lastFrom = null, lastTo = null;
 		const pairs = form => {
 			const a = data.routeById.get(form.from.value), b = data.routeById.get(form.to.value);
@@ -2505,17 +2506,17 @@
 			});
 			return { result, fromStop, toStop, a, b, exitIndex };
 		};
-		openDialog("新建直通关系", `
-			<div class="row"><label>从 <select name="from">${routeOptions(routes, a0.id)}</select></label><label>在 <select name="fromStop"></select> 接出</label></div>
-			<div class="row"><label>到 <select name="to">${routeOptions(routes.filter(r => r !== a0), b0.id)}</select></label><label>在 <select name="toStop"></select> 接入</label></div>
-			<div class="row"><label>首站发车在 <input name="t1" value="05:00" size="6"> 到 <input name="t2" value="26:00" size="6"> 之间（${WEEKDAY_NAMES[state.weekday]}的表）</label></div>
-			<div class="row"><label>衔接至少 <input name="gap" type="number" value="3" min="0" max="60" style="width:4.5em"> 分钟，最多再等 <input name="wait" type="number" value="12" min="0" max="120" style="width:4.5em"> 分钟</label></div>
-			<label><input type="checkbox" name="replace"> 替换这些班次原有的直通</label>
+		openDialog(tr("新建直通关系"), `
+			<div class="row"><label>${tr("从")} <select name="from">${routeOptions(routes, a0.id)}</select></label><label>${tr("在")} <select name="fromStop"></select> ${tr("接出")}</label></div>
+			<div class="row"><label>${trc("route", "到")} <select name="to">${routeOptions(routes.filter(r => r !== a0), b0.id)}</select></label><label>${tr("在")} <select name="toStop"></select> ${tr("接入")}</label></div>
+			<div class="row"><label>${tr("首站发车在")} <input name="t1" value="05:00" size="6"> ${tr("到")} <input name="t2" value="26:00" size="6"> ${tr("之间（{0}的表）", WEEKDAY_NAMES[state.weekday])}</label></div>
+			<div class="row"><label>${tr("衔接至少")} <input name="gap" type="number" value="3" min="0" max="60" style="width:4.5em"> ${tr("分钟，最多再等")} <input name="wait" type="number" value="12" min="0" max="120" style="width:4.5em"> ${tr("分钟")}</label></div>
+			<label><input type="checkbox" name="replace"> ${tr("替换这些班次原有的直通")}</label>
 			<p class="preview" id="dialog-preview"></p>
-			<p class="hint">中途接出和接入只能在游戏里标了时刻边界的站台（站台界面里设置）；没有边界的线路只能末站接首站。每一班接上对方能赶上的第一班，同一班不接两次，等太久的不接。</p>`, "新建", form => {
+			<p class="hint">${tr("中途接出和接入只能在游戏里标了时刻边界的站台（站台界面里设置）；没有边界的线路只能末站接首站。每一班接上对方能赶上的第一班，同一班不接两次，等太久的不接。")}</p>`, tr("新建"), form => {
 			const found = pairs(form);
-			if (!found) return "时刻写成 07:10";
-			if (!found.result.length) return "没有能接上的班次";
+			if (!found) return tr("时刻写成 07:10");
+			if (!found.result.length) return tr("没有能接上的班次");
 			found.result.forEach(x => setLink(x.s, found.fromStop, x.to, found.toStop));
 		}, form => {
 			if (form.from.value !== lastFrom) {
@@ -2532,12 +2533,12 @@
 			}
 			const found = pairs(form), preview = $("dialog-preview");
 			if (!found) {
-				preview.textContent = "时刻写成 07:10";
+				preview.textContent = tr("时刻写成 07:10");
 				return;
 			}
 			preview.textContent = found.result.length
-				? `${found.result.length} 对：\n` + found.result.slice(0, 8).map(x => `${clock(x.s.start)} 班 ${stopName(found.a, found.exitIndex)} ${clock(x.out)} 到 → ${clock(x.to.start)} 班 ${stopName(found.b, found.toStop)} ${clock(x.into)} 发`).join("\n") + (found.result.length > 8 ? "\n…" : "")
-				: "没有能接上的班次";
+				? `${tr("{0} 对：\n", found.result.length)}` + found.result.slice(0, 8).map(x => `${tr("{0} 班 {1} {2} 到 → {3} 班 {4} {5} 发", clock(x.s.start), stopName(found.a, found.exitIndex), clock(x.out), clock(x.to.start), stopName(found.b, found.toStop), clock(x.into))}`).join("\n") + (found.result.length > 8 ? "\n…" : "")
+				: tr("没有能接上的班次");
 		});
 	}
 
@@ -2554,9 +2555,9 @@
 		editTimetable(r, timetable => {
 			const table = timetable.tables[today];
 			const added = services.filter(service => !table.services.includes(service));
-			if (table.services.length + added.length > MAX_SERVICES) return `一张表最多 ${MAX_SERVICES} 个班次`;
+			if (table.services.length + added.length > MAX_SERVICES) return `${tr("一张表最多 {0} 个班次", MAX_SERVICES)}`;
 			table.services.push(...added);
-			return added.length < services.length ? `已有的 ${services.length - added.length} 班没有重复添加` : "";
+			return added.length < services.length ? `${tr("已有的 {0} 班没有重复添加", services.length - added.length)}` : "";
 		});
 		const next = $("add-service");
 		if (next) next.focus();
@@ -2576,9 +2577,9 @@
 	function renderBanner() {
 		const banner = $("banner");
 		const messages = {
-			key: "这个页面的链接已经失效。请在游戏的仪表盘里重新点“高级编辑器”。",
-			world: "游戏现在不在世界里，进入世界后会自动刷新。",
-			offline: "连不上游戏。游戏关了，或者离开了这个世界。请在游戏的仪表盘里重新点“高级编辑器”。",
+			key: tr("这个页面的链接已经失效。请在游戏的仪表盘里重新点“高级编辑器”。"),
+			world: tr("游戏现在不在世界里，进入世界后会自动刷新。"),
+			offline: tr("连不上游戏。游戏关了，或者离开了这个世界。请在游戏的仪表盘里重新点“高级编辑器”。"),
 		};
 		const missingTimes = data && data.routes.some(r => !r.hasTimes && r.timetable);
 		const problem = !key ? messages.key : messages[connection];
@@ -2589,23 +2590,23 @@
 			html = escapeHtml(problem);
 		} else if (state.pendingExit && findService(state.pendingExit.id)) {
 			const s = findService(state.pendingExit.id);
-			html = `已设接出点：<b>${clock(s.start)} ${escapeHtml(routeTitle(s.route))}</b> 在 <b>${escapeHtml(stopName(s.route, state.pendingExit.index))}</b>。打开目标线路的时刻表，右键首站或时刻边界站的一格，选“设为接入点”。<button data-cancel-exit>取消</button>`;
+			html = `${tr("已设接出点：")}<b>${clock(s.start)} ${escapeHtml(routeTitle(s.route))}</b> ${tr("在")} <b>${escapeHtml(stopName(s.route, state.pendingExit.index))}</b>${tr("。打开目标线路的时刻表，右键首站或时刻边界站的一格，选“设为接入点”。")}<button data-cancel-exit>${tr("取消")}</button>`;
 		} else if (data && !data.canEdit) {
-			html = "没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。";
+			html = tr("没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。");
 		} else if (applyResult && (!applyResult.ok || failed.length || otherFailed)) {
-			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : "已删除的线路";
-			html = `应用了 ${applyResult.applied} 项，下面的没有应用，留在草稿里：<ul>`
+			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
+			html = `${tr("应用了 {0} 项，下面的没有应用，留在草稿里：", applyResult.applied)}<ul>`
 				+ applyResult.general.map(message => `<li>${escapeHtml(message)}</li>`).join("")
-				+ Object.entries(draft.duties).filter(([, entry]) => entry.error).map(([id, entry]) => `<li>车厂${escapeHtml(shortName(depotById(id) ? depotById(id).name : "?"))}的运用：${escapeHtml(entry.error)}</li>`).join("")
-				+ draft.created.filter(made => made.error).map(made => `<li>新种别 ${escapeHtml(shortName(made.name))}：${escapeHtml(made.error)}</li>`).join("")
-				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}${entry.conflict ? `<button data-keep="${id}">保留草稿</button><button data-drop="${id}">用游戏里的</button>` : ""}</li>`).join("")
+				+ Object.entries(draft.duties).filter(([, entry]) => entry.error).map(([id, entry]) => `<li>${tr("车厂{0}的运用：{1}", escapeHtml(shortName(depotById(id) ? depotById(id).name : "?")), escapeHtml(entry.error))}</li>`).join("")
+				+ draft.created.filter(made => made.error).map(made => `<li>${tr("新种别 {0}：{1}", escapeHtml(shortName(made.name)), escapeHtml(made.error))}</li>`).join("")
+				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}${entry.conflict ? `<button data-keep="${id}">${tr("保留草稿")}</button><button data-drop="${id}">${tr("用游戏里的")}</button>` : ""}</li>`).join("")
 				+ "</ul>";
 		} else if (applyResult && applyResult.ok) {
-			html = `已应用 ${applyResult.applied} 项。`;
+			html = `${tr("已应用 {0} 项。", applyResult.applied)}`;
 		} else if (dutyNotice) {
 			html = escapeHtml(dutyNotice);
 		} else if (missingTimes) {
-			html = "部分线路还没有各站时刻，正在向服务端取，取到之前按虚线画。";
+			html = tr("部分线路还没有各站时刻，正在向服务端取，取到之前按虚线画。");
 		}
 		banner.hidden = !html;
 		banner.innerHTML = html;
@@ -2617,9 +2618,9 @@
 		const count = line ? line.routes.reduce((a, r) => a + r.services.length, 0) : 0;
 		const s = state.selected && data ? findService(state.selected) : null;
 		const parts = [];
-		if (s) parts.push(`<span>选中 <b>${clock(s.start)}</b> ${escapeHtml(routeTitle(s.route))}</span>`);
-		parts.push(`<span>线路 <b>${data ? data.lines.length : 0}</b></span>`, `<span>本线班次 <b>${count}</b></span>`);
-		parts.push(connection === "ok" ? `<span>已同步 <b>${new Date(lastLoaded || Date.now()).toLocaleTimeString()}</b></span>` : `<span class="warn">未连接</span>`);
+		if (s) parts.push(`<span>${tr("选中")} <b>${clock(s.start)}</b> ${escapeHtml(routeTitle(s.route))}</span>`);
+		parts.push(`<span>${tr("线路")} <b>${data ? data.lines.length : 0}</b></span>`, `<span>${tr("本线班次")} <b>${count}</b></span>`);
+		parts.push(connection === "ok" ? `<span>${tr("已同步")} <b>${new Date(lastLoaded || Date.now()).toLocaleTimeString()}</b></span>` : `<span class="warn">${tr("未连接")}</span>`);
 		$("status").innerHTML = parts.join("");
 	}
 
@@ -2656,19 +2657,19 @@
 		const sidingSlots = () => (dutiesOf(depot).sidings[sidingId] || []);
 		const siding = depot && sidingId && depot.sidings.find(o => o.id === sidingId);
 		const items = slot !== undefined && depot ? [
-			["清空这列车当天的运用", () => editDuties(depot, duties => { const day = dutyOn(duties.sidings[sidingId][+slot], state.weekday); if (day) dutyForEditing(depot, duties.sidings[sidingId][+slot], state.weekday).segments = []; })],
-			["删除这个库位", () => changeSlots(depot, sidingId, slots => slots.splice(+slot, 1))],
+			[tr("清空这列车当天的运用"), () => editDuties(depot, duties => { const day = dutyOn(duties.sidings[sidingId][+slot], state.weekday); if (day) dutyForEditing(depot, duties.sidings[sidingId][+slot], state.weekday).segments = []; })],
+			[tr("删除这个库位"), () => changeSlots(depot, sidingId, slots => slots.splice(+slot, 1))],
 		] : siding ? [
-			["添加库位", siding.maxTrains < 0 || sidingSlots().length < siding.maxTrains ? () => changeSlots(depot, sidingId, slots => slots.push([])) : null],
-			["删除最后一个库位", sidingSlots().length ? () => changeSlots(depot, sidingId, slots => slots.pop()) : null],
+			[tr("添加库位"), siding.maxTrains < 0 || sidingSlots().length < siding.maxTrains ? () => changeSlots(depot, sidingId, slots => slots.push([])) : null],
+			[tr("删除最后一个库位"), sidingSlots().length ? () => changeSlots(depot, sidingId, slots => slots.pop()) : null],
 		] : depotId && depot ? [
-			["一键生成运用…", data.canEdit ? () => generateDuties(depot) : null],
-			[dutiesOf(depot).mode === "diagram" ? "改为在线预约" : "改为按运用图", () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
-			["丢掉运用的草稿", draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
-		] : line ? [["新建种别…", data.canEdit ? () => newTypeDialog(line, null) : null]]
-			: r ? [["编辑停站…", data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], ["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], ["线路配线图…", () => routeDiagramDialog(r)],
-				isDeleted(r) ? ["取消删除", () => keepType(r)] : ["删除这个种别…", data.canEdit ? () => deleteTypeDialog(r) : null]]
-				: created ? [["删除这个新建的种别", () => removeCreated(created)]] : null;
+			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
+			[dutiesOf(depot).mode === "diagram" ? tr("改为在线预约") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
+			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
+		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null]]
+			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
+				isDeleted(r) ? [tr("取消删除"), () => keepType(r)] : [tr("删除这个种别…"), data.canEdit ? () => deleteTypeDialog(r) : null]]
+				: created ? [[tr("删除这个新建的种别"), () => removeCreated(created)]] : null;
 		if (!items) return;
 		e.preventDefault();
 		openMenu(e.clientX, e.clientY, items);
@@ -2694,9 +2695,9 @@
 		const box = e.currentTarget.getBoundingClientRect();
 		const r = data && (state.route ? data.routeById.get(state.route) : currentLine() && currentLine().routes[0]);
 		openMenu(box.left, box.bottom + 4, [
-			["种别…", r && data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
-			["时刻表…", r ? () => tableDialog(r, -1) : null],
-			["直通关系…", data && data.routes.length > 1 ? () => throughDialog(r) : null],
+			[tr("种别…"), r && data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
+			[tr("时刻表…"), r ? () => tableDialog(r, -1) : null],
+			[tr("直通关系…"), data && data.routes.length > 1 ? () => throughDialog(r) : null],
 		]);
 	});
 	$("banner").addEventListener("click", e => {
@@ -2781,9 +2782,9 @@
 			e.preventDefault();
 			const index = +tableButton.dataset.table, timetable = timetableOf(r);
 			openMenu(e.clientX, e.clientY, [
-				["改名和运行的星期…", () => tableDialog(r, index)],
-				[timetable.tables.length > 1 ? "删除这张表" : "删除这张表（至少要留一张）", timetable.tables.length > 1 ? () => {
-					if (confirm(`删除“${tableName(timetable.tables[index], index)}”和它的 ${timetable.tables[index].services.length} 个班次？`)) editTimetable(r, edited => { edited.tables.splice(index, 1); });
+				[tr("改名和运行的星期…"), () => tableDialog(r, index)],
+				[timetable.tables.length > 1 ? tr("删除这张表") : tr("删除这张表（至少要留一张）"), timetable.tables.length > 1 ? () => {
+					if (confirm(`${tr("删除“{0}”和它的 {1} 个班次？", tableName(timetable.tables[index], index), timetable.tables[index].services.length)}`)) editTimetable(r, edited => { edited.tables.splice(index, 1); });
 				} : null],
 			]);
 			return;

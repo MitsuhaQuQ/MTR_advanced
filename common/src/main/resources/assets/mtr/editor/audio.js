@@ -41,7 +41,7 @@
 	const formatSize = bytes => bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
 	const formatDuration = millis => {
 		const seconds = Math.round(millis / 100) / 10;
-		return seconds >= 60 ? Math.floor(seconds / 60) + ":" + String(Math.round(seconds % 60)).padStart(2, "0") : seconds.toFixed(1) + " 秒";
+		return seconds >= 60 ? Math.floor(seconds / 60) + ":" + String(Math.round(seconds % 60)).padStart(2, "0") : seconds.toFixed(1) + tr(" 秒");
 	};
 	const formatTime = millis => {
 		const date = new Date(millis);
@@ -52,6 +52,7 @@
 	async function poll() {
 		try {
 			data = await fetchJson("api/audio");
+			I18N.setLanguage(data.language);
 			connection = "ok";
 		} catch (e) {
 			connection = e.message === "401" ? "key" : e.message === "503" ? "world" : "offline";
@@ -62,7 +63,7 @@
 
 	function render() {
 		const banner = $("banner");
-		const messages = { key: "页面的链接已经失效，请在游戏里重新打开高级编辑器。", world: "游戏没有响应，可能不在世界里。", offline: "连不上游戏，游戏可能已经关闭。" };
+		const messages = { key: tr("页面的链接已经失效，请在游戏里重新打开高级编辑器。"), world: tr("游戏没有响应，可能不在世界里。"), offline: tr("连不上游戏，游戏可能已经关闭。") };
 		banner.hidden = connection === "ok" || connection === "connecting";
 		banner.className = "banner warn";
 		banner.textContent = messages[connection] || "";
@@ -70,22 +71,22 @@
 		const canUpload = Boolean(data && data.canUpload);
 		const button = $("btn-upload");
 		button.disabled = !canUpload || connection !== "ok";
-		button.title = canUpload ? "选择 Ogg Vorbis 文件（.ogg）" : "没有上传音频的权限";
+		button.title = canUpload ? tr("选择 Ogg Vorbis 文件（.ogg）") : tr("没有上传音频的权限");
 
 		if (data) {
-			$("usage").textContent = `已用 ${formatSize(data.totalBytes)} / ${formatSize(data.maxTotalBytes)}`;
+			$("usage").textContent = `${tr("已用 {0} / {1}", formatSize(data.totalBytes), formatSize(data.maxTotalBytes))}`;
 			$("limits").textContent = data.maxFileBytes > 0
-				? `只支持 Ogg Vorbis（.ogg），单个文件不超过 ${formatSize(data.maxFileBytes)}、${data.maxSeconds} 秒。单声道约每秒 6 KB。` + (canUpload ? "" : "你没有上传音频的权限。")
-				: "服务器没有开放上传音频。";
+				? `${tr("只支持 Ogg Vorbis（.ogg），单个文件不超过 {0}、{1} 秒。单声道约每秒 6 KB。", formatSize(data.maxFileBytes), data.maxSeconds)}` + (canUpload ? "" : tr("你没有上传音频的权限。"))
+				: tr("服务器没有开放上传音频。");
 		}
 		renderRequests();
 		renderEntries();
 
 		const status = $("status");
 		status.innerHTML = data
-			? `<span>音频 <b>${data.entries.length}</b> 个</span><span>本机已有 <b>${data.entries.filter(entry => entry.cached).length}</b> 个</span>` +
-				(data.entries.some(entry => entry.downloading) ? "<span>正在下载…</span>" : "")
-			: "<span>正在连接游戏…</span>";
+			? `<span>${tr("音频")} <b>${data.entries.length}</b> ${tr("个")}</span><span>${tr("本机已有")} <b>${data.entries.filter(entry => entry.cached).length}</b> ${tr("个")}</span>` +
+				(data.entries.some(entry => entry.downloading) ? tr("<span>正在下载…</span>") : "")
+			: tr("<span>正在连接游戏…</span>");
 	}
 
 	function renderRequests() {
@@ -94,7 +95,7 @@
 		if (data) items.push(...data.requests.slice().reverse());
 		list.innerHTML = items.slice(0, 8).map(item => {
 			const state = !item.done ? "" : item.ok ? "ok" : "error";
-			const message = item.done ? item.message : "正在发送…";
+			const message = item.done ? item.message : tr("正在发送…");
 			return `<li class="${state}"><b>${escapeHtml(item.name || "")}</b>　${escapeHtml(message)}</li>`;
 		}).join("");
 	}
@@ -103,18 +104,18 @@
 		const entries = data ? data.entries.slice().sort((a, b) => b.uploadedAt - a.uploadedAt) : [];
 		$("empty").hidden = !data || entries.length > 0;
 		$("entries").innerHTML = entries.map(entry => {
-			const local = entry.cached ? "有" : entry.downloading ? "下载中" : "没有";
+			const local = entry.cached ? tr("有") : entry.downloading ? tr("下载中") : tr("没有");
 			const isPlaying = playing === entry.hash;
 			return `<tr>
-				<td class="name">${escapeHtml(entry.name)}<div class="hint" title="填进报站器的“音频文件”栏">${escapeHtml(entry.reference)}</div></td>
+				<td class="name">${escapeHtml(entry.name)}<div class="hint" title="${tr("填进报站器的“音频文件”栏")}">${escapeHtml(entry.reference)}</div></td>
 				<td class="num">${formatDuration(entry.durationMillis)}</td>
 				<td class="num">${formatSize(entry.size)}</td>
 				<td>${escapeHtml(entry.uploaderName)}</td>
 				<td class="num">${formatTime(entry.uploadedAt)}</td>
 				<td>${local}</td>
 				<td class="actions">
-					<button data-play="${entry.hash}" ${entry.cached ? "" : "disabled title=\"本机还没有这个文件\""}>${isPlaying ? "停止" : "试听"}</button>
-					${entry.canDelete ? `<button class="danger" data-delete="${escapeHtml(entry.key)}">删除</button>` : ""}
+					<button data-play="${entry.hash}" ${entry.cached ? "" : `disabled title="${tr("本机还没有这个文件")}"`}>${isPlaying ? tr("停止") : tr("试听")}</button>
+					${entry.canDelete ? `<button class="danger" data-delete="${escapeHtml(entry.key)}">${tr("删除")}</button>` : ""}
 				</td>
 			</tr>`;
 		}).join("");
@@ -123,7 +124,7 @@
 	async function uploadFiles(files) {
 		for (const file of files) {
 			if (data && file.size > data.maxFileBytes) {
-				localErrors.unshift({ name: file.name, message: `文件不能超过 ${formatSize(data.maxFileBytes)}` });
+				localErrors.unshift({ name: file.name, message: `${tr("文件不能超过 {0}", formatSize(data.maxFileBytes))}` });
 				continue;
 			}
 			try {
@@ -131,7 +132,7 @@
 				const result = await sendJson("api/audio", { action: "upload", name: file.name, data: base64 });
 				if (!result.ok) localErrors.unshift({ name: file.name, message: result.message });
 			} catch (e) {
-				localErrors.unshift({ name: file.name, message: e.message === "413" ? "文件太大" : "发送失败，游戏可能已经关闭" });
+				localErrors.unshift({ name: file.name, message: e.message === "413" ? tr("文件太大") : tr("发送失败，游戏可能已经关闭") });
 			}
 			localErrors.splice(8);
 			render();
@@ -167,7 +168,7 @@
 			await player.play();
 		} catch (e) {
 			playing = null;
-			localErrors.unshift({ name: "", message: e.message === "404" ? "本机还没有这个文件，正在下载" : "这个浏览器无法播放这个文件" });
+			localErrors.unshift({ name: "", message: e.message === "404" ? tr("本机还没有这个文件，正在下载") : tr("这个浏览器无法播放这个文件") });
 		}
 		render();
 	}
@@ -175,12 +176,12 @@
 	// One name goes; the same recording under another name stays
 	async function remove(nameKey) {
 		const entry = data && data.entries.find(item => item.key === nameKey);
-		if (!entry || !confirm(`从服务器删除“${entry.reference}”？用这个名字的报站器都会不出声，不能撤销。`)) return;
+		if (!entry || !confirm(`${tr("从服务器删除“{0}”？用这个名字的报站器都会不出声，不能撤销。", entry.reference)}`)) return;
 		try {
 			const result = await sendJson("api/audio", { action: "delete", key: nameKey });
 			if (!result.ok) localErrors.unshift({ name: entry.name, message: result.message });
 		} catch (e) {
-			localErrors.unshift({ name: entry.name, message: "发送失败，游戏可能已经关闭" });
+			localErrors.unshift({ name: entry.name, message: tr("发送失败，游戏可能已经关闭") });
 		}
 		poll.now();
 	}
@@ -188,6 +189,7 @@
 	poll.now = async () => {
 		try {
 			data = await fetchJson("api/audio");
+			I18N.setLanguage(data.language);
 			connection = "ok";
 		} catch (e) {
 			connection = e.message === "401" ? "key" : "offline";

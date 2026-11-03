@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import mtr.MTR;
 import mtr.Registry;
 import mtr.SecurityConfig;
+import mtr.data.TranslatedMessage;
 import mtr.mappings.Text;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -198,7 +199,7 @@ public final class AudioServer implements IPacket {
 
 			if (chunk.length == 0 || upload.received + chunk.length > upload.bytes.length) {
 				UPLOADS.remove(playerId);
-				sendResult(player, requestId, false, "上传的内容和大小不符");
+				sendResult(player, requestId, false, TranslatedMessage.encode("gui.mtr.audio_size_mismatch"));
 				return;
 			}
 			System.arraycopy(chunk, 0, upload.bytes, upload.received, chunk.length);
@@ -217,7 +218,7 @@ public final class AudioServer implements IPacket {
 			final Entry entry = ENTRIES.get(nameKey);
 			final String reference = entry == null ? nameKey : entry.getReference();
 			final String error = delete(minecraftServer, player.getName().getString(), canManage(player), player.getUUID().toString(), nameKey);
-			sendResult(player, requestId, error == null, error == null ? "已删除“" + reference + "”" : error);
+			sendResult(player, requestId, error == null, error == null ? TranslatedMessage.encode("gui.mtr.audio_deleted", reference) : error);
 		});
 	}
 
@@ -243,12 +244,12 @@ public final class AudioServer implements IPacket {
 					final ServerPlayer player = getPlayer(source);
 					final String reference = StringArgumentType.getString(context, "name").trim();
 					final String[] parts = AnnouncementSound.splitUploaded(reference);
-					final String error = parts == null ? "名字要写成 <命名空间>:<文件名>，例如 steve:下一站.ogg" : delete(source.getServer(), source.getTextName(), canManage(source, player), player == null ? "" : player.getUUID().toString(), AnnouncementSound.getNameKey(parts[0], parts[1]));
-					final String message = error == null ? "已删除“" + reference + "”" : error;
+					final String error = parts == null ? TranslatedMessage.encode("gui.mtr.audio_bad_reference") : delete(source.getServer(), source.getTextName(), canManage(source, player), player == null ? "" : player.getUUID().toString(), AnnouncementSound.getNameKey(parts[0], parts[1]));
+					final String message = error == null ? TranslatedMessage.encode("gui.mtr.audio_deleted", reference) : error;
 					if (player == null) {
-						System.out.println(message);
+						System.out.println(TranslatedMessage.decode(message));
 					} else {
-						player.displayClientMessage(Text.literal(message), false);
+						player.displayClientMessage(TranslatedMessage.toComponent(message), false);
 					}
 					return error == null ? 1 : 0;
 				}))));
@@ -262,16 +263,16 @@ public final class AudioServer implements IPacket {
 	private static String delete(MinecraftServer minecraftServer, String deleterName, boolean canManage, String deleterId, String nameKey) {
 		final Entry entry = ENTRIES.get(nameKey);
 		if (database == null || entry == null) {
-			return "没有这个音频";
+			return TranslatedMessage.encode("gui.mtr.audio_missing");
 		}
 		if (!canManage && !entry.uploader.equals(deleterId)) {
-			return "没有删除这个音频的权限";
+			return TranslatedMessage.encode("gui.mtr.audio_no_delete_permission");
 		}
 		try {
 			database.delete(nameKey, entry.hash);
 		} catch (Exception e) {
 			e.printStackTrace();
-			return "服务器删除失败";
+			return TranslatedMessage.encode("gui.mtr.audio_delete_failed");
 		}
 		ENTRIES.remove(nameKey);
 		if (!hasHash(entry.hash)) {
@@ -340,13 +341,13 @@ public final class AudioServer implements IPacket {
 	 */
 	private static String checkUploadStart(ServerPlayer player, int size) {
 		if (!canUpload(player)) {
-			return "没有上传音频的权限";
+			return TranslatedMessage.encode("gui.mtr.audio_no_permission");
 		}
 		if (size <= 0 || size > getMaxFileBytes()) {
-			return String.format("文件不能超过 %s KB", getMaxFileBytes() / 1024);
+			return TranslatedMessage.encode("gui.mtr.audio_file_too_big_kb", getMaxFileBytes() / 1024);
 		}
 		if (getTotalBytes() + size > getMaxTotalBytes()) {
-			return "服务器的音频空间已满";
+			return TranslatedMessage.encode("gui.mtr.audio_server_full");
 		}
 		final long millis = System.currentTimeMillis();
 		final Deque<Long> times = UPLOAD_TIMES.computeIfAbsent(player.getUUID(), key -> new ArrayDeque<>());
@@ -354,7 +355,7 @@ public final class AudioServer implements IPacket {
 			times.removeFirst();
 		}
 		if (times.size() >= SecurityConfig.audioUploadsPerHour && !isOwner(player)) {
-			return "上传太频繁，请稍后再试";
+			return TranslatedMessage.encode("gui.mtr.audio_too_frequent");
 		}
 		// Every attempt counts, so sending broken files over and over is limited too
 		times.addLast(millis);
@@ -370,7 +371,7 @@ public final class AudioServer implements IPacket {
 			return;
 		}
 		if (info.durationMillis > SecurityConfig.audioMaxSeconds * 1000L) {
-			sendResult(player, upload.requestId, false, String.format("音频不能超过 %s 秒", SecurityConfig.audioMaxSeconds));
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_too_long_seconds", SecurityConfig.audioMaxSeconds));
 			return;
 		}
 		final String hash = AudioFiles.hash(upload.bytes);
@@ -381,9 +382,9 @@ public final class AudioServer implements IPacket {
 		final Entry existing = ENTRIES.get(nameKey);
 		if (existing != null) {
 			if (existing.hash.equals(hash)) {
-				sendResult(player, upload.requestId, true, "已经上传过“" + existing.name + "”");
+				sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_already_uploaded", existing.name));
 			} else {
-				sendResult(player, upload.requestId, false, "你已经有同名的音频“" + existing.name + "”，请改名或先删除再上传");
+				sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_same_name", existing.name));
 			}
 			return;
 		}
@@ -393,11 +394,11 @@ public final class AudioServer implements IPacket {
 			ENTRIES.put(nameKey, entry);
 		} catch (Exception e) {
 			e.printStackTrace();
-			sendResult(player, upload.requestId, false, "服务器保存失败");
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
 			return;
 		}
 		System.out.printf("%s uploaded announcement audio \"%s\" (%s, %s bytes)%n", player.getName().getString(), name, hash, upload.bytes.length);
-		sendResult(player, upload.requestId, true, "已上传“" + name + "”");
+		sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_uploaded", name));
 		sendListToAll(minecraftServer);
 	}
 

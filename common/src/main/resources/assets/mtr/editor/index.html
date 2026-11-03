@@ -3,49 +3,49 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>MTR 高级编辑器</title>
+	<title data-i18n="MTR 高级编辑器">MTR 高级编辑器</title>
 	<link rel="stylesheet" href="editor.css">
 </head>
 <body>
 <header class="top">
-	<button class="tree-toggle" id="btn-tree" aria-controls="tree" aria-expanded="true" title="显示或收起线路和车厂">☰</button>
-	<h1>MTR 高级编辑器</h1>
-	<span class="tag" id="draft-tag">没有草稿</span>
+	<button class="tree-toggle" id="btn-tree" aria-controls="tree" aria-expanded="true" title="显示或收起线路和车厂" data-i18n-title="显示或收起线路和车厂">☰</button>
+	<h1 data-i18n="MTR 高级编辑器">MTR 高级编辑器</h1>
+	<span class="tag" id="draft-tag" data-i18n="没有草稿">没有草稿</span>
 	<span class="spacer"></span>
-	<a class="button-link" href="audio.html" title="上传和管理报站音频">报站音频</a>
-	<label class="day">运行日
+	<a class="button-link" href="audio.html" title="上传和管理报站音频" data-i18n-title="上传和管理报站音频" data-i18n="报站音频">报站音频</a>
+	<label class="day"><span data-i18n="运行日">运行日</span>
 		<select id="day">
-			<option value="0">周一</option>
-			<option value="1">周二</option>
-			<option value="2">周三</option>
-			<option value="3">周四</option>
-			<option value="4">周五</option>
-			<option value="5">周六</option>
-			<option value="6">周日</option>
+			<option value="0" data-i18n="周一">周一</option>
+			<option value="1" data-i18n="周二">周二</option>
+			<option value="2" data-i18n="周三">周三</option>
+			<option value="3" data-i18n="周四">周四</option>
+			<option value="4" data-i18n="周五">周五</option>
+			<option value="5" data-i18n="周六">周六</option>
+			<option value="6" data-i18n="周日">周日</option>
 		</select>
 	</label>
-	<button id="btn-new" aria-haspopup="menu">新建 ▾</button>
-	<button id="btn-delete" disabled title="先选中一个种别">删除种别</button>
-	<button id="btn-apply" class="primary" disabled title="把草稿发给游戏">应用</button>
+	<button id="btn-new" aria-haspopup="menu" data-i18n="新建 ▾">新建 ▾</button>
+	<button id="btn-delete" disabled title="先选中一个种别" data-i18n-title="先选中一个种别" data-i18n="删除种别">删除种别</button>
+	<button id="btn-apply" class="primary" disabled title="把草稿发给游戏" data-i18n-title="把草稿发给游戏" data-i18n="应用">应用</button>
 </header>
 
 <div class="app">
-	<nav class="tree" id="tree" aria-label="线路和车厂"></nav>
+	<nav class="tree" id="tree" aria-label="线路和车厂" data-i18n-aria-label="线路和车厂"></nav>
 	<div class="scrim" id="scrim"></div>
 	<main>
 		<div class="tabs" role="tablist">
-			<button class="tab" id="tab-table" role="tab" aria-selected="false">汇总时刻表</button>
-			<button class="tab" id="tab-diagram" role="tab" aria-selected="true">运行图</button>
-			<button id="btn-split" aria-pressed="false" title="运行图在上，时刻表在下" hidden>上下显示</button>
+			<button class="tab" id="tab-table" role="tab" aria-selected="false" data-i18n="汇总时刻表">汇总时刻表</button>
+			<button class="tab" id="tab-diagram" role="tab" aria-selected="true" data-i18n="运行图">运行图</button>
+			<button id="btn-split" aria-pressed="false" title="运行图在上，时刻表在下" data-i18n-title="运行图在上，时刻表在下" data-i18n="上下显示" hidden>上下显示</button>
 			<span class="crumb" id="crumb"></span>
 			<span class="tools">
-				<button id="btn-zoom-out" title="缩小时间轴">−</button>
-				<button id="btn-zoom-in" title="放大时间轴">＋</button>
+				<button id="btn-zoom-out" title="缩小时间轴" data-i18n-title="缩小时间轴">−</button>
+				<button id="btn-zoom-in" title="放大时间轴" data-i18n-title="放大时间轴">＋</button>
 			</span>
 		</div>
 		<div class="banner" id="banner" hidden></div>
 		<section class="view diagram" id="view-diagram">
-			<div class="canvas-wrap" id="canvas-wrap"><canvas id="canvas" aria-label="运行图"></canvas></div>
+			<div class="canvas-wrap" id="canvas-wrap"><canvas id="canvas" aria-label="运行图" data-i18n-aria-label="运行图"></canvas></div>
 			<aside class="inspector" id="inspector"></aside>
 		</section>
 		<section class="view table-view" id="view-table" hidden></section>
@@ -55,6 +55,7 @@
 <footer class="status" id="status"></footer>
 <div class="tooltip" id="tooltip" hidden></div>
 <dialog id="dialog"></dialog>
+<script src="i18n.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

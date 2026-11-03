@@ -5,6 +5,7 @@ import mtr.RegistryClient;
 import mtr.audio.AnnouncementSound;
 import mtr.audio.AudioDatabase;
 import mtr.audio.AudioFiles;
+import mtr.data.TranslatedMessage;
 import mtr.packet.IPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
@@ -111,21 +112,21 @@ public final class AudioCache implements IPacket {
 	 */
 	public static int upload(String name, byte[] bytes) throws AudioFiles.InvalidAudioException {
 		if (!canUpload) {
-			throw new AudioFiles.InvalidAudioException("没有上传音频的权限");
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_no_permission"));
 		}
 		if (bytes.length > maxFileBytes) {
-			throw new AudioFiles.InvalidAudioException(String.format("文件不能超过 %s KB", maxFileBytes / 1024));
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_file_too_big_kb", maxFileBytes / 1024));
 		}
 		final AudioFiles.Info info = AudioFiles.check(bytes);
 		if (info.durationMillis > maxSeconds * 1000L) {
-			throw new AudioFiles.InvalidAudioException(String.format("音频不能超过 %s 秒", maxSeconds));
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_too_long_seconds", maxSeconds));
 		}
 
 		final String fileName = AudioFiles.withExtension(AudioFiles.cleanName(name));
 		// Only the server knows which names belong to mods, so this player's own files are told by the server's list
 		final String hash = AudioFiles.hash(bytes);
 		if (ENTRIES.stream().anyMatch(entry -> entry.mine && entry.name.equalsIgnoreCase(fileName) && !entry.hash.equals(hash))) {
-			throw new AudioFiles.InvalidAudioException("已经有同名的音频“" + fileName + "”，请改名后再上传");
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_same_name_local", fileName));
 		}
 
 		final int requestId = addRequest(fileName);

@@ -1,5 +1,7 @@
 package mtr.audio;
 
+import mtr.data.TranslatedMessage;
+
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -104,10 +106,10 @@ public final class AudioFiles {
 	 */
 	public static Info check(byte[] bytes) throws InvalidAudioException {
 		if (bytes.length == 0) {
-			throw new InvalidAudioException("文件是空的");
+			throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_empty"));
 		}
 		if (bytes.length > MAX_FILE_BYTES) {
-			throw new InvalidAudioException("文件太大");
+			throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_too_big"));
 		}
 
 		final byte[][] headers = new byte[3][];
@@ -120,10 +122,10 @@ public final class AudioFiles {
 
 		while (offset < bytes.length) {
 			if (bytes.length - offset < PAGE_HEADER_BYTES || bytes[offset] != 'O' || bytes[offset + 1] != 'g' || bytes[offset + 2] != 'g' || bytes[offset + 3] != 'S') {
-				throw new InvalidAudioException(offset == 0 ? "不是 Ogg 文件" : "文件末尾有多余的内容或已损坏");
+				throw new InvalidAudioException(offset == 0 ? TranslatedMessage.encode("gui.mtr.audio_not_ogg") : TranslatedMessage.encode("gui.mtr.audio_trailing_data"));
 			}
 			if (bytes[offset + 4] != 0) {
-				throw new InvalidAudioException("不支持的 Ogg 版本");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_ogg_version"));
 			}
 			final int flags = bytes[offset + 5] & 0xFF;
 			final long granule = readLong(bytes, offset + 6);
@@ -133,7 +135,7 @@ public final class AudioFiles {
 			final int segmentCount = bytes[offset + 26] & 0xFF;
 			final int bodyStart = offset + PAGE_HEADER_BYTES + segmentCount;
 			if (bodyStart > bytes.length) {
-				throw new InvalidAudioException("文件不完整");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_incomplete"));
 			}
 			int bodyLength = 0;
 			for (int i = 0; i < segmentCount; i++) {
@@ -141,22 +143,22 @@ public final class AudioFiles {
 			}
 			final int pageEnd = bodyStart + bodyLength;
 			if (pageEnd > bytes.length) {
-				throw new InvalidAudioException("文件不完整");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_incomplete"));
 			}
 			if (crc(bytes, offset, pageEnd - offset) != crc) {
-				throw new InvalidAudioException("文件已损坏（校验不符）");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_bad_checksum"));
 			}
 
 			if (pageNumber == 0) {
 				if ((flags & FLAG_FIRST) == 0) {
-					throw new InvalidAudioException("不是 Ogg 文件");
+					throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_not_ogg"));
 				}
 				serial = pageSerial;
 			} else if (pageSerial != serial || (flags & FLAG_FIRST) != 0) {
-				throw new InvalidAudioException("只支持只有一条音轨的文件");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_one_stream"));
 			}
 			if (sequence != pageNumber) {
-				throw new InvalidAudioException("文件已损坏（页序不符）");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_bad_page_order"));
 			}
 			if (granule != -1) {
 				lastGranule = granule;
@@ -166,7 +168,7 @@ public final class AudioFiles {
 			if (headerCount < 3) {
 				// A page carries on a packet exactly when the last one left it unfinished
 				if (((flags & FLAG_CONTINUED) != 0) != (packet.size() > 0)) {
-					throw new InvalidAudioException("文件已损坏");
+					throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_corrupt"));
 				}
 				int segmentStart = bodyStart;
 				for (int i = 0; i < segmentCount && headerCount < 3; i++) {
@@ -187,7 +189,7 @@ public final class AudioFiles {
 		}
 
 		if (headerCount < 3) {
-			throw new InvalidAudioException("文件不完整");
+			throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_incomplete"));
 		}
 		final byte[] identification = headers[0];
 		final int channels = identification[11] & 0xFF;
@@ -197,23 +199,23 @@ public final class AudioFiles {
 
 	private static void checkHeader(byte[] header, int index) throws InvalidAudioException {
 		if (index == 0 && header.length >= 8 && new String(header, 0, 8, StandardCharsets.ISO_8859_1).equals("OpusHead")) {
-			throw new InvalidAudioException("只支持 Ogg Vorbis，不支持 Opus");
+			throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_opus"));
 		}
 		final int type = index * 2 + 1;
 		if (header.length < 7 || (header[0] & 0xFF) != type || !new String(header, 1, 6, StandardCharsets.ISO_8859_1).equals("vorbis")) {
-			throw new InvalidAudioException(index == 0 ? "只支持 Ogg Vorbis" : "Vorbis 文件头不完整");
+			throw new InvalidAudioException(index == 0 ? TranslatedMessage.encode("gui.mtr.audio_vorbis_only") : TranslatedMessage.encode("gui.mtr.audio_vorbis_header_incomplete"));
 		}
 		if (index == 0) {
 			if (header.length != 30 || readInt(header, 7) != 0 || (header[29] & 1) == 0) {
-				throw new InvalidAudioException("Vorbis 文件头无效");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_vorbis_header_invalid"));
 			}
 			final int channels = header[11] & 0xFF;
 			if (channels < 1 || channels > MAX_CHANNELS) {
-				throw new InvalidAudioException("只支持单声道或立体声");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_channels"));
 			}
 			final int sampleRate = readInt(header, 12);
 			if (sampleRate < MIN_SAMPLE_RATE || sampleRate > MAX_SAMPLE_RATE) {
-				throw new InvalidAudioException("不支持的采样率");
+				throw new InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_sample_rate"));
 			}
 		}
 	}

@@ -33,11 +33,11 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private final float angle;
 	private final WidgetBetterTextField textFieldAngle = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", MAX_VALUE_LENGTH);
 	private final WidgetBetterTextField textFieldTransition = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
-	private final WidgetBetterCheckbox checkboxKeyNode = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal("Key node / 关键节点"), checked -> {
+	private final WidgetBetterCheckbox checkboxKeyNode = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.node_key_node"), checked -> {
 	});
 	private final WidgetBetterTextField textFieldTurnBack = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "0", MAX_VALUE_LENGTH);
 	private final Rail turnBackRail;
-	private final WidgetBetterCheckbox checkboxBoundary = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal("Path boundary / 寻路边界（寻路不穿过这个节点）"), checked -> {
+	private final WidgetBetterCheckbox checkboxBoundary = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.node_path_boundary"), checked -> {
 	});
 	// The rails from this node, each of which can be a pathfinding boundary on its own
 	private final List<BlockPos> connectedNodes = new ArrayList<>();
@@ -54,9 +54,9 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int ROW_TURN_BACK = 3;
 	private static final int ROW_BOUNDARY = 4;
 	private static final int ROW_SEGMENTS = 5;
-	private static final Component LABEL_ANGLE = Text.literal("Angle / 角度 (-180~180°)");
-	private static final Component LABEL_TRANSITION = Text.literal("Transition / 缓和曲线 (Not available)");
-	private static final Component LABEL_TURN_BACK = Text.literal("Turn back wait / 折返停留 (s)");
+	private static final Component LABEL_ANGLE = Text.translatable("gui.mtr.node_angle");
+	private static final Component LABEL_TRANSITION = Text.translatable("gui.mtr.node_transition");
+	private static final Component LABEL_TURN_BACK = Text.translatable("gui.mtr.node_turn_back");
 
 	public NodeAngleScreen(BlockPos pos) {
 		super(Text.literal(""));
@@ -70,9 +70,9 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			connectedNodes.addAll(connections.keySet());
 			connectedNodes.sort(Comparator.comparingDouble((BlockPos endPos) -> endPos.distSqr(pos)).thenComparingLong(BlockPos::asLong));
 		}
-		connectedNodes.forEach(endPos -> checkboxSegments.add(new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.literal(String.format("Boundary rail to / 边界轨道 → %s, %s, %s", endPos.getX(), endPos.getY(), endPos.getZ())), checked -> {
+		connectedNodes.forEach(endPos -> checkboxSegments.add(new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.node_boundary_rail", endPos.getX(), endPos.getY(), endPos.getZ()), checked -> {
 		})));
-		buttonSet = UtilitiesClient.newButton(Text.literal("Set / 设定"), button -> onSet());
+		buttonSet = UtilitiesClient.newButton(Text.translatable("gui.mtr.node_set"), button -> onSet());
 		buttonCancel = UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose());
 	}
 
@@ -187,17 +187,17 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		final long node = pos.asLong();
 		// At a turnout a node boundary separates every branch from the others, which is rarely what is wanted
 		if (checkboxBoundary.selected() && connectedNodes.size() > 2) {
-			return "Turnout: use a boundary rail / 这是道岔，节点边界会把每个分支都切开，请改为勾选下面的某一条边界轨道";
+			return Text.translatable("gui.mtr.node_turnout_boundary").getString();
 		}
 		if (regionData.uncutNodes.contains(node)) {
-			return "Both sides still connected / 两侧仍有别的连接，这个节点边界没有切开";
+			return Text.translatable("gui.mtr.node_not_cut_node").getString();
 		}
 		for (final BlockPos endPos : connectedNodes) {
 			if (regionData.uncutSegments.contains(PathBoundaries.segmentKey(node, endPos.asLong()))) {
-				return "Both sides still connected / 两侧仍有别的连接，这段边界轨道没有切开";
+				return Text.translatable("gui.mtr.node_not_cut_rail").getString();
 			}
 		}
-		return regionData.boundaries.isEmpty() ? null : String.format("Regions / 区域 %s 个", regionData.regionCount);
+		return regionData.boundaries.isEmpty() ? null : Text.translatable("gui.mtr.node_regions", regionData.regionCount).getString();
 	}
 
 	private static int getRowY(int row) {

@@ -1,0 +1,484 @@
+"use strict";
+
+/*
+ * Translations for the advanced editor's pages. The pages are written in Simplified Chinese, and tr() looks that text up
+ * here for other languages, keeping it as it is when there is no translation. {0}, {1} and so on are filled in with the
+ * arguments, and {{ and }} stand for plain braces. trc() is for a word that needs a different translation in one place,
+ * looked up as "context\u0004text".
+ *
+ * The language follows the game once a page has heard from it (the "language" field of its data), and until then the
+ * last language the game used, or the browser's. Chinese of any region shows the Simplified Chinese text; any language
+ * without a dictionary here shows English.
+ */
+const I18N = (() => {
+	const DICTIONARIES = {
+		en_us: {
+			// Weekdays
+			"周一": "Monday", "周二": "Tuesday", "周三": "Wednesday", "周四": "Thursday", "周五": "Friday", "周六": "Saturday", "周日": "Sunday",
+			"一": "Mo", "二": "Tu", "三": "We", "四": "Th", "五": "Fr", "六": "Sa", "日": "Su",
+			"周{0}": "{0}",
+			"weekday separator\u0004": " ",
+
+			// Pages
+			"MTR 高级编辑器": "MTR Advanced Editor",
+			"MTR 报站音频": "MTR Announcement Audio",
+			"显示或收起线路和车厂": "Show or hide lines and depots",
+			"上传和管理报站音频": "Upload and manage announcement audio",
+			"报站音频": "Announcement audio",
+			"运行日": "Day",
+			"新建 ▾": "New ▾",
+			"应用": "Apply",
+			"把草稿发给游戏": "Send the draft to the game",
+			"线路和车厂": "Lines and depots",
+			"运行图在上，时刻表在下": "Diagram above, timetable below",
+			"上下显示": "Split view",
+			"缩小时间轴": "Zoom the time axis out",
+			"放大时间轴": "Zoom the time axis in",
+			"回到运行图和时刻表": "Back to the diagram and timetables",
+			"← 高级编辑器": "← Advanced editor",
+			"上传音频": "Upload audio",
+			"名称": "Name",
+			"时长": "Length",
+			"大小": "Size",
+			"上传者": "Uploaded by",
+			"上传时间": "Uploaded",
+			"本机": "Local",
+			"服务器上还没有报站音频。": "There is no announcement audio on the server yet.",
+
+			// Draft and applying
+			"（未命名）": "(unnamed)",
+			"游戏里的这条线路在草稿之后改过": "This route was changed in the game after the draft",
+			"页面的链接已经失效": "The link to this page has expired",
+			"发送失败，游戏可能已经关闭": "Couldn't send, the game may have closed",
+			"正在应用…": "Applying…",
+			"草稿 {0} 项": "Draft: {0} changes",
+			"没有草稿": "No draft",
+			"取消删除": "Don't delete",
+			"删除种别": "Delete service type",
+			"不删除": "Don't delete",
+			"删除": "Delete",
+			"先选中一个种别": "Select a service type first",
+
+			// Timetables
+			"不运行": "never",
+			"表 ": "Table ",
+			"这张表已经有这个时刻的班次": "This timetable already has a service at that time",
+			"写成 07:10，或 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）": "Write 07:10, or 07:10 + 10 * 00:03 (from 07:10, 10 more services every 3 minutes)",
+			"取消": "Cancel",
+			"新建时刻表": "New timetable",
+			"时刻表设置": "Timetable settings",
+			"复制“{0}”的班次": "Copy the services of “{0}”",
+			"班次": "Services",
+			"空表": "Empty timetable",
+			"{0}的全部线路一起建": "Make it for all routes of {0}",
+			"表名": "Name",
+			"休日": "Holiday",
+			"运行的星期": "Days it runs",
+			"一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。": "Each day uses one timetable, so the days ticked move from their old timetable to this one. Copied services keep their one-off exceptions.",
+			"新建": "Create",
+			"确定": "OK",
+			"一条线路最多 {0} 张表": "A route can have at most {0} timetables",
+			"无": "none",
+
+			// Tree
+			"正在读取…": "Loading…",
+			"线路": "Lines",
+			"没有线路": "No lines",
+			"将删除：按“应用”后从游戏里删掉，右键取消": "To be deleted: removed from the game on “Apply”. Right-click to keep it",
+			"有没应用的草稿": "Has changes not applied yet",
+			"汇总时刻表": "Timetable",
+			"运行图": "Diagram",
+			"新建的种别，应用后才在游戏里出现；右键删除": "New service type, it appears in the game once applied. Right-click to remove it",
+			"车厂": "Depots",
+			"没有车厂": "No depots",
+			"运用有没应用的草稿": "Duties have changes not applied yet",
+			"按运用图": "By duty plan",
+			"在线预约": "Online booking",
+			"没有存车线": "No sidings",
+			"存车线": "Siding",
+			"不限": "no limit",
+			"运用有问题": "The duty has problems",
+			" 班": " services",
+			" 留": " stays out",
+			"休": "off",
+			"车 {0}": "Train {0}",
+
+			// Diagram and inspector
+			"回库": "To depot",
+			"接续": "Continues as",
+			"之后": "Then",
+			"选中的班次": "Selected service",
+			"表": "Timetable",
+			"{0} 班": "{0} services",
+			"整条线路的配线图": "Track layout of the whole route",
+			"配线图": "Track layout",
+			"股道问题": "Track problems",
+			"右键线路“编辑停站…”在连通图上改股道。": "Right-click a route and choose “Edit stops…” to change its tracks on the connection graph.",
+			"滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。": "Scroll to zoom the time axis, drag to pan, Shift + scroll to move up and down.",
+			"单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。": "Click a line to select that service; dragging the square at the end of a stop changes only that service (an exception, in blue). Double-click to select every service of that service type and direction, and drag a square to change the stop time for the whole timetable.",
+			"时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。": "In the timetable, click a cell to type a time, or right-click to set passing, waiting to be overtaken, or to copy to later services. Changes are kept as a draft and go to the game when you click “Apply” at the top.",
+			"在左边选一条线路的汇总时刻表": "Choose a route's timetable on the left",
+			" · 正在向服务端取各站时刻": " · getting stop times from the server",
+			" · 有没应用的草稿": " · has changes not applied yet",
+			"由高级编辑器管理": "Managed by the advanced editor",
+			"游戏内可编辑": "Editable in the game",
+			"（草稿）": " (draft)",
+			"交回游戏内编辑": "Hand back to the game",
+			"改由高级编辑器管理": "Manage in the advanced editor",
+			"切到这张表运行的第一天；右键改名、改星期或删除": "Go to the first day this timetable runs. Right-click to rename it, change its days or delete it",
+			"余裕": "Margin",
+			"添加班次": "Add services",
+			"添加": "Add",
+			"{0}没有表，这一天不运行。{1}": "No timetable on {0}, so it doesn't run that day. {1}",
+			"{0} · {1} 班{2}{3}": "{0} · {1} services{2}{3}",
+			"由高级编辑器管理的线路，游戏里的时刻表和停站只能查看": "Routes managed by the advanced editor can only be viewed in the game's timetable and stop settings",
+			"＋ 新建表": "＋ New timetable",
+			"启用时刻表": "Use the timetable",
+			"这条线路{0}没有班次": "This route has no services on {0}",
+			"有只改这一班的例外": "Has exceptions for this service only",
+			"直通": "Through",
+			"点这里改班次时刻；右键更多": "Click to change the service's time. Right-click for more",
+			"车站": "Station",
+			"只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车": "Only this service's times change: trains still stop as the route says, until paths are made per service (E2)",
+			"快过最快时刻，列车跑不到": "Faster than the fastest time, trains can't keep it",
+			"发": "Dep",
+			"arrival\u0004到": "Arr",
+			"通过": "Pass",
+			"（时刻边界，可以在这里接出或接入）": " (timetable boundary, services can leave or join here)",
+			"界": "B",
+			"车厂的列车从这里接入环线": "Trains from the depot join the loop here",
+			"入": "E",
+			"时刻": "Time",
+
+			// Context menus of services and cells
+			"删除这一班": "Delete this service",
+			"跑完这一班不回库": "Stay on the line after this service",
+			"跑完这一班回库": "Return to the depot after this service",
+			"这一班和之后的 {0} 班一起平移…": "Shift this and the {0} later services…",
+			"平移多少分钟？负数是提前": "Shift by how many minutes? Negative is earlier",
+			"清除这一班的全部例外": "Clear all exceptions of this service",
+			"清除这一班的直通": "Clear the through link of this service",
+			"批量新建直通关系…": "Create through links…",
+			"改为在这一站停车（只改这一班）": "Stop at this station (this service only)",
+			"设为通过这一站（只改这一班）": "Pass this station (this service only)",
+			"取消待避（只改这一班）": "Don't wait to be overtaken (this service only)",
+			"设为待避（只改这一班，在这一站等后车通过）": "Wait to be overtaken (this service only, waits here for the train behind to pass)",
+			"把这一格的例外推到之后的 {0} 班": "Copy this cell's exception to the {0} later services",
+			"把这一班的这个时刻改成整张表的": "Use this time for the whole timetable",
+			"恢复按表的时刻": "Go back to the timetable's time",
+			"设为出库列车接入这条环线的站": "Make this where trains from the depot join the loop",
+			"出库列车改回从首站接入": "Trains from the depot join at the first stop again",
+			"设为接出点（从{0}直通到别的线路）": "Set as through exit (continue from {0} onto another route)",
+			"设为接入点（{0} 班从{1}接到这里）": "Set as through entry (the {0} service continues here from {1})",
+			"（待避线）": " (passing track)",
+			"；还可停 {0}": "; can also use {0}",
+			"站台 {0}{1}": " platform {0}{1}",
+
+			// Loops
+			"留在线上": "Stays on the line",
+			"车 {0}：": "Train {0}: ",
+			"（首站）": " (first stop)",
+			"8 天（车厂不回库）": "8 days (the depot doesn't take trains back)",
+			"30 分钟": "30 minutes",
+			"环线运行（{0}）": "Loop running ({0})",
+			"列车": "Trains",
+			"{0} 列跑 {1} 班": "{0} trains run {1} services",
+			"出库接入": "Joins from the depot at",
+			"等下一圈": "Wait for the next lap",
+			"最多 {0}": "Up to {0}",
+			"每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。": "After each lap a train takes the first free service it can make at the first stop; services nobody can make get a train from the depot. Dashed lines on the bottom row of the diagram are waits at the first stop for the next lap.",
+
+			// Duties
+			"这一班当天不运行，可能时刻表改过": "This service doesn't run that day, the timetable may have changed",
+			"线路不在这个车厂": "The route is not in this depot",
+			"这一班也分给了别的车": "This service is also given to another train",
+			"衔接时间不够，上一班还没到": "Not enough time to connect, the previous service hasn't arrived",
+			"站台对不上：上一班在{0}结束": "Platforms don't match: the previous service ends at {0}",
+			"留在线上过夜，但第二天接的车 {0} 没有运用": "Stays out overnight, but train {0} it continues as the next day has no duty",
+			"第二天接的车 {0} 的运用不从这里出发": "The duty of train {0}, which it continues as the next day, doesn't start here",
+			"还有一列过夜的车第二天也接车 {0}": "Another train staying out overnight also continues as train {0}",
+			"{0} 不在车厂“{1}”里，先在游戏里把线路加进车厂。": "{0} is not in depot “{1}”. Add the route to the depot in the game first.",
+			"{0} {1} 已从车 {2} 移出，按运用图时这一班不运行。": "{0} {1} removed from train {2}. With a duty plan, this service doesn't run.",
+			"，从车 {0} 移过来": ", moved from train {0}",
+			"{0} {1} 加进车 {2}{3}。": "{0} {1} added to train {2}{3}.",
+			"已删除的线路": "Deleted route",
+			"移出这一班": "Remove this service",
+			"（现在和 {0} 共用，改了会分开）": " (shared with {0} now, changing it splits them)",
+			"在线预约（运用先存着，按运用运行要等以后）": "Online booking (duties are kept, running by them comes later)",
+			"这天没有运用，在运行图上点班次加进来。": "No duty this day. Click services on the diagram to add them.",
+			"跑完最后一班留在线上过夜": "Stay out overnight after the last service",
+			"（自己）": " (itself)",
+			"（不从这里出发）": " (doesn't start here)",
+			"（没有运用）": " (no duty)",
+			"车 {0}{1}{2}": "Train {0}{1}{2}",
+			"第二天接着跑": "Next day continue as",
+			"运用：车 {0}": "Duty: train {0}",
+			"方式": "Mode",
+			"选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 {0} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。": "While this train is selected, click a service on the diagram to add it and click again to remove it; services of other trains move over. This changes {0} (the days with the same timetables). Press Esc to deselect. Depots using a duty plan send out trains by these duties; refresh the depot's paths after applying.",
+			"用自动生成的运用替换“{0}”草稿里的运用？": "Replace the duties in the draft for “{0}” with generated ones?",
+			"用自动生成的运用替换“{0}”现在的运用？应用前都还在草稿里。": "Replace the current duties of “{0}” with generated ones? They stay in the draft until applied.",
+			"正在生成运用…": "Generating duties…",
+			"这个车厂没有存车线，生成不了运用。": "This depot has no sidings, so no duties can be generated.",
+			"已生成：最多同时 {0} 列车在线上。": "Generated: up to {0} trains on the line at once. ",
+			"有 {0} 班没有车可派，存车线放的车不够。": "{0} services have no train, the sidings don't hold enough. ",
+			"{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。": "{0} have no stop times yet and were left out; open their timetables or refresh the depot's paths, then generate again. ",
+			"其他问题：{0}": "Other problems: {0}. ",
+			"先检查一遍，再按“应用”。": "Check them, then press “Apply”.",
+			"生成失败：": "Couldn't generate: ",
+			"游戏可能已经关闭": "the game may have closed",
+
+			// Tracks and layouts
+			"（不属于车站）": "(no station)",
+			"第 {0} 站": "Stop {0}",
+			"{0}的站台没有轨道": "The platform at {0} has no rail",
+			"{0}的站台和首站不在同一个线网里（轨道没有连起来）": "The platform at {0} is not on the same network as the first stop (the rails don't connect)",
+			"{0}到{1}沿轨道走不通": "No way along the rails from {0} to {1}",
+			"各站单独走得通，连起来要在中途反复掉头才行": "Each stop can be reached, but only by turning back again and again on the way",
+			"在{0}掉头": "Turns back at {0}",
+			"{0}到{1}绕路：换股可以近得多": "{0} to {1} goes the long way: another track is much shorter",
+			"没有车站。": "No stations.",
+			"站台连通图": "Platform connection graph",
+			"收起配线图": "Hide the track layout",
+			"看这一站的配线图": "Show this station's track layout",
+			"↶ 掉头": "↶ Turn back",
+			"已固定，点一下取消": "Fixed, click to unfix",
+			"点一下固定走这一股": "Click to fix this track",
+			"和其他站连不起来，点一下仍可固定": "Doesn't connect to the other stops, click to fix it anyway",
+			" 待避": " passing",
+			"首末站，停车": "First or last stop, stops",
+			"停车，点一下改为通过": "Stops, click to pass",
+			"通过，点一下改为停车": "Passes, click to stop",
+			"停": "Stop",
+			"过": "Pass",
+			"正在读取轨道…": "Loading rails…",
+			"服务端没有回应，稍后再点一次站名": "The server didn't answer, click the station name again later",
+			"读取配线图失败": "Couldn't load the track layout",
+			"{0} 配线图": "{0} track layout",
+			"放大": "Zoom in",
+			"缩小": "Zoom out",
+			"不属于车站": "No station",
+			"：和这条线的轨道不连": ": not connected to this route's rails",
+			"轨道太多，只画了一部分。": "Too many rails, only some are drawn.",
+			"列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。": "Trains run left to right. Grey platforms belong to other stations or don't connect; drag to pan, ＋/− to zoom.",
+			"固定的站台连不起来：{0}。取消其中一个再试。": "The fixed platforms don't connect: {0}. Unfix one of them and try again.",
+			"，通过 {0} 站：{1}": ", passes {0}: {1}",
+			"，全部停车": ", stops at all",
+			"{0} 站，停 {1} 站{2}": "{0} stations, stops at {1}{2}",
+
+			// New service type
+			"选好不同的起点站和终点站": "Choose different first and last stations",
+			"经过选的途经站": " through the chosen stations",
+			"从{0}{1}到{2}沿轨道走不通": "No way along the rails from {0}{1} to {2}",
+			"反方向沿轨道走不通，只建这个方向": "No way along the rails the other way, only this direction is made",
+			"点一下去掉": "Click to remove",
+			"＋ 途经站…": "＋ Via station…",
+			"新建种别": "New service type",
+			"线路组": "Line",
+			"起点": "From",
+			"站台": "Platform",
+			"终点": "To",
+			"反方向一起建": "Also make the other direction",
+			"种别": "Service type",
+			"急行": "Express",
+			"颜色": "Colour",
+			"线路名": "Route name",
+			"按线路组和种别自动起名": "Named from the line and service type",
+			"车站和股道": "Stations and tracks",
+			"车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站，不照抄现有线路。只列和起点轨道连在一起的车站。连线表示列车不掉头能开过去；点一股固定它，其他站自动换成走得通的股道；最下一行点一下在停车和通过之间切换。": "The stations are those on the shortest way along the rails from the first to the last station (through the via stations in order), not copied from an existing route. Only stations whose rails connect to the first one are listed. A link means a train can run there without turning back; click a track to fix it and the other stops switch to tracks that work; click the bottom row to switch between stopping and passing.",
+			"可以留空，例如 08:05 + 12 * 00:30": "Can be empty, such as 08:05 + 12 * 00:30",
+			"加入车厂": "Add to depot",
+			"线路组的这条线路给出颜色、时刻表和车厂。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。": "The chosen route of the line gives the colour, timetable and depot. The new service type stays in the draft until “Apply” makes it in the game, managed by the advanced editor. Adding it to a depot refreshes the depot's paths, and the fastest times come once they are refreshed.",
+			"写上种别名，例如 急行": "Write a service type, such as Express",
+			"选好起点和终点": "Choose the first and last stations",
+			"有固定的股道连不起来": "Some fixed tracks don't connect",
+			"不加入，之后在游戏里加": "None, add it in the game later",
+			"任一股": "Any track",
+
+			// Stops and route layout
+			"停站：{0}": "Stops: {0}",
+			"有车站的站台没有轨道，没法按轨道选股道。先在游戏里把站台放回轨道上。": "A station's platform has no rail, so tracks can't be chosen along the rails. Put the platform back on a rail in the game first.",
+			"关闭": "Close",
+			"现在的股道沿轨道走得通，没有掉头和绕路。": "The current tracks work along the rails, with no turning back or long ways round.",
+			"连线表示列车不掉头能开过去。点一股固定它，其他站自动换成走得通、改动最少的股道；最下一行点一下在停车和通过之间切换。车站的先后和增删在游戏的仪表盘里改。": "A link means a train can run there without turning back. Click a track to fix it and the other stops switch to tracks that work with the fewest changes; click the bottom row to switch between stopping and passing. The order of stations and adding or removing them is done in the game's dashboard.",
+			"改股道会清掉线路手画的路径，应用后要刷新车厂路径。": "Changing tracks clears the route's hand-drawn path; refresh the depot's paths after applying.",
+			"正在沿路径取轨道…": "Getting the rails along the path…",
+			"服务端没有回应，关掉再打开试试": "The server didn't answer, close this and try again",
+			"读取线路配线图失败": "Couldn't load the route's track layout",
+			"线路配线图：{0}": "Route track layout: {0}",
+			"沿这条线路在游戏里的路径拉直，从左往右是行车方向，上方是行车方向的左侧。按游戏里已应用的线路画，草稿里的股道改动应用后才显示。": "The route's path in the game drawn straight: left to right is the direction of travel, and the top is the left side. It shows the route as applied in the game; track changes in the draft show once applied.",
+			"侧向不放大": "No sideways stretch",
+			"侧向放大 2 倍": "Stretch sideways 2 times",
+			"侧向放大 3 倍": "Stretch sideways 3 times",
+			"沿轨道寻不出这条线路的路径。先右键线路“编辑停站…”，在连通图里修好股道。": "No path along the rails can be found for this route. Right-click the route, choose “Edit stops…” and fix its tracks on the connection graph.",
+			"线路配线图": "Route track layout",
+			"（通过）": " (passes)",
+			"：股道有问题": ": track problem",
+			"{0}{1}{2}，点一下打开这一站": "{0}{1}{2}, click to open this station",
+			"有 {0} 站的站台不在路径上，没有标出。": "{0} stops have platforms off the path and aren't marked.",
+			"全长约 {0} 格，路径两侧各 {1} 格以内的轨道。红色、黄色的站名是股道有问题的站。": "About {0} blocks long, with rails up to {1} blocks either side of the path. Station names in red or yellow have track problems.",
+
+			// Deleting a service type
+			"车厂 {0} 跑这个种别，删除后不再跑它，要刷新车厂路径": "Depots {0} run this service type and won't after deleting it; refresh their paths",
+			"运用里有 {0} 班是它的，这些运用会走不通，要改运用": "{0} services in duties are of it; those duties won't work and need changing",
+			"别的种别有 {0} 班直通到它，这些直通会失效": "{0} services of other service types run through onto it; those links will stop working",
+			"：它的车站、停站设置和全部时刻表都从游戏里删掉，不能恢复。": ": its stations, stop settings and all timetables are removed from the game for good.",
+			"先放在草稿里，按“应用”才删除。应用之前可以右键取消。这个种别别的没应用的改动也一起丢掉。": "It stays in the draft until “Apply” deletes it, and can be undone by right-clicking before then. Other changes to this service type that aren't applied are dropped too.",
+
+			// Through links
+			"{0}（末站）": "{0} (last stop)",
+			"{0}（时刻边界）": "{0} (timetable boundary)",
+			"{0}（首站）": "{0} (first stop)",
+			"新建直通关系": "New through links",
+			"从": "From",
+			"在": "at",
+			"接出": "leaving",
+			"route\u0004到": "To",
+			"接入": "joining",
+			"首站发车在": "First departure from",
+			"到": "to",
+			"之间（{0}的表）": "({0} timetable)",
+			"衔接至少": "Connect in at least",
+			"分钟，最多再等": "minutes, waiting at most",
+			"分钟": "more minutes",
+			"替换这些班次原有的直通": "Replace the through links these services already have",
+			"中途接出和接入只能在游戏里标了时刻边界的站台（站台界面里设置）；没有边界的线路只能末站接首站。每一班接上对方能赶上的第一班，同一班不接两次，等太久的不接。": "Leaving or joining part way only works at platforms marked as timetable boundaries in the game (in the platform screen); routes without boundaries can only link last stop to first stop. Each service links to the first one it can make, no service is linked twice, and waits that are too long are left out.",
+			"时刻写成 07:10": "Write times like 07:10",
+			"没有能接上的班次": "No services can be linked",
+			"{0} 对：\n": "{0} pairs:\n",
+			"{0} 班 {1} {2} 到 → {3} 班 {4} {5} 发": "{0} service, {1} arr {2} → {3} service, {4} dep {5}",
+			"一张表最多 {0} 个班次": "A timetable can have at most {0} services",
+			"已有的 {0} 班没有重复添加": "{0} services already there were not added again",
+
+			// Banner and status
+			"这个页面的链接已经失效。请在游戏的仪表盘里重新点“高级编辑器”。": "The link to this page has expired. Click “Advanced editor” in the game's dashboard again.",
+			"游戏现在不在世界里，进入世界后会自动刷新。": "The game isn't in a world now. The page refreshes once it enters one.",
+			"连不上游戏。游戏关了，或者离开了这个世界。请在游戏的仪表盘里重新点“高级编辑器”。": "Can't reach the game. It closed or left this world. Click “Advanced editor” in the game's dashboard again.",
+			"已设接出点：": "Through exit set: ",
+			"。打开目标线路的时刻表，右键首站或时刻边界站的一格，选“设为接入点”。": ". Open the timetable of the route to join, right-click a cell at its first stop or a timetable boundary, and choose “Set as through entry”.",
+			"没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。": "No permission to edit: needs creative mode or the permission level set by the server. The draft is still saved, apply it once you have permission.",
+			"应用了 {0} 项，下面的没有应用，留在草稿里：": "Applied {0} changes. These weren't applied and stay in the draft:",
+			"车厂{0}的运用：{1}": "Duties of depot {0}: {1}",
+			"新种别 {0}：{1}": "New service type {0}: {1}",
+			"保留草稿": "Keep the draft",
+			"用游戏里的": "Use the game's",
+			"已应用 {0} 项。": "Applied {0} changes.",
+			"部分线路还没有各站时刻，正在向服务端取，取到之前按虚线画。": "Some routes have no stop times yet. They are being fetched from the server and drawn dashed until then.",
+			"选中": "Selected",
+			"本线班次": "Services on this line",
+			"已同步": "Synced",
+			"未连接": "Not connected",
+
+			// Context menus of the tree and top bar
+			"清空这列车当天的运用": "Clear this train's duty for the day",
+			"删除这个库位": "Delete this slot",
+			"添加库位": "Add a slot",
+			"删除最后一个库位": "Delete the last slot",
+			"一键生成运用…": "Generate duties…",
+			"改为在线预约": "Switch to online booking",
+			"改为按运用图": "Switch to duty plan",
+			"丢掉运用的草稿": "Drop the draft duties",
+			"新建种别…": "New service type…",
+			"新建时刻表…": "New timetable…",
+			"照着它新建种别…": "New service type like this…",
+			"线路配线图…": "Route track layout…",
+			"删除这个种别…": "Delete this service type…",
+			"删除这个新建的种别": "Remove this new service type",
+			"种别…": "Service type…",
+			"时刻表…": "Timetable…",
+			"直通关系…": "Through links…",
+			"改名和运行的星期…": "Rename and set days…",
+			"删除这张表": "Delete this timetable",
+			"删除这张表（至少要留一张）": "Delete this timetable (one must be left)",
+			"删除“{0}”和它的 {1} 个班次？": "Delete “{0}” and its {1} services?",
+			"编辑停站…": "Edit stops…",
+
+			// Audio page
+			" 秒": " s",
+			"页面的链接已经失效，请在游戏里重新打开高级编辑器。": "The link to this page has expired. Open the advanced editor in the game again.",
+			"游戏没有响应，可能不在世界里。": "The game isn't answering, it may not be in a world.",
+			"连不上游戏，游戏可能已经关闭。": "Can't reach the game, it may have closed.",
+			"选择 Ogg Vorbis 文件（.ogg）": "Choose Ogg Vorbis files (.ogg)",
+			"没有上传音频的权限": "No permission to upload audio",
+			"已用 {0} / {1}": "Used {0} / {1}",
+			"只支持 Ogg Vorbis（.ogg），单个文件不超过 {0}、{1} 秒。单声道约每秒 6 KB。": "Only Ogg Vorbis (.ogg), each file up to {0} and {1} seconds. Mono is about 6 KB a second.",
+			"你没有上传音频的权限。": " You don't have permission to upload audio.",
+			"服务器没有开放上传音频。": "The server doesn't allow uploading audio.",
+			"音频": "Audio",
+			"个": "",
+			"本机已有": "On this computer",
+			"<span>正在下载…</span>": "<span>Downloading…</span>",
+			"<span>正在连接游戏…</span>": "<span>Connecting to the game…</span>",
+			"正在发送…": "Sending…",
+			"有": "Yes",
+			"下载中": "Downloading",
+			"没有": "No",
+			"本机还没有这个文件": "Not on this computer yet",
+			"停止": "Stop",
+			"试听": "Play",
+			"填进报站器的“音频文件”栏": "Put this in the announcer's “Audio file” box",
+			"文件不能超过 {0}": "Files can't be over {0}",
+			"文件太大": "The file is too big",
+			"本机还没有这个文件，正在下载": "Not on this computer yet, downloading",
+			"这个浏览器无法播放这个文件": "This browser can't play this file",
+			"从服务器删除“{0}”？用这个名字的报站器都会不出声，不能撤销。": "Delete “{0}” from the server? Announcers using this name will go silent. This can't be undone."
+		}
+	};
+	const STORAGE_KEY = "mtr-editor-language";
+	const pick = code => {
+		const lower = String(code || "").toLowerCase().replace("-", "_");
+		if (!lower || lower.startsWith("zh")) return "zh_cn";
+		return DICTIONARIES[lower] ? lower : "en_us";
+	};
+	const stored = () => {
+		try {
+			return localStorage.getItem(STORAGE_KEY);
+		} catch (e) {
+			return null;
+		}
+	};
+
+	let language = pick(stored() || navigator.language);
+	let dictionary = DICTIONARIES[language] || {};
+
+	const format = (text, args) => text.replace(/\{\{|\}\}|\{(\d+)\}/g, (match, index) => match === "{{" ? "{" : match === "}}" ? "}" : String(args[+index]));
+	const translate = (text, args) => format(Object.prototype.hasOwnProperty.call(dictionary, text) ? dictionary[text] : text, args);
+
+	/** Translates the static text of the page, marked with data-i18n and data-i18n-* attributes holding the Chinese. */
+	function applyStatic(root) {
+		document.documentElement.lang = language === "zh_cn" ? "zh-CN" : language.replace("_", "-");
+		root.querySelectorAll("[data-i18n]").forEach(element => element.textContent = translate(element.dataset.i18n, []));
+		["title", "aria-label", "placeholder"].forEach(attribute => root.querySelectorAll(`[data-i18n-${attribute}]`).forEach(element => element.setAttribute(attribute, translate(element.getAttribute(`data-i18n-${attribute}`), []))));
+	}
+
+	/** @return whether the language changed */
+	function setLanguage(code) {
+		if (!code) return false;
+		const newLanguage = pick(code);
+		try {
+			localStorage.setItem(STORAGE_KEY, code);
+		} catch (e) {
+			// Only remembered for the next visit
+		}
+		if (newLanguage === language) return false;
+		language = newLanguage;
+		dictionary = DICTIONARIES[language] || {};
+		applyStatic(document);
+		return true;
+	}
+
+	document.addEventListener("DOMContentLoaded", () => applyStatic(document));
+	return {
+		get language() {
+			return language;
+		},
+		translate,
+		setLanguage,
+		applyStatic
+	};
+})();
+
+const tr = (text, ...args) => I18N.translate(text, args);
+const trc = (context, text, ...args) => I18N.translate(I18N.translate(context + "\u0004" + text, []) === context + "\u0004" + text ? text : context + "\u0004" + text, args);
+
+/** A list whose entries are translated each time they are read, for names kept in constants. */
+const translatedList = list => new Proxy(list, { get: (target, key) => typeof key === "string" && /^\d+$/.test(key) ? tr(target[key]) : Reflect.get(target, key) });

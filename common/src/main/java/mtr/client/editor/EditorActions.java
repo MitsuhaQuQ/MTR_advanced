@@ -12,6 +12,7 @@ import mtr.data.Platform;
 import mtr.data.Route;
 import transitsim.plan.RouteTimetable;
 import mtr.data.Station;
+import mtr.data.TranslatedMessage;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
 import transitsim.network.PlatformGraph;
@@ -45,9 +46,9 @@ public final class EditorActions implements IPacket {
 		final JsonArray operations = request.has("operations") ? request.getAsJsonArray("operations") : new JsonArray();
 
 		if (!ClientData.hasPermission()) {
-			addError(errors, -1, "", "没有编辑权限：需要创造模式，或服务端设置的权限等级");
+			addError(errors, -1, "", TranslatedMessage.get("gui.mtr.editor_no_permission"));
 		} else if (operations.size() > MAX_OPERATIONS) {
-			addError(errors, -1, "", "一次应用的修改太多，请分几次应用");
+			addError(errors, -1, "", TranslatedMessage.get("gui.mtr.editor_too_many_changes"));
 		} else {
 			for (int i = 0; i < operations.size(); i++) {
 				final JsonObject operation = operations.get(i).getAsJsonObject();
@@ -57,7 +58,7 @@ public final class EditorActions implements IPacket {
 					error = applyOperation(operation, i, created);
 				} catch (Exception e) {
 					e.printStackTrace();
-					error = "修改的格式不对";
+					error = TranslatedMessage.get("gui.mtr.editor_bad_change");
 				}
 				if (error == null) {
 					applied.add(i);
@@ -85,7 +86,7 @@ public final class EditorActions implements IPacket {
 		}
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
 		if (route == null) {
-			return "找不到这条线路，可能已被删除";
+			return TranslatedMessage.get("gui.mtr.editor_route_missing");
 		}
 		// A new type is made from the route it copies, which doesn't change, so it isn't checked against a revision
 		if ("newRoute".equals(getString(operation, "type"))) {
@@ -129,7 +130,7 @@ public final class EditorActions implements IPacket {
 				ClientData.ROUTES.remove(route);
 				return null;
 			default:
-				return "不认识的修改类型";
+				return TranslatedMessage.get("gui.mtr.editor_unknown_change");
 		}
 	}
 
@@ -142,14 +143,14 @@ public final class EditorActions implements IPacket {
 		final String name = getString(operation, "name").trim();
 		final String serviceType = getString(operation, "serviceType").trim();
 		if (name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
-			return "线路名不能为空，也不能太长";
+			return TranslatedMessage.get("gui.mtr.editor_bad_route_name");
 		}
 		if (serviceType.isEmpty() || serviceType.length() > MAX_SERVICE_TYPE_LENGTH) {
-			return "种别名不能为空，也不能太长";
+			return TranslatedMessage.get("gui.mtr.editor_bad_service_type");
 		}
 		final JsonArray stops = operation.getAsJsonArray("stops");
 		if (stops == null || stops.size() < 2 || stops.size() > MAX_STOPS) {
-			return String.format("一个种别要有 2 到 %s 个车站", MAX_STOPS);
+			return TranslatedMessage.get("gui.mtr.editor_stop_count", MAX_STOPS);
 		}
 		final int stopCount = stops.size();
 		final long[] platformIds = new long[stopCount];
@@ -160,10 +161,10 @@ public final class EditorActions implements IPacket {
 			pass[i] = stop.get("pass").getAsBoolean() && i > 0 && i < stopCount - 1;
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformIds[i]);
 			if (platform == null) {
-				return String.format("第 %s 站的站台已经不在了", i + 1);
+				return TranslatedMessage.get("gui.mtr.editor_platform_missing", i + 1);
 			}
 			if (platform.transportMode != source.transportMode) {
-				return String.format("第 %s 站的站台和线路的交通方式不同", i + 1);
+				return TranslatedMessage.get("gui.mtr.editor_platform_mode", i + 1);
 			}
 		}
 		final String connectionError = checkConnected(platformIds);
@@ -172,7 +173,7 @@ public final class EditorActions implements IPacket {
 		}
 		final Depot depot = operation.has("depot") ? ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot"))) : null;
 		if (depot != null && depot.transportMode != source.transportMode) {
-			return "车厂和线路的交通方式不同";
+			return TranslatedMessage.get("gui.mtr.editor_depot_mode");
 		}
 
 		final Route newRoute = source.duplicate();
@@ -200,7 +201,7 @@ public final class EditorActions implements IPacket {
 		final JsonArray services = operation.has("services") ? operation.getAsJsonArray("services") : new JsonArray();
 		final int servicesTable = operation.has("table") ? operation.get("table").getAsInt() : 0;
 		if (services.size() > RouteTimetable.MAX_SERVICES) {
-			return String.format("一张表最多 %s 个班次", RouteTimetable.MAX_SERVICES);
+			return TranslatedMessage.get("gui.mtr.editor_too_many_services", RouteTimetable.MAX_SERVICES);
 		}
 		for (int i = 0; i < newRoute.timetable.getTableCount(); i++) {
 			final RouteTimetable table = newRoute.timetable.getTable(i);
@@ -247,10 +248,10 @@ public final class EditorActions implements IPacket {
 		final long network = platformGraph.getNetworkOf(platformIds[0]);
 		for (int i = 0; i < platformIds.length; i++) {
 			if (network == 0 || platformGraph.getNetworkOf(platformIds[i]) != network) {
-				return String.format("第 %s 站的站台和第 1 站的不在同一个线网里（轨道没有连起来）", i + 1);
+				return TranslatedMessage.get("gui.mtr.editor_other_network", i + 1);
 			}
 			if (i > 0 && !platformGraph.canReach(platformIds[i - 1], platformIds[i])) {
-				return String.format("第 %s 站到第 %s 站沿轨道走不通", i, i + 1);
+				return TranslatedMessage.get("gui.mtr.editor_no_path", i, i + 1);
 			}
 		}
 		return null;
@@ -265,7 +266,7 @@ public final class EditorActions implements IPacket {
 	private static String changePlatforms(Route route, JsonArray platforms) {
 		final int stopCount = route.platformIds.size();
 		if (platforms == null || platforms.size() != stopCount) {
-			return "车站和游戏里的不一致，可能刚在游戏里改过，请刷新";
+			return TranslatedMessage.get("gui.mtr.editor_stations_changed");
 		}
 		final long[] platformIds = new long[stopCount];
 		for (int i = 0; i < stopCount; i++) {
@@ -274,7 +275,7 @@ public final class EditorActions implements IPacket {
 			final long oldPlatformId = route.platformIds.get(i).platformId;
 			final Station oldStation = ClientData.DATA_CACHE.platformIdToStation.get(oldPlatformId);
 			if (platformId != oldPlatformId && (oldStation == null || ClientData.DATA_CACHE.platformIdToStation.get(platformId) != oldStation)) {
-				return String.format("第 %s 站选的股道不是这个车站的站台，可能刚在游戏里改过，请刷新", i + 1);
+				return TranslatedMessage.get("gui.mtr.editor_wrong_track", i + 1);
 			}
 		}
 		// Only tracks changed are checked, so a route that was already broken in the game can still be put right a stop at a time
@@ -323,18 +324,18 @@ public final class EditorActions implements IPacket {
 		final JsonArray tables = timetable.getAsJsonArray("tables");
 		final JsonArray pass = timetable.getAsJsonArray("pass");
 		if (tables.size() < 1 || tables.size() > RouteTimetable.MAX_TABLES) {
-			return String.format("表的数量要在 1 到 %s 之间", RouteTimetable.MAX_TABLES);
+			return TranslatedMessage.get("gui.mtr.editor_table_count", RouteTimetable.MAX_TABLES);
 		}
 		if (pass.size() != stopCount) {
-			return "车站和游戏里的不一致，可能刚在游戏里改过，请刷新";
+			return TranslatedMessage.get("gui.mtr.editor_stations_changed");
 		}
 		for (final JsonElement tableElement : tables) {
 			final JsonObject table = tableElement.getAsJsonObject();
 			if (table.getAsJsonArray("stops").size() != stopCount) {
-				return "车站和游戏里的不一致，可能刚在游戏里改过，请刷新";
+				return TranslatedMessage.get("gui.mtr.editor_stations_changed");
 			}
 			if (table.getAsJsonArray("services").size() > RouteTimetable.MAX_SERVICES) {
-				return String.format("一张表最多 %s 个班次", RouteTimetable.MAX_SERVICES);
+				return TranslatedMessage.get("gui.mtr.editor_too_many_services", RouteTimetable.MAX_SERVICES);
 			}
 			for (final JsonElement linkElement : table.getAsJsonArray("links")) {
 				final JsonObject link = linkElement.getAsJsonObject();

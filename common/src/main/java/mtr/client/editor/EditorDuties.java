@@ -70,7 +70,7 @@ public final class EditorDuties implements IPacket {
 	public static String apply(JsonObject operation) {
 		final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot")));
 		if (depot == null) {
-			return "找不到这个车厂，可能已被删除";
+			return TranslatedMessage.get("gui.mtr.editor_depot_missing");
 		}
 		final JsonObject dutiesObject = operation.getAsJsonObject("duties");
 		final DepotDuties duties = new DepotDuties();
@@ -81,12 +81,12 @@ public final class EditorDuties implements IPacket {
 			final long sidingId = parseId(sidingEntry.getKey());
 			final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
 			if (siding == null || ClientData.DATA_CACHE.sidingIdToDepot.get(sidingId) != depot) {
-				return "有存车线不在这个车厂里，可能刚被拆掉，请刷新";
+				return TranslatedMessage.get("gui.mtr.editor_siding_missing");
 			}
 			final JsonArray slotsArray = sidingEntry.getValue().getAsJsonArray();
-			final String sidingName = siding.name.isEmpty() ? "存车线" : siding.name;
+			final String sidingName = siding.name.isEmpty() ? TranslatedMessage.get("gui.mtr.editor_siding") : siding.name;
 			if (slotsArray.size() > DepotDuties.MAX_SLOTS || !siding.getUnlimitedTrains() && slotsArray.size() > siding.getMaxTrains()) {
-				return String.format("%s 只能放 %s 列车，库位太多", sidingName, siding.getUnlimitedTrains() ? DepotDuties.MAX_SLOTS : siding.getMaxTrains());
+				return TranslatedMessage.get("gui.mtr.editor_too_many_slots", sidingName, siding.getUnlimitedTrains() ? DepotDuties.MAX_SLOTS : siding.getMaxTrains());
 			}
 			final List<DepotDuties.Slot> slots = new ArrayList<>();
 			for (int i = 0; i < slotsArray.size(); i++) {
@@ -97,24 +97,24 @@ public final class EditorDuties implements IPacket {
 					final DepotDuties.DayDuty day = new DepotDuties.DayDuty();
 					day.weekdays = dayObject.get("days").getAsInt() & DepotDuties.ALL_WEEKDAYS;
 					if (day.weekdays == 0 || (day.weekdays & usedDays) != 0 || slot.days.size() >= DepotDuties.MAX_DAYS) {
-						return String.format("%s 车 %s 的运用星期重叠", sidingName, i + 1);
+						return TranslatedMessage.get("gui.mtr.editor_duty_days_overlap", sidingName, i + 1);
 					}
 					usedDays |= day.weekdays;
 					day.stayOnLine = dayObject.get("stay").getAsBoolean();
 					day.nextSlot = day.stayOnLine && dayObject.has("next") ? dayObject.get("next").getAsInt() : -1;
 					if (day.nextSlot >= slotsArray.size() || day.nextSlot < -1) {
-						return String.format("%s 车 %s 过夜后接的库位不存在", sidingName, i + 1);
+						return TranslatedMessage.get("gui.mtr.editor_duty_next_missing", sidingName, i + 1);
 					}
 					final JsonArray segmentsArray = dayObject.getAsJsonArray("segments");
 					if (segmentsArray.size() > DepotDuties.MAX_SEGMENTS) {
-						return String.format("%s 车 %s 一天最多跑 %s 班", sidingName, i + 1, DepotDuties.MAX_SEGMENTS);
+						return TranslatedMessage.get("gui.mtr.editor_duty_too_many", sidingName, i + 1, DepotDuties.MAX_SEGMENTS);
 					}
 					for (final JsonElement segmentElement : segmentsArray) {
 						final JsonObject segmentObject = segmentElement.getAsJsonObject();
 						final DepotDuties.Segment segment = new DepotDuties.Segment(parseId(getString(segmentObject, "route")), segmentObject.get("service").getAsInt(), segmentObject.get("from").getAsInt(), segmentObject.get("to").getAsInt());
 						final String error = checkSegment(depot, segment, day.weekdays, taken);
 						if (error != null) {
-							return String.format("%s 车 %s：%s", sidingName, i + 1, error);
+							return TranslatedMessage.get("gui.mtr.editor_duty_error", sidingName, i + 1, error);
 						}
 						day.segments.add(segment);
 					}
@@ -128,7 +128,7 @@ public final class EditorDuties implements IPacket {
 				for (int i = 0; i < slots.size(); i++) {
 					final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
 					if (day != null && day.stayOnLine && !day.segments.isEmpty() && !takenSlots.add(day.nextSlot < 0 ? i : day.nextSlot)) {
-						return String.format("%s 有两列过夜的车第二天接同一个库位（车 %s）", sidingName, (day.nextSlot < 0 ? i : day.nextSlot) + 1);
+						return TranslatedMessage.get("gui.mtr.editor_duty_same_next", sidingName, (day.nextSlot < 0 ? i : day.nextSlot) + 1);
 					}
 				}
 			}
@@ -162,10 +162,10 @@ public final class EditorDuties implements IPacket {
 	private static String checkSegment(Depot depot, DepotDuties.Segment segment, int weekdays, Set<String> taken) {
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(segment.routeId);
 		if (route == null || !depot.routeIds.contains(segment.routeId)) {
-			return "有一班的线路不在这个车厂里";
+			return TranslatedMessage.get("gui.mtr.editor_segment_route_missing");
 		}
 		if (segment.fromStop >= route.platformIds.size() || segment.toStop >= route.platformIds.size()) {
-			return String.format("%s 的车站和游戏里的不一致，请刷新", route.name);
+			return TranslatedMessage.get("gui.mtr.editor_segment_stations_changed", route.name);
 		}
 		for (int day = 0; day < 7; day++) {
 			if ((weekdays >> day & 1) == 0) {
@@ -173,16 +173,15 @@ public final class EditorDuties implements IPacket {
 			}
 			final RouteTimetable table = getTable(route, day);
 			if (table == null || !table.services.contains(segment.service)) {
-				return String.format("%s 的一班在%s不运行，时刻表可能改过", route.name, WEEKDAY_NAMES[day]);
+				return TranslatedMessage.get("gui.mtr.editor_segment_not_running", route.name, TranslatedMessage.get("gui.mtr.editor_weekday_" + day));
 			}
 			if (!taken.add(segment.routeId + "@" + segment.service + "/" + day)) {
-				return String.format("%s 的一班在%s分给了两列车", route.name, WEEKDAY_NAMES[day]);
+				return TranslatedMessage.get("gui.mtr.editor_segment_twice", route.name, TranslatedMessage.get("gui.mtr.editor_weekday_" + day));
 			}
 		}
 		return null;
 	}
 
-	private static final String[] WEEKDAY_NAMES = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
 
 	/**
 	 * @return the table a route runs on a weekday, the first that has the day

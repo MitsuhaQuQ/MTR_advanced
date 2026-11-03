@@ -29,6 +29,13 @@ public final class EditorData {
 	private static final Map<Long, Long> TIMES_REQUESTED = new HashMap<>();
 	private static final long TIMES_REQUEST_INTERVAL_MILLIS = 30000;
 
+	/**
+	 * The game's language, such as en_us, for the pages to show the same one.
+	 */
+	public static String getLanguage() {
+		return Minecraft.getInstance().options.languageCode;
+	}
+
 	public static JsonObject build() {
 		if (Minecraft.getInstance().level == null) {
 			throw new IllegalStateException("Not in a world");
@@ -39,6 +46,7 @@ public final class EditorData {
 		// Local time of day is UTC time of day plus this
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
 		data.addProperty("canEdit", ClientData.hasPermission());
+		data.addProperty("language", getLanguage());
 		data.addProperty("regionCount", ClientData.PATH_REGIONS.regionCount);
 		data.add("topology", buildTopology());
 
