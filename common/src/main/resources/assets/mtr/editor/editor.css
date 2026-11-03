@@ -82,7 +82,11 @@ button:focus-visible, select:focus-visible, .tree .node:focus-visible, td:focus-
 main { display: grid; grid-template-rows: auto auto 1fr; min-width: 0; min-height: 0; }
 body.split main { grid-template-rows: auto auto minmax(0, 3fr) minmax(0, 2fr); }
 body.split #view-table { grid-row: 4; border-top: 2px solid var(--grid-strong); }
-#btn-split[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.sim-status { align-self: center; font-size: 12px; color: var(--muted); }
+.sim-problems { list-style: none; margin: 6px 0 0; padding: 0; max-height: 40vh; overflow: auto; }
+.sim-problems li { margin: 2px 0; }
+.sim-problems .link { text-align: left; }
+#btn-simulate[aria-pressed="true"], #btn-split[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--grid-strong); background: var(--panel); }
 /* The open view is the filled one */
 .tabs .tab { border-color: transparent; background: transparent; color: var(--muted); }

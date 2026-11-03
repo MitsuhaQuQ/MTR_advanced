@@ -96,6 +96,7 @@
 		clearTimeout(draftTimer);
 		draftTimer = setTimeout(() => sendJson("api/draft", "PUT", draft).catch(() => {}), 400);
 		renderDraftState();
+		scheduleSimulation();
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
@@ -126,8 +127,8 @@
 	}
 
 	/** Sends the draft to the game. What the game takes leaves the draft; what it doesn't stays, with the reason. */
-	async function applyDraft() {
-		if (applying || !draftCount()) return;
+	/** The draft as the changes to send to the game, and what each change is for, to put errors back on. */
+	function draftOperations() {
 		const operations = [], owners = [];
 		Object.entries(draft.routes).forEach(([id, entry]) => {
 			let base = entry.base;
@@ -161,6 +162,12 @@
 			operations.push({ type: "newRoute", route: made.source, name: made.name, serviceType: made.serviceType, color: made.color, stops: made.stops, services: made.services, table: made.table, depot: made.depot || "" });
 			owners.push(made);
 		});
+		return { operations, owners };
+	}
+
+	async function applyDraft() {
+		if (applying || !draftCount()) return;
+		const { operations, owners } = draftOperations();
 		applying = true;
 		renderDraftState();
 		try {
@@ -901,7 +908,8 @@
 				ctx.globalAlpha = dim ? 0.25 : 1;
 				slotPoints.push({ start: points[0], end: points[points.length - 1], time: timesOf(s)[0][0] });
 			}
-			ctx.strokeStyle = colorOf(s.route.color);
+			// Grey for a service no train ran in the simulated day
+			ctx.strokeStyle = sim.on && sim.notRun.has(key) ? c.muted : colorOf(s.route.color);
 			ctx.lineWidth = isSelected ? 2.5 : 1.5;
 			// Dashed: no times yet, or a depot running by its duties has no train for it
 			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : diagramRoutes.has(s.route.id) && !assigned.has(key) ? [2, 4] : []);
@@ -966,6 +974,7 @@
 			ctx.stroke();
 		}
 		ctx.setLineDash([]);
+		drawSimulated(line, yOf, c, w);
 		if (slotPoints.length) {
 			ctx.fillStyle = c.warn;
 			ctx.font = `bold 11px ${css("--font-ui")}`;
@@ -1062,6 +1071,7 @@
 				${s.link ? `<dt>${tr("接续")}</dt><dd>${escapeHtml(next ? routeTitle(next) : "?")} ${clock(mod(s.link.toService - data.dayStartMillis, DAY))}</dd>` : ""}
 				${s.returns ? `<dt>${tr("之后")}</dt><dd>${tr("回库")}</dd>` : ""}</dl>${stopsHtml(s)}</div>`);
 		}
+		if (sim.on && data) parts.push(simPanel(currentLine()));
 		const loopRoute = s && isLoop(s.route) ? s.route : state.route && data && data.routeById.get(state.route) && isLoop(data.routeById.get(state.route)) ? data.routeById.get(state.route) : null;
 		if (loopRoute) parts.push(loopPanel(loopRoute));
 		const line = currentLine();
@@ -1081,7 +1091,7 @@
 			tooltip.hidden = true;
 			return;
 		}
-		tooltip.innerHTML = `<b>${escapeHtml(routeTitle(s.route))}</b> ${clock(s.start)}${stopsHtml(s)}`;
+		tooltip.innerHTML = `<b>${escapeHtml(routeTitle(s.route))}</b> ${clock(s.start)}${stopsHtml(s)}${simTooltip(s)}`;
 		tooltip.hidden = false;
 		const box = tooltip.getBoundingClientRect();
 		tooltip.style.left = Math.min(clientX + 14, innerWidth - box.width - 8) + "px";
@@ -1105,6 +1115,158 @@
 		state.pxPerMin = next;
 		state.viewStart = anchor - (anchorX - LABEL_W) / next * 60000;
 		draw();
+	}
+
+	// ---------- Simulated day ----------
+	// The chosen day as the game's server simulates it with the draft (S5): what each service did and what went wrong
+	const SIM_LATE_MILLIS = 30000, SIM_MAX_LISTED = 300;
+	const SIM_KINDS = { LATE: "晚点", WAITING_FOR_PLATFORM: "等站台", HELD_ON_LINE: "区间扣停", LONG_DWELL: "站内久停", DEADLOCK: "锁死", NOT_RUN: "未开行" };
+	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0 };
+
+	function setSimulation(on) {
+		sim.on = on;
+		$("btn-simulate").setAttribute("aria-pressed", String(on));
+		$("btn-resimulate").hidden = !on;
+		clearTimeout(sim.timer);
+		sim.timer = null;
+		if (on) {
+			simulate();
+		} else {
+			Object.assign(sim, { state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [] });
+		}
+		renderSimStatus();
+		draw();
+		renderInspector();
+	}
+
+	/** Simulates again a moment after the draft, day or line changes, so a run of changes is only simulated once. */
+	function scheduleSimulation() {
+		if (!sim.on) return;
+		clearTimeout(sim.timer);
+		sim.timer = setTimeout(simulate, 2000);
+	}
+
+	async function simulate() {
+		clearTimeout(sim.timer);
+		sim.timer = null;
+		const line = currentLine();
+		if (!sim.on || !line) return;
+		sim.line = state.line;
+		sim.weekday = state.weekday;
+		try {
+			const response = await sendJson("api/simulate", "POST", { weekday: state.weekday, routes: line.routes.map(r => r.id), operations: draftOperations().operations });
+			if (response.error) {
+				sim.state = response.error;
+			} else {
+				sim.request = response.request;
+				sim.state = "running";
+			}
+		} catch (e) {
+			sim.state = "error";
+		}
+		renderSimStatus();
+		pollSimulation();
+	}
+
+	async function pollSimulation() {
+		if (sim.polling) return;
+		sim.polling = true;
+		try {
+			while (sim.on && sim.state === "running") {
+				await new Promise(resolve => setTimeout(resolve, 500));
+				const status = await fetchJson("api/simulate");
+				// Another page asked since, or this request's answer hasn't come yet
+				if (status.request > sim.request) sim.state = "idle";
+				if (status.request !== sim.request || status.state === "running") continue;
+				Object.assign(sim, { state: status.state, notSimulated: status.notSimulated, ignored: status.ignored });
+				if (status.state === "done" && status.result) setSimResult(status.result);
+			}
+		} catch (e) {
+			sim.state = "error";
+		}
+		sim.polling = false;
+		renderSimStatus();
+		draw();
+		renderInspector();
+	}
+
+	function setSimResult(result) {
+		sim.result = result;
+		sim.madeAt = Date.now();
+		sim.trips = new Map(result.trips.map(trip => [trip.route + "@" + trip.service, trip]));
+		sim.notRun = new Set(result.problems.filter(problem => problem.kind === "NOT_RUN").map(problem => problem.route + "@" + problem.service));
+	}
+
+	function renderSimStatus() {
+		const texts = {
+			running: tr("模拟中…"),
+			done: tr("按 {0} 的草稿模拟", new Date(sim.madeAt).toTimeString().slice(0, 5)),
+			busy: tr("服务端忙，稍后再试"),
+			permission: tr("没有权限模拟"),
+			error: tr("模拟失败"),
+		};
+		$("sim-status").textContent = sim.on ? texts[sim.state] || "" : "";
+	}
+
+	// A stop as [stop, arrival, departure, planned arrival, planned departure, passed], times in the operating day or -1
+	const simLate = stop => Math.max(stop[1] >= 0 && stop[3] >= 0 ? stop[1] - stop[3] : 0, stop[2] >= 0 && stop[4] >= 0 ? stop[2] - stop[4] : 0);
+	const formatDuration = millis => millis >= 60000 ? tr("{0} 分 {1} 秒", Math.floor(millis / 60000), Math.round(millis % 60000 / 1000)) : tr("{0} 秒", Math.round(millis / 1000));
+
+	/** Where each service of the line ran in the simulated day, dashed over the plan, red where it was late. */
+	function drawSimulated(line, yOf, c, w) {
+		if (!sim.on || !sim.result) return;
+		const routes = new Map(line.routes.map(r => [r.id, r]));
+		ctx.lineWidth = 1.5;
+		ctx.setLineDash([5, 3]);
+		sim.trips.forEach(trip => {
+			const r = routes.get(trip.route);
+			if (!r) return;
+			const points = [];
+			trip.stops.forEach(stop => {
+				if (stop[0] < 0 || stop[0] >= r.rows.length) return;
+				const y = yOf(r.rows[stop[0]]), late = simLate(stop) > SIM_LATE_MILLIS;
+				if (stop[1] >= 0) points.push([xOf(stop[1]), y, late]);
+				if (stop[2] >= 0 && stop[2] !== stop[1]) points.push([xOf(stop[2]), y, late]);
+			});
+			if (points.length < 2 || points[points.length - 1][0] < LABEL_W - 40 || points[0][0] > w + 40) return;
+			ctx.globalAlpha = state.route && r.id !== state.route ? 0.25 : 0.9;
+			for (let i = 1; i < points.length; i++) {
+				ctx.strokeStyle = points[i][2] ? c.warn : c.ink;
+				ctx.beginPath();
+				ctx.moveTo(points[i - 1][0], points[i - 1][1]);
+				ctx.lineTo(points[i][0], points[i][1]);
+				ctx.stroke();
+			}
+		});
+		ctx.setLineDash([]);
+		ctx.globalAlpha = 1;
+	}
+
+	function simTooltip(s) {
+		if (!sim.on || !sim.result) return "";
+		const key = s.route.id + "@" + s.service, trip = sim.trips.get(key);
+		if (!trip) return `<div class="hint">${sim.notRun.has(key) ? tr("模拟：没有车跑这一班") : ""}</div>`;
+		const late = trip.stops.reduce((most, stop) => Math.max(most, simLate(stop)), 0);
+		return `<div class="hint">${late > SIM_LATE_MILLIS ? tr("模拟：最多晚 {0}", formatDuration(late)) : tr("模拟：准点")}</div>`;
+	}
+
+	/** What went wrong on the line in the simulated day, each going to its service when clicked. */
+	function simPanel(line) {
+		const routes = new Map(line ? line.routes.map(r => [r.id, r]) : []);
+		const problems = sim.result ? sim.result.problems.filter(problem => problem.kind === "DEADLOCK" || routes.has(problem.route)) : [];
+		sim.listed = problems;
+		const items = problems.slice(0, SIM_MAX_LISTED).map((problem, i) => {
+			const r = routes.get(problem.route);
+			const stop = r && problem.stop >= 0 && problem.stop < r.stops.length ? shortName(r.stops[problem.stop].name) : "";
+			const service = r ? `${escapeHtml(routeTitle(r))} ${clock(mod(problem.service - data.dayStartMillis, DAY))}` : escapeHtml(problem.detail);
+			const duration = problem.duration > 0 ? " · " + formatDuration(problem.duration) : "";
+			return `<li><button type="button" class="link" data-sim-problem="${i}">${clock(problem.time)} <b>${tr(SIM_KINDS[problem.kind] || problem.kind)}</b> ${service}${stop ? " · " + escapeHtml(stop) : ""}${duration}</button></li>`;
+		});
+		const notes = [];
+		if (sim.notSimulated) notes.push(tr("改站序、新建或删除种别的修改没有模拟（{0} 项）", sim.notSimulated));
+		if (sim.ignored) notes.push(tr("{0} 项草稿和服务端的线路对不上，没有用上", sim.ignored));
+		const body = items.length ? `<ul class="sim-problems">${items.join("")}</ul>` : sim.result ? `<p class="hint">${tr("这一天没有发现问题。")}</p>` : "";
+		return `<h2>${tr("模拟问题")}</h2><div class="card">${body}${problems.length > SIM_MAX_LISTED ? `<p class="hint">${tr("只列出前 {0} 条。", SIM_MAX_LISTED)}</p>` : ""}${notes.map(note => `<p class="hint">${escapeHtml(note)}</p>`).join("")}<p class="hint">${tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p></div>`;
 	}
 
 	// ---------- Summary timetable ----------
@@ -2625,6 +2787,8 @@
 	}
 
 	function renderAll() {
+		// The line or day shown changed since the last simulation
+		if (sim.on && !sim.timer && (sim.line !== state.line || sim.weekday !== state.weekday)) scheduleSimulation();
 		renderTree();
 		renderViews();
 		draw();
@@ -2713,6 +2877,17 @@
 		else if (data && data.routeById.get(target.dataset.openRoute)) openView("table", data.routeById.get(target.dataset.openRoute).lineKey, target.dataset.openRoute);
 	});
 	$("inspector").addEventListener("click", e => {
+		const problemButton = e.target.closest("[data-sim-problem]");
+		if (problemButton) {
+			const problem = sim.listed[Number(problemButton.dataset.simProblem)];
+			const s = problem && findService(problem.route + "@" + problem.service);
+			if (s) {
+				state.selected = s.id;
+				centerOn(s);
+				renderAll();
+			}
+			return;
+		}
 		const diagramButton = e.target.closest("[data-route-diagram]");
 		if (diagramButton && data && data.routeById.get(diagramButton.dataset.routeDiagram)) {
 			routeDiagramDialog(data.routeById.get(diagramButton.dataset.routeDiagram));
@@ -2733,6 +2908,8 @@
 			editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).stay = stay; });
 		}
 	});
+	$("btn-simulate").addEventListener("click", () => setSimulation(!sim.on));
+	$("btn-resimulate").addEventListener("click", () => simulate());
 	$("btn-zoom-in").addEventListener("click", () => zoom(1));
 	$("btn-zoom-out").addEventListener("click", () => zoom(-1));
 	$("day").addEventListener("change", e => {
