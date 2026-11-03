@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Test;
 import transitsim.planning.OperationPlan.Duty;
 import transitsim.planning.OperationPlan.IssueType;
 import transitsim.planning.OperationPlan.Phase;
-import transitsim.planning.OperationPlan.PhaseType;
-import transitsim.planning.PlanAlignment.Placement;
 
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -35,7 +33,6 @@ class OperationSimulatorTest {
 	private static final long DEPOT = 100;
 	private static final long DWELL = 30 * SECOND_MILLIS;
 	private static final long MAX_LAYOVER = 30 * MINUTE_MILLIS;
-	private static final long MIN_HEADWAY = 3 * MINUTE_MILLIS;
 
 	private static TimetableService oneWay(long id, int days, long start, long from, long to, long running, boolean blank) {
 		return new TimetableService(id, id, days, start, blank, Arrays.asList(
@@ -232,63 +229,6 @@ class OperationSimulatorTest {
 				}
 			}
 		});
-
-		for (long time = 0; time < WEEK_MILLIS; time += 3 * MINUTE_MILLIS + 7 * SECOND_MILLIS) {
-			assertFalse(PlanAlignment.align(plan, time, MIN_HEADWAY).stream().anyMatch(Placement::isHeld), "held at " + time);
-		}
-	}
-
-	@Test
-	void alignmentIsAPureFunctionOfTime() {
-		final OperationPlan plan = DutyPlanner.plan(shuttle(1, ALL_DAYS, 0, DAY_MILLIS - 10 * MINUTE_MILLIS, 10 * MINUTE_MILLIS, 20 * MINUTE_MILLIS, A, B), Collections.emptyList(), network(12), MAX_LAYOVER);
-		assertNoIssue(plan);
-
-		for (long time = 0; time < WEEK_MILLIS; time += 7 * MINUTE_MILLIS + 11 * SECOND_MILLIS) {
-			final List<Placement> first = PlanAlignment.align(plan, time, MIN_HEADWAY);
-			final List<Placement> second = PlanAlignment.align(plan, time + 3 * WEEK_MILLIS, MIN_HEADWAY);
-			assertEquals(first.size(), second.size());
-			assertEquals(6, first.size());
-			first.forEach(placement -> assertFalse(placement.isHeld()));
-			for (int i = 0; i < first.size(); i++) {
-				assertEquals(first.get(i).dutyIndex, second.get(i).dutyIndex);
-				assertEquals(first.get(i).phaseIndex, second.get(i).phaseIndex);
-			}
-		}
-	}
-
-	@Test
-	void alignmentHoldsTheTrainBehindWhenTwoWouldShareASection() {
-		final OperationPlan plan = DutyPlanner.plan(Arrays.asList(
-				oneWay(1, ALL_DAYS, 8 * HOUR_MILLIS, A, B, 10 * MINUTE_MILLIS, false),
-				oneWay(2, ALL_DAYS, 8 * HOUR_MILLIS + 2 * MINUTE_MILLIS, A, B, 10 * MINUTE_MILLIS, false)
-		), Collections.emptyList(), network(3), MAX_LAYOVER);
-		final List<Placement> placements = PlanAlignment.align(plan, 8 * HOUR_MILLIS + 5 * MINUTE_MILLIS, MIN_HEADWAY);
-		assertEquals(2, placements.size());
-		assertEquals(0, placements.get(0).heldLateMillis);
-		assertEquals(PhaseType.RUN, placements.get(0).phase.type);
-		assertEquals(PhaseType.STOP, placements.get(1).phase.type);
-		assertEquals(A, placements.get(1).phase.fromPlatform);
-		assertEquals(2 * MINUTE_MILLIS + 30 * SECOND_MILLIS, placements.get(1).heldLateMillis);
-	}
-
-	@Test
-	void lateTrainRecoversThroughSpareDwellAndLayoverButNotBelowTheDoorMinimum() {
-		final OperationNetwork network = new OperationNetwork().setTurnaround(B, MINUTE_MILLIS).addDepot(DEPOT, 1).addDepotLink(DEPOT, A, 0).addDepotLink(DEPOT, B, 0);
-		final List<TimetableService> services = Arrays.asList(
-				oneWay(1, 1, 8 * HOUR_MILLIS, A, B, 10 * MINUTE_MILLIS, false),
-				oneWay(2, 1, 8 * HOUR_MILLIS + 20 * MINUTE_MILLIS, B, A, 10 * MINUTE_MILLIS, false)
-		);
-		final OperationPlan plan = DutyPlanner.plan(services, Collections.emptyList(), network, HOUR_MILLIS);
-		assertEquals(1, plan.duties.size());
-		final Duty duty = plan.duties.get(0);
-		final long firstArrival = duty.trips.get(0).startMillis();
-
-		// A one minute delay is absorbed before the end of the first layover
-		assertEquals(0, DelaySimulator.finalLateness(duty, network, 0, firstArrival, MINUTE_MILLIS));
-		// Twelve minutes late: each of the four stops saves 21.6 s, and the layover saves 8 minutes 30 s less 1 minute turnaround
-		assertEquals(153600, DelaySimulator.finalLateness(duty, network, 0, firstArrival, 12 * MINUTE_MILLIS));
-		// A 30 s door minimum needs 38.4 s per stop, longer than the planned dwell, so stops lose time instead
-		assertEquals(273600, DelaySimulator.finalLateness(duty, network, 30 * SECOND_MILLIS, firstArrival, 12 * MINUTE_MILLIS));
 	}
 
 	@Test

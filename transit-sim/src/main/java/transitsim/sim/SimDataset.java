@@ -18,6 +18,7 @@ import transitsim.plan.TripPath;
 import transitsim.plan.TurnBacks;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,15 +119,7 @@ public final class SimDataset {
 	 * Builds a world of its own from the data: new routes, depots and sidings, which make their trains as they run.
 	 */
 	public TickRunner<DataTrack> buildRunner(long startMillis) {
-		final Map<Long, DataRoute> routeMap = new TreeMap<>();
-		routes.forEach(route -> routeMap.put(route.id, new DataRoute(route)));
-		// Services that only run as the continuation of a service of another route aren't sent out by any depot
-		routeMap.values().forEach(route -> route.timetable.getTables().forEach(table -> table.links.values().forEach(link -> {
-			final DataRoute linkedRoute = routeMap.get(link.routeId);
-			if (linkedRoute != null) {
-				linkedRoute.timetable.addLinkedService(link.service);
-			}
-		})));
+		final Map<Long, DataRoute> routeMap = buildRoutes();
 		final TickRunner<DataTrack> runner = new TickRunner<>(startMillis, routeMap::get);
 		final Map<Long, DepotBoard> boards = new HashMap<>();
 		for (final DepotData depot : depots) {
@@ -144,11 +137,8 @@ public final class SimDataset {
 			}
 			final String trainId = "siding:" + sidingData.id;
 			board.setTrainRoutes(trainId, toRoutes(sidingData.routeIds, routeMap));
-			final TickRunner.Siding<DataTrack> untimed = new TickRunner.Siding<>(sidingData.path, sidingData.repeatIndex1, sidingData.repeatIndex2, null, trainId, sidingData.trainCars, sidingData.spacing, sidingData.railLength, sidingData.acceleration, sidingData.deceleration, sidingData.maxTrains);
-			untimed.minSpeed = sidingData.minSpeed;
-			final TimeGenerator<DataTrack> generator = timeGenerator(untimed);
-			final StopTimes stopTimes = new StopTimes();
-			generator.generateTimeSegments(sidingData.path, new ArrayList<>(), stopTimes, sidingData.loopJoinIndex, sidingData.repeatIndex2);
+			final TimeGenerator<DataTrack> generator = timeGenerator(untimed(sidingData));
+			final StopTimes stopTimes = getStopTimes(sidingData);
 			final TickRunner.Siding<DataTrack> siding = new TickRunner.Siding<>(sidingData.path, sidingData.repeatIndex1, sidingData.repeatIndex2, stopTimes, trainId, sidingData.trainCars, sidingData.spacing, sidingData.railLength, sidingData.acceleration, sidingData.deceleration, sidingData.maxTrains);
 			siding.minSpeed = sidingData.minSpeed;
 			siding.usesSpeedCurve = sidingData.usesSpeedCurve;
@@ -163,6 +153,64 @@ public final class SimDataset {
 			runner.addSiding(sidingData.id, board, siding);
 		}
 		return runner;
+	}
+
+	/**
+	 * The routes as plans, with the services that only run as another route's continuation marked (S6).
+	 */
+	public Map<Long, PlanRoute> getPlanRoutes() {
+		return new TreeMap<>(buildRoutes());
+	}
+
+	/**
+	 * The fastest arrival and departure at each stop of the depot's routes, worked out along each of its sidings' paths as
+	 * the game's siding does, from the first siding that reaches every stop (S6).
+	 */
+	public Map<Long, long[][]> getFastestTimes(long depotId) {
+		final Map<Long, DataRoute> routeMap = buildRoutes();
+		final Map<Long, long[][]> fastestTimes = new TreeMap<>();
+		for (final SidingData sidingData : sidings) {
+			if (sidingData.depotId != depotId || sidingData.path.isEmpty()) {
+				continue;
+			}
+			final StopTimes stopTimes = getStopTimes(sidingData);
+			final List<PlanRoute> sidingRoutes = toRoutes(sidingData.routeIds, routeMap);
+			for (final PlanRoute route : sidingRoutes) {
+				final long[][] times = stopTimes.getFastestTimes(route, sidingRoutes);
+				if (!fastestTimes.containsKey(route.getRouteId()) && Arrays.stream(times).noneMatch(time -> time[0] < 0)) {
+					fastestTimes.put(route.getRouteId(), times);
+				}
+			}
+		}
+		return fastestTimes;
+	}
+
+	private Map<Long, DataRoute> buildRoutes() {
+		final Map<Long, DataRoute> routeMap = new TreeMap<>();
+		routes.forEach(route -> routeMap.put(route.id, new DataRoute(route)));
+		// Services that only run as the continuation of a service of another route aren't sent out by any depot
+		routeMap.values().forEach(route -> route.timetable.getTables().forEach(table -> table.links.values().forEach(link -> {
+			final DataRoute linkedRoute = routeMap.get(link.routeId);
+			if (linkedRoute != null) {
+				linkedRoute.timetable.addLinkedService(link.service);
+			}
+		})));
+		return routeMap;
+	}
+
+	/**
+	 * A siding's train with no stop times yet, to work them out with.
+	 */
+	private static TickRunner.Siding<DataTrack> untimed(SidingData sidingData) {
+		final TickRunner.Siding<DataTrack> untimed = new TickRunner.Siding<>(sidingData.path, sidingData.repeatIndex1, sidingData.repeatIndex2, null, "siding:" + sidingData.id, sidingData.trainCars, sidingData.spacing, sidingData.railLength, sidingData.acceleration, sidingData.deceleration, sidingData.maxTrains);
+		untimed.minSpeed = sidingData.minSpeed;
+		return untimed;
+	}
+
+	private static StopTimes getStopTimes(SidingData sidingData) {
+		final StopTimes stopTimes = new StopTimes();
+		timeGenerator(untimed(sidingData)).generateTimeSegments(sidingData.path, new ArrayList<>(), stopTimes, sidingData.loopJoinIndex, sidingData.repeatIndex2);
+		return stopTimes;
 	}
 
 	/**

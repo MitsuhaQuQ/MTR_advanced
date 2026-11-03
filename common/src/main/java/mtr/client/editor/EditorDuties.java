@@ -6,7 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import transitsim.plan.DepotDuties;
-import mtr.advanced.DutyGenerator;
+import transitsim.planning.DutyGenerator;
 import mtr.client.ClientData;
 import mtr.data.*;
 import mtr.packet.IPacket;
@@ -226,47 +226,15 @@ public final class EditorDuties implements IPacket {
 			return null;
 		}
 		final int dayStartMillis = TimetableConfig.getDayStartMillis();
-		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
 		final List<String> missingTimes = new ArrayList<>();
+		final List<Route> routes = new ArrayList<>();
 		depot.routeIds.forEach(routeId -> {
 			final Route route = ClientData.DATA_CACHE.routeIdMap.get(routeId);
-			if (route == null || route.platformIds.size() < 2) {
-				return;
-			}
-			final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
-			final boolean hasTimes = times != null && times.length == route.platformIds.size();
-			if (!hasTimes) {
-				missingTimes.add(route.name);
-				return;
-			}
-			final long[] platformIds = route.platformIds.stream().mapToLong(routePlatform -> routePlatform.platformId).toArray();
-			final List<RouteTimetable> tables = route.timetable.getTables();
-			for (int i = 0; i < tables.size(); i++) {
-				final RouteTimetable table = tables.get(i);
-				// A day belongs to the first table that has it
-				int days = table.weekdays;
-				for (int j = 0; j < i; j++) {
-					days &= ~tables.get(j).weekdays;
-				}
-				if (days == 0) {
-					continue;
-				}
-				for (final int service : table.services) {
-					// Times and passing as trains and the timetable page have them, with this service's own exceptions
-					final List<StopRules.StopTime> stopTimes = StopRules.times(route.platformIds, times, table.marginPercent, i, table.exceptions.get(service));
-					final long[][] plans = new long[platformIds.length][];
-					final boolean[] pass = new boolean[platformIds.length];
-					for (int j = 0; j < plans.length; j++) {
-						final StopRules.StopTime stopTime = j < stopTimes.size() ? stopTimes.get(j) : null;
-						plans[j] = stopTime == null ? new long[]{0, 0} : new long[]{stopTime.arrivalMillis, stopTime.departureMillis};
-						pass[j] = stopTime != null && stopTime.passes;
-					}
-					final RouteTimetable.ServiceLink link = table.links.get(service);
-					services.add(new DutyGenerator.ServiceInput(route.id, service, days, Math.floorMod(service - dayStartMillis, Depot.MILLISECONDS_PER_DAY), platformIds, plans, pass,
-							link == null ? 0 : link.routeId, link == null ? 0 : link.service, link == null ? -1 : link.fromStop, link == null ? 0 : link.toStop));
-				}
+			if (route != null) {
+				routes.add(route);
 			}
 		});
+		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, route -> ClientData.TIMETABLE_TIMES.get(((Route) route).id), dayStartMillis, route -> missingTimes.add(((Route) route).name));
 
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
 		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getUnlimitedTrains() ? -1 : siding.getMaxTrains())));

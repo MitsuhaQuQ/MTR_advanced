@@ -1,13 +1,14 @@
-package mtr.advanced;
+package transitsim.planning;
 
 import transitsim.plan.DepotDuties;
-import transitsim.planning.DutyPlanner;
-import transitsim.planning.OperationNetwork;
-import transitsim.planning.OperationPlan;
-import transitsim.planning.OperationTime;
-import transitsim.planning.TimetableService;
+import transitsim.plan.OperatingDay;
+import transitsim.plan.PlanRoute;
+import transitsim.plan.RouteTimetable;
+import transitsim.plan.StopRules;
 
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Works out a first draft of a depot's duties with {@link DutyPlanner} (design document 6.12, block E1): the fewest
@@ -29,6 +30,55 @@ public final class DutyGenerator {
 	private static final int UNLIMITED_TRAINS = DepotDuties.MAX_SLOTS;
 
 	private DutyGenerator() {
+	}
+
+	/**
+	 * Each service of the routes, once for each table that runs it on a day no earlier table has, with its times and
+	 * passing as trains and the timetable page have them ({@link StopRules}) and its own exceptions.
+	 *
+	 * @param fastestTimes   the fastest arrival and departure at each stop of a route, or null if they aren't known yet
+	 * @param dayStartMillis when the operating day starts, as a time of day
+	 * @param missingTimes   told about each route left out as it has no fastest times
+	 */
+	public static List<ServiceInput> servicesOf(List<? extends PlanRoute> routes, Function<PlanRoute, long[][]> fastestTimes, int dayStartMillis, Consumer<PlanRoute> missingTimes) {
+		final List<ServiceInput> services = new ArrayList<>();
+		for (final PlanRoute route : routes) {
+			if (route.getStops().size() < 2) {
+				continue;
+			}
+			final long[][] times = fastestTimes.apply(route);
+			if (times == null || times.length != route.getStops().size()) {
+				missingTimes.accept(route);
+				continue;
+			}
+			final long[] platformIds = route.getStops().stream().mapToLong(stop -> stop.getPlatformId()).toArray();
+			final List<RouteTimetable> tables = route.getTimetable().getTables();
+			for (int i = 0; i < tables.size(); i++) {
+				final RouteTimetable table = tables.get(i);
+				// A day belongs to the first table that has it
+				int days = table.weekdays;
+				for (int j = 0; j < i; j++) {
+					days &= ~tables.get(j).weekdays;
+				}
+				if (days == 0) {
+					continue;
+				}
+				for (final int service : table.services) {
+					final List<StopRules.StopTime> stopTimes = StopRules.times(route.getStops(), times, table.marginPercent, i, table.exceptions.get(service));
+					final long[][] plans = new long[platformIds.length][];
+					final boolean[] pass = new boolean[platformIds.length];
+					for (int j = 0; j < plans.length; j++) {
+						final StopRules.StopTime stopTime = j < stopTimes.size() ? stopTimes.get(j) : null;
+						plans[j] = stopTime == null ? new long[]{0, 0} : new long[]{stopTime.arrivalMillis, stopTime.departureMillis};
+						pass[j] = stopTime != null && stopTime.passes;
+					}
+					final RouteTimetable.ServiceLink link = table.links.get(service);
+					services.add(new ServiceInput(route.getRouteId(), service, days, Math.floorMod(service - dayStartMillis, (long) OperatingDay.MILLIS_PER_DAY), platformIds, plans, pass,
+							link == null ? 0 : link.routeId, link == null ? 0 : link.service, link == null ? -1 : link.fromStop, link == null ? 0 : link.toStop));
+				}
+			}
+		}
+		return services;
 	}
 
 	/**
