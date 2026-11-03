@@ -1,8 +1,9 @@
 package mtr.data;
 
+import transitsim.plan.TimetableConflicts;
 import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
-import mtr.advanced.DutyShapes;
+import transitsim.plan.DutyShapes;
 import mtr.advanced.GraphRecords;
 import transitsim.plan.ServiceExceptions;
 import mtr.advanced.TrackViews;

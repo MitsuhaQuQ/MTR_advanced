@@ -1,5 +1,6 @@
 package mtr.packet;
 
+import transitsim.plan.TimetableConflicts;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;

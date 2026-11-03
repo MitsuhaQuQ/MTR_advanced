@@ -1,8 +1,9 @@
 package mtr.screen;
 
+import mtr.advanced.PlanAdapters;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.advanced.AdvancedEditing;
-import mtr.advanced.TimetableBoundaries;
+import transitsim.plan.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
@@ -15,7 +16,7 @@ import mtr.data.Route;
 import transitsim.plan.RouteTimetable;
 import mtr.data.Station;
 import mtr.data.TimetableConfig;
-import mtr.data.TimetableConflicts;
+import transitsim.plan.TimetableConflicts;
 import mtr.mappings.ScreenMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -155,7 +156,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			if (link != null) {
 				// A route can be left at its timetable boundaries, or at the end
 				int nextStop = link.fromStop < 0 ? 1 : link.fromStop + 1;
-				while (nextStop < route.platformIds.size() - 1 && !TimetableBoundaries.isBoundaryStop(route, nextStop, ClientData.DATA_CACHE.platformIdMap::get)) {
+				while (nextStop < route.platformIds.size() - 1 && !TimetableBoundaries.isBoundaryStop(route, nextStop, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap))) {
 					nextStop++;
 				}
 				getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, link.service, nextStop < route.platformIds.size() - 1 ? nextStop : -1, link.toStop));
@@ -168,7 +169,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			if (linkRoute != null) {
 				// A route can be joined at its timetable boundaries, or at the first stop
 				int nextStop = link.toStop + 1;
-				while (nextStop < linkRoute.platformIds.size() - 1 && !TimetableBoundaries.isBoundaryStop(linkRoute, nextStop, ClientData.DATA_CACHE.platformIdMap::get)) {
+				while (nextStop < linkRoute.platformIds.size() - 1 && !TimetableBoundaries.isBoundaryStop(linkRoute, nextStop, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap))) {
 					nextStop++;
 				}
 				getTable().links.put(baseMillis, new RouteTimetable.ServiceLink(link.routeId, link.service, link.fromStop, nextStop < linkRoute.platformIds.size() - 1 ? nextStop : 0));
@@ -500,9 +501,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonLinkRoute.visible = hasService;
 		buttonLinkRoute.setMessage(Text.literal(fitButtonText(Text.translatable("gui.mtr.timetable_link_route", routeName).getString())));
 		textFieldLinkService.visible = link != null;
-		buttonLinkStop.visible = link != null && TimetableBoundaries.hasBoundaryStops(route, ClientData.DATA_CACHE.platformIdMap::get);
+		buttonLinkStop.visible = link != null && TimetableBoundaries.hasBoundaryStops(route, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap));
 		buttonClearLink.visible = link != null;
-		buttonLinkEntry.visible = linkRoute != null && TimetableBoundaries.hasBoundaryStops(linkRoute, ClientData.DATA_CACHE.platformIdMap::get);
+		buttonLinkEntry.visible = linkRoute != null && TimetableBoundaries.hasBoundaryStops(linkRoute, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap));
 		buttonReturnToDepot.visible = hasService && link == null;
 		buttonReturnToDepot.setMessage(Text.literal(fitButtonText(Text.translatable(getTable().returnServices.contains(baseMillis) ? "gui.mtr.timetable_return_depot" : "gui.mtr.timetable_stay_on_line").getString())));
 		updateLocked();
@@ -518,7 +519,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			final String stopName = link.fromStop < 0 ? Text.translatable("gui.mtr.timetable_link_last_stop").getString() : IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name));
 			buttonLinkStop.setMessage(Text.literal(fitButtonText(Text.translatable("gui.mtr.timetable_link_stop", stopName).getString())));
 		}
-		if (linkRoute != null && TimetableBoundaries.hasBoundaryStops(linkRoute, ClientData.DATA_CACHE.platformIdMap::get)) {
+		if (linkRoute != null && TimetableBoundaries.hasBoundaryStops(linkRoute, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap))) {
 			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(linkRoute.platformIds.get(Math.min(link.toStop, linkRoute.platformIds.size() - 1)).platformId);
 			final String stopName = link.toStop == 0 ? Text.translatable("gui.mtr.timetable_entry_first_stop").getString() : IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name));
 			buttonLinkEntry.setMessage(Text.literal(fitButtonText(Text.translatable("gui.mtr.timetable_link_entry", stopName).getString())));

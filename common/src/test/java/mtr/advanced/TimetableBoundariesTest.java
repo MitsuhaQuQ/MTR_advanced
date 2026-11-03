@@ -1,5 +1,6 @@
 package mtr.advanced;
 
+import transitsim.plan.TimetableBoundaries;
 import mtr.data.Platform;
 import mtr.data.Route;
 import transitsim.plan.RouteTimetable;
@@ -32,7 +33,7 @@ class TimetableBoundariesTest {
 	}
 
 	private String check(Route route, long toRoute, int fromStop, int toStop) {
-		return TimetableBoundaries.checkLink(route, new RouteTimetable.ServiceLink(toRoute, 1000, fromStop, toStop), routes::get, platforms::get);
+		return TimetableBoundaries.checkLink(route, new RouteTimetable.ServiceLink(toRoute, 1000, fromStop, toStop), routes::get, PlanAdapters.boundaryPlatforms(platforms));
 	}
 
 	@Test
@@ -42,7 +43,7 @@ class TimetableBoundariesTest {
 		assertNull(check(route, 2, -1, 0));
 		assertNotNull(check(route, 2, 1, 0));
 		assertNotNull(check(route, 2, -1, 2));
-		assertFalse(TimetableBoundaries.hasBoundaryStops(route, platforms::get));
+		assertFalse(TimetableBoundaries.hasBoundaryStops(route, PlanAdapters.boundaryPlatforms(platforms)));
 	}
 
 	@Test
@@ -51,7 +52,7 @@ class TimetableBoundariesTest {
 		makeRoute(2, 11, 12, 13, 14);
 		platforms.get(2L).timetableBoundary = true;
 		platforms.get(13L).timetableBoundary = true;
-		assertTrue(TimetableBoundaries.hasBoundaryStops(route, platforms::get));
+		assertTrue(TimetableBoundaries.hasBoundaryStops(route, PlanAdapters.boundaryPlatforms(platforms)));
 		assertNull(check(route, 2, 1, 2));
 		// Only the marked platforms, and never the first or last stop as a middle stop
 		assertNotNull(check(route, 2, 2, 0));
@@ -82,9 +83,9 @@ class TimetableBoundariesTest {
 		route.timetable.links.put(1000, new RouteTimetable.ServiceLink(2, 5000, 1, 0));
 		route.timetable.links.put(2000, new RouteTimetable.ServiceLink(2, 6000, 2, 0));
 		route.timetable.links.put(3000, new RouteTimetable.ServiceLink(99, 7000, -1, 0));
-		assertTrue(TimetableBoundaries.sanitizeLinks(route, routes::get, platforms::get));
+		assertTrue(TimetableBoundaries.sanitizeLinks(route, routes::get, PlanAdapters.boundaryPlatforms(platforms)));
 		assertEquals(1, route.timetable.links.size());
 		assertTrue(route.timetable.links.containsKey(1000));
-		assertFalse(TimetableBoundaries.sanitizeLinks(route, routes::get, platforms::get));
+		assertFalse(TimetableBoundaries.sanitizeLinks(route, routes::get, PlanAdapters.boundaryPlatforms(platforms)));
 	}
 }

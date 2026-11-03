@@ -1,5 +1,6 @@
 package mtr.advanced;
 
+import transitsim.plan.DutyShapes;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.ServiceExceptions;
 import io.netty.buffer.Unpooled;

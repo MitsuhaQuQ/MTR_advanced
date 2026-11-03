@@ -4,7 +4,7 @@ import mtr.advanced.PacketBinary;
 import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
 import transitsim.plan.DepotDuties;
-import mtr.advanced.DutyShapes;
+import transitsim.plan.DutyShapes;
 import mtr.advanced.PathBoundaries;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.DeterministicPathFinder;

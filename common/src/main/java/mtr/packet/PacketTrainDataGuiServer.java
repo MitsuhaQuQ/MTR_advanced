@@ -1,12 +1,14 @@
 package mtr.packet;
 
+import mtr.advanced.PlanAdapters;
+import transitsim.plan.TimetableConflicts;
 import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.SecurityConfig;
 import mtr.advanced.RouteLayouts;
 import mtr.advanced.StationLayouts;
-import mtr.advanced.TimetableBoundaries;
+import transitsim.plan.TimetableBoundaries;
 import mtr.block.*;
 import mtr.compat.Compat;
 import mtr.data.*;
@@ -285,7 +287,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			// Links have to follow the timetable boundaries, which the game's screens and the editor already check
 			if (packetId.equals(PACKET_UPDATE_ROUTE)) {
 				final Route route = railwayData.dataCache.routeIdMap.get(updatedId);
-				if (route != null && TimetableBoundaries.sanitizeLinks(route, railwayData.dataCache.routeIdMap::get, railwayData.dataCache.platformIdMap::get)) {
+				if (route != null && TimetableBoundaries.sanitizeLinks(route, railwayData.dataCache.routeIdMap::get, PlanAdapters.boundaryPlatforms(railwayData.dataCache.platformIdMap))) {
 					route.setTimetable(correctedPacket -> world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, PACKET_UPDATE_ROUTE, correctedPacket)));
 				}
 			}

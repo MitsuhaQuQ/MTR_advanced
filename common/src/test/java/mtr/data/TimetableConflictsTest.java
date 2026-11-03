@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.plan.TimetableConflicts;
 import transitsim.plan.RouteTimetable;
 import org.junit.jupiter.api.Test;
 

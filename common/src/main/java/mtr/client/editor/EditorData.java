@@ -1,10 +1,11 @@
 package mtr.client.editor;
 
+import mtr.advanced.PlanAdapters;
 import transitsim.plan.RouteTimetable;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import mtr.data.*;
-import mtr.advanced.TimetableBoundaries;
+import transitsim.plan.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
@@ -100,7 +101,7 @@ public final class EditorData {
 			final Route.RoutePlatform routePlatform = route.platformIds.get(i);
 			final JsonObject stopObject = new JsonObject();
 			// Where a service can leave or join this route part of the way along
-			stopObject.addProperty("boundary", TimetableBoundaries.isBoundaryStop(route, i, ClientData.DATA_CACHE.platformIdMap::get));
+			stopObject.addProperty("boundary", TimetableBoundaries.isBoundaryStop(route, i, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap)));
 			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(routePlatform.platformId);
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
 			stopObject.addProperty("platformId", String.valueOf(routePlatform.platformId));

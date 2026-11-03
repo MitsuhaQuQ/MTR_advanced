@@ -1,11 +1,4 @@
-package mtr.advanced;
-
-import transitsim.plan.DepotDuties;
-import transitsim.plan.ServiceExceptions;
-import mtr.data.Depot;
-import mtr.data.Route;
-import transitsim.plan.RouteTimetable;
-import mtr.data.TimetableConfig;
+package transitsim.plan;
 
 import java.util.List;
 import java.util.function.LongFunction;
@@ -26,18 +19,18 @@ public final class DutyShapes {
 	 * @param startPlatform the platform a train staying on the line overnight starts from, or 0 from the siding
 	 * @return the key of the duty's path, or null if a route of it is gone
 	 */
-	public static String getKey(List<DepotDuties.Segment> segments, LongFunction<Route> routes, int weekday, long startPlatform, boolean staysOnLine) {
+	public static String getKey(List<DepotDuties.Segment> segments, LongFunction<? extends PlanRoute> routes, int weekday, long startPlatform, boolean staysOnLine) {
 		if (segments.isEmpty()) {
 			return null;
 		}
 		final StringBuilder builder = new StringBuilder(KEY_PREFIX).append(startPlatform).append('|');
 		for (final DepotDuties.Segment segment : segments) {
-			final Route route = routes.apply(segment.routeId);
-			if (route == null || route.platformIds.size() < 2) {
+			final PlanRoute route = routes.apply(segment.routeId);
+			if (route == null || route.getStops().size() < 2) {
 				return null;
 			}
 			final boolean[] pass = getPassFlags(route, segment, weekday);
-			builder.append(route.id).append('@').append(getFirstStop(route, segment)).append('-').append(getLastStop(route, segment)).append(':');
+			builder.append(route.getRouteId()).append('@').append(getFirstStop(route, segment)).append('-').append(getLastStop(route, segment)).append(':');
 			for (final boolean stopPass : pass) {
 				builder.append(stopPass ? '1' : '0');
 			}
@@ -46,12 +39,12 @@ public final class DutyShapes {
 		return builder.append(staysOnLine ? "stay" : "depot").toString();
 	}
 
-	public static int getFirstStop(Route route, DepotDuties.Segment segment) {
-		return Math.max(0, Math.min(segment.fromStop, route.platformIds.size() - 2));
+	public static int getFirstStop(PlanRoute route, DepotDuties.Segment segment) {
+		return Math.max(0, Math.min(segment.fromStop, route.getStops().size() - 2));
 	}
 
-	public static int getLastStop(Route route, DepotDuties.Segment segment) {
-		final int last = route.platformIds.size() - 1;
+	public static int getLastStop(PlanRoute route, DepotDuties.Segment segment) {
+		final int last = route.getStops().size() - 1;
 		return segment.toStop < 0 ? last : Math.max(getFirstStop(route, segment) + 1, Math.min(segment.toStop, last));
 	}
 
@@ -59,7 +52,7 @@ public final class DutyShapes {
 	 * Whether the service passes each stop it runs through, from where it joins to where it leaves. Its route's setting, then
 	 * the service's own exception on the table it runs to that day. The stops where it joins and leaves are always stops.
 	 */
-	public static boolean[] getPassFlags(Route route, DepotDuties.Segment segment, int weekday) {
+	public static boolean[] getPassFlags(PlanRoute route, DepotDuties.Segment segment, int weekday) {
 		final int first = getFirstStop(route, segment);
 		final int last = getLastStop(route, segment);
 		final RouteTimetable table = getTable(route, weekday);
@@ -68,7 +61,7 @@ public final class DutyShapes {
 		for (int i = first + 1; i < last; i++) {
 			final ServiceExceptions.StopException exception = exceptions == null ? null : exceptions.get(i);
 			final int exceptionPass = exception == null ? -1 : exception.pass;
-			pass[i - first] = exceptionPass == 1 || exceptionPass != 0 && route.platformIds.get(i).pass;
+			pass[i - first] = exceptionPass == 1 || exceptionPass != 0 && route.getStops().get(i).isPass();
 		}
 		return pass;
 	}
@@ -76,8 +69,8 @@ public final class DutyShapes {
 	/**
 	 * @return the table a route runs on a weekday, the first that has the day
 	 */
-	public static RouteTimetable getTable(Route route, int weekday) {
-		for (final RouteTimetable table : route.timetable.getTables()) {
+	public static RouteTimetable getTable(PlanRoute route, int weekday) {
+		for (final RouteTimetable table : route.getTimetable().getTables()) {
 			if ((table.weekdays >> weekday & 1) != 0) {
 				return table;
 			}
@@ -109,31 +102,31 @@ public final class DutyShapes {
 	/**
 	 * @return the platform where the last segment of a duty ends, which is where a train staying overnight waits
 	 */
-	public static long getEndPlatform(DepotDuties.DayDuty day, LongFunction<Route> routes) {
+	public static long getEndPlatform(DepotDuties.DayDuty day, LongFunction<? extends PlanRoute> routes) {
 		if (day == null || day.segments.isEmpty()) {
 			return 0;
 		}
 		final DepotDuties.Segment segment = day.segments.get(day.segments.size() - 1);
-		final Route route = routes.apply(segment.routeId);
-		return route == null || route.platformIds.size() < 2 ? 0 : route.platformIds.get(getLastStop(route, segment)).platformId;
+		final PlanRoute route = routes.apply(segment.routeId);
+		return route == null || route.getStops().size() < 2 ? 0 : route.getStops().get(getLastStop(route, segment)).getPlatformId();
 	}
 
 	/**
 	 * @return the platform where a duty's first segment starts
 	 */
-	public static long getStartPlatform(DepotDuties.DayDuty day, LongFunction<Route> routes) {
+	public static long getStartPlatform(DepotDuties.DayDuty day, LongFunction<? extends PlanRoute> routes) {
 		if (day == null || day.segments.isEmpty()) {
 			return 0;
 		}
 		final DepotDuties.Segment segment = day.segments.get(0);
-		final Route route = routes.apply(segment.routeId);
-		return route == null || route.platformIds.size() < 2 ? 0 : route.platformIds.get(getFirstStop(route, segment)).platformId;
+		final PlanRoute route = routes.apply(segment.routeId);
+		return route == null || route.getStops().size() < 2 ? 0 : route.getStops().get(getFirstStop(route, segment)).getPlatformId();
 	}
 
 	/**
 	 * @return the key of the path a slot runs on a weekday, starting from the siding or from where a train stayed overnight
 	 */
-	public static String getSlotKey(List<DepotDuties.Slot> slots, int slotIndex, int weekday, LongFunction<Route> routes) {
+	public static String getSlotKey(List<DepotDuties.Slot> slots, int slotIndex, int weekday, LongFunction<? extends PlanRoute> routes) {
 		final DepotDuties.DayDuty day = slotIndex < slots.size() ? slots.get(slotIndex).getDuty(weekday) : null;
 		if (day == null || day.segments.isEmpty()) {
 			return null;
@@ -147,17 +140,17 @@ public final class DutyShapes {
 	 * @return when the operating day of a time started
 	 */
 	public static long getDayStart(long millis) {
-		return millis - TimetableConfig.getTimeInDay(millis);
+		return millis - OperatingDay.getTimeInDay(millis);
 	}
 
 	/**
 	 * @return a service of a duty as a full timestamp on the operating day starting at {@code dayStart}
 	 */
 	public static long getServiceMillis(long dayStart, int service) {
-		return dayStart + TimetableConfig.getTimeInDay(service);
+		return dayStart + OperatingDay.getTimeInDay(service);
 	}
 
 	public static long getDayNumber(long dayStart) {
-		return Math.floorDiv(dayStart + Depot.MILLISECONDS_PER_DAY / 2, (long) Depot.MILLISECONDS_PER_DAY);
+		return Math.floorDiv(dayStart + OperatingDay.MILLIS_PER_DAY / 2, (long) OperatingDay.MILLIS_PER_DAY);
 	}
 }

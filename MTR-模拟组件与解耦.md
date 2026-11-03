@@ -66,10 +66,11 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `transitsim.planning.*`（原 `operation/*`，7 个类） | 958 | 无 | A | **已在组件**（S0），S6 收拢 |
 | `transitsim.plan.RouteTimetable`（原 `data/RouteTimetable`） | 473 | `ServiceExceptions`、`OperatingDay`、`PlanStop`、`PlanRoute` | A | **已在组件**（S3a）；`Route` 实现 `PlanRoute`，`Route.RoutePlatform` 实现 `PlanStop`；`StopPlan.route` 改为 `PlanRoute` |
 | `transitsim.plan.ServiceExceptions`（原 `advanced/ServiceExceptions`） | 233 | `RouteTimetable`、`PlanStop`、`transitsim.io` | A | **已在组件**（S3a）；读写用组件的 `BinaryReader`、`BinaryWriter`，宿主用 `advanced/PacketBinary` 包住 `FriendlyByteBuf`，字节不变 |
-| `advanced/TimetableBoundaries` | 82 | `Platform`、`Route`、`RouteTimetable` | B | 组件 `plan`（S3） |
+| `transitsim.plan.TimetableBoundaries`（原 `advanced/TimetableBoundaries`） | 82 | `PlanRoute`、`RouteTimetable` | A | **已在组件**（S3a）；站台是不是时刻边界由宿主传入（`advanced/PlanAdapters.boundaryPlatforms`） |
+| `transitsim.plan.TimetableConflicts`（原 `data/TimetableConflicts`） | 562 | `RouteTimetable`、`PlanStop` | A | **已在组件**（S3a） |
 | `data/TimetableConfig` → `transitsim.plan.OperatingDay` | 124 | Gson（只在宿主） | A | **已拆开**（S3a）：时区、日起点和星期的换算在组件 `OperatingDay`，配置文件读写留在宿主 `TimetableConfig`，它的方法转调组件 |
 | `transitsim.plan.DepotDuties`（原 `advanced/DepotDuties`） | 243 | `transitsim.io` | A | **已在组件**（S3a）；存成字节时用组件的 `ByteArrayBinary`，和 Minecraft 的 `FriendlyByteBuf` 逐字节相同（`PacketBinaryTest`），已有存档照常读入 |
-| `advanced/DutyShapes` | 161 | `Depot`、`Route`、`RouteTimetable`、`TimetableConfig` | B | 组件 `plan`（S3） |
+| `transitsim.plan.DutyShapes`（原 `advanced/DutyShapes`） | 161 | `PlanRoute`、`DepotDuties`、`OperatingDay` | A | **已在组件**（S3a） |
 | `advanced/DutyGenerator` | 349 | `transitsim.planning` | B（取数据时用 MTR 类） | 规划部分进组件 `planning`，取数据的部分是宿主适配器（S6） |
 | `data/Route` | 1111 | `BlockPos`、NBT、`FriendlyByteBuf`、`PathData` | C 的数据类 | 留在宿主，适配器换成组件的线路 |
 
@@ -425,7 +426,8 @@ S0 之前，已经不依赖世界的部件：
 | S2c 运行段和曲线模式 | 完成：服务端开速度曲线的自动列车沿 `RunSegment` 走，位置由曲线在"出发后经过的 tick 数"处的位置得出，不再逐 tick 累加；停车点变化、运行段或巡航上限变化、列车被别处移动时从当前位置和速度换新段（版本加一）；按常用减速度停不住时用 1.5 倍，再停不住就从还能停住的速度起步，并标出紧急制动；到段末时位置对齐到停车点。客户端照旧沿曲线逐帧走。运行段不存档，读档后从当前位置和速度重建 | 1.20.1 | 组件 112 项（新增 `RunSegmentTest` 7 项；对照测试里开速度曲线的场景改在客户端比较）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T93） | 未做 |
 | S2d 事件、命令和占用 | 完成：新规则在服务端发出事件 `MotionEvent`（停下、回库、续圈、越站、换段、紧急制动、发车），`Train` 收着，各存车线在列车走完后交出，`RailwayData` 在 tick 末按（时间、类别、列车、序号）排好统一处理，现在只把紧急制动写进日志，上一 tick 的事件可以取到；司机的加减档和开关门规则进组件 `TrainMotion.applyCommand`（`MotionCommand`），宿主照旧在本 tick 收集按键、在这列车走之前交给它，没有再延后一 tick，因为那样会改变手动驾驶的手感和返回值；占用的存放进组件 `transitsim.sim.Occupancy`（两 tick 的轨道 → 占用者），宿主的列车、手动驾驶、信号机闭塞和折返预约照旧写进去，查询经它判断，`trainPositions` 只是它的视图，所有公开方法签名不变 | 1.20.1 | 组件 122 项（新增 `MotionEventTest` 6 项、`OccupancyTest` 4 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动，ANTE 的 mixin 没有失败 | 未测（T94） | 未做 |
 | S3a 前半：时刻表、例外、运营日、运用进组件 | 完成：新包 `transitsim.plan`（`RouteTimetable`、`ServiceExceptions`、`OperatingDay`、`DepotDuties`、视图 `PlanRoute`、`PlanStop`）和 `transitsim.io`（`BinaryReader`、`BinaryWriter`、`ByteArrayBinary`）；宿主改为直接用组件的类，`TimetableConfig` 只读写配置文件，`advanced/PacketBinary` 把 `FriendlyByteBuf` 交给组件；网络包和存档字节不变，协议版本不变。顺手修了构建顺序：`common` 的生产转换要等组件的 jar 构建完（`common/build.gradle`） | 1.20.1 | 组件 122 项、common 243 项全过（新增 `PacketBinaryTest` 3 项，`RouteTimetableSaveTest` 照旧通过）；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
-| S3a 后半至 S6、全链路场景 | 未开始 | | | | |
+| S3a 后半：时刻边界、运用形状、冲突检查进组件 | 完成：`TimetableBoundaries`、`DutyShapes`、`TimetableConflicts` 进 `transitsim.plan`；`PlanRoute` 加站序、是否环线、运输方式；宿主 `advanced/PlanAdapters` 给出哪些站台是时刻边界。`DutyGenerator` 留在宿主，它是从车厂和存车线读数据、交给组件规划器的适配器。这些类的测试暂时还在 common，因为它们用 MTR 的 `Route`、`Platform` 造输入，S3c 有了组件自己的测试替身后再搬 | 1.20.1 | 组件 122 项、common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
+| S3b 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

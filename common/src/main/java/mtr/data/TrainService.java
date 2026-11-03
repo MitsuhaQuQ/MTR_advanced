@@ -2,7 +2,7 @@ package mtr.data;
 
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.DepotDuties;
-import mtr.advanced.DutyShapes;
+import transitsim.plan.DutyShapes;
 import mtr.path.PathData;
 import org.msgpack.core.MessagePacker;
 

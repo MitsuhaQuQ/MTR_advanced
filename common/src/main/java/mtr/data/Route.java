@@ -578,6 +578,16 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		return timetable;
 	}
 
+	@Override
+	public List<RoutePlatform> getStops() {
+		return platformIds;
+	}
+
+	@Override
+	public int getTransportModeId() {
+		return transportMode.ordinal();
+	}
+
 	public void setPlatformIds(Consumer<FriendlyByteBuf> sendPacket) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(id);

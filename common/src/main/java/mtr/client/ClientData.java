@@ -1,5 +1,6 @@
 package mtr.client;
 
+import transitsim.plan.TimetableConflicts;
 import mtr.KeyMappings;
 import mtr.MTRClient;
 import mtr.data.*;

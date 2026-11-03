@@ -1,7 +1,5 @@
-package mtr.data;
+package transitsim.plan;
 
-import transitsim.plan.RouteTimetable;
-import transitsim.plan.ServiceExceptions;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -97,7 +95,7 @@ public final class TimetableConflicts {
 	/**
 	 * A train turning back at the platform it arrived on stays there until its next service leaves, so whether the next
 	 * train fits depends on when these two line up, not just on how often they run. Each train takes the first service
-	 * nobody has taken, like {@link Depot#findNextService}.
+	 * nobody has taken, like a depot finding its next service.
 	 */
 	private static void linkTurnBacks(RouteTimes route, RouteTimes nextRoute, int weekday, Set<Long> platformIds, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops) {
 		if (nextRoute == null || route.platformIds.isEmpty() || nextRoute.platformIds.isEmpty()) {
@@ -121,7 +119,7 @@ public final class TimetableConflicts {
 				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
 				linkedStops.add(stop);
 				linkedStops.add(nextStop);
-				final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) Depot.MILLISECONDS_PER_DAY);
+				final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) OperatingDay.MILLIS_PER_DAY);
 				final long leaving = arrival + wait + nextServiceTimes.departures[0] - nextServiceTimes.arrivals[0];
 				final List<ServiceStop> stops = new ArrayList<>();
 				stops.add(stop);
@@ -175,7 +173,7 @@ public final class TimetableConflicts {
 	private static Occupation findOverlap(Occupation occupation, List<Occupation> otherOccupations) {
 		for (final Occupation otherOccupation : otherOccupations) {
 			for (int day = -1; day <= 1; day++) {
-				final long offset = day * Depot.MILLISECONDS_PER_DAY;
+				final long offset = day * OperatingDay.MILLIS_PER_DAY;
 				if (otherOccupation.start + offset < occupation.end + MIN_PLATFORM_GAP_MILLIS && occupation.start < otherOccupation.end + offset + MIN_PLATFORM_GAP_MILLIS) {
 					return otherOccupation;
 				}
@@ -201,7 +199,7 @@ public final class TimetableConflicts {
 				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
 				linkedStops.add(nextStop);
 				stops.add(nextStop);
-				leaving += Math.floorMod(nextServiceTimes.service - earliestStart, (long) Depot.MILLISECONDS_PER_DAY);
+				leaving += Math.floorMod(nextServiceTimes.service - earliestStart, (long) OperatingDay.MILLIS_PER_DAY);
 			}
 			occupations.add(new Occupation(arrival, leaving, stops, turnBack.candidates));
 		}
@@ -215,7 +213,7 @@ public final class TimetableConflicts {
 		ServiceTimes bestService = null;
 		for (final ServiceTimes nextServiceTimes : nextServices) {
 			final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
-			final long wait = Math.floorMod(nextServiceTimes.service - earliestMillis, (long) Depot.MILLISECONDS_PER_DAY);
+			final long wait = Math.floorMod(nextServiceTimes.service - earliestMillis, (long) OperatingDay.MILLIS_PER_DAY);
 			if (wait < bestWait && wait <= RouteTimetable.MAX_LAYOVER_MILLIS && !linkedStops.contains(nextStop) && !nextStop.equals(stop)) {
 				bestWait = wait;
 				bestService = nextServiceTimes;
@@ -232,7 +230,7 @@ public final class TimetableConflicts {
 			for (int offset = 1; offset < size && conflicts.size() < MAX_CONFLICTS; offset++) {
 				final Occupation otherOccupation = occupations.get((i + offset) % size);
 				// Starts only grow from here, going past midnight into the next day
-				if (otherOccupation.start + (i + offset < size ? 0 : Depot.MILLISECONDS_PER_DAY) >= occupation.end + MIN_PLATFORM_GAP_MILLIS) {
+				if (otherOccupation.start + (i + offset < size ? 0 : OperatingDay.MILLIS_PER_DAY) >= occupation.end + MIN_PLATFORM_GAP_MILLIS) {
 					break;
 				}
 				addConflict(routeId, platformId, occupation, otherOccupation, conflicts);
@@ -262,21 +260,21 @@ public final class TimetableConflicts {
 		 * The route the same train runs next.
 		 */
 		public long nextRouteId;
-		private final List<Route.RoutePlatform> stops;
+		private final List<PlanStop> stops;
 		private final List<Long> platformIds = new ArrayList<>();
 		private final List<TableTimes> tables = new ArrayList<>();
 		private final List<TurnBack> turnBacks = new ArrayList<>();
 
-		public RouteTimes(long routeId, List<Route.RoutePlatform> stops) {
+		public RouteTimes(long routeId, List<? extends PlanStop> stops) {
 			this.routeId = routeId;
 			this.stops = new ArrayList<>(stops);
-			stops.forEach(stop -> platformIds.add(stop.platformId));
+			stops.forEach(stop -> platformIds.add(stop.getPlatformId()));
 		}
 
 		/**
 		 * A route with one table running every day.
 		 */
-		public RouteTimes(long routeId, List<Route.RoutePlatform> stops, List<Integer> services, int marginPercent, long[][] times) {
+		public RouteTimes(long routeId, List<? extends PlanStop> stops, List<Integer> services, int marginPercent, long[][] times) {
 			this(routeId, stops);
 			addTable(0, RouteTimetable.ALL_WEEKDAYS, services, marginPercent, times);
 		}
@@ -382,7 +380,7 @@ public final class TimetableConflicts {
 		}
 
 		private long getArrival(ServiceTimes serviceTimes) {
-			return Math.floorMod(serviceTimes.service + serviceTimes.departures[stopIndex] + runInMillis, (long) Depot.MILLISECONDS_PER_DAY);
+			return Math.floorMod(serviceTimes.service + serviceTimes.departures[stopIndex] + runInMillis, (long) OperatingDay.MILLIS_PER_DAY);
 		}
 
 		@Override
@@ -502,7 +500,7 @@ public final class TimetableConflicts {
 		 * @return the time of day this service reaches a stop
 		 */
 		private long getArrival(int stopIndex) {
-			return Math.floorMod(service + arrivals[stopIndex], (long) Depot.MILLISECONDS_PER_DAY);
+			return Math.floorMod(service + arrivals[stopIndex], (long) OperatingDay.MILLIS_PER_DAY);
 		}
 	}
 

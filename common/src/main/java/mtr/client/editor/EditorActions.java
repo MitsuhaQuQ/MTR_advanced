@@ -1,10 +1,11 @@
 package mtr.client.editor;
 
+import mtr.advanced.PlanAdapters;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import transitsim.plan.ServiceExceptions;
-import mtr.advanced.TimetableBoundaries;
+import transitsim.plan.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.data.Depot;
 import mtr.data.Platform;
@@ -337,7 +338,7 @@ public final class EditorActions implements IPacket {
 			}
 			for (final JsonElement linkElement : table.getAsJsonArray("links")) {
 				final JsonObject link = linkElement.getAsJsonObject();
-				final String error = TimetableBoundaries.checkLink(route, new RouteTimetable.ServiceLink(parseId(getString(link, "route")), link.get("toService").getAsInt(), link.get("fromStop").getAsInt(), link.get("toStop").getAsInt()), ClientData.DATA_CACHE.routeIdMap::get, ClientData.DATA_CACHE.platformIdMap::get);
+				final String error = TimetableBoundaries.checkLink(route, new RouteTimetable.ServiceLink(parseId(getString(link, "route")), link.get("toService").getAsInt(), link.get("fromStop").getAsInt(), link.get("toStop").getAsInt()), ClientData.DATA_CACHE.routeIdMap::get, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap));
 				if (error != null) {
 					return error;
 				}
