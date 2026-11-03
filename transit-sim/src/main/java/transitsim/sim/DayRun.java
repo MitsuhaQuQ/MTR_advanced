@@ -1,10 +1,14 @@
 package transitsim.sim;
 
+import transitsim.io.BinaryReader;
+import transitsim.io.BinaryWriter;
+import transitsim.io.ByteArrayBinary;
 import transitsim.motion.MotionEvent;
 import transitsim.plan.OperatingDay;
 import transitsim.plan.PlanRoute;
 import transitsim.plan.RouteTimetable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +55,7 @@ public final class DayRun {
 	 * How much it simulates between asking whether it should stop.
 	 */
 	private static final long STEP_MILLIS = 10 * 60 * 1000;
+	private static final int VERSION = 1;
 
 	private DayRun(List<Trip> trips, List<Problem> problems, long dayStart, boolean cancelled) {
 		this.trips = Collections.unmodifiableList(trips);
@@ -93,6 +98,104 @@ public final class DayRun {
 		}
 		recorder.problems.sort((problem1, problem2) -> Long.compare(problem1.time, problem2.time));
 		return new DayRun(new ArrayList<>(recorder.trips.values()), recorder.problems, dayStart, wasCancelled);
+	}
+
+	/**
+	 * @return the report as the server sends it to the editor, with times counted from the start of the day
+	 */
+	public byte[] toBytes() {
+		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		writer.writeInt(VERSION);
+		writer.writeLong(dayStart);
+		writer.writeBoolean(cancelled);
+		writer.writeVarInt(trips.size());
+		for (final Trip trip : trips) {
+			writer.writeLong(trip.routeId);
+			writer.writeLong(trip.serviceMillis);
+			writer.writeLong(trip.trainId);
+			writer.writeVarInt(trip.stops.size());
+			for (final Stop stop : trip.stops) {
+				writer.writeInt(stop.stopIndex);
+				writer.writeLong(stop.platformId);
+				writer.writeBoolean(stop.passed);
+				writeTime(writer, stop.arrivalMillis);
+				writeTime(writer, stop.departureMillis);
+				writeTime(writer, stop.plannedArrivalMillis);
+				writeTime(writer, stop.plannedDepartureMillis);
+			}
+		}
+		writer.writeVarInt(problems.size());
+		for (final Problem problem : problems) {
+			writer.writeVarInt(problem.kind.ordinal());
+			writeTime(writer, problem.time);
+			writer.writeLong(problem.durationMillis);
+			writer.writeLong(problem.routeId);
+			writer.writeLong(problem.serviceMillis);
+			writer.writeLong(problem.trainId);
+			writer.writeInt(problem.stopIndex);
+			writer.writeLong(problem.platformId);
+			final byte[] detail = problem.detail.getBytes(StandardCharsets.UTF_8);
+			writer.writeVarInt(detail.length);
+			for (final byte value : detail) {
+				writer.writeByte(value);
+			}
+		}
+		return writer.toBytes();
+	}
+
+	public static DayRun fromBytes(byte[] bytes) {
+		final BinaryReader reader = new ByteArrayBinary.Reader(bytes);
+		final int version = reader.readInt();
+		if (version != VERSION) {
+			throw new IllegalArgumentException("Unknown day report version " + version);
+		}
+		final long dayStart = reader.readLong();
+		final boolean cancelled = reader.readBoolean();
+		final List<Trip> trips = new ArrayList<>();
+		for (int i = reader.readVarInt(); i > 0; i--) {
+			final Trip trip = new Trip(reader.readLong(), reader.readLong(), reader.readLong());
+			for (int j = reader.readVarInt(); j > 0; j--) {
+				final int stopIndex = reader.readInt();
+				final long platformId = reader.readLong();
+				final boolean passed = reader.readBoolean();
+				final long arrivalMillis = readTime(reader, dayStart);
+				final long departureMillis = readTime(reader, dayStart);
+				final Stop stop = new Stop(stopIndex, platformId, passed, arrivalMillis, readTime(reader, dayStart), readTime(reader, dayStart));
+				stop.departureMillis = departureMillis;
+				trip.stops.add(stop);
+			}
+			trips.add(trip);
+		}
+		final List<Problem> problems = new ArrayList<>();
+		final ProblemKind[] kinds = ProblemKind.values();
+		for (int i = reader.readVarInt(); i > 0; i--) {
+			final ProblemKind kind = kinds[Math.min(reader.readVarInt(), kinds.length - 1)];
+			final long time = readTime(reader, dayStart);
+			final long durationMillis = reader.readLong();
+			final long routeId = reader.readLong();
+			final long serviceMillis = reader.readLong();
+			final long trainId = reader.readLong();
+			final int stopIndex = reader.readInt();
+			final long platformId = reader.readLong();
+			final byte[] detail = new byte[reader.readVarInt()];
+			for (int j = 0; j < detail.length; j++) {
+				detail[j] = reader.readByte();
+			}
+			problems.add(new Problem(kind, time, durationMillis, routeId, serviceMillis, trainId, stopIndex, platformId, new String(detail, StandardCharsets.UTF_8)));
+		}
+		return new DayRun(trips, problems, dayStart, cancelled);
+	}
+
+	/**
+	 * A time, or -1 for none, as a count from the start of the day plus one, which fits in an int.
+	 */
+	private void writeTime(BinaryWriter writer, long millis) {
+		writer.writeInt(millis < 0 ? 0 : (int) (millis - dayStart) + 1);
+	}
+
+	private static long readTime(BinaryReader reader, long dayStart) {
+		final int value = reader.readInt();
+		return value == 0 ? -1 : dayStart + value - 1;
 	}
 
 	public enum ProblemKind {

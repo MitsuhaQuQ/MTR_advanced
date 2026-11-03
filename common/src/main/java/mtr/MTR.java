@@ -1,5 +1,6 @@
 package mtr;
 
+import mtr.advanced.SandboxRuns;
 import mtr.audio.AudioServer;
 import mtr.compat.Compat;
 import mtr.data.Depot;
@@ -465,6 +466,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_UPDATE_ENTITY_SEAT_POSITION, PacketTrainDataGuiServer::receiveUpdateEntitySeatPassengerPosition);
 		PacketGuard.register(PACKET_DRIVE_TRAIN, PacketTrainDataGuiServer::receiveDriveTrainC2S);
 		PacketGuard.register(PACKET_TIMETABLE_TIMES, PacketTrainDataGuiServer::receiveTimetableTimesC2S);
+		PacketGuard.register(PACKET_SIMULATE, SandboxRuns::receiveSimulateC2S);
 		PacketGuard.register(PACKET_STATION_LAYOUT, PacketTrainDataGuiServer::receiveStationLayoutC2S);
 		PacketGuard.register(PACKET_ROUTE_LAYOUT, PacketTrainDataGuiServer::receiveRouteLayoutC2S);
 		PacketGuard.register(PACKET_USE_LEGACY_MOTION, PacketTrainDataGuiServer::receiveUseLegacyMotionC2S);

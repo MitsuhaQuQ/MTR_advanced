@@ -83,6 +83,23 @@ class DayRunTest {
 		assertTrue(dayRun.trips.isEmpty());
 	}
 
+	@Test
+	void theReportAndADraftRouteReadBackAsTheyWereWritten() {
+		final List<HostInput> inputs = Collections.singletonList(new HostInput.ExternalOccupancy(MONDAY + 6 * HOUR + 5 * MINUTE, 1, SimDatasetTest.plain(3, 4, 400).getTrackKey(), MONDAY + 6 * HOUR + 14 * MINUTE));
+		final DayRun dayRun = DayRun.run(SimDatasetTest.lines(1, 400, 2, 4, 10), DAY_START, Collections.emptySet(), inputs, () -> false);
+		final DayRun readBack = DayRun.fromBytes(dayRun.toBytes());
+		assertEquals(describe(dayRun.problems), describe(readBack.problems));
+		assertEquals(describeTrips(dayRun.trips), describeTrips(readBack.trips));
+		assertEquals(dayRun.dayStart, readBack.dayStart);
+
+		final SimDataset.RouteData route = new SimDataset.RouteData(SimDatasetTest.route(1, 0, 10, 1, 2, 3));
+		assertArrayEquals(route.toBytes(), SimDataset.RouteData.fromBytes(route.toBytes()).toBytes());
+	}
+
+	private static List<String> describeTrips(List<DayRun.Trip> trips) {
+		return trips.stream().map(trip -> trip.routeId + "@" + trip.serviceMillis + " " + trip.trainId + trip.stops.stream().map(stop -> " " + stop.stopIndex + "/" + stop.platformId + "/" + stop.passed + "/" + stop.arrivalMillis + "/" + stop.departureMillis + "/" + stop.plannedArrivalMillis + "/" + stop.plannedDepartureMillis).collect(Collectors.joining())).collect(Collectors.toList());
+	}
+
 	private static List<String> describe(List<DayRun.Problem> problems) {
 		return problems.stream().map(problem -> ScenarioLine.clock(problem.time) + " " + problem.kind + " " + problem.routeId + "@" + ScenarioLine.clock(problem.serviceMillis) + " stop " + problem.stopIndex + " " + problem.durationMillis / 1000 + "s " + problem.detail).collect(Collectors.toList());
 	}

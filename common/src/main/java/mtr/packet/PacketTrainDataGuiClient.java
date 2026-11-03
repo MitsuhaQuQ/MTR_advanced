@@ -15,6 +15,7 @@ import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
 import mtr.client.editor.EditorLayout;
+import mtr.client.editor.EditorSimulation;
 import mtr.data.*;
 import mtr.mappings.RegistryUtilities;
 import mtr.mappings.Text;
@@ -259,6 +260,16 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void receiveRouteLayoutS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final RouteLayouts.Layout layout = RouteLayouts.read(packet);
 		minecraftClient.execute(() -> EditorLayout.receiveRoute(layout));
+	}
+
+	public static void receiveSimulateResultS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final int requestId = packet.readInt();
+		final int status = packet.readInt();
+		final int ignoredDrafts = packet.readInt();
+		final int part = packet.readInt();
+		final int partCount = packet.readInt();
+		final byte[] bytes = packet.readByteArray();
+		minecraftClient.execute(() -> EditorSimulation.receive(requestId, status, ignoredDrafts, part, partCount, bytes));
 	}
 
 	public static void requestTimetableTimesC2S(long routeId) {

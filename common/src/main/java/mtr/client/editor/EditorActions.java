@@ -319,7 +319,12 @@ public final class EditorActions implements IPacket {
 	/**
 	 * Checks the whole timetable before changing anything, so a bad one leaves the route as it was.
 	 */
-	private static String readTimetable(Route route, JsonObject timetable) {
+	/**
+	 * Puts the page's timetable into the route, checking it, without sending anything.
+	 *
+	 * @return why it can't be applied, or null
+	 */
+	static String readTimetable(Route route, JsonObject timetable) {
 		final int stopCount = route.platformIds.size();
 		final JsonArray tables = timetable.getAsJsonArray("tables");
 		final JsonArray pass = timetable.getAsJsonArray("pass");

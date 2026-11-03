@@ -68,12 +68,48 @@ public final class EditorDuties implements IPacket {
 	 * @return why they can't be sent, or null once they are
 	 */
 	public static String apply(JsonObject operation) {
-		final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot")));
+		final Depot depot = getDepot(operation);
 		if (depot == null) {
 			return TranslatedMessage.get("gui.mtr.editor_depot_missing");
 		}
-		final JsonObject dutiesObject = operation.getAsJsonObject("duties");
 		final DepotDuties duties = new DepotDuties();
+		final String error = read(depot, operation, duties);
+		if (error != null) {
+			return error;
+		}
+
+		final Set<Long> sidingIds = new TreeSet<>(depot.duties.sidings.keySet());
+		sidingIds.addAll(duties.sidings.keySet());
+		depot.duties.diagramMode = duties.diagramMode;
+		depot.setDutyMode(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
+		sidingIds.forEach(sidingId -> {
+			final List<DepotDuties.Slot> slots = duties.getSlots(sidingId);
+			depot.duties.setSlot(sidingId, slots.size(), -1, null);
+			if (slots.isEmpty()) {
+				depot.setDutySlot(sidingId, -1, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
+			}
+			for (int i = 0; i < slots.size(); i++) {
+				depot.duties.setSlot(sidingId, slots.size(), i, slots.get(i));
+				depot.setDutySlot(sidingId, i, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
+			}
+		});
+		return null;
+	}
+
+	/**
+	 * @return the depot a change of duties is for, or null
+	 */
+	public static Depot getDepot(JsonObject operation) {
+		return ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot")));
+	}
+
+	/**
+	 * Reads the page's duties of a depot into these duties, checking them as applying them does, without sending anything.
+	 *
+	 * @return why they can't be applied, or null
+	 */
+	public static String read(Depot depot, JsonObject operation, DepotDuties duties) {
+		final JsonObject dutiesObject = operation.getAsJsonObject("duties");
 		duties.diagramMode = "diagram".equals(getString(dutiesObject, "mode"));
 		final Set<String> taken = new HashSet<>();
 
@@ -136,22 +172,6 @@ public final class EditorDuties implements IPacket {
 				duties.sidings.put(sidingId, slots);
 			}
 		}
-
-		final Set<Long> sidingIds = new TreeSet<>(depot.duties.sidings.keySet());
-		sidingIds.addAll(duties.sidings.keySet());
-		depot.duties.diagramMode = duties.diagramMode;
-		depot.setDutyMode(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
-		sidingIds.forEach(sidingId -> {
-			final List<DepotDuties.Slot> slots = duties.getSlots(sidingId);
-			depot.duties.setSlot(sidingId, slots.size(), -1, null);
-			if (slots.isEmpty()) {
-				depot.setDutySlot(sidingId, -1, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
-			}
-			for (int i = 0; i < slots.size(); i++) {
-				depot.duties.setSlot(sidingId, slots.size(), i, slots.get(i));
-				depot.setDutySlot(sidingId, i, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
-			}
-		});
 		return null;
 	}
 

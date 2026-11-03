@@ -260,6 +260,7 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_TICKET_MACHINE_SCREEN, packet -> PacketTrainDataGuiClient.openTicketMachineScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_TRAIN_SENSOR_SCREEN, packet -> PacketTrainDataGuiClient.openTrainSensorScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_TIMETABLE_TIMES, packet -> PacketTrainDataGuiClient.receiveTimetableTimesS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_SIMULATE_RESULT, packet -> PacketTrainDataGuiClient.receiveSimulateResultS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_STATION_LAYOUT, packet -> PacketTrainDataGuiClient.receiveStationLayoutS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_ROUTE_LAYOUT, packet -> PacketTrainDataGuiClient.receiveRouteLayoutS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_MOTION_CONFIG, packet -> PacketTrainDataGuiClient.receiveMotionConfigS2C(Minecraft.getInstance(), packet));

@@ -305,6 +305,19 @@ public final class SimDataset {
 			this.timetable = timetable;
 		}
 
+		/**
+		 * @return the route on its own, as a draft is sent to be simulated (S5)
+		 */
+		public byte[] toBytes() {
+			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+			write(writer);
+			return writer.toBytes();
+		}
+
+		public static RouteData fromBytes(byte[] bytes) {
+			return read(new ByteArrayBinary.Reader(bytes));
+		}
+
 		private void write(BinaryWriter writer) {
 			writer.writeLong(id);
 			writer.writeInt(transportModeId);
