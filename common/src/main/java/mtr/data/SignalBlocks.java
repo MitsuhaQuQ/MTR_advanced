@@ -171,6 +171,19 @@ public class SignalBlocks {
 		}
 	}
 
+	/**
+	 * @return the rails of each signal block, for the component's simulator (G1)
+	 */
+	public List<List<UUID>> getBlockRails() {
+		final List<List<UUID>> blockRails = new ArrayList<>();
+		signalBlocks.forEach(signalBlock -> {
+			final List<UUID> rails = new ArrayList<>(signalBlock.rails);
+			rails.sort(Comparator.naturalOrder());
+			blockRails.add(rails);
+		});
+		return blockRails;
+	}
+
 	public void writeCache() {
 		railToSignalBlocks.clear();
 		signalBlocks.forEach(signalBlock -> signalBlock.rails.forEach(rail -> {

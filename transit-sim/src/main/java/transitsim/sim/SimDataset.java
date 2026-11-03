@@ -36,9 +36,9 @@ import java.util.function.Supplier;
 public final class SimDataset {
 
 	/**
-	 * Version 2 adds the trains as they were (G0); data of version 1 is read with none.
+	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1); older data is read without them.
 	 */
-	public static final int VERSION = 2;
+	public static final int VERSION = 3;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -51,6 +51,10 @@ public final class SimDataset {
 	 * The trains as they were when the data was written (G0), to simulate on from them, or null if there are none.
 	 */
 	public RunRecord trains;
+	/**
+	 * The signal blocks, each with the keys of its rails ({@link DataTrack#getTrackKey}), as the game's signals make them.
+	 */
+	public final List<List<UUID>> signalBlocks = new ArrayList<>();
 
 	public byte[] toBytes() {
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
@@ -65,13 +69,21 @@ public final class SimDataset {
 		if (trains != null) {
 			writeBytes(writer, trains.toBytes());
 		}
+		writer.writeVarInt(signalBlocks.size());
+		signalBlocks.forEach(rails -> {
+			writer.writeVarInt(rails.size());
+			rails.forEach(rail -> {
+				writer.writeLong(rail.getMostSignificantBits());
+				writer.writeLong(rail.getLeastSignificantBits());
+			});
+		});
 		return writer.toBytes();
 	}
 
 	public static SimDataset fromBytes(byte[] bytes) {
 		final ByteArrayBinary.Reader reader = new ByteArrayBinary.Reader(bytes);
 		final int version = reader.readInt();
-		if (version != 1 && version != VERSION) {
+		if (version < 1 || version > VERSION) {
 			throw new IllegalArgumentException("Unknown simulation data version " + version);
 		}
 		final SimDataset dataset = new SimDataset();
@@ -86,6 +98,15 @@ public final class SimDataset {
 		}
 		if (version >= 2 && reader.readBoolean()) {
 			dataset.trains = RunRecord.fromBytes(readBytes(reader));
+		}
+		if (version >= 3) {
+			for (int i = reader.readVarInt(); i > 0; i--) {
+				final List<UUID> rails = new ArrayList<>();
+				for (int j = reader.readVarInt(); j > 0; j--) {
+					rails.add(new UUID(reader.readLong(), reader.readLong()));
+				}
+				dataset.signalBlocks.add(rails);
+			}
 		}
 		return dataset;
 	}
@@ -135,6 +156,7 @@ public final class SimDataset {
 	public TickRunner<DataTrack> buildRunner(long startMillis) {
 		final Map<Long, DataRoute> routeMap = buildRoutes();
 		final TickRunner<DataTrack> runner = new TickRunner<>(startMillis, routeMap::get);
+		runner.setSignalBlocks(signalBlocks);
 		final Map<Long, DepotBoard> boards = new HashMap<>();
 		for (final DepotData depot : depots) {
 			final DepotBoard board = new DepotBoard(toRoutes(depot.routeIds, routeMap));

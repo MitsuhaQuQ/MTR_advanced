@@ -82,6 +82,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Level world;
 	private final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 	private final SignalBlocks signalBlocks = new SignalBlocks();
+
+	public SignalBlocks getSignalBlocks() {
+		return signalBlocks;
+	}
 	private final Map<UUID, Long> lastMapRailsRequestMillis = new HashMap<>();
 	private final Map<UUID, Long> lastMapRouteRequestMillis = new HashMap<>();
 	private final Map<UUID, Map<Integer, Map<Long, long[]>>> pendingMapEntries = new ConcurrentHashMap<>();

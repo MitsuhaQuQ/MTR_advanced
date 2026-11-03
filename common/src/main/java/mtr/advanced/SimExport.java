@@ -50,6 +50,7 @@ public final class SimExport {
 			}
 		});
 		dataset.trains = trains;
+		dataset.signalBlocks.addAll(railwayData.getSignalBlocks().getBlockRails());
 		return dataset.toBytes();
 	}
 

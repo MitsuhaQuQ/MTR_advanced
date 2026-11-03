@@ -48,13 +48,20 @@ class SimDatasetTest {
 		final SimDataset readBack = SimDataset.fromBytes(withTrains);
 		assertArrayEquals(withTrains, readBack.toBytes());
 		assertArrayEquals(dataset.trains.toBytes(), readBack.trains.toBytes());
+
+		// With signal blocks (G1)
+		final SimDataset blocks = SignalBlockTest.line(true);
+		final SimDataset blocksBack = SimDataset.fromBytes(blocks.toBytes());
+		assertEquals(blocks.signalBlocks, blocksBack.signalBlocks);
+		assertArrayEquals(blocks.toBytes(), blocksBack.toBytes());
 	}
 
 	@Test
 	void dataOfTheFirstVersionReadsWithoutTrains() {
-		// Version 1 had no trains after the sidings, where version 2 says there are none in a byte
+		// Version 1 had nothing after the sidings, where version 3 says in a byte each that there are no trains and no
+		// signal blocks
 		final byte[] bytes = lines(3, 400, 2, 4, 10).toBytes();
-		final byte[] first = Arrays.copyOf(bytes, bytes.length - 1);
+		final byte[] first = Arrays.copyOf(bytes, bytes.length - 2);
 		first[3] = 1;
 		final SimDataset dataset = SimDataset.fromBytes(first);
 		assertEquals(null, dataset.trains);

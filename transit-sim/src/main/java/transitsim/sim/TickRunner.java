@@ -20,17 +20,20 @@ import transitsim.plan.TripPath;
 import transitsim.plan.TurnBacks;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.LongFunction;
+import java.util.function.LongSupplier;
 
 /**
  * Runs trains tick by tick the way the game's server does, without a world (S4a): each siding's trains in turn by
@@ -43,9 +46,10 @@ import java.util.function.LongFunction;
  * woken when a rail it looked at is taken or let go, when the services its depot has taken change, and for every input.
  * Ticks in which no train moves are skipped altogether. The results are the same as moving every train in every tick.
  * <p>
- * It is what the event driven simulator is compared against, and runs the fixed whole-chain scenarios. Left out, as they
- * need a world or a player: signal blocks spanning several rails, manual driving, passengers, doors' platforms, and
- * depots sending trains out by frequency instead of a timetable or duties.
+ * It is what the event driven simulator is compared against, and runs the fixed whole-chain scenarios. Signal blocks
+ * spanning several rails are taken as the game's signals take them (G1). Left out, as they need a world or a player:
+ * manual driving (the host takes such a train over), passengers, doors' platforms, and depots sending trains out by
+ * frequency instead of a timetable or duties.
  */
 public final class TickRunner<T extends RunTrack> {
 
@@ -71,6 +75,10 @@ public final class TickRunner<T extends RunTrack> {
 	 * What has each rail, as an {@link Occupancy} has it in this tick and the one before.
 	 */
 	private final Map<UUID, RailEntry> rails = new HashMap<>();
+	/**
+	 * For each rail of a signal block, the rails of every block it is in (G1).
+	 */
+	private final Map<UUID, List<UUID>> blockRails = new HashMap<>();
 	/**
 	 * Rails whose occupants changed since the end of the last tick.
 	 */
@@ -99,6 +107,10 @@ public final class TickRunner<T extends RunTrack> {
 	private final LongFunction<? extends PlanRoute> routes;
 	private long millis;
 	private long nextTrainId = 1;
+	/**
+	 * Gives each new train its ID, or null to count up from 1.
+	 */
+	private LongSupplier trainIds;
 	/**
 	 * Whether trains are left alone in ticks in which nothing can change for them (S4c2, S4f).
 	 */
@@ -351,6 +363,38 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * Has the host give new trains their IDs (G1), such as random ones as the game gives them, so they don't clash with
+	 * the IDs of the trains the simulation doesn't run. An ID a train already has is asked again.
+	 */
+	public void setTrainIds(LongSupplier trainIds) {
+		this.trainIds = trainIds;
+	}
+
+	private long newTrainId() {
+		if (trainIds == null) {
+			return nextTrainId++;
+		}
+		long id;
+		do {
+			id = trainIds.getAsLong();
+		} while (trainsById.containsKey(id));
+		return id;
+	}
+
+	/**
+	 * The signal blocks (G1): a train on a rail of a block with a signal takes every rail of its blocks with it, as the
+	 * game's {@code SignalBlocks} has it, unless something else already has one of them.
+	 *
+	 * @param blocks each with the keys of its rails
+	 */
+	public void setSignalBlocks(Collection<? extends Collection<UUID>> blocks) {
+		blockRails.clear();
+		final Map<UUID, Set<UUID>> railSets = new HashMap<>();
+		blocks.forEach(block -> block.forEach(rail -> railSets.computeIfAbsent(rail, key -> new LinkedHashSet<>()).addAll(block)));
+		railSets.forEach((rail, rails) -> blockRails.put(rail, new ArrayList<>(rails)));
+	}
+
+	/**
 	 * Told about each event of a train as it happens, while the train is as it was then (S5). It must only read the train.
 	 */
 	public void setTrainListener(TrainListener<T> trainListener) {
@@ -494,6 +538,15 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	public List<MotionEvent> getEvents() {
 		return Collections.unmodifiableList(events);
+	}
+
+	/**
+	 * @return the train that has the rail now, as the game's train positions would have it, or 0 if nothing has it
+	 */
+	public long getOccupant(UUID rail) {
+		catchUpAll();
+		final RailEntry entry = rails.get(rail);
+		return entry == null || entry.now.isEmpty() ? 0 : entry.now.get(0).trainId;
 	}
 
 	/**
@@ -865,7 +918,7 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			final int dutySlots = depot.duties.getSlots(sidingId).size();
 			if (depot.duties.diagramMode ? dutySlots > 0 && (trains.isEmpty() || spawnTrain && trains.size() < dutySlots) : trains.isEmpty() || spawnTrain && trains.size() <= siding.maxTrains) {
-				final HeadlessTrain train = new HeadlessTrain(nextTrainId++, this);
+				final HeadlessTrain train = new HeadlessTrain(newTrainId(), this);
 				trains.add(train);
 				trainsById.put(train.id, train);
 			}
@@ -976,6 +1029,12 @@ public final class TickRunner<T extends RunTrack> {
 		 */
 		private List<UUID> heldRails = Collections.emptyList();
 		private final List<RailEntry> watched = new ArrayList<>();
+		/**
+		 * The rails of the signal blocks it is in, which it takes or not depending on who else has them, so it is woken
+		 * when they change.
+		 */
+		private List<UUID> blockWatch = Collections.emptyList();
+		private int blockedRail = -1;
 		/**
 		 * The services it reserved in its last tick, and the ones kept reserved for it while it is left alone.
 		 */
@@ -1129,6 +1188,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		private void simulate() {
 			requestedDeploy = false;
+			blockedRail = -1;
 			service.updateOvernight();
 			TrainMotion.tick(this, this, this, this, this, 1);
 			holdRun();
@@ -1150,12 +1210,32 @@ public final class TickRunner<T extends RunTrack> {
 			final List<UUID> newRails = new ArrayList<>(2);
 			final int headIndex = MotionConstants.findIndex(this, railProgress, true);
 			final int tailIndex = MotionConstants.findIndex(this, railProgress - siding.trainCars * siding.spacing, false);
+			List<UUID> newBlockWatch = Collections.emptyList();
 			for (int i = tailIndex; i <= headIndex; i++) {
 				final T track = path.get(i);
-				if (i > 0 && track.getStopId() != sidingRun.sidingId && track.hasSignal() && !newRails.contains(track.getTrackKey())) {
-					newRails.add(track.getTrackKey());
+				if (i > 0 && track.getStopId() != sidingRun.sidingId && track.hasSignal()) {
+					final UUID rail = track.getTrackKey();
+					if (!newRails.contains(rail)) {
+						newRails.add(rail);
+					}
+					// The whole block or nothing more, as the game's signals have it
+					final List<UUID> block = blockRails.get(rail);
+					if (block != null) {
+						if (newBlockWatch.isEmpty()) {
+							newBlockWatch = new ArrayList<>();
+						}
+						newBlockWatch.addAll(block);
+						if (block.stream().noneMatch(blockRail -> isTakenByOther(blockRail, this))) {
+							block.forEach(blockRail -> {
+								if (!newRails.contains(blockRail)) {
+									newRails.add(blockRail);
+								}
+							});
+						}
+					}
 				}
 			}
+			blockWatch = newBlockWatch;
 			if (!turnBackRails.isEmpty()) {
 				if (!onRoute || tailIndex >= turnBackUntil) {
 					turnBackRails = Collections.emptyList();
@@ -1213,6 +1293,13 @@ public final class TickRunner<T extends RunTrack> {
 				quietTrain = this;
 				quiet = getQuietTicks();
 				quietTrain = null;
+				blockWatch.forEach(rail -> {
+					final RailEntry entry = getEntry(rail);
+					if (!entry.watchers.contains(this)) {
+						entry.watchers.add(this);
+						watched.add(entry);
+					}
+				});
 			}
 			dueMillis = Math.min(dueMillis, quiet >= (Long.MAX_VALUE - millis) / TICK - 1 ? Long.MAX_VALUE : millis + (quiet + 1) * TICK);
 			if (dueMillis > millis + TICK && !recordedTrips.isEmpty()) {
@@ -1314,7 +1401,9 @@ public final class TickRunner<T extends RunTrack> {
 			// Nothing within reach of braking on the way is taken, so the train won't have to stop short
 			final double reach = segment.getPositionAfter(low) + 0.5 * siding.maxSpeed * siding.maxSpeed / siding.deceleration + siding.maxSpeed + MotionConstants.BRAKING_MARGIN;
 			final int lastCheckIndex = nextPlatformIndex > 0 ? Math.min(nextPlatformIndex, path.size() - 1) : path.size() - 1;
-			for (int i = MotionConstants.findIndex(this, railProgress, true) + 1; i <= lastCheckIndex && distances.get(i - 1) <= reach; i++) {
+			// The next rail always counts, however far it starts, as the train's own look ahead has it
+			final int nextRail = MotionConstants.findIndex(this, railProgress, true) + 1;
+			for (int i = nextRail; i == nextRail || i <= lastCheckIndex && distances.get(i - 1) <= reach; i++) {
 				if (isRailOccupied(i)) {
 					return 0;
 				}
@@ -1814,7 +1903,18 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean isRailBlocked(int rail) {
-			return isRailOccupied(rail);
+			final boolean blocked = isRailOccupied(rail);
+			if (blocked) {
+				blockedRail = rail;
+			}
+			return blocked;
+		}
+
+		/**
+		 * @return the rail of its path it last waited for, in the last tick it moved in, or -1, as the game marks a delay
+		 */
+		public int getBlockedRail() {
+			return blockedRail;
 		}
 
 		@Override
