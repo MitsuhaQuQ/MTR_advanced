@@ -148,6 +148,68 @@ class DutyRunTest {
 	}
 
 	@Test
+	void keepsItsDutyWhenTheDutiesAreEdited() {
+		// F2, R04 of the architecture review: a duty under way runs as it was when the train took it on
+		final FakeTrain[] train = new FakeTrain[1];
+		final Siding.TripPath tripPath = twoRoutes(train);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1)));
+
+		train[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 18 * MINUTE;
+		train[0].service.onStopReached();
+		assertEquals(2, train[0].service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, train[0].service.getTripMillis());
+
+		// Removing the duty altogether doesn't stop it either
+		setSlots();
+		now = MONDAY + 8 * HOUR + 20 * MINUTE + 30 * SECOND;
+		train[0].service.alignToTimetable(true);
+		assertEquals(4, train[0].movedTo);
+		assertFalse(train[0].returned);
+	}
+
+	@Test
+	void takesTheEditedDutyTheNextTime() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final Siding.TripPath tripPath = twoRoutes(train);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(false);
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1)));
+
+		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY + Depot.MILLISECONDS_PER_DAY, tripPath);
+		train[0].nextStoppingIndex = 4;
+		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 8 * HOUR + 38 * MINUTE;
+		train[0].service.onStopReached();
+		assertEquals(MONDAY + Depot.MILLISECONDS_PER_DAY + 8 * HOUR + 40 * MINUTE, train[0].service.getTripMillis());
+	}
+
+	@Test
+	void takesTheNextSlotChosenSinceItLeft() {
+		// Which slot a train staying overnight takes over is decided when the new day starts
+		setSlots(
+				day(true, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
+				day(false, -1, new DepotDuties.Segment(3, (int) (7 * HOUR), 0, -1))
+		);
+		final List<PathData> stayPath = makePath(0, 1, 2, 3);
+		final Siding.TripPath tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final FakeTrain train = newTrain(stayPath);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+		train.nextStoppingIndex = 3;
+
+		depot.slots.get(0).days.get(0).nextSlot = 1;
+		final Siding.TripPath nextPath = addPath(1, 1, new int[]{0}, makePath(3, 2, 1, 0), stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4));
+		now = MONDAY + Depot.MILLISECONDS_PER_DAY + HOUR;
+		train.service.updateOvernight();
+		assertSame(nextPath, train.followed);
+		assertEquals(1, train.service.getDutySlot());
+	}
+
+	@Test
 	void changesSegmentEvenOnTheSameRoute() {
 		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(1, (int) (8 * HOUR + 30 * MINUTE), 0, -1)));
 		final List<PathData> path = makePath(0, 1, 2, 3, 1, 2, 3, 0);

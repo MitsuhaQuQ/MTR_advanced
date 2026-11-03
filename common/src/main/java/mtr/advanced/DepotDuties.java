@@ -197,6 +197,18 @@ public final class DepotDuties {
 		 */
 		public int nextSlot = -1;
 		public final List<Segment> segments = new ArrayList<>();
+
+		/**
+		 * @return a copy that later edits of the duties don't change, sharing the segments, which never change
+		 */
+		public DayDuty copy() {
+			final DayDuty copy = new DayDuty();
+			copy.weekdays = weekdays;
+			copy.stayOnLine = stayOnLine;
+			copy.nextSlot = nextSlot;
+			copy.segments.addAll(segments);
+			return copy;
+		}
 	}
 
 	/**

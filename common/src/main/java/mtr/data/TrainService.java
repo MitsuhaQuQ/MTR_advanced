@@ -86,6 +86,11 @@ public class TrainService {
 	 * The segment of the duty the train is on.
 	 */
 	private int dutyIndex;
+	/**
+	 * A copy of that day's duty, taken when the train takes it on, so editing the duties doesn't change a duty under way
+	 * (fix F2, R04 of the architecture review). It isn't saved: after a restart the duty is read again from the depot.
+	 */
+	private DepotDuties.DayDuty dutyDay;
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
 	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
@@ -176,6 +181,7 @@ public class TrainService {
 		} else if (tripMillis != 0 || isLastLap || tripPath != null || dutySlot >= 0) {
 			dutySlot = -1;
 			dutyIndex = 0;
+			dutyDay = null;
 			tripMillis = 0;
 			nextTripMillis = 0;
 			routeStartMillis = 0;
@@ -547,6 +553,7 @@ public class TrainService {
 	public void deployDuty(int slot, long dayStart, Siding.TripPath dutyPath) {
 		dutySlot = slot;
 		dutyDayStart = dayStart;
+		dutyDay = readDutyDay();
 		isJoiningLoop = false;
 		linkedService = -1;
 		linkedRouteId = 0;
@@ -605,7 +612,8 @@ public class TrainService {
 		if (dayStart <= dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2) {
 			return;
 		}
-		final DepotDuties.DayDuty day = getDutyDay();
+		// The new day is where an edit takes effect, so which slot comes next is read as the depot has it now
+		final DepotDuties.DayDuty day = readDutyDay();
 		final List<DepotDuties.Slot> slots = depot.getDutySlots(sidingId);
 		final int nextSlot = day == null ? -1 : DutyShapes.getNextSlot(day, dutySlot);
 		final int weekday = TimetableConfig.getWeekday(dayStart);
@@ -621,6 +629,7 @@ public class TrainService {
 		depot.markDutyRun(sidingId, nextSlot, dayNumber);
 		dutySlot = nextSlot;
 		dutyDayStart = dayStart;
+		dutyDay = readDutyDay();
 		tripPath = nextPath;
 		tripPathKey = nextPath.key;
 		stopTimes = nextPath.stopTimes;
@@ -656,12 +665,26 @@ public class TrainService {
 		}
 	}
 
+	/**
+	 * @return the duty the train took on, or after a restart the one of its slot read again from the depot
+	 */
 	private DepotDuties.DayDuty getDutyDay() {
+		if (dutyDay == null) {
+			dutyDay = readDutyDay();
+		}
+		return dutyDay;
+	}
+
+	/**
+	 * @return a copy of the duty of the train's slot on its day, as the depot has it now
+	 */
+	private DepotDuties.DayDuty readDutyDay() {
 		if (depot == null || dutySlot < 0) {
 			return null;
 		}
 		final List<DepotDuties.Slot> slots = depot.getDutySlots(sidingId);
-		return dutySlot < slots.size() ? slots.get(dutySlot).getDuty(TimetableConfig.getWeekday(dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2)) : null;
+		final DepotDuties.DayDuty day = dutySlot < slots.size() ? slots.get(dutySlot).getDuty(TimetableConfig.getWeekday(dutyDayStart + Depot.MILLISECONDS_PER_DAY / 2)) : null;
+		return day == null ? null : day.copy();
 	}
 
 	private List<DepotDuties.Segment> getDutySegments() {
