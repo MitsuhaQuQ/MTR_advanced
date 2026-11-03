@@ -53,6 +53,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		minecraftClient.execute(() -> ClientData.hasEditPermissionLevel = hasPermissionLevel);
 	}
 
+	public static void receiveMotionConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final boolean useLegacyMotion = packet.readBoolean();
+		minecraftClient.execute(() -> MotionConfig.setUseLegacyMotionClient(useLegacyMotion));
+	}
+
 	public static void receiveTimetableConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String timeZone = packet.readUtf();
 		final int dayStartHour = packet.readInt();
@@ -617,5 +622,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBoolean(useTimeAndWindSync);
 		RegistryClient.sendToServer(PACKET_USE_TIME_AND_WIND_SYNC, packet);
+	}
+
+	public static void sendUseLegacyMotionC2S(boolean useLegacyMotion) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBoolean(useLegacyMotion);
+		RegistryClient.sendToServer(PACKET_USE_LEGACY_MOTION, packet);
 	}
 }

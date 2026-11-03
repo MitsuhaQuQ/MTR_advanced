@@ -3,6 +3,7 @@ package mtr;
 import mtr.compat.Compat;
 import mtr.data.Depot;
 import mtr.data.LineWords;
+import mtr.data.MotionConfig;
 import mtr.data.RailwayData;
 import mtr.data.Route;
 import mtr.data.Station;
@@ -458,6 +459,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_TIMETABLE_TIMES, PacketTrainDataGuiServer::receiveTimetableTimesC2S);
 		PacketGuard.register(PACKET_STATION_LAYOUT, PacketTrainDataGuiServer::receiveStationLayoutC2S);
 		PacketGuard.register(PACKET_ROUTE_LAYOUT, PacketTrainDataGuiServer::receiveRouteLayoutC2S);
+		PacketGuard.register(PACKET_USE_LEGACY_MOTION, PacketTrainDataGuiServer::receiveUseLegacyMotionC2S);
 		PacketGuard.register(PACKET_TIMETABLE_CONFLICTS, PacketTrainDataGuiServer::receiveTimetableConflictsC2S);
 		PacketGuard.register(PACKET_PRESS_LIFT_BUTTON, PacketTrainDataGuiServer::receivePressLiftButtonC2S);
 
@@ -480,6 +482,7 @@ public class MTR implements IPacket {
 			PacketTrainDataGuiServer.versionCheckS2C(player);
 			PacketTrainDataGuiServer.lineWordsS2C(player);
 			PacketTrainDataGuiServer.timetableConfigS2C(player);
+			PacketTrainDataGuiServer.motionConfigS2C(player);
 			PacketTrainDataGuiServer.editPermissionS2C(player);
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData != null) {
@@ -509,6 +512,7 @@ public class MTR implements IPacket {
 				SecurityConfig.load(configPath.resolve("mtr_security.json"));
 				LineWords.load(configPath.resolve(LineWords.FILE_NAME));
 				TimetableConfig.load(configPath.resolve(TimetableConfig.FILE_NAME));
+				MotionConfig.load(configPath.resolve(MotionConfig.FILE_NAME));
 				Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 			});
 			Registry.registerServerStoppingEvent(minecraftServer -> Webserver.stop());

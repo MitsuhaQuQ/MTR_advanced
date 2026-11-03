@@ -22,8 +22,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
-import transitsim.motion.SpeedCurves;
-import transitsim.motion.SpeedProfile;
+import transitsim.motion.*;
+import transitsim.motion.legacy.LegacyTrainMotion;
 
 import java.io.*;
 import java.util.*;
@@ -59,6 +59,9 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	private SpeedProfile cappedProfile;
 	private SpeedCurves.Run cappedRun;
 	private float cappedCap;
+	private final Motion motion = new Motion();
+	private Level motionWorld;
+	private Depot motionDepot;
 
 	public final long sidingId;
 	public final String trainId;
@@ -91,8 +94,6 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	public static final int DOOR_MOVE_TIME = 64;
 	protected static final int MAX_CHECK_DISTANCE = 32;
 	protected static final int DOOR_DELAY = 20;
-	private static final double BRAKING_MARGIN = 2;
-	private static final double CURVE_SPEED_TOLERANCE = 1E-3;
 
 	private static final String KEY_SPEED = "speed";
 	private static final String KEY_RAIL_PROGRESS = "rail_progress";
@@ -427,38 +428,6 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	/**
-	 * Moves the train along its speed curve. A train on the curve with nothing in the way moves exactly as the curve says,
-	 * so it arrives when the timetable worked out. Off the curve, held back by a train ahead or catching up after, it
-	 * speeds up and brakes at its own rates, never faster than the curve.
-	 *
-	 * @param stoppingDistance where the train has to stop, which is nearer than the end of the run when the line ahead is taken
-	 * @return how far the train moves
-	 */
-	private double followSpeedCurve(float ticksElapsed, double stoppingDistance) {
-		final SpeedCurves.Run run = getSpeedCurves().getRun(railProgress);
-		if (run == null) {
-			return speed * ticksElapsed;
-		}
-		final SpeedProfile profile = getRunProfile(run);
-		final double curveSpeed = profile.getSpeed(railProgress);
-		final boolean stopsEarly = stoppingDistance < profile.endPosition - CURVE_SPEED_TOLERANCE;
-		final double blockSpeed = stopsEarly ? Math.sqrt(2 * decelerationConstant * Math.max(0, stoppingDistance - railProgress)) : Double.POSITIVE_INFINITY;
-		final double furthest = profile.advance(railProgress, ticksElapsed);
-		final double newProgress;
-		if (blockSpeed >= curveSpeed - CURVE_SPEED_TOLERANCE && speed >= curveSpeed - CURVE_SPEED_TOLERANCE) {
-			newProgress = stopsEarly ? Math.min(furthest, stoppingDistance) : furthest;
-			speed = (float) profile.getSpeed(newProgress);
-		} else {
-			final double limit = Math.min(curveSpeed, blockSpeed);
-			final double newSpeed = speed < limit ? Math.min(speed + accelerationConstant * ticksElapsed, limit) : Math.max(limit, speed - decelerationConstant * ticksElapsed);
-			newProgress = Math.min(Math.min(railProgress + (speed + newSpeed) / 2 * ticksElapsed, furthest), stopsEarly ? stoppingDistance : Double.POSITIVE_INFINITY);
-			speed = (float) Math.max(newSpeed, newProgress < (stopsEarly ? stoppingDistance : profile.endPosition) ? ACCELERATION_DEFAULT / 10 : 0);
-		}
-		manualNotch = speed > curveSpeed - CURVE_SPEED_TOLERANCE ? 0 : 2;
-		return newProgress - railProgress;
-	}
-
-	/**
 	 * @return true if the end of the path is a stop on the line rather than the way into the siding, as for a train staying
 	 * there overnight
 	 */
@@ -592,141 +561,12 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		}
 
 		try {
-			if (nextStoppingIndex >= path.size()) {
+			// The rules moving the train are in the component (decoupling document 2.2); the old ones stay for comparing
+			motionWorld = world;
+			motionDepot = depot;
+			final int totalDwellTicks = MotionConfig.useLegacyMotion(world.isClientSide()) ? LegacyTrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed) : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
+			if (totalDwellTicks < 0) {
 				return;
-			}
-
-			final boolean tempDoorOpen;
-			final float tempDoorValue;
-			final int totalDwellTicks = getTotalDwellTicks();
-
-			if (!isOnRoute) {
-				railProgress = (railLength + trainCars * spacing) / 2;
-				reversed = false;
-				tempDoorOpen = false;
-				tempDoorValue = 0;
-				speed = 0;
-				nextStoppingIndex = 0;
-
-				if (!isCurrentlyManual && canDeploy(depot) || isCurrentlyManual && manualNotch > 0) {
-					startUp(world, trainCars, spacing, isOppositeRail());
-				}
-			} else {
-				final float newAcceleration = accelerationConstant * ticksElapsed;
-				// How far a train on its speed curve moves this tick, or -1 to move at its speed
-				double curveAdvance = -1;
-
-				if (railProgress >= distances.get(distances.size() - 1) - (railLength - trainCars * spacing) / 2 && !keepsOnLineAtEnd()) {
-					isOnRoute = false;
-					manualNotch = -2;
-					ridingEntities.clear();
-					tempDoorOpen = false;
-					tempDoorValue = 0;
-				} else {
-					if (speed <= 0) {
-						speed = 0;
-
-						final boolean isOppositeRail = isOppositeRail();
-						final boolean railBlocked = isRailBlocked(getIndex(0, spacing, true) + (isOppositeRail ? 2 : 1));
-
-						if (totalDwellTicks == 0) {
-							tempDoorOpen = false;
-						} else {
-							if (elapsedDwellTicks == 0 && isRepeat() && getIndex(railProgress, false) >= repeatIndex2 && distances.size() > repeatIndex1) {
-								if (path.get(repeatIndex2).isOppositeRail(path.get(repeatIndex1))) {
-									railProgress = distances.get(repeatIndex1 - 1) + trainCars * spacing;
-									reversed = !reversed;
-								} else {
-									railProgress = distances.get(repeatIndex1);
-								}
-								onLapComplete();
-							}
-
-							if (elapsedDwellTicks == 0) {
-								onStopReached();
-							}
-
-							// Holding can change the way the train leaves by, so it is checked even while the usual way is blocked
-							if (elapsedDwellTicks < totalDwellTicks - DOOR_MOVE_TIME - DOOR_DELAY - ticksElapsed || !isHeldAtStop() && !railBlocked) {
-								elapsedDwellTicks += ticksElapsed;
-							}
-
-							tempDoorOpen = openDoors();
-						}
-
-						if (!world.isClientSide() && (isCurrentlyManual || elapsedDwellTicks >= totalDwellTicks) && !railBlocked && (!isCurrentlyManual || manualNotch > 0)) {
-							startUp(world, trainCars, spacing, isOppositeRail);
-						}
-					} else {
-						if (!world.isClientSide()) {
-							final int lastCheckIndex = nextPlatformIndex > 0 ? Math.min(nextPlatformIndex, path.size() - 1) : path.size() - 1;
-							final double brakingDistance = 0.5 * speed * speed / (usesSpeedCurve() ? decelerationConstant : accelerationConstant) + speed * ticksElapsed + BRAKING_MARGIN;
-							final int blockedIndex = findBlockedIndex(distances, getIndex(0, spacing, true), lastCheckIndex, railProgress, brakingDistance, this::isRailBlocked);
-							if (blockedIndex >= 0) {
-								nextStoppingIndex = blockedIndex - 1;
-							} else if (nextPlatformIndex > 0 && nextPlatformIndex < path.size()) {
-								nextStoppingIndex = nextPlatformIndex;
-								if (manualNotch < -2) {
-									manualNotch = 0;
-								}
-							}
-						}
-
-						final double stoppingDistance = distances.get(nextStoppingIndex) - railProgress;
-						if (usesSpeedCurve()) {
-							curveAdvance = followSpeedCurve(ticksElapsed, distances.get(nextStoppingIndex));
-						} else if (!transportMode.continuousMovement && stoppingDistance < 0.5 * speed * speed / accelerationConstant && mustStop(nextStoppingIndex)) {
-							speed = stoppingDistance <= 0 ? Train.ACCELERATION_DEFAULT : (float) Math.max(speed - (0.5 * speed * speed / stoppingDistance) * ticksElapsed, Train.ACCELERATION_DEFAULT);
-							manualNotch = -3;
-						} else {
-							if (isCurrentlyManual) {
-								if (manualNotch >= -2) {
-									final RailType railType = convertMaxManualSpeed(maxManualSpeed);
-									speed = Mth.clamp(speed + manualNotch * newAcceleration / 2, 0, railType == null ? RailType.IRON.maxBlocksPerTick : railType.maxBlocksPerTick);
-								}
-							} else {
-								final float railSpeed = getRailSpeed(getIndex(0, spacing, false));
-								if (speed < railSpeed) {
-									speed = Math.min(speed + newAcceleration, railSpeed);
-									manualNotch = 2;
-								} else if (speed > railSpeed) {
-									speed = Math.max(speed - newAcceleration, railSpeed);
-									manualNotch = -2;
-								} else {
-									manualNotch = 0;
-								}
-							}
-						}
-
-						tempDoorOpen = transportMode.continuousMovement && openDoors();
-					}
-
-					// A loop joins back onto itself, so the train keeps running instead of stopping at the end of the path
-					if (loopsWithoutReversing() && railProgress + (curveAdvance >= 0 ? curveAdvance : speed * ticksElapsed) >= distances.get(repeatIndex2)) {
-						railProgress += distances.get(repeatIndex1 - 1) - distances.get(repeatIndex2 - 1);
-						onLapComplete();
-						continueWithoutStopping(world);
-					}
-
-					railProgress += curveAdvance >= 0 ? curveAdvance : speed * ticksElapsed;
-					if (!transportMode.continuousMovement && railProgress > distances.get(nextStoppingIndex)) {
-						if (mustStop(nextStoppingIndex)) {
-							railProgress = distances.get(nextStoppingIndex);
-							speed = 0;
-							manualNotch = -2;
-						} else {
-							continueWithoutStopping(world);
-						}
-					}
-
-					tempDoorValue = Mth.clamp(doorValue + ticksElapsed * (doorTarget ? 1 : -1) / DOOR_MOVE_TIME, 0, 1);
-				}
-			}
-
-			doorTarget = tempDoorOpen;
-			doorValue = tempDoorValue;
-			if (doorTarget || doorValue != 0) {
-				manualNotch = -2;
 			}
 
 			if (!path.isEmpty()) {
@@ -842,36 +682,6 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 	protected abstract double asin(double value);
 
-	/**
-	 * Only a manual train may run through a stop, unless the rails end there or the next one is blocked.
-	 */
-	private boolean mustStop(int stopIndex) {
-		if (!isCurrentlyManual) {
-			return true;
-		}
-		final boolean railsEnd;
-		if (isRepeat() && stopIndex >= repeatIndex2 && distances.size() > repeatIndex1) {
-			railsEnd = path.get(repeatIndex2).isOppositeRail(path.get(repeatIndex1));
-		} else {
-			railsEnd = stopIndex >= distances.size() - 1 || path.get(stopIndex).isOppositeRail(path.get(stopIndex + 1));
-		}
-		return railsEnd || isRailBlocked(stopIndex + 1);
-	}
-
-	private boolean loopsWithoutReversing() {
-		return isRepeat() && repeatIndex2 > repeatIndex1 && repeatIndex2 < distances.size() && !path.get(repeatIndex2).isOppositeRail(path.get(repeatIndex1));
-	}
-
-	private void continueWithoutStopping(Level world) {
-		final float oldSpeed = speed;
-		startUp(world, trainCars, spacing, false);
-		speed = oldSpeed;
-	}
-
-	private boolean isOppositeRail() {
-		return path.size() > nextStoppingIndex + 1 && railProgress == distances.get(nextStoppingIndex) && path.get(nextStoppingIndex).isOppositeRail(path.get(nextStoppingIndex + 1));
-	}
-
 	private double getRailProgress(int car, int trainSpacing) {
 		return railProgress - car * trainSpacing;
 	}
@@ -929,5 +739,274 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	@FunctionalInterface
 	protected interface CalculateCarCallback {
 		void calculateCarCallback(double x, double y, double z, float yaw, float pitch, double realSpacing, boolean doorLeftOpen, boolean doorRightOpen);
+	}
+
+	/**
+	 * The train as the component's motion rules see it. The state stays in the fields and the hooks stay overridable, so
+	 * subclasses and add-ons work as before.
+	 */
+	private final class Motion implements MotionState, MotionTrack, MotionVehicle, MotionHooks, MotionCurves {
+
+		@Override
+		public float getSpeed() {
+			return speed;
+		}
+
+		@Override
+		public void setSpeed(float speed) {
+			Train.this.speed = speed;
+		}
+
+		@Override
+		public double getRailProgress() {
+			return railProgress;
+		}
+
+		@Override
+		public void setRailProgress(double railProgress) {
+			Train.this.railProgress = railProgress;
+		}
+
+		@Override
+		public boolean getDoorTarget() {
+			return doorTarget;
+		}
+
+		@Override
+		public void setDoorTarget(boolean doorTarget) {
+			Train.this.doorTarget = doorTarget;
+		}
+
+		@Override
+		public float getDoorValue() {
+			return doorValue;
+		}
+
+		@Override
+		public void setDoorValue(float doorValue) {
+			Train.this.doorValue = doorValue;
+		}
+
+		@Override
+		public float getElapsedDwellTicks() {
+			return elapsedDwellTicks;
+		}
+
+		@Override
+		public void setElapsedDwellTicks(float elapsedDwellTicks) {
+			Train.this.elapsedDwellTicks = elapsedDwellTicks;
+		}
+
+		@Override
+		public int getNextStoppingIndex() {
+			return nextStoppingIndex;
+		}
+
+		@Override
+		public void setNextStoppingIndex(int nextStoppingIndex) {
+			Train.this.nextStoppingIndex = nextStoppingIndex;
+		}
+
+		@Override
+		public int getNextPlatformIndex() {
+			return nextPlatformIndex;
+		}
+
+		@Override
+		public void setNextPlatformIndex(int nextPlatformIndex) {
+			Train.this.nextPlatformIndex = nextPlatformIndex;
+		}
+
+		@Override
+		public boolean isReversed() {
+			return reversed;
+		}
+
+		@Override
+		public void setReversed(boolean reversed) {
+			Train.this.reversed = reversed;
+		}
+
+		@Override
+		public boolean isOnRoute() {
+			return isOnRoute;
+		}
+
+		@Override
+		public void setOnRoute(boolean onRoute) {
+			isOnRoute = onRoute;
+		}
+
+		@Override
+		public boolean isCurrentlyManual() {
+			return isCurrentlyManual;
+		}
+
+		@Override
+		public int getManualNotch() {
+			return manualNotch;
+		}
+
+		@Override
+		public void setManualNotch(int manualNotch) {
+			Train.this.manualNotch = manualNotch;
+		}
+
+		@Override
+		public int size() {
+			return path.size();
+		}
+
+		@Override
+		public int getDistanceCount() {
+			return distances.size();
+		}
+
+		@Override
+		public double getDistance(int rail) {
+			return distances.get(rail);
+		}
+
+		@Override
+		public int getDwellTime(int rail) {
+			return path.get(rail).dwellTime;
+		}
+
+		@Override
+		public boolean canAccelerate(int rail) {
+			return path.get(rail).rail.railType.canAccelerate;
+		}
+
+		@Override
+		public float getMaxSpeed(int rail) {
+			return path.get(rail).rail.railType.maxBlocksPerTick;
+		}
+
+		@Override
+		public boolean isOppositeRail(int rail, int nextRail) {
+			return path.get(rail).isOppositeRail(path.get(nextRail));
+		}
+
+		@Override
+		public int getRepeatIndex1() {
+			return repeatIndex1;
+		}
+
+		@Override
+		public int getRepeatIndex2() {
+			return repeatIndex2;
+		}
+
+		@Override
+		public int getTrainCars() {
+			return trainCars;
+		}
+
+		@Override
+		public int getSpacing() {
+			return spacing;
+		}
+
+		@Override
+		public float getRailLength() {
+			return railLength;
+		}
+
+		@Override
+		public float getAcceleration() {
+			return accelerationConstant;
+		}
+
+		@Override
+		public float getDeceleration() {
+			return decelerationConstant;
+		}
+
+		@Override
+		public boolean usesSpeedCurve() {
+			return Train.this.usesSpeedCurve();
+		}
+
+		@Override
+		public boolean isContinuousMovement() {
+			return transportMode.continuousMovement;
+		}
+
+		@Override
+		public float getDefaultMaxSpeed() {
+			return RailType.getDefaultMaxBlocksPerTick(transportMode);
+		}
+
+		@Override
+		public float getManualMaxSpeed() {
+			final RailType railType = convertMaxManualSpeed(maxManualSpeed);
+			return railType == null ? RailType.IRON.maxBlocksPerTick : railType.maxBlocksPerTick;
+		}
+
+		@Override
+		public boolean isClientSide() {
+			return motionWorld.isClientSide();
+		}
+
+		@Override
+		public int getTotalDwellTicks() {
+			return Train.this.getTotalDwellTicks();
+		}
+
+		@Override
+		public boolean canDeploy() {
+			return Train.this.canDeploy(motionDepot);
+		}
+
+		@Override
+		public void startUp(boolean isOppositeRail) {
+			Train.this.startUp(motionWorld, trainCars, spacing, isOppositeRail);
+		}
+
+		@Override
+		public boolean keepsOnLineAtEnd() {
+			return Train.this.keepsOnLineAtEnd();
+		}
+
+		@Override
+		public void clearRiders() {
+			ridingEntities.clear();
+		}
+
+		@Override
+		public boolean isRepeat() {
+			return Train.this.isRepeat();
+		}
+
+		@Override
+		public void onLapComplete() {
+			Train.this.onLapComplete();
+		}
+
+		@Override
+		public void onStopReached() {
+			Train.this.onStopReached();
+		}
+
+		@Override
+		public boolean isHeldAtStop() {
+			return Train.this.isHeldAtStop();
+		}
+
+		@Override
+		public boolean isRailBlocked(int rail) {
+			return Train.this.isRailBlocked(rail);
+		}
+
+		@Override
+		public boolean openDoors() {
+			return Train.this.openDoors();
+		}
+
+		@Override
+		public SpeedProfile getProfile(double position) {
+			final SpeedCurves.Run run = getSpeedCurves().getRun(position);
+			return run == null ? null : getRunProfile(run);
+		}
 	}
 }

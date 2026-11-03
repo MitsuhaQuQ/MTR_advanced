@@ -9,6 +9,7 @@ import mtr.client.ClientData;
 import mtr.client.Config;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
+import mtr.data.MotionConfig;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -31,6 +32,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 	private final boolean useTimeAndWindSync;
 
 	private final WidgetBetterCheckbox checkboxUseTimeAndWindSync;
+	private final WidgetBetterCheckbox checkboxUseLegacyMotion;
 	private final Button buttonUseMTRFont;
 	private final Button buttonShowAnnouncementMessages;
 	private final Button buttonUseTTSAnnouncements;
@@ -62,6 +64,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 		this.useTimeAndWindSync = useTimeAndWindSync;
 
 		checkboxUseTimeAndWindSync = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.use_time_and_wind_sync"), PacketTrainDataGuiClient::sendUseTimeAndWindSyncC2S);
+		checkboxUseLegacyMotion = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.use_legacy_motion"), PacketTrainDataGuiClient::sendUseLegacyMotionC2S);
 
 		buttonUseMTRFont = UtilitiesClient.newButton(BUTTON_HEIGHT, Text.literal(""), button -> {
 			useMTRFont = Config.setUseMTRFont(!useMTRFont);
@@ -118,7 +121,9 @@ public class ConfigScreen extends ScreenBase implements IGui {
 		if (hasTimeAndWindControls) {
 			IDrawing.setPositionAndWidth(checkboxUseTimeAndWindSync, SQUARE_SIZE, SQUARE_SIZE, width);
 			checkboxUseTimeAndWindSync.setChecked(useTimeAndWindSync);
-			offsetY = SQUARE_SIZE;
+			IDrawing.setPositionAndWidth(checkboxUseLegacyMotion, SQUARE_SIZE, SQUARE_SIZE * 2, width);
+			checkboxUseLegacyMotion.setChecked(MotionConfig.useLegacyMotion(true));
+			offsetY = SQUARE_SIZE * 2;
 		} else {
 			offsetY = 0;
 		}
@@ -156,6 +161,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 
 		if (hasTimeAndWindControls) {
 			addDrawableChild(checkboxUseTimeAndWindSync);
+			addDrawableChild(checkboxUseLegacyMotion);
 		}
 		addDrawableChild(buttonUseMTRFont);
 		if (!Keys.LIFTS_ONLY) {
@@ -179,7 +185,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			renderBackground(matrices);
 			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.mtr_options"), width / 2, TEXT_PADDING, ARGB_WHITE);
 
-			final int yStart1 = SQUARE_SIZE + TEXT_PADDING / 2 + (hasTimeAndWindControls ? SQUARE_SIZE : 0);
+			final int yStart1 = SQUARE_SIZE + TEXT_PADDING / 2 + (hasTimeAndWindControls ? SQUARE_SIZE * 2 : 0);
 			int i = 1;
 			GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.use_mtr_font"), SQUARE_SIZE, yStart1, ARGB_WHITE);
 			if (!Keys.LIFTS_ONLY) {

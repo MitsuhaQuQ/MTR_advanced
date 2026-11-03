@@ -3,6 +3,7 @@
   "gui.mtr.platform_timetable_boundary_off": "时刻边界：否",
   "gui.mtr.timetable_editor_managed": "这条线路由高级编辑器管理，这里只能查看。可以在高级编辑器里把它交回游戏内编辑。",
   "gui.mtr.advanced_editor": "高级编辑器",
+  "gui.mtr.use_legacy_motion": "使用旧的列车推进逻辑（对比用）",
   "gui.mtr.use_deterministic_path": "使用确定性寻路",
   "gui.mtr.pass_station": "本站通过，不停车",
   "gui.mtr.dwell_override": "本线路门全开时间（秒）",

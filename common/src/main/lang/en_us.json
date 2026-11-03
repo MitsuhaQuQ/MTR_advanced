@@ -3,6 +3,7 @@
   "gui.mtr.platform_timetable_boundary_off": "Timetable boundary: no",
   "gui.mtr.timetable_editor_managed": "This route is managed in the advanced editor, so it can only be viewed here. The editor can hand it back to in-game editing.",
   "gui.mtr.advanced_editor": "Advanced Editor",
+  "gui.mtr.use_legacy_motion": "Move trains with the old rules (for comparing)",
   "gui.mtr.use_deterministic_path": "Use deterministic routing",
   "gui.mtr.pass_station": "Run through without stopping",
   "gui.mtr.dwell_override": "Doors fully open for this route (seconds)",
