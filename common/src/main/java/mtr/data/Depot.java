@@ -432,7 +432,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			sidingGroups.put(Collections.emptySet(), new ArrayList<>());
 		}
 
-		final boolean useFastSpeed = cruisingAltitude >= world.getMaxBuildHeight() + THRESHOLD_ABOVE_MAX_BUILD_HEIGHT;
+		final boolean useFastSpeed = usesFastSpeed(world);
 		final List<MainPath> mainPaths = new ArrayList<>();
 		sidingGroups.forEach((serviceTypes, sidingGroup) -> mainPaths.add(new MainPath(filterRoutes(getRoutes(dataCache), serviceTypes), sidingGroup, dataCache)));
 
@@ -460,6 +460,40 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		});
 		callback.accept(thread);
 		thread.start();
+	}
+
+	/**
+	 * Whether the depot's paths are found for flying high above the world.
+	 */
+	public boolean usesFastSpeed(Level world) {
+		return cruisingAltitude >= world.getMaxBuildHeight() + THRESHOLD_ABOVE_MAX_BUILD_HEIGHT;
+	}
+
+	/**
+	 * Finds the paths of these duties from each of the depot's sidings along the rails, the way path generation does, for a
+	 * draft of them, without changing the depot or its sidings (S6). Like path generation it runs away from the server
+	 * thread; the graph comes from {@link #getPathGraph} on the server thread.
+	 *
+	 * @param failed told about the key of each duty shape whose path can't be found
+	 * @return the paths by siding, then by the key of the duty's shape
+	 */
+	public Map<Long, Map<String, TripPath<PathData>>> findDutyPaths(DepotDuties draft, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, Set<Siding> sidings, boolean useFastSpeed, Consumer<String> failed) {
+		final Map<Long, Map<String, TripPath<PathData>>> dutyPaths = new HashMap<>();
+		final Map<Set<String>, List<Siding>> sidingGroups = new LinkedHashMap<>();
+		sidings.forEach(siding -> {
+			final BlockPos sidingMidPos = siding.getMidPos();
+			if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
+				sidingGroups.computeIfAbsent(getServiceTypes(siding.getTrainId()), key -> new ArrayList<>()).add(siding);
+			}
+		});
+		sidingGroups.forEach((serviceTypes, sidingGroup) -> {
+			final MainPath mainPath = new MainPath(filterRoutes(getRoutes(dataCache), serviceTypes), sidingGroup, dataCache);
+			sidingGroup.forEach(siding -> {
+				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = mainPath.getDutyPlans(draft, siding, rails, graph, useFastSpeed, failed);
+				dutyPaths.put(siding.id, siding.findDutyPaths(dutyPlans, rails, graph, cruisingAltitude, useFastSpeed, failed));
+			});
+		});
+		return dutyPaths;
 	}
 
 	/**
@@ -1029,10 +1063,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		/**
 		 * Each shape of duty a siding's slots run, once (design document 6.12, block E2).
 		 */
-		private List<DutyPlan<PathData, SavedRailBase>> getDutyPlans(Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		/**
+		 * @param dutiesToPlan the depot's duties, or a draft of them
+		 * @param failed       told about the key of each duty shape whose plan can't be found
+		 */
+		private List<DutyPlan<PathData, SavedRailBase>> getDutyPlans(DepotDuties dutiesToPlan, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed, Consumer<String> failed) {
 			final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = new ArrayList<>();
 			final Set<String> keys = new HashSet<>();
-			final List<DepotDuties.Slot> slots = duties.getSlots(siding.id);
+			final List<DepotDuties.Slot> slots = dutiesToPlan.getSlots(siding.id);
 			for (int i = 0; i < slots.size(); i++) {
 				for (int weekday = 0; weekday < 7; weekday++) {
 					final String key = DutyShapes.getSlotKey(slots, i, weekday, dataCache.routeIdMap::get);
@@ -1043,6 +1081,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					final DutyPlan<PathData, SavedRailBase> dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
 					if (dutyPlan == null) {
 						failure = new PathFailure(PathFailure.Type.DUTY, 0);
+						failed.accept(key);
 					} else {
 						dutyPlans.add(dutyPlan);
 					}
@@ -1363,7 +1402,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (final Siding siding : sidings) {
 				final SavedRailBase firstPlatform = entryPlatform != null ? entryPlatform : platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = duties.diagramMode ? getDutyPlans(siding, rails, graph, useFastSpeed) : new ArrayList<>();
+				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = duties.diagramMode ? getDutyPlans(duties, siding, rails, graph, useFastSpeed, key -> {
+				}) : new ArrayList<>();
 				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans));
 			}
 			return successfulSegments;

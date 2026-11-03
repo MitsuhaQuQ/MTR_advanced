@@ -266,10 +266,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final int requestId = packet.readInt();
 		final int status = packet.readInt();
 		final int ignoredDrafts = packet.readInt();
+		final int missingDutyPaths = packet.readInt();
 		final int part = packet.readInt();
 		final int partCount = packet.readInt();
 		final byte[] bytes = packet.readByteArray();
-		minecraftClient.execute(() -> EditorSimulation.receive(requestId, status, ignoredDrafts, part, partCount, bytes));
+		minecraftClient.execute(() -> EditorSimulation.receive(requestId, status, ignoredDrafts, missingDutyPaths, part, partCount, bytes));
 	}
 
 	public static void requestTimetableTimesC2S(long routeId) {

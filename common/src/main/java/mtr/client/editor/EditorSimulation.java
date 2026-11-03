@@ -33,6 +33,7 @@ public final class EditorSimulation implements IPacket {
 	private static String state = "idle";
 	private static int notSimulated;
 	private static int ignoredDrafts;
+	private static int missingDutyPaths;
 	private static byte[][] parts;
 	private static JsonObject result;
 
@@ -94,6 +95,7 @@ public final class EditorSimulation implements IPacket {
 		state = "running";
 		notSimulated = skipped;
 		ignoredDrafts = 0;
+		missingDutyPaths = 0;
 		parts = null;
 		result = null;
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -138,7 +140,7 @@ public final class EditorSimulation implements IPacket {
 	}
 
 	/**
-	 * @return {@code {request, state, notSimulated, ignored, result}}; the state is idle, running, done, busy, permission or
+	 * @return {@code {request, state, notSimulated, ignored, missingPaths, result}}; the state is idle, running, done, busy, permission or
 	 * error
 	 */
 	public static JsonObject getStatus() {
@@ -147,17 +149,22 @@ public final class EditorSimulation implements IPacket {
 		status.addProperty("state", state);
 		status.addProperty("notSimulated", notSimulated);
 		status.addProperty("ignored", ignoredDrafts);
+		status.addProperty("missingPaths", missingDutyPaths);
 		if (result != null) {
 			status.add("result", result);
 		}
 		return status;
 	}
 
-	public static void receive(int receivedRequestId, int status, int ignored, int part, int partCount, byte[] bytes) {
+	/**
+	 * @param missing how many shapes of the draft's duties have no path along the rails, so their trains don't run
+	 */
+	public static void receive(int receivedRequestId, int status, int ignored, int missing, int part, int partCount, byte[] bytes) {
 		if (receivedRequestId != requestId) {
 			return;
 		}
 		ignoredDrafts = ignored;
+		missingDutyPaths = missing;
 		if (status != SandboxRuns.STATUS_RESULT) {
 			state = status == SandboxRuns.STATUS_BUSY ? "busy" : status == SandboxRuns.STATUS_NO_PERMISSION ? "permission" : "error";
 			return;

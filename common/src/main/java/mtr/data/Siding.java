@@ -849,17 +849,39 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				unlimitedTrains ? SimDataset.UNLIMITED_TRAINS : maxTrains, useSpeedCurve && !transportMode.continuousMovement, RailType.getDefaultMaxBlocksPerTick(transportMode),
 				repeatIndex1, repeatIndex2, loopJoinIndex, toTracks.apply(path), turnBacksWriter.toBytes()
 		);
-		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> {
-			final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
-			try {
-				tripPath.write(values);
-			} catch (IOException ignored) {
-			}
-			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
-			values.writeTo(writer);
-			sidingData.tripPaths.add(new SimDataset.TripPathData(writer.toBytes(), toTracks.apply(tripPath.path)));
-		});
+		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
+	}
+
+	/**
+	 * @return a path of a service leaving the siding as the component's simulator has it (S4e)
+	 */
+	public static SimDataset.TripPathData toSimulation(TripPath<PathData> tripPath, Function<List<PathData>, List<SimDataset.DataTrack>> toTracks) {
+		final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
+		try {
+			tripPath.write(values);
+		} catch (IOException ignored) {
+		}
+		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		return new SimDataset.TripPathData(writer.toBytes(), toTracks.apply(tripPath.path));
+	}
+
+	/**
+	 * The paths of these duties from this siding, found the way path generation finds them but kept apart from the siding,
+	 * as for a draft of the duties (S6).
+	 *
+	 * @param failed told about the key of each duty whose path can't be found
+	 * @return the paths by the key of the duty's shape
+	 */
+	public Map<String, TripPath<PathData>> findDutyPaths(List<DutyPlan<PathData, SavedRailBase>> dutyPlans, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, Consumer<String> failed) {
+		final Map<String, TripPath<PathData>> dutyPaths = new HashMap<>();
+		dutyPlans.forEach(dutyPlan -> {
+			if (!addDutyPath(dutyPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed)) {
+				failed.accept(dutyPlan.key);
+			}
+		});
+		return dutyPaths;
 	}
 
 	public StopTimes getStopTimes() {

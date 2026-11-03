@@ -3,8 +3,15 @@ package mtr.advanced;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.compat.Compat;
+import mtr.data.Depot;
 import mtr.data.RailwayData;
+import mtr.data.Rail;
 import mtr.data.Route;
+import mtr.data.Siding;
+import mtr.path.PathData;
+import net.minecraft.core.BlockPos;
+import transitsim.network.RailGraph;
+import transitsim.plan.TripPath;
 import mtr.packet.IPacket;
 import mtr.packet.PacketGuard;
 import net.minecraft.network.FriendlyByteBuf;
@@ -19,6 +26,7 @@ import transitsim.sim.SimDataset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -106,6 +114,7 @@ public final class SandboxRuns implements IPacket {
 		final SimDataset dataset = SimDataset.fromBytes(SimExport.build(railwayData));
 		final int ignoredDrafts = putDrafts(dataset, railwayData, draftRoutes, draftDuties);
 		final long dayStart = getDayStart(System.currentTimeMillis(), weekday);
+		final List<DutyPathSearch> dutyPathSearches = prepareDutyPaths(railwayData, player, draftDuties);
 
 		final AtomicBoolean stopped = new AtomicBoolean();
 		final AtomicBoolean previous = RUNS.put(player.getUUID(), stopped);
@@ -116,6 +125,7 @@ public final class SandboxRuns implements IPacket {
 		EXECUTOR.execute(() -> {
 			try {
 				final long deadline = System.nanoTime() + TIME_LIMIT_NANOS;
+				final int missingDutyPaths = findDutyPaths(dataset, dutyPathSearches);
 				final DayRun dayRun = DayRun.run(dataset, dayStart, reportRoutes, Collections.emptyList(), () -> stopped.get() || System.nanoTime() > deadline);
 				if (!stopped.get()) {
 					final byte[] bytes = dayRun.toBytes();
@@ -123,7 +133,7 @@ public final class SandboxRuns implements IPacket {
 						if (dayRun.cancelled) {
 							sendStatus(player, requestId, STATUS_BUSY, ignoredDrafts);
 						} else {
-							sendResult(player, requestId, ignoredDrafts, bytes);
+							sendResult(player, requestId, ignoredDrafts, missingDutyPaths, bytes);
 						}
 					});
 				}
@@ -166,6 +176,61 @@ public final class SandboxRuns implements IPacket {
 	}
 
 	/**
+	 * What finding the paths of a depot's draft duties needs from the server's thread (S6): trains running by duties only
+	 * run a duty whose path the depot found along the rails, and a draft's new shapes of duty have none yet.
+	 */
+	private static List<DutyPathSearch> prepareDutyPaths(RailwayData railwayData, ServerPlayer player, Map<Long, byte[]> draftDuties) {
+		final List<DutyPathSearch> searches = new ArrayList<>();
+		draftDuties.forEach((depotId, bytes) -> {
+			final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
+			final DepotDuties duties = new DepotDuties();
+			duties.fromBytes(bytes);
+			if (depot != null && duties.diagramMode) {
+				searches.add(new DutyPathSearch(depot, duties, railwayData, depot.getPathGraph(railwayData.getRails(), railwayData.pathBoundaries), depot.usesFastSpeed(Compat.getLevel(player))));
+			}
+		});
+		return searches;
+	}
+
+	/**
+	 * Finds the paths of the draft duties as the depot would and gives them to the sidings in the data, after the ones they
+	 * have, so a new path of a shape takes the place of an old one.
+	 *
+	 * @return how many shapes of duty have no path
+	 */
+	static int findDutyPaths(SimDataset dataset, List<DutyPathSearch> searches) {
+		final Set<String> missing = new HashSet<>();
+		for (final DutyPathSearch search : searches) {
+			final Map<BlockPos, Map<BlockPos, Rail>> rails = search.railwayData.getRails();
+			final Map<Long, Map<String, TripPath<PathData>>> dutyPaths = search.depot.findDutyPaths(search.duties, search.railwayData.dataCache, rails, search.graph, search.sidings, search.useFastSpeed, key -> missing.add(search.depot.id + ":" + key));
+			dutyPaths.forEach((sidingId, paths) -> dataset.sidings.stream().filter(siding -> siding.id == sidingId).findFirst().ifPresent(siding -> paths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> siding.tripPaths.add(Siding.toSimulation(tripPath, path -> SimExport.toTracks(path, rails))))));
+		}
+		return missing.size();
+	}
+
+	private static final class DutyPathSearch {
+
+		private final Depot depot;
+		private final DepotDuties duties;
+		private final RailwayData railwayData;
+		private final RailGraph<Rail> graph;
+		private final boolean useFastSpeed;
+		/**
+		 * The sidings as they were on the server's thread, which goes on changing its own set.
+		 */
+		private final Set<Siding> sidings;
+
+		private DutyPathSearch(Depot depot, DepotDuties duties, RailwayData railwayData, RailGraph<Rail> graph, boolean useFastSpeed) {
+			this.depot = depot;
+			this.duties = duties;
+			this.railwayData = railwayData;
+			this.graph = graph;
+			this.useFastSpeed = useFastSpeed;
+			sidings = new HashSet<>(railwayData.sidings);
+		}
+	}
+
+	/**
 	 * @return the start of the next operating day on this weekday, or of today's if it is that weekday
 	 */
 	public static long getDayStart(long millis, int weekday) {
@@ -183,6 +248,7 @@ public final class SandboxRuns implements IPacket {
 		packet.writeInt(ignoredDrafts);
 		packet.writeInt(0);
 		packet.writeInt(0);
+		packet.writeInt(0);
 		packet.writeByteArray(new byte[0]);
 		Registry.sendToPlayer(player, PACKET_SIMULATE_RESULT, packet);
 	}
@@ -190,13 +256,14 @@ public final class SandboxRuns implements IPacket {
 	/**
 	 * The report in parts small enough for a packet, which the client puts back together.
 	 */
-	private static void sendResult(ServerPlayer player, int requestId, int ignoredDrafts, byte[] bytes) {
+	private static void sendResult(ServerPlayer player, int requestId, int ignoredDrafts, int missingDutyPaths, byte[] bytes) {
 		final List<byte[]> parts = split(bytes, PART_BYTES);
 		for (int i = 0; i < parts.size(); i++) {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 			packet.writeInt(requestId);
 			packet.writeInt(STATUS_RESULT);
 			packet.writeInt(ignoredDrafts);
+			packet.writeInt(missingDutyPaths);
 			packet.writeInt(i);
 			packet.writeInt(parts.size());
 			packet.writeByteArray(parts.get(i));
