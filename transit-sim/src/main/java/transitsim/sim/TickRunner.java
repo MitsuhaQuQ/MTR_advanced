@@ -1,5 +1,7 @@
 package transitsim.sim;
 
+import transitsim.io.BinaryKeyed;
+import transitsim.io.ByteArrayBinary;
 import transitsim.motion.MotionConstants;
 import transitsim.motion.MotionCurves;
 import transitsim.motion.MotionEvent;
@@ -19,6 +21,7 @@ import transitsim.plan.TurnBacks;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -103,6 +106,15 @@ public final class TickRunner<T extends RunTrack> {
 	private Runnable afterTick = () -> {
 	};
 	private TrainListener<T> trainListener;
+	/**
+	 * Ticks until the trains restored from a record are put where the plan has them by now, and where they were put.
+	 */
+	private int recoveryTicks;
+	private final List<String> recovered = new ArrayList<>();
+	/**
+	 * While trains are put where the plan has them, a rail anybody else has counts as taken, as they move one by one.
+	 */
+	private boolean aligning;
 	private long skippedTicks;
 	private long trainTicks;
 	/**
@@ -251,6 +263,86 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * @return the trains as the game saves them, and the depots' services sent out, for carrying on from them later (G0)
+	 */
+	public RunRecord record() {
+		catchUpAll();
+		final RunRecord record = new RunRecord(millis);
+		final Set<DepotBoard> recordedDepots = new HashSet<>();
+		sidings.values().forEach(sidingRun -> {
+			if (recordedDepots.add(sidingRun.depot)) {
+				record.lastDeployedTrips.put(sidingRun.sidingId, new TreeMap<>(sidingRun.depot.dispatcher.lastDeployedTrips));
+				record.dutyRunDays.put(sidingRun.sidingId, new TreeMap<>(sidingRun.depot.dispatcher.dutyRunDays));
+			}
+			sidingRun.trains.forEach(train -> record.trains.add(train.toRecord()));
+		});
+		return record;
+	}
+
+	/**
+	 * Puts the recorded trains back, before the first tick (G0). Carrying on (contracts document 6.4), they run on as they
+	 * were. Recovering after a long stop (6.3), they are put where the plan has them once they have all taken their rails in
+	 * the first tick, furthest along first, each falling back to a free stop before; lateness and the runs held are gone.
+	 */
+	public void restore(RunRecord record, boolean recover) {
+		record.lastDeployedTrips.forEach((sidingId, trips) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				sidingRun.depot.dispatcher.lastDeployedTrips.putAll(trips);
+			}
+		});
+		record.dutyRunDays.forEach((sidingId, days) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				sidingRun.depot.dispatcher.dutyRunDays.putAll(days);
+			}
+		});
+		for (final RunRecord.TrainRecord trainRecord : record.trains) {
+			final SidingRun sidingRun = sidings.get(trainRecord.sidingId);
+			if (sidingRun == null || trainsById.containsKey(trainRecord.trainId)) {
+				continue;
+			}
+			final HeadlessTrain train = new HeadlessTrain(trainRecord.trainId, sidingRun);
+			if (train.restore(trainRecord)) {
+				sidingRun.trains.add(train);
+				trainsById.put(train.id, train);
+				nextTrainId = Math.max(nextTrainId, train.id + 1);
+			}
+		}
+		sidings.values().forEach(sidingRun -> sidingRun.trains.sort(Comparator.comparingLong(train -> train.id)));
+		recoveryTicks = recover ? 2 : 0;
+	}
+
+	/**
+	 * @return where each train was put on recovering, as {@code train rail}, once, after the tick it was done in
+	 */
+	public List<String> takeRecovered() {
+		final List<String> placements = new ArrayList<>(recovered);
+		recovered.clear();
+		return placements;
+	}
+
+	/**
+	 * Every train on the line goes to where the plan has it now (6.3), furthest along first.
+	 */
+	private void recover() {
+		catchUpAll();
+		final List<HeadlessTrain> trains = new ArrayList<>();
+		sidings.values().forEach(sidingRun -> trains.addAll(sidingRun.trains));
+		trains.sort(Comparator.comparingDouble((HeadlessTrain train) -> -train.railProgress).thenComparingLong(train -> train.id));
+		aligning = true;
+		for (final HeadlessTrain train : trains) {
+			movingTrain = train;
+			train.service.alignToTimetable(train.onRoute && !train.takenOver);
+			train.writePositions();
+			recovered.add(train.id + " " + train.getHeadRail());
+		}
+		aligning = false;
+		movingTrain = null;
+		trains.forEach(this::wake);
+	}
+
+	/**
 	 * Leaves trains alone in ticks in which nothing can change for them, which gives the same results as moving every
 	 * train in every tick (S4c2, S4f). Off, the runner moves every train in every tick, as the game does.
 	 */
@@ -331,6 +423,9 @@ public final class TickRunner<T extends RunTrack> {
 		millis += TICK;
 		inTick = true;
 		tickPosition = Occupant.FIRST;
+		if (recoveryTicks > 0 && --recoveryTicks == 0) {
+			recover();
+		}
 		if (lastTickMillis != millis - TICK) {
 			// A depot forgets the services no train reserved in the tick before, and in the ticks skipped only trains left alone did
 			depots.forEach(depot -> {
@@ -518,6 +613,10 @@ public final class TickRunner<T extends RunTrack> {
 	 * everybody had at the end of this tick, and watches the rail.
 	 */
 	private boolean isTakenByOther(UUID rail, HeadlessTrain train) {
+		if (aligning) {
+			final RailEntry entry = rails.get(rail);
+			return entry != null && (entry.now.stream().anyMatch(occupant -> occupant != train.occupant) || entry.before.stream().anyMatch(occupant -> occupant != train.occupant));
+		}
 		if (quietTrain == train) {
 			final RailEntry entry = getEntry(rail);
 			if (!entry.watchers.contains(train)) {
@@ -907,6 +1006,45 @@ public final class TickRunner<T extends RunTrack> {
 
 		public boolean isTakenOver() {
 			return takenOver;
+		}
+
+		private RunRecord.TrainRecord toRecord() {
+			final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
+			try {
+				service.write(values);
+			} catch (java.io.IOException e) {
+				throw new IllegalStateException(e);
+			}
+			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+			values.writeTo(writer);
+			return new RunRecord.TrainRecord(sidingRun.sidingId, id, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, onRoute, writer.toBytes(), cruiseCap);
+		}
+
+		/**
+		 * Takes the state the game saves of a train, the way the game reads it back.
+		 *
+		 * @return false if the path of its service is gone
+		 */
+		private boolean restore(RunRecord.TrainRecord trainRecord) {
+			speed = trainRecord.speed;
+			railProgress = trainRecord.railProgress;
+			elapsedDwellTicks = trainRecord.elapsedDwellTicks;
+			nextStoppingIndex = trainRecord.nextStoppingIndex;
+			nextPlatformIndex = trainRecord.nextPlatformIndex;
+			reversed = trainRecord.reversed;
+			onRoute = trainRecord.onRoute;
+			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(trainRecord.service)));
+			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
+			if (!service.restoreTripPath(siding.tripPaths) || nextStoppingIndex >= path.size()) {
+				return false;
+			}
+			if (!Float.isNaN(trainRecord.cruiseCap)) {
+				cruiseCap = trainRecord.cruiseCap;
+			} else if (onRoute && speed > 0) {
+				// Saved without it, a train on its way works it out again from where it is, which is close
+				cruiseCap = TrainRules.getCruiseCap(this);
+			}
+			return true;
 		}
 
 		/**

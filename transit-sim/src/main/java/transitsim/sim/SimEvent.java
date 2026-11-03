@@ -10,7 +10,12 @@ public final class SimEvent {
 	 * In the fixed order events of the same moment sort in.
 	 */
 	public enum Kind {
-		ARRIVE, PASS, RETURNED, DOORS_CLOSE, HELD, RELEASED, CONFLICT, DEADLOCK, SEGMENT_REPLACED, DOORS_OPEN, DEPART
+		ARRIVE, PASS, RETURNED, DOORS_CLOSE, HELD, RELEASED, CONFLICT, DEADLOCK, SEGMENT_REPLACED, DOORS_OPEN, DEPART,
+		/**
+		 * Trains were put where the plan has them after a long stop (contracts document 6.3); the reason lists each as
+		 * {@code train rail}.
+		 */
+		RECOVERED
 	}
 
 	public final long cursor;

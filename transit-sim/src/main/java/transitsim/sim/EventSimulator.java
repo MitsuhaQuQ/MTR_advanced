@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.LongFunction;
 import java.util.function.Supplier;
 
 /**
@@ -62,6 +63,30 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		runner = start.get();
 		runner.setSkipping(skipping);
 		runner.setAfterTick(this::collectEvents);
+	}
+
+	/**
+	 * How long a stop can be for trains to carry on as they were (contracts document 6.3).
+	 */
+	public static final long RECOVERY_MILLIS = 60000;
+
+	/**
+	 * Carries on from the trains as the game saved them (G0). After a stop of up to a minute they carry on from the record
+	 * and are run on to now, events and all; after a longer one they recover where the plan has them now, and the events of
+	 * the time missed don't happen.
+	 *
+	 * @param startAt makes the world at a time, without trains
+	 */
+	public static <T extends RunTrack> EventSimulator<T> resume(LongFunction<TickRunner<T>> startAt, RunRecord record, long now) {
+		final boolean recover = now - record.time > RECOVERY_MILLIS;
+		final long startMillis = recover ? now : record.time;
+		final EventSimulator<T> simulator = new EventSimulator<>(() -> {
+			final TickRunner<T> runner = startAt.apply(startMillis);
+			runner.restore(record, recover);
+			return runner;
+		});
+		simulator.advanceTo(now);
+		return simulator;
 	}
 
 	/**
@@ -245,6 +270,10 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 			if (wasOpen != null && wasOpen != open) {
 				tickEvents.add(new Object[]{open ? SimEvent.Kind.DOORS_OPEN : SimEvent.Kind.DOORS_CLOSE, train.id, train.getHeadRail(), Integer.MAX_VALUE});
 			}
+		}
+		final List<String> recovered = runner.takeRecovered();
+		if (!recovered.isEmpty()) {
+			tickEvents.add(new Object[]{SimEvent.Kind.RECOVERED, 0L, -1, Integer.MAX_VALUE, String.join(", ", recovered)});
 		}
 		for (final Set<Long> deadlock : runner.reservations.takeDeadlocks()) {
 			tickEvents.add(new Object[]{SimEvent.Kind.DEADLOCK, Collections.min(deadlock), -1, Integer.MAX_VALUE, deadlock.toString()});

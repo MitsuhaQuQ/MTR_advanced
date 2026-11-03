@@ -116,7 +116,7 @@ class PlanCheckTest {
 	/**
 	 * @param skipOthers leave out duties of other shapes, as the depot does when it finds no path for them
 	 */
-	private static void addDutyPaths(SimDataset dataset, DutyGenerator.Result result, boolean skipOthers) {
+	static void addDutyPaths(SimDataset dataset, DutyGenerator.Result result, boolean skipOthers) {
 		final Map<Long, PlanRoute> routes = dataset.getPlanRoutes();
 		result.sidings.forEach((sidingId, slots) -> {
 			final SimDataset.SidingData siding = dataset.sidings.stream().filter(eachSiding -> eachSiding.id == sidingId).findFirst().orElseThrow(AssertionError::new);
