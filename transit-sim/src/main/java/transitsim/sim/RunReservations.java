@@ -16,7 +16,9 @@ import java.util.*;
  * <p>
  * Trains ready to leave a stop ask for the rails of their next run. The requests of a tick are dealt with together once it
  * is over, in a fixed order, so the result doesn't depend on the order the trains ran in: requests that have waited
- * {@link #AGING_MILLIS} or longer first, longest waiting first, then the rest by planned departure, then by train.
+ * {@link #AGING_MILLIS} or longer first, longest waiting first, then the rest by planned departure, then by train. While a
+ * request that has waited that long can't be granted, no train that isn't on its rails yet is let onto them the other way,
+ * so the trains there clear out and a stream of trains the other way can't keep it waiting for ever.
  */
 public final class RunReservations {
 
@@ -112,16 +114,46 @@ public final class RunReservations {
 			return byTime != 0 ? byTime : Long.compare(request1.trainId, request2.trainId);
 		});
 
+		// The rails a request that has waited too long is still kept from, with the way it asked for them. No new train is let
+		// onto them the other way, so the trains already there can clear out and a steady stream can't starve the request.
+		final Map<UUID, Boolean> claims = new HashMap<>();
 		for (final Request request : waiting) {
-			if (canHold(request.trainId, request.moves)) {
+			if (canHold(request.trainId, request.moves) && (holdsAny(request.trainId, claims) || !isAgainstClaims(request.moves, claims))) {
 				hold(request.trainId, request.moves);
 				grants.add(request.trainId);
 				firstRequestMillis.remove(request.trainId);
+			} else if (currentMillis - firstRequestMillis.get(request.trainId) >= AGING_MILLIS) {
+				request.moves.forEach(move -> claims.putIfAbsent(move.rail, move.forwards));
 			}
 		}
 		requests.clear();
 		// Every train sets what it holds again next tick, including what was just granted
 		heldThisTick.clear();
+	}
+
+	/**
+	 * @return true if the train already holds one of these rails, so it is among the trains to let clear out
+	 */
+	private boolean holdsAny(long trainId, Map<UUID, Boolean> claims) {
+		final List<Move> moves = holdings.get(trainId);
+		if (moves != null) {
+			for (final Move move : moves) {
+				if (claims.containsKey(move.rail)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean isAgainstClaims(List<Move> moves, Map<UUID, Boolean> claims) {
+		for (final Move move : moves) {
+			final Boolean forwards = claims.get(move.rail);
+			if (forwards != null && forwards != move.forwards) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void removeHoldings(long trainId) {

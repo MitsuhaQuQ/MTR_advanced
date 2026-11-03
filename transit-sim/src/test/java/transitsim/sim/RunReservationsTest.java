@@ -2,9 +2,7 @@ package transitsim.sim;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -135,6 +133,54 @@ class RunReservationsTest {
 		reservations.resolve(millis);
 		assertTrue(reservations.takeGrant(2));
 		assertFalse(reservations.takeGrant(3));
+	}
+
+	@Test
+	void aStreamOfTrainsCantKeepATrainWaitingForEver() {
+		// A new eastbound train asks every second and holds the line for three seconds once granted, while train 1 waits to go west
+		final RunReservations reservations = new RunReservations();
+		final Map<Long, Integer> heldUntil = new HashMap<>();
+		long westGrantedAt = -1;
+		for (long tick = 0; tick < 180 && westGrantedAt < 0; tick++) {
+			final long nextEast = 100 + tick;
+			for (final Map.Entry<Long, Integer> entry : heldUntil.entrySet()) {
+				if (entry.getValue() > tick) {
+					reservations.hold(entry.getKey(), EASTWARDS);
+				}
+			}
+			reservations.request(nextEast, EASTWARDS, tick * 1000);
+			// Train 1 is due later than any of them, so only waiting long can put it first
+			reservations.request(1, WESTWARDS, 1000000);
+			reservations.resolve(tick * 1000);
+			if (reservations.takeGrant(nextEast)) {
+				heldUntil.put(nextEast, (int) tick + 3);
+			}
+			if (reservations.takeGrant(1)) {
+				westGrantedAt = tick;
+			}
+		}
+		assertTrue(westGrantedAt >= 0);
+		assertTrue(westGrantedAt <= RunReservations.AGING_MILLIS / 1000 + 4);
+	}
+
+	@Test
+	void letsTrainsAlreadyOnTheLineClearOut() {
+		// Train 5 stands on rail 1-2, at a stop part of the way along, and has to go on along 2-3 before train 1, which has
+		// waited long, can have the line; train 6 hasn't started yet and is kept back
+		final RunReservations reservations = new RunReservations();
+		long millis = 0;
+		for (; millis < RunReservations.AGING_MILLIS; millis += 1000) {
+			reservations.hold(5, Collections.singletonList(new RunReservations.Move(1, 2)));
+			assertFalse(ask(reservations, 1, WESTWARDS, 0, millis));
+		}
+		reservations.hold(5, Collections.singletonList(new RunReservations.Move(1, 2)));
+		reservations.request(1, WESTWARDS, 0);
+		reservations.request(5, EASTWARDS, 0);
+		reservations.request(6, EASTWARDS, 0);
+		reservations.resolve(millis);
+		assertFalse(reservations.takeGrant(1));
+		assertTrue(reservations.takeGrant(5));
+		assertFalse(reservations.takeGrant(6));
 	}
 
 	@Test

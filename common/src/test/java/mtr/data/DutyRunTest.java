@@ -148,6 +148,25 @@ class DutyRunTest {
 	}
 
 	@Test
+	void keepsItsDutyWhileWaitingToLeave() {
+		// The run out of the siding is granted a tick later at the earliest, and the train keeps its duty meanwhile
+		final FakeTrain[] train = new FakeTrain[1];
+		final Siding.TripPath tripPath = twoRoutes(train);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		for (int tick = 0; tick < 100; tick++) {
+			train[0].service.update(false);
+		}
+		assertTrue(train[0].service.isOnDuty());
+		assertEquals(MONDAY + 8 * HOUR, train[0].service.getTripMillis());
+
+		// Once it has left, coming back to the depot ends the duty
+		train[0].service.update(true);
+		train[0].service.update(false);
+		assertFalse(train[0].service.isOnDuty());
+	}
+
+	@Test
 	void keepsItsDutyWhenTheDutiesAreEdited() {
 		// F2, R04 of the architecture review: a duty under way runs as it was when the train took it on
 		final FakeTrain[] train = new FakeTrain[1];
@@ -176,7 +195,9 @@ class DutyRunTest {
 		final Siding.TripPath tripPath = twoRoutes(train);
 		now = MONDAY + 7 * HOUR + 58 * MINUTE;
 		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
 		train[0].service.update(false);
+		assertFalse(train[0].service.isOnDuty());
 		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1)));
 
 		now = MONDAY + Depot.MILLISECONDS_PER_DAY + 7 * HOUR + 58 * MINUTE;

@@ -91,6 +91,11 @@ public class TrainService {
 	 * (fix F2, R04 of the architecture review). It isn't saved: after a restart the duty is read again from the depot.
 	 */
 	private DepotDuties.DayDuty dutyDay;
+	/**
+	 * Sent out for a duty but still in the siding, waiting for its run out of it to be granted. The train keeps its duty
+	 * meanwhile, unlike a train back in the depot, which ends it.
+	 */
+	private boolean isLeavingForDuty;
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
 	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
@@ -128,6 +133,8 @@ public class TrainService {
 		dutySlot = messagePackHelper.getInt(KEY_DUTY_SLOT, -1);
 		dutyDayStart = messagePackHelper.getLong(KEY_DUTY_DAY_START);
 		dutyIndex = messagePackHelper.getInt(KEY_DUTY_INDEX);
+		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
+		isLeavingForDuty = dutySlot >= 0;
 		needsAlignment = tripMillis != 0;
 		setLastLap(messagePackHelper.getBoolean(KEY_IS_LAST_LAP));
 	}
@@ -167,6 +174,11 @@ public class TrainService {
 	 */
 	public void update(boolean isOnRoute) {
 		if (isOnRoute) {
+			isLeavingForDuty = false;
+		} else if (isLeavingForDuty && isOnDuty()) {
+			return;
+		}
+		if (isOnRoute) {
 			// Duties say which train runs what, so nothing is reserved for others to see
 			if (isOnDuty()) {
 				return;
@@ -182,6 +194,7 @@ public class TrainService {
 			dutySlot = -1;
 			dutyIndex = 0;
 			dutyDay = null;
+			isLeavingForDuty = false;
 			tripMillis = 0;
 			nextTripMillis = 0;
 			routeStartMillis = 0;
@@ -554,6 +567,7 @@ public class TrainService {
 		dutySlot = slot;
 		dutyDayStart = dayStart;
 		dutyDay = readDutyDay();
+		isLeavingForDuty = true;
 		isJoiningLoop = false;
 		linkedService = -1;
 		linkedRouteId = 0;
