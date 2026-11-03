@@ -1,9 +1,12 @@
 package transitsim.motion;
 
 /**
- * The rules moving a train (decoupling document 2.2), taken out of the host's train in S2. In S2a they are still exactly
- * the rules of {@link transitsim.motion.legacy.LegacyTrainMotion}; the steps after it change them here, and the comparison
- * tests keep the parts meant to stay the same.
+ * The rules moving a train (decoupling document 2.2), taken out of the host's train in S2. They started as exactly the
+ * rules of {@link transitsim.motion.legacy.LegacyTrainMotion}; the comparison tests keep the parts meant to stay the same.
+ * <p>
+ * What changed: on the server, an automatic train on speed curves runs along a {@link RunSegment}, its position worked out
+ * from the time since it set off rather than added up tick by tick (S2c). A client still follows the curve tick by tick
+ * between the positions the server sends.
  */
 public final class TrainMotion {
 
@@ -41,6 +44,9 @@ public final class TrainMotion {
 			final float newAcceleration = vehicle.getAcceleration() * ticksElapsed;
 			// How far a train on its speed curve moves this tick, or -1 to move at its speed
 			double curveAdvance = -1;
+			// Whether the train ran along a run segment this tick, and whether a loop moved it back
+			boolean onSegment = false;
+			boolean lapped = false;
 
 			if (state.getRailProgress() >= track.getDistance(track.getDistanceCount() - 1) - (railLength - trainCars * spacing) / 2 && !hooks.keepsOnLineAtEnd()) {
 				state.setOnRoute(false);
@@ -100,7 +106,12 @@ public final class TrainMotion {
 
 					final double stoppingDistance = track.getDistance(state.getNextStoppingIndex()) - state.getRailProgress();
 					if (vehicle.usesSpeedCurve()) {
-						curveAdvance = followSpeedCurve(state, vehicle, curves, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
+						if (hooks.isClientSide()) {
+							curveAdvance = followSpeedCurve(state, vehicle, curves, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
+						} else {
+							curveAdvance = followRunSegment(state, curves, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
+							onSegment = true;
+						}
 					} else if (!vehicle.isContinuousMovement() && stoppingDistance < 0.5 * state.getSpeed() * state.getSpeed() / vehicle.getAcceleration() && mustStop(state, track, hooks, state.getNextStoppingIndex())) {
 						final float speed = state.getSpeed();
 						state.setSpeed(stoppingDistance <= 0 ? MotionConstants.ACCELERATION_DEFAULT : (float) Math.max(speed - (0.5 * speed * speed / stoppingDistance) * ticksElapsed, MotionConstants.ACCELERATION_DEFAULT));
@@ -133,9 +144,15 @@ public final class TrainMotion {
 					state.setRailProgress(state.getRailProgress() + (track.getDistance(track.getRepeatIndex1() - 1) - track.getDistance(track.getRepeatIndex2() - 1)));
 					hooks.onLapComplete();
 					continueWithoutStopping(state, hooks);
+					lapped = true;
 				}
 
 				state.setRailProgress(state.getRailProgress() + (curveAdvance >= 0 ? curveAdvance : state.getSpeed() * ticksElapsed));
+				// A train at the end of its segment is exactly where it stops, so stops and turning back see it there
+				final RunSegment runSegment = state.getRunSegment();
+				if (onSegment && !lapped && runSegment != null && runSegment.isFinished()) {
+					state.setRailProgress(runSegment.target);
+				}
 				if (!vehicle.isContinuousMovement() && state.getRailProgress() > track.getDistance(state.getNextStoppingIndex())) {
 					if (mustStop(state, track, hooks, state.getNextStoppingIndex())) {
 						state.setRailProgress(track.getDistance(state.getNextStoppingIndex()));
@@ -157,6 +174,36 @@ public final class TrainMotion {
 		}
 
 		return totalDwellTicks;
+	}
+
+	/**
+	 * Moves the train along its run segment, starting a new one from where it is when the place to stop, the run or its
+	 * cruising cap has changed, or the train isn't where the segment has it (S2c).
+	 *
+	 * @param stoppingPosition where the train has to stop, which is nearer than the end of the run when the line ahead is taken
+	 * @return how far the train moves
+	 */
+	private static double followRunSegment(MotionState state, MotionCurves curves, float ticksElapsed, double stoppingPosition) {
+		final double railProgress = state.getRailProgress();
+		final SpeedCurves.Run run = curves.getRun(railProgress);
+		if (run == null) {
+			return state.getSpeed() * ticksElapsed;
+		}
+		final double target = stoppingPosition > run.fastest.endPosition + RunSegment.POSITION_TOLERANCE ? run.fastest.endPosition : stoppingPosition;
+		final double cap = curves.getCruiseCap();
+		RunSegment runSegment = state.getRunSegment();
+		if (runSegment == null || !runSegment.matches(run, cap, target, railProgress)) {
+			// The host starts a train off at a crawl only to mark it as moving: it sets off from standing, as the timetable has it
+			final float speed = state.getSpeed();
+			runSegment = RunSegment.start(runSegment, run, railProgress, speed <= MotionConstants.ACCELERATION_DEFAULT ? 0 : speed, cap, target);
+			state.setRunSegment(runSegment);
+		}
+		runSegment.advance(ticksElapsed);
+		final float oldSpeed = state.getSpeed();
+		final float newSpeed = runSegment.isFinished() ? 0 : (float) runSegment.getSpeed();
+		state.setSpeed(newSpeed);
+		state.setManualNotch(newSpeed > oldSpeed ? 2 : 0);
+		return runSegment.getPosition() - railProgress;
 	}
 
 	/**

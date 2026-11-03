@@ -60,6 +60,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	private SpeedCurves.Run cappedRun;
 	private float cappedCap;
 	private final Motion motion = new Motion();
+	private RunSegment runSegment;
 	private Level motionWorld;
 	private Depot motionDepot;
 
@@ -853,6 +854,16 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		}
 
 		@Override
+		public RunSegment getRunSegment() {
+			return runSegment;
+		}
+
+		@Override
+		public void setRunSegment(RunSegment runSegment) {
+			Train.this.runSegment = runSegment;
+		}
+
+		@Override
 		public int size() {
 			return path.size();
 		}
@@ -1007,6 +1018,16 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		public SpeedProfile getProfile(double position) {
 			final SpeedCurves.Run run = getSpeedCurves().getRun(position);
 			return run == null ? null : getRunProfile(run);
+		}
+
+		@Override
+		public SpeedCurves.Run getRun(double position) {
+			return getSpeedCurves().getRun(position);
+		}
+
+		@Override
+		public double getCruiseCap() {
+			return cruiseCap;
 		}
 	}
 }

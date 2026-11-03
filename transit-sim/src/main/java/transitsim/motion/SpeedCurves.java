@@ -154,23 +154,38 @@ public final class SpeedCurves {
 		 * @return the rest of the run, for a train setting off part of the way along it at some speed
 		 */
 		public SpeedProfile from(double position, double speed, double cap) {
-			final double[][] rest = getRest(position);
-			return rest == null ? SpeedProfile.build(new double[]{fastest.endPosition, fastest.endPosition}, new double[]{0}, acceleration, deceleration, cap) : SpeedProfile.build(rest[0], rest[1], acceleration, deceleration, cap, speed);
+			return fromTo(position, speed, cap, fastest.endPosition, deceleration);
+		}
+
+		/**
+		 * @param end          where the train has to stop, which can be short of the end of the run when the line ahead is taken
+		 * @param deceleration the braking to use, which can be harder than the train's own in an emergency
+		 * @return the run from part of the way along it to a stop, ending exactly at {@code end}
+		 */
+		public SpeedProfile fromTo(double position, double speed, double cap, double end, double deceleration) {
+			final double[][] rest = getRest(position, end);
+			return rest == null ? SpeedProfile.build(new double[]{end, end}, new double[]{0}, acceleration, deceleration, cap) : SpeedProfile.build(rest[0], rest[1], acceleration, deceleration, cap, speed);
 		}
 
 		/**
 		 * @return the cruising speed that takes the rest of the run this many ticks, or infinity when it has no time to spare
 		 */
 		public double findCapFrom(double position, double speed, double ticks, double minSpeed) {
-			final double[][] rest = getRest(position);
+			final double[][] rest = getRest(position, fastest.endPosition);
 			return rest == null ? Double.POSITIVE_INFINITY : SpeedProfile.findCap(rest[0], rest[1], acceleration, deceleration, ticks, minSpeed, speed);
 		}
 
+		public double getDeceleration() {
+			return deceleration;
+		}
+
 		/**
-		 * @return the breaks and limits from a position to the end of the run, or null if the position is at the end or past it
+		 * @return the breaks and limits from a position to an end no further than the end of the run, or null if there is
+		 * nothing between them
 		 */
-		private double[][] getRest(double position) {
-			if (breaks.length < 2 || position >= breaks[breaks.length - 1] - 1E-6) {
+		private double[][] getRest(double position, double rawEnd) {
+			final double end = Math.min(rawEnd, breaks.length < 2 ? rawEnd : breaks[breaks.length - 1]);
+			if (breaks.length < 2 || position >= end - 1E-6) {
 				return null;
 			}
 			final double start = Math.max(position, breaks[0]);
@@ -178,11 +193,17 @@ public final class SpeedCurves {
 			while (first + 1 < limits.length && breaks[first + 1] <= start + 1E-6) {
 				first++;
 			}
-			final double[] restBreaks = new double[breaks.length - first];
-			final double[] restLimits = new double[limits.length - first];
+			int last = first;
+			while (last + 1 < limits.length && breaks[last + 1] < end - 1E-6) {
+				last++;
+			}
+			final int count = last - first + 1;
+			final double[] restBreaks = new double[count + 1];
+			final double[] restLimits = new double[count];
 			restBreaks[0] = start;
-			System.arraycopy(breaks, first + 1, restBreaks, 1, restBreaks.length - 1);
-			System.arraycopy(limits, first, restLimits, 0, restLimits.length);
+			System.arraycopy(breaks, first + 1, restBreaks, 1, count - 1);
+			restBreaks[count] = end;
+			System.arraycopy(limits, first, restLimits, 0, count);
 			return new double[][]{restBreaks, restLimits};
 		}
 

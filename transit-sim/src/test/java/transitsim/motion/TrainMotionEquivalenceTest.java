@@ -9,7 +9,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The motion rules taken out of the host (S2) against the rules as they were before (decoupling document 5.2, S2): tick
- * by tick, every part of the state must come out the same.
+ * by tick, every part of the state must come out the same. Trains on speed curves run along run segments on the server
+ * since S2c, which {@link RunSegmentTest} checks against the old rules; here they are followed on the client, which still
+ * moves them the old way.
  */
 class TrainMotionEquivalenceTest {
 
@@ -30,8 +32,10 @@ class TrainMotionEquivalenceTest {
 
 	@Test
 	void followsSpeedCurves() {
-		final MotionFixture fixture = compare(MotionFixture::new, TrainMotionEquivalenceTest::line, fixture1 -> fixture1.speedCurve = true);
-		assertTrue(fixture.stopsReached > 0);
+		compare(MotionFixture::new, TrainMotionEquivalenceTest::line, fixture1 -> {
+			fixture1.speedCurve = true;
+			fixture1.clientSide = true;
+		});
 	}
 
 	@Test
@@ -39,6 +43,7 @@ class TrainMotionEquivalenceTest {
 		compare(MotionFixture::new, TrainMotionEquivalenceTest::line, fixture -> {
 			fixture.speedCurve = true;
 			fixture.cruiseCap = 0.15F;
+			fixture.clientSide = true;
 		});
 	}
 
@@ -47,6 +52,7 @@ class TrainMotionEquivalenceTest {
 		for (final boolean speedCurve : new boolean[]{false, true}) {
 			final MotionFixture fixture = compare(MotionFixture::new, TrainMotionEquivalenceTest::line, fixture1 -> {
 				fixture1.speedCurve = speedCurve;
+				fixture1.clientSide = speedCurve;
 				fixture1.blockedAt = (tick, rail) -> rail == 3 && tick >= 60 && tick < 700;
 			});
 			assertTrue(fixture.stopsReached > 0);
@@ -90,7 +96,8 @@ class TrainMotionEquivalenceTest {
 			fixture1.rail(80, 0, 0.6F).rail(80, 0, 0.6F);
 			fixture1.repeatIndex1 = 2;
 			fixture1.repeatIndex2 = 6;
-		}, fixture1 -> fixture1.speedCurve = true);
+		}, fixture1 -> {
+		});
 		assertTrue(fixture.laps > 0);
 	}
 

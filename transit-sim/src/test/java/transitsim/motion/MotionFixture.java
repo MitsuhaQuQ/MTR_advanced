@@ -23,6 +23,7 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	boolean onRoute;
 	boolean currentlyManual;
 	int manualNotch;
+	RunSegment runSegment;
 
 	// Path
 	private final List<Double> lengths = new ArrayList<>();
@@ -216,6 +217,16 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	@Override
 	public void setManualNotch(int manualNotch) {
 		this.manualNotch = manualNotch;
+	}
+
+	@Override
+	public RunSegment getRunSegment() {
+		return runSegment;
+	}
+
+	@Override
+	public void setRunSegment(RunSegment runSegment) {
+		this.runSegment = runSegment;
 	}
 
 	// MotionTrack
@@ -424,6 +435,16 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	public SpeedProfile getProfile(double position) {
 		final SpeedCurves.Run run = getCurves().getRun(position);
 		return run == null ? null : Float.isInfinite(cruiseCap) ? run.fastest : run.withCap(cruiseCap);
+	}
+
+	@Override
+	public SpeedCurves.Run getRun(double position) {
+		return getCurves().getRun(position);
+	}
+
+	@Override
+	public double getCruiseCap() {
+		return cruiseCap;
 	}
 
 	SpeedCurves getCurves() {

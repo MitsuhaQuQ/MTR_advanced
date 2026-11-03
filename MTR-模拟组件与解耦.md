@@ -68,7 +68,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `advanced/ServiceExceptions` | 233 | `FriendlyByteBuf`、`Route`、`RouteTimetable` | B | 组件 `plan`，读写换成组件格式（S3） |
 | `advanced/TimetableBoundaries` | 82 | `Platform`、`Route`、`RouteTimetable` | B | 组件 `plan`（S3） |
 | `data/TimetableConfig` | 124 | Gson | A（不依赖 Minecraft） | 时区和日起点进组件，配置文件读写留在宿主（S3） |
-| `advanced/DepotDuties` | 243 | `FriendlyByteBuf` | B | 组件 `plan`，读写换成组件格式，存档字节保持兼容（S3） |
+| `advanced/DepotDuties` | 243 | `FriendlyByteBuf` | B | 组件 `plan`，读写换成组件格式，已有的存档内容照常读入（S3） |
 | `advanced/DutyShapes` | 161 | `Depot`、`Route`、`RouteTimetable`、`TimetableConfig` | B | 组件 `plan`（S3） |
 | `advanced/DutyGenerator` | 349 | `transitsim.planning` | B（取数据时用 MTR 类） | 规划部分进组件 `planning`，取数据的部分是宿主适配器（S6） |
 | `data/Route` | 1111 | `BlockPos`、NBT、`FriendlyByteBuf`、`PathData` | C 的数据类 | 留在宿主，适配器换成组件的线路 |
@@ -118,7 +118,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 
 S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。`speed`、`railProgress`、`doorValue` 等状态字段仍留在 `Train` 上，由一个状态接口读写。
 
-**S2a 以后（2026-11-03）**：上表的规则部分已在组件的 `transitsim.motion.TrainMotion`，通过 `MotionState`（状态）、`MotionTrack`（路径）、`MotionVehicle`（车辆参数）、`MotionHooks`（上面的钩子，加上 `isClientSide`、`getTotalDwellTicks`、`isRepeat`、清空乘客）、`MotionCurves`（速度曲线）读写宿主。`Train` 用内部类 `Motion` 实现这五个接口，字段和可覆盖的方法都不变，`simulateTrain` 只剩"调规则、算车厢"两步。原来的规则逐字保留为 `transitsim.motion.legacy.LegacyTrainMotion`，仪表盘设置菜单里可以切换（`MotionConfig`，`config/mtr_motion.json`），S2 测完后删掉。
+**S2a 以后（2026-11-03）**：上表的规则部分已在组件的 `transitsim.motion.TrainMotion`（S2c 起服务端开速度曲线的自动列车改沿运行段 `RunSegment` 走，见 3.5 节），通过 `MotionState`（状态）、`MotionTrack`（路径）、`MotionVehicle`（车辆参数）、`MotionHooks`（上面的钩子，加上 `isClientSide`、`getTotalDwellTicks`、`isRepeat`、清空乘客）、`MotionCurves`（速度曲线）读写宿主。`Train` 用内部类 `Motion` 实现这五个接口，字段和可覆盖的方法都不变，`simulateTrain` 只剩"调规则、算车厢"两步。原来的规则逐字保留为 `transitsim.motion.legacy.LegacyTrainMotion`，仪表盘设置菜单里可以切换（`MotionConfig`，`config/mtr_motion.json`），S2 测完后删掉。
 
 ### 2.3 已经有的接口缝
 
@@ -143,6 +143,7 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 | `transitsim.network.NetworkTest`（组件，7 项）、`advanced/RailNetworksTest`（5 项） | 区间压缩、限速分段、ID 稳定、路径换算、读写、旧格式读入、四种资源的划分、版本和只读；`Rail` 的适配 |
 | `transitsim.motion.SpeedProfileTest`（组件，10 项）、`transitsim.motion.SpeedCurvesTest`（组件，5 项）、`advanced/SpeedCurvesTest`（2 项） | 速度曲线、巡航上限；按轨道限速和折返分段；从任意位置和速度起步（S2b）；`PathData` 的适配 |
 | `transitsim.motion.TrainMotionRestartTest`（组件，2 项） | 区间里被拦停后重新起步：时间够时准点到，不够时和原来一样尽快跑 |
+| `transitsim.motion.RunSegmentTest`（组件，7 项） | 运行段：推进步长不影响位置、换段时位置和速度连续、来不及停车时紧急制动且不越过停车点、到站时刻和曲线一致且不晚于旧规则、被占轨道前停住、运行中切换新旧规则不跳 |
 | `transitsim.sim.RunReservationsTest`（组件） | 带方向的区间预约 |
 | `advanced/ServiceExceptionsTest`、`advanced/TimetableBoundariesTest` | 班次例外、时刻边界 |
 | `advanced/DutyGeneratorTest`、`advanced/DutyShapesTest` | 运用生成、运用形状、旧格式读入 |
@@ -283,7 +284,7 @@ MTR4 把模拟拆成独立的 Transport Simulation Core（`org.mtr.core`，MIT �
   - `RailwayDataMixin` 委托给 `RailwayData.simulateTrains(RailNearPlayer)`。
   - S2 拆走推进规则碰不到这些注入点。G2 改客户端同步时要再核对 `TrainClientMixin`。
 - **构建**：子项目要接进五个版本的 Gradle 配置和并行构建脚本，Forge 的 shadow 也要包含它。S0 先单独验证这件事，再搬任何逻辑。
-- **存档**：S3 之前存档字节不变，组件格式只用于 `graph_*` 表。G4 才换列车运行状态的格式，并加独立于协议版本的存档版本号。
+- **存档**（2026-11-03 调整）：已有的存档内容保持不变，旧存档照常读入；新功能需要时可以主动新增存档内容（新的键、新的表），旧版本读到时忽略。原来写的"S3 之前存档字节不变"是这份文档自己定的，不是需求，已经取消。改变已有内容的格式（如列车运行状态换成组件格式）仍放到 G4，并加独立于协议版本的存档版本号。
 - **服务端和客户端一致**：S2 起两边用同一个运动内核，G2 起客户端按同一份运行段计算。
 - **性能**：事件推进要比逐 tick 便宜。S4 用大线网基准对比，确认全网一天的模拟在秒级以内。
 - **模组构建要联网**：组件已经能单独、离线构建（R05 已修）。模组本身仍在配置阶段联网，读 Minecraft、Fabric、Forge 的版本元数据并下载映射等文件，现在每次最多试 5 次，每次都有超时，没有网络时会报错停止，不再无限等待。
@@ -411,7 +412,8 @@ S0 之前，已经不依赖世界的部件：
 | S1 线网和资源 | 完成：线网、寻路、区域、速度曲线进组件；新的线网快照带资源（轨道段、道岔冲突区、单线方向区段、站台泊位）和发布序号；资源只定义，还没有地方用（S4 用）。路径到几何的对应仍是 `RailGraph` 里宿主给的轨道载荷 | 1.20.1 | 组件 71 项、common 233 项全过；组件单独离线构建通过；`SpeedCurvesTest`、`RailNetworksTest` 期望值不变；ABI 扫描无缺失；Fabric、Forge 服务端启动正常 | 不改行为，不单独测 | 不适用 |
 | S2a 抽出推进规则 | 完成：规则进组件 `TrainMotion`，`Train` 通过五个接口调用；旧规则保留为 `LegacyTrainMotion`，仪表盘设置菜单可以切换（协议 27） | 1.20.1 | 组件 96 项（新增对照 12 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T90、T91） | 未做 |
 | S2b 从任意状态起步的速度曲线 | 完成：`SpeedProfile` 可以从任意位置、非零速度起步（超过限速时按减速度降下来，来不及停车时从还能停住的速度起步），`SpeedCurves.Run.from`、`findCapFrom` 和 `SpeedCurves.findCruiseCap`；`TrainServer.getCruiseCap` 用新规则时，区间里被拦停后重新起步的车也按剩余时间设巡航上限（去掉 E2 的变通），旧规则不变 | 1.20.1 | 组件 105 项（新增 `SpeedProfileTest` 5 项、`SpeedCurvesTest` 2 项、`TrainMotionRestartTest` 2 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T92） | 未做 |
-| S2c 至 S6、全链路场景 | 未开始 | | | | |
+| S2c 运行段和曲线模式 | 完成：服务端开速度曲线的自动列车沿 `RunSegment` 走，位置由曲线在"出发后经过的 tick 数"处的位置得出，不再逐 tick 累加；停车点变化、运行段或巡航上限变化、列车被别处移动时从当前位置和速度换新段（版本加一）；按常用减速度停不住时用 1.5 倍，再停不住就从还能停住的速度起步，并标出紧急制动；到段末时位置对齐到停车点。客户端照旧沿曲线逐帧走。运行段不存档，读档后从当前位置和速度重建 | 1.20.1 | 组件 112 项（新增 `RunSegmentTest` 7 项；对照测试里开速度曲线的场景改在客户端比较）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T93） | 未做 |
+| S2d 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

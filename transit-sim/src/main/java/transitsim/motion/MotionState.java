@@ -53,4 +53,11 @@ public interface MotionState {
 	int getManualNotch();
 
 	void setManualNotch(int manualNotch);
+
+	/**
+	 * The run the train is on with the new rules, or null. It isn't saved: a train without one starts one from where it is.
+	 */
+	RunSegment getRunSegment();
+
+	void setRunSegment(RunSegment runSegment);
 }
