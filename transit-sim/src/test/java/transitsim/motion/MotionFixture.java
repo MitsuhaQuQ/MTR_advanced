@@ -73,6 +73,7 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	int stopsReached;
 	int ridersCleared;
 	int startUps;
+	final List<MotionEvent> events = new ArrayList<>();
 
 	MotionFixture rail(double length, int dwellTime, float maxSpeed) {
 		return rail(length, dwellTime, maxSpeed, true, false);
@@ -427,6 +428,11 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 		final int dwellTicks = getTotalDwellTicks();
 		final float maxDoorMoveTime = Math.min(MotionConstants.DOOR_MOVE_TIME, dwellTicks / 2 - MotionConstants.DOOR_DELAY);
 		return elapsedDwellTicks >= MotionConstants.DOOR_DELAY && elapsedDwellTicks < dwellTicks - MotionConstants.DOOR_DELAY - maxDoorMoveTime;
+	}
+
+	@Override
+	public void emit(MotionEvent.Type type, int rail) {
+		events.add(new MotionEvent(tick * 50L, type, 1, events.size() + 1, rail, runSegment == null ? 0 : runSegment.version));
 	}
 
 	// MotionCurves

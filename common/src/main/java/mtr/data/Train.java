@@ -61,6 +61,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	private float cappedCap;
 	private final Motion motion = new Motion();
 	private RunSegment runSegment;
+	private final List<MotionEvent> motionEvents = new ArrayList<>();
+	private long motionEventSequence;
 	private Level motionWorld;
 	private Depot motionDepot;
 
@@ -93,6 +95,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	public static final float MAX_ACCELERATION = 0.05F; // m/tick^2
 	public static final float MIN_ACCELERATION = 0.001F; // m/tick^2
 	public static final int DOOR_MOVE_TIME = 64;
+	private static final int MAX_MOTION_EVENTS = 256;
 	protected static final int MAX_CHECK_DISTANCE = 32;
 	protected static final int DOOR_DELAY = 20;
 
@@ -453,26 +456,19 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	public boolean changeManualSpeed(boolean isAccelerate) {
-		if (doorValue == 0 && isAccelerate && manualNotch >= -2 && manualNotch < 2) {
-			manualNotch++;
-			return true;
-		} else if (!isAccelerate && manualNotch > -2) {
-			manualNotch--;
-			return true;
-		} else {
-			return false;
-		}
+		return TrainMotion.applyCommand(motion, isAccelerate ? MotionCommand.ACCELERATE : MotionCommand.BRAKE);
 	}
 
 	public boolean toggleDoors() {
-		if (speed == 0) {
-			doorTarget = !doorTarget;
-			manualNotch = -2;
-			return true;
-		} else {
-			doorTarget = false;
-			return false;
-		}
+		return TrainMotion.applyCommand(motion, MotionCommand.TOGGLE_DOORS);
+	}
+
+	/**
+	 * Hands over what happened to the train since the last time, for the host to handle at the end of the tick.
+	 */
+	public final void drainMotionEvents(Collection<MotionEvent> events) {
+		events.addAll(motionEvents);
+		motionEvents.clear();
 	}
 
 	public final int getIndex(int car, int trainSpacing, boolean roundDown) {
@@ -1012,6 +1008,14 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		@Override
 		public boolean openDoors() {
 			return Train.this.openDoors();
+		}
+
+		@Override
+		public void emit(MotionEvent.Type type, int rail) {
+			// Nobody collects them while there are too many, as on a host that doesn't
+			if (motionEvents.size() < MAX_MOTION_EVENTS) {
+				motionEvents.add(new MotionEvent(System.currentTimeMillis(), type, id, ++motionEventSequence, rail, runSegment == null ? 0 : runSegment.version));
+			}
 		}
 
 		@Override

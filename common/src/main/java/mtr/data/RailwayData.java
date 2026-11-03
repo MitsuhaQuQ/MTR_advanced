@@ -36,7 +36,9 @@ import org.msgpack.core.MessagePack;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.core.MessageUnpacker;
 import org.msgpack.value.Value;
+import transitsim.motion.MotionEvent;
 import transitsim.network.RailGraph;
+import transitsim.sim.Occupancy;
 import transitsim.sim.RunReservations;
 
 import java.io.File;
@@ -88,7 +90,18 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	private final RailwayDataFileSaveModule railwayDataFileSaveModule;
 
-	private final List<Map<UUID, Long>> trainPositions = new ArrayList<>(2);
+	/**
+	 * The rails taken by trains, signal blocks and turn back bookings, kept by the component (decoupling document 3.7);
+	 * {@link #trainPositions} is its two ticks, as the rest of the code has always used them.
+	 */
+	private final Occupancy occupancy = new Occupancy();
+	private final List<Map<UUID, Long>> trainPositions = occupancy.getTicks();
+	/**
+	 * What happened to the trains this tick, collected from every siding and handled together at the end of the tick
+	 * (decoupling document 3.7).
+	 */
+	private final List<MotionEvent> motionEvents = new ArrayList<>();
+	private final List<MotionEvent> lastMotionEvents = new ArrayList<>();
 	private final TickCompensator tickCompensator = new TickCompensator();
 	private final Map<Player, BlockPos> playerLastUpdatedPositions = new HashMap<>();
 	private final List<Player> playersToSyncSchedules = new ArrayList<>();
@@ -125,8 +138,6 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		super(NAME);
 		this.world = world;
 
-		trainPositions.add(new HashMap<>());
-		trainPositions.add(new HashMap<>());
 
 		final ResourceLocation dimensionLocation = world.dimension().location();
 		final Path savePath = ((ServerLevel) world).getServer().getWorldPath(LevelResource.ROOT).resolve("mtr").resolve(dimensionLocation.getNamespace()).resolve(dimensionLocation.getPath().replace("..", "_"));
@@ -345,8 +356,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		});
 
 		updateNearbyTrains.startTick();
-		trainPositions.remove(0);
-		trainPositions.add(new HashMap<>());
+		occupancy.nextTick();
 		lastSchedulesForPlatform.clear();
 		lastSchedulesForPlatform.putAll(schedulesForPlatform);
 		schedulesForPlatform.clear();
@@ -357,8 +367,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails);
 			siding.ticksElapsed = ticksElapsed;
 			siding.lastSchedulesForPlatform = lastSchedulesForPlatform;
+			siding.motionEvents = motionEvents;
 			siding.simulateTrain(dataCache, railwayDataDriveTrainModule, trainPositions, signalBlocks, updateNearbyTrains.newDataSetInPlayerRange, updateNearbyTrains.dataSetToSync, schedulesForPlatform, trainDelays);
 		});
+		handleMotionEvents();
 		// Runs asked for during the tick are given out together, whatever order the trains ran in
 		runReservations.resolve(System.currentTimeMillis());
 		depots.forEach(depot -> depot.deployTrain(this, world));
@@ -404,7 +416,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			final Map<UUID, Boolean> occupiedRails = new HashMap<>();
 			railsToAdd.forEach(rail -> {
 				signalBlocks.getSignalBlockStatus(signalBlockStatus, rail);
-				occupiedRails.put(rail, trainPositions.get(1).containsKey(rail));
+				occupiedRails.put(rail, occupancy.isOccupiedNow(rail));
 			});
 
 			if (!platformIds.isEmpty() || !signalBlockStatus.isEmpty() || !occupiedRails.isEmpty()) {
@@ -845,6 +857,29 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	public void resetTrainDelays(Depot depot) {
 		depot.routeIds.forEach(trainDelays::remove);
+	}
+
+	/**
+	 * Puts this tick's motion events in order (contract 2.1, rule 5), reports emergency braking, and keeps them until the
+	 * next tick.
+	 */
+	private void handleMotionEvents() {
+		motionEvents.sort(null);
+		motionEvents.forEach(event -> {
+			if (event.type == MotionEvent.Type.EMERGENCY_BRAKE) {
+				System.out.println("Minecraft Transit Railway: emergency braking, " + event);
+			}
+		});
+		lastMotionEvents.clear();
+		lastMotionEvents.addAll(motionEvents);
+		motionEvents.clear();
+	}
+
+	/**
+	 * What happened to the trains in the last tick, in order.
+	 */
+	public List<MotionEvent> getLastMotionEvents() {
+		return Collections.unmodifiableList(lastMotionEvents);
 	}
 
 	public boolean getUseTimeAndWindSync() {

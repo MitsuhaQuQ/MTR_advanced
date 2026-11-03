@@ -21,6 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 import transitsim.motion.SpeedCurves;
+import transitsim.sim.Occupancy;
 import transitsim.sim.RunReservations;
 
 import java.io.IOException;
@@ -348,15 +349,7 @@ public class TrainServer extends Train {
 	}
 
 	private boolean isRailOccupied(int checkIndex) {
-		if (!transportMode.continuousMovement && trainPositions != null && checkIndex < path.size()) {
-			final UUID railProduct = path.get(checkIndex).getRailProduct();
-			for (final Map<UUID, Long> trainPositionsMap : trainPositions) {
-				if (trainPositionsMap.containsKey(railProduct) && trainPositionsMap.get(railProduct) != id) {
-					return true;
-				}
-			}
-		}
-		return false;
+		return !transportMode.continuousMovement && trainPositions != null && checkIndex < path.size() && Occupancy.isTakenByOther(trainPositions, path.get(checkIndex).getRailProduct(), id);
 	}
 
 	@Override
@@ -871,11 +864,8 @@ public class TrainServer extends Train {
 		public boolean isTurnBackFree(List<UUID> rails) {
 			if (trainPositions != null) {
 				for (final UUID rail : rails) {
-					for (final Map<UUID, Long> trainPositionsMap : trainPositions) {
-						final Long otherId = trainPositionsMap.get(rail);
-						if (otherId != null && otherId != id) {
-							return false;
-						}
+					if (Occupancy.isTakenByOther(trainPositions, rail, id)) {
+						return false;
 					}
 				}
 			}

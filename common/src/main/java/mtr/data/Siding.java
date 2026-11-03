@@ -17,6 +17,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.motion.MotionEvent;
 import transitsim.motion.PathRelocator;
 import transitsim.motion.SpeedCurves;
 import transitsim.motion.SpeedProfile;
@@ -69,6 +70,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * The schedules of the last tick, which are complete unlike the ones still being filled in by this tick's trains.
 	 */
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
+	/**
+	 * Where the trains' motion events go, collected by the world at the end of the tick, or null to drop them. A field for
+	 * the same reason as {@link #ticksElapsed}.
+	 */
+	public List<MotionEvent> motionEvents;
 	private final Map<Long, Map<Long, Float>> platformTimes = new HashMap<>();
 	private final Set<TrainServer> trains = new HashSet<>();
 	/**
@@ -750,6 +756,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			train.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
+			}
+			if (motionEvents != null) {
+				train.drainMotionEvents(motionEvents);
 			}
 
 			if (train.closeToDepot(train.spacing * trainCars)) {

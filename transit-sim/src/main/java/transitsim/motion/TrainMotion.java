@@ -6,7 +6,7 @@ package transitsim.motion;
  * <p>
  * What changed: on the server, an automatic train on speed curves runs along a {@link RunSegment}, its position worked out
  * from the time since it set off rather than added up tick by tick (S2c). A client still follows the curve tick by tick
- * between the positions the server sends.
+ * between the positions the server sends. On the server, the rules tell the host what happened through events (S2d).
  */
 public final class TrainMotion {
 
@@ -39,6 +39,9 @@ public final class TrainMotion {
 
 			if (!state.isCurrentlyManual() && hooks.canDeploy() || state.isCurrentlyManual() && state.getManualNotch() > 0) {
 				hooks.startUp(isOppositeRail(state, track));
+				if (state.isOnRoute()) {
+					emit(hooks, MotionEvent.Type.DEPARTED, 0);
+				}
 			}
 		} else {
 			final float newAcceleration = vehicle.getAcceleration() * ticksElapsed;
@@ -52,9 +55,11 @@ public final class TrainMotion {
 				state.setOnRoute(false);
 				state.setManualNotch(-2);
 				hooks.clearRiders();
+				emit(hooks, MotionEvent.Type.RETURNED, track.size() - 1);
 				tempDoorOpen = false;
 				tempDoorValue = 0;
 			} else {
+				final boolean wasMoving = state.getSpeed() > 0;
 				if (state.getSpeed() <= 0) {
 					state.setSpeed(0);
 
@@ -72,6 +77,7 @@ public final class TrainMotion {
 								state.setRailProgress(track.getDistance(track.getRepeatIndex1()));
 							}
 							hooks.onLapComplete();
+							emit(hooks, MotionEvent.Type.LAP, track.getRepeatIndex1());
 						}
 
 						if (state.getElapsedDwellTicks() == 0) {
@@ -87,7 +93,9 @@ public final class TrainMotion {
 					}
 
 					if (!hooks.isClientSide() && (state.isCurrentlyManual() || state.getElapsedDwellTicks() >= totalDwellTicks) && !railBlocked && (!state.isCurrentlyManual() || state.getManualNotch() > 0)) {
+						final int stoppedAt = state.getNextStoppingIndex();
 						hooks.startUp(isOppositeRail);
+						emit(hooks, MotionEvent.Type.DEPARTED, stoppedAt);
 					}
 				} else {
 					if (!hooks.isClientSide()) {
@@ -109,7 +117,7 @@ public final class TrainMotion {
 						if (hooks.isClientSide()) {
 							curveAdvance = followSpeedCurve(state, vehicle, curves, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
 						} else {
-							curveAdvance = followRunSegment(state, curves, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
+							curveAdvance = followRunSegment(state, curves, hooks, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
 							onSegment = true;
 						}
 					} else if (!vehicle.isContinuousMovement() && stoppingDistance < 0.5 * state.getSpeed() * state.getSpeed() / vehicle.getAcceleration() && mustStop(state, track, hooks, state.getNextStoppingIndex())) {
@@ -143,6 +151,7 @@ public final class TrainMotion {
 				if (loopsWithoutReversing(track, hooks) && state.getRailProgress() + (curveAdvance >= 0 ? curveAdvance : state.getSpeed() * ticksElapsed) >= track.getDistance(track.getRepeatIndex2())) {
 					state.setRailProgress(state.getRailProgress() + (track.getDistance(track.getRepeatIndex1() - 1) - track.getDistance(track.getRepeatIndex2() - 1)));
 					hooks.onLapComplete();
+					emit(hooks, MotionEvent.Type.LAP, track.getRepeatIndex1());
 					continueWithoutStopping(state, hooks);
 					lapped = true;
 				}
@@ -159,8 +168,12 @@ public final class TrainMotion {
 						state.setSpeed(0);
 						state.setManualNotch(-2);
 					} else {
+						emit(hooks, MotionEvent.Type.PASSED, state.getNextStoppingIndex());
 						continueWithoutStopping(state, hooks);
 					}
+				}
+				if (wasMoving && state.getSpeed() == 0) {
+					emit(hooks, MotionEvent.Type.STOPPED, state.getNextStoppingIndex());
 				}
 
 				tempDoorValue = MotionConstants.clamp(state.getDoorValue() + ticksElapsed * (state.getDoorTarget() ? 1 : -1) / MotionConstants.DOOR_MOVE_TIME, 0, 1);
@@ -183,7 +196,7 @@ public final class TrainMotion {
 	 * @param stoppingPosition where the train has to stop, which is nearer than the end of the run when the line ahead is taken
 	 * @return how far the train moves
 	 */
-	private static double followRunSegment(MotionState state, MotionCurves curves, float ticksElapsed, double stoppingPosition) {
+	private static double followRunSegment(MotionState state, MotionCurves curves, MotionHooks hooks, float ticksElapsed, double stoppingPosition) {
 		final double railProgress = state.getRailProgress();
 		final SpeedCurves.Run run = curves.getRun(railProgress);
 		if (run == null) {
@@ -195,8 +208,15 @@ public final class TrainMotion {
 		if (runSegment == null || !runSegment.matches(run, cap, target, railProgress)) {
 			// The host starts a train off at a crawl only to mark it as moving: it sets off from standing, as the timetable has it
 			final float speed = state.getSpeed();
+			final boolean replaces = runSegment != null;
 			runSegment = RunSegment.start(runSegment, run, railProgress, speed <= MotionConstants.ACCELERATION_DEFAULT ? 0 : speed, cap, target);
 			state.setRunSegment(runSegment);
+			if (replaces) {
+				emit(hooks, MotionEvent.Type.SEGMENT_REPLACED, state.getNextStoppingIndex());
+			}
+			if (runSegment.emergency) {
+				emit(hooks, MotionEvent.Type.EMERGENCY_BRAKE, state.getNextStoppingIndex());
+			}
 		}
 		runSegment.advance(ticksElapsed);
 		final float oldSpeed = state.getSpeed();
@@ -240,6 +260,46 @@ public final class TrainMotion {
 		state.setSpeed(newStateSpeed);
 		state.setManualNotch(newStateSpeed > curveSpeed - MotionConstants.CURVE_SPEED_TOLERANCE ? 0 : 2);
 		return newProgress - railProgress;
+	}
+
+	/**
+	 * A driver's notch moves one step at a time, up to 2 and down to -2, and not up while the doors are open. The doors
+	 * only open or close while the train is standing; asking while it moves closes them.
+	 *
+	 * @return whether the command changed anything
+	 */
+	public static boolean applyCommand(MotionState state, MotionCommand command) {
+		switch (command) {
+			case ACCELERATE:
+				if (state.getDoorValue() == 0 && state.getManualNotch() >= -2 && state.getManualNotch() < 2) {
+					state.setManualNotch(state.getManualNotch() + 1);
+					return true;
+				}
+				return false;
+			case BRAKE:
+				if (state.getManualNotch() > -2) {
+					state.setManualNotch(state.getManualNotch() - 1);
+					return true;
+				}
+				return false;
+			default:
+				if (state.getSpeed() == 0) {
+					state.setDoorTarget(!state.getDoorTarget());
+					state.setManualNotch(-2);
+					return true;
+				}
+				state.setDoorTarget(false);
+				return false;
+		}
+	}
+
+	/**
+	 * Clients only follow the server, so they have no events.
+	 */
+	private static void emit(MotionHooks hooks, MotionEvent.Type type, int rail) {
+		if (!hooks.isClientSide()) {
+			hooks.emit(type, rail);
+		}
 	}
 
 	private static float getRailSpeed(MotionState state, MotionTrack track, MotionVehicle vehicle, int railIndex) {

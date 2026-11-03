@@ -57,4 +57,10 @@ public interface MotionHooks {
 	boolean isRailBlocked(int rail);
 
 	boolean openDoors();
+
+	/**
+	 * Something happened to the train. The host adds when and which train, and collects the events at the end of the tick.
+	 * Only the new rules on the server have events.
+	 */
+	void emit(MotionEvent.Type type, int rail);
 }
