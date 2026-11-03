@@ -2,7 +2,10 @@ package transitsim.sim;
 
 import transitsim.network.RailKeys;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Keeps trains running by duties from meeting head on (design document 6.12, block E2, and the fixes F1 for R01 to R03 of
@@ -22,53 +25,35 @@ import java.util.*;
  */
 public final class RunReservations {
 
-	private final Map<Long, List<Move>> holdings = new HashMap<>();
-	private final Map<UUID, Map<Long, Boolean>> holders = new HashMap<>();
-	private final Set<Long> heldThisTick = new HashSet<>();
-	private final Map<Long, Request> requests = new HashMap<>();
-	private final Map<Long, Long> firstRequestMillis = new HashMap<>();
-	private final Set<Long> grants = new HashSet<>();
+	/**
+	 * Each two way rail is a single track resource of the arbiter (S4b), with its direction.
+	 */
+	private final Arbiter<UUID> arbiter = new Arbiter<>();
 
 	/**
 	 * How long a train may wait for its run before it goes ahead of trains due to leave earlier.
 	 */
-	public static final long AGING_MILLIS = 60000;
+	public static final long AGING_MILLIS = Arbiter.AGING_MILLIS;
 
 	/**
 	 * Sets what a train holds this tick, replacing what it held before.
 	 */
 	public void hold(long trainId, List<Move> moves) {
-		removeHoldings(trainId);
-		heldThisTick.add(trainId);
-		if (!moves.isEmpty()) {
-			holdings.put(trainId, new ArrayList<>(moves));
-			moves.forEach(move -> holders.computeIfAbsent(move.rail, key -> new HashMap<>()).put(trainId, move.forwards));
-		}
+		arbiter.hold(trainId, toClaims(moves));
 	}
 
 	/**
 	 * Gives up everything a train holds, as when it is back in its depot.
 	 */
 	public void release(long trainId) {
-		removeHoldings(trainId);
-		heldThisTick.remove(trainId);
+		arbiter.release(trainId);
 	}
 
 	/**
 	 * @return false if another train holds one of these rails the other way
 	 */
 	public boolean canHold(long trainId, List<Move> moves) {
-		for (final Move move : moves) {
-			final Map<Long, Boolean> railHolders = holders.get(move.rail);
-			if (railHolders != null) {
-				for (final Map.Entry<Long, Boolean> entry : railHolders.entrySet()) {
-					if (entry.getKey() != trainId && entry.getValue() != move.forwards) {
-						return false;
-					}
-				}
-			}
-		}
-		return true;
+		return arbiter.canHold(trainId, toClaims(moves));
 	}
 
 	/**
@@ -78,97 +63,34 @@ public final class RunReservations {
 	 * @param plannedMillis when the train is planned to leave
 	 */
 	public void request(long trainId, List<Move> moves, long plannedMillis) {
-		requests.put(trainId, new Request(trainId, new ArrayList<>(moves), plannedMillis));
+		arbiter.request(trainId, toClaims(moves), plannedMillis);
 	}
 
 	/**
 	 * @return true once, the tick after the train's request was granted, when it holds the rails it asked for
 	 */
 	public boolean takeGrant(long trainId) {
-		return grants.remove(trainId);
+		return arbiter.takeGrant(trainId);
 	}
 
 	/**
 	 * Ends a tick: trains gone since the last one give up what they held, then the requests of this tick are dealt with.
 	 */
 	public void resolve(long currentMillis) {
-		new ArrayList<>(holdings.keySet()).forEach(trainId -> {
-			if (!heldThisTick.contains(trainId)) {
-				removeHoldings(trainId);
-			}
-		});
-		grants.clear();
-		firstRequestMillis.keySet().retainAll(requests.keySet());
-
-		final List<Request> waiting = new ArrayList<>(requests.values());
-		waiting.forEach(request -> firstRequestMillis.putIfAbsent(request.trainId, currentMillis));
-		waiting.sort((request1, request2) -> {
-			final long first1 = firstRequestMillis.get(request1.trainId);
-			final long first2 = firstRequestMillis.get(request2.trainId);
-			final boolean aged1 = currentMillis - first1 >= AGING_MILLIS;
-			final boolean aged2 = currentMillis - first2 >= AGING_MILLIS;
-			if (aged1 != aged2) {
-				return aged1 ? -1 : 1;
-			}
-			final int byTime = aged1 ? Long.compare(first1, first2) : Long.compare(request1.plannedMillis, request2.plannedMillis);
-			return byTime != 0 ? byTime : Long.compare(request1.trainId, request2.trainId);
-		});
-
-		// The rails a request that has waited too long is still kept from, with the way it asked for them. No new train is let
-		// onto them the other way, so the trains already there can clear out and a steady stream can't starve the request.
-		final Map<UUID, Boolean> claims = new HashMap<>();
-		for (final Request request : waiting) {
-			if (canHold(request.trainId, request.moves) && (holdsAny(request.trainId, claims) || !isAgainstClaims(request.moves, claims))) {
-				hold(request.trainId, request.moves);
-				grants.add(request.trainId);
-				firstRequestMillis.remove(request.trainId);
-			} else if (currentMillis - firstRequestMillis.get(request.trainId) >= AGING_MILLIS) {
-				request.moves.forEach(move -> claims.putIfAbsent(move.rail, move.forwards));
-			}
-		}
-		requests.clear();
-		// Every train sets what it holds again next tick, including what was just granted
-		heldThisTick.clear();
+		arbiter.resolve(currentMillis);
 	}
 
 	/**
-	 * @return true if the train already holds one of these rails, so it is among the trains to let clear out
+	 * @return the trains of each deadlock found since this was last called, each once
 	 */
-	private boolean holdsAny(long trainId, Map<UUID, Boolean> claims) {
-		final List<Move> moves = holdings.get(trainId);
-		if (moves != null) {
-			for (final Move move : moves) {
-				if (claims.containsKey(move.rail)) {
-					return true;
-				}
-			}
-		}
-		return false;
+	public List<Set<Long>> takeDeadlocks() {
+		return arbiter.takeDeadlocks();
 	}
 
-	private static boolean isAgainstClaims(List<Move> moves, Map<UUID, Boolean> claims) {
-		for (final Move move : moves) {
-			final Boolean forwards = claims.get(move.rail);
-			if (forwards != null && forwards != move.forwards) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private void removeHoldings(long trainId) {
-		final List<Move> moves = holdings.remove(trainId);
-		if (moves != null) {
-			moves.forEach(move -> {
-				final Map<Long, Boolean> railHolders = holders.get(move.rail);
-				if (railHolders != null) {
-					railHolders.remove(trainId);
-					if (railHolders.isEmpty()) {
-						holders.remove(move.rail);
-					}
-				}
-			});
-		}
+	private static List<Arbiter.Claim<UUID>> toClaims(List<Move> moves) {
+		final List<Arbiter.Claim<UUID>> claims = new ArrayList<>();
+		moves.forEach(move -> claims.add(Arbiter.Claim.singleTrack(move.rail, move.forwards)));
+		return claims;
 	}
 
 	/**
@@ -185,16 +107,4 @@ public final class RunReservations {
 		}
 	}
 
-	private static final class Request {
-
-		private final long trainId;
-		private final List<Move> moves;
-		private final long plannedMillis;
-
-		private Request(long trainId, List<Move> moves, long plannedMillis) {
-			this.trainId = trainId;
-			this.moves = moves;
-			this.plannedMillis = plannedMillis;
-		}
-	}
 }
