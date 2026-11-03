@@ -9,6 +9,10 @@ import java.util.List;
  * speed limit is a step function of the head's position. The fastest run under it, accelerating and braking at fixed
  * rates, has a square of speed that is piecewise linear in position, so the run is kept as nodes of (position, v²) and
  * every time and speed is worked out exactly from them. Units are blocks and ticks.
+ * <p>
+ * A run can also start part of the way along, at the speed the train has there (review A04), as when a train held back
+ * on the way sets off again. A train starting faster than the limit brakes down to it at its own rate rather than all at
+ * once; one starting too fast to stop at the end starts at the fastest speed it could still stop from.
  */
 public final class SpeedProfile {
 
@@ -40,6 +44,13 @@ public final class SpeedProfile {
 	 * @param cap          the highest speed the train may cruise at, or infinity for none
 	 */
 	public static SpeedProfile build(double[] breaks, double[] limits, double rawAcceleration, double rawDeceleration, double cap) {
+		return build(breaks, limits, rawAcceleration, rawDeceleration, cap, 0);
+	}
+
+	/**
+	 * @param startSpeed the speed at the start of the run; at 0 the run is exactly the one starting from standing
+	 */
+	public static SpeedProfile build(double[] breaks, double[] limits, double rawAcceleration, double rawDeceleration, double cap, double startSpeed) {
 		final double acceleration = Math.max(rawAcceleration, EPSILON);
 		final double deceleration = Math.max(rawDeceleration, EPSILON);
 		final int count = limits.length;
@@ -52,19 +63,25 @@ public final class SpeedProfile {
 			limitsSquared[i] = limit * limit;
 		}
 
+		// A train starting faster than the limit may stay above it while it brakes: the allowed value is the higher of the
+		// limit² and the start braking down, startSquared - 2d(s - start)
+		final double start0 = breaks[0];
+		final boolean slowsDown = startSpeed > 0;
+		final double startSquared = slowsDown ? startSpeed * startSpeed : 0;
+
 		// Speeding up from the start: the value at the start of each part, then within it min(limit², start + 2a(s - a_i))
 		final double[] forward = new double[count];
-		double carried = 0;
+		double carried = startSquared;
 		for (int i = 0; i < count; i++) {
-			forward[i] = Math.min(limitsSquared[i], carried);
-			carried = Math.min(limitsSquared[i], forward[i] + 2 * acceleration * (breaks[i + 1] - breaks[i]));
+			forward[i] = Math.min(allowed(limitsSquared[i], slowsDown, startSquared, deceleration, start0, breaks[i]), carried);
+			carried = Math.min(allowed(limitsSquared[i], slowsDown, startSquared, deceleration, start0, breaks[i + 1]), forward[i] + 2 * acceleration * (breaks[i + 1] - breaks[i]));
 		}
 		// Braking for the end: the value at the end of each part, then within it min(limit², end + 2d(b_i - s))
 		final double[] backward = new double[count];
 		carried = 0;
 		for (int i = count - 1; i >= 0; i--) {
-			backward[i] = Math.min(limitsSquared[i], carried);
-			carried = Math.min(limitsSquared[i], backward[i] + 2 * deceleration * (breaks[i + 1] - breaks[i]));
+			backward[i] = Math.min(allowed(limitsSquared[i], slowsDown, startSquared, deceleration, start0, breaks[i + 1]), carried);
+			carried = Math.min(allowed(limitsSquared[i], slowsDown, startSquared, deceleration, start0, breaks[i]), backward[i] + 2 * deceleration * (breaks[i + 1] - breaks[i]));
 		}
 
 		final List<double[]> nodes = new ArrayList<>();
@@ -81,8 +98,14 @@ public final class SpeedProfile {
 			candidates.add(start + (limitSquared - forwardStart) / (2 * acceleration));
 			candidates.add(end - (limitSquared - backwardEnd) / (2 * deceleration));
 			candidates.add((backwardEnd + 2 * deceleration * end - forwardStart + 2 * acceleration * start) / (2 * acceleration + 2 * deceleration));
+			if (slowsDown) {
+				// Where the start braking down meets the limit and speeding up; braking for the end runs parallel to it
+				candidates.add(start0 + (startSquared - limitSquared) / (2 * deceleration));
+				candidates.add((startSquared + 2 * deceleration * start0 - forwardStart + 2 * acceleration * start) / (2 * acceleration + 2 * deceleration));
+			}
 			candidates.stream().filter(position -> position >= start && position <= end && Double.isFinite(position)).sorted().forEach(position -> {
-				final double value = Math.max(0, Math.min(limitSquared, Math.min(forwardStart + 2 * acceleration * (position - start), backwardEnd + 2 * deceleration * (end - position))));
+				final double upper = allowed(limitSquared, slowsDown, startSquared, deceleration, start0, position);
+				final double value = Math.max(0, Math.min(upper, Math.min(forwardStart + 2 * acceleration * (position - start), backwardEnd + 2 * deceleration * (end - position))));
 				if (nodes.isEmpty() || position - nodes.get(nodes.size() - 1)[0] > EPSILON) {
 					nodes.add(new double[]{position, value});
 				} else {
@@ -91,7 +114,9 @@ public final class SpeedProfile {
 				}
 			});
 		}
-		nodes.get(0)[1] = 0;
+		if (!slowsDown) {
+			nodes.get(0)[1] = 0;
+		}
 		nodes.get(nodes.size() - 1)[1] = 0;
 		final double[] positions = new double[nodes.size()];
 		final double[] speedsSquared = new double[nodes.size()];
@@ -110,18 +135,25 @@ public final class SpeedProfile {
 	 * @return the cap, or infinity when the time is no more than the fastest run takes
 	 */
 	public static double findCap(double[] breaks, double[] limits, double acceleration, double deceleration, double targetTicks, double minCap) {
-		final SpeedProfile fastest = build(breaks, limits, acceleration, deceleration, Double.POSITIVE_INFINITY);
+		return findCap(breaks, limits, acceleration, deceleration, targetTicks, minCap, 0);
+	}
+
+	/**
+	 * @param startSpeed the speed at the start of the run, as for {@link #build(double[], double[], double, double, double, double)}
+	 */
+	public static double findCap(double[] breaks, double[] limits, double acceleration, double deceleration, double targetTicks, double minCap, double startSpeed) {
+		final SpeedProfile fastest = build(breaks, limits, acceleration, deceleration, Double.POSITIVE_INFINITY, startSpeed);
 		if (targetTicks <= fastest.getDuration() + EPSILON) {
 			return Double.POSITIVE_INFINITY;
 		}
 		double low = minCap;
 		double high = Arrays.stream(limits).max().orElse(minCap);
-		if (high <= low || build(breaks, limits, acceleration, deceleration, low).getDuration() <= targetTicks) {
+		if (high <= low || build(breaks, limits, acceleration, deceleration, low, startSpeed).getDuration() <= targetTicks) {
 			return low;
 		}
 		for (int i = 0; i < CAP_SEARCH_STEPS; i++) {
 			final double middle = (low + high) / 2;
-			if (build(breaks, limits, acceleration, deceleration, middle).getDuration() > targetTicks) {
+			if (build(breaks, limits, acceleration, deceleration, middle, startSpeed).getDuration() > targetTicks) {
 				low = middle;
 			} else {
 				high = middle;
@@ -226,6 +258,13 @@ public final class SpeedProfile {
 			return 0;
 		}
 		return 2 * length / Math.max(startSpeed + endSpeed, EPSILON);
+	}
+
+	/**
+	 * The highest v² allowed at a position: the limit², or the start braking down while that is higher.
+	 */
+	private static double allowed(double limitSquared, boolean slowsDown, double startSquared, double deceleration, double start, double position) {
+		return slowsDown ? Math.max(limitSquared, startSquared - 2 * deceleration * (position - start)) : limitSquared;
 	}
 
 	private static double clamp(double value) {

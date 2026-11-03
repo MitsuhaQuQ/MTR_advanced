@@ -78,6 +78,22 @@ public final class SpeedCurves {
 		return runs.get(runIndex).fastest.getDuration();
 	}
 
+	/**
+	 * The cruising speed that gets a train setting off to its next stop there in a given time (design document 8.2). A
+	 * train setting off part of the way along a run, as after being held back by a train ahead, gets one from where it is
+	 * and how fast it is going (review A04), so it can still arrive on time if it has the time to.
+	 *
+	 * @param stopRailIndex the rail the train stops at next, which has to be the end of the run it is on
+	 * @return the cap, or infinity for none
+	 */
+	public double findCruiseCap(double position, double speed, int stopRailIndex, double ticks) {
+		final Run run = getRun(position);
+		if (run == null || run.stopRailIndex != stopRailIndex) {
+			return Double.POSITIVE_INFINITY;
+		}
+		return Math.abs(position - run.fastest.startPosition) <= 1 ? run.findCap(ticks, minSpeed) : run.findCapFrom(position, speed, ticks, minSpeed);
+	}
+
 	public static final class Run {
 
 		/**
@@ -132,6 +148,42 @@ public final class SpeedCurves {
 
 		public SpeedProfile withCap(double cap) {
 			return breaks.length < 2 || Double.isInfinite(cap) ? fastest : SpeedProfile.build(breaks, limits, acceleration, deceleration, cap);
+		}
+
+		/**
+		 * @return the rest of the run, for a train setting off part of the way along it at some speed
+		 */
+		public SpeedProfile from(double position, double speed, double cap) {
+			final double[][] rest = getRest(position);
+			return rest == null ? SpeedProfile.build(new double[]{fastest.endPosition, fastest.endPosition}, new double[]{0}, acceleration, deceleration, cap) : SpeedProfile.build(rest[0], rest[1], acceleration, deceleration, cap, speed);
+		}
+
+		/**
+		 * @return the cruising speed that takes the rest of the run this many ticks, or infinity when it has no time to spare
+		 */
+		public double findCapFrom(double position, double speed, double ticks, double minSpeed) {
+			final double[][] rest = getRest(position);
+			return rest == null ? Double.POSITIVE_INFINITY : SpeedProfile.findCap(rest[0], rest[1], acceleration, deceleration, ticks, minSpeed, speed);
+		}
+
+		/**
+		 * @return the breaks and limits from a position to the end of the run, or null if the position is at the end or past it
+		 */
+		private double[][] getRest(double position) {
+			if (breaks.length < 2 || position >= breaks[breaks.length - 1] - 1E-6) {
+				return null;
+			}
+			final double start = Math.max(position, breaks[0]);
+			int first = 0;
+			while (first + 1 < limits.length && breaks[first + 1] <= start + 1E-6) {
+				first++;
+			}
+			final double[] restBreaks = new double[breaks.length - first];
+			final double[] restLimits = new double[limits.length - first];
+			restBreaks[0] = start;
+			System.arraycopy(breaks, first + 1, restBreaks, 1, restBreaks.length - 1);
+			System.arraycopy(limits, first, restLimits, 0, restLimits.length);
+			return new double[][]{restBreaks, restLimits};
 		}
 
 		private static void addIfInside(TreeSet<Double> points, double point, double start, double end) {

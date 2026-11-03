@@ -141,7 +141,8 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 | `transitsim.network.RailRouterTest`、`transitsim.motion.PathRelocatorTest`（组件）、`path/StopSettingsTest`、`path/PathFinderTest` | 确定性寻路、刷新时列车保留原位、停站设置、旧寻路 |
 | `transitsim.network.PathRegionsTest`（组件） | 寻路边界和区域划分 |
 | `transitsim.network.NetworkTest`（组件，7 项）、`advanced/RailNetworksTest`（5 项） | 区间压缩、限速分段、ID 稳定、路径换算、读写、旧格式读入、四种资源的划分、版本和只读；`Rail` 的适配 |
-| `transitsim.motion.SpeedProfileTest`（组件，5 项）、`transitsim.motion.SpeedCurvesTest`（组件，3 项）、`advanced/SpeedCurvesTest`（2 项） | 速度曲线、巡航上限；按轨道限速和折返分段；`PathData` 的适配 |
+| `transitsim.motion.SpeedProfileTest`（组件，10 项）、`transitsim.motion.SpeedCurvesTest`（组件，5 项）、`advanced/SpeedCurvesTest`（2 项） | 速度曲线、巡航上限；按轨道限速和折返分段；从任意位置和速度起步（S2b）；`PathData` 的适配 |
+| `transitsim.motion.TrainMotionRestartTest`（组件，2 项） | 区间里被拦停后重新起步：时间够时准点到，不够时和原来一样尽快跑 |
 | `transitsim.sim.RunReservationsTest`（组件） | 带方向的区间预约 |
 | `advanced/ServiceExceptionsTest`、`advanced/TimetableBoundariesTest` | 班次例外、时刻边界 |
 | `advanced/DutyGeneratorTest`、`advanced/DutyShapesTest` | 运用生成、运用形状、旧格式读入 |
@@ -409,7 +410,8 @@ S0 之前，已经不依赖世界的部件：
 | C 契约 | 完成：`MTR-模拟组件契约.md`（时间、状态归属、资源、版本、运行/预测/恢复、事件、性能、接口草案，各节附现状对照） | 不适用 | 不适用 | 不适用 | 不适用 |
 | S1 线网和资源 | 完成：线网、寻路、区域、速度曲线进组件；新的线网快照带资源（轨道段、道岔冲突区、单线方向区段、站台泊位）和发布序号；资源只定义，还没有地方用（S4 用）。路径到几何的对应仍是 `RailGraph` 里宿主给的轨道载荷 | 1.20.1 | 组件 71 项、common 233 项全过；组件单独离线构建通过；`SpeedCurvesTest`、`RailNetworksTest` 期望值不变；ABI 扫描无缺失；Fabric、Forge 服务端启动正常 | 不改行为，不单独测 | 不适用 |
 | S2a 抽出推进规则 | 完成：规则进组件 `TrainMotion`，`Train` 通过五个接口调用；旧规则保留为 `LegacyTrainMotion`，仪表盘设置菜单可以切换（协议 27） | 1.20.1 | 组件 96 项（新增对照 12 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T90、T91） | 未做 |
-| S2b 至 S6、全链路场景 | 未开始 | | | | |
+| S2b 从任意状态起步的速度曲线 | 完成：`SpeedProfile` 可以从任意位置、非零速度起步（超过限速时按减速度降下来，来不及停车时从还能停住的速度起步），`SpeedCurves.Run.from`、`findCapFrom` 和 `SpeedCurves.findCruiseCap`；`TrainServer.getCruiseCap` 用新规则时，区间里被拦停后重新起步的车也按剩余时间设巡航上限（去掉 E2 的变通），旧规则不变 | 1.20.1 | 组件 105 项（新增 `SpeedProfileTest` 5 项、`SpeedCurvesTest` 2 项、`TrainMotionRestartTest` 2 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T92） | 未做 |
+| S2c 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

@@ -55,6 +55,16 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	 * The driver's notch from this tick on, for a manual train, or null to leave it.
 	 */
 	Integer[] notchFrom = new Integer[0];
+	/**
+	 * When the train should arrive at one of its stops, for the cruising cap the host sets as the train sets off for it, or
+	 * -1 for none.
+	 */
+	int plannedArrivalTick = -1;
+	int plannedStopRail = -1;
+	/**
+	 * Whether a train setting off part of the way along a run gets a cap from where it is, as with the new rules, or none.
+	 */
+	boolean capFromState = true;
 	int tick;
 
 	// What happened
@@ -343,6 +353,14 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 			}
 		}
 		nextStoppingIndex = next;
+		if (speedCurve && plannedArrivalTick > 0 && nextStoppingIndex == plannedStopRail) {
+			final SpeedCurves.Run run = getCurves().getRun(railProgress);
+			if (capFromState || run != null && Math.abs(railProgress - run.fastest.startPosition) <= 1) {
+				cruiseCap = (float) getCurves().findCruiseCap(railProgress, speed, nextStoppingIndex, plannedArrivalTick - tick);
+			} else {
+				cruiseCap = Float.POSITIVE_INFINITY;
+			}
+		}
 		doorTarget = false;
 		doorValue = 0;
 		nextPlatformIndex = nextStoppingIndex;
@@ -404,6 +422,11 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 
 	@Override
 	public SpeedProfile getProfile(double position) {
+		final SpeedCurves.Run run = getCurves().getRun(position);
+		return run == null ? null : Float.isInfinite(cruiseCap) ? run.fastest : run.withCap(cruiseCap);
+	}
+
+	SpeedCurves getCurves() {
 		if (curves == null) {
 			final double[] lengthArray = new double[lengths.size()];
 			final double[] limits = new double[lengths.size()];
@@ -417,7 +440,6 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 			}
 			curves = SpeedCurves.of(new TrackView(lengthArray, limits, stops, reversals, 0.02), (railLength + trainCars * spacing) / 2, trainCars * spacing, acceleration, deceleration);
 		}
-		final SpeedCurves.Run run = curves.getRun(position);
-		return run == null ? null : Float.isInfinite(cruiseCap) ? run.fastest : run.withCap(cruiseCap);
+		return curves;
 	}
 }

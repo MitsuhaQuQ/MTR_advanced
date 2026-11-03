@@ -202,7 +202,9 @@ public class TrainServer extends Train {
 
 	/**
 	 * With time to spare before the planned arrival at the next stop, the train cruises slower to arrive on time instead of
-	 * early. A late train gets no cap and runs as fast as it can to catch up (design document 8.2).
+	 * early. A late train gets no cap and runs as fast as it can to catch up (design document 8.2). A train setting off
+	 * again after being held back on the way gets a cap from where it is (review A04); with the old motion rules it got
+	 * none, being late already.
 	 */
 	private float getCruiseCap() {
 		if (!usesSpeedCurve() || nextStoppingIndex >= path.size()) {
@@ -210,6 +212,9 @@ public class TrainServer extends Train {
 		}
 		final long plannedMillis = service.getPlannedArrivalMillis(nextStoppingIndex);
 		final SpeedCurves curves = getSpeedCurves();
+		if (!MotionConfig.useLegacyMotion(false)) {
+			return plannedMillis <= 0 ? Float.POSITIVE_INFINITY : (float) curves.findCruiseCap(railProgress, speed, nextStoppingIndex, (plannedMillis - System.currentTimeMillis()) / (double) Depot.MILLIS_PER_TICK);
+		}
 		final SpeedCurves.Run run = curves.getRun(railProgress);
 		// A train starting again after waiting behind another one is late already, and catches up as fast as it can
 		if (plannedMillis <= 0 || run == null || run.stopRailIndex != nextStoppingIndex || Math.abs(railProgress - run.fastest.startPosition) > 1) {
