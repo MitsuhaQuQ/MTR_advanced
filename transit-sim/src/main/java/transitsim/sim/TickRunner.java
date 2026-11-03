@@ -20,8 +20,10 @@ import transitsim.plan.TurnBacks;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.LongFunction;
@@ -48,6 +50,13 @@ public final class TickRunner<T extends RunTrack> {
 	private final LongFunction<? extends PlanRoute> routes;
 	private long millis;
 	private long nextTrainId = 1;
+	/**
+	 * Whether ticks in which nothing can change are skipped (S4c2).
+	 */
+	private boolean skipping;
+	private Runnable afterTick = () -> {
+	};
+	private long skippedTicks;
 
 	/**
 	 * The occupant of rails taken from outside.
@@ -84,12 +93,70 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * Skips ticks in which nothing can change, which gives the same results as running every tick (S4c2). Off, the
+	 * runner runs every tick, as the game does.
+	 */
+	public void setSkipping(boolean skipping) {
+		this.skipping = skipping;
+	}
+
+	/**
+	 * Called at the end of every tick that is run, not skipped.
+	 */
+	public void setAfterTick(Runnable afterTick) {
+		this.afterTick = afterTick;
+	}
+
+	/**
+	 * @return how many ticks were skipped since the start
+	 */
+	public long getSkippedTicks() {
+		return skippedTicks;
+	}
+
+	/**
 	 * Runs ticks until this time.
 	 */
 	public void runUntil(long endMillis) {
 		while (millis + MotionConstants.MILLIS_PER_TICK <= endMillis) {
+			if (skipping) {
+				// The last tick before the end is always run, so the state there is what running every tick gives
+				final long quiet = Math.min(getQuietTicks(), (endMillis - millis) / MotionConstants.MILLIS_PER_TICK - 1);
+				if (quiet > 0) {
+					skip(quiet);
+				}
+			}
 			tick();
 		}
+	}
+
+	/**
+	 * @return how many of the next ticks are sure to change nothing but where trains are along their segments and how long
+	 * they have stood, so they can be skipped, or 0
+	 */
+	private long getQuietTicks() {
+		long quiet = Long.MAX_VALUE;
+		for (final long untilMillis : externalUntil.values()) {
+			// Something taken from outside is let go in the first tick after its time
+			quiet = Math.min(quiet, (untilMillis - millis) / MotionConstants.MILLIS_PER_TICK);
+		}
+		for (final SidingRun sidingRun : sidings.values()) {
+			quiet = Math.min(quiet, sidingRun.getQuietTicks());
+			if (quiet <= 0) {
+				return 0;
+			}
+		}
+		return quiet;
+	}
+
+	/**
+	 * Moves on this many ticks in which nothing changes but where trains are along their segments and how long they have
+	 * stood. Nobody crosses from one rail to another meanwhile, so what is taken stays the same.
+	 */
+	private void skip(long ticks) {
+		millis += ticks * MotionConstants.MILLIS_PER_TICK;
+		skippedTicks += ticks;
+		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(train -> train.skip(ticks)));
 	}
 
 	public void tick() {
@@ -108,6 +175,7 @@ public final class TickRunner<T extends RunTrack> {
 			}
 		});
 		depots.forEach(depot -> deploy(depot, deployable.getOrDefault(depot, Collections.emptyList())));
+		afterTick.run();
 	}
 
 	/**
@@ -206,6 +274,10 @@ public final class TickRunner<T extends RunTrack> {
 		public final int maxTrains;
 		public boolean usesSpeedCurve = true;
 		/**
+		 * The highest speed limit of the path, for how far ahead a train may have to look.
+		 */
+		public final float maxSpeed;
+		/**
 		 * The lowest cruising speed of the kind of vehicle, in blocks per tick.
 		 */
 		public float minSpeed = 0.5F;
@@ -213,10 +285,13 @@ public final class TickRunner<T extends RunTrack> {
 		public Siding(List<T> path, int repeatIndex1, int repeatIndex2, StopTimes stopTimes, String trainId, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains) {
 			this.path = path;
 			double distance = 0;
+			float highestSpeed = 0;
 			for (final T track : path) {
 				distance += track.getTrackLength();
 				distances.add(distance);
+				highestSpeed = Math.max(highestSpeed, track.getMaxSpeed());
 			}
+			maxSpeed = highestSpeed;
 			this.repeatIndex1 = repeatIndex1;
 			this.repeatIndex2 = repeatIndex2;
 			this.stopTimes = stopTimes;
@@ -245,6 +320,33 @@ public final class TickRunner<T extends RunTrack> {
 			this.sidingId = sidingId;
 			this.depot = depot;
 			this.siding = siding;
+		}
+
+		/**
+		 * @return how many of the next ticks change nothing for this siding and its trains, or 0
+		 */
+		private long getQuietTicks() {
+			// Trains by duties, a siding about to make or clear away a train, or two trains in the same place change at once
+			if (depot.duties.diagramMode || trains.isEmpty()) {
+				return 0;
+			}
+			int trainsAtDepot = 0;
+			boolean spawnTrain = true;
+			final Set<Long> railProgressSet = new HashSet<>();
+			long quiet = Long.MAX_VALUE;
+			for (final HeadlessTrain train : trains) {
+				if (!train.onRoute || train.railProgress < siding.spacing * siding.trainCars + siding.railLength) {
+					spawnTrain = false;
+				}
+				if (!train.onRoute && ++trainsAtDepot > 1 || !railProgressSet.add(Math.round(train.railProgress * 10))) {
+					return 0;
+				}
+				quiet = Math.min(quiet, train.getQuietTicks());
+				if (quiet <= 0) {
+					return 0;
+				}
+			}
+			return spawnTrain && trains.size() <= siding.maxTrains ? 0 : quiet;
 		}
 
 		private void tick(Map<DepotBoard, List<SidingRun>> deployable) {
@@ -380,6 +482,136 @@ public final class TickRunner<T extends RunTrack> {
 					turnBackRails.forEach(rail -> occupancy.getTicks().get(1).putIfAbsent(rail, id));
 				}
 			}
+		}
+
+		/**
+		 * @return how many of the next ticks change nothing for this train but where it is along its segment, or how long it
+		 * has stood, or 0
+		 */
+		private long getQuietTicks() {
+			// A new train gets its stop times in its first tick, and works out when to leave from them
+			if (!siding.usesSpeedCurve || path.isEmpty() || service.isOnDuty() || service.getStopTimes() == null) {
+				return 0;
+			}
+			final int trainLength = siding.trainCars * siding.spacing;
+			if (!onRoute) {
+				if (canDeploy) {
+					return 0;
+				}
+				if (path.size() > 1 && !isRailOccupied(1)) {
+					// Waiting to be sent out, which can only be once a service comes near enough
+					final List<PlanRoute> depotRoutes = sidingRun.depot.getRoutes();
+					if (depotRoutes.isEmpty()) {
+						return Long.MAX_VALUE;
+					}
+					final long nextDeployMillis = service.getNextDeployMillis(sidingRun.depot.dispatcher.lastDeployedTrips.getOrDefault(depotRoutes.get(0).getRouteId(), 0L));
+					return nextDeployMillis == Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(0, (nextDeployMillis - millis) / MotionConstants.MILLIS_PER_TICK - 1);
+				}
+				return Long.MAX_VALUE;
+			}
+			if (doorValue != (doorTarget ? 1 : 0) || nextStoppingIndex >= path.size()) {
+				return 0;
+			}
+			if (railProgress >= distances.get(distances.size() - 1) - (siding.railLength - trainLength) / 2 && !keepsOnLineAtEnd()) {
+				return 0;
+			}
+			if (speed <= 0) {
+				return getStandingQuietTicks();
+			}
+			return getMovingQuietTicks(trainLength);
+		}
+
+		private long getStandingQuietTicks() {
+			final int headIndex = MotionConstants.findIndex(this, railProgress, true);
+			final boolean isOppositeRail = headIndex + 1 < path.size() && headIndex >= 0 && isOppositeRail(headIndex, headIndex + 1);
+			final boolean railBlocked = isRailOccupied(headIndex + (isOppositeRail ? 2 : 1));
+			final int totalDwellTicks = getTotalDwellTicks();
+			if (totalDwellTicks == 0) {
+				// Stopped short of a taken rail, which stays taken while nobody moves from one rail to another
+				return railBlocked && !doorTarget ? Long.MAX_VALUE : 0;
+			}
+			if (elapsedDwellTicks == 0 || isRepeat()) {
+				return 0;
+			}
+			// A late train's stop time follows the clock, which moves differently from the time it has stood
+			final int pathDwellTicks = path.get(nextStoppingIndex).getDwellTime() * 10;
+			final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
+			if (stopPlan != null && elapsedDwellTicks + (service.getPlannedMillis(stopPlan.departureMillis) - millis) / MotionConstants.MILLIS_PER_TICK < pathDwellTicks) {
+				return 0;
+			}
+			// Stays short of the next time the doors move or the train may be held or leave
+			final float maxDoorMoveTime = Math.min(MotionConstants.DOOR_MOVE_TIME, totalDwellTicks / 2 - MotionConstants.DOOR_DELAY);
+			long quiet = Long.MAX_VALUE;
+			for (final double threshold : new double[]{MotionConstants.DOOR_DELAY, totalDwellTicks - MotionConstants.DOOR_DELAY - maxDoorMoveTime, totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1}) {
+				if (threshold > elapsedDwellTicks) {
+					quiet = Math.min(quiet, (long) Math.floor(threshold - elapsedDwellTicks) - 2);
+				}
+			}
+			return quiet == Long.MAX_VALUE ? 0 : Math.max(0, quiet);
+		}
+
+		private long getMovingQuietTicks(int trainLength) {
+			final RunSegment segment = runSegment;
+			if (segment == null || segment.isFinished() || nextStoppingIndex != nextPlatformIndex || isRepeat()) {
+				return 0;
+			}
+			final int headIndex = MotionConstants.findIndex(this, railProgress, false);
+			final int tailIndex = MotionConstants.findIndex(this, railProgress - trainLength, false);
+			// Head and tail stay on their rails, the train stays clear of the siding and of where it stops
+			double bound = Math.min(distances.get(headIndex), distances.get(nextStoppingIndex));
+			if (railProgress - trainLength >= 0) {
+				bound = Math.min(bound, distances.get(tailIndex) + trainLength);
+			}
+			final double depotThreshold = siding.spacing * siding.trainCars + siding.railLength;
+			if (railProgress < depotThreshold) {
+				bound = Math.min(bound, depotThreshold);
+			}
+			// A train goes back into its siding before the end of the last rail
+			if (!keepsOnLineAtEnd()) {
+				bound = Math.min(bound, distances.get(distances.size() - 1) - (siding.railLength - trainLength) / 2);
+			}
+			bound -= 1E-3;
+			long low = 0;
+			long high = Math.max(0, (long) Math.floor(segment.getDuration() - segment.getElapsedTicks()) - 2);
+			while (low < high) {
+				final long middle = (low + high + 1) >>> 1;
+				if (segment.getPositionAfter(middle) < bound) {
+					low = middle;
+				} else {
+					high = middle - 1;
+				}
+			}
+			if (low <= 0) {
+				return 0;
+			}
+			// Nothing within reach of braking on the way is taken, so the train won't have to stop short
+			final double reach = segment.getPositionAfter(low) + 0.5 * siding.maxSpeed * siding.maxSpeed / siding.deceleration + siding.maxSpeed + MotionConstants.BRAKING_MARGIN;
+			final int lastCheckIndex = nextPlatformIndex > 0 ? Math.min(nextPlatformIndex, path.size() - 1) : path.size() - 1;
+			for (int i = MotionConstants.findIndex(this, railProgress, true) + 1; i <= lastCheckIndex && distances.get(i - 1) <= reach; i++) {
+				if (isRailOccupied(i)) {
+					return 0;
+				}
+			}
+			return low;
+		}
+
+		private void skip(long ticks) {
+			if (!onRoute) {
+				return;
+			}
+			if (speed <= 0) {
+				if (getTotalDwellTicks() > 0) {
+					elapsedDwellTicks += ticks;
+				}
+				return;
+			}
+			final float beforeSpeed = (float) runSegment.getSpeedAfter(ticks - 1);
+			runSegment.advance(ticks);
+			railProgress = runSegment.getPosition();
+			final float lastSpeed = (float) runSegment.getSpeed();
+			// The notch of the last tick, which compares with the speed the tick before
+			manualNotch = lastSpeed > beforeSpeed ? 2 : 0;
+			speed = lastSpeed;
 		}
 
 		private boolean isRailOccupied(int index) {

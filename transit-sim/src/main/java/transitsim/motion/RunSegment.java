@@ -73,6 +73,27 @@ public final class RunSegment {
 		return elapsedTicks;
 	}
 
+	/**
+	 * @return where the train will be after this many more ticks on the segment, without moving it
+	 */
+	public double getPositionAfter(double ticks) {
+		return profile.getPosition(elapsedTicks + ticks);
+	}
+
+	/**
+	 * @return how fast the train will be going after this many more ticks on the segment
+	 */
+	public double getSpeedAfter(double ticks) {
+		return profile.getSpeed(getPositionAfter(ticks));
+	}
+
+	/**
+	 * @return how long the whole segment takes, in ticks
+	 */
+	public double getDuration() {
+		return profile.getDuration();
+	}
+
 	public boolean isFinished() {
 		return elapsedTicks >= profile.getDuration();
 	}

@@ -568,6 +568,24 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
+	 * @param lastDeployedMillis the latest service of the first route the depot has sent a train out for
+	 * @return the earliest time {@link #findDeployService} could find a service, as long as no service is taken or let go
+	 * meanwhile, or {@link Long#MAX_VALUE} if it never can
+	 */
+	public long getNextDeployMillis(long lastDeployedMillis) {
+		final RouteTimetable timetable = depot == null ? null : depot.getTimetable(trainId);
+		if (timetable == null) {
+			return Long.MAX_VALUE;
+		}
+		final PlanRoute firstRoute = depot.getTrainRoutes(trainId).get(0);
+		final long currentMillis = clock.getAsLong();
+		final long leadMillis = getLeadMillis();
+		final long fromMillis = Math.max(lastDeployedMillis, currentMillis + Math.min(leadMillis, 0) - RouteTimetable.MAX_DEPLOY_DELAY_MILLIS);
+		final long serviceMillis = timetable.getNextService(fromMillis, currentMillis + RouteTimetable.MAX_STAY_MILLIS, millis -> depot.isTripReserved(firstRoute.getRouteId(), millis));
+		return serviceMillis == 0 ? Long.MAX_VALUE : serviceMillis - leadMillis - DEPLOY_MARGIN_MILLIS;
+	}
+
+	/**
 	 * Sends this train out for a service of the timetable.
 	 */
 	public void deploy(long newTripMillis, long routeId) {

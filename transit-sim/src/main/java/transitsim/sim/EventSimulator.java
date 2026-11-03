@@ -15,9 +15,10 @@ import java.util.TreeMap;
 
 /**
  * The simulator of the contracts document (section 9) over a {@link TickRunner} (S4c). Time steps on the runner's ticks,
- * which start from its start time, so where the host stops a step doesn't change anything. Inputs take effect before the
- * first tick at or after their time; events come out as the trains have them, sorted within each tick, and are never
- * taken back, as nothing is ever told ahead of its time.
+ * which start from its start time, so where the host stops a step doesn't change anything. Ticks in which nothing can
+ * change are skipped (S4c2), which gives the same results as running every one. Inputs take effect before the first tick
+ * at or after their time; events come out as the trains have them, sorted within each tick, and are never taken back, as
+ * nothing is ever told ahead of its time.
  */
 public final class EventSimulator<T extends RunTrack> implements Simulator {
 
@@ -30,7 +31,16 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 	private long cursor;
 
 	public EventSimulator(TickRunner<T> runner) {
+		this(runner, true);
+	}
+
+	/**
+	 * @param skipping false to run every tick, for comparing with skipping
+	 */
+	public EventSimulator(TickRunner<T> runner, boolean skipping) {
 		this.runner = runner;
+		runner.setSkipping(skipping);
+		runner.setAfterTick(this::collectEvents);
 	}
 
 	public TickRunner<T> getRunner() {
@@ -54,8 +64,9 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 			while (!inputs.isEmpty() && inputs.peek().time <= tickMillis) {
 				apply(inputs.poll(), tickMillis);
 			}
-			runner.tick();
-			collectEvents();
+			// Runs on up to the tick before the next input, which is applied before its tick
+			final long untilMillis = inputs.isEmpty() ? time : Math.min(time, Math.max(tickMillis, inputs.peek().time - 1));
+			runner.runUntil(untilMillis);
 		}
 		return runner.getMillis();
 	}
