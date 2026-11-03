@@ -123,7 +123,7 @@ class SimDatasetTest {
 	 * @param count     how many lines like {@link ScenarioLine}, each with its own nodes, routes and depot
 	 * @param headway   the minutes between services
 	 */
-	private static SimDataset lines(int count, double between, int trainCars, int maxTrains, int headway) {
+	static SimDataset lines(int count, double between, int trainCars, int maxTrains, int headway) {
 		final SimDataset dataset = new SimDataset();
 		for (int line = 0; line < count; line++) {
 			final long node = line * 1000L;
@@ -158,7 +158,7 @@ class SimDatasetTest {
 		return dataset;
 	}
 
-	private static TestRoute route(long id, int firstMinute, int headway, long... platformIds) {
+	static TestRoute route(long id, int firstMinute, int headway, long... platformIds) {
 		final TestRoute route = new TestRoute(id, platformIds);
 		route.timetable.enabled = true;
 		route.timetable.marginPercent = 5;
@@ -171,7 +171,7 @@ class SimDatasetTest {
 		return route;
 	}
 
-	private static SimDataset.DataTrack plain(long from, long to, double length) {
+	static SimDataset.DataTrack plain(long from, long to, double length) {
 		return new SimDataset.DataTrack(from, to, length, false, false, 0, 0, 0, 1, true, true, false);
 	}
 

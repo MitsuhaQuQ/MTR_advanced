@@ -97,6 +97,7 @@ public final class TickRunner<T extends RunTrack> {
 	private boolean skipping;
 	private Runnable afterTick = () -> {
 	};
+	private TrainListener<T> trainListener;
 	private long skippedTicks;
 	private long trainTicks;
 	/**
@@ -186,6 +187,13 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	public void setSkipping(boolean skipping) {
 		this.skipping = skipping;
+	}
+
+	/**
+	 * Told about each event of a train as it happens, while the train is as it was then (S5). It must only read the train.
+	 */
+	public void setTrainListener(TrainListener<T> trainListener) {
+		this.trainListener = trainListener;
 	}
 
 	/**
@@ -521,6 +529,11 @@ public final class TickRunner<T extends RunTrack> {
 				break;
 			}
 		}
+	}
+
+	public interface TrainListener<T extends RunTrack> {
+
+		void onEvent(MotionEvent event, TickRunner<T>.HeadlessTrain train);
 	}
 
 	/**
@@ -1568,7 +1581,11 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public void emit(MotionEvent.Type type, int rail) {
-			events.add(new MotionEvent(millis, type, id, ++eventSequence, rail, runSegment == null ? 0 : runSegment.version));
+			final MotionEvent event = new MotionEvent(millis, type, id, ++eventSequence, rail, runSegment == null ? 0 : runSegment.version);
+			events.add(event);
+			if (trainListener != null) {
+				trainListener.onEvent(event, this);
+			}
 		}
 
 		// MotionCurves

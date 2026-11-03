@@ -258,6 +258,24 @@ public class RouteTimetable {
 		return -1;
 	}
 
+	/**
+	 * @return every service that runs from this time until before the other, as full timestamps in order, including the ones
+	 * that only run as the continuation of another route's service
+	 */
+	public List<Long> getServicesBetween(long fromMillis, long beforeMillis) {
+		final List<Long> serviceMillisList = new ArrayList<>();
+		final List<Integer> runningServices = getAllServices();
+		for (long day = Math.floorDiv(fromMillis, (long) OperatingDay.MILLIS_PER_DAY); day <= Math.floorDiv(beforeMillis, (long) OperatingDay.MILLIS_PER_DAY); day++) {
+			for (final int service : runningServices) {
+				final long serviceMillis = day * OperatingDay.MILLIS_PER_DAY + service;
+				if (serviceMillis >= fromMillis && serviceMillis < beforeMillis && findTableIndex(serviceMillis) >= 0) {
+					serviceMillisList.add(serviceMillis);
+				}
+			}
+		}
+		return serviceMillisList;
+	}
+
 	private List<Integer> getAllServices() {
 		return otherTables.isEmpty() ? services : allServices;
 	}

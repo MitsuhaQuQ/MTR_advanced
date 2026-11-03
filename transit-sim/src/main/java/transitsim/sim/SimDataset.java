@@ -78,6 +78,38 @@ public final class SimDataset {
 	/**
 	 * @return makes the world of the saved data afresh each time, starting at this time
 	 */
+	/**
+	 * Puts a route in place of the one with its ID, as for a draft of its timetable (S5).
+	 *
+	 * @return false if there is no route with its ID
+	 */
+	public boolean replaceRoute(RouteData route) {
+		for (int i = 0; i < routes.size(); i++) {
+			if (routes.get(i).id == route.id) {
+				routes.set(i, route);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Gives a depot other duties, as for a draft of them (S5).
+	 *
+	 * @param duties as {@link transitsim.plan.DepotDuties#toBytes} gives them, or empty for none
+	 * @return false if there is no depot with this ID
+	 */
+	public boolean replaceDuties(long depotId, byte[] duties) {
+		for (int i = 0; i < depots.size(); i++) {
+			final DepotData depot = depots.get(i);
+			if (depot.id == depotId) {
+				depots.set(i, new DepotData(depot.id, depot.routeIds, depot.cycleRoutes, duties));
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static Supplier<TickRunner<DataTrack>> start(byte[] bytes, long startMillis) {
 		return () -> fromBytes(bytes).buildRunner(startMillis);
 	}
