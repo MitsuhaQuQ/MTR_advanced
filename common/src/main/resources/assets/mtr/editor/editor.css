@@ -250,7 +250,7 @@ dialog .vias { gap: 6px; }
 .layout-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin: 4px 0; }
 .layout-wrap { overflow: auto; max-width: 100%; }
 .layout-svg { display: block; background: var(--bg, var(--panel)); cursor: grab; touch-action: none; }
-.layout-svg .rail { stroke: var(--grid-strong); stroke-linecap: round; }
+.layout-svg .rail { stroke: var(--grid-strong); stroke-linecap: round; stroke-linejoin: round; fill: none; }
 .layout-svg .turnout { fill: var(--muted); }
 .layout-svg .platform line { stroke-linecap: round; }
 .layout-svg .platform.other line { stroke: var(--grid); }

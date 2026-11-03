@@ -3,6 +3,7 @@ package mtr.packet;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.SecurityConfig;
+import mtr.advanced.StationLayouts;
 import mtr.advanced.TimetableBoundaries;
 import mtr.block.*;
 import mtr.compat.Compat;
@@ -417,6 +418,25 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 * Sends the fastest time at each stop of a route. A route can be part of a depot's path, or run by no depot at all, as
 	 * with the way back after a turn back, and then its path is found just for this.
 	 */
+	/**
+	 * The rails around a station as their real shape, for the advanced editor's track diagram ({@link StationLayouts}).
+	 */
+	public static void receiveStationLayoutC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final int[] box = StationLayouts.clampBox(packet.readInt(), packet.readInt(), packet.readInt(), packet.readInt());
+		final int mode = packet.readInt();
+		if (mode < 0 || mode >= TransportMode.values().length || !StationLayouts.allowRequest(player.getUUID())) {
+			return;
+		}
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) {
+				final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
+				StationLayouts.write(railwayData.getRails(), box, TransportMode.values()[mode], response);
+				Registry.sendToPlayer(player, PACKET_STATION_LAYOUT, response);
+			}
+		});
+	}
+
 	public static void receiveTimetableTimesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final long routeId = packet.readLong();
 		PacketGuard.execute(minecraftServer, () -> {

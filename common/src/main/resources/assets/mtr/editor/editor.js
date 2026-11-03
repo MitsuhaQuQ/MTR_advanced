@@ -1879,12 +1879,12 @@
 	async function loadDiagram(model, diagram, tries) {
 		diagram.error = "";
 		try {
-			const result = await sendJson("api/layout", "POST", { station: diagram.station, margin: diagram.margin });
+			const result = await sendJson("api/layout", "POST", { station: diagram.station, margin: diagram.margin, tracks: model.layers[diagram.stop].map(p => topo.platforms[p].id) });
 			if (model.diagram !== diagram) return;
 			if (!result.ready) {
 				diagram.error = "正在读取轨道…";
-				if (tries < 5) setTimeout(() => loadDiagram(model, diagram, tries + 1), 1500);
-				else diagram.error = "读不到轨道，打开一次仪表盘的地图再试";
+				if (tries < 8) setTimeout(() => loadDiagram(model, diagram, tries + 1), 600);
+				else diagram.error = "服务端没有回应，稍后再点一次站名";
 			} else {
 				diagram.data = result;
 			}
@@ -1895,9 +1895,8 @@
 	}
 
 	/**
-	 * The track diagram of a station: its rails as the game has them, turned so the train runs from left to right along the
-	 * track picked, with the station's tracks on the same rails to click like the cells of the picker. Curved rails are drawn
-	 * as the straight line between their ends.
+	 * The track diagram of a station: its rails as the game has them, curves included, turned so the train runs from left to
+	 * right along the track picked, with the station's tracks on the same rails to click like the cells of the picker.
 	 */
 	function stationDiagramHtml(model) {
 		const diagram = model.diagram, i = diagram.stop, n = model.layers.length;
@@ -1934,9 +1933,11 @@
 		const width = 560, height = Math.round(Math.min(360, Math.max(160, width * viewH / viewW)));
 		const unit = Math.max(viewW / width, viewH / height);
 		const parts = [`<svg class="layout-svg" viewBox="${minX} ${minY} ${viewW} ${viewH}" width="100%" style="aspect-ratio:${width} / ${height}" preserveAspectRatio="xMidYMid meet" data-unit="${unit}" role="img" aria-label="配线图">`];
+		// Each rail along its curve, as the server sampled it
 		data.rails.forEach(r => {
-			const a = turn(r[0], r[1]), b = turn(r[2], r[3]);
-			parts.push(`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="rail" stroke-width="${unit * 1.5}"/>`);
+			const points = [];
+			for (let k = 0; k + 1 < r.length; k += 2) points.push(turn(r[k], r[k + 1]).join(","));
+			parts.push(`<polyline points="${points.join(" ")}" class="rail" stroke-width="${unit * 1.5}"/>`);
 		});
 		data.turnouts.forEach(t => {
 			const a = turn(t[0], t[1]);

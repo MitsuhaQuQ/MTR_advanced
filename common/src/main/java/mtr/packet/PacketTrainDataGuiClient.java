@@ -4,12 +4,14 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;
 import mtr.advanced.RegionDataPackets;
+import mtr.advanced.StationLayouts;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
+import mtr.client.editor.EditorLayout;
 import mtr.data.*;
 import mtr.mappings.RegistryUtilities;
 import mtr.mappings.Text;
@@ -222,6 +224,20 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		}
 		packet.writeBoolean(isBoundary);
 		RegistryClient.sendToServer(PACKET_UPDATE_PATH_BOUNDARY, packet);
+	}
+
+	public static void requestStationLayoutC2S(int[] box, TransportMode transportMode) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		for (final int value : box) {
+			packet.writeInt(value);
+		}
+		packet.writeInt(transportMode.ordinal());
+		RegistryClient.sendToServer(PACKET_STATION_LAYOUT, packet);
+	}
+
+	public static void receiveStationLayoutS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final StationLayouts.Layout layout = StationLayouts.read(packet);
+		minecraftClient.execute(() -> EditorLayout.receive(layout));
 	}
 
 	public static void requestTimetableTimesC2S(long routeId) {

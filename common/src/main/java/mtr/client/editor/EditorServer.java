@@ -33,7 +33,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +57,7 @@ public final class EditorServer {
 	private static final String KEY_HEADER = "X-MTR-Editor-Key";
 	private static final long DATA_TIMEOUT_SECONDS = 10;
 	private static final int MAX_BODY_BYTES = 4 * 1024 * 1024;
+	private static final int MAX_LAYOUT_TRACKS = 64;
 	private static final String DRAFTS_FOLDER = "mtr_editor_drafts";
 	private static final String CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
@@ -345,17 +348,25 @@ public final class EditorServer {
 			}
 			final long stationId;
 			final int margin;
+			final List<Long> tracks = new ArrayList<>();
 			try {
 				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
 				stationId = Long.parseLong(requestObject.get("station").getAsString());
 				margin = requestObject.has("margin") ? requestObject.get("margin").getAsInt() : 0;
+				if (requestObject.has("tracks")) {
+					requestObject.getAsJsonArray("tracks").forEach(track -> {
+						if (tracks.size() < MAX_LAYOUT_TRACKS) {
+							tracks.add(Long.parseLong(track.getAsString()));
+						}
+					});
+				}
 			} catch (Exception e) {
 				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
 				return;
 			}
 			final JsonObject layout;
 			try {
-				layout = onGameThread(() -> EditorLayout.build(stationId, margin));
+				layout = onGameThread(() -> EditorLayout.build(stationId, margin, tracks));
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);

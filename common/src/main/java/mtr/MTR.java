@@ -456,6 +456,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_UPDATE_ENTITY_SEAT_POSITION, PacketTrainDataGuiServer::receiveUpdateEntitySeatPassengerPosition);
 		PacketGuard.register(PACKET_DRIVE_TRAIN, PacketTrainDataGuiServer::receiveDriveTrainC2S);
 		PacketGuard.register(PACKET_TIMETABLE_TIMES, PacketTrainDataGuiServer::receiveTimetableTimesC2S);
+		PacketGuard.register(PACKET_STATION_LAYOUT, PacketTrainDataGuiServer::receiveStationLayoutC2S);
 		PacketGuard.register(PACKET_TIMETABLE_CONFLICTS, PacketTrainDataGuiServer::receiveTimetableConflictsC2S);
 		PacketGuard.register(PACKET_PRESS_LIFT_BUTTON, PacketTrainDataGuiServer::receivePressLiftButtonC2S);
 
