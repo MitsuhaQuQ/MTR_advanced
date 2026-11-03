@@ -351,9 +351,8 @@ public class RouteMapGenerator implements IGui {
 		}
 
 		try {
-			final List<Tuple<Route, Integer>> routeDetails = new ArrayList<>();
-			getRouteStream(platformId, (route, currentStationIndex) -> routeDetails.add(new Tuple<>(route, currentStationIndex)));
-			final int routeCount = routeDetails.size();
+			final List<MapRoute> mapRoutes = getMapRoutes(platformId);
+			final int routeCount = mapRoutes.size();
 
 			if (routeCount > 0) {
 				final ClientCache clientCache = ClientData.DATA_CACHE;
@@ -363,6 +362,7 @@ public class RouteMapGenerator implements IGui {
 				final int[] colorIndices = new int[routeCount];
 				final Set<Integer> currentRouteColors = new HashSet<>();
 				final Set<String> currentRouteNames = new HashSet<>();
+				final Set<String> currentLineKeys = new HashSet<>();
 				int colorIndex = -1;
 				int previousColor = -1;
 				for (int routeIndex = 0; routeIndex < routeCount; routeIndex++) {
@@ -370,12 +370,12 @@ public class RouteMapGenerator implements IGui {
 					stationsIdsAfter.add(new ArrayList<>());
 					stationPositions.add(new HashMap<>());
 
-					final Tuple<Route, Integer> routeDetail = routeDetails.get(routeIndex);
-					final List<Route.RoutePlatform> platformIds = routeDetail.getA().platformIds;
-					final int currentIndex = routeDetail.getB();
-					for (int stationIndex = 0; stationIndex < platformIds.size(); stationIndex++) {
+					final MapRoute mapRoute = mapRoutes.get(routeIndex);
+					final List<Long> stationIds = mapRoute.stationIds;
+					final int currentIndex = mapRoute.currentIndex;
+					for (int stationIndex = 0; stationIndex < stationIds.size(); stationIndex++) {
 						if (stationIndex != currentIndex) {
-							final long stationId = getStationId(platformIds.get(stationIndex).platformId);
+							final long stationId = stationIds.get(stationIndex);
 							if (stationIndex < currentIndex) {
 								stationsIdsBefore.get(stationsIdsBefore.size() - 1).add(0, stationId);
 							} else {
@@ -384,15 +384,18 @@ public class RouteMapGenerator implements IGui {
 						}
 					}
 
-					final int color = routeDetail.getA().color;
+					final int color = mapRoute.color;
 					if (color != previousColor) {
 						colorIndex++;
 						previousColor = color;
 					}
 					colorIndices[routeIndex] = colorIndex;
-					currentRouteColors.add(color);
-					currentRouteNames.add(routeDetail.getA().name.split("\\|\\|")[0]);
+					currentRouteColors.add(mapRoute.lineColor);
+					currentRouteNames.add(mapRoute.name);
+					currentLineKeys.add(mapRoute.lineKey);
 				}
+
+				final Map<Long, Map<String, ClientCache.ColorNameTuple>> interchangeRoutesByStation = getInterchangeRoutes();
 
 				for (int routeIndex = 0; routeIndex < routeCount; routeIndex++) {
 					stationPositions.get(routeIndex).put(0, new StationPosition(0, getLineOffset(routeIndex, colorIndices), true));
@@ -443,30 +446,31 @@ public class RouteMapGenerator implements IGui {
 
 				final Map<Long, Set<StationPositionGrouped>> stationPositionsGrouped = new HashMap<>();
 				for (int routeIndex = 0; routeIndex < routeCount; routeIndex++) {
-					final Route route = routeDetails.get(routeIndex).getA();
-					final int currentIndex = routeDetails.get(routeIndex).getB();
+					final MapRoute mapRoute = mapRoutes.get(routeIndex);
+					final List<Long> stationIds = mapRoute.stationIds;
+					final int currentIndex = mapRoute.currentIndex;
 					final Map<Integer, StationPosition> routeStationPositions = stationPositions.get(routeIndex);
 
-					for (int stationIndex = 0; stationIndex < route.platformIds.size(); stationIndex++) {
+					for (int stationIndex = 0; stationIndex < stationIds.size(); stationIndex++) {
 						final StationPosition stationPosition = routeStationPositions.get(stationIndex - currentIndex);
-						if (stationIndex < route.platformIds.size() - 1) {
-							drawLine(nativeImage, stationPosition, routeStationPositions.get(stationIndex + 1 - currentIndex), widthScale, heightScale, xOffset, yOffset, stationIndex < currentIndex ? ARGB_LIGHT_GRAY : ARGB_BLACK | route.color);
+						if (stationIndex < stationIds.size() - 1) {
+							drawLine(nativeImage, stationPosition, routeStationPositions.get(stationIndex + 1 - currentIndex), widthScale, heightScale, xOffset, yOffset, stationIndex < currentIndex ? ARGB_LIGHT_GRAY : ARGB_BLACK | mapRoute.color);
 						}
 
-						final long stationId = getStationId(route.platformIds.get(stationIndex).platformId);
+						final long stationId = stationIds.get(stationIndex);
 						if (!stationPositionsGrouped.containsKey(stationId)) {
 							stationPositionsGrouped.put(stationId, new HashSet<>());
 						}
 						if (!stationPosition.isCommon || stationPositionsGrouped.get(stationId).stream().noneMatch(stationPosition2 -> stationPosition2.stationPosition.x == stationPosition.x)) {
-							final Map<Integer, ClientCache.ColorNameTuple> interchangeRoutes = getInterchangeRoutes(stationId);
-							final List<Integer> allColors = new ArrayList<>(interchangeRoutes.keySet());
-							allColors.sort(Integer::compareTo);
+							final List<ClientCache.ColorNameTuple> interchangeRoutes = new ArrayList<>(interchangeRoutesByStation.getOrDefault(stationId, Collections.emptyMap()).values());
+							interchangeRoutes.sort(Comparator.comparingInt((ClientCache.ColorNameTuple colorNameTuple) -> colorNameTuple.color).thenComparing(colorNameTuple -> colorNameTuple.name));
 
 							final List<Integer> interchangeColors = new ArrayList<>();
 							final List<String> interchangeNames = new ArrayList<>();
-							allColors.forEach(color -> {
-								final String name = interchangeRoutes.get(color).name;
-								if (!currentRouteColors.contains(color) && !currentRouteNames.contains(name)) {
+							interchangeRoutes.forEach(colorNameTuple -> {
+								final int color = colorNameTuple.color;
+								final String name = colorNameTuple.name;
+								if (!currentRouteColors.contains(color) && !currentLineKeys.contains(colorNameTuple.lineKey) && !currentRouteNames.contains(name)) {
 									if (!interchangeColors.contains(color)) {
 										interchangeColors.add(color);
 									}
@@ -485,6 +489,7 @@ public class RouteMapGenerator implements IGui {
 					final int x = Math.round((stationPositionGrouped.stationPosition.x + xOffset) * scale * widthScale);
 					final int y = Math.round((stationPositionGrouped.stationPosition.y + yOffset) * scale * heightScale);
 					final int lines = stationPositionGrouped.stationPosition.isCommon ? colorIndices[colorIndices.length - 1] : 0;
+					final int linesOffset = (int) (lines * lineSpacing * heightScale);
 					final boolean textBelow = vertical || (stationPositionGrouped.stationPosition.isCommon ? Math.abs(stationPositionGrouped.stationOffset) % 2 == 0 : y >= yOffset * scale);
 					final boolean currentStation = stationPositionGrouped.stationOffset == 0;
 					final boolean passed = stationPositionGrouped.stationOffset < 0;
@@ -496,14 +501,14 @@ public class RouteMapGenerator implements IGui {
 						for (int i = 0; i < interchangeColors.size(); i++) {
 							for (int drawX = 0; drawX < lineWidth; drawX++) {
 								for (int drawY = 0; drawY < lineHeight; drawY++) {
-									drawPixelSafe(nativeImage, x + drawX + lineWidth * i - lineWidth * interchangeColors.size() / 2, y + (textBelow ? -1 : lines * lineSpacing) + (textBelow ? -drawY : drawY), passed ? ARGB_LIGHT_GRAY : ARGB_BLACK | interchangeColors.get(i));
+									drawPixelSafe(nativeImage, x + drawX + lineWidth * i - lineWidth * interchangeColors.size() / 2, y + (textBelow ? -1 : linesOffset) + (textBelow ? -drawY : drawY), passed ? ARGB_LIGHT_GRAY : ARGB_BLACK | interchangeColors.get(i));
 								}
 							}
 						}
 
 						final int[] dimensions = new int[2];
 						final byte[] pixels = clientCache.getTextPixels(IGui.mergeStations(stationPositionGrouped.interchangeNames), dimensions, maxStringWidth - (vertical ? lineHeight : 0), (int) ((fontSizeBig + fontSizeSmall) * ClientCache.LINE_HEIGHT_MULTIPLIER / 2), fontSizeBig / 2, fontSizeSmall / 2, 0, vertical ? HorizontalAlignment.LEFT : HorizontalAlignment.CENTER);
-						drawString(nativeImage, pixels, x, y + (textBelow ? -1 - lineHeight : lines * lineSpacing + lineHeight), dimensions, HorizontalAlignment.CENTER, textBelow ? VerticalAlignment.BOTTOM : VerticalAlignment.TOP, 0, passed ? ARGB_LIGHT_GRAY : ARGB_BLACK, vertical);
+						drawString(nativeImage, pixels, x, y + (textBelow ? -1 - lineHeight : linesOffset + lineHeight), dimensions, HorizontalAlignment.CENTER, textBelow ? VerticalAlignment.BOTTOM : VerticalAlignment.TOP, 0, passed ? ARGB_LIGHT_GRAY : ARGB_BLACK, vertical);
 					}
 
 					drawStation(nativeImage, x, y, heightScale, lines, passed);
@@ -511,7 +516,7 @@ public class RouteMapGenerator implements IGui {
 					final Station station = clientCache.stationIdMap.get(stationId);
 					final int[] dimensions = new int[2];
 					final byte[] pixels = clientCache.getTextPixels(station == null ? "" : station.name, dimensions, maxStringWidth, (int) ((fontSizeBig + fontSizeSmall) * ClientCache.LINE_HEIGHT_MULTIPLIER), fontSizeBig, fontSizeSmall, fontSizeSmall / 4, vertical ? HorizontalAlignment.RIGHT : HorizontalAlignment.CENTER);
-					drawString(nativeImage, pixels, x, y + (textBelow ? lines * lineSpacing : -1) + (textBelow ? 1 : -1) * lineSize * 5 / 4, dimensions, HorizontalAlignment.CENTER, textBelow ? VerticalAlignment.TOP : VerticalAlignment.BOTTOM, currentStation ? ARGB_BLACK : 0, passed ? ARGB_LIGHT_GRAY : currentStation ? ARGB_WHITE : ARGB_BLACK, vertical);
+					drawString(nativeImage, pixels, x, y + (textBelow ? linesOffset : -1) + (textBelow ? 1 : -1) * lineSize * 5 / 4, dimensions, HorizontalAlignment.CENTER, textBelow ? VerticalAlignment.TOP : VerticalAlignment.BOTTOM, currentStation ? ARGB_BLACK : 0, passed ? ARGB_LIGHT_GRAY : currentStation ? ARGB_WHITE : ARGB_BLACK, vertical);
 				}));
 
 				if (transparentWhite) {
@@ -608,7 +613,7 @@ public class RouteMapGenerator implements IGui {
 	private static List<Integer> getRouteStream(long platformId, BiConsumer<Route, Integer> nonTerminatingCallback) {
 		final List<Integer> colors = new ArrayList<>();
 		final List<Integer> terminatingColors = new ArrayList<>();
-		ClientData.ROUTES.stream().filter(route -> route.containsPlatformId(platformId) && !route.isHidden).sorted((a, b) -> a.color == b.color ? a.compareTo(b) : a.color - b.color).forEach(route -> {
+		ClientData.ROUTES.stream().filter(route -> route.containsPlatformId(platformId) && !route.isHidden && !route.platformIds.get(route.getPlatformIdIndex(platformId)).pass).sorted((a, b) -> a.color == b.color ? a.compareTo(b) : a.color - b.color).forEach(route -> {
 			final int currentStationIndex = route.getPlatformIdIndex(platformId);
 			if (currentStationIndex < route.platformIds.size() - 1) {
 				nonTerminatingCallback.accept(route, currentStationIndex);
@@ -627,6 +632,34 @@ public class RouteMapGenerator implements IGui {
 		return colors;
 	}
 
+	/**
+	 * The routes to draw on a route map, each cut down to the stations it stops at. Routes of one line drawn in more than one
+	 * service colour here use their own colours, and routes that would draw the same line are drawn once.
+	 */
+	private static List<MapRoute> getMapRoutes(long platformId) {
+		final List<Tuple<Route, Integer>> routeDetails = new ArrayList<>();
+		getRouteStream(platformId, (route, currentStationIndex) -> routeDetails.add(new Tuple<>(route, currentStationIndex)));
+
+		final Map<String, Set<Integer>> lineServiceColors = new HashMap<>();
+		routeDetails.forEach(routeDetail -> lineServiceColors.computeIfAbsent(getLineKey(routeDetail.getA()), key -> new HashSet<>()).add(routeDetail.getA().getOwnColor()));
+
+		final List<MapRoute> mapRoutes = new ArrayList<>();
+		routeDetails.forEach(routeDetail -> {
+			final Route route = routeDetail.getA();
+			final boolean byService = lineServiceColors.get(getLineKey(route)).size() > 1;
+			final MapRoute mapRoute = new MapRoute(route, byService ? route.getOwnColor() : route.color, routeDetail.getB());
+			if (mapRoute.stationIds.size() > 1 && mapRoutes.stream().noneMatch(mapRoute::drawsSameAs)) {
+				mapRoutes.add(mapRoute);
+			}
+		});
+		mapRoutes.sort(Comparator.comparingInt((MapRoute mapRoute) -> mapRoute.lineColor).thenComparing(mapRoute -> mapRoute.lineKey).thenComparingInt(mapRoute -> mapRoute.color));
+		return mapRoutes;
+	}
+
+	private static String getLineKey(Route route) {
+		return route.transportMode + route.getLineKey();
+	}
+
 	private static long getStationId(long platformId) {
 		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platformId);
 		return station == null ? -1 : station.id;
@@ -637,8 +670,24 @@ public class RouteMapGenerator implements IGui {
 		return station == null ? "" : station.name;
 	}
 
-	private static Map<Integer, ClientCache.ColorNameTuple> getInterchangeRoutes(long stationId) {
-		return ClientData.DATA_CACHE.stationIdToRoutes.get(stationId);
+	/**
+	 * The lines stopping at each station, by line rather than by colour so two lines of one colour both show. A route only
+	 * passing a station doesn't count there.
+	 */
+	private static Map<Long, Map<String, ClientCache.ColorNameTuple>> getInterchangeRoutes() {
+		final Map<Long, Map<String, ClientCache.ColorNameTuple>> interchangeRoutes = new HashMap<>();
+		ClientData.ROUTES.forEach(route -> {
+			if (!route.isHidden) {
+				final String lineKey = getLineKey(route);
+				route.platformIds.forEach(routePlatform -> {
+					final Station station = ClientData.DATA_CACHE.platformIdToStation.get(routePlatform.platformId);
+					if (station != null && !routePlatform.pass) {
+						interchangeRoutes.computeIfAbsent(station.id, key -> new HashMap<>()).putIfAbsent(lineKey, new ClientCache.ColorNameTuple(route.color, route.getLineName(), lineKey));
+					}
+				});
+			}
+		});
+		return interchangeRoutes;
 	}
 
 	private static void drawLine(NativeImage nativeImage, StationPosition stationPosition1, StationPosition stationPosition2, float widthScale, float heightScale, float xOffset, float yOffset, int color) {
@@ -844,6 +893,59 @@ public class RouteMapGenerator implements IGui {
 			this.x = x;
 			this.y = y;
 			this.isCommon = isCommon;
+		}
+	}
+
+	private static class MapRoute {
+
+		private final int color;
+		private final int lineColor;
+		private final String lineKey;
+		private final String name;
+		/**
+		 * The stations this route stops at in order, always with its first and last stations and the current one.
+		 */
+		private final List<Long> stationIds = new ArrayList<>();
+		private final int currentIndex;
+
+		private MapRoute(Route route, int color, int currentPlatformIndex) {
+			this.color = color;
+			lineColor = route.color;
+			lineKey = getLineKey(route);
+			name = route.name.split("\\|\\|")[0];
+
+			final List<Long> stops = new ArrayList<>();
+			int stopIndex = 0;
+			final int lastIndex = route.platformIds.size() - 1;
+			for (int i = 0; i <= lastIndex; i++) {
+				final Route.RoutePlatform routePlatform = route.platformIds.get(i);
+				if (i == currentPlatformIndex) {
+					stopIndex = stops.size();
+				}
+				if (i == currentPlatformIndex || i == 0 || i == lastIndex || !routePlatform.pass) {
+					stops.add(getStationId(routePlatform.platformId));
+				}
+			}
+
+			final boolean loop = stops.size() > 3 && stops.get(0) != -1 && stops.get(0).equals(stops.get(stops.size() - 1)) && (route.isLoop() || route.circularState != Route.CircularState.NONE);
+			if (loop) {
+				// Half the loop ahead and half behind, both ending at the station across the loop
+				final int loopSize = stops.size() - 1;
+				final int current = stopIndex % loopSize;
+				final int ahead = (loopSize + 1) / 2;
+				final int behind = loopSize - ahead;
+				for (int i = -behind; i <= ahead; i++) {
+					stationIds.add(stops.get(Math.floorMod(current + i, loopSize)));
+				}
+				currentIndex = behind;
+			} else {
+				stationIds.addAll(stops);
+				currentIndex = stopIndex;
+			}
+		}
+
+		private boolean drawsSameAs(MapRoute mapRoute) {
+			return color == mapRoute.color && currentIndex == mapRoute.currentIndex && stationIds.equals(mapRoute.stationIds);
 		}
 	}
 

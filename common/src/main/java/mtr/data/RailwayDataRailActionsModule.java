@@ -45,9 +45,29 @@ public class RailwayDataRailActionsModule extends RailwayDataModuleBase {
 		}
 	}
 
+	public boolean markRailForRoundTunnel(Player player, BlockPos pos1, BlockPos pos2, int radius) {
+		if (railwayData.containsRail(pos1, pos2)) {
+			railActions.add(new Rail.RailActions(world, player, Rail.RailActionType.TUNNEL_ROUND, rails.get(pos1).get(pos2), radius, 0, null));
+			PacketTrainDataGuiServer.updateRailActionsS2C(world, railActions);
+			return true;
+		} else {
+			return false;
+		}
+	}
+
 	public boolean markRailForTunnelWall(Player player, BlockPos pos1, BlockPos pos2, int radius, int height, BlockState state) {
 		if (railwayData.containsRail(pos1, pos2)) {
 			railActions.add(new Rail.RailActions(world, player, Rail.RailActionType.TUNNEL_WALL, rails.get(pos1).get(pos2), radius + 1, height + 1, state));
+			PacketTrainDataGuiServer.updateRailActionsS2C(world, railActions);
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	public boolean markRailForRoundTunnelWall(Player player, BlockPos pos1, BlockPos pos2, int radius, BlockState state) {
+		if (railwayData.containsRail(pos1, pos2)) {
+			railActions.add(new Rail.RailActions(world, player, Rail.RailActionType.TUNNEL_WALL_ROUND, rails.get(pos1).get(pos2), radius, 0, state));
 			PacketTrainDataGuiServer.updateRailActionsS2C(world, railActions);
 			return true;
 		} else {

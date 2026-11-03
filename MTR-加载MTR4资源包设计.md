@@ -215,3 +215,41 @@ ANTE 的 `CustomResourcesMixin.readResource` 在 HEAD 接管了读取，所以�
 - 4.x 的电梯样式（G14）。
 - 4.x 的 PIDS、线路图等其他资源类型（4.x 资源 schema 里没有，属于它的模组内置功能）。
 - 把 4.x 的渲染器搬过来。
+
+## 9. 实测资源包：botamochi129 Rail Structure Pack v1.5（标注 `_mtr4`，2026-11-03）
+
+**结论：这个包不是 4.x 核心格式，而是 NTE/ANTE 格式的装饰物和轨道包，脚本按 MTR 3 + ANTE 的 API 写。** 本分支已合并 ANTE，绝大部分内容不用转换就能加载；找到两处脚本沙箱的问题，已改（未构建，条目见 `MTR-待验证.md`）。第 6 节 P0 要的"真实 4.x 车辆资源包"仍然没有，这个包不能替代。
+
+### 9.1 包里有什么
+
+| 内容 | 数量 | 本分支的处理 |
+|---|---|---|
+| `assets/mtrsteamloco/rails/botamochi129_rail.json`：轨道模型（桥、高架、隧道、路基、墙、屋顶、柱） | 109 个，字段只有 `name`、`model`、`repeatInterval`、`yOffset`、`flipV` | `RailModelRegistry` 原样支持 |
+| `assets/mtrsteamloco/eyecandies/botamochi129_eyecandies.json`：装饰物 | 17 个，字段 `name`、`model`、`textureId`、`flipV`、`rotation`、`asPlatform`、`scriptFiles` | `EyeCandyRegistry` 原样支持 |
+| OBJ + MTL + PNG 模型 | 约 120 个 | ANTE 的 OBJ 加载器 |
+| 10 个 JS 脚本（发车表、到站牌、发车铃、站台门、坡道、上野乘车引导牌） | 3139 行 | 见 9.2 |
+| `sounds.json` + 3 个 ogg、3 个 ttf 字体 | — | 原版声音系统；`Resources.readFont` |
+
+没有 `assets/mtr/mtr_custom_resources.json`，所以第 4 节的转换器和这个包无关。
+
+### 9.2 脚本用到的 API
+
+逐个核对了脚本里的全局对象和方法，以下都在本分支存在：`Resources`（`id`、`manager`、`readFont`、`readBufferedImage`、`ANTE_FLAG`）、`MTRClientData`（`STATIONS`、`ROUTES`、`TRAINS`、`SCHEDULES_FOR_PLATFORM`、`DATA_CACHE.requestStationIdToPlatforms`）、`MinecraftClient.getStationAt/setScreen`、`IScreen.ClothConfig2`、`ConfigResponder.TextField/CycleToggle`、`TickableSound`、`SoundHelper`、`ModelManager.loadRawModel/loadPartedRawModel`、`DynamicModelHolder`、`TextUtil`、`ComponentUtil`、`RateLimit`、`ClusterDrawCall`、`Matrix4f`、`Vector3f`，以及方块实体的 `doorValue`、`doorTarget`、`setShape`、`setCollisionShape`、`registerCustomConfig`、`getCustomConfig`、`getWorldPosVector3f`。
+
+用的数据结构全是 3.x 的：`ScheduleEntry.arrivalMillis`、`TrainClient.path` 和 `getThisRoute()`、`Route.platformIds.get(i).platformId`、`getDestination(int)`、`getLastPlatformId()`、`platform.dwellTime`（Graal 的 nashorn 兼容模式把它映射到 getter）。在 4.x 上这些都不存在，所以文件名里的 `mtr4` 不代表 4.x 格式。
+
+### 9.3 找到并已改的问题
+
+- **S1：`java.lang` 被沙箱挡住**。`ScriptHolderBase` 在脚本加载完后只放行 `java.awt`、`java.util`、`mtr` 开头的类。发车表和到站牌在 `create` 和定时任务里用 `new java.lang.Runnable({...})`、`new java.lang.Long(id)`，加载后查找被拒，`create` 报错，牌子不显示。改为额外放行单个类：`Runnable`、`Iterable`、`Comparable`、`CharSequence`、`Number`、各包装类型、`String`、`StringBuilder`、`Math`。`System`、`Runtime`、`Thread`、`Class` 等仍然关闭。
+- **S2：脚本自建线程池并发进入 JS 上下文**。发车表和到站牌在 `Resources.ANTE_FLAG` 为真时用 `Executors.newScheduledThreadPool(1)` 每 0.5 秒在自己的线程里调用 `tick`。GraalJS 不允许两个线程同时进入同一个上下文，和脚本线程撞上时抛 `IllegalStateException`，`scheduleAtFixedRate` 遇到异常就不再执行，牌子停止更新；重载资源后旧线程池也一直在跑。改为注入 `ScriptExecutors` 顶替脚本里的 `Executors`（定义了同名全局变量，`importPackage` 不再生效）：定时照旧，每次执行交给脚本线程并等它跑完；任务出错只记日志，不停止定时；线程是守护线程；`resetRunner`（资源重载、F3+5）时关掉所有这类线程池。
+
+### 9.4 有意不改的
+
+- **网络**：发车表每 30 秒用 `java.net.URL` 取延误信息（包里地址是空的 `http://`）。`java.net`、`java.io` 不放行，`new URL` 抛错被脚本自己的 `try` 接住，每 30 秒打一行日志，延误信息为空。资源包不应能访问网络，保持关闭。
+- **`setDelay(1.5)`**：发车铃给 `TickableSound.setDelay(int)` 传小数。本分支的类型映射把 1.5 四舍五入成 2（单位是 tick），不报错。
+- **显式写全名的 `java.util.concurrent.Executors`** 不经过 `ScriptExecutors`，仍是原来的线程池，会有 S2 的问题。这个包没有这样写。
+- **加载阶段放行所有类**（`loading[0]`）：脚本顶层代码在加载时能拿到任何类，这是 ANTE 原有的行为，不在本次范围，另记。
+
+### 9.5 游戏内要验证的
+
+见 `MTR-待验证.md` 的"ANTE 脚本沙箱：资源包定时器和 java.lang"条目。

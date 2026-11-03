@@ -42,7 +42,6 @@
   "mixins": [
     "ItemWithCreativeTabBaseMixin",
     "PackMixin",
-    "RailActionsMixin",
     "RailMixin",
     "RailwayDataAccessor",
     "TrainMixin",

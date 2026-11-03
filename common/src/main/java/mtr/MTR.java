@@ -171,6 +171,9 @@ public class MTR implements IPacket {
 			registerItem.accept("tunnel_creator_6_5", Items.TUNNEL_CREATOR_6_5);
 			registerItem.accept("tunnel_creator_6_7", Items.TUNNEL_CREATOR_6_7);
 			registerItem.accept("tunnel_creator_6_9", Items.TUNNEL_CREATOR_6_9);
+			registerItem.accept("round_tunnel_creator_4", Items.ROUND_TUNNEL_CREATOR_4);
+			registerItem.accept("round_tunnel_creator_6", Items.ROUND_TUNNEL_CREATOR_6);
+			registerItem.accept("round_tunnel_creator_8", Items.ROUND_TUNNEL_CREATOR_8);
 			registerItem.accept("tunnel_wall_creator_4_3", Items.TUNNEL_WALL_CREATOR_4_3);
 			registerItem.accept("tunnel_wall_creator_4_5", Items.TUNNEL_WALL_CREATOR_4_5);
 			registerItem.accept("tunnel_wall_creator_4_7", Items.TUNNEL_WALL_CREATOR_4_7);
@@ -183,6 +186,9 @@ public class MTR implements IPacket {
 			registerItem.accept("tunnel_wall_creator_6_5", Items.TUNNEL_WALL_CREATOR_6_5);
 			registerItem.accept("tunnel_wall_creator_6_7", Items.TUNNEL_WALL_CREATOR_6_7);
 			registerItem.accept("tunnel_wall_creator_6_9", Items.TUNNEL_WALL_CREATOR_6_9);
+			registerItem.accept("round_tunnel_wall_creator_4", Items.ROUND_TUNNEL_WALL_CREATOR_4);
+			registerItem.accept("round_tunnel_wall_creator_6", Items.ROUND_TUNNEL_WALL_CREATOR_6);
+			registerItem.accept("round_tunnel_wall_creator_8", Items.ROUND_TUNNEL_WALL_CREATOR_8);
 			registerItem.accept("boat_node", Items.BOAT_NODE);
 
 			registerBlockItem.accept("rail", Blocks.RAIL_NODE, CreativeModeTabs.CORE);

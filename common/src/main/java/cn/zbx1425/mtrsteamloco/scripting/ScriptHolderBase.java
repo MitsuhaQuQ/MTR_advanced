@@ -135,6 +135,15 @@ public abstract class ScriptHolderBase {
         "java.awt", "java.util", "mtr"
     );
 
+    // Single java.lang classes resource packs use at run time (new java.lang.Runnable({...}), new java.lang.Long(id));
+    // System, Runtime, Thread, Class and the rest of java.lang stay closed
+    private static final Set<String> ALLOWED_CLASSES = Set.of(
+        "java.lang.Runnable", "java.lang.Iterable", "java.lang.Comparable", "java.lang.CharSequence",
+        "java.lang.Number", "java.lang.Long", "java.lang.Integer", "java.lang.Short", "java.lang.Byte",
+        "java.lang.Double", "java.lang.Float", "java.lang.Boolean", "java.lang.Character",
+        "java.lang.String", "java.lang.StringBuilder", "java.lang.Math"
+    );
+
     public void load(
         String name, String contextTypeName, ResourceManager resourceManager, 
         Map<ResourceLocation, String> scripts, JsonObject config, String key, 
@@ -167,6 +176,7 @@ public abstract class ScriptHolderBase {
             .allowHostClassLoading(true)  
             .allowHostClassLookup(trust ? className -> true : className -> {
                 if (loading[0]) return true;
+                if (ALLOWED_CLASSES.contains(className)) return true;
                 for (String allowedPackage : ALLOWED_PACKAGES) {
                     if (className.startsWith(allowedPackage)) {
                         return true;
@@ -379,6 +389,8 @@ public abstract class ScriptHolderBase {
         inject(OrderedMap.class, "OrderedMap");
         inject(OrderedMap.PlacementOrder.class, "PlacementOrder");
         inject(ShapeSerializer.class, "ShapeSerializer");
+        // Shadows importPackage(java.util.concurrent): script timers run on the script thread
+        inject(ScriptExecutors.class, "Executors");
 
         inject(Matrices.class, "Matrices");
         inject(Matrix4f.class, "Matrix4f");
@@ -463,7 +475,17 @@ public abstract class ScriptHolderBase {
         return failTime > 0 && (System.currentTimeMillis() - failTime) < 4000;
     }
 
+    // Runs a task from another thread on the script thread and waits for it; must not be called from the script thread
+    public static <V> V runOnScriptThread(Callable<V> task) throws Exception {
+        try {
+            return SCRIPT_THREAD.submit(task).get();
+        } catch (ExecutionException ex) {
+            throw ex.getCause() instanceof Exception ? (Exception) ex.getCause() : ex;
+        }
+    }
+
     public static void resetRunner() {
+        ScriptExecutors.shutdownAll();
         SCRIPT_THREAD.shutdownNow();
         SCRIPT_THREAD = Executors.newSingleThreadExecutor();
     }

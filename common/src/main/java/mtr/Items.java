@@ -101,6 +101,9 @@ public interface Items {
 	RegistryObject<Item> TUNNEL_CREATOR_6_5 = new RegistryObject<>(() -> new ItemTunnelCreator(6, 5));
 	RegistryObject<Item> TUNNEL_CREATOR_6_7 = new RegistryObject<>(() -> new ItemTunnelCreator(6, 7));
 	RegistryObject<Item> TUNNEL_CREATOR_6_9 = new RegistryObject<>(() -> new ItemTunnelCreator(6, 9));
+	RegistryObject<Item> ROUND_TUNNEL_CREATOR_4 = new RegistryObject<>(() -> new ItemRoundTunnelCreator(4));
+	RegistryObject<Item> ROUND_TUNNEL_CREATOR_6 = new RegistryObject<>(() -> new ItemRoundTunnelCreator(6));
+	RegistryObject<Item> ROUND_TUNNEL_CREATOR_8 = new RegistryObject<>(() -> new ItemRoundTunnelCreator(8));
 	RegistryObject<Item> TUNNEL_WALL_CREATOR_4_3 = new RegistryObject<>(() -> new ItemTunnelWallCreator(4, 3));
 	RegistryObject<Item> TUNNEL_WALL_CREATOR_4_5 = new RegistryObject<>(() -> new ItemTunnelWallCreator(4, 5));
 	RegistryObject<Item> TUNNEL_WALL_CREATOR_4_7 = new RegistryObject<>(() -> new ItemTunnelWallCreator(4, 7));
@@ -113,4 +116,7 @@ public interface Items {
 	RegistryObject<Item> TUNNEL_WALL_CREATOR_6_5 = new RegistryObject<>(() -> new ItemTunnelWallCreator(6, 5));
 	RegistryObject<Item> TUNNEL_WALL_CREATOR_6_7 = new RegistryObject<>(() -> new ItemTunnelWallCreator(6, 7));
 	RegistryObject<Item> TUNNEL_WALL_CREATOR_6_9 = new RegistryObject<>(() -> new ItemTunnelWallCreator(6, 9));
+	RegistryObject<Item> ROUND_TUNNEL_WALL_CREATOR_4 = new RegistryObject<>(() -> new ItemRoundTunnelWallCreator(4));
+	RegistryObject<Item> ROUND_TUNNEL_WALL_CREATOR_6 = new RegistryObject<>(() -> new ItemRoundTunnelWallCreator(6));
+	RegistryObject<Item> ROUND_TUNNEL_WALL_CREATOR_8 = new RegistryObject<>(() -> new ItemRoundTunnelWallCreator(8));
 }

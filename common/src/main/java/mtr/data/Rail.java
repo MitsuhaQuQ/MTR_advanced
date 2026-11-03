@@ -1,6 +1,11 @@
 package mtr.data;
 
 import mtr.block.BlockNode;
+import mtr.block.BlockPSDAPGBase;
+import mtr.block.BlockPSDTop;
+import mtr.block.BlockRailwaySign;
+import mtr.block.BlockRailwaySignPole;
+import mtr.block.BlockRouteSignBase;
 import mtr.mappings.Text;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -8,11 +13,16 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SignBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import mtr.compat.MaterialColor;
+import it.unimi.dsi.fastutil.longs.Long2IntMap;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
@@ -623,8 +633,19 @@ public class Rail extends SerializedDataBase {
 		private final BlockState state;
 		private final boolean isSlab;
 		private final Set<BlockPos> blacklistedPos = new HashSet<>();
+		// Highest priority already written to each position by the bridge creator: 1 bottom half, 2 top half, 3 air above
+		private final Long2IntMap bridgePlacedState = new Long2IntOpenHashMap();
+		// Round tunnel and wall: sample index along the rail, positions already handled, and for the wall the blocks the tunnel of the same radius clears
+		private int roundStep;
+		private final LongOpenHashSet roundDonePos = new LongOpenHashSet();
+		private LongOpenHashSet roundTunnelPos;
+		private boolean roundTunnelCollected;
 
-		private static final double INCREMENT = 0.01;
+		// Distance along the rail between cross-sections, and across the rail between samples of one cross-section
+		private static final double INCREMENT = 0.1;
+		private static final double SIDE_INCREMENT = 0.01;
+		private static final double ROUND_TUNNEL_INCREMENT = 0.1;
+		private static final long TICK_BUDGET_NANOS = 2_000_000;
 
 		public RailActions(Level world, Player player, RailActionType railActionType, Rail rail, int radius, int height, BlockState state) {
 			id = new Random().nextLong();
@@ -649,6 +670,10 @@ public class Rail extends SerializedDataBase {
 					return createTunnel();
 				case TUNNEL_WALL:
 					return createTunnelWall();
+				case TUNNEL_ROUND:
+					return createRoundTunnel();
+				case TUNNEL_WALL_ROUND:
+					return createRoundTunnelWall();
 				default:
 					return true;
 			}
@@ -666,9 +691,8 @@ public class Rail extends SerializedDataBase {
 		private boolean createTunnel() {
 			return create(true, editPos -> {
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
-				if (!blacklistedPos.contains(pos) && canPlace(world, pos)) {
-					world.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
-					blacklistedPos.add(pos);
+				if (blacklistedPos.add(pos)) {
+					setBlockIfChanged(pos, Blocks.AIR.defaultBlockState());
 				}
 			});
 		}
@@ -676,54 +700,71 @@ public class Rail extends SerializedDataBase {
 		private boolean createTunnelWall() {
 			return create(false, editPos -> {
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
-				if (!blacklistedPos.contains(pos) && canPlace(world, pos)) {
-					world.setBlockAndUpdate(pos, state);
-					blacklistedPos.add(pos);
+				if (blacklistedPos.add(pos)) {
+					setBlockIfChanged(pos, state);
 				}
 			});
 		}
 
+		// Slabs fill the half block the rail passes through; a full block or a double slab goes under it, and the space above is cleared
 		private boolean createBridge() {
 			return create(false, editPos -> {
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
 				final boolean isTopHalf = editPos.y - Math.floor(editPos.y) >= 0.5;
-				blacklistedPos.add(getHalfPos(pos, isTopHalf));
 
 				final BlockPos placePos;
+				final BlockPos airPos;
 				final BlockState placeState;
-				final boolean placeHalf;
-
 				if (isSlab && isTopHalf) {
 					placePos = pos;
+					airPos = pos.above();
 					placeState = state.setValue(SlabBlock.TYPE, SlabType.BOTTOM);
-					placeHalf = false;
 				} else {
 					placePos = pos.below();
-					placeState = isSlab ? state.setValue(SlabBlock.TYPE, SlabType.TOP) : state;
-					placeHalf = true;
+					airPos = pos;
+					placeState = isSlab ? state.setValue(SlabBlock.TYPE, SlabType.DOUBLE) : state;
 				}
 
-				if (placePos != pos && canPlace(world, pos)) {
-					world.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+				final int slabPriority = isTopHalf ? 2 : 1;
+				if (bridgePlacedState.get(placePos.asLong()) < slabPriority) {
+					setBlockIfChanged(placePos, placeState);
+					bridgePlacedState.put(placePos.asLong(), slabPriority);
 				}
-				if (!blacklistedPos.contains(getHalfPos(placePos, placeHalf)) && canPlace(world, placePos)) {
-					world.setBlockAndUpdate(placePos, placeState);
+				if (bridgePlacedState.get(airPos.asLong()) < 3) {
+					setBlockIfChanged(airPos, Blocks.AIR.defaultBlockState());
+					bridgePlacedState.put(airPos.asLong(), 3);
 				}
 			});
 		}
 
 		private boolean create(boolean includeMiddle, Consumer<Vec3> consumer) {
-			final long startTime = System.currentTimeMillis();
-			while (System.currentTimeMillis() - startTime < 2) {
+			final long startTime = System.nanoTime();
+			while (System.nanoTime() - startTime < TICK_BUDGET_NANOS) {
 				final Vec3 pos1 = rail.getPosition(distance);
 				distance += INCREMENT;
 				final Vec3 pos2 = rail.getPosition(distance);
 				final Vec3 vec3 = new Vec3(pos2.x - pos1.x, 0, pos2.z - pos1.z).normalize().yRot((float) Math.PI / 2);
+				final boolean wholeNumber = Math.floor(pos1.y) == Math.ceil(pos1.y);
 
-				for (double x = -radius; x <= radius; x += INCREMENT) {
-					final Vec3 editPos = pos1.add(vec3.multiply(x, 0, x));
-					final boolean wholeNumber = Math.floor(editPos.y) == Math.ceil(editPos.y);
-					if (includeMiddle || Math.abs(x) > radius - INCREMENT) {
+				// Neighbouring samples usually fall in the same block column and would repeat the same work, so only the first one in each column is used
+				int lastBlockX = Integer.MIN_VALUE;
+				int lastBlockZ = Integer.MIN_VALUE;
+				boolean lastIsEdge = false;
+				for (double x = -radius; x <= radius; x += SIDE_INCREMENT) {
+					final double editX = pos1.x + vec3.x * x;
+					final double editZ = pos1.z + vec3.z * x;
+					final int blockX = (int) Math.floor(editX);
+					final int blockZ = (int) Math.floor(editZ);
+					final boolean isEdge = radius != 0 && Math.abs(x) > radius - SIDE_INCREMENT;
+					if (blockX == lastBlockX && blockZ == lastBlockZ && isEdge == lastIsEdge) {
+						continue;
+					}
+					lastBlockX = blockX;
+					lastBlockZ = blockZ;
+					lastIsEdge = isEdge;
+
+					final Vec3 editPos = new Vec3(editX, pos1.y, editZ);
+					if (includeMiddle || isEdge) {
 						for (int y = 0; y <= height; y++) {
 							if (y < height || !wholeNumber) {
 								consumer.accept(editPos.add(0, y, 0));
@@ -744,6 +785,107 @@ public class Rail extends SerializedDataBase {
 			return false;
 		}
 
+		// The circle's centre is (radius - 1) blocks above the rail, so on level track the lowest cleared row is the rail's own row
+		private boolean createRoundTunnel() {
+			return createRound(false);
+		}
+
+		// Fills the blocks outside the round tunnel of the same radius that share a face with it, including the row under the rail.
+		// The tunnel's blocks are worked out first with exactly the tunnel's own sampling, so the wall can never cut into it or leave a gap.
+		private boolean createRoundTunnelWall() {
+			return createRound(true);
+		}
+
+		private boolean createRound(boolean isWall) {
+			if (isWall && roundTunnelPos == null) {
+				roundTunnelPos = new LongOpenHashSet();
+			}
+
+			final long startTime = System.nanoTime();
+			while (System.nanoTime() - startTime < TICK_BUDGET_NANOS) {
+				final boolean collecting = isWall && !roundTunnelCollected;
+				final int outerRadius = isWall && !collecting ? radius + 1 : radius;
+				final RoundSection section = new RoundSection(rail.getPosition(roundStep * ROUND_TUNNEL_INCREMENT), rail.getPosition((roundStep + 1) * ROUND_TUNNEL_INCREMENT), radius);
+				roundStep++;
+				final int minY = (int) Math.floor(section.centreY - outerRadius) - 1;
+				final int maxY = (int) Math.ceil(section.centreY + outerRadius) + 1;
+
+				int lastBlockX = Integer.MIN_VALUE;
+				int lastBlockZ = Integer.MIN_VALUE;
+				for (double x = -outerRadius; x <= outerRadius; x += ROUND_TUNNEL_INCREMENT) {
+					final int blockX = (int) Math.floor(section.x + section.sideX * x);
+					final int blockZ = (int) Math.floor(section.z + section.sideZ * x);
+					if (blockX == lastBlockX && blockZ == lastBlockZ) {
+						continue;
+					}
+					lastBlockX = blockX;
+					lastBlockZ = blockZ;
+
+					for (int blockY = minY; blockY <= maxY; blockY++) {
+						final long posLong = BlockPos.asLong(blockX, blockY, blockZ);
+						if (collecting) {
+							if (section.contains(blockX, blockY, blockZ)) {
+								roundTunnelPos.add(posLong);
+							}
+						} else if (!roundDonePos.contains(posLong)) {
+							if (isWall) {
+								if (!roundTunnelPos.contains(posLong) && touchesRoundTunnel(blockX, blockY, blockZ)) {
+									roundDonePos.add(posLong);
+									setBlockIfChanged(RailwayData.newBlockPos(blockX, blockY, blockZ), state);
+								}
+							} else if (section.contains(blockX, blockY, blockZ)) {
+								roundDonePos.add(posLong);
+								setBlockIfChanged(RailwayData.newBlockPos(blockX, blockY, blockZ), Blocks.AIR.defaultBlockState());
+							}
+						}
+					}
+				}
+
+				if (length - roundStep * ROUND_TUNNEL_INCREMENT < ROUND_TUNNEL_INCREMENT) {
+					if (collecting) {
+						roundTunnelCollected = true;
+						roundStep = 0;
+					} else {
+						roundTunnelPos = null;
+						showProgressMessage(100);
+						return true;
+					}
+				}
+			}
+
+			final float progress = (float) Math.min(1, roundStep * ROUND_TUNNEL_INCREMENT / length);
+			// The wall walks the rail twice: first to find the tunnel's blocks, then to place the wall
+			showProgressMessage(RailwayData.round(100 * (isWall ? (roundTunnelCollected ? 0.5F + progress / 2 : progress / 2) : progress), 1));
+			return false;
+		}
+
+		private boolean touchesRoundTunnel(int x, int y, int z) {
+			return roundTunnelPos.contains(BlockPos.asLong(x - 1, y, z)) || roundTunnelPos.contains(BlockPos.asLong(x + 1, y, z))
+					|| roundTunnelPos.contains(BlockPos.asLong(x, y - 1, z)) || roundTunnelPos.contains(BlockPos.asLong(x, y + 1, z))
+					|| roundTunnelPos.contains(BlockPos.asLong(x, y, z - 1)) || roundTunnelPos.contains(BlockPos.asLong(x, y, z + 1));
+		}
+
+		// Skips positions that already hold the target state, so going through open air or ground already cleared costs no block update
+		private void setBlockIfChanged(BlockPos pos, BlockState newState) {
+			final BlockState oldState = world.getBlockState(pos);
+			if (oldState != newState && !isProtected(oldState.getBlock()) && world.getBlockEntity(pos) == null) {
+				world.setBlockAndUpdate(pos, newState);
+			}
+		}
+
+		/**
+		 * Blocks the creators build around rather than replace: platform screen doors and gates, signs, and nodes of rails or
+		 * of other mods such as MSD's catenary. Blocks with a block entity are left alone as well.
+		 */
+		private static boolean isProtected(Block block) {
+			if (block instanceof BlockNode || block instanceof BlockPSDAPGBase || block instanceof BlockPSDTop || block instanceof SignBlock || block instanceof BlockRailwaySign || block instanceof BlockRailwaySignPole || block instanceof BlockRouteSignBase) {
+				return true;
+			}
+			// Mod blocks by name, which reads the same in every Minecraft version: "block.msd.railing_stair", "block.msd.catenary_node"
+			final String id = block.getDescriptionId();
+			return id.contains("node") || id.startsWith("block.msd.") && (id.contains("railing") || id.contains("catenary"));
+		}
+
 		private void showProgressMessage(float percentage) {
 			final Player player = world.getPlayerByUUID(uuid);
 			if (player != null) {
@@ -751,12 +893,39 @@ public class Rail extends SerializedDataBase {
 			}
 		}
 
-		private static boolean canPlace(Level world, BlockPos pos) {
-			return world.getBlockEntity(pos) == null && !(world.getBlockState(pos).getBlock() instanceof BlockNode);
-		}
+		// One cross-section of a round tunnel. Each block is judged by its own centre, measured across the rail and against the rail's height at that point along it
+		private static class RoundSection {
 
-		private static BlockPos getHalfPos(BlockPos pos, boolean isTopHalf) {
-			return RailwayData.newBlockPos(pos.getX(), pos.getY() * 2 + (isTopHalf ? 1 : 0), pos.getZ());
+			private final double x;
+			private final double z;
+			private final double centreY;
+			private final double forwardX;
+			private final double forwardZ;
+			private final double sideX;
+			private final double sideZ;
+			private final double gradient;
+			private final int radiusSquared;
+
+			private RoundSection(Vec3 pos1, Vec3 pos2, int radius) {
+				x = pos1.x;
+				z = pos1.z;
+				centreY = pos1.y + radius - 1;
+				final double horizontalLength = Math.sqrt((pos2.x - pos1.x) * (pos2.x - pos1.x) + (pos2.z - pos1.z) * (pos2.z - pos1.z));
+				forwardX = horizontalLength == 0 ? 1 : (pos2.x - pos1.x) / horizontalLength;
+				forwardZ = horizontalLength == 0 ? 0 : (pos2.z - pos1.z) / horizontalLength;
+				sideX = -forwardZ;
+				sideZ = forwardX;
+				gradient = horizontalLength == 0 ? 0 : (pos2.y - pos1.y) / horizontalLength;
+				radiusSquared = radius * radius;
+			}
+
+			private boolean contains(int blockX, int blockY, int blockZ) {
+				final double relativeX = blockX + 0.5 - x;
+				final double relativeZ = blockZ + 0.5 - z;
+				final double offsetSide = relativeX * sideX + relativeZ * sideZ;
+				final double offsetY = blockY - (centreY + gradient * (relativeX * forwardX + relativeZ * forwardZ));
+				return offsetSide * offsetSide + offsetY * offsetY < radiusSquared;
+			}
 		}
 	}
 
@@ -768,7 +937,9 @@ public class Rail extends SerializedDataBase {
 	public enum RailActionType {
 		BRIDGE("percentage_complete_bridge", "rail_action_bridge", MaterialColor.COLOR_LIGHT_GRAY),
 		TUNNEL("percentage_complete_tunnel", "rail_action_tunnel", MaterialColor.COLOR_BROWN),
-		TUNNEL_WALL("percentage_complete_tunnel_wall", "rail_action_tunnel_wall", MaterialColor.COLOR_GRAY);
+		TUNNEL_WALL("percentage_complete_tunnel_wall", "rail_action_tunnel_wall", MaterialColor.COLOR_GRAY),
+		TUNNEL_ROUND("percentage_complete_round_tunnel", "rail_action_round_tunnel", MaterialColor.COLOR_BROWN),
+		TUNNEL_WALL_ROUND("percentage_complete_round_tunnel_wall", "rail_action_round_tunnel_wall", MaterialColor.COLOR_GRAY);
 
 		private final String progressTranslation;
 		private final String nameTranslation;

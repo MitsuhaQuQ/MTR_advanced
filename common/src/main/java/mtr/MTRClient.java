@@ -458,6 +458,9 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_CREATOR_6_5.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_CREATOR_6_7.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_CREATOR_6_9.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.ROUND_TUNNEL_CREATOR_4.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.ROUND_TUNNEL_CREATOR_6.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.ROUND_TUNNEL_CREATOR_8.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_WALL_CREATOR_4_3.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_WALL_CREATOR_4_5.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_WALL_CREATOR_4_7.get(), ItemBlockClickingBase.TAG_POS);
@@ -470,6 +473,9 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_WALL_CREATOR_6_5.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_WALL_CREATOR_6_7.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.TUNNEL_WALL_CREATOR_6_9.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.ROUND_TUNNEL_WALL_CREATOR_4.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.ROUND_TUNNEL_WALL_CREATOR_6.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.ROUND_TUNNEL_WALL_CREATOR_8.get(), ItemBlockClickingBase.TAG_POS);
 		}
 
 		RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.LIFT_BUTTONS_LINK_CONNECTOR.get(), ItemBlockClickingBase.TAG_POS);
