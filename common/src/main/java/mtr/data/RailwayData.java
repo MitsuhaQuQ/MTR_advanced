@@ -309,7 +309,6 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * player. Everything else of a tick is the same, so nothing added here is lost when ANTE is in.
 	 */
 	public void simulateTrains(RailNearPlayer isNearPlayer) {
-		runReservations.tick();
 		final List<? extends Player> players = world.players();
 		players.forEach(player -> {
 			final BlockPos playerBlockPos = player.blockPosition();
@@ -352,12 +351,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		schedulesForPlatform.clear();
 		signalBlocks.resetOccupied();
 		final float ticksElapsed = tickCompensator.nextTick(System.currentTimeMillis());
-		sidings.forEach(siding -> {
+		// In a fixed order, so a tick runs the same way each time (fix F1, R03 of the architecture review)
+		sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> {
 			siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails);
 			siding.ticksElapsed = ticksElapsed;
 			siding.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			siding.simulateTrain(dataCache, railwayDataDriveTrainModule, trainPositions, signalBlocks, updateNearbyTrains.newDataSetInPlayerRange, updateNearbyTrains.dataSetToSync, schedulesForPlatform, trainDelays);
 		});
+		// Runs asked for during the tick are given out together, whatever order the trains ran in
+		runReservations.resolve(System.currentTimeMillis());
 		depots.forEach(depot -> depot.deployTrain(this, world));
 
 		updateNearbyLifts.startTick();

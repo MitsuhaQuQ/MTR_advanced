@@ -77,7 +77,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 |---|---|---|---|---|
 | `data/TrainService` | 1093 | `PathData`、`Siding.TripPath`、`Route`、`RouteTimetable`、`DepotDuties`、`DutyShapes`、msgpack | B | 组件 `sim`（S3）。`Vehicle` 接口改用 `TrackView` 和组件的车次路径 |
 | `Siding.StopTimes`、`Siding.TripPath`、`TurnBack*`、`DepotReturn`、`DutyPlan`、`TimeSegment` | 约 1200（在 `Siding` 内） | 嵌在依赖 Minecraft 的 `Siding` 里 | B（逻辑本身不需要世界） | 抽成组件 `plan` 和 `sim` 的独立类（S3），`Siding` 只留路径生成的调度和存档 |
-| `transitsim.sim.RunReservations`（原 `advanced/RunReservations`） | 80 | 组件的 `RailKeys` | A | **已在组件**（S0） |
+| `transitsim.sim.RunReservations`（原 `advanced/RunReservations`） | 168（F1 后） | 组件的 `RailKeys` | A | **已在组件**（S0） |
 | `transitsim.network.RailKeys` | 16 | 无 | A | **已在组件**（S0）：两个节点之间轨道的键，原来是 `PathBoundaries.segmentKey`，`RunReservations` 搬进组件时发现它暗中依赖这个方法 |
 | `data/SignalBlocks` | 293 | `BlockPos`、`DyeColor`、NBT | C 的数据类 | 占用规则抽成组件的 `Occupancy`（S2），信号颜色和存档留在宿主 |
 | `data/Train` | 932 | `Level`、`Player`、物品、方块、NBT | C | 推进规则拆成组件的 `TrainMotion`（S2），见 2.2 节 |
@@ -386,14 +386,14 @@ S0 之前，已经不依赖世界的部件：
 | 班次决策移到 `TrainService`（`Vehicle`、`Board` 接口，可换时钟） | 完成 | 1.20.1 | 通过 | 通过（2026-11-02） | 未做 |
 | 速度曲线（`SpeedProfile`、`SpeedCurves`） | 完成（`79599eb`） | 1.20.1 | 通过 | 未测（T79 至 T82） | 未做 |
 | 线网压缩和路径区间序列（`PhysicalGraph`、`GraphRecords`、SQLite 表） | 完成（`a5fe8ce`） | 1.20.1 | 通过 | 未测（C15） | 未做 |
-| 方向预约（`RunReservations`） | 完成（`a5fe8ce`），有 R01 至 R03，待 F1 | 1.20.1 | 通过（未覆盖 R01 至 R03 的场景） | 未测（T86） | 未做 |
+| 方向预约（`RunReservations`） | 完成（`a5fe8ce`），R01 至 R03 由 F1 修好 | 1.20.1 | 通过 | 未测（T86） | 未做 |
 | ANTE 每 tick 入口改为委托（`RailwayData.simulateTrains(RailNearPlayer)`） | 完成（`a5fe8ce`） | 1.20.1 | 不适用 | 未测（T89） | 未做 |
 
 迁移步骤：
 
 | 步骤 | 代码 | 构建 | 单测 | 小场景实测 | 规模实测 |
 |---|---|---|---|---|---|
-| F1 预约安全修复 | 未开始 | | | | |
+| F1 预约安全修复 | 完成：`RunReservations` 改为持有加 tick 末统一仲裁，`TrainServer` 从车尾持有到运行终点、出库也要申请，存车线按 ID 遍历 | 1.20.1 | 组件 33 项、common 255 项全过（`RunReservationsTest` 11 项，覆盖区间挡停、车尾交接、同 tick 对向申请、等待老化、申请顺序无关）；ABI 扫描无缺失；Fabric、Forge 服务端启动正常 | 未测（T86） | 未做 |
 | F2 运用快照 | 未开始 | | | | |
 | S0 骨架 | 搬类部分完成，独立构建（R05）未做 | 五个版本编译通过（1.16.5、1.17.1、1.18.2、1.19.4 是 `e5673c0` 以后第一次）；六个 jar 都含组件的类 | 282 项全过（组件 27、common 255）；ABI 扫描无缺失；Fabric、Forge 服务端启动正常 | 不改行为，不单独测 | 不适用 |
 | C 契约 | 未开始 | | | | |
@@ -408,9 +408,9 @@ S0 之前，已经不依赖世界的部件：
 
 | 编号 | 核对 | 依据 | 处理 |
 |---|---|---|---|
-| R01 区间挡停时预约失效（高） | 属实 | `TrainServer.java:401` 只在 `speed > 0` 时续订；`RunReservations` 两个 tick 不续就失效。列车在区间被闭塞挡停后预约消失，对向车可以出站，最后会被物理闭塞挡住，两车在单线上对着停住，就是 E2 要防的锁死 | F1 |
-| R02 车尾还在时预约已释放（高） | 属实 | `TrainServer.java:402` 从车头所在的轨道开始续订 | F1 |
-| R03 调度依赖遍历顺序（中） | 属实 | `RailwayData.java:355` 遍历 `HashSet` 里的存车线；`canBook`、`book` 先到先得，没有仲裁和防饥饿 | F1 |
+| R01 区间挡停时预约失效（高） | 属实 | `TrainServer.java:401` 只在 `speed > 0` 时续订；`RunReservations` 两个 tick 不续就失效。列车在区间被闭塞挡停后预约消失，对向车可以出站，最后会被物理闭塞挡住，两车在单线上对着停住，就是 E2 要防的锁死 | F1（已修） |
+| R02 车尾还在时预约已释放（高） | 属实 | `TrainServer.java:402` 从车头所在的轨道开始续订 | F1（已修） |
+| R03 调度依赖遍历顺序（中） | 属实 | `RailwayData.java:355` 遍历 `HashSet` 里的存车线；`canBook`、`book` 先到先得，没有仲裁和防饥饿 | F1（已修） |
 | R04 旧计划没有版本隔离（高） | 属实 | `TrainService.getDutyDay`、`getDutySegments` 每次读车厂当前的运用；`getStopPlan` 读线路当前的时刻表。网页改了运用、还没刷新路径时，段数相同就会用新班次配旧路径 | F2（运用）、S3（时刻表和完整版本） |
 | R05 组件构建依赖模组根项目（中） | 属实，而且更重 | 根 `build.gradle` 在配置阶段联网；`getJson` 失败后无限重试，计数也从不增加 | S0 补完 |
 

@@ -48,6 +48,11 @@ public class TrainServer extends Train {
 	 */
 	private List<UUID> turnBackRails = Collections.emptyList();
 	private int turnBackUntil;
+	/**
+	 * The end of the run this train of a duty was given, or -1, and the end of the one it has asked for.
+	 */
+	private int grantedRunEnd = -1;
+	private int requestedRunEnd = -1;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
 	private List<Siding.TimeSegment> timeSegments;
@@ -154,9 +159,6 @@ public class TrainServer extends Train {
 		if (dutyDepartureMillis > 0 && System.currentTimeMillis() < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
 			return true;
 		}
-		if (service.isOnDuty() && !bookRun(nextStoppingIndex + 1, true)) {
-			return true;
-		}
 		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
 		if (stopPlan != null && stopPlan.isTimed) {
 			final long currentMillis = System.currentTimeMillis();
@@ -166,7 +168,11 @@ public class TrainServer extends Train {
 			}
 		}
 		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
-		return !transportMode.continuousMovement && (service.chooseDepotReturn() || service.chooseTurnBack());
+		if (!transportMode.continuousMovement && (service.chooseDepotReturn() || service.chooseTurnBack())) {
+			return true;
+		}
+		// The run is asked for last, on the path the train leaves by, so it isn't kept from other trains while this one waits
+		return service.isOnDuty() && !isRunGranted(nextStoppingIndex + 1);
 	}
 
 	@Override
@@ -314,7 +320,8 @@ public class TrainServer extends Train {
 		if (path.size() > 1 && depot != null && !isRailOccupied(1)) {
 			depot.requestDeploy(sidingId, this);
 		}
-		return canDeploy;
+		// A train sent out for a duty also waits for the run out of the siding, like any other run
+		return canDeploy && (!service.isOnDuty() || isRunGranted(1));
 	}
 
 	@Override
@@ -397,10 +404,7 @@ public class TrainServer extends Train {
 		this.world = world;
 		service.updateOvernight();
 		simulateTrain(world, ticksElapsed, depot);
-		// Rails the train has passed are let go, and the rest of its run stays booked
-		if (isOnRoute && speed > 0 && service.isOnDuty()) {
-			bookRun(getIndex(railProgress, false), false);
-		}
+		holdRun();
 
 		service.update(isOnRoute);
 
@@ -592,34 +596,98 @@ public class TrainServer extends Train {
 	}
 
 	/**
-	 * Books, with the train's direction, the two way rails from a rail of its path to its next stop, so no other train of a
-	 * duty runs onto them the other way (design document 6.12, block E2).
-	 *
-	 * @param check true to only book when nothing is booked the other way
-	 * @return false if something is
+	 * Sets, every tick, the two way rails a train of a duty holds with its direction: from its tail to the end of its run,
+	 * whether it is moving, waiting at a stop or held by a signal (design document 6.12, block E2, and fix F1). A rail is
+	 * let go once the tail has left it, and everything once the train is back in its depot.
 	 */
-	private boolean bookRun(int fromIndex, boolean check) {
-		final RailwayData railwayData = world == null ? null : RailwayData.getInstance(world);
-		if (railwayData == null) {
+	private void holdRun() {
+		final RunReservations reservations = getRunReservations();
+		if (reservations == null) {
+			return;
+		}
+		if (!isOnRoute || isCurrentlyManual || !service.isOnDuty() || path.isEmpty()) {
+			reservations.release(id);
+			grantedRunEnd = -1;
+			return;
+		}
+		if (grantedRunEnd < nextPlatformIndex) {
+			grantedRunEnd = -1;
+		}
+		reservations.hold(id, getRunMoves(Math.max(findRunEnd(nextPlatformIndex), grantedRunEnd)));
+	}
+
+	/**
+	 * Asks for the run from a rail of the path to the next stop after it, which is given or not once the tick is over.
+	 *
+	 * @return true once the train holds the run
+	 */
+	private boolean isRunGranted(int fromIndex) {
+		final RunReservations reservations = getRunReservations();
+		if (reservations == null) {
 			return true;
 		}
-		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		final int runEnd = findRunEnd(fromIndex);
+		if (grantedRunEnd == runEnd) {
+			return true;
+		}
+		if (requestedRunEnd == runEnd && reservations.takeGrant(id)) {
+			grantedRunEnd = runEnd;
+			requestedRunEnd = -1;
+			return true;
+		}
+		requestedRunEnd = runEnd;
+		reservations.request(id, getRunMoves(runEnd), getPlannedDepartureMillis());
+		return false;
+	}
+
+	/**
+	 * @return the two way rails from the train's tail to this rail of its path, with the direction it runs along them
+	 */
+	private List<RunReservations.Move> getRunMoves(int runEnd) {
+		final RailwayData railwayData = RailwayData.getInstance(world);
 		final List<RunReservations.Move> moves = new ArrayList<>();
-		for (int i = Math.max(fromIndex, 0); i < path.size(); i++) {
+		if (railwayData == null) {
+			return moves;
+		}
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		// Rounding down keeps the rail the tail is just leaving
+		for (int i = Math.max(getIndex(trainCars, spacing, true), 0); i <= Math.min(runEnd, path.size() - 1); i++) {
 			final PathData pathData = path.get(i);
 			final Rail backwards = DataCache.tryGet(rails, pathData.getLastPos(), pathData.startingPos);
 			if (backwards != null && backwards.railType != RailType.NONE) {
 				moves.add(new RunReservations.Move(pathData.startingPos.asLong(), pathData.getLastPos().asLong()));
 			}
-			if (pathData.dwellTime > 0 && i >= nextStoppingIndex) {
-				break;
+		}
+		return moves;
+	}
+
+	/**
+	 * @return the first stop on or after this rail of the path, or the end of the path
+	 */
+	private int findRunEnd(int fromIndex) {
+		for (int i = Math.max(fromIndex, 0); i < path.size(); i++) {
+			if (path.get(i).dwellTime > 0) {
+				return i;
 			}
 		}
-		if (check && !railwayData.runReservations.canBook(id, moves)) {
-			return false;
+		return path.size() - 1;
+	}
+
+	/**
+	 * @return when the train is planned to leave its stop, which decides who goes first when two trains ask at once
+	 */
+	private long getPlannedDepartureMillis() {
+		final long dutyDepartureMillis = service.getDutyDepartureMillis();
+		if (dutyDepartureMillis > 0) {
+			return dutyDepartureMillis;
 		}
-		railwayData.runReservations.book(id, moves);
-		return true;
+		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
+		return stopPlan == null ? System.currentTimeMillis() : service.getPlannedMillis(stopPlan.departureMillis);
+	}
+
+	private RunReservations getRunReservations() {
+		final RailwayData railwayData = world == null ? null : RailwayData.getInstance(world);
+		return railwayData == null ? null : railwayData.runReservations;
 	}
 
 	/**
@@ -780,6 +848,9 @@ public class TrainServer extends Train {
 			pathRepeatIndex1 = tripPath == null ? depotRepeatIndex1 : tripPath.repeatIndex1;
 			pathRepeatIndex2 = tripPath == null ? depotRepeatIndex2 : tripPath.repeatIndex2;
 			syncRepeatIndices = true;
+			// Runs are rails of the path, so a run given on the old one is asked for again
+			grantedRunEnd = -1;
+			requestedRunEnd = -1;
 		}
 
 		@Override
@@ -839,6 +910,8 @@ public class TrainServer extends Train {
 			elapsedDwellTicks = 0;
 			nextStoppingIndex = stopIndex;
 			nextPlatformIndex = stopIndex;
+			grantedRunEnd = -1;
+			requestedRunEnd = -1;
 		}
 
 		@Override
