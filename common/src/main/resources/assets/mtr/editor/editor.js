@@ -10,6 +10,10 @@
 	const POLL_MILLIS = 3000;
 	// Room below the last station for the labels of trains carrying on to another route
 	const LABEL_W = 120, AXIS_H = 28, MIN_ROW_GAP = 22, PAD_BOTTOM = 30;
+	// The space above a section of a line's stations other than the first, as a share of a row's
+	const SECTION_GAP = 1.5;
+	// How far to each side of a line's path its track diagram shows, in blocks
+	const LINE_DIAGRAM_HALF_WIDTH = 16;
 	const ZOOMS = [0.5, 1, 2, 3, 4, 6, 8, 12, 16];
 	const WEEKDAY_NAMES = translatedList(["周一", "周二", "周三", "周四", "周五", "周六", "周日"]);
 	const WEEKDAY_SHORT = translatedList(["一", "二", "三", "四", "五", "六", "日"]);
@@ -64,6 +68,8 @@
 		pxPerMin: 2,
 		viewStart: 0,
 		scrollY: 0,
+		// Which way a line's routes go in its table, down its stations (0) or up (1)
+		lineWay: 0,
 	};
 
 	// ---------- Data ----------
@@ -281,55 +287,183 @@
 	}
 
 	/**
-	 * One row for each station of a line, in the order of its longest route. A station only other routes stop at goes
-	 * after the station they stop at before it. A route running the other way meets the same rows from the bottom up, and a
-	 * loop's first station, met again at the end, gets a second row there.
+	 * Where a route comes back to a station it has stopped at: going back the way it came (retrace), or coming round to it
+	 * from elsewhere, like the end of a loop or of the loop of a Q, on the platform it stopped at before or on another.
+	 *
+	 * @return for each stop, null the first time at its station, or {earlier, retrace, samePlatform}
+	 */
+	function revisits(stations, platforms) {
+		const first = new Map();
+		return stations.map((id, i) => {
+			if (!first.has(id)) {
+				first.set(id, i);
+				return null;
+			}
+			const earlier = first.get(id);
+			return { earlier, retrace: i > 0 && (stations[earlier - 1] === stations[i - 1] || stations[earlier + 1] === stations[i - 1]), samePlatform: platforms[earlier] === platforms[i] };
+		});
+	}
+
+	/**
+	 * The stations of a line down the side of its diagram, in sections. The longest route goes down the first section. A
+	 * run of stations that no section has side by side yet carries on a section it leaves from the end of, and otherwise
+	 * starts a section of its own below, with the station it leaves from repeated at the top:
+	 * - a branch (Y) gets a section starting at the station it branches off at;
+	 * - another way between two stations further along the line gets a section that repeats both of them;
+	 * - a loop repeats its first station at the end;
+	 * - a Q coming back to the platform it branched off at is drawn as a loop, with the stretch leading to it below;
+	 * - a Q coming back to that station on another platform goes on down the same section, back along the stretch.
+	 * A route running the other way meets the same rows from the bottom up. Each stop of a route has the row it arrives on
+	 * (rows) and the row it leaves from (leaveRows), which are two rows of the same station where the route goes from one
+	 * section to another.
 	 */
 	function buildStations(line) {
-		const rows = [];
-		const indexOf = () => new Map(rows.map((row, i) => [row.id, i]));
-		const stopIds = r => {
-			const seen = new Set();
-			return r.stops.map(s => {
-				const id = s.station || "?" + s.name;
-				const rowId = seen.has(id) ? id + "#2" : id;
-				seen.add(id);
-				return rowId;
-			});
+		const stationOf = stop => stop.station || "?" + stop.name;
+		const sections = [];
+		const rowsOf = id => sections.flatMap((section, k) => section.flatMap((row, j) => row.id === id ? [[k, j]] : []));
+		const newRow = (id, name, base) => {
+			const row = { id, name };
+			row.base = base || row;
+			return row;
 		};
-		[...line.routes].sort((a, b) => b.stops.length - a.stops.length).forEach(r => {
-			const ids = stopIds(r), names = r.stops.map(s => s.name);
-			let index = indexOf();
-			const known = ids.filter(id => index.has(id)).map(id => index.get(id));
-			const reversed = known.length > 1 && known[0] > known[known.length - 1];
-			const order = ids.map((id, i) => i);
-			if (reversed) order.reverse();
-			let previous = -1;
-			order.forEach(i => {
-				if (index.has(ids[i])) {
-					previous = index.get(ids[i]);
-				} else {
-					rows.splice(previous + 1, 0, { id: ids[i], name: names[i], gap: 0 });
-					index = indexOf();
-					previous++;
+		[...line.routes].sort((a, b) => b.stops.length - a.stops.length || a.id.localeCompare(b.id)).forEach(r => {
+			let at = null, unfolded = false;
+			const visited = new Map(), shape = revisits(r.stops.map(stationOf), r.stops.map(stop => stop.platformId));
+			r.stops.forEach((stop, i) => {
+				const id = stationOf(stop), again = shape[i];
+				// Back at the station a Q branches off, on another platform: the rest of the route goes on down in rows of its own
+				if (again && !again.retrace && !again.samePlatform) unfolded = true;
+				let row = newRow(id, stop.name);
+				if (again && !again.retrace && again.samePlatform) {
+					row = newRow(id, stop.name, visited.get(id).base);
+				} else if (!unfolded && rowsOf(id).length) {
+					// Rejoining another route's station
+					const [k0, j0] = rowsOf(id)[0];
+					row = newRow(id, stop.name, sections[k0][j0].base);
 				}
+				if (!at) {
+					at = rowsOf(id)[0];
+					if (!at) {
+						sections.push([row]);
+						at = [sections.length - 1, 0];
+					}
+					visited.set(id, sections[at[0]][at[1]]);
+					return;
+				}
+				const [k, j] = at, section = sections[k], from = section[j];
+				if (from.id === id) return;
+				// Already side by side somewhere, preferably next to the row the route is on. Unfolded, only next to that row.
+				const starts = unfolded ? [at] : rowsOf(from.id).sort((a, b) => (b[0] === k && b[1] === j) - (a[0] === k && a[1] === j));
+				const side = starts.flatMap(([k2, j2]) => [[k2, j2 + 1], [k2, j2 - 1]]).find(([k2, j2]) => sections[k2][j2] && sections[k2][j2].id === id);
+				if (side) {
+					at = side;
+				} else if (j === section.length - 1) {
+					section.push(row);
+					at = [k, j + 1];
+				} else if (j === 0) {
+					section.unshift(row);
+					at = [k, 0];
+				} else {
+					sections.splice(k + 1, 0, [newRow(from.id, from.name, from.base), row]);
+					at = [k + 1, 1];
+				}
+				if (!visited.has(id)) visited.set(id, sections[at[0]][at[1]]);
 			});
 		});
-		const index = indexOf();
-		line.routes.forEach(r => r.rows = stopIds(r).map(id => index.get(id)));
+
+		// A Q coming back to the platform it branched off at: the loop on top, as a loop line is drawn, and the stretch
+		// leading to it in a section of its own below, starting from the station again
+		for (let k = 0; k < sections.length; k++) {
+			const section = sections[k], last = section[section.length - 1], j = section.indexOf(last.base);
+			if (last.base === last || j <= 0) continue;
+			sections.splice(k, 1, section.slice(j), [newRow(last.id, last.name, last.base), ...section.slice(0, j).reverse()]);
+			k++;
+		}
+
+		// A section with one end free and the other at the end of another section carries that one on. One left hanging
+		// off the middle of another goes down from the station it hangs off. A section coming back to itself, like the loop
+		// of a Q, stays as it is, and so does a loop another section hangs off.
+		const elsewhere = (k, id) => sections.some((section, k2) => k2 !== k && section.some(row => row.id === id));
+		for (let merged = true; merged;) {
+			merged = false;
+			for (let k = 0; k < sections.length && !merged; k++) {
+				const section = sections[k], first = section[0], last = section[section.length - 1];
+				if (section.length < 2 || elsewhere(k, first.id) === elsewhere(k, last.id)) continue;
+				// Turned so the end shared with another section is at the top
+				const ordered = elsewhere(k, first.id) ? section : section.slice().reverse();
+				const t = sections.findIndex((other, k2) => k2 !== k && other[0].id !== other[other.length - 1].id && (other[0].id === ordered[0].id || other[other.length - 1].id === ordered[0].id));
+				if (t >= 0) {
+					const other = sections[t], atEnd = other[other.length - 1].id === ordered[0].id;
+					// The station they share keeps the row that isn't a repeat
+					const end = atEnd ? other[other.length - 1] : other[0], shared = end.base === end ? end : ordered[0];
+					sections[t] = atEnd ? other.slice(0, -1).concat(shared, ordered.slice(1)) : ordered.slice(1).reverse().concat(shared, other.slice(1));
+					sections.splice(k, 1);
+					merged = true;
+				} else if (k > 0) {
+					sections[k] = ordered;
+				}
+			}
+		}
+
+		// A station repeated where a section starts or a loop closes is greyed; one a Q comes back to on another platform,
+		// and the stations it goes back along, are rows of their own
+		const rows = [], made = sections.flat();
+		sections.forEach((section, k) => section.forEach((row, j) => rows.push({ id: row.id, name: row.name, section: k, sectionStart: k > 0 && j === 0, repeat: row.base !== row, gap: 0 })));
+		rows.forEach((row, i) => row.group = made.indexOf(made[i].base));
+		const rowsById = new Map();
+		rows.forEach((row, i) => rowsById.set(row.id, (rowsById.get(row.id) || []).concat(i)));
+		const adjacent = (a, b) => a === b || Math.abs(a - b) === 1 && rows[a].section === rows[b].section;
+		line.routes.forEach(r => {
+			// The rows with the fewest changes from one section to another, by the cost of leaving each stop from each row
+			const options = r.stops.map(stop => rowsById.get(stationOf(stop)));
+			let cost = new Map(options.length ? options[0].map(d => [d, 0]) : []);
+			const back = [];
+			for (let i = 1; i < options.length; i++) {
+				const next = new Map(), choice = new Map();
+				options[i].forEach(d => options[i].forEach(a => {
+					let best = Infinity, before = -1;
+					cost.forEach((c, p) => {
+						const total = c + (adjacent(p, a) ? 0 : 100);
+						if (total < best) {
+							best = total;
+							before = p;
+						}
+					});
+					// Over to the station's row in another section, or to a row of its own, which is a way the route doesn't go
+					const total = best + (a === d ? 0 : rows[a].group === rows[d].group ? 1 : 150);
+					if (!next.has(d) || total < next.get(d)) {
+						next.set(d, total);
+						choice.set(d, [a, before]);
+					}
+				}));
+				back.push(choice);
+				cost = next;
+			}
+			r.rows = [];
+			r.leaveRows = [];
+			if (!options.length) return;
+			let d = [...cost.entries()].reduce((best, entry) => entry[1] < best[1] ? entry : best)[0];
+			for (let i = options.length - 1; i > 0; i--) {
+				const [a, before] = back[i - 1].get(d);
+				r.leaveRows[i] = d;
+				r.rows[i] = a;
+				d = before;
+			}
+			r.rows[0] = r.leaveRows[0] = d;
+		});
 
 		// The space above each row follows the fastest running time to it, half and half with even spacing, so close
-		// stations still have room
+		// stations still have room. A section starts a little further down.
 		const gaps = rows.map(() => []);
 		line.routes.forEach(r => {
 			const plans = r.tables.length ? r.tables[0].plans : [];
 			for (let i = 1; i < r.rows.length; i++) {
-				const a = r.rows[i - 1], b = r.rows[i];
-				if (Math.abs(a - b) === 1 && plans[i] && r.hasTimes) gaps[Math.max(a, b)].push(Math.max(0, plans[i][0] - plans[i - 1][1]));
+				const a = r.leaveRows[i - 1], b = r.rows[i];
+				if (a !== b && adjacent(a, b) && plans[i] && r.hasTimes) gaps[Math.max(a, b)].push(Math.max(0, plans[i][0] - plans[i - 1][1]));
 			}
 		});
 		const typical = gaps.flat().length ? gaps.flat().reduce((a, b) => a + b, 0) / gaps.flat().length : 1;
-		rows.forEach((row, i) => row.gap = i === 0 ? 0 : 0.5 + 0.5 * (gaps[i].length ? Math.min(...gaps[i]) / (typical || 1) : 1));
+		rows.forEach((row, i) => row.gap = i === 0 ? 0 : row.sectionStart ? SECTION_GAP : 0.5 + 0.5 * (gaps[i].length ? Math.min(...gaps[i]) / (typical || 1) : 1));
 		line.rows = rows;
 	}
 
@@ -862,6 +996,16 @@
 			ctx.moveTo(LABEL_W, y);
 			ctx.lineTo(w, y);
 			ctx.stroke();
+			if (row.sectionStart) {
+				const between = Math.round((yOf(i - 1) + yOf(i)) / 2) + 0.5;
+				ctx.strokeStyle = c.strong;
+				ctx.setLineDash([6, 4]);
+				ctx.beginPath();
+				ctx.moveTo(0, between);
+				ctx.lineTo(w, between);
+				ctx.stroke();
+				ctx.setLineDash([]);
+			}
 		});
 
 		// Services, the selected one last so it's on top
@@ -885,8 +1029,11 @@
 			if (xOf(times[times.length - 1][1]) < LABEL_W - 40 || xOf(times[0][0]) > w + 40) return;
 			const points = [];
 			s.route.rows.forEach((row, i) => {
+				const leaveRow = s.route.leaveRows[i];
 				points.push([xOf(times[i][0]), yOf(row)]);
-				if (times[i][1] !== times[i][0]) points.push([xOf(times[i][1]), yOf(row)]);
+				// Going on in another section: straight across to the station's row there as it arrives
+				if (leaveRow !== row) points.push([xOf(times[i][0]), yOf(leaveRow), true]);
+				if (times[i][1] !== times[i][0]) points.push([xOf(times[i][1]), yOf(leaveRow)]);
 			});
 			drawn.push({ s, points });
 			const isSelected = s.id === state.selected || s.route.id === state.selectedRoute;
@@ -950,7 +1097,7 @@
 			if (isSelected) {
 				timesOf(s).forEach((t, i) => {
 					if (i === 0 || i === times.length - 1 || s.plans[i].passes) return;
-					const x = xOf(t[1]), y = yOf(s.route.rows[i]);
+					const x = xOf(t[1]), y = yOf(s.route.leaveRows[i]);
 					ctx.fillStyle = c.panel;
 					ctx.strokeStyle = c.sel;
 					ctx.lineWidth = 2;
@@ -1000,8 +1147,8 @@
 		line.rows.forEach((row, i) => {
 			const y = yOf(i);
 			if (y < AXIS_H + 4 || y > h) return;
-			ctx.fillStyle = c.ink;
-			ctx.fillText(fitText(shortName(row.name), LABEL_W - 16), LABEL_W - 8, y);
+			ctx.fillStyle = row.repeat ? c.muted : c.ink;
+			ctx.fillText(fitText((row.repeat ? "↔ " : "") + shortName(row.name), LABEL_W - 16), LABEL_W - 8, y);
 		});
 		ctx.textBaseline = "alphabetic";
 		// Redo the time labels the station column covered
@@ -1016,10 +1163,26 @@
 		}
 	}
 
+	/**
+	 * A line through points. Where a route goes on in another section of the stations, the step between the station's
+	 * two rows is a dashed vertical line.
+	 */
 	function polyline(points) {
 		ctx.beginPath();
-		points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+		points.forEach(([x, y, jump], i) => i && !jump ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
 		ctx.stroke();
+		if (!points.some(point => point[2])) return;
+		ctx.save();
+		ctx.lineWidth = Math.min(ctx.lineWidth, 1.5);
+		ctx.setLineDash([5, 4]);
+		ctx.beginPath();
+		points.forEach(([x, y, jump], i) => {
+			if (!i || !jump) return;
+			ctx.moveTo(points[i - 1][0], points[i - 1][1]);
+			ctx.lineTo(x, y);
+		});
+		ctx.stroke();
+		ctx.restore();
 	}
 
 	function fitText(text, width) {
@@ -1076,7 +1239,7 @@
 		if (loopRoute) parts.push(loopPanel(loopRoute));
 		const line = currentLine();
 		if (line) {
-			parts.push(`<h2>${tr("线路")}</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${tr("{0} 班", r.services.length)} <button type="button" class="link" data-route-diagram="${r.id}" title="${tr("整条线路的配线图")}">${tr("配线图")}</button></dd>`).join("")}</dl></div>`);
+			parts.push(`<h2>${tr("线路")}</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}${line.routes.length > 1 ? ` <button type="button" class="link" data-line-diagram title="${tr("整个线路组的配线图，分支画在下面")}">${tr("线路组配线图")}</button>` : ""}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${tr("{0} 班", r.services.length)} <button type="button" class="link" data-route-diagram="${r.id}" title="${tr("整条线路的配线图")}">${tr("配线图")}</button></dd>`).join("")}</dl></div>`);
 			// Tracks that don't run along the rails, which make the diagram jump about, are listed until they are put right
 			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
 			if (troubled.length) parts.push(`<h2>${tr("股道问题")}</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">${tr("右键线路“编辑停站…”在连通图上改股道。")}</p></div>`);
@@ -1232,9 +1395,10 @@
 			const points = [];
 			trip.stops.forEach(stop => {
 				if (stop[0] < 0 || stop[0] >= r.rows.length) return;
-				const y = yOf(r.rows[stop[0]]), late = simLate(stop) > SIM_LATE_MILLIS;
+				const y = yOf(r.rows[stop[0]]), leaveY = yOf(r.leaveRows[stop[0]]), late = simLate(stop) > SIM_LATE_MILLIS;
 				if (stop[1] >= 0) points.push([xOf(stop[1]), y, late]);
-				if (stop[2] >= 0 && stop[2] !== stop[1]) points.push([xOf(stop[2]), y, late]);
+				if (stop[1] >= 0 && leaveY !== y) points.push([xOf(stop[1]), leaveY, late]);
+				if (stop[2] >= 0 && stop[2] !== stop[1]) points.push([xOf(stop[2]), leaveY, late]);
 			});
 			if (points.length < 2 || points[points.length - 1][0] < LABEL_W - 40 || points[0][0] > w + 40) return;
 			ctx.globalAlpha = state.route && r.id !== state.route ? 0.25 : 0.9;
@@ -1298,10 +1462,101 @@
 
 	// ---------- Summary timetable ----------
 	let tableRoute = null;
+	/** The head of a service's column: its time, which starts editing it, and notes. */
+	function serviceHead(s, selected, notes) {
+		return `<th class="svc-head${selected ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
+	}
+
+	/** A service's arrival, departure or passing time at a stop, as a cell to click and type into. @param t its times there */
+	function timeCell(s, i, kind, t, selected) {
+		const plan = s.plans[i], exception = s.exceptions && s.exceptions.get(i);
+		const passes = kind !== "pass" && plan.passes;
+		const changed = exception && (kind === "dep" ? exception.dwell >= 0 : exception.run >= 0) || exception && exception.pass >= 0;
+		const leaves = s.link && kind !== "dep" && (s.link.fromStop < 0 ? i === s.route.stops.length - 1 : s.link.fromStop === i);
+		const picked = state.pendingExit && state.pendingExit.id === s.id && state.pendingExit.index === i && kind !== "dep";
+		const classes = [selected ? "hl" : "", kind === "pass" || passes ? "pass" : "", changed ? "exc" : "", kind !== "dep" && plan.tooFast ? "fast" : "", kind === "dep" && plan.overtake ? "wait" : "", exception && exception.pass >= 0 ? "pending-run" : "", leaves ? "out" : "", picked ? "pending" : ""].filter(Boolean).join(" ");
+		const title = exception && exception.pass >= 0 ? tr("只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车") : plan.tooFast && kind !== "dep" ? tr("快过最快时刻，列车跑不到") : "";
+		const text = passes ? (kind === "arr" ? "↓ " + clock(t[0], true) : "レ") : clock(kind === "dep" ? t[1] : t[0], true);
+		return `<td class="${classes}" data-svc="${s.id}" data-stop="${i}" data-kind="${passes ? "pass" : kind}" title="${title}" tabindex="0">${text}</td>`;
+	}
+
+	/**
+	 * The timetable of a line's routes going one way, all together, with the stations down the side in the sections of the
+	 * line's diagram. A service going on in another section has ↳ at the first station it doesn't go to after leaving
+	 * this one, and ‖ at the other stations it doesn't go by.
+	 */
+	function renderLineTable(line) {
+		const view = $("view-table");
+		// Which way a route goes: down the stations or up, by its first move
+		const wayOf = r => {
+			for (let i = 1; i < r.rows.length; i++) if (r.rows[i] !== r.leaveRows[i - 1]) return r.rows[i] > r.leaveRows[i - 1] ? 0 : 1;
+			return 0;
+		};
+		const ways = [0, 1].map(w => line.routes.filter(r => wayOf(r) === w));
+		const way = ways[state.lineWay] && ways[state.lineWay].length ? state.lineWay : ways[0].length ? 0 : 1;
+		const order = line.rows.map((row, i) => i);
+		if (way === 1) order.reverse();
+		const position = new Map(order.map((row, t) => [row, t]));
+		const ends = w => [...new Set(ways[w].map(r => shortName(r.stops[r.stops.length - 1].name)))].join(tr("、"));
+		const services = ways[way].flatMap(r => r.services).sort((a, b) => a.start - b.start);
+		const tools = `<div class="tt-tools"><b>${escapeHtml(shortName(line.name))}</b><span class="hint">${tr("{0} · {1} 班 · 在左边选一个种别可以改表和添加班次", WEEKDAY_NAMES[state.weekday], services.length)}</span></div>
+			<div class="tt-tools"><span class="hint" style="flex:none">${tr("方向")}</span>${[0, 1].filter(w => ways[w].length).map(w => `<button class="table-chip${w === way ? " on" : ""}" data-way="${w}">${tr("往{0}", escapeHtml(ends(w)))}</button>`).join("")}</div>`;
+		if (!services.length) {
+			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
+			return;
+		}
+		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute;
+		const allTimes = services.map(timesOf);
+		// For each service, the stop it arrives at and leaves from on each row, and the rows it goes by
+		const visits = services.map(s => {
+			const r = s.route, at = new Map(), seen = new Set();
+			r.rows.forEach((row, i) => {
+				if (i > 0 && !at.has(row + "arr")) at.set(row + "arr", i);
+				if (i < r.rows.length - 1 && !at.has(r.leaveRows[i] + "dep")) at.set(r.leaveRows[i] + "dep", i);
+				seen.add(position.get(row));
+				seen.add(position.get(r.leaveRows[i]));
+			});
+			const sections = new Set([...seen].map(t => line.rows[order[t]].section));
+			return { at, seen, sections, first: Math.min(...seen), last: Math.max(...seen) };
+		});
+		const head = `<thead><tr><th class="st">${tr("车站")}</th><th class="kind"></th>${services.map(s => serviceHead(s, isSelected(s), `<span class="note" style="color:${colorOf(s.route.color)}">${escapeHtml(shortName(s.route.name))}</span>`)).join("")}</tr></thead>`;
+		const rows = [];
+		order.forEach((rowIndex, t) => {
+			const row = line.rows[rowIndex];
+			const arrives = visits.some(v => v.at.has(rowIndex + "arr")), leaves = visits.some(v => v.at.has(rowIndex + "dep"));
+			const kinds = arrives && leaves ? ["arr", "dep"] : arrives ? ["arr"] : ["dep"];
+			const sectionStart = t > 0 && line.rows[order[t - 1]].section !== row.section;
+			kinds.forEach((kind, k) => {
+				const cells = services.map((s, j) => {
+					const v = visits[j], i = v.at.get(rowIndex + kind), selected = isSelected(s);
+					if (i !== undefined) return timeCell(s, i, kind, allTimes[j][i], selected);
+					let mark = "";
+					if (!v.seen.has(t)) {
+						if (!v.sections.has(row.section)) mark = "‖";
+						else if (t > v.first && t < v.last) mark = v.seen.has(t - 1) ? "↳" : "‖";
+					}
+					if (mark === "↳" && k > 0) mark = "";
+					return `<td class="${["pass", mark === "↳" ? "through" : "", selected ? "hl" : ""].filter(Boolean).join(" ")}">${mark}</td>`;
+				}).join("");
+				const label = { dep: tr("发"), arr: trc("arrival", "到") }[kind];
+				rows.push(`<tr class="${[k === 0 ? "first-of-station" : "", k === 0 && sectionStart ? "section-start" : ""].filter(Boolean).join(" ")}">${k === 0 ? `<th class="st${row.repeat ? " repeat" : ""}" rowspan="${kinds.length}" title="${escapeHtml(row.name)}">${row.repeat ? "↔ " : ""}${escapeHtml(shortName(row.name))}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
+			});
+		});
+		view.innerHTML = tools + `<table class="tt">${head}<tbody>${rows.join("")}</tbody></table>`;
+		if (tableRoute !== "line:" + line.key) {
+			view.scrollLeft = 0;
+			tableRoute = "line:" + line.key;
+		}
+		const selectedHead = view.querySelector("th.svc-head.hl");
+		if (selectedHead && !state.selectedRoute) selectedHead.scrollIntoView({ block: "nearest", inline: "center" });
+	}
+
 	function renderTable() {
 		const view = $("view-table");
 		if (!showsTable()) return;
 		const line = currentLine();
+		// A line with more than one route shows them together until one is chosen
+		if (!state.route && line && line.routes.length > 1) return renderLineTable(line);
 		const r = state.route ? data.routeById.get(state.route) : line && line.routes[0];
 		if (!r) {
 			view.innerHTML = `<div class="table-empty">${tr("在左边选一条线路的汇总时刻表")}</div>`;
@@ -1323,7 +1578,7 @@
 		}
 		const multipleTables = timetable.tables.length > 1;
 		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute;
-		const head = `<thead><tr><th class="st">${tr("车站")}</th><th class="kind"></th>${services.map(s => `<th class="svc-head${isSelected(s) ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${multipleTables ? `<span class="note">${escapeHtml(tableName(s.table, s.tableIndex))}</span>` : ""}${s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`).join("")}</tr></thead>`;
+		const head = `<thead><tr><th class="st">${tr("车站")}</th><th class="kind"></th>${services.map(s => serviceHead(s, isSelected(s), multipleTables ? `<span class="note">${escapeHtml(tableName(s.table, s.tableIndex))}</span>` : "")).join("")}</tr></thead>`;
 		const allTimes = services.map(timesOf);
 		const rows = [];
 		r.stops.forEach((stop, i) => {
@@ -1331,17 +1586,7 @@
 			const allPass = i > 0 && !last && services.every(s => s.plans[i].passes);
 			const kinds = i === 0 ? ["dep"] : last ? ["arr"] : allPass ? ["pass"] : ["arr", "dep"];
 			kinds.forEach((kind, k) => {
-				const cells = services.map((s, j) => {
-					const t = allTimes[j][i], plan = s.plans[i], exception = s.exceptions && s.exceptions.get(i);
-					const passes = kind !== "pass" && plan.passes;
-					const changed = exception && (kind === "dep" ? exception.dwell >= 0 : exception.run >= 0) || exception && exception.pass >= 0;
-					const leaves = s.link && kind !== "dep" && (s.link.fromStop < 0 ? i === r.stops.length - 1 : s.link.fromStop === i);
-					const picked = state.pendingExit && state.pendingExit.id === s.id && state.pendingExit.index === i && kind !== "dep";
-					const classes = [isSelected(s) ? "hl" : "", kind === "pass" || passes ? "pass" : "", changed ? "exc" : "", kind !== "dep" && plan.tooFast ? "fast" : "", kind === "dep" && plan.overtake ? "wait" : "", exception && exception.pass >= 0 ? "pending-run" : "", leaves ? "out" : "", picked ? "pending" : ""].filter(Boolean).join(" ");
-					const title = exception && exception.pass >= 0 ? tr("只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车") : plan.tooFast && kind !== "dep" ? tr("快过最快时刻，列车跑不到") : "";
-					const text = passes ? (kind === "arr" ? "↓ " + clock(t[0], true) : "レ") : clock(kind === "dep" ? t[1] : t[0], true);
-					return `<td class="${classes}" data-svc="${s.id}" data-stop="${i}" data-kind="${passes ? "pass" : kind}" title="${title}" tabindex="0">${text}</td>`;
-				}).join("");
+				const cells = services.map((s, j) => timeCell(s, i, kind, allTimes[j][i], isSelected(s))).join("");
 				const label = { dep: tr("发"), arr: trc("arrival", "到"), pass: tr("通过") }[kind];
 				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${escapeHtml(trackTitle(stop))}${stop.boundary ? tr("（时刻边界，可以在这里接出或接入）") : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> ${tr("界")}</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="${tr("车厂的列车从这里接入环线")}"> ${tr("入")}</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
 			});
@@ -2055,33 +2300,59 @@
 		if (solution.ok && solution.picks.every((p, i) => p === model.picks[i])) solution.reversals.forEach(i => reversals.add(i));
 		const colW = 112, rowH = 26, head = 38, pad = 8, cellW = 92;
 		const rows = Math.max(...model.layers.map(l => l.length));
-		const width = pad * 2 + n * colW - (colW - cellW), height = head + rows * rowH + 28;
-		const x = i => pad + i * colW, y = k => head + k * rowH;
+		const place = foldOf(model), lines = Math.max(...place.map(p => p.line)) + 1, blockH = head + rows * rowH + 28;
+		const width = pad * 2 + (Math.max(...place.map(p => p.col)) + 1) * colW - (colW - cellW) + (lines > 1 ? 24 : 0), height = blockH * lines;
+		const x = i => pad + place[i].col * colW, top = i => place[i].line * blockH, y = (i, k) => top(i) + head + k * rowH;
 		const parts = [`<svg class="topo" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="group" aria-label="${tr("站台连通图")}">`];
 		for (let i = 0; i + 1 < n; i++) {
 			model.layers[i].forEach((p, a) => model.layers[i + 1].forEach((q, b) => {
 				if (legCost(p, q) === Infinity) return;
 				const on = model.picks[i] === p && model.picks[i + 1] === q;
-				parts.push(`<line x1="${x(i) + cellW}" y1="${y(a) + 10}" x2="${x(i + 1)}" y2="${y(b) + 10}" class="${on ? "link on" : "link"}"${on ? ` style="stroke:${model.color}"` : ""}/>`);
+				const y1 = y(i, a) + 10, y2 = y(i + 1, b) + 10, back = place[i + 1].col < place[i].col;
+				// Folding back: round the right of the graph and down to the row below, then leftwards along it
+				const points = place[i].line !== place[i + 1].line ? [[x(i) + cellW, y1], [width - 8, y1], [width - 8, y2], [x(i + 1) + cellW, y2]]
+					: back ? [[x(i), y1], [x(i + 1) + cellW, y2]] : [[x(i) + cellW, y1], [x(i + 1), y2]];
+				parts.push(`<polyline points="${points.map(point => point.join(",")).join(" ")}" fill="none" class="${on ? "link on" : "link"}"${on ? ` style="stroke:${model.color}"` : ""}/>`);
 			}));
 		}
+		// The station a Q comes back to, the same in both rows
+		place.forEach((p, i) => {
+			if (p.line === 0 || place[i - 1].line === 1) return;
+			const earlier = place.findIndex(o => o.line === 0 && o.col === p.col);
+			if (earlier >= 0) parts.push(`<line x1="${x(i) + 6}" y1="${y(earlier, model.layers[earlier].length)}" x2="${x(i) + 6}" y2="${top(i) + 4}" class="same-station"/>`);
+		});
 		model.layers.forEach((tracks, i) => {
 			const end = i === 0 || i === n - 1;
 			const open = model.diagram && model.diagram.stop === i;
-			parts.push(`<g class="station-head${open ? " open" : ""}" data-station-col="${i}" tabindex="0"><title>${open ? tr("收起配线图") : tr("看这一站的配线图")}</title><text x="${x(i) + cellW / 2}" y="14" class="station">${escapeHtml(stationLabel(tracks[0]))} ${open ? "▴" : "▾"}</text></g>`);
-			if (reversals.has(i)) parts.push(`<text x="${x(i) + cellW / 2}" y="30" class="turn">${tr("↶ 掉头")}</text>`);
+			parts.push(`<g class="station-head${open ? " open" : ""}" data-station-col="${i}" tabindex="0"><title>${open ? tr("收起配线图") : tr("看这一站的配线图")}</title><text x="${x(i) + cellW / 2}" y="${top(i) + 14}" class="station">${escapeHtml(stationLabel(tracks[0]))} ${open ? "▴" : "▾"}</text></g>`);
+			if (reversals.has(i)) parts.push(`<text x="${x(i) + cellW / 2}" y="${top(i) + 30}" class="turn">${tr("↶ 掉头")}</text>`);
 			tracks.forEach((p, k) => {
 				const on = model.picks[i] === p, pinned = model.pins.has(i) && model.pins.get(i) === p, ok = solution.feasible[i].has(p);
 				const classes = ["track", on ? "on" : "", pinned ? "pinned" : "", ok ? "" : "dead"].filter(Boolean).join(" ");
 				const title = `${platformLabel(p)}${topo.platforms[p].passingTrack ? tr("（待避线）") : ""}：${pinned ? tr("已固定，点一下取消") : ok ? tr("点一下固定走这一股") : tr("和其他站连不起来，点一下仍可固定")}`;
-				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(k) + 14}">${pinned ? "● " : ""}${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? tr(" 待避") : ""}</text></g>`);
+				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(i, k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(i, k) + 14}">${pinned ? "● " : ""}${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? tr(" 待避") : ""}</text></g>`);
 			});
 			const stops = model.stop[i] || end;
-			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? tr("首末站，停车") : stops ? tr("停车，点一下改为通过") : tr("通过，点一下改为停车")}</title><text x="${x(i) + cellW / 2}" y="${height - 8}">${stops ? tr("停") : tr("过")}</text></g>`);
+			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? tr("首末站，停车") : stops ? tr("停车，点一下改为通过") : tr("通过，点一下改为停车")}</title><text x="${x(i) + cellW / 2}" y="${top(i) + blockH - 8}">${stops ? tr("停") : tr("过")}</text></g>`);
 		});
 		parts.push(`</svg>`);
 		model.solution = solution;
 		return `<div class="topo-wrap">${parts.join("")}</div>${model.conflict ? `<p class="err">${escapeHtml(model.conflict)}</p>` : ""}${model.diagram ? stationDiagramHtml(model) : ""}`;
+	}
+
+	/**
+	 * Where each stop goes in the connection graph: in one row, or, for a Q, the stops from where it comes back to the
+	 * station it branched off at in a second row below, going leftwards from under that station.
+	 *
+	 * @return {col, line} for each stop
+	 */
+	function foldOf(model) {
+		const n = model.layers.length;
+		const stations = model.layers.map(tracks => topo.platforms[tracks[0]].station || "#" + tracks[0]);
+		const again = revisits(stations, model.picks);
+		const k = again.findIndex((v, i) => v && !v.retrace && i < n - 1);
+		if (k < 0 || again[k].earlier - (n - 1 - k) < 0) return model.layers.map((tracks, i) => ({ col: i, line: 0 }));
+		return model.layers.map((tracks, i) => i < k ? { col: i, line: 0 } : { col: again[k].earlier - (i - k), line: 1 });
 	}
 
 	/**
@@ -2533,6 +2804,202 @@
 	 * along the path across and the offset to the side up and down, left of the way the route runs at the top. It shows the
 	 * route as it is in the game; track changes in the draft show once applied.
 	 */
+	/**
+	 * Which route's track diagram each section of a line's stations is drawn from: the route going furthest along the
+	 * section in one go, from the stop it leaves at to the stop it gets to.
+	 *
+	 * @return {section, r, from, to, reversed}, reversed when the route goes up the section's stations
+	 */
+	function linePieces(line) {
+		const best = new Map();
+		line.routes.forEach(r => {
+			const n = r.rows.length;
+			const step = i => {
+				const a = r.leaveRows[i - 1], b = r.rows[i];
+				return a !== b && Math.abs(a - b) === 1 && line.rows[a].section === line.rows[b].section ? Math.sign(b - a) : 0;
+			};
+			let start = -1, way = 0;
+			const close = end => {
+				if (start < 0 || end <= start) return;
+				const section = line.rows[r.leaveRows[start]].section, found = best.get(section);
+				if (!found || end - start > found.to - found.from) best.set(section, { section, r, from: start, to: end, reversed: way < 0 });
+			};
+			for (let i = 1; i < n; i++) {
+				const direction = step(i);
+				if (start >= 0 && (!direction || direction !== way || r.rows[i - 1] !== r.leaveRows[i - 1])) {
+					close(i - 1);
+					start = -1;
+				}
+				if (direction && start < 0) {
+					start = i - 1;
+					way = direction;
+				}
+			}
+			close(n - 1);
+		});
+		return [...best.values()].sort((a, b) => a.section - b.section);
+	}
+
+	/**
+	 * The track diagram of a whole line, from the track diagrams of its routes (EditorLayout): each section of its stations
+	 * is a strip, the first along the top and each other below, slanting off the station it starts from. A loop is folded
+	 * in two, going along the top of its strip and back along the bottom.
+	 */
+	function lineDiagramDialog(line) {
+		const pieces = linePieces(line);
+		const routes = [...new Set(pieces.map(piece => piece.r))];
+		const view = { scale: 0, side: 2, layouts: new Map(), error: "" };
+		const render = form => {
+			form.querySelector("#dlg-line-diagram").innerHTML = lineDiagramHtml(line, pieces, view);
+		};
+		openDialog(`${tr("线路组配线图：{0}", escapeHtml(shortName(line.name)))}`, `
+			<div class="diagram-head"><span class="hint">${tr("每一段沿走得最远的一条线路的路径拉直，从左往右按运行图上车站的顺序；支线和另一路画在下面，从分出的车站斜着接出。按游戏里已应用的线路画。")}</span>
+				<span class="tools"><button type="button" data-line-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-line-zoom="out" title="${tr("缩小")}">−</button></span></div>
+			<div id="dlg-line-diagram"></div>`, tr("关闭"), () => {});
+		dialog.classList.add("wide");
+		dialog.addEventListener("close", () => dialog.classList.remove("wide"), { once: true });
+		const form = dialog.querySelector("form");
+		render(form);
+		form.addEventListener("click", e => {
+			const zoom = e.target.closest("[data-line-zoom]");
+			if (!zoom) return;
+			view.scale = Math.max(0.05, Math.min(8, view.scale * (zoom.dataset.lineZoom === "in" ? 1.5 : 1 / 1.5)));
+			render(form);
+		});
+		// The game keeps one route's track diagram at a time, so they are asked for one after another
+		(async () => {
+			for (const r of routes) {
+				for (let tries = 0; ; tries++) {
+					let result = null;
+					try {
+						result = await sendJson("api/route-layout", "POST", { route: r.id, halfWidth: LINE_DIAGRAM_HALF_WIDTH, fresh: tries === 0 });
+					} catch (e) {
+						view.error = tr("读取线路配线图失败");
+					}
+					if (result && result.ready) {
+						view.layouts.set(r.id, result);
+						break;
+					}
+					if (tries >= 15) {
+						view.error = tr("服务端没有回应，关掉再打开试试");
+						break;
+					}
+					if (result) view.error = tr("正在沿路径取轨道…（{0}/{1}）", view.layouts.size + 1, routes.length);
+					if (dialog.open) render(form);
+					await new Promise(resolve => setTimeout(resolve, 700));
+				}
+				if (!dialog.open) return;
+			}
+			if (view.layouts.size === routes.length) view.error = "";
+			if (!view.scale) {
+				const longest = Math.max(1, ...pieces.map(piece => {
+					const layout = view.layouts.get(piece.r.id);
+					return layout && layout.found ? layout.stops[piece.to] - layout.stops[piece.from] : 0;
+				}));
+				view.scale = Math.max(0.05, Math.min(8, (form.querySelector("#dlg-line-diagram").clientWidth - 160) / longest));
+			}
+			if (dialog.open) render(form);
+		})();
+	}
+
+	function lineDiagramHtml(line, pieces, view) {
+		if (!view.scale) return `<p class="hint">${escapeHtml(view.error || tr("正在读取…"))}</p>`;
+		const pad = 32, slant = 40, sidePx = view.side * 2, laneH = LINE_DIAGRAM_HALF_WIDTH * sidePx * 2;
+		const parts = [], labels = [], links = [], missing = [];
+		const stationX = new Map();
+		let top = 36, right = 0;
+		pieces.forEach(piece => {
+			const layout = view.layouts.get(piece.r.id), r = piece.r;
+			if (!layout || !layout.found || layout.stops[piece.from] < 0 || layout.stops[piece.to] < 0) {
+				missing.push(routeTitle(r));
+				return;
+			}
+			const rows = line.rows.map((row, i) => i).filter(i => line.rows[i].section === piece.section);
+			const firstRow = rows[0], lastRow = rows[rows.length - 1];
+			const ring = line.rows[firstRow].id === line.rows[lastRow].id;
+			const s0 = layout.stops[piece.from], s1 = layout.stops[piece.to], length = s1 - s0;
+			// Starting off the station the section repeats at its top, a little to the right of it
+			const junction = line.rows[firstRow].repeat ? stationX.get(line.rows[firstRow].group) : null;
+			const x0 = junction ? junction.x + slant : pad;
+			const y0 = top + laneH / 2 + 16;
+			const fold = ring ? length / 2 : Infinity;
+			const at = (s, d) => {
+				const u = piece.reversed ? s1 - s : s - s0, side = piece.reversed ? -d : d;
+				return u <= fold ? [x0 + u * view.scale, y0 - side * sidePx, 0] : [x0 + (length - u) * view.scale, y0 + laneH + 24 + side * sidePx, 1];
+			};
+			const inside = s => s >= s0 - 0.5 && s <= s1 + 0.5;
+			const color = colorOf(r.color);
+			// The route's own path, with the ends of a loop joined round
+			const path = [];
+			for (let k = 0; k <= 40; k++) path.push(at(s0 + length * k / 40, 0));
+			const lanes = [path.filter(p => !p[2]), path.filter(p => p[2])].filter(lane => lane.length > 1);
+			lanes.forEach(lane => parts.push(`<polyline points="${lane.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" class="route-path" style="stroke:${color}"/>`));
+			if (ring) {
+				const radius = (laneH + 24) / 2, endX = x0 + fold * view.scale;
+				parts.push(`<path d="M${endX.toFixed(1)},${y0} a${radius},${radius} 0 0 1 0,${2 * radius}" class="route-path" fill="none" style="stroke:${color}"/>`);
+			}
+			layout.rails.forEach(rail => {
+				let points = [];
+				const flush = () => {
+					if (points.length > 1) parts.push(`<polyline points="${points.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" class="rail"/>`);
+					points = [];
+				};
+				for (let k = 0; k + 1 < rail.length; k += 2) {
+					if (!inside(rail[k])) {
+						flush();
+						continue;
+					}
+					const p = at(rail[k], rail[k + 1]);
+					if (points.length && points[points.length - 1][2] !== p[2]) flush();
+					points.push(p);
+				}
+				flush();
+			});
+			layout.turnouts.forEach(t => {
+				if (!inside(t[0])) return;
+				const p = at(t[0], t[1]);
+				parts.push(`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.5" class="turnout"/>`);
+			});
+			const routePlatforms = new Set(line.routes.flatMap(o => o.stops.map(stop => stop.platformId)));
+			layout.platforms.forEach(p => {
+				const middle = (p.line[0] + p.line[2]) / 2;
+				if (!inside(middle)) return;
+				const a = at(p.line[0], p.line[1]), b = at(p.line[2], p.line[3]), ours = routePlatforms.has(p.id);
+				// One across the fold of a loop is drawn on the lane its middle is on
+				if (a[2] !== b[2]) {
+					const m = at(middle, (p.line[1] + p.line[3]) / 2), half = Math.abs(p.line[2] - p.line[0]) / 2 * view.scale;
+					a[0] = m[0] - half;
+					b[0] = m[0] + half;
+					a[1] = b[1] = m[1];
+				}
+				parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.passingTrack ? tr("（待避线）") : ""}`)}</title><line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"${ours ? ` style="stroke:${color}"` : ""}/></g>`);
+			});
+			// Station names, over the top lane and under the bottom one
+			for (let i = piece.from; i <= piece.to; i++) {
+				const row = i === piece.from ? r.leaveRows[i] : r.rows[i];
+				const p = at(layout.stops[i], 0);
+				if (!stationX.has(line.rows[row].group)) stationX.set(line.rows[row].group, { x: p[0], y: p[1] });
+				if (line.rows[row].repeat && !ring) continue;
+				const below = p[2] === 1;
+				labels.push(`<g class="stop-mark"><line x1="${p[0].toFixed(1)}" y1="${(p[1] - laneH / 2 - 4).toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${(p[1] + laneH / 2 + 4).toFixed(1)}"/><text x="${p[0].toFixed(1)}" y="${(below ? p[1] + laneH / 2 + 16 : p[1] - laneH / 2 - 8).toFixed(1)}">${escapeHtml(shortName(line.rows[row].name))}</text></g>`);
+				right = Math.max(right, p[0]);
+			}
+			// Slanting off the station the section starts from, and back onto the one another way ends at
+			if (junction) links.push(`<line x1="${junction.x.toFixed(1)}" y1="${junction.y.toFixed(1)}" x2="${x0}" y2="${y0}" class="route-path" style="stroke:${color}"/>`);
+			const end = line.rows[lastRow].repeat && !ring ? stationX.get(line.rows[lastRow].group) : null;
+			if (end) {
+				const p = at(piece.reversed ? s0 : s1, 0);
+				links.push(`<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${end.x.toFixed(1)}" y2="${end.y.toFixed(1)}" class="route-path" style="stroke:${color}"/>`);
+			}
+			right = Math.max(right, x0 + (ring ? fold : length) * view.scale);
+			top += (ring ? 2 * laneH + 24 : laneH) + 56;
+		});
+		const width = Math.round(right + pad * 2), height = Math.round(top);
+		return `<div class="route-diagram-wrap"><svg class="route-diagram" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${tr("线路组配线图")}">${links.join("")}${parts.join("")}${labels.join("")}</svg></div>`
+			+ (missing.length ? `<p class="hint">${tr("{0} 沿轨道寻不出路径，那一段没有画。", escapeHtml(missing.join(tr("、"))))}</p>` : "")
+			+ (view.error ? `<p class="hint">${escapeHtml(view.error)}</p>` : "");
+	}
+
 	function routeDiagramDialog(r) {
 		const view = { halfWidth: 24, scale: 0.6, side: 2, data: null, error: "", tries: 0 };
 		const render = form => {
@@ -2920,6 +3387,10 @@
 			}
 			return;
 		}
+		if (e.target.closest("[data-line-diagram]") && currentLine()) {
+			lineDiagramDialog(currentLine());
+			return;
+		}
 		const diagramButton = e.target.closest("[data-route-diagram]");
 		if (diagramButton && data && data.routeById.get(diagramButton.dataset.routeDiagram)) {
 			routeDiagramDialog(data.routeById.get(diagramButton.dataset.routeDiagram));
@@ -2953,6 +3424,12 @@
 		if (data) setWeekday(Number(e.target.value));
 	});
 	$("view-table").addEventListener("click", e => {
+		const wayButton = e.target.closest("[data-way]");
+		if (wayButton) {
+			state.lineWay = +wayButton.dataset.way;
+			renderTable();
+			return;
+		}
 		const r = tableRouteOf();
 		const managedButton = e.target.closest("[data-managed]");
 		if (managedButton) {

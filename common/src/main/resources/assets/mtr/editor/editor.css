@@ -132,6 +132,9 @@ table.tt td { cursor: pointer; }
 table.tt td:hover { background: var(--panel-2); }
 table.tt td.pass { color: var(--muted); }
 table.tt tr.first-of-station > * { border-top: 1px solid var(--grid-strong); }
+table.tt tr.section-start > * { border-top: 2px dashed var(--grid-strong); }
+table.tt th.st.repeat { color: var(--muted); font-weight: 400; }
+table.tt td.through { color: var(--sel); font-family: var(--font-ui); }
 table.tt th.svc-head { cursor: pointer; }
 table.tt th.svc-head .time { display: block; font-family: var(--font-num); }
 table.tt th.svc-head .note { display: block; font-size: 11px; color: var(--muted); }
@@ -235,6 +238,7 @@ dialog ul.warn { color: var(--warn); margin: 8px 0; padding-left: 1.2em; }
 .topo .turn { text-anchor: middle; fill: #b7791f; font-weight: 700; }
 .topo .link { stroke: var(--grid-strong); stroke-width: 1.5; }
 .topo .link.on { stroke-width: 4; }
+.topo .same-station { stroke: var(--muted); stroke-dasharray: 2 3; }
 .topo .track { cursor: pointer; }
 .topo .track rect { fill: var(--panel); stroke: var(--grid-strong); }
 .topo .track text { text-anchor: middle; fill: var(--ink); pointer-events: none; }
