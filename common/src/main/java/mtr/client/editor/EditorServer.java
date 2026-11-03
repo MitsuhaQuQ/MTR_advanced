@@ -122,6 +122,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new ApplyServlet()), "/api/apply");
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
+		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
 		server.setHandler(context);
 		server.start();
 	}
@@ -327,6 +328,44 @@ public final class EditorServer {
 				return;
 			}
 			sendJson(response, content);
+		}
+	}
+
+	/**
+	 * The rails around a station for the track diagram ({@link EditorLayout}).
+	 */
+	private static class LayoutServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final long stationId;
+			final int margin;
+			try {
+				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				stationId = Long.parseLong(requestObject.get("station").getAsString());
+				margin = requestObject.has("margin") ? requestObject.get("margin").getAsInt() : 0;
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			final JsonObject layout;
+			try {
+				layout = onGameThread(() -> EditorLayout.build(stationId, margin));
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				return;
+			}
+			if (layout == null) {
+				response.sendError(HttpServletResponse.SC_NOT_FOUND);
+				return;
+			}
+			sendJson(response, layout.toString());
 		}
 	}
 

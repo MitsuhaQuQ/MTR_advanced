@@ -1748,7 +1748,7 @@
 		picks[0] = (n > 1 ? depart[0] : best[0]) >> 1;
 		const reversals = [];
 		for (let i = 1; i < n - 1; i++) if (depart[i] !== arrive[i]) reversals.push(i);
-		return { ok: true, picks, reversals, legs, feasible };
+		return { ok: true, picks, reversals, legs, feasible, arrive, depart };
 	}
 
 	/**
@@ -1856,7 +1856,8 @@
 		}
 		model.layers.forEach((tracks, i) => {
 			const end = i === 0 || i === n - 1;
-			parts.push(`<text x="${x(i) + cellW / 2}" y="14" class="station">${escapeHtml(stationLabel(tracks[0]))}</text>`);
+			const open = model.diagram && model.diagram.stop === i;
+			parts.push(`<g class="station-head${open ? " open" : ""}" data-station-col="${i}" tabindex="0"><title>${open ? "收起配线图" : "看这一站的配线图"}</title><text x="${x(i) + cellW / 2}" y="14" class="station">${escapeHtml(stationLabel(tracks[0]))} ${open ? "▴" : "▾"}</text></g>`);
 			if (reversals.has(i)) parts.push(`<text x="${x(i) + cellW / 2}" y="30" class="turn">↶ 掉头</text>`);
 			tracks.forEach((p, k) => {
 				const on = model.picks[i] === p, pinned = model.pins.has(i) && model.pins.get(i) === p, ok = solution.feasible[i].has(p);
@@ -1868,11 +1869,143 @@
 			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? "首末站，停车" : stops ? "停车，点一下改为通过" : "通过，点一下改为停车"}</title><text x="${x(i) + cellW / 2}" y="${height - 8}">${stops ? "停" : "过"}</text></g>`);
 		});
 		parts.push(`</svg>`);
-		return `<div class="topo-wrap">${parts.join("")}</div>${model.conflict ? `<p class="err">${escapeHtml(model.conflict)}</p>` : ""}`;
+		model.solution = solution;
+		return `<div class="topo-wrap">${parts.join("")}</div>${model.conflict ? `<p class="err">${escapeHtml(model.conflict)}</p>` : ""}${model.diagram ? stationDiagramHtml(model) : ""}`;
+	}
+
+	/**
+	 * The rails around a station (EditorLayout), asked for again a few times while the game is still reading the map.
+	 */
+	async function loadDiagram(model, diagram, tries) {
+		diagram.error = "";
+		try {
+			const result = await sendJson("api/layout", "POST", { station: diagram.station, margin: diagram.margin });
+			if (model.diagram !== diagram) return;
+			if (!result.ready) {
+				diagram.error = "正在读取轨道…";
+				if (tries < 5) setTimeout(() => loadDiagram(model, diagram, tries + 1), 1500);
+				else diagram.error = "读不到轨道，打开一次仪表盘的地图再试";
+			} else {
+				diagram.data = result;
+			}
+		} catch (e) {
+			if (model.diagram === diagram) diagram.error = "读取配线图失败";
+		}
+		if (model.onChange && model.diagram === diagram) model.onChange();
+	}
+
+	/**
+	 * The track diagram of a station: its rails as the game has them, turned so the train runs from left to right along the
+	 * track picked, with the station's tracks on the same rails to click like the cells of the picker. Curved rails are drawn
+	 * as the straight line between their ends.
+	 */
+	function stationDiagramHtml(model) {
+		const diagram = model.diagram, i = diagram.stop, n = model.layers.length;
+		const head = `<div class="diagram-head"><b>${escapeHtml(stationLabel(model.layers[i][0]))} 配线图</b><span class="tools"><button type="button" data-zoom="in" title="放大">＋</button><button type="button" data-zoom="out" title="缩小">−</button></span></div>`;
+		if (!diagram.data) return `<div class="layout">${head}<p class="hint">${escapeHtml(diagram.error || "正在读取…")}</p></div>`;
+		const data = diagram.data;
+		const station = topo.platforms[model.layers[i][0]].station;
+		const tracks = new Set(model.layers[i].map(p => topo.platforms[p].id));
+		const solution = model.solution;
+		// The way the train runs here: along the track picked, the way it arrives (or leaves, at the first stop)
+		const picked = data.platforms.find(p => p.id === topo.platforms[model.picks[i]].id);
+		const state = solution && solution.ok ? i > 0 ? solution.arrive[i] : solution.depart[0] : undefined;
+		let dx = 1, dz = 0;
+		const own = data.platforms.filter(p => p.station === station);
+		if (picked) {
+			const forwards = state === undefined || (state & 1) === 0;
+			dx = (picked.line[2] - picked.line[0]) * (forwards ? 1 : -1);
+			dz = (picked.line[3] - picked.line[1]) * (forwards ? 1 : -1);
+		} else if (own.length) {
+			dx = own[0].line[2] - own[0].line[0];
+			dz = own[0].line[3] - own[0].line[1];
+		}
+		const length = Math.hypot(dx, dz) || 1, cos = dx / length, sin = dz / length;
+		const cx = (data.box[0] + data.box[2]) / 2, cz = (data.box[1] + data.box[3]) / 2;
+		const turn = (x, z) => [(x - cx) * cos + (z - cz) * sin, -(x - cx) * sin + (z - cz) * cos];
+		// The station's own tracks set the view, so the rails around it don't push it into a corner
+		const ownPoints = own.flatMap(p => [turn(p.line[0], p.line[1]), turn(p.line[2], p.line[3])]);
+		const fallback = [[data.box[0], data.box[1]], [data.box[2], data.box[3]]].map(([x, z]) => turn(x, z));
+		const points = ownPoints.length ? ownPoints : fallback;
+		const margin = diagram.margin;
+		const minX = Math.min(...points.map(p => p[0])) - margin + diagram.pan[0], maxX = Math.max(...points.map(p => p[0])) + margin + diagram.pan[0];
+		const minY = Math.min(...points.map(p => p[1])) - margin / 2 + diagram.pan[1], maxY = Math.max(...points.map(p => p[1])) + margin / 2 + diagram.pan[1];
+		const viewW = maxX - minX, viewH = Math.max(maxY - minY, viewW * 0.3);
+		const width = 560, height = Math.round(Math.min(360, Math.max(160, width * viewH / viewW)));
+		const unit = Math.max(viewW / width, viewH / height);
+		const parts = [`<svg class="layout-svg" viewBox="${minX} ${minY} ${viewW} ${viewH}" width="100%" style="aspect-ratio:${width} / ${height}" preserveAspectRatio="xMidYMid meet" data-unit="${unit}" role="img" aria-label="配线图">`];
+		data.rails.forEach(r => {
+			const a = turn(r[0], r[1]), b = turn(r[2], r[3]);
+			parts.push(`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="rail" stroke-width="${unit * 1.5}"/>`);
+		});
+		data.turnouts.forEach(t => {
+			const a = turn(t[0], t[1]);
+			parts.push(`<circle cx="${a[0]}" cy="${a[1]}" r="${unit * 3}" class="turnout"/>`);
+		});
+		data.platforms.forEach(p => {
+			const a = turn(p.line[0], p.line[1]), b = turn(p.line[2], p.line[3]);
+			const index = topo.index.get(p.id);
+			const ours = tracks.has(p.id) && index !== undefined;
+			const on = ours && model.picks[i] === index, pinned = ours && model.pins.get(i) === index;
+			const dead = ours && solution && !solution.feasible[i].has(index);
+			const classes = ["platform", ours ? "ours" : "other", on ? "on" : "", pinned ? "pinned" : "", dead ? "dead" : ""].filter(Boolean).join(" ");
+			const label = `${pinned ? "● " : ""}${p.name || "?"}${p.passingTrack ? " 待避" : ""}${!ours && p.stationName && p.station !== station ? " · " + shortName(p.stationName) : ""}`;
+			const title = ours ? `${p.name || "?"}：${pinned ? "已固定，点一下取消" : dead ? "和其他站连不起来，点一下仍可固定" : "点一下固定走这一股"}` : `${shortName(p.stationName) || "不属于车站"} ${p.name || "?"}${p.station === station ? "：和这条线的轨道不连" : ""}`;
+			parts.push(`<g class="${classes}"${ours ? ` data-stop="${i}" data-track="${index}" tabindex="0"` : ""}><title>${escapeHtml(title)}</title><line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="${unit * (on ? 7 : 5)}"${on ? ` style="stroke:${model.color}"` : ""}${dead ? ` stroke-dasharray="${unit * 4} ${unit * 3}"` : ""}/><text x="${(a[0] + b[0]) / 2}" y="${(a[1] + b[1]) / 2 - unit * 6}" font-size="${unit * 11}">${escapeHtml(label)}</text></g>`);
+		});
+		parts.push(`</svg>`);
+		const before = i > 0 ? `← ${escapeHtml(stationLabel(model.layers[i - 1][0]))}` : "";
+		const after = i + 1 < n ? `${escapeHtml(stationLabel(model.layers[i + 1][0]))} →` : "";
+		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">轨道太多，只画了一部分。</p>` : ""}<p class="hint">列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。</p></div>`;
+	}
+
+	/** Dragging a track diagram moves it, kept in the picker's model so it stays where it was left. */
+	function enableDiagramPanning(form, getModel) {
+		let drag = null;
+		form.addEventListener("pointerdown", e => {
+			const svg = e.target.closest(".layout-svg");
+			const model = getModel();
+			if (!svg || !model || !model.diagram || e.target.closest("[data-track]")) return;
+			const view = svg.getAttribute("viewBox").split(" ").map(Number);
+			// The drawing is scaled to fit its box, so a pixel is as many blocks as the box makes it
+			const unit = Math.max(view[2] / (svg.getBoundingClientRect().width || 1), view[3] / (svg.getBoundingClientRect().height || 1));
+			drag = { svg, x: e.clientX, y: e.clientY, unit, view, model, pan: model.diagram.pan.slice() };
+			svg.setPointerCapture(e.pointerId);
+		});
+		form.addEventListener("pointermove", e => {
+			if (!drag) return;
+			const moveX = (drag.x - e.clientX) * drag.unit, moveY = (drag.y - e.clientY) * drag.unit;
+			drag.svg.setAttribute("viewBox", `${drag.view[0] + moveX} ${drag.view[1] + moveY} ${drag.view[2]} ${drag.view[3]}`);
+			drag.moved = [moveX, moveY];
+		});
+		const end = () => {
+			if (drag && drag.moved && drag.model.diagram) drag.model.diagram.pan = [drag.pan[0] + drag.moved[0], drag.pan[1] + drag.moved[1]];
+			drag = null;
+		};
+		form.addEventListener("pointerup", end);
+		form.addEventListener("pointercancel", end);
 	}
 
 	/** A click in the picker: fixing or freeing a track, or switching between stopping and passing. */
 	function topologyClick(model, target) {
+		const head = target.closest("[data-station-col]");
+		if (head) {
+			const i = +head.dataset.stationCol;
+			if (model.diagram && model.diagram.stop === i) {
+				model.diagram = null;
+			} else {
+				model.diagram = { stop: i, station: topo.platforms[model.layers[i][0]].station, margin: 48, pan: [0, 0], data: null, error: "" };
+				loadDiagram(model, model.diagram, 0);
+			}
+			return true;
+		}
+		const zoom = target.closest("[data-zoom]");
+		if (zoom && model.diagram) {
+			model.diagram.margin = Math.max(16, Math.min(256, Math.round(model.diagram.margin * (zoom.dataset.zoom === "in" ? 0.6 : 1.6))));
+			model.diagram.pan = [0, 0];
+			loadDiagram(model, model.diagram, 0);
+			return true;
+		}
 		const toggle = target.closest("[data-toggle]");
 		if (toggle) {
 			const i = +toggle.dataset.toggle;
@@ -1995,7 +2128,10 @@
 		};
 		const renderPicker = form => {
 			plan(form);
-			models.forEach(m => { m.color = form.color.value; });
+			models.forEach(m => {
+				m.color = form.color.value;
+				m.onChange = () => renderPicker(form);
+			});
 			const stationOptions = selected => stations.map(s => `<option value="${s.station}"${s.station === selected ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
 			form.querySelector("#dlg-vias").innerHTML = vias.map((station, k) => `<button type="button" class="table-chip" data-via="${k}" title="点一下去掉">${escapeHtml((stations.find(o => o.station === station) || { name: "?" }).name)} ✕</button>`).join("") + `<select name="addVia"><option value="">＋ 途经站…</option>${stationOptions("")}</select>`;
 			const model = models[Math.min(pickDir, models.length - 1)];
@@ -2069,6 +2205,7 @@
 			renderPicker(form);
 		});
 		const form = dialog.querySelector("form");
+		enableDiagramPanning(form, () => models[Math.min(pickDir, models.length - 1)]);
 		form.addEventListener("click", e => {
 			const tab = e.target.closest("[data-dir]");
 			if (tab) {
@@ -2131,6 +2268,8 @@
 			});
 		}, render);
 		const form = dialog.querySelector("form");
+		model.onChange = () => render(form);
+		enableDiagramPanning(form, () => model);
 		form.addEventListener("click", e => {
 			if (topologyClick(model, e.target)) render(form);
 		});

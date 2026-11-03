@@ -242,3 +242,23 @@ dialog ul.warn { color: var(--warn); margin: 8px 0; padding-left: 1.2em; }
 .topo .stop-toggle text { text-anchor: middle; fill: var(--muted); cursor: pointer; font-weight: 700; }
 .topo .stop-toggle.fixed text { cursor: default; }
 dialog .vias { gap: 6px; }
+.topo .station-head { cursor: pointer; }
+.topo .station-head.open .station { fill: var(--sel); }
+.layout { margin-top: 8px; border: 1px solid var(--grid); border-radius: 8px; padding: 6px 8px; background: var(--panel); }
+.layout .diagram-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.layout .diagram-head .tools button { min-width: 28px; }
+.layout-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin: 4px 0; }
+.layout-wrap { overflow: auto; max-width: 100%; }
+.layout-svg { display: block; background: var(--bg, var(--panel)); cursor: grab; touch-action: none; }
+.layout-svg .rail { stroke: var(--grid-strong); stroke-linecap: round; }
+.layout-svg .turnout { fill: var(--muted); }
+.layout-svg .platform line { stroke-linecap: round; }
+.layout-svg .platform.other line { stroke: var(--grid); }
+.layout-svg .platform.other text { fill: var(--muted); }
+.layout-svg .platform.ours { cursor: pointer; }
+.layout-svg .platform.ours line { stroke: var(--ink); opacity: .55; }
+.layout-svg .platform.ours.on line { opacity: 1; }
+.layout-svg .platform.ours.dead line { opacity: .35; }
+.layout-svg .platform text { text-anchor: middle; fill: var(--ink); pointer-events: none; }
+.layout-svg .platform.on text { font-weight: 700; }
+
