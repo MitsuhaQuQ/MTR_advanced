@@ -41,7 +41,8 @@ public final class EditorSimulation implements IPacket {
 	}
 
 	/**
-	 * @param request {@code {weekday, routes: [id], operations}}, the operations as the page applies them
+	 * @param request {@code {weekday, fromNow, routes: [id], operations}}, the operations as the page applies them; with
+	 *                {@code fromNow} on today, the day is simulated on from the trains as they are now (G0)
 	 * @return {@code {request}}, or {@code {error}} if it can't be sent
 	 */
 	public static JsonObject start(JsonObject request) {
@@ -110,6 +111,7 @@ public final class EditorSimulation implements IPacket {
 			packet.writeLong(depotId);
 			packet.writeByteArray(bytes);
 		});
+		packet.writeBoolean(request.has("fromNow") && request.get("fromNow").getAsBoolean());
 		RegistryClient.sendToServer(PACKET_SIMULATE, packet);
 		response.addProperty("request", requestId);
 		return response;
@@ -232,6 +234,7 @@ public final class EditorSimulation implements IPacket {
 		});
 		resultObject.add("problems", problemsArray);
 		resultObject.addProperty("dayStart", dayRun.dayStart);
+		resultObject.addProperty("from", dayRun.fromMillis - dayRun.dayStart);
 		return resultObject;
 	}
 

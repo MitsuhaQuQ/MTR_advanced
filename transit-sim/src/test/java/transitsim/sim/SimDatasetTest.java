@@ -37,6 +37,28 @@ class SimDatasetTest {
 	void theDataReadsBackAsItWasWritten() {
 		final byte[] bytes = lines(3, 400, 2, 4, 10).toBytes();
 		assertArrayEquals(bytes, SimDataset.fromBytes(bytes).toBytes());
+
+		// With the trains as they were (G0)
+		final SimDataset dataset = lines(3, 400, 2, 4, 10);
+		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(bytes, MONDAY + 5 * HOUR + 50 * MINUTE));
+		simulator.advanceTo(MONDAY + 7 * HOUR);
+		dataset.trains = simulator.getRunner().record();
+		assertTrue(dataset.trains.trains.size() > 4);
+		final byte[] withTrains = dataset.toBytes();
+		final SimDataset readBack = SimDataset.fromBytes(withTrains);
+		assertArrayEquals(withTrains, readBack.toBytes());
+		assertArrayEquals(dataset.trains.toBytes(), readBack.trains.toBytes());
+	}
+
+	@Test
+	void dataOfTheFirstVersionReadsWithoutTrains() {
+		// Version 1 had no trains after the sidings, where version 2 says there are none in a byte
+		final byte[] bytes = lines(3, 400, 2, 4, 10).toBytes();
+		final byte[] first = Arrays.copyOf(bytes, bytes.length - 1);
+		first[3] = 1;
+		final SimDataset dataset = SimDataset.fromBytes(first);
+		assertEquals(null, dataset.trains);
+		assertArrayEquals(bytes, dataset.toBytes());
 	}
 
 	@Test

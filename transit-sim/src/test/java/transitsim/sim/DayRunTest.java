@@ -77,6 +77,44 @@ class DayRunTest {
 	}
 
 	@Test
+	void aDayRunFromTheTrainsAsTheyWereGoesOnAsTheWholeDayDoes() {
+		final SimDataset dataset = SimDatasetTest.lines(3, 400, 2, 8, 3);
+		final DayRun wholeDay = DayRun.run(dataset, DAY_START, Collections.emptySet(), Collections.emptyList(), () -> false);
+		assertEquals(DAY_START, wholeDay.fromMillis);
+		// The trains as the game would have saved them part way through the morning
+		final long from = MONDAY + 7 * HOUR + 3 * MINUTE + 1250;
+		final EventSimulator<SimDataset.DataTrack> saved = new EventSimulator<>(SimDataset.start(dataset.toBytes(), DAY_START));
+		saved.advanceTo(from);
+		dataset.trains = saved.getRunner().record();
+		final DayRun fromThen = DayRun.fromBytes(DayRun.run(SimDataset.fromBytes(dataset.toBytes()), DAY_START, from, Collections.emptySet(), Collections.emptyList(), () -> false).toBytes());
+
+		assertEquals(from, fromThen.fromMillis);
+		assertEquals(stopsAfter(wholeDay.trips, from), stopsAfter(fromThen.trips, from));
+		assertTrue(fromThen.trips.size() > 10, String.valueOf(fromThen.trips.size()));
+		// Services before then aren't counted as not run
+		assertTrue(fromThen.problems.stream().noneMatch(problem -> problem.kind == DayRun.ProblemKind.NOT_RUN && problem.serviceMillis < from), describe(fromThen.problems).toString());
+		assertEquals(describe(problemsAfter(wholeDay.problems, from)), describe(problemsAfter(fromThen.problems, from)));
+	}
+
+	@Test
+	void withoutTrainsADayRunFromLaterStartsAtTheStartOfTheDay() {
+		final DayRun dayRun = DayRun.run(SimDatasetTest.lines(1, 400, 2, 4, 10), DAY_START, MONDAY + 7 * HOUR, Collections.emptySet(), Collections.emptyList(), () -> false);
+		assertEquals(DAY_START, dayRun.fromMillis);
+		assertEquals(24, dayRun.trips.size());
+	}
+
+	/**
+	 * @return the stops arrived at after a time, by service
+	 */
+	private static List<String> stopsAfter(List<DayRun.Trip> trips, long time) {
+		return trips.stream().sorted(java.util.Comparator.comparingLong((DayRun.Trip trip) -> trip.routeId).thenComparingLong(trip -> trip.serviceMillis)).map(trip -> trip.routeId + "@" + trip.serviceMillis + " " + trip.trainId + trip.stops.stream().filter(stop -> stop.arrivalMillis > time).map(stop -> " " + stop.stopIndex + "/" + stop.passed + "/" + stop.arrivalMillis + "/" + stop.departureMillis + "/" + stop.plannedArrivalMillis + "/" + stop.plannedDepartureMillis).collect(Collectors.joining())).filter(text -> text.contains("/")).collect(Collectors.toList());
+	}
+
+	private static List<DayRun.Problem> problemsAfter(List<DayRun.Problem> problems, long time) {
+		return problems.stream().filter(problem -> problem.time > time && problem.kind != DayRun.ProblemKind.NOT_RUN).collect(Collectors.toList());
+	}
+
+	@Test
 	void aRunCanBeStopped() {
 		final DayRun dayRun = DayRun.run(SimDatasetTest.lines(1, 400, 2, 4, 10), DAY_START, Collections.emptySet(), Collections.emptyList(), () -> true);
 		assertTrue(dayRun.cancelled);

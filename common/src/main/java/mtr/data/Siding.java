@@ -2,6 +2,7 @@ package mtr.data;
 
 import transitsim.plan.DepotReturn;
 import transitsim.sim.SimDataset;
+import transitsim.sim.RunRecord;
 import transitsim.io.BinaryKeyed;
 import transitsim.io.ByteArrayBinary;
 import java.util.function.Function;
@@ -851,6 +852,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		);
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
+	}
+
+	/**
+	 * Adds the siding's trains to a record of them (G0), leaving out the ones driven by hand, which the simulator doesn't
+	 * move.
+	 */
+	public void recordTrains(RunRecord record) {
+		trains.stream().filter(train -> !train.isCurrentlyManual()).sorted(Comparator.comparingLong(train -> train.id)).forEach(train -> record.trains.add(train.toRecord()));
 	}
 
 	/**

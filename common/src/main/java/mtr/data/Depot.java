@@ -1,6 +1,7 @@
 package mtr.data;
 
 import transitsim.sim.DepotDispatcher;
+import transitsim.sim.RunRecord;
 import transitsim.sim.TrainService;
 import transitsim.plan.PlanRoute;
 import transitsim.plan.DepotReturn;
@@ -460,6 +461,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		});
 		callback.accept(thread);
 		thread.start();
+	}
+
+	/**
+	 * Adds the services the depot sent out last, and the days its duties ran, to a record of the trains (G0), under one of
+	 * its sidings.
+	 */
+	public void recordDispatcher(RunRecord record, long sidingId) {
+		record.lastDeployedTrips.put(sidingId, new TreeMap<>(dispatcher.lastDeployedTrips));
+		record.dutyRunDays.put(sidingId, new TreeMap<>(dispatcher.dutyRunDays));
 	}
 
 	/**

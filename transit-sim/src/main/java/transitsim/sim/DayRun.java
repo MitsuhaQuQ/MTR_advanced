@@ -24,8 +24,9 @@ import java.util.function.LongFunction;
  * One operating day simulated from a world's data, as the editor shows it next to the plan (S5): where and when each
  * service actually stopped, and what went wrong on the way. It runs in a world of its own, so nothing in the game changes.
  * <p>
- * Every train starts in its depot at the start of the day, so a train that stays on the line overnight leaves its depot
- * instead.
+ * Run from the start of the day, every train starts in its depot, so a train that stays on the line overnight leaves its
+ * depot instead. Run from later in the day, it carries on from the trains as the data has them (G0), and reports only
+ * what happens from then on.
  */
 public final class DayRun {
 
@@ -38,6 +39,10 @@ public final class DayRun {
 	 */
 	public final List<Problem> problems;
 	public final long dayStart;
+	/**
+	 * When the simulation started: the start of the day, or later if it carried on from the trains as they were.
+	 */
+	public final long fromMillis;
 	/**
 	 * Whether it was stopped before the end of the day.
 	 */
@@ -55,12 +60,13 @@ public final class DayRun {
 	 * How much it simulates between asking whether it should stop.
 	 */
 	private static final long STEP_MILLIS = 10 * 60 * 1000;
-	private static final int VERSION = 1;
+	private static final int VERSION = 2;
 
-	private DayRun(List<Trip> trips, List<Problem> problems, long dayStart, boolean cancelled) {
+	private DayRun(List<Trip> trips, List<Problem> problems, long dayStart, long fromMillis, boolean cancelled) {
 		this.trips = Collections.unmodifiableList(trips);
 		this.problems = Collections.unmodifiableList(problems);
 		this.dayStart = dayStart;
+		this.fromMillis = fromMillis;
 		this.cancelled = cancelled;
 	}
 
@@ -72,13 +78,24 @@ public final class DayRun {
 	 * @param cancelled    asked every ten simulated minutes; true stops the run
 	 */
 	public static DayRun run(SimDataset dataset, long dayStart, Set<Long> reportRoutes, List<HostInput> inputs, BooleanSupplier cancelled) {
+		return run(dataset, dayStart, dayStart, reportRoutes, inputs, cancelled);
+	}
+
+	/**
+	 * @param fromMillis when to start: the start of the day, or later to carry on from {@link SimDataset#trains}, which
+	 *                   then have to be there (see {@link EventSimulator#resume} for how long they may be out of date)
+	 */
+	public static DayRun run(SimDataset dataset, long dayStart, long fromMillis, Set<Long> reportRoutes, List<HostInput> inputs, BooleanSupplier cancelled) {
 		final Recorder recorder = new Recorder(dataset, reportRoutes);
-		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(dataset.toBytes(), dayStart));
+		final byte[] bytes = dataset.toBytes();
+		final boolean fromTrains = fromMillis > dayStart && dataset.trains != null;
+		final EventSimulator<SimDataset.DataTrack> simulator = fromTrains ? EventSimulator.resume(startMillis -> SimDataset.start(bytes, startMillis).get(), dataset.trains, fromMillis) : new EventSimulator<>(SimDataset.start(bytes, dayStart));
+		final long start = simulator.getTime();
 		simulator.getRunner().setTrainListener(recorder::onEvent);
 		inputs.forEach(simulator::submit);
 		final long end = dayStart + OperatingDay.MILLIS_PER_DAY + OVERRUN_MILLIS;
 		boolean wasCancelled = false;
-		for (long time = dayStart; time < end; time = Math.min(end, time + STEP_MILLIS)) {
+		for (long time = start; time < end; time = Math.min(end, time + STEP_MILLIS)) {
 			if (cancelled.getAsBoolean()) {
 				wasCancelled = true;
 				break;
@@ -94,10 +111,10 @@ public final class DayRun {
 		});
 		recorder.addLateness();
 		if (!wasCancelled) {
-			recorder.addNotRun(simulator.getRunner().getRoutes(), dayStart, dayStart + OperatingDay.MILLIS_PER_DAY);
+			recorder.addNotRun(simulator.getRunner().getRoutes(), start, dayStart + OperatingDay.MILLIS_PER_DAY);
 		}
 		recorder.problems.sort((problem1, problem2) -> Long.compare(problem1.time, problem2.time));
-		return new DayRun(new ArrayList<>(recorder.trips.values()), recorder.problems, dayStart, wasCancelled);
+		return new DayRun(new ArrayList<>(recorder.trips.values()), recorder.problems, dayStart, start, wasCancelled);
 	}
 
 	/**
@@ -107,6 +124,7 @@ public final class DayRun {
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
 		writer.writeInt(VERSION);
 		writer.writeLong(dayStart);
+		writer.writeLong(fromMillis);
 		writer.writeBoolean(cancelled);
 		writer.writeVarInt(trips.size());
 		for (final Trip trip : trips) {
@@ -150,6 +168,7 @@ public final class DayRun {
 			throw new IllegalArgumentException("Unknown day report version " + version);
 		}
 		final long dayStart = reader.readLong();
+		final long fromMillis = reader.readLong();
 		final boolean cancelled = reader.readBoolean();
 		final List<Trip> trips = new ArrayList<>();
 		for (int i = reader.readVarInt(); i > 0; i--) {
@@ -183,7 +202,7 @@ public final class DayRun {
 			}
 			problems.add(new Problem(kind, time, durationMillis, routeId, serviceMillis, trainId, stopIndex, platformId, new String(detail, StandardCharsets.UTF_8)));
 		}
-		return new DayRun(trips, problems, dayStart, cancelled);
+		return new DayRun(trips, problems, dayStart, fromMillis, cancelled);
 	}
 
 	/**

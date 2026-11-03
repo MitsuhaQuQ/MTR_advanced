@@ -74,8 +74,9 @@ public final class SandboxRuns implements IPacket {
 	}
 
 	/**
-	 * Request number, weekday, routes to report on, draft routes ({@link SimDataset.RouteData#toBytes}) and draft duties by
-	 * depot ({@link DepotDuties#toBytes}).
+	 * Request number, weekday, routes to report on, draft routes ({@link SimDataset.RouteData#toBytes}), draft duties by
+	 * depot ({@link DepotDuties#toBytes}) and whether to simulate on from the trains as they are now, if the weekday is
+	 * today's (G0).
 	 */
 	public static void receiveSimulateC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final int requestId = packet.readInt();
@@ -92,10 +93,11 @@ public final class SandboxRuns implements IPacket {
 		for (int i = Math.min(packet.readInt(), MAX_DRAFTS); i > 0; i--) {
 			draftDuties.put(packet.readLong(), packet.readByteArray());
 		}
-		PacketGuard.execute(minecraftServer, () -> start(minecraftServer, player, requestId, weekday, reportRoutes, draftRoutes, draftDuties));
+		final boolean fromNow = packet.readBoolean();
+		PacketGuard.execute(minecraftServer, () -> start(minecraftServer, player, requestId, weekday, reportRoutes, draftRoutes, draftDuties, fromNow));
 	}
 
-	private static void start(MinecraftServer minecraftServer, ServerPlayer player, int requestId, int weekday, Set<Long> reportRoutes, List<byte[]> draftRoutes, Map<Long, byte[]> draftDuties) {
+	private static void start(MinecraftServer minecraftServer, ServerPlayer player, int requestId, int weekday, Set<Long> reportRoutes, List<byte[]> draftRoutes, Map<Long, byte[]> draftDuties, boolean fromNow) {
 		if (RailwayData.hasNoPermission(player)) {
 			sendStatus(player, requestId, STATUS_NO_PERMISSION, 0);
 			return;
@@ -114,6 +116,8 @@ public final class SandboxRuns implements IPacket {
 		final SimDataset dataset = SimDataset.fromBytes(SimExport.build(railwayData));
 		final int ignoredDrafts = putDrafts(dataset, railwayData, draftRoutes, draftDuties);
 		final long dayStart = getDayStart(System.currentTimeMillis(), weekday);
+		// The trains are as they are now only on today; another day starts with every train in its depot
+		final long fromMillis = fromNow && dataset.trains != null && dataset.trains.time > dayStart && dataset.trains.time < dayStart + OperatingDay.MILLIS_PER_DAY ? dataset.trains.time : dayStart;
 		final List<DutyPathSearch> dutyPathSearches = prepareDutyPaths(railwayData, player, draftDuties);
 
 		final AtomicBoolean stopped = new AtomicBoolean();
@@ -126,7 +130,7 @@ public final class SandboxRuns implements IPacket {
 			try {
 				final long deadline = System.nanoTime() + TIME_LIMIT_NANOS;
 				final int missingDutyPaths = findDutyPaths(dataset, dutyPathSearches);
-				final DayRun dayRun = DayRun.run(dataset, dayStart, reportRoutes, Collections.emptyList(), () -> stopped.get() || System.nanoTime() > deadline);
+				final DayRun dayRun = DayRun.run(dataset, dayStart, fromMillis, reportRoutes, Collections.emptyList(), () -> stopped.get() || System.nanoTime() > deadline);
 				if (!stopped.get()) {
 					final byte[] bytes = dayRun.toBytes();
 					minecraftServer.execute(() -> {

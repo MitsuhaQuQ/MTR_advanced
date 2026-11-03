@@ -35,7 +35,10 @@ import java.util.function.Supplier;
  */
 public final class SimDataset {
 
-	public static final int VERSION = 1;
+	/**
+	 * Version 2 adds the trains as they were (G0); data of version 1 is read with none.
+	 */
+	public static final int VERSION = 2;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -44,6 +47,10 @@ public final class SimDataset {
 	public final List<RouteData> routes = new ArrayList<>();
 	public final List<DepotData> depots = new ArrayList<>();
 	public final List<SidingData> sidings = new ArrayList<>();
+	/**
+	 * The trains as they were when the data was written (G0), to simulate on from them, or null if there are none.
+	 */
+	public RunRecord trains;
 
 	public byte[] toBytes() {
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
@@ -54,13 +61,17 @@ public final class SimDataset {
 		depots.forEach(depot -> depot.write(writer));
 		writer.writeVarInt(sidings.size());
 		sidings.forEach(siding -> siding.write(writer));
+		writer.writeBoolean(trains != null);
+		if (trains != null) {
+			writeBytes(writer, trains.toBytes());
+		}
 		return writer.toBytes();
 	}
 
 	public static SimDataset fromBytes(byte[] bytes) {
 		final ByteArrayBinary.Reader reader = new ByteArrayBinary.Reader(bytes);
 		final int version = reader.readInt();
-		if (version != VERSION) {
+		if (version != 1 && version != VERSION) {
 			throw new IllegalArgumentException("Unknown simulation data version " + version);
 		}
 		final SimDataset dataset = new SimDataset();
@@ -73,12 +84,12 @@ public final class SimDataset {
 		for (int i = reader.readVarInt(); i > 0; i--) {
 			dataset.sidings.add(SidingData.read(reader));
 		}
+		if (version >= 2 && reader.readBoolean()) {
+			dataset.trains = RunRecord.fromBytes(readBytes(reader));
+		}
 		return dataset;
 	}
 
-	/**
-	 * @return makes the world of the saved data afresh each time, starting at this time
-	 */
 	/**
 	 * Puts a route in place of the one with its ID, as for a draft of its timetable (S5).
 	 *
@@ -111,6 +122,9 @@ public final class SimDataset {
 		return false;
 	}
 
+	/**
+	 * @return makes the world of the saved data afresh each time, starting at this time, without its trains
+	 */
 	public static Supplier<TickRunner<DataTrack>> start(byte[] bytes, long startMillis) {
 		return () -> fromBytes(bytes).buildRunner(startMillis);
 	}

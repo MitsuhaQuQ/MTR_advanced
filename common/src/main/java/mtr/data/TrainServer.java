@@ -1,6 +1,9 @@
 package mtr.data;
 
 import transitsim.sim.TrainService;
+import transitsim.io.BinaryKeyed;
+import transitsim.io.ByteArrayBinary;
+import transitsim.sim.RunRecord;
 import mtr.advanced.MessagePackKeyed;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TimeSegment;
@@ -73,7 +76,17 @@ public class TrainServer extends Train {
 	private final List<TimeSegment> depotTimeSegments;
 	private int depotRepeatIndex1;
 	private int depotRepeatIndex2;
+	/**
+	 * Read from a save made before the cruising cap was saved, so it is worked out again from where the train is on its
+	 * first tick, as the simulation does (see {@link transitsim.sim.RunRecord.TrainRecord#cruiseCap}).
+	 */
+	private boolean cruiseCapMissing;
 
+	/**
+	 * The cruising cap the train set off with (G0, contracts document 6.4): without it, a train carrying on from a save gets
+	 * to its next stop at another time than it would have.
+	 */
+	private static final String KEY_CRUISE_CAP = "cruise_cap";
 	private static final int TRAIN_UPDATE_DISTANCE = 128;
 	private static final int TICKS_TO_SEND_RAIL_PROGRESS = 40;
 
@@ -109,6 +122,11 @@ public class TrainServer extends Train {
 		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
 		service.read(new MessagePackKeyed.Reader(new MessagePackHelper(map)));
+		if (map.containsKey(KEY_CRUISE_CAP)) {
+			cruiseCap = new MessagePackHelper(map).getFloat(KEY_CRUISE_CAP, Float.POSITIVE_INFINITY);
+		} else {
+			cruiseCapMissing = true;
+		}
 	}
 
 	@Deprecated
@@ -129,17 +147,19 @@ public class TrainServer extends Train {
 		depotRepeatIndex2 = repeatIndex2;
 		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
+		cruiseCapMissing = true;
 	}
 
 	@Override
 	public void toMessagePack(MessagePacker messagePacker) throws IOException {
 		super.toMessagePack(messagePacker);
 		service.write(new MessagePackKeyed.Writer(messagePacker));
+		messagePacker.packString(KEY_CRUISE_CAP).packFloat(cruiseCap);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + TrainService.SAVED_KEYS;
+		return super.messagePackLength() + TrainService.SAVED_KEYS + 1;
 	}
 
 	@Override
@@ -339,6 +359,12 @@ public class TrainServer extends Train {
 
 		this.world = world;
 		service.updateOvernight();
+		if (cruiseCapMissing) {
+			cruiseCapMissing = false;
+			if (isOnRoute && speed > 0) {
+				cruiseCap = getCruiseCap();
+			}
+		}
 		simulateTrain(world, ticksElapsed, depot);
 		holdRun();
 
@@ -462,6 +488,20 @@ public class TrainServer extends Train {
 				}
 			}
 		}
+	}
+
+	/**
+	 * @return the train as the component's simulator carries on from it (G0)
+	 */
+	public RunRecord.TrainRecord toRecord() {
+		final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
+		try {
+			service.write(values);
+		} catch (IOException ignored) {
+		}
+		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		return new RunRecord.TrainRecord(sidingId, id, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, isOnRoute, writer.toBytes(), cruiseCapMissing ? Float.NaN : cruiseCap);
 	}
 
 	public boolean needsAlignment() {

@@ -1122,7 +1122,9 @@
 	const SIM_LATE_MILLIS = 30000, SIM_MAX_LISTED = 300;
 	const SIM_KINDS = { LATE: "晚点", WAITING_FOR_PLATFORM: "等站台", HELD_ON_LINE: "区间扣停", LONG_DWELL: "站内久停", DEADLOCK: "锁死", NOT_RUN: "未开行" };
 	// checkDepot is the depot whose generated duties the simulated day checks, whose routes are reported on as well
-	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0, missingPaths: 0, checkDepot: null };
+	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0, missingPaths: 0, checkDepot: null, fromNow: false };
+	// Only today can carry on from the trains as they are in the game now (G0)
+	const simFromNow = () => sim.fromNow && state.weekday === mod(nowDay() + FIRST_DAY_WEEKDAY, 7);
 
 	function setSimulation(on) {
 		sim.on = on;
@@ -1157,7 +1159,7 @@
 		const routes = new Set(line ? line.routes.map(r => r.id) : []);
 		if (checkDepot) checkDepot.routes.forEach(id => routes.add(id));
 		try {
-			const response = await sendJson("api/simulate", "POST", { weekday: state.weekday, routes: [...routes], operations: draftOperations().operations });
+			const response = await sendJson("api/simulate", "POST", { weekday: state.weekday, fromNow: simFromNow(), routes: [...routes], operations: draftOperations().operations });
 			if (response.error) {
 				sim.state = response.error;
 			} else {
@@ -1210,6 +1212,8 @@
 			error: tr("模拟失败"),
 		};
 		$("sim-status").textContent = sim.on ? texts[sim.state] || "" : "";
+		$("btn-sim-now").hidden = !sim.on || state.weekday !== mod(nowDay() + FIRST_DAY_WEEKDAY, 7);
+		$("btn-sim-now").setAttribute("aria-pressed", String(sim.fromNow));
 	}
 
 	// A stop as [stop, arrival, departure, planned arrival, planned departure, passed], times in the operating day or -1
@@ -1289,7 +1293,7 @@
 		if (sim.ignored) notes.push(tr("{0} 项草稿和服务端的线路对不上，没有用上", sim.ignored));
 		if (sim.missingPaths) notes.push(tr("{0} 种运用在轨道上找不到路径，这些车不会发车", sim.missingPaths));
 		const body = items.length ? `<ul class="sim-problems">${items.join("")}</ul>` : sim.result ? `<p class="hint">${tr("这一天没有发现问题。")}</p>` : "";
-		return `<h2>${tr("模拟问题")}</h2><div class="card">${body}${problems.length > SIM_MAX_LISTED ? `<p class="hint">${tr("只列出前 {0} 条。", SIM_MAX_LISTED)}</p>` : ""}${notes.map(note => `<p class="hint">${escapeHtml(note)}</p>`).join("")}<p class="hint">${tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p></div>`;
+		return `<h2>${tr("模拟问题")}</h2><div class="card">${body}${problems.length > SIM_MAX_LISTED ? `<p class="hint">${tr("只列出前 {0} 条。", SIM_MAX_LISTED)}</p>` : ""}${notes.map(note => `<p class="hint">${escapeHtml(note)}</p>`).join("")}<p class="hint">${sim.result && sim.result.from > 0 ? tr("从 {0} 起接着游戏里列车当时的位置模拟，之前的班次不计。", clock(sim.result.from)) : tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p></div>`;
 	}
 
 	// ---------- Summary timetable ----------
@@ -2938,6 +2942,11 @@
 	});
 	$("btn-simulate").addEventListener("click", () => setSimulation(!sim.on));
 	$("btn-resimulate").addEventListener("click", () => simulate());
+	$("btn-sim-now").addEventListener("click", () => {
+		sim.fromNow = !sim.fromNow;
+		renderSimStatus();
+		simulate();
+	});
 	$("btn-zoom-in").addEventListener("click", () => zoom(1));
 	$("btn-zoom-out").addEventListener("click", () => zoom(-1));
 	$("day").addEventListener("change", e => {

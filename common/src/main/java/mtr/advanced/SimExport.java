@@ -7,16 +7,19 @@ import mtr.data.RailType;
 import mtr.data.RailwayData;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
+import transitsim.sim.RunRecord;
 import transitsim.sim.SimDataset;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * What the component's simulator needs of the world, written into the database when the world saves (S4e), so the day
- * tool can run it without the game.
+ * tool can run it without the game. With it go the trains as they are (G0), to simulate on from them.
  */
 public final class SimExport {
 
@@ -31,15 +34,22 @@ public final class SimExport {
 		railwayData.routes.stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> dataset.routes.add(new SimDataset.RouteData(route)));
 		railwayData.depots.stream().sorted(Comparator.comparingLong(depot -> depot.id)).forEach(depot -> dataset.depots.add(new SimDataset.DepotData(depot.id, toArray(depot.routeIds), depot.cycleRoutes, depot.duties.diagramMode ? depot.duties.toBytes() : new byte[0])));
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		final RunRecord trains = new RunRecord(System.currentTimeMillis());
+		final Set<Long> recordedDepots = new HashSet<>();
 		railwayData.sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> {
 			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
 			if (depot != null) {
 				final SimDataset.SidingData sidingData = siding.toSimulation(depot.id, toArray(depot.getRouteIds(siding.getTrainId(), railwayData.dataCache)), path -> toTracks(path, rails));
 				if (sidingData != null) {
 					dataset.sidings.add(sidingData);
+					if (recordedDepots.add(depot.id)) {
+						depot.recordDispatcher(trains, siding.id);
+					}
+					siding.recordTrains(trains);
 				}
 			}
 		});
+		dataset.trains = trains;
 		return dataset.toBytes();
 	}
 
