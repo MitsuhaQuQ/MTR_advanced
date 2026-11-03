@@ -50,8 +50,13 @@ public final class RailGraph<R> {
 		maxChordPerCost = tempMaxChordPerCost;
 		// One way rails still connect their ends here, so this only rules out routes that can't exist
 		connections.forEach(connection -> components.put(findComponent(connection.fromPos), findComponent(connection.toPos)));
+		// Point every node straight at its root, so the graph is never written to again and can be shared between threads
+		new ArrayList<>(components.keySet()).forEach(pos -> components.put(pos, findComponent(pos)));
 	}
 
+	/**
+	 * Only used while building, as it compresses the paths it follows.
+	 */
 	private long findComponent(long pos) {
 		long root = pos;
 		while (components.containsKey(root) && components.get(root) != root) {
@@ -67,7 +72,7 @@ public final class RailGraph<R> {
 	}
 
 	public boolean isConnected(long pos1, long pos2) {
-		return hasNode(pos1) && hasNode(pos2) && findComponent(pos1) == findComponent(pos2);
+		return hasNode(pos1) && hasNode(pos2) && components.getOrDefault(pos1, pos1).longValue() == components.getOrDefault(pos2, pos2).longValue();
 	}
 
 	public List<Connection<R>> outgoing(long pos) {

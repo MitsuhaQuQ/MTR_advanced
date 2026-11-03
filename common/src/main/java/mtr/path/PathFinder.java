@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3;
 import transitsim.network.RailGraph;
 
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 
 public class PathFinder {
@@ -125,7 +126,11 @@ public class PathFinder {
 			path.add(new PathPart(null, startPositions.get(0), new ArrayList<>()));
 			addPathPart(rails, runways, startPositions.get(1), startPositions.get(0), path, turnBacks, visited, comparator);
 
+			int steps = 0;
 			while (path.size() >= 2) {
+				if (++steps % 1024 == 0 && Thread.currentThread().isInterrupted()) {
+					throw new CancellationException("Path search interrupted");
+				}
 				final PathPart lastPathPart = path.get(path.size() - 1);
 
 				if (lastPathPart.otherOptions.isEmpty()) {

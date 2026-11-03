@@ -12,8 +12,11 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
+import java.util.concurrent.CancellationException;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RailRouterTest {
@@ -204,5 +207,72 @@ class RailRouterTest {
 		final Result<String> result = RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(size * 10 - 10, 35, size * 10, 35)));
 		System.out.println(graph.connections.size() + " connections routed in " + (System.nanoTime() - start) / 1000000 + " ms");
 		assertTrue(result.isSuccess());
+	}
+
+	/**
+	 * Parallel east-west lines joined by north-south rails, with a platform every 1000 blocks on each line.
+	 */
+	private static RailGraph<String> manyStations(int lines, int length) {
+		final RailGraph.Builder<String> builder = new RailGraph.Builder<>();
+		for (int line = 0; line < lines; line++) {
+			final int z = line * 100;
+			for (int x = 0; x < length; x += 20) {
+				final Kind kind = x % 1000 == 500 ? Kind.PLATFORM : Kind.NORMAL;
+				builder.add(pos(x, z), x, z, EAST, pos(x + 20, z), x + 20, 0, z, WEST, kind, 20 / SPEED, "e");
+				builder.add(pos(x + 20, z), x + 20, z, WEST, pos(x, z), x, 0, z, EAST, kind, 20 / SPEED, "w");
+			}
+			if (line > 0) {
+				for (int x = 0; x <= length; x += 400) {
+					// Leaving a line northwards or southwards doesn't face the way the train arrived, so it is a junction
+					builder.add(pos(x, z), x, z, 2, pos(x, z - 100), x, 0, z - 100, 3, Kind.NORMAL, 100 / SPEED, "n");
+					builder.add(pos(x, z - 100), x, z - 100, 3, pos(x, z), x, 0, z, 2, Kind.NORMAL, 100 / SPEED, "s");
+				}
+			}
+		}
+		return builder.build();
+	}
+
+	private static List<Target> stationsOnLine(int line, int count) {
+		final List<Target> targets = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			targets.add(saved(500 + i * 1000, line * 100, 520 + i * 1000, line * 100));
+		}
+		return targets;
+	}
+
+	@Test
+	void longRouteWithManyStopsRunsStraightAlongItsLine() {
+		final RailGraph<String> graph = manyStations(20, 32000);
+		final long start = System.nanoTime();
+		final Result<String> result = RailRouter.route(graph, stationsOnLine(5, 31));
+		System.out.println(graph.connections.size() + " connections, 31 stops routed in " + (System.nanoTime() - start) / 1000000 + " ms");
+		assertTrue(result.isSuccess());
+		// 30 sections of 1000 blocks in 20 block rails, plus the first platform
+		assertEquals(30 * 50 + 1, result.steps.size());
+		assertTrue(result.steps.stream().allMatch(step -> step.connection.rail.equals("e")));
+	}
+
+	@Test
+	void laterTargetsDontChangeTheBestRoute() {
+		// The second stop is only reached by leaving the line, and the estimate for the later stops mustn't skip it
+		final RailGraph<String> graph = manyStations(3, 6000);
+		final List<Target> targets = new ArrayList<>(stationsOnLine(0, 2));
+		targets.add(saved(2500, 200, 2520, 200));
+		targets.addAll(stationsOnLine(0, 6).subList(4, 6));
+		final Result<String> result = RailRouter.route(graph, targets);
+		assertTrue(result.isSuccess());
+		assertEquals(targets.size(), result.completedTargets);
+		assertTrue(result.steps.stream().anyMatch(step -> step.connection.toPos == pos(2520, 200) || step.connection.toPos == pos(2500, 200)));
+	}
+
+	@Test
+	void interruptedSearchStops() {
+		final RailGraph<String> graph = manyStations(20, 32000);
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(CancellationException.class, () -> RailRouter.route(graph, Arrays.asList(saved(500, 0, 520, 0), saved(500, 1900, 520, 1900), saved(30500, 0, 30520, 0))));
+		} finally {
+			Thread.interrupted();
+		}
 	}
 }

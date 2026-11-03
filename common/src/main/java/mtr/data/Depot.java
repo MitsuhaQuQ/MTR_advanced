@@ -28,6 +28,7 @@ import transitsim.network.RailGraph;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -446,6 +447,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
+			} catch (CancellationException e) {
+				// A newer request restarted path generation, and that thread reports the result
+				System.out.println("Stopped path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (Exception e) {
 				e.printStackTrace();
 				PacketTrainDataGuiServer.generatePathS2C(world, id, 0);

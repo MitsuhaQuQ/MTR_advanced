@@ -729,7 +729,12 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		final long millis = System.currentTimeMillis();
 		if (route != null && mapGraph != null && millis - lastMapRouteRequestMillis.getOrDefault(player.getUUID(), 0L) >= MAP_ROUTE_REQUEST_INTERVAL_MILLIS) {
 			lastMapRouteRequestMillis.put(player.getUUID(), millis);
-			sendMapEntry(player, MapSyncData.KIND_ROUTES, routeId, new MapRouteQuery(route, dataCache).findNodes(mapGraph));
+			// A long route can take a while to trace, so it mustn't hold up the server thread
+			final MapRouteQuery query = new MapRouteQuery(route, dataCache);
+			final RailGraph<Rail> graph = mapGraph;
+			final Thread thread = new Thread(() -> sendMapEntry(player, MapSyncData.KIND_ROUTES, routeId, query.findNodes(graph)));
+			thread.setDaemon(true);
+			thread.start();
 		}
 	}
 
