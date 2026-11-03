@@ -257,6 +257,7 @@
 		});
 		data.lines = [...lines.values()].sort((a, b) => a.name.localeCompare(b.name));
 		data.lines.forEach(buildStations);
+		buildTopology();
 		if (!state.line || !lines.has(state.line)) state.line = data.lines.length ? data.lines[0].key : null;
 		if (state.route && !data.routeById.has(state.route)) state.route = null;
 		if (state.selected && !findService(state.selected)) state.selected = null;
@@ -640,7 +641,7 @@
 				parts.push(`<ul>`);
 				line.routes.forEach(r => {
 					const routeOpen = state.openNodes.has("route:" + r.id) || state.route === r.id;
-					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || "将删除：按“应用”后从游戏里删掉，右键取消")}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="有没应用的草稿">•</span>` : ""}<span class="count">${r.services.length}</span>`, false)}`);
+					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || "将删除：按“应用”后从游戏里删掉，右键取消")}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="有没应用的草稿">•</span>` : ""}${problemDot(r)}<span class="count">${r.services.length}</span>`, false)}`);
 					if (routeOpen) {
 						parts.push(`<ul>`);
 						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">汇总时刻表</span>`, state.route === r.id && state.view === "table")}</li>`);
@@ -1048,6 +1049,9 @@
 		const line = currentLine();
 		if (line) {
 			parts.push(`<h2>线路</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${r.services.length} 班</dd>`).join("")}</dl></div>`);
+			// Tracks that don't run along the rails, which make the diagram jump about, are listed until they are put right
+			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
+			if (troubled.length) parts.push(`<h2>股道问题</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">右键线路“编辑停站…”在连通图上改股道。</p></div>`);
 		}
 		parts.push(`<p class="hint">滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。<br>单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。<br>时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。</p>`);
 		inspector.innerHTML = parts.join("");
@@ -1271,7 +1275,7 @@
 	// ---------- Loops ----------
 	const isLoop = r => r.stops.length > 2 && r.stops[0].platformId === r.stops[r.stops.length - 1].platformId;
 
-	/** The platform a stop uses and the others the track picker could offer there (same station, region and reachable). */
+	/** The platform a stop uses and the other tracks of its station on the same rails. */
 	function trackTitle(stop) {
 		const trackName = c => `${c.name || "?"}${c.passingTrack ? "（待避线）" : ""}`;
 		const others = (stop.candidates || []).filter(c => c.id !== stop.platformId);
@@ -1580,6 +1584,329 @@
 
 	// ---------- New types ----------
 	/** The route of the same line running the other way, with the stations of this one in reverse. */
+	// ---------- Topology: how trains run between platforms ----------
+	/*
+	 * The server's platform graph (PlatformGraph): each platform in two states, one for each way along it (state = index *
+	 * 2 + way), with edges to the first platforms a train meets running on without turning back. A network is rails joined
+	 * together; platforms with no rail between them are never offered for each other.
+	 */
+	let topo = null;
+
+	/** A mark in the tree for a route whose tracks don't run along the rails. */
+	function problemDot(r) {
+		const problems = routeProblems(r);
+		if (!problems.length) return "";
+		const level = problems.some(p => p.level === "error") ? "error" : "warn";
+		return `<span class="problem-dot ${level}" title="${escapeHtml(problems.map(p => p.text).join("；"))}">!</span>`;
+	}
+
+	function buildTopology() {
+		const source = data.topology || { platforms: [], networkCount: 0 };
+		const byStation = new Map();
+		source.platforms.forEach((p, i) => {
+			if (!p.station) return;
+			const key = p.station + "|" + p.network;
+			if (!byStation.has(key)) byStation.set(key, []);
+			byStation.get(key).push(i);
+		});
+		topo = { platforms: source.platforms, index: new Map(source.platforms.map((p, i) => [p.id, i])), byStation, reach: new Map(), problems: new Map(), networkCount: source.networkCount || 0 };
+	}
+
+	const isUsable = s => Boolean(topo.platforms[s >> 1] && topo.platforms[s >> 1].ways[s & 1].usable);
+	const platformLabel = i => topo.platforms[i].name || "?";
+	const stationLabel = i => shortName(topo.platforms[i].stationName) || "（不属于车站）";
+	/** The tracks of a platform's station on the same rails, by name so they keep their rows whichever is picked. */
+	function stationTracks(i) {
+		const p = topo.platforms[i];
+		const tracks = p.station ? topo.byStation.get(p.station + "|" + p.network) || [i] : [i];
+		return (tracks.includes(i) ? tracks : [i, ...tracks]).slice().sort((a, b) => platformLabel(a).localeCompare(platformLabel(b), undefined, { numeric: true }) || a - b);
+	}
+
+	/** Costs from a state to every state reachable from it without turning back, passing platforms on the way. */
+	function reachFrom(start) {
+		const cached = topo.reach.get(start);
+		if (cached) return cached;
+		const dist = new Map([[start, 0]]), prev = new Map(), done = new Set();
+		const heap = [[0, start]];
+		const push = item => {
+			heap.push(item);
+			for (let i = heap.length - 1; i > 0;) {
+				const parent = (i - 1) >> 1;
+				if (heap[parent][0] <= heap[i][0]) break;
+				[heap[parent], heap[i]] = [heap[i], heap[parent]];
+				i = parent;
+			}
+		};
+		const pop = () => {
+			const top = heap[0], last = heap.pop();
+			if (heap.length) {
+				heap[0] = last;
+				for (let i = 0; ;) {
+					const l = i * 2 + 1, r = l + 1;
+					let m = i;
+					if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+					if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+					if (m === i) break;
+					[heap[m], heap[i]] = [heap[i], heap[m]];
+					i = m;
+				}
+			}
+			return top;
+		};
+		while (heap.length && done.size < 20000) {
+			const [d, s] = pop();
+			if (done.has(s)) continue;
+			done.add(s);
+			const edges = isUsable(s) ? topo.platforms[s >> 1].ways[s & 1].edges : [];
+			for (let k = 0; k < edges.length; k += 2) {
+				const t = edges[k], nd = d + edges[k + 1];
+				if (t !== start && nd < (dist.has(t) ? dist.get(t) : Infinity)) {
+					dist.set(t, nd);
+					prev.set(t, s);
+					push([nd, t]);
+				}
+			}
+		}
+		dist.delete(start);
+		const result = { dist, prev };
+		topo.reach.set(start, result);
+		return result;
+	}
+
+	/** The cheapest way from any state of one platform to any state of another, or Infinity. */
+	function legCost(from, to) {
+		let best = Infinity;
+		[from * 2, from * 2 + 1].filter(isUsable).forEach(s => [to * 2, to * 2 + 1].forEach(t => {
+			const d = reachFrom(s).dist.get(t);
+			if (d !== undefined && d < best) best = d;
+		}));
+		return best;
+	}
+
+	const compareTuples = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+
+	/**
+	 * The best tracks for a run of stations, by layers: each stop's tracks, a state being a track and the way the train
+	 * runs along it. Fixed stops must keep their track; then as few tracks as possible differ from {@code current}, then as
+	 * few turn backs as possible, then the cheapest. Turning back is leaving a stop the other way from how it came.
+	 *
+	 * @return {ok, picks, reversals, legs, feasible: Set of tracks for each stop}
+	 */
+	function solveStops(layers, current, pins) {
+		const n = layers.length;
+		const allowed = layers.map((tracks, i) => pins && pins.has(i) ? tracks.filter(p => p === pins.get(i)) : tracks);
+		const change = (i, p) => current && current[i] !== undefined && current[i] !== p ? 1 : 0;
+		const departures = [new Map()], arrivals = [null];
+		allowed[0].forEach(p => [p * 2, p * 2 + 1].filter(isUsable).forEach(s => departures[0].set(s, { t: [change(0, p), 0, 0], from: null })));
+		for (let i = 1; i < n; i++) {
+			const arrive = new Map(), targets = allowed[i].flatMap(p => [p * 2, p * 2 + 1]);
+			departures[i - 1].forEach((v, s) => {
+				const { dist } = reachFrom(s);
+				targets.forEach(t => {
+					const d = dist.get(t);
+					if (d === undefined) return;
+					const tuple = [v.t[0] + change(i, t >> 1), v.t[1], v.t[2] + d];
+					const old = arrive.get(t);
+					if (!old || compareTuples(tuple, old.t) < 0) arrive.set(t, { t: tuple, from: s });
+				});
+			});
+			arrivals.push(arrive);
+			const depart = new Map();
+			if (i < n - 1) arrive.forEach((v, t) => [t, t ^ 1].filter(isUsable).forEach(s => {
+				const tuple = s === t ? v.t : [v.t[0], v.t[1] + 1, v.t[2]];
+				const old = depart.get(s);
+				if (!old || compareTuples(tuple, old.t) < 0) depart.set(s, { t: tuple, from: t });
+			}));
+			departures.push(depart);
+		}
+
+		// Which tracks some way through all the stops can use, from both ends
+		const feasible = layers.map(() => new Set());
+		let good = n > 1 ? new Set(arrivals[n - 1].keys()) : new Set(departures[0].keys());
+		good.forEach(t => feasible[n - 1].add(t >> 1));
+		for (let i = n - 2; i >= 0; i--) {
+			const goodDepartures = new Set([...departures[i].keys()].filter(s => [...good].some(t => reachFrom(s).dist.has(t))));
+			good = i === 0 ? goodDepartures : new Set([...arrivals[i].keys()].filter(t => goodDepartures.has(t) || goodDepartures.has(t ^ 1)));
+			good.forEach(s => feasible[i].add(s >> 1));
+		}
+
+		const last = n > 1 ? arrivals[n - 1] : departures[0];
+		let best = null;
+		last.forEach((v, t) => { if (!best || compareTuples(v.t, best[1].t) < 0) best = [t, v]; });
+		if (!best) return { ok: false, feasible };
+		const picks = new Array(n), arrive = new Array(n), depart = new Array(n), legs = new Array(n).fill(0);
+		let t = best[0];
+		for (let i = n - 1; i >= 1; i--) {
+			const entry = arrivals[i].get(t);
+			arrive[i] = t;
+			picks[i] = t >> 1;
+			const s = entry.from;
+			legs[i - 1] = reachFrom(s).dist.get(t);
+			depart[i - 1] = s;
+			t = i - 1 > 0 ? departures[i - 1].get(s).from : s;
+		}
+		picks[0] = (n > 1 ? depart[0] : best[0]) >> 1;
+		const reversals = [];
+		for (let i = 1; i < n - 1; i++) if (depart[i] !== arrive[i]) reversals.push(i);
+		return { ok: true, picks, reversals, legs, feasible };
+	}
+
+	/**
+	 * The way along the rails from one station to another, through stations in between in order: the shortest at each
+	 * part, turning back at a station on the way only when there is no other way.
+	 *
+	 * @param stages lists of tracks: where to start, each station to go through, and where to end
+	 * @return the tracks of every station passed, in order, or null if there is no way
+	 */
+	function findCorridor(stages) {
+		let sources = new Map();
+		stages[0].forEach(p => [p * 2, p * 2 + 1].filter(isUsable).forEach(s => sources.set(s, { cost: 0, states: [s] })));
+		for (let k = 1; k < stages.length; k++) {
+			const targets = stages[k].flatMap(p => [p * 2, p * 2 + 1]);
+			let found = null;
+			sources.forEach((v, s) => {
+				const { dist, prev } = reachFrom(s);
+				targets.forEach(t => {
+					const d = dist.get(t);
+					if (d === undefined || found && v.cost + d >= found.cost) return;
+					const between = [];
+					for (let x = t; x !== s && x !== undefined; x = prev.get(x)) between.unshift(x);
+					found = { cost: v.cost + d, states: [...v.states, ...between], end: t };
+				});
+			});
+			if (!found) return null;
+			sources = new Map([[found.end, found]]);
+			// Turning back at a station on the way costs a lot, so it is only taken when nothing else gets there
+			if (k < stages.length - 1 && isUsable(found.end ^ 1)) sources.set(found.end ^ 1, { cost: found.cost + 1e7, states: found.states });
+		}
+		const way = [...sources.values()][0].states;
+		const tracks = [];
+		way.forEach(s => {
+			const p = s >> 1;
+			if (!topo.platforms[p].station) return;
+			if (tracks.length && topo.platforms[tracks[tracks.length - 1]].station === topo.platforms[p].station) return;
+			tracks.push(p);
+		});
+		return tracks;
+	}
+
+	/**
+	 * What is wrong with a route's tracks against the rails, without changing anything: stops that can't be reached at all,
+	 * turning back part of the way, and long detours.
+	 *
+	 * @return [{stop, level: "error" | "warn", text}]
+	 */
+	function routeProblems(r) {
+		if (!topo) return [];
+		const ids = platformsOf(r);
+		const key = ids.join(",");
+		const cached = topo.problems.get(r.id);
+		if (cached && cached.key === key) return cached.problems;
+		const problems = [];
+		const tracks = ids.map(id => topo.index.has(id) ? topo.index.get(id) : -1);
+		const name = i => shortName(r.stops[i].name) || `第 ${i + 1} 站`;
+		tracks.forEach((p, i) => { if (p < 0) problems.push({ stop: i, level: "error", text: `${name(i)}的站台没有轨道` }); });
+		if (!problems.length && tracks.length > 1) {
+			const network = topo.platforms[tracks[0]].network;
+			tracks.forEach((p, i) => { if (topo.platforms[p].network !== network) problems.push({ stop: i, level: "error", text: `${name(i)}的站台和首站不在同一个线网里（轨道没有连起来）` }); });
+		}
+		if (!problems.length && tracks.length > 1) {
+			const solution = solveStops(tracks.map(p => [p]), null, null);
+			if (!solution.ok) {
+				for (let i = 0; i + 1 < tracks.length; i++) {
+					if (legCost(tracks[i], tracks[i + 1]) === Infinity) problems.push({ stop: i + 1, level: "error", text: `${name(i)}到${name(i + 1)}沿轨道走不通` });
+				}
+				if (!problems.length) problems.push({ stop: 0, level: "error", text: "各站单独走得通，连起来要在中途反复掉头才行" });
+			} else {
+				solution.reversals.forEach(i => problems.push({ stop: i, level: "warn", text: `在${name(i)}掉头` }));
+				for (let i = 0; i + 1 < tracks.length; i++) {
+					const best = Math.min(...stationTracks(tracks[i]).flatMap(p => stationTracks(tracks[i + 1]).map(q => legCost(p, q))));
+					if (isFinite(best) && solution.legs[i] > best * 1.5 + 50) problems.push({ stop: i + 1, level: "warn", text: `${name(i)}到${name(i + 1)}绕路：换股可以近得多` });
+				}
+			}
+		}
+		topo.problems.set(r.id, { key, problems });
+		return problems;
+	}
+
+	/**
+	 * The track picker on the platform graph: a column for each station with its tracks on the same rails, lines between
+	 * neighbouring columns where a train can run without turning back, and the way picked drawn bold. A click on a track
+	 * fixes it, and the other stations move to the best tracks that still run, keeping what they had where they can.
+	 *
+	 * @param model {layers: [[track]], picks: [track], stop: [bool], pins: Map, color, conflict}
+	 */
+	function topologyHtml(model) {
+		const n = model.layers.length;
+		if (!n) return `<p class="hint">没有车站。</p>`;
+		const solution = solveStops(model.layers, model.picks, model.pins);
+		const reversals = new Set();
+		if (solution.ok && solution.picks.every((p, i) => p === model.picks[i])) solution.reversals.forEach(i => reversals.add(i));
+		const colW = 112, rowH = 26, head = 38, pad = 8, cellW = 92;
+		const rows = Math.max(...model.layers.map(l => l.length));
+		const width = pad * 2 + n * colW - (colW - cellW), height = head + rows * rowH + 28;
+		const x = i => pad + i * colW, y = k => head + k * rowH;
+		const parts = [`<svg class="topo" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="group" aria-label="站台连通图">`];
+		for (let i = 0; i + 1 < n; i++) {
+			model.layers[i].forEach((p, a) => model.layers[i + 1].forEach((q, b) => {
+				if (legCost(p, q) === Infinity) return;
+				const on = model.picks[i] === p && model.picks[i + 1] === q;
+				parts.push(`<line x1="${x(i) + cellW}" y1="${y(a) + 10}" x2="${x(i + 1)}" y2="${y(b) + 10}" class="${on ? "link on" : "link"}"${on ? ` style="stroke:${model.color}"` : ""}/>`);
+			}));
+		}
+		model.layers.forEach((tracks, i) => {
+			const end = i === 0 || i === n - 1;
+			parts.push(`<text x="${x(i) + cellW / 2}" y="14" class="station">${escapeHtml(stationLabel(tracks[0]))}</text>`);
+			if (reversals.has(i)) parts.push(`<text x="${x(i) + cellW / 2}" y="30" class="turn">↶ 掉头</text>`);
+			tracks.forEach((p, k) => {
+				const on = model.picks[i] === p, pinned = model.pins.has(i) && model.pins.get(i) === p, ok = solution.feasible[i].has(p);
+				const classes = ["track", on ? "on" : "", pinned ? "pinned" : "", ok ? "" : "dead"].filter(Boolean).join(" ");
+				const title = `${platformLabel(p)}${topo.platforms[p].passingTrack ? "（待避线）" : ""}：${pinned ? "已固定，点一下取消" : ok ? "点一下固定走这一股" : "和其他站连不起来，点一下仍可固定"}`;
+				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(k) + 14}">${pinned ? "● " : ""}${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? " 待避" : ""}</text></g>`);
+			});
+			const stops = model.stop[i] || end;
+			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? "首末站，停车" : stops ? "停车，点一下改为通过" : "通过，点一下改为停车"}</title><text x="${x(i) + cellW / 2}" y="${height - 8}">${stops ? "停" : "过"}</text></g>`);
+		});
+		parts.push(`</svg>`);
+		return `<div class="topo-wrap">${parts.join("")}</div>${model.conflict ? `<p class="err">${escapeHtml(model.conflict)}</p>` : ""}`;
+	}
+
+	/** A click in the picker: fixing or freeing a track, or switching between stopping and passing. */
+	function topologyClick(model, target) {
+		const toggle = target.closest("[data-toggle]");
+		if (toggle) {
+			const i = +toggle.dataset.toggle;
+			if (i > 0 && i < model.layers.length - 1) model.stop[i] = !model.stop[i];
+			return true;
+		}
+		const cell = target.closest("[data-track]");
+		if (!cell) return false;
+		const i = +cell.dataset.stop, p = +cell.dataset.track;
+		if (model.pins.has(i) && model.pins.get(i) === p) model.pins.delete(i);
+		else model.pins.set(i, p);
+		const solution = solveStops(model.layers, model.picks, model.pins);
+		if (solution.ok) {
+			model.picks = solution.picks;
+			model.conflict = "";
+		} else {
+			model.picks[i] = p;
+			const names = [...model.pins.keys()].sort((a, b) => a - b).map(k => stationLabel(model.layers[k][0]));
+			model.conflict = `固定的站台连不起来：${names.join("、")}。取消其中一个再试。`;
+		}
+		return true;
+	}
+
+	/** A picker model for stations given as tracks, offering the other tracks of each station on the same rails. */
+	function topologyModel(tracks, stop, color) {
+		return { layers: tracks.map(stationTracks), picks: tracks.slice(), stop: stop.slice(), pins: new Map(), color, conflict: "" };
+	}
+
+	function stopsSummaryOf(model) {
+		const n = model.layers.length;
+		const passed = model.layers.filter((tracks, i) => !model.stop[i] && i > 0 && i < n - 1).map(tracks => stationLabel(tracks[0]));
+		return `${n} 站，停 ${n - passed.length} 站${passed.length ? `，通过 ${passed.length} 站：${passed.join("、")}` : "，全部停车"}`;
+	}
+
 	function counterpartOf(r) {
 		const line = data.lines.find(l => l.key === r.lineKey);
 		if (!line || r.stops.length < 2) return null;
@@ -1588,6 +1915,9 @@
 		return others.find(o => o.serviceType === r.serviceType) || others[0] || null;
 	}
 
+	/** A name with words added to the first language of it, before the {@code |} other languages follow. */
+	const withSuffix = (name, suffix) => name.includes("|") ? name.slice(0, name.indexOf("|")) + suffix + name.slice(name.indexOf("|")) : name + suffix;
+
 	/** A name for the new type: the route's name with its type word swapped, or the type added after it. */
 	function typedName(r, type) {
 		const word = r.serviceType;
@@ -1595,59 +1925,119 @@
 	}
 
 	/**
-	 * A new type of a line, copied from one of its routes (design document 6.12, block D). Each station offers the tracks
-	 * the game found for it: the same station, the same region of the pathfinding boundaries, and reachable from the
-	 * stations around it, so platforms of other lines at an interchange aren't offered.
+	 * A new type of a line, made along the rails (design document 6.12, block D): pick where it starts and ends and
+	 * stations to go through, and its stations are those the shortest way between them passes, in order. A route of the
+	 * line gives the colour, tables and depot, and fills in the ends to start with; its stations aren't copied.
 	 */
 	function newTypeDialog(lineKey, baseRoute) {
 		const line = data.lines.find(l => l.key === lineKey) || currentLine();
 		if (!line) return;
 		const base0 = baseRoute && baseRoute.lineKey === line.key ? baseRoute : line.routes.find(r => r.stops.length > 1);
 		if (!base0) return;
-		// The track and stop picked at each station, for each direction being made
-		let choices = new Map(), lastBase = null, pickDir = 0;
-		const resetChoices = base => {
-			choices = new Map();
-			[base, counterpartOf(base)].filter(Boolean).forEach(r => choices.set(r.id, r.stops.map(stop => ({ platformId: stop.platformId, stop: !stop.pass }))));
-			pickDir = 0;
+		const trackOf = id => topo.index.has(id) ? topo.index.get(id) : -1;
+		// The stations on the same rails as the base route, by the first track of each
+		const stationsOn = base => {
+			const first = trackOf(base.stops[0].platformId);
+			if (first < 0) return [];
+			const network = topo.platforms[first].network, seen = new Map();
+			topo.platforms.forEach((p, i) => { if (p.network === network && p.station && !seen.has(p.station)) seen.set(p.station, i); });
+			return [...seen.entries()].map(([station, i]) => ({ station, track: i, name: shortName(topo.platforms[i].stationName) })).sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
 		};
-		const directions = form => {
-			const base = data.routeById.get(form.base.value), other = counterpartOf(base);
-			return form.both.checked && other ? [base, other] : [base];
+		let stations = [], vias = [], models = [], lastBase = null, lastKey = null, pickDir = 0, routeError = "";
+		const tracksOf = station => {
+			const s = stations.find(o => o.station === station);
+			return s ? stationTracks(s.track) : [];
 		};
-		const depots = r => data.depots.filter(depot => depot.routes.includes(r.id));
+		const plan = form => {
+			const base = data.routeById.get(form.base.value);
+			const from = form.from.value, to = form.to.value, startTrack = form.fromTrack.value;
+			const both = form.both.checked;
+			const key = [base.id, from, to, startTrack, both, vias.join(">")].join("|");
+			if (key === lastKey) return;
+			lastKey = key;
+			models = [];
+			routeError = "";
+			if (!from || !to || from === to) {
+				routeError = "选好不同的起点站和终点站";
+				return;
+			}
+			const color = form.color.value;
+			/*
+			 * The stations come from the shortest way along the rails. Ways along different tracks of a station often cost the
+			 * same, so each station then takes the track the line's route the same way uses there, where that still runs.
+			 */
+			const make = (start, ends, stops, hint, pinnedStart) => {
+				const tracks = findCorridor([start, ...stops.map(tracksOf), ends]);
+				if (!tracks || tracks.length < 2) return null;
+				const model = topologyModel(tracks, tracks.map(() => true), color);
+				if (pinnedStart >= 0) model.pins.set(0, pinnedStart);
+				const hinted = new Map((hint ? hint.stops : []).filter(stop => topo.index.has(stop.platformId)).map(stop => [stop.station, topo.index.get(stop.platformId)]));
+				const preferred = model.layers.map((layer, i) => {
+					const track = hinted.get(topo.platforms[layer[0]].station);
+					return track !== undefined && layer.includes(track) ? track : model.picks[i];
+				});
+				const solution = solveStops(model.layers, preferred, model.pins);
+				if (solution.ok) model.picks = solution.picks;
+				return model;
+			};
+			const startTracks = startTrack ? [+startTrack] : tracksOf(from);
+			const forward = make(startTracks, tracksOf(to), vias, base, startTrack ? +startTrack : -1);
+			if (!forward) {
+				routeError = `从${shortName(stations.find(o => o.station === from).name)}${vias.length ? "经过选的途经站" : ""}到${shortName(stations.find(o => o.station === to).name)}沿轨道走不通`;
+				return;
+			}
+			models.push(forward);
+			if (both) {
+				const backward = make(tracksOf(to), tracksOf(from), vias.slice().reverse(), counterpartOf(base), -1);
+				if (backward) models.push(backward);
+				else routeError = "反方向沿轨道走不通，只建这个方向";
+			}
+		};
 		const renderPicker = form => {
-			const dirs = directions(form), r = dirs[Math.min(pickDir, dirs.length - 1)], picked = choices.get(r.id), color = form.color.value;
-			form.querySelector(".dir-tabs").innerHTML = dirs.length > 1 ? dirs.map((d, i) => `<button type="button" class="table-chip${d === r ? " on" : ""}" data-dir="${i}">${escapeHtml(routeTitle(d))}</button>`).join("") : "";
-			form.querySelector("#dlg-pick").innerHTML = trackRowsHtml(r, picked, color);
-			form.querySelector("#dlg-pick-summary").textContent = (dirs.length > 1 ? routeTitle(r) + "：" : "") + stopsSummary(r, picked);
+			plan(form);
+			models.forEach(m => { m.color = form.color.value; });
+			const stationOptions = selected => stations.map(s => `<option value="${s.station}"${s.station === selected ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+			form.querySelector("#dlg-vias").innerHTML = vias.map((station, k) => `<button type="button" class="table-chip" data-via="${k}" title="点一下去掉">${escapeHtml((stations.find(o => o.station === station) || { name: "?" }).name)} ✕</button>`).join("") + `<select name="addVia"><option value="">＋ 途经站…</option>${stationOptions("")}</select>`;
+			const model = models[Math.min(pickDir, models.length - 1)];
+			form.querySelector(".dir-tabs").innerHTML = models.length > 1 ? models.map((m, i) => `<button type="button" class="table-chip${i === pickDir ? " on" : ""}" data-dir="${i}">${escapeHtml(stationLabel(m.picks[0]))} → ${escapeHtml(stationLabel(m.picks[m.picks.length - 1]))}</button>`).join("") : "";
+			form.querySelector("#dlg-pick").innerHTML = model ? topologyHtml(model) : "";
+			form.querySelector("#dlg-pick-summary").textContent = model ? stopsSummaryOf(model) : "";
+			form.querySelector("#dlg-route-error").textContent = routeError;
 		};
 		openDialog("新建种别", `
-			<div class="row"><label>照着 <select name="base">${line.routes.filter(r => r.stops.length > 1).map(r => `<option value="${r.id}"${r === base0 ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("")}</select></label></div>
-			<label><input type="checkbox" name="both" checked> 上下行一起建</label>
+			<div class="row"><label>线路组 <select name="base">${line.routes.filter(r => r.stops.length > 1).map(r => `<option value="${r.id}"${r === base0 ? " selected" : ""}>${escapeHtml(routeTitle(r))}</option>`).join("")}</select></label></div>
+			<div class="row"><label>起点 <select name="from"></select></label><label>站台 <select name="fromTrack"></select></label><label>终点 <select name="to"></select></label></div>
+			<div class="row vias" id="dlg-vias"></div>
+			<label><input type="checkbox" name="both" checked> 反方向一起建</label>
 			<div class="row"><label>种别 <input name="type" required placeholder="急行" maxlength="16" size="8" autocomplete="off"></label>
 			<label>颜色 <input type="color" name="color" value="#2f9e55"></label></div>
-			<label>线路名 <input name="name" maxlength="128" size="28" autocomplete="off" placeholder="按照着的线路和种别自动起名"></label>
+			<label>线路名 <input name="name" maxlength="128" size="28" autocomplete="off" placeholder="按线路组和种别自动起名"></label>
 			<div class="picker">
-				<div class="picker-head"><b>股道</b><span class="dir-tabs"></span></div>
-				<p class="hint">每站列出这条线在这一站能停的股道：同一车站、同一寻路区域、从前后站开得到的站台，换乘站别的线路的站台不列。点一股走这一股，再点一次在停车和通过之间切换。股道不对时，在游戏里设寻路边界或站台的正线、待避线。</p>
-				<div class="track-rows" id="dlg-pick"></div>
+				<div class="picker-head"><b>车站和股道</b><span class="dir-tabs"></span></div>
+				<p class="hint">车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站，不照抄现有线路。只列和起点轨道连在一起的车站。连线表示列车不掉头能开过去；点一股固定它，其他站自动换成走得通的股道；最下一行点一下在停车和通过之间切换。</p>
+				<p class="err" id="dlg-route-error"></p>
+				<div id="dlg-pick"></div>
 				<div class="hint" id="dlg-pick-summary"></div>
 			</div>
 			<label>班次 <input name="pattern" placeholder="可以留空，例如 08:05 + 12 * 00:30" autocomplete="off"></label>
 			<label>加入车厂 <select name="depot"></select></label>
-			<p class="hint">车站、区间和停站时间照着选的线路。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。</p>`, "新建", form => {
+			<p class="hint">线路组的这条线路给出颜色、时刻表和车厂。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。</p>`, "新建", form => {
 			const type = form.type.value.trim();
 			if (!type) return "写上种别名，例如 急行";
+			if (!models.length) return routeError || "选好起点和终点";
+			if (models.some(m => m.conflict)) return "有固定的股道连不起来";
 			const times = form.pattern.value.trim() ? parsePattern(form.pattern.value) : [];
 			if (!times) return PATTERN_HINT;
 			const color = parseInt(form.color.value.slice(1), 16);
-			directions(form).forEach((r, i) => {
-				const name = i === 0 && form.name.value.trim() ? form.name.value.trim() : typedName(r, type);
-				const table = Math.max(0, timetableOf(r).tables.findIndex(t => t.weekdays >> state.weekday & 1));
+			const base = data.routeById.get(form.base.value);
+			models.forEach((model, i) => {
+				const source = i === 0 ? base : counterpartOf(base) || base;
+				// The other way is named after the line's route that way, or marked as the way back when there is none
+				const name = i === 0 && form.name.value.trim() ? form.name.value.trim() : i > 0 && source === base ? withSuffix(typedName(base, type), " 返") : typedName(source, type);
+				const table = Math.max(0, timetableOf(source).tables.findIndex(t => t.weekdays >> state.weekday & 1));
 				draft.created.push({
-					key: "n" + Date.now().toString(36) + i, source: r.id, lineKey: r.lineKey, name, serviceType: type, color,
-					stops: choices.get(r.id).map((choice, k) => ({ platformId: choice.platformId, pass: !choice.stop && k > 0 && k < r.stops.length - 1 })),
+					key: "n" + Date.now().toString(36) + i, source: source.id, lineKey: source.lineKey, name, serviceType: type, color,
+					stops: model.picks.map((p, k) => ({ platformId: topo.platforms[p].id, pass: !model.stop[k] && k > 0 && k < model.picks.length - 1 })),
 					services: times, table, depot: form.depot.value,
 				});
 			});
@@ -1657,12 +2047,25 @@
 		}, form => {
 			if (form.base.value !== lastBase) {
 				lastBase = form.base.value;
-				resetChoices(data.routeById.get(lastBase));
-				const list = depots(data.routeById.get(lastBase));
+				const base = data.routeById.get(lastBase);
+				stations = stationsOn(base);
+				vias = [];
+				const station = i => base.stops[i].station;
+				form.from.innerHTML = stations.map(s => `<option value="${s.station}"${s.station === station(0) ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+				form.to.innerHTML = stations.map(s => `<option value="${s.station}"${s.station === station(base.stops.length - 1) ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+				form.fromTrack.dataset.station = "";
+				const list = data.depots.filter(depot => depot.routes.includes(base.id));
 				form.depot.innerHTML = list.map(depot => `<option value="${depot.id}">${escapeHtml(shortName(depot.name))}</option>`).join("") + `<option value="">不加入，之后在游戏里加</option>`;
 			}
-			form.both.disabled = !counterpartOf(data.routeById.get(form.base.value));
-			form.name.placeholder = form.type.value.trim() ? typedName(data.routeById.get(form.base.value), form.type.value.trim()) : "按照着的线路和种别自动起名";
+			if (form.fromTrack.dataset.station !== form.from.value) {
+				form.fromTrack.dataset.station = form.from.value;
+				form.fromTrack.innerHTML = `<option value="">任一股</option>` + tracksOf(form.from.value).map(p => `<option value="${p}">${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? " 待避" : ""}</option>`).join("");
+			}
+			if (form.addVia && form.addVia.value) {
+				vias.push(form.addVia.value);
+				form.addVia.value = "";
+			}
+			form.name.placeholder = form.type.value.trim() ? typedName(data.routeById.get(form.base.value), form.type.value.trim()) : "按线路组和种别自动起名";
 			renderPicker(form);
 		});
 		const form = dialog.querySelector("form");
@@ -1673,83 +2076,63 @@
 				renderPicker(form);
 				return;
 			}
-			const chip = e.target.closest("[data-track]");
-			if (!chip) return;
-			const r = directions(form)[Math.min(pickDir, directions(form).length - 1)];
-			pickTrack(r, choices.get(r.id), +chip.dataset.stop, chip.dataset.track);
-			renderPicker(form);
+			const via = e.target.closest("[data-via]");
+			if (via) {
+				vias.splice(+via.dataset.via, 1);
+				renderPicker(form);
+				return;
+			}
+			const model = models[Math.min(pickDir, models.length - 1)];
+			if (model && topologyClick(model, e.target)) renderPicker(form);
 		});
-	}
-
-	/**
-	 * The track picker: a row for each station with a chip for each track the game found for it (same station, same region,
-	 * reachable from the stations around it). Picks are {platformId, stop} for each stop.
-	 */
-	function trackRowsHtml(r, picked, color) {
-		return r.stops.map((stop, i) => {
-			const choice = picked[i], end = i === 0 || i === r.stops.length - 1;
-			const chips = (stop.candidates && stop.candidates.length ? stop.candidates : [{ id: stop.platformId, name: stop.platform, passingTrack: stop.passingTrack }]).map(c => {
-				const on = c.id === choice.platformId;
-				const what = !on ? "点这里走这一股" : end ? "首末站，停车" : choice.stop ? "停车，再点一次改为通过" : "通过，再点一次改为停车";
-				return `<button type="button" class="table-chip track${on ? " on" : ""}${on && !choice.stop ? " pass" : ""}" style="${on ? `background:${color};border-color:${color}` : ""}" data-stop="${i}" data-track="${c.id}" title="${escapeHtml(what)}">${escapeHtml(c.name || "?")}${c.passingTrack ? " 待避" : ""}${on ? (choice.stop || end ? " · 停" : " · 过") : ""}</button>`;
-			}).join("");
-			return `<div class="track-row"><span class="track-station">${escapeHtml(shortName(stop.name))}</span>${chips}</div>`;
-		}).join("");
-	}
-
-	function stopsSummary(r, picked) {
-		const passed = r.stops.filter((stop, i) => !picked[i].stop && i > 0 && i < r.stops.length - 1).map(stop => shortName(stop.name));
-		return `停 ${r.stops.length - passed.length} 站${passed.length ? `，通过 ${passed.length} 站：${passed.join("、")}` : "，全部停车"}`;
-	}
-
-	/** A click on a track: the first picks it and stops there, the next switches between stopping and passing. */
-	function pickTrack(r, picked, i, trackId) {
-		const choice = picked[i];
-		if (choice.platformId === trackId) {
-			if (i > 0 && i < r.stops.length - 1) choice.stop = !choice.stop;
-		} else {
-			choice.platformId = trackId;
-			choice.stop = true;
-		}
 	}
 
 	/** The platform each stop uses, with a track change waiting in the draft. */
 	const platformsOf = r => draftOf(r) && draftOf(r).platforms ? draftOf(r).platforms : r.stops.map(stop => stop.platformId);
 
 	/**
-	 * Changes which track a route uses at each station, and where it stops or passes. The stations and their order stay as
-	 * they are in the game, where the dashboard changes them.
+	 * Changes which track a route uses at each station, and where it stops or passes, on the platform graph. The stations
+	 * and their order stay as they are in the game, where the dashboard changes them. Problems with the tracks as they are
+	 * are listed, and nothing is changed until a track is clicked.
 	 */
 	function stopsDialog(r) {
-		const platforms = platformsOf(r), pass = timetableOf(r).pass;
-		const picked = r.stops.map((stop, i) => ({ platformId: platforms[i], stop: !pass[i] }));
-		const color = colorOf(r.color);
+		const ids = platformsOf(r), pass = timetableOf(r).pass;
+		const tracks = ids.map(id => topo.index.has(id) ? topo.index.get(id) : -1);
+		if (tracks.some(p => p < 0)) {
+			openDialog(`停站：${escapeHtml(routeTitle(r))}`, `<p class="err">有车站的站台没有轨道，没法按轨道选股道。先在游戏里把站台放回轨道上。</p>`, "关闭", () => {});
+			return;
+		}
+		const model = topologyModel(tracks, r.stops.map((stop, i) => !pass[i]), colorOf(r.color));
+		const problemsHtml = () => {
+			const problems = routeProblems(r);
+			return problems.length ? `<ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>` : `<p class="hint">现在的股道沿轨道走得通，没有掉头和绕路。</p>`;
+		};
+		const render = form => {
+			form.querySelector("#dlg-problems").innerHTML = problemsHtml();
+			form.querySelector("#dlg-pick").innerHTML = topologyHtml(model);
+			form.querySelector("#dlg-pick-summary").textContent = stopsSummaryOf(model);
+		};
 		openDialog(`停站：${escapeHtml(routeTitle(r))}`, `
+			<div id="dlg-problems"></div>
 			<div class="picker">
-				<p class="hint">点一股走这一股，再点一次在停车和通过之间切换，首末站只能停车。只列同一车站、同一寻路区域、前后站开得到的站台。车站的先后和增删在游戏的仪表盘里改。</p>
-				<div class="track-rows" id="dlg-pick"></div>
+				<p class="hint">连线表示列车不掉头能开过去。点一股固定它，其他站自动换成走得通、改动最少的股道；最下一行点一下在停车和通过之间切换。车站的先后和增删在游戏的仪表盘里改。</p>
+				<div id="dlg-pick"></div>
 				<div class="hint" id="dlg-pick-summary"></div>
 			</div>
 			<p class="hint">改股道会清掉线路手画的路径，应用后要刷新车厂路径。</p>`, "确定", () => {
-			const newPlatforms = picked.map(choice => choice.platformId);
+			if (model.conflict) return "有固定的股道连不起来";
+			const newPlatforms = model.picks.map(p => topo.platforms[p].id);
 			const entry = draftEntry(r);
 			if (newPlatforms.every((id, i) => id === r.stops[i].platformId)) delete entry.platforms;
 			else entry.platforms = newPlatforms;
 			tidyDraft(r.id);
 			editTimetable(r, timetable => {
-				timetable.pass = picked.map((choice, i) => !choice.stop && i > 0 && i < r.stops.length - 1);
+				timetable.pass = model.stop.map((stops, i) => !stops && i > 0 && i < r.stops.length - 1);
 			});
-		}, form => {
-			form.querySelector("#dlg-pick").innerHTML = trackRowsHtml(r, picked, color);
-			form.querySelector("#dlg-pick-summary").textContent = stopsSummary(r, picked);
-		});
+		}, render);
 		const form = dialog.querySelector("form");
 		form.addEventListener("click", e => {
-			const chip = e.target.closest("[data-track]");
-			if (!chip) return;
-			pickTrack(r, picked, +chip.dataset.stop, chip.dataset.track);
-			form.querySelector("#dlg-pick").innerHTML = trackRowsHtml(r, picked, color);
-			form.querySelector("#dlg-pick-summary").textContent = stopsSummary(r, picked);
+			if (topologyClick(model, e.target)) render(form);
 		});
 	}
 

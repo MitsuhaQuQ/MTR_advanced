@@ -10,8 +10,10 @@ import mtr.data.Depot;
 import mtr.data.Platform;
 import mtr.data.Route;
 import mtr.data.RouteTimetable;
+import mtr.data.Station;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
+import transitsim.network.PlatformGraph;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,6 +30,7 @@ public final class EditorActions implements IPacket {
 	private static final int MAX_OPERATIONS = 512;
 	private static final int MAX_NAME_LENGTH = 256;
 	private static final int MAX_SERVICE_TYPE_LENGTH = 32;
+	private static final int MAX_STOPS = 256;
 
 	/**
 	 * @param request {@code {operations: [...]}}, each with a {@code type}, the {@code route} id, and the revision the page
@@ -130,9 +133,9 @@ public final class EditorActions implements IPacket {
 	}
 
 	/**
-	 * A new type (种别) of a line, copied from one of its routes: the same stations, each at a track the player picked from
-	 * those the server found for it (same station, same region, reachable, see {@link transitsim.network.RegionComputer}), with its
-	 * own name, colour, stops and services. Its set times start empty, since its stops differ from the route it copies.
+	 * A new type (种别) of a line, with the stations the page found along the rails ({@link PlatformGraph}): the platforms a
+	 * way between the ends the player picked runs through, each at a track the player may have changed. The route it is
+	 * based on gives the line, colour, tables and depot; its stations aren't copied. Set times start empty.
 	 */
 	private static String createRoute(Route source, JsonObject operation, int index, JsonArray created) {
 		final String name = getString(operation, "name").trim();
@@ -144,25 +147,27 @@ public final class EditorActions implements IPacket {
 			return "种别名不能为空，也不能太长";
 		}
 		final JsonArray stops = operation.getAsJsonArray("stops");
-		final int stopCount = source.platformIds.size();
-		if (stops == null || stops.size() != stopCount) {
-			return "车站和游戏里的不一致，可能刚在游戏里改过，请刷新";
+		if (stops == null || stops.size() < 2 || stops.size() > MAX_STOPS) {
+			return String.format("一个种别要有 2 到 %s 个车站", MAX_STOPS);
 		}
+		final int stopCount = stops.size();
 		final long[] platformIds = new long[stopCount];
 		final boolean[] pass = new boolean[stopCount];
 		for (int i = 0; i < stopCount; i++) {
 			final JsonObject stop = stops.get(i).getAsJsonObject();
-			final long sourcePlatformId = source.platformIds.get(i).platformId;
 			platformIds[i] = parseId(getString(stop, "platformId"));
 			pass[i] = stop.get("pass").getAsBoolean() && i > 0 && i < stopCount - 1;
-			final long platformId = platformIds[i];
-			if (Arrays.stream(ClientData.PATH_REGIONS.getCandidates(source.id, i, sourcePlatformId)).noneMatch(candidate -> candidate == platformId)) {
-				return String.format("第 %s 站选的股道不在可选的站台里，可能轨道或寻路边界刚改过，请刷新", i + 1);
-			}
-			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId);
+			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformIds[i]);
 			if (platform == null) {
 				return String.format("第 %s 站的站台已经不在了", i + 1);
 			}
+			if (platform.transportMode != source.transportMode) {
+				return String.format("第 %s 站的站台和线路的交通方式不同", i + 1);
+			}
+		}
+		final String connectionError = checkConnected(platformIds);
+		if (connectionError != null) {
+			return connectionError;
 		}
 		final Depot depot = operation.has("depot") ? ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot"))) : null;
 		if (depot != null && depot.transportMode != source.transportMode) {
@@ -179,24 +184,14 @@ public final class EditorActions implements IPacket {
 		}
 		newRoute.editorManaged = true;
 
-		// The platform of a stop can't be changed in place, so each stop is made again with what it had
-		final List<Route.RoutePlatform> oldStops = new ArrayList<>(newRoute.platformIds);
+		// Its own stations, so nothing of the stops of the route it is based on is kept, nor a path drawn for them
 		newRoute.platformIds.clear();
-		boolean changedTrack = false;
 		for (int i = 0; i < stopCount; i++) {
-			final Route.RoutePlatform oldStop = oldStops.get(i);
 			final Route.RoutePlatform newStop = new Route.RoutePlatform(platformIds[i]);
-			newStop.customDestination = oldStop.customDestination;
-			newStop.waypoints.addAll(oldStop.waypoints);
-			newStop.dwellOverride = oldStop.dwellOverride;
 			newStop.pass = pass[i];
 			newRoute.platformIds.add(newStop);
-			changedTrack |= platformIds[i] != oldStop.platformId;
 		}
-		// A drawn path follows the old tracks
-		if (changedTrack) {
-			newRoute.getPathData().clear();
-		}
+		newRoute.getPathData().clear();
 		if (newRoute.platformIds.stream().noneMatch(routePlatform -> routePlatform.platformId == newRoute.timetable.entryPlatformId)) {
 			newRoute.timetable.entryPlatformId = 0;
 		}
@@ -241,6 +236,26 @@ public final class EditorActions implements IPacket {
 	}
 
 	/**
+	 * Checks a run of platforms against the rails: all joined into one network, and a train can get from each to the next,
+	 * passing other platforms on the way. Turning back at a stop is allowed here; the page warns about it.
+	 *
+	 * @return why it can't run, or null
+	 */
+	private static String checkConnected(long[] platformIds) {
+		final PlatformGraph platformGraph = ClientData.PATH_REGIONS.platformGraph;
+		final long network = platformGraph.getNetworkOf(platformIds[0]);
+		for (int i = 0; i < platformIds.length; i++) {
+			if (network == 0 || platformGraph.getNetworkOf(platformIds[i]) != network) {
+				return String.format("第 %s 站的站台和第 1 站的不在同一个线网里（轨道没有连起来）", i + 1);
+			}
+			if (i > 0 && !platformGraph.canReach(platformIds[i - 1], platformIds[i])) {
+				return String.format("第 %s 站到第 %s 站沿轨道走不通", i, i + 1);
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Moves stops of a route to other tracks of the same station, from those the server found for each stop. Everything
 	 * else of a stop stays, its set times included.
 	 *
@@ -255,8 +270,17 @@ public final class EditorActions implements IPacket {
 		for (int i = 0; i < stopCount; i++) {
 			final long platformId = parseId(platforms.get(i).getAsString());
 			platformIds[i] = platformId;
-			if (Arrays.stream(ClientData.PATH_REGIONS.getCandidates(route.id, i, route.platformIds.get(i).platformId)).noneMatch(candidate -> candidate == platformId)) {
-				return String.format("第 %s 站选的股道不在可选的站台里，可能轨道或寻路边界刚改过，请刷新", i + 1);
+			final long oldPlatformId = route.platformIds.get(i).platformId;
+			final Station oldStation = ClientData.DATA_CACHE.platformIdToStation.get(oldPlatformId);
+			if (platformId != oldPlatformId && (oldStation == null || ClientData.DATA_CACHE.platformIdToStation.get(platformId) != oldStation)) {
+				return String.format("第 %s 站选的股道不是这个车站的站台，可能刚在游戏里改过，请刷新", i + 1);
+			}
+		}
+		// Only tracks changed are checked, so a route that was already broken in the game can still be put right a stop at a time
+		if (!Arrays.equals(platformIds, route.platformIds.stream().mapToLong(routePlatform -> routePlatform.platformId).toArray())) {
+			final String connectionError = checkConnected(platformIds);
+			if (connectionError != null) {
+				return connectionError;
 			}
 		}
 

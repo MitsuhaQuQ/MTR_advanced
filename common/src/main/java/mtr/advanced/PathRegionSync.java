@@ -70,14 +70,12 @@ public final class PathRegionSync {
 		});
 		final List<RegionComputer.SavedRail> sidings = new ArrayList<>();
 		railwayData.sidings.forEach(siding -> sidings.add(toSavedRail(siding, 0)));
-		final List<RegionComputer.RouteStops> routes = new ArrayList<>();
-		railwayData.routes.forEach(route -> routes.add(new RegionComputer.RouteStops(route.id, route.platformIds.stream().mapToLong(routePlatform -> routePlatform.platformId).toArray())));
 
 		final Thread thread = new Thread(() -> {
 			RegionData data = null;
 			Network network = null;
 			try {
-				data = RegionComputer.compute(graph, boundariesCopy, platforms, sidings, routes);
+				data = RegionComputer.compute(graph, boundariesCopy, platforms, sidings);
 				final Map<UUID, Long> savedRails = new HashMap<>();
 				platforms.forEach(platform -> savedRails.put(PathBoundaries.segmentKey(platform.pos1, platform.pos2), platform.id));
 				sidings.forEach(siding -> savedRails.put(PathBoundaries.segmentKey(siding.pos1, siding.pos2), siding.id));

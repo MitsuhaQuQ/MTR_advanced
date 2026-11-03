@@ -7,11 +7,9 @@ import mtr.advanced.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
+import transitsim.network.PlatformGraph;
 
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -38,10 +36,19 @@ public final class EditorData {
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
 		data.addProperty("canEdit", ClientData.hasPermission());
 		data.addProperty("regionCount", ClientData.PATH_REGIONS.regionCount);
+		data.add("topology", buildTopology());
+
+		final Map<Long, List<Platform>> stationPlatforms = new HashMap<>();
+		ClientData.PLATFORMS.stream().sorted(Comparator.comparing((Platform platform) -> platform.name).thenComparingLong(platform -> platform.id)).forEach(platform -> {
+			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platform.id);
+			if (station != null) {
+				stationPlatforms.computeIfAbsent(station.id, key -> new ArrayList<>()).add(platform);
+			}
+		});
 
 		final List<Route> routes = ClientData.ROUTES.stream().filter(route -> !route.isHidden).sorted(Comparator.comparing((Route route) -> route.name).thenComparingLong(route -> route.id)).collect(Collectors.toList());
 		final JsonArray routesArray = new JsonArray();
-		routes.forEach(route -> routesArray.add(buildRoute(route)));
+		routes.forEach(route -> routesArray.add(buildRoute(route, stationPlatforms)));
 		data.add("routes", routesArray);
 
 		final JsonArray depotsArray = new JsonArray();
@@ -70,7 +77,7 @@ public final class EditorData {
 		return data;
 	}
 
-	private static JsonObject buildRoute(Route route) {
+	private static JsonObject buildRoute(Route route, Map<Long, List<Platform>> stationPlatforms) {
 		final JsonObject routeObject = new JsonObject();
 		// Ids don't fit in a JavaScript number
 		routeObject.addProperty("id", String.valueOf(route.id));
@@ -101,18 +108,19 @@ public final class EditorData {
 			stopObject.addProperty("platform", platform == null ? "" : platform.name);
 			stopObject.addProperty("pass", routePlatform.pass);
 			stopObject.addProperty("passingTrack", platform != null && platform.passingTrack);
-			// The tracks the track picker offers here: the same station, the same region, and reachable from the stops around
+			// The tracks of the same station joined by rails to this one; the page works out which of them a train can use
+			final PlatformGraph platformGraph = ClientData.PATH_REGIONS.platformGraph;
+			final long network = platformGraph.getNetworkOf(routePlatform.platformId);
+			stopObject.addProperty("network", String.valueOf(network));
 			final JsonArray candidatesArray = new JsonArray();
-			for (final long candidateId : ClientData.PATH_REGIONS.getCandidates(route.id, i, routePlatform.platformId)) {
-				final Platform candidate = ClientData.DATA_CACHE.platformIdMap.get(candidateId);
-				if (candidate != null) {
-					final JsonObject candidateObject = new JsonObject();
-					candidateObject.addProperty("id", String.valueOf(candidateId));
-					candidateObject.addProperty("name", candidate.name);
-					candidateObject.addProperty("passingTrack", candidate.passingTrack);
-					candidatesArray.add(candidateObject);
-				}
-			}
+			final List<Platform> candidates = station == null ? Collections.emptyList() : stationPlatforms.getOrDefault(station.id, Collections.emptyList());
+			candidates.stream().filter(candidate -> candidate.id == routePlatform.platformId || network != 0 && platformGraph.getNetworkOf(candidate.id) == network && candidate.transportMode == route.transportMode).forEach(candidate -> {
+				final JsonObject candidateObject = new JsonObject();
+				candidateObject.addProperty("id", String.valueOf(candidate.id));
+				candidateObject.addProperty("name", candidate.name);
+				candidateObject.addProperty("passingTrack", candidate.passingTrack);
+				candidatesArray.add(candidateObject);
+			});
 			stopObject.add("candidates", candidatesArray);
 			stopsArray.add(stopObject);
 		}
@@ -216,6 +224,53 @@ public final class EditorData {
 		}
 		routeObject.add("tables", tablesArray);
 		return routeObject;
+	}
+
+	/**
+	 * How trains can run between platforms without turning back ({@link PlatformGraph}), for picking tracks and making new
+	 * types in the page: each platform in the graph's order, with its station and network, and for each way along it whether
+	 * it can be used and the edges from it as [state, cost, state, cost, ...], a state being a platform's index times two
+	 * plus its way.
+	 */
+	private static JsonObject buildTopology() {
+		final PlatformGraph platformGraph = ClientData.PATH_REGIONS.platformGraph;
+		final JsonObject topology = new JsonObject();
+		final JsonArray platformsArray = new JsonArray();
+		for (int i = 0; i < platformGraph.size(); i++) {
+			final long platformId = platformGraph.getPlatformId(i);
+			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId);
+			final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platformId);
+			final JsonObject platformObject = new JsonObject();
+			platformObject.addProperty("id", String.valueOf(platformId));
+			platformObject.addProperty("name", platform == null ? "" : platform.name);
+			platformObject.addProperty("station", station == null ? "" : String.valueOf(station.id));
+			platformObject.addProperty("stationName", station == null ? "" : station.name);
+			platformObject.addProperty("mode", platform == null ? "" : platform.transportMode.toString());
+			platformObject.addProperty("passingTrack", platform != null && platform.passingTrack);
+			platformObject.addProperty("network", String.valueOf(platformGraph.getNetwork(i)));
+			final JsonArray waysArray = new JsonArray();
+			for (int direction = 0; direction < 2; direction++) {
+				final int state = i * 2 + direction;
+				final JsonArray edgesArray = new JsonArray();
+				if (platformGraph.isUsable(state)) {
+					final int[] targets = platformGraph.getTargets(state);
+					final double[] costs = platformGraph.getCosts(state);
+					for (int j = 0; j < targets.length; j++) {
+						edgesArray.add(targets[j]);
+						edgesArray.add(Math.round(costs[j] * 10) / 10.0);
+					}
+				}
+				final JsonObject wayObject = new JsonObject();
+				wayObject.addProperty("usable", platformGraph.isUsable(state));
+				wayObject.add("edges", edgesArray);
+				waysArray.add(wayObject);
+			}
+			platformObject.add("ways", waysArray);
+			platformsArray.add(platformObject);
+		}
+		topology.add("platforms", platformsArray);
+		topology.addProperty("networkCount", platformGraph.getNetworkCount());
+		return topology;
 	}
 
 	/**

@@ -1,6 +1,7 @@
 package mtr.advanced;
 
 import net.minecraft.network.FriendlyByteBuf;
+import transitsim.network.PlatformGraph;
 import transitsim.network.RegionData;
 
 import java.util.*;
@@ -24,18 +25,7 @@ public final class RegionDataPackets {
 		writeUuids(packet, regionData.missingSegments);
 		writeRegions(packet, regionData.platformRegions);
 		writeRegions(packet, regionData.sidingRegions);
-		packet.writeInt(regionData.routeCandidates.size());
-		regionData.routeCandidates.forEach((routeId, stops) -> {
-			packet.writeLong(routeId);
-			packet.writeInt(stops.size());
-			stops.forEach((stopIndex, platformIds) -> {
-				packet.writeInt(stopIndex);
-				packet.writeInt(platformIds.length);
-				for (final long platformId : platformIds) {
-					packet.writeLong(platformId);
-				}
-			});
-		});
+		writePlatformGraph(packet, regionData.platformGraph);
 	}
 
 	public static RegionData read(FriendlyByteBuf packet) {
@@ -47,22 +37,58 @@ public final class RegionDataPackets {
 		final List<UUID> missingSegments = readUuids(packet);
 		final Map<Long, int[]> platformRegions = readRegions(packet);
 		final Map<Long, int[]> sidingRegions = readRegions(packet);
-		final Map<Long, Map<Integer, long[]>> routeCandidates = new HashMap<>();
-		final int routeCount = limit(packet.readInt());
-		for (int i = 0; i < routeCount; i++) {
-			final Map<Integer, long[]> stops = new HashMap<>();
-			routeCandidates.put(packet.readLong(), stops);
-			final int stopCount = limit(packet.readInt());
-			for (int j = 0; j < stopCount; j++) {
-				final int stopIndex = packet.readInt();
-				final long[] platformIds = new long[limit(packet.readInt())];
-				for (int k = 0; k < platformIds.length; k++) {
-					platformIds[k] = packet.readLong();
+		return new RegionData(boundaries, regionCount, uncutNodes, uncutSegments, missingNodes, missingSegments, platformRegions, sidingRegions, readPlatformGraph(packet));
+	}
+
+	/**
+	 * Each platform with its network and, for each of its two states, whether it can be used and the edges from it.
+	 */
+	private static void writePlatformGraph(FriendlyByteBuf packet, PlatformGraph platformGraph) {
+		packet.writeInt(platformGraph.size());
+		for (int i = 0; i < platformGraph.size(); i++) {
+			packet.writeLong(platformGraph.getPlatformId(i));
+			packet.writeLong(platformGraph.getNetwork(i));
+			for (int direction = 0; direction < 2; direction++) {
+				final int state = i * 2 + direction;
+				final int[] targets = platformGraph.getTargets(state);
+				final double[] costs = platformGraph.getCosts(state);
+				packet.writeBoolean(platformGraph.isUsable(state));
+				packet.writeInt(targets.length);
+				for (int j = 0; j < targets.length; j++) {
+					packet.writeInt(targets[j]);
+					packet.writeFloat((float) costs[j]);
 				}
-				stops.put(stopIndex, platformIds);
 			}
 		}
-		return new RegionData(boundaries, regionCount, uncutNodes, uncutSegments, missingNodes, missingSegments, platformRegions, sidingRegions, routeCandidates);
+	}
+
+	private static PlatformGraph readPlatformGraph(FriendlyByteBuf packet) {
+		final int count = limit(packet.readInt());
+		final long[] platformIds = new long[count];
+		final long[] networks = new long[count];
+		final boolean[] usable = new boolean[count * 2];
+		final int[][] targets = new int[count * 2][];
+		final double[][] costs = new double[count * 2][];
+		for (int i = 0; i < count; i++) {
+			platformIds[i] = packet.readLong();
+			networks[i] = packet.readLong();
+			for (int direction = 0; direction < 2; direction++) {
+				final int state = i * 2 + direction;
+				usable[state] = packet.readBoolean();
+				final int edgeCount = limit(packet.readInt());
+				targets[state] = new int[edgeCount];
+				costs[state] = new double[edgeCount];
+				for (int j = 0; j < edgeCount; j++) {
+					final int target = packet.readInt();
+					if (target < 0 || target >= count * 2) {
+						throw new IllegalArgumentException("Bad platform state " + target);
+					}
+					targets[state][j] = target;
+					costs[state][j] = packet.readFloat();
+				}
+			}
+		}
+		return new PlatformGraph(platformIds, networks, usable, targets, costs);
 	}
 
 	private static void writeLongs(FriendlyByteBuf packet, List<Long> values) {

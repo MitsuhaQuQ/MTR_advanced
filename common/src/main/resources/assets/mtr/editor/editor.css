@@ -222,3 +222,23 @@ body.tree-closed .tree { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 dialog ul.warn { color: var(--warn); margin: 8px 0; padding-left: 1.2em; }
+.tree .problem-dot { font-weight: 700; flex: none; }
+.tree .problem-dot.error, .warn li.error { color: var(--warn); }
+.tree .problem-dot.warn, .warn li.warn { color: #b7791f; }
+.topo-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--grid); border-radius: 8px; background: var(--panel); }
+.topo { display: block; font-size: 12px; }
+.topo .station { text-anchor: middle; font-weight: 700; fill: var(--ink); }
+.topo .turn { text-anchor: middle; fill: #b7791f; font-weight: 700; }
+.topo .link { stroke: var(--grid-strong); stroke-width: 1.5; }
+.topo .link.on { stroke-width: 4; }
+.topo .track { cursor: pointer; }
+.topo .track rect { fill: var(--panel); stroke: var(--grid-strong); }
+.topo .track text { text-anchor: middle; fill: var(--ink); pointer-events: none; }
+.topo .track.on text { fill: #fff; font-weight: 700; }
+.topo .track.dead rect { stroke-dasharray: 3 2; }
+.topo .track.dead text { fill: var(--muted); }
+.topo .track.pinned rect { stroke-width: 2; }
+.topo .track:focus rect, .topo .stop-toggle:focus text { outline: none; stroke: var(--sel); stroke-width: 2; }
+.topo .stop-toggle text { text-anchor: middle; fill: var(--muted); cursor: pointer; font-weight: 700; }
+.topo .stop-toggle.fixed text { cursor: default; }
+dialog .vias { gap: 6px; }

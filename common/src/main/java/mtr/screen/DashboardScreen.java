@@ -54,6 +54,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonRegionFilter;
 	// The regions of the pathfinding boundaries the lists are cut down to, or null for everything
 	private int[] regionFilter;
+	/**
+	 * Whether the region filter button is too narrow for its full text.
+	 */
+	private boolean compactRegionFilter;
 	private long pickedStationId;
 
 	private final WidgetBetterTextField textFieldName;
@@ -174,10 +178,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		IDrawing.setPositionAndWidth(buttonDoneEditingRouteDestination, 0, bottomRowY, PANEL_WIDTH);
 		IDrawing.setPositionAndWidth(buttonZoomIn, width - SQUARE_SIZE * 2, bottomRowY, SQUARE_SIZE);
 		IDrawing.setPositionAndWidth(buttonZoomOut, width - SQUARE_SIZE, bottomRowY, SQUARE_SIZE);
-		IDrawing.setPositionAndWidth(buttonRailActions, width - SQUARE_SIZE * 10, bottomRowY, SQUARE_SIZE * 5);
-		IDrawing.setPositionAndWidth(buttonAdvancedEditor, width - SQUARE_SIZE * 15, bottomRowY, SQUARE_SIZE * 5);
-		IDrawing.setPositionAndWidth(buttonRegionFilter, width - SQUARE_SIZE * 22, bottomRowY, SQUARE_SIZE * 7);
-		IDrawing.setPositionAndWidth(buttonOptions, width - SQUARE_SIZE * 5, bottomRowY, SQUARE_SIZE * 3);
+		layoutMapButtons(bottomRowY);
 
 		IDrawing.setPositionAndWidth(buttonStationArea, 0, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
 		IDrawing.setPositionAndWidth(buttonAddStationArea, PANEL_WIDTH / 3, bottomRowY - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING, PANEL_WIDTH / 3);
@@ -345,15 +346,57 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		dashboardList.clearSelectedItem();
 	}
 
+	/**
+	 * The map's buttons stay over the map, never over the panel on the left: from the right, zoom, options, rail actions, the
+	 * advanced editor and the region filter. Without room for all of them at full width they narrow, the region filter
+	 * first, and a button with no room at all is hidden.
+	 */
+	private void layoutMapButtons(int bottomRowY) {
+		final Button[] buttons = {buttonOptions, buttonRailActions, buttonAdvancedEditor, buttonRegionFilter};
+		final int[] widths = {SQUARE_SIZE * 3, SQUARE_SIZE * 5, SQUARE_SIZE * 5, SQUARE_SIZE * 7};
+		final int minWidth = SQUARE_SIZE * 2;
+		final int available = Math.max(width - PANEL_WIDTH - SQUARE_SIZE * 2, 0);
+		int excess = Arrays.stream(widths).sum() - available;
+		final int filterCut = Math.min(Math.max(excess, 0), widths[3] - minWidth);
+		widths[3] -= filterCut;
+		excess -= filterCut;
+		for (int i = 0; i < 3 && excess > 0; i++) {
+			final int cut = Math.min(excess, widths[i] - minWidth);
+			widths[i] -= cut;
+			excess -= cut;
+		}
+		// Still too narrow: the region filter goes first, then the others from the left
+		for (int i = 3; i >= 0 && excess > 0; i--) {
+			excess -= widths[i];
+			widths[i] = 0;
+		}
+		int x = width - SQUARE_SIZE * 2;
+		for (int i = 0; i < buttons.length; i++) {
+			x -= widths[i];
+			IDrawing.setPositionAndWidth(buttons[i], x, bottomRowY, Math.max(widths[i], 1));
+			buttons[i].visible = widths[i] > 0;
+		}
+		compactRegionFilter = widths[3] < SQUARE_SIZE * 7;
+		widgetMap.setBottomButtonsWidth(width - x);
+		updateRegionFilterButton();
+	}
+
 	private void updateRegionFilterButton() {
 		final RegionData regionData = ClientData.PATH_REGIONS;
 		final int uncut = regionData.uncutNodes.size() + regionData.uncutSegments.size();
 		final int missing = regionData.missingNodes.size() + regionData.missingSegments.size();
 		final String problems = (uncut > 0 ? Text.translatable("gui.mtr.region_uncut", uncut).getString() : "") + (missing > 0 ? Text.translatable("gui.mtr.region_missing", missing).getString() : "");
+		// Networks are rails joined together; the regions counted are those with a platform or siding, cut by boundaries or not
+		final Set<Integer> regions = new HashSet<>();
+		regionData.platformRegions.values().forEach(platformRegions -> Arrays.stream(platformRegions).forEach(regions::add));
+		regionData.sidingRegions.values().forEach(sidingRegions -> Arrays.stream(sidingRegions).forEach(regions::add));
+		final int networks = regionData.platformGraph.getNetworkCount();
 		if (regionFilter != null) {
-			buttonRegionFilter.setMessage(Text.translatable("gui.mtr.region_filter_on", regionFilter.length));
+			buttonRegionFilter.setMessage(Text.translatable(compactRegionFilter ? "gui.mtr.region_filter_on_short" : "gui.mtr.region_filter_on", regionFilter.length));
+		} else if (compactRegionFilter) {
+			buttonRegionFilter.setMessage(Text.translatable("gui.mtr.region_filter_short", networks, regions.size()));
 		} else {
-			buttonRegionFilter.setMessage(Text.literal(Text.translatable("gui.mtr.region_filter_off", regionData.regionCount).getString() + problems));
+			buttonRegionFilter.setMessage(Text.literal(Text.translatable("gui.mtr.region_filter_off", networks, regions.size()).getString() + problems));
 		}
 		buttonRegionFilter.active = regionFilter != null || pickedStationId != 0;
 	}

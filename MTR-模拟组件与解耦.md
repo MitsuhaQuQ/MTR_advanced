@@ -41,8 +41,9 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `path/PathFinder` | 266 | `Rail`、`Vec3` | B | 旧寻路，留在宿主，不迁移 |
 | `advanced/PathBoundaries` | 119 | 组件的 `Boundaries`、`FriendlyByteBuf`、msgpack | B | S1 后只剩存档和网络包，数据部分 `transitsim.network.Boundaries`（36 行）已在组件，`PathBoundaries extends Boundaries` |
 | `transitsim.network.PathRegions`（原 `advanced/PathRegions`） | 251 | `RailGraph`、`Boundaries` | A | **已在组件**（S1） |
-| `transitsim.network.RegionComputer`（原 `advanced/RegionComputer`） | 150 | `RailGraph` | A | **已在组件**（S1） |
-| `transitsim.network.RegionData`（原 `advanced/RegionData`） | 53 | `Boundaries` | A | **已在组件**（S1）；网络包读写拆到宿主的 `advanced/RegionDataPackets` |
+| `transitsim.network.RegionComputer`（原 `advanced/RegionComputer`） | 约 60 | `RailGraph`、`PlatformGraph` | A | **已在组件**（S1）；不再逐站算候选，改为算 `PlatformGraph` |
+| `transitsim.network.PlatformGraph`（新） | 约 300 | `RailGraph`、`PathRegions` | A | **组件里的新规则**：站台之间不掉头怎么走，按线网（轨道连通分量）分开；有无头测试 `PlatformGraphTest` |
+| `transitsim.network.RegionData`（原 `advanced/RegionData`） | 约 40 | `Boundaries`、`PlatformGraph` | A | **已在组件**（S1）；带上 `PlatformGraph`，网络包读写在宿主的 `advanced/RegionDataPackets` |
 | `transitsim.network.Network`、`NetworkBuilder`、`Resource`、`SectionType`、`RailAttributes`（原 `advanced/PhysicalGraph`） | 约 590 | 无 | A | **已在组件**（S1）：线网快照、压缩算法（对任意 `RailGraph<R>`，轨道属性由宿主通过 `RailAttributes` 给）、资源、版本。宿主只剩 `advanced/RailNetworks`（用 `Rail` 实现属性） |
 | `advanced/GraphRecords` | 126 | `RailwayDataStore`、`PathData`、组件的 `Network` | B | 留在宿主：SQLite 读写，内容格式由组件的 `Network.Section`、`SectionPath` 定义 |
 | `advanced/PathRegionSync` | 132 | `MinecraftServer`、`ServerPlayer`、网络包 | C | 留在宿主：后台计算触发和同步 |
