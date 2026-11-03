@@ -119,6 +119,11 @@ public final class EditorActions implements IPacket {
 				route.editorManaged = operation.get("managed").getAsBoolean();
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
+			case "deleteRoute":
+				// The same as deleting it on the dashboard; depots, duties and through links naming it are left as they are
+				PacketTrainDataGuiClient.sendDeleteData(PACKET_DELETE_ROUTE, route.id);
+				ClientData.ROUTES.remove(route);
+				return null;
 			default:
 				return "不认识的修改类型";
 		}

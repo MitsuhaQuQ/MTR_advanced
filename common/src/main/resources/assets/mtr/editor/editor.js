@@ -112,6 +112,8 @@
 		if (entry && Object.keys(entry).every(k => k === "base" || k === "force" || k === "error" || k === "conflict")) delete draft.routes[id];
 	}
 	const isManaged = r => draftOf(r) && "managed" in draftOf(r) ? draftOf(r).managed : r.editorManaged;
+	// A type marked for deletion stays in the game until the draft is applied
+	const isDeleted = r => Boolean(draftOf(r) && draftOf(r).deleted);
 
 	function setManaged(r, managed) {
 		const entry = draftEntry(r);
@@ -129,6 +131,12 @@
 		const operations = [], owners = [];
 		Object.entries(draft.routes).forEach(([id, entry]) => {
 			let base = entry.base;
+			// Nothing else of a route being deleted is worth sending
+			if (entry.deleted) {
+				operations.push({ type: "deleteRoute", route: id, base, force: Boolean(entry.force) });
+				owners.push(id);
+				return;
+			}
 			if (entry.platforms) {
 				operations.push({ type: "platforms", route: id, base, force: Boolean(entry.force), platforms: entry.platforms });
 				owners.push(id);
@@ -212,6 +220,11 @@
 		tag.textContent = applying ? "正在应用…" : count ? `草稿 ${count} 项` : "没有草稿";
 		tag.classList.toggle("has-draft", count > 0);
 		$("btn-apply").disabled = applying || !count || !(data && data.canEdit);
+		const selected = data && state.route && data.routeById.get(state.route);
+		const button = $("btn-delete");
+		button.textContent = selected && isDeleted(selected) ? "取消删除" : "删除种别";
+		button.disabled = !selected || !data.canEdit;
+		button.title = selected ? (isDeleted(selected) ? "不删除" : "删除") + "“" + routeTitle(selected) + "”" : "先选中一个种别";
 	}
 
 	async function poll(once) {
@@ -627,7 +640,7 @@
 				parts.push(`<ul>`);
 				line.routes.forEach(r => {
 					const routeOpen = state.openNodes.has("route:" + r.id) || state.route === r.id;
-					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label">${escapeHtml(routeTitle(r))}</span>${draftOf(r) ? `<span class="draft-dot" title="有没应用的草稿">•</span>` : ""}<span class="count">${r.services.length}</span>`, false)}`);
+					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || "将删除：按“应用”后从游戏里删掉，右键取消")}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="有没应用的草稿">•</span>` : ""}<span class="count">${r.services.length}</span>`, false)}`);
 					if (routeOpen) {
 						parts.push(`<ul>`);
 						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">汇总时刻表</span>`, state.route === r.id && state.view === "table")}</li>`);
@@ -1740,6 +1753,43 @@
 		});
 	}
 
+	/**
+	 * Marks a type for deletion, after saying what still names it: those stay as they are, the same as deleting it on the
+	 * dashboard, and stop working.
+	 */
+	function deleteTypeDialog(r) {
+		const depots = data.depots.filter(depot => depot.routes.includes(r.id)).map(depot => "“" + shortName(depot.name) + "”");
+		let segments = 0;
+		data.depots.forEach(depot => Object.values(dutiesOf(depot).sidings).forEach(slots => slots.forEach(slot => slot.forEach(day => {
+			segments += day.segments.filter(segment => segment.route === r.id).length;
+		}))));
+		const links = data.routes.filter(other => other !== r).reduce((count, other) => count + other.services.filter(s => s.link && s.link.route === r.id).length, 0);
+		const notes = [];
+		if (depots.length) notes.push(`车厂 ${depots.map(escapeHtml).join("、")} 跑这个种别，删除后不再跑它，要刷新车厂路径`);
+		if (segments) notes.push(`运用里有 ${segments} 班是它的，这些运用会走不通，要改运用`);
+		if (links) notes.push(`别的种别有 ${links} 班直通到它，这些直通会失效`);
+		openDialog("删除种别", `
+			<p>删除 <b>${escapeHtml(routeTitle(r))}</b>：它的车站、停站设置和全部时刻表都从游戏里删掉，不能恢复。</p>
+			${notes.length ? `<ul class="warn">${notes.map(note => `<li>${note}</li>`).join("")}</ul>` : ""}
+			<p class="hint">先放在草稿里，按“应用”才删除。应用之前可以右键取消。这个种别别的没应用的改动也一起丢掉。</p>`, "删除", () => {
+			const entry = draftEntry(r);
+			entry.deleted = true;
+			delete entry.error;
+			saveDraft();
+			renderAll();
+		});
+	}
+
+	function keepType(r) {
+		const entry = draftOf(r);
+		if (!entry) return;
+		delete entry.deleted;
+		delete entry.error;
+		tidyDraft(r.id);
+		saveDraft();
+		renderAll();
+	}
+
 	function removeCreated(key) {
 		draft.created = draft.created.filter(made => made.key !== key);
 		saveDraft();
@@ -1904,6 +1954,8 @@
 		renderTable();
 		renderBanner();
 		renderStatus();
+		// The delete button follows the type that is open
+		renderDraftState();
 	}
 
 	// ---------- Tree folding ----------
@@ -1937,7 +1989,8 @@
 			[dutiesOf(depot).mode === "diagram" ? "改为在线预约" : "改为按运用图", () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			["丢掉运用的草稿", draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
 		] : line ? [["新建种别…", data.canEdit ? () => newTypeDialog(line, null) : null]]
-			: r ? [["编辑停站…", data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], ["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null]]
+			: r ? [["编辑停站…", data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], ["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
+				isDeleted(r) ? ["取消删除", () => keepType(r)] : ["删除这个种别…", data.canEdit ? () => deleteTypeDialog(r) : null]]
 				: created ? [["删除这个新建的种别", () => removeCreated(created)]] : null;
 		if (!items) return;
 		e.preventDefault();
@@ -1955,6 +2008,10 @@
 	$("tab-table").addEventListener("click", () => { state.view = "table"; renderAll(); });
 	$("btn-split").addEventListener("click", () => { state.split = !state.split; renderAll(); });
 	$("btn-apply").addEventListener("click", applyDraft);
+	$("btn-delete").addEventListener("click", () => {
+		const r = data && state.route && data.routeById.get(state.route);
+		if (r) isDeleted(r) ? keepType(r) : deleteTypeDialog(r);
+	});
 	$("btn-new").addEventListener("click", e => {
 		e.stopPropagation();
 		const box = e.currentTarget.getBoundingClientRect();

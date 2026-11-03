@@ -70,6 +70,7 @@ button:focus-visible, select:focus-visible, .tree .node:focus-visible, td:focus-
 .tree .node.active .caret { color: inherit; }
 .tree .swatch { width: 10px; height: 3px; border-radius: 2px; flex: none; }
 .tree .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree .label.deleted { text-decoration: line-through; color: var(--muted); }
 .tree .group-label { font-weight: 700; }
 .tree .leaf { color: var(--muted); }
 .tree .node.active .leaf { color: inherit; }
@@ -220,3 +221,4 @@ body.tree-closed .tree { display: none; }
 	body:not(.tree-closed) .scrim { display: block; position: absolute; inset: 0; z-index: 14; background: rgb(0 0 0 / .25); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+dialog ul.warn { color: var(--warn); margin: 8px 0; padding-left: 1.2em; }
