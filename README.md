@@ -136,10 +136,11 @@ The stages above describe the work as a whole. This is the order it is being don
 
 1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
 2. Test in game the speed curves and running by vehicle working, which are written but untested.
-3. Run logic, part 2: move train movement out of the Minecraft classes, together with running by vehicle working and before speed curves and block sections change it.
-4. Turning back at a platform with the actual platform on PIDS, and empty services.
-5. Speed curves (including speed limits when passing stations), block sections, interlocking, splitting through services and deadheading.
-6. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
+3. Move the simulation into a component of its own that runs timetables, vehicle workings and the rail network without Minecraft, so it can be reused by the web editor, a command line tool and tests. MTR becomes one host of it: it turns its rails, routes and depots into the component's data, asks where each train should be at the current time, and draws the trains, opens the doors and carries the passengers.
+4. Simulated running in the web editor, with lateness, held trains and conflicts shown against the timetable.
+5. Trains in game placed by the component from the real time instead of moving tick by tick.
+6. Then, written in the component first: speed limits when passing stations, block sections, turning back at a platform, interlocking, splitting through services and deadheading.
+7. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
 
 Run logic part 1 (service decisions in `TrainService`, tested in game), choosing between reversing sidings after a terminal, the running diagram design, and the advanced editor's parts up to vehicle working (writing to the game, timetable editing with single-service exceptions, timetable boundaries, path boundaries and regions, new service types, vehicle working data and generation) are done. Path boundaries, new service types and vehicle working have had a first quick test in game; their behaviour is still being watched.
 
