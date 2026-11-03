@@ -1,5 +1,10 @@
 package mtr.data;
 
+import transitsim.plan.DepotReturn;
+import transitsim.plan.DutyPlan;
+import transitsim.plan.TripPath;
+import transitsim.plan.TripTail;
+import transitsim.plan.TurnBackSection;
 import mtr.advanced.PacketBinary;
 import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
@@ -538,7 +543,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final long day = DutyShapes.getDayNumber(dayStart);
 		final int weekday = TimetableConfig.getWeekday(currentMillis);
 		TrainServer bestTrain = null;
-		Siding.TripPath bestPath = null;
+		TripPath<PathData> bestPath = null;
 		long bestSidingId = 0;
 		int bestSlot = -1;
 		long bestDepartureMillis = Long.MAX_VALUE;
@@ -554,7 +559,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					continue;
 				}
 				final String key = DutyShapes.getSlotKey(slots, i, weekday, railwayData.dataCache.routeIdMap::get);
-				final Siding.TripPath dutyPath = key == null ? null : siding.getTripPaths().get(key);
+				final TripPath<PathData> dutyPath = key == null ? null : siding.getTripPaths().get(key);
 				if (dutyPath == null) {
 					continue;
 				}
@@ -918,8 +923,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * Finds where services of the last route carry on onto other routes. Each way through only needs one path, however
 		 * many services use it. A route that can't be reached is left out, and its services stay on the main path.
 		 */
-		private List<Siding.TripTail> getTripTails(List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-			final List<Siding.TripTail> tripTails = new ArrayList<>();
+		private List<TripTail<PathData, SavedRailBase>> getTripTails(List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<TripTail<PathData, SavedRailBase>> tripTails = new ArrayList<>();
 			final Route lastRoute = mainRoutes.isEmpty() ? null : mainRoutes.get(mainRoutes.size() - 1);
 			if (lastRoute == null || mainPath.isEmpty() || getActiveTimetable(lastRoute) == null) {
 				return tripTails;
@@ -931,8 +936,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					final Route route = dataCache.routeIdMap.get(routeId);
 					return route == null ? null : route.timetable;
 				});
-				if (keys.add(Siding.TripTail.getKey(links))) {
-					final Siding.TripTail tripTail = getTripTail(lastRoute, links, mainPath, rails, graph, useFastSpeed);
+				if (keys.add(TripTail.getKey(links))) {
+					final TripTail<PathData, SavedRailBase> tripTail = getTripTail(lastRoute, links, mainPath, rails, graph, useFastSpeed);
 					if (tripTail != null) {
 						tripTails.add(tripTail);
 					}
@@ -941,7 +946,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			return tripTails;
 		}
 
-		private Siding.TripTail getTripTail(Route lastRoute, List<RouteTimetable.ServiceLink> links, List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		private TripTail<PathData, SavedRailBase> getTripTail(Route lastRoute, List<RouteTimetable.ServiceLink> links, List<PathData> mainPath, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final int leaveRail = isCut(lastRoute, links.get(0)) ? Siding.getStopRail(mainPath, lastRoute.platformIds, links.get(0).fromStop) : mainPath.size() - 1;
 			if (leaveRail < 0) {
 				return null;
@@ -954,8 +959,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final List<PathData> tailPath = new ArrayList<>();
 			Route previousRoute = lastRoute;
 			SavedRailBase lastPlatform = null;
-			int lapStart = Siding.TripTail.NO_RAIL;
-			int entryRail = Siding.TripTail.NO_RAIL;
+			int lapStart = TripTail.NO_RAIL;
+			int entryRail = TripTail.NO_RAIL;
 			boolean isLapReversed = false;
 
 			for (int i = 0; i < links.size(); i++) {
@@ -1000,7 +1005,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					if (turnBackNodes.isEmpty()) {
 						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(leavePlatform, entryPlatform), null, 1, cruisingAltitude, useFastSpeed);
 					} else {
-						final Siding.TurnBackSection turnBackSection = findTurnBackSection(leavePlatform, entryPlatform, turnBackNodes, 0, rails, graph, useFastSpeed);
+						final TurnBackSection<PathData> turnBackSection = findTurnBackSection(leavePlatform, entryPlatform, turnBackNodes, 0, rails, graph, useFastSpeed);
 						if (turnBackSection != null) {
 							connectingPath.addAll(turnBackSection.getDefaultWay());
 						}
@@ -1071,14 +1076,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			final List<Long> tripRouteIds = new ArrayList<>();
 			tripRoutes.forEach(route -> tripRouteIds.add(route.id));
-			return new Siding.TripTail(Siding.TripTail.getKey(links), tripRouteIds, cutStops, leaveRail, tailPath, lastPlatform, lapStart, isLapReversed, entryRail, entryStops, entryLeads);
+			return new TripTail<>(TripTail.getKey(links), tripRouteIds, cutStops, leaveRail, tailPath, lastPlatform, lapStart, isLapReversed, entryRail, entryStops, entryLeads);
 		}
 
 		/**
 		 * Each shape of duty a siding's slots run, once (design document 6.12, block E2).
 		 */
-		private List<Siding.DutyPlan> getDutyPlans(Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-			final List<Siding.DutyPlan> dutyPlans = new ArrayList<>();
+		private List<DutyPlan<PathData, SavedRailBase>> getDutyPlans(Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = new ArrayList<>();
 			final Set<String> keys = new HashSet<>();
 			final List<DepotDuties.Slot> slots = duties.getSlots(siding.id);
 			for (int i = 0; i < slots.size(); i++) {
@@ -1088,7 +1093,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						continue;
 					}
 					final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
-					final Siding.DutyPlan dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
+					final DutyPlan<PathData, SavedRailBase> dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
 					if (dutyPlan == null) {
 						failure = new PathFailure(PathFailure.Type.DUTY, 0);
 					} else {
@@ -1106,7 +1111,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 *
 		 * @return the plan, or null if a part of it can't be found
 		 */
-		private Siding.DutyPlan getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		private DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<PathData> body = new ArrayList<>();
 			final int[] segmentStarts = new int[segments.size()];
 			final List<Long> routeIds = new ArrayList<>();
@@ -1157,7 +1162,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					if (turnBackNodes.isEmpty()) {
 						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
 					} else {
-						final Siding.TurnBackSection turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
+						final TurnBackSection<PathData> turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
 						if (turnBackSection != null) {
 							connectingPath.addAll(turnBackSection.getDefaultWay());
 						}
@@ -1217,7 +1222,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				previousRoute = route;
 				previousRanToEnd = lastStop == route.platformIds.size() - 1;
 			}
-			return new Siding.DutyPlan(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
+			return new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
 		}
 
 		private boolean isCut(Route route, RouteTimetable.ServiceLink link) {
@@ -1262,14 +1267,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @param routeBefore the route whose last stop this is, or -1 if it has no stops
 		 * @return false if none of the turn back rails can be reached, which fails the path
 		 */
-		private boolean addConnection(List<PathData> tempPath, SavedRailBase from, SavedRailBase to, int routeBefore, List<Siding.TurnBackSection> turnBackSections, List<Siding.DepotReturn> depotReturns, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		private boolean addConnection(List<PathData> tempPath, SavedRailBase from, SavedRailBase to, int routeBefore, List<TurnBackSection<PathData>> turnBackSections, List<DepotReturn<PathData, SavedRailBase>> depotReturns, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final int start = tempPath.size();
 			final List<BlockPos> turnBackNodes = routeBefore >= 0 ? getTurnBackNodes(mainRoutes.get(routeBefore), graph) : Collections.emptyList();
 			final List<PathData> connectingPath = new ArrayList<>();
 			if (turnBackNodes.isEmpty()) {
 				PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(from, to), null, 1, cruisingAltitude, useFastSpeed);
 			} else {
-				final Siding.TurnBackSection turnBackSection = findTurnBackSection(from, to, turnBackNodes, start, rails, graph, useFastSpeed);
+				final TurnBackSection<PathData> turnBackSection = findTurnBackSection(from, to, turnBackNodes, start, rails, graph, useFastSpeed);
 				if (turnBackSection == null) {
 					failure = new PathFailure(PathFailure.Type.TURN_BACK, turnBackNodes.get(0).asLong());
 					tempPath.clear();
@@ -1281,7 +1286,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			tempPath.addAll(connectingPath);
 			// Only trains staying on the line need a way back to the depot after a route
 			if (cycleRoutes && routeBefore >= 0 && !connectingPath.isEmpty()) {
-				depotReturns.add(new Siding.DepotReturn(routeBefore, start, connectingPath, from));
+				depotReturns.add(new DepotReturn<>(routeBefore, start, connectingPath, from));
 			}
 			return true;
 		}
@@ -1301,7 +1306,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @param start where the ways round start on the main path
 		 * @return the ways round, or null if none of them can be used
 		 */
-		private Siding.TurnBackSection findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		private TurnBackSection<PathData> findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<List<PathData>> ways = new ArrayList<>();
 			int defaultWay = -1;
 			for (final BlockPos node : nodes) {
@@ -1316,7 +1321,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					defaultWay = ways.size() - 1;
 				}
 			}
-			return defaultWay < 0 ? null : new Siding.TurnBackSection(start, ways, defaultWay);
+			return defaultWay < 0 ? null : new TurnBackSection<>(start, ways, defaultWay);
 		}
 
 		/**
@@ -1336,8 +1341,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<PathData> tempPath = new ArrayList<>();
-			final List<Siding.TurnBackSection> turnBackSections = new ArrayList<>();
-			final List<Siding.DepotReturn> depotReturns = new ArrayList<>();
+			final List<TurnBackSection<PathData>> turnBackSections = new ArrayList<>();
+			final List<DepotReturn<PathData, SavedRailBase>> depotReturns = new ArrayList<>();
 			SavedRailBase lastPlatform = null;
 
 			for (int i = 0; i < pathsInRoute.size(); i++) {
@@ -1405,13 +1410,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			final List<PathData> loopJoinPath = getLoopJoinPath(tempPath);
 			final SavedRailBase entryPlatform = loopJoinPath.isEmpty() ? null : platformsInRoute.get(0).get(loopEntryStop);
-			final List<Siding.TripTail> tripTails = getTripTails(tempPath, rails, graph, useFastSpeed);
+			final List<TripTail<PathData, SavedRailBase>> tripTails = getTripTails(tempPath, rails, graph, useFastSpeed);
 
 			int successfulSegments = Integer.MAX_VALUE;
 			for (final Siding siding : sidings) {
 				final SavedRailBase firstPlatform = entryPlatform != null ? entryPlatform : platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-				final List<Siding.DutyPlan> dutyPlans = duties.diagramMode ? getDutyPlans(siding, rails, graph, useFastSpeed) : new ArrayList<>();
+				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = duties.diagramMode ? getDutyPlans(siding, rails, graph, useFastSpeed) : new ArrayList<>();
 				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans));
 			}
 			return successfulSegments;

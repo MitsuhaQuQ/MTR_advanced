@@ -1,5 +1,10 @@
 package mtr.data;
 
+import transitsim.plan.StopTimes;
+import transitsim.plan.TripPath;
+import transitsim.plan.TripTail;
+import transitsim.plan.TurnBackPoint;
+import transitsim.plan.TurnBacks;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.DutyShapes;
@@ -54,21 +59,21 @@ public class TrainService {
 	 * Just loaded from a save, when the time the world was stopped for still has to be dealt with.
 	 */
 	private boolean needsAlignment;
-	private Siding.StopTimes stopTimes;
-	private Siding.StopTimes depotStopTimes;
+	private StopTimes stopTimes;
+	private StopTimes depotStopTimes;
 	/**
 	 * The path the train is on when it isn't the usual path of the depot, for a service running through to another route or
 	 * for another way round a turn back point. The usual path is kept to go back to.
 	 */
-	private Siding.TripPath tripPath;
+	private TripPath<PathData> tripPath;
 	private String tripPathKey = "";
 	/**
 	 * The next route of the trip and the service to run on it.
 	 */
 	private int linkedService = -1;
 	private long linkedRouteId;
-	private Map<String, Siding.TripPath> tripPaths = new HashMap<>();
-	private Siding.TurnBacks turnBacks = Siding.TurnBacks.NONE;
+	private Map<String, TripPath<PathData>> tripPaths = new HashMap<>();
+	private TurnBacks turnBacks = TurnBacks.NONE;
 	/**
 	 * The stop where the train has taken a turn back rail of the point after it, or -1.
 	 */
@@ -466,12 +471,12 @@ public class TrainService {
 			return false;
 		}
 
-		final Siding.TurnBackPoint turnBackPoint = turnBacks.get(point);
+		final TurnBackPoint turnBackPoint = turnBacks.get(point);
 		final String tripKey = isOnTrip() ? tripPath.tripKey : "";
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
-			final Siding.TripPath newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(Siding.TripPath.getTurnBackKey(tripKey, point, way));
+			final TripPath<PathData> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
 			if (rails != null && (newPath != null || isDefaultWay && tripKey.isEmpty()) && vehicle.isTurnBackFree(rails)) {
 				final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
 				turnBackStop = newStopIndex;
@@ -510,7 +515,7 @@ public class TrainService {
 		for (int i = 0; i < trainRoutes.size(); i++) {
 			final Route route = trainRoutes.get(i);
 			if (route.id == tripRouteId && !route.platformIds.isEmpty() && route.getLastPlatformId() == platformId && route.timetable.isReturnService(tripMillis)) {
-				final Siding.TripPath returnPath = tripPaths.get(Siding.TripPath.getDepotReturnKey(i));
+				final TripPath<PathData> returnPath = tripPaths.get(TripPath.getDepotReturnKey(i));
 				if (returnPath != null) {
 					tripPath = returnPath;
 					tripPathKey = returnPath.key;
@@ -564,7 +569,7 @@ public class TrainService {
 	 *
 	 * @param dayStart when the operating day of the duty started
 	 */
-	public void deployDuty(int slot, long dayStart, Siding.TripPath dutyPath) {
+	public void deployDuty(int slot, long dayStart, TripPath<PathData> dutyPath) {
 		dutySlot = slot;
 		dutyDayStart = dayStart;
 		dutyDay = readDutyDay();
@@ -633,7 +638,7 @@ public class TrainService {
 		final int nextSlot = day == null ? -1 : DutyShapes.getNextSlot(day, dutySlot);
 		final int weekday = TimetableConfig.getWeekday(dayStart);
 		final String key = nextSlot < 0 || routes == null ? null : DutyShapes.getSlotKey(slots, nextSlot, weekday, routes);
-		final Siding.TripPath nextPath = key == null ? null : tripPaths.get(key);
+		final TripPath<PathData> nextPath = key == null ? null : tripPaths.get(key);
 		final List<PathData> path = vehicle.getPath();
 		final long dayNumber = DutyShapes.getDayNumber(dayStart);
 		if (nextPath == null || nextPath.path.isEmpty() || nextPath.path.get(0).savedRailBaseId != path.get(path.size() - 1).savedRailBaseId || depot.hasDutyRun(sidingId, nextSlot, dayNumber)) {
@@ -715,21 +720,21 @@ public class TrainService {
 	 * @param depotStopTimes the stop times of the usual path of the siding
 	 * @param newTripPaths   the paths of services leaving it
 	 */
-	public void setStopTimes(Siding.StopTimes newDepotStopTimes, Map<String, Siding.TripPath> newTripPaths) {
-		setStopTimes(newDepotStopTimes, newTripPaths, Siding.TurnBacks.NONE);
+	public void setStopTimes(StopTimes newDepotStopTimes, Map<String, TripPath<PathData>> newTripPaths) {
+		setStopTimes(newDepotStopTimes, newTripPaths, TurnBacks.NONE);
 	}
 
 	/**
 	 * @param newTurnBacks where trains of the siding can turn back on more than one rail
 	 */
-	public void setStopTimes(Siding.StopTimes newDepotStopTimes, Map<String, Siding.TripPath> newTripPaths, Siding.TurnBacks newTurnBacks) {
+	public void setStopTimes(StopTimes newDepotStopTimes, Map<String, TripPath<PathData>> newTripPaths, TurnBacks newTurnBacks) {
 		depotStopTimes = newDepotStopTimes;
 		stopTimes = tripPath == null ? newDepotStopTimes : tripPath.stopTimes;
 		tripPaths = newTripPaths;
 		turnBacks = newTurnBacks;
 	}
 
-	public Siding.StopTimes getStopTimes() {
+	public StopTimes getStopTimes() {
 		return stopTimes;
 	}
 
@@ -756,11 +761,11 @@ public class TrainService {
 	 *
 	 * @return false if that path no longer exists
 	 */
-	public boolean restoreTripPath(Map<String, Siding.TripPath> newTripPaths) {
+	public boolean restoreTripPath(Map<String, TripPath<PathData>> newTripPaths) {
 		if (tripPathKey.isEmpty()) {
 			return true;
 		}
-		final Siding.TripPath newTripPath = newTripPaths.get(tripPathKey);
+		final TripPath<PathData> newTripPath = newTripPaths.get(tripPathKey);
 		if (newTripPath == null) {
 			return false;
 		}
@@ -787,12 +792,12 @@ public class TrainService {
 		final Route lastRoute = trainRoutes.isEmpty() ? null : trainRoutes.get(trainRoutes.size() - 1);
 		if (lastRoute != null && lastRoute.id == tripRouteId) {
 			final RouteTimetable.ServiceLink link = lastRoute.timetable.getLink(tripMillis);
-			final Siding.TripPath newTripPath = link == null || routes == null ? null : tripPaths.get(Siding.TripTail.getKey(RouteTimetable.getLinkChain(link, routeId -> {
+			final TripPath<PathData> newTripPath = link == null || routes == null ? null : tripPaths.get(TripTail.getKey(RouteTimetable.getLinkChain(link, routeId -> {
 				final Route route = routes.apply(routeId);
 				return route == null ? null : route.timetable;
 			})));
 			// A train that went another way round a turn back point keeps to it, as it may be past the point already
-			final Siding.TripPath turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(Siding.TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
+			final TripPath<PathData> turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
 			if (turnBackPath != null) {
 				linkedService = link.service;
 				linkedRouteId = link.routeId;
@@ -801,7 +806,7 @@ public class TrainService {
 		}
 	}
 
-	private void useTripPath(Siding.TripPath newTripPath) {
+	private void useTripPath(TripPath<PathData> newTripPath) {
 		tripPath = newTripPath;
 		tripPathKey = newTripPath.key;
 		stopTimes = newTripPath.stopTimes;
@@ -1050,7 +1055,7 @@ public class TrainService {
 		/**
 		 * @param tripPath the path of a service running through to another route, or null for the usual path of the depot
 		 */
-		void followPath(Siding.TripPath tripPath);
+		void followPath(TripPath<PathData> tripPath);
 
 		/**
 		 * Moves the train, stopped before a turn back point, onto a path that is the same from there to the point.
@@ -1058,7 +1063,7 @@ public class TrainService {
 		 * @param tripPath     the new path, or null for the usual path of the depot
 		 * @param newStopIndex the rail of the same stop on the new path
 		 */
-		void changePath(Siding.TripPath tripPath, int newStopIndex);
+		void changePath(TripPath<PathData> tripPath, int newStopIndex);
 
 		/**
 		 * @return true if no other train is on these rails or has them kept for itself

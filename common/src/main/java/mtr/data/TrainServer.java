@@ -1,5 +1,9 @@
 package mtr.data;
 
+import transitsim.plan.StopTimes;
+import transitsim.plan.TimeSegment;
+import transitsim.plan.TripPath;
+import transitsim.plan.TurnBacks;
 import transitsim.plan.RouteTimetable;
 import mtr.TrigCache;
 import mtr.block.*;
@@ -57,10 +61,10 @@ public class TrainServer extends Train {
 	private int requestedRunEnd = -1;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
-	private List<Siding.TimeSegment> timeSegments;
+	private List<TimeSegment> timeSegments;
 	private final List<PathData> depotPath;
 	private final List<Double> depotDistances;
-	private final List<Siding.TimeSegment> depotTimeSegments;
+	private final List<TimeSegment> depotTimeSegments;
 	private int depotRepeatIndex1;
 	private int depotRepeatIndex2;
 
@@ -69,7 +73,7 @@ public class TrainServer extends Train {
 	private static final int DOOR_CLOSE_MILLIS = (DOOR_MOVE_TIME + DOOR_DELAY) * Depot.MILLIS_PER_TICK;
 	private static final int MIN_DWELL_TICKS = Route.MIN_STOP_DWELL * 10;
 
-	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<Siding.TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
+	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
 		super(id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, manualToAutomaticTime);
 		this.timeSegments = timeSegments;
 		pathRepeatIndex1 = repeatIndex1;
@@ -84,7 +88,7 @@ public class TrainServer extends Train {
 	}
 
 	public TrainServer(
-			long sidingId, float railLength, List<Siding.TimeSegment> timeSegments,
+			long sidingId, float railLength, List<TimeSegment> timeSegments,
 			List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2,
 			float accelerationConstant, boolean isManual, int maxManualSpeed, int manualToAutomaticTime,
 			Map<String, Value> map
@@ -105,7 +109,7 @@ public class TrainServer extends Train {
 
 	@Deprecated
 	public TrainServer(
-			long sidingId, float railLength, List<Siding.TimeSegment> timeSegments,
+			long sidingId, float railLength, List<TimeSegment> timeSegments,
 			List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2,
 			float accelerationConstant, boolean isManual, int maxManualSpeed, int manualToAutomaticTime,
 			CompoundTag compoundTag
@@ -412,7 +416,7 @@ public class TrainServer extends Train {
 
 		double currentTime = -1;
 		int startingIndex = 0;
-		for (final Siding.TimeSegment timeSegment : timeSegments) {
+		for (final TimeSegment timeSegment : timeSegments) {
 			if (RailwayData.isBetween(railProgress, timeSegment.startRailProgress, timeSegment.endRailProgress)) {
 				currentTime = timeSegment.getTime(railProgress);
 				break;
@@ -429,7 +433,7 @@ public class TrainServer extends Train {
 			// A trip ending with a loop only comes round again on the loop, so the rest of the trip must not be counted twice
 			final boolean startsOver = isRepeat() && !service.isOnTrip();
 			for (int i = startingIndex; i < timeSegments.size() + (startsOver ? timeSegments.size() : 0); i++) {
-				final Siding.TimeSegment timeSegment = timeSegments.get(i % timeSegments.size());
+				final TimeSegment timeSegment = timeSegments.get(i % timeSegments.size());
 
 				if (timeSegment.savedRailBaseId != 0) {
 					if (timeSegment.routeId == 0) {
@@ -584,7 +588,7 @@ public class TrainServer extends Train {
 	/**
 	 * Sends this train out for a slot's duty. See {@link TrainService#deployDuty}.
 	 */
-	public void deployDuty(int slot, long dayStart, Siding.TripPath dutyPath) {
+	public void deployDuty(int slot, long dayStart, TripPath<PathData> dutyPath) {
 		canDeploy = true;
 		service.deployDuty(slot, dayStart, dutyPath);
 	}
@@ -693,14 +697,14 @@ public class TrainServer extends Train {
 	 * @param depotStopTimes the stop times of the usual path of the siding
 	 * @param newTripPaths   the paths of services leaving it
 	 */
-	public void setStopTimes(Siding.StopTimes depotStopTimes, Map<String, Siding.TripPath> newTripPaths) {
+	public void setStopTimes(StopTimes depotStopTimes, Map<String, TripPath<PathData>> newTripPaths) {
 		service.setStopTimes(depotStopTimes, newTripPaths);
 	}
 
 	/**
 	 * @param turnBacks where trains of the siding can turn back on more than one rail
 	 */
-	public void setStopTimes(Siding.StopTimes depotStopTimes, Map<String, Siding.TripPath> newTripPaths, Siding.TurnBacks turnBacks) {
+	public void setStopTimes(StopTimes depotStopTimes, Map<String, TripPath<PathData>> newTripPaths, TurnBacks turnBacks) {
 		service.setStopTimes(depotStopTimes, newTripPaths, turnBacks);
 	}
 
@@ -718,7 +722,7 @@ public class TrainServer extends Train {
 	 *
 	 * @return false if that path no longer exists
 	 */
-	public boolean restoreTripPath(Map<String, Siding.TripPath> newTripPaths) {
+	public boolean restoreTripPath(Map<String, TripPath<PathData>> newTripPaths) {
 		return service.restoreTripPath(newTripPaths);
 	}
 
@@ -836,7 +840,7 @@ public class TrainServer extends Train {
 		}
 
 		@Override
-		public void followPath(Siding.TripPath tripPath) {
+		public void followPath(TripPath<PathData> tripPath) {
 			path = tripPath == null ? depotPath : tripPath.path;
 			distances = tripPath == null ? depotDistances : tripPath.distances;
 			timeSegments = tripPath == null ? depotTimeSegments : tripPath.timeSegments;
@@ -853,7 +857,7 @@ public class TrainServer extends Train {
 		}
 
 		@Override
-		public void changePath(Siding.TripPath tripPath, int newStopIndex) {
+		public void changePath(TripPath<PathData> tripPath, int newStopIndex) {
 			final double distanceToStop = distances.get(nextStoppingIndex) - railProgress;
 			followPath(tripPath);
 			railProgress = distances.get(newStopIndex) - distanceToStop;

@@ -1,5 +1,7 @@
 package mtr.data;
 
+import transitsim.plan.TripTail;
+import mtr.path.PathData;
 import transitsim.plan.RouteTimetable;
 import org.junit.jupiter.api.Test;
 
@@ -194,12 +196,12 @@ class RouteTimetableTest {
 	@Test
 	void waysThroughHaveTheirOwnKeys() {
 		final RouteTimetable.ServiceLink first = new RouteTimetable.ServiceLink(2, 200, -1);
-		final String key = Siding.TripTail.getKey(Collections.singletonList(first));
+		final String key = TripTail.getKey(Collections.singletonList(first));
 
-		assertEquals(key, Siding.TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 900, -1))));
-		assertNotEquals(key, Siding.TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 200, 3))));
-		assertNotEquals(key, Siding.TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 200, -1, 3))));
-		assertNotEquals(key, Siding.TripTail.getKey(Arrays.asList(first, new RouteTimetable.ServiceLink(3, 300, -1))));
+		assertEquals(key, TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 900, -1))));
+		assertNotEquals(key, TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 200, 3))));
+		assertNotEquals(key, TripTail.getKey(Collections.singletonList(new RouteTimetable.ServiceLink(2, 200, -1, 3))));
+		assertNotEquals(key, TripTail.getKey(Arrays.asList(first, new RouteTimetable.ServiceLink(3, 300, -1))));
 	}
 
 	@Test

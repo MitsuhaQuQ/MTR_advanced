@@ -1,5 +1,10 @@
 package mtr.data;
 
+import transitsim.plan.StopTimes;
+import transitsim.plan.TripPath;
+import transitsim.plan.TripTail;
+import transitsim.plan.TurnBackPoint;
+import transitsim.plan.TurnBacks;
 import transitsim.plan.RouteTimetable;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
@@ -170,7 +175,7 @@ class TrainServiceTest {
 	void aTrainTurningBackTakesTheNextServiceTheOtherWay() {
 		final Route up = makeRoute(1, 0, 1, 2, 3);
 		final Route down = makeRoute(2, 5, 3, 2, 1);
-		final Network network = new Network(Arrays.asList(up, down), makePath(7), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 2, 6), stop(5, 1, 8)), 0, 0);
+		final Network network = new Network(Arrays.asList(up, down), makePath(7), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 2, 6), stop(5, 1, 8)), 0, 0);
 		final FakeTrain train = network.deploy(MONDAY + 8 * HOUR);
 		network.depot.reserveTrip(down.id, MONDAY + 8 * HOUR + 5 * MINUTE);
 
@@ -194,10 +199,10 @@ class TrainServiceTest {
 		line2.timetable.addLinkedService(linkedService);
 		final Line line = new Line(line1);
 		line.addRoute(line2);
-		final String key = Siding.TripTail.getKey(Collections.singletonList(line1.timetable.getLink(MONDAY + 8 * HOUR)));
+		final String key = TripTail.getKey(Collections.singletonList(line1.timetable.getLink(MONDAY + 8 * HOUR)));
 		final List<PathData> tripRails = makePath(6);
-		final Siding.TripTail tripTail = new Siding.TripTail(key, Arrays.asList(line1.id, line2.id), new HashMap<>(), 3, tripRails.subList(3, 6), null, Siding.TripTail.NO_RAIL, false, Siding.TripTail.NO_RAIL);
-		final Siding.TripPath tripPath = Siding.TripPath.of(tripTail, tripRails, 3, 0, Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 8)));
+		final TripTail<PathData, SavedRailBase> tripTail = new TripTail<>(key, Arrays.asList(line1.id, line2.id), new HashMap<>(), 3, tripRails.subList(3, 6), null, TripTail.NO_RAIL, false, TripTail.NO_RAIL);
+		final TripPath<PathData> tripPath = TripPath.of(tripTail, tripRails, 3, 0, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 8)));
 		line.tripPaths.put(key, tripPath);
 
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
@@ -295,7 +300,7 @@ class TrainServiceTest {
 		final Line line = new Line();
 		line.depot.keepsTrainsOnLine = true;
 		line.route.timetable.returnServices.add((int) (8 * HOUR));
-		final Siding.TripPath wayBack = Siding.TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		final TripPath<PathData> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
 		line.tripPaths.put(wayBack.key, wayBack);
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
 
@@ -316,7 +321,7 @@ class TrainServiceTest {
 		final Line line = new Line();
 		line.depot.keepsTrainsOnLine = true;
 		line.route.timetable.returnServices.add((int) (8 * HOUR));
-		final Siding.TripPath wayBack = Siding.TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		final TripPath<PathData> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
 		line.tripPaths.put(wayBack.key, wayBack);
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
 
@@ -329,7 +334,7 @@ class TrainServiceTest {
 	void aDepotWhoseTrainsGoBackAnywayIgnoresTheMark() {
 		final Line line = new Line();
 		line.route.timetable.returnServices.add((int) (8 * HOUR));
-		final Siding.TripPath wayBack = Siding.TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
+		final TripPath<PathData> wayBack = TripPath.ofDepotReturn(0, 3, makePath(6), line.stopTimes);
 		line.tripPaths.put(wayBack.key, wayBack);
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
 
@@ -345,13 +350,13 @@ class TrainServiceTest {
 		final Map<Long, Route> routes = new HashMap<>();
 		final FakeDepot depot;
 		final List<PathData> path;
-		final Siding.StopTimes stopTimes;
-		final Map<String, Siding.TripPath> tripPaths = new HashMap<>();
-		Siding.TurnBacks turnBacks = Siding.TurnBacks.NONE;
+		final StopTimes stopTimes;
+		final Map<String, TripPath<PathData>> tripPaths = new HashMap<>();
+		TurnBacks turnBacks = TurnBacks.NONE;
 		final int repeatIndex1;
 		final int repeatIndex2;
 
-		Network(List<Route> depotRoutes, List<PathData> path, Siding.StopTimes stopTimes, int repeatIndex1, int repeatIndex2) {
+		Network(List<Route> depotRoutes, List<PathData> path, StopTimes stopTimes, int repeatIndex1, int repeatIndex2) {
 			depot = new FakeDepot(depotRoutes);
 			depotRoutes.forEach(this::addRoute);
 			this.path = path;
@@ -397,7 +402,7 @@ class TrainServiceTest {
 		}
 
 		Line(Route route) {
-			super(Collections.singletonList(route), makePath(5), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4)), 0, 0);
+			super(Collections.singletonList(route), makePath(5), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4)), 0, 0);
 			this.route = route;
 		}
 	}
@@ -409,18 +414,18 @@ class TrainServiceTest {
 
 
 		final Route down;
-		final Siding.TripPath secondWay;
+		final TripPath<PathData> secondWay;
 
 		TurnBackLine() {
 			this(makeRoute(1, 0, 1, 2, 3), makeRoute(2, 9, 4, 5, 6));
 		}
 
 		private TurnBackLine(Route up, Route down) {
-			super(Arrays.asList(up, down), makePath(9), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 0, 6), stop(5, 4, 8), stop(6, 5, 10), stop(7, 6, 12)), 0, 0);
+			super(Arrays.asList(up, down), makePath(9), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 0, 6), stop(5, 4, 8), stop(6, 5, 10), stop(7, 6, 12)), 0, 0);
 			this.down = down;
-			secondWay = Siding.TripPath.ofTurnBack(0, 1, new int[]{3}, makePath(10), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(5, 0, 7), stop(6, 4, 9), stop(7, 5, 11), stop(8, 6, 13)));
+			secondWay = TripPath.ofTurnBack(0, 1, new int[]{3}, makePath(10), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(5, 0, 7), stop(6, 4, 9), stop(7, 5, 11), stop(8, 6, 13)));
 			tripPaths.put(secondWay.key, secondWay);
-			turnBacks = Siding.TurnBacks.of(new int[]{3}, new Siding.TurnBackPoint(Arrays.asList(FIRST_TURN_BACK, SECOND_TURN_BACK), new int[]{2, 3}, 0));
+			turnBacks = TurnBacks.of(new int[]{3}, new TurnBackPoint(Arrays.asList(FIRST_TURN_BACK, SECOND_TURN_BACK), new int[]{2, 3}, 0));
 		}
 	}
 
@@ -433,7 +438,7 @@ class TrainServiceTest {
 		 * @param lapMinutes the time from the first stop round to it again
 		 */
 		Loop(int lapMinutes) {
-			super(Collections.singletonList(makeRoute(1, 0, 1, 2, 3, 1)), makePath(6), Siding.StopTimes.of(stop(1, 1, 0), stop(2, 2, lapMinutes / 3), stop(3, 3, lapMinutes * 2 / 3), stop(4, 1, lapMinutes)), 1, 4);
+			super(Collections.singletonList(makeRoute(1, 0, 1, 2, 3, 1)), makePath(6), StopTimes.of(stop(1, 1, 0), stop(2, 2, lapMinutes / 3), stop(3, 3, lapMinutes * 2 / 3), stop(4, 1, lapMinutes)), 1, 4);
 		}
 
 		/**
@@ -523,7 +528,7 @@ class TrainServiceTest {
 		boolean lastLap;
 		int movedTo = -1;
 		boolean returned;
-		Siding.TripPath followed;
+		TripPath<PathData> followed;
 		int pathChanges;
 		final Set<UUID> takenRails = new HashSet<>();
 		List<UUID> reserved;
@@ -572,12 +577,12 @@ class TrainServiceTest {
 		}
 
 		@Override
-		public void followPath(Siding.TripPath tripPath) {
+		public void followPath(TripPath<PathData> tripPath) {
 			followed = tripPath;
 		}
 
 		@Override
-		public void changePath(Siding.TripPath tripPath, int newStopIndex) {
+		public void changePath(TripPath<PathData> tripPath, int newStopIndex) {
 			followed = tripPath;
 			nextStoppingIndex = newStopIndex;
 			pathChanges++;

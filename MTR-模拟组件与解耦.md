@@ -71,6 +71,9 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `data/TimetableConfig` → `transitsim.plan.OperatingDay` | 124 | Gson（只在宿主） | A | **已拆开**（S3a）：时区、日起点和星期的换算在组件 `OperatingDay`，配置文件读写留在宿主 `TimetableConfig`，它的方法转调组件 |
 | `transitsim.plan.DepotDuties`（原 `advanced/DepotDuties`） | 243 | `transitsim.io` | A | **已在组件**（S3a）；存成字节时用组件的 `ByteArrayBinary`，和 Minecraft 的 `FriendlyByteBuf` 逐字节相同（`PacketBinaryTest`），已有存档照常读入 |
 | `transitsim.plan.DutyShapes`（原 `advanced/DutyShapes`） | 161 | `PlanRoute`、`DepotDuties`、`OperatingDay` | A | **已在组件**（S3a） |
+| `transitsim.plan.TripPath`、`StopTimes`、`TimeSegment`（原 `Siding` 的内部类） | 约 800 | `PlanTrack`、`PlanRoute`、`RouteTimetable`、`ServiceExceptions`、`TimetableConflicts`、`transitsim.io` | A | **已在组件**（S3b）；路径的元素类型是泛型 `T extends PlanTrack`，宿主用 `TripPath<PathData>`；存档用组件的 `KeyedReader`、`KeyedWriter`，宿主 `advanced/MessagePackKeyed` 包住 msgpack，键和顺序都不变，路径本身仍由宿主写在最后；跑一趟要的时刻由宿主通过 `TimeGenerator` 算 |
+| `transitsim.plan.TripTail`、`DutyPlan`、`TurnBackSection`、`DepotReturn`、`TurnBacks`、`TurnBackPoint`（原 `Siding` 的内部类） | 约 400 | `PlanTrack` | A | **已在组件**（S3b）；站台类型也是泛型（宿主用 `SavedRailBase`），组件只存不读；`DepotReturn` 改为给出折返的轨道序号，节点坐标由宿主取 |
+| `transitsim.plan.PlanTrack` | 新 | 无 | A | S3b 新增：路径上一条轨道的视图（长度、停站时间、是否站台、站台或存车线 ID、停站序号、是否反向、轨道键），`PathData` 实现它。计划里叫 `PlanPath`，实际做成单条轨道的视图，路径就是 `List<T>` |
 | `advanced/DutyGenerator` | 349 | `transitsim.planning` | B（取数据时用 MTR 类） | 规划部分进组件 `planning`，取数据的部分是宿主适配器（S6） |
 | `data/Route` | 1111 | `BlockPos`、NBT、`FriendlyByteBuf`、`PathData` | C 的数据类 | 留在宿主，适配器换成组件的线路 |
 
@@ -427,7 +430,8 @@ S0 之前，已经不依赖世界的部件：
 | S2d 事件、命令和占用 | 完成：新规则在服务端发出事件 `MotionEvent`（停下、回库、续圈、越站、换段、紧急制动、发车），`Train` 收着，各存车线在列车走完后交出，`RailwayData` 在 tick 末按（时间、类别、列车、序号）排好统一处理，现在只把紧急制动写进日志，上一 tick 的事件可以取到；司机的加减档和开关门规则进组件 `TrainMotion.applyCommand`（`MotionCommand`），宿主照旧在本 tick 收集按键、在这列车走之前交给它，没有再延后一 tick，因为那样会改变手动驾驶的手感和返回值；占用的存放进组件 `transitsim.sim.Occupancy`（两 tick 的轨道 → 占用者），宿主的列车、手动驾驶、信号机闭塞和折返预约照旧写进去，查询经它判断，`trainPositions` 只是它的视图，所有公开方法签名不变 | 1.20.1 | 组件 122 项（新增 `MotionEventTest` 6 项、`OccupancyTest` 4 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动，ANTE 的 mixin 没有失败 | 未测（T94） | 未做 |
 | S3a 前半：时刻表、例外、运营日、运用进组件 | 完成：新包 `transitsim.plan`（`RouteTimetable`、`ServiceExceptions`、`OperatingDay`、`DepotDuties`、视图 `PlanRoute`、`PlanStop`）和 `transitsim.io`（`BinaryReader`、`BinaryWriter`、`ByteArrayBinary`）；宿主改为直接用组件的类，`TimetableConfig` 只读写配置文件，`advanced/PacketBinary` 把 `FriendlyByteBuf` 交给组件；网络包和存档字节不变，协议版本不变。顺手修了构建顺序：`common` 的生产转换要等组件的 jar 构建完（`common/build.gradle`） | 1.20.1 | 组件 122 项、common 243 项全过（新增 `PacketBinaryTest` 3 项，`RouteTimetableSaveTest` 照旧通过）；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
 | S3a 后半：时刻边界、运用形状、冲突检查进组件 | 完成：`TimetableBoundaries`、`DutyShapes`、`TimetableConflicts` 进 `transitsim.plan`；`PlanRoute` 加站序、是否环线、运输方式；宿主 `advanced/PlanAdapters` 给出哪些站台是时刻边界。`DutyGenerator` 留在宿主，它是从车厂和存车线读数据、交给组件规划器的适配器。这些类的测试暂时还在 common，因为它们用 MTR 的 `Route`、`Platform` 造输入，S3c 有了组件自己的测试替身后再搬 | 1.20.1 | 组件 122 项、common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
-| S3b 至 S6、全链路场景 | 未开始 | | | | |
+| S3b：车次和停站时刻进组件 | 完成：`Siding` 的九个内部类（`TripPath`、`StopTimes`、`TimeSegment`、`TripTail`、`DutyPlan`、`TurnBackSection`、`DepotReturn`、`TurnBacks`、`TurnBackPoint`）进 `transitsim.plan`；新增轨道视图 `PlanTrack`（`PathData` 实现）、`TimeGenerator`、`transitsim.io.KeyedReader`/`KeyedWriter`（宿主 `advanced/MessagePackKeyed`）。`Siding` 从 2355 行减到约 1140 行，只留路径生成、存档和同步。存档的键、顺序和数值写法不变 | 1.20.1 | 组件和 common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
+| S3c 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

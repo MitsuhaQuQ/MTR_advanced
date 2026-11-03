@@ -2,6 +2,7 @@ package mtr.path;
 
 import mtr.data.MessagePackHelper;
 import mtr.data.Rail;
+import mtr.data.RailType;
 import mtr.data.RailwayData;
 import mtr.data.SerializedDataBase;
 import net.minecraft.core.BlockPos;
@@ -9,12 +10,13 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.plan.PlanTrack;
 
 import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 
-public class PathData extends SerializedDataBase {
+public class PathData extends SerializedDataBase implements PlanTrack {
 
 	public final Rail rail;
 	public long savedRailBaseId;
@@ -111,6 +113,46 @@ public class PathData extends SerializedDataBase {
 
 	public UUID getRailProduct() {
 		return getRailProduct(startingPos, endingPos);
+	}
+
+	@Override
+	public double getTrackLength() {
+		return rail.getLength();
+	}
+
+	@Override
+	public int getDwellTime() {
+		return dwellTime;
+	}
+
+	@Override
+	public boolean isPlatformTrack() {
+		return rail.railType == RailType.PLATFORM;
+	}
+
+	@Override
+	public long getStopId() {
+		return savedRailBaseId;
+	}
+
+	@Override
+	public int getStopIndex() {
+		return stopIndex;
+	}
+
+	@Override
+	public void setStopIndex(int stopIndex) {
+		this.stopIndex = stopIndex;
+	}
+
+	@Override
+	public boolean isOppositeOf(PlanTrack track) {
+		return track instanceof PathData && isOppositeRail((PathData) track);
+	}
+
+	@Override
+	public UUID getTrackKey() {
+		return getRailProduct();
 	}
 
 	public static UUID getRailProduct(BlockPos startingPos, BlockPos endingPos) {

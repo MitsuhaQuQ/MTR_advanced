@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.plan.StopTimes;
 import transitsim.plan.RouteTimetable;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +31,7 @@ class RouteEntryTest {
 		final List<Route> routes = Arrays.asList(first, joined);
 
 		// Rail, platform, and arrival and departure in ticks: the first route, then the joined route from its third stop
-		final Siding.StopTimes stopTimes = Siding.StopTimes.of(new long[]{0, 1, 0, 20}, new long[]{10, 2, 100, 120}, new long[]{30, 12, 300, 320}, new long[]{50, 13, 500, 500});
+		final StopTimes stopTimes = StopTimes.of(new long[]{0, 1, 0, 20}, new long[]{10, 2, 100, 120}, new long[]{30, 12, 300, 320}, new long[]{50, 13, 500, 500});
 		// The joined route takes three minutes from its first stop to the third
 		stopTimes.setEntry(2, 2, new long[][]{{0, 0}, {60000, 90000}, {180000, 210000}});
 
