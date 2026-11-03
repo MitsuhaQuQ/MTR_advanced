@@ -131,6 +131,40 @@ class TrainServiceTest {
 	}
 
 	@Test
+	void aTrainKeepsThePlanOfItsServiceWhenTheTimetableChanges() {
+		final Line line = new Line();
+		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
+		assertEquals(2 * MINUTE, train.service.getPlanAt(2).arrivalMillis);
+
+		// Half as much time again between stops, from now on
+		line.route.timetable.marginPercent = 50;
+		line.route.timetable.revision++;
+		assertEquals(2 * MINUTE, train.service.getPlanAt(2).arrivalMillis);
+
+		// A train leaving after the change runs by the new plan at once
+		final FakeTrain newTrain = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
+		// The margin adds to the running time, not to the 10 seconds stopped at the first stop
+		assertEquals(2 * MINUTE + (2 * MINUTE - 10 * SECOND) / 2, newTrain.service.getPlanAt(2).arrivalMillis);
+		assertEquals(2 * MINUTE, train.service.getPlanAt(2).arrivalMillis);
+	}
+
+	@Test
+	void aTrainTakesTheNewPlanAtItsNextService() {
+		final Loop loop = new Loop(6);
+		final FakeTrain train = loop.deploy(MONDAY + 6 * HOUR);
+		final long oldArrival = train.service.getPlanAt(2).arrivalMillis;
+
+		loop.depot.routes.get(0).timetable.marginPercent = 50;
+		loop.depot.routes.get(0).timetable.revision++;
+		assertEquals(oldArrival, train.service.getPlanAt(2).arrivalMillis);
+
+		now = MONDAY + 6 * HOUR + 6 * MINUTE;
+		train.service.onLapComplete();
+		assertEquals(MONDAY + 6 * HOUR + 10 * MINUTE, train.service.getTripMillis());
+		assertEquals(oldArrival + (oldArrival - 10 * SECOND) / 2, train.service.getPlanAt(2).arrivalMillis);
+	}
+
+	@Test
 	void oneTrainOnALoopRunsEveryServiceOfTheDay() {
 		final Loop loop = new Loop(6);
 		final List<Long> taken = loop.runDay(Collections.singletonList(loop.deploy(MONDAY + 6 * HOUR)));

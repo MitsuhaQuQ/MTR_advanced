@@ -432,7 +432,8 @@ S0 之前，已经不依赖世界的部件：
 | S3a 后半：时刻边界、运用形状、冲突检查进组件 | 完成：`TimetableBoundaries`、`DutyShapes`、`TimetableConflicts` 进 `transitsim.plan`；`PlanRoute` 加站序、是否环线、运输方式；宿主 `advanced/PlanAdapters` 给出哪些站台是时刻边界。`DutyGenerator` 留在宿主，它是从车厂和存车线读数据、交给组件规划器的适配器。这些类的测试暂时还在 common，因为它们用 MTR 的 `Route`、`Platform` 造输入，S3c 有了组件自己的测试替身后再搬 | 1.20.1 | 组件 122 项、common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
 | S3b：车次和停站时刻进组件 | 完成：`Siding` 的九个内部类（`TripPath`、`StopTimes`、`TimeSegment`、`TripTail`、`DutyPlan`、`TurnBackSection`、`DepotReturn`、`TurnBacks`、`TurnBackPoint`）进 `transitsim.plan`；新增轨道视图 `PlanTrack`（`PathData` 实现）、`TimeGenerator`、`transitsim.io.KeyedReader`/`KeyedWriter`（宿主 `advanced/MessagePackKeyed`）。`Siding` 从 2355 行减到约 1140 行，只留路径生成、存档和同步。存档的键、顺序和数值写法不变 | 1.20.1 | 组件和 common 243 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
 | S3c：班次决策和出车进组件 | 完成：`TrainService` 进 `transitsim.sim`（泛型 `T extends PlanTrack`，用 `PlanRoute`）；新增 `DepotDispatcher`，`Depot` 的车次预约、上次派出班次、运用出车记录和选库位都转调它；`PlanTrack` 加 `isSidingTrack`，`PlanRoute` 加默认的 `getLastPlatformId`，`KeyedWriter` 加 `writeLong`。`TrainServiceTest`、`DutyRunTest`（27 项）搬进组件，用测试替身 `TestRoute`、`TestTrack`。存档的键和写法不变 | 1.20.1 | 组件 152 项（含合并进来的寻路 3 项）、common 216 项全过；组件单独离线构建通过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
-| S3d 至 S6、全链路场景 | 未开始 | | | | |
+| S3d：计划版本 | 完成：组件 `transitsim.plan.PlanVersions` 按时刻表的 `revision` 给线路做不可变副本（时刻表和各张表、班次例外、各站逐表的到发和待避、通过），同一版本的列车共用一份，没有列车用时被回收；`RouteTimetable.copy()`。`TrainService` 取停站计划时用自己这一趟的副本，换班次、换线路、换运用段、换路径或回库时才取最新版本；选下一班、直通接续、查空闲班次仍看线路的当前状态。和计划里写的"全网一份带版本号的快照"不同，做成了按线路的版本：效果一样（列车绑定开始这一趟时的版本，交接时切换），但改一条线路不用复制全网 | 1.20.1 | 组件 156 项全过（新增：改表后正在跑的列车照旧、新出车的用新表，跑完一圈换新表；副本不跟着改、同版本共用）；common 216 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T96） | 未做 |
+| S3e 至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理
@@ -446,7 +447,7 @@ S0 之前，已经不依赖世界的部件：
 | R01 区间挡停时预约失效（高） | 属实 | `TrainServer.java:401` 只在 `speed > 0` 时续订；`RunReservations` 两个 tick 不续就失效。列车在区间被闭塞挡停后预约消失，对向车可以出站，最后会被物理闭塞挡住，两车在单线上对着停住，就是 E2 要防的锁死 | F1（已修） |
 | R02 车尾还在时预约已释放（高） | 属实 | `TrainServer.java:402` 从车头所在的轨道开始续订 | F1（已修） |
 | R03 调度依赖遍历顺序（中） | 属实 | `RailwayData.java:355` 遍历 `HashSet` 里的存车线；`canBook`、`book` 先到先得，没有仲裁和防饥饿 | F1（已修） |
-| R04 旧计划没有版本隔离（高） | 属实 | `TrainService.getDutyDay`、`getDutySegments` 每次读车厂当前的运用；`getStopPlan` 读线路当前的时刻表。网页改了运用、还没刷新路径时，段数相同就会用新班次配旧路径 | F2（运用，已修）、S3（时刻表和完整版本） |
+| R04 旧计划没有版本隔离（高） | 属实 | `TrainService.getDutyDay`、`getDutySegments` 每次读车厂当前的运用；`getStopPlan` 读线路当前的时刻表。网页改了运用、还没刷新路径时，段数相同就会用新班次配旧路径 | F2（运用，已修）、S3（时刻表和完整版本）；**S3d 已修**：时刻表、例外和停站也按版本，列车跑完这一趟再换 |
 | R05 组件构建依赖模组根项目（中） | 属实，而且更重 | 根 `build.gradle` 在配置阶段联网；`getJson` 失败后无限重试，计数也从不增加 | S0 补完（已修）：组件有自己的 `settings.gradle` 和完整的 `build.gradle`，能单独、离线构建；`getJson`、`getXml` 最多试 5 次并有超时，各处下载从无限重试改为 5 次并加超时 |
 
 审查说 S0"尚不能认定完成"，因为它写在 S0 验证之前。验证结果见第 6 节。但独立构建确实没做，所以 S0 在补完 R05 前不算完成。

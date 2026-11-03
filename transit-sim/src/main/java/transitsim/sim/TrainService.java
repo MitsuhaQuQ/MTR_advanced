@@ -7,6 +7,7 @@ import transitsim.plan.DutyShapes;
 import transitsim.plan.OperatingDay;
 import transitsim.plan.PlanRoute;
 import transitsim.plan.PlanTrack;
+import transitsim.plan.PlanVersions;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TripPath;
@@ -82,6 +83,18 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private int turnBackStop = -1;
 	private final List<PlanRoute> tripRoutes = new ArrayList<>();
+	/**
+	 * The plan of the service the train is on: its routes and timetable as they were when it took the service (S3d, fix R04).
+	 * Edits to the timetable, its exceptions or the stops don't change it; the train takes the newest plan when it changes
+	 * service, route, duty segment or path, or comes back to the depot.
+	 */
+	private List<PlanRoute> planRoutes;
+	private RouteTimetable planTimetable;
+	private long planTripMillis;
+	private long planRouteId;
+	private TripPath<T> planTripPath;
+	private StopTimes planStopTimes;
+	private int planDutyIndex;
 	private long sidingId;
 	/**
 	 * In a depot running by its duties, the slot whose duty the train is running, or -1 (design document 6.12, block E2).
@@ -273,11 +286,11 @@ public class TrainService<T extends PlanTrack> {
 			final long plannedStartMillis = getPlannedMillis(startPlan.routeStartMillis);
 			final long readyMillis = clock.getAsLong() + startPlan.arrivalMillis - stopPlan.arrivalMillis;
 			final boolean isLinked = tripPath != null && linkedService >= 0 && startPlan.route.getRouteId() == linkedRouteId;
-			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService(startPlan.route, Math.max(plannedStartMillis, readyMillis));
+			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService(getCurrentRoute(startPlan.route), Math.max(plannedStartMillis, readyMillis));
 			tripMillis = serviceMillis == 0 ? plannedStartMillis : serviceMillis;
 			tripRouteId = startPlan.route.getRouteId();
 			if (isLinked) {
-				setNextLink(startPlan.route);
+				setNextLink(getCurrentRoute(startPlan.route));
 			}
 			updateTripPath();
 			// The plan follows the route and table the train is on now, which can move where this route starts in it
@@ -419,7 +432,7 @@ public class TrainService<T extends PlanTrack> {
 				}
 				final RouteTimetable.StopPlan startPlan = stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
 				if (startPlan != null && startPlan.startsRoute && startPlan.route.getRouteId() != tripRouteId) {
-					final PlanRoute route = startPlan.route;
+					final PlanRoute route = getCurrentRoute(startPlan.route);
 					return !startPlan.waitsForService || route.getTimetable().getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.getRouteId(), millis)) != 0 ? i : -1;
 				}
 			}
@@ -977,13 +990,41 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	private RouteTimetable.StopPlan getStopPlan(int stopIndex) {
-		final PlanRoute dutyRoute = isOnDuty() && routes != null ? routes.apply(tripRouteId) : null;
-		final RouteTimetable timetable = dutyRoute != null ? dutyRoute.getTimetable() : depot == null ? null : depot.getTimetable(trainId);
-		if (tripMillis == 0 || timetable == null || stopTimes == null) {
+		if (tripMillis == 0 || stopTimes == null) {
 			return null;
 		}
-		final List<? extends PlanRoute> newTripRoutes = getTripRoutes();
-		return stopTimes.getPlan(newTripRoutes, timetable, stopIndex, tripRouteId, getTripTable(newTripRoutes), (int) Math.floorMod(tripMillis, (long) OperatingDay.MILLIS_PER_DAY));
+		updatePlan();
+		if (planTimetable == null) {
+			return null;
+		}
+		return stopTimes.getPlan(planRoutes, planTimetable, stopIndex, tripRouteId, getTripTable(planRoutes), (int) Math.floorMod(tripMillis, (long) OperatingDay.MILLIS_PER_DAY));
+	}
+
+	/**
+	 * Takes the newest plan when the train has changed service, route, duty segment or path since it took the one it has.
+	 */
+	private void updatePlan() {
+		final int newDutyIndex = isOnDuty() ? dutyIndex : -1;
+		if (planRoutes != null && planTripMillis == tripMillis && planRouteId == tripRouteId && planTripPath == tripPath && planStopTimes == stopTimes && planDutyIndex == newDutyIndex) {
+			return;
+		}
+		final PlanRoute dutyRoute = isOnDuty() && routes != null ? routes.apply(tripRouteId) : null;
+		final RouteTimetable timetable = dutyRoute != null ? dutyRoute.getTimetable() : depot == null ? null : depot.getTimetable(trainId);
+		planRoutes = PlanVersions.fix(getTripRoutes());
+		planTimetable = timetable == null ? null : PlanVersions.fix(timetable);
+		planTripMillis = tripMillis;
+		planRouteId = tripRouteId;
+		planTripPath = tripPath;
+		planStopTimes = stopTimes;
+		planDutyIndex = newDutyIndex;
+	}
+
+	/**
+	 * @return the route as it is now, for choosing what the train does next, rather than as the train's plan has it
+	 */
+	private PlanRoute getCurrentRoute(PlanRoute planRoute) {
+		final PlanRoute route = routes == null ? null : routes.apply(planRoute.getRouteId());
+		return route == null ? planRoute : route;
 	}
 
 	/**

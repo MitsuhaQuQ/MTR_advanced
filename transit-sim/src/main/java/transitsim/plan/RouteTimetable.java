@@ -98,6 +98,31 @@ public class RouteTimetable {
 	}
 
 	/**
+	 * @return a copy of this timetable and its other tables that later changes to this one don't reach, with the same revision
+	 */
+	public RouteTimetable copy() {
+		final RouteTimetable timetable = new RouteTimetable();
+		timetable.enabled = enabled;
+		timetable.marginPercent = marginPercent;
+		timetable.services.addAll(services);
+		timetable.name = name;
+		timetable.entryPlatformId = entryPlatformId;
+		timetable.weekdays = weekdays;
+		timetable.revision = revision;
+		timetable.links.putAll(links);
+		timetable.returnServices.addAll(returnServices);
+		exceptions.forEach((service, stops) -> {
+			final Map<Integer, ServiceExceptions.StopException> newStops = new HashMap<>();
+			stops.forEach((stop, stopException) -> newStops.put(stop, stopException.copy()));
+			timetable.exceptions.put(service, newStops);
+		});
+		otherTables.forEach(table -> timetable.otherTables.add(table.copy()));
+		timetable.allServices.addAll(allServices);
+		timetable.linkedServices.addAll(linkedServices);
+		return timetable;
+	}
+
+	/**
 	 * Sorts the services and removes anything a client should not have sent.
 	 */
 	public void sanitize() {
