@@ -1121,7 +1121,8 @@
 	// The chosen day as the game's server simulates it with the draft (S5): what each service did and what went wrong
 	const SIM_LATE_MILLIS = 30000, SIM_MAX_LISTED = 300;
 	const SIM_KINDS = { LATE: "晚点", WAITING_FOR_PLATFORM: "等站台", HELD_ON_LINE: "区间扣停", LONG_DWELL: "站内久停", DEADLOCK: "锁死", NOT_RUN: "未开行" };
-	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0 };
+	// checkDepot is the depot whose generated duties the simulated day checks, whose routes are reported on as well
+	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0, missingPaths: 0, checkDepot: null };
 
 	function setSimulation(on) {
 		sim.on = on;
@@ -1132,7 +1133,7 @@
 		if (on) {
 			simulate();
 		} else {
-			Object.assign(sim, { state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [] });
+			Object.assign(sim, { state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], checkDepot: null });
 		}
 		renderSimStatus();
 		draw();
@@ -1149,12 +1150,14 @@
 	async function simulate() {
 		clearTimeout(sim.timer);
 		sim.timer = null;
-		const line = currentLine();
-		if (!sim.on || !line) return;
+		const line = currentLine(), checkDepot = sim.checkDepot && depotById(sim.checkDepot);
+		if (!sim.on || !line && !checkDepot) return;
 		sim.line = state.line;
 		sim.weekday = state.weekday;
+		const routes = new Set(line ? line.routes.map(r => r.id) : []);
+		if (checkDepot) checkDepot.routes.forEach(id => routes.add(id));
 		try {
-			const response = await sendJson("api/simulate", "POST", { weekday: state.weekday, routes: line.routes.map(r => r.id), operations: draftOperations().operations });
+			const response = await sendJson("api/simulate", "POST", { weekday: state.weekday, routes: [...routes], operations: draftOperations().operations });
 			if (response.error) {
 				sim.state = response.error;
 			} else {
@@ -1178,7 +1181,7 @@
 				// Another page asked since, or this request's answer hasn't come yet
 				if (status.request > sim.request) sim.state = "idle";
 				if (status.request !== sim.request || status.state === "running") continue;
-				Object.assign(sim, { state: status.state, notSimulated: status.notSimulated, ignored: status.ignored });
+				Object.assign(sim, { state: status.state, notSimulated: status.notSimulated, ignored: status.ignored, missingPaths: status.missingPaths || 0 });
 				if (status.state === "done" && status.result) setSimResult(status.result);
 			}
 		} catch (e) {
@@ -1188,6 +1191,7 @@
 		renderSimStatus();
 		draw();
 		renderInspector();
+		renderBanner();
 	}
 
 	function setSimResult(result) {
@@ -1250,9 +1254,27 @@
 		return `<div class="hint">${late > SIM_LATE_MILLIS ? tr("模拟：最多晚 {0}", formatDuration(late)) : tr("模拟：准点")}</div>`;
 	}
 
+	/** How the depot's generated duties ran in the simulated day, in a line, or nothing if they aren't being checked. */
+	function dutyCheckText(depot) {
+		if (!sim.on || !depot || sim.checkDepot !== depot.id) return "";
+		if (sim.state === "running") return tr("内核验证中…");
+		if (!sim.result) return "";
+		const routes = new Set(depot.routes);
+		const count = kind => sim.result.problems.filter(problem => problem.kind === kind && routes.has(problem.route)).length;
+		const parts = [];
+		if (sim.missingPaths) parts.push(tr("{0} 种运用找不到路径", sim.missingPaths));
+		if (count("NOT_RUN")) parts.push(tr("未开行 {0} 班", count("NOT_RUN")));
+		if (count("LATE")) parts.push(tr("晚点 {0} 班", count("LATE")));
+		const deadlocks = sim.result.problems.filter(problem => problem.kind === "DEADLOCK").length;
+		if (deadlocks) parts.push(tr("锁死 {0} 次", deadlocks));
+		return parts.length ? tr("内核验证：{0}，见右侧“模拟问题”。", parts.join(trc("list separator", "、"))) : tr("内核验证：全部开行、准点。");
+	}
+
 	/** What went wrong on the line in the simulated day, each going to its service when clicked. */
 	function simPanel(line) {
 		const routes = new Map(line ? line.routes.map(r => [r.id, r]) : []);
+		const checkDepot = sim.checkDepot && depotById(sim.checkDepot);
+		if (checkDepot) checkDepot.routes.forEach(id => { if (!routes.has(id) && data.routeById.get(id)) routes.set(id, data.routeById.get(id)); });
 		const problems = sim.result ? sim.result.problems.filter(problem => problem.kind === "DEADLOCK" || routes.has(problem.route)) : [];
 		sim.listed = problems;
 		const items = problems.slice(0, SIM_MAX_LISTED).map((problem, i) => {
@@ -1265,6 +1287,7 @@
 		const notes = [];
 		if (sim.notSimulated) notes.push(tr("改站序、新建或删除种别的修改没有模拟（{0} 项）", sim.notSimulated));
 		if (sim.ignored) notes.push(tr("{0} 项草稿和服务端的线路对不上，没有用上", sim.ignored));
+		if (sim.missingPaths) notes.push(tr("{0} 种运用在轨道上找不到路径，这些车不会发车", sim.missingPaths));
 		const body = items.length ? `<ul class="sim-problems">${items.join("")}</ul>` : sim.result ? `<p class="hint">${tr("这一天没有发现问题。")}</p>` : "";
 		return `<h2>${tr("模拟问题")}</h2><div class="card">${body}${problems.length > SIM_MAX_LISTED ? `<p class="hint">${tr("只列出前 {0} 条。", SIM_MAX_LISTED)}</p>` : ""}${notes.map(note => `<p class="hint">${escapeHtml(note)}</p>`).join("")}<p class="hint">${tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p></div>`;
 	}
@@ -1714,6 +1737,7 @@
 			<dt>${tr("方式")}</dt><dd>${dutiesOf(depot).mode === "diagram" ? tr("按运用图") : tr("在线预约（运用先存着，按运用运行要等以后）")}</dd></dl>
 			${rows ? `<ol class="duty">${rows}</ol>` : `<p class="hint">${tr("这天没有运用，在运行图上点班次加进来。")}</p>`}
 			${problemAt(-1)}
+			${dutyCheckText(depot) ? `<p class="hint">${escapeHtml(dutyCheckText(depot))}</p>` : ""}
 			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> ${tr("跑完最后一班留在线上过夜")}</label>` : ""}
 			${day && day.stay ? `<label>${tr("第二天接着跑")} <select data-duty-next>${slots.map((slot, i) => {
 				const next = dutyOn(slot, (state.weekday + 1) % 7);
@@ -1737,6 +1761,9 @@
 				editDuties(depot, duties => {
 					duties.sidings = result.duties.sidings;
 				});
+				// The running kernel checks the duties in a simulated day with the draft (S6)
+				sim.checkDepot = depot.id;
+				if (sim.on) simulate(); else setSimulation(true);
 				dutyNotice = `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
 					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
 					+ (result.issues.length ? `${tr("其他问题：{0}", result.issues.slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
@@ -2766,7 +2793,8 @@
 		} else if (applyResult && applyResult.ok) {
 			html = `${tr("已应用 {0} 项。", applyResult.applied)}`;
 		} else if (dutyNotice) {
-			html = escapeHtml(dutyNotice);
+			const check = dutyCheckText(depotById(sim.checkDepot));
+			html = escapeHtml(dutyNotice) + (check ? " " + escapeHtml(check) : "");
 		} else if (missingTimes) {
 			html = tr("部分线路还没有各站时刻，正在向服务端取，取到之前按虚线画。");
 		}
