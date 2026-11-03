@@ -309,41 +309,6 @@ public class RouteTimetable {
 	}
 
 	/**
-	 * Works out the times of one route on its own. A passing train doesn't stop, even if the times from the server were
-	 * worked out before the stop was changed to passing, as they only change when the path is refreshed.
-	 *
-	 * @param stops         the stops of the route
-	 * @param times         the fastest arrival and departure at each stop, with -1 for stops not found, or null if there are none yet
-	 * @param marginPercent the extra time to plan for
-	 * @param table         the index of the table to take the times at each stop from
-	 */
-	public static List<StopPlan> getStopPlans(List<? extends PlanStop> stops, long[][] times, int marginPercent, int table) {
-		return getStopPlans(stops, times, marginPercent, table, null);
-	}
-
-	/**
-	 * @param stopExceptions where one service runs differently, by stop, or null for the table's own times
-	 */
-	public static List<StopPlan> getStopPlans(List<? extends PlanStop> stops, long[][] times, int marginPercent, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
-		final List<StopPlan> plans = new ArrayList<>();
-		long lastTime = 0;
-		for (int i = 0; i < stops.size(); i++) {
-			final PlanStop stop = stops.get(i);
-			final boolean hasTime = times != null && times[i][0] >= 0;
-			final boolean isPass = stop.isPass() && i > 0 && i < stops.size() - 1;
-			final long arrival = hasTime ? times[i][0] : lastTime;
-			final long departure = !hasTime ? lastTime : isPass ? arrival : times[i][1];
-			lastTime = departure;
-			plans.add(new StopPlan(arrival, departure, stop.getArrival(table), stop.getDeparture(table), stop.getOvertake(table)));
-		}
-		ServiceExceptions.applyTo(plans, stopExceptions);
-		final RouteTimetable timetable = new RouteTimetable();
-		timetable.marginPercent = marginPercent;
-		timetable.applyPlan(plans);
-		return plans;
-	}
-
-	/**
 	 * Marks turn back rails just before a route with services of its own, where a train waits so it reaches that route on time.
 	 *
 	 * @param stops       the stops of the trip in order, after {@link #applyPlan(List)}

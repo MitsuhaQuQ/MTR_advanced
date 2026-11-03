@@ -1,5 +1,6 @@
 package mtr.advanced;
 
+import transitsim.plan.StopRules;
 import transitsim.plan.ServiceExceptions;
 import io.netty.buffer.Unpooled;
 import mtr.data.RailwayData;
@@ -54,7 +55,7 @@ class ServiceExceptionsTest {
 	}
 
 	private static List<RouteTimetable.StopPlan> plan(Route route, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
-		return RouteTimetable.getStopPlans(route.platformIds, getTimes(), 0, 0, stopExceptions);
+		return StopRules.plan(route.platformIds, getTimes(), 0, 0, stopExceptions);
 	}
 
 	@Test
@@ -103,7 +104,7 @@ class ServiceExceptionsTest {
 		final long[][] times = {{0, 0}, {120000, 120000}, {240000, 270000}, {390000, 390000}};
 		final Map<Integer, ServiceExceptions.StopException> stopExceptions = new HashMap<>();
 		stopExceptions.put(1, exception(-1, -1, 0, -1));
-		final List<RouteTimetable.StopPlan> plans = RouteTimetable.getStopPlans(route.platformIds, times, 0, 0, stopExceptions);
+		final List<RouteTimetable.StopPlan> plans = StopRules.plan(route.platformIds, times, 0, 0, stopExceptions);
 		assertEquals(120000 + ServiceExceptions.ADDED_STOP_MILLIS, plans.get(1).departureMillis);
 		assertEquals(240000 + ServiceExceptions.ADDED_STOP_MILLIS, plans.get(2).arrivalMillis);
 	}

@@ -1,5 +1,6 @@
 package mtr.client.editor;
 
+import transitsim.plan.StopRules;
 import transitsim.plan.RouteTimetable;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -220,10 +221,6 @@ public final class EditorDuties implements IPacket {
 				return;
 			}
 			final long[] platformIds = route.platformIds.stream().mapToLong(routePlatform -> routePlatform.platformId).toArray();
-			final boolean[] pass = new boolean[platformIds.length];
-			for (int i = 0; i < pass.length; i++) {
-				pass[i] = route.platformIds.get(i).pass && i > 0 && i < pass.length - 1;
-			}
 			final List<RouteTimetable> tables = route.timetable.getTables();
 			for (int i = 0; i < tables.size(); i++) {
 				final RouteTimetable table = tables.get(i);
@@ -236,11 +233,14 @@ public final class EditorDuties implements IPacket {
 					continue;
 				}
 				for (final int service : table.services) {
-					final List<RouteTimetable.StopPlan> stopPlans = RouteTimetable.getStopPlans(route.platformIds, times, table.marginPercent, i, table.exceptions.get(service));
+					// Times and passing as trains and the timetable page have them, with this service's own exceptions
+					final List<StopRules.StopTime> stopTimes = StopRules.times(route.platformIds, times, table.marginPercent, i, table.exceptions.get(service));
 					final long[][] plans = new long[platformIds.length][];
+					final boolean[] pass = new boolean[platformIds.length];
 					for (int j = 0; j < plans.length; j++) {
-						final RouteTimetable.StopPlan plan = j < stopPlans.size() ? stopPlans.get(j) : null;
-						plans[j] = plan == null ? new long[]{0, 0} : new long[]{plan.arrivalMillis, plan.departureMillis};
+						final StopRules.StopTime stopTime = j < stopTimes.size() ? stopTimes.get(j) : null;
+						plans[j] = stopTime == null ? new long[]{0, 0} : new long[]{stopTime.arrivalMillis, stopTime.departureMillis};
+						pass[j] = stopTime != null && stopTime.passes;
 					}
 					final RouteTimetable.ServiceLink link = table.links.get(service);
 					services.add(new DutyGenerator.ServiceInput(route.id, service, days, Math.floorMod(service - dayStartMillis, Depot.MILLISECONDS_PER_DAY), platformIds, plans, pass,

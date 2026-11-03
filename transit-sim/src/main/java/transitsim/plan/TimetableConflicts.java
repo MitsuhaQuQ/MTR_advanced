@@ -290,9 +290,9 @@ public final class TimetableConflicts {
 		 * @param exceptions the stops where services of the table run differently, which get times of their own
 		 */
 		public void addTable(int table, int weekdays, List<Integer> services, int marginPercent, long[][] times, Map<Integer, Map<Integer, ServiceExceptions.StopException>> exceptions) {
-			final long[][] tableTimes = getTimes(times, RouteTimetable.getStopPlans(stops, times, marginPercent, table));
+			final long[][] tableTimes = getTimes(times, StopRules.plan(stops, times, marginPercent, table, null));
 			final TableTimes tableTimesObject = new TableTimes(table, weekdays, services, tableTimes[0], tableTimes[1]);
-			exceptions.forEach((service, stopExceptions) -> tableTimesObject.serviceTimes.put(service, getTimes(times, RouteTimetable.getStopPlans(stops, times, marginPercent, table, stopExceptions))));
+			exceptions.forEach((service, stopExceptions) -> tableTimesObject.serviceTimes.put(service, getTimes(times, StopRules.plan(stops, times, marginPercent, table, stopExceptions))));
 			tables.add(tableTimesObject);
 		}
 

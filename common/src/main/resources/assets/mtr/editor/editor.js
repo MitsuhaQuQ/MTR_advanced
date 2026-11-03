@@ -13,8 +13,8 @@
 	const ZOOMS = [0.5, 1, 2, 3, 4, 6, 8, 12, 16];
 	const WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 	const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
-	// The same as ServiceExceptions.ADDED_STOP_MILLIS and RouteTimetable.MAX_SERVICES in the game
-	const ADDED_STOP_MILLIS = 30000, MAX_SERVICES = 4096, MAX_TABLES = 16;
+	// The same as RouteTimetable.MAX_SERVICES and MAX_TABLES in the game
+	const MAX_SERVICES = 4096, MAX_TABLES = 16;
 	// RouteTimetable.MAX_LAYOVER_MILLIS and MAX_STAY_MILLIS: how long a train waits for its next lap before going back to the depot
 	const MAX_LAYOVER_MILLIS = 30 * 60000, MAX_STAY_MILLIS = 8 * DAY;
 	// 1 January 1970, the first day of the epoch, was a Thursday
@@ -325,46 +325,62 @@
 		line.rows = rows;
 	}
 
-	/**
-	 * The planned arrival and departure at each stop in milliseconds from the first stop, worked out the same way as
-	 * RouteTimetable.getStopPlans and applyPlan in the game, so a draft shows the times the game will use once applied.
-	 *
-	 * @param stopExceptions where one service runs differently, by stop, or null
-	 */
-	function computePlans(r, table, pass, stopExceptions) {
-		const n = r.stops.length, times = r.hasTimes ? r.fastest : null;
-		const stops = [];
-		let last = 0;
-		for (let i = 0; i < n; i++) {
-			const hasTime = Boolean(times) && times[i][0] >= 0;
-			const isPass = pass[i] && i > 0 && i < n - 1;
-			const arrival = hasTime ? times[i][0] : last;
-			const departure = !hasTime ? last : isPass ? arrival : times[i][1];
-			last = departure;
-			const set = table.stops[i] || { arrival: -1, departure: -1, overtake: false };
-			const exception = stopExceptions ? stopExceptions.get(i) : null;
-			stops.push({
-				fastestArrival: arrival, fastestDeparture: departure, setArrival: set.arrival, setDeparture: set.departure,
-				run: exception && exception.run >= 0 ? exception.run * 1000 : -1,
-				dwell: exception && exception.dwell >= 0 ? exception.dwell * 1000 : -1,
-				pass: exception ? exception.pass : -1,
-				overtake: exception && exception.overtake >= 0 ? exception.overtake === 1 : set.overtake,
-			});
+	// ---------- Times ----------
+	// The page doesn't work out times itself: the game does, by the same rules trains run by (StopRules), and sends each
+	// stop as [arrival, departure, overtake, passes, tooFast], the times in milliseconds from the first stop
+	const toPlans = times => times.map(t => ({ arrival: t[0], departure: t[1], overtake: t[2] === 1, passes: t[3] === 1, tooFast: t[4] === 1 }));
+	const gameSource = r => r.gameSource || (r.gameSource = r.tables.map(table => ({ times: table.times, exceptions: new Map((table.exceptions || []).map(e => [e.service, e.times])) })));
+	// The times of each route's draft as the game worked them out, with the draft they are for
+	const draftTimes = new Map();
+	const requestedTimes = new Map();
+	let timesTimer = 0;
+
+	/** What a route's times are taken from: the game's for its own timetable, or the game's answer for the draft. */
+	function timesSource(r) {
+		const draftTimetable = draftOf(r) && draftOf(r).timetable;
+		if (!draftTimetable) return gameSource(r);
+		const key = JSON.stringify([draftTimetable, r.hasTimes ? r.fastest : null]);
+		const cached = draftTimes.get(r.id);
+		if ((!cached || cached.key !== key) && requestedTimes.get(r.id) !== key) {
+			requestedTimes.set(r.id, key);
+			clearTimeout(timesTimer);
+			timesTimer = setTimeout(sendTimes, 150);
 		}
-		const addMargin = millis => Math.trunc(millis * (100 + table.marginPercent) / 100);
-		let lastFastestDeparture = 0, lastDeparture = 0;
-		return stops.map((p, i) => {
-			const automatic = i === 0 ? 0 : lastDeparture + addMargin(p.fastestArrival - lastFastestDeparture);
-			const arrival = i > 0 && p.run >= 0 ? lastDeparture + p.run : i > 0 && p.setArrival >= 0 ? p.setArrival * 1000 : automatic;
-			const automaticDwell = p.pass === 0 && p.fastestDeparture === p.fastestArrival ? ADDED_STOP_MILLIS : p.fastestDeparture - p.fastestArrival;
-			const middle = i > 0 && i < n - 1;
-			const departure = p.dwell >= 0 ? arrival + p.dwell : p.pass === 1 && middle ? arrival : p.setDeparture >= 0 ? Math.max(p.setDeparture * 1000, arrival) : arrival + automaticDwell;
-			// Faster than the train can run, which the game can't keep to
-			const tooFast = i > 0 && Boolean(times) && arrival < lastDeparture + p.fastestArrival - lastFastestDeparture - 500;
-			lastFastestDeparture = p.fastestDeparture;
-			lastDeparture = departure;
-			return { arrival, departure, overtake: p.overtake && middle, passes: middle && (p.pass === 1 || p.pass !== 0 && pass[i]), tooFast };
-		});
+		// Until the game answers, the times it last gave are shown
+		return cached ? cached.tables : gameSource(r);
+	}
+
+	/** Sends the drafts waiting for times to the game, and shows them once it answers. */
+	async function sendTimes() {
+		const sent = [...requestedTimes.entries()].filter(([id, key]) => !draftTimes.has(id) || draftTimes.get(id).key !== key);
+		const routes = sent.map(([id]) => data.routeById.get(id)).filter(r => r && draftOf(r) && draftOf(r).timetable);
+		if (!routes.length) return;
+		const keys = new Map(sent);
+		try {
+			const result = await sendJson("api/times", "POST", { routes: routes.map(r => ({ id: r.id, timetable: draftOf(r).timetable })) });
+			result.routes.forEach(route => draftTimes.set(route.id, {
+				key: keys.get(route.id),
+				tables: route.tables.map(table => ({ times: table.times, exceptions: new Map(table.exceptions.map(e => [e.service, e.times])) })),
+			}));
+		} catch (e) {
+			// Asked again with the next change
+			sent.forEach(([id]) => requestedTimes.delete(id));
+			return;
+		}
+		buildServices();
+		if (state.selected && !findService(state.selected)) state.selected = null;
+		renderAll();
+	}
+
+	/**
+	 * The planned times at each stop of a table's services, or of one service with its own exceptions. A table or service
+	 * the game hasn't answered for yet takes the table's times, or none.
+	 */
+	function plansFor(r, source, tableIndex, service) {
+		const table = source[tableIndex];
+		const times = table ? service !== null && table.exceptions.get(service) || table.times : null;
+		if (times && times.length === r.stops.length) return toPlans(times);
+		return r.stops.map(() => ({ arrival: 0, departure: 0, overtake: false, passes: false, tooFast: false }));
 	}
 
 	/** The table a route runs on a day for each of its services, which is the first of its tables that has it that day. */
@@ -372,10 +388,11 @@
 		const weekday = state.weekday;
 		data.routes.forEach(r => {
 			const timetable = timetableOf(r);
+			const source = timesSource(r);
 			const services = new Map();
 			timetable.tables.forEach((table, tableIndex) => {
 				if ((table.weekdays >> weekday & 1) === 0) return;
-				const tablePlans = computePlans(r, table, timetable.pass, null);
+				const tablePlans = plansFor(r, source, tableIndex, null);
 				const exceptions = new Map(table.exceptions.map(exception => [exception.service, new Map(exception.stops.map(stop => [stop.stop, stop]))]));
 				table.services.forEach(service => {
 					if (services.has(service)) return;
@@ -386,7 +403,7 @@
 						returns: table.returns.includes(service),
 						// The time in the operating day, so the last trains after midnight come after the first ones
 						start: mod(service - data.dayStartMillis, DAY),
-						plans: stopExceptions ? computePlans(r, table, timetable.pass, stopExceptions) : tablePlans,
+						plans: stopExceptions ? plansFor(r, source, tableIndex, service) : tablePlans,
 						tablePlans, exceptions: stopExceptions,
 					});
 				});

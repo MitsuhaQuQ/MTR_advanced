@@ -1,5 +1,6 @@
 package mtr.screen;
 
+import transitsim.plan.StopRules;
 import mtr.advanced.PlanAdapters;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.advanced.AdvancedEditing;
@@ -683,7 +684,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 
 	private List<RouteTimetable.StopPlan> getPlans() {
 		// The selected service's own times, where it runs differently from the table
-		return RouteTimetable.getStopPlans(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin(), tableIndex, getTable().exceptions.get(baseMillis));
+		return StopRules.plan(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin(), tableIndex, getTable().exceptions.get(baseMillis));
 	}
 
 	private void requestConflicts() {

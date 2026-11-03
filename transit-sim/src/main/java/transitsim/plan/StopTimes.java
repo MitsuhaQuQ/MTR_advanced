@@ -294,7 +294,7 @@ public class StopTimes {
 		for (int i = 0; i < times.length; i++) {
 			times[i] = i < leadTimes.length ? leadTimes[i] : new long[]{-1, -1};
 		}
-		return RouteTimetable.getStopPlans(route.getStops(), times, route.getTimetable().getTable(table).marginPercent, table, stopExceptions).get(entryStop).arrivalMillis;
+		return StopRules.plan(route.getStops(), times, route.getTimetable().getTable(table).marginPercent, table, stopExceptions).get(entryStop).arrivalMillis;
 	}
 
 	/**

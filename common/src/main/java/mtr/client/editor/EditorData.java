@@ -1,5 +1,6 @@
 package mtr.client.editor;
 
+import transitsim.plan.StopRules;
 import mtr.advanced.PlanAdapters;
 import transitsim.plan.RouteTimetable;
 import com.google.gson.JsonArray;
@@ -160,13 +161,15 @@ public final class EditorData {
 
 			// Arrival and departure at each stop in milliseconds from the service's time at the first stop
 			final JsonArray plansArray = new JsonArray();
-			RouteTimetable.getStopPlans(route.platformIds, hasTimes ? times : null, table.marginPercent, i).forEach(plan -> {
+			StopRules.plan(route.platformIds, hasTimes ? times : null, table.marginPercent, i, null).forEach(plan -> {
 				final JsonArray planArray = new JsonArray();
 				planArray.add(plan.arrivalMillis);
 				planArray.add(plan.departureMillis);
 				plansArray.add(planArray);
 			});
 			tableObject.add("plans", plansArray);
+			// The same times with whether each stop is passed, waited at or planned too fast (StopRules), for the page
+			tableObject.add("times", EditorTimes.toJson(StopRules.times(route.platformIds, hasTimes ? times : null, table.marginPercent, i, null)));
 
 			// The times set at each stop in seconds from the first stop, or -1 to follow the stop before, and whether the
 			// train waits there to be overtaken
@@ -213,13 +216,14 @@ public final class EditorData {
 				});
 				exceptionObject.add("stops", exceptionStopsArray);
 				final JsonArray servicePlansArray = new JsonArray();
-				RouteTimetable.getStopPlans(route.platformIds, hasTimes ? times : null, table.marginPercent, tableIndex, stopExceptions).forEach(plan -> {
+				StopRules.plan(route.platformIds, hasTimes ? times : null, table.marginPercent, tableIndex, stopExceptions).forEach(plan -> {
 					final JsonArray planArray = new JsonArray();
 					planArray.add(plan.arrivalMillis);
 					planArray.add(plan.departureMillis);
 					servicePlansArray.add(planArray);
 				});
 				exceptionObject.add("plans", servicePlansArray);
+				exceptionObject.add("times", EditorTimes.toJson(StopRules.times(route.platformIds, hasTimes ? times : null, table.marginPercent, tableIndex, stopExceptions)));
 				exceptionsArray.add(exceptionObject);
 			});
 			tableObject.add("exceptions", exceptionsArray);

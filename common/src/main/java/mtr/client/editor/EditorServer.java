@@ -127,6 +127,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new ApplyServlet()), "/api/apply");
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
+		context.addServlet(new ServletHolder(new TimesServlet()), "/api/times");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
 		context.addServlet(new ServletHolder(new RouteLayoutServlet()), "/api/route-layout");
 		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
@@ -296,6 +297,36 @@ public final class EditorServer {
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				return;
+			}
+			sendJson(response, content);
+		}
+	}
+
+	/**
+	 * The times of the page's draft timetables, worked out by the game's rules ({@link EditorTimes}). Nothing is changed.
+	 */
+	private static class TimesServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final JsonObject requestObject;
+			try {
+				requestObject = new JsonParser().parse(body).getAsJsonObject();
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			final String content;
+			try {
+				content = onGameThread(() -> EditorTimes.fromDraft(requestObject).toString());
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
 				return;
 			}
 			sendJson(response, content);
