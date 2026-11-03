@@ -2,7 +2,7 @@ package mtr.advanced;
 
 import mtr.data.Platform;
 import mtr.data.Route;
-import mtr.data.RouteTimetable;
+import transitsim.plan.RouteTimetable;
 
 import java.util.function.LongFunction;
 

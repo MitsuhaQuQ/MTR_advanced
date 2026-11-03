@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.plan.RouteTimetable;
 import mtr.TrigCache;
 import mtr.block.*;
 import mtr.mappings.Utilities;

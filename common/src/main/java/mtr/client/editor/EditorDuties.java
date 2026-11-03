@@ -1,9 +1,10 @@
 package mtr.client.editor;
 
+import transitsim.plan.RouteTimetable;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import mtr.advanced.DepotDuties;
+import transitsim.plan.DepotDuties;
 import mtr.advanced.DutyGenerator;
 import mtr.client.ClientData;
 import mtr.data.*;

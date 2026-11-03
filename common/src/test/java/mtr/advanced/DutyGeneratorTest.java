@@ -1,5 +1,6 @@
 package mtr.advanced;
 
+import transitsim.plan.DepotDuties;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.Test;
@@ -111,8 +112,8 @@ class DutyGeneratorTest {
 
 		// One slot at a time, as the game sends them
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-		slot.write(packet);
-		read.setSlot(100, 1, 0, DepotDuties.Slot.read(packet));
+		slot.write(mtr.advanced.PacketBinary.of(packet));
+		read.setSlot(100, 1, 0, DepotDuties.Slot.read(mtr.advanced.PacketBinary.of(packet)));
 		assertEquals(1, read.getSlots(100).size());
 		assertEquals(day.segments, read.getSlots(100).get(0).getDuty(0).segments);
 		read.setSlot(100, 0, -1, null);

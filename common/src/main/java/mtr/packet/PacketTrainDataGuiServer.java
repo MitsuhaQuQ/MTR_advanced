@@ -1,5 +1,6 @@
 package mtr.packet;
 
+import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.SecurityConfig;

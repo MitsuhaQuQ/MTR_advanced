@@ -1,7 +1,9 @@
 package mtr.data;
 
+import mtr.advanced.PacketBinary;
+import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
-import mtr.advanced.DepotDuties;
+import transitsim.plan.DepotDuties;
 import mtr.advanced.DutyShapes;
 import mtr.advanced.PathBoundaries;
 import mtr.packet.PacketTrainDataGuiServer;
@@ -196,7 +198,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		useDeterministicPath = packet.readBoolean();
 		cycleRoutes = packet.readBoolean();
 		readVehicleServiceTypes(packet);
-		duties.read(packet);
+		duties.read(PacketBinary.of(packet));
 		speedCurves = packet.readBoolean();
 	}
 
@@ -285,7 +287,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(useDeterministicPath);
 		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
-		duties.write(packet);
+		duties.write(PacketBinary.of(packet));
 		packet.writeBoolean(speedCurves);
 	}
 
@@ -331,7 +333,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final long sidingId = packet.readLong();
 			final int slotCount = packet.readVarInt();
 			final int index = packet.readVarInt() - 1;
-			duties.setSlot(sidingId, slotCount, index, index >= 0 ? DepotDuties.Slot.read(packet) : null);
+			duties.setSlot(sidingId, slotCount, index, index >= 0 ? DepotDuties.Slot.read(PacketBinary.of(packet)) : null);
 		} else {
 			super.update(key, packet);
 		}
@@ -404,7 +406,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final boolean hasSlot = index >= 0 && index < slots.size();
 		packet.writeVarInt(hasSlot ? index + 1 : 0);
 		if (hasSlot) {
-			slots.get(index).write(packet);
+			slots.get(index).write(PacketBinary.of(packet));
 		}
 		sendPacket.accept(packet);
 	}
@@ -925,7 +927,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			final Set<String> keys = new HashSet<>();
 			lastRoute.timetable.getTables().forEach(table -> table.links.values().forEach(link -> {
-				final List<RouteTimetable.ServiceLink> links = RouteTimetable.getLinkChain(link, dataCache.routeIdMap::get);
+				final List<RouteTimetable.ServiceLink> links = RouteTimetable.getLinkChain(link, routeId -> {
+					final Route route = dataCache.routeIdMap.get(routeId);
+					return route == null ? null : route.timetable;
+				});
 				if (keys.add(Siding.TripTail.getKey(links))) {
 					final Siding.TripTail tripTail = getTripTail(lastRoute, links, mainPath, rails, graph, useFastSpeed);
 					if (tripTail != null) {

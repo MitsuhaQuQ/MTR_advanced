@@ -1,7 +1,8 @@
-package mtr.advanced;
+package transitsim.plan;
 
-import io.netty.buffer.Unpooled;
-import net.minecraft.network.FriendlyByteBuf;
+import transitsim.io.BinaryReader;
+import transitsim.io.BinaryWriter;
+import transitsim.io.ByteArrayBinary;
 
 import java.util.*;
 
@@ -61,7 +62,7 @@ public final class DepotDuties {
 		}
 	}
 
-	public void write(FriendlyByteBuf packet) {
+	public void write(BinaryWriter packet) {
 		packet.writeByte(FORMAT_VERSION);
 		packet.writeBoolean(diagramMode);
 		packet.writeVarInt(sidings.size());
@@ -72,7 +73,7 @@ public final class DepotDuties {
 		});
 	}
 
-	public void read(FriendlyByteBuf packet) {
+	public void read(BinaryReader packet) {
 		final int first = packet.readUnsignedByte();
 		final boolean hasVersion = first >= FORMAT_VERSION;
 		diagramMode = hasVersion ? packet.readBoolean() : first != 0;
@@ -92,16 +93,14 @@ public final class DepotDuties {
 	}
 
 	public byte[] toBytes() {
-		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		final ByteArrayBinary.Writer packet = new ByteArrayBinary.Writer();
 		write(packet);
-		final byte[] bytes = new byte[packet.readableBytes()];
-		packet.readBytes(bytes);
-		return bytes;
+		return packet.toBytes();
 	}
 
 	public void fromBytes(byte[] bytes) {
 		try {
-			read(new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes)));
+			read(new ByteArrayBinary.Reader(bytes));
 		} catch (Exception e) {
 			e.printStackTrace();
 			diagramMode = false;
@@ -136,7 +135,7 @@ public final class DepotDuties {
 			return null;
 		}
 
-		public void write(FriendlyByteBuf packet) {
+		public void write(BinaryWriter packet) {
 			packet.writeVarInt(days.size());
 			days.forEach(day -> {
 				packet.writeByte(day.weekdays);
@@ -152,14 +151,14 @@ public final class DepotDuties {
 			});
 		}
 
-		public static Slot read(FriendlyByteBuf packet) {
+		public static Slot read(BinaryReader packet) {
 			return read(packet, true);
 		}
 
 		/**
 		 * @param hasNextSlot false for data saved before overnight trains could pick their next duty
 		 */
-		public static Slot read(FriendlyByteBuf packet, boolean hasNextSlot) {
+		public static Slot read(BinaryReader packet, boolean hasNextSlot) {
 			final Slot slot = new Slot();
 			final int dayCount = limit(packet.readVarInt(), MAX_DAYS);
 			int usedDays = 0;
@@ -213,13 +212,13 @@ public final class DepotDuties {
 
 	/**
 	 * A service of a route, run from one stop to another. A train joining or leaving part of the way along follows the
-	 * route's through links ({@link mtr.data.RouteTimetable.ServiceLink}).
+	 * route's through links ({@link RouteTimetable.ServiceLink}).
 	 */
 	public static final class Segment {
 
 		public final long routeId;
 		/**
-		 * The service, as UTC milliseconds of the day like {@link mtr.data.RouteTimetable#services}.
+		 * The service, as UTC milliseconds of the day like {@link RouteTimetable#services}.
 		 */
 		public final int service;
 		/**

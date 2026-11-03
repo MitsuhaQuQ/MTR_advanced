@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.plan.RouteTimetable;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -169,7 +170,7 @@ class RouteTimetableTest {
 		lastRoute.timetable.services.add(300);
 		routes.put(3L, lastRoute);
 
-		final List<RouteTimetable.ServiceLink> links = RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routes::get);
+		final List<RouteTimetable.ServiceLink> links = RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routeId -> routes.containsKey(routeId) ? routes.get(routeId).timetable : null);
 
 		assertEquals(2, links.size());
 		assertEquals(3, links.get(1).routeId);
@@ -182,12 +183,12 @@ class RouteTimetableTest {
 		routes.put(2L, linkedRoute(200, 3, 300));
 		routes.put(3L, linkedRoute(300, 2, 200));
 
-		assertEquals(RouteTimetable.MAX_TRIP_LINKS, RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routes::get).size());
+		assertEquals(RouteTimetable.MAX_TRIP_LINKS, RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routeId -> routes.containsKey(routeId) ? routes.get(routeId).timetable : null).size());
 	}
 
 	@Test
 	void aLinkToARouteThatIsGoneEndsTheChain() {
-		assertEquals(1, RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), new HashMap<Long, Route>()::get).size());
+		assertEquals(1, RouteTimetable.getLinkChain(new RouteTimetable.ServiceLink(2, 200, -1), routeId -> null).size());
 	}
 
 	@Test

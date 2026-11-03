@@ -1,5 +1,6 @@
 package mtr.client.editor;
 
+import transitsim.plan.RouteTimetable;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import mtr.data.*;

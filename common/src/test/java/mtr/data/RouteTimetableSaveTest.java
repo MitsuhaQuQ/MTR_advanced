@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.plan.RouteTimetable;
 import org.junit.jupiter.api.Test;
 import org.msgpack.core.MessageBufferPacker;
 import org.msgpack.core.MessagePack;

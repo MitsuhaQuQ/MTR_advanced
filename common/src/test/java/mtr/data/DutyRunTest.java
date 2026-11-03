@@ -1,6 +1,7 @@
 package mtr.data;
 
-import mtr.advanced.DepotDuties;
+import transitsim.plan.RouteTimetable;
+import transitsim.plan.DepotDuties;
 import mtr.advanced.DutyShapes;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;

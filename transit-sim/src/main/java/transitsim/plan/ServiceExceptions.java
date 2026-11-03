@@ -1,8 +1,7 @@
-package mtr.advanced;
+package transitsim.plan;
 
-import mtr.data.Route;
-import mtr.data.RouteTimetable;
-import net.minecraft.network.FriendlyByteBuf;
+import transitsim.io.BinaryReader;
+import transitsim.io.BinaryWriter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -17,7 +16,7 @@ import java.util.Map;
  * Everything that works out planned times goes through {@link #applyTo(RouteTimetable.StopPlan, StopException, StopException)},
  * so the train, the PIDS and the conflict check all agree.
  * <p>
- * In a depot running by its duties each duty has a path of its own (see {@link DutyShapes}), so passing or stopping for one
+ * In a depot running by its duties each duty has a path of its own (see the host's duty shapes), so passing or stopping for one
  * service is where the train really stops. Elsewhere it only changes the times, and the train stops where its path does.
  */
 public interface ServiceExceptions {
@@ -143,17 +142,17 @@ public interface ServiceExceptions {
 	/**
 	 * Keeps exceptions with the same stops when the route's stops change, matching them by platform.
 	 */
-	static void remapStops(Route route, List<Route.RoutePlatform> oldStops) {
+	static void remapStops(RouteTimetable timetable, List<? extends PlanStop> newStops, List<? extends PlanStop> oldStops) {
 		final Map<Integer, Integer> newIndices = new HashMap<>();
 		for (int i = 0; i < oldStops.size(); i++) {
-			for (int j = 0; j < route.platformIds.size(); j++) {
-				if (route.platformIds.get(j).platformId == oldStops.get(i).platformId && !newIndices.containsValue(j)) {
+			for (int j = 0; j < newStops.size(); j++) {
+				if (newStops.get(j).getPlatformId() == oldStops.get(i).getPlatformId() && !newIndices.containsValue(j)) {
 					newIndices.put(i, j);
 					break;
 				}
 			}
 		}
-		route.timetable.getTables().forEach(table -> table.exceptions.values().forEach(stopExceptions -> {
+		timetable.getTables().forEach(table -> table.exceptions.values().forEach(stopExceptions -> {
 			final Map<Integer, StopException> remapped = new HashMap<>();
 			stopExceptions.forEach((stop, stopException) -> {
 				final Integer newStop = newIndices.get(stop);
@@ -208,7 +207,7 @@ public interface ServiceExceptions {
 		}
 	}
 
-	static void write(FriendlyByteBuf packet, RouteTimetable table) {
+	static void write(BinaryWriter packet, RouteTimetable table) {
 		final int[] values = toInts(table);
 		packet.writeInt(values.length);
 		for (final int value : values) {
@@ -219,7 +218,7 @@ public interface ServiceExceptions {
 	/**
 	 * Reads every value even past the limit, so the rest of the packet still lines up.
 	 */
-	static void read(FriendlyByteBuf packet, RouteTimetable table) {
+	static void read(BinaryReader packet, RouteTimetable table) {
 		final int count = packet.readInt();
 		final List<Integer> values = new ArrayList<>();
 		for (int i = 0; i < count; i++) {

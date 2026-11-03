@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.plan.RouteTimetable;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.BeforeEach;

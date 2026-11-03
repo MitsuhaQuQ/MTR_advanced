@@ -91,3 +91,8 @@ afterEvaluate {
 		}
 	}
 }
+
+// The production transforms read the component from its jar, so it has to be built first
+tasks.matching { it.name.startsWith("transformProduction") }.configureEach {
+	dependsOn ":transit-sim:jar"
+}

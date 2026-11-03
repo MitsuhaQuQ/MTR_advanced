@@ -2,7 +2,7 @@ package mtr.advanced;
 
 import mtr.data.Platform;
 import mtr.data.Route;
-import mtr.data.RouteTimetable;
+import transitsim.plan.RouteTimetable;
 import mtr.data.TransportMode;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;

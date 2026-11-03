@@ -1,6 +1,7 @@
 package mtr.data;
 
-import mtr.advanced.DepotDuties;
+import transitsim.plan.RouteTimetable;
+import transitsim.plan.DepotDuties;
 import mtr.advanced.DutyShapes;
 import mtr.path.PathData;
 import org.msgpack.core.MessagePacker;
@@ -260,15 +261,15 @@ public class TrainService {
 
 		final RouteTimetable.StopPlan stopPlan = getStopPlan(getPlanIndex(nextStoppingIndex));
 		final RouteTimetable.StopPlan startPlan = stopPlan == null || stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
-		if (startPlan != null && startPlan.startsRoute && startPlan.route.id != tripRouteId) {
+		if (startPlan != null && startPlan.startsRoute && startPlan.route.getRouteId() != tripRouteId) {
 			final long plannedStartMillis = getPlannedMillis(startPlan.routeStartMillis);
 			final long readyMillis = clock.getAsLong() + startPlan.arrivalMillis - stopPlan.arrivalMillis;
-			final boolean isLinked = tripPath != null && linkedService >= 0 && startPlan.route.id == linkedRouteId;
-			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService(startPlan.route, Math.max(plannedStartMillis, readyMillis));
+			final boolean isLinked = tripPath != null && linkedService >= 0 && startPlan.route.getRouteId() == linkedRouteId;
+			final long serviceMillis = !startPlan.waitsForService ? 0 : isLinked ? RouteTimetable.getClosestService(plannedStartMillis, linkedService) : depot.findNextService((Route) startPlan.route, Math.max(plannedStartMillis, readyMillis));
 			tripMillis = serviceMillis == 0 ? plannedStartMillis : serviceMillis;
-			tripRouteId = startPlan.route.id;
+			tripRouteId = startPlan.route.getRouteId();
 			if (isLinked) {
-				setNextLink(startPlan.route);
+				setNextLink((Route) startPlan.route);
 			}
 			updateTripPath();
 			// The plan follows the route and table the train is on now, which can move where this route starts in it
@@ -409,8 +410,8 @@ public class TrainService {
 					return i;
 				}
 				final RouteTimetable.StopPlan startPlan = stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
-				if (startPlan != null && startPlan.startsRoute && startPlan.route.id != tripRouteId) {
-					final Route route = startPlan.route;
+				if (startPlan != null && startPlan.startsRoute && startPlan.route.getRouteId() != tripRouteId) {
+					final Route route = (Route) startPlan.route;
 					return !startPlan.waitsForService || route.timetable.getNextService(currentMillis, currentMillis + RouteTimetable.MAX_LAYOVER_MILLIS, millis -> depot.isTripReserved(route.id, millis)) != 0 ? i : -1;
 				}
 			}
@@ -786,7 +787,10 @@ public class TrainService {
 		final Route lastRoute = trainRoutes.isEmpty() ? null : trainRoutes.get(trainRoutes.size() - 1);
 		if (lastRoute != null && lastRoute.id == tripRouteId) {
 			final RouteTimetable.ServiceLink link = lastRoute.timetable.getLink(tripMillis);
-			final Siding.TripPath newTripPath = link == null || routes == null ? null : tripPaths.get(Siding.TripTail.getKey(RouteTimetable.getLinkChain(link, routes)));
+			final Siding.TripPath newTripPath = link == null || routes == null ? null : tripPaths.get(Siding.TripTail.getKey(RouteTimetable.getLinkChain(link, routeId -> {
+				final Route route = routes.apply(routeId);
+				return route == null ? null : route.timetable;
+			})));
 			// A train that went another way round a turn back point keeps to it, as it may be past the point already
 			final Siding.TripPath turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(Siding.TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
 			if (turnBackPath != null) {

@@ -1,6 +1,10 @@
 package mtr.data;
 
-import mtr.advanced.ServiceExceptions;
+import mtr.advanced.PacketBinary;
+import transitsim.plan.PlanRoute;
+import transitsim.plan.PlanStop;
+import transitsim.plan.RouteTimetable;
+import transitsim.plan.ServiceExceptions;
 import io.netty.buffer.Unpooled;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
@@ -20,7 +24,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
-public final class Route extends NameColorDataBase implements IGui {
+public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	private static final int MAX_PLATFORMS = 1024;
 	public static final int MAX_WAYPOINTS = 64;
@@ -525,7 +529,7 @@ public final class Route extends NameColorDataBase implements IGui {
 						platformIds.add(routePlatform);
 					}
 				}
-				ServiceExceptions.remapStops(this, oldPlatforms);
+				ServiceExceptions.remapStops(timetable, platformIds, oldPlatforms);
 				timetable.revision++;
 				break;
 			case KEY_IS_LIGHT_RAIL_ROUTE:
@@ -562,6 +566,16 @@ public final class Route extends NameColorDataBase implements IGui {
 	@Override
 	protected boolean hasTransportMode() {
 		return true;
+	}
+
+	@Override
+	public long getRouteId() {
+		return id;
+	}
+
+	@Override
+	public RouteTimetable getTimetable() {
+		return timetable;
 	}
 
 	public void setPlatformIds(Consumer<FriendlyByteBuf> sendPacket) {
@@ -901,7 +915,7 @@ public final class Route extends NameColorDataBase implements IGui {
 				table.returnServices.add(service);
 			}
 		}
-		ServiceExceptions.read(packet, table);
+		ServiceExceptions.read(PacketBinary.of(packet), table);
 	}
 
 	private void writeTimetable(FriendlyByteBuf packet) {
@@ -925,7 +939,7 @@ public final class Route extends NameColorDataBase implements IGui {
 			});
 			packet.writeInt(table.returnServices.size());
 			table.returnServices.forEach(packet::writeInt);
-			ServiceExceptions.write(packet, table);
+			ServiceExceptions.write(PacketBinary.of(packet), table);
 
 			packet.writeInt(platformIds.size());
 			for (final RoutePlatform routePlatform : platformIds) {
@@ -939,7 +953,7 @@ public final class Route extends NameColorDataBase implements IGui {
 		platformIds.forEach(routePlatform -> packet.writeBoolean(routePlatform.pass));
 	}
 
-	public static class RoutePlatform {
+	public static class RoutePlatform implements PlanStop {
 
 		public String customDestination;
 		public final long platformId;
@@ -987,6 +1001,16 @@ public final class Route extends NameColorDataBase implements IGui {
 		/**
 		 * @return the timetable's arrival in seconds from reaching the first stop, or -1 to work it out
 		 */
+		@Override
+		public long getPlatformId() {
+			return platformId;
+		}
+
+		@Override
+		public boolean isPass() {
+			return pass;
+		}
+
 		public int getArrival() {
 			return arrival;
 		}

@@ -1,6 +1,5 @@
-package mtr.data;
+package transitsim.plan;
 
-import mtr.advanced.ServiceExceptions;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -14,11 +13,13 @@ import java.util.function.LongPredicate;
 import java.util.stream.Collectors;
 
 /**
- * The services of a route, each being the planned arrival at the first stop in UTC milliseconds of the day, like
- * {@link Depot#departures}. The times at later stops come from the generated path.
+ * The services of a route, each being the planned arrival at the first stop in UTC milliseconds of the day, like a
+ * depot's departures. The times at later stops come from the generated path.
  * <p>
  * This is a route's first table, which also holds its other tables, as a route can run differently on different days. Each
  * table has its own services and times at each stop.
+ * <p>
+ * Moved into the component in S3a; the host's routes hold it.
  */
 public class RouteTimetable {
 
@@ -27,11 +28,11 @@ public class RouteTimetable {
 	public final List<Integer> services = new ArrayList<>();
 	public String name = "";
 	/**
-	 * On a loop, the platform where trains from the depot join it instead of its first stop, or 0. See {@link Route#getLoopEntryStop()}.
+	 * On a loop, the platform where trains from the depot join it instead of its first stop, or 0. See the host route's loop entry stop.
 	 */
 	public long entryPlatformId;
 	/**
-	 * The days this table runs on, with the lowest bit for Monday. See {@link TimetableConfig#getWeekday(long)}.
+	 * The days this table runs on, with the lowest bit for Monday. See {@link OperatingDay#getWeekday(long)}.
 	 */
 	public int weekdays = ALL_WEEKDAYS;
 	/**
@@ -74,7 +75,7 @@ public class RouteTimetable {
 	/**
 	 * How far ahead a train that stays on the line looks for its next service, which is the first train of the next day at most.
 	 */
-	public static final long MAX_STAY_MILLIS = 8L * Depot.MILLISECONDS_PER_DAY;
+	public static final long MAX_STAY_MILLIS = 8L * OperatingDay.MILLIS_PER_DAY;
 	/**
 	 * A train with a longer wait until its next service returns to the depot instead.
 	 */
@@ -100,7 +101,7 @@ public class RouteTimetable {
 	 * Sorts the services and removes anything a client should not have sent.
 	 */
 	public void sanitize() {
-		final List<Integer> newServices = services.stream().map(service -> Math.floorMod(service, Depot.MILLISECONDS_PER_DAY)).distinct().sorted().limit(MAX_SERVICES).collect(Collectors.toList());
+		final List<Integer> newServices = services.stream().map(service -> Math.floorMod(service, OperatingDay.MILLIS_PER_DAY)).distinct().sorted().limit(MAX_SERVICES).collect(Collectors.toList());
 		services.clear();
 		services.addAll(newServices);
 		marginPercent = Math.max(0, Math.min(marginPercent, MAX_MARGIN_PERCENT));
@@ -143,7 +144,7 @@ public class RouteTimetable {
 	}
 
 	/**
-	 * Other than the first table, which holds the rest. Use {@link Route#removeTable(int)} to remove the table's stop times too.
+	 * Other than the first table, which holds the rest. The host route removes the table's stop times too.
 	 */
 	public void removeTable(int index) {
 		if (index >= 1 && index <= otherTables.size()) {
@@ -167,7 +168,7 @@ public class RouteTimetable {
 	 * @return the service this one carries on onto, or null if the train doesn't leave this route's path
 	 */
 	public ServiceLink getLink(long serviceMillis) {
-		return getTable(getTableIndex(serviceMillis)).links.get((int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY));
+		return getTable(getTableIndex(serviceMillis)).links.get((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
 	}
 
 	/**
@@ -175,7 +176,7 @@ public class RouteTimetable {
 	 * @return true if the train goes back to the depot after this service
 	 */
 	public boolean isReturnService(long serviceMillis) {
-		return getTable(getTableIndex(serviceMillis)).returnServices.contains((int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY));
+		return getTable(getTableIndex(serviceMillis)).returnServices.contains((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
 	}
 
 	/**
@@ -187,15 +188,16 @@ public class RouteTimetable {
 	}
 
 	/**
+	 * @param getTimetable the timetable of a route by its ID, or null if there is no such route
 	 * @return this link and the ones following it, as far as a train can run in one go
 	 */
-	public static List<ServiceLink> getLinkChain(ServiceLink firstLink, LongFunction<Route> getRoute) {
+	public static List<ServiceLink> getLinkChain(ServiceLink firstLink, LongFunction<RouteTimetable> getTimetable) {
 		final List<ServiceLink> links = new ArrayList<>();
 		links.add(firstLink);
 		while (links.size() < MAX_TRIP_LINKS) {
 			final ServiceLink link = links.get(links.size() - 1);
-			final Route route = getRoute.apply(link.routeId);
-			final ServiceLink nextLink = route == null ? null : route.timetable.getLinkOfService(link.service);
+			final RouteTimetable timetable = getTimetable.apply(link.routeId);
+			final ServiceLink nextLink = timetable == null ? null : timetable.getLinkOfService(link.service);
 			if (nextLink == null) {
 				break;
 			}
@@ -220,8 +222,8 @@ public class RouteTimetable {
 		if (otherTables.isEmpty() && weekdays == ALL_WEEKDAYS) {
 			return 0;
 		}
-		final int weekday = TimetableConfig.getWeekday(serviceMillis);
-		final int service = (int) Math.floorMod(serviceMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final int weekday = OperatingDay.getWeekday(serviceMillis);
+		final int service = (int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY);
 		final List<RouteTimetable> tables = getTables();
 		for (int i = 0; i < tables.size(); i++) {
 			if (tables.get(i).runsOn(weekday) && Collections.binarySearch(tables.get(i).services, service) >= 0) {
@@ -290,20 +292,20 @@ public class RouteTimetable {
 	 * @param marginPercent the extra time to plan for
 	 * @param table         the index of the table to take the times at each stop from
 	 */
-	public static List<StopPlan> getStopPlans(List<Route.RoutePlatform> stops, long[][] times, int marginPercent, int table) {
+	public static List<StopPlan> getStopPlans(List<? extends PlanStop> stops, long[][] times, int marginPercent, int table) {
 		return getStopPlans(stops, times, marginPercent, table, null);
 	}
 
 	/**
 	 * @param stopExceptions where one service runs differently, by stop, or null for the table's own times
 	 */
-	public static List<StopPlan> getStopPlans(List<Route.RoutePlatform> stops, long[][] times, int marginPercent, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
+	public static List<StopPlan> getStopPlans(List<? extends PlanStop> stops, long[][] times, int marginPercent, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
 		final List<StopPlan> plans = new ArrayList<>();
 		long lastTime = 0;
 		for (int i = 0; i < stops.size(); i++) {
-			final Route.RoutePlatform stop = stops.get(i);
+			final PlanStop stop = stops.get(i);
 			final boolean hasTime = times != null && times[i][0] >= 0;
-			final boolean isPass = stop.pass && i > 0 && i < stops.size() - 1;
+			final boolean isPass = stop.isPass() && i > 0 && i < stops.size() - 1;
 			final long arrival = hasTime ? times[i][0] : lastTime;
 			final long departure = !hasTime ? lastTime : isPass ? arrival : times[i][1];
 			lastTime = departure;
@@ -336,11 +338,11 @@ public class RouteTimetable {
 	 * @return the first free service from {@code fromMillis} until before {@code beforeMillis} as a full timestamp, or 0
 	 */
 	public long getNextService(long fromMillis, long beforeMillis, LongPredicate isTaken) {
-		final long lastDay = Math.floorDiv(beforeMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final long lastDay = Math.floorDiv(beforeMillis, (long) OperatingDay.MILLIS_PER_DAY);
 		final List<Integer> runningServices = getAllServices();
-		for (long day = Math.floorDiv(fromMillis, (long) Depot.MILLISECONDS_PER_DAY); day <= lastDay; day++) {
+		for (long day = Math.floorDiv(fromMillis, (long) OperatingDay.MILLIS_PER_DAY); day <= lastDay; day++) {
 			for (final int service : runningServices) {
-				final long serviceMillis = day * Depot.MILLISECONDS_PER_DAY + service;
+				final long serviceMillis = day * OperatingDay.MILLIS_PER_DAY + service;
 				if (serviceMillis >= beforeMillis) {
 					return 0;
 				}
@@ -356,11 +358,11 @@ public class RouteTimetable {
 	 * @return the last free service after {@code afterMillis} and up to {@code latestMillis} as a full timestamp, or 0
 	 */
 	public long getLatestService(long afterMillis, long latestMillis, LongPredicate isTaken) {
-		final long firstDay = Math.floorDiv(afterMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final long firstDay = Math.floorDiv(afterMillis, (long) OperatingDay.MILLIS_PER_DAY);
 		final List<Integer> runningServices = getAllServices();
-		for (long day = Math.floorDiv(latestMillis, (long) Depot.MILLISECONDS_PER_DAY); day >= firstDay; day--) {
+		for (long day = Math.floorDiv(latestMillis, (long) OperatingDay.MILLIS_PER_DAY); day >= firstDay; day--) {
 			for (int i = runningServices.size() - 1; i >= 0; i--) {
-				final long serviceMillis = day * Depot.MILLISECONDS_PER_DAY + runningServices.get(i);
+				final long serviceMillis = day * OperatingDay.MILLIS_PER_DAY + runningServices.get(i);
 				if (serviceMillis <= afterMillis) {
 					return 0;
 				}
@@ -376,9 +378,9 @@ public class RouteTimetable {
 	 * @return the time of this service closest to a planned time as a full timestamp
 	 */
 	public static long getClosestService(long plannedMillis, int service) {
-		final long dayMillis = plannedMillis - Math.floorMod(plannedMillis, (long) Depot.MILLISECONDS_PER_DAY);
+		final long dayMillis = plannedMillis - Math.floorMod(plannedMillis, (long) OperatingDay.MILLIS_PER_DAY);
 		long closest = dayMillis + service;
-		for (final long day : new long[]{-Depot.MILLISECONDS_PER_DAY, Depot.MILLISECONDS_PER_DAY}) {
+		for (final long day : new long[]{-OperatingDay.MILLIS_PER_DAY, OperatingDay.MILLIS_PER_DAY}) {
 			if (Math.abs(dayMillis + day + service - plannedMillis) < Math.abs(closest - plannedMillis)) {
 				closest = dayMillis + day + service;
 			}
@@ -445,7 +447,7 @@ public class RouteTimetable {
 		/**
 		 * The route starting here, which is only known on the server.
 		 */
-		public Route route;
+		public PlanRoute route;
 		/**
 		 * The route starting here has services of its own, which the train waits for here.
 		 */

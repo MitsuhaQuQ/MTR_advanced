@@ -1,9 +1,10 @@
 package mtr.advanced;
 
+import transitsim.plan.ServiceExceptions;
 import io.netty.buffer.Unpooled;
 import mtr.data.RailwayData;
 import mtr.data.Route;
-import mtr.data.RouteTimetable;
+import transitsim.plan.RouteTimetable;
 import mtr.data.TransportMode;
 import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.Test;
@@ -178,7 +179,7 @@ class ServiceExceptionsTest {
 		// The second stop is taken out, so the exception at the third stop moves to the second
 		final List<Route.RoutePlatform> oldStops = new ArrayList<>(route.platformIds);
 		route.platformIds.remove(1);
-		ServiceExceptions.remapStops(route, oldStops);
+		ServiceExceptions.remapStops(route.timetable, route.platformIds, oldStops);
 		assertEquals(60, route.timetable.exceptions.get(SERVICE).get(1).dwellSeconds);
 	}
 }

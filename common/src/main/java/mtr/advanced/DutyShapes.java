@@ -1,8 +1,10 @@
 package mtr.advanced;
 
+import transitsim.plan.DepotDuties;
+import transitsim.plan.ServiceExceptions;
 import mtr.data.Depot;
 import mtr.data.Route;
-import mtr.data.RouteTimetable;
+import transitsim.plan.RouteTimetable;
 import mtr.data.TimetableConfig;
 
 import java.util.List;

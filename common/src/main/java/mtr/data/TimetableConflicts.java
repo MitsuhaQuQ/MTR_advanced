@@ -1,6 +1,7 @@
 package mtr.data;
 
-import mtr.advanced.ServiceExceptions;
+import transitsim.plan.RouteTimetable;
+import transitsim.plan.ServiceExceptions;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;

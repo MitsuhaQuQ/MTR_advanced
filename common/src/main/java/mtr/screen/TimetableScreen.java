@@ -12,7 +12,7 @@ import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
 import mtr.data.Platform;
 import mtr.data.Route;
-import mtr.data.RouteTimetable;
+import transitsim.plan.RouteTimetable;
 import mtr.data.Station;
 import mtr.data.TimetableConfig;
 import mtr.data.TimetableConflicts;

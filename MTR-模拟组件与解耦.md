@@ -64,11 +64,11 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | 类 | 行数 | 依赖 | 级别 | 去向 |
 |---|---|---|---|---|
 | `transitsim.planning.*`（原 `operation/*`，7 个类） | 958 | 无 | A | **已在组件**（S0），S6 收拢 |
-| `data/RouteTimetable` | 473 | `ServiceExceptions` | B（只差 `ServiceExceptions`） | 组件 `plan`（S3） |
-| `advanced/ServiceExceptions` | 233 | `FriendlyByteBuf`、`Route`、`RouteTimetable` | B | 组件 `plan`，读写换成组件格式（S3） |
+| `transitsim.plan.RouteTimetable`（原 `data/RouteTimetable`） | 473 | `ServiceExceptions`、`OperatingDay`、`PlanStop`、`PlanRoute` | A | **已在组件**（S3a）；`Route` 实现 `PlanRoute`，`Route.RoutePlatform` 实现 `PlanStop`；`StopPlan.route` 改为 `PlanRoute` |
+| `transitsim.plan.ServiceExceptions`（原 `advanced/ServiceExceptions`） | 233 | `RouteTimetable`、`PlanStop`、`transitsim.io` | A | **已在组件**（S3a）；读写用组件的 `BinaryReader`、`BinaryWriter`，宿主用 `advanced/PacketBinary` 包住 `FriendlyByteBuf`，字节不变 |
 | `advanced/TimetableBoundaries` | 82 | `Platform`、`Route`、`RouteTimetable` | B | 组件 `plan`（S3） |
-| `data/TimetableConfig` | 124 | Gson | A（不依赖 Minecraft） | 时区和日起点进组件，配置文件读写留在宿主（S3） |
-| `advanced/DepotDuties` | 243 | `FriendlyByteBuf` | B | 组件 `plan`，读写换成组件格式，已有的存档内容照常读入（S3） |
+| `data/TimetableConfig` → `transitsim.plan.OperatingDay` | 124 | Gson（只在宿主） | A | **已拆开**（S3a）：时区、日起点和星期的换算在组件 `OperatingDay`，配置文件读写留在宿主 `TimetableConfig`，它的方法转调组件 |
+| `transitsim.plan.DepotDuties`（原 `advanced/DepotDuties`） | 243 | `transitsim.io` | A | **已在组件**（S3a）；存成字节时用组件的 `ByteArrayBinary`，和 Minecraft 的 `FriendlyByteBuf` 逐字节相同（`PacketBinaryTest`），已有存档照常读入 |
 | `advanced/DutyShapes` | 161 | `Depot`、`Route`、`RouteTimetable`、`TimetableConfig` | B | 组件 `plan`（S3） |
 | `advanced/DutyGenerator` | 349 | `transitsim.planning` | B（取数据时用 MTR 类） | 规划部分进组件 `planning`，取数据的部分是宿主适配器（S6） |
 | `data/Route` | 1111 | `BlockPos`、NBT、`FriendlyByteBuf`、`PathData` | C 的数据类 | 留在宿主，适配器换成组件的线路 |
@@ -302,6 +302,7 @@ MTR4 把模拟拆成独立的 Transport Simulation Core（`org.mtr.core`，MIT �
 - **修 bug 修在规则现在所在的地方**：推进规则在组件 `TrainMotion`；旧内核 `LegacyTrainMotion` 只作对照，不修，S2 测完、用户确认后和开关一起删掉。
 - **对照**：tick 模式的部分保持和旧内核一致（`TrainMotionEquivalenceTest`），直到删掉旧内核。
 - **穿插**：界面、编辑器、PIDS、放送音频、OBJ、性能、MTR 4 资源包等照常穿插。
+- **并行的会话不构建**（2026-11-03）：同时推进的会话只写代码和测试，不构建模组、不启动测试服务端、不放测试 jar；改动和要验证的内容记在 `MTR-待验证.md`，做完以后由一个会话统一合并、构建、测试。组件的单元测试可以在自己的临时目录里单独离线跑。协议版本统一构建时再加。
 
 以下是 S2 之前的规则和理由，留作记录。
 
@@ -423,7 +424,8 @@ S0 之前，已经不依赖世界的部件：
 | S2b 从任意状态起步的速度曲线 | 完成：`SpeedProfile` 可以从任意位置、非零速度起步（超过限速时按减速度降下来，来不及停车时从还能停住的速度起步），`SpeedCurves.Run.from`、`findCapFrom` 和 `SpeedCurves.findCruiseCap`；`TrainServer.getCruiseCap` 用新规则时，区间里被拦停后重新起步的车也按剩余时间设巡航上限（去掉 E2 的变通），旧规则不变 | 1.20.1 | 组件 105 项（新增 `SpeedProfileTest` 5 项、`SpeedCurvesTest` 2 项、`TrainMotionRestartTest` 2 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T92） | 未做 |
 | S2c 运行段和曲线模式 | 完成：服务端开速度曲线的自动列车沿 `RunSegment` 走，位置由曲线在"出发后经过的 tick 数"处的位置得出，不再逐 tick 累加；停车点变化、运行段或巡航上限变化、列车被别处移动时从当前位置和速度换新段（版本加一）；按常用减速度停不住时用 1.5 倍，再停不住就从还能停住的速度起步，并标出紧急制动；到段末时位置对齐到停车点。客户端照旧沿曲线逐帧走。运行段不存档，读档后从当前位置和速度重建 | 1.20.1 | 组件 112 项（新增 `RunSegmentTest` 7 项；对照测试里开速度曲线的场景改在客户端比较）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T93） | 未做 |
 | S2d 事件、命令和占用 | 完成：新规则在服务端发出事件 `MotionEvent`（停下、回库、续圈、越站、换段、紧急制动、发车），`Train` 收着，各存车线在列车走完后交出，`RailwayData` 在 tick 末按（时间、类别、列车、序号）排好统一处理，现在只把紧急制动写进日志，上一 tick 的事件可以取到；司机的加减档和开关门规则进组件 `TrainMotion.applyCommand`（`MotionCommand`），宿主照旧在本 tick 收集按键、在这列车走之前交给它，没有再延后一 tick，因为那样会改变手动驾驶的手感和返回值；占用的存放进组件 `transitsim.sim.Occupancy`（两 tick 的轨道 → 占用者），宿主的列车、手动驾驶、信号机闭塞和折返预约照旧写进去，查询经它判断，`trainPositions` 只是它的视图，所有公开方法签名不变 | 1.20.1 | 组件 122 项（新增 `MotionEventTest` 6 项、`OccupancyTest` 4 项）、common 233 项全过；ABI 扫描无缺失；Fabric、Forge 服务端能启动，ANTE 的 mixin 没有失败 | 未测（T94） | 未做 |
-| S3 至 S6、全链路场景 | 未开始 | | | | |
+| S3a 前半：时刻表、例外、运营日、运用进组件 | 完成：新包 `transitsim.plan`（`RouteTimetable`、`ServiceExceptions`、`OperatingDay`、`DepotDuties`、视图 `PlanRoute`、`PlanStop`）和 `transitsim.io`（`BinaryReader`、`BinaryWriter`、`ByteArrayBinary`）；宿主改为直接用组件的类，`TimetableConfig` 只读写配置文件，`advanced/PacketBinary` 把 `FriendlyByteBuf` 交给组件；网络包和存档字节不变，协议版本不变。顺手修了构建顺序：`common` 的生产转换要等组件的 jar 构建完（`common/build.gradle`） | 1.20.1 | 组件 122 项、common 243 项全过（新增 `PacketBinaryTest` 3 项，`RouteTimetableSaveTest` 照旧通过）；ABI 扫描无缺失；Fabric、Forge 服务端能启动 | 未测（T95） | 未做 |
+| S3a 后半至 S6、全链路场景 | 未开始 | | | | |
 | G0 至 G4 | 未开始 | | | | |
 
 ## 7. 架构审查的处理

@@ -1,5 +1,6 @@
 package mtr.advanced;
 
+import transitsim.plan.DepotDuties;
 import transitsim.planning.DutyPlanner;
 import transitsim.planning.OperationNetwork;
 import transitsim.planning.OperationPlan;
