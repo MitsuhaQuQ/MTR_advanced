@@ -9,6 +9,7 @@ import mtr.SecurityConfig;
 import mtr.advanced.GraphRecords;
 import mtr.advanced.PathBoundaries;
 import mtr.advanced.PathRegionSync;
+import mtr.advanced.RouteLayouts;
 import mtr.block.BlockNode;
 import mtr.mappings.PersistentStateMapper;
 import mtr.mappings.Utilities;
@@ -678,6 +679,37 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			}
 		}
 		Registry.sendToPlayer(player, PACKET_MAP_DATA, packet);
+	}
+
+	/**
+	 * Sends the straightened track diagram of a route to a player, worked out on a snapshot of the rails away from the
+	 * server thread ({@link RouteLayouts}).
+	 */
+	public void sendRouteLayout(ServerPlayer player, long routeId, int halfWidth) {
+		final Route route = dataCache.routeIdMap.get(routeId);
+		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails, pathBoundaries);
+		final MapRouteQuery query = route == null ? null : new MapRouteQuery(route, dataCache);
+		final List<long[]> stops = new ArrayList<>();
+		final List<long[]> platformEnds = new ArrayList<>();
+		if (route != null) {
+			route.platformIds.forEach(routePlatform -> {
+				final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
+				stops.add(platform == null ? new long[]{routePlatform.platformId, 0, 0} : ends(platform));
+			});
+			platforms.stream().filter(platform -> platform.transportMode == route.transportMode).forEach(platform -> platformEnds.add(ends(platform)));
+		}
+		final Thread thread = new Thread(() -> {
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+			RouteLayouts.write(routeId, graph, query == null ? new long[0] : query.findNodes(graph), stops, platformEnds, halfWidth, packet);
+			Registry.sendToPlayer(player, PACKET_ROUTE_LAYOUT, packet);
+		});
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private static long[] ends(SavedRailBase savedRail) {
+		final List<BlockPos> positions = savedRail.getOrderedPositions(BlockPos.ZERO, false);
+		return new long[]{savedRail.id, positions.get(0).asLong(), positions.get(1).asLong()};
 	}
 
 	public void sendMapRoute(ServerPlayer player, long routeId) {

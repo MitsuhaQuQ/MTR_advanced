@@ -126,6 +126,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
+		context.addServlet(new ServletHolder(new RouteLayoutServlet()), "/api/route-layout");
 		server.setHandler(context);
 		server.start();
 	}
@@ -331,6 +332,39 @@ public final class EditorServer {
 				return;
 			}
 			sendJson(response, content);
+		}
+	}
+
+	/**
+	 * The straightened track diagram of a route ({@link EditorLayout#buildRoute}).
+	 */
+	private static class RouteLayoutServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final long routeId;
+			final int halfWidth;
+			final boolean fresh;
+			try {
+				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				routeId = Long.parseLong(requestObject.get("route").getAsString());
+				halfWidth = requestObject.has("halfWidth") ? requestObject.get("halfWidth").getAsInt() : 0;
+				fresh = requestObject.has("fresh") && requestObject.get("fresh").getAsBoolean();
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				sendJson(response, onGameThread(() -> EditorLayout.buildRoute(routeId, halfWidth, fresh)).toString());
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
 		}
 	}
 

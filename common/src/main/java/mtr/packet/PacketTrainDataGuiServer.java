@@ -3,6 +3,7 @@ package mtr.packet;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.SecurityConfig;
+import mtr.advanced.RouteLayouts;
 import mtr.advanced.StationLayouts;
 import mtr.advanced.TimetableBoundaries;
 import mtr.block.*;
@@ -23,6 +24,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
@@ -424,6 +426,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	public static void receiveStationLayoutC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final int[] box = StationLayouts.clampBox(packet.readInt(), packet.readInt(), packet.readInt(), packet.readInt());
 		final int mode = packet.readInt();
+		final long[] seeds = StationLayouts.readSeeds(packet);
 		if (mode < 0 || mode >= TransportMode.values().length || !StationLayouts.allowRequest(player.getUUID())) {
 			return;
 		}
@@ -431,8 +434,25 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData != null) {
 				final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
-				StationLayouts.write(railwayData.getRails(), box, TransportMode.values()[mode], response);
+				StationLayouts.write(railwayData.getRails(), box, TransportMode.values()[mode], seeds, response);
 				Registry.sendToPlayer(player, PACKET_STATION_LAYOUT, response);
+			}
+		});
+	}
+
+	/**
+	 * The straightened track diagram of a route, for the advanced editor ({@link RouteLayouts}).
+	 */
+	public static void receiveRouteLayoutC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final long routeId = packet.readLong();
+		final int halfWidth = Mth.clamp(packet.readInt(), RouteLayouts.MIN_HALF_WIDTH, RouteLayouts.MAX_HALF_WIDTH);
+		if (!RouteLayouts.allowRequest(player.getUUID())) {
+			return;
+		}
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) {
+				railwayData.sendRouteLayout(player, routeId, halfWidth);
 			}
 		});
 	}

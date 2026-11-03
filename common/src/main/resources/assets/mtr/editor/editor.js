@@ -1048,7 +1048,7 @@
 		if (loopRoute) parts.push(loopPanel(loopRoute));
 		const line = currentLine();
 		if (line) {
-			parts.push(`<h2>线路</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${r.services.length} 班</dd>`).join("")}</dl></div>`);
+			parts.push(`<h2>线路</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${r.services.length} 班 <button type="button" class="link" data-route-diagram="${r.id}" title="整条线路的配线图">配线图</button></dd>`).join("")}</dl></div>`);
 			// Tracks that don't run along the rails, which make the diagram jump about, are listed until they are put right
 			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
 			if (troubled.length) parts.push(`<h2>股道问题</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">右键线路“编辑停站…”在连通图上改股道。</p></div>`);
@@ -1952,7 +1952,9 @@
 			const classes = ["platform", ours ? "ours" : "other", on ? "on" : "", pinned ? "pinned" : "", dead ? "dead" : ""].filter(Boolean).join(" ");
 			const label = `${pinned ? "● " : ""}${p.name || "?"}${p.passingTrack ? " 待避" : ""}${!ours && p.stationName && p.station !== station ? " · " + shortName(p.stationName) : ""}`;
 			const title = ours ? `${p.name || "?"}：${pinned ? "已固定，点一下取消" : dead ? "和其他站连不起来，点一下仍可固定" : "点一下固定走这一股"}` : `${shortName(p.stationName) || "不属于车站"} ${p.name || "?"}${p.station === station ? "：和这条线的轨道不连" : ""}`;
-			parts.push(`<g class="${classes}"${ours ? ` data-stop="${i}" data-track="${index}" tabindex="0"` : ""}><title>${escapeHtml(title)}</title><line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="${unit * (on ? 7 : 5)}"${on ? ` style="stroke:${model.color}"` : ""}${dead ? ` stroke-dasharray="${unit * 4} ${unit * 3}"` : ""}/><text x="${(a[0] + b[0]) / 2}" y="${(a[1] + b[1]) / 2 - unit * 6}" font-size="${unit * 11}">${escapeHtml(label)}</text></g>`);
+			// The name goes before the left end, where tracks side by side don't crowd it
+			const start = a[0] <= b[0] ? a : b;
+			parts.push(`<g class="${classes}"${ours ? ` data-stop="${i}" data-track="${index}" tabindex="0"` : ""}><title>${escapeHtml(title)}</title><line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="${unit * (on ? 7 : 5)}"${on ? ` style="stroke:${model.color}"` : ""}${dead ? ` stroke-dasharray="${unit * 4} ${unit * 3}"` : ""}/><text x="${start[0] - unit * 6}" y="${start[1] + unit * 4}" font-size="${unit * 11}" text-anchor="end">${escapeHtml(label)}</text></g>`);
 		});
 		parts.push(`</svg>`);
 		const before = i > 0 ? `← ${escapeHtml(stationLabel(model.layers[i - 1][0]))}` : "";
@@ -2032,7 +2034,41 @@
 
 	/** A picker model for stations given as tracks, offering the other tracks of each station on the same rails. */
 	function topologyModel(tracks, stop, color) {
-		return { layers: tracks.map(stationTracks), picks: tracks.slice(), stop: stop.slice(), pins: new Map(), color, conflict: "" };
+		return { layers: orderByLayout(tracks.map(stationTracks)), picks: tracks.slice(), stop: stop.slice(), pins: new Map(), color, conflict: "" };
+	}
+
+	/**
+	 * Puts each station's tracks in the order they lie side by side, as the track diagram shows them: across the way from
+	 * the station before to the station after, the leftmost first. Platform names are whatever players typed, so they
+	 * don't say where a track is.
+	 */
+	function orderByLayout(layers) {
+		const middle = p => {
+			const line = topo.platforms[p].line;
+			return line ? [(line[0] + line[2]) / 2, (line[1] + line[3]) / 2] : null;
+		};
+		const centres = layers.map(layer => {
+			const points = layer.map(middle).filter(Boolean);
+			return points.length ? [points.reduce((a, p) => a + p[0], 0) / points.length, points.reduce((a, p) => a + p[1], 0) / points.length] : null;
+		});
+		return layers.map((layer, i) => {
+			const centre = centres[i];
+			if (!centre || layer.length < 2) return layer;
+			const before = centres.slice(0, i).reverse().find(Boolean) || centre, after = centres.slice(i + 1).find(Boolean) || centre;
+			let dx = after[0] - before[0], dz = after[1] - before[1];
+			if (Math.hypot(dx, dz) < 1E-6) {
+				const line = topo.platforms[layer[0]].line;
+				if (!line) return layer;
+				dx = line[2] - line[0];
+				dz = line[3] - line[1];
+			}
+			// With x east and z south, left of the way along has a negative cross product
+			const left = p => {
+				const point = middle(p);
+				return point ? -(dx * (point[1] - centre[1]) - dz * (point[0] - centre[0])) : 0;
+			};
+			return layer.slice().sort((a, b) => left(b) - left(a) || platformLabel(a).localeCompare(platformLabel(b), undefined, { numeric: true }));
+		});
 	}
 
 	function stopsSummaryOf(model) {
@@ -2233,7 +2269,7 @@
 	 * and their order stay as they are in the game, where the dashboard changes them. Problems with the tracks as they are
 	 * are listed, and nothing is changed until a track is clicked.
 	 */
-	function stopsDialog(r) {
+	function stopsDialog(r, openStop) {
 		const ids = platformsOf(r), pass = timetableOf(r).pass;
 		const tracks = ids.map(id => topo.index.has(id) ? topo.index.get(id) : -1);
 		if (tracks.some(p => p < 0)) {
@@ -2271,9 +2307,110 @@
 		const form = dialog.querySelector("form");
 		model.onChange = () => render(form);
 		enableDiagramPanning(form, () => model);
+		if (openStop >= 0 && openStop < model.layers.length) {
+			model.diagram = { stop: openStop, station: topo.platforms[model.layers[openStop][0]].station, margin: 48, pan: [0, 0], data: null, error: "" };
+			loadDiagram(model, model.diagram, 0);
+			render(form);
+		}
 		form.addEventListener("click", e => {
 			if (topologyClick(model, e.target)) render(form);
 		});
+	}
+
+	/**
+	 * The track diagram of a whole route: the rails along its path straightened by the server (RouteLayouts), the distance
+	 * along the path across and the offset to the side up and down, left of the way the route runs at the top. It shows the
+	 * route as it is in the game; track changes in the draft show once applied.
+	 */
+	function routeDiagramDialog(r) {
+		const view = { halfWidth: 24, scale: 0.6, side: 2, data: null, error: "", tries: 0 };
+		const render = form => {
+			form.querySelector("#dlg-route-diagram").innerHTML = routeDiagramHtml(r, view);
+		};
+		const load = async (form, fresh) => {
+			try {
+				const result = await sendJson("api/route-layout", "POST", { route: r.id, halfWidth: view.halfWidth, fresh });
+				if (!result.ready) {
+					view.error = "正在沿路径取轨道…";
+					if (view.tries++ < 15) setTimeout(() => load(form, false), 700);
+					else view.error = "服务端没有回应，关掉再打开试试";
+				} else {
+					// The first time, the whole line fits the width of the dialog
+					if (!view.data && result.found && result.length > 0) view.scale = Math.max(0.05, Math.min(8, (form.querySelector("#dlg-route-diagram").clientWidth - 56) / result.length));
+					view.data = result;
+					view.error = "";
+				}
+			} catch (e) {
+				view.error = "读取线路配线图失败";
+			}
+			if (dialog.open) render(form);
+		};
+		openDialog(`线路配线图：${escapeHtml(routeTitle(r))}`, `
+			<div class="diagram-head"><span class="hint">沿这条线路在游戏里的路径拉直，从左往右是行车方向，上方是行车方向的左侧。按游戏里已应用的线路画，草稿里的股道改动应用后才显示。</span>
+				<span class="tools"><button type="button" data-route-zoom="in" title="放大">＋</button><button type="button" data-route-zoom="out" title="缩小">−</button>
+				<button type="button" data-route-side="1" title="侧向不放大">1×</button><button type="button" data-route-side="2" title="侧向放大 2 倍">2×</button><button type="button" data-route-side="3" title="侧向放大 3 倍">3×</button></span></div>
+			<div id="dlg-route-diagram"></div>`, "关闭", () => {});
+		dialog.classList.add("wide");
+		dialog.addEventListener("close", () => dialog.classList.remove("wide"), { once: true });
+		const form = dialog.querySelector("form");
+		render(form);
+		load(form, true);
+		form.addEventListener("click", e => {
+			const zoom = e.target.closest("[data-route-zoom]");
+			const side = e.target.closest("[data-route-side]");
+			const station = e.target.closest("[data-route-stop]");
+			if (zoom) view.scale = Math.max(0.05, Math.min(8, view.scale * (zoom.dataset.routeZoom === "in" ? 1.5 : 1 / 1.5)));
+			else if (side) view.side = +side.dataset.routeSide;
+			else if (station) {
+				// The station opens in the stop editor, with its own track diagram
+				const stop = +station.dataset.routeStop;
+				dialog.close();
+				if (data.canEdit && r.stops.length > 1) stopsDialog(r, stop);
+				return;
+			} else return;
+			render(form);
+		});
+	}
+
+	function routeDiagramHtml(r, view) {
+		const result = view.data;
+		if (!result) return `<p class="hint">${escapeHtml(view.error || "正在读取…")}</p>`;
+		if (!result.found) return `<p class="err">沿轨道寻不出这条线路的路径。先右键线路"编辑停站…"，在连通图里修好股道。</p>`;
+		const pad = 24, head = 44, sidePx = view.side * 2;
+		const width = Math.round(result.length * view.scale + pad * 2), middle = head + result.halfWidth * sidePx;
+		const height = middle + result.halfWidth * sidePx + 16;
+		const x = s => (pad + s * view.scale).toFixed(1), y = d => (middle - d * sidePx).toFixed(1);
+		const color = colorOf(r.color);
+		const routePlatforms = new Set(platformsOf(r));
+		const problems = new Map();
+		routeProblems(r).forEach(p => { if (!problems.has(p.stop) || p.level === "error") problems.set(p.stop, p.level); });
+		const pass = timetableOf(r).pass;
+		const parts = [`<svg class="route-diagram" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="线路配线图">`];
+		parts.push(`<line x1="${x(0)}" y1="${middle}" x2="${x(result.length)}" y2="${middle}" class="route-path" style="stroke:${color}"/>`);
+		result.rails.forEach(piece => {
+			const points = [];
+			for (let k = 0; k + 1 < piece.length; k += 2) points.push(`${x(piece[k])},${y(piece[k + 1])}`);
+			parts.push(`<polyline points="${points.join(" ")}" class="rail"/>`);
+		});
+		result.turnouts.forEach(t => parts.push(`<circle cx="${x(t[0])}" cy="${y(t[1])}" r="2.5" class="turnout"/>`));
+		result.platforms.forEach(p => {
+			const ours = routePlatforms.has(p.id);
+			const line = p.line;
+			parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || "不属于车站"} ${p.name || "?"}${p.passingTrack ? "（待避线）" : ""}`)}</title><line x1="${x(line[0])}" y1="${y(line[1])}" x2="${x(line[2])}" y2="${y(line[3])}"${ours ? ` style="stroke:${color}"` : ""}/>${ours ? `<text x="${((+x(line[0]) + +x(line[2])) / 2).toFixed(1)}" y="${(Math.min(+y(line[1]), +y(line[3])) - 4).toFixed(1)}">${escapeHtml(p.name || "?")}</text>` : ""}</g>`);
+		});
+		result.stops.forEach((s, i) => {
+			if (s < 0) return;
+			const level = problems.get(i);
+			const passes = pass[i] && i > 0 && i < result.stops.length - 1;
+			const classes = ["stop-mark", passes ? "passes" : "", level || ""].filter(Boolean).join(" ");
+			parts.push(`<g class="${classes}" data-route-stop="${i}" tabindex="0"><title>${escapeHtml(`${shortName(r.stops[i].name) || "第 " + (i + 1) + " 站"}${passes ? "（通过）" : ""}${level ? "：股道有问题" : ""}，点一下打开这一站`)}</title><line x1="${x(s)}" y1="${head - 6}" x2="${x(s)}" y2="${height - 10}"/><text x="${x(s)}" y="${head - 12}">${escapeHtml(shortName(r.stops[i].name) || "?")}</text></g>`);
+		});
+		parts.push(`</svg>`);
+		const missing = result.stops.filter(s => s < 0).length;
+		return `<div class="route-diagram-wrap">${parts.join("")}</div>`
+			+ (missing ? `<p class="hint">有 ${missing} 站的站台不在路径上，没有标出。</p>` : "")
+			+ (result.truncated ? `<p class="hint">轨道太多，只画了一部分。</p>` : "")
+			+ `<p class="hint">全长约 ${Math.round(result.length)} 格，路径两侧各 ${result.halfWidth} 格以内的轨道。红色、黄色的站名是股道有问题的站。</p>`;
 	}
 
 	/**
@@ -2512,7 +2649,7 @@
 			[dutiesOf(depot).mode === "diagram" ? "改为在线预约" : "改为按运用图", () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			["丢掉运用的草稿", draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
 		] : line ? [["新建种别…", data.canEdit ? () => newTypeDialog(line, null) : null]]
-			: r ? [["编辑停站…", data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], ["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
+			: r ? [["编辑停站…", data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], ["新建时刻表…", () => tableDialog(r, -1)], ["照着它新建种别…", data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], ["线路配线图…", () => routeDiagramDialog(r)],
 				isDeleted(r) ? ["取消删除", () => keepType(r)] : ["删除这个种别…", data.canEdit ? () => deleteTypeDialog(r) : null]]
 				: created ? [["删除这个新建的种别", () => removeCreated(created)]] : null;
 		if (!items) return;
@@ -2558,6 +2695,11 @@
 		else if (data && data.routeById.get(target.dataset.openRoute)) openView("table", data.routeById.get(target.dataset.openRoute).lineKey, target.dataset.openRoute);
 	});
 	$("inspector").addEventListener("click", e => {
+		const diagramButton = e.target.closest("[data-route-diagram]");
+		if (diagramButton && data && data.routeById.get(diagramButton.dataset.routeDiagram)) {
+			routeDiagramDialog(data.routeById.get(diagramButton.dataset.routeDiagram));
+			return;
+		}
 		const remove = e.target.closest("[data-remove-segment]");
 		const depot = state.slot && depotById(state.slot.depot);
 		if (remove && depot) editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).segments.splice(+remove.dataset.removeSegment, 1); });

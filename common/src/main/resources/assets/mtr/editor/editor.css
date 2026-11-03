@@ -259,6 +259,23 @@ dialog .vias { gap: 6px; }
 .layout-svg .platform.ours line { stroke: var(--ink); opacity: .55; }
 .layout-svg .platform.ours.on line { opacity: 1; }
 .layout-svg .platform.ours.dead line { opacity: .35; }
-.layout-svg .platform text { text-anchor: middle; fill: var(--ink); pointer-events: none; }
+.layout-svg .platform text { text-anchor: end; fill: var(--ink); pointer-events: none; }
 .layout-svg .platform.on text { font-weight: 700; }
+dialog.wide { width: min(1100px, calc(100vw - 32px)); }
+.route-diagram-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--grid); border-radius: 8px; background: var(--bg, var(--panel)); }
+.route-diagram { display: block; }
+.route-diagram .route-path { stroke-width: 7; opacity: .25; stroke-linecap: round; }
+.route-diagram .rail { stroke: var(--grid-strong); stroke-width: 1.5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.route-diagram .turnout { fill: var(--muted); }
+.route-diagram .platform line { stroke-width: 5; stroke-linecap: round; }
+.route-diagram .platform.other line { stroke: var(--grid); }
+.route-diagram .platform text { font-size: 10px; text-anchor: middle; fill: var(--ink); }
+.route-diagram .stop-mark { cursor: pointer; }
+.route-diagram .stop-mark line { stroke: var(--grid); stroke-dasharray: 2 3; }
+.route-diagram .stop-mark text { font-size: 12px; font-weight: 700; text-anchor: middle; fill: var(--ink); }
+.route-diagram .stop-mark.passes text { fill: var(--muted); font-weight: 400; }
+.route-diagram .stop-mark.error text { fill: var(--warn); }
+.route-diagram .stop-mark.warn text { fill: #b7791f; }
+.route-diagram .stop-mark:focus text { text-decoration: underline; }
+button.link { border: none; background: none; padding: 0 2px; color: var(--sel); cursor: pointer; text-decoration: underline; font-size: inherit; }
 

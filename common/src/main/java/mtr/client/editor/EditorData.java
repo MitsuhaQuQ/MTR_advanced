@@ -7,6 +7,7 @@ import mtr.advanced.TimetableBoundaries;
 import mtr.client.ClientData;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import transitsim.network.PlatformGraph;
 
 import java.util.*;
@@ -248,6 +249,16 @@ public final class EditorData {
 			platformObject.addProperty("mode", platform == null ? "" : platform.transportMode.toString());
 			platformObject.addProperty("passingTrack", platform != null && platform.passingTrack);
 			platformObject.addProperty("network", String.valueOf(platformGraph.getNetwork(i)));
+			// Where it lies, so the page can put a station's tracks in the order they lie side by side
+			if (platform != null) {
+				final List<BlockPos> ends = platform.getOrderedPositions(BlockPos.ZERO, false);
+				final JsonArray line = new JsonArray();
+				line.add(ends.get(0).getX() + 0.5);
+				line.add(ends.get(0).getZ() + 0.5);
+				line.add(ends.get(1).getX() + 0.5);
+				line.add(ends.get(1).getZ() + 0.5);
+				platformObject.add("line", line);
+			}
 			final JsonArray waysArray = new JsonArray();
 			for (int direction = 0; direction < 2; direction++) {
 				final int state = i * 2 + direction;

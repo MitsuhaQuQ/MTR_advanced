@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;
 import mtr.advanced.RegionDataPackets;
+import mtr.advanced.RouteLayouts;
 import mtr.advanced.StationLayouts;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
@@ -226,18 +227,31 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		RegistryClient.sendToServer(PACKET_UPDATE_PATH_BOUNDARY, packet);
 	}
 
-	public static void requestStationLayoutC2S(int[] box, TransportMode transportMode) {
+	public static void requestStationLayoutC2S(int[] box, TransportMode transportMode, long[] seeds) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		for (final int value : box) {
 			packet.writeInt(value);
 		}
 		packet.writeInt(transportMode.ordinal());
+		StationLayouts.writeSeeds(seeds, packet);
 		RegistryClient.sendToServer(PACKET_STATION_LAYOUT, packet);
 	}
 
 	public static void receiveStationLayoutS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final StationLayouts.Layout layout = StationLayouts.read(packet);
 		minecraftClient.execute(() -> EditorLayout.receive(layout));
+	}
+
+	public static void requestRouteLayoutC2S(long routeId, int halfWidth) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(routeId);
+		packet.writeInt(halfWidth);
+		RegistryClient.sendToServer(PACKET_ROUTE_LAYOUT, packet);
+	}
+
+	public static void receiveRouteLayoutS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final RouteLayouts.Layout layout = RouteLayouts.read(packet);
+		minecraftClient.execute(() -> EditorLayout.receiveRoute(layout));
 	}
 
 	public static void requestTimetableTimesC2S(long routeId) {

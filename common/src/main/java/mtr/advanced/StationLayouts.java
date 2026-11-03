@@ -21,6 +21,10 @@ public final class StationLayouts {
 	public static final int MAX_SIZE = 1024;
 	private static final int MAX_RAILS = 4000;
 	private static final int MAX_POINTS = 48;
+	/**
+	 * The most platform ends a request may name to find the station's own rails from.
+	 */
+	public static final int MAX_SEEDS = 256;
 	private static final double POINT_SPACING = 3;
 	private static final long MIN_REQUEST_INTERVAL_MILLIS = 150;
 	private static final Map<UUID, Long> LAST_REQUESTS = new HashMap<>();
@@ -44,9 +48,13 @@ public final class StationLayouts {
 
 	/**
 	 * Writes the box, then each rail of the transport mode reaching into it as a line of points along its curve, each
-	 * rail once for both directions.
+	 * rail once for both directions. Only the rails joined by track to one of the seeds are kept, so lines crossing over
+	 * or under the station aren't drawn.
+	 *
+	 * @param seeds the ends of the station's platforms, sorted, as {@link BlockPos#asLong()}
 	 */
-	public static void write(Map<BlockPos, Map<BlockPos, Rail>> rails, int[] box, TransportMode transportMode, FriendlyByteBuf packet) {
+	public static void write(Map<BlockPos, Map<BlockPos, Rail>> rails, int[] box, TransportMode transportMode, long[] seeds, FriendlyByteBuf packet) {
+		final Set<Long> connected = connectedNodes(rails, seeds);
 		final List<float[]> lines = new ArrayList<>();
 		boolean truncated = false;
 		for (final Map.Entry<BlockPos, Map<BlockPos, Rail>> entry : rails.entrySet()) {
@@ -54,7 +62,7 @@ public final class StationLayouts {
 			for (final Map.Entry<BlockPos, Rail> railEntry : entry.getValue().entrySet()) {
 				final Rail rail = railEntry.getValue();
 				final BlockPos end = railEntry.getKey();
-				if (start.asLong() > end.asLong() || rail.transportMode != transportMode) {
+				if (start.asLong() > end.asLong() || rail.transportMode != transportMode || !connected.contains(start.asLong())) {
 					continue;
 				}
 				// A curve can bulge out of the box around its ends by up to its length
@@ -85,6 +93,7 @@ public final class StationLayouts {
 			packet.writeInt(value);
 		}
 		packet.writeInt(transportMode.ordinal());
+		writeSeeds(seeds, packet);
 		packet.writeBoolean(truncated);
 		packet.writeInt(lines.size());
 		lines.forEach(points -> {
@@ -98,6 +107,7 @@ public final class StationLayouts {
 	public static Layout read(FriendlyByteBuf packet) {
 		final int[] box = {packet.readInt(), packet.readInt(), packet.readInt(), packet.readInt()};
 		final int mode = packet.readInt();
+		final long[] seeds = readSeeds(packet);
 		final boolean truncated = packet.readBoolean();
 		final int count = packet.readInt();
 		if (count < 0 || count > MAX_RAILS) {
@@ -115,7 +125,52 @@ public final class StationLayouts {
 			}
 			lines.add(line);
 		}
-		return new Layout(box, mode, truncated, lines);
+		return new Layout(box, mode, seeds, truncated, lines);
+	}
+
+	public static void writeSeeds(long[] seeds, FriendlyByteBuf packet) {
+		packet.writeInt(seeds.length);
+		for (final long seed : seeds) {
+			packet.writeLong(seed);
+		}
+	}
+
+	public static long[] readSeeds(FriendlyByteBuf packet) {
+		final int count = packet.readInt();
+		if (count < 0 || count > MAX_SEEDS) {
+			throw new IllegalArgumentException("Too many platform ends " + count);
+		}
+		final long[] seeds = new long[count];
+		for (int i = 0; i < count; i++) {
+			seeds[i] = packet.readLong();
+		}
+		return seeds;
+	}
+
+	/**
+	 * The nodes reached from the seeds along rails either way, as one-way rails still join the track physically.
+	 */
+	private static Set<Long> connectedNodes(Map<BlockPos, Map<BlockPos, Rail>> rails, long[] seeds) {
+		final Map<Long, List<Long>> neighbours = new HashMap<>();
+		rails.forEach((start, ends) -> ends.keySet().forEach(end -> {
+			neighbours.computeIfAbsent(start.asLong(), key -> new ArrayList<>()).add(end.asLong());
+			neighbours.computeIfAbsent(end.asLong(), key -> new ArrayList<>()).add(start.asLong());
+		}));
+		final Set<Long> reached = new HashSet<>();
+		final ArrayDeque<Long> queue = new ArrayDeque<>();
+		for (final long seed : seeds) {
+			if (reached.add(seed)) {
+				queue.add(seed);
+			}
+		}
+		while (!queue.isEmpty()) {
+			for (final long next : neighbours.getOrDefault(queue.poll(), Collections.emptyList())) {
+				if (reached.add(next)) {
+					queue.add(next);
+				}
+			}
+		}
+		return reached;
 	}
 
 	/**
@@ -132,15 +187,20 @@ public final class StationLayouts {
 
 		public final int[] box;
 		public final int mode;
+		/**
+		 * The platform ends asked about, to match the answer to the request.
+		 */
+		public final long[] seeds;
 		public final boolean truncated;
 		/**
 		 * Each rail as x, z, x, z, ... along it.
 		 */
 		public final List<float[]> lines;
 
-		private Layout(int[] box, int mode, boolean truncated, List<float[]> lines) {
+		private Layout(int[] box, int mode, long[] seeds, boolean truncated, List<float[]> lines) {
 			this.box = box;
 			this.mode = mode;
+			this.seeds = seeds;
 			this.truncated = truncated;
 			this.lines = lines;
 		}
