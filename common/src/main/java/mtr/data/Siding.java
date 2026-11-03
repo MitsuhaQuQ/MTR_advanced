@@ -1,6 +1,7 @@
 package mtr.data;
 
 import transitsim.plan.DepotReturn;
+import transitsim.plan.PathTimes;
 import transitsim.plan.DutyPlan;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TimeGenerator;
@@ -1026,96 +1027,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
-	 * Times a path with speed curves (design document section 8), so the times are the ones trains on the curves run to.
-	 * Gives the same kinds of results as the step by step timing: a time segment for each part with one acceleration,
-	 * ending at each stop and each platform passed, the time of each stop, and the times between platforms.
+	 * See {@link PathTimes#curveTimes}.
 	 */
 	private void generateCurveTimes(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes, StopTimes stopTimes) {
 		final int spacing = TrainType.getSpacing(baseTrainType);
 		final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, transportMode), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, getDecelerationConstant());
-		final double[] railEnds = new double[path.size()];
-		double distance = 0;
-		for (int i = 0; i < path.size(); i++) {
-			distance += path.get(i).rail.getLength();
-			railEnds[i] = distance;
-		}
-		final double totalDistance = distance;
-
-		// When each run leaves, after the stops before it
-		final double[] runStarts = new double[curves.runs.size()];
-		double ticks = 0;
-		for (int i = 0; i < curves.runs.size(); i++) {
-			runStarts[i] = ticks;
-			final SpeedCurves.Run run = curves.runs.get(i);
-			ticks += run.fastest.getDuration() + path.get(run.stopRailIndex).dwellTime * 10;
-		}
-
-		int runIndex = 0;
-		for (final SpeedCurves.Run run : curves.runs) {
-			// Segments end where the train stops or passes a platform, so arrivals can be read off them
-			final TreeMap<Double, Integer> ends = new TreeMap<>();
-			for (int i = 0; i <= run.stopRailIndex; i++) {
-				if (railEnds[i] > run.fastest.startPosition && railEnds[i] <= run.fastest.endPosition && (isPassingPlatform(path, i) || i == run.stopRailIndex)) {
-					ends.put(railEnds[i], i);
-				}
-			}
-			final List<double[]> pieces = run.fastest.getPieces();
-			for (int p = 0; p < pieces.size(); p++) {
-				final double[] piece = pieces.get(p);
-				final double pieceEnd = p + 1 < pieces.size() ? pieces.get(p + 1)[0] : run.fastest.endPosition;
-				double start = piece[0];
-				for (final Map.Entry<Double, Integer> end : ends.subMap(piece[0], false, pieceEnd, true).entrySet()) {
-					addCurveSegment(timeSegments, run.fastest, piece, start, end.getKey(), runStarts[runIndex], path, end.getValue(), totalDistance);
-					start = end.getKey();
-				}
-				if (pieceEnd > start + 1E-6) {
-					addCurveSegment(timeSegments, run.fastest, piece, start, pieceEnd, runStarts[runIndex], path, -1, totalDistance);
-				}
-			}
-			runIndex++;
-		}
-
-		long savedRailBaseIdOld = 0;
-		float timeOld = 0;
-		runIndex = 0;
-		for (int i = 0; i < path.size(); i++) {
-			while (runIndex < curves.runs.size() - 1 && curves.runs.get(runIndex).stopRailIndex < i) {
-				runIndex++;
-			}
-			final SpeedCurves.Run run = curves.runs.get(runIndex);
-			final PathData pathData = path.get(i);
-			final float time = (float) (runStarts[runIndex] + run.fastest.getTime(railEnds[i]));
-			final boolean isPlatformStop = pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0;
-			if (pathData.dwellTime > 0 || isPassingPlatform(path, i)) {
-				final boolean isTurnBack = !isPlatformStop && i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1));
-				stopTimes.add(i, isPlatformStop ? pathData.savedRailBaseId : 0, isTurnBack ? pathData.getRailProduct() : null, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
-			}
-			if (pathData.savedRailBaseId != 0) {
-				final float middle = time + pathData.dwellTime * 5;
-				if (savedRailBaseIdOld != 0) {
-					platformTimes.computeIfAbsent(savedRailBaseIdOld, key -> new HashMap<>()).put(pathData.savedRailBaseId, middle - timeOld);
-				}
-				savedRailBaseIdOld = pathData.savedRailBaseId;
-				timeOld = middle;
-			}
-		}
-	}
-
-	/**
-	 * @param railIndex the rail whose end the segment ends at, or -1
-	 */
-	private void addCurveSegment(List<TimeSegment> timeSegments, SpeedProfile profile, double[] piece, double start, double end, double runStart, List<PathData> path, int railIndex, double totalDistance) {
-		final double acceleration = piece[3];
-		final int speedChange = acceleration > 1E-9 ? 1 : acceleration < -1E-9 ? -1 : 0;
-		final TimeSegment timeSegment = new TimeSegment(start, (float) profile.getSpeed(start), (float) (runStart + profile.getTime(start)), speedChange, (float) Math.abs(acceleration));
-		timeSegment.endRailProgress = end;
-		timeSegment.endTime = (float) (runStart + profile.getTime(end));
-		if (railIndex >= 0) {
-			final PathData pathData = path.get(railIndex);
-			timeSegment.pass = isPassingPlatform(path, railIndex);
-			timeSegment.savedRailBaseId = timeSegment.pass || pathData.dwellTime > 0 && end < totalDistance ? pathData.savedRailBaseId : 0;
-		}
-		timeSegments.add(timeSegment);
+		PathTimes.curveTimes(path, curves, timeSegments, platformTimes, stopTimes);
 	}
 
 	/**
@@ -1142,7 +1059,6 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * Rails after a stop or a reversal also carry the ID of that platform, so only the first rail with the ID counts.
 	 */
 	public static boolean isPassingPlatform(List<PathData> path, int index) {
-		final PathData pathData = path.get(index);
-		return index > 0 && pathData.dwellTime == 0 && pathData.savedRailBaseId != 0 && pathData.rail.railType == RailType.PLATFORM && path.get(index - 1).savedRailBaseId != pathData.savedRailBaseId;
+		return PathTimes.isPassingPlatform(path, index);
 	}
 }

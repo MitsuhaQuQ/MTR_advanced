@@ -30,6 +30,9 @@ import org.msgpack.value.Value;
 import transitsim.motion.SpeedCurves;
 import transitsim.sim.Occupancy;
 import transitsim.sim.RunReservations;
+import transitsim.sim.TrainRules;
+import transitsim.motion.MotionState;
+import transitsim.motion.MotionTrack;
 
 import java.io.IOException;
 import java.util.*;
@@ -47,6 +50,7 @@ public class TrainServer extends Train {
 	private Depot depot;
 	private DataCache dataCache;
 	private final TrainService<PathData> service;
+	private final TrainRules.Train rules = new RulesTrain();
 	private Level world;
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
@@ -72,8 +76,6 @@ public class TrainServer extends Train {
 
 	private static final int TRAIN_UPDATE_DISTANCE = 128;
 	private static final int TICKS_TO_SEND_RAIL_PROGRESS = 40;
-	private static final int DOOR_CLOSE_MILLIS = (DOOR_MOVE_TIME + DOOR_DELAY) * Depot.MILLIS_PER_TICK;
-	private static final int MIN_DWELL_TICKS = Route.MIN_STOP_DWELL * 10;
 
 	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
 		super(id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, manualToAutomaticTime);
@@ -142,45 +144,12 @@ public class TrainServer extends Train {
 
 	@Override
 	public int getTotalDwellTicks() {
-		final int dwellTicks = super.getTotalDwellTicks();
-		final RouteTimetable.StopPlan stopPlan = isCurrentlyManual ? null : service.getPlanAt(nextStoppingIndex);
-		if (stopPlan == null) {
-			return dwellTicks;
-		} else {
-			// A late train shortens its stop to catch up, without going below the time doors need
-			final long ticksAtStop = (long) elapsedDwellTicks + (service.getPlannedMillis(stopPlan.departureMillis) - System.currentTimeMillis()) / Depot.MILLIS_PER_TICK;
-			return (int) Math.max(Math.min(dwellTicks, ticksAtStop), Math.min(dwellTicks, MIN_DWELL_TICKS));
-		}
+		return TrainRules.getTotalDwellTicks(rules, super.getTotalDwellTicks());
 	}
 
 	@Override
 	protected boolean isHeldAtStop() {
-		if (isCurrentlyManual) {
-			return false;
-		}
-		// A train on a duty stays overnight at its last stop, waits for each segment's planned departure, and doesn't leave
-		// onto rails another train of a duty has booked the other way
-		if (service.isStayingOnLine()) {
-			return true;
-		}
-		final long dutyDepartureMillis = service.getDutyDepartureMillis();
-		if (dutyDepartureMillis > 0 && System.currentTimeMillis() < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
-			return true;
-		}
-		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
-		if (stopPlan != null && stopPlan.isTimed) {
-			final long currentMillis = System.currentTimeMillis();
-			final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
-			if (currentMillis < departureMillis - DOOR_CLOSE_MILLIS || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && isOvertakingTrainComing(service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
-				return true;
-			}
-		}
-		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
-		if (!transportMode.continuousMovement && (service.chooseDepotReturn() || service.chooseTurnBack())) {
-			return true;
-		}
-		// The run is asked for last, on the path the train leaves by, so it isn't kept from other trains while this one waits
-		return service.isOnDuty() && !isRunGranted(nextStoppingIndex + 1);
+		return TrainRules.isHeldAtStop(rules);
 	}
 
 	@Override
@@ -209,53 +178,15 @@ public class TrainServer extends Train {
 	}
 
 	/**
-	 * With time to spare before the planned arrival at the next stop, the train cruises slower to arrive on time instead of
-	 * early. A late train gets no cap and runs as fast as it can to catch up (design document 8.2). A train setting off
-	 * again after being held back on the way gets a cap from where it is (review A04); with the old motion rules it got
-	 * none, being late already.
+	 * See {@link TrainRules#getCruiseCap}.
 	 */
 	private float getCruiseCap() {
-		if (!usesSpeedCurve() || nextStoppingIndex >= path.size()) {
-			return Float.POSITIVE_INFINITY;
-		}
-		final long plannedMillis = service.getPlannedArrivalMillis(nextStoppingIndex);
-		final SpeedCurves curves = getSpeedCurves();
-		if (!MotionConfig.useLegacyMotion(false)) {
-			return plannedMillis <= 0 ? Float.POSITIVE_INFINITY : (float) curves.findCruiseCap(railProgress, speed, nextStoppingIndex, (plannedMillis - System.currentTimeMillis()) / (double) Depot.MILLIS_PER_TICK);
-		}
-		final SpeedCurves.Run run = curves.getRun(railProgress);
-		// A train starting again after waiting behind another one is late already, and catches up as fast as it can
-		if (plannedMillis <= 0 || run == null || run.stopRailIndex != nextStoppingIndex || Math.abs(railProgress - run.fastest.startPosition) > 1) {
-			return Float.POSITIVE_INFINITY;
-		}
-		final double ticks = (plannedMillis - System.currentTimeMillis()) / (double) Depot.MILLIS_PER_TICK;
-		return (float) run.findCap(ticks, curves.minSpeed);
+		return TrainRules.getCruiseCap(rules);
 	}
 
 	@Override
 	protected boolean openDoors() {
-		if (isCurrentlyManual) {
-			return doorTarget;
-		} else {
-			if (transportMode.continuousMovement) {
-				final int index = getIndex(railProgress, false);
-				if (path.get(index).dwellTime > 0 && index > 0) {
-					final double doorValue1 = (railProgress - distances.get(index - 1)) * 0.5;
-					final double doorValue2 = (distances.get(index) - railProgress) * 0.5;
-					return doorValue1 > 0 && (doorValue2 > doorValue1 || doorValue2 > 1);
-				} else {
-					return false;
-				}
-			} else {
-				// Turn backs have no platform, so a long wait there must not open the doors
-				if (path.get(nextStoppingIndex).savedRailBaseId == 0) {
-					return false;
-				}
-				final int dwellTicks = getTotalDwellTicks();
-				final float maxDoorMoveTime = Math.min(DOOR_MOVE_TIME, dwellTicks / 2 - DOOR_DELAY);
-				return elapsedDwellTicks >= DOOR_DELAY && elapsedDwellTicks < dwellTicks - DOOR_DELAY - maxDoorMoveTime;
-			}
-		}
+		return isCurrentlyManual ? doorTarget : TrainRules.openDoors(rules);
 	}
 
 	@Override
@@ -666,28 +597,12 @@ public class TrainServer extends Train {
 		return moves;
 	}
 
-	/**
-	 * @return the first stop on or after this rail of the path, or the end of the path
-	 */
 	private int findRunEnd(int fromIndex) {
-		for (int i = Math.max(fromIndex, 0); i < path.size(); i++) {
-			if (path.get(i).dwellTime > 0) {
-				return i;
-			}
-		}
-		return path.size() - 1;
+		return TrainRules.findRunEnd(getMotionTrack(), fromIndex);
 	}
 
-	/**
-	 * @return when the train is planned to leave its stop, which decides who goes first when two trains ask at once
-	 */
 	private long getPlannedDepartureMillis() {
-		final long dutyDepartureMillis = service.getDutyDepartureMillis();
-		if (dutyDepartureMillis > 0) {
-			return dutyDepartureMillis;
-		}
-		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
-		return stopPlan == null ? System.currentTimeMillis() : service.getPlannedMillis(stopPlan.departureMillis);
+		return TrainRules.getPlannedDepartureMillis(rules);
 	}
 
 	private RunReservations getRunReservations() {
@@ -750,8 +665,7 @@ public class TrainServer extends Train {
 	/**
 	 * A train planned to pass this station while this one is stopped has not gone yet, on another platform of the station.
 	 */
-	private boolean isOvertakingTrainComing(long arrivalMillis, long departureMillis, long currentMillis) {
-		final long platformId = path.get(nextStoppingIndex).savedRailBaseId;
+	private boolean isOvertakingTrainComing(long platformId, long arrivalMillis, long departureMillis, long currentMillis) {
 		final Station station = dataCache == null ? null : dataCache.platformIdToStation.get(platformId);
 		if (station == null) {
 			return false;
@@ -769,13 +683,7 @@ public class TrainServer extends Train {
 	}
 
 	private int getNextStoppingIndex() {
-		final int headIndex = getIndex(0, 0, false);
-		for (int i = headIndex; i < path.size(); i++) {
-			if (path.get(i).dwellTime > 0) {
-				return i;
-			}
-		}
-		return path.size() - 1;
+		return TrainRules.findNextStoppingIndex(getMotionTrack(), getIndex(0, 0, false));
 	}
 
 	private void checkBlock(BlockPos pos, Consumer<BlockPos> callback) {
@@ -801,6 +709,72 @@ public class TrainServer extends Train {
 					return;
 				}
 			}
+		}
+	}
+
+	/**
+	 * The train as the component's stop rules see it ({@link TrainRules}).
+	 */
+	private class RulesTrain implements TrainRules.Train {
+
+		@Override
+		public long getMillis() {
+			return System.currentTimeMillis();
+		}
+
+		@Override
+		public TrainService<?> getService() {
+			return service;
+		}
+
+		@Override
+		public MotionState getState() {
+			return getMotionState();
+		}
+
+		@Override
+		public MotionTrack getTrack() {
+			return getMotionTrack();
+		}
+
+		@Override
+		public long getStopId(int rail) {
+			return path.get(rail).savedRailBaseId;
+		}
+
+		@Override
+		public boolean isContinuousMovement() {
+			return transportMode.continuousMovement;
+		}
+
+		@Override
+		public boolean usesSpeedCurve() {
+			return TrainServer.this.usesSpeedCurve();
+		}
+
+		@Override
+		public boolean usesLegacyMotion() {
+			return MotionConfig.useLegacyMotion(false);
+		}
+
+		@Override
+		public SpeedCurves getSpeedCurves() {
+			return TrainServer.this.getSpeedCurves();
+		}
+
+		@Override
+		public int getTotalDwellTicks() {
+			return TrainServer.this.getTotalDwellTicks();
+		}
+
+		@Override
+		public boolean isOvertakingTrainComing(long platformId, long arrivalMillis, long departureMillis, long currentMillis) {
+			return TrainServer.this.isOvertakingTrainComing(platformId, arrivalMillis, departureMillis, currentMillis);
+		}
+
+		@Override
+		public boolean isRunGranted(int fromIndex) {
+			return TrainServer.this.isRunGranted(fromIndex);
 		}
 	}
 

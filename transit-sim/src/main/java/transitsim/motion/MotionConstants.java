@@ -11,6 +11,7 @@ public final class MotionConstants {
 	public static final float ACCELERATION_DEFAULT = 0.01F;
 	public static final int DOOR_MOVE_TIME = 64;
 	public static final int DOOR_DELAY = 20;
+	public static final int MILLIS_PER_TICK = 50;
 	public static final double BRAKING_MARGIN = 2;
 	public static final double CURVE_SPEED_TOLERANCE = 1E-3;
 

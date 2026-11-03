@@ -552,6 +552,17 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		return path.get(nextStoppingIndex).dwellTime * 10;
 	}
 
+	/**
+	 * The train's moving state as the component's rules see it, for subclasses handing it to them.
+	 */
+	protected final MotionState getMotionState() {
+		return motion;
+	}
+
+	protected final MotionTrack getMotionTrack() {
+		return motion;
+	}
+
 	protected final void simulateTrain(Level world, float ticksElapsed, Depot depot) {
 		if (world == null) {
 			return;
