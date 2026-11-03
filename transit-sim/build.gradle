@@ -1,10 +1,22 @@
 // Runs timetables, vehicle workings and the rail network without Minecraft, so it can be used by other hosts too.
 // It must not depend on Minecraft, netty or anything else of the mod.
+// It builds the same as part of the mod and on its own, offline once its dependencies are cached:
+//   ./gradlew -p transit-sim test --offline
 apply plugin: "java-library"
+
+repositories {
+	mavenCentral()
+}
 
 dependencies {
 	testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.10.2"
+}
+
+// Java 8, so every Minecraft version can use it
+tasks.withType(JavaCompile) {
+	options.encoding = "UTF-8"
+	options.release = 8
 }
 
 test {

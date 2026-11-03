@@ -182,7 +182,7 @@ The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.
 
 The Fabric version needs [Fabric API](https://modrinth.com/mod/fabric-api), and the Forge version needs the Forge version of [Architectury API](https://modrinth.com/mod/architectury-api). Clients and servers must use jars with the same protocol version, which is currently 23. Jars with ANTE are about 136 MB.
 
-The simulation component in `transit-sim` is a plain Java 8 project without Minecraft, built into the Fabric and Forge jars; `./gradlew :transit-sim:test` runs its tests.
+The simulation component in `transit-sim` is a plain Java 8 project without Minecraft, built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
 

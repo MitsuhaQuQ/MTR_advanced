@@ -144,7 +144,9 @@ task setupFiles() {
 		src "https://github.com/jonafanho/Minecraft-Mappings/archive/refs/heads/${is_1_19_4 ? minecraft_version : "1." + minecraft_main_version}.zip"
 		dest "common/src/main/java/mtr/mappings/mappings.zip"
 		overwrite true
-		retries - 1
+		retries 5
+		connectTimeout 10000
+		readTimeout 300000
 	}
 	copy {
 		outputs.upToDateWhen { false }
@@ -214,13 +216,17 @@ task setupFiles() {
 			src "https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"
 			dest "common/src/main/resources/assets/mtr/website/fabric.min.js"
 			overwrite true
-			retries - 1
+			retries 5
+			connectTimeout 10000
+			readTimeout 300000
 		}
 		download {
 			src "https://raw.githubusercontent.com/bramstein/fontfaceobserver/master/fontfaceobserver.standalone.js"
 			dest "common/src/main/resources/assets/mtr/website/fontfaceobserver.standalone.js"
 			overwrite true
-			retries - 1
+			retries 5
+			connectTimeout 10000
+			readTimeout 300000
 		}
 		copy {
 			outputs.upToDateWhen { false }
@@ -265,7 +271,9 @@ task setupFiles() {
 		src "https://crowdin.com/backend/download/project/minecraft-transit-railway"
 		dest "common/src/main/java/mtr/mappings/lang.zip"
 		overwrite false
-		retries - 1
+		retries 5
+		connectTimeout 10000
+		readTimeout 300000
 	}
 	copy {
 		outputs.upToDateWhen { false }
@@ -363,9 +371,8 @@ allprojects {
 	tasks.withType(JavaCompile) {
 		options.encoding = "UTF-8"
 
-		// The component stays on Java 8 for every Minecraft version
+		// The component sets up its own Java version, so it builds the same on its own
 		if (isComponent(project)) {
-			options.release = 8
 			return
 		}
 
@@ -413,30 +420,39 @@ static String[] getModrinthData(String loader, String minecraftVersion, String p
 }
 
 static Object getJson(String url) {
-	int tries = 0
-	while (true) {
-		try {
-			if (tries > 1) {
-				System.out.println("Parsed ${url} after ${tries} tries")
-			}
-			return new JsonSlurper().parse(url.toURL())
-		} catch (Exception ignored) {
-			Thread.sleep(1000)
-		}
-	}
+	return readUrl(url) { inputStream -> new JsonSlurper().parse(inputStream, "UTF-8") }
 }
 
 static Object getXml(String url) {
-	int tries = 0
-	while (true) {
+	return readUrl(url) { inputStream -> new XmlSlurper().parse(inputStream) }
+}
+
+/**
+ * Reads a URL a few times at most, each with timeouts, so a build without a network stops with an error instead of waiting
+ * for ever.
+ */
+static Object readUrl(String url, Closure<Object> parse) {
+	final int maxTries = 5
+	Exception lastException = null
+	for (int tries = 1; tries <= maxTries; tries++) {
 		try {
-			if (tries > 1) {
-				System.out.println("Parsed ${url} after ${tries} tries")
+			final URLConnection connection = new URL(url).openConnection()
+			connection.connectTimeout = 10000
+			connection.readTimeout = 60000
+			final InputStream inputStream = connection.inputStream
+			try {
+				final Object result = parse(inputStream)
+				if (tries > 1) {
+					System.out.println("Parsed ${url} after ${tries} tries")
+				}
+				return result
+			} finally {
+				inputStream.close()
 			}
-			return new XmlSlurper().parse(url)
-		} catch (Exception ignored) {
-			Thread.sleep(1000)
-			tries++
+		} catch (Exception e) {
+			lastException = e
+			Thread.sleep(1000L * tries)
 		}
 	}
+	throw new GradleException("Couldn't read ${url} after ${maxTries} tries", lastException)
 }

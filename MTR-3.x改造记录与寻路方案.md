@@ -1698,7 +1698,7 @@ T3    发车
    - R02：从车尾所在的轨道开始续订，车尾清出后才释放；
    - R03：存车线按 ID 排序，同 tick 的出站申请统一仲裁，并防饥饿。
 3. **F2 运用快照**（已完成，R04 的最小修复）：列车出库或接过夜运用时复制当天的运用段，之后只读这份。
-4. **S0 补完**（R05）：组件能单独、离线构建和测试；根 `build.gradle` 的联网改为有限重试并设超时。搬类部分已完成。
+4. **S0 补完**（已完成，R05）：组件能单独、离线构建和测试；根 `build.gradle` 的联网改为有限重试并设超时。搬类部分已完成。
 5. **C 契约**：写定时间、状态归属、资源三级、版本、运行/预测/恢复分离、事件消费、性能和锁死处置（解耦文档 3.6 节）。只写文档和接口草案。
 6. **S1 线网和资源**：组件的线网（有向拓扑、区间、边界、区域、寻路）加资源定义（轨道段、道岔冲突区、单线方向区段、站台），线网快照带版本；`PhysicalGraph` 拆开，`TrackView`、`SpeedCurves` 进组件。不改行为，可以和实测并行。
 
@@ -2049,7 +2049,8 @@ JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\gtmp' ./gradlew.bat build -Pbu
 
 - 不带 `-PbuildVersion` 时默认构建 1.16.5。
 - 多个版本要同时构建时，给每个版本单独复制一份工作区。Gradle 会在工作区写生成文件，同一目录不能并行。各版本互不干扰，五个版本约 3 分钟。
-- 运行模拟组件 `transit-sim` 是不依赖 Minecraft 的普通 Java 子项目，固定按 Java 8 编译，构建时打进 Fabric 和 Forge 的 jar（11.5 节、`MTR-模拟组件与解耦.md` 3.2 节）。它的测试用 `./gradlew :transit-sim:test` 运行。
+- 运行模拟组件 `transit-sim` 是不依赖 Minecraft 的普通 Java 子项目，固定按 Java 8 编译，构建时打进 Fabric 和 Forge 的 jar（11.5 节、`MTR-模拟组件与解耦.md` 3.2 节）。它的测试用 `./gradlew :transit-sim:test` 运行，也可以不经过模组单独、离线运行：`./gradlew -p transit-sim test --offline`。
+- 配置阶段要联网读 Minecraft、Fabric、Forge 的版本信息并下载映射等文件。每处最多试 5 次，每次有超时，没有网络时报错停止，不会一直等。
 - `fabric`、`forge` 下的 `mappings` 是受版本控制的生成文件。提交前要用默认版本跑一次 Gradle，让它们回到 1.16.5 的内容。
 - 1.20.1 的 `:fabric:runClient` 可用；`:forge:runClient` 不可用，原因见 2.9 节。
 - 每次运行 Gradle 都会重新生成 `mappings`、`Keys.java` 和 `src/main/resources`，不要把改动写进这些生成内容。
