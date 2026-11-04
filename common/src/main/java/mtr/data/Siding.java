@@ -888,6 +888,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
+	 * @return whether the siding has run the ticks after the world is loaded in which its trains are put where the plan has
+	 * them
+	 */
+	public boolean hasSettled() {
+		return ticksSinceLoad >= 2;
+	}
+
+	/**
 	 * @return whether the component's simulator can run the siding, which needs a path and a vehicle that fits (G1)
 	 */
 	public boolean canBeSimulated() {

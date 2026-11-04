@@ -124,8 +124,9 @@ public final class LiveSimulation {
 	}
 
 	private void run(RailwayData railwayData, List<Map<UUID, Long>> trainPositions, boolean drive) {
-		// Which depot each siding is in is only known a moment after the world is loaded
-		if (!started && !railwayData.sidings.isEmpty() && railwayData.dataCache.sidingIdToDepot.isEmpty()) {
+		// Which depot each siding is in is only known a moment after the world is loaded, and the game puts the trains where
+		// the plan has them a tick later; the simulator carries on from there, so it starts from what the game would have
+		if (!started && (!railwayData.sidings.isEmpty() && railwayData.dataCache.sidingIdToDepot.isEmpty() || railwayData.sidings.stream().anyMatch(siding -> railwayData.dataCache.sidingIdToDepot.containsKey(siding.id) && !siding.hasSettled()))) {
 			return;
 		}
 		final long now = System.currentTimeMillis();
@@ -140,8 +141,8 @@ public final class LiveSimulation {
 				start(railwayData, now, true, stopped ? lastMillis : now);
 			}
 		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : drive ? CHANGE_CHECK_MILLIS : COMPARE_MILLIS))) {
-			// The first time after the world is loaded, the trains are put where the plan has them, as the game does
-			start(railwayData, now, drive, started ? now : 0);
+			// The first time after the world is loaded, the game has already put the trains where the plan has them
+			start(railwayData, now, drive, now);
 		}
 		// Time going back leaves the simulator where it is (contracts document A02)
 		if (simulator == null || now <= lastMillis) {
@@ -215,7 +216,7 @@ public final class LiveSimulation {
 	 * Starts the simulator from the game's trains of the depots it can run.
 	 *
 	 * @param recordMillis when the game's trains were as they are, so that more than a minute ago puts them where the plan
-	 *                     has them now; 0 when that isn't known, as after the world is loaded
+	 *                     has them now
 	 */
 	private void start(RailwayData railwayData, long now, boolean drive, long recordMillis) {
 		final Set<Long> newSidingIds = getSidingIds(railwayData);
