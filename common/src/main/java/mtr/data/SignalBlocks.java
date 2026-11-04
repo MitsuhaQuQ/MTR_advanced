@@ -13,6 +13,8 @@ import java.util.*;
 
 public class SignalBlocks {
 
+	private int version;
+
 	private final Map<UUID, Set<SignalBlock>> railToSignalBlocks = new HashMap<>();
 	public final List<SignalBlock> signalBlocks = new ArrayList<>();
 
@@ -184,7 +186,15 @@ public class SignalBlocks {
 		return blockRails;
 	}
 
+	/**
+	 * @return a number that changes each time the signal blocks are worked out again
+	 */
+	public int getVersion() {
+		return version;
+	}
+
 	public void writeCache() {
+		version++;
 		railToSignalBlocks.clear();
 		signalBlocks.forEach(signalBlock -> signalBlock.rails.forEach(rail -> {
 			if (!railToSignalBlocks.containsKey(rail)) {

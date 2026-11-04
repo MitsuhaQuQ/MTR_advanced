@@ -40,6 +40,11 @@ public class DataCache {
 	protected final Set<Depot> depots;
 	private final Set<LiftServer> liftsServer;
 
+	/**
+	 * Counts up each time the data is synced after a change, so whoever keeps a copy of it knows to look again.
+	 */
+	private int version;
+
 	private static final int AREA_CELL_BITS = 8;
 	private static final int MAX_AREA_CELLS = 1024;
 
@@ -52,7 +57,12 @@ public class DataCache {
 		liftsServer = lifts;
 	}
 
+	public int getVersion() {
+		return version;
+	}
+
 	public final void sync() {
+		version++;
 		try {
 			mapIds(stationIdMap, stations);
 			mapIds(platformIdMap, platforms);

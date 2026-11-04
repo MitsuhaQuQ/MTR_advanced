@@ -53,9 +53,17 @@ public final class LiveSimulation {
 	 */
 	private static final long COMPARE_MILLIS = 60000;
 	/**
-	 * How often, while it runs the trains, it looks whether the network or the plans changed.
+	 * How often, while it runs the trains, it looks whether the network or the plans changed, when nothing said they did.
 	 */
-	private static final long CHANGE_CHECK_MILLIS = 30000;
+	private static final long CHANGE_CHECK_MILLIS = 300000;
+	/**
+	 * How long it waits to start again after it was stopped while running the trains.
+	 */
+	private static final long RESTART_MILLIS = 30000;
+	/**
+	 * How long it waits after the game's data was changed before it looks, so a run of edits is looked at once.
+	 */
+	private static final long CHANGE_SETTLE_MILLIS = 2000;
 	/**
 	 * How often it looks again for sidings it can run while it has none, as the depots' timetables are only known a moment
 	 * after the world is loaded.
@@ -77,6 +85,11 @@ public final class LiveSimulation {
 	private byte[] startedData = new byte[0];
 	private long startedMillis;
 	private long checkedMillis;
+	/**
+	 * The versions of the game's data and signal blocks when it last looked, and when it saw them change since.
+	 */
+	private long checkedVersion;
+	private long versionChangedMillis;
 	private long lastMillis;
 	private boolean started;
 	private int restoredTrains;
@@ -142,7 +155,7 @@ public final class LiveSimulation {
 			if (stopped || hasChanged(railwayData, now)) {
 				start(railwayData, now, true, stopped ? lastMillis : now);
 			}
-		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : drive ? CHANGE_CHECK_MILLIS : COMPARE_MILLIS))) {
+		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : drive ? RESTART_MILLIS : COMPARE_MILLIS))) {
 			// The first time after the world is loaded, the game has already put the trains where the plan has them
 			start(railwayData, now, drive, now);
 		}
@@ -232,6 +245,8 @@ public final class LiveSimulation {
 		sidingIds = newSidingIds;
 		startedMillis = now;
 		checkedMillis = now;
+		checkedVersion = getVersion(railwayData);
+		versionChangedMillis = 0;
 		lastMillis = now;
 		reportedMillis = now;
 		departures = 0;
@@ -316,17 +331,26 @@ public final class LiveSimulation {
 	}
 
 	/**
-	 * @return whether the sidings the simulator can run, their paths or the plans changed since it started, looked at every
-	 * half minute, or at once when a siding found its path again
+	 * @return whether the sidings the simulator can run, their paths or the plans changed since it started, looked at a
+	 * moment after the game's data or signal blocks changed and every few minutes, or at once when a siding found its path
+	 * again
 	 */
 	private boolean hasChanged(RailwayData railwayData, long now) {
 		if (railwayData.sidings.stream().anyMatch(siding -> sidingIds.contains(siding.id) && siding.hasTrainsRelocated())) {
 			return true;
 		}
-		if (now < checkedMillis + CHANGE_CHECK_MILLIS) {
+		// Looked at once a change to the game's data has settled, and every few minutes in case something changed unannounced
+		final long version = getVersion(railwayData);
+		if (version != checkedVersion && versionChangedMillis == 0) {
+			versionChangedMillis = now;
+		}
+		final boolean settled = versionChangedMillis > 0 && now >= versionChangedMillis + CHANGE_SETTLE_MILLIS;
+		if (!settled && now < checkedMillis + CHANGE_CHECK_MILLIS) {
 			return false;
 		}
 		checkedMillis = now;
+		checkedVersion = version;
+		versionChangedMillis = 0;
 		if (!getSidingIds(railwayData).equals(sidingIds)) {
 			return true;
 		}
@@ -336,6 +360,10 @@ public final class LiveSimulation {
 		}
 		System.out.println("Minecraft Transit Railway: the component's simulator starts again from the game's trains, as these changed: " + describeChange(SimDataset.fromBytes(startedData), dataset));
 		return true;
+	}
+
+	private static long getVersion(RailwayData railwayData) {
+		return (long) railwayData.dataCache.getVersion() << 32 | railwayData.getSignalBlocks().getVersion() & 0xFFFFFFFFL;
 	}
 
 	/**
