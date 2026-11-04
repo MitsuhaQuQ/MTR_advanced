@@ -106,6 +106,11 @@ public final class LiveSimulation {
 	 */
 	private final Set<Long> takenOver = new HashSet<>();
 	/**
+	 * Sidings left to the game, as some of their trains couldn't be carried on in the simulator (their paths changed, say);
+	 * running them would take those trains away. Tried again when the network or the plans change.
+	 */
+	private final Set<Long> excludedSidings = new TreeSet<>();
+	/**
 	 * The setting the simulator failed with, or -1.
 	 */
 	private int failedDrive = -1;
@@ -234,7 +239,7 @@ public final class LiveSimulation {
 	 *                     has them now
 	 */
 	private void start(RailwayData railwayData, long now, boolean drive, long recordMillis) {
-		final Set<Long> newSidingIds = getSidingIds(railwayData);
+		final Set<Long> newSidingIds = getRunSidingIds(railwayData);
 		// Said when the sidings or what it does with them change; a world with none it can run says nothing
 		if (!newSidingIds.equals(sidingIds) || driving != drive && !newSidingIds.isEmpty()) {
 			System.out.println("Minecraft Transit Railway: the component's simulator " + (drive ? "runs" : "is compared on") + " " + newSidingIds.size() + " of " + railwayData.sidings.size() + " sidings, the ones of depots with speed curves");
@@ -282,6 +287,23 @@ public final class LiveSimulation {
 		eventCursor = 0;
 		simulator.forgetEvents(Long.MAX_VALUE);
 		restoredTrains = simulator.getRunner().getTrains().size();
+		// The game's trains the simulator couldn't carry on would be taken away by showing its trains, so their sidings are
+		// left to the game
+		final Set<Long> lostSidings = new TreeSet<>();
+		final List<Long> lostTrains = new ArrayList<>();
+		record.trains.forEach(train -> {
+			if (!simulator.getRunner().hasTrain(train.trainId)) {
+				lostSidings.add(train.sidingId);
+				lostTrains.add(train.trainId);
+			}
+		});
+		if (!lostSidings.isEmpty()) {
+			System.out.println("Minecraft Transit Railway: the component's simulator leaves sidings " + lostSidings + " to the game, as it couldn't carry on their trains " + lostTrains);
+			simulator = null;
+			excludedSidings.addAll(lostSidings);
+			start(railwayData, now, drive, recordMillis);
+			return;
+		}
 		if (drive) {
 			show(railwayData);
 		}
@@ -311,6 +333,10 @@ public final class LiveSimulation {
 		final Map<Long, List<TickRunner<SimDataset.DataTrack>.HeadlessTrain>> bySiding = new HashMap<>();
 		runner.getTrains().forEach(train -> {
 			if (!takenOver.contains(train.id)) {
+				// A train the game can't show, as from a mistake in the simulator, turns it off instead of being saved
+				if (!Float.isFinite(train.getSpeed()) || !Double.isFinite(train.getRailProgress()) || train.getNextStoppingIndex() < 0 || train.getNextStoppingIndex() >= train.getPath().size() && !train.getPath().isEmpty()) {
+					throw new IllegalStateException("The simulator has train " + train.id + " at " + train.getRailProgress() + ", speed " + train.getSpeed() + ", next stop " + train.getNextStoppingIndex() + " of " + train.getPath().size());
+				}
 				bySiding.computeIfAbsent(train.getSidingId(), key -> new ArrayList<>()).add(train);
 			}
 		});
@@ -351,7 +377,7 @@ public final class LiveSimulation {
 		checkedMillis = now;
 		checkedVersion = version;
 		versionChangedMillis = 0;
-		if (!getSidingIds(railwayData).equals(sidingIds)) {
+		if (!getRunSidingIds(railwayData).equals(sidingIds)) {
 			return true;
 		}
 		final SimDataset dataset = getDataset(railwayData);
@@ -359,7 +385,18 @@ public final class LiveSimulation {
 			return false;
 		}
 		System.out.println("Minecraft Transit Railway: the component's simulator starts again from the game's trains, as these changed: " + describeChange(SimDataset.fromBytes(startedData), dataset));
+		// What changed may let it carry on the trains of the sidings it left to the game
+		excludedSidings.clear();
 		return true;
+	}
+
+	/**
+	 * @return the sidings it can run, without the ones it left to the game
+	 */
+	private Set<Long> getRunSidingIds(RailwayData railwayData) {
+		final Set<Long> ids = getSidingIds(railwayData);
+		ids.removeAll(excludedSidings);
+		return ids;
 	}
 
 	private static long getVersion(RailwayData railwayData) {

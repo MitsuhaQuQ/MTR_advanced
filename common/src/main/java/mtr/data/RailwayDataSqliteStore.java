@@ -51,9 +51,15 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	private static final String BACKUP_EXTENSION = ".db";
 	private static final String TEMPORARY_EXTENSION = ".tmp";
 	private static final String KEY_MIGRATED = "migrated";
+	/**
+	 * The version of how the data is stored. A database of a later version, written by a newer jar, isn't opened, so this
+	 * jar can't write over what it doesn't understand.
+	 */
+	private static final String KEY_SCHEMA_VERSION = "schema_version";
+	private static final int SCHEMA_VERSION = 1;
 	private static final String KEY_GRAPH_FINGERPRINT = "graph_fingerprint";
 	private static final long BACKUP_INTERVAL_MILLIS = 60 * 60 * 1000;
-	private static final int BACKUPS_TO_KEEP = 5;
+	private static final int BACKUPS_TO_KEEP = 12;
 	private static final int BACKUP_WAIT_SECONDS = 60;
 
 	public RailwayDataSqliteStore(Path savePath, String[] types) throws Exception {
@@ -66,6 +72,14 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			System.out.println("Minecraft Transit Railway database is corrupted: " + databasePath);
 			quarantineDatabase();
 			restoreLatestBackup();
+		} else if (Files.exists(databasePath)) {
+			// Every start keeps the data as it was, before anything of this run can change it
+			try {
+				createBackup();
+			} catch (Exception e) {
+				System.out.println("Minecraft Transit Railway could not back up " + databasePath + " on starting");
+				e.printStackTrace();
+			}
 		}
 
 		connection = connect(databasePath);
@@ -85,7 +99,35 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 		writeStatement = connection.prepareStatement("INSERT OR REPLACE INTO entries (type, id, data) VALUES (?, ?, ?)");
 		deleteStatement = connection.prepareStatement("DELETE FROM entries WHERE type = ? AND id = ?");
 
+		checkSchemaVersion();
 		migrate(types);
+	}
+
+	/**
+	 * Refuses a database written by a newer jar, and marks one this jar writes.
+	 */
+	private void checkSchemaVersion() throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT value FROM meta WHERE key = ?")) {
+			statement.setString(1, KEY_SCHEMA_VERSION);
+			try (final ResultSet resultSet = statement.executeQuery()) {
+				if (resultSet.next()) {
+					final int version = Integer.parseInt(resultSet.getString(1));
+					if (version > SCHEMA_VERSION) {
+						connection.rollback();
+						connection.close();
+						throw new IllegalStateException("Minecraft Transit Railway data at " + databasePath + " was written by a newer version (storage version " + version + ", this jar has " + SCHEMA_VERSION + "); it is left untouched");
+					}
+					connection.rollback();
+					return;
+				}
+			}
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)")) {
+			statement.setString(1, KEY_SCHEMA_VERSION);
+			statement.setString(2, String.valueOf(SCHEMA_VERSION));
+			statement.executeUpdate();
+		}
+		connection.commit();
 	}
 
 	@Override
@@ -153,6 +195,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.setBytes(1, data);
 			statement.executeUpdate();
 		}
+		hasPendingChanges = true;
 	}
 
 	@Override

@@ -149,7 +149,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		messagePackHelper.iterateArrayValue(KEY_DEPARTURES, departure -> departures.add(departure.asIntegerValue().asInt()));
 
-		deployIndex = messagePackHelper.getInt(KEY_DEPLOY_INDEX);
+		deployIndex = Math.max(0, messagePackHelper.getInt(KEY_DEPLOY_INDEX));
 		repeatInfinitely = messagePackHelper.getBoolean(KEY_REPEAT_INFINITELY);
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
@@ -180,7 +180,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		lastDeployedMillis = System.currentTimeMillis() - compoundTag.getLong(KEY_LAST_DEPLOYED);
-		deployIndex = compoundTag.getInt(KEY_DEPLOY_INDEX);
+		deployIndex = Math.max(0, compoundTag.getInt(KEY_DEPLOY_INDEX));
 		repeatInfinitely = compoundTag.getBoolean(KEY_REPEAT_INFINITELY);
 		cruisingAltitude = compoundTag.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = false;
@@ -482,7 +482,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		dispatcher.dutyRunDays.clear();
 		dispatcher.dutyRunDays.putAll(simulated.dispatcher.dutyRunDays);
 		lastDeployedMillis = simulated.lastDeployedMillis;
-		deployIndex = simulated.deployIndex;
+		deployIndex = Math.max(0, simulated.deployIndex);
 	}
 
 	public void recordDispatcher(RunRecord record, long sidingId) {

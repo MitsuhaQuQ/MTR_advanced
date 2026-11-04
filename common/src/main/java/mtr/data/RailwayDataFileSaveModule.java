@@ -22,6 +22,15 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 
 	private boolean canAutoSave = false;
 	private boolean dataLoaded = false;
+	/**
+	 * Whether loading started; if it didn't finish, nothing is saved, so a failed load can't write over the data.
+	 */
+	private boolean loadStarted = false;
+	/**
+	 * Entries that couldn't be read. With any, nothing is deleted while the server runs: what can't be read stays in the
+	 * database, and what depended on it (such as a siding on a rail that couldn't be read) isn't deleted with it either.
+	 */
+	private int skippedEntries;
 	private boolean useReducedHash = true;
 	private int filesWritten;
 	private int filesDeleted;
@@ -30,6 +39,14 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 * What was last written for the day tool, so an unchanged world isn't written again.
 	 */
 	private int lastSimulationHash;
+	/**
+	 * Whether the save going on has written it.
+	 */
+	private boolean simulationDataWritten = true;
+	/**
+	 * Whether a save is going on, writing and then deleting a little each tick.
+	 */
+	private boolean saveInProgress;
 
 	private final SignalBlocks signalBlocks;
 
@@ -78,6 +95,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	public void load() {
+		loadStarted = true;
+		skippedEntries = 0;
 		existingFiles.clear();
 		readMessagePackFromFile(TYPE_STATIONS, Station::new, railwayData.stations::add, false);
 		readMessagePackFromFile(TYPE_PLATFORMS, Platform::new, railwayData.platforms::add, true);
@@ -94,6 +113,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		railwayData.graphRecords.load(dataStore);
 
 		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location());
+		if (skippedEntries > 0) {
+			System.out.println("Minecraft Transit Railway: " + skippedEntries + " data entries of " + world.dimension().location() + " couldn't be read and are kept as they are; nothing is deleted from the saved data until the server is started again with them readable");
+		}
 		canAutoSave = true;
 		dataLoaded = true;
 	}
@@ -112,6 +134,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		dirtyBoundaryNodes.clear();
 		dirtyBoundarySegments.clear();
 		checkFilesToDelete.clear();
+		saveInProgress = false;
 		autoSave();
 		while (true) {
 			if (autoSaveTick()) {
@@ -128,12 +151,20 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 
 	public void autoSave() {
 		if (!dataLoaded) {
+			if (loadStarted) {
+				// Loading failed part of the way, so what is in memory isn't the saved data
+				System.out.println("Minecraft Transit Railway data of " + world.dimension().location() + " failed to load; it isn't saved, so the saved data stays as it was");
+				return;
+			}
+			// A world with no saved data yet
 			dataLoaded = true;
 			canAutoSave = true;
 		}
 
-		if (canAutoSave && checkFilesToDelete.isEmpty()) {
+		if (canAutoSave && !saveInProgress) {
+			saveInProgress = true;
 			autoSaveStartMillis = System.currentTimeMillis();
+			simulationDataWritten = false;
 			filesWritten = 0;
 			filesDeleted = 0;
 			dirtyStationIds.addAll(railwayData.dataCache.stationIdMap.keySet());
@@ -147,14 +178,15 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			dirtyKeyNodes.addAll(railwayData.keyNodes);
 			dirtyBoundaryNodes.addAll(railwayData.pathBoundaries.nodes);
 			dirtyBoundarySegments.addAll(railwayData.pathBoundaries.segments);
-			checkFilesToDelete.addAll(existingFiles.keySet());
+			if (skippedEntries == 0) {
+				checkFilesToDelete.addAll(existingFiles.keySet());
+			}
 			dataStore.backup();
 		}
 	}
 
 	public boolean autoSaveTick() {
 		if (canAutoSave) {
-			final boolean deleteEmptyOld = checkFilesToDelete.isEmpty();
 
 			boolean hasSpareTime = writeDirtyDataToFile(dirtyStationIds, railwayData.dataCache.stationIdMap::get, id -> id, TYPE_STATIONS);
 			if (hasSpareTime) {
@@ -202,7 +234,23 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				filesDeleted++;
 			}
 
-			if (!deleteEmptyOld && checkFilesToDelete.isEmpty()) {
+			if (doneWriting && checkFilesToDelete.isEmpty() && !simulationDataWritten) {
+				// What the component's day tool simulates, once a save, written again only when it changed
+				simulationDataWritten = true;
+				try {
+					final byte[] simulationData = SimExport.build(railwayData);
+					final int simulationHash = Arrays.hashCode(simulationData);
+					if (simulationHash != lastSimulationHash) {
+						dataStore.writeSimulationData(simulationData);
+						lastSimulationHash = simulationHash;
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+
+			if (saveInProgress && doneWriting && checkFilesToDelete.isEmpty()) {
+				saveInProgress = false;
 				final Map<Long, Map<BlockPos, TrainDelay>> trainDelays = railwayData.getTrainDelays();
 				final List<Long> routeIdsToRemove = new ArrayList<>();
 				final List<BlockPos> posToRemove = new ArrayList<>();
@@ -241,18 +289,6 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				e.printStackTrace();
 			}
 
-			// What the component's day tool simulates, written again only when it changed
-			try {
-				final byte[] simulationData = SimExport.build(railwayData);
-				final int simulationHash = Arrays.hashCode(simulationData);
-				if (simulationHash != lastSimulationHash) {
-					dataStore.writeSimulationData(simulationData);
-					lastSimulationHash = simulationHash;
-				}
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-
 			try {
 				dataStore.commit();
 			} catch (Exception e) {
@@ -285,6 +321,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				} catch (Exception e) {
 					System.out.println("Skipping invalid Minecraft Transit Railway data " + getKey(type, id));
 					e.printStackTrace();
+					skippedEntries++;
 				}
 			});
 		} catch (Exception e) {

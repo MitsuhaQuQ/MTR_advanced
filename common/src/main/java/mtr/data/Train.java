@@ -446,6 +446,45 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	/**
+	 * Puts values that can't be right, as from damaged saved data, back to safe ones, so the train still runs and the next
+	 * save holds good values again.
+	 *
+	 * @return whether anything was put right
+	 */
+	protected final boolean repairLoaded() {
+		boolean repaired = false;
+		if (!Float.isFinite(speed) || speed < 0) {
+			speed = 0;
+			repaired = true;
+		}
+		if (!Double.isFinite(railProgress)) {
+			railProgress = 0;
+			isOnRoute = false;
+			repaired = true;
+		}
+		if (!Float.isFinite(elapsedDwellTicks) || elapsedDwellTicks < 0) {
+			elapsedDwellTicks = 0;
+			repaired = true;
+		}
+		if (Float.isNaN(cruiseCap) || cruiseCap <= 0) {
+			cruiseCap = Float.POSITIVE_INFINITY;
+			repaired = true;
+		}
+		if (!path.isEmpty() && (nextStoppingIndex < 0 || nextStoppingIndex >= path.size())) {
+			nextStoppingIndex = path.size() - 1;
+			repaired = true;
+		}
+		if (!path.isEmpty() && (nextPlatformIndex < 0 || nextPlatformIndex >= path.size())) {
+			nextPlatformIndex = nextStoppingIndex;
+			repaired = true;
+		}
+		if (repaired) {
+			System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " had saved values that can't be right, which were put back to safe ones");
+		}
+		return repaired;
+	}
+
+	/**
 	 * @return the run segment the clients follow, which only a train the component's simulator runs has, or null
 	 */
 	protected RunSegment.Spec getSegmentSpecToSend() {

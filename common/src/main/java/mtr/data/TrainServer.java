@@ -141,6 +141,7 @@ public class TrainServer extends Train {
 		} else {
 			cruiseCapMissing = true;
 		}
+		repairLoaded();
 	}
 
 	@Deprecated
@@ -162,6 +163,7 @@ public class TrainServer extends Train {
 		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
 		cruiseCapMissing = true;
+		repairLoaded();
 	}
 
 	@Override

@@ -112,6 +112,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	private final List<MotionEvent> motionEvents = new ArrayList<>();
 	private final List<MotionEvent> lastMotionEvents = new ArrayList<>();
+	/**
+	 * Depots that failed sending trains out, each said in the log once.
+	 */
+	private final Set<Long> failedDepots = new HashSet<>();
 	private final TickCompensator tickCompensator = new TickCompensator();
 	private final Map<Player, BlockPos> playerLastUpdatedPositions = new HashMap<>();
 	private final List<Player> playersToSyncSchedules = new ArrayList<>();
@@ -387,7 +391,17 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		handleMotionEvents();
 		// Runs asked for during the tick are given out together, whatever order the trains ran in
 		runReservations.resolve(System.currentTimeMillis());
-		depots.forEach(depot -> depot.deployTrain(this, world));
+		depots.forEach(depot -> {
+			// A depot that fails doesn't stop the others or the rest of the tick
+			try {
+				depot.deployTrain(this, world);
+			} catch (Exception e) {
+				if (failedDepots.add(depot.id)) {
+					System.out.println("Minecraft Transit Railway: depot " + depot.id + " failed sending trains out");
+					e.printStackTrace();
+				}
+			}
+		});
 
 		updateNearbyLifts.startTick();
 		lifts.forEach(lift -> lift.tickServer(world, updateNearbyLifts.newDataSetInPlayerRange, updateNearbyLifts.dataSetToSync));
