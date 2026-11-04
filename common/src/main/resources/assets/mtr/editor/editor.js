@@ -14,6 +14,9 @@
 	const SECTION_GAP = 1.5;
 	// How far to each side of a line's path its track diagram shows, in blocks
 	const LINE_DIAGRAM_HALF_WIDTH = 16;
+	// In the line track layout: how far apart rows of station names are, and how far a rail may wander from where it
+	// usually runs beside the route and still be drawn straight
+	const LABEL_ROW_PX = 14, RAIL_WOBBLE_BLOCKS = 2;
 	const ZOOMS = [0.5, 1, 2, 3, 4, 6, 8, 12, 16];
 	const WEEKDAY_NAMES = translatedList(["周一", "周二", "周三", "周四", "周五", "周六", "周日"]);
 	const WEEKDAY_SHORT = translatedList(["一", "二", "三", "四", "五", "六", "日"]);
@@ -3053,19 +3056,26 @@
 	function lineDiagramDialog(line) {
 		const pieces = linePieces(line);
 		const routes = [...new Set(pieces.map(piece => piece.r))];
-		const view = { scale: 0, side: 2, layouts: new Map(), error: "" };
+		const view = { scale: 0, side: 2, layouts: new Map(), error: "", even: true, gap: 0 };
 		const render = form => {
 			form.querySelector("#dlg-line-diagram").innerHTML = lineDiagramHtml(line, pieces, view);
+			const even = form.querySelector("[data-line-even]");
+			if (even) even.textContent = view.even ? tr("按实际距离画") : tr("车站等距画");
 		};
 		openDialog(`${tr("线路组配线图：{0}", escapeHtml(shortName(line.name)))}`, `
 			<div class="diagram-head"><span class="hint">${tr("每一段沿走得最远的一条线路的路径拉直，从左往右按运行图上车站的顺序；支线和另一路画在下面，从分出的车站斜着接出。按游戏里已应用的线路画。")}</span>
-				<span class="tools"><button type="button" data-line-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-line-zoom="out" title="${tr("缩小")}">−</button></span></div>
+				<span class="tools"><button type="button" data-line-even></button><button type="button" data-line-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-line-zoom="out" title="${tr("缩小")}">−</button></span></div>
 			<div id="dlg-line-diagram"></div>`, tr("关闭"), () => {});
 		dialog.classList.add("wide");
 		dialog.addEventListener("close", () => dialog.classList.remove("wide"), { once: true });
 		const form = dialog.querySelector("form");
 		render(form);
 		form.addEventListener("click", e => {
+			if (e.target.closest("[data-line-even]")) {
+				view.even = !view.even;
+				render(form);
+				return;
+			}
 			const zoom = e.target.closest("[data-line-zoom]");
 			if (!zoom) return;
 			view.scale = Math.max(0.05, Math.min(8, view.scale * (zoom.dataset.lineZoom === "in" ? 1.5 : 1 / 1.5)));
@@ -3097,10 +3107,17 @@
 			}
 			if (view.layouts.size === routes.length) view.error = "";
 			if (!view.scale) {
-				const longest = Math.max(1, ...pieces.map(piece => {
+				let longest = 1, gap = 0;
+				pieces.forEach(piece => {
 					const layout = view.layouts.get(piece.r.id);
-					return layout && layout.found ? layout.stops[piece.to] - layout.stops[piece.from] : 0;
-				}));
+					const length = layout && layout.found ? layout.stops[piece.to] - layout.stops[piece.from] : 0;
+					if (length > longest) {
+						longest = length;
+						// Evenly apart, the longest section is as wide as by distance
+						gap = length / Math.max(1, piece.to - piece.from);
+					}
+				});
+				view.gap = gap || longest;
 				view.scale = Math.max(0.05, Math.min(8, (form.querySelector("#dlg-line-diagram").clientWidth - 160) / longest));
 			}
 			if (dialog.open) render(form);
@@ -3126,11 +3143,50 @@
 			// Starting off the station the section repeats at its top, a little to the right of it
 			const junction = line.rows[firstRow].repeat ? stationX.get(line.rows[firstRow].group) : null;
 			const x0 = junction ? junction.x + slant : pad;
-			const y0 = top + laneH / 2 + 16;
 			const fold = ring ? length / 2 : Infinity;
+			// How far along the section a point is drawn: by distance, or with the stations evenly apart and what is between
+			// two of them spread out evenly between them
+			const stopUs = [];
+			for (let i = piece.from; i <= piece.to; i++) stopUs.push(Math.max(0, Math.min(length, piece.reversed ? s1 - layout.stops[i] : layout.stops[i] - s0)));
+			stopUs.sort((a, b) => a - b);
+			const gapPx = view.gap * view.scale;
+			const along = u => {
+				if (!view.even || stopUs.length < 2 || !gapPx) return u * view.scale;
+				if (u <= stopUs[0]) return (u - stopUs[0]) * view.scale;
+				for (let k = 1; k < stopUs.length; k++) {
+					if (u <= stopUs[k]) {
+						const span = stopUs[k] - stopUs[k - 1];
+						return (k - 1 + (span > 0 ? (u - stopUs[k - 1]) / span : 1)) * gapPx;
+					}
+				}
+				return (stopUs.length - 1) * gapPx + (u - stopUs[stopUs.length - 1]) * view.scale;
+			};
+			const foldX = ring ? along(fold) : 0;
+			const xOfU = u => u <= fold ? x0 + along(u) : x0 + 2 * foldX - along(u);
+
+			// The names of the stations, each on the first row along the top (or the bottom of a loop) it fits on
+			const names = [];
+			for (let i = piece.from; i <= piece.to; i++) {
+				const row = i === piece.from ? r.leaveRows[i] : r.rows[i];
+				if (line.rows[row].repeat && !ring) continue;
+				const u = piece.reversed ? s1 - layout.stops[i] : layout.stops[i] - s0;
+				const name = shortName(line.rows[row].name);
+				const width = [...name].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? 12.5 : 7), 0);
+				names.push({ i, row, x: xOfU(u), below: u > fold, name, width, level: 0 });
+			}
+			const ends = [[], []];
+			names.slice().sort((a, b) => a.x - b.x).forEach(label => {
+				const rows = ends[label.below ? 1 : 0];
+				let level = 0;
+				while (level < rows.length && rows[level] > label.x - label.width / 2 - 6) level++;
+				rows[level] = label.x + label.width / 2;
+				label.level = level;
+			});
+			const above = Math.max(0, ends[0].length - 1) * LABEL_ROW_PX;
+			const y0 = top + laneH / 2 + 16 + above;
 			const at = (s, d) => {
 				const u = piece.reversed ? s1 - s : s - s0, side = piece.reversed ? -d : d;
-				return u <= fold ? [x0 + u * view.scale, y0 - side * sidePx, 0] : [x0 + (length - u) * view.scale, y0 + laneH + 24 + side * sidePx, 1];
+				return u <= fold ? [xOfU(u), y0 - side * sidePx, 0] : [xOfU(u), y0 + laneH + 24 + side * sidePx, 1];
 			};
 			const inside = s => s >= s0 - 0.5 && s <= s1 + 0.5;
 			const color = colorOf(r.color);
@@ -3140,10 +3196,17 @@
 			const lanes = [path.filter(p => !p[2]), path.filter(p => p[2])].filter(lane => lane.length > 1);
 			lanes.forEach(lane => parts.push(`<polyline points="${lane.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" class="route-path" style="stroke:${color}"/>`));
 			if (ring) {
-				const radius = (laneH + 24) / 2, endX = x0 + fold * view.scale;
+				const radius = (laneH + 24) / 2, endX = x0 + foldX;
 				parts.push(`<path d="M${endX.toFixed(1)},${y0} a${radius},${radius} 0 0 1 0,${2 * radius}" class="route-path" fill="none" style="stroke:${color}"/>`);
 			}
 			layout.rails.forEach(rail => {
+				// A rail running beside the route at about the same distance from it is drawn at that distance, so the small
+				// wobbles of its curves don't show; where it really turns away it is drawn as it goes
+				const offsets = [];
+				for (let k = 0; k + 1 < rail.length; k += 2) if (inside(rail[k])) offsets.push(rail[k + 1]);
+				offsets.sort((a, b) => a - b);
+				const usual = offsets.length ? offsets[Math.floor(offsets.length / 2)] : 0;
+				const steady = d => Math.abs(d - usual) <= RAIL_WOBBLE_BLOCKS ? usual : d;
 				let points = [];
 				const flush = () => {
 					if (points.length > 1) parts.push(`<polyline points="${points.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" class="rail"/>`);
@@ -3154,7 +3217,7 @@
 						flush();
 						continue;
 					}
-					const p = at(rail[k], rail[k + 1]);
+					const p = at(rail[k], steady(rail[k + 1]));
 					if (points.length && points[points.length - 1][2] !== p[2]) flush();
 					points.push(p);
 				}
@@ -3179,16 +3242,19 @@
 				}
 				parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.passingTrack ? tr("（待避线）") : ""}`)}</title><line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"${ours ? ` style="stroke:${color}"` : ""}/></g>`);
 			});
-			// Station names, over the top lane and under the bottom one
+			// Station names, over the top lane and under the bottom one, a row further out for each name in the way
 			for (let i = piece.from; i <= piece.to; i++) {
 				const row = i === piece.from ? r.leaveRows[i] : r.rows[i];
 				const p = at(layout.stops[i], 0);
 				if (!stationX.has(line.rows[row].group)) stationX.set(line.rows[row].group, { x: p[0], y: p[1] });
-				if (line.rows[row].repeat && !ring) continue;
-				const below = p[2] === 1;
-				labels.push(`<g class="stop-mark"><line x1="${p[0].toFixed(1)}" y1="${(p[1] - laneH / 2 - 4).toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${(p[1] + laneH / 2 + 4).toFixed(1)}"/><text x="${p[0].toFixed(1)}" y="${(below ? p[1] + laneH / 2 + 16 : p[1] - laneH / 2 - 8).toFixed(1)}">${escapeHtml(shortName(line.rows[row].name))}</text></g>`);
-				right = Math.max(right, p[0]);
 			}
+			names.forEach(label => {
+				const p = at(layout.stops[label.i], 0);
+				const out = label.level * LABEL_ROW_PX;
+				const lineTop = p[1] - laneH / 2 - 4 - (label.below ? 0 : out), lineBottom = p[1] + laneH / 2 + 4 + (label.below ? out : 0);
+				labels.push(`<g class="stop-mark"><line x1="${p[0].toFixed(1)}" y1="${lineTop.toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${lineBottom.toFixed(1)}"/><text x="${p[0].toFixed(1)}" y="${(label.below ? p[1] + laneH / 2 + 16 + out : p[1] - laneH / 2 - 8 - out).toFixed(1)}">${escapeHtml(label.name)}</text></g>`);
+				right = Math.max(right, p[0] + label.width / 2);
+			});
 			// Slanting off the station the section starts from, and back onto the one another way ends at
 			if (junction) links.push(`<line x1="${junction.x.toFixed(1)}" y1="${junction.y.toFixed(1)}" x2="${x0}" y2="${y0}" class="route-path" style="stroke:${color}"/>`);
 			const end = line.rows[lastRow].repeat && !ring ? stationX.get(line.rows[lastRow].group) : null;
@@ -3196,8 +3262,8 @@
 				const p = at(piece.reversed ? s0 : s1, 0);
 				links.push(`<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${end.x.toFixed(1)}" y2="${end.y.toFixed(1)}" class="route-path" style="stroke:${color}"/>`);
 			}
-			right = Math.max(right, x0 + (ring ? fold : length) * view.scale);
-			top += (ring ? 2 * laneH + 24 : laneH) + 56;
+			right = Math.max(right, ring ? x0 + foldX : xOfU(length));
+			top += (ring ? 2 * laneH + 24 : laneH) + 56 + above + Math.max(0, ends[1].length - 1) * LABEL_ROW_PX;
 		});
 		const width = Math.round(right + pad * 2), height = Math.round(top);
 		return `<div class="route-diagram-wrap"><svg class="route-diagram" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${tr("线路组配线图")}">${links.join("")}${parts.join("")}${labels.join("")}</svg></div>`

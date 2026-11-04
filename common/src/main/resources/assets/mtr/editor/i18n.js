@@ -91,6 +91,8 @@ const I18N = (() => {
 			"以最新版本为基础，覆盖对方的修改": "Base it on the latest version, overwriting the other change",
 			"放弃草稿，用游戏里的": "Drop the draft, use the game's",
 			"草稿的改动": "Changes in the draft",
+			"按实际距离画": "Draw by distance",
+			"车站等距画": "Stations evenly apart",
 			"按时刻表把列车摆到现在的位置…": "Put trains where the timetable has them now…",
 			"按时刻表摆车": "Put trains by the timetable",
 			"把“{0}”的列车直接放到时刻表现在要求的位置：从今天运营日开始按游戏的规则算到现在，这时候应该在线上的车摆上去，已经发过的班次不再发；原来的车换成算出来的车，乘客和货物不保留，玩家驾驶中的车不动。": "Puts the trains of “{0}” straight where the timetable has them now: worked out by the game's rules from the start of today's operating day, the trains that should be on the line are put there and the services already out aren't sent again. The trains there now make way for them, without their passengers and cargo; trains players drive stay.",
