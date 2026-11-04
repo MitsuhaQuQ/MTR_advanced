@@ -71,6 +71,7 @@ public final class EditorData {
 			depotObject.addProperty("id", String.valueOf(depot.id));
 			depotObject.addProperty("name", depot.name);
 			depotObject.addProperty("cycleRoutes", depot.cycleRoutes);
+			depotObject.addProperty("releaseInterval", depot.releaseInterval);
 			final JsonArray routeIds = new JsonArray();
 			depot.routeIds.forEach(routeId -> routeIds.add(String.valueOf(routeId)));
 			depotObject.add("routes", routeIds);

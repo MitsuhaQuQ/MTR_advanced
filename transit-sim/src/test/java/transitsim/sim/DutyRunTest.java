@@ -27,6 +27,10 @@ class DutyRunTest {
 	private static final long MONDAY = 20458L * OperatingDay.MILLIS_PER_DAY;
 	private static final int TICKS_PER_MINUTE = (int) (MINUTE / MILLIS_PER_TICK);
 	private static final long SIDING_ID = 100;
+	/**
+	 * Another siding of the same pool (decoupling document, step D, depots sending trains out 4 and 5).
+	 */
+	private static final long OTHER_SIDING_ID = 200;
 
 	private long now;
 	private final Map<Long, TestRoute> routes = new HashMap<>();
@@ -295,6 +299,152 @@ class DutyRunTest {
 	}
 
 	@Test
+	void runsTheSlotOfAnotherSidingAndKeepsItThroughARestart() throws Exception {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		// The slot is the other siding's; this siding has none
+		depot.otherSlots = depot.slots;
+		depot.slots = new ArrayList<>();
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, OTHER_SIDING_ID, MONDAY, tripPath);
+		assertEquals(OTHER_SIDING_ID, train[0].service.getDutySidingId());
+		assertEquals(1, train[0].service.getTripRouteId());
+
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		train[0].service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		final FakeTrain restored = newTrain(tripPath.path);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		assertEquals(OTHER_SIDING_ID, restored.service.getDutySidingId());
+		now = MONDAY + 8 * HOUR + 20 * MINUTE + 30 * SECOND;
+		restored.service.alignToTimetable(true);
+		assertEquals(4, restored.movedTo);
+		assertEquals(2, restored.service.getTripRouteId());
+
+		// Back in the depot it is the siding's own train again
+		restored.service.update(true);
+		restored.service.update(false);
+		assertEquals(SIDING_ID, restored.service.getDutySidingId());
+	}
+
+	@Test
+	void goesBackToTheSidingOfItsPoolThatNeedsATrain() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		final List<TestTrack> otherPath = new ArrayList<>(tripPath.path);
+		final DepotDuties.DayDuty day = depot.slots.get(0).getDuty(0);
+		final List<Long> routeIds = new ArrayList<>();
+		day.segments.forEach(segment -> routeIds.add(segment.routeId));
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(tripPath.key, routeIds, new HashMap<>(), new HashMap<>(), new HashMap<>(), otherPath, tripPath.dutyStarts, null, null, false, false);
+		final TripPath<TestTrack> returnPath = new TripPath<>(dutyPlan, tripPath.dutyStarts, otherPath, TripPath.getReturnKey(tripPath.key, OTHER_SIDING_ID));
+		tripPaths.put(returnPath.key, returnPath);
+		depot.returnTo = OTHER_SIDING_ID;
+
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		// Not yet at its last stop
+		train[0].nextStoppingIndex = 4;
+		assertFalse(train[0].service.chooseDutyReturn());
+		train[0].nextStoppingIndex = 5;
+		assertTrue(train[0].service.mayChooseWayAtStop());
+		assertTrue(train[0].service.chooseDutyReturn());
+		assertSame(returnPath, train[0].followed);
+		assertTrue(train[0].service.isOnDuty());
+		// It chooses once
+		assertFalse(train[0].service.chooseDutyReturn());
+
+		assertFalse(train[0].service.takeReturnedElsewhere());
+		train[0].service.update(false);
+		assertTrue(train[0].service.takeReturnedElsewhere());
+		assertFalse(train[0].service.takeReturnedElsewhere());
+	}
+
+	@Test
+	void goesBackToItsOwnSidingWhenNoOtherNeedsATrain() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		train[0].nextStoppingIndex = 5;
+		assertFalse(train[0].service.chooseDutyReturn());
+		assertSame(tripPath, train[0].followed);
+		train[0].service.update(false);
+		assertFalse(train[0].service.takeReturnedElsewhere());
+	}
+
+	@Test
+	void aPoolTrainLeavesInPlaceOfASidingWithNoneReady() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		final DepotDuties duties = new DepotDuties();
+		duties.sidings.put(SIDING_ID, depot.slots);
+		final Map<Long, Map<String, TripPath<TestTrack>>> sidingPaths = new HashMap<>();
+		sidingPaths.put(SIDING_ID, tripPaths);
+		sidingPaths.put(OTHER_SIDING_ID, tripPaths);
+		final long due = MONDAY + 8 * HOUR;
+
+		// Only the other siding has a train ready: of the same pool it goes, of another it doesn't
+		final DepotDispatcher apart = new DepotDispatcher();
+		assertNull(apart.findDutyDeploy(due, Collections.singletonList(OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> sidingId));
+		final DepotDispatcher pooled = new DepotDispatcher();
+		final DepotDispatcher.DutyDeploy<TestTrack> deploy = pooled.findDutyDeploy(due, Collections.singletonList(OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool");
+		assertNotNull(deploy);
+		assertEquals(OTHER_SIDING_ID, deploy.sidingId);
+		assertEquals(SIDING_ID, deploy.dutySidingId);
+		assertTrue(pooled.hasDutyRun(SIDING_ID, 0, DutyShapes.getDayNumber(MONDAY)));
+		assertNull(pooled.findDutyDeploy(due + SECOND, Collections.singletonList(OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool"));
+
+		// With its own siding ready too, that one goes
+		final DepotDispatcher both = new DepotDispatcher();
+		assertEquals(SIDING_ID, both.findDutyDeploy(due, Arrays.asList(SIDING_ID, OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool").sidingId);
+	}
+
+	@Test
+	void trainsLeaveAtLeastTheReleaseIntervalApart() {
+		setSlots(
+				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
+				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR + 30 * SECOND), 0, -1))
+		);
+		final List<TestTrack> path = makePath(0, 1, 2, 3, 0);
+		addPath(0, 0, new int[]{1}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		addPath(1, 0, new int[]{1}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final DepotDuties duties = new DepotDuties();
+		duties.sidings.put(SIDING_ID, depot.slots);
+		final DepotDispatcher dispatcher = new DepotDispatcher();
+		dispatcher.releaseIntervalMillis = 120 * (int) SECOND;
+		final List<Long> ready = Collections.singletonList(SIDING_ID);
+
+		final DepotDispatcher.DutyDeploy<TestTrack> first = dispatcher.findDutyDeploy(MONDAY + 8 * HOUR, ready, duties, sidingId -> tripPaths, routes::get);
+		assertEquals(0, first.slot);
+		assertNull(dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 40 * SECOND, ready, duties, sidingId -> tripPaths, routes::get));
+		final DepotDispatcher.DutyDeploy<TestTrack> second = dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 2 * MINUTE, ready, duties, sidingId -> tripPaths, routes::get);
+		assertEquals(1, second.slot);
+		assertFalse(second.late);
+	}
+
+	@Test
+	void aTrainGoesBackToTheSidingWithRoomThatNeedsATrainSoonest() {
+		final DepotDuties duties = new DepotDuties();
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (10 * HOUR), 0, -1)));
+		duties.sidings.put(SIDING_ID, depot.slots);
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (9 * HOUR), 0, -1)));
+		duties.sidings.put(OTHER_SIDING_ID, depot.slots);
+		final DepotDispatcher dispatcher = new DepotDispatcher();
+		final List<Long> pool = Arrays.asList(SIDING_ID, OTHER_SIDING_ID);
+		final long millis = MONDAY + 8 * HOUR + 30 * MINUTE;
+
+		assertEquals(OTHER_SIDING_ID, dispatcher.chooseReturnSiding(SIDING_ID, pool, duties, millis, sidingId -> true));
+		// Full, or its duty already gone, it doesn't need this train
+		assertEquals(SIDING_ID, dispatcher.chooseReturnSiding(SIDING_ID, pool, duties, millis, sidingId -> sidingId == SIDING_ID));
+		dispatcher.markDutyRun(OTHER_SIDING_ID, 0, DutyShapes.getDayNumber(MONDAY));
+		assertEquals(SIDING_ID, dispatcher.chooseReturnSiding(SIDING_ID, pool, duties, millis, sidingId -> true));
+	}
+
+	@Test
 	void takesOverTheChosenSlotAfterStayingOvernight() {
 		setSlots(
 				day(true, 1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
@@ -429,6 +579,8 @@ class DutyRunTest {
 	private class DutyDepot implements TrainService.Board {
 
 		List<DepotDuties.Slot> slots = new ArrayList<>();
+		List<DepotDuties.Slot> otherSlots = new ArrayList<>();
+		long returnTo = SIDING_ID;
 		final Set<String> reserved = new HashSet<>();
 		final Map<String, Long> runDays = new HashMap<>();
 
@@ -465,7 +617,12 @@ class DutyRunTest {
 
 		@Override
 		public List<DepotDuties.Slot> getDutySlots(long sidingId) {
-			return sidingId == SIDING_ID ? slots : Collections.emptyList();
+			return sidingId == SIDING_ID ? slots : sidingId == OTHER_SIDING_ID ? otherSlots : Collections.emptyList();
+		}
+
+		@Override
+		public long chooseReturnSiding(long sidingId) {
+			return returnTo;
 		}
 
 		@Override

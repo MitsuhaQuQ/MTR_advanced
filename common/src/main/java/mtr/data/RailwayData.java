@@ -417,6 +417,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		final List<Siding> sortedSidings = sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).collect(Collectors.toList());
 		// The sidings take on their depots' settings, such as speed curves, before the component's simulator looks at them
 		sortedSidings.forEach(siding -> siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails));
+		// Each depot's sidings with the same vehicle share their trains and duties (decoupling document, step D)
+		depots.forEach(Depot::clearPools);
+		sortedSidings.forEach(siding -> {
+			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
+			if (depot != null) {
+				depot.addToPool(siding);
+			}
+		});
 		// The component's simulator moves on first, seeing the game's trains where they were at the end of the last tick (G1)
 		liveSimulation.tick(this, trainPositions);
 		sortedSidings.forEach(siding -> {

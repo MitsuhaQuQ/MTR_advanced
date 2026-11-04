@@ -83,7 +83,7 @@ public final class TrainRules {
 			}
 		}
 		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
-		if (!train.isContinuousMovement() && (service.chooseDepotReturn() || service.chooseTurnBack())) {
+		if (!train.isContinuousMovement() && (service.chooseDepotReturn() || service.chooseDutyReturn() || service.chooseTurnBack())) {
 			return true;
 		}
 		// The run is asked for last, on the path the train leaves by, so it isn't kept from other trains while this one waits

@@ -27,6 +27,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.ArrayValue;
@@ -67,6 +68,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * time. Depots made before this keep the old way of running until it is turned on.
 	 */
 	public boolean speedCurves;
+	/**
+	 * The shortest time in seconds between two trains the depot sends out by its duties, or 0 for none (decoupling
+	 * document, step D, depots sending trains out 2).
+	 */
+	public int releaseInterval;
 	public int cruisingAltitude = DEFAULT_CRUISING_ALTITUDE;
 	private int deployIndex;
 	private int departureOffset;
@@ -136,6 +142,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_USE_DETERMINISTIC_PATH = "use_deterministic_path";
 	private static final String KEY_CYCLE_ROUTES = "cycle_routes";
 	private static final String KEY_SPEED_CURVES = "speed_curves";
+	private static final String KEY_RELEASE_INTERVAL = "release_interval";
+	public static final int MAX_RELEASE_INTERVAL = 3600;
 	private static final String KEY_DUTIES = "duties";
 	private static final String KEY_AUTO_DUTIES = "auto_duties";
 	private static final String KEY_DUTY_MODE = "duty_mode";
@@ -178,6 +186,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
 		cycleRoutes = messagePackHelper.getBoolean(KEY_CYCLE_ROUTES);
 		speedCurves = messagePackHelper.getBoolean(KEY_SPEED_CURVES);
+		releaseInterval = Mth.clamp(messagePackHelper.getInt(KEY_RELEASE_INTERVAL, 0), 0, MAX_RELEASE_INTERVAL);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> dispatcher.lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
@@ -242,6 +251,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		duties.read(PacketBinary.of(packet));
 		speedCurves = packet.readBoolean();
 		autoDuties.read(PacketBinary.of(packet));
+		releaseInterval = packet.readInt();
 	}
 
 	@Override
@@ -274,6 +284,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePacker.packString(KEY_USE_DETERMINISTIC_PATH).packBoolean(useDeterministicPath);
 		messagePacker.packString(KEY_CYCLE_ROUTES).packBoolean(cycleRoutes);
 		messagePacker.packString(KEY_SPEED_CURVES).packBoolean(speedCurves);
+		messagePacker.packString(KEY_RELEASE_INTERVAL).packInt(releaseInterval);
 
 		messagePacker.packString(KEY_FREQUENCIES).packArrayHeader(HOURS_IN_DAY);
 		for (int i = 0; i < HOURS_IN_DAY; i++) {
@@ -335,6 +346,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		duties.write(PacketBinary.of(packet));
 		packet.writeBoolean(speedCurves);
 		autoDuties.write(PacketBinary.of(packet));
+		packet.writeInt(releaseInterval);
 	}
 
 	/**
@@ -385,6 +397,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			cycleRoutes = packet.readBoolean();
 			readVehicleServiceTypes(packet);
 			speedCurves = packet.readBoolean();
+			releaseInterval = Mth.clamp(packet.readInt(), 0, MAX_RELEASE_INTERVAL);
 		} else if (KEY_DUTY_MODE.equals(key)) {
 			duties.diagramMode = packet.readBoolean();
 		} else if (KEY_DUTY_SLOT.equals(key)) {
@@ -437,6 +450,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(cycleRoutes);
 		writeVehicleServiceTypes(packet);
 		packet.writeBoolean(speedCurves);
+		packet.writeInt(releaseInterval);
 		sendPacket.accept(packet);
 	}
 
@@ -601,6 +615,62 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		return useDeterministicPath && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails, boundaries) : null;
 	}
 
+	/**
+	 * The depot's sidings by their pool (see {@link Siding#getPoolKey}), gathered again at the start of every tick.
+	 */
+	private final Map<String, List<Siding>> pools = new HashMap<>();
+
+	public void clearPools() {
+		pools.clear();
+	}
+
+	public void addToPool(Siding siding) {
+		pools.computeIfAbsent(siding.getPoolKey(), key -> new ArrayList<>()).add(siding);
+	}
+
+	private List<Siding> getPool(Siding siding) {
+		return pools.getOrDefault(siding.getPoolKey(), Collections.singletonList(siding));
+	}
+
+	/**
+	 * @return how many duty slots the sidings of the siding's pool have together
+	 */
+	public int getPoolSlots(Siding siding) {
+		final DepotDuties runDuties = getRunDuties();
+		return runDuties == null ? 0 : getPool(siding).stream().mapToInt(poolSiding -> runDuties.getSlots(poolSiding.id).size()).sum();
+	}
+
+	/**
+	 * @return how many trains the sidings of the siding's pool have together, out and standing
+	 */
+	public int getPoolTrains(Siding siding) {
+		return getPool(siding).stream().mapToInt(Siding::getTrainCount).sum();
+	}
+
+	@Override
+	public long chooseReturnSiding(long sidingId) {
+		final DepotDuties runDuties = getRunDuties();
+		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
+		if (runDuties == null || siding == null) {
+			return sidingId;
+		}
+		final List<Siding> pool = getPool(siding);
+		if (pool.size() < 2) {
+			return sidingId;
+		}
+		final Map<Long, Siding> poolById = new HashMap<>();
+		pool.forEach(poolSiding -> poolById.put(poolSiding.id, poolSiding));
+		return dispatcher.chooseReturnSiding(sidingId, poolById.keySet(), runDuties, System.currentTimeMillis(), otherSidingId -> {
+			final Siding other = poolById.get(otherSidingId);
+			if (otherSidingId == sidingId || other.getTrainLimit() < 0) {
+				return true;
+			}
+			// Room for the trains it holds and the ones already on their way to it
+			final int coming = pool.stream().mapToInt(poolSiding -> poolSiding.countReturningTo(otherSidingId)).sum();
+			return other.getTrainCount() + coming < other.getTrainLimit();
+		});
+	}
+
 	public void requestDeploy(long sidingId, TrainServer train) {
 		deployableSidings.put(sidingId, train);
 	}
@@ -671,13 +741,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private void deployDutyTrain(RailwayData railwayData) {
 		final long currentMillis = System.currentTimeMillis();
+		dispatcher.releaseIntervalMillis = releaseInterval * 1000;
 		final DepotDispatcher.DutyDeploy<PathData> deploy = dispatcher.findDutyDeploy(currentMillis, new TreeSet<>(deployableSidings.keySet()), getRunDuties(), sidingId -> {
 			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
 			return siding == null ? null : siding.getTripPaths();
-		}, railwayData.dataCache.routeIdMap::get);
+		}, railwayData.dataCache.routeIdMap::get, sidingId -> {
+			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
+			return siding == null ? sidingId : siding.getPoolKey();
+		});
 		if (deploy != null) {
 			lastDeployedMillis = currentMillis;
-			deployableSidings.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dayStart, deploy.path);
+			deployableSidings.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dutySidingId, deploy.dayStart, deploy.path);
 			if (deploy.late) {
 				deployableSidings.get(deploy.sidingId).joinDutyLate();
 			}
@@ -1250,24 +1324,37 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private List<DutyPlan<PathData, SavedRailBase>> getDutyPlans(DepotDuties dutiesToPlan, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed, Consumer<String> failed) {
 			final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = new ArrayList<>();
 			final Set<String> keys = new HashSet<>();
-			final List<DepotDuties.Slot> slots = dutiesToPlan.getSlots(siding.id);
-			for (int i = 0; i < slots.size(); i++) {
-				for (int weekday = 0; weekday < 7; weekday++) {
-					final String key = DutyShapes.getSlotKey(slots, i, weekday, dataCache.routeIdMap::get);
-					if (key == null || !keys.add(key)) {
-						continue;
-					}
-					final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
-					final DutyPlan<PathData, SavedRailBase> dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
-					if (dutyPlan == null) {
-						failure = new PathFailure(PathFailure.Type.DUTY, 0);
-						failed.accept(key);
-					} else {
-						dutyPlans.add(dutyPlan);
+			// The duties of every siding of its pool, as its trains may run them in place of the other sidings' trains
+			for (final Siding poolSiding : getPoolSidings(siding)) {
+				final List<DepotDuties.Slot> slots = dutiesToPlan.getSlots(poolSiding.id);
+				for (int i = 0; i < slots.size(); i++) {
+					for (int weekday = 0; weekday < 7; weekday++) {
+						final String key = DutyShapes.getSlotKey(slots, i, weekday, dataCache.routeIdMap::get);
+						if (key == null || !keys.add(key)) {
+							continue;
+						}
+						final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
+						final DutyPlan<PathData, SavedRailBase> dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
+						if (dutyPlan == null) {
+							failure = new PathFailure(PathFailure.Type.DUTY, 0);
+							failed.accept(key);
+						} else {
+							dutyPlans.add(dutyPlan);
+						}
 					}
 				}
 			}
 			return dutyPlans;
+		}
+
+		/**
+		 * @return the sidings of the group with the same vehicle as this one, itself first
+		 */
+		private List<Siding> getPoolSidings(Siding siding) {
+			final List<Siding> poolSidings = new ArrayList<>();
+			poolSidings.add(siding);
+			sidings.stream().filter(other -> other != siding && other.getPoolKey().equals(siding.getPoolKey())).sorted(Comparator.comparingLong(other -> other.id)).forEach(poolSidings::add);
+			return poolSidings;
 		}
 
 		/**
@@ -1589,7 +1676,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
 				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = runDuties != null ? getDutyPlans(runDuties, siding, rails, graph, useFastSpeed, key -> {
 				}) : new ArrayList<>();
-				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans));
+				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans, getPoolSidings(siding)));
 			}
 			return successfulSegments;
 		}

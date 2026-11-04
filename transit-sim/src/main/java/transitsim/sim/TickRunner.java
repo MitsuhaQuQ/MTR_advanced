@@ -195,7 +195,59 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			depotSidings.computeIfAbsent(eachSidingRun.depot, key -> new ArrayList<>()).add(eachSidingRun);
 		});
+		depot.returnChooser = eachSidingId -> chooseReturnSiding(depot, eachSidingId);
 		return sidingRun;
+	}
+
+	private Object getPoolKey(SidingRun sidingRun) {
+		return sidingRun.siding.poolKey.isEmpty() ? (Object) sidingRun.sidingId : sidingRun.siding.poolKey;
+	}
+
+	/**
+	 * @return the sidings of the depot whose trains can run each other's duties, this one among them
+	 */
+	private List<SidingRun> getPool(SidingRun sidingRun) {
+		final Object poolKey = getPoolKey(sidingRun);
+		final List<SidingRun> pool = new ArrayList<>();
+		for (final SidingRun other : depotSidings.getOrDefault(sidingRun.depot, Collections.emptyList())) {
+			if (other == sidingRun || getPoolKey(other).equals(poolKey)) {
+				pool.add(other);
+			}
+		}
+		return pool;
+	}
+
+	/**
+	 * See {@link DepotDispatcher#chooseReturnSiding}: a siding has room while the trains it holds and the ones on their way
+	 * to it are fewer than it holds at most.
+	 */
+	private long chooseReturnSiding(DepotBoard depot, long sidingId) {
+		final SidingRun own = sidings.get(sidingId);
+		if (own == null) {
+			return sidingId;
+		}
+		final List<SidingRun> pool = getPool(own);
+		if (pool.size() < 2) {
+			return sidingId;
+		}
+		final Map<Long, SidingRun> poolById = new HashMap<>();
+		pool.forEach(sidingRun -> poolById.put(sidingRun.sidingId, sidingRun));
+		return depot.dispatcher.chooseReturnSiding(sidingId, poolById.keySet(), depot.duties, millis, otherSidingId -> {
+			final SidingRun other = poolById.get(otherSidingId);
+			if (otherSidingId == sidingId || other.siding.maxTrains >= SimDataset.UNLIMITED_TRAINS) {
+				return true;
+			}
+			final String returnKey = TripPath.getReturnKey("", otherSidingId);
+			int coming = 0;
+			for (final SidingRun sidingRun : pool) {
+				for (final HeadlessTrain train : sidingRun.trains) {
+					if (train.onRoute && train.service.getTripPathKey().endsWith(returnKey)) {
+						coming++;
+					}
+				}
+			}
+			return other.trains.size() + coming < other.siding.maxTrains + 1;
+		});
 	}
 
 	public RunReservations getReservations() {
@@ -864,11 +916,11 @@ public final class TickRunner<T extends RunTrack> {
 		if (depot.duties.diagramMode) {
 			final Map<Long, HeadlessTrain> readyTrains = new TreeMap<>();
 			ready.forEach(sidingRun -> readyTrains.put(sidingRun.sidingId, sidingRun.waitingTrain));
-			final DepotDispatcher.DutyDeploy<T> deploy = depot.dispatcher.findDutyDeploy(millis, readyTrains.keySet(), depot.duties, sidingId -> sidings.containsKey(sidingId) ? sidings.get(sidingId).siding.tripPaths : null, routes);
+			final DepotDispatcher.DutyDeploy<T> deploy = depot.dispatcher.findDutyDeploy(millis, readyTrains.keySet(), depot.duties, sidingId -> sidings.containsKey(sidingId) ? sidings.get(sidingId).siding.tripPaths : null, routes, sidingId -> sidings.containsKey(sidingId) ? getPoolKey(sidings.get(sidingId)) : sidingId);
 			if (deploy != null) {
 				final HeadlessTrain train = readyTrains.get(deploy.sidingId);
 				train.catchUp(millis);
-				train.deployDuty(deploy.slot, deploy.dayStart, deploy.path);
+				train.deployDuty(deploy.slot, deploy.dutySidingId, deploy.dayStart, deploy.path);
 				if (deploy.late) {
 					train.joinDutyLate();
 				}
@@ -1014,6 +1066,11 @@ public final class TickRunner<T extends RunTrack> {
 		 * The lowest cruising speed of the kind of vehicle, in blocks per tick.
 		 */
 		public float minSpeed = 0.5F;
+		/**
+		 * What the depot's sidings whose trains can run each other's duties have in common, or empty for a pool of its own
+		 * (decoupling document, step D, depots sending trains out 4 and 5).
+		 */
+		public String poolKey = "";
 
 		public Siding(List<T> path, int repeatIndex1, int repeatIndex2, StopTimes stopTimes, String trainId, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains) {
 			this.path = path;
@@ -1088,7 +1145,8 @@ public final class TickRunner<T extends RunTrack> {
 				if (!train.onRoute || train.railProgress < siding.spacing * siding.trainCars + siding.railLength) {
 					spawnTrain = false;
 				}
-				if (!train.onRoute && ++trainsAtDepot > 1) {
+				// Back in another siding of the pool, which makes a train standing there in its place
+				if (train.service.takeReturnedElsewhere() || !train.onRoute && ++trainsAtDepot > 1) {
 					trainsToRemove.add(train);
 				}
 			}
@@ -1100,8 +1158,17 @@ public final class TickRunner<T extends RunTrack> {
 				removedTrains.add(train);
 				standingDrops.add(train);
 			}
-			final int dutySlots = depot.duties.getSlots(sidingId).size();
-			if (depot.duties.diagramMode ? dutySlots > 0 && (trains.isEmpty() || spawnTrain && trains.size() < dutySlots) : trains.isEmpty() || spawnTrain && trains.size() <= siding.maxTrains) {
+			// By duties, a train for each slot of the siding's pool, within each siding's limit
+			int poolSlots = 0;
+			int poolTrains = 0;
+			if (depot.duties.diagramMode) {
+				for (final SidingRun poolSiding : getPool(this)) {
+					poolSlots += depot.duties.getSlots(poolSiding.sidingId).size();
+					poolTrains += poolSiding.trains.size();
+				}
+			}
+			final boolean belowLimit = siding.maxTrains >= SimDataset.UNLIMITED_TRAINS || trains.size() <= siding.maxTrains;
+			if (depot.duties.diagramMode ? poolSlots > 0 && (trains.isEmpty() || spawnTrain && poolTrains < poolSlots && belowLimit) : trains.isEmpty() || spawnTrain && trains.size() <= siding.maxTrains) {
 				final HeadlessTrain train = new HeadlessTrain(newTrainId(), this);
 				trains.add(train);
 				trainsById.put(train.id, train);
@@ -2321,9 +2388,9 @@ public final class TickRunner<T extends RunTrack> {
 			speed = 0;
 		}
 
-		private void deployDuty(int slot, long dayStart, TripPath<T> dutyPath) {
+		private void deployDuty(int slot, long dutySidingId, long dayStart, TripPath<T> dutyPath) {
 			canDeploy = true;
-			service.deployDuty(slot, dayStart, dutyPath);
+			service.deployDuty(slot, dutySidingId, dayStart, dutyPath);
 		}
 
 		/**

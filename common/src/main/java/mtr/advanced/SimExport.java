@@ -44,6 +44,7 @@ public final class SimExport {
 			// Sending trains out by frequency, the depot takes its sidings in turn in their order by name, as the game's does
 			depotData.departures = depot.getDeployTimes(railwayData.getWorld());
 			depotData.sidingOrder = railwayData.sidings.stream().filter(siding -> railwayData.dataCache.sidingIdToDepot.get(siding.id) == depot).sorted().mapToLong(siding -> siding.id).toArray();
+			depotData.releaseInterval = depot.releaseInterval;
 			dataset.depots.add(depotData);
 		});
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();

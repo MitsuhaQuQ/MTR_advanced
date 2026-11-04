@@ -39,7 +39,7 @@ public final class SimDataset {
 	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1), version 4 the depots' departures by
 	 * frequency and order of sidings, and which sidings are driven by hand (G1); older data is read without them.
 	 */
-	public static final int VERSION = 4;
+	public static final int VERSION = 5;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -86,6 +86,8 @@ public final class SimDataset {
 			writeLongs(writer, depot.sidingOrder);
 		});
 		sidings.forEach(siding -> writer.writeBoolean(siding.manual));
+		depots.forEach(depot -> writer.writeInt(depot.releaseInterval));
+		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.poolKey));
 		return writer.toBytes();
 	}
 
@@ -129,6 +131,14 @@ public final class SimDataset {
 				siding.manual = reader.readBoolean();
 			}
 		}
+		if (version >= 5) {
+			for (final DepotData depot : dataset.depots) {
+				depot.releaseInterval = reader.readInt();
+			}
+			for (final SidingData siding : dataset.sidings) {
+				siding.poolKey = BinaryKeyed.readString(reader);
+			}
+		}
 		return dataset;
 	}
 
@@ -160,6 +170,7 @@ public final class SimDataset {
 				final DepotData newDepot = new DepotData(depot.id, depot.routeIds, depot.cycleRoutes, duties);
 				newDepot.departures = depot.departures;
 				newDepot.sidingOrder = depot.sidingOrder;
+				newDepot.releaseInterval = depot.releaseInterval;
 				depots.set(i, newDepot);
 				return true;
 			}
@@ -185,6 +196,7 @@ public final class SimDataset {
 		for (final DepotData depot : depots) {
 			final DepotBoard board = new DepotBoard(toRoutes(depot.routeIds, routeMap));
 			board.cycleRoutes = depot.cycleRoutes;
+			board.dispatcher.releaseIntervalMillis = depot.releaseInterval * 1000;
 			for (final int departure : depot.departures) {
 				board.departures.add(departure);
 			}
@@ -218,6 +230,7 @@ public final class SimDataset {
 			siding.minSpeed = sidingData.minSpeed;
 			siding.usesSpeedCurve = sidingData.usesSpeedCurve;
 			siding.manual = sidingData.manual;
+			siding.poolKey = sidingData.poolKey;
 			sidingData.tripPaths.forEach(tripPath -> {
 				final TripPath<DataTrack> newTripPath = new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path);
 				newTripPath.generateTimes(generator);
@@ -496,6 +509,10 @@ public final class SimDataset {
 		 * All the depot's sidings in the order the game's depot takes them in turn sending trains out, or none.
 		 */
 		public long[] sidingOrder = new long[0];
+		/**
+		 * The shortest time in seconds between two trains it sends out by its duties, or 0.
+		 */
+		public int releaseInterval;
 
 		public DepotData(long id, long[] routeIds, boolean cycleRoutes, byte[] duties) {
 			this.id = id;
@@ -545,6 +562,10 @@ public final class SimDataset {
 		 * Whether its trains may be driven by hand, so they only leave when a player drives them out.
 		 */
 		public boolean manual;
+		/**
+		 * What the depot's sidings whose trains can run each other's duties have in common, or empty for a pool of its own.
+		 */
+		public String poolKey = "";
 
 		public SidingData(long id, long depotId, long[] routeIds, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains, boolean usesSpeedCurve, float minSpeed, int repeatIndex1, int repeatIndex2, int loopJoinIndex, List<DataTrack> path, byte[] turnBacks) {
 			this.id = id;

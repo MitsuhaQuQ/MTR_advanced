@@ -41,9 +41,14 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	private final WidgetBetterCheckbox checkboxCycleRoutes;
 	private final WidgetBetterCheckbox checkboxSpeedCurves;
 	private final WidgetBetterTextField textFieldCruisingAltitude;
+	/**
+	 * The shortest time in seconds between two trains sent out by duties (decoupling document, step D).
+	 */
+	private final WidgetBetterTextField textFieldReleaseInterval;
 	private final DashboardList departuresList;
 
 	private final Component cruisingAltitudeText = Text.translatable("gui.mtr.cruising_altitude");
+	private final Component releaseIntervalText = Text.translatable("gui.mtr.release_interval");
 
 	private static final int PANELS_START = SQUARE_SIZE * 2 + TEXT_FIELD_PADDING;
 	private static final int SLIDER_WIDTH = 64;
@@ -133,6 +138,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			PacketTrainDataGuiClient.generatePathC2S(depot.id);
 		});
 		textFieldCruisingAltitude = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.INTEGER, String.valueOf(Depot.DEFAULT_CRUISING_ALTITUDE), 5);
+		textFieldReleaseInterval = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "0", 4);
 	}
 
 	@Override
@@ -156,6 +162,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		final int cruisingAltitudeTextWidth = font.width(cruisingAltitudeText) + TEXT_PADDING * 2;
 		IDrawing.setPositionAndWidth(textFieldCruisingAltitude, rightPanelsX + Math.min(cruisingAltitudeTextWidth, buttonWidth * 2 - SQUARE_SIZE * 3) + TEXT_FIELD_PADDING / 2, PANELS_START + SQUARE_SIZE * 2 + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 3 - TEXT_FIELD_PADDING);
 		textFieldCruisingAltitude.setValue(String.valueOf(data.cruisingAltitude));
+
+		final int releaseIntervalTextWidth = font.width(releaseIntervalText) + TEXT_PADDING * 2;
+		IDrawing.setPositionAndWidth(textFieldReleaseInterval, rightPanelsX + Math.min(releaseIntervalTextWidth, buttonWidth * 2 - SQUARE_SIZE * 3) + TEXT_FIELD_PADDING / 2, getReleaseIntervalRowY() + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 3 - TEXT_FIELD_PADDING);
+		textFieldReleaseInterval.setValue(String.valueOf(data.releaseInterval));
 
 		if (showScheduleControls) {
 			for (WidgetShorterSlider slider : sliders) {
@@ -192,6 +202,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			addDrawableChild(checkboxCycleRoutes);
 			if (showSpeedCurves()) {
 				addDrawableChild(checkboxSpeedCurves);
+				addDrawableChild(textFieldReleaseInterval);
 			}
 		}
 		if (showDeterministicPath()) {
@@ -211,6 +222,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		departuresList.tick();
 		textFieldDeparture.tick();
 		textFieldCruisingAltitude.tick();
+		textFieldReleaseInterval.tick();
 
 		for (int i = 0; i < Depot.HOURS_IN_DAY; i++) {
 			data.setFrequency(sliders[i].getIntValue(), i);
@@ -226,6 +238,7 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			checkboxCycleRoutes.visible = !checkboxRepeatIndefinitely.visible;
 		}
 		UtilitiesClient.setWidgetY(checkboxSpeedCurves, getSpeedCurvesRowY());
+		UtilitiesClient.setWidgetY(textFieldReleaseInterval, getReleaseIntervalRowY() + TEXT_FIELD_PADDING / 2);
 	}
 
 	@Override
@@ -250,7 +263,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 			super.render(matrices, mouseX, mouseY, delta);
 
-			final int yStartRightPane = getSpeedCurvesRowY() + (showSpeedCurves() ? SQUARE_SIZE : 0) + TEXT_PADDING;
+			final int yStartRightPane = getSpeedCurvesRowY() + (showSpeedCurves() ? SQUARE_SIZE * 2 + TEXT_FIELD_PADDING : 0) + TEXT_PADDING;
+			if (showSpeedCurves()) {
+				GuiCompat.draw(matrices, font, releaseIntervalText, rightPanelsX + TEXT_PADDING, getReleaseIntervalRowY() + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
+			}
 			if (showCruisingAltitude) {
 				GuiCompat.draw(matrices, font, cruisingAltitudeText, rightPanelsX + TEXT_PADDING, PANELS_START + SQUARE_SIZE * 2 + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
 			}
@@ -331,6 +347,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		return showScheduleControls && !data.transportMode.continuousMovement;
 	}
 
+	private int getReleaseIntervalRowY() {
+		return getSpeedCurvesRowY() + SQUARE_SIZE;
+	}
+
 	private int getSpeedCurvesRowY() {
 		return PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible || checkboxCycleRoutes.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0);
 	}
@@ -351,6 +371,11 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		} catch (Exception e) {
 			e.printStackTrace();
 			data.cruisingAltitude = Depot.DEFAULT_CRUISING_ALTITUDE;
+		}
+		try {
+			data.releaseInterval = Math.max(0, Math.min(Depot.MAX_RELEASE_INTERVAL, Integer.parseInt(textFieldReleaseInterval.getValue())));
+		} catch (Exception ignored) {
+			data.releaseInterval = 0;
 		}
 		data.setData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
 	}

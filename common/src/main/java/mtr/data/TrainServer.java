@@ -678,8 +678,29 @@ public class TrainServer extends Train {
 	 * Sends this train out for a slot's duty. See {@link TrainService#deployDuty}.
 	 */
 	public void deployDuty(int slot, long dayStart, TripPath<PathData> dutyPath) {
+		deployDuty(slot, 0, dayStart, dutyPath);
+	}
+
+	/**
+	 * @param dutySidingId the siding whose slot it is, when this train is sent in place of that siding's
+	 */
+	public void deployDuty(int slot, long dutySidingId, long dayStart, TripPath<PathData> dutyPath) {
 		canDeploy = true;
-		service.deployDuty(slot, dayStart, dutyPath);
+		service.deployDuty(slot, dutySidingId, dayStart, dutyPath);
+	}
+
+	/**
+	 * See {@link TrainService#takeReturnedElsewhere}.
+	 */
+	public boolean takeReturnedElsewhere() {
+		return service.takeReturnedElsewhere();
+	}
+
+	/**
+	 * @return whether the train is on its way back to that siding of its pool, not its own
+	 */
+	public boolean isReturningTo(long otherSidingId) {
+		return isOnRoute && service.getTripPathKey().endsWith(TripPath.getReturnKey("", otherSidingId));
 	}
 
 	/**

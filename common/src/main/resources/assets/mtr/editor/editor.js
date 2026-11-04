@@ -2241,7 +2241,8 @@
 		openDialog(`${tr("出入库计划：{0}（{1}）", escapeHtml(shortName(depot.name)), WEEKDAY_NAMES[state.weekday])}`, `
 			<p class="hint">${duties.auto ? tr("这个车厂没设运用，按游戏根据时刻表自动生成的运用出车。") : ""}${tr("车厂在首班前按出库用时放车；出库太晚（超过 10 分钟）的车直接放到它的运用里还赶得上的第一站。放车前要先拿到出库线到首站的进路，正线的方向预约在内，拿不到就在库里等。")}</p>
 			${table}
-			<p class="hint">${tr("今天出车 {0} 列，在库 {1} 列（存车线不限列车数的不算）。", rows.length, inDepot)}</p>`, tr("关闭"), () => {});
+			<p class="hint">${tr("今天出车 {0} 列，在库 {1} 列（存车线不限列车数的不算）。", rows.length, inDepot)}</p>
+			<p class="hint">${depot.releaseInterval > 0 ? tr("两列车出库至少间隔 {0} 秒（在游戏的车厂界面里设）。", depot.releaseInterval) : tr("没设出库间隔（在游戏的车厂界面里设）。")}${tr("同一车厂车型相同的存车线共用列车：某条存车线没车时由另一条替补出车，回库时进下一班最早要车、还有空位的那条。")}</p>`, tr("关闭"), () => {});
 	}
 
 	/** Has the game put the depot's trains where the timetable has them now, instead of sending them out one by one. */

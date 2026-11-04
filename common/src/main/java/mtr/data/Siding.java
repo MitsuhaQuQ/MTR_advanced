@@ -365,6 +365,25 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return trainId;
 	}
 
+	/**
+	 * @return what the sidings of a depot whose trains can run each other's duties have in common: the vehicle and its
+	 * length (decoupling document, step D, depots sending trains out 4 and 5)
+	 */
+	public String getPoolKey() {
+		return trainId + "/" + trainCars;
+	}
+
+	public int getTrainCount() {
+		return trains.size();
+	}
+
+	/**
+	 * @return how many of its trains are on their way back to another siding
+	 */
+	public int countReturningTo(long otherSidingId) {
+		return (int) trains.stream().filter(train -> train.isReturningTo(otherSidingId)).count();
+	}
+
 	public float getAccelerationConstant() {
 		return accelerationConstant;
 	}
@@ -441,13 +460,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @param depotReturns     for trains staying on the line, where they can go back to the depot after a route
 	 */
 	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail<PathData, SavedRailBase>> tripTails, List<TurnBackSection<PathData>> turnBackSections, List<DepotReturn<PathData, SavedRailBase>> depotReturns) {
-		return generateRoute(minecraftServer, mainPath, successfulSegmentsMain, rails, graph, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, new ArrayList<>());
+		return generateRoute(minecraftServer, mainPath, successfulSegmentsMain, rails, graph, firstPlatform, lastPlatform, repeatInfinitely, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, new ArrayList<>(), Collections.emptyList());
 	}
 
 	/**
-	 * @param dutyPlans the paths of the duties of this siding's trains, for a depot running by its duties
+	 * @param dutyPlans    the paths of the duties of this siding's trains, for a depot running by its duties
+	 * @param poolSidings the other sidings of its pool, which its trains may go back to after a duty
 	 */
-	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail<PathData, SavedRailBase>> tripTails, List<TurnBackSection<PathData>> turnBackSections, List<DepotReturn<PathData, SavedRailBase>> depotReturns, List<DutyPlan<PathData, SavedRailBase>> dutyPlans) {
+	public int generateRoute(MinecraftServer minecraftServer, List<PathData> mainPath, int successfulSegmentsMain, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, SavedRailBase firstPlatform, SavedRailBase lastPlatform, boolean repeatInfinitely, int cruisingAltitude, boolean useFastSpeed, List<PathData> loopJoinPath, List<TripTail<PathData, SavedRailBase>> tripTails, List<TurnBackSection<PathData>> turnBackSections, List<DepotReturn<PathData, SavedRailBase>> depotReturns, List<DutyPlan<PathData, SavedRailBase>> dutyPlans, List<Siding> poolSidings) {
 		final List<PathData> tempPath = new ArrayList<>();
 		final Map<String, TripPath<PathData>> tempTripPaths = new HashMap<>();
 		final int successfulSegments;
@@ -528,8 +548,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final StopTimes tempStopTimes = new StopTimes();
 		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes, tempStopTimes, tempLoopJoinIndex, tempRepeatIndex2);
 		final List<String> failedDuties = new ArrayList<>();
+		final Map<String, List<PathData>> returnTails = new HashMap<>();
 		dutyPlans.forEach(dutyPlan -> {
-			if (!addDutyPath(tempTripPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed)) {
+			if (!addDutyPath(tempTripPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, poolSidings, returnTails)) {
 				failedDuties.add(dutyPlan.key);
 			}
 		});
@@ -584,7 +605,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 *
 	 * @return false if a part of it can't be found
 	 */
-	private boolean addDutyPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed) {
+	private boolean addDutyPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<Siding> poolSidings, Map<String, List<PathData>> returnTails) {
 		final List<PathData> dutyPath = new ArrayList<>();
 		if (!dutyPlan.startsOnLine) {
 			PathFinder.findPath(dutyPath, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
@@ -604,15 +625,49 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			bodyStart = dutyPath.size();
 			dutyPath.addAll(body);
 		}
-		if (!dutyPlan.staysOnLine) {
-			final List<PathData> pathToDepot = new ArrayList<>();
-			PathFinder.findPath(pathToDepot, rails, graph, Arrays.asList(dutyPlan.lastPlatform, this), null, 0, cruisingAltitude, useFastSpeed);
-			if (pathToDepot.isEmpty()) {
-				return false;
-			}
-			PathFinder.appendPath(dutyPath, pathToDepot);
+		if (dutyPlan.staysOnLine) {
+			addDutyTripPath(tempTripPaths, dutyPlan, dutyPath, bodyStart, dutyPlan.key);
+			return true;
 		}
+		final List<PathData> pathToDepot = getReturnTail(dutyPlan, this, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+		if (pathToDepot == null) {
+			return false;
+		}
+		final List<PathData> ownPath = new ArrayList<>(dutyPath);
+		PathFinder.appendPath(ownPath, pathToDepot);
+		addDutyTripPath(tempTripPaths, dutyPlan, ownPath, bodyStart, dutyPlan.key);
+		// The same duty going back to each other siding of the pool, for a train going where a train is needed next
+		for (final Siding poolSiding : poolSidings) {
+			final List<PathData> pathToOther = poolSiding == this ? null : getReturnTail(dutyPlan, poolSiding, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+			if (pathToOther != null) {
+				final List<PathData> otherPath = new ArrayList<>(dutyPath);
+				PathFinder.appendPath(otherPath, pathToOther);
+				addDutyTripPath(tempTripPaths, dutyPlan, otherPath, bodyStart, TripPath.getReturnKey(dutyPlan.key, poolSiding.id));
+			}
+		}
+		return true;
+	}
 
+	/**
+	 * @return the way from the last stop of the duty into a siding, found once for each stop and siding, or null if there
+	 * is none
+	 */
+	private static List<PathData> getReturnTail(DutyPlan<PathData, SavedRailBase> dutyPlan, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, Map<String, List<PathData>> returnTails) {
+		final List<PathData> tail = returnTails.computeIfAbsent(dutyPlan.lastPlatform.id + ":" + siding.id, key -> {
+			final List<PathData> pathToDepot = new ArrayList<>();
+			PathFinder.findPath(pathToDepot, rails, graph, Arrays.asList(dutyPlan.lastPlatform, siding), null, 0, cruisingAltitude, useFastSpeed);
+			return pathToDepot;
+		});
+		return tail.isEmpty() ? null : copyPath(tail);
+	}
+
+	private static List<PathData> copyPath(List<PathData> path) {
+		final List<PathData> copy = new ArrayList<>();
+		path.forEach(pathData -> copy.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+		return copy;
+	}
+
+	private void addDutyTripPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, List<PathData> dutyPath, int bodyStart, String key) {
 		int stopIndex = 1;
 		for (int i = 1; i < dutyPath.size(); i++) {
 			final PathData pathData = dutyPath.get(i);
@@ -625,10 +680,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		for (int i = 0; i < dutyStarts.length; i++) {
 			dutyStarts[i] = dutyPlan.segmentStarts[i] + bodyStart;
 		}
-		final TripPath<PathData> newTripPath = new TripPath<>(dutyPlan, dutyStarts, dutyPath);
+		final TripPath<PathData> newTripPath = new TripPath<>(dutyPlan, dutyStarts, dutyPath, key);
 		newTripPath.generateTimes(timeGenerator);
-		tempTripPaths.put(dutyPlan.key, newTripPath);
-		return true;
+		tempTripPaths.put(key, newTripPath);
 	}
 
 	/**
@@ -789,6 +843,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
 			}
+			// Back in another siding of the pool, which makes a train standing there in its place
+			if (train.takeReturnedElsewhere()) {
+				trainsToRemove.add(train);
+				continue;
+			}
 			if (motionEvents != null) {
 				train.drainMotionEvents(motionEvents);
 			}
@@ -826,10 +885,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			return;
 		}
 
-		// A depot running by its duties has a train for each slot of the siding
+		// A depot running by its duties has a train for each slot of the siding's pool, the sidings with the same vehicle,
+		// within each siding's limit
 		final boolean runsByDuties = depot.getRunDuties() != null;
-		final int dutySlots = depot.getDutySlots(id).size();
-		if (trainCars > 0 && (runsByDuties ? dutySlots > 0 && (trains.isEmpty() || spawnTrain && trains.size() < dutySlots) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
+		final int poolSlots = runsByDuties ? depot.getPoolSlots(this) : 0;
+		final int trainLimit = getTrainLimit();
+		if (trainCars > 0 && (runsByDuties ? poolSlots > 0 && (trains.isEmpty() || spawnTrain && depot.getPoolTrains(this) < poolSlots && (trainLimit < 0 || trains.size() < trainLimit)) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
 			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 			trains.add(train);
 		}
@@ -878,6 +939,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				repeatIndex1, repeatIndex2, loopJoinIndex, toTracks.apply(path), turnBacksWriter.toBytes()
 		);
 		sidingData.manual = isManual;
+		sidingData.poolKey = getPoolKey();
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
 	}
@@ -977,8 +1039,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	public Map<String, TripPath<PathData>> findDutyPaths(List<DutyPlan<PathData, SavedRailBase>> dutyPlans, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, Consumer<String> failed) {
 		final Map<String, TripPath<PathData>> dutyPaths = new HashMap<>();
+		final Map<String, List<PathData>> returnTails = new HashMap<>();
 		dutyPlans.forEach(dutyPlan -> {
-			if (!addDutyPath(dutyPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed)) {
+			// Only the paths back to this siding, for showing the duties in the editor
+			if (!addDutyPath(dutyPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, Collections.emptyList(), returnTails)) {
 				failed.accept(dutyPlan.key);
 			}
 		});

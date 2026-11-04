@@ -14,8 +14,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.LongFunction;
+import java.util.function.LongPredicate;
 
 /**
  * What a depot decides when it sends trains out: which services its trains have taken, which service the next train
@@ -46,6 +49,12 @@ public class DepotDispatcher {
 	 * two depots run is run by one train, whichever depot sends it.
 	 */
 	private final List<DepotDispatcher> peers = new ArrayList<>();
+	/**
+	 * The shortest time between two trains the depot sends out by its duties, or 0 for none, set by the host (decoupling
+	 * document, step D, depots sending trains out 2).
+	 */
+	public int releaseIntervalMillis;
+	private long lastReleaseMillis = Long.MIN_VALUE / 2;
 
 	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
 
@@ -174,23 +183,58 @@ public class DepotDispatcher {
 	 * @return the duty to send out, or null if none is due
 	 */
 	public <T extends PlanTrack> DutyDeploy<T> findDutyDeploy(long currentMillis, Collection<Long> sidingIds, DepotDuties duties, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<? extends PlanRoute> routes) {
+		return findDutyDeploy(currentMillis, sidingIds, duties, tripPaths, routes, sidingId -> sidingId);
+	}
+
+	/**
+	 * As {@link #findDutyDeploy(long, Collection, DepotDuties, LongFunction, LongFunction)}, with the depot's sidings of the
+	 * same vehicle as a pool: a slot whose siding has no train ready is run by a train ready in another siding of its pool
+	 * that has the path of the duty (decoupling document, step D, depots sending trains out 4). Trains leave at least the
+	 * depot's release interval apart (2).
+	 *
+	 * @param pools the pool of a siding, the same for the sidings whose trains can run each other's duties
+	 */
+	public <T extends PlanTrack> DutyDeploy<T> findDutyDeploy(long currentMillis, Collection<Long> sidingIds, DepotDuties duties, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<? extends PlanRoute> routes, LongFunction<Object> pools) {
+		if (releaseIntervalMillis > 0 && currentMillis < lastReleaseMillis + releaseIntervalMillis) {
+			return null;
+		}
 		final long dayStart = DutyShapes.getDayStart(currentMillis);
 		final long day = DutyShapes.getDayNumber(dayStart);
 		final int weekday = OperatingDay.getWeekday(currentMillis);
+		final Set<Long> ready = new TreeSet<>(sidingIds);
 		DutyDeploy<T> best = null;
-		for (final long sidingId : sidingIds) {
-			final Map<String, TripPath<T>> sidingPaths = tripPaths.apply(sidingId);
-			final List<DepotDuties.Slot> slots = duties.getSlots(sidingId);
-			if (sidingPaths == null) {
-				continue;
-			}
+		for (final Map.Entry<Long, List<DepotDuties.Slot>> entry : duties.sidings.entrySet()) {
+			final long dutySidingId = entry.getKey();
+			final List<DepotDuties.Slot> slots = entry.getValue();
 			for (int i = 0; i < slots.size(); i++) {
 				final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
-				if (duty == null || duty.segments.isEmpty() || hasDutyRun(sidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
+				if (duty == null || duty.segments.isEmpty() || hasDutyRun(dutySidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
 					continue;
 				}
 				final String key = DutyShapes.getSlotKey(slots, i, weekday, routes);
-				final TripPath<T> dutyPath = key == null ? null : sidingPaths.get(key);
+				if (key == null) {
+					continue;
+				}
+				// The slot's own siding sends the train if it has one ready, else the first siding of its pool that has one and
+				// the path of the duty
+				long sidingId = 0;
+				TripPath<T> dutyPath = null;
+				if (ready.contains(dutySidingId)) {
+					dutyPath = getPath(tripPaths, dutySidingId, key);
+					sidingId = dutySidingId;
+				}
+				if (dutyPath == null) {
+					final Object pool = pools.apply(dutySidingId);
+					for (final long otherSidingId : ready) {
+						if (otherSidingId != dutySidingId && Objects.equals(pool, pools.apply(otherSidingId))) {
+							dutyPath = getPath(tripPaths, otherSidingId, key);
+							if (dutyPath != null) {
+								sidingId = otherSidingId;
+								break;
+							}
+						}
+					}
+				}
 				if (dutyPath == null) {
 					continue;
 				}
@@ -200,14 +244,56 @@ public class DepotDispatcher {
 				final boolean late = currentMillis > departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS;
 				final boolean running = duty.stayOnLine || currentMillis < departureMillis + dutyPath.stopTimes.getDurationMillis();
 				if (currentMillis >= departureMillis && (!late || running) && (best == null || best.late && !late || best.late == late && departureMillis < best.departureMillis)) {
-					best = new DutyDeploy<>(sidingId, i, dayStart, dutyPath, departureMillis, late);
+					best = new DutyDeploy<>(sidingId, dutySidingId, i, dayStart, dutyPath, departureMillis, late);
 				}
 			}
 		}
 		if (best != null) {
-			markDutyRun(best.sidingId, best.slot, day);
+			markDutyRun(best.dutySidingId, best.slot, day);
+			lastReleaseMillis = currentMillis;
 		}
 		return best;
+	}
+
+	private static <T extends PlanTrack> TripPath<T> getPath(LongFunction<Map<String, TripPath<T>>> tripPaths, long sidingId, String key) {
+		final Map<String, TripPath<T>> sidingPaths = tripPaths.apply(sidingId);
+		return sidingPaths == null ? null : sidingPaths.get(key);
+	}
+
+	/**
+	 * Where a train of a pool goes back to after its duty (decoupling document, step D, depots sending trains out 5): of the
+	 * pool's sidings with room, no train standing in it or heading to it, the one whose next duty today that hasn't left
+	 * starts soonest; its own siding if none of them needs a train.
+	 *
+	 * @param poolSidingIds the sidings of the train's pool, its own among them
+	 * @param hasRoom       whether a siding has room for one more train
+	 * @return the siding to go back to
+	 */
+	public long chooseReturnSiding(long ownSidingId, Collection<Long> poolSidingIds, DepotDuties duties, long currentMillis, LongPredicate hasRoom) {
+		final long dayStart = DutyShapes.getDayStart(currentMillis);
+		final long day = DutyShapes.getDayNumber(dayStart);
+		final int weekday = OperatingDay.getWeekday(currentMillis);
+		long bestSidingId = ownSidingId;
+		long bestMillis = Long.MAX_VALUE;
+		for (final long sidingId : new TreeSet<>(poolSidingIds)) {
+			if (!hasRoom.test(sidingId)) {
+				continue;
+			}
+			final List<DepotDuties.Slot> slots = duties.getSlots(sidingId);
+			for (int i = 0; i < slots.size(); i++) {
+				final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
+				if (duty == null || duty.segments.isEmpty() || hasDutyRun(sidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
+					continue;
+				}
+				final long serviceMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service);
+				// Its own siding wins a tie, so a train only goes elsewhere for a duty that needs it sooner
+				if (serviceMillis < bestMillis || serviceMillis == bestMillis && sidingId == ownSidingId) {
+					bestMillis = serviceMillis;
+					bestSidingId = sidingId;
+				}
+			}
+		}
+		return bestSidingId;
 	}
 
 	/**
@@ -259,7 +345,14 @@ public class DepotDispatcher {
 	 */
 	public static class DutyDeploy<T extends PlanTrack> {
 
+		/**
+		 * The siding the train leaves from.
+		 */
 		public final long sidingId;
+		/**
+		 * The siding whose slot it runs, another one of the pool when the train is sent in place of that siding's.
+		 */
+		public final long dutySidingId;
 		public final int slot;
 		/**
 		 * When the operating day of the duty started, as a full timestamp.
@@ -273,8 +366,9 @@ public class DepotDispatcher {
 		 */
 		public final boolean late;
 
-		private DutyDeploy(long sidingId, int slot, long dayStart, TripPath<T> path, long departureMillis, boolean late) {
+		private DutyDeploy(long sidingId, long dutySidingId, int slot, long dayStart, TripPath<T> path, long departureMillis, boolean late) {
 			this.sidingId = sidingId;
+			this.dutySidingId = dutySidingId;
 			this.slot = slot;
 			this.dayStart = dayStart;
 			this.path = path;

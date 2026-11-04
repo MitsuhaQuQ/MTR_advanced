@@ -96,7 +96,14 @@ public class TripPath<T extends PlanTrack> {
 	 * The path of a duty (design document 6.12, block E2).
 	 */
 	public TripPath(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path) {
-		key = dutyPlan.key;
+		this(dutyPlan, dutyStarts, path, dutyPlan.key);
+	}
+
+	/**
+	 * The path of a duty under its own key, as for the same duty going back to another siding of its pool.
+	 */
+	public TripPath(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path, String key) {
+		this.key = key;
 		tripKey = dutyPlan.key;
 		turnBackStops = new int[0];
 		turnBackPoint = -1;
@@ -286,6 +293,25 @@ public class TripPath<T extends PlanTrack> {
 	public static String getDepotReturnKey(int routeIndex) {
 		return "depot|" + routeIndex;
 	}
+
+	/**
+	 * @param dutyKey  the key of a duty's path from a siding back to it
+	 * @param sidingId another siding of its pool
+	 * @return the key of the same duty's path going back to that siding instead (decoupling document, step D, depots sending
+	 * trains out 5)
+	 */
+	public static String getReturnKey(String dutyKey, long sidingId) {
+		return dutyKey + RETURN_MARK + sidingId;
+	}
+
+	/**
+	 * @return whether the key is of a path going back to a siding other than the one it left
+	 */
+	public static boolean isReturnKey(String key) {
+		return key.indexOf(RETURN_MARK) >= 0;
+	}
+
+	private static final char RETURN_MARK = '#';
 
 	public void generateTimes(TimeGenerator<T> generator) {
 		stopTimes.cutStops.clear();

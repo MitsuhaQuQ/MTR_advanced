@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongUnaryOperator;
 
 /**
  * A depot as its trains see it when it runs without a world: its routes, the services its trains have taken and its
@@ -50,6 +51,11 @@ public final class DepotBoard implements TrainService.Board {
 	 * leave look again when this one takes or lets go of a service.
 	 */
 	final List<DepotBoard> peers = new ArrayList<>();
+	/**
+	 * Where a train of a siding goes back to after its duty, worked out by the runner that has the sidings, or null for its
+	 * own siding.
+	 */
+	LongUnaryOperator returnChooser;
 
 	/**
 	 * The two depots run a route in common, so a service either one's trains take isn't taken by the other's too.
@@ -157,5 +163,10 @@ public final class DepotBoard implements TrainService.Board {
 	@Override
 	public void markDutyRun(long sidingId, int slot, long day) {
 		dispatcher.markDutyRun(sidingId, slot, day);
+	}
+
+	@Override
+	public long chooseReturnSiding(long sidingId) {
+		return returnChooser == null ? sidingId : returnChooser.applyAsLong(sidingId);
 	}
 }
