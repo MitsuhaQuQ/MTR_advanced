@@ -8,6 +8,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
+import com.mojang.blaze3d.audio.SoundBuffer;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.stb.STBVorbis;
 import org.lwjgl.stb.STBVorbisInfo;
 import org.lwjgl.system.MemoryStack;
@@ -84,6 +86,12 @@ public final class AnnouncementPlayer {
 		final float volume = minecraft.options.getSoundSourceVolume(SoundSource.MASTER) * minecraft.options.getSoundSourceVolume(SoundSource.BLOCKS);
 		final String[] uploaded = AnnouncementSound.splitUploaded(cleanSoundString);
 		final String hash = uploaded == null ? null : AudioCache.getHash(uploaded[0], uploaded[1]);
+		// An added file plays as the game's sound of it, like any other sound, when the game knows it (UploadedSounds)
+		final ResourceLocation uploadedSound = hash == null ? null : UploadedSounds.getLocation(uploaded[0], uploaded[1]);
+		if (uploadedSound != null) {
+			world.playLocalSound(pos, RegistryUtilities.createSoundEvent(uploadedSound), SoundSource.BLOCKS, 1000000, 1, false);
+			return;
+		}
 		if (hash != null) {
 			final byte[] bytes = AudioCache.read(hash);
 			if (bytes != null) {
@@ -188,6 +196,16 @@ public final class AnnouncementPlayer {
 			return;
 		}
 		PLAYER.execute(() -> playPcm(pcm, volume, generation));
+	}
+
+	/**
+	 * The file as the game's sound system plays it, for {@link UploadedSounds}.
+	 */
+	public static SoundBuffer toSoundBuffer(byte[] bytes) throws Exception {
+		final Pcm pcm = isWav(bytes) ? decodeWav(bytes) : decodeVorbis(bytes);
+		final ByteBuffer buffer = BufferUtils.createByteBuffer(pcm.data.length);
+		buffer.put(pcm.data).flip();
+		return new SoundBuffer(buffer, new AudioFormat(pcm.sampleRate, 16, pcm.channels, true, false));
 	}
 
 	private static boolean isWav(byte[] bytes) {

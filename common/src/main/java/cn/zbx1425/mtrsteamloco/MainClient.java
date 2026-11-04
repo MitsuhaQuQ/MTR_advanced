@@ -1,7 +1,6 @@
 package cn.zbx1425.mtrsteamloco;
 
 import cn.zbx1425.mtrsteamloco.network.PacketScreen;
-import cn.zbx1425.mtrsteamloco.network.PacketVersionCheck;
 import cn.zbx1425.mtrsteamloco.network.PacketRoutePathCreator;
 import cn.zbx1425.mtrsteamloco.render.ShadersModHandler;
 import cn.zbx1425.mtrsteamloco.render.block.BlockEntityEyeCandyRenderer;
@@ -42,7 +41,6 @@ public class MainClient {
 			RegistryClient.registerTileEntityRenderer(Main.BLOCK_ENTITY_TYPE_EYE_CANDY.get(), BlockEntityEyeCandyRenderer::new);
 			RegistryClient.registerTileEntityRenderer(Main.BLOCK_ENTITY_TYPE_DIRECT_NODE.get(), BlockEntityDirectNodeRenderer::new);
 
-			RegistryClient.registerNetworkReceiver(PacketVersionCheck.PACKET_VERSION_CHECK, PacketVersionCheck::receiveVersionCheckS2C);
 			RegistryClient.registerNetworkReceiver(PacketScreen.PACKET_SHOW_SCREEN, PacketScreen::receiveScreenS2C);
 			RegistryClient.registerNetworkReceiver(PacketRoutePathCreator.ROUTE_S2C, PacketRoutePathCreator::receiveRouteS2C);
 

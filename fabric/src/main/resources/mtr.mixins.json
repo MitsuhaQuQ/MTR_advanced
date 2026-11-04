@@ -10,6 +10,8 @@
 		"EntitySpawnMixin",
 		"GameRendererMixin",
 		"PlayerRendererOffsetMixin",
+		"SoundBufferLibraryMixin",
+		"SoundManagerMixin",
 		"UnknownPacketMixin"
 	],
 	"server": [],

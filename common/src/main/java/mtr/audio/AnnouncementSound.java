@@ -4,6 +4,8 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 /**
  * What an announcer plays, as one piece of text that the block keeps and the server sends: a file added to the server,
@@ -16,6 +18,14 @@ import java.util.Set;
 public final class AnnouncementSound {
 
 	public static final int MAX_LENGTH = 1024;
+	/**
+	 * The namespace the sounds of added files have in the game, so {@code /playsound} and resource-style names play them
+	 * ({@code mtr_audio:steve/next_station}).
+	 */
+	public static final String SOUND_NAMESPACE = "mtr_audio";
+	public static final int MAX_SOUND_ID_LENGTH = 64;
+	private static final Pattern SOUND_ID = Pattern.compile("[a-z0-9_.-]+(/[a-z0-9_.-]+)*");
+	private static final int HASH_SOUND_ID_LENGTH = 12;
 
 	private AnnouncementSound() {
 	}
@@ -61,6 +71,63 @@ public final class AnnouncementSound {
 			return null;
 		}
 		return new String[]{soundString.substring(0, colon).toLowerCase(Locale.ENGLISH), soundString.substring(colon + 1)};
+	}
+
+	/**
+	 * @return whether this can be the sound ID of an added file: lowercase letters, digits, {@code _ - .} and {@code /}
+	 * between parts, as the game's sound names allow
+	 */
+	public static boolean isValidSoundId(String soundId) {
+		return soundId != null && !soundId.isEmpty() && soundId.length() <= MAX_SOUND_ID_LENGTH && SOUND_ID.matcher(soundId).matches();
+	}
+
+	/**
+	 * @return the file name without {@code .ogg} in lowercase, spaces as {@code _}, if that is a valid sound ID, or else
+	 * empty, as for a name in Chinese
+	 */
+	public static String getSoundIdFromFileName(String fileName) {
+		String stem = fileName == null ? "" : fileName.trim();
+		if (stem.toLowerCase(Locale.ENGLISH).endsWith(".ogg")) {
+			stem = stem.substring(0, stem.length() - 4);
+		}
+		final String soundId = stem.toLowerCase(Locale.ENGLISH).replace(' ', '_');
+		return isValidSoundId(soundId) ? soundId : "";
+	}
+
+	/**
+	 * The sound ID a file gets when none was given, as for files added before sound IDs: from its file name if it can be,
+	 * else from its hash, made unique among the files of whoever added it.
+	 *
+	 * @param taken whether another file of the same uploader has this sound ID
+	 */
+	public static String getDefaultSoundId(String fileName, String hash, Predicate<String> taken) {
+		final String fromName = getSoundIdFromFileName(fileName);
+		final String base = fromName.isEmpty() ? hash.substring(0, Math.min(HASH_SOUND_ID_LENGTH, hash.length())) : fromName;
+		if (!taken.test(base)) {
+			return base;
+		}
+		for (int length = 6; length <= hash.length(); length += 6) {
+			final String candidate = (base.length() + 1 + length > MAX_SOUND_ID_LENGTH ? base.substring(0, MAX_SOUND_ID_LENGTH - 1 - length) : base) + "_" + hash.substring(0, length);
+			if (!taken.test(candidate)) {
+				return candidate;
+			}
+		}
+		return hash.substring(0, Math.min(MAX_SOUND_ID_LENGTH, hash.length()));
+	}
+
+	/**
+	 * @param namespace who added the file, as {@link #getNamespace} made it
+	 * @return the name of the file's sound in the game, or null if the sound ID isn't valid
+	 */
+	public static ResourceLocation getSoundLocation(String namespace, String soundId) {
+		if (!isValidSoundId(soundId) || !isValidSoundId(namespace)) {
+			return null;
+		}
+		try {
+			return new ResourceLocation(SOUND_NAMESPACE, namespace + "/" + soundId);
+		} catch (Exception e) {
+			return null;
+		}
 	}
 
 	public static boolean isNetwork(String soundString) {

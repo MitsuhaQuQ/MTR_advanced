@@ -104,6 +104,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Players upload their own announcement recordings to the server from the advanced editor's audio page, which lists them, plays them in the browser and deletes them. `/mtr deleteaudio` deletes them in game. Only Ogg Vorbis is taken, checked on both sides, and each recording is stored and sent once under its SHA-256, however many names point to it.
 - The server keeps them in one database in the save (`mtr/announce.db`). Clients download what they don't have in the background and cache it in `mtr_audio_cache`, shared by every world and server.
 - Announcer blocks play an uploaded file (`steve:next_station.ogg`), a game or resource pack sound as before, or a web address, which only plays from sites allowed in `config/mtr.json`.
+- Each uploaded file is also a sound of the game, `mtr_audio:<uploader>/<sound ID>`, played through the game's sound system at its volume. `/playsound mtr_audio:steve/next_station block @a` plays it, with Tab completion. The sound ID is given on upload (made from the file name where it can be) and can be changed on the audio page. `audio_download_all` in `config/mtr.json` (on by default) fetches every file as soon as the server lists it; off fetches a file the first time something plays it, which then plays the next time.
 - Who may upload or delete others' files, file size, total size, length and uploads per hour are set in `config/mtr_security.json`.
 
 **Rendering**
@@ -132,7 +133,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Supports Fabric and Forge on Minecraft 1.20.1, with Architectury updated to 9.2.14.
 - Supported versions are 1.16.5, 1.17.1, 1.18.2, 1.19.4 and 1.20.1. Of the 1.19 versions, only 1.19.4 remains.
 - ANTE is merged into the core, so one jar contains both MTR and ANTE. This applies to 1.17.1 and later. 1.16.5 lacks the shaders ANTE needs, so it only has MTR.
-- Adds a network protocol version, so incompatible clients and servers get a message when connecting.
+- Clients and servers check they have the same MTM_Logic version, so incompatible ones get a message when connecting.
 - New depots use real-world time for departures by default.
 
 ## Roadmap
@@ -201,7 +202,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same protocol version, which is currently 44. Jars with ANTE are about 136 MB.
+Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.2.0. It goes up whenever packets or saved data change. Jars with ANTE are about 136 MB.
 
 The simulation component in `transit-sim` is a plain Java project without Minecraft (Java 8 by default, raised when needed), built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 

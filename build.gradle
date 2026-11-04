@@ -296,7 +296,7 @@ task setupFiles() {
 		outputs.upToDateWhen { false }
 		from "common/src/main/KeysTemplate.java"
 		into "common/src/main/java/mtr"
-		filter(ReplaceTokens, tokens: ["key": patreon_api_key, "version": minecraft_version + "-" + rootProject.mod_version, "lifts": rootProject.variation, "server": testServer])
+		filter(ReplaceTokens, tokens: ["key": patreon_api_key, "version": minecraft_version + "-" + rootProject.mod_version, "mtm_version": rootProject.mtm_version, "lifts": rootProject.variation, "server": testServer])
 		rename "(.+)Template.java", "\$1.java"
 	}
 	copy {

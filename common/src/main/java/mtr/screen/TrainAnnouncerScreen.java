@@ -66,7 +66,8 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 		// The server's own files come first, by name; the field gets what to save
 		final List<DataConverter> sounds = new ArrayList<>();
 		AudioCache.ENTRIES.stream().sorted(Comparator.comparing(AudioCache.Entry::getReference)).forEach(entry -> {
-			final String label = Text.translatable("gui.mtr.uploaded_audio", entry.getReference()).getString();
+			// With the sound the game plays it as, which /playsound can name too
+			final String label = Text.translatable("gui.mtr.uploaded_audio", entry.getReference()).getString() + (entry.getSoundLocation() == null ? "" : "  " + entry.getSoundLocation());
 			uploadedSounds.put(label, entry.getReference());
 			sounds.add(new DataConverter(label, ARGB_BACKGROUND));
 		});

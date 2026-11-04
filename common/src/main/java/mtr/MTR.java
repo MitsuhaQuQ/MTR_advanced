@@ -489,6 +489,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_AUDIO_UPLOAD, AudioServer::receiveUploadC2S);
 		PacketGuard.register(PACKET_AUDIO_DELETE, AudioServer::receiveDeleteC2S);
 		PacketGuard.register(PACKET_AUDIO_WANTED, AudioServer::receiveWantedC2S);
+		PacketGuard.register(PACKET_AUDIO_SOUND_ID, AudioServer::receiveSoundIdC2S);
 		RegistryUtilities.registerCommand(AudioServer::registerCommand);
 
 		Registry.registerTickEvent(minecraftServer -> {

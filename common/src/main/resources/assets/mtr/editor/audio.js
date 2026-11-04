@@ -2,7 +2,9 @@
 
 /*
  * The announcement audio page of the advanced editor: the files the server keeps, adding Ogg Vorbis files, playing one
- * back and deleting one. Announcers name a file as the uploader's name in lowercase, a colon and its file name, which is unique for each uploader. The game sends files to the server and answers later, so the list is read again every few
+ * back and deleting one. Announcers name a file as the uploader's name in lowercase, a colon and its file name, which is unique for each uploader.
+ * Each file is also a sound of the game, mtr_audio:<uploader>/<sound ID>, which /playsound plays; the sound ID is asked for
+ * when adding a file, from its file name where that can be one. The game sends files to the server and answers later, so the list is read again every few
  * seconds. Files only play here once this computer has them; the game asks the server for the missing ones by itself.
  */
 (() => {
@@ -37,6 +39,25 @@
 		if (!response.ok) throw new Error(String(response.status));
 		return response.json();
 	}
+
+	const SOUND_ID = /^[a-z0-9_.-]+(\/[a-z0-9_.-]+)*$/;
+	const MAX_SOUND_ID = 64;
+	const isSoundId = id => id.length <= MAX_SOUND_ID && SOUND_ID.test(id);
+	// As the game makes one: the file name without .ogg in lowercase, spaces as _, or nothing for a name in Chinese
+	const soundIdFromName = name => {
+		const id = name.replace(/\.ogg$/i, "").toLowerCase().replace(/ /g, "_");
+		return isSoundId(id) ? id : "";
+	};
+	const askSoundId = (text, suggested) => {
+		for (;;) {
+			const answer = prompt(text, suggested);
+			if (answer === null) return null;
+			const id = answer.trim();
+			if (isSoundId(id)) return id;
+			alert(tr("声音 ID 只能用小写字母、数字和 _ - . /，最长 {0} 个字符。", MAX_SOUND_ID));
+			suggested = id;
+		}
+	};
 
 	const formatSize = bytes => bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
 	const formatDuration = millis => {
@@ -76,7 +97,7 @@
 		if (data) {
 			$("usage").textContent = `${tr("已用 {0} / {1}", formatSize(data.totalBytes), formatSize(data.maxTotalBytes))}`;
 			$("limits").textContent = data.maxFileBytes > 0
-				? `${tr("只支持 Ogg Vorbis（.ogg），单个文件不超过 {0}、{1} 秒。单声道约每秒 6 KB。", formatSize(data.maxFileBytes), data.maxSeconds)}` + (canUpload ? "" : tr("你没有上传音频的权限。"))
+				? `${tr("只支持 Ogg Vorbis（.ogg），单个文件不超过 {0}、{1} 秒。单声道约每秒 6 KB。", formatSize(data.maxFileBytes), data.maxSeconds)}` + (canUpload ? "" : tr("你没有上传音频的权限。")) + tr("每个音频在游戏里也是一个声音，可以用 /playsound 播放，例如 /playsound mtr_audio:<上传者>/<声音 ID> block @a。")
 				: tr("服务器没有开放上传音频。");
 		}
 		renderRequests();
@@ -91,7 +112,7 @@
 
 	function renderRequests() {
 		const list = $("requests");
-		const items = localErrors.map(error => ({ name: error.name, done: true, ok: false, message: error.message }));
+		const items = localErrors.map(error => ({ name: error.name, done: true, ok: Boolean(error.ok), message: error.message }));
 		if (data) items.push(...data.requests.slice().reverse());
 		list.innerHTML = items.slice(0, 8).map(item => {
 			const state = !item.done ? "" : item.ok ? "ok" : "error";
@@ -107,7 +128,7 @@
 			const local = entry.cached ? tr("有") : entry.downloading ? tr("下载中") : tr("没有");
 			const isPlaying = playing === entry.hash;
 			return `<tr>
-				<td class="name">${escapeHtml(entry.name)}<div class="hint" title="${tr("填进报站器的“音频文件”栏")}">${escapeHtml(entry.reference)}</div></td>
+				<td class="name">${escapeHtml(entry.name)}<div class="hint" title="${tr("填进报站器的“音频文件”栏")}">${escapeHtml(entry.reference)}</div>${entry.sound ? `<div class="hint" title="${tr("/playsound 用这个名字播放，报站器的“音频文件”栏也可以填它")}">${escapeHtml(entry.sound)} <button class="link" data-copy="${escapeHtml(entry.sound)}">${tr("复制")}</button></div>` : ""}</td>
 				<td class="num">${formatDuration(entry.durationMillis)}</td>
 				<td class="num">${formatSize(entry.size)}</td>
 				<td>${escapeHtml(entry.uploaderName)}</td>
@@ -115,6 +136,7 @@
 				<td>${local}</td>
 				<td class="actions">
 					<button data-play="${entry.hash}" ${entry.cached ? "" : `disabled title="${tr("本机还没有这个文件")}"`}>${isPlaying ? tr("停止") : tr("试听")}</button>
+					${entry.canDelete ? `<button data-sound-id="${escapeHtml(entry.key)}">${tr("改声音 ID")}</button>` : ""}
 					${entry.canDelete ? `<button class="danger" data-delete="${escapeHtml(entry.key)}">${tr("删除")}</button>` : ""}
 				</td>
 			</tr>`;
@@ -127,9 +149,13 @@
 				localErrors.unshift({ name: file.name, message: `${tr("文件不能超过 {0}", formatSize(data.maxFileBytes))}` });
 				continue;
 			}
+			// A file name in Chinese can't be a sound ID, so one has to be given
+			const suggested = soundIdFromName(file.name);
+			const soundId = askSoundId(suggested ? tr("“{0}”的声音 ID（/playsound 用它播放）：", file.name) : tr("“{0}”的文件名不能当声音 ID，请填一个（小写字母、数字和 _ - . /）：", file.name), suggested);
+			if (soundId === null) continue;
 			try {
 				const base64 = await readBase64(file);
-				const result = await sendJson("api/audio", { action: "upload", name: file.name, data: base64 });
+				const result = await sendJson("api/audio", { action: "upload", name: file.name, soundId, data: base64 });
 				if (!result.ok) localErrors.unshift({ name: file.name, message: result.message });
 			} catch (e) {
 				localErrors.unshift({ name: file.name, message: e.message === "413" ? tr("文件太大") : tr("发送失败，游戏可能已经关闭") });
@@ -186,6 +212,30 @@
 		poll.now();
 	}
 
+	async function changeSoundId(nameKey) {
+		const entry = data && data.entries.find(item => item.key === nameKey);
+		if (!entry) return;
+		const soundId = askSoundId(tr("“{0}”的新声音 ID（用旧 ID 的 /playsound 和报站器要改成新的）：", entry.reference), entry.soundId);
+		if (soundId === null || soundId === entry.soundId) return;
+		try {
+			const result = await sendJson("api/audio", { action: "soundId", key: nameKey, soundId });
+			if (!result.ok) localErrors.unshift({ name: entry.name, message: result.message });
+		} catch (e) {
+			localErrors.unshift({ name: entry.name, message: tr("发送失败，游戏可能已经关闭") });
+		}
+		poll.now();
+	}
+
+	async function copy(text) {
+		try {
+			await navigator.clipboard.writeText(text);
+			localErrors.unshift({ name: text, done: true, ok: true, message: tr("已复制") });
+		} catch (e) {
+			prompt(tr("复制这个名字："), text);
+		}
+		render();
+	}
+
 	poll.now = async () => {
 		try {
 			data = await fetchJson("api/audio");
@@ -208,6 +258,8 @@
 		if (!button) return;
 		if (button.dataset.play) play(button.dataset.play);
 		if (button.dataset.delete) remove(button.dataset.delete);
+		if (button.dataset.soundId) changeSoundId(button.dataset.soundId);
+		if (button.dataset.copy) copy(button.dataset.copy);
 	});
 	$("player").addEventListener("ended", () => {
 		playing = null;

@@ -9,6 +9,7 @@ import mtr.data.TranslatedMessage;
 import mtr.packet.IPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,6 +89,32 @@ public final class AudioCache implements IPacket {
 	}
 
 	/**
+	 * The file as kept here, for a thread other than the game's, without asking the server for it.
+	 *
+	 * @return the file, or null if it isn't here
+	 */
+	public static byte[] readStored(String hash) {
+		if (!AudioFiles.isHash(hash) || !CACHED.contains(hash)) {
+			return null;
+		}
+		try {
+			return EXECUTOR.submit(() -> database == null ? null : database.readData(hash)).get();
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	/**
+	 * Asks the server for a file this client doesn't have yet, as when it is played before it was fetched.
+	 */
+	public static void want(String hash) {
+		if (!isCached(hash)) {
+			request(Collections.singletonList(hash));
+		}
+	}
+
+	/**
 	 * @param namespace who added the file, in lowercase, as the server made it ({@link AnnouncementSound#getNamespace})
 	 * @return the hash of the server's file with this name, ignoring case as the server does, or null if it has none
 	 */
@@ -110,7 +137,7 @@ public final class AudioCache implements IPacket {
 	 * @return the number to look for in {@link #REQUESTS}
 	 * @throws AudioFiles.InvalidAudioException with the reason a file can't be sent
 	 */
-	public static int upload(String name, byte[] bytes) throws AudioFiles.InvalidAudioException {
+	public static int upload(String name, String soundId, byte[] bytes) throws AudioFiles.InvalidAudioException {
 		if (!canUpload) {
 			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_no_permission"));
 		}
@@ -120,6 +147,14 @@ public final class AudioCache implements IPacket {
 		final AudioFiles.Info info = AudioFiles.check(bytes);
 		if (info.durationMillis > maxSeconds * 1000L) {
 			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_too_long_seconds", maxSeconds));
+		}
+		// Empty leaves it to the server, which makes one from the file name or hash
+		final String cleanSoundId = soundId == null ? "" : soundId.trim();
+		if (!cleanSoundId.isEmpty() && !AnnouncementSound.isValidSoundId(cleanSoundId)) {
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH));
+		}
+		if (!cleanSoundId.isEmpty() && ENTRIES.stream().anyMatch(entry -> entry.mine && entry.soundId.equals(cleanSoundId) && !entry.name.equalsIgnoreCase(AudioFiles.withExtension(AudioFiles.cleanName(name))))) {
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_same_sound_id", cleanSoundId));
 		}
 
 		final String fileName = AudioFiles.withExtension(AudioFiles.cleanName(name));
@@ -140,6 +175,7 @@ public final class AudioCache implements IPacket {
 			packet.writeInt(offset);
 			packet.writeUtf(fileName);
 			packet.writeByteArray(chunk);
+			packet.writeUtf(cleanSoundId);
 			RegistryClient.sendToServer(PACKET_AUDIO_UPLOAD, packet);
 		}
 		// This client has the file already, so once the server takes it, it isn't sent back
@@ -159,6 +195,25 @@ public final class AudioCache implements IPacket {
 		return requestId;
 	}
 
+	/**
+	 * Gives a file another sound ID ({@link mtr.audio.AudioServer#receiveSoundIdC2S}).
+	 *
+	 * @throws AudioFiles.InvalidAudioException if the sound ID isn't valid
+	 */
+	public static int setSoundId(Entry entry, String soundId) throws AudioFiles.InvalidAudioException {
+		final String cleanSoundId = soundId == null ? "" : soundId.trim();
+		if (!AnnouncementSound.isValidSoundId(cleanSoundId)) {
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH));
+		}
+		final int requestId = addRequest(entry.getReference());
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeInt(requestId);
+		packet.writeUtf(entry.getKey());
+		packet.writeUtf(cleanSoundId);
+		RegistryClient.sendToServer(PACKET_AUDIO_SOUND_ID, packet);
+		return requestId;
+	}
+
 	public static void receiveListS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final boolean newCanUpload = packet.readBoolean();
 		final boolean newCanManage = packet.readBoolean();
@@ -168,6 +223,7 @@ public final class AudioCache implements IPacket {
 		final long newTotalBytes = packet.readLong();
 		final int count = packet.readInt();
 		final List<Entry> entries = new ArrayList<>();
+		final List<Object[]> rawEntries = new ArrayList<>();
 		for (int i = 0; i < count; i++) {
 			final String hash = packet.readUtf();
 			final String namespace = packet.readUtf();
@@ -177,8 +233,17 @@ public final class AudioCache implements IPacket {
 			final String uploaderName = packet.readUtf();
 			final long uploadedAt = packet.readLong();
 			final boolean mine = packet.readBoolean();
+			rawEntries.add(new Object[]{hash, namespace, name, size, durationMillis, uploaderName, uploadedAt, mine});
+		}
+		// The sound IDs come after every entry, and not at all from a server from before them
+		for (int i = 0; i < count; i++) {
+			final String soundId = packet.isReadable() ? packet.readUtf() : "";
+			final Object[] raw = rawEntries.get(i);
+			final String hash = (String) raw[0];
+			final String namespace = (String) raw[1];
+			final int size = (Integer) raw[3];
 			if (AudioFiles.isHash(hash) && !namespace.isEmpty() && size > 0 && size <= AudioFiles.MAX_FILE_BYTES) {
-				entries.add(new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), name, size, durationMillis, uploaderName, uploadedAt, mine));
+				entries.add(new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), (String) raw[2], size, (Long) raw[4], (String) raw[5], (Long) raw[6], (Boolean) raw[7], AnnouncementSound.isValidSoundId(soundId) ? soundId : ""));
 			}
 		}
 		minecraftClient.execute(() -> {
@@ -192,13 +257,17 @@ public final class AudioCache implements IPacket {
 			ENTRIES.addAll(entries);
 			// Pieces of files the server no longer has won't come
 			DOWNLOADS.keySet().removeIf(hash -> entries.stream().noneMatch(entry -> entry.hash.equals(hash)));
-			final List<String> missing = new ArrayList<>();
-			entries.forEach(entry -> {
-				if (!isCached(entry.hash)) {
-					missing.add(entry.hash);
-				}
-			});
-			request(missing);
+			// Every file the server has, unless the player chose to fetch a file only once something plays it
+			if (Config.audioDownloadAll()) {
+				final List<String> missing = new ArrayList<>();
+				entries.forEach(entry -> {
+					if (!isCached(entry.hash)) {
+						missing.add(entry.hash);
+					}
+				});
+				request(missing);
+			}
+			UploadedSounds.refresh();
 		});
 	}
 
@@ -344,8 +413,13 @@ public final class AudioCache implements IPacket {
 		public final String uploaderName;
 		public final long uploadedAt;
 		public final boolean mine;
+		/**
+		 * The name of its sound in the game under {@link AnnouncementSound#SOUND_NAMESPACE}, or empty from a server that
+		 * doesn't give one.
+		 */
+		public final String soundId;
 
-		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploaderName, long uploadedAt, boolean mine) {
+		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploaderName, long uploadedAt, boolean mine, String soundId) {
 			this.hash = hash;
 			this.namespace = namespace;
 			this.name = name;
@@ -354,6 +428,14 @@ public final class AudioCache implements IPacket {
 			this.uploaderName = uploaderName;
 			this.uploadedAt = uploadedAt;
 			this.mine = mine;
+			this.soundId = soundId;
+		}
+
+		/**
+		 * @return the name {@code /playsound} and announcers can play it by, or null if it has none
+		 */
+		public ResourceLocation getSoundLocation() {
+			return AnnouncementSound.getSoundLocation(namespace, soundId);
 		}
 
 		/**

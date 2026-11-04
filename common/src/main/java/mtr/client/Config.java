@@ -31,6 +31,8 @@ public class Config {
 	// Announcers can name a web address, which would make this client contact any site, so it is off unless the player turns it on for chosen sites
 	private static boolean networkAudioEnabled;
 	private static List<String> networkAudioAllowedHosts = Collections.emptyList();
+	// The server's announcement audio is fetched as soon as the server lists it, so it plays the first time; off fetches a file once something plays it
+	private static boolean audioDownloadAll = true;
 
 	public static final List<Patreon> PATREON_LIST = new ArrayList<>();
 	public static final int TRACK_OFFSET_COUNT = 32;
@@ -49,6 +51,7 @@ public class Config {
 	private static final String TRAIN_RENDER_DISTANCE_RATIO = "train_render_distance_ratio";
 	private static final String NETWORK_AUDIO_ENABLED = "network_audio_enabled";
 	private static final String NETWORK_AUDIO_ALLOWED_HOSTS = "network_audio_allowed_hosts";
+	private static final String AUDIO_DOWNLOAD_ALL = "audio_download_all";
 
 	public static boolean useMTRFont() {
 		return useMTRFont;
@@ -92,6 +95,10 @@ public class Config {
 
 	public static int trainRenderDistanceRatio() {
 		return trainRenderDistanceRatio;
+	}
+
+	public static boolean audioDownloadAll() {
+		return audioDownloadAll;
 	}
 
 	public static boolean networkAudioEnabled() {
@@ -217,6 +224,10 @@ public class Config {
 			} catch (Exception ignored) {
 			}
 			try {
+				audioDownloadAll = jsonConfig.get(AUDIO_DOWNLOAD_ALL).getAsBoolean();
+			} catch (Exception ignored) {
+			}
+			try {
 				final List<String> hosts = new ArrayList<>();
 				jsonConfig.getAsJsonArray(NETWORK_AUDIO_ALLOWED_HOSTS).forEach(host -> {
 					final String cleanHost = host.getAsString().trim().toLowerCase(Locale.ENGLISH);
@@ -250,6 +261,7 @@ public class Config {
 		final JsonArray hosts = new JsonArray();
 		networkAudioAllowedHosts.forEach(hosts::add);
 		jsonConfig.add(NETWORK_AUDIO_ALLOWED_HOSTS, hosts);
+		jsonConfig.addProperty(AUDIO_DOWNLOAD_ALL, audioDownloadAll);
 
 		try {
 			Files.write(CONFIG_FILE_PATH, Collections.singleton(RailwayData.prettyPrint(jsonConfig)));

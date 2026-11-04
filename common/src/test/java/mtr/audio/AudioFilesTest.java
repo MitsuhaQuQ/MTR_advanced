@@ -91,15 +91,19 @@ class AudioFilesTest {
 		final String alexKey = AnnouncementSound.getNameKey("mtr_player", "next.ogg");
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			// Two players add the same recording under their own names
-			database.write(steveKey, "steve", "下一站.ogg", hash, data.length, 1000, "uuid1", "Steve", 5, data);
-			database.write(alexKey, "mtr_player", "next.ogg", hash, data.length, 1000, "uuid2", "MTR", 6, data);
+			database.write(steveKey, "steve", "下一站.ogg", hash, data.length, 1000, "uuid1", "Steve", 5, "next_station", data);
+			database.write(alexKey, "mtr_player", "next.ogg", hash, data.length, 1000, "uuid2", "MTR", 6, "next", data);
 			// Audio without a name, as a client keeps it, isn't listed
 			database.writeData(AudioFiles.hash(new byte[]{9}), new byte[]{9});
 		}
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final List<String> names = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt) -> names.add(AnnouncementSound.getUploadedString(namespace, fileName) + size));
-			assertEquals(Arrays.asList("steve:下一站.ogg4", "mtr_player:next.ogg4"), names);
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> names.add(AnnouncementSound.getUploadedString(namespace, fileName) + size + soundId));
+			assertEquals(Arrays.asList("steve:下一站.ogg4next_station", "mtr_player:next.ogg4next"), names);
+			database.setSoundId(steveKey, "station/next");
+			final List<String> soundIds = new ArrayList<>();
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> soundIds.add(soundId));
+			assertEquals(Arrays.asList("station/next", "next"), soundIds);
 			final List<String> hashes = new ArrayList<>();
 			database.readDataHashes(hashes::add);
 			assertEquals(2, hashes.size());
@@ -108,6 +112,30 @@ class AudioFilesTest {
 			assertArrayEquals(data, database.readData(hash));
 			database.delete(alexKey, hash);
 			assertNull(database.readData(hash));
+		}
+	}
+
+	@Test
+	void anIndexFromBeforeSoundIdsGetsTheColumn() throws Exception {
+		final Path path = folder.resolve("old").resolve(AudioDatabase.FILE_NAME);
+		java.nio.file.Files.createDirectories(path.getParent());
+		final byte[] data = {5, 6};
+		final String hash = AudioFiles.hash(data);
+		// The tables as they were made before sound IDs
+		try (final java.sql.Connection connection = new org.sqlite.JDBC().connect(org.sqlite.JDBC.PREFIX + path, new java.util.Properties()); final java.sql.Statement statement = connection.createStatement()) {
+			statement.execute("CREATE TABLE audio_index (name_key TEXT PRIMARY KEY, namespace TEXT NOT NULL, file_name TEXT NOT NULL, hash TEXT NOT NULL, size INTEGER NOT NULL, duration_millis INTEGER NOT NULL, uploader TEXT NOT NULL, uploader_name TEXT NOT NULL, uploaded_at INTEGER NOT NULL) WITHOUT ROWID");
+			statement.execute("CREATE TABLE audio_data (hash TEXT PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("INSERT INTO audio_index VALUES ('steve:next.ogg', 'steve', 'next.ogg', '" + hash + "', 2, 500, 'uuid1', 'Steve', 7)");
+			try (final java.sql.PreparedStatement insert = connection.prepareStatement("INSERT INTO audio_data VALUES (?, ?)")) {
+				insert.setString(1, hash);
+				insert.setBytes(2, data);
+				insert.executeUpdate();
+			}
+		}
+		try (final AudioDatabase database = new AudioDatabase(path)) {
+			final List<String> rows = new ArrayList<>();
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> rows.add(fileName + "|" + soundId + "|" + uploadedAt));
+			assertEquals(Arrays.asList("next.ogg||7"), rows);
 		}
 	}
 }

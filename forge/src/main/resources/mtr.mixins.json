@@ -9,7 +9,9 @@
 	"client": [
 		"GameRendererMixin",
 		"LevelRendererMixin",
-		"PlayerRendererOffsetMixin"
+		"PlayerRendererOffsetMixin",
+		"SoundBufferLibraryMixin",
+		"SoundManagerMixin"
 	],
 	"server": [],
 	"injectors": {

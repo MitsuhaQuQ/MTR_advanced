@@ -14,6 +14,7 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import mtr.packet.IPacket;
 import mtr.packet.PacketGuard;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -74,14 +75,23 @@ public final class AudioServer implements IPacket {
 		final Path path = minecraftServer.getWorldPath(LevelResource.ROOT).resolve(FOLDER).resolve(AudioDatabase.FILE_NAME);
 		try {
 			database = new AudioDatabase(path);
-			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt) -> {
+			final List<Entry> withoutSoundId = new ArrayList<>();
+			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> {
 				if (AudioFiles.isHash(hash) && !namespace.isEmpty()) {
-					final Entry entry = new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), AudioFiles.cleanName(fileName), size, durationMillis, uploader, uploaderName, uploadedAt);
+					final Entry entry = new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), AudioFiles.cleanName(fileName), size, durationMillis, uploader, uploaderName, uploadedAt, AnnouncementSound.isValidSoundId(soundId) ? soundId : "");
 					ENTRIES.put(entry.getKey(), entry);
+					if (entry.soundId.isEmpty()) {
+						withoutSoundId.add(entry);
+					}
 				} else {
 					System.out.println("Skipping invalid announcement audio entry " + hash);
 				}
 			});
+			// Files added before sound IDs get one from their file name or hash, kept so it stays the same
+			for (final Entry entry : withoutSoundId) {
+				entry.soundId = AnnouncementSound.getDefaultSoundId(entry.name, entry.hash, soundId -> isSoundIdTaken(entry.namespace, soundId, entry.getKey()));
+				database.setSoundId(entry.getKey(), entry.soundId);
+			}
 		} catch (Exception | LinkageError e) {
 			System.out.println("Failed to open the announcement audio database " + path);
 			e.printStackTrace();
@@ -168,6 +178,8 @@ public final class AudioServer implements IPacket {
 			packet.writeLong(entry.uploadedAt);
 			packet.writeBoolean(entry.uploader.equals(playerId));
 		});
+		// After every entry, so a client from before sound IDs reads the list as it always did
+		ENTRIES.values().forEach(entry -> packet.writeUtf(entry.soundId));
 		Registry.sendToPlayer(player, PACKET_AUDIO_LIST, packet);
 	}
 
@@ -177,6 +189,8 @@ public final class AudioServer implements IPacket {
 		final int offset = packet.readInt();
 		final String name = packet.readUtf(AudioFiles.MAX_NAME_LENGTH * 4);
 		final byte[] chunk = packet.readByteArray(AudioFiles.CHUNK_BYTES);
+		// Last, and missing from a client from before sound IDs, which leaves it to the server
+		final String soundId = packet.isReadable() ? packet.readUtf(AnnouncementSound.MAX_SOUND_ID_LENGTH * 4) : "";
 		PacketGuard.execute(minecraftServer, () -> {
 			if (database == null) {
 				return;
@@ -184,13 +198,13 @@ public final class AudioServer implements IPacket {
 			final UUID playerId = player.getUUID();
 			Upload upload = UPLOADS.get(playerId);
 			if (offset == 0) {
-				final String error = checkUploadStart(player, size);
+				final String error = soundId.isEmpty() || AnnouncementSound.isValidSoundId(soundId) ? checkUploadStart(player, size) : TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH);
 				if (error != null) {
 					UPLOADS.remove(playerId);
 					sendResult(player, requestId, false, error);
 					return;
 				}
-				upload = new Upload(requestId, size, AudioFiles.cleanName(name));
+				upload = new Upload(requestId, size, AudioFiles.cleanName(name), soundId);
 				UPLOADS.put(playerId, upload);
 			} else if (upload == null || upload.requestId != requestId || upload.received != offset) {
 				// Pieces of an upload that was turned down or replaced
@@ -220,6 +234,51 @@ public final class AudioServer implements IPacket {
 			final String error = delete(minecraftServer, player.getName().getString(), canManage(player), player.getUUID().toString(), nameKey);
 			sendResult(player, requestId, error == null, error == null ? TranslatedMessage.encode("gui.mtr.audio_deleted", reference) : error);
 		});
+	}
+
+	/**
+	 * Gives a file another sound ID, which {@code /playsound} and announcers can name it by. Whoever added it and managers
+	 * can, as with deleting.
+	 */
+	public static void receiveSoundIdC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final int requestId = packet.readInt();
+		final String nameKey = packet.readUtf(MAX_KEY_LENGTH);
+		final String soundId = packet.readUtf(AnnouncementSound.MAX_SOUND_ID_LENGTH * 4);
+		PacketGuard.execute(minecraftServer, () -> {
+			final Entry entry = ENTRIES.get(nameKey);
+			final String error;
+			if (database == null || entry == null) {
+				error = TranslatedMessage.encode("gui.mtr.audio_missing");
+			} else if (!canManage(player) && !entry.uploader.equals(player.getUUID().toString())) {
+				error = TranslatedMessage.encode("gui.mtr.audio_no_delete_permission");
+			} else if (!AnnouncementSound.isValidSoundId(soundId)) {
+				error = TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH);
+			} else if (isSoundIdTaken(entry.namespace, soundId, nameKey)) {
+				error = TranslatedMessage.encode("gui.mtr.audio_same_sound_id", soundId);
+			} else {
+				String saveError = null;
+				try {
+					database.setSoundId(nameKey, soundId);
+				} catch (Exception e) {
+					e.printStackTrace();
+					saveError = TranslatedMessage.encode("gui.mtr.audio_save_failed");
+				}
+				error = saveError;
+				if (error == null) {
+					entry.soundId = soundId;
+					System.out.printf("%s set the sound ID of announcement audio \"%s\" to %s%n", player.getName().getString(), entry.getReference(), entry.getSoundLocation());
+					sendListToAll(minecraftServer);
+				}
+			}
+			sendResult(player, requestId, error == null, error == null ? TranslatedMessage.encode("gui.mtr.audio_sound_id_set", entry.getReference(), String.valueOf(entry.getSoundLocation())) : error);
+		});
+	}
+
+	/**
+	 * @param exceptKey the name key of the file asking, which doesn't count
+	 */
+	private static boolean isSoundIdTaken(String namespace, String soundId, String exceptKey) {
+		return ENTRIES.values().stream().anyMatch(entry -> entry.namespace.equals(namespace) && entry.soundId.equals(soundId) && !entry.getKey().equals(exceptKey));
 	}
 
 	/**
@@ -388,16 +447,22 @@ public final class AudioServer implements IPacket {
 			}
 			return;
 		}
-		final Entry entry = new Entry(hash, namespace, name, upload.bytes.length, info.durationMillis, player.getUUID().toString(), player.getName().getString(), System.currentTimeMillis());
+		// The sound ID given, or one from the file name or hash; one given has to be free among this player's files
+		if (!upload.soundId.isEmpty() && isSoundIdTaken(namespace, upload.soundId, nameKey)) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_same_sound_id", upload.soundId));
+			return;
+		}
+		final String soundId = upload.soundId.isEmpty() ? AnnouncementSound.getDefaultSoundId(name, hash, checkSoundId -> isSoundIdTaken(namespace, checkSoundId, nameKey)) : upload.soundId;
+		final Entry entry = new Entry(hash, namespace, name, upload.bytes.length, info.durationMillis, player.getUUID().toString(), player.getName().getString(), System.currentTimeMillis(), soundId);
 		try {
-			database.write(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, upload.bytes);
+			database.write(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, upload.bytes);
 			ENTRIES.put(nameKey, entry);
 		} catch (Exception e) {
 			e.printStackTrace();
 			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
 			return;
 		}
-		System.out.printf("%s uploaded announcement audio \"%s\" (%s, %s bytes)%n", player.getName().getString(), name, hash, upload.bytes.length);
+		System.out.printf("%s uploaded announcement audio \"%s\" as %s (%s, %s bytes)%n", player.getName().getString(), name, entry.getSoundLocation(), hash, upload.bytes.length);
 		sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_uploaded", name));
 		sendListToAll(minecraftServer);
 	}
@@ -454,8 +519,13 @@ public final class AudioServer implements IPacket {
 		private final String uploader;
 		private final String uploaderName;
 		private final long uploadedAt;
+		/**
+		 * The name of its sound in the game under {@link AnnouncementSound#SOUND_NAMESPACE}, unique among the files of whoever
+		 * added it.
+		 */
+		private String soundId;
 
-		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt) {
+		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId) {
 			this.hash = hash;
 			this.namespace = namespace;
 			this.name = name;
@@ -464,6 +534,11 @@ public final class AudioServer implements IPacket {
 			this.uploader = uploader;
 			this.uploaderName = uploaderName;
 			this.uploadedAt = uploadedAt;
+			this.soundId = soundId;
+		}
+
+		private ResourceLocation getSoundLocation() {
+			return AnnouncementSound.getSoundLocation(namespace, soundId);
 		}
 
 		private String getKey() {
@@ -479,12 +554,14 @@ public final class AudioServer implements IPacket {
 
 		private final int requestId;
 		private final String name;
+		private final String soundId;
 		private final byte[] bytes;
 		private int received;
 
-		private Upload(int requestId, int size, String name) {
+		private Upload(int requestId, int size, String name, String soundId) {
 			this.requestId = requestId;
 			this.name = name;
+			this.soundId = soundId;
 			bytes = new byte[size];
 		}
 	}

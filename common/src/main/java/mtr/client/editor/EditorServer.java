@@ -556,21 +556,23 @@ public final class EditorServer {
 			final String action;
 			final String name;
 			final String value;
+			final String soundId;
 			try {
 				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
 				action = requestObject.get("action").getAsString();
 				name = requestObject.has("name") ? requestObject.get("name").getAsString() : "";
 				value = requestObject.get("upload".equals(action) ? "data" : "key").getAsString();
+				soundId = requestObject.has("soundId") ? requestObject.get("soundId").getAsString() : "";
 			} catch (Exception e) {
 				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
 				return;
 			}
-			if (!"upload".equals(action) && !"delete".equals(action)) {
+			if (!"upload".equals(action) && !"delete".equals(action) && !"soundId".equals(action)) {
 				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
 				return;
 			}
 			try {
-				sendJson(response, onGameThread(() -> ("upload".equals(action) ? EditorAudio.upload(name, value) : EditorAudio.delete(value)).toString()));
+				sendJson(response, onGameThread(() -> ("upload".equals(action) ? EditorAudio.upload(name, soundId, value) : "soundId".equals(action) ? EditorAudio.setSoundId(value, soundId) : EditorAudio.delete(value)).toString()));
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);

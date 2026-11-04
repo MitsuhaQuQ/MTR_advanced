@@ -6,13 +6,15 @@ import net.minecraft.resources.ResourceLocation;
 
 public interface IPacket {
 
-	// Added to the version string so that clients without a protocol version also see a mismatch
+	/**
+	 * What a client and its server must have the same of: this fork's version (MTM_Logic, {@code mtm_version} in
+	 * gradle.properties), raised whenever packets or saved data change. MTR's own version stays 3.2.2 for add-ons, so it
+	 * tells nothing. It differs from what builds before it sent (MTR's version and a protocol number), so they don't match
+	 * either.
+	 */
 	static String getNetworkVersion() {
-		return Keys.MOD_VERSION.split("-hotfix-")[0] + "-protocol-" + PROTOCOL_VERSION;
+		return "MTM_Logic " + Keys.MTM_VERSION;
 	}
-
-	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 44;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 	ResourceLocation PACKET_LINE_WORDS = new ResourceLocation(MTR.MOD_ID, "packet_line_words");
@@ -114,6 +116,7 @@ public interface IPacket {
 	ResourceLocation PACKET_AUDIO_UPLOAD = new ResourceLocation(MTR.MOD_ID, "packet_audio_upload");
 	ResourceLocation PACKET_AUDIO_DELETE = new ResourceLocation(MTR.MOD_ID, "packet_audio_delete");
 	ResourceLocation PACKET_AUDIO_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_audio_wanted");
+	ResourceLocation PACKET_AUDIO_SOUND_ID = new ResourceLocation(MTR.MOD_ID, "packet_audio_sound_id");
 
 	int MAX_PACKET_BYTES = 1048576;
 }

@@ -49,4 +49,29 @@ class AnnouncementSoundTest {
 		assertEquals("mtr:a", AnnouncementSound.clean("  mtr:a "));
 		assertEquals("", AnnouncementSound.clean(new String(new char[AnnouncementSound.MAX_LENGTH + 1]).replace('\0', 'a')));
 	}
+
+	@Test
+	void soundIdsAreWhatTheGameAllowsInASoundName() {
+		assertTrue(AnnouncementSound.isValidSoundId("next_station"));
+		assertTrue(AnnouncementSound.isValidSoundId("line1/next-station.2"));
+		assertFalse(AnnouncementSound.isValidSoundId(""));
+		assertFalse(AnnouncementSound.isValidSoundId("Next"));
+		assertFalse(AnnouncementSound.isValidSoundId("下一站"));
+		assertFalse(AnnouncementSound.isValidSoundId("a//b"));
+		assertFalse(AnnouncementSound.isValidSoundId("/a"));
+		assertFalse(AnnouncementSound.isValidSoundId("a".repeat(AnnouncementSound.MAX_SOUND_ID_LENGTH + 1)));
+		assertEquals("mtr_audio:steve/next_station", String.valueOf(AnnouncementSound.getSoundLocation("steve", "next_station")));
+		assertNull(AnnouncementSound.getSoundLocation("steve", "下一站"));
+	}
+
+	@Test
+	void aFileWithoutASoundIdGetsOneFromItsNameOrHash() {
+		final String hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+		assertEquals("next_station", AnnouncementSound.getSoundIdFromFileName("Next Station.ogg"));
+		assertEquals("", AnnouncementSound.getSoundIdFromFileName("下一站.ogg"));
+		assertEquals("next_station", AnnouncementSound.getDefaultSoundId("Next Station.ogg", hash, id -> false));
+		assertEquals("0123456789ab", AnnouncementSound.getDefaultSoundId("下一站.ogg", hash, id -> false));
+		// Taken by another file of the same uploader, it gets part of the hash
+		assertEquals("next_station_012345", AnnouncementSound.getDefaultSoundId("next station.ogg", hash, id -> id.equals("next_station")));
+	}
 }

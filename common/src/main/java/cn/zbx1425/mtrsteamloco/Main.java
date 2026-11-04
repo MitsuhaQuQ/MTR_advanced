@@ -139,8 +139,7 @@ public class Main {
 					PacketReplaceRailNode::receiveUpdateC2S);
 			mtr.Registry.registerNetworkReceiver(PacketRoutePathCreator.ROUTE_C2S,
 					PacketRoutePathCreator::receiveRouteC2S);
-
-			mtr.Registry.registerPlayerJoinEvent(PacketVersionCheck::sendVersionCheckS2C);
+			// ANTE is part of this jar, so MTR's version check (the MTM_Logic version, IPacket.getNetworkVersion) covers it
 		}
 	}
 

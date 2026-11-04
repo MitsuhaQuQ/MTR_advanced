@@ -34,6 +34,9 @@ public final class EditorAudio {
 			entryObject.addProperty("reference", entry.getReference());
 			entryObject.addProperty("hash", entry.hash);
 			entryObject.addProperty("name", entry.name);
+			entryObject.addProperty("soundId", entry.soundId);
+			final net.minecraft.resources.ResourceLocation soundLocation = entry.getSoundLocation();
+			entryObject.addProperty("sound", soundLocation == null ? "" : soundLocation.toString());
 			entryObject.addProperty("size", entry.size);
 			entryObject.addProperty("durationMillis", entry.durationMillis);
 			entryObject.addProperty("uploaderName", entry.uploaderName);
@@ -62,7 +65,10 @@ public final class EditorAudio {
 	/**
 	 * @param data the file as base64, as the page reads it
 	 */
-	public static JsonObject upload(String name, String data) {
+	/**
+	 * @param soundId the sound ID to give it, or empty for the server to make one from the file name
+	 */
+	public static JsonObject upload(String name, String soundId, String data) {
 		final JsonObject jsonObject = new JsonObject();
 		try {
 			final byte[] bytes;
@@ -71,7 +77,26 @@ public final class EditorAudio {
 			} catch (IllegalArgumentException e) {
 				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_read_failed"));
 			}
-			jsonObject.addProperty("id", AudioCache.upload(name, bytes));
+			jsonObject.addProperty("id", AudioCache.upload(name, soundId, bytes));
+			jsonObject.addProperty("ok", true);
+		} catch (AudioFiles.InvalidAudioException e) {
+			jsonObject.addProperty("ok", false);
+			jsonObject.addProperty("message", TranslatedMessage.decode(e.getMessage()));
+		}
+		return jsonObject;
+	}
+
+	/**
+	 * @param key the name key of the file ({@link AudioCache.Entry#getKey})
+	 */
+	public static JsonObject setSoundId(String key, String soundId) {
+		final JsonObject jsonObject = new JsonObject();
+		final AudioCache.Entry entry = AudioCache.ENTRIES.stream().filter(checkEntry -> checkEntry.getKey().equals(key)).findFirst().orElse(null);
+		try {
+			if (entry == null) {
+				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_missing"));
+			}
+			jsonObject.addProperty("id", AudioCache.setSoundId(entry, soundId));
 			jsonObject.addProperty("ok", true);
 		} catch (AudioFiles.InvalidAudioException e) {
 			jsonObject.addProperty("ok", false);

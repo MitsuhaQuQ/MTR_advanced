@@ -926,7 +926,8 @@ sequenceDiagram
 | `audio/AudioServer` | 服务端 | 存档的 `mtr/announce.db`，所有维度共用；收上传、删除、下载请求，按块发文件；`/mtr deleteaudio` 命令 |
 | `client/AudioCache` | 客户端 | 本机缓存 `mtr_audio_cache`，按哈希存，所有世界和服务器共用；收列表后在后台下载缺的；也替网页编辑器的音频页上传和删除 |
 | `client/editor/EditorAudio` | 客户端 | 高级编辑器的"报站音频"页（`audio.html`）：列表、上传、试听、删除 |
-| `client/AnnouncementPlayer` | 客户端 | 播放：上传的文件在后台线程解码 Ogg Vorbis 或 WAV，用 Java 的音频输出播放；游戏声音走游戏的声音系统；网址只在 `config/mtr.json` 允许的网站下载 |
+| `client/AnnouncementPlayer` | 客户端 | 播放：上传的文件作为游戏声音播放（`UploadedSounds`），只有它没生效时才自己解码、用 Java 的音频输出播放；游戏声音走游戏的声音系统；网址只在 `config/mtr.json` 允许的网站下载 |
+| `client/UploadedSounds` | 客户端 | 把服务器的音频登记成游戏声音 `mtr_audio:<上传者>/<声音 ID>`，`/playsound` 也能播；游戏要这个声音的数据时从缓存取出解码。由 mixin `SoundManagerMixin`（每次加载声音后重新登记）、`SoundBufferLibraryMixin`（取声音数据）调用，Fabric 和 Forge 各一份 |
 
 ### 11.2 生命周期
 
@@ -939,7 +940,8 @@ sequenceDiagram
    - 收齐后 `finishUpload` 再校验一次，按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者有同名但内容不同的文件时拒绝。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
 5. **删除**（音频页 `PACKET_AUDIO_DELETE`，或 `/mtr deleteaudio <名字>`）：任何人能删自己上传的，达到管理权限等级的能删别人的。删掉名字后，没有别的名字再用这份音频才删音频本身，然后同样 `sendListToAll`。删除和上传都写进服务端日志。
 6. **播放**：列车车头经过报站方块时，`TrainServer.handlePositions` 对车上每位乘客调 `TileEntityTrainAnnouncer.announce`（同一玩家有冷却时间），服务端 `announceS2C` 把文字和"音频文件"一栏发给他。客户端 `AnnouncementPlayer.play`：
-   - 先当作上传的文件，在服务器列表里按名字找哈希。找到就从缓存读出，在后台线程解码播放。缓存里还没有时这次不响，`AudioCache.read` 顺便请求下载，下次就有了。
+   - 先当作上传的文件，在服务器列表里按名字找到它的游戏声音，用 `playLocalSound` 播放，和游戏声音一样。游戏第一次要这个声音的数据时，`UploadedSounds.getBuffer` 从缓存读出、在后台线程解码；缓存里还没有时这次不响，顺便请求下载，下次就有了。
+   - `/playsound mtr_audio:<上传者>/<声音 ID>` 走的是同一条路：服务端把名字发给附近的玩家，客户端在声音表里找到它。
    - 不是上传的文件，就当作游戏或资源包的声音，在方块处播放。
    - 是网址时，只有 `config/mtr.json` 允许的网站才下载播放，否则只记一行日志。
    - 报站方块的设置界面（`TrainAnnouncerScreen`）里可以试听，走同一个 `play`。
