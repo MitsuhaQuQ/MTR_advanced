@@ -52,6 +52,7 @@
   - `emergency braking`：有车来不及停车用了紧急制动。
   - `put back N node(s) the world had lost`、`found the node of a rail at ... taken by ...`：崩溃回档后补回节点，或者节点的位置被占了，见第 3 节。
   - `route ... deleted by ...; depots that ran it ...`：删了一条还被运用或直通引用的线路。
+  - `worked out the duties of depot ...: N trains, M services a day with no train`：用时刻表、没设运用的车厂按时刻表自动生成了运用。M 大于 0 说明存车线的车不够，那些班次没有车跑（网页运行图上变浅）。
   - `could not save the track graph`、`COULD NOT SAVE ... when stopping`：保存失败，见第 3 节。
 - **对照模式**：想确认组件和游戏是否一致时，把设置切到"对照"。此时日志每分钟一行 `alike within 1 m` 的统计，把这些行发来。
 - **报问题时附上**：
