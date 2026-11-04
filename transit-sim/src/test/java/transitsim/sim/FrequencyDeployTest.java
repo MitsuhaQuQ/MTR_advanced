@@ -204,7 +204,7 @@ class FrequencyDeployTest {
 		final List<RunReservations.Move> against = Collections.singletonList(new RunReservations.Move(SignalBlockTest.rail(6, 7), false));
 		simulator.submit(new HostInput.ExternalRun(START + SECOND, 1, 77, held));
 		simulator.advanceTo(START + MINUTE);
-		final RunReservations reservations = simulator.getRunner().reservations;
+		final RunReservations reservations = simulator.getRunner().getReservations();
 		// Held again every tick, so it is still held a minute later
 		assertEquals(held, reservations.getHeld(77));
 		assertFalse(reservations.canHold(5, against));

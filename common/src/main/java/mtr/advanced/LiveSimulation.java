@@ -30,8 +30,10 @@ import java.util.function.Consumer;
 /**
  * The component's simulator running the trains of the depots it can run (G1, decoupling document 5.2): depots with speed
  * curves, not moving continuously, whether they send their trains out by a timetable, by duties or by frequency. The
- * trains of the other depots are told to it as external trains ({@link SimInputs}), with the runs they hold; running the
- * trains, it tells the game the runs its trains hold, so neither side gives a train a run against the other's.
+ * trains of the other depots are told to it as external trains ({@link SimInputs}). Running the trains, its trains hold
+ * and ask for their runs in the game's run reservations, dealt with once a tick together with the game's own trains, so
+ * the two kinds of train wait for each other on single track as any two of the game's do. Compared, it has reservations of
+ * its own and is told the runs the game's trains of other depots hold.
  * <p>
  * A train driven by hand, which a train of a siding that allows it is whenever it is in the siding, is taken over: the
  * game moves it itself until it is given back on the line.
@@ -167,25 +169,25 @@ public final class LiveSimulation {
 		if (!trainPositions.isEmpty()) {
 			inputs.update(now, trainPositions.get(0), trainId -> !run.contains(trainId)).forEach(simulator::submit);
 		}
-		// The runs held by the game's trains of other depots, as of the end of the tick before
-		final RunReservations gameRuns = railwayData.runReservations;
 		final TickRunner<SimDataset.DataTrack> runner = simulator.getRunner();
-		final Map<Long, List<RunReservations.Move>> otherRuns = new TreeMap<>();
-		gameRuns.getHolders().forEach(holder -> {
-			if (!runner.hasTrain(holder) && !run.contains(holder) && !takenOver.contains(holder)) {
-				otherRuns.put(holder, gameRuns.getHeld(holder));
-			}
-		});
-		inputs.updateRuns(now, otherRuns).forEach(simulator::submit);
+		if (!drive) {
+			// Compared, the simulator has reservations of its own, beside the game's trains of the same sidings holding theirs;
+			// it is told the runs held by the game's trains of other depots, as of the end of the tick before
+			final RunReservations gameRuns = railwayData.runReservations;
+			final Map<Long, List<RunReservations.Move>> otherRuns = new TreeMap<>();
+			gameRuns.getHolders().forEach(holder -> {
+				if (!runner.hasTrain(holder) && !run.contains(holder) && !takenOver.contains(holder)) {
+					otherRuns.put(holder, gameRuns.getHeld(holder));
+				}
+			});
+			inputs.updateRuns(now, otherRuns).forEach(simulator::submit);
+		}
 		simulator.advanceTo(now);
 		lastMillis = now;
 		if (drive) {
-			// The game's trains asking for runs later in this tick see what the simulator's trains hold
-			runner.reservations.getHolders().forEach(holder -> {
-				if (runner.hasTrain(holder)) {
-					gameRuns.hold(holder, runner.reservations.getHeld(holder));
-				}
-			});
+			// Running the trains, it shares the game's reservations, which the game deals with at the end of its tick together
+			// with its own trains' requests; what its trains hold and ask for is renewed in every tick of the game
+			runner.renewReservations();
 		}
 		final List<SimEvent> events = simulator.events(eventCursor);
 		if (!events.isEmpty()) {
@@ -256,6 +258,9 @@ public final class LiveSimulation {
 		simulator = EventSimulator.resume(startMillis -> {
 			final TickRunner<SimDataset.DataTrack> runner = dataset.buildRunner(startMillis);
 			runner.setTrainIds(random::nextLong);
+			if (drive) {
+				runner.shareReservations(railwayData.runReservations);
+			}
 			return runner;
 		}, record, now);
 		simulator.setLive();

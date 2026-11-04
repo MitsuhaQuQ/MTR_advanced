@@ -82,7 +82,7 @@ class RestoreTest {
 	/**
 	 * A line whose depot runs by the duties the planner works out, with their paths.
 	 */
-	private static SimDataset byDuties() {
+	static SimDataset byDuties() {
 		final SimDataset dataset = SimDatasetTest.lines(1, 400, 2, 4, 10);
 		final transitsim.planning.DutyGenerator.Result result = transitsim.planning.PlanCheck.generate(dataset, 1, 0);
 		PlanCheckTest.addDutyPaths(dataset, result, false);

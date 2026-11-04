@@ -313,7 +313,7 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		if (!recovered.isEmpty()) {
 			tickEvents.add(new Object[]{SimEvent.Kind.RECOVERED, 0L, -1, Integer.MAX_VALUE, String.join(", ", recovered)});
 		}
-		for (final Set<Long> deadlock : runner.reservations.takeDeadlocks()) {
+		for (final Set<Long> deadlock : runner.getReservations().takeDeadlocks()) {
 			tickEvents.add(new Object[]{SimEvent.Kind.DEADLOCK, Collections.min(deadlock), -1, Integer.MAX_VALUE, deadlock.toString()});
 		}
 		tickEvents.sort((event1, event2) -> {

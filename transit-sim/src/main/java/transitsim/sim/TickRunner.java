@@ -54,7 +54,12 @@ import java.util.function.LongSupplier;
  */
 public final class TickRunner<T extends RunTrack> {
 
-	public final RunReservations reservations = new RunReservations();
+	private RunReservations reservations = new RunReservations();
+	/**
+	 * Whether the host deals with the requests for runs once its tick is over, as the reservations are shared with its own
+	 * trains (G1).
+	 */
+	private boolean hostResolves;
 	private final Map<Long, SidingRun> sidings = new TreeMap<>();
 	/**
 	 * Each depot once, in the order of its first siding, and its sidings in order.
@@ -188,6 +193,28 @@ public final class TickRunner<T extends RunTrack> {
 			depotSidings.computeIfAbsent(eachSidingRun.depot, key -> new ArrayList<>()).add(eachSidingRun);
 		});
 		return sidingRun;
+	}
+
+	public RunReservations getReservations() {
+		return reservations;
+	}
+
+	/**
+	 * Has the trains hold and ask for their runs in the host's reservations, shared with the host's own trains, before the
+	 * first tick (G1). The host deals with the requests once its tick is over, and calls {@link #renewReservations} in
+	 * every tick of its own, as the runner may not tick in each of them.
+	 */
+	public void shareReservations(RunReservations shared) {
+		reservations = shared;
+		hostResolves = true;
+	}
+
+	/**
+	 * Every train holds again what it holds and asks again for the run it waits for, as it does in a tick, so a tick of the
+	 * host in which the runner didn't tick doesn't take them away.
+	 */
+	public void renewReservations() {
+		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(HeadlessTrain::renewReservations));
 	}
 
 	public LongFunction<? extends PlanRoute> getRoutes() {
@@ -530,7 +557,9 @@ public final class TickRunner<T extends RunTrack> {
 		}
 		movingTrain = null;
 		tickPosition = Occupant.LAST;
-		reservations.resolve(millis);
+		if (!hostResolves) {
+			reservations.resolve(millis);
+		}
 		standingDrops.forEach(HeadlessTrain::dropStandingTrips);
 		standingDrops.clear();
 		depots.forEach(this::deploy);
@@ -1628,6 +1657,22 @@ public final class TickRunner<T extends RunTrack> {
 				grantedRunEnd = -1;
 			}
 			reservations.hold(id, getRunMoves(Math.max(TrainRules.findRunEnd(this, nextPlatformIndex), grantedRunEnd)));
+		}
+
+		/**
+		 * See {@link TickRunner#renewReservations}.
+		 */
+		private void renewReservations() {
+			if (takenOver || removed) {
+				return;
+			}
+			final List<RunReservations.Move> held = reservations.getHeld(id);
+			if (!held.isEmpty()) {
+				reservations.hold(id, held);
+			}
+			if (requestedRunEnd >= 0) {
+				reservations.request(id, getRunMoves(requestedRunEnd), TrainRules.getPlannedDepartureMillis(this));
+			}
 		}
 
 		private List<RunReservations.Move> getRunMoves(int runEnd) {
