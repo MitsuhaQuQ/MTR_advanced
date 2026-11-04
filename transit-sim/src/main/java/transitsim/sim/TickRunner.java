@@ -1873,6 +1873,17 @@ public final class TickRunner<T extends RunTrack> {
 			return runSegment;
 		}
 
+		/**
+		 * @return what makes the segment the train runs on now, by the runner's clock, or null if it isn't running on one,
+		 * as when it stands, is in its siding, or has just been set off and starts its next segment in the next tick (G2)
+		 */
+		public RunSegment.Spec getSegmentSpec() {
+			if (runSegment == null || !onRoute || takenOver || speed <= 0 || runSegment.isFinished() || Math.abs(runSegment.getPosition() - railProgress) > RunSegment.POSITION_TOLERANCE) {
+				return null;
+			}
+			return runSegment.describe(millis);
+		}
+
 		@Override
 		public void setRunSegment(RunSegment runSegment) {
 			this.runSegment = runSegment;
