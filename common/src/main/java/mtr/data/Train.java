@@ -873,6 +873,15 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	/**
+	 * The front of the train on the track at a rail progress, the point the blocks it passes are checked under.
+	 */
+	protected final Vec3 getFrontPosition(double frontRailProgress) {
+		final double tempRailProgress = Math.max(frontRailProgress - getModelZOffset(), 0);
+		final int index = getIndex(tempRailProgress, false);
+		return path.get(index).rail.getPosition(tempRailProgress - (index == 0 ? 0 : distances.get(index - 1))).add(0, transportMode.railOffset, 0);
+	}
+
+	/**
 	 * Where a point of a car lies on the track, for drawing bogies. The car is counted as in {@link #calculateCar}, and a
 	 * positive offset points from the first end of the car towards the second. Uses the same path and progress as the car
 	 * positions and changes nothing.

@@ -104,6 +104,13 @@ public class TrainServer extends Train {
 	private static final int TRAIN_UPDATE_DISTANCE = 128;
 	private static final int TICKS_TO_SEND_RAIL_PROGRESS = 40;
 
+	/**
+	 * The rail progress of the front when the blocks under it were last checked (see {@link #getCheckPositions}).
+	 */
+	private double lastCheckedRailProgress = Double.NaN;
+	private double lastCheckedSpeed;
+	private static final double SWEEP_STEP = 0.5;
+
 	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
 		super(id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, manualToAutomaticTime);
 		this.timeSegments = timeSegments;
@@ -254,8 +261,9 @@ public class TrainServer extends Train {
 		});
 
 		final BlockPos frontPos = RailwayData.newBlockPos(positions[reversed ? positions.length - 1 : 0]);
+		final Set<BlockPos> checkPositions = getCheckPositions(frontPos, ticksElapsed);
 		if (RailwayData.chunkLoaded(world, frontPos)) {
-			checkBlock(frontPos, checkPos -> {
+			checkPositions.forEach(checkPos -> {
 				if (RailwayData.chunkLoaded(world, checkPos)) {
 					final BlockState state = world.getBlockState(checkPos);
 					final Block block = state.getBlock();
@@ -281,7 +289,7 @@ public class TrainServer extends Train {
 		}
 
 		if (!ridingEntities.isEmpty() && RailwayData.chunkLoaded(world, frontPos)) {
-			checkBlock(frontPos, checkPos -> {
+			checkPositions.forEach(checkPos -> {
 				if (RailwayData.chunkLoaded(world, checkPos) && world.getBlockState(checkPos).getBlock() instanceof BlockTrainAnnouncer) {
 					final BlockEntity entity = world.getBlockEntity(checkPos);
 					if (entity instanceof BlockTrainAnnouncer.TileEntityTrainAnnouncer && ((BlockTrainAnnouncer.TileEntityTrainAnnouncer) entity).matchesFilter(routeId, speed)) {
@@ -825,6 +833,47 @@ public class TrainServer extends Train {
 
 	private int getNextStoppingIndex() {
 		return TrainRules.findNextStoppingIndex(getMotionTrack(), getIndex(0, 0, false));
+	}
+
+	/**
+	 * The blocks a sensor, a cargo loader or an announcer can be in to be set off by the train in this tick: around the
+	 * front of the train as before, and under each block the front passed since the last tick, so a fast train or one
+	 * moving several ticks at once when the server is slow doesn't go past one without setting it off (G3). A jump much
+	 * longer than the train could run, as when it is put somewhere else, sets off nothing on the way.
+	 */
+	private Set<BlockPos> getCheckPositions(BlockPos frontPos, float ticksElapsed) {
+		final Set<BlockPos> checkPositions = new LinkedHashSet<>();
+		checkBlock(frontPos, checkPositions::add);
+		if (!path.isEmpty()) {
+			for (final double sweptRailProgress : getSweptRailProgresses(lastCheckedRailProgress, railProgress, Math.max(Math.abs(speed), lastCheckedSpeed), ticksElapsed)) {
+				final BlockPos pos = RailwayData.newBlockPos(getFrontPosition(sweptRailProgress));
+				for (int y = 0; y <= 3; y++) {
+					checkPositions.add(pos.below(y));
+				}
+			}
+		}
+		lastCheckedRailProgress = railProgress;
+		lastCheckedSpeed = Math.abs(speed);
+		return checkPositions;
+	}
+
+	/**
+	 * @param fromRailProgress where the front was when last checked, or NaN
+	 * @param speed            the faster of the speeds then and now, in blocks a tick
+	 * @return the rail progresses of the front to check under on the way to where it is now, every half block, or none if
+	 * it moved back, hardly moved or jumped further than it could run
+	 */
+	public static List<Double> getSweptRailProgresses(double fromRailProgress, double toRailProgress, double speed, float ticksElapsed) {
+		final List<Double> sweptRailProgresses = new ArrayList<>();
+		final double passed = toRailProgress - fromRailProgress;
+		final double maxPassed = speed * Math.max(1, ticksElapsed) * 1.5 + 2;
+		if (Double.isNaN(fromRailProgress) || passed <= 1 || passed > maxPassed) {
+			return sweptRailProgresses;
+		}
+		for (double sweptRailProgress = fromRailProgress; sweptRailProgress < toRailProgress; sweptRailProgress += SWEEP_STEP) {
+			sweptRailProgresses.add(sweptRailProgress);
+		}
+		return sweptRailProgresses;
 	}
 
 	private void checkBlock(BlockPos pos, Consumer<BlockPos> callback) {
