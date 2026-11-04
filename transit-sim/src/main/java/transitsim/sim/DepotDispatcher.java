@@ -8,6 +8,7 @@ import transitsim.plan.PlanTrack;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.TripPath;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,6 +41,11 @@ public class DepotDispatcher {
 	 * counted by how many trains reserve them.
 	 */
 	private final Map<Long, Integer> standingTrips = new HashMap<>();
+	/**
+	 * The depots sharing a route with this one, whose trains' services count as taken here too, so a service of a route
+	 * two depots run is run by one train, whichever depot sends it.
+	 */
+	private final List<DepotDispatcher> peers = new ArrayList<>();
 
 	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
 
@@ -61,7 +67,48 @@ public class DepotDispatcher {
 
 	public boolean isTripReserved(long routeId, long tripMillis) {
 		final long tripKey = getTripKey(routeId, tripMillis);
+		if (isReservedHere(tripKey)) {
+			return true;
+		}
+		for (final DepotDispatcher peer : peers) {
+			if (peer.isReservedHere(tripKey)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isReservedHere(long tripKey) {
 		return reservedTrips.contains(tripKey) || newReservedTrips.contains(tripKey) || standingTrips.containsKey(tripKey);
+	}
+
+	/**
+	 * @return the latest service of this first route this depot or one sharing its routes sent a train out for, so a
+	 * service a train of either has run already isn't sent again once that train has finished it
+	 */
+	public long getLastDeployedTrip(long routeId) {
+		long last = lastDeployedTrips.getOrDefault(routeId, 0L);
+		for (final DepotDispatcher peer : peers) {
+			last = Math.max(last, peer.lastDeployedTrips.getOrDefault(routeId, 0L));
+		}
+		return last;
+	}
+
+	/**
+	 * The two depots run a route in common, so each takes the services the other's trains have taken as taken.
+	 */
+	public void shareServicesWith(DepotDispatcher other) {
+		if (other != this && !peers.contains(other)) {
+			peers.add(other);
+			other.peers.add(this);
+		}
+	}
+
+	/**
+	 * Forgets the depots this one shared services with, before they are worked out again.
+	 */
+	public void clearPeers() {
+		peers.clear();
 	}
 
 	/**

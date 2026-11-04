@@ -597,7 +597,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final RouteTimetable timetable = getTimetable(train.trainId);
 				final Route firstRoute = timetable == null ? null : getTrainRoutes(train.trainId).get(0);
 				final long currentMillis = System.currentTimeMillis();
-				final long tripMillis = timetable == null ? 0 : train.findDeployService(dispatcher.lastDeployedTrips.getOrDefault(firstRoute.id, 0L));
+				final long tripMillis = timetable == null ? 0 : train.findDeployService(dispatcher.getLastDeployedTrip(firstRoute.id));
 				if (timetable == null ? getMillisUntilDeploy(1) == 0 : tripMillis != 0) {
 					lastDeployedMillis = currentMillis;
 					deployIndex++;
@@ -742,6 +742,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	public static boolean supportsTimetable(TransportMode transportMode) {
 		return !transportMode.continuousMovement && transportMode != TransportMode.AIRPLANE;
+	}
+
+	/**
+	 * The two depots run a route in common, so a service either one's trains take isn't taken by the other's too.
+	 */
+	public void shareServicesWith(Depot other) {
+		dispatcher.shareServicesWith(other.dispatcher);
+	}
+
+	public void clearSharedServices() {
+		dispatcher.clearPeers();
 	}
 
 	public void reserveTrip(long routeId, long tripMillis) {

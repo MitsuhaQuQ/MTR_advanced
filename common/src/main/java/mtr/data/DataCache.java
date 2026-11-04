@@ -109,7 +109,18 @@ public class DataCache {
 			depots.forEach(depot -> {
 				depot.routeIds.removeIf(routeId -> routeIdMap.get(routeId) == null);
 				depot.routeIds.forEach(routeId -> routeIdToOneDepot.put(routeId, depot));
+				depot.clearSharedServices();
 			});
+			// Depots running a route in common share its services, so each service is run by one train
+			final List<Depot> depotList = new ArrayList<>(depots);
+			for (int i = 0; i < depotList.size(); i++) {
+				for (int j = i + 1; j < depotList.size(); j++) {
+					final Depot depot1 = depotList.get(i), depot2 = depotList.get(j);
+					if (depot1.routeIds.stream().anyMatch(depot2.routeIds::contains)) {
+						depot1.shareServicesWith(depot2);
+					}
+				}
+			}
 
 			platformConnections.clear();
 			routes.forEach(route -> {

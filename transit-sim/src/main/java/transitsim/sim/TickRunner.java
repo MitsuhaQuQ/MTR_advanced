@@ -581,14 +581,25 @@ public final class TickRunner<T extends RunTrack> {
 		changedRails.clear();
 		removedTrains.forEach(HeadlessTrain::dropRails);
 		removedTrains.clear();
+		// A service taken or let go also wakes the trains waiting in the depots sharing its routes
+		final Set<DepotBoard> changedDepots = new HashSet<>();
 		for (final DepotBoard depot : depots) {
 			if (depot.changed) {
-				depot.changed = false;
-				depotSidings.get(depot).forEach(sidingRun -> sidingRun.trains.forEach(train -> {
-					if (!train.onRoute) {
-						wake(train);
-					}
-				}));
+				changedDepots.add(depot);
+				changedDepots.addAll(depot.peers);
+			}
+		}
+		for (final DepotBoard depot : depots) {
+			depot.changed = false;
+			if (changedDepots.contains(depot)) {
+				final List<SidingRun> depotRuns = depotSidings.get(depot);
+				if (depotRuns != null) {
+					depotRuns.forEach(sidingRun -> sidingRun.trains.forEach(train -> {
+						if (!train.onRoute) {
+							wake(train);
+						}
+					}));
+				}
 			}
 		}
 		for (final SidingRun sidingRun : sidings.values()) {
@@ -756,7 +767,7 @@ public final class TickRunner<T extends RunTrack> {
 	 * game's depot does. A depot running by duties sends the train of the duty due first.
 	 */
 	private void deploy(DepotBoard depot) {
-		if (skipping && !readyDepots.contains(depot) && !depot.changed && !depot.duties.diagramMode) {
+		if (skipping && !readyDepots.contains(depot) && !depot.changedWithPeers() && !depot.duties.diagramMode) {
 			// The trains left alone that could leave can't yet, and no service was taken or let go meanwhile
 			depot.dispatcher.startTick();
 			return;
@@ -831,7 +842,7 @@ public final class TickRunner<T extends RunTrack> {
 			return false;
 		}
 		final PlanRoute firstRoute = timetable == null ? null : depot.getTrainRoutes(sidingRun.siding.trainId).get(0);
-		final long tripMillis = timetable == null ? 0 : train.service.findDeployService(depot.dispatcher.lastDeployedTrips.getOrDefault(firstRoute.getRouteId(), 0L));
+		final long tripMillis = timetable == null ? 0 : train.service.findDeployService(depot.dispatcher.getLastDeployedTrip(firstRoute.getRouteId()));
 		if (timetable == null ? DepotDispatcher.getMillisUntilDeploy(depot.departures, depot.lastDeployedMillis, millis, 1) != 0 : tripMillis == 0) {
 			return false;
 		}
@@ -1440,7 +1451,7 @@ public final class TickRunner<T extends RunTrack> {
 					if (depotRoutes.isEmpty()) {
 						return Long.MAX_VALUE;
 					}
-					final long nextDeployMillis = service.getNextDeployMillis(sidingRun.depot.dispatcher.lastDeployedTrips.getOrDefault(depotRoutes.get(0).getRouteId(), 0L));
+					final long nextDeployMillis = service.getNextDeployMillis(sidingRun.depot.dispatcher.getLastDeployedTrip(depotRoutes.get(0).getRouteId()));
 					return nextDeployMillis == Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(0, (nextDeployMillis - millis) / MotionConstants.MILLIS_PER_TICK - 1);
 				}
 				return Long.MAX_VALUE;

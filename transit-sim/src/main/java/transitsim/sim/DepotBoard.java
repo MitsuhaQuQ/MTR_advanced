@@ -46,6 +46,37 @@ public final class DepotBoard implements TrainService.Board {
 	 */
 	boolean changed;
 	/**
+	 * The depots sharing a route with this one (see {@link DepotDispatcher#shareServicesWith}), whose trains waiting to
+	 * leave look again when this one takes or lets go of a service.
+	 */
+	final List<DepotBoard> peers = new ArrayList<>();
+
+	/**
+	 * The two depots run a route in common, so a service either one's trains take isn't taken by the other's too.
+	 */
+	public void shareServicesWith(DepotBoard other) {
+		if (other != this && !peers.contains(other)) {
+			peers.add(other);
+			other.peers.add(this);
+			dispatcher.shareServicesWith(other.dispatcher);
+		}
+	}
+
+	/**
+	 * Whether this depot or one sharing a route with it took or let go of a service in this tick.
+	 */
+	boolean changedWithPeers() {
+		if (changed) {
+			return true;
+		}
+		for (final DepotBoard peer : peers) {
+			if (peer.changed) {
+				return true;
+			}
+		}
+		return false;
+	}
+	/**
 	 * Where the services reserved are written down as well, while a train reserves its services for the tick.
 	 */
 	private List<Long> recorder;

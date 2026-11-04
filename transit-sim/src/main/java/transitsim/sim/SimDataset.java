@@ -196,6 +196,15 @@ public final class SimDataset {
 			}
 			boards.put(depot.id, board);
 		}
+		// Depots running a route in common share its services, as the game's depots do
+		for (int i = 0; i < depots.size(); i++) {
+			for (int j = i + 1; j < depots.size(); j++) {
+				final DepotData depot1 = depots.get(i), depot2 = depots.get(j);
+				if (Arrays.stream(depot1.routeIds).anyMatch(routeId -> Arrays.stream(depot2.routeIds).anyMatch(other -> other == routeId))) {
+					boards.get(depot1.id).shareServicesWith(boards.get(depot2.id));
+				}
+			}
+		}
 		for (final SidingData sidingData : sidings) {
 			final DepotBoard board = boards.get(sidingData.depotId);
 			if (board == null || sidingData.path.isEmpty()) {
