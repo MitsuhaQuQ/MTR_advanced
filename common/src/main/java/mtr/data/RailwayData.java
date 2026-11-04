@@ -485,6 +485,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		prevPlatformCount = platforms.size();
 		prevSidingCount = sidings.size();
 
+		// Track laid or taken away in this tick is saved now, the rest with the next save
+		railwayDataFileSaveModule.saveRailsNow();
 		railwayDataFileSaveModule.autoSaveTick();
 	}
 
@@ -505,6 +507,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public long addRail(Player player, TransportMode transportMode, BlockPos posStart, BlockPos posEnd, Rail rail, boolean validate) {
 		final long newId = validate ? new Random().nextLong() : 0;
 		addRail(rails, platforms, sidings, transportMode, posStart, posEnd, rail, newId);
+		railwayDataFileSaveModule.markRailsChanged(Arrays.asList(posStart, posEnd));
 
 		if (validate) {
 			final Rail backwardsRail = DataCache.tryGet(rails, posEnd, posStart);
@@ -571,6 +574,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			final Rail newBackwardsRail = newBackwardsRails.get(posEnd);
 			rails.get(pos).put(posEnd, newRail);
 			rails.get(posEnd).put(pos, newBackwardsRail);
+			railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
 			PacketTrainDataGuiServer.createRailS2C(world, newRail.transportMode, pos, posEnd, newRail, newBackwardsRail, 0);
 		});
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, new ArrayList<>(), Collections.singletonList(String.format("angle:%s", angle.angleDegrees)), pos);
@@ -585,6 +589,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				if (backwardsRail != null && (rail.railType == RailType.TURN_BACK || backwardsRail.railType == RailType.TURN_BACK) && rail.turnBackDwell != turnBackDwell) {
 					rail.turnBackDwell = turnBackDwell;
 					backwardsRail.turnBackDwell = turnBackDwell;
+					railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
 					PacketTrainDataGuiServer.createRailS2C(world, rail.transportMode, pos, posEnd, rail, backwardsRail, 0);
 				}
 			});
@@ -598,6 +603,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	public void removeNode(Player player, BlockPos pos, TransportMode transportMode) {
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, Collections.singletonList(String.format("type:%s", transportMode)), new ArrayList<>(), pos);
+		// The node and the ends of its rails, whose rails back to it go with it
+		final Set<BlockPos> changed = new HashSet<>(rails.getOrDefault(pos, Collections.emptyMap()).keySet());
+		changed.add(pos);
+		railwayDataFileSaveModule.markRailsChanged(changed);
 		removeNode(world, rails, pos);
 		setKeyNode(pos, false);
 		// A boundary on a rail that was only taken away stays, as the rail is often laid again, but nothing is left of a node
@@ -838,6 +847,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		}
 
 		removeRailConnection(world, rails, pos1, pos2);
+		railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos1, pos2));
 		validateData();
 		final FriendlyByteBuf packet = signalBlocks.getValidationPacket(rails);
 		if (packet != null) {

@@ -226,6 +226,12 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	}
 
 	@Override
+	public void rollback() throws Exception {
+		connection.rollback();
+		hasPendingChanges = false;
+	}
+
+	@Override
 	public void backup() {
 		try {
 			if (!closed && isBackupDue() && backupRunning.compareAndSet(false, true)) {

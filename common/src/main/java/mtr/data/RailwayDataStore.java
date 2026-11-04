@@ -13,6 +13,12 @@ public interface RailwayDataStore {
 
 	void commit() throws Exception;
 
+	/**
+	 * Drops what was written since the last commit, where the store can.
+	 */
+	default void rollback() throws Exception {
+	}
+
 	void backup();
 
 	void close() throws Exception;

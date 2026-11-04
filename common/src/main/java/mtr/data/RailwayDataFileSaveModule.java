@@ -31,7 +31,6 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 * database, and what depended on it (such as a siding on a rail that couldn't be read) isn't deleted with it either.
 	 */
 	private int skippedEntries;
-	private boolean useReducedHash = true;
 	private int filesWritten;
 	private int filesDeleted;
 	private long autoSaveStartMillis;
@@ -39,10 +38,6 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 * What was last written for the day tool, so an unchanged world isn't written again.
 	 */
 	private int lastSimulationHash;
-	/**
-	 * Whether the save going on has written it.
-	 */
-	private boolean simulationDataWritten = true;
 	/**
 	 * Whether a save is going on, writing and then deleting a little each tick.
 	 */
@@ -64,6 +59,16 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 
 	private final Map<String, Integer> existingFiles = new HashMap<>();
 	private final Set<String> checkFilesToDelete = new LinkedHashSet<>();
+	/**
+	 * The entries the save going on writes, worked out a little each tick and held until it is done, then written together
+	 * with its deletions in one transaction: the saved data goes from one whole save to the next, and a save cut off part
+	 * of the way, as by the server being killed, leaves the one before.
+	 */
+	private final Map<String, PendingWrite> pendingWrites = new LinkedHashMap<>();
+	/**
+	 * Rails changed since the end of the last tick, saved at once at the end of this one.
+	 */
+	private final Set<BlockPos> railsToSaveNow = new HashSet<>();
 
 	private final RailwayDataStore dataStore;
 
@@ -121,7 +126,6 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	public void fullSave() {
-		useReducedHash = false;
 		dirtyStationIds.clear();
 		dirtyPlatformIds.clear();
 		dirtySidingIds.clear();
@@ -134,6 +138,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		dirtyBoundaryNodes.clear();
 		dirtyBoundarySegments.clear();
 		checkFilesToDelete.clear();
+		pendingWrites.clear();
 		saveInProgress = false;
 		autoSave();
 		while (true) {
@@ -164,7 +169,6 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		if (canAutoSave && !saveInProgress) {
 			saveInProgress = true;
 			autoSaveStartMillis = System.currentTimeMillis();
-			simulationDataWritten = false;
 			filesWritten = 0;
 			filesDeleted = 0;
 			dirtyStationIds.addAll(railwayData.dataCache.stationIdMap.keySet());
@@ -221,36 +225,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			}
 
 			final boolean doneWriting = dirtyStationIds.isEmpty() && dirtyPlatformIds.isEmpty() && dirtySidingIds.isEmpty() && dirtyRouteIds.isEmpty() && dirtyDepotIds.isEmpty() && dirtyLiftIds.isEmpty() && dirtyRailPositions.isEmpty() && dirtySignalBlocks.isEmpty() && dirtyKeyNodes.isEmpty() && dirtyBoundaryNodes.isEmpty() && dirtyBoundarySegments.isEmpty();
-			if (hasSpareTime && !checkFilesToDelete.isEmpty() && doneWriting) {
-				final String key = checkFilesToDelete.iterator().next();
-				checkFilesToDelete.remove(key);
-				try {
-					final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
-					dataStore.delete(key.substring(0, separatorIndex), Long.parseLong(key.substring(separatorIndex + 1)));
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-				existingFiles.remove(key);
-				filesDeleted++;
-			}
 
-			if (doneWriting && checkFilesToDelete.isEmpty() && !simulationDataWritten) {
-				// What the component's day tool simulates, once a save, written again only when it changed
-				simulationDataWritten = true;
-				try {
-					final byte[] simulationData = SimExport.build(railwayData);
-					final int simulationHash = Arrays.hashCode(simulationData);
-					if (simulationHash != lastSimulationHash) {
-						dataStore.writeSimulationData(simulationData);
-						lastSimulationHash = simulationHash;
-					}
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-
-			if (saveInProgress && doneWriting && checkFilesToDelete.isEmpty()) {
+			if (saveInProgress && doneWriting) {
 				saveInProgress = false;
+				finishSave();
 				final Map<Long, Map<BlockPos, TrainDelay>> trainDelays = railwayData.getTrainDelays();
 				final List<Long> routeIdsToRemove = new ArrayList<>();
 				final List<BlockPos> posToRemove = new ArrayList<>();
@@ -261,7 +239,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 					}
 				}));
 
-				if (!useReducedHash || filesWritten > 0 || filesDeleted > 0) {
+				if (filesWritten > 0 || filesDeleted > 0) {
 					System.out.println("Minecraft Transit Railway save complete for " + world.dimension().location() + " in " + (System.currentTimeMillis() - autoSaveStartMillis) / 1000 + " second(s)");
 					if (filesWritten > 0) {
 						System.out.println("- Changed: " + filesWritten);
@@ -295,9 +273,137 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				e.printStackTrace();
 			}
 
-			return doneWriting && checkFilesToDelete.isEmpty();
+			return doneWriting;
 		} else {
 			return true;
+		}
+	}
+
+	/**
+	 * Writes what the save worked out and deletes what is gone, in one transaction (see {@link #pendingWrites}). If it
+	 * fails, nothing of it is kept, and the next save writes it all again.
+	 */
+	private void finishSave() {
+		try {
+			for (final PendingWrite pendingWrite : pendingWrites.values()) {
+				dataStore.write(pendingWrite.type, pendingWrite.id, pendingWrite.data);
+			}
+			for (final String key : checkFilesToDelete) {
+				final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
+				dataStore.delete(key.substring(0, separatorIndex), Long.parseLong(key.substring(separatorIndex + 1)));
+			}
+			// What the component's day tool simulates, written again only when it changed
+			final byte[] simulationData = SimExport.build(railwayData);
+			final int simulationHash = Arrays.hashCode(simulationData);
+			if (simulationHash != lastSimulationHash) {
+				dataStore.writeSimulationData(simulationData);
+			}
+			dataStore.commit();
+			lastSimulationHash = simulationHash;
+			pendingWrites.forEach((key, pendingWrite) -> existingFiles.put(key, pendingWrite.hash));
+			checkFilesToDelete.forEach(existingFiles::remove);
+			filesWritten = pendingWrites.size();
+			filesDeleted = checkFilesToDelete.size();
+		} catch (Exception e) {
+			System.out.println("Minecraft Transit Railway could not save " + world.dimension().location() + "; the saved data stays as it was after the last save, and the next save tries again");
+			e.printStackTrace();
+			try {
+				dataStore.rollback();
+			} catch (Exception e2) {
+				e2.printStackTrace();
+			}
+		}
+		pendingWrites.clear();
+		checkFilesToDelete.clear();
+	}
+
+	/**
+	 * Has rails changed by a player saved at the end of the tick, rather than with the next save (see
+	 * {@link #saveRailsNow}).
+	 */
+	public void markRailsChanged(Collection<BlockPos> positions) {
+		if (canAutoSave) {
+			railsToSaveNow.addAll(positions);
+		}
+	}
+
+	/**
+	 * Saves the rails changed in this tick at once, in a transaction of their own, with the platforms and sidings that
+	 * came or went with them, so laying track isn't lost if the server stops before the next save. Called at the end of
+	 * the tick.
+	 */
+	public void saveRailsNow() {
+		if (railsToSaveNow.isEmpty() || !canAutoSave) {
+			railsToSaveNow.clear();
+			return;
+		}
+		final Map<String, PendingWrite> writes = new LinkedHashMap<>();
+		final Set<String> deletes = new LinkedHashSet<>();
+		try {
+			for (final BlockPos pos : railsToSaveNow) {
+				final Map<BlockPos, Rail> connections = rails.get(pos);
+				final String key = getKey(TYPE_RAILS, pos.asLong());
+				if (connections != null && !connections.isEmpty()) {
+					addWrite(writes, new RailEntry(pos, connections), pos.asLong(), TYPE_RAILS);
+				} else if (existingFiles.containsKey(key)) {
+					deletes.add(key);
+				}
+			}
+			// A platform or siding is made or taken away with its rail
+			railwayData.platforms.forEach(platform -> {
+				if (!existingFiles.containsKey(getKey(TYPE_PLATFORMS, platform.id))) {
+					addWrite(writes, platform, platform.id, TYPE_PLATFORMS);
+				}
+			});
+			railwayData.sidings.forEach(siding -> {
+				if (!existingFiles.containsKey(getKey(TYPE_SIDINGS, siding.id))) {
+					addWrite(writes, siding, siding.id, TYPE_SIDINGS);
+				}
+			});
+			existingFiles.keySet().forEach(key -> {
+				final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
+				final String type = key.substring(0, separatorIndex);
+				final long id = Long.parseLong(key.substring(separatorIndex + 1));
+				if (type.equals(TYPE_PLATFORMS) && !railwayData.dataCache.platformIdMap.containsKey(id) && railwayData.platforms.stream().noneMatch(platform -> platform.id == id) || type.equals(TYPE_SIDINGS) && !railwayData.dataCache.sidingIdMap.containsKey(id) && railwayData.sidings.stream().noneMatch(siding -> siding.id == id)) {
+					deletes.add(key);
+				}
+			});
+			if (skippedEntries > 0) {
+				// Nothing is deleted while entries that couldn't be read are kept
+				deletes.clear();
+			}
+			for (final PendingWrite write : writes.values()) {
+				dataStore.write(write.type, write.id, write.data);
+			}
+			for (final String key : deletes) {
+				final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
+				dataStore.delete(key.substring(0, separatorIndex), Long.parseLong(key.substring(separatorIndex + 1)));
+			}
+			dataStore.commit();
+			writes.forEach((key, write) -> existingFiles.put(key, write.hash));
+			deletes.forEach(existingFiles::remove);
+			// What the save going on worked out earlier for these is out of date now
+			writes.keySet().forEach(key -> {
+				pendingWrites.remove(key);
+				checkFilesToDelete.remove(key);
+			});
+			deletes.forEach(pendingWrites::remove);
+		} catch (Exception e) {
+			System.out.println("Minecraft Transit Railway could not save the rails just changed in " + world.dimension().location() + "; they are saved with the next save");
+			e.printStackTrace();
+			try {
+				dataStore.rollback();
+			} catch (Exception e2) {
+				e2.printStackTrace();
+			}
+		}
+		railsToSaveNow.clear();
+	}
+
+	private void addWrite(Map<String, PendingWrite> writes, SerializedDataBase data, long id, String type) {
+		final byte[] bytes = toBytes(data);
+		if (bytes != null) {
+			writes.put(getKey(type, id), new PendingWrite(type, id, bytes));
 		}
 	}
 
@@ -317,7 +423,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 						callback.accept(data);
 					}
 
-					existingFiles.put(getKey(type, id), getHash(data, true));
+					existingFiles.put(getKey(type, id), Arrays.hashCode(bytes));
 				} catch (Exception e) {
 					System.out.println("Skipping invalid Minecraft Transit Railway data " + getKey(type, id));
 					e.printStackTrace();
@@ -330,26 +436,45 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	private String writeMessagePackToFile(SerializedDataBase data, long id, String type) {
+		final byte[] bytes = toBytes(data);
+		if (bytes == null) {
+			return null;
+		}
+		final String key = getKey(type, id);
+		final PendingWrite pendingWrite = new PendingWrite(type, id, bytes);
+		// Everything an entry saves counts, so a train's position or a depot's last service sent out are saved each time
+		if (!existingFiles.containsKey(key) || pendingWrite.hash != existingFiles.get(key)) {
+			pendingWrites.put(key, pendingWrite);
+		}
+		return key;
+	}
+
+	private static byte[] toBytes(SerializedDataBase data) {
 		try {
-			final String key = getKey(type, id);
-			final int hash = getHash(data, useReducedHash);
-
-			if (!existingFiles.containsKey(key) || hash != existingFiles.get(key)) {
-				final MessageBufferPacker messageBufferPacker = MessagePack.newDefaultBufferPacker();
-				messageBufferPacker.packMapHeader(data.messagePackLength());
-				data.toMessagePack(messageBufferPacker);
-				messageBufferPacker.close();
-				dataStore.write(type, id, messageBufferPacker.toByteArray());
-
-				existingFiles.put(key, hash);
-				filesWritten++;
-			}
-
-			return key;
+			final MessageBufferPacker messageBufferPacker = MessagePack.newDefaultBufferPacker();
+			messageBufferPacker.packMapHeader(data.messagePackLength());
+			data.toMessagePack(messageBufferPacker);
+			messageBufferPacker.close();
+			return messageBufferPacker.toByteArray();
 		} catch (Exception e) {
 			e.printStackTrace();
+			return null;
 		}
-		return null;
+	}
+
+	private static final class PendingWrite {
+
+		private final String type;
+		private final long id;
+		private final byte[] data;
+		private final int hash;
+
+		private PendingWrite(String type, long id, byte[] data) {
+			this.type = type;
+			this.id = id;
+			this.data = data;
+			hash = Arrays.hashCode(data);
+		}
 	}
 
 	private <T extends SerializedDataBase, U> boolean writeDirtyDataToFile(List<U> dirtyData, Function<U, T> getId, Function<U, Long> idToLong, String type) {
@@ -372,28 +497,6 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 
 	private static String getKey(String type, long id) {
 		return type + KEY_SEPARATOR + id;
-	}
-
-	private static int getHash(SerializedDataBase data, boolean useReducedHash) {
-		try {
-			final MessageBufferPacker messageBufferPacker = MessagePack.newDefaultBufferPacker();
-
-			if (useReducedHash && data instanceof IReducedSaveData) {
-				messageBufferPacker.packMapHeader(((IReducedSaveData) data).reducedMessagePackLength());
-				((IReducedSaveData) data).toReducedMessagePack(messageBufferPacker);
-			} else {
-				messageBufferPacker.packMapHeader(data.messagePackLength());
-				data.toMessagePack(messageBufferPacker);
-			}
-
-			final int hash = Arrays.hashCode(messageBufferPacker.toByteArray());
-			messageBufferPacker.close();
-
-			return hash;
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return 0;
 	}
 
 	private static class RailEntry extends SerializedDataBase {
