@@ -10,6 +10,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * The client's side of keeping players from writing over each other's edits (multiplayer edit conflicts, see
@@ -34,6 +35,15 @@ public final class ClientEditing implements IPacket {
 	 * The web editor's changes being collected to send as one batch, or null.
 	 */
 	private static List<Object[]> batch;
+	/**
+	 * In the batch being collected, the revisions of each part the page made its changes from, by {@code kind:id}.
+	 */
+	private static final Map<String, Map<String, Integer>> BATCH_BASES = new HashMap<>();
+	/**
+	 * The batches sent and not yet answered, by number.
+	 */
+	private static final Map<Integer, CompletableFuture<BatchResult>> PENDING = new HashMap<>();
+	private static int nextBatchId;
 
 	/**
 	 * How long a screen's revisions are used for its changes, as a screen left open longer is taken as stale anyway.
@@ -56,8 +66,9 @@ public final class ClientEditing implements IPacket {
 		final long id = packet.getLong(packet.readerIndex());
 		final String part = EditGuard.getPart(packetId, packet);
 		final String objectKey = kind + ":" + id;
-		final Map<String, Integer> snapshot = getSnapshot(objectKey);
-		final int base = EditGuard.isDelete(packetId) ? EditRevisions.UNCHECKED : snapshot == null ? REVISIONS.getOrDefault(EditRevisions.getKey(kind, id, part), 0) : snapshot.getOrDefault(part, 0);
+		final Map<String, Integer> batchBases = batch == null ? null : BATCH_BASES.get(objectKey);
+		final Map<String, Integer> snapshot = batchBases == null ? getSnapshot(objectKey) : null;
+		final int base = EditGuard.isDelete(packetId) ? EditRevisions.UNCHECKED : batchBases != null ? batchBases.getOrDefault(part, 0) : snapshot == null ? REVISIONS.getOrDefault(EditRevisions.getKey(kind, id, part), 0) : snapshot.getOrDefault(part, 0);
 		if (snapshot != null && base != EditRevisions.UNCHECKED) {
 			// The screen's next change of the same part goes on from this one
 			snapshot.put(part, base + 1);
@@ -112,6 +123,35 @@ public final class ClientEditing implements IPacket {
 	 */
 	public static synchronized void startBatch() {
 		batch = new ArrayList<>();
+		BATCH_BASES.clear();
+	}
+
+	/**
+	 * In the batch being collected, this object's changes are checked from these revisions of its parts, as the page
+	 * had them when it made its draft.
+	 */
+	public static synchronized void setBatchBases(NameColorDataBase data, Map<String, Integer> parts) {
+		final String kind = EditGuard.getKind(data);
+		if (kind != null && batch != null) {
+			BATCH_BASES.putIfAbsent(kind + ":" + data.id, new HashMap<>(parts));
+		}
+	}
+
+	/**
+	 * @return the revision of each part of this object as the client knows it now
+	 */
+	public static synchronized Map<String, Integer> getRevisions(NameColorDataBase data) {
+		final String kind = EditGuard.getKind(data);
+		final Map<String, Integer> parts = new TreeMap<>();
+		if (kind != null) {
+			final String prefix = kind + ":" + data.id + ":";
+			REVISIONS.forEach((key, revision) -> {
+				if (key.startsWith(prefix)) {
+					parts.put(key.substring(prefix.length()), revision);
+				}
+			});
+		}
+		return parts;
 	}
 
 	/**
@@ -119,13 +159,18 @@ public final class ClientEditing implements IPacket {
 	 *
 	 * @param routeBases the revision ({@link Route#getEditorRevision}) the page based its changes of each route on
 	 */
-	public static synchronized void sendBatch(Map<Long, String> routeBases) {
+	public static synchronized CompletableFuture<BatchResult> sendBatch(Map<Long, String> routeBases) {
 		final List<Object[]> changes = batch;
 		batch = null;
+		BATCH_BASES.clear();
 		if (changes == null || changes.isEmpty()) {
-			return;
+			return CompletableFuture.completedFuture(new BatchResult(true, false, ""));
 		}
+		final int batchId = nextBatchId++;
+		final CompletableFuture<BatchResult> future = new CompletableFuture<>();
+		PENDING.put(batchId, future);
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeInt(batchId);
 		packet.writeInt(changes.size());
 		for (final Object[] change : changes) {
 			final byte[] bytes = (byte[]) change[2];
@@ -140,6 +185,38 @@ public final class ClientEditing implements IPacket {
 			packet.writeUtf(base);
 		});
 		RegistryClient.sendToServer(PACKET_EDIT_BATCH, packet);
+		return future;
+	}
+
+	/**
+	 * Whether a batch was made, as the server answers it.
+	 */
+	public static void receiveResultS2C(FriendlyByteBuf packet) {
+		final int batchId = packet.readInt();
+		final BatchResult result = new BatchResult(packet.readBoolean(), packet.readBoolean(), packet.readUtf());
+		final CompletableFuture<BatchResult> future;
+		synchronized (ClientEditing.class) {
+			future = PENDING.remove(batchId);
+		}
+		if (future != null) {
+			future.complete(result);
+		}
+	}
+
+	public static final class BatchResult {
+
+		public final boolean ok;
+		/**
+		 * If it wasn't made, whether because something in it was deleted, and who changed or deleted it.
+		 */
+		public final boolean deleted;
+		public final String playerName;
+
+		private BatchResult(boolean ok, boolean deleted, String playerName) {
+			this.ok = ok;
+			this.deleted = deleted;
+			this.playerName = playerName;
+		}
 	}
 
 	/**

@@ -182,5 +182,9 @@
   "gui.mtr.node_regions": "%s regions",
   "gui.mtr.edit_conflict_changed": "%s changed this just now, so your change wasn't made; you now see the latest version",
   "gui.mtr.edit_conflict_deleted": "%s deleted this, so your change wasn't made",
-  "gui.mtr.others_editing": "Also editing: %s"
+  "gui.mtr.others_editing": "Also editing: %s",
+  "gui.mtr.editor_batch_conflict": "Some routes were changed in the game after the draft; nothing was applied and the whole draft is kept",
+  "gui.mtr.editor_server_rejected": "%s changed some of these routes just now; the server didn't write them and the draft is kept",
+  "gui.mtr.editor_server_deleted": "%s deleted something these changes are on; the server didn't write them and the draft is kept",
+  "gui.mtr.editor_no_answer": "No answer from the server; the draft is kept, try again in a moment"
 }

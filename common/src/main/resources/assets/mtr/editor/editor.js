@@ -112,7 +112,12 @@
 	// The route to show once the game has made a new one
 	let pendingOpen = null;
 	const draftOf = r => draft.routes[r.id];
-	const draftEntry = r => draft.routes[r.id] || (draft.routes[r.id] = { base: r.revision });
+	// Each draft keeps the revision of each part of the route it was made from, which the game checks part by part
+	const draftEntry = r => draft.routes[r.id] || (draft.routes[r.id] = { base: r.revision, parts: Object.assign({}, r.parts || {}) });
+	/** The parts of a route the editor's changes send: the timetable, the stops and the route's settings sent with them. */
+	const EDITOR_PARTS = ["timetable_services", "platform_ids", "is_light_rail_route"];
+	/** Whether the game changed a part of the route the draft would send since the draft was made. */
+	const draftOutOfDate = (entry, r) => entry.parts ? EDITOR_PARTS.some(part => ((r.parts || {})[part] || 0) !== (entry.parts[part] || 0)) : r.revision !== entry.base;
 	/** A route's entry goes once nothing is left in it but where it came from. */
 	function tidyDraft(id) {
 		const entry = draft.routes[id];
@@ -138,25 +143,26 @@
 		const operations = [], owners = [];
 		Object.entries(draft.routes).forEach(([id, entry]) => {
 			let base = entry.base;
+			const parts = entry.parts;
 			// Nothing else of a route being deleted is worth sending
 			if (entry.deleted) {
-				operations.push({ type: "deleteRoute", route: id, base, force: Boolean(entry.force) });
+				operations.push({ type: "deleteRoute", route: id, base, parts, force: Boolean(entry.force) });
 				owners.push(id);
 				return;
 			}
 			if (entry.platforms) {
-				operations.push({ type: "platforms", route: id, base, force: Boolean(entry.force), platforms: entry.platforms });
+				operations.push({ type: "platforms", route: id, base, parts, force: Boolean(entry.force), platforms: entry.platforms });
 				owners.push(id);
 				base = undefined;
 			}
 			if (entry.timetable) {
-				operations.push({ type: "timetable", route: id, base, force: Boolean(entry.force), timetable: entry.timetable });
+				operations.push({ type: "timetable", route: id, base, parts, force: Boolean(entry.force), timetable: entry.timetable });
 				owners.push(id);
 				// The timetable changes the revision, so what follows for the route doesn't check it again
 				base = undefined;
 			}
 			if ("managed" in entry) {
-				operations.push({ type: "managed", route: id, base, force: Boolean(entry.force), managed: entry.managed });
+				operations.push({ type: "managed", route: id, base, parts, force: Boolean(entry.force), managed: entry.managed });
 				owners.push(id);
 			}
 		});
@@ -217,7 +223,10 @@
 		if (!entry) return;
 		if (keep) {
 			entry.force = true;
-			if (r) entry.base = r.revision;
+			if (r) {
+				entry.base = r.revision;
+				entry.parts = Object.assign({}, r.parts || {});
+			}
 			delete entry.conflict;
 			delete entry.error;
 		} else {
@@ -232,7 +241,10 @@
 		const tag = $("draft-tag");
 		tag.textContent = applying ? tr("正在应用…") : count ? `${tr("草稿 {0} 项", count)}` : tr("没有草稿");
 		tag.classList.toggle("has-draft", count > 0);
-		$("btn-apply").disabled = applying || !count || !(data && data.canEdit);
+		// A draft some of whose routes were changed in the game meanwhile is kept, but can't be applied until each is settled
+		const hasConflict = Object.values(draft.routes).some(entry => entry.conflict);
+		$("btn-apply").disabled = applying || !count || !(data && data.canEdit) || hasConflict;
+		$("btn-apply").title = hasConflict ? tr("草稿里有线路在游戏里被改过，先逐条处理再应用") : "";
 		const selected = data && state.route && data.routeById.get(state.route);
 		const button = $("btn-delete");
 		button.textContent = selected && isDeleted(selected) ? tr("取消删除") : tr("删除种别");
@@ -275,7 +287,7 @@
 		// A route changed in the game since its draft was made is a conflict to settle while drafting, before applying
 		Object.entries(draft.routes).forEach(([id, entry]) => {
 			const r = data.routeById.get(id);
-			if (r && entry.base && !entry.force && !entry.conflict && r.revision !== entry.base) {
+			if (r && entry.base && !entry.force && !entry.conflict && draftOutOfDate(entry, r)) {
 				entry.conflict = true;
 				entry.error = r.editors ? tr("游戏里的这条线路在草稿之后改过（{0} 正在编辑）", r.editors) : tr("游戏里的这条线路在草稿之后改过");
 			}
@@ -3263,8 +3275,8 @@
 			html = tr("没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。");
 		} else if (!applyResult && failed.some(([, entry]) => entry.conflict)) {
 			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
-			html = `${tr("下面的线路在草稿之后游戏里改过，应用前先选保留草稿还是用游戏里的：")}<ul>`
-				+ failed.filter(([, entry]) => entry.conflict).map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}<button data-keep="${id}">${tr("保留草稿")}</button><button data-drop="${id}">${tr("用游戏里的")}</button></li>`).join("")
+			html = `${tr("下面的线路在草稿之后游戏里改过。草稿保留着，但要逐条处理后才能应用：")}<ul>`
+				+ failed.filter(([, entry]) => entry.conflict).map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button></li>`).join("")
 				+ "</ul>";
 		} else if (applyResult && (!applyResult.ok || failed.length || otherFailed)) {
 			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
@@ -3272,7 +3284,7 @@
 				+ applyResult.general.map(message => `<li>${escapeHtml(message)}</li>`).join("")
 				+ Object.entries(draft.duties).filter(([, entry]) => entry.error).map(([id, entry]) => `<li>${tr("车厂{0}的运用：{1}", escapeHtml(shortName(depotById(id) ? depotById(id).name : "?")), escapeHtml(entry.error))}</li>`).join("")
 				+ draft.created.filter(made => made.error).map(made => `<li>${tr("新种别 {0}：{1}", escapeHtml(shortName(made.name)), escapeHtml(made.error))}</li>`).join("")
-				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}${entry.conflict ? `<button data-keep="${id}">${tr("保留草稿")}</button><button data-drop="${id}">${tr("用游戏里的")}</button>` : ""}</li>`).join("")
+				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}${entry.conflict ? `<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button>` : ""}</li>`).join("")
 				+ "</ul>";
 		} else if (applyResult && applyResult.ok) {
 			html = `${tr("已应用 {0} 项。", applyResult.applied)}`;

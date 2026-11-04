@@ -182,5 +182,9 @@
   "gui.mtr.node_regions": "区域 %s 个",
   "gui.mtr.edit_conflict_changed": "%s 刚改过这里，你的修改没有生效，已换成最新的内容",
   "gui.mtr.edit_conflict_deleted": "%s 已删除了它，你的修改没有生效",
-  "gui.mtr.others_editing": "也在编辑：%s"
+  "gui.mtr.others_editing": "也在编辑：%s",
+  "gui.mtr.editor_batch_conflict": "有线路在草稿之后被改过，整批都没有应用，草稿全部保留",
+  "gui.mtr.editor_server_rejected": "%s 刚改过其中的线路，服务端没有写入，草稿保留",
+  "gui.mtr.editor_server_deleted": "%s 删除了这些修改涉及的内容，服务端没有写入，草稿保留",
+  "gui.mtr.editor_no_answer": "没有收到服务端的回复，草稿保留，稍后再试"
 }

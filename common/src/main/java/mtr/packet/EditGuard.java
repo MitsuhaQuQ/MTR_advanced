@@ -165,10 +165,12 @@ public final class EditGuard implements IPacket {
 	}
 
 	/**
-	 * The web editor's changes, made all or not at all: how many, then each as {@link #receiveEditC2S} has it; then how
-	 * many routes, each with the revision the page based its changes on ({@link Route#getEditorRevision}).
+	 * The web editor's changes, made all or not at all: the batch's number, how many changes, then each as
+	 * {@link #receiveEditC2S} has it; then how many routes, each with the revision the page based its changes on
+	 * ({@link Route#getEditorRevision}). The player is told whether they were made, so the page keeps its draft if not.
 	 */
 	private static void receiveBatchC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final int batchId = packet.readInt();
 		final int count = PacketGuard.readCount(packet, 8, MAX_BATCH);
 		final List<ResourceLocation> packetIds = new ArrayList<>();
 		final List<Integer> bases = new ArrayList<>();
@@ -193,6 +195,7 @@ public final class EditGuard implements IPacket {
 		PacketGuard.execute(minecraftServer, () -> {
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData == null || RailwayData.hasNoPermission(player)) {
+				sendResult(player, batchId, false, false, "");
 				return;
 			}
 			final List<long[]> objects = new ArrayList<>();
@@ -218,6 +221,7 @@ public final class EditGuard implements IPacket {
 			}
 			if (firstConflict != null) {
 				reject(player, railwayData, objects, kinds, firstConflict);
+				sendResult(player, batchId, false, firstConflict.deleted, firstConflict.playerName);
 				return;
 			}
 			for (int i = 0; i < packets.size(); i++) {
@@ -225,7 +229,20 @@ public final class EditGuard implements IPacket {
 				final FriendlyByteBuf inner = packets.get(i);
 				apply(minecraftServer, player, railwayData, packetId, KINDS.get(packetId), inner.getLong(inner.readerIndex()), getPart(packetId, inner), inner);
 			}
+			sendResult(player, batchId, true, false, "");
 		});
+	}
+
+	/**
+	 * Whether a batch was made: its number, whether it was, and if not whether because something was deleted, and who.
+	 */
+	private static void sendResult(ServerPlayer player, int batchId, boolean ok, boolean deleted, String playerName) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeInt(batchId);
+		packet.writeBoolean(ok);
+		packet.writeBoolean(deleted);
+		packet.writeUtf(playerName);
+		Registry.sendToPlayer(player, PACKET_EDIT_RESULT, packet);
 	}
 
 	/**

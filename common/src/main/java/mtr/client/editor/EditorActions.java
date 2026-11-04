@@ -42,10 +42,74 @@ public final class EditorActions implements IPacket {
 	 * @return {@code {ok, applied: [operation index], created: [{index, id}], errors: [{index, route, message}]}}
 	 */
 	public static JsonObject apply(JsonObject request) {
+		return applyAndSend(request).result;
+	}
+
+	/**
+	 * Like {@link #apply}, but with the server's answer to wait for: a change the server turns down, as another player
+	 * changed the route meanwhile, isn't counted as applied, so the page keeps it in its draft as a conflict. A route the
+	 * page's draft is out of date for keeps the whole batch from being sent, and nothing is changed.
+	 */
+	public static Pending applyAndSend(JsonObject request) {
+		final JsonArray operations = request.has("operations") ? request.getAsJsonArray("operations") : new JsonArray();
+		if (ClientData.hasPermission() && operations.size() <= MAX_OPERATIONS) {
+			final JsonArray conflicts = new JsonArray();
+			for (int i = 0; i < operations.size(); i++) {
+				final JsonObject operation = operations.get(i).getAsJsonObject();
+				if (isOutOfDate(operation)) {
+					addError(conflicts, i, getString(operation, "route"), "CONFLICT");
+				}
+			}
+			if (conflicts.size() > 0) {
+				addError(conflicts, -1, "", TranslatedMessage.get("gui.mtr.editor_batch_conflict"));
+				final JsonObject result = new JsonObject();
+				result.addProperty("ok", false);
+				result.add("applied", new JsonArray());
+				result.add("created", new JsonArray());
+				result.add("errors", conflicts);
+				return new Pending(result, null, operations);
+			}
+		}
+		return applyChecked(request, operations);
+	}
+
+	/**
+	 * @return whether the page based this change on a version of its route the game has moved on from
+	 */
+	private static boolean isOutOfDate(JsonObject operation) {
+		final String type = getString(operation, "type");
+		if ("duties".equals(type) || "newRoute".equals(type) || operation.has("force") && operation.get("force").getAsBoolean()) {
+			return false;
+		}
+		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
+		if (route == null) {
+			return false;
+		}
+		// Part by part, the parts the editor's changes of a route send
+		if (operation.has("parts") && operation.get("parts").isJsonObject()) {
+			final Map<String, Integer> current = ClientEditing.getRevisions(route);
+			final Map<String, Integer> parts = getParts(operation);
+			return EDITOR_PARTS.stream().anyMatch(part -> !current.getOrDefault(part, 0).equals(parts.getOrDefault(part, 0)));
+		}
+		return operation.has("base") && !getString(operation, "base").equals(EditorData.getRevision(route));
+	}
+
+	/**
+	 * The parts of a route the editor's changes send: its timetable, its stops, and its settings sent with them.
+	 */
+	private static final List<String> EDITOR_PARTS = Arrays.asList("timetable_services", "platform_ids", "is_light_rail_route");
+
+	private static Map<String, Integer> getParts(JsonObject operation) {
+		final Map<String, Integer> parts = new HashMap<>();
+		operation.getAsJsonObject("parts").entrySet().forEach(entry -> parts.put(entry.getKey(), entry.getValue().getAsInt()));
+		return parts;
+	}
+
+	private static Pending applyChecked(JsonObject request, JsonArray operations) {
+		final java.util.concurrent.CompletableFuture<ClientEditing.BatchResult>[] future = new java.util.concurrent.CompletableFuture[]{null};
 		final JsonArray applied = new JsonArray();
 		final JsonArray created = new JsonArray();
 		final JsonArray errors = new JsonArray();
-		final JsonArray operations = request.has("operations") ? request.getAsJsonArray("operations") : new JsonArray();
 
 		if (!ClientData.hasPermission()) {
 			addError(errors, -1, "", TranslatedMessage.get("gui.mtr.editor_no_permission"));
@@ -61,6 +125,11 @@ public final class EditorActions implements IPacket {
 					final JsonObject operation = operations.get(i).getAsJsonObject();
 					final String routeId = getString(operation, "route");
 					final boolean force = operation.has("force") && operation.get("force").getAsBoolean();
+					// The server checks the route's changes part by part, from the revisions the page drafted them from
+					final Route draftedRoute = ClientData.DATA_CACHE.routeIdMap.get(parseId(routeId));
+					if (draftedRoute != null && !force && operation.has("parts") && operation.get("parts").isJsonObject()) {
+						ClientEditing.setBatchBases(draftedRoute, getParts(operation));
+					}
 					String error;
 					try {
 						error = applyOperation(operation, i, created);
@@ -70,7 +139,7 @@ public final class EditorActions implements IPacket {
 					}
 					if (error == null) {
 						applied.add(i);
-						if (!force && operation.has("base") && !"newRoute".equals(getString(operation, "type")) && !"duties".equals(getString(operation, "type"))) {
+						if (!force && operation.has("base") && !operation.has("parts") && !"newRoute".equals(getString(operation, "type")) && !"duties".equals(getString(operation, "type"))) {
 							routeBases.putIfAbsent(parseId(routeId), getString(operation, "base"));
 						}
 					} else {
@@ -78,7 +147,7 @@ public final class EditorActions implements IPacket {
 					}
 				}
 			} finally {
-				ClientEditing.sendBatch(routeBases);
+				future[0] = ClientEditing.sendBatch(routeBases);
 			}
 		}
 
@@ -87,7 +156,62 @@ public final class EditorActions implements IPacket {
 		result.add("applied", applied);
 		result.add("created", created);
 		result.add("errors", errors);
-		return result;
+		return new Pending(result, future[0], operations);
+	}
+
+	/**
+	 * What was sent, and the server's answer to wait for.
+	 */
+	public static final class Pending {
+
+		private final JsonObject result;
+		private final java.util.concurrent.CompletableFuture<ClientEditing.BatchResult> future;
+		private final JsonArray operations;
+
+		private static final int ANSWER_SECONDS = 10;
+
+		private Pending(JsonObject result, java.util.concurrent.CompletableFuture<ClientEditing.BatchResult> future, JsonArray operations) {
+			this.result = result;
+			this.future = future;
+			this.operations = operations;
+		}
+
+		/**
+		 * @return the result for the page: if the server didn't make the changes, or didn't answer, none of them counts as
+		 * applied, and the page keeps them all in its draft
+		 */
+		public JsonObject await() {
+			if (future == null) {
+				return result;
+			}
+			String general;
+			boolean conflict = false;
+			try {
+				final ClientEditing.BatchResult answer = future.get(ANSWER_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+				if (answer.ok) {
+					return result;
+				}
+				conflict = true;
+				general = TranslatedMessage.get(answer.deleted ? "gui.mtr.editor_server_deleted" : "gui.mtr.editor_server_rejected", answer.playerName.isEmpty() ? "?" : answer.playerName);
+			} catch (Exception e) {
+				general = TranslatedMessage.get("gui.mtr.editor_no_answer");
+			}
+			final JsonArray errors = new JsonArray();
+			addError(errors, -1, "", general);
+			for (final JsonElement index : result.getAsJsonArray("applied")) {
+				final JsonObject operation = operations.get(index.getAsInt()).getAsJsonObject();
+				addError(errors, index.getAsInt(), getString(operation, "route"), conflict ? "CONFLICT" : general);
+			}
+			for (final JsonElement error : result.getAsJsonArray("errors")) {
+				errors.add(error);
+			}
+			final JsonObject newResult = new JsonObject();
+			newResult.addProperty("ok", false);
+			newResult.add("applied", new JsonArray());
+			newResult.add("created", new JsonArray());
+			newResult.add("errors", errors);
+			return newResult;
+		}
 	}
 
 	/**

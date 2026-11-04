@@ -294,7 +294,8 @@ public final class EditorServer {
 			}
 			final String content;
 			try {
-				content = onGameThread(() -> EditorActions.apply(requestObject).toString());
+				// Made on the game thread, then the server's answer is waited for here, so the game doesn't stop meanwhile
+				content = onGameThread(() -> EditorActions.applyAndSend(requestObject)).await().toString();
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);

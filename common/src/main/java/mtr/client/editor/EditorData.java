@@ -108,6 +108,10 @@ public final class EditorData {
 		routeObject.addProperty("revision", getRevision(route));
 		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
 		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));
+		// The revision of each part, which a draft keeps so the game checks only the parts it changes
+		final JsonObject parts = new JsonObject();
+		ClientEditing.getRevisions(route).forEach(parts::addProperty);
+		routeObject.add("parts", parts);
 
 		final JsonArray stopsArray = new JsonArray();
 		for (int i = 0; i < route.platformIds.size(); i++) {
