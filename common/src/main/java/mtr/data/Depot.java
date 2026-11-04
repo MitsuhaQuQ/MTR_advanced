@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.sim.DepotBoard;
 import transitsim.sim.DepotDispatcher;
 import transitsim.sim.RunRecord;
 import transitsim.sim.TrainService;
@@ -475,16 +476,31 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Takes what the simulator's depot sent out last and the days its duties ran (G1), so they are saved, and carried on
 	 * from when the simulator starts again.
 	 */
-	public void copyDispatcher(DepotDispatcher simulated) {
+	public void copyDispatcher(DepotBoard simulated) {
 		dispatcher.lastDeployedTrips.clear();
-		dispatcher.lastDeployedTrips.putAll(simulated.lastDeployedTrips);
+		dispatcher.lastDeployedTrips.putAll(simulated.dispatcher.lastDeployedTrips);
 		dispatcher.dutyRunDays.clear();
-		dispatcher.dutyRunDays.putAll(simulated.dutyRunDays);
+		dispatcher.dutyRunDays.putAll(simulated.dispatcher.dutyRunDays);
+		lastDeployedMillis = simulated.lastDeployedMillis;
+		deployIndex = simulated.deployIndex;
 	}
 
 	public void recordDispatcher(RunRecord record, long sidingId) {
 		record.lastDeployedTrips.put(sidingId, new TreeMap<>(dispatcher.lastDeployedTrips));
 		record.dutyRunDays.put(sidingId, new TreeMap<>(dispatcher.dutyRunDays));
+		record.lastDeployedMillis.put(sidingId, lastDeployedMillis);
+		record.deployIndices.put(sidingId, deployIndex);
+	}
+
+	/**
+	 * @return the departures of trains sent out by frequency, as times of the day in order, as the component's simulator
+	 * takes them (G1), worked out first if the depot changed, as after the world is loaded
+	 */
+	public int[] getDeployTimes(Level world) {
+		if (isDirty) {
+			generateTempDepartures(world);
+		}
+		return tempDepartures.stream().mapToInt(Integer::intValue).sorted().toArray();
 	}
 
 	/**

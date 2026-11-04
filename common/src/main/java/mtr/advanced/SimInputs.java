@@ -1,6 +1,7 @@
 package mtr.advanced;
 
 import transitsim.sim.HostInput;
+import transitsim.sim.RunReservations;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,7 +26,19 @@ public final class SimInputs {
 	 * The rails last reported for each train.
 	 */
 	private final Map<Long, Set<UUID>> reported = new HashMap<>();
+	/**
+	 * The runs last reported for each train holding some.
+	 */
+	private final Map<Long, List<RunReservations.Move>> reportedRuns = new HashMap<>();
 	private long sequence;
+
+	/**
+	 * Forgets what was reported, for a new simulator that knows nothing yet.
+	 */
+	public void reset() {
+		reported.clear();
+		reportedRuns.clear();
+	}
 
 	/**
 	 * @return the next sequence number, for other inputs of the host so they don't share one with these
@@ -67,6 +80,38 @@ public final class SimInputs {
 			inputs.add(new HostInput.ExternalTrain(time, sequence++, trainId, rails));
 			if (!rails.isEmpty()) {
 				reported.put(trainId, rails);
+			}
+		});
+		return inputs;
+	}
+
+	/**
+	 * @param time the time of the tick
+	 * @param runs the runs each train the simulator leaves alone holds now, as the game's run reservations have them
+	 * @return the trains whose runs changed since the last tick, with none for a train that holds none any more, in the
+	 * order of their IDs
+	 */
+	public List<HostInput.ExternalRun> updateRuns(long time, Map<Long, List<RunReservations.Move>> runs) {
+		final Map<Long, List<RunReservations.Move>> changed = new TreeMap<>();
+		runs.forEach((trainId, moves) -> {
+			if (!moves.isEmpty() && !moves.equals(reportedRuns.get(trainId))) {
+				changed.put(trainId, moves);
+			}
+		});
+		for (final Iterator<Long> iterator = reportedRuns.keySet().iterator(); iterator.hasNext(); ) {
+			final long trainId = iterator.next();
+			final List<RunReservations.Move> moves = runs.get(trainId);
+			if (moves == null || moves.isEmpty()) {
+				changed.put(trainId, Collections.emptyList());
+				iterator.remove();
+			}
+		}
+
+		final List<HostInput.ExternalRun> inputs = new ArrayList<>();
+		changed.forEach((trainId, moves) -> {
+			inputs.add(new HostInput.ExternalRun(time, sequence++, trainId, moves));
+			if (!moves.isEmpty()) {
+				reportedRuns.put(trainId, moves);
 			}
 		});
 		return inputs;

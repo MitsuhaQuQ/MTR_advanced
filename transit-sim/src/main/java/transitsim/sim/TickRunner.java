@@ -371,7 +371,8 @@ public final class TickRunner<T extends RunTrack> {
 	 * Every train on the line goes to where the plan has it now (6.3), furthest along first.
 	 */
 	private void recover() {
-		catchUpAll();
+		// Done at the start of a tick, so only up to the end of the last one; trains due in this one still move in it
+		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(train -> train.catchUp(millis - TICK)));
 		final List<HeadlessTrain> trains = new ArrayList<>();
 		sidings.values().forEach(sidingRun -> trains.addAll(sidingRun.trains));
 		trains.sort(Comparator.comparingDouble((HeadlessTrain train) -> -train.railProgress).thenComparingLong(train -> train.id));
@@ -2013,6 +2014,10 @@ public final class TickRunner<T extends RunTrack> {
 		 */
 		public DepotDispatcher getDispatcher() {
 			return sidingRun.depot.dispatcher;
+		}
+
+		public DepotBoard getDepot() {
+			return sidingRun.depot;
 		}
 
 		/**

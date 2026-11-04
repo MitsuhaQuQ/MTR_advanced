@@ -2,6 +2,7 @@ package mtr.advanced;
 
 import org.junit.jupiter.api.Test;
 import transitsim.sim.HostInput;
+import transitsim.sim.RunReservations;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -9,6 +10,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -16,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Trains the simulator doesn't move, reported from the rails the game has them on (G0).
+ * Trains the simulator doesn't move, reported from the rails the game has them on (G0), and the runs they hold (G1).
  */
 class SimInputsTest {
 
@@ -73,6 +75,39 @@ class SimInputsTest {
 		final List<HostInput.ExternalTrain> reported = inputs.update(100, occupancy(A, 9, B, 4, C, 7), id -> true);
 		assertEquals(Arrays.asList(4L, 7L, 9L), reported.stream().map(input -> input.trainId).collect(Collectors.toList()));
 		assertEquals(Arrays.asList(0L, 1L, 2L), reported.stream().map(input -> input.sequence).collect(Collectors.toList()));
+	}
+
+	@Test
+	void afterAResetEveryTrainIsReportedAgain() {
+		final SimInputs inputs = new SimInputs();
+		inputs.update(100, occupancy(A, 1), id -> true);
+		inputs.updateRuns(100, runs(2, A));
+		assertTrue(inputs.update(150, occupancy(A, 1), id -> true).isEmpty());
+		// A new simulator knows nothing of them
+		inputs.reset();
+		assertEquals(1, inputs.update(200, occupancy(A, 1), id -> true).size());
+		assertEquals(1, inputs.updateRuns(200, runs(2, A)).size());
+	}
+
+	@Test
+	void runsAreReportedWhenTheyChangeAndOnceWhenLetGo() {
+		final SimInputs inputs = new SimInputs();
+		final List<HostInput.ExternalRun> first = inputs.updateRuns(100, runs(2, A));
+		assertEquals(1, first.size());
+		assertEquals(2, first.get(0).trainId);
+		assertEquals(Collections.singletonList(new RunReservations.Move(A, true)), first.get(0).moves);
+		assertTrue(inputs.updateRuns(150, runs(2, A)).isEmpty());
+		assertEquals(Arrays.asList(new RunReservations.Move(A, true), new RunReservations.Move(B, true)), inputs.updateRuns(200, runs(2, A, B)).get(0).moves);
+		final List<HostInput.ExternalRun> letGo = inputs.updateRuns(250, new TreeMap<>());
+		assertEquals(1, letGo.size());
+		assertTrue(letGo.get(0).moves.isEmpty());
+		assertTrue(inputs.updateRuns(300, new TreeMap<>()).isEmpty());
+	}
+
+	private static Map<Long, List<RunReservations.Move>> runs(long trainId, UUID... rails) {
+		final Map<Long, List<RunReservations.Move>> runs = new TreeMap<>();
+		runs.put(trainId, Arrays.stream(rails).map(rail -> new RunReservations.Move(rail, true)).collect(Collectors.toList()));
+		return runs;
 	}
 
 	private static Map<UUID, Long> occupancy(Object... railsAndTrains) {

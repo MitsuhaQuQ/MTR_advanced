@@ -293,6 +293,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			case KEY_BASE_TRAIN_TYPE:
 				setTrainDetails(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readUtf(PACKET_STRING_READ_LENGTH), false);
 				trains.clear();
+				trainsRelocated = true;
 				break;
 			case KEY_UNLIMITED_TRAINS:
 				name = packet.readUtf(PACKET_STRING_READ_LENGTH);
@@ -307,6 +308,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : Float.isNaN(newAccelerationConstant) ? Train.ACCELERATION_DEFAULT : Mth.clamp(newAccelerationConstant, Train.MIN_ACCELERATION, Train.MAX_ACCELERATION);
 				if (packet.readBoolean()) {
 					trains.clear();
+					trainsRelocated = true;
 				}
 				break;
 			default:
@@ -868,6 +870,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				unlimitedTrains ? SimDataset.UNLIMITED_TRAINS : maxTrains, useSpeedCurve && !transportMode.continuousMovement, RailType.getDefaultMaxBlocksPerTick(transportMode),
 				repeatIndex1, repeatIndex2, loopJoinIndex, toTracks.apply(path), turnBacksWriter.toBytes()
 		);
+		sidingData.manual = isManual;
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
 	}
@@ -877,21 +880,31 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
-	 * @return whether the siding's path was found again since its last tick, which moved its trains
+	 * @return whether the siding's path was found again or its trains were cleared away since its last tick, so the
+	 * component's simulator starts again from its trains as they are now
 	 */
 	public boolean hasTrainsRelocated() {
 		return trainsRelocated;
 	}
 
 	/**
-	 * Has the siding's trains show the simulator's trains of the siding (G1): a train for each of them, with the same ID,
-	 * and none other.
+	 * @return whether the component's simulator can run the siding, which needs a path and a vehicle that fits (G1)
 	 */
-	public void showSimulatedTrains(List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> simulatedTrains) {
+	public boolean canBeSimulated() {
+		return !path.isEmpty() && trainCars > 0;
+	}
+
+	/**
+	 * Has the siding's trains show the simulator's trains of the siding (G1): a train for each of them, with the same ID,
+	 * and none other, apart from the trains the game moves itself as they are driven by hand.
+	 *
+	 * @param takenOver the trains the game moves itself, which stay as they are
+	 */
+	public void showSimulatedTrains(List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> simulatedTrains, Set<Long> takenOver) {
 		runBySimulator = true;
 		final Map<Long, TickRunner<SimDataset.DataTrack>.HeadlessTrain> byId = new HashMap<>();
 		simulatedTrains.forEach(train -> byId.put(train.id, train));
-		trains.removeIf(train -> !byId.containsKey(train.id));
+		trains.removeIf(train -> !byId.containsKey(train.id) && !takenOver.contains(train.id));
 		final Set<Long> shown = new HashSet<>();
 		trains.forEach(train -> {
 			shown.add(train.id);
@@ -1007,6 +1020,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	public void clearTrains() {
 		trains.clear();
+		trainsRelocated = true;
 	}
 
 	private void setTrainDetails() {

@@ -87,6 +87,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public SignalBlocks getSignalBlocks() {
 		return signalBlocks;
 	}
+
+	public Level getWorld() {
+		return world;
+	}
 	private final Map<UUID, Long> lastMapRailsRequestMillis = new HashMap<>();
 	private final Map<UUID, Long> lastMapRouteRequestMillis = new HashMap<>();
 	private final Map<UUID, Map<Integer, Map<Long, long[]>>> pendingMapEntries = new ConcurrentHashMap<>();
@@ -368,11 +372,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		schedulesForPlatform.clear();
 		signalBlocks.resetOccupied();
 		final float ticksElapsed = tickCompensator.nextTick(System.currentTimeMillis());
+		// In a fixed order, so a tick runs the same way each time (fix F1, R03 of the architecture review)
+		final List<Siding> sortedSidings = sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).collect(Collectors.toList());
+		// The sidings take on their depots' settings, such as speed curves, before the component's simulator looks at them
+		sortedSidings.forEach(siding -> siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails));
 		// The component's simulator moves on first, seeing the game's trains where they were at the end of the last tick (G1)
 		liveSimulation.tick(this, trainPositions);
-		// In a fixed order, so a tick runs the same way each time (fix F1, R03 of the architecture review)
-		sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> {
-			siding.setSidingData(world, dataCache.sidingIdToDepot.get(siding.id), rails);
+		sortedSidings.forEach(siding -> {
 			siding.ticksElapsed = ticksElapsed;
 			siding.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			siding.motionEvents = motionEvents;

@@ -131,6 +131,38 @@ class FrequencyDeployTest {
 	}
 
 	@Test
+	void recoveringAfterALoadPutsTheTrainsWhereThePlanHasThem() {
+		recoverFromEveryMoment(lines(false).toBytes());
+	}
+
+	@Test
+	void recoveringTrainsRunByATimetable() {
+		recoverFromEveryMoment(SimDatasetTest.lines(2, 2400, 2, 8, 3).toBytes());
+	}
+
+	private static void recoverFromEveryMoment(byte[] bytes) {
+		// Saved at moments when trains stand at stops, leave them and run between them
+		final EventSimulator<SimDataset.DataTrack> before = new EventSimulator<>(SimDataset.start(bytes, START));
+		final List<RunRecord> records = new ArrayList<>();
+		for (long time = MONDAY + 5 * HOUR + 10 * MINUTE; time < MONDAY + 5 * HOUR + 14 * MINUTE; time += 3 * SECOND) {
+			before.advanceTo(time);
+			records.add(before.getRunner().record());
+		}
+		for (final RunRecord record : records) {
+			// As after the world is loaded, when it isn't known when the trains were as they are
+			final RunRecord loaded = new RunRecord(0);
+			loaded.trains.addAll(record.trains);
+			loaded.lastDeployedMillis.putAll(record.lastDeployedMillis);
+			loaded.deployIndices.putAll(record.deployIndices);
+			final long loadedAt = record.time + HOUR;
+			final EventSimulator<SimDataset.DataTrack> simulator = EventSimulator.resume(startMillis -> SimDataset.fromBytes(bytes).buildRunner(startMillis), loaded, loadedAt);
+			final List<long[]> deployed = watch(simulator, loadedAt, loadedAt + 4 * MINUTE);
+			assertTrue(simulator.getRunner().getTrains().stream().anyMatch(TickRunner.HeadlessTrain::isOnRoute), ScenarioLine.clock(record.time));
+			assertTrue(deployed.size() >= 1, ScenarioLine.clock(record.time) + " " + describe(deployed));
+		}
+	}
+
+	@Test
 	void trainsDrivenByHandStandInTheSiding() {
 		final List<long[]> deployed = run(lines(true).toBytes(), true, START, MONDAY + 5 * HOUR + 31 * MINUTE, null);
 		// Only the second siding sends trains out, at every departure it can take

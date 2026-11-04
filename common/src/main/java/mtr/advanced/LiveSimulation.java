@@ -8,6 +8,7 @@ import mtr.data.TrainServer;
 import transitsim.sim.EventSimulator;
 import transitsim.sim.HostInput;
 import transitsim.sim.RunRecord;
+import transitsim.sim.RunReservations;
 import transitsim.sim.SimDataset;
 import transitsim.sim.SimEvent;
 import transitsim.sim.TickRunner;
@@ -21,14 +22,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
  * The component's simulator running the trains of the depots it can run (G1, decoupling document 5.2): depots with speed
- * curves, not moving continuously, that send their trains out by a timetable or by duties, with sidings not driven by
- * hand. The trains of the other depots are told to it as external trains ({@link SimInputs}).
+ * curves, not moving continuously, whether they send their trains out by a timetable, by duties or by frequency. The
+ * trains of the other depots are told to it as external trains ({@link SimInputs}), with the runs they hold; running the
+ * trains, it tells the game the runs its trains hold, so neither side gives a train a run against the other's.
+ * <p>
+ * A train driven by hand, which a train of a siding that allows it is whenever it is in the siding, is taken over: the
+ * game moves it itself until it is given back on the line.
  * <p>
  * Running the trains ({@link MotionConfig#COMPONENT_DRIVE_ON}), the simulator has them: each tick it moves on to now,
  * and the game's trains of those sidings only show its trains (A06), doing what needs the world, such as their cars,
@@ -160,8 +166,26 @@ public final class LiveSimulation {
 		if (!trainPositions.isEmpty()) {
 			inputs.update(now, trainPositions.get(0), trainId -> !run.contains(trainId)).forEach(simulator::submit);
 		}
+		// The runs held by the game's trains of other depots, as of the end of the tick before
+		final RunReservations gameRuns = railwayData.runReservations;
+		final TickRunner<SimDataset.DataTrack> runner = simulator.getRunner();
+		final Map<Long, List<RunReservations.Move>> otherRuns = new TreeMap<>();
+		gameRuns.getHolders().forEach(holder -> {
+			if (!runner.hasTrain(holder) && !run.contains(holder) && !takenOver.contains(holder)) {
+				otherRuns.put(holder, gameRuns.getHeld(holder));
+			}
+		});
+		inputs.updateRuns(now, otherRuns).forEach(simulator::submit);
 		simulator.advanceTo(now);
 		lastMillis = now;
+		if (drive) {
+			// The game's trains asking for runs later in this tick see what the simulator's trains hold
+			runner.reservations.getHolders().forEach(holder -> {
+				if (runner.hasTrain(holder)) {
+					gameRuns.hold(holder, runner.reservations.getHeld(holder));
+				}
+			});
+		}
 		final List<SimEvent> events = simulator.events(eventCursor);
 		if (!events.isEmpty()) {
 			eventCursor = events.get(events.size() - 1).cursor;
@@ -197,7 +221,7 @@ public final class LiveSimulation {
 		final Set<Long> newSidingIds = getSidingIds(railwayData);
 		// Said when the sidings or what it does with them change; a world with none it can run says nothing
 		if (!newSidingIds.equals(sidingIds) || driving != drive && !newSidingIds.isEmpty()) {
-			System.out.println("Minecraft Transit Railway: the component's simulator " + (drive ? "runs" : "is compared on") + " " + newSidingIds.size() + " of " + railwayData.sidings.size() + " sidings, the ones of depots with speed curves sending trains out by a timetable or by duties, without driving by hand");
+			System.out.println("Minecraft Transit Railway: the component's simulator " + (drive ? "runs" : "is compared on") + " " + newSidingIds.size() + " of " + railwayData.sidings.size() + " sidings, the ones of depots with speed curves");
 		}
 		stop(railwayData);
 		started = true;
@@ -210,6 +234,8 @@ public final class LiveSimulation {
 		departures = 0;
 		arrivals = 0;
 		takenOver.clear();
+		// The new simulator knows nothing of the trains it leaves alone yet
+		inputs.reset();
 		if (sidingIds.isEmpty()) {
 			return;
 		}
@@ -271,12 +297,12 @@ public final class LiveSimulation {
 		railwayData.sidings.forEach(siding -> {
 			if (sidingIds.contains(siding.id)) {
 				final List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> trains = bySiding.getOrDefault(siding.id, Collections.emptyList());
-				siding.showSimulatedTrains(trains);
+				siding.showSimulatedTrains(trains, takenOver);
 				final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
 				if (depot != null) {
 					depot.runBySimulator = true;
 					if (!trains.isEmpty() && copiedDepots.add(depot.id)) {
-						depot.copyDispatcher(trains.get(0).getDispatcher());
+						depot.copyDispatcher(trains.get(0).getDepot());
 					}
 				}
 			}
@@ -295,7 +321,86 @@ public final class LiveSimulation {
 			return false;
 		}
 		checkedMillis = now;
-		return !getSidingIds(railwayData).equals(sidingIds) || !Arrays.equals(getDataset(railwayData).toBytes(), startedData);
+		if (!getSidingIds(railwayData).equals(sidingIds)) {
+			return true;
+		}
+		final SimDataset dataset = getDataset(railwayData);
+		if (Arrays.equals(dataset.toBytes(), startedData)) {
+			return false;
+		}
+		System.out.println("Minecraft Transit Railway: the component's simulator starts again from the game's trains, as these changed: " + describeChange(SimDataset.fromBytes(startedData), dataset));
+		return true;
+	}
+
+	/**
+	 * @return which parts of the world as the simulator has it differ, for the log
+	 */
+	private static String describeChange(SimDataset before, SimDataset after) {
+		final List<String> changed = new ArrayList<>();
+		if (!Arrays.equals(part(before, 0), part(after, 0))) {
+			changed.add("routes");
+		}
+		for (int i = 0; i < Math.max(before.depots.size(), after.depots.size()); i++) {
+			final SimDataset.DepotData depot1 = i < before.depots.size() ? before.depots.get(i) : null;
+			final SimDataset.DepotData depot2 = i < after.depots.size() ? after.depots.get(i) : null;
+			if (depot1 == null || depot2 == null || depot1.id != depot2.id) {
+				changed.add("depots");
+				break;
+			}
+			if (!Arrays.equals(depot1.departures, depot2.departures)) {
+				changed.add("departures of depot " + depot1.id);
+			}
+			if (!Arrays.equals(depot1.sidingOrder, depot2.sidingOrder)) {
+				changed.add("sidings of depot " + depot1.id);
+			}
+			if (!Arrays.equals(depot1.routeIds, depot2.routeIds) || depot1.cycleRoutes != depot2.cycleRoutes || !Arrays.equals(depot1.duties, depot2.duties)) {
+				changed.add("depot " + depot1.id);
+			}
+		}
+		if (!Arrays.equals(part(before, 2), part(after, 2))) {
+			if (before.sidings.size() != after.sidings.size()) {
+				changed.add("sidings");
+			} else {
+				for (int i = 0; i < before.sidings.size(); i++) {
+					final SimDataset.SidingData siding1 = before.sidings.get(i);
+					final SimDataset.SidingData siding2 = after.sidings.get(i);
+					if (siding1.tripPaths.size() != after.sidings.get(i).tripPaths.size()) {
+						changed.add("service paths of siding " + siding1.id);
+					} else if (siding1.path.size() != siding2.path.size()) {
+						changed.add("path of siding " + siding1.id);
+					} else if (!Arrays.equals(siding1.turnBacks, siding2.turnBacks)) {
+						changed.add("turn backs of siding " + siding1.id);
+					} else if (siding1.manual != siding2.manual || siding1.maxTrains != siding2.maxTrains || siding1.trainCars != siding2.trainCars || siding1.acceleration != siding2.acceleration || siding1.deceleration != siding2.deceleration || siding1.usesSpeedCurve != siding2.usesSpeedCurve) {
+						changed.add("settings of siding " + siding1.id);
+					} else if (!Arrays.equals(part(single(siding1), 2), part(single(siding2), 2))) {
+						changed.add("siding " + siding1.id);
+					}
+				}
+			}
+		}
+		if (!before.signalBlocks.equals(after.signalBlocks)) {
+			changed.add("signal blocks");
+		}
+		return changed.isEmpty() ? "something" : String.join(", ", changed);
+	}
+
+	private static SimDataset single(SimDataset.SidingData siding) {
+		final SimDataset dataset = new SimDataset();
+		dataset.sidings.add(siding);
+		return dataset;
+	}
+
+	/**
+	 * @return the routes (0) or sidings (2) alone, written out
+	 */
+	private static byte[] part(SimDataset dataset, int which) {
+		final SimDataset part = new SimDataset();
+		if (which == 0) {
+			part.routes.addAll(dataset.routes);
+		} else {
+			part.sidings.addAll(dataset.sidings);
+		}
+		return part.toBytes();
 	}
 
 	/**
@@ -354,9 +459,7 @@ public final class LiveSimulation {
 	}
 
 	/**
-	 * The sidings of depots with speed curves, not moving continuously, that send their trains out by a timetable or by
-	 * duties, as the simulator doesn't send trains out by frequency; and not driven by hand, as such a siding's trains only
-	 * leave when a player drives them.
+	 * The sidings of depots with speed curves, not moving continuously, that have a path and a vehicle.
 	 */
 	private static Set<Long> getSidingIds(RailwayData railwayData) {
 		final Map<Long, List<Siding>> depotSidings = new HashMap<>();
@@ -369,9 +472,9 @@ public final class LiveSimulation {
 		final Set<Long> sidingIds = new TreeSet<>();
 		depotSidings.forEach((depotId, sidings) -> {
 			final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
-			if (depot != null && depot.speedCurves && !depot.transportMode.continuousMovement && (depot.duties.diagramMode || sidings.stream().allMatch(siding -> depot.getTimetable(siding.getTrainId()) != null))) {
+			if (depot != null && depot.speedCurves && !depot.transportMode.continuousMovement) {
 				sidings.forEach(siding -> {
-					if (!siding.getIsManual()) {
+					if (siding.canBeSimulated()) {
 						sidingIds.add(siding.id);
 					}
 				});
