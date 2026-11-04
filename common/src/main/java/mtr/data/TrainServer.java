@@ -32,6 +32,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.motion.RunSegment;
 import transitsim.motion.SpeedCurves;
 import transitsim.sim.Occupancy;
 import transitsim.sim.RunReservations;
@@ -88,6 +89,10 @@ public class TrainServer extends Train {
 	 * its service as last copied in.
 	 */
 	private TickRunner<SimDataset.DataTrack>.HeadlessTrain simulated;
+	/**
+	 * The version of the run segment the clients were last sent, or 0 for none.
+	 */
+	private int sentSegmentVersion;
 	private byte[] simulatedService = new byte[0];
 	private Map<String, TripPath<PathData>> lastTripPaths = Collections.emptyMap();
 
@@ -326,6 +331,11 @@ public class TrainServer extends Train {
 	 * Shows the component's train instead of moving this one (G1), or with null goes back to moving it, carrying on from
 	 * where the component had it.
 	 */
+	@Override
+	protected RunSegment.Spec getSegmentSpecToSend() {
+		return simulated == null ? null : simulated.getSegmentSpec();
+	}
+
 	public void setSimulated(TickRunner<SimDataset.DataTrack>.HeadlessTrain newSimulated) {
 		simulated = newSimulated;
 		movedBySimulator = newSimulated != null;
@@ -548,7 +558,12 @@ public class TrainServer extends Train {
 
 		final boolean oldSyncRepeatIndices = syncRepeatIndices;
 		syncRepeatIndices = false;
-		return oldPassengerCount > ridingEntities.size() || oldStoppingIndex != nextStoppingIndex || oldIsCurrentlyManual != isCurrentlyManual || oldStopped && speed != 0 || oldDoorOpen != doorTarget || oldSyncRepeatIndices;
+		// The clients follow each new run segment of a train the component's simulator runs (G2)
+		final RunSegment.Spec segmentSpec = getSegmentSpecToSend();
+		final int segmentVersion = segmentSpec == null ? 0 : segmentSpec.version;
+		final boolean newSegment = segmentVersion != sentSegmentVersion;
+		sentSegmentVersion = segmentVersion;
+		return newSegment || oldPassengerCount > ridingEntities.size() || oldStoppingIndex != nextStoppingIndex || oldIsCurrentlyManual != isCurrentlyManual || oldStopped && speed != 0 || oldDoorOpen != doorTarget || oldSyncRepeatIndices;
 	}
 
 	public void writeTrainPositions(List<Map<UUID, Long>> trainPositions, SignalBlocks signalBlocks) {

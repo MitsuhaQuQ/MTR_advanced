@@ -17,10 +17,23 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 	private final Map<Player, Set<T>> dataSetInPlayerRange = new HashMap<>();
 	private final ResourceLocation deletePacketId;
 	private final ResourceLocation updatePacketId;
+	/**
+	 * For trains, the packet with only what changes while they run (G2), or null.
+	 */
+	private final ResourceLocation statePacketId;
+	/**
+	 * For each player, the sync key of each train last sent in full.
+	 */
+	private final Map<Player, Map<Long, Integer>> sentKeys = new HashMap<>();
 
 	public UpdateNearbyMovingObjects(ResourceLocation deletePacketId, ResourceLocation updatePacketId) {
+		this(deletePacketId, updatePacketId, null);
+	}
+
+	public UpdateNearbyMovingObjects(ResourceLocation deletePacketId, ResourceLocation updatePacketId, ResourceLocation statePacketId) {
 		this.deletePacketId = deletePacketId;
 		this.updatePacketId = updatePacketId;
+		this.statePacketId = statePacketId;
 	}
 
 	public void startTick() {
@@ -50,17 +63,35 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 			}
 		});
 
+		sentKeys.keySet().retainAll(newDataSetInPlayerRange.keySet());
 		newDataSetInPlayerRange.forEach((player, dataSet) -> {
 			final List<FriendlyByteBuf> dataSetPacketsToUpdate = new ArrayList<>();
+			final List<FriendlyByteBuf> statePackets = new ArrayList<>();
+			final Map<Long, Integer> playerKeys = sentKeys.computeIfAbsent(player, key -> new HashMap<>());
+			final boolean wasInRange = dataSetInPlayerRange.containsKey(player);
+			final Set<Long> inRange = new HashSet<>();
 			dataSet.forEach(data -> {
-				if (dataSetToSync.contains(data) || !dataSetInPlayerRange.containsKey(player) || !dataSetInPlayerRange.get(player).contains(data)) {
+				inRange.add(data.id);
+				final boolean newInRange = !wasInRange || !dataSetInPlayerRange.get(player).contains(data);
+				if (dataSetToSync.contains(data) || newInRange) {
 					final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-					data.writePacket(packet);
-					if (packet.readableBytes() < MAX_PACKET_BYTES) {
-						dataSetPacketsToUpdate.add(packet);
+					// A train the player has with the same path only needs what changed while it runs
+					if (statePacketId != null && data instanceof Train && !newInRange && Objects.equals(playerKeys.get(data.id), ((Train) data).getSyncKey())) {
+						((Train) data).writeStatePacket(packet);
+						statePackets.add(packet);
+					} else {
+						data.writePacket(packet);
+						if (packet.readableBytes() < MAX_PACKET_BYTES) {
+							dataSetPacketsToUpdate.add(packet);
+							if (data instanceof Train) {
+								playerKeys.put(data.id, ((Train) data).getSyncKey());
+							}
+						}
 					}
 				}
 			});
+			playerKeys.keySet().retainAll(inRange);
+			send((ServerPlayer) player, statePacketId, statePackets);
 
 			while (!dataSetPacketsToUpdate.isEmpty()) {
 				final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -81,5 +112,18 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 
 		dataSetInPlayerRange.clear();
 		dataSetInPlayerRange.putAll(newDataSetInPlayerRange);
+	}
+
+	/**
+	 * Sends the packets together in as few as fit.
+	 */
+	private static void send(ServerPlayer player, ResourceLocation packetId, List<FriendlyByteBuf> packets) {
+		while (!packets.isEmpty()) {
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+			while (!packets.isEmpty() && packet.readableBytes() + packets.get(0).readableBytes() < MAX_PACKET_BYTES) {
+				packet.writeBytes(packets.remove(0));
+			}
+			Registry.sendToPlayer(player, packetId, packet);
+		}
 	}
 }

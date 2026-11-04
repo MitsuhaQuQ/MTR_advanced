@@ -154,6 +154,14 @@ public abstract class TrainMixin implements TrainExtraSupplier{
         cir.setReturnValue(cir.getReturnValue() + 1);
     }
 
+	/**
+	 * The custom configs only go in the full packet, so a change to them has the clients sent it again (G2).
+	 */
+	@Inject(method = "getSyncKey", at = @At("RETURN"), cancellable = true, remap = false)
+	private void getSyncKey(CallbackInfoReturnable<Integer> cir) {
+		cir.setReturnValue(cir.getReturnValue() * 31 + java.util.Objects.hashCode(customConfigs));
+	}
+
 	@Inject(method = "writePacket", at = @At("TAIL"))
     private void toPacket(FriendlyByteBuf packet, CallbackInfo ci) {
 		String res;

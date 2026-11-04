@@ -15,6 +15,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
+import transitsim.motion.RunSegment;
 
 import java.util.*;
 
@@ -335,6 +336,13 @@ public class TrainClient extends Train implements IGui {
 		distances.addAll(train.distances);
 		ridingEntities.addAll(train.ridingEntities);
 
+		// A train on a run segment is where the segment has it by the clock, which the train shown eases into (G2)
+		if (train.segmentSpec == null) {
+			speed = train.speed;
+			railProgress = train.railProgress;
+		}
+		segmentSpec = train.segmentSpec;
+
 		// Going onto or off a service running through to another line changes the routes the train announces
 		if (!tripRouteIds.equals(train.tripRouteIds)) {
 			tripRouteIds.clear();
@@ -344,8 +352,6 @@ public class TrainClient extends Train implements IGui {
 		repeatIndex1 = train.repeatIndex1;
 		repeatIndex2 = train.repeatIndex2;
 
-		speed = train.speed;
-		railProgress = train.railProgress;
 		doorTarget = train.doorTarget;
 		elapsedDwellTicks = train.elapsedDwellTicks;
 		nextStoppingIndex = train.nextStoppingIndex;
@@ -359,6 +365,101 @@ public class TrainClient extends Train implements IGui {
 		cruiseCap = train.cruiseCap;
 		// The path is refilled in place, so the curves can't tell it changed
 		invalidateSpeedCurves();
+	}
+
+	/**
+	 * What changes while a train runs, as {@link Train#writeStatePacket} writes it (G2), read on the network thread and put
+	 * into the train on the client's.
+	 */
+	public static final class State {
+
+		public final long id;
+		public final int syncKey;
+		private final int repeatIndex1;
+		private final int repeatIndex2;
+		private final List<Long> tripRouteIds = new ArrayList<>();
+		private final float speed;
+		private final double railProgress;
+		private final float elapsedDwellTicks;
+		private final int nextStoppingIndex;
+		private final int nextPlatformIndex;
+		private final boolean reversed;
+		private final boolean isCurrentlyManual;
+		private final boolean isOnRoute;
+		private final int manualNotch;
+		private final boolean doorTarget;
+		private final List<UUID> ridingEntities = new ArrayList<>();
+		private final boolean useSpeedCurve;
+		private final float decelerationConstant;
+		private final float cruiseCap;
+		private final RunSegment.Spec segmentSpec;
+
+		public State(FriendlyByteBuf packet) {
+			id = packet.readLong();
+			syncKey = packet.readInt();
+			repeatIndex1 = packet.readInt();
+			repeatIndex2 = packet.readInt();
+			for (int i = packet.readInt(); i > 0; i--) {
+				tripRouteIds.add(packet.readLong());
+			}
+			speed = packet.readFloat();
+			railProgress = packet.readDouble();
+			elapsedDwellTicks = packet.readFloat();
+			nextStoppingIndex = packet.readInt();
+			nextPlatformIndex = packet.readInt();
+			reversed = packet.readBoolean();
+			isCurrentlyManual = packet.readBoolean();
+			isOnRoute = packet.readBoolean();
+			manualNotch = packet.readInt();
+			doorTarget = packet.readBoolean();
+			for (int i = packet.readInt(); i > 0; i--) {
+				ridingEntities.add(packet.readUUID());
+			}
+			useSpeedCurve = packet.readBoolean();
+			decelerationConstant = packet.readFloat();
+			cruiseCap = packet.readFloat();
+			segmentSpec = readSegmentSpec(packet);
+		}
+	}
+
+	/**
+	 * Takes in what changed while the train runs (G2), as {@link #copyFromTrain} does without the path.
+	 *
+	 * @return false if the train's path isn't the one the state goes with, so it is left as it is
+	 */
+	public boolean applyState(State state) {
+		if (state.syncKey != getSyncKey()) {
+			return false;
+		}
+		ridingEntities.clear();
+		ridingEntities.addAll(state.ridingEntities);
+		if (!tripRouteIds.equals(state.tripRouteIds)) {
+			tripRouteIds.clear();
+			tripRouteIds.addAll(state.tripRouteIds);
+			routeIds = new ArrayList<>();
+		}
+		repeatIndex1 = state.repeatIndex1;
+		repeatIndex2 = state.repeatIndex2;
+		if (state.segmentSpec == null) {
+			speed = state.speed;
+			railProgress = state.railProgress;
+		}
+		segmentSpec = state.segmentSpec;
+		doorTarget = state.doorTarget;
+		elapsedDwellTicks = state.elapsedDwellTicks;
+		nextStoppingIndex = state.nextStoppingIndex;
+		nextPlatformIndex = state.nextPlatformIndex;
+		reversed = state.reversed;
+		isOnRoute = state.isOnRoute;
+		isCurrentlyManual = state.isCurrentlyManual;
+		manualNotch = state.manualNotch;
+		if (useSpeedCurve != state.useSpeedCurve || decelerationConstant != state.decelerationConstant) {
+			invalidateSpeedCurves();
+		}
+		useSpeedCurve = state.useSpeedCurve;
+		decelerationConstant = state.decelerationConstant;
+		cruiseCap = state.cruiseCap;
+		return true;
 	}
 
 	public final float speedChange() {

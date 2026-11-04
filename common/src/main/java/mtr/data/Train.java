@@ -3,6 +3,7 @@ package mtr.data;
 import mtr.Items;
 import mtr.Keys;
 import mtr.advanced.TrackViews;
+import mtr.client.ClientClock;
 import mtr.block.BlockPSDAPGBase;
 import mtr.block.BlockPlatform;
 import mtr.packet.IPacket;
@@ -56,6 +57,22 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * does what needs the world, such as its cars, riders and doors.
 	 */
 	protected boolean movedBySimulator;
+	/**
+	 * The run segment the server says the train is on, which the client follows by the server's clock (G2), or null.
+	 */
+	protected RunSegment.Spec segmentSpec;
+	private RunSegment.Spec followedSpec;
+	private RunSegment followedSegment;
+	/**
+	 * How far the client showed the train from where a new segment has it, which fades away so the train doesn't jump.
+	 */
+	private double smoothOffset;
+	private long smoothStartMillis;
+	/**
+	 * A new segment closer than this to where the client shows the train is eased into; a larger difference is a real jump.
+	 */
+	private static final double SMOOTH_DISTANCE = 2;
+	private static final long SMOOTH_MILLIS = 500;
 	private SpeedCurves speedCurves;
 	private List<PathData> speedCurvesPath;
 	private int speedCurvesSize;
@@ -293,6 +310,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		useSpeedCurve = packet.readBoolean();
 		decelerationConstant = packet.readFloat();
 		cruiseCap = packet.readFloat();
+		segmentSpec = readSegmentSpec(packet);
 
 		inventory = null;
 	}
@@ -382,6 +400,116 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeBoolean(useSpeedCurve);
 		packet.writeFloat(decelerationConstant);
 		packet.writeFloat(cruiseCap);
+		writeSegmentSpec(packet, getSegmentSpecToSend());
+	}
+
+	/**
+	 * Writes what changes while the train runs, for a client that already has the train with the same path (G2): everything
+	 * {@link #writePacket} writes but what the train is and its path.
+	 */
+	public final void writeStatePacket(FriendlyByteBuf packet) {
+		packet.writeLong(id);
+		packet.writeInt(getSyncKey());
+		packet.writeInt(repeatIndex1);
+		packet.writeInt(repeatIndex2);
+		packet.writeInt(tripRouteIds.size());
+		tripRouteIds.forEach(packet::writeLong);
+		packet.writeFloat(speed);
+		packet.writeDouble(railProgress);
+		packet.writeFloat(elapsedDwellTicks);
+		packet.writeInt(nextStoppingIndex);
+		packet.writeInt(nextPlatformIndex);
+		packet.writeBoolean(reversed);
+		packet.writeBoolean(isCurrentlyManual);
+		packet.writeBoolean(isOnRoute);
+		packet.writeInt(manualNotch);
+		packet.writeBoolean(doorTarget);
+		packet.writeInt(ridingEntities.size());
+		ridingEntities.forEach(packet::writeUUID);
+		packet.writeBoolean(useSpeedCurve);
+		packet.writeFloat(decelerationConstant);
+		packet.writeFloat(cruiseCap);
+		writeSegmentSpec(packet, getSegmentSpecToSend());
+	}
+
+	/**
+	 * @return a number that changes when the train's path or what else only {@link #writePacket} sends changes, so a client
+	 * that has the train with the same number only needs {@link #writeStatePacket}
+	 */
+	public int getSyncKey() {
+		int key = path.size();
+		for (final PathData pathData : path) {
+			key = key * 31 + Long.hashCode(pathData.startingPos.asLong());
+			key = key * 31 + Long.hashCode(pathData.getLastPos().asLong());
+		}
+		return key * 31 + Float.hashCode(railLength);
+	}
+
+	/**
+	 * @return the run segment the clients follow, which only a train the component's simulator runs has, or null
+	 */
+	protected RunSegment.Spec getSegmentSpecToSend() {
+		return null;
+	}
+
+	protected static void writeSegmentSpec(FriendlyByteBuf packet, RunSegment.Spec spec) {
+		packet.writeBoolean(spec != null);
+		if (spec != null) {
+			packet.writeInt(spec.version);
+			packet.writeLong(spec.startMillis);
+			packet.writeDouble(spec.startPosition);
+			packet.writeDouble(spec.startSpeed);
+			packet.writeDouble(spec.cap);
+			packet.writeDouble(spec.target);
+		}
+	}
+
+	protected static RunSegment.Spec readSegmentSpec(FriendlyByteBuf packet) {
+		return packet.readBoolean() ? new RunSegment.Spec(packet.readInt(), packet.readLong(), packet.readDouble(), packet.readDouble(), packet.readDouble(), packet.readDouble()) : null;
+	}
+
+	/**
+	 * On the client, puts the train where the server's run segment has it by the server's clock (G2), so it doesn't drift
+	 * from the server however the frames fall. A new segment close to where the train is shown is eased into.
+	 *
+	 * @return false if there is no segment to follow, or it has ended, so the train moves as before
+	 */
+	private boolean followSegment(Level world) {
+		if (!world.isClientSide() || segmentSpec == null || !usesSpeedCurve() || MotionConfig.useLegacyMotion(true) || path.isEmpty()) {
+			followedSegment = null;
+			followedSpec = null;
+			return false;
+		}
+		final long now = ClientClock.INSTANCE.serverMillis();
+		if (followedSpec != segmentSpec) {
+			final SpeedCurves.Run run = getSpeedCurves().getRun(segmentSpec.startPosition);
+			if (run == null) {
+				segmentSpec = null;
+				followedSegment = null;
+				followedSpec = null;
+				return false;
+			}
+			final RunSegment segment = segmentSpec.rebuild(run);
+			final double difference = railProgress - segment.getPositionAt(segmentSpec.getTicksAt(now));
+			smoothOffset = Math.abs(difference) < SMOOTH_DISTANCE ? difference : 0;
+			smoothStartMillis = now;
+			followedSegment = segment;
+			followedSpec = segmentSpec;
+		}
+		final double ticks = segmentSpec.getTicksAt(now);
+		if (ticks >= followedSegment.getDuration()) {
+			// Stopped where the segment ends; the train stands as before until the server sends the next one
+			railProgress = followedSegment.getPositionAt(ticks);
+			speed = 0;
+			segmentSpec = null;
+			followedSegment = null;
+			followedSpec = null;
+			return false;
+		}
+		final double fade = Math.max(0, 1 - (double) (now - smoothStartMillis) / SMOOTH_MILLIS);
+		railProgress = followedSegment.getPositionAt(ticks) + smoothOffset * fade;
+		speed = (float) followedSegment.getSpeedAt(ticks);
+		return true;
 	}
 
 	@Override
@@ -577,7 +705,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			// The rules moving the train are in the component (decoupling document 2.2); the old ones stay for comparing
 			motionWorld = world;
 			motionDepot = depot;
-			final int totalDwellTicks = movedBySimulator ? motion.getTotalDwellTicks() : MotionConfig.useLegacyMotion(world.isClientSide()) ? LegacyTrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed) : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
+			final int totalDwellTicks = movedBySimulator || followSegment(world) ? motion.getTotalDwellTicks() : MotionConfig.useLegacyMotion(world.isClientSide()) ? LegacyTrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed) : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
 			if (totalDwellTicks < 0) {
 				return;
 			}

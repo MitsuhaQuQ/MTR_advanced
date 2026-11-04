@@ -160,7 +160,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		railwayDataDriveTrainModule = new RailwayDataDriveTrainModule(this, world, rails);
 		railwayDataRouteFinderModule = new RailwayDataRouteFinderModule(this, world, rails);
 
-		updateNearbyTrains = new UpdateNearbyMovingObjects<>(PACKET_DELETE_TRAINS, PACKET_UPDATE_TRAINS);
+		updateNearbyTrains = new UpdateNearbyMovingObjects<>(PACKET_DELETE_TRAINS, PACKET_UPDATE_TRAINS, PACKET_UPDATE_TRAIN_STATES);
 		updateNearbyLifts = new UpdateNearbyMovingObjects<>(PACKET_DELETE_LIFTS, PACKET_UPDATE_LIFTS);
 	}
 

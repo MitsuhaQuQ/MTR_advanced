@@ -76,6 +76,7 @@ public interface IPacket {
 	ResourceLocation PACKET_WRITE_RAILS = new ResourceLocation(MTR.MOD_ID, "write_rails");
 	ResourceLocation PACKET_UPDATE_TRAINS = new ResourceLocation(MTR.MOD_ID, "update_trains");
 	ResourceLocation PACKET_DELETE_TRAINS = new ResourceLocation(MTR.MOD_ID, "delete_trains");
+	ResourceLocation PACKET_UPDATE_TRAIN_STATES = new ResourceLocation(MTR.MOD_ID, "update_train_states");
 	ResourceLocation PACKET_UPDATE_LIFTS = new ResourceLocation(MTR.MOD_ID, "update_lifts");
 	ResourceLocation PACKET_DELETE_LIFTS = new ResourceLocation(MTR.MOD_ID, "delete_lifts");
 	ResourceLocation PACKET_UPDATE_TRAIN_PASSENGERS = new ResourceLocation(MTR.MOD_ID, "update_train_passengers");

@@ -128,6 +128,23 @@ public final class ClientData {
 		}));
 	}
 
+	/**
+	 * What changed while trains run, for trains the client has with the same path (G2).
+	 */
+	public static void updateTrainStates(Minecraft client, FriendlyByteBuf packet) {
+		final List<TrainClient.State> states = new ArrayList<>();
+		while (packet.isReadable()) {
+			states.add(new TrainClient.State(packet));
+		}
+
+		client.execute(() -> states.forEach(state -> {
+			final TrainClient existingTrain = getTrainById(state.id);
+			if (existingTrain != null) {
+				existingTrain.applyState(state);
+			}
+		}));
+	}
+
 	public static void deleteTrains(Minecraft client, FriendlyByteBuf packet) {
 		final Set<Long> trainIdsToKeep = new HashSet<>();
 
