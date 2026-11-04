@@ -27,6 +27,32 @@
 
 ## 待验证
 
+### 自定义转向架和沿轨道转向（本会话，`ante-merge` 工作区，2026-11-04）
+
+- **改了什么**：实现设计文档 4.8 节两级转向架：`custom_trains` 新增 `bogie1`、`bogie2`（模型、属性、贴图、位置）；细节半径内转向架沿轨道转向，远处跟车体；内置转向架也沿轨道转向，客户端设置默认开；写了自定义转向架的车型（4.x 资源）车体按 4.x 由两个转向架定位，其余车型仍按两端点。详见 `MTR-加载MTR4资源包设计.md` 第 10 节。
+- **文件**：新增 `common/src/main/java/mtr/client/CustomBogie.java`；改 `mtr/client/TrainProperties.java`、`TrainClientRegistry.java`、`ICustomResources.java`、`CustomResources.java`、`mtr/data/Train.java`（只加只读的 `getTrackPosition`）、`mtr/render/JonModelTrainRenderer.java`、`cn/zbx1425/mtrsteamloco/ClientConfig.java`、`gui/ConfigScreen.java`、`resources/common/ante/assets/mtrsteamloco/lang/en_us.json`、`zh_cn.json`。
+- **协议和存档**：没有变化。只改客户端渲染和资源读取；`Train` 只加了只读方法。客户端配置文件多一个 `bogiesFollowTrack`。
+- **和别的改动的关系**：和编辑器那条不碰同一文件。`JonModelTrainRendererMixin` 注入 `renderCar` 里第一个 `rotateX`，新代码的 `rotateX` 在别的方法里，注入点不变。
+- **已经验证的**：没有。
+- **构建后要检查的**：
+  - 编译；ABI 扫描看 `TrainProperties`、`TrainClientRegistry`（只新增，旧构造函数和重载都在）。
+  - Mixin 应用无警告（`JonModelTrainRendererMixin.injectRenderCar` 的 ordinal 0）。
+- **游戏内测试**：
+  - 内置车型（如 SP1900、M-Train）过弯：转向架贴着轨道、随轨道转，直道上和以前位置一致；坡道上俯仰正确；正向和反向运行都对。
+  - 设置里关掉"内置转向架沿轨道转向"后回到旧表现。
+  - 走出细节半径，转向架回到跟车体，切换处没有跳动（直道上应完全重合）。
+  - 乘车时（视角偏移下）转向架位置不抖、不偏。
+  - 铰接车型（如轻铁）不变。
+  - 自定义车型写 `bogie1`/`bogie2`（`.bbmodel` 和 `.obj` 各一个）：显示自己的转向架和贴图，不再出现内置转向架；只写 `position` 时内置转向架画在指定位置；只写一个时只画一个。
+  - 写了转向架的车型和没写的 3.x 资源包同时加载，后者外观不变。
+  - 写了转向架的车型过 S 弯和小半径弯：车体中心落在两个转向架之间、两个转向架都在轨上；直道上车体位置和以前一样；走出细节半径车体不跳。
+  - 同一车型乘车过弯：看玩家站位和车体偏差是否可以接受（站位和开门检测仍按两端点）；贯通道接缝在弯道上是否明显错开。
+- **已知风险**：
+  - `position` 的正负对应哪一端没有 4.x 资源包核对；如果反了，交换 `getTrackPosition` 和车体平移的符号要一起改。
+  - 二级每节车每帧多 4 次轨道查询（二分查找），远处车厢不查。内置转向架默认开，车多时看一下帧率。
+  - 二级转向架不跟 ANTE 的车体侧倾（侧倾只作用于车体）。
+  - 4.x 资源的车体按转向架画，但乘客站位、开门检测、贯通道、声音仍按两端点，弯道上有小偏差。
+
 2026-11-03 统一构建了 ANTE 脚本沙箱、线路图两项和圆形隧道创建器（协议版本加到 30），编译、common 测试、ABI 扫描、两个服务端启动都通过；游戏内测试转为测试清单 U56 至 U60、C17。
 
 2026-11-03 统一构建了界面多语言（协议版本加到 32），编译、common 测试、合并后的语言文件、ABI 扫描、两个服务端启动都通过；游戏内测试转为测试清单 U64 至 U66。

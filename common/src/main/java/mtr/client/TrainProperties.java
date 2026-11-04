@@ -21,8 +21,15 @@ public class TrainProperties {
 	public final boolean hasGangwayConnection;
 	public final TrainRendererBase renderer;
 	public final TrainSoundBase sound;
+	// Bogies from the resource pack; when either is set, they replace the built-in bogies (null for built-in trains)
+	public final CustomBogie bogie1;
+	public final CustomBogie bogie2;
 
 	public TrainProperties(String baseTrainType, Component name, String description, String wikipediaArticle, int color, float riderOffset, float riderOffsetDismounting, float bogiePosition, boolean isJacobsBogie, boolean hasGangwayConnection, TrainRendererBase renderer, TrainSoundBase sound) {
+		this(baseTrainType, name, description, wikipediaArticle, color, riderOffset, riderOffsetDismounting, bogiePosition, isJacobsBogie, hasGangwayConnection, renderer, sound, null, null);
+	}
+
+	public TrainProperties(String baseTrainType, Component name, String description, String wikipediaArticle, int color, float riderOffset, float riderOffsetDismounting, float bogiePosition, boolean isJacobsBogie, boolean hasGangwayConnection, TrainRendererBase renderer, TrainSoundBase sound, CustomBogie bogie1, CustomBogie bogie2) {
 		this.baseTrainType = baseTrainType;
 		this.name = name;
 		this.description = description;
@@ -35,6 +42,12 @@ public class TrainProperties {
 		this.hasGangwayConnection = hasGangwayConnection;
 		this.renderer = renderer;
 		this.sound = sound;
+		this.bogie1 = bogie1;
+		this.bogie2 = bogie2;
+	}
+
+	public boolean hasCustomBogies() {
+		return bogie1 != null || bogie2 != null;
 	}
 
 	public static TrainProperties getBlankProperties() {

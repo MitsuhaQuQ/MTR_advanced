@@ -31,6 +31,10 @@ public interface ICustomResources {
 	String CUSTOM_TRAINS_DOOR_CLOSE_SOUND_TIME = "door_close_sound_time";
 	String CUSTOM_TRAINS_ACCEL_SOUND_AT_COAST = "accel_sound_at_coast";
 	String CUSTOM_TRAINS_CONST_PLAYBACK_SPEED = "const_playback_speed";
+	// Bogies after MTR 4: each is an object with model, model_properties, texture_id, flipV and position (blocks along the car)
+	String CUSTOM_TRAINS_BOGIE_1 = "bogie1";
+	String CUSTOM_TRAINS_BOGIE_2 = "bogie2";
+	String CUSTOM_TRAINS_BOGIE_POSITION = "position";
 
 	String CUSTOM_SIGNS_TEXTURE_ID = "texture_id";
 	String CUSTOM_SIGNS_FLIP_TEXTURE = "flip_texture";

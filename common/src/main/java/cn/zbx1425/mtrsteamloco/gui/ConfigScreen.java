@@ -146,6 +146,12 @@ public final class ConfigScreen {
                 ).setSaveConsumer(checked -> ClientConfig.enableRolling = checked).setDefaultValue(true).build()
         );
         common.addEntry(entryBuilder
+                .startBooleanToggle(
+                        Text.translatable("gui.mtrsteamloco.config.client.bogiesfollowtrack"),
+                        mtr.render.JonModelTrainRenderer.builtInBogiesFollowTrack
+                ).setSaveConsumer(checked -> mtr.render.JonModelTrainRenderer.builtInBogiesFollowTrack = checked).setDefaultValue(true).build()
+        );
+        common.addEntry(entryBuilder
                 .startIntField(
                         Text.translatable("gui.mtrsteamloco.config.client.rail_distance_renderer_interval"),
                         ClientConfig.railDistanceRendererInterval

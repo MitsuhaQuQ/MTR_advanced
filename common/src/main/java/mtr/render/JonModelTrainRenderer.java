@@ -3,6 +3,7 @@ package mtr.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import mtr.MTRClient;
+import mtr.client.CustomBogie;
 import mtr.client.TrainClientRegistry;
 import mtr.client.TrainProperties;
 import mtr.data.IGui;
@@ -46,6 +47,11 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 	private static final Map<Long, FakeBoat> BOATS = new HashMap<>();
 	private static final ModelCableCarGrip MODEL_CABLE_CAR_GRIP = new ModelCableCarGrip();
 	private static final ModelBogie MODEL_BOGIE = new ModelBogie();
+	// A bogie's heading comes from two track points this far either side of its centre
+	private static final double BOGIE_HALF_LENGTH = 1;
+
+	// Client setting: built-in bogies of near cars also turn along the track, as in MTR 4 (custom bogies always do)
+	public static boolean builtInBogiesFollowTrack = true;
 
 	private JonModelTrainRenderer(ModelTrainBase model, String textureId, String gangwayConnectionId, String trainBarrierId, TrainClient train) {
 		this.model = model;
@@ -66,13 +72,30 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 
 	@Override
 	public void renderCar(int carIndex, double x, double y, double z, float yaw, float pitch, boolean doorLeftOpen, boolean doorRightOpen) {
+		final String trainId = train.trainId;
+		final TrainProperties trainProperties = TrainClientRegistry.getTrainProperties(trainId);
+
+		// The car's centre between its two ends, which bogies on the track are placed from
+		final double endsX = x;
+		final double endsY = y;
+		final double endsZ = z;
+
+		// Cars with bogies from the resource pack stand on their bogies, as in MTR 4; the rest stay placed by their two ends
+		if (trainProperties.hasCustomBogies() && !trainProperties.isJacobsBogie) {
+			final double[] placement = getPlacementOnBogies(trainProperties, carIndex);
+			if (placement != null) {
+				x += placement[0];
+				y += placement[1];
+				z += placement[2];
+				yaw = (float) placement[3];
+				pitch = (float) placement[4];
+			}
+		}
+
 		final float doorLeftValue = doorLeftOpen ? train.getDoorValue() : 0;
 		final float doorRightValue = doorRightOpen ? train.getDoorValue() : 0;
 		final boolean atPlatform = train.path.get(train.getIndex(0, train.spacing, true)).dwellTime > 0;
 		final boolean hasPitch = pitch < 0 ? train.transportMode.hasPitchAscending : train.transportMode.hasPitchDescending;
-
-		final String trainId = train.trainId;
-		final TrainProperties trainProperties = TrainClientRegistry.getTrainProperties(trainId);
 
 		if (model == null && isTranslucentBatch) {
 			return;
@@ -89,6 +112,8 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 		UtilitiesClient.rotateX(matrices, (float) Math.PI + (hasPitch ? pitch : 0));
 
 		final int light = LightTexture.pack(world.getBrightness(LightLayer.BLOCK, posAverage), world.getBrightness(LightLayer.SKY, posAverage));
+		boolean renderDetails = false;
+		boolean bogiesOnTrack = false;
 
 		if (model == null || textureId == null) {
 			final boolean isBoat = train.transportMode == TransportMode.BOAT;
@@ -110,11 +135,21 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 
 			model.renderToBuffer(matrices, vertexConsumer, light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
 		} else if (!textureId.isEmpty()) {
-			final boolean renderDetails = MTRClient.isReplayMod() || posAverage.distSqr(camera.getBlockPosition()) <= RenderTrains.DETAIL_RADIUS_SQUARED;
+			renderDetails = MTRClient.isReplayMod() || posAverage.distSqr(camera.getBlockPosition()) <= RenderTrains.DETAIL_RADIUS_SQUARED;
 			model.render(matrices, vertexConsumers, train, resolveTexture(textureId, textureId -> textureId + ".png"), light, doorLeftValue, doorRightValue, train.isDoorOpening(), carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
 
-			if (trainProperties.bogiePosition != 0 && !isTranslucentBatch) {
-				if (trainProperties.isJacobsBogie) {
+			if (trainProperties.hasCustomBogies() && !trainProperties.isJacobsBogie) {
+				// Near cars turn their bogies along the track after the car is drawn; far ones keep them fixed to the body
+				if (renderDetails) {
+					bogiesOnTrack = true;
+				} else {
+					renderBogieOnBody(trainProperties.bogie1, carIndex, light, false, atPlatform);
+					renderBogieOnBody(trainProperties.bogie2, carIndex, light, false, atPlatform);
+				}
+			} else if (trainProperties.bogiePosition != 0 && !isTranslucentBatch) {
+				if (builtInBogiesFollowTrack && renderDetails && !trainProperties.isJacobsBogie) {
+					bogiesOnTrack = true;
+				} else if (trainProperties.isJacobsBogie) {
 					if (carIndex == 0) {
 						MODEL_BOGIE.render(matrices, vertexConsumers, light, train.trainCars == 1 ? 0 : -(int) (trainProperties.bogiePosition * 16));
 					} else if (carIndex == train.trainCars - 1) {
@@ -139,7 +174,111 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 		}
 
 		matrices.popPose();
+
+		if (bogiesOnTrack) {
+			if (trainProperties.hasCustomBogies()) {
+				renderBogieOnTrack(trainProperties.bogie1, carIndex, endsX, endsY, endsZ, light, atPlatform);
+				renderBogieOnTrack(trainProperties.bogie2, carIndex, endsX, endsY, endsZ, light, atPlatform);
+			} else {
+				renderBogieOnTrack(new CustomBogie(null, null, trainProperties.bogiePosition), carIndex, endsX, endsY, endsZ, light, atPlatform);
+				renderBogieOnTrack(new CustomBogie(null, null, -trainProperties.bogiePosition), carIndex, endsX, endsY, endsZ, light, atPlatform);
+			}
+		}
+
 		matrices.popPose();
+	}
+
+	/**
+	 * MTR 4's car placement: the body runs through the centres of its two bogies on the track and is shifted along itself
+	 * by the bogies' average position. Returns the shift from the car's centre between its ends, then yaw and pitch.
+	 */
+	private double[] getPlacementOnBogies(TrainProperties trainProperties, int carIndex) {
+		final float position1 = trainProperties.bogie1 == null ? trainProperties.bogie2.position : trainProperties.bogie1.position;
+		final float position2 = trainProperties.bogie2 == null ? position1 : trainProperties.bogie2.position;
+		final float positionLow = Math.min(position1, position2);
+		final float positionHigh = Math.max(position1, position2);
+
+		final Vec3 carEnd1 = train.getTrackPosition(carIndex, -train.spacing / 2D);
+		final Vec3 carEnd2 = train.getTrackPosition(carIndex, train.spacing / 2D);
+		final Vec3 bogieLowEnd1 = train.getTrackPosition(carIndex, positionLow - BOGIE_HALF_LENGTH);
+		final Vec3 bogieLowEnd2 = train.getTrackPosition(carIndex, positionLow + BOGIE_HALF_LENGTH);
+		final Vec3 bogieHighEnd1 = train.getTrackPosition(carIndex, positionHigh - BOGIE_HALF_LENGTH);
+		final Vec3 bogieHighEnd2 = train.getTrackPosition(carIndex, positionHigh + BOGIE_HALF_LENGTH);
+		if (carEnd1 == null || carEnd2 == null || bogieLowEnd1 == null || bogieLowEnd2 == null || bogieHighEnd1 == null || bogieHighEnd2 == null) {
+			return null;
+		}
+
+		final Vec3 bogieLow = bogieLowEnd1.add(bogieLowEnd2).scale(0.5);
+		final Vec3 bogieHigh = bogieHighEnd1.add(bogieHighEnd2).scale(0.5);
+		// With one bogie, or both at the same place, the body takes that bogie's heading
+		final Vec3 direction = positionLow == positionHigh ? bogieLowEnd2.subtract(bogieLowEnd1) : bogieHigh.subtract(bogieLow);
+		if (direction.lengthSqr() == 0) {
+			return null;
+		}
+
+		final Vec3 unit = direction.normalize();
+		final Vec3 center = bogieLow.add(bogieHigh).scale(0.5).subtract(unit.scale((positionLow + positionHigh) / 2D));
+		return new double[]{
+				center.x - (carEnd1.x + carEnd2.x) / 2,
+				center.y - (carEnd1.y + carEnd2.y) / 2,
+				center.z - (carEnd1.z + carEnd2.z) / 2,
+				Math.atan2(unit.x, unit.z),
+				Math.asin(Math.max(-1, Math.min(1, unit.y)))
+		};
+	}
+
+	// Level 1: the bogie moves with the car body, like the built-in bogies
+	private void renderBogieOnBody(CustomBogie bogie, int carIndex, int light, boolean renderDetails, boolean atPlatform) {
+		if (bogie == null) {
+			return;
+		}
+		matrices.pushPose();
+		matrices.translate(0, 0, bogie.position);
+		renderBogieModel(bogie, carIndex, light, renderDetails, atPlatform);
+		matrices.popPose();
+	}
+
+	// Level 2: the bogie stands on the track and turns with it; the car body stays placed by its two ends as before
+	private void renderBogieOnTrack(CustomBogie bogie, int carIndex, double x, double y, double z, int light, boolean atPlatform) {
+		if (bogie == null) {
+			return;
+		}
+
+		final Vec3 carEnd1 = train.getTrackPosition(carIndex, -train.spacing / 2D);
+		final Vec3 carEnd2 = train.getTrackPosition(carIndex, train.spacing / 2D);
+		final Vec3 bogieEnd1 = train.getTrackPosition(carIndex, bogie.position - BOGIE_HALF_LENGTH);
+		final Vec3 bogieEnd2 = train.getTrackPosition(carIndex, bogie.position + BOGIE_HALF_LENGTH);
+		if (carEnd1 == null || carEnd2 == null || bogieEnd1 == null || bogieEnd2 == null) {
+			return;
+		}
+
+		final double bogieLength = bogieEnd2.distanceTo(bogieEnd1);
+		final float yaw = (float) Math.atan2(bogieEnd2.x - bogieEnd1.x, bogieEnd2.z - bogieEnd1.z);
+		final float pitch = bogieLength == 0 ? 0 : (float) Math.asin((bogieEnd2.y - bogieEnd1.y) / bogieLength);
+		final boolean hasPitch = pitch < 0 ? train.transportMode.hasPitchAscending : train.transportMode.hasPitchDescending;
+
+		// x, y and z are the car's centre as drawn (riding offset included), so move by the bogie's distance from the car's centre
+		matrices.pushPose();
+		translateToWorld(
+				train.getViewOffset(),
+				x + (bogieEnd1.x + bogieEnd2.x - carEnd1.x - carEnd2.x) / 2,
+				y + (bogieEnd1.y + bogieEnd2.y - carEnd1.y - carEnd2.y) / 2,
+				z + (bogieEnd1.z + bogieEnd2.z - carEnd1.z - carEnd2.z) / 2
+		);
+		UtilitiesClient.rotateY(matrices, (float) Math.PI + yaw);
+		UtilitiesClient.rotateX(matrices, (float) Math.PI + (hasPitch ? pitch : 0));
+		renderBogieModel(bogie, carIndex, light, true, atPlatform);
+		matrices.popPose();
+	}
+
+	private void renderBogieModel(CustomBogie bogie, int carIndex, int light, boolean renderDetails, boolean atPlatform) {
+		if (bogie.model == null) {
+			if (!isTranslucentBatch) {
+				MODEL_BOGIE.render(matrices, vertexConsumers, light, 0);
+			}
+		} else {
+			bogie.model.render(matrices, vertexConsumers, train, resolveTexture(bogie.textureId, textureId -> textureId + ".png"), light, 0, 0, false, carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+		}
 	}
 
 	@Override

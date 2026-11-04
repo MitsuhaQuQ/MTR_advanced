@@ -91,6 +91,7 @@
     "gui.mtrsteamloco.config.client.rail3d.description": "关闭立体轨道可使 WorldEdit 复制已连接的轨道节点造成的不可见的轨道节点可见。",
     "gui.mtrsteamloco.config.client.slsmoke": "显示蒸汽机车的烟雾",
     "gui.mtrsteamloco.config.client.rolling": "启用视角滚转",
+    "gui.mtrsteamloco.config.client.bogiesfollowtrack": "内置转向架沿轨道转向",
     "gui.mtrsteamloco.config.client.translucentsort": "精确地显示半透明面",
     "gui.mtrsteamloco.config.client.translucentsort.description": "开启时精确运算遮挡次序，关闭时提升性能",
     "gui.mtrsteamloco.config.client.railrender": "显示轨道",

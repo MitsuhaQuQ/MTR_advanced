@@ -72,6 +72,7 @@ public class ClientConfig {
             enableTrainSound = getOrDefault(configObject, "enableTrainSound", JsonElement::getAsBoolean, true);
             enableSmoke = getOrDefault(configObject, "enableSmoke", JsonElement::getAsBoolean, true);
             hideRidingTrain = getOrDefault(configObject, "hideRidingTrain", JsonElement::getAsBoolean, false);
+            mtr.render.JonModelTrainRenderer.builtInBogiesFollowTrack = getOrDefault(configObject, "bogiesFollowTrack", JsonElement::getAsBoolean, true);
             enableRolling = getOrDefault(configObject, "enableRolling", JsonElement::getAsBoolean, true);
             useEditBoxSetRailRolling = getOrDefault(configObject, "useEditBoxSetRailRolling", JsonElement::getAsBoolean, true);
             railDistanceRendererInterval = getOrDefault(configObject, "railDistanceRendererInterval", JsonElement::getAsInt, 5);
@@ -142,6 +143,7 @@ public class ClientConfig {
             configObject.addProperty("enableTrainSound", enableTrainSound);
             configObject.addProperty("enableSmoke", enableSmoke);
             configObject.addProperty("hideRidingTrain", hideRidingTrain);
+            configObject.addProperty("bogiesFollowTrack", mtr.render.JonModelTrainRenderer.builtInBogiesFollowTrack);
             configObject.addProperty("useEditBoxSetRailRolling", useEditBoxSetRailRolling);
             configObject.addProperty("railDistanceRendererInterval", railDistanceRendererInterval);
             configObject.addProperty("railDistanceRendererMaxDistanceSqr", railDistanceRendererMaxDistanceSqr);

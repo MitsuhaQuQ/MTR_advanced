@@ -253,3 +253,56 @@ ANTE 的 `CustomResourcesMixin.readResource` 在 HEAD 接管了读取，所以�
 ### 9.5 游戏内要验证的
 
 见 `MTR-待验证.md` 的"ANTE 脚本沙箱：资源包定时器和 java.lang"条目。
+
+## 10. 转向架（4.8 节的 P5）已实现，未构建（2026-11-04）
+
+没有 4.x 资源包，先把 4.8 节两级都做了，入口是本分支 `custom_trains` 的扩展字段，以后 4.x 转换器直接生成这些字段即可。条目见 `MTR-待验证.md`。
+
+### 10.1 资源包写法
+
+`custom_trains` 的条目可加 `bogie1`、`bogie2` 两个对象（对应 4.x 的 `bogie1Position`/`bogie1Models` 等）：
+
+```json
+"bogie1": {
+  "model": "mtr:custom/bogie.bbmodel",
+  "model_properties": "mtr:custom/bogie_properties.json",
+  "texture_id": "mtr:custom/bogie",
+  "flipV": false,
+  "position": -7.5
+}
+```
+
+- `position`：沿车身的位置，单位格，车模自己的坐标（与部件位置同向，只是单位是格不是像素）。4.x 惯例是 `bogie1` 为负、`bogie2` 为正；正负对应哪一端**要用真实 4.x 资源包核对**。
+- `model` 可以是 `.bbmodel`，也可以是 `.obj` 或 ANTE 的 `|` 写法，走车体同一条加载路径；必须同时给 `model_properties`（部件、条件和车体一样处理，门恒为关）。
+- `texture_id`、`flipV` 不写时用车体的贴图。
+- 只写 `position` 不写 `model`：在该位置画内置转向架（可做不对称位置）。
+- 只写其中一个也可以；写了任何一个，就不再画内置转向架。
+- 基础车型（`base_train_type`）是带自定义转向架的车型时，没写的那个继承过去。
+- 铰接转向架车型（`isJacobsBogie`）不使用自定义转向架，照旧。
+
+### 10.2 渲染
+
+- **一级（跟车体固定）**：超出细节半径的车厢，转向架挂在车体矩阵下，平移 `position` 画出。
+- **二级（沿轨道转向）**：细节半径内，转向架中心取轨道上 `position` 处的点，朝向和俯仰取该点前后各 1 格的两个轨道点（`BOGIE_HALF_LENGTH`），用自己的世界矩阵画，不受车体矩阵和 ANTE 车体侧倾影响。
+- `Train.getTrackPosition(car, offset)`：只读查询，和 `getRoutePosition` 用同一套里程、路径和 `getModelZOffset`，不改任何状态。车厢编号同 `calculateCar`，正偏移从车厢第一端指向第二端（正向列车里程减小，反向列车里程增大），与车体矩阵的 +z 一致，所以一级和二级位置相同。
+- **内置转向架**：客户端设置"内置转向架沿轨道转向"（`ClientConfig` 的 `bogiesFollowTrack`），**默认开**（按用户要求，默认列车用 4.x 的转向架表现）；关掉回到 3.x 的跟车体。铰接转向架仍画在车体和贯通道上，不走二级。
+- 车体定位分两种（用户定：4.x 资源按 4.x 的逻辑）：写了 `bogie1`/`bogie2` 的车型（4.x 资源）按 10.4 节由转向架定位；其余车型（3.x 资源和内置车型）仍由两端点定位。
+
+### 10.3 改动的类
+
+- 新增 `mtr.client.CustomBogie`。
+- `TrainProperties`：新增 `bogie1`、`bogie2` 和 `hasCustomBogies()`；原构造函数保留，附属模组不受影响。
+- `TrainClientRegistry.register`：新增带两个转向架参数的重载，原重载保留。
+- `ICustomResources`：`CUSTOM_TRAINS_BOGIE_1/2`、`CUSTOM_TRAINS_BOGIE_POSITION`。
+- `CustomResources`：`readBogie`；在读车体 `texture_id` 之前读转向架，因为 ANTE 的 mixin 记住最后一次读到的贴图给下一个 OBJ/Blockbench 模型用。
+- `Train.getTrackPosition`；`JonModelTrainRenderer` 的 `renderBogieOnBody`、`renderBogieOnTrack`、`renderBogieModel`。
+- `ClientConfig`、`ConfigScreen`、`en_us.json`、`zh_cn.json`：新设置。
+
+### 10.4 4.x 资源的车体由转向架定位
+
+照 4.x `PositionAndRotation(bogiePositions, vehicleCar, hasPitch)`：
+
+- 两个转向架中心各取轨道上 `position` 处（前后各 1 格两点的中点）；车体朝向和俯仰取低位置转向架指向高位置转向架；车体中心 = 两转向架中点沿车身方向退回两者 `position` 的平均值。只有一个转向架或两个位置相同时，朝向取那个转向架自己的。
+- 只在渲染里做（`JonModelTrainRenderer.getPlacementOnBogies`），远近车厢都用，所以出了细节半径车体不跳。转向架位置按里程（沿轨道弧长）算，和 4.x 核心一致。
+- **没改的**（仍按车厢两端点，和车体画出来的位置在弯道上差几厘米到十几厘米，直道上完全一致）：乘客站位和下车点、开门检测（`calculateCar`、`scanDoors`）、贯通道和屏障（`renderConnection`、`renderBarrier`）、声音位置、服务端。要完全一致得把车厢定位放进组件，见解耦文档。
+

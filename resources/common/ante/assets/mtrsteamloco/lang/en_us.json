@@ -91,6 +91,7 @@
     "gui.mtrsteamloco.config.client.rail3d.description": "Disabling 3D rails makes WorldEdit-copied connected rail nodes visible.",
     "gui.mtrsteamloco.config.client.slsmoke": "Show Steam Locomotive Smoke",
     "gui.mtrsteamloco.config.client.rolling": "Enable Camera Roll",
+    "gui.mtrsteamloco.config.client.bogiesfollowtrack": "Built-in Bogies Turn Along Track",
     "gui.mtrsteamloco.config.client.translucentsort": "Precise Translucent Sorting",
     "gui.mtrsteamloco.config.client.translucentsort.description": "Enable: Accurate occlusion order; Disable: Better performance",
     "gui.mtrsteamloco.config.client.railrender": "Show Rails",

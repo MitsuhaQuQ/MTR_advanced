@@ -705,6 +705,21 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		return path.get(index).rail.getPosition(tempRailProgress - (index == 0 ? 0 : distances.get(index - 1))).add(0, transportMode.railOffset, 0);
 	}
 
+	/**
+	 * Where a point of a car lies on the track, for drawing bogies. The car is counted as in {@link #calculateCar}, and a
+	 * positive offset points from the first end of the car towards the second. Uses the same path and progress as the car
+	 * positions and changes nothing.
+	 */
+	public final Vec3 getTrackPosition(int car, double offset) {
+		if (path.isEmpty()) {
+			return null;
+		}
+		final double carCenter = reversed ? trainCars - car - 0.5 : car + 0.5;
+		final double tempRailProgress = Math.max(railProgress - carCenter * spacing + (reversed ? offset : -offset) - getModelZOffset(), 0);
+		final int index = getIndex(tempRailProgress, false);
+		return path.get(index).rail.getPosition(tempRailProgress - (index == 0 ? 0 : distances.get(index - 1))).add(0, transportMode.railOffset, 0);
+	}
+
 	private boolean scanDoors(Level world, double trainX, double trainY, double trainZ, float checkYaw, float pitch, double halfSpacing, int dwellTicks) {
 		if (skipScanBlocks(world, trainX, trainY, trainZ)) {
 			return false;

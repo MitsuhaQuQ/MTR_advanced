@@ -63,6 +63,11 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 						final String baseBveSoundBaseId = baseTrainProperties.sound instanceof BveTrainSound ? ((BveTrainSound) baseTrainProperties.sound).config.baseName : "";
 						final ModelSimpleTrainBase<?> modelSimpleTrainBase = jonRendererOrDefault.model instanceof ModelSimpleTrainBase<?> ? ((ModelSimpleTrainBase<?>) jonRendererOrDefault.model) : null;
 
+						// Bogies are read before the car's texture: ANTE keeps the last texture read for the next OBJ or Blockbench model
+						final String carTextureId = jsonObject.has(CUSTOM_TRAINS_TEXTURE_ID) ? jsonObject.get(CUSTOM_TRAINS_TEXTURE_ID).getAsString() : jonRendererOrDefault.textureId;
+						final CustomBogie bogie1 = readBogie(manager, jsonObject, CUSTOM_TRAINS_BOGIE_1, carTextureId, baseTrainProperties.bogie1);
+						final CustomBogie bogie2 = readBogie(manager, jsonObject, CUSTOM_TRAINS_BOGIE_2, carTextureId, baseTrainProperties.bogie2);
+
 						final String textureId = getOrDefault(jsonObject, CUSTOM_TRAINS_TEXTURE_ID, jonRendererOrDefault.textureId, JsonElement::getAsString);
 						final String gangwayConnectionId = getOrDefault(jsonObject, CUSTOM_TRAINS_GANGWAY_CONNECTION_ID, jonRendererOrDefault.gangwayConnectionId, JsonElement::getAsString);
 						final String trainBarrierId = getOrDefault(jsonObject, CUSTOM_TRAINS_TRAIN_BARRIER_ID, jonRendererOrDefault.trainBarrierId, JsonElement::getAsString);
@@ -94,7 +99,7 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 							final ModelTrainBase model = modelSimpleTrainBase == null ? jonRendererOrDefault.model : (ModelTrainBase) modelSimpleTrainBase.createNew(doorAnimationType, renderDoorOverlay);
 							final String soundBaseId = useBveSound ? bveSoundBaseId : speedSoundBaseId;
 							final JonTrainSound.JonTrainSoundConfig soundConfig = useBveSound ? null : new JonTrainSound.JonTrainSoundConfig(doorSoundBaseId, speedSoundCount, doorCloseSoundTime, accelSoundAtCoast, constPlaybackSpeed);
-							TrainClientRegistry.register(trainId, baseTrainType, name, description, wikipediaArticle, model, textureId, color, gangwayConnectionId, trainBarrierId, riderOffset, riderOffset, baseTrainProperties.bogiePosition, baseTrainProperties.isJacobsBogie, soundBaseId, soundConfig);
+							TrainClientRegistry.register(trainId, baseTrainType, name, description, wikipediaArticle, model, textureId, color, gangwayConnectionId, trainBarrierId, riderOffset, riderOffset, baseTrainProperties.bogiePosition, baseTrainProperties.isJacobsBogie, soundBaseId, soundConfig, bogie1, bogie2);
 							customTrains.add(trainId);
 						}
 
@@ -112,7 +117,7 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 								final ModelTrainBase model = useLegacy ? new DynamicTrainModelLegacy(jsonModel, jsonProperties, doorAnimationType) : new DynamicTrainModel(jsonModel, jsonProperties, doorAnimationType);
 								final String soundBaseId = useBveSound ? bveSoundBaseId : speedSoundBaseId;
 								final JonTrainSound.JonTrainSoundConfig soundConfig = useBveSound ? null : new JonTrainSound.JonTrainSoundConfig(doorSoundBaseId, speedSoundCount, doorCloseSoundTime, accelSoundAtCoast, constPlaybackSpeed);
-								TrainClientRegistry.register(trainId, newBaseTrainType2.toLowerCase(Locale.ENGLISH), name, description, wikipediaArticle, model, textureId, color, gangwayConnectionId2, trainBarrierId, riderOffset, riderOffset, baseTrainProperties.bogiePosition, baseTrainProperties.isJacobsBogie, soundBaseId, soundConfig);
+								TrainClientRegistry.register(trainId, newBaseTrainType2.toLowerCase(Locale.ENGLISH), name, description, wikipediaArticle, model, textureId, color, gangwayConnectionId2, trainBarrierId, riderOffset, riderOffset, baseTrainProperties.bogiePosition, baseTrainProperties.isJacobsBogie, soundBaseId, soundConfig, bogie1, bogie2);
 								customTrains.add(trainId);
 							}));
 						}
@@ -162,6 +167,27 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 		} catch (Exception ignored) {
 			return 0;
 		}
+	}
+
+	private static CustomBogie readBogie(ResourceManager manager, JsonObject jsonObject, String key, String carTextureId, CustomBogie defaultBogie) {
+		if (!jsonObject.has(key)) {
+			return defaultBogie;
+		}
+
+		final JsonObject bogieObject = jsonObject.getAsJsonObject(key);
+		final float position = getOrDefault(bogieObject, CUSTOM_TRAINS_BOGIE_POSITION, 0F, JsonElement::getAsFloat);
+		// Through getOrDefault, so that ANTE picks up the bogie's own texture and flipV
+		final String textureId = getOrDefault(bogieObject, CUSTOM_TRAINS_TEXTURE_ID, carTextureId, JsonElement::getAsString);
+		final ModelTrainBase[] model = {null};
+
+		if (bogieObject.has(CUSTOM_TRAINS_MODEL) && bogieObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES)) {
+			readResource(manager, bogieObject.get(CUSTOM_TRAINS_MODEL).getAsString(), jsonModel -> readResource(manager, bogieObject.get(CUSTOM_TRAINS_MODEL_PROPERTIES).getAsString(), jsonProperties -> {
+				IResourcePackCreatorProperties.checkSchema(jsonProperties);
+				model[0] = jsonProperties.has("parts_normal") ? new DynamicTrainModelLegacy(jsonModel, jsonProperties, DoorAnimationType.STANDARD) : new DynamicTrainModel(jsonModel, jsonProperties, DoorAnimationType.STANDARD);
+			}));
+		}
+
+		return new CustomBogie(model[0], textureId, position);
 	}
 
 	private static void readResource(ResourceManager manager, String path, Consumer<JsonObject> callback) {

@@ -34,9 +34,13 @@ public class TrainClientRegistry {
 	}
 
 	public static void register(String key, String baseTrainType, String name, String description, String wikipediaArticle, ModelTrainBase model, String textureId, int color, String gangwayConnectionId, String trainBarrierId, float riderOffset, float riderOffsetDismounting, float bogiePosition, boolean isJacobsBogie, String soundId, JonTrainSound.JonTrainSoundConfig legacySoundConfig) {
+		register(key, baseTrainType, name, description, wikipediaArticle, model, textureId, color, gangwayConnectionId, trainBarrierId, riderOffset, riderOffsetDismounting, bogiePosition, isJacobsBogie, soundId, legacySoundConfig, null, null);
+	}
+
+	public static void register(String key, String baseTrainType, String name, String description, String wikipediaArticle, ModelTrainBase model, String textureId, int color, String gangwayConnectionId, String trainBarrierId, float riderOffset, float riderOffsetDismounting, float bogiePosition, boolean isJacobsBogie, String soundId, JonTrainSound.JonTrainSoundConfig legacySoundConfig, CustomBogie bogie1, CustomBogie bogie2) {
 		final TrainRendererBase renderer = new JonModelTrainRenderer(model, textureId, gangwayConnectionId, trainBarrierId);
 		final TrainSoundBase sound = legacySoundConfig == null ? new BveTrainSound(new BveTrainSoundConfig(Minecraft.getInstance().getResourceManager(), soundId == null ? "" : soundId)) : new JonTrainSound(soundId, legacySoundConfig);
-		register(key, new TrainProperties(baseTrainType, Text.translatable(name == null ? "train.mtr." + key.toLowerCase(Locale.ENGLISH) : name), description, wikipediaArticle, color, riderOffset, riderOffsetDismounting, bogiePosition, isJacobsBogie, !StringUtils.isEmpty(gangwayConnectionId), renderer, sound));
+		register(key, new TrainProperties(baseTrainType, Text.translatable(name == null ? "train.mtr." + key.toLowerCase(Locale.ENGLISH) : name), description, wikipediaArticle, color, riderOffset, riderOffsetDismounting, bogiePosition, isJacobsBogie, !StringUtils.isEmpty(gangwayConnectionId), renderer, sound, bogie1, bogie2));
 	}
 
 	private static void register(TrainType defaultTrainType, String wikipediaArticle, ModelTrainBase model, String textureId, int color, String gangwayConnectionId, String trainBarrierId, float bogiePosition, boolean isJacobsBogie, String soundId, JonTrainSound.JonTrainSoundConfig legacySoundConfig) {
