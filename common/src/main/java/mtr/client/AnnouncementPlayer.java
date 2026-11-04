@@ -9,9 +9,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import org.lwjgl.stb.STBVorbis;
+import org.lwjgl.stb.STBVorbisInfo;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.system.libc.LibCStdlib;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -202,27 +202,47 @@ public final class AnnouncementPlayer {
 		if (info.durationMillis > MAX_DECODED_MILLIS) {
 			throw new AudioFiles.InvalidAudioException("too long");
 		}
+		// The samples are read in pieces into a buffer of our own. stb_vorbis_decode_memory hands back a buffer of its own,
+		// and freeing that with the C library's free corrupted the heap, which closed the game as soon as Java Sound
+		// played it
 		final ByteBuffer buffer = MemoryUtil.memAlloc(bytes.length);
+		ShortBuffer chunk = null;
+		long decoder = MemoryUtil.NULL;
 		try (final MemoryStack stack = MemoryStack.stackPush()) {
 			buffer.put(bytes).flip();
-			final IntBuffer channels = stack.mallocInt(1);
-			final IntBuffer sampleRate = stack.mallocInt(1);
-			final ShortBuffer samples = STBVorbis.stb_vorbis_decode_memory(buffer, channels, sampleRate);
-			if (samples == null) {
+			decoder = STBVorbis.stb_vorbis_open_memory(buffer, stack.mallocInt(1), null);
+			if (decoder == MemoryUtil.NULL) {
 				throw new AudioFiles.InvalidAudioException("not decodable");
 			}
-			try {
-				final byte[] data = new byte[samples.remaining() * 2];
-				for (int i = 0; samples.hasRemaining(); i += 2) {
-					final short sample = samples.get();
-					data[i] = (byte) sample;
-					data[i + 1] = (byte) (sample >> 8);
-				}
-				return new Pcm(data, sampleRate.get(0), channels.get(0));
-			} finally {
-				LibCStdlib.free(samples);
+			final STBVorbisInfo vorbisInfo = STBVorbisInfo.malloc(stack);
+			STBVorbis.stb_vorbis_get_info(decoder, vorbisInfo);
+			final int channels = vorbisInfo.channels();
+			final int sampleRate = vorbisInfo.sample_rate();
+			if (channels < 1 || channels > 2 || sampleRate <= 0) {
+				throw new AudioFiles.InvalidAudioException("only mono or stereo");
 			}
+			final long maxBytes = (long) sampleRate * channels * 2 * MAX_DECODED_MILLIS / 1000;
+			chunk = MemoryUtil.memAllocShort(WRITE_FRAMES * channels);
+			final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+			int frames;
+			while ((frames = STBVorbis.stb_vorbis_get_samples_short_interleaved(decoder, channels, chunk)) > 0) {
+				if (outputStream.size() + (long) frames * channels * 2 > maxBytes) {
+					throw new AudioFiles.InvalidAudioException("too long");
+				}
+				for (int i = 0; i < frames * channels; i++) {
+					final short sample = chunk.get(i);
+					outputStream.write(sample & 0xFF);
+					outputStream.write(sample >> 8 & 0xFF);
+				}
+			}
+			return new Pcm(outputStream.toByteArray(), sampleRate, channels);
 		} finally {
+			if (decoder != MemoryUtil.NULL) {
+				STBVorbis.stb_vorbis_close(decoder);
+			}
+			if (chunk != null) {
+				MemoryUtil.memFree(chunk);
+			}
 			MemoryUtil.memFree(buffer);
 		}
 	}
