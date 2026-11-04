@@ -335,6 +335,9 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 				return Text.translatable("gui.mtr.path_failure_duty").getString();
 			case BOUNDARY:
 				return Text.translatable("gui.mtr.path_failure_boundary", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
+			case CONNECTING_LINE:
+				final Route connectingLine = ClientData.DATA_CACHE.routeIdMap.get(data.clientPathFailure.pos);
+				return Text.translatable("gui.mtr.path_failure_connecting_line", connectingLine == null ? String.valueOf(data.clientPathFailure.pos) : IGui.formatStationName(connectingLine.name)).getString();
 			default:
 				return ClientData.STALE_DEPOTS.contains(data.id) ? Text.translatable("gui.mtr.path_stale").getString() : "";
 		}

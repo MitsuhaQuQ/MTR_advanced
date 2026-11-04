@@ -1,10 +1,12 @@
 package mtr.advanced;
 
 import mtr.data.DataCache;
+import mtr.data.PathTiming;
 import mtr.data.Depot;
 import mtr.data.Rail;
 import mtr.data.RailType;
 import mtr.data.RailwayData;
+import mtr.data.RoutePaths;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
 import transitsim.sim.RunRecord;
@@ -38,7 +40,17 @@ public final class SimExport {
 	 */
 	public static SimDataset toDataset(RailwayData railwayData) {
 		final SimDataset dataset = new SimDataset();
-		railwayData.routes.stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> dataset.routes.add(new SimDataset.RouteData(route)));
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
+		railwayData.routes.stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
+			final SimDataset.RouteData routeData = new SimDataset.RouteData(route);
+			// The route's own fastest times, so the component plans with the same times as the game (L1)
+			final RoutePaths.RoutePath routePath = RoutePaths.timesByPath(route) ? railwayData.routePaths.getFound(route, railwayData.dataCache, rails) : null;
+			if (routePath != null) {
+				routeData.fastestTimes = routePath.getFastestTimes(route, RoutePaths.getVehicles(vehicles, route));
+			}
+			dataset.routes.add(routeData);
+		});
 		railwayData.depots.stream().sorted(Comparator.comparingLong(depot -> depot.id)).forEach(depot -> {
 			final SimDataset.DepotData depotData = new SimDataset.DepotData(depot.id, toArray(depot.routeIds), depot.cycleRoutes, depot.getRunDuties() != null ? depot.getRunDuties().toBytes() : new byte[0]);
 			// Sending trains out by frequency, the depot takes its sidings in turn in their order by name, as the game's does
@@ -47,7 +59,6 @@ public final class SimExport {
 			depotData.releaseInterval = depot.releaseInterval;
 			dataset.depots.add(depotData);
 		});
-		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 		final RunRecord trains = new RunRecord(System.currentTimeMillis());
 		final Set<Long> recordedDepots = new HashSet<>();
 		railwayData.sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> {

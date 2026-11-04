@@ -108,6 +108,7 @@ public final class EditorData {
 		routeObject.addProperty("timetable", route.timetable.enabled);
 		routeObject.addProperty("entryPlatform", String.valueOf(route.timetable.entryPlatformId));
 		routeObject.addProperty("editorManaged", route.editorManaged);
+		routeObject.addProperty("connectingLine", route.connectingLine);
 		routeObject.addProperty("revision", getRevision(route));
 		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
 		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));

@@ -20,8 +20,10 @@ import transitsim.plan.TurnBacks;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -37,9 +39,10 @@ public final class SimDataset {
 
 	/**
 	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1), version 4 the depots' departures by
-	 * frequency and order of sidings, and which sidings are driven by hand (G1); older data is read without them.
+	 * frequency and order of sidings, and which sidings are driven by hand (G1); version 5 the depots' release intervals
+	 * and the sidings' pools, version 6 the routes' own fastest times (L1); older data is read without them.
 	 */
-	public static final int VERSION = 5;
+	public static final int VERSION = 6;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -88,6 +91,7 @@ public final class SimDataset {
 		sidings.forEach(siding -> writer.writeBoolean(siding.manual));
 		depots.forEach(depot -> writer.writeInt(depot.releaseInterval));
 		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.poolKey));
+		routes.forEach(route -> writeTimes(writer, route.fastestTimes));
 		return writer.toBytes();
 	}
 
@@ -139,6 +143,11 @@ public final class SimDataset {
 				siding.poolKey = BinaryKeyed.readString(reader);
 			}
 		}
+		if (version >= 6) {
+			for (final RouteData route : dataset.routes) {
+				route.fastestTimes = readTimes(reader);
+			}
+		}
 		return dataset;
 	}
 
@@ -150,6 +159,10 @@ public final class SimDataset {
 	public boolean replaceRoute(RouteData route) {
 		for (int i = 0; i < routes.size(); i++) {
 			if (routes.get(i).id == route.id) {
+				// A draft with the same stops keeps the times the game worked out for the route
+				if (route.fastestTimes == null && Arrays.equals(routes.get(i).platformIds, route.platformIds) && Arrays.equals(routes.get(i).passes, route.passes)) {
+					route.fastestTimes = routes.get(i).fastestTimes;
+				}
 				routes.set(i, route);
 				return true;
 			}
@@ -252,12 +265,21 @@ public final class SimDataset {
 	}
 
 	/**
-	 * The fastest arrival and departure at each stop of the depot's routes, worked out along each of its sidings' paths as
-	 * the game's siding does, from the first siding that reaches every stop (S6).
+	 * The fastest arrival and departure at each stop of the depot's routes: the routes' own times as the game worked them
+	 * out (L1), or for routes without them, worked out along each of the depot's sidings' paths as the game's siding does,
+	 * from the first siding that reaches every stop (S6).
 	 */
 	public Map<Long, long[][]> getFastestTimes(long depotId) {
 		final Map<Long, DataRoute> routeMap = buildRoutes();
 		final Map<Long, long[][]> fastestTimes = new TreeMap<>();
+		final Set<Long> depotRouteIds = new HashSet<>();
+		depots.stream().filter(depot -> depot.id == depotId).forEach(depot -> Arrays.stream(depot.routeIds).forEach(depotRouteIds::add));
+		sidings.stream().filter(sidingData -> sidingData.depotId == depotId).forEach(sidingData -> Arrays.stream(sidingData.routeIds).forEach(depotRouteIds::add));
+		routes.forEach(route -> {
+			if (route.fastestTimes != null && depotRouteIds.contains(route.id)) {
+				fastestTimes.put(route.id, copyTimes(route.fastestTimes));
+			}
+		});
 		for (final SidingData sidingData : sidings) {
 			if (sidingData.depotId != depotId || sidingData.path.isEmpty()) {
 				continue;
@@ -272,6 +294,36 @@ public final class SimDataset {
 			}
 		}
 		return fastestTimes;
+	}
+
+	private static void writeTimes(BinaryWriter writer, long[][] times) {
+		writer.writeVarInt(times == null ? 0 : times.length + 1);
+		if (times != null) {
+			for (final long[] stopTime : times) {
+				writer.writeLong(stopTime[0]);
+				writer.writeLong(stopTime[1]);
+			}
+		}
+	}
+
+	private static long[][] readTimes(BinaryReader reader) {
+		final int count = reader.readVarInt();
+		if (count == 0) {
+			return null;
+		}
+		final long[][] times = new long[count - 1][];
+		for (int i = 0; i < times.length; i++) {
+			times[i] = new long[]{reader.readLong(), reader.readLong()};
+		}
+		return times;
+	}
+
+	private static long[][] copyTimes(long[][] times) {
+		final long[][] copy = new long[times.length][];
+		for (int i = 0; i < times.length; i++) {
+			copy[i] = times[i].clone();
+		}
+		return copy;
 	}
 
 	private Map<Long, DataRoute> buildRoutes() {
@@ -406,6 +458,11 @@ public final class SimDataset {
 		public final int[][] departures;
 		public final boolean[][] overtakes;
 		public final byte[] timetable;
+		/**
+		 * The fastest arrival and departure at each stop counted from leaving the first, as the game works them out along
+		 * the route's own path for the slowest vehicle running it (L1), or null if the game didn't have them.
+		 */
+		public long[][] fastestTimes;
 
 		public RouteData(PlanRoute route) {
 			id = route.getRouteId();

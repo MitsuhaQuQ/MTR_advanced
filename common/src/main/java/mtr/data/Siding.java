@@ -1162,111 +1162,21 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	private void generateTimeSegments(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes, StopTimes stopTimes, int joinIndex, int lapEndIndex) {
-		timeSegments.clear();
-		stopTimes.clear();
-		stopTimes.setJoinIndex(joinIndex);
-		if (useSpeedCurve && !transportMode.continuousMovement && !path.isEmpty()) {
-			generateCurveTimes(path, timeSegments, platformTimes, stopTimes);
-			stopTimes.linkJoinStops(lapEndIndex);
-			return;
-		}
-
-		double distanceSum1 = 0;
-		final List<Double> stoppingDistances = new ArrayList<>();
-		for (final PathData pathData : path) {
-			distanceSum1 += pathData.rail.getLength();
-			if (pathData.dwellTime > 0) {
-				stoppingDistances.add(distanceSum1);
-			}
-		}
-
-		final int spacing = TrainType.getSpacing(baseTrainType);
-		double railProgress = (railLength + trainCars * spacing) / 2;
-		double nextStoppingDistance = 0;
-		float speed = 0;
-		float time = 0;
-		float timeOld = 0;
-		long savedRailBaseIdOld = 0;
-		double distanceSum2 = 0;
-		boolean startNewSegment = false;
-		for (int i = 0; i < path.size(); i++) {
-			if (railProgress >= nextStoppingDistance) {
-				if (stoppingDistances.isEmpty()) {
-					nextStoppingDistance = distanceSum1;
-				} else {
-					nextStoppingDistance = stoppingDistances.remove(0);
-				}
-			}
-
-			final PathData pathData = path.get(i);
-			final float railSpeed = pathData.rail.railType.canAccelerate ? pathData.rail.railType.maxBlocksPerTick : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(transportMode));
-			distanceSum2 += pathData.rail.getLength();
-
-			while (railProgress < distanceSum2) {
-				final int speedChange;
-				if (speed > railSpeed || nextStoppingDistance - railProgress + 1 < 0.5 * speed * speed / accelerationConstant) {
-					speed = Math.max(speed - accelerationConstant, accelerationConstant);
-					speedChange = -1;
-				} else if (speed < railSpeed) {
-					speed = Math.min(speed + accelerationConstant, railSpeed);
-					speedChange = 1;
-				} else {
-					speedChange = 0;
-				}
-
-				if (startNewSegment || timeSegments.isEmpty() || timeSegments.get(timeSegments.size() - 1).speedChange != speedChange) {
-					timeSegments.add(new TimeSegment(railProgress, speed, time, speedChange, accelerationConstant));
-					startNewSegment = false;
-				}
-
-				railProgress = Math.min(railProgress + speed, distanceSum2);
-				time++;
-
-				final TimeSegment timeSegment = timeSegments.get(timeSegments.size() - 1);
-				timeSegment.endRailProgress = railProgress;
-				timeSegment.endTime = time;
-				timeSegment.pass = railProgress == distanceSum2 && isPassingPlatform(path, i);
-				timeSegment.savedRailBaseId = timeSegment.pass || nextStoppingDistance != distanceSum1 && railProgress == distanceSum2 && pathData.dwellTime > 0 ? pathData.savedRailBaseId : 0;
-				// The next rail would otherwise extend this segment and clear the platform
-				startNewSegment = timeSegment.pass;
-			}
-
-			final boolean isPlatformStop = pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0;
-			if (pathData.dwellTime > 0 || isPassingPlatform(path, i)) {
-				final boolean isTurnBack = !isPlatformStop && i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1));
-				stopTimes.add(i, isPlatformStop ? pathData.savedRailBaseId : 0, isTurnBack ? pathData.getRailProduct() : null, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
-			}
-
-			time += pathData.dwellTime * 5;
-
-			if (pathData.savedRailBaseId != 0) {
-				if (savedRailBaseIdOld != 0) {
-					if (!platformTimes.containsKey(savedRailBaseIdOld)) {
-						platformTimes.put(savedRailBaseIdOld, new HashMap<>());
-					}
-					platformTimes.get(savedRailBaseIdOld).put(pathData.savedRailBaseId, time - timeOld);
-				}
-				savedRailBaseIdOld = pathData.savedRailBaseId;
-				timeOld = time;
-			}
-
-			time += pathData.dwellTime * 5;
-
-			if (i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1))) {
-				railProgress += spacing * trainCars;
-			}
-		}
-
-		stopTimes.linkJoinStops(lapEndIndex);
+		PathTiming.generateTimeSegments(getTimingVehicle(), path, timeSegments, platformTimes, stopTimes, joinIndex, lapEndIndex);
 	}
 
 	/**
-	 * See {@link PathTimes#curveTimes}.
+	 * @return what the times along a path depend on of this siding's trains (see {@link PathTiming})
 	 */
-	private void generateCurveTimes(List<PathData> path, List<TimeSegment> timeSegments, Map<Long, Map<Long, Float>> platformTimes, StopTimes stopTimes) {
-		final int spacing = TrainType.getSpacing(baseTrainType);
-		final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, transportMode), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, getDecelerationConstant());
-		PathTimes.curveTimes(path, curves, timeSegments, platformTimes, stopTimes);
+	public PathTiming.Vehicle getTimingVehicle() {
+		return getTimingVehicle(useSpeedCurve);
+	}
+
+	/**
+	 * @param speedCurves whether the train runs on speed curves, as its depot is set
+	 */
+	public PathTiming.Vehicle getTimingVehicle(boolean speedCurves) {
+		return new PathTiming.Vehicle(railLength, trainCars, TrainType.getSpacing(baseTrainType), accelerationConstant, getDecelerationConstant(), speedCurves, transportMode);
 	}
 
 	/**

@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.concurrent.CancellationException;
+import java.util.function.Predicate;
 
 /**
  * Deterministic A* over a whole route. The state is "targets completed + current connection", so the direction a
@@ -26,6 +27,14 @@ public final class RailRouter {
 	}
 
 	public static <R> Result<R> route(RailGraph<R> graph, List<Target> targets) {
+		return route(graph, targets, null);
+	}
+
+	/**
+	 * @param avoid the connections the route may not use, as the rails of a connecting line other lines keep off, or null;
+	 *              the targets themselves are always allowed
+	 */
+	public static <R> Result<R> route(RailGraph<R> graph, List<Target> targets, Predicate<Connection<R>> avoid) {
 		if (targets.size() < 2 || !targets.get(0).isRail()) {
 			throw new IllegalArgumentException("A route starts on a saved rail and needs a second target");
 		}
@@ -60,8 +69,8 @@ public final class RailRouter {
 		if (forward == null || backward == null) {
 			return new Result<>(Collections.emptyList(), 0);
 		}
-		push(graph, targets, legs, remainingAfter, best, queue, null, forward, 1, 0, false);
-		push(graph, targets, legs, remainingAfter, best, queue, null, backward, 1, 0, false);
+		push(graph, targets, legs, remainingAfter, best, queue, null, forward, 1, 0, false, avoid);
+		push(graph, targets, legs, remainingAfter, best, queue, null, backward, 1, 0, false, avoid);
 
 		int mostCompleted = 1;
 		int expanded = 0;
@@ -83,7 +92,7 @@ public final class RailRouter {
 			if (state.justCompletedRail) {
 				final Connection<R> opposite = graph.reverseOf(connection);
 				if (opposite != null) {
-					push(graph, targets, legs, remainingAfter, best, queue, state, opposite, state.completed, state.cost + opposite.cost + TURN_BACK_PENALTY, true);
+					push(graph, targets, legs, remainingAfter, best, queue, state, opposite, state.completed, state.cost + opposite.cost + TURN_BACK_PENALTY, true, avoid);
 				}
 			}
 
@@ -93,7 +102,7 @@ public final class RailRouter {
 					final boolean reversing = next.toPos == connection.fromPos;
 					final boolean isTarget = targets.get(state.completed).matches(next);
 					final double penalty = (reversing ? TURN_BACK_PENALTY : 0) + (next.kind == Kind.PLATFORM && !isTarget ? OTHER_PLATFORM_PENALTY : 0);
-					push(graph, targets, legs, remainingAfter, best, queue, state, next, state.completed, state.cost + next.cost + penalty, false);
+					push(graph, targets, legs, remainingAfter, best, queue, state, next, state.completed, state.cost + next.cost + penalty, false, avoid);
 				}
 			}
 		}
@@ -118,8 +127,11 @@ public final class RailRouter {
 		return legs;
 	}
 
-	private static <R> void push(RailGraph<R> graph, List<Target> targets, BitSet[] legs, double[] remainingAfter, Map<Long, State<R>> best, PriorityQueue<State<R>> queue, State<R> parent, Connection<R> connection, int completedBefore, double cost, boolean reversal) {
+	private static <R> void push(RailGraph<R> graph, List<Target> targets, BitSet[] legs, double[] remainingAfter, Map<Long, State<R>> best, PriorityQueue<State<R>> queue, State<R> parent, Connection<R> connection, int completedBefore, double cost, boolean reversal, Predicate<Connection<R>> avoid) {
 		if (legs != null && !graph.getRegions().allows(connection, legs[completedBefore])) {
+			return;
+		}
+		if (avoid != null && avoid.test(connection) && targets.stream().noneMatch(target -> target.matches(connection))) {
 			return;
 		}
 		int completed = completedBefore;

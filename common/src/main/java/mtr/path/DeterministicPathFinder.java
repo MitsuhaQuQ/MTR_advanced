@@ -51,6 +51,13 @@ public final class DeterministicPathFinder {
 	 * @return the number of saved rails reached, like {@link PathFinder#findPath}
 	 */
 	public static int findPath(List<PathData> path, RailGraph<Rail> graph, List<SavedRailBase> savedRailBases, List<List<BlockPos>> sectionWaypoints, int stopIndexOffset) {
+		return findPath(path, graph, savedRailBases, sectionWaypoints, stopIndexOffset, null);
+	}
+
+	/**
+	 * @param avoid the rails the path may not use, as a connecting line's own rails, or null
+	 */
+	public static int findPath(List<PathData> path, RailGraph<Rail> graph, List<SavedRailBase> savedRailBases, List<List<BlockPos>> sectionWaypoints, int stopIndexOffset, java.util.function.Predicate<Connection<Rail>> avoid) {
 		path.clear();
 		if (savedRailBases.size() < 2) {
 			return 0;
@@ -72,7 +79,7 @@ public final class DeterministicPathFinder {
 			}
 		}
 
-		final Result<Rail> result = RailRouter.route(graph, targets);
+		final Result<Rail> result = RailRouter.route(graph, targets, avoid);
 		if (!result.isSuccess()) {
 			return result.completedTargets == 0 ? 1 : savedIndices.get(result.completedTargets - 1) + 1;
 		}

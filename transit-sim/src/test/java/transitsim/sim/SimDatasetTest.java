@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -54,6 +55,27 @@ class SimDatasetTest {
 		final SimDataset blocksBack = SimDataset.fromBytes(blocks.toBytes());
 		assertEquals(blocks.signalBlocks, blocksBack.signalBlocks);
 		assertArrayEquals(blocks.toBytes(), blocksBack.toBytes());
+	}
+
+	@Test
+	void routesKeepTheFastestTimesTheGameWorkedOut() {
+		final SimDataset dataset = lines(1, 400, 2, 4, 10);
+		final long[][] times = {{0, 0}, {30000, 50000}, {90000, 90000}};
+		dataset.routes.get(0).fastestTimes = times;
+		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
+		assertArrayEquals(times, read.routes.get(0).fastestTimes);
+		assertEquals(null, read.routes.get(1).fastestTimes);
+
+		// The route's own times come first; a route without them is timed along the depot's path as before
+		final Map<Long, long[][]> fastest = read.getFastestTimes(1);
+		assertArrayEquals(times, fastest.get(read.routes.get(0).id));
+		assertTrue(fastest.containsKey(read.routes.get(1).id));
+
+		// A draft of the timetable with the same stops keeps them
+		final SimDataset.RouteData draft = SimDataset.RouteData.fromBytes(read.routes.get(0).toBytes());
+		assertEquals(null, draft.fastestTimes);
+		assertTrue(read.replaceRoute(draft));
+		assertArrayEquals(times, read.getFastestTimes(1).get(draft.id));
 	}
 
 	@Test

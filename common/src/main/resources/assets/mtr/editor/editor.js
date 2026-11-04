@@ -130,8 +130,20 @@
 		if (entry && Object.keys(entry).every(k => k === "base" || k === "force" || k === "error" || k === "conflict")) delete draft.routes[id];
 	}
 	const isManaged = r => draftOf(r) && "managed" in draftOf(r) ? draftOf(r).managed : r.editorManaged;
+	const isConnecting = r => draftOf(r) && "connectingLine" in draftOf(r) ? draftOf(r).connectingLine : Boolean(r.connectingLine);
 	// A type marked for deletion stays in the game until the draft is applied
 	const isDeleted = r => Boolean(draftOf(r) && draftOf(r).deleted);
+
+	/** A connecting line: other lines' paths keep off its rails, while services can run through it with passengers. */
+	function setConnecting(r, connecting) {
+		const entry = draftEntry(r);
+		if (connecting === Boolean(r.connectingLine)) delete entry.connectingLine;
+		else entry.connectingLine = connecting;
+		if (!entry.conflict) delete entry.error;
+		tidyDraft(r.id);
+		saveDraft();
+		renderAll();
+	}
 
 	function setManaged(r, managed) {
 		const entry = draftEntry(r);
@@ -172,6 +184,10 @@
 			}
 			if ("managed" in entry) {
 				operations.push({ type: "managed", route: id, base, parts, force: Boolean(entry.force), managed: entry.managed });
+				owners.push(id);
+			}
+			if ("connectingLine" in entry) {
+				operations.push({ type: "connectingLine", route: id, base, parts, force: Boolean(entry.force), connectingLine: entry.connectingLine });
 				owners.push(id);
 			}
 		});
@@ -815,6 +831,7 @@
 		const items = [];
 		if (entry.deleted) items.push(tr("删除这个种别"));
 		if ("managed" in entry) items.push(entry.managed ? tr("改由高级编辑器管理") : tr("交回游戏内编辑"));
+		if ("connectingLine" in entry) items.push(entry.connectingLine ? tr("设为联络线") : tr("取消联络线"));
 		if (entry.platforms) {
 			// Each platform by its station and number, from the stops that use it or could
 			const names = new Map();
@@ -1763,9 +1780,12 @@
 		const services = r.services;
 		const timetable = timetableOf(r), today = timetable.tables.findIndex(table => table.weekdays >> state.weekday & 1);
 		const managed = isManaged(r), pending = draftOf(r) && "managed" in draftOf(r), drafted = Boolean(draftOf(r) && draftOf(r).timetable);
+		const connecting = isConnecting(r), connectingPending = draftOf(r) && "connectingLine" in draftOf(r);
 		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>
 			<span class="pill${managed ? " managed" : ""}" title="${tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}">${managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}${pending ? tr("（草稿）") : ""}</span>
-			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button></div>
+			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button>
+			${connecting ? `<span class="pill" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${tr("联络线")}${connectingPending ? tr("（草稿）") : ""}</span>` : ""}
+			<button data-connecting="${!connecting}" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${connecting ? tr("取消联络线") : tr("设为联络线")}</button></div>
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint">${tr("余裕")} <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
 			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
@@ -3768,6 +3788,11 @@
 		const managedButton = e.target.closest("[data-managed]");
 		if (managedButton) {
 			if (r) setManaged(r, managedButton.dataset.managed === "true");
+			return;
+		}
+		const connectingButton = e.target.closest("[data-connecting]");
+		if (connectingButton) {
+			if (r) setConnecting(r, connectingButton.dataset.connecting === "true");
 			return;
 		}
 		const tableButton = e.target.closest("[data-table]");

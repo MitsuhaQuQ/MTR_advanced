@@ -101,6 +101,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 	private final SignalBlocks signalBlocks = new SignalBlocks();
 	private final RailNodeRepair railNodeRepair = new RailNodeRepair();
+	/**
+	 * Each route's path, found once for the depots running it by a timetable (decoupling document 5.4, L1).
+	 */
+	public final RoutePaths routePaths = new RoutePaths();
 	private static final int AUTO_DUTIES_CHECK_TICKS = 100;
 
 	public SignalBlocks getSignalBlocks() {

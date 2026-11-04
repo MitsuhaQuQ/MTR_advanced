@@ -508,6 +508,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		final RailGraph<Rail> graph = getPathGraph(rails, railwayData == null ? null : railwayData.pathBoundaries);
+		// Depots running by a timetable take their routes' paths from the routes (decoupling document 5.4, L1)
+		final RoutePaths.Search routeSearch = railwayData == null ? null : new RoutePaths.Search(railwayData.routePaths, rails, graph, railwayData.pathBoundaries, RoutePaths.getVehicles(railwayData));
+		mainPaths.forEach(mainPath -> mainPath.routeSearch = routeSearch);
 
 		final Thread thread = new Thread(() -> {
 			try {
@@ -818,6 +821,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		sidings.stream().filter(siding -> dataCache.sidingIdToDepot.get(siding.id) == this).sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> key.append(siding.id).append('/').append(siding.getTrainLimit()).append(siding.getTrainId()).append(';'));
 		// What depots sharing a route run changes what is left for this one
 		key.append("shared:").append(getSharedTaken(dataCache).hashCode());
+		// The routes' paths keep off the connecting lines, so making one or no longer finds them again
+		key.append("connecting:");
+		dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode).mapToLong(route -> route.id).sorted().forEach(routeId -> key.append(routeId).append(','));
 		return key.toString();
 	}
 
@@ -1075,7 +1081,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		/**
 		 * Works out the duties of these sidings from the timetables of their routes when the depot runs by a timetable
 		 * and has none set, and gives them to the depot on the server thread (decoupling document, step D). The routes'
-		 * fastest times are those of their own paths, found by now.
+		 * fastest times are the routes' own ({@link RoutePaths.RoutePath#getFastestTimes}), for the slowest vehicle
+		 * running each, as the editor shows them; a route with a path drawn by hand is timed along this depot's path.
 		 *
 		 * @return the duties, or null if the depot doesn't run by a timetable
 		 */
@@ -1093,7 +1100,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final Map<Long, long[][]> fastestTimes = new HashMap<>();
 			for (int i = 0; i < mainRoutes.size(); i++) {
 				final List<PathData> routePath = pathsInRoute.get(i);
-				if (routePath.size() > 1) {
+				// The route's own times, the same as the editor's, for the slowest vehicle running it
+				final long[][] routeTimes = usesRoutePaths() ? routeSearch.getFastestTimes(mainRoutes.get(i), dataCache) : null;
+				if (routeTimes != null) {
+					if (routeTimes.length > 0) {
+						fastestTimes.put(mainRoutes.get(i).id, routeTimes);
+					}
+				} else if (routePath.size() > 1) {
 					fastestTimes.put(mainRoutes.get(i).id, sidings.get(0).calculateStopTimes(routePath).getFastestTimesFromFirstStop(mainRoutes.get(i)));
 				}
 			}
@@ -1130,6 +1143,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private final int loopEntryStop;
 		private final List<Route> mainRoutes;
 		private final DataCache dataCache;
+		/**
+		 * The routes' own paths, for a depot running by a timetable, or null to search each route here as before.
+		 */
+		private RoutePaths.Search routeSearch;
 		private final List<SavedRailBase> platformsMerged = new ArrayList<>();
 		private final List<List<SavedRailBase>> platformsInRoute = new ArrayList<>();
 		private final List<List<PathData>> pathsInRoute = new ArrayList<>();
@@ -1287,11 +1304,19 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					PathFinder.appendPath(tailPath, connectingPath);
 				}
 				final List<PathData> routePath = new ArrayList<>();
-				PathFinder.findPath(routePath, rails, graph, nextPlatforms, nextWaypoints, 1, cruisingAltitude, useFastSpeed);
+				// The route's own path where the depot takes its routes' paths from the routes
+				final RoutePaths.RoutePath ownPath = usesRoutePaths() && nextPlatforms.size() == nextRoute.platformIds.size() ? routeSearch.get(nextRoute, dataCache) : null;
+				if (ownPath != null) {
+					if (ownPath.isFound()) {
+						routePath.addAll(ownPath.getPath(nextStopSettings));
+					}
+				} else {
+					PathFinder.findPath(routePath, rails, graph, nextPlatforms, nextWaypoints, 1, cruisingAltitude, useFastSpeed);
+					PathFinder.applyStopSettings(routePath, nextStopSettings);
+				}
 				if (routePath.size() <= 2) {
 					return null;
 				}
-				PathFinder.applyStopSettings(routePath, nextStopSettings);
 
 				// Stops are counted through every route before this one in full, so this route starts after all of them
 				tripRoutes.add(nextRoute);
@@ -1438,7 +1463,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					stopSettings.add(stopSetting);
 				}
 				final List<PathData> segmentPath = new ArrayList<>();
-				PathFinder.findPath(segmentPath, rails, graph, platforms, waypoints, 1, cruisingAltitude, useFastSpeed);
+				// Cut from the route's own path rather than searched again
+				final RoutePaths.RoutePath ownPath = usesRoutePaths() ? routeSearch.get(route, dataCache) : null;
+				if (ownPath != null) {
+					segmentPath.addAll(ownPath.getSlice(firstStop, lastStop));
+				} else {
+					PathFinder.findPath(segmentPath, rails, graph, platforms, waypoints, 1, cruisingAltitude, useFastSpeed);
+				}
 				if (segmentPath.size() < 2) {
 					return null;
 				}
@@ -1501,7 +1532,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						}
 					}
 					final List<PathData> leadPath = new ArrayList<>();
-					PathFinder.findPath(leadPath, rails, graph, leadPlatforms, leadWaypoints, 1, cruisingAltitude, useFastSpeed);
+					if (ownPath != null) {
+						leadPath.addAll(ownPath.getSlice(0, firstStop));
+					} else {
+						PathFinder.findPath(leadPath, rails, graph, leadPlatforms, leadWaypoints, 1, cruisingAltitude, useFastSpeed);
+					}
 					if (leadPath.size() >= 2 && leadPlatforms.size() == firstStop + 1) {
 						PathFinder.applyStopSettings(leadPath, leadSettings);
 						entryStops.put(route.id, firstStop);
@@ -1512,6 +1547,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				previousRanToEnd = lastStop == route.platformIds.size() - 1;
 			}
 			return new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
+		}
+
+		/**
+		 * @return whether the routes' paths are taken from the routes: for a depot running by a timetable, not moving
+		 * continuously and not of airplanes, which search their whole way as before
+		 */
+		private boolean usesRoutePaths() {
+			return routeSearch != null && !mainRoutes.isEmpty() && getActiveTimetable(mainRoutes.get(0)) != null && !transportMode.continuousMovement && transportMode != TransportMode.AIRPLANE;
 		}
 
 		private boolean isCut(Route route, RouteTimetable.ServiceLink link) {
@@ -1650,7 +1693,18 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 
 				final List<PathData> routePath = pathsInRoute.get(i);
-				if (routePath.isEmpty()) {
+				final RoutePaths.RoutePath ownPath = routePath.isEmpty() && usesRoutePaths() ? routeSearch.get(mainRoutes.get(i), dataCache) : null;
+				if (ownPath != null) {
+					// The route's own path, with the route's stops
+					if (!ownPath.isFound() && platforms.size() >= 2) {
+						failure = ownPath.failure == PathFailure.NONE ? new PathFailure(PathFailure.Type.NO_ROUTE, 0) : ownPath.failure;
+						tempPath.clear();
+						break;
+					}
+					if (ownPath.isFound()) {
+						routePath.addAll(ownPath.getPath(stopSettingsInRoute.get(i)));
+					}
+				} else if (routePath.isEmpty()) {
 					final int reached = PathFinder.findPath(routePath, rails, graph, platforms, waypointsInRoute.get(i), 1, cruisingAltitude, useFastSpeed);
 					if (routePath.isEmpty() && platforms.size() >= 2) {
 						failure = PathFailure.diagnose(graph, platforms, waypointsInRoute.get(i), reached);

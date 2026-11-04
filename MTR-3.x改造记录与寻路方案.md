@@ -1957,6 +1957,11 @@ T3    发车
 - **许可证**：本仓库、上游 MTR 和 ANTE（`aphrodite281/mtr-ante`）的代码都是 MIT，可以公开发布修改版，但要保留各自的版权和许可声明。扩展模组的车型、音频等资源文件是否另有授权尚未核实。
 - **名字和版本号**（2026-11-03 起）：模组列表里 MTR 这一项显示为 `MTR-MTM_Enhanced`，版本 `3.2.2`（`gradle.properties` 的 `mod_version`），附属模组按 `mtr` 3.2.x 声明的依赖照常满足；本分支自己的版本由另一项 `MTM_Logic`（模组 ID `mtm_logic`）显示，从 `0.1.0` 开始（`mtm_version`）。Fabric 里它是嵌在 jar 里的一个只有 `fabric.mod.json` 的小 jar（由 Loom 的 `remapJar.nestedJars` 放进去，shadow 插件会把直接放在资源里的 jar 拆开），列表里显示在 MTR 下面；Forge 里是 `mods.toml` 里的第三个 `[[mods]]`，加一个什么都不做的 `@Mod("mtm_logic")` 类（`mtr.mtm.MTMLogicForge`，电梯单独版不带）。发布的 jar 名为 `MTR3-MTM-0.1.0-fabric-1.20.1.jar`、`MTR3-MTM-0.1.0-forge-1.20.1.jar`（服务端精简包加 `-server`），两种加载器要分开，所以名字里带加载器。模组 ID 和命名空间仍是 `mtr`。原来的做法是保持 `3.2.2`、只加 hotfix 序号（到 `3.2.2-hotfix-2` 为止）。
 - **版本检查**（2026-11-05 改）：客户端和服务端按 MTM_Logic 的版本检查（`gradle.properties` 的 `mtm_version`，模组列表里 MTM_Logic 那一项和 jar 名 `MTR3-MTM-<版本>-...` 里的就是它），完全一样才能玩，不一样时进服就提示双方的版本。服务端发的是 `MTM_Logic <版本>`（`IPacket.getNetworkVersion`），和之前的 `<MTR 版本>-protocol-<协议号>` 写法不同，所以新旧版本无论哪边连哪边都会提示不匹配。网络包或存档有任何变化（包括新增存档内容）都把 `mtm_version` 加一，要求客户端和服务端一起更新；`IPacket.PROTOCOL_VERSION` 已去掉（最后是 45）。版本从 `0.1.0` 升到 `0.2.0` 时开始用这套检查，因为之前所有构建都叫 0.1.0。ANTE 已经合并在同一个 jar 里，由这个检查一并管，所以 ANTE 自己的版本检查（`PacketVersionCheck`，进服时按 ANTE 协议号比较）去掉了；ANTE 协议号只留给脚本读取（`ScriptResourceUtil`）。
+- **线路路径和联络线**（2026-11-05，MTM_Logic 0.3.0，解耦文档 5.4 的 L1）：
+  - 用时刻表的车厂不再每条线路各自寻路，而是用线路自己的路径（`RoutePaths`）。
+  - 线路的最快时刻只从线路路径算，取跑这条线路最慢的车型；没车厂跑时按 0.8 m/s²、8 节的默认车型。
+  - 联络线（`connecting_line`）的线内轨道，别的线路寻路时不走。
+  - 设计、实现情况和偏离计划的地方见解耦文档 5.4"L1 做到哪里"，代码流程见代码说明 9.0。
 - **协议版本**（2026-11-05 之前）：网络包或存档有任何变化都把 `IPacket.PROTOCOL_VERSION` 加一，拼在版本检查字符串里。文中各处的"协议版本 N"指的是这个旧编号。
 - **TPS 补偿（已实现）**：`TickCompensator` 按现实时间计算每个 tick 列车前进的步数，单次最多 4 步，积压最多 8 步，所以卡顿很久之后不会一次追完，时间抖动也不会让列车变快。
 

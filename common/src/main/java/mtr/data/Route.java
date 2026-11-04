@@ -41,6 +41,11 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	public boolean isLightRailRoute;
 	public boolean isHidden;
 	public boolean disableNextStationAnnouncements;
+	/**
+	 * A connecting line (联络线): an ordinary route, which can carry passengers through to another line, but whose rails
+	 * between its first and last platform other routes' paths don't run over (decoupling document 5.4, L1).
+	 */
+	public boolean connectingLine;
 	public CircularState circularState;
 	public String lightRailRouteNumber;
 	public final List<RoutePlatform> platformIds;
@@ -97,6 +102,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_DIAGRAM_COLOR = "diagram_color";
 	private static final String KEY_SERVICE_TYPE = "service_type";
 	private static final String KEY_EDITOR_MANAGED = "editor_managed";
+	private static final String KEY_CONNECTING_LINE = "connecting_line";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
 
@@ -162,6 +168,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		ownColor = messagePackHelper.getInt(KEY_DIAGRAM_COLOR, -1);
 		serviceType = messagePackHelper.getString(KEY_SERVICE_TYPE);
 		editorManaged = messagePackHelper.getBoolean(KEY_EDITOR_MANAGED);
+		connectingLine = messagePackHelper.getBoolean(KEY_CONNECTING_LINE);
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
@@ -238,6 +245,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		serviceType = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		ownColor = packet.readInt();
 		editorManaged = packet.readBoolean();
+		connectingLine = packet.readBoolean();
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
@@ -288,6 +296,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		messagePacker.packString(KEY_DIAGRAM_COLOR).packInt(getOwnColor());
 		messagePacker.packString(KEY_SERVICE_TYPE).packString(serviceType);
 		messagePacker.packString(KEY_EDITOR_MANAGED).packBoolean(editorManaged);
+		messagePacker.packString(KEY_CONNECTING_LINE).packBoolean(connectingLine);
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
@@ -331,7 +340,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 28 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 29 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -512,6 +521,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeUtf(serviceType);
 		packet.writeInt(ownColor);
 		packet.writeBoolean(editorManaged);
+		packet.writeBoolean(connectingLine);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
@@ -550,6 +560,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 				serviceType = packet.readUtf(PACKET_STRING_READ_LENGTH);
 				ownColor = packet.readInt();
 				editorManaged = packet.readBoolean();
+				connectingLine = packet.readBoolean();
 				break;
 			case KEY_TIMETABLE_SERVICES:
 				readTimetable(packet);
@@ -624,6 +635,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeUtf(serviceType);
 		packet.writeInt(ownColor);
 		packet.writeBoolean(editorManaged);
+		packet.writeBoolean(connectingLine);
 		sendPacket.accept(packet);
 	}
 
@@ -648,6 +660,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		route.isLightRailRoute = isLightRailRoute;
 		route.isHidden = isHidden;
 		route.disableNextStationAnnouncements = disableNextStationAnnouncements;
+		route.connectingLine = connectingLine;
 		route.circularState = circularState;
 		route.lightRailRouteNumber = lightRailRouteNumber;
 		route.lineName = lineName;

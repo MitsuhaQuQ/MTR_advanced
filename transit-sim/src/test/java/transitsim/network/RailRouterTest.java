@@ -85,6 +85,21 @@ class RailRouterTest {
 	}
 
 	@Test
+	void keepsOffTheRailsItMustAvoid() {
+		// The fast branch is another line's own track, so the route takes the slow one
+		final Result<String> result = RailRouter.route(graph(twoBranches()), Arrays.asList(saved(0, 0, 10, 0), saved(130, 0, 140, 0)), connection -> connection.rail.contains("70,50"));
+		assertTrue(result.isSuccess());
+		assertFalse(names(result).contains("20,0>70,50"));
+		assertTrue(names(result).contains("20,0>120,0"));
+
+		// With both branches kept off there is no way, while the targets themselves never count as avoided
+		final Result<String> none = RailRouter.route(graph(twoBranches()), Arrays.asList(saved(0, 0, 10, 0), saved(130, 0, 140, 0)), connection -> connection.rail.contains("70,50") || connection.rail.equals("20,0>120,0") || connection.rail.equals("120,0>20,0"));
+		assertFalse(none.isSuccess());
+		final Result<String> targetsOnly = RailRouter.route(graph(twoBranches()), Arrays.asList(saved(0, 0, 10, 0), saved(130, 0, 140, 0)), connection -> connection.rail.startsWith("130,0") || connection.rail.startsWith("0,0"));
+		assertTrue(targetsOnly.isSuccess());
+	}
+
+	@Test
 	void waypointForcesTheOtherBranch() {
 		final List<Object[]> rails = twoBranches();
 		add(rails, 70, 0, 70, 0, Kind.NORMAL, 1);

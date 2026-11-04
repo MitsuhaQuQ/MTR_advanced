@@ -27,6 +27,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 	private final WidgetBetterCheckbox buttonIsLightRailRoute;
 	private final WidgetBetterCheckbox buttonIsRouteHidden;
 	private final WidgetBetterCheckbox buttonDisableNextStationAnnouncements;
+	private final WidgetBetterCheckbox buttonConnectingLine;
 	private final WidgetBetterCheckbox buttonIsClockwiseRoute;
 	private final WidgetBetterCheckbox buttonIsAntiClockwiseRoute;
 	private final Button buttonTimetable;
@@ -47,6 +48,8 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		buttonIsLightRailRoute = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_light_rail_route"), this::setIsLightRailRoute);
 		buttonIsRouteHidden = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_route_hidden"), this::setIsRouteHidden);
 		buttonDisableNextStationAnnouncements = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.disable_next_station_announcements"), this::setDisableNextStationAnnouncements);
+		buttonConnectingLine = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.connecting_line"), checked -> {
+		});
 		buttonIsClockwiseRoute = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_clockwise_route"), this::setIsClockwise);
 		buttonIsAntiClockwiseRoute = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_anticlockwise_route"), this::setIsAntiClockwise);
 		buttonTimetable = UtilitiesClient.newButton(Text.translatable("gui.mtr.timetable"), button -> {
@@ -107,6 +110,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		textFieldServiceType.setValue(data.serviceType);
 		IDrawing.setPositionAndWidth(buttonTimetable, RIGHT_COLUMN_X, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING, rightColumnWidth);
 		IDrawing.setPositionAndWidth(buttonDuplicate, RIGHT_COLUMN_X, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING, rightColumnWidth);
+		IDrawing.setPositionAndWidth(buttonConnectingLine, RIGHT_COLUMN_X, SQUARE_SIZE * 9 + TEXT_FIELD_PADDING, rightColumnWidth);
 
 		if (data.transportMode.hasRouteTypeVariation) {
 			addDrawableChild(buttonRouteType);
@@ -123,12 +127,17 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 			addDrawableChild(buttonTimetable);
 		}
 		addDrawableChild(buttonDuplicate);
+		// Only routes found along the rails keep off a connecting line, not flights or continuous movement
+		if (data.transportMode != TransportMode.AIRPLANE && !data.transportMode.continuousMovement) {
+			addDrawableChild(buttonConnectingLine);
+		}
 		addDrawableChild(textFieldLineName);
 		addDrawableChild(textFieldServiceType);
 
 		setIsLightRailRoute(data.isLightRailRoute);
 		setIsRouteHidden(data.isHidden);
 		setDisableNextStationAnnouncements(data.disableNextStationAnnouncements);
+		buttonConnectingLine.setChecked(data.connectingLine);
 		setIsClockwise(data.circularState == Route.CircularState.CLOCKWISE);
 		setIsAntiClockwise(data.circularState == Route.CircularState.ANTICLOCKWISE);
 	}
@@ -160,6 +169,7 @@ public class EditRouteScreen extends EditNameColorScreenBase<Route> implements I
 		data.lightRailRouteNumber = textFieldLightRailRouteNumber.getValue();
 		data.isHidden = buttonIsRouteHidden.selected();
 		data.disableNextStationAnnouncements = buttonDisableNextStationAnnouncements.selected();
+		data.connectingLine = buttonConnectingLine.selected();
 		data.lineName = textFieldLineName.getValue().trim();
 		data.serviceType = textFieldServiceType.getValue().trim();
 

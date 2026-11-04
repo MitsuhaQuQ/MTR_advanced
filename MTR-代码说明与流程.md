@@ -838,17 +838,40 @@ sequenceDiagram
     TH-->>P: generatePathS2C(成功段数, 失败原因)
 ```
 
+### 9.0 线路路径：`RoutePaths`（L1）
+
+用时刻表的车厂不再自己寻每条线路，而是从线路拿路径（`RailwayData.routePaths`，只在服务端，不存档）：
+
+| 类 | 做什么 |
+|---|---|
+| `RoutePaths` | 每条线路一份 `RoutePath`，按线路加锁，`get` 不存在或过期才找，`getFound` 只读不找；`getVehicles` 在主线程上收集跑每条线路的车型；`timesByPath` 判断线路是否按自己的路径算时刻（不是手画路径、飞机、连续运动） |
+| `RoutePaths.Search` | 一个路径生成线程看到的线路路径：它那份轨道副本，要找时才建一次 `RailGraph`；`getFastestTimes(route)` |
+| `RoutePaths.RoutePath` | 原始路径（每站用站台自己的停站时间，第 k 站在第一个 `stopIndex == k+1` 且有站台 ID 的轨道上，第 0 段停站为 0）；`getPath(停站设置)`、`getSlice(首站, 末站)`（第一段停站为 0，像从那站重新找的一样）、`getFastestTimes(route, 车型)`（逐站取最慢，按车型和停站设置缓存） |
+| `RoutePaths.Exclusion` | 一条线路要避开的轨道：同一运输方式的联络线路径上首末站台之间、不是站台的轨道，双向，记着属于哪条联络线 |
+| `PathTiming` | 车厂和线路共用的计时：`Vehicle`（存车线长、编组、车距、加减速、速度曲线、运输方式）和 `generateTimeSegments`，从 `Siding` 搬出来，规则不变 |
+
+**找一条线路**（`RoutePaths.get`）：
+
+1. 手画路径的线路返回 null，调用的人照旧处理。
+2. 不是联络线时先算 `Exclusion`：对每条联络线先 `get` 它的路径（联络线自己不避开别人，所以不会互相等）。
+3. 键 = 站台和站台停站时间、途经点 + 联络线的标记和轨道哈希；和已有的相同且路径上的轨道没变就直接用。
+4. 否则 `DeterministicPathFinder.findPath(..., exclusion::avoids)`。找不到时照常 `PathFailure.diagnose`；有联络线时再不避开地找一次，如果那条路经过联络线，失败原因改成 `CONNECTING_LINE`（位置字段是联络线的 ID）。
+
+**最快时刻**：编辑器（`PacketTrainDataGuiServer.getKnownTimes` / `TimeSearch`，在复制的轨道和数据上另开线程找）、自动运用（`MainPath.generateAutoDuties`）和组件的数据集（`SimExport`，`RouteData.fastestTimes`）都用 `RoutePath.getFastestTimes`。车型来自 `RoutePaths.getVehicles`：跑这条线路的车厂的所有存车线（`Siding.getTimingVehicle(车厂.speedCurves)`），没有就用 `getDefaultVehicle`（8 × 20 m，0.8 m/s²，开速度曲线）。
+
 ### 9.1 发起：`Depot.generateMainRoute`
 
 1. **复制数据**：`dataCache.copyIdMaps()` 和 `DataCache.copyRails(rails)`，后台线程只用这份副本，玩家同时改轨道不会影响它，也不会让它找到改了一半的线网。
 2. **按服务类型分组**：车厂区域内、运输方式相同的侧线，按车辆能跑的服务类型（`getServiceTypes`）分组，每组只用它能跑的线路（`filterRoutes`），各生成一条主路径（`MainPath`）。
 3. **建图**（在服务器主线程上）：`getPathGraph(rails, pathBoundaries)`。车厂开了新寻路（`useDeterministicPath`）、不是飞机、不是连续运动时，用 `DeterministicPathFinder.compile` 建组件的 `RailGraph`（按路径分界限定区域）；否则返回 null，用旧寻路。
-4. **开线程**：逐组 `MainPath.generate`，完成后 `generatePathS2C` 把成功的段数和失败原因发给客户端。新的请求会让正在跑的旧线程以 `CancellationException` 停下，由新线程报告结果。
+4. **线路路径**：建一个 `RoutePaths.Search`（这份轨道副本、上面的图、主线程上读好的车型），给每个 `MainPath`。
+5. **开线程**：逐组 `MainPath.generate`，完成后 `generatePathS2C` 把成功的段数和失败原因发给客户端。新的请求会让正在跑的旧线程以 `CancellationException` 停下，由新线程报告结果。
 
 ### 9.2 主路径：`MainPath.generate`
 
 1. 逐条线路：
    - 和上一条线路的终点站不同时，`addConnection` 找两条线路之间的连接路径（可能包括折返）。
+   - **用时刻表的车厂**（`usesRoutePaths`：有时刻表、不是连续运动、不是飞机）：拿 `routeSearch.get(线路)` 的路径，套这条线路的停站设置；线路找不到路径时用它的失败原因停止，下面的寻路不做。手画路径的线路仍用手画的。其他车厂照旧往下：
    - `PathFinder.findPath(...)` 按线路的站台顺序和途经点找路径：有 `RailGraph` 就走 `DeterministicPathFinder.findPath`（组件的 `RailRouter`，同样的线网和线路总是得到同样的路径）；没有就用旧的 `PathFinder`，旧寻路不支持途经点，有途经点的段直接判失败，而不是悄悄走另一条路。
    - 找不到时 `PathFailure.diagnose` 给出原因（哪两站之间、为什么），停止。
    - `applyStopSettings` 应用线路的停站设置（通过站、每站停站时间）。
@@ -879,10 +902,10 @@ sequenceDiagram
 
 ### 9.4 运用路径和自动运用（用时刻表的车厂）
 
-- **自动运用**：车厂用时刻表、又没设运用时，`MainPath.generate` 里先 `generateAutoDuties`：按各线路的路径算最快时刻（`getFastestTimesFromFirstStop`），`AutoDuties.generate`（包在 `DutyGenerator` 外）把这组线路的班次串成车最少的运用，不超过每条存车线的上限，存进 `Depot.autoDuties`（存档 `auto_duties`），并发给客户端（`PACKET_AUTO_DUTIES`）。日志写出几列车、每天几班没有车、让给别人几班。
+- **自动运用**：车厂用时刻表、又没设运用时，`MainPath.generate` 里先 `generateAutoDuties`：用线路自己的最快时刻（`RoutePaths.Search.getFastestTimes`，跑这条线路的最慢车型，和编辑器显示的一样；手画路径的线路按车厂路径 `getFastestTimesFromFirstStop`），`AutoDuties.generate`（包在 `DutyGenerator` 外）把这组线路的班次串成车最少的运用，不超过每条存车线的上限，存进 `Depot.autoDuties`（存档 `auto_duties`），并发给客户端（`PACKET_AUTO_DUTIES`）。日志写出几列车、每天几班没有车、让给别人几班。
 - **让出的班次**（`autoTaken`）：先放进共用线路的其他车厂已在跑的班次（`Depot.getSharedTaken`，在主线程上读），同一车厂车型不同的几组存车线按先后再接着让，同一个班次不会跑两遍。
-- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的线路时刻表、站台、存车线、车型或共用线路被占的班次变了（`Depot.takeAutoDutiesChange` 比较 `getAutoDutiesKey`），就重新寻路，每次最多一个车厂；读档后也会算一次。
-- **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
+- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的线路时刻表、站台、存车线、车型、共用线路被占的班次或同一运输方式的联络线变了（`Depot.takeAutoDutiesChange` 比较 `getAutoDutiesKey`），就重新寻路，每次最多一个车厂；读档后也会算一次。
+- **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。主体从线路路径上按站切出来（`getSlice`），中途接入的引导段也一样；网页草稿的路径（`findDutyPaths`）没有 `routeSearch`，仍各自寻路。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
 
 ## 10. ANTE 脚本
 

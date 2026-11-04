@@ -724,6 +724,7 @@
 	"gui.mtr.path_failure_old_search": "刷新失敗：必經節點需要開啟確定性尋路",
 	"gui.mtr.path_failure_missing_waypoint": "刷新失敗：必經節點 %s 沒有軌道",
 	"gui.mtr.path_failure_disconnected": "刷新失敗：車站之間沒有連通",
+	"gui.mtr.path_failure_connecting_line": "刷新失敗：要經過聯絡線 %s",
 	"gui.mtr.path_failure_no_route": "刷新失敗：按行進方向走不通",
 	"gui.mtr.path_stale": "軌道已變動，路徑已過期",
 	"gui.mtr.rail_would_loop": "這個角度會讓軌道掉頭繞圈",

@@ -298,6 +298,10 @@ public final class EditorActions implements IPacket {
 				route.editorManaged = operation.get("managed").getAsBoolean();
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
+			case "connectingLine":
+				route.connectingLine = operation.get("connectingLine").getAsBoolean();
+				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				return null;
 			case "deleteRoute":
 				// The same as deleting it on the dashboard; depots, duties and through links naming it are left as they are
 				PacketTrainDataGuiClient.sendDeleteData(PACKET_DELETE_ROUTE, route.id);

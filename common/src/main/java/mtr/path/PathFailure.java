@@ -82,6 +82,10 @@ public final class PathFailure {
 		/**
 		 * The path of a duty of a depot running by its duties can't be found, so that train doesn't go out on those days.
 		 */
-		DUTY
+		DUTY,
+		/**
+		 * The route can only be found over a connecting line, which other routes keep off; the position is that line's ID.
+		 */
+		CONNECTING_LINE
 	}
 }

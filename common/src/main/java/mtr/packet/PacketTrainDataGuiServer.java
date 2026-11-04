@@ -552,9 +552,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			final Route route = railwayData == null ? null : railwayData.dataCache.routeIdMap.get(routeId);
 			if (route != null) {
-				final long[][] times = getDepotTimes(railwayData, route);
+				final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
+				final long[][] times = getKnownTimes(railwayData, route, vehicles);
 				if (times == null) {
-					calculateTimetableTimes(minecraftServer, player, railwayData, route);
+					calculateTimetableTimes(minecraftServer, player, railwayData, route, vehicles);
 				} else {
 					sendTimetableTimes(player, routeId, times);
 				}
@@ -615,14 +616,19 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 		final Map<Route, long[][]> knownTimes = new HashMap<>();
 		final Map<Route, Supplier<long[][]>> timeFinders = new HashMap<>();
+		final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
 		final RailGraph<Rail>[] graph = new RailGraph[1];
+		final TimeSearch[] search = new TimeSearch[1];
 		routes.forEach(testRoute -> {
-			final long[][] times = getDepotTimes(railwayData, testRoute);
+			final long[][] times = getKnownTimes(railwayData, testRoute, vehicles);
 			if (times == null) {
-				if (graph[0] == null && canUseRailGraph(route)) {
+				if (graph[0] == null && canUseRailGraph(route) && !usesRoutePath(testRoute)) {
 					graph[0] = DeterministicPathFinder.compile(rails, railwayData.pathBoundaries);
 				}
-				final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, testRoute, rails, graph[0]);
+				if (search[0] == null && usesRoutePath(testRoute)) {
+					search[0] = new TimeSearch(railwayData, vehicles);
+				}
+				final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, testRoute, rails, graph[0], search[0]);
 				if (timeFinder != null) {
 					timeFinders.put(testRoute, timeFinder);
 				}
@@ -705,6 +711,45 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	/**
+	 * A route's fastest times come from its own path ({@link RoutePaths}), for the slowest vehicle running it, the same
+	 * as the depots' duties are worked out from (decoupling document 5.4, L1). Routes with a path drawn by hand, airplanes
+	 * and continuous movement are timed along a depot's path, or a path found for them here, as before.
+	 */
+	private static boolean usesRoutePath(Route route) {
+		return RoutePaths.timesByPath(route);
+	}
+
+	/**
+	 * @return the route's fastest times if they are known without finding a path, or null
+	 */
+	private static long[][] getKnownTimes(RailwayData railwayData, Route route, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
+		if (usesRoutePath(route)) {
+			final RoutePaths.RoutePath routePath = railwayData.routePaths.getFound(route, railwayData.dataCache, railwayData.getRails());
+			return routePath == null ? null : routePath.getFastestTimes(route, RoutePaths.getVehicles(vehicles, route));
+		}
+		return getDepotTimes(railwayData, route);
+	}
+
+	/**
+	 * Route paths to find away from the server thread, on a copy of the rails and data made here.
+	 */
+	private static final class TimeSearch {
+
+		private final RoutePaths.Search search;
+		private final DataCache dataCache;
+
+		private TimeSearch(RailwayData railwayData, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
+			search = new RoutePaths.Search(railwayData.routePaths, DataCache.copyRails(railwayData.getRails()), null, railwayData.pathBoundaries, vehicles);
+			dataCache = railwayData.dataCache.copyIdMaps();
+		}
+
+		private long[][] getFastestTimes(Route route) {
+			final long[][] times = search.getFastestTimes(route, dataCache);
+			return times == null ? new long[0][] : times;
+		}
+	}
+
+	/**
 	 * @return the fastest times of a route from the path of a depot, or null if no depot has a path with this route or the
 	 * depot runs on speed curves
 	 */
@@ -724,9 +769,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		return route.transportMode != TransportMode.AIRPLANE && !route.transportMode.continuousMovement;
 	}
 
-	private static void calculateTimetableTimes(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, Route route) {
+	private static void calculateTimetableTimes(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, Route route, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
-		final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, route, rails, canUseRailGraph(route) ? DeterministicPathFinder.compile(rails, railwayData.pathBoundaries) : null);
+		final boolean usesRoutePath = usesRoutePath(route);
+		final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, route, rails, canUseRailGraph(route) && !usesRoutePath ? DeterministicPathFinder.compile(rails, railwayData.pathBoundaries) : null, usesRoutePath ? new TimeSearch(railwayData, vehicles) : null);
 
 		if (timeFinder == null) {
 			sendTimetableTimes(player, route.id, new long[0][]);
@@ -748,7 +794,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 *
 	 * @return what finds the fastest times, or null if the route has nothing to find a path through
 	 */
-	private static Supplier<long[][]> getTimeFinder(RailwayData railwayData, Route route, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph) {
+	private static Supplier<long[][]> getTimeFinder(RailwayData railwayData, Route route, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, TimeSearch search) {
+		if (usesRoutePath(route)) {
+			return route.platformIds.size() < 2 || search == null ? null : () -> search.getFastestTimes(route);
+		}
 		final List<SavedRailBase> platforms = new ArrayList<>();
 		final List<List<BlockPos>> waypoints = new ArrayList<>();
 		final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
