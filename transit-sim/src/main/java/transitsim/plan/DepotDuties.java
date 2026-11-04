@@ -208,6 +208,39 @@ public final class DepotDuties {
 			copy.segments.addAll(segments);
 			return copy;
 		}
+
+		/**
+		 * @return the duty as text, for a train to keep the duty it took with it when saved (decoupling document, step D)
+		 */
+		public String toText() {
+			final StringBuilder builder = new StringBuilder().append(weekdays).append(',').append(stayOnLine ? 1 : 0).append(',').append(nextSlot);
+			segments.forEach(segment -> builder.append(';').append(segment.routeId).append(',').append(segment.service).append(',').append(segment.fromStop).append(',').append(segment.toStop));
+			return builder.toString();
+		}
+
+		/**
+		 * @return the duty {@link #toText} wrote, or null if the text isn't one
+		 */
+		public static DayDuty fromText(String text) {
+			if (text == null || text.isEmpty()) {
+				return null;
+			}
+			try {
+				final String[] parts = text.split(";");
+				final String[] head = parts[0].split(",");
+				final DayDuty day = new DayDuty();
+				day.weekdays = Integer.parseInt(head[0]);
+				day.stayOnLine = Integer.parseInt(head[1]) != 0;
+				day.nextSlot = Integer.parseInt(head[2]);
+				for (int i = 1; i < parts.length; i++) {
+					final String[] values = parts[i].split(",");
+					day.segments.add(new Segment(Long.parseLong(values[0]), Integer.parseInt(values[1]), Integer.parseInt(values[2]), Integer.parseInt(values[3])));
+				}
+				return day;
+			} catch (RuntimeException e) {
+				return null;
+			}
+		}
 	}
 
 	/**

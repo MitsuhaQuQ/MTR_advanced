@@ -131,7 +131,11 @@ public class TrainService<T extends PlanTrack> {
 	private static final String KEY_DUTY_SLOT = "duty_slot";
 	private static final String KEY_DUTY_DAY_START = "duty_day_start";
 	private static final String KEY_DUTY_INDEX = "duty_index";
-	public static final int SAVED_KEYS = 12;
+	/**
+	 * The duty the train took, so it keeps running it however the depot's duties change (decoupling document, step D).
+	 */
+	private static final String KEY_DUTY_DAY = "duty_day";
+	public static final int SAVED_KEYS = 13;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
 	 */
@@ -155,6 +159,8 @@ public class TrainService<T extends PlanTrack> {
 		dutySlot = reader.getInt(KEY_DUTY_SLOT, -1);
 		dutyDayStart = reader.getLong(KEY_DUTY_DAY_START, 0);
 		dutyIndex = reader.getInt(KEY_DUTY_INDEX, 0);
+		// Saved before trains kept their duty, it is read again from the depot when needed
+		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
 		isLeavingForDuty = dutySlot >= 0;
 		needsAlignment = tripMillis != 0;
@@ -174,6 +180,7 @@ public class TrainService<T extends PlanTrack> {
 		writer.writeInt(KEY_DUTY_SLOT, dutySlot);
 		writer.writeLong(KEY_DUTY_DAY_START, dutyDayStart);
 		writer.writeInt(KEY_DUTY_INDEX, dutyIndex);
+		writer.writeString(KEY_DUTY_DAY, dutySlot >= 0 && getDutyDay() != null ? getDutyDay().toText() : "");
 	}
 
 	public void setSiding(long newSidingId) {
@@ -747,7 +754,8 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
-	 * @return the duty the train took on, or after a restart the one of its slot read again from the depot
+	 * @return the duty the train took on, kept with it when saved, or for a train saved before that the one of its slot
+	 * read again from the depot
 	 */
 	private DepotDuties.DayDuty getDutyDay() {
 		if (dutyDay == null) {

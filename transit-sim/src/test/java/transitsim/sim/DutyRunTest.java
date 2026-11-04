@@ -260,6 +260,28 @@ class DutyRunTest {
 	}
 
 	@Test
+	void keepsItsOwnDutyThroughARestartWhateverTheDepotHasNow() throws Exception {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		train[0].service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+
+		// The depot's duties are gone meanwhile, as when they were made again or edited
+		setSlots();
+		final FakeTrain restored = newTrain(tripPath.path);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		now = MONDAY + 8 * HOUR + 20 * MINUTE + 30 * SECOND;
+		restored.service.alignToTimetable(true);
+		assertEquals(4, restored.movedTo);
+		assertEquals(2, restored.service.getTripRouteId());
+	}
+
+	@Test
 	void takesOverTheChosenSlotAfterStayingOvernight() {
 		setSlots(
 				day(true, 1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
