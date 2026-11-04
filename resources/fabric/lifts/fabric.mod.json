@@ -30,6 +30,7 @@
 	],
 	"depends": {
 		"fabric": "*",
+		"architectury": "*",
 		"minecraft": "*"
 	}
 }

@@ -39,6 +39,7 @@
 	"accessWidener": "mtrsteamloco_filtered.accesswidener",
 	"depends": {
 		"fabric": "*",
+		"architectury": "*",
 		"minecraft": "*"
 	}
 }
