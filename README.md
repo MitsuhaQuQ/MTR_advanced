@@ -14,6 +14,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Right-click a node with the brush to enter an exact angle from -180° to 180°. Rails stay on the side of the node they leave from, and connected rails are rebuilt immediately, so there is no need to remove them first.
 - Holding a rail tool shows node direction lines. Holding the brush shows the angle and the slope of connected rails.
 - Node rotation rejects angles that would make a rail double back on itself, and reports the error in chat.
+- Node angles are readable: they count from east, clockwise seen from above, and the node shows the angle as a compass reading (east 37.5° toward south) with a dial at the node. The brush screen has a map of the node, north up, showing its rails as they are and at the angle typed in; dragging on it sets the angle, in 22.5° steps with shift.
 
 **Pathfinding and routes**
 
@@ -46,6 +47,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Platforms can be marked as timetable boundaries. A service can leave its route or join another one part of the way along only at a boundary it stops at; joining a route part of the way along keeps to that route's service times, worked out from its first stop. Without boundaries, only the last stop runs on to the first.
 - A single service can run differently from its table at some stops: its own running time, stop time, waiting to be overtaken, or passing or stopping. Passing or stopping only changes the times for now; the train still stops where the depot's path does.
 - After a restart, trains don't try to catch up. Each one goes straight to the stop the timetable has it at by then.
+- Depots running a route in common share its services, so each service is run by one train, whichever depot sends it.
 - A route can have up to 16 tables, each with its own days of the week, services and stop times. Times are saved in UTC. The time zone and the hour a new operating day starts are in `config/mtr_timetable.json`, and in multiplayer the server's file is used. Last trains after midnight count as the day before.
 
 **Line groups**
@@ -64,6 +66,8 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - For loops, it shows how the trains go round lap after lap, the way the game runs them.
 - New service types are made in the page along the rails: pick where one starts and ends and stations to go through, and its stations are those the shortest way between them passes. Tracks are picked on a graph of how trains can run between platforms without turning back, kept apart by network (rails joined together), where fixing one station's track moves the others to tracks that still run. Clicking a station's name opens its track diagram, with the rails along their curves as the server sends them, turned so the train runs left to right, where tracks can be picked too. An existing route's tracks and stops are changed the same way, and routes whose tracks can't run along the rails, turn back part of the way or take a detour are marked. The order of stations always comes from the route's path. A service type can be deleted from the page too, after it lists the depots, vehicle workings and through links that still name it.
 - Depots keep vehicle working: which services each train of each siding runs, by groups of weekdays. A first draft is worked out in one click, and services are added to a train by clicking them on the diagram, with checks for missed connections and double assignment. Depots set to run by vehicle working send out a train for each slot when its first service is due, and the train runs exactly the services of its duty, so services nobody is given don't run. Each shape of duty gets a path of its own, so a single service's passing or stopping is real there. Trains booking single-track stretches with their direction keep two of them from meeting head on, and a train staying on the line overnight takes over the duty chosen for it the next day.
+- Simulated running: the running diagram can overlay how the draft would actually run, simulated by the component on the server, with late services, services that don't run and deadlocks listed. Generated vehicle workings are checked the same way.
+- Right-clicking a depot run by the component puts its trains where its timetable has them now, worked out from the start of the operating day away from the server thread, instead of sending them out one by one. Depots sharing its routes are placed with it, and trains a player drives stay where they are.
 - The server keeps the compressed rail network (sections between junctions and stations, with their length at each speed limit) and the sections each path runs through in tables of its own in the save's SQLite database.
 
 **Speed curves**
@@ -83,17 +87,29 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Click a route, a station area or a depot area on the map to find it in the list on the left.
 - Lists for choosing routes, such as a depot's instructions, fold each line like the routes page and show where each route goes, so the two directions of a line can be told apart.
 
-**Simulation**
+**Simulation component**
 
-- A vehicle scheduling and timetable simulator that doesn't depend on Minecraft checks the rules for vehicle working, timing and delay recovery in unit tests. It isn't connected to the game yet. The game uses simpler online booking of services for now.
+- The running rules are in `transit-sim`, a component that doesn't depend on Minecraft: the rail network and pathfinding, train motion and speed curves, timetables, vehicle working, single-track reservations and a whole-network simulator, with unit tests for each.
+- The component runs the trains of every depot on speed curves in the game by default. The game only shows its trains, doing what needs the world: cars, riders, doors, signals and the rails they take. Each tick it moves on to the real time, so trains keep to time on a slow server. A button in the dashboard's settings switches it between drive, off, and compare, which runs it beside the game and logs how far apart the two come.
+- Clients follow each train along the run segment the server sends, by the server's clock, instead of stepping it frame by frame. Sensors check every block the train passed since the last tick, so a slow server doesn't skip them.
+- Written and tested in the component but not yet in the game: working out vehicle workings for a timetable depot that has none, and a train keeping the duty it left with when the depot's workings change.
+
+**Multiplayer editing**
+
+- The server keeps a revision for each part of each station, platform, siding, route and depot. A change made from an older copy isn't written: the player is told who changed it and is sent the data as it is now. Two players changing different parts don't hold each other up.
+- The web editor sends its changes as one batch, made all or not at all. Edit screens and the editor show who else is editing the same thing.
 
 **Rendering**
 
 - Fixes the precision problem that made trains and displays shake with the camera far from the world origin.
+- Resource packs can give a train two custom bogies (model, texture, position), as in MTR 4. Its cars are then placed on their bogies, and near the camera the bogies turn along the track. Built-in bogies turn along the track too, with a client setting that is on by default.
 
 **Storage and reliability**
 
-- Railway data is kept in a single SQLite database, with rotating snapshots, recovery from corruption and migration from the old format.
+- Railway data is kept in a single SQLite database, with recovery from corruption and migration from the old format.
+- Edits are saved at the end of the tick in one transaction, and commits survive a power cut. An autosave takes everything but the rails at one moment.
+- Backups come in batches: a whole base, then backups of only what changed since it. A backup is restored automatically on corruption, or when an admin names it in `backups/restore.txt` before starting.
+- Nodes the world lost while their rails were saved, as after a crash, are put back once their chunk loads.
 - Fixes a crash when loading saves with macOS metadata files, and empty names no longer stop data from being saved.
 
 **Performance**
@@ -117,13 +133,13 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 | Stage | Content | Status |
 |---|---|---|
 | 0 | Add-on compatibility, merging ANTE into the core | Packaging and running logic done, `Rail` left for stage 4 |
-| 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Simulator done |
+| 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Done; the simulator is a component of its own and runs speed curve depots in game |
 | 1 | Pathfinding base: state graph, deterministic A*, required nodes, keeping trains in place on refresh, and path boundaries with regions that limit pathfinding and pick each route's platforms at shared stations are done; section caching is not | In progress |
 | 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
 | 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |
 | 5 | Speed curves: TPS compensation and a first version of speed curves (braking ahead of slower rails and stops, separate acceleration and braking, cruising slower to keep time and catching up when late) are done; curvature, vertical curves and passing speed limits are not | In progress |
-| 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Not started |
+| 6 | Block sections: virtual sections, signal binding, single-track direction reservation, priority at conflict points | Single-track direction reservation done; the rest not started |
 | 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services, aligning after a restart and choosing between reversing sidings after a terminal are done; choosing between platforms to turn back on is not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
 | 9 | Timetable boundaries at platforms are done; splitting through services, deadheading, train priority and boundaries on turn-back rails are not | In progress |
@@ -134,15 +150,13 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 
 The stages above describe the work as a whole. This is the order it is being done in:
 
-1. Test in game what is written but untested: the advanced editor, single-service exceptions, timetable boundaries, choosing between reversing sidings, depots keeping trains on the line and the server jar. Then build the other four Minecraft versions, which haven't been built since these changes.
-2. Fix two safety problems an architecture review found in running by vehicle working: a train held between stations, or with its tail still on a rail, can lose its booking of a single-track stretch. Then test in game the speed curves and running by vehicle working. Until what is written is tested, no new running rules are added to the current code; they wait for the component below.
-3. Move the simulation into a component of its own that runs timetables, vehicle workings and the rail network without Minecraft, so it can be reused by the web editor, a command line tool and tests. `MTR-模拟组件与解耦.md` records what is already separated and the target architecture. MTR becomes one host of it: it turns its rails, routes and depots into the component's data, asks where each train should be at the current time, and draws the trains, opens the doors and carries the passengers.
-4. Simulated running in the web editor, with lateness, held trains and conflicts shown against the timetable.
-5. Trains in game placed by the component from the real time instead of moving tick by tick.
-6. Then, written in the component first: speed limits when passing stations, block sections, turning back at a platform, interlocking, splitting through services and deadheading.
-7. Faster OBJ parsing or caching parsed models on disk, faster scripts and custom announcements, which can move earlier if needed.
+1. Test everything together on a multiplayer server (test list items U75 to U98): the component running trains in game, clients following run segments, edit conflicts, saving and backups, and what was written earlier but not yet tested. Only bugs in this base work are fixed during this round; no new features are mixed in. [MTR-多人服务器测试指南.md](MTR-多人服务器测试指南.md) (Chinese) explains how to run it.
+2. Then, written in the component first and reaching the game the same way: speed limits when passing stations, block sections, turning back at a platform, interlocking, timed connections, splitting through services and deadheading.
+3. Fares by distance, which needs new save data and packets of its own, done in one go once the base is stable.
+4. Things not tied to running, which can be done at any time: lifts and audio referring to routes and stations, faster resource loading, and building the other four Minecraft versions, which haven't been built since these changes.
+5. Running the security tests again at the end, to cover the new packets.
 
-Run logic part 1 (service decisions in `TrainService`, tested in game), choosing between reversing sidings after a terminal, the running diagram design, and the advanced editor's parts up to vehicle working (writing to the game, timetable editing with single-service exceptions, timetable boundaries, path boundaries and regions, new service types, vehicle working data and generation) are done. Path boundaries, new service types and vehicle working have had a first quick test in game; their behaviour is still being watched.
+Done so far: the simulation component and its move into the game (steps S0 to S6 and G0 to G4 in [MTR-模拟组件与解耦.md](MTR-模拟组件与解耦.md), Chinese, which also records the architecture); run logic part 1 (service decisions in `TrainService`, tested in game); choosing between reversing sidings after a terminal; the running diagram design; and the advanced editor up to vehicle working and simulated running. Path boundaries, new service types and vehicle working have had a first quick test in game; their behaviour is still being watched.
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
