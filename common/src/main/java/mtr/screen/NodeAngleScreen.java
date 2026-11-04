@@ -18,12 +18,14 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import transitsim.network.Boundaries;
 import transitsim.network.RegionData;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import net.minecraft.util.FormattedCharSequence;
 import java.util.List;
 import java.util.Map;
 
@@ -42,6 +44,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	// The rails from this node, each of which can be a pathfinding boundary on its own
 	private final List<BlockPos> connectedNodes = new ArrayList<>();
 	private final List<WidgetBetterCheckbox> checkboxSegments = new ArrayList<>();
+	private final NodeAnglePreview preview;
+	private boolean draggingPreview;
 	private final Button buttonSet;
 	private final Button buttonCancel;
 
@@ -49,12 +53,19 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int LABEL_WIDTH = 150;
 	private static final int ROW_HEIGHT = SQUARE_SIZE + TEXT_FIELD_PADDING;
 	private static final int ROW_ANGLE = 0;
-	private static final int ROW_TRANSITION = 1;
-	private static final int ROW_KEY_NODE = 2;
-	private static final int ROW_TURN_BACK = 3;
-	private static final int ROW_BOUNDARY = 4;
-	private static final int ROW_SEGMENTS = 5;
+	// What the angle typed means, and how angles are counted
+	private static final int ROW_ANGLE_DIRECTION = 1;
+	private static final int ROW_ANGLE_RULE = 2;
+	private static final int ROW_TRANSITION = 4;
+	private static final int ROW_KEY_NODE = 5;
+	private static final int ROW_TURN_BACK = 6;
+	private static final int ROW_BOUNDARY = 7;
+	private static final int ROW_SEGMENTS = 8;
+	private static final int MIN_PREVIEW_SIZE = 64;
+	private static final int MAX_PREVIEW_SIZE = 240;
 	private static final Component LABEL_ANGLE = Text.translatable("gui.mtr.node_angle");
+	private static final Component LABEL_PREVIEW_HINT = Text.translatable("gui.mtr.node_angle_preview_hint");
+	private static final Component LABEL_ANGLE_RULE = Text.translatable("gui.mtr.node_angle_rule");
 	private static final Component LABEL_TRANSITION = Text.translatable("gui.mtr.node_transition");
 	private static final Component LABEL_TURN_BACK = Text.translatable("gui.mtr.node_turn_back");
 
@@ -72,6 +83,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		}
 		connectedNodes.forEach(endPos -> checkboxSegments.add(new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.node_boundary_rail", endPos.getX(), endPos.getY(), endPos.getZ()), checked -> {
 		})));
+		preview = new NodeAnglePreview(pos);
 		buttonSet = UtilitiesClient.newButton(Text.translatable("gui.mtr.node_set"), button -> onSet());
 		buttonCancel = UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose());
 	}
@@ -93,6 +105,10 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			IDrawing.setPositionAndWidth(checkboxSegments.get(i), SQUARE_SIZE, getRowY(ROW_SEGMENTS + i), PANEL_WIDTH);
 			checkboxSegments.get(i).setChecked(regionData.boundaries.isSegment(pos.asLong(), connectedNodes.get(i).asLong()));
 		}
+		// The map to the right of everything else, as large as fits
+		final int previewX = fieldX + PANEL_WIDTH / 2 + SQUARE_SIZE;
+		final int previewSize = Math.min(MAX_PREVIEW_SIZE, Math.min(width - previewX - SQUARE_SIZE, height - SQUARE_SIZE * 3));
+		preview.setBounds(previewX, SQUARE_SIZE, previewSize >= MIN_PREVIEW_SIZE ? previewSize : 0);
 		IDrawing.setPositionAndWidth(buttonSet, SQUARE_SIZE, getRowY(getButtonsRow()), PANEL_WIDTH / 2);
 		IDrawing.setPositionAndWidth(buttonCancel, SQUARE_SIZE + PANEL_WIDTH / 2, getRowY(getButtonsRow()), PANEL_WIDTH / 2);
 
@@ -123,6 +139,17 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		try {
 			renderBackground(matrices);
 			GuiCompat.draw(matrices, font, LABEL_ANGLE, SQUARE_SIZE, getRowY(ROW_ANGLE) + TEXT_PADDING, ARGB_WHITE);
+			GuiCompat.draw(matrices, font, getAngleDirectionText(), SQUARE_SIZE, getRowY(ROW_ANGLE_DIRECTION) + TEXT_PADDING, ARGB_LIGHT_GRAY);
+			final List<FormattedCharSequence> ruleLines = font.split(LABEL_ANGLE_RULE, LABEL_WIDTH + PANEL_WIDTH / 2);
+			for (int i = 0; i < Math.min(2, ruleLines.size()); i++) {
+				GuiCompat.draw(matrices, font, ruleLines.get(i), SQUARE_SIZE, getRowY(ROW_ANGLE_RULE) + TEXT_PADDING + i * (ROW_HEIGHT - 6), ARGB_LIGHT_GRAY);
+			}
+			final String previewError = preview.render(matrices, font, textFieldAngle.getValue());
+			if (previewError != null) {
+				GuiCompat.draw(matrices, font, Text.translatable(previewError), preview.getX(), preview.getY() + preview.getSize() + TEXT_PADDING, 0xFFFF4040);
+			} else if (preview.getSize() > 0) {
+				GuiCompat.draw(matrices, font, LABEL_PREVIEW_HINT, preview.getX(), preview.getY() + preview.getSize() + TEXT_PADDING, ARGB_LIGHT_GRAY);
+			}
 			GuiCompat.draw(matrices, font, LABEL_TRANSITION, SQUARE_SIZE, getRowY(ROW_TRANSITION) + TEXT_PADDING, ARGB_LIGHT_GRAY);
 			if (turnBackRail != null) {
 				GuiCompat.draw(matrices, font, LABEL_TURN_BACK, SQUARE_SIZE, getRowY(ROW_TURN_BACK) + TEXT_PADDING, ARGB_WHITE);
@@ -135,6 +162,38 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+	}
+
+	@Override
+	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		if (button == 0 && preview.isInside(mouseX, mouseY)) {
+			draggingPreview = true;
+			setAngleFromPreview(mouseX, mouseY);
+			return true;
+		}
+		return super.mouseClicked(mouseX, mouseY, button);
+	}
+
+	@Override
+	public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+		if (draggingPreview) {
+			setAngleFromPreview(mouseX, mouseY);
+			return true;
+		}
+		return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+	}
+
+	@Override
+	public boolean mouseReleased(double mouseX, double mouseY, int button) {
+		draggingPreview = false;
+		return super.mouseReleased(mouseX, mouseY, button);
+	}
+
+	/**
+	 * Points the node to the mouse, in steps of 22.5° with shift held.
+	 */
+	private void setAngleFromPreview(double mouseX, double mouseY) {
+		textFieldAngle.setValue(BlockNode.getAngleValue(preview.getAngle(mouseX, mouseY, hasShiftDown())));
 	}
 
 	@Override
@@ -158,6 +217,19 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			}
 			onClose();
 		} catch (NumberFormatException ignored) {
+		}
+	}
+
+	/**
+	 * The way the angle typed points, and the way the player faces to compare it with.
+	 */
+	private Component getAngleDirectionText() {
+		final Player player = Minecraft.getInstance().player;
+		final String playerAngle = player == null ? "-" : BlockNode.getAngleText(BlockNode.getPlayerAngle(player));
+		try {
+			return Text.translatable("gui.mtr.node_angle_direction", BlockNode.getAngleDirection(Float.parseFloat(textFieldAngle.getValue())), playerAngle);
+		} catch (NumberFormatException e) {
+			return Text.translatable("gui.mtr.node_angle_direction", "-", playerAngle);
 		}
 	}
 

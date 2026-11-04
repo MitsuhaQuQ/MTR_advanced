@@ -131,6 +131,40 @@ public class BlockNode extends BlockDirectionalMapper {
 		return String.format(Locale.ENGLISH, "%.1f", wrappedAngle <= -180 ? 180 : wrappedAngle);
 	}
 
+	/**
+	 * The way an angle points as a compass reading, such as "due east" or "east 30° toward south". Angles count from east
+	 * (0°), turning clockwise as seen from above: south is 90°, north -90°, west 180°.
+	 */
+	public static Component getAngleDirection(float angle) {
+		final float wrappedAngle = Mth.wrapDegrees(angle);
+		// The nearest of east, south, west and north, counting clockwise from east
+		final int cardinal = Math.floorMod(Math.round(wrappedAngle / 90), 4);
+		final float deviation = Mth.wrapDegrees(wrappedAngle - cardinal * 90);
+		final float absoluteDeviation = Math.abs(deviation);
+		if (absoluteDeviation < 0.05F) {
+			return Text.translatable("gui.mtr.angle_due", getCardinal(cardinal));
+		}
+		final int towards = Math.floorMod(cardinal + (deviation > 0 ? 1 : -1), 4);
+		if (Math.abs(absoluteDeviation - 45) < 0.05F) {
+			// Halfway between two, named by the one that comes first clockwise from east, then the other
+			return Text.translatable("gui.mtr.direction_" + DIRECTION_KEYS[deviation > 0 ? cardinal : towards] + DIRECTION_KEYS[deviation > 0 ? towards : cardinal]);
+		}
+		return Text.translatable("gui.mtr.angle_toward", getCardinal(cardinal), getCardinal(towards), String.format(Locale.ENGLISH, "%.1f", absoluteDeviation));
+	}
+
+	/**
+	 * The way a player faces, counted as node angles are.
+	 */
+	public static float getPlayerAngle(Player player) {
+		return Mth.wrapDegrees(Utilities.getYaw(player) + 90);
+	}
+
+	private static Component getCardinal(int cardinal) {
+		return Text.translatable("gui.mtr.direction_" + DIRECTION_KEYS[cardinal]);
+	}
+
+	private static final String[] DIRECTION_KEYS = {"e", "s", "w", "n"};
+
 	public static void setCustomAngle(BlockGetter world, BlockPos pos, float angle) {
 		final BlockEntity entity = world.getBlockEntity(pos);
 		if (entity instanceof TileEntityNode) {

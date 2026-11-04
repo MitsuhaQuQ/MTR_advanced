@@ -415,6 +415,51 @@ public class Rail extends SerializedDataBase {
 	 * @param connections the rails leaving a node
 	 * @return the facing of the node, or null if it has no rails
 	 */
+	/**
+	 * Builds the rails of a node again for a new angle, each keeping its other end as it is, as the brush sets it on the
+	 * server and the brush screen previews it on the client.
+	 *
+	 * @param rails every rail, by its start and then its end
+	 */
+	public static RotatedNode rotateNode(Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos, RailAngle angle) {
+		final Map<BlockPos, Rail> connections = rails.get(pos);
+		final RotatedNode rotatedNode = new RotatedNode();
+		if (connections == null || connections.isEmpty()) {
+			return rotatedNode;
+		}
+		final RailAngle referenceFacing = getNodeFacing(connections);
+		for (final Map.Entry<BlockPos, Rail> entry : connections.entrySet()) {
+			final BlockPos posEnd = entry.getKey();
+			final Rail rail = entry.getValue();
+			final Map<BlockPos, Rail> backwardsConnections = rails.get(posEnd);
+			final Rail backwardsRail = backwardsConnections == null ? null : backwardsConnections.get(pos);
+			if (backwardsRail == null) {
+				return rotatedNode.failed("gui.mtr.invalid_orientation");
+			}
+
+			// A node has no front or back, so each rail keeps leaving from the side it already uses
+			final RailAngle facing = angle.getRotatedFacing(referenceFacing, rail.getLeavingFacing());
+			final RailAngle facingEnd = rail.getArrivingFacing();
+			final Rail newRail = new Rail(pos, facing, posEnd, facingEnd, rail.railType, rail.transportMode);
+			final Rail newBackwardsRail = new Rail(posEnd, facingEnd, pos, facing, backwardsRail.railType, rail.transportMode);
+			rotatedNode.rails.put(posEnd, newRail);
+			rotatedNode.backwardsRails.put(posEnd, newBackwardsRail);
+			if (!newRail.goodRadius() || !newBackwardsRail.goodRadius()) {
+				return rotatedNode.failed("gui.mtr.radius_too_small");
+			}
+			if (!newRail.isValid() || !newBackwardsRail.isValid()) {
+				return rotatedNode.failed("gui.mtr.invalid_orientation");
+			}
+			// Curves of more than a quarter turn, which turnouts and balloon loops can have, run backwards from the start
+			if (!rail.turnsBack(pos, posEnd) && (newRail.turnsBack(pos, posEnd) || newBackwardsRail.turnsBack(posEnd, pos))) {
+				return rotatedNode.failed("gui.mtr.rail_would_loop");
+			}
+			newRail.turnBackDwell = rail.turnBackDwell;
+			newBackwardsRail.turnBackDwell = backwardsRail.turnBackDwell;
+		}
+		return rotatedNode;
+	}
+
 	public static RailAngle getNodeFacing(Map<BlockPos, Rail> connections) {
 		return connections == null || connections.isEmpty() ? null : connections.get(Collections.min(connections.keySet(), Comparator.comparingLong(BlockPos::asLong))).getLeavingFacing();
 	}
@@ -949,6 +994,27 @@ public class Rail extends SerializedDataBase {
 			this.progressTranslation = progressTranslation;
 			this.nameTranslation = nameTranslation;
 			color = materialColor.col;
+		}
+	}
+
+	/**
+	 * The rails of a node built again for a new angle (see {@link #rotateNode}).
+	 */
+	public static final class RotatedNode {
+
+		/**
+		 * By the end of each rail; when it failed, the rails built until then, the last being the one that failed.
+		 */
+		public final Map<BlockPos, Rail> rails = new HashMap<>();
+		public final Map<BlockPos, Rail> backwardsRails = new HashMap<>();
+		/**
+		 * The translation key of why the node can't take the angle, or null if it can.
+		 */
+		public String error;
+
+		private RotatedNode failed(String error) {
+			this.error = error;
+			return this;
 		}
 	}
 }

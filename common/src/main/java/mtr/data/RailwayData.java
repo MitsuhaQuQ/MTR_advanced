@@ -555,40 +555,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			return "gui.mtr.platform_or_siding_exists";
 		}
 
-		final RailAngle referenceFacing = Rail.getNodeFacing(connections);
-		final Map<BlockPos, Rail> newRails = new HashMap<>();
-		final Map<BlockPos, Rail> newBackwardsRails = new HashMap<>();
-		for (final Map.Entry<BlockPos, Rail> entry : connections.entrySet()) {
-			final BlockPos posEnd = entry.getKey();
-			final Rail rail = entry.getValue();
-			final Rail backwardsRail = DataCache.tryGet(rails, posEnd, pos);
-			if (backwardsRail == null) {
-				return "gui.mtr.invalid_orientation";
-			}
-
-			// A node has no front or back, so each rail keeps leaving from the side it already uses
-			final RailAngle facing = angle.getRotatedFacing(referenceFacing, rail.getLeavingFacing());
-			final RailAngle facingEnd = rail.getArrivingFacing();
-			final Rail newRail = new Rail(pos, facing, posEnd, facingEnd, rail.railType, rail.transportMode);
-			final Rail newBackwardsRail = new Rail(posEnd, facingEnd, pos, facing, backwardsRail.railType, rail.transportMode);
-			if (!newRail.goodRadius() || !newBackwardsRail.goodRadius()) {
-				return "gui.mtr.radius_too_small";
-			}
-			if (!newRail.isValid() || !newBackwardsRail.isValid()) {
-				return "gui.mtr.invalid_orientation";
-			}
-			// Curves of more than a quarter turn, which turnouts and balloon loops can have, run backwards from the start
-			if (!rail.turnsBack(pos, posEnd) && (newRail.turnsBack(pos, posEnd) || newBackwardsRail.turnsBack(posEnd, pos))) {
-				return "gui.mtr.rail_would_loop";
-			}
-			newRail.turnBackDwell = rail.turnBackDwell;
-			newBackwardsRail.turnBackDwell = backwardsRail.turnBackDwell;
-			newRails.put(posEnd, newRail);
-			newBackwardsRails.put(posEnd, newBackwardsRail);
+		final Rail.RotatedNode rotatedNode = Rail.rotateNode(rails, pos, angle);
+		if (rotatedNode.error != null) {
+			return rotatedNode.error;
 		}
 
-		newRails.forEach((posEnd, newRail) -> {
-			final Rail newBackwardsRail = newBackwardsRails.get(posEnd);
+		rotatedNode.rails.forEach((posEnd, newRail) -> {
+			final Rail newBackwardsRail = rotatedNode.backwardsRails.get(posEnd);
 			rails.get(pos).put(posEnd, newRail);
 			rails.get(posEnd).put(pos, newBackwardsRail);
 			railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
