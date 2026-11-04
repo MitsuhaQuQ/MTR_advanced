@@ -12,6 +12,7 @@ import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
 import mtr.client.AnnouncementPlayer;
 import mtr.client.ClientClock;
+import mtr.client.ClientEditing;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
@@ -503,7 +504,10 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	}
 
 	public static void sendUpdate(ResourceLocation packetId, FriendlyByteBuf packet) {
-		RegistryClient.sendToServer(packetId, packet);
+		// Changes of railway data go with the revision they were made from (multiplayer edit conflicts)
+		if (!ClientEditing.send(packetId, packet)) {
+			RegistryClient.sendToServer(packetId, packet);
+		}
 		ClientData.DATA_CACHE.sync();
 		ClientData.DATA_CACHE.refreshDynamicResources();
 	}

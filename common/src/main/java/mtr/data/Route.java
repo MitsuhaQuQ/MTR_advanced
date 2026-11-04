@@ -1142,4 +1142,15 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	}
 
 	public enum CircularState {NONE, CLOCKWISE, ANTICLOCKWISE}
+
+	/**
+	 * @return a short text that changes when the route's timetable, stops or whether the editor manages it change, which
+	 * the web editor bases its changes on and the server checks them against
+	 */
+	public String getEditorRevision() {
+		final int[] hash = {Boolean.hashCode(editorManaged)};
+		setTimetable(packet -> hash[0] = hash[0] * 31 + packet.nioBuffer().hashCode());
+		setPlatformIds(packet -> hash[0] = hash[0] * 31 + packet.nioBuffer().hashCode());
+		return Integer.toHexString(hash[0]);
+	}
 }

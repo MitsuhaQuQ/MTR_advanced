@@ -3,6 +3,7 @@ package mtr.screen;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
+import mtr.client.ClientEditing;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
@@ -32,6 +33,7 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 		nameText = Text.translatable(nameKey);
 		colorText = Text.translatable(colorKey);
 
+		ClientEditing.beginEdit(data);
 		textFieldName = new WidgetBetterTextField("");
 		colorSelector = new WidgetColorSelector(this, true, () -> {
 		});
@@ -49,6 +51,7 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 			UtilitiesClient.setScreen(minecraft, dashboardScreen);
 		}
 		saveData();
+		ClientEditing.endEdit(data);
 	}
 
 	@Override
@@ -74,6 +77,7 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 	}
 
 	protected void renderTextFields(PoseStack matrices) {
+		renderEditors(matrices, font, data, height);
 		GuiCompat.drawCenteredString(matrices, font, nameText, (nameStart + colorStart) / 2, TEXT_PADDING, ARGB_WHITE);
 		GuiCompat.drawCenteredString(matrices, font, colorText, (colorStart + colorEnd) / 2, TEXT_PADDING, ARGB_WHITE);
 	}
@@ -89,5 +93,15 @@ public abstract class EditNameColorScreenBase<T extends NameColorDataBase> exten
 
 	protected void setEditedColor(int color) {
 		data.color = color;
+	}
+
+	/**
+	 * Shows who else is editing the same thing (multiplayer edit conflicts).
+	 */
+	public static void renderEditors(PoseStack matrices, net.minecraft.client.gui.Font font, NameColorDataBase data, int height) {
+		final java.util.List<String> editors = ClientEditing.getEditors(data);
+		if (!editors.isEmpty()) {
+			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.others_editing", String.join(", ", editors)), SQUARE_SIZE, height - SQUARE_SIZE, 0xFFFFFF55);
+		}
 	}
 }

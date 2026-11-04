@@ -3,6 +3,7 @@ package mtr;
 import mtr.block.*;
 import mtr.client.AudioCache;
 import mtr.client.ClientData;
+import mtr.client.ClientEditing;
 import mtr.client.Config;
 import mtr.client.editor.EditorServer;
 import mtr.client.IDrawing;
@@ -297,6 +298,9 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_WRITE_RAILS, packet -> ClientData.writeRails(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_UPDATE_TRAINS, packet -> ClientData.updateTrains(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_UPDATE_TRAIN_STATES, packet -> ClientData.updateTrainStates(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_EDIT_REVISIONS, ClientEditing::receiveRevisionsS2C);
+		RegistryClient.registerNetworkReceiver(PACKET_EDITORS, ClientEditing::receiveEditorsS2C);
+		RegistryClient.registerNetworkReceiver(PACKET_EDIT_DATA, packet -> ClientEditing.receiveDataS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_UPDATE_LIFTS, packet -> ClientData.updateLifts(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_DELETE_TRAINS, packet -> ClientData.deleteTrains(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_DELETE_LIFTS, packet -> ClientData.deleteLifts(Minecraft.getInstance(), packet));

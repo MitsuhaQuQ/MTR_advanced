@@ -1,5 +1,7 @@
 package mtr.client.editor;
 
+import mtr.client.ClientEditing;
+
 import transitsim.plan.StopRules;
 import mtr.advanced.PlanAdapters;
 import transitsim.plan.RouteTimetable;
@@ -104,6 +106,8 @@ public final class EditorData {
 		routeObject.addProperty("entryPlatform", String.valueOf(route.timetable.entryPlatformId));
 		routeObject.addProperty("editorManaged", route.editorManaged);
 		routeObject.addProperty("revision", getRevision(route));
+		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
+		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));
 
 		final JsonArray stopsArray = new JsonArray();
 		for (int i = 0; i < route.platformIds.size(); i++) {
@@ -303,10 +307,7 @@ public final class EditorData {
 	 * send those changes, so a draft made before another change in the game is noticed before it overwrites it
 	 */
 	public static String getRevision(Route route) {
-		final int[] hash = {Boolean.hashCode(route.editorManaged)};
-		route.setTimetable(packet -> hash[0] = hash[0] * 31 + packet.nioBuffer().hashCode());
-		route.setPlatformIds(packet -> hash[0] = hash[0] * 31 + packet.nioBuffer().hashCode());
-		return Integer.toHexString(hash[0]);
+		return route.getEditorRevision();
 	}
 
 	private static void requestTimes(long routeId) {

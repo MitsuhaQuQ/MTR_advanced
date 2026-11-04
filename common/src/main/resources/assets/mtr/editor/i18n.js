@@ -85,6 +85,9 @@ const I18N = (() => {
 			// Draft and applying
 			"（未命名）": "(unnamed)",
 			"游戏里的这条线路在草稿之后改过": "This route was changed in the game after the draft",
+			"游戏里的这条线路在草稿之后改过（{0} 正在编辑）": "This route was changed in the game after the draft ({0} is editing it)",
+			"下面的线路在草稿之后游戏里改过，应用前先选保留草稿还是用游戏里的：": "These routes were changed in the game after the draft. Before applying, choose to keep the draft or use the game's:",
+			"{0} 正在游戏里编辑这条线路，应用前留意别和对方改到同一处": "{0} is editing this route in the game; take care not to change the same things before applying",
 			"页面的链接已经失效": "The link to this page has expired",
 			"发送失败，游戏可能已经关闭": "Couldn't send, the game may have closed",
 			"正在应用…": "Applying…",

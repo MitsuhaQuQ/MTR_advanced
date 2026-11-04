@@ -179,5 +179,8 @@
   "gui.mtr.node_turnout_boundary": "这是道岔，节点边界会把每个分支都切开，请改为勾选下面的某一条边界轨道",
   "gui.mtr.node_not_cut_node": "两侧仍有别的连接，这个节点边界没有切开",
   "gui.mtr.node_not_cut_rail": "两侧仍有别的连接，这段边界轨道没有切开",
-  "gui.mtr.node_regions": "区域 %s 个"
+  "gui.mtr.node_regions": "区域 %s 个",
+  "gui.mtr.edit_conflict_changed": "%s 刚改过这里，你的修改没有生效，已换成最新的内容",
+  "gui.mtr.edit_conflict_deleted": "%s 已删除了它，你的修改没有生效",
+  "gui.mtr.others_editing": "也在编辑：%s"
 }

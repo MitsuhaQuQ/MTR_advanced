@@ -64,6 +64,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * Keeps trains running by duties from meeting head on. See {@link RunReservations}.
 	 */
 	public final RunReservations runReservations = new RunReservations();
+	/**
+	 * Which version of each part of the data players edit the server has (multiplayer edit conflicts).
+	 */
+	public final EditRevisions editRevisions = new EditRevisions();
 	public final Set<Route> routes = new HashSet<>();
 	public final Set<Depot> depots = new HashSet<>();
 	public final Set<LiftServer> lifts = new HashSet<>();

@@ -1,5 +1,7 @@
 package mtr.client.editor;
 
+import mtr.client.ClientEditing;
+
 import mtr.advanced.PlanAdapters;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -50,21 +52,33 @@ public final class EditorActions implements IPacket {
 		} else if (operations.size() > MAX_OPERATIONS) {
 			addError(errors, -1, "", TranslatedMessage.get("gui.mtr.editor_too_many_changes"));
 		} else {
-			for (int i = 0; i < operations.size(); i++) {
-				final JsonObject operation = operations.get(i).getAsJsonObject();
-				final String routeId = getString(operation, "route");
-				String error;
-				try {
-					error = applyOperation(operation, i, created);
-				} catch (Exception e) {
-					e.printStackTrace();
-					error = TranslatedMessage.get("gui.mtr.editor_bad_change");
+			// Sent to the server as one batch, which it makes all or not at all, checking each route against the revision
+			// the page based its changes on, as the game has it then (multiplayer edit conflicts)
+			final Map<Long, String> routeBases = new HashMap<>();
+			ClientEditing.startBatch();
+			try {
+				for (int i = 0; i < operations.size(); i++) {
+					final JsonObject operation = operations.get(i).getAsJsonObject();
+					final String routeId = getString(operation, "route");
+					final boolean force = operation.has("force") && operation.get("force").getAsBoolean();
+					String error;
+					try {
+						error = applyOperation(operation, i, created);
+					} catch (Exception e) {
+						e.printStackTrace();
+						error = TranslatedMessage.get("gui.mtr.editor_bad_change");
+					}
+					if (error == null) {
+						applied.add(i);
+						if (!force && operation.has("base") && !"newRoute".equals(getString(operation, "type")) && !"duties".equals(getString(operation, "type"))) {
+							routeBases.putIfAbsent(parseId(routeId), getString(operation, "base"));
+						}
+					} else {
+						addError(errors, i, routeId, error);
+					}
 				}
-				if (error == null) {
-					applied.add(i);
-				} else {
-					addError(errors, i, routeId, error);
-				}
+			} finally {
+				ClientEditing.sendBatch(routeBases);
 			}
 		}
 

@@ -272,6 +272,14 @@
 		data.lines = [...lines.values()].sort((a, b) => a.name.localeCompare(b.name));
 		data.lines.forEach(buildStations);
 		buildTopology();
+		// A route changed in the game since its draft was made is a conflict to settle while drafting, before applying
+		Object.entries(draft.routes).forEach(([id, entry]) => {
+			const r = data.routeById.get(id);
+			if (r && entry.base && !entry.force && !entry.conflict && r.revision !== entry.base) {
+				entry.conflict = true;
+				entry.error = r.editors ? tr("游戏里的这条线路在草稿之后改过（{0} 正在编辑）", r.editors) : tr("游戏里的这条线路在草稿之后改过");
+			}
+		});
 		if (!state.line || !lines.has(state.line)) state.line = data.lines.length ? data.lines[0].key : null;
 		if (state.route && !data.routeById.has(state.route)) state.route = null;
 		if (state.selected && !findService(state.selected)) state.selected = null;
@@ -3253,6 +3261,11 @@
 			html = `${tr("已设接出点：")}<b>${clock(s.start)} ${escapeHtml(routeTitle(s.route))}</b> ${tr("在")} <b>${escapeHtml(stopName(s.route, state.pendingExit.index))}</b>${tr("。打开目标线路的时刻表，右键首站或时刻边界站的一格，选“设为接入点”。")}<button data-cancel-exit>${tr("取消")}</button>`;
 		} else if (data && !data.canEdit) {
 			html = tr("没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。");
+		} else if (!applyResult && failed.some(([, entry]) => entry.conflict)) {
+			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
+			html = `${tr("下面的线路在草稿之后游戏里改过，应用前先选保留草稿还是用游戏里的：")}<ul>`
+				+ failed.filter(([, entry]) => entry.conflict).map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}<button data-keep="${id}">${tr("保留草稿")}</button><button data-drop="${id}">${tr("用游戏里的")}</button></li>`).join("")
+				+ "</ul>";
 		} else if (applyResult && (!applyResult.ok || failed.length || otherFailed)) {
 			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
 			html = `${tr("应用了 {0} 项，下面的没有应用，留在草稿里：", applyResult.applied)}<ul>`
@@ -3263,6 +3276,8 @@
 				+ "</ul>";
 		} else if (applyResult && applyResult.ok) {
 			html = `${tr("已应用 {0} 项。", applyResult.applied)}`;
+		} else if (data && state.route && data.routeById.get(state.route) && data.routeById.get(state.route).editors) {
+			html = escapeHtml(tr("{0} 正在游戏里编辑这条线路，应用前留意别和对方改到同一处", data.routeById.get(state.route).editors));
 		} else if (dutyNotice) {
 			const check = dutyCheckText(depotById(sim.checkDepot));
 			html = escapeHtml(dutyNotice) + (check ? " " + escapeHtml(check) : "");

@@ -179,5 +179,8 @@
   "gui.mtr.node_turnout_boundary": "This is a turnout: a node boundary cuts every branch apart, tick one of the boundary rails below instead",
   "gui.mtr.node_not_cut_node": "Both sides are still connected another way, this node boundary doesn't cut anything",
   "gui.mtr.node_not_cut_rail": "Both sides are still connected another way, this boundary rail doesn't cut anything",
-  "gui.mtr.node_regions": "%s regions"
+  "gui.mtr.node_regions": "%s regions",
+  "gui.mtr.edit_conflict_changed": "%s changed this just now, so your change wasn't made; you now see the latest version",
+  "gui.mtr.edit_conflict_deleted": "%s deleted this, so your change wasn't made",
+  "gui.mtr.others_editing": "Also editing: %s"
 }

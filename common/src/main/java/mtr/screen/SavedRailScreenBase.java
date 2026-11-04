@@ -3,6 +3,7 @@ package mtr.screen;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import com.mojang.blaze3d.vertex.PoseStack;
+import mtr.client.ClientEditing;
 import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.Platform;
@@ -34,6 +35,7 @@ public abstract class SavedRailScreenBase<T extends SavedRailBase> extends Scree
 	public SavedRailScreenBase(T savedRailBase, TransportMode transportMode, DashboardScreen dashboardScreen, Component... additionalTexts) {
 		super(Text.literal(""));
 		this.savedRailBase = savedRailBase;
+		ClientEditing.beginEdit(savedRailBase);
 		showScheduleControls = !transportMode.continuousMovement;
 		this.dashboardScreen = dashboardScreen;
 		savedRailNumberText = Text.translatable(getNumberStringKey());
@@ -101,6 +103,7 @@ public abstract class SavedRailScreenBase<T extends SavedRailBase> extends Scree
 				GuiCompat.draw(matrices, font, savedRailNumberText, SQUARE_SIZE, SQUARE_SIZE + TEXT_FIELD_PADDING / 2F + TEXT_PADDING, ARGB_WHITE);
 			}
 			super.render(matrices, mouseX, mouseY, delta);
+			EditNameColorScreenBase.renderEditors(matrices, font, savedRailBase, height);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -112,6 +115,7 @@ public abstract class SavedRailScreenBase<T extends SavedRailBase> extends Scree
 		if (minecraft != null) {
 			UtilitiesClient.setScreen(minecraft, dashboardScreen);
 		}
+		ClientEditing.endEdit(savedRailBase);
 	}
 
 	@Override
