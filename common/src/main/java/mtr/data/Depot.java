@@ -488,6 +488,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		// the way through or have it find a path on a network changed half way
 		final DataCache dataCache = liveDataCache.copyIdMaps();
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = DataCache.copyRails(liveRails);
+		// Read here, on the server thread, as the other depots' duties may change while the path is found
+		final Set<String> sharedTaken = getSharedTaken(liveDataCache);
 		// Vehicles only run some types of service, so each group of them gets a path of its own routes
 		final Map<Set<String>, List<Siding>> sidingGroups = new LinkedHashMap<>();
 		sidings.forEach(siding -> {
@@ -511,8 +513,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
 				PathFailure failure = PathFailure.NONE;
-				// Groups of sidings running the same routes share their services out, the first group first
-				final Set<String> autoTaken = new HashSet<>();
+				// Groups of sidings running the same routes share their services out, the first group first, after the
+				// depots sharing a route with this one
+				final Set<String> autoTaken = new HashSet<>(sharedTaken);
 				for (final MainPath mainPath : mainPaths) {
 					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, autoTaken));
 					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
@@ -768,6 +771,34 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * @return what the depot's auto duties are worked out from: its routes' timetables and stops, and its sidings and the
 	 * trains each holds; null if it doesn't run by a timetable or has duties set
 	 */
+	/**
+	 * Another depot running a route of this one already runs some of its services: all it has in its own duties, and the
+	 * ones in its auto duties when it comes first by its ID. This depot's auto duties leave them to it, so no service of a
+	 * route two depots run is run twice (as when trains reserved their services, the depots sharing a route share them).
+	 * Auto duties of depots sharing a route are worked out in the order of their IDs, each leaving what the earlier ones
+	 * took, so working them out again in any order ends the same.
+	 *
+	 * @return the services as {@code route@service}
+	 */
+	public Set<String> getSharedTaken(DataCache dataCache) {
+		final Set<String> taken = new TreeSet<>();
+		final Set<Long> ownRoutes = new HashSet<>(routeIds);
+		dataCache.depotIdMap.values().forEach(other -> {
+			if (other == this || other.transportMode != transportMode || other.routeIds.stream().noneMatch(ownRoutes::contains)) {
+				return;
+			}
+			final DepotDuties otherDuties = other.duties.diagramMode ? other.duties : other.id < id && other.autoDuties.diagramMode ? other.autoDuties : null;
+			if (otherDuties != null) {
+				otherDuties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> {
+					if (ownRoutes.contains(segment.routeId)) {
+						taken.add(segment.routeId + "@" + segment.service);
+					}
+				}))));
+			}
+		});
+		return taken;
+	}
+
 	public String getAutoDutiesKey(DataCache dataCache, Set<Siding> sidings) {
 		if (duties.diagramMode || transportMode.continuousMovement) {
 			return null;
@@ -785,6 +816,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			key.append(';');
 		});
 		sidings.stream().filter(siding -> dataCache.sidingIdToDepot.get(siding.id) == this).sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> key.append(siding.id).append('/').append(siding.getTrainLimit()).append(siding.getTrainId()).append(';'));
+		// What depots sharing a route run changes what is left for this one
+		key.append("shared:").append(getSharedTaken(dataCache).hashCode());
 		return key.toString();
 	}
 
@@ -1068,8 +1101,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit())));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
+			final Set<Long> mainRouteIds = new HashSet<>();
+			mainRoutes.forEach(route -> mainRouteIds.add(route.id));
+			final long leftToOthers = autoTaken.stream().filter(service -> mainRouteIds.contains(Long.parseLong(service.substring(0, service.indexOf('@'))))).count();
 			final AutoDuties generated = AutoDuties.generate(mainRoutes, route -> fastestTimes.get(route.getRouteId()), TimetableConfig.getDayStartMillis(), sidingInputs, stationOf, cycleRoutes, autoTaken);
-			System.out.println("Minecraft Transit Railway: worked out the duties of depot " + (name.isEmpty() ? String.valueOf(id) : name) + " from its timetables: " + generated.trains + " trains, " + generated.uncovered / 7 + " services a day with no train" + (generated.missingTimes.isEmpty() ? "" : ", " + generated.missingTimes.size() + " routes left out as their times aren't known"));
+			System.out.println("Minecraft Transit Railway: worked out the duties of depot " + (name.isEmpty() ? String.valueOf(id) : name) + " from its timetables: " + generated.trains + " trains, " + generated.uncovered / 7 + " services a day with no train" + (leftToOthers == 0 ? "" : ", " + leftToOthers + " services left to other sidings or depots running its routes") + (generated.missingTimes.isEmpty() ? "" : ", " + generated.missingTimes.size() + " routes left out as their times aren't known"));
 			minecraftServer.execute(() -> {
 				autoDuties.sidings.keySet().removeAll(sidingIds);
 				autoDuties.sidings.putAll(generated.duties.sidings);
