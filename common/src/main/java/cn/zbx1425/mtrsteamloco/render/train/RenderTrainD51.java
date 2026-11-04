@@ -105,7 +105,8 @@ public class RenderTrainD51 extends TrainRendererBase {
         }
 
         matrices.pushPose();
-        matrices.translate(x, y - 1, z);
+        // The render matrices start at the camera, and x, y and z are world coordinates (see translateToWorld)
+        translateToWorld(train.getViewOffset(), x, y - 1, z);
         PoseStackUtil.rotY(matrices, (float) Math.PI + yaw);
         final boolean hasPitch = pitch < 0 ? train.transportMode.hasPitchAscending : train.transportMode.hasPitchDescending;
         PoseStackUtil.rotX(matrices, hasPitch ? pitch : 0);

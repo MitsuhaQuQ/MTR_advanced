@@ -145,9 +145,14 @@ public class ScriptedTrainRenderer extends TrainRendererBase {
 
         final BlockPos posAverage = applyAverageTransform(train.getViewOffset(), x, y, z);
         if (posAverage == null) return;
-        Matrix4f worldPose = new Matrix4f(matrices.last().pose()).copy();
+        // The render matrices start at the camera, and x, y and z are world coordinates (see translateToWorld); scripts
+        // get the pose of the world's origin as before
         matrices.pushPose();
-        matrices.translate(x, y, z);
+        translateToWorld(train.getViewOffset(), 0, 0, 0);
+        Matrix4f worldPose = new Matrix4f(matrices.last().pose()).copy();
+        matrices.popPose();
+        matrices.pushPose();
+        translateToWorld(train.getViewOffset(), x, y, z);
         PoseStackUtil.rotY(matrices, (float) Math.PI + yaw);
         final boolean hasPitch = pitch < 0 ? train.transportMode.hasPitchAscending : train.transportMode.hasPitchDescending;
         PoseStackUtil.rotX(matrices, hasPitch ? pitch : 0);
