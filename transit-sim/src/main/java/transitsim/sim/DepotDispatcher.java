@@ -195,8 +195,12 @@ public class DepotDispatcher {
 					continue;
 				}
 				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - dutyPath.stopTimes.getLeadMillis() - DUTY_DEPLOY_MARGIN_MILLIS;
-				if (currentMillis >= departureMillis && currentMillis <= departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS && (best == null || departureMillis < best.departureMillis)) {
-					best = new DutyDeploy<>(sidingId, i, dayStart, dutyPath, departureMillis);
+				// Missed by much, as when the depot had no train or the server stopped, the train joins its duty where it can
+				// still keep to it instead of the duty being left out, while the duty runs
+				final boolean late = currentMillis > departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS;
+				final boolean running = duty.stayOnLine || currentMillis < departureMillis + dutyPath.stopTimes.getDurationMillis();
+				if (currentMillis >= departureMillis && (!late || running) && (best == null || best.late && !late || best.late == late && departureMillis < best.departureMillis)) {
+					best = new DutyDeploy<>(sidingId, i, dayStart, dutyPath, departureMillis, late);
 				}
 			}
 		}
@@ -263,13 +267,19 @@ public class DepotDispatcher {
 		public final long dayStart;
 		public final TripPath<T> path;
 		private final long departureMillis;
+		/**
+		 * Sent out much later than its duty needed: the train is put at the first stop of its duty it can still keep to
+		 * (see {@link TrainService#joinDutyLate}).
+		 */
+		public final boolean late;
 
-		private DutyDeploy(long sidingId, int slot, long dayStart, TripPath<T> path, long departureMillis) {
+		private DutyDeploy(long sidingId, int slot, long dayStart, TripPath<T> path, long departureMillis, boolean late) {
 			this.sidingId = sidingId;
 			this.slot = slot;
 			this.dayStart = dayStart;
 			this.path = path;
 			this.departureMillis = departureMillis;
+			this.late = late;
 		}
 	}
 }

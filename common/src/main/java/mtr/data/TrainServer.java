@@ -682,6 +682,16 @@ public class TrainServer extends Train {
 		service.deployDuty(slot, dayStart, dutyPath);
 	}
 
+	/**
+	 * Puts a train sent out much later than its duty needed at the first stop of its duty it can still keep to. See
+	 * {@link TrainService#joinDutyLate}.
+	 */
+	public void joinDutyLate() {
+		isOnRoute = true;
+		canDeploy = false;
+		service.joinDutyLate();
+	}
+
 	@Override
 	protected boolean keepsOnLineAtEnd() {
 		return service.endsOnLine();

@@ -282,6 +282,19 @@ class DutyRunTest {
 	}
 
 	@Test
+	void sentOutLateItJoinsAtTheFirstStopItCanKeepTo() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		// Its duty starts at 08:00; the depot only sends it out at 08:20:30
+		now = MONDAY + 8 * HOUR + 20 * MINUTE + 30 * SECOND;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.joinDutyLate();
+		// Route 1 is over by then, so it joins route 2 at its first stop
+		assertEquals(4, train[0].movedTo);
+		assertEquals(2, train[0].service.getTripRouteId());
+	}
+
+	@Test
 	void takesOverTheChosenSlotAfterStayingOvernight() {
 		setSlots(
 				day(true, 1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),

@@ -2208,6 +2208,42 @@
 	}
 
 	/** A first draft of a depot's duties from its timetables, put in the draft to look over before applying. */
+	/**
+	 * When each of the depot's trains goes out and comes back on the day shown, by its duty: the first service it runs and
+	 * from where, the last and to where, and whether it stays on the line overnight. A depot running by a timetable with
+	 * no duties set shows the duties the game worked out for it. The depot sends a train out its run from the siding
+	 * before the first service; one sent out too late joins its duty at the first stop it can still keep to.
+	 */
+	function releasePlanDialog(depot) {
+		const duties = dutiesOf(depot);
+		const rows = [];
+		let inDepot = 0;
+		depot.sidings.forEach(siding => {
+			const slots = duties.sidings[siding.id] || [];
+			let used = 0;
+			slots.forEach((slot, index) => {
+				const day = dutyOn(slot, state.weekday);
+				if (!day || !day.segments.length) return;
+				used++;
+				const first = day.segments[0], last = day.segments[day.segments.length - 1];
+				const firstRoute = data.routeById.get(first.route), lastRoute = data.routeById.get(last.route);
+				rows.push({
+					start: segmentStart(first), siding, index, stay: day.stay,
+					first: `${segmentService(first) ? clock(timesOf(segmentService(first))[Math.min(first.from, segmentService(first).plans.length - 1)][1]) : "--:--"} ${firstRoute ? escapeHtml(shortName(firstRoute.name)) + " " + escapeHtml(shortName(firstRoute.stops[first.from] ? firstRoute.stops[first.from].name : "?")) : tr("已删除的线路")}`,
+					last: `${segmentService(last) ? clock(timesOf(segmentService(last))[lastStopOf(last, segmentService(last).route)][0]) : "--:--"} ${lastRoute ? escapeHtml(shortName(lastRoute.name)) + " " + escapeHtml(shortName(lastRoute.stops[lastStopOf(last, lastRoute)] ? lastRoute.stops[lastStopOf(last, lastRoute)].name : "?")) : tr("已删除的线路")}`,
+					count: day.segments.length,
+				});
+			});
+			if (siding.maxTrains >= 0) inDepot += Math.max(0, siding.maxTrains - used);
+		});
+		rows.sort((a, b) => a.start - b.start);
+		const table = rows.length ? `<table class="tt release-plan" style="cursor: default"><thead><tr><th>${tr("车")}</th><th>${tr("存车线")}</th><th>${tr("首班（出库后）")}</th><th>${tr("末班到达")}</th><th>${tr("班次")}</th><th>${tr("之后")}</th></tr></thead><tbody>${rows.map(row => `<tr><td>${tr("车 {0}", row.index + 1)}</td><td>${escapeHtml(shortName(row.siding.name) || tr("存车线"))}</td><td>${row.first}</td><td>${row.last}</td><td class="num">${row.count}</td><td>${row.stay ? tr("留在线上过夜") : tr("回库")}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">${tr("这天没有运用，车厂不放车。")}</p>`;
+		openDialog(`${tr("出入库计划：{0}（{1}）", escapeHtml(shortName(depot.name)), WEEKDAY_NAMES[state.weekday])}`, `
+			<p class="hint">${duties.auto ? tr("这个车厂没设运用，按游戏根据时刻表自动生成的运用出车。") : ""}${tr("车厂在首班前按出库用时放车；出库太晚（超过 10 分钟）的车直接放到它的运用里还赶得上的第一站。放车前要先拿到出库线到首站的进路，正线的方向预约在内，拿不到就在库里等。")}</p>
+			${table}
+			<p class="hint">${tr("今天出车 {0} 列，在库 {1} 列（存车线不限列车数的不算）。", rows.length, inDepot)}</p>`, tr("关闭"), () => {});
+	}
+
 	/** Has the game put the depot's trains where the timetable has them now, instead of sending them out one by one. */
 	function placeTrainsDialog(depot) {
 		openDialog(tr("按时刻表摆车"), `<p>${tr("把“{0}”的列车直接放到时刻表现在要求的位置：从今天运营日开始按游戏的规则算到现在，这时候应该在线上的车摆上去，已经发过的班次不再发；原来的车换成算出来的车，乘客和货物不保留，玩家驾驶中的车不动。", escapeHtml(shortName(depot.name)))}</p>
@@ -3623,6 +3659,7 @@
 		] : depotId && depot ? [
 			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
 			[tr("按时刻表把列车摆到现在的位置…"), data.canEdit ? () => placeTrainsDialog(depot) : null],
+			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为在线预约") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
 		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null]]

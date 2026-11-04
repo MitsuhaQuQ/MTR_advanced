@@ -869,6 +869,9 @@ public final class TickRunner<T extends RunTrack> {
 				final HeadlessTrain train = readyTrains.get(deploy.sidingId);
 				train.catchUp(millis);
 				train.deployDuty(deploy.slot, deploy.dayStart, deploy.path);
+				if (deploy.late) {
+					train.joinDutyLate();
+				}
 				depot.changed = true;
 				wake(train);
 			}
@@ -2321,6 +2324,19 @@ public final class TickRunner<T extends RunTrack> {
 		private void deployDuty(int slot, long dayStart, TripPath<T> dutyPath) {
 			canDeploy = true;
 			service.deployDuty(slot, dayStart, dutyPath);
+		}
+
+		/**
+		 * Puts a train sent out late at the first stop of its duty it can still keep to; if none is free, it stays in the
+		 * siding.
+		 */
+		private void joinDutyLate() {
+			onRoute = true;
+			canDeploy = false;
+			service.joinDutyLate();
+			if (onRoute) {
+				writePositions();
+			}
 		}
 	}
 }

@@ -368,7 +368,25 @@ public class TrainService<T extends PlanTrack> {
 	 * it hasn't left yet, or the last free stop before that. Before the duty starts it waits at its first stop; after the
 	 * duty it goes back to the depot, or to its last stop when it stays there overnight.
 	 */
+	/**
+	 * A train sent out much later than its duty needed joins it at the first stop it can still keep to, as it is put
+	 * there when the simulation starts again, rather than running the whole way late (decoupling document, step D, depots
+	 * sending trains out 3). It is put at a stop, not on a run, as it comes from the depot.
+	 */
+	public void joinDutyLate() {
+		if (isOnDuty()) {
+			alignDuty(false);
+		}
+	}
+
 	private void alignDuty() {
+		alignDuty(true);
+	}
+
+	/**
+	 * @param onRun whether the train may be put on its way between two stops, not only at one
+	 */
+	private void alignDuty(boolean onRun) {
 		final List<DepotDuties.Segment> segments = getDutySegments();
 		final int[] starts = tripPath.dutyStarts;
 		if (segments.size() != starts.length || segments.isEmpty()) {
@@ -405,7 +423,7 @@ public class TrainService<T extends PlanTrack> {
 			}
 			stopIndex = path.size() - 1;
 		}
-		for (int i = starts[0] + 1; i < path.size(); i++) {
+		for (int i = starts[0] + 1; onRun && i < path.size(); i++) {
 			if (path.get(i).getDwellTime() > 0 && !path.get(i).isSidingTrack() && placeOnRun(i, starts, currentMillis)) {
 				return;
 			}

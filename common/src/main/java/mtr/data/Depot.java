@@ -678,6 +678,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		if (deploy != null) {
 			lastDeployedMillis = currentMillis;
 			deployableSidings.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dayStart, deploy.path);
+			if (deploy.late) {
+				deployableSidings.get(deploy.sidingId).joinDutyLate();
+			}
 		}
 	}
 
