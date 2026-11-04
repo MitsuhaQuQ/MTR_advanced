@@ -179,6 +179,14 @@ public final class EditGuard implements IPacket {
 			}
 		}
 
+		// What each change is, read before its handler reads the packet on
+		final List<Object[]> made = new ArrayList<>();
+		for (final Object[] change : changes) {
+			final ResourceLocation packetId = (ResourceLocation) change[0];
+			final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
+			made.add(new Object[]{packetId, KINDS.get(packetId), inner.getLong(inner.readerIndex()), getPart(packetId, inner)});
+		}
+
 		boolean failed = false;
 		for (final Object[] change : changes) {
 			PacketTrainDataBase.FAILED.set(false);
@@ -210,12 +218,11 @@ public final class EditGuard implements IPacket {
 			return false;
 		}
 
-		for (final Object[] change : changes) {
+		for (final Object[] change : made) {
 			final ResourceLocation packetId = (ResourceLocation) change[0];
-			final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
-			final String kind = KINDS.get(packetId);
-			final long id = inner.getLong(inner.readerIndex());
-			final String part = getPart(packetId, inner);
+			final String kind = (String) change[1];
+			final long id = (Long) change[2];
+			final String part = (String) change[3];
 			final int revision = railwayData.editRevisions.record(kind, id, part, player.getGameProfile().getName(), isDelete(packetId));
 			sendRevision(Compat.getLevel(player), kind, id, isDelete(packetId) ? EditRevisions.WHOLE : part, revision, player.getUUID());
 			railwayData.markEdited(kind, id);
