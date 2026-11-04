@@ -3,6 +3,7 @@ package mtr.advanced;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
 import mtr.compat.Compat;
+import mtr.data.DataCache;
 import mtr.data.Depot;
 import mtr.data.RailwayData;
 import mtr.data.Rail;
@@ -205,8 +206,8 @@ public final class SandboxRuns implements IPacket {
 	static int findDutyPaths(SimDataset dataset, List<DutyPathSearch> searches) {
 		final Set<String> missing = new HashSet<>();
 		for (final DutyPathSearch search : searches) {
-			final Map<BlockPos, Map<BlockPos, Rail>> rails = search.railwayData.getRails();
-			final Map<Long, Map<String, TripPath<PathData>>> dutyPaths = search.depot.findDutyPaths(search.duties, search.railwayData.dataCache, rails, search.graph, search.sidings, search.useFastSpeed, key -> missing.add(search.depot.id + ":" + key));
+			final Map<BlockPos, Map<BlockPos, Rail>> rails = search.rails;
+			final Map<Long, Map<String, TripPath<PathData>>> dutyPaths = search.depot.findDutyPaths(search.duties, search.dataCache, rails, search.graph, search.sidings, search.useFastSpeed, key -> missing.add(search.depot.id + ":" + key));
 			dutyPaths.forEach((sidingId, paths) -> dataset.sidings.stream().filter(siding -> siding.id == sidingId).findFirst().ifPresent(siding -> paths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> siding.tripPaths.add(Siding.toSimulation(tripPath, path -> SimExport.toTracks(path, rails))))));
 		}
 		return missing.size();
@@ -223,6 +224,11 @@ public final class SandboxRuns implements IPacket {
 		 * The sidings as they were on the server's thread, which goes on changing its own set.
 		 */
 		private final Set<Siding> sidings;
+		/**
+		 * The rails and data as they were on the server's thread, for the same reason.
+		 */
+		private final Map<BlockPos, Map<BlockPos, Rail>> rails;
+		private final DataCache dataCache;
 
 		private DutyPathSearch(Depot depot, DepotDuties duties, RailwayData railwayData, RailGraph<Rail> graph, boolean useFastSpeed) {
 			this.depot = depot;
@@ -231,6 +237,8 @@ public final class SandboxRuns implements IPacket {
 			this.graph = graph;
 			this.useFastSpeed = useFastSpeed;
 			sidings = new HashSet<>(railwayData.sidings);
+			rails = DataCache.copyRails(railwayData.getRails());
+			dataCache = railwayData.dataCache.copyIdMaps();
 		}
 	}
 

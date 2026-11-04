@@ -61,6 +61,31 @@ public class DataCache {
 		return version;
 	}
 
+	/**
+	 * The maps by ID as they are now, for work away from the server thread (path generation), which must not see them
+	 * emptied and filled again by {@link #sync} part of the way through. The data in them is the same, not copied, and the
+	 * copy is never synced.
+	 */
+	public DataCache copyIdMaps() {
+		final DataCache copy = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>());
+		copy.stationIdMap.putAll(stationIdMap);
+		copy.platformIdMap.putAll(platformIdMap);
+		copy.sidingIdMap.putAll(sidingIdMap);
+		copy.routeIdMap.putAll(routeIdMap);
+		copy.depotIdMap.putAll(depotIdMap);
+		return copy;
+	}
+
+	/**
+	 * The rails as they are now, for work away from the server thread (path generation), which must not see rails laid or
+	 * taken away part of the way through. The rails themselves are the same, as a rail is built again rather than changed.
+	 */
+	public static Map<BlockPos, Map<BlockPos, Rail>> copyRails(Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		final Map<BlockPos, Map<BlockPos, Rail>> copy = new HashMap<>(rails.size());
+		rails.forEach((pos, connections) -> copy.put(pos, new HashMap<>(connections)));
+		return copy;
+	}
+
 	public final void sync() {
 		version++;
 		try {

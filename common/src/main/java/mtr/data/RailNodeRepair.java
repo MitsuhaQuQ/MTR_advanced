@@ -22,6 +22,10 @@ import java.util.Set;
 public final class RailNodeRepair {
 
 	private final Set<BlockPos> nodesToCheck = new HashSet<>();
+	/**
+	 * Nodes whose place another block took, kept until a player lays a node there again or takes their rails away.
+	 */
+	private final Set<BlockPos> nodesTaken = new HashSet<>();
 
 	private static final int CHECK_INTERVAL_TICKS = 20;
 
@@ -30,6 +34,7 @@ public final class RailNodeRepair {
 	 */
 	public void start(Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		nodesToCheck.clear();
+		nodesTaken.clear();
 		rails.forEach((pos, railMap) -> {
 			if (!railMap.isEmpty()) {
 				nodesToCheck.add(pos);
@@ -38,34 +43,52 @@ public final class RailNodeRepair {
 	}
 
 	public void tick(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		if (nodesToCheck.isEmpty() || world.getGameTime() % CHECK_INTERVAL_TICKS != 0) {
+		if (nodesToCheck.isEmpty() && nodesTaken.isEmpty() || world.getGameTime() % CHECK_INTERVAL_TICKS != 0) {
 			return;
 		}
 		final int[] repaired = {0};
-		nodesToCheck.removeIf(pos -> {
-			if (world.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null) {
-				return false;
-			}
-			final Map<BlockPos, Rail> railMap = rails.get(pos);
-			if (railMap == null || railMap.isEmpty()) {
-				return true;
-			}
-			final BlockState state = world.getBlockState(pos);
-			if (state.getBlock() instanceof BlockNode) {
-				return true;
-			}
-			final Rail rail = railMap.values().iterator().next();
-			if (!state.isAir() && !Compat.isReplaceable(state)) {
-				System.out.println("Minecraft Transit Railway found the node of a rail at " + pos.toShortString() + " in " + world.dimension().location() + " taken by " + state.getBlock().getDescriptionId() + "; it is left as it is");
-				return true;
-			}
-			placeNode(world, pos, rail);
-			repaired[0]++;
-			return true;
-		});
+		nodesToCheck.removeIf(pos -> check(world, rails, pos, repaired, true));
+		// A node whose place was taken is put back once the block there is cleared away
+		nodesTaken.removeIf(pos -> check(world, rails, pos, repaired, false));
 		if (repaired[0] > 0) {
 			System.out.println("Minecraft Transit Railway put back " + repaired[0] + " node(s) the world had lost in " + world.dimension().location());
 		}
+	}
+
+	/**
+	 * @return whether the node needs no more looking at
+	 */
+	private boolean check(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos, int[] repaired, boolean firstLook) {
+		if (world.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null) {
+			return false;
+		}
+		final Map<BlockPos, Rail> railMap = rails.get(pos);
+		if (railMap == null || railMap.isEmpty()) {
+			return true;
+		}
+		final BlockState state = world.getBlockState(pos);
+		if (state.getBlock() instanceof BlockNode) {
+			return true;
+		}
+		if (!state.isAir() && !Compat.isReplaceable(state)) {
+			if (firstLook) {
+				System.out.println("Minecraft Transit Railway found the node of a rail at " + pos.toShortString() + " in " + world.dimension().location() + " taken by " + state.getBlock().getDescriptionId() + "; it is put back once that block is cleared away");
+				nodesTaken.add(pos);
+				return true;
+			}
+			return false;
+		}
+		placeNode(world, pos, railMap.values().iterator().next());
+		repaired[0]++;
+		return true;
+	}
+
+	/**
+	 * Whether a node whose block is missing is one of these, not yet looked at or with its place taken, so the check that
+	 * takes away rails of missing nodes leaves it (see {@link RailwayData}). A node laid there again is no longer one.
+	 */
+	public boolean isKept(BlockPos pos) {
+		return nodesToCheck.contains(pos) || nodesTaken.contains(pos);
 	}
 
 	/**

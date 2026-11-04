@@ -268,6 +268,51 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		}
 	}
 
+	/**
+	 * Deletes a route, then tells the player, and the log, what still refers to it: the depots that ran it drop it by
+	 * themselves, but duties and other routes' through links that use it stay as they were and no longer run that part,
+	 * so they can be changed by hand.
+	 */
+	public static void reportRouteReferences(ServerPlayer player, long routeId, Runnable delete) {
+		final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+		final Route route = railwayData == null || RailwayData.hasNoPermission(player) ? null : railwayData.dataCache.routeIdMap.get(routeId);
+		final List<String> depots = new ArrayList<>();
+		final List<String> duties = new ArrayList<>();
+		final List<String> links = new ArrayList<>();
+		if (route != null) {
+			railwayData.depots.forEach(depot -> {
+				if (depot.routeIds.contains(routeId)) {
+					depots.add(IGui.formatStationName(depot.name));
+				}
+				if (depot.duties.sidings.values().stream().anyMatch(slots -> slots.stream().anyMatch(slot -> slot.days.stream().anyMatch(day -> day.segments.stream().anyMatch(segment -> segment.routeId == routeId))))) {
+					duties.add(IGui.formatStationName(depot.name));
+				}
+			});
+			railwayData.routes.forEach(otherRoute -> {
+				if (otherRoute.id != routeId && otherRoute.timetable.getTables().stream().anyMatch(table -> table.links.values().stream().anyMatch(link -> link.routeId == routeId))) {
+					links.add(IGui.formatStationName(otherRoute.name));
+				}
+			});
+		}
+		delete.run();
+		if (route == null || railwayData.dataCache.routeIdMap.containsKey(routeId)) {
+			return;
+		}
+		final String routeName = IGui.formatStationName(route.name);
+		if (!depots.isEmpty()) {
+			player.displayClientMessage(Text.translatable("gui.mtr.route_deleted_depots", routeName, String.join(", ", depots)), false);
+		}
+		if (!duties.isEmpty()) {
+			player.displayClientMessage(Text.translatable("gui.mtr.route_deleted_duties", routeName, String.join(", ", duties)), false);
+		}
+		if (!links.isEmpty()) {
+			player.displayClientMessage(Text.translatable("gui.mtr.route_deleted_links", routeName, String.join(", ", links)), false);
+		}
+		if (!depots.isEmpty() || !duties.isEmpty() || !links.isEmpty()) {
+			System.out.println("Minecraft Transit Railway route " + routeName + " deleted by " + player.getGameProfile().getName() + "; depots that ran it: " + depots + ", depots with duties using it: " + duties + ", routes with through links to it: " + links);
+		}
+	}
+
 	public static <T extends NameColorDataBase> void receiveUpdateOrDeleteC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet, ResourceLocation packetId, Function<RailwayData, Set<T>> dataSet, Function<RailwayData, Map<Long, T>> cacheMap, BiFunction<Long, TransportMode, T> createDataWithId, boolean isDelete) {
 		if (RailwayData.hasNoPermission(player)) {
 			return;

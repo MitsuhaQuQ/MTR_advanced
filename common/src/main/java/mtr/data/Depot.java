@@ -425,7 +425,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		sendPacket.accept(packet);
 	}
 
-	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Set<Siding> sidings, Consumer<Thread> callback) {
+	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, Map<BlockPos, Map<BlockPos, Rail>> liveRails, Set<Siding> sidings, Consumer<Thread> callback) {
+		// The thread works on the rails and data as they are now, so a player laying track meanwhile can't break it part of
+		// the way through or have it find a path on a network changed half way
+		final DataCache dataCache = liveDataCache.copyIdMaps();
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = DataCache.copyRails(liveRails);
 		// Vehicles only run some types of service, so each group of them gets a path of its own routes
 		final Map<Set<String>, List<Siding>> sidingGroups = new LinkedHashMap<>();
 		sidings.forEach(siding -> {

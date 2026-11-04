@@ -47,6 +47,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class RailwayData extends PersistentStateMapper implements IPacket {
@@ -597,7 +598,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		final Set<BlockPos> changed = new HashSet<>(rails.getOrDefault(pos, Collections.emptyMap()).keySet());
 		changed.add(pos);
 		railwayDataFileSaveModule.markRailsChanged(changed);
-		removeNode(world, rails, pos);
+		removeNode(world, rails, pos, railNodeRepair::isKept);
 		setKeyNode(pos, false);
 		// A boundary on a rail that was only taken away stays, as the rail is often laid again, but nothing is left of a node
 		pathBoundaries.nodes.remove(pos.asLong());
@@ -836,7 +837,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			railwayDataLoggingModule.addEvent((ServerPlayer) player, Rail.class, dataList, new ArrayList<>(), pos1, pos2);
 		}
 
-		removeRailConnection(world, rails, pos1, pos2);
+		removeRailConnection(world, rails, pos1, pos2, railNodeRepair::isKept);
 		railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos1, pos2));
 		validateData();
 		final FriendlyByteBuf packet = signalBlocks.getValidationPacket(rails);
@@ -988,6 +989,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public static void removeNode(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos) {
+		removeNode(world, rails, pos, node -> false);
+	}
+
+	/**
+	 * @param kept nodes whose block is missing that are kept anyway (see {@link #validateRails})
+	 */
+	private static void removeNode(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos, Predicate<BlockPos> kept) {
 		try {
 			rails.remove(pos);
 			rails.forEach((startPos, railMap) -> {
@@ -997,7 +1005,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				}
 			});
 			if (world != null) {
-				validateRails(world, rails);
+				validateRails(world, rails, kept);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1012,6 +1020,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public static void removeRailConnection(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos1, BlockPos pos2) {
+		removeRailConnection(world, rails, pos1, pos2, node -> false);
+	}
+
+	private static void removeRailConnection(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos1, BlockPos pos2, Predicate<BlockPos> kept) {
 		try {
 			if (rails.containsKey(pos1)) {
 				rails.get(pos1).remove(pos2);
@@ -1026,7 +1038,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				}
 			}
 			if (world != null) {
-				validateRails(world, rails);
+				validateRails(world, rails, kept);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1185,12 +1197,19 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		}
 	}
 
-	private static void validateRails(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+	/**
+	 * Takes away the rails of nodes whose block is gone, as when blown up, and the rails left with no connections.
+	 *
+	 * @param kept nodes whose block is missing that are kept anyway: the ones the world lost while their rails were saved,
+	 *             which are put back or reported (see {@link RailNodeRepair}), so taking away one rail doesn't take theirs
+	 *             away too, with the platforms and sidings on them
+	 */
+	private static void validateRails(Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, Predicate<BlockPos> kept) {
 		final Set<BlockPos> railsToRemove = new HashSet<>();
 		final Set<BlockPos> railsNodesToRemove = new HashSet<>();
 		rails.forEach((startPos, railMap) -> {
 			final boolean chunkLoaded = chunkLoaded(world, startPos);
-			if (chunkLoaded && !(world.getBlockState(startPos).getBlock() instanceof BlockNode)) {
+			if (chunkLoaded && !(world.getBlockState(startPos).getBlock() instanceof BlockNode) && !kept.test(startPos)) {
 				railsNodesToRemove.add(startPos);
 			}
 
