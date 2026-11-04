@@ -95,10 +95,15 @@ public final class LiveSimulation {
 	private long versionChangedMillis;
 	private long lastMillis;
 	/**
-	 * Depots whose trains are to be put where their timetables have them now when the simulator starts again, with who
-	 * asked.
+	 * Trains being put where their depots' timetables have them now, worked out away from the server thread and taken
+	 * when the simulator starts again once it is done (see {@link #placeByTimetable(RailwayData, ServerPlayer, long)}).
 	 */
-	private final Map<Long, ServerPlayer> placeRequests = new HashMap<>();
+	private Placement placement;
+	private static final java.util.concurrent.ExecutorService PLACEMENT_THREAD = java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+		final Thread thread = new Thread(runnable, "MTR train placement");
+		thread.setDaemon(true);
+		return thread;
+	});
 	private boolean started;
 	private int restoredTrains;
 	/**
@@ -165,7 +170,7 @@ public final class LiveSimulation {
 		if (simulator != null && drive) {
 			// A stop of more than a minute is recovered from (contracts document 6.3), and a change starts it again
 			final boolean stopped = now - lastMillis > EventSimulator.RECOVERY_MILLIS;
-			if (stopped || !placeRequests.isEmpty() || hasChanged(railwayData, now)) {
+			if (stopped || placement != null && placement.work.isDone() || hasChanged(railwayData, now)) {
 				start(railwayData, now, true, stopped ? lastMillis : now);
 			}
 		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : drive ? RESTART_MILLIS : COMPARE_MILLIS))) {
@@ -282,9 +287,11 @@ public final class LiveSimulation {
 			}
 			siding.forEachTrain(train -> record.trains.add(train.toRecord()));
 		});
-		final Map<Long, ServerPlayer> placed = new HashMap<>(placeRequests);
-		final Map<Long, Integer> placedTrains = placed.isEmpty() ? Collections.emptyMap() : placeByTimetable(railwayData, dataset, record, placed.keySet(), now);
-		placeRequests.clear();
+		final Placement placed = placement != null && placement.work.isDone() ? placement : null;
+		final Map<Long, Integer> placedTrains = placed == null ? Collections.emptyMap() : placed.takeInto(railwayData, record, now);
+		if (placed != null) {
+			placement = null;
+		}
 		recordedTrains = record.trains.size();
 		simulator = EventSimulator.resume(startMillis -> {
 			final TickRunner<SimDataset.DataTrack> runner = dataset.buildRunner(startMillis);
@@ -318,75 +325,133 @@ public final class LiveSimulation {
 		if (drive) {
 			show(railwayData);
 		}
-		placed.forEach((depotId, player) -> {
-			final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
-			final String name = depot == null ? "" : depot.name.split("\\|\\|")[0].replace('|', ' ');
-			player.displayClientMessage(Text.translatable("gui.mtr.place_trains_done", name, placedTrains.getOrDefault(depotId, 0)), false);
-		});
-	}
-
-	/**
-	 * Asks for a depot's trains to be put where its timetable has them now, which is done when the simulator starts again
-	 * at the next tick (see {@link #placeByTimetable(RailwayData, SimDataset, RunRecord, Set, long)}).
-	 */
-	public void placeByTimetable(RailwayData railwayData, ServerPlayer player, long depotId) {
-		final boolean runs = simulator != null && driving && railwayData.sidings.stream().anyMatch(siding -> sidingIds.contains(siding.id) && railwayData.dataCache.sidingIdToDepot.get(siding.id) != null && railwayData.dataCache.sidingIdToDepot.get(siding.id).id == depotId);
-		if (runs) {
-			placeRequests.put(depotId, player);
-		} else {
-			player.displayClientMessage(Text.translatable("gui.mtr.place_trains_not_run"), false);
+		if (placed != null && placedTrains != null) {
+			final List<String> counts = new ArrayList<>();
+			placed.depotIds.forEach(depotId -> counts.add(getDepotName(railwayData, depotId) + " " + placedTrains.getOrDefault(depotId, 0)));
+			placed.player.displayClientMessage(Text.translatable("gui.mtr.place_trains_done", String.join(", ", counts)), false);
 		}
 	}
 
+	private static String getDepotName(RailwayData railwayData, long depotId) {
+		final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
+		return depot == null ? "?" : depot.name.split("\\|\\|")[0].replace('|', ' ');
+	}
+
 	/**
-	 * Works out where the trains of these depots would be now had they run from the start of the operating day, the depots
-	 * on their own, and puts that in the record the simulator starts from instead of their trains in the game. The depots'
-	 * services sent out and duties run go with them, so the services already out aren't sent again. Trains a player drives
-	 * stay as they are.
-	 *
-	 * @return how many trains each depot has now
+	 * Asks for a depot's trains to be put where its timetable has them now. The depots sharing a route with it, one after
+	 * the other, are put too, as their trains run on the same line and take services of the same timetables: worked out
+	 * apart, their trains would be put on top of each other's. Where they would all be had they run from the start of the
+	 * operating day is worked out away from the server thread, and the simulator starts from it at the next tick after.
 	 */
-	private Map<Long, Integer> placeByTimetable(RailwayData railwayData, SimDataset dataset, RunRecord record, Set<Long> depotIds, long now) {
-		final SimDataset placed = SimDataset.fromBytes(dataset.toBytes());
-		placed.trains = null;
-		placed.sidings.removeIf(siding -> !depotIds.contains(siding.depotId));
-		placed.depots.removeIf(depot -> !depotIds.contains(depot.id));
-		final Set<Long> placedSidings = new HashSet<>();
-		placed.sidings.forEach(siding -> placedSidings.add(siding.id));
+	public void placeByTimetable(RailwayData railwayData, ServerPlayer player, long depotId) {
+		final boolean runs = simulator != null && driving && railwayData.sidings.stream().anyMatch(siding -> sidingIds.contains(siding.id) && railwayData.dataCache.sidingIdToDepot.get(siding.id) != null && railwayData.dataCache.sidingIdToDepot.get(siding.id).id == depotId);
+		if (!runs) {
+			player.displayClientMessage(Text.translatable("gui.mtr.place_trains_not_run"), false);
+			return;
+		}
+		if (placement != null && !placement.work.isDone()) {
+			player.displayClientMessage(Text.translatable("gui.mtr.place_trains_busy"), false);
+			return;
+		}
 
-		final long startNanos = System.nanoTime();
-		final java.util.function.Supplier<TickRunner<SimDataset.DataTrack>> start = SimDataset.start(placed.toBytes(), DutyShapes.getDayStart(now));
-		final EventSimulator<SimDataset.DataTrack> day = new EventSimulator<>(() -> {
-			final TickRunner<SimDataset.DataTrack> runner = start.get();
-			runner.setTrainIds(random::nextLong);
-			return runner;
-		});
-		day.advanceTo(now);
-		final RunRecord dayRecord = day.getRunner().record();
-
-		final Set<Long> driven = new HashSet<>();
-		forEachTrain(railwayData, train -> {
-			if (train.isCurrentlyManual()) {
-				driven.add(train.id);
+		final SimDataset dataset = getDataset(railwayData);
+		// The depot and every depot sharing a route with it, and every depot sharing one with those
+		final Set<Long> depotIds = new TreeSet<>();
+		depotIds.add(depotId);
+		final Set<Long> routeIds = new HashSet<>();
+		boolean grew = true;
+		while (grew) {
+			grew = false;
+			for (final SimDataset.DepotData depot : dataset.depots) {
+				final boolean shares = depotIds.contains(depot.id) || Arrays.stream(depot.routeIds).anyMatch(routeIds::contains);
+				if (shares && (depotIds.add(depot.id) | Arrays.stream(depot.routeIds).mapToObj(Long::valueOf).map(routeIds::add).reduce(false, Boolean::logicalOr))) {
+					grew = true;
+				}
 			}
-		});
-		record.trains.removeIf(train -> placedSidings.contains(train.sidingId) && !driven.contains(train.trainId));
-		record.trains.addAll(dayRecord.trains);
-		record.lastDeployedTrips.keySet().removeAll(placedSidings);
-		record.lastDeployedTrips.putAll(dayRecord.lastDeployedTrips);
-		record.dutyRunDays.keySet().removeAll(placedSidings);
-		record.dutyRunDays.putAll(dayRecord.dutyRunDays);
-		record.lastDeployedMillis.keySet().removeAll(placedSidings);
-		record.lastDeployedMillis.putAll(dayRecord.lastDeployedMillis);
-		record.deployIndices.keySet().removeAll(placedSidings);
-		record.deployIndices.putAll(dayRecord.deployIndices);
-
+		}
+		dataset.trains = null;
+		dataset.sidings.removeIf(siding -> !depotIds.contains(siding.depotId));
+		dataset.depots.removeIf(depot -> !depotIds.contains(depot.id));
 		final Map<Long, Long> sidingDepots = new HashMap<>();
-		placed.sidings.forEach(siding -> sidingDepots.put(siding.id, siding.depotId));
-		final Map<Long, Integer> counts = new HashMap<>();
-		dayRecord.trains.forEach(train -> counts.merge(sidingDepots.getOrDefault(train.sidingId, 0L), 1, Integer::sum));
-		System.out.println("Minecraft Transit Railway: put the trains of depots " + depotIds + " where their timetables have them now, " + dayRecord.trains.size() + " trains, worked out in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
-		return counts;
+		dataset.sidings.forEach(siding -> sidingDepots.put(siding.id, siding.depotId));
+		final byte[] bytes = dataset.toBytes();
+		final long now = System.currentTimeMillis();
+
+		final List<String> names = new ArrayList<>();
+		depotIds.forEach(id -> names.add(getDepotName(railwayData, id)));
+		player.displayClientMessage(Text.translatable("gui.mtr.place_trains_working", String.join(", ", names)), false);
+		placement = new Placement(player, depotIds, sidingDepots, PLACEMENT_THREAD.submit(() -> {
+			final long startNanos = System.nanoTime();
+			final java.util.function.Supplier<TickRunner<SimDataset.DataTrack>> start = SimDataset.start(bytes, DutyShapes.getDayStart(now));
+			final EventSimulator<SimDataset.DataTrack> day = new EventSimulator<>(() -> {
+				final TickRunner<SimDataset.DataTrack> runner = start.get();
+				runner.setTrainIds(random::nextLong);
+				return runner;
+			});
+			day.advanceTo(now);
+			System.out.println("Minecraft Transit Railway: worked out where the trains of depots " + depotIds + " are now by their timetables in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
+			return day;
+		}));
+	}
+
+	/**
+	 * Trains of depots worked out from the start of the operating day, to start the simulator from in their place.
+	 */
+	private static final class Placement {
+
+		private final ServerPlayer player;
+		private final Set<Long> depotIds;
+		private final Map<Long, Long> sidingDepots;
+		private final java.util.concurrent.Future<EventSimulator<SimDataset.DataTrack>> work;
+
+		private Placement(ServerPlayer player, Set<Long> depotIds, Map<Long, Long> sidingDepots, java.util.concurrent.Future<EventSimulator<SimDataset.DataTrack>> work) {
+			this.player = player;
+			this.depotIds = depotIds;
+			this.sidingDepots = sidingDepots;
+			this.work = work;
+		}
+
+		/**
+		 * Puts the worked out trains in the record the simulator starts from instead of these depots' trains in the game,
+		 * brought on to now, as the time it took went by. The depots' services sent out and duties run go with them, so
+		 * the services already out aren't sent again. Trains a player drives stay as they are.
+		 *
+		 * @return how many trains each depot has now, or null if it couldn't be worked out
+		 */
+		private Map<Long, Integer> takeInto(RailwayData railwayData, RunRecord record, long now) {
+			final EventSimulator<SimDataset.DataTrack> day;
+			try {
+				day = work.get();
+			} catch (Exception e) {
+				e.printStackTrace();
+				player.displayClientMessage(Text.translatable("gui.mtr.place_trains_failed"), false);
+				return null;
+			}
+			day.advanceTo(now);
+			final RunRecord dayRecord = day.getRunner().record();
+			final Set<Long> placedSidings = sidingDepots.keySet();
+			final Set<Long> driven = new HashSet<>();
+			railwayData.sidings.forEach(siding -> siding.forEachTrain(train -> {
+				if (train.isCurrentlyManual()) {
+					driven.add(train.id);
+				}
+			}));
+			record.trains.removeIf(train -> placedSidings.contains(train.sidingId) && !driven.contains(train.trainId));
+			record.trains.addAll(dayRecord.trains);
+			record.lastDeployedTrips.keySet().removeAll(placedSidings);
+			record.lastDeployedTrips.putAll(dayRecord.lastDeployedTrips);
+			record.dutyRunDays.keySet().removeAll(placedSidings);
+			record.dutyRunDays.putAll(dayRecord.dutyRunDays);
+			record.lastDeployedMillis.keySet().removeAll(placedSidings);
+			record.lastDeployedMillis.putAll(dayRecord.lastDeployedMillis);
+			record.deployIndices.keySet().removeAll(placedSidings);
+			record.deployIndices.putAll(dayRecord.deployIndices);
+
+			final Map<Long, Integer> counts = new HashMap<>();
+			dayRecord.trains.forEach(train -> counts.merge(sidingDepots.getOrDefault(train.sidingId, 0L), 1, Integer::sum));
+			System.out.println("Minecraft Transit Railway: put the trains of depots " + depotIds + " where their timetables have them now, " + dayRecord.trains.size() + " trains");
+			return counts;
+		}
 	}
 
 	/**
