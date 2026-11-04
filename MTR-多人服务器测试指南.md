@@ -37,7 +37,9 @@
   - U85：客户端按运行段走；
   - U76、U77、U79、U80：组件驱动、停服重进、按频率出车、手动驾驶；
   - U82：改数据很快生效；
-  - U86：同步包和 ANTE。
+  - U86：同步包和 ANTE；
+  - U92、U94：编辑和轨道立即保存、崩溃回档后补回节点；
+  - 中优先级里和多人相关的：U89 至 U91（同时编辑）、U96（删线路提示）、U97、U98（卡顿时传感器和时刻）。
 - **服务端日志里要留意、出问题时发给开发者的行**（都以 `Minecraft Transit Railway` 开头）：
   - `the component's simulator runs N of M sidings`：组件接管了哪些存车线。
   - `in the last minute the simulator's trains left ... arrived ...`：驱动时每分钟一行。
@@ -48,6 +50,9 @@
   - `train ... had saved values that can't be right`：读档时修正了列车的异常数值。
   - `depot ... failed sending trains out`：某个车厂出车出错，其余照常。
   - `emergency braking`：有车来不及停车用了紧急制动。
+  - `put back N node(s) the world had lost`、`found the node of a rail at ... taken by ...`：崩溃回档后补回节点，或者节点的位置被占了，见第 3 节。
+  - `route ... deleted by ...; depots that ran it ...`：删了一条还被运用或直通引用的线路。
+  - `could not save the track graph`、`COULD NOT SAVE ... when stopping`：保存失败，见第 3 节。
 - **对照模式**：想确认组件和游戏是否一致时，把设置切到"对照"。此时日志每分钟一行 `alike within 1 m` 的统计，把这些行发来。
 - **报问题时附上**：
   - 时间；
