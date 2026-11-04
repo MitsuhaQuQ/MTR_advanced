@@ -22,6 +22,11 @@ public final class GraphRecords {
 	private final ConcurrentLinkedQueue<PendingPath> pendingPaths = new ConcurrentLinkedQueue<>();
 	private final Map<Long, Network.Section> loadedSections = new TreeMap<>();
 	private long loadedFingerprint;
+	/**
+	 * What the last flush wrote, kept until it is committed, so a failed commit writes it again with the next.
+	 */
+	private boolean flushedGraph;
+	private final List<PendingPath> flushedPaths = new ArrayList<>();
 
 	private static final int MAX_PENDING_PATHS = 65536;
 
@@ -50,6 +55,8 @@ public final class GraphRecords {
 	 * Writes what changed. Paths found before the first graph wait for it.
 	 */
 	public void flush(RailwayDataStore store) throws Exception {
+		flushedGraph = false;
+		flushedPaths.clear();
 		final Network currentGraph = graph;
 		if (currentGraph == null) {
 			return;
@@ -57,14 +64,28 @@ public final class GraphRecords {
 		final long fingerprint = currentGraph.getFingerprint();
 		if (graphChanged) {
 			graphChanged = false;
+			flushedGraph = true;
 			final Map<Long, byte[]> sections = new TreeMap<>();
 			currentGraph.sections.forEach((id, section) -> sections.put(id, section.toBytes()));
 			store.replaceGraphSections(sections, fingerprint);
 		}
 		PendingPath pendingPath;
 		while ((pendingPath = pendingPaths.poll()) != null) {
+			flushedPaths.add(pendingPath);
 			store.writeGraphPath(pendingPath.owner, fingerprint, currentGraph.toSectionPath(pendingPath.moves).toBytes());
 		}
+	}
+
+	/**
+	 * What the last flush wrote wasn't committed, so it is written again with the next.
+	 */
+	public void flushFailed() {
+		if (flushedGraph) {
+			graphChanged = true;
+		}
+		pendingPaths.addAll(flushedPaths);
+		flushedGraph = false;
+		flushedPaths.clear();
 	}
 
 	/**

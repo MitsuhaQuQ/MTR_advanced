@@ -39,6 +39,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 */
 	private long snapshotMillis;
 	/**
+	 * Whether the last save couldn't be written, so the data saved before stays as it was.
+	 */
+	private boolean lastSaveFailed;
+	/**
 	 * What was last written for the day tool, so an unchanged world isn't written again.
 	 */
 	private int lastSimulationHash;
@@ -157,6 +161,19 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		while (true) {
 			if (autoSaveTick()) {
 				break;
+			}
+		}
+		if (lastSaveFailed && canAutoSave) {
+			// Once more, as when the database was busy for a moment; the data saved before stays as it was either way
+			System.out.println("Minecraft Transit Railway tries saving " + world.dimension().location() + " once more before stopping");
+			autoSave();
+			while (true) {
+				if (autoSaveTick()) {
+					break;
+				}
+			}
+			if (lastSaveFailed) {
+				System.out.println("Minecraft Transit Railway COULD NOT SAVE " + world.dimension().location() + " when stopping: what changed since the last save is lost, apart from the rails and edits saved as they were made");
 			}
 		}
 		canAutoSave = false;
@@ -278,16 +295,19 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				}
 			}
 
+			// The graph and paths in a transaction of their own, so a failure leaves nothing half written for a later commit
 			try {
 				railwayData.graphRecords.flush(dataStore);
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-
-			try {
 				dataStore.commit();
 			} catch (Exception e) {
+				System.out.println("Minecraft Transit Railway could not save the track graph of " + world.dimension().location() + "; it is saved again with the next tick");
 				e.printStackTrace();
+				railwayData.graphRecords.flushFailed();
+				try {
+					dataStore.rollback();
+				} catch (Exception e2) {
+					e2.printStackTrace();
+				}
 			}
 
 			return doneWriting;
@@ -321,7 +341,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			checkFilesToDelete.forEach(existingFiles::remove);
 			filesWritten = pendingWrites.size();
 			filesDeleted = checkFilesToDelete.size();
+			lastSaveFailed = false;
 		} catch (Exception e) {
+			lastSaveFailed = true;
 			System.out.println("Minecraft Transit Railway could not save " + world.dimension().location() + "; the saved data stays as it was after the last save, and the next save tries again");
 			e.printStackTrace();
 			try {
