@@ -1,6 +1,7 @@
 package transitsim.plan;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -302,6 +303,42 @@ public class StopTimes {
 	 * @return the fastest arrival and departure at each stop of the route counted from reaching its first stop, or -1 for stops not found
 	 */
 	public long[][] getFastestTimes(PlanRoute route, List<? extends PlanRoute> routes) {
+		final long[][] times = matchFastestTimes(route, routes);
+		long start = -1;
+		for (final long[] stopTime : times) {
+			if (stopTime[0] >= 0) {
+				start = start < 0 ? stopTime[0] : start;
+				stopTime[0] -= start;
+				stopTime[1] -= start;
+			}
+		}
+		return times;
+	}
+
+	/**
+	 * Like {@link #getFastestTimes}, for a path that starts standing at the route's first stop, as the route's own path
+	 * does when no depot runs it on its path. That stop isn't one of the path's stops, as the train doesn't arrive there,
+	 * so it is left at the start of the path and the times count from there. Counted from the first stop the path has
+	 * instead, the run to the second stop would be lost and every stop after the first would come too early.
+	 */
+	public long[][] getFastestTimesFromFirstStop(PlanRoute route) {
+		final long[][] times = matchFastestTimes(route, Collections.singletonList(route));
+		if (times.length == 0 || times[0][0] >= 0) {
+			return getFastestTimes(route, Collections.singletonList(route));
+		}
+		// The stops count from reaching the first one the path has, which is this long after the start of the path
+		final long reachedMillis = firstIndex < 0 ? 0 : (long) (firstArrival * MILLIS_PER_TICK);
+		for (final long[] stopTime : times) {
+			if (stopTime[0] >= 0) {
+				stopTime[0] += reachedMillis;
+				stopTime[1] += reachedMillis;
+			}
+		}
+		times[0] = new long[]{0, 0};
+		return times;
+	}
+
+	private long[][] matchFastestTimes(PlanRoute route, List<? extends PlanRoute> routes) {
 		final int stopCount = route.getStops().size();
 		final long[][] times = new long[stopCount][];
 		for (int i = 0; i < stopCount; i++) {
@@ -314,15 +351,6 @@ public class StopTimes {
 				times[routeStop.arrivalIndex] = new long[]{stop.arrivalMillis, stop.arrivalMillis};
 			}
 		});
-
-		long start = -1;
-		for (final long[] stopTime : times) {
-			if (stopTime[0] >= 0) {
-				start = start < 0 ? stopTime[0] : start;
-				stopTime[0] -= start;
-				stopTime[1] -= start;
-			}
-		}
 		return times;
 	}
 

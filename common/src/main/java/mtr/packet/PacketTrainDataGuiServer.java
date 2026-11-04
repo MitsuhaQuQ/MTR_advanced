@@ -756,7 +756,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final List<PathData> path = new ArrayList<>();
 			PathFinder.findPath(path, rails, graph, platforms, waypoints, 1, Depot.DEFAULT_CRUISING_ALTITUDE, false);
 			PathFinder.applyStopSettings(path, stopSettings);
-			return path.isEmpty() ? new long[0][] : siding.calculateStopTimes(path).getFastestTimes(route, Collections.singletonList(route));
+			// The route's own path starts standing at its first stop, so the times count from leaving it
+			return path.isEmpty() ? new long[0][] : siding.calculateStopTimes(path).getFastestTimesFromFirstStop(route);
 		};
 	}
 

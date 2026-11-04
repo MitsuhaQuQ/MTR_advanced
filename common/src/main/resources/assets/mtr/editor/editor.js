@@ -1289,6 +1289,16 @@
 		const visible = (wrap.clientWidth - LABEL_W) / state.pxPerMin * 60000;
 		const x = xOf(middle);
 		if (x < LABEL_W + 40 || x > wrap.clientWidth - 40) state.viewStart = middle - visible / 2;
+		// Up or down too, as the diagram is short above the table and the service may be off it
+		if (layout && layout.line === currentLine()) {
+			const ys = s.route.rows.map(row => layout.ys[row]).filter(y => y !== undefined);
+			if (ys.length) {
+				const top = Math.min(...ys), bottom = Math.max(...ys), height = wrap.clientHeight - AXIS_H;
+				if (top - state.scrollY < AXIS_H || bottom - state.scrollY > wrap.clientHeight) {
+					state.scrollY = bottom - top <= height - 40 ? (top + bottom) / 2 - AXIS_H - height / 2 : top - AXIS_H - 20;
+				}
+			}
+		}
 	}
 
 	function zoom(direction, atX) {
