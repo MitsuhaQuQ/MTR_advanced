@@ -187,6 +187,7 @@ Fabric: MTRFabric / MTRFabricClient      Forge: MTRForge
 - **网络包**：客户端发上来的包都经过 `PacketGuard.register` 注册，先检查大小（1 MB）和频率（每秒 400 个），再交给 `PacketTrainDataGuiServer.receiveXxxC2S`。
 - **服务端 tick**（`Registry.registerTickEvent`）：每个维度调一次 `RailwayData.simulateTrains()`，见第 4 节；然后 `AudioServer.tick`，每隔一段时间给所有玩家发服务器时间。
 - **玩家加入**：发版本检查、线路用语、时刻表和运动设置、服务器时间、编辑版本号、编辑权限、音频列表，再调 `RailwayData.onPlayerJoin`。
+  - **版本检查**（2026-11-05 起）：`PacketTrainDataGuiServer.versionCheckS2C` 发 `IPacket.getNetworkVersion()`，即 `MTM_Logic <版本>`（`gradle.properties` 的 `mtm_version`，构建时写进 `Keys.MTM_VERSION`）。客户端 `PacketTrainDataGuiClient.openVersionCheckS2C` 和自己的比，不完全一样就断开连接，显示双方的版本。网络包或存档有任何变化都把 `mtm_version` 加一。以前比的是 MTR 版本加协议号（`IPacket.PROTOCOL_VERSION`，已去掉）；ANTE 原来另有一套检查（`PacketVersionCheck`），合并进同一个 jar 后也去掉了。
 - **玩家离开**：清掉这个玩家的同步状态、包计数、编辑状态。
 - **服务器启动**：读 `config/` 下的 `mtr_security.json`、线路用语、时刻表设置、`mtr_motion.json`，启动网页服务和音频服务。
 
@@ -285,7 +286,12 @@ sequenceDiagram
 4. **清理和补车**（组件模拟器接管的侧线跳过这一步）：
    - 车厂里（不在线上）的列车只留一列，多的删掉；两列车位置（`railProgress` 取到 0.1 格）完全相同时删掉后一列。
    - 有列车还在侧线附近（`closeToDepot`）就不补车。
-   - 需要时新建一列 `TrainServer` 放在侧线上：按运用（`duties.diagramMode`）的车厂每个运用位一列；其余车厂按"无限列车"或最大列车数。不限数量或最大数大于 0 时列车 ID 随机，否则用侧线 ID。
+   - 回到车池里另一条存车线的列车（`takeReturnedElsewhere`，见 4.6 的回库）从这条侧线清掉，那条存车线在下面按规则补一列。
+   - 需要时新建一列 `TrainServer` 放在侧线上：
+     - 按运用跑的车厂（`depot.getRunDuties() != null`，用时刻表的车厂都是）：按**车池**计数。车池是同一车厂里车型和编组都相同的存车线（`Siding.getPoolKey`），每个 tick 开始时 `RailwayData` 重新分组（`Depot.clearPools`、`addToPool`）。侧线没有车时补一列；否则车池的车少于车池的槽位数（`Depot.getPoolTrains`、`getPoolSlots`）、这条侧线也没到自己的上限（`getTrainLimit`）时才补。
+     - 其余车厂按"无限列车"或最大列车数。
+     - 不限数量或最大数大于 0 时列车 ID 随机，否则用侧线 ID。
+     - 组件模拟器（`TickRunner.SidingRun.tick`）用同样的规则。
 
 ### 4.3 一列车：`TrainServer.simulateTrain` 和 `Train.simulateTrain`
 
@@ -413,7 +419,14 @@ sequenceDiagram
 ### 4.6 车厂发车：`Depot.deployTrain`
 
 - 组件模拟器接管的车厂直接返回，由模拟器发车。
-- **按运用**（`duties.diagramMode`）：`DepotDispatcher.findDutyDeploy` 按当前时间在可发车的侧线里找该出的运用，找到就从对应侧线发车，并记下这一天这个运用已经跑过。
+- **按运用**：用时刻表的车厂一律按运用跑（`getRunDuties`：设了运用用自己的，否则用寻路时按时刻表自动生成的 `autoDuties`，见 9.4）。车厂只负责放车，车出库后带着自己的运用跑（`duty_day`）。`Depot.deployDutyTrain` → `DepotDispatcher.findDutyDeploy`：
+  - **什么时候放**：运用首班的时刻减去出库用时（存车线到首站的最快时间）再减 15 秒。每 tick 最多放一列，准点的先放，同样准点时最早到点的先放。放了就记下这一天这个槽位已经跑过（`dutyRunDays`，按"槽位所属的存车线:槽位"）。
+  - **出库间隔**：车厂设了 `releaseInterval`（秒，游戏的车厂界面）时，两次放车至少隔这么久；被压住的车不算晚点。
+  - **出库进路**：车要先拿到出库线到首站的进路（`TrainServer.canDeploy` 里的 `isRunGranted(1)`，含正线方向预约，计划发车时刻作优先级）才算准备好，拿不到就在库里等。
+  - **晚了**：错过超过 `MAX_DEPLOY_DELAY`（10 分钟）、运用还没跑完（或留线过夜）时照样放（`DutyDeploy.late`），放出后 `joinDutyLate` 把车放到运用里还赶得上的第一站，只放在站上。
+  - **车池替补**：槽位自己的存车线没有准备好的车时，由同一车池里另一条有车、也有这个运用路径的存车线放车（`pools` 参数）。`DutyDeploy.dutySidingId` 记下槽位属于哪条存车线，车存成 `duty_siding`，过夜接班和"今天已跑"都按它算。
+  - **回库**：车在运用最后一站准备回库时选一次去哪（`TrainService.chooseDutyReturn` → `Depot.chooseReturnSiding` → `DepotDispatcher.chooseReturnSiding`）：在还有空位（自己的车加上正赶去的车少于上限）的车池存车线里，选今天下一个还没出库的运用最早的那条，没有就回自己的。换到同一运用、终点不同的路径（键 `<运用键>#<存车线>`）。进了别的存车线，原存车线清掉它，那条存车线补一列（4.2）。
+- **共用线路的车厂**：按运用跑时车不预约班次。自动运用生成前先让出共用线路的其他车厂已在跑的班次（`Depot.getSharedTaken`：它们自己设的运用，以及 ID 更小的车厂的自动运用），见 9.4。下面"共享班次"那一段只对按频率、按时刻表在线预约的车厂起作用。
 - **按时刻表或频率**：本 tick 请求发车的侧线（列车在 `canDeploy` 里调 `requestDeploy`，只有出库的第一段轨道没被占才请求）按侧线顺序从 `deployIndex` 开始轮流找：
   - 有时刻表的线路：`findDeployService` 找下一个还没发出的班次，找到就记下这个班次（`lastDeployedTrips`、`reserveTrip`）并 `deployTrain(班次时间, 线路)`。
   - 没有时刻表：到了发车间隔（`getMillisUntilDeploy(1) == 0`）就 `deployTrain()`。
@@ -479,8 +492,10 @@ sequenceDiagram
 2. **检查**：模拟器必须正在**接管**这个车厂，否则在聊天栏提示"不是组件运行的车厂"；上一次就位还没算完时提示"正在计算"。
 3. **选车厂**：从这个车厂开始反复扩展，把和已选车厂共用线路的车厂都加进来，直到不再增加。共用线路的车厂跑同一条线和同一张时刻表，分开算会把列车叠在一起。
 4. **准备数据**（主线程）：复制模拟器的数据集，去掉列车，只留选中车厂的侧线，序列化成字节。聊天栏提示正在计算哪些车厂。
-5. **后台计算**（单独的线程 `MTR train placement`）：用这份数据从运营日开始（`DutyShapes.getDayStart`）建一个 `EventSimulator`，按组件的规则一直推进到当前时间。真实世界里算一天大约要 10 秒，所以不能在主线程上算。
-6. **接回**：之后某个 tick 里 `LiveSimulation` 发现计算已完成（`placement.work.isDone()`），就像网络变化时一样重新 `start`。拍下当前列车的记录后，`Placement.takeInto` 先把算好的结果再推进到现在（计算期间时间还在走），然后：
+5. **计算**（主线程，下一个 tick 里 `LiveSimulation` 重新 `start` 时，`Placement.takeInto`）：
+   - **车厂都按运用跑时**（用时刻表的车厂都是）：用这份数据建一个 `TickRunner`，`placeDutyTrains` 给此刻在外的每个运用放一列车，直接放到运用此刻的位置（在站就在站，在区间按最快曲线拉伸到计划运行时间算出位置和速度，`TrainService.placeOnRun`），不用从运营日开始推演，几毫秒就算完。
+   - **否则**（还有按频率跑的车厂）：从运营日开始（`DutyShapes.getDayStart`）建一个 `EventSimulator`，按组件的规则推进到当前时间。
+6. **接回**：拍下当前列车的记录后：
    - 从记录里删掉这些侧线上的列车，**玩家正在手动驾驶的除外**，换上算出来的列车。
    - 这些侧线已发出的班次、运用已跑过的日期、最后发车时间、发车轮转位置也一起换掉，已经发出的班次不会再发一遍。
    - 模拟器从这份记录启动，聊天栏报告每个车厂现在有几列车；计算失败也会提示。
@@ -492,7 +507,6 @@ sequenceDiagram
     participant E as 网页编辑器
     participant PS as PacketTrainDataGuiServer（主线程）
     participant LS as LiveSimulation
-    participant PT as MTR train placement 线程
     participant P as 玩家聊天栏
     E->>PS: PACKET_PLACE_TRAINS(depotId)
     PS->>PS: 检查编辑权限
@@ -504,10 +518,7 @@ sequenceDiagram
     else
         LS->>LS: 扩展出共用线路的所有车厂，复制数据集（不含列车）
         LS-->>P: place_trains_working(车厂名)
-        LS->>PT: submit：从运营日开始推进到现在
-        Note over LS: 主线程照常 tick
-        PT-->>LS: Future 完成
-        LS->>LS: 下一个 tick：start()，takeInto 再推进到现在
+        LS->>LS: 下一个 tick：start()，takeInto：按运用直接放车（placeDutyTrains），有按频率的车厂才从运营日推进到现在
         LS->>LS: 换掉这些侧线的列车和发车记录，手动驾驶的保留
         LS-->>P: place_trains_done(每个车厂的列车数)
     end
@@ -581,6 +592,8 @@ sequenceDiagram
     RT->>RT: 电梯、轨道、按贴图提交
 ```
 
+**坐标约定**（`27d96cf` 起）：渲染矩阵以摄像机为原点，避免离世界原点很远时浮点精度不够、列车抖动。`renderCar` 等拿到的 x、y、z 是**世界坐标**，渲染器要用 `TrainRendererBase.translateToWorld(viewOffset, x, y, z)` 平移（没有视角偏移时减去摄像机位置），不能直接 `matrices.translate(x, y, z)`。ANTE 合并进来时它的列车渲染器（DK3、D51、脚本车型）还是直接平移，车被画到了别处，`91bb3a1` 改正。ANTE 的 3D 铁轨在 `RenderTrainsMixin.renderTail` 里先减去摄像机位置，再按世界坐标画。
+
 ### 5.3 一列车：`TrainClient`
 
 - 带 ANTE 时 `TrainClientMixin` 替换 `TrainClient.simulateTrain`：先清掉上一帧的半透明队列，按当前停站算出本站、下站、终点站和线路，处理报站和声音，再调 `Train.simulateTrain(world, 帧时长, null)`（4.3 的共用部分，客户端不检查方块），最后取消原方法。
@@ -608,7 +621,7 @@ sequenceDiagram
 
 1. 有基础车型（`baseRenderer`）时先照常画它。
 2. 半透明批次直接返回。
-3. 算出车厢的位姿矩阵（位置、乘客视角偏移、yaw、pitch、侧倾），连同左右门状态写进 `TrainWrapper`（脚本里的 `train` 对象），给脚本读。
+3. 算出车厢的位姿矩阵（`translateToWorld` 平移到车厢位置，再加乘客视角偏移、yaw、pitch、侧倾），连同左右门状态写进 `TrainWrapper`（脚本里的 `train` 对象），给脚本读。交给脚本的 `worldPose` 是世界原点的矩阵（`translateToWorld(viewOffset, 0, 0, 0)`），脚本按世界坐标画的东西照旧在原位。
 4. 把脚本**上一次** `render` 提交的模型按这个位姿画出来（`commitCar`）。
 5. 最后一节车厢处理完后 `extraFinished`，并 `tryCallRenderFunctionAsync` 让脚本在脚本线程上算下一帧要画什么（第 10 节）。所以脚本画出来的东西比列车位置晚一帧。
 
@@ -864,6 +877,13 @@ sequenceDiagram
 - 否则替换路径、时间段、停站时间、站台时间、重复点、班次路径、折返；`relocateTrains` 按轨道把线上的列车放到新路径上对应的位置，列车不会跳走。
 - 新路径为空且原来也没有时，用默认路径（侧线自己）。
 
+### 9.4 运用路径和自动运用（用时刻表的车厂）
+
+- **自动运用**：车厂用时刻表、又没设运用时，`MainPath.generate` 里先 `generateAutoDuties`：按各线路的路径算最快时刻（`getFastestTimesFromFirstStop`），`AutoDuties.generate`（包在 `DutyGenerator` 外）把这组线路的班次串成车最少的运用，不超过每条存车线的上限，存进 `Depot.autoDuties`（存档 `auto_duties`），并发给客户端（`PACKET_AUTO_DUTIES`）。日志写出几列车、每天几班没有车、让给别人几班。
+- **让出的班次**（`autoTaken`）：先放进共用线路的其他车厂已在跑的班次（`Depot.getSharedTaken`，在主线程上读），同一车厂车型不同的几组存车线按先后再接着让，同一个班次不会跑两遍。
+- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的线路时刻表、站台、存车线、车型或共用线路被占的班次变了（`Depot.takeAutoDutiesChange` 比较 `getAutoDutiesKey`），就重新寻路，每次最多一个车厂；读档后也会算一次。
+- **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
+
 ## 10. ANTE 脚本
 
 ### 10.1 加载：`ScriptHolderBase.load`
@@ -921,10 +941,10 @@ sequenceDiagram
 | 类 | 在哪一边 | 做什么 |
 |---|---|---|
 | `audio/AudioFiles` | 两边 | 校验和命名：按字节的 SHA-256；只收 Ogg Vorbis（单条音轨，每页校验和正确，开头三个 Vorbis 头齐全）；不解码 |
-| `audio/AudioDatabase` | 两边 | 一个 SQLite 文件：名字索引（命名空间、文件名、上传者、哈希）和按哈希存的音频，同一个录音只存一份 |
-| `audio/AnnouncementSound` | 两边 | 报站方块"音频文件"一栏的三种写法：上传的文件（`steve:下一站.ogg`）、游戏或资源包声音（`mtr:ticket_barrier`）、网址（`https://...`） |
+| `audio/AudioDatabase` | 两边 | 一个 SQLite 文件：名字索引（命名空间、文件名、上传者、哈希、声音 ID `sound_id`）和按哈希存的音频，同一个录音只存一份；`replace` 换录音并删掉没人用的旧录音 |
+| `audio/AnnouncementSound` | 两边 | 报站方块"音频文件"一栏的三种写法：上传的文件（`steve:下一站.ogg`）、游戏或资源包声音（`mtr:ticket_barrier`）、网址（`https://...`）；上传文件的声音 ID 规则和游戏里的声音名 `mtr_audio:<上传者>/<声音 ID>` |
 | `audio/AudioServer` | 服务端 | 存档的 `mtr/announce.db`，所有维度共用；收上传、删除、下载请求，按块发文件；`/mtr deleteaudio` 命令 |
-| `client/AudioCache` | 客户端 | 本机缓存 `mtr_audio_cache`，按哈希存，所有世界和服务器共用；收列表后在后台下载缺的；也替网页编辑器的音频页上传和删除 |
+| `client/AudioCache` | 客户端 | 本机缓存 `mtr_audio_cache`，按哈希存，所有世界和服务器共用；收列表后在后台下载缺的（`audio_download_all`、`audio_prefetch_max_kilobytes` 以内），被更新的文件马上下载；也替网页编辑器的音频页上传、删除、改声音 ID，等不到回复的请求超时标成失败 |
 | `client/editor/EditorAudio` | 客户端 | 高级编辑器的"报站音频"页（`audio.html`）：列表、上传、试听、删除 |
 | `client/AnnouncementPlayer` | 客户端 | 播放：上传的文件作为游戏声音播放（`UploadedSounds`），只有它没生效时才自己解码、用 Java 的音频输出播放；游戏声音走游戏的声音系统；网址只在 `config/mtr.json` 允许的网站下载 |
 | `client/UploadedSounds` | 客户端 | 把服务器的音频登记成游戏声音 `mtr_audio:<上传者>/<声音 ID>`，`/playsound` 也能播；游戏要这个声音的数据时从缓存取出解码。由 mixin `SoundManagerMixin`（每次加载声音后重新登记）、`SoundBufferLibraryMixin`（取声音数据）调用，Fabric 和 Forge 各一份 |
@@ -932,12 +952,14 @@ sequenceDiagram
 ### 11.2 生命周期
 
 1. **开服**：`MTR.init` 注册的服务器启动事件里 `AudioServer.open`，打开 `mtr/announce.db`，读入索引；同时收集模组的命名空间（`minecraft`、`mtr` 和数据包里的），玩家名和它们重名时上传的命名空间加 `_player` 后缀，不会盖掉模组的声音。关服时 `AudioServer.close`。
-2. **玩家进服**：`AudioServer.sendList` 发 `PACKET_AUDIO_LIST`（每个名字和它的哈希、大小、时长、上传者）。客户端 `AudioCache.receiveListS2C` 对比本机缓存，把缺的哈希用 `PACKET_AUDIO_WANTED` 请求。
+2. **玩家进服**：`AudioServer.sendList` 发 `PACKET_AUDIO_LIST`（每个名字和它的哈希、大小、时长、上传者；所有名字之后再跟一段声音 ID，旧版本读不到这一段时按没有处理）。客户端 `AudioCache.receiveListS2C` 对比本机缓存，把缺的哈希用 `PACKET_AUDIO_WANTED` 请求：`audio_download_all` 开着时下 `audio_prefetch_max_kilobytes`（默认 1 MB）以内的；名字换了录音（被更新）而本机有旧录音的，不论大小马上下。然后 `UploadedSounds.refresh` 把每个名字登记成游戏声音。
 3. **下载**：`AudioServer.receiveWantedC2S` 记下请求；`AudioServer.tick`（每个服务端 tick，由 `MTR.init` 的 tick 事件调用）给每个玩家发两块，每块 32 KB（`PACKET_AUDIO_DATA`，约 1.3 MB/s），大列表不会堵住连接。客户端 `receiveDataS2C` 收齐后**哈希不符就丢弃**，相符才存进缓存。
 4. **上传**（网页编辑器的音频页 → `EditorAudio` → `AudioCache.upload`）：
    - 客户端先用 `AudioFiles` 检查一遍，再按顺序分块发 `PACKET_AUDIO_UPLOAD`。
    - 服务端 `receiveUploadC2S`：第一块时 `checkUploadStart` 检查权限等级、单个文件大小、总容量、每小时次数（`config/mtr_security.json`，单人存档的主人不受限）；每个玩家同时只能有一份在传，块必须按顺序。
+   - 声音 ID 跟在每块数据后面，空的由服务端按文件名或哈希生成（`AnnouncementSound.getDefaultSoundId`）。
    - 收齐后 `finishUpload` 再校验一次，按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者已有同名但内容不同的文件时算作更新：换成新录音，声音 ID 不变，旧录音没有别的名字用时删掉；本机有旧录音的客户端收到新列表后马上下载新录音。服务端出错时也一定回结果，客户端等不到回复会超时标成失败。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
+   - 改声音 ID：音频页"改声音 ID" → `AudioCache.setSoundId` → `PACKET_AUDIO_SOUND_ID` → `AudioServer.receiveSoundIdC2S`，上传者和管理员能改，同一个上传者内不能重复，然后 `sendListToAll`。
 5. **删除**（音频页 `PACKET_AUDIO_DELETE`，或 `/mtr deleteaudio <名字>`）：任何人能删自己上传的，达到管理权限等级的能删别人的。删掉名字后，没有别的名字再用这份音频才删音频本身，然后同样 `sendListToAll`。删除和上传都写进服务端日志。
 6. **播放**：列车车头经过报站方块时，`TrainServer.handlePositions` 对车上每位乘客调 `TileEntityTrainAnnouncer.announce`（同一玩家有冷却时间），服务端 `announceS2C` 把文字和"音频文件"一栏发给他。客户端 `AnnouncementPlayer.play`：
    - 先当作上传的文件，在服务器列表里按名字找到它的游戏声音，用 `playLocalSound` 播放，和游戏声音一样。游戏第一次要这个声音的数据时，`UploadedSounds.getBuffer` 从缓存读出、在后台线程解码；缓存里还没有时这次不响，顺便请求下载，下次就有了。
@@ -973,13 +995,14 @@ sequenceDiagram
     OC->>OC: 哈希相符才存进 mtr_audio_cache
     Note over AS,AP: 列车经过报站方块
     AS->>AP: announceS2C(文字, 音频文件)
-    AP->>OC: getHash(命名空间, 文件名)，read(hash)
-    AP->>AP: 后台线程解码并播放
+    AP->>OC: getHash(命名空间, 文件名)，找到游戏声音 mtr_audio:上传者/声音 ID
+    AP->>AP: playLocalSound（和游戏声音一样）
+    Note over AP,OC: 游戏第一次要这个声音的数据：SoundBufferLibraryMixin → UploadedSounds.getBuffer<br/>从缓存读出（按录音的哈希），后台线程解码成 SoundBuffer，游戏缓存到下次重载
 ```
 
 ### 11.3 还没做的
 
-线路、车站和时刻事件引用上传的音频（自动报站用它）；按位置的立体声（用游戏的 `SoundInstance`）；客户端缓存的容量上限和清理。
+线路、车站和时刻事件引用上传的音频（自动报站用它）；客户端缓存的容量上限和清理。按位置播放已经有了：上传的音频是游戏声音，单声道的录音按位置衰减（2026-11-05）。
 
 ## 12. 读代码的几点提示
 
