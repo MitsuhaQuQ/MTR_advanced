@@ -218,19 +218,28 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		RenderSystem.disableBlend();
 		UtilitiesClient.finishDrawingRectangle();
 
+		// The hint along the top, which the mouse position on the right keeps clear of
+		final String topText;
 		if (mapState == MapState.EDITING_AREA) {
-			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_area").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+			topText = Text.translatable("gui.mtr.edit_area").getString();
+		} else if (mapState == MapState.EDITING_ROUTE) {
+			topText = Text.translatable("gui.mtr.edit_route_key_nodes").getString();
+		} else if (canPickRoute.getAsBoolean()) {
+			topText = Text.translatable("gui.mtr.map_pick_route").getString();
+		} else if (canPickStation.getAsBoolean()) {
+			topText = Text.translatable("gui.mtr.map_pick_station").getString();
+		} else if (canPickDepot.getAsBoolean()) {
+			topText = Text.translatable("gui.mtr.map_pick_depot").getString();
+		} else {
+			topText = "";
+		}
+		if (!topText.isEmpty()) {
+			GuiCompat.drawString(matrices, textRenderer, topText, x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
+		}
+		if (mapState == MapState.EDITING_AREA) {
 			if (!areaNotice.isEmpty()) {
 				GuiCompat.drawString(matrices, textRenderer, areaNotice, x + TEXT_PADDING, y + TEXT_PADDING + SQUARE_SIZE, ARGB_KEY_NODE);
 			}
-		} else if (mapState == MapState.EDITING_ROUTE) {
-			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.edit_route_key_nodes").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
-		} else if (canPickRoute.getAsBoolean()) {
-			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_route").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
-		} else if (canPickStation.getAsBoolean()) {
-			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_station").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
-		} else if (canPickDepot.getAsBoolean()) {
-			GuiCompat.drawString(matrices, textRenderer, Text.translatable("gui.mtr.map_pick_depot").getString(), x + TEXT_PADDING, y + TEXT_PADDING, ARGB_WHITE);
 		}
 
 		if (scale >= 8) {
@@ -284,7 +293,10 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		}
 
 		final String mousePosText = String.format("(%s, %s)", RailwayData.round(mouseWorldPos.getA(), 1), RailwayData.round(mouseWorldPos.getB(), 1));
-		GuiCompat.drawString(matrices, textRenderer, mousePosText, x + width - TEXT_PADDING - textRenderer.width(mousePosText), y + TEXT_PADDING, ARGB_WHITE);
+		final int mousePosX = x + width - TEXT_PADDING - textRenderer.width(mousePosText);
+		// Down in the corner below when the hint along the top would run into it
+		final boolean clearOfTopText = topText.isEmpty() || x + TEXT_PADDING * 3 + textRenderer.width(topText) <= mousePosX;
+		GuiCompat.drawString(matrices, textRenderer, mousePosText, mousePosX, clearOfTopText ? y + TEXT_PADDING : y + height - TEXT_PADDING - TEXT_HEIGHT, ARGB_WHITE);
 	}
 
 	@Override
