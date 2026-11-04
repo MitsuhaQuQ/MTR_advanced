@@ -165,25 +165,25 @@ public final class EditGuard implements IPacket {
 	}
 
 	/**
-	 * The web editor's changes, made all or not at all: the batch's number, how many changes, then each as
-	 * {@link #receiveEditC2S} has it; then how many routes, each with the revision the page based its changes on
-	 * ({@link Route#getEditorRevision}). The player is told whether they were made, so the page keeps its draft if not.
+	 * The web editor's changes, in groups each made all or not at all, one group for each route the page changed (or new
+	 * route, or depot's duties): a group with a change made from an older copy isn't made, and doesn't keep the others
+	 * from being made. The batch's number, how many changes, then each with its group and as {@link #receiveEditC2S} has
+	 * it; then how many routes, each with the revision the page based its changes on ({@link Route#getEditorRevision}),
+	 * for pages that don't send the revisions of each part. The player is told which groups weren't made, so the page
+	 * keeps those in its draft.
 	 */
 	private static void receiveBatchC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final int batchId = packet.readInt();
 		final int count = PacketGuard.readCount(packet, 8, MAX_BATCH);
-		final List<ResourceLocation> packetIds = new ArrayList<>();
-		final List<Integer> bases = new ArrayList<>();
-		final List<FriendlyByteBuf> packets = new ArrayList<>();
+		final Map<String, List<Object[]>> groups = new LinkedHashMap<>();
 		for (int i = 0; i < count; i++) {
+			final String group = packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH);
 			final ResourceLocation packetId = new ResourceLocation(packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH));
 			final int base = packet.readInt();
 			final int length = packet.readInt();
 			final FriendlyByteBuf inner = new FriendlyByteBuf(packet.readBytes(length));
 			if (KINDS.containsKey(packetId)) {
-				packetIds.add(packetId);
-				bases.add(base);
-				packets.add(inner);
+				groups.computeIfAbsent(group, key -> new ArrayList<>()).add(new Object[]{packetId, base, inner});
 			}
 		}
 		final Map<Long, String> routeBases = new HashMap<>();
@@ -193,55 +193,72 @@ public final class EditGuard implements IPacket {
 		}
 
 		PacketGuard.execute(minecraftServer, () -> {
+			final Map<String, EditRevisions.Conflict> rejected = new LinkedHashMap<>();
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData == null || RailwayData.hasNoPermission(player)) {
-				sendResult(player, batchId, false, false, "");
+				groups.keySet().forEach(group -> rejected.put(group, null));
+				sendResult(player, batchId, rejected);
 				return;
 			}
-			final List<long[]> objects = new ArrayList<>();
-			final List<String> kinds = new ArrayList<>();
-			EditRevisions.Conflict firstConflict = null;
-			for (int i = 0; i < packets.size(); i++) {
-				final ResourceLocation packetId = packetIds.get(i);
-				final long id = packets.get(i).getLong(packets.get(i).readerIndex());
-				objects.add(new long[]{0, id});
-				kinds.add(KINDS.get(packetId));
-				final EditRevisions.Conflict conflict = railwayData.editRevisions.check(KINDS.get(packetId), id, getPart(packetId, packets.get(i)), bases.get(i), isDelete(packetId));
-				if (conflict != null && firstConflict == null) {
-					firstConflict = conflict;
+			groups.forEach((group, changes) -> {
+				// Every change of the group is checked before any of it is made
+				EditRevisions.Conflict groupConflict = null;
+				final List<long[]> objects = new ArrayList<>();
+				final List<String> kinds = new ArrayList<>();
+				for (final Object[] change : changes) {
+					final ResourceLocation packetId = (ResourceLocation) change[0];
+					final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
+					final long id = inner.getLong(inner.readerIndex());
+					objects.add(new long[]{0, id});
+					kinds.add(KINDS.get(packetId));
+					final EditRevisions.Conflict conflict = railwayData.editRevisions.check(KINDS.get(packetId), id, getPart(packetId, inner), (Integer) change[1], isDelete(packetId));
+					if (conflict != null && groupConflict == null) {
+						groupConflict = conflict;
+					}
 				}
-			}
-			// The page's own revision of each route, which covers its timetable and stops as the game has them now
-			for (final Map.Entry<Long, String> entry : routeBases.entrySet()) {
-				final Route route = railwayData.dataCache.routeIdMap.get(entry.getKey());
-				if (route != null && !route.getEditorRevision().equals(entry.getValue()) && firstConflict == null) {
+				// The page's own revision of the group's route, covering its timetable and stops as the game has them now
+				final Long routeId = group.startsWith(ROUTE + ":") ? parseLong(group.substring(ROUTE.length() + 1)) : null;
+				final Route route = routeId == null ? null : railwayData.dataCache.routeIdMap.get(routeId);
+				if (groupConflict == null && route != null && routeBases.containsKey(routeId) && !route.getEditorRevision().equals(routeBases.get(routeId))) {
 					// Changed since the page loaded it; checked from a revision it can't have, which names who changed it last
-					firstConflict = railwayData.editRevisions.check(ROUTE, route.id, "timetable", Integer.MIN_VALUE, false);
+					groupConflict = railwayData.editRevisions.check(ROUTE, route.id, "timetable", Integer.MIN_VALUE, false);
 				}
-			}
-			if (firstConflict != null) {
-				reject(player, railwayData, objects, kinds, firstConflict);
-				sendResult(player, batchId, false, firstConflict.deleted, firstConflict.playerName);
-				return;
-			}
-			for (int i = 0; i < packets.size(); i++) {
-				final ResourceLocation packetId = packetIds.get(i);
-				final FriendlyByteBuf inner = packets.get(i);
-				apply(minecraftServer, player, railwayData, packetId, KINDS.get(packetId), inner.getLong(inner.readerIndex()), getPart(packetId, inner), inner);
-			}
-			sendResult(player, batchId, true, false, "");
+				if (groupConflict != null) {
+					rejected.put(group, groupConflict);
+					reject(player, railwayData, objects, kinds, groupConflict);
+					return;
+				}
+				for (final Object[] change : changes) {
+					final ResourceLocation packetId = (ResourceLocation) change[0];
+					final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
+					apply(minecraftServer, player, railwayData, packetId, KINDS.get(packetId), inner.getLong(inner.readerIndex()), getPart(packetId, inner), inner);
+				}
+			});
+			sendResult(player, batchId, rejected);
 		});
 	}
 
+	private static Long parseLong(String text) {
+		try {
+			return Long.parseLong(text);
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
 	/**
-	 * Whether a batch was made: its number, whether it was, and if not whether because something was deleted, and who.
+	 * Which groups of a batch weren't made: the batch's number, how many, then each group, whether because something was
+	 * deleted, and who changed or deleted it.
 	 */
-	private static void sendResult(ServerPlayer player, int batchId, boolean ok, boolean deleted, String playerName) {
+	private static void sendResult(ServerPlayer player, int batchId, Map<String, EditRevisions.Conflict> rejected) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeInt(batchId);
-		packet.writeBoolean(ok);
-		packet.writeBoolean(deleted);
-		packet.writeUtf(playerName);
+		packet.writeInt(rejected.size());
+		rejected.forEach((group, conflict) -> {
+			packet.writeUtf(group);
+			packet.writeBoolean(conflict != null && conflict.deleted);
+			packet.writeUtf(conflict == null ? "" : conflict.playerName);
+		});
 		Registry.sendToPlayer(player, PACKET_EDIT_RESULT, packet);
 	}
 

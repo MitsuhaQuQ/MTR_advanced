@@ -15,6 +15,7 @@ import mtr.data.Route;
 import transitsim.plan.RouteTimetable;
 import mtr.data.Station;
 import mtr.data.TranslatedMessage;
+import mtr.packet.EditGuard;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
 import transitsim.network.PlatformGraph;
@@ -22,8 +23,10 @@ import transitsim.network.PlatformGraph;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Applies the advanced editor's changes. Each change is checked here first, then made to this client's copy and sent with
@@ -52,25 +55,32 @@ public final class EditorActions implements IPacket {
 	 */
 	public static Pending applyAndSend(JsonObject request) {
 		final JsonArray operations = request.has("operations") ? request.getAsJsonArray("operations") : new JsonArray();
+		// A route the page's draft is out of date for isn't sent at all, and stays in the draft; the others still are
+		final Set<String> outOfDate = new HashSet<>();
 		if (ClientData.hasPermission() && operations.size() <= MAX_OPERATIONS) {
-			final JsonArray conflicts = new JsonArray();
 			for (int i = 0; i < operations.size(); i++) {
 				final JsonObject operation = operations.get(i).getAsJsonObject();
 				if (isOutOfDate(operation)) {
-					addError(conflicts, i, getString(operation, "route"), "CONFLICT");
+					outOfDate.add(getString(operation, "route"));
 				}
 			}
-			if (conflicts.size() > 0) {
-				addError(conflicts, -1, "", TranslatedMessage.get("gui.mtr.editor_batch_conflict"));
-				final JsonObject result = new JsonObject();
-				result.addProperty("ok", false);
-				result.add("applied", new JsonArray());
-				result.add("created", new JsonArray());
-				result.add("errors", conflicts);
-				return new Pending(result, null, operations);
-			}
 		}
-		return applyChecked(request, operations);
+		return applyChecked(request, operations, outOfDate);
+	}
+
+	/**
+	 * @return the group a change is made all or not at all with: the route it changes, or the depot whose duties it
+	 * changes, or a new route on its own
+	 */
+	private static String getGroup(JsonObject operation, int index) {
+		final String type = getString(operation, "type");
+		if ("duties".equals(type)) {
+			return EditGuard.DEPOT + ":" + getString(operation, "depot");
+		} else if ("newRoute".equals(type)) {
+			return "new:" + index;
+		} else {
+			return EditGuard.ROUTE + ":" + parseId(getString(operation, "route"));
+		}
 	}
 
 	/**
@@ -105,7 +115,8 @@ public final class EditorActions implements IPacket {
 		return parts;
 	}
 
-	private static Pending applyChecked(JsonObject request, JsonArray operations) {
+	private static Pending applyChecked(JsonObject request, JsonArray operations, Set<String> outOfDate) {
+		final List<String> groups = new ArrayList<>();
 		final java.util.concurrent.CompletableFuture<ClientEditing.BatchResult>[] future = new java.util.concurrent.CompletableFuture[]{null};
 		final JsonArray applied = new JsonArray();
 		final JsonArray created = new JsonArray();
@@ -125,6 +136,12 @@ public final class EditorActions implements IPacket {
 					final JsonObject operation = operations.get(i).getAsJsonObject();
 					final String routeId = getString(operation, "route");
 					final boolean force = operation.has("force") && operation.get("force").getAsBoolean();
+					groups.add(getGroup(operation, i));
+					if (outOfDate.contains(routeId) && !"duties".equals(getString(operation, "type")) && !"newRoute".equals(getString(operation, "type"))) {
+						addError(errors, i, routeId, "CONFLICT");
+						continue;
+					}
+					ClientEditing.setBatchGroup(groups.get(i));
 					// The server checks the route's changes part by part, from the revisions the page drafted them from
 					final Route draftedRoute = ClientData.DATA_CACHE.routeIdMap.get(parseId(routeId));
 					if (draftedRoute != null && !force && operation.has("parts") && operation.get("parts").isJsonObject()) {
@@ -156,7 +173,7 @@ public final class EditorActions implements IPacket {
 		result.add("applied", applied);
 		result.add("created", created);
 		result.add("errors", errors);
-		return new Pending(result, future[0], operations);
+		return new Pending(result, future[0], operations, groups);
 	}
 
 	/**
@@ -167,48 +184,67 @@ public final class EditorActions implements IPacket {
 		private final JsonObject result;
 		private final java.util.concurrent.CompletableFuture<ClientEditing.BatchResult> future;
 		private final JsonArray operations;
+		private final List<String> groups;
 
 		private static final int ANSWER_SECONDS = 10;
 
-		private Pending(JsonObject result, java.util.concurrent.CompletableFuture<ClientEditing.BatchResult> future, JsonArray operations) {
+		private Pending(JsonObject result, java.util.concurrent.CompletableFuture<ClientEditing.BatchResult> future, JsonArray operations, List<String> groups) {
 			this.result = result;
 			this.future = future;
 			this.operations = operations;
+			this.groups = groups;
 		}
 
 		/**
-		 * @return the result for the page: if the server didn't make the changes, or didn't answer, none of them counts as
-		 * applied, and the page keeps them all in its draft
+		 * @return the result for the page: a group the server didn't make, as another player changed that route
+		 * meanwhile, doesn't count as applied, and the page keeps it in its draft; the other groups are applied. With no
+		 * answer, nothing counts as applied.
 		 */
 		public JsonObject await() {
 			if (future == null) {
 				return result;
 			}
-			String general;
-			boolean conflict = false;
+			Map<String, String[]> rejected;
+			String general = null;
 			try {
-				final ClientEditing.BatchResult answer = future.get(ANSWER_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
-				if (answer.ok) {
+				rejected = future.get(ANSWER_SECONDS, java.util.concurrent.TimeUnit.SECONDS).rejected;
+				if (rejected.isEmpty()) {
 					return result;
 				}
-				conflict = true;
-				general = TranslatedMessage.get(answer.deleted ? "gui.mtr.editor_server_deleted" : "gui.mtr.editor_server_rejected", answer.playerName.isEmpty() ? "?" : answer.playerName);
+				final String[] first = rejected.values().iterator().next();
+				general = TranslatedMessage.get(Boolean.parseBoolean(first[0]) ? "gui.mtr.editor_server_deleted" : "gui.mtr.editor_server_rejected", first[1].isEmpty() ? "?" : first[1]);
 			} catch (Exception e) {
+				rejected = null;
 				general = TranslatedMessage.get("gui.mtr.editor_no_answer");
 			}
 			final JsonArray errors = new JsonArray();
 			addError(errors, -1, "", general);
-			for (final JsonElement index : result.getAsJsonArray("applied")) {
-				final JsonObject operation = operations.get(index.getAsInt()).getAsJsonObject();
-				addError(errors, index.getAsInt(), getString(operation, "route"), conflict ? "CONFLICT" : general);
+			final JsonArray applied = new JsonArray();
+			final JsonArray created = new JsonArray();
+			for (final JsonElement indexElement : result.getAsJsonArray("applied")) {
+				final int index = indexElement.getAsInt();
+				final JsonObject operation = operations.get(index).getAsJsonObject();
+				if (rejected == null) {
+					addError(errors, index, getString(operation, "route"), general);
+				} else if (rejected.containsKey(groups.get(index))) {
+					addError(errors, index, getString(operation, "route"), "CONFLICT");
+				} else {
+					applied.add(index);
+				}
+			}
+			for (final JsonElement made : result.getAsJsonArray("created")) {
+				final int index = made.getAsJsonObject().get("index").getAsInt();
+				if (rejected != null && !rejected.containsKey(groups.get(index))) {
+					created.add(made);
+				}
 			}
 			for (final JsonElement error : result.getAsJsonArray("errors")) {
 				errors.add(error);
 			}
 			final JsonObject newResult = new JsonObject();
 			newResult.addProperty("ok", false);
-			newResult.add("applied", new JsonArray());
-			newResult.add("created", new JsonArray());
+			newResult.add("applied", applied);
+			newResult.add("created", created);
 			newResult.add("errors", errors);
 			return newResult;
 		}

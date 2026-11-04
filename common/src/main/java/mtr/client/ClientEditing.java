@@ -40,6 +40,10 @@ public final class ClientEditing implements IPacket {
 	 */
 	private static final Map<String, Map<String, Integer>> BATCH_BASES = new HashMap<>();
 	/**
+	 * The group the changes now being collected belong to, which the server makes all or not at all.
+	 */
+	private static String batchGroup = "";
+	/**
 	 * The batches sent and not yet answered, by number.
 	 */
 	private static final Map<Integer, CompletableFuture<BatchResult>> PENDING = new HashMap<>();
@@ -76,7 +80,7 @@ public final class ClientEditing implements IPacket {
 		final byte[] bytes = new byte[packet.readableBytes()];
 		packet.getBytes(packet.readerIndex(), bytes);
 		if (batch != null) {
-			batch.add(new Object[]{packetId, base, bytes});
+			batch.add(new Object[]{packetId, base, bytes, batchGroup});
 			return true;
 		}
 		final FriendlyByteBuf editPacket = new FriendlyByteBuf(Unpooled.buffer());
@@ -124,6 +128,15 @@ public final class ClientEditing implements IPacket {
 	public static synchronized void startBatch() {
 		batch = new ArrayList<>();
 		BATCH_BASES.clear();
+		batchGroup = "";
+	}
+
+	/**
+	 * The changes collected from now on belong to this group, such as one route's, which the server makes all or not at
+	 * all, apart from the other groups.
+	 */
+	public static synchronized void setBatchGroup(String group) {
+		batchGroup = group;
 	}
 
 	/**
@@ -164,7 +177,7 @@ public final class ClientEditing implements IPacket {
 		batch = null;
 		BATCH_BASES.clear();
 		if (changes == null || changes.isEmpty()) {
-			return CompletableFuture.completedFuture(new BatchResult(true, false, ""));
+			return CompletableFuture.completedFuture(new BatchResult(Collections.emptyMap()));
 		}
 		final int batchId = nextBatchId++;
 		final CompletableFuture<BatchResult> future = new CompletableFuture<>();
@@ -174,6 +187,7 @@ public final class ClientEditing implements IPacket {
 		packet.writeInt(changes.size());
 		for (final Object[] change : changes) {
 			final byte[] bytes = (byte[]) change[2];
+			packet.writeUtf((String) change[3]);
 			packet.writeUtf(change[0].toString());
 			packet.writeInt((Integer) change[1]);
 			packet.writeInt(bytes.length);
@@ -193,7 +207,12 @@ public final class ClientEditing implements IPacket {
 	 */
 	public static void receiveResultS2C(FriendlyByteBuf packet) {
 		final int batchId = packet.readInt();
-		final BatchResult result = new BatchResult(packet.readBoolean(), packet.readBoolean(), packet.readUtf());
+		final Map<String, String[]> rejected = new LinkedHashMap<>();
+		for (int i = packet.readInt(); i > 0; i--) {
+			final String group = packet.readUtf();
+			rejected.put(group, new String[]{String.valueOf(packet.readBoolean()), packet.readUtf()});
+		}
+		final BatchResult result = new BatchResult(rejected);
 		final CompletableFuture<BatchResult> future;
 		synchronized (ClientEditing.class) {
 			future = PENDING.remove(batchId);
@@ -205,17 +224,14 @@ public final class ClientEditing implements IPacket {
 
 	public static final class BatchResult {
 
-		public final boolean ok;
 		/**
-		 * If it wasn't made, whether because something in it was deleted, and who changed or deleted it.
+		 * The groups that weren't made, each with whether because something in it was deleted ({@code "true"}) and who
+		 * changed or deleted it.
 		 */
-		public final boolean deleted;
-		public final String playerName;
+		public final Map<String, String[]> rejected;
 
-		private BatchResult(boolean ok, boolean deleted, String playerName) {
-			this.ok = ok;
-			this.deleted = deleted;
-			this.playerName = playerName;
+		private BatchResult(Map<String, String[]> rejected) {
+			this.rejected = rejected;
 		}
 	}
 

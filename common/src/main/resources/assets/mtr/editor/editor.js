@@ -142,6 +142,8 @@
 	function draftOperations() {
 		const operations = [], owners = [];
 		Object.entries(draft.routes).forEach(([id, entry]) => {
+			// A route with a conflict stays in the draft and isn't sent; it doesn't hold up the other routes
+			if (entry.conflict) return;
 			let base = entry.base;
 			const parts = entry.parts;
 			// Nothing else of a route being deleted is worth sending
@@ -241,10 +243,10 @@
 		const tag = $("draft-tag");
 		tag.textContent = applying ? tr("正在应用…") : count ? `${tr("草稿 {0} 项", count)}` : tr("没有草稿");
 		tag.classList.toggle("has-draft", count > 0);
-		// A draft some of whose routes were changed in the game meanwhile is kept, but can't be applied until each is settled
-		const hasConflict = Object.values(draft.routes).some(entry => entry.conflict);
-		$("btn-apply").disabled = applying || !count || !(data && data.canEdit) || hasConflict;
-		$("btn-apply").title = hasConflict ? tr("草稿里有线路在游戏里被改过，先逐条处理再应用") : "";
+		// Each route is applied as a whole; one changed in the game meanwhile is kept in the draft and left out until settled
+		const conflicts = Object.values(draft.routes).filter(entry => entry.conflict).length;
+		$("btn-apply").disabled = applying || !count || count <= conflicts || !(data && data.canEdit);
+		$("btn-apply").title = conflicts ? tr("有 {0} 条线路在游戏里被改过，应用时先不发，处理后再应用", conflicts) : "";
 		const selected = data && state.route && data.routeById.get(state.route);
 		const button = $("btn-delete");
 		button.textContent = selected && isDeleted(selected) ? tr("取消删除") : tr("删除种别");
@@ -3275,7 +3277,7 @@
 			html = tr("没有编辑权限：需要创造模式，或服务端设置的权限等级。草稿照常保存，有权限后再应用。");
 		} else if (!applyResult && failed.some(([, entry]) => entry.conflict)) {
 			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
-			html = `${tr("下面的线路在草稿之后游戏里改过。草稿保留着，但要逐条处理后才能应用：")}<ul>`
+			html = `${tr("下面的线路在草稿之后游戏里改过。它们的草稿保留着，应用时先不发，逐条处理后才能应用；其余线路照常应用：")}<ul>`
 				+ failed.filter(([, entry]) => entry.conflict).map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button></li>`).join("")
 				+ "</ul>";
 		} else if (applyResult && (!applyResult.ok || failed.length || otherFailed)) {
