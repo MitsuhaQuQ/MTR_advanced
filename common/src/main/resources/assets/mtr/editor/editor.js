@@ -247,6 +247,7 @@
 		const tag = $("draft-tag");
 		tag.textContent = applying ? tr("正在应用…") : count ? `${tr("草稿 {0} 项", count)}` : tr("没有草稿");
 		tag.classList.toggle("has-draft", count > 0);
+		tag.title = count ? tr("点这里看草稿改了哪些地方") : "";
 		// Each route is applied as a whole; one changed in the game meanwhile is kept in the draft and left out until settled
 		const conflicts = Object.values(draft.routes).filter(entry => entry.conflict).length;
 		$("btn-apply").disabled = applying || !count || count <= conflicts || !(data && data.canEdit);
@@ -796,6 +797,142 @@
 		renderAll();
 	}
 
+	// ---------- What the draft changes ----------
+	/** A time set at a stop, in seconds from the first stop, or -1 to follow the stop before. */
+	const setTimeText = seconds => seconds < 0 ? tr("跟前一站") : `+${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+	const serviceClock = service => clock(mod(service - data.dayStartMillis, DAY), true);
+	/** A few times, and how many more. */
+	const someServices = services => {
+		const shown = services.slice(0, 12).map(serviceClock).join(tr("、"));
+		return services.length > 12 ? tr("{0} 等 {1} 班", shown, services.length) : shown;
+	};
+
+	/** What a route's draft changes from the game's version, as lines to read. */
+	function routeChanges(r, entry) {
+		const items = [];
+		if (entry.deleted) items.push(tr("删除这个种别"));
+		if ("managed" in entry) items.push(entry.managed ? tr("改由高级编辑器管理") : tr("交回游戏内编辑"));
+		if (entry.platforms) {
+			// Each platform by its station and number, from the stops that use it or could
+			const names = new Map();
+			const platformName = (stop, platform) => `${shortName(stop.name)} ${tr("站台 {0}", platform || "?")}`;
+			data.routes.forEach(route => route.stops.forEach(stop => {
+				(stop.candidates || []).forEach(candidate => names.set(candidate.id, platformName(stop, candidate.name)));
+				if (stop.platform || !names.has(stop.platformId)) names.set(stop.platformId, platformName(stop, stop.platform));
+			}));
+			entry.platforms.forEach((id, i) => {
+				const old = r.stops[i];
+				if (old && old.platformId !== id) items.push(tr("第 {0} 站换股道：{1} → {2}", i + 1, escapeHtml(names.get(old.platformId) || "?"), escapeHtml(names.get(id) || "?")));
+			});
+		}
+		if (!entry.timetable) return items;
+		const before = gameTimetable(r), after = entry.timetable;
+		if (before.enabled !== after.enabled) items.push(after.enabled ? tr("启用时刻表") : tr("停用时刻表"));
+		const passed = (after.pass || []).map((pass, i) => pass !== Boolean((before.pass || [])[i]) ? tr("{0}改为{1}", escapeHtml(stopName(r, i)), pass ? tr("通过") : tr("停车")) : null).filter(Boolean);
+		if (passed.length) items.push(tr("停站：{0}", passed.join(tr("；"))));
+		if (before.entryPlatform !== after.entryPlatform) items.push(tr("出库接入站改了"));
+		const count = Math.max(before.tables.length, after.tables.length);
+		for (let t = 0; t < count; t++) {
+			const old = before.tables[t], now = after.tables[t];
+			if (!now) {
+				items.push(tr("删掉{0}（{1}，{2} 班）", escapeHtml(tableName(old, t)), daysText(old.weekdays), old.services.length));
+				continue;
+			}
+			const name = escapeHtml(tableName(now, t));
+			if (!old) {
+				items.push(tr("新建{0}（{1}，{2} 班）", name, daysText(now.weekdays), now.services.length));
+				continue;
+			}
+			const lines = [];
+			if (old.name !== now.name) lines.push(tr("改名为“{0}”", escapeHtml(now.name || tableName(now, t))));
+			if (old.weekdays !== now.weekdays) lines.push(tr("星期 {0} → {1}", daysText(old.weekdays), daysText(now.weekdays)));
+			if (old.marginPercent !== now.marginPercent) lines.push(tr("余裕 {0}% → {1}%", old.marginPercent, now.marginPercent));
+			const oldServices = new Set(old.services), newServices = new Set(now.services);
+			const added = now.services.filter(service => !oldServices.has(service)), removed = old.services.filter(service => !newServices.has(service));
+			if (added.length) lines.push(tr("增加 {0} 班：{1}", added.length, someServices(added)));
+			if (removed.length) lines.push(tr("删掉 {0} 班：{1}", removed.length, someServices(removed)));
+			now.stops.forEach((stop, i) => {
+				const was = old.stops[i] || { arrival: -1, departure: -1, overtake: false };
+				const parts = [];
+				if (was.arrival !== stop.arrival) parts.push(tr("到 {0} → {1}", setTimeText(was.arrival), setTimeText(stop.arrival)));
+				if (was.departure !== stop.departure) parts.push(tr("发 {0} → {1}", setTimeText(was.departure), setTimeText(stop.departure)));
+				if (Boolean(was.overtake) !== Boolean(stop.overtake)) parts.push(stop.overtake ? tr("待避") : tr("不待避"));
+				if (parts.length && i < r.stops.length) lines.push(tr("{0}：{1}", escapeHtml(stopName(r, i)), parts.join(tr("，"))));
+			});
+			const linkText = link => { const target = data.routeById.get(link.route); return tr("{0} 直通 {1}", serviceClock(link.service), escapeHtml(target ? shortName(target.name) : "?")); };
+			const oldLinks = new Map(old.links.map(link => [link.service, JSON.stringify(link)])), newLinks = new Map(now.links.map(link => [link.service, JSON.stringify(link)]));
+			now.links.filter(link => oldLinks.get(link.service) !== JSON.stringify(link)).forEach(link => lines.push(tr("设直通：{0}", linkText(link))));
+			old.links.filter(link => !newLinks.has(link.service)).forEach(link => lines.push(tr("取消直通：{0}", linkText(link))));
+			const oldReturns = new Set(old.returns), newReturns = new Set(now.returns);
+			const returned = now.returns.filter(service => !oldReturns.has(service)), unreturned = old.returns.filter(service => !newReturns.has(service));
+			if (returned.length) lines.push(tr("回库：{0}", someServices(returned)));
+			if (unreturned.length) lines.push(tr("不再回库：{0}", someServices(unreturned)));
+			const oldExceptions = new Map(old.exceptions.map(exception => [exception.service, JSON.stringify(exception)]));
+			const newExceptions = new Map(now.exceptions.map(exception => [exception.service, JSON.stringify(exception)]));
+			now.exceptions.filter(exception => oldExceptions.get(exception.service) !== JSON.stringify(exception)).forEach(exception => {
+				const stops = exception.stops.map(stop => {
+					const parts = [];
+					if (stop.run >= 0) parts.push(tr("运行 {0} 秒", stop.run));
+					if (stop.dwell >= 0) parts.push(tr("停 {0} 秒", stop.dwell));
+					if (stop.pass >= 0) parts.push(stop.pass ? tr("通过") : tr("停车"));
+					if (stop.overtake) parts.push(tr("待避"));
+					return parts.length && stop.stop < r.stops.length ? `${escapeHtml(stopName(r, stop.stop))} ${parts.join(tr("，"))}` : null;
+				}).filter(Boolean);
+				lines.push(tr("{0} 这一班：{1}", serviceClock(exception.service), stops.length ? stops.join(tr("；")) : tr("例外")));
+			});
+			old.exceptions.filter(exception => !newExceptions.has(exception.service)).forEach(exception => lines.push(tr("{0} 这一班的例外去掉", serviceClock(exception.service))));
+			if (lines.length) items.push(`<b>${name}</b><ul>${lines.map(line => `<li>${line}</li>`).join("")}</ul>`);
+		}
+		return items;
+	}
+
+	/** The draft's changes, route by route, with a way to each and to drop it. */
+	function draftChangesDialog() {
+		if (!data || !draftCount()) return;
+		const sections = [];
+		Object.entries(draft.routes).forEach(([id, entry]) => {
+			const r = data.routeById.get(id);
+			if (!r) {
+				sections.push(`<section class="draft-change"><h3>${tr("已删除的线路")}</h3><div class="draft-actions"><button type="button" data-diff-drop="${id}">${tr("放弃这条的草稿")}</button></div></section>`);
+				return;
+			}
+			const items = routeChanges(r, entry);
+			const conflict = entry.conflict ? `<p class="err">${escapeHtml(entry.error || tr("游戏里的这条线路在草稿之后改过"))}</p><div class="draft-actions"><button type="button" data-diff-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button type="button" data-diff-drop="${id}">${tr("放弃草稿，用游戏里的")}</button></div>` : entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : "";
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(routeTitle(r))}</h3>${conflict}<ul>${items.length ? items.map(item => `<li>${item}</li>`).join("") : `<li>${tr("没有和游戏不同的地方")}</li>`}</ul>
+				<div class="draft-actions"><button type="button" data-diff-open="${id}">${tr("跳到这里")}</button>${entry.conflict ? "" : `<button type="button" data-diff-drop="${id}">${tr("放弃这条的草稿")}</button>`}</div></section>`);
+		});
+		draft.created.forEach(made => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length)}</li></ul></section>`));
+		Object.entries(draft.duties).forEach(([depotId, entry]) => {
+			const depot = depotById(depotId);
+			const slots = Object.values(entry.duties.sidings || {}).reduce((a, list) => a + list.length, 0);
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul><li>${tr("运用改了：{0}，{1} 个运用", entry.duties.mode === "diagram" ? tr("按运用图") : tr("在线预约"), slots)}</li></ul></section>`);
+		});
+		openDialog(tr("草稿的改动"), `<p class="hint">${tr("和游戏里现在的版本比。按“应用”才发给游戏。")}</p><div class="draft-changes">${sections.join("")}</div>`, tr("关闭"), () => {});
+	}
+
+	$("draft-tag").addEventListener("click", draftChangesDialog);
+	dialog.addEventListener("click", e => {
+		const open = e.target.closest("[data-diff-open]"), drop = e.target.closest("[data-diff-drop]"), keep = e.target.closest("[data-diff-keep]");
+		if (!open && !drop && !keep) return;
+		e.preventDefault();
+		if (open) {
+			const r = data.routeById.get(open.dataset.diffOpen);
+			dialog.close();
+			if (r) openView("table", r.lineKey, r.id);
+			return;
+		}
+		if (drop) {
+			delete draft.routes[drop.dataset.diffDrop];
+			saveDraft();
+			buildServices();
+			renderAll();
+		} else {
+			resolveConflict(keep.dataset.diffKeep, true);
+		}
+		if (draftCount()) draftChangesDialog();
+		else dialog.close();
+	});
+
 	// A time in the operating day as the local time of day
 	const clock = (millis, seconds = false) => {
 		const local = mod(millis + data.dayStartMillis + data.offsetMillis, DAY);
@@ -1008,6 +1145,24 @@
 				ctx.fillStyle = hour ? c.ink : c.muted;
 				ctx.fillText(clock(m * 60000), x, AXIS_H - 10);
 			}
+		}
+
+		// Now, as a dashed line, on the day shown when it is today
+		const nowMillis = mod(Date.now() - data.dayStartMillis, DAY);
+		const nowX = xOf(nowMillis);
+		if (state.weekday === mod(nowDay() + FIRST_DAY_WEEKDAY, 7) && nowX >= LABEL_W && nowX <= w) {
+			ctx.strokeStyle = c.warn;
+			ctx.lineWidth = 1.5;
+			ctx.setLineDash([6, 4]);
+			ctx.beginPath();
+			ctx.moveTo(Math.round(nowX) + 0.5, AXIS_H);
+			ctx.lineTo(Math.round(nowX) + 0.5, h);
+			ctx.stroke();
+			ctx.setLineDash([]);
+			ctx.fillStyle = c.warn;
+			ctx.textAlign = "left";
+			ctx.fillText(tr("现在 {0}", clock(nowMillis)), nowX + 4, AXIS_H + 12);
+			ctx.textAlign = "center";
 		}
 
 		// Station lines
@@ -3650,6 +3805,8 @@
 		}
 	});
 	new ResizeObserver(() => draw()).observe(wrap);
+	// The line of the time now moves on
+	setInterval(() => { if (data) draw(); }, 30000);
 	addEventListener("resize", renderAll);
 	portrait.addEventListener("change", () => setTreeOpen(!portrait.matches));
 	matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);

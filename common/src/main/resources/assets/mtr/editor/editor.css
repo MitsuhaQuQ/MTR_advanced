@@ -48,7 +48,12 @@ button:focus-visible, select:focus-visible, .tree .node:focus-visible, td:focus-
 }
 .top h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .02em; }
 .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--grid-strong); border-radius: 999px; padding: 1px 8px; }
-.tag.has-draft { color: var(--sel); border-color: var(--sel); }
+.tag.has-draft { color: var(--sel); border-color: var(--sel); cursor: pointer; }
+.draft-changes { max-height: 60vh; overflow: auto; min-width: min(640px, 80vw); }
+.draft-change { border-top: 1px solid var(--grid-strong); padding: 6px 0; }
+.draft-change h3 { margin: 4px 0; font-size: 14px; }
+.draft-change ul { margin: 2px 0; padding-left: 18px; font-size: 13px; }
+.draft-actions { display: flex; gap: 6px; margin-top: 4px; }
 /* Routes with changes not applied to the game yet */
 .tree .draft-dot { color: var(--sel); font-weight: 700; flex: none; }
 .pill.managed { color: var(--accent); }
