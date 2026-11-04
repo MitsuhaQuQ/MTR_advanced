@@ -13,6 +13,9 @@ import transitsim.motion.RunSegment;
 import transitsim.motion.SpeedCurves;
 import transitsim.motion.SpeedProfile;
 import transitsim.motion.TrainMotion;
+import transitsim.plan.DepotDuties;
+import transitsim.plan.DutyShapes;
+import transitsim.plan.OperatingDay;
 import transitsim.plan.PlanRoute;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.StopTimes;
@@ -397,6 +400,70 @@ public final class TickRunner<T extends RunTrack> {
 	/**
 	 * Every train on the line goes to where the plan has it now (6.3), furthest along first.
 	 */
+	/**
+	 * Puts a train on every duty of the depots running by duties that is out now and has no train, where the duty has it
+	 * now: at the stop it stands at, or on its run between two (decoupling document, step D). Nothing is worked out from
+	 * the start of the day, so it is done at once. The duties started earliest are put first, as they are furthest along,
+	 * and a train whose planned place is taken goes to the free stop before it. The duties are marked as sent out today.
+	 * Called on a runner just built, before its first tick.
+	 *
+	 * @return how many trains were put on the line
+	 */
+	public int placeDutyTrains() {
+		final long dayStart = DutyShapes.getDayStart(millis);
+		final long day = DutyShapes.getDayNumber(dayStart);
+		final int weekday = OperatingDay.getWeekday(millis);
+		final List<Object[]> due = new ArrayList<>();
+		for (final DepotBoard depot : depots) {
+			if (!depot.duties.diagramMode) {
+				continue;
+			}
+			for (final SidingRun sidingRun : depotSidings.get(depot)) {
+				final List<DepotDuties.Slot> slots = depot.duties.getSlots(sidingRun.sidingId);
+				for (int i = 0; i < slots.size(); i++) {
+					final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
+					if (duty == null || duty.segments.isEmpty() || depot.dispatcher.hasDutyRun(sidingRun.sidingId, i, day)) {
+						continue;
+					}
+					final String key = DutyShapes.getSlotKey(slots, i, weekday, routes);
+					final TripPath<T> dutyPath = key == null ? null : sidingRun.siding.tripPaths.get(key);
+					if (dutyPath == null) {
+						continue;
+					}
+					final long leaveMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - dutyPath.stopTimes.getLeadMillis();
+					if (leaveMillis <= millis) {
+						due.add(new Object[]{leaveMillis, sidingRun, i, dutyPath, depot});
+					}
+				}
+			}
+		}
+		due.sort(Comparator.comparingLong(entry -> (Long) entry[0]));
+		int placed = 0;
+		aligning = true;
+		for (final Object[] entry : due) {
+			final SidingRun sidingRun = (SidingRun) entry[1];
+			final int slot = (Integer) entry[2];
+			@SuppressWarnings("unchecked") final TripPath<T> dutyPath = (TripPath<T>) entry[3];
+			final DepotBoard depot = (DepotBoard) entry[4];
+			final HeadlessTrain train = new HeadlessTrain(newTrainId(), sidingRun);
+			train.service.setStopTimes(sidingRun.siding.stopTimes, sidingRun.siding.tripPaths, sidingRun.siding.turnBacks);
+			train.service.deployDuty(slot, dayStart, dutyPath);
+			train.onRoute = true;
+			movingTrain = train;
+			train.service.alignToTimetable(true);
+			if (train.onRoute) {
+				sidingRun.trains.add(train);
+				train.writePositions();
+				depot.dispatcher.markDutyRun(sidingRun.sidingId, slot, day);
+				placed++;
+			}
+		}
+		aligning = false;
+		movingTrain = null;
+		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(this::wake));
+		return placed;
+	}
+
 	private void recover() {
 		// Done at the start of a tick, so only up to the end of the last one; trains due in this one still move in it
 		sidings.values().forEach(sidingRun -> sidingRun.trains.forEach(train -> train.catchUp(millis - TICK)));
@@ -2222,6 +2289,26 @@ public final class TickRunner<T extends RunTrack> {
 			nextPlatformIndex = stopIndex;
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
+		}
+
+		@Override
+		public boolean moveBetweenStops(int fromStop, int toStop, double newRailProgress, float newSpeed) {
+			moveToStop(fromStop);
+			// Turning back on the run swaps which end leads too
+			for (int i = fromStop; i + 1 < path.size() && distances.get(i) < newRailProgress; i++) {
+				if (path.get(i).isOppositeOf(path.get(i + 1))) {
+					reversed = !reversed;
+				}
+			}
+			railProgress = newRailProgress;
+			speed = Math.max(0, newSpeed);
+			onRoute = true;
+			// Its run is worked out afresh from where it is, as for a train given back by the host
+			runSegment = null;
+			manualNotch = speed > 0 ? 0 : -2;
+			nextStoppingIndex = toStop;
+			nextPlatformIndex = toStop;
+			return true;
 		}
 
 		@Override

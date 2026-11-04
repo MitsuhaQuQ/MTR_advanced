@@ -29,6 +29,16 @@ public class TimeSegment {
 		this.accelerationConstant = tempAccelerationConstant <= 0 ? MotionConstants.ACCELERATION_DEFAULT : tempAccelerationConstant;
 	}
 
+	/**
+	 * @return the speed at this rail progress on the segment, in blocks a tick
+	 */
+	public double getSpeed(double railProgress) {
+		if (speedChange == 0) {
+			return startSpeed;
+		}
+		return Math.sqrt(Math.max(0, 2 * speedChange * accelerationConstant * (railProgress - startRailProgress) + startSpeed * startSpeed));
+	}
+
 	public double getTime(double railProgress) {
 		final double distance = railProgress - startRailProgress;
 		if (speedChange == 0) {

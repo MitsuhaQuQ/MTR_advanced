@@ -10,6 +10,7 @@ import transitsim.plan.PlanTrack;
 import transitsim.plan.PlanVersions;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.StopTimes;
+import transitsim.plan.TimeSegment;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
 import transitsim.plan.TurnBackPoint;
@@ -136,6 +137,7 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_DUTY_DAY = "duty_day";
 	public static final int SAVED_KEYS = 13;
+	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
 	 */
@@ -403,6 +405,11 @@ public class TrainService<T extends PlanTrack> {
 			}
 			stopIndex = path.size() - 1;
 		}
+		for (int i = starts[0] + 1; i < path.size(); i++) {
+			if (path.get(i).getDwellTime() > 0 && !path.get(i).isSidingTrack() && placeOnRun(i, starts, currentMillis)) {
+				return;
+			}
+		}
 		for (int i = stopIndex; i >= starts[0]; i--) {
 			if (path.get(i).getDwellTime() > 0 && vehicle.isStopFree(i)) {
 				int segment = 0;
@@ -415,6 +422,90 @@ public class TrainService<T extends PlanTrack> {
 			}
 		}
 		vehicle.returnToDepot();
+	}
+
+	/**
+	 * Puts the train where its duty has it now on the run to this stop, if it has left the stop before and not got here
+	 * yet: as far along as the fastest run would be, stretched to the planned running time, at the speed it has there.
+	 * Unlike choosing a stop to start from again, no slack is given, so a train that has just left is put on its way.
+	 *
+	 * @return false if the train isn't on this run now, or the run's times aren't known
+	 */
+	private boolean placeOnRun(int stopIndex, int[] starts, long currentMillis) {
+		final List<T> path = vehicle.getPath();
+		int fromStop = -1;
+		for (int i = stopIndex - 1; i >= starts[0] && i >= 0; i--) {
+			if (path.get(i).getDwellTime() > 0 && !path.get(i).isSidingTrack()) {
+				fromStop = i;
+				break;
+			}
+		}
+		if (fromStop < 0 || stopIndex >= path.size() || tripPath.timeSegments.isEmpty() || tripPath.distances.size() <= stopIndex) {
+			return false;
+		}
+		int segment = 0;
+		while (segment + 1 < starts.length && fromStop >= starts[segment + 1]) {
+			segment++;
+		}
+		startDutySegment(segment);
+		final RouteTimetable.StopPlan fromPlan = getStopPlan(fromStop);
+		final RouteTimetable.StopPlan toPlan = getStopPlan(stopIndex);
+		if (fromPlan == null || toPlan == null) {
+			return false;
+		}
+		final long departMillis = getPlannedMillis(fromPlan.departureMillis);
+		final long arriveMillis = getPlannedMillis(toPlan.arrivalMillis);
+		if (currentMillis <= departMillis || currentMillis >= arriveMillis || !vehicle.isStopFree(stopIndex)) {
+			return false;
+		}
+		final double from = tripPath.distances.get(fromStop), to = tripPath.distances.get(stopIndex);
+		final double fastFrom = getFastTime(from, true), fastTo = getFastTime(to, false);
+		if (Double.isNaN(fastFrom) || Double.isNaN(fastTo) || fastTo <= fastFrom) {
+			return false;
+		}
+		// How much slower than the fastest run the plan is, and where the fastest run would be by now at that pace
+		final double stretch = (arriveMillis - departMillis) / ((fastTo - fastFrom) * MILLIS_PER_TICK);
+		final double fastNow = fastFrom + (currentMillis - departMillis) / (MILLIS_PER_TICK * stretch);
+		double low = from, high = to;
+		for (int i = 0; i < 40; i++) {
+			final double middle = (low + high) / 2;
+			if (getFastTime(middle, true) < fastNow) {
+				low = middle;
+			} else {
+				high = middle;
+			}
+		}
+		final TimeSegment timeSegment = getTimeSegment(low, true);
+		final float speed = timeSegment == null ? 0 : (float) (timeSegment.getSpeed(low) / stretch);
+		return vehicle.moveBetweenStops(fromStop, stopIndex, low, speed);
+	}
+
+	/**
+	 * @param leaving at a stop, the time it leaves rather than arrives
+	 * @return the time of the fastest run along the duty's path at this rail progress, in ticks, or NaN
+	 */
+	private double getFastTime(double railProgress, boolean leaving) {
+		final TimeSegment timeSegment = getTimeSegment(railProgress, leaving);
+		return timeSegment == null ? Double.NaN : timeSegment.getTime(Math.max(railProgress, timeSegment.startRailProgress));
+	}
+
+	/**
+	 * Where a train turns back its progress jumps on by its length, so there the segment after the jump is taken.
+	 */
+	private TimeSegment getTimeSegment(double railProgress, boolean leaving) {
+		for (final TimeSegment timeSegment : tripPath.timeSegments) {
+			if (leaving ? railProgress >= timeSegment.startRailProgress && railProgress < timeSegment.endRailProgress : railProgress > timeSegment.startRailProgress && railProgress <= timeSegment.endRailProgress) {
+				return timeSegment;
+			}
+		}
+		if (leaving) {
+			for (final TimeSegment timeSegment : tripPath.timeSegments) {
+				if (timeSegment.startRailProgress >= railProgress) {
+					return timeSegment;
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -1185,6 +1276,16 @@ public class TrainService<T extends PlanTrack> {
 		boolean isStopFree(int stopIndex);
 
 		void moveToStop(int stopIndex);
+
+		/**
+		 * Puts the train on its run from one stop to the next, at this rail progress and speed, as when its duty has it
+		 * there at the time the simulation starts again (decoupling document, step D).
+		 *
+		 * @return false if the vehicle can't be put there, and is then put at a stop instead
+		 */
+		default boolean moveBetweenStops(int fromStop, int toStop, double railProgress, float speed) {
+			return false;
+		}
 
 		void returnToDepot();
 	}

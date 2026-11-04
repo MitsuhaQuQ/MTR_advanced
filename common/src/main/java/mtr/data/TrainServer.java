@@ -1096,6 +1096,22 @@ public class TrainServer extends Train {
 		}
 
 		@Override
+		public boolean moveBetweenStops(int fromStop, int toStop, double newRailProgress, float newSpeed) {
+			moveToStop(fromStop);
+			// Turning back on the run swaps which end leads too
+			for (int i = fromStop; i + 1 < path.size() && distances.get(i) < newRailProgress; i++) {
+				if (path.get(i).isOppositeRail(path.get(i + 1))) {
+					reversed = !reversed;
+				}
+			}
+			railProgress = newRailProgress;
+			speed = newSpeed;
+			nextStoppingIndex = toStop;
+			nextPlatformIndex = toStop;
+			return true;
+		}
+
+		@Override
 		public void returnToDepot() {
 			isOnRoute = false;
 			manualNotch = -2;
