@@ -987,7 +987,7 @@
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
 				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
@@ -1243,9 +1243,13 @@
 			ctx.strokeStyle = sim.on && sim.notRun.has(key) ? c.muted : colorOf(s.route.color);
 			ctx.lineWidth = isSelected ? 2.5 : 1.5;
 			// Dashed: no times yet, or a depot running by its duties has no train for it
-			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : diagramRoutes.has(s.route.id) && !assigned.has(key) ? [2, 4] : []);
+			// A service no train of the depots running it by duties runs is drawn dashed and faint
+			const noTrain = s.route.hasTimes && diagramRoutes.has(s.route.id) && !assigned.has(key);
+			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : noTrain ? [2, 4] : []);
+			if (noTrain) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.35);
 			polyline(points);
 			ctx.setLineDash([]);
+			ctx.globalAlpha = dim ? 0.25 : 1;
 			// Where the train carries on onto another route, or goes back to the depot
 			const [ex, ey] = points[points.length - 1];
 			if (s.link || s.returns && !loopNext.has(s.id)) {
@@ -1997,14 +2001,27 @@
 	const sortedObject = object => Object.fromEntries(Object.keys(object).sort().map(k => [k, object[k]]));
 	/** A depot's duties in a fixed order, so a draft changed back to the game's matches it. */
 	const canonDuties = duties => JSON.stringify({ mode: duties.mode, sidings: sortedObject(Object.fromEntries(Object.entries(duties.sidings).filter(([, slots]) => slots.length))) });
-	const dutiesOf = depot => draft.duties[depot.id] ? draft.duties[depot.id].duties : depot.duties || { mode: "online", sidings: {} };
+	/**
+	 * The duties a depot runs by: the draft's, the ones set for it, or for a depot running by a timetable with none set the
+	 * ones the game worked out from its timetables, marked auto.
+	 */
+	const dutiesOf = depot => {
+		if (draft.duties[depot.id]) return draft.duties[depot.id].duties;
+		const set = depot.duties || { mode: "online", sidings: {} };
+		const auto = depot.autoDuties;
+		return set.mode !== "diagram" && auto && auto.mode === "diagram" && Object.keys(auto.sidings).length ? Object.assign({}, auto, { auto: true }) : set;
+	};
 	const dutyOn = (slot, weekday) => slot.find(day => day.days >> weekday & 1) || null;
 	const depotById = id => data.depots.find(depot => depot.id === id);
 	const segmentKey = segment => segment.route + "@" + segment.service;
 
 	/** Changes a depot's duties in the draft, dropping the draft when it ends up the same as the game's. */
 	function editDuties(depot, change) {
-		if (!draft.duties[depot.id]) draft.duties[depot.id] = { duties: JSON.parse(JSON.stringify(depot.duties || { mode: "online", sidings: {} })) };
+		if (!draft.duties[depot.id]) {
+			const start = JSON.parse(JSON.stringify(dutiesOf(depot)));
+			delete start.auto;
+			draft.duties[depot.id] = { duties: start };
+		}
 		const entry = draft.duties[depot.id];
 		const message = change(entry.duties);
 		Object.values(entry.duties.sidings).forEach(slots => slots.forEach(slot => slot.forEach(day => day.segments.sort((a, b) => segmentStart(a) - segmentStart(b)))));

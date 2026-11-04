@@ -85,6 +85,8 @@ public final class EditorData {
 			depotObject.add("sidings", sidingsArray);
 			// Which services each train of the depot runs, see DepotDuties
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));
+			// Worked out from the timetables when the depot runs by a timetable and has no duties set
+			depotObject.add("autoDuties", EditorDuties.toJson(depot.autoDuties));
 			depotsArray.add(depotObject);
 		});
 		data.add("depots", depotsArray);

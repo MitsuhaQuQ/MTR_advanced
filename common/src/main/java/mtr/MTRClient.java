@@ -283,6 +283,19 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_RESOURCE_PACK_CREATOR_SCREEN, packet -> PacketTrainDataGuiClient.openResourcePackCreatorScreen(Minecraft.getInstance()));
 		RegistryClient.registerNetworkReceiver(PACKET_ANNOUNCE, packet -> PacketTrainDataGuiClient.announceS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_GENERATE_PATH, packet -> PacketTrainDataGuiClient.generatePathS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_AUTO_DUTIES, packet -> {
+			final long depotId = packet.readLong();
+			final transitsim.plan.DepotDuties autoDuties = new transitsim.plan.DepotDuties();
+			autoDuties.read(mtr.advanced.PacketBinary.of(packet));
+			Minecraft.getInstance().execute(() -> {
+				final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
+				if (depot != null) {
+					depot.autoDuties.diagramMode = autoDuties.diagramMode;
+					depot.autoDuties.sidings.clear();
+					depot.autoDuties.sidings.putAll(autoDuties.sidings);
+				}
+			});
+		});
 		RegistryClient.registerNetworkReceiver(PACKET_CREATE_RAIL, packet -> PacketTrainDataGuiClient.createRailS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_CREATE_SIGNAL, packet -> PacketTrainDataGuiClient.createSignalS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_REMOVE_NODE, packet -> PacketTrainDataGuiClient.removeNodeS2C(Minecraft.getInstance(), packet));

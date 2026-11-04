@@ -241,6 +241,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		readVehicleServiceTypes(packet);
 		duties.read(PacketBinary.of(packet));
 		speedCurves = packet.readBoolean();
+		autoDuties.read(PacketBinary.of(packet));
 	}
 
 	@Override
@@ -333,6 +334,19 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		writeVehicleServiceTypes(packet);
 		duties.write(PacketBinary.of(packet));
 		packet.writeBoolean(speedCurves);
+		autoDuties.write(PacketBinary.of(packet));
+	}
+
+	/**
+	 * Tells the players the depot's auto duties, worked out again with its paths, for the advanced editor to show.
+	 */
+	public void sendAutoDuties(MinecraftServer minecraftServer) {
+		minecraftServer.getPlayerList().getPlayers().forEach(player -> {
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+			packet.writeLong(id);
+			autoDuties.write(PacketBinary.of(packet));
+			mtr.Registry.sendToPlayer(player, mtr.packet.IPacket.PACKET_AUTO_DUTIES, packet);
+		});
 	}
 
 	@Override
@@ -983,6 +997,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				autoDuties.sidings.keySet().removeAll(sidingIds);
 				autoDuties.sidings.putAll(generated.duties.sidings);
 				autoDuties.diagramMode = true;
+				sendAutoDuties(minecraftServer);
 			});
 			return generated.duties;
 		}

@@ -91,6 +91,7 @@ const I18N = (() => {
 			"以最新版本为基础，覆盖对方的修改": "Base it on the latest version, overwriting the other change",
 			"放弃草稿，用游戏里的": "Drop the draft, use the game's",
 			"草稿的改动": "Changes in the draft",
+			"自动运用": "Auto duties",
 			"按实际距离画": "Draw by distance",
 			"车站等距画": "Stations evenly apart",
 			"按时刻表把列车摆到现在的位置…": "Put trains where the timetable has them now…",
