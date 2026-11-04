@@ -99,6 +99,13 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - The server keeps a revision for each part of each station, platform, siding, route and depot. A change made from an older copy isn't written: the player is told who changed it and is sent the data as it is now. Two players changing different parts don't hold each other up.
 - The web editor sends its changes as one batch, made all or not at all. Edit screens and the editor show who else is editing the same thing.
 
+**Announcement audio**
+
+- Players upload their own announcement recordings to the server from the advanced editor's audio page, which lists them, plays them in the browser and deletes them. `/mtr deleteaudio` deletes them in game. Only Ogg Vorbis is taken, checked on both sides, and each recording is stored and sent once under its SHA-256, however many names point to it.
+- The server keeps them in one database in the save (`mtr/announce.db`). Clients download what they don't have in the background and cache it in `mtr_audio_cache`, shared by every world and server.
+- Announcer blocks play an uploaded file (`steve:next_station.ogg`), a game or resource pack sound as before, or a web address, which only plays from sites allowed in `config/mtr.json`.
+- Who may upload or delete others' files, file size, total size, length and uploads per hour are set in `config/mtr_security.json`.
+
 **Rendering**
 
 - Fixes the precision problem that made trains and displays shake with the camera far from the world origin.
@@ -143,17 +150,17 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 | 7 | Timetabled operation: first versions of route timetables, timed departures, vehicle working, turn-back services, vehicle service type groups, platform and turn-back conflict checks, multiple timetables by weekday, loops joined part way round, through services, aligning after a restart and choosing between reversing sidings after a terminal are done; choosing between platforms to turn back on is not | In progress |
 | 8 | Interlocking: a first version of waiting to be overtaken is done; full interlocking and timed connections between local and express trains are not | In progress |
 | 9 | Timetable boundaries at platforms are done; splitting through services, deadheading, train priority and boundaries on turn-back rails are not | In progress |
-| 9.5 | Custom announcements: audio added by hand for automatic announcements, uploaded to the server, then synced to clients and cached locally | Not started |
+| 9.5 | Custom announcements: audio added by hand for automatic announcements, uploaded to the server, then synced to clients and cached locally | Upload, sync, local cache and announcer blocks playing the audio are done; routes, stations and timetable events using it are not |
 | 10 | Final verification | Not started |
 
 ### Current priorities
 
 The stages above describe the work as a whole. This is the order it is being done in:
 
-1. Test everything together on a multiplayer server (test list items U75 to U98): the component running trains in game, clients following run segments, edit conflicts, saving and backups, and what was written earlier but not yet tested. Only bugs in this base work are fixed during this round; no new features are mixed in. [MTR-多人服务器测试指南.md](MTR-多人服务器测试指南.md) (Chinese) explains how to run it.
+1. Test everything together on a multiplayer server (test list items U75 to U98): the component running trains in game, clients following run segments, edit conflicts, saving and backups, and what was written earlier but not yet tested, such as announcement audio (U47 to U54). Only bugs in this base work are fixed during this round; no new features are mixed in. [MTR-多人服务器测试指南.md](MTR-多人服务器测试指南.md) (Chinese) explains how to run it.
 2. Then, written in the component first and reaching the game the same way: speed limits when passing stations, block sections, turning back at a platform, interlocking, timed connections, splitting through services and deadheading.
 3. Fares by distance, which needs new save data and packets of its own, done in one go once the base is stable.
-4. Things not tied to running, which can be done at any time: lifts and audio referring to routes and stations, faster resource loading, and building the other four Minecraft versions, which haven't been built since these changes.
+4. Things not tied to running, which can be done at any time: lifts, and uploaded audio played by routes, stations and timetable events, faster resource loading, and building the other four Minecraft versions, which haven't been built since these changes.
 5. Running the security tests again at the end, to cover the new packets.
 
 Done so far: the simulation component and its move into the game (steps S0 to S6 and G0 to G4 in [MTR-模拟组件与解耦.md](MTR-模拟组件与解耦.md), Chinese, which also records the architecture); run logic part 1 (service decisions in `TrainService`, tested in game); choosing between reversing sidings after a terminal; the running diagram design; and the advanced editor up to vehicle working and simulated running. Path boundaries, new service types and vehicle working have had a first quick test in game; their behaviour is still being watched.

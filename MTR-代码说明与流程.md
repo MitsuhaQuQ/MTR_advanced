@@ -912,7 +912,74 @@ sequenceDiagram
 
 资源重载时 `ScriptHolderClient.resetRunner()`：停掉 `SCRIPT_THREAD`（`shutdownNow`）并新建一个，`ScriptExecutors.shutdownAll()` 停掉脚本开的所有线程池，然后重新加载脚本。
 
-## 11. 读代码的几点提示
+## 11. 报站音频
+
+玩家上传的录音存在服务器上，同步到各客户端缓存，由报站方块播放。设计和限制的细节见改造记录 6.11 节；还没测过游戏内，测试项是测试清单 U47 至 U54、S07、S08。
+
+### 11.1 涉及的类
+
+| 类 | 在哪一边 | 做什么 |
+|---|---|---|
+| `audio/AudioFiles` | 两边 | 校验和命名：按字节的 SHA-256；只收 Ogg Vorbis（单条音轨，每页校验和正确，开头三个 Vorbis 头齐全）；不解码 |
+| `audio/AudioDatabase` | 两边 | 一个 SQLite 文件：名字索引（命名空间、文件名、上传者、哈希）和按哈希存的音频，同一个录音只存一份 |
+| `audio/AnnouncementSound` | 两边 | 报站方块"音频文件"一栏的三种写法：上传的文件（`steve:下一站.ogg`）、游戏或资源包声音（`mtr:ticket_barrier`）、网址（`https://...`） |
+| `audio/AudioServer` | 服务端 | 存档的 `mtr/announce.db`，所有维度共用；收上传、删除、下载请求，按块发文件；`/mtr deleteaudio` 命令 |
+| `client/AudioCache` | 客户端 | 本机缓存 `mtr_audio_cache`，按哈希存，所有世界和服务器共用；收列表后在后台下载缺的；也替网页编辑器的音频页上传和删除 |
+| `client/editor/EditorAudio` | 客户端 | 高级编辑器的"报站音频"页（`audio.html`）：列表、上传、试听、删除 |
+| `client/AnnouncementPlayer` | 客户端 | 播放：上传的文件在后台线程解码 Ogg Vorbis 或 WAV，用 Java 的音频输出播放；游戏声音走游戏的声音系统；网址只在 `config/mtr.json` 允许的网站下载 |
+
+### 11.2 生命周期
+
+1. **开服**：`MTR.init` 注册的服务器启动事件里 `AudioServer.open`，打开 `mtr/announce.db`，读入索引；同时收集模组的命名空间（`minecraft`、`mtr` 和数据包里的），玩家名和它们重名时上传的命名空间加 `_player` 后缀，不会盖掉模组的声音。关服时 `AudioServer.close`。
+2. **玩家进服**：`AudioServer.sendList` 发 `PACKET_AUDIO_LIST`（每个名字和它的哈希、大小、时长、上传者）。客户端 `AudioCache.receiveListS2C` 对比本机缓存，把缺的哈希用 `PACKET_AUDIO_WANTED` 请求。
+3. **下载**：`AudioServer.receiveWantedC2S` 记下请求；`AudioServer.tick`（每个服务端 tick，由 `MTR.init` 的 tick 事件调用）给每个玩家发两块，每块 32 KB（`PACKET_AUDIO_DATA`，约 1.3 MB/s），大列表不会堵住连接。客户端 `receiveDataS2C` 收齐后**哈希不符就丢弃**，相符才存进缓存。
+4. **上传**（网页编辑器的音频页 → `EditorAudio` → `AudioCache.upload`）：
+   - 客户端先用 `AudioFiles` 检查一遍，再按顺序分块发 `PACKET_AUDIO_UPLOAD`。
+   - 服务端 `receiveUploadC2S`：第一块时 `checkUploadStart` 检查权限等级、单个文件大小、总容量、每小时次数（`config/mtr_security.json`，单人存档的主人不受限）；每个玩家同时只能有一份在传，块必须按顺序。
+   - 收齐后 `finishUpload` 再校验一次，按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者有同名但内容不同的文件时拒绝。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
+5. **删除**（音频页 `PACKET_AUDIO_DELETE`，或 `/mtr deleteaudio <名字>`）：任何人能删自己上传的，达到管理权限等级的能删别人的。删掉名字后，没有别的名字再用这份音频才删音频本身，然后同样 `sendListToAll`。删除和上传都写进服务端日志。
+6. **播放**：列车车头经过报站方块时，`TrainServer.handlePositions` 对车上每位乘客调 `TileEntityTrainAnnouncer.announce`（同一玩家有冷却时间），服务端 `announceS2C` 把文字和"音频文件"一栏发给他。客户端 `AnnouncementPlayer.play`：
+   - 先当作上传的文件，在服务器列表里按名字找哈希。找到就从缓存读出，在后台线程解码播放。缓存里还没有时这次不响，`AudioCache.read` 顺便请求下载，下次就有了。
+   - 不是上传的文件，就当作游戏或资源包的声音，在方块处播放。
+   - 是网址时，只有 `config/mtr.json` 允许的网站才下载播放，否则只记一行日志。
+   - 报站方块的设置界面（`TrainAnnouncerScreen`）里可以试听，走同一个 `play`。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant Ed as 网页编辑器音频页
+    participant AC as AudioCache（上传者的客户端）
+    participant AS as AudioServer（服务端）
+    participant DB as mtr/announce.db
+    participant OC as 其他客户端的 AudioCache
+    participant AP as AnnouncementPlayer
+    Ed->>AC: upload(文件名, 字节)
+    AC->>AC: AudioFiles 校验 Ogg Vorbis
+    loop 每块 32 KB，按顺序
+        AC->>AS: PACKET_AUDIO_UPLOAD
+    end
+    AS->>AS: checkUploadStart：权限、大小、总量、次数
+    AS->>AS: finishUpload：再校验，算 SHA-256
+    AS->>DB: 索引加一行；同一哈希的音频已有就不再存
+    AS-->>AC: PACKET_AUDIO_RESULT
+    AS->>OC: PACKET_AUDIO_LIST（发给所有人）
+    OC->>AS: PACKET_AUDIO_WANTED(缺的哈希)
+    loop 每 tick 每个玩家两块
+        AS->>OC: PACKET_AUDIO_DATA
+    end
+    OC->>OC: 哈希相符才存进 mtr_audio_cache
+    Note over AS,AP: 列车经过报站方块
+    AS->>AP: announceS2C(文字, 音频文件)
+    AP->>OC: getHash(命名空间, 文件名)，read(hash)
+    AP->>AP: 后台线程解码并播放
+```
+
+### 11.3 还没做的
+
+线路、车站和时刻事件引用上传的音频（自动报站用它）；按位置的立体声（用游戏的 `SoundInstance`）；客户端缓存的容量上限和清理。
+
+## 12. 读代码的几点提示
 
 - **一份数据，服务端和客户端各有一份**：`Station`、`Route`、`Depot` 等在两边都有，都能用 msgpack（存档）和 `FriendlyByteBuf`（网络）读写。改字段时，存档读写、网络读写、`update(key, packet)` 三处都要改。
 - **`DataCache` 是索引**：`RailwayData` 里的数据是集合，按 ID 查找和"站台属于哪个站"这类关系都在 `DataCache` 里；数据结构变了要 `sync()`。
