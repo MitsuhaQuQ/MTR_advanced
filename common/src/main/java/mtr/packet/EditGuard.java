@@ -11,6 +11,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import org.msgpack.core.MessagePack;
+import org.msgpack.core.MessageUnpacker;
+import org.msgpack.value.Value;
 
 import java.util.*;
 
@@ -150,17 +153,139 @@ public final class EditGuard implements IPacket {
 				reject(player, railwayData, Collections.singletonList(new long[]{0, id}), Collections.singletonList(kind), conflict);
 				return;
 			}
-			apply(minecraftServer, player, railwayData, packetId, kind, id, part, packet);
+			applyGroup(minecraftServer, player, railwayData, Collections.singletonList(new Object[]{packetId, base, packet}));
 		});
 	}
 
-	private static void apply(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, ResourceLocation packetId, String kind, long id, String part, FriendlyByteBuf packet) {
-		final int revision = railwayData.editRevisions.record(kind, id, part, player.getGameProfile().getName(), isDelete(packetId));
-		sendRevision(Compat.getLevel(player), kind, id, isDelete(packetId) ? EditRevisions.WHOLE : part, revision, player.getUUID());
-		try {
-			HANDLERS.get(packetId).packetCallback(minecraftServer, player, packet);
+	/**
+	 * Makes a group of changes that were checked together, all or none (multiplayer edit conflicts). They are made one
+	 * after the other in this task of the server's thread; if one can't be made, every object of the group is put back as
+	 * it was and sent again to every player, and no revision is counted. Made, their revisions are counted and the objects
+	 * are saved at the end of the tick.
+	 *
+	 * @param changes each as {@code {packet ID, base revision, packet}}
+	 * @return whether they were made
+	 */
+	private static boolean applyGroup(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, List<Object[]> changes) {
+		final Map<String, byte[]> before = new LinkedHashMap<>();
+		for (final Object[] change : changes) {
+			final ResourceLocation packetId = (ResourceLocation) change[0];
+			final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
+			final String kind = KINDS.get(packetId);
+			final long id = inner.getLong(inner.readerIndex());
+			if (!before.containsKey(kind + ":" + id)) {
+				final NameColorDataBase data = getData(railwayData, kind, id);
+				before.put(kind + ":" + id, data == null ? null : RailwayDataFileSaveModule.toBytes(data));
+			}
+		}
+
+		boolean failed = false;
+		for (final Object[] change : changes) {
+			PacketTrainDataBase.FAILED.set(false);
+			try {
+				HANDLERS.get((ResourceLocation) change[0]).packetCallback(minecraftServer, player, (FriendlyByteBuf) change[2]);
+			} catch (Exception e) {
+				e.printStackTrace();
+				PacketTrainDataBase.FAILED.set(true);
+			}
+			if (PacketTrainDataBase.FAILED.get()) {
+				failed = true;
+				break;
+			}
+		}
+		PacketTrainDataBase.FAILED.set(false);
+
+		if (failed) {
+			before.forEach((key, bytes) -> {
+				final int separator = key.lastIndexOf(':');
+				restore(railwayData, key.substring(0, separator), Long.parseLong(key.substring(separator + 1)), bytes);
+			});
+			railwayData.dataCache.sync();
+			// Everyone may have been sent part of the group, so everyone is sent the objects as they are again
+			before.keySet().forEach(key -> {
+				final int separator = key.lastIndexOf(':');
+				Compat.getLevel(player).players().forEach(worldPlayer -> sendData((ServerPlayer) worldPlayer, railwayData, key.substring(0, separator), Long.parseLong(key.substring(separator + 1))));
+			});
+			player.displayClientMessage(Text.translatable("gui.mtr.edit_failed"), false);
+			return false;
+		}
+
+		for (final Object[] change : changes) {
+			final ResourceLocation packetId = (ResourceLocation) change[0];
+			final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
+			final String kind = KINDS.get(packetId);
+			final long id = inner.getLong(inner.readerIndex());
+			final String part = getPart(packetId, inner);
+			final int revision = railwayData.editRevisions.record(kind, id, part, player.getGameProfile().getName(), isDelete(packetId));
+			sendRevision(Compat.getLevel(player), kind, id, isDelete(packetId) ? EditRevisions.WHOLE : part, revision, player.getUUID());
+			railwayData.markEdited(kind, id);
+		}
+		return true;
+	}
+
+	/**
+	 * Puts an object back as it was saved, or takes it away if it wasn't there.
+	 */
+	private static void restore(RailwayData railwayData, String kind, long id, byte[] bytes) {
+		final Set<? extends NameColorDataBase> set = getSet(railwayData, kind);
+		if (set == null) {
+			return;
+		}
+		set.removeIf(data -> data.id == id);
+		if (bytes == null) {
+			return;
+		}
+		try (final MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(bytes)) {
+			final int size = unpacker.unpackMapHeader();
+			final Map<String, Value> map = new HashMap<>(size);
+			for (int i = 0; i < size; i++) {
+				map.put(unpacker.unpackString(), unpacker.unpackValue());
+			}
+			final NameColorDataBase data;
+			switch (kind) {
+				case STATION:
+					data = new Station(map);
+					break;
+				case PLATFORM:
+					data = new Platform(map);
+					break;
+				case SIDING:
+					data = new Siding(map);
+					break;
+				case ROUTE:
+					data = new Route(map);
+					break;
+				case DEPOT:
+					data = new Depot(map);
+					break;
+				default:
+					return;
+			}
+			addTo(set, data);
 		} catch (Exception e) {
 			e.printStackTrace();
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void addTo(Set<? extends NameColorDataBase> set, NameColorDataBase data) {
+		((Set<NameColorDataBase>) set).add(data);
+	}
+
+	private static Set<? extends NameColorDataBase> getSet(RailwayData railwayData, String kind) {
+		switch (kind) {
+			case STATION:
+				return railwayData.stations;
+			case PLATFORM:
+				return railwayData.platforms;
+			case SIDING:
+				return railwayData.sidings;
+			case ROUTE:
+				return railwayData.routes;
+			case DEPOT:
+				return railwayData.depots;
+			default:
+				return null;
 		}
 	}
 
@@ -228,10 +353,8 @@ public final class EditGuard implements IPacket {
 					reject(player, railwayData, objects, kinds, groupConflict);
 					return;
 				}
-				for (final Object[] change : changes) {
-					final ResourceLocation packetId = (ResourceLocation) change[0];
-					final FriendlyByteBuf inner = (FriendlyByteBuf) change[2];
-					apply(minecraftServer, player, railwayData, packetId, KINDS.get(packetId), inner.getLong(inner.readerIndex()), getPart(packetId, inner), inner);
+				if (!applyGroup(minecraftServer, player, railwayData, changes)) {
+					rejected.put(group, null);
 				}
 			});
 			sendResult(player, batchId, rejected);

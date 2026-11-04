@@ -186,5 +186,6 @@
   "gui.mtr.editor_batch_conflict": "有線路在草稿之後被改過，整批都沒有應用，草稿全部保留",
   "gui.mtr.editor_server_rejected": "%s 剛改過其中的線路，伺服器沒有寫入，草稿保留",
   "gui.mtr.editor_server_deleted": "%s 刪除了這些修改涉及的內容，伺服器沒有寫入，草稿保留",
-  "gui.mtr.editor_no_answer": "沒有收到伺服器的回覆，草稿保留，稍後再試"
+  "gui.mtr.editor_no_answer": "沒有收到伺服器的回覆，草稿保留，稍後再試",
+  "gui.mtr.edit_failed": "你的修改沒能完成，涉及的內容都已恢復原樣"
 }

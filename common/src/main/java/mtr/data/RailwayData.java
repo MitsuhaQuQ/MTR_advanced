@@ -95,6 +95,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public Level getWorld() {
 		return world;
 	}
+
+	/**
+	 * Has an object a player edited saved at the end of the tick (multiplayer edit conflicts).
+	 *
+	 * @param kind as {@link mtr.packet.EditGuard} names it
+	 */
+	public void markEdited(String kind, long id) {
+		railwayDataFileSaveModule.markObjectChanged(kind, id);
+	}
 	private final Map<UUID, Long> lastMapRailsRequestMillis = new HashMap<>();
 	private final Map<UUID, Long> lastMapRouteRequestMillis = new HashMap<>();
 	private final Map<UUID, Map<Integer, Map<Long, long[]>>> pendingMapEntries = new ConcurrentHashMap<>();
@@ -490,7 +499,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		prevSidingCount = sidings.size();
 
 		// Track laid or taken away in this tick is saved now, the rest with the next save
-		railwayDataFileSaveModule.saveRailsNow();
+		railwayDataFileSaveModule.saveNow();
 		railwayDataFileSaveModule.autoSaveTick();
 	}
 

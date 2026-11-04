@@ -35,6 +35,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private int filesDeleted;
 	private long autoSaveStartMillis;
 	/**
+	 * How long taking everything but the rails at once took in the last save.
+	 */
+	private long snapshotMillis;
+	/**
 	 * What was last written for the day tool, so an unchanged world isn't written again.
 	 */
 	private int lastSimulationHash;
@@ -69,6 +73,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 * Rails changed since the end of the last tick, saved at once at the end of this one.
 	 */
 	private final Set<BlockPos> railsToSaveNow = new HashSet<>();
+	/**
+	 * Objects players edited since the end of the last tick, as {@code type:id}, saved at once at the end of this one.
+	 */
+	private final Set<String> objectsToSaveNow = new LinkedHashSet<>();
 
 	private final RailwayDataStore dataStore;
 
@@ -116,6 +124,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		readMessagePackFromFile(TYPE_BOUNDARY_SEGMENTS, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.segments.add(entry.segment), true);
 
 		railwayData.graphRecords.load(dataStore);
+		try {
+			dataStore.forEachEditRevision(railwayData.editRevisions::restore);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 
 		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location());
 		if (skippedEntries > 0) {
@@ -171,20 +184,24 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			autoSaveStartMillis = System.currentTimeMillis();
 			filesWritten = 0;
 			filesDeleted = 0;
-			dirtyStationIds.addAll(railwayData.dataCache.stationIdMap.keySet());
-			dirtyPlatformIds.addAll(railwayData.dataCache.platformIdMap.keySet());
-			dirtySidingIds.addAll(railwayData.dataCache.sidingIdMap.keySet());
-			dirtyRouteIds.addAll(railwayData.dataCache.routeIdMap.keySet());
-			dirtyDepotIds.addAll(railwayData.dataCache.depotIdMap.keySet());
-			dirtyLiftIds.addAll(railwayData.dataCache.liftsServerIdMap.keySet());
-			dirtyRailPositions.addAll(rails.keySet());
-			dirtySignalBlocks.addAll(signalBlocks.signalBlocks);
-			dirtyKeyNodes.addAll(railwayData.keyNodes);
-			dirtyBoundaryNodes.addAll(railwayData.pathBoundaries.nodes);
-			dirtyBoundarySegments.addAll(railwayData.pathBoundaries.segments);
 			if (skippedEntries == 0) {
 				checkFilesToDelete.addAll(existingFiles.keySet());
 			}
+			// Everything but the rails is taken as it is at this moment, so the save holds them as they were together; the
+			// rails, saved at once as they change anyway, are worked out a little each tick
+			final long snapshotStartMillis = System.currentTimeMillis();
+			railwayData.dataCache.stationIdMap.forEach((id, data) -> stage(data, id, TYPE_STATIONS));
+			railwayData.dataCache.platformIdMap.forEach((id, data) -> stage(data, id, TYPE_PLATFORMS));
+			railwayData.dataCache.sidingIdMap.forEach((id, data) -> stage(data, id, TYPE_SIDINGS));
+			railwayData.dataCache.routeIdMap.forEach((id, data) -> stage(data, id, TYPE_ROUTES));
+			railwayData.dataCache.depotIdMap.forEach((id, data) -> stage(data, id, TYPE_DEPOTS));
+			railwayData.dataCache.liftsServerIdMap.forEach((id, data) -> stage(data, id, TYPE_LIFTS));
+			signalBlocks.signalBlocks.forEach(signalBlock -> stage(signalBlock, signalBlock.id, TYPE_SIGNAL_BLOCKS));
+			railwayData.keyNodes.forEach(pos -> stage(new KeyNode(pos), pos.asLong(), TYPE_KEY_NODES));
+			railwayData.pathBoundaries.nodes.forEach(node -> stage(new PathBoundaries.Entry(node), node, TYPE_BOUNDARY_NODES));
+			railwayData.pathBoundaries.segments.forEach(segment -> stage(new PathBoundaries.Entry(segment), new PathBoundaries.Entry(segment).getId(), TYPE_BOUNDARY_SEGMENTS));
+			snapshotMillis = System.currentTimeMillis() - snapshotStartMillis;
+			dirtyRailPositions.addAll(rails.keySet());
 			dataStore.backup();
 		}
 	}
@@ -240,7 +257,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				}));
 
 				if (filesWritten > 0 || filesDeleted > 0) {
-					System.out.println("Minecraft Transit Railway save complete for " + world.dimension().location() + " in " + (System.currentTimeMillis() - autoSaveStartMillis) / 1000 + " second(s)");
+					System.out.println("Minecraft Transit Railway save complete for " + world.dimension().location() + " in " + (System.currentTimeMillis() - autoSaveStartMillis) / 1000 + " second(s), taking everything but the rails in " + snapshotMillis + " ms");
 					if (filesWritten > 0) {
 						System.out.println("- Changed: " + filesWritten);
 					}
@@ -318,8 +335,67 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	/**
+	 * Works out an entry of the save going on now, which is then written with the rest of the save.
+	 */
+	private void stage(SerializedDataBase data, long id, String type) {
+		if (data == null) {
+			return;
+		}
+		final String key = writeMessagePackToFile(data, id, type);
+		if (key != null) {
+			checkFilesToDelete.remove(key);
+		}
+	}
+
+	/**
+	 * Has an object a player edited saved at the end of the tick, rather than with the next save (see {@link #saveNow}).
+	 *
+	 * @param kind as {@link mtr.packet.EditGuard} names it
+	 */
+	public void markObjectChanged(String kind, long id) {
+		final String type = getType(kind);
+		if (canAutoSave && type != null) {
+			objectsToSaveNow.add(getKey(type, id));
+		}
+	}
+
+	private static String getType(String kind) {
+		switch (kind) {
+			case "station":
+				return TYPE_STATIONS;
+			case "platform":
+				return TYPE_PLATFORMS;
+			case "siding":
+				return TYPE_SIDINGS;
+			case "route":
+				return TYPE_ROUTES;
+			case "depot":
+				return TYPE_DEPOTS;
+			default:
+				return null;
+		}
+	}
+
+	private SerializedDataBase getObject(String type, long id) {
+		switch (type) {
+			case TYPE_STATIONS:
+				return railwayData.dataCache.stationIdMap.get(id);
+			case TYPE_PLATFORMS:
+				return railwayData.dataCache.platformIdMap.get(id);
+			case TYPE_SIDINGS:
+				return railwayData.dataCache.sidingIdMap.get(id);
+			case TYPE_ROUTES:
+				return railwayData.dataCache.routeIdMap.get(id);
+			case TYPE_DEPOTS:
+				return railwayData.dataCache.depotIdMap.get(id);
+			default:
+				return null;
+		}
+	}
+
+	/**
 	 * Has rails changed by a player saved at the end of the tick, rather than with the next save (see
-	 * {@link #saveRailsNow}).
+	 * {@link #saveNow}).
 	 */
 	public void markRailsChanged(Collection<BlockPos> positions) {
 		if (canAutoSave) {
@@ -328,18 +404,31 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	/**
-	 * Saves the rails changed in this tick at once, in a transaction of their own, with the platforms and sidings that
-	 * came or went with them, so laying track isn't lost if the server stops before the next save. Called at the end of
-	 * the tick.
+	 * Saves what changed in this tick at once, in a transaction of its own: the rails laid or taken away, with the
+	 * platforms and sidings that came or went with them, and the objects players edited, with the revisions of their
+	 * edits, so neither is lost if the server stops before the next save. Called at the end of the tick.
 	 */
-	public void saveRailsNow() {
-		if (railsToSaveNow.isEmpty() || !canAutoSave) {
+	public void saveNow() {
+		final List<Object[]> revisions = railwayData.editRevisions.takeUnsaved();
+		if (railsToSaveNow.isEmpty() && objectsToSaveNow.isEmpty() && revisions.isEmpty() || !canAutoSave) {
 			railsToSaveNow.clear();
+			objectsToSaveNow.clear();
 			return;
 		}
 		final Map<String, PendingWrite> writes = new LinkedHashMap<>();
 		final Set<String> deletes = new LinkedHashSet<>();
 		try {
+			for (final String key : objectsToSaveNow) {
+				final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
+				final String type = key.substring(0, separatorIndex);
+				final long id = Long.parseLong(key.substring(separatorIndex + 1));
+				final SerializedDataBase data = getObject(type, id);
+				if (data != null) {
+					addWrite(writes, data, id, type);
+				} else if (existingFiles.containsKey(key)) {
+					deletes.add(key);
+				}
+			}
 			for (final BlockPos pos : railsToSaveNow) {
 				final Map<BlockPos, Rail> connections = rails.get(pos);
 				final String key = getKey(TYPE_RAILS, pos.asLong());
@@ -379,6 +468,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
 				dataStore.delete(key.substring(0, separatorIndex), Long.parseLong(key.substring(separatorIndex + 1)));
 			}
+			for (final Object[] revision : revisions) {
+				dataStore.writeEditRevision((String) revision[0], (Integer) revision[1], (String) revision[2], (Boolean) revision[3]);
+			}
 			dataStore.commit();
 			writes.forEach((key, write) -> existingFiles.put(key, write.hash));
 			deletes.forEach(existingFiles::remove);
@@ -389,8 +481,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			});
 			deletes.forEach(pendingWrites::remove);
 		} catch (Exception e) {
-			System.out.println("Minecraft Transit Railway could not save the rails just changed in " + world.dimension().location() + "; they are saved with the next save");
+			System.out.println("Minecraft Transit Railway could not save what was just changed in " + world.dimension().location() + "; it is saved with the next save");
 			e.printStackTrace();
+			railwayData.editRevisions.keepUnsaved(revisions);
 			try {
 				dataStore.rollback();
 			} catch (Exception e2) {
@@ -398,6 +491,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			}
 		}
 		railsToSaveNow.clear();
+		objectsToSaveNow.clear();
 	}
 
 	private void addWrite(Map<String, PendingWrite> writes, SerializedDataBase data, long id, String type) {
@@ -449,7 +543,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		return key;
 	}
 
-	private static byte[] toBytes(SerializedDataBase data) {
+	/**
+	 * @return the data as it is saved, or null if it can't be written
+	 */
+	public static byte[] toBytes(SerializedDataBase data) {
 		try {
 			final MessageBufferPacker messageBufferPacker = MessagePack.newDefaultBufferPacker();
 			messageBufferPacker.packMapHeader(data.messagePackLength());

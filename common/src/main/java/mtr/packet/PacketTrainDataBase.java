@@ -15,6 +15,10 @@ import java.util.function.Consumer;
 public abstract class PacketTrainDataBase implements IPacket {
 
 	private static final int MAX_DATA_COUNT = 100000;
+	/**
+	 * Set when a change couldn't be made, so a group of changes made together can be undone (multiplayer edit conflicts).
+	 */
+	public static final ThreadLocal<Boolean> FAILED = ThreadLocal.withInitial(() -> false);
 
 	protected static <T extends NameColorDataBase, U extends ReentrantBlockableEventLoop<? extends Runnable>> void updateData(Set<T> dataSet, Map<Long, T> cacheMap, U minecraft, FriendlyByteBuf packet, PacketCallback packetCallback, BiFunction<Long, TransportMode, T> createDataWithId, BiConsumer<T, List<String>> dataCallback) {
 		final FriendlyByteBuf packetFullCopy = new FriendlyByteBuf(packet.copy());
@@ -44,6 +48,7 @@ public abstract class PacketTrainDataBase implements IPacket {
 				packetCallback.packetCallback(packetCopy, packetFullCopy);
 			} catch (Exception e) {
 				e.printStackTrace();
+				FAILED.set(true);
 			}
 		});
 	}
@@ -63,6 +68,7 @@ public abstract class PacketTrainDataBase implements IPacket {
 				packetCallback.packetCallback(null, packetFullCopy);
 			} catch (Exception e) {
 				e.printStackTrace();
+				FAILED.set(true);
 			}
 		});
 	}

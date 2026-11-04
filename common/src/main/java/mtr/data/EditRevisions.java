@@ -1,7 +1,11 @@
 package mtr.data;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Which version of each part of the railway data players edit the server has, so a change made from an older copy, as
@@ -16,6 +20,10 @@ public final class EditRevisions {
 	private final Map<String, Integer> revisions = new HashMap<>();
 	private final Map<String, String> editors = new HashMap<>();
 	private final Map<String, String> deleted = new HashMap<>();
+	/**
+	 * Parts whose revision changed since they were last saved.
+	 */
+	private final Set<String> unsaved = new LinkedHashSet<>();
 
 	/**
 	 * The part a deletion counts as, which is the whole object.
@@ -61,7 +69,37 @@ public final class EditRevisions {
 		final int revision = revisions.getOrDefault(key, 0) + 1;
 		revisions.put(key, revision);
 		editors.put(key, playerName);
+		unsaved.add(key);
 		return revision;
+	}
+
+	/**
+	 * Puts back a part's revision as it was saved.
+	 */
+	public void restore(String key, int revision, String editor, boolean isDeleted) {
+		revisions.put(key, revision);
+		editors.put(key, editor);
+		if (isDeleted) {
+			deleted.put(key, editor);
+		}
+	}
+
+	/**
+	 * @return the revisions changed since this was last called, each as its key, revision, who made it and whether it
+	 * marks an object deleted, to be saved
+	 */
+	public List<Object[]> takeUnsaved() {
+		final List<Object[]> entries = new ArrayList<>();
+		unsaved.forEach(key -> entries.add(new Object[]{key, revisions.get(key), editors.getOrDefault(key, ""), deleted.containsKey(key)}));
+		unsaved.clear();
+		return entries;
+	}
+
+	/**
+	 * Saving failed, so these are saved again with the next.
+	 */
+	public void keepUnsaved(List<Object[]> entries) {
+		entries.forEach(entry -> unsaved.add((String) entry[0]));
 	}
 
 	/**

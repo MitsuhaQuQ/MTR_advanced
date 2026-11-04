@@ -186,5 +186,6 @@
   "gui.mtr.editor_batch_conflict": "有线路在草稿之后被改过，整批都没有应用，草稿全部保留",
   "gui.mtr.editor_server_rejected": "%s 刚改过其中的线路，服务端没有写入，草稿保留",
   "gui.mtr.editor_server_deleted": "%s 删除了这些修改涉及的内容，服务端没有写入，草稿保留",
-  "gui.mtr.editor_no_answer": "没有收到服务端的回复，草稿保留，稍后再试"
+  "gui.mtr.editor_no_answer": "没有收到服务端的回复，草稿保留，稍后再试",
+  "gui.mtr.edit_failed": "你的修改没能完成，涉及的内容都已恢复原样"
 }

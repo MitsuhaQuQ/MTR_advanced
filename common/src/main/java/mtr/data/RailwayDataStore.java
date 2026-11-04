@@ -14,6 +14,21 @@ public interface RailwayDataStore {
 	void commit() throws Exception;
 
 	/**
+	 * Keeps the revision of a part players edit (multiplayer edit conflicts), so it holds after the server is started
+	 * again; {@code deleted} for an object deleted.
+	 */
+	default void writeEditRevision(String key, int revision, String editor, boolean deleted) throws Exception {
+	}
+
+	default void forEachEditRevision(EditRevisionConsumer consumer) throws Exception {
+	}
+
+	interface EditRevisionConsumer {
+
+		void accept(String key, int revision, String editor, boolean deleted);
+	}
+
+	/**
 	 * Drops what was written since the last commit, where the store can.
 	 */
 	default void rollback() throws Exception {

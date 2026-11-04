@@ -59,7 +59,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	private static final int SCHEMA_VERSION = 1;
 	private static final String KEY_GRAPH_FINGERPRINT = "graph_fingerprint";
 	private static final long BACKUP_INTERVAL_MILLIS = 60 * 60 * 1000;
-	private static final int BACKUPS_TO_KEEP = 12;
+	private static final String RESTORE_REQUEST = "restore.txt";
 	private static final int BACKUP_WAIT_SECONDS = 60;
 
 	public RailwayDataSqliteStore(Path savePath, String[] types) throws Exception {
@@ -68,6 +68,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 		backupsPath = savePath.resolve(BACKUPS_FOLDER);
 		Files.createDirectories(backupsPath);
 
+		restoreRequested();
 		if (Files.exists(databasePath) && !isHealthy(databasePath)) {
 			System.out.println("Minecraft Transit Railway database is corrupted: " + databasePath);
 			quarantineDatabase();
@@ -85,13 +86,16 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 		connection = connect(databasePath);
 		try (final Statement statement = connection.createStatement()) {
 			statement.execute("PRAGMA journal_mode=WAL");
-			statement.execute("PRAGMA synchronous=NORMAL");
+			// Each commit reaches the disk before it counts, so a power cut loses nothing committed
+			statement.execute("PRAGMA synchronous=FULL");
 			statement.execute("CREATE TABLE IF NOT EXISTS entries (type TEXT NOT NULL, id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (type, id)) WITHOUT ROWID");
 			statement.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 			// Our own tables for the physical network, apart from the entries of the data itself
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_sections (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_paths (owner TEXT PRIMARY KEY, graph_fingerprint INTEGER NOT NULL, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS sim_data (key TEXT PRIMARY KEY, data BLOB NOT NULL)");
+			// The revision of each part players edit, kept so edits are checked the same after the server is started again
+			statement.execute("CREATE TABLE IF NOT EXISTS edit_revisions (key TEXT PRIMARY KEY, revision INTEGER NOT NULL, editor TEXT NOT NULL, deleted INTEGER NOT NULL)");
 		}
 		connection.setAutoCommit(false);
 
@@ -226,6 +230,27 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	}
 
 	@Override
+	public void writeEditRevision(String key, int revision, String editor, boolean deleted) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO edit_revisions (key, revision, editor, deleted) VALUES (?, ?, ?, ?)")) {
+			statement.setString(1, key);
+			statement.setInt(2, revision);
+			statement.setString(3, editor);
+			statement.setInt(4, deleted ? 1 : 0);
+			statement.executeUpdate();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void forEachEditRevision(EditRevisionConsumer consumer) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT key, revision, editor, deleted FROM edit_revisions"); final ResultSet resultSet = statement.executeQuery()) {
+			while (resultSet.next()) {
+				consumer.accept(resultSet.getString(1), resultSet.getInt(2), resultSet.getString(3), resultSet.getInt(4) != 0);
+			}
+		}
+	}
+
+	@Override
 	public void rollback() throws Exception {
 		connection.rollback();
 		hasPendingChanges = false;
@@ -330,32 +355,47 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	}
 
 	private void createBackup() throws Exception {
-		final String name = "mtr-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date()) + BACKUP_EXTENSION;
-		final Path temporaryPath = backupsPath.resolve(name + TEMPORARY_EXTENSION);
-		Files.deleteIfExists(temporaryPath);
-
-		try (final Connection backupConnection = connect(databasePath); final Statement statement = backupConnection.createStatement()) {
-			statement.execute("VACUUM INTO '" + temporaryPath.toString().replace("'", "''") + "'");
-		}
-
-		if (isHealthy(temporaryPath)) {
-			Files.move(temporaryPath, backupsPath.resolve(name), StandardCopyOption.REPLACE_EXISTING);
-		} else {
-			Files.deleteIfExists(temporaryPath);
-		}
-
-		final List<Path> backups = getBackups();
-		for (int i = BACKUPS_TO_KEEP; i < backups.size(); i++) {
-			Files.deleteIfExists(backups.get(i));
+		final Path backup = RailwayDataBackups.createBackup(databasePath, backupsPath, RailwayDataBackups.now());
+		if (backup == null) {
+			System.out.println("Minecraft Transit Railway backup of " + databasePath + " failed its check and was dropped");
 		}
 	}
 
 	private List<Path> getBackups() throws Exception {
-		try (final Stream<Path> stream = Files.list(backupsPath)) {
-			final List<Path> backups = stream.filter(path -> path.getFileName().toString().endsWith(BACKUP_EXTENSION) && !path.getFileName().toString().startsWith(".")).sorted().collect(Collectors.toCollection(ArrayList::new));
-			Collections.reverse(backups);
-			return backups;
+		return RailwayDataBackups.getBackups(backupsPath);
+	}
+
+	/**
+	 * An admin asks for a backup to be restored by putting its file name in {@code backups/restore.txt} while the server
+	 * is stopped; on starting, the database as it is is kept aside as {@code mtr.db-before-restore-<time>}, the backup is
+	 * made whole again in its place, and the request is renamed {@code restore-done.txt}.
+	 */
+	private void restoreRequested() throws Exception {
+		final Path request = backupsPath.resolve(RESTORE_REQUEST);
+		if (!Files.exists(request)) {
+			return;
 		}
+		final String name = new String(Files.readAllBytes(request), java.nio.charset.StandardCharsets.UTF_8).trim();
+		final Path backup = backupsPath.resolve(name);
+		if (name.isEmpty() || name.contains("/") || name.contains("\\") || !Files.exists(backup)) {
+			System.out.println("Minecraft Transit Railway: the backup asked for in " + request + " isn't there: " + name);
+			return;
+		}
+		final Path restored = savePath.resolve(RailwayDataFileStore.DATABASE_NAME + ".restored");
+		if (!RailwayDataBackups.restore(backup, restored)) {
+			System.out.println("Minecraft Transit Railway: the backup " + backup + " couldn't be restored, as it or its base is damaged or missing; nothing was changed");
+			return;
+		}
+		final String suffix = "-before-restore-" + System.currentTimeMillis();
+		for (final String databaseSuffix : RailwayDataFileStore.DATABASE_SUFFIXES) {
+			final Path path = savePath.resolve(RailwayDataFileStore.DATABASE_NAME + databaseSuffix);
+			if (Files.exists(path)) {
+				Files.move(path, savePath.resolve(RailwayDataFileStore.DATABASE_NAME + databaseSuffix + suffix));
+			}
+		}
+		Files.move(restored, databasePath);
+		Files.move(request, backupsPath.resolve("restore-done.txt"), StandardCopyOption.REPLACE_EXISTING);
+		System.out.println("Minecraft Transit Railway data restored from " + backup + " as asked; the data as it was is kept as " + RailwayDataFileStore.DATABASE_NAME + suffix);
 	}
 
 	private void quarantineDatabase() throws Exception {
@@ -370,8 +410,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 
 	private void restoreLatestBackup() throws Exception {
 		for (final Path backup : getBackups()) {
-			if (isHealthy(backup)) {
-				Files.copy(backup, databasePath);
+			if (RailwayDataBackups.restore(backup, databasePath)) {
 				System.out.println("Restored Minecraft Transit Railway data from " + backup);
 				return;
 			}

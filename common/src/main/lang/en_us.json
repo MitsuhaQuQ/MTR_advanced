@@ -186,5 +186,6 @@
   "gui.mtr.editor_batch_conflict": "Some routes were changed in the game after the draft; nothing was applied and the whole draft is kept",
   "gui.mtr.editor_server_rejected": "%s changed some of these routes just now; the server didn't write them and the draft is kept",
   "gui.mtr.editor_server_deleted": "%s deleted something these changes are on; the server didn't write them and the draft is kept",
-  "gui.mtr.editor_no_answer": "No answer from the server; the draft is kept, try again in a moment"
+  "gui.mtr.editor_no_answer": "No answer from the server; the draft is kept, try again in a moment",
+  "gui.mtr.edit_failed": "Your change couldn't be made, so everything it touched was put back as it was"
 }
