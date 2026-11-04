@@ -92,6 +92,9 @@
 		} catch (e) {
 			draft = { routes: {} };
 		}
+		Object.values(draft.routes).forEach(entry => {
+			if (entry.conflict && !entry.error) entry.error = tr("游戏里的这条线路在草稿之后改过");
+		});
 		if (!Array.isArray(draft.created)) draft.created = [];
 		if (!draft.duties || typeof draft.duties !== "object") draft.duties = {};
 		draftLoaded = true;
@@ -131,7 +134,8 @@
 		const entry = draftEntry(r);
 		if (managed === r.editorManaged) delete entry.managed;
 		else entry.managed = managed;
-		delete entry.error;
+		// A conflict stays until it is settled with its buttons, and keeps its message so the banner shows them
+		if (!entry.conflict) delete entry.error;
 		tidyDraft(r.id);
 		saveDraft();
 		renderAll();
@@ -628,7 +632,7 @@
 		const message = change(entry.timetable);
 		normalize(entry.timetable);
 		if (JSON.stringify(entry.timetable) === JSON.stringify(gameTimetable(r))) delete entry.timetable;
-		delete entry.error;
+		if (!entry.conflict) delete entry.error;
 		tidyDraft(r.id);
 		saveDraft();
 		buildServices();
@@ -3144,7 +3148,7 @@
 			<p class="hint">${tr("先放在草稿里，按“应用”才删除。应用之前可以右键取消。这个种别别的没应用的改动也一起丢掉。")}</p>`, tr("删除"), () => {
 			const entry = draftEntry(r);
 			entry.deleted = true;
-			delete entry.error;
+			if (!entry.conflict) delete entry.error;
 			saveDraft();
 			renderAll();
 		});
@@ -3154,7 +3158,7 @@
 		const entry = draftOf(r);
 		if (!entry) return;
 		delete entry.deleted;
-		delete entry.error;
+		if (!entry.conflict) delete entry.error;
 		tidyDraft(r.id);
 		saveDraft();
 		renderAll();
@@ -3275,7 +3279,7 @@
 		};
 		const missingTimes = data && data.routes.some(r => !r.hasTimes && r.timetable);
 		const problem = !key ? messages.key : messages[connection];
-		const failed = Object.entries(draft.routes).filter(([, entry]) => entry.error);
+		const failed = Object.entries(draft.routes).filter(([, entry]) => entry.error || entry.conflict);
 		const otherFailed = Object.values(draft.duties).some(entry => entry.error) || draft.created.some(made => made.error);
 		let html = "";
 		if (problem) {
@@ -3288,7 +3292,7 @@
 		} else if (!applyResult && failed.some(([, entry]) => entry.conflict)) {
 			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
 			html = `${tr("下面的线路在草稿之后游戏里改过。它们的草稿保留着，应用时先不发，逐条处理后才能应用；其余线路照常应用：")}<ul>`
-				+ failed.filter(([, entry]) => entry.conflict).map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button></li>`).join("")
+				+ failed.filter(([, entry]) => entry.conflict).map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error || tr("游戏里的这条线路在草稿之后改过"))}<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button></li>`).join("")
 				+ "</ul>";
 		} else if (applyResult && (!applyResult.ok || failed.length || otherFailed)) {
 			const name = id => data && data.routeById.get(id) ? escapeHtml(routeTitle(data.routeById.get(id))) : tr("已删除的线路");
@@ -3296,7 +3300,7 @@
 				+ applyResult.general.map(message => `<li>${escapeHtml(message)}</li>`).join("")
 				+ Object.entries(draft.duties).filter(([, entry]) => entry.error).map(([id, entry]) => `<li>${tr("车厂{0}的运用：{1}", escapeHtml(shortName(depotById(id) ? depotById(id).name : "?")), escapeHtml(entry.error))}</li>`).join("")
 				+ draft.created.filter(made => made.error).map(made => `<li>${tr("新种别 {0}：{1}", escapeHtml(shortName(made.name)), escapeHtml(made.error))}</li>`).join("")
-				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error)}${entry.conflict ? `<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button>` : ""}</li>`).join("")
+				+ failed.map(([id, entry]) => `<li><a data-open-route="${id}">${name(id)}</a>：${escapeHtml(entry.error || tr("游戏里的这条线路在草稿之后改过"))}${entry.conflict ? `<button data-keep="${id}">${tr("以最新版本为基础，覆盖对方的修改")}</button><button data-drop="${id}">${tr("放弃草稿，用游戏里的")}</button>` : ""}</li>`).join("")
 				+ "</ul>";
 		} else if (applyResult && applyResult.ok) {
 			html = `${tr("已应用 {0} 项。", applyResult.applied)}`;
