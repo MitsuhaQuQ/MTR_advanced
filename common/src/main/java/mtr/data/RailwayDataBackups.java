@@ -21,8 +21,10 @@ import java.util.stream.Stream;
  * followed by backups that only hold what differs from their batch's base, each table's rows that are new or changed
  * since and the keys of the rows taken away. A backup is made whole again from its base and its own differences.
  * <p>
- * Names: {@code mtr-<time>-base.db} for a base, {@code mtr-<time>-inc-<time of its base>.db} for the others, and
- * {@code mtr-<time>.db} for a whole copy made before batches, which counts as a base.
+ * Names: {@code mtr-<time>-base.db} for a base, {@code mtr-<time>-inc.db} for the others, whose base is the newest base
+ * before them, and {@code mtr-<time>.db} for a whole copy made before batches, which counts as a base. Names are kept
+ * short, as SQLite on Windows can't open a path longer than 260 characters and servers are often kept deep in folders;
+ * {@code mtr-<time>-inc-<time of its base>.db}, as the first backups of differences were named, is still read.
  */
 public final class RailwayDataBackups {
 
@@ -45,9 +47,14 @@ public final class RailwayDataBackups {
 	private static final String PREFIX = "mtr-";
 	private static final String EXTENSION = ".db";
 	private static final String BASE = "-base";
-	private static final String INCREMENT = "-inc-";
+	private static final String INCREMENT = "-inc";
+	private static final String TEMPORARY_NAME = "next.tmp";
 	private static final int TIME_LENGTH = "yyyyMMdd-HHmmss".length();
 	private static final String DELETED_TABLE = "backup_deleted";
+	/**
+	 * In a backup of differences, the time of its base, so it is never made whole from another.
+	 */
+	private static final String BASE_TABLE = "backup_base";
 
 	private RailwayDataBackups() {
 	}
@@ -63,8 +70,8 @@ public final class RailwayDataBackups {
 		final List<Path> newestBatch = batches.isEmpty() ? null : batches.get(0);
 		final Path base = newestBatch == null ? null : newestBatch.get(newestBatch.size() - 1);
 		final boolean asIncrement = base != null && newestBatch.size() < BATCH_SIZE && isHealthy(base);
-		final String name = PREFIX + time + (asIncrement ? INCREMENT + getTime(base) : BASE) + EXTENSION;
-		final Path temporaryPath = backupsPath.resolve(name + ".tmp");
+		final String name = PREFIX + time + (asIncrement ? INCREMENT : BASE) + EXTENSION;
+		final Path temporaryPath = backupsPath.resolve(TEMPORARY_NAME);
 		Files.deleteIfExists(temporaryPath);
 
 		try (final Connection connection = connect(databasePath); final Statement statement = connection.createStatement()) {
@@ -98,10 +105,9 @@ public final class RailwayDataBackups {
 	 * @return false if it can't be, as its base is missing or damaged
 	 */
 	public static boolean restore(Path backup, Path target) throws Exception {
-		final String fileName = backup.getFileName().toString();
 		final Path temporaryPath = target.resolveSibling(target.getFileName() + ".restoring");
 		Files.deleteIfExists(temporaryPath);
-		if (!fileName.contains(INCREMENT)) {
+		if (!isIncrement(backup)) {
 			if (!isHealthy(backup)) {
 				return false;
 			}
@@ -164,20 +170,23 @@ public final class RailwayDataBackups {
 	 * gone makes no batch
 	 */
 	public static List<List<Path>> getBatches(Path backupsPath) throws Exception {
-		final Map<String, List<Path>> batches = new TreeMap<>(Comparator.reverseOrder());
+		final TreeMap<String, List<Path>> batches = new TreeMap<>();
 		final List<Path> backups = getBackups(backupsPath);
 		for (final Path backup : backups) {
-			if (!backup.getFileName().toString().contains(INCREMENT)) {
+			if (!isIncrement(backup)) {
 				batches.put(getTime(backup), new ArrayList<>());
 			}
 		}
 		for (final Path backup : backups) {
-			final List<Path> batch = batches.get(getBaseTime(backup));
+			final String baseTime = getBaseTime(backup, batches.navigableKeySet());
+			final List<Path> batch = baseTime == null ? null : batches.get(baseTime);
 			if (batch != null) {
 				batch.add(backup);
 			}
 		}
-		return new ArrayList<>(batches.values());
+		final List<List<Path>> newestFirst = new ArrayList<>(batches.descendingMap().values());
+		newestFirst.removeIf(List::isEmpty);
+		return newestFirst;
 	}
 
 	public static String now() {
@@ -187,9 +196,13 @@ public final class RailwayDataBackups {
 	private static void writeDifferences(Statement statement, Path base, Path temporaryPath) throws SQLException {
 		statement.execute("ATTACH DATABASE " + quote(base.toString()) + " AS base");
 		statement.execute("ATTACH DATABASE " + quote(temporaryPath.toString()) + " AS increment");
+		// No journal file beside it, which would need a longer path; a failed backup is dropped anyway
+		statement.execute("PRAGMA increment.journal_mode=MEMORY");
 		// One read of the database for all its tables, so they are as they were together
 		statement.execute("BEGIN");
 		try {
+			statement.execute("CREATE TABLE increment." + BASE_TABLE + " (time TEXT NOT NULL)");
+			statement.execute("INSERT INTO increment." + BASE_TABLE + " VALUES (" + quote(getTime(base)) + ")");
 			statement.execute("CREATE TABLE increment." + DELETED_TABLE + " (name TEXT NOT NULL, k1, k2)");
 			for (final String[][] table : TABLES) {
 				final String name = table[0][0];
@@ -222,23 +235,58 @@ public final class RailwayDataBackups {
 	}
 
 	private static Path findBase(Path backup) throws Exception {
-		final String baseTime = getBaseTime(backup);
-		for (final Path path : getBackups(backup.getParent())) {
-			if (!path.getFileName().toString().contains(INCREMENT) && getTime(path).equals(baseTime)) {
+		final List<Path> backups = getBackups(backup.getParent());
+		final TreeSet<String> baseTimes = new TreeSet<>();
+		backups.forEach(path -> {
+			if (!isIncrement(path)) {
+				baseTimes.add(getTime(path));
+			}
+		});
+		final String recordedTime = getRecordedBaseTime(backup);
+		final String baseTime = recordedTime == null ? getBaseTime(backup, baseTimes) : recordedTime;
+		for (final Path path : backups) {
+			if (!isIncrement(path) && getTime(path).equals(baseTime)) {
 				return path;
 			}
 		}
 		return null;
 	}
 
+	private static String getRecordedBaseTime(Path backup) throws SQLException {
+		try (final Connection connection = connect(backup); final Statement statement = connection.createStatement()) {
+			if (!hasTable(statement, "main", BASE_TABLE)) {
+				return null;
+			}
+			try (final ResultSet resultSet = statement.executeQuery("SELECT time FROM " + BASE_TABLE)) {
+				return resultSet.next() ? resultSet.getString(1) : null;
+			}
+		}
+	}
+
+	private static boolean isIncrement(Path backup) {
+		return backup.getFileName().toString().contains(INCREMENT);
+	}
+
 	private static String getTime(Path backup) {
 		return backup.getFileName().toString().substring(PREFIX.length(), PREFIX.length() + TIME_LENGTH);
 	}
 
-	private static String getBaseTime(Path backup) {
+	/**
+	 * @param baseTimes the times of the bases there are
+	 * @return the time of the backup's base, or null if there is none
+	 */
+	private static String getBaseTime(Path backup, NavigableSet<String> baseTimes) {
+		if (!isIncrement(backup)) {
+			return getTime(backup);
+		}
 		final String name = backup.getFileName().toString();
-		final int index = name.indexOf(INCREMENT);
-		return index < 0 ? getTime(backup) : name.substring(index + INCREMENT.length(), index + INCREMENT.length() + TIME_LENGTH);
+		final int index = name.indexOf(INCREMENT + "-");
+		if (index >= 0 && name.length() >= index + INCREMENT.length() + 1 + TIME_LENGTH) {
+			final String named = name.substring(index + INCREMENT.length() + 1, index + INCREMENT.length() + 1 + TIME_LENGTH);
+			return baseTimes.contains(named) ? named : null;
+		}
+		// Made against the newest base there was then
+		return baseTimes.floor(getTime(backup));
 	}
 
 	private static List<String> allColumns(String[][] table) {

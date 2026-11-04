@@ -44,7 +44,7 @@ class RailwayDataBackupsTest {
 				"CREATE TABLE edit_revisions (key TEXT PRIMARY KEY, revision INTEGER NOT NULL, editor TEXT NOT NULL, deleted INTEGER NOT NULL)",
 				"INSERT INTO edit_revisions VALUES ('route:1:name', 3, 'Alice', 0)");
 		final Path increment = RailwayDataBackups.createBackup(database, backups, "20261104-110000");
-		assertTrue(increment.getFileName().toString().contains("-inc-20261104-100000"), increment.toString());
+		assertEquals("mtr-20261104-110000-inc.db", increment.getFileName().toString());
 		// Only what changed: the changed and the new route rows, nothing of the unchanged one
 		assertEquals(2, count(increment, "SELECT COUNT(*) FROM entries"));
 		assertTrue(Files.size(increment) > 0);
@@ -54,6 +54,20 @@ class RailwayDataBackupsTest {
 		assertEquals(rows(database, "SELECT type, id, hex(data) FROM entries ORDER BY type, id"), rows(restored, "SELECT type, id, hex(data) FROM entries ORDER BY type, id"));
 		assertEquals(rows(database, "SELECT key, value FROM meta"), rows(restored, "SELECT key, value FROM meta"));
 		assertEquals(rows(database, "SELECT key, revision, editor FROM edit_revisions"), rows(restored, "SELECT key, revision, editor FROM edit_revisions"));
+
+		// A newer base doesn't take over an increment made from an older one
+		final Path newerBase = backups.resolve("mtr-20261104-103000-base.db");
+		Files.copy(base, newerBase);
+		final Path restoredAgain = folder.resolve("restored-again.db");
+		assertTrue(RailwayDataBackups.restore(increment, restoredAgain));
+		assertEquals(rows(database, "SELECT type, id, hex(data) FROM entries ORDER BY type, id"), rows(restoredAgain, "SELECT type, id, hex(data) FROM entries ORDER BY type, id"));
+		Files.delete(newerBase);
+
+		// Named as the first backups of differences were, it is still made whole
+		final Path oldName = backups.resolve("mtr-20261104-110000-inc-20261104-100000.db");
+		Files.move(increment, oldName);
+		assertTrue(RailwayDataBackups.restore(oldName, folder.resolve("restored-old-name.db")));
+		Files.move(oldName, increment);
 
 		// The base on its own is the data as it was then
 		final Path restoredBase = folder.resolve("restored-base.db");

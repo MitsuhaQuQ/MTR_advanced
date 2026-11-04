@@ -87,6 +87,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Level world;
 	private final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 	private final SignalBlocks signalBlocks = new SignalBlocks();
+	private final RailNodeRepair railNodeRepair = new RailNodeRepair();
 
 	public SignalBlocks getSignalBlocks() {
 		return signalBlocks;
@@ -290,6 +291,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 		railwayDataFileSaveModule.load();
 		validateData();
+		railNodeRepair.start(rails);
 		dataCache.sync();
 		signalBlocks.writeCache();
 
@@ -498,6 +500,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		prevPlatformCount = platforms.size();
 		prevSidingCount = sidings.size();
 
+		// Nodes the world lost while their rails were kept, as when the server stopped before saving the world
+		railNodeRepair.tick(world, rails);
 		// Track laid or taken away in this tick is saved now, the rest with the next save
 		railwayDataFileSaveModule.saveNow();
 		railwayDataFileSaveModule.autoSaveTick();
