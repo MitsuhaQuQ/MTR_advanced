@@ -24,6 +24,10 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+/**
+ * Draws a vehicle whose look is made by a script. Each frame it gives the script where the cars are and draws what
+ * the script's last run asked for; the script's {@code render} function runs again on the script thread meanwhile.
+ */
 public class ScriptedTrainRenderer extends TrainRendererBase {
 
     public final ScriptHolderBase typeScripting;

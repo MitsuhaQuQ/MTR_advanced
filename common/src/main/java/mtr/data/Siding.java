@@ -47,6 +47,13 @@ import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+/**
+ * A siding: a stretch of track in a depot where its trains are kept, and the trains it owns ({@link TrainServer}).
+ * <p>
+ * It holds the paths its trains run, made by {@code generateRoute} when its depot generates paths: the main path along
+ * the depot's routes, and the paths out of the siding, turning back and back to the depot ({@link TripPath}). Each tick
+ * {@code simulateTrain} moves its trains, unless the component's simulator runs them ({@link #isRunBySimulator()}).
+ */
 public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	private Level world;

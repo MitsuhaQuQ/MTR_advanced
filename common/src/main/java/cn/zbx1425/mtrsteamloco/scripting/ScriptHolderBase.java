@@ -37,6 +37,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.nio.file.Path;
 
+/**
+ * Loads and runs one set of JavaScript files (GraalJS with nashorn compatibility) for a vehicle or eye candy.
+ * <p>
+ * While loading, scripts may use any class; afterwards only the allowed packages and classes. Every call into a script
+ * runs on the one script thread, as a Graal context can't be entered by two threads at once; work scripts schedule
+ * themselves ({@code ScriptExecutors}) runs there too.
+ */
 public abstract class ScriptHolderBase {
 
     // Contexts stay isolated, but sharing the engine lets them reuse parsed code

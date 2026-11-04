@@ -14,6 +14,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
+/**
+ * Lookups built from the sets in {@link RailwayData} (or {@code ClientData} on the client): objects by ID, and the
+ * relations between them, such as the station of a platform, the depot of a siding or the stations connected to a
+ * station. Nothing here is saved; call {@link #sync()} after the sets change.
+ */
 public class DataCache {
 
 	private long lastRefreshedTime;

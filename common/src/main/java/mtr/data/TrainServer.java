@@ -44,6 +44,14 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
+/**
+ * A train on the server. On top of {@link Train} it checks whether the rails ahead are taken
+ * ({@link #isRailBlocked}), records delays, opens doors and platform screen doors, carries passengers on and off, and holds
+ * and asks for runs in the run reservations so trains wait for each other on single track.
+ * <p>
+ * When the component's simulator runs its siding, {@link #setSimulated} hands it the simulator's train, and this train only
+ * shows where that one is.
+ */
 public class TrainServer extends Train {
 
 	private boolean canDeploy;

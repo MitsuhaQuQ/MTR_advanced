@@ -24,6 +24,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
 
+/**
+ * The client side entry point: registers the renderers (trains are drawn by the renderer of
+ * {@link mtr.entity.EntitySeat}, see {@link mtr.render.RenderTrains}), the packets the server sends, key mappings, the client
+ * tick ({@link mtr.client.ClientData#tick()}) and the resource reload listener.
+ */
 public class MTRClient implements IPacket {
 
 	private static boolean isReplayMod;

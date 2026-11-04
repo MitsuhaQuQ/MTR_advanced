@@ -43,6 +43,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * Draws the trains, lifts and rails each frame. It is the renderer of {@link mtr.entity.EntitySeat}, so it runs once a
+ * frame; {@link #render} moves each client train for the frame, which draws its cars through its
+ * {@link TrainRendererBase}.
+ */
 public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IGui {
 
 	public static int maxTrainRenderDistance;

@@ -9,6 +9,9 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 
+/**
+ * The old pathfinding of MTR 3, kept for existing depots. New depots use {@link DeterministicPathFinder}.
+ */
 public class PathFinder {
 
 	private static final int MAX_AIRPLANE_TURN_ARC = 128;

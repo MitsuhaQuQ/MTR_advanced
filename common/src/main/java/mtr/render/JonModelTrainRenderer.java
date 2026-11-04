@@ -33,6 +33,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
+/**
+ * Draws trains with models of MTR itself: the built-in Java models and the JSON models of resource packs. It also
+ * draws the bogies, placing them on the track when the car is near, and for vehicles with custom bogies places the car
+ * body on its bogies as MTR 4 does (see section 10 of {@code MTR-加载MTR4资源包设计.md}).
+ */
 public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 
 	private final TrainClient train;

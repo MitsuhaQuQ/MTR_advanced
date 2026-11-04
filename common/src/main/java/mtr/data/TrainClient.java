@@ -19,6 +19,14 @@ import transitsim.motion.RunSegment;
 
 import java.util.*;
 
+/**
+ * A train on the client, made from what the server sends ({@code ClientData.updateTrains}). It runs the same motion
+ * rules as the server between the server's updates, moves the players riding it, and draws each car with its
+ * {@link #trainRenderer}, chosen from its {@link mtr.client.TrainProperties}.
+ * <p>
+ * With ANTE in the build, {@code TrainClientMixin} replaces {@code simulateTrain} as a whole (current station,
+ * announcements, sounds), so changes to it here don't take effect there.
+ */
 public class TrainClient extends Train implements IGui {
 
 	public boolean isRemoved = false;

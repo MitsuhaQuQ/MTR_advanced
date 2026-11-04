@@ -37,6 +37,16 @@ import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+/**
+ * A depot: an area holding sidings, the routes their trains run and how trains are sent out (by frequency, by
+ * timetable or by duties).
+ * <p>
+ * {@link #generateMainRoute} finds the paths of all its sidings on a thread of its own, working on a copy of the rails and
+ * data. {@link #deployTrain(RailwayData, Level)} runs every tick and sends trains out when it is time.
+ * <p>
+ * Depots running a route in common are linked when the data is synced ({@link #shareServicesWith}), so a service either
+ * one's trains take counts as taken in both and runs once.
+ */
 public class Depot extends AreaBase implements IReducedSaveData, TrainService.Board {
 
 	public int clientPathGenerationSuccessfulSegments;

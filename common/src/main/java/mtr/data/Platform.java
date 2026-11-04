@@ -11,6 +11,10 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * A platform: a stretch of rail between two nodes where trains stop, with its dwell time. Routes are lists of
+ * platforms.
+ */
 public final class Platform extends SavedRailBase {
 
 	/**

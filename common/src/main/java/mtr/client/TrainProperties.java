@@ -7,6 +7,10 @@ import mtr.sound.JonTrainSound;
 import mtr.sound.TrainSoundBase;
 import net.minecraft.network.chat.Component;
 
+/**
+ * How one vehicle type looks and sounds: its name, colour, rider offsets, bogies, renderer and sounds. Made when
+ * resources load and kept in {@link TrainClientRegistry}.
+ */
 public class TrainProperties {
 
 	public final String baseTrainType;

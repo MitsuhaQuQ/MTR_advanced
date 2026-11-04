@@ -27,6 +27,14 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+/**
+ * Loads the vehicles and signs of resource packs ({@code mtr_custom_resources.json}) on each resource reload and
+ * registers each vehicle in {@link TrainClientRegistry}.
+ * <p>
+ * ANTE's {@code CustomResourcesMixin} adds its own loading before and after {@code reload} and remembers the last texture
+ * read through {@code getOrDefault}, using it for the next OBJ or bbmodel model, so a vehicle's texture has to be read
+ * before its model.
+ */
 public class CustomResources implements IResourcePackCreatorProperties, ICustomResources {
 
 	private static final Logger LOGGER = LogManager.getLogger("MTR");

@@ -10,6 +10,11 @@ import net.minecraft.world.entity.player.Player;
 
 import java.util.*;
 
+/**
+ * Keeps each player's copy of nearby moving objects (trains, lifts) up to date. Each tick, objects that come into
+ * range are sent in full, those already in range send only what changed (the state packet, for trains), and those that
+ * left range or were removed are deleted on the client.
+ */
 public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements IPacket {
 
 	public final Map<Player, Set<T>> newDataSetInPlayerRange = new HashMap<>();

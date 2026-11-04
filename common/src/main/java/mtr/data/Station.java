@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * A station: an area on the map with a fare zone and exits. Platforms belong to the station whose area they are
+ * in (see {@code DataCache.platformIdToStation}).
+ */
 public final class Station extends AreaBase {
 
 	public int zone;

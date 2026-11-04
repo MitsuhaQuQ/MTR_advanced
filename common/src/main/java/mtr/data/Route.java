@@ -24,6 +24,11 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
+/**
+ * A route: the platforms a service stops at in order, with its type, colour, name, waypoints and the timetable
+ * settings of the route (dwell times per station, stations passed without stopping, reversing sidings at its end).
+ * It implements the component's {@code PlanRoute}, so timetables are made from it directly.
+ */
 public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	private static final int MAX_PLATFORMS = 1024;

@@ -30,6 +30,18 @@ import java.io.*;
 import java.util.*;
 import java.util.function.IntPredicate;
 
+/**
+ * A train running along a path of rails, shared by the server ({@link TrainServer}) and the client
+ * ({@link TrainClient}).
+ * <p>
+ * {@link #simulateTrain(Level, float, Depot)} moves the train for a tick or a frame. How it moves comes from the
+ * component ({@code transitsim.motion.TrainMotion}, or {@code LegacyTrainMotion} for the old rules, chosen by
+ * {@link MotionConfig}): this class gives the component its state through the motion interfaces. It then works out where
+ * the ends of each car are, and the subclasses act on each car in {@code simulateCar}: the server checks the track ahead
+ * and opens doors, the client moves riders and draws the car.
+ * <p>
+ * {@link #railProgress} is how far along the path the front of the train is, in blocks.
+ */
 public abstract class Train extends NameColorDataBase implements IPacket {
 
 	protected float speed;

@@ -26,6 +26,10 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+/**
+ * The built-in web server (Jetty) serving the website and the {@code /data}, {@code /info}, {@code /arrivals},
+ * {@code /delays} and {@code /route} endpoints. Requests are dealt with on the server thread through {@link #callback}.
+ */
 public abstract class Webserver {
 
 	public static Consumer<Runnable> callback = Runnable::run;

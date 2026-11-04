@@ -12,6 +12,9 @@ import org.msgpack.value.Value;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * The base of {@link Platform} and {@link Siding}: data saved on the rail between two nodes, with a dwell time.
+ */
 public abstract class SavedRailBase extends NameColorDataBase {
 
 	protected int dwellTime;

@@ -31,6 +31,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.function.BiConsumer;
 
+/**
+ * The server side entry point, called by the Fabric and Forge entry classes. {@link #init} registers the blocks, items,
+ * entities and sounds, the packets players send (each through {@link mtr.packet.PacketGuard}), and the server events: each
+ * tick runs {@link mtr.data.RailwayData#simulateTrains()} for every dimension, a player joining is sent the settings and
+ * data they need, and the server starting loads the config files and starts the web server. See section 3 of
+ * {@code MTR-代码说明与流程.md}.
+ */
 public class MTR implements IPacket {
 
 	private static int gameTick = 0;

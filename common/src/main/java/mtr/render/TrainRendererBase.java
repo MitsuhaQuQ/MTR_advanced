@@ -23,6 +23,10 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
 
+/**
+ * The base of the renderers that draw one train's cars. The static fields hold what one frame shares (camera,
+ * matrices, buffers), set by {@link #setupStaticInfo} before the trains are drawn.
+ */
 public abstract class TrainRendererBase {
 
 	protected static Camera camera;

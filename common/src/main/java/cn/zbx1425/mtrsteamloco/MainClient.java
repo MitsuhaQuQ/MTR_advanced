@@ -18,6 +18,10 @@ import net.minecraft.client.Minecraft;
 import cn.zbx1425.mtrsteamloco.gui.TrainScreen;
 import mtr.client.ClientData;
 
+/**
+ * ANTE's client entry point: registers the block entity renderers and client packets, and adds
+ * {@link CustomResources#init} to MTR's resource reload.
+ */
 public class MainClient {
 
 	public static final DrawScheduler drawScheduler = new DrawScheduler();

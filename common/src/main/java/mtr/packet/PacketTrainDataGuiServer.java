@@ -46,6 +46,11 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+/**
+ * The server's side of most packets: sends data to players ({@code ...S2C}) and receives their changes
+ * ({@code receive...C2S}). Changes are checked for permission and by {@link EditGuard}, made to {@link RailwayData}, and
+ * passed on to the other players in the dimension.
+ */
 public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	private static final int MAX_LIST_SIZE = 4096;

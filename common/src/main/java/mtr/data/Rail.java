@@ -31,6 +31,11 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
+/**
+ * One rail between two nodes. Its shape is up to two circular arcs (or straight lines), set from the nodes'
+ * positions and their directions ({@link RailAngle}); {@link #getPosition(double)} gives the point a distance along it.
+ * Rails are stored in both directions: {@code rails.get(start).get(end)} and {@code rails.get(end).get(start)}.
+ */
 public class Rail extends SerializedDataBase {
 
 	public final RailType railType;

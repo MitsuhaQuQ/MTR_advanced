@@ -18,6 +18,11 @@ import transitsim.network.RegionData;
 import java.util.*;
 import java.util.function.Function;
 
+/**
+ * The railway data the client knows about: stations, platforms, sidings, routes, depots, the trains near the
+ * player ({@link #TRAINS}), lifts, and the lookups ({@link #DATA_CACHE}). Filled from the server's packets, read by the
+ * screens and renderers. {@link #tick()} runs every client tick (driving by hand, key presses).
+ */
 public final class ClientData {
 
 	public static String DASHBOARD_SEARCH = "";

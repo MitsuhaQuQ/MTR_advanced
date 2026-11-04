@@ -32,6 +32,11 @@ import java.util.ArrayList;
 import java.util.Locale;
 import java.util.function.BiConsumer;
 
+/**
+ * ANTE's common entry point, called next to {@link mtr.MTR#init}: registers eye candy, the direct node, the
+ * creator and editing tools, sounds, particles and ANTE's packets. Most of ANTE's changes to MTR are mixins in
+ * {@code mixin/}, not here.
+ */
 public class Main {
 
 	public static final String MOD_ID = "mtrsteamloco";

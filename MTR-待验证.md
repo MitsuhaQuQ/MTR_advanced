@@ -33,4 +33,13 @@
 
 2026-11-04 统一构建了自定义转向架（`3e599e3`）和编辑器的线路形状（`14ff674`），编译、common 测试、ABI 扫描（`TrainProperties`、`TrainClientRegistry` 无缺失）、两个服务端启动、mixin 无警告都通过；游戏内测试转为测试清单 U87、U88，已知风险一并写在那里。
 
-现在没有待验证的条目。
+### 核心类的类说明（本会话，工作区，2026-11-04）
+
+- **改了什么**：给 34 个核心类加了类级 Javadoc（只加注释，不改代码），并新增代码说明文档 `MTR-代码说明与流程.md`（第 4 至 10 节按现在的代码写了具体实现，附 14 张 Mermaid UML 图：类图、时序图、活动图、状态图，都已用 Mermaid 10.9.1 解析和渲染通过）。文档已跟到提交 `4f880df`：按时刻表就位、共用线路的车厂共享班次、改动在处理器之前读出；`Depot` 的类说明加了共享班次。
+- **文件**：`mtr/` 下 `MTR`、`MTRClient`、`data/`（`RailwayData`、`Siding`、`Depot`、`Train`、`TrainServer`、`TrainClient`、`Route`、`Rail`、`Station`、`Platform`、`SavedRailBase`、`DataCache`、`UpdateNearbyMovingObjects`、`RailwayDataFileSaveModule`）、`path/`（`PathData`、`PathFinder`）、`packet/`（`PacketGuard`、`PacketTrainDataGuiServer`、`PacketTrainDataGuiClient`）、`client/`（`ClientData`、`CustomResources`、`TrainClientRegistry`、`TrainProperties`）、`render/`（`RenderTrains`、`TrainRendererBase`、`JonModelTrainRenderer`）、`servlet/Webserver`；ANTE 的 `Main`、`MainClient`、`CustomResources`、`ScriptHolderBase`、`ScriptedTrainRenderer`。
+- **协议和存档**：没有变化。
+- **和别的改动的关系**：只在类声明前插入注释，和别的条目改同一文件时按文本合并即可。
+- **已经验证的**：注释里 `{@link}` 指向的成员都确认存在；没有编译。
+- **构建后要检查的**：编译通过即可（Manifold 预处理只认行首的 `#`，注释里的 `#init` 等不受影响）。
+- **游戏内测试**：无。
+- **已知风险**：无。

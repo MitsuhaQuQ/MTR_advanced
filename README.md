@@ -146,7 +146,7 @@ Run logic part 1 (service decisions in `TrainService`, tested in game), choosing
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
-The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese).
+The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). Where the code lives and how the main flows run (server tick, train sync, rendering, resource loading, saving, editing, path generation, ANTE scripts) are in [MTR-代码说明与流程.md](MTR-代码说明与流程.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese).
 
 ## Project complexity
 

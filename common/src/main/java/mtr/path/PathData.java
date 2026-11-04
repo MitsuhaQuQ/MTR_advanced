@@ -16,6 +16,10 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * One rail on the path of a train, with the platform or siding it is part of (if any), the dwell time there and
+ * which stop it is. A siding's paths are lists of these; it implements the component's {@code PlanTrack}.
+ */
 public class PathData extends SerializedDataBase implements PlanTrack {
 
 	public final Rail rail;

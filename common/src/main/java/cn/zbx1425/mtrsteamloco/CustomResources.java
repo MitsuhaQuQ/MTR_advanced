@@ -32,6 +32,10 @@ import cn.zbx1425.mtrsteamloco.render.block.BlockEntityDirectNodeRenderer;
 import java.io.IOException;
 import java.util.HashMap;
 
+/**
+ * Loads ANTE's resources after MTR's: vehicles with OBJ or bbmodel models and scripts, eye candy and rail models,
+ * each into its registry.
+ */
 public class CustomResources {
 
     public static void reset(ResourceManager resourceManager) {

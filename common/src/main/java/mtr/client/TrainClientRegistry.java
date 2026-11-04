@@ -16,6 +16,10 @@ import org.apache.commons.lang3.StringUtils;
 import java.util.*;
 import java.util.function.BiConsumer;
 
+/**
+ * All vehicle types the client can draw, built in and from resource packs, by their ID. A
+ * {@link mtr.data.TrainClient} looks up its {@link TrainProperties} here when it is made.
+ */
 public class TrainClientRegistry {
 
 	private static final Map<String, TrainProperties> REGISTRY = new HashMap<>();

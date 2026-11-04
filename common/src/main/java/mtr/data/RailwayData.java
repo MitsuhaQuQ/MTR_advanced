@@ -50,6 +50,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+/**
+ * All railway data of one dimension on the server: rails, stations, platforms, sidings, routes, depots and lifts,
+ * with the modules split off from it (saving, driving by hand, route finding for passengers, building tools). One is made
+ * for each dimension the first time {@link #getInstance(Level)} is asked for it.
+ * <p>
+ * {@link #simulateTrains(RailNearPlayer)} is the server tick of the railway: it sends players the rails near them, moves the
+ * trains of every siding, sends trains out of the depots, runs the lifts and modules, syncs nearby trains and schedules to
+ * players, and saves what changed. The order of its steps is listed in section 4 of {@code MTR-代码说明与流程.md}.
+ * <p>
+ * ANTE replaces {@link #simulateTrains()} with a mixin, so a change meant for every tick goes in
+ * {@link #simulateTrains(RailNearPlayer)}.
+ */
 public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	public final Set<Station> stations = new HashSet<>();

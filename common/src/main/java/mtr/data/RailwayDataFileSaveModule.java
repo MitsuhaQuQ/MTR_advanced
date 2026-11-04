@@ -18,6 +18,12 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+/**
+ * Saves and loads the railway data of a dimension in its database ({@code mtr.db}, through
+ * {@link RailwayDataFileStore}). Changed objects are marked ({@code markObjectChanged}, {@code markRailsChanged}) and
+ * written a few at a time while the server runs; changed rails are written at the end of the tick. If loading didn't
+ * finish, nothing is saved, so a failed load can't write over the data.
+ */
 public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 
 	private boolean canAutoSave = false;

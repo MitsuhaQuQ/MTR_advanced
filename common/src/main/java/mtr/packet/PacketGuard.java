@@ -12,6 +12,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Registers the packets players send to the server, turning away packets that are too large or come too often
+ * before they are read.
+ */
 public final class PacketGuard {
 
 	private static final int MAX_PACKET_BYTES = 1 << 20;

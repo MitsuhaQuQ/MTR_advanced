@@ -40,6 +40,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BiFunction;
 
+/**
+ * The client's side of most packets: receives data from the server into {@link mtr.client.ClientData} and sends the
+ * player's changes from the screens ({@code send...}).
+ */
 public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 
 	private static final int MAX_CHUNKS = 1 << 16;

@@ -1,0 +1,922 @@
+# MTR 代码说明与主要流程
+
+- **最后更新**：2026-11-04，对应提交 `4f880df`。这次补进了按时刻表就位（`7dc4d97`、`58cf977`，4.8 节）、共用线路的车厂共享班次（`a1ed043`，4.6 节）、改动在处理器之前读出（`e7abbc7`，8.2 节）。
+  - 另一个会话正在做的 `transitsim.planning.AutoDuties`（从时刻表自动生成运用）还没有接进游戏，等它合并后再写进来。
+- **写给谁**：第一次读这个仓库代码的人。先看第 1、2 节知道东西在哪，再按要改的功能看第 3 至 9 节的流程。
+- **和别的文档的关系**：
+  - 这份只讲"代码在哪、怎么跑起来"。为什么这样设计、改过什么，看 `MTR-3.x改造记录与寻路方案.md`。
+  - 运行模拟组件（`transit-sim`）的分离情况看 `MTR-模拟组件与解耦.md`，对外接口看 `MTR-模拟组件契约.md`。
+  - MTR 4 资源包和转向架看 `MTR-加载MTR4资源包设计.md`。
+- **维护规则**：新增一个主要的类或改了某个流程的调用顺序，就更新这里对应的一节。行号会变，这里只写类名和方法名。
+- **类说明**：第 2 节表里的核心类在源码里都有类级 Javadoc，讲这个类管什么、在流程里的位置；这里讲类之间怎么串起来。
+- **UML 图**：用 Mermaid 写在 ` ```mermaid ` 代码块里，GitHub、VS Code（装 Markdown Preview Mermaid Support）、Typora、IDEA 都能直接显示。类图在 2.4 节，时序图、活动图、状态图在各流程小节的末尾。改流程时同时改图。
+
+## 1. 仓库结构
+
+| 目录 | 内容 |
+|---|---|
+| `common/src/main/java/mtr/` | MTR 3.2.2 本体和本分支的改造，Fabric 和 Forge 共用 |
+| `common/src/main/java/cn/zbx1425/mtrsteamloco/` | 合并进来的 ANTE（mtrsteamloco）：OBJ/bbmodel 模型、JS 脚本、装饰物、3D 轨道 |
+| `transit-sim/` | 运行模拟组件，不依赖 Minecraft；有自己的单元测试 |
+| `fabric/`、`forge/` | 两个加载器的入口类、mixin 和平台相关代码 |
+| `resources/common/` | 共用资源：`normal`（MTR 本体，含网页 `website`）、`ante`、`lifts` |
+| `resources/fabric/`、`resources/forge/` | 加载器专用资源；`no-ante` 是不带 ANTE 的构建用的 |
+| `examples/` | 自定义资源包示例 |
+
+代码用 Manifold 预处理（`#if MC_VERSION >= "12000"`）同时支持多个 Minecraft 版本；目前只构建 1.20.1。`mtr/mappings/` 是各版本之间的兼容层，写新代码时调 Minecraft 的接口优先找这里有没有包装。
+
+## 2. 包的分工
+
+### 2.1 `mtr/`（本体）
+
+| 包 | 负责什么 | 重要的类 |
+|---|---|---|
+| 根目录 | 注册和入口 | `MTR`（服务端初始化、tick、玩家进出）、`MTRClient`（客户端初始化）、`Registry`/`RegistryClient`（注册的封装）、`Blocks`、`Items`、`SecurityConfig` |
+| `data/` | 铁路数据和列车运行，服务端的核心 | `RailwayData`（一个维度的全部数据）、`Rail`、`Station`、`Platform`、`Siding`、`Depot`、`Route`、`Train`/`TrainServer`/`TrainClient`、`DataCache`、`SignalBlocks`、`Lift` |
+| `data/` 里的模块 | 从 `RailwayData` 拆出去的功能 | `RailwayDataFileSaveModule`（存档）、`RailwayDataDriveTrainModule`（手动驾驶）、`RailwayDataRouteFinderModule`（乘客寻路）、`RailwayDataCoolDownModule`、`RailwayDataRailActionsModule`（造桥造隧道）、`RailwayDataBackups` |
+| `path/` | 车厂的路径 | `DeterministicPathFinder`（新寻路，用组件的 `RailRouter`）、`PathFinder`（旧寻路）、`PathData`（路径上的一段轨道）、`PathFailure` |
+| `advanced/` | 本分支加的功能和组件的适配器 | `LiveSimulation`（组件模拟器跑列车）、`PathRegionSync`、`RouteLayouts`、`StationLayouts`、`GraphRecords`、`TrackViews`、`SandboxRuns` |
+| `packet/` | 网络包 | `IPacket`（包 ID）、`PacketTrainDataGuiServer`/`PacketTrainDataGuiClient`（收发）、`PacketGuard`（大小和频率限制）、`EditGuard`（多人编辑冲突） |
+| `client/` | 客户端数据和资源 | `ClientData`（客户端看到的数据）、`ClientCache`、`CustomResources`（读资源包）、`TrainClientRegistry`/`TrainProperties`（车型）、`DynamicTrainModel`、`MapDataCache`/`MapCacheDatabase`（地图缓存） |
+| `client/editor/` | 高级编辑器（文中的"网页编辑器"） | `EditorServer`：客户端自己在本机开一个网页服务，只监听本机、随机端口，只认本次会话生成的密钥，用系统浏览器打开。它读客户端已知的数据，单人和服务器上用法一样；改动仍然通过游戏的网络包发给服务器检查（8.2 节）。页面在 `common/src/main/resources/assets/mtr/editor/`（`editor.js`、`i18n.js`）。它和服务器给所有人开的地图网页服务（`servlet/`）是两回事 |
+| `render/` | 绘制 | `RenderTrains`（列车、电梯和轨道的总入口）、`TrainRendererBase`/`JonModelTrainRenderer`（画车厢）、各种站牌和信号 |
+| `screen/` | 界面 | 车厂、线路、站台、仪表盘等界面 |
+| `block/`、`item/`、`entity/` | 方块、物品、实体 | `EntitySeat`（玩家坐的座位实体，也是画车的触发点） |
+| `model/` | 内置车型的 Java 模型 | |
+| `sound/`、`audio/` | 列车声音、报站和上传的音频 | `AudioServer` |
+| `servlet/` | 内置网页服务（Jetty） | `Webserver`，路径 `/data`、`/info`、`/arrivals`、`/delays`、`/route` |
+| `compat/` | 和 Dynmap、BlueMap、Squaremap 等的兼容 | |
+
+### 2.2 `cn/zbx1425/mtrsteamloco/`（ANTE）
+
+| 包 | 负责什么 |
+|---|---|
+| 根目录 | `Main`（注册装饰物、直线节点、各种创建器和网络包）、`MainClient`（渲染器和资源重载）、`ClientConfig`（客户端设置）、`CustomResources`（读 ANTE 的模型和脚本资源） |
+| `mixin/` | 改 MTR 本体行为的地方，见 3.4 节 |
+| `scripting/` | JS 脚本：`ScriptHolderBase`（加载和沙箱）、`train/`（列车脚本）、`eyecandy/`（装饰物脚本）、`util/`（注入给脚本的工具类） |
+| `render/` | 模型绘制、3D 轨道（`rail/`）、`RailDistanceRenderer`、光影兼容 `ShadersModHandler` |
+| `data/` | 3D 轨道形状、装饰物和轨道模型的注册表、车身侧倾 `Rolling` |
+| `gui/`、`item/`、`block/`、`network/` | 界面、工具物品、方块、网络包 |
+
+### 2.3 `transit-sim/`（运行模拟组件）
+
+不引用 Minecraft，由 MTR 通过适配器喂数据。
+
+| 包 | 负责什么 |
+|---|---|
+| `network` | 线网图 `RailGraph`、寻路 `RailRouter`、区域和站台图、线网快照 `Network` |
+| `motion` | 列车运动：`TrainMotion`（现在的规则）、`legacy/LegacyTrainMotion`（旧规则，用来对比）、速度曲线 `SpeedCurves`/`SpeedProfile` |
+| `plan` | 时刻表、运用、折返、停站规则 |
+| `planning` | 运用计划的生成和检查 |
+| `sim` | 无头模拟器 `Simulator`、事件模拟 `EventSimulator`、占用 `Occupancy`、走行预约 `RunReservations` |
+| `io` | 二进制读写 |
+
+### 2.4 核心类的关系（UML 类图）
+
+服务端的数据模型。客户端有同样的数据类（`ClientData` 里的集合），列车换成 `TrainClient`。
+
+```mermaid
+classDiagram
+    direction LR
+    class SerializedDataBase {
+        <<abstract>>
+        toMessagePack()
+        writePacket()
+    }
+    class NameColorDataBase {
+        <<abstract>>
+        id
+        name
+        color
+        update(key, packet)
+    }
+    class AreaBase {
+        <<abstract>>
+        corner1
+        corner2
+    }
+    class SavedRailBase {
+        <<abstract>>
+        positions
+        dwellTime
+    }
+    class RailwayData {
+        rails
+        stations
+        platforms
+        sidings
+        routes
+        depots
+        dataCache
+        simulateTrains()
+    }
+    class Rail {
+        railType
+        facingStart
+        facingEnd
+        getPosition(value)
+    }
+    class Train {
+        <<abstract>>
+        path
+        railProgress
+        speed
+        simulateTrain()
+        simulateCar()*
+    }
+    class PathData {
+        rail
+        savedRailBaseId
+        dwellTime
+        stopIndex
+    }
+    SerializedDataBase <|-- NameColorDataBase
+    SerializedDataBase <|-- Rail
+    SerializedDataBase <|-- PathData
+    NameColorDataBase <|-- AreaBase
+    NameColorDataBase <|-- SavedRailBase
+    NameColorDataBase <|-- Route
+    NameColorDataBase <|-- Train
+    AreaBase <|-- Station
+    AreaBase <|-- Depot
+    SavedRailBase <|-- Platform
+    SavedRailBase <|-- Siding
+    Train <|-- TrainServer
+    Train <|-- TrainClient
+    RailwayData "1" *-- "*" Rail
+    RailwayData "1" *-- "*" Station
+    RailwayData "1" *-- "*" Platform
+    RailwayData "1" *-- "*" Siding
+    RailwayData "1" *-- "*" Route
+    RailwayData "1" *-- "*" Depot
+    RailwayData "1" *-- "1" DataCache
+    RailwayData "1" *-- "1" RailwayDataFileSaveModule
+    RailwayData "1" *-- "1" LiveSimulation
+    RailwayData "1" *-- "1" RunReservations
+    Depot "1" o-- "*" Siding : 区域内
+    Depot "1" o-- "*" Route : routeIds
+    Route "1" o-- "*" Platform : 按顺序停靠
+    Siding "1" *-- "*" TrainServer
+    Siding "1" *-- "*" PathData : path
+    Train "1" o-- "*" PathData : path
+    PathData "*" --> "1" Rail
+    TrainClient --> TrainRendererBase : trainRenderer
+    TrainRendererBase <|-- JonModelTrainRenderer
+    TrainRendererBase <|-- ScriptedTrainRenderer
+```
+
+## 3. 启动和注册
+
+### 3.1 入口
+
+```
+Fabric: MTRFabric / MTRFabricClient      Forge: MTRForge
+        │                                        │
+        └──────────────┬─────────────────────────┘
+                       ▼
+        MTR.init(...)              注册方块、物品、实体、网络包、事件
+        cn.zbx1425.mtrsteamloco.Main.init(...)   注册 ANTE 的内容
+                       │（客户端另外）
+                       ▼
+        MTRClient.init()           注册渲染器、客户端网络包、按键、客户端 tick
+        cn.zbx1425.mtrsteamloco.MainClient.init()
+```
+
+### 3.2 `MTR.init` 里注册的事件
+
+- **网络包**：客户端发上来的包都经过 `PacketGuard.register` 注册，先检查大小（1 MB）和频率（每秒 400 个），再交给 `PacketTrainDataGuiServer.receiveXxxC2S`。
+- **服务端 tick**（`Registry.registerTickEvent`）：每个维度调一次 `RailwayData.simulateTrains()`，见第 4 节；然后 `AudioServer.tick`，每隔一段时间给所有玩家发服务器时间。
+- **玩家加入**：发版本检查、线路用语、时刻表和运动设置、服务器时间、编辑版本号、编辑权限、音频列表，再调 `RailwayData.onPlayerJoin`。
+- **玩家离开**：清掉这个玩家的同步状态、包计数、编辑状态。
+- **服务器启动**：读 `config/` 下的 `mtr_security.json`、线路用语、时刻表设置、`mtr_motion.json`，启动网页服务和音频服务。
+
+### 3.3 `RailwayData` 的创建和读档
+
+`RailwayData.getInstance(level)` 按维度取实例，第一次取时创建，`load` 时由 `RailwayDataFileSaveModule.load()` 从维度存档目录下的 `mtr.db`（SQLite，经 `RailwayDataFileStore.open`）读出全部数据，再 `dataCache.sync()` 建好各种 ID 索引。
+
+### 3.4 ANTE 怎么接到本体上
+
+ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时看到本体某个方法的行为和源码不一致，先查这里：
+
+| mixin | 改了什么 |
+|---|---|
+| `RailwayDataMixin` | 替换 `simulateTrains()`，用 ANTE 自己的"轨道是否在玩家附近"调 `simulateTrains(RailNearPlayer)`（3D 轨道的形状不同） |
+| `CustomResourcesMixin` | 在本体读资源包前后插入 ANTE 的资源读取；记住最近读到的贴图，给接下来的 OBJ/bbmodel 用 |
+| `TrainClientRegistryMixin` | 取车型时先找 ANTE 注册的脚本车型 |
+| `RenderTrainsMixin` | 列车绘制前后的准备和收尾、拿着轨道工具时的显示 |
+| `JonModelTrainRendererMixin` | 在车厢绘制的第一次 `rotateX` 处加车身侧倾 |
+| `TrainClientMixin` | **整个替换** `TrainClient.simulateTrain`：自己算当前站、报站和声音，再调 `Train.simulateTrain` 后取消原方法。改 `TrainClient.simulateTrain` 的本体代码在带 ANTE 的构建里不会生效 |
+| `TrainMixin`、`VehicleRidingClientMixin` | 给列车和乘客加额外数据（`TrainExtraSupplier`、`VehicleRidingClientExtraSupplier`），并改乘客的位置计算 |
+| `RailMixin`、`RailTypeMixin` | 3D 轨道的形状、长度、角度和额外属性（`RailExtraSupplier`） |
+| `FQ*`、`FQGraalServices` | 让 GraalJS 在模组环境里能加载 |
+
+## 4. 服务端每个 tick（列车运行）
+
+入口是 `RailwayData.simulateTrains(RailNearPlayer)`。不带 ANTE 时由 `simulateTrains()` 调用，"轨道在玩家附近"的判断是轨道两端点的包围盒向外扩 128 格（`RAIL_UPDATE_DISTANCE`）后包含玩家；带 ANTE 时 `RailwayDataMixin` 换成按 3D 轨道形状判断，其余步骤相同。
+
+### 4.1 一个 tick 的步骤
+
+| 步骤 | 做什么 | 具体实现 |
+|---|---|---|
+| 1 发附近轨道 | 玩家离上次发轨道的位置超过 16 格（曼哈顿距离，`PLAYER_MOVE_UPDATE_THRESHOLD`）就重发 | 把附近的轨道写进一个 `PACKET_WRITE_RAILS` 包；超过 1 MB（`MAX_PACKET_BYTES`）就不发。客户端 `ClientData.writeRails` 整个替换 `ClientData.RAILS` |
+| 2 清本 tick 状态 | `updateNearbyTrains.startTick()`、`occupancy.nextTick()`、`signalBlocks.resetOccupied()` | 上一 tick 的站台时刻表移到 `lastSchedulesForPlatform`（列车本 tick 要读），`schedulesForPlatform` 清空等列车重新填 |
+| 3 算经过的 tick 数 | `tickCompensator.nextTick(当前毫秒)` | 按真实时间折算成 tick（50 毫秒一个），每 tick 最少 1、最多 4；舍入的余数留到以后的 tick（上限 8，下限 -1），服务器卡顿时列车不落后于真实时间 |
+| 4 侧线排序 | 按侧线 ID 排序 | 保证每次 tick 的处理顺序一样，结果可复现（架构审查 R03） |
+| 5 侧线取车厂设置 | `siding.setSidingData(world, depot, rails)` | 速度曲线、减速度等从所属车厂拷到侧线 |
+| 6 组件模拟器 | `liveSimulation.tick(this, trainPositions)` | 见 4.4。它先走，看到的是上一 tick 结束时游戏里列车的位置 |
+| 7 侧线和列车 | 每条侧线 `siding.simulateTrain(...)` | 见 4.2 |
+| 8 运动事件 | `handleMotionEvents()` | 列车运动产生的事件（出发、到站、通过、折返、回库）在这里统一处理 |
+| 9 分配走行 | `runReservations.resolve(当前毫秒)` | 见 4.5。本 tick 所有列车申请的走行一起分配，结果和列车处理顺序无关 |
+| 10 车厂发车 | 每个车厂 `depot.deployTrain(this, world)` | 见 4.6。用 try/catch 包住，一个车厂出错只在日志里报一次，不影响别的车厂 |
+| 11 电梯 | `lift.tickServer(...)`，再 `updateNearbyLifts` | |
+| 12 模块 | 冷却、手动驾驶、造桥造隧道、乘客寻路、`pathRegionSync.tick` | `PathRegionSync` 每隔几秒算一次轨道、分界、站台、线路的指纹，变了才在后台线程重算区域数据 |
+| 13 同步列车 | `updateNearbyTrains.tick()` | 见 4.7 |
+| 14 时刻表和信号 | 每 60 tick（`SCHEDULE_UPDATE_TICKS`）把所有玩家排进队列，每 tick 只给队首一个玩家发 | 发给这个玩家的：附近 16 格内站台或所在车站的时刻表、附近轨道的信号区段状态和轨道占用，打成一个 `PACKET_UPDATE_SCHEDULE` |
+| 15 索引 | 站台或侧线数量变了就 `dataCache.sync()` | |
+| 16 修节点和存档 | `railNodeRepair.tick`、`saveNow`、`autoSaveTick` | `railNodeRepair` 补回服务器在存世界前停掉而丢失的轨道节点方块；存档见第 7 节 |
+
+**时序图**（一个 tick）：
+
+```mermaid
+sequenceDiagram
+    participant S as MinecraftServer
+    participant RD as RailwayData
+    participant LS as LiveSimulation
+    participant Sd as Siding（按 ID 排序）
+    participant T as TrainServer
+    participant RR as RunReservations
+    participant D as Depot
+    participant U as UpdateNearbyMovingObjects
+    participant Sv as FileSaveModule
+    S->>RD: simulateTrains()
+    RD->>RD: 发附近轨道、清本 tick 状态
+    RD->>RD: tickCompensator.nextTick() 得到 ticksElapsed
+    RD->>Sd: setSidingData(depot)
+    RD->>LS: tick(trainPositions)
+    loop 每条侧线
+        RD->>Sd: simulateTrain(...)
+        loop 每列车
+            Sd->>T: simulateTrain(...)
+            T->>RR: hold(已占的双向轨道)
+            T-->>Sd: 是否需要同步
+        end
+        Sd->>Sd: 清理多余列车、补车
+    end
+    RD->>RD: handleMotionEvents()
+    RD->>RR: resolve() 分配本 tick 的申请
+    loop 每个车厂
+        RD->>D: deployTrain()
+    end
+    RD->>RD: 电梯、各模块、PathRegionSync
+    RD->>U: tick() 同步列车给玩家
+    RD->>RD: 轮流给一个玩家发时刻表和信号
+    RD->>Sv: saveNow()、autoSaveTick()
+```
+
+### 4.2 侧线：`Siding.simulateTrain`
+
+1. 侧线没有所属车厂（`depot == null`）就什么都不做。
+2. **读档后第 2 个 tick**：不由组件模拟器接管的侧线，把需要对齐的列车（`needsAlignment`）按位置从前到后 `alignToTimetable`，放到时刻表上它此刻该在的位置，再全部标记同步。要等第 2 个 tick 是因为所有侧线跑过一次之后列车位置和车厂的线路才都知道。
+3. **逐列车**：
+   - 手动驾驶的列车先由 `RailwayDataDriveTrainModule.drive` 处理按键。
+   - 给列车设好停站时间（`setStopTimes`）、速度曲线（`setSpeedCurve`）、上一 tick 的站台时刻表，然后 `train.simulateTrain(...)`（见 4.3），返回 true 表示要同步给客户端。
+   - 取走列车的运动事件（`drainMotionEvents`）。
+   - 非连续运动的列车把自己占的轨道写进 `trainPositions` 并占用信号区段（`writeTrainPositions`）。
+4. **清理和补车**（组件模拟器接管的侧线跳过这一步）：
+   - 车厂里（不在线上）的列车只留一列，多的删掉；两列车位置（`railProgress` 取到 0.1 格）完全相同时删掉后一列。
+   - 有列车还在侧线附近（`closeToDepot`）就不补车。
+   - 需要时新建一列 `TrainServer` 放在侧线上：按运用（`duties.diagramMode`）的车厂每个运用位一列；其余车厂按"无限列车"或最大列车数。不限数量或最大数大于 0 时列车 ID 随机，否则用侧线 ID。
+
+### 4.3 一列车：`TrainServer.simulateTrain` 和 `Train.simulateTrain`
+
+`TrainServer.simulateTrain` 的顺序：
+
+1. 记下旧状态（下一停车点、乘客数、手动、是否停着、门），用来最后判断要不要同步。
+2. **移动**：
+   - 组件模拟器接管时（`simulated != null`）：`showSimulated` 把模拟器里那列车的位置和状态抄过来，再调 `Train.simulateTrain` 只做车厢、乘客、开门这些要世界的事。
+   - 否则：`service.updateOvernight()`（跨天的班次处理），`Train.simulateTrain` 按规则移动，`holdRun()` 更新自己在走行预约里占着的轨道（4.5），`service.update(isOnRoute)`。
+3. **站台时刻表**：沿 `timeSegments`（生成路径时按速度算好的每段轨道的时间）往前推算这列车到后面每个站台的时间，取"推算时间"和"计划到达时间"中较晚的一个，写进 `schedulesForPlatform`。环线跑完一圈后接着推第二圈。
+4. **手动和自动切换**：允许手动的列车在车厂里总是手动；上线后手动操作冷却够 `manualToAutomaticTime` 就转回自动，并按门的状态补算已停时间。
+5. 返回是否需要同步：走行段版本变了、有乘客下车、下一停车点变了、手动状态变了、从停着变成走、门的目标变了，任一成立就同步。
+
+`Train.simulateTrain(world, ticksElapsed, depot)` 是服务端和客户端共用的部分：
+
+1. **算运动**，三选一：
+   - `movedBySimulator`：模拟器已经移动过，只取停站时间。
+   - `followSegment`：客户端按服务端发来的走行段走（速度曲线列车，G2）。
+   - 否则按 `mtr_motion.json`：`LegacyTrainMotion.tick`（旧规则）或 `TrainMotion.tick`（组件规则，见下）。返回 -1 表示已经在路径末尾，不再处理。
+2. **算车厢端点**：`positions[0..trainCars]`，第 i 个端点在路径上的进度是 `railProgress - i × spacing`（反向时倒过来），用 `Rail.getPosition` 求出坐标，再加上运输方式的轨道高度 `railOffset`。
+3. **`handlePositions`**（服务端）：
+   - 列车包围盒外扩 128 格内的玩家或正在坐车的玩家，记进 `trainsInPlayerRange`，用来决定同步给谁。
+   - 车头下方要检查的方块：列车红石感应器、货物装卸器（和相邻容器交换物品）、报站器（对车上乘客报站）。只查已加载的区块。
+   - 附近没有玩家时返回 false，后面不再逐车厢处理。
+4. **逐车厢 `calculateCar`**：车厢中心取两端点的平均再加 1 格高；`yaw = atan2(Δx, Δz)`，`pitch = asin(Δy / 车厢实际长度)`；左右各扫一次门旁边的方块（`scanDoors`），有站台或屏蔽门且门在开才算这一侧开门。结果交给子类的 `simulateCar`：服务端处理乘客上下车和座位，客户端画车（第 5 节）。
+
+**活动图**（`Train.simulateTrain`）：
+
+```mermaid
+flowchart TD
+    A([simulateTrain]) --> B{movedBySimulator?}
+    B -- 是 --> M[取停站时间]
+    B -- 否 --> C{followSegment?}
+    C -- 是 --> M
+    C -- 否 --> E{mtr_motion.json 用旧规则?}
+    E -- 是 --> F[LegacyTrainMotion.tick]
+    E -- 否 --> G[TrainMotion.tick]
+    F --> H{返回值小于 0?}
+    G --> H
+    M --> H
+    H -- 是 --> Z([结束])
+    H -- 否 --> I["算 positions[0..trainCars]"]
+    I --> J{"handlePositions：附近有玩家?"}
+    J -- 否 --> Z
+    J -- 是 --> K[每节车厢 calculateCar]
+    K --> L["simulateCar：服务端乘客和座位 / 客户端画车"]
+    L --> Z
+```
+
+### 4.4 组件的运动规则：`TrainMotion.tick`
+
+在 `transit-sim` 的 `transitsim.motion`，不依赖 Minecraft。`Train` 把自己实现成 `MotionState`（速度、位置、门、下一停车点）、`MotionTrack`（路径和每段的累计距离）、`MotionVehicle`（车厢数、间距、加减速度）、`MotionHooks`（能否发车、轨道是否被占、开门、到站回调）交进去。
+
+- **在车厂里**（`!isOnRoute`）：位置固定在侧线中间，速度 0。自动列车 `canDeploy()` 为真（车厂允许发车，按运用的还要拿到出库走行），或手动列车推了牵引，就 `startUp` 上线，发 `DEPARTED` 事件。
+- **到路径末尾**且不留在线上：回库，清乘客，发 `RETURNED`。
+- **停着**：
+  - 前方一段轨道（车头所在段 +1，掉头时 +2）被占就算 blocked。
+  - 环线到了重复点就跳回重复起点（掉头的环线同时反向），发 `LAP`。
+  - 刚停下时调 `onStopReached`（扣车、到站记录在这里）。
+  - 已停时间累加，但到"总停站时间 - 关门 64 tick - 延迟 20 tick"之后，如果被扣车或前方被占就不再累加，门保持开着。
+  - 服务端停够时间、前方不占、（手动时推了牵引）就 `startUp` 出发。
+- **走着**（服务端）：
+  - 制动距离 = `v² / 2a`（用速度曲线的列车用减速度）+ 本 tick 走的距离 + 2 格余量。在制动距离内找第一段被占的轨道，找到就把停车点设在它前一段；否则停车点是下一个站台。
+  - 速度：用速度曲线的列车服务端按走行段（`followRunSegment`）、客户端按速度曲线（`followSpeedCurve`）；不用曲线的，进入制动距离且必须停就按匀减速降速，否则向这段轨道的限速加速或减速（加速度 × 经过的 tick）。手动列车按档位加减速，不超过手动最高速度。
+  - 前进 `速度 × ticksElapsed`（或曲线给出的距离）；越过停车点时，必须停就停在停车点上并发 `STOPPED`，不停的站（通过站）发 `PASSED` 继续走。
+- **门**：门的值每 tick 变化 `ticksElapsed / 64`，开着或在动时不允许牵引。
+
+旧规则 `LegacyTrainMotion` 是改造前的同一套流程，留着对比用。
+
+**状态图**（`TrainMotion.tick` 里列车的状态）：
+
+```mermaid
+stateDiagram-v2
+    state "在车厂" as InDepot
+    state "运行" as Running
+    state "停站" as Stopped {
+        state "开门" as DoorOpen
+        state "计时" as Counting
+        state "扣住" as Held
+        state "可发车" as Ready
+        [*] --> DoorOpen
+        DoorOpen --> Counting : onStopReached()
+        Counting --> Held : 被扣车或前方被占
+        Held --> Counting : 放行
+        Counting --> Ready : 停够时间
+    }
+    [*] --> InDepot
+    InDepot --> Running : canDeploy() 或手动推牵引 / startUp，DEPARTED
+    Running --> Stopped : 到达必须停的停车点 / STOPPED
+    Running --> Running : 通过站 PASSED，环线越过重复点 LAP
+    Running --> InDepot : 到路径末尾且不留在线上 / RETURNED
+    Stopped --> Running : 前方不占 / startUp，DEPARTED
+```
+
+### 4.5 单线走行预约：`RunReservations`
+
+在组件的 `transitsim.sim`，防止按运用运行的列车在单线上对向相遇。
+
+- 只管"双向轨道"：反方向也有轨道的那一段（`getRunMoves` 用 `rails.get(end).get(start)` 判断）。同向的列车由信号区段管，不在这里互相等。
+- **持有**：在线、自动、按运用运行的列车，每 tick 调 `hold`，持有从车尾到"本段走行终点"之间所有双向轨道（带方向）。车尾离开一段轨道才放掉；回库、手动或不按运用的列车 `release` 全部放掉。没有再调 `hold` 的列车在 tick 结束时自动放掉。
+- **申请**：准备离站的列车 `request` 下一段走行的轨道，带计划发车时间。`resolve` 在 tick 结束后统一分配，顺序固定：已等了 `AGING_MILLIS` 以上的按等待时间最长的优先，其余按计划发车时间，再按列车 ID。有等太久的申请没能满足时，还没进入那段轨道的反向列车也不放进去，避免一直被对向车流挡住。
+- 下一 tick 列车 `takeGrant` 拿到结果才发车（`isRunGranted`）；出库也一样要先拿到走行。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant A as 列车 A
+    participant B as 对向列车 B
+    participant RR as RunReservations
+    Note over A,B: 第 n 个 tick
+    A->>RR: hold(车尾到本段终点的双向轨道)
+    B->>RR: hold(...)
+    A->>RR: request(下一段走行, 计划发车时间)
+    B->>RR: request(同一段单线的反方向)
+    Note over RR: tick 结束：resolve()
+    RR->>RR: 先等得久的，再按计划发车时间，再按列车 ID
+    Note over A,B: 第 n+1 个 tick
+    A->>RR: takeGrant()
+    RR-->>A: 给了，可以发车
+    B->>RR: takeGrant()
+    RR-->>B: 没给，继续开门等待
+```
+
+### 4.6 车厂发车：`Depot.deployTrain`
+
+- 组件模拟器接管的车厂直接返回，由模拟器发车。
+- **按运用**（`duties.diagramMode`）：`DepotDispatcher.findDutyDeploy` 按当前时间在可发车的侧线里找该出的运用，找到就从对应侧线发车，并记下这一天这个运用已经跑过。
+- **按时刻表或频率**：本 tick 请求发车的侧线（列车在 `canDeploy` 里调 `requestDeploy`，只有出库的第一段轨道没被占才请求）按侧线顺序从 `deployIndex` 开始轮流找：
+  - 有时刻表的线路：`findDeployService` 找下一个还没发出的班次，找到就记下这个班次（`lastDeployedTrips`、`reserveTrip`）并 `deployTrain(班次时间, 线路)`。
+  - 没有时刻表：到了发车间隔（`getMillisUntilDeploy(1) == 0`）就 `deployTrain()`。
+  - 每 tick 最多发一列，发完 `deployIndex` 往后移，下次从下一条侧线开始，保证各侧线轮流。
+- 发不出去的列车不排队，跳过这个班次，时刻表不会越积越晚。
+- **共用线路的车厂共享班次**（`a1ed043`）：`DataCache.sync()` 时先 `clearSharedServices()`，再把每两个 `routeIds` 有交集的车厂互相 `shareServicesWith`（各自的 `DepotDispatcher` 记为 peer）。之后：
+  - 判断某个班次是否已被占（`isReserved`）时，自己和所有 peer 的预留都算。
+  - `getLastDeployedTrip(线路)` 取自己和 peer 最后发出班次中最晚的一个，所以比它早的班次两边都不会再发。
+  - 结果：两个车厂按同一张时刻表跑同一条线路时，每个班次只由一列车跑。一个车厂占用或放掉班次，也会唤醒另一个车厂里等着的列车。组件的模拟器里做法相同（同一个数据集里共用线路的 `DepotBoard` 互相连接），由 `SharedServicesTest` 检查。
+
+### 4.7 列车同步到客户端：`UpdateNearbyMovingObjects.tick`
+
+每个玩家记着上一 tick 范围内有哪些列车（`dataSetInPlayerRange`）和本 tick 的（`newDataSetInPlayerRange`，由 `handlePositions` 填）。
+
+1. 有列车离开某玩家范围（或被删除），给他发一个 `PACKET_DELETE_TRAINS`，内容是**还要保留**的列车 ID 列表；客户端把不在列表里的列车标为 `isRemoved`，下一帧移除。
+2. 对范围内要同步的列车（本 tick `simulateTrain` 返回 true，或刚进入范围）：
+   - 玩家已经有这列车，且路径没变（`getSyncKey` 相同）：只发状态包（`writeStatePacket`，G2），合并到 `PACKET_UPDATE_TRAIN_STATES`。
+   - 否则发完整数据（`writePacket`，含整条路径），记下 sync key。
+3. 完整数据按 1 MB 一个包拼起来发 `PACKET_UPDATE_TRAINS`；单列车超过 1 MB 的不发。
+
+客户端在网络线程读包、在主线程（`client.execute`）改数据：`updateTrains` 新的列车加进 `ClientData.TRAINS`，已有的 `copyFromTrain`；`updateTrainStates` 对已有列车 `applyState`。两次更新之间客户端用同样的运动规则自己推算位置。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant RD as RailwayData（服务端）
+    participant U as UpdateNearbyMovingObjects
+    participant N as 网络
+    participant CD as ClientData（客户端）
+    RD->>U: handlePositions 填 newDataSetInPlayerRange
+    RD->>U: tick()
+    alt 有列车离开范围
+        U->>N: PACKET_DELETE_TRAINS(保留的 ID)
+        N->>CD: deleteTrains：其余标记 isRemoved
+    end
+    alt 新进入范围或路径变了
+        U->>N: PACKET_UPDATE_TRAINS(完整数据，含路径)
+        N->>CD: updateTrains：新增或 copyFromTrain
+    else 已有且路径没变
+        U->>N: PACKET_UPDATE_TRAIN_STATES(只有状态)
+        N->>CD: updateTrainStates：applyState
+    end
+    Note over CD: 两次更新之间按同样的运动规则自己推算
+```
+
+### 4.8 组件模拟器接管：`LiveSimulation`
+
+由 `mtr_motion.json` 的 `componentDrive` 决定：关（0）、对比（1）、开（2）；用旧规则时总是关。
+
+- **能接管的车厂**：用速度曲线、不是连续运动的车厂（按时刻表、运用或频率都可以）。别的车厂的列车作为外部列车告诉模拟器。
+- **启动**：等读档后侧线都知道所属车厂、列车都已对齐（`hasSettled`）才第一次启动，从游戏里列车的当前位置开始。没有能接管的侧线时每秒重试一次。
+- **开**：模拟器每 tick 推进到当前时间，游戏里这些侧线的列车只显示模拟器的列车（`setSimulated`），自己做车厢、乘客、开门、占轨道和信号。轨道或计划变了（编辑后等 2 秒再看，或每 5 分钟检查一次），或服务器停了超过恢复时间，就从游戏列车的当前位置重新启动。模拟器的列车同样在游戏的 `RunReservations` 里持有和申请走行，和游戏自己的列车互相等待。
+- **对比**：模拟器在旁边独立跑，游戏照常移动所有列车；每 60 秒在日志里报两边差多远（1 格内算一致），然后从游戏列车重新开始。
+- **手动驾驶**：手动的列车由模拟器交给游戏（`TakeOver`），回到自动时把位置和速度还给模拟器（`Release`）。
+- **出错**：任何异常都不会打断游戏的 tick；模拟器关掉，直到设置被改，游戏从模拟器留下的位置接着跑。
+
+#### 按时刻表就位（`placeByTimetable`，协议 42）
+
+模拟器接管的车厂本来只能一列一列发车，白天才应用的时刻表要几个小时才能把线路排满。现在可以让车厂的列车直接出现在时刻表此刻安排的位置：
+
+1. **发起**：在网页编辑器里右键车厂 → `EditorServer` → `PacketTrainDataGuiClient.placeTrainsC2S(depotId)` 发 `PACKET_PLACE_TRAINS`。服务端 `receivePlaceTrainsC2S` 在主线程上检查权限，调 `RailwayData.placeTrainsByTimetable` → `LiveSimulation.placeByTimetable`。
+2. **检查**：模拟器必须正在**接管**这个车厂，否则在聊天栏提示"不是组件运行的车厂"；上一次就位还没算完时提示"正在计算"。
+3. **选车厂**：从这个车厂开始反复扩展，把和已选车厂共用线路的车厂都加进来，直到不再增加。共用线路的车厂跑同一条线和同一张时刻表，分开算会把列车叠在一起。
+4. **准备数据**（主线程）：复制模拟器的数据集，去掉列车，只留选中车厂的侧线，序列化成字节。聊天栏提示正在计算哪些车厂。
+5. **后台计算**（单独的线程 `MTR train placement`）：用这份数据从运营日开始（`DutyShapes.getDayStart`）建一个 `EventSimulator`，按组件的规则一直推进到当前时间。真实世界里算一天大约要 10 秒，所以不能在主线程上算。
+6. **接回**：之后某个 tick 里 `LiveSimulation` 发现计算已完成（`placement.work.isDone()`），就像网络变化时一样重新 `start`。拍下当前列车的记录后，`Placement.takeInto` 先把算好的结果再推进到现在（计算期间时间还在走），然后：
+   - 从记录里删掉这些侧线上的列车，**玩家正在手动驾驶的除外**，换上算出来的列车。
+   - 这些侧线已发出的班次、运用已跑过的日期、最后发车时间、发车轮转位置也一起换掉，已经发出的班次不会再发一遍。
+   - 模拟器从这份记录启动，聊天栏报告每个车厂现在有几列车；计算失败也会提示。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant E as 网页编辑器
+    participant PS as PacketTrainDataGuiServer（主线程）
+    participant LS as LiveSimulation
+    participant PT as MTR train placement 线程
+    participant P as 玩家聊天栏
+    E->>PS: PACKET_PLACE_TRAINS(depotId)
+    PS->>PS: 检查编辑权限
+    PS->>LS: placeByTimetable(player, depotId)
+    alt 模拟器没有接管这个车厂
+        LS-->>P: place_trains_not_run
+    else 上一次还在算
+        LS-->>P: place_trains_busy
+    else
+        LS->>LS: 扩展出共用线路的所有车厂，复制数据集（不含列车）
+        LS-->>P: place_trains_working(车厂名)
+        LS->>PT: submit：从运营日开始推进到现在
+        Note over LS: 主线程照常 tick
+        PT-->>LS: Future 完成
+        LS->>LS: 下一个 tick：start()，takeInto 再推进到现在
+        LS->>LS: 换掉这些侧线的列车和发车记录，手动驾驶的保留
+        LS-->>P: place_trains_done(每个车厂的列车数)
+    end
+```
+
+**状态图**（`componentDrive` 和模拟器）：
+
+```mermaid
+stateDiagram-v2
+    state "关" as Off
+    state "等待" as Waiting
+    state "出错" as Failed
+    state "运行中" as Active {
+        state "接管（componentDrive = 2）" as Drive
+        state "对比（componentDrive = 1）" as Compare
+        [*] --> Drive
+        [*] --> Compare
+        Drive --> Drive : 轨道或计划变了、停服超过恢复时间、按时刻表就位算完 / 重新 start()
+        Compare --> Compare : 每 60 秒报告差距 / 重新 start()
+    }
+    [*] --> Off
+    Off --> Waiting : componentDrive 改为 1 或 2
+    Waiting --> Active : 侧线都知道车厂且列车已对齐 / start()
+    Active --> Failed : 异常
+    Failed --> Off : 直到设置被改
+    Active --> Off : componentDrive 改为 0，或改用旧规则
+```
+
+## 5. 客户端每帧（画列车）
+
+### 5.1 谁触发绘制
+
+列车不是实体，没有自己的渲染器。`RenderTrains` 注册成座位实体 `EntitySeat` 的渲染器，借它每帧被调用：
+
+- 有座位实体时，第一个被画的座位触发 `RenderTrains.render(entity, ...)`，记下它的 UUID（`renderedUuid`），同一帧其他座位直接返回。
+- 没有座位实体时，Fabric 的 `MTRFabricClient`（世界渲染事件）和 Forge 的 `LevelRendererMixin` 调 `render(null, ...)` 作为后备。
+- 装了 Pehkui 时只走后备路径。
+
+### 5.2 `RenderTrains.render` 的步骤
+
+1. **帧时长**：暂停或本游戏 tick 已经画过时为 0（列车不动），否则是上一帧时长（以 tick 计）。
+2. **列车可见距离**：开了动态帧率时，帧时长大于 0.5 tick 就把最大距离往 `DETAIL_RADIUS`（32 格）收一半，小于 0.4 就加 1；否则固定为渲染距离 × (`trainRenderDistanceRatio` + 1)。
+3. `TrainRendererBase.setupStaticInfo`：保存本帧的相机、世界、矩阵、缓冲区。
+4. **不透明批次**（`setBatch(false)`）：`ClientData.TRAINS` 每列车 `train.simulateTrain(world, 帧时长, ...)`，回调里显示速度或站名提示、播报站。
+5. **半透明批次**（`setBatch(true)`）：重放各车厢记下的半透明绘制（`trainTranslucentRenders`）。
+6. 画电梯、轨道和节点，最后按贴图分批提交（`scheduleRender`）。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant LR as LevelRenderer
+    participant RT as RenderTrains
+    participant TC as TrainClient（ANTE mixin 替换后）
+    participant TR as TrainRendererBase 子类
+    participant VR as VehicleRidingClient
+    LR->>RT: render(第一个座位实体，或 null 后备)
+    RT->>RT: 算帧时长、可见距离
+    RT->>TR: setupStaticInfo(矩阵、缓冲区、相机)
+    loop ClientData.TRAINS 每列车
+        RT->>TC: simulateTrain(world, 帧时长, 回调)
+        TC->>TC: 本站、下站、报站、声音
+        TC->>TC: Train.simulateTrain 共用部分
+        loop 每节车厢
+            TC->>VR: 移动坐车的玩家
+            TC->>TR: renderCar(不透明，并排进半透明队列)
+            TC->>TR: renderConnection / renderBarrier
+        end
+    end
+    RT->>RT: setBatch(true) 重放半透明队列
+    RT->>RT: 电梯、轨道、按贴图提交
+```
+
+### 5.3 一列车：`TrainClient`
+
+- 带 ANTE 时 `TrainClientMixin` 替换 `TrainClient.simulateTrain`：先清掉上一帧的半透明队列，按当前停站算出本站、下站、终点站和线路，处理报站和声音，再调 `Train.simulateTrain(world, 帧时长, null)`（4.3 的共用部分，客户端不检查方块），最后取消原方法。
+- `TrainClient.simulateCar`（每节车厢）：
+  - `vehicleRidingClient` 移动坐车的玩家，算出视角偏移。
+  - `trainRenderer.renderCar(...)` 马上画不透明部分，同时把同一调用加进半透明队列。
+  - 有前一节车厢时按两节车厢的四个角算出连接处，`renderConnection` 画风挡，或 `renderBarrier` 画护栏。
+
+### 5.4 车厢：`JonModelTrainRenderer.renderCar`
+
+1. 先保存两端点中心（`endsX/Y/Z`，转向架贴轨道时从这里算）。
+2. 资源包定义了自定义转向架、又不是雅可比转向架时，`getPlacementOnBogies` 按 MTR 4 的方式由两个转向架的位置重新算车体的位置、yaw、pitch。
+3. 半透明批次且没有模型就返回；`applyAverageTransform` 判断超出可见距离也返回。
+4. 平移到车厢位置，`rotateY(π + yaw)`、`rotateX(π + pitch)`（运输方式不允许俯仰时 pitch 取 0）。ANTE 的 `JonModelTrainRendererMixin` 在第一次 `rotateX` 处插入车身侧倾。
+5. 光照取车厢中心方块的方块光和天空光。
+6. 画模型：
+   - 没有模型时画原版矿车或船。
+   - 有模型时，距相机 32 格（`DETAIL_RADIUS`）内或 Replay Mod 下画细节（内饰、门、灯）。
+7. 转向架：
+   - 自定义转向架：近处的车厢在车体画完后按轨道放（`renderBogieOnTrack`，各自取转向架前后 ±1 格的轨道点定方向）；远处的固定在车体上（`renderBogieOnBody`）。
+   - 内置转向架：设置里开了"沿轨道转向"、在细节距离内、不是雅可比转向架时同样按轨道放；否则在 ±`bogiePosition` 处固定在车体上；雅可比转向架只在首尾车厢的端部画。
+8. 缆车另外画抓索器。
+
+### 5.5 脚本车型：`ScriptedTrainRenderer.renderCar`
+
+1. 有基础车型（`baseRenderer`）时先照常画它。
+2. 半透明批次直接返回。
+3. 算出车厢的位姿矩阵（位置、乘客视角偏移、yaw、pitch、侧倾），连同左右门状态写进 `TrainWrapper`（脚本里的 `train` 对象），给脚本读。
+4. 把脚本**上一次** `render` 提交的模型按这个位姿画出来（`commitCar`）。
+5. 最后一节车厢处理完后 `extraFinished`，并 `tryCallRenderFunctionAsync` 让脚本在脚本线程上算下一帧要画什么（第 10 节）。所以脚本画出来的东西比列车位置晚一帧。
+
+## 6. 资源包加载（客户端）
+
+资源重载时 `mtr.client.CustomResources.reload(manager)` 的顺序：
+
+1. **[ANTE `CustomResourcesMixin` HEAD]**：检查 OpenGL 版本，保存 GL 状态，清空 ANTE 的模型和贴图图集（`CustomResources.reset`），预加载列车模型（`TrainModelPreloader`），开始延迟上传模型（`DeferredModelUpload.begin`）。
+2. **清空**：`TrainClientRegistry.reset()`（只剩内置车型）、贴图可用性缓存、字体、自定义站牌。
+3. **读 `mtr:mtr_custom_resources.json`**：`readResource` 读所有资源包里同名的文件（每个包一次）。带 ANTE 时 `readResource` 整个由 mixin 接管：`.obj` 或带 `|` 的路径不读文件，直接生成一个假的 bbmodel 数据交给回调；`.bbmodel` 文件在 JSON 里附上假数据；其余照常解析 JSON。
+4. **每个车型**（`custom_trains` 里的每一项）：
+   - 车型 ID 是 `mtr_custom_train_` 加键名；从 `base_train_type` 找基础车型，没写的属性都继承它（名称、描述、渲染器、声音、转向架……）。
+   - 先读两个转向架（`readBogie`），再用 `getOrDefault` 读车厢贴图。顺序不能换：ANTE 的 mixin 会记住最近一次 `getOrDefault(texture_id)` 读到的贴图和是否翻转 V，用在接下来加载的 OBJ 或 bbmodel 上。
+   - 声音：写了 `bve_sound_base_id` 用 BVE 声音，写了 `speed_sound_base_id` 用 MTR 声音，都没写跟随基础车型。
+   - 有基础车型时，用基础车型的 Java 模型（换上门动画类型）注册一次。
+   - 写了 `model` 和 `model_properties` 时，再读这两个文件：有 `parts_normal` 的是旧格式（`DynamicTrainModelLegacy`），否则 `DynamicTrainModel`；基础车型改为 `<运输方式>_<长度>_<宽度>`，用这个模型覆盖注册。
+   - 单个车型出错只记日志；加载超过阈值的车型在日志里警告。
+5. 读自定义站牌等。
+6. **reload listeners**：依次调用注册过的监听器。ANTE 在 `MainClient.init` 里注册了 `cn.zbx1425.mtrsteamloco.CustomResources.init`，它在这里运行：重载装饰物（`EyeCandyRegistry`）、轨道模型（`RailModelRegistry`）、重置脚本线程（`ScriptHolderClient.resetRunner`）、加载脚本车型（`ScriptedCustomTrains.init`）、上传内置蒸汽机车的模型，并注册 ANTE 内置车型（DK3 等）。
+7. **[ANTE mixin TAIL]**：结束延迟上传、清掉预加载的 OBJ、报告节省的共享几何内存、做一次完整 GC、报告各阶段耗时、重建列车的渲染和声音组件（`resetComponents`）；有加载错误时弹出错误界面；恢复 GL 状态。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant MC as Minecraft 资源重载
+    participant CR as mtr.client.CustomResources
+    participant MX as ANTE CustomResourcesMixin
+    participant TR as TrainClientRegistry
+    participant AC as ANTE CustomResources
+    MC->>CR: reload(manager)
+    CR->>MX: HEAD：GL 检查、清空、预加载、开始延迟上传
+    CR->>TR: reset()
+    CR->>MX: readResource(mtr_custom_resources.json)
+    MX-->>CR: 每个资源包的 JSON
+    loop 每个车型
+        CR->>CR: readBogie ×2，再 getOrDefault(texture_id)
+        CR->>MX: getOrDefault 返回时记下贴图
+        CR->>TR: register(基础车型的 Java 模型)
+        opt 有 model 和 model_properties
+            CR->>MX: readResource(model)，OBJ/bbmodel 用记下的贴图
+            CR->>TR: register(DynamicTrainModel) 覆盖
+        end
+    end
+    CR->>AC: reload listener：init()
+    AC->>AC: 装饰物、轨道模型、重置脚本、脚本车型、内置车型
+    CR->>MX: TAIL：结束上传、GC、resetComponents、报错界面
+```
+
+## 7. 存档
+
+### 7.1 存在哪
+
+| 内容 | 位置 | 格式 |
+|---|---|---|
+| 铁路数据 | 维度存档目录下的 `mtr.db` | SQLite，每类数据一张表，每个对象一行，值是 msgpack（`toBytes`：`messagePackLength` 写表头，`toMessagePack` 写内容） |
+| 备份 | 同目录 `mtr-<时间>-base.db`、`mtr-<时间>-inc.db` | 每批一个完整备份加若干差异备份（`RailwayDataBackups`） |
+| 地图缓存 | 客户端本地 SQLite | `MapCacheDatabase`、`MapDataCache`，服务端只发摘要不同的部分 |
+| 服务端设置 | `config/mtr_security.json`、`mtr_motion.json`、时刻表设置、线路用语 | JSON，服务器启动时读 |
+| 客户端设置 | MTR 的 `Config`、ANTE 的 `ClientConfig` | 设置界面保存时写 |
+
+`RailwayDataFileStore.open` 打开数据库；它本身不引用 SQLite 的类，这样 SQLite 加载失败时能在这里处理。
+
+### 7.2 读档
+
+`RailwayDataFileSaveModule.load()` 读出每张表，逐行还原对象。读不出来的行跳过并计数（`skippedEntries`）：
+
+- 有跳过的行时，本次运行期间不删除数据库里的任何行，读不出来的数据和依赖它的数据都原样保留。
+- 读档开始了但没有读完（`loadStarted` 且 `!dataLoaded`）时，`autoSave` 什么都不写，避免内存里不完整的数据覆盖存档。
+
+### 7.3 写档
+
+有三条路径：
+
+**活动图**：
+
+```mermaid
+flowchart TD
+    subgraph 每个 tick
+        A[玩家改了轨道或对象] --> B["markRailsChanged / markEdited"]
+        B --> C["saveNow：本 tick 结束一次写入"]
+        D[autoSaveTick] --> E{"有待写的行?"}
+        E -- 是 --> F["按类型写，最多约 2 毫秒"]
+        F --> G{写完了?}
+        G -- 否 --> H[留到下一 tick]
+        G -- 是 --> I["finishSave：删除不存在的行、清过期延误"]
+    end
+    subgraph 世界保存
+        J["RailwayData.save"] --> K{服务器在停止?}
+        K -- 否 --> L["autoSave：快照，哈希不同才进队列，标记全部轨道，检查备份"]
+        L --> D
+        K -- 是 --> M["fullSave：不限时写完，失败重试一次，关闭数据库"]
+    end
+```
+
+1. **本 tick 结束立即写**（`saveNow`，每 tick 调）：玩家刚改的轨道（`markRailsChanged`）和对象（`markObjectChanged`，由 `markEdited` 调），以及编辑版本号，一次写入。轨道改动因此不会因为服务器崩溃而丢失。
+2. **自动存档**（世界保存时 `RailwayData.save` → `autoSave`）：
+   - 在同一时刻给除轨道外的所有对象拍快照（`stage`），保证存下的数据彼此一致。
+   - 每个对象序列化后算哈希，和数据库里已有的比，**只有变了的才进待写队列**。列车位置、车厂最后发出的班次也算在对象内容里，所以会每次更新。
+   - 轨道数量多，不拍快照，标记全部轨道位置，之后每 tick 处理一点。
+   - 同时检查要不要做备份（`dataStore.backup()`，在单独的线程里做）。
+   - 之后每 tick `autoSaveTick` 按类型依次写，每次最多用约 2 毫秒，超时就留到下一 tick。全部写完后 `finishSave` 删除已经不存在的对象的行，清理过期的延误记录，在日志里报告改了几行、删了几行。
+3. **停服完整存档**（服务器停止时 `fullSave`）：清空所有队列，`autoSave` 后不限时一口气写完；失败的话再试一次，还失败就在日志里明确报告丢失了哪些（轨道已经即时写过，不受影响），最后关闭数据库。
+
+存档格式只能加内容，不能改已有的内容。
+
+## 8. 玩家编辑数据
+
+### 8.1 普通的改动
+
+以在界面里改一条线路为例：
+
+1. **客户端**：界面调 `PacketTrainDataGuiClient.sendUpdate(packetId, packet)`。包的内容是对象 ID、改的字段名（"part"）和新值；`ClientEditing.send` 在外面再包一层 `PACKET_EDIT`，带上这个玩家看到的这部分数据的版本号（不归它管的包照原样发出）。发完客户端立即 `DATA_CACHE.sync()`，界面马上看到自己的改动。
+2. **`PacketGuard`**：同一玩家同一种包每秒超过 400 个，或包大于 1 MB，直接拒收并记日志；处理时的异常也在这里接住，不会传到网络线程。
+3. **`EditGuard.handle`**（在服务器主线程上执行，所以同一对象的改动按到达顺序逐个检查）：
+   - 没有编辑权限（`RailwayData.hasNoPermission`）就忽略。
+   - `editRevisions.check(类型, ID, 字段, 版本号, 是否删除)`：这个对象的这个字段在玩家拿到之后被别人改过（或对象被删了），就**拒绝**：告诉玩家是谁改的，并把对象当前的数据发回给他。没有带版本号的旧式改动（`UNCHECKED`）也会过这一关，不能把运行中已删除的对象改回来。
+   - 通过后 `applyGroup` 执行改动。
+4. **执行**（`PacketTrainDataGuiServer.receiveUpdateOrDeleteC2S`）：
+   - 再检查一次权限；ID 为 0 的新建请求拒绝（服务端和各客户端会各自随机出不同的 ID）。
+   - 在 `RailwayData` 里找到或新建对象，调它的 `update(字段, packet)` 改值。
+   - 把完整的包转发给同一维度的其他玩家，`dataCache.sync()`。
+   - 改的是线路时，按时刻表分界修正跨线路的连接，修正了就再广播一次。
+   - 改车站或车厂时更新 Dynmap、BlueMap、Squaremap（没装就跳过）。
+5. 改动成功后版本号加 1 并广播（`sendRevision`），对象在本 tick 结束时写档。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant P as 玩家 A 的界面
+    participant CE as ClientEditing
+    participant PG as PacketGuard
+    participant EG as EditGuard（主线程）
+    participant ER as EditRevisions
+    participant PS as PacketTrainDataGuiServer
+    participant O as 其他玩家
+    P->>CE: sendUpdate(packetId, 对象 ID + 字段 + 新值)
+    CE->>PG: PACKET_EDIT(包 ID, 版本号, 内容)
+    PG->>PG: 大小 ≤ 1 MB，每秒 ≤ 400 个
+    PG->>EG: receiveEditC2S
+    EG->>EG: 检查编辑权限
+    EG->>ER: check(类型, ID, 字段, 版本号)
+    alt 别人先改过
+        ER-->>EG: Conflict
+        EG-->>P: 拒绝：谁改的 + 当前数据
+    else 没有冲突
+        EG->>EG: applyGroup：备份对象，先读出类型、ID、字段
+        EG->>PS: 处理器 receiveUpdateOrDeleteC2S
+        PS->>PS: 找到或新建对象，update(字段, 值)
+        PS->>O: 转发完整的包
+        PS->>PS: dataCache.sync()，修正时刻表连接，更新网页地图
+        alt 处理器失败（异常或 FAILED）
+            EG->>EG: restore 备份，dataCache.sync()
+            EG->>O: 重新发这些对象给所有玩家
+            EG-->>P: edit_failed
+        else 成功
+            EG->>O: sendRevision(新版本号)
+            Note over EG: markEdited，本 tick 结束时写档
+        end
+    end
+```
+
+### 8.2 一组改动
+
+网页编辑器的改动一次发一批（`PACKET_EDIT_BATCH`）。单个改动（8.1）也走同一个 `applyGroup`，只是组里只有一项。`applyGroup` 在同一个主线程任务里做这些事：
+
+1. **备份**：组里涉及的每个对象先存一份序列化的字节（对象原来不存在就记为 null）。
+2. **先读出每项改动是什么**：类型、对象 ID、字段，都在处理器读包**之前**读出来（`e7abbc7` 修复）。处理器会把包的读位置往后移，以前在处理器之后才读，读到的是错误的字节，会抛 `VarInt too big` 或 `IndexOutOfBounds`。结果是改动本身生效了，但版本号没记、没有即时写档、别的玩家不知道新版本号，网页编辑器的那一批也没有返回结果。
+3. **依次执行**：每项执行前清掉 `PacketTrainDataBase.FAILED`，调用这种包注册的处理器。处理器抛异常或把 `FAILED` 设为 true 都算失败，后面的改动不再执行。
+4. **失败**：**整组对象恢复成备份**（`restore`：有备份就还原，原来不存在就删掉），然后 `dataCache.sync()`。因为别的玩家可能已经收到了其中一部分，所以把这些对象重新发给所有玩家，给发起的玩家提示 `edit_failed`。版本号不变。
+5. **成功**：按第 2 步读出的信息，逐项 `editRevisions.record` 记新版本号，`sendRevision` 广播，`markEdited` 让它在本 tick 结束时写档。
+
+### 8.3 谁在编辑什么
+
+玩家打开或关闭某个对象的编辑界面时发 `PACKET_EDITING`，服务器广播给所有人；玩家离开时 `EditGuard.onPlayerQuit` 清掉他的编辑状态。
+
+### 8.4 改轨道
+
+放节点、连轨道、删轨道走 `RailwayData` 的 `addRail`、`removeNode`、`removeRailConnection` 等方法，改完 `markRailsChanged`，本 tick 结束时写档。用旧路径的侧线会被标记为路径过期（`isPathStale`：路径上的轨道被删、类型、方向或长度变了），在车厂界面显示。`PathRegionSync` 发现指纹变了就在后台重算区域数据再同步给玩家。
+
+## 9. 车厂生成路径
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant P as 车厂界面
+    participant D as Depot（主线程）
+    participant TH as 路径生成线程
+    participant MP as MainPath
+    participant PF as PathFinder / DeterministicPathFinder
+    participant Sd as Siding
+    participant MS as 主线程任务
+    P->>D: 刷新路径
+    D->>D: 复制轨道和数据，按服务类型分组
+    D->>D: getPathGraph()：新寻路建 RailGraph，否则 null
+    D->>TH: 启动线程
+    loop 每组
+        TH->>MP: generate()
+        loop 每条线路
+            MP->>PF: findPath(站台, 途经点)
+            PF-->>MP: 路径，或失败的段号
+        end
+        MP->>MP: 连接、编号停站、折返和回库点
+        loop 组里每条侧线
+            MP->>Sd: generateRoute()
+            Sd->>PF: 出库、各班次回库、末站回库
+            Sd->>Sd: generateTimeSegments()
+            Sd->>MS: execute(替换路径)
+            MS->>MS: 新路径为空则保留旧路径，否则替换并 relocateTrains
+        end
+    end
+    TH-->>P: generatePathS2C(成功段数, 失败原因)
+```
+
+### 9.1 发起：`Depot.generateMainRoute`
+
+1. **复制数据**：`dataCache.copyIdMaps()` 和 `DataCache.copyRails(rails)`，后台线程只用这份副本，玩家同时改轨道不会影响它，也不会让它找到改了一半的线网。
+2. **按服务类型分组**：车厂区域内、运输方式相同的侧线，按车辆能跑的服务类型（`getServiceTypes`）分组，每组只用它能跑的线路（`filterRoutes`），各生成一条主路径（`MainPath`）。
+3. **建图**（在服务器主线程上）：`getPathGraph(rails, pathBoundaries)`。车厂开了新寻路（`useDeterministicPath`）、不是飞机、不是连续运动时，用 `DeterministicPathFinder.compile` 建组件的 `RailGraph`（按路径分界限定区域）；否则返回 null，用旧寻路。
+4. **开线程**：逐组 `MainPath.generate`，完成后 `generatePathS2C` 把成功的段数和失败原因发给客户端。新的请求会让正在跑的旧线程以 `CancellationException` 停下，由新线程报告结果。
+
+### 9.2 主路径：`MainPath.generate`
+
+1. 逐条线路：
+   - 和上一条线路的终点站不同时，`addConnection` 找两条线路之间的连接路径（可能包括折返）。
+   - `PathFinder.findPath(...)` 按线路的站台顺序和途经点找路径：有 `RailGraph` 就走 `DeterministicPathFinder.findPath`（组件的 `RailRouter`，同样的线网和线路总是得到同样的路径）；没有就用旧的 `PathFinder`，旧寻路不支持途经点，有途经点的段直接判失败，而不是悄悄走另一条路。
+   - 找不到时 `PathFailure.diagnose` 给出原因（哪两站之间、为什么），停止。
+   - `applyStopSettings` 应用线路的停站设置（通过站、每站停站时间）。
+   - 和上一段首尾相接：同一段轨道去掉重复的一段；反向的同一段（掉头）把那一段的停站去掉。
+2. 留在线上的车厂（`closesPath`）：再找从最后一条线路回到第一条的连接，一圈的终点就是第一站。
+3. **编号停站**：路径上每遇到一个新站台（站台轨道且有站台 ID，前一段不是站台），`stopIndex` 加 1；通过的站也算，因为线路的车站序号包括它们。
+4. 折返段、回库点、环线入口、各班次的尾部（`TripTail`，在中途离开主路径回库的服务）都在这里找好。
+5. 对组里每条侧线调 `siding.generateRoute(...)`。
+
+### 9.3 侧线的完整路径：`Siding.generateRoute`
+
+在路径生成线程上算：
+
+1. 侧线 → 第一个站台的出库路径；找不到就算失败。
+2. 环线连接路径接在后面；`repeatIndex1` 记下重复起点。
+3. 接上主路径。
+4. 每个班次尾部：找从它最后一站回侧线的路径，找到才加这个班次的路径（`addTripPath`），找不到这个班次就留在主路径上。
+5. 最后一站 → 侧线的回库路径；找不到算失败。`repeatIndex2` 记下重复终点。
+6. 有折返段就加折返路径（`addTurnBackPaths`），再加中途回库的路径（`addDepotReturnPaths`）。
+7. `generateTimeSegments`：按速度算出每段轨道的时间段、各站台的到站时间和停站时间。
+8. 按运用运行的车厂还要给每个运用找路径（`addDutyPath`），找不到的在日志里列出。
+
+然后回到**服务器主线程**（`minecraftServer.execute`）替换：
+
+- 新路径为空、而侧线原来有路径时，**保留旧路径和所有列车**，只报告失败。
+- 否则替换路径、时间段、停站时间、站台时间、重复点、班次路径、折返；`relocateTrains` 按轨道把线上的列车放到新路径上对应的位置，列车不会跳走。
+- 新路径为空且原来也没有时，用默认路径（侧线自己）。
+
+## 10. ANTE 脚本
+
+### 10.1 加载：`ScriptHolderBase.load`
+
+1. 建一个 GraalJS 上下文，所有脚本共用一个引擎（`SharedEngine`）：
+   - nashorn 兼容模式，ECMAScript 最新版；脚本开头先加载 `nashorn:mozilla_compat.js`。
+   - 不允许本地代码和启动进程；允许建线程。
+   - 文件访问只限 `./ante/script_data/` 目录（相对路径也按这个目录解析，不能跳出去），JS 引擎自己需要的内部资源除外。
+   - Java 类访问：**加载阶段**（`loading[0]` 为真）允许所有类；加载完以后只允许 `ALLOWED_PACKAGES`（`java.awt`、`java.util`、`mtr`）下的类和 `ALLOWED_CLASSES` 里的少数 `java.lang` 类。
+2. `appendImporter` 把工具类注入成全局变量，例如 `Executors`（`ScriptExecutors`）。
+3. 依次执行脚本文件，把全局的 `create`、`render`、`dispose` 等函数收集起来（多个文件可以各有一个，按顺序都调用），然后从全局里删掉。
+
+### 10.2 调用
+
+- 所有对脚本的调用都提交到唯一的 `SCRIPT_THREAD`（单线程执行器），因为同一个 Graal 上下文不能同时被两个线程进入。
+- `tryCallFunctionAsync`：这个对象（一列车或一个装饰物）的上一次调用还没结束、或对象已销毁时，**跳过这次**，不排队。
+- `tryCallRenderFunctionAsync`：还没创建过就调 `create`，之后每帧调 `render`。调用参数是脚本上下文、状态对象（`state`）和包装对象（列车是 `TrainWrapper`）。
+- 脚本抛异常时记日志，之后 4 秒内这个脚本的所有调用都跳过，避免每帧刷错误。
+- 脚本自己用 `Executors` 开的定时任务，`ScriptExecutors` 包装成在 `SCRIPT_THREAD` 上执行。
+
+**时序图**：
+
+```mermaid
+sequenceDiagram
+    participant R as 渲染线程
+    participant STR as ScriptedTrainRenderer
+    participant H as ScriptHolderBase
+    participant ST as SCRIPT_THREAD
+    participant JS as 脚本
+    R->>STR: renderCar(第 i 节)
+    STR->>STR: 写 TrainWrapper（位姿、门）
+    STR->>STR: commitCar：画脚本上一次提交的模型
+    Note over STR: 最后一节车厢之后
+    STR->>H: tryCallRenderFunctionAsync(ctx)
+    alt 上一次调用还没结束，或 4 秒失败冷却中
+        H-->>STR: 跳过这一帧
+    else
+        H->>ST: submit
+        ST->>JS: create（首次）或 render(ctx, state, train)
+        JS-->>ST: 提交下一帧要画的模型
+        Note over ST,JS: 抛异常则记日志，4 秒内不再调用
+    end
+```
+
+### 10.3 重置
+
+资源重载时 `ScriptHolderClient.resetRunner()`：停掉 `SCRIPT_THREAD`（`shutdownNow`）并新建一个，`ScriptExecutors.shutdownAll()` 停掉脚本开的所有线程池，然后重新加载脚本。
+
+## 11. 读代码的几点提示
+
+- **一份数据，服务端和客户端各有一份**：`Station`、`Route`、`Depot` 等在两边都有，都能用 msgpack（存档）和 `FriendlyByteBuf`（网络）读写。改字段时，存档读写、网络读写、`update(key, packet)` 三处都要改。
+- **`DataCache` 是索引**：`RailwayData` 里的数据是集合，按 ID 查找和"站台属于哪个站"这类关系都在 `DataCache` 里；数据结构变了要 `sync()`。
+- **新规则在组件里**：列车运动、时刻表、运用、寻路的新规则都在 `transit-sim`，MTR 里对应的是适配器（`advanced/` 和 `PlanAdapters` 等）。改规则先改组件并写组件测试。
+- **注释里的编号**：代码注释里的 F1、G1、S1、R03 等是设计文档和架构审查里的步骤或问题编号，到 `MTR-模拟组件与解耦.md` 和 `MTR-设计与架构审查评估-2026-11-03.md` 里查。
+- **找不到的行为先查 mixin**：见 3.4 节。
+- **不参与编译的文件**：`scripting/ScriptHolderBase copy` 是旧版的副本（没有 `.java` 后缀），读代码时以 `ScriptHolderBase.java` 为准。
