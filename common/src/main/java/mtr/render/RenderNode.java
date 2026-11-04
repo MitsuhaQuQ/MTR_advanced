@@ -71,7 +71,8 @@ public class RenderNode<T extends BlockNode.TileEntityNode> extends BlockEntityR
 		final float offsetX = LINE_LENGTH * (float) Math.cos(Math.toRadians(angle));
 		final float offsetZ = LINE_LENGTH * (float) Math.sin(Math.toRadians(angle));
 		final float y = IBlock.getStatePropertySafe(state, BlockNode.IS_CONNECTED) ? LINE_Y_CONNECTED : LINE_Y_NOT_CONNECTED;
-		IDrawing.drawLine(matrices, vertexConsumers, 0.5F - offsetX, y, 0.5F - offsetZ, 0.5F + offsetX, y, 0.5F + offsetZ, 0xFF, 0xFF, 0);
+		// The node's line in blue, apart from the red line and arc of the angle and from yellow rails
+		IDrawing.drawLine(matrices, vertexConsumers, 0.5F - offsetX, y, 0.5F - offsetZ, 0.5F + offsetX, y, 0.5F + offsetZ, 0x33, 0x99, 0xFF);
 
 		// Connected nodes show the way their rails face, the same number the brush screen uses
 		final RailAngle facing = Rail.getNodeFacing(ClientData.RAILS.get(pos));

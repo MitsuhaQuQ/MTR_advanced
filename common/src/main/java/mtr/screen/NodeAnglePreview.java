@@ -37,6 +37,8 @@ public class NodeAnglePreview implements IGui {
 	private static final int COLOR_BAD_RAIL = 0xFFFF4040;
 	private static final int COLOR_DIAL = 0xFFFF3030;
 	private static final int COLOR_NODE = 0xFFFFFFFF;
+	// Blue, so the node's line can't be taken for the yellow rails
+	private static final int COLOR_NODE_AXIS = 0xFF3399FF;
 	private static final float MIN_BLOCKS_SHOWN = 8;
 	private static final float DIAL_RADIUS_RATIO = 0.18F;
 
@@ -130,7 +132,7 @@ public class NodeAnglePreview implements IGui {
 			// The node's line, through it both ways
 			final float lineX = (float) Math.cos(radians) * dialRadius * 1.6F;
 			final float lineY = (float) Math.sin(radians) * dialRadius * 1.6F;
-			drawLine(matrices, centerX - lineX, centerY - lineY, centerX + lineX, centerY + lineY, COLOR_NEW_RAIL);
+			drawLine(matrices, centerX - lineX, centerY - lineY, centerX + lineX, centerY + lineY, COLOR_NODE_AXIS);
 			drawArc(matrices, centerX, centerY, dialRadius, wrappedAngle);
 		}
 		GuiCompat.fill(matrices, Math.round(centerX) - 1, Math.round(centerY) - 1, Math.round(centerX) + 2, Math.round(centerY) + 2, COLOR_NODE);

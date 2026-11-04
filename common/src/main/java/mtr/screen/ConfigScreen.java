@@ -133,7 +133,8 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			checkboxUseLegacyMotion.setChecked(MotionConfig.useLegacyMotion(true));
 			IDrawing.setPositionAndWidth(buttonComponentDrive, SQUARE_SIZE, SQUARE_SIZE * 3, width - SQUARE_SIZE * 3 - BUTTON_WIDTH);
 			setComponentDriveText(buttonComponentDrive);
-			offsetY = SQUARE_SIZE * 2;
+			// Below the two checkboxes and the component's button, each a row of its own
+			offsetY = SQUARE_SIZE * 3;
 		} else {
 			offsetY = 0;
 		}
@@ -196,7 +197,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			renderBackground(matrices);
 			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.mtr_options"), width / 2, TEXT_PADDING, ARGB_WHITE);
 
-			final int yStart1 = SQUARE_SIZE + TEXT_PADDING / 2 + (hasTimeAndWindControls ? SQUARE_SIZE * 2 : 0);
+			final int yStart1 = SQUARE_SIZE + TEXT_PADDING / 2 + (hasTimeAndWindControls ? SQUARE_SIZE * 3 : 0);
 			int i = 1;
 			GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.use_mtr_font"), SQUARE_SIZE, yStart1, ARGB_WHITE);
 			if (!Keys.LIFTS_ONLY) {

@@ -145,10 +145,12 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 				GuiCompat.draw(matrices, font, ruleLines.get(i), SQUARE_SIZE, getRowY(ROW_ANGLE_RULE) + TEXT_PADDING + i * (ROW_HEIGHT - 6), ARGB_LIGHT_GRAY);
 			}
 			final String previewError = preview.render(matrices, font, textFieldAngle.getValue());
-			if (previewError != null) {
-				GuiCompat.draw(matrices, font, Text.translatable(previewError), preview.getX(), preview.getY() + preview.getSize() + TEXT_PADDING, 0xFFFF4040);
-			} else if (preview.getSize() > 0) {
-				GuiCompat.draw(matrices, font, LABEL_PREVIEW_HINT, preview.getX(), preview.getY() + preview.getSize() + TEXT_PADDING, ARGB_LIGHT_GRAY);
+			if (preview.getSize() > 0) {
+				// Under the map and as wide as it, on as many lines as it takes
+				final List<FormattedCharSequence> previewLines = font.split(previewError == null ? LABEL_PREVIEW_HINT : Text.translatable(previewError), Math.max(preview.getSize(), width - preview.getX() - TEXT_PADDING));
+				for (int i = 0; i < previewLines.size(); i++) {
+					GuiCompat.draw(matrices, font, previewLines.get(i), preview.getX(), preview.getY() + preview.getSize() + TEXT_PADDING + i * (TEXT_HEIGHT + 2), previewError == null ? ARGB_LIGHT_GRAY : 0xFFFF4040);
+				}
 			}
 			GuiCompat.draw(matrices, font, LABEL_TRANSITION, SQUARE_SIZE, getRowY(ROW_TRANSITION) + TEXT_PADDING, ARGB_LIGHT_GRAY);
 			if (turnBackRail != null) {

@@ -174,7 +174,7 @@
   "gui.mtr.node_angle": "角度 (-180~180°)",
   "gui.mtr.node_angle_direction": "指向%s · 你现在面向 %s",
   "gui.mtr.node_angle_rule": "0° 为正东；正数顺时针转（俯视，东→南），负数逆时针转（东→北）",
-  "gui.mtr.node_angle_preview_hint": "在图上拖动来旋转节点，按住 Shift 以 22.5° 为一档；灰色是现在的轨道，黄色是旋转后的",
+  "gui.mtr.node_angle_preview_hint": "在图上拖动来旋转节点，按住 Shift 以 22.5° 为一档；蓝线是节点的方向，灰色是现在的轨道，黄色是旋转后的",
   "gui.mtr.node_angle_status": "%s（%s）· 你面向 %s",
   "gui.mtr.angle_due": "正%s",
   "gui.mtr.angle_toward": "%1$s偏%2$s %3$s°",

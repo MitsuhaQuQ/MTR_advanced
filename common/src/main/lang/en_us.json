@@ -174,7 +174,7 @@
   "gui.mtr.node_angle": "Angle (-180~180°)",
   "gui.mtr.node_angle_direction": "Points %s · you face %s",
   "gui.mtr.node_angle_rule": "0° is east; + turns clockwise seen from above (east → south), - the other way (east → north)",
-  "gui.mtr.node_angle_preview_hint": "Drag on the map to turn the node, shift for 22.5° steps; grey is now, yellow after",
+  "gui.mtr.node_angle_preview_hint": "Drag on the map to turn the node, shift for 22.5° steps; blue is the node, grey the rails now, yellow after",
   "gui.mtr.node_angle_status": "%s (%s) · you face %s",
   "gui.mtr.angle_due": "due %s",
   "gui.mtr.angle_toward": "%1$s %3$s° toward %2$s",
