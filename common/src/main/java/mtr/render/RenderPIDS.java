@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.MTRClient;
 import mtr.block.BlockArrivalProjectorBase;
 import mtr.block.IBlock;
+import mtr.client.ClientClock;
 import mtr.client.ClientData;
 import mtr.data.*;
 import mtr.mappings.BlockEntityMapper;
@@ -269,7 +270,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 						// Render arrival
 						final Component arrivalText;
 						// Get arrival time
-						final int seconds = (int) ((currentSchedule.arrivalMillis - System.currentTimeMillis()) / 1000);
+						final int seconds = (int) ((currentSchedule.arrivalMillis - ClientClock.INSTANCE.serverMillis()) / 1000);
 						final int delayMinutes = currentSchedule.getDelayMinutes();
 						if (seconds >= 60) {
 							if ((arrivalLine == 1 && renderVertical) || (arrivalLine == 0 && renderSingle) || renderClassic) {

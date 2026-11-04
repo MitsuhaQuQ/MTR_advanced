@@ -33,6 +33,10 @@ import java.util.function.BiConsumer;
 public class MTR implements IPacket {
 
 	private static int gameTick = 0;
+	/**
+	 * How often the server sends its time to the players, ten seconds (G2).
+	 */
+	private static final int SERVER_TIME_TICKS = 200;
 
 	public static final String MOD_ID = "mtr";
 
@@ -487,6 +491,9 @@ public class MTR implements IPacket {
 			AudioServer.tick(minecraftServer);
 
 			gameTick++;
+			if (gameTick % SERVER_TIME_TICKS == 0) {
+				minecraftServer.getPlayerList().getPlayers().forEach(PacketTrainDataGuiServer::serverTimeS2C);
+			}
 
 			if (Keys.TEST_SERVER && gameTick > 200) {
 				System.out.printf("Terminating test server for %s%n", Registry.isFabric() ? "Fabric" : "Forge");
@@ -498,6 +505,7 @@ public class MTR implements IPacket {
 			PacketTrainDataGuiServer.lineWordsS2C(player);
 			PacketTrainDataGuiServer.timetableConfigS2C(player);
 			PacketTrainDataGuiServer.motionConfigS2C(player);
+			PacketTrainDataGuiServer.serverTimeS2C(player);
 			PacketTrainDataGuiServer.editPermissionS2C(player);
 			AudioServer.sendList(player);
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));

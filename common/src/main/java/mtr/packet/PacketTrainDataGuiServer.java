@@ -77,6 +77,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	/**
+	 * The server's time, so the client goes by it when it works out where trains are and shows times (G2).
+	 */
+	public static void serverTimeS2C(ServerPlayer player) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(System.currentTimeMillis());
+		Registry.sendToPlayer(player, PACKET_SERVER_TIME, packet);
+	}
+
+	/**
 	 * Which rules move the trains, so the client follows them the same way ({@link MotionConfig}).
 	 */
 	public static void motionConfigS2C(ServerPlayer player) {

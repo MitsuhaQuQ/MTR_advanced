@@ -11,6 +11,7 @@ import mtr.block.BlockTrainAnnouncer;
 import mtr.block.BlockTrainScheduleSensor;
 import mtr.block.BlockTrainSensorBase;
 import mtr.client.AnnouncementPlayer;
+import mtr.client.ClientClock;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
 import mtr.client.MapDataCache;
@@ -54,6 +55,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void receiveEditPermissionS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final boolean hasPermissionLevel = packet.readBoolean();
 		minecraftClient.execute(() -> ClientData.hasEditPermissionLevel = hasPermissionLevel);
+	}
+
+	public static void receiveServerTimeS2C(FriendlyByteBuf packet) {
+		// Taken as it arrives, as waiting for the client's thread would make it look later than it is
+		ClientClock.INSTANCE.onServerTime(packet.readLong());
 	}
 
 	public static void receiveMotionConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
