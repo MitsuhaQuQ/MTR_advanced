@@ -79,7 +79,7 @@ public final class EditorData {
 				final JsonObject sidingObject = new JsonObject();
 				sidingObject.addProperty("id", String.valueOf(siding.id));
 				sidingObject.addProperty("name", siding.name);
-				sidingObject.addProperty("maxTrains", siding.getUnlimitedTrains() ? -1 : siding.getMaxTrains());
+				sidingObject.addProperty("maxTrains", siding.getTrainLimit());
 				sidingsArray.add(sidingObject);
 			});
 			depotObject.add("sidings", sidingsArray);

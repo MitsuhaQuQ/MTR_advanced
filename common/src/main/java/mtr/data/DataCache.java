@@ -78,6 +78,7 @@ public class DataCache {
 		copy.sidingIdMap.putAll(sidingIdMap);
 		copy.routeIdMap.putAll(routeIdMap);
 		copy.depotIdMap.putAll(depotIdMap);
+		copy.platformIdToStation.putAll(platformIdToStation);
 		return copy;
 	}
 

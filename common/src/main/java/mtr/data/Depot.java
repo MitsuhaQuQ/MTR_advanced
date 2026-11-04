@@ -15,6 +15,8 @@ import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.DutyShapes;
+import transitsim.planning.DutyGenerator;
+import transitsim.planning.AutoDuties;
 import mtr.advanced.PathBoundaries;
 import mtr.packet.PacketTrainDataGuiServer;
 import mtr.path.DeterministicPathFinder;
@@ -83,6 +85,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final DepotDuties duties = new DepotDuties();
 	/**
+	 * The duties worked out from the timetables when the depot runs by a timetable and has none set, made again with its
+	 * paths (decoupling document, step D). The depot then only sends trains out when their duties start.
+	 */
+	public final DepotDuties autoDuties = new DepotDuties();
+	/**
+	 * What the auto duties were last worked out from, so they are worked out again when it changes; not saved, so they
+	 * are worked out again once after the world is loaded.
+	 */
+	private String autoDutiesKey;
+	/**
 	 * The operating day each slot last ran its duty, as "siding:slot", so a duty runs once a day however its train gets to it.
 	 */
 
@@ -125,6 +137,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_CYCLE_ROUTES = "cycle_routes";
 	private static final String KEY_SPEED_CURVES = "speed_curves";
 	private static final String KEY_DUTIES = "duties";
+	private static final String KEY_AUTO_DUTIES = "auto_duties";
 	private static final String KEY_DUTY_MODE = "duty_mode";
 	private static final String KEY_DUTY_SLOT = "duty_slot";
 	private static final String KEY_DUTY_RUN_DAYS = "duty_run_days";
@@ -173,6 +186,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			duties.fromBytes(dutiesValue.asBinaryValue().asByteArray());
 		}
 		duties.diagramMode = DUTY_MODE_DIAGRAM.equals(messagePackHelper.getString(KEY_DUTY_MODE));
+		final Value autoDutiesValue = map.get(KEY_AUTO_DUTIES);
+		if (autoDutiesValue != null && autoDutiesValue.isBinaryValue()) {
+			autoDuties.fromBytes(autoDutiesValue.asBinaryValue().asByteArray());
+		}
 		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dispatcher.dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
 	}
 
@@ -276,11 +293,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePacker.packString(KEY_DUTIES).packBinaryHeader(dutyBytes.length);
 		messagePacker.writePayload(dutyBytes);
 		messagePacker.packString(KEY_DUTY_MODE).packString(duties.diagramMode ? DUTY_MODE_DIAGRAM : DUTY_MODE_ONLINE);
+		final byte[] autoDutyBytes = autoDuties.toBytes();
+		messagePacker.packString(KEY_AUTO_DUTIES).packBinaryHeader(autoDutyBytes.length);
+		messagePacker.writePayload(autoDutyBytes);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 16;
+		return super.messagePackLength() + 17;
 	}
 
 	@Override
@@ -463,8 +483,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
 				PathFailure failure = PathFailure.NONE;
+				// Groups of sidings running the same routes share their services out, the first group first
+				final Set<String> autoTaken = new HashSet<>();
 				for (final MainPath mainPath : mainPaths) {
-					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed));
+					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, autoTaken));
 					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
 				}
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure);
@@ -585,7 +607,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		dataCache = railwayData.dataCache;
 		trainRoutes.clear();
 
-		if (duties.diagramMode) {
+		if (getRunDuties() != null) {
 			deployDutyTrain(railwayData);
 			departureOffset = 0;
 			deployableSidings.clear();
@@ -635,7 +657,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private void deployDutyTrain(RailwayData railwayData) {
 		final long currentMillis = System.currentTimeMillis();
-		final DepotDispatcher.DutyDeploy<PathData> deploy = dispatcher.findDutyDeploy(currentMillis, new TreeSet<>(deployableSidings.keySet()), duties, sidingId -> {
+		final DepotDispatcher.DutyDeploy<PathData> deploy = dispatcher.findDutyDeploy(currentMillis, new TreeSet<>(deployableSidings.keySet()), getRunDuties(), sidingId -> {
 			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
 			return siding == null ? null : siding.getTripPaths();
 		}, railwayData.dataCache.routeIdMap::get);
@@ -647,7 +669,59 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public List<DepotDuties.Slot> getDutySlots(long sidingId) {
-		return duties.getSlots(sidingId);
+		final DepotDuties runDuties = getRunDuties();
+		return runDuties == null ? Collections.emptyList() : runDuties.getSlots(sidingId);
+	}
+
+	/**
+	 * @return what the depot's auto duties are worked out from: its routes' timetables and stops, and its sidings and the
+	 * trains each holds; null if it doesn't run by a timetable or has duties set
+	 */
+	public String getAutoDutiesKey(DataCache dataCache, Set<Siding> sidings) {
+		if (duties.diagramMode || transportMode.continuousMovement) {
+			return null;
+		}
+		final List<Route> routes = getRoutes(dataCache);
+		if (routes.isEmpty() || getActiveTimetable(routes.get(0)) == null) {
+			return null;
+		}
+		final StringBuilder key = new StringBuilder();
+		routes.forEach(route -> {
+			final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+			transitsim.plan.TimetableBinary.write(writer, route.timetable);
+			key.append(route.id).append(':').append(Arrays.hashCode(writer.toBytes())).append(':');
+			route.platformIds.forEach(platform -> key.append(platform.platformId).append(','));
+			key.append(';');
+		});
+		sidings.stream().filter(siding -> dataCache.sidingIdToDepot.get(siding.id) == this).sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> key.append(siding.id).append('/').append(siding.getTrainLimit()).append(siding.getTrainId()).append(';'));
+		return key.toString();
+	}
+
+	/**
+	 * @return whether the auto duties need working out again, which is then taken as done
+	 */
+	public boolean takeAutoDutiesChange(DataCache dataCache, Set<Siding> sidings) {
+		final String key = getAutoDutiesKey(dataCache, sidings);
+		if (key == null) {
+			autoDutiesKey = null;
+			return false;
+		}
+		if (key.equals(autoDutiesKey)) {
+			return false;
+		}
+		autoDutiesKey = key;
+		return true;
+	}
+
+	/**
+	 * @return the duties the depot runs by: the ones set for it, or for a depot running by a timetable with none set the
+	 * ones worked out from its timetables; null for a depot sending trains out by frequency
+	 */
+	public DepotDuties getRunDuties() {
+		if (duties.diagramMode) {
+			return duties;
+		}
+		return autoDuties.diagramMode && !transportMode.continuousMovement ? autoDuties : null;
 	}
 
 	@Override
@@ -873,6 +947,45 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * The path through some of the depot's routes, shared by the sidings whose vehicles run those routes.
 	 */
 	private class MainPath {
+
+		/**
+		 * Works out the duties of these sidings from the timetables of their routes when the depot runs by a timetable
+		 * and has none set, and gives them to the depot on the server thread (decoupling document, step D). The routes'
+		 * fastest times are those of their own paths, found by now.
+		 *
+		 * @return the duties, or null if the depot doesn't run by a timetable
+		 */
+		private DepotDuties generateAutoDuties(MinecraftServer minecraftServer, Set<String> autoTaken) {
+			final Set<Long> sidingIds = new HashSet<>();
+			sidings.forEach(siding -> sidingIds.add(siding.id));
+			final boolean byTimetable = !mainRoutes.isEmpty() && getActiveTimetable(mainRoutes.get(0)) != null && !transportMode.continuousMovement && !sidings.isEmpty();
+			if (!byTimetable) {
+				minecraftServer.execute(() -> {
+					autoDuties.sidings.keySet().removeAll(sidingIds);
+					autoDuties.diagramMode = !autoDuties.sidings.isEmpty();
+				});
+				return null;
+			}
+			final Map<Long, long[][]> fastestTimes = new HashMap<>();
+			for (int i = 0; i < mainRoutes.size(); i++) {
+				final List<PathData> routePath = pathsInRoute.get(i);
+				if (routePath.size() > 1) {
+					fastestTimes.put(mainRoutes.get(i).id, sidings.get(0).calculateStopTimes(routePath).getFastestTimesFromFirstStop(mainRoutes.get(i)));
+				}
+			}
+			final List<DutyGenerator.SidingInput> sidingInputs = new ArrayList<>();
+			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit())));
+			final Map<Long, Long> stationOf = new HashMap<>();
+			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
+			final AutoDuties generated = AutoDuties.generate(mainRoutes, route -> fastestTimes.get(route.getRouteId()), TimetableConfig.getDayStartMillis(), sidingInputs, stationOf, cycleRoutes, autoTaken);
+			System.out.println("Minecraft Transit Railway: worked out the duties of depot " + (name.isEmpty() ? String.valueOf(id) : name) + " from its timetables: " + generated.trains + " trains, " + generated.uncovered / 7 + " services a day with no train" + (generated.missingTimes.isEmpty() ? "" : ", " + generated.missingTimes.size() + " routes left out as their times aren't known"));
+			minecraftServer.execute(() -> {
+				autoDuties.sidings.keySet().removeAll(sidingIds);
+				autoDuties.sidings.putAll(generated.duties.sidings);
+				autoDuties.diagramMode = true;
+			});
+			return generated.duties;
+		}
 
 		private PathFailure failure = PathFailure.NONE;
 
@@ -1374,7 +1487,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			return loopJoinPath;
 		}
 
-		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		/**
+		 * @param autoTaken the services the sidings of other groups already run by their auto duties
+		 */
+		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed, Set<String> autoTaken) {
 			final List<PathData> tempPath = new ArrayList<>();
 			final List<TurnBackSection<PathData>> turnBackSections = new ArrayList<>();
 			final List<DepotReturn<PathData, SavedRailBase>> depotReturns = new ArrayList<>();
@@ -1447,11 +1563,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final SavedRailBase entryPlatform = loopJoinPath.isEmpty() ? null : platformsInRoute.get(0).get(loopEntryStop);
 			final List<TripTail<PathData, SavedRailBase>> tripTails = getTripTails(tempPath, rails, graph, useFastSpeed);
 
+			final DepotDuties runDuties = duties.diagramMode ? duties : generateAutoDuties(minecraftServer, autoTaken);
+
 			int successfulSegments = Integer.MAX_VALUE;
 			for (final Siding siding : sidings) {
 				final SavedRailBase firstPlatform = entryPlatform != null ? entryPlatform : platformsMerged.isEmpty() ? null : platformsMerged.get(0);
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
-				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = duties.diagramMode ? getDutyPlans(duties, siding, rails, graph, useFastSpeed, key -> {
+				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = runDuties != null ? getDutyPlans(runDuties, siding, rails, graph, useFastSpeed, key -> {
 				}) : new ArrayList<>();
 				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans));
 			}

@@ -121,8 +121,8 @@ public final class EditorDuties implements IPacket {
 			}
 			final JsonArray slotsArray = sidingEntry.getValue().getAsJsonArray();
 			final String sidingName = siding.name.isEmpty() ? TranslatedMessage.get("gui.mtr.editor_siding") : siding.name;
-			if (slotsArray.size() > DepotDuties.MAX_SLOTS || !siding.getUnlimitedTrains() && slotsArray.size() > siding.getMaxTrains()) {
-				return TranslatedMessage.get("gui.mtr.editor_too_many_slots", sidingName, siding.getUnlimitedTrains() ? DepotDuties.MAX_SLOTS : siding.getMaxTrains());
+			if (slotsArray.size() > DepotDuties.MAX_SLOTS || !siding.getUnlimitedTrains() && slotsArray.size() > siding.getTrainLimit()) {
+				return TranslatedMessage.get("gui.mtr.editor_too_many_slots", sidingName, siding.getUnlimitedTrains() ? DepotDuties.MAX_SLOTS : siding.getTrainLimit());
 			}
 			final List<DepotDuties.Slot> slots = new ArrayList<>();
 			for (int i = 0; i < slotsArray.size(); i++) {
@@ -237,7 +237,7 @@ public final class EditorDuties implements IPacket {
 		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, route -> ClientData.TIMETABLE_TIMES.get(((Route) route).id), dayStartMillis, route -> missingTimes.add(((Route) route).name));
 
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
-		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getUnlimitedTrains() ? -1 : siding.getMaxTrains())));
+		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit())));
 		final Map<Long, Long> stationOf = new HashMap<>();
 		ClientData.DATA_CACHE.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 		final long maxLayoverMillis = depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;

@@ -281,9 +281,14 @@ public final class DutyPlanner {
 			if (duty.trips.isEmpty()) {
 				duty.carriedFrom.returnDepotAtMillis = duty.returnDepotAtMillis + OperationTime.WEEK_MILLIS;
 			} else {
-				final int nextIndex = indexByFirstTrip.get(duty.trips.get(0).key());
-				nextDuties.put(duty.carriedFrom, nextIndex);
-				previousDuties.put(openDuties.get(nextIndex), indices.get(duty.carriedFrom));
+				// A duty carried into the following week whose first trip or whose duty it came from isn't one of this week's
+				// is left as one that doesn't carry on
+				final Integer nextIndex = indexByFirstTrip.get(duty.trips.get(0).key());
+				final Integer fromIndex = indices.get(duty.carriedFrom);
+				if (nextIndex != null && fromIndex != null) {
+					nextDuties.put(duty.carriedFrom, nextIndex);
+					previousDuties.put(openDuties.get(nextIndex), fromIndex);
+				}
 			}
 		});
 

@@ -827,8 +827,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 
 		// A depot running by its duties has a train for each slot of the siding
-		final boolean runsByDuties = depot.duties.diagramMode;
-		final int dutySlots = depot.duties.getSlots(id).size();
+		final boolean runsByDuties = depot.getRunDuties() != null;
+		final int dutySlots = depot.getDutySlots(id).size();
 		if (trainCars > 0 && (runsByDuties ? dutySlots > 0 && (trains.isEmpty() || spawnTrain && trains.size() < dutySlots) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
 			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 			trains.add(train);
@@ -1019,6 +1019,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	public int getMaxTrains() {
 		return maxTrains;
+	}
+
+	/**
+	 * @return how many trains the siding holds at most, or -1 for no limit; {@link #getMaxTrains} is one less, as the
+	 * siding makes a train while it has no more than that many
+	 */
+	public int getTrainLimit() {
+		return unlimitedTrains ? -1 : maxTrains + 1;
 	}
 
 	public boolean getIsManual() {

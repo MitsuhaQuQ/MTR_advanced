@@ -101,6 +101,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 	private final SignalBlocks signalBlocks = new SignalBlocks();
 	private final RailNodeRepair railNodeRepair = new RailNodeRepair();
+	private static final int AUTO_DUTIES_CHECK_TICKS = 100;
 
 	public SignalBlocks getSignalBlocks() {
 		return signalBlocks;
@@ -521,6 +522,16 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		prevPlatformCount = platforms.size();
 		prevSidingCount = sidings.size();
 
+		// A depot running by a timetable with no duties set has its duties worked out with its paths, so its paths are found
+		// again when its timetables or sidings change, and once after the world is loaded; one depot at a time
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && railwayDataPathGenerationModule.canGenerate()) {
+			for (final Depot depot : depots) {
+				if (depot.takeAutoDutiesChange(dataCache, sidings)) {
+					railwayDataPathGenerationModule.generatePath(world.getServer(), depot.id);
+					break;
+				}
+			}
+		}
 		// Nodes the world lost while their rails were kept, as when the server stopped before saving the world
 		railNodeRepair.tick(world, rails);
 		// Track laid or taken away in this tick is saved now, the rest with the next save

@@ -21,6 +21,14 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 		super(railwayData, world, rails);
 	}
 
+	/**
+	 * @return whether a new path generation can start now, as only a few run at once
+	 */
+	public boolean canGenerate() {
+		generatingPathThreads.keySet().removeIf(id -> !generatingPathThreads.get(id).isAlive());
+		return generatingPathThreads.size() < MAX_THREADS;
+	}
+
 	public void generatePath(MinecraftServer minecraftServer, long depotId) {
 		generatingPathThreads.keySet().removeIf(id -> !generatingPathThreads.get(id).isAlive());
 		final long millis = System.currentTimeMillis();

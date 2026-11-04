@@ -47,10 +47,20 @@ public final class AutoDuties {
 	 * @param staysOnLine    whether the depot keeps its trains on the line between services
 	 */
 	public static AutoDuties generate(List<? extends PlanRoute> routes, Function<PlanRoute, long[][]> fastestTimes, int dayStartMillis, List<DutyGenerator.SidingInput> sidings, Map<Long, Long> stationOf, boolean staysOnLine) {
+		return generate(routes, fastestTimes, dayStartMillis, sidings, stationOf, staysOnLine, new java.util.HashSet<>());
+	}
+
+	/**
+	 * @param taken the services other sidings of the depot already run, as {@code route@service}, which these sidings
+	 *              leave to them; the services these sidings take are added
+	 */
+	public static AutoDuties generate(List<? extends PlanRoute> routes, Function<PlanRoute, long[][]> fastestTimes, int dayStartMillis, List<DutyGenerator.SidingInput> sidings, Map<Long, Long> stationOf, boolean staysOnLine, java.util.Set<String> taken) {
 		final List<PlanRoute> missing = new ArrayList<>();
 		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, fastestTimes, dayStartMillis, missing::add);
+		services.removeIf(service -> taken.contains(service.routeId + "@" + service.service));
 		final AutoDuties autoDuties = new AutoDuties(DutyGenerator.generate(services, sidings, stationOf, staysOnLine ? transitsim.plan.RouteTimetable.MAX_STAY_MILLIS : transitsim.plan.RouteTimetable.MAX_LAYOVER_MILLIS));
 		autoDuties.missingTimes.addAll(missing);
+		autoDuties.duties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> taken.add(segment.routeId + "@" + segment.service)))));
 		return autoDuties;
 	}
 }
