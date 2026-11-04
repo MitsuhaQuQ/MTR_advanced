@@ -81,6 +81,22 @@ public final class RunReservations {
 	}
 
 	/**
+	 * @return the trains holding rails, in order
+	 */
+	public Set<Long> getHolders() {
+		return arbiter.getHolders();
+	}
+
+	/**
+	 * @return the rails a train holds, with their directions
+	 */
+	public List<Move> getHeld(long trainId) {
+		final List<Move> moves = new ArrayList<>();
+		arbiter.getHoldings(trainId).forEach(claim -> moves.add(new Move(claim.resource, claim.way > 0)));
+		return moves;
+	}
+
+	/**
 	 * @return the trains of each deadlock found since this was last called, each once
 	 */
 	public List<Set<Long>> takeDeadlocks() {
@@ -104,6 +120,21 @@ public final class RunReservations {
 		public Move(long fromPos, long toPos) {
 			rail = RailKeys.of(fromPos, toPos);
 			forwards = fromPos < toPos;
+		}
+
+		public Move(UUID rail, boolean forwards) {
+			this.rail = rail;
+			this.forwards = forwards;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return object instanceof Move && ((Move) object).rail.equals(rail) && ((Move) object).forwards == forwards;
+		}
+
+		@Override
+		public int hashCode() {
+			return rail.hashCode() * 2 + (forwards ? 1 : 0);
 		}
 	}
 

@@ -27,6 +27,20 @@ public final class DepotBoard implements TrainService.Board {
 	 */
 	public boolean cycleRoutes;
 	/**
+	 * The departures of trains sent out by frequency rather than by a timetable, as times of the day in order, or none.
+	 */
+	public final List<Integer> departures = new ArrayList<>();
+	/**
+	 * The depot's sidings in the order the game's depot takes them in turn sending trains out, or none to take each siding
+	 * with a train ready by its ID.
+	 */
+	public final List<Long> sidingOrder = new ArrayList<>();
+	/**
+	 * When it last sent a train out, and which siding in {@link #sidingOrder} it goes on from, as the game's depot saves them.
+	 */
+	public long lastDeployedMillis;
+	public int deployIndex;
+	/**
 	 * Whether the services taken changed in this tick, so trains waiting to be sent out work out again when they can go
 	 * (S4f).
 	 */

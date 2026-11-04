@@ -246,6 +246,9 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		} else if (input instanceof HostInput.ExternalTrain) {
 			final HostInput.ExternalTrain externalTrain = (HostInput.ExternalTrain) input;
 			runner.setExternalTrain(externalTrain.trainId, externalTrain.rails);
+		} else if (input instanceof HostInput.ExternalRun) {
+			final HostInput.ExternalRun externalRun = (HostInput.ExternalRun) input;
+			runner.setExternalRun(externalRun.trainId, externalRun.moves);
 		} else if (input instanceof HostInput.TakeOver) {
 			runner.takeOver(((HostInput.TakeOver) input).trainId);
 		} else if (input instanceof HostInput.Release) {

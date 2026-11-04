@@ -26,8 +26,17 @@ public final class RunRecord {
 	 */
 	public final Map<Long, Map<Long, Long>> lastDeployedTrips = new TreeMap<>();
 	public final Map<Long, Map<String, Long>> dutyRunDays = new TreeMap<>();
+	/**
+	 * When each depot last sent a train out, and which of its sidings it takes next when sending trains out by frequency,
+	 * by the depot's first siding (G1).
+	 */
+	public final Map<Long, Long> lastDeployedMillis = new TreeMap<>();
+	public final Map<Long, Integer> deployIndices = new TreeMap<>();
 
-	private static final int VERSION = 1;
+	/**
+	 * Version 2 adds the depots sending trains out by frequency; older records are read without them.
+	 */
+	private static final int VERSION = 2;
 
 	public RunRecord(long time) {
 		this.time = time;
@@ -57,13 +66,23 @@ public final class RunRecord {
 				writer.writeLong(day);
 			});
 		});
+		writer.writeVarInt(lastDeployedMillis.size());
+		lastDeployedMillis.forEach((sidingId, millis) -> {
+			writer.writeLong(sidingId);
+			writer.writeLong(millis);
+		});
+		writer.writeVarInt(deployIndices.size());
+		deployIndices.forEach((sidingId, index) -> {
+			writer.writeLong(sidingId);
+			writer.writeInt(index);
+		});
 		return writer.toBytes();
 	}
 
 	public static RunRecord fromBytes(byte[] bytes) {
 		final ByteArrayBinary.Reader reader = new ByteArrayBinary.Reader(bytes);
 		final int version = reader.readInt();
-		if (version != VERSION) {
+		if (version < 1 || version > VERSION) {
 			throw new IllegalArgumentException("Unknown run record version " + version);
 		}
 		final RunRecord record = new RunRecord(reader.readLong());
@@ -80,6 +99,14 @@ public final class RunRecord {
 			final Map<String, Long> days = record.dutyRunDays.computeIfAbsent(reader.readLong(), key -> new TreeMap<>());
 			for (int j = reader.readVarInt(); j > 0; j--) {
 				days.put(readString(reader), reader.readLong());
+			}
+		}
+		if (version >= 2) {
+			for (int i = reader.readVarInt(); i > 0; i--) {
+				record.lastDeployedMillis.put(reader.readLong(), reader.readLong());
+			}
+			for (int i = reader.readVarInt(); i > 0; i--) {
+				record.deployIndices.put(reader.readLong(), reader.readInt());
 			}
 		}
 		return record;

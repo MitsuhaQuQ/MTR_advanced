@@ -36,9 +36,10 @@ import java.util.function.Supplier;
 public final class SimDataset {
 
 	/**
-	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1); older data is read without them.
+	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1), version 4 the depots' departures by
+	 * frequency and order of sidings, and which sidings are driven by hand (G1); older data is read without them.
 	 */
-	public static final int VERSION = 3;
+	public static final int VERSION = 4;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -77,6 +78,14 @@ public final class SimDataset {
 				writer.writeLong(rail.getLeastSignificantBits());
 			});
 		});
+		depots.forEach(depot -> {
+			writer.writeVarInt(depot.departures.length);
+			for (final int departure : depot.departures) {
+				writer.writeInt(departure);
+			}
+			writeLongs(writer, depot.sidingOrder);
+		});
+		sidings.forEach(siding -> writer.writeBoolean(siding.manual));
 		return writer.toBytes();
 	}
 
@@ -108,6 +117,18 @@ public final class SimDataset {
 				dataset.signalBlocks.add(rails);
 			}
 		}
+		if (version >= 4) {
+			for (final DepotData depot : dataset.depots) {
+				depot.departures = new int[reader.readVarInt()];
+				for (int i = 0; i < depot.departures.length; i++) {
+					depot.departures[i] = reader.readInt();
+				}
+				depot.sidingOrder = readLongs(reader);
+			}
+			for (final SidingData siding : dataset.sidings) {
+				siding.manual = reader.readBoolean();
+			}
+		}
 		return dataset;
 	}
 
@@ -136,7 +157,10 @@ public final class SimDataset {
 		for (int i = 0; i < depots.size(); i++) {
 			final DepotData depot = depots.get(i);
 			if (depot.id == depotId) {
-				depots.set(i, new DepotData(depot.id, depot.routeIds, depot.cycleRoutes, duties));
+				final DepotData newDepot = new DepotData(depot.id, depot.routeIds, depot.cycleRoutes, duties);
+				newDepot.departures = depot.departures;
+				newDepot.sidingOrder = depot.sidingOrder;
+				depots.set(i, newDepot);
 				return true;
 			}
 		}
@@ -161,6 +185,12 @@ public final class SimDataset {
 		for (final DepotData depot : depots) {
 			final DepotBoard board = new DepotBoard(toRoutes(depot.routeIds, routeMap));
 			board.cycleRoutes = depot.cycleRoutes;
+			for (final int departure : depot.departures) {
+				board.departures.add(departure);
+			}
+			for (final long sidingId : depot.sidingOrder) {
+				board.sidingOrder.add(sidingId);
+			}
 			if (depot.duties.length > 0) {
 				board.duties.fromBytes(depot.duties);
 			}
@@ -178,6 +208,7 @@ public final class SimDataset {
 			final TickRunner.Siding<DataTrack> siding = new TickRunner.Siding<>(sidingData.path, sidingData.repeatIndex1, sidingData.repeatIndex2, stopTimes, trainId, sidingData.trainCars, sidingData.spacing, sidingData.railLength, sidingData.acceleration, sidingData.deceleration, sidingData.maxTrains);
 			siding.minSpeed = sidingData.minSpeed;
 			siding.usesSpeedCurve = sidingData.usesSpeedCurve;
+			siding.manual = sidingData.manual;
 			sidingData.tripPaths.forEach(tripPath -> {
 				final TripPath<DataTrack> newTripPath = new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path);
 				newTripPath.generateTimes(generator);
@@ -448,6 +479,14 @@ public final class SimDataset {
 		 * The depot's duties as {@link transitsim.plan.DepotDuties#toBytes} gives them, or empty.
 		 */
 		public final byte[] duties;
+		/**
+		 * The departures of trains sent out by frequency rather than by a timetable, as times of the day in order, or none.
+		 */
+		public int[] departures = new int[0];
+		/**
+		 * All the depot's sidings in the order the game's depot takes them in turn sending trains out, or none.
+		 */
+		public long[] sidingOrder = new long[0];
 
 		public DepotData(long id, long[] routeIds, boolean cycleRoutes, byte[] duties) {
 			this.id = id;
@@ -493,6 +532,10 @@ public final class SimDataset {
 		 * As {@link TurnBacks#write} writes them into a {@link BinaryKeyed.Writer}, or empty for none.
 		 */
 		public final byte[] turnBacks;
+		/**
+		 * Whether its trains may be driven by hand, so they only leave when a player drives them out.
+		 */
+		public boolean manual;
 
 		public SidingData(long id, long depotId, long[] routeIds, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains, boolean usesSpeedCurve, float minSpeed, int repeatIndex1, int repeatIndex2, int loopJoinIndex, List<DataTrack> path, byte[] turnBacks) {
 			this.id = id;

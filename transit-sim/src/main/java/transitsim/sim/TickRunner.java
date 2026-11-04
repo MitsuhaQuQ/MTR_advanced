@@ -47,9 +47,10 @@ import java.util.function.LongSupplier;
  * Ticks in which no train moves are skipped altogether. The results are the same as moving every train in every tick.
  * <p>
  * It is what the event driven simulator is compared against, and runs the fixed whole-chain scenarios. Signal blocks
- * spanning several rails are taken as the game's signals take them (G1). Left out, as they need a world or a player:
- * manual driving (the host takes such a train over), passengers, doors' platforms, and depots sending trains out by
- * frequency instead of a timetable or duties.
+ * spanning several rails are taken as the game's signals take them (G1), and depots send trains out by a timetable, by
+ * duties or by frequency as the game's do. A siding whose trains may be driven by hand has them stand until the host
+ * takes them over and drives them out. Left out, as they need a world or a player: driving by hand itself, passengers and
+ * doors' platforms.
  */
 public final class TickRunner<T extends RunTrack> {
 
@@ -71,6 +72,10 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	private final Map<Long, Set<UUID>> externalTrainRails = new HashMap<>();
 	private final Map<Long, Occupant> externalTrainOccupants = new HashMap<>();
+	/**
+	 * The runs held by trains the runner doesn't move, by their IDs, held again in every tick (G1).
+	 */
+	private final Map<Long, List<RunReservations.Move>> externalRuns = new TreeMap<>();
 	/**
 	 * What has each rail, as an {@link Occupancy} has it in this tick and the one before.
 	 */
@@ -236,6 +241,20 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * The runs a train the runner doesn't move holds now, in place of the ones it held (G1). The runner's trains aren't
+	 * given runs against them.
+	 */
+	public void setExternalRun(long trainId, List<RunReservations.Move> moves) {
+		if (moves.isEmpty()) {
+			externalRuns.remove(trainId);
+			reservations.release(trainId);
+		} else {
+			externalRuns.put(trainId, new ArrayList<>(moves));
+			reservations.hold(trainId, moves);
+		}
+	}
+
+	/**
 	 * Stops moving a train, as the host has taken it over (3.1, rule 4). Its rails stay taken, as an external train's.
 	 *
 	 * @return false if there is no such train
@@ -285,6 +304,8 @@ public final class TickRunner<T extends RunTrack> {
 			if (recordedDepots.add(sidingRun.depot)) {
 				record.lastDeployedTrips.put(sidingRun.sidingId, new TreeMap<>(sidingRun.depot.dispatcher.lastDeployedTrips));
 				record.dutyRunDays.put(sidingRun.sidingId, new TreeMap<>(sidingRun.depot.dispatcher.dutyRunDays));
+				record.lastDeployedMillis.put(sidingRun.sidingId, sidingRun.depot.lastDeployedMillis);
+				record.deployIndices.put(sidingRun.sidingId, sidingRun.depot.deployIndex);
 			}
 			sidingRun.trains.forEach(train -> record.trains.add(train.toRecord()));
 		});
@@ -307,6 +328,18 @@ public final class TickRunner<T extends RunTrack> {
 			final SidingRun sidingRun = sidings.get(sidingId);
 			if (sidingRun != null) {
 				sidingRun.depot.dispatcher.dutyRunDays.putAll(days);
+			}
+		});
+		record.lastDeployedMillis.forEach((sidingId, lastDeployedMillis) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				sidingRun.depot.lastDeployedMillis = lastDeployedMillis;
+			}
+		});
+		record.deployIndices.forEach((sidingId, deployIndex) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				sidingRun.depot.deployIndex = deployIndex;
 			}
 		});
 		for (final RunRecord.TrainRecord trainRecord : record.trains) {
@@ -485,6 +518,8 @@ public final class TickRunner<T extends RunTrack> {
 				removeOccupant(entry.getKey(), Occupant.EXTERNAL);
 			}
 		}
+		// What trains the runner doesn't move hold is held again, as each holder renews it every tick
+		externalRuns.forEach(reservations::hold);
 		movedTrains.clear();
 		readyDepots.clear();
 		for (final SidingRun sidingRun : sidings.values()) {
@@ -731,29 +766,59 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			return;
 		}
-		for (final SidingRun sidingRun : ready) {
-			final HeadlessTrain train = sidingRun.waitingTrain;
-			final RouteTimetable timetable = depot.getTimetable(sidingRun.siding.trainId);
-			if (timetable == null) {
-				continue;
+		if (depot.sidingOrder.isEmpty()) {
+			for (final SidingRun sidingRun : ready) {
+				if (deployTrain(depot, sidingRun, false)) {
+					break;
+				}
 			}
-			final PlanRoute firstRoute = depot.getTrainRoutes(sidingRun.siding.trainId).get(0);
-			// A siding whose path runs over a track gone from the network sends no more trains
-			if (train.findRemovedRail() >= 0) {
-				continue;
-			}
-			final long tripMillis = train.service.findDeployService(depot.dispatcher.lastDeployedTrips.getOrDefault(firstRoute.getRouteId(), 0L));
-			if (tripMillis != 0) {
-				train.catchUp(millis);
-				depot.dispatcher.lastDeployedTrips.put(firstRoute.getRouteId(), tripMillis);
-				depot.reserveTrip(firstRoute.getRouteId(), tripMillis);
-				train.canDeploy = true;
-				train.service.deploy(tripMillis, firstRoute.getRouteId());
-				depot.changed = true;
-				wake(train);
+			return;
+		}
+		// The game's depot goes through its sidings from where it left off, the last train ready in each
+		final Map<Long, SidingRun> readySidings = new HashMap<>();
+		ready.forEach(sidingRun -> readySidings.put(sidingRun.sidingId, sidingRun));
+		final int size = depot.sidingOrder.size();
+		for (int i = depot.deployIndex; i < depot.deployIndex + size; i++) {
+			final SidingRun sidingRun = readySidings.get(depot.sidingOrder.get(i % size));
+			if (sidingRun != null && deployTrain(depot, sidingRun, true)) {
 				break;
 			}
 		}
+	}
+
+	/**
+	 * Sends out the siding's train that is ready, for the first service of the timetable no train has taken, or by
+	 * frequency when the depot's next departure is due.
+	 *
+	 * @param inTurn whether the depot takes its sidings in turn, as the game's does
+	 * @return whether it was sent out
+	 */
+	private boolean deployTrain(DepotBoard depot, SidingRun sidingRun, boolean inTurn) {
+		final HeadlessTrain train = sidingRun.waitingTrain;
+		final RouteTimetable timetable = depot.getTimetable(sidingRun.siding.trainId);
+		// A siding whose path runs over a track gone from the network sends no more trains
+		if (train == null || timetable == null && depot.departures.isEmpty() || train.findRemovedRail() >= 0) {
+			return false;
+		}
+		final PlanRoute firstRoute = timetable == null ? null : depot.getTrainRoutes(sidingRun.siding.trainId).get(0);
+		final long tripMillis = timetable == null ? 0 : train.service.findDeployService(depot.dispatcher.lastDeployedTrips.getOrDefault(firstRoute.getRouteId(), 0L));
+		if (timetable == null ? DepotDispatcher.getMillisUntilDeploy(depot.departures, depot.lastDeployedMillis, millis, 1) != 0 : tripMillis == 0) {
+			return false;
+		}
+		train.catchUp(millis);
+		depot.lastDeployedMillis = millis;
+		if (inTurn) {
+			depot.deployIndex = depot.deployIndex + 1 >= depot.sidingOrder.size() ? 0 : depot.deployIndex + 1;
+		}
+		if (timetable != null) {
+			depot.dispatcher.lastDeployedTrips.put(firstRoute.getRouteId(), tripMillis);
+			depot.reserveTrip(firstRoute.getRouteId(), tripMillis);
+			train.service.deploy(tripMillis, firstRoute.getRouteId());
+		}
+		train.canDeploy = true;
+		depot.changed = true;
+		wake(train);
+		return true;
 	}
 
 	public interface TrainListener<T extends RunTrack> {
@@ -826,6 +891,10 @@ public final class TickRunner<T extends RunTrack> {
 		public final float deceleration;
 		public final int maxTrains;
 		public boolean usesSpeedCurve = true;
+		/**
+		 * Whether its trains may be driven by hand, which makes them stand in the siding until the host drives them out.
+		 */
+		public boolean manual;
 		/**
 		 * The highest speed limit of the path, for how far ahead a train may have to look.
 		 */
@@ -1326,6 +1395,15 @@ public final class TickRunner<T extends RunTrack> {
 				if (canDeploy) {
 					return 0;
 				}
+				// A train driven by hand only leaves when the host drives it
+				if (siding.manual) {
+					return Long.MAX_VALUE;
+				}
+				if (path.size() > 1 && !isRailOccupied(1) && sidingRun.depot.getTimetable(siding.trainId) == null) {
+					// Sent out by frequency, which is once the depot's next departure has passed
+					final int untilMillis = sidingRun.depot.departures.isEmpty() ? -1 : DepotDispatcher.getMillisUntilDeploy(sidingRun.depot.departures, sidingRun.depot.lastDeployedMillis, millis, 1);
+					return untilMillis < 0 ? Long.MAX_VALUE : Math.max(0, untilMillis / MotionConstants.MILLIS_PER_TICK - 1);
+				}
 				if (path.size() > 1 && !isRailOccupied(1)) {
 					// Waiting to be sent out, which can only be once a service comes near enough
 					final List<PlanRoute> depotRoutes = sidingRun.depot.getTrainRoutes(siding.trainId);
@@ -1730,7 +1808,8 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean isCurrentlyManual() {
-			return false;
+			// As in the game, a train that may be driven by hand counts as driven while it is in its siding
+			return siding.manual && !onRoute;
 		}
 
 		@Override

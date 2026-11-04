@@ -159,6 +159,46 @@ public class DepotDispatcher {
 		return best;
 	}
 
+	/**
+	 * A depot sending trains out by frequency rather than by a timetable sends one out when the time of the day has passed
+	 * one of its departures and the last train it sent left before that departure.
+	 *
+	 * @param departures         the departures as times of the day, in order
+	 * @param lastDeployedMillis when the depot last sent a train out
+	 * @param offset             which departure, counting from 1 for the one now due or next
+	 * @return for the first departure, 0 if a train is due now, else the time until the next departure; for a later one,
+	 * the time until it; -1 if there is no such departure
+	 */
+	public static int getMillisUntilDeploy(List<Integer> departures, long lastDeployedMillis, long currentMillis, int offset) {
+		final long millis = currentMillis % OperatingDay.MILLIS_PER_DAY;
+		for (int i = 0; i < departures.size(); i++) {
+			final long thisDeparture = departures.get(i);
+			final long nextDeparture = wrapTime(departures.get((i + 1) % departures.size()), thisDeparture);
+			final long newMillis = wrapTime(millis, thisDeparture);
+			if (newMillis > thisDeparture && newMillis <= nextDeparture) {
+				if (offset > 1) {
+					if (offset <= departures.size()) {
+						return (int) (wrapTime(departures.get((i + offset) % departures.size()), millis) - millis);
+					}
+				} else {
+					return wrapTime(lastDeployedMillis, newMillis) - OperatingDay.MILLIS_PER_DAY >= thisDeparture ? (int) (nextDeparture - newMillis) : 0;
+				}
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * @return the time of the day moved on by whole days until it is after the other time
+	 */
+	private static long wrapTime(long time, long mustBeGreaterThan) {
+		long newTime = time % OperatingDay.MILLIS_PER_DAY;
+		while (newTime <= mustBeGreaterThan) {
+			newTime += OperatingDay.MILLIS_PER_DAY;
+		}
+		return newTime;
+	}
+
 	public static long getTripKey(long routeId, long tripMillis) {
 		return routeId * 31 + tripMillis;
 	}

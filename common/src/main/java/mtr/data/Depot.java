@@ -777,22 +777,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	public int getMillisUntilDeploy(int offset, int currentTimeOffset) {
-		final long millis = (System.currentTimeMillis() + currentTimeOffset) % MILLISECONDS_PER_DAY;
-		for (int i = 0; i < tempDepartures.size(); i++) {
-			final long thisDeparture = tempDepartures.get(i);
-			final long nextDeparture = wrapTime(tempDepartures.get((i + 1) % tempDepartures.size()), thisDeparture);
-			final long newMillis = wrapTime(millis, thisDeparture);
-			if (newMillis > thisDeparture && newMillis <= nextDeparture) {
-				if (offset > 1) {
-					if (offset <= tempDepartures.size()) {
-						return (int) (wrapTime(tempDepartures.get((i + offset) % tempDepartures.size()), millis) - millis);
-					}
-				} else {
-					return wrapTime(lastDeployedMillis + currentTimeOffset, newMillis) - MILLISECONDS_PER_DAY >= thisDeparture ? (int) (nextDeparture - newMillis) : 0;
-				}
-			}
-		}
-		return -1;
+		return DepotDispatcher.getMillisUntilDeploy(tempDepartures, lastDeployedMillis + currentTimeOffset, System.currentTimeMillis() + currentTimeOffset, offset);
 	}
 
 	public void generateTempDepartures(Level world) {
@@ -821,14 +806,6 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	private static float wrapTime(float time) {
 		return (time + 6000 + TICKS_PER_DAY) % TICKS_PER_DAY;
-	}
-
-	private static long wrapTime(long time, long mustBeGreaterThan) {
-		long newTime = time % MILLISECONDS_PER_DAY;
-		while (newTime <= mustBeGreaterThan) {
-			newTime += MILLISECONDS_PER_DAY;
-		}
-		return newTime;
 	}
 
 	private void readVehicleServiceTypes(FriendlyByteBuf packet) {

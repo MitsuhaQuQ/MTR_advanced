@@ -2,8 +2,10 @@ package transitsim.sim;
 
 import transitsim.plan.PlanRoute;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -95,6 +97,23 @@ public abstract class HostInput implements Comparable<HostInput> {
 			super(time, sequence);
 			this.trainId = trainId;
 			this.rails = Collections.unmodifiableSet(new HashSet<>(rails));
+		}
+	}
+
+	/**
+	 * The runs a train the simulation doesn't move holds with their directions now (G1), such as one of a depot still run
+	 * by the game, in place of the ones it held before. Nothing means it holds none. The simulation's trains aren't given
+	 * runs against them.
+	 */
+	public static final class ExternalRun extends HostInput {
+
+		public final long trainId;
+		public final List<RunReservations.Move> moves;
+
+		public ExternalRun(long time, long sequence, long trainId, List<RunReservations.Move> moves) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.moves = Collections.unmodifiableList(new ArrayList<>(moves));
 		}
 	}
 

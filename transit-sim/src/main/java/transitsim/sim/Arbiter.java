@@ -114,6 +114,13 @@ public final class Arbiter<K extends Comparable<K>> {
 	}
 
 	/**
+	 * @return everybody granted something, in order
+	 */
+	public Set<Long> getHolders() {
+		return new TreeSet<>(holdings.keySet());
+	}
+
+	/**
 	 * @return what the holder is granted
 	 */
 	public List<Claim<K>> getHoldings(long holder) {
