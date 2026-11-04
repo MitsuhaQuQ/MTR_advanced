@@ -116,6 +116,35 @@ class AudioFilesTest {
 	}
 
 	@Test
+	void replacingAFileDropsTheOldRecordingOnceNothingNamesIt() throws Exception {
+		final Path path = folder.resolve("replace").resolve(AudioDatabase.FILE_NAME);
+		final byte[] oldData = {1, 1};
+		final byte[] sharedData = {2, 2};
+		final byte[] newData = {3, 3, 3};
+		final String oldHash = AudioFiles.hash(oldData);
+		final String sharedHash = AudioFiles.hash(sharedData);
+		final String newHash = AudioFiles.hash(newData);
+		final String key = AnnouncementSound.getNameKey("steve", "next.ogg");
+		final String otherKey = AnnouncementSound.getNameKey("alex", "next.ogg");
+		try (final AudioDatabase database = new AudioDatabase(path)) {
+			database.write(key, "steve", "next.ogg", oldHash, 2, 100, "uuid1", "Steve", 1, "next", oldData);
+			database.replace(key, "steve", "next.ogg", newHash, 3, 150, "uuid1", "Steve", 2, "next", newData, oldHash);
+			assertNull(database.readData(oldHash));
+			assertArrayEquals(newData, database.readData(newHash));
+			final List<String> rows = new ArrayList<>();
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> rows.add(fileName + size + soundId + uploadedAt));
+			assertEquals(Arrays.asList("next.ogg3next2"), rows);
+
+			// A recording another name still uses stays
+			database.write(otherKey, "alex", "next.ogg", sharedHash, 2, 100, "uuid2", "Alex", 3, "next", sharedData);
+			database.replace(key, "steve", "next.ogg", sharedHash, 2, 100, "uuid1", "Steve", 4, "next", sharedData, newHash);
+			database.replace(otherKey, "alex", "next.ogg", newHash, 3, 150, "uuid2", "Alex", 5, "next", newData, sharedHash);
+			assertArrayEquals(sharedData, database.readData(sharedHash));
+			assertArrayEquals(newData, database.readData(newHash));
+		}
+	}
+
+	@Test
 	void anIndexFromBeforeSoundIdsGetsTheColumn() throws Exception {
 		final Path path = folder.resolve("old").resolve(AudioDatabase.FILE_NAME);
 		java.nio.file.Files.createDirectories(path.getParent());

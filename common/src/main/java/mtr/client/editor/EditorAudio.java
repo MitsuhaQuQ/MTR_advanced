@@ -42,12 +42,14 @@ public final class EditorAudio {
 			entryObject.addProperty("uploaderName", entry.uploaderName);
 			entryObject.addProperty("uploadedAt", entry.uploadedAt);
 			entryObject.addProperty("canDelete", AudioCache.canManage || entry.mine);
+			entryObject.addProperty("mine", entry.mine);
 			entryObject.addProperty("cached", AudioCache.isCached(entry.hash));
 			entryObject.addProperty("downloading", AudioCache.isDownloading(entry.hash));
 			entries.add(entryObject);
 		});
 		jsonObject.add("entries", entries);
 
+		AudioCache.expireRequests();
 		final JsonArray requests = new JsonArray();
 		AudioCache.REQUESTS.values().forEach(request -> {
 			final JsonObject requestObject = new JsonObject();

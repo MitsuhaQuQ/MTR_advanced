@@ -193,6 +193,10 @@ public final class AudioServer implements IPacket {
 		final String soundId = packet.isReadable() ? packet.readUtf(AnnouncementSound.MAX_SOUND_ID_LENGTH * 4) : "";
 		PacketGuard.execute(minecraftServer, () -> {
 			if (database == null) {
+				// Answered, so the page doesn't wait for nothing
+				if (offset == 0) {
+					sendResult(player, requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
+				}
 				return;
 			}
 			final UUID playerId = player.getUUID();
@@ -421,7 +425,19 @@ public final class AudioServer implements IPacket {
 		return null;
 	}
 
+	/**
+	 * Always answers, so the page never waits for an upload that went wrong here.
+	 */
 	private static void finishUpload(MinecraftServer minecraftServer, ServerPlayer player, Upload upload) {
+		try {
+			finishUploadChecked(minecraftServer, player, upload);
+		} catch (RuntimeException e) {
+			e.printStackTrace();
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
+		}
+	}
+
+	private static void finishUploadChecked(MinecraftServer minecraftServer, ServerPlayer player, Upload upload) {
 		final AudioFiles.Info info;
 		try {
 			info = AudioFiles.check(upload.bytes);
@@ -439,12 +455,14 @@ public final class AudioServer implements IPacket {
 		final String namespace = getPlayerNamespace(player);
 		final String nameKey = AnnouncementSound.getNameKey(namespace, name);
 		final Entry existing = ENTRIES.get(nameKey);
-		if (existing != null) {
-			if (existing.hash.equals(hash)) {
-				sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_already_uploaded", existing.name));
-			} else {
-				sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_same_name", existing.name));
-			}
+		if (existing != null && existing.hash.equals(hash)) {
+			sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_already_uploaded", existing.name));
+			return;
+		}
+		// A file of the same name in this player's own files is an update of it: it keeps its sound ID unless another is given, so
+		// announcers and commands naming it play the new recording. Only the one who added it updates it.
+		if (existing != null && !existing.uploader.equals(player.getUUID().toString())) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_same_name", existing.name));
 			return;
 		}
 		// The sound ID given, or one from the file name or hash; one given has to be free among this player's files
@@ -452,18 +470,22 @@ public final class AudioServer implements IPacket {
 			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_same_sound_id", upload.soundId));
 			return;
 		}
-		final String soundId = upload.soundId.isEmpty() ? AnnouncementSound.getDefaultSoundId(name, hash, checkSoundId -> isSoundIdTaken(namespace, checkSoundId, nameKey)) : upload.soundId;
-		final Entry entry = new Entry(hash, namespace, name, upload.bytes.length, info.durationMillis, player.getUUID().toString(), player.getName().getString(), System.currentTimeMillis(), soundId);
+		final String soundId = !upload.soundId.isEmpty() ? upload.soundId : existing != null ? existing.soundId : AnnouncementSound.getDefaultSoundId(name, hash, checkSoundId -> isSoundIdTaken(namespace, checkSoundId, nameKey));
+		final Entry entry = new Entry(hash, namespace, existing == null ? name : existing.name, upload.bytes.length, info.durationMillis, player.getUUID().toString(), player.getName().getString(), System.currentTimeMillis(), soundId);
 		try {
-			database.write(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, upload.bytes);
+			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, upload.bytes, existing == null ? null : existing.hash);
 			ENTRIES.put(nameKey, entry);
 		} catch (Exception e) {
 			e.printStackTrace();
 			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
 			return;
 		}
-		System.out.printf("%s uploaded announcement audio \"%s\" as %s (%s, %s bytes)%n", player.getName().getString(), name, entry.getSoundLocation(), hash, upload.bytes.length);
-		sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_uploaded", name));
+		// The old recording isn't sent any more once nothing names it
+		if (existing != null && !hasHash(existing.hash)) {
+			SENDING.values().forEach(queue -> queue.removeIf(sending -> sending.hash.equals(existing.hash)));
+		}
+		System.out.printf("%s %s announcement audio \"%s\" as %s (%s, %s bytes)%n", player.getName().getString(), existing == null ? "uploaded" : "updated", entry.name, entry.getSoundLocation(), hash, upload.bytes.length);
+		sendResult(player, upload.requestId, true, TranslatedMessage.encode(existing == null ? "gui.mtr.audio_uploaded" : "gui.mtr.audio_updated", entry.name));
 		sendListToAll(minecraftServer);
 	}
 

@@ -149,9 +149,12 @@
 				localErrors.unshift({ name: file.name, message: `${tr("文件不能超过 {0}", formatSize(data.maxFileBytes))}` });
 				continue;
 			}
+			// One of this player's own files of the same name is updated: it keeps its sound ID, so nothing is asked
+			const fileName = /\.ogg$/i.test(file.name) ? file.name : file.name + ".ogg";
+			const updating = data && data.entries.some(entry => entry.mine && entry.name.toLowerCase() === fileName.toLowerCase());
 			// A file name in Chinese can't be a sound ID, so one has to be given
 			const suggested = soundIdFromName(file.name);
-			const soundId = askSoundId(suggested ? tr("“{0}”的声音 ID（/playsound 用它播放）：", file.name) : tr("“{0}”的文件名不能当声音 ID，请填一个（小写字母、数字和 _ - . /）：", file.name), suggested);
+			const soundId = updating ? "" : askSoundId(suggested ? tr("“{0}”的声音 ID（/playsound 用它播放）：", file.name) : tr("“{0}”的文件名不能当声音 ID，请填一个（小写字母、数字和 _ - . /）：", file.name), suggested);
 			if (soundId === null) continue;
 			try {
 				const base64 = await readBase64(file);

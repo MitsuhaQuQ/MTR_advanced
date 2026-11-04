@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 public final class UploadedSounds {
 
 	/**
-	 * By the path the game asks for the audio of a sound with ({@link Sound#getPath}).
+	 * By the path the game asks for the audio of a sound with ({@link Sound#getPath}), which is the recording's hash.
 	 */
 	private static final Map<ResourceLocation, AudioCache.Entry> BY_PATH = new HashMap<>();
 	private static final Map<ResourceLocation, AudioCache.Entry> BY_LOCATION = new HashMap<>();
@@ -52,7 +52,9 @@ public final class UploadedSounds {
 			if (location == null || BY_LOCATION.containsKey(location)) {
 				return;
 			}
-			final Sound sound = new Sound(location.toString(), ConstantFloat.of(1), ConstantFloat.of(1), 1, Sound.Type.FILE, false, false, ATTENUATION_DISTANCE);
+			// The audio goes by the recording, so a file replaced under the same name plays the new one, not what the game
+			// kept of the old one
+			final Sound sound = new Sound(AnnouncementSound.SOUND_NAMESPACE + ":" + entry.hash, ConstantFloat.of(1), ConstantFloat.of(1), 1, Sound.Type.FILE, false, false, ATTENUATION_DISTANCE);
 			final WeighedSoundEvents events = new WeighedSoundEvents(location, null);
 			events.addSound(sound);
 			registry.put(location, events);

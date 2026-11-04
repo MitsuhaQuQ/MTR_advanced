@@ -105,6 +105,16 @@ public final class AudioDatabase implements AutoCloseable {
 	 * name is left as it is.
 	 */
 	public void write(String nameKey, String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, byte[] data) throws SQLException {
+		replace(nameKey, namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, data, null);
+	}
+
+	/**
+	 * Writes a name with other audio in place of what it had, and deletes the old audio once no other name uses it, all
+	 * together.
+	 *
+	 * @param oldHash the audio the name had, or null for a new name
+	 */
+	public void replace(String nameKey, String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, byte[] data, String oldHash) throws SQLException {
 		connection.setAutoCommit(false);
 		try {
 			writeData(hash, data);
@@ -119,6 +129,11 @@ public final class AudioDatabase implements AutoCloseable {
 			writeIndexStatement.setLong(9, uploadedAt);
 			writeIndexStatement.setString(10, soundId);
 			writeIndexStatement.executeUpdate();
+			if (oldHash != null && !oldHash.equals(hash)) {
+				deleteUnusedDataStatement.setString(1, oldHash);
+				deleteUnusedDataStatement.setString(2, oldHash);
+				deleteUnusedDataStatement.executeUpdate();
+			}
 			connection.commit();
 		} catch (SQLException e) {
 			connection.rollback();

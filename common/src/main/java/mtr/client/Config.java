@@ -33,6 +33,8 @@ public class Config {
 	private static List<String> networkAudioAllowedHosts = Collections.emptyList();
 	// The server's announcement audio is fetched as soon as the server lists it, so it plays the first time; off fetches a file once something plays it
 	private static boolean audioDownloadAll = true;
+	// Only files up to this size are fetched ahead; a bigger one is fetched the first time something plays it
+	private static int audioPrefetchMaxKilobytes = 1024;
 
 	public static final List<Patreon> PATREON_LIST = new ArrayList<>();
 	public static final int TRACK_OFFSET_COUNT = 32;
@@ -52,6 +54,7 @@ public class Config {
 	private static final String NETWORK_AUDIO_ENABLED = "network_audio_enabled";
 	private static final String NETWORK_AUDIO_ALLOWED_HOSTS = "network_audio_allowed_hosts";
 	private static final String AUDIO_DOWNLOAD_ALL = "audio_download_all";
+	private static final String AUDIO_PREFETCH_MAX_KILOBYTES = "audio_prefetch_max_kilobytes";
 
 	public static boolean useMTRFont() {
 		return useMTRFont;
@@ -99,6 +102,10 @@ public class Config {
 
 	public static boolean audioDownloadAll() {
 		return audioDownloadAll;
+	}
+
+	public static int audioPrefetchMaxKilobytes() {
+		return audioPrefetchMaxKilobytes;
 	}
 
 	public static boolean networkAudioEnabled() {
@@ -228,6 +235,10 @@ public class Config {
 			} catch (Exception ignored) {
 			}
 			try {
+				audioPrefetchMaxKilobytes = Mth.clamp(jsonConfig.get(AUDIO_PREFETCH_MAX_KILOBYTES).getAsInt(), 0, mtr.audio.AudioFiles.MAX_FILE_BYTES / 1024);
+			} catch (Exception ignored) {
+			}
+			try {
 				final List<String> hosts = new ArrayList<>();
 				jsonConfig.getAsJsonArray(NETWORK_AUDIO_ALLOWED_HOSTS).forEach(host -> {
 					final String cleanHost = host.getAsString().trim().toLowerCase(Locale.ENGLISH);
@@ -262,6 +273,7 @@ public class Config {
 		networkAudioAllowedHosts.forEach(hosts::add);
 		jsonConfig.add(NETWORK_AUDIO_ALLOWED_HOSTS, hosts);
 		jsonConfig.addProperty(AUDIO_DOWNLOAD_ALL, audioDownloadAll);
+		jsonConfig.addProperty(AUDIO_PREFETCH_MAX_KILOBYTES, audioPrefetchMaxKilobytes);
 
 		try {
 			Files.write(CONFIG_FILE_PATH, Collections.singleton(RailwayData.prettyPrint(jsonConfig)));

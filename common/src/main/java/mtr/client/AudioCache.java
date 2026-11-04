@@ -49,6 +49,12 @@ public final class AudioCache implements IPacket {
 	private static final String CACHE_DIRECTORY = "mtr_audio_cache";
 	private static final int MAX_WANTED_PER_PACKET = 256;
 	private static final int MAX_REQUESTS = 20;
+	/**
+	 * How long the page waits for the server to answer an upload or a change before telling the player it got no answer,
+	 * as when the server is from before it answered every time, plus time for the size of a file.
+	 */
+	private static final long REQUEST_TIMEOUT_MILLIS = 30000;
+	private static final int TIMEOUT_BYTES_PER_SECOND = 64 * 1024;
 	private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
 		final Thread thread = new Thread(runnable, "MTR Audio Cache");
 		thread.setDaemon(true);
@@ -157,14 +163,11 @@ public final class AudioCache implements IPacket {
 			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_same_sound_id", cleanSoundId));
 		}
 
+		// A file of the same name in this player's own files is replaced by the server
 		final String fileName = AudioFiles.withExtension(AudioFiles.cleanName(name));
-		// Only the server knows which names belong to mods, so this player's own files are told by the server's list
-		final String hash = AudioFiles.hash(bytes);
-		if (ENTRIES.stream().anyMatch(entry -> entry.mine && entry.name.equalsIgnoreCase(fileName) && !entry.hash.equals(hash))) {
-			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_same_name_local", fileName));
-		}
 
 		final int requestId = addRequest(fileName);
+		REQUESTS.get(requestId).timeoutMillis += (long) bytes.length * 1000 / TIMEOUT_BYTES_PER_SECOND;
 		for (int offset = 0; offset < bytes.length; offset += AudioFiles.CHUNK_BYTES) {
 			final int length = Math.min(AudioFiles.CHUNK_BYTES, bytes.length - offset);
 			final byte[] chunk = new byte[length];
@@ -253,20 +256,34 @@ public final class AudioCache implements IPacket {
 			maxSeconds = newMaxSeconds;
 			maxTotalBytes = newMaxTotalBytes;
 			totalBytes = newTotalBytes;
+			// A name now with another recording was updated: whoever had the old one gets the new one straight away,
+			// whatever the size, so announcers and /playsound play the update the first time
+			final Map<String, String> oldHashes = new HashMap<>();
+			ENTRIES.forEach(entry -> oldHashes.put(entry.getKey(), entry.hash));
+			final List<String> updated = new ArrayList<>();
+			entries.forEach(entry -> {
+				final String oldHash = oldHashes.get(entry.getKey());
+				if (oldHash != null && !oldHash.equals(entry.hash) && isCached(oldHash) && !isCached(entry.hash)) {
+					updated.add(entry.hash);
+				}
+			});
 			ENTRIES.clear();
 			ENTRIES.addAll(entries);
 			// Pieces of files the server no longer has won't come
 			DOWNLOADS.keySet().removeIf(hash -> entries.stream().noneMatch(entry -> entry.hash.equals(hash)));
-			// Every file the server has, unless the player chose to fetch a file only once something plays it
+			// Every file the server has up to the size the player set, unless the player chose to fetch a file only once
+			// something plays it; a bigger one is fetched the first time it plays
 			if (Config.audioDownloadAll()) {
+				final long maxPrefetchBytes = Config.audioPrefetchMaxKilobytes() * 1024L;
 				final List<String> missing = new ArrayList<>();
 				entries.forEach(entry -> {
-					if (!isCached(entry.hash)) {
+					if (entry.size <= maxPrefetchBytes && !isCached(entry.hash)) {
 						missing.add(entry.hash);
 					}
 				});
 				request(missing);
 			}
+			request(updated);
 			UploadedSounds.refresh();
 		});
 	}
@@ -334,6 +351,21 @@ public final class AudioCache implements IPacket {
 			part.forEach(packet::writeUtf);
 			RegistryClient.sendToServer(PACKET_AUDIO_WANTED, packet);
 		}
+	}
+
+	/**
+	 * Gives up on what the server hasn't answered in time, so the page doesn't show it as being sent forever.
+	 */
+	public static void expireRequests() {
+		final long millis = System.currentTimeMillis();
+		REQUESTS.values().forEach(request -> {
+			if (!request.done && millis - request.startedMillis > request.timeoutMillis) {
+				request.done = true;
+				request.ok = false;
+				request.message = TranslatedMessage.encode("gui.mtr.audio_no_response");
+				request.bytes = null;
+			}
+		});
 	}
 
 	private static int addRequest(String name) {
@@ -454,6 +486,8 @@ public final class AudioCache implements IPacket {
 
 		public final int id;
 		public final String name;
+		private final long startedMillis = System.currentTimeMillis();
+		private long timeoutMillis = REQUEST_TIMEOUT_MILLIS;
 		public boolean done;
 		public boolean ok;
 		public String message = "";

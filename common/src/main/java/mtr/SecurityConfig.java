@@ -28,7 +28,7 @@ public final class SecurityConfig {
 	// Announcement audio: who can add files, who can delete anyone's, and how much each file and the server can hold
 	public static volatile int audioUploadPermissionLevel = 2;
 	public static volatile int audioManagePermissionLevel = 2;
-	public static volatile int audioMaxFileKilobytes = 512;
+	public static volatile int audioMaxFileKilobytes = 2048;
 	public static volatile int audioMaxTotalMegabytes = 64;
 	public static volatile int audioMaxSeconds = 60;
 	public static volatile int audioUploadsPerHour = 30;
@@ -65,7 +65,7 @@ public final class SecurityConfig {
 				webserverAllowedHosts = allowedHosts;
 				audioUploadPermissionLevel = getInt(jsonObject, KEY_AUDIO_UPLOAD_PERMISSION_LEVEL, 2, 0, 4);
 				audioManagePermissionLevel = getInt(jsonObject, KEY_AUDIO_MANAGE_PERMISSION_LEVEL, 2, 0, 4);
-				audioMaxFileKilobytes = getInt(jsonObject, KEY_AUDIO_MAX_FILE_KILOBYTES, 512, 0, AudioFiles.MAX_FILE_BYTES / 1024);
+				audioMaxFileKilobytes = getInt(jsonObject, KEY_AUDIO_MAX_FILE_KILOBYTES, 2048, 0, AudioFiles.MAX_FILE_BYTES / 1024);
 				audioMaxTotalMegabytes = getInt(jsonObject, KEY_AUDIO_MAX_TOTAL_MEGABYTES, 64, 0, 4096);
 				audioMaxSeconds = getInt(jsonObject, KEY_AUDIO_MAX_SECONDS, 60, 1, 3600);
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);

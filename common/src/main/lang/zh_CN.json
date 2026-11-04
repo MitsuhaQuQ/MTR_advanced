@@ -157,6 +157,8 @@
   "gui.mtr.audio_sound_id_set": "“%s”现在的声音是 %s",
   "gui.mtr.audio_save_failed": "服务器保存失败",
   "gui.mtr.audio_uploaded": "已上传“%s”",
+  "gui.mtr.audio_updated": "已更新“%s”",
+  "gui.mtr.audio_no_response": "服务器没有回应，可能没有保存",
   "gui.mtr.audio_empty": "文件是空的",
   "gui.mtr.audio_too_big": "文件太大",
   "gui.mtr.audio_not_ogg": "不是 Ogg 文件",

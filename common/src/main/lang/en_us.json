@@ -157,6 +157,8 @@
   "gui.mtr.audio_sound_id_set": "“%s” now plays as %s",
   "gui.mtr.audio_save_failed": "The server couldn't save it",
   "gui.mtr.audio_uploaded": "Uploaded “%s”",
+  "gui.mtr.audio_updated": "Updated “%s”",
+  "gui.mtr.audio_no_response": "The server didn’t answer, so it may not have been saved",
   "gui.mtr.audio_empty": "The file is empty",
   "gui.mtr.audio_too_big": "The file is too big",
   "gui.mtr.audio_not_ogg": "Not an Ogg file",

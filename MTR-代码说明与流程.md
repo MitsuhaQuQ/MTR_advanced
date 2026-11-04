@@ -937,7 +937,7 @@ sequenceDiagram
 4. **上传**（网页编辑器的音频页 → `EditorAudio` → `AudioCache.upload`）：
    - 客户端先用 `AudioFiles` 检查一遍，再按顺序分块发 `PACKET_AUDIO_UPLOAD`。
    - 服务端 `receiveUploadC2S`：第一块时 `checkUploadStart` 检查权限等级、单个文件大小、总容量、每小时次数（`config/mtr_security.json`，单人存档的主人不受限）；每个玩家同时只能有一份在传，块必须按顺序。
-   - 收齐后 `finishUpload` 再校验一次，按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者有同名但内容不同的文件时拒绝。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
+   - 收齐后 `finishUpload` 再校验一次，按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者已有同名但内容不同的文件时算作更新：换成新录音，声音 ID 不变，旧录音没有别的名字用时删掉；本机有旧录音的客户端收到新列表后马上下载新录音。服务端出错时也一定回结果，客户端等不到回复会超时标成失败。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
 5. **删除**（音频页 `PACKET_AUDIO_DELETE`，或 `/mtr deleteaudio <名字>`）：任何人能删自己上传的，达到管理权限等级的能删别人的。删掉名字后，没有别的名字再用这份音频才删音频本身，然后同样 `sendListToAll`。删除和上传都写进服务端日志。
 6. **播放**：列车车头经过报站方块时，`TrainServer.handlePositions` 对车上每位乘客调 `TileEntityTrainAnnouncer.announce`（同一玩家有冷却时间），服务端 `announceS2C` 把文字和"音频文件"一栏发给他。客户端 `AnnouncementPlayer.play`：
    - 先当作上传的文件，在服务器列表里按名字找到它的游戏声音，用 `playLocalSound` 播放，和游戏声音一样。游戏第一次要这个声音的数据时，`UploadedSounds.getBuffer` 从缓存读出、在后台线程解码；缓存里还没有时这次不响，顺便请求下载，下次就有了。
