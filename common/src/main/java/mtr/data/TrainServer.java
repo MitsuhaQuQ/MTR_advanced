@@ -109,6 +109,7 @@ public class TrainServer extends Train {
 	 */
 	private double lastCheckedRailProgress = Double.NaN;
 	private double lastCheckedSpeed;
+	private long lastCheckedMillis;
 	private static final double SWEEP_STEP = 0.5;
 
 	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
@@ -261,7 +262,7 @@ public class TrainServer extends Train {
 		});
 
 		final BlockPos frontPos = RailwayData.newBlockPos(positions[reversed ? positions.length - 1 : 0]);
-		final Set<BlockPos> checkPositions = getCheckPositions(frontPos, ticksElapsed);
+		final Set<BlockPos> checkPositions = getCheckPositions(frontPos);
 		if (RailwayData.chunkLoaded(world, frontPos)) {
 			checkPositions.forEach(checkPos -> {
 				if (RailwayData.chunkLoaded(world, checkPos)) {
@@ -841,11 +842,16 @@ public class TrainServer extends Train {
 	 * moving several ticks at once when the server is slow doesn't go past one without setting it off (G3). A jump much
 	 * longer than the train could run, as when it is put somewhere else, sets off nothing on the way.
 	 */
-	private Set<BlockPos> getCheckPositions(BlockPos frontPos, float ticksElapsed) {
+	private Set<BlockPos> getCheckPositions(BlockPos frontPos) {
 		final Set<BlockPos> checkPositions = new LinkedHashSet<>();
 		checkBlock(frontPos, checkPositions::add);
+		final long millis = System.currentTimeMillis();
+		// By the clock, not the ticks the game counted, which stop at a few however slow the server is, while a train the
+		// component moves goes on for all the time that passed
+		final float ticksPassed = lastCheckedMillis == 0 ? 1 : (float) (millis - lastCheckedMillis) / Depot.MILLIS_PER_TICK;
+		lastCheckedMillis = millis;
 		if (!path.isEmpty()) {
-			for (final double sweptRailProgress : getSweptRailProgresses(lastCheckedRailProgress, railProgress, Math.max(Math.abs(speed), lastCheckedSpeed), ticksElapsed)) {
+			for (final double sweptRailProgress : getSweptRailProgresses(lastCheckedRailProgress, railProgress, Math.max(Math.abs(speed), lastCheckedSpeed), ticksPassed)) {
 				final BlockPos pos = RailwayData.newBlockPos(getFrontPosition(sweptRailProgress));
 				for (int y = 0; y <= 3; y++) {
 					checkPositions.add(pos.below(y));
@@ -860,13 +866,14 @@ public class TrainServer extends Train {
 	/**
 	 * @param fromRailProgress where the front was when last checked, or NaN
 	 * @param speed            the faster of the speeds then and now, in blocks a tick
+	 * @param ticksPassed      the time since then, in ticks
 	 * @return the rail progresses of the front to check under on the way to where it is now, every half block, or none if
 	 * it moved back, hardly moved or jumped further than it could run
 	 */
-	public static List<Double> getSweptRailProgresses(double fromRailProgress, double toRailProgress, double speed, float ticksElapsed) {
+	public static List<Double> getSweptRailProgresses(double fromRailProgress, double toRailProgress, double speed, float ticksPassed) {
 		final List<Double> sweptRailProgresses = new ArrayList<>();
 		final double passed = toRailProgress - fromRailProgress;
-		final double maxPassed = speed * Math.max(1, ticksElapsed) * 1.5 + 2;
+		final double maxPassed = speed * Math.max(1, ticksPassed) * 1.5 + 2;
 		if (Double.isNaN(fromRailProgress) || passed <= 1 || passed > maxPassed) {
 			return sweptRailProgresses;
 		}
