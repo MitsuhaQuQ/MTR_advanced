@@ -99,6 +99,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	/**
+	 * Puts the trains of a depot the component's simulator runs where its timetable has them now, worked out from the
+	 * start of the operating day, instead of sending them out one by one from the depot. The player is told how it went.
+	 */
+	public void placeTrainsByTimetable(ServerPlayer player, long depotId) {
+		liveSimulation.placeByTimetable(this, player, depotId);
+	}
+
+	/**
 	 * Has an object a player edited saved at the end of the tick (multiplayer edit conflicts).
 	 *
 	 * @param kind as {@link mtr.packet.EditGuard} names it

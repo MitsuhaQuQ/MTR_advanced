@@ -190,6 +190,8 @@
   "gui.mtr.node_turn_back": "折返停留 (秒)",
   "gui.mtr.node_boundary_rail": "边界轨道 → %s, %s, %s",
   "gui.mtr.node_set": "设定",
+  "gui.mtr.place_trains_done": "%s 的列车已按时刻表摆到现在的位置：%s 列",
+  "gui.mtr.place_trains_not_run": "只有开了速度曲线、由组件驱动的车厂才能按时刻表把列车摆到现在的位置",
   "gui.mtr.route_deleted_depots": "%s 已从这些车厂去掉：%s",
   "gui.mtr.route_deleted_duties": "这些车厂的运用还用到 %s，那几段不再运行，请手动修改：%s",
   "gui.mtr.route_deleted_links": "这些线路还直通到 %s，班次会在原终点结束，请手动修改：%s",

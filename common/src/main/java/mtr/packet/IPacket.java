@@ -12,7 +12,7 @@ public interface IPacket {
 	}
 
 	// Increase when packets or saved data change, as hotfix numbers are ignored by the version check
-	int PROTOCOL_VERSION = 41;
+	int PROTOCOL_VERSION = 42;
 
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 	ResourceLocation PACKET_LINE_WORDS = new ResourceLocation(MTR.MOD_ID, "packet_line_words");
@@ -51,6 +51,7 @@ public interface IPacket {
 	ResourceLocation PACKET_REMOVE_RAIL_ACTION = new ResourceLocation(MTR.MOD_ID, "packet_remove_rail_action");
 
 	ResourceLocation PACKET_GENERATE_PATH = new ResourceLocation(MTR.MOD_ID, "packet_generate_path");
+	ResourceLocation PACKET_PLACE_TRAINS = new ResourceLocation(MTR.MOD_ID, "packet_place_trains");
 	ResourceLocation PACKET_CLEAR_TRAINS = new ResourceLocation(MTR.MOD_ID, "packet_clear_trains");
 	ResourceLocation PACKET_SIGN_TYPES = new ResourceLocation(MTR.MOD_ID, "packet_sign_types");
 	ResourceLocation PACKET_DRIVE_TRAIN = new ResourceLocation(MTR.MOD_ID, "packet_drive_train");

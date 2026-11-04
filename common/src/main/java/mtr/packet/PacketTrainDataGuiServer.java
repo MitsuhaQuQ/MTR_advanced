@@ -527,6 +527,20 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		});
 	}
 
+	/**
+	 * Puts a depot's trains where its timetable has them now, instead of sending them out one by one (see
+	 * {@link RailwayData#placeTrainsByTimetable}).
+	 */
+	public static void receivePlaceTrainsC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final long depotId = packet.readLong();
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null && !RailwayData.hasNoPermission(player)) {
+				railwayData.placeTrainsByTimetable(player, depotId);
+			}
+		});
+	}
+
 	public static void receiveTimetableTimesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final long routeId = packet.readLong();
 		PacketGuard.execute(minecraftServer, () -> {

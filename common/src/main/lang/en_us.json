@@ -190,6 +190,8 @@
   "gui.mtr.node_turn_back": "Turn back wait (s)",
   "gui.mtr.node_boundary_rail": "Boundary rail to %s, %s, %s",
   "gui.mtr.node_set": "Set",
+  "gui.mtr.place_trains_done": "The trains of %s are where the timetable has them now: %s on the line or ready",
+  "gui.mtr.place_trains_not_run": "Only a depot with speed curves, run by the component's simulator, can have its trains put where the timetable has them now",
   "gui.mtr.route_deleted_depots": "%s was taken off the depots that ran it: %s",
   "gui.mtr.route_deleted_duties": "Duties of these depots still use %s and no longer run those parts; change them by hand: %s",
   "gui.mtr.route_deleted_links": "These routes still run through to %s, which now ends their services there; change them by hand: %s",

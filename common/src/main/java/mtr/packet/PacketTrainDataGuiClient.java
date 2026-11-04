@@ -556,6 +556,12 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		});
 	}
 
+	public static void placeTrainsC2S(long depotId) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(depotId);
+		RegistryClient.sendToServer(PACKET_PLACE_TRAINS, packet);
+	}
+
 	public static void generatePathC2S(long sidingId) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(sidingId);

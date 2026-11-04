@@ -2188,6 +2188,20 @@
 	}
 
 	/** A first draft of a depot's duties from its timetables, put in the draft to look over before applying. */
+	/** Has the game put the depot's trains where the timetable has them now, instead of sending them out one by one. */
+	function placeTrainsDialog(depot) {
+		openDialog(tr("按时刻表摆车"), `<p>${tr("把“{0}”的列车直接放到时刻表现在要求的位置：从今天运营日开始按游戏的规则算到现在，这时候应该在线上的车摆上去，已经发过的班次不再发；原来的车换成算出来的车，乘客和货物不保留，玩家驾驶中的车不动。", escapeHtml(shortName(depot.name)))}</p>
+			<p class="hint">${tr("只对开了速度曲线、由组件驱动的车厂有效。用的是游戏里已应用的时刻表，草稿要先应用。结果在游戏聊天栏。")}</p>`, tr("摆车"), () => {
+			sendJson("api/place-trains", "POST", { depot: depot.id }).then(result => {
+				dutyNotice = result.ok ? tr("已请求“{0}”按时刻表摆车，结果见游戏聊天栏。", shortName(depot.name)) : tr("没有权限，或者游戏里没有这个车厂。");
+				renderBanner();
+			}).catch(() => {
+				dutyNotice = tr("发送失败，游戏可能已经关闭");
+				renderBanner();
+			});
+		});
+	}
+
 	async function generateDuties(depot) {
 		if (draft.duties[depot.id] && !confirm(`${tr("用自动生成的运用替换“{0}”草稿里的运用？", shortName(depot.name))}`)) return;
 		if (!draft.duties[depot.id] && Object.values((depot.duties || { sidings: {} }).sidings).some(slots => slots.length) && !confirm(`${tr("用自动生成的运用替换“{0}”现在的运用？应用前都还在草稿里。", shortName(depot.name))}`)) return;
@@ -3525,6 +3539,7 @@
 			[tr("删除最后一个库位"), sidingSlots().length ? () => changeSlots(depot, sidingId, slots => slots.pop()) : null],
 		] : depotId && depot ? [
 			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
+			[tr("按时刻表把列车摆到现在的位置…"), data.canEdit ? () => placeTrainsDialog(depot) : null],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为在线预约") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
 		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null]]

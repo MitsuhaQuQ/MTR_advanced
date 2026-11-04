@@ -127,6 +127,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new ApplyServlet()), "/api/apply");
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
+		context.addServlet(new ServletHolder(new PlaceTrainsServlet()), "/api/place-trains");
 		context.addServlet(new ServletHolder(new TimesServlet()), "/api/times");
 		context.addServlet(new ServletHolder(new SimulateServlet()), "/api/simulate");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
@@ -382,6 +383,41 @@ public final class EditorServer {
 	 * A first draft of a depot's duties. The data is copied on the game thread and the plan worked out here, so a big
 	 * timetable doesn't hold up the game. Nothing is changed; the page puts the result in its draft.
 	 */
+	/**
+	 * Asks the server to put a depot's trains where its timetable has them now; how it went is said in the game's chat.
+	 */
+	private static class PlaceTrainsServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final long depotId;
+			try {
+				depotId = Long.parseLong(new JsonParser().parse(body).getAsJsonObject().get("depot").getAsString());
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				final boolean sent = onGameThread(() -> {
+					if (!mtr.client.ClientData.hasPermission() || mtr.client.ClientData.DATA_CACHE.depotIdMap.get(depotId) == null) {
+						return false;
+					}
+					mtr.packet.PacketTrainDataGuiClient.placeTrainsC2S(depotId);
+					return true;
+				});
+				sendJson(response, "{\"ok\":" + sent + "}");
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+	}
+
 	private static class PlanDutiesServlet extends HttpServlet {
 
 		@Override

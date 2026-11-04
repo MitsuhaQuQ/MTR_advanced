@@ -190,6 +190,8 @@
   "gui.mtr.node_turn_back": "折返停留 (秒)",
   "gui.mtr.node_boundary_rail": "邊界軌道 → %s, %s, %s",
   "gui.mtr.node_set": "設定",
+  "gui.mtr.place_trains_done": "%s 的列車已按時刻表擺到現在的位置：%s 列",
+  "gui.mtr.place_trains_not_run": "只有開了速度曲線、由組件驅動的車廠才能按時刻表把列車擺到現在的位置",
   "gui.mtr.route_deleted_depots": "%s 已從這些車廠去掉：%s",
   "gui.mtr.route_deleted_duties": "這些車廠的運用還用到 %s，那幾段不再運行，請手動修改：%s",
   "gui.mtr.route_deleted_links": "這些路線還直通到 %s，班次會在原終點結束，請手動修改：%s",
