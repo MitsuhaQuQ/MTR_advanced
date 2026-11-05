@@ -198,6 +198,11 @@ With ANTE merged, the common module has about 120,000 lines of Java, of which AN
 - **Both server and client simulate trains**: the running logic has to match on both sides, or trains shake or jump.
 - **Several versions and loaders**: the same code has to work on different Minecraft versions and on both Fabric and Forge, and some APIs have breaking changes in 1.20.
 - **Save and network compatibility**: real saves have to migrate, and a format mistake can damage a player's network.
+- **Depots by duties**: a depot's routes are the lines it runs, in no order; the routes aren't joined into one path, so two routes that don't meet no longer stop the depot's path. Each siding can be given only some of the routes and a fleet, how many trains it sends out whatever its rails hold. Both are set in the web editor's "Edit depot…", which also shows a sync panel of whatever didn't take in the game. In the game's dashboard only the physical layer is meant to stay.
+- **Route pickers**: in the depot's (and other) route lists, a line folded into one row opens and closes again when clicked.
+- **Duty limits**: a duty may run up to 4096 services a day (was 128), a siding may have more duties than trains, and a turnaround too short at a terminal is pointed out when duties are generated.
+- **Too few trains**: the duties then run every k-th service of each route, evenly through the day, instead of bunching the trains there are.
+- **Services without a train**: on the web diagram a service no train of its depot's duties runs is drawn thin and grey (red with the "Services without a train" switch), and each route shows how many services have a train and how many don't.
 - **Not configured depots**: the web editor marks a depot with no timetable and nothing to send trains for as not configured, not as the old logic.
 - **Mixin check**: a test in the build scans ANTE's mixins for code that quietly replaces MTR's own (shadow fields with initialisers, methods overwriting the target's, injections that always cancel); the ones looked at are listed with why, and a new one fails the build.
 - **Add-on mods**: parts of ANTE still change internal classes through mixins, and add-ons like MSD and YJCM call internal methods and fields directly, so changing one method signature can cause a crash on load.

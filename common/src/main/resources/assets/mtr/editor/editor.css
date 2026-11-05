@@ -91,7 +91,7 @@ body.split #view-table { grid-row: 4; border-top: 2px solid var(--grid-strong); 
 .sim-problems { list-style: none; margin: 6px 0 0; padding: 0; max-height: 40vh; overflow: auto; }
 .sim-problems li { margin: 2px 0; }
 .sim-problems .link { text-align: left; }
-#btn-simulate[aria-pressed="true"], #btn-split[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+#btn-simulate[aria-pressed="true"], #btn-split[aria-pressed="true"], #btn-no-train[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--grid-strong); background: var(--panel); }
 /* The open view is the filled one */
 .tabs .tab { border-color: transparent; background: transparent; color: var(--muted); }
@@ -145,6 +145,7 @@ table.tt th.svc-head .time { display: block; font-family: var(--font-num); }
 table.tt th.svc-head .note { display: block; font-size: 11px; color: var(--muted); }
 /* The service selected on the diagram */
 table.tt .hl { background: color-mix(in srgb, var(--sel) 14%, var(--panel)); }
+table.tt th.svc-head.no-train .time { color: var(--muted); text-decoration: line-through; }
 table.tt th.svc-head.hl { background: color-mix(in srgb, var(--sel) 24%, var(--panel-2)); color: var(--sel); }
 .table-empty { padding: 16px; color: var(--muted); }
 .tt-tools input[type=text], .tt-tools input:not([type]) { font-family: var(--font-num); padding: 3px 6px; border: 1px solid var(--grid-strong); border-radius: 6px; background: var(--panel); }
@@ -332,3 +333,10 @@ body.network-view #btn-split, body.network-view #btn-simulate, body.network-view
 /* How trains turn back at a route's ends, under the station diagram */
 .turn-back { margin-top: 8px; }
 .turn-back .turn-option { display: inline-block; margin: 2px 12px 2px 0; cursor: pointer; }
+
+#btn-sync.bad { border-color: var(--warn); color: var(--warn); font-weight: 700; }
+#btn-sync.warn { border-color: color-mix(in srgb, var(--warn) 50%, var(--grid)); }
+ul.sync-problems { max-height: 60vh; overflow: auto; padding-left: 1.2em; }
+ul.sync-problems li { margin: 4px 0; }
+ul.sync-problems li.err { color: var(--warn); }
+ul.sync-problems a { cursor: pointer; text-decoration: underline; }

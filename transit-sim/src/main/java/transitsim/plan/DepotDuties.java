@@ -26,7 +26,7 @@ public final class DepotDuties {
 
 	public static final int MAX_SLOTS = 256;
 	public static final int MAX_DAYS = 7;
-	public static final int MAX_SEGMENTS = 128;
+	public static final int MAX_SEGMENTS = 4096;
 	public static final int ALL_WEEKDAYS = 0x7F;
 	/**
 	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started

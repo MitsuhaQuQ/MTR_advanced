@@ -53,6 +53,8 @@ import java.util.function.Supplier;
  */
 public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
+	private static final int MAX_FAILED_DUTIES = 16;
+
 	private static final int MAX_LIST_SIZE = 4096;
 	private static final int MAX_STRING_LIST_SIZE = 256;
 	private static final int MAX_EDIT_DISTANCE = 64;
@@ -383,10 +385,21 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure) {
+		generatePathS2C(world, depotId, successfulSegments, failure, Collections.emptyList());
+	}
+
+	/**
+	 * @param failedDuties the keys of the duties whose paths weren't found, of which the first few are sent
+	 */
+	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
 		failure.writePacket(packet);
+		packet.writeInt(failedDuties.size());
+		final List<String> sent = failedDuties.subList(0, Math.min(failedDuties.size(), MAX_FAILED_DUTIES));
+		packet.writeInt(sent.size());
+		sent.forEach(key -> packet.writeUtf(key.length() > 200 ? key.substring(0, 200) : key));
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 

@@ -43,9 +43,23 @@ public final class PathFailureText {
 				final BlockPos node2 = BlockPos.of(failure.node2);
 				final BlockPos middle = new BlockPos((node1.getX() + node2.getX()) / 2, (node1.getY() + node2.getY()) / 2, (node1.getZ() + node2.getZ()) / 2);
 				return Text.translatable("gui.mtr.path_failure_connecting_line", connectingLine == null ? String.valueOf(failure.pos) : IGui.formatStationName(connectingLine.name), format(middle)).getString();
+			case CYCLE_BACK:
+				return Text.translatable("gui.mtr.path_failure_cycle_back", platformName(failure.pos), platformName(failure.node1)).getString();
 			default:
 				return "";
 		}
+	}
+
+	/**
+	 * @return the platform as its station's name and its own, or its ID if it's gone
+	 */
+	private static String platformName(long platformId) {
+		final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId);
+		if (platform == null) {
+			return String.valueOf(platformId);
+		}
+		final mtr.data.Station station = ClientData.DATA_CACHE.platformIdToStation.get(platformId);
+		return (station == null ? "" : IGui.formatStationName(station.name) + " ") + platform.name;
 	}
 
 	private static String format(BlockPos pos) {

@@ -66,7 +66,7 @@ public final class SimExport {
 		railwayData.sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> {
 			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
 			if (depot != null) {
-				final SimDataset.SidingData sidingData = siding.toSimulation(depot.id, toArray(depot.getRouteIds(siding.getTrainId(), railwayData.dataCache)), path -> toTracks(path, rails));
+				final SimDataset.SidingData sidingData = siding.toSimulation(depot.id, toArray(depot.getSidingRouteIds(siding, railwayData.dataCache)), path -> toTracks(path, rails), depot.getRunDuties() != null);
 				if (sidingData != null) {
 					dataset.sidings.add(sidingData);
 					if (recordedDepots.add(depot.id)) {

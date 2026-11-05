@@ -566,11 +566,19 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final long depotId = packet.readLong();
 		final int successfulSegments = packet.readInt();
 		final PathFailure failure = PathFailure.readPacket(packet);
+		final int failedCount = packet.readInt();
+		final List<String> failedDuties = new ArrayList<>();
+		for (int i = Math.min(packet.readInt(), 64); i > 0; i--) {
+			failedDuties.add(packet.readUtf(256));
+		}
+		final int totalFailed = Math.max(failedCount, failedDuties.size());
 		minecraftClient.execute(() -> {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
 				depot.clientPathGenerationSuccessfulSegments = successfulSegments;
 				depot.clientPathFailure = failure;
+				depot.clientFailedDuties = failedDuties;
+				depot.clientFailedDutyCount = totalFailed;
 				ClientData.STALE_DEPOTS.remove(depotId);
 			}
 		});

@@ -58,7 +58,7 @@ public final class AutoDuties {
 		final List<PlanRoute> missing = new ArrayList<>();
 		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, fastestTimes, dayStartMillis, missing::add);
 		services.removeIf(service -> taken.contains(service.routeId + "@" + service.service));
-		final AutoDuties autoDuties = new AutoDuties(DutyGenerator.generate(services, sidings, stationOf, staysOnLine ? transitsim.plan.RouteTimetable.MAX_STAY_MILLIS : transitsim.plan.RouteTimetable.MAX_LAYOVER_MILLIS));
+		final AutoDuties autoDuties = new AutoDuties(DutyGenerator.generateSpread(services, sidings, stationOf, staysOnLine ? transitsim.plan.RouteTimetable.MAX_STAY_MILLIS : transitsim.plan.RouteTimetable.MAX_LAYOVER_MILLIS));
 		autoDuties.missingTimes.addAll(missing);
 		autoDuties.duties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> taken.add(segment.routeId + "@" + segment.service)))));
 		return autoDuties;

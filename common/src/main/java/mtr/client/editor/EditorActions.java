@@ -75,7 +75,7 @@ public final class EditorActions implements IPacket {
 	 */
 	private static String getGroup(JsonObject operation, int index) {
 		final String type = getString(operation, "type");
-		if ("duties".equals(type)) {
+		if ("duties".equals(type) || "depot".equals(type)) {
 			return EditGuard.DEPOT + ":" + getString(operation, "depot");
 		} else if ("newRoute".equals(type)) {
 			return "new:" + index;
@@ -89,7 +89,7 @@ public final class EditorActions implements IPacket {
 	 */
 	private static boolean isOutOfDate(JsonObject operation) {
 		final String type = getString(operation, "type");
-		if ("duties".equals(type) || "newRoute".equals(type) || operation.has("force") && operation.get("force").getAsBoolean()) {
+		if ("duties".equals(type) || "depot".equals(type) || "newRoute".equals(type) || operation.has("force") && operation.get("force").getAsBoolean()) {
 			return false;
 		}
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
@@ -116,6 +116,59 @@ public final class EditorActions implements IPacket {
 		return parts;
 	}
 
+	/**
+	 * A depot's routes (in no order for one running by a timetable), whether its trains stay on the line, and its
+	 * sidings' routes and fleets, as the page drafted them from the depot as it was ({@code base}); then its path is
+	 * found again, with the result on the page's sync panel.
+	 */
+	private static String applyDepot(JsonObject operation) {
+		final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot")));
+		if (depot == null) {
+			return TranslatedMessage.get("gui.mtr.editor_depot_missing");
+		}
+		final boolean force = operation.has("force") && operation.get("force").getAsBoolean();
+		if (!force && operation.has("base") && !getString(operation, "base").equals(EditorData.getRevision(depot))) {
+			return TranslatedMessage.get("gui.mtr.editor_depot_changed");
+		}
+		if (operation.has("routes")) {
+			final List<Long> routeIds = new ArrayList<>();
+			for (final JsonElement element : operation.getAsJsonArray("routes")) {
+				final long routeId = parseId(element.getAsString());
+				final Route route = ClientData.DATA_CACHE.routeIdMap.get(routeId);
+				if (route == null || route.transportMode != depot.transportMode) {
+					return TranslatedMessage.get("gui.mtr.editor_route_missing");
+				}
+				if (!routeIds.contains(routeId)) {
+					routeIds.add(routeId);
+				}
+			}
+			depot.routeIds.clear();
+			depot.routeIds.addAll(routeIds);
+		}
+		if (operation.has("cycleRoutes")) {
+			depot.cycleRoutes = operation.get("cycleRoutes").getAsBoolean();
+		}
+		depot.setData(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+		if (operation.has("sidings")) {
+			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("sidings").entrySet()) {
+				final mtr.data.Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(parseId(entry.getKey()));
+				if (siding == null || ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) != depot) {
+					return TranslatedMessage.get("gui.mtr.editor_siding_missing");
+				}
+				final JsonObject sidingObject = entry.getValue().getAsJsonObject();
+				final List<Long> sidingRoutes = new ArrayList<>();
+				if (sidingObject.has("routes")) {
+					sidingObject.getAsJsonArray("routes").forEach(element -> sidingRoutes.add(parseId(element.getAsString())));
+				}
+				final int fleet = sidingObject.has("fleet") ? sidingObject.get("fleet").getAsInt() : siding.getFleetSize();
+				siding.setOperation(sidingRoutes, fleet, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_SIDING, packet));
+			}
+		}
+		ClientData.DATA_CACHE.sync();
+		PacketTrainDataGuiClient.generatePathC2S(depot.id);
+		return null;
+	}
+
 	private static Pending applyChecked(JsonObject request, JsonArray operations, Set<String> outOfDate) {
 		final List<String> groups = new ArrayList<>();
 		final java.util.concurrent.CompletableFuture<ClientEditing.BatchResult>[] future = new java.util.concurrent.CompletableFuture[]{null};
@@ -138,7 +191,7 @@ public final class EditorActions implements IPacket {
 					final String routeId = getString(operation, "route");
 					final boolean force = operation.has("force") && operation.get("force").getAsBoolean();
 					groups.add(getGroup(operation, i));
-					if (outOfDate.contains(routeId) && !"duties".equals(getString(operation, "type")) && !"newRoute".equals(getString(operation, "type"))) {
+					if (outOfDate.contains(routeId) && !"duties".equals(getString(operation, "type")) && !"depot".equals(getString(operation, "type")) && !"newRoute".equals(getString(operation, "type"))) {
 						addError(errors, i, routeId, "CONFLICT");
 						continue;
 					}
@@ -157,7 +210,7 @@ public final class EditorActions implements IPacket {
 					}
 					if (error == null) {
 						applied.add(i);
-						if (!force && operation.has("base") && !operation.has("parts") && !"newRoute".equals(getString(operation, "type")) && !"duties".equals(getString(operation, "type"))) {
+						if (!force && operation.has("base") && !operation.has("parts") && !"newRoute".equals(getString(operation, "type")) && !"duties".equals(getString(operation, "type")) && !"depot".equals(getString(operation, "type"))) {
 							routeBases.putIfAbsent(parseId(routeId), getString(operation, "base"));
 						}
 					} else {
@@ -258,6 +311,10 @@ public final class EditorActions implements IPacket {
 		// A depot's duties belong to the depot, not to a route
 		if ("duties".equals(getString(operation, "type"))) {
 			return EditorDuties.apply(operation);
+		}
+		// What a depot runs: its routes, whether its trains stay on the line, its sidings' routes and fleets
+		if ("depot".equals(getString(operation, "type"))) {
+			return applyDepot(operation);
 		}
 		// A pathfinding boundary on a rail belongs to the network, set the same way as in the game's node screen
 		if ("pathBoundary".equals(getString(operation, "type"))) {

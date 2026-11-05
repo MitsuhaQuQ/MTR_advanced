@@ -121,8 +121,10 @@ public final class EditorDuties implements IPacket {
 			}
 			final JsonArray slotsArray = sidingEntry.getValue().getAsJsonArray();
 			final String sidingName = siding.name.isEmpty() ? TranslatedMessage.get("gui.mtr.editor_siding") : siding.name;
-			if (slotsArray.size() > DepotDuties.MAX_SLOTS || !siding.getUnlimitedTrains() && slotsArray.size() > siding.getTrainLimit()) {
-				return TranslatedMessage.get("gui.mtr.editor_too_many_slots", sidingName, siding.getUnlimitedTrains() ? DepotDuties.MAX_SLOTS : siding.getTrainLimit());
+			// More duties than the siding holds trains is fine: a train back in the siding goes out again for a later one
+			// (DepotDispatcher sends whichever train is ready), so only the number of duties a siding can keep is limited
+			if (slotsArray.size() > DepotDuties.MAX_SLOTS) {
+				return TranslatedMessage.get("gui.mtr.editor_too_many_slots", sidingName, DepotDuties.MAX_SLOTS);
 			}
 			final List<DepotDuties.Slot> slots = new ArrayList<>();
 			for (int i = 0; i < slotsArray.size(); i++) {
@@ -278,19 +280,21 @@ public final class EditorDuties implements IPacket {
 				final JsonArray missingArray = new JsonArray();
 				unitMissing.forEach(missingArray::add);
 				object.add("missingTimes", missingArray);
-				object.add("issues", new JsonArray());
+				final JsonArray issuesArray = new JsonArray();
+				plan.issues.forEach(issuesArray::add);
+				object.add("issues", issuesArray);
 				return object;
 			};
 		}
 
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
-		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit(), null, depot.id)));
+		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), null, depot.id)));
 		final Map<Long, Long> stationOf = new HashMap<>();
 		ClientData.DATA_CACHE.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 		final long maxLayoverMillis = depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
 
 		return () -> {
-			final DutyGenerator.Result result = DutyGenerator.generate(services, sidings, stationOf, maxLayoverMillis);
+			final DutyGenerator.Result result = DutyGenerator.generateSpread(services, sidings, stationOf, maxLayoverMillis);
 			final DepotDuties duties = new DepotDuties();
 			duties.diagramMode = depot.duties.diagramMode;
 			duties.sidings.putAll(result.sidings);

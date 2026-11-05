@@ -117,8 +117,8 @@ public final class DepotBoard implements TrainService.Board {
 
 	@Override
 	public RouteTimetable getTimetable(String trainId) {
-		final List<PlanRoute> vehicleRoutes = getTrainRoutes(trainId);
-		return vehicleRoutes.isEmpty() || !vehicleRoutes.get(0).getTimetable().isActive() ? null : vehicleRoutes.get(0).getTimetable();
+		// The routes are the lines the depot runs, in no order: any of them with a timetable makes it run by one
+		return getTrainRoutes(trainId).stream().filter(route -> route.getTimetable().isActive()).map(PlanRoute::getTimetable).findFirst().orElse(null);
 	}
 
 	@Override

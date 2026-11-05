@@ -114,9 +114,28 @@ public final class EditorData {
 				sidingObject.addProperty("id", String.valueOf(siding.id));
 				sidingObject.addProperty("name", siding.name);
 				sidingObject.addProperty("maxTrains", siding.getTrainLimit());
+				// Its fleet and the routes it's given (empty for all of the depot's)
+				sidingObject.addProperty("fleet", siding.getFleetSize());
+				final JsonArray sidingRoutes = new JsonArray();
+				siding.getRouteIds().forEach(routeId -> sidingRoutes.add(String.valueOf(routeId)));
+				sidingObject.add("routes", sidingRoutes);
+				sidingObject.addProperty("vehicle", siding.getTrainId());
 				sidingsArray.add(sidingObject);
 			});
 			depotObject.add("sidings", sidingsArray);
+			depotObject.addProperty("revision", getRevision(depot));
+			depotObject.addProperty("byTimetable", depot.runsByDutiesWith(depot.getRoutes(ClientData.DATA_CACHE)));
+			// The last path generation as the server told it: generating, found, failed and why, and duties not found
+			final JsonObject pathObject = new JsonObject();
+			final int segments = depot.clientPathGenerationSuccessfulSegments;
+			final String failureText = mtr.client.PathFailureText.get(depot.clientPathFailure);
+			pathObject.addProperty("state", segments < 0 ? "generating" : !failureText.isEmpty() || segments == 0 ? "failed" : ClientData.STALE_DEPOTS.contains(depot.id) ? "stale" : "found");
+			pathObject.addProperty("text", failureText);
+			pathObject.addProperty("failedDuties", depot.clientFailedDutyCount);
+			final JsonArray failedArray = new JsonArray();
+			depot.clientFailedDuties.forEach(failedArray::add);
+			pathObject.add("failedDutyKeys", failedArray);
+			depotObject.add("path", pathObject);
 			// Which services each train of the depot runs, see DepotDuties
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));
 			// Worked out from the timetables when the depot runs by a timetable and has no duties set
@@ -421,6 +440,18 @@ public final class EditorData {
 	 */
 	public static String getRevision(Route route) {
 		return route.getEditorRevision();
+	}
+
+	/**
+	 * @return what the advanced editor changes of a depot, as it is in the game: its routes, whether its trains stay on
+	 * the line, its way of running and its sidings' routes and fleets; a draft based on another is out of date
+	 */
+	public static String getRevision(Depot depot) {
+		final StringBuilder text = new StringBuilder();
+		new java.util.TreeSet<>(depot.routeIds).forEach(routeId -> text.append(routeId).append(','));
+		text.append('|').append(depot.cycleRoutes).append('|').append(depot.duties.diagramMode);
+		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> text.append('|').append(siding.id).append(':').append(siding.getRouteIds()).append('/').append(siding.getFleetSize()));
+		return Integer.toHexString(text.toString().hashCode());
 	}
 
 	private static void requestTimes(long routeId) {

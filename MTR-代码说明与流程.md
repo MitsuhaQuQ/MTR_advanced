@@ -779,6 +779,8 @@ flowchart TD
 
 ### 8.1 普通的改动
 
+选线路的列表（车厂、站台等用的 `DashboardListSelectorScreen`）和仪表盘一样，把一条线的几条线路折成一行 `[+] 线名 (条数)`（`LineRows`），点这一行展开或收起。点击由界面的 `mouseClicked` 交给 `DashboardList.mouseClicked`；2026-11-06 以前选择界面没有转交，这一行点了没反应，多条线路的线选不了。
+
 以在界面里改一条线路为例：
 
 1. **客户端**：界面调 `PacketTrainDataGuiClient.sendUpdate(packetId, packet)`。包的内容是对象 ID、改的字段名（"part"）和新值；`ClientEditing.send` 在外面再包一层 `PACKET_EDIT`，带上这个玩家看到的这部分数据的版本号（不归它管的包照原样发出）。发完客户端立即 `DATA_CACHE.sync()`，界面马上看到自己的改动。
@@ -965,6 +967,18 @@ sequenceDiagram
 
 ### 9.1 发起：`Depot.generateMainRoute`
 
+**车厂的线路没有先后，派线路的单位是存车线**（MTM_Logic 0.13.0，2026-11-06）：
+
+- 按运用跑的车厂（`Depot.runsByDutiesWith`：设了运用图，或线路里任意一条有启用的时刻表）不再把线路首尾相接成一条主路径。`MainPath.generateDutiesOnly` 只逐条检查各线路自己的路径（找不到的第一条报原因），再给每条存车线算运用路径（`Siding.generateDutyRoute`：存车线本身作为 `path`，运用路径总是应用，不会因为两条线路接不上而保留旧的），返回 `Depot.DUTIES_ONLY_FOUND`。线路之间的连接、"不回库"的绕回、`depotReturns`、`tripTails` 只给按频率发车的旧车厂用。
+- 以前只看第一条线路的判断（`findTimetable`、`getTimetable`、`getDepotAutoDutiesKey`、`hasTimetable`、`generateAutoDuties` 的 `byTimetable`、`usesRoutePaths`、组件的 `DepotBoard.getTimetable`）改成"任意一条有启用的时刻表"（`findTimetabledRoute`），排在第一位的线路不再悄悄改变车厂的行为。
+- 游戏内选线路的界面对按时刻表跑的车厂不显示排序、不能重复（`DashboardListSelectorScreen` 的 `canSort`）。"不回库"在这种车厂里显示成"允许长时间停在线上"（`gui.mtr.stay_on_line`），只放宽两班之间的等待（`MAX_STAY_MILLIS`）。模拟器比较车厂时按集合比较线路（`LiveSimulation`）。
+- **存车线的线路和配属车数**（`Siding.routeIds`、`fleetSize`，存档键 `route_ids`、`fleet_size`，网络包末尾和更新键 `siding_operation`）：
+  - 存车线的车跑的线路 = 车厂的线路 ∩ 存车线给的线路（空表示全部），再按车型的服务类型过滤（`Depot.getSidingRoutes`）。车厂寻路、`findDutyPaths`、`LineDuties` 建组都按"服务类型 + 存车线线路"分组（`Depot.getSidingGroupKey`），模拟器导出用 `getSidingRouteIds`。
+  - 配属车数是这条存车线能派出的列车数（相当于车厂的配属），不受轨道长度限制；-1 表示按需要。按运用跑时，规划（`SidingInput.maxTrains`）、生成列车（`Siding.simulateTrain`）、回库选存车线（`chooseReturnSiding`）和模拟器导出都用它；按频率的旧车厂仍用 `max_trains`。旧存档没有这个键时取原来的上限，规划结果不变；游戏里改上限时配属车数跟着改。新建的存车线默认"无限车辆"。
+  - 按长期目标（游戏内只管物理层），这两项只在网页"编辑车厂…"里改。
+
+不回库（`cycleRoutes`）时，主路径从最后一条线路的终点接回第一条线路的起点（`closesPath`）。两站之间找不到路时记 `PathFailure.Type.CYCLE_BACK`（出发站台、要到的站台），车厂界面写明是哪两个站台接不上（`gui.mtr.path_failure_cycle_back`），不再只说"未创建路径"。
+
 1. **复制数据**：`dataCache.copyIdMaps()` 和 `DataCache.copyRails(rails)`，后台线程只用这份副本，玩家同时改轨道不会影响它，也不会让它找到改了一半的线网。
 2. **按服务类型分组**：车厂区域内、运输方式相同的侧线，按车辆能跑的服务类型（`getServiceTypes`）分组，每组只用它能跑的线路（`filterRoutes`），各生成一条主路径（`MainPath`）。
 3. **建图**（在服务器主线程上）：`getPathGraph(rails, pathBoundaries)`。车厂开了新寻路（`useDeterministicPath`）、不是飞机、不是连续运动时，用 `DeterministicPathFinder.compile` 建组件的 `RailGraph`（按路径分界限定区域）；否则返回 null，用旧寻路。
@@ -1011,11 +1025,20 @@ sequenceDiagram
   - **规划单元**（`LineDuties.Unit`，`LineDuties.of` 在主线程上建）：从这个车厂出发，经它列的线路找到这些线路的所有线路组，再找列了这些线路组的其他按线路排的车厂（`plansByLine`：用时刻表、没设运用、不是连续运动或飞机），直通关系连着的线路组也算进来，一直连下去。
   - **班次**：单元里所有线路组的、启用时刻表的线路的全部班次（`DutyGenerator.servicesOf`），最快时刻用线路自己的（`RoutePaths.Search.getFastestTimes`）；设了运用的车厂已经在跑的班次先去掉。
   - **存车线**：单元里各车厂区域内的存车线，按车辆能跑的服务类型分组（`getServiceTypes`、`filterRoutes`），各组按先后排，前面的组用掉的班次后面的组不再排。
+  - **车不够时均匀抽班**（`DutyGenerator.generateSpread`，游戏的自动运用 `LineDuties.Unit.plan`、网页一键生成 `EditorDuties`、组件的 `AutoDuties` 和 `PlanCheck` 都用它）：先照常 `generate`；有班次没车、存车线都有上限时，每条线路每种星期组合的班次按发车先后每 k 班留 1 班，k 从"跑满需要 ÷ 现有"起往上试（小的时候一次加 1，大了每次加八分之一），取第一个让留下的班次全部有车的 k；没留下的班次计入没车。这样现有的车间隔相同、全天均匀，不会像贪心那样几列车挨着开（每分钟一班、3 列车时贪心排成 1 分钟、22 分钟交替，抽班后是每 24 分钟一班）。一直排不满时退回贪心的结果。车够时结果不变。
   - **从哪里出车**：一条存车线的车只从它自己车厂所列线路的首站出发（`DutyGenerator.SidingInput.links`），代价按存车线到站台的直线距离（每格 50 毫秒），规划器优先用最近的存车线；出发以后可以跑这条运营线路的任何线路，在同一车站折返接下一班。所以只列了单方向线路的车厂，车也能跑另一个方向。回库仍回自己车厂的车池。
   - **怎么分给车厂**：每个车厂在自己的寻路线程里把整个单元排一遍（`Unit.plan`），只留下自己存车线的槽位；同样的单元总是排出同样的结果，所以各车厂一致。`MainPath.generateAutoDuties` 把这些槽位存进 `Depot.autoDuties` 并发给客户端。
   - **车够不够**（`LineDuties.Plan`、`Depot.Shortfall`）：有班次没车时，取离线路最近的存车线，用折半查找求出它最少再加几列，能让没车的班次降到车再多也降不下去的数（`Unit.extraTrains`，约 8 次规划），跑满需要的车数就是现有的加上这些。随自动运用发给客户端（`PACKET_AUTO_DUTIES` 和车厂整包末尾），车厂界面和网页（车厂一行、时刻表上方）显示"跑满需要 N 列，现有 M 列，每天 K 班没有车，建议加到 …"。日志每次排单元写一行 `planned the duties of line …`。
+  - **一天的班次上限**（MTM_Logic 0.12.0）：一份运用一天最多 4096 班（`DepotDuties.MAX_SEGMENTS`，和一张时刻表的班次上限相同）。以前是 128，超出的部分在 `assignSlots` 里被直接截掉，1 列车跑密集班次时跑到第 128 班就停在线上。存档格式不变，只是允许更长；网络包也一样，旧客户端会截断，所以升了版本。
+  - **运用数可以多于存车线放的车**：车回库再出来就是一份新运用，存车线的车跑完一份、回库后可以接着跑下一份（`DepotDispatcher` 放准备好的车），所以网页应用运用时只限制每条存车线最多 256 份（`MAX_SLOTS`），不再要求运用数不超过车数。游戏里出车的车数仍按存车线上限（`Siding` 生成列车时）。
+  - **折返太短**（`DutyPlanner.findTrainInService`）：一班找不到线上的车时，如果同一站台有一列车在发车前就到了、只是到站加最短折返（`MIN_TURNAROUND_MILLIS`）来不及，记一条 `SHORT_TURNAROUND <站台> <有的毫秒> <要的毫秒>`，每个站台只留时间最紧的一次。它经 `DutyGenerator.Result.issues`、`LineDuties.Plan.issues` 传给网页（一键生成后提示"在某站折返时间不够……"，`shortTurnaroundText`）和日志（`turnaround too short at platform …`）。单站台的终点站折返不够时，车也不能在站台上等下一班（`isPlatformFree`），每列车只跑一个来回就回库。
+  - **网页编辑车厂和同步状态**（0.13.0）：
+    - 右键车厂"编辑车厂…"：勾负责的线路（按线路组）、"允许长时间停在线上"、每条存车线的配属车数和只跑哪些线路；放进草稿（`draft.depots`），应用时是一项 `depot` 操作（`EditorActions.applyDepot`：比对 `EditorData.getRevision(Depot)`，`depot.setData` 和 `siding.setOperation` 发更新包，然后刷新车厂路径）。树里存车线显示成车池（配属几列、几份运用），运用叫"运用 N"；"在线预约"改叫"自动排班"。
+    - 选着一份运用时，在运行图上 Shift 点第二班，把两班之间这列车接得上的班次一次加进来（`chainBetween`：从上一班终点站找最早赶得上的下一班），两班都已在运用里时一起移出。
+    - 顶栏"同步状态"（`syncProblems`）：连接、没应用的草稿和原因、车厂没选线路、路径生成中/失败（`EditorData` 的 `path`，来自 `generatePathS2C` 的失败原因）、运用找不到路的份数和键（服务端现在随结果发来，`Depot.clientFailedDuties`）、运用里有已删除线路、车不够、线路还没有时刻。网页每 1.5 秒查一次游戏的变化（页面在后台时 5 秒）。
+  - **网页上哪班没车**（`editor.js` 的 `coverageNow`，按数据、草稿和星期缓存）：按运用跑（含自动运用）的车厂负责的线路里，不在任何槽位运用里的班次算没车。运行图上有车的画线路色、稍粗，没车的画灰色细线（不再用点线，线密时也分得清）；顶栏"没车的班次"开关（存在 `localStorage`）把没车的标成红色、有车的变淡。线路卡片写"有车 N · 没车 M"，悬停看缺车的车厂；车厂不按运用跑时写"看不出哪班有车"。时刻表里没车的班次表头时刻变灰加删除线。
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
-- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。
+- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
 - **出车和回送指令**（MTM_Logic 0.8.0）：时刻表每张表有 `deployOrders` 和 `returnOrders`，按班次记"第 j 站由车厂 D 出车接上""第 k 站转回送回车厂 D"（`RouteTimetable.ServiceOrder`，D 为 0 是自动），在网页汇总时刻表右键某格设。
   - **存档**：线路的 `timetable_orders`，每项四个数（班次、种类 0 出车 / 1 回送、站、车厂），旧档没有就是空。线路的包在回库班次之后带两组。`TimetableBinary` 把它们写在所有表之后，读的时候还有字节才读（`BinaryReader.hasMore`），所以旧的组件数据照常读。

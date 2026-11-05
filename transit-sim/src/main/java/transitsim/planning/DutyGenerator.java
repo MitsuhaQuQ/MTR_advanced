@@ -446,6 +446,53 @@ public final class DutyGenerator {
 	}
 
 	/**
+	 * Like {@link #generate}, but when the sidings hold too few trains for every service, the trains run every k-th
+	 * service of each route evenly through the day, rather than every service early in the day and none later: k is the
+	 * smallest that leaves no kept service without a train, starting from what's needed over what's held. The services
+	 * left out count as without a train. With trains enough, or a siding with no limit, the result is
+	 * {@link #generate}'s.
+	 */
+	public static Result generateSpread(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis) {
+		final Result all = generate(services, sidings, stationOf, maxLayoverMillis);
+		if (all.uncovered == 0 || sidings.stream().anyMatch(siding -> siding.maxTrains < 0)) {
+			return all;
+		}
+		final int held = sidings.stream().mapToInt(siding -> Math.min(siding.maxTrains, UNLIMITED_TRAINS)).sum();
+		if (held <= 0) {
+			return all;
+		}
+
+		// Each route's services on the same days, in the order they leave in the operating day
+		final Map<String, List<ServiceInput>> groups = new TreeMap<>();
+		services.forEach(service -> groups.computeIfAbsent(service.routeId + "/" + service.weekdays, key -> new ArrayList<>()).add(service));
+		groups.values().forEach(group -> group.sort(Comparator.comparingLong((ServiceInput service) -> service.startMillis).thenComparingInt(service -> service.service)));
+		final int longest = groups.values().stream().mapToInt(List::size).max().orElse(1);
+
+		final int needed = neededTrains(services, sidings, stationOf, maxLayoverMillis);
+		// Up one at a time while k is small, then by an eighth, so a long day of services is planned only a few dozen times
+		for (int k = Math.max(2, (needed + held - 1) / held); k <= longest; k += Math.max(1, k / 8)) {
+			final List<ServiceInput> kept = new ArrayList<>();
+			int left = 0;
+			for (final List<ServiceInput> group : groups.values()) {
+				for (int i = 0; i < group.size(); i++) {
+					if (i % k == 0) {
+						kept.add(group.get(i));
+					} else {
+						left += Integer.bitCount(group.get(i).weekdays & DepotDuties.ALL_WEEKDAYS);
+					}
+				}
+			}
+			final Result result = generate(kept, sidings, stationOf, maxLayoverMillis);
+			if (result.uncovered == 0) {
+				result.uncovered = left;
+				return result;
+			}
+		}
+		// Not even one service a route has a train for every kept one: as many as the trains can take, early first
+		return all;
+	}
+
+	/**
 	 * @return how many trains the services need at most when the sidings have as many as they like, to compare with what
 	 * they have
 	 */

@@ -30,6 +30,10 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 	private final boolean isSingleSelect;
 	private final boolean canRepeat;
 	/**
+	 * The selected items are in an order that can be changed; a depot running by a timetable has its routes in no order.
+	 */
+	private final boolean canSort;
+	/**
 	 * Lists of routes look like the routes page of the dashboard, as routes of one line in opposite directions tend to look alike.
 	 */
 	private final boolean isRouteList;
@@ -41,10 +45,21 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 	}
 
 	public DashboardListSelectorScreen(ScreenMapper previousScreen, List<NameColorDataBase> allData, Collection<Long> selectedIds, boolean isSingleSelect, boolean canRepeat) {
-		this(previousScreen, null, allData, selectedIds, isSingleSelect, canRepeat);
+		this(previousScreen, null, allData, selectedIds, isSingleSelect, canRepeat, canRepeat);
+	}
+
+	/**
+	 * @param canSort whether the selected items have an order to change, which needn't go with repeating them
+	 */
+	public DashboardListSelectorScreen(ScreenMapper previousScreen, List<NameColorDataBase> allData, Collection<Long> selectedIds, boolean isSingleSelect, boolean canRepeat, boolean canSort) {
+		this(previousScreen, null, allData, selectedIds, isSingleSelect, canRepeat, canSort);
 	}
 
 	private DashboardListSelectorScreen(ScreenMapper previousScreen, Runnable onClose, List<NameColorDataBase> allData, Collection<Long> selectedIds, boolean isSingleSelect, boolean canRepeat) {
+		this(previousScreen, onClose, allData, selectedIds, isSingleSelect, canRepeat, canRepeat);
+	}
+
+	private DashboardListSelectorScreen(ScreenMapper previousScreen, Runnable onClose, List<NameColorDataBase> allData, Collection<Long> selectedIds, boolean isSingleSelect, boolean canRepeat, boolean canSort) {
 		super(Text.literal(""));
 		this.previousScreen = previousScreen;
 		this.onClose = onClose;
@@ -52,6 +67,7 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 		this.selectedIds = selectedIds;
 		this.isSingleSelect = isSingleSelect;
 		this.canRepeat = canRepeat;
+		this.canSort = canSort;
 
 		availableList = new DashboardList(null, null, null, null, this::onAdd, null, null, () -> ClientData.ROUTES_PLATFORMS_SEARCH, text -> ClientData.ROUTES_PLATFORMS_SEARCH = text);
 		selectedList = new DashboardList(null, null, null, this::updateList, null, this::onDelete, () -> selectedIds instanceof ArrayList ? (List<Long>) selectedIds : new ArrayList<>(), () -> ClientData.ROUTES_PLATFORMS_SELECTED_SEARCH, text -> ClientData.ROUTES_PLATFORMS_SELECTED_SEARCH = text);
@@ -112,6 +128,17 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 		selectedList.mouseMoved(mouseX, mouseY);
 	}
 
+	/**
+	 * A click on a line's row opens or closes it; the list only knows of the click when it's passed on.
+	 */
+	@Override
+	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		if (button == 0 && availableList.mouseClicked(mouseX, mouseY)) {
+			return true;
+		}
+		return super.mouseClicked(mouseX, mouseY, button);
+	}
+
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
 		availableList.mouseScrolled(mouseX, mouseY, amount);
@@ -158,7 +185,7 @@ public class DashboardListSelectorScreen extends ScreenBase implements IGui {
 			lineRows.clear();
 			availableList.setData(availableData, false, false, false, false, true, false);
 		}
-		selectedList.setData(selectedData, false, false, false, canRepeat, false, true);
+		selectedList.setData(selectedData, false, false, false, canSort, false, true);
 	}
 
 	private String getRouteLabel(NameColorDataBase data) {

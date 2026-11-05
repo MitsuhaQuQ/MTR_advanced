@@ -7,7 +7,8 @@
  */
 (() => {
 	const DAY = 24 * 60 * 60 * 1000;
-	const POLL_MILLIS = 3000;
+	// Checked often, so changes made in the game show soon; less often while the page is hidden
+	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
 	// Room below the last station for the labels of trains carrying on to another route
 	const LABEL_W = 120, AXIS_H = 28, MIN_ROW_GAP = 22, PAD_BOTTOM = 30;
 	// The space above a section of a line's stations other than the first, as a share of a row's
@@ -51,7 +52,8 @@
 	 * Changes not yet applied to the game, saved as they are made so closing the page or the game doesn't lose them. Each
 	 * route's entry keeps the revision it was made from, so a change made in the game since is noticed before applying.
 	 */
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let coverage = null;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -101,11 +103,13 @@
 		if (!Array.isArray(draft.created)) draft.created = [];
 		if (!draft.duties || typeof draft.duties !== "object") draft.duties = {};
 		if (!draft.boundaries || typeof draft.boundaries !== "object") draft.boundaries = {};
+		if (!draft.depots || typeof draft.depots !== "object") draft.depots = {};
 		draftLoaded = true;
 	}
 
 	/** Saves the draft shortly after the last change, so typing doesn't write it on every key. */
 	function saveDraft() {
+		coverage = null;
 		clearTimeout(draftTimer);
 		draftTimer = setTimeout(() => sendJson("api/draft", "PUT", draft).catch(() => {}), 400);
 		renderDraftState();
@@ -113,7 +117,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -302,6 +306,11 @@
 				owners.push(id);
 			}
 		});
+		// What a depot runs goes first, so its duties are applied to the routes and sidings as drafted
+		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
+			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings });
+			owners.push({ depotOf: depotId });
+		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
 			operations.push({ type: "duties", depot: depotId, duties: entry.duties });
 			owners.push({ dutiesOf: depotId });
@@ -332,7 +341,9 @@
 				const id = owners[error.index];
 				failed.add(id);
 				if (typeof id === "object") {
-					if (id.dutiesOf) {
+					if (id.depotOf) {
+						if (draft.depots[id.depotOf]) draft.depots[id.depotOf].error = error.message;
+					} else if (id.dutiesOf) {
 						if (draft.duties[id.dutiesOf]) draft.duties[id.dutiesOf].error = error.message;
 					} else if (id.boundaryOf) {
 						boundaryErrors[id.boundaryOf] = error.message;
@@ -349,6 +360,7 @@
 			owners.forEach(id => { if (!failed.has(id) && typeof id === "string") delete draft.routes[id]; });
 			draft.created = draft.created.filter(made => failed.has(made));
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
+			owners.filter(owner => owner && owner.depotOf && !failed.has(owner)).forEach(owner => delete draft.depots[owner.depotOf]);
 			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
 				delete draft.boundaries[owner.boundaryOf];
 				delete boundaryErrors[owner.boundaryOf];
@@ -415,13 +427,15 @@
 		renderBanner();
 		renderStatus();
 		renderDraftState();
-		if (!once) setTimeout(poll, POLL_MILLIS);
+		renderSyncButton();
+		if (!once) setTimeout(poll, document.hidden ? POLL_HIDDEN_MILLIS : POLL_MILLIS);
 	}
 
 	/** The routes of each line, the stations of its diagram, and each route's services on the chosen day. */
 	function setData(newData) {
 		I18N.setLanguage(newData.language);
 		data = newData;
+		coverage = null;
 		lastLoaded = Date.now();
 		data.routeById = new Map(data.routes.map(r => [r.id, r]));
 		const lines = new Map();
@@ -1087,10 +1101,21 @@
 				<div class="draft-actions"><button type="button" data-diff-open="${id}">${tr("跳到这里")}</button>${entry.conflict ? "" : `<button type="button" data-diff-drop="${id}">${tr("放弃这条的草稿")}</button>`}</div></section>`);
 		});
 		draft.created.forEach(made => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${made.source ? tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length) : tr("新建线路：{0} 站", made.stops.length)}</li></ul></section>`));
+		// What a depot runs, drafted in "编辑车厂…"
+		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
+			const depot = depotById(depotId);
+			const routeName = id => data.routeById.get(id) ? routeTitle(data.routeById.get(id)) : tr("已删除的线路");
+			const lines = [tr("负责的线路：{0}", entry.routes.map(routeName).join("、") || tr("无")), entry.cycleRoutes ? tr("允许长时间停在线上") : tr("不在线上久等")];
+			(depot ? depot.sidings : []).forEach(siding => {
+				const value = entry.sidings[siding.id];
+				if (value) lines.push(tr("{0}：{1}，{2}", shortName(siding.name) || tr("存车线"), value.fleet < 0 ? tr("配属按需要") : tr("配属 {0} 列", value.fleet), value.routes.length ? tr("只跑：{0}", value.routes.map(routeName).join("、")) : tr("跑车厂的全部线路")));
+			});
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul></section>`);
+		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
 			const depot = depotById(depotId);
 			const slots = Object.values(entry.duties.sidings || {}).reduce((a, list) => a + list.length, 0);
-			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul><li>${tr("运用改了：{0}，{1} 个运用", entry.duties.mode === "diagram" ? tr("按运用图") : tr("在线预约"), slots)}</li></ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul><li>${tr("运用改了：{0}，{1} 个运用", entry.duties.mode === "diagram" ? tr("按运用图") : tr("自动排班"), slots)}</li></ul></section>`);
 		});
 		const boundaryKeys = Object.keys(draft.boundaries || {});
 		if (boundaryKeys.length) {
@@ -1195,21 +1220,26 @@
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
 				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
 				depot.sidings.forEach(siding => {
 					const slots = duties.sidings[siding.id] || [];
-					const over = siding.maxTrains >= 0 && slots.length > siding.maxTrains;
-					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, slots.length ? "▾" : "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || tr("存车线"))}</span><span class="count${over ? " warn" : ""}">${slots.length}/${siding.maxTrains < 0 ? tr("不限") : siding.maxTrains}</span>`, false)}`);
+					// A fleet, as a depot has trains: how many there are, not one row a train
+					const drafted = draft.depots && draft.depots[depot.id] && draft.depots[depot.id].sidings && draft.depots[depot.id].sidings[siding.id];
+					const fleet = drafted ? drafted.fleet : siding.fleet;
+					const given = drafted ? drafted.routes : siding.routes || [];
+					const fleetText = fleet < 0 ? tr("配属按需要") : tr("配属 {0} 列", fleet);
+					const givenText = given.length ? tr("只跑：{0}", given.map(id => data.routeById.get(id) ? routeTitle(data.routeById.get(id)) : "?").join("、")) : tr("跑车厂的全部线路");
+					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, slots.length ? "▾" : "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || tr("存车线"))}</span><span class="count" title="${escapeHtml(givenText)}">${fleetText} · ${tr("{0} 份运用", slots.length)}${given.length ? " · " + tr("{0} 条线路", given.length) : ""}</span>`, false)}`);
 					if (slots.length) {
 						parts.push(`<ul>`);
 						slots.forEach((slot, index) => {
 							const day = dutyOn(slot, state.weekday);
 							const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
 							const problems = day ? dutyProblems(depot, siding.id, index, state.weekday).length : 0;
-							parts.push(`<li>${node(`data-slot="${index}" data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">${tr("车 {0}", index + 1)}</span>${problems ? `<span class="draft-dot" title="${tr("运用有问题")}">!</span>` : ""}<span class="count">${day ? day.segments.length + tr(" 班") + (day.stay ? tr(" 留") : "") : tr("休")}</span>`, active)}</li>`);
+							parts.push(`<li>${node(`data-slot="${index}" data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">${tr("运用 {0}", index + 1)}</span>${problems ? `<span class="draft-dot" title="${tr("运用有问题")}">!</span>` : ""}<span class="count">${day ? day.segments.length + tr(" 班") + (day.stay ? tr(" 留") : "") : tr("休")}</span>`, active)}</li>`);
 						});
 						parts.push(`</ul>`);
 					}
@@ -1981,14 +2011,17 @@
 				ctx.globalAlpha = dim ? 0.25 : 1;
 				slotPoints.push({ start: points[0], end: points[points.length - 1], time: timesOf(s)[0][0] });
 			}
-			// Grey for a service no train ran in the simulated day
-			ctx.strokeStyle = sim.on && sim.notRun.has(key) ? c.muted : colorOf(s.route.color);
-			ctx.lineWidth = isSelected ? 2.5 : 1.5;
-			// Dashed: no times yet, or a depot running by its duties has no train for it
-			// A service no train of the depots running it by duties runs is drawn dashed and faint
+			// A service no train of the depots running it by duties runs: thin and grey, or red when those are picked out;
+			// one with a train in the route's colour, a little wider. Colour, not dashes, so dense diagrams still show it
 			const noTrain = s.route.hasTimes && diagramRoutes.has(s.route.id) && !assigned.has(key);
-			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : noTrain ? [2, 4] : []);
-			if (noTrain) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.35);
+			const covered = !noTrain && s.route.hasTimes && diagramRoutes.has(s.route.id);
+			// Grey for a service no train ran in the simulated day
+			ctx.strokeStyle = sim.on && sim.notRun.has(key) ? c.muted : noTrain ? (showNoTrain ? c.warn : c.muted) : colorOf(s.route.color);
+			ctx.lineWidth = isSelected ? 2.5 : noTrain ? 1 : covered ? 2 : 1.5;
+			// Dashed: no times yet
+			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : []);
+			if (noTrain && !showNoTrain) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.35);
+			if (covered && showNoTrain) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.25);
 			polyline(points);
 			ctx.setLineDash([]);
 			ctx.globalAlpha = dim ? 0.25 : 1;
@@ -2185,12 +2218,12 @@
 		if (loopRoute) parts.push(loopPanel(loopRoute));
 		const line = currentLine();
 		if (line) {
-			parts.push(`<h2>${tr("线路")}</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}${line.routes.length > 1 ? ` <button type="button" class="link" data-line-diagram title="${tr("整个线路组的配线图，分支画在下面")}">${tr("线路组配线图")}</button>` : ""}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${tr("{0} 班", r.services.length)} <button type="button" class="link" data-route-diagram="${r.id}" title="${tr("整条线路的配线图")}">${tr("配线图")}</button></dd>`).join("")}</dl></div>`);
+			parts.push(`<h2>${tr("线路")}</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}${line.routes.length > 1 ? ` <button type="button" class="link" data-line-diagram title="${tr("整个线路组的配线图，分支画在下面")}">${tr("线路组配线图")}</button>` : ""}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${tr("{0} 班", r.services.length)}${coverageText(r)} <button type="button" class="link" data-route-diagram="${r.id}" title="${tr("整条线路的配线图")}">${tr("配线图")}</button></dd>`).join("")}</dl></div>`);
 			// Tracks that don't run along the rails, which make the diagram jump about, are listed until they are put right
 			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
 			if (troubled.length) parts.push(`<h2>${tr("股道问题")}</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">${tr("右键线路“编辑停站…”在连通图上改股道。")}</p></div>`);
 		}
-		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
+		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("按运用跑的车厂：线路色较粗的线有车跑，灰色细线没有车；顶栏“没车的班次”把没车的标成红色。")}<br>${tr("时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
 		inspector.innerHTML = parts.join("");
 	}
 
@@ -2422,7 +2455,8 @@
 	let tableRoute = null;
 	/** The head of a service's column: its time, which starts editing it, and notes. */
 	function serviceHead(s, selected, notes) {
-		return `<th class="svc-head${selected ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
+		const noTrain = hasNoTrain(s);
+		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
 	}
 
 	/** A service's arrival, departure or passing time at a stop, as a cell to click and type into. @param t its times there */
@@ -2846,6 +2880,36 @@
 		return s ? timesOf(s)[lastStopOf(segment, s.route)][1] : -Infinity;
 	}
 
+	/**
+	 * On the day shown, the routes a depot running by its duties runs and the services no train of their duties runs;
+	 * worked out once until the data, the draft or the day changes ({@link coverage}, declared at the top).
+	 */
+	function coverageNow() {
+		if (coverage && coverage.weekday === state.weekday) return coverage;
+		const assigned = dutyAssignments();
+		const routes = new Set(data ? data.depots.filter(depot => dutiesOf(depot).mode === "diagram").flatMap(depot => depot.routes || []) : []);
+		const noTrain = new Set();
+		if (data) data.routes.forEach(r => {
+			if (routes.has(r.id) && r.hasTimes) (r.services || []).forEach(s => { if (!assigned.has(s.id)) noTrain.add(s.id); });
+		});
+		coverage = { weekday: state.weekday, routes, noTrain };
+		return coverage;
+	}
+	const hasNoTrain = s => coverageNow().noTrain.has(s.id);
+
+	/** A route's services on the day shown, with a train and without, or why that isn't known. */
+	function coverageText(r) {
+		if (!coverageNow().routes.has(r.id)) return `<span class="hint" title="${escapeHtml(tr("这条线路还没有车厂的运用（车厂没选这条线路，或自动排班还没生成），看不出哪班有车"))}"> · ${tr("看不出哪班有车")}</span>`;
+		const today = (r.services || []).filter(s => s.table.weekdays >> state.weekday & 1);
+		const without = today.filter(hasNoTrain).length;
+		const depots = data.depots.filter(depot => (depot.routes || []).includes(r.id) && depot.shortfall && depot.shortfall.uncovered > 0);
+		const title = depots.map(depot => shortName(depot.name) + "：" + shortfallText(depot.shortfall)).join("\n");
+		return `<span${without ? ` class="err" title="${escapeHtml(title)}"` : ""}> · ${tr("有车 {0} · 没车 {1}", today.length - without, without)}</span>`;
+	}
+
+	let showNoTrain = false;
+	try { showNoTrain = localStorage.getItem("mtr-editor-show-no-train") === "1"; } catch (e) {}
+
 	/** Where each service is run on the chosen day: route@service → {depot, siding, index}. */
 	function dutyAssignments() {
 		const assigned = new Map();
@@ -2869,7 +2933,8 @@
 		day.segments.forEach((segment, i) => {
 			const s = segmentService(segment);
 			if (!s) {
-				problems.push({ i, text: tr("这一班当天不运行，可能时刻表改过") });
+				// A deleted route is told once for the whole duty (dutyPanel); a route still there doesn't have this service
+				if (data.routeById.get(segment.route)) problems.push({ i, text: tr("{0}的时刻表里没有 {1} 这一班，可能时刻表改过", WEEKDAY_NAMES[weekday], clock(mod(segment.service - data.dayStartMillis, DAY))) });
 				return;
 			}
 			if (!depot.routes.includes(segment.route)) problems.push({ i, text: tr("线路不在这个车厂") });
@@ -2916,6 +2981,63 @@
 		renderAll();
 	}
 
+	let lastSlotService = null;
+
+	/**
+	 * The services a train can run one after another from one service to another on the chosen day: from where each ends,
+	 * the first one leaving that station after it arrives, until the second service. Empty if it can't get there.
+	 */
+	function chainBetween(a, b) {
+		const [first, last] = a.start <= b.start ? [a, b] : [b, a];
+		const depot = depotById(state.slot.depot);
+		const pool = data.routes.filter(r => depot.routes.includes(r.id)).flatMap(r => r.services).filter(o => o.start >= first.start && o.start <= last.start);
+		const stationAt = (o, i) => (o.route.stops[i] || {}).station;
+		const chain = [first];
+		let current = first;
+		for (let guard = 0; guard < 4096 && current !== last; guard++) {
+			const times = timesOf(current), endStation = stationAt(current, current.route.stops.length - 1), arrival = times[times.length - 1][0];
+			const next = pool.filter(o => o !== current && !chain.includes(o) && stationAt(o, 0) === endStation && timesOf(o)[0][1] >= arrival + 30000).sort((x, y) => timesOf(x)[0][1] - timesOf(y)[0][1])[0];
+			if (!next || next.start > last.start) return [];
+			chain.push(next);
+			current = next;
+		}
+		return current === last ? chain : [];
+	}
+
+	/** Adds the services between two to the selected train's duty, or takes them out if both are in it already. */
+	function addRangeToSlot(a, b) {
+		const depot = depotById(state.slot.depot);
+		if (!depot) return;
+		const chain = chainBetween(a, b);
+		if (!chain.length) {
+			dutyNotice = tr("从 {0} 到 {1} 接不上：中间没有一班从上一班终点站发车、赶得上的班次。", clock(a.start), clock(b.start));
+			renderBanner();
+			return;
+		}
+		editDuties(depot, duties => {
+			const slots = duties.sidings[state.slot.siding] || (duties.sidings[state.slot.siding] = []);
+			while (slots.length <= state.slot.index) slots.push([]);
+			const day = dutyForEditing(depot, slots[state.slot.index], state.weekday);
+			const keys = chain.map(o => o.route.id + "@" + o.service);
+			const has = key => day.segments.some(other => segmentKey(other) === key);
+			if (has(keys[0]) && has(keys[keys.length - 1])) {
+				day.segments = day.segments.filter(other => !keys.includes(segmentKey(other)));
+				return tr("{0} 班已从车 {1} 移出。", chain.length, state.slot.index + 1);
+			}
+			// Taken from the other trains that ran them
+			Object.entries(duties.sidings).forEach(([siding, otherSlots]) => otherSlots.forEach((slot, index) => {
+				const other = dutyOn(slot, state.weekday);
+				if (!other || siding === state.slot.siding && index === state.slot.index) return;
+				if (other.segments.some(o => keys.includes(segmentKey(o)))) dutyForEditing(depot, slot, state.weekday).segments = other.segments.filter(o => !keys.includes(segmentKey(o)));
+			}));
+			chain.forEach(o => {
+				if (!has(o.route.id + "@" + o.service)) day.segments.push({ route: o.route.id, service: o.service, from: 0, to: o.link ? o.link.fromStop : -1 });
+			});
+			day.segments.sort((x, y) => segmentStart(x) - segmentStart(y));
+			return tr("{0} 班加进车 {1}。", chain.length, state.slot.index + 1);
+		});
+	}
+
 	/**
 	 * Adds a service to the selected train's duty for the chosen day, or takes it out. A service another train of the
 	 * depot runs moves to this one. Joining or leaving part of the way along follows the service's through links.
@@ -2924,7 +3046,7 @@
 		const depot = depotById(state.slot.depot);
 		if (!depot) return;
 		if (!depot.routes.includes(s.route.id)) {
-			dutyNotice = `${tr("{0} 不在车厂“{1}”里，先在游戏里把线路加进车厂。", routeTitle(s.route), shortName(depot.name))}`;
+			dutyNotice = `${tr("{0} 不在车厂“{1}”里，先右键车厂选“编辑车厂…”把线路加进去。", routeTitle(s.route), shortName(depot.name))}`;
 			renderBanner();
 			return;
 		}
@@ -2962,15 +3084,22 @@
 		const day = dutyOn(slot, state.weekday), group = dayGroup(depot, state.weekday);
 		const problems = dutyProblems(depot, siding.id, state.slot.index, state.weekday);
 		const problemAt = i => problems.filter(p => p.i === i).map(p => `<div class="err">${escapeHtml(p.text)}</div>`).join("");
+		// Services of deleted routes: one line for all of them, not a row each with "?"
+		const deleted = day ? day.segments.filter(segment => !data.routeById.get(segment.route)).length : 0;
+		const deletedNote = deleted ? `<p class="err">${escapeHtml(dutiesOf(depot).auto
+			? tr("这份运用里有 {0} 班属于已经删除的线路。它是游戏按时刻表自动排的，车厂重新寻路后会按现在的线路重排（服务端换了新版后会自动做）。", deleted)
+			: tr("这份运用里有 {0} 班属于已经删除的线路，这些班不会再跑。右键车厂重新生成运用，或在这里把它们移出。", deleted))}${dutiesOf(depot).auto ? "" : ` <button type="button" class="link" data-remove-deleted>${tr("全部移出")}</button>`}</p>` : "";
 		const rows = day ? day.segments.map((segment, i) => {
+			if (!data.routeById.get(segment.route)) return "";
 			const s = segmentService(segment), r = data.routeById.get(segment.route);
 			const where = r ? `${shortName(r.stops[segment.from] ? r.stops[segment.from].name : "?")} → ${shortName(r.stops[lastStopOf(segment, r)] ? r.stops[lastStopOf(segment, r)].name : "?")}` : tr("已删除的线路");
 			return `<li><span class="num">${s ? clock(segmentStart(segment)) + "–" + clock(segmentEnd(segment)) : "--:--"}</span> ${escapeHtml(r ? shortName(r.name) : "?")} <span class="muted">${escapeHtml(where)}</span><button class="link" data-remove-segment="${i}" title="${tr("移出这一班")}">×</button>${problemAt(i)}</li>`;
 		}).join("") : "";
 		return `<h2>${tr("运用：车 {0}", state.slot.index + 1)}</h2><div class="card"><div class="title">${escapeHtml(shortName(depot.name))} · ${escapeHtml(shortName(siding.name) || tr("存车线"))}</div>
 			<dl class="kv"><dt>${tr("运行日")}</dt><dd>${daysText(group)}${day && day.days !== group ? `${tr("（现在和 {0} 共用，改了会分开）", daysText(day.days & ~group))}` : ""}</dd>
-			<dt>${tr("方式")}</dt><dd>${dutiesOf(depot).mode === "diagram" ? tr("按运用图") : tr("在线预约（运用先存着，按运用运行要等以后）")}</dd></dl>
-			${rows ? `<ol class="duty">${rows}</ol>` : `<p class="hint">${tr("这天没有运用，在运行图上点班次加进来。")}</p>`}
+			<dt>${tr("方式")}</dt><dd>${dutiesOf(depot).mode === "diagram" ? tr("按运用图") : tr("自动排班（游戏按时刻表自动生成运用；这里设的运用先存着，改为按运用图才用）")}</dd></dl>
+			${deletedNote}
+			${rows ? `<ol class="duty">${rows}</ol>` : deleted ? "" : `<p class="hint">${tr("这天没有运用，在运行图上点班次加进来。")}</p>`}
 			${problemAt(-1)}
 			${dutyCheckText(depot) ? `<p class="hint">${escapeHtml(dutyCheckText(depot))}</p>` : ""}
 			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> ${tr("跑完最后一班留在线上过夜")}</label>` : ""}
@@ -3034,6 +3163,61 @@
 		});
 	}
 
+	/** The planner's "SHORT_TURNAROUND <platform> <millis had> <millis needed>" as a sentence, with the station's name. */
+	function shortTurnaroundText(issue) {
+		const [, platformId, had, needed] = issue.split(" ");
+		const platform = data.platforms.find(p => p.id === platformId);
+		const where = platform ? `${shortName(platform.stationName) || tr("不属于车站")} ${platform.name || ""}`.trim() : platformId;
+		return tr("在 {0} 折返时间不够：车到站后 {1} 秒就要发下一班，至少要 {2} 秒，所以每列车只能跑一趟就回库。把回程的发车往后挪，或者加一个站台。", where, Math.round(+had / 1000), Math.round(+needed / 1000));
+	}
+
+	/**
+	 * What a depot runs, drafted: the routes it's responsible for (in no order for one running by a timetable), whether its
+	 * trains may wait on the line, and each siding's fleet and the routes its trains run (none ticked for all of them).
+	 */
+	function depotDialog(depot) {
+		const drafted = (draft.depots || {})[depot.id];
+		const current = drafted || { routes: depot.routes.slice(), cycleRoutes: depot.cycleRoutes, sidings: {} };
+		const sidingOf = siding => current.sidings[siding.id] || { routes: (siding.routes || []).slice(), fleet: siding.fleet };
+		const lines = data.lines.filter(line => line.routes.length);
+		const routeBoxes = lines.map(line => `<fieldset><legend>${escapeHtml(shortName(line.name))}</legend>${line.routes.map(r => `<label><input type="checkbox" name="route" value="${r.id}"${current.routes.includes(r.id) ? " checked" : ""}> ${escapeHtml(routeTitle(r))}</label>`).join("")}</fieldset>`).join("");
+		const chosen = lines.flatMap(line => line.routes).filter(r => current.routes.includes(r.id));
+		const sidingRows = depot.sidings.map(siding => {
+			const value = sidingOf(siding);
+			const boxes = chosen.map(r => `<label><input type="checkbox" name="sidingRoute" value="${r.id}"${value.routes.includes(r.id) ? " checked" : ""}> ${escapeHtml(routeTitle(r))}</label>`).join("");
+			return `<fieldset data-siding-row="${siding.id}"><legend>${escapeHtml(shortName(siding.name) || tr("存车线"))}${siding.vehicle ? ` <span class="hint">${escapeHtml(siding.vehicle)}</span>` : ""}</legend>
+				<label>${tr("配属车数")} <input type="number" min="0" max="999" name="fleet" placeholder="${tr("按需要")}" value="${value.fleet < 0 ? "" : value.fleet}"></label>
+				<div class="hint">${tr("跑的线路（都不勾就跑车厂的全部线路）：")}</div>
+				${boxes || `<span class="hint">${tr("先在上面选车厂负责的线路，放进草稿后再打开这里分给存车线")}</span>`}
+			</fieldset>`;
+		}).join("");
+		const cycleLabel = depot.byTimetable ? tr("允许长时间停在线上（两班之间不回库，运用跑完才回）") : tr("列车不回车厂，跑完最后一条线路后折返回第一条");
+		openDialog(tr("编辑车厂：{0}", escapeHtml(shortName(depot.name))), `
+			<p class="hint">${tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；存车线可以只跑其中几条线路，配属车数是这条存车线能派出的车数，不受轨道长度限制。")}</p>
+			<h3>${tr("负责的线路")}</h3>${routeBoxes || `<p class="hint">${tr("还没有线路")}</p>`}
+			<label><input type="checkbox" name="cycle"${current.cycleRoutes ? " checked" : ""}> ${cycleLabel}</label>
+			<h3>${tr("存车线")}</h3>${sidingRows || `<p class="hint">${tr("没有存车线")}</p>`}`, tr("放进草稿"), form => {
+			const routes = [...form.querySelectorAll("input[name=route]:checked")].map(box => box.value);
+			const sidings = {};
+			let bad = false;
+			form.querySelectorAll("[data-siding-row]").forEach(row => {
+				const fleetText = row.querySelector("input[name=fleet]").value.trim();
+				if (fleetText !== "" && !Number.isFinite(Number(fleetText))) bad = true;
+				const fleet = fleetText === "" ? -1 : Math.max(0, Math.min(999, Math.round(Number(fleetText))));
+				sidings[row.dataset.sidingRow] = { fleet, routes: [...row.querySelectorAll("input[name=sidingRoute]:checked")].map(box => box.value).filter(id => routes.includes(id)) };
+			});
+			if (bad) return tr("配属车数写成数字，或者留空表示按需要");
+			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings };
+			const sorted = list => JSON.stringify(list.slice().sort());
+			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
+				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []));
+			if (same) delete draft.depots[depot.id];
+			else draft.depots[depot.id] = entry;
+			saveDraft();
+			renderAll();
+		});
+	}
+
 	async function generateDuties(depot) {
 		if (draft.duties[depot.id] && !confirm(`${tr("用自动生成的运用替换“{0}”草稿里的运用？", shortName(depot.name))}`)) return;
 		if (!draft.duties[depot.id] && Object.values((depot.duties || { sidings: {} }).sidings).some(slots => slots.length) && !confirm(`${tr("用自动生成的运用替换“{0}”现在的运用？应用前都还在草稿里。", shortName(depot.name))}`)) return;
@@ -3056,7 +3240,8 @@
 				const byLine = result.byLine ? tr("按运营线路 {0} 和 {1} 个车厂一起排，这里是本车厂的部分；应用后线路上其他自动排的车厂会把剩下的班次重排。", result.lineNames, result.lineDepots) + (result.uncovered && result.needed > result.available ? tr("跑满需要 {0} 列，现有 {1} 列{2}。", result.needed, result.available, result.suggestedSiding ? tr("，加到 {0}", result.suggestedSiding) : "") : "") : "";
 				dutyNotice = byLine + `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
 					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
-					+ (result.issues.length ? `${tr("其他问题：{0}", result.issues.slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
+					+ result.issues.filter(issue => issue.startsWith("SHORT_TURNAROUND ")).map(shortTurnaroundText).join("")
+					+ (result.issues.some(issue => !issue.startsWith("SHORT_TURNAROUND ")) ? `${tr("其他问题：{0}", result.issues.filter(issue => !issue.startsWith("SHORT_TURNAROUND ")).slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
 			}
 		} catch (e) {
 			dutyNotice = tr("生成失败：") + (e.message === "401" ? tr("页面的链接已经失效") : tr("游戏可能已经关闭"));
@@ -4666,6 +4851,65 @@
 		banner.classList.toggle("warn", Boolean(problem) || Boolean(data && !data.canEdit) || Boolean(applyResult && (!applyResult.ok || failed.length)));
 	}
 
+	/**
+	 * Everything that doesn't match between the page and the game, or that the game couldn't do with what it was given:
+	 * the connection, changes not applied, depots' paths, duties whose paths weren't found, trains too few, routes with
+	 * no times yet. Each as {level: "err" | "warn", text, route?}.
+	 */
+	function syncProblems() {
+		const problems = [];
+		if (connection !== "ok") problems.push({ level: "err", text: connection === "world" ? tr("游戏现在不在世界里") : connection === "key" ? tr("页面的链接已经失效") : tr("连不上游戏") });
+		if (!data) return problems;
+		const routeName = id => data.routeById.get(id) ? routeTitle(data.routeById.get(id)) : tr("已删除的线路");
+		Object.entries(draft.routes).forEach(([id, entry]) => {
+			if (entry.conflict) problems.push({ level: "err", text: tr("{0}：游戏里在草稿之后改过，草稿先不发", routeName(id)), route: id });
+			else if (entry.error) problems.push({ level: "err", text: tr("{0}：没有应用，{1}", routeName(id), entry.error), route: id });
+		});
+		Object.entries(draft.duties).forEach(([id, entry]) => {
+			if (entry.error) problems.push({ level: "err", text: tr("车厂{0}的运用没有应用：{1}", shortName(depotById(id) ? depotById(id).name : "?"), entry.error) });
+		});
+		Object.entries(draft.depots || {}).forEach(([id, entry]) => {
+			if (entry.error) problems.push({ level: "err", text: tr("车厂{0}的设置没有应用：{1}", shortName(depotById(id) ? depotById(id).name : "?"), entry.error) });
+		});
+		(draft.created || []).filter(made => made.error).forEach(made => problems.push({ level: "err", text: tr("新种别 {0} 没有建成：{1}", shortName(made.name), made.error) }));
+		data.depots.forEach(depot => {
+			const name = shortName(depot.name) || tr("（未命名车厂）");
+			const path = depot.path || {};
+			if (!depot.routes.length) problems.push({ level: "warn", text: tr("车厂{0}没选线路，不会出车", name) });
+			else if (path.state === "failed") problems.push({ level: "err", text: tr("车厂{0}的路径没生成：{1}", name, path.text || tr("原因不明，看游戏里的车厂界面")) });
+			else if (path.state === "generating") problems.push({ level: "warn", text: tr("车厂{0}正在生成路径", name) });
+			else if (path.state === "stale") problems.push({ level: "warn", text: tr("车厂{0}的路径是旧的，线路或轨道改过，要刷新", name) });
+			if (path.failedDuties > 0) problems.push({ level: "err", text: tr("车厂{0}有 {1} 份运用找不到路，这些车不会按运用出车：{2}", name, path.failedDuties, (path.failedDutyKeys || []).slice(0, 3).join("、")) });
+			const duties = dutiesOf(depot);
+			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
+			if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) });
+			if (depot.shortfall && depot.shortfall.uncovered > 0) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, shortfallText(depot.shortfall)) });
+		});
+		data.routes.filter(r => r.timetable && !r.hasTimes).forEach(r => problems.push({ level: "warn", text: r.pathFailure ? tr("{0}：找不到路，{1}", routeTitle(r), r.pathFailure) : tr("{0}：还没有各站时刻", routeTitle(r)), route: r.id }));
+		return problems;
+	}
+
+	function renderSyncButton() {
+		const button = $("btn-sync");
+		if (!button) return;
+		const problems = syncProblems(), errors = problems.filter(p => p.level === "err").length;
+		button.textContent = problems.length ? tr("同步状态 · {0}", problems.length) : tr("同步状态 · 正常");
+		button.classList.toggle("bad", errors > 0);
+		button.classList.toggle("warn", !errors && problems.length > 0);
+	}
+
+	function syncDialog() {
+		const problems = syncProblems();
+		const items = problems.map(p => `<li class="${p.level}">${p.route ? `<a data-open-route="${p.route}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)}</li>`).join("");
+		openDialog(tr("同步状态"), `<p class="hint">${connection === "ok" ? tr("已同步 {0}，每 1.5 秒检查一次游戏里的变化。", new Date(lastLoaded || Date.now()).toLocaleTimeString()) : tr("没有连上游戏。")}</p>${items ? `<ul class="sync-problems">${items}</ul>` : `<p>${tr("页面和游戏一致，没有发现问题。")}</p>`}`, tr("关闭"), () => {
+		});
+		dialog.querySelectorAll("[data-open-route]").forEach(link => link.addEventListener("click", () => {
+			dialog.close();
+			const r = data.routeById.get(link.dataset.openRoute);
+			if (r) openView("table", r.lineKey, r.id);
+		}));
+	}
+
 	function renderStatus() {
 		const line = currentLine();
 		const count = line ? line.routes.reduce((a, r) => a + r.services.length, 0) : 0;
@@ -4727,13 +4971,14 @@
 			[tr("清空这列车当天的运用"), () => editDuties(depot, duties => { const day = dutyOn(duties.sidings[sidingId][+slot], state.weekday); if (day) dutyForEditing(depot, duties.sidings[sidingId][+slot], state.weekday).segments = []; })],
 			[tr("删除这个库位"), () => changeSlots(depot, sidingId, slots => slots.splice(+slot, 1))],
 		] : siding ? [
-			[tr("添加库位"), siding.maxTrains < 0 || sidingSlots().length < siding.maxTrains ? () => changeSlots(depot, sidingId, slots => slots.push([])) : null],
+			[tr("添加运用"), sidingSlots().length < 256 ? () => changeSlots(depot, sidingId, slots => slots.push([])) : null],
 			[tr("删除最后一个库位"), sidingSlots().length ? () => changeSlots(depot, sidingId, slots => slots.pop()) : null],
 		] : depotId && depot ? [
+			[tr("编辑车厂…"), () => depotDialog(depot)],
 			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
 			[tr("按时刻表把列车摆到现在的位置…"), data.canEdit ? () => placeTrainsDialog(depot) : null],
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
-			[dutiesOf(depot).mode === "diagram" ? tr("改为在线预约") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
+			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
 		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null]]
 			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
@@ -4807,6 +5052,10 @@
 		const remove = e.target.closest("[data-remove-segment]");
 		const depot = state.slot && depotById(state.slot.depot);
 		if (remove && depot) editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).segments.splice(+remove.dataset.removeSegment, 1); });
+		if (e.target.closest("[data-remove-deleted]") && depot) editDuties(depot, duties => {
+			const day = dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday);
+			day.segments = day.segments.filter(segment => data.routeById.get(segment.route));
+		});
 	});
 	$("inspector").addEventListener("change", e => {
 		const depot = state.slot && depotById(state.slot.depot);
@@ -4827,6 +5076,14 @@
 		simulate();
 	});
 	$("btn-zoom-in").addEventListener("click", () => zoom(1));
+	$("btn-sync").addEventListener("click", syncDialog);
+	$("btn-no-train").setAttribute("aria-pressed", String(showNoTrain));
+	$("btn-no-train").addEventListener("click", () => {
+		showNoTrain = !showNoTrain;
+		$("btn-no-train").setAttribute("aria-pressed", String(showNoTrain));
+		try { localStorage.setItem("mtr-editor-show-no-train", showNoTrain ? "1" : "0"); } catch (e) {}
+		renderAll();
+	});
 	$("btn-zoom-out").addEventListener("click", () => zoom(-1));
 	$("day").addEventListener("change", e => {
 		if (data) setWeekday(Number(e.target.value));
@@ -4980,7 +5237,10 @@
 			const x = e.clientX - box.left, y = e.clientY - box.top;
 			const s = hitService(x, y);
 			if (state.slot && s) {
-				toggleInSlot(s);
+				// Shift: every service the train can run one after another from the one clicked before to this one
+				if (e.shiftKey && lastSlotService && lastSlotService !== s.id && findService(lastSlotService)) addRangeToSlot(findService(lastSlotService), s);
+				else toggleInSlot(s);
+				lastSlotService = s.id;
 				selectService(s.id, false);
 				drag = null;
 				canvas.classList.remove("dragging");

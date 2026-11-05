@@ -195,29 +195,34 @@ public final class LineDuties {
 			});
 			for (final Depot depot : depots) {
 				anyStays |= depot.cycleRoutes;
-				final List<Route> depotRoutes = depot.getRoutes(dataCache);
 				sidings.stream().filter(siding -> siding.isTransportMode(depot.transportMode) && depot.inArea(siding.getMidPos().getX(), siding.getMidPos().getZ())).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> {
 					final Set<String> serviceTypes = depot.getServiceTypes(siding.getTrainId());
-					final Group group = groupsByTypes.computeIfAbsent(String.join(",", serviceTypes), key -> new Group(serviceTypes));
+					// Sidings given only some of the routes are planned apart, with those routes
+					final Group group = groupsByTypes.computeIfAbsent(Depot.getSidingGroupKey(serviceTypes, siding), key -> new Group(serviceTypes, siding.getRouteIds()));
 					// Its trains start at the first stops of its own depot's routes, the nearer the sooner
 					final Map<Long, Long> links = new TreeMap<>();
 					final BlockPos sidingPos = siding.getMidPos();
-					Depot.filterRoutes(depotRoutes, serviceTypes).forEach(route -> {
+					depot.getSidingRoutes(siding, dataCache).forEach(route -> {
 						final Platform platform = dataCache.platformIdMap.get(route.getFirstPlatformId());
 						if (platform != null) {
 							final BlockPos platformPos = platform.getMidPos();
 							links.put(platform.id, (long) (Math.sqrt(sidingPos.distSqr(platformPos)) * MILLIS_PER_BLOCK));
 						}
 					});
-					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit(), links, depot.id));
+					// Its fleet, however many trains its rails hold
+					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), links, depot.id));
 					group.depotOf.put(siding.id, depot);
 					group.sidingNames.put(siding.id, siding.name);
-					group.available += siding.getTrainLimit() < 0 ? DepotDuties.MAX_SLOTS : siding.getTrainLimit();
+					group.available += siding.getFleetSize() < 0 ? DepotDuties.MAX_SLOTS : siding.getFleetSize();
 				});
 			}
 			staysOnLine = anyStays;
 			groups.addAll(groupsByTypes.values());
-			groups.forEach(group -> group.routes.addAll(Depot.filterRoutes(routes, group.serviceTypes)));
+			groups.forEach(group -> Depot.filterRoutes(routes, group.serviceTypes).forEach(route -> {
+				if (group.routeIds.isEmpty() || group.routeIds.contains(route.id)) {
+					group.routes.add(route);
+				}
+			}));
 
 			// What the duties are worked out from: the routes' timetables and stops, the sidings, what others run
 			final StringBuilder keyBuilder = new StringBuilder();
@@ -229,7 +234,7 @@ public final class LineDuties {
 				keyBuilder.append(';');
 			});
 			groups.forEach(group -> {
-				keyBuilder.append('[').append(group.serviceTypes).append(']');
+				keyBuilder.append('[').append(group.serviceTypes).append(group.routeIds).append(']');
 				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(siding.links).append(';'));
 			});
 			keyBuilder.append("taken:").append(taken.hashCode());
@@ -275,11 +280,12 @@ public final class LineDuties {
 				if (services.isEmpty() || group.sidings.isEmpty()) {
 					continue;
 				}
-				final DutyGenerator.Result result = DutyGenerator.generate(services, group.sidings, stationOf, maxLayover);
+				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, group.sidings, stationOf, maxLayover);
 				plan.sidings.putAll(result.sidings);
 				result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
 				plan.trains += result.trains;
 				plan.uncovered += result.uncovered;
+				result.issues.stream().filter(issue -> !plan.issues.contains(issue)).forEach(plan.issues::add);
 				plan.available += group.available;
 				if (result.uncovered > 0) {
 					// Where to add trains: the siding nearest the line
@@ -332,14 +338,19 @@ public final class LineDuties {
 	private static final class Group {
 
 		private final Set<String> serviceTypes;
+		/**
+		 * The routes the group's sidings are given, or empty for all.
+		 */
+		private final Set<Long> routeIds;
 		private final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
 		private final List<Route> routes = new ArrayList<>();
 		private final Map<Long, Depot> depotOf = new HashMap<>();
 		private final Map<Long, String> sidingNames = new HashMap<>();
 		private int available;
 
-		private Group(Set<String> serviceTypes) {
+		private Group(Set<String> serviceTypes, Set<Long> routeIds) {
 			this.serviceTypes = serviceTypes;
+			this.routeIds = new TreeSet<>(routeIds);
 		}
 	}
 
@@ -362,6 +373,11 @@ public final class LineDuties {
 		public int uncovered;
 		public int missingTimes;
 		/**
+		 * The planner's problems with the unit, as {@link transitsim.planning.DutyGenerator.Result#issues}: a type, then its
+		 * details, such as {@code SHORT_TURNAROUND <platform> <millis had> <millis needed>}.
+		 */
+		public final List<String> issues = new ArrayList<>();
+		/**
 		 * The siding to add trains to when there are too few, as depot and siding name, or empty.
 		 */
 		public String suggestedSiding = "";
@@ -371,7 +387,18 @@ public final class LineDuties {
 		}
 
 		public String describe() {
-			return "line " + lineNames + ": needs " + needed + " trains, has " + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known");
+			return "line " + lineNames + ": needs " + needed + " trains, has " + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + shortTurnarounds();
+		}
+
+		private String shortTurnarounds() {
+			final StringBuilder text = new StringBuilder();
+			issues.stream().filter(issue -> issue.startsWith("SHORT_TURNAROUND ")).forEach(issue -> {
+				final String[] parts = issue.split(" ");
+				if (parts.length >= 4) {
+					text.append("; turnaround too short at platform ").append(parts[1]).append(": ").append(Long.parseLong(parts[2]) / 1000).append(" s, needs ").append(Long.parseLong(parts[3]) / 1000).append(" s");
+				}
+			});
+			return text.toString();
 		}
 	}
 }

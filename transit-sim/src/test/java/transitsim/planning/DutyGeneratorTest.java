@@ -90,6 +90,166 @@ class DutyGeneratorTest {
 		assertEquals(2, DutyGenerator.neededTrains(shuttle(), sidings, stations(), 30 * MINUTE));
 	}
 
+	/**
+	 * A service every minute each way all day, far more than a few trains can run.
+	 */
+	private static List<DutyGenerator.ServiceInput> everyMinute() {
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		for (int minute = 0; minute < 24 * 60; minute++) {
+			services.add(service(ROUTE_UP, minute, DepotDuties.ALL_WEEKDAYS, 0, 0));
+			services.add(service(ROUTE_DOWN, minute, DepotDuties.ALL_WEEKDAYS, 0, 0));
+		}
+		return services;
+	}
+
+	/**
+	 * The start times in minutes of the services the duties run on one day, by route.
+	 */
+	private static Map<Long, List<Long>> runMinutes(DutyGenerator.Result result) {
+		final Map<Long, List<Long>> minutes = new TreeMap<>();
+		result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.stream().filter(day -> (day.weekdays & 1) != 0).forEach(day -> day.segments.forEach(segment -> minutes.computeIfAbsent(segment.routeId, key -> new ArrayList<>()).add(segment.service / MINUTE)))));
+		minutes.values().forEach(Collections::sort);
+		return minutes;
+	}
+
+	@Test
+	void tooFewTrainsRunServicesEvenlyThroughTheDay() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1));
+		final DutyGenerator.Result result = DutyGenerator.generateSpread(everyMinute(), sidings, stations(), 30 * MINUTE);
+		assertTrue(result.trains <= 1);
+		assertTrue(result.uncovered > 0, "most services still have no train");
+		final Map<Long, List<Long>> minutes = runMinutes(result);
+		for (final List<Long> run : minutes.values()) {
+			assertTrue(run.size() > 10);
+			// Every k-th service: the same gap between each and the next, and the last late in the day
+			final long gap = run.get(1) - run.get(0);
+			for (int i = 1; i < run.size(); i++) {
+				assertEquals(gap, run.get(i) - run.get(i - 1));
+			}
+			assertTrue(run.get(run.size() - 1) > 20 * 60, "runs until late in the day, not only early");
+		}
+	}
+
+	@Test
+	void tooFewTrainsDontBunch() {
+		// Three trains taken greedily leave one after another and then run as a bunch; spread, they keep equal gaps
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 3));
+		final List<Long> greedy = runMinutes(DutyGenerator.generate(everyMinute(), sidings, stations(), 30 * MINUTE)).get(ROUTE_UP);
+		final long closest = java.util.stream.IntStream.range(1, greedy.size()).mapToLong(i -> greedy.get(i) - greedy.get(i - 1)).min().orElse(0);
+		assertEquals(1, closest, "greedily, two trains run a minute apart");
+		final List<Long> spread = runMinutes(DutyGenerator.generateSpread(everyMinute(), sidings, stations(), 30 * MINUTE)).get(ROUTE_UP);
+		final long gap = spread.get(1) - spread.get(0);
+		assertTrue(gap > 1);
+		for (int i = 1; i < spread.size(); i++) {
+			assertEquals(gap, spread.get(i) - spread.get(i - 1));
+		}
+	}
+
+	@Test
+	void moreTrainsRunServicesCloserTogether() {
+		final long gapOne = gapOf(DutyGenerator.generateSpread(everyMinute(), Collections.singletonList(new DutyGenerator.SidingInput(100, 1)), stations(), 30 * MINUTE));
+		final long gapThree = gapOf(DutyGenerator.generateSpread(everyMinute(), Collections.singletonList(new DutyGenerator.SidingInput(100, 3)), stations(), 30 * MINUTE));
+		assertTrue(gapThree < gapOne, gapThree + " " + gapOne);
+	}
+
+	private static long gapOf(DutyGenerator.Result result) {
+		final List<Long> run = runMinutes(result).get(ROUTE_UP);
+		return run.get(1) - run.get(0);
+	}
+
+	@Test
+	void withTrainsEnoughSpreadIsTheSame() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 4));
+		final DutyGenerator.Result plain = DutyGenerator.generate(shuttle(), sidings, stations(), 30 * MINUTE);
+		final DutyGenerator.Result spread = DutyGenerator.generateSpread(shuttle(), sidings, stations(), 30 * MINUTE);
+		assertEquals(0, spread.uncovered);
+		assertEquals(plain.trains, spread.trains);
+		assertEquals(runMinutes(plain), runMinutes(spread));
+	}
+
+	@Test
+	void spreadDoesNotDependOnTheOrderOfServices() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 2));
+		final List<DutyGenerator.ServiceInput> shuffled = everyMinute();
+		Collections.shuffle(shuffled, new Random(7));
+		final DutyGenerator.Result ordered = DutyGenerator.generateSpread(everyMinute(), sidings, stations(), 30 * MINUTE);
+		final DutyGenerator.Result other = DutyGenerator.generateSpread(shuffled, sidings, stations(), 30 * MINUTE);
+		assertEquals(runMinutes(ordered), runMinutes(other));
+		assertEquals(ordered.uncovered, other.uncovered);
+	}
+
+	/**
+	 * A short line with one platform at each end, as the VH line: out from platform 100 to 102 on the hour and every
+	 * {@code headway} minutes, back from 102 to 100 two minutes later, each run taking {@code runSeconds}.
+	 */
+	private static List<DutyGenerator.ServiceInput> shortLine(int headway, long runSeconds) {
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		final long[][] plans = {{0, 0}, {runSeconds * 600, runSeconds * 600 + 10000}, {runSeconds * 1000, runSeconds * 1000}};
+		for (int minute = 0; minute < 24 * 60; minute += headway) {
+			services.add(new DutyGenerator.ServiceInput(ROUTE_UP, (int) (minute * MINUTE), DepotDuties.ALL_WEEKDAYS, minute * MINUTE, new long[]{100, 101, 102}, plans, new boolean[3], 0, 0, -1, 0));
+			services.add(new DutyGenerator.ServiceInput(ROUTE_DOWN, (int) ((minute + 2) * MINUTE), DepotDuties.ALL_WEEKDAYS, (minute + 2) * MINUTE, new long[]{102, 103, 100}, plans, new boolean[3], 0, 0, -1, 0));
+		}
+		return services;
+	}
+
+	private static Map<Long, Long> shortLineStations() {
+		final Map<Long, Long> stationOf = new HashMap<>();
+		stationOf.put(100L, 1L);
+		stationOf.put(101L, 2L);
+		stationOf.put(103L, 2L);
+		stationOf.put(102L, 3L);
+		return stationOf;
+	}
+
+	@Test
+	void aLongDayOfOneTrainIsKeptWhole() {
+		// Every 6 minutes each way: 480 services a day, all run by one train
+		final DutyGenerator.Result result = DutyGenerator.generate(shortLine(6, 84), Collections.singletonList(new DutyGenerator.SidingInput(100, 40)), shortLineStations(), 30 * MINUTE);
+		assertEquals(0, result.uncovered);
+		assertEquals(1, result.sidings.get(100L).size());
+		final int segments = result.sidings.get(100L).get(0).days.stream().mapToInt(day -> day.segments.size()).max().orElse(0);
+		assertTrue(segments > 128, String.valueOf(segments));
+	}
+
+	@Test
+	void aTurnaroundTooShortIsTold() {
+		// Back 2 minutes after leaving, with a run of 95 seconds: 25 seconds to turn round, under the 30 needed. Each
+		// train then runs one round trip and goes back to its siding, a duty each, though few trains are out at once
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 40));
+		final DutyGenerator.Result result = DutyGenerator.generate(shortLine(10, 95), sidings, shortLineStations(), 30 * MINUTE);
+		assertTrue(result.sidings.get(100L).size() > 40, "more duties than the siding holds trains");
+		assertTrue(result.trains <= 40);
+		assertEquals(0, result.uncovered);
+		final String shortTurnaround = result.issues.stream().filter(issue -> issue.startsWith("SHORT_TURNAROUND 102 ")).findFirst().orElse("");
+		assertEquals("SHORT_TURNAROUND 102 25000 " + DutyGenerator.MIN_TURNAROUND_MILLIS, shortTurnaround, result.issues.toString());
+
+	}
+
+	@Test
+	void aTurnaroundLongEnoughIsntTold() {
+		final DutyGenerator.Result result = DutyGenerator.generate(shortLine(10, 84), Collections.singletonList(new DutyGenerator.SidingInput(100, 40)), shortLineStations(), 30 * MINUTE);
+		assertEquals(0, result.uncovered);
+		assertEquals(1, result.trains);
+		assertTrue(result.issues.stream().noneMatch(issue -> issue.startsWith("SHORT_TURNAROUND")), result.issues.toString());
+	}
+
+	@Test
+	void aDutyOfMoreThan128ServicesIsSavedWhole() {
+		final DepotDuties duties = new DepotDuties();
+		final DepotDuties.Slot slot = new DepotDuties.Slot();
+		final DepotDuties.DayDuty day = new DepotDuties.DayDuty();
+		day.weekdays = DepotDuties.ALL_WEEKDAYS;
+		for (int i = 0; i < 300; i++) {
+			day.segments.add(new DepotDuties.Segment(ROUTE_UP, (int) (i * MINUTE), 0, -1));
+		}
+		slot.days.add(day);
+		duties.sidings.put(100L, Collections.singletonList(slot));
+		final DepotDuties read = new DepotDuties();
+		read.fromBytes(duties.toBytes());
+		assertEquals(300, read.sidings.get(100L).get(0).days.get(0).segments.size());
+		assertEquals(day.segments, read.sidings.get(100L).get(0).days.get(0).segments);
+	}
+
 	private static List<DutyGenerator.ServiceInput> shuttle() {
 		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
 		for (int i = 0; i < 6; i++) {

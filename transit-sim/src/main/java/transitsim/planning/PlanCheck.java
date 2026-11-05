@@ -84,7 +84,7 @@ public final class PlanCheck {
 		});
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
 		dataset.sidings.stream().filter(siding -> siding.depotId == depotId).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.maxTrains >= SimDataset.UNLIMITED_TRAINS ? -1 : siding.maxTrains)));
-		return DutyGenerator.generate(services, sidings, Collections.emptyMap(), depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS);
+		return DutyGenerator.generateSpread(services, sidings, Collections.emptyMap(), depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS);
 	}
 
 	/**
@@ -162,7 +162,7 @@ public final class PlanCheck {
 				sidings.add(new DutyGenerator.SidingInput(siding.id, siding.maxTrains >= SimDataset.UNLIMITED_TRAINS ? -1 : siding.maxTrains, links.isEmpty() ? null : links, depot.id));
 			}
 		}
-		return DutyGenerator.generate(services, sidings, Collections.emptyMap(), staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS);
+		return DutyGenerator.generateSpread(services, sidings, Collections.emptyMap(), staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS);
 	}
 
 	/**

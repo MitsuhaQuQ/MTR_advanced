@@ -574,7 +574,9 @@ public final class LiveSimulation {
 			if (!Arrays.equals(depot1.sidingOrder, depot2.sidingOrder)) {
 				changed.add("sidings of depot " + depot1.id);
 			}
-			if (!Arrays.equals(depot1.routeIds, depot2.routeIds) || depot1.cycleRoutes != depot2.cycleRoutes || !Arrays.equals(depot1.duties, depot2.duties)) {
+			// Only a depot sending trains out by frequency runs its routes in turn; for the others they're a set
+			final boolean sameRoutes = depot1.duties.length > 0 || depot2.duties.length > 0 ? sortedCopy(depot1.routeIds).equals(sortedCopy(depot2.routeIds)) : Arrays.equals(depot1.routeIds, depot2.routeIds);
+			if (!sameRoutes || depot1.cycleRoutes != depot2.cycleRoutes || !Arrays.equals(depot1.duties, depot2.duties)) {
 				changed.add("depot " + depot1.id);
 			}
 		}
@@ -706,5 +708,14 @@ public final class LiveSimulation {
 
 	private void forEachTrain(RailwayData railwayData, Consumer<TrainServer> consumer) {
 		railwayData.sidings.stream().filter(siding -> sidingIds.contains(siding.id)).sorted().forEach(siding -> siding.forEachTrain(consumer));
+	}
+
+	private static List<Long> sortedCopy(long[] ids) {
+		final List<Long> list = new ArrayList<>();
+		for (final long id : ids) {
+			list.add(id);
+		}
+		Collections.sort(list);
+		return list;
 	}
 }

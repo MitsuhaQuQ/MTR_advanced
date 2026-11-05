@@ -42,6 +42,11 @@ public final class OperationPlan {
 		 */
 		NO_TRAIN,
 		/**
+		 * Trains arrive at a platform before a trip leaves it, but too late to turn round for it, so the trip needs another
+		 * train; detail: the platform, the time they had and the time they needed, in milliseconds.
+		 */
+		SHORT_TURNAROUND,
+		/**
 		 * A blank service was not picked up by a through trip, so it is not run. This is normal.
 		 */
 		UNUSED_BLANK,

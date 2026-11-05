@@ -114,6 +114,11 @@ public final class PathFailure {
 		/**
 		 * The route can only be found over a connecting line, which other routes keep off; the position is that line's ID.
 		 */
-		CONNECTING_LINE
+		CONNECTING_LINE,
+		/**
+		 * Trains staying on the line can't get from the last stop of the depot's last route back to the first stop of its
+		 * first route; the position is the platform they leave from, {@link #node1} the one they should reach.
+		 */
+		CYCLE_BACK
 	}
 }

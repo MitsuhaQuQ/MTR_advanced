@@ -106,7 +106,9 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 				saveData();
 				final List<NameColorDataBase> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
 				Collections.sort(routes);
-				UtilitiesClient.setScreen(minecraft, new DashboardListSelectorScreen(this, routes, data.routeIds, false, true));
+				// A depot running by a timetable runs its routes in no order, each once; an old one runs them in turn
+				final boolean byTimetable = runsByTimetable();
+				UtilitiesClient.setScreen(minecraft, new DashboardListSelectorScreen(this, routes, data.routeIds, false, !byTimetable, !byTimetable));
 			}
 		});
 		buttonGenerateRoute = UtilitiesClient.newButton(Text.translatable("gui.mtr.refresh_path"), button -> {
@@ -232,7 +234,13 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		if (data.routeIds.isEmpty()) {
 			checkboxRepeatIndefinitely.visible = false;
 			checkboxCycleRoutes.visible = false;
+		} else if (runsByTimetable()) {
+			// Running by duties, the routes have no order: staying on the line only lets trains wait there between services
+			checkboxRepeatIndefinitely.visible = false;
+			checkboxCycleRoutes.visible = true;
+			checkboxCycleRoutes.setMessage(Text.translatable("gui.mtr.stay_on_line"));
 		} else {
+			checkboxCycleRoutes.setMessage(Text.translatable("gui.mtr.cycle_routes"));
 			final Route firstRoute = ClientData.DATA_CACHE.routeIdMap.get(data.routeIds.get(0));
 			final Route lastRoute = ClientData.DATA_CACHE.routeIdMap.get(data.routeIds.get(data.routeIds.size() - 1));
 			checkboxRepeatIndefinitely.visible = firstRoute != null && lastRoute != null && !firstRoute.platformIds.isEmpty() && !lastRoute.platformIds.isEmpty() && firstRoute.getFirstPlatformId() == lastRoute.getLastPlatformId();
@@ -321,6 +329,13 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
 		departuresList.mouseScrolled(mouseX, mouseY, amount);
 		return super.mouseScrolled(mouseX, mouseY, amount);
+	}
+
+	/**
+	 * @return whether the depot runs by duties, set or from a timetable of one of its routes, where its routes have no order
+	 */
+	private boolean runsByTimetable() {
+		return data.runsByDutiesWith(data.getRoutes(ClientData.DATA_CACHE));
 	}
 
 	private String getPathStatusText() {

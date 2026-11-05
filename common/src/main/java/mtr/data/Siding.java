@@ -64,6 +64,19 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private int trainCars;
 	private boolean unlimitedTrains;
 	private int maxTrains;
+	/**
+	 * The routes this siding's trains run, of its depot's, in no order; empty for all of them.
+	 */
+	private final Set<Long> routeIds = new TreeSet<>();
+	/**
+	 * The keys of the duties whose paths the last path generation couldn't find, for the depot to report.
+	 */
+	private volatile List<String> lastFailedDuties = Collections.emptyList();
+	/**
+	 * How many trains run from the siding for a depot running by duties, as a depot's fleet, which needn't fit on the
+	 * rails here; -1 for as many as the duties need.
+	 */
+	private int fleetSize = -1;
 	private boolean isManual;
 	private int maxManualSpeed;
 	private int repeatIndex1;
@@ -132,6 +145,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_TRAIN_ID = "train_custom_id";
 	private static final String KEY_UNLIMITED_TRAINS = "unlimited_trains";
 	private static final String KEY_MAX_TRAINS = "max_trains";
+	private static final String KEY_ROUTE_IDS = "route_ids";
+	private static final String KEY_FLEET_SIZE = "fleet_size";
+	/**
+	 * The update setting the routes the siding's trains run and how many trains it has, together.
+	 */
+	private static final String KEY_OPERATION = "siding_operation";
+	private static final int MAX_ROUTE_IDS = 1024;
 	private static final int MAX_TRAINS = 999;
 	private static final int MAX_UNLIMITED_TRAINS = 4096;
 	private static final String KEY_IS_MANUAL = "is_manual";
@@ -148,7 +168,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		super(id, transportMode, pos1, pos2);
 		this.railLength = RailwayData.round(railLength, 3);
 		setTrainDetails();
-		unlimitedTrains = transportMode.continuousMovement;
+		// New sidings hold any number of trains: how many run is the fleet, set in the advanced editor
+		unlimitedTrains = true;
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : Train.ACCELERATION_DEFAULT;
 	}
 
@@ -156,7 +177,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		super(transportMode, pos1, pos2);
 		this.railLength = RailwayData.round(railLength, 3);
 		setTrainDetails();
-		unlimitedTrains = transportMode.continuousMovement;
+		// New sidings hold any number of trains: how many run is the fleet, set in the advanced editor
+		unlimitedTrains = true;
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : Train.ACCELERATION_DEFAULT;
 	}
 
@@ -167,6 +189,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		setTrainDetails(messagePackHelper.getString(KEY_TRAIN_ID), messagePackHelper.getString(KEY_BASE_TRAIN_TYPE), false);
 		unlimitedTrains = transportMode.continuousMovement || messagePackHelper.getBoolean(KEY_UNLIMITED_TRAINS);
 		maxTrains = messagePackHelper.getInt(KEY_MAX_TRAINS);
+		messagePackHelper.iterateArrayValue(KEY_ROUTE_IDS, value -> {
+			if (routeIds.size() < MAX_ROUTE_IDS) {
+				routeIds.add(value.asIntegerValue().asLong());
+			}
+		});
+		// Saved before the fleet: as many as the siding held
+		fleetSize = Math.max(-1, messagePackHelper.getInt(KEY_FLEET_SIZE, getTrainLimit()));
 		isManual = messagePackHelper.getBoolean(KEY_IS_MANUAL);
 		maxManualSpeed = messagePackHelper.getInt(KEY_MAX_MANUAL_SPEED);
 		repeatIndex1 = messagePackHelper.getInt(KEY_REPEAT_INDEX_1);
@@ -234,6 +263,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final float tempAccelerationConstant = RailwayData.round(packet.readFloat(), 3);
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant <= 0 ? Train.ACCELERATION_DEFAULT : tempAccelerationConstant;
 		decelerationConstant = clampDeceleration(packet.readFloat());
+		readOperation(packet);
 	}
 
 	@Override
@@ -251,6 +281,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		messagePacker.packString(KEY_BASE_TRAIN_TYPE).packString(baseTrainType);
 		messagePacker.packString(KEY_UNLIMITED_TRAINS).packBoolean(unlimitedTrains);
 		messagePacker.packString(KEY_MAX_TRAINS).packInt(maxTrains);
+		messagePacker.packString(KEY_ROUTE_IDS).packArrayHeader(routeIds.size());
+		for (final long routeId : routeIds) {
+			messagePacker.packLong(routeId);
+		}
+		messagePacker.packString(KEY_FLEET_SIZE).packInt(fleetSize);
 		messagePacker.packString(KEY_IS_MANUAL).packBoolean(isManual);
 		messagePacker.packString(KEY_MAX_MANUAL_SPEED).packInt(maxManualSpeed);
 		messagePacker.packString(KEY_REPEAT_INDEX_1).packInt(repeatIndex1);
@@ -270,7 +305,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 17;
+		return super.messagePackLength() + 19;
 	}
 
 	@Override
@@ -290,6 +325,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		packet.writeInt(maxManualSpeed);
 		packet.writeFloat(accelerationConstant);
 		packet.writeFloat(decelerationConstant);
+		writeOperation(packet);
 	}
 
 	@Override
@@ -297,6 +333,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		switch (key) {
 			case KEY_DECELERATION_CONSTANT:
 				decelerationConstant = clampDeceleration(packet.readFloat());
+				break;
+			case KEY_OPERATION:
+				readOperation(packet);
 				break;
 			case KEY_BASE_TRAIN_TYPE:
 				setTrainDetails(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readUtf(PACKET_STRING_READ_LENGTH), false);
@@ -310,6 +349,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				dwellTime = transportMode.continuousMovement ? 1 : dwellTime;
 				unlimitedTrains = packet.readBoolean() || transportMode.continuousMovement;
 				maxTrains = Mth.clamp(packet.readInt(), -1, MAX_TRAINS);
+				// Set in the game's siding screen, the limit is the fleet too
+				fleetSize = getTrainLimit();
 				isManual = packet.readBoolean();
 				maxManualSpeed = packet.readInt();
 				final float newAccelerationConstant = RailwayData.round(packet.readFloat(), 3);
@@ -354,6 +395,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		sendPacket.accept(packet);
 		this.unlimitedTrains = transportMode.continuousMovement || unlimitedTrains;
 		this.maxTrains = maxTrains;
+		fleetSize = getTrainLimit();
 		this.isManual = isManual;
 		this.maxManualSpeed = maxManualSpeed;
 		this.accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant;
@@ -364,6 +406,60 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	public String getTrainId() {
 		return trainId;
+	}
+
+	/**
+	 * @return the routes this siding's trains run, of its depot's; empty for all of them
+	 */
+	public Set<Long> getRouteIds() {
+		return Collections.unmodifiableSet(routeIds);
+	}
+
+	/**
+	 * @return how many trains run from the siding for a depot running by duties, or -1 for as many as needed
+	 */
+	public int getFleetSize() {
+		return fleetSize;
+	}
+
+	/**
+	 * @return the keys of the duties whose paths the last path generation couldn't find
+	 */
+	public List<String> getLastFailedDuties() {
+		return lastFailedDuties;
+	}
+
+	/**
+	 * Sets the routes the siding's trains run (empty for all of its depot's) and its fleet (-1 for as many as needed).
+	 */
+	public void setOperation(Collection<Long> newRouteIds, int newFleetSize, Consumer<FriendlyByteBuf> sendPacket) {
+		routeIds.clear();
+		newRouteIds.stream().limit(MAX_ROUTE_IDS).forEach(routeIds::add);
+		fleetSize = Mth.clamp(newFleetSize, -1, MAX_TRAINS + 1);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_OPERATION);
+		writeOperation(packet);
+		sendPacket.accept(packet);
+	}
+
+	private void writeOperation(FriendlyByteBuf packet) {
+		packet.writeInt(routeIds.size());
+		routeIds.forEach(packet::writeLong);
+		packet.writeInt(fleetSize);
+	}
+
+	private void readOperation(FriendlyByteBuf packet) {
+		final int count = packet.readInt();
+		if (count < 0 || count > MAX_ROUTE_IDS) {
+			throw new IllegalArgumentException("Too many routes for a siding: " + count);
+		}
+		routeIds.clear();
+		for (int i = 0; i < count; i++) {
+			routeIds.add(packet.readLong());
+		}
+		fleetSize = Mth.clamp(packet.readInt(), -1, MAX_TRAINS + 1);
 	}
 
 	/**
@@ -590,6 +686,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 		});
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
+		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
 		final TurnBacks newTurnBacks = tempTurnBacks.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
@@ -632,6 +729,46 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 
 		return successfulSegments;
+	}
+
+	/**
+	 * For a depot running by duties, where the routes aren't joined into one path: the siding alone is the path, and the
+	 * trains run on their duties' paths. The duties' paths are always taken, so one route that can't be reached from
+	 * another doesn't keep the old ones.
+	 */
+	public void generateDutyRoute(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<DutyPlan<PathData, SavedRailBase>> dutyPlans, List<Siding> poolSidings) {
+		final Map<String, TripPath<PathData>> tempTripPaths = new HashMap<>();
+		final List<String> failedDuties = new ArrayList<>();
+		final Map<String, List<PathData>> returnTails = new HashMap<>();
+		final List<TurnBackPoint> dutyPoints = new ArrayList<>();
+		dutyPlans.forEach(dutyPlan -> {
+			if (!addDutyPath(tempTripPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, poolSidings, returnTails, dutyPoints, 0)) {
+				failedDuties.add(dutyPlan.key);
+			}
+		});
+		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
+		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
+		final TurnBacks newTurnBacks = TurnBacks.NONE.with(dutyPoints);
+
+		minecraftServer.execute(() -> {
+			try {
+				path.clear();
+				generateDefaultPath(rails);
+				timeSegments.clear();
+				stopTimes.copyFrom(new StopTimes());
+				platformTimes.clear();
+				generateDistances();
+				repeatIndex1 = 0;
+				repeatIndex2 = 0;
+				loopJoinIndex = 0;
+				tripPaths.clear();
+				tripPaths.putAll(tempTripPaths);
+				turnBacks = newTurnBacks;
+				recordPaths();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
 	}
 
 	/**
@@ -1040,7 +1177,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		// within each siding's limit
 		final boolean runsByDuties = depot.getRunDuties() != null;
 		final int poolSlots = runsByDuties ? depot.getPoolSlots(this) : 0;
-		final int trainLimit = getTrainLimit();
+		// Running by duties, the fleet is how many trains there are, not what the rails here hold
+		final int trainLimit = runsByDuties ? fleetSize : getTrainLimit();
 		// A train that came back here from another siding stands here in its place
 		final boolean arrived = pendingArrivals > 0;
 		if (arrived) {
@@ -1079,6 +1217,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @return the siding as the component's simulator needs it (S4e), or null without a path or trains
 	 */
 	public SimDataset.SidingData toSimulation(long depotId, long[] routeIds, Function<List<PathData>, List<SimDataset.DataTrack>> toTracks) {
+		return toSimulation(depotId, routeIds, toTracks, false);
+	}
+
+	/**
+	 * @param byDuties whether the depot runs by duties, when the siding has its fleet rather than what its rails hold
+	 */
+	public SimDataset.SidingData toSimulation(long depotId, long[] routeIds, Function<List<PathData>, List<SimDataset.DataTrack>> toTracks, boolean byDuties) {
 		if (path.isEmpty() || trainCars <= 0) {
 			return null;
 		}
@@ -1091,7 +1236,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		turnBacksValues.writeTo(turnBacksWriter);
 		final SimDataset.SidingData sidingData = new SimDataset.SidingData(
 				id, depotId, routeIds, trainCars, TrainType.getSpacing(baseTrainType), railLength, accelerationConstant, getDecelerationConstant(),
-				unlimitedTrains ? SimDataset.UNLIMITED_TRAINS : maxTrains, useSpeedCurve && !transportMode.continuousMovement, RailType.getDefaultMaxBlocksPerTick(transportMode),
+				byDuties ? fleetSize < 0 ? SimDataset.UNLIMITED_TRAINS : fleetSize - 1 : unlimitedTrains ? SimDataset.UNLIMITED_TRAINS : maxTrains, useSpeedCurve && !transportMode.continuousMovement, RailType.getDefaultMaxBlocksPerTick(transportMode),
 				repeatIndex1, repeatIndex2, loopJoinIndex, toTracks.apply(path), turnBacksWriter.toBytes()
 		);
 		sidingData.manual = isManual;

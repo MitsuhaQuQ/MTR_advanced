@@ -222,6 +222,7 @@ public final class DutyPlanner {
 
 	private OpenDuty findTrainInService(List<OpenDuty> open, Trip trip) {
 		OpenDuty best = null;
+		OpenDuty missed = null;
 		for (final OpenDuty duty : open) {
 			final long connectionMillis = network.connectionMillis(duty.platformId, trip.firstPlatform());
 			final boolean reachable = connectionMillis != OperationNetwork.UNREACHABLE && duty.readyMillis + connectionMillis <= trip.startMillis();
@@ -229,9 +230,27 @@ public final class DutyPlanner {
 			if (reachable && (!samePlatform || isPlatformFree(duty.platformId, duty.endMillis, trip.startMillis())) && (best == null || duty.readyMillis > best.readyMillis)) {
 				best = duty;
 			}
+			// Arrived at the platform before the trip leaves, but too late to turn round for it
+			if (samePlatform && connectionMillis != OperationNetwork.UNREACHABLE && duty.endMillis <= trip.startMillis() && duty.readyMillis + connectionMillis > trip.startMillis() && (missed == null || duty.endMillis > missed.endMillis)) {
+				missed = duty;
+			}
+		}
+		if (best == null && missed != null) {
+			final long given = trip.startMillis() - missed.endMillis;
+			final long needed = missed.readyMillis + network.connectionMillis(missed.platformId, trip.firstPlatform()) - missed.endMillis;
+			final long[] worst = shortTurnarounds.get(trip.firstPlatform());
+			if (worst == null || given < worst[0]) {
+				shortTurnarounds.put(trip.firstPlatform(), new long[]{given, needed});
+			}
 		}
 		return best;
 	}
+
+	/**
+	 * Platform → the least time a train arriving there had before a trip it couldn't turn round for, and the time it
+	 * needed, in milliseconds.
+	 */
+	private final Map<Long, long[]> shortTurnarounds = new TreeMap<>();
 
 	/**
 	 * @param allowed the depots the train may come from, or null for any
@@ -287,6 +306,8 @@ public final class DutyPlanner {
 			planIssues.add(new Issue(IssueType.NOT_PERIODIC, "No repeating week within " + MAX_WEEKS + " weeks"));
 		}
 		week.uncovered.forEach(trip -> planIssues.add(new Issue(IssueType.NO_TRAIN, trip.key())));
+		// Detail: the platform, the time trains had there to turn round and the time they needed, in milliseconds
+		shortTurnarounds.forEach((platformId, times) -> planIssues.add(new Issue(IssueType.SHORT_TURNAROUND, platformId + " " + times[0] + " " + times[1])));
 
 		final List<OpenDuty> openDuties = new ArrayList<>(week.finished);
 		openDuties.addAll(week.carried);
