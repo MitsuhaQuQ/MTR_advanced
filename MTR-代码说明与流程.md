@@ -988,6 +988,7 @@ sequenceDiagram
   - **车够不够**（`LineDuties.Plan`、`Depot.Shortfall`）：有班次没车时，取离线路最近的存车线，用折半查找求出它最少再加几列，能让没车的班次降到车再多也降不下去的数（`Unit.extraTrains`，约 8 次规划），跑满需要的车数就是现有的加上这些。随自动运用发给客户端（`PACKET_AUTO_DUTIES` 和车厂整包末尾），车厂界面和网页（车厂一行、时刻表上方）显示"跑满需要 N 列，现有 M 列，每天 K 班没有车，建议加到 …"。日志每次排单元写一行 `planned the duties of line …`。
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。
+- **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
 - **出车和回送指令**（MTM_Logic 0.8.0）：时刻表每张表有 `deployOrders` 和 `returnOrders`，按班次记"第 j 站由车厂 D 出车接上""第 k 站转回送回车厂 D"（`RouteTimetable.ServiceOrder`，D 为 0 是自动），在网页汇总时刻表右键某格设。
   - **存档**：线路的 `timetable_orders`，每项四个数（班次、种类 0 出车 / 1 回送、站、车厂），旧档没有就是空。线路的包在回库班次之后带两组。`TimetableBinary` 把它们写在所有表之后，读的时候还有字节才读（`BinaryReader.hasMore`），所以旧的组件数据照常读。
   - **含义**：班次只在 j 到 k 之间载客（`RouteTimetable.getFirstStop`、`getLastStop`、`servesStop`）。时刻表冲突检查把这之外的站当作没到（`TimetableConflicts.RouteTimes.addTable` 多两个参数），站台时刻和到站显示跟着列车的运用路径走，本来就不含这些站。

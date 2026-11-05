@@ -3,6 +3,7 @@ package mtr.advanced;
 import mtr.data.DataCache;
 import mtr.data.PathTiming;
 import mtr.data.Depot;
+import mtr.data.LineDuties;
 import mtr.data.Rail;
 import mtr.data.RailType;
 import mtr.data.RailwayData;
@@ -44,6 +45,7 @@ public final class SimExport {
 		final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
 		railwayData.routes.stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
 			final SimDataset.RouteData routeData = new SimDataset.RouteData(route);
+			routeData.lineKey = LineDuties.getLineKey(route);
 			// The route's own fastest times, so the component plans with the same times as the game (L1)
 			final RoutePaths.RoutePath routePath = RoutePaths.timesByPath(route) ? railwayData.routePaths.getFound(route, railwayData.dataCache, rails) : null;
 			if (routePath != null) {

@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.TreeSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -93,6 +94,50 @@ class PlanCheckTest {
 		final PlanCheck check = PlanCheck.check(dataset, DEPOT, result.sidings, DAY_START);
 		assertFalse(check.passes(), describe(check));
 		assertTrue(check.notRun > 0, describe(check));
+	}
+
+	/**
+	 * The line of {@link SimDatasetTest#lines} with the up route listed by depot 1 and the down route by depot 2, each with a
+	 * siding of the same path.
+	 */
+	private static SimDataset splitLine(String upLine, String downLine) {
+		final SimDataset dataset = SimDatasetTest.lines(1, 400, 2, 4, 10);
+		final SimDataset.DepotData depot = dataset.depots.get(0);
+		dataset.depots.set(0, new SimDataset.DepotData(DEPOT, new long[]{UP}, false, new byte[0]));
+		dataset.depots.add(new SimDataset.DepotData(2, new long[]{DOWN}, depot.cycleRoutes, new byte[0]));
+		final SimDataset.SidingData siding = dataset.sidings.get(0);
+		dataset.sidings.add(new SimDataset.SidingData(100001, 2, siding.routeIds, siding.trainCars, siding.spacing, siding.railLength, siding.acceleration, siding.deceleration, siding.maxTrains, siding.usesSpeedCurve, siding.minSpeed, siding.repeatIndex1, siding.repeatIndex2, siding.loopJoinIndex, siding.path, siding.turnBacks));
+		dataset.routes.forEach(route -> route.lineKey = route.id == UP ? upLine : downLine);
+		return SimDataset.fromBytes(dataset.toBytes());
+	}
+
+	private static Set<Long> plannedRoutes(DutyGenerator.Result result) {
+		final Set<Long> routeIds = new TreeSet<>();
+		result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> routeIds.add(segment.routeId)))));
+		return routeIds;
+	}
+
+	@Test
+	void depotsOfTheSameLinePlanBothWaysTogether() {
+		final SimDataset dataset = splitLine("train|Line", "train|Line");
+		// On its own the depot only plans the way it lists
+		assertEquals(Collections.singleton(UP), plannedRoutes(PlanCheck.generate(dataset, DEPOT, 0)));
+
+		final DutyGenerator.Result result = PlanCheck.generateByLine(dataset, DEPOT, 0);
+		assertEquals(0, result.uncovered, String.join(", ", result.issues));
+		assertEquals(new TreeSet<>(java.util.Arrays.asList(UP, DOWN)), plannedRoutes(result));
+		addDutyPaths(dataset, result, false);
+		final PlanCheck check = PlanCheck.checkByLine(dataset, DEPOT, result.sidings, DAY_START);
+		assertTrue(check.passes(), describe(check));
+		assertEquals(24, check.dayRun.trips.size());
+	}
+
+	@Test
+	void depotsOfOtherLinesArentPlannedTogether() {
+		final SimDataset dataset = splitLine("train|Up", "train|Down");
+		final DutyGenerator.Result result = PlanCheck.generateByLine(dataset, DEPOT, 0);
+		assertEquals(Collections.singleton(UP), plannedRoutes(result));
+		assertTrue(result.sidings.keySet().stream().allMatch(sidingId -> sidingId == 100000));
 	}
 
 	@Test

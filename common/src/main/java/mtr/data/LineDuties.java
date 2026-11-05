@@ -38,7 +38,14 @@ public final class LineDuties {
 	 * moving continuously or flying
 	 */
 	public static boolean plansByLine(Depot depot, DataCache dataCache) {
-		return !depot.duties.diagramMode && !depot.transportMode.continuousMovement && depot.transportMode != TransportMode.AIRPLANE && depot.findTimetable(dataCache) != null;
+		return !depot.duties.diagramMode && canPlanByLine(depot, dataCache);
+	}
+
+	/**
+	 * @return whether the depot could plan by line, duties set or not
+	 */
+	private static boolean canPlanByLine(Depot depot, DataCache dataCache) {
+		return !depot.transportMode.continuousMovement && depot.transportMode != TransportMode.AIRPLANE && depot.findTimetable(dataCache) != null;
 	}
 
 	/**
@@ -48,7 +55,16 @@ public final class LineDuties {
 	 * @return the planning unit the depot belongs to, or null if it doesn't plan by line
 	 */
 	public static Unit of(Depot depot, DataCache dataCache, Collection<Siding> sidings) {
-		if (!plansByLine(depot, dataCache)) {
+		return of(depot, dataCache, sidings, false);
+	}
+
+	/**
+	 * @param forDraft for the advanced editor's draft of the depot's duties ("一键生成运用"): the depot is planned with its
+	 *                 lines even if it has duties set, and its own set duties don't count as taken
+	 * @return the planning unit the depot belongs to, or null if it can't plan by line
+	 */
+	public static Unit of(Depot depot, DataCache dataCache, Collection<Siding> sidings, boolean forDraft) {
+		if (!plansByLine(depot, dataCache) && !(forDraft && canPlanByLine(depot, dataCache))) {
 			return null;
 		}
 		// The routes of each line, and the depots planning by line, by the lines they run
@@ -61,7 +77,7 @@ public final class LineDuties {
 		final Map<String, List<Depot>> lineDepots = new HashMap<>();
 		final Map<Long, Set<String>> depotLines = new HashMap<>();
 		dataCache.depotIdMap.values().forEach(other -> {
-			if (other.transportMode == depot.transportMode && plansByLine(other, dataCache)) {
+			if (other.transportMode == depot.transportMode && (plansByLine(other, dataCache) || forDraft && other == depot)) {
 				other.getRoutes(dataCache).forEach(route -> {
 					final String lineKey = getLineKey(route);
 					depotLines.computeIfAbsent(other.id, key -> new TreeSet<>()).add(lineKey);
@@ -117,7 +133,7 @@ public final class LineDuties {
 				});
 			}
 		}
-		return new Unit(lines, lineRoutes, depotIds, dataCache, sidings);
+		return new Unit(lines, lineRoutes, depotIds, dataCache, sidings, forDraft ? depot.id : 0);
 	}
 
 	/**
@@ -137,7 +153,10 @@ public final class LineDuties {
 		private final boolean staysOnLine;
 		private final Map<Long, Long> stationOf = new HashMap<>();
 
-		private Unit(Set<String> lines, Map<String, List<Route>> lineRoutes, Set<Long> depotIds, DataCache dataCache, Collection<Siding> sidings) {
+		/**
+		 * @param draftDepotId the depot drafting its duties, whose own set duties aren't taken, or 0
+		 */
+		private Unit(Set<String> lines, Map<String, List<Route>> lineRoutes, Set<Long> depotIds, DataCache dataCache, Collection<Siding> sidings, long draftDepotId) {
 			this.depotIds = depotIds;
 			final Set<String> names = new TreeSet<>();
 			lines.forEach(lineKey -> lineRoutes.getOrDefault(lineKey, Collections.emptyList()).forEach(route -> {
@@ -155,7 +174,7 @@ public final class LineDuties {
 			// Services already run by depots with duties set are left to them
 			final TransportMode transportMode = routes.isEmpty() ? null : routes.get(0).transportMode;
 			dataCache.depotIdMap.values().forEach(other -> {
-				if (other.transportMode == transportMode && other.duties.diagramMode) {
+				if (other.transportMode == transportMode && other.duties.diagramMode && other.id != draftDepotId) {
 					other.duties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> {
 						if (routeIds.contains(segment.routeId)) {
 							taken.add(segment.routeId + "@" + segment.service);
@@ -222,6 +241,20 @@ public final class LineDuties {
 				keyBuilder.append(',');
 			});
 			key = keyBuilder.toString();
+		}
+
+		/**
+		 * @return the services left to depots with duties set, as route and service
+		 */
+		Set<String> getTaken() {
+			return Collections.unmodifiableSet(taken);
+		}
+
+		/**
+		 * @return the routes of the unit's lines with a timetable
+		 */
+		public List<Route> getRoutes() {
+			return Collections.unmodifiableList(routes);
 		}
 
 		/**

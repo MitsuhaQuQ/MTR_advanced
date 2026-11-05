@@ -236,6 +236,53 @@ public final class EditorDuties implements IPacket {
 		});
 		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, route -> ClientData.TIMETABLE_TIMES.get(((Route) route).id), dayStartMillis, route -> missingTimes.add(((Route) route).name));
 
+		// Planned with the depot's operating lines, as the game plans depots running by a timetable; the draft keeps the
+		// depot's own part, and the other depots of the lines plan what is left once it is applied
+		final LineDuties.Unit unit = LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true);
+		if (unit != null) {
+			final Map<Long, long[][]> times = new HashMap<>(ClientData.TIMETABLE_TIMES);
+			final List<String> unitMissing = new ArrayList<>();
+			unit.getRoutes().forEach(route -> {
+				if (!times.containsKey(route.id)) {
+					unitMissing.add(route.name);
+				}
+			});
+			final Set<Long> ownSidings = new HashSet<>();
+			ClientData.SIDINGS.forEach(siding -> {
+				if (ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot) {
+					ownSidings.add(siding.id);
+				}
+			});
+			final boolean diagramMode = depot.duties.diagramMode;
+			final int unitDepots = unit.depotIds.size();
+			return () -> {
+				final LineDuties.Plan plan = unit.plan(route -> times.get(route.id), dayStartMillis);
+				final DepotDuties duties = new DepotDuties();
+				duties.diagramMode = diagramMode;
+				plan.sidings.forEach((sidingId, slots) -> {
+					if (ownSidings.contains(sidingId)) {
+						duties.sidings.put(sidingId, slots);
+					}
+				});
+				final JsonObject object = new JsonObject();
+				object.add("duties", toJson(duties));
+				object.addProperty("trains", plan.trains);
+				object.addProperty("uncovered", plan.uncovered);
+				object.addProperty("noSidings", ownSidings.isEmpty());
+				object.addProperty("byLine", true);
+				object.addProperty("lineNames", plan.lineNames);
+				object.addProperty("lineDepots", unitDepots);
+				object.addProperty("needed", plan.needed);
+				object.addProperty("available", plan.available);
+				object.addProperty("suggestedSiding", plan.suggestedSiding);
+				final JsonArray missingArray = new JsonArray();
+				unitMissing.forEach(missingArray::add);
+				object.add("missingTimes", missingArray);
+				object.add("issues", new JsonArray());
+				return object;
+			};
+		}
+
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
 		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit(), null, depot.id)));
 		final Map<Long, Long> stationOf = new HashMap<>();

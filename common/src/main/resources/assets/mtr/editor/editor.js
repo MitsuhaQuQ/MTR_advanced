@@ -2986,7 +2986,9 @@
 					sim.checkDepot = depot.id;
 					if (sim.on) simulate(); else setSimulation(true);
 				}
-				dutyNotice = `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
+				// Planned with the depot's operating lines, as the game plans them; the draft is this depot's part
+				const byLine = result.byLine ? tr("按运营线路 {0} 和 {1} 个车厂一起排，这里是本车厂的部分；应用后线路上其他自动排的车厂会把剩下的班次重排。", result.lineNames, result.lineDepots) + (result.uncovered && result.needed > result.available ? tr("跑满需要 {0} 列，现有 {1} 列{2}。", result.needed, result.available, result.suggestedSiding ? tr("，加到 {0}", result.suggestedSiding) : "") : "") : "";
+				dutyNotice = byLine + `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
 					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
 					+ (result.issues.length ? `${tr("其他问题：{0}", result.issues.slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
 			}

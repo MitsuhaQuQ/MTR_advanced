@@ -41,9 +41,9 @@ public final class SimDataset {
 	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1), version 4 the depots' departures by
 	 * frequency and order of sidings, and which sidings are driven by hand (G1); version 5 the depots' release intervals
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
-	 * an operating line; older data is read without them.
+	 * an operating line, version 8 the routes' operating lines; older data is read without them.
 	 */
-	public static final int VERSION = 7;
+	public static final int VERSION = 8;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -94,6 +94,7 @@ public final class SimDataset {
 		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.poolKey));
 		routes.forEach(route -> writeTimes(writer, route.fastestTimes));
 		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.linePool));
+		routes.forEach(route -> BinaryKeyed.writeString(writer, route.lineKey));
 		return writer.toBytes();
 	}
 
@@ -153,6 +154,11 @@ public final class SimDataset {
 		if (version >= 7) {
 			for (final SidingData siding : dataset.sidings) {
 				siding.linePool = BinaryKeyed.readString(reader);
+			}
+		}
+		if (version >= 8) {
+			for (final RouteData route : dataset.routes) {
+				route.lineKey = BinaryKeyed.readString(reader);
 			}
 		}
 		return dataset;
@@ -472,6 +478,11 @@ public final class SimDataset {
 		 * the route's own path for the slowest vehicle running it (L1), or null if the game didn't have them.
 		 */
 		public long[][] fastestTimes;
+		/**
+		 * The operating line the route belongs to, its transport mode and route group as the game's {@code LineDuties} has
+		 * it, or empty if not known; depots running routes of the same line plan their duties together.
+		 */
+		public String lineKey = "";
 
 		public RouteData(PlanRoute route) {
 			id = route.getRouteId();

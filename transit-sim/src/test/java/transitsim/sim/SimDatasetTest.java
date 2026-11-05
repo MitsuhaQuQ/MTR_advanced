@@ -171,6 +171,15 @@ class SimDatasetTest {
 	}
 
 	@Test
+	void theLinesOfRoutesAreKept() {
+		final SimDataset dataset = lines(1, 400, 2, 4, 10);
+		dataset.routes.get(0).lineKey = "train|Line";
+		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
+		assertEquals("train|Line", read.routes.get(0).lineKey);
+		assertEquals("", read.routes.get(1).lineKey);
+	}
+
+	@Test
 	void theLinePoolsOfSidingsAreKept() {
 		final SimDataset dataset = lines(2, 400, 2, 4, 10);
 		dataset.sidings.get(0).linePool = "unit|train/2";
