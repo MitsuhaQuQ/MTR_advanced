@@ -259,10 +259,6 @@ public abstract class RailMixin implements RailExtraSupplier {
     @Shadow(remap = false) public abstract Vec3 getPosition(double distance);
     @Shadow(remap = false) public abstract RailAngle getRailAngle(boolean getEnd);
 
-    public boolean goodRadius() {
-        return true;
-    }
-
     @Inject(method = "<init>(Ljava/util/Map;)V", at = @At("TAIL"), remap = false)
     private void fromMessagePack(Map<String, Value> map, CallbackInfo ci) {
         MessagePackHelper messagePackHelper = new MessagePackHelper(map);

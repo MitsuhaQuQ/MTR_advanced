@@ -198,6 +198,7 @@ With ANTE merged, the common module has about 120,000 lines of Java, of which AN
 - **Both server and client simulate trains**: the running logic has to match on both sides, or trains shake or jump.
 - **Several versions and loaders**: the same code has to work on different Minecraft versions and on both Fabric and Forge, and some APIs have breaking changes in 1.20.
 - **Save and network compatibility**: real saves have to migrate, and a format mistake can damage a player's network.
+- **Mixin check**: a test in the build scans ANTE's mixins for code that quietly replaces MTR's own (shadow fields with initialisers, methods overwriting the target's, injections that always cancel); the ones looked at are listed with why, and a new one fails the build.
 - **Add-on mods**: parts of ANTE still change internal classes through mixins, and add-ons like MSD and YJCM call internal methods and fields directly, so changing one method signature can cause a crash on load.
 - **Operating rules are complex in themselves**: timetables, vehicle working, overtaking, timed connections and through services are specialist railway problems, and the rules constrain each other.
 

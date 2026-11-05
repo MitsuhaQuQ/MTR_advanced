@@ -205,7 +205,15 @@ Fabric: MTRFabric / MTRFabricClient      Forge: MTRForge
 
 ### 3.4 ANTE 怎么接到本体上
 
-ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时看到本体某个方法的行为和源码不一致，先查这里：
+ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时看到本体某个方法的行为和源码不一致，先查这里。
+
+构建时 `MixinLintTest`（common 的测试）扫 `mixin/` 的源码，找三种会悄悄换掉本体代码的写法：
+- 带初始化的 `@Shadow` 字段：初始化会被合并进目标的构造函数，覆盖本体的值（占用表崩溃就是这个）；
+- 和目标类某个方法同名同参数、又没有注解的方法：它会直接覆盖目标的方法；
+- 会取消的 HEAD 注入，取消是一条独立语句，或者方法体超过 4 条语句：等于用自己的一份代替目标方法。只在 if 后面短短取消一下的不算。
+
+后两种看过、确认不会盖掉本体改动的，写在测试的 `ALLOWED` 里并注明原因。新出现的、或者写在 `ALLOWED` 里却已经没有的，测试失败。改了 mixin 或者改了被注入的本体方法时，按失败信息检查。
+
 
 | mixin | 改了什么 |
 |---|---|
@@ -216,7 +224,7 @@ ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时�
 | `JonModelTrainRendererMixin` | 在车厢绘制的第一次 `rotateX` 处加车身侧倾 |
 | `TrainClientMixin` | 构造和 `copyFromTrain` 后带上 ANTE 的数据；`handlePositions` 是 ANTE 的版本（多了车身侧倾）。以前它还整个替换 `TrainClient.simulateTrain`，用的是一份旧代码，本体后来加的直通班次线路（`tripRouteIds`）因此不生效；2026-11-05 去掉了，`simulateTrain` 是本体自己的 |
 | `TrainMixin`、`VehicleRidingClientMixin` | 给列车和乘客加额外数据（`TrainExtraSupplier`、`VehicleRidingClientExtraSupplier`），并改乘客的位置计算 |
-| `RailMixin` | 3D 轨道的模型、侧倾、竖曲线（`getPositionY`）、开门方向、自定义配置和带侧倾的绘制（`RailExtraSupplier`）。轨道的形状、长度和角度是本体自己的：2026-11-05 去掉了 ANTE 的贝塞尔模式和对 `getLength`、`getPosition`、`getRailAngle`、`isValid` 的重写，读档时也不再用 ANTE 存的弧度角覆盖本体的角度。ANTE 存成贝塞尔的旧轨道由 `Rail(Map)`（`fromAnteBezier`）按两端位置和方向算成本体的形状，算不出有效轨道的保留原样 |
+| `RailMixin` | 3D 轨道的模型、侧倾、竖曲线（`getPositionY`）、开门方向、自定义配置和带侧倾的绘制（`RailExtraSupplier`）。轨道的形状、长度和角度是本体自己的：2026-11-05 去掉了 ANTE 的贝塞尔模式和对 `getLength`、`getPosition`、`getRailAngle`、`isValid` 的重写，读档时也不再用 ANTE 存的弧度角覆盖本体的角度。ANTE 存成贝塞尔的旧轨道由 `Rail(Map)`（`fromAnteBezier`）按两端位置和方向算成本体的形状，算不出有效轨道的保留原样。以前它还把 `goodRadius()` 改成总是成立，2026-11-05 去掉了，新连的轨道又要满足本体的最小半径（2 格） |
 | `RailTypeMixin`、`SidingScreenMixin` | ANTE 的 P 类型速度轨道（P-1 至 P600、P1000 至 P10000），以及存车线界面的限速滑块范围 |
 | 已去掉的 | 2026-11-05：`ItemNodeModifierBaseMixin` 整个替换连轨工具的 `onEndClick`，本体自己的连轨（0.1° 角度、不能折回的检查）从没跑过；`ItemRailModifierMixin` 切换贝塞尔路径模式。全向节点只剩方块注册名 `mtrsteamloco:direct_node`（`BlockDirectNode` 是普通的本体节点，保留是为了已有存档里的这些方块和它们的轨道），物品、设角度的界面、方块实体、绘制和换节点的包都删了；贝塞尔路径编辑器（`RailPathEditor`）也删了 |
 | `FQ*`、`FQGraalServices` | 让 GraalJS 在模组环境里能加载 |
