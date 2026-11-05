@@ -60,11 +60,16 @@ public final class TrainMotion {
 				tempDoorValue = 0;
 			} else {
 				final boolean wasMoving = state.getSpeed() > 0;
+				// Where the train has to stop short of a taken block section part of the way along a rail, or NaN
+				double sectionStop = Double.NaN;
 				if (state.getSpeed() <= 0) {
 					state.setSpeed(0);
 
 					final boolean isOppositeRail = isOppositeRail(state, track);
-					final boolean railBlocked = hooks.isRailBlocked(getIndex(state, track, 0, spacing, true) + (isOppositeRail ? 2 : 1));
+					final int stoppedHead = getIndex(state, track, 0, spacing, true);
+					// Also while a block section just ahead on the rail it stands on is taken
+					final int nextRail = stoppedHead + (isOppositeRail ? 2 : 1);
+					final boolean railBlocked = isTakenAtStart(hooks, track, nextRail, hooks.isRailBlocked(nextRail)) || !isOppositeRail && isSectionTakenJustAhead(hooks, stoppedHead, state.getRailProgress());
 
 					if (totalDwellTicks == 0) {
 						tempDoorOpen = false;
@@ -101,8 +106,19 @@ public final class TrainMotion {
 					if (!hooks.isClientSide()) {
 						final int lastCheckIndex = state.getNextPlatformIndex() > 0 ? Math.min(state.getNextPlatformIndex(), track.size() - 1) : track.size() - 1;
 						final double brakingDistance = 0.5 * state.getSpeed() * state.getSpeed() / (vehicle.usesSpeedCurve() ? vehicle.getDeceleration() : vehicle.getAcceleration()) + state.getSpeed() * ticksElapsed + MotionConstants.BRAKING_MARGIN;
-						final int blockedIndex = findBlockedIndex(track, getIndex(state, track, 0, spacing, true), lastCheckIndex, state.getRailProgress(), brakingDistance, hooks);
-						if (blockedIndex >= 0) {
+						final int headIndex = getIndex(state, track, 0, spacing, true);
+						// A taken section further along the rail the head is on comes first
+						final double ownTaken = hooks.getSectionBlockedPosition(headIndex, state.getRailProgress());
+						final int blockedIndex = Double.isNaN(ownTaken) ? findBlockedIndex(track, headIndex, lastCheckIndex, state.getRailProgress(), brakingDistance, hooks) : -1;
+						final double blockedAt = blockedIndex > 0 ? hooks.getSectionBlockedPosition(blockedIndex, track.getDistance(blockedIndex - 1)) : Double.NaN;
+						if (!Double.isNaN(ownTaken)) {
+							state.setNextStoppingIndex(headIndex);
+							sectionStop = ownTaken;
+						} else if (blockedIndex >= 0 && !Double.isNaN(blockedAt) && blockedAt > track.getDistance(blockedIndex - 1) + 1E-6) {
+							// Free from the start of the rail to the taken section
+							state.setNextStoppingIndex(blockedIndex);
+							sectionStop = blockedAt;
+						} else if (blockedIndex >= 0) {
 							state.setNextStoppingIndex(blockedIndex - 1);
 						} else if (state.getNextPlatformIndex() > 0 && state.getNextPlatformIndex() < track.size()) {
 							state.setNextStoppingIndex(state.getNextPlatformIndex());
@@ -112,12 +128,13 @@ public final class TrainMotion {
 						}
 					}
 
-					final double stoppingDistance = track.getDistance(state.getNextStoppingIndex()) - state.getRailProgress();
+					final double stoppingPosition = Double.isNaN(sectionStop) ? track.getDistance(state.getNextStoppingIndex()) : Math.min(sectionStop, track.getDistance(state.getNextStoppingIndex()));
+					final double stoppingDistance = stoppingPosition - state.getRailProgress();
 					if (vehicle.usesSpeedCurve()) {
 						if (hooks.isClientSide()) {
-							curveAdvance = followSpeedCurve(state, vehicle, curves, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
+							curveAdvance = followSpeedCurve(state, vehicle, curves, ticksElapsed, stoppingPosition);
 						} else {
-							curveAdvance = followRunSegment(state, curves, hooks, ticksElapsed, track.getDistance(state.getNextStoppingIndex()));
+							curveAdvance = followRunSegment(state, curves, hooks, ticksElapsed, stoppingPosition);
 							onSegment = true;
 						}
 					} else if (!vehicle.isContinuousMovement() && stoppingDistance < 0.5 * state.getSpeed() * state.getSpeed() / vehicle.getAcceleration() && mustStop(state, track, hooks, state.getNextStoppingIndex())) {
@@ -161,6 +178,12 @@ public final class TrainMotion {
 				final RunSegment runSegment = state.getRunSegment();
 				if (onSegment && !lapped && runSegment != null && runSegment.isFinished()) {
 					state.setRailProgress(runSegment.target);
+				}
+				// Stopped short of a taken section, as at the end of a rail
+				if (!Double.isNaN(sectionStop) && state.getRailProgress() > sectionStop) {
+					state.setRailProgress(sectionStop);
+					state.setSpeed(0);
+					state.setManualNotch(-2);
 				}
 				if (!vehicle.isContinuousMovement() && state.getRailProgress() > track.getDistance(state.getNextStoppingIndex())) {
 					if (mustStop(state, track, hooks, state.getNextStoppingIndex())) {
@@ -327,6 +350,35 @@ public final class TrainMotion {
 			railsEnd = stopIndex >= track.getDistanceCount() - 1 || track.isOppositeRail(stopIndex, stopIndex + 1);
 		}
 		return railsEnd || hooks.isRailBlocked(stopIndex + 1);
+	}
+
+	/**
+	 * How close ahead a taken section keeps a train standing in front of it from moving off.
+	 */
+	private static final double SECTION_STANDING_MARGIN = 1;
+
+	/**
+	 * @return whether a block section just ahead on the rail a standing train's head is on is taken, so it can't move off
+	 */
+	public static boolean isSectionTakenJustAhead(MotionHooks hooks, int headIndex, double railProgress) {
+		final double taken = hooks.getSectionBlockedPosition(headIndex, railProgress);
+		return !Double.isNaN(taken) && taken - railProgress <= SECTION_STANDING_MARGIN;
+	}
+
+	/**
+	 * A standing train can move onto a rail cut into block sections when only sections further along it are taken; it
+	 * stops again short of them.
+	 *
+	 * @param taken whether the rail counts as taken as a whole
+	 * @return whether it is taken where the train would move onto it
+	 */
+	public static boolean isTakenAtStart(MotionHooks hooks, MotionTrack track, int rail, boolean taken) {
+		if (!taken || rail <= 0 || rail >= track.size()) {
+			return taken;
+		}
+		final double start = track.getDistance(rail - 1);
+		final double at = hooks.getSectionBlockedPosition(rail, start);
+		return Double.isNaN(at) || at - start <= SECTION_STANDING_MARGIN;
 	}
 
 	private static boolean loopsWithoutReversing(MotionTrack track, MotionHooks hooks) {

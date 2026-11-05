@@ -47,6 +47,12 @@ public final class SecurityConfig {
 	 * through it, besides being signal blocks as before.
 	 */
 	public static volatile DyeColor interlockColor = DyeColor.MAGENTA;
+	/**
+	 * Long rails are cut into block sections of the braking distance at their speed limit for this
+	 * deceleration, in m/s², and at least this long, in blocks ({@code BlockSections}).
+	 */
+	public static volatile double blockDeceleration = 1.0;
+	public static volatile int blockMinLength = 400;
 
 	private static final String KEY_WEBSERVER_ENABLED = "webserverEnabled";
 	private static final String KEY_WEBSERVER_BIND_HOST = "webserverBindHost";
@@ -63,6 +69,8 @@ public final class SecurityConfig {
 	private static final String KEY_THROAT_LOCKS = "throatLocks";
 	private static final String KEY_EDITOR_SIMULATION = "editorSimulation";
 	private static final String KEY_INTERLOCK_COLOR = "interlockColor";
+	private static final String KEY_BLOCK_DECELERATION = "blockDeceleration";
+	private static final String KEY_BLOCK_MIN_LENGTH = "blockMinLength";
 
 	private SecurityConfig() {
 	}
@@ -90,6 +98,8 @@ public final class SecurityConfig {
 				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
 				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
 				interlockColor = parseColor(jsonObject.has(KEY_INTERLOCK_COLOR) ? jsonObject.get(KEY_INTERLOCK_COLOR).getAsString() : "");
+				blockDeceleration = jsonObject.has(KEY_BLOCK_DECELERATION) ? Math.max(0.1, Math.min(10, jsonObject.get(KEY_BLOCK_DECELERATION).getAsDouble())) : 1.0;
+				blockMinLength = getInt(jsonObject, KEY_BLOCK_MIN_LENGTH, 400, 16, 10000);
 			} else {
 				write(path);
 			}
@@ -107,6 +117,8 @@ public final class SecurityConfig {
 	 */
 	public static void apply() {
 		transitsim.sim.ThroatLocks.enabled = throatLocks;
+		transitsim.network.BlockSections.deceleration = blockDeceleration;
+		transitsim.network.BlockSections.minLength = blockMinLength;
 	}
 
 	public static boolean isLoopbackBinding() {
@@ -138,6 +150,8 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
 		jsonObject.addProperty(KEY_INTERLOCK_COLOR, interlockColor.name().toLowerCase(Locale.ROOT));
+		jsonObject.addProperty(KEY_BLOCK_DECELERATION, blockDeceleration);
+		jsonObject.addProperty(KEY_BLOCK_MIN_LENGTH, blockMinLength);
 		jsonObject.addProperty(KEY_AUDIO_MAX_TOTAL_MEGABYTES, audioMaxTotalMegabytes);
 		jsonObject.addProperty(KEY_AUDIO_MAX_SECONDS, audioMaxSeconds);
 		jsonObject.addProperty(KEY_AUDIO_UPLOADS_PER_HOUR, audioUploadsPerHour);

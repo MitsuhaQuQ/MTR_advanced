@@ -430,7 +430,49 @@ public class TrainServer extends Train {
 	}
 
 	private boolean isRailOccupied(int checkIndex) {
-		return !transportMode.continuousMovement && trainPositions != null && checkIndex < path.size() && Occupancy.isTakenByOther(trainPositions, path.get(checkIndex).getRailProduct(), id);
+		if (transportMode.continuousMovement || trainPositions == null || checkIndex >= path.size()) {
+			return false;
+		}
+		for (final UUID unit : getCoveredUnits(checkIndex, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
+			if (Occupancy.isTakenByOther(trainPositions, unit, id)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @return the block sections of a rail of the path a part of the path covers: the rail's own key, or the pieces of a
+	 * rail cut into block sections, as the component's runner has them
+	 */
+	private List<UUID> getCoveredUnits(int index, double fromPosition, double toPosition) {
+		final PathData pathData = path.get(index);
+		final double start = index == 0 ? 0 : distances.get(index - 1);
+		final double length = pathData.getTrackLength();
+		return transitsim.network.BlockSections.getPieces(pathData.getRailProduct(), length, cutSpeed(pathData.rail.railType), pathData.startingPos.asLong() < pathData.getLastPos().asLong(), Math.max(0, fromPosition - start), Math.min(length, toPosition - start));
+	}
+
+	/**
+	 * @return the speed limit a rail is cut into block sections by, or -1 for one never cut, as the component's runner has it
+	 */
+	public static float cutSpeed(RailType railType) {
+		return railType.canAccelerate ? railType.maxBlocksPerTick : -1;
+	}
+
+		@Override
+	protected double getSectionBlockedPosition(int rail, double fromPosition) {
+		if (transportMode.continuousMovement || trainPositions == null || rail <= 0 || rail >= path.size() || !path.get(rail).rail.railType.hasSignal) {
+			return Double.NaN;
+		}
+		final PathData pathData = path.get(rail);
+		final double start = distances.get(rail - 1);
+		for (final Map.Entry<Double, UUID> piece : transitsim.network.BlockSections.getPieceStarts(pathData.getRailProduct(), pathData.getTrackLength(), cutSpeed(pathData.rail.railType), pathData.startingPos.asLong() < pathData.getLastPos().asLong())) {
+			final double pieceStart = start + piece.getKey();
+			if (pieceStart >= fromPosition - 1E-6 && Occupancy.isTakenByOther(trainPositions, piece.getValue(), id)) {
+				return pieceStart;
+			}
+		}
+		return Double.NaN;
 	}
 
 	@Override
@@ -605,10 +647,15 @@ public class TrainServer extends Train {
 		if (!path.isEmpty()) {
 			final int headIndex = getIndex(0, spacing, true);
 			final int tailIndex = getIndex(trainCars, spacing, false);
+			final double tailPosition = railProgress - trainCars * spacing;
 			for (int i = tailIndex; i <= headIndex; i++) {
 				final PathData pathData = path.get(i);
 				if (i > 0 && pathData.savedRailBaseId != sidingId && pathData.rail.railType.hasSignal) {
-					signalBlocks.occupy(pathData.getRailProduct(), trainPositions, id);
+					// The block sections of the rail it covers: the whole rail, or the pieces of a long one
+					final UUID rail = pathData.getRailProduct();
+					for (final UUID unit : getCoveredUnits(i, tailPosition, railProgress)) {
+						signalBlocks.occupy(rail, unit, trainPositions, id);
+					}
 				}
 			}
 

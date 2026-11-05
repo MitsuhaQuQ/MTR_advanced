@@ -34,14 +34,52 @@ class SignalBlockTest {
 	}
 
 	/**
-	 * @param withBlock whether the up line from the first platform to the far end is one signal block
+	 * @param withBlock whether the up line from the first platform to the far end is one signal block, which stays whole
+	 *                  however long
 	 */
 	static SimDataset line(boolean withBlock) {
-		final SimDataset dataset = SimDatasetTest.lines(1, 2400, 2, 8, 3);
-		if (withBlock) {
-			dataset.signalBlocks.add(Arrays.asList(rail(2, 3), rail(3, 4), rail(4, 5), rail(5, 6)));
+		final SimDataset dataset = longBlockLine();
+		if (!withBlock) {
+			dataset.signalBlocks.clear();
 		}
 		return dataset;
+	}
+
+	private static SimDataset longBlockLine() {
+		final SimDataset dataset = SimDatasetTest.lines(1, 2400, 2, 8, 3);
+		dataset.signalBlocks.add(Arrays.asList(rail(2, 3), rail(3, 4), rail(4, 5), rail(5, 6)));
+		return dataset;
+	}
+
+	@Test
+	void trainsFollowEachOtherAlongALongRail() {
+		// A service every minute on the 2400 blocks between the first two stations, one rail: with the rail cut into block
+		// sections, the next train runs onto it while the one ahead is still on it
+		final SimDataset dataset = SimDatasetTest.lines(1, 2400, 2, 8, 1);
+		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(dataset.toBytes(), START));
+		int most = 0;
+		for (long time = START; time < START + HOUR; time += 2 * SECOND) {
+			simulator.advanceTo(time);
+			most = Math.max(most, (int) simulator.getRunner().getTrains().stream().filter(train -> train.isOnRoute() && train.getHeadRail() == 3).count());
+		}
+		assertTrue(most >= 2, String.valueOf(most));
+		final EventSimulator<SimDataset.DataTrack> everyTick = new EventSimulator<>(SimDataset.start(dataset.toBytes(), START), false);
+		final EventSimulator<SimDataset.DataTrack> skipping = new EventSimulator<>(SimDataset.start(dataset.toBytes(), START), true);
+		everyTick.advanceTo(START + HOUR);
+		skipping.advanceTo(START + HOUR);
+		assertEquals(describe(everyTick.events(0)), describe(skipping.events(0)));
+	}
+
+	@Test
+	void aPaintedBlockStaysWholeHoweverLong() {
+		// Thousands of blocks long, its rails are many block sections, but as a signal block they are all one
+		assertEquals(1, mostTrainsInBlock(longBlockLine()));
+		final byte[] bytes = longBlockLine().toBytes();
+		final EventSimulator<SimDataset.DataTrack> everyTick = new EventSimulator<>(SimDataset.start(bytes, START), false);
+		final EventSimulator<SimDataset.DataTrack> skipping = new EventSimulator<>(SimDataset.start(bytes, START), true);
+		everyTick.advanceTo(END);
+		skipping.advanceTo(END);
+		assertEquals(describe(everyTick.events(0)), describe(skipping.events(0)));
 	}
 
 	@Test
@@ -84,7 +122,7 @@ class SignalBlockTest {
 		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
 		assertTrue(read.isInterlockBlock(0));
 		assertFalse(read.isInterlockBlock(1));
-		assertFalse(SimDataset.fromBytes(line(true).toBytes()).isInterlockBlock(0));
+		assertFalse(SimDataset.fromBytes(longBlockLine().toBytes()).isInterlockBlock(0));
 
 		final byte[] bytes = dataset.toBytes();
 		final EventSimulator<SimDataset.DataTrack> everyTick = new EventSimulator<>(SimDataset.start(bytes, START), false);

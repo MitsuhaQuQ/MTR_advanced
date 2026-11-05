@@ -41,6 +41,8 @@
   "gui.mtr.dwell_source_route": "route",
   "gui.mtr.dwell_source_platform": "platform",
   "gui.mtr.rail_info": "Rail: %s blocks, limit %s km/h, %s, signal blocks: %s",
+  "gui.mtr.rail_sections": "%s, %s block sections of %s blocks, taken: %s",
+  "gui.mtr.rail_sections_none": "none",
   "gui.mtr.rail_free": "free",
   "gui.mtr.rail_occupied": "occupied",
   "gui.mtr.timetable": "Timetable",

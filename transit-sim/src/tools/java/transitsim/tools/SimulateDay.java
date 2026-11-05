@@ -102,6 +102,44 @@ public final class SimulateDay {
 			}
 		}
 		System.out.printf("%d trains ran; %s%n", trains.size(), kinds);
+		// -Pmtr.debugStuck=true lists trains standing between stations at the end, and what is ahead of them
+		if (Boolean.getBoolean("mtr.debugStuck")) {
+			int listed = 0;
+			for (final transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train : simulator.getRunner().getTrains()) {
+				if (listed >= 400 || !train.isOnRoute() || train.getSpeed() > 0) {
+					continue;
+				}
+				final int head = train.getHeadRail();
+				final java.util.List<SimDataset.DataTrack> path = train.getPath();
+				if (head < 0 || head >= path.size() || path.get(head).isPlatformTrack() || path.get(head).isSidingTrack()) {
+					continue;
+				}
+				listed++;
+				final SimDataset.DataTrack track = path.get(head);
+				final SimDataset.DataTrack next = head + 1 < path.size() ? path.get(head + 1) : null;
+				// Who has what is ahead: the first taken unit of the next rail, or of its own rail ahead
+				long blocker = 0;
+				if (next != null) {
+					for (final java.util.UUID unit : transitsim.network.BlockSections.getPieces(next.getTrackKey(), next.getTrackLength(), next.canAccelerate() ? next.getMaxSpeed() : -1, next.getStartNode() < next.getEndNode(), 0, next.getTrackLength())) {
+						final long occupant = simulator.getRunner().getOccupant(unit);
+						if (occupant != 0 && occupant != train.id) {
+							blocker = occupant;
+							break;
+						}
+					}
+				}
+				for (final java.util.UUID unit : transitsim.network.BlockSections.getPieces(track.getTrackKey(), track.getTrackLength(), track.canAccelerate() ? track.getMaxSpeed() : -1, track.getStartNode() < track.getEndNode(), 0, track.getTrackLength())) {
+					final long occupant = simulator.getRunner().getOccupant(unit);
+					if (blocker == 0 && occupant != 0 && occupant != train.id) {
+						blocker = occupant;
+					}
+				}
+				System.out.printf("blocker of %d is %d%n", train.id, blocker);
+				System.out.printf("stuck %d head rail %d/%d len %.0f speed %.2f accel %b pieces %d progress %.1f own %.1f nextBlocked %b nextLen %.0f nextPieces %d nextPlatform %b blockedRail %d nextStop %d%n",
+						train.id, head, path.size(), track.getTrackLength(), track.getMaxSpeed(), track.canAccelerate(), transitsim.network.BlockSections.getPieceCount(track.getTrackLength(), track.canAccelerate() ? track.getMaxSpeed() : -1), train.getRailProgress(),
+						train.getSectionBlockedPosition(head, train.getRailProgress()), next != null && train.isRailBlocked(head + 1), next == null ? 0 : next.getTrackLength(), next == null ? 0 : transitsim.network.BlockSections.getPieceCount(next.getTrackLength(), next.canAccelerate() ? next.getMaxSpeed() : -1), next != null && next.isPlatformTrack(), train.getBlockedRail(), train.getNextStoppingIndex());
+			}
+		}
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
 		final long ticks = hours * HOUR / 50;
 		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, trains moved in %.2f%% of ticks%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, trains.isEmpty() ? 0 : 100.0 * simulator.getRunner().getTrainTicks() / ticks / trains.size());

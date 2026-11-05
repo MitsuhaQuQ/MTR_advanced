@@ -440,6 +440,15 @@ sequenceDiagram
   - 时刻表检查 `checkThroats` 按"道岔节点"或"区"分组（`useKey`），冲突的位置用 `getPlace`。网页的咽喉提示另写联锁区个数（`EditorData` 的 `throat.zones`），交叉列表里区的冲突写"在联锁区"。
   - 组件：`SimDataset` 格式 10 在每个信号闭塞分区后带"是联锁区"（`interlockBlocks`，`SimExport` 从 `SignalBlocks.getInterlockFlags` 填），`TickRunner.setInterlockZones` 给区编号（在列表里的位置加 1）。
   - 联锁区仍是普通的信号闭塞，占用照旧；按频率和手动驾驶的车不办进路。
+- **闭塞区段**（MTM_Logic 0.11.0，`transitsim.network.BlockSections`）：没涂色的长轨道切成区段，占用、追踪停车和信号灯色都按区段。
+  - **长度**：每条轨道按自己的限速算常用制动距离 `v²/(2a)`，`a` 是 `BlockSections.deceleration`（`SecurityConfig.blockDeceleration`，默认 1.0 m/s²），不小于 `minLength`（`blockMinLength`，默认 400 格，比大多数列车长，停着的车只占一两段）。
+  - **轨道**：比区段长的平均切成 `ceil(长度/区段长)` 段，从节点小的那一端编号，第 0 段用轨道自己的键，其余段的键由轨道键和段号算出（`getPieceKey`）。不能加速的轨道（站台、存车线、折返线）不切：宿主传限速 -1（组件 `TickRunner.cutSpeed`，游戏 `TrainServer.cutSpeed`）。
+  - **分区不切**（用户 2026-11-05 定）：玩家涂的信号闭塞分区不论多长都整块是一个区段，里面长轨道的每一段都算进去；一条轨道在几种颜色的分区里时取它们的并（`getSection`）。原来计划超长分区也切，yel 实测切开后两列车会各占一段、互相挡住（占用死锁，仲裁器看不到），2 小时少 5%–20% 的到站，所以改成不切。游戏由 `SignalBlocks.updateSections` 在每 tick 列车跑之前、分区变了时重算（轨道长度和限速来自 `RailwayData.railInfo`）；组件在 `TickRunner.getBlockSections` 用存车线和运用路径上的轨道算。
+  - **占用**：列车占它车身覆盖的每个区段（`getCoveredUnits`：整条轨道的键，或长轨道上覆盖到的段），再带上所在分区区段的其余部分（游戏 `SignalBlocks.occupy(轨道, 区段, …)`，组件 `writePositions`）。一条轨道"被占"是它有任何一段被别的车占着。
+  - **停车**：运动内核多一个钩子 `MotionHooks.getSectionBlockedPosition(轨道, 位置)`，给出这条轨道上从这个位置往前第一个被别人占的区段的起点，默认没有。`TrainMotion.tick` 先看车头所在轨道往前的区段，再看前方被占的轨道：被占的区段从轨道中间开始时，车停在区段起点（`sectionStop`，越过时拉回并停下），否则照旧停在前一条轨道的终点。停着的车只要下一条轨道开头的那段空着就能起动（`isTakenAtStart`），车头前方 1 格内的区段被占时不起动（`isSectionTakenJustAhead`）。没有切开的轨道行为不变。
+  - **查卡车**：日跑工具加 `-Pmtr.debugStuck=true`，跑完列出停在两站之间的车、车头所在轨道的段数、前方是否被占和挡住它的车。`-Pmtr.blockMinLength=1000000` 相当于不切，用来对比。
+  - **跳 tick**：`getMovingQuietTicks` 的边界加上车头、车尾所在轨道的下一个区段起点（`getNextSectionStart`），车头所在轨道前方有被占区段时不跳；`Standing` 判断被挡和运动内核一样。
+  - **客户端**：服务端同步时发所有分区的占用标记（不再只发附近的）和全网被占的区段，每个写成"轨道键 + 第几段"（`SignalBlocks.getPiece`），客户端存进 `ClientData.OCCUPIED_SECTIONS`。信号灯色由 `SignalAspects.getAspect` 算：从信号机的节点沿朝向走客户端有的轨道，按同样的切法数区段，第 j 个区段被占就是第 j 档（1 红）；道岔后每一支都看，取最限制的；地图上有、客户端没有的轨道按被占。客户端按它知道的轨道长度切，远处轨道长度不知道时区段数可能和服务端不同，只会让灯色更限制。铁路检查对切开的轨道写出段数、每段多长和哪几段被占（`gui.mtr.rail_sections`）。
 - 卡死：仲裁器发现列车在单线或道岔上互相等成一圈时，冻住相关资源、每圈报一次。游戏每 tick 给出预约（`RailwayData` 里 `runReservations.resolve`）之后取出这些报告，在服务端日志写一行 `Minecraft Transit Railway: trains waiting on each other for their runs [列车…]`。以前只有组件的模拟器读它们，按速度曲线跑的车厂和模拟器共用预约，报告被模拟器取走后就丢了，服务端日志看不到。
 
 ### 4.6 车厂发车：`Depot.deployTrain`

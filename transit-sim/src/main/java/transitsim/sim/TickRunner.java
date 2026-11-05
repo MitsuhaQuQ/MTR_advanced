@@ -106,6 +106,14 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	private final Map<UUID, List<UUID>> blockRails = new HashMap<>();
 	/**
+	 * The signal blocks as given.
+	 */
+	private final List<List<UUID>> signalBlockList = new ArrayList<>();
+	/**
+	 * The signal blocks cut into block sections, worked out once the paths are known; see {@link #getBlockSections}.
+	 */
+	private transitsim.network.BlockSections blockSections;
+	/**
 	 * Rails whose occupants changed since the end of the last tick.
 	 */
 	private final List<RailEntry> changedRails = new ArrayList<>();
@@ -201,6 +209,7 @@ public final class TickRunner<T extends RunTrack> {
 		final SidingRun sidingRun = new SidingRun(sidingId, depot, siding);
 		sidings.put(sidingId, sidingRun);
 		nodeNeighbours = null;
+		blockSections = null;
 		depots.clear();
 		depotSidings.clear();
 		sidings.values().forEach(eachSidingRun -> {
@@ -338,7 +347,42 @@ public final class TickRunner<T extends RunTrack> {
 	 * first tick (G1). The host deals with the requests once its tick is over, and calls {@link #renewReservations} in
 	 * every tick of its own, as the runner may not tick in each of them.
 	 */
-	private Map<Long, Set<Long>> getNodeNeighbours() {
+	/**
+	 * The signal blocks cut into block sections ({@link transitsim.network.BlockSections}), with the lengths and speed limits
+	 * of the rails on the sidings' paths and their trips' paths.
+	 */
+	private transitsim.network.BlockSections getBlockSections() {
+		if (blockSections == null) {
+			final Map<UUID, RunTrack> tracks = new HashMap<>();
+			sidings.values().forEach(sidingRun -> {
+				sidingRun.siding.path.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track));
+				sidingRun.siding.tripPaths.values().forEach(tripPath -> tripPath.path.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track)));
+			});
+			blockSections = new transitsim.network.BlockSections(signalBlockList, new transitsim.network.BlockSections.RailInfo() {
+				@Override
+				public double getLength(UUID rail) {
+					final RunTrack track = tracks.get(rail);
+					return track == null ? 0 : track.getTrackLength();
+				}
+
+				@Override
+				public float getMaxSpeed(UUID rail) {
+					final RunTrack track = tracks.get(rail);
+					return track == null ? 0 : cutSpeed(track);
+				}
+			});
+		}
+		return blockSections;
+	}
+
+	/**
+	 * @return the speed limit a track is cut into block sections by, or -1 for one never cut ({@link transitsim.network.BlockSections})
+	 */
+	private static float cutSpeed(RunTrack track) {
+		return track.canAccelerate() ? track.getMaxSpeed() : -1;
+	}
+
+		private Map<Long, Set<Long>> getNodeNeighbours() {
 		if (nodeNeighbours == null) {
 			nodeNeighbours = new HashMap<>();
 			sidings.values().forEach(sidingRun -> sidingRun.siding.path.forEach(track -> {
@@ -658,6 +702,9 @@ public final class TickRunner<T extends RunTrack> {
 	 * @param blocks each with the keys of its rails
 	 */
 	public void setSignalBlocks(Collection<? extends Collection<UUID>> blocks) {
+		signalBlockList.clear();
+		blocks.forEach(block -> signalBlockList.add(new ArrayList<>(block)));
+		blockSections = null;
 		blockRails.clear();
 		final Map<UUID, Set<UUID>> railSets = new HashMap<>();
 		blocks.forEach(block -> block.forEach(rail -> railSets.computeIfAbsent(rail, key -> new LinkedHashSet<>()).addAll(block)));
@@ -1591,26 +1638,29 @@ public final class TickRunner<T extends RunTrack> {
 			final int headIndex = MotionConstants.findIndex(this, railProgress, true);
 			final int tailIndex = MotionConstants.findIndex(this, railProgress - siding.trainCars * siding.spacing, false);
 			List<UUID> newBlockWatch = Collections.emptyList();
+			final double tailPosition = railProgress - siding.trainCars * siding.spacing;
 			for (int i = tailIndex; i <= headIndex; i++) {
 				final T track = path.get(i);
 				if (i > 0 && track.getStopId() != sidingRun.sidingId && track.hasSignal()) {
-					final UUID rail = track.getTrackKey();
-					if (!newRails.contains(rail)) {
-						newRails.add(rail);
-					}
-					// The whole block or nothing more, as the game's signals have it
-					final List<UUID> block = blockRails.get(rail);
-					if (block != null) {
-						if (newBlockWatch.isEmpty()) {
-							newBlockWatch = new ArrayList<>();
+					// The block sections of the rail the train is on: the whole rail, or the pieces of a long one it covers
+					for (final UUID rail : getCoveredUnits(i, tailPosition, railProgress)) {
+						if (!newRails.contains(rail)) {
+							newRails.add(rail);
 						}
-						newBlockWatch.addAll(block);
-						if (block.stream().noneMatch(blockRail -> isTakenByOther(blockRail, this))) {
-							block.forEach(blockRail -> {
-								if (!newRails.contains(blockRail)) {
-									newRails.add(blockRail);
-								}
-							});
+						// The whole section of its signal block or nothing more, as the game's signals have it
+						final List<UUID> block = getBlockSections().getSection(rail);
+						if (block != null) {
+							if (newBlockWatch.isEmpty()) {
+								newBlockWatch = new ArrayList<>();
+							}
+							newBlockWatch.addAll(block);
+							if (block.stream().noneMatch(blockRail -> isTakenByOther(blockRail, this))) {
+								block.forEach(blockRail -> {
+									if (!newRails.contains(blockRail)) {
+										newRails.add(blockRail);
+									}
+								});
+							}
 						}
 					}
 				}
@@ -1761,9 +1811,9 @@ public final class TickRunner<T extends RunTrack> {
 			final int headIndex = MotionConstants.findIndex(this, railProgress, false);
 			final int tailIndex = MotionConstants.findIndex(this, railProgress - trainLength, false);
 			// Head and tail stay on their rails, the train stays clear of the siding and of where it stops
-			double bound = Math.min(distances.get(headIndex), distances.get(nextStoppingIndex));
+			double bound = Math.min(getNextSectionStart(headIndex, railProgress), distances.get(nextStoppingIndex));
 			if (railProgress - trainLength >= 0) {
-				bound = Math.min(bound, distances.get(tailIndex) + trainLength);
+				bound = Math.min(bound, getNextSectionStart(tailIndex, railProgress - trainLength) + trainLength);
 			}
 			final double depotThreshold = siding.spacing * siding.trainCars + siding.railLength;
 			if (railProgress < depotThreshold) {
@@ -1790,6 +1840,10 @@ public final class TickRunner<T extends RunTrack> {
 			// Nothing within reach of braking on the way is taken, so the train won't have to stop short
 			final double reach = segment.getPositionAfter(low) + 0.5 * siding.maxSpeed * siding.maxSpeed / siding.deceleration + siding.maxSpeed + MotionConstants.BRAKING_MARGIN;
 			final int lastCheckIndex = nextPlatformIndex > 0 ? Math.min(nextPlatformIndex, path.size() - 1) : path.size() - 1;
+			// A taken section ahead on the rail the head is on
+			if (!Double.isNaN(getSectionBlockedPosition(headIndex, railProgress))) {
+				return 0;
+			}
 			// The next rail always counts, however far it starts, as the train's own look ahead has it
 			final int nextRail = MotionConstants.findIndex(this, railProgress, true) + 1;
 			for (int i = nextRail; i == nextRail || i <= lastCheckIndex && distances.get(i - 1) <= reach; i++) {
@@ -1861,7 +1915,9 @@ public final class TickRunner<T extends RunTrack> {
 				atPlatform = getStopId(nextStoppingIndex) != 0;
 				final int headIndex = MotionConstants.findIndex(HeadlessTrain.this, railProgress, true);
 				final boolean isOppositeRail = headIndex + 1 < path.size() && headIndex >= 0 && isOppositeRail(headIndex, headIndex + 1);
-				blocked = isRailOccupied(headIndex + (isOppositeRail ? 2 : 1));
+				// As the motion rules have it: only where it would move onto the next rail, or just ahead on its own
+				final int nextRail = headIndex + (isOppositeRail ? 2 : 1);
+				blocked = TrainMotion.isTakenAtStart(HeadlessTrain.this, HeadlessTrain.this, nextRail, isRailOccupied(nextRail)) || !isOppositeRail && TrainMotion.isSectionTakenJustAhead(HeadlessTrain.this, headIndex, railProgress);
 				hostHeld = hostHold != null;
 				// Overtaking trains aren't followed here, so only choosing a way on or a duty asks anything else
 				heldByClock = hostHeld || !service.isStayingOnLine() && service.getDutyDepartureMillis() <= 0 && !service.isOnDuty() && !service.mayChooseWayAtStop();
@@ -1893,7 +1949,61 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		private boolean isRailOccupied(int index) {
-			return index < path.size() && (isTakenByOther(path.get(index).getTrackKey(), this) || removedTracks.contains(path.get(index).getTrackKey()));
+			if (index >= path.size()) {
+				return false;
+			}
+			final UUID rail = path.get(index).getTrackKey();
+			if (removedTracks.contains(rail)) {
+				return true;
+			}
+			for (final UUID unit : getCoveredUnits(index, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
+				if (isTakenByOther(unit, this)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * @return the block sections of a rail of the path a part of the path covers: the rail's own key, or the pieces of a
+		 * rail cut into block sections
+		 */
+		private List<UUID> getCoveredUnits(int index, double fromPosition, double toPosition) {
+			final T track = path.get(index);
+			final double start = index == 0 ? 0 : distances.get(index - 1);
+			final double length = track.getTrackLength();
+			return transitsim.network.BlockSections.getPieces(track.getTrackKey(), length, cutSpeed(track), track.getStartNode() < track.getEndNode(), Math.max(0, fromPosition - start), Math.min(length, toPosition - start));
+		}
+
+		@Override
+		public double getSectionBlockedPosition(int rail, double fromPosition) {
+			if (rail <= 0 || rail >= path.size() || !path.get(rail).hasSignal()) {
+				return Double.NaN;
+			}
+			final T track = path.get(rail);
+			final double start = distances.get(rail - 1);
+			for (final Map.Entry<Double, UUID> piece : transitsim.network.BlockSections.getPieceStarts(track.getTrackKey(), track.getTrackLength(), cutSpeed(track), track.getStartNode() < track.getEndNode())) {
+				final double pieceStart = start + piece.getKey();
+				// Only sections from here on; the one the train is in is its own
+				if (pieceStart >= fromPosition - 1E-6 && isTakenByOther(piece.getValue(), this)) {
+					return pieceStart;
+				}
+			}
+			return Double.NaN;
+		}
+
+		/**
+		 * @return where on the path the next block section of this rail after this position starts, or the rail's end
+		 */
+		private double getNextSectionStart(int rail, double position) {
+			final T track = path.get(rail);
+			final double start = rail == 0 ? 0 : distances.get(rail - 1);
+			for (final Map.Entry<Double, UUID> piece : transitsim.network.BlockSections.getPieceStarts(track.getTrackKey(), track.getTrackLength(), cutSpeed(track), track.getStartNode() < track.getEndNode())) {
+				if (start + piece.getKey() > position + 1E-6) {
+					return start + piece.getKey();
+				}
+			}
+			return distances.get(rail);
 		}
 
 		/**

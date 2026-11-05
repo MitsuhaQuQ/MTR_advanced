@@ -41,6 +41,8 @@
   "gui.mtr.dwell_source_route": "路線設定",
   "gui.mtr.dwell_source_platform": "月台預設",
   "gui.mtr.rail_info": "軌道：%s 格，限速 %s km/h，%s，訊號分區 %s 個",
+  "gui.mtr.rail_sections": "%s，切成 %s 個閉塞區段，每段 %s 格，被佔：%s",
+  "gui.mtr.rail_sections_none": "無",
   "gui.mtr.rail_free": "空閒",
   "gui.mtr.rail_occupied": "佔用",
   "gui.mtr.timetable": "時刻表",

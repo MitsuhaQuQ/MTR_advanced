@@ -884,6 +884,13 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 	protected abstract boolean isRailBlocked(int checkIndex);
 
+	/**
+	 * See {@code MotionHooks.getSectionBlockedPosition}: where a taken block section of a long rail starts, or NaN.
+	 */
+	protected double getSectionBlockedPosition(int rail, double fromPosition) {
+		return Double.NaN;
+	}
+
 	protected abstract boolean skipScanBlocks(Level world, double trainX, double trainY, double trainZ);
 
 	protected abstract boolean openDoors(Level world, Block block, BlockPos checkPos, int dwellTicks);
@@ -1238,6 +1245,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		@Override
 		public boolean isRailBlocked(int rail) {
 			return Train.this.isRailBlocked(rail);
+		}
+
+		@Override
+		public double getSectionBlockedPosition(int rail, double fromPosition) {
+			return Train.this.getSectionBlockedPosition(rail, fromPosition);
 		}
 
 		@Override

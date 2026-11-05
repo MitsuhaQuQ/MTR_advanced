@@ -56,6 +56,17 @@ public interface MotionHooks {
 
 	boolean isRailBlocked(int rail);
 
+	/**
+	 * For a rail cut into block sections ({@code BlockSections}): where on the path the first section of it at or after this
+	 * position that another train has starts, so the train can follow as far as that. A rail in one section, or with none of
+	 * its sections taken ahead, gives NaN, and {@link #isRailBlocked} says whether it is taken as a whole.
+	 *
+	 * @param fromPosition a position on the path, as the train's rail progress counts it
+	 */
+	default double getSectionBlockedPosition(int rail, double fromPosition) {
+		return Double.NaN;
+	}
+
 	boolean openDoors();
 
 	/**

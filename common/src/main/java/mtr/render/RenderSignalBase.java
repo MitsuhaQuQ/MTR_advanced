@@ -99,41 +99,11 @@ public abstract class RenderSignalBase<T extends BlockEntityMapper> extends Bloc
 	}
 	// TODO temporary code end
 
+	/**
+	 * Counted in block sections ahead, as {@link mtr.client.SignalAspects} has it.
+	 */
 	private int getOccupiedAspect(BlockPos startPos, float facing) {
-		Map<BlockPos, Float> nodesToScan = new HashMap<>();
-		nodesToScan.put(startPos, facing);
-		int occupiedAspect = -1;
-
-		for (int j = 1; j < aspects; j++) {
-			final Map<BlockPos, Float> newNodesToScan = new HashMap<>();
-
-			for (final Map.Entry<BlockPos, Float> checkNode : nodesToScan.entrySet()) {
-				final Map<BlockPos, Rail> railMap = ClientData.RAILS.get(checkNode.getKey());
-
-				if (railMap != null) {
-					for (final BlockPos endPos : railMap.keySet()) {
-						final Rail rail = railMap.get(endPos);
-						if (rail.facingStart.similarFacing(checkNode.getValue())) {
-							if (ClientData.SIGNAL_BLOCKS.isOccupied(PathData.getRailProduct(checkNode.getKey(), endPos))) {
-								return j;
-							} else {
-								final Boolean isOccupied = ClientData.OCCUPIED_RAILS.get(PathData.getRailProduct(checkNode.getKey(), endPos));
-								if (isOccupied != null && isOccupied) {
-									return j;
-								}
-							}
-
-							newNodesToScan.put(endPos, rail.facingEnd.getOpposite().angleDegrees);
-							occupiedAspect = 0;
-						}
-					}
-				}
-			}
-
-			nodesToScan = newNodesToScan;
-		}
-
-		return occupiedAspect;
+		return mtr.client.SignalAspects.getAspect(startPos, facing, aspects);
 	}
 
 	private static BlockPos getNodePos(BlockGetter world, BlockPos pos, Direction facing) {

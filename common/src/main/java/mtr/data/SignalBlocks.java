@@ -17,6 +17,24 @@ public class SignalBlocks {
 
 	private final Map<UUID, Set<SignalBlock>> railToSignalBlocks = new HashMap<>();
 	private Map<UUID, Long> zones = Collections.emptyMap();
+	/**
+	 * The signal blocks cut into block sections, made again when the blocks or the interlocking colour change.
+	 */
+	private transitsim.network.BlockSections blockSections;
+	private static final transitsim.network.BlockSections.RailInfo UNKNOWN_RAILS = new transitsim.network.BlockSections.RailInfo() {
+		@Override
+		public double getLength(UUID rail) {
+			return 0;
+		}
+
+		@Override
+		public float getMaxSpeed(UUID rail) {
+			return 0;
+		}
+	};
+	private int sectionsVersion = -1;
+	private DyeColor sectionsColor;
+	private int sectionsRailsVersion;
 	private int zonesVersion = -1;
 	private DyeColor zonesColor;
 	public final List<SignalBlock> signalBlocks = new ArrayList<>();
@@ -80,22 +98,41 @@ public class SignalBlocks {
 		return 0;
 	}
 
+	/**
+	 * Takes a rail in one piece; see {@link #occupy(UUID, UUID, List, long)}.
+	 */
 	public void occupy(UUID currentRail, List<Map<UUID, Long>> trainPositions, long trainId) {
+		occupy(currentRail, currentRail, trainPositions, trainId);
+	}
+
+	/**
+	 * Takes a block section of a rail a train is on, and with it the rest of the section of each signal block it is in,
+	 * unless something else has part of that already.
+	 *
+	 * @param unit the rail's key, or the key of the piece of a long rail ({@code BlockSections})
+	 */
+	public void occupy(UUID currentRail, UUID unit, List<Map<UUID, Long>> trainPositions, long trainId) {
 		if (trainPositions.size() < 2) {
 			return;
 		}
 
-		// The rail under a train always counts, or a train that entered a taken signal block would be invisible to others
-		trainPositions.get(1).putIfAbsent(currentRail, trainId);
+		// The section under a train always counts, or a train that entered a taken signal block would be invisible to others
+		trainPositions.get(1).putIfAbsent(unit, trainId);
+		unitRails.putIfAbsent(unit, currentRail);
 
 		final Set<UUID> railsToAdd = new HashSet<>();
-		railsToAdd.add(currentRail);
+		railsToAdd.add(unit);
 
 		if (railToSignalBlocks.containsKey(currentRail)) {
-			railToSignalBlocks.get(currentRail).forEach(signalBlock -> {
-				railsToAdd.addAll(signalBlock.rails);
-				signalBlock.occupied = 2;
-			});
+			railToSignalBlocks.get(currentRail).forEach(signalBlock -> signalBlock.occupied = 2);
+			// Not cut yet, the blocks are taken whole, as with rails of unknown length
+			if (blockSections == null) {
+				updateSections(DyeColor.MAGENTA, UNKNOWN_RAILS);
+			}
+			final List<UUID> section = blockSections == null ? null : blockSections.getSection(unit);
+			if (section != null) {
+				railsToAdd.addAll(section);
+			}
 		}
 
 		for (final Map<UUID, Long> trainPositionsMap : trainPositions) {
@@ -107,7 +144,34 @@ public class SignalBlocks {
 		railsToAdd.forEach(rail -> trainPositions.get(1).put(rail, trainId));
 	}
 
+	/**
+	 * The rail of each unit trains took this tick, for telling clients which piece of which rail is taken.
+	 */
+	private final Map<UUID, UUID> unitRails = new HashMap<>();
+
+	/**
+	 * @return the rail and the number of the piece a unit trains have taken is, for the clients; a unit not known is a
+	 * whole rail
+	 */
+	public Map.Entry<UUID, Integer> getPiece(UUID unit, transitsim.network.BlockSections.RailInfo railInfo) {
+		final Map.Entry<UUID, Integer> inBlock = blockSections == null ? null : blockSections.getPiece(unit);
+		if (inBlock != null) {
+			return inBlock;
+		}
+		final UUID rail = unitRails.get(unit);
+		if (rail != null) {
+			final int count = transitsim.network.BlockSections.getPieceCount(railInfo.getLength(rail), railInfo.getMaxSpeed(rail));
+			for (int k = 0; k < count; k++) {
+				if (transitsim.network.BlockSections.getPieceKey(rail, k).equals(unit)) {
+					return new AbstractMap.SimpleImmutableEntry<>(rail, k);
+				}
+			}
+		}
+		return new AbstractMap.SimpleImmutableEntry<>(unit, 0);
+	}
+
 	public void resetOccupied() {
+		unitRails.clear();
 		signalBlocks.forEach(signalBlock -> {
 			if (signalBlock.isOccupied()) {
 				signalBlock.occupied--;
@@ -187,6 +251,33 @@ public class SignalBlocks {
 			blockRails.add(rails);
 		});
 		return blockRails;
+	}
+
+	/**
+	 * Works out the block sections of the signal blocks again if they have changed since: each block is one section, with
+	 * every piece of its rails.
+	 */
+	public void updateSections(DyeColor interlockColor, transitsim.network.BlockSections.RailInfo railInfo) {
+		updateSections(interlockColor, railInfo, 0);
+	}
+
+	/**
+	 * @param railsVersion a number that changes when what is known of the rails does, as on a client getting the rails near it
+	 */
+	public void updateSections(DyeColor interlockColor, transitsim.network.BlockSections.RailInfo railInfo, int railsVersion) {
+		if (blockSections == null || sectionsVersion != version || sectionsColor != interlockColor || sectionsRailsVersion != railsVersion) {
+			sectionsRailsVersion = railsVersion;
+			blockSections = new transitsim.network.BlockSections(getBlockRails(), railInfo);
+			sectionsVersion = version;
+			sectionsColor = interlockColor;
+		}
+	}
+
+	/**
+	 * @return the signal blocks as block sections, or null before {@link #updateSections}
+	 */
+	public transitsim.network.BlockSections getBlockSections() {
+		return blockSections;
 	}
 
 	/**

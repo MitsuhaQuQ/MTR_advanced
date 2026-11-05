@@ -100,12 +100,21 @@ public final class RenderRailInspect {
 	}
 
 	private static boolean isOccupied() {
-		return Boolean.TRUE.equals(ClientData.OCCUPIED_RAILS.get(aimedRailProduct)) || ClientData.SIGNAL_BLOCKS.isOccupied(aimedRailProduct);
+		final java.util.Set<Integer> pieces = ClientData.OCCUPIED_SECTIONS == null ? null : ClientData.OCCUPIED_SECTIONS.get(aimedRailProduct);
+		return pieces != null && !pieces.isEmpty() || Boolean.TRUE.equals(ClientData.OCCUPIED_RAILS.get(aimedRailProduct)) || ClientData.OCCUPIED_SECTIONS == null && ClientData.SIGNAL_BLOCKS.isOccupied(aimedRailProduct);
 	}
 
 	private static Component getInfoText() {
 		final String state = Text.translatable(isOccupied() ? "gui.mtr.rail_occupied" : "gui.mtr.rail_free").getString();
-		return Text.translatable("gui.mtr.rail_info", RailwayData.round(aimedRail.getLength(), 1), aimedRail.railType.speedLimit, state, ClientData.SIGNAL_BLOCKS.getSignalBlocksAtTrack(aimedRailProduct).size());
+		final Component info = Text.translatable("gui.mtr.rail_info", RailwayData.round(aimedRail.getLength(), 1), aimedRail.railType.speedLimit, state, ClientData.SIGNAL_BLOCKS.getSignalBlocksAtTrack(aimedRailProduct).size());
+		// A long rail is cut into block sections, each taken on its own
+		final int pieces = transitsim.network.BlockSections.getPieceCount(aimedRail.getLength(), mtr.data.TrainServer.cutSpeed(aimedRail.railType));
+		if (pieces <= 1) {
+			return info;
+		}
+		final java.util.Set<Integer> taken = ClientData.OCCUPIED_SECTIONS == null ? java.util.Collections.emptySet() : ClientData.OCCUPIED_SECTIONS.getOrDefault(aimedRailProduct, java.util.Collections.emptySet());
+		final String takenText = taken.isEmpty() ? Text.translatable("gui.mtr.rail_sections_none").getString() : taken.stream().sorted().map(piece -> String.valueOf(piece + 1)).collect(java.util.stream.Collectors.joining(", "));
+		return Text.translatable("gui.mtr.rail_sections", info.getString(), pieces, RailwayData.round(aimedRail.getLength() / pieces, 1), takenText);
 	}
 
 	private static boolean isLookingAtNode(Player player) {

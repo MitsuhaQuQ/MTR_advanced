@@ -41,6 +41,8 @@
   "gui.mtr.dwell_source_route": "线路设置",
   "gui.mtr.dwell_source_platform": "站台默认",
   "gui.mtr.rail_info": "轨道：%s 格，限速 %s km/h，%s，信号分区 %s 个",
+  "gui.mtr.rail_sections": "%s，切成 %s 个闭塞区段，每段 %s 格，被占：%s",
+  "gui.mtr.rail_sections_none": "无",
   "gui.mtr.rail_free": "空闲",
   "gui.mtr.rail_occupied": "占用",
   "gui.mtr.timetable": "时刻表",

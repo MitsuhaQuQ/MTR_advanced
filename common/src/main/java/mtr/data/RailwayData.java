@@ -148,6 +148,27 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	private final Level world;
 	private final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
+	/**
+	 * The length and speed limit of a rail by its key, for cutting signal blocks into block sections.
+	 */
+	private final transitsim.network.BlockSections.RailInfo railInfo = new transitsim.network.BlockSections.RailInfo() {
+		@Override
+		public double getLength(UUID rail) {
+			final Rail found = findRail(rail);
+			return found == null ? 0 : found.getLength();
+		}
+
+		@Override
+		public float getMaxSpeed(UUID rail) {
+			final Rail found = findRail(rail);
+			return found == null ? 0 : TrainServer.cutSpeed(found.railType);
+		}
+
+		private Rail findRail(UUID rail) {
+			final Map<BlockPos, Rail> connections = rails.get(BlockPos.of(rail.getMostSignificantBits()));
+			return connections == null ? null : connections.get(BlockPos.of(rail.getLeastSignificantBits()));
+		}
+	};
 	private final SignalBlocks signalBlocks = new SignalBlocks();
 	private final RailNodeRepair railNodeRepair = new RailNodeRepair();
 	/**
@@ -465,6 +486,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		lastSchedulesForPlatform.putAll(schedulesForPlatform);
 		schedulesForPlatform.clear();
 		signalBlocks.resetOccupied();
+		// Long rails and long signal blocks are cut into block sections, by what the rails are
+		signalBlocks.updateSections(SecurityConfig.interlockColor, railInfo);
 		final float ticksElapsed = tickCompensator.nextTick(System.currentTimeMillis());
 		// In a fixed order, so a tick runs the same way each time (fix F1, R03 of the architecture review)
 		final List<Siding> sortedSidings = sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).collect(Collectors.toList());
@@ -542,12 +565,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					railsToAdd.add(PathData.getRailProduct(startPos, endPos));
 				}
 			}));
+			// Every signal block's state, not only those near the player, so signals on long lines show what is there
 			final Map<Long, Boolean> signalBlockStatus = new HashMap<>();
+			signalBlocks.signalBlocks.forEach(signalBlock -> signalBlockStatus.put(signalBlock.id, signalBlock.isOccupied()));
 			final Map<UUID, Boolean> occupiedRails = new HashMap<>();
-			railsToAdd.forEach(rail -> {
-				signalBlocks.getSignalBlockStatus(signalBlockStatus, rail);
-				occupiedRails.put(rail, occupancy.isOccupiedNow(rail));
-			});
+			railsToAdd.forEach(rail -> occupiedRails.put(rail, occupancy.isOccupiedNow(rail)));
 
 			if (!platformIds.isEmpty() || !signalBlockStatus.isEmpty() || !occupiedRails.isEmpty()) {
 				final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -573,6 +595,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				occupiedRails.forEach((rail, occupied) -> {
 					packet.writeUUID(rail);
 					packet.writeBoolean(occupied);
+				});
+
+				// Every block section trains have taken, as its rail and which piece of it (BlockSections)
+				final Set<UUID> takenUnits = new HashSet<>(trainPositions.get(1).keySet());
+				packet.writeInt(takenUnits.size());
+				takenUnits.forEach(unit -> {
+					final Map.Entry<UUID, Integer> piece = signalBlocks.getPiece(unit, railInfo);
+					packet.writeUUID(piece.getKey());
+					packet.writeInt(piece.getValue());
 				});
 
 				if (packet.readableBytes() <= MAX_PACKET_BYTES) {

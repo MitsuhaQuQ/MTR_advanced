@@ -64,6 +64,11 @@ public final class ClientData {
 	public static final Map<Long, mtr.path.PathFailure> ROUTE_PATH_FAILURES = new HashMap<>();
 	public static final Map<Long, TimetableConflicts.Result> TIMETABLE_CONFLICTS = new HashMap<>();
 	public static final Map<UUID, Boolean> OCCUPIED_RAILS = new HashMap<>();
+	/**
+	 * Every block section trains have taken, all over the world: the pieces taken of each rail, by its key, the first being
+	 * 0 ({@code BlockSections}); null from a server that doesn't send them.
+	 */
+	public static Map<UUID, Set<Integer>> OCCUPIED_SECTIONS = null;
 	public static final Map<BlockPos, Map<BlockPos, Rail>> RAILS = new HashMap<>();
 	public static final Set<TrainClient> TRAINS = new HashSet<>();
 	public static final List<DataConverter> RAIL_ACTIONS = new ArrayList<>();
@@ -298,11 +303,23 @@ public final class ClientData {
 			occupiedRails.put(packet.readUUID(), packet.readBoolean());
 		}
 
+		final Map<UUID, Set<Integer>> occupiedSections;
+		if (packet.readableBytes() >= 4) {
+			occupiedSections = new HashMap<>();
+			final int sectionCount = packet.readInt();
+			for (int i = 0; i < sectionCount; i++) {
+				occupiedSections.computeIfAbsent(packet.readUUID(), key -> new HashSet<>()).add(packet.readInt());
+			}
+		} else {
+			occupiedSections = null;
+		}
+
 		client.execute(() -> {
 			clearAndAddAll(SCHEDULES_FOR_PLATFORM, tempSchedulesForPlatform);
 			SIGNAL_BLOCKS.writeSignalBlockStatus(signalBlockStatus);
 			OCCUPIED_RAILS.clear();
 			OCCUPIED_RAILS.putAll(occupiedRails);
+			OCCUPIED_SECTIONS = occupiedSections;
 		});
 	}
 
