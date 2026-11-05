@@ -46,7 +46,10 @@ task mtmLogicJar(type: Jar) {
 	archiveFileName = "mtm_logic.jar"
 	destinationDirectory = file("build/mtmLogic")
 	from("../resources/fabric/mtm_logic") {
-		expand "version": rootProject.mtm_version
+		// Only the metadata is filled in; the icon is a picture and must be copied as it is
+		filesMatching("fabric.mod.json") {
+			expand "version": rootProject.mtm_version
+		}
 	}
 }
 

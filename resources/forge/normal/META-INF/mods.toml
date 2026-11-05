@@ -77,7 +77,7 @@ version = "${mtm_version}"
 displayName = "MTM_Logic"
 authors = "Mitsuha_QuQ"
 description = "The version of this fork's own logic (the transit-sim component, the advanced editor and the rest of MTM), shown apart from the MTR version add-ons depend on."
-logoFile = "icon.png"
+logoFile = "mtm_logic_icon.png"
 
 [[dependencies.mtm_logic]]
 modId = "mtr"

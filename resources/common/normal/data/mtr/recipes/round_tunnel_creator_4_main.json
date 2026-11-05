@@ -1,0 +1,19 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"pattern": [
+		"T",
+		"I"
+	],
+	"key": {
+		"T": {
+			"item": "mtr:tunnel_creator_6_7"
+		},
+		"I": {
+			"tag": "c:iron_ingots"
+		}
+	},
+	"result": {
+		"item": "mtr:round_tunnel_creator_4",
+		"count": 1
+	}
+}
