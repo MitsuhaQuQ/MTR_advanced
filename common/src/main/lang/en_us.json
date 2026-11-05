@@ -89,7 +89,7 @@
   "gui.mtr.vehicle_service_types_suggestion": "All, or like local, express. Refresh the path after changing",
   "gui.mtr.platform_main_track": "Track: main line",
   "gui.mtr.platform_passing_track": "Track: passing track",
-  "gui.mtr.path_failure_boundary": "Refresh failed: the next station is past a pathfinding boundary. Add the boundary node near %s as a waypoint",
+  "gui.mtr.path_failure_boundary": "Refresh failed: blocked by isolation: the next station is past a pathfinding boundary. Add the boundary node near %s as a waypoint",
   "gui.mtr.region_filter_off": "Region filter (%s networks, %s regions)",
   "gui.mtr.region_filter_on": "Showing %s region(s), click to clear",
   "gui.mtr.region_filter_on_short": "%s region(s) ✕",
@@ -215,5 +215,16 @@
   "gui.mtr.editor_server_rejected": "%s changed some of these routes just now; the server didn't write them and the draft is kept",
   "gui.mtr.editor_server_deleted": "%s deleted something these changes are on; the server didn't write them and the draft is kept",
   "gui.mtr.editor_no_answer": "No answer from the server; the draft is kept, try again in a moment",
-  "gui.mtr.edit_failed": "Your change couldn't be made, so everything it touched was put back as it was"
+  "gui.mtr.edit_failed": "Your change couldn't be made, so everything it touched was put back as it was",
+  "gui.mtr.connecting_line": "Connecting line (other lines don't run over it, through services can)",
+  "gui.mtr.line_shortfall": "Needs %s trains to run every service, has %s; %s services a day have no train",
+  "gui.mtr.line_shortfall_suggest": "; add trains to %s",
+  "gui.mtr.track_up": "Up",
+  "gui.mtr.track_down": "Down",
+  "gui.mtr.track_both": "Both ways",
+  "gui.mtr.track_main": "main line",
+  "gui.mtr.track_passing": "passing track",
+  "gui.mtr.track_worked_out": " (from the routes: %s)",
+  "gui.mtr.path_failure_connecting_line": "Refresh failed: blocked by isolation: the path would run over connecting line %s (near %s); the rail can be released in the track diagram",
+  "gui.mtr.editor_bad_line_name": "The line name can't be empty or too long"
 }

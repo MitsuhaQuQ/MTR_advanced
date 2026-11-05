@@ -89,7 +89,7 @@
   "gui.mtr.vehicle_service_types_suggestion": "留空全部，如 普通,急行。改後刷新車廠路徑",
   "gui.mtr.platform_main_track": "軌道：正線",
   "gui.mtr.platform_passing_track": "軌道：待避線",
-  "gui.mtr.path_failure_boundary": "刷新失敗：下一站在尋路邊界的另一側，請把 %s 附近的邊界節點設為必經節點",
+  "gui.mtr.path_failure_boundary": "刷新失敗：被隔離擋住：下一站在尋路邊界的另一側，請把 %s 附近的邊界節點設為必經節點",
   "gui.mtr.region_filter_off": "區域篩選（%s 個線網，%s 個區域）",
   "gui.mtr.region_filter_on": "只顯示 %s 個區域，點擊取消",
   "gui.mtr.region_filter_on_short": "%s 個區域 ✕",
@@ -215,5 +215,16 @@
   "gui.mtr.editor_server_rejected": "%s 剛改過其中的線路，伺服器沒有寫入，草稿保留",
   "gui.mtr.editor_server_deleted": "%s 刪除了這些修改涉及的內容，伺服器沒有寫入，草稿保留",
   "gui.mtr.editor_no_answer": "沒有收到伺服器的回覆，草稿保留，稍後再試",
-  "gui.mtr.edit_failed": "你的修改沒能完成，涉及的內容都已恢復原樣"
+  "gui.mtr.edit_failed": "你的修改沒能完成，涉及的內容都已恢復原樣",
+  "gui.mtr.line_shortfall": "跑滿需要 %s 列，現有 %s 列，每天 %s 班沒有車",
+  "gui.mtr.line_shortfall_suggest": "，建議加到 %s",
+  "gui.mtr.track_up": "上行",
+  "gui.mtr.track_down": "下行",
+  "gui.mtr.track_both": "雙向",
+  "gui.mtr.track_main": "正線",
+  "gui.mtr.track_passing": "待避線",
+  "gui.mtr.track_worked_out": "（按路線推出：%s）",
+  "gui.mtr.path_failure_connecting_line": "刷新失敗：被隔離擋住：要經過聯絡線 %s（%s 附近），可以在配線圖裡放行這一段",
+  "gui.mtr.connecting_line": "聯絡線（別的路線線內不走，可以直通載客）",
+  "gui.mtr.editor_bad_line_name": "路線組名不能為空，也不能太長"
 }

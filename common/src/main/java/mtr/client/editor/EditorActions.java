@@ -15,6 +15,7 @@ import mtr.data.Route;
 import transitsim.plan.RouteTimetable;
 import mtr.data.Station;
 import mtr.data.TranslatedMessage;
+import mtr.data.TransportMode;
 import mtr.packet.EditGuard;
 import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
@@ -268,6 +269,10 @@ public final class EditorActions implements IPacket {
 			PacketTrainDataGuiClient.sendPathBoundaryC2S(net.minecraft.core.BlockPos.of(node1), net.minecraft.core.BlockPos.of(node2), operation.get("boundary").getAsBoolean());
 			return null;
 		}
+		// A new line has no route to copy (L4): only its stations, no services and no depot
+		if ("newRoute".equals(getString(operation, "type")) && getString(operation, "route").isEmpty()) {
+			return createRoute(null, operation, index, created);
+		}
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
 		if (route == null) {
 			return TranslatedMessage.get("gui.mtr.editor_route_missing");
@@ -342,7 +347,26 @@ public final class EditorActions implements IPacket {
 	 * way between the ends the player picked runs through, each at a track the player may have changed. The route it is
 	 * based on gives the line, colour, tables and depot; its stations aren't copied. Set times start empty.
 	 */
+	/**
+	 * @param source the route a new type copies, or null for a new line, which gets only its stations
+	 */
 	private static String createRoute(Route source, JsonObject operation, int index, JsonArray created) {
+		final TransportMode transportMode;
+		final String lineName;
+		if (source == null) {
+			try {
+				transportMode = TransportMode.valueOf(getString(operation, "mode"));
+			} catch (IllegalArgumentException e) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			lineName = getString(operation, "line").trim();
+			if (lineName.isEmpty() || lineName.length() > MAX_NAME_LENGTH) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_line_name");
+			}
+		} else {
+			transportMode = source.transportMode;
+			lineName = source.getLineName();
+		}
 		final String name = getString(operation, "name").trim();
 		final String serviceType = getString(operation, "serviceType").trim();
 		if (name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
@@ -366,7 +390,7 @@ public final class EditorActions implements IPacket {
 			if (platform == null) {
 				return TranslatedMessage.get("gui.mtr.editor_platform_missing", i + 1);
 			}
-			if (platform.transportMode != source.transportMode) {
+			if (platform.transportMode != transportMode) {
 				return TranslatedMessage.get("gui.mtr.editor_platform_mode", i + 1);
 			}
 		}
@@ -374,18 +398,21 @@ public final class EditorActions implements IPacket {
 		if (connectionError != null) {
 			return connectionError;
 		}
-		final Depot depot = operation.has("depot") ? ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot"))) : null;
-		if (depot != null && depot.transportMode != source.transportMode) {
+		final Depot depot = source != null && operation.has("depot") ? ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot"))) : null;
+		if (depot != null && depot.transportMode != transportMode) {
 			return TranslatedMessage.get("gui.mtr.editor_depot_mode");
 		}
 
-		final Route newRoute = source.duplicate();
+		final Route newRoute = source == null ? new Route(transportMode) : source.duplicate();
 		newRoute.name = name;
 		newRoute.serviceType = serviceType;
-		newRoute.lineName = source.getLineName();
+		newRoute.lineName = lineName;
 		if (operation.has("color")) {
 			// The line keeps the colour of its first route, which applyLineColors gives back to this one
 			newRoute.setOwnColor(operation.get("color").getAsInt() & 0xFFFFFF);
+			if (source == null) {
+				newRoute.color = operation.get("color").getAsInt() & 0xFFFFFF;
+			}
 		}
 		newRoute.editorManaged = true;
 
@@ -401,7 +428,8 @@ public final class EditorActions implements IPacket {
 			newRoute.timetable.entryPlatformId = 0;
 		}
 
-		final JsonArray services = operation.has("services") ? operation.getAsJsonArray("services") : new JsonArray();
+		// A new line starts with its stations only; services and depots are added afterwards
+		final JsonArray services = source != null && operation.has("services") ? operation.getAsJsonArray("services") : new JsonArray();
 		final int servicesTable = operation.has("table") ? operation.get("table").getAsInt() : 0;
 		if (services.size() > RouteTimetable.MAX_SERVICES) {
 			return TranslatedMessage.get("gui.mtr.editor_too_many_services", RouteTimetable.MAX_SERVICES);

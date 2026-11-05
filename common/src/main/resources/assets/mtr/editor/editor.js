@@ -291,7 +291,7 @@
 			owners.push({ boundaryOf: key });
 		});
 		draft.created.forEach(made => {
-			operations.push({ type: "newRoute", route: made.source, name: made.name, serviceType: made.serviceType, color: made.color, stops: made.stops, services: made.services, table: made.table, depot: made.depot || "" });
+			operations.push({ type: "newRoute", route: made.source, mode: made.mode || "", line: made.lineName || "", name: made.name, serviceType: made.serviceType, color: made.color, stops: made.stops, services: made.services, table: made.table, depot: made.depot || "" });
 			owners.push(made);
 		});
 		return { operations, owners };
@@ -1023,7 +1023,7 @@
 			sections.push(`<section class="draft-change"><h3>${escapeHtml(routeTitle(r))}</h3>${conflict}<ul>${items.length ? items.map(item => `<li>${item}</li>`).join("") : `<li>${tr("没有和游戏不同的地方")}</li>`}</ul>
 				<div class="draft-actions"><button type="button" data-diff-open="${id}">${tr("跳到这里")}</button>${entry.conflict ? "" : `<button type="button" data-diff-drop="${id}">${tr("放弃这条的草稿")}</button>`}</div></section>`);
 		});
-		draft.created.forEach(made => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length)}</li></ul></section>`));
+		draft.created.forEach(made => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${made.source ? tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length) : tr("新建线路：{0} 站", made.stops.length)}</li></ul></section>`));
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
 			const depot = depotById(depotId);
 			const slots = Object.values(entry.duties.sidings || {}).reduce((a, list) => a + list.length, 0);
@@ -1091,7 +1091,7 @@
 		}
 		const node = (attrs, caret, content, active) => `<div class="node${active ? " active" : ""}" tabindex="0" ${attrs}><span class="caret">${caret}</span>${content}</div>`;
 		const parts = [`<div class="section">${tr("线路")}</div><ul>`];
-		if (!data.lines.length) parts.push(`<li class="empty">${tr("没有线路")}</li>`);
+		if (!data.lines.length) parts.push(`<li class="empty">${tr("没有线路")}${data.canEdit ? ` <button type="button" data-new-line>${tr("＋ 新建线路")}</button>` : ""}</li>`);
 		data.lines.forEach(line => {
 			const open = state.openNodes.has("line:" + line.key) || line.key === state.line;
 			const count = line.routes.reduce((a, r) => a + r.services.length, 0);
@@ -1115,6 +1115,17 @@
 				parts.push(`</ul>`);
 			}
 			parts.push(`</li>`);
+		});
+		// New lines waiting in the draft, which aren't lines of the game yet
+		const draftLines = new Map();
+		draft.created.filter(made => !made.source && !data.lines.some(l => l.key === made.lineKey)).forEach(made => {
+			if (!draftLines.has(made.lineKey)) draftLines.set(made.lineKey, []);
+			draftLines.get(made.lineKey).push(made);
+		});
+		draftLines.forEach(list => {
+			parts.push(`<li>${node("", "▾", `<span class="swatch" style="background:${colorOf(list[0].color)}"></span><span class="label group-label">${tr("（草稿）{0}", escapeHtml(list[0].lineName))}</span>`, false)}<ul>`);
+			list.forEach(made => parts.push(`<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || tr("新建的线路，应用后才在游戏里出现；右键删除"))}">${made.error ? "!" : "•"}</span>`, false)}</li>`));
+			parts.push(`</ul></li>`);
 		});
 		parts.push(`</ul><div class="section">${tr("车厂")}</div><ul>`);
 		if (!data.depots.length) parts.push(`<li class="empty">${tr("没有车厂")}</li>`);
@@ -3653,6 +3664,176 @@
 		});
 	}
 
+	/**
+	 * A new line from nothing (L4): pick the transport mode, name the line and its type, and choose its stations along the
+	 * rails as for a new type, with the track picker. A new line has only its stations (the user's rule): no services and
+	 * no depot, which are added afterwards as for any route. Both ways are named up and down by where their ends lie,
+	 * north or east being up (L2).
+	 */
+	function newLineDialog() {
+		if (!data || !data.canEdit) return;
+		const modes = [...new Set(topo.platforms.filter(p => p.station && p.mode).map(p => p.mode))].sort();
+		if (!modes.length) {
+			openDialog(tr("新建线路"), `<p class="err">${tr("游戏里还没有属于车站、放在轨道上的站台，先在游戏里建车站和站台。")}</p>`, tr("关闭"), () => {});
+			return;
+		}
+		const modeNames = { TRAIN: tr("铁路"), BOAT: tr("船"), CABLE_CAR: tr("缆车"), AIRPLANE: tr("飞机") };
+		let stations = [], vias = [], models = [], lastMode = null, lastFrom = null, lastKey = null, pickDir = 0, routeError = "";
+		// A station once for each rail network it has tracks on, named with the network when it has tracks on several
+		const stationsOf = mode => {
+			const seen = new Map();
+			topo.platforms.forEach((p, i) => {
+				const key = p.station + "|" + p.network;
+				if (p.mode === mode && p.station && !seen.has(key)) seen.set(key, { key, station: p.station, network: p.network, track: i, name: shortName(p.stationName) });
+			});
+			const list = [...seen.values()];
+			const names = new Map();
+			list.forEach(s => names.set(s.name, (names.get(s.name) || 0) + 1));
+			list.forEach(s => { if (names.get(s.name) > 1) s.name += tr("（轨道网 {0}）", s.network); });
+			return list.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
+		};
+		const find = key => stations.find(s => s.key === key);
+		const tracksOf = key => {
+			const s = find(key);
+			return s ? stationTracks(s.track) : [];
+		};
+		const directionOfModel = model => {
+			const middle = p => topo.platforms[p].line ? [(topo.platforms[p].line[0] + topo.platforms[p].line[2]) / 2, (topo.platforms[p].line[1] + topo.platforms[p].line[3]) / 2] : null;
+			const a = middle(model.picks[0]), b = middle(model.picks[model.picks.length - 1]);
+			if (!a || !b) return "";
+			const dx = b[0] - a[0], dz = b[1] - a[1];
+			return Math.abs(dx) >= Math.abs(dz) ? (dx > 0 ? "up" : "down") : (dz < 0 ? "up" : "down");
+		};
+		const plan = form => {
+			const from = form.from.value, to = form.to.value, startTrack = form.fromTrack.value, both = form.both.checked;
+			const key = [form.mode.value, from, to, startTrack, both, vias.join(">")].join("|");
+			if (key === lastKey) return;
+			lastKey = key;
+			models = [];
+			routeError = "";
+			if (!from || !to || from === to) {
+				routeError = tr("选好不同的起点站和终点站");
+				return;
+			}
+			const make = (start, ends, stops, pinnedStart) => {
+				const tracks = findCorridor([start, ...stops.map(tracksOf), ends]);
+				if (!tracks || tracks.length < 2) return null;
+				const model = topologyModel(tracks, tracks.map(() => true), form.color.value);
+				if (pinnedStart >= 0) model.pins.set(0, pinnedStart);
+				const solution = solveStops(model.layers, model.picks, model.pins);
+				if (solution.ok) model.picks = solution.picks;
+				return model;
+			};
+			const forward = make(startTrack ? [+startTrack] : tracksOf(from), tracksOf(to), vias, startTrack ? +startTrack : -1);
+			if (!forward) {
+				routeError = tr("从{0}{1}到{2}沿轨道走不通", find(from).name, vias.length ? tr("经过选的途经站") : "", find(to).name);
+				return;
+			}
+			models.push(forward);
+			if (both) {
+				const backward = make(tracksOf(to), tracksOf(from), vias.slice().reverse(), -1);
+				if (backward) models.push(backward);
+				else routeError = tr("反方向沿轨道走不通，只建这个方向");
+			}
+		};
+		const nameOf = (form, model) => {
+			const base = `${form.line.value.trim()} ${form.type.value.trim()}`.trim();
+			if (models.length < 2) return base;
+			const direction = directionOfModel(model);
+			return direction ? `${base} ${tr(TRACK_DIRECTIONS[direction])}` : base;
+		};
+		const renderPicker = form => {
+			plan(form);
+			models.forEach(m => {
+				m.color = form.color.value;
+				m.onChange = () => renderPicker(form);
+			});
+			const network = find(form.from.value) ? find(form.from.value).network : null;
+			const sameNetwork = stations.filter(s => s.network === network);
+			form.querySelector("#dlg-vias").innerHTML = vias.map((key, k) => `<button type="button" class="table-chip" data-via="${k}" title="${tr("点一下去掉")}">${escapeHtml((find(key) || { name: "?" }).name)} ✕</button>`).join("") + `<select name="addVia"><option value="">${tr("＋ 途经站…")}</option>${sameNetwork.map(s => `<option value="${s.key}">${escapeHtml(s.name)}</option>`).join("")}</select>`;
+			const model = models[Math.min(pickDir, models.length - 1)];
+			form.querySelector(".dir-tabs").innerHTML = models.length > 1 ? models.map((m, i) => `<button type="button" class="table-chip${i === pickDir ? " on" : ""}" data-dir="${i}">${escapeHtml(stationLabel(m.picks[0]))} → ${escapeHtml(stationLabel(m.picks[m.picks.length - 1]))}</button>`).join("") : "";
+			form.querySelector("#dlg-pick").innerHTML = model ? topologyHtml(model) : "";
+			form.querySelector("#dlg-pick-summary").textContent = model ? stopsSummaryOf(model) : "";
+			form.querySelector("#dlg-route-error").textContent = routeError;
+			form.querySelector("#dlg-names").textContent = models.length && form.line.value.trim() && form.type.value.trim() ? tr("建出：{0}", models.map(m => nameOf(form, m)).join("、")) : "";
+		};
+		openDialog(tr("新建线路"), `
+			<div class="row"><label>${tr("交通方式")} <select name="mode">${modes.map(mode => `<option value="${mode}">${escapeHtml(modeNames[mode] || mode)}</option>`).join("")}</select></label>
+			<label>${tr("线路组名")} <input name="line" required maxlength="128" size="16" autocomplete="off" placeholder="${tr("1号线")}"></label></div>
+			<div class="row"><label>${tr("种别")} <input name="type" required placeholder="${tr("普通")}" maxlength="16" size="8" autocomplete="off"></label>
+			<label>${tr("颜色")} <input type="color" name="color" value="#2f6fd6"></label></div>
+			<div class="row"><label>${tr("起点")} <select name="from"></select></label><label>${tr("站台")} <select name="fromTrack"></select></label><label>${tr("终点")} <select name="to"></select></label></div>
+			<div class="row vias" id="dlg-vias"></div>
+			<label><input type="checkbox" name="both" checked> ${tr("反方向一起建")}</label>
+			<div class="picker">
+				<div class="picker-head"><b>${tr("车站和股道")}</b><span class="dir-tabs"></span></div>
+				<p class="hint">${tr("车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站。只列和起点轨道连在一起的车站。连线表示列车不掉头能开过去；点一股固定它，其他站自动换成走得通的股道；最下一行点一下在停车和通过之间切换。")}</p>
+				<p class="err" id="dlg-route-error"></p>
+				<div id="dlg-pick"></div>
+				<div class="hint" id="dlg-pick-summary"></div>
+			</div>
+			<p class="hint" id="dlg-names"></p>
+			<p class="hint">${tr("新线路只有车站表，没有班次和运用；时刻表、班次和车厂建好以后再加。先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理。")}</p>`, tr("新建"), form => {
+			const lineName = form.line.value.trim(), type = form.type.value.trim();
+			if (!lineName) return tr("写上线路组名，例如 1号线");
+			if (data.lines.some(l => l.key === form.mode.value + "|" + lineName.toLowerCase())) return tr("已经有这个线路组了，请用“新建 ▾ → 种别…”");
+			if (!type) return tr("写上种别名，例如 普通");
+			if (!models.length) return routeError || tr("选好起点和终点");
+			if (models.some(m => m.conflict)) return tr("有固定的股道连不起来");
+			const color = parseInt(form.color.value.slice(1), 16);
+			models.forEach((model, i) => {
+				draft.created.push({
+					key: "n" + Date.now().toString(36) + i, source: "", mode: form.mode.value, lineName, lineKey: form.mode.value + "|" + lineName.toLowerCase(), name: nameOf(form, model), serviceType: type, color,
+					stops: model.picks.map((p, k) => ({ platformId: topo.platforms[p].id, pass: !model.stop[k] && k > 0 && k < model.picks.length - 1 })),
+					services: [], table: 0, depot: "",
+				});
+			});
+			saveDraft();
+			renderAll();
+		}, form => {
+			if (form.mode.value !== lastMode) {
+				lastMode = form.mode.value;
+				stations = stationsOf(lastMode);
+				vias = [];
+				lastFrom = null;
+				form.from.innerHTML = stations.map(s => `<option value="${s.key}">${escapeHtml(s.name)}</option>`).join("");
+			}
+			if (form.from.value !== lastFrom) {
+				lastFrom = form.from.value;
+				const network = find(lastFrom) ? find(lastFrom).network : null;
+				// Only the stations the start's rails reach
+				const others = stations.filter(s => s.network === network && s.key !== lastFrom);
+				form.to.innerHTML = others.map(s => `<option value="${s.key}">${escapeHtml(s.name)}</option>`).join("");
+				vias = vias.filter(key => find(key) && find(key).network === network);
+				form.fromTrack.innerHTML = `<option value="">${tr("任一股")}</option>` + tracksOf(lastFrom).map(p => `<option value="${p}">${escapeHtml(trackLabel(topo.platforms[p].id, platformLabel(p), topo.platforms[p].passingTrack))}</option>`).join("");
+			}
+			if (form.addVia && form.addVia.value) {
+				vias.push(form.addVia.value);
+				form.addVia.value = "";
+			}
+			renderPicker(form);
+		});
+		const form = dialog.querySelector("form");
+		enableDiagramPanning(form, () => models[Math.min(pickDir, models.length - 1)]);
+		form.addEventListener("click", e => {
+			const tab = e.target.closest("[data-dir]");
+			if (tab) {
+				pickDir = +tab.dataset.dir;
+				renderPicker(form);
+				return;
+			}
+			const via = e.target.closest("[data-via]");
+			if (via) {
+				vias.splice(+via.dataset.via, 1);
+				renderPicker(form);
+				return;
+			}
+			const model = models[Math.min(pickDir, models.length - 1)];
+			if (model && topologyClick(model, e.target)) renderPicker(form);
+		});
+	}
+
 	/** The platform each stop uses, with a track change waiting in the draft. */
 	const platformsOf = r => draftOf(r) && draftOf(r).platforms ? draftOf(r).platforms : r.stops.map(stop => stop.platformId);
 
@@ -4311,7 +4492,13 @@
 	}
 
 	// ---------- Events ----------
-	$("tree").addEventListener("click", e => onTreeClick(e.target));
+	$("tree").addEventListener("click", e => {
+		if (e.target.closest("[data-new-line]")) {
+			newLineDialog();
+			return;
+		}
+		onTreeClick(e.target);
+	});
 	// Right-click a line for a new type, a route for a new table or a type copied from it, a new type for removing it
 	$("tree").addEventListener("contextmenu", e => {
 		const el = e.target.closest(".node");
@@ -4363,6 +4550,7 @@
 		const box = e.currentTarget.getBoundingClientRect();
 		const r = data && (state.route ? data.routeById.get(state.route) : currentLine() && currentLine().routes[0]);
 		openMenu(box.left, box.bottom + 4, [
+			[tr("线路…"), data && data.canEdit ? () => newLineDialog() : null],
 			[tr("种别…"), r && data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
 			[tr("时刻表…"), r ? () => tableDialog(r, -1) : null],
 			[tr("直通关系…"), data && data.routes.length > 1 ? () => throughDialog(r) : null],
