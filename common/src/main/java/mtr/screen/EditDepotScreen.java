@@ -4,6 +4,7 @@ import mtr.compat.GuiCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import mtr.client.ClientData;
 import mtr.client.IDrawing;
+import mtr.client.PathFailureText;
 import mtr.data.*;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -317,30 +318,8 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 	}
 
 	private String getPathStatusText() {
-		final BlockPos pos = BlockPos.of(data.clientPathFailure.pos);
-		switch (data.clientPathFailure.type) {
-			case OLD_SEARCH:
-				return Text.translatable("gui.mtr.path_failure_old_search").getString();
-			case MISSING_WAYPOINT:
-				return Text.translatable("gui.mtr.path_failure_missing_waypoint", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
-			case DISCONNECTED:
-				return Text.translatable("gui.mtr.path_failure_disconnected").getString();
-			case NO_ROUTE:
-				return Text.translatable("gui.mtr.path_failure_no_route").getString();
-			case TURN_BACK:
-				return Text.translatable("gui.mtr.path_failure_turn_back", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
-			case TURN_BACK_UNUSED:
-				return Text.translatable("gui.mtr.path_failure_turn_back_unused", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
-			case DUTY:
-				return Text.translatable("gui.mtr.path_failure_duty").getString();
-			case BOUNDARY:
-				return Text.translatable("gui.mtr.path_failure_boundary", pos.getX() + ", " + pos.getY() + ", " + pos.getZ()).getString();
-			case CONNECTING_LINE:
-				final Route connectingLine = ClientData.DATA_CACHE.routeIdMap.get(data.clientPathFailure.pos);
-				return Text.translatable("gui.mtr.path_failure_connecting_line", connectingLine == null ? String.valueOf(data.clientPathFailure.pos) : IGui.formatStationName(connectingLine.name)).getString();
-			default:
-				return ClientData.STALE_DEPOTS.contains(data.id) ? Text.translatable("gui.mtr.path_stale").getString() : "";
-		}
+		final String text = PathFailureText.get(data.clientPathFailure);
+		return text.isEmpty() && ClientData.STALE_DEPOTS.contains(data.id) ? Text.translatable("gui.mtr.path_stale").getString() : text;
 	}
 
 	/**

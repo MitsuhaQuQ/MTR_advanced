@@ -383,8 +383,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
-		packet.writeByte(failure.type.ordinal());
-		packet.writeLong(failure.pos);
+		failure.writePacket(packet);
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 
@@ -747,6 +746,14 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final long[][] times = search.getFastestTimes(route, dataCache);
 			return times == null ? new long[0][] : times;
 		}
+
+		/**
+		 * @return why the route has no path, or {@link PathFailure#NONE}, found by now with {@link #getFastestTimes}
+		 */
+		private PathFailure getFailure(Route route) {
+			final RoutePaths.RoutePath routePath = search.get(route, dataCache);
+			return routePath == null ? PathFailure.NONE : routePath.failure;
+		}
 	}
 
 	/**
@@ -772,7 +779,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	private static void calculateTimetableTimes(MinecraftServer minecraftServer, ServerPlayer player, RailwayData railwayData, Route route, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 		final boolean usesRoutePath = usesRoutePath(route);
-		final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, route, rails, canUseRailGraph(route) && !usesRoutePath ? DeterministicPathFinder.compile(rails, railwayData.pathBoundaries) : null, usesRoutePath ? new TimeSearch(railwayData, vehicles) : null);
+		final TimeSearch search = usesRoutePath ? new TimeSearch(railwayData, vehicles) : null;
+		final Supplier<long[][]> timeFinder = getTimeFinder(railwayData, route, rails, canUseRailGraph(route) && !usesRoutePath ? DeterministicPathFinder.compile(rails, railwayData.pathBoundaries) : null, search);
 
 		if (timeFinder == null) {
 			sendTimetableTimes(player, route.id, new long[0][]);
@@ -782,7 +790,9 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		new Thread(() -> {
 			try {
 				final long[][] times = timeFinder.get();
-				minecraftServer.execute(() -> sendTimetableTimes(player, route.id, times));
+				// The editor shows why a route has no times when its path can't be found
+				final PathFailure failure = search == null ? PathFailure.NONE : search.getFailure(route);
+				minecraftServer.execute(() -> sendTimetableTimes(player, route.id, times, failure));
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -846,6 +856,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	private static void sendTimetableTimes(ServerPlayer player, long routeId, long[][] times) {
+		sendTimetableTimes(player, routeId, times, PathFailure.NONE);
+	}
+
+	private static void sendTimetableTimes(ServerPlayer player, long routeId, long[][] times, PathFailure failure) {
 		final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
 		response.writeLong(routeId);
 		response.writeInt(times.length);
@@ -853,6 +867,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			response.writeLong(stopTime[0]);
 			response.writeLong(stopTime[1]);
 		}
+		failure.writePacket(response);
 		Registry.sendToPlayer(player, PACKET_TIMETABLE_TIMES, response);
 	}
 

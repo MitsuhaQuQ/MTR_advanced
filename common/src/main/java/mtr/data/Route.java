@@ -46,6 +46,12 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	 * between its first and last platform other routes' paths don't run over (decoupling document 5.4, L1).
 	 */
 	public boolean connectingLine;
+	/**
+	 * The rails of this connecting line that other routes may still run over, each as its two nodes in either order: track
+	 * it shares with another line, such as a crossover at a station throat, released by hand in the editor.
+	 */
+	public final List<long[]> connectingReleased = new ArrayList<>();
+	public static final int MAX_CONNECTING_RELEASED = 512;
 	public CircularState circularState;
 	public String lightRailRouteNumber;
 	public final List<RoutePlatform> platformIds;
@@ -103,6 +109,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_SERVICE_TYPE = "service_type";
 	private static final String KEY_EDITOR_MANAGED = "editor_managed";
 	private static final String KEY_CONNECTING_LINE = "connecting_line";
+	private static final String KEY_CONNECTING_RELEASED = "connecting_released";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
 
@@ -169,6 +176,11 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		serviceType = messagePackHelper.getString(KEY_SERVICE_TYPE);
 		editorManaged = messagePackHelper.getBoolean(KEY_EDITOR_MANAGED);
 		connectingLine = messagePackHelper.getBoolean(KEY_CONNECTING_LINE);
+		final List<Long> releasedNodes = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_CONNECTING_RELEASED, node -> releasedNodes.add(node.asIntegerValue().asLong()));
+		for (int i = 0; i + 1 < releasedNodes.size() && connectingReleased.size() < MAX_CONNECTING_RELEASED; i += 2) {
+			connectingReleased.add(new long[]{releasedNodes.get(i), releasedNodes.get(i + 1)});
+		}
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
@@ -246,6 +258,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		ownColor = packet.readInt();
 		editorManaged = packet.readBoolean();
 		connectingLine = packet.readBoolean();
+		readConnectingReleased(packet);
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
@@ -297,6 +310,11 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		messagePacker.packString(KEY_SERVICE_TYPE).packString(serviceType);
 		messagePacker.packString(KEY_EDITOR_MANAGED).packBoolean(editorManaged);
 		messagePacker.packString(KEY_CONNECTING_LINE).packBoolean(connectingLine);
+		messagePacker.packString(KEY_CONNECTING_RELEASED).packArrayHeader(connectingReleased.size() * 2);
+		for (final long[] rail : connectingReleased) {
+			messagePacker.packLong(rail[0]);
+			messagePacker.packLong(rail[1]);
+		}
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
@@ -340,7 +358,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 29 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 30 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -522,6 +540,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeInt(ownColor);
 		packet.writeBoolean(editorManaged);
 		packet.writeBoolean(connectingLine);
+		writeConnectingReleased(packet);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
@@ -561,6 +580,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 				ownColor = packet.readInt();
 				editorManaged = packet.readBoolean();
 				connectingLine = packet.readBoolean();
+				readConnectingReleased(packet);
 				break;
 			case KEY_TIMETABLE_SERVICES:
 				readTimetable(packet);
@@ -636,7 +656,27 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeInt(ownColor);
 		packet.writeBoolean(editorManaged);
 		packet.writeBoolean(connectingLine);
+		writeConnectingReleased(packet);
 		sendPacket.accept(packet);
+	}
+
+	private void writeConnectingReleased(FriendlyByteBuf packet) {
+		packet.writeInt(connectingReleased.size());
+		connectingReleased.forEach(rail -> {
+			packet.writeLong(rail[0]);
+			packet.writeLong(rail[1]);
+		});
+	}
+
+	private void readConnectingReleased(FriendlyByteBuf packet) {
+		connectingReleased.clear();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			final long[] rail = {packet.readLong(), packet.readLong()};
+			if (i < MAX_CONNECTING_RELEASED) {
+				connectingReleased.add(rail);
+			}
+		}
 	}
 
 	public void setCustomPath(Consumer<FriendlyByteBuf> sendPacket) {
@@ -661,6 +701,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		route.isHidden = isHidden;
 		route.disableNextStationAnnouncements = disableNextStationAnnouncements;
 		route.connectingLine = connectingLine;
+		connectingReleased.forEach(rail -> route.connectingReleased.add(rail.clone()));
 		route.circularState = circularState;
 		route.lightRailRouteNumber = lightRailRouteNumber;
 		route.lineName = lineName;

@@ -51,7 +51,7 @@
 	 * Changes not yet applied to the game, saved as they are made so closing the page or the game doesn't lose them. Each
 	 * route's entry keeps the revision it was made from, so a change made in the game since is noticed before applying.
 	 */
-	let draft = { routes: {}, created: [], duties: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -100,6 +100,7 @@
 		});
 		if (!Array.isArray(draft.created)) draft.created = [];
 		if (!draft.duties || typeof draft.duties !== "object") draft.duties = {};
+		if (!draft.boundaries || typeof draft.boundaries !== "object") draft.boundaries = {};
 		draftLoaded = true;
 	}
 
@@ -112,7 +113,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -133,6 +134,77 @@
 	const isConnecting = r => draftOf(r) && "connectingLine" in draftOf(r) ? draftOf(r).connectingLine : Boolean(r.connectingLine);
 	// A type marked for deletion stays in the game until the draft is applied
 	const isDeleted = r => Boolean(draftOf(r) && draftOf(r).deleted);
+
+	// Why changes to boundaries the game didn't take failed, kept until they are changed or applied again
+	const boundaryErrors = {};
+	const railKey = (a, b) => (BigInt(a) < BigInt(b) ? a + "," + b : b + "," + a);
+	/** The rails of a connecting line released to other routes, as the draft has them. */
+	const releasedOf = r => draftOf(r) && draftOf(r).connectingReleased ? draftOf(r).connectingReleased : (r.connectingReleased || []);
+
+	/** Releases a rail of a connecting line to other routes, or takes it back, in the draft. */
+	function toggleReleased(r, a, b) {
+		const entry = draftEntry(r), key = railKey(a, b);
+		const released = releasedOf(r).filter(rail => railKey(rail[0], rail[1]) !== key);
+		if (released.length === releasedOf(r).length) released.push([a, b]);
+		const original = new Set((r.connectingReleased || []).map(rail => railKey(rail[0], rail[1])));
+		if (released.length === original.size && released.every(rail => original.has(railKey(rail[0], rail[1])))) delete entry.connectingReleased;
+		else entry.connectingReleased = released;
+		if (!entry.conflict) delete entry.error;
+		tidyDraft(r.id);
+		saveDraft();
+		renderAll();
+	}
+
+	/**
+	 * How a rail of a route's track diagram is drawn: a rail a connecting line takes from other routes, one released, or
+	 * an ordinary one. A connecting line's own diagram shows its draft.
+	 */
+	function railMarker(result, r, readOnly) {
+		const keys = result.railKeys || [], canEdit = data.canEdit && !readOnly;
+		const released = r && r.connectingLine ? new Set(releasedOf(r).map(rail => railKey(rail[0], rail[1]))) : null;
+		return index => {
+			const entry = keys[index];
+			if (!entry) return { cls: "", attrs: "", title: "" };
+			const [a, b, status] = entry, key = railKey(a, b);
+			const drafted = draft.boundaries && key in draft.boundaries;
+			const boundary = drafted ? draft.boundaries[key] : status === 3;
+			// Right-click any rail to change its isolation; a connecting line's own rails also switch with a click
+			const attrs = canEdit ? ` data-rail="${a},${b}" data-rail-status="${status}"` : "";
+			if (boundary) return { cls: " boundary" + (canEdit ? " clickable" : ""), attrs, title: `<title>${escapeHtml(tr("寻路边界：所有寻路都不过这段") + (drafted ? tr("（草稿）") : ""))}</title>` };
+			if (status !== 1 && status !== 2) return { cls: drafted ? " unbounded" : "", attrs, title: drafted ? `<title>${escapeHtml(tr("取消寻路边界（草稿）"))}</title>` : "" };
+			const isReleased = released ? released.has(key) : status === 2;
+			const editable = released && canEdit;
+			const title = isReleased ? tr("联络线的这段已放行，别的线路可以走") : tr("联络线独占，别的线路不走");
+			return {
+				cls: (isReleased ? " released" : " connecting") + (canEdit ? " clickable" : ""),
+				attrs: attrs + (editable ? ` data-release="${a},${b}"` : ""),
+				title: `<title>${escapeHtml(title + (editable ? tr("；点一下切换") : ""))}</title>`
+			};
+		};
+	}
+
+	/** Sets or clears a pathfinding boundary on a rail in the draft, sent with the in-game boundary packet when applied. */
+	function setBoundary(a, b, boundary, wasBoundary) {
+		const key = railKey(a, b);
+		if (boundary === wasBoundary) delete draft.boundaries[key];
+		else draft.boundaries[key] = boundary;
+		delete boundaryErrors[key];
+		saveDraft();
+		renderAll();
+	}
+
+	/** The menu of a rail in a track diagram: its isolation, as a boundary for every search or a connecting line's. */
+	function railMenu(e, r, rail, rerender) {
+		const [a, b] = rail.dataset.rail.split(","), status = +rail.dataset.railStatus, key = railKey(a, b);
+		const wasBoundary = status === 3;
+		const boundary = key in draft.boundaries ? draft.boundaries[key] : wasBoundary;
+		const items = [[boundary ? tr("取消寻路边界") : tr("设为寻路边界"), () => { setBoundary(a, b, !boundary, wasBoundary); rerender(); }]];
+		if (r && r.connectingLine && (status === 1 || status === 2)) {
+			const released = releasedOf(r).some(other => railKey(other[0], other[1]) === key);
+			items.push([released ? tr("取消放行") : tr("放行（别的线路可以走）"), () => { toggleReleased(r, a, b); rerender(); }]);
+		}
+		openMenu(e.clientX, e.clientY, items);
+	}
 
 	/** A connecting line: other lines' paths keep off its rails, while services can run through it with passengers. */
 	function setConnecting(r, connecting) {
@@ -190,10 +262,19 @@
 				operations.push({ type: "connectingLine", route: id, base, parts, force: Boolean(entry.force), connectingLine: entry.connectingLine });
 				owners.push(id);
 			}
+			if (entry.connectingReleased) {
+				operations.push({ type: "connectingRelease", route: id, base, parts, force: Boolean(entry.force), rails: entry.connectingReleased });
+				owners.push(id);
+			}
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
 			operations.push({ type: "duties", depot: depotId, duties: entry.duties });
 			owners.push({ dutiesOf: depotId });
+		});
+		Object.entries(draft.boundaries || {}).forEach(([key, boundary]) => {
+			const [a, b] = key.split(",");
+			operations.push({ type: "pathBoundary", a, b, boundary });
+			owners.push({ boundaryOf: key });
 		});
 		draft.created.forEach(made => {
 			operations.push({ type: "newRoute", route: made.source, name: made.name, serviceType: made.serviceType, color: made.color, stops: made.stops, services: made.services, table: made.table, depot: made.depot || "" });
@@ -218,6 +299,8 @@
 				if (typeof id === "object") {
 					if (id.dutiesOf) {
 						if (draft.duties[id.dutiesOf]) draft.duties[id.dutiesOf].error = error.message;
+					} else if (id.boundaryOf) {
+						boundaryErrors[id.boundaryOf] = error.message;
 					} else {
 						id.error = error.message;
 					}
@@ -231,6 +314,10 @@
 			owners.forEach(id => { if (!failed.has(id) && typeof id === "string") delete draft.routes[id]; });
 			draft.created = draft.created.filter(made => failed.has(made));
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
+			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
+				delete draft.boundaries[owner.boundaryOf];
+				delete boundaryErrors[owner.boundaryOf];
+			});
 			applyResult = { ok: result.ok, general: (result.errors || []).filter(error => error.index < 0).map(error => error.message), applied: owners.filter(id => !failed.has(id)).length };
 		} catch (e) {
 			applyResult = { ok: false, general: [e.message === "401" ? tr("页面的链接已经失效") : tr("发送失败，游戏可能已经关闭")], applied: 0 };
@@ -832,6 +919,7 @@
 		if (entry.deleted) items.push(tr("删除这个种别"));
 		if ("managed" in entry) items.push(entry.managed ? tr("改由高级编辑器管理") : tr("交回游戏内编辑"));
 		if ("connectingLine" in entry) items.push(entry.connectingLine ? tr("设为联络线") : tr("取消联络线"));
+		if (entry.connectingReleased) items.push(tr("联络线放行 {0} 段", entry.connectingReleased.length));
 		if (entry.platforms) {
 			// Each platform by its station and number, from the stops that use it or could
 			const names = new Map();
@@ -927,12 +1015,27 @@
 			const slots = Object.values(entry.duties.sidings || {}).reduce((a, list) => a + list.length, 0);
 			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul><li>${tr("运用改了：{0}，{1} 个运用", entry.duties.mode === "diagram" ? tr("按运用图") : tr("在线预约"), slots)}</li></ul></section>`);
 		});
+		const boundaryKeys = Object.keys(draft.boundaries || {});
+		if (boundaryKeys.length) {
+			const added = boundaryKeys.filter(key => draft.boundaries[key]).length;
+			const errors = boundaryKeys.map(key => boundaryErrors[key]).filter(Boolean);
+			sections.push(`<section class="draft-change"><h3>${tr("隔离")}</h3>${errors.length ? `<p class="err">${escapeHtml(errors[0])}</p>` : ""}<ul>${added ? `<li>${tr("设为寻路边界 {0} 段", added)}</li>` : ""}${boundaryKeys.length - added ? `<li>${tr("取消寻路边界 {0} 段", boundaryKeys.length - added)}</li>` : ""}</ul>
+				<div class="draft-actions"><button type="button" data-diff-boundaries>${tr("放弃隔离的草稿")}</button></div></section>`);
+		}
 		openDialog(tr("草稿的改动"), `<p class="hint">${tr("和游戏里现在的版本比。按“应用”才发给游戏。")}</p><div class="draft-changes">${sections.join("")}</div>`, tr("关闭"), () => {});
 	}
 
 	$("draft-tag").addEventListener("click", draftChangesDialog);
 	dialog.addEventListener("click", e => {
 		const open = e.target.closest("[data-diff-open]"), drop = e.target.closest("[data-diff-drop]"), keep = e.target.closest("[data-diff-keep]");
+		if (e.target.closest("[data-diff-boundaries]")) {
+			e.preventDefault();
+			draft.boundaries = {};
+			saveDraft();
+			renderAll();
+			dialog.close();
+			return;
+		}
 		if (!open && !drop && !keep) return;
 		e.preventDefault();
 		if (open) {
@@ -1781,7 +1884,7 @@
 		const timetable = timetableOf(r), today = timetable.tables.findIndex(table => table.weekdays >> state.weekday & 1);
 		const managed = isManaged(r), pending = draftOf(r) && "managed" in draftOf(r), drafted = Boolean(draftOf(r) && draftOf(r).timetable);
 		const connecting = isConnecting(r), connectingPending = draftOf(r) && "connectingLine" in draftOf(r);
-		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>
+		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>${r.pathFailure ? `<span class="err">${escapeHtml(r.pathFailure)}</span>` : ""}
 			<span class="pill${managed ? " managed" : ""}" title="${tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}">${managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}${pending ? tr("（草稿）") : ""}</span>
 			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button>
 			${connecting ? `<span class="pill" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${tr("联络线")}${connectingPending ? tr("（草稿）") : ""}</span>` : ""}
@@ -3273,7 +3376,9 @@
 				const radius = (laneH + 24) / 2, endX = x0 + foldX;
 				parts.push(`<path d="M${endX.toFixed(1)},${y0} a${radius},${radius} 0 0 1 0,${2 * radius}" class="route-path" fill="none" style="stroke:${color}"/>`);
 			}
-			layout.rails.forEach(rail => {
+			const marker = railMarker(layout, null, true);
+			layout.rails.forEach((rail, index) => {
+				const mark = marker(index);
 				// A rail running beside the route at about the same distance from it is drawn at that distance, so the small
 				// wobbles of its curves don't show; where it really turns away it is drawn as it goes
 				const offsets = [];
@@ -3283,7 +3388,7 @@
 				const steady = d => Math.abs(d - usual) <= RAIL_WOBBLE_BLOCKS ? usual : d;
 				let points = [];
 				const flush = () => {
-					if (points.length > 1) parts.push(`<polyline points="${points.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" class="rail"/>`);
+					if (points.length > 1) parts.push(`<polyline points="${points.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" class="rail${mark.cls}"${mark.attrs}>${mark.title}</polyline>`);
 					points = [];
 				};
 				for (let k = 0; k + 1 < rail.length; k += 2) {
@@ -3378,10 +3483,23 @@
 		const form = dialog.querySelector("form");
 		render(form);
 		load(form, true);
+		form.addEventListener("contextmenu", e => {
+			const rail = e.target.closest("[data-rail]");
+			if (!rail) return;
+			e.preventDefault();
+			railMenu(e, r, rail, () => render(form));
+		});
 		form.addEventListener("click", e => {
 			const zoom = e.target.closest("[data-route-zoom]");
 			const side = e.target.closest("[data-route-side]");
 			const station = e.target.closest("[data-route-stop]");
+			const release = e.target.closest("[data-release]");
+			if (release) {
+				const [a, b] = release.dataset.release.split(",");
+				toggleReleased(r, a, b);
+				render(form);
+				return;
+			}
 			if (zoom) view.scale = Math.max(0.05, Math.min(8, view.scale * (zoom.dataset.routeZoom === "in" ? 1.5 : 1 / 1.5)));
 			else if (side) view.side = +side.dataset.routeSide;
 			else if (station) {
@@ -3410,12 +3528,15 @@
 		const pass = timetableOf(r).pass;
 		const parts = [`<svg class="route-diagram" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${tr("线路配线图")}">`];
 		parts.push(`<line x1="${x(0)}" y1="${middle}" x2="${x(result.length)}" y2="${middle}" class="route-path" style="stroke:${color}"/>`);
-		result.rails.forEach(piece => {
+		const marker = railMarker(result, r);
+		result.rails.forEach((piece, index) => {
 			const points = [];
 			for (let k = 0; k + 1 < piece.length; k += 2) points.push(`${x(piece[k])},${y(piece[k + 1])}`);
-			parts.push(`<polyline points="${points.join(" ")}" class="rail"/>`);
+			const mark = marker(index);
+			parts.push(`<polyline points="${points.join(" ")}" class="rail${mark.cls}"${mark.attrs}>${mark.title}</polyline>`);
 		});
 		result.turnouts.forEach(t => parts.push(`<circle cx="${x(t[0])}" cy="${y(t[1])}" r="2.5" class="turnout"/>`));
+		(result.boundaryNodes || []).forEach(node => parts.push(`<circle cx="${x(node[0])}" cy="${y(node[1])}" r="4" class="boundary-node"><title>${escapeHtml(tr("寻路边界节点（在游戏里节点界面改）"))}</title></circle>`));
 		result.platforms.forEach(p => {
 			const ours = routePlatforms.has(p.id);
 			const line = p.line;
@@ -3433,6 +3554,7 @@
 		return `<div class="route-diagram-wrap">${parts.join("")}</div>`
 			+ (missing ? `<p class="hint">${tr("有 {0} 站的站台不在路径上，没有标出。", missing)}</p>` : "")
 			+ (result.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : "")
+			+ `<p class="hint">${tr("隔离：红色是寻路边界，所有寻路都不过；橙色虚线是联络线独占，别的线路不走；灰色虚线是已放行。")}${data.canEdit ? tr("右键一段轨道改隔离，放进草稿，应用后刷新车厂。") : ""}</p>`
 			+ `<p class="hint">${tr("全长约 {0} 格，路径两侧各 {1} 格以内的轨道。红色、黄色的站名是股道有问题的站。", Math.round(result.length), result.halfWidth)}</p>`;
 	}
 

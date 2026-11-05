@@ -1,6 +1,8 @@
 package mtr.data;
 
 import transitsim.plan.RouteTimetable;
+import io.netty.buffer.Unpooled;
+import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.Test;
 import org.msgpack.core.MessageBufferPacker;
 import org.msgpack.core.MessagePack;
@@ -10,6 +12,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,6 +29,38 @@ class RouteTimetableSaveTest {
 		final Route newRoute = new Route(RailwayData.castMessagePackValueToSKMap(unpacker.unpackValue()));
 		assertFalse(unpacker.hasNext());
 		return newRoute;
+	}
+
+	@Test
+	void connectingLineSurvivesSavingAndPackets() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.connectingLine = true;
+		route.connectingReleased.add(new long[]{5, 6});
+		route.connectingReleased.add(new long[]{9, 7});
+
+		final Route saved = saveAndLoad(route);
+		assertTrue(saved.connectingLine);
+		assertEquals(2, saved.connectingReleased.size());
+		assertArrayEquals(new long[]{9, 7}, saved.connectingReleased.get(1));
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		route.writePacket(packet);
+		final Route sent = new Route(packet);
+		assertTrue(sent.connectingLine);
+		assertArrayEquals(new long[]{5, 6}, sent.connectingReleased.get(0));
+
+		// The extra data the edit screens and the editor send
+		final Route updated = new Route(route.id, TransportMode.TRAIN);
+		route.setExtraData(extraData -> {
+			extraData.readLong();
+			extraData.readUtf();
+			updated.update(extraData.readUtf(), extraData);
+		});
+		assertTrue(updated.connectingLine);
+		assertEquals(2, updated.connectingReleased.size());
+		assertEquals(2, route.duplicate().connectingReleased.size());
 	}
 
 	@Test

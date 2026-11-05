@@ -1,5 +1,6 @@
 package mtr.path;
 
+import net.minecraft.network.FriendlyByteBuf;
 import mtr.data.Rail;
 import mtr.data.SavedRailBase;
 import net.minecraft.core.BlockPos;
@@ -17,10 +18,37 @@ public final class PathFailure {
 
 	public final Type type;
 	public final long pos;
+	/**
+	 * The two nodes of the rail in the way, or 0: for {@link Type#CONNECTING_LINE}, the first rail of the connecting line
+	 * the route would have to run over.
+	 */
+	public final long node1;
+	public final long node2;
 
 	public PathFailure(Type type, long pos) {
+		this(type, pos, 0, 0);
+	}
+
+	public PathFailure(Type type, long pos, long node1, long node2) {
 		this.type = type;
 		this.pos = pos;
+		this.node1 = node1;
+		this.node2 = node2;
+	}
+
+	public void writePacket(FriendlyByteBuf packet) {
+		packet.writeByte(type.ordinal());
+		packet.writeLong(pos);
+		packet.writeLong(node1);
+		packet.writeLong(node2);
+	}
+
+	public static PathFailure readPacket(FriendlyByteBuf packet) {
+		final int type = packet.readByte();
+		final long pos = packet.readLong();
+		final long node1 = packet.readLong();
+		final long node2 = packet.readLong();
+		return new PathFailure(type >= 0 && type < Type.values().length ? Type.values()[type] : Type.NO_ROUTE, pos, node1, node2);
 	}
 
 	/**

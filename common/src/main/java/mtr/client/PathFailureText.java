@@ -1,0 +1,54 @@
+package mtr.client;
+
+import mtr.data.IGui;
+import mtr.data.Route;
+import mtr.mappings.Text;
+import mtr.path.PathFailure;
+import net.minecraft.core.BlockPos;
+
+/**
+ * Why a path couldn't be found, in words, for the depot screen and the advanced editor's route view.
+ */
+public final class PathFailureText {
+
+	private PathFailureText() {
+	}
+
+	/**
+	 * @return the message, or empty for {@link PathFailure#NONE}
+	 */
+	public static String get(PathFailure failure) {
+		final BlockPos pos = BlockPos.of(failure.pos);
+		switch (failure.type) {
+			case OLD_SEARCH:
+				return Text.translatable("gui.mtr.path_failure_old_search").getString();
+			case MISSING_WAYPOINT:
+				return Text.translatable("gui.mtr.path_failure_missing_waypoint", format(pos)).getString();
+			case DISCONNECTED:
+				return Text.translatable("gui.mtr.path_failure_disconnected").getString();
+			case NO_ROUTE:
+				return Text.translatable("gui.mtr.path_failure_no_route").getString();
+			case TURN_BACK:
+				return Text.translatable("gui.mtr.path_failure_turn_back", format(pos)).getString();
+			case TURN_BACK_UNUSED:
+				return Text.translatable("gui.mtr.path_failure_turn_back_unused", format(pos)).getString();
+			case DUTY:
+				return Text.translatable("gui.mtr.path_failure_duty").getString();
+			case BOUNDARY:
+				return Text.translatable("gui.mtr.path_failure_boundary", format(pos)).getString();
+			case CONNECTING_LINE:
+				final Route connectingLine = ClientData.DATA_CACHE.routeIdMap.get(failure.pos);
+				// The rail in the way, by the middle of its two ends
+				final BlockPos node1 = BlockPos.of(failure.node1);
+				final BlockPos node2 = BlockPos.of(failure.node2);
+				final BlockPos middle = new BlockPos((node1.getX() + node2.getX()) / 2, (node1.getY() + node2.getY()) / 2, (node1.getZ() + node2.getZ()) / 2);
+				return Text.translatable("gui.mtr.path_failure_connecting_line", connectingLine == null ? String.valueOf(failure.pos) : IGui.formatStationName(connectingLine.name), format(middle)).getString();
+			default:
+				return "";
+		}
+	}
+
+	private static String format(BlockPos pos) {
+		return pos.getX() + ", " + pos.getY() + ", " + pos.getZ();
+	}
+}

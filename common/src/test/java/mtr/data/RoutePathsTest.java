@@ -6,6 +6,7 @@ import mtr.path.PathFailure;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 import transitsim.network.RailGraph;
+import transitsim.network.RailKeys;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -94,6 +95,15 @@ class RoutePathsTest {
 		assertFalse(throughPath.isFound());
 		assertEquals(PathFailure.Type.CONNECTING_LINE, throughPath.failure.type);
 		assertEquals(connectingLine.id, throughPath.failure.pos);
+		// It names the rail in the way, between P and Q
+		assertEquals(RailKeys.of(new BlockPos(0, 64, 120).asLong(), new BlockPos(0, 64, 200).asLong()), RailKeys.of(throughPath.failure.node1, throughPath.failure.node2));
+
+		// Released, that rail can be run over by the others again
+		connectingLine.connectingReleased.add(new long[]{new BlockPos(0, 64, 200).asLong(), new BlockPos(0, 64, 120).asLong()});
+		assertEquals(null, routePaths.getFound(through, dataCache, rails));
+		assertTrue(routePaths.get(through, dataCache, rails, () -> graph).isFound());
+		connectingLine.connectingReleased.clear();
+		assertFalse(routePaths.get(through, dataCache, rails, () -> graph).isFound());
 
 		// Once it is an ordinary route again, the route runs over its rails
 		connectingLine.connectingLine = false;

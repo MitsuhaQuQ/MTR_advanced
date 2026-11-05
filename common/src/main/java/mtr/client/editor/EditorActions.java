@@ -258,6 +258,16 @@ public final class EditorActions implements IPacket {
 		if ("duties".equals(getString(operation, "type"))) {
 			return EditorDuties.apply(operation);
 		}
+		// A pathfinding boundary on a rail belongs to the network, set the same way as in the game's node screen
+		if ("pathBoundary".equals(getString(operation, "type"))) {
+			final long node1 = parseId(getString(operation, "a"));
+			final long node2 = parseId(getString(operation, "b"));
+			if (node1 == 0 || node2 == 0) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			PacketTrainDataGuiClient.sendPathBoundaryC2S(net.minecraft.core.BlockPos.of(node1), net.minecraft.core.BlockPos.of(node2), operation.get("boundary").getAsBoolean());
+			return null;
+		}
 		final Route route = ClientData.DATA_CACHE.routeIdMap.get(parseId(getString(operation, "route")));
 		if (route == null) {
 			return TranslatedMessage.get("gui.mtr.editor_route_missing");
@@ -300,6 +310,21 @@ public final class EditorActions implements IPacket {
 				return null;
 			case "connectingLine":
 				route.connectingLine = operation.get("connectingLine").getAsBoolean();
+				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				return null;
+			case "connectingRelease":
+				// The whole list of the connecting line's released rails, each as its two nodes
+				final JsonArray releasedArray = operation.getAsJsonArray("rails");
+				if (releasedArray == null || releasedArray.size() > Route.MAX_CONNECTING_RELEASED) {
+					return TranslatedMessage.get("gui.mtr.editor_bad_change");
+				}
+				final List<long[]> released = new ArrayList<>();
+				for (final JsonElement element : releasedArray) {
+					final JsonArray railArray = element.getAsJsonArray();
+					released.add(new long[]{parseId(railArray.get(0).getAsString()), parseId(railArray.get(1).getAsString())});
+				}
+				route.connectingReleased.clear();
+				route.connectingReleased.addAll(released);
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
 			case "deleteRoute":

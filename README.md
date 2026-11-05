@@ -26,7 +26,9 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - When pathfinding fails, the old path is kept and the depot screen shows the reason. Changing the rails shows that a path is out of date.
 - Each route has its own path, found once from its platforms and waypoints, which depots running by a timetable build their paths and vehicle workings from instead of searching every route again.
 - A route's fastest times come only from its own path, for the slowest vehicle running it, so the editor, the conflict check, automatic vehicle working and the simulator use the same times. A route no depot runs is timed with a default vehicle (8 cars, 0.8 m/s²).
-- A route can be made a connecting line, in game or in the editor. It still carries passengers and through services, but other routes' paths keep off its track, and a route that can only be found over it says so.
+- A route can be made a connecting line, in game or in the editor. It still carries passengers and through services, but other routes' paths keep off its track, and a route that can only be found over it says so and where.
+- Pathfinding boundaries and connecting lines are shown as one layer of isolation on the dashboard map and the editor's track diagrams. Right-clicking a rail in a track diagram makes it a boundary or clears it, and releases a connecting line's rail it shares with another line.
+- The map and the track diagrams draw a route along the path its trains run.
 
 **Route operation**
 
@@ -205,7 +207,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.3.0. It goes up whenever packets or saved data change. Jars with ANTE are about 136 MB.
+Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.4.0. It goes up whenever packets or saved data change. Jars with ANTE are about 136 MB.
 
 The simulation component in `transit-sim` is a plain Java project without Minecraft (Java 8 by default, raised when needed), built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 

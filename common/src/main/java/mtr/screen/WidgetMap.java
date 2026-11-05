@@ -100,6 +100,10 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private static final double ROUTE_PICK_PIXELS = 5;
 	private static final double CLICK_MAX_MOVE_PIXELS = 3;
 	private static final int ARGB_RAIL_LINE = 0x50FFFFFF;
+	private static final int ARGB_BOUNDARY = 0xFFDD3333;
+	private static final int ARGB_CONNECTING_LINE = 0xFFE8891A;
+	private static final int ARGB_RELEASED = 0xA0999999;
+	private static final double ISOLATION_LINE_PIXELS = 2;
 	private static final int ARGB_AREA_HIGHLIGHT = 0x50FFFFFF;
 	private static final int ARGB_ROUTE_LINE_ALPHA = 0xB0000000;
 	private static final int ARGB_KEY_NODE = 0xFFFFFF00;
@@ -159,6 +163,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 
 		try {
 			drawRails(buffer);
+			drawIsolation(buffer);
 			drawDepotPaths(buffer);
 			routesToDraw.get().forEach(route -> drawRoute(buffer, route));
 			updateHoveredRoutes(mouseX, mouseY, mouseWorldPos);
@@ -518,6 +523,42 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 				drawLineFromWorldCoords(buffer, mapRail.x1 + 0.5, mapRail.z1 + 0.5, mapRail.x2 + 0.5, mapRail.z2 + 0.5, RAIL_LINE_PIXELS, ARGB_RAIL_LINE);
 			}
 		});
+	}
+
+	/**
+	 * One layer of isolation over the rails: pathfinding boundaries, which no search crosses, and the rails connecting
+	 * lines take from other routes, or have released (L1).
+	 */
+	private void drawIsolation(BufferBuilder buffer) {
+		final transitsim.network.Boundaries boundaries = ClientData.PATH_REGIONS.boundaries;
+		boundaries.segments.forEach(segment -> drawIsolatedRail(buffer, segment.getMostSignificantBits(), segment.getLeastSignificantBits(), ARGB_BOUNDARY));
+		boundaries.nodes.forEach(node -> drawMarker(buffer, BlockPos.of(node), KEY_NODE_MARKER_PIXELS, ARGB_BOUNDARY));
+
+		final Set<java.util.UUID> platformRails = new HashSet<>();
+		ClientData.DATA_CACHE.platformIdMap.values().forEach(platform -> {
+			final List<BlockPos> positions = platform.getOrderedPositions(BlockPos.ZERO, false);
+			platformRails.add(transitsim.network.RailKeys.of(positions.get(0).asLong(), positions.get(1).asLong()));
+		});
+		ClientData.ROUTES.forEach(route -> {
+			final long[] nodes = route.connectingLine && route.transportMode == transportMode ? ClientData.MAP_ROUTES.get(route.id) : null;
+			if (nodes == null) {
+				return;
+			}
+			final Set<java.util.UUID> released = new HashSet<>();
+			route.connectingReleased.forEach(rail -> released.add(transitsim.network.RailKeys.of(rail[0], rail[1])));
+			for (int i = 1; i < nodes.length; i++) {
+				final java.util.UUID key = transitsim.network.RailKeys.of(nodes[i - 1], nodes[i]);
+				if (!platformRails.contains(key)) {
+					drawIsolatedRail(buffer, nodes[i - 1], nodes[i], released.contains(key) ? ARGB_RELEASED : ARGB_CONNECTING_LINE);
+				}
+			}
+		});
+	}
+
+	private void drawIsolatedRail(BufferBuilder buffer, long node1, long node2, int color) {
+		final BlockPos pos1 = BlockPos.of(node1);
+		final BlockPos pos2 = BlockPos.of(node2);
+		drawLineFromWorldCoords(buffer, pos1.getX() + 0.5, pos1.getZ() + 0.5, pos2.getX() + 0.5, pos2.getZ() + 0.5, ISOLATION_LINE_PIXELS, color);
 	}
 
 	private void drawRouteHighlights(BufferBuilder buffer, Route route) {

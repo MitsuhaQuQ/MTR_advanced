@@ -7,6 +7,7 @@ import mtr.path.PathFailure;
 import mtr.path.PathFinder;
 import net.minecraft.core.BlockPos;
 import transitsim.network.RailGraph;
+import transitsim.network.RailKeys;
 import transitsim.plan.StopTimes;
 
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -35,6 +37,13 @@ public final class RoutePaths {
 	public static final int DEFAULT_CARS = 8;
 	public static final int DEFAULT_CAR_LENGTH = 20;
 	public static final float DEFAULT_ACCELERATION = 0.002F;
+	public static final int RAIL_TAKEN = 1;
+	public static final int RAIL_RELEASED = 2;
+	/**
+	 * A pathfinding boundary on the rail, which every search keeps off; shown with the connecting lines' rails as one
+	 * layer of isolation.
+	 */
+	public static final int RAIL_BOUNDARY = 3;
 
 	private final Map<Long, RoutePath> paths = new ConcurrentHashMap<>();
 	private final Map<Long, Object> locks = new ConcurrentHashMap<>();
@@ -85,7 +94,7 @@ public final class RoutePaths {
 		final Exclusion exclusion = new Exclusion();
 		dataCache.routeIdMap.values().stream().filter(other -> other.connectingLine && other.id != route.id && other.transportMode == route.transportMode && timesByPath(other)).sorted(Comparator.comparingLong(other -> other.id)).forEach(other -> {
 			final RoutePath connectingPath = graph == null ? getFound(other, dataCache, rails) : get(other, dataCache, rails, graph);
-			exclusion.add(other.id, connectingPath);
+			exclusion.add(other, connectingPath);
 		});
 		exclusion.finish();
 		return exclusion;
@@ -97,6 +106,47 @@ public final class RoutePaths {
 	public void retain(Set<Long> routeIds) {
 		paths.keySet().retainAll(routeIds);
 		locks.keySet().retainAll(routeIds);
+	}
+
+	/**
+	 * The rails of the connecting lines of a transport mode, for the track diagram: those each one takes from other routes
+	 * ({@link #RAIL_TAKEN}) and those released by hand ({@link #RAIL_RELEASED}), by rail key.
+	 *
+	 * @param graph the network to find the connecting lines' paths in, or null to take only those found already
+	 */
+	public Map<UUID, Integer> getConnectingRails(TransportMode transportMode, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Supplier<RailGraph<Rail>> graph) {
+		final Map<UUID, Integer> statuses = new HashMap<>();
+		dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode && timesByPath(route)).forEach(route -> {
+			final RoutePath connectingPath = graph == null ? getFound(route, dataCache, rails) : get(route, dataCache, rails, graph);
+			final Set<UUID> released = getReleased(route);
+			forEachLineRail(connectingPath, (fromPos, toPos) -> {
+				final UUID key = RailKeys.of(fromPos, toPos);
+				statuses.merge(key, released.contains(key) ? RAIL_RELEASED : RAIL_TAKEN, Math::min);
+			});
+		});
+		return statuses;
+	}
+
+	private static Set<UUID> getReleased(Route connectingLine) {
+		final Set<UUID> released = new HashSet<>();
+		connectingLine.connectingReleased.forEach(rail -> released.add(RailKeys.of(rail[0], rail[1])));
+		return released;
+	}
+
+	/**
+	 * Gives each rail of a connecting line's path strictly between its first and last platform that isn't a platform rail.
+	 */
+	private static void forEachLineRail(RoutePath connectingPath, java.util.function.BiConsumer<Long, Long> consumer) {
+		if (connectingPath == null || !connectingPath.isFound()) {
+			return;
+		}
+		final int lastStop = connectingPath.getStopRail(connectingPath.getStopCount() - 1);
+		for (int i = 1; i < lastStop; i++) {
+			final PathData pathData = connectingPath.rawPath.get(i);
+			if (pathData.rail.railType != RailType.PLATFORM) {
+				consumer.accept(pathData.startingPos.asLong(), pathData.getLastPos().asLong());
+			}
+		}
 	}
 
 	/**
@@ -161,9 +211,14 @@ public final class RoutePaths {
 			// Found only over a connecting line, the route says which one it would have to run over
 			final List<PathData> unrestricted = new ArrayList<>();
 			DeterministicPathFinder.findPath(unrestricted, graph, platforms, waypoints, 1);
-			final long connectingLineId = unrestricted.stream().mapToLong(pathData -> exclusion.getLine(pathData.startingPos.asLong(), pathData.getLastPos().asLong())).filter(id -> id != 0).findFirst().orElse(0);
-			if (connectingLineId != 0) {
-				failure = new PathFailure(PathFailure.Type.CONNECTING_LINE, connectingLineId);
+			for (final PathData pathData : unrestricted) {
+				final long fromPos = pathData.startingPos.asLong();
+				final long toPos = pathData.getLastPos().asLong();
+				final long connectingLineId = exclusion.getLine(fromPos, toPos);
+				if (connectingLineId != 0) {
+					failure = new PathFailure(PathFailure.Type.CONNECTING_LINE, connectingLineId, fromPos, toPos);
+					break;
+				}
 			}
 		}
 		System.out.println("Minecraft Transit Railway: " + (path.isEmpty() ? "found no path for" : "found the path of") + " route " + (route.name.isEmpty() ? String.valueOf(route.id) : route.name) + " (" + path.size() + " rails) in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
@@ -243,26 +298,24 @@ public final class RoutePaths {
 		/**
 		 * @param connectingPath the connecting line's path, or null if it has none yet
 		 */
-		void add(long connectingLineId, RoutePath connectingPath) {
+		void add(Route connectingLine, RoutePath connectingPath) {
+			final long connectingLineId = connectingLine.id;
+			final Set<UUID> released = getReleased(connectingLine);
 			keyBuilder.append("|x").append(connectingLineId).append(':');
 			if (connectingPath == null || !connectingPath.isFound()) {
 				keyBuilder.append('-');
 				return;
 			}
-			final int lastStop = connectingPath.getStopRail(connectingPath.getStopCount() - 1);
-			long hash = 17;
-			for (int i = 1; i < lastStop; i++) {
-				final PathData pathData = connectingPath.rawPath.get(i);
-				if (pathData.rail.railType != RailType.PLATFORM) {
-					final long fromPos = pathData.startingPos.asLong();
-					final long toPos = pathData.getLastPos().asLong();
+			final long[] hash = {17};
+			forEachLineRail(connectingPath, (fromPos, toPos) -> {
+				if (!released.contains(RailKeys.of(fromPos, toPos))) {
 					lines.computeIfAbsent(fromPos, pos -> new HashMap<>()).put(toPos, connectingLineId);
 					lines.computeIfAbsent(toPos, pos -> new HashMap<>()).put(fromPos, connectingLineId);
-					hash = hash * 31 + fromPos;
-					hash = hash * 31 + toPos;
+					hash[0] = hash[0] * 31 + fromPos;
+					hash[0] = hash[0] * 31 + toPos;
 				}
-			}
-			keyBuilder.append(Long.toHexString(hash));
+			});
+			keyBuilder.append(Long.toHexString(hash[0]));
 		}
 
 		void finish() {
@@ -309,6 +362,13 @@ public final class RoutePaths {
 			this.graph = graph;
 			this.boundaries = boundaries;
 			this.vehicles = vehicles;
+		}
+
+		/**
+		 * See {@link RoutePaths#getConnectingRails}.
+		 */
+		public Map<UUID, Integer> getConnectingRails(TransportMode transportMode, DataCache dataCache) {
+			return routePaths.getConnectingRails(transportMode, dataCache, rails, this::getGraph);
 		}
 
 		/**
@@ -361,6 +421,18 @@ public final class RoutePaths {
 
 		public boolean isFound() {
 			return rawPath.size() >= 2;
+		}
+
+		/**
+		 * @return the nodes the path passes in order, for the map and the track diagram
+		 */
+		public long[] getNodes() {
+			final long[] nodes = new long[rawPath.size() + 1];
+			for (int i = 0; i < rawPath.size(); i++) {
+				nodes[i] = rawPath.get(i).startingPos.asLong();
+			}
+			nodes[rawPath.size()] = rawPath.get(rawPath.size() - 1).getLastPos().asLong();
+			return nodes;
 		}
 
 		/**

@@ -823,7 +823,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		key.append("shared:").append(getSharedTaken(dataCache).hashCode());
 		// The routes' paths keep off the connecting lines, so making one or no longer finds them again
 		key.append("connecting:");
-		dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode).mapToLong(route -> route.id).sorted().forEach(routeId -> key.append(routeId).append(','));
+		dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode).sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
+			key.append(route.id).append('/');
+			route.connectingReleased.forEach(rail -> key.append(transitsim.network.RailKeys.of(rail[0], rail[1]).hashCode()).append('.'));
+			key.append(',');
+		});
 		return key.toString();
 	}
 

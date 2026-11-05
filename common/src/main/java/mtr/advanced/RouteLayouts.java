@@ -44,8 +44,11 @@ public final class RouteLayouts {
 	 * @param stops      the platform of each stop, as {id, end node, end node}
 	 * @param platforms  every platform of the route's transport mode, as {id, end node, end node}
 	 * @param halfWidth  how far to each side of the path rails are drawn
+	 * @param statuses      the isolation of rails by rail key: taken by a connecting line, released, or a pathfinding
+	 *                      boundary ({@code RoutePaths.RAIL_*})
+	 * @param boundaryNodes the nodes that are pathfinding boundaries
 	 */
-	public static void write(long routeId, RailGraph<Rail> graph, long[] nodes, List<long[]> stops, List<long[]> platforms, int halfWidth, FriendlyByteBuf packet) {
+	public static void write(long routeId, RailGraph<Rail> graph, long[] nodes, List<long[]> stops, List<long[]> platforms, int halfWidth, Map<UUID, Integer> statuses, Set<Long> boundaryNodes, FriendlyByteBuf packet) {
 		packet.writeLong(routeId);
 		packet.writeInt(halfWidth);
 		if (nodes.length < 2) {
@@ -87,6 +90,7 @@ public final class RouteLayouts {
 
 		// Every rail once, kept if some of it is near the path
 		final List<float[]> pieces = new ArrayList<>();
+		final List<long[]> keys = new ArrayList<>();
 		final Map<Long, Integer> nodeRails = new HashMap<>();
 		int points = 0;
 		boolean truncated = false;
@@ -109,6 +113,7 @@ public final class RouteLayouts {
 					break;
 				}
 				points += piece.length / 2;
+				keys.add(new long[]{statuses.getOrDefault(key, 0), connection.fromPos, connection.toPos});
 				pieces.add(piece);
 			}
 		}
@@ -162,13 +167,33 @@ public final class RouteLayouts {
 				packet.writeFloat(value);
 			}
 		});
+		// Each piece's rail, to change its isolation from the diagram
+		keys.forEach(key -> {
+			packet.writeByte((int) key[0]);
+			packet.writeLong(key[1]);
+			packet.writeLong(key[2]);
+		});
+		final List<float[]> boundaryPoints = new ArrayList<>();
+		boundaryNodes.forEach(node -> {
+			if (connected.contains(node)) {
+				final double[] projected = straightener.project(x(node), z(node), halfWidth, Double.NaN);
+				if (projected != null) {
+					boundaryPoints.add(new float[]{(float) projected[0], (float) projected[1]});
+				}
+			}
+		});
+		packet.writeInt(Math.min(boundaryPoints.size(), MAX_POINTS));
+		boundaryPoints.stream().limit(MAX_POINTS).forEach(point -> {
+			packet.writeFloat(point[0]);
+			packet.writeFloat(point[1]);
+		});
 	}
 
 	public static Layout read(FriendlyByteBuf packet) {
 		final long routeId = packet.readLong();
 		final int halfWidth = packet.readInt();
 		if (!packet.readBoolean()) {
-			return new Layout(routeId, halfWidth, false, 0, false, new float[0], new ArrayList<>(), new ArrayList<>(), new HashMap<>());
+			return new Layout(routeId, halfWidth, false, 0, false, new float[0], new ArrayList<>(), new ArrayList<>(), new HashMap<>(), new ArrayList<>(), new ArrayList<>());
 		}
 		final float length = packet.readFloat();
 		final boolean truncated = packet.readBoolean();
@@ -199,7 +224,16 @@ public final class RouteLayouts {
 		for (int i = 0; i < platformCount; i++) {
 			platforms.put(packet.readLong(), new float[]{packet.readFloat(), packet.readFloat(), packet.readFloat(), packet.readFloat()});
 		}
-		return new Layout(routeId, halfWidth, true, length, truncated, stops, pieces, turnouts, platforms);
+		final List<long[]> keys = new ArrayList<>();
+		for (int i = 0; i < pieces.size(); i++) {
+			keys.add(new long[]{packet.readByte(), packet.readLong(), packet.readLong()});
+		}
+		final List<float[]> boundaryNodes = new ArrayList<>();
+		final int boundaryCount = limit(packet.readInt(), MAX_POINTS);
+		for (int i = 0; i < boundaryCount; i++) {
+			boundaryNodes.add(new float[]{packet.readFloat(), packet.readFloat()});
+		}
+		return new Layout(routeId, halfWidth, true, length, truncated, stops, pieces, turnouts, platforms, keys, boundaryNodes);
 	}
 
 	/**
@@ -293,8 +327,17 @@ public final class RouteLayouts {
 		 * Platform ID → its ends as distance, offset, distance, offset.
 		 */
 		public final Map<Long, float[]> platforms;
+		/**
+		 * For each piece, its rail as {isolation, node, node}: isolation 0, or {@code RoutePaths.RAIL_TAKEN},
+		 * {@code RAIL_RELEASED} or {@code RAIL_BOUNDARY}.
+		 */
+		public final List<long[]> keys;
+		/**
+		 * The pathfinding boundary nodes as distance, offset.
+		 */
+		public final List<float[]> boundaryNodes;
 
-		private Layout(long routeId, int halfWidth, boolean found, float length, boolean truncated, float[] stops, List<float[]> pieces, List<float[]> turnouts, Map<Long, float[]> platforms) {
+		private Layout(long routeId, int halfWidth, boolean found, float length, boolean truncated, float[] stops, List<float[]> pieces, List<float[]> turnouts, Map<Long, float[]> platforms, List<long[]> keys, List<float[]> boundaryNodes) {
 			this.routeId = routeId;
 			this.halfWidth = halfWidth;
 			this.found = found;
@@ -304,6 +347,8 @@ public final class RouteLayouts {
 			this.pieces = pieces;
 			this.turnouts = turnouts;
 			this.platforms = platforms;
+			this.keys = keys;
+			this.boundaryNodes = boundaryNodes;
 		}
 	}
 }

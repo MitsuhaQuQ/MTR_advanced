@@ -697,7 +697,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		mapGraph = DeterministicPathFinder.compile(rails, pathBoundaries);
 		final RailGraph<Rail> graph = mapGraph;
 		final List<MapRouteQuery> queries = new ArrayList<>();
-		routes.forEach(route -> queries.add(new MapRouteQuery(route, dataCache)));
+		final RoutePaths.Search mapSearch = getMapSearch(graph);
+		final DataCache mapData = dataCache.copyIdMaps();
+		routes.forEach(route -> queries.add(new MapRouteQuery(route, mapData, mapSearch)));
 		final Thread thread = new Thread(() -> {
 			final Map<Long, long[]> routePayloads = new HashMap<>();
 			final Map<Long, Long> routeHashes = new HashMap<>();
@@ -771,7 +773,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public void sendRouteLayout(ServerPlayer player, long routeId, int halfWidth) {
 		final Route route = dataCache.routeIdMap.get(routeId);
 		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails, pathBoundaries);
-		final MapRouteQuery query = route == null ? null : new MapRouteQuery(route, dataCache);
+		final DataCache layoutData = dataCache.copyIdMaps();
+		final Set<UUID> boundarySegments = new HashSet<>(pathBoundaries.segments);
+		final Set<Long> boundaryNodes = new HashSet<>(pathBoundaries.nodes);
+		final RoutePaths.Search layoutSearch = getMapSearch(graph);
+		final MapRouteQuery query = route == null ? null : new MapRouteQuery(route, layoutData, layoutSearch);
 		final List<long[]> stops = new ArrayList<>();
 		final List<long[]> platformEnds = new ArrayList<>();
 		if (route != null) {
@@ -783,11 +789,23 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		}
 		final Thread thread = new Thread(() -> {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-			RouteLayouts.write(routeId, graph, query == null ? new long[0] : query.findNodes(graph), stops, platformEnds, halfWidth, packet);
+			final long[] nodes = query == null ? new long[0] : query.findNodes(graph);
+			// One layer of isolation on the diagram: the rails connecting lines take from other routes, those released, and
+			// the pathfinding boundaries
+			final Map<UUID, Integer> railStatuses = route == null ? new HashMap<>() : layoutSearch.getConnectingRails(route.transportMode, layoutData);
+			boundarySegments.forEach(segment -> railStatuses.put(segment, RoutePaths.RAIL_BOUNDARY));
+			RouteLayouts.write(routeId, graph, nodes, stops, platformEnds, halfWidth, railStatuses, boundaryNodes, packet);
 			Registry.sendToPlayer(player, PACKET_ROUTE_LAYOUT, packet);
 		});
 		thread.setDaemon(true);
 		thread.start();
+	}
+
+	/**
+	 * The route paths on a copy of the rails as they are now, searched in the graph just made of them.
+	 */
+	private RoutePaths.Search getMapSearch(RailGraph<Rail> graph) {
+		return new RoutePaths.Search(routePaths, DataCache.copyRails(rails), graph, pathBoundaries, Collections.emptyMap());
 	}
 
 	private static long[] ends(SavedRailBase savedRail) {
@@ -801,8 +819,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		if (route != null && mapGraph != null && millis - lastMapRouteRequestMillis.getOrDefault(player.getUUID(), 0L) >= MAP_ROUTE_REQUEST_INTERVAL_MILLIS) {
 			lastMapRouteRequestMillis.put(player.getUUID(), millis);
 			// A long route can take a while to trace, so it mustn't hold up the server thread
-			final MapRouteQuery query = new MapRouteQuery(route, dataCache);
 			final RailGraph<Rail> graph = mapGraph;
+			// The map's graph may be older than the rails, so only a route path found already is used, not searched in it
+			final MapRouteQuery query = new MapRouteQuery(route, dataCache, null);
+			final RoutePaths.RoutePath found = RoutePaths.timesByPath(route) ? routePaths.getFound(route, dataCache, rails) : null;
+			query.foundNodes = found == null ? null : found.getNodes();
 			final Thread thread = new Thread(() -> sendMapEntry(player, MapSyncData.KIND_ROUTES, routeId, query.findNodes(graph)));
 			thread.setDaemon(true);
 			thread.start();
@@ -812,15 +833,34 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	/**
 	 * A copy of what is needed to trace one route for the dashboard, which is safe to search from another thread.
 	 */
+	/**
+	 * A route's path as nodes for the map and the track diagram: the route's own path, as its trains run it, keeping off
+	 * the connecting lines (L1); traced along the rails as before for routes timed otherwise, or whose path can't be found,
+	 * so a route cut off by a connecting line shows where it would have to run.
+	 */
 	private static class MapRouteQuery {
 
 		private final long routeId;
+		private final Route route;
+		private final RoutePaths.Search search;
+		private final DataCache dataCache;
 		private final boolean canTrace;
 		private final List<SavedRailBase> platforms = new ArrayList<>();
 		private final List<List<BlockPos>> sectionWaypoints = new ArrayList<>();
+		/**
+		 * The route's path found already, read on the server thread, or null.
+		 */
+		private long[] foundNodes;
 
-		private MapRouteQuery(Route route, DataCache dataCache) {
+		/**
+		 * @param search    the route paths on a copy of the rails, or null to only trace
+		 * @param dataCache a copy of the data, read away from the server thread with the search
+		 */
+		private MapRouteQuery(Route route, DataCache dataCache, RoutePaths.Search search) {
 			routeId = route.id;
+			this.route = route;
+			this.search = RoutePaths.timesByPath(route) ? search : null;
+			this.dataCache = dataCache;
 			canTrace = route.transportMode != TransportMode.AIRPLANE && !route.transportMode.continuousMovement;
 			route.platformIds.forEach(routePlatform -> {
 				final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
@@ -832,6 +872,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		}
 
 		private long[] findNodes(RailGraph<Rail> graph) {
+			if (foundNodes != null) {
+				return foundNodes;
+			}
+			if (search != null) {
+				final RoutePaths.RoutePath routePath = search.get(route, dataCache);
+				if (routePath != null && routePath.isFound()) {
+					return routePath.getNodes();
+				}
+			}
 			return canTrace ? DeterministicPathFinder.findNodes(graph, platforms, sectionWaypoints) : new long[0];
 		}
 	}

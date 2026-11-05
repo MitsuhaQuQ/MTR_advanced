@@ -109,6 +109,14 @@ public final class EditorData {
 		routeObject.addProperty("entryPlatform", String.valueOf(route.timetable.entryPlatformId));
 		routeObject.addProperty("editorManaged", route.editorManaged);
 		routeObject.addProperty("connectingLine", route.connectingLine);
+		final JsonArray releasedArray = new JsonArray();
+		route.connectingReleased.forEach(rail -> {
+			final JsonArray railArray = new JsonArray();
+			railArray.add(String.valueOf(rail[0]));
+			railArray.add(String.valueOf(rail[1]));
+			releasedArray.add(railArray);
+		});
+		routeObject.add("connectingReleased", releasedArray);
 		routeObject.addProperty("revision", getRevision(route));
 		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
 		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));
@@ -153,6 +161,10 @@ public final class EditorData {
 		final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
 		final boolean hasTimes = times != null && times.length == route.platformIds.size();
 		routeObject.addProperty("hasTimes", hasTimes);
+		final mtr.path.PathFailure pathFailure = ClientData.ROUTE_PATH_FAILURES.get(route.id);
+		if (pathFailure != null) {
+			routeObject.addProperty("pathFailure", mtr.client.PathFailureText.get(pathFailure));
+		}
 		if (hasTimes) {
 			// The fastest arrival and departure at each stop, which set times can't be earlier than
 			final JsonArray fastestArray = new JsonArray();

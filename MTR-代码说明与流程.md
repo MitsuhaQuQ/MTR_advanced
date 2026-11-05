@@ -857,6 +857,15 @@ sequenceDiagram
 3. 键 = 站台和站台停站时间、途经点 + 联络线的标记和轨道哈希；和已有的相同且路径上的轨道没变就直接用。
 4. 否则 `DeterministicPathFinder.findPath(..., exclusion::avoids)`。找不到时照常 `PathFailure.diagnose`；有联络线时再不避开地找一次，如果那条路经过联络线，失败原因改成 `CONNECTING_LINE`（位置字段是联络线的 ID）。
 
+**隔离（寻路边界和联络线合成一层）**：
+
+- `RoutePaths.getConnectingRails` 给出联络线的轨道：`RAIL_TAKEN` 是独占，`RAIL_RELEASED` 是放行（`Route.connectingReleased`）。`RailwayData.sendRouteLayout` 再加上寻路边界的轨道段（`RAIL_BOUNDARY`）和边界节点，一起交给 `RouteLayouts.write`。
+- 配线图的包里，每段轨道带上它的两个节点和隔离状态（`Layout.keys`），后面跟边界节点的位置（`Layout.boundaryNodes`）。`EditorLayout` 把它们转成 `railKeys`、`boundaryNodes` 给网页。
+- 网页上右键一段轨道打开菜单（`railMenu`）：边界放进草稿 `draft.boundaries`，应用时是操作 `pathBoundary`，客户端用 `sendPathBoundaryC2S` 发出；放行是操作 `connectingRelease`，客户端用 `Route.setExtraData` 发出。
+- 仪表盘地图（`WidgetMap.drawIsolation`）用客户端已有的数据画同一层：边界来自 `ClientData.PATH_REGIONS.boundaries`，联络线来自它在地图上的路径（`MAP_ROUTES`），去掉站台轨道。
+- 地图上的线路路径（`RailwayData.MapRouteQuery`）：先取线路自己的路径（`RoutePath.getNodes`），找不到再沿轨道追。单条线路的地图请求，用的地图图可能比轨道旧，所以只取已经找好的路径（`getFound`），不在旧图里找。
+- 失败原因（`PathFailure`）多了挡住的那段轨道（`node1`/`node2`，只有 `CONNECTING_LINE` 填），整体用 `writePacket`/`readPacket` 收发。车厂包和时刻回包都带上它，客户端存进 `ClientData.ROUTE_PATH_FAILURES`，文字由 `PathFailureText` 给出。
+
 **最快时刻**：编辑器（`PacketTrainDataGuiServer.getKnownTimes` / `TimeSearch`，在复制的轨道和数据上另开线程找）、自动运用（`MainPath.generateAutoDuties`）和组件的数据集（`SimExport`，`RouteData.fastestTimes`）都用 `RoutePath.getFastestTimes`。车型来自 `RoutePaths.getVehicles`：跑这条线路的车厂的所有存车线（`Siding.getTimingVehicle(车厂.speedCurves)`），没有就用 `getDefaultVehicle`（8 × 20 m，0.8 m/s²，开速度曲线）。
 
 ### 9.1 发起：`Depot.generateMainRoute`

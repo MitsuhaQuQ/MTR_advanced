@@ -85,6 +85,19 @@ public final class EditorLayout {
 		final JsonArray rails = new JsonArray();
 		received.pieces.forEach(piece -> rails.add(round(piece)));
 		layout.add("rails", rails);
+		// Each rail's nodes and isolation: 0, 1 taken by a connecting line, 2 released, 3 a pathfinding boundary
+		final JsonArray keys = new JsonArray();
+		received.keys.forEach(railKey -> {
+			final JsonArray keyArray = new JsonArray();
+			keyArray.add(String.valueOf(railKey[1]));
+			keyArray.add(String.valueOf(railKey[2]));
+			keyArray.add(railKey[0]);
+			keys.add(keyArray);
+		});
+		layout.add("railKeys", keys);
+		final JsonArray boundaryNodes = new JsonArray();
+		received.boundaryNodes.forEach(node -> boundaryNodes.add(round(node)));
+		layout.add("boundaryNodes", boundaryNodes);
 		final JsonArray turnouts = new JsonArray();
 		received.turnouts.forEach(turnout -> turnouts.add(round(turnout)));
 		layout.add("turnouts", turnouts);

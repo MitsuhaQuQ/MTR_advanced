@@ -298,7 +298,15 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		for (int i = 0; i < stopCount; i++) {
 			times[i] = new long[]{packet.readLong(), packet.readLong()};
 		}
-		minecraftClient.execute(() -> ClientData.TIMETABLE_TIMES.put(routeId, times));
+		final PathFailure failure = PathFailure.readPacket(packet);
+		minecraftClient.execute(() -> {
+			ClientData.TIMETABLE_TIMES.put(routeId, times);
+			if (failure.type == PathFailure.Type.NONE) {
+				ClientData.ROUTE_PATH_FAILURES.remove(routeId);
+			} else {
+				ClientData.ROUTE_PATH_FAILURES.put(routeId, failure);
+			}
+		});
 	}
 
 	public static void requestTimetableConflictsC2S(long routeId) {
@@ -549,7 +557,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void generatePathS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final long depotId = packet.readLong();
 		final int successfulSegments = packet.readInt();
-		final PathFailure failure = new PathFailure(PathFailure.Type.values()[packet.readByte()], packet.readLong());
+		final PathFailure failure = PathFailure.readPacket(packet);
 		minecraftClient.execute(() -> {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
