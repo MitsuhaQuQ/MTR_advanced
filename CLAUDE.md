@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MTR Advanced: a fork of Minecraft Transit Railway 3.2.2 (Fabric + Forge via Architectury, merged with ANTE/mtrsteamloco) that turns it into a network-operations simulator: deterministic pathfinding, timetables, vehicle workings (运用/duties), single-track reservations, station-throat locks and a browser-based editor. It shows in the mod list as `MTR-MTM_Enhanced 3.2.2` plus a second entry `MTM_Logic` whose version is `mtm_version` in `gradle.properties`. Only Minecraft **1.20.1** is built for now; the other versions are not compiled until the user says otherwise.
 
-The user writes in Chinese; reply in Chinese. The design docs (`MTR-*.md` at the repo root) are in Chinese.
+The user writes in Chinese; reply in Chinese. Keep the session's language constant: every reply, plan, question, recap and insight stays in Chinese for the whole session, including after a context summary, over Remote Control, and when tool output or the files being read are in English. Code, identifiers, commit messages and code comments stay in English as they are now. The design docs (`MTR-*.md` at the repo root) are in Chinese.
 
 ## Build and test
 
