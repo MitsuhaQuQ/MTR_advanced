@@ -1,6 +1,7 @@
 package mtr.client;
 
 import mtr.data.MapSyncData;
+import mtr.data.RailShapes;
 import mtr.data.TransportMode;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
@@ -39,6 +40,7 @@ public final class MapDataCache {
 	private static final List<Map<Long, Long>> DIGESTS = new ArrayList<>();
 	private static final int[] PENDING = new int[MapSyncData.KIND_COUNT];
 	private static String cacheName;
+	private static int version;
 	private static MapCacheDatabase database;
 
 	static {
@@ -147,12 +149,37 @@ public final class MapDataCache {
 		});
 	}
 
+	/**
+	 * @return a number that changes each time map data is published, so the editor's network view only reloads on a change
+	 */
+	public static int getVersion() {
+		return version;
+	}
+
 	private static void publish(int kind) {
+		version++;
 		if (kind == MapSyncData.KIND_RAILS) {
 			ClientData.MAP_RAILS.clear();
 			ENTRIES.get(kind).values().forEach(entry -> {
 				for (int i = 0; i + 2 < entry.payload.length; i += MapSyncData.RAIL_LONGS) {
 					ClientData.MAP_RAILS.add(new ClientData.MapRail(BlockPos.of(entry.payload[i]), BlockPos.of(entry.payload[i + 1]), TransportMode.values()[(int) entry.payload[i + 2]]));
+				}
+			});
+		} else if (kind == MapSyncData.KIND_RAIL_SHAPES) {
+			ClientData.MAP_RAIL_SHAPES.clear();
+			ENTRIES.get(kind).values().forEach(entry -> {
+				int i = 0;
+				while (i + 2 < entry.payload.length) {
+					final long node1 = entry.payload[i];
+					final long node2 = entry.payload[i + 1];
+					final int count = (int) Math.max(0, Math.min(entry.payload[i + 2], (entry.payload.length - i - 3)));
+					final float[] shape = new float[count * 2];
+					for (int j = 0; j < count; j++) {
+						shape[j * 2] = RailShapes.unpackX(entry.payload[i + 3 + j]);
+						shape[j * 2 + 1] = RailShapes.unpackZ(entry.payload[i + 3 + j]);
+					}
+					ClientData.MAP_RAIL_SHAPES.put(transitsim.network.RailKeys.of(node1, node2), shape);
+					i += 3 + count;
 				}
 			});
 		} else {

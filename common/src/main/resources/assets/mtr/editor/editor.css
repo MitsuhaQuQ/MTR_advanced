@@ -320,3 +320,11 @@ table.audio-list button.danger { color: var(--warn); }
 @media (max-width: 720px) {
 	table.audio-list th:nth-child(4), table.audio-list td:nth-child(4), table.audio-list th:nth-child(5), table.audio-list td:nth-child(5) { display: none; }
 }
+/* Whole network track view */
+.network-view { grid-template-rows: auto 1fr; }
+.net-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--grid); }
+.net-legend { margin-left: auto; }
+.net-wrap { position: relative; min-height: 0; overflow: hidden; }
+.net-wrap canvas { position: absolute; inset: 0; cursor: grab; }
+.net-wrap canvas:active { cursor: grabbing; }
+body.network-view #btn-split, body.network-view #btn-simulate, body.network-view #btn-zoom-in, body.network-view #btn-zoom-out { display: none; }

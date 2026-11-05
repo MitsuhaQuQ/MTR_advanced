@@ -50,6 +50,12 @@ public class Rail extends SerializedDataBase {
 	private final double h2, k2, r2, tStart2, tEnd2;
 	private final int yStart, yEnd;
 	private final boolean reverseT1, isStraight1, reverseT2, isStraight2;
+	/**
+	 * The rough shape for the maps ({@link RailShapes}), worked out the first time it is asked for, as a rail is built
+	 * again rather than changed.
+	 */
+	private float[] mapShape;
+	private boolean mapShapeDone;
 
 	private static final double ACCEPT_THRESHOLD = 1E-4;
 	private static final double ANGLE_THRESHOLD = 1E-9;
@@ -402,6 +408,17 @@ public class Rail extends SerializedDataBase {
 		} else {
 			return getPositionXZ(h2, k2, r2, (reverseT2 ? -1 : 1) * (value - count1) + tStart2, 0, isStraight2).add(0, y, 0);
 		}
+	}
+
+	/**
+	 * @return a few points along the rail for the maps, as x, z, ... between its nodes, or null if it is straight
+	 */
+	public float[] getMapShape() {
+		if (!mapShapeDone) {
+			mapShape = RailShapes.of(this);
+			mapShapeDone = true;
+		}
+		return mapShape;
 	}
 
 	public double getLength() {

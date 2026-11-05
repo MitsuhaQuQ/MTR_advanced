@@ -661,19 +661,37 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		lastMapRailsRequestMillis.put(player.getUUID(), millis);
 
 		final Map<Long, List<Long>> regions = new HashMap<>();
+		final Map<Long, List<Long>> shapeRegions = new HashMap<>();
 		rails.forEach((startPos, railMap) -> railMap.forEach((endPos, rail) -> {
 			// Each connection is stored once in each direction
 			if (startPos.asLong() < endPos.asLong()) {
-				final List<Long> region = regions.computeIfAbsent(MapSyncData.regionKey(startPos.getX(), startPos.getZ()), key -> new ArrayList<>());
+				final long regionKey = MapSyncData.regionKey(startPos.getX(), startPos.getZ());
+				final List<Long> region = regions.computeIfAbsent(regionKey, key -> new ArrayList<>());
 				region.add(startPos.asLong());
 				region.add(endPos.asLong());
 				region.add((long) rail.transportMode.ordinal());
+				final float[] shape = rail.getMapShape();
+				if (shape != null) {
+					final List<Long> shapeRegion = shapeRegions.computeIfAbsent(regionKey, key -> new ArrayList<>());
+					shapeRegion.add(startPos.asLong());
+					shapeRegion.add(endPos.asLong());
+					shapeRegion.add((long) shape.length / 2);
+					for (int i = 0; i + 1 < shape.length; i += 2) {
+						shapeRegion.add(RailShapes.pack(shape[i], shape[i + 1]));
+					}
+				}
 			}
 		}));
+		// Regions with rails but no curves are sent empty, so a client drops the shapes of rails straightened or removed
+		regions.keySet().forEach(regionKey -> shapeRegions.computeIfAbsent(regionKey, key -> new ArrayList<>()));
+		final Map<Long, long[]> shapePayloads = MapSyncData.toPayloads(shapeRegions);
+		final Map<Long, Long> shapeHashes = new HashMap<>();
+		shapePayloads.forEach((key, payload) -> shapeHashes.put(key, MapSyncData.hashRoute(payload)));
 		final Map<Long, long[]> railPayloads = MapSyncData.toPayloads(regions);
 		final Map<Long, Long> railHashes = new HashMap<>();
 		railPayloads.forEach((key, payload) -> railHashes.put(key, MapSyncData.hashRails(payload)));
 		storeAndSendDigest(player, MapSyncData.KIND_RAILS, railPayloads, railHashes);
+		storeAndSendDigest(player, MapSyncData.KIND_RAIL_SHAPES, shapePayloads, shapeHashes);
 
 		// Generated paths include the runs to and from the depot and any turn back rails
 		final Map<Long, long[]> sidingPayloads = new HashMap<>();

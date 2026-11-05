@@ -132,6 +132,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new SimulateServlet()), "/api/simulate");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
 		context.addServlet(new ServletHolder(new RouteLayoutServlet()), "/api/route-layout");
+		context.addServlet(new ServletHolder(new NetworkServlet()), "/api/network");
 		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
 		context.addServlet(new ServletHolder(new AudioFileServlet()), "/api/audio-file");
 		server.setHandler(context);
@@ -454,6 +455,39 @@ public final class EditorServer {
 	/**
 	 * The straightened track diagram of a route ({@link EditorLayout#buildRoute}).
 	 */
+	/**
+	 * The whole network's track layout ({@link EditorNetwork}).
+	 */
+	private static class NetworkServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final String mode;
+			final boolean fresh;
+			final int seenVersion;
+			try {
+				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				mode = requestObject.has("mode") ? requestObject.get("mode").getAsString() : "";
+				fresh = requestObject.has("fresh") && requestObject.get("fresh").getAsBoolean();
+				seenVersion = requestObject.has("version") ? requestObject.get("version").getAsInt() : -1;
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				sendJson(response, onGameThread(() -> EditorNetwork.build(mode, fresh, seenVersion)).toString());
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+	}
+
 	private static class RouteLayoutServlet extends HttpServlet {
 
 		@Override

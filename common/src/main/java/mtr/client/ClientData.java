@@ -52,6 +52,10 @@ public final class ClientData {
 	public static final List<MapRail> MAP_RAILS = new ArrayList<>();
 	public static final Map<Long, long[]> MAP_ROUTES = new HashMap<>();
 	public static final Map<Long, long[]> MAP_SIDINGS = new HashMap<>();
+	/**
+	 * A few points along each curved rail, by rail key ({@code RailKeys.of}), as x, z, ... from the rail's lower node.
+	 */
+	public static final Map<java.util.UUID, float[]> MAP_RAIL_SHAPES = new HashMap<>();
 	public static final Set<Long> STALE_DEPOTS = new HashSet<>();
 	public static final Map<Long, long[][]> TIMETABLE_TIMES = new HashMap<>();
 	/**
@@ -382,8 +386,12 @@ public final class ClientData {
 		public final int x2;
 		public final int z2;
 		public final TransportMode transportMode;
+		public final long node1;
+		public final long node2;
 
 		public MapRail(BlockPos pos1, BlockPos pos2, TransportMode transportMode) {
+			node1 = pos1.asLong();
+			node2 = pos2.asLong();
 			x1 = pos1.getX();
 			z1 = pos1.getZ();
 			x2 = pos2.getX();

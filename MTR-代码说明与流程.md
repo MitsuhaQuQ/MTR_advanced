@@ -862,7 +862,27 @@ sequenceDiagram
 - `RoutePaths.getConnectingRails` 给出联络线的轨道：`RAIL_TAKEN` 是独占，`RAIL_RELEASED` 是放行（`Route.connectingReleased`）。`RailwayData.sendRouteLayout` 再加上寻路边界的轨道段（`RAIL_BOUNDARY`）和边界节点，一起交给 `RouteLayouts.write`。
 - 配线图的包里，每段轨道带上它的两个节点和隔离状态（`Layout.keys`），后面跟边界节点的位置（`Layout.boundaryNodes`）。`EditorLayout` 把它们转成 `railKeys`、`boundaryNodes` 给网页。
 - 网页上右键一段轨道打开菜单（`railMenu`）：边界放进草稿 `draft.boundaries`，应用时是操作 `pathBoundary`，客户端用 `sendPathBoundaryC2S` 发出；放行是操作 `connectingRelease`，客户端用 `Route.setExtraData` 发出。
-- 仪表盘地图（`WidgetMap.drawIsolation`）用客户端已有的数据画同一层：边界来自 `ClientData.PATH_REGIONS.boundaries`，联络线来自它在地图上的路径（`MAP_ROUTES`），去掉站台轨道。
+- 仪表盘地图（`WidgetMap.drawIsolation`）用客户端已有的数据画同一层，状态由 `MapIsolation.getStatuses` 给出（网页的全网配线也用它）：边界来自 `ClientData.PATH_REGIONS.boundaries`，联络线来自它在地图上的路径（`MAP_ROUTES`），去掉站台轨道。
+
+**地图上的弯道和全网配线**（MTM_Logic 0.5.0）：
+
+- 地图同步原来每段轨道只有两个端点，长弯道画成一条斜直线。现在多了一类 `MapSyncData.KIND_RAIL_SHAPES`，按和轨道相同的 128 格区块分组，只放弯道：两个节点、点数、各点（`RailShapes.pack`，四分之一格精度）。
+  - 点由 `Rail.getMapShape` 给出（`RailShapes.of`，每条轨道算一次留在对象里）：每 2 格取一个点，再用 Douglas–Peucker 化简到离真实曲线不超过 0.5 格，最多 64 个点，直的轨道没有。
+  - 和其他几类一样走摘要和本地缓存（`MapDataCache`），只重发变了的区块。客户端放进 `ClientData.MAP_RAIL_SHAPES`，按轨道键，从较小的节点起。
+  - 仪表盘地图的轨道、隔离层和线路路径都经 `WidgetMap.drawRailShape` 沿这些点画。
+- 网页"全网配线"页签：`api/network` 由 `EditorNetwork.build` 从客户端的地图数据给出：
+  - 节点表；
+  - 每段轨道：两个节点、种类（站台、存车线、普通）、隔离状态、弯道点；
+  - 边界节点、车站（各站台中点）、各线路在地图上的路径；
+  - 一个版本号，没变时只回版本。
+  - 打开时向服务端要一次最新地图（`requestMapRailsC2S`），之后每 3 秒问一次有没有变化。
+  - 页面用 canvas 画，拖动平移，滚轮按光标缩放，按运输方式切换，放大后显示站名；树里选中的线路按颜色画出路径，其余变淡。
+  - **示意图画法**（用户画的样子）：缩小到每格不到 2 像素时画成示意图。
+    - 先把两个道岔之间的轨道连成一段（`netChains`）：只穿过连着两条轨道的节点，种类和隔离状态不同就断开，所以站台、存车线和隔离段各自成段，车站位置不变。
+    - 每段按屏幕 10 像素化简（`simplifyPoints`，Douglas–Peucker），再把每一小段改成横、竖或 45°（`octilinear`：已接近这些方向的不动，否则先直走一半、再斜走、再直走），同方向相连的合成一段，所以大弯变成一条 45° 斜线、小弯拉直。
+    - 结果按缩放档（每档半个 2 的幂）缓存。放大后按实际轨道画。
+    - 选中线路、隔离层、悬停高亮都画在这些段上；光标先找画出来的段，再取段里离光标最近的实际轨道，所以右键菜单仍是对一条轨道。
+  - 按网格找光标下的轨道，悬停显示种类和隔离，右键弹出和配线图相同的隔离菜单（`railMenu`，参数是 `{a, b, status}`）。
 - 地图上的线路路径（`RailwayData.MapRouteQuery`）：先取线路自己的路径（`RoutePath.getNodes`），找不到再沿轨道追。单条线路的地图请求，用的地图图可能比轨道旧，所以只取已经找好的路径（`getFound`），不在旧图里找。
 - 失败原因（`PathFailure`）多了挡住的那段轨道（`node1`/`node2`，只有 `CONNECTING_LINE` 填），整体用 `writePacket`/`readPacket` 收发。车厂包和时刻回包都带上它，客户端存进 `ClientData.ROUTE_PATH_FAILURES`，文字由 `PathFailureText` 给出。
 

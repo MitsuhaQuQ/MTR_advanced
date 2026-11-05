@@ -520,7 +520,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private void drawRails(BufferBuilder buffer) {
 		ClientData.MAP_RAILS.forEach(mapRail -> {
 			if (mapRail.transportMode == transportMode) {
-				drawLineFromWorldCoords(buffer, mapRail.x1 + 0.5, mapRail.z1 + 0.5, mapRail.x2 + 0.5, mapRail.z2 + 0.5, RAIL_LINE_PIXELS, ARGB_RAIL_LINE);
+				drawRailShape(buffer, mapRail.node1, mapRail.node2, RAIL_LINE_PIXELS, ARGB_RAIL_LINE);
 			}
 		});
 	}
@@ -530,35 +530,32 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	 * lines take from other routes, or have released (L1).
 	 */
 	private void drawIsolation(BufferBuilder buffer) {
-		final transitsim.network.Boundaries boundaries = ClientData.PATH_REGIONS.boundaries;
-		boundaries.segments.forEach(segment -> drawIsolatedRail(buffer, segment.getMostSignificantBits(), segment.getLeastSignificantBits(), ARGB_BOUNDARY));
-		boundaries.nodes.forEach(node -> drawMarker(buffer, BlockPos.of(node), KEY_NODE_MARKER_PIXELS, ARGB_BOUNDARY));
-
-		final Set<java.util.UUID> platformRails = new HashSet<>();
-		ClientData.DATA_CACHE.platformIdMap.values().forEach(platform -> {
-			final List<BlockPos> positions = platform.getOrderedPositions(BlockPos.ZERO, false);
-			platformRails.add(transitsim.network.RailKeys.of(positions.get(0).asLong(), positions.get(1).asLong()));
-		});
-		ClientData.ROUTES.forEach(route -> {
-			final long[] nodes = route.connectingLine && route.transportMode == transportMode ? ClientData.MAP_ROUTES.get(route.id) : null;
-			if (nodes == null) {
-				return;
-			}
-			final Set<java.util.UUID> released = new HashSet<>();
-			route.connectingReleased.forEach(rail -> released.add(transitsim.network.RailKeys.of(rail[0], rail[1])));
-			for (int i = 1; i < nodes.length; i++) {
-				final java.util.UUID key = transitsim.network.RailKeys.of(nodes[i - 1], nodes[i]);
-				if (!platformRails.contains(key)) {
-					drawIsolatedRail(buffer, nodes[i - 1], nodes[i], released.contains(key) ? ARGB_RELEASED : ARGB_CONNECTING_LINE);
-				}
-			}
-		});
+		mtr.client.MapIsolation.getStatuses(transportMode).forEach((key, status) -> drawIsolatedRail(buffer, key.getMostSignificantBits(), key.getLeastSignificantBits(), status == RoutePaths.RAIL_BOUNDARY ? ARGB_BOUNDARY : status == RoutePaths.RAIL_RELEASED ? ARGB_RELEASED : ARGB_CONNECTING_LINE));
+		ClientData.PATH_REGIONS.boundaries.nodes.forEach(node -> drawMarker(buffer, BlockPos.of(node), KEY_NODE_MARKER_PIXELS, ARGB_BOUNDARY));
 	}
 
 	private void drawIsolatedRail(BufferBuilder buffer, long node1, long node2, int color) {
-		final BlockPos pos1 = BlockPos.of(node1);
-		final BlockPos pos2 = BlockPos.of(node2);
-		drawLineFromWorldCoords(buffer, pos1.getX() + 0.5, pos1.getZ() + 0.5, pos2.getX() + 0.5, pos2.getZ() + 0.5, ISOLATION_LINE_PIXELS, color);
+		drawRailShape(buffer, node1, node2, ISOLATION_LINE_PIXELS, color);
+	}
+
+	/**
+	 * A rail from node to node, through the few points along its curve the server sent ({@link ClientData#MAP_RAIL_SHAPES}),
+	 * so a long curve isn't drawn straight across.
+	 */
+	private void drawRailShape(BufferBuilder buffer, long node1, long node2, double pixels, int color) {
+		final BlockPos pos1 = BlockPos.of(Math.min(node1, node2));
+		final BlockPos pos2 = BlockPos.of(Math.max(node1, node2));
+		final float[] shape = ClientData.MAP_RAIL_SHAPES.get(transitsim.network.RailKeys.of(node1, node2));
+		double lastX = pos1.getX() + 0.5;
+		double lastZ = pos1.getZ() + 0.5;
+		if (shape != null) {
+			for (int i = 0; i + 1 < shape.length; i += 2) {
+				drawLineFromWorldCoords(buffer, lastX, lastZ, shape[i], shape[i + 1], pixels, color);
+				lastX = shape[i];
+				lastZ = shape[i + 1];
+			}
+		}
+		drawLineFromWorldCoords(buffer, lastX, lastZ, pos2.getX() + 0.5, pos2.getZ() + 0.5, pixels, color);
 	}
 
 	private void drawRouteHighlights(BufferBuilder buffer, Route route) {
@@ -609,7 +606,8 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	}
 
 	private void drawRouteSegment(BufferBuilder buffer, BlockPos lastPos, BlockPos pos, double thickness, int color) {
-		drawLineFromWorldCoords(buffer, lastPos.getX() + 0.5, lastPos.getZ() + 0.5, pos.getX() + 0.5, pos.getZ() + 0.5, thickness, color);
+		// Along the rail's curve when the two nodes are the ends of a curved rail
+		drawRailShape(buffer, lastPos.asLong(), pos.asLong(), thickness, color);
 	}
 
 	private static List<BlockPos> getRouteNodes(Route route) {

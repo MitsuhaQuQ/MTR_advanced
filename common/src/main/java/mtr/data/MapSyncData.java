@@ -13,7 +13,12 @@ public final class MapSyncData {
 	public static final int KIND_RAILS = 0;
 	public static final int KIND_ROUTES = 1;
 	public static final int KIND_SIDINGS = 2;
-	public static final int KIND_COUNT = 3;
+	/**
+	 * A few points along each curved rail, by the same regions as the rails: node, node, count, then that many points
+	 * packed by {@link RailShapes#pack}, so the maps draw a long curve along it rather than straight across.
+	 */
+	public static final int KIND_RAIL_SHAPES = 3;
+	public static final int KIND_COUNT = 4;
 	public static final int RAIL_LONGS = 3;
 	private static final int REGION_BITS = 7;
 	private static final long HASH_MULTIPLIER = 0x9E3779B97F4A7C15L;

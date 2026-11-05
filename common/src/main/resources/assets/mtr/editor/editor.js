@@ -195,7 +195,7 @@
 
 	/** The menu of a rail in a track diagram: its isolation, as a boundary for every search or a connecting line's. */
 	function railMenu(e, r, rail, rerender) {
-		const [a, b] = rail.dataset.rail.split(","), status = +rail.dataset.railStatus, key = railKey(a, b);
+		const { a, b, status } = rail, key = railKey(a, b);
 		const wasBoundary = status === 3;
 		const boundary = key in draft.boundaries ? draft.boundaries[key] : wasBoundary;
 		const items = [[boundary ? tr("取消寻路边界") : tr("设为寻路边界"), () => { setBoundary(a, b, !boundary, wasBoundary); rerender(); }]];
@@ -1150,7 +1150,8 @@
 			} else {
 				state.openNodes.add(nodeKey);
 			}
-			openView("diagram", line, null);
+			// The whole network view stays open, with the line's routes drawn over it
+			openView(state.view === "network" ? "network" : "diagram", line, null);
 		} else if (route && view) {
 			openView(view, data.routeById.get(route).lineKey, route);
 		} else if (route) {
@@ -1167,8 +1168,8 @@
 
 	// ---------- Views ----------
 	const canSplit = () => innerWidth >= 1100 && innerHeight >= 820;
-	const showsDiagram = () => state.view === "diagram" || (state.split && canSplit());
-	const showsTable = () => state.view === "table" || (state.split && canSplit());
+	const showsDiagram = () => state.view === "diagram" || (state.split && canSplit() && state.view !== "network");
+	const showsTable = () => state.view === "table" || (state.split && canSplit() && state.view !== "network");
 
 	function openView(view, lineKey, routeId) {
 		if (lineKey !== state.line) state.selected = null;
@@ -1187,6 +1188,9 @@
 		$("btn-split").setAttribute("aria-pressed", String(split));
 		$("view-diagram").hidden = !showsDiagram();
 		$("view-table").hidden = !showsTable();
+		$("view-network").hidden = state.view !== "network";
+		document.body.classList.toggle("network-view", state.view === "network");
+		$("tab-network").setAttribute("aria-selected", String(state.view === "network"));
 		$("tab-diagram").setAttribute("aria-selected", String(state.view === "diagram"));
 		$("tab-table").setAttribute("aria-selected", String(state.view === "table"));
 		const line = currentLine(), r = state.route ? data && data.routeById.get(state.route) : null;
@@ -1194,6 +1198,490 @@
 	}
 
 	const currentLine = () => data && data.lines.find(l => l.key === state.line);
+
+
+	// ---------- Whole network track view ----------
+	/*
+	 * Every rail of one transport mode from the game's map data (EditorNetwork): end to end through the few points along
+	 * its curve, with platforms, sidings and the isolation layer, stations named once zoomed in, and the routes of the line
+	 * chosen in the tree drawn over it. Right-click a rail to change its isolation, the same as in a route's track diagram.
+	 */
+	const NET_CELL = 64, NET_HIT_PX = 6, NET_STATION_SCALE = 0.6, NET_POLL_MS = 3000;
+	// Zoomed out further than this many pixels a block, the network is drawn as a schematic: each run of track between two
+	// junctions simplified to within a few pixels, with its straight runs set along the horizontal, vertical and 45°
+	const NET_EXACT_SCALE = 2, NET_SIMPLIFY_PX = 10, NET_ALIGNED = 0.12;
+	const net = { data: null, version: -1, mode: "", scale: 0, cx: 0, cz: 0, grid: null, hover: -1, error: "", timer: null, drag: null };
+	const netCanvas = $("net-canvas"), netWrap = $("net-wrap"), netCtx = netCanvas.getContext("2d");
+
+	async function loadNetwork(fresh) {
+		try {
+			const result = await sendJson("api/network", "POST", { mode: net.mode, fresh, version: fresh ? -1 : net.version });
+			net.error = "";
+			if (!result.same) {
+				const modeChanged = !net.data || net.data.mode !== result.mode;
+				net.data = result;
+				net.version = result.version;
+				net.mode = result.mode;
+				indexNetwork();
+				if (modeChanged || !net.scale) fitNetwork();
+			}
+		} catch (e) {
+			net.error = tr("读取全网配线失败");
+		}
+		renderNetworkTools();
+		drawNetwork();
+	}
+
+	/** Polls while the view is open, as the map data from the server comes in a while after it is asked for. */
+	function watchNetwork() {
+		const open = state.view === "network";
+		if (open && !net.timer) {
+			loadNetwork(true);
+			net.timer = setInterval(() => { if (!document.hidden) loadNetwork(false); }, NET_POLL_MS);
+		} else if (!open && net.timer) {
+			clearInterval(net.timer);
+			net.timer = null;
+		}
+	}
+
+	/** Each rail's points in order, its bounding box in a grid to find the rail under the mouse, and rails by node pair. */
+	function indexNetwork() {
+		const d = net.data;
+		net.grid = new Map();
+		net.byPair = new Map();
+		net.railPoints = [];
+		if (!d || !d.rails) return;
+		d.rails.forEach((rail, index) => {
+			const a = d.nodes[rail[0]], b = d.nodes[rail[1]];
+			const points = [a[0], a[1]];
+			for (let k = 4; k + 1 < rail.length; k += 2) points.push(rail[k], rail[k + 1]);
+			points.push(b[0], b[1]);
+			net.railPoints.push(points);
+			net.byPair.set(Math.min(rail[0], rail[1]) + "," + Math.max(rail[0], rail[1]), index);
+			let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+			for (let k = 0; k < points.length; k += 2) {
+				minX = Math.min(minX, points[k]); maxX = Math.max(maxX, points[k]);
+				minZ = Math.min(minZ, points[k + 1]); maxZ = Math.max(maxZ, points[k + 1]);
+			}
+			for (let gx = Math.floor(minX / NET_CELL); gx <= Math.floor(maxX / NET_CELL); gx++) {
+				for (let gz = Math.floor(minZ / NET_CELL); gz <= Math.floor(maxZ / NET_CELL); gz++) {
+					const key = gx + "," + gz;
+					if (!net.grid.has(key)) net.grid.set(key, []);
+					net.grid.get(key).push(index);
+				}
+			}
+		});
+		// Which connecting line a taken or released rail belongs to, for the release item of the menu
+		net.connectingOf = new Map();
+		(d.routes || []).forEach(route => {
+			const r = data && data.routeById.get(route.id);
+			if (!r || !r.connectingLine) return;
+			for (let i = 1; i < route.nodes.length; i++) {
+				const index = net.byPair.get(Math.min(route.nodes[i - 1], route.nodes[i]) + "," + Math.max(route.nodes[i - 1], route.nodes[i]));
+				if (index !== undefined) net.connectingOf.set(index, r);
+			}
+		});
+	}
+
+
+	/**
+	 * The runs of track between junctions, for the schematic: rails joined end to end through nodes with two rails, while
+	 * they are the same kind and isolation, so platforms, sidings and isolated rails stay their own runs and stations stay
+	 * where they are. Built again when the network or the draft's isolation changes.
+	 */
+	function netChains() {
+		const d = net.data;
+		const key = net.version + "|" + JSON.stringify(draft.boundaries || {}) + "|" + (d.routes || []).map(route => {
+			const r = data && data.routeById.get(route.id);
+			return r && r.connectingLine ? JSON.stringify(releasedOf(r)) : "";
+		}).join("");
+		if (net.chainKey === key && net.chains) return net.chains;
+		const adjacent = new Map();
+		d.rails.forEach((rail, index) => {
+			for (const node of [rail[0], rail[1]]) {
+				if (!adjacent.has(node)) adjacent.set(node, []);
+				adjacent.get(node).push(index);
+			}
+		});
+		const statuses = d.rails.map((rail, index) => netStatus(index));
+		const used = new Uint8Array(d.rails.length);
+		const chains = [];
+		net.railChain = new Int32Array(d.rails.length);
+		// The rail's points from one node to the other
+		const along = (index, fromNode) => {
+			const points = net.railPoints[index];
+			if (d.rails[index][0] === fromNode) return points;
+			const reversed = [];
+			for (let k = points.length - 2; k >= 0; k -= 2) reversed.push(points[k], points[k + 1]);
+			return reversed;
+		};
+		d.rails.forEach((rail, start) => {
+			if (used[start]) return;
+			used[start] = 1;
+			const kind = rail[2], status = statuses[start];
+			const same = index => !used[index] && d.rails[index][2] === kind && statuses[index] === status;
+			// Walks on from a node while it joins exactly two rails
+			const walk = (node, from) => {
+				const run = [];
+				for (;;) {
+					const next = adjacent.get(node) || [];
+					if (next.length !== 2) break;
+					const index = next[0] === from ? next[1] : next[0];
+					if (!same(index)) break;
+					used[index] = 1;
+					run.push([index, node]);
+					node = d.rails[index][0] === node ? d.rails[index][1] : d.rails[index][0];
+					from = index;
+				}
+				return run;
+			};
+			const forward = walk(rail[1], start), backward = walk(rail[0], start);
+			const rails = [], points = [];
+			const add = (index, fromNode) => {
+				const p = along(index, fromNode);
+				for (let k = points.length ? 2 : 0; k < p.length; k++) points.push(p[k]);
+				rails.push(index);
+			};
+			// Backward runs from the start's first node away from it, so it is added the other way round
+			for (let i = backward.length - 1; i >= 0; i--) {
+				const [index, node] = backward[i];
+				add(index, d.rails[index][0] === node ? d.rails[index][1] : d.rails[index][0]);
+			}
+			add(start, rail[0]);
+			forward.forEach(([index, node]) => add(index, node));
+			rails.forEach(index => { net.railChain[index] = chains.length; });
+			chains.push({ rails, points, kind, status, drawn: new Map() });
+		});
+		net.chains = chains;
+		net.chainKey = key;
+		return chains;
+	}
+
+	/** The scale the schematic is worked out at, in steps of half a power of two, so it is kept while zooming a little. */
+	const netLevel = () => Math.round(Math.log2(net.scale) * 2);
+
+	/** A run of track as drawn at the scale: exact when zoomed in, otherwise simplified and set along 0°, 45° and 90°. */
+	function chainShape(chain) {
+		if (net.scale >= NET_EXACT_SCALE) return chain.points;
+		const level = netLevel();
+		if (!chain.drawn.has(level)) chain.drawn.set(level, octilinear(simplifyPoints(chain.points, NET_SIMPLIFY_PX / Math.pow(2, level / 2))));
+		return chain.drawn.get(level);
+	}
+
+	/** Douglas–Peucker on x, z, x, z, ...: the ends stay, and points further than the tolerance from the line. */
+	function simplifyPoints(points, tolerance) {
+		const count = points.length / 2;
+		if (count <= 2) return points;
+		const kept = new Uint8Array(count);
+		kept[0] = kept[count - 1] = 1;
+		const stack = [[0, count - 1]];
+		while (stack.length) {
+			const [first, last] = stack.pop();
+			let furthest = -1, at = -1;
+			for (let i = first + 1; i < last; i++) {
+				const distance = netSegmentDistance(points[i * 2], points[i * 2 + 1], points[first * 2], points[first * 2 + 1], points[last * 2], points[last * 2 + 1]);
+				if (distance > furthest) {
+					furthest = distance;
+					at = i;
+				}
+			}
+			if (furthest > tolerance) {
+				kept[at] = 1;
+				stack.push([first, at], [at, last]);
+			}
+		}
+		const simplified = [];
+		for (let i = 0; i < count; i++) if (kept[i]) simplified.push(points[i * 2], points[i * 2 + 1]);
+		return simplified;
+	}
+
+	/**
+	 * Each piece between two points set along the horizontal, vertical and 45°, as a line map draws it: a piece already
+	 * close to one of them stays; another goes straight for half of what isn't diagonal, then diagonally, then straight.
+	 */
+	function octilinear(points) {
+		const result = [points[0], points[1]];
+		for (let k = 2; k + 1 < points.length; k += 2) {
+			const x1 = points[k - 2], z1 = points[k - 1], x2 = points[k], z2 = points[k + 1];
+			const dx = x2 - x1, dz = z2 - z1, ax = Math.abs(dx), az = Math.abs(dz), longer = Math.max(ax, az), shorter = Math.min(ax, az);
+			if (shorter > NET_ALIGNED * longer && longer - shorter > NET_ALIGNED * longer) {
+				const straight = (longer - shorter) / 2, sx = Math.sign(dx), sz = Math.sign(dz);
+				const firstX = ax > az ? x1 + sx * straight : x1, firstZ = ax > az ? z1 : z1 + sz * straight;
+				result.push(firstX, firstZ, firstX + sx * shorter, firstZ + sz * shorter);
+			}
+			result.push(x2, z2);
+		}
+		// Pieces one after the other going the same way are one piece, so a bend is one diagonal rather than steps
+		const merged = [result[0], result[1]];
+		const way = (x1, z1, x2, z2) => Math.round(Math.atan2(z2 - z1, x2 - x1) / (Math.PI / 4));
+		for (let k = 2; k + 1 < result.length; k += 2) {
+			const n = merged.length;
+			if (n >= 4 && way(merged[n - 4], merged[n - 3], merged[n - 2], merged[n - 1]) === way(merged[n - 2], merged[n - 1], result[k], result[k + 1])) {
+				merged[n - 2] = result[k];
+				merged[n - 1] = result[k + 1];
+			} else if (result[k] !== merged[n - 2] || result[k + 1] !== merged[n - 1]) {
+				merged.push(result[k], result[k + 1]);
+			}
+		}
+		return merged;
+	}
+
+	function fitNetwork() {
+		const d = net.data;
+		if (!d || !d.nodes || !d.nodes.length) return;
+		let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+		d.nodes.forEach(n => { minX = Math.min(minX, n[0]); maxX = Math.max(maxX, n[0]); minZ = Math.min(minZ, n[1]); maxZ = Math.max(maxZ, n[1]); });
+		const w = netWrap.clientWidth || 800, h = netWrap.clientHeight || 600;
+		net.cx = (minX + maxX) / 2;
+		net.cz = (minZ + maxZ) / 2;
+		net.scale = Math.max(0.005, Math.min(8, Math.min((w - 40) / Math.max(1, maxX - minX), (h - 40) / Math.max(1, maxZ - minZ))));
+	}
+
+	const netX = x => (x - net.cx) * net.scale + netWrap.clientWidth / 2;
+	const netZ = z => (z - net.cz) * net.scale + netWrap.clientHeight / 2;
+	const netWorldX = px => (px - netWrap.clientWidth / 2) / net.scale + net.cx;
+	const netWorldZ = pz => (pz - netWrap.clientHeight / 2) / net.scale + net.cz;
+
+	/** A rail's isolation with the draft's boundaries on top: 0, 1 taken by a connecting line, 2 released, 3 a boundary. */
+	function netStatus(index) {
+		const d = net.data, rail = d.rails[index];
+		const key = railKey(d.nodes[rail[0]][2], d.nodes[rail[1]][2]);
+		if (draft.boundaries && key in draft.boundaries) return draft.boundaries[key] ? 3 : (rail[3] === 3 ? 0 : rail[3]);
+		const owner = net.connectingOf && net.connectingOf.get(index);
+		if (owner && (rail[3] === 1 || rail[3] === 2)) return releasedOf(owner).some(other => railKey(other[0], other[1]) === key) ? 2 : 1;
+		return rail[3];
+	}
+
+	function drawNetwork() {
+		if (state.view !== "network") return;
+		const ratio = devicePixelRatio || 1, w = netWrap.clientWidth, h = netWrap.clientHeight;
+		if (netCanvas.width !== Math.round(w * ratio) || netCanvas.height !== Math.round(h * ratio)) {
+			netCanvas.width = Math.round(w * ratio);
+			netCanvas.height = Math.round(h * ratio);
+			netCanvas.style.width = w + "px";
+			netCanvas.style.height = h + "px";
+		}
+		const g = netCtx;
+		g.setTransform(ratio, 0, 0, ratio, 0, 0);
+		g.fillStyle = css("--panel");
+		g.fillRect(0, 0, w, h);
+		const d = net.data;
+		if (!d || !d.rails || !d.rails.length) {
+			g.fillStyle = css("--muted");
+			g.font = "14px sans-serif";
+			g.fillText(net.error || (d ? tr("游戏里还没有这种运输方式的轨道，或地图数据还没传来") : tr("正在读取…")), 20, 30);
+			return;
+		}
+		const left = netWorldX(-NET_HIT_PX), right = netWorldX(w + NET_HIT_PX), top = netWorldZ(-NET_HIT_PX), bottom = netWorldZ(h + NET_HIT_PX);
+		const visible = points => {
+			for (let k = 0; k < points.length; k += 2) if (points[k] >= left && points[k] <= right && points[k + 1] >= top && points[k + 1] <= bottom) return true;
+			// A long rail can cross the view with both ends outside it
+			return points.length >= 4 && !(Math.max(points[0], points[points.length - 2]) < left || Math.min(points[0], points[points.length - 2]) > right || Math.max(points[1], points[points.length - 1]) < top || Math.min(points[1], points[points.length - 1]) > bottom);
+		};
+		const line = state.line, highlighted = (d.routes || []).filter(route => route.lineKey === line && (!state.route || state.route === route.id));
+		const faded = highlighted.length > 0;
+		const stroke = (points, color, width, dash) => {
+			g.beginPath();
+			g.moveTo(netX(points[0]), netZ(points[1]));
+			for (let k = 2; k + 1 < points.length; k += 2) g.lineTo(netX(points[k]), netZ(points[k + 1]));
+			g.strokeStyle = color;
+			g.lineWidth = width;
+			g.setLineDash(dash || []);
+			g.stroke();
+		};
+		g.lineCap = "round";
+		g.lineJoin = "round";
+		g.globalAlpha = faded ? 0.45 : 1;
+		const plain = css("--grid-strong"), ink = css("--ink");
+		// Runs of track, each one kind and isolation, drawn exactly when zoomed in and as a schematic further out
+		const chains = netChains();
+		chains.forEach(chain => {
+			const points = chainShape(chain);
+			if (!visible(points)) return;
+			stroke(points, chain.kind === 1 ? ink : chain.kind === 2 ? "#d9a520" : plain, chain.kind === 1 ? 3 : 1.5);
+		});
+		g.globalAlpha = 1;
+		// The isolation layer, in the colours of the track diagrams
+		chains.forEach(chain => {
+			const points = chainShape(chain);
+			if (!chain.status || !visible(points)) return;
+			if (chain.status === 3) stroke(points, "#d33", 3);
+			else if (chain.status === 1) stroke(points, "#e8891a", 2.5, [6, 3]);
+			else stroke(points, plain, 2, [3, 3]);
+		});
+		g.setLineDash([]);
+		(d.boundaryNodes || []).forEach(index => {
+			const n = d.nodes[index];
+			g.fillStyle = "#d33";
+			g.beginPath();
+			g.arc(netX(n[0]), netZ(n[1]), 4, 0, Math.PI * 2);
+			g.fill();
+		});
+		// The chosen line's routes along their paths: zoomed out, the runs of track they use as drawn
+		if (net.scale < NET_EXACT_SCALE) {
+			highlighted.forEach(route => {
+				const runs = new Set();
+				for (let i = 1; i < route.nodes.length; i++) {
+					const index = net.byPair.get(Math.min(route.nodes[i - 1], route.nodes[i]) + "," + Math.max(route.nodes[i - 1], route.nodes[i]));
+					if (index !== undefined) runs.add(net.railChain[index]);
+				}
+				runs.forEach(run => stroke(chainShape(chains[run]), colorOf(route.color), 4));
+			});
+		} else highlighted.forEach(route => {
+			const points = [];
+			for (let i = 0; i < route.nodes.length; i++) {
+				if (i > 0) {
+					const a = route.nodes[i - 1], b = route.nodes[i];
+					const index = net.byPair.get(Math.min(a, b) + "," + Math.max(a, b));
+					if (index !== undefined) {
+						const railPoints = net.railPoints[index];
+						const forward = d.rails[index][0] === a;
+						for (let k = 2; k + 3 < railPoints.length; k += 2) {
+							const at = forward ? k : railPoints.length - 2 - k;
+							points.push(railPoints[at], railPoints[at + 1]);
+						}
+					}
+				}
+				const n = d.nodes[route.nodes[i]];
+				points.push(n[0], n[1]);
+			}
+			stroke(points, colorOf(route.color), 4);
+		});
+		if (net.hover >= 0 && net.hover < d.rails.length) stroke(net.scale < NET_EXACT_SCALE ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
+		if (net.scale >= NET_STATION_SCALE) {
+			g.fillStyle = ink;
+			g.font = "12px sans-serif";
+			g.textAlign = "center";
+			(d.stations || []).forEach(station => {
+				const x = netX(station.x), y = netZ(station.z);
+				if (x > -50 && x < w + 50 && y > -20 && y < h + 20) g.fillText(shortName(station.name), x, y - 8);
+			});
+			g.textAlign = "start";
+		}
+	}
+
+	/**
+	 * @return the rail nearest the mouse within a few pixels, or -1; zoomed out, the nearest rail of the run of track drawn
+	 * under the mouse
+	 */
+	function netRailAt(px, pz) {
+		if (!net.data || !net.grid) return -1;
+		const x = netWorldX(px), z = netWorldZ(pz), reach = NET_HIT_PX / net.scale;
+		if (net.scale < NET_EXACT_SCALE) {
+			let bestChain = null, bestChainDistance = reach;
+			netChains().forEach(chain => {
+				const p = chainShape(chain);
+				for (let k = 0; k + 3 < p.length; k += 2) {
+					const distance = netSegmentDistance(x, z, p[k], p[k + 1], p[k + 2], p[k + 3]);
+					if (distance < bestChainDistance) {
+						bestChainDistance = distance;
+						bestChain = chain;
+					}
+				}
+			});
+			if (!bestChain) return -1;
+			let best = bestChain.rails[0], bestDistance = Infinity;
+			bestChain.rails.forEach(index => {
+				const p = net.railPoints[index];
+				for (let k = 0; k + 3 < p.length; k += 2) {
+					const distance = netSegmentDistance(x, z, p[k], p[k + 1], p[k + 2], p[k + 3]);
+					if (distance < bestDistance) {
+						bestDistance = distance;
+						best = index;
+					}
+				}
+			});
+			return best;
+		}
+		let best = -1, bestDistance = reach;
+		const seen = new Set();
+		for (let gx = Math.floor((x - reach) / NET_CELL); gx <= Math.floor((x + reach) / NET_CELL); gx++) {
+			for (let gz = Math.floor((z - reach) / NET_CELL); gz <= Math.floor((z + reach) / NET_CELL); gz++) {
+				(net.grid.get(gx + "," + gz) || []).forEach(index => {
+					if (seen.has(index)) return;
+					seen.add(index);
+					const p = net.railPoints[index];
+					for (let k = 0; k + 3 < p.length; k += 2) {
+						const distance = netSegmentDistance(x, z, p[k], p[k + 1], p[k + 2], p[k + 3]);
+						if (distance < bestDistance) {
+							bestDistance = distance;
+							best = index;
+						}
+					}
+				});
+			}
+		}
+		return best;
+	}
+
+	function netSegmentDistance(x, z, x1, z1, x2, z2) {
+		const dx = x2 - x1, dz = z2 - z1, lengthSquared = dx * dx + dz * dz;
+		const t = lengthSquared ? Math.max(0, Math.min(1, ((x - x1) * dx + (z - z1) * dz) / lengthSquared)) : 0;
+		return Math.hypot(x - x1 - t * dx, z - z1 - t * dz);
+	}
+
+	function netRailText(index) {
+		const d = net.data, rail = d.rails[index], status = netStatus(index);
+		const a = d.nodes[rail[0]], b = d.nodes[rail[1]];
+		const kind = rail[2] === 1 ? tr("站台") : rail[2] === 2 ? tr("存车线") : tr("轨道");
+		const isolation = status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("联络线已放行") : "";
+		const run = net.scale < NET_EXACT_SCALE && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
+		return `${kind}${isolation ? " · " + isolation : ""} · ${Math.floor(a[0])}, ${Math.floor(a[1])} → ${Math.floor(b[0])}, ${Math.floor(b[1])}${run > 1 ? tr("（示意图里这一段有 {0} 条轨道，放大后逐条显示）", run) : ""}`;
+	}
+
+	function renderNetworkTools() {
+		const d = net.data, select = $("net-mode");
+		const modes = d && d.modes ? d.modes : [];
+		const names = { TRAIN: tr("铁路"), BOAT: tr("船"), CABLE_CAR: tr("缆车"), AIRPLANE: tr("飞机") };
+		const html = modes.map(mode => `<option value="${mode}"${mode === net.mode ? " selected" : ""}>${escapeHtml(names[mode] || mode)}</option>`).join("");
+		if (select.innerHTML !== html) select.innerHTML = html;
+		$("net-info").textContent = d && d.rails ? tr("{0} 段轨道，{1} 个车站", d.rails.length, (d.stations || []).length) : "";
+	}
+
+	$("net-mode").addEventListener("change", e => { net.mode = e.target.value; net.version = -1; loadNetwork(false); });
+	$("net-fit").addEventListener("click", () => { fitNetwork(); drawNetwork(); });
+	$("net-zoom-in").addEventListener("click", () => { net.scale = Math.min(32, net.scale * 1.5); drawNetwork(); });
+	$("net-zoom-out").addEventListener("click", () => { net.scale = Math.max(0.002, net.scale / 1.5); drawNetwork(); });
+	$("net-refresh").addEventListener("click", () => loadNetwork(true));
+	netCanvas.addEventListener("wheel", e => {
+		e.preventDefault();
+		const rect = netCanvas.getBoundingClientRect(), px = e.clientX - rect.left, pz = e.clientY - rect.top;
+		const x = netWorldX(px), z = netWorldZ(pz);
+		net.scale = Math.max(0.002, Math.min(32, net.scale * (e.deltaY < 0 ? 1.25 : 0.8)));
+		// The point under the mouse stays where it is
+		net.cx = x - (px - netWrap.clientWidth / 2) / net.scale;
+		net.cz = z - (pz - netWrap.clientHeight / 2) / net.scale;
+		drawNetwork();
+	}, { passive: false });
+	netCanvas.addEventListener("mousedown", e => {
+		if (e.button !== 0) return;
+		net.drag = { x: e.clientX, z: e.clientY, cx: net.cx, cz: net.cz };
+	});
+	addEventListener("mouseup", () => { net.drag = null; });
+	netCanvas.addEventListener("mousemove", e => {
+		if (net.drag) {
+			net.cx = net.drag.cx - (e.clientX - net.drag.x) / net.scale;
+			net.cz = net.drag.cz - (e.clientY - net.drag.z) / net.scale;
+			drawNetwork();
+			return;
+		}
+		const rect = netCanvas.getBoundingClientRect();
+		const hover = netRailAt(e.clientX - rect.left, e.clientY - rect.top);
+		if (hover !== net.hover) {
+			net.hover = hover;
+			netCanvas.title = hover >= 0 ? netRailText(hover) + (data && data.canEdit ? tr("；右键改隔离") : "") : "";
+			drawNetwork();
+		}
+	});
+	netCanvas.addEventListener("contextmenu", e => {
+		const rect = netCanvas.getBoundingClientRect();
+		const index = netRailAt(e.clientX - rect.left, e.clientY - rect.top);
+		if (index < 0 || !data || !data.canEdit) return;
+		e.preventDefault();
+		const d = net.data, rail = d.rails[index];
+		railMenu(e, net.connectingOf.get(index) || null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork);
+	});
+	addEventListener("resize", () => drawNetwork());
 
 	// ---------- Running diagram ----------
 	const canvas = $("canvas"), wrap = $("canvas-wrap"), ctx = canvas.getContext("2d");
@@ -3487,7 +3975,8 @@
 			const rail = e.target.closest("[data-rail]");
 			if (!rail) return;
 			e.preventDefault();
-			railMenu(e, r, rail, () => render(form));
+			const [a, b] = rail.dataset.rail.split(",");
+			railMenu(e, r, { a, b, status: +rail.dataset.railStatus }, () => render(form));
 		});
 		form.addEventListener("click", e => {
 			const zoom = e.target.closest("[data-route-zoom]");
@@ -3764,6 +4253,8 @@
 		if (sim.on && !sim.timer && (sim.line !== state.line || sim.weekday !== state.weekday)) scheduleSimulation();
 		renderTree();
 		renderViews();
+		watchNetwork();
+		drawNetwork();
 		draw();
 		renderInspector();
 		renderTable();
@@ -3823,6 +4314,7 @@
 	$("scrim").addEventListener("click", () => setTreeOpen(false));
 	$("tab-diagram").addEventListener("click", () => { state.view = "diagram"; renderAll(); });
 	$("tab-table").addEventListener("click", () => { state.view = "table"; renderAll(); });
+	$("tab-network").addEventListener("click", () => { state.view = "network"; renderAll(); });
 	$("btn-split").addEventListener("click", () => { state.split = !state.split; renderAll(); });
 	$("btn-apply").addEventListener("click", applyDraft);
 	$("btn-delete").addEventListener("click", () => {

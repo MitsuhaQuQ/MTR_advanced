@@ -36,6 +36,7 @@
 		<div class="tabs" role="tablist">
 			<button class="tab" id="tab-table" role="tab" aria-selected="false" data-i18n="汇总时刻表">汇总时刻表</button>
 			<button class="tab" id="tab-diagram" role="tab" aria-selected="true" data-i18n="运行图">运行图</button>
+			<button class="tab" id="tab-network" role="tab" aria-selected="false" data-i18n="全网配线">全网配线</button>
 			<button id="btn-split" aria-pressed="false" title="运行图在上，时刻表在下" data-i18n-title="运行图在上，时刻表在下" data-i18n="上下显示" hidden>上下显示</button>
 			<span class="crumb" id="crumb"></span>
 			<span class="tools">
@@ -53,6 +54,18 @@
 			<aside class="inspector" id="inspector"></aside>
 		</section>
 		<section class="view table-view" id="view-table" hidden></section>
+		<section class="view network-view" id="view-network" hidden>
+			<div class="net-tools">
+				<select id="net-mode" aria-label="运输方式" data-i18n-aria-label="运输方式"></select>
+				<button id="net-fit" data-i18n="全图">全图</button>
+				<button id="net-zoom-out" title="缩小" data-i18n-title="缩小">−</button>
+				<button id="net-zoom-in" title="放大" data-i18n-title="放大">＋</button>
+				<button id="net-refresh" title="向游戏要最新的轨道" data-i18n-title="向游戏要最新的轨道">↻</button>
+				<span class="hint" id="net-info" title="放大后按实际走向画，缩小时画成示意图（只有横、竖和 45°）" data-i18n-title="放大后按实际走向画，缩小时画成示意图（只有横、竖和 45°）"></span>
+				<span class="hint net-legend" data-i18n="红：寻路边界　橙虚线：联络线独占　灰虚线：已放行　粗线：站台　黄：存车线">红：寻路边界　橙虚线：联络线独占　灰虚线：已放行　粗线：站台　黄：存车线</span>
+			</div>
+			<div class="net-wrap" id="net-wrap"><canvas id="net-canvas" aria-label="全网配线" data-i18n-aria-label="全网配线"></canvas></div>
+		</section>
 	</main>
 </div>
 
