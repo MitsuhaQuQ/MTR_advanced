@@ -227,5 +227,8 @@
   "gui.mtr.track_worked_out": "（按线路推出：%s）",
   "gui.mtr.path_failure_connecting_line": "刷新失败：被隔离挡住：要经过联络线 %s（%s 附近），可以在配线图里放行这一段",
   "gui.mtr.editor_bad_line_name": "线路组名不能为空，也不能太长",
-  "gui.mtr.timetable_conflicts_found_throat": "冲突 %1$s 处。这一班：%2$s 站咽喉的道岔（%3$s）和 %4$s 的 %5$s 班进路交叉"
+  "gui.mtr.timetable_conflicts_found_throat": "冲突 %1$s 处。这一班：%2$s 站咽喉的道岔（%3$s）和 %4$s 的 %5$s 班进路交叉",
+  "gui.mtr.timetable_deploy_order": "%2$s出车，从%1$s站接上",
+  "gui.mtr.timetable_return_order": "在%1$s站转回送，回%2$s",
+  "gui.mtr.timetable_order_any_depot": "自动选的车厂"
 }

@@ -190,7 +190,7 @@ public final class LineDuties {
 							links.put(platform.id, (long) (Math.sqrt(sidingPos.distSqr(platformPos)) * MILLIS_PER_BLOCK));
 						}
 					});
-					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit(), links));
+					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit(), links, depot.id));
 					group.depotOf.put(siding.id, depot);
 					group.sidingNames.put(siding.id, siding.name);
 					group.available += siding.getTrainLimit() < 0 ? DepotDuties.MAX_SLOTS : siding.getTrainLimit();
@@ -291,7 +291,7 @@ public final class LineDuties {
 
 		private int uncoveredWith(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, int trains, long maxLayover) {
 			final List<DutyGenerator.SidingInput> changed = new ArrayList<>();
-			sidings.forEach(other -> changed.add(other == siding ? new DutyGenerator.SidingInput(other.sidingId, Math.min(trains, DepotDuties.MAX_SLOTS), other.links) : other));
+			sidings.forEach(other -> changed.add(other == siding ? new DutyGenerator.SidingInput(other.sidingId, Math.min(trains, DepotDuties.MAX_SLOTS), other.links, other.depotId) : other));
 			return DutyGenerator.generate(services, changed, stationOf, maxLayover).uncovered;
 		}
 	}

@@ -116,6 +116,10 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private boolean returnedElsewhere;
 	/**
+	 * The siding it came back to when {@link #returnedElsewhere}.
+	 */
+	private long returnedToSidingId;
+	/**
 	 * When the operating day of that duty started, as a full timestamp.
 	 */
 	private long dutyDayStart;
@@ -244,6 +248,7 @@ public class TrainService<T extends PlanTrack> {
 		} else if (tripMillis != 0 || isLastLap || tripPath != null || dutySlot >= 0) {
 			if (TripPath.isReturnKey(tripPathKey)) {
 				returnedElsewhere = true;
+				returnedToSidingId = TripPath.getReturnSidingId(tripPathKey);
 			}
 			dutySlot = -1;
 			dutySidingId = 0;
@@ -955,7 +960,9 @@ public class TrainService<T extends PlanTrack> {
 			return false;
 		}
 		returnChosenStop = stopIndex;
-		final long returnSidingId = depot.chooseReturnSiding(sidingId);
+		// The last service of the duty may be set on the running diagram to go back to a depot of its own choosing
+		final long orderDepotId = getReturnOrderDepot();
+		final long returnSidingId = orderDepotId == 0 ? depot.chooseReturnSiding(sidingId) : depot.chooseReturnSiding(sidingId, orderDepotId);
 		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(tripPathKey, returnSidingId));
 		if (returnPath == null) {
 			return false;
@@ -965,6 +972,19 @@ public class TrainService<T extends PlanTrack> {
 		stopTimes = returnPath.stopTimes;
 		vehicle.changePath(returnPath, stopIndex);
 		return true;
+	}
+
+	/**
+	 * @return the depot the duty's last service is set to go back to, or 0
+	 */
+	private long getReturnOrderDepot() {
+		if (dutyDay == null || dutyDay.segments.isEmpty() || routes == null) {
+			return 0;
+		}
+		final DepotDuties.Segment segment = dutyDay.segments.get(dutyDay.segments.size() - 1);
+		final PlanRoute route = routes.apply(segment.routeId);
+		final RouteTimetable.ServiceOrder order = route == null ? null : route.getTimetable().getReturnOrder(segment.service);
+		return order == null ? 0 : order.depotId;
 	}
 
 	/**
@@ -988,6 +1008,17 @@ public class TrainService<T extends PlanTrack> {
 		final boolean returned = returnedElsewhere;
 		returnedElsewhere = false;
 		return returned;
+	}
+
+	/**
+	 * As {@link #takeReturnedElsewhere}, saying where to.
+	 *
+	 * @return once, the siding the train came back to if it isn't its own, else 0
+	 */
+	public long takeReturnedElsewhereSiding() {
+		final long sidingId = returnedElsewhere ? returnedToSidingId : 0;
+		returnedElsewhere = false;
+		return sidingId;
 	}
 
 	/**
@@ -1461,6 +1492,14 @@ public class TrainService<T extends PlanTrack> {
 		 */
 		default long chooseReturnSiding(long sidingId) {
 			return sidingId;
+		}
+
+		/**
+		 * As {@link #chooseReturnSiding(long)} for a duty whose last service is set to go back to this depot: one of its
+		 * sidings with the same vehicle and room, the one needing a train soonest; the usual choice if it has none.
+		 */
+		default long chooseReturnSiding(long sidingId, long depotId) {
+			return chooseReturnSiding(sidingId);
 		}
 	}
 }

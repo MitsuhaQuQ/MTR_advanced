@@ -690,6 +690,9 @@
 						id: r.id + "@" + service, route: r, service, table, tableIndex,
 						link: table.links.find(l => l.service === service),
 						returns: table.returns.includes(service),
+						// Set on the running diagram: joined part of the way by a train from a depot, or left part of the way back to one
+						deployOrder: (table.orders || []).find(order => order.service === service && order.kind === "deploy") || null,
+						returnOrder: (table.orders || []).find(order => order.service === service && order.kind === "return") || null,
 						// The time in the operating day, so the last trains after midnight come after the first ones
 						start: mod(service - data.dayStartMillis, DAY),
 						plans: stopExceptions ? plansFor(r, source, tableIndex, service) : tablePlans,
@@ -719,6 +722,8 @@
 		timetable.tables.forEach(table => {
 			table.services.sort((a, b) => a - b);
 			table.returns.sort((a, b) => a - b);
+			table.orders = table.orders || [];
+			table.orders.sort((a, b) => a.service - b.service || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 			table.links.sort((a, b) => a.service - b.service);
 			table.exceptions.sort((a, b) => a.service - b.service);
 			table.exceptions.forEach(exception => exception.stops.sort((a, b) => a.stop - b.stop));
@@ -733,6 +738,7 @@
 			tables: r.tables.map(table => ({
 				name: table.name, weekdays: table.weekdays, marginPercent: table.marginPercent,
 				services: [...table.services], returns: [...table.returns],
+				orders: (table.orders || []).map(order => ({ ...order })),
 				links: table.links.map(link => ({ ...link })),
 				stops: table.stops.map(stop => ({ ...stop })),
 				exceptions: (table.exceptions || []).map(exception => ({ service: exception.service, stops: exception.stops.map(stop => ({ stop: stop.stop, run: stop.run, dwell: stop.dwell, pass: stop.pass, overtake: stop.overtake })) })),
@@ -780,6 +786,7 @@
 		table.services[table.services.indexOf(oldService)] = newService;
 		table.links.forEach(link => { if (link.service === oldService) link.service = newService; });
 		table.returns = table.returns.map(service => service === oldService ? newService : service);
+		(table.orders || []).forEach(order => { if (order.service === oldService) order.service = newService; });
 		table.exceptions.forEach(exception => { if (exception.service === oldService) exception.service = newService; });
 	}
 
@@ -787,7 +794,36 @@
 		table.services = table.services.filter(s => s !== service);
 		table.links = table.links.filter(link => link.service !== service);
 		table.returns = table.returns.filter(s => s !== service);
+		table.orders = (table.orders || []).filter(order => order.service !== service);
 		table.exceptions = table.exceptions.filter(exception => exception.service !== service);
+	}
+
+	/** The first and last stops a service carries passengers at, which orders set on the running diagram can narrow. */
+	const servedStops = s => [s.deployOrder ? s.deployOrder.stop : 0, s.returnOrder ? Math.min(s.returnOrder.stop, s.route.stops.length - 1) : s.route.stops.length - 1];
+	const orderDepotName = order => {
+		const depot = order && order.depot !== "0" ? depotById(order.depot) : null;
+		return depot ? shortName(depot.name) : tr("自动选的车厂");
+	};
+
+	/** Sets or clears where a service is joined by a train from a depot, or left for one. @param depot the depot's ID, "0" for any, or null to clear */
+	function setServiceOrder(table, service, kind, stop, depot) {
+		table.orders = (table.orders || []).filter(order => !(order.service === service && order.kind === kind));
+		if (depot !== null) table.orders.push({ service, kind, stop, depot: String(depot) });
+	}
+
+	/** Picks the depot for a service's order: the depots running the line's routes first, then the others of its transport mode. */
+	function serviceOrderDialog(s, kind, stop) {
+		const lineRoutes = new Set((currentLine() ? currentLine().routes : [s.route]).map(r => r.id));
+		const depots = data.depots.filter(depot => !depot.transportMode || !s.route.transportMode || depot.transportMode === s.route.transportMode);
+		const near = depots.filter(depot => depot.routes.some(id => lineRoutes.has(id))), far = depots.filter(depot => !near.includes(depot));
+		const option = depot => `<option value="${depot.id}">${escapeHtml(shortName(depot.name))}</option>`;
+		const current = kind === "deploy" ? s.deployOrder : s.returnOrder;
+		const title = kind === "deploy" ? tr("{0} 班从{1}出车", clock(s.start), stopName(s.route, stop)) : tr("{0} 班在{1}转回送", clock(s.start), stopName(s.route, stop));
+		const hint = kind === "deploy" ? tr("这一班从这一站起载客：车厂出一列车空跑到这里接上，之前的站不停。") : tr("这一班到这一站为止载客：之后的站不停，车从这里空跑回所选车厂。");
+		openDialog(escapeHtml(title), `<p class="hint">${hint}</p><label>${tr("车厂")} <select name="depot"><option value="0">${tr("自动选的车厂")}</option>${near.length ? `<optgroup label="${tr("跑这条线路的")}">${near.map(option).join("")}</optgroup>` : ""}${far.length ? `<optgroup label="${tr("其他车厂")}">${far.map(option).join("")}</optgroup>` : ""}</select></label>`, tr("确定"), form => {
+			editTimetable(s.route, timetable => setServiceOrder(timetable.tables[s.tableIndex], s.service, kind, stop, form.depot.value));
+		});
+		if (current) dialog.querySelector("select").value = current.depot;
 	}
 
 	// Times are typed as 7:10, 07:10, 07:10:30, 0710 or 071030, with full-width digits and colons from an input method too
@@ -887,7 +923,7 @@
 					const copied = +form.copy.value >= 0 && edited.tables[+form.copy.value];
 					edited.tables.push({
 						name, weekdays: mask, marginPercent: copied ? copied.marginPercent : edited.tables[0].marginPercent,
-						services: copied ? [...copied.services] : [], returns: copied ? [...copied.returns] : [],
+						services: copied ? [...copied.services] : [], returns: copied ? [...copied.returns] : [], orders: copied ? (copied.orders || []).map(order => ({ ...order })) : [],
 						links: copied ? copied.links.map(link => ({ ...link })) : [],
 						stops: (copied || edited.tables[0]).stops.map(stop => ({ ...stop })),
 						exceptions: copied ? JSON.parse(JSON.stringify(copied.exceptions)) : [],
@@ -989,6 +1025,10 @@
 			const returned = now.returns.filter(service => !oldReturns.has(service)), unreturned = old.returns.filter(service => !newReturns.has(service));
 			if (returned.length) lines.push(tr("回库：{0}", someServices(returned)));
 			if (unreturned.length) lines.push(tr("不再回库：{0}", someServices(unreturned)));
+			const orderText = order => tr(order.kind === "deploy" ? "{0} 从{1}出车（{2}）" : "{0} 在{1}转回送（{2}）", serviceClock(order.service), escapeHtml(stopName(r, order.stop)), escapeHtml(orderDepotName(order)));
+			const oldOrders = new Map((old.orders || []).map(order => [order.service + order.kind, JSON.stringify(order)])), newOrders = new Map((now.orders || []).map(order => [order.service + order.kind, JSON.stringify(order)]));
+			(now.orders || []).filter(order => oldOrders.get(order.service + order.kind) !== JSON.stringify(order)).forEach(order => lines.push(tr("设{0}", orderText(order))));
+			(old.orders || []).filter(order => !newOrders.has(order.service + order.kind)).forEach(order => lines.push(tr("取消{0}", orderText(order))));
 			const oldExceptions = new Map(old.exceptions.map(exception => [exception.service, JSON.stringify(exception)]));
 			const newExceptions = new Map(now.exceptions.map(exception => [exception.service, JSON.stringify(exception)]));
 			now.exceptions.filter(exception => oldExceptions.get(exception.service) !== JSON.stringify(exception)).forEach(exception => {
@@ -1845,13 +1885,16 @@
 			const times = timesOf(s);
 			if (xOf(times[times.length - 1][1]) < LABEL_W - 40 || xOf(times[0][0]) > w + 40) return;
 			const points = [];
+			const [firstServed, lastServed] = servedStops(s);
 			s.route.rows.forEach((row, i) => {
+				if (i < firstServed || i > lastServed) return;
 				const leaveRow = s.route.leaveRows[i];
 				points.push([xOf(times[i][0]), yOf(row)]);
 				// Going on in another section: straight across to the station's row there as it arrives
 				if (leaveRow !== row) points.push([xOf(times[i][0]), yOf(leaveRow), true]);
-				if (times[i][1] !== times[i][0]) points.push([xOf(times[i][1]), yOf(leaveRow)]);
+				if (times[i][1] !== times[i][0] && i < lastServed) points.push([xOf(times[i][1]), yOf(leaveRow)]);
 			});
+			if (!points.length) return;
 			drawn.push({ s, points });
 			const isSelected = s.id === state.selected || s.route.id === state.selectedRoute;
 			const dim = selectedRoute && s.route.id !== selectedRoute;
@@ -1883,9 +1926,25 @@
 			polyline(points);
 			ctx.setLineDash([]);
 			ctx.globalAlpha = dim ? 0.25 : 1;
+			// Set on the running diagram: a short dashed run from or to the depot, with its name
+			[[s.deployOrder, points[0], -1], [s.returnOrder, points[points.length - 1], 1]].forEach(([order, [px, py], side]) => {
+				if (!order) return;
+				ctx.strokeStyle = colorOf(s.route.color);
+				ctx.lineWidth = 1;
+				ctx.setLineDash([3, 3]);
+				ctx.beginPath();
+				ctx.moveTo(px, py);
+				ctx.lineTo(px + side * 14, py + 10);
+				ctx.stroke();
+				ctx.setLineDash([]);
+				ctx.fillStyle = c.muted;
+				ctx.font = `11px ${css("--font-ui")}`;
+				ctx.textAlign = side < 0 ? "right" : "left";
+				ctx.fillText(side < 0 ? orderDepotName(order) + " →" : "→ " + orderDepotName(order), px + side * 16, py + 20);
+			});
 			// Where the train carries on onto another route, or goes back to the depot
 			const [ex, ey] = points[points.length - 1];
-			if (s.link || s.returns && !loopNext.has(s.id)) {
+			if (!s.returnOrder && (s.link || s.returns && !loopNext.has(s.id))) {
 				const next = s.link && data.routeById.get(s.link.route);
 				ctx.fillStyle = s.link ? c.ink : c.muted;
 				ctx.font = `11px ${css("--font-ui")}`;
@@ -2297,12 +2356,19 @@
 	let tableRoute = null;
 	/** The head of a service's column: its time, which starts editing it, and notes. */
 	function serviceHead(s, selected, notes) {
-		return `<th class="svc-head${selected ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
+		return `<th class="svc-head${selected ? " hl" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
 	}
 
 	/** A service's arrival, departure or passing time at a stop, as a cell to click and type into. @param t its times there */
 	function timeCell(s, i, kind, t, selected) {
 		const plan = s.plans[i], exception = s.exceptions && s.exceptions.get(i);
+		// Not served: before the stop a train from a depot joins it, or after the one it leaves for a depot
+		const [firstServed, lastServed] = servedStops(s);
+		if (i < firstServed || i > lastServed || i === firstServed && kind === "arr" && i > 0 || i === lastServed && kind === "dep" && i < s.route.stops.length - 1) {
+			const before = i < firstServed || i === firstServed && kind === "arr";
+			const title = before ? tr("出车 ← {0}", orderDepotName(s.deployOrder)) : tr("回送 → {0}", orderDepotName(s.returnOrder));
+			return `<td class="${["pass", "unserved", selected ? "hl" : ""].filter(Boolean).join(" ")}" data-svc="${s.id}" data-stop="${i}" data-kind="${kind}" title="${escapeHtml(title)}" tabindex="0">—</td>`;
+		}
 		const passes = kind !== "pass" && plan.passes;
 		const changed = exception && (kind === "dep" ? exception.dwell >= 0 : exception.run >= 0) || exception && exception.pass >= 0;
 		const leaves = s.link && kind !== "dep" && (s.link.fromStop < 0 ? i === s.route.stops.length - 1 : s.link.fromStop === i);
@@ -2543,6 +2609,11 @@
 				setStopException(table, s.service, stop, { run: -1, dwell: -1 });
 			})]);
 			if (exception) items.push([tr("恢复按表的时刻"), () => edit(table => setStopException(table, s.service, stop, { run: -1, dwell: -1, pass: -1, overtake: -1 }))]);
+			// Joined or left part of the way by a train from or to a depot, set by hand
+			if (!s.link && stop < n - 1 && (!s.returnOrder || stop < s.returnOrder.stop)) items.push([s.deployOrder && s.deployOrder.stop === stop ? tr("改出车的车厂…") : tr("从这一站出车…"), () => serviceOrderDialog(s, "deploy", stop)]);
+			if (stop > 0 && (!s.deployOrder || stop > s.deployOrder.stop)) items.push([s.returnOrder && s.returnOrder.stop === stop ? tr("改回送的车厂…") : tr("在这一站转回送…"), () => serviceOrderDialog(s, "return", stop)]);
+			if (s.deployOrder) items.push([tr("取消出车指令"), () => edit(table => setServiceOrder(table, s.service, "deploy", 0, null))]);
+			if (s.returnOrder) items.push([tr("取消回送"), () => edit(table => setServiceOrder(table, s.service, "return", 0, null))]);
 			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`${tr("设为出库列车接入这条环线的站")}`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
 			if (isLoop(s.route) && loopEntryStop(s.route) === stop && stop > 0) items.push([tr("出库列车改回从首站接入"), () => editTimetable(s.route, timetable => { timetable.entryPlatform = "0"; })]);
 			// Through running: leave at the last stop or a boundary, join at the first stop or a boundary

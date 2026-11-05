@@ -3,6 +3,7 @@ package transitsim.planning;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * One timetable service of a route. Stop offsets are measured from the planned arrival at the first stop.
@@ -15,6 +16,15 @@ public final class TimetableService {
 	public final long firstArrivalMillis;
 	public final boolean blank;
 	public final List<Stop> stops;
+	/**
+	 * The depots a train for it has to come out of fresh, as set on the running diagram, or null for any train: one
+	 * already out, or one from the nearest depot.
+	 */
+	public Set<Long> startDepots;
+	/**
+	 * Whether the train goes back to the depot after it, as set on the running diagram, rather than running on.
+	 */
+	public boolean endsDuty;
 
 	public TimetableService(long id, long routeId, int daysMask, long firstArrivalMillis, boolean blank, List<Stop> stops) {
 		if (stops.isEmpty()) {

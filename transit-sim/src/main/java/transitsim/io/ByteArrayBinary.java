@@ -65,6 +65,11 @@ public final class ByteArrayBinary {
 		}
 
 		@Override
+		public boolean hasMore() {
+			return position < bytes.length;
+		}
+
+		@Override
 		public byte readByte() {
 			if (position >= bytes.length) {
 				throw new IllegalStateException("Read past the end of the data");

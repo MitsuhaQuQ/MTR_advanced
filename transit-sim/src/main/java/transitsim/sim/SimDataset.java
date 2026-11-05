@@ -40,9 +40,10 @@ public final class SimDataset {
 	/**
 	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1), version 4 the depots' departures by
 	 * frequency and order of sidings, and which sidings are driven by hand (G1); version 5 the depots' release intervals
-	 * and the sidings' pools, version 6 the routes' own fastest times (L1); older data is read without them.
+	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
+	 * an operating line; older data is read without them.
 	 */
-	public static final int VERSION = 6;
+	public static final int VERSION = 7;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -92,6 +93,7 @@ public final class SimDataset {
 		depots.forEach(depot -> writer.writeInt(depot.releaseInterval));
 		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.poolKey));
 		routes.forEach(route -> writeTimes(writer, route.fastestTimes));
+		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.linePool));
 		return writer.toBytes();
 	}
 
@@ -146,6 +148,11 @@ public final class SimDataset {
 		if (version >= 6) {
 			for (final RouteData route : dataset.routes) {
 				route.fastestTimes = readTimes(reader);
+			}
+		}
+		if (version >= 7) {
+			for (final SidingData siding : dataset.sidings) {
+				siding.linePool = BinaryKeyed.readString(reader);
 			}
 		}
 		return dataset;
@@ -219,6 +226,7 @@ public final class SimDataset {
 			if (depot.duties.length > 0) {
 				board.duties.fromBytes(depot.duties);
 			}
+			board.depotId = depot.id;
 			boards.put(depot.id, board);
 		}
 		// Depots running a route in common share its services, as the game's depots do
@@ -244,6 +252,7 @@ public final class SimDataset {
 			siding.usesSpeedCurve = sidingData.usesSpeedCurve;
 			siding.manual = sidingData.manual;
 			siding.poolKey = sidingData.poolKey;
+			siding.linePool = sidingData.linePool;
 			sidingData.tripPaths.forEach(tripPath -> {
 				final TripPath<DataTrack> newTripPath = new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path);
 				newTripPath.generateTimes(generator);
@@ -623,6 +632,12 @@ public final class SimDataset {
 		 * What the depot's sidings whose trains can run each other's duties have in common, or empty for a pool of its own.
 		 */
 		public String poolKey = "";
+		/**
+		 * The pool of sidings across the depots of an operating line planned together (decoupling document 5.4, after L1):
+		 * the planning unit's key and the pool key, or empty if its depot doesn't plan by line. A train goes back to any of
+		 * them after its duty.
+		 */
+		public String linePool = "";
 
 		public SidingData(long id, long depotId, long[] routeIds, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains, boolean usesSpeedCurve, float minSpeed, int repeatIndex1, int repeatIndex2, int loopJoinIndex, List<DataTrack> path, byte[] turnBacks) {
 			this.id = id;

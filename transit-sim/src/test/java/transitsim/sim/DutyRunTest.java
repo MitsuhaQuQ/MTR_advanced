@@ -358,8 +358,67 @@ class DutyRunTest {
 
 		assertFalse(train[0].service.takeReturnedElsewhere());
 		train[0].service.update(false);
-		assertTrue(train[0].service.takeReturnedElsewhere());
+		// The host learns which siding it came back to, once
+		assertEquals(OTHER_SIDING_ID, train[0].service.takeReturnedElsewhereSiding());
+		assertEquals(0, train[0].service.takeReturnedElsewhereSiding());
 		assertFalse(train[0].service.takeReturnedElsewhere());
+	}
+
+	@Test
+	void aDutyWhoseLastServiceIsSetToGoBackToADepotAsksForItsSidings() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		final List<TestTrack> otherPath = new ArrayList<>(tripPath.path);
+		final DepotDuties.DayDuty day = depot.slots.get(0).getDuty(0);
+		final List<Long> routeIds = new ArrayList<>();
+		day.segments.forEach(segment -> routeIds.add(segment.routeId));
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(tripPath.key, routeIds, new HashMap<>(), new HashMap<>(), new HashMap<>(), otherPath, tripPath.dutyStarts, null, null, false, false);
+		final TripPath<TestTrack> returnPath = new TripPath<>(dutyPlan, tripPath.dutyStarts, otherPath, TripPath.getReturnKey(tripPath.key, OTHER_SIDING_ID));
+		tripPaths.put(returnPath.key, returnPath);
+		depot.returnTo = OTHER_SIDING_ID;
+		// The duty's last service, route 2 at 08:20, goes back to depot 77
+		routes.get(2L).timetable.returnOrders.put((int) (8 * HOUR + 20 * MINUTE), new RouteTimetable.ServiceOrder(1, 77));
+
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		train[0].nextStoppingIndex = 5;
+		assertTrue(train[0].service.chooseDutyReturn());
+		assertEquals(77, depot.orderedDepot);
+		assertSame(returnPath, train[0].followed);
+	}
+
+	@Test
+	void theSidingOfAReturnPathIsReadFromItsKey() {
+		assertEquals(OTHER_SIDING_ID, TripPath.getReturnSidingId(TripPath.getReturnKey("duty|1", OTHER_SIDING_ID)));
+		assertEquals(-5, TripPath.getReturnSidingId(TripPath.getReturnKey("duty|1", -5)));
+		assertEquals(0, TripPath.getReturnSidingId("duty|1"));
+	}
+
+	@Test
+	void aTrainGoesBackToASidingOfAnotherDepotOfItsLineThatNeedsATrainSooner() {
+		// The sidings are of two depots, each with its own duties and dispatcher
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (10 * HOUR), 0, -1)));
+		final DepotDuties ownDuties = new DepotDuties();
+		ownDuties.sidings.put(SIDING_ID, depot.slots);
+		setSlots(day(false, -1, new DepotDuties.Segment(2, (int) (9 * HOUR), 0, -1)));
+		final DepotDuties otherDuties = new DepotDuties();
+		otherDuties.sidings.put(OTHER_SIDING_ID, depot.slots);
+		final DepotDispatcher ownDispatcher = new DepotDispatcher();
+		final DepotDispatcher otherDispatcher = new DepotDispatcher();
+		final java.util.function.LongFunction<List<DepotDuties.Slot>> slotsOf = sidingId -> sidingId == SIDING_ID ? ownDuties.getSlots(sidingId) : otherDuties.getSlots(sidingId);
+		final DepotDispatcher.DutyRuns runs = (sidingId, slot, day) -> (sidingId == SIDING_ID ? ownDispatcher : otherDispatcher).hasDutyRun(sidingId, slot, day);
+		final List<Long> pool = Arrays.asList(SIDING_ID, OTHER_SIDING_ID);
+		final long millis = MONDAY + 8 * HOUR + 30 * MINUTE;
+
+		assertEquals(OTHER_SIDING_ID, DepotDispatcher.chooseReturnSiding(SIDING_ID, pool, slotsOf, runs, millis, sidingId -> true));
+		// Full there, it comes home
+		assertEquals(SIDING_ID, DepotDispatcher.chooseReturnSiding(SIDING_ID, pool, slotsOf, runs, millis, sidingId -> sidingId == SIDING_ID));
+		// Its depot has sent that duty out already, which the other depot's dispatcher knows, not its own
+		otherDispatcher.markDutyRun(OTHER_SIDING_ID, 0, DutyShapes.getDayNumber(MONDAY));
+		assertEquals(SIDING_ID, DepotDispatcher.chooseReturnSiding(SIDING_ID, pool, slotsOf, runs, millis, sidingId -> true));
+		// The one depot's way gives the same as before for its own pool
+		assertEquals(SIDING_ID, ownDispatcher.chooseReturnSiding(SIDING_ID, pool, ownDuties, millis, sidingId -> true));
 	}
 
 	@Test
@@ -581,6 +640,10 @@ class DutyRunTest {
 		List<DepotDuties.Slot> slots = new ArrayList<>();
 		List<DepotDuties.Slot> otherSlots = new ArrayList<>();
 		long returnTo = SIDING_ID;
+		/**
+		 * The depot a duty was last set to go back to, or 0.
+		 */
+		long orderedDepot;
 		final Set<String> reserved = new HashSet<>();
 		final Map<String, Long> runDays = new HashMap<>();
 
@@ -622,6 +685,12 @@ class DutyRunTest {
 
 		@Override
 		public long chooseReturnSiding(long sidingId) {
+			return returnTo;
+		}
+
+		@Override
+		public long chooseReturnSiding(long sidingId, long depotId) {
+			orderedDepot = depotId;
 			return returnTo;
 		}
 

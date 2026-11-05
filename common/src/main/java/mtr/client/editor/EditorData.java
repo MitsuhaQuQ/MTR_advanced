@@ -267,6 +267,11 @@ public final class EditorData {
 			final JsonArray returnsArray = new JsonArray();
 			table.returnServices.forEach(returnsArray::add);
 			tableObject.add("returns", returnsArray);
+			// Services joined or left part of the way by a train from or to a depot
+			final JsonArray ordersArray = new JsonArray();
+			table.deployOrders.forEach((service, order) -> ordersArray.add(orderJson(service, "deploy", order)));
+			table.returnOrders.forEach((service, order) -> ordersArray.add(orderJson(service, "return", order)));
+			tableObject.add("orders", ordersArray);
 
 			// Stops where one service runs differently, with its own times worked out
 			final JsonArray exceptionsArray = new JsonArray();
@@ -384,5 +389,14 @@ public final class EditorData {
 			TIMES_REQUESTED.put(routeId, millis);
 			PacketTrainDataGuiClient.requestTimetableTimesC2S(routeId);
 		}
+	}
+
+	private static JsonObject orderJson(int service, String kind, transitsim.plan.RouteTimetable.ServiceOrder order) {
+		final JsonObject orderObject = new JsonObject();
+		orderObject.addProperty("service", service);
+		orderObject.addProperty("kind", kind);
+		orderObject.addProperty("stop", order.stop);
+		orderObject.addProperty("depot", String.valueOf(order.depotId));
+		return orderObject;
 	}
 }

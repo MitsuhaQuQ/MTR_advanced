@@ -56,6 +56,14 @@ public final class DepotBoard implements TrainService.Board {
 	 * own siding.
 	 */
 	LongUnaryOperator returnChooser;
+	/**
+	 * Chooses a siding of a given depot for a duty set to go back there.
+	 */
+	java.util.function.LongBinaryOperator orderedReturnChooser;
+	/**
+	 * The depot's ID in the data it was built from, or 0.
+	 */
+	public long depotId;
 
 	/**
 	 * The two depots run a route in common, so a service either one's trains take isn't taken by the other's too.
@@ -168,5 +176,10 @@ public final class DepotBoard implements TrainService.Board {
 	@Override
 	public long chooseReturnSiding(long sidingId) {
 		return returnChooser == null ? sidingId : returnChooser.applyAsLong(sidingId);
+	}
+
+	@Override
+	public long chooseReturnSiding(long sidingId, long depotId) {
+		return orderedReturnChooser == null ? chooseReturnSiding(sidingId) : orderedReturnChooser.applyAsLong(sidingId, depotId);
 	}
 }

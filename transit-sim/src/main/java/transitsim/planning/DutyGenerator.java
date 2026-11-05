@@ -73,8 +73,19 @@ public final class DutyGenerator {
 						pass[j] = stopTime != null && stopTime.passes;
 					}
 					final RouteTimetable.ServiceLink link = table.links.get(service);
-					services.add(new ServiceInput(route.getRouteId(), service, days, Math.floorMod(service - dayStartMillis, (long) OperatingDay.MILLIS_PER_DAY), platformIds, plans, pass,
-							link == null ? 0 : link.routeId, link == null ? 0 : link.service, link == null ? -1 : link.fromStop, link == null ? 0 : link.toStop));
+					final ServiceInput input = new ServiceInput(route.getRouteId(), service, days, Math.floorMod(service - dayStartMillis, (long) OperatingDay.MILLIS_PER_DAY), platformIds, plans, pass,
+							link == null ? 0 : link.routeId, link == null ? 0 : link.service, link == null ? -1 : link.fromStop, link == null ? 0 : link.toStop);
+					final RouteTimetable.ServiceOrder deployOrder = table.deployOrders.get(service);
+					if (deployOrder != null && deployOrder.stop < platformIds.length - 1) {
+						input.deployStop = deployOrder.stop;
+						input.deployDepot = deployOrder.depotId;
+					}
+					final RouteTimetable.ServiceOrder returnOrder = table.returnOrders.get(service);
+					if (returnOrder != null && returnOrder.stop > Math.max(input.deployStop, 0)) {
+						input.returnStop = Math.min(returnOrder.stop, platformIds.length - 1);
+						input.returnDepot = returnOrder.depotId;
+					}
+					services.add(input);
 				}
 			}
 		}
@@ -96,7 +107,24 @@ public final class DutyGenerator {
 		final List<Chain> chains = buildChains(services);
 		final List<TimetableService> timetableServices = new ArrayList<>();
 		for (int i = 0; i < chains.size(); i++) {
-			timetableServices.add(chains.get(i).toTimetableService(i));
+			final Chain chain = chains.get(i);
+			final TimetableService timetableService = chain.toTimetableService(i);
+			// Set on the running diagram: a train fresh out of a depot, of that depot if it has a siding here
+			if (chain.deployDepot >= 0) {
+				final Set<Long> startDepots = new TreeSet<>();
+				sidings.forEach(siding -> {
+					if (chain.deployDepot == 0 || siding.depotId == chain.deployDepot) {
+						startDepots.add(siding.sidingId);
+					}
+				});
+				if (startDepots.isEmpty()) {
+					result.issues.add("DEPLOY_DEPOT " + chain.deployDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
+					sidings.forEach(siding -> startDepots.add(siding.sidingId));
+				}
+				timetableService.startDepots = startDepots;
+			}
+			timetableService.endsDuty = chain.endsDuty;
+			timetableServices.add(timetableService);
 		}
 
 		final OperationNetwork network = new OperationNetwork();
@@ -118,6 +146,19 @@ public final class DutyGenerator {
 					}
 				});
 			}
+		});
+		// A train sent out for a service at a stop of the line runs there from its siding, taking as long as to the nearest
+		// first stop the siding knows, the best guess without the rails
+		timetableServices.forEach(service -> {
+			if (service.startDepots == null) {
+				return;
+			}
+			final long platformId = service.stops.get(0).platformId;
+			sidings.forEach(siding -> {
+				if (siding.links != null && service.startDepots.contains(siding.sidingId) && !siding.links.containsKey(platformId)) {
+					network.addDepotLink(siding.sidingId, platformId, siding.links.values().stream().mapToLong(Long::longValue).min().orElse(0));
+				}
+			});
 		});
 		lastPlatforms.forEach(lastPlatform -> {
 			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS);
@@ -154,9 +195,10 @@ public final class DutyGenerator {
 		services.forEach(service -> {
 			int days = service.weekdays;
 			ServiceInput current = service;
-			for (int i = 0; i < MAX_LINKS && current.linkRoute != 0 && days != 0; i++) {
+			for (int i = 0; i < MAX_LINKS && current.linkRoute != 0 && current.returnStop < 0 && days != 0; i++) {
 				final ServiceInput next = findLinked(byService, current, days);
-				if (next == null || next == service) {
+				// A service a train is sent out of a depot for starts a trip of its own
+				if (next == null || next == service || next.deployStop >= 0) {
 					break;
 				}
 				days &= next.weekdays;
@@ -172,11 +214,11 @@ public final class DutyGenerator {
 				return;
 			}
 			final Chain chain = new Chain(ownDays);
-			chain.add(service, 0);
+			chain.add(service, Math.max(service.deployStop, 0));
 			ServiceInput current = service;
-			for (int i = 0; i < MAX_LINKS && current.linkRoute != 0; i++) {
+			for (int i = 0; i < MAX_LINKS && current.linkRoute != 0 && current.returnStop < 0; i++) {
 				final ServiceInput next = findLinked(byService, current, chain.weekdays);
-				if (next == null || next == service || (chain.weekdays & next.weekdays) == 0) {
+				if (next == null || next == service || next.deployStop >= 0 || (chain.weekdays & next.weekdays) == 0) {
 					break;
 				}
 				chain.weekdays &= next.weekdays;
@@ -184,6 +226,12 @@ public final class DutyGenerator {
 				chain.add(next, current.linkToStop);
 				current = next;
 			}
+			// A service set to end at a stop leaves the line there
+			if (current.returnStop >= 0) {
+				chain.cut(current.returnStop);
+			}
+			chain.deployDepot = service.deployStop >= 0 ? service.deployDepot : -1;
+			chain.endsDuty = current.returnStop >= 0;
 			chains.add(chain);
 		});
 		chains.sort(Comparator.comparingLong((Chain chain) -> chain.startMillis).thenComparingLong(chain -> chain.segments.get(0).routeId));
@@ -288,6 +336,11 @@ public final class DutyGenerator {
 	private static final class Chain {
 
 		private int weekdays;
+		/**
+		 * The depot a train for it has to come out of, 0 for any, or -1 if it may be any train.
+		 */
+		private long deployDepot = -1;
+		private boolean endsDuty;
 		private long startMillis = -1;
 		private final List<DepotDuties.Segment> segments = new ArrayList<>();
 		private final List<TimetableService.Stop> stops = new ArrayList<>();
@@ -368,6 +421,14 @@ public final class DutyGenerator {
 		public final int linkService;
 		public final int linkFromStop;
 		public final int linkToStop;
+		/**
+		 * Set on the running diagram: the stop a train sent out of a depot joins it at and the depot, or -1; the stop it
+		 * ends at to run empty back to a depot and the depot, or -1. A depot of 0 is any.
+		 */
+		public int deployStop = -1;
+		public long deployDepot;
+		public int returnStop = -1;
+		public long returnDepot;
 
 		public ServiceInput(long routeId, int service, int weekdays, long startMillis, long[] platformIds, long[][] plans, boolean[] pass, long linkRoute, int linkService, int linkFromStop, int linkToStop) {
 			this.routeId = routeId;
@@ -407,15 +468,24 @@ public final class DutyGenerator {
 		 * is taken first.
 		 */
 		public final Map<Long, Long> links;
+		/**
+		 * The depot of the siding, for the services set to be sent out of a depot, or 0 if not known.
+		 */
+		public final long depotId;
 
 		public SidingInput(long sidingId, int maxTrains) {
 			this(sidingId, maxTrains, null);
 		}
 
 		public SidingInput(long sidingId, int maxTrains, Map<Long, Long> links) {
+			this(sidingId, maxTrains, links, 0);
+		}
+
+		public SidingInput(long sidingId, int maxTrains, Map<Long, Long> links, long depotId) {
 			this.sidingId = sidingId;
 			this.maxTrains = maxTrains;
 			this.links = links;
+			this.depotId = depotId;
 		}
 	}
 

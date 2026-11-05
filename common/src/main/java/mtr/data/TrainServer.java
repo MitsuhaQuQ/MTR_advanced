@@ -708,6 +708,13 @@ public class TrainServer extends Train {
 	}
 
 	/**
+	 * See {@link TrainService#takeReturnedElsewhereSiding}.
+	 */
+	public long takeReturnedElsewhereSiding() {
+		return service.takeReturnedElsewhereSiding();
+	}
+
+	/**
 	 * @return whether the train is on its way back to that siding of its pool, not its own
 	 */
 	public boolean isReturningTo(long otherSidingId) {

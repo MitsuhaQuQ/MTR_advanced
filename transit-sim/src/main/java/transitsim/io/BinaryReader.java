@@ -16,4 +16,11 @@ public interface BinaryReader {
 	long readLong();
 
 	int readVarInt();
+
+	/**
+	 * @return whether there is anything left to read, as far as the reader knows; false if it can't tell
+	 */
+	default boolean hasMore() {
+		return false;
+	}
 }

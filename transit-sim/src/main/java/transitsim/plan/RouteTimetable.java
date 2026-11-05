@@ -48,6 +48,16 @@ public class RouteTimetable {
 	 */
 	public final Set<Integer> returnServices = new HashSet<>();
 	/**
+	 * Services of this table that end part of the way, at a stop, and run empty from there to a depot, by service (set on
+	 * the running diagram). See {@link ServiceOrder}.
+	 */
+	public final Map<Integer, ServiceOrder> returnOrders = new HashMap<>();
+	/**
+	 * Services of this table that a train sent out of a depot for them joins part of the way, at a stop, by service. See
+	 * {@link ServiceOrder}.
+	 */
+	public final Map<Integer, ServiceOrder> deployOrders = new HashMap<>();
+	/**
 	 * Stops where a service of this table runs differently, by service and then by stop. See {@link ServiceExceptions}.
 	 */
 	public final Map<Integer, Map<Integer, ServiceExceptions.StopException>> exceptions = new HashMap<>();
@@ -111,6 +121,8 @@ public class RouteTimetable {
 		timetable.revision = revision;
 		timetable.links.putAll(links);
 		timetable.returnServices.addAll(returnServices);
+		timetable.returnOrders.putAll(returnOrders);
+		timetable.deployOrders.putAll(deployOrders);
 		exceptions.forEach((service, stops) -> {
 			final Map<Integer, ServiceExceptions.StopException> newStops = new HashMap<>();
 			stops.forEach((stop, stopException) -> newStops.put(stop, stopException.copy()));
@@ -134,6 +146,15 @@ public class RouteTimetable {
 		name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
 		links.keySet().retainAll(services);
 		returnServices.retainAll(services);
+		returnOrders.keySet().retainAll(services);
+		deployOrders.keySet().retainAll(services);
+		returnOrders.values().removeIf(order -> order.stop < 0);
+		deployOrders.values().removeIf(order -> order.stop < 0);
+		// A train has to join a service before it leaves it
+		deployOrders.entrySet().removeIf(entry -> {
+			final ServiceOrder returnOrder = returnOrders.get(entry.getKey());
+			return returnOrder != null && entry.getValue().stop >= returnOrder.stop;
+		});
 		ServiceExceptions.sanitize(this);
 
 		otherTables.forEach(RouteTimetable::sanitize);
@@ -194,6 +215,47 @@ public class RouteTimetable {
 	 */
 	public ServiceLink getLink(long serviceMillis) {
 		return getTable(getTableIndex(serviceMillis)).links.get((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
+	}
+
+	/**
+	 * @param serviceMillis a service as a full timestamp, or a time of the day
+	 * @return where the service ends to run empty to a depot, or null if it runs to its last stop
+	 */
+	public ServiceOrder getReturnOrder(long serviceMillis) {
+		return getTable(getTableIndex(serviceMillis)).returnOrders.get((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
+	}
+
+	/**
+	 * @param serviceMillis a service as a full timestamp, or a time of the day
+	 * @return where a train sent out for the service joins it, or null if it runs from its first stop as usual
+	 */
+	public ServiceOrder getDeployOrder(long serviceMillis) {
+		return getTable(getTableIndex(serviceMillis)).deployOrders.get((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
+	}
+
+	/**
+	 * @return the first stop the service carries passengers from, as a stop of the route
+	 */
+	public int getFirstStop(long serviceMillis) {
+		final ServiceOrder order = getDeployOrder(serviceMillis);
+		return order == null ? 0 : order.stop;
+	}
+
+	/**
+	 * @param stopCount how many stops the route has
+	 * @return the last stop the service carries passengers to, as a stop of the route
+	 */
+	public int getLastStop(long serviceMillis, int stopCount) {
+		final ServiceOrder order = getReturnOrder(serviceMillis);
+		return order == null ? stopCount - 1 : Math.min(order.stop, stopCount - 1);
+	}
+
+	/**
+	 * @return whether the service carries passengers at this stop, which it doesn't before the stop a train sent out for it
+	 * joins it or after the stop it ends at to run empty to a depot
+	 */
+	public boolean servesStop(long serviceMillis, int stopIndex, int stopCount) {
+		return stopIndex >= getFirstStop(serviceMillis) && stopIndex <= getLastStop(serviceMillis, stopCount);
 	}
 
 	/**
@@ -394,6 +456,37 @@ public class RouteTimetable {
 			}
 		}
 		return closest;
+	}
+
+	/**
+	 * Where a service starts or ends other than at the route's first or last stop, set by hand on the running diagram: a
+	 * train sent out of a depot joins it at a stop, or it ends at a stop and the train runs empty from there to a depot.
+	 */
+	public static final class ServiceOrder {
+
+		/**
+		 * The stop of the route, counting from 0.
+		 */
+		public final int stop;
+		/**
+		 * The depot the train comes from or goes back to, or 0 to leave it to the planner.
+		 */
+		public final long depotId;
+
+		public ServiceOrder(int stop, long depotId) {
+			this.stop = stop;
+			this.depotId = depotId;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return object instanceof ServiceOrder && ((ServiceOrder) object).stop == stop && ((ServiceOrder) object).depotId == depotId;
+		}
+
+		@Override
+		public int hashCode() {
+			return stop * 31 + Long.hashCode(depotId);
+		}
 	}
 
 	/**

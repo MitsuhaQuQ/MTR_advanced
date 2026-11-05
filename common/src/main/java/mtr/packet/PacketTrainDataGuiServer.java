@@ -675,7 +675,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 						final TimetableConflicts.RouteTimes newRouteTimes = new TimetableConflicts.RouteTimes(testRoute.id, testRoute.platformIds);
 						for (int i = 0; i < testRoute.timetable.getTableCount(); i++) {
 							final RouteTimetable table = testRoute.timetable.getTable(i);
-							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times, table.exceptions);
+							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times, table.exceptions, table.deployOrders, table.returnOrders);
 						}
 						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
 						newRouteTimes.setThroats(throats.getOrDefault(testRoute.id, Collections.emptyList()));

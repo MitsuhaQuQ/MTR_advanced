@@ -227,5 +227,8 @@
   "gui.mtr.path_failure_connecting_line": "刷新失敗：被隔離擋住：要經過聯絡線 %s（%s 附近），可以在配線圖裡放行這一段",
   "gui.mtr.connecting_line": "聯絡線（別的路線線內不走，可以直通載客）",
   "gui.mtr.editor_bad_line_name": "路線組名不能為空，也不能太長",
-  "gui.mtr.timetable_conflicts_found_throat": "衝突 %1$s 處。這一班：%2$s 站咽喉的道岔（%3$s）和 %4$s 的 %5$s 班進路交叉"
+  "gui.mtr.timetable_conflicts_found_throat": "衝突 %1$s 處。這一班：%2$s 站咽喉的道岔（%3$s）和 %4$s 的 %5$s 班進路交叉",
+  "gui.mtr.timetable_deploy_order": "%2$s出車，從%1$s站接上",
+  "gui.mtr.timetable_return_order": "在%1$s站轉回送，回%2$s",
+  "gui.mtr.timetable_order_any_depot": "自動選的車廠"
 }

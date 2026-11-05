@@ -170,6 +170,15 @@ class SimDatasetTest {
 		assertTrue(simulator.events(0).stream().noneMatch(event -> event.kind == SimEvent.Kind.DEADLOCK));
 	}
 
+	@Test
+	void theLinePoolsOfSidingsAreKept() {
+		final SimDataset dataset = lines(2, 400, 2, 4, 10);
+		dataset.sidings.get(0).linePool = "unit|train/2";
+		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
+		assertEquals("unit|train/2", read.sidings.get(0).linePool);
+		assertEquals("", read.sidings.get(1).linePool);
+	}
+
 	/**
 	 * @param count     how many lines like {@link ScenarioLine}, each with its own nodes, routes and depot
 	 * @param headway   the minutes between services

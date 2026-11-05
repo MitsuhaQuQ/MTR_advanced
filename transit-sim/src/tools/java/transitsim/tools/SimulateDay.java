@@ -55,6 +55,11 @@ public final class SimulateDay {
 			return;
 		}
 		SimDataset dataset = SimDataset.fromBytes(data);
+		// -Dmtr.noLinePools=true runs without trains going back to other depots of their line, to compare
+		if (Boolean.getBoolean("mtr.noLinePools")) {
+			dataset.sidings.forEach(siding -> siding.linePool = "");
+			data = dataset.toBytes();
+		}
 		// -Dmtr.simRoutes=id,id simulates only those routes' part of the world, as the editor does (SimScope);
 		// -Dmtr.simRoutes=scopes lists how big that part is for each depot's routes, without simulating
 		final String simRoutes = System.getProperty("mtr.simRoutes", "");

@@ -357,6 +357,17 @@ public final class TimetableConflicts {
 		}
 
 		/**
+		 * As {@link #addTable(int, int, List, int, long[][], Map)}, with the services set on the running diagram to be joined
+		 * or left part of the way, which don't use the stops before or after.
+		 */
+		public void addTable(int table, int weekdays, List<Integer> services, int marginPercent, long[][] times, Map<Integer, Map<Integer, ServiceExceptions.StopException>> exceptions, Map<Integer, RouteTimetable.ServiceOrder> deployOrders, Map<Integer, RouteTimetable.ServiceOrder> returnOrders) {
+			addTable(table, weekdays, services, marginPercent, times, exceptions);
+			final TableTimes tableTimes = tables.get(tables.size() - 1);
+			deployOrders.forEach((service, order) -> tableTimes.servedStops.computeIfAbsent(service, key -> new int[]{0, Integer.MAX_VALUE})[0] = order.stop);
+			returnOrders.forEach((service, order) -> tableTimes.servedStops.computeIfAbsent(service, key -> new int[]{0, Integer.MAX_VALUE})[1] = order.stop);
+		}
+
+		/**
 		 * @return the arrivals and departures, with -1 for stops the path doesn't reach
 		 */
 		private static long[][] getTimes(long[][] times, List<RouteTimetable.StopPlan> plans) {
@@ -395,7 +406,21 @@ public final class TimetableConflicts {
 			tables.stream().filter(table -> table.runsOn(weekday)).forEach(table -> table.services.forEach(service -> {
 				if (foundServices.add(service)) {
 					final long[][] serviceTimes = table.serviceTimes.get(service);
-					services.add(new ServiceTimes(table.table, service, serviceTimes == null ? table.arrivals : serviceTimes[0], serviceTimes == null ? table.departures : serviceTimes[1]));
+					long[] arrivals = serviceTimes == null ? table.arrivals : serviceTimes[0];
+					long[] departures = serviceTimes == null ? table.departures : serviceTimes[1];
+					// Stops a service joined or left part of the way doesn't use count as not reached
+					final int[] served = table.servedStops.get(service);
+					if (served != null) {
+						arrivals = arrivals.clone();
+						departures = departures.clone();
+						for (int i = 0; i < arrivals.length; i++) {
+							if (i < served[0] || i > served[1]) {
+								arrivals[i] = -1;
+								departures[i] = -1;
+							}
+						}
+					}
+					services.add(new ServiceTimes(table.table, service, arrivals, departures));
 				}
 			}));
 			return services;
@@ -545,6 +570,10 @@ public final class TimetableConflicts {
 		 * The arrivals and departures of services with exceptions, which differ from the table's.
 		 */
 		private final Map<Integer, long[][]> serviceTimes = new HashMap<>();
+		/**
+		 * The first and last stops of services joined or left part of the way.
+		 */
+		private final Map<Integer, int[]> servedStops = new HashMap<>();
 
 		private TableTimes(int table, int weekdays, List<Integer> services, long[] arrivals, long[] departures) {
 			this.table = table;

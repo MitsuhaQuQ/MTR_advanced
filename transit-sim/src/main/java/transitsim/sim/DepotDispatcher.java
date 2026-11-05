@@ -270,6 +270,25 @@ public class DepotDispatcher {
 	 * @return the siding to go back to
 	 */
 	public long chooseReturnSiding(long ownSidingId, Collection<Long> poolSidingIds, DepotDuties duties, long currentMillis, LongPredicate hasRoom) {
+		return chooseReturnSiding(ownSidingId, poolSidingIds, duties::getSlots, this::hasDutyRun, currentMillis, hasRoom);
+	}
+
+	/**
+	 * Whether a siding's slot has run its duty on a day, as the dispatcher of the siding's own depot knows.
+	 */
+	@FunctionalInterface
+	public interface DutyRuns {
+		boolean hasDutyRun(long sidingId, int slot, long day);
+	}
+
+	/**
+	 * As {@link #chooseReturnSiding(long, Collection, DepotDuties, long, LongPredicate)}, for a pool whose sidings may be of
+	 * different depots of an operating line, each with its own duties and dispatcher.
+	 *
+	 * @param slotsOf a siding's duty slots, from its own depot
+	 * @param runs    whether a siding's slot has run today, from its own depot
+	 */
+	public static long chooseReturnSiding(long ownSidingId, Collection<Long> poolSidingIds, java.util.function.LongFunction<List<DepotDuties.Slot>> slotsOf, DutyRuns runs, long currentMillis, LongPredicate hasRoom) {
 		final long dayStart = DutyShapes.getDayStart(currentMillis);
 		final long day = DutyShapes.getDayNumber(dayStart);
 		final int weekday = OperatingDay.getWeekday(currentMillis);
@@ -279,10 +298,10 @@ public class DepotDispatcher {
 			if (!hasRoom.test(sidingId)) {
 				continue;
 			}
-			final List<DepotDuties.Slot> slots = duties.getSlots(sidingId);
+			final List<DepotDuties.Slot> slots = slotsOf.apply(sidingId);
 			for (int i = 0; i < slots.size(); i++) {
 				final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
-				if (duty == null || duty.segments.isEmpty() || hasDutyRun(sidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
+				if (duty == null || duty.segments.isEmpty() || runs.hasDutyRun(sidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
 					continue;
 				}
 				final long serviceMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service);

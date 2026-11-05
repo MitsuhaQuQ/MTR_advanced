@@ -36,6 +36,28 @@ public final class TimetableBinary {
 			table.returnServices.forEach(writer::writeInt);
 			ServiceExceptions.write(writer, table);
 		}
+		// The service orders of each table come after all the tables, so data written before them still reads
+		for (final RouteTimetable table : tables) {
+			writeOrders(writer, table.returnOrders);
+			writeOrders(writer, table.deployOrders);
+		}
+	}
+
+	private static void writeOrders(BinaryWriter writer, java.util.Map<Integer, RouteTimetable.ServiceOrder> orders) {
+		writer.writeVarInt(orders.size());
+		new java.util.TreeMap<>(orders).forEach((service, order) -> {
+			writer.writeInt(service);
+			writer.writeInt(order.stop);
+			writer.writeLong(order.depotId);
+		});
+	}
+
+	private static void readOrders(BinaryReader reader, java.util.Map<Integer, RouteTimetable.ServiceOrder> orders) {
+		for (int i = reader.readVarInt(); i > 0; i--) {
+			final int service = reader.readInt();
+			final int stop = reader.readInt();
+			orders.put(service, new RouteTimetable.ServiceOrder(stop, reader.readLong()));
+		}
 	}
 
 	/**
@@ -47,6 +69,7 @@ public final class TimetableBinary {
 		timetable.enabled = reader.readBoolean();
 		timetable.entryPlatformId = reader.readLong();
 		final int tableCount = reader.readVarInt();
+		final java.util.List<RouteTimetable> tables = new java.util.ArrayList<>();
 		for (int i = 0; i < tableCount; i++) {
 			final RouteTimetable table = i == 0 ? timetable : new RouteTimetable();
 			table.marginPercent = reader.readInt();
@@ -71,6 +94,13 @@ public final class TimetableBinary {
 			ServiceExceptions.read(reader, table);
 			if (i > 0) {
 				timetable.addTable(table);
+			}
+			tables.add(table);
+		}
+		if (reader.hasMore()) {
+			for (final RouteTimetable table : tables) {
+				readOrders(reader, table.returnOrders);
+				readOrders(reader, table.deployOrders);
 			}
 		}
 		timetable.sanitize();

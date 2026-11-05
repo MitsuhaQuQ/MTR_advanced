@@ -378,6 +378,16 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
+	 * Trains of other sidings that came back here, each of which this siding makes standing in its place; not saved, as
+	 * that happens within a tick or two.
+	 */
+	private int pendingArrivals;
+
+	public int getPendingArrivals() {
+		return pendingArrivals;
+	}
+
+	/**
 	 * @return how many of its trains are on their way back to another siding
 	 */
 	public int countReturningTo(long otherSidingId) {
@@ -843,9 +853,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
 			}
-			// Back in another siding of the pool, which makes a train standing there in its place
-			if (train.takeReturnedElsewhere()) {
+			// Back in another siding of the pool, which makes a train standing there in its place, maybe of another depot of
+			// the line
+			final long returnedTo = train.takeReturnedElsewhereSiding();
+			if (returnedTo != 0) {
 				trainsToRemove.add(train);
+				final Siding target = dataCache == null ? null : dataCache.sidingIdMap.get(returnedTo);
+				if (target != null && target != this) {
+					target.pendingArrivals++;
+				}
 				continue;
 			}
 			if (motionEvents != null) {
@@ -890,7 +906,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final boolean runsByDuties = depot.getRunDuties() != null;
 		final int poolSlots = runsByDuties ? depot.getPoolSlots(this) : 0;
 		final int trainLimit = getTrainLimit();
-		if (trainCars > 0 && (runsByDuties ? poolSlots > 0 && (trains.isEmpty() || spawnTrain && depot.getPoolTrains(this) < poolSlots && (trainLimit < 0 || trains.size() < trainLimit)) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
+		// A train that came back here from another siding stands here in its place
+		final boolean arrived = pendingArrivals > 0;
+		if (arrived) {
+			pendingArrivals--;
+		}
+		if (trainCars > 0 && (arrived ? trains.isEmpty() || trainLimit < 0 || trains.size() < trainLimit : runsByDuties ? poolSlots > 0 && (trains.isEmpty() || spawnTrain && depot.getPoolTrains(this) < poolSlots && (trainLimit < 0 || trains.size() < trainLimit)) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
 			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 			trains.add(train);
 		}
@@ -940,6 +961,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		);
 		sidingData.manual = isManual;
 		sidingData.poolKey = getPoolKey();
+		// The pool across the depots of its operating line (SimDataset 7)
+		final String lineUnitKey = depot == null ? "" : depot.getLineUnitKey();
+		sidingData.linePool = lineUnitKey.isEmpty() ? "" : lineUnitKey + "|" + getPoolKey();
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
 	}

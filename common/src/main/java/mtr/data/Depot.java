@@ -101,6 +101,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private String autoDutiesKey;
 	/**
+	 * The depots of the depot's planning unit ({@link LineDuties}), itself among them, and the unit's key, or empty if it
+	 * doesn't plan by line; worked out on the server thread with the auto duties and the paths, not saved. Its trains go back
+	 * to sidings of these depots with the same vehicle too.
+	 */
+	private volatile Set<Long> lineDepotIds = Collections.emptySet();
+	private volatile String lineUnitKey = "";
+	/**
 	 * The depot's sidings in their order, kept until the sidings, the data or the depot's area change, as sending trains
 	 * out by frequency asks for them every tick.
 	 */
@@ -505,6 +512,22 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		// The planning unit of the depot's lines, read here on the server thread, as the other depots and their duties may
 		// change while the path is found
 		final LineDuties.Unit lineUnit = LineDuties.of(this, liveDataCache, sidings);
+		setLineUnit(lineUnit);
+		// The sidings of the unit's other depots, which the duties' trains may go back to as well, and of the depots the
+		// routes' services are set on the running diagram to go back to
+		final Set<Long> returnDepotIds = new HashSet<>();
+		if (lineUnit != null) {
+			returnDepotIds.addAll(lineUnit.depotIds);
+		}
+		getRoutes(liveDataCache).forEach(route -> route.timetable.getTables().forEach(table -> table.returnOrders.values().forEach(order -> returnDepotIds.add(order.depotId))));
+		returnDepotIds.remove(id);
+		final List<Siding> lineSidings = new ArrayList<>();
+		sidings.forEach(siding -> {
+			final Depot sidingDepot = liveDataCache.sidingIdToDepot.get(siding.id);
+			if (sidingDepot != null && sidingDepot != this && returnDepotIds.contains(sidingDepot.id)) {
+				lineSidings.add(siding);
+			}
+		});
 		// Vehicles only run some types of service, so each group of them gets a path of its own routes
 		final Map<Set<String>, List<Siding>> sidingGroups = new LinkedHashMap<>();
 		sidings.forEach(siding -> {
@@ -519,7 +542,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		final boolean useFastSpeed = usesFastSpeed(world);
 		final List<MainPath> mainPaths = new ArrayList<>();
-		sidingGroups.forEach((serviceTypes, sidingGroup) -> mainPaths.add(new MainPath(filterRoutes(getRoutes(dataCache), serviceTypes), sidingGroup, dataCache)));
+		sidingGroups.forEach((serviceTypes, sidingGroup) -> {
+			final MainPath mainPath = new MainPath(filterRoutes(getRoutes(dataCache), serviceTypes), sidingGroup, dataCache);
+			mainPath.lineSidings = lineSidings;
+			mainPaths.add(mainPath);
+		});
 
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		final RailGraph<Rail> graph = getPathGraph(rails, railwayData == null ? null : railwayData.pathBoundaries);
@@ -659,18 +686,44 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	/**
-	 * @return how many duty slots the sidings of the siding's pool have together
+	 * @return the depot's pool of the siding, then the sidings of the other depots of its planning unit with the same
+	 * vehicle, which its trains go back to as well (decoupling document 5.4, after L1)
 	 */
-	public int getPoolSlots(Siding siding) {
-		final DepotDuties runDuties = getRunDuties();
-		return runDuties == null ? 0 : getPool(siding).stream().mapToInt(poolSiding -> runDuties.getSlots(poolSiding.id).size()).sum();
+	private List<Siding> getLinePool(Siding siding) {
+		final List<Siding> pool = new ArrayList<>(getPool(siding));
+		if (dataCache != null && lineDepotIds.size() > 1) {
+			new TreeSet<>(lineDepotIds).forEach(depotId -> {
+				final Depot other = dataCache.depotIdMap.get(depotId);
+				if (other != null && other != this) {
+					pool.addAll(other.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()));
+				}
+			});
+		}
+		return pool;
 	}
 
 	/**
-	 * @return how many trains the sidings of the siding's pool have together, out and standing
+	 * @return the duties a siding of the depot's line pool runs by, its own depot's
+	 */
+	private List<DepotDuties.Slot> getSlotsOf(long sidingId) {
+		final Depot depot = dataCache == null ? null : dataCache.sidingIdToDepot.get(sidingId);
+		final DepotDuties runDuties = depot == null ? null : depot.getRunDuties();
+		return runDuties == null ? Collections.emptyList() : runDuties.getSlots(sidingId);
+	}
+
+	/**
+	 * @return how many duty slots the sidings of the siding's pool have together, across its planning unit
+	 */
+	public int getPoolSlots(Siding siding) {
+		return getRunDuties() == null ? 0 : getLinePool(siding).stream().mapToInt(poolSiding -> getSlotsOf(poolSiding.id).size()).sum();
+	}
+
+	/**
+	 * @return how many trains the sidings of the siding's pool have together, out, standing and coming back from another
+	 * siding, across its planning unit
 	 */
 	public int getPoolTrains(Siding siding) {
-		return getPool(siding).stream().mapToInt(Siding::getTrainCount).sum();
+		return getLinePool(siding).stream().mapToInt(poolSiding -> poolSiding.getTrainCount() + poolSiding.getPendingArrivals()).sum();
 	}
 
 	@Override
@@ -680,21 +733,58 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		if (runDuties == null || siding == null) {
 			return sidingId;
 		}
-		final List<Siding> pool = getPool(siding);
+		final List<Siding> pool = getLinePool(siding);
 		if (pool.size() < 2) {
 			return sidingId;
 		}
 		final Map<Long, Siding> poolById = new HashMap<>();
 		pool.forEach(poolSiding -> poolById.put(poolSiding.id, poolSiding));
-		return dispatcher.chooseReturnSiding(sidingId, poolById.keySet(), runDuties, System.currentTimeMillis(), otherSidingId -> {
+		// Each siding's slots and what has run today are its own depot's
+		return DepotDispatcher.chooseReturnSiding(sidingId, poolById.keySet(), this::getSlotsOf, (eachSidingId, slot, day) -> {
+			final Depot depot = dataCache.sidingIdToDepot.get(eachSidingId);
+			return depot != null && depot.hasDutyRun(eachSidingId, slot, day);
+		}, System.currentTimeMillis(), otherSidingId -> {
 			final Siding other = poolById.get(otherSidingId);
 			if (otherSidingId == sidingId || other.getTrainLimit() < 0) {
 				return true;
 			}
 			// Room for the trains it holds and the ones already on their way to it
 			final int coming = pool.stream().mapToInt(poolSiding -> poolSiding.countReturningTo(otherSidingId)).sum();
-			return other.getTrainCount() + coming < other.getTrainLimit();
+			return other.getTrainCount() + coming + other.getPendingArrivals() < other.getTrainLimit();
 		});
+	}
+
+	@Override
+	public long chooseReturnSiding(long sidingId, long depotId) {
+		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
+		final Depot orderDepot = dataCache == null ? null : dataCache.depotIdMap.get(depotId);
+		if (siding == null || orderDepot == null) {
+			return chooseReturnSiding(sidingId);
+		}
+		final Map<Long, Siding> candidates = new TreeMap<>();
+		orderDepot.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()).forEach(other -> {
+			if (other == siding || other.getTrainLimit() < 0 || other.getTrainCount() + other.getPendingArrivals() + countReturningTo(other.id) < other.getTrainLimit()) {
+				candidates.put(other.id, other);
+			}
+		});
+		if (candidates.isEmpty()) {
+			return chooseReturnSiding(sidingId);
+		}
+		final long first = candidates.containsKey(sidingId) ? sidingId : candidates.keySet().iterator().next();
+		return DepotDispatcher.chooseReturnSiding(first, candidates.keySet(), this::getSlotsOf, (eachSidingId, slot, day) -> {
+			final Depot depot = dataCache.sidingIdToDepot.get(eachSidingId);
+			return depot != null && depot.hasDutyRun(eachSidingId, slot, day);
+		}, System.currentTimeMillis(), eachSidingId -> true);
+	}
+
+	/**
+	 * @return how many trains anywhere are on their way back to this siding, not their own
+	 */
+	private int countReturningTo(long sidingId) {
+		if (dataCache == null) {
+			return 0;
+		}
+		return dataCache.sidingIdMap.values().stream().mapToInt(other -> other.countReturningTo(sidingId)).sum();
 	}
 
 	public void requestDeploy(long sidingId, TrainServer train) {
@@ -861,11 +951,25 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		return key.toString();
 	}
 
+	private void setLineUnit(LineDuties.Unit unit) {
+		lineDepotIds = unit == null ? Collections.emptySet() : Collections.unmodifiableSet(new HashSet<>(unit.depotIds));
+		lineUnitKey = unit == null ? "" : unit.key;
+	}
+
+	/**
+	 * @return the key of the depot's planning unit, or empty if it doesn't plan by line
+	 */
+	public String getLineUnitKey() {
+		return lineUnitKey;
+	}
+
 	/**
 	 * @return whether the auto duties need working out again, which is then taken as done
 	 */
 	public boolean takeAutoDutiesChange(DataCache dataCache, Set<Siding> sidings) {
-		final String key = getAutoDutiesKey(dataCache, sidings);
+		final LineDuties.Unit unit = LineDuties.of(this, dataCache, sidings);
+		setLineUnit(unit);
+		final String key = unit == null ? null : unit.key;
 		if (key == null) {
 			autoDutiesKey = null;
 			return false;
@@ -1218,7 +1322,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			}
 			final List<DutyGenerator.SidingInput> sidingInputs = new ArrayList<>();
-			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit())));
+			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getTrainLimit(), null, id)));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();
@@ -1238,6 +1342,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private PathFailure failure = PathFailure.NONE;
 
 		private final List<Siding> sidings;
+		/**
+		 * The sidings of the other depots of the depot's planning unit, or none.
+		 */
+		private List<Siding> lineSidings = Collections.emptyList();
 		private final boolean repeatPath;
 		/**
 		 * The path turns back from the last route to the first stop of the first one, so trains go round without the depot.
@@ -1516,12 +1624,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		/**
-		 * @return the sidings of the group with the same vehicle as this one, itself first
+		 * @return the sidings of the group with the same vehicle as this one, itself first, then those of the other depots of
+		 * its planning unit with the same vehicle, which its duties may go back to
 		 */
 		private List<Siding> getPoolSidings(Siding siding) {
 			final List<Siding> poolSidings = new ArrayList<>();
 			poolSidings.add(siding);
 			sidings.stream().filter(other -> other != siding && other.getPoolKey().equals(siding.getPoolKey())).sorted(Comparator.comparingLong(other -> other.id)).forEach(poolSidings::add);
+			lineSidings.stream().filter(other -> other.getPoolKey().equals(siding.getPoolKey())).sorted(Comparator.comparingLong(other -> other.id)).forEach(poolSidings::add);
 			return poolSidings;
 		}
 

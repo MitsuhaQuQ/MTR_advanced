@@ -33,6 +33,10 @@ public final class DutyPlanner {
 	private final long maxLayoverMillis;
 	private final List<Issue> issues = new ArrayList<>();
 	private final List<Trip> trips = new ArrayList<>();
+	/**
+	 * The trips with orders set on the running diagram, and the service they are of.
+	 */
+	private final Map<Trip, TimetableService> ordered = new IdentityHashMap<>();
 	private final Map<Long, List<TripStop>> platformStops = new TreeMap<>();
 
 	private DutyPlanner(OperationNetwork network, long maxLayoverMillis) {
@@ -71,7 +75,11 @@ public final class DutyPlanner {
 				} else {
 					final List<TripStop> stops = new ArrayList<>();
 					appendStops(stops, service, day * OperationTime.DAY_MILLIS + service.firstArrivalMillis);
-					trips.add(new Trip(service.id, stops));
+					final Trip trip = new Trip(service.id, stops);
+					trips.add(trip);
+					if (service.startDepots != null || service.endsDuty) {
+						ordered.put(trip, service);
+					}
 				}
 			}
 		});
@@ -153,17 +161,23 @@ public final class DutyPlanner {
 
 		for (final Trip trip : trips) {
 			retireIdleTrains(open, depotReady, trip.startMillis(), result);
-			final OpenDuty duty = findTrainInService(open, trip);
+			// Set on the running diagram: a trip a train has to come out of a depot for, and one after which it goes back
+			final TimetableService order = ordered.get(trip);
+			final Set<Long> startDepots = order == null ? null : order.startDepots;
+			OpenDuty duty = startDepots == null ? findTrainInService(open, trip) : null;
 			if (duty != null) {
 				duty.add(trip, network);
 			} else {
-				final OpenDuty fromDepot = takeFromDepot(depotReady, trip);
-				if (fromDepot == null) {
+				duty = takeFromDepot(depotReady, trip, startDepots);
+				if (duty == null) {
 					result.uncovered.add(trip);
 				} else {
-					open.add(fromDepot);
-					fromDepot.add(trip, network);
+					open.add(duty);
+					duty.add(trip, network);
 				}
+			}
+			if (duty != null && order != null && order.endsDuty) {
+				retire(open, duty, depotReady, result);
 			}
 			updatePeak(result, depotReady, trip.startMillis());
 		}
@@ -186,17 +200,24 @@ public final class DutyPlanner {
 		for (int i = 0; i < open.size(); ) {
 			final OpenDuty duty = open.get(i);
 			if (duty.readyMillis + maxLayoverMillis < nowMillis) {
-				open.remove(i);
-				final long linkMillis = network.depot(duty.depotId).linkMillis(duty.platformId);
-				final List<Long> ready = depotReady.get(duty.depotId);
-				ready.add(duty.readyMillis + Math.max(linkMillis, 0));
-				ready.sort(Comparator.naturalOrder());
-				duty.returnDepotAtMillis = duty.readyMillis + Math.max(linkMillis, 0);
-				result.finished.add(duty);
+				retire(open, duty, depotReady, result);
 			} else {
 				i++;
 			}
 		}
+	}
+
+	/**
+	 * Sends a train back to its depot, where it is ready again once it has run there.
+	 */
+	private void retire(List<OpenDuty> open, OpenDuty duty, Map<Long, List<Long>> depotReady, WeekResult result) {
+		open.remove(duty);
+		final long linkMillis = network.depot(duty.depotId).linkMillis(duty.platformId);
+		final List<Long> ready = depotReady.get(duty.depotId);
+		ready.add(duty.readyMillis + Math.max(linkMillis, 0));
+		ready.sort(Comparator.naturalOrder());
+		duty.returnDepotAtMillis = duty.readyMillis + Math.max(linkMillis, 0);
+		result.finished.add(duty);
 	}
 
 	private OpenDuty findTrainInService(List<OpenDuty> open, Trip trip) {
@@ -212,10 +233,16 @@ public final class DutyPlanner {
 		return best;
 	}
 
-	private OpenDuty takeFromDepot(Map<Long, List<Long>> depotReady, Trip trip) {
+	/**
+	 * @param allowed the depots the train may come from, or null for any
+	 */
+	private OpenDuty takeFromDepot(Map<Long, List<Long>> depotReady, Trip trip, Set<Long> allowed) {
 		OperationNetwork.Depot bestDepot = null;
 		long bestLinkMillis = Long.MAX_VALUE;
 		for (final OperationNetwork.Depot depot : network.depots()) {
+			if (allowed != null && !allowed.contains(depot.id)) {
+				continue;
+			}
 			final long linkMillis = depot.linkMillis(trip.firstPlatform());
 			final List<Long> ready = depotReady.get(depot.id);
 			if (linkMillis != OperationNetwork.UNREACHABLE && linkMillis < bestLinkMillis && !ready.isEmpty() && ready.get(0) + linkMillis <= trip.startMillis()) {

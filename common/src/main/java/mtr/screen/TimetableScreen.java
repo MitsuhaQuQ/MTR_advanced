@@ -494,6 +494,16 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		}
 	}
 
+	private String getOrderStopName(RouteTimetable.ServiceOrder order) {
+		final Station station = route.platformIds.isEmpty() ? null : ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(Math.min(order.stop, route.platformIds.size() - 1)).platformId);
+		return IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name));
+	}
+
+	private static String getOrderDepotName(RouteTimetable.ServiceOrder order) {
+		final Depot depot = order.depotId == 0 ? null : ClientData.DATA_CACHE.depotIdMap.get(order.depotId);
+		return depot == null ? Text.translatable("gui.mtr.timetable_order_any_depot").getString() : IGui.textOrUntitled(IGui.formatStationName(depot.name));
+	}
+
 	private void updateLinkWidgets() {
 		final boolean hasService = getTable().services.contains(baseMillis);
 		final RouteTimetable.ServiceLink link = hasService ? getTable().links.get(baseMillis) : null;
@@ -507,7 +517,17 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonClearLink.visible = link != null;
 		buttonLinkEntry.visible = linkRoute != null && TimetableBoundaries.hasBoundaryStops(linkRoute, PlanAdapters.boundaryPlatforms(ClientData.DATA_CACHE.platformIdMap));
 		buttonReturnToDepot.visible = hasService && link == null;
-		buttonReturnToDepot.setMessage(Text.literal(fitButtonText(Text.translatable(getTable().returnServices.contains(baseMillis) ? "gui.mtr.timetable_return_depot" : "gui.mtr.timetable_stay_on_line").getString())));
+		// Set on the running diagram in the advanced editor, only shown here
+		final List<String> orders = new ArrayList<>();
+		final RouteTimetable.ServiceOrder deployOrder = hasService ? getTable().deployOrders.get(baseMillis) : null;
+		final RouteTimetable.ServiceOrder returnOrder = hasService ? getTable().returnOrders.get(baseMillis) : null;
+		if (deployOrder != null) {
+			orders.add(Text.translatable("gui.mtr.timetable_deploy_order", getOrderStopName(deployOrder), getOrderDepotName(deployOrder)).getString());
+		}
+		if (returnOrder != null) {
+			orders.add(Text.translatable("gui.mtr.timetable_return_order", getOrderStopName(returnOrder), getOrderDepotName(returnOrder)).getString());
+		}
+		buttonReturnToDepot.setMessage(Text.literal(fitButtonText(orders.isEmpty() ? Text.translatable(getTable().returnServices.contains(baseMillis) ? "gui.mtr.timetable_return_depot" : "gui.mtr.timetable_stay_on_line").getString() : String.join(" / ", orders))));
 		updateLocked();
 
 		final boolean wasBinding = isBinding;

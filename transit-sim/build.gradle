@@ -53,4 +53,6 @@ tasks.register("simulateDay", JavaExec) {
 	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
 	// -Pmtr.simRoutes=id,id simulates only those routes' part of the world; -Pmtr.simRoutes=scopes lists its sizes
 	systemProperty "mtr.simRoutes", project.findProperty("mtr.simRoutes") ?: ""
+	// -Pmtr.noLinePools=true runs without trains going back to other depots of their line
+	systemProperty "mtr.noLinePools", project.findProperty("mtr.noLinePools") ?: "false"
 }

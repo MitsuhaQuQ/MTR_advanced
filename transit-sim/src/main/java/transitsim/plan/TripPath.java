@@ -305,6 +305,21 @@ public class TripPath<T extends PlanTrack> {
 	}
 
 	/**
+	 * @return the siding a path going back to another siding goes to, or 0 if the key isn't of such a path
+	 */
+	public static long getReturnSidingId(String key) {
+		final int index = key.lastIndexOf(RETURN_MARK);
+		if (index < 0) {
+			return 0;
+		}
+		try {
+			return Long.parseLong(key.substring(index + 1));
+		} catch (NumberFormatException e) {
+			return 0;
+		}
+	}
+
+	/**
 	 * @return whether the key is of a path going back to a siding other than the one it left
 	 */
 	public static boolean isReturnKey(String key) {

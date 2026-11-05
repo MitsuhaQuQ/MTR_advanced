@@ -439,6 +439,8 @@ public final class EditorActions implements IPacket {
 			table.services.clear();
 			table.links.clear();
 			table.returnServices.clear();
+			table.returnOrders.clear();
+			table.deployOrders.clear();
 			table.exceptions.clear();
 			if (i == servicesTable) {
 				services.forEach(service -> table.services.add(Math.floorMod(service.getAsInt(), Depot.MILLISECONDS_PER_DAY)));
@@ -606,6 +608,15 @@ public final class EditorActions implements IPacket {
 			});
 			table.returnServices.clear();
 			tableObject.getAsJsonArray("returns").forEach(service -> table.returnServices.add(service.getAsInt()));
+			table.returnOrders.clear();
+			table.deployOrders.clear();
+			if (tableObject.has("orders")) {
+				tableObject.getAsJsonArray("orders").forEach(orderElement -> {
+					final JsonObject order = orderElement.getAsJsonObject();
+					final RouteTimetable.ServiceOrder serviceOrder = new RouteTimetable.ServiceOrder(order.get("stop").getAsInt(), parseId(getString(order, "depot")));
+					("deploy".equals(getString(order, "kind")) ? table.deployOrders : table.returnOrders).put(order.get("service").getAsInt(), serviceOrder);
+				});
+			}
 			table.exceptions.clear();
 			if (tableObject.has("exceptions")) {
 				tableObject.getAsJsonArray("exceptions").forEach(exceptionElement -> {

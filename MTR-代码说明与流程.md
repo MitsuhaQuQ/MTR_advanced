@@ -294,9 +294,9 @@ sequenceDiagram
 4. **清理和补车**（组件模拟器接管的侧线跳过这一步）：
    - 车厂里（不在线上）的列车只留一列，多的删掉；两列车位置（`railProgress` 取到 0.1 格）完全相同时删掉后一列。
    - 有列车还在侧线附近（`closeToDepot`）就不补车。
-   - 回到车池里另一条存车线的列车（`takeReturnedElsewhere`，见 4.6 的回库）从这条侧线清掉，那条存车线在下面按规则补一列。
+   - 回到车池里另一条存车线的列车（`takeReturnedElsewhereSiding`，见 4.6 的回库）从这条侧线清掉，并在目标存车线上记一列"待到"（`Siding.pendingArrivals`），那条存车线下一次补车时先补这一列，不受车池计数限制（只看自己的上限）。目标可以是同一运营线路别的车厂的存车线。
    - 需要时新建一列 `TrainServer` 放在侧线上：
-     - 按运用跑的车厂（`depot.getRunDuties() != null`，用时刻表的车厂都是）：按**车池**计数。车池是同一车厂里车型和编组都相同的存车线（`Siding.getPoolKey`），每个 tick 开始时 `RailwayData` 重新分组（`Depot.clearPools`、`addToPool`）。侧线没有车时补一列；否则车池的车少于车池的槽位数（`Depot.getPoolTrains`、`getPoolSlots`）、这条侧线也没到自己的上限（`getTrainLimit`）时才补。
+     - 按运用跑的车厂（`depot.getRunDuties() != null`，用时刻表的车厂都是）：按**车池**计数。车池是同一车厂里车型和编组都相同的存车线（`Siding.getPoolKey`），每个 tick 开始时 `RailwayData` 重新分组（`Depot.clearPools`、`addToPool`）。按运营线路排运用的车厂，计数用**线路车池**（`Depot.getLinePool`）：本车厂的车池加上同一规划单元里别的车厂同键的存车线；每条存车线的槽位按它自己车厂的运用算，列车数加上"待到"的。侧线没有车时补一列；否则车池的车少于车池的槽位数（`Depot.getPoolTrains`、`getPoolSlots`）、这条侧线也没到自己的上限（`getTrainLimit`）时才补。
      - 其余车厂按"无限列车"或最大列车数。
      - 不限数量或最大数大于 0 时列车 ID 随机，否则用侧线 ID。
      - 组件模拟器（`TickRunner.SidingRun.tick`）用同样的规则。
@@ -443,7 +443,8 @@ sequenceDiagram
   - **出库进路**：车要先拿到出库线到首站的进路（`TrainServer.canDeploy` 里的 `isRunGranted(1)`，含正线方向预约，计划发车时刻作优先级）才算准备好，拿不到就在库里等。
   - **晚了**：错过超过 `MAX_DEPLOY_DELAY`（10 分钟）、运用还没跑完（或留线过夜）时照样放（`DutyDeploy.late`），放出后 `joinDutyLate` 把车放到运用里还赶得上的第一站，只放在站上。
   - **车池替补**：槽位自己的存车线没有准备好的车时，由同一车池里另一条有车、也有这个运用路径的存车线放车（`pools` 参数）。`DutyDeploy.dutySidingId` 记下槽位属于哪条存车线，车存成 `duty_siding`，过夜接班和"今天已跑"都按它算。
-  - **回库**：车在运用最后一站准备回库时选一次去哪（`TrainService.chooseDutyReturn` → `Depot.chooseReturnSiding` → `DepotDispatcher.chooseReturnSiding`）：在还有空位（自己的车加上正赶去的车少于上限）的车池存车线里，选今天下一个还没出库的运用最早的那条，没有就回自己的。换到同一运用、终点不同的路径（键 `<运用键>#<存车线>`）。进了别的存车线，原存车线清掉它，那条存车线补一列（4.2）。
+  - **回库**：车在运用最后一站准备回库时选一次去哪（`TrainService.chooseDutyReturn` → `Depot.chooseReturnSiding` → `DepotDispatcher.chooseReturnSiding`）：在还有空位（自己的车加上正赶去的车、待到的车少于上限）的**线路车池**存车线里，选今天下一个还没出库的运用最早的那条，没有就回自己的。线路车池见 4.2，可以是同一运营线路别的车厂的存车线；每条候选的槽位和"今天跑过没有"按它自己车厂读（`DepotDispatcher.chooseReturnSiding` 的静态重载，参数 `slotsOf`、`DutyRuns`）。换到同一运用、终点不同的路径（键 `<运用键>#<存车线>`，`TripPath.getReturnSidingId` 从键读出存车线）。进了别的存车线，原存车线清掉它，那条存车线补一列（4.2）。
+  - **回送指令**：运用最后一段的班次在时刻表里设了回送车厂（`RouteTimetable.returnOrders`，见 9.4），就改用 `Board.chooseReturnSiding(sidingId, depotId)`：只在那个车厂同车型、编组、有空位的存车线里选（下一班最早要车的），那个车厂没有合适的存车线时照上面自动选。车厂寻路时把这些车厂的存车线也算进回库变体（`Depot.generateMainRoute` 的 `lineSidings`）。
 - **共用线路的车厂**：按运用跑时车不预约班次。自动运用生成前先让出共用线路的其他车厂已在跑的班次（`Depot.getSharedTaken`：它们自己设的运用，以及 ID 更小的车厂的自动运用），见 9.4。下面"共享班次"那一段只对按频率、按时刻表在线预约的车厂起作用。
 - **按时刻表或频率**：本 tick 请求发车的侧线（列车在 `canDeploy` 里调 `requestDeploy`，只有出库的第一段轨道没被占才请求）按侧线顺序从 `deployIndex` 开始轮流找：
   - 有时刻表的线路：`findDeployService` 找下一个还没发出的班次，找到就记下这个班次（`lastDeployedTrips`、`reserveTrip`）并 `deployTrain(班次时间, 线路)`。
@@ -987,7 +988,12 @@ sequenceDiagram
   - **车够不够**（`LineDuties.Plan`、`Depot.Shortfall`）：有班次没车时，取离线路最近的存车线，用折半查找求出它最少再加几列，能让没车的班次降到车再多也降不下去的数（`Unit.extraTrains`，约 8 次规划），跑满需要的车数就是现有的加上这些。随自动运用发给客户端（`PACKET_AUTO_DUTIES` 和车厂整包末尾），车厂界面和网页（车厂一行、时刻表上方）显示"跑满需要 N 列，现有 M 列，每天 K 班没有车，建议加到 …"。日志每次排单元写一行 `planned the duties of line …`。
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。
-- **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。主体从线路路径上按站切出来（`getSlice`），中途接入的引导段也一样；网页草稿的路径（`findDutyPaths`）没有 `routeSearch`，仍各自寻路。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
+- **出车和回送指令**（MTM_Logic 0.8.0）：时刻表每张表有 `deployOrders` 和 `returnOrders`，按班次记"第 j 站由车厂 D 出车接上""第 k 站转回送回车厂 D"（`RouteTimetable.ServiceOrder`，D 为 0 是自动），在网页汇总时刻表右键某格设。
+  - **存档**：线路的 `timetable_orders`，每项四个数（班次、种类 0 出车 / 1 回送、站、车厂），旧档没有就是空。线路的包在回库班次之后带两组。`TimetableBinary` 把它们写在所有表之后，读的时候还有字节才读（`BinaryReader.hasMore`），所以旧的组件数据照常读。
+  - **含义**：班次只在 j 到 k 之间载客（`RouteTimetable.getFirstStop`、`getLastStop`、`servesStop`）。时刻表冲突检查把这之外的站当作没到（`TimetableConflicts.RouteTimes.addTable` 多两个参数），站台时刻和到站显示跟着列车的运用路径走，本来就不含这些站。
+  - **规划**：`DutyGenerator.servicesOf` 把指令放进 `ServiceInput`（`deployStop`、`deployDepot`、`returnStop`、`returnDepot`）。连成趟时，有出车指令的班次总是开一趟新的（不被前一班直通接上），从 j 站起；有回送指令的班次在 k 站截断，之后不再直通。`TimetableService.startDepots` 是只能从这些存车线新出库（D 的存车线，`SidingInput.depotId` 对上；D 没有存车线时报 `DEPLOY_DEPOT` 并放开），`endsDuty` 是跑完马上回库。`DutyPlanner.runWeek` 照这两条：前者不接在线上的车、只从这些存车线取车（存车线的 `links` 里没有 j 站时，按它到最近首站的时间补一条），后者跑完就让这列车回库。
+  - **游戏界面**：时刻表界面的"跑完本趟回库"按钮上显示指令（`gui.mtr.timetable_deploy_order`、`timetable_return_order`），只看不改。
+- **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。主体从线路路径上按站切出来（`getSlice`），中途接入的引导段也一样；网页草稿的路径（`findDutyPaths`）没有 `routeSearch`，仍各自寻路。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线（加上同一规划单元别的车厂、和本车厂线路回送指令所指车厂的同键存车线）生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
 
 ## 10. ANTE 脚本
 
