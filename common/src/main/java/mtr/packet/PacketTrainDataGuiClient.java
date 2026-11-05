@@ -59,7 +59,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 
 	public static void receiveEditPermissionS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final boolean hasPermissionLevel = packet.readBoolean();
-		minecraftClient.execute(() -> ClientData.hasEditPermissionLevel = hasPermissionLevel);
+		final boolean editorSimulation = packet.isReadable() && packet.readBoolean();
+		minecraftClient.execute(() -> {
+			ClientData.hasEditPermissionLevel = hasPermissionLevel;
+			ClientData.editorSimulation = editorSimulation;
+		});
 	}
 
 	public static void receiveServerTimeS2C(FriendlyByteBuf packet) {
@@ -279,10 +283,12 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final int status = packet.readInt();
 		final int ignoredDrafts = packet.readInt();
 		final int missingDutyPaths = packet.readInt();
+		final int depots = packet.readInt();
+		final int allDepots = packet.readInt();
 		final int part = packet.readInt();
 		final int partCount = packet.readInt();
 		final byte[] bytes = packet.readByteArray();
-		minecraftClient.execute(() -> EditorSimulation.receive(requestId, status, ignoredDrafts, missingDutyPaths, part, partCount, bytes));
+		minecraftClient.execute(() -> EditorSimulation.receive(requestId, status, ignoredDrafts, missingDutyPaths, depots, allDepots, part, partCount, bytes));
 	}
 
 	public static void requestTimetableTimesC2S(long routeId) {

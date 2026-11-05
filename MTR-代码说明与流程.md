@@ -432,6 +432,7 @@ sequenceDiagram
 - **每 tick**（`holdRun`）：不在等离站时调 `approach`：下一站进站进路还没给、车头离停车点（驶入咽喉那段轨道的起点）不超过制动距离加 32 格，就带上已持有的一起申请；然后持有单线加 `getHeld`。
 - **轨道被占**（`isRailBlocked`）：`isBlocked` 为真时那段轨道算被占，运动规则让车停在它前面。
 - 节点相交的轨道数：游戏按轨道表，组件按所有存车线路径的轨道（没有路径用的轨道挡不着谁）。开关 `ThroatLocks.enabled`，由 `SecurityConfig.throatLocks` 设。
+- 卡死：仲裁器发现列车在单线或道岔上互相等成一圈时，冻住相关资源、每圈报一次。游戏每 tick 给出预约（`RailwayData` 里 `runReservations.resolve`）之后取出这些报告，在服务端日志写一行 `Minecraft Transit Railway: trains waiting on each other for their runs [列车…]`。以前只有组件的模拟器读它们，按速度曲线跑的车厂和模拟器共用预约，报告被模拟器取走后就丢了，服务端日志看不到。
 
 ### 4.6 车厂发车：`Depot.deployTrain`
 
@@ -819,6 +820,30 @@ sequenceDiagram
 ### 8.4 改轨道
 
 放节点、连轨道、删轨道走 `RailwayData` 的 `addRail`、`removeNode`、`removeRailConnection` 等方法，改完 `markRailsChanged`，本 tick 结束时写档。用旧路径的侧线会被标记为路径过期（`isPathStale`：路径上的轨道被删、类型、方向或长度变了），在车厂界面显示。`PathRegionSync` 发现指纹变了就在后台重算区域数据再同步给玩家。
+
+### 8.5 网页模拟运行（`SandboxRuns`）
+
+网页运行图的"模拟运行"是**调试功能**，一般用不到：服务端 `config/mtr_security.json` 的 `editorSimulation` 默认 `false`。开关随 `PACKET_EDIT_PERMISSION`（进服和打开主控面板时发）多带一个布尔值告诉客户端（`ClientData.editorSimulation`），编辑器数据里是 `simulation`。关着时页面不显示"模拟运行"按钮，"生成运用"后也不做内核验证；服务端收到请求直接回 `STATUS_DISABLED`。
+
+开着时，`editor.js` `simulate()` 发 `api/simulate`，请求带星期、是否"从现在开始"、要报告的线路（当前线路的种别，加上要验证的车厂的线路）和草稿；客户端 `EditorSimulation` 把草稿做成组件格式，发 `PACKET_SIMULATE`。
+
+服务端 `SandboxRuns.start`：
+
+1. **服务端线程上**：检查权限，导出整个世界的 `SimDataset`（`SimExport.build`），放进草稿（`putDrafts`），为运用草稿准备找路径要的轨道和车厂副本。
+2. **后台线程**（`MTR-Editor-Simulation`，单线程、最低优先级，排队最多 8 个，每个玩家同时一个）：
+   - 先找草稿运用的路径（`findDutyPaths`）。
+   - 再取子集 `SimScope.of(dataset, reportRoutes)`，只留下和所报线路有关的部分：
+     - 跑这些线路的车厂；
+     - 和它们共用线路的车厂（会分担班次），一直补到没有为止；
+     - 别的车厂里，有车经过同样节点的存车线（存车线的路径或任一班次路径碰到上面这些车厂的车走过的节点）。只带这几条，不带整个车厂。代价是：这个车厂原来由别的存车线发的车改由带上的存车线发，邻线的车可能比实际多，结果偏保守。
+     - 只扩这一圈。线路、闭塞分区全部保留；"从现在开始"的列车记录原样给，掉出去的存车线的车在恢复时找不到存车线，自动跳过。
+     - 没有所报线路（空集合）时用整个世界。
+   - 然后 `DayRun.run` 跑一天，超过 60 秒停下回"太忙"。
+3. **回包** `PACKET_SIMULATE_RESULT`：请求号、状态、没用上的草稿数、找不到路径的运用数、**模拟的车厂数和全部车厂数**、分包序号和总数、报告字节（每包 512 KB 以内）。
+   - 页面在问题列表下写"只模拟了有关的 X / Y 个车厂"。
+   - 超时时状态行写"一分钟内没有模拟完（X / Y 个车厂）"。
+
+子集里的列车编号和整个世界跑时不同（编号按车出现的先后发），其余的到发、问题都相同（`SimScopeTest`）。
 
 ## 9. 车厂生成路径
 

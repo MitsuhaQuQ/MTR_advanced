@@ -2,6 +2,7 @@ package mtr.advanced;
 
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
+import mtr.SecurityConfig;
 import mtr.compat.Compat;
 import mtr.data.DataCache;
 import mtr.data.Depot;
@@ -23,6 +24,7 @@ import transitsim.plan.DutyShapes;
 import transitsim.plan.OperatingDay;
 import transitsim.sim.DayRun;
 import transitsim.sim.SimDataset;
+import transitsim.sim.SimScope;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -54,6 +56,10 @@ public final class SandboxRuns implements IPacket {
 	public static final int STATUS_BUSY = 1;
 	public static final int STATUS_NO_PERMISSION = 2;
 	public static final int STATUS_ERROR = 3;
+	/**
+	 * The server doesn't simulate days for the editor ({@code editorSimulation} is off).
+	 */
+	public static final int STATUS_DISABLED = 4;
 
 	public static final int MAX_DRAFTS = 256;
 	public static final int MAX_REPORT_ROUTES = 256;
@@ -99,6 +105,10 @@ public final class SandboxRuns implements IPacket {
 	}
 
 	private static void start(MinecraftServer minecraftServer, ServerPlayer player, int requestId, int weekday, Set<Long> reportRoutes, List<byte[]> draftRoutes, Map<Long, byte[]> draftDuties, boolean fromNow) {
+		if (!SecurityConfig.editorSimulation) {
+			sendStatus(player, requestId, STATUS_DISABLED, 0);
+			return;
+		}
 		if (RailwayData.hasNoPermission(player)) {
 			sendStatus(player, requestId, STATUS_NO_PERMISSION, 0);
 			return;
@@ -131,14 +141,16 @@ public final class SandboxRuns implements IPacket {
 			try {
 				final long deadline = System.nanoTime() + TIME_LIMIT_NANOS;
 				final int missingDutyPaths = findDutyPaths(dataset, dutyPathSearches);
-				final DayRun dayRun = DayRun.run(dataset, dayStart, fromMillis, reportRoutes, Collections.emptyList(), () -> stopped.get() || System.nanoTime() > deadline);
+				// Only the routes' own part of the world: their depots and those whose trains pass where theirs do
+				final SimScope scope = SimScope.of(dataset, reportRoutes);
+				final DayRun dayRun = DayRun.run(scope.dataset, dayStart, fromMillis, reportRoutes, Collections.emptyList(), () -> stopped.get() || System.nanoTime() > deadline);
 				if (!stopped.get()) {
 					final byte[] bytes = dayRun.toBytes();
 					minecraftServer.execute(() -> {
 						if (dayRun.cancelled) {
-							sendStatus(player, requestId, STATUS_BUSY, ignoredDrafts);
+							sendStatus(player, requestId, STATUS_BUSY, ignoredDrafts, scope.depots, scope.allDepots);
 						} else {
-							sendResult(player, requestId, ignoredDrafts, missingDutyPaths, bytes);
+							sendResult(player, requestId, ignoredDrafts, missingDutyPaths, scope.depots, scope.allDepots, bytes);
 						}
 					});
 				}
@@ -254,11 +266,20 @@ public final class SandboxRuns implements IPacket {
 	}
 
 	private static void sendStatus(ServerPlayer player, int requestId, int status, int ignoredDrafts) {
+		sendStatus(player, requestId, status, ignoredDrafts, 0, 0);
+	}
+
+	/**
+	 * @param depots    how many depots the run simulated, and of how many the world has, or 0 if it didn't run
+	 */
+	private static void sendStatus(ServerPlayer player, int requestId, int status, int ignoredDrafts, int depots, int allDepots) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeInt(requestId);
 		packet.writeInt(status);
 		packet.writeInt(ignoredDrafts);
 		packet.writeInt(0);
+		packet.writeInt(depots);
+		packet.writeInt(allDepots);
 		packet.writeInt(0);
 		packet.writeInt(0);
 		packet.writeByteArray(new byte[0]);
@@ -268,7 +289,7 @@ public final class SandboxRuns implements IPacket {
 	/**
 	 * The report in parts small enough for a packet, which the client puts back together.
 	 */
-	private static void sendResult(ServerPlayer player, int requestId, int ignoredDrafts, int missingDutyPaths, byte[] bytes) {
+	private static void sendResult(ServerPlayer player, int requestId, int ignoredDrafts, int missingDutyPaths, int depots, int allDepots, byte[] bytes) {
 		final List<byte[]> parts = split(bytes, PART_BYTES);
 		for (int i = 0; i < parts.size(); i++) {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -276,6 +297,8 @@ public final class SandboxRuns implements IPacket {
 			packet.writeInt(STATUS_RESULT);
 			packet.writeInt(ignoredDrafts);
 			packet.writeInt(missingDutyPaths);
+			packet.writeInt(depots);
+			packet.writeInt(allDepots);
 			packet.writeInt(i);
 			packet.writeInt(parts.size());
 			packet.writeByteArray(parts.get(i));

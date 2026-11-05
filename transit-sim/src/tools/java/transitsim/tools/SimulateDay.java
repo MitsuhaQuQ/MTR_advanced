@@ -4,6 +4,7 @@ import transitsim.plan.OperatingDay;
 import transitsim.sim.EventSimulator;
 import transitsim.sim.SimDataset;
 import transitsim.sim.SimEvent;
+import transitsim.sim.SimScope;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -12,6 +13,10 @@ import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,12 +49,29 @@ public final class SimulateDay {
 		final int dayStartHour = count > 3 ? Integer.parseInt(args[3]) : OperatingDay.DEFAULT_DAY_START_HOUR;
 		OperatingDay.set(timeZone, dayStartHour);
 
-		final byte[] data = read(args[0]);
+		byte[] data = read(args[0]);
 		if (data == null) {
 			System.out.println("The database has no simulation data. Save the world with this version of the mod first.");
 			return;
 		}
-		final SimDataset dataset = SimDataset.fromBytes(data);
+		SimDataset dataset = SimDataset.fromBytes(data);
+		// -Dmtr.simRoutes=id,id simulates only those routes' part of the world, as the editor does (SimScope);
+		// -Dmtr.simRoutes=scopes lists how big that part is for each depot's routes, without simulating
+		final String simRoutes = System.getProperty("mtr.simRoutes", "");
+		if (simRoutes.equals("scopes")) {
+			printScopes(dataset);
+			return;
+		}
+		if (!simRoutes.isEmpty()) {
+			final Set<Long> routeIds = new TreeSet<>();
+			for (final String id : simRoutes.split(",")) {
+				routeIds.add(Long.parseLong(id.trim()));
+			}
+			final SimScope scope = SimScope.of(dataset, routeIds);
+			System.out.printf("Routes %s: %d of %d depots, %d of %d sidings%n", routeIds, scope.depots, scope.allDepots, scope.dataset.sidings.size(), dataset.sidings.size());
+			dataset = scope.dataset;
+			data = dataset.toBytes();
+		}
 		final long dayStart = LocalDateTime.of(day, java.time.LocalTime.of(dayStartHour, 0)).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
 		System.out.printf("%d routes, %d depots, %d sidings, operating day of %s from %02d:00 %s%n", dataset.routes.size(), dataset.depots.size(), dataset.sidings.size(), day, dayStartHour, timeZone);
 
@@ -75,6 +97,36 @@ public final class SimulateDay {
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
 		final long ticks = hours * HOUR / 50;
 		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, trains moved in %.2f%% of ticks%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, trains.isEmpty() ? 0 : 100.0 * simulator.getRunner().getTrainTicks() / ticks / trains.size());
+	}
+
+	/**
+	 * For each depot's routes, how many depots and sidings the editor's simulated day of them runs, smallest first.
+	 */
+	private static void printScopes(SimDataset dataset) {
+		final List<String> lines = new ArrayList<>();
+		final Set<String> seen = new HashSet<>();
+		for (final SimDataset.DepotData depot : dataset.depots) {
+			final Set<Long> routeIds = new TreeSet<>();
+			for (final long routeId : depot.routeIds) {
+				routeIds.add(routeId);
+			}
+			if (routeIds.isEmpty() || !seen.add(routeIds.toString())) {
+				continue;
+			}
+			final SimScope scope = SimScope.of(dataset, routeIds);
+			final Set<Long> own = new HashSet<>();
+			for (final SimDataset.DepotData each : dataset.depots) {
+				if (Arrays.stream(each.routeIds).anyMatch(routeIds::contains)) {
+					own.add(each.id);
+				}
+			}
+			final long ownSidings = dataset.sidings.stream().filter(siding -> own.contains(siding.depotId)).count();
+			final long ownTrains = dataset.trains == null ? -1 : dataset.trains.trains.stream().filter(train -> scope.dataset.sidings.stream().anyMatch(siding -> siding.id == train.sidingId && own.contains(siding.depotId))).count();
+			final long trains = dataset.trains == null ? -1 : dataset.trains.trains.stream().filter(train -> scope.dataset.sidings.stream().anyMatch(siding -> siding.id == train.sidingId)).count();
+			lines.add(String.format("%5d depots %5d sidings %5d trains | own %d (direct %d) depots %d sidings %d trains | depot %d routes %s", scope.depots, scope.dataset.sidings.size(), trains, scope.ownDepots, own.size(), ownSidings, ownTrains, depot.id, routeIds.toString().replace(" ", "")));
+		}
+		Collections.sort(lines);
+		lines.forEach(System.out::println);
 	}
 
 	private static byte[] read(String path) throws Exception {

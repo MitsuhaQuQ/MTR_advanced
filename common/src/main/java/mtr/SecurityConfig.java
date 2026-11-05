@@ -36,6 +36,11 @@ public final class SecurityConfig {
 	 * Trains on duty lock their way through station throats (L2, {@code ThroatLocks}); off, they run as before.
 	 */
 	public static volatile boolean throatLocks = true;
+	/**
+	 * The advanced editor's fast simulation of a day ("模拟运行", S5), a debugging tool, which takes a lot of the server's
+	 * time in a big world; off, the editor doesn't offer it and the server refuses it.
+	 */
+	public static volatile boolean editorSimulation = false;
 
 	private static final String KEY_WEBSERVER_ENABLED = "webserverEnabled";
 	private static final String KEY_WEBSERVER_BIND_HOST = "webserverBindHost";
@@ -50,6 +55,7 @@ public final class SecurityConfig {
 	private static final String KEY_AUDIO_MAX_SECONDS = "audioMaxSeconds";
 	private static final String KEY_AUDIO_UPLOADS_PER_HOUR = "audioUploadsPerHour";
 	private static final String KEY_THROAT_LOCKS = "throatLocks";
+	private static final String KEY_EDITOR_SIMULATION = "editorSimulation";
 
 	private SecurityConfig() {
 	}
@@ -75,6 +81,7 @@ public final class SecurityConfig {
 				audioMaxSeconds = getInt(jsonObject, KEY_AUDIO_MAX_SECONDS, 60, 1, 3600);
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);
 				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
+				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
 			} else {
 				write(path);
 			}
@@ -121,6 +128,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_AUDIO_MANAGE_PERMISSION_LEVEL, audioManagePermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
+		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
 		jsonObject.addProperty(KEY_AUDIO_MAX_TOTAL_MEGABYTES, audioMaxTotalMegabytes);
 		jsonObject.addProperty(KEY_AUDIO_MAX_SECONDS, audioMaxSeconds);
 		jsonObject.addProperty(KEY_AUDIO_UPLOADS_PER_HOUR, audioUploadsPerHour);

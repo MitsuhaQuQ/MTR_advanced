@@ -34,6 +34,10 @@ public final class EditorSimulation implements IPacket {
 	private static int notSimulated;
 	private static int ignoredDrafts;
 	private static int missingDutyPaths;
+	/**
+	 * How many depots the server simulated, the routes' own part of the world, and how many it has.
+	 */
+	private static int scopeDepots, allDepots;
 	private static byte[][] parts;
 	private static JsonObject result;
 
@@ -97,6 +101,8 @@ public final class EditorSimulation implements IPacket {
 		notSimulated = skipped;
 		ignoredDrafts = 0;
 		missingDutyPaths = 0;
+		scopeDepots = 0;
+		allDepots = 0;
 		parts = null;
 		result = null;
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -142,7 +148,7 @@ public final class EditorSimulation implements IPacket {
 	}
 
 	/**
-	 * @return {@code {request, state, notSimulated, ignored, missingPaths, result}}; the state is idle, running, done, busy, permission or
+	 * @return {@code {request, state, notSimulated, ignored, missingPaths, scopeDepots, allDepots, result}}; the state is idle, running, done, busy, permission or
 	 * error
 	 */
 	public static JsonObject getStatus() {
@@ -152,6 +158,8 @@ public final class EditorSimulation implements IPacket {
 		status.addProperty("notSimulated", notSimulated);
 		status.addProperty("ignored", ignoredDrafts);
 		status.addProperty("missingPaths", missingDutyPaths);
+		status.addProperty("scopeDepots", scopeDepots);
+		status.addProperty("allDepots", allDepots);
 		if (result != null) {
 			status.add("result", result);
 		}
@@ -162,13 +170,24 @@ public final class EditorSimulation implements IPacket {
 	 * @param missing how many shapes of the draft's duties have no path along the rails, so their trains don't run
 	 */
 	public static void receive(int receivedRequestId, int status, int ignored, int missing, int part, int partCount, byte[] bytes) {
+		receive(receivedRequestId, status, ignored, missing, 0, 0, part, partCount, bytes);
+	}
+
+	/**
+	 * @param depots    how many depots the server simulated, and of how many, or 0 if it didn't run
+	 */
+	public static void receive(int receivedRequestId, int status, int ignored, int missing, int depots, int allDepots, int part, int partCount, byte[] bytes) {
 		if (receivedRequestId != requestId) {
 			return;
 		}
 		ignoredDrafts = ignored;
 		missingDutyPaths = missing;
+		if (depots > 0) {
+			scopeDepots = depots;
+			EditorSimulation.allDepots = allDepots;
+		}
 		if (status != SandboxRuns.STATUS_RESULT) {
-			state = status == SandboxRuns.STATUS_BUSY ? "busy" : status == SandboxRuns.STATUS_NO_PERMISSION ? "permission" : "error";
+			state = status == SandboxRuns.STATUS_BUSY ? "busy" : status == SandboxRuns.STATUS_NO_PERMISSION ? "permission" : status == SandboxRuns.STATUS_DISABLED ? "disabled" : "error";
 			return;
 		}
 		if (parts == null || parts.length != partCount) {

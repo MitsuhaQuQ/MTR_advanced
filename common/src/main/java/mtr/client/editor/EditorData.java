@@ -50,6 +50,8 @@ public final class EditorData {
 		// Local time of day is UTC time of day plus this
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
 		data.addProperty("canEdit", ClientData.hasPermission());
+		// The fast simulation of a day is a debugging tool the server turns on
+		data.addProperty("simulation", ClientData.editorSimulation);
 		data.addProperty("language", getLanguage());
 		data.addProperty("regionCount", ClientData.PATH_REGIONS.regionCount);
 		data.add("topology", buildTopology());

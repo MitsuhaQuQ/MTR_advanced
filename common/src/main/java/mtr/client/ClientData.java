@@ -349,6 +349,10 @@ public final class ClientData {
 	 * Whether the server's permission level lets this player edit, which the server sends. See {@link mtr.SecurityConfig#editPermissionLevel}.
 	 */
 	public static boolean hasEditPermissionLevel = true;
+	/**
+	 * Whether the server lets the advanced editor simulate days, a debugging tool ({@code editorSimulation}).
+	 */
+	public static boolean editorSimulation = false;
 
 	public static boolean hasPermission() {
 		final LocalPlayer player = Minecraft.getInstance().player;

@@ -102,11 +102,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	/**
 	 * The client only knows the game mode, so this tells it whether the permission level the server asks for lets it edit,
-	 * as the server ignores changes it isn't allowed to make without saying so.
+	 * as the server ignores changes it isn't allowed to make without saying so; and whether the editor may simulate days, a
+	 * debugging tool the server turns on.
 	 */
 	public static void editPermissionS2C(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBoolean(player.hasPermissions(SecurityConfig.editPermissionLevel));
+		packet.writeBoolean(SecurityConfig.editorSimulation);
 		Registry.sendToPlayer(player, PACKET_EDIT_PERMISSION, packet);
 	}
 

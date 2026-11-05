@@ -440,6 +440,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		handleMotionEvents();
 		// Runs asked for during the tick are given out together, whatever order the trains ran in
 		runReservations.resolve(System.currentTimeMillis());
+		// Trains waiting on each other in a circle, which the arbiter holds as they are, said once each so the server log shows them
+		for (final Set<Long> deadlock : runReservations.takeDeadlocks()) {
+			System.out.println("Minecraft Transit Railway: trains waiting on each other for their runs " + deadlock);
+		}
 		depots.forEach(depot -> {
 			// A depot that fails doesn't stop the others or the rest of the tick
 			try {

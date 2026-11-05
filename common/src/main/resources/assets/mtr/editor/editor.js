@@ -2116,7 +2116,7 @@
 	const SIM_LATE_MILLIS = 30000, SIM_MAX_LISTED = 300;
 	const SIM_KINDS = { LATE: "晚点", WAITING_FOR_PLATFORM: "等站台", HELD_ON_LINE: "区间扣停", LONG_DWELL: "站内久停", DEADLOCK: "锁死", NOT_RUN: "未开行" };
 	// checkDepot is the depot whose generated duties the simulated day checks, whose routes are reported on as well
-	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0, missingPaths: 0, checkDepot: null, fromNow: false };
+	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0, missingPaths: 0, scopeDepots: 0, allDepots: 0, checkDepot: null, fromNow: false };
 	// Only today can carry on from the trains as they are in the game now (G0)
 	const simFromNow = () => sim.fromNow && state.weekday === mod(nowDay() + FIRST_DAY_WEEKDAY, 7);
 
@@ -2177,7 +2177,7 @@
 				// Another page asked since, or this request's answer hasn't come yet
 				if (status.request > sim.request) sim.state = "idle";
 				if (status.request !== sim.request || status.state === "running") continue;
-				Object.assign(sim, { state: status.state, notSimulated: status.notSimulated, ignored: status.ignored, missingPaths: status.missingPaths || 0 });
+				Object.assign(sim, { state: status.state, notSimulated: status.notSimulated, ignored: status.ignored, missingPaths: status.missingPaths || 0, scopeDepots: status.scopeDepots || 0, allDepots: status.allDepots || 0 });
 				if (status.state === "done" && status.result) setSimResult(status.result);
 			}
 		} catch (e) {
@@ -2201,9 +2201,10 @@
 		const texts = {
 			running: tr("模拟中…"),
 			done: tr("按 {0} 的草稿模拟", new Date(sim.madeAt).toTimeString().slice(0, 5)),
-			busy: tr("服务端忙，稍后再试"),
+			busy: sim.allDepots ? tr("一分钟内没有模拟完（{0} / {1} 个车厂），稍后再试", sim.scopeDepots, sim.allDepots) : tr("服务端忙，稍后再试"),
 			permission: tr("没有权限模拟"),
 			error: tr("模拟失败"),
+			disabled: tr("服务端没有开启模拟（调试功能）"),
 		};
 		$("sim-status").textContent = sim.on ? texts[sim.state] || "" : "";
 		$("btn-sim-now").hidden = !sim.on || state.weekday !== mod(nowDay() + FIRST_DAY_WEEKDAY, 7);
@@ -2287,6 +2288,7 @@
 		if (sim.notSimulated) notes.push(tr("改站序、新建或删除种别的修改没有模拟（{0} 项）", sim.notSimulated));
 		if (sim.ignored) notes.push(tr("{0} 项草稿和服务端的线路对不上，没有用上", sim.ignored));
 		if (sim.missingPaths) notes.push(tr("{0} 种运用在轨道上找不到路径，这些车不会发车", sim.missingPaths));
+		if (sim.result && sim.allDepots && sim.scopeDepots < sim.allDepots) notes.push(tr("只模拟了有关的 {0} / {1} 个车厂：跑这些线路的，和车经过同样轨道的；其余的车没有模拟", sim.scopeDepots, sim.allDepots));
 		const body = items.length ? `<ul class="sim-problems">${items.join("")}</ul>` : sim.result ? `<p class="hint">${tr("这一天没有发现问题。")}</p>` : "";
 		return `<h2>${tr("模拟问题")}</h2><div class="card">${body}${problems.length > SIM_MAX_LISTED ? `<p class="hint">${tr("只列出前 {0} 条。", SIM_MAX_LISTED)}</p>` : ""}${notes.map(note => `<p class="hint">${escapeHtml(note)}</p>`).join("")}<p class="hint">${sim.result && sim.result.from > 0 ? tr("从 {0} 起接着游戏里列车当时的位置模拟，之前的班次不计。", clock(sim.result.from)) : tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p></div>`;
 	}
@@ -2908,9 +2910,11 @@
 				editDuties(depot, duties => {
 					duties.sidings = result.duties.sidings;
 				});
-				// The running kernel checks the duties in a simulated day with the draft (S6)
-				sim.checkDepot = depot.id;
-				if (sim.on) simulate(); else setSimulation(true);
+				// The running kernel checks the duties in a simulated day with the draft (S6), if the server has it on
+				if (data.simulation) {
+					sim.checkDepot = depot.id;
+					if (sim.on) simulate(); else setSimulation(true);
+				}
 				dutyNotice = `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
 					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
 					+ (result.issues.length ? `${tr("其他问题：{0}", result.issues.slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
@@ -4487,6 +4491,10 @@
 	}
 
 	function renderAll() {
+		// The fast simulation is a debugging tool the server turns on (editorSimulation)
+		const simulation = !!(data && data.simulation);
+		$("btn-simulate").hidden = !simulation;
+		if (!simulation && sim.on) setSimulation(false);
 		// The line or day shown changed since the last simulation
 		if (sim.on && !sim.timer && (sim.line !== state.line || sim.weekday !== state.weekday)) scheduleSimulation();
 		renderTree();

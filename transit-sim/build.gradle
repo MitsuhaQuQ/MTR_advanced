@@ -51,4 +51,6 @@ tasks.register("simulateDay", JavaExec) {
 	// -Pmtr.throatLocks=false runs the day without trains locking station throats, to compare
 	systemProperty "mtr.throatLocks", project.findProperty("mtr.throatLocks") ?: "true"
 	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
+	// -Pmtr.simRoutes=id,id simulates only those routes' part of the world; -Pmtr.simRoutes=scopes lists its sizes
+	systemProperty "mtr.simRoutes", project.findProperty("mtr.simRoutes") ?: ""
 }
