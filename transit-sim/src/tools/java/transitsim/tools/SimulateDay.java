@@ -80,6 +80,9 @@ public final class SimulateDay {
 		final long dayStart = LocalDateTime.of(day, java.time.LocalTime.of(dayStartHour, 0)).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
 		System.out.printf("%d routes, %d depots, %d sidings, operating day of %s from %02d:00 %s%n", dataset.routes.size(), dataset.depots.size(), dataset.sidings.size(), day, dayStartHour, timeZone);
 
+		// Throat locks only where the depots sharing track all run by duties (LockNetworks)
+		final transitsim.network.LockNetworks.Result lockResult = dataset.getLockNetworks().result();
+		System.out.printf("%d track networks, %d shared with depots not running by duties: throat locks off for %d of %d depots%n", lockResult.networks, lockResult.mixed.size(), lockResult.offDepots.size(), dataset.depots.size());
 		final long buildStart = System.nanoTime();
 		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(data, dayStart));
 		final long runStart = System.nanoTime();

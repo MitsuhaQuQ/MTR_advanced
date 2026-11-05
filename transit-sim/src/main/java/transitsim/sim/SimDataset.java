@@ -244,6 +244,10 @@ public final class SimDataset {
 				}
 			}
 		}
+		// The new logic and the old don't share track: depots on track with one not running by duties don't lock throats
+		final transitsim.network.LockNetworks lockNetworks = getLockNetworks();
+		final Set<Long> offDepots = lockNetworks.result().offDepots;
+		boards.forEach((depotId, board) -> board.throatLocksAllowed = !offDepots.contains(depotId));
 		for (final SidingData sidingData : sidings) {
 			final DepotBoard board = boards.get(sidingData.depotId);
 			if (board == null || sidingData.path.isEmpty()) {
@@ -270,6 +274,37 @@ public final class SimDataset {
 			runner.addSiding(sidingData.id, board, siding);
 		}
 		return runner;
+	}
+
+	/**
+	 * @return the networks of track the depots' trains run along, with which depots run by duties: those with duties in
+	 * the data, as the game writes the duties it runs by
+	 */
+	public transitsim.network.LockNetworks getLockNetworks() {
+		final transitsim.network.LockNetworks lockNetworks = new transitsim.network.LockNetworks();
+		final Map<Long, Boolean> byDuties = new HashMap<>();
+		depots.forEach(depot -> byDuties.put(depot.id, depot.duties.length > 0));
+		sidings.forEach(siding -> {
+			if (siding.path.isEmpty() || !byDuties.containsKey(siding.depotId)) {
+				return;
+			}
+			lockNetworks.addDepot(siding.depotId, byDuties.get(siding.depotId));
+			lockNetworks.addPath(siding.depotId, nodesOf(siding.path));
+			siding.tripPaths.forEach(tripPath -> lockNetworks.addPath(siding.depotId, nodesOf(tripPath.path)));
+		});
+		return lockNetworks;
+	}
+
+	private static long[] nodesOf(List<DataTrack> path) {
+		if (path.isEmpty()) {
+			return new long[0];
+		}
+		final long[] nodes = new long[path.size() + 1];
+		for (int i = 0; i < path.size(); i++) {
+			nodes[i] = path.get(i).getStartNode();
+		}
+		nodes[path.size()] = path.get(path.size() - 1).getEndNode();
+		return nodes;
 	}
 
 	/**

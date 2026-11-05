@@ -140,6 +140,45 @@ class PlanCheckTest {
 		assertTrue(result.sidings.keySet().stream().allMatch(sidingId -> sidingId == 100000));
 	}
 
+	/**
+	 * @return the most turnouts a train held at once over the morning, checked every second
+	 */
+	private static int mostTurnoutsHeld(SimDataset dataset) {
+		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(dataset.toBytes(), DAY_START));
+		int most = 0;
+		for (long time = DAY_START + 6 * ScenarioLine.HOUR; time < DAY_START + 8 * ScenarioLine.HOUR; time += ScenarioLine.SECOND) {
+			simulator.advanceTo(time);
+			final RunReservations reservations = simulator.getRunner().getReservations();
+			for (final long holder : reservations.getHolders()) {
+				most = Math.max(most, (int) reservations.getHeld(holder).stream().filter(move -> move.turnout).count());
+			}
+		}
+		return most;
+	}
+
+	@Test
+	void trainsOnDutyDontLockThroatsOnTrackSharedWithTheOldLogic() {
+		final SimDataset dataset = SimDatasetTest.lines(1, 400, 2, 4, 10);
+		final DutyGenerator.Result result = PlanCheck.generate(dataset, DEPOT, 0);
+		addDutyPaths(dataset, result, false);
+		final DepotDuties duties = new DepotDuties();
+		duties.diagramMode = true;
+		duties.sidings.putAll(result.sidings);
+		dataset.replaceDuties(DEPOT, duties.toBytes());
+		// On their own the duties' trains lock the terminal's throat
+		assertTrue(mostTurnoutsHeld(dataset) > 0);
+		assertTrue(dataset.getLockNetworks().result().offDepots.isEmpty());
+
+		// A depot sending its trains out by frequency onto the same track
+		final SimDataset.SidingData siding = dataset.sidings.get(0);
+		final SimDataset.DepotData old = new SimDataset.DepotData(9, new long[]{UP}, false, new byte[0]);
+		old.departures = new int[]{(int) (6 * ScenarioLine.HOUR)};
+		dataset.depots.add(old);
+		dataset.sidings.add(new SimDataset.SidingData(900000, 9, siding.routeIds, siding.trainCars, siding.spacing, siding.railLength, siding.acceleration, siding.deceleration, 1, siding.usesSpeedCurve, siding.minSpeed, siding.repeatIndex1, siding.repeatIndex2, siding.loopJoinIndex, siding.path, siding.turnBacks));
+		assertEquals(Collections.singleton(DEPOT), dataset.getLockNetworks().result().offDepots);
+		assertEquals(0, mostTurnoutsHeld(dataset));
+	}
+
 	@Test
 	void theSameInputGivesTheSameDuties() {
 		final DutyGenerator.Result first = PlanCheck.generate(SimDatasetTest.lines(1, 400, 2, 4, 10), DEPOT, 0);

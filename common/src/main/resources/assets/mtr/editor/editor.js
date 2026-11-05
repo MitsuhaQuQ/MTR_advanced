@@ -1172,7 +1172,7 @@
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
 				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
@@ -3383,9 +3383,21 @@
 	 * and going out, and the other routes at the station whose way through one of them differs, which can't use it at
 	 * the same time. The route as it is in the game; track changes in the draft show once applied.
 	 */
+	/** Why a depot's trains don't lock station throats, or nothing: it doesn't run by duties, or shares track with one that doesn't. */
+	function lockOffText(depot) {
+		if (!depot || !depot.throatLocksOffBy && !depot.oldLogic) return "";
+		const names = (depot.throatLocksOffBy || []).map(id => { const old = depotById(id); return old ? shortName(old.name) : "?"; }).join(tr("、"));
+		return depot.oldLogic
+			? tr("这个车厂不按运用跑（例如按频率发车），属于旧逻辑：它的车不锁咽喉进路，和它共用轨道的按运用的车厂也不锁。给它设时刻表，或用寻路边界把它隔开后，新逻辑才启用。")
+			: tr("和不按运用跑的车厂（{0}）共用轨道，咽喉进路锁不启用；把它们改成按时刻表，或用寻路边界隔开后启用。", names);
+	}
+
+	const lockMark = depot => depot.throatLocksOffBy || depot.oldLogic ? `<span class="count warn" title="${escapeHtml(lockOffText(depot))}"> · ${depot.oldLogic ? tr("旧逻辑") : tr("咽喉锁未启用")}</span>` : "";
+
 	function throatHtml(r, i) {
 		const stop = r && r.stops[i];
 		if (!stop || !stop.throat) return "";
+		const offDepot = data.depots.find(depot => depot.throatLocksOffBy && depot.routes.includes(r.id));
 		const throat = stop.throat;
 		const side = entry => entry ? tr("进站") : tr("出站");
 		const crossings = throat.crossings.map(c => {
@@ -3393,6 +3405,7 @@
 			return tr("{0}和 {1} 的{2}在道岔（{3}, {4}）", side(c.entry), escapeHtml(other ? routeTitle(other) : "?"), side(c.otherEntry), c.x, c.z);
 		});
 		return `<p class="hint">${tr("咽喉：进站经过 {0} 组道岔，出站经过 {1} 组（按游戏里的线路路径）。", throat.entry, throat.exit)}</p>`
+			+ (offDepot ? `<p class="hint warn">${escapeHtml(lockOffText(offDepot))}</p>` : "")
 			+ (crossings.length ? `<p class="hint">${tr("和这些进路交叉，不能同时走：")}${crossings.join(tr("；"))}${tr("。时刻表检查会找出时间上撞在一起的班次。")}</p>` : "");
 	}
 

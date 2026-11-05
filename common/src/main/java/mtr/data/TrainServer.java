@@ -776,6 +776,12 @@ public class TrainServer extends Train {
 		if (!ThroatLocks.enabled || !isOnRoute || isCurrentlyManual || !service.isOnDuty() || path.isEmpty()) {
 			return null;
 		}
+		// Not on track shared with a depot not running by duties (LockNetworks)
+		final RailwayData lockData = RailwayData.getInstance(world);
+		final Depot lockDepot = lockData == null ? null : lockData.dataCache.sidingIdToDepot.get(sidingId);
+		if (lockDepot != null && lockData.isThroatLocksOff(lockDepot.id)) {
+			return null;
+		}
 		if (throatLocks == null || !throatLocks.isFor(path, path.size() + 1)) {
 			final RailwayData railwayData = RailwayData.getInstance(world);
 			if (railwayData == null) {

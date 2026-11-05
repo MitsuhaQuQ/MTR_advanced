@@ -378,6 +378,27 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
+	 * Gives the nodes of the siding's path and of each of its duties' paths, in order, for telling which depots' trains
+	 * share track ({@link transitsim.network.LockNetworks}).
+	 */
+	public void forEachPathNodes(Consumer<long[]> consumer) {
+		consumer.accept(nodesOf(path));
+		tripPaths.values().forEach(tripPath -> consumer.accept(nodesOf(tripPath.path)));
+	}
+
+	private static long[] nodesOf(List<PathData> pathDataList) {
+		if (pathDataList.isEmpty()) {
+			return new long[0];
+		}
+		final long[] nodes = new long[pathDataList.size() + 1];
+		for (int i = 0; i < pathDataList.size(); i++) {
+			nodes[i] = pathDataList.get(i).startingPos.asLong();
+		}
+		nodes[pathDataList.size()] = pathDataList.get(pathDataList.size() - 1).getLastPos().asLong();
+		return nodes;
+	}
+
+	/**
 	 * Trains of other sidings that came back here, each of which this siding makes standing in its place; not saved, as
 	 * that happens within a tick or two.
 	 */

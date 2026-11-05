@@ -74,9 +74,58 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	public final GraphRecords graphRecords = new GraphRecords();
 	/**
+	 * @return whether the depot's trains don't lock station throats, as its track is shared with a depot not running by
+	 * duties
+	 */
+	public boolean isThroatLocksOff(long depotId) {
+		return throatLocksOffDepots.contains(depotId);
+	}
+
+	/**
+	 * Works out again which depots share track with a depot not running by duties, and says so in the log when it changes.
+	 */
+	private void updateLockNetworks() {
+		final transitsim.network.LockNetworks lockNetworks = new transitsim.network.LockNetworks();
+		sidings.forEach(siding -> {
+			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
+			// Trains moving continuously, like cable cars, lock nothing whatever their depot does
+			if (depot != null && !depot.transportMode.continuousMovement) {
+				lockNetworks.addDepot(depot.id, depot.getRunDuties() != null);
+				siding.forEachPathNodes(nodes -> lockNetworks.addPath(depot.id, nodes));
+			}
+		});
+		final transitsim.network.LockNetworks.Result result = lockNetworks.result();
+		throatLocksOffDepots = result.offDepots;
+		final String state = result.describe();
+		if (!state.equals(lockNetworksState)) {
+			if (result.mixed.isEmpty()) {
+				if (lockNetworksState != null) {
+					System.out.println("Minecraft Transit Railway: station throat locks are on for every depot running by duties");
+				}
+			} else {
+				result.mixed.forEach(network -> System.out.println("Minecraft Transit Railway: station throat locks are off for depots " + depotNames(network.newDepots) + ": their tracks are shared with depots " + depotNames(network.oldDepots) + " that don't run by duties, such as by frequency; give those a timetable or keep them apart with path boundaries"));
+			}
+			lockNetworksState = state;
+		}
+	}
+
+	private String depotNames(Set<Long> depotIds) {
+		return depotIds.isEmpty() ? "(none)" : depotIds.stream().map(depotId -> {
+			final Depot depot = dataCache.depotIdMap.get(depotId);
+			return depot == null || depot.name.isEmpty() ? String.valueOf(depotId) : IGui.formatStationName(depot.name);
+		}).collect(Collectors.joining(", "));
+	}
+
+	/**
 	 * Keeps trains running by duties from meeting head on. See {@link RunReservations}.
 	 */
 	public final RunReservations runReservations = new RunReservations();
+	/**
+	 * The depots whose trains don't lock station throats, as their track is shared with a depot not running by duties
+	 * ({@link transitsim.network.LockNetworks}), worked out again every few seconds.
+	 */
+	private Set<Long> throatLocksOffDepots = Collections.emptySet();
+	private String lockNetworksState = null;
 	/**
 	 * Which version of each part of the data players edit the server has (multiplayer edit conflicts).
 	 */
@@ -538,6 +587,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		prevPlatformCount = platforms.size();
 		prevSidingCount = sidings.size();
 
+		// The new logic and the old don't share track: depots on track with one not running by duties don't lock throats
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0) {
+			updateLockNetworks();
+		}
 		// A depot running by a timetable with no duties set has its duties worked out with its paths, so its paths are found
 		// again when its timetables or sidings change, and once after the world is loaded; one depot at a time
 		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && railwayDataPathGenerationModule.canGenerate()) {

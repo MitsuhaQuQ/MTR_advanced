@@ -69,6 +69,22 @@ public final class EditorData {
 		routes.forEach(route -> routesArray.add(buildRoute(route, stationPlatforms)));
 		data.add("routes", routesArray);
 
+		// Which depots' trains don't lock station throats, as their track is shared with a depot not running by duties
+		// (LockNetworks), worked out as the server does from the sidings' paths the client has
+		final transitsim.network.LockNetworks lockNetworks = new transitsim.network.LockNetworks();
+		ClientData.SIDINGS.forEach(siding -> {
+			final Depot depot = ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
+			final long[] nodes = ClientData.MAP_SIDINGS.get(siding.id);
+			if (depot != null && !depot.transportMode.continuousMovement && nodes != null) {
+				lockNetworks.addDepot(depot.id, depot.getRunDuties() != null);
+				lockNetworks.addPath(depot.id, nodes);
+			}
+		});
+		final Map<Long, java.util.Set<Long>> sharedWithOld = new HashMap<>();
+		lockNetworks.result().mixed.forEach(network -> {
+			network.newDepots.forEach(depotId -> sharedWithOld.put(depotId, network.oldDepots));
+		});
+
 		final JsonArray depotsArray = new JsonArray();
 		ClientData.DEPOTS.stream().sorted(Comparator.comparing((Depot depot) -> depot.name).thenComparingLong(depot -> depot.id)).forEach(depot -> {
 			final JsonObject depotObject = new JsonObject();
@@ -76,6 +92,14 @@ public final class EditorData {
 			depotObject.addProperty("name", depot.name);
 			depotObject.addProperty("cycleRoutes", depot.cycleRoutes);
 			depotObject.addProperty("releaseInterval", depot.releaseInterval);
+			// Not running by duties: the old logic, whose trains don't lock station throats
+			depotObject.addProperty("oldLogic", depot.getRunDuties() == null && !depot.transportMode.continuousMovement);
+			final java.util.Set<Long> oldDepots = sharedWithOld.get(depot.id);
+			if (oldDepots != null) {
+				final JsonArray oldArray = new JsonArray();
+				oldDepots.forEach(oldId -> oldArray.add(String.valueOf(oldId)));
+				depotObject.add("throatLocksOffBy", oldArray);
+			}
 			final JsonArray routeIds = new JsonArray();
 			depot.routeIds.forEach(routeId -> routeIds.add(String.valueOf(routeId)));
 			depotObject.add("routes", routeIds);

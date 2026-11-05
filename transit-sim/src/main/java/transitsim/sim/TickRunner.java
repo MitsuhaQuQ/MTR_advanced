@@ -1938,7 +1938,7 @@ public final class TickRunner<T extends RunTrack> {
 		 * train isn't on duty
 		 */
 		private ThroatLocks getThroatLocks() {
-			if (!ThroatLocks.enabled || !service.isOnDuty() || path.isEmpty()) {
+			if (!ThroatLocks.enabled || !service.isOnDuty() || path.isEmpty() || !sidingRun.depot.throatLocksAllowed) {
 				return null;
 			}
 			if (throatLocks == null || !throatLocks.isFor(path, path.size() + 1)) {

@@ -57,6 +57,11 @@ public final class DepotBoard implements TrainService.Board {
 	 */
 	LongUnaryOperator returnChooser;
 	/**
+	 * Whether its trains lock their way through station throats: off when its track is shared with a depot not running by
+	 * duties ({@link transitsim.network.LockNetworks}).
+	 */
+	public boolean throatLocksAllowed = true;
+	/**
 	 * Chooses a siding of a given depot for a duty set to go back there.
 	 */
 	java.util.function.LongBinaryOperator orderedReturnChooser;
