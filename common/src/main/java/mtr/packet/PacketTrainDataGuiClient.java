@@ -572,6 +572,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 			failedDuties.add(packet.readUtf(256));
 		}
 		final int totalFailed = Math.max(failedCount, failedDuties.size());
+		final Map<Long, DepotLegs> depotLegs = new HashMap<>();
+		for (int i = Math.min(packet.readInt(), 1024); i > 0; i--) {
+			final long sidingId = packet.readLong();
+			depotLegs.put(sidingId, DepotLegs.readPacket(packet));
+		}
 		minecraftClient.execute(() -> {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
@@ -579,6 +584,12 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 				depot.clientPathFailure = failure;
 				depot.clientFailedDuties = failedDuties;
 				depot.clientFailedDutyCount = totalFailed;
+				depotLegs.forEach((sidingId, legs) -> {
+					final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
+					if (siding != null) {
+						siding.setDepotLegs(legs);
+					}
+				});
 				ClientData.STALE_DEPOTS.remove(depotId);
 			}
 		});

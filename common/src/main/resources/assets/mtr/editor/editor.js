@@ -877,7 +877,7 @@
 		return near + mod(local - oldLocal + DAY / 2, DAY) - DAY / 2;
 	}
 
-	const PATTERN_HINT = tr("写成 07:10，或 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
+	const PATTERN_HINT = tr("填起始时刻、结束时刻和班数（首末两班都算，中间等分），或者只在起始时刻一栏写 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
 	/** @return the services, in UTC milliseconds of the day, that a pattern like "07:10 + 10 * 00:03" stands for */
 	function parsePattern(value) {
 		const text = value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFF10 + 48)).replace(/[：]/g, ":").replace(/＋/g, "+").replace(/[＊×]/g, "*");
@@ -1639,7 +1639,8 @@
 			// A long rail can cross the view with both ends outside it
 			return points.length >= 4 && !(Math.max(points[0], points[points.length - 2]) < left || Math.min(points[0], points[points.length - 2]) > right || Math.max(points[1], points[points.length - 1]) < top || Math.min(points[1], points[points.length - 1]) > bottom);
 		};
-		const line = state.line, highlighted = (d.routes || []).filter(route => route.lineKey === line && (!state.route || state.route === route.id));
+		const pickedRoutes = pickingRouteIds();
+		const line = state.line, highlighted = (d.routes || []).filter(route => pickedRoutes ? pickedRoutes.has(route.id) : route.lineKey === line && (!state.route || state.route === route.id));
 		const faded = highlighted.length > 0;
 		const stroke = (points, color, width, dash) => {
 			g.beginPath();
@@ -1719,6 +1720,7 @@
 			});
 			g.textAlign = "start";
 		}
+		drawPicking(g);
 	}
 
 	/**
@@ -1818,9 +1820,20 @@
 		if (e.button !== 0) return;
 		net.drag = { x: e.clientX, z: e.clientY, cx: net.cx, cz: net.cz };
 	});
-	addEventListener("mouseup", () => { net.drag = null; });
+	// While picking a new line, a click that didn't pan the map picks a station or a waypoint
+	netCanvas.addEventListener("click", e => {
+		if (!picking || net.dragged) return;
+		const rect = netCanvas.getBoundingClientRect();
+		pickAt(e, e.clientX - rect.left, e.clientY - rect.top);
+	});
+	addEventListener("mouseup", () => {
+		net.drag = null;
+		// Cleared after the click that ends a pan has been seen
+		setTimeout(() => { net.dragged = false; }, 0);
+	});
 	netCanvas.addEventListener("mousemove", e => {
 		if (net.drag) {
+			net.dragged = Math.hypot(e.clientX - net.drag.x, e.clientY - net.drag.z) > 4;
 			net.cx = net.drag.cx - (e.clientX - net.drag.x) / net.scale;
 			net.cz = net.drag.cz - (e.clientY - net.drag.z) / net.scale;
 			drawNetwork();
@@ -1843,6 +1856,262 @@
 		railMenu(e, net.connectingOf.get(index) || null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork);
 	});
 	addEventListener("resize", () => drawNetwork());
+
+	// ---------- A new line chosen on the whole network map ----------
+	/**
+	 * Picking a new line's stops on the whole network map: stops in order (platform, station, whether passed, the nodes
+	 * the way to the next goes through), the way of each leg as the server finds it (api/route-preview), and the leg
+	 * whose waypoints clicks on nodes set.
+	 */
+	let picking = null;
+
+	function startPicking() {
+		picking = { mode: net.mode || "TRAIN", stops: [], legs: [], activeLeg: -1, color: "#3b82f6", requestId: 0 };
+		openView("network", state.line, null);
+		dutyNotice = tr("在全网配线图上依次点车站；站里有多个站台时选一个。选好后在右侧完成。");
+		renderAll();
+	}
+
+	function stopPicking() {
+		picking = null;
+		renderAll();
+	}
+
+	/** The platforms of a station of the map's kind of transport, for choosing which one a stop uses. */
+	const stationPlatforms = stationId => (topo ? topo.platforms : []).filter(p => p.station === stationId && (!p.mode || p.mode === picking.mode));
+
+	function addPickedStop(platform) {
+		picking.stops.push({ platformId: platform.id, station: platform.station, name: `${shortName(platform.stationName) || "?"} ${platform.name || ""}`.trim(), pass: false, waypoints: [] });
+		refreshPreview();
+	}
+
+	/** Asks the server for the way through the stops chosen, and draws it when it comes. */
+	async function refreshPreview() {
+		renderInspector();
+		drawNetwork();
+		if (!picking || picking.stops.length < 2) {
+			if (picking) picking.legs = [];
+			return;
+		}
+		const id = ++picking.requestId;
+		try {
+			const result = await sendJson("api/route-preview", "POST", { platforms: picking.stops.map(stop => stop.platformId), waypoints: picking.stops.map(stop => stop.waypoints) });
+			if (!picking || id !== picking.requestId) return;
+			picking.legs = result.legs || [];
+			picking.error = result.error ? tr("服务端没有回答，稍后再试") : "";
+		} catch (e) {
+			if (picking) picking.error = tr("发送失败，游戏可能已经关闭");
+		}
+		renderInspector();
+		drawNetwork();
+	}
+
+	/** The station on the map at this point, or null. */
+	function netStationAt(px, pz) {
+		let best = null, bestDistance = 12;
+		((net.data && net.data.stations) || []).forEach(station => {
+			const distance = Math.hypot(netX(station.x) - px, netZ(station.z) - pz);
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				best = station;
+			}
+		});
+		return best;
+	}
+
+	/** The rail node on the map at this point, as its id, or null. */
+	function netNodeAt(px, pz) {
+		let best = null, bestDistance = 8;
+		((net.data && net.data.nodes) || []).forEach(node => {
+			const distance = Math.hypot(netX(node[0]) - px, netZ(node[1]) - pz);
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				best = node[2];
+			}
+		});
+		return best;
+	}
+
+	/** A click on the map while picking: a station adds a stop, a node is a waypoint of the leg chosen. */
+	function pickAt(e, px, pz) {
+		if (picking.activeLeg >= 0) {
+			const node = netNodeAt(px, pz);
+			if (node) {
+				const waypoints = picking.stops[picking.activeLeg].waypoints;
+				const at = waypoints.indexOf(node);
+				if (at >= 0) waypoints.splice(at, 1);
+				else waypoints.push(node);
+				refreshPreview();
+				return;
+			}
+		}
+		const station = netStationAt(px, pz);
+		if (!station) return;
+		const platforms = stationPlatforms(station.id);
+		if (!platforms.length) {
+			dutyNotice = tr("{0} 没有这种运输方式的站台", shortName(station.name));
+			renderBanner();
+			return;
+		}
+		if (platforms.length === 1) {
+			addPickedStop(platforms[0]);
+			return;
+		}
+		openMenu(e.clientX, e.clientY, platforms.map(p => {
+			const using = data.routes.filter(r => r.stops.some(stop => stop.platformId === p.id)).map(r => shortName(r.name));
+			return [`${trackLabel(p.id, p.name, p.passingTrack)}${using.length ? " · " + using.slice(0, 3).join("、") : ""}`, () => addPickedStop(p)];
+		}));
+	}
+
+	/** Over the map: the existing routes through the chosen stations stand out, then the new line's legs and stops. */
+	function drawPicking(g) {
+		if (!picking) return;
+		const d = net.data, nodeById = new Map((d.nodes || []).map(node => [node[2], node]));
+		const stationById = new Map((d.stations || []).map(station => [station.id, station]));
+		g.save();
+		picking.stops.forEach((stop, i) => {
+			const next = picking.stops[i + 1], leg = picking.legs[i];
+			if (next && leg && leg.found) {
+				g.strokeStyle = i === picking.activeLeg ? css("--sel") : picking.color;
+				g.lineWidth = i === picking.activeLeg ? 6 : 4;
+				g.globalAlpha = 0.85;
+				g.beginPath();
+				leg.nodes.forEach(([x, z], k) => k ? g.lineTo(netX(x), netZ(z)) : g.moveTo(netX(x), netZ(z)));
+				g.stroke();
+			} else if (next) {
+				const a = stationById.get(stop.station), b = stationById.get(next.station);
+				if (a && b) {
+					g.strokeStyle = css("--warn");
+					g.lineWidth = 2;
+					g.globalAlpha = 1;
+					g.setLineDash([6, 4]);
+					g.beginPath();
+					g.moveTo(netX(a.x), netZ(a.z));
+					g.lineTo(netX(b.x), netZ(b.z));
+					g.stroke();
+					g.setLineDash([]);
+					if (leg && leg.failure) {
+						g.fillStyle = css("--warn");
+						g.font = "12px sans-serif";
+						g.fillText(leg.failure, (netX(a.x) + netX(b.x)) / 2 + 6, (netZ(a.z) + netZ(b.z)) / 2);
+					}
+				}
+			}
+			stop.waypoints.forEach(nodeId => {
+				const node = nodeById.get(nodeId);
+				if (!node) return;
+				g.globalAlpha = 1;
+				g.fillStyle = css("--sel");
+				g.fillRect(netX(node[0]) - 4, netZ(node[1]) - 4, 8, 8);
+			});
+		});
+		picking.stops.forEach((stop, i) => {
+			const station = stationById.get(stop.station);
+			if (!station) return;
+			const x = netX(station.x), y = netZ(station.z);
+			g.globalAlpha = 1;
+			g.fillStyle = stop.pass ? css("--panel") : picking.color;
+			g.strokeStyle = picking.color;
+			g.lineWidth = 2;
+			g.beginPath();
+			g.arc(x, y, 9, 0, Math.PI * 2);
+			g.fill();
+			g.stroke();
+			g.fillStyle = stop.pass ? picking.color : "#fff";
+			g.font = "bold 11px sans-serif";
+			g.textAlign = "center";
+			g.fillText(String(i + 1), x, y + 4);
+		});
+		g.restore();
+	}
+
+	/** The routes stopping at any station chosen so far, which the map shows over the others. */
+	const pickingRouteIds = () => {
+		if (!picking || !picking.stops.length) return null;
+		const stations = new Set(picking.stops.map(stop => stop.station));
+		return new Set(data.routes.filter(r => r.stops.some(stop => stations.has(stop.station))).map(r => r.id));
+	};
+
+	/** The panel beside the map while picking: the stops in order with their legs, and finishing. */
+	function pickingPanel() {
+		const rows = picking.stops.map((stop, i) => {
+			const leg = picking.legs[i], next = picking.stops[i + 1];
+			const legText = !next ? "" : !leg ? tr("正在找路…") : leg.found ? tr("经 {0} 个节点{1}", leg.nodes.length, stop.waypoints.length ? tr("，途经 {0} 个点", stop.waypoints.length) : "") : tr("走不通：{0}", leg.failure);
+			return `<li><b>${i + 1}</b> ${escapeHtml(stop.name)}${i > 0 && i < picking.stops.length - 1 ? ` <label class="hint"><input type="checkbox" data-pick-pass="${i}"${stop.pass ? " checked" : ""}> ${tr("通过")}</label>` : ""}
+				<button class="link" data-pick-up="${i}" title="${tr("上移")}">↑</button><button class="link" data-pick-down="${i}" title="${tr("下移")}">↓</button><button class="link" data-pick-remove="${i}" title="${tr("删掉这一站")}">×</button>
+				${next ? `<div class="${leg && !leg.found ? "err" : "hint"}">→ ${escapeHtml(legText)} <button class="link" data-pick-leg="${i}">${picking.activeLeg === i ? tr("选途经点中，点这里结束") : tr("选这一段的途经点")}</button></div>` : ""}</li>`;
+		}).join("");
+		const allFound = picking.stops.length >= 2 && picking.legs.length === picking.stops.length - 1 && picking.legs.every(leg => leg.found);
+		return `<h2>${tr("新建线路")}</h2><div class="card">
+			<p class="hint">${tr("在图上依次点车站；站里有多个站台时选一个。经过已选车站的线路会高亮。两站之间的路是服务端按游戏的寻路找的；要走别的路，选一段后在图上点节点作为途经点，再点一次去掉。")}</p>
+			${rows ? `<ol class="pick-stops">${rows}</ol>` : `<p class="hint">${tr("还没选车站")}</p>`}
+			${picking.error ? `<p class="err">${escapeHtml(picking.error)}</p>` : ""}
+			<p><button data-pick-finish ${allFound ? "" : "disabled"}>${tr("填线名和种别…")}</button> <button data-pick-cancel>${tr("取消")}</button> <button class="link" data-pick-old>${tr("改用停站图新建…")}</button></p></div>`;
+	}
+
+	/** The last step: the line's name, its type and colour, then the route goes into the draft as a new line. */
+	function finishPicking() {
+		const stops = picking.stops;
+		openDialog(tr("新建线路"), `
+			<label>${tr("线路组名")} <input name="line" placeholder="${tr("例如 1号线")}"></label>
+			<label>${tr("种别名")} <input name="type" placeholder="${tr("例如 普通")}"></label>
+			<label>${tr("颜色")} <input type="color" name="color" value="${picking.color}"></label>
+			<p class="hint">${escapeHtml(stops.map(stop => stop.name).join(" → "))}</p>`, tr("放进草稿"), form => {
+			const lineName = form.line.value.trim(), type = form.type.value.trim();
+			if (!lineName) return tr("写上线路组名，例如 1号线");
+			if (data.lines.some(l => l.key === picking.mode + "|" + lineName.toLowerCase())) return tr("已经有这个线路组了，请用“新建 ▾ → 种别…”");
+			if (!type) return tr("写上种别名，例如 普通");
+			draft.created.push({
+				key: "n" + Date.now().toString(36), source: "", mode: picking.mode, lineName, lineKey: picking.mode + "|" + lineName.toLowerCase(),
+				name: `${shortName(stops[0].name)} → ${shortName(stops[stops.length - 1].name)}`, serviceType: type, color: parseInt(form.color.value.slice(1), 16),
+				stops: stops.map((stop, k) => ({ platformId: stop.platformId, pass: stop.pass && k > 0 && k < stops.length - 1, waypoints: stop.waypoints.slice() })),
+				services: [], table: 0, depot: "",
+			});
+			picking = null;
+			saveDraft();
+			renderAll();
+		});
+	}
+
+	$("inspector").addEventListener("click", e => {
+		if (!picking) return;
+		const button = e.target.closest("[data-pick-up], [data-pick-down], [data-pick-remove], [data-pick-leg], [data-pick-finish], [data-pick-cancel], [data-pick-old]");
+		if (!button) return;
+		const stops = picking.stops;
+		if (button.dataset.pickUp !== undefined) {
+			const i = +button.dataset.pickUp;
+			if (i > 0) [stops[i - 1], stops[i]] = [stops[i], stops[i - 1]];
+		} else if (button.dataset.pickDown !== undefined) {
+			const i = +button.dataset.pickDown;
+			if (i < stops.length - 1) [stops[i + 1], stops[i]] = [stops[i], stops[i + 1]];
+		} else if (button.dataset.pickRemove !== undefined) {
+			stops.splice(+button.dataset.pickRemove, 1);
+			picking.activeLeg = -1;
+		} else if (button.dataset.pickLeg !== undefined) {
+			const i = +button.dataset.pickLeg;
+			picking.activeLeg = picking.activeLeg === i ? -1 : i;
+			renderInspector();
+			drawNetwork();
+			return;
+		} else if (button.dataset.pickFinish !== undefined) {
+			finishPicking();
+			return;
+		} else if (button.dataset.pickCancel !== undefined) {
+			stopPicking();
+			return;
+		} else if (button.dataset.pickOld !== undefined) {
+			picking = null;
+			newLineDialog();
+			return;
+		}
+		refreshPreview();
+	});
+	$("inspector").addEventListener("change", e => {
+		if (picking && e.target.dataset.pickPass !== undefined) {
+			picking.stops[+e.target.dataset.pickPass].pass = e.target.checked;
+			drawNetwork();
+		}
+	});
 
 	// ---------- Running diagram ----------
 	const canvas = $("canvas"), wrap = $("canvas-wrap"), ctx = canvas.getContext("2d");
@@ -1992,7 +2261,7 @@
 			});
 			if (!points.length) return;
 			drawn.push({ s, points });
-			const isSelected = s.id === state.selected || s.route.id === state.selectedRoute;
+			const isSelected = s.id === state.selected || s.route.id === state.selectedRoute || inRange(s);
 			const dim = selectedRoute && s.route.id !== selectedRoute;
 			ctx.globalAlpha = dim ? 0.25 : 1;
 			if (isSelected) {
@@ -2100,6 +2369,7 @@
 			ctx.stroke();
 		}
 		ctx.setLineDash([]);
+		drawDepotLegs(line, yOf, c, w, layout.ys.length > 1 ? layout.ys[1] - layout.ys[0] : MIN_ROW_GAP);
 		drawSimulated(line, yOf, c, w);
 		if (slotPoints.length) {
 			ctx.fillStyle = c.warn;
@@ -2172,6 +2442,115 @@
 	}
 
 	/** The service whose line passes closest to a point, within a few pixels. */
+	// The trains' runs out of their depots and back drawn last, to find the duty clicked
+	let legsDrawn = [];
+
+	/**
+	 * Each depot running by duties as a row beside the station it joins the line at, and each duty of the day shown
+	 * out from it to its first stop and back from its last (decoupling document 5d, first step): out leaving
+	 * the first stop's time less the time from the siding and 15 seconds, as the depot sends trains out; back from the
+	 * last stop's arrival plus the time to the siding (DepotLegs from the server). Only drawn; nothing runs by it.
+	 */
+	function drawDepotLegs(line, yOf, c, w, unit) {
+		legsDrawn = [];
+		const lineRoutes = new Set(line.routes.map(r => r.id));
+		const rowOfStation = id => line.rows.findIndex(row => row.id === id && !row.repeat);
+		const depotRows = new Map();
+		ctx.save();
+		ctx.font = `10px ${css("--font-num")}`;
+		data.depots.forEach(depot => {
+			const duties = dutiesOf(depot);
+			if (duties.mode !== "diagram") return;
+			depot.sidings.forEach(siding => {
+				const legs = siding.legs, slots = duties.sidings[siding.id] || [];
+				if (!legs || !slots.length) return;
+				const entranceRow = rowOfStation(legs.entrance);
+				slots.forEach((slot, index) => {
+					const day = dutyOn(slot, state.weekday);
+					if (!day || !day.segments.length) return;
+					const first = day.segments[0], firstService = segmentService(first);
+					const last = day.segments[day.segments.length - 1], lastService = segmentService(last);
+					if (!firstService || !lineRoutes.has(firstService.route.id)) return;
+					// The depot's row: beside the station it joins the line at, or the first stop's station
+					const baseRow = entranceRow >= 0 ? entranceRow : firstService.route.rows[first.from];
+					if (baseRow === undefined || baseRow < 0) return;
+					const side = baseRow < line.rows.length / 2 ? -1 : 1;
+					const depotY = Math.max(AXIS_H + 4, yOf(baseRow) + side * Math.min(22, Math.max(12, unit * 0.45)));
+					const key = depot.id + ":" + baseRow;
+					if (!depotRows.has(key)) depotRows.set(key, { y: depotY, name: shortName(depot.name) || tr("车厂") });
+					const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
+					ctx.strokeStyle = active ? c.warn : c.muted;
+					ctx.lineWidth = active ? 2 : 1;
+					ctx.setLineDash([4, 3]);
+					const sidingName = shortName(siding.name) || tr("存车线");
+					// Out to the first stop
+					const firstTimes = timesOf(firstService), outMillis = legs.out[firstService.route.stops[first.from].platformId];
+					if (outMillis !== undefined) {
+						const arrive = firstTimes[first.from][0], leave = arrive - outMillis - 15000;
+						const a = [xOf(leave), depotY], b = [xOf(arrive), yOf(firstService.route.rows[first.from])];
+						ctx.beginPath();
+						ctx.moveTo(...a);
+						ctx.lineTo(...b);
+						ctx.stroke();
+						legsDrawn.push({ a, b, depot: depot.id, siding: siding.id, index, text: tr("出库 {0} ← {1} {2}", clock(leave, true), shortName(depot.name), sidingName) });
+						if (state.pxPerMin >= 3) {
+							ctx.fillStyle = c.muted;
+							ctx.textAlign = "right";
+							ctx.fillText(clock(leave), a[0] - 2, depotY + (side < 0 ? -2 : 9));
+						}
+					}
+					// Back from the last stop, unless the train stays on the line
+					if (!day.stay && lastService && lineRoutes.has(lastService.route.id)) {
+						const lastStop = lastStopOf(last, lastService.route), backMillis = legs.back[lastService.route.stops[lastStop].platformId];
+						if (backMillis !== undefined) {
+							const arrive = timesOf(lastService)[lastStop][0], home = arrive + backMillis;
+							const a = [xOf(arrive), yOf(lastService.route.rows[lastStop])], b = [xOf(home), depotY];
+							ctx.beginPath();
+							ctx.moveTo(...a);
+							ctx.lineTo(...b);
+							ctx.stroke();
+							legsDrawn.push({ a, b, depot: depot.id, siding: siding.id, index, text: tr("回库 {0} → {1} {2}", clock(home, true), shortName(depot.name), sidingName) });
+							if (state.pxPerMin >= 3) {
+								ctx.fillStyle = c.muted;
+								ctx.textAlign = "left";
+								ctx.fillText(clock(home), b[0] + 2, depotY + (side < 0 ? -2 : 9));
+							}
+						}
+					}
+					ctx.setLineDash([]);
+				});
+			});
+		});
+		// The depots' rows: a faint line along the diagram and the depot's name by the station names
+		depotRows.forEach(({ y, name }) => {
+			ctx.strokeStyle = c.grid;
+			ctx.lineWidth = 1;
+			ctx.setLineDash([1, 4]);
+			ctx.beginPath();
+			ctx.moveTo(LABEL_W, y);
+			ctx.lineTo(w, y);
+			ctx.stroke();
+			ctx.setLineDash([]);
+			ctx.fillStyle = c.muted;
+			ctx.textAlign = "right";
+			ctx.fillText("▤ " + name, LABEL_W - 6, y + 3);
+		});
+		ctx.restore();
+	}
+
+	/** The duty whose run out of its depot or back is at this point, or null. */
+	function hitDepotLeg(x, y) {
+		let best = null, bestDistance = 6;
+		legsDrawn.forEach(leg => {
+			const distance = segmentDistance(x, y, leg.a, leg.b);
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				best = leg;
+			}
+		});
+		return best;
+	}
+
 	function hitService(x, y) {
 		let best = null, bestDistance = 6;
 		drawn.forEach(d => {
@@ -2205,6 +2584,7 @@
 		const inspector = $("inspector");
 		const s = state.selected && data ? findService(state.selected) : null;
 		const parts = [];
+		if (picking && data) parts.push(pickingPanel());
 		if (state.slot && data) parts.push(dutyPanel());
 		if (s) {
 			const next = s.link && data.routeById.get(s.link.route);
@@ -2504,7 +2884,7 @@
 			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
 			return;
 		}
-		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute;
+		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute || inRange(s);
 		const allTimes = services.map(timesOf);
 		// For each service, the stop it arrives at and leaves from on each row, and the rows it goes by
 		const visits = services.map(s => {
@@ -2573,13 +2953,13 @@
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint">${tr("余裕")} <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
 			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
-			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="07:10 + 10 * 00:03" autocomplete="off"><button data-add-service>${tr("添加")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
+			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("班数")}" inputmode="numeric" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:4em"><button data-add-service>${tr("添加")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
 		if (!services.length) {
 			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
 			return;
 		}
 		const multipleTables = timetable.tables.length > 1;
-		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute;
+		const isSelected = s => s.id === state.selected || s.route.id === state.selectedRoute || inRange(s);
 		const head = `<thead><tr><th class="st">${tr("车站")}</th><th class="kind"></th>${services.map(s => serviceHead(s, isSelected(s), multipleTables ? `<span class="note">${escapeHtml(tableName(s.table, s.tableIndex))}</span>` : "")).join("")}</tr></thead>`;
 		const allTimes = services.map(timesOf);
 		const rows = [];
@@ -2666,6 +3046,58 @@
 	/** Services of the same table that run after this one, in the operating day. */
 	const laterServices = s => s.route.services.filter(o => o.tableIndex === s.tableIndex && o.start > s.start);
 
+	// A run of services chosen together: one route and table, one after another with none skipped (TimetableBatch)
+	const Batch = window.TimetableBatch;
+	const tableRun = s => s.route.services.filter(o => o.tableIndex === s.tableIndex);
+	const inRange = s => Boolean(state.range && state.range.ids.includes(s.id));
+	const rangeServices = () => state.range ? state.range.ids.map(findService).filter(Boolean) : [];
+
+	/** Chooses the services from the one chosen before to this one, if they're of one route and table. */
+	function chooseRange(s) {
+		const anchor = state.range ? findService(state.range.anchor) : state.selected && findService(state.selected);
+		if (!anchor || anchor.route !== s.route || anchor.tableIndex !== s.tableIndex) {
+			state.range = null;
+			return false;
+		}
+		state.range = { anchor: anchor.id, ids: Batch.runBetween(tableRun(s).map(o => o.id), anchor.id, s.id) };
+		return true;
+	}
+
+	/** Spaces the chosen services evenly from the first, keeping each one's stops and run times. */
+	function respaceRange() {
+		const run = rangeServices();
+		if (run.length < 2) return;
+		const minutes = Number(prompt(tr("这 {0} 班相邻两班之间隔多少分钟？", run.length), String(Math.round((run[1].start - run[0].start) / 60000) || 5)));
+		if (!(minutes > 0)) return;
+		const targets = Batch.respace(run.map(o => o.service), Math.round(minutes * 60000));
+		editTimetable(run[0].route, timetable => {
+			const table = timetable.tables[run[0].tableIndex];
+			// Those moving later go first from the end, those moving earlier from the start, so none lands on another
+			const moves = run.map((o, i) => [o.service, targets[i]]).filter(([from, to]) => from !== to);
+			const later = moves.filter(([from, to]) => mod(to - from, DAY) < DAY / 2).reverse(), earlier = moves.filter(([from, to]) => mod(to - from, DAY) >= DAY / 2);
+			for (const [from, to] of [...later, ...earlier]) {
+				const error = retimeService(table, from, to);
+				if (error) return error;
+			}
+			state.range = null;
+			return tr("{0} 班已按 {1} 分钟间隔排开", run.length, minutes);
+		});
+	}
+
+	/** Puts a new service beside one, its time worked out from the services either side (TimetableBatch.besideTime). */
+	function addBeside(s, side) {
+		const run = tableRun(s), at = run.indexOf(s);
+		const before = at > 0 ? run[at - 1].service : null, after = at < run.length - 1 ? run[at + 1].service : null;
+		const time = Batch.besideTime(s.service, side, before, after);
+		editTimetable(s.route, timetable => {
+			const table = timetable.tables[s.tableIndex];
+			if (table.services.includes(time)) return tr("{0} 已经有一班", clock(mod(time - data.dayStartMillis, DAY)));
+			if (table.services.length >= MAX_SERVICES) return `${tr("一张表最多 {0} 个班次", MAX_SERVICES)}`;
+			table.services.push(time);
+			return tr("在 {0} 加了一班", clock(mod(time - data.dayStartMillis, DAY)));
+		});
+	}
+
 	function cellMenu(e, cell) {
 		const s = findService(cell.dataset.svc), stop = +cell.dataset.stop;
 		if (!s) return;
@@ -2675,6 +3107,16 @@
 		const items = [];
 		const edit = change => editTimetable(s.route, timetable => change(timetable.tables[s.tableIndex], timetable));
 		if (cell.tagName === "TH") {
+			if (inRange(s) && state.range.ids.length > 1) {
+				items.push([tr("调整选中 {0} 班的间隔…", state.range.ids.length), () => respaceRange()]);
+				items.push([tr("删除选中的 {0} 班", state.range.ids.length), () => {
+					const run = rangeServices();
+					edit(table => run.forEach(o => removeService(table, o.service)));
+					state.range = null;
+				}]);
+			}
+			items.push([tr("在左边新建一列"), () => addBeside(s, -1)]);
+			items.push([tr("在右边新建一列"), () => addBeside(s, 1)]);
 			items.push([tr("删除这一班"), () => edit(table => removeService(table, s.service))]);
 			if (!s.link) items.push([s.returns ? tr("跑完这一班不回库") : tr("跑完这一班回库"), () => edit(table => { table.returns = s.returns ? table.returns.filter(x => x !== s.service) : [...table.returns, s.service]; })]);
 			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => {
@@ -3118,6 +3560,25 @@
 	 * no duties set shows the duties the game worked out for it. The depot sends a train out its run from the siding
 	 * before the first service; one sent out too late joins its duty at the first stop it can still keep to.
 	 */
+	/**
+	 * When a duty's train leaves its siding and gets back, by how long its runs out and back take (DepotLegs), as the
+	 * running diagram draws them; "--:--" where not known yet.
+	 */
+	function legTimes(siding, day) {
+		const legs = siding.legs, first = day.segments[0], last = day.segments[day.segments.length - 1];
+		const firstService = segmentService(first), lastService = segmentService(last);
+		let out = "--:--", home = day.stay ? tr("留线") : "--:--";
+		if (legs && firstService) {
+			const millis = legs.out[firstService.route.stops[first.from].platformId];
+			if (millis !== undefined) out = clock(timesOf(firstService)[first.from][0] - millis - 15000, true);
+		}
+		if (legs && lastService && !day.stay) {
+			const lastStop = lastStopOf(last, lastService.route), millis = legs.back[lastService.route.stops[lastStop].platformId];
+			if (millis !== undefined) home = clock(timesOf(lastService)[lastStop][0] + millis, true);
+		}
+		return { out, home };
+	}
+
 	function releasePlanDialog(depot) {
 		const duties = dutiesOf(depot);
 		const rows = [];
@@ -3136,12 +3597,13 @@
 					first: `${segmentService(first) ? clock(timesOf(segmentService(first))[Math.min(first.from, segmentService(first).plans.length - 1)][1]) : "--:--"} ${firstRoute ? escapeHtml(shortName(firstRoute.name)) + " " + escapeHtml(shortName(firstRoute.stops[first.from] ? firstRoute.stops[first.from].name : "?")) : tr("已删除的线路")}`,
 					last: `${segmentService(last) ? clock(timesOf(segmentService(last))[lastStopOf(last, segmentService(last).route)][0]) : "--:--"} ${lastRoute ? escapeHtml(shortName(lastRoute.name)) + " " + escapeHtml(shortName(lastRoute.stops[lastStopOf(last, lastRoute)] ? lastRoute.stops[lastStopOf(last, lastRoute)].name : "?")) : tr("已删除的线路")}`,
 					count: day.segments.length,
+					...legTimes(siding, day),
 				});
 			});
 			if (siding.maxTrains >= 0) inDepot += Math.max(0, siding.maxTrains - used);
 		});
 		rows.sort((a, b) => a.start - b.start);
-		const table = rows.length ? `<table class="tt release-plan" style="cursor: default"><thead><tr><th>${tr("车")}</th><th>${tr("存车线")}</th><th>${tr("首班（出库后）")}</th><th>${tr("末班到达")}</th><th>${tr("班次")}</th><th>${tr("之后")}</th></tr></thead><tbody>${rows.map(row => `<tr><td>${tr("车 {0}", row.index + 1)}</td><td>${escapeHtml(shortName(row.siding.name) || tr("存车线"))}</td><td>${row.first}</td><td>${row.last}</td><td class="num">${row.count}</td><td>${row.stay ? tr("留在线上过夜") : tr("回库")}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">${tr("这天没有运用，车厂不放车。")}</p>`;
+		const table = rows.length ? `<table class="tt release-plan" style="cursor: default"><thead><tr><th>${tr("车")}</th><th>${tr("存车线")}</th><th>${tr("出库")}</th><th>${tr("首班（出库后）")}</th><th>${tr("末班到达")}</th><th>${tr("到库")}</th><th>${tr("班次")}</th><th>${tr("之后")}</th></tr></thead><tbody>${rows.map(row => `<tr><td>${tr("车 {0}", row.index + 1)}</td><td>${escapeHtml(shortName(row.siding.name) || tr("存车线"))}</td><td class="num">${row.out}</td><td>${row.first}</td><td>${row.last}</td><td class="num">${row.home}</td><td class="num">${row.count}</td><td>${row.stay ? tr("留在线上过夜") : tr("回库")}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">${tr("这天没有运用，车厂不放车。")}</p>`;
 		openDialog(`${tr("出入库计划：{0}（{1}）", escapeHtml(shortName(depot.name)), WEEKDAY_NAMES[state.weekday])}`, `
 			<p class="hint">${duties.auto ? tr("这个车厂没设运用，按游戏根据时刻表自动生成的运用出车。") : ""}${tr("车厂在首班前按出库用时放车；出库太晚（超过 10 分钟）的车直接放到它的运用里还赶得上的第一站。放车前要先拿到出库线到首站的进路，正线的方向预约在内，拿不到就在库里等。")}</p>
 			${table}
@@ -4772,10 +5234,31 @@
 		});
 	}
 
+	// What was typed to add services, kept after adding and across visits (per viewer)
+	const addInputs = (() => {
+		try {
+			return Object.assign({ start: "", end: "", count: "" }, JSON.parse(localStorage.getItem("mtr-editor-add-services") || "{}"));
+		} catch (e) {
+			return { start: "", end: "", count: "" };
+		}
+	})();
+
+	/** The services to add: from start to end, count of them evenly apart; or the start's own pattern alone. */
+	function servicesToAdd(startText, endText, countText) {
+		if (!endText.trim() && !countText.trim()) return parsePattern(startText);
+		const start = parseClock(startText.trim()), end = parseClock(endText.trim()), count = Number(countText.trim());
+		if (start === null || !Number.isInteger(count) || count < 1 || count > 1000 || count > 1 && end === null) return null;
+		return Batch.evenTimes(start, end === null ? start : end, count).map(time => mod(time - data.offsetMillis, DAY));
+	}
+
 	function addServices() {
 		const r = tableRouteOf(), input = $("add-service");
 		if (!r || !input) return;
-		const services = parsePattern(input.value);
+		addInputs.start = input.value;
+		addInputs.end = $("add-end") ? $("add-end").value : "";
+		addInputs.count = $("add-count") ? $("add-count").value : "";
+		try { localStorage.setItem("mtr-editor-add-services", JSON.stringify(addInputs)); } catch (e) {}
+		const services = servicesToAdd(addInputs.start, addInputs.end, addInputs.count);
 		if (!services) {
 			tableMessage = PATTERN_HINT;
 			renderTable();
@@ -4884,6 +5367,7 @@
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
 			if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) });
 			if (depot.shortfall && depot.shortfall.uncovered > 0) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, shortfallText(depot.shortfall)) });
+			if (duties.mode === "diagram" && depot.sidings.some(siding => (duties.sidings[siding.id] || []).length && !siding.legs)) problems.push({ level: "warn", text: tr("车厂{0}还没有出入库时刻，刷新路径后运行图上才画出出库和回库", name) });
 		});
 		data.routes.filter(r => r.timetable && !r.hasTimes).forEach(r => problems.push({ level: "warn", text: r.pathFailure ? tr("{0}：找不到路，{1}", routeTitle(r), r.pathFailure) : tr("{0}：还没有各站时刻", routeTitle(r)), route: r.id }));
 		return problems;
@@ -5010,7 +5494,8 @@
 		const box = e.currentTarget.getBoundingClientRect();
 		const r = data && (state.route ? data.routeById.get(state.route) : currentLine() && currentLine().routes[0]);
 		openMenu(box.left, box.bottom + 4, [
-			[tr("线路…"), data && data.canEdit ? () => newLineDialog() : null],
+			[tr("线路（在全网配线图上选站）…"), data && data.canEdit ? () => startPicking() : null],
+			[tr("线路（按停站图）…"), data && data.canEdit ? () => newLineDialog() : null],
 			[tr("种别…"), r && data.canEdit ? () => newTypeDialog(r.lineKey, r) : null],
 			[tr("时刻表…"), r ? () => tableDialog(r, -1) : null],
 			[tr("直通关系…"), data && data.routes.length > 1 ? () => throughDialog(r) : null],
@@ -5121,6 +5606,16 @@
 			return;
 		}
 		const cell = e.target.closest("td[data-svc], th[data-svc]");
+		if (cell && e.shiftKey && cell.tagName === "TH") {
+			const s = findService(cell.dataset.svc);
+			if (s && chooseRange(s)) {
+				tableMessage = tr("选中 {0} 班，右键表头可以调整间隔", state.range.ids.length);
+				renderTable();
+				draw();
+				return;
+			}
+		}
+		if (cell && !e.shiftKey) state.range = null;
 		if (cell) {
 			if (state.selected !== cell.dataset.svc || state.selectedRoute) {
 				state.selected = cell.dataset.svc;
@@ -5246,6 +5741,23 @@
 				canvas.classList.remove("dragging");
 				return;
 			}
+			const leg = !s && hitDepotLeg(x, y);
+			if (leg) {
+				drag = null;
+				canvas.classList.remove("dragging");
+				state.slot = { depot: leg.depot, siding: leg.siding, index: leg.index };
+				dutyNotice = leg.text;
+				renderAll();
+				return;
+			}
+			if (s && e.shiftKey && chooseRange(s)) {
+				drag = null;
+				canvas.classList.remove("dragging");
+				renderTable();
+				draw();
+				return;
+			}
+			state.range = null;
 			// A second click on the same service soon after selects every service of its route
 			const now = performance.now(), again = s && lastClick && lastClick.id === s.id && now - lastClick.time < 350;
 			lastClick = again ? null : { id: s && s.id, time: now };
@@ -5274,8 +5786,9 @@
 			renderAll();
 			return;
 		}
-		if (e.key === "Escape" && (state.selected || state.selectedRoute) && !dialog.open && e.target.tagName !== "INPUT") {
+		if (e.key === "Escape" && (state.selected || state.selectedRoute || state.range) && !dialog.open && e.target.tagName !== "INPUT") {
 			state.selectedRoute = null;
+			state.range = null;
 			selectService(null, false);
 		}
 	});

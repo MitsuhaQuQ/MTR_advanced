@@ -385,13 +385,20 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure) {
-		generatePathS2C(world, depotId, successfulSegments, failure, Collections.emptyList());
+		generatePathS2C(world, depotId, successfulSegments, failure, Collections.emptyList(), Collections.emptyMap());
 	}
 
 	/**
 	 * @param failedDuties the keys of the duties whose paths weren't found, of which the first few are sent
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties) {
+		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, Collections.emptyMap());
+	}
+
+	/**
+	 * @param depotLegs by siding, how its trains get out to their first stops and back
+	 */
+	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
@@ -400,6 +407,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final List<String> sent = failedDuties.subList(0, Math.min(failedDuties.size(), MAX_FAILED_DUTIES));
 		packet.writeInt(sent.size());
 		sent.forEach(key -> packet.writeUtf(key.length() > 200 ? key.substring(0, 200) : key));
+		packet.writeInt(depotLegs.size());
+		depotLegs.forEach((sidingId, legs) -> {
+			packet.writeLong(sidingId);
+			legs.writePacket(packet);
+		});
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 

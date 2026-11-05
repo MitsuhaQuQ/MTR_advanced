@@ -121,6 +121,8 @@ public final class EditorActions implements IPacket {
 	 * sidings' routes and fleets, as the page drafted them from the depot as it was ({@code base}); then its path is
 	 * found again, with the result on the page's sync panel.
 	 */
+	private static final int MAX_WAYPOINTS = 16;
+
 	private static String applyDepot(JsonObject operation) {
 		final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot")));
 		if (depot == null) {
@@ -452,8 +454,19 @@ public final class EditorActions implements IPacket {
 		final int stopCount = stops.size();
 		final long[] platformIds = new long[stopCount];
 		final boolean[] pass = new boolean[stopCount];
+		// The nodes the way from each stop to the next goes through, chosen on the whole network map
+		final List<List<net.minecraft.core.BlockPos>> waypoints = new ArrayList<>();
 		for (int i = 0; i < stopCount; i++) {
 			final JsonObject stop = stops.get(i).getAsJsonObject();
+			final List<net.minecraft.core.BlockPos> stopWaypoints = new ArrayList<>();
+			if (stop.has("waypoints") && stop.get("waypoints").isJsonArray()) {
+				for (final JsonElement node : stop.getAsJsonArray("waypoints")) {
+					if (stopWaypoints.size() < MAX_WAYPOINTS) {
+						stopWaypoints.add(net.minecraft.core.BlockPos.of(parseId(node.getAsString())));
+					}
+				}
+			}
+			waypoints.add(stopWaypoints);
 			platformIds[i] = parseId(getString(stop, "platformId"));
 			pass[i] = stop.get("pass").getAsBoolean() && i > 0 && i < stopCount - 1;
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformIds[i]);
@@ -491,6 +504,7 @@ public final class EditorActions implements IPacket {
 		for (int i = 0; i < stopCount; i++) {
 			final Route.RoutePlatform newStop = new Route.RoutePlatform(platformIds[i]);
 			newStop.pass = pass[i];
+			newStop.waypoints.addAll(waypoints.get(i));
 			newRoute.platformIds.add(newStop);
 		}
 		newRoute.getPathData().clear();

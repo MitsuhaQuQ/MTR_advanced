@@ -433,6 +433,17 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		return compoundTag;
 	}
 
+	/**
+	 * @return the graph of the rails as path generation searches them, for previewing a route's way; the map's, or made
+	 * now if there is none yet
+	 */
+	public RailGraph<Rail> getPreviewGraph() {
+		if (mapGraph == null) {
+			mapGraph = DeterministicPathFinder.compile(rails, pathBoundaries);
+		}
+		return mapGraph;
+	}
+
 	public Map<BlockPos, Map<BlockPos, Rail>> getRails() {
 		return rails;
 	}

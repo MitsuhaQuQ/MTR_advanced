@@ -120,6 +120,20 @@ public final class EditorData {
 				siding.getRouteIds().forEach(routeId -> sidingRoutes.add(String.valueOf(routeId)));
 				sidingObject.add("routes", sidingRoutes);
 				sidingObject.addProperty("vehicle", siding.getTrainId());
+				// How its trains get out to their first stops and back (DepotLegs), from the last path generation
+				final mtr.data.DepotLegs legs = siding.getDepotLegs();
+				if (legs.entrancePlatform != 0 || !legs.outMillis.isEmpty()) {
+					final JsonObject legsObject = new JsonObject();
+					final Station entrance = ClientData.DATA_CACHE.platformIdToStation.get(legs.entrancePlatform);
+					legsObject.addProperty("entrance", entrance == null ? "" : String.valueOf(entrance.id));
+					final JsonObject out = new JsonObject();
+					legs.outMillis.forEach((platformId, millis) -> out.addProperty(String.valueOf(platformId), millis));
+					legsObject.add("out", out);
+					final JsonObject back = new JsonObject();
+					legs.backMillis.forEach((platformId, millis) -> back.addProperty(String.valueOf(platformId), millis));
+					legsObject.add("back", back);
+					sidingObject.add("legs", legsObject);
+				}
 				sidingsArray.add(sidingObject);
 			});
 			depotObject.add("sidings", sidingsArray);

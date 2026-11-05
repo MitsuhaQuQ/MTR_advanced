@@ -587,7 +587,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// Duties whose paths weren't found, which only the server's log told of before
 				final List<String> failedDuties = new ArrayList<>();
 				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> failedDuties.addAll(siding.getLastFailedDuties())));
-				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties);
+				// How each siding's trains get out to their first stops and back, for the advanced editor's running diagram
+				final Map<Long, DepotLegs> depotLegs = new TreeMap<>();
+				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> depotLegs.put(siding.id, siding.getDepotLegs())));
+				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (CancellationException e) {
 				// A newer request restarted path generation, and that thread reports the result

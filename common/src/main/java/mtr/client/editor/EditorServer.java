@@ -1,5 +1,6 @@
 package mtr.client.editor;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import mtr.MTR;
@@ -133,6 +134,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
 		context.addServlet(new ServletHolder(new RouteLayoutServlet()), "/api/route-layout");
 		context.addServlet(new ServletHolder(new NetworkServlet()), "/api/network");
+		context.addServlet(new ServletHolder(new RoutePreviewServlet()), "/api/route-preview");
 		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
 		context.addServlet(new ServletHolder(new AudioFileServlet()), "/api/audio-file");
 		server.setHandler(context);
@@ -561,6 +563,75 @@ public final class EditorServer {
 				return;
 			}
 			sendJson(response, layout.toString());
+		}
+	}
+
+	/**
+	 * The way a new route would run between the stops chosen on the whole network map, found by the server
+	 * ({@link mtr.packet.RoutePreview}): for each leg its nodes as {x, z, id}, or why it can't be found.
+	 */
+	private static class RoutePreviewServlet extends HttpServlet {
+
+		private static final int ANSWER_SECONDS = 8;
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final List<Long> platformIds = new ArrayList<>();
+			final List<List<Long>> waypoints = new ArrayList<>();
+			try {
+				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				requestObject.getAsJsonArray("platforms").forEach(platform -> {
+					if (platformIds.size() < mtr.packet.RoutePreview.MAX_STOPS) {
+						platformIds.add(Long.parseLong(platform.getAsString()));
+					}
+				});
+				if (requestObject.has("waypoints")) {
+					requestObject.getAsJsonArray("waypoints").forEach(leg -> {
+						final List<Long> legWaypoints = new ArrayList<>();
+						leg.getAsJsonArray().forEach(node -> legWaypoints.add(Long.parseLong(node.getAsString())));
+						waypoints.add(legWaypoints);
+					});
+				}
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			final JsonObject result = new JsonObject();
+			final JsonArray legsArray = new JsonArray();
+			try {
+				final java.util.concurrent.CompletableFuture<List<mtr.packet.RoutePreview.Leg>> future = onGameThread(() -> mtr.packet.RoutePreview.request(platformIds, waypoints));
+				final List<mtr.packet.RoutePreview.Leg> legs = future.get(ANSWER_SECONDS, TimeUnit.SECONDS);
+				final List<String> texts = onGameThread(() -> {
+					final List<String> list = new ArrayList<>();
+					legs.forEach(leg -> list.add(mtr.client.PathFailureText.get(leg.failure)));
+					return list;
+				});
+				for (int i = 0; i < legs.size(); i++) {
+					final JsonObject legObject = new JsonObject();
+					final JsonArray nodesArray = new JsonArray();
+					legs.get(i).nodes.forEach(node -> {
+						final net.minecraft.core.BlockPos pos = net.minecraft.core.BlockPos.of(node);
+						final JsonArray nodeArray = new JsonArray();
+						nodeArray.add(pos.getX() + 0.5);
+						nodeArray.add(pos.getZ() + 0.5);
+						nodeArray.add(String.valueOf(node));
+						nodesArray.add(nodeArray);
+					});
+					legObject.add("nodes", nodesArray);
+					legObject.addProperty("found", !legs.get(i).nodes.isEmpty());
+					legObject.addProperty("failure", texts.get(i).isEmpty() && legs.get(i).nodes.isEmpty() ? "?" : texts.get(i));
+					legsArray.add(legObject);
+				}
+			} catch (Exception e) {
+				result.addProperty("error", "no answer");
+			}
+			result.add("legs", legsArray);
+			sendJson(response, result.toString());
 		}
 	}
 

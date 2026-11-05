@@ -73,6 +73,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private volatile List<String> lastFailedDuties = Collections.emptyList();
 	/**
+	 * How the siding's trains get out to their first stops and back from their last, from the last path generation, for
+	 * the advanced editor's running diagram: on the server for the depot to send, on the client as it was sent.
+	 */
+	private volatile DepotLegs lastDepotLegs = DepotLegs.NONE;
+	/**
 	 * How many trains run from the siding for a depot running by duties, as a depot's fleet, which needn't fit on the
 	 * rails here; -1 for as many as the duties need.
 	 */
@@ -429,6 +434,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return lastFailedDuties;
 	}
 
+	public DepotLegs getDepotLegs() {
+		return lastDepotLegs;
+	}
+
+	public void setDepotLegs(DepotLegs depotLegs) {
+		lastDepotLegs = depotLegs;
+	}
+
 	/**
 	 * Sets the routes the siding's trains run (empty for all of its depot's) and its fleet (-1 for as many as needed).
 	 */
@@ -687,6 +700,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
+		lastDepotLegs = DepotLegs.of(tempTripPaths.values());
 		final TurnBacks newTurnBacks = tempTurnBacks.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
@@ -748,6 +762,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
+		lastDepotLegs = DepotLegs.of(tempTripPaths.values());
 		final TurnBacks newTurnBacks = TurnBacks.NONE.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
