@@ -15,7 +15,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import mtr.block.BlockNode;
-import cn.zbx1425.mtrsteamloco.block.BlockDirectNode.BlockEntityDirectNode;
 
 import org.spongepowered.asm.mixin.Mixin;
 
@@ -35,14 +34,6 @@ public abstract class ItemWithCreativeTabBaseMixin extends Item {
             Block block = state.getBlock();
             BlockEntity blockEntity = level.getBlockEntity(pos);
             if (block instanceof BlockNode) {
-                if (blockEntity instanceof BlockEntityDirectNode e) {
-                    if (state.getValue(BlockNode.IS_CONNECTED) == false) {
-                        if (!level.isClientSide) {
-                            PacketScreen.sendScreenBlockS2C((ServerPlayer) context.getPlayer(), "direct_node", pos);
-                        }
-                        return InteractionResult.SUCCESS;
-                    }
-                }
                 if (context.isSecondaryUseActive()) {
                     if (level.isClientSide) {
                         // BrushEditRailScreen.acquirePickInfoWhenUse();

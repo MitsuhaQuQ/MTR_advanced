@@ -25,7 +25,7 @@ public class RailwayDataRailActionsModuleMixin extends RailwayDataModuleBase imp
     }
 
     @Shadow(remap = false)
-    private List<Rail.RailActions> railActions = new ArrayList<>();
+    private List<Rail.RailActions> railActions;
 
     @Override
     public List<Rail.RailActions> getRailActions() {

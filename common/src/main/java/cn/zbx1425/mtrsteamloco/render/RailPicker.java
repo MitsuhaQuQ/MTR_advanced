@@ -58,12 +58,7 @@ public class RailPicker {
         RailAccessor rail = (RailAccessor)pickedRail;
         double length = pickedRail.getLength();
         String[] contents;
-        if (((RailExtraSupplier) (Object) pickedRail).getPathMode() == 1) {
-            contents = new String[] {
-                String.format("L%.1fm", pickedRail.getLength()),
-                "BezierCurve"
-            };
-        } else {
+        {
             double radius;
             double gradient = Math.abs(rail.invokeGetPositionY(length / 2 - 0.5) - rail.invokeGetPositionY(length / 2 + 0.5)) * 1000;
             if (!rail.getIsStraight1() && !rail.getIsStraight2()) {

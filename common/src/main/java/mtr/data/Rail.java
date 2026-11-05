@@ -85,6 +85,14 @@ public class Rail extends SerializedDataBase {
 	private static final String KEY_RAIL_TYPE = "rail_type";
 	private static final String KEY_TRANSPORT_MODE = "transport_mode";
 	private static final String KEY_TURN_BACK_DWELL = "turn_back_dwell";
+	/**
+	 * Keys ANTE saved with every rail; only read, for its Bézier rails ({@link #fromAnteBezier}).
+	 */
+	private static final String KEY_ANTE_PATH_MODE = "path_mode";
+	private static final String KEY_ANTE_POS_START = "pos_start";
+	private static final String KEY_ANTE_FACING_START = "facing_start";
+	private static final String KEY_ANTE_POS_END = "pos_end";
+	private static final String KEY_ANTE_FACING_END = "facing_end";
 
 	// for curves:
 	// x = h + r*cos(T)
@@ -265,28 +273,49 @@ public class Rail extends SerializedDataBase {
 
 	public Rail(Map<String, Value> map) {
 		final MessagePackHelper messagePackHelper = new MessagePackHelper(map);
-		h1 = messagePackHelper.getDouble(KEY_H_1);
-		k1 = messagePackHelper.getDouble(KEY_K_1);
-		h2 = messagePackHelper.getDouble(KEY_H_2);
-		k2 = messagePackHelper.getDouble(KEY_K_2);
-		r1 = messagePackHelper.getDouble(KEY_R_1);
-		r2 = messagePackHelper.getDouble(KEY_R_2);
-		tStart1 = messagePackHelper.getDouble(KEY_T_START_1);
-		tEnd1 = messagePackHelper.getDouble(KEY_T_END_1);
-		tStart2 = messagePackHelper.getDouble(KEY_T_START_2);
-		tEnd2 = messagePackHelper.getDouble(KEY_T_END_2);
-		yStart = messagePackHelper.getInt(KEY_Y_START);
-		yEnd = messagePackHelper.getInt(KEY_Y_END);
-		reverseT1 = messagePackHelper.getBoolean(KEY_REVERSE_T_1);
-		isStraight1 = messagePackHelper.getBoolean(KEY_IS_STRAIGHT_1);
-		reverseT2 = messagePackHelper.getBoolean(KEY_REVERSE_T_2);
-		isStraight2 = messagePackHelper.getBoolean(KEY_IS_STRAIGHT_2);
 		railType = EnumHelper.valueOf(RailType.IRON, messagePackHelper.getString(KEY_RAIL_TYPE));
 		transportMode = EnumHelper.valueOf(TransportMode.TRAIN, messagePackHelper.getString(KEY_TRANSPORT_MODE));
+		// A rail ANTE saved as a Bézier curve has no shape of MTR's: it is made one from its two ends and their angles
+		final Rail reshaped = fromAnteBezier(messagePackHelper, map, railType, transportMode);
+		h1 = reshaped != null ? reshaped.h1 : messagePackHelper.getDouble(KEY_H_1);
+		k1 = reshaped != null ? reshaped.k1 : messagePackHelper.getDouble(KEY_K_1);
+		h2 = reshaped != null ? reshaped.h2 : messagePackHelper.getDouble(KEY_H_2);
+		k2 = reshaped != null ? reshaped.k2 : messagePackHelper.getDouble(KEY_K_2);
+		r1 = reshaped != null ? reshaped.r1 : messagePackHelper.getDouble(KEY_R_1);
+		r2 = reshaped != null ? reshaped.r2 : messagePackHelper.getDouble(KEY_R_2);
+		tStart1 = reshaped != null ? reshaped.tStart1 : messagePackHelper.getDouble(KEY_T_START_1);
+		tEnd1 = reshaped != null ? reshaped.tEnd1 : messagePackHelper.getDouble(KEY_T_END_1);
+		tStart2 = reshaped != null ? reshaped.tStart2 : messagePackHelper.getDouble(KEY_T_START_2);
+		tEnd2 = reshaped != null ? reshaped.tEnd2 : messagePackHelper.getDouble(KEY_T_END_2);
+		yStart = reshaped != null ? reshaped.yStart : messagePackHelper.getInt(KEY_Y_START);
+		yEnd = reshaped != null ? reshaped.yEnd : messagePackHelper.getInt(KEY_Y_END);
+		reverseT1 = reshaped != null ? reshaped.reverseT1 : messagePackHelper.getBoolean(KEY_REVERSE_T_1);
+		isStraight1 = reshaped != null ? reshaped.isStraight1 : messagePackHelper.getBoolean(KEY_IS_STRAIGHT_1);
+		reverseT2 = reshaped != null ? reshaped.reverseT2 : messagePackHelper.getBoolean(KEY_REVERSE_T_2);
+		isStraight2 = reshaped != null ? reshaped.isStraight2 : messagePackHelper.getBoolean(KEY_IS_STRAIGHT_2);
 		turnBackDwell = messagePackHelper.getInt(KEY_TURN_BACK_DWELL);
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
+	}
+
+	/**
+	 * ANTE could make a rail a Bézier curve between its two nodes ({@code path_mode} 1), saving its ends and their angles in
+	 * keys of its own beside a shape that isn't one. Read again, such a rail takes MTR's shape for the same ends and angles,
+	 * a straight part and an arc or two arcs, as long as that is a valid rail; otherwise it keeps what was saved.
+	 *
+	 * @return the rail of MTR's shape, or null for a rail that isn't one of those
+	 */
+	private static Rail fromAnteBezier(MessagePackHelper messagePackHelper, Map<String, Value> map, RailType railType, TransportMode transportMode) {
+		if (messagePackHelper.getInt(KEY_ANTE_PATH_MODE, 0) != 1 || !map.containsKey(KEY_ANTE_POS_START) || !map.containsKey(KEY_ANTE_FACING_START) || !map.containsKey(KEY_ANTE_POS_END) || !map.containsKey(KEY_ANTE_FACING_END)) {
+			return null;
+		}
+		try {
+			final Rail rail = new Rail(BlockPos.of(messagePackHelper.getLong(KEY_ANTE_POS_START)), RailAngle.fromAngle(Math.toDegrees(messagePackHelper.getDouble(KEY_ANTE_FACING_START))), BlockPos.of(messagePackHelper.getLong(KEY_ANTE_POS_END)), RailAngle.fromAngle(Math.toDegrees(messagePackHelper.getDouble(KEY_ANTE_FACING_END))), railType, transportMode);
+			return rail.isValid() ? rail : null;
+		} catch (Exception e) {
+			return null;
+		}
 	}
 
 	@Deprecated

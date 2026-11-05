@@ -168,8 +168,8 @@ public final class AudioCache implements IPacket {
 
 		final int requestId = addRequest(fileName);
 		REQUESTS.get(requestId).timeoutMillis += (long) bytes.length * 1000 / TIMEOUT_BYTES_PER_SECOND;
-		for (int offset = 0; offset < bytes.length; offset += AudioFiles.CHUNK_BYTES) {
-			final int length = Math.min(AudioFiles.CHUNK_BYTES, bytes.length - offset);
+		for (int offset = 0; offset < bytes.length; offset += AudioFiles.UPLOAD_CHUNK_BYTES) {
+			final int length = Math.min(AudioFiles.UPLOAD_CHUNK_BYTES, bytes.length - offset);
 			final byte[] chunk = new byte[length];
 			System.arraycopy(bytes, offset, chunk, 0, length);
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());

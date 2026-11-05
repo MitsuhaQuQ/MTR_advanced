@@ -56,17 +56,9 @@ public interface RailExtraSupplier {
 
     boolean isStraightOnly();
 
-    void changePathMode(int mode);
-
-    int getPathMode();
-
     boolean isBetween(double x, double y, double z, double radius);
 
     Rail getTransposition(RailType railType);
-
-    void setBezier(BezierCurve bezier);
-
-    boolean couldSwitchModeTo(int mode);
 
     void sendUpdateC2S();
 

@@ -14,7 +14,6 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import io.netty.buffer.ByteBufUtil;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import cn.zbx1425.mtrsteamloco.block.BlockDirectNode.BlockEntityDirectNode;
 import net.minecraft.util.FormattedCharSequence;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.network.FriendlyByteBuf;
@@ -76,7 +75,6 @@ import me.shedaniel.math.Point;
 import cn.zbx1425.mtrsteamloco.network.util.DoubleFloatMapSerializer;
 import cn.zbx1425.mtrsteamloco.gui.entries.*;
 import net.minecraft.world.InteractionHand;
-import cn.zbx1425.mtrsteamloco.network.PacketReplaceRailNode;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -137,38 +135,8 @@ public class BrushEditRailScreen {
             CompoundTag brushTag = getBrushTag();
             String modelKey = supplier.getModelKey();
 
+            // Node angles are MTR's own now (the brush on a node), so there is nothing about them here
             Minecraft minecraft = Minecraft.getInstance();
-            BlockEntityDirectNode entity = null;
-            if (minecraft != null) {
-                if (minecraft.level != null) {
-                    BlockEntity e = minecraft.level.getBlockEntity(pickedPosStart);
-                    if (e != null) {
-                        if (e instanceof BlockEntityDirectNode en) {
-                            entity = en;
-                        }
-                    }
-                }
-            }
-
-            if (entity != null) {
-                final BlockEntityDirectNode entity1 = entity;
-                common.addEntry(
-                    ButtonListEntry.createCenteredInstance(
-                        Text.translatable("gui.mtrsteamloco.brush_edit_rail.adjust_angle"),
-                        btn -> minecraft.setScreen(DirectNodeScreen.createScreen(entity1, () -> createScreen(pickedRail, pickedPosStart, pickedPosEnd, parent)))
-                    )
-                );
-            } else if (pickedRail.transportMode == TransportMode.TRAIN) {
-                BlockState state = minecraft.level.getBlockState(pickedPosStart);
-                if (state != null && state.getBlock() instanceof BlockNode) {
-                    common.addEntry(
-                        ButtonListEntry.createCenteredInstance(
-                            Text.translatable("gui.mtrsteamloco.brush_edit_rail.switch_to_direct_node"),
-                            btn -> PacketReplaceRailNode.sendUpdateC2S(minecraft.level, pickedPosStart, state, "brush_edit_rail")
-                        )
-                    );
-                }
-            }
 
 
             common.addEntry(

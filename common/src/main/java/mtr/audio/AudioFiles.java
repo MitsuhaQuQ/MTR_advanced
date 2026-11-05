@@ -20,6 +20,11 @@ public final class AudioFiles {
 	 */
 	public static final int MAX_FILE_BYTES = 2 * 1024 * 1024;
 	public static final int CHUNK_BYTES = 32 * 1024;
+	/**
+	 * A chunk of an upload, from a client to the server: smaller, as a packet a client sends can be at most 32767 bytes, and
+	 * the request, sizes, file name and sound ID go with the chunk (the same fix as ANTE-advanced 2f3921c8).
+	 */
+	public static final int UPLOAD_CHUNK_BYTES = 30 * 1024;
 	public static final int HASH_LENGTH = 64;
 	public static final int MAX_NAME_LENGTH = 64;
 

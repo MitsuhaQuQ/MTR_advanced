@@ -3,10 +3,7 @@ package cn.zbx1425.mtrsteamloco.network;
 import cn.zbx1425.mtrsteamloco.Main;
 import cn.zbx1425.mtrsteamloco.gui.BrushEditRailScreen;
 import cn.zbx1425.mtrsteamloco.gui.EyeCandyScreen;
-import cn.zbx1425.mtrsteamloco.gui.RailPathEditorScreen;
-import cn.zbx1425.mtrsteamloco.item.RailPathEditor;
 import cn.zbx1425.mtrsteamloco.gui.CompoundCreatorScreen;
-import cn.zbx1425.mtrsteamloco.gui.DirectNodeScreen;
 import cn.zbx1425.mtrsteamloco.gui.RoutePathCreatorScreen;
 import io.netty.buffer.Unpooled;
 import mtr.Registry;
@@ -34,17 +31,6 @@ public class PacketScreen {
         packet.writeInt(1);
         packet.writeUtf(screenName);
         packet.writeBlockPos(pos);
-        Registry.sendToPlayer(player, PACKET_SHOW_SCREEN, packet);
-    }
-
-    public static void sendScreenRailPathEditorS2C(ServerPlayer player, Rail rail, BlockPos posStart, BlockPos posEnd) {
-        final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-        packet.writeInt(2);
-        packet.writeUtf("rail_path_editor");
-        packet.writeBlockPos(posStart);
-        packet.writeBlockPos(posEnd);
-        rail.writePacket(packet);
-        System.out.println("sending rail path editor screen");
         Registry.sendToPlayer(player, PACKET_SHOW_SCREEN, packet);
     }
 
@@ -82,11 +68,6 @@ public class PacketScreen {
                         break;
                     case "compound_creator":
                         minecraftClient.setScreen(CompoundCreatorScreen.createScreen(null));
-                        break;
-                    case "direct_node":
-                        minecraftClient.setScreen(DirectNodeScreen.createScreen(minecraftClient.level, pos0, null));
-                    case "rail_path_editor":
-                        minecraftClient.setScreen(RailPathEditorScreen.createScreen(pos0, pos1, rail, null));
                         break;
                     case "route_path_creator":
                         minecraftClient.setScreen(RoutePathCreatorScreen.createScreen(null));

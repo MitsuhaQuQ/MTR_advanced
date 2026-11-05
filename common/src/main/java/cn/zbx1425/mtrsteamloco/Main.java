@@ -68,19 +68,12 @@ public class Main {
 			));
 	public static final RegistryObject<Item> ITEM_EYE_CANDY = new RegistryObject<>(() -> new BlockItemEyeCandy(BLOCK_EYE_CANDY.get()));
 	
+	// Kept as a plain MTR node, for worlds that have it; see BlockDirectNode
 	public static final RegistryObject<Block> BLOCK_DIRECT_NODE = new RegistryObject<>(BlockDirectNode::new);
-	public static final RegistryObject<BlockEntityType<BlockDirectNode.BlockEntityDirectNode>>
-			BLOCK_ENTITY_TYPE_DIRECT_NODE = new RegistryObject<>(() ->
-			RegistryUtilities.getBlockEntityType(
-					BlockDirectNode.BlockEntityDirectNode::new,
-					BLOCK_DIRECT_NODE.get()
-			));
-	public static final RegistryObject<Item> ITEM_DIRECT_NODE = new RegistryObject<>(() -> new BlockItemDirectNode(CreativeModeTabs.CORE, BLOCK_DIRECT_NODE.get()));
 
 	public static final RegistryObject<ItemWithCreativeTabBase> BRIDGE_CREATOR_1 = new RegistryObject<>(() -> new ItemBridgeCreator(1));
 	public static final RegistryObject<ItemWithCreativeTabBase> COMPOUND_CREATOR = new RegistryObject<>(() -> new CompoundCreator());
 	public static final RegistryObject<ItemWithCreativeTabBase> DISPLACEMENT_TOOL = new RegistryObject<>(() -> new DisplacementTool());
-	public static final RegistryObject<ItemWithCreativeTabBase> RAIL_PATH_EDITOR = new RegistryObject<>(() -> new RailPathEditor());
 	public static final RegistryObject<ItemWithCreativeTabBase> ROUTE_PATH_CREATOR = new RegistryObject<>(() -> new RoutePathCreator());
 	public static RegistriesWrapper REGISTERIES;
 
@@ -114,13 +107,10 @@ public class Main {
 			registries.registerBlockAndItem("departure_bell", BLOCK_DEPARTURE_BELL, CreativeModeTabs.RAILWAY_FACILITIES);
 
 			registries.registerBlock("direct_node", BLOCK_DIRECT_NODE);
-			registries.registerBlockEntityType("direct_node", BLOCK_ENTITY_TYPE_DIRECT_NODE);
-			registries.registerItem("direct_node", ITEM_DIRECT_NODE, CreativeModeTabs.CORE);
 
 			registries.registerItem("bridge_creator_1", BRIDGE_CREATOR_1);
 			registries.registerItem("compound_creator", COMPOUND_CREATOR);
 			registries.registerItem("displacement_tool", DISPLACEMENT_TOOL);
-			registries.registerItem("rail_path_editor", RAIL_PATH_EDITOR);
 			registries.registerItem("route_path_creator", ROUTE_PATH_CREATOR);
 
 			registries.registerSoundEvent("bell", SOUND_EVENT_BELL);
@@ -135,8 +125,6 @@ public class Main {
 					PacketUpdateHoldingItem::receiveUpdateC2S);
 			mtr.Registry.registerNetworkReceiver(PacketUpdateTrainCustomConfigs.C2S,
 					PacketUpdateTrainCustomConfigs::receiveUpdateC2S);
-			mtr.Registry.registerNetworkReceiver(PacketReplaceRailNode.C2S, 
-					PacketReplaceRailNode::receiveUpdateC2S);
 			mtr.Registry.registerNetworkReceiver(PacketRoutePathCreator.ROUTE_C2S,
 					PacketRoutePathCreator::receiveRouteC2S);
 			// ANTE is part of this jar, so MTR's version check (the MTM_Logic version, IPacket.getNetworkVersion) covers it

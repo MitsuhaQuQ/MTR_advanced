@@ -73,7 +73,7 @@ public abstract class TrainClientMixin extends Train implements IGui{
         ((TrainExtraSupplier) (Object) this).setCustomConfigs(((TrainExtraSupplier) (Object) other).getCustomConfigs());
     }
 
-	@Shadow(remap = false) boolean isRemoved = false;
+	@Shadow(remap = false) boolean isRemoved;
 	@Shadow(remap = false) boolean justMounted;
 	@Shadow(remap = false) float oldSpeed;
 	@Shadow(remap = false) double oldRailProgress;
@@ -291,53 +291,8 @@ public abstract class TrainClientMixin extends Train implements IGui{
 		}
     }
 
-	@Inject(method = "simulateTrain", at = @At("HEAD"), remap = false, cancellable = true)
-	private void simulateTrain(Level world, float ticksElapsed, SpeedCallback speedCallback, AnnouncementCallback announcementCallback, AnnouncementCallback lightRailAnnouncementCallback, CallbackInfo ci) {
-		trainTranslucentRenders.clear();
-		this.speedCallback = speedCallback;
-		this.announcementCallback = announcementCallback;
-		this.lightRailAnnouncementCallback = lightRailAnnouncementCallback;
-		oldSpeed = speed;
-		oldRailProgress = railProgress;
-		oldDoorValue = doorValue;
-		
-		if (ticksElapsed != 0) {
-			final int stopIndex = path.get(getIndex(0, spacing, false)).stopIndex - 1;
-			if (!RailwayData.useRoutesAndStationsFromIndex(stopIndex, routeIds, ClientData.DATA_CACHE, (currentStationIndex, thisRoute1, nextRoute1, thisStation1, nextStation1, lastStation1) -> {
-				this.currentStationIndex = currentStationIndex;
-				thisRoute = thisRoute1;
-				nextRoute = nextRoute1;
-				thisStation = thisStation1;
-				nextStation = nextStation1;
-				lastStation = lastStation1;
-			})) {
-				currentStationIndex = 0;
-				thisRoute = null;
-				nextRoute = null;
-				thisStation = null;
-				nextStation = null;
-				lastStation = null;
-			}
-		}
-
-		simulateTrain(world, ticksElapsed, null);
-
-		if (depot == null || routeIds.isEmpty()) {
-			final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
-			depot = siding == null ? null : ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
-			routeIds = depot == null ? new ArrayList<>() : depot.getRouteIds(((Train) (Object) this).trainId, ClientData.DATA_CACHE);
-			if (depot != null) {
-				depot.lastDeployedMillis = System.currentTimeMillis();
-			}
-		}
-
-		final LocalPlayer player = Minecraft.getInstance().player;
-		if (isManualAllowed && Train.isHoldingKey(player) && isPlayerRiding(player)) {
-			RenderDrivingOverlay.setData(manualNotch, (TrainClient) (Object) this);
-		}
-		
-		ci.cancel();
-	}
+	// TrainClient.simulateTrain is MTR's own: ANTE's copy of it, which replaced it whole, was an older version and left out
+	// what MTR does now, such as the routes of a service running through to another route
 
     private static Vec3 now(Matrices matrices) {
         return matrices.last().getTranslationPart().toVec3();

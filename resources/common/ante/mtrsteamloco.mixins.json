@@ -49,8 +49,6 @@
     "SidingMixin",
     "RailwayDataRailActionsModuleMixin",
     "RailTypeMixin",
-    "ItemNodeModifierBaseMixin",
-    "ItemRailModifierMixin",
     "RailwayDataMixin",
     "FQTruffleLanguage",
     "FQHotSpotTruffleRuntimeAccess"

@@ -27,7 +27,6 @@ import mtr.sound.TrainSoundBase;
 import mtr.sound.bve.BveTrainSoundConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.packs.resources.ResourceManager;
-import cn.zbx1425.mtrsteamloco.render.block.BlockEntityDirectNodeRenderer;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -70,7 +69,6 @@ public class CustomResources {
         RenderTrainD51.initGLModel(resourceManager);
         RenderTrainDK3.initGLModel(resourceManager);
         RenderTrainDK3Mini.initGLModel(resourceManager);
-        BlockEntityDirectNodeRenderer.initGLModel(resourceManager);
 
         Main.LOGGER.info("MTR-ANTE: "
                 + "Uploaded Models: " + MainClient.modelManager.uploadedVertArrays.size()

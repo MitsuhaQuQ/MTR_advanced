@@ -16,6 +16,30 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AudioFilesTest {
 
+	@Test
+	void anUploadChunkFitsInAPacketAClientMaySend() {
+		// The longest file name and sound ID, every character three bytes in UTF-8, as the upload packet writes them
+		final StringBuilder name = new StringBuilder();
+		final StringBuilder soundId = new StringBuilder();
+		for (int i = 0; i < AudioFiles.MAX_NAME_LENGTH + 4; i++) {
+			name.append('中');
+		}
+		for (int i = 0; i < AnnouncementSound.MAX_SOUND_ID_LENGTH; i++) {
+			soundId.append('中');
+		}
+		final net.minecraft.network.FriendlyByteBuf packet = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+		packet.writeInt(1);
+		packet.writeInt(AudioFiles.MAX_FILE_BYTES);
+		packet.writeInt(0);
+		packet.writeUtf(name.toString());
+		packet.writeByteArray(new byte[AudioFiles.UPLOAD_CHUNK_BYTES]);
+		packet.writeUtf(soundId.toString());
+		// Minecraft takes at most 32767 bytes from a client in one custom packet, its channel name besides
+		assertTrue(packet.readableBytes() + 64 <= 32767, String.valueOf(packet.readableBytes()));
+		// The server reads up to a whole chunk, so an upload chunk always fits
+		assertTrue(AudioFiles.UPLOAD_CHUNK_BYTES <= AudioFiles.CHUNK_BYTES);
+	}
+
 	@TempDir
 	Path folder;
 

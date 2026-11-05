@@ -209,15 +209,18 @@ ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时�
 
 | mixin | 改了什么 |
 |---|---|
-| `RailwayDataMixin` | 替换 `simulateTrains()`，用 ANTE 自己的"轨道是否在玩家附近"调 `simulateTrains(RailNearPlayer)`（3D 轨道的形状不同） |
+| `RailwayDataMixin` | 替换 `simulateTrains()`，用 ANTE 自己的"轨道是否在玩家附近"调 `simulateTrains(RailNearPlayer)`（3D 轨道的形状不同）。只影子 `world` 和 `RAIL_UPDATE_DISTANCE`，**都不带初始化**：Mixin 会把 mixin 里字段的初始化合并进目标的构造函数，以前这里的 `trainPositions = new ArrayList<>(2)` 把本体的占用表换成了空表，列车在游戏里一直没占轨道，2026-11-05 读占用表时崩溃（和 ANTE-advanced `2f3921c8` 同一个修法） |
 | `CustomResourcesMixin` | 在本体读资源包前后插入 ANTE 的资源读取；记住最近读到的贴图，给接下来的 OBJ/bbmodel 用 |
 | `TrainClientRegistryMixin` | 取车型时先找 ANTE 注册的脚本车型 |
 | `RenderTrainsMixin` | 列车绘制前后的准备和收尾、拿着轨道工具时的显示 |
 | `JonModelTrainRendererMixin` | 在车厢绘制的第一次 `rotateX` 处加车身侧倾 |
-| `TrainClientMixin` | **整个替换** `TrainClient.simulateTrain`：自己算当前站、报站和声音，再调 `Train.simulateTrain` 后取消原方法。改 `TrainClient.simulateTrain` 的本体代码在带 ANTE 的构建里不会生效 |
+| `TrainClientMixin` | 构造和 `copyFromTrain` 后带上 ANTE 的数据；`handlePositions` 是 ANTE 的版本（多了车身侧倾）。以前它还整个替换 `TrainClient.simulateTrain`，用的是一份旧代码，本体后来加的直通班次线路（`tripRouteIds`）因此不生效；2026-11-05 去掉了，`simulateTrain` 是本体自己的 |
 | `TrainMixin`、`VehicleRidingClientMixin` | 给列车和乘客加额外数据（`TrainExtraSupplier`、`VehicleRidingClientExtraSupplier`），并改乘客的位置计算 |
-| `RailMixin`、`RailTypeMixin` | 3D 轨道的形状、长度、角度和额外属性（`RailExtraSupplier`） |
+| `RailMixin` | 3D 轨道的模型、侧倾、竖曲线（`getPositionY`）、开门方向、自定义配置和带侧倾的绘制（`RailExtraSupplier`）。轨道的形状、长度和角度是本体自己的：2026-11-05 去掉了 ANTE 的贝塞尔模式和对 `getLength`、`getPosition`、`getRailAngle`、`isValid` 的重写，读档时也不再用 ANTE 存的弧度角覆盖本体的角度。ANTE 存成贝塞尔的旧轨道由 `Rail(Map)`（`fromAnteBezier`）按两端位置和方向算成本体的形状，算不出有效轨道的保留原样 |
+| `RailTypeMixin`、`SidingScreenMixin` | ANTE 的 P 类型速度轨道（P-1 至 P600、P1000 至 P10000），以及存车线界面的限速滑块范围 |
+| 已去掉的 | 2026-11-05：`ItemNodeModifierBaseMixin` 整个替换连轨工具的 `onEndClick`，本体自己的连轨（0.1° 角度、不能折回的检查）从没跑过；`ItemRailModifierMixin` 切换贝塞尔路径模式。全向节点只剩方块注册名 `mtrsteamloco:direct_node`（`BlockDirectNode` 是普通的本体节点，保留是为了已有存档里的这些方块和它们的轨道），物品、设角度的界面、方块实体、绘制和换节点的包都删了；贝塞尔路径编辑器（`RailPathEditor`）也删了 |
 | `FQ*`、`FQGraalServices` | 让 GraalJS 在模组环境里能加载 |
+| `ItemWithCreativeTabBaseMixin` | 刷子点节点时打开 ANTE 的轨道编辑界面（模型、侧倾等）；它和本体"刷子右键节点输入精确角度"的关系还要在游戏里看 |
 
 ## 4. 服务端每个 tick（列车运行）
 

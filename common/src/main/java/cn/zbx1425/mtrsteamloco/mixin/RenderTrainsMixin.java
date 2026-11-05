@@ -15,7 +15,6 @@ import net.minecraft.client.player.LocalPlayer;
 import mtr.entity.EntitySeat;
 import net.minecraft.resources.ResourceLocation;
 import cn.zbx1425.mtrsteamloco.render.block.BlockEntityEyeCandyRenderer;
-import cn.zbx1425.mtrsteamloco.render.block.BlockEntityDirectNodeRenderer;
 import mtr.render.RenderTrains;
 import net.minecraft.client.Minecraft;
 import cn.zbx1425.mtrsteamloco.Main;
@@ -23,7 +22,6 @@ import cn.zbx1425.mtrsteamloco.data.RailExtraSupplier;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.level.Level;
-import cn.zbx1425.mtrsteamloco.gui.DirectNodeScreen;
 import cn.zbx1425.mtrsteamloco.render.RailDistanceRenderer;
 import mtr.mappings.EntityRendererMapper;
 import mtr.entity.EntitySeat;
@@ -199,7 +197,6 @@ public class RenderTrainsMixin extends EntityRendererMapper<EntitySeat> implemen
         // }
 
         BlockEntityEyeCandyRenderer.commit(matrices, vertexConsumers);
-        BlockEntityDirectNodeRenderer.commit(matrices, vertexConsumers);
 
         MainClient.drawContext.drawWithBlaze = !ClientConfig.useRenderOptimization();
         MainClient.drawContext.sortTranslucentFaces = ClientConfig.translucentSort;

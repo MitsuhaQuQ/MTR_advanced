@@ -152,6 +152,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Supports Fabric and Forge on Minecraft 1.20.1, with Architectury updated to 9.2.14.
 - Supported versions are 1.16.5, 1.17.1, 1.18.2, 1.19.4 and 1.20.1. Of the 1.19 versions, only 1.19.4 remains.
 - ANTE is merged into the core, so one jar contains both MTR and ANTE. This applies to 1.17.1 and later. 1.16.5 lacks the shaders ANTE needs, so it only has MTR.
+- Where ANTE did what MTR now does itself, MTR's own is used: rail shapes, lengths and angles, connecting rails, the client's train tick and the server's train positions. ANTE's all-direction node and Bézier rails are gone; a world that has them keeps its nodes as ordinary MTR nodes and its Bézier rails become MTR's shape for the same ends. ANTE's own vehicles, scripts, decorations, 3D rail models, roll, vertical curves and P speed rails stay.
 - Clients and servers check they have the same MTM_Logic version, so incompatible ones get a message when connecting.
 - New depots use real-world time for departures by default.
 
