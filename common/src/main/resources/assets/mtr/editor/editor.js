@@ -141,6 +141,22 @@
 	/** The rails of a connecting line released to other routes, as the draft has them. */
 	const releasedOf = r => draftOf(r) && draftOf(r).connectingReleased ? draftOf(r).connectingReleased : (r.connectingReleased || []);
 
+	/** The platforms a route turns back at (站前折返) or would rather start from (种别优先), as the draft has them. */
+	const turnOf = (r, kind) => draftOf(r) && draftOf(r)[kind] ? draftOf(r)[kind] : (r[kind] || []);
+
+	/** Adds a platform to the end of one of these lists, or takes it out, in the draft. */
+	function toggleTurnPlatform(r, kind, platformId) {
+		const entry = draftEntry(r);
+		const list = turnOf(r, kind).filter(id => id !== platformId);
+		if (list.length === turnOf(r, kind).length) list.push(platformId);
+		const original = r[kind] || [];
+		if (list.length === original.length && list.every((id, k) => id === original[k])) delete entry[kind];
+		else entry[kind] = list;
+		if (!entry.conflict) delete entry.error;
+		tidyDraft(r.id);
+		saveDraft();
+	}
+
 	/** Releases a rail of a connecting line to other routes, or takes it back, in the draft. */
 	function toggleReleased(r, a, b) {
 		const entry = draftEntry(r), key = railKey(a, b);
@@ -278,6 +294,11 @@
 			}
 			if (entry.connectingReleased) {
 				operations.push({ type: "connectingRelease", route: id, base, parts, force: Boolean(entry.force), rails: entry.connectingReleased });
+				owners.push(id);
+			}
+			if (entry.terminalPlatforms || entry.startPlatforms) {
+				const r = data.routeById.get(id) || {};
+				operations.push({ type: "turnPlatforms", route: id, base, parts, force: Boolean(entry.force), terminal: entry.terminalPlatforms || r.terminalPlatforms || [], start: entry.startPlatforms || r.startPlatforms || [] });
 				owners.push(id);
 			}
 		});
@@ -970,6 +991,8 @@
 		if ("managed" in entry) items.push(entry.managed ? tr("改由高级编辑器管理") : tr("交回游戏内编辑"));
 		if ("connectingLine" in entry) items.push(entry.connectingLine ? tr("设为联络线") : tr("取消联络线"));
 		if (entry.connectingReleased) items.push(tr("联络线放行 {0} 段", entry.connectingReleased.length));
+		if (entry.terminalPlatforms) items.push(tr("轮用站台 {0} 个", entry.terminalPlatforms.length));
+		if (entry.startPlatforms) items.push(tr("优先股道 {0} 个", entry.startPlatforms.length));
 		if (entry.platforms) {
 			// Each platform by its station and number, from the stops that use it or could
 			const names = new Map();
@@ -3409,6 +3432,34 @@
 			+ (crossings.length ? `<p class="hint">${tr("和这些进路交叉，不能同时走：")}${crossings.join(tr("；"))}${tr("。时刻表检查会找出时间上撞在一起的班次。")}</p>` : "");
 	}
 
+	/**
+	 * How trains turn back at the last stop (站前 or 站后) and the platforms they take turns at, or at the first stop the
+	 * platforms this route would rather start from (种别优先), each a box to tick; the order ticked is the order tried.
+	 */
+	function turnHtml(model, i) {
+		const r = model.route;
+		const n = model.layers.length;
+		const stop = r && r.stops[i];
+		if (!stop || n < 2 || (i !== 0 && i !== n - 1)) return "";
+		const kind = i === 0 ? "startPlatforms" : "terminalPlatforms";
+		const chosen = turnOf(r, kind);
+		const ownId = topo.platforms[model.picks[i]] ? topo.platforms[model.picks[i]].id : stop.platformId;
+		// A route's own last platform is always where it turns back usually, so only its other platforms are offered there
+		const options = (stop.candidates || []).filter(c => i === 0 || c.id !== ownId);
+		const boxes = options.map(c => {
+			const at = chosen.indexOf(c.id);
+			return `<label class="turn-option"><input type="checkbox" data-turn="${kind}" data-platform="${c.id}"${at >= 0 ? " checked" : ""}> ${escapeHtml(trackLabel(c.id, c.name, c.passingTrack))}${at >= 0 ? ` <span class="count">${tr("第 {0} 个", at + 1)}</span>` : ""}</label>`;
+		}).join(" ");
+		if (i === 0) {
+			return `<div class="turn-back"><b>${tr("优先股道（种别优先）")}</b><p class="hint">${tr("在本站掉头接这条线的车，先进勾选的站台，按勾选的先后；只在上一条线路设了轮用站台时起作用。")}</p>${boxes || `<p class="hint">${tr("本站没有和这股连通的其他站台。")}</p>`}</div>`;
+		}
+		const rear = stop.waypoints > 0;
+		const mode = rear
+			? (chosen.length ? tr("站前加站后：先进勾选的站台掉头，站台都占着或赶不上下一班时，才走末站途经点里列的站后折返线。") : tr("站后折返：走末站途经点里列的折返线（{0} 个节点），按顺序取能赶上下一班、进路没被别的车占着的那股。", stop.waypoints))
+			: tr("站前折返：车在站台上掉头，下一班从同一站台发车。勾选的站台和本站台轮用，在前一站出发时按下一班种别的优先股道、再按勾选的先后选。");
+		return `<div class="turn-back"><b>${tr("折返方式")}</b><p class="hint">${mode}</p><p class="hint">${tr("轮用站台：")}</p>${boxes || `<p class="hint">${tr("本站没有和这股连通的其他站台。")}</p>`}<p class="hint">${tr("按运用跑的车才轮用；按频率发车的车只用本站台。")}</p></div>`;
+	}
+
 	function stationDiagramHtml(model) {
 		const diagram = model.diagram, i = diagram.stop, n = model.layers.length;
 		const head = `<div class="diagram-head"><b>${tr("{0} 配线图", escapeHtml(stationLabel(model.layers[i][0])))}</b><span class="tools"><button type="button" data-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-zoom="out" title="${tr("缩小")}">−</button></span></div>`;
@@ -3470,7 +3521,7 @@
 		parts.push(`</svg>`);
 		const before = i > 0 ? `← ${escapeHtml(stationLabel(model.layers[i - 1][0]))}` : "";
 		const after = i + 1 < n ? `${escapeHtml(stationLabel(model.layers[i + 1][0]))} →` : "";
-		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : ""}<p class="hint">${tr("列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。")}</p>${throatHtml(model.route, i)}</div>`;
+		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : ""}<p class="hint">${tr("列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。")}</p>${throatHtml(model.route, i)}${turnHtml(model, i)}</div>`;
 	}
 
 	/** Dragging a track diagram moves it, kept in the picker's model so it stays where it was left. */
@@ -3502,6 +3553,11 @@
 
 	/** A click in the picker: fixing or freeing a track, or switching between stopping and passing. */
 	function topologyClick(model, target) {
+		const turn = target.closest("[data-turn]");
+		if (turn) {
+			if (model.route) toggleTurnPlatform(model.route, turn.dataset.turn, turn.dataset.platform);
+			return true;
+		}
 		const head = target.closest("[data-station-col]");
 		if (head) {
 			const i = +head.dataset.stationCol;

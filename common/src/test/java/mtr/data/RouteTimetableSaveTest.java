@@ -64,6 +64,41 @@ class RouteTimetableSaveTest {
 	}
 
 	@Test
+	void turnBackPlatformsSurviveSavingAndPackets() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.terminalPlatforms.add(5L);
+		route.terminalPlatforms.add(3L);
+		route.startPlatforms.add(4L);
+
+		final Route saved = saveAndLoad(route);
+		assertEquals(Arrays.asList(5L, 3L), saved.terminalPlatforms);
+		assertEquals(Collections.singletonList(4L), saved.startPlatforms);
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		route.writePacket(packet);
+		final Route sent = new Route(packet);
+		assertEquals(Arrays.asList(5L, 3L), sent.terminalPlatforms);
+		assertEquals(Collections.singletonList(4L), sent.startPlatforms);
+
+		final Route updated = new Route(route.id, TransportMode.TRAIN);
+		route.setExtraData(extraData -> {
+			extraData.readLong();
+			extraData.readUtf();
+			updated.update(extraData.readUtf(), extraData);
+		});
+		assertEquals(Arrays.asList(5L, 3L), updated.terminalPlatforms);
+		assertEquals(Collections.singletonList(4L), updated.getStartPlatforms());
+		assertEquals(Arrays.asList(5L, 3L), route.duplicate().terminalPlatforms);
+
+		// A save from before has none
+		final Route plain = new Route(TransportMode.TRAIN);
+		plain.platformIds.add(new Route.RoutePlatform(1));
+		assertTrue(saveAndLoad(plain).terminalPlatforms.isEmpty());
+	}
+
+	@Test
 	void everyTableSurvivesSaving() throws IOException {
 		final Route route = new Route(TransportMode.TRAIN);
 		route.platformIds.add(new Route.RoutePlatform(1));

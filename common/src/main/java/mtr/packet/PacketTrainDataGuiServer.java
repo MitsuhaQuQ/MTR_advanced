@@ -678,6 +678,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times, table.exceptions, table.deployOrders, table.returnOrders);
 						}
 						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
+						newRouteTimes.terminalPlatforms.addAll(testRoute.terminalPlatforms);
 						newRouteTimes.setThroats(throats.getOrDefault(testRoute.id, Collections.emptyList()));
 						turnBacks.getOrDefault(testRoute.id, Collections.emptySet()).forEach(newRouteTimes::addTurnBack);
 						routeTimes.add(newRouteTimes);

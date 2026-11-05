@@ -332,6 +332,19 @@ public final class EditorActions implements IPacket {
 				route.connectingReleased.addAll(released);
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
+			case "turnPlatforms":
+				// The platforms of the last station it turns back at (站前折返) and of the first it would rather start from
+				final JsonArray terminalArray = operation.getAsJsonArray("terminal");
+				final JsonArray startArray = operation.getAsJsonArray("start");
+				if (terminalArray == null || startArray == null || terminalArray.size() > Route.MAX_TURN_PLATFORMS || startArray.size() > Route.MAX_TURN_PLATFORMS) {
+					return TranslatedMessage.get("gui.mtr.editor_bad_change");
+				}
+				route.terminalPlatforms.clear();
+				terminalArray.forEach(element -> route.terminalPlatforms.add(parseId(element.getAsString())));
+				route.startPlatforms.clear();
+				startArray.forEach(element -> route.startPlatforms.add(parseId(element.getAsString())));
+				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				return null;
 			case "deleteRoute":
 				// The same as deleting it on the dashboard; depots, duties and through links naming it are left as they are
 				PacketTrainDataGuiClient.sendDeleteData(PACKET_DELETE_ROUTE, route.id);

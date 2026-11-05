@@ -53,6 +53,16 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	 * it shares with another line, such as a crossover at a station throat, released by hand in the editor.
 	 */
 	public final List<long[]> connectingReleased = new ArrayList<>();
+	/**
+	 * The other platforms of the last stop's station trains can turn back at (站前折返), in order; see
+	 * {@code PlanRoute.getTerminalPlatforms}.
+	 */
+	public final List<Long> terminalPlatforms = new ArrayList<>();
+	/**
+	 * The platforms of the first stop's station this route would rather start from, best first (种别优先).
+	 */
+	public final List<Long> startPlatforms = new ArrayList<>();
+	public static final int MAX_TURN_PLATFORMS = 16;
 	public static final int MAX_CONNECTING_RELEASED = 512;
 	public CircularState circularState;
 	public String lightRailRouteNumber;
@@ -117,6 +127,8 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_EDITOR_MANAGED = "editor_managed";
 	private static final String KEY_CONNECTING_LINE = "connecting_line";
 	private static final String KEY_CONNECTING_RELEASED = "connecting_released";
+	private static final String KEY_TERMINAL_PLATFORMS = "terminal_platforms";
+	private static final String KEY_START_PLATFORMS = "start_platforms";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
 
@@ -188,6 +200,8 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		for (int i = 0; i + 1 < releasedNodes.size() && connectingReleased.size() < MAX_CONNECTING_RELEASED; i += 2) {
 			connectingReleased.add(new long[]{releasedNodes.get(i), releasedNodes.get(i + 1)});
 		}
+		messagePackHelper.iterateArrayValue(KEY_TERMINAL_PLATFORMS, value -> addTurnPlatform(terminalPlatforms, value.asIntegerValue().asLong()));
+		messagePackHelper.iterateArrayValue(KEY_START_PLATFORMS, value -> addTurnPlatform(startPlatforms, value.asIntegerValue().asLong()));
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
@@ -267,6 +281,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		editorManaged = packet.readBoolean();
 		connectingLine = packet.readBoolean();
 		readConnectingReleased(packet);
+		readTurnPlatforms(packet);
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
@@ -323,6 +338,14 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			messagePacker.packLong(rail[0]);
 			messagePacker.packLong(rail[1]);
 		}
+		messagePacker.packString(KEY_TERMINAL_PLATFORMS).packArrayHeader(terminalPlatforms.size());
+		for (final long platformId : terminalPlatforms) {
+			messagePacker.packLong(platformId);
+		}
+		messagePacker.packString(KEY_START_PLATFORMS).packArrayHeader(startPlatforms.size());
+		for (final long platformId : startPlatforms) {
+			messagePacker.packLong(platformId);
+		}
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
@@ -367,7 +390,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 31 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 33 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -571,6 +594,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeBoolean(editorManaged);
 		packet.writeBoolean(connectingLine);
 		writeConnectingReleased(packet);
+		writeTurnPlatforms(packet);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
@@ -611,6 +635,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 				editorManaged = packet.readBoolean();
 				connectingLine = packet.readBoolean();
 				readConnectingReleased(packet);
+				readTurnPlatforms(packet);
 				break;
 			case KEY_TIMETABLE_SERVICES:
 				readTimetable(packet);
@@ -687,7 +712,42 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeBoolean(editorManaged);
 		packet.writeBoolean(connectingLine);
 		writeConnectingReleased(packet);
+		writeTurnPlatforms(packet);
 		sendPacket.accept(packet);
+	}
+
+	private void writeTurnPlatforms(FriendlyByteBuf packet) {
+		packet.writeInt(terminalPlatforms.size());
+		terminalPlatforms.forEach(packet::writeLong);
+		packet.writeInt(startPlatforms.size());
+		startPlatforms.forEach(packet::writeLong);
+	}
+
+	private void readTurnPlatforms(FriendlyByteBuf packet) {
+		terminalPlatforms.clear();
+		for (int i = packet.readInt(); i > 0; i--) {
+			addTurnPlatform(terminalPlatforms, packet.readLong());
+		}
+		startPlatforms.clear();
+		for (int i = packet.readInt(); i > 0; i--) {
+			addTurnPlatform(startPlatforms, packet.readLong());
+		}
+	}
+
+	private static void addTurnPlatform(List<Long> platforms, long platformId) {
+		if (platforms.size() < MAX_TURN_PLATFORMS && platformId != 0 && !platforms.contains(platformId)) {
+			platforms.add(platformId);
+		}
+	}
+
+	@Override
+	public List<Long> getTerminalPlatforms() {
+		return terminalPlatforms;
+	}
+
+	@Override
+	public List<Long> getStartPlatforms() {
+		return startPlatforms;
 	}
 
 	private void writeConnectingReleased(FriendlyByteBuf packet) {
@@ -732,6 +792,8 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		route.disableNextStationAnnouncements = disableNextStationAnnouncements;
 		route.connectingLine = connectingLine;
 		connectingReleased.forEach(rail -> route.connectingReleased.add(rail.clone()));
+		route.terminalPlatforms.addAll(terminalPlatforms);
+		route.startPlatforms.addAll(startPlatforms);
 		route.circularState = circularState;
 		route.lightRailRouteNumber = lightRailRouteNumber;
 		route.lineName = lineName;

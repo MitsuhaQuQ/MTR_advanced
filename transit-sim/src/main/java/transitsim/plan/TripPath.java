@@ -103,11 +103,22 @@ public class TripPath<T extends PlanTrack> {
 	 * The path of a duty under its own key, as for the same duty going back to another siding of its pool.
 	 */
 	public TripPath(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path, String key) {
+		this(dutyPlan, dutyStarts, path, key, -1, -1, new int[0]);
+	}
+
+	/**
+	 * The path of a duty that passes turn back points, or takes another way round one of them than the usual one.
+	 *
+	 * @param turnBackPoint the point where this path takes another way round, or -1 for the duty's usual path
+	 * @param turnBackStops the rail of the stop before each point of the siding's {@link TurnBacks}, or -1 for one this path
+	 *                      doesn't pass
+	 */
+	public TripPath(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
 		this.key = key;
 		tripKey = dutyPlan.key;
-		turnBackStops = new int[0];
-		turnBackPoint = -1;
-		turnBackWay = -1;
+		this.turnBackStops = turnBackStops;
+		this.turnBackPoint = turnBackPoint;
+		this.turnBackWay = turnBackWay;
 		changeStop = -1;
 		routeIds.addAll(dutyPlan.routeIds);
 		cutStops.putAll(dutyPlan.cutStops);
@@ -230,7 +241,18 @@ public class TripPath<T extends PlanTrack> {
 	 * The path of a duty worked out elsewhere, for running services without a world.
 	 */
 	public static <T extends PlanTrack> TripPath<T> ofDuty(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path, StopTimes newStopTimes) {
-		final TripPath<T> tripPath = new TripPath<>(dutyPlan, dutyStarts, path);
+		return ofDuty(new TripPath<>(dutyPlan, dutyStarts, path), newStopTimes);
+	}
+
+	/**
+	 * The path of a duty passing turn back points, or taking another way round one of them, worked out elsewhere.
+	 */
+	public static <T extends PlanTrack> TripPath<T> ofDuty(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path, StopTimes newStopTimes, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
+		final String key = turnBackPoint < 0 ? dutyPlan.key : getTurnBackKey(dutyPlan.key, turnBackPoint, turnBackWay);
+		return ofDuty(new TripPath<>(dutyPlan, dutyStarts, path, key, turnBackPoint, turnBackWay, turnBackStops), newStopTimes);
+	}
+
+	private static <T extends PlanTrack> TripPath<T> ofDuty(TripPath<T> tripPath, StopTimes newStopTimes) {
 		tripPath.stopTimes.copyFrom(newStopTimes);
 		tripPath.stopTimes.cutStops.clear();
 		tripPath.stopTimes.cutStops.putAll(tripPath.cutStops);

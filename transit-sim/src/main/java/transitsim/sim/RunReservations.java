@@ -3,6 +3,7 @@ package transitsim.sim;
 import transitsim.network.RailKeys;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -85,6 +86,29 @@ public final class RunReservations {
 	 */
 	public Set<Long> getHolders() {
 		return arbiter.getHolders();
+	}
+
+	/**
+	 * @return whether another train holds one of these rails, either way, or a turnout at a node between two of them
+	 */
+	public boolean isHeldByOther(long trainId, List<UUID> rails) {
+		final Set<UUID> railSet = new HashSet<>(rails);
+		final Set<Long> nodes = new HashSet<>();
+		rails.forEach(rail -> {
+			nodes.add(rail.getMostSignificantBits());
+			nodes.add(rail.getLeastSignificantBits());
+		});
+		for (final long holder : getHolders()) {
+			if (holder == trainId) {
+				continue;
+			}
+			for (final Move move : getHeld(holder)) {
+				if (move.turnout ? nodes.contains(move.rail.getMostSignificantBits()) : railSet.contains(move.rail)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**

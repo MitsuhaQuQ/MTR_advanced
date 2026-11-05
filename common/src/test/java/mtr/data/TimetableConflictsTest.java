@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TimetableConflictsTest {
@@ -235,6 +236,24 @@ class TimetableConflictsTest {
 		final List<TimetableConflicts.Conflict> conflicts = check(down, up);
 		assertEquals(1, conflicts.size());
 		assertEquals(PLATFORM_2, conflicts.get(0).platformId);
+	}
+
+	@Test
+	void turningBackAtEitherOfTwoPlatformsFitsWhatOnePlatformCant() {
+		// As above, each train stays from its arrival until 8 minutes later, past the next arrival; with a second platform to
+		// turn back at (站前折返), the trains take turns at the two
+		final TimetableConflicts.RouteTimes down = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 0, 4);
+		final TimetableConflicts.RouteTimes up = route(ROUTE_B, new long[]{PLATFORM_2, PLATFORM_3}, times(), 10, 14);
+		down.nextRouteId = ROUTE_B;
+		down.terminalPlatforms.add(14L);
+		assertTrue(check(down, up).isEmpty());
+
+		// Three trains on the two platforms at once are one too many
+		final TimetableConflicts.RouteTimes busyDown = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 0, 2, 4);
+		final TimetableConflicts.RouteTimes busyUp = route(ROUTE_B, new long[]{PLATFORM_2, PLATFORM_3}, times(), 10, 12, 14);
+		busyDown.nextRouteId = ROUTE_B;
+		busyDown.terminalPlatforms.add(14L);
+		assertFalse(check(busyDown, busyUp).isEmpty());
 	}
 
 	@Test

@@ -180,6 +180,17 @@ class SimDatasetTest {
 	}
 
 	@Test
+	void thePlatformsRoutesTurnBackAtAreKept() {
+		final SimDataset dataset = lines(1, 400, 2, 4, 10);
+		dataset.routes.get(0).terminalPlatforms = new long[]{7, 8};
+		dataset.routes.get(0).startPlatforms = new long[]{8};
+		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
+		assertArrayEquals(new long[]{7, 8}, read.routes.get(0).terminalPlatforms);
+		assertArrayEquals(new long[]{8}, read.routes.get(0).startPlatforms);
+		assertEquals(0, read.routes.get(1).terminalPlatforms.length);
+	}
+
+	@Test
 	void theLinePoolsOfSidingsAreKept() {
 		final SimDataset dataset = lines(2, 400, 2, 4, 10);
 		dataset.sidings.get(0).linePool = "unit|train/2";

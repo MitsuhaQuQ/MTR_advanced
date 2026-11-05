@@ -15,6 +15,7 @@ import mtr.advanced.MessagePackKeyed;
 import transitsim.plan.TimeSegment;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
+import transitsim.plan.TurnBackPoint;
 import transitsim.plan.TurnBackSection;
 import transitsim.plan.TurnBacks;
 import transitsim.plan.TimetableConflicts;
@@ -580,13 +581,16 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes, tempStopTimes, tempLoopJoinIndex, tempRepeatIndex2);
 		final List<String> failedDuties = new ArrayList<>();
 		final Map<String, List<PathData>> returnTails = new HashMap<>();
+		// The duties' turn back points come after the usual path's
+		final List<TurnBackPoint> dutyPoints = new ArrayList<>();
+		final int firstDutyPoint = tempTurnBacks.size();
 		dutyPlans.forEach(dutyPlan -> {
-			if (!addDutyPath(tempTripPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, poolSidings, returnTails)) {
+			if (!addDutyPath(tempTripPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, poolSidings, returnTails, dutyPoints, firstDutyPoint)) {
 				failedDuties.add(dutyPlan.key);
 			}
 		});
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
-		final TurnBacks newTurnBacks = tempTurnBacks;
+		final TurnBacks newTurnBacks = tempTurnBacks.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
 			try {
@@ -636,47 +640,161 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 *
 	 * @return false if a part of it can't be found
 	 */
-	private boolean addDutyPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<Siding> poolSidings, Map<String, List<PathData>> returnTails) {
-		final List<PathData> dutyPath = new ArrayList<>();
+	/**
+	 * @param dutyPoints     the turn back points of the duties so far, to which this duty's are added, or null to give the
+	 *                       duty only its usual way round each
+	 * @param firstDutyPoint the number the first of the duties' points has among the siding's points
+	 */
+	private boolean addDutyPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<Siding> poolSidings, Map<String, List<PathData>> returnTails, List<TurnBackPoint> dutyPoints, int firstDutyPoint) {
+		final List<PathData> wayOut = new ArrayList<>();
 		if (!dutyPlan.startsOnLine) {
-			PathFinder.findPath(dutyPath, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
-			if (dutyPath.isEmpty()) {
+			PathFinder.findPath(wayOut, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
+			if (wayOut.isEmpty()) {
 				return false;
 			}
 		}
-		final List<PathData> body = new ArrayList<>();
-		dutyPlan.body.forEach(pathData -> body.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
-		// The first stop of the duty keeps its own stop time, not the one the way out of the siding found
-		final int bodyStart;
-		if (!dutyPath.isEmpty() && dutyPath.get(dutyPath.size() - 1).isSameRail(body.get(0))) {
-			bodyStart = dutyPath.size() - 1;
-			dutyPath.set(bodyStart, body.get(0));
-			dutyPath.addAll(body.subList(1, body.size()));
-		} else {
-			bodyStart = dutyPath.size();
-			dutyPath.addAll(body);
-		}
-		if (dutyPlan.staysOnLine) {
-			addDutyTripPath(tempTripPaths, dutyPlan, dutyPath, bodyStart, dutyPlan.key);
-			return true;
-		}
-		final List<PathData> pathToDepot = getReturnTail(dutyPlan, this, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
-		if (pathToDepot == null) {
+		final List<PathData> pathToDepot = dutyPlan.staysOnLine ? null : getReturnTail(dutyPlan, this, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+		if (!dutyPlan.staysOnLine && pathToDepot == null) {
 			return false;
 		}
-		final List<PathData> ownPath = new ArrayList<>(dutyPath);
-		PathFinder.appendPath(ownPath, pathToDepot);
-		addDutyTripPath(tempTripPaths, dutyPlan, ownPath, bodyStart, dutyPlan.key);
-		// The same duty going back to each other siding of the pool, for a train going where a train is needed next
-		for (final Siding poolSiding : poolSidings) {
-			final List<PathData> pathToOther = poolSiding == this ? null : getReturnTail(dutyPlan, poolSiding, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
-			if (pathToOther != null) {
-				final List<PathData> otherPath = new ArrayList<>(dutyPath);
-				PathFinder.appendPath(otherPath, pathToOther);
-				addDutyTripPath(tempTripPaths, dutyPlan, otherPath, bodyStart, TripPath.getReturnKey(dutyPlan.key, poolSiding.id));
+
+		// Each place the duty can turn back more than one way is a point of the siding's own
+		final List<TurnBackSection<PathData>> sections = dutyPoints == null ? Collections.emptyList() : dutyPlan.turnBackSections;
+		final int[] points = new int[sections.size()];
+		for (int i = 0; i < sections.size(); i++) {
+			points[i] = firstDutyPoint + dutyPoints.size();
+			dutyPoints.add(new TurnBackPoint(sections.get(i).ways, sections.get(i).defaultWay, 0));
+		}
+		final int pointCount = sections.isEmpty() ? 0 : points[points.length - 1] + 1;
+
+		final DutyBody usual = new DutyBody(dutyPlan, sections, -1, -1);
+		final List<PathData> dutyPath = usual.join(wayOut);
+		final int[] usualStops = usual.getTurnBackStops(points, pointCount, wayOut);
+		if (dutyPlan.staysOnLine) {
+			addDutyTripPath(tempTripPaths, dutyPlan, dutyPath, usual.getStarts(wayOut), dutyPlan.key, -1, -1, usualStops);
+		} else {
+			final List<PathData> ownPath = new ArrayList<>(dutyPath);
+			PathFinder.appendPath(ownPath, pathToDepot);
+			addDutyTripPath(tempTripPaths, dutyPlan, ownPath, usual.getStarts(wayOut), dutyPlan.key, -1, -1, usualStops);
+			// The same duty going back to each other siding of the pool, for a train going where a train is needed next
+			for (final Siding poolSiding : poolSidings) {
+				final List<PathData> pathToOther = poolSiding == this ? null : getReturnTail(dutyPlan, poolSiding, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+				if (pathToOther != null) {
+					final List<PathData> otherPath = new ArrayList<>(dutyPath);
+					PathFinder.appendPath(otherPath, pathToOther);
+					addDutyTripPath(tempTripPaths, dutyPlan, otherPath, usual.getStarts(wayOut), TripPath.getReturnKey(dutyPlan.key, poolSiding.id), -1, -1, usualStops);
+				}
+			}
+		}
+
+		// The other ways round, one point at a time, each going back to this siding; a train going back to another siding
+		// takes the way back of the usual path from its last stop
+		for (int i = 0; i < sections.size(); i++) {
+			final TurnBackSection<PathData> section = sections.get(i);
+			for (int way = 0; way < section.ways.size(); way++) {
+				if (way == section.defaultWay || section.ways.get(way) == null) {
+					continue;
+				}
+				final DutyBody other = new DutyBody(dutyPlan, sections, i, way);
+				final List<PathData> otherPath = other.join(copyPath(wayOut));
+				if (!dutyPlan.staysOnLine) {
+					PathFinder.appendPath(otherPath, copyPath(pathToDepot));
+				}
+				addDutyTripPath(tempTripPaths, dutyPlan, otherPath, other.getStarts(wayOut), TripPath.getTurnBackKey(dutyPlan.key, points[i], way), points[i], way, other.getTurnBackStops(points, pointCount, wayOut));
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * A duty's body as a train runs it, the usual way round every turn back point or another way round one of them.
+	 */
+	static final class DutyBody {
+
+		private final List<PathData> body = new ArrayList<>();
+		private final int[] segmentStarts;
+		/**
+		 * The rail of the body of the stop before each of the duty's turn back points.
+		 */
+		private final int[] stopRails;
+
+		/**
+		 * @param changedSection the section taken another way round, or -1
+		 */
+		DutyBody(DutyPlan<PathData, SavedRailBase> dutyPlan, List<TurnBackSection<PathData>> sections, int changedSection, int way) {
+			final List<PathData> planBody;
+			final int changedStart;
+			final int changedEnd;
+			final int extraRails;
+			if (changedSection < 0) {
+				planBody = dutyPlan.body;
+				changedStart = Integer.MAX_VALUE;
+				changedEnd = Integer.MAX_VALUE;
+				extraRails = 0;
+			} else {
+				// The stop and the first stop of the next route stay the body's own, with their stop settings
+				final TurnBackSection<PathData> section = sections.get(changedSection);
+				final List<PathData> newWay = section.ways.get(way);
+				final int length = section.getLength();
+				planBody = new ArrayList<>(dutyPlan.body.subList(0, section.start + 1));
+				planBody.addAll(newWay.subList(1, newWay.size() - 1));
+				planBody.addAll(dutyPlan.body.subList(section.start + length - 1, dutyPlan.body.size()));
+				changedStart = section.start;
+				changedEnd = section.start + length - 1;
+				extraRails = newWay.size() - length;
+			}
+			planBody.forEach(pathData -> body.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+			segmentStarts = new int[dutyPlan.segmentStarts.length];
+			for (int i = 0; i < segmentStarts.length; i++) {
+				segmentStarts[i] = dutyPlan.segmentStarts[i] + (dutyPlan.segmentStarts[i] > changedStart ? extraRails : 0);
+			}
+			stopRails = new int[sections.size()];
+			for (int i = 0; i < stopRails.length; i++) {
+				final int start = sections.get(i).start;
+				// A point within the way taken instead, like one after the station inside a way round its platforms, isn't passed
+				stopRails[i] = i != changedSection && start > changedStart && start < changedEnd ? -1 : start + (start > changedStart ? extraRails : 0);
+			}
+		}
+
+		/**
+		 * Puts the body after the way out of the siding, whose last rail, when it is the first stop, keeps the body's stop time.
+		 */
+		List<PathData> join(List<PathData> wayOut) {
+			final List<PathData> dutyPath = new ArrayList<>(wayOut);
+			if (!dutyPath.isEmpty() && dutyPath.get(dutyPath.size() - 1).isSameRail(body.get(0))) {
+				dutyPath.set(dutyPath.size() - 1, body.get(0));
+				dutyPath.addAll(body.subList(1, body.size()));
+			} else {
+				dutyPath.addAll(body);
+			}
+			return dutyPath;
+		}
+
+		private int getBodyStart(List<PathData> wayOut) {
+			return !wayOut.isEmpty() && wayOut.get(wayOut.size() - 1).isSameRail(body.get(0)) ? wayOut.size() - 1 : wayOut.size();
+		}
+
+		int[] getStarts(List<PathData> wayOut) {
+			final int bodyStart = getBodyStart(wayOut);
+			final int[] starts = new int[segmentStarts.length];
+			for (int i = 0; i < starts.length; i++) {
+				starts[i] = segmentStarts[i] + bodyStart;
+			}
+			return starts;
+		}
+
+		/**
+		 * @return the rail of the stop before each of the siding's points, or -1 for those of other paths
+		 */
+		int[] getTurnBackStops(int[] points, int pointCount, List<PathData> wayOut) {
+			final int[] stops = new int[pointCount];
+			Arrays.fill(stops, -1);
+			final int bodyStart = getBodyStart(wayOut);
+			for (int i = 0; i < points.length; i++) {
+				stops[points[i]] = stopRails[i] < 0 ? -1 : stopRails[i] + bodyStart;
+			}
+			return stops;
+		}
 	}
 
 	/**
@@ -698,7 +816,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return copy;
 	}
 
-	private void addDutyTripPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, List<PathData> dutyPath, int bodyStart, String key) {
+	private void addDutyTripPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, List<PathData> dutyPath, int[] dutyStarts, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
 		int stopIndex = 1;
 		for (int i = 1; i < dutyPath.size(); i++) {
 			final PathData pathData = dutyPath.get(i);
@@ -707,11 +825,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 			pathData.stopIndex = stopIndex;
 		}
-		final int[] dutyStarts = new int[dutyPlan.segmentStarts.length];
-		for (int i = 0; i < dutyStarts.length; i++) {
-			dutyStarts[i] = dutyPlan.segmentStarts[i] + bodyStart;
-		}
-		final TripPath<PathData> newTripPath = new TripPath<>(dutyPlan, dutyStarts, dutyPath, key);
+		final TripPath<PathData> newTripPath = new TripPath<>(dutyPlan, dutyStarts, dutyPath, key, turnBackPoint, turnBackWay, turnBackStops);
 		newTripPath.generateTimes(timeGenerator);
 		tempTripPaths.put(key, newTripPath);
 	}
@@ -1087,7 +1201,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final Map<String, List<PathData>> returnTails = new HashMap<>();
 		dutyPlans.forEach(dutyPlan -> {
 			// Only the paths back to this siding, for showing the duties in the editor
-			if (!addDutyPath(dutyPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, Collections.emptyList(), returnTails)) {
+			if (!addDutyPath(dutyPaths, dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, Collections.emptyList(), returnTails, null, 0)) {
 				failed.accept(dutyPlan.key);
 			}
 		});

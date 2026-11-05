@@ -1,5 +1,6 @@
 package transitsim.plan;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -25,6 +26,22 @@ public interface PlanRoute {
 	 * Which kind of vehicle runs the route, only compared between routes.
 	 */
 	int getTransportModeId();
+
+	/**
+	 * @return the other platforms of the station of the last stop that trains of the route can turn back at, so that the
+	 * next route starts there (站前折返), in the order they are tried; the route's own last platform isn't one of them
+	 */
+	default List<Long> getTerminalPlatforms() {
+		return Collections.emptyList();
+	}
+
+	/**
+	 * @return the platforms of the station of the first stop the route would rather start from, best first (种别优先), or
+	 * empty for no preference
+	 */
+	default List<Long> getStartPlatforms() {
+		return Collections.emptyList();
+	}
 
 	/**
 	 * @return the platform of the last stop, or 0 if the route has no stops

@@ -157,6 +157,13 @@ public final class EditorData {
 			releasedArray.add(railArray);
 		});
 		routeObject.add("connectingReleased", releasedArray);
+		// The platforms it turns back at (站前折返) and would rather start from (种别优先)
+		final JsonArray terminalArray = new JsonArray();
+		route.terminalPlatforms.forEach(platformId -> terminalArray.add(String.valueOf(platformId)));
+		routeObject.add("terminalPlatforms", terminalArray);
+		final JsonArray startArray = new JsonArray();
+		route.startPlatforms.forEach(platformId -> startArray.add(String.valueOf(platformId)));
+		routeObject.add("startPlatforms", startArray);
 		routeObject.addProperty("revision", getRevision(route));
 		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
 		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));
@@ -180,6 +187,8 @@ public final class EditorData {
 			stopObject.addProperty("platform", platform == null ? "" : platform.name);
 			stopObject.addProperty("pass", routePlatform.pass);
 			stopObject.addProperty("passingTrack", platform != null && platform.passingTrack);
+			// After the last stop these are the nodes of the turn back rails (站后折返)
+			stopObject.addProperty("waypoints", routePlatform.waypoints.size());
 			// The tracks of the same station joined by rails to this one; the page works out which of them a train can use
 			final PlatformGraph platformGraph = ClientData.PATH_REGIONS.platformGraph;
 			final long network = platformGraph.getNetworkOf(routePlatform.platformId);

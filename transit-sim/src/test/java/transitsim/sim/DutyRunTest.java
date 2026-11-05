@@ -8,6 +8,8 @@ import transitsim.plan.TripPath;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.DutyShapes;
+import transitsim.plan.TurnBackPoint;
+import transitsim.plan.TurnBacks;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -106,11 +108,146 @@ class DutyRunTest {
 	}
 
 	private FakeTrain newTrain(List<TestTrack> path) {
+		return newTrain(path, TurnBacks.NONE);
+	}
+
+	private FakeTrain newTrain(List<TestTrack> path, TurnBacks turnBacks) {
 		final FakeTrain train = new FakeTrain(path);
 		train.service.setSiding(SIDING_ID);
 		train.service.setNetwork(depot, routes::get, null);
-		train.service.setStopTimes(new StopTimes(), tripPaths);
+		train.service.setStopTimes(new StopTimes(), tripPaths, turnBacks);
 		return train;
+	}
+
+	private static final List<UUID> FIRST_TURN_BACK = Collections.singletonList(new UUID(0, 1));
+	private static final List<UUID> SECOND_TURN_BACK = Collections.singletonList(new UUID(0, 2));
+
+	/**
+	 * Route 1 from 08:00 to platform 3, turning back after it on one of two rails, then route 2 from 08:20 at platform 4. The
+	 * second turn back rail is a rail further on, and the train reaches platform 4 four minutes later that way.
+	 *
+	 * @return the duty's usual path and its path the other way round
+	 */
+	private List<TripPath<TestTrack>> turnBackDuty(FakeTrain[] train) {
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
+		final String key = DutyShapes.getSlotKey(depot.slots, 0, 0, routes::get);
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, Arrays.asList(1L, 2L), new HashMap<>(), new HashMap<>(), new HashMap<>(), makePath(0, 1, 2, 3, 0, 4, 5, 0), new int[]{1, 5}, null, null, false, false);
+		final List<TestTrack> path = makePath(0, 1, 2, 3, 0, 4, 5, 0);
+		final TripPath<TestTrack> usual = TripPath.ofDuty(dutyPlan, new int[]{1, 5}, path, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 0, 6), stop(5, 4, 8), stop(6, 5, 10)), -1, -1, new int[]{3});
+		final TripPath<TestTrack> other = TripPath.ofDuty(dutyPlan, new int[]{1, 6}, makePath(0, 1, 2, 3, 0, 0, 4, 5, 0), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(5, 0, 10), stop(6, 4, 12), stop(7, 5, 14)), 0, 1, new int[]{3});
+		tripPaths.put(usual.key, usual);
+		tripPaths.put(other.key, other);
+		train[0] = newTrain(path, TurnBacks.of(new int[]{3}, new TurnBackPoint(Arrays.asList(FIRST_TURN_BACK, SECOND_TURN_BACK), new int[]{2, 3}, 0)));
+		return Arrays.asList(usual, other);
+	}
+
+	private FakeTrain atTurnBackStop(List<TripPath<TestTrack>> paths, FakeTrain train, long millis) {
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, paths.get(0));
+		now = millis;
+		train.nextStoppingIndex = 3;
+		return train;
+	}
+
+	@Test
+	void aDutyTurningBackAtAnotherPlatformOfTheLastStationRunsTheNextRouteFromThere() {
+		// Route 1 ends at platform 3, and its trains can turn back at platform 9 of that station too, then run route 3 back
+		routes.get(1L).terminalPlatforms.add(9L);
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(3, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
+		final List<TestTrack> path = makePath(0, 1, 2, 9, 0, 2, 1, 0);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1, 3}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 9, 4), stop(5, 2, 6), stop(6, 1, 8));
+		final FakeTrain train = newTrain(path);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+
+		// At platform 9 it is at the last stop of route 1 and the first of route 3, which it leaves on time
+		train.nextStoppingIndex = 3;
+		now = MONDAY + 8 * HOUR + 4 * MINUTE;
+		train.service.onStopReached();
+		assertEquals(3, train.service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, train.service.getTripMillis());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE + 10 * SECOND, train.service.getDutyDepartureMillis());
+		// The stops after it are route 3's
+		assertEquals(MONDAY + 8 * HOUR + 22 * MINUTE, train.service.getPlannedArrivalMillis(5));
+	}
+
+	@Test
+	void aDutyTurnsBackTheUsualWayWhenItMakesTheNextService() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = turnBackDuty(train);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		assertTrue(train[0].service.mayChooseWayAtStop());
+		assertFalse(train[0].service.chooseTurnBack());
+		assertSame(paths.get(0), train[0].followed);
+		assertEquals(FIRST_TURN_BACK, train[0].reserved);
+	}
+
+	@Test
+	void aDutyTakesTheOtherWayWhenAnotherTrainHoldsTheUsualOneAndItStillMakesTheNextService() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = turnBackDuty(train);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		train[0].heldRails.addAll(FIRST_TURN_BACK);
+		assertTrue(train[0].service.chooseTurnBack());
+		assertSame(paths.get(1), train[0].followed);
+		assertEquals(3, train[0].nextStoppingIndex);
+		assertEquals(SECOND_TURN_BACK, train[0].reserved);
+		// It chooses once
+		assertFalse(train[0].service.chooseTurnBack());
+	}
+
+	@Test
+	void aDutyThatMakesTheNextServiceNeitherWayTakesTheSoonestClearOne() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = turnBackDuty(train);
+		// At 08:18 it reaches platform 4 at 08:22 the usual way and 08:26 the other, after the service at 08:20
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 18 * MINUTE);
+		assertFalse(train[0].service.chooseTurnBack());
+		assertSame(paths.get(0), train[0].followed);
+
+		// With the usual way held, the clear way goes first even though it is later
+		final FakeTrain[] other = new FakeTrain[1];
+		tripPaths.clear();
+		final List<TripPath<TestTrack>> otherPaths = turnBackDuty(other);
+		atTurnBackStop(otherPaths, other[0], MONDAY + 8 * HOUR + 18 * MINUTE);
+		other[0].heldRails.addAll(FIRST_TURN_BACK);
+		assertTrue(other[0].service.chooseTurnBack());
+		assertSame(otherPaths.get(1), other[0].followed);
+	}
+
+	@Test
+	void aDutyTakesTheOtherWayWhenTheUsualTurnBackRailIsTakenAndWaitsWhenBothAre() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = turnBackDuty(train);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		train[0].takenRails.addAll(FIRST_TURN_BACK);
+		train[0].takenRails.addAll(SECOND_TURN_BACK);
+		assertTrue(train[0].service.chooseTurnBack());
+		assertNull(train[0].reserved);
+		train[0].takenRails.removeAll(SECOND_TURN_BACK);
+		assertTrue(train[0].service.chooseTurnBack());
+		assertSame(paths.get(1), train[0].followed);
+	}
+
+	@Test
+	void aDutyThatWentTheOtherWayGoesBackToAnotherSidingAlongItsUsualPathsWayBack() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = turnBackDuty(train);
+		final TripPath<TestTrack> usual = paths.get(0);
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(usual.key, Arrays.asList(1L, 2L), new HashMap<>(), new HashMap<>(), new HashMap<>(), usual.path, usual.dutyStarts, null, null, false, false);
+		final TripPath<TestTrack> returnPath = new TripPath<>(dutyPlan, usual.dutyStarts, makePath(0, 1, 2, 3, 0, 4, 5, 0, 0), TripPath.getReturnKey(usual.key, OTHER_SIDING_ID));
+		tripPaths.put(returnPath.key, returnPath);
+		depot.returnTo = OTHER_SIDING_ID;
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		train[0].heldRails.addAll(FIRST_TURN_BACK);
+		train[0].service.chooseTurnBack();
+		assertSame(paths.get(1), train[0].followed);
+
+		// The last stop is on rail 7 the other way round, and on rail 6 of the usual path's way back
+		train[0].nextStoppingIndex = 7;
+		assertTrue(train[0].service.chooseDutyReturn());
+		assertSame(returnPath, train[0].followed);
+		assertEquals(6, train[0].nextStoppingIndex);
 	}
 
 	/**
@@ -558,6 +695,12 @@ class DutyRunTest {
 		int movedTo = -1;
 		boolean returned;
 		TripPath<TestTrack> followed;
+		/**
+		 * Rails another train is on, and rails another train holds.
+		 */
+		final Set<UUID> takenRails = new HashSet<>();
+		final Set<UUID> heldRails = new HashSet<>();
+		List<UUID> reserved;
 
 		FakeTrain(List<TestTrack> path) {
 			this.path = path;
@@ -611,11 +754,17 @@ class DutyRunTest {
 
 		@Override
 		public boolean isTurnBackFree(List<UUID> rails) {
-			return true;
+			return rails.stream().noneMatch(takenRails::contains);
 		}
 
 		@Override
 		public void reserveTurnBack(List<UUID> rails, int untilIndex) {
+			reserved = rails;
+		}
+
+		@Override
+		public boolean isWayClear(List<UUID> rails) {
+			return isTurnBackFree(rails) && rails.stream().noneMatch(heldRails::contains);
 		}
 
 		@Override

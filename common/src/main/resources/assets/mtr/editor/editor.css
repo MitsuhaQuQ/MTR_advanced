@@ -328,3 +328,7 @@ table.audio-list button.danger { color: var(--warn); }
 .net-wrap canvas { position: absolute; inset: 0; cursor: grab; }
 .net-wrap canvas:active { cursor: grabbing; }
 body.network-view #btn-split, body.network-view #btn-simulate, body.network-view #btn-zoom-in, body.network-view #btn-zoom-out { display: none; }
+
+/* How trains turn back at a route's ends, under the station diagram */
+.turn-back { margin-top: 8px; }
+.turn-back .turn-option { display: inline-block; margin: 2px 12px 2px 0; cursor: pointer; }

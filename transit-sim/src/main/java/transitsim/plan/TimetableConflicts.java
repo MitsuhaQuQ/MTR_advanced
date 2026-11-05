@@ -49,6 +49,7 @@ public final class TimetableConflicts {
 			routeMap.put(route.routeId, route);
 			if (route.routeId == routeId) {
 				platformIds.addAll(route.platformIds);
+				platformIds.addAll(route.terminalPlatforms);
 			}
 		});
 
@@ -79,10 +80,12 @@ public final class TimetableConflicts {
 	private static void checkDay(long routeId, List<RouteTimes> routes, Map<Long, RouteTimes> routeMap, Set<Long> platformIds, int weekday, Set<Conflict> conflicts) {
 		final Map<Long, List<Occupation>> occupations = new HashMap<>();
 		final Set<ServiceStop> linkedStops = new HashSet<>();
+		// Trains turning back at one of several platforms of a station (站前折返), which take one once the others are known
+		final List<Occupation> choosingOccupations = new ArrayList<>();
 		routes.forEach(route -> {
 			// A train going by way of a turn back rail leaves the platform in between
 			if (route.turnBacks.stream().noneMatch(turnBack -> turnBack.nextRouteId == route.nextRouteId)) {
-				linkTurnBacks(route, routeMap.get(route.nextRouteId), weekday, platformIds, occupations, linkedStops);
+				linkTurnBacks(route, routeMap.get(route.nextRouteId), weekday, platformIds, occupations, linkedStops, choosingOccupations);
 			}
 		});
 		routes.forEach(route -> route.getServices(weekday).forEach(serviceTimes -> {
@@ -95,6 +98,19 @@ public final class TimetableConflicts {
 				}
 			}
 		}));
+		// Each takes the first of its platforms free for as long as it stays, in the order they arrive; with none free, it
+		// stays on the first, which then conflicts
+		choosingOccupations.sort(Comparator.comparingLong(occupation -> occupation.start));
+		for (final Occupation occupation : choosingOccupations) {
+			long chosenPlatform = occupation.platforms.get(0);
+			for (final long platformId : occupation.platforms) {
+				if (findOverlap(occupation, occupations.getOrDefault(platformId, Collections.emptyList())) == null) {
+					chosenPlatform = platformId;
+					break;
+				}
+			}
+			occupations.computeIfAbsent(chosenPlatform, key -> new ArrayList<>()).add(occupation);
+		}
 		occupations.forEach((platformId, platformOccupations) -> findConflicts(routeId, platformId, platformOccupations, conflicts));
 	}
 
@@ -103,7 +119,7 @@ public final class TimetableConflicts {
 	 * train fits depends on when these two line up, not just on how often they run. Each train takes the first service
 	 * nobody has taken, like a depot finding its next service.
 	 */
-	private static void linkTurnBacks(RouteTimes route, RouteTimes nextRoute, int weekday, Set<Long> platformIds, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops) {
+	private static void linkTurnBacks(RouteTimes route, RouteTimes nextRoute, int weekday, Set<Long> platformIds, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops, List<Occupation> choosingOccupations) {
 		if (nextRoute == null || route.platformIds.isEmpty() || nextRoute.platformIds.isEmpty()) {
 			return;
 		}
@@ -130,7 +146,14 @@ public final class TimetableConflicts {
 				final List<ServiceStop> stops = new ArrayList<>();
 				stops.add(stop);
 				stops.add(nextStop);
-				occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, leaving, stops));
+				if (route.terminalPlatforms.isEmpty()) {
+					occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, leaving, stops));
+				} else {
+					final List<Long> platforms = new ArrayList<>();
+					platforms.add(platformId);
+					platforms.addAll(route.terminalPlatforms);
+					choosingOccupations.add(new Occupation(arrival, leaving, stops, Collections.emptyList(), platforms));
+				}
 			}
 		}
 	}
@@ -316,6 +339,10 @@ public final class TimetableConflicts {
 		 * The route the same train runs next.
 		 */
 		public long nextRouteId;
+		/**
+		 * The other platforms of the last stop's station trains of the route can turn back at (站前折返), in order.
+		 */
+		public final List<Long> terminalPlatforms = new ArrayList<>();
 		private final List<PlanStop> stops;
 		private final List<Long> platformIds = new ArrayList<>();
 		private final List<TableTimes> tables = new ArrayList<>();
@@ -619,16 +646,25 @@ public final class TimetableConflicts {
 		 * For a train that can turn back on more than one rail, those rails in the order it tries them.
 		 */
 		private final List<UUID> candidates;
+		/**
+		 * For a train that can turn back at more than one platform, those platforms in the order it tries them.
+		 */
+		private final List<Long> platforms;
 
 		private Occupation(long start, long end, List<ServiceStop> stops) {
 			this(start, end, stops, Collections.emptyList());
 		}
 
 		private Occupation(long start, long end, List<ServiceStop> stops, List<UUID> candidates) {
+			this(start, end, stops, candidates, Collections.emptyList());
+		}
+
+		private Occupation(long start, long end, List<ServiceStop> stops, List<UUID> candidates, List<Long> platforms) {
 			this.start = start;
 			this.end = end;
 			this.stops = stops;
 			this.candidates = candidates;
+			this.platforms = platforms;
 		}
 
 		private ServiceStop getStop(long routeId) {

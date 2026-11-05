@@ -16,6 +16,10 @@ class TestRoute implements PlanRoute {
 	final long id;
 	final RouteTimetable timetable = new RouteTimetable();
 	final List<Stop> platformIds = new ArrayList<>();
+	/**
+	 * See {@link PlanRoute#getTerminalPlatforms}.
+	 */
+	final List<Long> terminalPlatforms = new ArrayList<>();
 
 	TestRoute(long id, long... platformIds) {
 		this.id = id;
@@ -47,6 +51,11 @@ class TestRoute implements PlanRoute {
 	@Override
 	public int getTransportModeId() {
 		return 0;
+	}
+
+	@Override
+	public List<Long> getTerminalPlatforms() {
+		return terminalPlatforms;
 	}
 
 	static class Stop implements PlanStop {

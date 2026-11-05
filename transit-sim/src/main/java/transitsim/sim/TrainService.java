@@ -617,9 +617,15 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
-	 * At the last stop of a route that can turn back on more than one rail, takes the first of them that is free as the train
-	 * is about to leave, and keeps it for the train until it is through. Each way round has a path of its own, which is the
-	 * same as the one the train is on up to this stop, so the train changes onto it here.
+	 * At a stop before a place where a train can turn back more than one way (the turn back rails after the last stop of a
+	 * route, or the platforms it can turn back at), chooses one as the train is about to leave, and keeps it for the train
+	 * until it is through. Each way round has a path of its own, which is the same as the one the train is on up to this
+	 * stop, so the train changes onto it here.
+	 * <p>
+	 * Of the ways whose turn back rails are free, it takes the first in order with which the train leaves the first stop of
+	 * the next route by the time its next service is planned to, and whose rails no other train has or holds; if none
+	 * does, the one it can leave there soonest by. A train with no planned time for its next service takes the first free
+	 * way.
 	 *
 	 * @return true while the train has to wait at the stop, as every way round is taken or it has only just changed paths
 	 */
@@ -635,26 +641,83 @@ public class TrainService<T extends PlanTrack> {
 
 		final TurnBackPoint turnBackPoint = turnBacks.get(point);
 		final String tripKey = isOnTrip() ? tripPath.tripKey : "";
+		int chosenWay = -1;
+		TripPath<T> chosenPath = null;
+		int chosenStopIndex = -1;
+		// Of the ways that don't make the next service: clear ones before ones another train is on, then the soonest
+		boolean chosenClear = false;
+		long chosenReadyMillis = Long.MAX_VALUE;
+		final long nowMillis = clock.getAsLong();
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
-			if (rails != null && (newPath != null || isDefaultWay && tripKey.isEmpty()) && vehicle.isTurnBackFree(rails)) {
-				final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
-				turnBackStop = newStopIndex;
-				vehicle.reserveTurnBack(rails, newStopIndex + turnBackPoint.getLength(way));
-				if (newPath == tripPath) {
-					return false;
-				}
-				tripPath = newPath;
-				tripPathKey = newPath == null ? "" : newPath.key;
-				stopTimes = newPath == null ? depotStopTimes : newPath.stopTimes;
-				vehicle.changePath(newPath, newStopIndex);
-				setLastLap(isLastLap);
-				return true;
+			if (rails == null || newPath == null && !(isDefaultWay && tripKey.isEmpty()) || !vehicle.isTurnBackFree(rails)) {
+				continue;
+			}
+			final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
+			final long[] times = getWayTimes(newPath, newStopIndex, newStopIndex + turnBackPoint.getLength(way), nowMillis);
+			final List<UUID> wayRails = turnBackPoint.getWayRails(way);
+			final boolean clear = wayRails == null || vehicle.isWayClear(wayRails);
+			// No planned time to make, or making it on a clear way: the first such way is the one
+			if (times == null || clear && times[0] <= times[1]) {
+				chosenWay = way;
+				chosenPath = newPath;
+				chosenStopIndex = newStopIndex;
+				break;
+			}
+			if (chosenWay < 0 || clear && !chosenClear || clear == chosenClear && times[0] < chosenReadyMillis) {
+				chosenWay = way;
+				chosenPath = newPath;
+				chosenStopIndex = newStopIndex;
+				chosenClear = clear;
+				chosenReadyMillis = times[0];
 			}
 		}
+		if (chosenWay < 0) {
+			return true;
+		}
+		turnBackStop = chosenStopIndex;
+		vehicle.reserveTurnBack(turnBackPoint.getRails(chosenWay), chosenStopIndex + turnBackPoint.getLength(chosenWay));
+		if (chosenPath == tripPath) {
+			return false;
+		}
+		tripPath = chosenPath;
+		tripPathKey = chosenPath == null ? "" : chosenPath.key;
+		stopTimes = chosenPath == null ? depotStopTimes : chosenPath.stopTimes;
+		vehicle.changePath(chosenPath, chosenStopIndex);
+		setLastLap(isLastLap);
 		return true;
+	}
+
+	/**
+	 * @param wayPath   a way round's path, or null for the usual path of the depot
+	 * @param stopIndex the rail of the stop the train is leaving, on that path
+	 * @param nextStart the rail of the first stop of the next route, on that path
+	 * @return when the train, leaving now, could leave the first stop of the next route this way at the fastest, and when its
+	 * next service is planned to leave there; or null if the next service has no planned time
+	 */
+	private long[] getWayTimes(TripPath<T> wayPath, int stopIndex, int nextStart, long nowMillis) {
+		if (tripMillis == 0) {
+			return null;
+		}
+		updatePlan();
+		final StopTimes wayStopTimes = wayPath == null ? depotStopTimes : wayPath.stopTimes;
+		if (planTimetable == null || wayStopTimes == null) {
+			return null;
+		}
+		final int table = getTripTable(planRoutes);
+		final int service = (int) Math.floorMod(tripMillis, (long) OperatingDay.MILLIS_PER_DAY);
+		final RouteTimetable.StopPlan leavingPlan = wayStopTimes.getPlan(planRoutes, planTimetable, stopIndex, tripRouteId, table, service);
+		final RouteTimetable.StopPlan nextPlan = wayStopTimes.getPlan(planRoutes, planTimetable, nextStart, tripRouteId, table, service);
+		if (leavingPlan == null || nextPlan == null) {
+			return null;
+		}
+		final long readyMillis = nowMillis + nextPlan.fastestDepartureMillis - leavingPlan.fastestDepartureMillis;
+		// A duty plans every service it runs; other trains take the next service only as they reach it, except round a loop,
+		// where it is reserved ahead
+		final long plannedMillis = isOnDuty() ? getPlannedMillis(nextPlan.departureMillis) : nextTripMillis;
+		return plannedMillis <= 0 ? null : new long[]{readyMillis, plannedMillis};
 	}
 
 	/**
@@ -963,14 +1026,21 @@ public class TrainService<T extends PlanTrack> {
 		// The last service of the duty may be set on the running diagram to go back to a depot of its own choosing
 		final long orderDepotId = getReturnOrderDepot();
 		final long returnSidingId = orderDepotId == 0 ? depot.chooseReturnSiding(sidingId) : depot.chooseReturnSiding(sidingId, orderDepotId);
-		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(tripPathKey, returnSidingId));
+		// A train that went another way round a turn back point takes the way back of the duty's usual path, whose last stop
+		// can be on another rail
+		final boolean otherWayRound = tripPath.turnBackPoint >= 0;
+		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(otherWayRound ? tripPath.tripKey : tripPathKey, returnSidingId));
 		if (returnPath == null) {
+			return false;
+		}
+		final int newStopIndex = otherWayRound ? getLastDutyStop(returnPath) : stopIndex;
+		if (newStopIndex < 0) {
 			return false;
 		}
 		tripPath = returnPath;
 		tripPathKey = returnPath.key;
 		stopTimes = returnPath.stopTimes;
-		vehicle.changePath(returnPath, stopIndex);
+		vehicle.changePath(returnPath, newStopIndex);
 		return true;
 	}
 
@@ -991,7 +1061,11 @@ public class TrainService<T extends PlanTrack> {
 	 * @return the last stop of the duty's path before the way into the siding, or -1
 	 */
 	private int getLastDutyStop() {
-		final List<T> path = tripPath.path;
+		return getLastDutyStop(tripPath);
+	}
+
+	private static <T extends PlanTrack> int getLastDutyStop(TripPath<T> dutyPath) {
+		final List<T> path = dutyPath.path;
 		for (int i = path.size() - 1; i >= 0; i--) {
 			if (path.get(i).getDwellTime() > 0 && !path.get(i).isSidingTrack()) {
 				return i;
@@ -1414,6 +1488,12 @@ public class TrainService<T extends PlanTrack> {
 		 * Keeps these rails for the train until it reaches this rail of its path.
 		 */
 		void reserveTurnBack(List<UUID> rails, int untilIndex);
+
+		/**
+		 * @return true if no other train is on these rails, nor holds them or a turnout between them (single track and
+		 * station throats), so the train could run along them now without waiting
+		 */
+		boolean isWayClear(List<UUID> rails);
 
 		/**
 		 * @return true if the whole train fits behind the end of this stop's rail without touching another train

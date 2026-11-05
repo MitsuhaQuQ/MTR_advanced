@@ -1,6 +1,6 @@
 # MTR 代码说明与主要流程
 
-- **最后更新**：2026-11-04，对应提交 `4f880df`。这次补进了按时刻表就位（`7dc4d97`、`58cf977`，4.8 节）、共用线路的车厂共享班次（`a1ed043`，4.6 节）、改动在处理器之前读出（`e7abbc7`，8.2 节）。
+- **最后更新**：2026-11-05，折返方式（9.5 节，MTM_Logic 0.9.0）；之前 2026-11-04，对应提交 `4f880df`。这次补进了按时刻表就位（`7dc4d97`、`58cf977`，4.8 节）、共用线路的车厂共享班次（`a1ed043`，4.6 节）、改动在处理器之前读出（`e7abbc7`，8.2 节）。
   - 另一个会话正在做的 `transitsim.planning.AutoDuties`（从时刻表自动生成运用）还没有接进游戏，等它合并后再写进来。
 - **写给谁**：第一次读这个仓库代码的人。先看第 1、2 节知道东西在哪，再按要改的功能看第 3 至 9 节的流程。
 - **和别的文档的关系**：
@@ -967,7 +967,7 @@ sequenceDiagram
 3. 接上主路径。
 4. 每个班次尾部：找从它最后一站回侧线的路径，找到才加这个班次的路径（`addTripPath`），找不到这个班次就留在主路径上。
 5. 最后一站 → 侧线的回库路径；找不到算失败。`repeatIndex2` 记下重复终点。
-6. 有折返段就加折返路径（`addTurnBackPaths`），再加中途回库的路径（`addDepotReturnPaths`）。
+6. 有折返段就加折返路径（`addTurnBackPaths`），再加中途回库的路径（`addDepotReturnPaths`）。运用的折返段见 9.4 节"折返方式"。
 7. `generateTimeSegments`：按速度算出每段轨道的时间段、各站台的到站时间和停站时间。
 8. 按运用运行的车厂还要给每个运用找路径（`addDutyPath`），找不到的在日志里列出。
 
@@ -996,6 +996,35 @@ sequenceDiagram
   - **规划**：`DutyGenerator.servicesOf` 把指令放进 `ServiceInput`（`deployStop`、`deployDepot`、`returnStop`、`returnDepot`）。连成趟时，有出车指令的班次总是开一趟新的（不被前一班直通接上），从 j 站起；有回送指令的班次在 k 站截断，之后不再直通。`TimetableService.startDepots` 是只能从这些存车线新出库（D 的存车线，`SidingInput.depotId` 对上；D 没有存车线时报 `DEPLOY_DEPOT` 并放开），`endsDuty` 是跑完马上回库。`DutyPlanner.runWeek` 照这两条：前者不接在线上的车、只从这些存车线取车（存车线的 `links` 里没有 j 站时，按它到最近首站的时间补一条），后者跑完就让这列车回库。
   - **游戏界面**：时刻表界面的"跑完本趟回库"按钮上显示指令（`gui.mtr.timetable_deploy_order`、`timetable_return_order`），只看不改。
 - **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。主体从线路路径上按站切出来（`getSlice`），中途接入的引导段也一样；网页草稿的路径（`findDutyPaths`）没有 `routeSearch`，仍各自寻路。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线（加上同一规划单元别的车厂、和本车厂线路回送指令所指车厂的同键存车线）生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
+
+### 9.5 折返方式（MTM_Logic 0.9.0）
+
+- **设置**：线路终点的折返方式由设置推出。
+  - **站后**：末站途经点里的折返节点，`Depot.getTurnBackNodes`，原来就有。
+  - **站前**：线路新字段 `Route.terminalPlatforms`，终点站的其他站台，按次序轮用。
+  - **种别优先**：线路新字段 `Route.startPlatforms`，首站想从哪几个站台发车。
+  - 两个字段都实现成组件的 `PlanRoute.getTerminalPlatforms` / `getStartPlatforms`，网页从 `EditorData`（`terminalPlatforms`、`startPlatforms`，停站的 `waypoints` 个数）读，用操作 `turnPlatforms` 改（`EditorActions`，经 `setExtraData` 发出）。
+  - 页面在停站编辑的车站配线图下面画"折返方式"和"优先股道"两栏（`turnHtml`、`toggleTurnPlatform`）。
+  - 存档键 `terminal_platforms`、`start_platforms`，旧档没有就是空。线路整包和 `setExtraData` 包在联络线放行之后带上两组。
+- **运用的路径**：
+  - `Depot.getDutyPlan` 拼运用主体时，把有几种走法的地方记成 `DutyPlan.turnBackSections`，起点是走法开始的停站在主体里的轨道。
+    - 站后：连接两条线路时 `findTurnBackSection` 找到的各股，起点是末站。
+    - 站前：`addFrontTurnBack`，起点是倒数第二站，每种走法从这一站经一个轮用站台（`findFrontWay`：进站台、在站台掉头，掉头的那段去掉停站和站台 ID）到下一条线路的第二站。
+    - 次序：先按下一条线路的 `startPlatforms`，再按终点的次序；平常就在站台掉头时，原终点站台也是其中一种。平常走站后的，站后作为最后一种，所以先站前、后站后。
+  - `Siding.addDutyPath` 把每个运用的这些地方编成存车线的折返点，接在主路径的点后面（`TurnBacks.with`）。
+    - 每个运用先生成平常的路径（带 `turnBackStops`），再对每个点的每种别的走法生成一条回本存车线的路径，键 `TripPath.getTurnBackKey(运用键, 点, 走法)`。
+    - 主体由 `Siding.DutyBody` 拼出：停站和下一站用主体自己的（保留停站设置），中间换成那种走法，后面的段起点和别的点顺移；落在换掉的那段里的点（站前走法里的站后点）不经过，记 -1。
+    - 回库换存车线的路径（`#存车线`）只挂在平常路径上。走了别的走法的车在最后一站选回库时，换到平常路径的那条，按它自己的最后一站对位（`TrainService.chooseDutyReturn`）。
+  - 网页草稿的运用路径（`findDutyPaths`）不生成这些走法。
+  - 车厂主路径（按频率发车）的站后多股照旧，没有站前轮用；直通班次尾部的折返仍只走第一股。
+- **怎么选**（组件 `TrainService.chooseTurnBack`，两边宿主一样）：在折返点前的那一站出发时选一次，记在 `turnBackStop`。
+  1. 只看能用的：有这条路径，掉头的轨道没被别的车占着或留着（`isTurnBackFree`）。
+  2. 每种走法用它自己路径上的计划（`getWayTimes`）算：现在出发、按最快时刻到下一条线路的那一站能发车的时刻，和下一班的计划发车时刻（按运用跑的车取运用的计划；环线取已预约的下一班）。
+  3. 走法经过的轨道（`TurnBackPoint.getWayRails`）没有别的车占着、也没被别的车预约（`Vehicle.isWayClear`，游戏和组件都用 `RunReservations.isHeldByOther`：别的车持有其中一段，或持有两段之间节点上的道岔）。
+  4. 按次序取第一种赶得上而且进路空着的；都不行就取进路空着的里面最早的，再不行取最早的；没有计划时刻的车（按频率发车）取第一种能用的。
+- **计划对位**：组件 `StopTimes.matchRouteStops` 按站台 ID 把路径上的停站对到线路的站。车停在终点的轮用站台时，算作线路末站；下一条线路从同一车站开始的，同时算作它的首站。所以这一班的计划、发车时刻和后面各站照常。
+- **冲突检查**：`TimetableConflicts.RouteTimes.terminalPlatforms`（服务端从线路填）。同站台折返时，各列车按到达先后取第一个在这段时间里空着的站台，都不空才在第一个站台上报冲突。
+- **组件数据**：`SimDataset` 格式 9 在线路后面带两组站台 ID。`TurnBackPoint` 的数值在原来的各股之后加上每种走法的全部轨道，旧数据读出时全部轨道就是掉头的轨道。
 
 ## 10. ANTE 脚本
 

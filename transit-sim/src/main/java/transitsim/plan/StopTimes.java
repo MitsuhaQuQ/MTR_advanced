@@ -408,7 +408,23 @@ public class StopTimes {
 		int nextRouteStop = 0;
 		for (final Stop stop : stops) {
 			RouteStop matchedStop = null;
-			for (int i = nextRouteStop; stop.platformId != 0 && i < routeStops.size(); i++) {
+			// A train turning back at another platform of the last stop's station (站前折返) is at the last stop of the route
+			// there, and at the first stop of the next route too when that starts in the same station
+			if (stop.platformId != 0 && nextRouteStop < routeStops.size()) {
+				final RouteStop expected = routeStops.get(nextRouteStop);
+				final List<? extends PlanStop> arrivalStops = expected.arrivalRoute.getStops();
+				if (expected.platformId != stop.platformId && expected.arrivalIndex == arrivalStops.size() - 1 && expected.arrivalRoute.getTerminalPlatforms().contains(stop.platformId)) {
+					final RouteStop next = nextRouteStop + 1 < routeStops.size() ? routeStops.get(nextRouteStop + 1) : null;
+					if (expected.departureRoute == expected.arrivalRoute && next != null && next.startsRoute) {
+						matchedStop = new RouteStop(expected.arrivalRoute, expected.arrivalIndex, next.departureRoute, next.departureIndex, true);
+						nextRouteStop += 2;
+					} else {
+						matchedStop = expected;
+						nextRouteStop++;
+					}
+				}
+			}
+			for (int i = nextRouteStop; matchedStop == null && stop.platformId != 0 && i < routeStops.size(); i++) {
 				if (routeStops.get(i).platformId == stop.platformId) {
 					matchedStop = routeStops.get(i);
 					nextRouteStop = i + 1;

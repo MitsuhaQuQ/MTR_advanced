@@ -65,8 +65,12 @@ public final class PlanVersions {
 		private final List<FixedStop> stops = new ArrayList<>();
 		private final boolean isLoop;
 		private final int transportModeId;
+		private final List<Long> terminalPlatforms;
+		private final List<Long> startPlatforms;
 
 		private FixedRoute(PlanRoute route) {
+			terminalPlatforms = new ArrayList<>(route.getTerminalPlatforms());
+			startPlatforms = new ArrayList<>(route.getStartPlatforms());
 			routeId = route.getRouteId();
 			timetable = route.getTimetable().copy();
 			revision = timetable.revision;
@@ -99,6 +103,16 @@ public final class PlanVersions {
 		@Override
 		public int getTransportModeId() {
 			return transportModeId;
+		}
+
+		@Override
+		public List<Long> getTerminalPlatforms() {
+			return terminalPlatforms;
+		}
+
+		@Override
+		public List<Long> getStartPlatforms() {
+			return startPlatforms;
 		}
 	}
 

@@ -43,7 +43,7 @@ public final class SimDataset {
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; older data is read without them.
 	 */
-	public static final int VERSION = 8;
+	public static final int VERSION = 9;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -95,6 +95,10 @@ public final class SimDataset {
 		routes.forEach(route -> writeTimes(writer, route.fastestTimes));
 		sidings.forEach(siding -> BinaryKeyed.writeString(writer, siding.linePool));
 		routes.forEach(route -> BinaryKeyed.writeString(writer, route.lineKey));
+		routes.forEach(route -> {
+			writeLongs(writer, route.terminalPlatforms);
+			writeLongs(writer, route.startPlatforms);
+		});
 		return writer.toBytes();
 	}
 
@@ -159,6 +163,12 @@ public final class SimDataset {
 		if (version >= 8) {
 			for (final RouteData route : dataset.routes) {
 				route.lineKey = BinaryKeyed.readString(reader);
+			}
+		}
+		if (version >= 9) {
+			for (final RouteData route : dataset.routes) {
+				route.terminalPlatforms = readLongs(reader);
+				route.startPlatforms = readLongs(reader);
 			}
 		}
 		return dataset;
@@ -518,8 +528,15 @@ public final class SimDataset {
 		 * it, or empty if not known; depots running routes of the same line plan their duties together.
 		 */
 		public String lineKey = "";
+		/**
+		 * See {@link PlanRoute#getTerminalPlatforms} and {@link PlanRoute#getStartPlatforms}.
+		 */
+		public long[] terminalPlatforms = new long[0];
+		public long[] startPlatforms = new long[0];
 
 		public RouteData(PlanRoute route) {
+			terminalPlatforms = route.getTerminalPlatforms().stream().mapToLong(Long::longValue).toArray();
+			startPlatforms = route.getStartPlatforms().stream().mapToLong(Long::longValue).toArray();
 			id = route.getRouteId();
 			transportModeId = route.getTransportModeId();
 			final List<? extends PlanStop> stops = route.getStops();
@@ -911,7 +928,16 @@ public final class SimDataset {
 		private final RouteTimetable timetable;
 		private final List<DataStop> stops = new ArrayList<>();
 
+		private final List<Long> terminalPlatforms = new ArrayList<>();
+		private final List<Long> startPlatforms = new ArrayList<>();
+
 		private DataRoute(RouteData data) {
+			for (final long platformId : data.terminalPlatforms) {
+				terminalPlatforms.add(platformId);
+			}
+			for (final long platformId : data.startPlatforms) {
+				startPlatforms.add(platformId);
+			}
 			id = data.id;
 			transportModeId = data.transportModeId;
 			timetable = TimetableBinary.read(new ByteArrayBinary.Reader(data.timetable));
@@ -938,6 +964,16 @@ public final class SimDataset {
 		@Override
 		public boolean isLoop() {
 			return stops.size() > 2 && stops.get(0).getPlatformId() == getLastPlatformId();
+		}
+
+		@Override
+		public List<Long> getTerminalPlatforms() {
+			return terminalPlatforms;
+		}
+
+		@Override
+		public List<Long> getStartPlatforms() {
+			return startPlatforms;
 		}
 
 		@Override

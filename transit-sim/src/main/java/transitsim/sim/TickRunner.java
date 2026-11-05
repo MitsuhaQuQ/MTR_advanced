@@ -2507,6 +2507,11 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		@Override
+		public boolean isWayClear(List<UUID> rails) {
+			return isTurnBackFree(rails) && !reservations.isHeldByOther(id, rails);
+		}
+
+		@Override
 		public boolean isStopFree(int stopIndex) {
 			double remainingLength = siding.trainCars * siding.spacing;
 			for (int i = stopIndex; i >= 0 && remainingLength > 0; i--) {

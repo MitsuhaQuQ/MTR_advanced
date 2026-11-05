@@ -1175,6 +1175,12 @@ public class TrainServer extends Train {
 		}
 
 		@Override
+		public boolean isWayClear(List<UUID> rails) {
+			final RunReservations reservations = getRunReservations();
+			return isTurnBackFree(rails) && (reservations == null || !reservations.isHeldByOther(id, rails));
+		}
+
+		@Override
 		public boolean isStopFree(int stopIndex) {
 			double remainingLength = trainCars * spacing;
 			for (int i = stopIndex; i >= 0 && remainingLength > 0; i--) {

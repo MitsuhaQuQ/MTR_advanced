@@ -1,5 +1,6 @@
 package transitsim.plan;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,11 @@ public class DutyPlan<T extends PlanTrack, P> {
 	public final P lastPlatform;
 	public final boolean startsOnLine;
 	public final boolean staysOnLine;
+	/**
+	 * Where the duty can turn back more than one way, each from a stop on {@link #body} (the section's start is that stop's
+	 * rail, and each way starts on it) to the first stop of the next segment.
+	 */
+	public final List<TurnBackSection<T>> turnBackSections = new ArrayList<>();
 
 	public DutyPlan(String key, List<Long> routeIds, Map<Long, Integer> cutStops, Map<Long, Integer> entryStops, Map<Long, List<T>> entryLeads, List<T> body, int[] segmentStarts, P firstPlatform, P lastPlatform, boolean startsOnLine, boolean staysOnLine) {
 		this.key = key;

@@ -39,6 +39,28 @@ public class TurnBacks {
 	}
 
 	/**
+	 * @param more points the usual path doesn't pass, such as those of duties, numbered after these
+	 * @return these points and those
+	 */
+	public TurnBacks with(List<TurnBackPoint> more) {
+		if (more.isEmpty()) {
+			return this;
+		}
+		final List<TurnBackPoint> newPoints = new ArrayList<>(points);
+		newPoints.addAll(more);
+		final int[] newStops = Arrays.copyOf(depotStops, newPoints.size());
+		Arrays.fill(newStops, depotStops.length, newStops.length, -1);
+		return new TurnBacks(newPoints, newStops);
+	}
+
+	/**
+	 * @return how many points there are
+	 */
+	public int size() {
+		return points.size();
+	}
+
+	/**
 	 * Turn back points worked out elsewhere, for running services without a world.
 	 */
 	public static TurnBacks of(int[] depotStops, TurnBackPoint... points) {

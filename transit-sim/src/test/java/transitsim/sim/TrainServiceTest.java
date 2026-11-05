@@ -629,6 +629,11 @@ class TrainServiceTest {
 		}
 
 		@Override
+		public boolean isWayClear(List<UUID> rails) {
+			return isTurnBackFree(rails);
+		}
+
+		@Override
 		public boolean isStopFree(int stopIndex) {
 			return !takenStops.contains(stopIndex);
 		}

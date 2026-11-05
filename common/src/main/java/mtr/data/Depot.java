@@ -1653,6 +1653,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			SavedRailBase lastPlatform = null;
 			Route previousRoute = null;
 			boolean previousRanToEnd = false;
+			final List<TurnBackSection<PathData>> turnBackSections = new ArrayList<>();
+			List<SavedRailBase> previousPlatforms = Collections.emptyList();
+			List<List<BlockPos>> previousWaypoints = Collections.emptyList();
+			int previousStart = 0;
 
 			for (int k = 0; k < segments.size(); k++) {
 				final DepotDuties.Segment segment = segments.get(k);
@@ -1696,16 +1700,21 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					final List<PathData> connectingPath = new ArrayList<>();
 					// After running a route to its end the train turns back the way the route lists, like the depot's own path
 					final List<BlockPos> turnBackNodes = previousRanToEnd ? getTurnBackNodes(previousRoute, graph) : Collections.emptyList();
+					TurnBackSection<PathData> turnBackSection = null;
 					if (turnBackNodes.isEmpty()) {
 						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
 					} else {
-						final TurnBackSection<PathData> turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
+						turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
 						if (turnBackSection != null) {
 							connectingPath.addAll(turnBackSection.getDefaultWay());
 						}
 					}
 					if (connectingPath.isEmpty()) {
 						return null;
+					}
+					// More than one way round, each from the last stop, which is already the last rail of the body
+					if (turnBackSection != null && turnBackSection.ways.size() > 1 && !body.isEmpty() && body.get(body.size() - 1).isSameRail(connectingPath.get(0))) {
+						turnBackSections.add(new TurnBackSection<>(body.size() - 1, turnBackSection.ways, turnBackSection.defaultWay));
 					}
 					PathFinder.appendPath(body, connectingPath);
 				}
@@ -1725,6 +1734,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				} else {
 					segmentStarts[k] = body.size();
 					body.addAll(segmentPath);
+				}
+
+				// The route before may turn back at other platforms of its last station (站前折返)
+				if (k > 0 && previousRanToEnd && firstStop == 0) {
+					addFrontTurnBack(body, previousRoute, previousPlatforms, previousWaypoints, previousStart, route, platforms, waypoints, segmentStarts[k], turnBackSections, rails, graph, useFastSpeed);
 				}
 
 				if (firstPlatform == null) {
@@ -1762,8 +1776,126 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				previousRoute = route;
 				previousRanToEnd = lastStop == route.platformIds.size() - 1;
+				previousPlatforms = platforms;
+				previousWaypoints = waypoints;
+				previousStart = segmentStarts[k];
 			}
-			return new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
+			final DutyPlan<PathData, SavedRailBase> dutyPlan = new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
+			dutyPlan.turnBackSections.addAll(turnBackSections);
+			return dutyPlan;
+		}
+
+		/**
+		 * Where a route ends at a station whose other platforms it lists to turn back at (站前折返), and the next segment's
+		 * route starts in that station, adds the ways from the stop before the last to the next route's second stop, one at
+		 * each of those platforms, in the order the next route would rather start from (种别优先). The usual way is one of
+		 * them when the train usually turns back at its last platform, and the last when it turns back after the station
+		 * (站后), so the platforms come first and the way after the station is taken only when none of them does.
+		 *
+		 * @param previousStart the rail of the body where the route before starts
+		 * @param nextStart     the rail of the body where the next route starts
+		 */
+		private void addFrontTurnBack(List<PathData> body, Route previousRoute, List<SavedRailBase> previousPlatforms, List<List<BlockPos>> previousWaypoints, int previousStart, Route route, List<SavedRailBase> platforms, List<List<BlockPos>> waypoints, int nextStart, List<TurnBackSection<PathData>> turnBackSections, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			if (previousRoute.terminalPlatforms.isEmpty() || previousPlatforms.size() < 2 || platforms.size() < 2 || graph == null) {
+				return;
+			}
+			final long lastPlatformId = previousRoute.getLastPlatformId();
+			final Station station = dataCache.platformIdToStation.get(lastPlatformId);
+			if (station == null || dataCache.platformIdToStation.get(platforms.get(0).id) != station) {
+				return;
+			}
+			final int stopRail = findStopRail(body, previousStart, previousPlatforms.get(previousPlatforms.size() - 2).id);
+			final int lastRail = stopRail < 0 ? -1 : findStopRail(body, stopRail + 1, lastPlatformId);
+			final int secondRail = lastRail < 0 ? -1 : findStopRail(body, Math.max(nextStart, lastRail) + 1, platforms.get(1).id);
+			if (secondRail < 0) {
+				return;
+			}
+			final List<PathData> usualWay = new ArrayList<>(body.subList(stopRail, secondRail + 1));
+			final boolean usualAtPlatform = lastPlatformId == platforms.get(0).id;
+
+			final List<Long> candidates = new ArrayList<>();
+			if (usualAtPlatform) {
+				candidates.add(lastPlatformId);
+			}
+			previousRoute.terminalPlatforms.forEach(platformId -> {
+				if (platformId != lastPlatformId && !candidates.contains(platformId) && dataCache.platformIdToStation.get(platformId) == station && dataCache.platformIdMap.containsKey(platformId)) {
+					candidates.add(platformId);
+				}
+			});
+			final List<Long> ordered = new ArrayList<>();
+			route.startPlatforms.forEach(platformId -> {
+				if (candidates.contains(platformId) && !ordered.contains(platformId)) {
+					ordered.add(platformId);
+				}
+			});
+			candidates.forEach(platformId -> {
+				if (!ordered.contains(platformId)) {
+					ordered.add(platformId);
+				}
+			});
+
+			final List<List<PathData>> ways = new ArrayList<>();
+			int defaultWay = -1;
+			for (final long platformId : ordered) {
+				if (platformId == lastPlatformId) {
+					defaultWay = ways.size();
+					ways.add(usualWay);
+				} else {
+					final List<PathData> way = findFrontWay(previousPlatforms.get(previousPlatforms.size() - 2), dataCache.platformIdMap.get(platformId), platforms.get(1), previousWaypoints.get(previousWaypoints.size() - 2), waypoints.get(0), body.get(lastRail).dwellTime, usualWay, rails, graph, useFastSpeed);
+					ways.add(way);
+					if (way == null) {
+						failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, dataCache.platformIdMap.get(platformId).getMidPos().asLong());
+					}
+				}
+			}
+			if (!usualAtPlatform) {
+				defaultWay = ways.size();
+				ways.add(usualWay);
+			}
+			if (ways.stream().filter(Objects::nonNull).count() >= 2) {
+				turnBackSections.add(new TurnBackSection<>(stopRail, ways, defaultWay));
+			}
+		}
+
+		/**
+		 * @return the way from a stop into a platform and back out of it to the next route's second stop, turning back on the
+		 * platform, or null if there is none that leaves and reaches the stops along the same rails as the usual way
+		 */
+		private List<PathData> findFrontWay(SavedRailBase from, Platform platform, SavedRailBase to, List<BlockPos> fromWaypoints, List<BlockPos> toWaypoints, int dwellTime, List<PathData> usualWay, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			if (platform == null) {
+				return null;
+			}
+			final List<PathData> wayIn = new ArrayList<>();
+			PathFinder.findPath(wayIn, rails, graph, Arrays.asList(from, platform), Collections.singletonList(fromWaypoints), 1, cruisingAltitude, useFastSpeed);
+			final List<PathData> wayOut = new ArrayList<>();
+			PathFinder.findPath(wayOut, rails, graph, Arrays.asList(platform, to), Collections.singletonList(toWaypoints), 1, cruisingAltitude, useFastSpeed);
+			if (wayIn.size() < 2 || wayOut.size() < 2) {
+				return null;
+			}
+			// The stop is the arrival at the platform, with the stop time of the route's last stop; the platform reversed is
+			// only the way out
+			final PathData arrival = wayIn.get(wayIn.size() - 1);
+			arrival.dwellTime = dwellTime;
+			final PathData leaving = wayOut.get(0);
+			if (!leaving.isOppositeRail(arrival)) {
+				return null;
+			}
+			leaving.dwellTime = 0;
+			leaving.savedRailBaseId = 0;
+			wayIn.addAll(wayOut);
+			return wayIn.get(0).isSameRail(usualWay.get(0)) && wayIn.get(wayIn.size() - 1).isSameRail(usualWay.get(usualWay.size() - 1)) ? wayIn : null;
+		}
+
+		/**
+		 * @return the first rail from this one on that is this platform, or -1
+		 */
+		private static int findStopRail(List<PathData> body, int from, long platformId) {
+			for (int i = Math.max(from, 0); i < body.size(); i++) {
+				if (body.get(i).savedRailBaseId == platformId && body.get(i).rail.railType == RailType.PLATFORM) {
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		/**
