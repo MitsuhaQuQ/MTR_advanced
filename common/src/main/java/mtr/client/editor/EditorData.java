@@ -93,7 +93,12 @@ public final class EditorData {
 			depotObject.addProperty("cycleRoutes", depot.cycleRoutes);
 			depotObject.addProperty("releaseInterval", depot.releaseInterval);
 			// Not running by duties: the old logic, whose trains don't lock station throats
-			depotObject.addProperty("oldLogic", depot.getRunDuties() == null && !depot.transportMode.continuousMovement);
+			// Not configured: neither duties nor anything the old logic would send a train for (lines and departures or a
+			// frequency), as a depot just made; shown as such, not as the old logic
+			final boolean oldLogic = depot.getRunDuties() == null && !depot.transportMode.continuousMovement;
+			final boolean sendsNothing = depot.routeIds.isEmpty() || (depot.useRealTime ? depot.departures.isEmpty() : java.util.stream.IntStream.range(0, Depot.HOURS_IN_DAY).allMatch(hour -> depot.getFrequency(hour) == 0));
+			depotObject.addProperty("oldLogic", oldLogic && !sendsNothing);
+			depotObject.addProperty("notConfigured", oldLogic && sendsNothing);
 			final java.util.Set<Long> oldDepots = sharedWithOld.get(depot.id);
 			if (oldDepots != null) {
 				final JsonArray oldArray = new JsonArray();

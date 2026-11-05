@@ -67,6 +67,8 @@ const I18N = (() => {
 			"这个车厂不按运用跑（例如按频率发车），属于旧逻辑：它的车不锁咽喉进路，和它共用轨道的按运用的车厂也不锁。给它设时刻表，或用寻路边界把它隔开后，新逻辑才启用。": "This depot doesn't run by duties (as when sending trains by frequency), the old logic: its trains don't lock their way through station throats, nor do those of depots running by duties that share its track. Give it a timetable, or keep it apart with path boundaries, for the new logic.",
 			"和不按运用跑的车厂（{0}）共用轨道，咽喉进路锁不启用；把它们改成按时刻表，或用寻路边界隔开后启用。": "Its track is shared with depots not running by duties ({0}), so its trains don't lock their way through station throats; give those a timetable, or keep them apart with path boundaries.",
 			"旧逻辑": "old logic",
+			"未配置": "not configured",
+			"这个车厂还没有时刻表，也没有按频率发车的设置，不发车。": "This depot has no timetable and no frequency set yet, so it sends no trains.",
 			"咽喉锁未启用": "no throat locks",
 			"按运营线路 {0} 和 {1} 个车厂一起排，这里是本车厂的部分；应用后线路上其他自动排的车厂会把剩下的班次重排。": "Planned with the line {0} and its {1} depots; this is this depot's part, and once it is applied the line's other depots planning automatically plan what is left. ",
 			"跑满需要 {0} 列，现有 {1} 列{2}。": "Running every service needs {0} trains, there are {1}{2}. ",

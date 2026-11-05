@@ -443,7 +443,7 @@ sequenceDiagram
 - **每 tick**（`holdRun`）：不在等离站时调 `approach`：下一站进站进路还没给、车头离停车点（驶入咽喉那段轨道的起点）不超过制动距离加 32 格，就带上已持有的一起申请；然后持有单线加 `getHeld`。
 - **轨道被占**（`isRailBlocked`）：`isBlocked` 为真时那段轨道算被占，运动规则让车停在它前面。
 - 节点相交的轨道数：游戏按轨道表，组件按所有存车线路径的轨道（没有路径用的轨道挡不着谁）。开关 `ThroatLocks.enabled`，由 `SecurityConfig.throatLocks` 设。
-- 新旧隔离：车厂列车走的轨道（存车线路径和运用路径的节点）连成网（`transitsim.network.LockNetworks`），一张网上同时有按运用的车厂和不按运用的车厂（按频率发车等）时，这张网上按运用的车不锁咽喉。游戏由 `RailwayData.updateLockNetworks` 每 100 tick 重算（`isThroatLocksOff`，变化时写日志），组件在 `SimDataset.buildRunner` 设 `DepotBoard.throatLocksAllowed`，网页编辑器数据里车厂带 `oldLogic` 和 `throatLocksOffBy`。
+- 新旧隔离：车厂列车走的轨道（存车线路径和运用路径的节点）连成网（`transitsim.network.LockNetworks`），一张网上同时有按运用的车厂和不按运用的车厂（按频率发车等）时，这张网上按运用的车不锁咽喉。游戏由 `RailwayData.updateLockNetworks` 每 100 tick 重算（`isThroatLocksOff`，变化时写日志），组件在 `SimDataset.buildRunner` 设 `DepotBoard.throatLocksAllowed`，网页编辑器数据里车厂带 `oldLogic` 和 `throatLocksOffBy`。没有运用、也不会发车的车厂（没有线路，或按实时时刻没有发车时刻、按频率各小时都是 0，例如刚新建的）带 `notConfigured`，网页显示"未配置"而不是"旧逻辑"；它没有路径时也不和别的车厂连成网。
 - **联锁区**（MTM_Logic 0.10.0）：联锁色（`SecurityConfig.interlockColor`，默认品红）的信号闭塞分区是整块锁的联锁区。
   - 游戏用 `SignalBlocks.getZones(颜色)` 得到"轨道 → 分区 ID"表，信号闭塞版本或颜色变了才重建，给出的表不再改动，所以别的线程也能用。客户端用 `ClientData.SIGNAL_BLOCKS` 和随 `PACKET_EDIT_PERMISSION` 发来的 `ClientData.interlockColor` 算同样的表（`ClientThroats`）。
   - `ThroatRoutes.of` 多一个轨道到区的查询：走进站、出站进路时，经过的轨道在区里就记下这个区（`Item.zone`，`index` 是进区的第一条轨道，`endIndex` 是出区后的那条），并像道岔一样清零"64 格没有道岔"的计数。区对区同 ID 就冲突，不分方式；区和道岔不冲突。`getPlace` 给出显示用的节点（道岔的节点，或进区的节点）。
@@ -954,7 +954,7 @@ sequenceDiagram
   - 页面用 canvas 画，拖动平移，滚轮按光标缩放，按运输方式切换，放大后显示站名；树里选中的线路按颜色画出路径，其余变淡。
   - **示意图画法**（用户画的样子）：缩小到每格不到 2 像素时画成示意图。
     - 先把两个道岔之间的轨道连成一段（`netChains`）：只穿过连着两条轨道的节点，种类和隔离状态不同就断开，所以站台、存车线和隔离段各自成段，车站位置不变。
-    - 每段按屏幕 10 像素化简（`simplifyPoints`，Douglas–Peucker），再把每一小段改成横、竖或 45°（`octilinear`：已接近这些方向的不动，否则先直走一半、再斜走、再直走），同方向相连的合成一段，所以大弯变成一条 45° 斜线、小弯拉直。
+    - 每段按屏幕 10 像素化简（`simplifyPoints`，Douglas–Peucker），再把每一小段改成横、竖或 45°（`octilinear`：已接近这些方向的不动，否则先直走一半、再斜走、再直走），同方向相连的合成一段，所以大弯变成一条 45° 斜线、小弯拉直。相邻两小段的直走部分在拐角处会拼出一个凸起的直角台阶，或在两段斜线之间留一小段横竖的错台：`cutSteps` 把两条腿长短相近、又比两边短的直角切成斜线，把比两边短一半以上的错台去掉，再合并同方向的段。
     - 结果按缩放档（每档半个 2 的幂）缓存。放大后按实际轨道画。
     - 选中线路、隔离层、悬停高亮都画在这些段上；光标先找画出来的段，再取段里离光标最近的实际轨道，所以右键菜单仍是对一条轨道。
   - 按网格找光标下的轨道，悬停显示种类和隔离，右键弹出和配线图相同的隔离菜单（`railMenu`，参数是 `{a, b, status}`）。

@@ -1511,6 +1511,49 @@
 				merged.push(result[k], result[k + 1]);
 			}
 		}
+		return cutSteps(merged, way);
+	}
+
+	/**
+	 * A right-angled step between two pieces, where one piece's straight end meets the next one's turned the other way
+	 * (a bend split into two pieces, each set straight, diagonal, straight), cut across diagonally: the two short legs,
+	 * close to each other in length and shorter than the pieces either side, become one diagonal joining those pieces.
+	 */
+	function cutSteps(points, way) {
+		const length = (k) => Math.hypot(points[k + 2] - points[k], points[k + 3] - points[k + 1]);
+		for (let k = 2; k + 3 < points.length; k += 2) {
+			const before = way(points[k - 2], points[k - 1], points[k], points[k + 1]);
+			const after = way(points[k], points[k + 1], points[k + 2], points[k + 3]);
+			const turn = ((after - before) % 8 + 8) % 8;
+			if (turn !== 2 && turn !== 6) continue;
+			const leg1 = length(k - 2), leg2 = length(k), shorter = Math.min(leg1, leg2), longer = Math.max(leg1, leg2);
+			const outside1 = k >= 4 ? length(k - 4) : 0, outside2 = k + 5 < points.length ? length(k + 2) : 0;
+			if (outside1 > longer && outside2 > longer && shorter >= longer / 2) {
+				points.splice(k, 2);
+				k = Math.max(0, k - 4);
+			}
+		}
+		// A short jog between two pieces going the same way, left where a straight end met a diagonal: gone, the two
+		// pieces either side joined
+		for (let k = 2; k + 5 < points.length; k += 2) {
+			const before = way(points[k - 2], points[k - 1], points[k], points[k + 1]);
+			const beyond = way(points[k + 2], points[k + 3], points[k + 4], points[k + 5]);
+			if (before === beyond && length(k) * 2 < Math.min(length(k - 2), length(k + 2))) {
+				points.splice(k + 2, 2);
+				k = Math.max(0, k - 4);
+			}
+		}
+		// The diagonal cut across and the diagonals either side going the same way are one piece
+		const merged = [points[0], points[1]];
+		for (let k = 2; k + 1 < points.length; k += 2) {
+			const n = merged.length;
+			if (n >= 4 && way(merged[n - 4], merged[n - 3], merged[n - 2], merged[n - 1]) === way(merged[n - 2], merged[n - 1], points[k], points[k + 1])) {
+				merged[n - 2] = points[k];
+				merged[n - 1] = points[k + 1];
+			} else {
+				merged.push(points[k], points[k + 1]);
+			}
+		}
 		return merged;
 	}
 
@@ -3415,7 +3458,7 @@
 			: tr("和不按运用跑的车厂（{0}）共用轨道，咽喉进路锁不启用；把它们改成按时刻表，或用寻路边界隔开后启用。", names);
 	}
 
-	const lockMark = depot => depot.throatLocksOffBy || depot.oldLogic ? `<span class="count warn" title="${escapeHtml(lockOffText(depot))}"> · ${depot.oldLogic ? tr("旧逻辑") : tr("咽喉锁未启用")}</span>` : "";
+	const lockMark = depot => depot.notConfigured ? `<span class="count" title="${escapeHtml(tr("这个车厂还没有时刻表，也没有按频率发车的设置，不发车。"))}"> · ${tr("未配置")}</span>` : depot.throatLocksOffBy || depot.oldLogic ? `<span class="count warn" title="${escapeHtml(lockOffText(depot))}"> · ${depot.oldLogic ? tr("旧逻辑") : tr("咽喉锁未启用")}</span>` : "";
 
 	function throatHtml(r, i) {
 		const stop = r && r.stops[i];
