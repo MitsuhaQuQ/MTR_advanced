@@ -25,6 +25,11 @@ public final class TimetableConflicts {
 	 * The time between one train leaving a platform and the next one arriving, as trains have a length and need to clear it.
 	 */
 	public static final long MIN_PLATFORM_GAP_MILLIS = 30 * 1000;
+	/**
+	 * How long a train takes through a station's throat, before reaching its platform and after leaving it: an
+	 * approximation, as the times of a route are only known at its stops (L2).
+	 */
+	public static final long THROAT_MILLIS = 30 * 1000;
 	public static final int MAX_CONFLICTS = 256;
 
 	private static final int DAYS_PER_WEEK = 7;
@@ -62,6 +67,7 @@ public final class TimetableConflicts {
 			if (checkedDays.add(routes.stream().map(route -> route.getTableKey(day)).collect(Collectors.joining(",")))) {
 				checkDay(routeId, routes, routeMap, platformIds, day, conflicts);
 				checkTurnBacks(routeId, routes, routeMap, turnBackRails, day, conflicts);
+				checkThroats(routeId, routes, day, conflicts);
 			}
 		}
 
@@ -206,6 +212,56 @@ public final class TimetableConflicts {
 	}
 
 	/**
+	 * Two trains can't use a turnout of a station's throat by different ways at once (L2): each stop's entry route is used
+	 * for {@link #THROAT_MILLIS} before its arrival, its exit route for as long after its departure. The checked route's
+	 * windows are compared with every other train's at the same turnout.
+	 */
+	private static void checkThroats(long routeId, List<RouteTimes> routes, int weekday, Set<Conflict> conflicts) {
+		final Map<Long, List<ThroatUse>> uses = new HashMap<>();
+		routes.forEach(route -> {
+			if (route.throats.isEmpty()) {
+				return;
+			}
+			route.getServices(weekday).forEach(serviceTimes -> {
+				for (int i = 0; i < serviceTimes.arrivals.length && i < route.throats.size(); i++) {
+					if (serviceTimes.arrivals[i] < 0) {
+						continue;
+					}
+					final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, i);
+					final long arrival = serviceTimes.getArrival(i);
+					final long departure = arrival + serviceTimes.departures[i] - serviceTimes.arrivals[i];
+					for (final transitsim.network.ThroatRoutes.Item item : route.throats.get(i).entry) {
+						uses.computeIfAbsent(item.node, key -> new ArrayList<>()).add(new ThroatUse(arrival - THROAT_MILLIS, arrival, item, stop));
+					}
+					for (final transitsim.network.ThroatRoutes.Item item : route.throats.get(i).exit) {
+						uses.computeIfAbsent(item.node, key -> new ArrayList<>()).add(new ThroatUse(departure, departure + THROAT_MILLIS, item, stop));
+					}
+				}
+			});
+		});
+		uses.forEach((node, nodeUses) -> {
+			for (final ThroatUse use : nodeUses) {
+				if (use.stop.routeId != routeId || conflicts.size() >= MAX_CONFLICTS) {
+					continue;
+				}
+				for (final ThroatUse other : nodeUses) {
+					// The same train coming in and going out is one train
+					if (other == use || !use.item.conflicts(other.item) || other.stop.routeId == use.stop.routeId && other.stop.table == use.stop.table && other.stop.service == use.stop.service) {
+						continue;
+					}
+					for (int day = -1; day <= 1; day++) {
+						final long offset = day * OperatingDay.MILLIS_PER_DAY;
+						if (other.start + offset < use.end && use.start < other.end + offset) {
+							conflicts.add(new Conflict(use.stop.table, use.stop.stopIndex, use.stop.service, other.stop.routeId, other.stop.service, 0, node));
+							break;
+						}
+					}
+				}
+			}
+		});
+	}
+
+	/**
 	 * @return the first service from {@code earliestMillis} that no train has taken, within the time a train waits for one
 	 */
 	private static ServiceTimes findNextService(RouteTimes nextRoute, List<ServiceTimes> nextServices, long earliestMillis, ServiceStop stop, Set<ServiceStop> linkedStops) {
@@ -264,6 +320,10 @@ public final class TimetableConflicts {
 		private final List<Long> platformIds = new ArrayList<>();
 		private final List<TableTimes> tables = new ArrayList<>();
 		private final List<TurnBack> turnBacks = new ArrayList<>();
+		/**
+		 * The turnouts each stop's train passes coming in and going out, or empty if not known.
+		 */
+		private final List<transitsim.network.ThroatRoutes.StopThroat> throats = new ArrayList<>();
 
 		public RouteTimes(long routeId, List<? extends PlanStop> stops) {
 			this.routeId = routeId;
@@ -312,6 +372,14 @@ public final class TimetableConflicts {
 
 		public void addTurnBack(TurnBack turnBack) {
 			turnBacks.add(turnBack);
+		}
+
+		/**
+		 * @param throats for each stop, the turnouts its train passes coming in and going out ({@code ThroatRoutes})
+		 */
+		public void setThroats(List<transitsim.network.ThroatRoutes.StopThroat> throats) {
+			this.throats.clear();
+			this.throats.addAll(throats);
 		}
 
 		private String getTableKey(int weekday) {
@@ -412,17 +480,26 @@ public final class TimetableConflicts {
 		public final long otherRouteId;
 		public final int otherService;
 		/**
-		 * Where this happens, or 0 for a turn back rail.
+		 * Where this happens, or 0 for a turn back rail or a throat.
 		 */
 		public final long platformId;
+		/**
+		 * The turnout of a station's throat both trains use by different ways, or 0.
+		 */
+		public final long turnoutNode;
 
 		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId) {
+			this(table, stopIndex, service, otherRouteId, otherService, platformId, 0);
+		}
+
+		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId, long turnoutNode) {
 			this.table = table;
 			this.stopIndex = stopIndex;
 			this.service = service;
 			this.otherRouteId = otherRouteId;
 			this.otherService = otherService;
 			this.platformId = platformId;
+			this.turnoutNode = turnoutNode;
 		}
 
 		@Override
@@ -431,12 +508,12 @@ public final class TimetableConflicts {
 				return false;
 			}
 			final Conflict conflict = (Conflict) object;
-			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId;
+			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId && turnoutNode == conflict.turnoutNode;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId);
+			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode);
 		}
 	}
 
@@ -527,6 +604,21 @@ public final class TimetableConflicts {
 
 		private ServiceStop getStop(long routeId) {
 			return stops.stream().filter(stop -> stop.routeId == routeId).findFirst().orElse(null);
+		}
+	}
+
+	private static class ThroatUse {
+
+		private final long start;
+		private final long end;
+		private final transitsim.network.ThroatRoutes.Item item;
+		private final ServiceStop stop;
+
+		private ThroatUse(long start, long end, transitsim.network.ThroatRoutes.Item item, ServiceStop stop) {
+			this.start = start;
+			this.end = end;
+			this.item = item;
+			this.stop = stop;
 		}
 	}
 

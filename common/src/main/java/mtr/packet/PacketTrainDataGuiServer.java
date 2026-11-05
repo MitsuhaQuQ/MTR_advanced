@@ -603,16 +603,35 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			}
 		}));
 
+		// Routes stopping at the same stations share their throats (L2), whatever platform they use
+		final Set<Long> stationIds = new HashSet<>();
+		platformIds.forEach(platformId -> {
+			final Station station = railwayData.dataCache.platformIdToStation.get(platformId);
+			if (station != null) {
+				stationIds.add(station.id);
+			}
+		});
 		final List<Route> routes = new ArrayList<>();
 		routes.add(route);
 		railwayData.routes.forEach(testRoute -> {
-			if (testRoute != route && testRoute.timetable.isActive() && (turnBackRouteIds.contains(testRoute.id) || testRoute.platformIds.stream().anyMatch(routePlatform -> platformIds.contains(routePlatform.platformId)))) {
+			if (testRoute != route && testRoute.timetable.isActive() && (turnBackRouteIds.contains(testRoute.id) || testRoute.platformIds.stream().anyMatch(routePlatform -> {
+				final Station station = railwayData.dataCache.platformIdToStation.get(routePlatform.platformId);
+				return platformIds.contains(routePlatform.platformId) || station != null && stationIds.contains(station.id);
+			}))) {
 				routes.add(testRoute);
 			}
 		});
 
 		final Map<Long, Long> nextRouteIds = getNextRouteIds(railwayData);
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		// The turnouts of each route's throats, from its own path where it has been found
+		final Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
+		routes.forEach(testRoute -> {
+			final RoutePaths.RoutePath routePath = RoutePaths.timesByPath(testRoute) ? railwayData.routePaths.getFound(testRoute, railwayData.dataCache, rails) : null;
+			if (routePath != null) {
+				throats.put(testRoute.id, routePath.getThroats(testRoute.platformIds.size(), rails));
+			}
+		});
 		final Map<Route, long[][]> knownTimes = new HashMap<>();
 		final Map<Route, Supplier<long[][]>> timeFinders = new HashMap<>();
 		final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
@@ -657,6 +676,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times, table.exceptions);
 						}
 						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
+						newRouteTimes.setThroats(throats.getOrDefault(testRoute.id, Collections.emptyList()));
 						turnBacks.getOrDefault(testRoute.id, Collections.emptySet()).forEach(newRouteTimes::addTurnBack);
 						routeTimes.add(newRouteTimes);
 					}
@@ -851,6 +871,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			response.writeLong(conflict.otherRouteId);
 			response.writeInt(conflict.otherService);
 			response.writeLong(conflict.platformId);
+			response.writeLong(conflict.turnoutNode);
 		});
 		Registry.sendToPlayer(player, PACKET_TIMETABLE_CONFLICTS, response);
 	}

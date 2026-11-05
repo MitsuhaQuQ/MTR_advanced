@@ -44,6 +44,8 @@ public final class EditorData {
 		}
 		final JsonObject data = new JsonObject();
 		final int dayStartMillis = TimetableConfig.getDayStartMillis();
+		// The turnouts of the throats each route passes (L2), for the stop editor
+		throats = mtr.client.ClientThroats.compute();
 		data.addProperty("dayStartMillis", dayStartMillis);
 		// Local time of day is UTC time of day plus this
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
@@ -103,6 +105,8 @@ public final class EditorData {
 		data.add("depots", depotsArray);
 		return data;
 	}
+
+	private static Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
 
 	private static JsonObject buildRoute(Route route, Map<Long, List<Platform>> stationPlatforms) {
 		final JsonObject routeObject = new JsonObject();
@@ -164,6 +168,27 @@ public final class EditorData {
 				candidatesArray.add(candidateObject);
 			});
 			stopObject.add("candidates", candidatesArray);
+			// The turnouts it passes coming in and going out, and the routes crossing them at this station
+			final List<transitsim.network.ThroatRoutes.StopThroat> routeThroats = throats.get(route.id);
+			if (routeThroats != null && i < routeThroats.size()) {
+				final JsonObject throatObject = new JsonObject();
+				throatObject.addProperty("entry", routeThroats.get(i).entry.size());
+				throatObject.addProperty("exit", routeThroats.get(i).exit.size());
+				final JsonArray crossingsArray = new JsonArray();
+				mtr.client.ClientThroats.crossings(throats, route, i, 20).forEach(crossing -> {
+					final JsonObject crossingObject = new JsonObject();
+					crossingObject.addProperty("route", String.valueOf(crossing.otherRouteId));
+					crossingObject.addProperty("stop", crossing.otherStop);
+					crossingObject.addProperty("entry", crossing.entry);
+					crossingObject.addProperty("otherEntry", crossing.otherEntry);
+					final BlockPos node = BlockPos.of(crossing.node);
+					crossingObject.addProperty("x", node.getX());
+					crossingObject.addProperty("z", node.getZ());
+					crossingsArray.add(crossingObject);
+				});
+				throatObject.add("crossings", crossingsArray);
+				stopObject.add("throat", throatObject);
+			}
 			stopsArray.add(stopObject);
 		}
 		routeObject.add("stops", stopsArray);

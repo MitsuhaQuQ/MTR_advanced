@@ -424,6 +424,25 @@ public final class RoutePaths {
 		}
 
 		/**
+		 * @return the turnouts each stop's train passes coming in and going out ({@link transitsim.network.ThroatRoutes},
+		 * L2), with the rails meeting at each node counted on the rails as they are
+		 */
+		public List<transitsim.network.ThroatRoutes.StopThroat> getThroats(int stopCount, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+			final long[] nodes = getNodes();
+			final int[] stopRails = new int[stopCount];
+			for (int i = 0; i < stopCount; i++) {
+				stopRails[i] = getStopRail(i);
+			}
+			return transitsim.network.ThroatRoutes.of(nodes, node -> {
+				final BlockPos pos = BlockPos.of(node);
+				return new double[]{pos.getX(), pos.getZ()};
+			}, stopRails, node -> {
+				final Map<BlockPos, Rail> connections = rails.get(BlockPos.of(node));
+				return connections == null ? 0 : connections.size();
+			});
+		}
+
+		/**
 		 * @return the nodes the path passes in order, for the map and the track diagram
 		 */
 		public long[] getNodes() {

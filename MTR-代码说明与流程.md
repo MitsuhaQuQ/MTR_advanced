@@ -874,6 +874,8 @@ sequenceDiagram
 
 **车站股道**（L2，`transitsim.network.StationTracks`）：输入每个站台（车站、轨道网、两端、名字、手动的待避线）和每条线路的各站（站台、沿站台的方向、是否通过）；输出每个站台的方向（`up`/`down`/`both`/空）、种类（`main`/`passing`/空）和在车站里的顺序。客户端 `ClientStationTracks.compute` 从 `ClientData` 取输入：沿站台的方向看线路在地图上的路径（`MAP_ROUTES`）里站台两端的先后。`EditorData.buildTopology` 把结果放在每个站台的 `track` 里，网页用 `trackLabel`/`trackShort` 统一写出；站台界面（`PlatformScreen`）也调它。
 
+**咽喉进路**（L2，`transitsim.network.ThroatRoutes`）：输入路径的节点、各站站台所在的轨道序号和每个节点相交的轨道数，输出每站的进站、出站进路（道岔节点和两侧节点）。服务端在时刻表冲突检查里用 `RoutePath.getThroats`（按线路路径和当前轨道）给每条线路 `RouteTimes.setThroats`，`TimetableConflicts.checkThroats` 按到站前、开车后各 30 秒（`THROAT_MILLIS`）找冲突，`Conflict.turnoutNode` 随冲突包发回，游戏时刻表界面用 `gui.mtr.timetable_conflicts_found_throat` 显示。客户端 `ClientThroats` 用地图数据算同样的进路和静态交叉，`EditorData` 放在每个停站的 `throat` 里，网页 `throatHtml` 显示在停站编辑的车站配线图下面。
+
 **地图上的弯道和全网配线**（MTM_Logic 0.5.0）：
 
 - 地图同步原来每段轨道只有两个端点，长弯道画成一条斜直线。现在多了一类 `MapSyncData.KIND_RAIL_SHAPES`，按和轨道相同的 128 格区块分组，只放弯道：两个节点、点数、各点（`RailShapes.pack`，四分之一格精度）。

@@ -1,5 +1,6 @@
 package mtr.data;
 
+import transitsim.network.ThroatRoutes;
 import transitsim.plan.TimetableConflicts;
 import transitsim.plan.RouteTimetable;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,50 @@ class TimetableConflictsTest {
 
 	private static TimetableConflicts.RouteTimes routeB(int... serviceMinutes) {
 		return route(ROUTE_B, new long[]{PLATFORM_3}, new long[][]{{0, 0}}, serviceMinutes);
+	}
+
+	/**
+	 * Route A arrives at its second stop over turnout 100 by way 1-2; route B leaves the same station from another track
+	 * over turnout 100 by way 1-3. Route A's service at 10 arrives there at 13.
+	 */
+	private static List<TimetableConflicts.Conflict> throatCheck(int bDepartureMillis, boolean sameWay) {
+		final TimetableConflicts.RouteTimes a = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 10);
+		a.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList()), new ThroatRoutes.StopThroat(Collections.singletonList(new ThroatRoutes.Item(100, 1, 2)), Collections.emptyList())));
+		final List<Route.RoutePlatform> stops = Arrays.asList(new Route.RoutePlatform(PLATFORM_3), new Route.RoutePlatform(14));
+		final TimetableConflicts.RouteTimes b = new TimetableConflicts.RouteTimes(ROUTE_B, stops, Collections.singletonList(bDepartureMillis), 0, new long[][]{{0, 0}, {3L * MINUTE, 3L * MINUTE}});
+		b.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.singletonList(new ThroatRoutes.Item(100, 1, sameWay ? 2 : 3))), new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList())));
+		return check(a, b);
+	}
+
+	@Test
+	void crossingTheThroatWithinHalfAMinuteConflicts() {
+		// A uses the turnout from 12:30 to 13:00, B from 12:45 to 13:15
+		final List<TimetableConflicts.Conflict> conflicts = throatCheck(12 * MINUTE + 45000, false);
+		assertEquals(1, conflicts.size());
+		assertEquals(100, conflicts.get(0).turnoutNode);
+		assertEquals(0, conflicts.get(0).platformId);
+		assertEquals(1, conflicts.get(0).stopIndex);
+		assertEquals(ROUTE_B, conflicts.get(0).otherRouteId);
+	}
+
+	@Test
+	void crossingTheThroatMinutesApartDoesnt() {
+		assertTrue(throatCheck(15 * MINUTE, false).isEmpty());
+	}
+
+	@Test
+	void followingTheSameWayIsntAThroatConflict() {
+		assertTrue(throatCheck(12 * MINUTE + 45000, true).isEmpty());
+	}
+
+	@Test
+	void throatConflictsGoRoundMidnight() {
+		// A's service at 23:57 arrives at midnight, on the turnout from 23:59:30; B leaves at 23:59:45
+		final TimetableConflicts.RouteTimes a = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 23 * 60 + 57);
+		a.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList()), new ThroatRoutes.StopThroat(Collections.singletonList(new ThroatRoutes.Item(100, 1, 2)), Collections.emptyList())));
+		final TimetableConflicts.RouteTimes b = new TimetableConflicts.RouteTimes(ROUTE_B, Arrays.asList(new Route.RoutePlatform(PLATFORM_3), new Route.RoutePlatform(14)), Collections.singletonList((23 * 60 + 59) * MINUTE + 45000), 0, new long[][]{{0, 0}, {3L * MINUTE, 3L * MINUTE}});
+		b.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.singletonList(new ThroatRoutes.Item(100, 1, 3))), new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList())));
+		assertEquals(1, check(a, b).size());
 	}
 
 	@Test

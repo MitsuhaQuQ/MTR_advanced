@@ -10,6 +10,7 @@ import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import mtr.data.Depot;
+import net.minecraft.core.BlockPos;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
 import mtr.data.Platform;
@@ -761,6 +762,12 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		final TimetableConflicts.Conflict conflict = serviceConflicts.get(0);
 		final Route otherRoute = ClientData.DATA_CACHE.routeIdMap.get(conflict.otherRouteId);
 		final int otherService = conflict.otherRouteId == route.id && conflict.otherService == baseMillis ? conflict.service : conflict.otherService;
+		if (conflict.turnoutNode != 0) {
+			// Both trains through a turnout of the throat by different ways at once (L2)
+			final Station station = conflict.stopIndex < route.platformIds.size() ? ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(conflict.stopIndex).platformId) : null;
+			final BlockPos turnout = BlockPos.of(conflict.turnoutNode);
+			return Text.translatable("gui.mtr.timetable_conflicts_found_throat", count, IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name)), turnout.getX() + ", " + turnout.getZ(), IGui.textOrUntitled(otherRoute == null ? "" : IGui.formatStationName(otherRoute.name)), EditDepotScreen.formatTime(otherService));
+		}
 		if (conflict.platformId == 0) {
 			return Text.translatable("gui.mtr.timetable_conflicts_found_turn_back", count, IGui.textOrUntitled(otherRoute == null ? "" : IGui.formatStationName(otherRoute.name)), EditDepotScreen.formatTime(otherService));
 		}

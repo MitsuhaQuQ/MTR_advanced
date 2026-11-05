@@ -3301,6 +3301,24 @@
 	 * The track diagram of a station: its rails as the game has them, curves included, turned so the train runs from left to
 	 * right along the track picked, with the station's tracks on the same rails to click like the cells of the picker.
 	 */
+	/**
+	 * A stop's throat as the game works it out from the route's path on the map (L2): the turnouts it passes coming in
+	 * and going out, and the other routes at the station whose way through one of them differs, which can't use it at
+	 * the same time. The route as it is in the game; track changes in the draft show once applied.
+	 */
+	function throatHtml(r, i) {
+		const stop = r && r.stops[i];
+		if (!stop || !stop.throat) return "";
+		const throat = stop.throat;
+		const side = entry => entry ? tr("进站") : tr("出站");
+		const crossings = throat.crossings.map(c => {
+			const other = data.routeById.get(c.route);
+			return tr("{0}和 {1} 的{2}在道岔（{3}, {4}）", side(c.entry), escapeHtml(other ? routeTitle(other) : "?"), side(c.otherEntry), c.x, c.z);
+		});
+		return `<p class="hint">${tr("咽喉：进站经过 {0} 组道岔，出站经过 {1} 组（按游戏里的线路路径）。", throat.entry, throat.exit)}</p>`
+			+ (crossings.length ? `<p class="hint">${tr("和这些进路交叉，不能同时走：")}${crossings.join(tr("；"))}${tr("。时刻表检查会找出时间上撞在一起的班次。")}</p>` : "");
+	}
+
 	function stationDiagramHtml(model) {
 		const diagram = model.diagram, i = diagram.stop, n = model.layers.length;
 		const head = `<div class="diagram-head"><b>${tr("{0} 配线图", escapeHtml(stationLabel(model.layers[i][0])))}</b><span class="tools"><button type="button" data-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-zoom="out" title="${tr("缩小")}">−</button></span></div>`;
@@ -3362,7 +3380,7 @@
 		parts.push(`</svg>`);
 		const before = i > 0 ? `← ${escapeHtml(stationLabel(model.layers[i - 1][0]))}` : "";
 		const after = i + 1 < n ? `${escapeHtml(stationLabel(model.layers[i + 1][0]))} →` : "";
-		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : ""}<p class="hint">${tr("列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。")}</p></div>`;
+		return `<div class="layout">${head}<div class="layout-ends"><span>${before}</span><span>${after}</span></div><div class="layout-wrap">${parts.join("")}</div>${data.truncated ? `<p class="hint">${tr("轨道太多，只画了一部分。")}</p>` : ""}<p class="hint">${tr("列车从左往右开。灰色的是别的车站或轨道不连的站台；拖动平移，＋/− 缩放。")}</p>${throatHtml(model.route, i)}</div>`;
 	}
 
 	/** Dragging a track diagram moves it, kept in the picker's model so it stays where it was left. */
@@ -3850,6 +3868,8 @@
 			return;
 		}
 		const model = topologyModel(tracks, r.stops.map((stop, i) => !pass[i]), colorOf(r.color));
+		// The route edited, for its stops' throats in the station diagram
+		model.route = r;
 		const problemsHtml = () => {
 			const problems = routeProblems(r);
 			return problems.length ? `<ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>` : `<p class="hint">${tr("现在的股道沿轨道走得通，没有掉头和绕路。")}</p>`;
