@@ -726,6 +726,8 @@
 	"gui.mtr.path_failure_old_search": "刷新失败：必经节点需要开启确定性寻路",
 	"gui.mtr.path_failure_missing_waypoint": "刷新失败：必经节点 %s 没有轨道",
 	"gui.mtr.path_failure_disconnected": "刷新失败：车站之间没有连通",
+	"gui.mtr.line_shortfall": "跑满需要 %s 列，现有 %s 列，每天 %s 班没有车",
+	"gui.mtr.line_shortfall_suggest": "，建议加到 %s",
 	"gui.mtr.path_failure_boundary": "刷新失败：被隔离挡住：下一站在寻路边界的另一侧（%s），要在边界上加途经点",
 	"gui.mtr.path_failure_connecting_line": "刷新失败：被隔离挡住：要经过联络线 %s（%s 附近），可以在配线图里放行这一段",
 	"gui.mtr.path_failure_no_route": "刷新失败：按行进方向走不通",

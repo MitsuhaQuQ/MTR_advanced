@@ -88,6 +88,16 @@ public final class EditorData {
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));
 			// Worked out from the timetables when the depot runs by a timetable and has no duties set
 			depotObject.add("autoDuties", EditorDuties.toJson(depot.autoDuties));
+			// Whether the lines planned with it have trains enough (LineDuties)
+			if (depot.lineShortfall != null) {
+				final JsonObject shortfallObject = new JsonObject();
+				shortfallObject.addProperty("lines", depot.lineShortfall.lineNames);
+				shortfallObject.addProperty("needed", depot.lineShortfall.needed);
+				shortfallObject.addProperty("available", depot.lineShortfall.available);
+				shortfallObject.addProperty("uncovered", depot.lineShortfall.uncoveredPerDay);
+				shortfallObject.addProperty("suggested", depot.lineShortfall.suggestedSiding);
+				depotObject.add("shortfall", shortfallObject);
+			}
 			depotsArray.add(depotObject);
 		});
 		data.add("depots", depotsArray);

@@ -287,9 +287,11 @@ public class MTRClient implements IPacket {
 			final long depotId = packet.readLong();
 			final transitsim.plan.DepotDuties autoDuties = new transitsim.plan.DepotDuties();
 			autoDuties.read(mtr.advanced.PacketBinary.of(packet));
+			final Depot.Shortfall shortfall = Depot.Shortfall.read(packet);
 			Minecraft.getInstance().execute(() -> {
 				final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 				if (depot != null) {
+					depot.lineShortfall = shortfall;
 					depot.autoDuties.diagramMode = autoDuties.diagramMode;
 					depot.autoDuties.sidings.clear();
 					depot.autoDuties.sidings.putAll(autoDuties.sidings);

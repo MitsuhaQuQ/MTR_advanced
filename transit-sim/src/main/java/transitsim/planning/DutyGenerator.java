@@ -107,7 +107,18 @@ public final class DutyGenerator {
 			firstPlatforms.add(service.stops.get(0).platformId);
 			lastPlatforms.add(service.stops.get(service.stops.size() - 1).platformId);
 		});
-		sidings.forEach(siding -> firstPlatforms.forEach(platformId -> network.addDepotLink(siding.sidingId, platformId, 0)));
+		// A siding with links of its own starts its trains only there, the nearest first; otherwise at any first stop
+		sidings.forEach(siding -> {
+			if (siding.links == null) {
+				firstPlatforms.forEach(platformId -> network.addDepotLink(siding.sidingId, platformId, 0));
+			} else {
+				siding.links.forEach((platformId, millis) -> {
+					if (firstPlatforms.contains(platformId)) {
+						network.addDepotLink(siding.sidingId, platformId, millis);
+					}
+				});
+			}
+		});
 		lastPlatforms.forEach(lastPlatform -> {
 			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS);
 			final Long station = stationOf.get(lastPlatform);
@@ -373,6 +384,16 @@ public final class DutyGenerator {
 		}
 	}
 
+	/**
+	 * @return how many trains the services need at most when the sidings have as many as they like, to compare with what
+	 * they have
+	 */
+	public static int neededTrains(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis) {
+		final List<SidingInput> unlimited = new ArrayList<>();
+		sidings.forEach(siding -> unlimited.add(new SidingInput(siding.sidingId, -1, siding.links)));
+		return generate(services, unlimited, stationOf, maxLayoverMillis).trains;
+	}
+
 	public static final class SidingInput {
 
 		public final long sidingId;
@@ -380,10 +401,21 @@ public final class DutyGenerator {
 		 * The trains the siding holds, or -1 for no limit.
 		 */
 		public final int maxTrains;
+		/**
+		 * The platforms its trains can start at and how long the run there takes, or null for every first stop at once.
+		 * Planning by operating line, a siding starts at the first stops of its own depot's routes, and the nearer siding
+		 * is taken first.
+		 */
+		public final Map<Long, Long> links;
 
 		public SidingInput(long sidingId, int maxTrains) {
+			this(sidingId, maxTrains, null);
+		}
+
+		public SidingInput(long sidingId, int maxTrains, Map<Long, Long> links) {
 			this.sidingId = sidingId;
 			this.maxTrains = maxTrains;
+			this.links = links;
 		}
 	}
 

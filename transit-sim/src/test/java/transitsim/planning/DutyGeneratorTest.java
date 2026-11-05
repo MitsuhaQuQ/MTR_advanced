@@ -58,6 +58,48 @@ class DutyGeneratorTest {
 	}
 
 	@Test
+	void aSidingStartingOnlyOnTheUpLineRunsBothDirections() {
+		// The depot lists only the up route, so its trains start at its first stop, then turn back onto the down route
+		final List<DutyGenerator.ServiceInput> services = shuttle();
+		final DutyGenerator.Result result = DutyGenerator.generate(services, Collections.singletonList(new DutyGenerator.SidingInput(100, 4, Collections.singletonMap(11L, 0L))), stations(), 30 * MINUTE);
+		assertEquals(0, result.uncovered);
+		final Set<Long> routes = new HashSet<>();
+		result.sidings.get(100L).forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> routes.add(segment.routeId))));
+		assertEquals(new HashSet<>(Arrays.asList(ROUTE_UP, ROUTE_DOWN)), routes);
+	}
+
+	@Test
+	void theNearerSidingIsTakenFirst() {
+		final Map<Long, Long> far = new HashMap<>();
+		far.put(11L, 10 * MINUTE);
+		far.put(22L, 10 * MINUTE);
+		final Map<Long, Long> near = new HashMap<>();
+		near.put(11L, MINUTE);
+		near.put(22L, MINUTE);
+		final DutyGenerator.Result result = DutyGenerator.generate(shuttle(), Arrays.asList(new DutyGenerator.SidingInput(100, 4, far), new DutyGenerator.SidingInput(200, 4, near)), stations(), 30 * MINUTE);
+		assertEquals(0, result.uncovered);
+		assertTrue(result.sidings.getOrDefault(100L, Collections.emptyList()).isEmpty(), "the far siding has nothing to do");
+		assertEquals(2, result.sidings.get(200L).size());
+	}
+
+	@Test
+	void tooFewTrainsAreCountedAgainstWhatIsNeeded() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1));
+		final DutyGenerator.Result result = DutyGenerator.generate(shuttle(), sidings, stations(), 30 * MINUTE);
+		assertTrue(result.uncovered > 0);
+		assertEquals(2, DutyGenerator.neededTrains(shuttle(), sidings, stations(), 30 * MINUTE));
+	}
+
+	private static List<DutyGenerator.ServiceInput> shuttle() {
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			services.add(service(ROUTE_UP, 360 + i * 30L, DepotDuties.ALL_WEEKDAYS, 0, 0));
+			services.add(service(ROUTE_DOWN, 385 + i * 30L, DepotDuties.ALL_WEEKDAYS, 0, 0));
+		}
+		return services;
+	}
+
+	@Test
 	void runsLinkedServicesAsOneTrain() {
 		final List<DutyGenerator.ServiceInput> services = Arrays.asList(
 				service(ROUTE_UP, 360, DepotDuties.ALL_WEEKDAYS, ROUTE_DOWN, 385),

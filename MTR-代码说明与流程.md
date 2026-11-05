@@ -933,9 +933,16 @@ sequenceDiagram
 
 ### 9.4 运用路径和自动运用（用时刻表的车厂）
 
-- **自动运用**：车厂用时刻表、又没设运用时，`MainPath.generate` 里先 `generateAutoDuties`：用线路自己的最快时刻（`RoutePaths.Search.getFastestTimes`，跑这条线路的最慢车型，和编辑器显示的一样；手画路径的线路按车厂路径 `getFastestTimesFromFirstStop`），`AutoDuties.generate`（包在 `DutyGenerator` 外）把这组线路的班次串成车最少的运用，不超过每条存车线的上限，存进 `Depot.autoDuties`（存档 `auto_duties`），并发给客户端（`PACKET_AUTO_DUTIES`）。日志写出几列车、每天几班没有车、让给别人几班。
-- **让出的班次**（`autoTaken`）：先放进共用线路的其他车厂已在跑的班次（`Depot.getSharedTaken`，在主线程上读），同一车厂车型不同的几组存车线按先后再接着让，同一个班次不会跑两遍。
-- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的线路时刻表、站台、存车线、车型、共用线路被占的班次或同一运输方式的联络线变了（`Depot.takeAutoDutiesChange` 比较 `getAutoDutiesKey`），就重新寻路，每次最多一个车厂；读档后也会算一次。
+- **自动运用按运营线路排**（`LineDuties`，MTM_Logic 0.6.0）：车厂用时刻表、又没设运用时，运用不再按车厂各自排，而是按运营线路一起排。
+  - **运营线路**是线路组（`LineDuties.getLineKey`：运输方式加 `Route.getLineKey`，和网页的 `lineKey` 相同），包括上下行、各种别和支线。
+  - **规划单元**（`LineDuties.Unit`，`LineDuties.of` 在主线程上建）：从这个车厂出发，经它列的线路找到这些线路的所有线路组，再找列了这些线路组的其他按线路排的车厂（`plansByLine`：用时刻表、没设运用、不是连续运动或飞机），直通关系连着的线路组也算进来，一直连下去。
+  - **班次**：单元里所有线路组的、启用时刻表的线路的全部班次（`DutyGenerator.servicesOf`），最快时刻用线路自己的（`RoutePaths.Search.getFastestTimes`）；设了运用的车厂已经在跑的班次先去掉。
+  - **存车线**：单元里各车厂区域内的存车线，按车辆能跑的服务类型分组（`getServiceTypes`、`filterRoutes`），各组按先后排，前面的组用掉的班次后面的组不再排。
+  - **从哪里出车**：一条存车线的车只从它自己车厂所列线路的首站出发（`DutyGenerator.SidingInput.links`），代价按存车线到站台的直线距离（每格 50 毫秒），规划器优先用最近的存车线；出发以后可以跑这条运营线路的任何线路，在同一车站折返接下一班。所以只列了单方向线路的车厂，车也能跑另一个方向。回库仍回自己车厂的车池。
+  - **怎么分给车厂**：每个车厂在自己的寻路线程里把整个单元排一遍（`Unit.plan`），只留下自己存车线的槽位；同样的单元总是排出同样的结果，所以各车厂一致。`MainPath.generateAutoDuties` 把这些槽位存进 `Depot.autoDuties` 并发给客户端。
+  - **车够不够**（`LineDuties.Plan`、`Depot.Shortfall`）：有班次没车时，取离线路最近的存车线，用折半查找求出它最少再加几列，能让没车的班次降到车再多也降不下去的数（`Unit.extraTrains`，约 8 次规划），跑满需要的车数就是现有的加上这些。随自动运用发给客户端（`PACKET_AUTO_DUTIES` 和车厂整包末尾），车厂界面和网页（车厂一行、时刻表上方）显示"跑满需要 N 列，现有 M 列，每天 K 班没有车，建议加到 …"。日志每次排单元写一行 `planned the duties of line …`。
+  - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
+- **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。
 - **运用路径**：`MainPath.getDutyPlans` 读整个车池所有存车线的槽位，每个运用形状一个 `DutyPlan`（主体，整个车厂共用）。主体从线路路径上按站切出来（`getSlice`），中途接入的引导段也一样；网页草稿的路径（`findDutyPaths`）没有 `routeSearch`，仍各自寻路。`Siding.addDutyPath` 给每个形状生成"出库 + 主体 + 回本存车线"的路径，再给车池里每条别的存车线生成回那里的版本（键 `<运用键>#<存车线>`，末站到各存车线的路径只找一次）；留线过夜的运用没有回库段。网页草稿的路径（`findDutyPaths`）只有回本存车线的版本。
 
 ## 10. ANTE 脚本

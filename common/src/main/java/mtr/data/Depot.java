@@ -101,6 +101,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private String autoDutiesKey;
 	/**
+	 * Whether the lines of the depot's planning unit have trains enough, from the last time its duties were worked out,
+	 * sent to the players with the auto duties; null if not planned by line.
+	 */
+	public Shortfall lineShortfall;
+	/**
 	 * The operating day each slot last ran its duty, as "siding:slot", so a duty runs once a day however its train gets to it.
 	 */
 
@@ -252,6 +257,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		speedCurves = packet.readBoolean();
 		autoDuties.read(PacketBinary.of(packet));
 		releaseInterval = packet.readInt();
+		lineShortfall = Shortfall.read(packet);
 	}
 
 	@Override
@@ -347,6 +353,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(speedCurves);
 		autoDuties.write(PacketBinary.of(packet));
 		packet.writeInt(releaseInterval);
+		Shortfall.write(lineShortfall, packet);
 	}
 
 	/**
@@ -357,6 +364,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 			packet.writeLong(id);
 			autoDuties.write(PacketBinary.of(packet));
+			Shortfall.write(lineShortfall, packet);
 			mtr.Registry.sendToPlayer(player, mtr.packet.IPacket.PACKET_AUTO_DUTIES, packet);
 		});
 	}
@@ -488,8 +496,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		// the way through or have it find a path on a network changed half way
 		final DataCache dataCache = liveDataCache.copyIdMaps();
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = DataCache.copyRails(liveRails);
-		// Read here, on the server thread, as the other depots' duties may change while the path is found
-		final Set<String> sharedTaken = getSharedTaken(liveDataCache);
+		// The planning unit of the depot's lines, read here on the server thread, as the other depots and their duties may
+		// change while the path is found
+		final LineDuties.Unit lineUnit = LineDuties.of(this, liveDataCache, sidings);
 		// Vehicles only run some types of service, so each group of them gets a path of its own routes
 		final Map<Set<String>, List<Siding>> sidingGroups = new LinkedHashMap<>();
 		sidings.forEach(siding -> {
@@ -516,11 +525,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
 				PathFailure failure = PathFailure.NONE;
-				// Groups of sidings running the same routes share their services out, the first group first, after the
-				// depots sharing a route with this one
-				final Set<String> autoTaken = new HashSet<>(sharedTaken);
+				// The duties of the whole unit, planned at once by operating line, of which this depot keeps its own sidings'
+				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null ? null : lineUnit.plan(route -> {
+					final long[][] times = routeSearch.getFastestTimes(route, dataCache);
+					return times == null || times.length == 0 ? null : times;
+				}, TimetableConfig.getDayStartMillis());
+				if (linePlan != null) {
+					System.out.println("Minecraft Transit Railway: planned the duties of " + linePlan.describe());
+				}
 				for (final MainPath mainPath : mainPaths) {
-					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, autoTaken));
+					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, linePlan));
 					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
 				}
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure);
@@ -802,7 +816,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		return taken;
 	}
 
+	/**
+	 * @return what the depot's auto duties are worked out from: those of its whole planning unit ({@link LineDuties}), so
+	 * a change on any line or depot of the unit works out every depot of it again; null if it doesn't plan by line
+	 */
 	public String getAutoDutiesKey(DataCache dataCache, Set<Siding> sidings) {
+		final LineDuties.Unit unit = LineDuties.of(this, dataCache, sidings);
+		return unit == null ? null : unit.key;
+	}
+
+	/**
+	 * The key of the depot's auto duties planned on its own, before planning by line; kept for reference by add-ons.
+	 */
+	@Deprecated
+	public String getDepotAutoDutiesKey(DataCache dataCache, Set<Siding> sidings) {
 		if (duties.diagramMode || transportMode.continuousMovement) {
 			return null;
 		}
@@ -1080,6 +1107,46 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	/**
 	 * The path through some of the depot's routes, shared by the sidings whose vehicles run those routes.
 	 */
+	/**
+	 * Whether a planning unit's lines have trains enough ({@link LineDuties.Plan}): the trains needed to run every service,
+	 * those the sidings hold, the services a day with no train and where to add trains.
+	 */
+	public static final class Shortfall {
+
+		public final String lineNames;
+		public final int needed;
+		public final int available;
+		public final int uncoveredPerDay;
+		public final String suggestedSiding;
+
+		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding) {
+			this.lineNames = lineNames;
+			this.needed = needed;
+			this.available = available;
+			this.uncoveredPerDay = uncoveredPerDay;
+			this.suggestedSiding = suggestedSiding;
+		}
+
+		Shortfall(LineDuties.Plan plan) {
+			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding);
+		}
+
+		public static void write(Shortfall shortfall, FriendlyByteBuf packet) {
+			packet.writeBoolean(shortfall != null);
+			if (shortfall != null) {
+				packet.writeUtf(shortfall.lineNames);
+				packet.writeInt(shortfall.needed);
+				packet.writeInt(shortfall.available);
+				packet.writeInt(shortfall.uncoveredPerDay);
+				packet.writeUtf(shortfall.suggestedSiding);
+			}
+		}
+
+		public static Shortfall read(FriendlyByteBuf packet) {
+			return packet.readBoolean() ? new Shortfall(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readUtf(PACKET_STRING_READ_LENGTH)) : null;
+		}
+	}
+
 	private class MainPath {
 
 		/**
@@ -1090,7 +1157,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 *
 		 * @return the duties, or null if the depot doesn't run by a timetable
 		 */
-		private DepotDuties generateAutoDuties(MinecraftServer minecraftServer, Set<String> autoTaken) {
+		private DepotDuties generateAutoDuties(MinecraftServer minecraftServer, LineDuties.Plan linePlan) {
 			final Set<Long> sidingIds = new HashSet<>();
 			sidings.forEach(siding -> sidingIds.add(siding.id));
 			final boolean byTimetable = !mainRoutes.isEmpty() && getActiveTimetable(mainRoutes.get(0)) != null && !transportMode.continuousMovement && !sidings.isEmpty();
@@ -1101,6 +1168,26 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				});
 				return null;
 			}
+			if (linePlan != null) {
+				// Planned with the depot's whole planning unit: these sidings' slots of it
+				final DepotDuties planned = new DepotDuties();
+				planned.diagramMode = true;
+				sidingIds.forEach(sidingId -> {
+					final List<DepotDuties.Slot> slots = linePlan.sidings.get(sidingId);
+					if (slots != null && !slots.isEmpty()) {
+						planned.sidings.put(sidingId, slots);
+					}
+				});
+				minecraftServer.execute(() -> {
+					autoDuties.sidings.keySet().removeAll(sidingIds);
+					autoDuties.sidings.putAll(planned.sidings);
+					autoDuties.diagramMode = true;
+					lineShortfall = new Shortfall(linePlan);
+					sendAutoDuties(minecraftServer);
+				});
+				return planned;
+			}
+			final Set<String> autoTaken = new HashSet<>();
 			final Map<Long, long[][]> fastestTimes = new HashMap<>();
 			for (int i = 0; i < mainRoutes.size(); i++) {
 				final List<PathData> routePath = pathsInRoute.get(i);
@@ -1676,9 +1763,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		/**
-		 * @param autoTaken the services the sidings of other groups already run by their auto duties
+		 * @param linePlan the duties of the depot's planning unit, or null if there are none
 		 */
-		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed, Set<String> autoTaken) {
+		private int generate(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed, LineDuties.Plan linePlan) {
 			final List<PathData> tempPath = new ArrayList<>();
 			final List<TurnBackSection<PathData>> turnBackSections = new ArrayList<>();
 			final List<DepotReturn<PathData, SavedRailBase>> depotReturns = new ArrayList<>();
@@ -1762,7 +1849,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final SavedRailBase entryPlatform = loopJoinPath.isEmpty() ? null : platformsInRoute.get(0).get(loopEntryStop);
 			final List<TripTail<PathData, SavedRailBase>> tripTails = getTripTails(tempPath, rails, graph, useFastSpeed);
 
-			final DepotDuties runDuties = duties.diagramMode ? duties : generateAutoDuties(minecraftServer, autoTaken);
+			final DepotDuties runDuties = duties.diagramMode ? duties : generateAutoDuties(minecraftServer, linePlan);
 
 			int successfulSegments = Integer.MAX_VALUE;
 			for (final Siding siding : sidings) {

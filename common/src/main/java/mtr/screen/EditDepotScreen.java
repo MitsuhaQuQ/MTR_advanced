@@ -296,6 +296,12 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			if (!pathStatus.isEmpty()) {
 				GuiCompat.draw(matrices, font, Text.literal(pathStatus), rightPanelsX + TEXT_PADDING, yStartRightPane + SQUARE_SIZE * 2 + (TEXT_HEIGHT + TEXT_PADDING) * stringSplit.length, ARGB_LIGHT_GRAY);
 			}
+			// The lines planned with this depot are short of trains (LineDuties)
+			final Depot.Shortfall shortfall = data.lineShortfall;
+			if (shortfall != null && shortfall.uncoveredPerDay > 0 && !data.duties.diagramMode) {
+				final String shortfallText = Text.translatable("gui.mtr.line_shortfall", shortfall.needed, shortfall.available, shortfall.uncoveredPerDay).getString() + (shortfall.suggestedSiding.isEmpty() ? "" : Text.translatable("gui.mtr.line_shortfall_suggest", shortfall.suggestedSiding).getString());
+				GuiCompat.draw(matrices, font, Text.literal(font.plainSubstrByWidth(shortfallText, width - rightPanelsX - TEXT_PADDING * 2)), rightPanelsX + TEXT_PADDING, yStartRightPane + SQUARE_SIZE * 2 + (TEXT_HEIGHT + TEXT_PADDING) * (stringSplit.length + (pathStatus.isEmpty() ? 0 : 1)), 0xFFFF8080);
+			}
 
 			if (showScheduleControls && !data.useRealTime) {
 				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.game_time"), sliderX / 2, SQUARE_SIZE + TEXT_PADDING, ARGB_LIGHT_GRAY);

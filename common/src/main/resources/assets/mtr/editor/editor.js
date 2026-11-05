@@ -206,6 +206,20 @@
 		openMenu(e.clientX, e.clientY, items);
 	}
 
+	/** Whether a planning unit's lines have trains enough, as the server worked out their duties by line. */
+	function shortfallText(shortfall) {
+		return tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered) + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
+	}
+
+	/** The shortfalls of the depots running a route, each unit once. */
+	function shortfallsOf(r) {
+		const texts = new Set();
+		(data.depots || []).forEach(depot => {
+			if (depot.shortfall && depot.shortfall.uncovered > 0 && (depot.routes || []).some(id => data.routeById.get(id) && data.routeById.get(id).lineKey === r.lineKey)) texts.add(shortfallText(depot.shortfall));
+		});
+		return [...texts];
+	}
+
 	/** A connecting line: other lines' paths keep off its rails, while services can run through it with passengers. */
 	function setConnecting(r, connecting) {
 		const entry = draftEntry(r);
@@ -1107,7 +1121,7 @@
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("在线预约")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
 				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
@@ -2372,7 +2386,7 @@
 		const timetable = timetableOf(r), today = timetable.tables.findIndex(table => table.weekdays >> state.weekday & 1);
 		const managed = isManaged(r), pending = draftOf(r) && "managed" in draftOf(r), drafted = Boolean(draftOf(r) && draftOf(r).timetable);
 		const connecting = isConnecting(r), connectingPending = draftOf(r) && "connectingLine" in draftOf(r);
-		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>${r.pathFailure ? `<span class="err">${escapeHtml(r.pathFailure)}</span>` : ""}
+		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>${r.pathFailure ? `<span class="err">${escapeHtml(r.pathFailure)}</span>` : ""}${shortfallsOf(r).map(text => `<span class="err">${escapeHtml(text)}</span>`).join("")}
 			<span class="pill${managed ? " managed" : ""}" title="${tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}">${managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}${pending ? tr("（草稿）") : ""}</span>
 			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button>
 			${connecting ? `<span class="pill" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${tr("联络线")}${connectingPending ? tr("（草稿）") : ""}</span>` : ""}

@@ -724,6 +724,8 @@
 	"gui.mtr.path_failure_old_search": "刷新失敗：必經節點需要開啟確定性尋路",
 	"gui.mtr.path_failure_missing_waypoint": "刷新失敗：必經節點 %s 沒有軌道",
 	"gui.mtr.path_failure_disconnected": "刷新失敗：車站之間沒有連通",
+	"gui.mtr.line_shortfall": "跑滿需要 %s 列，現有 %s 列，每天 %s 班沒有車",
+	"gui.mtr.line_shortfall_suggest": "，建議加到 %s",
 	"gui.mtr.path_failure_boundary": "刷新失敗：被隔離擋住：下一站在尋路邊界的另一側（%s），要在邊界上加途經點",
 	"gui.mtr.path_failure_connecting_line": "刷新失敗：被隔離擋住：要經過聯絡線 %s（%s 附近），可以在配線圖裡放行這一段",
 	"gui.mtr.path_failure_no_route": "刷新失敗：按行進方向走不通",
