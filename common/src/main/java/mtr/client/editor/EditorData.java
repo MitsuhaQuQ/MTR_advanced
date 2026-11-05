@@ -285,6 +285,8 @@ public final class EditorData {
 		final PlatformGraph platformGraph = ClientData.PATH_REGIONS.platformGraph;
 		final JsonObject topology = new JsonObject();
 		final JsonArray platformsArray = new JsonArray();
+		// Up or down, main line or passing track, and the order across the station (L2)
+		final Map<Long, transitsim.network.StationTracks.Track> tracks = mtr.client.ClientStationTracks.compute();
 		for (int i = 0; i < platformGraph.size(); i++) {
 			final long platformId = platformGraph.getPlatformId(i);
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId);
@@ -325,6 +327,14 @@ public final class EditorData {
 				waysArray.add(wayObject);
 			}
 			platformObject.add("ways", waysArray);
+			final transitsim.network.StationTracks.Track track = tracks.get(platformId);
+			if (track != null) {
+				final JsonObject trackObject = new JsonObject();
+				trackObject.addProperty("direction", track.direction);
+				trackObject.addProperty("kind", track.kind);
+				trackObject.addProperty("order", track.order);
+				platformObject.add("track", trackObject);
+			}
 			platformsArray.add(platformObject);
 		}
 		topology.add("platforms", platformsArray);

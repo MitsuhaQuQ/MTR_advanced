@@ -866,6 +866,8 @@ sequenceDiagram
 - 网页上右键一段轨道打开菜单（`railMenu`）：边界放进草稿 `draft.boundaries`，应用时是操作 `pathBoundary`，客户端用 `sendPathBoundaryC2S` 发出；放行是操作 `connectingRelease`，客户端用 `Route.setExtraData` 发出。
 - 仪表盘地图（`WidgetMap.drawIsolation`）用客户端已有的数据画同一层，状态由 `MapIsolation.getStatuses` 给出（网页的全网配线也用它）：边界来自 `ClientData.PATH_REGIONS.boundaries`，联络线来自它在地图上的路径（`MAP_ROUTES`），去掉站台轨道。
 
+**车站股道**（L2，`transitsim.network.StationTracks`）：输入每个站台（车站、轨道网、两端、名字、手动的待避线）和每条线路的各站（站台、沿站台的方向、是否通过）；输出每个站台的方向（`up`/`down`/`both`/空）、种类（`main`/`passing`/空）和在车站里的顺序。客户端 `ClientStationTracks.compute` 从 `ClientData` 取输入：沿站台的方向看线路在地图上的路径（`MAP_ROUTES`）里站台两端的先后。`EditorData.buildTopology` 把结果放在每个站台的 `track` 里，网页用 `trackLabel`/`trackShort` 统一写出；站台界面（`PlatformScreen`）也调它。
+
 **地图上的弯道和全网配线**（MTM_Logic 0.5.0）：
 
 - 地图同步原来每段轨道只有两个端点，长弯道画成一条斜直线。现在多了一类 `MapSyncData.KIND_RAIL_SHAPES`，按和轨道相同的 128 格区块分组，只放弯道：两个节点、点数、各点（`RailShapes.pack`，四分之一格精度）。

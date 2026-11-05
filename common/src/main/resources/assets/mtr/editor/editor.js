@@ -2552,9 +2552,9 @@
 
 	/** The platform a stop uses and the other tracks of its station on the same rails. */
 	function trackTitle(stop) {
-		const trackName = c => `${c.name || "?"}${c.passingTrack ? tr("（待避线）") : ""}`;
+		const trackName = c => trackLabel(c.id, c.name, c.passingTrack);
 		const others = (stop.candidates || []).filter(c => c.id !== stop.platformId);
-		return ` ${tr("站台 {0}{1}", trackName({ name: stop.platform, passingTrack: stop.passingTrack }), others.length ? `${tr("；还可停 {0}", others.map(trackName).join("、"))}` : "")}`;
+		return ` ${tr("站台 {0}{1}", trackName({ id: stop.platformId, name: stop.platform, passingTrack: stop.passingTrack }), others.length ? `${tr("；还可停 {0}", others.map(trackName).join("、"))}` : "")}`;
 	}
 
 	/** The stop where trains from the depot join a loop, which is its first stop unless another is set. */
@@ -2956,6 +2956,29 @@
 	}
 
 	const isUsable = s => Boolean(topo.platforms[s >> 1] && topo.platforms[s >> 1].ways[s & 1].usable);
+	/*
+	 * A station's tracks as the game works them out from the routes (L2, StationTracks): up or down by where the routes'
+	 * first and last stations lie (north or east is up), and main line or passing track, the hand-set flag first. Every
+	 * place naming a track says it the same way.
+	 */
+	const TRACK_DIRECTIONS = { up: "上行", down: "下行", both: "双向" };
+	const TRACK_SHORT = { up: "上", down: "下", both: "双" };
+	function trackInfo(id, passingTrack) {
+		const index = topo && topo.index.get(id);
+		const track = index !== undefined && topo.platforms[index] ? topo.platforms[index].track : null;
+		const kind = passingTrack ? "passing" : track && track.kind ? track.kind : "";
+		return { direction: track && track.direction ? track.direction : "", kind };
+	}
+	/** As "上行 3道 正线". */
+	function trackLabel(id, name, passingTrack) {
+		const { direction, kind } = trackInfo(id, passingTrack);
+		return [direction ? tr(TRACK_DIRECTIONS[direction]) : "", tr("{0}道", name || "?"), kind === "main" ? tr("正线") : kind === "passing" ? tr("待避线") : ""].filter(Boolean).join(" ");
+	}
+	/** As "上 3 待避", for the narrow cells of the stop picker. */
+	function trackShort(id, name, passingTrack) {
+		const { direction, kind } = trackInfo(id, passingTrack);
+		return [direction ? tr(TRACK_SHORT[direction]) : "", name || "?", kind === "main" ? tr("正") : kind === "passing" ? tr("待避") : ""].filter(Boolean).join(" ");
+	}
 	const platformLabel = i => topo.platforms[i].name || "?";
 	const stationLabel = i => shortName(topo.platforms[i].stationName) || tr("（不属于车站）");
 	/** The tracks of a platform's station on the same rails, by name so they keep their rows whichever is picked. */
@@ -3216,8 +3239,8 @@
 			tracks.forEach((p, k) => {
 				const on = model.picks[i] === p, pinned = model.pins.has(i) && model.pins.get(i) === p, ok = solution.feasible[i].has(p);
 				const classes = ["track", on ? "on" : "", pinned ? "pinned" : "", ok ? "" : "dead"].filter(Boolean).join(" ");
-				const title = `${platformLabel(p)}${topo.platforms[p].passingTrack ? tr("（待避线）") : ""}：${pinned ? tr("已固定，点一下取消") : ok ? tr("点一下固定走这一股") : tr("和其他站连不起来，点一下仍可固定")}`;
-				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(i, k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(i, k) + 14}">${pinned ? "● " : ""}${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? tr(" 待避") : ""}</text></g>`);
+				const title = `${trackLabel(topo.platforms[p].id, platformLabel(p), topo.platforms[p].passingTrack)}：${pinned ? tr("已固定，点一下取消") : ok ? tr("点一下固定走这一股") : tr("和其他站连不起来，点一下仍可固定")}`;
+				parts.push(`<g class="${classes}" data-stop="${i}" data-track="${p}" tabindex="0"><title>${escapeHtml(title)}</title><rect x="${x(i)}" y="${y(i, k)}" width="${cellW}" height="20" rx="4"${on ? ` style="fill:${model.color};stroke:${model.color}"` : ""}/><text x="${x(i) + cellW / 2}" y="${y(i, k) + 14}">${pinned ? "● " : ""}${escapeHtml(trackShort(topo.platforms[p].id, platformLabel(p), topo.platforms[p].passingTrack))}</text></g>`);
 			});
 			const stops = model.stop[i] || end;
 			parts.push(`<g class="stop-toggle${end ? " fixed" : ""}" data-toggle="${i}"${end ? "" : ` tabindex="0"`}><title>${end ? tr("首末站，停车") : stops ? tr("停车，点一下改为通过") : tr("通过，点一下改为停车")}</title><text x="${x(i) + cellW / 2}" y="${top(i) + blockH - 8}">${stops ? tr("停") : tr("过")}</text></g>`);
@@ -3319,8 +3342,8 @@
 			const on = ours && model.picks[i] === index, pinned = ours && model.pins.get(i) === index;
 			const dead = ours && solution && !solution.feasible[i].has(index);
 			const classes = ["platform", ours ? "ours" : "other", on ? "on" : "", pinned ? "pinned" : "", dead ? "dead" : ""].filter(Boolean).join(" ");
-			const label = `${pinned ? "● " : ""}${p.name || "?"}${p.passingTrack ? tr(" 待避") : ""}${!ours && p.stationName && p.station !== station ? " · " + shortName(p.stationName) : ""}`;
-			const title = ours ? `${p.name || "?"}：${pinned ? tr("已固定，点一下取消") : dead ? tr("和其他站连不起来，点一下仍可固定") : tr("点一下固定走这一股")}` : `${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.station === station ? tr("：和这条线的轨道不连") : ""}`;
+			const label = `${pinned ? "● " : ""}${trackShort(p.id, p.name, p.passingTrack)}${!ours && p.stationName && p.station !== station ? " · " + shortName(p.stationName) : ""}`;
+			const title = ours ? `${trackLabel(p.id, p.name, p.passingTrack)}：${pinned ? tr("已固定，点一下取消") : dead ? tr("和其他站连不起来，点一下仍可固定") : tr("点一下固定走这一股")}` : `${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.station === station ? tr("：和这条线的轨道不连") : ""}`;
 			// The name goes before the left end, where tracks side by side don't crowd it
 			const start = a[0] <= b[0] ? a : b;
 			parts.push(`<g class="${classes}"${ours ? ` data-stop="${i}" data-track="${index}" tabindex="0"` : ""}><title>${escapeHtml(title)}</title><line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="${unit * (on ? 7 : 5)}"${on ? ` style="stroke:${model.color}"` : ""}${dead ? ` stroke-dasharray="${unit * 4} ${unit * 3}"` : ""}/><text x="${start[0] - unit * 6}" y="${start[1] + unit * 4}" font-size="${unit * 11}" text-anchor="end">${escapeHtml(label)}</text></g>`);
@@ -3601,7 +3624,7 @@
 			}
 			if (form.fromTrack.dataset.station !== form.from.value) {
 				form.fromTrack.dataset.station = form.from.value;
-				form.fromTrack.innerHTML = `<option value="">${tr("任一股")}</option>` + tracksOf(form.from.value).map(p => `<option value="${p}">${escapeHtml(platformLabel(p))}${topo.platforms[p].passingTrack ? tr(" 待避") : ""}</option>`).join("");
+				form.fromTrack.innerHTML = `<option value="">${tr("任一股")}</option>` + tracksOf(form.from.value).map(p => `<option value="${p}">${escapeHtml(trackLabel(topo.platforms[p].id, platformLabel(p), topo.platforms[p].passingTrack))}</option>`).join("");
 			}
 			if (form.addVia && form.addVia.value) {
 				vias.push(form.addVia.value);
@@ -3921,7 +3944,7 @@
 					b[0] = m[0] + half;
 					a[1] = b[1] = m[1];
 				}
-				parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.passingTrack ? tr("（待避线）") : ""}`)}</title><line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"${ours ? ` style="stroke:${color}"` : ""}/></g>`);
+				parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${trackLabel(p.id, p.name, p.passingTrack)}`)}</title><line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"${ours ? ` style="stroke:${color}"` : ""}/></g>`);
 			});
 			// Station names, over the top lane and under the bottom one, a row further out for each name in the way
 			for (let i = piece.from; i <= piece.to; i++) {
@@ -4043,7 +4066,7 @@
 		result.platforms.forEach(p => {
 			const ours = routePlatforms.has(p.id);
 			const line = p.line;
-			parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${p.name || "?"}${p.passingTrack ? tr("（待避线）") : ""}`)}</title><line x1="${x(line[0])}" y1="${y(line[1])}" x2="${x(line[2])}" y2="${y(line[3])}"${ours ? ` style="stroke:${color}"` : ""}/>${ours ? `<text x="${((+x(line[0]) + +x(line[2])) / 2).toFixed(1)}" y="${(Math.min(+y(line[1]), +y(line[3])) - 4).toFixed(1)}">${escapeHtml(p.name || "?")}</text>` : ""}</g>`);
+			parts.push(`<g class="platform ${ours ? "ours" : "other"}"><title>${escapeHtml(`${shortName(p.stationName) || tr("不属于车站")} ${trackLabel(p.id, p.name, p.passingTrack)}`)}</title><line x1="${x(line[0])}" y1="${y(line[1])}" x2="${x(line[2])}" y2="${y(line[3])}"${ours ? ` style="stroke:${color}"` : ""}/>${ours ? `<text x="${((+x(line[0]) + +x(line[2])) / 2).toFixed(1)}" y="${(Math.min(+y(line[1]), +y(line[3])) - 4).toFixed(1)}">${escapeHtml(p.name || "?")}</text>` : ""}</g>`);
 		});
 		result.stops.forEach((s, i) => {
 			if (s < 0) return;

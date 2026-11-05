@@ -29,6 +29,7 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	private long selectedStationId;
 	private boolean timetableBoundary;
 	private boolean passingTrack;
+	private final transitsim.network.StationTracks.Track workedOutTrack;
 	private int firstVisibleRow;
 	private final List<Route> rowRoutes = new ArrayList<>();
 	private final List<Integer> rowIndices = new ArrayList<>();
@@ -47,6 +48,8 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 			updateBoundaryButton();
 		});
 		passingTrack = savedRailBase.passingTrack;
+		// Up or down and main line or passing track as worked out from the routes, the same as the advanced editor shows
+		workedOutTrack = mtr.client.ClientStationTracks.compute().get(savedRailBase.id);
 		buttonTrackType = UtilitiesClient.newButton(Text.literal(""), button -> {
 			passingTrack = !passingTrack;
 			updateTrackTypeButton();
@@ -80,7 +83,11 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	}
 
 	private void updateTrackTypeButton() {
-		buttonTrackType.setMessage(Text.translatable(passingTrack ? "gui.mtr.platform_passing_track" : "gui.mtr.platform_main_track"));
+		final String direction = workedOutTrack == null || workedOutTrack.direction.isEmpty() ? "" : Text.translatable("gui.mtr.track_" + workedOutTrack.direction).getString();
+		// Ticked, it is a passing track; otherwise whatever the services passing on it show, if anything
+		final String kind = passingTrack ? "" : workedOutTrack == null || workedOutTrack.kind.isEmpty() || savedRailBase.passingTrack ? "" : Text.translatable("gui.mtr.track_" + workedOutTrack.kind).getString();
+		final String workedOut = (direction + (direction.isEmpty() || kind.isEmpty() ? "" : " ") + kind).trim();
+		buttonTrackType.setMessage(Text.literal(Text.translatable(passingTrack ? "gui.mtr.platform_passing_track" : "gui.mtr.platform_main_track").getString() + (workedOut.isEmpty() ? "" : Text.translatable("gui.mtr.track_worked_out", workedOut).getString())));
 	}
 
 	private void updateStationButton() {
