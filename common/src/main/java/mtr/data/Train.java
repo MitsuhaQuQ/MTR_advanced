@@ -664,6 +664,22 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	/**
+	 * @return the path index where a time segment ends, as {@link #getIndex(double, boolean)} rounding down, kept on the
+	 * segment while the path stays the same
+	 */
+	protected final int getSegmentIndex(transitsim.plan.TimeSegment timeSegment) {
+		if (timeSegment.indexDistances == distances && timeSegment.indexDistancesSize == distances.size() && timeSegment.indexProgress == timeSegment.endRailProgress) {
+			return timeSegment.index;
+		}
+		final int index = getIndex(timeSegment.endRailProgress, true);
+		timeSegment.indexDistances = distances;
+		timeSegment.indexDistancesSize = distances.size();
+		timeSegment.indexProgress = timeSegment.endRailProgress;
+		timeSegment.index = index;
+		return index;
+	}
+
+	/**
 	 * @return the first rail ending after the progress, or the last rail. Distances never decrease along a path.
 	 */
 	public static int findIndex(List<Double> distances, int size, double tempRailProgress, boolean roundDown) {

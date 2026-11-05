@@ -19,6 +19,13 @@ public abstract class SavedRailBase extends NameColorDataBase {
 
 	protected int dwellTime;
 	private final Set<BlockPos> positions;
+	/**
+	 * The positions in the set's order, and the middle with and without its height, worked out the first time they are
+	 * asked for, as the positions never change; trains and depots ask for them every tick.
+	 */
+	private BlockPos[] positionArray;
+	private BlockPos midPos;
+	private BlockPos midPosZeroY;
 
 	public static final int MAX_DWELL_TIME = 1200;
 	private static final int DEFAULT_DWELL_TIME = 20;
@@ -107,8 +114,18 @@ public abstract class SavedRailBase extends NameColorDataBase {
 	}
 
 	public BlockPos getMidPos(boolean zeroY) {
+		final BlockPos cached = zeroY ? midPosZeroY : midPos;
+		if (cached != null) {
+			return cached;
+		}
 		final BlockPos pos = getPosition(0).offset(getPosition(1));
-		return RailwayData.newBlockPos(pos.getX() / 2, zeroY ? 0 : pos.getY() / 2, pos.getZ() / 2);
+		final BlockPos middle = RailwayData.newBlockPos(pos.getX() / 2, zeroY ? 0 : pos.getY() / 2, pos.getZ() / 2);
+		if (zeroY) {
+			midPosZeroY = middle;
+		} else {
+			midPos = middle;
+		}
+		return middle;
 	}
 
 	public Direction.Axis getAxis() {
@@ -175,7 +192,13 @@ public abstract class SavedRailBase extends NameColorDataBase {
 	}
 
 	private BlockPos getPosition(int index) {
-		return positions.size() > index ? new ArrayList<>(positions).get(index) : RailwayData.newBlockPos(0, 0, 0);
+		BlockPos[] array = positionArray;
+		if (array == null) {
+			// The set's own order, as before
+			array = positions.toArray(new BlockPos[0]);
+			positionArray = array;
+		}
+		return array.length > index ? array[index] : RailwayData.newBlockPos(0, 0, 0);
 	}
 
 	public static boolean isInvalidSavedRail(Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos1, BlockPos pos2) {

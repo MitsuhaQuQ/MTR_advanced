@@ -131,6 +131,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 
 **Performance**
 
+- Measured with Java Flight Recorder on a large test world, the server thread spends about 4.1 ms a tick on MTR instead of 6.7 ms: platform and siding positions, a time segment's place on its path and a depot's list of sidings are worked out once instead of every tick, and the background route search for the website map's density runs one tick in ten.
 - Optimises train pathfinding, data sync and the save loop. In a synthetic benchmark, pathfinding along a 20,000-segment single line went from 468 ms to 32 ms, and unreachable targets no longer cause long searches.
 
 **Security**

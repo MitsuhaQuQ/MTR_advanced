@@ -507,7 +507,7 @@ public class TrainServer extends Train {
 
 				if (timeSegment.savedRailBaseId != 0) {
 					if (timeSegment.routeId == 0) {
-						RailwayData.useRoutesAndStationsFromIndex(path.get(getIndex(timeSegment.endRailProgress, true)).stopIndex - 1, tripRouteIds.isEmpty() ? depot.getRouteIds(trainId, dataCache) : tripRouteIds, dataCache, (currentStationIndex, thisRoute, nextRoute, thisStation, nextStation, lastStation) -> {
+						RailwayData.useRoutesAndStationsFromIndex(path.get(getSegmentIndex(timeSegment)).stopIndex - 1, tripRouteIds.isEmpty() ? depot.getRouteIds(trainId, dataCache) : tripRouteIds, dataCache, (currentStationIndex, thisRoute, nextRoute, thisStation, nextStation, lastStation) -> {
 							timeSegment.routeId = thisRoute == null ? 0 : thisRoute.id;
 							timeSegment.currentStationIndex = currentStationIndex;
 						});
@@ -527,7 +527,7 @@ public class TrainServer extends Train {
 
 					if (isOnRoute || nextDepartureTicks >= 0) {
 						final long estimatedMillis = currentMillis + (long) ((timeSegment.endTime + offsetTime - currentTime) * Depot.MILLIS_PER_TICK);
-						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getIndex(timeSegment.endRailProgress, true)) : 0;
+						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getSegmentIndex(timeSegment)) : 0;
 						// The estimate doesn't know about waiting for the timetable at earlier stops
 						final long arrivalMillis = Math.max(estimatedMillis, scheduledMillis);
 						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis));

@@ -12,6 +12,8 @@ import java.util.function.BiConsumer;
 
 public class RailwayDataRouteFinderModule extends RailwayDataModuleBase {
 
+	private static final int IDLE_TICK_INTERVAL = 10;
+	private int idleTicks;
 	private Long2ObjectOpenHashMap<Long2IntOpenHashMap> connectionDensityOld = new Long2ObjectOpenHashMap<>();
 	private Long2ObjectOpenHashMap<Long2IntOpenHashMap> connectionDensity = new Long2ObjectOpenHashMap<>();
 	private BlockPos startPos;
@@ -43,6 +45,16 @@ public class RailwayDataRouteFinderModule extends RailwayDataModuleBase {
 		final int platformCount = railwayData.dataCache.platformConnections.size();
 		if (platformCount < 4) {
 			return;
+		}
+		// With nothing asked for, the searches between random platforms only count how much each connection is used, for
+		// the website map's density; they run one tick in ten, as every tick they took a large part of the server thread
+		if (routeFinderQueue.isEmpty() && currentRouteFinderRequest == null) {
+			idleTicks++;
+			if (idleTicks % IDLE_TICK_INTERVAL != 0) {
+				return;
+			}
+		} else {
+			idleTicks = 0;
 		}
 
 		final long startTime = System.currentTimeMillis();

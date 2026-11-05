@@ -13,6 +13,14 @@ public class TimeSegment {
 	public long routeId;
 	public int currentStationIndex;
 	public float endTime;
+	/**
+	 * The path index of {@link #endRailProgress} as last worked out, and what it was worked out on, so a train writing
+	 * its schedule every few ticks doesn't search the path again for every segment. Not saved.
+	 */
+	public transient Object indexDistances;
+	public transient int indexDistancesSize = -1;
+	public transient double indexProgress = Double.NaN;
+	public transient int index = -1;
 
 	public final double startRailProgress;
 	private final float startSpeed;

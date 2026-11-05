@@ -23,6 +23,8 @@
 | `resources/fabric/`、`resources/forge/` | 加载器专用资源；`no-ante` 是不带 ANTE 的构建用的；`resources/fabric/mtm_logic` 是嵌在 Fabric jar 里的 MTM_Logic 小 jar（`fabric.mod.json` 和图标 `assets/mtm_logic/icon.png`），Forge 的 MTM_Logic 图标是 `resources/forge/normal/mtm_logic_icon.png`（`mods.toml` 第三个 `[[mods]]` 的 `logoFile`） |
 | `examples/` | 自定义资源包示例 |
 
+**主线程上每 tick 都会调到的地方不要每次重算**（2026-11-05 量过，见解耦文档 L3）：`SavedRailBase` 的端点和中点算一次就留着（`positionArray`、`midPos`，端点不会变）；列车写时刻时，时间段在路径上的位置留在 `TimeSegment` 上（`Train.getSegmentIndex`，路径的距离表换了或变长变短才重算）；按频率发车的车厂的存车线列表留着（`Depot.getSidingsInDepot`）；上游路线查找没有请求时十个 tick 才搜一次（`RailwayDataRouteFinderModule`，只供网站地图的连接密度）。
+
 **新物品的贴图和配方要放在 `resources/common/normal`**：构建前的准备步骤会删掉 `common/src/main/resources` 下的 `assets/mtr/textures`、`assets/mtr/sounds`、`data/mtr/recipes`、`data/mtr/loot_tables` 等，再从 `resources/common/` 复制回来（根目录 `build.gradle`）。只放在 `common/src` 里的贴图不会进 jar，游戏里显示紫黑格；圆形隧道创建器就是这样漏掉的（2026-11-05 补上）。物品模型（`models/item`）不在删除之列，所以模型在、贴图不在。
 
 代码用 Manifold 预处理（`#if MC_VERSION >= "12000"`）同时支持多个 Minecraft 版本；目前只构建 1.20.1。`mtr/mappings/` 是各版本之间的兼容层，写新代码时调 Minecraft 的接口优先找这里有没有包装。

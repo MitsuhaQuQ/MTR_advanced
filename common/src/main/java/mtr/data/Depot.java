@@ -101,6 +101,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private String autoDutiesKey;
 	/**
+	 * The depot's sidings in their order, kept until the sidings, the data or the depot's area change, as sending trains
+	 * out by frequency asks for them every tick.
+	 */
+	private List<Siding> sidingsInDepotCache;
+	private String sidingsInDepotKey;
+	/**
 	 * Whether the lines of the depot's planning unit have trains enough, from the last time its duties were worked out,
 	 * sent to the players with the auto duties; null if not planned by line.
 	 */
@@ -719,10 +725,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		if (!deployableSidings.isEmpty()) {
-			final List<Siding> sidingsInDepot = railwayData.sidings.stream().filter(siding -> {
-				final BlockPos sidingPos = siding.getMidPos();
-				return siding.isTransportMode(transportMode) && inArea(sidingPos.getX(), sidingPos.getZ());
-			}).sorted().collect(Collectors.toList());
+			final List<Siding> sidingsInDepot = getSidingsInDepot(railwayData);
 
 			final int sidingsInDepotSize = sidingsInDepot.size();
 			for (int i = deployIndex; i < deployIndex + sidingsInDepotSize; i++) {
@@ -1107,6 +1110,19 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	/**
 	 * The path through some of the depot's routes, shared by the sidings whose vehicles run those routes.
 	 */
+	private List<Siding> getSidingsInDepot(RailwayData railwayData) {
+		// Also worked out again every few seconds, as a siding renamed changes the order without changing the data's version
+		final String key = railwayData.sidings.size() + "/" + railwayData.dataCache.getVersion() + "/" + corner1 + corner2 + transportMode + "/" + System.currentTimeMillis() / 5000;
+		if (sidingsInDepotCache == null || !key.equals(sidingsInDepotKey)) {
+			sidingsInDepotCache = railwayData.sidings.stream().filter(siding -> {
+				final BlockPos sidingPos = siding.getMidPos();
+				return siding.isTransportMode(transportMode) && inArea(sidingPos.getX(), sidingPos.getZ());
+			}).sorted().collect(Collectors.toList());
+			sidingsInDepotKey = key;
+		}
+		return sidingsInDepotCache;
+	}
+
 	/**
 	 * Whether a planning unit's lines have trains enough ({@link LineDuties.Plan}): the trains needed to run every service,
 	 * those the sidings hold, the services a day with no train and where to add trains.
