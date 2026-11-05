@@ -59,6 +59,10 @@ public final class TickRunner<T extends RunTrack> {
 
 	private RunReservations reservations = new RunReservations();
 	/**
+	 * The interlocking zone of each rail in one, by its key; see {@link #setInterlockZones}.
+	 */
+	private final Map<UUID, Long> zoneOfRail = new HashMap<>();
+	/**
 	 * Whether the host deals with the requests for runs once its tick is over, as the reservations are shared with its own
 	 * trains (G1).
 	 */
@@ -658,6 +662,20 @@ public final class TickRunner<T extends RunTrack> {
 		final Map<UUID, Set<UUID>> railSets = new HashMap<>();
 		blocks.forEach(block -> block.forEach(rail -> railSets.computeIfAbsent(rail, key -> new LinkedHashSet<>()).addAll(block)));
 		railSets.forEach((rail, rails) -> blockRails.put(rail, new ArrayList<>(rails)));
+	}
+
+	/**
+	 * The interlocking zones (L2): signal blocks of the interlocking colour, each taken as a whole by a train on duty
+	 * routed through a station throat over it. Each zone's ID is its place in the list, from 1.
+	 *
+	 * @param zones for each signal block in order, its rails if it is a zone, or empty
+	 */
+	public void setInterlockZones(List<? extends Collection<UUID>> zones) {
+		zoneOfRail.clear();
+		for (int i = 0; i < zones.size(); i++) {
+			final long zoneId = i + 1;
+			zones.get(i).forEach(rail -> zoneOfRail.putIfAbsent(rail, zoneId));
+		}
 	}
 
 	/**
@@ -1958,7 +1976,7 @@ public final class TickRunner<T extends RunTrack> {
 					neighbours.computeIfAbsent(track.getStartNode(), key -> new HashSet<>()).add(track.getEndNode());
 					neighbours.computeIfAbsent(track.getEndNode(), key -> new HashSet<>()).add(track.getStartNode());
 				});
-				throatLocks = new ThroatLocks(path, nodes, stopRails.stream().mapToInt(Integer::intValue).toArray(), node -> neighbours.getOrDefault(node, Collections.emptySet()).size());
+				throatLocks = new ThroatLocks(path, nodes, stopRails.stream().mapToInt(Integer::intValue).toArray(), node -> neighbours.getOrDefault(node, Collections.emptySet()).size(), rail -> zoneOfRail.getOrDefault(rail, 0L));
 			}
 			return throatLocks;
 		}

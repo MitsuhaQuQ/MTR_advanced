@@ -3425,9 +3425,11 @@
 		const side = entry => entry ? tr("进站") : tr("出站");
 		const crossings = throat.crossings.map(c => {
 			const other = data.routeById.get(c.route);
-			return tr("{0}和 {1} 的{2}在道岔（{3}, {4}）", side(c.entry), escapeHtml(other ? routeTitle(other) : "?"), side(c.otherEntry), c.x, c.z);
+			return c.zone
+				? tr("{0}和 {1} 的{2}在联锁区（{3}, {4}）", side(c.entry), escapeHtml(other ? routeTitle(other) : "?"), side(c.otherEntry), c.x, c.z)
+				: tr("{0}和 {1} 的{2}在道岔（{3}, {4}）", side(c.entry), escapeHtml(other ? routeTitle(other) : "?"), side(c.otherEntry), c.x, c.z);
 		});
-		return `<p class="hint">${tr("咽喉：进站经过 {0} 组道岔，出站经过 {1} 组（按游戏里的线路路径）。", throat.entry, throat.exit)}</p>`
+		return `<p class="hint">${tr("咽喉：进站经过 {0} 组道岔，出站经过 {1} 组（按游戏里的线路路径）。", throat.entry, throat.exit)}${throat.zones ? tr("还经过 {0} 个联锁区（联锁色的信号闭塞分区），整块锁住，车尾离开才放开。", throat.zones) : ""}</p>`
 			+ (offDepot ? `<p class="hint warn">${escapeHtml(lockOffText(offDepot))}</p>` : "")
 			+ (crossings.length ? `<p class="hint">${tr("和这些进路交叉，不能同时走：")}${crossings.join(tr("；"))}${tr("。时刻表检查会找出时间上撞在一起的班次。")}</p>` : "");
 	}

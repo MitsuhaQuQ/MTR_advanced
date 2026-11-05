@@ -18,6 +18,7 @@ import transitsim.plan.TripPath;
 import transitsim.plan.TurnBacks;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,7 +44,7 @@ public final class SimDataset {
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; older data is read without them.
 	 */
-	public static final int VERSION = 9;
+	public static final int VERSION = 10;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -60,6 +61,18 @@ public final class SimDataset {
 	 * The signal blocks, each with the keys of its rails ({@link DataTrack#getTrackKey}), as the game's signals make them.
 	 */
 	public final List<List<UUID>> signalBlocks = new ArrayList<>();
+	/**
+	 * For each of {@link #signalBlocks}, whether it is of the interlocking colour, an interlocking zone that a route through a
+	 * station throat takes as a whole (L2); none in data from before.
+	 */
+	public final List<Boolean> interlockBlocks = new ArrayList<>();
+
+	/**
+	 * @return whether the signal block with this index is an interlocking zone
+	 */
+	public boolean isInterlockBlock(int index) {
+		return index < interlockBlocks.size() && interlockBlocks.get(index);
+	}
 
 	public byte[] toBytes() {
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
@@ -99,6 +112,9 @@ public final class SimDataset {
 			writeLongs(writer, route.terminalPlatforms);
 			writeLongs(writer, route.startPlatforms);
 		});
+		for (int i = 0; i < signalBlocks.size(); i++) {
+			writer.writeBoolean(isInterlockBlock(i));
+		}
 		return writer.toBytes();
 	}
 
@@ -171,6 +187,11 @@ public final class SimDataset {
 				route.startPlatforms = readLongs(reader);
 			}
 		}
+		if (version >= 10) {
+			for (int i = 0; i < dataset.signalBlocks.size(); i++) {
+				dataset.interlockBlocks.add(reader.readBoolean());
+			}
+		}
 		return dataset;
 	}
 
@@ -228,6 +249,11 @@ public final class SimDataset {
 		final Map<Long, DataRoute> routeMap = buildRoutes();
 		final TickRunner<DataTrack> runner = new TickRunner<>(startMillis, routeMap::get);
 		runner.setSignalBlocks(signalBlocks);
+		final List<List<UUID>> zones = new ArrayList<>();
+		for (int i = 0; i < signalBlocks.size(); i++) {
+			zones.add(isInterlockBlock(i) ? signalBlocks.get(i) : Collections.emptyList());
+		}
+		runner.setInterlockZones(zones);
 		final Map<Long, DepotBoard> boards = new HashMap<>();
 		for (final DepotData depot : depots) {
 			final DepotBoard board = new DepotBoard(toRoutes(depot.routeIds, routeMap));

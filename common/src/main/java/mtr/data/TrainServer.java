@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.SecurityConfig;
 import transitsim.sim.TrainService;
 import transitsim.io.BinaryKeyed;
 import transitsim.io.ByteArrayBinary;
@@ -83,6 +84,10 @@ public class TrainServer extends Train {
 	 * The station throats on the path the train locks its way through (L2), made for the path it has now.
 	 */
 	private ThroatLocks throatLocks;
+	/**
+	 * The interlocking zones {@link #throatLocks} was made with.
+	 */
+	private Map<UUID, Long> throatZones;
 	private int requestedRunEnd = -1;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
@@ -782,11 +787,14 @@ public class TrainServer extends Train {
 		if (lockDepot != null && lockData.isThroatLocksOff(lockDepot.id)) {
 			return null;
 		}
-		if (throatLocks == null || !throatLocks.isFor(path, path.size() + 1)) {
+		final Map<UUID, Long> zones = lockData == null ? Collections.emptyMap() : lockData.getSignalBlocks().getZones(SecurityConfig.interlockColor);
+		// Made again when the path changes, or the interlocking zones do
+		if (throatLocks == null || !throatLocks.isFor(path, path.size() + 1) || throatZones != zones) {
 			final RailwayData railwayData = RailwayData.getInstance(world);
 			if (railwayData == null) {
 				return null;
 			}
+			throatZones = zones;
 			final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 			final long[] nodes = new long[path.size() + 1];
 			final List<Integer> stopRails = new ArrayList<>();
@@ -801,7 +809,7 @@ public class TrainServer extends Train {
 			throatLocks = new ThroatLocks(path, nodes, stopRails.stream().mapToInt(Integer::intValue).toArray(), node -> {
 				final Map<BlockPos, Rail> connections = rails.get(BlockPos.of(node));
 				return connections == null ? 0 : connections.size();
-			});
+			}, rail -> zones.getOrDefault(rail, 0L));
 		}
 		return throatLocks;
 	}

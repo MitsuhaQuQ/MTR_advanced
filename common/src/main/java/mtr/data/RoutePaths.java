@@ -426,8 +426,10 @@ public final class RoutePaths {
 		/**
 		 * @return the turnouts each stop's train passes coming in and going out ({@link transitsim.network.ThroatRoutes},
 		 * L2), with the rails meeting at each node counted on the rails as they are
+		 *
+		 * @param zones the interlocking zone of each rail in one, as {@code SignalBlocks.getZones} gives them
 		 */
-		public List<transitsim.network.ThroatRoutes.StopThroat> getThroats(int stopCount, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		public List<transitsim.network.ThroatRoutes.StopThroat> getThroats(int stopCount, Map<BlockPos, Map<BlockPos, Rail>> rails, Map<UUID, Long> zones) {
 			final long[] nodes = getNodes();
 			final int[] stopRails = new int[stopCount];
 			for (int i = 0; i < stopCount; i++) {
@@ -439,7 +441,7 @@ public final class RoutePaths {
 			}, stopRails, node -> {
 				final Map<BlockPos, Rail> connections = rails.get(BlockPos.of(node));
 				return connections == null ? 0 : connections.size();
-			});
+			}, rail -> zones.getOrDefault(rail, 0L));
 		}
 
 		/**

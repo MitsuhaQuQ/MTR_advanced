@@ -60,9 +60,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void receiveEditPermissionS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final boolean hasPermissionLevel = packet.readBoolean();
 		final boolean editorSimulation = packet.isReadable() && packet.readBoolean();
+		final int interlockColor = packet.readableBytes() >= 4 ? packet.readInt() : DyeColor.MAGENTA.ordinal();
 		minecraftClient.execute(() -> {
 			ClientData.hasEditPermissionLevel = hasPermissionLevel;
 			ClientData.editorSimulation = editorSimulation;
+			ClientData.interlockColor = interlockColor >= 0 && interlockColor < DyeColor.values().length ? DyeColor.values()[interlockColor] : DyeColor.MAGENTA;
 		});
 	}
 

@@ -6,13 +6,14 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import mtr.audio.AudioFiles;
+import net.minecraft.world.item.DyeColor;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Locale;
+import java.util.HashSet;
 import java.util.Set;
 
 public final class SecurityConfig {
@@ -41,6 +42,11 @@ public final class SecurityConfig {
 	 * time in a big world; off, the editor doesn't offer it and the server refuses it.
 	 */
 	public static volatile boolean editorSimulation = false;
+	/**
+	 * The signal block colour of interlocking zones (L2): blocks of it in a station throat are taken as a whole by a route
+	 * through it, besides being signal blocks as before.
+	 */
+	public static volatile DyeColor interlockColor = DyeColor.MAGENTA;
 
 	private static final String KEY_WEBSERVER_ENABLED = "webserverEnabled";
 	private static final String KEY_WEBSERVER_BIND_HOST = "webserverBindHost";
@@ -56,6 +62,7 @@ public final class SecurityConfig {
 	private static final String KEY_AUDIO_UPLOADS_PER_HOUR = "audioUploadsPerHour";
 	private static final String KEY_THROAT_LOCKS = "throatLocks";
 	private static final String KEY_EDITOR_SIMULATION = "editorSimulation";
+	private static final String KEY_INTERLOCK_COLOR = "interlockColor";
 
 	private SecurityConfig() {
 	}
@@ -82,6 +89,7 @@ public final class SecurityConfig {
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);
 				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
 				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
+				interlockColor = parseColor(jsonObject.has(KEY_INTERLOCK_COLOR) ? jsonObject.get(KEY_INTERLOCK_COLOR).getAsString() : "");
 			} else {
 				write(path);
 			}
@@ -129,10 +137,23 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
+		jsonObject.addProperty(KEY_INTERLOCK_COLOR, interlockColor.name().toLowerCase(Locale.ROOT));
 		jsonObject.addProperty(KEY_AUDIO_MAX_TOTAL_MEGABYTES, audioMaxTotalMegabytes);
 		jsonObject.addProperty(KEY_AUDIO_MAX_SECONDS, audioMaxSeconds);
 		jsonObject.addProperty(KEY_AUDIO_UPLOADS_PER_HOUR, audioUploadsPerHour);
 		Files.createDirectories(path.getParent());
 		Files.write(path, new GsonBuilder().setPrettyPrinting().create().toJson(jsonObject).getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
+	 * @return the dye colour of this name, such as {@code magenta}, or magenta for anything else
+	 */
+	public static DyeColor parseColor(String name) {
+		for (final DyeColor color : DyeColor.values()) {
+			if (color.name().equalsIgnoreCase(name.trim())) {
+				return color;
+			}
+		}
+		return DyeColor.MAGENTA;
 	}
 }

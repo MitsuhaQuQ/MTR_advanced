@@ -353,6 +353,10 @@ public final class ClientData {
 	 * Whether the server lets the advanced editor simulate days, a debugging tool ({@code editorSimulation}).
 	 */
 	public static boolean editorSimulation = false;
+	/**
+	 * The signal block colour of interlocking zones, as the server has it ({@code interlockColor}).
+	 */
+	public static net.minecraft.world.item.DyeColor interlockColor = net.minecraft.world.item.DyeColor.MAGENTA;
 
 	public static boolean hasPermission() {
 		final LocalPlayer player = Minecraft.getInstance().player;

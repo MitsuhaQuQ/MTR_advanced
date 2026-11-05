@@ -29,6 +29,7 @@ public final class ClientThroats {
 			neighbours.computeIfAbsent(mapRail.node2, key -> new HashSet<>()).add(mapRail.node1);
 		});
 		final Map<Long, List<ThroatRoutes.StopThroat>> throats = new HashMap<>();
+		final Map<java.util.UUID, Long> zones = ClientData.SIGNAL_BLOCKS.getZones(ClientData.interlockColor);
 		ClientData.ROUTES.forEach(route -> {
 			final long[] nodes = ClientData.MAP_ROUTES.get(route.id);
 			if (route.isHidden || nodes == null || nodes.length < 2) {
@@ -56,7 +57,7 @@ public final class ClientThroats {
 			throats.put(route.id, ThroatRoutes.of(nodes, node -> {
 				final BlockPos pos = BlockPos.of(node);
 				return new double[]{pos.getX(), pos.getZ()};
-			}, stopRails, node -> neighbours.getOrDefault(node, Collections.emptySet()).size()));
+			}, stopRails, node -> neighbours.getOrDefault(node, Collections.emptySet()).size(), rail -> zones.getOrDefault(rail, 0L)));
 		});
 		return throats;
 	}
@@ -71,8 +72,13 @@ public final class ClientThroats {
 		public final boolean entry;
 		public final boolean otherEntry;
 		public final long node;
+		/**
+		 * The two use the same interlocking zone, entered at {@link #node}, rather than a turnout.
+		 */
+		public final boolean zone;
 
-		private Crossing(long otherRouteId, int otherStop, boolean entry, boolean otherEntry, long node) {
+		private Crossing(long otherRouteId, int otherStop, boolean entry, boolean otherEntry, long node, boolean zone) {
+			this.zone = zone;
 			this.otherRouteId = otherRouteId;
 			this.otherStop = otherStop;
 			this.entry = entry;
@@ -107,7 +113,7 @@ public final class ClientThroats {
 					for (final boolean otherEntry : new boolean[]{true, false}) {
 						final ThroatRoutes.Item item = ThroatRoutes.findConflict(entry ? own.get(stop).entry : own.get(stop).exit, otherEntry ? otherThroats.get(j).entry : otherThroats.get(j).exit);
 						if (item != null && crossings.size() < limit) {
-							crossings.add(new Crossing(other.id, j, entry, otherEntry, item.node));
+							crossings.add(new Crossing(other.id, j, entry, otherEntry, item.getPlace(), item.isZone()));
 						}
 					}
 				}

@@ -46,6 +46,45 @@ class ThroatRoutesTest {
 	}
 
 	@Test
+	void routesThroughTheSameInterlockingZoneConflictWithoutAShareNode() {
+		// Tracks 1 and 2 coming in straight share no node, but the rails 11-12 and 21-22 are painted as one zone, as where
+		// they cross without a node
+		final Map<java.util.UUID, Long> zones = new HashMap<>();
+		zones.put(RailKeys.of(11, 12), 7L);
+		zones.put(RailKeys.of(21, 22), 7L);
+		final List<ThroatRoutes.StopThroat> one = ThroatRoutes.of(new long[]{10, 11, 12, 13}, POSITIONS::get, new int[]{2}, node -> RAILS.getOrDefault(node, 2), rail -> zones.getOrDefault(rail, 0L));
+		final List<ThroatRoutes.StopThroat> two = ThroatRoutes.of(new long[]{20, 21, 22, 23}, POSITIONS::get, new int[]{2}, node -> RAILS.getOrDefault(node, 2), rail -> zones.getOrDefault(rail, 0L));
+		final ThroatRoutes.Item conflict = ThroatRoutes.findConflict(one.get(0).entry, two.get(0).entry);
+		assertNotNull(conflict);
+		assertTrue(conflict.isZone());
+		assertEquals(7, conflict.node);
+		// The path enters it at rail 1, from node 11, and the tail leaves it after rail 1
+		assertEquals(1, conflict.index);
+		assertEquals(2, conflict.endIndex);
+		assertEquals(11, conflict.getPlace());
+		// Unpainted, the two straight ways don't cross
+		assertNull(ThroatRoutes.findConflict(throats(new long[]{10, 11, 12, 13}, 2).get(0).entry, throats(new long[]{20, 21, 22, 23}, 2).get(0).entry));
+	}
+
+	@Test
+	void aZoneFarFromTheThroatIsntPartOfIt() {
+		// A straight line with no turnouts, every 20 blocks, the stop on rail 6; a zone on rail 4 is just before it, one on
+		// rail 0 is 60 blocks of plain track further back, more than the 64 counted from rail 4's end
+		final Map<Long, double[]> positions = new HashMap<>();
+		final long[] nodes = new long[9];
+		for (int i = 0; i < nodes.length; i++) {
+			nodes[i] = 100 + i;
+			positions.put(nodes[i], new double[]{i * 20, 0});
+		}
+		final Map<java.util.UUID, Long> zones = new HashMap<>();
+		zones.put(RailKeys.of(nodes[4], nodes[5]), 1L);
+		zones.put(RailKeys.of(nodes[0], nodes[1]), 2L);
+		final List<ThroatRoutes.Item> entry = ThroatRoutes.of(nodes, positions::get, new int[]{6}, node -> 2, rail -> zones.getOrDefault(rail, 0L)).get(0).entry;
+		assertEquals(1, entry.size());
+		assertEquals(1, entry.get(0).node);
+	}
+
+	@Test
 	void comingInOverTheCrossover() {
 		// From the north line's west end, over the crossover, into track 2 (rail 22-23)
 		final List<ThroatRoutes.StopThroat> throats = throats(new long[]{10, 11, 21, 22, 23}, 3);

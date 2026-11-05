@@ -103,7 +103,7 @@ public final class RunReservations {
 				continue;
 			}
 			for (final Move move : getHeld(holder)) {
-				if (move.turnout ? nodes.contains(move.rail.getMostSignificantBits()) : railSet.contains(move.rail)) {
+				if (move.turnout ? nodes.contains(move.rail.getMostSignificantBits()) : !move.zone && railSet.contains(move.rail)) {
 					return true;
 				}
 			}
@@ -116,7 +116,7 @@ public final class RunReservations {
 	 */
 	public List<Move> getHeld(long trainId) {
 		final List<Move> moves = new ArrayList<>();
-		arbiter.getHoldings(trainId).forEach(claim -> moves.add(claim.kind == transitsim.network.Resource.Kind.TURNOUT ? new Move(claim.resource, claim.way) : new Move(claim.resource, claim.way > 0)));
+		arbiter.getHoldings(trainId).forEach(claim -> moves.add(claim.kind == transitsim.network.Resource.Kind.TRACK ? Move.zoneOf(claim.resource) : claim.kind == transitsim.network.Resource.Kind.TURNOUT ? new Move(claim.resource, claim.way) : new Move(claim.resource, claim.way > 0)));
 		return moves;
 	}
 
@@ -129,7 +129,7 @@ public final class RunReservations {
 
 	private static List<Arbiter.Claim<UUID>> toClaims(List<Move> moves) {
 		final List<Arbiter.Claim<UUID>> claims = new ArrayList<>();
-		moves.forEach(move -> claims.add(move.turnout ? Arbiter.Claim.turnout(move.rail, move.way) : Arbiter.Claim.singleTrack(move.rail, move.forwards)));
+		moves.forEach(move -> claims.add(move.zone ? Arbiter.Claim.track(move.rail) : move.turnout ? Arbiter.Claim.turnout(move.rail, move.way) : Arbiter.Claim.singleTrack(move.rail, move.forwards)));
 		return claims;
 	}
 
@@ -143,10 +143,18 @@ public final class RunReservations {
 		 * Turnouts are kept apart from rails by this in the low half of their key, which a rail's key never has.
 		 */
 		private static final long TURNOUT_MARK = 0x7475726E6F757421L;
+		/**
+		 * Interlocking zones the same way, in the low half of their key.
+		 */
+		private static final long ZONE_MARK = 0x7A6F6E6521212121L;
 
 		public final UUID rail;
 		public final boolean forwards;
 		public final boolean turnout;
+		/**
+		 * An interlocking zone, which one train has at a time whichever way (L2, signal blocks of the interlocking colour).
+		 */
+		public final boolean zone;
 		/**
 		 * For a turnout, which way through it; trains the same way share it.
 		 */
@@ -156,6 +164,7 @@ public final class RunReservations {
 			rail = RailKeys.of(fromPos, toPos);
 			forwards = fromPos < toPos;
 			turnout = false;
+			zone = false;
 			way = 0;
 		}
 
@@ -163,6 +172,7 @@ public final class RunReservations {
 			this.rail = rail;
 			this.forwards = forwards;
 			turnout = false;
+			zone = false;
 			way = 0;
 		}
 
@@ -170,7 +180,27 @@ public final class RunReservations {
 			rail = resource;
 			forwards = true;
 			turnout = true;
+			zone = false;
 			this.way = way;
+		}
+
+		private Move(UUID resource) {
+			rail = resource;
+			forwards = true;
+			turnout = false;
+			zone = true;
+			way = 0;
+		}
+
+		/**
+		 * @return the whole of an interlocking zone, by its ID
+		 */
+		public static Move zone(long zoneId) {
+			return new Move(new UUID(zoneId, ZONE_MARK));
+		}
+
+		private static Move zoneOf(UUID resource) {
+			return new Move(resource);
 		}
 
 		/**
@@ -182,7 +212,7 @@ public final class RunReservations {
 
 		@Override
 		public boolean equals(Object object) {
-			return object instanceof Move && ((Move) object).rail.equals(rail) && ((Move) object).forwards == forwards && ((Move) object).turnout == turnout && ((Move) object).way == way;
+			return object instanceof Move && ((Move) object).rail.equals(rail) && ((Move) object).forwards == forwards && ((Move) object).turnout == turnout && ((Move) object).zone == zone && ((Move) object).way == way;
 		}
 
 		@Override

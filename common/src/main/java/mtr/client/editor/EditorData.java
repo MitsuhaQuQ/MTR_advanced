@@ -207,8 +207,10 @@ public final class EditorData {
 			final List<transitsim.network.ThroatRoutes.StopThroat> routeThroats = throats.get(route.id);
 			if (routeThroats != null && i < routeThroats.size()) {
 				final JsonObject throatObject = new JsonObject();
-				throatObject.addProperty("entry", routeThroats.get(i).entry.size());
-				throatObject.addProperty("exit", routeThroats.get(i).exit.size());
+				// Turnouts, and interlocking zones apart from them
+				throatObject.addProperty("entry", routeThroats.get(i).entry.stream().filter(item -> !item.isZone()).count());
+				throatObject.addProperty("exit", routeThroats.get(i).exit.stream().filter(item -> !item.isZone()).count());
+				throatObject.addProperty("zones", java.util.stream.Stream.concat(routeThroats.get(i).entry.stream(), routeThroats.get(i).exit.stream()).filter(transitsim.network.ThroatRoutes.Item::isZone).map(item -> item.node).distinct().count());
 				final JsonArray crossingsArray = new JsonArray();
 				mtr.client.ClientThroats.crossings(throats, route, i, 20).forEach(crossing -> {
 					final JsonObject crossingObject = new JsonObject();
@@ -216,6 +218,7 @@ public final class EditorData {
 					crossingObject.addProperty("stop", crossing.otherStop);
 					crossingObject.addProperty("entry", crossing.entry);
 					crossingObject.addProperty("otherEntry", crossing.otherEntry);
+					crossingObject.addProperty("zone", crossing.zone);
 					final BlockPos node = BlockPos.of(crossing.node);
 					crossingObject.addProperty("x", node.getX());
 					crossingObject.addProperty("z", node.getZ());

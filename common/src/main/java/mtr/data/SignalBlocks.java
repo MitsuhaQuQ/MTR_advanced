@@ -16,6 +16,9 @@ public class SignalBlocks {
 	private int version;
 
 	private final Map<UUID, Set<SignalBlock>> railToSignalBlocks = new HashMap<>();
+	private Map<UUID, Long> zones = Collections.emptyMap();
+	private int zonesVersion = -1;
+	private DyeColor zonesColor;
 	public final List<SignalBlock> signalBlocks = new ArrayList<>();
 
 	public long add(long id, DyeColor color, UUID rail) {
@@ -184,6 +187,37 @@ public class SignalBlocks {
 			blockRails.add(rails);
 		});
 		return blockRails;
+	}
+
+	/**
+	 * @return whether each signal block, in the order of {@link #getBlockRails}, is of this colour, an interlocking zone (L2)
+	 */
+	public List<Boolean> getInterlockFlags(DyeColor color) {
+		final List<Boolean> flags = new ArrayList<>();
+		signalBlocks.forEach(signalBlock -> flags.add(signalBlock.color == color));
+		return flags;
+	}
+
+	/**
+	 * The interlocking zones (L2): the signal blocks of this colour, which a route through a station throat takes as a whole.
+	 * Worked out again only when the blocks or the colour change; a map once given out never changes, so it can be used
+	 * away from the thread that changes the blocks.
+	 *
+	 * @return the zone of each rail in one, by the block's ID
+	 */
+	public synchronized Map<UUID, Long> getZones(DyeColor color) {
+		if (zonesVersion != version || zonesColor != color) {
+			final Map<UUID, Long> newZones = new HashMap<>();
+			signalBlocks.forEach(signalBlock -> {
+				if (signalBlock.color == color) {
+					signalBlock.rails.forEach(rail -> newZones.putIfAbsent(rail, signalBlock.id));
+				}
+			});
+			zones = Collections.unmodifiableMap(newZones);
+			zonesVersion = version;
+			zonesColor = color;
+		}
+		return zones;
 	}
 
 	/**

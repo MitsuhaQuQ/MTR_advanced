@@ -50,6 +50,8 @@ const I18N = (() => {
 			"模拟中…": "Simulating…",
 			"按 {0} 的草稿模拟": "Simulated with the draft of {0}",
 			"服务端忙，稍后再试": "The server is busy, try again later",
+			"{0}和 {1} 的{2}在联锁区（{3}, {4}）": "{0} with {1} {2} in the interlocking zone ({3}, {4})",
+			"还经过 {0} 个联锁区（联锁色的信号闭塞分区），整块锁住，车尾离开才放开。": " It also passes {0} interlocking zones (signal blocks of the interlocking colour), each locked as a whole until the tail has left it.",
 			"轮用站台 {0} 个": "{0} platforms to turn back at",
 			"优先股道 {0} 个": "{0} platforms to start from first",
 			"第 {0} 个": "no. {0}",

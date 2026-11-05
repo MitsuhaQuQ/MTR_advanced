@@ -78,6 +78,7 @@ public final class SimExport {
 		});
 		dataset.trains = trains;
 		dataset.signalBlocks.addAll(railwayData.getSignalBlocks().getBlockRails());
+		dataset.interlockBlocks.addAll(railwayData.getSignalBlocks().getInterlockFlags(mtr.SecurityConfig.interlockColor));
 		return dataset;
 	}
 

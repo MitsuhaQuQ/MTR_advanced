@@ -237,10 +237,12 @@ public final class TimetableConflicts {
 	/**
 	 * Two trains can't use a turnout of a station's throat by different ways at once (L2): each stop's entry route is used
 	 * for {@link #THROAT_MILLIS} before its arrival, its exit route for as long after its departure. The checked route's
-	 * windows are compared with every other train's at the same turnout.
+	 * windows are compared with every other train's at the same turnout. An interlocking zone is used the same way, and any
+	 * two trains using it at once conflict.
 	 */
 	private static void checkThroats(long routeId, List<RouteTimes> routes, int weekday, Set<Conflict> conflicts) {
-		final Map<Long, List<ThroatUse>> uses = new HashMap<>();
+		// By turnout node, or by zone; a zone's ID is kept apart from the nodes
+		final Map<String, List<ThroatUse>> uses = new HashMap<>();
 		routes.forEach(route -> {
 			if (route.throats.isEmpty()) {
 				return;
@@ -254,15 +256,15 @@ public final class TimetableConflicts {
 					final long arrival = serviceTimes.getArrival(i);
 					final long departure = arrival + serviceTimes.departures[i] - serviceTimes.arrivals[i];
 					for (final transitsim.network.ThroatRoutes.Item item : route.throats.get(i).entry) {
-						uses.computeIfAbsent(item.node, key -> new ArrayList<>()).add(new ThroatUse(arrival - THROAT_MILLIS, arrival, item, stop));
+						uses.computeIfAbsent(useKey(item), key -> new ArrayList<>()).add(new ThroatUse(arrival - THROAT_MILLIS, arrival, item, stop));
 					}
 					for (final transitsim.network.ThroatRoutes.Item item : route.throats.get(i).exit) {
-						uses.computeIfAbsent(item.node, key -> new ArrayList<>()).add(new ThroatUse(departure, departure + THROAT_MILLIS, item, stop));
+						uses.computeIfAbsent(useKey(item), key -> new ArrayList<>()).add(new ThroatUse(departure, departure + THROAT_MILLIS, item, stop));
 					}
 				}
 			});
 		});
-		uses.forEach((node, nodeUses) -> {
+		uses.forEach((key, nodeUses) -> {
 			for (final ThroatUse use : nodeUses) {
 				if (use.stop.routeId != routeId || conflicts.size() >= MAX_CONFLICTS) {
 					continue;
@@ -275,13 +277,17 @@ public final class TimetableConflicts {
 					for (int day = -1; day <= 1; day++) {
 						final long offset = day * OperatingDay.MILLIS_PER_DAY;
 						if (other.start + offset < use.end && use.start < other.end + offset) {
-							conflicts.add(new Conflict(use.stop.table, use.stop.stopIndex, use.stop.service, other.stop.routeId, other.stop.service, 0, node));
+							conflicts.add(new Conflict(use.stop.table, use.stop.stopIndex, use.stop.service, other.stop.routeId, other.stop.service, 0, use.item.getPlace()));
 							break;
 						}
 					}
 				}
 			}
 		});
+	}
+
+	private static String useKey(transitsim.network.ThroatRoutes.Item item) {
+		return (item.isZone() ? "zone:" : "node:") + item.node;
 	}
 
 	/**

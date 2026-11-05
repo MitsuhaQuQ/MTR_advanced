@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static transitsim.sim.ScenarioLine.HOUR;
 import static transitsim.sim.ScenarioLine.MINUTE;
@@ -74,6 +75,23 @@ class SignalBlockTest {
 		final List<String> expected = describe(everyTick.events(0));
 		assertTrue(expected.stream().anyMatch(event -> event.contains("ARRIVE")), expected.toString());
 		assertEquals(expected, describe(skipping.events(0)));
+	}
+
+	@Test
+	void anInterlockingZoneIsKeptAndRunsTheSameWhetherTicksAreSkippedOrNot() {
+		final SimDataset dataset = line(true);
+		dataset.interlockBlocks.add(true);
+		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
+		assertTrue(read.isInterlockBlock(0));
+		assertFalse(read.isInterlockBlock(1));
+		assertFalse(SimDataset.fromBytes(line(true).toBytes()).isInterlockBlock(0));
+
+		final byte[] bytes = dataset.toBytes();
+		final EventSimulator<SimDataset.DataTrack> everyTick = new EventSimulator<>(SimDataset.start(bytes, START), false);
+		final EventSimulator<SimDataset.DataTrack> skipping = new EventSimulator<>(SimDataset.start(bytes, START), true);
+		everyTick.advanceTo(END);
+		skipping.advanceTo(END);
+		assertEquals(describe(everyTick.events(0)), describe(skipping.events(0)));
 	}
 
 	@Test

@@ -5,6 +5,7 @@ import transitsim.network.ThroatRoutes;
 import java.util.*;
 import java.util.function.IntToDoubleFunction;
 import java.util.function.LongToIntFunction;
+import java.util.function.ToLongFunction;
 
 /**
  * A train on duty locks its way through station throats while running (decoupling document 5.4, L2), as a home signal
@@ -33,9 +34,9 @@ public final class ThroatLocks {
 	private final int pathSize;
 	private final List<Stop> stops = new ArrayList<>();
 	/**
-	 * The path indices of the turnouts given to the train and not passed yet.
+	 * The turnouts and zones given to the train and not passed yet, by {@link #grantKey}.
 	 */
-	private final Map<Integer, ThroatRoutes.Item> granted = new TreeMap<>();
+	private final Map<Long, ThroatRoutes.Item> granted = new TreeMap<>();
 	/**
 	 * What the train's outstanding request asks for, given to it once the request is granted.
 	 */
@@ -48,9 +49,16 @@ public final class ThroatLocks {
 	 * @param rails     how many different rails meet at a node
 	 */
 	public ThroatLocks(Object pathKey, long[] nodes, int[] stopRails, LongToIntFunction rails) {
+		this(pathKey, nodes, stopRails, rails, rail -> 0);
+	}
+
+	/**
+	 * @param zones the interlocking zone of each rail, by its key, or 0; see {@link ThroatRoutes#of}
+	 */
+	public ThroatLocks(Object pathKey, long[] nodes, int[] stopRails, LongToIntFunction rails, ToLongFunction<UUID> zones) {
 		this.pathKey = pathKey;
 		pathSize = nodes.length;
-		final List<ThroatRoutes.StopThroat> throats = ThroatRoutes.of(nodes, ThroatLocks::position, stopRails, rails);
+		final List<ThroatRoutes.StopThroat> throats = ThroatRoutes.of(nodes, ThroatLocks::position, stopRails, rails, zones);
 		for (int i = 0; i < stopRails.length; i++) {
 			stops.add(new Stop(stopRails[i], throats.get(i)));
 		}
@@ -74,7 +82,8 @@ public final class ThroatLocks {
 	 * @return the turnouts given to the train that its tail, on this rail, hasn't passed, as moves to hold
 	 */
 	public List<RunReservations.Move> getHeld(int tailRail) {
-		granted.keySet().removeIf(index -> index <= tailRail);
+		// A turnout once the tail is past its node, a zone once the tail has left its last rail
+		granted.values().removeIf(item -> item.endIndex <= tailRail);
 		return toMoves(granted.values());
 	}
 
@@ -98,7 +107,7 @@ public final class ThroatLocks {
 			if (stop.rail > headRail) {
 				final List<ThroatRoutes.Item> missing = new ArrayList<>();
 				stop.throat.entry.forEach(item -> {
-					if (item.index > headRail && !granted.containsKey(item.index)) {
+					if (item.endIndex > headRail && !granted.containsKey(grantKey(item))) {
 						missing.add(item);
 					}
 				});
@@ -123,7 +132,7 @@ public final class ThroatLocks {
 	}
 
 	public void onGranted() {
-		requested.forEach(item -> granted.put(item.index, item));
+		requested.forEach(item -> granted.put(grantKey(item), item));
 		requested = Collections.emptyList();
 	}
 
@@ -168,8 +177,15 @@ public final class ThroatLocks {
 
 	public static List<RunReservations.Move> toMoves(Collection<ThroatRoutes.Item> items) {
 		final List<RunReservations.Move> moves = new ArrayList<>();
-		items.forEach(item -> moves.add(RunReservations.Move.turnout(item.node, item.side1, item.side2)));
+		items.forEach(item -> moves.add(item.isZone() ? RunReservations.Move.zone(item.node) : RunReservations.Move.turnout(item.node, item.side1, item.side2)));
 		return moves;
+	}
+
+	/**
+	 * A turnout and a zone can start at the same node of the path, so each has a key of its own.
+	 */
+	private static long grantKey(ThroatRoutes.Item item) {
+		return item.index * 2L + (item.isZone() ? 1 : 0);
 	}
 
 	private static final class Stop {

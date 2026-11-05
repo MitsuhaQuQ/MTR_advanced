@@ -85,6 +85,32 @@ class TimetableConflictsTest {
 	}
 
 	@Test
+	void twoRoutesThroughOneInterlockingZoneConflictWhicheverWay() {
+		// Route A comes in to its second stop through zone 5 from 12:30 to 13:00; route B leaves another track at 12:45
+		// through the same zone, with no turnout in common
+		final TimetableConflicts.RouteTimes a = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 10);
+		a.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList()), new ThroatRoutes.StopThroat(Collections.singletonList(ThroatRoutes.Item.zone(5, 3, 4, 300)), Collections.emptyList())));
+		final List<Route.RoutePlatform> stops = Arrays.asList(new Route.RoutePlatform(PLATFORM_3), new Route.RoutePlatform(14));
+		final TimetableConflicts.RouteTimes b = new TimetableConflicts.RouteTimes(ROUTE_B, stops, Collections.singletonList(12 * MINUTE + 45000), 0, new long[][]{{0, 0}, {3L * MINUTE, 3L * MINUTE}});
+		b.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.singletonList(ThroatRoutes.Item.zone(5, 1, 1, 400))), new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList())));
+		final List<TimetableConflicts.Conflict> conflicts = check(a, b);
+		assertEquals(1, conflicts.size());
+		// Shown where route A enters the zone
+		assertEquals(300, conflicts.get(0).turnoutNode);
+
+		// Another zone is no conflict
+		b.setThroats(Arrays.asList(new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.singletonList(ThroatRoutes.Item.zone(6, 1, 1, 400))), new ThroatRoutes.StopThroat(Collections.emptyList(), Collections.emptyList())));
+		assertTrue(check(a, b).isEmpty());
+	}
+
+	@Test
+	void theInterlockingColourIsReadByName() {
+		assertEquals(net.minecraft.world.item.DyeColor.MAGENTA, mtr.SecurityConfig.parseColor(""));
+		assertEquals(net.minecraft.world.item.DyeColor.MAGENTA, mtr.SecurityConfig.parseColor("purple-ish"));
+		assertEquals(net.minecraft.world.item.DyeColor.LIGHT_BLUE, mtr.SecurityConfig.parseColor(" light_blue "));
+	}
+
+	@Test
 	void crossingTheThroatMinutesApartDoesnt() {
 		assertTrue(throatCheck(15 * MINUTE, false).isEmpty());
 	}

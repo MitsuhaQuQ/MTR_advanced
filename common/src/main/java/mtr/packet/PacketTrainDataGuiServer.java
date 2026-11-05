@@ -109,6 +109,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBoolean(player.hasPermissions(SecurityConfig.editPermissionLevel));
 		packet.writeBoolean(SecurityConfig.editorSimulation);
+		packet.writeInt(SecurityConfig.interlockColor.ordinal());
 		Registry.sendToPlayer(player, PACKET_EDIT_PERMISSION, packet);
 	}
 
@@ -628,10 +629,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 		// The turnouts of each route's throats, from its own path where it has been found
 		final Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
+		final Map<UUID, Long> zones = railwayData.getSignalBlocks().getZones(SecurityConfig.interlockColor);
 		routes.forEach(testRoute -> {
 			final RoutePaths.RoutePath routePath = RoutePaths.timesByPath(testRoute) ? railwayData.routePaths.getFound(testRoute, railwayData.dataCache, rails) : null;
 			if (routePath != null) {
-				throats.put(testRoute.id, routePath.getThroats(testRoute.platformIds.size(), rails));
+				throats.put(testRoute.id, routePath.getThroats(testRoute.platformIds.size(), rails, zones));
 			}
 		});
 		final Map<Route, long[][]> knownTimes = new HashMap<>();

@@ -116,6 +116,50 @@ class ThroatLocksTest {
 	}
 
 	@Test
+	void aZoneIsAskedForWithTheThroatAndLetGoOnceTheTailHasLeftIt() {
+		// As locks(), with rails 3 and 4 (x 60 to 100, just before the stop) painted as zone 9
+		final long[] nodes = new long[8];
+		for (int i = 0; i < nodes.length; i++) {
+			nodes[i] = node(i * 20, 0);
+		}
+		final Map<Long, Integer> rails = new HashMap<>();
+		rails.put(nodes[3], 3);
+		final Map<java.util.UUID, Long> zones = new HashMap<>();
+		zones.put(transitsim.network.RailKeys.of(nodes[3], nodes[4]), 9L);
+		zones.put(transitsim.network.RailKeys.of(nodes[4], nodes[5]), 9L);
+		final ThroatLocks locks = new ThroatLocks("path", nodes, new int[]{0, 5}, node -> rails.getOrDefault(node, 2), rail -> zones.getOrDefault(rail, 0L));
+		final List<ThroatRoutes.Item> entry = locks.getNextEntry(0);
+		assertEquals(2, entry.size());
+		assertTrue(entry.stream().anyMatch(ThroatRoutes.Item::isZone));
+		assertTrue(locks.isBlocked(2, 0));
+
+		final RunReservations reservations = new RunReservations();
+		assertTrue(locks.approach(reservations, 1, Collections.emptyList(), 0, 0, index -> 10, 50, 0));
+		reservations.resolve(0);
+		assertFalse(locks.approach(reservations, 1, Collections.emptyList(), 1, 0, index -> 10, 50, 0));
+		// The turnout goes once the tail is past node 3; the zone only once it has left rail 4
+		assertEquals(2, locks.getHeld(2).size());
+		assertEquals(1, locks.getHeld(4).size());
+		assertTrue(locks.getHeld(4).get(0).zone);
+		assertTrue(locks.getHeld(5).isEmpty());
+	}
+
+	@Test
+	void aZoneIsOneTrainsAtATimeEvenTheSameWay() {
+		final RunReservations reservations = new RunReservations();
+		final RunReservations.Move zone = RunReservations.Move.zone(9);
+		reservations.hold(1, Collections.singletonList(zone));
+		reservations.request(2, Collections.singletonList(zone), 0);
+		reservations.resolve(0);
+		assertFalse(reservations.takeGrant(2));
+		assertEquals(Collections.singletonList(zone), reservations.getHeld(1));
+		reservations.hold(1, Collections.emptyList());
+		reservations.request(2, Collections.singletonList(zone), 0);
+		reservations.resolve(1000);
+		assertTrue(reservations.takeGrant(2));
+	}
+
+	@Test
 	void theExitRouteGoesWithTheRunOutOfTheSiding() {
 		// From the siding, the turnout at node 3 is on its way out as well
 		final ThroatLocks locks = locks();
