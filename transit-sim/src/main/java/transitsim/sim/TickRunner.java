@@ -65,6 +65,11 @@ public final class TickRunner<T extends RunTrack> {
 	private boolean hostResolves;
 	private final Map<Long, SidingRun> sidings = new TreeMap<>();
 	/**
+	 * The nodes joined to each node by the rails of the sidings' paths, for the turnouts of station throats
+	 * ({@link ThroatLocks}); a rail no path uses can't be in anybody's way. Made again when a siding is added.
+	 */
+	private Map<Long, Set<Long>> nodeNeighbours;
+	/**
 	 * Each depot once, in the order of its first siding, and its sidings in order.
 	 */
 	private final List<DepotBoard> depots = new ArrayList<>();
@@ -187,6 +192,7 @@ public final class TickRunner<T extends RunTrack> {
 	public SidingRun addSiding(long sidingId, DepotBoard depot, Siding<T> siding) {
 		final SidingRun sidingRun = new SidingRun(sidingId, depot, siding);
 		sidings.put(sidingId, sidingRun);
+		nodeNeighbours = null;
 		depots.clear();
 		depotSidings.clear();
 		sidings.values().forEach(eachSidingRun -> {
@@ -259,6 +265,17 @@ public final class TickRunner<T extends RunTrack> {
 	 * first tick (G1). The host deals with the requests once its tick is over, and calls {@link #renewReservations} in
 	 * every tick of its own, as the runner may not tick in each of them.
 	 */
+	private Map<Long, Set<Long>> getNodeNeighbours() {
+		if (nodeNeighbours == null) {
+			nodeNeighbours = new HashMap<>();
+			sidings.values().forEach(sidingRun -> sidingRun.siding.path.forEach(track -> {
+				nodeNeighbours.computeIfAbsent(track.getStartNode(), key -> new HashSet<>()).add(track.getEndNode());
+				nodeNeighbours.computeIfAbsent(track.getEndNode(), key -> new HashSet<>()).add(track.getStartNode());
+			}));
+		}
+		return nodeNeighbours;
+	}
+
 	public void shareReservations(RunReservations shared) {
 		reservations = shared;
 		hostResolves = true;
@@ -1227,6 +1244,11 @@ public final class TickRunner<T extends RunTrack> {
 		private final SidingRun sidingRun;
 		private final Siding<T> siding;
 		private List<T> path;
+		private ThroatLocks throatLocks;
+		/**
+		 * What the train's run request asks for, asked again as it is when the host ticks without the runner.
+		 */
+		private List<RunReservations.Move> requestedMoves = Collections.emptyList();
 		private List<Double> distances;
 		private int pathRepeatIndex1;
 		private int pathRepeatIndex2;
@@ -1804,7 +1826,52 @@ public final class TickRunner<T extends RunTrack> {
 			if (grantedRunEnd < nextPlatformIndex) {
 				grantedRunEnd = -1;
 			}
-			reservations.hold(id, getRunMoves(Math.max(TrainRules.findRunEnd(this, nextPlatformIndex), grantedRunEnd)));
+			final List<RunReservations.Move> moves = getRunMoves(Math.max(TrainRules.findRunEnd(this, nextPlatformIndex), grantedRunEnd));
+			final ThroatLocks locks = getThroatLocks();
+			if (locks != null) {
+				final int headIndex = Math.max(MotionConstants.findIndex(this, railProgress, true), 0);
+				final int tailIndex = getTailIndex();
+				// Not while waiting to leave a stop, whose request is the run's
+				if (requestedRunEnd < 0) {
+					locks.approach(reservations, id, moves, headIndex, tailIndex, index -> getDistance(index - 1) - railProgress, 0.5 * speed * speed / siding.deceleration, TrainRules.getPlannedDepartureMillis(this));
+				}
+				moves.addAll(locks.getHeld(tailIndex));
+			}
+			reservations.hold(id, moves);
+		}
+
+		private int getTailIndex() {
+			return Math.max(MotionConstants.findIndex(this, railProgress - siding.trainCars * siding.spacing, true), 0);
+		}
+
+		/**
+		 * @return the throat locks of the train's path, made again when the path changes, or null if they are off or the
+		 * train isn't on duty
+		 */
+		private ThroatLocks getThroatLocks() {
+			if (!ThroatLocks.enabled || !service.isOnDuty() || path.isEmpty()) {
+				return null;
+			}
+			if (throatLocks == null || !throatLocks.isFor(path, path.size() + 1)) {
+				final long[] nodes = new long[path.size() + 1];
+				final List<Integer> stopRails = new ArrayList<>();
+				for (int i = 0; i < path.size(); i++) {
+					final T track = path.get(i);
+					nodes[i] = track.getStartNode();
+					if (track.isSidingTrack() || track.isPlatformTrack() && track.getDwellTime() > 0) {
+						stopRails.add(i);
+					}
+				}
+				nodes[path.size()] = path.get(path.size() - 1).getEndNode();
+				final Map<Long, Set<Long>> neighbours = getNodeNeighbours();
+				// Its own path may run where no siding's does, as on the way back to another siding
+				path.forEach(track -> {
+					neighbours.computeIfAbsent(track.getStartNode(), key -> new HashSet<>()).add(track.getEndNode());
+					neighbours.computeIfAbsent(track.getEndNode(), key -> new HashSet<>()).add(track.getStartNode());
+				});
+				throatLocks = new ThroatLocks(path, nodes, stopRails.stream().mapToInt(Integer::intValue).toArray(), node -> neighbours.getOrDefault(node, Collections.emptySet()).size());
+			}
+			return throatLocks;
 		}
 
 		/**
@@ -1819,7 +1886,7 @@ public final class TickRunner<T extends RunTrack> {
 				reservations.hold(id, held);
 			}
 			if (requestedRunEnd >= 0) {
-				reservations.request(id, getRunMoves(requestedRunEnd), TrainRules.getPlannedDepartureMillis(this));
+				reservations.request(id, requestedMoves.isEmpty() ? getRunMoves(requestedRunEnd) : requestedMoves, TrainRules.getPlannedDepartureMillis(this));
 			}
 		}
 
@@ -1898,13 +1965,27 @@ public final class TickRunner<T extends RunTrack> {
 			if (grantedRunEnd == runEnd) {
 				return true;
 			}
+			final ThroatLocks locks = getThroatLocks();
 			if (requestedRunEnd == runEnd && reservations.takeGrant(id)) {
 				grantedRunEnd = runEnd;
 				requestedRunEnd = -1;
+				requestedMoves = Collections.emptyList();
+				if (locks != null) {
+					locks.onGranted();
+				}
 				return true;
 			}
 			requestedRunEnd = runEnd;
-			reservations.request(id, getRunMoves(runEnd), TrainRules.getPlannedDepartureMillis(this));
+			final List<RunReservations.Move> moves = getRunMoves(runEnd);
+			if (locks != null) {
+				// The way out through the throat of the stop it is leaving goes with the run, all of it or none
+				final List<transitsim.network.ThroatRoutes.Item> exit = locks.getExit(fromIndex - 1);
+				moves.addAll(locks.getHeld(getTailIndex()));
+				moves.addAll(ThroatLocks.toMoves(exit));
+				locks.setRequested(exit);
+			}
+			requestedMoves = moves;
+			reservations.request(id, moves, TrainRules.getPlannedDepartureMillis(this));
 			return false;
 		}
 
@@ -2191,6 +2272,12 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean isRailBlocked(int rail) {
+			// The rail onto the next station's throat, until the train is given its way through
+			final ThroatLocks locks = getThroatLocks();
+			if (locks != null && locks.isBlocked(rail, Math.max(MotionConstants.findIndex(this, railProgress, true), 0))) {
+				blockedRail = rail;
+				return true;
+			}
 			final boolean blocked = isRailOccupied(rail);
 			if (blocked) {
 				blockedRail = rail;

@@ -424,6 +424,15 @@ sequenceDiagram
     RR-->>B: 没给，继续开门等待
 ```
 
+#### 咽喉进路锁（L2，`ThroatLocks`）
+
+和单线预约用同一个 `RunReservations`：`Move` 可以是一个道岔（节点和经过方式，`Move.turnout`），在仲裁器里是道岔资源，同一方式共用、方式不同互斥。每列按运用运行的车有一个 `ThroatLocks`（路径变了重建），由宿主（游戏的 `TrainServer`、组件的 `TickRunner.HeadlessTrain`）这样用：
+
+- **离站**（`isRunGranted`）：申请的走行里加上这一站出站进路的道岔（`getExit`）和已经持有、车尾还没过的道岔（`getHeld`），给了以后 `onGranted` 记下。
+- **每 tick**（`holdRun`）：不在等离站时调 `approach`：下一站进站进路还没给、车头离停车点（驶入咽喉那段轨道的起点）不超过制动距离加 32 格，就带上已持有的一起申请；然后持有单线加 `getHeld`。
+- **轨道被占**（`isRailBlocked`）：`isBlocked` 为真时那段轨道算被占，运动规则让车停在它前面。
+- 节点相交的轨道数：游戏按轨道表，组件按所有存车线路径的轨道（没有路径用的轨道挡不着谁）。开关 `ThroatLocks.enabled`，由 `SecurityConfig.throatLocks` 设。
+
 ### 4.6 车厂发车：`Depot.deployTrain`
 
 - 组件模拟器接管的车厂直接返回，由模拟器发车。

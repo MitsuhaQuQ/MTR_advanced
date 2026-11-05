@@ -56,7 +56,9 @@ public final class SimulateDay {
 		final long buildStart = System.nanoTime();
 		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(data, dayStart));
 		final long runStart = System.nanoTime();
-		simulator.advanceTo(dayStart + 24 * HOUR);
+		// -Dmtr.simHours=N simulates only the first N hours, to compare runs of a big world quickly
+		final long hours = Long.getLong("mtr.simHours", 24L);
+		simulator.advanceTo(dayStart + hours * HOUR);
 		final long runEnd = System.nanoTime();
 
 		final List<SimEvent> events = simulator.events(0);
@@ -71,7 +73,7 @@ public final class SimulateDay {
 		}
 		System.out.printf("%d trains ran; %s%n", trains.size(), kinds);
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
-		final long ticks = 24 * HOUR / 50;
+		final long ticks = hours * HOUR / 50;
 		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, trains moved in %.2f%% of ticks%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, trains.isEmpty() ? 0 : 100.0 * simulator.getRunner().getTrainTicks() / ticks / trains.size());
 	}
 

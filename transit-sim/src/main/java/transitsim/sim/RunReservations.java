@@ -92,7 +92,7 @@ public final class RunReservations {
 	 */
 	public List<Move> getHeld(long trainId) {
 		final List<Move> moves = new ArrayList<>();
-		arbiter.getHoldings(trainId).forEach(claim -> moves.add(new Move(claim.resource, claim.way > 0)));
+		arbiter.getHoldings(trainId).forEach(claim -> moves.add(claim.kind == transitsim.network.Resource.Kind.TURNOUT ? new Move(claim.resource, claim.way) : new Move(claim.resource, claim.way > 0)));
 		return moves;
 	}
 
@@ -105,36 +105,65 @@ public final class RunReservations {
 
 	private static List<Arbiter.Claim<UUID>> toClaims(List<Move> moves) {
 		final List<Arbiter.Claim<UUID>> claims = new ArrayList<>();
-		moves.forEach(move -> claims.add(Arbiter.Claim.singleTrack(move.rail, move.forwards)));
+		moves.forEach(move -> claims.add(move.turnout ? Arbiter.Claim.turnout(move.rail, move.way) : Arbiter.Claim.singleTrack(move.rail, move.forwards)));
 		return claims;
 	}
 
 	/**
-	 * A rail run along in one direction. Forwards is from the lower node of the rail's key to the higher.
+	 * A rail run along in one direction, or a turnout of a station's throat taken by one way through it (L2,
+	 * {@link ThroatLocks}). Forwards is from the lower node of the rail's key to the higher.
 	 */
 	public static final class Move {
 
+		/**
+		 * Turnouts are kept apart from rails by this in the low half of their key, which a rail's key never has.
+		 */
+		private static final long TURNOUT_MARK = 0x7475726E6F757421L;
+
 		public final UUID rail;
 		public final boolean forwards;
+		public final boolean turnout;
+		/**
+		 * For a turnout, which way through it; trains the same way share it.
+		 */
+		public final int way;
 
 		public Move(long fromPos, long toPos) {
 			rail = RailKeys.of(fromPos, toPos);
 			forwards = fromPos < toPos;
+			turnout = false;
+			way = 0;
 		}
 
 		public Move(UUID rail, boolean forwards) {
 			this.rail = rail;
 			this.forwards = forwards;
+			turnout = false;
+			way = 0;
+		}
+
+		private Move(UUID resource, int way) {
+			rail = resource;
+			forwards = true;
+			turnout = true;
+			this.way = way;
+		}
+
+		/**
+		 * @return a turnout taken by the way between the two nodes beside it, in either order
+		 */
+		public static Move turnout(long node, long side1, long side2) {
+			return new Move(new UUID(node, TURNOUT_MARK), java.util.Objects.hash(Math.min(side1, side2), Math.max(side1, side2)) | 1);
 		}
 
 		@Override
 		public boolean equals(Object object) {
-			return object instanceof Move && ((Move) object).rail.equals(rail) && ((Move) object).forwards == forwards;
+			return object instanceof Move && ((Move) object).rail.equals(rail) && ((Move) object).forwards == forwards && ((Move) object).turnout == turnout && ((Move) object).way == way;
 		}
 
 		@Override
 		public int hashCode() {
-			return rail.hashCode() * 2 + (forwards ? 1 : 0);
+			return rail.hashCode() * 2 + (forwards ? 1 : 0) + way * 31;
 		}
 	}
 

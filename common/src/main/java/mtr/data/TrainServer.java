@@ -36,6 +36,7 @@ import transitsim.motion.RunSegment;
 import transitsim.motion.SpeedCurves;
 import transitsim.sim.Occupancy;
 import transitsim.sim.RunReservations;
+import transitsim.sim.ThroatLocks;
 import transitsim.sim.TrainRules;
 import transitsim.motion.MotionState;
 import transitsim.motion.MotionTrack;
@@ -78,6 +79,10 @@ public class TrainServer extends Train {
 	 * The end of the run this train of a duty was given, or -1, and the end of the one it has asked for.
 	 */
 	private int grantedRunEnd = -1;
+	/**
+	 * The station throats on the path the train locks its way through (L2), made for the path it has now.
+	 */
+	private ThroatLocks throatLocks;
 	private int requestedRunEnd = -1;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
@@ -323,6 +328,12 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean isRailBlocked(int checkIndex) {
+		// The rail onto the next station's throat, until the train is given its way through (L2)
+		final ThroatLocks locks = getThroatLocks();
+		if (locks != null && locks.isBlocked(checkIndex, Math.max(getIndex(0, spacing, true), 0))) {
+			markDelay(checkIndex);
+			return true;
+		}
 		if (isRailOccupied(checkIndex)) {
 			markDelay(checkIndex);
 			return true;
@@ -736,7 +747,50 @@ public class TrainServer extends Train {
 		if (grantedRunEnd < nextPlatformIndex) {
 			grantedRunEnd = -1;
 		}
-		reservations.hold(id, getRunMoves(Math.max(findRunEnd(nextPlatformIndex), grantedRunEnd)));
+		final List<RunReservations.Move> moves = getRunMoves(Math.max(findRunEnd(nextPlatformIndex), grantedRunEnd));
+		final ThroatLocks locks = getThroatLocks();
+		if (locks != null) {
+			final int headIndex = Math.max(getIndex(0, spacing, true), 0);
+			final int tailIndex = Math.max(getIndex(trainCars, spacing, true), 0);
+			// Not while waiting to leave a stop, whose request is the run's
+			if (requestedRunEnd < 0) {
+				locks.approach(reservations, id, moves, headIndex, tailIndex, index -> index <= 0 ? -railProgress : distances.get(Math.min(index, distances.size()) - 1) - railProgress, 0.5 * speed * speed / Math.max(decelerationConstant, 1E-4F), getPlannedDepartureMillis());
+			}
+			moves.addAll(locks.getHeld(tailIndex));
+		}
+		reservations.hold(id, moves);
+	}
+
+	/**
+	 * @return the locks of the station throats on the train's path (L2), made again when the path changes, or null if they
+	 * are off or the train isn't running a duty
+	 */
+	private ThroatLocks getThroatLocks() {
+		if (!ThroatLocks.enabled || !isOnRoute || isCurrentlyManual || !service.isOnDuty() || path.isEmpty()) {
+			return null;
+		}
+		if (throatLocks == null || !throatLocks.isFor(path, path.size() + 1)) {
+			final RailwayData railwayData = RailwayData.getInstance(world);
+			if (railwayData == null) {
+				return null;
+			}
+			final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+			final long[] nodes = new long[path.size() + 1];
+			final List<Integer> stopRails = new ArrayList<>();
+			for (int i = 0; i < path.size(); i++) {
+				final PathData pathData = path.get(i);
+				nodes[i] = pathData.startingPos.asLong();
+				if (pathData.savedRailBaseId != 0 && (pathData.rail.railType == RailType.SIDING || pathData.rail.railType == RailType.PLATFORM && pathData.dwellTime > 0)) {
+					stopRails.add(i);
+				}
+			}
+			nodes[path.size()] = path.get(path.size() - 1).getLastPos().asLong();
+			throatLocks = new ThroatLocks(path, nodes, stopRails.stream().mapToInt(Integer::intValue).toArray(), node -> {
+				final Map<BlockPos, Rail> connections = rails.get(BlockPos.of(node));
+				return connections == null ? 0 : connections.size();
+			});
+		}
+		return throatLocks;
 	}
 
 	/**
@@ -753,13 +807,25 @@ public class TrainServer extends Train {
 		if (grantedRunEnd == runEnd) {
 			return true;
 		}
+		final ThroatLocks locks = getThroatLocks();
 		if (requestedRunEnd == runEnd && reservations.takeGrant(id)) {
 			grantedRunEnd = runEnd;
 			requestedRunEnd = -1;
+			if (locks != null) {
+				locks.onGranted();
+			}
 			return true;
 		}
 		requestedRunEnd = runEnd;
-		reservations.request(id, getRunMoves(runEnd), getPlannedDepartureMillis());
+		final List<RunReservations.Move> moves = getRunMoves(runEnd);
+		if (locks != null) {
+			// The way out through the throat of the stop it is leaving goes with the run, all of it or none
+			final List<transitsim.network.ThroatRoutes.Item> exit = locks.getExit(fromIndex - 1);
+			moves.addAll(locks.getHeld(Math.max(getIndex(trainCars, spacing, true), 0)));
+			moves.addAll(ThroatLocks.toMoves(exit));
+			locks.setRequested(exit);
+		}
+		reservations.request(id, moves, getPlannedDepartureMillis());
 		return false;
 	}
 

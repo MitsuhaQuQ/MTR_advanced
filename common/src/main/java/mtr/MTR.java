@@ -548,6 +548,7 @@ public class MTR implements IPacket {
 				Webserver.getDataCache = railwayData -> railwayData == null ? null : railwayData.dataCache;
 				final Path configPath = minecraftServer.getServerDirectory().toPath().resolve("config");
 				SecurityConfig.load(configPath.resolve("mtr_security.json"));
+				SecurityConfig.apply();
 				LineWords.load(configPath.resolve(LineWords.FILE_NAME));
 				TimetableConfig.load(configPath.resolve(TimetableConfig.FILE_NAME));
 				MotionConfig.load(configPath.resolve(MotionConfig.FILE_NAME));

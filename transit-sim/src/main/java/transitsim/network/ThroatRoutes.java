@@ -46,7 +46,7 @@ public final class ThroatRoutes {
 			double plain = 0;
 			for (int j = platform; j >= 1 && j > (previous < 0 ? 0 : previous + 1); j--) {
 				if (rails.applyAsInt(nodes[j]) >= 3) {
-					entry.add(new Item(nodes[j], nodes[j - 1], nodes[j + 1]));
+					entry.add(new Item(nodes[j], nodes[j - 1], nodes[j + 1], j));
 					plain = 0;
 				}
 				plain += distance(position, nodes[j], nodes[j - 1]);
@@ -60,7 +60,7 @@ public final class ThroatRoutes {
 			plain = 0;
 			for (int j = platform + 1; j + 1 < nodes.length && (next < 0 || j < next); j++) {
 				if (rails.applyAsInt(nodes[j]) >= 3) {
-					exit.add(new Item(nodes[j], nodes[j - 1], nodes[j + 1]));
+					exit.add(new Item(nodes[j], nodes[j - 1], nodes[j + 1], j));
 					plain = 0;
 				}
 				plain += distance(position, nodes[j], nodes[j + 1]);
@@ -119,11 +119,20 @@ public final class ThroatRoutes {
 		public final long node;
 		public final long side1;
 		public final long side2;
+		/**
+		 * Where on the path the turnout is, as the index of the node, or -1; not part of what the item is.
+		 */
+		public final int index;
 
 		public Item(long node, long neighbour1, long neighbour2) {
+			this(node, neighbour1, neighbour2, -1);
+		}
+
+		public Item(long node, long neighbour1, long neighbour2, int index) {
 			this.node = node;
 			side1 = Math.min(neighbour1, neighbour2);
 			side2 = Math.max(neighbour1, neighbour2);
+			this.index = index;
 		}
 
 		public boolean conflicts(Item other) {

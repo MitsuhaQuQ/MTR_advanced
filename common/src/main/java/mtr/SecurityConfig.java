@@ -32,6 +32,10 @@ public final class SecurityConfig {
 	public static volatile int audioMaxTotalMegabytes = 64;
 	public static volatile int audioMaxSeconds = 60;
 	public static volatile int audioUploadsPerHour = 30;
+	/**
+	 * Trains on duty lock their way through station throats (L2, {@code ThroatLocks}); off, they run as before.
+	 */
+	public static volatile boolean throatLocks = true;
 
 	private static final String KEY_WEBSERVER_ENABLED = "webserverEnabled";
 	private static final String KEY_WEBSERVER_BIND_HOST = "webserverBindHost";
@@ -45,6 +49,7 @@ public final class SecurityConfig {
 	private static final String KEY_AUDIO_MAX_TOTAL_MEGABYTES = "audioMaxTotalMegabytes";
 	private static final String KEY_AUDIO_MAX_SECONDS = "audioMaxSeconds";
 	private static final String KEY_AUDIO_UPLOADS_PER_HOUR = "audioUploadsPerHour";
+	private static final String KEY_THROAT_LOCKS = "throatLocks";
 
 	private SecurityConfig() {
 	}
@@ -69,6 +74,7 @@ public final class SecurityConfig {
 				audioMaxTotalMegabytes = getInt(jsonObject, KEY_AUDIO_MAX_TOTAL_MEGABYTES, 64, 0, 4096);
 				audioMaxSeconds = getInt(jsonObject, KEY_AUDIO_MAX_SECONDS, 60, 1, 3600);
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);
+				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
 			} else {
 				write(path);
 			}
@@ -79,6 +85,13 @@ public final class SecurityConfig {
 			webserverEnabled = false;
 			audioMaxFileKilobytes = 0;
 		}
+	}
+
+	/**
+	 * Hands the settings the simulation component reads to it, after they are loaded.
+	 */
+	public static void apply() {
+		transitsim.sim.ThroatLocks.enabled = throatLocks;
 	}
 
 	public static boolean isLoopbackBinding() {
@@ -107,6 +120,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_AUDIO_UPLOAD_PERMISSION_LEVEL, audioUploadPermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_MANAGE_PERMISSION_LEVEL, audioManagePermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
+		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_AUDIO_MAX_TOTAL_MEGABYTES, audioMaxTotalMegabytes);
 		jsonObject.addProperty(KEY_AUDIO_MAX_SECONDS, audioMaxSeconds);
 		jsonObject.addProperty(KEY_AUDIO_UPLOADS_PER_HOUR, audioUploadsPerHour);

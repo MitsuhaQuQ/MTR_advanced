@@ -48,4 +48,7 @@ dependencies {
 tasks.register("simulateDay", JavaExec) {
 	classpath = sourceSets.tools.runtimeClasspath
 	mainClass = "transitsim.tools.SimulateDay"
+	// -Pmtr.throatLocks=false runs the day without trains locking station throats, to compare
+	systemProperty "mtr.throatLocks", project.findProperty("mtr.throatLocks") ?: "true"
+	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
 }
