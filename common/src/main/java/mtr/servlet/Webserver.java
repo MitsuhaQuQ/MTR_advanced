@@ -41,7 +41,11 @@ public abstract class Webserver {
 	private static ServerConnector serverConnector;
 
 	public static void init() {
-		webServer = new Server(new QueuedThreadPool(100, 10, 120));
+		// Daemon threads, so they never keep the server's process running once it has stopped
+		final QueuedThreadPool threadPool = new QueuedThreadPool(100, 10, 120);
+		threadPool.setDaemon(true);
+		threadPool.setName("mtr-webserver");
+		webServer = new Server(threadPool);
 		serverConnector = new ServerConnector(webServer);
 		webServer.setConnectors(new Connector[]{serverConnector});
 		final ServletContextHandler context = new ServletContextHandler();
@@ -101,13 +105,16 @@ public abstract class Webserver {
 		try {
 			webServer.start();
 		} catch (Exception e) {
-			e.printStackTrace();
+			// As when the port is taken: what did start, such as the thread pool, is stopped again
+			System.out.println("Minecraft Transit Railway: the web server couldn't start on port " + port + ": " + e.getMessage());
+			stop();
 		}
 	}
 
 	public static void stop() {
 		try {
-			if (webServer.isStarted() || webServer.isStarting()) {
+			// Also after a failed start, which leaves the server neither started nor stopped
+			if (!webServer.isStopped()) {
 				webServer.stop();
 			}
 		} catch (Exception e) {

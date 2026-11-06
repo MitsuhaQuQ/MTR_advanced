@@ -107,7 +107,11 @@ public final class EditorServer {
 		}
 		key = keyBuilder.toString();
 
-		server = new Server(new QueuedThreadPool(8, 1, 60000));
+		// Daemon threads, so the editor's server never keeps the game's process running after it closes
+		final QueuedThreadPool threadPool = new QueuedThreadPool(8, 1, 60000);
+		threadPool.setDaemon(true);
+		threadPool.setName("mtr-editor");
+		server = new Server(threadPool);
 		connector = new ServerConnector(server);
 		connector.setHost(LOOPBACK);
 		connector.setPort(0);

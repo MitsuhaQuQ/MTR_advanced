@@ -11,6 +11,7 @@
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
 	// Room below the last station for the labels of trains carrying on to another route
 	const LABEL_W = 120, AXIS_H = 28, MIN_ROW_GAP = 22, PAD_BOTTOM = 30;
+	const DEPOT_ROW_ROOM = 26;
 	// The space above a section of a line's stations other than the first, as a share of a row's
 	const SECTION_GAP = 1.5;
 	// How far to each side of a line's path its track diagram shows, in blocks
@@ -1881,6 +1882,8 @@
 	const stationPlatforms = stationId => (topo ? topo.platforms : []).filter(p => p.station === stationId && (!p.mode || p.mode === picking.mode));
 
 	function addPickedStop(platform) {
+		dutyNotice = tr("已加第 {0} 站：{1}", picking.stops.length + 1, `${shortName(platform.stationName) || "?"} ${platform.name || ""}`.trim());
+		renderBanner();
 		picking.stops.push({ platformId: platform.id, station: platform.station, name: `${shortName(platform.stationName) || "?"} ${platform.name || ""}`.trim(), pass: false, waypoints: [] });
 		refreshPreview();
 	}
@@ -1906,17 +1909,34 @@
 		drawNetwork();
 	}
 
-	/** The station on the map at this point, or null. */
+	/**
+	 * The station on the map at this point, or null: its name and dot, or one of its platforms' rails, which is the
+	 * nearest station to the rail's middle.
+	 */
 	function netStationAt(px, pz) {
-		let best = null, bestDistance = 12;
-		((net.data && net.data.stations) || []).forEach(station => {
+		const stations = (net.data && net.data.stations) || [];
+		let best = null, bestDistance = 18;
+		stations.forEach(station => {
 			const distance = Math.hypot(netX(station.x) - px, netZ(station.z) - pz);
 			if (distance < bestDistance) {
 				bestDistance = distance;
 				best = station;
 			}
 		});
-		return best;
+		if (best) return best;
+		const index = netRailAt(px, pz);
+		const rail = index >= 0 ? net.data.rails[index] : null;
+		if (!rail || rail[2] !== 1) return null;
+		const a = net.data.nodes[rail[0]], b = net.data.nodes[rail[1]], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+		let nearest = null, nearestDistance = 160;
+		stations.forEach(station => {
+			const distance = Math.hypot(station.x - mx, station.z - mz);
+			if (distance < nearestDistance) {
+				nearestDistance = distance;
+				nearest = station;
+			}
+		});
+		return nearest;
 	}
 
 	/** The rail node on the map at this point, as its id, or null. */
@@ -1946,10 +1966,15 @@
 			}
 		}
 		const station = netStationAt(px, pz);
-		if (!station) return;
-		const platforms = stationPlatforms(station.id);
+		if (!station) {
+			dutyNotice = tr("这里没有车站：点车站的名字、圆点，或者它的站台轨道");
+			renderBanner();
+			return;
+		}
+		const lastStop = picking.stops[picking.stops.length - 1];
+		const platforms = stationPlatforms(station.id).filter(p => !lastStop || p.id !== lastStop.platformId);
 		if (!platforms.length) {
-			dutyNotice = tr("{0} 没有这种运输方式的站台", shortName(station.name));
+			dutyNotice = lastStop && lastStop.station === station.id ? tr("{0} 已经是上一站了，点下一个车站", shortName(station.name)) : tr("{0} 没有这种运输方式的站台", shortName(station.name));
 			renderBanner();
 			return;
 		}
@@ -1975,8 +2000,23 @@
 				g.strokeStyle = i === picking.activeLeg ? css("--sel") : picking.color;
 				g.lineWidth = i === picking.activeLeg ? 6 : 4;
 				g.globalAlpha = 0.85;
+				// Along the rails' shapes where the map has the rail, otherwise straight from node to node
+				const indexOf = new Map(d.nodes.map((node, k) => [node[2], k]));
 				g.beginPath();
-				leg.nodes.forEach(([x, z], k) => k ? g.lineTo(netX(x), netZ(z)) : g.moveTo(netX(x), netZ(z)));
+				leg.nodes.forEach(([x, z, id], k) => {
+					if (k > 0) {
+						const a = indexOf.get(leg.nodes[k - 1][2]), b = indexOf.get(id);
+						const rail = a !== undefined && b !== undefined ? net.byPair.get(Math.min(a, b) + "," + Math.max(a, b)) : undefined;
+						if (rail !== undefined) {
+							const railPoints = net.railPoints[rail], forward = d.rails[rail][0] === a;
+							for (let j = 2; j + 3 < railPoints.length; j += 2) {
+								const at = forward ? j : railPoints.length - 2 - j;
+								g.lineTo(netX(railPoints[at]), netZ(railPoints[at + 1]));
+							}
+						}
+						g.lineTo(netX(x), netZ(z));
+					} else g.moveTo(netX(x), netZ(z));
+				});
 				g.stroke();
 			} else if (next) {
 				const a = stationById.get(stop.station), b = stationById.get(next.station);
@@ -2122,10 +2162,12 @@
 		if (!line) return null;
 		const height = wrap.clientHeight;
 		const totalGap = line.rows.reduce((a, row) => a + row.gap, 0) || 1;
-		const unit = Math.max(MIN_ROW_GAP, (height - AXIS_H - PAD_BOTTOM - 12) / totalGap);
-		let y = AXIS_H + 12;
+		// Room above the first station and below the last for the depots' rows beside them (drawDepotLegs)
+		const depotRoom = data.depots.some(depot => dutiesOf(depot).mode === "diagram" && depot.sidings.some(siding => siding.legs)) ? DEPOT_ROW_ROOM : 0;
+		const unit = Math.max(MIN_ROW_GAP, (height - AXIS_H - PAD_BOTTOM - 12 - depotRoom * 2) / totalGap);
+		let y = AXIS_H + 12 + depotRoom;
 		const ys = line.rows.map(row => (y += row.gap * unit));
-		return { line, ys, contentHeight: y + PAD_BOTTOM };
+		return { line, ys, contentHeight: y + PAD_BOTTOM + depotRoom };
 	}
 
 	const xOf = millis => LABEL_W + (millis - state.viewStart) / 60000 * state.pxPerMin;
@@ -2247,7 +2289,9 @@
 		const diagramRoutes = new Set(data.depots.filter(depot => dutiesOf(depot).mode === "diagram").flatMap(depot => depot.routes));
 		const slotPoints = [];
 		services.forEach(s => {
-			const times = timesOf(s);
+			// Being dragged along the time axis: drawn where it would go
+			const moving = state.move && state.move.ids.includes(s.id) ? state.move.shift : 0;
+			const times = moving ? timesOf(s).map(([a, b]) => [a + moving, b + moving]) : timesOf(s);
 			if (xOf(times[times.length - 1][1]) < LABEL_W - 40 || xOf(times[0][0]) > w + 40) return;
 			const points = [];
 			const [firstServed, lastServed] = servedStops(s);
@@ -2475,7 +2519,7 @@
 					const baseRow = entranceRow >= 0 ? entranceRow : firstService.route.rows[first.from];
 					if (baseRow === undefined || baseRow < 0) return;
 					const side = baseRow < line.rows.length / 2 ? -1 : 1;
-					const depotY = Math.max(AXIS_H + 4, yOf(baseRow) + side * Math.min(22, Math.max(12, unit * 0.45)));
+					const depotY = Math.max(AXIS_H + 4, yOf(baseRow) + side * Math.min(DEPOT_ROW_ROOM - 8, Math.max(12, unit * 0.45)));
 					const key = depot.id + ":" + baseRow;
 					if (!depotRows.has(key)) depotRows.set(key, { y: depotY, name: shortName(depot.name) || tr("车厂") });
 					const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
@@ -5728,10 +5772,70 @@
 		});
 	}
 
+	/**
+	 * The services a drag along a line moves: the chosen run when the line is in it, the selected service, or every
+	 * service of the route chosen with a double click; none while a duty is chosen, where clicks add services to it.
+	 */
+	function servicesToMove(s) {
+		if (!s || state.slot || !data.canEdit) return null;
+		// Of several chosen, the ones edited on their own (with exceptions, drawn blue) stay where they are
+		const unedited = list => list.filter(o => o === s || !o.exceptions);
+		if (inRange(s)) return unedited(rangeServices()).map(o => o.id);
+		if (state.selectedRoute === s.route.id) return unedited(s.route.services.filter(o => o.tableIndex === s.tableIndex)).map(o => o.id);
+		if (state.selected === s.id) return [s.id];
+		return null;
+	}
+
+	/** How far a drag moves services: whole seconds, rounded more coarsely the further the view is zoomed out. */
+	function moveShift(dx) {
+		const step = state.pxPerMin >= 8 ? 5000 : state.pxPerMin >= 3 ? 15000 : state.pxPerMin >= 1 ? 60000 : 300000;
+		return Math.round(dx / state.pxPerMin * 60000 / step) * step;
+	}
+
+	/** Moves services by the same time each, keeping their stops and run times, into the draft. */
+	function moveServices(ids, shift) {
+		const services = ids.map(findService).filter(Boolean);
+		if (!services.length || !shift) return;
+		const r = services[0].route, tableIndex = services[0].tableIndex;
+		const wasSelected = state.selected && ids.includes(state.selected) ? state.selected : null;
+		const moved = id => {
+			const [routeId, service] = id.split("@");
+			return routeId + "@" + mod(Number(service) + shift, DAY);
+		};
+		let failed = false;
+		editTimetable(r, timetable => {
+			const table = timetable.tables[tableIndex];
+			// All or none: a service landing on one that stays where it is stops the whole move
+			const movingSet = new Set(services.map(o => o.service));
+			const blocked = services.map(o => mod(o.service + shift, DAY)).find(time => table.services.includes(time) && !movingSet.has(time));
+			if (blocked !== undefined) {
+				failed = true;
+				return tr("{0} 已经有一班，没有移动", clock(mod(blocked - data.dayStartMillis, DAY)));
+			}
+			// Moving later from the last, earlier from the first, so none lands on one not moved yet
+			const order = services.map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
+			for (const service of order) {
+				const error = retimeService(table, service, mod(service + shift, DAY));
+				if (error) return error;
+			}
+			const minutes = Math.round(shift / 1000) / 60;
+			return tr("{0} 班{1}了 {2} 分钟", services.length, shift > 0 ? tr("推后") : tr("提前"), Math.abs(minutes) % 1 ? Math.abs(minutes).toFixed(2) : Math.abs(minutes));
+		});
+		// The moved services keep being chosen, under their new times
+		if (!failed) {
+			if (state.range) state.range = { anchor: moved(state.range.anchor), ids: state.range.ids.map(moved) };
+			if (wasSelected) state.selected = moved(wasSelected);
+			renderAll();
+		}
+	}
+
 	canvas.addEventListener("pointerdown", e => {
 		const box = canvas.getBoundingClientRect();
 		const handle = hitHandle(e.clientX - box.left, e.clientY - box.top);
-		drag = handle ? { handle, moved: false } : { x: e.clientX, y: e.clientY, viewStart: state.viewStart, scrollY: state.scrollY, moved: false };
+		const s = !handle && hitService(e.clientX - box.left, e.clientY - box.top);
+		const ids = s ? servicesToMove(s) : null;
+		const chosen = !ids ? 0 : inRange(s) ? state.range.ids.length : state.selectedRoute === s.route.id ? s.route.services.filter(o => o.tableIndex === s.tableIndex).length : 1;
+		drag = handle ? { handle, moved: false } : ids ? { move: ids, kept: chosen - ids.length, x: e.clientX, y: e.clientY, moved: false } : { x: e.clientX, y: e.clientY, viewStart: state.viewStart, scrollY: state.scrollY, moved: false };
 		canvas.setPointerCapture(e.pointerId);
 	});
 	canvas.addEventListener("pointermove", e => {
@@ -5740,6 +5844,19 @@
 			drag.moved = true;
 			canvas.classList.add("dragging");
 			dragDwell(drag.handle, e.clientX - box.left);
+			return;
+		}
+		if (drag && drag.move) {
+			const dx = e.clientX - drag.x;
+			if (Math.abs(dx) > 3) drag.moved = true;
+			if (drag.moved) {
+				canvas.classList.add("dragging");
+				state.move = { ids: drag.move, shift: moveShift(dx) };
+				const minutes = Math.round(state.move.shift / 1000) / 60;
+				showTooltip(null);
+				canvas.title = tr("{0} 班，{1}{2} 分钟", drag.move.length, minutes >= 0 ? "+" : "−", Math.abs(minutes)) + (drag.kept ? tr("（{0} 班单独编辑过，不动）", drag.kept) : "");
+				draw();
+			}
 			return;
 		}
 		if (drag) {
@@ -5760,6 +5877,16 @@
 	});
 	canvas.addEventListener("pointerup", e => {
 		const box = canvas.getBoundingClientRect();
+		if (drag && drag.move && drag.moved) {
+			const move = state.move;
+			state.move = null;
+			drag = null;
+			canvas.title = "";
+			canvas.classList.remove("dragging");
+			if (move) moveServices(move.ids, move.shift);
+			else draw();
+			return;
+		}
 		if (drag && !drag.moved && !drag.handle) {
 			const x = e.clientX - box.left, y = e.clientY - box.top;
 			const s = hitService(x, y);
