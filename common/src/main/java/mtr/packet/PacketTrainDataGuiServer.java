@@ -407,11 +407,12 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 * @param detours the ways between services far longer than their platforms are apart, as "from to length apart"
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours) {
-		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, depotLegs, detours, Collections.emptyMap());
+		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, depotLegs, detours, null);
 	}
 
 	/**
-	 * @param turnTimes how long each change of platform within a station takes on the rails
+	 * @param turnTimes how long each change of platform within a station takes on the rails, or null when this result
+	 *                  measured none (generation starting or failed), which leaves the clients' as they were
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours, Map<Long, Map<Long, Long>> turnTimes) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
@@ -431,9 +432,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		packet.writeInt(sentDetours.size());
 		sentDetours.forEach(packet::writeUtf);
 		final List<long[]> turns = new ArrayList<>();
-		turnTimes.forEach((from, times) -> times.forEach((to, millis) -> turns.add(new long[]{from, to, millis})));
+		if (turnTimes != null) {
+			turnTimes.forEach((from, times) -> times.forEach((to, millis) -> turns.add(new long[]{from, to, millis})));
+		}
 		final int turnCount = Math.min(turns.size(), MAX_TURN_TIMES);
-		packet.writeInt(turnCount);
+		packet.writeInt(turnTimes == null ? -1 : turnCount);
 		turns.stream().limit(turnCount).forEach(turn -> {
 			packet.writeLong(turn[0]);
 			packet.writeLong(turn[1]);

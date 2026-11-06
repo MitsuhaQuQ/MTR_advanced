@@ -27,35 +27,47 @@ public final class LineDuties {
 	private static final long MILLIS_PER_BLOCK = 50;
 
 	/**
-	 * How long the siding's trains take out to each of the platforms: as measured along the rails at the last path
-	 * generation ({@link DepotLegs}), otherwise from how far it is, half as much again with room for leaving the siding.
+	 * How long the siding's trains take out to each of the platforms: as kept where measuring found the estimate off
+	 * ({@link Siding#getRecordedLegs}), otherwise the estimate.
 	 */
 	public static Map<Long, Long> sidingLinks(Siding siding, Collection<Long> platformIds, DataCache dataCache) {
-		final Map<Long, Long> links = new TreeMap<>();
-		final BlockPos sidingPos = siding.getMidPos();
-		final DepotLegs legs = siding.getDepotLegs();
-		platformIds.forEach(platformId -> {
-			final Platform platform = dataCache.platformIdMap.get(platformId);
-			if (platform != null) {
-				final Long measured = legs.outMillis.get(platform.id);
-				links.put(platform.id, measured != null ? measured : (long) (Math.sqrt(sidingPos.distSqr(platform.getMidPos())) * MILLIS_PER_BLOCK * 3 / 2) + ESTIMATE_MARGIN_MILLIS);
-			}
-		});
-		return links;
+		return legsOrEstimates(siding, siding.getRecordedLegs().outMillis, platformIds, dataCache);
 	}
 
 	/**
-	 * @return each siding's way back from each platform, as measured at the last path generation
+	 * How long the siding's trains take back from each of the platforms, the same way.
 	 */
-	public static Map<Long, Map<Long, Long>> backLinksOf(Collection<Siding> sidings) {
+	public static Map<Long, Long> sidingBackLinks(Siding siding, Collection<Long> platformIds, DataCache dataCache) {
+		return legsOrEstimates(siding, siding.getRecordedLegs().backMillis, platformIds, dataCache);
+	}
+
+	/**
+	 * @return each siding's way back from each of the platforms
+	 */
+	public static Map<Long, Map<Long, Long>> backLinksOf(Collection<Siding> sidings, Collection<Long> platformIds, DataCache dataCache) {
 		final Map<Long, Map<Long, Long>> backLinks = new TreeMap<>();
-		sidings.forEach(siding -> {
-			final DepotLegs legs = siding.getDepotLegs();
-			if (!legs.backMillis.isEmpty()) {
-				backLinks.put(siding.id, new TreeMap<>(legs.backMillis));
+		sidings.forEach(siding -> backLinks.put(siding.id, sidingBackLinks(siding, platformIds, dataCache)));
+		return backLinks;
+	}
+
+	/**
+	 * An estimate of how long a train takes between the siding and the platform, out or back: from how far apart they
+	 * are, half as much again with room for leaving the siding and the bends of the rails.
+	 */
+	public static long estimateMillis(Siding siding, long platformId, DataCache dataCache) {
+		final Platform platform = dataCache.platformIdMap.get(platformId);
+		return platform == null ? ESTIMATE_MARGIN_MILLIS : (long) (Math.sqrt(siding.getMidPos().distSqr(platform.getMidPos())) * MILLIS_PER_BLOCK * 3 / 2) + ESTIMATE_MARGIN_MILLIS;
+	}
+
+	private static Map<Long, Long> legsOrEstimates(Siding siding, Map<Long, Long> kept, Collection<Long> platformIds, DataCache dataCache) {
+		final Map<Long, Long> links = new TreeMap<>();
+		platformIds.forEach(platformId -> {
+			if (dataCache.platformIdMap.containsKey(platformId)) {
+				final Long recorded = kept.get(platformId);
+				links.put(platformId, recorded != null ? recorded : estimateMillis(siding, platformId, dataCache));
 			}
 		});
-		return backLinks;
+		return links;
 	}
 
 	/**
@@ -251,10 +263,14 @@ public final class LineDuties {
 					// Its trains start at the first stops of its own depot's routes, the nearer the sooner
 					// As measured out along the rails at the last path generation (DepotLegs), otherwise from how far it is, with room
 					final List<Long> firstPlatforms = new ArrayList<>();
-					depot.getSidingRoutes(siding, dataCache).forEach(route -> firstPlatforms.add(route.getFirstPlatformId()));
+					final List<Long> lastPlatforms = new ArrayList<>();
+					depot.getSidingRoutes(siding, dataCache).forEach(route -> {
+						firstPlatforms.add(route.getFirstPlatformId());
+						lastPlatforms.add(route.getLastPlatformId());
+					});
 					final Map<Long, Long> links = sidingLinks(siding, firstPlatforms, dataCache);
 					// And back to it from each last stop
-					backLinks.putAll(backLinksOf(Collections.singletonList(siding)));
+					backLinks.put(siding.id, sidingBackLinks(siding, lastPlatforms, dataCache));
 					// Its fleet, however many trains its rails hold
 					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), links, depot.id));
 					group.depotOf.put(siding.id, depot);
@@ -281,7 +297,7 @@ public final class LineDuties {
 			});
 			groups.forEach(group -> {
 				keyBuilder.append('[').append(group.serviceTypes).append(group.routeIds).append(']');
-				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(siding.links).append(';'));
+				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(siding.links).append(backLinks.get(siding.sidingId)).append(';'));
 			});
 			keyBuilder.append("taken:").append(taken.hashCode());
 			// The routes' paths keep off the connecting lines, which changes their times

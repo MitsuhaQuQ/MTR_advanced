@@ -67,6 +67,29 @@ class SidingOperationTest {
 	}
 
 	@Test
+	void legsKeptAsMeasuredAreSavedSentAndUpdated() throws IOException {
+		final Siding siding = siding();
+		final List<FriendlyByteBuf> sent = new ArrayList<>();
+		final DepotLegs legs = new DepotLegs(11, Collections.singletonMap(11L, 90000L), Collections.singletonMap(12L, 40000L));
+		siding.setRecordedLegs(legs, sent::add);
+
+		final Siding read = new Siding(saved(siding));
+		assertEquals(legs.outMillis, read.getRecordedLegs().outMillis);
+		assertEquals(legs.backMillis, read.getRecordedLegs().backMillis);
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		siding.writePacket(packet);
+		assertEquals(legs.outMillis, new Siding(packet).getRecordedLegs().outMillis);
+
+		final Siding updated = siding();
+		final FriendlyByteBuf update = sent.get(0);
+		update.readLong();
+		update.readUtf();
+		updated.update(update.readUtf(), update);
+		assertEquals(legs.backMillis, updated.getRecordedLegs().backMillis);
+	}
+
+	@Test
 	void anOldSaveKeepsWhatItsSidingHeld() throws IOException {
 		final Siding siding = siding();
 		siding.setUnlimitedTrains(false, 4, false, 0, Train.ACCELERATION_DEFAULT, 0, false, packet -> {
@@ -74,7 +97,9 @@ class SidingOperationTest {
 		final Map<String, Value> map = saved(siding);
 		map.remove("fleet_size");
 		map.remove("route_ids");
+		map.remove("recorded_depot_legs");
 		final Siding read = new Siding(map);
+		assertTrue(read.getRecordedLegs().outMillis.isEmpty(), "an old siding plans by estimates");
 		assertEquals(5, read.getFleetSize(), "an old siding's fleet is what it held");
 		assertTrue(read.getRouteIds().isEmpty());
 	}

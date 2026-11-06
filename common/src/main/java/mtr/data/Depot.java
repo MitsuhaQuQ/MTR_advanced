@@ -633,6 +633,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// How each siding's trains get out to their first stops and back, for the advanced editor's running diagram
 				final Map<Long, DepotLegs> depotLegs = new TreeMap<>();
 				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> depotLegs.put(siding.id, siding.getDepotLegs())));
+				// Where the times measured are off the plan's by more than a little, the plan goes by them from now on: kept
+				// in the save and sent to the clients, which plans the unit again (its key holds them)
+				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> {
+					final DepotLegs recorded = DepotLegs.record(siding.getRecordedLegs(), siding.getDepotLegs(), platformId -> LineDuties.estimateMillis(siding, platformId, dataCache));
+					if (recorded != siding.getRecordedLegs()) {
+						System.out.println("Minecraft Transit Railway: siding " + siding.id + " takes longer or shorter out or back than planned, kept as measured: out " + recorded.outMillis + ", back " + recorded.backMillis);
+						siding.setRecordedLegs(recorded, packet -> minecraftServer.execute(() -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_SIDING, packet))));
+					}
+				}));
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (CancellationException e) {
@@ -1450,10 +1459,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			}
 			// Out to the first stops and back as measured on the rails, and the changes of platform as measured
 			final List<Long> firstPlatforms = new ArrayList<>();
-			mainRoutes.forEach(route -> firstPlatforms.add(route.getFirstPlatformId()));
+			final List<Long> lastPlatforms = new ArrayList<>();
+			mainRoutes.forEach(route -> {
+				firstPlatforms.add(route.getFirstPlatformId());
+				lastPlatforms.add(route.getLastPlatformId());
+			});
 			final List<DutyGenerator.SidingInput> sidingInputs = new ArrayList<>();
 			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, dataCache), id)));
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings));
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();

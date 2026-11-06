@@ -3438,7 +3438,8 @@
 					// A change of platform takes as long as the server measured on the rails, or has no way at all
 					const turn = turnTimeOf(depot, endStop.platformId, startStop.platformId);
 					if (turn === null) problems.push({ i, text: tr("这两个站台之间没有路：{0} 到 {1} 换不过去，刷新路径后还是这样就要加折返线或渡线", stopLabel(endStop), stopLabel(startStop)) });
-					else if (turn !== undefined && gap < turn) problems.push({ i, text: tr("衔接时间不够：从 {0} 换到 {1} 实际要 {2}，这里只有 {3}", stopLabel(endStop), stopLabel(startStop), formatDuration(turn), formatDuration(gap)) });
+					// As the planner: the least turnaround at the platform arrived at, then the way to the other one
+					else if (turn !== undefined && gap < TURN_MIN_MILLIS + turn) problems.push({ i, text: tr("衔接时间不够：从 {0} 换到 {1} 实际要 {2}，这里只有 {3}", stopLabel(endStop), stopLabel(startStop), formatDuration(TURN_MIN_MILLIS + turn), formatDuration(gap)) });
 				}
 			}
 		});

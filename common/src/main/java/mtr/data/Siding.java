@@ -78,6 +78,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private volatile DepotLegs lastDepotLegs = DepotLegs.NONE;
 	/**
+	 * The ways out and back the duties are planned by where measuring found the estimate off (DepotLegs.record): saved,
+	 * sent to the clients, and kept across path generations, unlike {@link #lastDepotLegs}.
+	 */
+	private volatile DepotLegs recordedLegs = DepotLegs.NONE;
+	/**
 	 * How many trains run from the siding for a depot running by duties, as a depot's fleet, which needn't fit on the
 	 * rails here; -1 for as many as the duties need.
 	 */
@@ -152,6 +157,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_MAX_TRAINS = "max_trains";
 	private static final String KEY_ROUTE_IDS = "route_ids";
 	private static final String KEY_FLEET_SIZE = "fleet_size";
+	private static final String KEY_RECORDED_LEGS = "recorded_depot_legs";
 	/**
 	 * The update setting the routes the siding's trains run and how many trains it has, together.
 	 */
@@ -201,6 +207,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		// Saved before the fleet: as many as the siding held
 		fleetSize = Math.max(-1, messagePackHelper.getInt(KEY_FLEET_SIZE, getTrainLimit()));
+		// An old save has none, and plans by estimates until measuring finds them off
+		final List<Long> recordedList = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_RECORDED_LEGS, value -> recordedList.add(value.asIntegerValue().asLong()));
+		recordedLegs = recordedList.isEmpty() ? DepotLegs.NONE : DepotLegs.fromList(recordedList);
 		isManual = messagePackHelper.getBoolean(KEY_IS_MANUAL);
 		maxManualSpeed = messagePackHelper.getInt(KEY_MAX_MANUAL_SPEED);
 		repeatIndex1 = messagePackHelper.getInt(KEY_REPEAT_INDEX_1);
@@ -269,6 +279,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant <= 0 ? Train.ACCELERATION_DEFAULT : tempAccelerationConstant;
 		decelerationConstant = clampDeceleration(packet.readFloat());
 		readOperation(packet);
+		recordedLegs = DepotLegs.readPacket(packet);
 	}
 
 	@Override
@@ -291,6 +302,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			messagePacker.packLong(routeId);
 		}
 		messagePacker.packString(KEY_FLEET_SIZE).packInt(fleetSize);
+		final List<Long> recordedList = recordedLegs.toList();
+		messagePacker.packString(KEY_RECORDED_LEGS).packArrayHeader(recordedList.size());
+		for (final long value : recordedList) {
+			messagePacker.packLong(value);
+		}
 		messagePacker.packString(KEY_IS_MANUAL).packBoolean(isManual);
 		messagePacker.packString(KEY_MAX_MANUAL_SPEED).packInt(maxManualSpeed);
 		messagePacker.packString(KEY_REPEAT_INDEX_1).packInt(repeatIndex1);
@@ -310,7 +326,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 19;
+		return super.messagePackLength() + 20;
 	}
 
 	@Override
@@ -331,6 +347,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		packet.writeFloat(accelerationConstant);
 		packet.writeFloat(decelerationConstant);
 		writeOperation(packet);
+		recordedLegs.writePacket(packet);
 	}
 
 	@Override
@@ -341,6 +358,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				break;
 			case KEY_OPERATION:
 				readOperation(packet);
+				break;
+			case KEY_RECORDED_LEGS:
+				recordedLegs = DepotLegs.readPacket(packet);
 				break;
 			case KEY_BASE_TRAIN_TYPE:
 				setTrainDetails(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readUtf(PACKET_STRING_READ_LENGTH), false);
@@ -440,6 +460,23 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	public void setDepotLegs(DepotLegs depotLegs) {
 		lastDepotLegs = depotLegs;
+	}
+
+	public DepotLegs getRecordedLegs() {
+		return recordedLegs;
+	}
+
+	/**
+	 * Keeps the ways out and back the duties are planned by, and sends them to the clients.
+	 */
+	public void setRecordedLegs(DepotLegs legs, Consumer<FriendlyByteBuf> sendPacket) {
+		recordedLegs = legs;
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_RECORDED_LEGS);
+		legs.writePacket(packet);
+		sendPacket.accept(packet);
 	}
 
 	/**

@@ -298,12 +298,16 @@ public final class EditorDuties implements IPacket {
 
 		// Out and back as measured on the rails, like the game's own plan, rather than no time at all
 		final List<Long> firstPlatforms = new ArrayList<>();
-		routes.forEach(route -> firstPlatforms.add(route.getFirstPlatformId()));
+		final List<Long> lastPlatforms = new ArrayList<>();
+		routes.forEach(route -> {
+			firstPlatforms.add(route.getFirstPlatformId());
+			lastPlatforms.add(route.getLastPlatformId());
+		});
 		final List<Siding> depotSidings = new ArrayList<>();
 		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(depotSidings::add);
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
 		depotSidings.forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, ClientData.DATA_CACHE), depot.id)));
-		final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(depot)), LineDuties.backLinksOf(depotSidings));
+		final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(depot)), LineDuties.backLinksOf(depotSidings, lastPlatforms, ClientData.DATA_CACHE));
 		final Map<Long, Long> stationOf = new HashMap<>();
 		ClientData.DATA_CACHE.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 		final long maxLayoverMillis = depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;

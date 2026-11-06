@@ -6,6 +6,7 @@ import transitsim.plan.TimeSegment;
 import transitsim.plan.TripPath;
 
 import java.util.*;
+import java.util.function.ToLongFunction;
 
 /**
  * How a siding's trains get out to the first stop of a duty and back from the last (decoupling document 5d, first step):
@@ -75,6 +76,90 @@ public final class DepotLegs {
 		}
 		final long entrance = entrances.entrySet().stream().max(Map.Entry.<Long, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey(Comparator.reverseOrder()))).map(Map.Entry::getKey).orElse(0L);
 		return new DepotLegs(entrance, out, back);
+	}
+
+	/**
+	 * How far a measured way out or back may be from what the plan took before it's kept instead: within it the plan
+	 * stays as it is, so small differences between path generations don't plan the duties again and again.
+	 */
+	public static final long RECORD_TOLERANCE_MILLIS = 15000;
+
+	/**
+	 * The legs the plan goes by after a path generation measured these: what was kept, with each measured way out or
+	 * back that is more than {@link #RECORD_TOLERANCE_MILLIS} from what the plan took (kept, or else estimated) put in
+	 * its place. The plan starts from estimates, and keeps a measured time only where it found them off.
+	 *
+	 * @param estimate the estimate for a platform, out or back
+	 * @return the kept legs themselves when nothing changes
+	 */
+	public static DepotLegs record(DepotLegs kept, DepotLegs measured, ToLongFunction<Long> estimate) {
+		final Map<Long, Long> out = new TreeMap<>(kept.outMillis);
+		final Map<Long, Long> back = new TreeMap<>(kept.backMillis);
+		final boolean outChanged = recordInto(out, measured.outMillis, estimate);
+		final boolean backChanged = recordInto(back, measured.backMillis, estimate);
+		final long entrance = measured.entrancePlatform != 0 ? measured.entrancePlatform : kept.entrancePlatform;
+		if (!outChanged && !backChanged && entrance == kept.entrancePlatform) {
+			return kept;
+		}
+		return new DepotLegs(entrance, out, back);
+	}
+
+	private static boolean recordInto(Map<Long, Long> kept, Map<Long, Long> measured, ToLongFunction<Long> estimate) {
+		boolean changed = false;
+		for (final Map.Entry<Long, Long> entry : measured.entrySet()) {
+			if (kept.size() >= MAX_PLATFORMS && !kept.containsKey(entry.getKey())) {
+				continue;
+			}
+			final Long before = kept.get(entry.getKey());
+			final long planned = before != null ? before : estimate.applyAsLong(entry.getKey());
+			if (Math.abs(entry.getValue() - planned) > RECORD_TOLERANCE_MILLIS) {
+				kept.put(entry.getKey(), entry.getValue());
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	/**
+	 * For saves: the entrance, then the count and pairs of the ways out, then of the ways back.
+	 */
+	public List<Long> toList() {
+		final List<Long> list = new ArrayList<>();
+		list.add(entrancePlatform);
+		list.add((long) outMillis.size());
+		outMillis.forEach((platformId, millis) -> {
+			list.add(platformId);
+			list.add(millis);
+		});
+		list.add((long) backMillis.size());
+		backMillis.forEach((platformId, millis) -> {
+			list.add(platformId);
+			list.add(millis);
+		});
+		return list;
+	}
+
+	/**
+	 * @return as saved by {@link #toList}, or {@link #NONE} if it doesn't read
+	 */
+	public static DepotLegs fromList(List<Long> list) {
+		try {
+			int index = 0;
+			final long entrance = list.get(index++);
+			final Map<Long, Long> out = new TreeMap<>();
+			final int outCount = Math.min(list.get(index++).intValue(), MAX_PLATFORMS);
+			for (int i = 0; i < outCount; i++) {
+				out.put(list.get(index++), list.get(index++));
+			}
+			final Map<Long, Long> back = new TreeMap<>();
+			final int backCount = Math.min(list.get(index++).intValue(), MAX_PLATFORMS);
+			for (int i = 0; i < backCount; i++) {
+				back.put(list.get(index++), list.get(index++));
+			}
+			return new DepotLegs(entrance, out, back);
+		} catch (IndexOutOfBoundsException | NullPointerException e) {
+			return NONE;
+		}
 	}
 
 	public void writePacket(FriendlyByteBuf packet) {

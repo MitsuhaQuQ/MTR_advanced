@@ -581,8 +581,10 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		for (int i = Math.min(packet.readInt(), 64); i > 0; i--) {
 			detours.add(packet.readUtf(256));
 		}
-		final Map<Long, Map<Long, Long>> turnTimes = new TreeMap<>();
-		for (int i = Math.min(packet.readInt(), 4096); i > 0; i--) {
+		// -1: this result measured none, and the depot keeps what it had
+		final int turnCount = packet.readInt();
+		final Map<Long, Map<Long, Long>> turnTimes = turnCount < 0 ? null : new TreeMap<>();
+		for (int i = Math.min(turnCount, 4096); i > 0; i--) {
 			final long from = packet.readLong();
 			final long to = packet.readLong();
 			turnTimes.computeIfAbsent(from, key -> new TreeMap<>()).put(to, packet.readLong());
@@ -595,8 +597,10 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 				depot.clientFailedDuties = failedDuties;
 				depot.clientFailedDutyCount = totalFailed;
 				depot.clientDetours = detours;
-				depot.clientTurnTimes = turnTimes;
-				depot.turnTimesMeasured = true;
+				if (turnTimes != null) {
+					depot.clientTurnTimes = turnTimes;
+					depot.turnTimesMeasured = true;
+				}
 				depotLegs.forEach((sidingId, legs) -> {
 					final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
 					if (siding != null) {
