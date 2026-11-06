@@ -11,6 +11,13 @@ assert.deepStrictEqual(batch.evenTimes(8 * H, 9 * H, 0), []);
 // Past midnight
 assert.deepStrictEqual(batch.evenTimes(23 * H, 1 * H, 3), [23 * H, 0, 1 * H]);
 
+// From the start every step until the end, the end included where one falls on it
+assert.deepStrictEqual(batch.stepTimes(5 * H, 6 * H, 20 * M), [5 * H, 5 * H + 20 * M, 5 * H + 40 * M, 6 * H]);
+assert.deepStrictEqual(batch.stepTimes(5 * H, 6 * H, 25 * M), [5 * H, 5 * H + 25 * M, 5 * H + 50 * M]);
+assert.deepStrictEqual(batch.stepTimes(23 * H, 1 * H, H), [23 * H, 0, 1 * H]);
+assert.deepStrictEqual(batch.stepTimes(5 * H, 6 * H, 0), []);
+assert.strictEqual(batch.stepTimes(5 * H, 23 * H, 5 * M).length, 18 * 12 + 1);
+
 // Spaced again from the first
 assert.deepStrictEqual(batch.respace([8 * H, 8 * H + 3 * M, 8 * H + 11 * M], 10 * M), [8 * H, 8 * H + 10 * M, 8 * H + 20 * M]);
 

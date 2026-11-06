@@ -22,6 +22,18 @@
 	}
 
 	/**
+	 * @return {number[]} from start every step until end, the end included where a service falls on it; at most 1000.
+	 * An end before the start runs on past midnight.
+	 */
+	function stepTimes(start, end, step) {
+		if (!(step > 0)) return [];
+		const span = mod(end - start, DAY);
+		const times = [];
+		for (let offset = 0; offset <= span && times.length < 1000; offset += step) times.push(mod(start + offset, DAY));
+		return times;
+	}
+
+	/**
 	 * @param times the services' times, in their order
 	 * @return {number[]} the times spaced gap apart from the first, which keeps its time
 	 */
@@ -57,7 +69,7 @@
 		return ids.slice(Math.min(a, b), Math.max(a, b) + 1);
 	}
 
-	const api = { DAY, evenTimes, respace, besideTime, runBetween };
+	const api = { DAY, evenTimes, stepTimes, respace, besideTime, runBetween };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	else root.TimetableBatch = api;
 })(typeof window !== "undefined" ? window : this);

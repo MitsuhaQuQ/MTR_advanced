@@ -877,7 +877,7 @@
 		return near + mod(local - oldLocal + DAY / 2, DAY) - DAY / 2;
 	}
 
-	const PATTERN_HINT = tr("填起始时刻、结束时刻和班数（首末两班都算，中间等分），或者只在起始时刻一栏写 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
+	const PATTERN_HINT = tr("填起始时刻、结束时刻和期望间隔（分钟，从起始时刻起每隔这么久一班，到结束时刻为止），或者只在起始时刻一栏写 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
 	/** @return the services, in UTC milliseconds of the day, that a pattern like "07:10 + 10 * 00:03" stands for */
 	function parsePattern(value) {
 		const text = value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFF10 + 48)).replace(/[：]/g, ":").replace(/＋/g, "+").replace(/[＊×]/g, "*");
@@ -2953,7 +2953,7 @@
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint">${tr("余裕")} <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
 			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
-			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("班数")}" inputmode="numeric" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:4em"><button data-add-service>${tr("添加")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
+			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("间隔 5")}" title="${tr("期望间隔，分钟（也可以写 04:30 表示 4 分 30 秒）")}" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:5em"><button data-add-service>${tr("添加")}</button><button data-clear-table title="${tr("删掉这张表的全部班次，连同直通、回库、出入库指令和例外；表本身、停站时分和运行的星期保留")}">${tr("清空")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
 		if (!services.length) {
 			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
 			return;
@@ -5243,12 +5243,38 @@
 		}
 	})();
 
-	/** The services to add: from start to end, count of them evenly apart; or the start's own pattern alone. */
-	function servicesToAdd(startText, endText, countText) {
-		if (!endText.trim() && !countText.trim()) return parsePattern(startText);
-		const start = parseClock(startText.trim()), end = parseClock(endText.trim()), count = Number(countText.trim());
-		if (start === null || !Number.isInteger(count) || count < 1 || count > 1000 || count > 1 && end === null) return null;
-		return Batch.evenTimes(start, end === null ? start : end, count).map(time => mod(time - data.offsetMillis, DAY));
+	/**
+	 * The services to add: from the start every interval until the end (the end included where one falls on it); with no
+	 * end, the start alone; or the start's own pattern when nothing else is filled in. The interval is in minutes, or
+	 * minutes and seconds as 04:30.
+	 */
+	function servicesToAdd(startText, endText, intervalText) {
+		if (!endText.trim() && !intervalText.trim()) return parsePattern(startText);
+		const start = parseClock(startText.trim()), end = endText.trim() ? parseClock(endText.trim()) : start;
+		const text = intervalText.trim(), parts = text.split(/[:：]/);
+		const step = parts.length === 2 ? (Number(parts[0]) * 60 + Number(parts[1])) * 1000 : Number(text) * 60000;
+		if (start === null || end === null || !(step >= 1000)) return null;
+		return Batch.stepTimes(start, end, Math.round(step / 1000) * 1000).map(time => mod(time - data.offsetMillis, DAY));
+	}
+
+	/**
+	 * Takes every service out of a table, with their through links, returns to the depot, orders and exceptions; the
+	 * table, its stop times and its days stay. Into the draft like any other change, so it can still be dropped.
+	 */
+	function clearTable(r, index) {
+		const table = timetableOf(r).tables[index];
+		if (!table || !table.services.length) return;
+		if (!confirm(tr("清空“{0}”的 {1} 个班次？改动先放进草稿，应用前都可以放弃。", tableName(table, index), table.services.length))) return;
+		state.range = null;
+		editTimetable(r, timetable => {
+			const edited = timetable.tables[index];
+			edited.services = [];
+			edited.links = [];
+			edited.returns = [];
+			edited.orders = [];
+			edited.exceptions = [];
+			return tr("已清空“{0}”", tableName(edited, index));
+		});
 	}
 
 	function addServices() {
@@ -5605,6 +5631,11 @@
 			addServices();
 			return;
 		}
+		if (e.target.closest("[data-clear-table]") && r) {
+			const today = timetableOf(r).tables.findIndex(table => table.weekdays >> state.weekday & 1);
+			if (today >= 0) clearTable(r, today);
+			return;
+		}
 		const cell = e.target.closest("td[data-svc], th[data-svc]");
 		if (cell && e.shiftKey && cell.tagName === "TH") {
 			const s = findService(cell.dataset.svc);
@@ -5639,6 +5670,7 @@
 			const index = +tableButton.dataset.table, timetable = timetableOf(r);
 			openMenu(e.clientX, e.clientY, [
 				[tr("改名和运行的星期…"), () => tableDialog(r, index)],
+				[tr("清空这张表的班次"), timetable.tables[index].services.length ? () => clearTable(r, index) : null],
 				[timetable.tables.length > 1 ? tr("删除这张表") : tr("删除这张表（至少要留一张）"), timetable.tables.length > 1 ? () => {
 					if (confirm(`${tr("删除“{0}”和它的 {1} 个班次？", tableName(timetable.tables[index], index), timetable.tables[index].services.length)}`)) editTimetable(r, edited => { edited.tables.splice(index, 1); });
 				} : null],
