@@ -579,6 +579,7 @@ const I18N = (() => {
 			"{0}：{1} 到的车在 {2} 一直停到 {3}，{4} 列车改用别的站台或折返线": "{0}: the train arriving at {1} stands at {2} until {3}; {4} trains use another platform or a turn back rail",
 			"{0}：{1} 到 {2} 的车没有空站台可停，也没有空的折返线，要等前面的车开走": "{0}: the train arriving at {2} at {1} has no free platform or turn back rail, and waits for the one ahead to leave",
 			"接下一班": "Run next",
+			"接 {0}": "then {0}",
 			"停 {0}": "stands {0}",
 			"（现在由 {0} 接）": " (now run by {0})",
 			"取消指定接续": "Clear the next service set",

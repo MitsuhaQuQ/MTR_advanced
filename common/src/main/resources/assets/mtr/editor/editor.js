@@ -3012,7 +3012,7 @@
 	/** The head of a service's column: its time, which starts editing it, and notes. */
 	function serviceHead(s, selected, notes) {
 		const noTrain = !s.suspended && hasNoTrain(s);
-		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}${s.suspended ? " suspended" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${s.suspended ? tr("停运：留在表里，不出车、不排运用，右键恢复") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.suspended ? `<span class="note suspended-note">${tr("停运")}</span>` : ""}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
+		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}${s.suspended ? " suspended" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${s.suspended ? tr("停运：留在表里，不出车、不排运用，右键恢复") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.suspended ? `<span class="note suspended-note">${tr("停运")}</span>` : ""}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link && s.link.fromStop < 0 && s.link.toStop === 0 ? `<span class="note">${tr("接 {0}", clock(mod(s.link.toService - data.dayStartMillis, DAY)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
 	}
 
 	/** A service's arrival, departure or passing time at a stop, as a cell to click and type into. @param t its times there */
@@ -3597,8 +3597,10 @@
 		terminal = Object.assign(TerminalPairs.pair({ runs, manual, duties, turnTimes }), { weekday: state.weekday });
 		return terminal;
 	}
+	/** A platform as the whole network's topology has it (id, name, station, stationName), or null. */
+	const platformById = platformId => topo && topo.index.has(String(platformId)) ? topo.platforms[topo.index.get(String(platformId))] : null;
 	const platformText = platformId => {
-		const platform = data.platforms.find(p => p.id === platformId);
+		const platform = platformById(platformId);
 		return platform ? `${shortName(platform.stationName) || ""} ${platform.name || ""}`.trim() : String(platformId);
 	};
 	/** How a train goes on at the end of a route, as a short sentence. */
@@ -3951,7 +3953,7 @@
 	/** The planner's "SHORT_TURNAROUND <platform> <millis had> <millis needed>" as a sentence, with the station's name. */
 	function shortTurnaroundText(issue) {
 		const [, platformId, had, needed] = issue.split(" ");
-		const platform = data.platforms.find(p => p.id === platformId);
+		const platform = platformById(platformId);
 		const where = platform ? `${shortName(platform.stationName) || tr("不属于车站")} ${platform.name || ""}`.trim() : platformId;
 		return tr("在 {0} 折返时间不够：车到站后 {1} 秒就要发下一班，至少要 {2} 秒，所以每列车只能跑一趟就回库。把回程的发车往后挪，或者加一个站台。", where, Math.round(+had / 1000), Math.round(+needed / 1000));
 	}

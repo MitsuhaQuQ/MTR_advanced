@@ -676,7 +676,9 @@ public class TrainService<T extends PlanTrack> {
 			}
 			final long[] times = getWayTimes(newPath, newStopIndex, newStopIndex + turnBackPoint.getLength(way), nowMillis);
 			final List<UUID> wayRails = turnBackPoint.getWayRails(way);
-			if (times != null && (wayRails == null || vehicle.isWayClear(wayRails)) && times[0] <= times[1] && times[1] - times[0] >= LONG_TURN_BACK_WAIT_MILLIS) {
+			// How long the wait is, from when the train could be ready to its next duty segment's service
+			final long nextMillis = getNextSegmentServiceMillis();
+			if (times != null && nextMillis > 0 && (wayRails == null || vehicle.isWayClear(wayRails)) && times[0] <= nextMillis && nextMillis - times[0] >= LONG_TURN_BACK_WAIT_MILLIS) {
 				chosenWay = way;
 				chosenPath = newPath;
 				chosenStopIndex = newStopIndex;
@@ -724,6 +726,17 @@ public class TrainService<T extends PlanTrack> {
 		vehicle.changePath(chosenPath, chosenStopIndex);
 		setLastLap(isLastLap);
 		return true;
+	}
+
+	/**
+	 * @return on a duty, when its next segment's service is due, or 0
+	 */
+	private long getNextSegmentServiceMillis() {
+		if (!isOnDuty()) {
+			return 0;
+		}
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		return dutyIndex + 1 < segments.size() ? DutyShapes.getServiceMillis(dutyDayStart, segments.get(dutyIndex + 1).service) : 0;
 	}
 
 	/**

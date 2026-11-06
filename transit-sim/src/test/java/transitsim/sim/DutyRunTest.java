@@ -171,6 +171,54 @@ class DutyRunTest {
 		assertEquals(MONDAY + 8 * HOUR + 22 * MINUTE, train.service.getPlannedArrivalMillis(5));
 	}
 
+	/**
+	 * Route 1 to platform 3, then route 2 from 08:20 at platform 4, turning back either at platform 9 of the station (the
+	 * usual way, 站前) or on a turn back rail where the train stops (站后): both two rails from platform 3 to platform 4.
+	 */
+	private List<TripPath<TestTrack>> mixedTurnBackDuty(FakeTrain[] train) {
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
+		final String key = DutyShapes.getSlotKey(depot.slots, 0, 0, routes::get);
+		final List<TestTrack> platformPath = makePath(0, 1, 2, 3, 9, 4, 5, 0);
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, Arrays.asList(1L, 2L), new HashMap<>(), new HashMap<>(), new HashMap<>(), platformPath, new int[]{1, 5}, null, null, false, false);
+		final TripPath<TestTrack> usual = TripPath.ofDuty(dutyPlan, new int[]{1, 5}, platformPath, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 9, 6), stop(5, 4, 8), stop(6, 5, 10)), -1, -1, new int[]{3});
+		final TripPath<TestTrack> rail = TripPath.ofDuty(dutyPlan, new int[]{1, 5}, makePath(0, 1, 2, 3, 0, 4, 5, 0), StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 0, 6), stop(5, 4, 8), stop(6, 5, 10)), 0, 1, new int[]{3});
+		tripPaths.put(usual.key, usual);
+		tripPaths.put(rail.key, rail);
+		train[0] = newTrain(platformPath, TurnBacks.of(new int[]{3}, new TurnBackPoint(Arrays.asList(FIRST_TURN_BACK, SECOND_TURN_BACK), new int[]{2, 2}, 0)));
+		return Arrays.asList(usual, rail);
+	}
+
+	@Test
+	void aTrainWithALongWaitTakesTheTurnBackRailOverThePlatform() {
+		// Leaving platform 3 at 08:04, ready at platform 4 by 08:08 for 08:20: a long wait, so on the rail (混合折返)
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = mixedTurnBackDuty(train);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		assertTrue(train[0].service.chooseTurnBack());
+		assertSame(paths.get(1), train[0].followed);
+		assertEquals(SECOND_TURN_BACK, train[0].reserved);
+	}
+
+	@Test
+	void aTrainWithAShortWaitTurnsBackTheUsualWay() {
+		// Leaving at 08:15, ready by 08:19: a short wait, the usual way at the platform
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = mixedTurnBackDuty(train);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 15 * MINUTE);
+		assertFalse(train[0].service.chooseTurnBack());
+		assertEquals(FIRST_TURN_BACK, train[0].reserved);
+	}
+
+	@Test
+	void aTrainWithALongWaitTurnsBackAtThePlatformWhenTheRailIsTaken() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = mixedTurnBackDuty(train);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		train[0].takenRails.addAll(SECOND_TURN_BACK);
+		assertFalse(train[0].service.chooseTurnBack());
+		assertEquals(FIRST_TURN_BACK, train[0].reserved);
+	}
+
 	@Test
 	void aDutyTurnsBackTheUsualWayWhenItMakesTheNextService() {
 		final FakeTrain[] train = new FakeTrain[1];
