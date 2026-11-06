@@ -46,6 +46,10 @@ public final class DutyPlanner {
 	 * which here is the siding the pool next sends a train out of. Filled as the week runs.
 	 */
 	private final Map<String, List<Returning>> returning = new TreeMap<>();
+	/**
+	 * By platform, the times trains wait on the turn back rail beyond it for their next service; filled as the week runs.
+	 */
+	private final Map<Long, List<long[]>> holds = new TreeMap<>();
 
 	private DutyPlanner(OperationNetwork network, long maxLayoverMillis) {
 		this.network = network;
@@ -160,6 +164,7 @@ public final class DutyPlanner {
 		final WeekResult result = new WeekResult();
 		platformStops.clear();
 		returning.clear();
+		holds.clear();
 		final Map<Long, List<Long>> depotReady = new TreeMap<>();
 		network.depots().forEach(depot -> {
 			// The trains in the siding as the week before left them, which may have gone back to other sidings of the pool
@@ -308,6 +313,7 @@ public final class DutyPlanner {
 
 	private OpenDuty findTrainInService(List<OpenDuty> open, Trip trip) {
 		OpenDuty best = null;
+		boolean bestHolds = false;
 		OpenDuty missed = null;
 		for (final OpenDuty duty : open) {
 			final long connectionMillis = network.connectionMillis(duty.platformId, trip.firstPlatform());
@@ -316,13 +322,23 @@ public final class DutyPlanner {
 			final boolean overnightMove = duty.platformId != trip.firstPlatform() && Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS) != Math.floorDiv(trip.startMillis(), OperationTime.DAY_MILLIS);
 			final boolean reachable = !overnightMove && connectionMillis != OperationNetwork.UNREACHABLE && duty.readyMillis + connectionMillis <= trip.startMillis();
 			final boolean samePlatform = duty.platformId == trip.firstPlatform();
-			if (reachable && (!samePlatform || isPlatformFree(duty.platformId, duty.endMillis, trip.startMillis())) && (best == null || duty.readyMillis > best.readyMillis)) {
+			// With the platform taken meanwhile, a train can wait on a turn back rail beyond it if one is free (混合折返)
+			final boolean platformFree = !samePlatform || isPlatformFree(duty.platformId, duty.endMillis, trip.startMillis());
+			// A long wait goes on the rail too, as the runtime sends it there (TrainService.LONG_TURN_BACK_WAIT_MILLIS)
+			final boolean longWait = samePlatform && trip.startMillis() - duty.endMillis >= transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS;
+			final boolean railFree = (!platformFree || longWait) && reachable && isHoldFree(duty, trip);
+			if (reachable && (platformFree || railFree) && (best == null || duty.readyMillis > best.readyMillis)) {
 				best = duty;
+				bestHolds = railFree;
 			}
 			// Arrived at the platform before the trip leaves, but too late to turn round for it
 			if (samePlatform && connectionMillis != OperationNetwork.UNREACHABLE && duty.endMillis <= trip.startMillis() && duty.readyMillis + connectionMillis > trip.startMillis() && (missed == null || duty.endMillis > missed.endMillis)) {
 				missed = duty;
 			}
+		}
+		if (best != null && bestHolds) {
+			final long[] hold = network.turnBackHold(best.platformId);
+			holds.computeIfAbsent(best.platformId, key -> new ArrayList<>()).add(new long[]{best.endMillis + hold[0], trip.startMillis() - hold[1]});
 		}
 		if (best == null && missed != null) {
 			final long given = trip.startMillis() - missed.endMillis;
@@ -403,6 +419,31 @@ public final class DutyPlanner {
 	 * True if no trip a train runs occupies the platform strictly between the two times, including across the week
 	 * boundary. Only trips with a train count: a service no train runs doesn't stand at the platform.
 	 */
+	/**
+	 * Whether the train can wait for the trip on the turn back rail beyond its platform: there is one, the train has time
+	 * to run in and back out, no other train waits on it meanwhile, and the platform is free while it comes back for the trip.
+	 */
+	private boolean isHoldFree(OpenDuty duty, Trip trip) {
+		final long[] hold = network.turnBackHold(duty.platformId);
+		if (hold == null) {
+			return false;
+		}
+		final long fromMillis = duty.endMillis + hold[0];
+		final long toMillis = trip.startMillis() - hold[1];
+		if (duty.readyMillis + hold[0] + hold[1] > trip.startMillis() || fromMillis > toMillis || !isPlatformFree(duty.platformId, toMillis, trip.startMillis())) {
+			return false;
+		}
+		for (final long[] other : holds.getOrDefault(duty.platformId, Collections.emptyList())) {
+			for (int week = -1; week <= 1; week++) {
+				final long shift = week * OperationTime.WEEK_MILLIS;
+				if (other[0] + shift < toMillis && fromMillis < other[1] + shift) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	private boolean isPlatformFree(long platformId, long fromMillis, long toMillis) {
 		final List<TripStop> stops = platformStops.getOrDefault(platformId, Collections.emptyList());
 		for (int week = -1; week <= 1; week++) {

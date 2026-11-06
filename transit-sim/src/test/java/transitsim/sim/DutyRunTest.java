@@ -216,6 +216,22 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aTrainWaitsOnTheTurnBackRailUntilItsTimeToRunToThePlatform() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = turnBackDuty(train);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, paths.get(0));
+		train[0].service.update(true);
+		// On the platform it isn't a turn back rail
+		train[0].nextStoppingIndex = 3;
+		assertEquals(0, train[0].service.getTurnBackLeaveMillis());
+		// On the turn back rail: route 2 is due at 08:20 at the platform two minutes on, less ten seconds' stop
+		train[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 7 * MINUTE;
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE - 2 * MINUTE + 10 * SECOND, train[0].service.getTurnBackLeaveMillis());
+	}
+
+	@Test
 	void aDutyTakesTheOtherWayWhenTheUsualTurnBackRailIsTakenAndWaitsWhenBothAre() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final List<TripPath<TestTrack>> paths = turnBackDuty(train);

@@ -82,6 +82,8 @@ public final class TimetableConflicts {
 		final Set<ServiceStop> linkedStops = new HashSet<>();
 		// Trains turning back at one of several platforms of a station (站前折返), which take one once the others are known
 		final List<Occupation> choosingOccupations = new ArrayList<>();
+		// Pairs known for sure first, set by the player or one after the other in a duty (TerminalPairs), then the nearest
+		routes.forEach(route -> linkFixedTurnBacks(route, routeMap, weekday, platformIds, occupations, linkedStops, choosingOccupations));
 		routes.forEach(route -> {
 			// A train going by way of a turn back rail leaves the platform in between
 			if (route.turnBacks.stream().noneMatch(turnBack -> turnBack.nextRouteId == route.nextRouteId)) {
@@ -136,25 +138,67 @@ public final class TimetableConflicts {
 		for (final ServiceTimes serviceTimes : services) {
 			final long arrival = serviceTimes.getArrival(lastIndex);
 			final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, lastIndex);
+			// Already paired for sure
+			if (linkedStops.contains(stop)) {
+				continue;
+			}
 			final ServiceTimes nextServiceTimes = findNextService(nextRoute, nextServices, arrival, stop, linkedStops);
 			if (nextServiceTimes != null) {
-				final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
-				linkedStops.add(stop);
-				linkedStops.add(nextStop);
-				final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) OperatingDay.MILLIS_PER_DAY);
-				final long leaving = arrival + wait + nextServiceTimes.departures[0] - nextServiceTimes.arrivals[0];
-				final List<ServiceStop> stops = new ArrayList<>();
-				stops.add(stop);
-				stops.add(nextStop);
-				if (route.terminalPlatforms.isEmpty()) {
-					occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, leaving, stops));
-				} else {
-					final List<Long> platforms = new ArrayList<>();
-					platforms.add(platformId);
-					platforms.addAll(route.terminalPlatforms);
-					choosingOccupations.add(new Occupation(arrival, leaving, stops, Collections.emptyList(), platforms));
-				}
+				addTurnBackStay(route, platformId, serviceTimes, nextRoute, nextServiceTimes, occupations, linkedStops, choosingOccupations);
 			}
+		}
+	}
+
+	/**
+	 * Trains whose next service is known for sure ({@link RouteTimes#fixedNext}) and leaves from the platform they arrive at
+	 * stay there until it leaves, whichever route it is of.
+	 */
+	private static void linkFixedTurnBacks(RouteTimes route, Map<Long, RouteTimes> routeMap, int weekday, Set<Long> platformIds, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops, List<Occupation> choosingOccupations) {
+		if (route.fixedNext.isEmpty() || route.platformIds.isEmpty()) {
+			return;
+		}
+		final int lastIndex = route.platformIds.size() - 1;
+		final long platformId = route.platformIds.get(lastIndex);
+		if (!platformIds.contains(platformId)) {
+			return;
+		}
+		for (final ServiceTimes serviceTimes : route.getServices(weekday)) {
+			final long[] next = route.fixedNext.get(serviceTimes.service);
+			final RouteTimes nextRoute = next == null ? null : routeMap.get(next[0]);
+			if (serviceTimes.arrivals[lastIndex] < 0 || nextRoute == null || nextRoute.platformIds.isEmpty() || nextRoute.platformIds.get(0) != platformId) {
+				continue;
+			}
+			final ServiceTimes nextServiceTimes = nextRoute.getServices(weekday).stream().filter(other -> other.service == (int) next[1] && other.departures[0] >= 0).findFirst().orElse(null);
+			final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, lastIndex);
+			if (nextServiceTimes != null && !linkedStops.contains(stop)) {
+				addTurnBackStay(route, platformId, serviceTimes, nextRoute, nextServiceTimes, occupations, linkedStops, choosingOccupations);
+			}
+		}
+	}
+
+	/**
+	 * A train staying at its last stop's platform from its arrival until its next service leaves; with platforms to turn
+	 * back at in turn (站前折返), it takes the first one free once the others are known.
+	 */
+	private static void addTurnBackStay(RouteTimes route, long platformId, ServiceTimes serviceTimes, RouteTimes nextRoute, ServiceTimes nextServiceTimes, Map<Long, List<Occupation>> occupations, Set<ServiceStop> linkedStops, List<Occupation> choosingOccupations) {
+		final int lastIndex = route.platformIds.size() - 1;
+		final long arrival = serviceTimes.getArrival(lastIndex);
+		final ServiceStop stop = new ServiceStop(route.routeId, serviceTimes.table, serviceTimes.service, lastIndex);
+		final ServiceStop nextStop = new ServiceStop(nextRoute.routeId, nextServiceTimes.table, nextServiceTimes.service, 0);
+		linkedStops.add(stop);
+		linkedStops.add(nextStop);
+		final long wait = Math.floorMod(nextServiceTimes.service - arrival, (long) OperatingDay.MILLIS_PER_DAY);
+		final long leaving = arrival + wait + nextServiceTimes.departures[0] - nextServiceTimes.arrivals[0];
+		final List<ServiceStop> stops = new ArrayList<>();
+		stops.add(stop);
+		stops.add(nextStop);
+		if (route.terminalPlatforms.isEmpty()) {
+			occupations.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new Occupation(arrival, leaving, stops));
+		} else {
+			final List<Long> platforms = new ArrayList<>();
+			platforms.add(platformId);
+			platforms.addAll(route.terminalPlatforms);
+			choosingOccupations.add(new Occupation(arrival, leaving, stops, Collections.emptyList(), platforms));
 		}
 	}
 
@@ -349,6 +393,11 @@ public final class TimetableConflicts {
 		 * The other platforms of the last stop's station trains of the route can turn back at (站前折返), in order.
 		 */
 		public final List<Long> terminalPlatforms = new ArrayList<>();
+		/**
+		 * By service, the route and service the same train runs next when that is known for sure, as {@code {route,
+		 * service}} (see {@link TerminalPairs#fixedNext}); the others are paired with the nearest of {@link #nextRouteId}.
+		 */
+		public final Map<Integer, long[]> fixedNext = new HashMap<>();
 		private final List<PlanStop> stops;
 		private final List<Long> platformIds = new ArrayList<>();
 		private final List<TableTimes> tables = new ArrayList<>();

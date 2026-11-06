@@ -681,6 +681,17 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		});
 
 		final Map<Long, Long> nextRouteIds = getNextRouteIds(railwayData);
+		// The next service of a train where known for sure: set by the player, or in the duties depots run by
+		final Map<Long, RouteTimetable> timetables = new HashMap<>();
+		routes.forEach(testRoute -> timetables.put(testRoute.id, testRoute.timetable));
+		final List<List<transitsim.plan.DepotDuties.Segment>> dutyDays = new ArrayList<>();
+		railwayData.depots.forEach(depot -> {
+			final transitsim.plan.DepotDuties runDuties = depot.getRunDuties();
+			if (runDuties != null) {
+				runDuties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> dutyDays.add(day.segments))));
+			}
+		});
+		final Map<Long, Map<Integer, long[]>> fixedNext = transitsim.plan.TerminalPairs.fixedNext(timetables, dutyDays);
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 		// The turnouts of each route's throats, from its own path where it has been found
 		final Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
@@ -738,6 +749,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 							newRouteTimes.addTable(i, table.weekdays, running, table.marginPercent, times, table.exceptions, table.deployOrders, table.returnOrders);
 						}
 						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
+						newRouteTimes.fixedNext.putAll(fixedNext.getOrDefault(testRoute.id, Collections.emptyMap()));
 						newRouteTimes.terminalPlatforms.addAll(testRoute.terminalPlatforms);
 						newRouteTimes.setThroats(throats.getOrDefault(testRoute.id, Collections.emptyList()));
 						turnBacks.getOrDefault(testRoute.id, Collections.emptySet()).forEach(newRouteTimes::addTurnBack);

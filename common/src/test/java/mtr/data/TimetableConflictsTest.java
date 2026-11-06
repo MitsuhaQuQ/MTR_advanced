@@ -130,6 +130,41 @@ class TimetableConflictsTest {
 		assertEquals(1, check(a, b).size());
 	}
 
+	/**
+	 * Route A ends at platform 2, where route B starts: A at 0 and 10 reaches it at 3 and 13; B leaves a minute after its
+	 * services.
+	 */
+	private static TimetableConflicts.RouteTimes[] turningBackAtPlatform2(int... bMinutes) {
+		final TimetableConflicts.RouteTimes a = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 0, 10);
+		final TimetableConflicts.RouteTimes b = route(ROUTE_B, new long[]{PLATFORM_2, PLATFORM_1}, times(), bMinutes);
+		a.nextRouteId = ROUTE_B;
+		return new TimetableConflicts.RouteTimes[]{a, b};
+	}
+
+	@Test
+	void trainsTurningBackToTheNearestServiceDontConflict() {
+		// A at 0 runs B at 5, A at 10 runs B at 15
+		assertTrue(check(turningBackAtPlatform2(5, 15)).isEmpty());
+	}
+
+	@Test
+	void aTrainSetToRunALaterServiceHoldsThePlatformUntilThen() {
+		// Set by the player, or in a duty: A at 0 runs B at 25, staying at platform 2 from 3 until 26, while A at 10 runs
+		// B at 15 from there too
+		final TimetableConflicts.RouteTimes[] routes = turningBackAtPlatform2(15, 25);
+		routes[0].fixedNext.put(0, new long[]{ROUTE_B, 25 * MINUTE});
+		assertFalse(check(routes).isEmpty());
+	}
+
+	@Test
+	void aTrainSetToRunALaterServiceTakesAnotherPlatformToTurnBackAt() {
+		// The same, with platform 3 to turn back at in turn (站前折返): A at 10 takes it
+		final TimetableConflicts.RouteTimes[] routes = turningBackAtPlatform2(15, 25);
+		routes[0].fixedNext.put(0, new long[]{ROUTE_B, 25 * MINUTE});
+		routes[0].terminalPlatforms.add(PLATFORM_3);
+		assertTrue(check(routes).isEmpty(), check(routes).toString());
+	}
+
 	@Test
 	void trainsOnOneTurnBackRailConflict() {
 		// Both trains are in at 15 and 25, and the first one only leaves for its service at 29

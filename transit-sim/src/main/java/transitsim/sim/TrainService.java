@@ -652,7 +652,39 @@ public class TrainService<T extends PlanTrack> {
 		boolean chosenClear = false;
 		long chosenReadyMillis = Long.MAX_VALUE;
 		final long nowMillis = clock.getAsLong();
+		// A train with a long wait for its next service waits on a free turn back rail rather than at a platform, leaving
+		// the platforms to others (混合折返), where both are ways round; the planner and the web editor take the same way
+		// (LONG_TURN_BACK_WAIT_MILLIS)
+		boolean hasPlatformWay = false;
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
+			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
+			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+			if (turnBackPoint.getRails(way) != null && (newPath != null || isDefaultWay && tripKey.isEmpty()) && !isRailWay(newPath, turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point), turnBackPoint.getLength(way))) {
+				hasPlatformWay = true;
+			}
+		}
+		for (int way = 0; hasPlatformWay && way < turnBackPoint.getWayCount(); way++) {
+			final List<UUID> rails = turnBackPoint.getRails(way);
+			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
+			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+			if (rails == null || newPath == null && !(isDefaultWay && tripKey.isEmpty()) || !vehicle.isTurnBackFree(rails)) {
+				continue;
+			}
+			final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
+			if (!isRailWay(newPath, newStopIndex, turnBackPoint.getLength(way))) {
+				continue;
+			}
+			final long[] times = getWayTimes(newPath, newStopIndex, newStopIndex + turnBackPoint.getLength(way), nowMillis);
+			final List<UUID> wayRails = turnBackPoint.getWayRails(way);
+			if (times != null && (wayRails == null || vehicle.isWayClear(wayRails)) && times[0] <= times[1] && times[1] - times[0] >= LONG_TURN_BACK_WAIT_MILLIS) {
+				chosenWay = way;
+				chosenPath = newPath;
+				chosenStopIndex = newStopIndex;
+				break;
+			}
+		}
+		final boolean railChosen = chosenWay >= 0;
+		for (int way = 0; !railChosen && way < turnBackPoint.getWayCount(); way++) {
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
@@ -692,6 +724,19 @@ public class TrainService<T extends PlanTrack> {
 		vehicle.changePath(chosenPath, chosenStopIndex);
 		setLastLap(isLastLap);
 		return true;
+	}
+
+	/**
+	 * @return whether this way round turns back on a turn back rail where the train stops, rather than at a platform
+	 */
+	private boolean isRailWay(TripPath<T> wayPath, int stopIndex, int length) {
+		final List<T> path = wayPath == null ? vehicle.getPath() : wayPath.path;
+		for (int i = stopIndex + 1; i < Math.min(stopIndex + length, path.size()); i++) {
+			if (path.get(i).getStopId() == 0 && path.get(i).getDwellTime() > 0) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -889,6 +934,36 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
+	 * On a duty, at a turn back rail just before the first stop of its next segment: when to leave the rail to reach that
+	 * stop as its service is due, so the train waits on the rail rather than at the platform, which other trains can use
+	 * meanwhile (混合折返). 0 anywhere else.
+	 */
+	public long getTurnBackLeaveMillis() {
+		if (!isOnDuty() || tripPath == null || stopTimes == null) {
+			return 0;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		final List<T> path = vehicle.getPath();
+		final int next = dutyIndex + 1;
+		if (stopIndex >= path.size() || path.get(stopIndex).getStopId() != 0 || next >= tripPath.dutyStarts.length || tripPath.dutyStarts[next] <= stopIndex) {
+			return 0;
+		}
+		// Before the next segment's first stop, so not the siding at either end of the path
+		final int start = tripPath.dutyStarts[next];
+		for (int i = stopIndex + 1; i < start; i++) {
+			if (path.get(i).getDwellTime() > 0) {
+				return 0;
+			}
+		}
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		final long runMillis = stopTimes.getRunMillis(stopIndex, start);
+		if (next >= segments.size() || runMillis < 0) {
+			return 0;
+		}
+		return DutyShapes.getServiceMillis(dutyDayStart, segments.get(next).service) - runMillis;
+	}
+
+	/**
 	 * @return at the first stop of a segment of the duty, when the train leaves, or 0
 	 */
 	public long getDutyDepartureMillis() {
@@ -913,6 +988,12 @@ public class TrainService<T extends PlanTrack> {
 	/**
 	 * Why a train staying on the line overnight has no duty to go on with from where it stands.
 	 */
+	/**
+	 * A train waiting this long or more at its last stop for its next service waits on a turn back rail instead, if there is
+	 * a free one, so the platform is free for others meanwhile (混合折返).
+	 */
+	public static final long LONG_TURN_BACK_WAIT_MILLIS = 5 * 60 * 1000;
+
 	public enum HoldReason {
 		/**
 		 * The slot it takes over has no duty that day.

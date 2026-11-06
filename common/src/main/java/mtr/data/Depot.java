@@ -2270,6 +2270,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				if (station == null) {
 					continue;
 				}
+				// Round a turn back rail beyond the platform and back to it, where a train can wait for its next service
+				// there while others use the platform (混合折返); only once for each platform
+				if (!turnTimes.getOrDefault(from.id, Collections.emptyMap()).containsKey(from.id)) {
+					final List<BlockPos> listed = getTurnBackNodes(before, graph);
+					final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : listed;
+					final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : findTurnBackSection(from, from, nodes, 0, rails, graph, useFastSpeed);
+					if (hold != null && !hold.getDefaultWay().isEmpty()) {
+						long millis = 0;
+						for (final PathTiming.Vehicle vehicle : vehiclesOf(before, before)) {
+							millis = Math.max(millis, connectionMillis(vehicle, hold.getDefaultWay()));
+						}
+						turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(from.id, millis + TURN_MARGIN_MILLIS);
+					}
+				}
 				for (final Route after : routes) {
 					if (after.platformIds.isEmpty()) {
 						continue;
@@ -2282,15 +2296,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					findConnection(connectingPath, from, to, before, rails, graph, useFastSpeed);
 					if (!connectingPath.isEmpty()) {
 						// Timed for the slowest of the vehicles running either route
-						final Set<PathTiming.Vehicle> vehicles = new HashSet<>();
-						if (routeSearch == null) {
-							vehicles.add(RoutePaths.getDefaultVehicle(transportMode));
-						} else {
-							vehicles.addAll(routeSearch.getVehicles(before));
-							vehicles.addAll(routeSearch.getVehicles(after));
-						}
 						long millis = 0;
-						for (final PathTiming.Vehicle vehicle : vehicles) {
+						for (final PathTiming.Vehicle vehicle : vehiclesOf(before, after)) {
 							millis = Math.max(millis, connectionMillis(vehicle, connectingPath));
 						}
 						turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(to.id, millis + TURN_MARGIN_MILLIS);
@@ -2298,6 +2305,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			}
 			return turnTimes;
+		}
+
+		/**
+		 * @return the vehicles timed with either route, or the default one without the routes' vehicles
+		 */
+		private Set<PathTiming.Vehicle> vehiclesOf(Route before, Route after) {
+			final Set<PathTiming.Vehicle> vehicles = new HashSet<>();
+			if (routeSearch == null) {
+				vehicles.add(RoutePaths.getDefaultVehicle(transportMode));
+			} else {
+				vehicles.addAll(routeSearch.getVehicles(before));
+				vehicles.addAll(routeSearch.getVehicles(after));
+			}
+			return vehicles;
 		}
 
 		/**

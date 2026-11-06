@@ -12,11 +12,29 @@ import java.util.TreeMap;
  */
 public final class OperationNetwork {
 
+	private final java.util.Map<Long, long[]> turnBackHolds = new java.util.TreeMap<>();
+
 	public static final long UNREACHABLE = -1;
 
 	private final Map<Long, Long> turnaroundMillis = new TreeMap<>();
 	private final Map<Long, Map<Long, Long>> connections = new TreeMap<>();
 	private final Map<Long, Depot> depots = new TreeMap<>();
+
+	/**
+	 * A turn back rail beyond the platform a train can wait on for its next service from there, leaving the platform free
+	 * (混合折返): the run in, and the run back out to the platform, in milliseconds.
+	 */
+	public OperationNetwork setTurnBackHold(long platformId, long inMillis, long outMillis) {
+		turnBackHolds.put(platformId, new long[]{inMillis, outMillis});
+		return this;
+	}
+
+	/**
+	 * @return the run in and out of the turn back rail a train can wait on beyond the platform, or null if there is none
+	 */
+	public long[] turnBackHold(long platformId) {
+		return turnBackHolds.get(platformId);
+	}
 
 	public OperationNetwork setTurnaround(long platformId, long millis) {
 		turnaroundMillis.put(platformId, millis);

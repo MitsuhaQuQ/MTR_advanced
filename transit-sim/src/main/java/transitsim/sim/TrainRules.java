@@ -74,6 +74,11 @@ public final class TrainRules {
 		if (dutyDepartureMillis > 0 && currentMillis < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
 			return true;
 		}
+		// On a turn back rail before its next service, it waits there until it's time to run to the platform
+		final long turnBackLeaveMillis = service.getTurnBackLeaveMillis();
+		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis) {
+			return true;
+		}
 		final int nextStoppingIndex = state.getNextStoppingIndex();
 		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
 		if (stopPlan != null && stopPlan.isTimed) {

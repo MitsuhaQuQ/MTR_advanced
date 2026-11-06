@@ -202,6 +202,23 @@ public class StopTimes {
 	}
 
 	/**
+	 * @return the fastest time from leaving one stop of the path to reaching a later one, by their rails, or -1 if either
+	 * isn't a stop of it
+	 */
+	public long getRunMillis(int fromIndex, int toIndex) {
+		Stop from = null;
+		Stop to = null;
+		for (final Stop stop : stops) {
+			if (stop.index == fromIndex) {
+				from = stop;
+			} else if (stop.index == toIndex) {
+				to = stop;
+			}
+		}
+		return from == null || to == null ? -1 : Math.max(0, to.arrivalMillis - from.departureMillis);
+	}
+
+	/**
 	 * @return the time from the first stop to the last one
 	 */
 	public long getDurationMillis() {

@@ -211,6 +211,11 @@ public final class DutyGenerator {
 		sidings.forEach(siding -> inputs.backLinks.getOrDefault(siding.sidingId, Collections.emptyMap()).forEach((platformId, millis) -> network.addDepotBackLink(siding.sidingId, platformId, millis)));
 		lastPlatforms.forEach(lastPlatform -> {
 			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS);
+			// Measured from the platform back to itself by way of a turn back rail beyond it: a train may wait there (混合折返)
+			final Long holdMillis = inputs.turnTimes == null ? null : inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap()).get(lastPlatform);
+			if (holdMillis != null) {
+				network.setTurnBackHold(lastPlatform, holdMillis / 2, holdMillis - holdMillis / 2);
+			}
 			final Long station = stationOf.get(lastPlatform);
 			firstPlatforms.forEach(firstPlatform -> {
 				if (firstPlatform.longValue() != lastPlatform && station != null && station.equals(stationOf.get(firstPlatform))) {
