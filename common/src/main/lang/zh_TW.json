@@ -178,7 +178,7 @@
   "gui.mtr.audio_channels": "只支援單聲道或立體聲",
   "gui.mtr.audio_sample_rate": "不支援的取樣率",
   "gui.mtr.node_key_node": "關鍵節點",
-  "gui.mtr.node_path_boundary": "尋路邊界（尋路不穿過這個節點）",
+  "gui.mtr.node_path_boundary": "尋路邊界（只劃分先在哪裡找路，不擋車）",
   "gui.mtr.node_angle": "角度 (-180~180°)",
   "gui.mtr.node_angle_direction": "指向%s · 你現在面向 %s",
   "gui.mtr.node_angle_rule": "0° 為正東；正數順時針轉（俯視，東→南），負數逆時針轉（東→北）",

@@ -101,7 +101,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 **Path boundaries**
 
 - A node, or one rail from a node, can be marked as a path boundary in the node screen. At a turnout, mark the rail rather than the node. The server splits the network into regions at the boundaries and warns about boundaries that don't cut anything.
-- Route searches stay in the regions of each stretch's ends, so they can cross into the next region but not wander through unrelated ones. Without boundaries, pathfinding is unchanged.
+- Boundaries only narrow the search: each stretch of a route is looked for in the regions of its ends first, and only if there is no way there, in the whole network. A boundary never stops a route that has a way; keeping trains off rails is what connecting lines are for. Without boundaries, pathfinding is unchanged.
 - The dashboard can filter stations, routes and depots to the regions of a picked station. Platforms can be set as main line or passing tracks.
 
 **Dashboard**
@@ -167,7 +167,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 |---|---|---|
 | 0 | Add-on compatibility, merging ANTE into the core | Packaging and running logic done, `Rail` left for stage 4 |
 | 0.5 | Basic definitions and simulation: route timetables, trips, vehicle working, restart recovery, new data format | Done; the simulator is a component of its own and runs speed curve depots in game |
-| 1 | Pathfinding base: state graph, deterministic A*, required nodes, keeping trains in place on refresh, and path boundaries with regions that limit pathfinding and pick each route's platforms at shared stations are done; section caching is not | In progress |
+| 1 | Pathfinding base: state graph, deterministic A*, required nodes, keeping trains in place on refresh, and path boundaries with regions that narrow pathfinding (never stopping a route that has a way) are done; section caching is not | In progress |
 | 2 | Route operation: stop or pass, door-open time, turn-back dwell, multiple station areas, passing trains on PIDS and platform time lists are done; passing speed limits are not | In progress |
 | 3 | Block fixes: occupancy registration, depot exit checks, braking distance lookahead, whole-section highlight | Done |
 | 4 | Rail geometry: node slopes, vertical curves, transition curves | Not started |

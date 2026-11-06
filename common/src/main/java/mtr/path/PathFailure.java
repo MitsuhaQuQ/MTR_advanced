@@ -4,7 +4,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import mtr.data.Rail;
 import mtr.data.SavedRailBase;
 import net.minecraft.core.BlockPos;
-import transitsim.network.PathRegions;
 import transitsim.network.RailGraph;
 
 import java.util.List;
@@ -81,15 +80,7 @@ public final class PathFailure {
 		if (!graph.isConnected(startPos, endPos)) {
 			return new PathFailure(Type.DISCONNECTED, 0);
 		}
-		// Stations in regions that don't touch can only be reached through waypoints on the boundaries between them
-		final PathRegions regions = graph.getRegions();
-		if (regions != null && (sectionWaypoints == null || section >= sectionWaypoints.size() || sectionWaypoints.get(section).isEmpty())) {
-			final int[] startRegions = regions.railRegions(graph, startPos, startPositions.get(1).asLong());
-			final int[] endRegions = regions.railRegions(graph, endPos, endPositions.get(1).asLong());
-			if (!PathRegions.shares(startRegions, endRegions)) {
-				return new PathFailure(Type.BOUNDARY, endPos);
-			}
-		}
+		// Pathfinding boundaries never stop a route that has a way (they only narrow the search), so they are no reason
 		return new PathFailure(Type.NO_ROUTE, 0);
 	}
 
@@ -104,7 +95,7 @@ public final class PathFailure {
 		 */
 		TURN_BACK_UNUSED,
 		/**
-		 * The next station is in another region of the pathfinding boundaries, and nothing says where to cross.
+		 * No longer given: pathfinding boundaries only narrow searches. Kept so the types after it keep their numbers.
 		 */
 		BOUNDARY,
 		/**

@@ -45,7 +45,19 @@ public final class RailRouter {
 			}
 		}
 
+		// Pathfinding boundaries only narrow the search (the user's decision): each part of the route is looked for in the
+		// regions of its ends first, and only if that finds no way, in the whole network. A boundary never stops a route
+		// that has a way; keeping trains off rails is what connecting lines are for
 		final BitSet[] legs = getLegRegions(graph, targets);
+		final Result<R> inRegions = search(graph, targets, avoid, legs);
+		if (inRegions.isSuccess() || legs == null) {
+			return inRegions;
+		}
+		final Result<R> anywhere = search(graph, targets, avoid, null);
+		return anywhere.isSuccess() ? new Result<>(anywhere.steps, anywhere.completedTargets, true) : inRegions.completedTargets >= anywhere.completedTargets ? inRegions : anywhere;
+	}
+
+	private static <R> Result<R> search(RailGraph<R> graph, List<Target> targets, Predicate<Connection<R>> avoid, BitSet[] legs) {
 		// The estimate also counts the straight distance between every later pair of targets, so a search far from the end
 		// of a long route doesn't spread out over the whole network for each of the earlier targets
 		final double speed = Math.max(graph.maxChordPerCost, Double.MIN_VALUE);
@@ -111,7 +123,8 @@ public final class RailRouter {
 	}
 
 	/**
-	 * With pathfinding boundaries, each part of the route between two targets stays in the regions of its ends.
+	 * With pathfinding boundaries, each part of the route between two targets is first looked for in the regions of its
+	 * ends.
 	 *
 	 * @return the regions allowed while heading for each target, or null when the graph has no boundaries
 	 */
@@ -248,10 +261,19 @@ public final class RailRouter {
 
 		public final List<Step<R>> steps;
 		public final int completedTargets;
+		/**
+		 * Found only by looking beyond the regions of the pathfinding boundaries, as there was no way within them.
+		 */
+		public final boolean crossedRegions;
 
 		private Result(List<Step<R>> steps, int completedTargets) {
+			this(steps, completedTargets, false);
+		}
+
+		private Result(List<Step<R>> steps, int completedTargets, boolean crossedRegions) {
 			this.steps = Collections.unmodifiableList(steps);
 			this.completedTargets = completedTargets;
+			this.crossedRegions = crossedRegions;
 		}
 
 		public boolean isSuccess() {

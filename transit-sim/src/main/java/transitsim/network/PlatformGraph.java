@@ -8,7 +8,7 @@ import java.util.*;
  * <p>
  * A network is rails physically joined together, one connected part of the {@link RailGraph}. Platforms with no rail
  * joining them are in different networks by themselves, so they are never offered for each other, whatever station they
- * belong to; pathfinding boundaries only cut a network further.
+ * belong to; pathfinding boundaries don't change them, as they only narrow searches.
  * <p>
  * Each platform is two states, one for each way along it: 0 from its first end to its second, 1 the other way. From a state
  * a train runs on without turning back, and each branch ends at the first platform it meets, which is an edge to that
@@ -54,7 +54,8 @@ public final class PlatformGraph {
 	}
 
 	/**
-	 * @param regions the regions of the pathfinding boundaries, or null for none
+	 * @param regions the regions of the pathfinding boundaries, or null for none; they don't change the ways between
+	 *                platforms, which only the rails do
 	 */
 	public static <R> PlatformGraph compute(RailGraph<R> graph, PathRegions regions, List<RegionComputer.SavedRail> platforms) {
 		final List<RegionComputer.SavedRail> sorted = new ArrayList<>(platforms);
@@ -139,21 +140,11 @@ public final class PlatformGraph {
 	}
 
 	/**
-	 * A way between two platforms may only run where a route between them could, by {@link PathRegions#legRegions}. Ways
-	 * passing other platforms are checked an edge at a time, which is a little looser than checking the whole way at once.
+	 * Every way the rails give is a way: pathfinding boundaries only narrow searches, and a route that has a way finds it
+	 * whatever the boundaries (the user's decision). Each branch ends at the first platform it meets anyway, so the regions
+	 * aren't needed to keep the search small.
 	 */
 	private static <R> boolean isAllowed(RailGraph<R> graph, PathRegions regions, RegionComputer.SavedRail from, RegionComputer.SavedRail to, RailGraph.Connection<R> end, Map<Integer, RailGraph.Connection<R>> previous, RailGraph.Connection<R> start) {
-		if (regions == null) {
-			return true;
-		}
-		final BitSet allowed = PathRegions.legRegions(regions.railRegions(graph, from.pos1, from.pos2), regions.railRegions(graph, to.pos1, to.pos2));
-		RailGraph.Connection<R> connection = end;
-		while (connection != null && connection != start) {
-			if (!regions.allows(connection, allowed)) {
-				return false;
-			}
-			connection = previous.get(connection.index());
-		}
 		return true;
 	}
 

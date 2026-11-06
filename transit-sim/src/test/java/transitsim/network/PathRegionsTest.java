@@ -95,6 +95,28 @@ class PathRegionsTest {
 	}
 
 	@Test
+	void withNoWayWithinTheRegionsTheSearchLooksBeyondThem() {
+		// Line Y alone between the two platforms, cut off by boundaries: no way within the regions of the ends, but a way
+		final RailGraph.Builder<String> builder = new RailGraph.Builder<>();
+		add(builder, 0, 0, 10, 0, Kind.PLATFORM, 2);
+		add(builder, 100, 0, 110, 0, Kind.PLATFORM, 2);
+		add(builder, 10, 0, 20, 50, Kind.NORMAL, 8);
+		add(builder, 20, 50, 90, 50, Kind.NORMAL, 8);
+		add(builder, 90, 50, 100, 0, Kind.NORMAL, 8);
+		final RailGraph<String> graph = builder.build();
+		graph.setRegions(yCutOff());
+		final Result<String> result = RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0)));
+		// Boundaries only narrow the search: a route with a way finds it (the user's decision)
+		assertTrue(result.isSuccess());
+		assertTrue(result.crossedRegions);
+		assertTrue(names(result).contains("20,50>90,50"));
+		// Found within the regions, it says so
+		final RailGraph<String> withDirect = twoLines().build();
+		withDirect.setRegions(yCutOff());
+		assertFalse(RailRouter.route(withDirect, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0))).crossedRegions);
+	}
+
+	@Test
 	void searchesCanCrossIntoTheNextRegion() {
 		final RailGraph<String> graph = twoLines().build();
 		graph.setRegions(yCutOff());

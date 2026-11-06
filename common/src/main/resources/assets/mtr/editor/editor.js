@@ -196,7 +196,7 @@
 			const boundary = drafted ? draft.boundaries[key] : status === 3;
 			// Right-click any rail to change its isolation; a connecting line's own rails also switch with a click
 			const attrs = canEdit ? ` data-rail="${a},${b}" data-rail-status="${status}"` : "";
-			if (boundary) return { cls: " boundary" + (canEdit ? " clickable" : ""), attrs, title: `<title>${escapeHtml(tr("寻路边界：所有寻路都不过这段") + (drafted ? tr("（草稿）") : ""))}</title>` };
+			if (boundary) return { cls: " boundary" + (canEdit ? " clickable" : ""), attrs, title: `<title>${escapeHtml(tr("寻路边界：只划分先在哪里找路，区域内找不到会越过，不挡车") + (drafted ? tr("（草稿）") : ""))}</title>` };
 			if (status !== 1 && status !== 2) return { cls: drafted ? " unbounded" : "", attrs, title: drafted ? `<title>${escapeHtml(tr("取消寻路边界（草稿）"))}</title>` : "" };
 			const isReleased = released ? released.has(key) : status === 2;
 			const editable = released && canEdit;
@@ -219,7 +219,7 @@
 		renderAll();
 	}
 
-	/** The menu of a rail in a track diagram: its isolation, as a boundary for every search or a connecting line's. */
+	/** The menu of a rail in a track diagram: a pathfinding boundary, which only narrows searches, or a connecting line's rail. */
 	function railMenu(e, r, rail, rerender) {
 		const { a, b, status } = rail, key = railKey(a, b);
 		const wasBoundary = status === 3;
@@ -1774,7 +1774,9 @@
 		chains.forEach(chain => {
 			const points = chainShape(chain);
 			if (!chain.status || !visible(points)) return;
-			if (chain.status === 3) stroke(points, "#d33", 3);
+			// A pathfinding boundary only splits where searches look first, so it is drawn thin and dotted, apart from the
+			// connecting lines, which keep trains off
+			if (chain.status === 3) stroke(points, "#7a5fd0", 1.5, [2, 4]);
 			else if (chain.status === 1) stroke(points, "#e8891a", 2.5, [6, 3]);
 			else stroke(points, plain, 2, [3, 3]);
 		});

@@ -100,7 +100,7 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private static final double ROUTE_PICK_PIXELS = 5;
 	private static final double CLICK_MAX_MOVE_PIXELS = 3;
 	private static final int ARGB_RAIL_LINE = 0x50FFFFFF;
-	private static final int ARGB_BOUNDARY = 0xFFDD3333;
+	private static final int ARGB_BOUNDARY = 0xFF7A5FD0;
 	private static final int ARGB_CONNECTING_LINE = 0xFFE8891A;
 	private static final int ARGB_RELEASED = 0xA0999999;
 	private static final double ISOLATION_LINE_PIXELS = 2;

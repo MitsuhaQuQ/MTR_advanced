@@ -178,7 +178,7 @@
   "gui.mtr.audio_channels": "Only mono or stereo is supported",
   "gui.mtr.audio_sample_rate": "Unsupported sample rate",
   "gui.mtr.node_key_node": "Key node",
-  "gui.mtr.node_path_boundary": "Path boundary (path finding doesn't pass this node)",
+  "gui.mtr.node_path_boundary": "Path boundary (only splits where paths are looked for first; never stops a train)",
   "gui.mtr.node_angle": "Angle (-180~180°)",
   "gui.mtr.node_angle_direction": "Points %s · you face %s",
   "gui.mtr.node_angle_rule": "0° is east; + turns clockwise seen from above (east → south), - the other way (east → north)",

@@ -140,15 +140,21 @@ class PlatformGraphTest {
 	}
 
 	@Test
-	void keepsWaysWithinThePathfindingRegions() {
+	void pathfindingRegionsDontChangeTheWaysBetweenPlatforms() {
 		final RailGraph<String> graph = stationWithPassingTrack(true);
 		final Boundaries boundaries = new Boundaries();
 		// Cutting the line east of station 20 leaves platform 5 in a region of its own
 		boundaries.nodes.add(pos(110, 0));
 		final PlatformGraph platformGraph = PlatformGraph.compute(graph, PathRegions.compute(graph, boundaries), PLATFORMS);
-		// A route may still cross straight over a boundary into the next region, as with pathfinding
+		// Boundaries only narrow searches, so the ways are those of the rails alone (the user's decision)
+		final PlatformGraph withoutRegions = PlatformGraph.compute(graph, null, PLATFORMS);
+		for (final long platformId : new long[]{1, 2, 3, 4, 5}) {
+			for (final int state : new int[]{0, 1}) {
+				assertEquals(next(withoutRegions, platformId, state), next(platformGraph, platformId, state));
+			}
+		}
 		assertEquals(Collections.singleton(5L), next(platformGraph, 2, 0));
-		// Boundaries cut a network, but don't make it two
+		// Nor the networks
 		assertEquals(platformGraph.getNetworkOf(1), platformGraph.getNetworkOf(5));
 	}
 

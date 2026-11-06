@@ -288,10 +288,10 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); }
 .route-diagram .rail { stroke: var(--grid-strong); stroke-width: 1.5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
 .route-diagram .rail.connecting { stroke: #e8891a; stroke-width: 2.5; stroke-dasharray: 6 3; }
 .route-diagram .rail.released { stroke: var(--grid-strong); stroke-dasharray: 3 3; }
-.route-diagram .rail.boundary { stroke: #d33; stroke-width: 3; }
+.route-diagram .rail.boundary { stroke: #7a5fd0; stroke-width: 1.5; stroke-dasharray: 2 4; }
 .route-diagram .rail.unbounded { stroke-dasharray: 1 3; }
 .route-diagram .rail.clickable { cursor: pointer; stroke-width: 4; }
-.route-diagram .boundary-node { fill: #d33; stroke: none; }
+.route-diagram .boundary-node { fill: #7a5fd0; stroke: none; }
 .route-diagram .turnout { fill: var(--muted); }
 .route-diagram .platform line { stroke-width: 5; stroke-linecap: round; }
 .route-diagram .platform.other line { stroke: var(--grid); }

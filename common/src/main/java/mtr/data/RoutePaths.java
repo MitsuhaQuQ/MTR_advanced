@@ -40,8 +40,9 @@ public final class RoutePaths {
 	public static final int RAIL_TAKEN = 1;
 	public static final int RAIL_RELEASED = 2;
 	/**
-	 * A pathfinding boundary on the rail, which every search keeps off; shown with the connecting lines' rails as one
-	 * layer of isolation.
+	 * A pathfinding boundary on the rail. It only splits the network into regions searches look in first, and never
+	 * keeps a train off (the user's decision): keeping trains off rails is what connecting lines do. Shown on the maps
+	 * with the connecting lines' rails, drawn apart from them.
 	 */
 	public static final int RAIL_BOUNDARY = 3;
 
