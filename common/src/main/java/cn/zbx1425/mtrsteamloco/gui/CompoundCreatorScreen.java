@@ -399,7 +399,7 @@ public class CompoundCreatorScreen extends Screen {
         private static int x = 20;
         private static int height = 20;
         private WidgetBetterTextField nameField = new WidgetBetterTextField("", 256);
-        private Button enter = UtilitiesClient.newButton(Text.literal("Enter"), btn -> enter());
+        private Button enter = UtilitiesClient.newButton(Text.translatable("gui.mtrsteamloco.compound_creator.enter"), btn -> enter());
         private Button up = UtilitiesClient.newButton(Text.literal("▲"), btn -> moveUp());
         private Button down = UtilitiesClient.newButton(Text.literal("▼"), btn -> moveDown());
         private List<GuiEventListener> children = Arrays.asList(nameField, enter, up, down, this);
@@ -545,7 +545,7 @@ public class CompoundCreatorScreen extends Screen {
         });
 
         public TaskSelectScreen() {
-            super(Text.literal("Select Task"));
+            super(Text.translatable("gui.mtrsteamloco.compound_creator.select_task"));
         }
 
         public void init() {
@@ -577,7 +577,7 @@ public class CompoundCreatorScreen extends Screen {
         RailModifierTask task = new RailModifierTask(task0);
         ConfigBuilder builder = ConfigBuilder.create()
                 .setParentScreen(this)
-                .setTitle(Text.translatable("轨道修改器"))
+                .setTitle(Text.translatable("gui.mtrsteamloco.compound_creator.rail_modifier"))
                 .setDoesConfirmSave(false)
                 .transparentBackground()
                 .setSavingRunnable(() -> {
@@ -652,7 +652,7 @@ public class CompoundCreatorScreen extends Screen {
 
         common.addEntry(
             entryBuilder.startIntSlider(
-                Text.translatable("开门方向"),
+                Text.translatable("gui.mtrsteamloco.brush_edit_rail.opening_direction"),
                 extra.getOpeningDirection(),
                 0, 3
             )
@@ -695,7 +695,7 @@ public class CompoundCreatorScreen extends Screen {
         private Runnable returnParent;
 
         public SelectScreen(RailModifierTask task, Runnable returnParent) {
-            super(Text.literal("Select rail arguments"));
+            super(Text.translatable("gui.mtrsteamloco.compound_creator.select_rail_arguments"));
             this.task = task;
             this.rail = task.rail;
             this.extra = (RailExtraSupplier) rail;
@@ -780,7 +780,7 @@ public class CompoundCreatorScreen extends Screen {
         private Button btnAddTY = UtilitiesClient.newButton(Text.literal("▼"), btn -> setTY(ty - 4 * Square.length));
         private Button btnCenter = UtilitiesClient.newButton(Text.literal("▣"), btn -> {tx = 0; ty = 0;});
 
-        private Button btnEnterConfig = UtilitiesClient.newButton(Text.literal("配置"), btn -> setConfigScreen());
+        private Button btnEnterConfig = UtilitiesClient.newButton(Text.translatable("gui.mtrsteamloco.compound_creator.config"), btn -> setConfigScreen());
 
         private Square mouseOver = null;
 

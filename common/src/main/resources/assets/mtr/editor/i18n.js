@@ -486,6 +486,7 @@ const I18N = (() => {
 			"右键一段轨道改隔离，放进草稿，应用后刷新车厂。": "Right-click a rail to change its isolation; it goes into the draft, and depots refresh once it is applied.",
 			"联络线的这段已放行，别的线路可以走": "This part of the connecting line is released; other lines can run over it",
 			"联络线独占，别的线路不走": "Taken by a connecting line; other lines don't run over it",
+			"联络线独占": "Taken by a connecting line",
 			"；点一下切换": "; click to switch",
 			"联络线放行 {0} 段": "Release {0} rails of the connecting line",
 			"橙色虚线：联络线独占，别的线路不走；灰色虚线：已放行。": "Dashed orange: taken by a connecting line, other lines don't run over it; dashed grey: released. ",

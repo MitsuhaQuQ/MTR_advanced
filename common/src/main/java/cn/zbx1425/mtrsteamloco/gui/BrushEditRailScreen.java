@@ -278,7 +278,7 @@ public class BrushEditRailScreen {
 
             common.addEntry(
                 entryBuilder.startIntSlider(
-                    Text.translatable("开门方向"),
+                    Text.translatable("gui.mtrsteamloco.brush_edit_rail.opening_direction"),
                     supplier.getOpeningDirection(),
                     0, 3
                 )

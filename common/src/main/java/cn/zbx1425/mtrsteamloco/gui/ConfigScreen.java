@@ -36,7 +36,7 @@ public final class ConfigScreen {
         );
         if (!ShadersModHandler.canDrawWithBuffer()) {
             common.addEntry(entryBuilder.startTextDescription(
-                    Text.literal("gui.mtrsteamloco.config.client.shaderactive")
+                    Text.translatable("gui.mtrsteamloco.config.client.shaderactive")
             ).build());
         }
         common.addEntry(entryBuilder

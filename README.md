@@ -8,6 +8,11 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 
 ## Completed improvements
 
+**Languages**
+
+- MTR's own translations load again from the jar: the language files are named in lower case, as Minecraft looks them up, so text no longer falls back to English in Chinese and the other languages.
+- Chinese added for MTR text the translation pack lacks (resource pack creator, depot path messages, some settings), and ANTE screens use language keys instead of text written into the code.
+
 **Rails and nodes**
 
 - Rail directions go from 16 fixed directions to 0.1° precision, with long-distance geometry fixes and two-arc connections.

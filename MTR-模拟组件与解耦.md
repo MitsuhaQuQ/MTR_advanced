@@ -283,6 +283,7 @@ MTR4 把模拟拆成独立的 Transport Simulation Core（`org.mtr.core`，MIT �
 
 - **自己的接口**（2026-11-03）：本分支（MTM）自己实现的部分可以在 MTR 的基础上定义自己的接口（类、数据结构、网络包、命令、配置、编辑器接口），不必沿用 MTR 原有的定义。附属模组直接用到的 MTR 公开字段和方法仍然保留（见下一条 ABI），新功能不必再套进 MTR 的旧接口里。
 - **附属模组 ABI**：附属模组直接读写 `Train` 的字段和方法。字段保留，只改写入方式；每一步都扫描 MSD、YJCM、Metropolis、SHMetro。
+- **语言**（2026-11-06）：和模拟组件无关。组件不产生给玩家看的文字，游戏和网页的文字都在宿主一侧（`common/src/main/lang`、`assets/mtr/editor/i18n.js`）；这次修的是语言文件名大小写和缺的翻译，见代码说明。
 - **ANTE 的运行逻辑**（2026-11-03 调整）：ANTE 里和列车运行有关的注入（`TrainMixin`、`TrainClientMixin`、`SidingMixin` 对推进和调度的注入，`RailwayDataMixin` 的每 tick 入口）不再要求保持兼容，我们的实现取代它们，需要时可以直接删掉或改写。ANTE 的渲染、模型、声音、脚本等其余部分照旧保留，改到它们用到的类时仍要核对注入点。
   - 2026-11-03 核对时的注入点：`TrainMixin` 注入构造、`toMessagePack`、`messagePackLength`、`writePacket`、`scanDoors`、`convertMaxManualSpeed`；`TrainClientMixin` 注入 `TrainClient.simulateTrain` 的入口；`SidingMixin` 注入 `Siding.simulateTrain` 的入口；`RailwayDataMixin` 委托给 `RailwayData.simulateTrains(RailNearPlayer)`，并按名字和类型引用 `trainPositions`。
 - **存档**（2026-11-03 调整）：已有的存档内容保持不变，旧存档照常读入；新功能需要时可以主动新增存档内容（新的键、新的表），旧版本读到时忽略。原来写的"S3 之前存档字节不变"是这份文档自己定的，不是需求，已经取消。改变已有内容的格式（如列车运行状态换成组件格式）仍放到 G4，并加独立于协议版本的存档版本号。

@@ -277,14 +277,19 @@ task setupFiles() {
 		connectTimeout 10000
 		readTimeout 300000
 	}
+	// Minecraft looks language files up by lower case code (lang/zh_cn.json) and files in a jar are case sensitive, so the
+	// Crowdin pack's zh_CN.json is renamed; its old files are removed first, as a case insensitive disk keeps a name's case
+	// (en_us.json is not in the pack but kept here)
+	delete fileTree("common/src/main/resources/assets/mtr/lang").include("*.json").exclude("en_us.json")
 	copy {
 		outputs.upToDateWhen { false }
 		from(zipTree("common/src/main/java/mtr/mappings/lang.zip"))
 		into "common/src/main/resources/assets/mtr/lang"
+		rename { name -> name.toLowerCase(Locale.ROOT) }
 	}
 	// Strings added by this project are kept outside the Crowdin pack and merged over it
 	fileTree("common/src/main/lang").include("*.json").each { file ->
-		def target = new File(rootDir, "common/src/main/resources/assets/mtr/lang/${file.name}")
+		def target = new File(rootDir, "common/src/main/resources/assets/mtr/lang/${file.name.toLowerCase(Locale.ROOT)}")
 		def text = target.getText("UTF-8")
 		def lineBreak = System.lineSeparator()
 		def lastEntryEnd = text.lastIndexOf('"') + 1

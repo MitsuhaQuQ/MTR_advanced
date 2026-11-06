@@ -26,6 +26,8 @@
 **主线程上每 tick 都会调到的地方不要每次重算**（2026-11-05 量过，见解耦文档 L3）：`SavedRailBase` 的端点和中点算一次就留着（`positionArray`、`midPos`，端点不会变）；列车写时刻时，时间段在路径上的位置留在 `TimeSegment` 上（`Train.getSegmentIndex`，路径的距离表换了或变长变短才重算）；按频率发车的车厂的存车线列表留着（`Depot.getSidingsInDepot`）；上游路线查找没有请求时十个 tick 才搜一次（`RailwayDataRouteFinderModule`，只供网站地图的连接密度）。
 
 **本项目新加的游戏内文字要放在 `common/src/main/lang/*.json`**：构建前的准备步骤用 Crowdin 的翻译包覆盖 `common/src/main/resources/assets/mtr/lang`，再把 `common/src/main/lang` 里没有的键合并进去（根目录 `build.gradle`）。写在 `assets/mtr/lang` 里的中文会被覆盖，游戏退回显示英文。只合并缺的键，所以改上游已有的文字要改 Crowdin 那边；值里不能有英文双引号，因为合并时不转义。
+  - **文件名一律小写**（2026-11-06）：Minecraft 按小写的语言代码找 `lang/zh_cn.json`，jar 里的文件名区分大小写，而 Crowdin 包里是 `zh_CN.json`，以前正式 jar 里 MTR 的非英文翻译都找不到，退回英文（开发环境的 Windows 目录不分大小写，看不出来）。准备步骤先删掉 `assets/mtr/lang` 里旧的翻译文件（`en_us.json` 不在包里，保留），解包时改成小写，合并时也按小写文件名找。
+  - Crowdin 包缺中文的 MTR 界面文字（资源包创建器、车厂"正在生成路径"、几项设置等）和 ANTE 缺文字的键，都在 `common/src/main/lang` 里补上；语言键全局通用，`gui.mtrsteamloco.*` 也可以放这里。PIDS 和指示牌上的非 `_cjk` 键（如 `terminates_here_1..3`、`sign.mtr.*`）是双语显示里的英文那一半，故意不翻。ANTE 界面里写死的中文和英文（轨道修改器、路线路径创建器、选择界面的标题和按钮、物品提示）改成语言键。
 
 **网页新建线路**（L4）：`newRoute` 操作的 `route` 为空时，`EditorActions.applyOperation` 不找来源线路，直接调 `createRoute(null, …)`：按 `mode` 建 `new Route(mode)`，线路组名取 `line`，颜色同时作线路组颜色和线路自己的颜色；不带班次、不加入车厂（即使操作里写了也不用）。网页那边是 `newLineDialog`。
 

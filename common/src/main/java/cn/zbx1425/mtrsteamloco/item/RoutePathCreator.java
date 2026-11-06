@@ -61,7 +61,7 @@ public class RoutePathCreator extends ItemWithCreativeTabBase {
         } else {
             if (tag.contains("last_pos")) {
                 BlockPos lastPos = BlockPos.of(tag.getLong("last_pos"));
-                list.add(Text.literal("Last position: " + lastPos.toShortString()));
+                list.add(Text.translatable("tooltip.mtrsteamloco.route_path_creator.last_position", lastPos.toShortString()));
             }
             BlockPos lastPos = null;
             for (PathData pd : path) {
@@ -73,7 +73,7 @@ public class RoutePathCreator extends ItemWithCreativeTabBase {
                 } else {
                     list.add(Text.literal("§2" + lastPos.toShortString() + "§r -> §4" + currentPos.toShortString()));
                 }
-                list.add(Text.literal("Rail: " + pd.rail.railType.name() + " " + pd.rail.railType.speedLimit + "km/h " + String.format("%.1f", pd.rail.getLength()) + "m " + (pd.dwellTime * 0.5f) + "s"));
+                list.add(Text.translatable("tooltip.mtrsteamloco.route_path_creator.rail", pd.rail.railType.name(), String.valueOf(pd.rail.railType.speedLimit), String.format("%.1f", pd.rail.getLength()), String.valueOf(pd.dwellTime * 0.5f)));
                 lastPos = getPos(pd.rail, false);
             }
             if (lastPos != null) {

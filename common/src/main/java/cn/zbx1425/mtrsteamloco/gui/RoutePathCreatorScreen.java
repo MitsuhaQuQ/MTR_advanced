@@ -79,7 +79,7 @@ public class RoutePathCreatorScreen extends Screen implements IGraphics {
         } else tag.putLong("last_pos", getPos(pathData.get(pathData.size() - 1).rail, false).asLong());
         pushData();
     });
-    Button btnClear = UtilitiesClient.newButton(Text.literal("Clear"), btn -> {
+    Button btnClear = UtilitiesClient.newButton(Text.translatable("gui.mtrsteamloco.route_path_creator.clear"), btn -> {
         pathData.clear();
         pathParts.clear();
         tag.remove("last_pos");
@@ -88,13 +88,13 @@ public class RoutePathCreatorScreen extends Screen implements IGraphics {
         clearWidgets();
         init();
     });
-    Button btnActionScreen = UtilitiesClient.newButton(Text.literal("Action"), btn -> enterActionScreen());
+    Button btnActionScreen = UtilitiesClient.newButton(Text.translatable("gui.mtrsteamloco.route_path_creator.action"), btn -> enterActionScreen());
     EditBox railTypeIn = null;
     EditBox dwellTimeIn = null;
 
 
     private RoutePathCreatorScreen(Screen parent) {
-        super(Text.literal("Route Path Creator Screen"));
+        super(Text.translatable("gui.mtrsteamloco.route_path_creator.title"));
         this.parent = parent;
         pullData();
 
@@ -305,7 +305,7 @@ public class RoutePathCreatorScreen extends Screen implements IGraphics {
         );
 
         if (pathData.size() > 2 && pathData.get(pathData.size() - 1).rail.railType == RailType.PLATFORM && (!pathData.get(pathData.size() - 2).isOppositeRail(pathData.get(pathData.size() - 1)))) {
-            common.addEntry(ButtonListEntry.createCenteredInstance(Text.literal("创建路线"), btn -> {
+            common.addEntry(ButtonListEntry.createCenteredInstance(Text.translatable("gui.mtrsteamloco.route_path_creator.create_route"), btn -> {
                 Route route = new Route(TransportMode.TRAIN);
                 route.name = tag.getString("route_name");
                 route.color = tag.getInt("route_color");

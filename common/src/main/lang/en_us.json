@@ -238,5 +238,20 @@
   "gui.mtr.timetable_deploy_order": "Sent out of %2$s at %1$s",
   "gui.mtr.timetable_return_order": "Ends at %1$s, back to %2$s",
   "gui.mtr.timetable_suspended": "Not running (set in the advanced editor)",
-  "gui.mtr.timetable_order_any_depot": "any depot"
+  "gui.mtr.timetable_order_any_depot": "any depot",
+  "gui.mtrsteamloco.rail_path_creator.error.data_not_found": "§cRail data not found",
+  "gui.mtrsteamloco.select_screen.merged": "Merged: ",
+  "gui.mtrsteamloco.unknown_task_type": "Unknown task type: %s",
+  "gui.mtrsteamloco.brush_edit_rail.opening_direction": "Door Opening Side",
+  "gui.mtrsteamloco.compound_creator.enter": "Enter",
+  "gui.mtrsteamloco.compound_creator.select_task": "Select Task",
+  "gui.mtrsteamloco.compound_creator.select_rail_arguments": "Select Rail Arguments",
+  "gui.mtrsteamloco.compound_creator.config": "Configure",
+  "gui.mtrsteamloco.route_path_creator.title": "Route Path Creator",
+  "gui.mtrsteamloco.route_path_creator.clear": "Clear",
+  "gui.mtrsteamloco.route_path_creator.action": "Action",
+  "gui.mtrsteamloco.route_path_creator.create_route": "Create Route",
+  "gui.mtrsteamloco.select_screen.title": "Select",
+  "tooltip.mtrsteamloco.route_path_creator.last_position": "Last position: %s",
+  "tooltip.mtrsteamloco.route_path_creator.rail": "Rail: %s %s km/h %s m %s s"
 }

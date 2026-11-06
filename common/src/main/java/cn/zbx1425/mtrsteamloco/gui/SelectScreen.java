@@ -51,7 +51,7 @@ public class SelectScreen extends Screen {
     protected float alpha = 0.6F;
 
     public SelectScreen(Supplier<Screen> parent, MutableComponent screenKey, Map<String, String> map, Supplier<String> getSelected, SelectedCallback onSelected, String instructionLink) {
-        super(Text.literal("SelectScreen"));
+        super(Text.translatable("gui.mtrsteamloco.select_screen.title"));
         this.parent = parent;
         this.screenKey = screenKey;
         for (Map.Entry<String, String> entry : map.entrySet()) {
@@ -77,7 +77,7 @@ public class SelectScreen extends Screen {
     }
 
     public SelectScreen(Supplier<Screen> parent, MutableComponent screenKey, List<String> list, Supplier<String> getSelected, SelectedCallback onSelected, String instructionLink) {
-        super(Text.literal("SelectScreen"));
+        super(Text.translatable("gui.mtrsteamloco.select_screen.title"));
         this.parent = parent;
         this.screenKey = screenKey;
         for (String value : list) {
@@ -100,7 +100,7 @@ public class SelectScreen extends Screen {
     }
 
     public <T> SelectScreen(Supplier<Screen> parent, Tree.Branch<T> tree, Supplier<String> getSelected, SelectedCallback onSelected, String instructionLink) {
-        super(Text.literal("SelectScreen"));
+        super(Text.translatable("gui.mtrsteamloco.select_screen.title"));
         this.parent = parent;
         this.screenKey = Text.literal(tree.getPathKey());
         for (Tree.Node<T> node : tree.getNodes().values()) {
