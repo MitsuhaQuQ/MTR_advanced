@@ -119,9 +119,13 @@ public final class LiveSimulation {
 	 */
 	private final Set<Long> excludedSidings = new TreeSet<>();
 	/**
-	 * The setting the simulator failed with, or -1.
+	 * When the simulator last failed, or 0.
 	 */
-	private int failedDrive = -1;
+	private long failedMillis;
+	/**
+	 * How long it stays off after failing before it starts again.
+	 */
+	private static final long FAILED_RETRY_MILLIS = 5 * 60 * 1000;
 
 	/**
 	 * Runs the simulator on to now, before the game's sidings move their trains in this tick.
@@ -129,24 +133,18 @@ public final class LiveSimulation {
 	 * @param trainPositions the game's rails taken, of the tick before and of this one
 	 */
 	public void tick(RailwayData railwayData, List<Map<UUID, Long>> trainPositions) {
-		final int componentDrive = MotionConfig.useLegacyMotion(false) ? MotionConfig.COMPONENT_DRIVE_OFF : MotionConfig.getComponentDrive(false);
-		if (componentDrive != failedDrive) {
-			failedDrive = -1;
+		// It always runs the trains (R4); having failed, it waits a while, the game moving the trains meanwhile
+		if (failedMillis != 0 && System.currentTimeMillis() < failedMillis + FAILED_RETRY_MILLIS) {
+			return;
 		}
-		if (componentDrive == MotionConfig.COMPONENT_DRIVE_OFF || failedDrive >= 0 || simulator != null && driving != (componentDrive == MotionConfig.COMPONENT_DRIVE_ON)) {
-			stop(railwayData);
-			if (componentDrive == MotionConfig.COMPONENT_DRIVE_OFF || failedDrive >= 0) {
-				return;
-			}
-		}
+		failedMillis = 0;
 		try {
-			run(railwayData, trainPositions, componentDrive == MotionConfig.COMPONENT_DRIVE_ON);
+			run(railwayData, trainPositions, true);
 		} catch (Exception e) {
-			// Nothing of the simulator may stop the game's tick; it stays off until the setting is changed, and the game moves
-			// the trains on from where the simulator had them
-			System.out.println("Minecraft Transit Railway: the component's simulator failed and is off until its setting is changed");
+			// Nothing of the simulator may stop the game's tick; the game moves the trains on from where the simulator had them
+			System.out.println("Minecraft Transit Railway: the component's simulator failed and is off for five minutes");
 			e.printStackTrace();
-			failedDrive = componentDrive;
+			failedMillis = System.currentTimeMillis();
 			stop(railwayData);
 		}
 	}

@@ -111,15 +111,7 @@ public final class TrainRules {
 		final SpeedCurves curves = train.getSpeedCurves();
 		final double railProgress = state.getRailProgress();
 		final double ticks = (plannedMillis - train.getMillis()) / (double) MotionConstants.MILLIS_PER_TICK;
-		if (!train.usesLegacyMotion()) {
-			return plannedMillis <= 0 ? Float.POSITIVE_INFINITY : (float) curves.findCruiseCap(railProgress, state.getSpeed(), nextStoppingIndex, ticks);
-		}
-		final SpeedCurves.Run run = curves.getRun(railProgress);
-		// A train starting again after waiting behind another one is late already, and catches up as fast as it can
-		if (plannedMillis <= 0 || run == null || run.stopRailIndex != nextStoppingIndex || Math.abs(railProgress - run.fastest.startPosition) > 1) {
-			return Float.POSITIVE_INFINITY;
-		}
-		return (float) run.findCap(ticks, curves.minSpeed);
+		return plannedMillis <= 0 ? Float.POSITIVE_INFINITY : (float) curves.findCruiseCap(railProgress, state.getSpeed(), nextStoppingIndex, ticks);
 	}
 
 	/**
@@ -219,7 +211,6 @@ public final class TrainRules {
 
 		boolean usesSpeedCurve();
 
-		boolean usesLegacyMotion();
 
 		SpeedCurves getSpeedCurves();
 

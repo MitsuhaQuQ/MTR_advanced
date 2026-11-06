@@ -73,11 +73,6 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		ClientClock.INSTANCE.onServerTime(packet.readLong());
 	}
 
-	public static void receiveMotionConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
-		final boolean useLegacyMotion = packet.readBoolean();
-		final int componentDrive = packet.readInt();
-		minecraftClient.execute(() -> MotionConfig.setClient(useLegacyMotion, componentDrive));
-	}
 
 	public static void receiveTimetableConfigS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String timeZone = packet.readUtf();
@@ -708,19 +703,5 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBoolean(useTimeAndWindSync);
 		RegistryClient.sendToServer(PACKET_USE_TIME_AND_WIND_SYNC, packet);
-	}
-
-	public static void sendUseLegacyMotionC2S(boolean useLegacyMotion) {
-		sendMotionConfigC2S(useLegacyMotion, MotionConfig.getComponentDrive(true));
-	}
-
-	/**
-	 * Both motion settings ({@link MotionConfig}), as the server takes them together.
-	 */
-	public static void sendMotionConfigC2S(boolean useLegacyMotion, int componentDrive) {
-		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-		packet.writeBoolean(useLegacyMotion);
-		packet.writeInt(componentDrive);
-		RegistryClient.sendToServer(PACKET_USE_LEGACY_MOTION, packet);
 	}
 }

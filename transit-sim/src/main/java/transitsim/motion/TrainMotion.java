@@ -2,7 +2,7 @@ package transitsim.motion;
 
 /**
  * The rules moving a train (decoupling document 2.2), taken out of the host's train in S2. They started as exactly the
- * rules of {@link transitsim.motion.legacy.LegacyTrainMotion}; the comparison tests keep the parts meant to stay the same.
+ * rules of {@code LegacyTrainMotion}, now kept in the tests only (R4); the comparison tests keep the parts meant to stay the same.
  * <p>
  * What changed: on the server, an automatic train on speed curves runs along a {@link RunSegment}, its position worked out
  * from the time since it set off rather than added up tick by tick (S2c). A client still follows the curve tick by tick

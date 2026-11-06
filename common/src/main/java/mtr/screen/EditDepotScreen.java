@@ -226,7 +226,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			addDrawableChild(checkboxRepeatIndefinitely);
 			addDrawableChild(checkboxCycleRoutes);
 			if (showSpeedCurves()) {
-				addDrawableChild(checkboxSpeedCurves);
+				// A depot of trains always runs by speed curves (R4)
+				if (!Depot.supportsTimetable(data.transportMode)) {
+					addDrawableChild(checkboxSpeedCurves);
+				}
 				addDrawableChild(textFieldReleaseInterval);
 			}
 		}

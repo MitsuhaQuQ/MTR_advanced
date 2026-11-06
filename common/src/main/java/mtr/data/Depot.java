@@ -306,7 +306,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		cruisingAltitude = messagePackHelper.getInt(KEY_CRUISING_ALTITUDE);
 		useDeterministicPath = messagePackHelper.getBoolean(KEY_USE_DETERMINISTIC_PATH);
 		cycleRoutes = messagePackHelper.getBoolean(KEY_CYCLE_ROUTES);
-		speedCurves = messagePackHelper.getBoolean(KEY_SPEED_CURVES);
+		speedCurves = messagePackHelper.getBoolean(KEY_SPEED_CURVES) || supportsTimetable(transportMode);
 		releaseInterval = Mth.clamp(messagePackHelper.getInt(KEY_RELEASE_INTERVAL, 0), 0, MAX_RELEASE_INTERVAL);
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> dispatcher.lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
@@ -389,7 +389,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		cycleRoutes = packet.readBoolean();
 		readVehicleServiceTypes(packet);
 		duties.read(PacketBinary.of(packet));
-		speedCurves = packet.readBoolean();
+		speedCurves = packet.readBoolean() || supportsTimetable(transportMode);
 		autoDuties.read(PacketBinary.of(packet));
 		releaseInterval = packet.readInt();
 		lineShortfall = Shortfall.read(packet);
@@ -564,7 +564,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			useDeterministicPath = packet.readBoolean();
 			cycleRoutes = packet.readBoolean();
 			readVehicleServiceTypes(packet);
-			speedCurves = packet.readBoolean();
+			speedCurves = packet.readBoolean() || supportsTimetable(transportMode);
 			releaseInterval = Mth.clamp(packet.readInt(), 0, MAX_RELEASE_INTERVAL);
 			readHeadways(packet);
 		} else if (KEY_POOL_FLEETS.equals(key)) {

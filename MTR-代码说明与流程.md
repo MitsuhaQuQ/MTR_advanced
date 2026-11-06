@@ -1065,6 +1065,11 @@ sequenceDiagram
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
+- **运行规则只留一种**（0.25.0，R4）：列车只按组件的规则（`TrainMotion`）跑，组件代跑一直开着。
+  - `MotionConfig` 只剩读旧的 `mtr_motion.json`：里面设了旧运动规则或代跑关、对比时，日志说一声已经不起作用。`useLegacyMotion`、`COMPONENT_DRIVE_*`、`set`/`setClient` 删掉；运动设置的包（`PACKET_MOTION_CONFIG`、`PACKET_USE_LEGACY_MOTION` 的收发）和设置界面里的两个选项删掉。
+  - `LegacyTrainMotion` 挪到组件的测试源码（`transit-sim/src/test/java/transitsim/motion/legacy`），只给 `TrainMotionEquivalenceTest` 等对照测试用；`TrainRules.Train.usesLegacyMotion` 和旧的巡航上限算法删掉。
+  - `LiveSimulation.tick` 只按"代跑"走，出错后停 5 分钟再试（以前要改设置才再开），这期间游戏自己按共享规则推车。
+  - 速度曲线：列车类车厂一律开（`Depot` 读档、包、更新时 `speedCurves || supportsTimetable`），车厂界面不再显示这个勾选框；缆车、飞机照旧可选。
 - **存车线只按运用**（R3，协议不变）：列车类车厂的存车线（`Siding.simulateTrain` 的 `runsByDuties`、组件 `SidingRun.tick` 的 `dutiesOnly`）即使还没有运用也走运用分支：车池按总数造车，"按需要"时车池总数等于运用份数、每条存车线至少有一列停着，第二列停着的进库内队列。原来每条存车线自己造车删车（`maxTrains`、`unlimitedTrains`）只留给缆车和飞机；老存档的 `maxTrains` 只作为没有 `fleet_size` 时的容量来源。
   - 咽喉锁：列车类车厂不再算"旧逻辑车厂"（`RailwayData.updateLockNetworks`、`SimDataset.getLockNetworks`、`EditorData`），只有飞机可能是；网页上没有运用的列车类车厂显示为"还没设置"，不再显示"旧逻辑"。
   - 规划：`DutyGenerator.PlanInputs.poolFleets`（`LineDuties.poolFleetsOf`：车厂设了按设的，没设按各存车线配属相加，有按需要的就不限）；`OperationNetwork.setPoolFleet`、`getStartingTrains` 让车池的车在一周开始时按存车线 id 顺序分给各存车线（每条不超过它的容量），`DutyPlanner` 按这个数起步并算出车数。

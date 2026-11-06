@@ -1142,11 +1142,6 @@ public class TrainServer extends Train {
 		}
 
 		@Override
-		public boolean usesLegacyMotion() {
-			return MotionConfig.useLegacyMotion(false);
-		}
-
-		@Override
 		public SpeedCurves getSpeedCurves() {
 			return TrainServer.this.getSpeedCurves();
 		}

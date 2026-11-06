@@ -2296,11 +2296,6 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		@Override
-		public boolean usesLegacyMotion() {
-			return false;
-		}
-
-		@Override
 		public SpeedCurves getSpeedCurves() {
 			if (curves == null || curvesPath != path) {
 				curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);

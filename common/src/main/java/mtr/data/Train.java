@@ -24,7 +24,6 @@ import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 import transitsim.motion.*;
-import transitsim.motion.legacy.LegacyTrainMotion;
 
 import java.io.*;
 import java.util.*;
@@ -35,7 +34,7 @@ import java.util.function.IntPredicate;
  * ({@link TrainClient}).
  * <p>
  * {@link #simulateTrain(Level, float, Depot)} moves the train for a tick or a frame. How it moves comes from the
- * component ({@code transitsim.motion.TrainMotion}, or {@code LegacyTrainMotion} for the old rules, chosen by
+ * component ({@code transitsim.motion.TrainMotion}, the only rules since R4, chosen by
  * {@link MotionConfig}): this class gives the component its state through the motion interfaces. It then works out where
  * the ends of each car are, and the subclasses act on each car in {@code simulateCar}: the server checks the track ahead
  * and opens doors, the client moves riders and draws the car.
@@ -554,7 +553,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * @return false if there is no segment to follow, or it has ended, so the train moves as before
 	 */
 	private boolean followSegment(Level world) {
-		if (!world.isClientSide() || segmentSpec == null || !usesSpeedCurve() || MotionConfig.useLegacyMotion(true) || path.isEmpty()) {
+		if (!world.isClientSide() || segmentSpec == null || !usesSpeedCurve() || path.isEmpty()) {
 			followedSegment = null;
 			followedSpec = null;
 			return false;
@@ -816,10 +815,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		}
 
 		try {
-			// The rules moving the train are in the component (decoupling document 2.2); the old ones stay for comparing
+			// The rules moving the train are in the component (decoupling document 2.2), the only ones (R4)
 			motionWorld = world;
 			motionDepot = depot;
-			final int totalDwellTicks = movedBySimulator || followSegment(world) ? motion.getTotalDwellTicks() : MotionConfig.useLegacyMotion(world.isClientSide()) ? LegacyTrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed) : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
+			final int totalDwellTicks = movedBySimulator || followSegment(world) ? motion.getTotalDwellTicks() : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
 			if (totalDwellTicks < 0) {
 				return;
 			}
