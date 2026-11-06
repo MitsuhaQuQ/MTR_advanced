@@ -125,10 +125,20 @@ public final class DutyGenerator {
 		 * found no way back.
 		 */
 		public final Map<Long, Map<Long, Long>> backLinks;
+		/**
+		 * The trains each pool has in all ({@link SidingInput#poolKey}, P2-C, R3), which its sidings start the week with
+		 * between them; a pool left out has each siding's.
+		 */
+		public final Map<String, Integer> poolFleets;
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks) {
+			this(turnTimes, backLinks, Collections.emptyMap());
+		}
+
+		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets) {
 			this.turnTimes = turnTimes;
 			this.backLinks = backLinks == null ? Collections.emptyMap() : backLinks;
+			this.poolFleets = poolFleets == null ? Collections.emptyMap() : poolFleets;
 		}
 	}
 
@@ -177,6 +187,7 @@ public final class DutyGenerator {
 
 		final OperationNetwork network = new OperationNetwork();
 		sidings.forEach(siding -> network.addDepot(siding.sidingId, siding.maxTrains < 0 ? UNLIMITED_TRAINS : Math.min(siding.maxTrains, UNLIMITED_TRAINS), siding.poolKey));
+		inputs.poolFleets.forEach(network::setPoolFleet);
 		final Set<Long> firstPlatforms = new TreeSet<>();
 		final Set<Long> lastPlatforms = new TreeSet<>();
 		timetableServices.forEach(service -> {

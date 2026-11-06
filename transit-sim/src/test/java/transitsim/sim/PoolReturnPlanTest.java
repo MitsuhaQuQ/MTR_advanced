@@ -106,6 +106,17 @@ class PoolReturnPlanTest {
 		assertEquals(7, result.uncovered);
 	}
 
+	@Test
+	void aPoolGivenItsTrainsInAllPlansNoMore() {
+		// Two services leaving at once from two sidings' platforms need two trains; the pool has one in all (R3)
+		final TestRoute up = route(1, 6 * HOUR, 1, 2, 3, 4), down = route(2, 6 * HOUR, 8, 5, 6, 7);
+		final DutyGenerator.Result both = DutyGenerator.generate(services(up, down), Arrays.asList(siding(A, 1), siding(B, 8)), Collections.emptyMap(), 5 * MINUTE);
+		assertEquals(0, both.uncovered, String.join(", ", both.issues));
+		final DutyGenerator.Result one = DutyGenerator.generate(services(up, down), Arrays.asList(siding(A, 1), siding(B, 8)), Collections.emptyMap(), 5 * MINUTE, new DutyGenerator.PlanInputs(null, null, Collections.singletonMap("pool", 1)));
+		assertTrue(one.uncovered > 0, "one train can't run both");
+		assertTrue(one.trains <= 1, "trains " + one.trains);
+	}
+
 	private static DutyGenerator.SidingInput siding(long sidingId, long platformId) {
 		final DutyGenerator.SidingInput siding = new DutyGenerator.SidingInput(sidingId, -1, Collections.singletonMap(platformId, 0L), 7);
 		siding.poolKey = "pool";

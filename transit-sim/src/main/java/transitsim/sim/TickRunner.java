@@ -1421,7 +1421,7 @@ public final class TickRunner<T extends RunTrack> {
 				} else if (!train.onRoute && ++trainsAtDepot > 1) {
 					trainsToRemove.add(train);
 					// By duties, a second train standing here is kept in the shed rather than taken away
-					if (depot.duties.diagramMode) {
+					if (depot.duties.diagramMode || depot.dutiesOnly) {
 						arriving.add(train.id);
 						shedIds.add(train.id);
 					}
@@ -1438,7 +1438,8 @@ public final class TickRunner<T extends RunTrack> {
 			// By duties, the trains are the pool's, across the sidings of the other depots of its line too, as trains go back to
 			// those (P2-C): a siding with none standing takes the one kept longest in its shed, and a new train is made only
 			// while the pool has fewer than it has in all, or than its duties need when that is not set
-			if (depot.duties.diagramMode) {
+			// A depot of trains has its sidings by duties only (R3), even before it has duties
+			if (depot.duties.diagramMode || depot.dutiesOnly) {
 				if (trains.isEmpty() || spawnTrain) {
 					final long keptId = shed.isEmpty() ? 0 : shed.removeFirst();
 					if (keptId != 0) {
@@ -1454,7 +1455,8 @@ public final class TickRunner<T extends RunTrack> {
 						}
 						final int poolTrains = getPoolCount(this);
 						final boolean roomHere = siding.maxTrains >= SimDataset.UNLIMITED_TRAINS || getHeld() <= siding.maxTrains;
-						if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : poolSlots > 0 && (trains.isEmpty() || poolTrains < poolSlots && trains.size() <= siding.maxTrains)) {
+						// As many as needed: as many as its duties, each siding with one standing at least
+						if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : trains.isEmpty() || poolTrains < poolSlots && trains.size() <= siding.maxTrains) {
 							addStanding(newTrainId());
 						}
 					}

@@ -334,7 +334,8 @@ public final class SimDataset {
 	public transitsim.network.LockNetworks getLockNetworks() {
 		final transitsim.network.LockNetworks lockNetworks = new transitsim.network.LockNetworks();
 		final Map<Long, Boolean> byDuties = new HashMap<>();
-		depots.forEach(depot -> byDuties.put(depot.id, depot.duties.length > 0));
+		// A depot of trains sends them out by duties only (R2, R3), so it never runs by the old logic
+		depots.forEach(depot -> byDuties.put(depot.id, depot.duties.length > 0 || depot.dutiesOnly));
 		sidings.forEach(siding -> {
 			if (siding.path.isEmpty() || !byDuties.containsKey(siding.depotId)) {
 				return;

@@ -90,7 +90,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
 			// Trains moving continuously, like cable cars, lock nothing whatever their depot does
 			if (depot != null && !depot.transportMode.continuousMovement) {
-				lockNetworks.addDepot(depot.id, depot.getRunDuties() != null);
+				// A depot of trains sends them out by duties only (R2, R3), so only aircraft can run by the old logic
+				lockNetworks.addDepot(depot.id, depot.getRunDuties() != null || Depot.supportsTimetable(depot.transportMode));
 				siding.forEachPathNodes(nodes -> lockNetworks.addPath(depot.id, nodes));
 			}
 		});

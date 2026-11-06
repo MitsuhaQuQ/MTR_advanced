@@ -3,6 +3,7 @@ package transitsim.planning;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -19,6 +20,7 @@ public final class OperationNetwork {
 	private final Map<Long, Long> turnaroundMillis = new TreeMap<>();
 	private final Map<Long, Map<Long, Long>> connections = new TreeMap<>();
 	private final Map<Long, Depot> depots = new TreeMap<>();
+	private final Map<String, Integer> poolFleets = new HashMap<>();
 
 	/**
 	 * A turn back rail beyond the platform a train can wait on for its next service from there, leaving the platform free
@@ -57,6 +59,36 @@ public final class OperationNetwork {
 	public OperationNetwork addDepot(long depotId, int trainCount, String poolKey) {
 		depots.put(depotId, new Depot(depotId, trainCount, poolKey == null ? "#" + depotId : poolKey));
 		return this;
+	}
+
+	/**
+	 * Has a pool's depots start the week with this many trains between them (P2-C, R3), each at most what it holds, in
+	 * the order of their IDs, rather than each as many as it holds.
+	 */
+	public OperationNetwork setPoolFleet(String poolKey, int trains) {
+		if (poolKey != null && trains >= 0) {
+			poolFleets.put(poolKey, trains);
+		}
+		return this;
+	}
+
+	/**
+	 * @return the trains each depot starts the week with: as many as it holds, or its share of its pool's when set
+	 */
+	public Map<Long, Integer> getStartingTrains() {
+		final Map<Long, Integer> starting = new TreeMap<>();
+		final Map<String, Integer> left = new HashMap<>(poolFleets);
+		depots.values().forEach(depot -> {
+			final Integer poolLeft = left.get(depot.poolKey);
+			if (poolLeft == null) {
+				starting.put(depot.id, depot.trainCount);
+			} else {
+				final int trains = Math.min(depot.trainCount, poolLeft);
+				starting.put(depot.id, trains);
+				left.put(depot.poolKey, poolLeft - trains);
+			}
+		});
+		return starting;
 	}
 
 	public OperationNetwork addDepotLink(long depotId, long platformId, long millis) {

@@ -1291,7 +1291,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		boolean spawnTrain = true;
 		// A depot running by duties has a train for each slot of the siding's pool, the sidings with the same vehicle,
 		// within each siding's limit
-		final boolean runsByDuties = depot.getRunDuties() != null;
+		// A depot of trains has its sidings by duties only (R3), even before it has duties; vehicles moving all the time and
+		// aircraft as before
+		final boolean runsByDuties = depot.getRunDuties() != null || Depot.supportsTimetable(transportMode) && !transportMode.continuousMovement;
 
 		final Set<Long> railProgressSet = new HashSet<>();
 		final Set<TrainServer> trainsToRemove = new HashSet<>();
@@ -1372,7 +1374,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 					final int poolTrains = depot.getPoolTrains(this);
 					final boolean roomHere = fleetSize < 0 || getHeldCount() < fleetSize;
 					final int poolSlots = poolFleet < 0 ? depot.getPoolSlots(this) : 0;
-					if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : poolSlots > 0 && (trains.isEmpty() || poolTrains < poolSlots && (fleetSize < 0 || trains.size() < fleetSize))) {
+					// As many as needed: as many as its duties, each siding with one standing at least
+					if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : trains.isEmpty() || poolTrains < poolSlots && (fleetSize < 0 || trains.size() < fleetSize)) {
 						trains.add(new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime()));
 					}
 				}

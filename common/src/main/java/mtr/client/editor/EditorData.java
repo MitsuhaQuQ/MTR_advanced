@@ -76,7 +76,7 @@ public final class EditorData {
 			final Depot depot = ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
 			final long[] nodes = ClientData.MAP_SIDINGS.get(siding.id);
 			if (depot != null && !depot.transportMode.continuousMovement && nodes != null) {
-				lockNetworks.addDepot(depot.id, depot.getRunDuties() != null);
+				lockNetworks.addDepot(depot.id, depot.getRunDuties() != null || Depot.supportsTimetable(depot.transportMode));
 				lockNetworks.addPath(depot.id, nodes);
 			}
 		});
@@ -95,10 +95,12 @@ public final class EditorData {
 			// Not running by duties: the old logic, whose trains don't lock station throats
 			// Not configured: neither duties nor anything the old logic would send a train for (lines and departures or a
 			// frequency), as a depot just made; shown as such, not as the old logic
-			final boolean oldLogic = depot.getRunDuties() == null && !depot.transportMode.continuousMovement;
+			// A depot of trains sends them out by duties only (R2, R3): with none, it isn't set up yet; only aircraft run by the
+			// old logic
+			final boolean oldLogic = depot.getRunDuties() == null && !depot.transportMode.continuousMovement && !Depot.supportsTimetable(depot.transportMode);
 			final boolean sendsNothing = depot.routeIds.isEmpty() || (depot.useRealTime ? depot.departures.isEmpty() : java.util.stream.IntStream.range(0, Depot.HOURS_IN_DAY).allMatch(hour -> depot.getFrequency(hour) == 0));
 			depotObject.addProperty("oldLogic", oldLogic && !sendsNothing);
-			depotObject.addProperty("notConfigured", oldLogic && sendsNothing);
+			depotObject.addProperty("notConfigured", depot.getRunDuties() == null && Depot.supportsTimetable(depot.transportMode) || oldLogic && sendsNothing);
 			final java.util.Set<Long> oldDepots = sharedWithOld.get(depot.id);
 			if (oldDepots != null) {
 				final JsonArray oldArray = new JsonArray();

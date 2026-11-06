@@ -164,18 +164,26 @@ public final class DutyPlanner {
 		return buildPlan(alone, runWeek(new WeekStart()), false);
 	}
 
+	/**
+	 * The trains each depot started the week with, for how many are out.
+	 */
+	private final Map<Long, Integer> startTrains = new TreeMap<>();
+
 	private WeekResult runWeek(WeekStart start) {
 		final WeekResult result = new WeekResult();
 		platformStops.clear();
 		returning.clear();
 		holds.clear();
 		final Map<Long, List<Long>> depotReady = new TreeMap<>();
+		// A pool given its trains in all shares them between its sidings (R3)
+		final Map<Long, Integer> startingTrains = network.getStartingTrains();
+		startTrains.clear();
 		network.depots().forEach(depot -> {
 			// The trains in the siding as the week before left them, which may have gone back to other sidings of the pool
 			final List<Long> ready = new ArrayList<>();
 			final List<Long> stocked = start.stock.get(depot.id);
 			if (stocked == null) {
-				for (int i = 0; i < depot.trainCount; i++) {
+				for (int i = 0; i < startingTrains.getOrDefault(depot.id, depot.trainCount); i++) {
 					ready.add(Long.MIN_VALUE);
 				}
 			} else {
@@ -183,6 +191,8 @@ public final class DutyPlanner {
 			}
 			ready.sort(Comparator.naturalOrder());
 			depotReady.put(depot.id, ready);
+			// Counted as it started the first week, the pool's trains in all staying the same as they move between its sidings
+			startTrains.put(depot.id, startingTrains.getOrDefault(depot.id, depot.trainCount));
 		});
 		final List<OpenDuty> open = new ArrayList<>();
 		start.carried.forEach(carried -> open.add(carried.shiftedToNextWeek()));
@@ -232,7 +242,7 @@ public final class DutyPlanner {
 	private void updatePeak(WeekResult result, Map<Long, List<Long>> depotReady, long timeMillis) {
 		int trainsOut = 0;
 		for (final OperationNetwork.Depot depot : network.depots()) {
-			trainsOut += depot.trainCount - (int) depotReady.get(depot.id).stream().filter(time -> time <= timeMillis).count();
+			trainsOut += startTrains.getOrDefault(depot.id, depot.trainCount) - (int) depotReady.get(depot.id).stream().filter(time -> time <= timeMillis).count();
 		}
 		result.peakTrains = Math.max(result.peakTrains, trainsOut);
 	}

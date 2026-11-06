@@ -27,6 +27,39 @@ public final class LineDuties {
 	private static final long MILLIS_PER_BLOCK = 50;
 
 	/**
+	 * @return the trains each pool of the sidings has in all (P2-C, R3): what each depot gives it, or else its sidings'
+	 * fleets added up; a pool one of whose depots has as many as needed is left out
+	 */
+	public static Map<String, Integer> poolFleetsOf(List<DutyGenerator.SidingInput> sidings, java.util.function.LongFunction<Depot> depotOf) {
+		final Map<String, Integer> totals = new HashMap<>();
+		final Set<String> unlimited = new HashSet<>();
+		final Set<String> counted = new HashSet<>();
+		sidings.forEach(siding -> {
+			if (siding.poolKey == null) {
+				return;
+			}
+			final Depot depot = depotOf.apply(siding.sidingId);
+			final Integer set = depot == null ? null : depot.poolFleets.get(siding.poolKey);
+			final int fleet;
+			if (set != null) {
+				if (!counted.add(depot.id + "/" + siding.poolKey)) {
+					return;
+				}
+				fleet = set;
+			} else {
+				fleet = siding.maxTrains;
+			}
+			if (fleet < 0) {
+				unlimited.add(siding.poolKey);
+			} else {
+				totals.merge(siding.poolKey, fleet, Integer::sum);
+			}
+		});
+		unlimited.forEach(totals::remove);
+		return totals;
+	}
+
+	/**
 	 * How long the siding's trains take out to each of the platforms: as kept where measuring found the estimate off
 	 * ({@link Siding#getRecordedLegs}), otherwise the estimate.
 	 */
@@ -354,7 +387,9 @@ public final class LineDuties {
 		 *                  way between, or null to estimate them
 		 */
 		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes) {
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks);
+			final Map<String, Integer> poolFleets = new HashMap<>();
+			groups.forEach(group -> poolFleets.putAll(poolFleetsOf(group.sidings, group.depotOf::get)));
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks, poolFleets);
 			final Plan plan = new Plan(name);
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;

@@ -1846,7 +1846,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				sidingInput.poolKey = siding.getPoolKey();
 				sidingInputs.add(sidingInput);
 			});
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache));
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();
