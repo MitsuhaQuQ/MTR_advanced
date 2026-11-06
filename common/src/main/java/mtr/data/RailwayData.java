@@ -523,6 +523,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		});
 		// Trains back in a shed in this tick are kept there from the next, whichever order the sidings ran in (P2-C)
 		sortedSidings.forEach(Siding::keepArrived);
+		// Buffers measured off what they were planned with by more than a little go to the players (D1)
+		depots.forEach(depot -> depot.sendBuffersIfChanged(packet -> world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_UPDATE_DEPOT, packet))));
 		handleMotionEvents();
 		// Runs asked for during the tick are given out together, whatever order the trains ran in
 		runReservations.resolve(System.currentTimeMillis());

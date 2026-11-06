@@ -219,6 +219,26 @@ public class StopTimes {
 	}
 
 	/**
+	 * @return the fastest time running from leaving one stop of the path to reaching a later one, leaving out the time it
+	 * stands at the stops between, such as a turn back rail (D1); -1 if either isn't a stop of it
+	 */
+	public long getMovingMillis(int fromIndex, int toIndex) {
+		Stop from = null;
+		Stop to = null;
+		long standing = 0;
+		for (final Stop stop : stops) {
+			if (stop.index == fromIndex) {
+				from = stop;
+			} else if (stop.index == toIndex) {
+				to = stop;
+			} else if (stop.index > fromIndex && stop.index < toIndex) {
+				standing += stop.departureMillis - stop.arrivalMillis;
+			}
+		}
+		return from == null || to == null ? -1 : Math.max(0, to.arrivalMillis - from.departureMillis - standing);
+	}
+
+	/**
 	 * @return the time from the first stop to the last one
 	 */
 	public long getDurationMillis() {

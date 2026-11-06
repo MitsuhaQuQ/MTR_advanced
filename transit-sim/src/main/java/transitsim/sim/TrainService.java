@@ -1303,6 +1303,13 @@ public class TrainService<T extends PlanTrack> {
 		turnBacks = newTurnBacks;
 	}
 
+	/**
+	 * @return the path the train is on when it isn't the usual path of the depot, such as a duty's, or null
+	 */
+	public TripPath<T> getTripPath() {
+		return tripPath;
+	}
+
 	public StopTimes getStopTimes() {
 		return stopTimes;
 	}

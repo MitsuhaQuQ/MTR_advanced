@@ -358,6 +358,19 @@ class DutyGeneratorTest {
 	}
 
 	@Test
+	void aBufferMeasuredRoundIsAddedToTheChangeOfPlatform() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1));
+		final Map<Long, Map<Long, Long>> turnTimes = Collections.singletonMap(104L, Collections.singletonMap(105L, 5 * MINUTE));
+		// Measured at 5 minutes, and trains took 10 minutes longer round than that (D1): not in time for 15 past either
+		final transitsim.plan.Buffers buffers = new transitsim.plan.Buffers(Collections.singletonMap(transitsim.plan.Buffers.key(transitsim.plan.Buffers.TURN, 104, 105), 10 * MINUTE));
+		final DutyGenerator.PlanInputs buffered = new DutyGenerator.PlanInputs(turnTimes, null, null, buffers);
+		assertEquals(Collections.singletonList(0L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE, buffered)));
+		// Two minutes longer: still in time
+		final transitsim.plan.Buffers less = new transitsim.plan.Buffers(Collections.singletonMap(transitsim.plan.Buffers.key(transitsim.plan.Buffers.TURN, 104, 105), 2 * MINUTE));
+		assertEquals(Arrays.asList(0L, 15L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE, new DutyGenerator.PlanInputs(turnTimes, null, null, less))));
+	}
+
+	@Test
 	void aTrainIsBackInItsSidingOnlyOnceItHasRunThere() {
 		// One train, the down service at the hour and again 20 minutes past; nothing to wait for at the far end, so it
 		// goes back between them. Out from the siding takes a minute

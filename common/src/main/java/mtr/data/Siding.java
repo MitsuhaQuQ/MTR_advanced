@@ -1310,6 +1310,18 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
 			}
+			// What happened to it in this tick: kept for the tick's events, and measured for the depot's buffers (D1)
+			final List<MotionEvent> trainEvents = new ArrayList<>();
+			train.drainMotionEvents(trainEvents);
+			if (!trainEvents.isEmpty()) {
+				if (depot != null) {
+					final transitsim.plan.TripPath<PathData> eventPath = train.getService().getTripPath();
+					trainEvents.forEach(event -> depot.bufferRecorder.onEvent(event, id, eventPath));
+				}
+				if (motionEvents != null) {
+					motionEvents.addAll(trainEvents);
+				}
+			}
 			// Back in another siding of the pool, maybe of another depot of the line, the same train is kept in its shed (P2-C)
 			final long returnedTo = train.takeReturnedElsewhereSiding();
 			if (returnedTo != 0) {
@@ -1319,9 +1331,6 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 					target.arriving.add(target.adopt(train));
 				}
 				continue;
-			}
-			if (motionEvents != null) {
-				train.drainMotionEvents(motionEvents);
 			}
 
 			if (runBySimulator) {

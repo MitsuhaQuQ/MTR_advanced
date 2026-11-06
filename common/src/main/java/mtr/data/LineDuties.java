@@ -234,6 +234,10 @@ public final class LineDuties {
 
 		public final String key;
 		/**
+		 * What the unit's depots measured (D1).
+		 */
+		private final transitsim.plan.Buffers buffers;
+		/**
 		 * The names of the unit's lines, for the log and the shortfall.
 		 */
 		public final String name;
@@ -343,6 +347,11 @@ public final class LineDuties {
 				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(siding.links).append(backLinks.get(siding.sidingId)).append(';'));
 			});
 			keyBuilder.append("taken:").append(taken.hashCode());
+			// How much longer than planned the unit's trains were measured to take out, round and back (D1)
+			final Map<String, Long> unitBuffers = new TreeMap<>();
+			depotIds.stream().sorted().map(dataCache.depotIdMap::get).filter(Objects::nonNull).forEach(depot -> depot.getBuffers().getMillis().forEach((bufferKey, millis) -> unitBuffers.merge(bufferKey, millis, Math::max)));
+			buffers = unitBuffers.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(unitBuffers);
+			keyBuilder.append("buffers:").append(unitBuffers);
 			// The routes' paths keep off the connecting lines, which changes their times
 			keyBuilder.append("connecting:");
 			dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode).sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
@@ -384,7 +393,7 @@ public final class LineDuties {
 		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes) {
 			final Map<String, Integer> poolFleets = new HashMap<>();
 			groups.forEach(group -> poolFleets.putAll(poolFleetsOf(group.sidings, group.depotOf::get)));
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks, poolFleets);
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks, poolFleets, buffers);
 			final Plan plan = new Plan(name);
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;

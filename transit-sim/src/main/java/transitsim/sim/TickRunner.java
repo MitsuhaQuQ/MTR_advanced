@@ -154,6 +154,10 @@ public final class TickRunner<T extends RunTrack> {
 	};
 	private TrainListener<T> trainListener;
 	/**
+	 * Told about each event after {@link #trainListener}, such as a {@link BufferRecorder} (D1).
+	 */
+	private final List<TrainListener<T>> moreListeners = new ArrayList<>();
+	/**
 	 * Ticks until the trains restored from a record are put where the plan has them by now, and where they were put.
 	 */
 	private int recoveryTicks;
@@ -788,6 +792,20 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	public void setTrainListener(TrainListener<T> trainListener) {
 		this.trainListener = trainListener;
+	}
+
+	/**
+	 * Told about each event as well, after the listener set; it must only read the train.
+	 */
+	public void addTrainListener(TrainListener<T> listener) {
+		moreListeners.add(listener);
+	}
+
+	/**
+	 * Measures how much longer than planned the trains of duties take out, round and back (D1).
+	 */
+	public void recordBuffers(BufferRecorder recorder) {
+		addTrainListener((event, train) -> recorder.onEvent(event, train.getSidingId(), train.service.getTripPath()));
 	}
 
 	/**
@@ -2652,6 +2670,9 @@ public final class TickRunner<T extends RunTrack> {
 			events.add(event);
 			if (trainListener != null) {
 				trainListener.onEvent(event, this);
+			}
+			for (final TrainListener<T> listener : moreListeners) {
+				listener.onEvent(event, this);
 			}
 		}
 

@@ -173,6 +173,10 @@ public final class EditorActions implements IPacket {
 			}
 			depot.setVehicleSettings(settings, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
 		}
+		// Forget how much longer than planned its trains were measured to take (D1)
+		if (operation.has("clearBuffers") && operation.get("clearBuffers").getAsBoolean()) {
+			depot.clearBuffers(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+		}
 		if (operation.has("sidings")) {
 			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("sidings").entrySet()) {
 				final mtr.data.Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(parseId(entry.getKey()));

@@ -313,7 +313,7 @@
 		});
 		// What a depot runs goes first, so its duties are applied to the routes and sidings as drafted
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
-			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null });
+			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null, clearBuffers: Boolean(entry.clearBuffers) });
 			owners.push({ depotOf: depotId });
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
@@ -4121,13 +4121,21 @@
 				${boxes || `<span class="hint">${tr("先在上面选车厂负责的线路，放进草稿后再打开这里分给存车线")}</span>`}
 			</fieldset>`;
 		}).join("");
+		// How much longer than planned its trains were measured to take out, round and back (D1)
+		const bufferKinds = { out: tr("出库"), turn: tr("折返"), back: tr("回库") };
+		const bufferRows = (depot.buffers || []).map(buffer => `<tr><td>${escapeHtml(bufferKinds[buffer.kind] || buffer.kind)}</td><td>${escapeHtml(buffer.from)} → ${escapeHtml(buffer.to)}</td><td>+${buffer.seconds} s</td></tr>`).join("");
+		const bufferSection = `<h3>${tr("实测余量")}</h3>
+			<p class="hint">${tr("列车实际比计划多用的时间（最近 20 次的 85% 分位，多 15 秒以上才记），生成运用时加在折返和出入库上，时刻表不变。")}</p>
+			${bufferRows ? `<table class="buffers"><tbody>${bufferRows}</tbody></table>
+			<label><input type="checkbox" name="clearBuffers"${current.clearBuffers ? " checked" : ""}> ${tr("清空实测余量")}</label>` : `<p class="hint">${tr("还没有记下")}</p>`}`;
 		const cycleLabel = depot.byTimetable ? tr("允许长时间停在线上（两班之间不回库，运用跑完才回）") : tr("列车不回车厂，跑完最后一条线路后折返回第一条");
 		openDialog(tr("编辑车厂：{0}", escapeHtml(shortName(depot.name))), `
 			<p class="hint">${tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；车按车型配属给车厂，同车型的存车线共用这些车，车回到哪条存车线都还是同一列。存车线可以只跑其中几条线路，最多停几列是它能停的车数。配属车数留空时按各存车线相加。")}</p>
 			<h3>${tr("负责的线路")}</h3>${routeBoxes || `<p class="hint">${tr("还没有线路")}</p>`}
 			<label><input type="checkbox" name="cycle"${current.cycleRoutes ? " checked" : ""}> ${cycleLabel}</label>
 			${poolRows ? `<h3>${tr("配属")}</h3>${poolRows}` : ""}
-			<h3>${tr("存车线")}</h3>${sidingRows || `<p class="hint">${tr("没有存车线")}</p>`}`, tr("放进草稿"), form => {
+			<h3>${tr("存车线")}</h3>${sidingRows || `<p class="hint">${tr("没有存车线")}</p>`}
+			${bufferSection}`, tr("放进草稿"), form => {
 			const routes = [...form.querySelectorAll("input[name=route]:checked")].map(box => box.value);
 			const sidings = {};
 			let bad = false;
@@ -4155,11 +4163,12 @@
 				}
 			});
 			if (bad) return tr("车数写成数字，或者留空");
-			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings };
+			const clearBox = form.querySelector("input[name=clearBuffers]");
+			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, clearBuffers: Boolean(clearBox && clearBox.checked) };
 			const sorted = list => JSON.stringify(list.slice().sort());
 			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
 				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
-				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings));
+				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings)) && !entry.clearBuffers;
 			if (same) delete draft.depots[depot.id];
 			else draft.depots[depot.id] = entry;
 			saveDraft();

@@ -100,6 +100,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final Map<String, Integer> poolFleets = new TreeMap<>();
 	/**
+	 * On the server, how much longer than planned its trains take out, round and back, measured as they run (D1).
+	 */
+	public final transitsim.sim.BufferRecorder bufferRecorder = new transitsim.sim.BufferRecorder();
+	/**
+	 * What the duties are planned with: the recorder's on the server, as sent on the clients.
+	 */
+	private transitsim.plan.Buffers buffers = transitsim.plan.Buffers.NONE;
+	/**
 	 * How the trains of each pool of its sidings run (R1), by the pool's key; a pool left out runs as its first siding has
 	 * it set.
 	 */
@@ -255,6 +263,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_LAST_DEPLOYED_TRIPS = "last_deployed_trips";
 	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
 	private static final String KEY_POOL_FLEETS = "pool_fleets";
+	private static final String KEY_MEASURED_BUFFERS = "measured_buffers";
 	private static final String KEY_VEHICLE_SETTINGS = "vehicle_settings";
 	private static final String KEY_FREQUENCIES_MIGRATED = "frequencies_migrated";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
@@ -339,6 +348,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			autoDuties.fromBytes(autoDutiesValue.asBinaryValue().asByteArray());
 		}
 		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dispatcher.dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
+		final List<Long> bufferSamples = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_MEASURED_BUFFERS, value -> bufferSamples.add(value.asIntegerValue().asLong()));
+		bufferRecorder.readList(bufferSamples);
+		buffers = bufferRecorder.getBuffers();
 	}
 
 	@Deprecated
@@ -397,6 +410,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		readVehicleSettings(packet);
 		frequenciesMigrated = packet.readBoolean();
 		readHeadways(packet);
+		readBuffers(packet);
 	}
 
 	@Override
@@ -470,11 +484,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final byte[] autoDutyBytes = autoDuties.toBytes();
 		messagePacker.packString(KEY_AUTO_DUTIES).packBinaryHeader(autoDutyBytes.length);
 		messagePacker.writePayload(autoDutyBytes);
+		final List<Long> bufferSamples = bufferRecorder.toList();
+		messagePacker.packString(KEY_MEASURED_BUFFERS).packArrayHeader(bufferSamples.size());
+		for (final long value : bufferSamples) {
+			messagePacker.packLong(value);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 21;
+		return super.messagePackLength() + 22;
 	}
 
 	@Override
@@ -514,6 +533,61 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		writeVehicleSettings(packet);
 		packet.writeBoolean(frequenciesMigrated);
 		writeHeadways(packet);
+		writeBuffers(packet);
+	}
+
+	private void writeBuffers(FriendlyByteBuf packet) {
+		final List<Long> list = buffers.toList();
+		packet.writeVarInt(list.size());
+		list.forEach(packet::writeLong);
+	}
+
+	private void readBuffers(FriendlyByteBuf packet) {
+		final int size = packet.readVarInt();
+		final List<Long> list = new ArrayList<>();
+		for (int i = 0; i < size; i++) {
+			list.add(packet.readLong());
+		}
+		buffers = transitsim.plan.Buffers.fromList(list);
+	}
+
+	/**
+	 * @return how much longer than planned its trains were measured to take out, round and back, which its duties are
+	 * planned with (D1)
+	 */
+	public transitsim.plan.Buffers getBuffers() {
+		return buffers;
+	}
+
+	/**
+	 * Sends the players the buffers if they changed by more than a little since they were last sent (D1).
+	 */
+	public void sendBuffersIfChanged(Consumer<FriendlyByteBuf> sendPacket) {
+		if (bufferRecorder.takeChanged()) {
+			buffers = bufferRecorder.getBuffers();
+			sendBuffers(sendPacket);
+			isDirty = true;
+		}
+	}
+
+	/**
+	 * Forgets what was measured, from the web editor (D1).
+	 */
+	public void clearBuffers(Consumer<FriendlyByteBuf> sendPacket) {
+		bufferRecorder.clear();
+		bufferRecorder.takeChanged();
+		buffers = transitsim.plan.Buffers.NONE;
+		sendBuffers(sendPacket);
+		isDirty = true;
+	}
+
+	private void sendBuffers(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_MEASURED_BUFFERS);
+		writeBuffers(packet);
+		sendPacket.accept(packet);
 	}
 
 	/**
@@ -569,6 +643,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			readHeadways(packet);
 		} else if (KEY_POOL_FLEETS.equals(key)) {
 			readPoolFleets(packet);
+		} else if (KEY_MEASURED_BUFFERS.equals(key)) {
+			readBuffers(packet);
+			// Sent with none from the web editor: what was measured is forgotten. The server's are its recorder's whatever a
+			// player sends; the clients' are what the server sends
+			if (buffers.isEmpty()) {
+				bufferRecorder.clear();
+				bufferRecorder.takeChanged();
+			} else if (bufferRecorder.hasSamples()) {
+				buffers = bufferRecorder.getBuffers();
+			}
 		} else if (KEY_VEHICLE_SETTINGS.equals(key)) {
 			readVehicleSettings(packet);
 		} else if (KEY_FREQUENCIES_MIGRATED.equals(key)) {
@@ -1841,7 +1925,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				sidingInput.poolKey = siding.getPoolKey();
 				sidingInputs.add(sidingInput);
 			});
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this));
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getBuffers());
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();

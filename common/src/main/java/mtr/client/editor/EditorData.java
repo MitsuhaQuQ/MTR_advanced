@@ -32,6 +32,22 @@ public final class EditorData {
 	private static final long TIMES_REQUEST_INTERVAL_MILLIS = 30000;
 
 	/**
+	 * @return the name of a siding, or of a platform with its station, for the buffers shown (D1)
+	 */
+	private static String bufferPlaceName(boolean siding, long id) {
+		if (siding) {
+			final Siding found = ClientData.DATA_CACHE.sidingIdMap.get(id);
+			return found == null ? String.valueOf(id) : found.name;
+		}
+		final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(id);
+		if (platform == null) {
+			return String.valueOf(id);
+		}
+		final mtr.data.Station station = ClientData.DATA_CACHE.platformIdToStation.get(id);
+		return (station == null ? "" : station.name + " ") + platform.name;
+	}
+
+	/**
 	 * The game's language, such as en_us, for the pages to show the same one.
 	 */
 	public static String getLanguage() {
@@ -142,6 +158,20 @@ public final class EditorData {
 				poolsArray.add(poolObject);
 			});
 			depotObject.add("pools", poolsArray);
+			// How much longer than planned its trains were measured to take out, round and back, which its duties are
+			// planned with (D1)
+			final JsonArray buffersArray = new JsonArray();
+			depot.getBuffers().getMillis().forEach((bufferKey, millis) -> {
+				final long[] parts = transitsim.plan.Buffers.parse(bufferKey);
+				final JsonObject bufferObject = new JsonObject();
+				final int kind = (int) parts[0];
+				bufferObject.addProperty("kind", kind == transitsim.plan.Buffers.OUT ? "out" : kind == transitsim.plan.Buffers.TURN ? "turn" : "back");
+				bufferObject.addProperty("from", bufferPlaceName(kind == transitsim.plan.Buffers.OUT, parts[1]));
+				bufferObject.addProperty("to", bufferPlaceName(kind == transitsim.plan.Buffers.BACK, parts[2]));
+				bufferObject.addProperty("seconds", millis / 1000);
+				buffersArray.add(bufferObject);
+			});
+			depotObject.add("buffers", buffersArray);
 			final JsonArray sidingsArray = new JsonArray();
 			ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> {
 				final JsonObject sidingObject = new JsonObject();

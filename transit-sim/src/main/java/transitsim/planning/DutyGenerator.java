@@ -130,15 +130,24 @@ public final class DutyGenerator {
 		 * between them; a pool left out has each siding's.
 		 */
 		public final Map<String, Integer> poolFleets;
+		/**
+		 * How much longer than planned trains were measured to take out, round and back (D1), added to each.
+		 */
+		public final transitsim.plan.Buffers buffers;
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks) {
 			this(turnTimes, backLinks, Collections.emptyMap());
 		}
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets) {
+			this(turnTimes, backLinks, poolFleets, transitsim.plan.Buffers.NONE);
+		}
+
+		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets, transitsim.plan.Buffers buffers) {
 			this.turnTimes = turnTimes;
 			this.backLinks = backLinks == null ? Collections.emptyMap() : backLinks;
 			this.poolFleets = poolFleets == null ? Collections.emptyMap() : poolFleets;
+			this.buffers = buffers == null ? transitsim.plan.Buffers.NONE : buffers;
 		}
 	}
 
@@ -201,7 +210,7 @@ public final class DutyGenerator {
 			} else {
 				siding.links.forEach((platformId, millis) -> {
 					if (firstPlatforms.contains(platformId)) {
-						network.addDepotLink(siding.sidingId, platformId, millis);
+						network.addDepotLink(siding.sidingId, platformId, millis + inputs.buffers.out(siding.sidingId, platformId));
 					}
 				});
 			}
@@ -215,14 +224,14 @@ public final class DutyGenerator {
 			final long platformId = service.stops.get(0).platformId;
 			sidings.forEach(siding -> {
 				if (siding.links != null && service.startDepots.contains(siding.sidingId) && !siding.links.containsKey(platformId)) {
-					network.addDepotLink(siding.sidingId, platformId, siding.links.values().stream().mapToLong(Long::longValue).min().orElse(0));
+					network.addDepotLink(siding.sidingId, platformId, siding.links.values().stream().mapToLong(Long::longValue).min().orElse(0) + inputs.buffers.out(siding.sidingId, platformId));
 				}
 			});
 		});
 		// The way back to each siding, as measured from each platform
-		sidings.forEach(siding -> inputs.backLinks.getOrDefault(siding.sidingId, Collections.emptyMap()).forEach((platformId, millis) -> network.addDepotBackLink(siding.sidingId, platformId, millis)));
+		sidings.forEach(siding -> inputs.backLinks.getOrDefault(siding.sidingId, Collections.emptyMap()).forEach((platformId, millis) -> network.addDepotBackLink(siding.sidingId, platformId, millis == OperationNetwork.UNREACHABLE ? millis : millis + inputs.buffers.back(platformId, siding.sidingId))));
 		lastPlatforms.forEach(lastPlatform -> {
-			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS);
+			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS + inputs.buffers.turn(lastPlatform, lastPlatform));
 			// Measured from the platform back to itself by way of a turn back rail beyond it: a train may wait there (混合折返)
 			final Long holdMillis = inputs.turnTimes == null ? null : inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap()).get(lastPlatform);
 			if (holdMillis != null) {
@@ -231,13 +240,15 @@ public final class DutyGenerator {
 			final Long station = stationOf.get(lastPlatform);
 			firstPlatforms.forEach(firstPlatform -> {
 				if (firstPlatform.longValue() != lastPlatform && station != null && station.equals(stationOf.get(firstPlatform))) {
+					// With how much longer trains were measured to take round (D1)
+					final long buffer = inputs.buffers.turn(lastPlatform, firstPlatform);
 					if (inputs.turnTimes == null) {
-						network.addConnection(lastPlatform, firstPlatform, TURN_BACK_MILLIS);
+						network.addConnection(lastPlatform, firstPlatform, TURN_BACK_MILLIS + buffer);
 					} else {
 						// Measured on the rails; a pair not measured has no way between
 						final Long millis = inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap()).get(firstPlatform);
 						if (millis != null) {
-							network.addConnection(lastPlatform, firstPlatform, millis);
+							network.addConnection(lastPlatform, firstPlatform, millis + buffer);
 						}
 					}
 				}

@@ -93,6 +93,23 @@ public class TripPath<T extends PlanTrack> {
 	public final boolean staysOnLine;
 
 	/**
+	 * @return the fastest time from leaving the last stop the path stops at to its end, back in a siding, or 0 for a path
+	 * that stays on the line or has no times (as {@code DepotLegs} measures the way back)
+	 */
+	public long getBackMillis() {
+		if (staysOnLine || timeSegments.isEmpty()) {
+			return 0;
+		}
+		TimeSegment lastStop = null;
+		for (final TimeSegment segment : timeSegments) {
+			if (segment.savedRailBaseId != 0 && !segment.pass) {
+				lastStop = segment;
+			}
+		}
+		return lastStop == null ? 0 : Math.max(0, (long) ((timeSegments.get(timeSegments.size() - 1).endTime - lastStop.endTime) * 50));
+	}
+
+	/**
 	 * The path of a duty (design document 6.12, block E2).
 	 */
 	public TripPath(DutyPlan<T, ?> dutyPlan, int[] dutyStarts, List<T> path) {

@@ -1065,6 +1065,20 @@ sequenceDiagram
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
+- **实测余量**（0.28.0，晚点调度 D1）：列车实际比计划多用的时间记下来，下次生成运用时加上，时刻表不变。
+  - **记录**：组件 `transitsim.sim.BufferRecorder` 按列车的 `MotionEvent` 量三种用时：
+    - 出库：存车线 `DEPARTED`（第 0 条轨道）→ 第一个站台 `STOPPED`，计划用时 `stopTimes.getLeadMillis()`；
+    - 折返：第 k 段末站 `DEPARTED` → 第 k+1 段首站 `STOPPED`，计划用时 `StopTimes.getMovingMillis`（中间停车点的停站时间不算）；
+    - 回库：最后一站 `DEPARTED` → `RETURNED`，计划用时 `TripPath.getBackMillis()`，去别的存车线时按回库路径键里的存车线记。
+  - 实际用时扣掉在中间停车点（折返线）站着的时间；在轨道中途被前车挡住停下的时间算进去，因为这正是晚点的来源。多用超过 20 分钟的一次当成被别的事卡住，不记。
+  - 每个键（`Buffers.key(类别, 从, 到)`）留最近 20 次，余量取 85% 分位，低于 15 秒不记；和上次的差不超过 15 秒就不改，免得反复重排运用。
+  - 一份运用的信息在一段开始时取好，所以游戏在 tick 结束后才处理事件也一样。
+  - 组件：`TickRunner.recordBuffers(recorder)`（`addTrainListener`，原来的 `setTrainListener` 仍只有一个，给 `DayRun` 用）。
+  - 游戏：`Siding.simulateTrain` 每列车跑完后把它这个 tick 的事件交给所属车厂的 `Depot.bufferRecorder`，再放进全局事件列表。去别的存车线的车（`returnedTo`）也先交事件再转走。
+  - **存放**：车厂存档键 `measured_buffers` 存各键的测量值（不是余量），读档后重算。`RailwayData` 每 tick 在 `keepArrived` 之后调 `Depot.sendBuffersIfChanged`，余量变了才发 `PACKET_UPDATE_DEPOT`（键 `measured_buffers`），整包也带余量。
+  - **清空**：网页车厂对话框"清空实测余量"，操作带 `clearBuffers`，`EditorActions` 调 `Depot.clearBuffers` 发空的余量。服务端收到空的就清掉测量；收到非空的、自己又有测量时仍用自己的，玩家发不进余量。
+  - **使用**：`DutyGenerator.PlanInputs.buffers`，`generate` 里出库链接加 `out(存车线, 站台)`、回库链接加 `back(站台, 存车线)`（走不通的不加）、同站台最短折返和换站台的用时加 `turn(站台, 站台)`。游戏三处都传：`LineDuties.Unit`（单元里各车厂取较大的，并写进单元的键，余量变了会重排）、`Depot` 的自动运用、网页 `EditorDuties`。
+  - 网页车厂对话框"实测余量"一节列出各项（出库 / 折返 / 回库，从哪到哪，多几秒），`EditorData` 给车厂 JSON 加 `buffers`。
 - **运用归车池，存车线只是出车地点**（0.27.0，S8）：运用仍按存车线分组存放，那条存车线就是它的出车存车线；`DepotDuties.Slot.start`（格式 4，老数据为 `START_PREFER`）定出车方式，`DepotDispatcher.findDutyDeploy` 照它选：`PREFER` 自己有车就出、否则车池里第一条有车有路径的替（原来的做法）；`ONLY` 只从自己出，没车就等；`ANY` 车池里有车、有这份运用路径的存车线里取出库到首站最快的（`stopTimes.getLeadMillis()`），一样快取 id 小的。各存车线本来就为整个车池的运用生成路径（`MainPath.getDutyPlans`）。网页：运用 JSON 每天带 `start`；树状图按车型（车池）列运用，每份注明出车存车线，存车线另列一组只显示容量；运用面板"出车方式""出车存车线"两个下拉（改出车存车线就是原来的"移到存车线"，编号不变）。重新生成运用时出车方式按生成结果重来（`PREFER`）。
 - **车池规则只留一份**（S7，协议不变）：组件 `transitsim.sim.FleetRules` 是车池和存车线规则的唯一一份，游戏和组件都调它：`whatToMake`（存车线这一 tick 不动、从库内取还是新造）、`hasRoom`（回库位置）、`sumFleets`（车池总数相加）、`keepsSecondStanding`（第二列停着的进库内队列）、`linePool`（哪些存车线是一个车池：本车厂同车池键的，加上同一线路规划单元里别的车厂同车池的）。游戏端 `Siding.simulateTrain` 的造车、`Depot` 的 `getLinePool`/`getPoolFleet`/`getLinePoolFleet` 和两处回库位置检查、`LineDuties.poolFleetsOf`，组件 `TickRunner` 的造车、`getLinePool`、`hasRoom`、`chooseReturnSiding` 都改成调它；宿主只负责把自己手上的数据（候选存车线、车数、容量、正在回来的车）交给它。
 - **站台归属和车站立体范围**（0.26.0，R6）：
