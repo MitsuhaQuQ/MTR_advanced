@@ -1340,7 +1340,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				if (trainsAtDepot > 1) {
 					trainsToRemove.add(train);
 					// By duties, a second train standing here is kept in the shed rather than taken away
-					if (runsByDuties) {
+					if (transitsim.sim.FleetRules.keepsSecondStanding(runsByDuties)) {
 						arriving.add(train);
 						continue;
 					}
@@ -1367,17 +1367,19 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			// with none standing takes the one kept longest in its shed, and a new train is made only while the pool has fewer
 			// than it has in all, or than its duties need when that is not set; the siding's fleet is how many it holds
 			if (trainCars > 0 && (trains.isEmpty() || spawnTrain)) {
-				if (!shed.isEmpty()) {
-					trains.add(shed.remove(0));
-				} else {
-					final int poolFleet = depot.getLinePoolFleet(this);
-					final int poolTrains = depot.getPoolTrains(this);
-					final boolean roomHere = fleetSize < 0 || getHeldCount() < fleetSize;
-					final int poolSlots = poolFleet < 0 ? depot.getPoolSlots(this) : 0;
-					// As many as needed: as many as its duties, each siding with one standing at least
-					if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : trains.isEmpty() || poolTrains < poolSlots && (fleetSize < 0 || trains.size() < fleetSize)) {
+				// The component's rule (FleetRules, S7), the same as its runner goes by
+				final int poolFleet = shed.isEmpty() ? depot.getLinePoolFleet(this) : -1;
+				final int poolTrains = shed.isEmpty() ? depot.getPoolTrains(this) : 0;
+				final int poolSlots = shed.isEmpty() && poolFleet < 0 ? depot.getPoolSlots(this) : 0;
+				switch (transitsim.sim.FleetRules.whatToMake(spawnTrain, trains.isEmpty(), shed.isEmpty(), poolFleet, poolTrains, poolSlots, getHeldCount(), fleetSize, trains.size())) {
+					case FROM_SHED:
+						trains.add(shed.remove(0));
+						break;
+					case NEW:
 						trains.add(new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime()));
-					}
+						break;
+					default:
+						break;
 				}
 			}
 		} else if (trainCars > 0 && (trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {

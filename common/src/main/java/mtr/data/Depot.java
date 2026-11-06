@@ -974,16 +974,26 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * vehicle, which its trains go back to as well (decoupling document 5.4, after L1)
 	 */
 	private List<Siding> getLinePool(Siding siding) {
-		final List<Siding> pool = new ArrayList<>(getPool(siding));
-		if (dataCache != null && lineDepotIds.size() > 1) {
+		// The candidates the game has at hand: the depot's pool, and the same pool of the other depots of its planning unit;
+		// which of them are the pool is the component's rule (FleetRules, S7)
+		final List<Siding> candidates = new ArrayList<>(getPool(siding));
+		final boolean byLine = dataCache != null && lineDepotIds.size() > 1;
+		if (byLine) {
 			new TreeSet<>(lineDepotIds).forEach(depotId -> {
 				final Depot other = dataCache.depotIdMap.get(depotId);
 				if (other != null && other != this) {
-					pool.addAll(other.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()));
+					candidates.addAll(other.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()));
 				}
 			});
 		}
-		return pool;
+		final String linePool = byLine ? "line|" + siding.getPoolKey() : "";
+		return transitsim.sim.FleetRules.linePool(siding, candidates, poolSiding -> {
+			final Depot depot = dataCache == null ? null : dataCache.sidingIdToDepot.get(poolSiding.id);
+			return depot == null ? id : depot.id;
+		}, Siding::getPoolKey, poolSiding -> {
+			final Depot depot = dataCache == null ? null : dataCache.sidingIdToDepot.get(poolSiding.id);
+			return byLine && (depot == null ? this : depot) != this && lineDepotIds.contains((depot == null ? this : depot).id) || poolSiding == siding ? linePool : "";
+		});
 	}
 
 	/**
@@ -1037,13 +1047,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			if (!canGoBack.test(otherSidingId)) {
 				return false;
 			}
-			// Running by duties, a siding holds its fleet, however long its rails
-			if (otherSidingId == sidingId || other.getFleetSize() < 0) {
-				return true;
-			}
-			// Room for the trains it holds and the ones already on their way to it
-			final int coming = pool.stream().mapToInt(poolSiding -> poolSiding.countReturningTo(otherSidingId)).sum();
-			return other.getHeldCount() + coming < other.getFleetSize();
+			// Running by duties, a siding holds its fleet, however long its rails: room for the trains it holds and the ones
+			// already on their way to it (FleetRules, S7)
+			return otherSidingId == sidingId || transitsim.sim.FleetRules.hasRoom(other.getHeldCount(), other.getFleetSize() < 0 ? 0 : pool.stream().mapToInt(poolSiding -> poolSiding.countReturningTo(otherSidingId)).sum(), other.getFleetSize());
 		});
 	}
 
@@ -1056,7 +1062,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 		final Map<Long, Siding> candidates = new TreeMap<>();
 		orderDepot.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()).forEach(other -> {
-			if (canGoBack.test(other.id) && (other == siding || other.getFleetSize() < 0 || other.getHeldCount() + countReturningTo(other.id) < other.getFleetSize())) {
+			if (canGoBack.test(other.id) && (other == siding || transitsim.sim.FleetRules.hasRoom(other.getHeldCount(), other.getFleetSize() < 0 ? 0 : countReturningTo(other.id), other.getFleetSize()))) {
 				candidates.put(other.id, other);
 			}
 		});
@@ -1599,14 +1605,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		if (fleet != null) {
 			return fleet;
 		}
-		int total = 0;
-		for (final Siding siding : poolSidings) {
-			if (siding.getFleetSize() < 0) {
-				return -1;
-			}
-			total += siding.getFleetSize();
-		}
-		return total;
+		final List<Integer> fleets = new ArrayList<>();
+		poolSidings.forEach(siding -> fleets.add(siding.getFleetSize()));
+		return transitsim.sim.FleetRules.sumFleets(fleets);
 	}
 
 	/**
@@ -1619,15 +1620,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final Depot depot = dataCache == null ? this : dataCache.sidingIdToDepot.getOrDefault(poolSiding.id, this);
 			byDepot.computeIfAbsent(depot, key -> new ArrayList<>()).add(poolSiding);
 		}
-		int total = 0;
-		for (final Map.Entry<Depot, List<Siding>> entry : byDepot.entrySet()) {
-			final int fleet = entry.getKey().getPoolFleet(siding.getPoolKey(), entry.getValue());
-			if (fleet < 0) {
-				return -1;
-			}
-			total += fleet;
-		}
-		return total;
+		final List<Integer> fleets = new ArrayList<>();
+		byDepot.forEach((depot, depotSidings) -> fleets.add(depot.getPoolFleet(siding.getPoolKey(), depotSidings)));
+		return transitsim.sim.FleetRules.sumFleets(fleets);
 	}
 
 	/**

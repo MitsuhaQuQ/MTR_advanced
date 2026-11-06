@@ -31,8 +31,8 @@ public final class LineDuties {
 	 * fleets added up; a pool one of whose depots has as many as needed is left out
 	 */
 	public static Map<String, Integer> poolFleetsOf(List<DutyGenerator.SidingInput> sidings, java.util.function.LongFunction<Depot> depotOf) {
-		final Map<String, Integer> totals = new HashMap<>();
-		final Set<String> unlimited = new HashSet<>();
+		// What each depot gives a pool, or each siding's fleet where it gives none, added up as the component adds them (S7)
+		final Map<String, List<Integer>> fleets = new HashMap<>();
 		final Set<String> counted = new HashSet<>();
 		sidings.forEach(siding -> {
 			if (siding.poolKey == null) {
@@ -40,22 +40,17 @@ public final class LineDuties {
 			}
 			final Depot depot = depotOf.apply(siding.sidingId);
 			final Integer set = depot == null ? null : depot.poolFleets.get(siding.poolKey);
-			final int fleet;
-			if (set != null) {
-				if (!counted.add(depot.id + "/" + siding.poolKey)) {
-					return;
-				}
-				fleet = set;
-			} else {
-				fleet = siding.maxTrains;
-			}
-			if (fleet < 0) {
-				unlimited.add(siding.poolKey);
-			} else {
-				totals.merge(siding.poolKey, fleet, Integer::sum);
+			if (set == null || counted.add(depot.id + "/" + siding.poolKey)) {
+				fleets.computeIfAbsent(siding.poolKey, key -> new ArrayList<>()).add(set == null ? siding.maxTrains : set);
 			}
 		});
-		unlimited.forEach(totals::remove);
+		final Map<String, Integer> totals = new HashMap<>();
+		fleets.forEach((poolKey, poolFleets) -> {
+			final int total = transitsim.sim.FleetRules.sumFleets(poolFleets);
+			if (total >= 0) {
+				totals.put(poolKey, total);
+			}
+		});
 		return totals;
 	}
 
