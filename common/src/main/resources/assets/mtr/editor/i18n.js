@@ -69,6 +69,7 @@ const I18N = (() => {
 			"旧逻辑": "old logic",
 			"未配置": "not configured",
 			"没车的班次": "Services without a train",
+			"车厂{0}：从 {1} 到 {2} 要空车走 {3} 格（两个站台只相距 {4} 格），绕远了。在 {1} 的线路上设站前或站后折返（折返线、多站台轮用），或者让下一班从同一个站台发车": "Depot {0}: from {1} to {2} trains run {3} blocks empty though the platforms are {4} blocks apart; set turning back at {1} (a turn back rail, or platforms taken in turn), or have the next service leave from the same platform",
 			"（{0} 班单独编辑过，不动）": " ({0} edited on their own stay)",
 			"这里没有车站：点车站的名字、圆点，或者它的站台轨道": "No station here: click a station's name or dot, or one of its platforms",
 			"{0} 已经是上一站了，点下一个车站": "{0} is the last stop already; click the next station",

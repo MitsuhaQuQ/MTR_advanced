@@ -9,6 +9,7 @@ import transitsim.planning.OperationPlan.Trip;
 import transitsim.planning.OperationPlan.TripStop;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -85,8 +86,7 @@ public final class DutyPlanner {
 		});
 
 		trips.sort(Comparator.comparingLong(Trip::startMillis).thenComparingLong(trip -> trip.sourceId));
-		trips.forEach(trip -> trip.stops.forEach(stop -> platformStops.computeIfAbsent(stop.platformId, key -> new ArrayList<>()).add(stop)));
-		platformStops.values().forEach(stops -> stops.sort(Comparator.comparingLong(stop -> stop.arrivalMillis)));
+		// Filled as trips get trains (occupy), so a service no train runs doesn't keep a train from waiting at its platform
 	}
 
 	private void expandThrough(TimetableService.Through through, int day, Map<Long, TimetableService> serviceMap, Set<String> takenByThrough) {
@@ -142,11 +142,16 @@ public final class DutyPlanner {
 				return buildPlan(week, runWeek(week.nextStart()), true);
 			}
 		}
-		return buildPlan(week, week, false);
+		// No week repeats the one before, as when a train that never goes back to its depot ends each week at the other end of
+		// the line: the week is planned on its own, from every train in its depot, and each train still out at its end goes
+		// back then, so every day is planned and every week is the same
+		final WeekResult alone = runWeek(new WeekStart());
+		return buildPlan(alone, runWeek(new WeekStart()), false);
 	}
 
 	private WeekResult runWeek(WeekStart start) {
 		final WeekResult result = new WeekResult();
+		platformStops.clear();
 		final Map<Long, List<Long>> depotReady = new TreeMap<>();
 		network.depots().forEach(depot -> {
 			final List<Long> ready = new ArrayList<>();
@@ -167,6 +172,7 @@ public final class DutyPlanner {
 			OpenDuty duty = startDepots == null ? findTrainInService(open, trip) : null;
 			if (duty != null) {
 				duty.add(trip, network);
+				occupy(trip);
 			} else {
 				duty = takeFromDepot(depotReady, trip, startDepots);
 				if (duty == null) {
@@ -174,6 +180,7 @@ public final class DutyPlanner {
 				} else {
 					open.add(duty);
 					duty.add(trip, network);
+					occupy(trip);
 				}
 			}
 			if (duty != null && order != null && order.endsDuty) {
@@ -277,10 +284,25 @@ public final class DutyPlanner {
 	}
 
 	/**
-	 * True if nothing occupies the platform strictly between the two times, including across the week boundary.
+	 * Records the stops of a trip a train runs, which keep other trains from waiting at those platforms then.
+	 */
+	private void occupy(Trip trip) {
+		trip.stops.forEach(stop -> {
+			final List<TripStop> stops = platformStops.computeIfAbsent(stop.platformId, key -> new ArrayList<>());
+			int at = stops.size();
+			while (at > 0 && stops.get(at - 1).arrivalMillis > stop.arrivalMillis) {
+				at--;
+			}
+			stops.add(at, stop);
+		});
+	}
+
+	/**
+	 * True if no trip a train runs occupies the platform strictly between the two times, including across the week
+	 * boundary. Only trips with a train count: a service no train runs doesn't stand at the platform.
 	 */
 	private boolean isPlatformFree(long platformId, long fromMillis, long toMillis) {
-		final List<TripStop> stops = platformStops.get(platformId);
+		final List<TripStop> stops = platformStops.getOrDefault(platformId, Collections.emptyList());
 		for (int week = -1; week <= 1; week++) {
 			final long shift = week * OperationTime.WEEK_MILLIS;
 			int low = 0;

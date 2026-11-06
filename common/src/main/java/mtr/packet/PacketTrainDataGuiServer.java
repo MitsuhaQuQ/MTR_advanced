@@ -385,20 +385,27 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	}
 
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure) {
-		generatePathS2C(world, depotId, successfulSegments, failure, Collections.emptyList(), Collections.emptyMap());
+		generatePathS2C(world, depotId, successfulSegments, failure, Collections.emptyList(), Collections.emptyMap(), Collections.emptyList());
 	}
 
 	/**
 	 * @param failedDuties the keys of the duties whose paths weren't found, of which the first few are sent
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties) {
-		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, Collections.emptyMap());
+		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, Collections.emptyMap(), Collections.emptyList());
 	}
 
 	/**
 	 * @param depotLegs by siding, how its trains get out to their first stops and back
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs) {
+		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, depotLegs, Collections.emptyList());
+	}
+
+	/**
+	 * @param detours the ways between services far longer than their platforms are apart, as "from to length apart"
+	 */
+	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
@@ -412,6 +419,9 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			packet.writeLong(sidingId);
 			legs.writePacket(packet);
 		});
+		final List<String> sentDetours = detours.subList(0, Math.min(detours.size(), MAX_FAILED_DUTIES));
+		packet.writeInt(sentDetours.size());
+		sentDetours.forEach(packet::writeUtf);
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 

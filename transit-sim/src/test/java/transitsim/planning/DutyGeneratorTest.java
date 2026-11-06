@@ -250,6 +250,64 @@ class DutyGeneratorTest {
 		assertEquals(day.segments, read.sidings.get(100L).get(0).days.get(0).segments);
 	}
 
+	@Test
+	void aTrainNeverGoingBackStillHasADutyEveryDay() {
+		// Both ways at the same minutes from 05:00 to 01:50, one train staying on the line: it ends each week at the other
+		// end, so no week repeats the one before, and the week is planned on its own
+		final long[][] plans = {{0, 0}, {51000, 61000}, {84000, 84000}};
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		for (long t = 2 * 60; t <= 22 * 60 + 50; t += 5) {
+			services.add(new DutyGenerator.ServiceInput(ROUTE_UP, (int) (t * MINUTE), DepotDuties.ALL_WEEKDAYS, t * MINUTE, new long[]{100, 101, 102}, plans, new boolean[3], 0, 0, -1, 0));
+			services.add(new DutyGenerator.ServiceInput(ROUTE_DOWN, (int) (t * MINUTE), DepotDuties.ALL_WEEKDAYS, t * MINUTE, new long[]{102, 103, 100}, plans, new boolean[3], 0, 0, -1, 0));
+		}
+		final DutyGenerator.Result result = DutyGenerator.generateSpread(services, Collections.singletonList(new DutyGenerator.SidingInput(100, 1)), shortLineStations(), transitsim.plan.RouteTimetable.MAX_STAY_MILLIS);
+		int days = 0;
+		for (final DepotDuties.Slot slot : result.sidings.get(100L)) {
+			for (final DepotDuties.DayDuty day : slot.days) {
+				assertFalse(day.segments.isEmpty());
+				days |= day.weekdays;
+			}
+		}
+		assertEquals(DepotDuties.ALL_WEEKDAYS, days, "a duty every day of the week");
+	}
+
+	@Test
+	void aServiceWithNoTrainDoesntKeepATrainFromWaitingAtItsPlatform() {
+		// Both ways every 5 minutes, 28 seconds short of turning round at one end: one train has to wait at that
+		// platform for the service after next. The services between have no train, so they don't stand there
+		final long[][] plans = {{0, 0}, {100000, 110000}, {180000, 190000}, {272000, 272000}};
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		for (long t = 2 * 60; t <= 22 * 60 + 50; t += 5) {
+			services.add(new DutyGenerator.ServiceInput(ROUTE_UP, (int) (t * MINUTE), DepotDuties.ALL_WEEKDAYS, t * MINUTE, new long[]{100, 101, 102, 104}, plans, new boolean[4], 0, 0, -1, 0));
+			services.add(new DutyGenerator.ServiceInput(ROUTE_DOWN, (int) (t * MINUTE), DepotDuties.ALL_WEEKDAYS, t * MINUTE, new long[]{105, 103, 106, 100}, plans, new boolean[4], 0, 0, -1, 0));
+		}
+		final Map<Long, Long> stationOf = new HashMap<>();
+		stationOf.put(100L, 1L);
+		stationOf.put(101L, 2L);
+		stationOf.put(103L, 2L);
+		stationOf.put(102L, 3L);
+		stationOf.put(106L, 3L);
+		stationOf.put(104L, 4L);
+		stationOf.put(105L, 4L);
+		final DutyGenerator.Result result = DutyGenerator.generate(services, Collections.singletonList(new DutyGenerator.SidingInput(100, 1)), stationOf, transitsim.plan.RouteTimetable.MAX_STAY_MILLIS);
+		int days = 0;
+		for (final DepotDuties.Slot slot : result.sidings.get(100L)) {
+			for (final DepotDuties.DayDuty day : slot.days) {
+				assertTrue(day.segments.size() > 100, "the train runs all day: " + day.segments.size());
+				days |= day.weekdays;
+			}
+		}
+		assertEquals(DepotDuties.ALL_WEEKDAYS, days);
+
+		// Spread, the one train runs every 4th service of each way, every 20 minutes: a round trip takes just over 15, as
+		// each end is 2 seconds short of turning round for the next service. Not one in eleven, as the trains needed for
+		// every service would suggest
+		final List<Long> run = runMinutes(DutyGenerator.generateSpread(services, Collections.singletonList(new DutyGenerator.SidingInput(100, 1)), stationOf, transitsim.plan.RouteTimetable.MAX_STAY_MILLIS)).get(ROUTE_UP);
+		for (int i = 1; i < run.size(); i++) {
+			assertEquals(20, run.get(i) - run.get(i - 1), run.toString());
+		}
+	}
+
 	private static List<DutyGenerator.ServiceInput> shuttle() {
 		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
 		for (int i = 0; i < 6; i++) {

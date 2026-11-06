@@ -115,6 +115,27 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public static final int DUTIES_ONLY_FOUND = Integer.MAX_VALUE / 2;
 	/**
+	 * How far from a platform a turn back rail is still taken as that station's, in blocks, and how many are tried.
+	 */
+	private static final int NEARBY_TURN_BACK_BLOCKS = 200;
+	private static final int MAX_NEARBY_TURN_BACKS = 6;
+	/**
+	 * A way between two services counts as a detour when longer than this many blocks and this many times as far as the
+	 * two platforms are apart.
+	 */
+	private static final int DETOUR_MIN_BLOCKS = 300;
+	private static final int DETOUR_FACTOR = 5;
+
+	private static double pathLength(List<PathData> path) {
+		return path.stream().mapToDouble(pathData -> pathData.rail.getLength()).sum();
+	}
+
+	/**
+	 * The ways between services the last path generation found to be detours, as "from-platform to-platform length apart".
+	 */
+	private final Set<String> pathDetours = Collections.synchronizedSet(new TreeSet<>());
+	public List<String> clientDetours = Collections.emptyList();
+	/**
 	 * The depots of the depot's planning unit ({@link LineDuties}), itself among them, and the unit's key, or empty if it
 	 * doesn't plan by line; worked out on the server thread with the auto duties and the paths, not saved. Its trains go back
 	 * to sidings of these depots with the same vehicle too.
@@ -568,6 +589,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final RoutePaths.Search routeSearch = railwayData == null ? null : new RoutePaths.Search(railwayData.routePaths, rails, graph, railwayData.pathBoundaries, RoutePaths.getVehicles(railwayData));
 		mainPaths.forEach(mainPath -> mainPath.routeSearch = routeSearch);
 
+		pathDetours.clear();
 		final Thread thread = new Thread(() -> {
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
@@ -584,13 +606,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, linePlan));
 					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
 				}
-				// Duties whose paths weren't found, which only the server's log told of before
+				final List<String> detours = new ArrayList<>(pathDetours);
 				final List<String> failedDuties = new ArrayList<>();
 				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> failedDuties.addAll(siding.getLastFailedDuties())));
 				// How each siding's trains get out to their first stops and back, for the advanced editor's running diagram
 				final Map<Long, DepotLegs> depotLegs = new TreeMap<>();
 				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> depotLegs.put(siding.id, siding.getDepotLegs())));
-				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs);
+				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (CancellationException e) {
 				// A newer request restarted path generation, and that thread reports the result
@@ -1784,6 +1806,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					TurnBackSection<PathData> turnBackSection = null;
 					if (turnBackNodes.isEmpty()) {
 						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
+						// The route lists no turn back rails, but there may be some by the station: going round one of them is
+						// taken when it's shorter than the way found, which may run far round the line instead (站后折返)
+						final List<BlockPos> nearbyNodes = getNearbyTurnBackNodes(lastPlatform, rails);
+						if (!nearbyNodes.isEmpty()) {
+							final TurnBackSection<PathData> nearby = findTurnBackSection(lastPlatform, platforms.get(0), nearbyNodes, 0, rails, graph, useFastSpeed);
+							if (nearby != null && (connectingPath.isEmpty() || pathLength(nearby.getDefaultWay()) < pathLength(connectingPath))) {
+								connectingPath.clear();
+								connectingPath.addAll(nearby.getDefaultWay());
+								turnBackSection = nearby;
+							}
+						}
 					} else {
 						turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
 						if (turnBackSection != null) {
@@ -1792,6 +1825,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					}
 					if (connectingPath.isEmpty()) {
 						return null;
+					}
+					// A way between two services far longer than the two platforms are apart is told of: the train runs a
+					// long way empty, as where no turn back rail is listed or near
+					final double connectingLength = pathLength(connectingPath);
+					final double apart = Math.sqrt(lastPlatform.getMidPos().distSqr(platforms.get(0).getMidPos()));
+					if (connectingLength > Math.max(DETOUR_MIN_BLOCKS, apart * DETOUR_FACTOR)) {
+						pathDetours.add(lastPlatform.id + " " + platforms.get(0).id + " " + Math.round(connectingLength) + " " + Math.round(apart));
 					}
 					// More than one way round, each from the last stop, which is already the last rail of the body
 					if (turnBackSection != null && turnBackSection.ways.size() > 1 && !body.isEmpty() && body.get(body.size() - 1).isSameRail(connectingPath.get(0))) {
@@ -1804,7 +1844,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final PathData last = body.isEmpty() ? null : body.get(body.size() - 1);
 				if (last != null && first.isSameRail(last)) {
 					segmentStarts[k] = body.size() - 1;
-					body.set(body.size() - 1, first);
+					// Come from another platform to this route's first stop, the train stops there for its departure: the first
+					// stop of a route's own path has no stop time, and without the way there's it would run straight through
+					final boolean arrivedHere = k > 0 && first.savedRailBaseId != 0 && first.dwellTime == 0 && last.savedRailBaseId == first.savedRailBaseId;
+					final int stopDwell = Math.max(last.dwellTime, platforms.get(0).getDwellTime());
+					body.set(body.size() - 1, arrivedHere && stopDwell > 0 ? new PathData(first.rail, first.savedRailBaseId, stopDwell, first.startingPos, first.getLastPos(), first.stopIndex) : first);
 					body.addAll(segmentPath.subList(1, segmentPath.size()));
 				} else if (last != null && first.isOppositeRail(last)) {
 					// Turning back on the platform: the stop is the arrival there, and the platform reversed is only the way out
@@ -2103,6 +2147,28 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @param start where the ways round start on the main path
 		 * @return the ways round, or null if none of them can be used
 		 */
+		/**
+		 * @return the dead ends of the turn back rails within reach of the platform, the nearest first, to turn back round
+		 * when a route lists none
+		 */
+		private List<BlockPos> getNearbyTurnBackNodes(SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+			final BlockPos center = platform.getMidPos();
+			final Set<BlockPos> ends = new HashSet<>();
+			rails.forEach((startPos, connections) -> connections.forEach((endPos, rail) -> {
+				if (rail.railType == RailType.TURN_BACK && Math.min(startPos.distSqr(center), endPos.distSqr(center)) <= NEARBY_TURN_BACK_BLOCKS * NEARBY_TURN_BACK_BLOCKS) {
+					for (final BlockPos pos : new BlockPos[]{startPos, endPos}) {
+						final Map<BlockPos, Rail> from = rails.get(pos);
+						if (from != null && from.size() == 1) {
+							ends.add(pos);
+						}
+					}
+				}
+			}));
+			final List<BlockPos> sorted = new ArrayList<>(ends);
+			sorted.sort(Comparator.comparingDouble((BlockPos pos) -> pos.distSqr(center)).thenComparingLong(BlockPos::asLong));
+			return sorted.size() > MAX_NEARBY_TURN_BACKS ? sorted.subList(0, MAX_NEARBY_TURN_BACKS) : sorted;
+		}
+
 		private TurnBackSection<PathData> findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<List<PathData>> ways = new ArrayList<>();
 			int defaultWay = -1;

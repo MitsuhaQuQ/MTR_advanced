@@ -149,6 +149,20 @@ public final class EditorData {
 			final JsonArray failedArray = new JsonArray();
 			depot.clientFailedDuties.forEach(failedArray::add);
 			pathObject.add("failedDutyKeys", failedArray);
+			// Ways between services far longer than their platforms are apart: from, to, length and how far apart
+			final JsonArray detoursArray = new JsonArray();
+			depot.clientDetours.forEach(detour -> {
+				final String[] parts = detour.split(" ");
+				if (parts.length >= 4) {
+					final JsonObject detourObject = new JsonObject();
+					detourObject.addProperty("from", platformLabel(Long.parseLong(parts[0])));
+					detourObject.addProperty("to", platformLabel(Long.parseLong(parts[1])));
+					detourObject.addProperty("length", Long.parseLong(parts[2]));
+					detourObject.addProperty("apart", Long.parseLong(parts[3]));
+					detoursArray.add(detourObject);
+				}
+			});
+			pathObject.add("detours", detoursArray);
 			depotObject.add("path", pathObject);
 			// Which services each train of the depot runs, see DepotDuties
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));
@@ -452,6 +466,18 @@ public final class EditorData {
 	 * @return text that changes whenever anything the editor can change on the route does, made from the same packets that
 	 * send those changes, so a draft made before another change in the game is noticed before it overwrites it
 	 */
+	/**
+	 * @return a platform as its station's name and its own, or its ID if it's gone
+	 */
+	private static String platformLabel(long platformId) {
+		final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformId);
+		if (platform == null) {
+			return String.valueOf(platformId);
+		}
+		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platformId);
+		return (station == null ? "" : station.name + " ") + platform.name;
+	}
+
 	public static String getRevision(Route route) {
 		return route.getEditorRevision();
 	}

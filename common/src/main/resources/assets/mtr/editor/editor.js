@@ -5432,6 +5432,7 @@
 			else if (path.state === "failed") problems.push({ level: "err", text: tr("车厂{0}的路径没生成：{1}", name, path.text || tr("原因不明，看游戏里的车厂界面")) });
 			else if (path.state === "generating") problems.push({ level: "warn", text: tr("车厂{0}正在生成路径", name) });
 			else if (path.state === "stale") problems.push({ level: "warn", text: tr("车厂{0}的路径是旧的，线路或轨道改过，要刷新", name) });
+			(path.detours || []).forEach(detour => problems.push({ level: "warn", text: tr("车厂{0}：从 {1} 到 {2} 要空车走 {3} 格（两个站台只相距 {4} 格），绕远了。在 {1} 的线路上设站前或站后折返（折返线、多站台轮用），或者让下一班从同一个站台发车", name, shortName(detour.from), shortName(detour.to), detour.length, detour.apart) }));
 			if (path.failedDuties > 0) problems.push({ level: "err", text: tr("车厂{0}有 {1} 份运用找不到路，这些车不会按运用出车：{2}", name, path.failedDuties, (path.failedDutyKeys || []).slice(0, 3).join("、")) });
 			const duties = dutiesOf(depot);
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));

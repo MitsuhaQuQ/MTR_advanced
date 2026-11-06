@@ -577,6 +577,10 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 			final long sidingId = packet.readLong();
 			depotLegs.put(sidingId, DepotLegs.readPacket(packet));
 		}
+		final List<String> detours = new ArrayList<>();
+		for (int i = Math.min(packet.readInt(), 64); i > 0; i--) {
+			detours.add(packet.readUtf(256));
+		}
 		minecraftClient.execute(() -> {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
@@ -584,6 +588,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 				depot.clientPathFailure = failure;
 				depot.clientFailedDuties = failedDuties;
 				depot.clientFailedDutyCount = totalFailed;
+				depot.clientDetours = detours;
 				depotLegs.forEach((sidingId, legs) -> {
 					final Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(sidingId);
 					if (siding != null) {

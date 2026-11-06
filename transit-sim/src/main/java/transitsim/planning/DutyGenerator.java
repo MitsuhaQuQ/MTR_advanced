@@ -28,6 +28,7 @@ public final class DutyGenerator {
 	public static final long TURN_BACK_MILLIS = 120000;
 	private static final int MAX_LINKS = 8;
 	private static final int UNLIMITED_TRAINS = DepotDuties.MAX_SLOTS;
+	private static final int MAX_SPREAD_OFFSETS = 8;
 
 	private DutyGenerator() {
 	}
@@ -468,24 +469,32 @@ public final class DutyGenerator {
 		groups.values().forEach(group -> group.sort(Comparator.comparingLong((ServiceInput service) -> service.startMillis).thenComparingInt(service -> service.service)));
 		final int longest = groups.values().stream().mapToInt(List::size).max().orElse(1);
 
-		final int needed = neededTrains(services, sidings, stationOf, maxLayoverMillis);
 		// Up one at a time while k is small, then by an eighth, so a long day of services is planned only a few dozen times
-		for (int k = Math.max(2, (needed + held - 1) / held); k <= longest; k += Math.max(1, k / 8)) {
-			final List<ServiceInput> kept = new ArrayList<>();
-			int left = 0;
-			for (final List<ServiceInput> group : groups.values()) {
-				for (int i = 0; i < group.size(); i++) {
-					if (i % k == 0) {
-						kept.add(group.get(i));
-					} else {
-						left += Integer.bitCount(group.get(i).weekdays & DepotDuties.ALL_WEEKDAYS);
+		// From every other service up: what's needed over what's held is only a guess, as trains running fewer services can
+		// often turn round for them where they couldn't for every one
+		final List<List<ServiceInput>> groupList = new ArrayList<>(groups.values());
+		for (int k = 2; k <= longest; k += k < 16 ? 1 : Math.max(1, k / 8)) {
+			// The other routes' kept services may fall better a service or two along: each offset is tried, the first
+			// route's staying put, so a train coming back can take the next one
+			for (int offset = 0; offset < Math.min(k, MAX_SPREAD_OFFSETS); offset++) {
+				final List<ServiceInput> kept = new ArrayList<>();
+				int left = 0;
+				for (int g = 0; g < groupList.size(); g++) {
+					final List<ServiceInput> group = groupList.get(g);
+					final int shift = g == 0 ? 0 : offset;
+					for (int i = 0; i < group.size(); i++) {
+						if (Math.floorMod(i - shift, k) == 0) {
+							kept.add(group.get(i));
+						} else {
+							left += Integer.bitCount(group.get(i).weekdays & DepotDuties.ALL_WEEKDAYS);
+						}
 					}
 				}
-			}
-			final Result result = generate(kept, sidings, stationOf, maxLayoverMillis);
-			if (result.uncovered == 0) {
-				result.uncovered = left;
-				return result;
+				final Result result = generate(kept, sidings, stationOf, maxLayoverMillis);
+				if (result.uncovered == 0) {
+					result.uncovered = left;
+					return result;
+				}
 			}
 		}
 		// Not even one service a route has a train for every kept one: as many as the trains can take, early first
