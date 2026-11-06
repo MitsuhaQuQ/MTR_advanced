@@ -22,6 +22,7 @@ import transitsim.plan.StopTimes;
 import transitsim.plan.TripPath;
 import transitsim.plan.TurnBacks;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -79,9 +80,9 @@ public final class TickRunner<T extends RunTrack> {
 	private final List<DepotBoard> depots = new ArrayList<>();
 	private final Map<DepotBoard, List<SidingRun>> depotSidings = new HashMap<>();
 	/**
-	 * Trains that came back to a siding other than their own, by that siding, which makes one standing in their place.
+	 * The IDs of the trains kept in the sidings' sheds (P2-C), which no new train is given.
 	 */
-	private final Map<Long, Integer> pendingArrivals = new HashMap<>();
+	private final Set<Long> shedIds = new HashSet<>();
 	private final Map<Long, HeadlessTrain> trainsById = new HashMap<>();
 	private final List<MotionEvent> events = new ArrayList<>();
 	/**
@@ -262,6 +263,25 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * @return the trains of the siding's pool across its line (P2-C): on the line, standing in its sidings and kept in their
+	 * sheds, the ones coming back in this tick among them
+	 */
+	private int getPoolCount(SidingRun sidingRun) {
+		int count = 0;
+		for (final SidingRun poolSiding : getLinePool(sidingRun)) {
+			count += poolSiding.trains.size() + poolSiding.shed.size() + poolSiding.arriving.size();
+		}
+		return count;
+	}
+
+	/**
+	 * @return the trains the siding's pool has in all (P2-C), or -1 for as many as its duties need
+	 */
+	private int getPoolFleet(SidingRun sidingRun) {
+		return sidingRun.siding.poolFleet;
+	}
+
+	/**
 	 * See {@link DepotDispatcher#chooseReturnSiding}: a siding has room while the trains it holds and the ones on their way
 	 * to it are fewer than it holds at most.
 	 */
@@ -294,7 +314,7 @@ public final class TickRunner<T extends RunTrack> {
 					}
 				}
 			}
-			return other.trains.size() + coming + pendingArrivals.getOrDefault(otherSidingId, 0) < other.siding.maxTrains + 1;
+			return other.getHeld() + coming < other.siding.maxTrains + 1;
 		});
 	}
 
@@ -331,7 +351,7 @@ public final class TickRunner<T extends RunTrack> {
 			return true;
 		}
 		final String returnKey = TripPath.getReturnKey("", sidingRun.sidingId);
-		int coming = pendingArrivals.getOrDefault(sidingRun.sidingId, 0);
+		int coming = 0;
 		for (final SidingRun other : sidings.values()) {
 			for (final HeadlessTrain train : other.trains) {
 				if (train.onRoute && train.service.getTripPathKey().endsWith(returnKey)) {
@@ -339,7 +359,7 @@ public final class TickRunner<T extends RunTrack> {
 				}
 			}
 		}
-		return sidingRun.trains.size() + coming < sidingRun.siding.maxTrains + 1;
+		return sidingRun.getHeld() + coming < sidingRun.siding.maxTrains + 1;
 	}
 
 	public RunReservations getReservations() {
@@ -528,6 +548,11 @@ public final class TickRunner<T extends RunTrack> {
 				record.deployIndices.put(sidingRun.sidingId, sidingRun.depot.deployIndex);
 			}
 			sidingRun.trains.forEach(train -> record.trains.add(train.toRecord()));
+			if (!sidingRun.shed.isEmpty() || !sidingRun.arriving.isEmpty()) {
+				final List<Long> shed = new ArrayList<>(sidingRun.shed);
+				shed.addAll(sidingRun.arriving);
+				record.sheds.put(sidingRun.sidingId, shed);
+			}
 		});
 		return record;
 	}
@@ -575,6 +600,17 @@ public final class TickRunner<T extends RunTrack> {
 			}
 		}
 		sidings.values().forEach(sidingRun -> sidingRun.trains.sort(Comparator.comparingLong(train -> train.id)));
+		record.sheds.forEach((sidingId, ids) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				ids.forEach(id -> {
+					if (!trainsById.containsKey(id) && shedIds.add(id)) {
+						sidingRun.shed.add(id);
+						nextTrainId = Math.max(nextTrainId, id + 1);
+					}
+				});
+			}
+		});
 		recoveryTicks = recover ? 2 : 0;
 	}
 
@@ -635,7 +671,9 @@ public final class TickRunner<T extends RunTrack> {
 			final int slot = (Integer) entry[2];
 			@SuppressWarnings("unchecked") final TripPath<T> dutyPath = (TripPath<T>) entry[3];
 			final DepotBoard depot = (DepotBoard) entry[4];
-			final HeadlessTrain train = new HeadlessTrain(newTrainId(), sidingRun);
+			// A train kept in a shed of the pool first, so the trains stay the pool's (P2-C)
+			final long keptId = takeFromPoolShed(sidingRun);
+			final HeadlessTrain train = new HeadlessTrain(keptId != 0 ? keptId : newTrainId(), sidingRun);
 			train.service.setStopTimes(sidingRun.siding.stopTimes, sidingRun.siding.tripPaths, sidingRun.siding.turnBacks);
 			train.service.deployDuty(slot, dayStart, dutyPath);
 			train.onRoute = true;
@@ -643,9 +681,13 @@ public final class TickRunner<T extends RunTrack> {
 			train.service.alignToTimetable(true);
 			if (train.onRoute) {
 				sidingRun.trains.add(train);
+				trainsById.put(train.id, train);
 				train.writePositions();
 				depot.dispatcher.markDutyRun(sidingRun.sidingId, slot, day);
 				placed++;
+			} else if (keptId != 0) {
+				shedIds.add(keptId);
+				sidingRun.shed.addFirst(keptId);
 			}
 		}
 		aligning = false;
@@ -690,13 +732,53 @@ public final class TickRunner<T extends RunTrack> {
 
 	private long newTrainId() {
 		if (trainIds == null) {
+			while (shedIds.contains(nextTrainId)) {
+				nextTrainId++;
+			}
 			return nextTrainId++;
 		}
 		long id;
 		do {
 			id = trainIds.getAsLong();
-		} while (trainsById.containsKey(id));
+		} while (trainsById.containsKey(id) || shedIds.contains(id));
 		return id;
+	}
+
+	/**
+	 * Takes the first train kept in a shed of the siding's pool, its own first.
+	 *
+	 * @return its ID, or 0 if they have none
+	 */
+	private long takeFromPoolShed(SidingRun sidingRun) {
+		SidingRun from = sidingRun.shed.isEmpty() ? null : sidingRun;
+		if (from == null) {
+			for (final SidingRun poolSiding : getLinePool(sidingRun)) {
+				if (!poolSiding.shed.isEmpty()) {
+					from = poolSiding;
+					break;
+				}
+			}
+		}
+		if (from == null) {
+			return 0;
+		}
+		final long id = from.shed.removeFirst();
+		shedIds.remove(id);
+		return id;
+	}
+
+	/**
+	 * @return the trains kept in a siding's shed (P2-C), oldest first, the ones coming back in this tick last; empty for
+	 * a siding it doesn't run
+	 */
+	public List<Long> getShed(long sidingId) {
+		final SidingRun sidingRun = sidings.get(sidingId);
+		if (sidingRun == null) {
+			return Collections.emptyList();
+		}
+		final List<Long> ids = new ArrayList<>(sidingRun.shed);
+		ids.addAll(sidingRun.arriving);
+		return ids;
 	}
 
 	/**
@@ -855,6 +937,14 @@ public final class TickRunner<T extends RunTrack> {
 		changedRails.clear();
 		removedTrains.forEach(HeadlessTrain::dropRails);
 		removedTrains.clear();
+		// Trains back in a shed are kept there from the next tick, once what they held is let go (P2-C)
+		for (final SidingRun sidingRun : sidings.values()) {
+			if (!sidingRun.arriving.isEmpty()) {
+				sidingRun.shed.addAll(sidingRun.arriving);
+				sidingRun.arriving.clear();
+				sidingRun.dueMillis = Math.min(sidingRun.dueMillis, millis + TICK);
+			}
+		}
 		// A service taken or let go also wakes the trains waiting in the depots sharing its routes
 		final Set<DepotBoard> changedDepots = new HashSet<>();
 		for (final DepotBoard depot : depots) {
@@ -1230,6 +1320,11 @@ public final class TickRunner<T extends RunTrack> {
 		 * The pool across the depots of its operating line, or empty (see {@link SimDataset.SidingData#linePool}).
 		 */
 		public String linePool = "";
+		/**
+		 * The trains its pool has in all (P2-C), the same for each siding of the pool, or -1 for as many as its duties need;
+		 * {@link #maxTrains} is then how many the siding holds.
+		 */
+		public int poolFleet = -1;
 
 		public Siding(List<T> path, int repeatIndex1, int repeatIndex2, StopTimes stopTimes, String trainId, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains) {
 			this.path = path;
@@ -1263,6 +1358,12 @@ public final class TickRunner<T extends RunTrack> {
 		public final DepotBoard depot;
 		public final Siding<T> siding;
 		private final List<HeadlessTrain> trains = new ArrayList<>();
+		/**
+		 * The trains of its pool kept in the siding beyond the one standing there, oldest first (P2-C), and the ones back in
+		 * this tick, kept from the next.
+		 */
+		private final ArrayDeque<Long> shed = new ArrayDeque<>();
+		private final List<Long> arriving = new ArrayList<>();
 		private HeadlessTrain waitingTrain;
 		/**
 		 * How many of its trains asked to leave in its last tick.
@@ -1304,15 +1405,22 @@ public final class TickRunner<T extends RunTrack> {
 				if (!train.onRoute || train.railProgress < siding.spacing * siding.trainCars + siding.railLength) {
 					spawnTrain = false;
 				}
-				// Back in another siding of the pool, which makes a train standing there in its place
+				// Back in another siding of the pool, the same train is kept in its shed (P2-C)
 				final long returnedTo = train.service.takeReturnedElsewhereSiding();
 				if (returnedTo != 0) {
 					trainsToRemove.add(train);
-					if (sidings.containsKey(returnedTo)) {
-						pendingArrivals.merge(returnedTo, 1, Integer::sum);
+					final SidingRun target = sidings.get(returnedTo);
+					if (target != null) {
+						target.arriving.add(train.id);
+						shedIds.add(train.id);
 					}
 				} else if (!train.onRoute && ++trainsAtDepot > 1) {
 					trainsToRemove.add(train);
+					// By duties, a second train standing here is kept in the shed rather than taken away
+					if (depot.duties.diagramMode) {
+						arriving.add(train.id);
+						shedIds.add(train.id);
+					}
 				}
 			}
 			movingTrain = null;
@@ -1323,31 +1431,52 @@ public final class TickRunner<T extends RunTrack> {
 				removedTrains.add(train);
 				standingDrops.add(train);
 			}
-			// By duties, a train for each slot of the siding's pool, within each siding's limit; the pool takes in the sidings
-			// of the other depots of its line, as trains go back to those too, each siding's slots its own depot's
-			int poolSlots = 0;
-			int poolTrains = 0;
+			// By duties, the trains are the pool's, across the sidings of the other depots of its line too, as trains go back to
+			// those (P2-C): a siding with none standing takes the one kept longest in its shed, and a new train is made only
+			// while the pool has fewer than it has in all, or than its duties need when that is not set
 			if (depot.duties.diagramMode) {
-				for (final SidingRun poolSiding : getLinePool(this)) {
-					poolSlots += poolSiding.depot.duties.getSlots(poolSiding.sidingId).size();
-					poolTrains += poolSiding.trains.size() + pendingArrivals.getOrDefault(poolSiding.sidingId, 0);
+				if (trains.isEmpty() || spawnTrain) {
+					final long keptId = shed.isEmpty() ? 0 : shed.removeFirst();
+					if (keptId != 0) {
+						shedIds.remove(keptId);
+						addStanding(keptId);
+					} else {
+						final int poolFleet = getPoolFleet(this);
+						int poolSlots = 0;
+						if (poolFleet < 0) {
+							for (final SidingRun poolSiding : getLinePool(this)) {
+								poolSlots += poolSiding.depot.duties.getSlots(poolSiding.sidingId).size();
+							}
+						}
+						final int poolTrains = getPoolCount(this);
+						final boolean roomHere = siding.maxTrains >= SimDataset.UNLIMITED_TRAINS || getHeld() <= siding.maxTrains;
+						if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : poolSlots > 0 && (trains.isEmpty() || poolTrains < poolSlots && trains.size() <= siding.maxTrains)) {
+							addStanding(newTrainId());
+						}
+					}
+				}
+			} else if (trains.isEmpty() || spawnTrain && trains.size() <= siding.maxTrains) {
+				addStanding(newTrainId());
+			}
+		}
+
+		private void addStanding(long id) {
+			final HeadlessTrain train = new HeadlessTrain(id, this);
+			trains.add(train);
+			trainsById.put(train.id, train);
+		}
+
+		/**
+		 * @return the trains standing in the siding and kept in its shed, the ones coming back in this tick among them
+		 */
+		private int getHeld() {
+			int standing = 0;
+			for (final HeadlessTrain train : trains) {
+				if (!train.onRoute) {
+					standing++;
 				}
 			}
-			final boolean belowLimit = siding.maxTrains >= SimDataset.UNLIMITED_TRAINS || trains.size() <= siding.maxTrains;
-			// A train that came back here from another siding stands here in its place
-			final int arrived = pendingArrivals.getOrDefault(sidingId, 0);
-			if (arrived > 0) {
-				if (arrived > 1) {
-					pendingArrivals.put(sidingId, arrived - 1);
-				} else {
-					pendingArrivals.remove(sidingId);
-				}
-			}
-			if (arrived > 0 ? trains.isEmpty() || belowLimit : depot.duties.diagramMode ? poolSlots > 0 && (trains.isEmpty() || spawnTrain && poolTrains < poolSlots && belowLimit) : trains.isEmpty() || spawnTrain && trains.size() <= siding.maxTrains) {
-				final HeadlessTrain train = new HeadlessTrain(newTrainId(), this);
-				trains.add(train);
-				trainsById.put(train.id, train);
-			}
+			return standing + shed.size() + arriving.size();
 		}
 
 		/**

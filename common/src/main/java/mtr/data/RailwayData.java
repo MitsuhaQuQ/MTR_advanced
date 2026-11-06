@@ -520,6 +520,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			siding.motionEvents = motionEvents;
 			siding.simulateTrain(dataCache, railwayDataDriveTrainModule, trainPositions, signalBlocks, updateNearbyTrains.newDataSetInPlayerRange, updateNearbyTrains.dataSetToSync, schedulesForPlatform, trainDelays);
 		});
+		// Trains back in a shed in this tick are kept there from the next, whichever order the sidings ran in (P2-C)
+		sortedSidings.forEach(Siding::keepArrived);
 		handleMotionEvents();
 		// Runs asked for during the tick are given out together, whatever order the trains ran in
 		runReservations.resolve(System.currentTimeMillis());

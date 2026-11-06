@@ -32,11 +32,16 @@ public final class RunRecord {
 	 */
 	public final Map<Long, Long> lastDeployedMillis = new TreeMap<>();
 	public final Map<Long, Integer> deployIndices = new TreeMap<>();
+	/**
+	 * The trains kept in each siding's shed (P2-C), oldest first.
+	 */
+	public final Map<Long, List<Long>> sheds = new TreeMap<>();
 
 	/**
-	 * Version 2 adds the depots sending trains out by frequency; older records are read without them.
+	 * Version 2 adds the depots sending trains out by frequency, version 3 the sidings' sheds; older records are read
+	 * without them.
 	 */
-	private static final int VERSION = 2;
+	private static final int VERSION = 3;
 
 	public RunRecord(long time) {
 		this.time = time;
@@ -76,6 +81,12 @@ public final class RunRecord {
 			writer.writeLong(sidingId);
 			writer.writeInt(index);
 		});
+		writer.writeVarInt(sheds.size());
+		sheds.forEach((sidingId, ids) -> {
+			writer.writeLong(sidingId);
+			writer.writeVarInt(ids.size());
+			ids.forEach(writer::writeLong);
+		});
 		return writer.toBytes();
 	}
 
@@ -107,6 +118,14 @@ public final class RunRecord {
 			}
 			for (int i = reader.readVarInt(); i > 0; i--) {
 				record.deployIndices.put(reader.readLong(), reader.readInt());
+			}
+		}
+		if (version >= 3) {
+			for (int i = reader.readVarInt(); i > 0; i--) {
+				final List<Long> ids = record.sheds.computeIfAbsent(reader.readLong(), key -> new ArrayList<>());
+				for (int j = reader.readVarInt(); j > 0; j--) {
+					ids.add(reader.readLong());
+				}
 			}
 		}
 		return record;

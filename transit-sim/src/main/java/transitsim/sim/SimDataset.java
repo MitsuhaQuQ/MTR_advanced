@@ -44,7 +44,7 @@ public final class SimDataset {
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; older data is read without them.
 	 */
-	public static final int VERSION = 10;
+	public static final int VERSION = 11;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -115,6 +115,7 @@ public final class SimDataset {
 		for (int i = 0; i < signalBlocks.size(); i++) {
 			writer.writeBoolean(isInterlockBlock(i));
 		}
+		sidings.forEach(siding -> writer.writeInt(siding.poolFleet));
 		return writer.toBytes();
 	}
 
@@ -190,6 +191,11 @@ public final class SimDataset {
 		if (version >= 10) {
 			for (int i = 0; i < dataset.signalBlocks.size(); i++) {
 				dataset.interlockBlocks.add(reader.readBoolean());
+			}
+		}
+		if (version >= 11) {
+			for (final SidingData siding : dataset.sidings) {
+				siding.poolFleet = reader.readInt();
 			}
 		}
 		return dataset;
@@ -299,6 +305,7 @@ public final class SimDataset {
 			siding.manual = sidingData.manual;
 			siding.poolKey = sidingData.poolKey;
 			siding.linePool = sidingData.linePool;
+			siding.poolFleet = sidingData.poolFleet;
 			sidingData.tripPaths.forEach(tripPath -> {
 				final TripPath<DataTrack> newTripPath = new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path);
 				newTripPath.generateTimes(generator);
@@ -727,6 +734,10 @@ public final class SimDataset {
 		 * them after its duty.
 		 */
 		public String linePool = "";
+		/**
+		 * The trains its pool has in all (P2-C), or -1 for as many as its duties need.
+		 */
+		public int poolFleet = -1;
 
 		public SidingData(long id, long depotId, long[] routeIds, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains, boolean usesSpeedCurve, float minSpeed, int repeatIndex1, int repeatIndex2, int loopJoinIndex, List<DataTrack> path, byte[] turnBacks) {
 			this.id = id;

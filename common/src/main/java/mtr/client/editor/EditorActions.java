@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Applies the advanced editor's changes. Each change is checked here first, then made to this client's copy and sent with
@@ -151,6 +152,16 @@ public final class EditorActions implements IPacket {
 			depot.cycleRoutes = operation.get("cycleRoutes").getAsBoolean();
 		}
 		depot.setData(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+		// The trains it gives each pool of its sidings (P2-C); a pool left out, or null, has its sidings' fleets added up
+		if (operation.has("poolFleets") && operation.get("poolFleets").isJsonObject()) {
+			final Map<String, Integer> poolFleets = new TreeMap<>();
+			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("poolFleets").entrySet()) {
+				if (!entry.getValue().isJsonNull()) {
+					poolFleets.put(entry.getKey(), entry.getValue().getAsInt());
+				}
+			}
+			depot.setPoolFleets(poolFleets, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+		}
 		if (operation.has("sidings")) {
 			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("sidings").entrySet()) {
 				final mtr.data.Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(parseId(entry.getKey()));

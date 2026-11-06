@@ -108,6 +108,28 @@ public final class EditorData {
 			final JsonArray routeIds = new JsonArray();
 			depot.routeIds.forEach(routeId -> routeIds.add(String.valueOf(routeId)));
 			depotObject.add("routes", routeIds);
+			// The trains it gives each pool of its sidings, the same vehicle (P2-C): as set, or null for its sidings' fleets
+			// added up, which is the sum
+			final Map<String, List<Siding>> poolSidings = new TreeMap<>();
+			ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).forEach(siding -> poolSidings.computeIfAbsent(siding.getPoolKey(), key -> new ArrayList<>()).add(siding));
+			final JsonArray poolsArray = new JsonArray();
+			poolSidings.forEach((poolKey, eachSidings) -> {
+				final JsonObject poolObject = new JsonObject();
+				poolObject.addProperty("key", poolKey);
+				poolObject.addProperty("vehicle", eachSidings.get(0).getTrainId());
+				final Integer fleet = depot.poolFleets.get(poolKey);
+				if (fleet == null) {
+					poolObject.add("fleet", com.google.gson.JsonNull.INSTANCE);
+				} else {
+					poolObject.addProperty("fleet", fleet);
+				}
+				poolObject.addProperty("sum", eachSidings.stream().anyMatch(siding -> siding.getFleetSize() < 0) ? -1 : eachSidings.stream().mapToInt(Siding::getFleetSize).sum());
+				final JsonArray ids = new JsonArray();
+				eachSidings.forEach(siding -> ids.add(String.valueOf(siding.id)));
+				poolObject.add("sidings", ids);
+				poolsArray.add(poolObject);
+			});
+			depotObject.add("pools", poolsArray);
 			final JsonArray sidingsArray = new JsonArray();
 			ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> {
 				final JsonObject sidingObject = new JsonObject();

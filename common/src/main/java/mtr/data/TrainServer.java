@@ -144,6 +144,21 @@ public class TrainServer extends Train {
 		service.setSiding(sidingId);
 	}
 
+	/**
+	 * Takes on what makes another train of the pool the same train, as it goes on as a train of this one's siding (P2-C):
+	 * its cargo, riders and ANTE's settings. Its ID is given when it is made.
+	 */
+	public void carryFrom(TrainServer other) {
+		for (int i = 0; i < Math.min(inventory.getContainerSize(), other.inventory.getContainerSize()); i++) {
+			inventory.setItem(i, other.inventory.getItem(i));
+		}
+		ridingEntities.clear();
+		ridingEntities.addAll(other.ridingEntities);
+		if ((Object) this instanceof cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier && (Object) other instanceof cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier) {
+			((cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier) (Object) this).setCustomConfigs(new HashMap<>(((cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier) (Object) other).getCustomConfigs()));
+		}
+	}
+
 	public TrainServer(
 			long sidingId, float railLength, List<TimeSegment> timeSegments,
 			List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2,

@@ -491,10 +491,19 @@ public final class LiveSimulation {
 			}
 		});
 		final Set<Long> copiedDepots = new HashSet<>();
+		// The game's trains by ID before any siding shows the simulator's, so a train it moved to another siding of its pool
+		// is the same train there (P2-C)
+		final Map<Long, TrainServer> known = new HashMap<>();
+		railwayData.sidings.forEach(siding -> {
+			if (sidingIds.contains(siding.id)) {
+				siding.indexTrains(known);
+			}
+		});
 		railwayData.sidings.forEach(siding -> {
 			if (sidingIds.contains(siding.id)) {
 				final List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> trains = bySiding.getOrDefault(siding.id, Collections.emptyList());
-				siding.showSimulatedTrains(trains, takenOver);
+				siding.showSimulatedTrains(trains, takenOver, known);
+				siding.showSimulatedShed(runner.getShed(siding.id), known);
 				final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
 				if (depot != null) {
 					depot.runBySimulator = true;

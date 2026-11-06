@@ -312,7 +312,7 @@
 		});
 		// What a depot runs goes first, so its duties are applied to the routes and sidings as drafted
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
-			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings });
+			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null });
 			owners.push({ depotOf: depotId });
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
@@ -1181,7 +1181,11 @@
 			const lines = [tr("负责的线路：{0}", entry.routes.map(routeName).join("、") || tr("无")), entry.cycleRoutes ? tr("允许长时间停在线上") : tr("不在线上久等")];
 			(depot ? depot.sidings : []).forEach(siding => {
 				const value = entry.sidings[siding.id];
-				if (value) lines.push(tr("{0}：{1}，{2}", shortName(siding.name) || tr("存车线"), value.fleet < 0 ? tr("配属按需要") : tr("配属 {0} 列", value.fleet), value.routes.length ? tr("只跑：{0}", value.routes.map(routeName).join("、")) : tr("跑车厂的全部线路")));
+				if (value) lines.push(tr("{0}：{1}，{2}", shortName(siding.name) || tr("存车线"), value.fleet < 0 ? tr("停车不限") : tr("最多停 {0} 列", value.fleet), value.routes.length ? tr("只跑：{0}", value.routes.map(routeName).join("、")) : tr("跑车厂的全部线路")));
+			});
+			(depot ? depot.pools || [] : []).forEach(pool => {
+				const fleet = entry.poolFleets ? entry.poolFleets[pool.key] : undefined;
+				if (fleet !== undefined) lines.push(tr("车型 {0}：{1}", pool.vehicle || pool.key, poolFleetText(fleet, pool.sum)));
 			});
 			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul></section>`);
 		});
@@ -1296,6 +1300,11 @@
 			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
+				// The trains each pool of its sidings has (P2-C), when more than one siding shares them
+				(depot.pools || []).filter(pool => (pool.sidings || []).length > 1 || pool.fleet !== null).forEach(pool => {
+					const draftedFleet = draft.depots && draft.depots[depot.id] && draft.depots[depot.id].poolFleets ? draft.depots[depot.id].poolFleets[pool.key] : undefined;
+					parts.push(`<li class="hint">${escapeHtml(tr("车型 {0}：{1}", pool.vehicle || pool.key, poolFleetText(draftedFleet !== undefined ? draftedFleet : pool.fleet, pool.sum)))}</li>`);
+				});
 				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
 				depot.sidings.forEach(siding => {
 					const slots = duties.sidings[siding.id] || [];
@@ -1303,7 +1312,7 @@
 					const drafted = draft.depots && draft.depots[depot.id] && draft.depots[depot.id].sidings && draft.depots[depot.id].sidings[siding.id];
 					const fleet = drafted ? drafted.fleet : siding.fleet;
 					const given = drafted ? drafted.routes : siding.routes || [];
-					const fleetText = fleet < 0 ? tr("配属按需要") : tr("配属 {0} 列", fleet);
+					const fleetText = fleet < 0 ? tr("停车不限") : tr("最多停 {0} 列", fleet);
 					const givenText = given.length ? tr("只跑：{0}", given.map(id => data.routeById.get(id) ? routeTitle(data.routeById.get(id)) : "?").join("、")) : tr("跑车厂的全部线路");
 					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, slots.length ? "▾" : "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || tr("存车线"))}</span><span class="count" title="${escapeHtml(givenText)}">${fleetText} · ${tr("{0} 份运用", slots.length)}${given.length ? " · " + tr("{0} 条线路", given.length) : ""}</span>`, false)}`);
 					if (slots.length) {
@@ -4011,9 +4020,20 @@
 	 * What a depot runs, drafted: the routes it's responsible for (in no order for one running by a timetable), whether its
 	 * trains may wait on the line, and each siding's fleet and the routes its trains run (none ticked for all of them).
 	 */
+	/** What a pool of a depot's sidings has: as given, or its sidings' fleets added up when not (null). */
+	function poolFleetText(fleet, sum) {
+		if (fleet === null || fleet === undefined) return sum < 0 ? tr("配属按需要（存车线相加）") : tr("配属 {0} 列（存车线相加）", sum);
+		return fleet < 0 ? tr("配属按需要") : tr("配属 {0} 列", fleet);
+	}
+
 	function depotDialog(depot) {
 		const drafted = (draft.depots || {})[depot.id];
 		const current = drafted || { routes: depot.routes.slice(), cycleRoutes: depot.cycleRoutes, sidings: {} };
+		const poolFleetOf = pool => current.poolFleets && current.poolFleets[pool.key] !== undefined ? current.poolFleets[pool.key] : pool.fleet;
+		const poolRows = (depot.pools || []).map(pool => {
+			const fleet = poolFleetOf(pool);
+			return `<label data-pool-row="${escapeHtml(pool.key)}">${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key))} ${tr("配属车数")} <input type="number" min="0" max="999" name="poolFleet" placeholder="${escapeHtml(pool.sum < 0 ? tr("存车线相加：按需要") : tr("存车线相加：{0}", pool.sum))}" value="${fleet === null || fleet === undefined || fleet < 0 ? "" : fleet}"></label>`;
+		}).join("");
 		const sidingOf = siding => current.sidings[siding.id] || { routes: (siding.routes || []).slice(), fleet: siding.fleet };
 		const lines = data.lines.filter(line => line.routes.length);
 		const routeBoxes = lines.map(line => `<fieldset><legend>${escapeHtml(shortName(line.name))}</legend>${line.routes.map(r => `<label><input type="checkbox" name="route" value="${r.id}"${current.routes.includes(r.id) ? " checked" : ""}> ${escapeHtml(routeTitle(r))}</label>`).join("")}</fieldset>`).join("");
@@ -4022,16 +4042,17 @@
 			const value = sidingOf(siding);
 			const boxes = chosen.map(r => `<label><input type="checkbox" name="sidingRoute" value="${r.id}"${value.routes.includes(r.id) ? " checked" : ""}> ${escapeHtml(routeTitle(r))}</label>`).join("");
 			return `<fieldset data-siding-row="${siding.id}"><legend>${escapeHtml(shortName(siding.name) || tr("存车线"))}${siding.vehicle ? ` <span class="hint">${escapeHtml(siding.vehicle)}</span>` : ""}</legend>
-				<label>${tr("配属车数")} <input type="number" min="0" max="999" name="fleet" placeholder="${tr("按需要")}" value="${value.fleet < 0 ? "" : value.fleet}"></label>
+				<label>${tr("最多停几列")} <input type="number" min="0" max="999" name="fleet" placeholder="${tr("不限")}" value="${value.fleet < 0 ? "" : value.fleet}"></label>
 				<div class="hint">${tr("跑的线路（都不勾就跑车厂的全部线路）：")}</div>
 				${boxes || `<span class="hint">${tr("先在上面选车厂负责的线路，放进草稿后再打开这里分给存车线")}</span>`}
 			</fieldset>`;
 		}).join("");
 		const cycleLabel = depot.byTimetable ? tr("允许长时间停在线上（两班之间不回库，运用跑完才回）") : tr("列车不回车厂，跑完最后一条线路后折返回第一条");
 		openDialog(tr("编辑车厂：{0}", escapeHtml(shortName(depot.name))), `
-			<p class="hint">${tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；存车线可以只跑其中几条线路，配属车数是这条存车线能派出的车数，不受轨道长度限制。")}</p>
+			<p class="hint">${tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；车按车型配属给车厂，同车型的存车线共用这些车，车回到哪条存车线都还是同一列。存车线可以只跑其中几条线路，最多停几列是它能停的车数。配属车数留空时按各存车线相加。")}</p>
 			<h3>${tr("负责的线路")}</h3>${routeBoxes || `<p class="hint">${tr("还没有线路")}</p>`}
 			<label><input type="checkbox" name="cycle"${current.cycleRoutes ? " checked" : ""}> ${cycleLabel}</label>
+			${poolRows ? `<h3>${tr("配属")}</h3>${poolRows}` : ""}
 			<h3>${tr("存车线")}</h3>${sidingRows || `<p class="hint">${tr("没有存车线")}</p>`}`, tr("放进草稿"), form => {
 			const routes = [...form.querySelectorAll("input[name=route]:checked")].map(box => box.value);
 			const sidings = {};
@@ -4042,11 +4063,18 @@
 				const fleet = fleetText === "" ? -1 : Math.max(0, Math.min(999, Math.round(Number(fleetText))));
 				sidings[row.dataset.sidingRow] = { fleet, routes: [...row.querySelectorAll("input[name=sidingRoute]:checked")].map(box => box.value).filter(id => routes.includes(id)) };
 			});
-			if (bad) return tr("配属车数写成数字，或者留空表示按需要");
-			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings };
+			const poolFleets = {};
+			form.querySelectorAll("[data-pool-row]").forEach(row => {
+				const text = row.querySelector("input[name=poolFleet]").value.trim();
+				if (text !== "" && !Number.isFinite(Number(text))) bad = true;
+				poolFleets[row.dataset.poolRow] = text === "" ? null : Math.max(0, Math.min(999, Math.round(Number(text))));
+			});
+			if (bad) return tr("车数写成数字，或者留空");
+			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets };
 			const sorted = list => JSON.stringify(list.slice().sort());
 			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
-				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []));
+				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
+				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet);
 			if (same) delete draft.depots[depot.id];
 			else draft.depots[depot.id] = entry;
 			saveDraft();

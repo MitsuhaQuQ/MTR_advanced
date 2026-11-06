@@ -95,6 +95,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final Map<String, String> vehicleServiceTypes = new HashMap<>();
 	/**
+	 * The trains the depot gives each pool of its sidings (P2-C), by the pool's key ({@link Siding#getPoolKey}); a pool
+	 * left out has its sidings' fleets added up, as before, and -1 is as many as its duties need.
+	 */
+	public final Map<String, Integer> poolFleets = new TreeMap<>();
+	/**
 	 * Which services each train runs, set in the advanced editor. See {@link DepotDuties}.
 	 */
 	public final DepotDuties duties = new DepotDuties();
@@ -221,12 +226,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_ROUTE_IDS = "route_ids";
 	private static final int MAX_DEPARTURES = 4096;
 	private static final int MAX_ROUTES = 1024;
+	private static final int MAX_POOL_FLEET = 999;
 	private static final String KEY_USE_REAL_TIME = "use_real_time";
 	private static final String KEY_FREQUENCIES = "frequencies";
 	private static final String KEY_DEPARTURES = "departures";
 	private static final String KEY_LAST_DEPLOYED = "last_deployed";
 	private static final String KEY_LAST_DEPLOYED_TRIPS = "last_deployed_trips";
 	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
+	private static final String KEY_POOL_FLEETS = "pool_fleets";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
@@ -281,6 +288,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		lastDeployedMillis = System.currentTimeMillis() - messagePackHelper.getLong(KEY_LAST_DEPLOYED);
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> dispatcher.lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
+		messagePackHelper.iterateMapValue(KEY_POOL_FLEETS, entry -> poolFleets.put(entry.getKey().asStringValue().asString(), Mth.clamp(entry.getValue().asIntegerValue().asInt(), -1, MAX_POOL_FLEET)));
 		final Value dutiesValue = map.get(KEY_DUTIES);
 		if (dutiesValue != null && dutiesValue.isBinaryValue()) {
 			duties.fromBytes(dutiesValue.asBinaryValue().asByteArray());
@@ -344,6 +352,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		autoDuties.read(PacketBinary.of(packet));
 		releaseInterval = packet.readInt();
 		lineShortfall = Shortfall.read(packet);
+		readPoolFleets(packet);
 	}
 
 	@Override
@@ -393,6 +402,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			messagePacker.packString(entry.getKey()).packString(entry.getValue());
 		}
 
+		messagePacker.packString(KEY_POOL_FLEETS).packMapHeader(poolFleets.size());
+		for (final Map.Entry<String, Integer> entry : poolFleets.entrySet()) {
+			messagePacker.packString(entry.getKey()).packInt(entry.getValue());
+		}
+
 		final byte[] dutyBytes = duties.toBytes();
 		messagePacker.packString(KEY_DUTIES).packBinaryHeader(dutyBytes.length);
 		messagePacker.writePayload(dutyBytes);
@@ -404,7 +418,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 17;
+		return super.messagePackLength() + 18;
 	}
 
 	@Override
@@ -440,6 +454,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		autoDuties.write(PacketBinary.of(packet));
 		packet.writeInt(releaseInterval);
 		Shortfall.write(lineShortfall, packet);
+		writePoolFleets(packet);
 	}
 
 	/**
@@ -492,6 +507,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			readVehicleServiceTypes(packet);
 			speedCurves = packet.readBoolean();
 			releaseInterval = Mth.clamp(packet.readInt(), 0, MAX_RELEASE_INTERVAL);
+		} else if (KEY_POOL_FLEETS.equals(key)) {
+			readPoolFleets(packet);
 		} else if (KEY_DUTY_MODE.equals(key)) {
 			duties.diagramMode = packet.readBoolean();
 		} else if (KEY_DUTY_SLOT.equals(key)) {
@@ -834,7 +851,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * siding, across its planning unit
 	 */
 	public int getPoolTrains(Siding siding) {
-		return getLinePool(siding).stream().mapToInt(poolSiding -> poolSiding.getTrainCount() + poolSiding.getPendingArrivals()).sum();
+		return getLinePool(siding).stream().mapToInt(poolSiding -> poolSiding.getTrainCount() + poolSiding.getShedCount()).sum();
 	}
 
 	@Override
@@ -870,7 +887,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			}
 			// Room for the trains it holds and the ones already on their way to it
 			final int coming = pool.stream().mapToInt(poolSiding -> poolSiding.countReturningTo(otherSidingId)).sum();
-			return other.getTrainCount() + coming + other.getPendingArrivals() < other.getFleetSize();
+			return other.getHeldCount() + coming < other.getFleetSize();
 		});
 	}
 
@@ -883,7 +900,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 		final Map<Long, Siding> candidates = new TreeMap<>();
 		orderDepot.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()).forEach(other -> {
-			if (canGoBack.test(other.id) && (other == siding || other.getFleetSize() < 0 || other.getTrainCount() + other.getPendingArrivals() + countReturningTo(other.id) < other.getFleetSize())) {
+			if (canGoBack.test(other.id) && (other == siding || other.getFleetSize() < 0 || other.getHeldCount() + countReturningTo(other.id) < other.getFleetSize())) {
 				candidates.put(other.id, other);
 			}
 		});
@@ -1388,6 +1405,85 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	private static float wrapTime(float time) {
 		return (time + 6000 + TICKS_PER_DAY) % TICKS_PER_DAY;
+	}
+
+	/**
+	 * Sets the trains the depot gives each pool of its sidings (P2-C), a pool left out keeping its sidings' fleets added up.
+	 */
+	public void setPoolFleets(Map<String, Integer> newPoolFleets, Consumer<FriendlyByteBuf> sendPacket) {
+		poolFleets.clear();
+		newPoolFleets.forEach((poolKey, fleet) -> {
+			if (poolFleets.size() < MAX_ROUTES) {
+				poolFleets.put(poolKey, Mth.clamp(fleet, -1, MAX_POOL_FLEET));
+			}
+		});
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_POOL_FLEETS);
+		writePoolFleets(packet);
+		sendPacket.accept(packet);
+		isDirty = true;
+	}
+
+	/**
+	 * @return the trains the depot gives a pool of its sidings: as set, or its sidings' fleets added up, -1 if one of them
+	 * has as many as needed or for a pool set to that
+	 */
+	public int getPoolFleet(String poolKey, Collection<Siding> poolSidings) {
+		final Integer fleet = poolFleets.get(poolKey);
+		if (fleet != null) {
+			return fleet;
+		}
+		int total = 0;
+		for (final Siding siding : poolSidings) {
+			if (siding.getFleetSize() < 0) {
+				return -1;
+			}
+			total += siding.getFleetSize();
+		}
+		return total;
+	}
+
+	/**
+	 * @return the trains the siding's pool has in all across its line (P2-C): what each depot of the line gives it, added
+	 * up, or -1 for as many as its duties need
+	 */
+	public int getLinePoolFleet(Siding siding) {
+		final Map<Depot, List<Siding>> byDepot = new LinkedHashMap<>();
+		for (final Siding poolSiding : getLinePool(siding)) {
+			final Depot depot = dataCache == null ? this : dataCache.sidingIdToDepot.getOrDefault(poolSiding.id, this);
+			byDepot.computeIfAbsent(depot, key -> new ArrayList<>()).add(poolSiding);
+		}
+		int total = 0;
+		for (final Map.Entry<Depot, List<Siding>> entry : byDepot.entrySet()) {
+			final int fleet = entry.getKey().getPoolFleet(siding.getPoolKey(), entry.getValue());
+			if (fleet < 0) {
+				return -1;
+			}
+			total += fleet;
+		}
+		return total;
+	}
+
+	private void readPoolFleets(FriendlyByteBuf packet) {
+		poolFleets.clear();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			final String poolKey = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			final int fleet = packet.readInt();
+			if (i < MAX_ROUTES) {
+				poolFleets.put(poolKey, Mth.clamp(fleet, -1, MAX_POOL_FLEET));
+			}
+		}
+	}
+
+	private void writePoolFleets(FriendlyByteBuf packet) {
+		packet.writeInt(poolFleets.size());
+		poolFleets.forEach((poolKey, fleet) -> {
+			packet.writeUtf(poolKey);
+			packet.writeInt(fleet);
+		});
 	}
 
 	private void readVehicleServiceTypes(FriendlyByteBuf packet) {

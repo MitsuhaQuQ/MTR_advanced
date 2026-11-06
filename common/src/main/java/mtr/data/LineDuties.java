@@ -284,7 +284,13 @@ public final class LineDuties {
 					group.sidings.add(sidingInput);
 					group.depotOf.put(siding.id, depot);
 					group.sidingNames.put(siding.id, siding.name);
-					group.available += siding.getFleetSize() < 0 ? DepotDuties.MAX_SLOTS : siding.getFleetSize();
+					// The trains its pool has: what the depot gives the pool, once, or else each siding's fleet (P2-C)
+					final Integer poolFleet = depot.poolFleets.get(siding.getPoolKey());
+					if (poolFleet == null) {
+						group.available += siding.getFleetSize() < 0 ? DepotDuties.MAX_SLOTS : siding.getFleetSize();
+					} else if (group.countedPools.add(depot.id + "/" + siding.getPoolKey())) {
+						group.available += poolFleet < 0 ? DepotDuties.MAX_SLOTS : poolFleet;
+					}
 				});
 			}
 			staysOnLine = anyStays;
@@ -428,6 +434,7 @@ public final class LineDuties {
 		private final Map<Long, Depot> depotOf = new HashMap<>();
 		private final Map<Long, String> sidingNames = new HashMap<>();
 		private int available;
+		private final Set<String> countedPools = new HashSet<>();
 
 		private Group(Set<String> serviceTypes, Set<Long> routeIds) {
 			this.serviceTypes = serviceTypes;

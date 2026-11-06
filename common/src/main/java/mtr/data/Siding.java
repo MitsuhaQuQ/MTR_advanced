@@ -177,6 +177,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_REPEAT_INDEX_2 = "repeat_index_2";
 	private static final String KEY_LOOP_JOIN_INDEX = "loop_join_index";
 	private static final String KEY_TRAINS = "trains";
+	private static final String KEY_SHED = "shed";
 	private static final String KEY_ACCELERATION_CONSTANT = "acceleration_constant";
 	private static final String KEY_DECELERATION_CONSTANT = "deceleration_constant";
 
@@ -240,6 +241,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 
 		messagePackHelper.iterateArrayValue(KEY_TRAINS, value -> trains.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
+		messagePackHelper.iterateArrayValue(KEY_SHED, value -> shed.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
 		generateDistances();
 		// A train on a path that no longer exists has nowhere to be, and starts again from the siding
 		trains.removeIf(train -> !train.restoreTripPath(tripPaths));
@@ -291,6 +293,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	public void toMessagePack(MessagePacker messagePacker) throws IOException {
 		toReducedMessagePack(messagePacker);
 		RailwayData.writeMessagePackDataset(messagePacker, trains, KEY_TRAINS);
+		final List<TrainServer> kept = new ArrayList<>(shed);
+		kept.addAll(arriving);
+		RailwayData.writeMessagePackDataset(messagePacker, kept, KEY_SHED);
 	}
 
 	@Override
@@ -331,12 +336,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 20;
+		return super.messagePackLength() + 21;
 	}
 
 	@Override
 	public int reducedMessagePackLength() {
-		return messagePackLength() - 1;
+		return messagePackLength() - 2;
 	}
 
 	@Override
@@ -583,13 +588,69 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
-	 * Trains of other sidings that came back here, each of which this siding makes standing in its place; not saved, as
-	 * that happens within a tick or two.
+	 * Running by duties, the trains of its pool kept in the siding beyond the one standing there, oldest first (P2-C), and
+	 * the ones back in this tick, kept from the next ({@link #keepArrived}). Saved as its trains are.
 	 */
-	private int pendingArrivals;
+	private final List<TrainServer> shed = new ArrayList<>();
+	private final List<TrainServer> arriving = new ArrayList<>();
 
-	public int getPendingArrivals() {
-		return pendingArrivals;
+	/**
+	 * @return the trains kept in its shed, the ones back in this tick among them
+	 */
+	public int getShedCount() {
+		return shed.size() + arriving.size();
+	}
+
+	/**
+	 * @return the trains standing in the siding and kept in its shed, for whether it has room for one more
+	 */
+	public int getHeldCount() {
+		return (int) trains.stream().filter(train -> !train.getIsOnRoute()).count() + getShedCount();
+	}
+
+	/**
+	 * The trains back in its shed in this tick are kept there from the next, as in the component's runner.
+	 */
+	public void keepArrived() {
+		shed.addAll(arriving);
+		arriving.clear();
+	}
+
+	/**
+	 * @return a train of this siding standing for one of another siding of the pool (P2-C): the same train, its ID, its
+	 * cargo, riders and ANTE's settings, now this siding's
+	 */
+	private TrainServer adopt(TrainServer train) {
+		if (train.sidingId == id) {
+			return train;
+		}
+		final TrainServer adopted = new TrainServer(train.id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
+		adopted.carryFrom(train);
+		return adopted;
+	}
+
+	/**
+	 * Has the siding keep the trains the component's simulator keeps in its shed (P2-C), each the game's train with its ID
+	 * wherever it was.
+	 */
+	public void showSimulatedShed(List<Long> shedIds, Map<Long, TrainServer> known) {
+		arriving.clear();
+		final Map<Long, TrainServer> own = new HashMap<>();
+		shed.forEach(train -> own.put(train.id, train));
+		shed.clear();
+		shedIds.forEach(trainId -> {
+			final TrainServer train = own.containsKey(trainId) ? own.get(trainId) : known.get(trainId);
+			shed.add(train == null ? new TrainServer(trainId, id, railLength, this.trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime) : adopt(train));
+		});
+	}
+
+	/**
+	 * Adds its trains, those standing and those kept in its shed, to an index by ID.
+	 */
+	public void indexTrains(Map<Long, TrainServer> index) {
+		trains.forEach(train -> index.put(train.id, train));
+		shed.forEach(train -> index.put(train.id, train));
+		arriving.forEach(train -> index.put(train.id, train));
 	}
 
 	/**
@@ -1211,6 +1272,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		int trainsAtDepot = 0;
 		boolean spawnTrain = true;
+		// A depot running by duties has a train for each slot of the siding's pool, the sidings with the same vehicle,
+		// within each siding's limit
+		final boolean runsByDuties = depot.getRunDuties() != null;
 
 		final Set<Long> railProgressSet = new HashSet<>();
 		final Set<TrainServer> trainsToRemove = new HashSet<>();
@@ -1225,14 +1289,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
 			}
-			// Back in another siding of the pool, which makes a train standing there in its place, maybe of another depot of
-			// the line
+			// Back in another siding of the pool, maybe of another depot of the line, the same train is kept in its shed (P2-C)
 			final long returnedTo = train.takeReturnedElsewhereSiding();
 			if (returnedTo != 0) {
 				trainsToRemove.add(train);
 				final Siding target = dataCache == null ? null : dataCache.sidingIdMap.get(returnedTo);
 				if (target != null && target != this) {
-					target.pendingArrivals++;
+					target.arriving.add(target.adopt(train));
 				}
 				continue;
 			}
@@ -1255,6 +1318,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				trainsAtDepot++;
 				if (trainsAtDepot > 1) {
 					trainsToRemove.add(train);
+					// By duties, a second train standing here is kept in the shed rather than taken away
+					if (runsByDuties) {
+						arriving.add(train);
+						continue;
+					}
 				}
 			}
 
@@ -1273,18 +1341,24 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			return;
 		}
 
-		// A depot running by its duties has a train for each slot of the siding's pool, the sidings with the same vehicle,
-		// within each siding's limit
-		final boolean runsByDuties = depot.getRunDuties() != null;
-		final int poolSlots = runsByDuties ? depot.getPoolSlots(this) : 0;
-		// Running by duties, the fleet is how many trains there are, not what the rails here hold
-		final int trainLimit = runsByDuties ? fleetSize : getTrainLimit();
-		// A train that came back here from another siding stands here in its place
-		final boolean arrived = pendingArrivals > 0;
-		if (arrived) {
-			pendingArrivals--;
-		}
-		if (trainCars > 0 && (arrived ? trains.isEmpty() || trainLimit < 0 || trains.size() < trainLimit : runsByDuties ? poolSlots > 0 && (trains.isEmpty() || spawnTrain && depot.getPoolTrains(this) < poolSlots && (trainLimit < 0 || trains.size() < trainLimit)) : trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
+		if (runsByDuties) {
+			// By duties, the trains are the pool's, across the sidings of the other depots of its line too (P2-C): a siding
+			// with none standing takes the one kept longest in its shed, and a new train is made only while the pool has fewer
+			// than it has in all, or than its duties need when that is not set; the siding's fleet is how many it holds
+			if (trainCars > 0 && (trains.isEmpty() || spawnTrain)) {
+				if (!shed.isEmpty()) {
+					trains.add(shed.remove(0));
+				} else {
+					final int poolFleet = depot.getLinePoolFleet(this);
+					final int poolTrains = depot.getPoolTrains(this);
+					final boolean roomHere = fleetSize < 0 || getHeldCount() < fleetSize;
+					final int poolSlots = poolFleet < 0 ? depot.getPoolSlots(this) : 0;
+					if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : poolSlots > 0 && (trains.isEmpty() || poolTrains < poolSlots && (fleetSize < 0 || trains.size() < fleetSize))) {
+						trains.add(new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime));
+					}
+				}
+			}
+		} else if (trainCars > 0 && (trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
 			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 			trains.add(train);
 		}
@@ -1352,6 +1426,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		// The pool across the depots of its operating line (SimDataset 7)
 		final String lineUnitKey = depot == null ? "" : depot.getLineUnitKey();
 		sidingData.linePool = lineUnitKey.isEmpty() ? "" : lineUnitKey + "|" + getPoolKey();
+		// The trains its pool has in all (SimDataset 11, P2-C)
+		sidingData.poolFleet = byDuties && depot != null ? depot.getLinePoolFleet(this) : -1;
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
 	}
@@ -1390,6 +1466,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @param takenOver the trains the game moves itself, which stay as they are
 	 */
 	public void showSimulatedTrains(List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> simulatedTrains, Set<Long> takenOver) {
+		showSimulatedTrains(simulatedTrains, takenOver, Collections.emptyMap());
+	}
+
+	/**
+	 * @param known the game's trains of the sidings the simulator runs, by ID, before any of them was shown, so a train the
+	 *              simulator moved to this siding is the same train here (P2-C)
+	 */
+	public void showSimulatedTrains(List<TickRunner<SimDataset.DataTrack>.HeadlessTrain> simulatedTrains, Set<Long> takenOver, Map<Long, TrainServer> known) {
 		runBySimulator = true;
 		final Map<Long, TickRunner<SimDataset.DataTrack>.HeadlessTrain> byId = new HashMap<>();
 		simulatedTrains.forEach(train -> byId.put(train.id, train));
@@ -1401,7 +1485,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		byId.forEach((simulatedId, simulatedTrain) -> {
 			if (!shown.contains(simulatedId)) {
-				final TrainServer train = new TrainServer(simulatedId, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
+				final TrainServer knownTrain = known.get(simulatedId);
+				final TrainServer train = knownTrain != null ? adopt(knownTrain) : new TrainServer(simulatedId, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
 				train.setSimulated(simulatedTrain);
 				trains.add(train);
 			}
@@ -1426,6 +1511,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	public void recordTrains(RunRecord record) {
 		trains.stream().filter(train -> !train.isCurrentlyManual()).sorted(Comparator.comparingLong(train -> train.id)).forEach(train -> record.trains.add(train.toRecord()));
+		if (getShedCount() > 0) {
+			final List<Long> ids = new ArrayList<>();
+			shed.forEach(train -> ids.add(train.id));
+			arriving.forEach(train -> ids.add(train.id));
+			record.sheds.put(id, ids);
+		}
 	}
 
 	/**
