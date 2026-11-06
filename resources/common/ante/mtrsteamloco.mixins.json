@@ -46,7 +46,6 @@
     "RailwayDataAccessor",
     "TrainMixin",
     "SidingAccessor",
-    "SidingMixin",
     "RailwayDataRailActionsModuleMixin",
     "RailTypeMixin",
     "RailwayDataMixin",

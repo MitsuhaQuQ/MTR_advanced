@@ -41,13 +41,12 @@ import java.util.function.Consumer;
  * A train driven by hand, which a train of a siding that allows it is whenever it is in the siding, is taken over: the
  * game moves it itself until it is given back on the line.
  * <p>
- * Running the trains ({@link MotionConfig#COMPONENT_DRIVE_ON}), the simulator has them: each tick it moves on to now,
+ * Running the trains, the simulator has them: each tick it moves on to now,
  * and the game's trains of those sidings only show its trains (A06), doing what needs the world, such as their cars,
  * riders, doors and the rails they take for the game's other trains and signals. It starts again from the game's trains,
  * which then are where it had them, when the network or the plans change.
  * <p>
- * Compared ({@link MotionConfig#COMPONENT_DRIVE_COMPARE}), it runs next to the game, which still moves every train. After
- * a minute it says in the log how far apart the two came, and starts again from the game's trains.
+ * It always runs the trains (R4); comparing it with the game is left to the tests running both by the same rules.
  */
 public final class LiveSimulation {
 
@@ -72,10 +71,6 @@ public final class LiveSimulation {
 	 * after the world is loaded.
 	 */
 	private static final long RETRY_MILLIS = 1000;
-	/**
-	 * How far apart a train of the game and of the simulator can be and still count as alike.
-	 */
-	private static final double ALIKE_DISTANCE = 1;
 
 	private final SimInputs inputs = new SimInputs();
 	private final Random random = new Random();
@@ -156,17 +151,13 @@ public final class LiveSimulation {
 			return;
 		}
 		final long now = System.currentTimeMillis();
-		if (simulator != null && !drive && now >= startedMillis + COMPARE_MILLIS) {
-			System.out.println("Minecraft Transit Railway: " + compare(railwayData));
-			simulator = null;
-		}
 		if (simulator != null && drive) {
 			// A stop of more than a minute is recovered from (contracts document 6.3), and a change starts it again
 			final boolean stopped = now - lastMillis > EventSimulator.RECOVERY_MILLIS;
 			if (stopped || placement != null || hasChanged(railwayData, now)) {
 				start(railwayData, now, true, stopped ? lastMillis : now);
 			}
-		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : drive ? RESTART_MILLIS : COMPARE_MILLIS))) {
+		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : RESTART_MILLIS))) {
 			// The first time after the world is loaded, the game has already put the trains where the plan has them
 			start(railwayData, now, drive, now);
 		}
@@ -194,18 +185,6 @@ public final class LiveSimulation {
 			inputs.update(now, trainPositions.get(0), trainId -> !run.contains(trainId)).forEach(simulator::submit);
 		}
 		final TickRunner<SimDataset.DataTrack> runner = simulator.getRunner();
-		if (!drive) {
-			// Compared, the simulator has reservations of its own, beside the game's trains of the same sidings holding theirs;
-			// it is told the runs held by the game's trains of other depots, as of the end of the tick before
-			final RunReservations gameRuns = railwayData.runReservations;
-			final Map<Long, List<RunReservations.Move>> otherRuns = new TreeMap<>();
-			gameRuns.getHolders().forEach(holder -> {
-				if (!runner.hasTrain(holder) && !run.contains(holder) && !takenOver.contains(holder)) {
-					otherRuns.put(holder, gameRuns.getHeld(holder));
-				}
-			});
-			inputs.updateRuns(now, otherRuns).forEach(simulator::submit);
-		}
 		simulator.advanceTo(now);
 		lastMillis = now;
 		if (drive) {
@@ -644,48 +623,6 @@ public final class LiveSimulation {
 		dataset.sidings.forEach(siding -> depotIds.add(siding.depotId));
 		dataset.depots.removeIf(depot -> !depotIds.contains(depot.id));
 		return dataset;
-	}
-
-	/**
-	 * @return how the game's trains and the simulator's compare now
-	 */
-	private String compare(RailwayData railwayData) {
-		final TickRunner<SimDataset.DataTrack> runner = simulator.getRunner();
-		final Set<Long> inGame = new HashSet<>();
-		final int[] counts = new int[4];
-		final double[] largest = {0};
-		final long[] largestTrain = {0};
-		final String[] firstDifferent = {""};
-		forEachTrain(railwayData, train -> {
-			if (train.isCurrentlyManual()) {
-				return;
-			}
-			inGame.add(train.id);
-			counts[0]++;
-			final TickRunner<SimDataset.DataTrack>.HeadlessTrain simulated = runner.getTrain(train.id);
-			if (simulated == null) {
-				counts[2]++;
-				return;
-			}
-			final RunRecord.TrainRecord gameTrain = train.toRecord();
-			final double distance = Math.abs(simulated.getRailProgress() - gameTrain.railProgress);
-			if (distance > largest[0]) {
-				largest[0] = distance;
-				largestTrain[0] = train.id;
-			}
-			final boolean sameState = simulated.isOnRoute() == gameTrain.onRoute && simulated.getNextStoppingIndex() == gameTrain.nextStoppingIndex;
-			if (sameState && distance <= ALIKE_DISTANCE) {
-				counts[1]++;
-			} else if (firstDifferent[0].isEmpty()) {
-				firstDifferent[0] = String.format(", first different: train %d at %.1f (simulated %.1f), next stop %d (simulated %d), %s (simulated %s)", train.id, gameTrain.railProgress, simulated.getRailProgress(), gameTrain.nextStoppingIndex, simulated.getNextStoppingIndex(), gameTrain.onRoute ? "on the line" : "in the siding", simulated.isOnRoute() ? "on the line" : "in the siding");
-			}
-		});
-		runner.getTrains().forEach(train -> {
-			if (!inGame.contains(train.id) && !takenOver.contains(train.id)) {
-				counts[3]++;
-			}
-		});
-		return String.format("the simulator ran %d sidings for a minute next to the game (started with %d of %d trains): %d trains, %d alike within %.0f m, largest gap %.1f m (train %d), %d only in the game, %d only in the simulator%s", sidingIds.size(), restoredTrains, recordedTrains, counts[0], counts[1], ALIKE_DISTANCE, largest[0], largestTrain[0], counts[2], counts[3], firstDifferent[0]);
 	}
 
 	/**
