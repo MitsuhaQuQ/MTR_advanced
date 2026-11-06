@@ -848,6 +848,20 @@
 	}
 
 	/** Picks the depot for a service's order: the depots running the line's routes first, then the others of its transport mode. */
+	/** The depots a service can be set to go back to (or come out of) at a stop, as menu items, the one set ticked. */
+	function orderDepotItems(s, kind, stop) {
+		const lineRoutes = new Set((currentLine() ? currentLine().routes : [s.route]).map(r => r.id));
+		const depots = data.depots.filter(depot => !depot.transportMode || !s.route.transportMode || depot.transportMode === s.route.transportMode);
+		const near = depots.filter(depot => depot.routes.some(id => lineRoutes.has(id))), far = depots.filter(depot => !near.includes(depot));
+		const current = kind === "deploy" ? s.deployOrder : s.returnOrder;
+		const set = depotId => () => editTimetable(s.route, timetable => setServiceOrder(timetable.tables[s.tableIndex], s.service, kind, stop, depotId));
+		const mark = depotId => current && current.stop === stop && current.depot === depotId ? "✓ " : "";
+		const items = [[mark("0") + tr("自动选的车厂"), set("0")]];
+		near.forEach(depot => items.push([mark(depot.id) + shortName(depot.name), set(depot.id)]));
+		if (far.length) items.push([tr("其他车厂"), far.map(depot => [mark(depot.id) + shortName(depot.name), set(depot.id)])]);
+		return items;
+	}
+
 	function serviceOrderDialog(s, kind, stop) {
 		const lineRoutes = new Set((currentLine() ? currentLine().routes : [s.route]).map(r => r.id));
 		const depots = data.depots.filter(depot => !depot.transportMode || !s.route.transportMode || depot.transportMode === s.route.transportMode);
@@ -892,26 +906,63 @@
 
 	// ---------- Menus and dialogs ----------
 	let menu = null;
+	/**
+	 * A menu of [label, action] items at a point. An item whose action is a list of items opens them beside it as a
+	 * second-level menu, on hover or click; an item with no action is shown greyed out.
+	 */
 	function openMenu(x, y, items) {
 		closeMenu();
-		menu = document.createElement("div");
-		menu.className = "menu";
-		items.forEach(([label, action]) => {
-			const button = document.createElement("button");
-			button.textContent = label;
-			if (action) button.onclick = () => { closeMenu(); action(); };
-			else button.disabled = true;
-			menu.appendChild(button);
-		});
+		menu = buildMenu(items, 0);
 		document.body.appendChild(menu);
 		menu.style.left = Math.min(x, innerWidth - menu.offsetWidth - 8) + "px";
 		menu.style.top = Math.min(y, innerHeight - menu.offsetHeight - 8) + "px";
 	}
+	let subMenu = null;
+	function buildMenu(items, level) {
+		const element = document.createElement("div");
+		element.className = level ? "menu sub" : "menu";
+		items.forEach(([label, action]) => {
+			const button = document.createElement("button");
+			button.type = "button";
+			if (Array.isArray(action)) {
+				button.textContent = label + " ▸";
+				button.className = "has-sub";
+				const open = () => {
+					if (subMenu && subMenu.owner === button) return;
+					if (subMenu) subMenu.remove();
+					subMenu = buildMenu(action, level + 1);
+					subMenu.owner = button;
+					document.body.appendChild(subMenu);
+					const box = button.getBoundingClientRect();
+					const left = box.right + subMenu.offsetWidth + 4 > innerWidth ? box.left - subMenu.offsetWidth - 2 : box.right + 2;
+					subMenu.style.left = Math.max(8, left) + "px";
+					subMenu.style.top = Math.max(8, Math.min(box.top - 4, innerHeight - subMenu.offsetHeight - 8)) + "px";
+				};
+				button.addEventListener("mouseenter", open);
+				button.addEventListener("click", e => {
+					e.stopPropagation();
+					open();
+				});
+			} else {
+				button.textContent = label;
+				if (action) button.onclick = () => { closeMenu(); action(); };
+				else button.disabled = true;
+				if (!level) button.addEventListener("mouseenter", () => {
+					if (subMenu) subMenu.remove();
+					subMenu = null;
+				});
+			}
+			element.appendChild(button);
+		});
+		return element;
+	}
 	function closeMenu() {
+		if (subMenu) subMenu.remove();
+		subMenu = null;
 		if (menu) menu.remove();
 		menu = null;
 	}
-	document.addEventListener("click", e => { if (menu && !menu.contains(e.target)) closeMenu(); });
+	document.addEventListener("click", e => { if (menu && !menu.contains(e.target) && !(subMenu && subMenu.contains(e.target))) closeMenu(); });
 
 	const dialog = $("dialog");
 	/** A form whose OK button runs onOk, which returns an error to show and keep the form open, or nothing to close it. */
@@ -3198,7 +3249,8 @@
 			if (exception) items.push([tr("恢复按表的时刻"), () => edit(table => setStopException(table, s.service, stop, { run: -1, dwell: -1, pass: -1, overtake: -1 }))]);
 			// Joined or left part of the way by a train from or to a depot, set by hand
 			if (!s.link && stop < n - 1 && (!s.returnOrder || stop < s.returnOrder.stop)) items.push([s.deployOrder && s.deployOrder.stop === stop ? tr("改出车的车厂…") : tr("从这一站出车…"), () => serviceOrderDialog(s, "deploy", stop)]);
-			if (stop > 0 && (!s.deployOrder || stop > s.deployOrder.stop)) items.push([s.returnOrder && s.returnOrder.stop === stop ? tr("改回送的车厂…") : tr("在这一站转回送…"), () => serviceOrderDialog(s, "return", stop)]);
+			// The depots right in the menu: those running the line first, then the others
+			if (stop > 0 && (!s.deployOrder || stop > s.deployOrder.stop)) items.push([tr("回送"), orderDepotItems(s, "return", stop)]);
 			if (s.deployOrder) items.push([tr("取消出车指令"), () => edit(table => setServiceOrder(table, s.service, "deploy", 0, null))]);
 			if (s.returnOrder) items.push([tr("取消回送"), () => edit(table => setServiceOrder(table, s.service, "return", 0, null))]);
 			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`${tr("设为出库列车接入这条环线的站")}`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
@@ -3425,6 +3477,9 @@
 				return;
 			}
 			if (!depot.routes.includes(segment.route)) problems.push({ i, text: tr("线路不在这个车厂") });
+			// A service set to come out of a depot starts a train's duty, from a siding of that depot
+			if (s.deployOrder && i > 0 && segment.from === s.deployOrder.stop) problems.push({ i, text: tr("这一班设了从车厂出车，不能接在上一班后面，要放在一份运用的开头") });
+			else if (s.deployOrder && i === 0 && s.deployOrder.depot !== "0" && s.deployOrder.depot !== depot.id) problems.push({ i, text: tr("这一班设了由车厂 {0} 出车，这份运用却在车厂 {1}", orderDepotName(s.deployOrder), shortName(depot.name)) });
 			if ((assigned.get(segmentKey(segment)) || []).length > 1) problems.push({ i, text: tr("这一班也分给了别的车") });
 			const before = day.segments[i - 1], beforeService = before && segmentService(before);
 			if (beforeService) {
@@ -3587,6 +3642,14 @@
 		});
 	}
 
+	/** Where the generated duty's train is forecast to go back, when not to its own siding. */
+	function plannedReturnText(depot, sidingId, index, weekday) {
+		const to = (plannedReturns.get(depot.id) || {})[`${sidingId}/${index}/${weekday}`];
+		if (!to) return "";
+		const siding = data.depots.flatMap(other => other.sidings).find(other => other.id === to);
+		return `<dt>${tr("回库")}</dt><dd>${escapeHtml(tr("预计回 {0}（车池里那时最早要用车的存车线；游戏运行时自己选）", siding ? shortName(siding.name) || tr("存车线") : to))}</dd>`;
+	}
+
 	function dutyPanel() {
 		const depot = depotById(state.slot.depot);
 		const siding = depot && depot.sidings.find(o => o.id === state.slot.siding);
@@ -3608,7 +3671,8 @@
 		}).join("") : "";
 		return `<h2>${tr("运用：车 {0}", state.slot.index + 1)}</h2><div class="card"><div class="title">${escapeHtml(shortName(depot.name))} · ${escapeHtml(shortName(siding.name) || tr("存车线"))}</div>
 			<dl class="kv"><dt>${tr("运行日")}</dt><dd>${daysText(group)}${day && day.days !== group ? `${tr("（现在和 {0} 共用，改了会分开）", daysText(day.days & ~group))}` : ""}</dd>
-			<dt>${tr("方式")}</dt><dd>${dutiesOf(depot).mode === "diagram" ? tr("按运用图") : tr("自动排班（游戏按时刻表自动生成运用；这里设的运用先存着，改为按运用图才用）")}</dd></dl>
+			<dt>${tr("方式")}</dt><dd>${dutiesOf(depot).mode === "diagram" ? tr("按运用图") : tr("自动排班（游戏按时刻表自动生成运用；这里设的运用先存着，改为按运用图才用）")}</dd>
+			${plannedReturnText(depot, siding.id, state.slot.index, state.weekday)}</dl>
 			${deletedNote}
 			${rows ? `<ol class="duty">${rows}</ol>` : deleted ? "" : `<p class="hint">${tr("这天没有运用，在运行图上点班次加进来。")}</p>`}
 			${problemAt(-1)}
@@ -3694,6 +3758,19 @@
 		});
 	}
 
+	const isOrderIssue = issue => issue.startsWith("DEPLOY_DEPOT ") || issue.startsWith("RETURN_DEPOT ");
+	/**
+	 * The planner's "DEPLOY_DEPOT <depot> has no siding for <route>@<service>" (or RETURN_DEPOT) as a sentence: a service set
+	 * to come out of, or go back to, a depot with no siding planned here, which has no train rather than one from elsewhere.
+	 */
+	function orderIssueText(issue) {
+		const parts = issue.split(" "), [routeId, service] = (parts[parts.length - 1] || "").split("@");
+		const depot = depotById(parts[1]), r = data.routeById.get(routeId);
+		const what = `${r ? routeTitle(r) : routeId} ${service ? clock(mod(+service - data.dayStartMillis, DAY)) : ""}`.trim();
+		const depotName = depot ? shortName(depot.name) : parts[1];
+		return issue.startsWith("DEPLOY_DEPOT ") ? tr("{0} 这一班设了由车厂 {1} 出车，但 {1} 没有能跑它的存车线一起排，这一班没有车。", what, depotName) : tr("{0} 这一班设了跑完回送车厂 {1}，但 {1} 没有能收它的存车线一起排，这一班没有车。", what, depotName);
+	}
+
 	/** The planner's "SHORT_TURNAROUND <platform> <millis had> <millis needed>" as a sentence, with the station's name. */
 	function shortTurnaroundText(issue) {
 		const [, platformId, had, needed] = issue.split(" ");
@@ -3749,6 +3826,12 @@
 		});
 	}
 
+	/**
+	 * By depot, where the duties last generated here send their trains back when not to their own siding, as the game
+	 * would choose it running: siding/slot/weekday → siding. A forecast; the game chooses as it runs.
+	 */
+	const plannedReturns = new Map();
+
 	async function generateDuties(depot) {
 		if (draft.duties[depot.id] && !confirm(`${tr("用自动生成的运用替换“{0}”草稿里的运用？", shortName(depot.name))}`)) return;
 		if (!draft.duties[depot.id] && Object.values((depot.duties || { sidings: {} }).sidings).some(slots => slots.length) && !confirm(`${tr("用自动生成的运用替换“{0}”现在的运用？应用前都还在草稿里。", shortName(depot.name))}`)) return;
@@ -3762,6 +3845,7 @@
 				editDuties(depot, duties => {
 					duties.sidings = result.duties.sidings;
 				});
+				plannedReturns.set(depot.id, result.returns || {});
 				// The running kernel checks the duties in a simulated day with the draft (S6), if the server has it on
 				if (data.simulation) {
 					sim.checkDepot = depot.id;
@@ -3772,7 +3856,8 @@
 				dutyNotice = byLine + `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
 					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
 					+ result.issues.filter(issue => issue.startsWith("SHORT_TURNAROUND ")).map(shortTurnaroundText).join("")
-					+ (result.issues.some(issue => !issue.startsWith("SHORT_TURNAROUND ")) ? `${tr("其他问题：{0}", result.issues.filter(issue => !issue.startsWith("SHORT_TURNAROUND ")).slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
+					+ result.issues.filter(isOrderIssue).slice(0, 5).map(orderIssueText).join("")
+					+ (result.issues.some(issue => !issue.startsWith("SHORT_TURNAROUND ") && !isOrderIssue(issue)) ? `${tr("其他问题：{0}", result.issues.filter(issue => !issue.startsWith("SHORT_TURNAROUND ") && !isOrderIssue(issue)).slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
 			}
 		} catch (e) {
 			dutyNotice = tr("生成失败：") + (e.message === "401" ? tr("页面的链接已经失效") : tr("游戏可能已经关闭"));
@@ -5459,6 +5544,13 @@
 			else if (path.state === "stale") problems.push({ level: "warn", text: tr("车厂{0}的路径是旧的，线路或轨道改过，要刷新", name) });
 			(path.detours || []).forEach(detour => problems.push({ level: "warn", text: tr("车厂{0}：从 {1} 到 {2} 要空车走 {3} 格（两个站台只相距 {4} 格），绕远了。在 {1} 的线路上设站前或站后折返（折返线、多站台轮用），或者让下一班从同一个站台发车", name, shortName(detour.from), shortName(detour.to), detour.length, detour.apart) }));
 			if (path.failedDuties > 0) problems.push({ level: "err", text: tr("车厂{0}有 {1} 份运用找不到路，这些车不会按运用出车：{2}", name, path.failedDuties, (path.failedDutyKeys || []).slice(0, 3).join("、")) });
+			// Trains waiting on the line with no duty to go on with, which a click takes straight back (P1-C)
+			(depot.held || []).forEach(held => {
+				const siding = depot.sidings.find(other => other.id === held.siding);
+				const why = held.reason === "OTHER_PLATFORM" ? tr("第二天的运用不从这个站台出发") : held.reason === "ALREADY_RUN" ? tr("第二天的运用已经由别的车跑了") : tr("第二天没有接着跑的运用");
+				problems.push({ level: "err", text: tr("车厂{0}：{1} 车 {2} 留在线上过夜后{3}，停在 {4} 等处理。改好运用后它会接着跑", name, shortName(siding ? siding.name : "") || tr("存车线"), held.slot + 1, why, shortName(held.platform)), recall: { depot: depot.id, siding: held.siding, slot: held.slot } });
+			});
+			(depot.returnMisses || []).forEach(miss => problems.push({ level: "warn", text: tr("车厂{0}：一班设了回送车厂 {1}，但那里没有同车型、有空位又有路的存车线，车按平常回库了", name, shortName((depotById(miss.depot) || {}).name || miss.depot)) }));
 			turnPairsOf(depot).filter(pair => pair.millis === null).forEach(pair => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 换不过去（同站换站台没有路），自动排班不会让车这样接续", name, stopLabel(pair.from), stopLabel(pair.to)) }));
 			const duties = dutiesOf(depot);
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
@@ -5501,12 +5593,23 @@
 
 	function syncDialog() {
 		const problems = syncProblems();
-		const items = problems.map(p => `<li class="${p.level}">${p.route ? `<a data-open-route="${p.route}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)}</li>`).join("");
+		const items = problems.map(p => `<li class="${p.level}">${p.route ? `<a data-open-route="${p.route}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)}${p.recall && data.canEdit ? ` <button type="button" class="link" data-recall='${escapeHtml(JSON.stringify(p.recall))}'>${tr("直接收回")}</button>` : ""}</li>`).join("");
 		// The changes of platform as measured on the rails, which the planner and the duty check go by
 		const turns = data ? data.depots.flatMap(depot => turnPairsOf(depot).filter(pair => pair.millis !== null).map(pair => `<li>${escapeHtml(tr("车厂{0}：{1} → {2} 实际要 {3}", shortName(depot.name) || tr("（未命名车厂）"), stopLabel(pair.from), stopLabel(pair.to), formatDuration(pair.millis)))}</li>`)) : [];
 		const turnsText = turns.length ? `<h3>${tr("同站换站台用时（轨道上实测，含 30 秒余量）")}</h3><ul class="sync-turns">${turns.slice(0, 40).join("")}</ul>` : "";
 		openDialog(tr("同步状态"), `<p class="hint">${connection === "ok" ? tr("已同步 {0}，每 1.5 秒检查一次游戏里的变化。", new Date(lastLoaded || Date.now()).toLocaleTimeString()) : tr("没有连上游戏。")}</p>${items ? `<ul class="sync-problems">${items}</ul>` : `<p>${tr("页面和游戏一致，没有发现问题。")}</p>`}${turnsText}`, tr("关闭"), () => {
 		});
+		// Taken back at once, not along the rails: the player's own command, which the game logs
+		dialog.querySelectorAll("[data-recall]").forEach(button => button.addEventListener("click", async () => {
+			if (!confirm(tr("把这列车直接收回存车线？它不走轨道，从站台上直接回到存车线。"))) return;
+			button.disabled = true;
+			try {
+				await sendJson("api/apply", "POST", { operations: [Object.assign({ type: "recall" }, JSON.parse(button.dataset.recall))] });
+				button.textContent = tr("已收回");
+			} catch (e) {
+				button.disabled = false;
+			}
+		}));
 		dialog.querySelectorAll("[data-open-route]").forEach(link => link.addEventListener("click", () => {
 			dialog.close();
 			const r = data.routeById.get(link.dataset.openRoute);

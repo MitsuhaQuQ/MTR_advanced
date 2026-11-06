@@ -314,6 +314,16 @@ public final class EditorActions implements IPacket {
 		if ("duties".equals(getString(operation, "type"))) {
 			return EditorDuties.apply(operation);
 		}
+		// A train waiting on the line with no duty, taken straight back to its siding by the player's command (P1-C)
+		if ("recall".equals(getString(operation, "type"))) {
+			final long depotId = parseId(getString(operation, "depot"));
+			final long sidingId = parseId(getString(operation, "siding"));
+			if (depotId == 0 || sidingId == 0 || !operation.has("slot")) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			mtr.packet.HeldTrains.sendRecallC2S(depotId, sidingId, operation.get("slot").getAsInt());
+			return null;
+		}
 		// What a depot runs: its routes, whether its trains stay on the line, its sidings' routes and fleets
 		if ("depot".equals(getString(operation, "type"))) {
 			return applyDepot(operation);

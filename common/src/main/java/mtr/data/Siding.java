@@ -462,6 +462,38 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		lastDepotLegs = depotLegs;
 	}
 
+	/**
+	 * Each train of the siding waiting on the line with no duty to go on with: its slot, the stop it waits at and why.
+	 */
+	public void forEachHeldTrain(HeldTrainConsumer consumer) {
+		trains.forEach(train -> {
+			final transitsim.sim.TrainService<?> service = train.getService();
+			if (service.getOvernightHold() != null) {
+				consumer.accept(service.getDutySlot(), service.getHeldStopId(), service.getOvernightHold().name());
+			}
+		});
+	}
+
+	/**
+	 * Takes the train of the slot waiting on the line with no duty straight back to the siding.
+	 *
+	 * @return whether there was one
+	 */
+	public boolean recallHeldTrain(int slot) {
+		for (final TrainServer train : trains) {
+			final transitsim.sim.TrainService<?> service = train.getService();
+			if (service.getOvernightHold() != null && service.getDutySlot() == slot && service.recallHeld()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@FunctionalInterface
+	public interface HeldTrainConsumer {
+		void accept(int slot, long stopId, String reason);
+	}
+
 	public DepotLegs getRecordedLegs() {
 		return recordedLegs;
 	}

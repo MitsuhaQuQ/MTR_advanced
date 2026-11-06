@@ -292,6 +292,7 @@ public final class EditorDuties implements IPacket {
 				final JsonArray issuesArray = new JsonArray();
 				plan.issues.forEach(issuesArray::add);
 				object.add("issues", issuesArray);
+				object.add("returns", returnsJson(plan.returnSidings, ownSidings));
 				return object;
 			};
 		}
@@ -306,7 +307,11 @@ public final class EditorDuties implements IPacket {
 		final List<Siding> depotSidings = new ArrayList<>();
 		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(depotSidings::add);
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
-		depotSidings.forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, ClientData.DATA_CACHE), depot.id)));
+		depotSidings.forEach(siding -> {
+			final DutyGenerator.SidingInput sidingInput = new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, ClientData.DATA_CACHE), depot.id);
+			sidingInput.poolKey = siding.getPoolKey();
+			sidings.add(sidingInput);
+		});
 		final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(depot)), LineDuties.backLinksOf(depotSidings, lastPlatforms, ClientData.DATA_CACHE));
 		final Map<Long, Long> stationOf = new HashMap<>();
 		ClientData.DATA_CACHE.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
@@ -328,8 +333,25 @@ public final class EditorDuties implements IPacket {
 			final JsonArray issuesArray = new JsonArray();
 			result.issues.forEach(issuesArray::add);
 			object.add("issues", issuesArray);
+			object.add("returns", returnsJson(result.returnSidings, null));
 			return object;
 		};
+	}
+
+	/**
+	 * @param ownSidings the sidings to keep, or null for all
+	 * @return where duties' trains go back when not to their own siding, as the runtime would send them: siding/slot/weekday
+	 * → the siding
+	 */
+	private static JsonObject returnsJson(Map<String, Long> returnSidings, Set<Long> ownSidings) {
+		final JsonObject returns = new JsonObject();
+		returnSidings.forEach((key, sidingId) -> {
+			final long from = Long.parseLong(key.substring(0, key.indexOf('/')));
+			if (ownSidings == null || ownSidings.contains(from)) {
+				returns.addProperty(key, String.valueOf(sidingId));
+			}
+		});
+		return returns;
 	}
 
 	private static String getString(JsonObject object, String key) {

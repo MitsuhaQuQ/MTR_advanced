@@ -151,11 +151,13 @@ class ServiceOrdersTest {
 	}
 
 	@Test
-	void aDepotWithNoSidingHereIsReportedAndAnyTakesItsPlace() {
+	void aDepotWithNoSidingHereIsReportedAndTheServiceHasNoTrain() {
 		final TestRoute up = line(1, 1, 2, 3, 4), down = line(2, 4, 5, 6, 7);
 		up.timetable.deployOrders.put(FIRST, new RouteTimetable.ServiceOrder(0, 99));
 		final DutyGenerator.Result result = DutyGenerator.generate(services(up, down), Collections.singletonList(new DutyGenerator.SidingInput(100, 8, null, 7)), Collections.emptyMap(), 30 * MINUTE);
-		assertEquals(0, result.uncovered);
 		assertTrue(result.issues.stream().anyMatch(issue -> issue.startsWith("DEPLOY_DEPOT 99")), result.issues.toString());
+		// Kept to the depot set: no other siding sends a train out for it
+		assertNull(dutyOf(result, 1, FIRST), "the service set to come out of depot 99 has no train");
+		assertTrue(result.uncovered > 0);
 	}
 }

@@ -272,7 +272,10 @@ public final class LineDuties {
 					// And back to it from each last stop
 					backLinks.put(siding.id, sidingBackLinks(siding, lastPlatforms, dataCache));
 					// Its fleet, however many trains its rails hold
-					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), links, depot.id));
+					final DutyGenerator.SidingInput sidingInput = new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), links, depot.id);
+					// The runtime's pool: the unit's sidings of the same vehicle run each other's duties and take each other's trains
+					sidingInput.poolKey = siding.getPoolKey();
+					group.sidings.add(sidingInput);
 					group.depotOf.put(siding.id, depot);
 					group.sidingNames.put(siding.id, siding.name);
 					group.available += siding.getFleetSize() < 0 ? DepotDuties.MAX_SLOTS : siding.getFleetSize();
@@ -353,6 +356,7 @@ public final class LineDuties {
 				}
 				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, group.sidings, stationOf, maxLayover, inputs);
 				plan.sidings.putAll(result.sidings);
+				plan.returnSidings.putAll(result.returnSidings);
 				result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
 				plan.trains += result.trains;
 				plan.uncovered += result.uncovered;
@@ -449,6 +453,11 @@ public final class LineDuties {
 		 */
 		public final List<String> issues = new ArrayList<>();
 		/**
+		 * Where duties' trains go back when not to their own siding, as the runtime would send them (see
+		 * {@link transitsim.planning.DutyGenerator.Result#returnSidings}).
+		 */
+		public final Map<String, Long> returnSidings = new TreeMap<>();
+		/**
 		 * The siding to add trains to when there are too few, as depot and siding name, or empty.
 		 */
 		public String suggestedSiding = "";
@@ -458,7 +467,7 @@ public final class LineDuties {
 		}
 
 		public String describe() {
-			return "line " + lineNames + ": needs " + needed + " trains, has " + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + shortTurnarounds();
+			return "line " + lineNames + ": needs " + needed + " trains, has " + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + shortTurnarounds();
 		}
 
 		private String shortTurnarounds() {

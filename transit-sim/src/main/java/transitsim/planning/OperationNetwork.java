@@ -29,7 +29,15 @@ public final class OperationNetwork {
 	}
 
 	public OperationNetwork addDepot(long depotId, int trainCount) {
-		depots.put(depotId, new Depot(depotId, trainCount));
+		return addDepot(depotId, trainCount, null);
+	}
+
+	/**
+	 * @param poolKey the depots whose trains run each other's duties and go back to whichever needs one next, as the
+	 *                sidings of one pool do; null for a pool of its own
+	 */
+	public OperationNetwork addDepot(long depotId, int trainCount, String poolKey) {
+		depots.put(depotId, new Depot(depotId, trainCount, poolKey == null ? "#" + depotId : poolKey));
 		return this;
 	}
 
@@ -70,10 +78,12 @@ public final class OperationNetwork {
 
 		public final long id;
 		public final int trainCount;
+		public final String poolKey;
 		private final Map<Long, Long> links = new TreeMap<>();
 		private final Map<Long, Long> backLinks = new TreeMap<>();
 
-		private Depot(long id, int trainCount) {
+		private Depot(long id, int trainCount, String poolKey) {
+			this.poolKey = poolKey;
 			this.id = id;
 			this.trainCount = trainCount;
 		}

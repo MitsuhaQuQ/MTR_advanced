@@ -102,6 +102,10 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private int dutySlot = -1;
 	/**
+	 * Why the train waits on the line with no duty to go on with, or null.
+	 */
+	private HoldReason overnightHold;
+	/**
 	 * The siding whose slot that is, when another siding of its pool sent the train in place of that siding's, else 0 for
 	 * the train's own (decoupling document, step D, depots sending trains out 4).
 	 */
@@ -906,6 +910,53 @@ public class TrainService<T extends PlanTrack> {
 	 * it, which starts where it is. If that duty doesn't start here, as the duties have changed since, it goes back to the
 	 * depot.
 	 */
+	/**
+	 * Why a train staying on the line overnight has no duty to go on with from where it stands.
+	 */
+	public enum HoldReason {
+		/**
+		 * The slot it takes over has no duty that day.
+		 */
+		NO_DUTY,
+		/**
+		 * The duty starts from another platform than the one it stands at.
+		 */
+		OTHER_PLATFORM,
+		/**
+		 * Another train already ran the duty that day.
+		 */
+		ALREADY_RUN
+	}
+
+	/**
+	 * @return why the train is waiting on the line with no duty to go on with, or null if it isn't
+	 */
+	public HoldReason getOvernightHold() {
+		return overnightHold;
+	}
+
+	/**
+	 * @return the stop the train waits at with no duty, or 0
+	 */
+	public long getHeldStopId() {
+		final List<T> path = vehicle.getPath();
+		return overnightHold == null || path.isEmpty() ? 0 : path.get(path.size() - 1).getStopId();
+	}
+
+	/**
+	 * Takes a train waiting on the line with no duty straight back to its siding, by the player's command.
+	 *
+	 * @return whether it was waiting
+	 */
+	public boolean recallHeld() {
+		if (overnightHold == null) {
+			return false;
+		}
+		overnightHold = null;
+		vehicle.returnToDepot();
+		return true;
+	}
+
 	public void updateOvernight() {
 		if (!isOnDuty() || !tripPath.staysOnLine || vehicle.getNextStoppingIndex() < vehicle.getPath().size() - 1) {
 			return;
@@ -924,11 +975,17 @@ public class TrainService<T extends PlanTrack> {
 		final TripPath<T> nextPath = key == null ? null : tripPaths.get(key);
 		final List<T> path = vehicle.getPath();
 		final long dayNumber = DutyShapes.getDayNumber(dayStart);
-		if (nextPath == null || nextPath.path.isEmpty() || nextPath.path.get(0).getStopId() != path.get(path.size() - 1).getStopId() || depot.hasDutyRun(slotSidingId, nextSlot, dayNumber)) {
-			System.out.println("A train staying on the line overnight has no duty starting where it is, and goes back to the depot: " + key);
-			vehicle.returnToDepot();
+		// With no duty to go on with from where it stands, it waits there to be seen to, rather than vanishing into its siding
+		// (P1-C): it goes on once a duty starting there is set, or when the player takes it straight back
+		final HoldReason reason = nextPath == null || nextPath.path.isEmpty() ? HoldReason.NO_DUTY : nextPath.path.get(0).getStopId() != path.get(path.size() - 1).getStopId() ? HoldReason.OTHER_PLATFORM : depot.hasDutyRun(slotSidingId, nextSlot, dayNumber) ? HoldReason.ALREADY_RUN : null;
+		if (reason != null) {
+			if (overnightHold != reason) {
+				System.out.println("A train staying on the line overnight has no duty starting where it is (" + reason + "), and waits there: " + key);
+			}
+			overnightHold = reason;
 			return;
 		}
+		overnightHold = null;
 		depot.markDutyRun(slotSidingId, nextSlot, dayNumber);
 		dutySlot = nextSlot;
 		dutyDayStart = dayStart;
@@ -1025,10 +1082,12 @@ public class TrainService<T extends PlanTrack> {
 		returnChosenStop = stopIndex;
 		// The last service of the duty may be set on the running diagram to go back to a depot of its own choosing
 		final long orderDepotId = getReturnOrderDepot();
-		final long returnSidingId = orderDepotId == 0 ? depot.chooseReturnSiding(sidingId) : depot.chooseReturnSiding(sidingId, orderDepotId);
 		// A train that went another way round a turn back point takes the way back of the duty's usual path, whose last stop
 		// can be on another rail
 		final boolean otherWayRound = tripPath.turnBackPoint >= 0;
+		// Only a siding the duty has a way back to is chosen, rather than one it can't reach and then its own after all
+		final String returnFrom = otherWayRound ? tripPath.tripKey : tripPathKey;
+		final long returnSidingId = depot.chooseReturnSiding(sidingId, orderDepotId, otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null);
 		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(otherWayRound ? tripPath.tripKey : tripPathKey, returnSidingId));
 		if (returnPath == null) {
 			return false;
@@ -1567,19 +1626,14 @@ public class TrainService<T extends PlanTrack> {
 		}
 
 		/**
+		 * @param depotId   the depot the duty's last service is set to go back to, or 0: then one of its sidings with the same
+		 *                  vehicle and room, the one needing a train soonest; with none, the usual choice, which is told
+		 * @param canGoBack whether the duty has a way back to a siding, which only those are chosen from
 		 * @return the siding of the pool a train of this siding goes back to after its duty, its own unless another one needs
 		 * a train sooner (see {@link DepotDispatcher#chooseReturnSiding})
 		 */
-		default long chooseReturnSiding(long sidingId) {
+		default long chooseReturnSiding(long sidingId, long depotId, java.util.function.LongPredicate canGoBack) {
 			return sidingId;
-		}
-
-		/**
-		 * As {@link #chooseReturnSiding(long)} for a duty whose last service is set to go back to this depot: one of its
-		 * sidings with the same vehicle and room, the one needing a train soonest; the usual choice if it has none.
-		 */
-		default long chooseReturnSiding(long sidingId, long depotId) {
-			return chooseReturnSiding(sidingId);
 		}
 	}
 }

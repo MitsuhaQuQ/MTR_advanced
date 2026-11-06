@@ -218,8 +218,7 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			depotSidings.computeIfAbsent(eachSidingRun.depot, key -> new ArrayList<>()).add(eachSidingRun);
 		});
-		depot.returnChooser = eachSidingId -> chooseReturnSiding(depot, eachSidingId);
-		depot.orderedReturnChooser = (eachSidingId, depotId) -> chooseOrderedReturnSiding(depot, eachSidingId, depotId);
+		depot.returnChooser = (eachSidingId, depotId, canGoBack) -> depotId == 0 ? chooseReturnSiding(depot, eachSidingId, canGoBack) : chooseOrderedReturnSiding(depot, eachSidingId, depotId, canGoBack);
 		return sidingRun;
 	}
 
@@ -266,7 +265,7 @@ public final class TickRunner<T extends RunTrack> {
 	 * See {@link DepotDispatcher#chooseReturnSiding}: a siding has room while the trains it holds and the ones on their way
 	 * to it are fewer than it holds at most.
 	 */
-	private long chooseReturnSiding(DepotBoard depot, long sidingId) {
+	private long chooseReturnSiding(DepotBoard depot, long sidingId, java.util.function.LongPredicate canGoBack) {
 		final SidingRun own = sidings.get(sidingId);
 		if (own == null) {
 			return sidingId;
@@ -280,6 +279,9 @@ public final class TickRunner<T extends RunTrack> {
 		// Each siding's slots and what has run today are its own depot's
 		return DepotDispatcher.chooseReturnSiding(sidingId, poolById.keySet(), eachSidingId -> poolById.get(eachSidingId).depot.duties.getSlots(eachSidingId), (eachSidingId, slot, day) -> poolById.get(eachSidingId).depot.dispatcher.hasDutyRun(eachSidingId, slot, day), millis, otherSidingId -> {
 			final SidingRun other = poolById.get(otherSidingId);
+			if (!canGoBack.test(otherSidingId)) {
+				return false;
+			}
 			if (otherSidingId == sidingId || other.siding.maxTrains >= SimDataset.UNLIMITED_TRAINS) {
 				return true;
 			}
@@ -300,7 +302,7 @@ public final class TickRunner<T extends RunTrack> {
 	 * A siding of the depot a duty is set to go back to, with the same vehicle and room, the one needing a train soonest;
 	 * the usual choice if it has none.
 	 */
-	private long chooseOrderedReturnSiding(DepotBoard depot, long sidingId, long depotId) {
+	private long chooseOrderedReturnSiding(DepotBoard depot, long sidingId, long depotId, java.util.function.LongPredicate canGoBack) {
 		final SidingRun own = sidings.get(sidingId);
 		if (own == null) {
 			return sidingId;
@@ -308,12 +310,14 @@ public final class TickRunner<T extends RunTrack> {
 		final Object poolKey = own.siding.poolKey.isEmpty() ? null : own.siding.poolKey;
 		final Map<Long, SidingRun> candidates = new TreeMap<>();
 		sidings.values().forEach(sidingRun -> {
-			if (sidingRun.depot.depotId == depotId && (sidingRun == own || poolKey != null && poolKey.equals(sidingRun.siding.poolKey)) && hasRoom(sidingRun, own)) {
+			if (sidingRun.depot.depotId == depotId && (sidingRun == own || poolKey != null && poolKey.equals(sidingRun.siding.poolKey)) && hasRoom(sidingRun, own) && canGoBack.test(sidingRun.sidingId)) {
 				candidates.put(sidingRun.sidingId, sidingRun);
 			}
 		});
 		if (candidates.isEmpty()) {
-			return chooseReturnSiding(depot, sidingId);
+			// Told rather than silently going back elsewhere (P1-B)
+			depot.returnOrderMisses.add(sidingId + " " + depotId);
+			return chooseReturnSiding(depot, sidingId, canGoBack);
 		}
 		final long first = candidates.containsKey(sidingId) ? sidingId : candidates.keySet().iterator().next();
 		return DepotDispatcher.chooseReturnSiding(first, candidates.keySet(), eachSidingId -> candidates.get(eachSidingId).depot.duties.getSlots(eachSidingId), (eachSidingId, slot, day) -> candidates.get(eachSidingId).depot.dispatcher.hasDutyRun(eachSidingId, slot, day), millis, eachSidingId -> true);

@@ -173,6 +173,35 @@ public final class EditorData {
 				turnTimesObject.add(String.valueOf(from), toObject);
 			});
 			pathObject.add("turnTimes", turnTimesObject);
+			// Trains waiting on the line with no duty: siding, slot, where and why (P1-C)
+			final JsonArray heldArray = new JsonArray();
+			depot.clientHeldTrains.forEach(entry -> {
+				final String[] parts = entry.split(" ");
+				if (parts.length >= 4) {
+					final JsonObject heldObject = new JsonObject();
+					heldObject.addProperty("siding", parts[0]);
+					heldObject.addProperty("slot", Integer.parseInt(parts[1]));
+					heldObject.addProperty("platform", platformLabel(Long.parseLong(parts[2])));
+					heldObject.addProperty("reason", parts[3]);
+					heldArray.add(heldObject);
+				}
+			});
+			depotObject.add("held", heldArray);
+			// Services set to go back to a depot whose trains couldn't: siding, depot, why (P1-B)
+			final JsonArray missesArray = new JsonArray();
+			synchronized (depot.returnOrderMisses) {
+				depot.returnOrderMisses.forEach(entry -> {
+					final String[] parts = entry.split(" ", 3);
+					if (parts.length >= 2) {
+						final JsonObject missObject = new JsonObject();
+						missObject.addProperty("siding", parts[0]);
+						missObject.addProperty("depot", parts[1]);
+						missObject.addProperty("reason", parts.length > 2 ? parts[2] : "");
+						missesArray.add(missObject);
+					}
+				});
+			}
+			depotObject.add("returnMisses", missesArray);
 			depotObject.add("path", pathObject);
 			// Which services each train of the depot runs, see DepotDuties
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));

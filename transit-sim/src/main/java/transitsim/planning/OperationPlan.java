@@ -138,10 +138,16 @@ public final class OperationPlan {
 		public final int previousDuty;
 		public final int nextDuty;
 		public final List<Phase> phases;
+		/**
+		 * The depot the train goes back to after the duty, as the runtime would send it: of the pool, the one that needs a
+		 * train next, else its own.
+		 */
+		public final long returnDepotId;
 
-		Duty(int index, long depotId, List<Trip> trips, int previousDuty, int nextDuty, List<Phase> phases) {
+		Duty(int index, long depotId, List<Trip> trips, int previousDuty, int nextDuty, List<Phase> phases, long returnDepotId) {
 			this.index = index;
 			this.depotId = depotId;
+			this.returnDepotId = returnDepotId;
 			this.trips = Collections.unmodifiableList(new ArrayList<>(trips));
 			this.previousDuty = previousDuty;
 			this.nextDuty = nextDuty;

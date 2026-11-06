@@ -1085,6 +1085,13 @@ public class TrainServer extends Train {
 	/**
 	 * The train as the component's stop rules see it ({@link TrainRules}).
 	 */
+	/**
+	 * The train's running by its depot's duties and timetables.
+	 */
+	public TrainService<PathData> getService() {
+		return service;
+	}
+
 	private class RulesTrain implements TrainRules.Train {
 
 		@Override

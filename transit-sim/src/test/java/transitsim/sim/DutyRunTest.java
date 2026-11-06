@@ -502,6 +502,22 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aSidingTheDutyHasNoWayBackToIsntChosen() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		// The pool would send it to the other siding, but no way back there was found
+		depot.returnTo = OTHER_SIDING_ID;
+
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		train[0].nextStoppingIndex = 5;
+		assertFalse(train[0].service.chooseDutyReturn(), "keeps to its own way back");
+		assertSame(tripPath, train[0].followed);
+		assertEquals(Arrays.asList(OTHER_SIDING_ID), depot.refused, "the other siding was refused for having no way back");
+	}
+
+	@Test
 	void aDutyWhoseLastServiceIsSetToGoBackToADepotAsksForItsSidings() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final TripPath<TestTrack> tripPath = twoRoutes(train);
@@ -670,7 +686,7 @@ class DutyRunTest {
 	}
 
 	@Test
-	void goesBackWhenTheNextDutyStartsElsewhere() {
+	void waitsWhereItIsWhenTheNextDutyStartsElsewhere() {
 		setSlots(
 				day(true, 1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),
 				day(false, -1, new DepotDuties.Segment(2, (int) (7 * HOUR), 0, -1))
@@ -684,7 +700,46 @@ class DutyRunTest {
 		train.nextStoppingIndex = 3;
 		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
 		train.service.updateOvernight();
+		// It stays at its platform and says why, rather than vanishing into its siding
+		assertFalse(train.returned);
+		assertEquals(TrainService.HoldReason.OTHER_PLATFORM, train.service.getOvernightHold());
+		assertEquals(3, train.service.getHeldStopId());
+		train.service.updateOvernight();
+		assertFalse(train.returned);
+
+		// Taken straight back by the player's command
+		assertTrue(train.service.recallHeld());
 		assertTrue(train.returned);
+		assertNull(train.service.getOvernightHold());
+		assertFalse(train.service.recallHeld());
+	}
+
+	@Test
+	void aTrainWaitingWithNoDutyGoesOnOnceOneStartsWhereItIs() {
+		setSlots(day(true, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)));
+		// Monday only
+		depot.slots.get(0).days.get(0).weekdays = 1;
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final FakeTrain train = newTrain(stayPath);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+		train.nextStoppingIndex = 3;
+
+		// Its slot has no duty on Tuesday
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
+		train.service.updateOvernight();
+		assertEquals(TrainService.HoldReason.NO_DUTY, train.service.getOvernightHold());
+		assertFalse(train.returned);
+
+		// A Tuesday duty from where it stands is set: it goes on with it
+		final DepotDuties.DayDuty tuesday = day(false, -1, new DepotDuties.Segment(3, (int) (7 * HOUR), 0, -1));
+		tuesday.weekdays = 1 << 1;
+		depot.slots.get(0).days.add(tuesday);
+		final TripPath<TestTrack> nextPath = addPath(0, 1, new int[]{0}, makePath(3, 2, 1, 0), stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4));
+		train.service.updateOvernight();
+		assertNull(train.service.getOvernightHold());
+		assertSame(nextPath, train.followed);
 	}
 
 	private class FakeTrain implements TrainService.Vehicle<TestTrack> {
@@ -793,6 +848,7 @@ class DutyRunTest {
 		 * The depot a duty was last set to go back to, or 0.
 		 */
 		long orderedDepot;
+		final List<Long> refused = new ArrayList<>();
 		final Set<String> reserved = new HashSet<>();
 		final Map<String, Long> runDays = new HashMap<>();
 
@@ -833,14 +889,15 @@ class DutyRunTest {
 		}
 
 		@Override
-		public long chooseReturnSiding(long sidingId) {
-			return returnTo;
-		}
-
-		@Override
-		public long chooseReturnSiding(long sidingId, long depotId) {
-			orderedDepot = depotId;
-			return returnTo;
+		public long chooseReturnSiding(long sidingId, long depotId, java.util.function.LongPredicate canGoBack) {
+			if (depotId != 0) {
+				orderedDepot = depotId;
+			}
+			if (canGoBack.test(returnTo)) {
+				return returnTo;
+			}
+			refused.add(returnTo);
+			return sidingId;
 		}
 
 		@Override

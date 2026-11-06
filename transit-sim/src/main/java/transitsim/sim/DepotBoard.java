@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.LongUnaryOperator;
 
 /**
  * A depot as its trains see it when it runs without a world: its routes, the services its trains have taken and its
@@ -55,16 +54,17 @@ public final class DepotBoard implements TrainService.Board {
 	 * Where a train of a siding goes back to after its duty, worked out by the runner that has the sidings, or null for its
 	 * own siding.
 	 */
-	LongUnaryOperator returnChooser;
+	ReturnChooser returnChooser;
+	/**
+	 * Services set to go back to a depot that had no siding to take the train, as {@code <siding> <depot>}: the train went
+	 * back by the usual choice, told rather than silently.
+	 */
+	public final List<String> returnOrderMisses = new ArrayList<>();
 	/**
 	 * Whether its trains lock their way through station throats: off when its track is shared with a depot not running by
 	 * duties ({@link transitsim.network.LockNetworks}).
 	 */
 	public boolean throatLocksAllowed = true;
-	/**
-	 * Chooses a siding of a given depot for a duty set to go back there.
-	 */
-	java.util.function.LongBinaryOperator orderedReturnChooser;
 	/**
 	 * The depot's ID in the data it was built from, or 0.
 	 */
@@ -179,12 +179,15 @@ public final class DepotBoard implements TrainService.Board {
 	}
 
 	@Override
-	public long chooseReturnSiding(long sidingId) {
-		return returnChooser == null ? sidingId : returnChooser.applyAsLong(sidingId);
+	public long chooseReturnSiding(long sidingId, long depotId, java.util.function.LongPredicate canGoBack) {
+		return returnChooser == null ? sidingId : returnChooser.choose(sidingId, depotId, canGoBack);
 	}
 
-	@Override
-	public long chooseReturnSiding(long sidingId, long depotId) {
-		return orderedReturnChooser == null ? chooseReturnSiding(sidingId) : orderedReturnChooser.applyAsLong(sidingId, depotId);
+	/**
+	 * See {@link TrainService.Board#chooseReturnSiding}.
+	 */
+	@FunctionalInterface
+	interface ReturnChooser {
+		long choose(long sidingId, long depotId, java.util.function.LongPredicate canGoBack);
 	}
 }

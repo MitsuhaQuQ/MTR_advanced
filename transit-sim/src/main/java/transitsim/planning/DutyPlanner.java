@@ -1,5 +1,6 @@
 package transitsim.planning;
 
+import transitsim.plan.DepotDuties;
 import transitsim.planning.OperationPlan.Duty;
 import transitsim.planning.OperationPlan.Issue;
 import transitsim.planning.OperationPlan.IssueType;
@@ -39,6 +40,12 @@ public final class DutyPlanner {
 	 */
 	private final Map<Trip, TimetableService> ordered = new IdentityHashMap<>();
 	private final Map<Long, List<TripStop>> platformStops = new TreeMap<>();
+	/**
+	 * By pool, the trains done with their duties and not yet sent to a siding: the runtime sends each, when it reaches its
+	 * last stop, to the siding of its pool whose next duty of the day leaves soonest (DepotDispatcher.chooseReturnSiding),
+	 * which here is the siding the pool next sends a train out of. Filled as the week runs.
+	 */
+	private final Map<String, List<Returning>> returning = new TreeMap<>();
 
 	private DutyPlanner(OperationNetwork network, long maxLayoverMillis) {
 		this.network = network;
@@ -78,7 +85,7 @@ public final class DutyPlanner {
 					appendStops(stops, service, day * OperationTime.DAY_MILLIS + service.firstArrivalMillis);
 					final Trip trip = new Trip(service.id, stops);
 					trips.add(trip);
-					if (service.startDepots != null || service.endsDuty) {
+					if (service.startDepots != null || service.endsDuty || service.returnDepots != null) {
 						ordered.put(trip, service);
 					}
 				}
@@ -152,11 +159,18 @@ public final class DutyPlanner {
 	private WeekResult runWeek(WeekStart start) {
 		final WeekResult result = new WeekResult();
 		platformStops.clear();
+		returning.clear();
 		final Map<Long, List<Long>> depotReady = new TreeMap<>();
 		network.depots().forEach(depot -> {
+			// The trains in the siding as the week before left them, which may have gone back to other sidings of the pool
 			final List<Long> ready = new ArrayList<>();
-			for (int i = 0; i < depot.trainCount - start.trainsOut(depot.id); i++) {
-				ready.add(i < start.lateReturns(depot.id).size() ? start.lateReturns(depot.id).get(i) : Long.MIN_VALUE);
+			final List<Long> stocked = start.stock.get(depot.id);
+			if (stocked == null) {
+				for (int i = 0; i < depot.trainCount; i++) {
+					ready.add(Long.MIN_VALUE);
+				}
+			} else {
+				ready.addAll(stocked);
 			}
 			ready.sort(Comparator.naturalOrder());
 			depotReady.put(depot.id, ready);
@@ -166,9 +180,15 @@ public final class DutyPlanner {
 
 		for (final Trip trip : trips) {
 			retireIdleTrains(open, depotReady, trip.startMillis(), result);
+			landBeforeDay(trip.startMillis(), depotReady);
 			// Set on the running diagram: a trip a train has to come out of a depot for, and one after which it goes back
 			final TimetableService order = ordered.get(trip);
 			final Set<Long> startDepots = order == null ? null : order.startDepots;
+			// Going back to a depot with no siding planned here: no train runs it, rather than one going back elsewhere (P1-B)
+			if (order != null && order.returnDepots != null && order.returnDepots.isEmpty()) {
+				result.uncovered.add(trip);
+				continue;
+			}
 			OpenDuty duty = startDepots == null ? findTrainInService(open, trip) : null;
 			if (duty != null) {
 				duty.add(trip, network);
@@ -184,14 +204,19 @@ public final class DutyPlanner {
 				}
 			}
 			if (duty != null && order != null && order.endsDuty) {
-				retire(open, duty, depotReady, result);
+				retire(open, duty, result, order.returnDepots);
 			}
 			updatePeak(result, depotReady, trip.startMillis());
 		}
 
 		retireIdleTrains(open, depotReady, OperationTime.WEEK_MILLIS, result);
+		landBeforeDay(Long.MAX_VALUE, depotReady);
 		result.carried.addAll(open);
-		depotReady.forEach((depotId, ready) -> ready.stream().filter(time -> time > OperationTime.WEEK_MILLIS).forEach(time -> result.lateReturns.add(new long[]{depotId, time - OperationTime.WEEK_MILLIS})));
+		depotReady.forEach((depotId, ready) -> {
+			final List<Long> stock = new ArrayList<>();
+			ready.forEach(time -> stock.add(time > OperationTime.WEEK_MILLIS ? time - OperationTime.WEEK_MILLIS : Long.MIN_VALUE));
+			result.stock.put(depotId, stock);
+		});
 		return result;
 	}
 
@@ -207,7 +232,7 @@ public final class DutyPlanner {
 		for (int i = 0; i < open.size(); ) {
 			final OpenDuty duty = open.get(i);
 			if (duty.readyMillis + maxLayoverMillis < nowMillis) {
-				retire(open, duty, depotReady, result);
+				retire(open, duty, result, null);
 			} else {
 				i++;
 			}
@@ -215,16 +240,70 @@ public final class DutyPlanner {
 	}
 
 	/**
-	 * Sends a train back to its depot, where it is ready again once it has run there.
+	 * Ends a train's duty: it goes back to a siding of its pool, which one decided as the runtime decides it (P1-B), when
+	 * the pool next sends a train out ({@link #takeFromDepot}) or, if none does that day, to its own.
+	 *
+	 * @param allowed the sidings it is set to go back to, or null for any of its pool
 	 */
-	private void retire(List<OpenDuty> open, OpenDuty duty, Map<Long, List<Long>> depotReady, WeekResult result) {
+	private void retire(List<OpenDuty> open, OpenDuty duty, WeekResult result, Set<Long> allowed) {
 		open.remove(duty);
-		final long backMillis = Math.max(network.depot(duty.depotId).backMillis(duty.platformId), 0);
-		final List<Long> ready = depotReady.get(duty.depotId);
+		result.finished.add(duty);
+		// Of the depot set, only the sidings of the same pool take the train, as at runtime; with none it goes back as usual
+		final String poolKey = network.depot(duty.depotId).poolKey;
+		Set<Long> sameVehicle = null;
+		if (allowed != null) {
+			sameVehicle = new java.util.TreeSet<>();
+			for (final long depotId : allowed) {
+				if (depotId == duty.depotId || network.depot(depotId).poolKey.equals(poolKey)) {
+					sameVehicle.add(depotId);
+				}
+			}
+			if (sameVehicle.isEmpty()) {
+				sameVehicle = null;
+			}
+		}
+		final long fallback = sameVehicle == null || sameVehicle.contains(duty.depotId) ? duty.depotId : sameVehicle.iterator().next();
+		returning.computeIfAbsent(poolKey, key -> new ArrayList<>()).add(new Returning(duty, sameVehicle, fallback));
+	}
+
+	/**
+	 * The train is back in the siding once it has run there from its last stop.
+	 */
+	private void land(Returning train, long depotId, Map<Long, List<Long>> depotReady) {
+		final OpenDuty duty = train.duty;
+		final long backMillis = Math.max(network.depot(depotId).backMillis(duty.platformId), 0);
+		final List<Long> ready = depotReady.get(depotId);
 		ready.add(duty.readyMillis + backMillis);
 		ready.sort(Comparator.naturalOrder());
 		duty.returnDepotAtMillis = duty.readyMillis + backMillis;
-		result.finished.add(duty);
+		duty.returnDepotId = depotId;
+	}
+
+	/**
+	 * Trains that reached their last stop on an earlier day than this, with no siding of their pool sending a train out
+	 * after them that day, went back to their own (or the first of the depot set) then.
+	 */
+	private void landBeforeDay(long nowMillis, Map<Long, List<Long>> depotReady) {
+		final long day = nowMillis == Long.MAX_VALUE ? Long.MAX_VALUE : Math.floorDiv(nowMillis, OperationTime.DAY_MILLIS);
+		returning.values().forEach(trains -> trains.removeIf(train -> {
+			if (Math.floorDiv(train.duty.endMillis, OperationTime.DAY_MILLIS) < day) {
+				land(train, train.fallback, depotReady);
+				return true;
+			}
+			return false;
+		}));
+	}
+
+	/**
+	 * Whether a train coming back to the pool may be sent to this siding, as the runtime sends it: the siding needs a train
+	 * before it reached its last stop, on the same day, is one it may go back to, and has room (its own always has, and so
+	 * does one with no limit, as one whose fleet is -1 at runtime).
+	 */
+	private boolean maySendTo(Returning train, OperationNetwork.Depot depot, long leaveMillis, Map<Long, List<Long>> depotReady) {
+		final OpenDuty duty = train.duty;
+		return duty.endMillis <= leaveMillis && Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS) == Math.floorDiv(leaveMillis, OperationTime.DAY_MILLIS)
+				&& (train.allowed == null || train.allowed.contains(depot.id))
+				&& (depot.id == duty.depotId || depot.trainCount >= DepotDuties.MAX_SLOTS || depotReady.get(depot.id).size() < depot.trainCount);
 	}
 
 	private OpenDuty findTrainInService(List<OpenDuty> open, Trip trip) {
@@ -273,8 +352,16 @@ public final class DutyPlanner {
 				continue;
 			}
 			final long linkMillis = depot.linkMillis(trip.firstPlatform());
+			if (linkMillis == OperationNetwork.UNREACHABLE || linkMillis >= bestLinkMillis) {
+				continue;
+			}
+			final long leaveMillis = trip.startMillis() - linkMillis;
 			final List<Long> ready = depotReady.get(depot.id);
-			if (linkMillis != OperationNetwork.UNREACHABLE && linkMillis < bestLinkMillis && !ready.isEmpty() && ready.get(0) + linkMillis <= trip.startMillis()) {
+			// A train in the siding, or one of the pool coming back that the runtime sends here, being where a train is needed
+			// next, and that is back in time
+			final boolean hasTrain = !ready.isEmpty() && ready.get(0) <= leaveMillis || returning.getOrDefault(depot.poolKey, Collections.emptyList()).stream()
+					.anyMatch(train -> maySendTo(train, depot, leaveMillis, depotReady) && train.duty.readyMillis + Math.max(depot.backMillis(train.duty.platformId), 0) <= leaveMillis);
+			if (hasTrain) {
 				bestDepot = depot;
 				bestLinkMillis = linkMillis;
 			}
@@ -282,8 +369,20 @@ public final class DutyPlanner {
 		if (bestDepot == null) {
 			return null;
 		}
-		depotReady.get(bestDepot.id).remove(0);
-		return new OpenDuty(bestDepot.id, bestLinkMillis);
+		// Every train of the pool coming back before this one leaves goes to this siding, needing a train soonest
+		final OperationNetwork.Depot chosen = bestDepot;
+		final long leaveMillis = trip.startMillis() - bestLinkMillis;
+		final List<Returning> coming = returning.getOrDefault(chosen.poolKey, Collections.emptyList());
+		coming.sort(Comparator.comparingLong(train -> train.duty.endMillis));
+		coming.removeIf(train -> {
+			if (maySendTo(train, chosen, leaveMillis, depotReady)) {
+				land(train, chosen.id, depotReady);
+				return true;
+			}
+			return false;
+		});
+		depotReady.get(chosen.id).remove(0);
+		return new OpenDuty(chosen.id, bestLinkMillis);
 	}
 
 	/**
@@ -353,6 +452,7 @@ public final class DutyPlanner {
 		followingDuties.stream().filter(duty -> duty.carriedFrom != null).forEach(duty -> {
 			if (duty.trips.isEmpty()) {
 				duty.carriedFrom.returnDepotAtMillis = duty.returnDepotAtMillis + OperationTime.WEEK_MILLIS;
+				duty.carriedFrom.returnDepotId = duty.returnDepotId;
 			} else {
 				// A duty carried into the following week whose first trip or whose duty it came from isn't one of this week's
 				// is left as one that doesn't carry on
@@ -370,7 +470,7 @@ public final class DutyPlanner {
 			final int nextIndex = nextDuties.getOrDefault(duty, OperationPlan.NONE);
 			final long nextStartMillis = nextIndex == OperationPlan.NONE ? Long.MIN_VALUE : openDuties.get(nextIndex).trips.get(0).startMillis() + OperationTime.WEEK_MILLIS;
 			final long nextPlatform = nextIndex == OperationPlan.NONE ? 0 : openDuties.get(nextIndex).trips.get(0).firstPlatform();
-			duties.add(new Duty(indices.get(duty), duty.depotId, duty.trips, previousDuties.getOrDefault(duty, OperationPlan.NONE), nextIndex, buildPhases(duty, previousDuties.containsKey(duty), nextIndex != OperationPlan.NONE, nextStartMillis, nextPlatform)));
+			duties.add(new Duty(indices.get(duty), duty.depotId, duty.trips, previousDuties.getOrDefault(duty, OperationPlan.NONE), nextIndex, buildPhases(duty, previousDuties.containsKey(duty), nextIndex != OperationPlan.NONE, nextStartMillis, nextPlatform), duty.returnDepotId == 0 ? duty.depotId : duty.returnDepotId));
 		});
 
 		checkPlatformOccupancy(duties, planIssues);
@@ -453,6 +553,10 @@ public final class DutyPlanner {
 		private long endMillis;
 		private long readyMillis;
 		private long returnDepotAtMillis;
+		/**
+		 * The depot it went back to, or 0 while it hasn't.
+		 */
+		private long returnDepotId;
 
 		private OpenDuty(long depotId, long leaveMillis) {
 			this(depotId, leaveMillis, null);
@@ -480,18 +584,37 @@ public final class DutyPlanner {
 		}
 	}
 
+	/**
+	 * A train done with its duty and on its way back, not yet sent to a siding.
+	 */
+	private static final class Returning {
+
+		private final OpenDuty duty;
+		private final Set<Long> allowed;
+		private final long fallback;
+
+		private Returning(OpenDuty duty, Set<Long> allowed, long fallback) {
+			this.duty = duty;
+			this.allowed = allowed;
+			this.fallback = fallback;
+		}
+	}
+
 	private static final class WeekResult {
 
 		private final List<OpenDuty> finished = new ArrayList<>();
 		private final List<OpenDuty> carried = new ArrayList<>();
-		private final List<long[]> lateReturns = new ArrayList<>();
+		/**
+		 * Each depot's trains at the end of the week, when each is ready the next: in it already, or back during it.
+		 */
+		private final Map<Long, List<Long>> stock = new TreeMap<>();
 		private final List<Trip> uncovered = new ArrayList<>();
 		private int peakTrains;
 
 		private WeekStart nextStart() {
 			final WeekStart start = new WeekStart();
 			start.carried.addAll(carried);
-			lateReturns.forEach(lateReturn -> start.lateReturnsByDepot.computeIfAbsent(lateReturn[0], key -> new ArrayList<>()).add(lateReturn[1]));
+			stock.forEach((depotId, times) -> start.stock.put(depotId, new ArrayList<>(times)));
 			return start;
 		}
 	}
@@ -499,20 +622,18 @@ public final class DutyPlanner {
 	private static final class WeekStart {
 
 		private final List<OpenDuty> carried = new ArrayList<>();
-		private final Map<Long, List<Long>> lateReturnsByDepot = new TreeMap<>();
-
-		private int trainsOut(long depotId) {
-			return (int) carried.stream().filter(duty -> duty.depotId == depotId).count();
-		}
-
-		private List<Long> lateReturns(long depotId) {
-			return lateReturnsByDepot.getOrDefault(depotId, new ArrayList<>());
-		}
+		/**
+		 * Each depot's trains as the week before left them, or none for every depot full.
+		 */
+		private final Map<Long, List<Long>> stock = new TreeMap<>();
 
 		private String signature() {
 			final List<String> parts = new ArrayList<>();
 			carried.forEach(duty -> parts.add(duty.depotId + ":" + duty.platformId + ":" + duty.readyMillis));
-			lateReturnsByDepot.forEach((depotId, times) -> times.forEach(time -> parts.add(depotId + ":" + time)));
+			stock.forEach((depotId, times) -> {
+				parts.add(depotId + "#" + times.size());
+				times.stream().filter(time -> time != Long.MIN_VALUE).forEach(time -> parts.add(depotId + ":" + time));
+			});
 			parts.sort(Comparator.naturalOrder());
 			return String.join(",", parts);
 		}

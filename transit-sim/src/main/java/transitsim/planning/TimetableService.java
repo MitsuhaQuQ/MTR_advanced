@@ -25,6 +25,11 @@ public final class TimetableService {
 	 * Whether the train goes back to the depot after it, as set on the running diagram, rather than running on.
 	 */
 	public boolean endsDuty;
+	/**
+	 * For a service the train goes back after, the sidings of the depot set on the running diagram it may go back to, or
+	 * null for any of its pool; empty when that depot has no siding planned here, so no train runs it.
+	 */
+	public Set<Long> returnDepots;
 
 	public TimetableService(long id, long routeId, int daysMask, long firstArrivalMillis, boolean blank, List<Stop> stops) {
 		if (stops.isEmpty()) {

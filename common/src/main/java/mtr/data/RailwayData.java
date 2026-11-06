@@ -643,6 +643,23 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				}
 			}
 		}
+		// Trains waiting on the line with no duty and orders to go back that couldn't be kept, for the advanced editor: sent
+		// when they change, and now and then while there are any, for players who joined since
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0) {
+			final boolean resend = world.getGameTime() % (AUTO_DUTIES_CHECK_TICKS * 12) == 0;
+			for (final Depot depot : depots) {
+				final List<String> held = mtr.packet.HeldTrains.collect(depot, sidings, dataCache);
+				final List<String> misses;
+				synchronized (depot.returnOrderMisses) {
+					misses = new ArrayList<>(depot.returnOrderMisses);
+				}
+				if (depot.runProblemsChanged || !held.equals(depot.clientHeldTrains) || resend && (!held.isEmpty() || !misses.isEmpty())) {
+					depot.runProblemsChanged = false;
+					depot.clientHeldTrains = held;
+					mtr.packet.HeldTrains.sendS2C(world, depot.id, held, misses);
+				}
+			}
+		}
 		// Nodes the world lost while their rails were kept, as when the server stopped before saving the world
 		railNodeRepair.tick(world, rails);
 		// Track laid or taken away in this tick is saved now, the rest with the next save

@@ -40,6 +40,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
+import java.util.function.LongPredicate;
 import java.util.stream.Collectors;
 
 /**
@@ -127,6 +128,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private static final int DETOUR_MIN_BLOCKS = 300;
 	private static final int DETOUR_FACTOR = 5;
+	private static final int MAX_RUN_PROBLEMS = 16;
 	/**
 	 * Added to the measured time of a change of platform, for stopping and starting.
 	 */
@@ -152,6 +154,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * than not known yet.
 	 */
 	public volatile boolean turnTimesMeasured;
+	/**
+	 * The last few services set to go back to a depot whose train couldn't, see {@link #noteReturnOrderMissed}; on the
+	 * clients as sent.
+	 */
+	public final List<String> returnOrderMisses = new ArrayList<>();
+	/**
+	 * Whether the problems trains met as they ran changed since they were last sent to the clients.
+	 */
+	public volatile boolean runProblemsChanged;
+	/**
+	 * The depot's trains waiting on the line with no duty, as last sent ({@link mtr.packet.HeldTrains}): on the server
+	 * what the clients have, on the clients as sent.
+	 */
+	public volatile List<String> clientHeldTrains = Collections.emptyList();
 	/**
 	 * The depots of the depot's planning unit ({@link LineDuties}), itself among them, and the unit's key, or empty if it
 	 * doesn't plan by line; worked out on the server thread with the auto duties and the paths, not saved. Its trains go back
@@ -809,7 +825,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	@Override
-	public long chooseReturnSiding(long sidingId) {
+	public long chooseReturnSiding(long sidingId, long depotId, LongPredicate canGoBack) {
+		return depotId == 0 ? choosePoolReturnSiding(sidingId, canGoBack) : chooseOrderedReturnSiding(sidingId, depotId, canGoBack);
+	}
+
+	private long choosePoolReturnSiding(long sidingId, LongPredicate canGoBack) {
 		final DepotDuties runDuties = getRunDuties();
 		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
 		if (runDuties == null || siding == null) {
@@ -827,6 +847,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			return depot != null && depot.hasDutyRun(eachSidingId, slot, day);
 		}, System.currentTimeMillis(), otherSidingId -> {
 			final Siding other = poolById.get(otherSidingId);
+			// Only a siding the duty has a way back to
+			if (!canGoBack.test(otherSidingId)) {
+				return false;
+			}
 			// Running by duties, a siding holds its fleet, however long its rails
 			if (otherSidingId == sidingId || other.getFleetSize() < 0) {
 				return true;
@@ -837,27 +861,44 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		});
 	}
 
-	@Override
-	public long chooseReturnSiding(long sidingId, long depotId) {
+	private long chooseOrderedReturnSiding(long sidingId, long depotId, LongPredicate canGoBack) {
 		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
 		final Depot orderDepot = dataCache == null ? null : dataCache.depotIdMap.get(depotId);
 		if (siding == null || orderDepot == null) {
-			return chooseReturnSiding(sidingId);
+			noteReturnOrderMissed(sidingId, depotId, orderDepot == null ? "the depot no longer exists" : "the siding no longer exists");
+			return choosePoolReturnSiding(sidingId, canGoBack);
 		}
 		final Map<Long, Siding> candidates = new TreeMap<>();
 		orderDepot.pools.getOrDefault(siding.getPoolKey(), Collections.emptyList()).forEach(other -> {
-			if (other == siding || other.getFleetSize() < 0 || other.getTrainCount() + other.getPendingArrivals() + countReturningTo(other.id) < other.getFleetSize()) {
+			if (canGoBack.test(other.id) && (other == siding || other.getFleetSize() < 0 || other.getTrainCount() + other.getPendingArrivals() + countReturningTo(other.id) < other.getFleetSize())) {
 				candidates.put(other.id, other);
 			}
 		});
 		if (candidates.isEmpty()) {
-			return chooseReturnSiding(sidingId);
+			// Told rather than silently going back elsewhere (P1-B)
+			noteReturnOrderMissed(sidingId, depotId, "no siding of the same vehicle with room and a way back");
+			return choosePoolReturnSiding(sidingId, canGoBack);
 		}
 		final long first = candidates.containsKey(sidingId) ? sidingId : candidates.keySet().iterator().next();
 		return DepotDispatcher.chooseReturnSiding(first, candidates.keySet(), this::getSlotsOf, (eachSidingId, slot, day) -> {
 			final Depot depot = dataCache.sidingIdToDepot.get(eachSidingId);
 			return depot != null && depot.hasDutyRun(eachSidingId, slot, day);
 		}, System.currentTimeMillis(), eachSidingId -> true);
+	}
+
+	/**
+	 * A service set to go back to a depot whose train couldn't: in the log, and kept for the advanced editor's sync panel
+	 * (the last few, as {@code <siding> <depot> <reason>}).
+	 */
+	private void noteReturnOrderMissed(long sidingId, long depotId, String reason) {
+		System.out.println("Minecraft Transit Railway: a train of siding " + sidingId + " set to go back to depot " + depotId + " couldn't (" + reason + ") and goes back to its own pool instead");
+		synchronized (returnOrderMisses) {
+			returnOrderMisses.add(sidingId + " " + depotId + " " + reason);
+			while (returnOrderMisses.size() > MAX_RUN_PROBLEMS) {
+				returnOrderMisses.remove(0);
+			}
+		}
+		runProblemsChanged = true;
 	}
 
 	/**
@@ -1465,7 +1506,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				lastPlatforms.add(route.getLastPlatformId());
 			});
 			final List<DutyGenerator.SidingInput> sidingInputs = new ArrayList<>();
-			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, dataCache), id)));
+			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> {
+				final DutyGenerator.SidingInput sidingInput = new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, dataCache), id);
+				sidingInput.poolKey = siding.getPoolKey();
+				sidingInputs.add(sidingInput);
+			});
 			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));

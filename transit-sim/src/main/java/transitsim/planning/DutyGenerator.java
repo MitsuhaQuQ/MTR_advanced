@@ -146,18 +146,32 @@ public final class DutyGenerator {
 						startDepots.add(siding.sidingId);
 					}
 				});
+				// A depot set by the player is kept to: with no siding of it here the service has no train, rather than one
+				// from anywhere (P1-A)
 				if (startDepots.isEmpty()) {
 					result.issues.add("DEPLOY_DEPOT " + chain.deployDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
-					sidings.forEach(siding -> startDepots.add(siding.sidingId));
 				}
 				timetableService.startDepots = startDepots;
 			}
 			timetableService.endsDuty = chain.endsDuty;
+			// Set to go back to a depot: to its sidings only, and with none of them here, no train runs it (P1-B)
+			if (chain.endsDuty && chain.returnDepot > 0) {
+				final Set<Long> returnDepots = new TreeSet<>();
+				sidings.forEach(siding -> {
+					if (siding.depotId == chain.returnDepot) {
+						returnDepots.add(siding.sidingId);
+					}
+				});
+				if (returnDepots.isEmpty()) {
+					result.issues.add("RETURN_DEPOT " + chain.returnDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
+				}
+				timetableService.returnDepots = returnDepots;
+			}
 			timetableServices.add(timetableService);
 		}
 
 		final OperationNetwork network = new OperationNetwork();
-		sidings.forEach(siding -> network.addDepot(siding.sidingId, siding.maxTrains < 0 ? UNLIMITED_TRAINS : Math.min(siding.maxTrains, UNLIMITED_TRAINS)));
+		sidings.forEach(siding -> network.addDepot(siding.sidingId, siding.maxTrains < 0 ? UNLIMITED_TRAINS : Math.min(siding.maxTrains, UNLIMITED_TRAINS), siding.poolKey));
 		final Set<Long> firstPlatforms = new TreeSet<>();
 		final Set<Long> lastPlatforms = new TreeSet<>();
 		timetableServices.forEach(service -> {
@@ -271,6 +285,7 @@ public final class DutyGenerator {
 			}
 			chain.deployDepot = service.deployStop >= 0 ? service.deployDepot : -1;
 			chain.endsDuty = current.returnStop >= 0;
+			chain.returnDepot = current.returnStop >= 0 ? current.returnDepot : -1;
 			chains.add(chain);
 		});
 		chains.sort(Comparator.comparingLong((Chain chain) -> chain.startMillis).thenComparingLong(chain -> chain.segments.get(0).routeId));
@@ -336,6 +351,10 @@ public final class DutyGenerator {
 				for (final int day : pieceDays) {
 					days.get(day).put(slot, pieces.get(day));
 				}
+				// Going back to another siding of its pool, as the runtime would send it
+				if (duty.returnDepotId != siding.sidingId && duty.nextDuty == OperationPlan.NONE && !pieceDays.isEmpty()) {
+					result.returnSidings.put(siding.sidingId + "/" + slot + "/" + pieceDays.get(pieceDays.size() - 1), duty.returnDepotId);
+				}
 			}
 
 			final int slotCount = days.stream().mapToInt(day -> day.isEmpty() ? 0 : Collections.max(day.keySet()) + 1).max().orElse(0);
@@ -380,6 +399,10 @@ public final class DutyGenerator {
 		 */
 		private long deployDepot = -1;
 		private boolean endsDuty;
+		/**
+		 * The depot the train goes back to after it, 0 for any, or -1 if it doesn't end the duty.
+		 */
+		private long returnDepot = -1;
 		private long startMillis = -1;
 		private final List<DepotDuties.Segment> segments = new ArrayList<>();
 		private final List<TimetableService.Stop> stops = new ArrayList<>();
@@ -553,7 +576,11 @@ public final class DutyGenerator {
 
 	public static int neededTrains(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
 		final List<SidingInput> unlimited = new ArrayList<>();
-		sidings.forEach(siding -> unlimited.add(new SidingInput(siding.sidingId, -1, siding.links)));
+		sidings.forEach(siding -> {
+			final SidingInput copy = new SidingInput(siding.sidingId, -1, siding.links, siding.depotId);
+			copy.poolKey = siding.poolKey;
+			unlimited.add(copy);
+		});
 		return generate(services, unlimited, stationOf, maxLayoverMillis, inputs).trains;
 	}
 
@@ -574,6 +601,11 @@ public final class DutyGenerator {
 		 * The depot of the siding, for the services set to be sent out of a depot, or 0 if not known.
 		 */
 		public final long depotId;
+		/**
+		 * The sidings whose trains run each other's duties and go back to whichever needs a train next, as one pool of the
+		 * runtime (same planning unit and vehicle); null for a pool of its own.
+		 */
+		public String poolKey;
 
 		public SidingInput(long sidingId, int maxTrains) {
 			this(sidingId, maxTrains, null);
@@ -600,5 +632,10 @@ public final class DutyGenerator {
 		 * Trips no train was free for, which the sidings need more trains to run.
 		 */
 		public int uncovered;
+		/**
+		 * Where a duty's train goes back as the runtime would send it, when not to its own siding: siding/slot/weekday
+		 * (0 Monday) of the duty's last day → the siding. Worked out, not kept; the runtime chooses as it runs.
+		 */
+		public final Map<String, Long> returnSidings = new TreeMap<>();
 	}
 }
