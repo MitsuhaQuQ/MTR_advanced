@@ -356,6 +356,13 @@ public final class RoutePaths {
 		 * @param graph    the network already made for the depot, or null to make one when needed
 		 * @param vehicles the vehicles running each route ({@link RoutePaths#getVehicles(RailwayData)})
 		 */
+		/**
+		 * @return the vehicles the route is timed with
+		 */
+		public Collection<PathTiming.Vehicle> getVehicles(Route route) {
+			return RoutePaths.getVehicles(vehicles, route);
+		}
+
 		public Search(RoutePaths routePaths, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, PathBoundaries boundaries, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
 			this.routePaths = routePaths;
 			this.rails = rails;

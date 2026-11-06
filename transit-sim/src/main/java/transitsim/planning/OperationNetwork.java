@@ -38,6 +38,14 @@ public final class OperationNetwork {
 		return this;
 	}
 
+	/**
+	 * How long a train takes from a platform back to the depot, as measured on the rails.
+	 */
+	public OperationNetwork addDepotBackLink(long depotId, long platformId, long millis) {
+		depots.get(depotId).backLinks.put(platformId, millis);
+		return this;
+	}
+
 	public long turnaroundMillis(long platformId) {
 		return turnaroundMillis.getOrDefault(platformId, 0L);
 	}
@@ -63,6 +71,7 @@ public final class OperationNetwork {
 		public final long id;
 		public final int trainCount;
 		private final Map<Long, Long> links = new TreeMap<>();
+		private final Map<Long, Long> backLinks = new TreeMap<>();
 
 		private Depot(long id, int trainCount) {
 			this.id = id;
@@ -71,6 +80,22 @@ public final class OperationNetwork {
 
 		public long linkMillis(long platformId) {
 			return links.getOrDefault(platformId, UNREACHABLE);
+		}
+
+		/**
+		 * @return how long a train takes from the platform back to the depot: measured, or the way out from there, or, with
+		 * neither, the longest way out the depot has, rather than nothing as if the train were back the moment it arrived
+		 */
+		public long backMillis(long platformId) {
+			final Long back = backLinks.get(platformId);
+			if (back != null) {
+				return back;
+			}
+			final Long out = links.get(platformId);
+			if (out != null) {
+				return out;
+			}
+			return links.values().stream().mapToLong(Long::longValue).max().orElse(0);
 		}
 	}
 }

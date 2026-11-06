@@ -219,11 +219,11 @@ public final class DutyPlanner {
 	 */
 	private void retire(List<OpenDuty> open, OpenDuty duty, Map<Long, List<Long>> depotReady, WeekResult result) {
 		open.remove(duty);
-		final long linkMillis = network.depot(duty.depotId).linkMillis(duty.platformId);
+		final long backMillis = Math.max(network.depot(duty.depotId).backMillis(duty.platformId), 0);
 		final List<Long> ready = depotReady.get(duty.depotId);
-		ready.add(duty.readyMillis + Math.max(linkMillis, 0));
+		ready.add(duty.readyMillis + backMillis);
 		ready.sort(Comparator.naturalOrder());
-		duty.returnDepotAtMillis = duty.readyMillis + Math.max(linkMillis, 0);
+		duty.returnDepotAtMillis = duty.readyMillis + backMillis;
 		result.finished.add(duty);
 	}
 
@@ -232,7 +232,10 @@ public final class DutyPlanner {
 		OpenDuty missed = null;
 		for (final OpenDuty duty : open) {
 			final long connectionMillis = network.connectionMillis(duty.platformId, trip.firstPlatform());
-			final boolean reachable = connectionMillis != OperationNetwork.UNREACHABLE && duty.readyMillis + connectionMillis <= trip.startMillis();
+			// A train staying on the line overnight goes on the next day from the platform it stopped at: the next day's
+			// duty starts on the same track, so a change of platform is only within one operating day
+			final boolean overnightMove = duty.platformId != trip.firstPlatform() && Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS) != Math.floorDiv(trip.startMillis(), OperationTime.DAY_MILLIS);
+			final boolean reachable = !overnightMove && connectionMillis != OperationNetwork.UNREACHABLE && duty.readyMillis + connectionMillis <= trip.startMillis();
 			final boolean samePlatform = duty.platformId == trip.firstPlatform();
 			if (reachable && (!samePlatform || isPlatformFree(duty.platformId, duty.endMillis, trip.startMillis())) && (best == null || duty.readyMillis > best.readyMillis)) {
 				best = duty;

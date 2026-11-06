@@ -100,6 +100,34 @@ public final class DutyGenerator {
 	 * @param maxLayoverMillis how long a train may wait on the line for its next service
 	 */
 	public static Result generate(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis) {
+		return generate(services, sidings, stationOf, maxLayoverMillis, PlanInputs.NONE);
+	}
+
+	/**
+	 * What path generation measured on the rails, for planning by it rather than by estimates (decoupling document,
+	 * plans by measured data): how long each change of platform within a station takes, where the rails allow one at
+	 * all, and how long each siding's trains take back from a platform.
+	 */
+	public static final class PlanInputs {
+
+		public static final PlanInputs NONE = new PlanInputs(null, Collections.emptyMap());
+		/**
+		 * From platform → to platform of the same station → milliseconds; a pair left out has no way between. Null to
+		 * estimate every change of platform within a station as possible.
+		 */
+		public final Map<Long, Map<Long, Long>> turnTimes;
+		/**
+		 * Siding → platform → milliseconds back to the siding.
+		 */
+		public final Map<Long, Map<Long, Long>> backLinks;
+
+		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks) {
+			this.turnTimes = turnTimes;
+			this.backLinks = backLinks == null ? Collections.emptyMap() : backLinks;
+		}
+	}
+
+	public static Result generate(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
 		final Result result = new Result();
 		if (services.isEmpty() || sidings.isEmpty()) {
 			return result;
@@ -161,12 +189,22 @@ public final class DutyGenerator {
 				}
 			});
 		});
+		// The way back to each siding, as measured from each platform
+		sidings.forEach(siding -> inputs.backLinks.getOrDefault(siding.sidingId, Collections.emptyMap()).forEach((platformId, millis) -> network.addDepotBackLink(siding.sidingId, platformId, millis)));
 		lastPlatforms.forEach(lastPlatform -> {
 			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS);
 			final Long station = stationOf.get(lastPlatform);
 			firstPlatforms.forEach(firstPlatform -> {
 				if (firstPlatform.longValue() != lastPlatform && station != null && station.equals(stationOf.get(firstPlatform))) {
-					network.addConnection(lastPlatform, firstPlatform, TURN_BACK_MILLIS);
+					if (inputs.turnTimes == null) {
+						network.addConnection(lastPlatform, firstPlatform, TURN_BACK_MILLIS);
+					} else {
+						// Measured on the rails; a pair not measured has no way between
+						final Long millis = inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap()).get(firstPlatform);
+						if (millis != null) {
+							network.addConnection(lastPlatform, firstPlatform, millis);
+						}
+					}
 				}
 			});
 		});
@@ -454,7 +492,11 @@ public final class DutyGenerator {
 	 * {@link #generate}'s.
 	 */
 	public static Result generateSpread(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis) {
-		final Result all = generate(services, sidings, stationOf, maxLayoverMillis);
+		return generateSpread(services, sidings, stationOf, maxLayoverMillis, PlanInputs.NONE);
+	}
+
+	public static Result generateSpread(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
+		final Result all = generate(services, sidings, stationOf, maxLayoverMillis, inputs);
 		if (all.uncovered == 0 || sidings.stream().anyMatch(siding -> siding.maxTrains < 0)) {
 			return all;
 		}
@@ -490,7 +532,7 @@ public final class DutyGenerator {
 						}
 					}
 				}
-				final Result result = generate(kept, sidings, stationOf, maxLayoverMillis);
+				final Result result = generate(kept, sidings, stationOf, maxLayoverMillis, inputs);
 				if (result.uncovered == 0) {
 					result.uncovered = left;
 					return result;
@@ -506,9 +548,13 @@ public final class DutyGenerator {
 	 * they have
 	 */
 	public static int neededTrains(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis) {
+		return neededTrains(services, sidings, stationOf, maxLayoverMillis, PlanInputs.NONE);
+	}
+
+	public static int neededTrains(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
 		final List<SidingInput> unlimited = new ArrayList<>();
 		sidings.forEach(siding -> unlimited.add(new SidingInput(siding.sidingId, -1, siding.links)));
-		return generate(services, unlimited, stationOf, maxLayoverMillis).trains;
+		return generate(services, unlimited, stationOf, maxLayoverMillis, inputs).trains;
 	}
 
 	public static final class SidingInput {

@@ -308,6 +308,91 @@ class DutyGeneratorTest {
 		}
 	}
 
+	/**
+	 * Down from platform 100 to 104 at the hour, up from 105 (beside 104 at the same station) back to 100 at the given
+	 * minutes past; each run 4½ minutes.
+	 */
+	private static List<DutyGenerator.ServiceInput> changeOfPlatform(long... upMinutes) {
+		final long[][] plans = {{0, 0}, {100000, 110000}, {180000, 190000}, {272000, 272000}};
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		services.add(new DutyGenerator.ServiceInput(ROUTE_UP, (int) (6 * 60 * MINUTE), DepotDuties.ALL_WEEKDAYS, 3 * 60 * MINUTE, new long[]{100, 101, 102, 104}, plans, new boolean[4], 0, 0, -1, 0));
+		for (final long minutes : upMinutes) {
+			services.add(new DutyGenerator.ServiceInput(ROUTE_DOWN, (int) ((6 * 60 + minutes) * MINUTE), DepotDuties.ALL_WEEKDAYS, (3 * 60 + minutes) * MINUTE, new long[]{105, 103, 106, 100}, plans, new boolean[4], 0, 0, -1, 0));
+		}
+		return services;
+	}
+
+	private static Map<Long, Long> changeOfPlatformStations() {
+		final Map<Long, Long> stationOf = new HashMap<>();
+		stationOf.put(100L, 1L);
+		stationOf.put(101L, 2L);
+		stationOf.put(103L, 2L);
+		stationOf.put(102L, 3L);
+		stationOf.put(106L, 3L);
+		stationOf.put(104L, 4L);
+		stationOf.put(105L, 4L);
+		return stationOf;
+	}
+
+	/**
+	 * The services the slot's train runs on Monday, by the minutes past 03:00 they leave.
+	 */
+	private static List<Long> mondayRun(DutyGenerator.Result result) {
+		final List<Long> run = new ArrayList<>();
+		result.sidings.getOrDefault(100L, Collections.emptyList()).stream().findFirst().ifPresent(slot -> slot.days.stream().filter(day -> (day.weekdays & 1) != 0).forEach(day -> day.segments.forEach(segment -> run.add(segment.service / MINUTE - 6 * 60))));
+		return run;
+	}
+
+	@Test
+	void aChangeOfPlatformTakesAsLongAsMeasured() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1));
+		// Estimated at 2 minutes, the train makes the up service 8 minutes past
+		assertEquals(Arrays.asList(0L, 8L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE)));
+		// Measured at 5, only the one 15 minutes past
+		final Map<Long, Map<Long, Long>> turnTimes = Collections.singletonMap(104L, Collections.singletonMap(105L, 5 * MINUTE));
+		final DutyGenerator.PlanInputs measured = new DutyGenerator.PlanInputs(turnTimes, null);
+		assertEquals(Arrays.asList(0L, 15L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE, measured)));
+		// With no way between the platforms the train can't take either
+		final DutyGenerator.PlanInputs noWay = new DutyGenerator.PlanInputs(Collections.emptyMap(), null);
+		assertEquals(Collections.singletonList(0L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE, noWay)));
+	}
+
+	@Test
+	void aTrainIsBackInItsSidingOnlyOnceItHasRunThere() {
+		// One train, the down service at the hour and again 20 minutes past; nothing to wait for at the far end, so it
+		// goes back between them. Out from the siding takes a minute
+		final long[][] plans = {{0, 0}, {272000, 272000}};
+		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+		for (final long minutes : new long[]{0, 20}) {
+			services.add(new DutyGenerator.ServiceInput(ROUTE_UP, (int) ((6 * 60 + minutes) * MINUTE), DepotDuties.ALL_WEEKDAYS, (3 * 60 + minutes) * MINUTE, new long[]{100, 104}, plans, new boolean[2], 0, 0, -1, 0));
+		}
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1, Collections.singletonMap(100L, MINUTE)));
+		// Back as long as the way out, a minute: in time for the second
+		assertEquals(0, DutyGenerator.generate(services, sidings, changeOfPlatformStations(), MINUTE).uncovered);
+		// Measured at 20 minutes back from the far end: not
+		final DutyGenerator.PlanInputs measured = new DutyGenerator.PlanInputs(null, Collections.singletonMap(100L, Collections.singletonMap(104L, 20 * MINUTE)));
+		assertEquals(7, DutyGenerator.generate(services, sidings, changeOfPlatformStations(), MINUTE, measured).uncovered);
+	}
+
+	@Test
+	void aTrainStayingOutOvernightGoesOnFromTheSamePlatform() {
+		// The last down service of the day reaches the far end after the operating day ends; the first up service of
+		// the next day leaves 8 minutes into it, from the platform it stopped at or from the one beside it
+		final long[][] plans = {{0, 0}, {272000, 272000}};
+		for (final long upPlatform : new long[]{104, 105}) {
+			final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
+			services.add(new DutyGenerator.ServiceInput(ROUTE_UP, (int) (2 * 60 * MINUTE + 1435 * MINUTE), DepotDuties.ALL_WEEKDAYS, 1435 * MINUTE, new long[]{100, 104}, plans, new boolean[2], 0, 0, -1, 0));
+			services.add(new DutyGenerator.ServiceInput(ROUTE_DOWN, (int) (3 * 60 * MINUTE + 8 * MINUTE), DepotDuties.ALL_WEEKDAYS, 8 * MINUTE, new long[]{upPlatform, 100}, plans, new boolean[2], 0, 0, -1, 0));
+			final DutyGenerator.Result result = DutyGenerator.generate(services, Collections.singletonList(new DutyGenerator.SidingInput(100, 1, Collections.singletonMap(100L, MINUTE))), changeOfPlatformStations(), transitsim.plan.RouteTimetable.MAX_STAY_MILLIS);
+			// From the same platform the train goes on and runs every service; from the other one it can't go on
+			if (upPlatform == 104) {
+				assertEquals(0, result.uncovered, "up from the same platform");
+			} else {
+				assertTrue(result.uncovered >= 7, "up from the other platform: " + result.uncovered);
+			}
+		}
+	}
+
 	private static List<DutyGenerator.ServiceInput> shuttle() {
 		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
 		for (int i = 0; i < 6; i++) {

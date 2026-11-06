@@ -2547,8 +2547,9 @@
 					if (!day.stay && lastService && lineRoutes.has(lastService.route.id)) {
 						const lastStop = lastStopOf(last, lastService.route), backMillis = legs.back[lastService.route.stops[lastStop].platformId];
 						if (backMillis !== undefined) {
-							const arrive = timesOf(lastService)[lastStop][0], home = arrive + backMillis;
-							const a = [xOf(arrive), yOf(lastService.route.rows[lastStop])], b = [xOf(home), depotY];
+							// Measured from where the train leaves the last stop, after its stop there
+							const lastTimes = timesOf(lastService)[lastStop], leave = Math.max(lastTimes[0], lastTimes[1]), home = leave + backMillis;
+							const a = [xOf(leave), yOf(lastService.route.rows[lastStop])], b = [xOf(home), depotY];
 							ctx.beginPath();
 							ctx.moveTo(...a);
 							ctx.lineTo(...b);
@@ -3428,15 +3429,24 @@
 			const before = day.segments[i - 1], beforeService = before && segmentService(before);
 			if (beforeService) {
 				const endStop = beforeService.route.stops[lastStopOf(before, beforeService.route)], startStop = s.route.stops[segment.from];
-				if (segmentEnd(before) > segmentStart(segment)) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
+				const gap = segmentStart(segment) - segmentEnd(before);
+				if (gap < 0) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
 				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` });
+				else if (endStop && startStop && endStop.platformId === startStop.platformId) {
+					if (gap < TURN_MIN_MILLIS) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(TURN_MIN_MILLIS), formatDuration(gap)) });
+				} else if (endStop && startStop) {
+					// A change of platform takes as long as the server measured on the rails, or has no way at all
+					const turn = turnTimeOf(depot, endStop.platformId, startStop.platformId);
+					if (turn === null) problems.push({ i, text: tr("这两个站台之间没有路：{0} 到 {1} 换不过去，刷新路径后还是这样就要加折返线或渡线", stopLabel(endStop), stopLabel(startStop)) });
+					else if (turn !== undefined && gap < turn) problems.push({ i, text: tr("衔接时间不够：从 {0} 换到 {1} 实际要 {2}，这里只有 {3}", stopLabel(endStop), stopLabel(startStop), formatDuration(turn), formatDuration(gap)) });
+				}
 			}
 		});
 		if (day.stay) {
 			const target = nextSlotOf(day, index);
 			const next = slots[target] ? dutyOn(slots[target], (weekday + 1) % 7) : null;
 			if (!next || !next.segments.length) problems.push({ i: -1, text: `${tr("留在线上过夜，但第二天接的车 {0} 没有运用", target + 1)}` });
-			else if (dutyEndStation(day) !== dutyStartStation(next)) problems.push({ i: -1, text: `${tr("第二天接的车 {0} 的运用不从这里出发", target + 1)}` });
+			else if (dutyEndPlatform(day) !== dutyStartPlatform(next)) problems.push({ i: -1, text: `${tr("第二天接的车 {0} 的运用不从这个站台出发（过夜的车第二天从停着的站台接着跑）", target + 1)}` });
 			if (slots.some((slot, other) => other !== index && dutyOn(slot, weekday) && dutyOn(slot, weekday).stay && nextSlotOf(dutyOn(slot, weekday), other) === target)) problems.push({ i: -1, text: `${tr("还有一列过夜的车第二天也接车 {0}", target + 1)}` });
 		}
 		return problems;
@@ -3444,14 +3454,28 @@
 
 	/** The slot a train staying overnight runs the next day: the one chosen, or its own. */
 	const nextSlotOf = (day, index) => day.next !== undefined && day.next >= 0 ? day.next : index;
-	function dutyEndStation(day) {
+	function dutyEndPlatform(day) {
 		const segment = day.segments[day.segments.length - 1], r = segment && data.routeById.get(segment.route);
-		return r ? (r.stops[lastStopOf(segment, r)] || {}).station : null;
+		return r ? (r.stops[lastStopOf(segment, r)] || {}).platformId : null;
 	}
-	function dutyStartStation(day) {
+	function dutyStartPlatform(day) {
 		const segment = day.segments[0], r = segment && data.routeById.get(segment.route);
-		return r ? (r.stops[segment.from] || {}).station : null;
+		return r ? (r.stops[segment.from] || {}).platformId : null;
 	}
+
+	/** The least time a train turns back at the platform it arrived at, as the planner takes it. */
+	const TURN_MIN_MILLIS = 30000;
+	/**
+	 * How long a change of platform within a station takes as the server measured it on the rails: the millis, null with
+	 * no way between, or undefined when not measured yet.
+	 */
+	function turnTimeOf(depot, from, to) {
+		const path = depot.path || {};
+		if (!path.turnTimesMeasured) return undefined;
+		const millis = ((path.turnTimes || {})[from] || {})[to];
+		return millis === undefined ? null : millis;
+	}
+	const stopLabel = stop => `${shortName(stop.name)} ${stop.platform}`.trim();
 
 	function selectSlot(depotId, sidingId, index) {
 		const depot = depotById(depotId);
@@ -3591,8 +3615,8 @@
 			${day && day.segments.length ? `<label><input type="checkbox" data-duty-stay ${day.stay ? "checked" : ""}> ${tr("跑完最后一班留在线上过夜")}</label>` : ""}
 			${day && day.stay ? `<label>${tr("第二天接着跑")} <select data-duty-next>${slots.map((slot, i) => {
 				const next = dutyOn(slot, (state.weekday + 1) % 7);
-				const fits = next && next.segments.length && dutyStartStation(next) === dutyEndStation(day);
-				return `<option value="${i}"${nextSlotOf(day, state.slot.index) === i ? " selected" : ""}>${tr("车 {0}{1}{2}", i + 1, i === state.slot.index ? tr("（自己）") : "", fits ? "" : next && next.segments.length ? tr("（不从这里出发）") : tr("（没有运用）"))}</option>`;
+				const fits = next && next.segments.length && dutyStartPlatform(next) === dutyEndPlatform(day);
+				return `<option value="${i}"${nextSlotOf(day, state.slot.index) === i ? " selected" : ""}>${tr("车 {0}{1}{2}", i + 1, i === state.slot.index ? tr("（自己）") : "", fits ? "" : next && next.segments.length ? tr("（不从这个站台出发）") : tr("（没有运用）"))}</option>`;
 			}).join("")}</select></label>` : ""}
 			<p class="hint">${tr("选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 {0} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。", daysText(group))}</p></div>`;
 	}
@@ -5434,6 +5458,7 @@
 			else if (path.state === "stale") problems.push({ level: "warn", text: tr("车厂{0}的路径是旧的，线路或轨道改过，要刷新", name) });
 			(path.detours || []).forEach(detour => problems.push({ level: "warn", text: tr("车厂{0}：从 {1} 到 {2} 要空车走 {3} 格（两个站台只相距 {4} 格），绕远了。在 {1} 的线路上设站前或站后折返（折返线、多站台轮用），或者让下一班从同一个站台发车", name, shortName(detour.from), shortName(detour.to), detour.length, detour.apart) }));
 			if (path.failedDuties > 0) problems.push({ level: "err", text: tr("车厂{0}有 {1} 份运用找不到路，这些车不会按运用出车：{2}", name, path.failedDuties, (path.failedDutyKeys || []).slice(0, 3).join("、")) });
+			turnPairsOf(depot).filter(pair => pair.millis === null).forEach(pair => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 换不过去（同站换站台没有路），自动排班不会让车这样接续", name, stopLabel(pair.from), stopLabel(pair.to)) }));
 			const duties = dutiesOf(depot);
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
 			if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) });
@@ -5453,10 +5478,33 @@
 		button.classList.toggle("warn", !errors && problems.length > 0);
 	}
 
+	/**
+	 * Each change of platform within a station the depot's routes may make, from where one ends to where another starts,
+	 * with how long it takes as measured (null: no way), once the server measured them.
+	 */
+	function turnPairsOf(depot) {
+		if (!data || !(depot.path || {}).turnTimesMeasured) return [];
+		const routes = depot.routes.map(id => data.routeById.get(id)).filter(r => r && r.stops.length);
+		const pairs = [], seen = new Set();
+		routes.forEach(before => {
+			const from = before.stops[before.stops.length - 1];
+			routes.forEach(after => {
+				const to = after.stops[0], key = from.platformId + ">" + to.platformId;
+				if (!from.station || from.station !== to.station || from.platformId === to.platformId || seen.has(key)) return;
+				seen.add(key);
+				pairs.push({ from, to, millis: turnTimeOf(depot, from.platformId, to.platformId) });
+			});
+		});
+		return pairs;
+	}
+
 	function syncDialog() {
 		const problems = syncProblems();
 		const items = problems.map(p => `<li class="${p.level}">${p.route ? `<a data-open-route="${p.route}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)}</li>`).join("");
-		openDialog(tr("同步状态"), `<p class="hint">${connection === "ok" ? tr("已同步 {0}，每 1.5 秒检查一次游戏里的变化。", new Date(lastLoaded || Date.now()).toLocaleTimeString()) : tr("没有连上游戏。")}</p>${items ? `<ul class="sync-problems">${items}</ul>` : `<p>${tr("页面和游戏一致，没有发现问题。")}</p>`}`, tr("关闭"), () => {
+		// The changes of platform as measured on the rails, which the planner and the duty check go by
+		const turns = data ? data.depots.flatMap(depot => turnPairsOf(depot).filter(pair => pair.millis !== null).map(pair => `<li>${escapeHtml(tr("车厂{0}：{1} → {2} 实际要 {3}", shortName(depot.name) || tr("（未命名车厂）"), stopLabel(pair.from), stopLabel(pair.to), formatDuration(pair.millis)))}</li>`)) : [];
+		const turnsText = turns.length ? `<h3>${tr("同站换站台用时（轨道上实测，含 30 秒余量）")}</h3><ul class="sync-turns">${turns.slice(0, 40).join("")}</ul>` : "";
+		openDialog(tr("同步状态"), `<p class="hint">${connection === "ok" ? tr("已同步 {0}，每 1.5 秒检查一次游戏里的变化。", new Date(lastLoaded || Date.now()).toLocaleTimeString()) : tr("没有连上游戏。")}</p>${items ? `<ul class="sync-problems">${items}</ul>` : `<p>${tr("页面和游戏一致，没有发现问题。")}</p>`}${turnsText}`, tr("关闭"), () => {
 		});
 		dialog.querySelectorAll("[data-open-route]").forEach(link => link.addEventListener("click", () => {
 			dialog.close();

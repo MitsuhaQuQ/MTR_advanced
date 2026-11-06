@@ -26,6 +26,51 @@ public final class LineDuties {
 	 */
 	private static final long MILLIS_PER_BLOCK = 50;
 
+	/**
+	 * How long the siding's trains take out to each of the platforms: as measured along the rails at the last path
+	 * generation ({@link DepotLegs}), otherwise from how far it is, half as much again with room for leaving the siding.
+	 */
+	public static Map<Long, Long> sidingLinks(Siding siding, Collection<Long> platformIds, DataCache dataCache) {
+		final Map<Long, Long> links = new TreeMap<>();
+		final BlockPos sidingPos = siding.getMidPos();
+		final DepotLegs legs = siding.getDepotLegs();
+		platformIds.forEach(platformId -> {
+			final Platform platform = dataCache.platformIdMap.get(platformId);
+			if (platform != null) {
+				final Long measured = legs.outMillis.get(platform.id);
+				links.put(platform.id, measured != null ? measured : (long) (Math.sqrt(sidingPos.distSqr(platform.getMidPos())) * MILLIS_PER_BLOCK * 3 / 2) + ESTIMATE_MARGIN_MILLIS);
+			}
+		});
+		return links;
+	}
+
+	/**
+	 * @return each siding's way back from each platform, as measured at the last path generation
+	 */
+	public static Map<Long, Map<Long, Long>> backLinksOf(Collection<Siding> sidings) {
+		final Map<Long, Map<Long, Long>> backLinks = new TreeMap<>();
+		sidings.forEach(siding -> {
+			final DepotLegs legs = siding.getDepotLegs();
+			if (!legs.backMillis.isEmpty()) {
+				backLinks.put(siding.id, new TreeMap<>(legs.backMillis));
+			}
+		});
+		return backLinks;
+	}
+
+	/**
+	 * @return the changes of platform measured for the depots, merged, or null with none measured yet, to estimate them
+	 */
+	public static Map<Long, Map<Long, Long>> turnTimesOf(Collection<Depot> depots) {
+		final Map<Long, Map<Long, Long>> turnTimes = new TreeMap<>();
+		depots.forEach(depot -> depot.clientTurnTimes.forEach((from, times) -> turnTimes.computeIfAbsent(from, key -> new TreeMap<>()).putAll(times)));
+		return depots.stream().anyMatch(depot -> depot.turnTimesMeasured) ? turnTimes : null;
+	}
+	/**
+	 * Added to a way out estimated from how far it is, for leaving the siding and the bends of the rails.
+	 */
+	private static final long ESTIMATE_MARGIN_MILLIS = 30000;
+
 	private LineDuties() {
 	}
 
@@ -152,6 +197,10 @@ public final class LineDuties {
 		private final Set<String> taken = new TreeSet<>();
 		private final boolean staysOnLine;
 		private final Map<Long, Long> stationOf = new HashMap<>();
+		/**
+		 * Each siding's way back from each platform, as measured at the last path generation.
+		 */
+		private final Map<Long, Map<Long, Long>> backLinks = new TreeMap<>();
 
 		/**
 		 * @param draftDepotId the depot drafting its duties, whose own set duties aren't taken, or 0
@@ -200,15 +249,12 @@ public final class LineDuties {
 					// Sidings given only some of the routes are planned apart, with those routes
 					final Group group = groupsByTypes.computeIfAbsent(Depot.getSidingGroupKey(serviceTypes, siding), key -> new Group(serviceTypes, siding.getRouteIds()));
 					// Its trains start at the first stops of its own depot's routes, the nearer the sooner
-					final Map<Long, Long> links = new TreeMap<>();
-					final BlockPos sidingPos = siding.getMidPos();
-					depot.getSidingRoutes(siding, dataCache).forEach(route -> {
-						final Platform platform = dataCache.platformIdMap.get(route.getFirstPlatformId());
-						if (platform != null) {
-							final BlockPos platformPos = platform.getMidPos();
-							links.put(platform.id, (long) (Math.sqrt(sidingPos.distSqr(platformPos)) * MILLIS_PER_BLOCK));
-						}
-					});
+					// As measured out along the rails at the last path generation (DepotLegs), otherwise from how far it is, with room
+					final List<Long> firstPlatforms = new ArrayList<>();
+					depot.getSidingRoutes(siding, dataCache).forEach(route -> firstPlatforms.add(route.getFirstPlatformId()));
+					final Map<Long, Long> links = sidingLinks(siding, firstPlatforms, dataCache);
+					// And back to it from each last stop
+					backLinks.putAll(backLinksOf(Collections.singletonList(siding)));
 					// Its fleet, however many trains its rails hold
 					group.sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), links, depot.id));
 					group.depotOf.put(siding.id, depot);
@@ -269,6 +315,15 @@ public final class LineDuties {
 		 * @param fastestTimes a route's fastest times, or null if not known
 		 */
 		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis) {
+			return plan(fastestTimes, dayStartMillis, null);
+		}
+
+		/**
+		 * @param turnTimes how long each change of platform within a station takes on the rails, a pair left out having no
+		 *                  way between, or null to estimate them
+		 */
+		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes) {
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks);
 			final Plan plan = new Plan(name);
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
@@ -280,7 +335,7 @@ public final class LineDuties {
 				if (services.isEmpty() || group.sidings.isEmpty()) {
 					continue;
 				}
-				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, group.sidings, stationOf, maxLayover);
+				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, group.sidings, stationOf, maxLayover, inputs);
 				plan.sidings.putAll(result.sidings);
 				result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
 				plan.trains += result.trains;
@@ -298,7 +353,7 @@ public final class LineDuties {
 							nearestMillis = millis;
 						}
 					}
-					plan.needed += group.available + (nearest == null ? 0 : extraTrains(services, group.sidings, nearest, maxLayover));
+					plan.needed += group.available + (nearest == null ? 0 : extraTrains(services, group.sidings, nearest, maxLayover, inputs));
 					if (nearest != null && plan.suggestedSiding.isEmpty()) {
 						final Depot depot = group.depotOf.get(nearest.sidingId);
 						plan.suggestedSiding = (depot == null || depot.name.isEmpty() ? "" : IGui.formatStationName(depot.name) + " ") + IGui.formatStationName(group.sidingNames.getOrDefault(nearest.sidingId, ""));
@@ -313,13 +368,13 @@ public final class LineDuties {
 		/**
 		 * @return how few trains added to the siding run as many services as any number of trains could, found by halving
 		 */
-		private int extraTrains(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, long maxLayover) {
-			final int best = uncoveredWith(services, sidings, siding, DepotDuties.MAX_SLOTS, maxLayover);
+		private int extraTrains(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, long maxLayover, DutyGenerator.PlanInputs inputs) {
+			final int best = uncoveredWith(services, sidings, siding, DepotDuties.MAX_SLOTS, maxLayover, inputs);
 			int low = 0;
 			int high = Math.max(0, DepotDuties.MAX_SLOTS - siding.maxTrains);
 			while (low < high) {
 				final int middle = (low + high) / 2;
-				if (uncoveredWith(services, sidings, siding, siding.maxTrains + middle, maxLayover) <= best) {
+				if (uncoveredWith(services, sidings, siding, siding.maxTrains + middle, maxLayover, inputs) <= best) {
 					high = middle;
 				} else {
 					low = middle + 1;
@@ -328,10 +383,10 @@ public final class LineDuties {
 			return low;
 		}
 
-		private int uncoveredWith(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, int trains, long maxLayover) {
+		private int uncoveredWith(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, int trains, long maxLayover, DutyGenerator.PlanInputs inputs) {
 			final List<DutyGenerator.SidingInput> changed = new ArrayList<>();
 			sidings.forEach(other -> changed.add(other == siding ? new DutyGenerator.SidingInput(other.sidingId, Math.min(trains, DepotDuties.MAX_SLOTS), other.links, other.depotId) : other));
-			return DutyGenerator.generate(services, changed, stationOf, maxLayover).uncovered;
+			return DutyGenerator.generate(services, changed, stationOf, maxLayover, inputs).uncovered;
 		}
 	}
 

@@ -10,6 +10,8 @@ import transitsim.plan.DutyPlan;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
 import transitsim.plan.TurnBackSection;
+import transitsim.plan.TimeSegment;
+import transitsim.plan.StopTimes;
 import mtr.advanced.PacketBinary;
 import transitsim.plan.RouteTimetable;
 import io.netty.buffer.Unpooled;
@@ -125,6 +127,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private static final int DETOUR_MIN_BLOCKS = 300;
 	private static final int DETOUR_FACTOR = 5;
+	/**
+	 * Added to the measured time of a change of platform, for stopping and starting.
+	 */
+	private static final long TURN_MARGIN_MILLIS = 30000;
 
 	private static double pathLength(List<PathData> path) {
 		return path.stream().mapToDouble(pathData -> pathData.rail.getLength()).sum();
@@ -135,6 +141,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private final Set<String> pathDetours = Collections.synchronizedSet(new TreeSet<>());
 	public List<String> clientDetours = Collections.emptyList();
+	/**
+	 * How long each change of platform within a station of the depot's lines takes on the rails, from the last path
+	 * generation: from platform → to platform → milliseconds; a pair left out has no way between. On the server for the
+	 * plan, on the clients as sent, for the advanced editor.
+	 */
+	public volatile Map<Long, Map<Long, Long>> clientTurnTimes = Collections.emptyMap();
+	/**
+	 * Whether {@link #clientTurnTimes} were measured, so an empty table means no way between any of the platforms rather
+	 * than not known yet.
+	 */
+	public volatile boolean turnTimesMeasured;
 	/**
 	 * The depots of the depot's planning unit ({@link LineDuties}), itself among them, and the unit's key, or empty if it
 	 * doesn't plan by line; worked out on the server thread with the auto duties and the paths, not saved. Its trains go back
@@ -595,10 +612,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				int successfulSegments = Integer.MAX_VALUE;
 				PathFailure failure = PathFailure.NONE;
 				// The duties of the whole unit, planned at once by operating line, of which this depot keeps its own sidings'
+				// How long each change of platform within a station takes on the rails, for the plan and the clients
+				final Map<Long, Map<Long, Long>> turnTimes = mainPaths.isEmpty() ? new TreeMap<>() : mainPaths.get(0).turnTimesFor(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), rails, graph, useFastSpeed);
+				clientTurnTimes = turnTimes;
+				turnTimesMeasured = !mainPaths.isEmpty();
 				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null ? null : lineUnit.plan(route -> {
 					final long[][] times = routeSearch.getFastestTimes(route, dataCache);
 					return times == null || times.length == 0 ? null : times;
-				}, TimetableConfig.getDayStartMillis());
+				}, TimetableConfig.getDayStartMillis(), turnTimes);
 				if (linePlan != null) {
 					System.out.println("Minecraft Transit Railway: planned the duties of " + linePlan.describe());
 				}
@@ -612,7 +633,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// How each siding's trains get out to their first stops and back, for the advanced editor's running diagram
 				final Map<Long, DepotLegs> depotLegs = new TreeMap<>();
 				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> depotLegs.put(siding.id, siding.getDepotLegs())));
-				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours);
+				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (CancellationException e) {
 				// A newer request restarted path generation, and that thread reports the result
@@ -667,6 +688,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public boolean usesFastSpeed(Level world) {
 		return cruisingAltitude >= world.getMaxBuildHeight() + THRESHOLD_ABOVE_MAX_BUILD_HEIGHT;
+	}
+
+	/**
+	 * How long each change of platform within a station takes between these routes, measured along the rails the way a
+	 * duty runs it, as path generation measures it for the plan; for tests.
+	 *
+	 * @return from platform → to platform → milliseconds, a pair left out having no way between
+	 */
+	public Map<Long, Map<Long, Long>> measureTurnTimes(List<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		return new MainPath(routes, Collections.emptyList(), dataCache).turnTimesFor(routes, rails, graph, useFastSpeed);
 	}
 
 	/**
@@ -1417,14 +1448,18 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					fastestTimes.put(mainRoutes.get(i).id, sidings.get(0).calculateStopTimes(routePath).getFastestTimesFromFirstStop(mainRoutes.get(i)));
 				}
 			}
+			// Out to the first stops and back as measured on the rails, and the changes of platform as measured
+			final List<Long> firstPlatforms = new ArrayList<>();
+			mainRoutes.forEach(route -> firstPlatforms.add(route.getFirstPlatformId()));
 			final List<DutyGenerator.SidingInput> sidingInputs = new ArrayList<>();
-			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), null, id)));
+			sidings.stream().sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidingInputs.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, dataCache), id)));
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();
 			mainRoutes.forEach(route -> mainRouteIds.add(route.id));
 			final long leftToOthers = autoTaken.stream().filter(service -> mainRouteIds.contains(Long.parseLong(service.substring(0, service.indexOf('@'))))).count();
-			final AutoDuties generated = AutoDuties.generate(mainRoutes, route -> fastestTimes.get(route.getRouteId()), TimetableConfig.getDayStartMillis(), sidingInputs, stationOf, cycleRoutes, autoTaken);
+			final AutoDuties generated = AutoDuties.generate(mainRoutes, route -> fastestTimes.get(route.getRouteId()), TimetableConfig.getDayStartMillis(), sidingInputs, stationOf, cycleRoutes, autoTaken, inputs);
 			System.out.println("Minecraft Transit Railway: worked out the duties of depot " + (name.isEmpty() ? String.valueOf(id) : name) + " from its timetables: " + generated.trains + " trains, " + generated.uncovered / 7 + " services a day with no train" + (leftToOthers == 0 ? "" : ", " + leftToOthers + " services left to other sidings or depots running its routes") + (generated.missingTimes.isEmpty() ? "" : ", " + generated.missingTimes.size() + " routes left out as their times aren't known"));
 			minecraftServer.execute(() -> {
 				autoDuties.sidings.keySet().removeAll(sidingIds);
@@ -1801,28 +1836,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 				if (lastPlatform != null && lastPlatform.id != platforms.get(0).id) {
 					final List<PathData> connectingPath = new ArrayList<>();
-					// After running a route to its end the train turns back the way the route lists, like the depot's own path
-					final List<BlockPos> turnBackNodes = previousRanToEnd ? getTurnBackNodes(previousRoute, graph) : Collections.emptyList();
-					TurnBackSection<PathData> turnBackSection = null;
-					if (turnBackNodes.isEmpty()) {
-						PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(lastPlatform, platforms.get(0)), null, 1, cruisingAltitude, useFastSpeed);
-						// The route lists no turn back rails, but there may be some by the station: going round one of them is
-						// taken when it's shorter than the way found, which may run far round the line instead (站后折返)
-						final List<BlockPos> nearbyNodes = getNearbyTurnBackNodes(lastPlatform, rails);
-						if (!nearbyNodes.isEmpty()) {
-							final TurnBackSection<PathData> nearby = findTurnBackSection(lastPlatform, platforms.get(0), nearbyNodes, 0, rails, graph, useFastSpeed);
-							if (nearby != null && (connectingPath.isEmpty() || pathLength(nearby.getDefaultWay()) < pathLength(connectingPath))) {
-								connectingPath.clear();
-								connectingPath.addAll(nearby.getDefaultWay());
-								turnBackSection = nearby;
-							}
-						}
-					} else {
-						turnBackSection = findTurnBackSection(lastPlatform, platforms.get(0), turnBackNodes, 0, rails, graph, useFastSpeed);
-						if (turnBackSection != null) {
-							connectingPath.addAll(turnBackSection.getDefaultWay());
-						}
-					}
+					final TurnBackSection<PathData> turnBackSection = findConnection(connectingPath, lastPlatform, platforms.get(0), previousRanToEnd ? previousRoute : null, rails, graph, useFastSpeed);
 					if (connectingPath.isEmpty()) {
 						return null;
 					}
@@ -2147,6 +2161,99 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @param start where the ways round start on the main path
 		 * @return the ways round, or null if none of them can be used
 		 */
+		/**
+		 * The way between two services, from where one ends to where the next starts, as a duty runs it: round the turn
+		 * back rails the route before lists after its end, or, with none listed, the shorter of the way found and the way
+		 * round a turn back rail near the station (站后折返). The planner's times between platforms are measured along it
+		 * ({@link #turnTimesFor}), so the plan and the run take the same way.
+		 *
+		 * @param connectingPath filled with the way, or left empty if there is none
+		 * @param routeBefore    the route the train ran to its end before, whose turn back rails are taken, or null
+		 * @return the ways round a turn back rail when there are any, or null
+		 */
+		private TurnBackSection<PathData> findConnection(List<PathData> connectingPath, SavedRailBase from, SavedRailBase to, Route routeBefore, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final List<BlockPos> turnBackNodes = routeBefore != null ? getTurnBackNodes(routeBefore, graph) : Collections.emptyList();
+			if (!turnBackNodes.isEmpty()) {
+				final TurnBackSection<PathData> listed = findTurnBackSection(from, to, turnBackNodes, 0, rails, graph, useFastSpeed);
+				if (listed != null) {
+					connectingPath.addAll(listed.getDefaultWay());
+				}
+				return listed;
+			}
+			PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(from, to), null, 1, cruisingAltitude, useFastSpeed);
+			final List<BlockPos> nearbyNodes = getNearbyTurnBackNodes(from, rails);
+			if (!nearbyNodes.isEmpty()) {
+				final TurnBackSection<PathData> nearby = findTurnBackSection(from, to, nearbyNodes, 0, rails, graph, useFastSpeed);
+				if (nearby != null && (connectingPath.isEmpty() || pathLength(nearby.getDefaultWay()) < pathLength(connectingPath))) {
+					connectingPath.clear();
+					connectingPath.addAll(nearby.getDefaultWay());
+					return nearby;
+				}
+			}
+			return null;
+		}
+
+		/**
+		 * How long each change of platform within a station takes as a duty runs it ({@link #findConnection}): from each
+		 * route's last platform to each other route's first platform at the same station, with a margin; a pair with no
+		 * way between is left out, which the planner takes as no way.
+		 *
+		 * @param routes the routes planned together
+		 * @return from platform → to platform → milliseconds
+		 */
+		private Map<Long, Map<Long, Long>> turnTimesFor(List<Route> routes, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final Map<Long, Map<Long, Long>> turnTimes = new TreeMap<>();
+			for (final Route before : routes) {
+				if (before.platformIds.isEmpty()) {
+					continue;
+				}
+				final Platform from = dataCache.platformIdMap.get(before.getLastPlatformId());
+				final Station station = from == null ? null : dataCache.platformIdToStation.get(from.id);
+				if (station == null) {
+					continue;
+				}
+				for (final Route after : routes) {
+					if (after.platformIds.isEmpty()) {
+						continue;
+					}
+					final Platform to = dataCache.platformIdMap.get(after.getFirstPlatformId());
+					if (to == null || to.id == from.id || station != dataCache.platformIdToStation.get(to.id) || turnTimes.getOrDefault(from.id, Collections.emptyMap()).containsKey(to.id)) {
+						continue;
+					}
+					final List<PathData> connectingPath = new ArrayList<>();
+					findConnection(connectingPath, from, to, before, rails, graph, useFastSpeed);
+					if (!connectingPath.isEmpty()) {
+						// Timed for the slowest of the vehicles running either route
+						final Set<PathTiming.Vehicle> vehicles = new HashSet<>();
+						if (routeSearch == null) {
+							vehicles.add(RoutePaths.getDefaultVehicle(transportMode));
+						} else {
+							vehicles.addAll(routeSearch.getVehicles(before));
+							vehicles.addAll(routeSearch.getVehicles(after));
+						}
+						long millis = 0;
+						for (final PathTiming.Vehicle vehicle : vehicles) {
+							millis = Math.max(millis, connectionMillis(vehicle, connectingPath));
+						}
+						turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(to.id, millis + TURN_MARGIN_MILLIS);
+					}
+				}
+			}
+			return turnTimes;
+		}
+
+		/**
+		 * @return how long the vehicle takes along a way between two services, starting with its head at the end of the
+		 * platform it stopped at, as a train stands there, rather than with its middle at the middle of a siding
+		 */
+		private long connectionMillis(PathTiming.Vehicle vehicle, List<PathData> connectingPath) {
+			final double headStart = connectingPath.get(0).rail.getLength();
+			final PathTiming.Vehicle standing = new PathTiming.Vehicle((float) (2 * headStart - vehicle.trainCars * vehicle.spacing), vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode);
+			final List<TimeSegment> timeSegments = new ArrayList<>();
+			PathTiming.generateTimeSegments(standing, connectingPath, timeSegments, new HashMap<>(), new StopTimes(), 0, 0);
+			return timeSegments.isEmpty() ? 0 : (long) (timeSegments.get(timeSegments.size() - 1).endTime * MILLIS_PER_TICK);
+		}
+
 		/**
 		 * @return the dead ends of the turn back rails within reach of the platform, the nearest first, to turn back round
 		 * when a route lists none

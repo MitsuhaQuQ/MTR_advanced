@@ -257,8 +257,17 @@ public final class EditorDuties implements IPacket {
 			});
 			final boolean diagramMode = depot.duties.diagramMode;
 			final int unitDepots = unit.depotIds.size();
+			// The changes of platform as the server measured them on the rails, so the draft is planned as the game plans
+			final List<Depot> unitDepotList = new ArrayList<>();
+			unit.depotIds.forEach(unitDepotId -> {
+				final Depot unitDepot = ClientData.DATA_CACHE.depotIdMap.get(unitDepotId);
+				if (unitDepot != null) {
+					unitDepotList.add(unitDepot);
+				}
+			});
+			final Map<Long, Map<Long, Long>> turnTimes = LineDuties.turnTimesOf(unitDepotList);
 			return () -> {
-				final LineDuties.Plan plan = unit.plan(route -> times.get(route.id), dayStartMillis);
+				final LineDuties.Plan plan = unit.plan(route -> times.get(route.id), dayStartMillis, turnTimes);
 				final DepotDuties duties = new DepotDuties();
 				duties.diagramMode = diagramMode;
 				plan.sidings.forEach((sidingId, slots) -> {
@@ -287,14 +296,20 @@ public final class EditorDuties implements IPacket {
 			};
 		}
 
+		// Out and back as measured on the rails, like the game's own plan, rather than no time at all
+		final List<Long> firstPlatforms = new ArrayList<>();
+		routes.forEach(route -> firstPlatforms.add(route.getFirstPlatformId()));
+		final List<Siding> depotSidings = new ArrayList<>();
+		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(depotSidings::add);
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
-		ClientData.SIDINGS.stream().filter(siding -> ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id) == depot).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), null, depot.id)));
+		depotSidings.forEach(siding -> sidings.add(new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), LineDuties.sidingLinks(siding, firstPlatforms, ClientData.DATA_CACHE), depot.id)));
+		final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(depot)), LineDuties.backLinksOf(depotSidings));
 		final Map<Long, Long> stationOf = new HashMap<>();
 		ClientData.DATA_CACHE.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 		final long maxLayoverMillis = depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
 
 		return () -> {
-			final DutyGenerator.Result result = DutyGenerator.generateSpread(services, sidings, stationOf, maxLayoverMillis);
+			final DutyGenerator.Result result = DutyGenerator.generateSpread(services, sidings, stationOf, maxLayoverMillis, inputs);
 			final DepotDuties duties = new DepotDuties();
 			duties.diagramMode = depot.duties.diagramMode;
 			duties.sidings.putAll(result.sidings);

@@ -41,8 +41,8 @@ class DutyTurnBackTest {
 		final Platform b = platform(dataCache, rails, PLATFORM_B, pos(4, 240), pos(4, 260));
 		addRail(rails, pos(-4, 260), pos(0, 300), RailType.IRON);
 		addRail(rails, pos(4, 260), pos(0, 300), RailType.IRON);
-		// The turn back rail beyond the station, a dead end
-		addRail(rails, pos(0, 300), pos(0, 340), RailType.TURN_BACK);
+		// The turn back rail beyond the station, a dead end, long enough for a whole train
+		addRail(rails, pos(0, 300), pos(0, 500), RailType.TURN_BACK);
 
 		final Route down = route(dataCache, DOWN, south, a);
 		final Route up = route(dataCache, UP, b, south);
@@ -85,6 +85,23 @@ class DutyTurnBackTest {
 		assertTrue(turnedBack, "turned back on the turn back rail");
 		// It stops at B for its departure, rather than running straight through
 		assertTrue(path.get(atB).dwellTime > 0, "stops at B");
+
+		// The planner is told how long A to B takes the way the duty runs it: the run round the turn back rail and back,
+		// over 600 blocks with a reversal, on top of the 30 second margin, rather than a fixed guess
+		final Station station = new Station(50);
+		dataCache.platformIdToStation.put(PLATFORM_A, station);
+		dataCache.platformIdToStation.put(PLATFORM_B, station);
+		final List<Route> routes = Arrays.asList(down, up);
+		final Map<Long, Map<Long, Long>> turnTimes = depot.measureTurnTimes(routes, dataCache, rails, graph, false);
+		final Long aToB = turnTimes.getOrDefault(PLATFORM_A, Collections.emptyMap()).get(PLATFORM_B);
+		assertNotNull(aToB, "A to B measured: " + turnTimes);
+		assertTrue(aToB > 60000 && aToB < 300000, "the run round the turn back rail: " + aToB);
+
+		// Without the turn back rail there's no way from A to B, and the planner is told so
+		rails.get(pos(0, 300)).remove(pos(0, 500));
+		rails.remove(pos(0, 500));
+		final Map<Long, Map<Long, Long>> noTurnBack = depot.measureTurnTimes(routes, dataCache, rails, DeterministicPathFinder.compile(rails), false);
+		assertNull(noTurnBack.getOrDefault(PLATFORM_A, Collections.emptyMap()).get(PLATFORM_B), "no way from A to B: " + noTurnBack);
 	}
 
 	private static int indexOf(List<PathData> path, long platformId) {

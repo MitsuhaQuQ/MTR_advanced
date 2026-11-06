@@ -163,6 +163,16 @@ public final class EditorData {
 				}
 			});
 			pathObject.add("detours", detoursArray);
+			// How long each change of platform within a station takes on the rails: from platform → to platform → millis,
+			// a pair left out having no way between once measured
+			pathObject.addProperty("turnTimesMeasured", depot.turnTimesMeasured);
+			final JsonObject turnTimesObject = new JsonObject();
+			depot.clientTurnTimes.forEach((from, times) -> {
+				final JsonObject toObject = new JsonObject();
+				times.forEach((to, millis) -> toObject.addProperty(String.valueOf(to), millis));
+				turnTimesObject.add(String.valueOf(from), toObject);
+			});
+			pathObject.add("turnTimes", turnTimesObject);
 			depotObject.add("path", pathObject);
 			// Which services each train of the depot runs, see DepotDuties
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));

@@ -54,6 +54,7 @@ import java.util.function.Supplier;
 public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	private static final int MAX_FAILED_DUTIES = 16;
+	private static final int MAX_TURN_TIMES = 4096;
 
 	private static final int MAX_LIST_SIZE = 4096;
 	private static final int MAX_STRING_LIST_SIZE = 256;
@@ -406,6 +407,13 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 * @param detours the ways between services far longer than their platforms are apart, as "from to length apart"
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours) {
+		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, depotLegs, detours, Collections.emptyMap());
+	}
+
+	/**
+	 * @param turnTimes how long each change of platform within a station takes on the rails
+	 */
+	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours, Map<Long, Map<Long, Long>> turnTimes) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
@@ -422,6 +430,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final List<String> sentDetours = detours.subList(0, Math.min(detours.size(), MAX_FAILED_DUTIES));
 		packet.writeInt(sentDetours.size());
 		sentDetours.forEach(packet::writeUtf);
+		final List<long[]> turns = new ArrayList<>();
+		turnTimes.forEach((from, times) -> times.forEach((to, millis) -> turns.add(new long[]{from, to, millis})));
+		final int turnCount = Math.min(turns.size(), MAX_TURN_TIMES);
+		packet.writeInt(turnCount);
+		turns.stream().limit(turnCount).forEach(turn -> {
+			packet.writeLong(turn[0]);
+			packet.writeLong(turn[1]);
+			packet.writeLong(turn[2]);
+		});
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 

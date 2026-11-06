@@ -55,10 +55,17 @@ public final class AutoDuties {
 	 *              leave to them; the services these sidings take are added
 	 */
 	public static AutoDuties generate(List<? extends PlanRoute> routes, Function<PlanRoute, long[][]> fastestTimes, int dayStartMillis, List<DutyGenerator.SidingInput> sidings, Map<Long, Long> stationOf, boolean staysOnLine, java.util.Set<String> taken) {
+		return generate(routes, fastestTimes, dayStartMillis, sidings, stationOf, staysOnLine, taken, DutyGenerator.PlanInputs.NONE);
+	}
+
+	/**
+	 * @param inputs what path generation measured on the rails
+	 */
+	public static AutoDuties generate(List<? extends PlanRoute> routes, Function<PlanRoute, long[][]> fastestTimes, int dayStartMillis, List<DutyGenerator.SidingInput> sidings, Map<Long, Long> stationOf, boolean staysOnLine, java.util.Set<String> taken, DutyGenerator.PlanInputs inputs) {
 		final List<PlanRoute> missing = new ArrayList<>();
 		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, fastestTimes, dayStartMillis, missing::add);
 		services.removeIf(service -> taken.contains(service.routeId + "@" + service.service));
-		final AutoDuties autoDuties = new AutoDuties(DutyGenerator.generateSpread(services, sidings, stationOf, staysOnLine ? transitsim.plan.RouteTimetable.MAX_STAY_MILLIS : transitsim.plan.RouteTimetable.MAX_LAYOVER_MILLIS));
+		final AutoDuties autoDuties = new AutoDuties(DutyGenerator.generateSpread(services, sidings, stationOf, staysOnLine ? transitsim.plan.RouteTimetable.MAX_STAY_MILLIS : transitsim.plan.RouteTimetable.MAX_LAYOVER_MILLIS, inputs));
 		autoDuties.missingTimes.addAll(missing);
 		autoDuties.duties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> taken.add(segment.routeId + "@" + segment.service)))));
 		return autoDuties;
