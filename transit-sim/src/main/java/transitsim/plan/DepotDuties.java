@@ -32,7 +32,7 @@ public final class DepotDuties {
 	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started
 	 * with the mode, a boolean, so it reads as 0 or 1 there.
 	 */
-	private static final int FORMAT_VERSION = 3;
+	private static final int FORMAT_VERSION = 4;
 
 	public boolean isEmpty() {
 		return sidings.values().stream().allMatch(List::isEmpty);
@@ -163,7 +163,17 @@ public final class DepotDuties {
 		 * The duty's own number, which stays the same wherever its siding and place in the list (P2-D); 0 until given one.
 		 */
 		public long id;
+		/**
+		 * Where its train comes from (S8): {@link #START_PREFER} its siding, else another siding of its pool with a train
+		 * ready; {@link #START_ONLY} its siding alone; {@link #START_ANY} whichever siding of its pool has a train ready and
+		 * the quickest way out to its first stop.
+		 */
+		public int start = START_PREFER;
 		public final List<DayDuty> days = new ArrayList<>();
+
+		public static final int START_PREFER = 0;
+		public static final int START_ONLY = 1;
+		public static final int START_ANY = 2;
 
 		/**
 		 * @param weekday 0 for Monday
@@ -180,6 +190,7 @@ public final class DepotDuties {
 
 		public void write(BinaryWriter packet) {
 			packet.writeLong(id);
+			packet.writeByte(start);
 			packet.writeVarInt(days.size());
 			days.forEach(day -> {
 				packet.writeByte(day.weekdays);
@@ -203,13 +214,18 @@ public final class DepotDuties {
 		}
 
 		/**
-		 * @param version 1 for data saved before overnight trains could pick their next duty, 2 before duties had numbers
+		 * @param version 1 for data saved before overnight trains could pick their next duty, 2 before duties had numbers, 3
+	 *                before they said where their train comes from
 		 */
 		public static Slot read(BinaryReader packet, int version) {
 			final boolean hasNextSlot = version >= 2;
 			final Slot slot = new Slot();
 			if (version >= 3) {
 				slot.id = packet.readLong();
+			}
+			if (version >= 4) {
+				final int start = packet.readUnsignedByte();
+				slot.start = start <= START_ANY ? start : START_PREFER;
 			}
 			final int dayCount = limit(packet.readVarInt(), MAX_DAYS);
 			int usedDays = 0;

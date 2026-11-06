@@ -18,6 +18,7 @@ class DutyIdsTest {
 		final DepotDuties duties = new DepotDuties();
 		final DepotDuties.Slot slot = new DepotDuties.Slot();
 		slot.id = 42;
+		slot.start = DepotDuties.Slot.START_ANY;
 		final DepotDuties.DayDuty day = new DepotDuties.DayDuty();
 		day.weekdays = DepotDuties.ALL_WEEKDAYS;
 		day.stayOnLine = true;
@@ -36,6 +37,7 @@ class DutyIdsTest {
 		read.fromBytes(duties().toBytes());
 		final DepotDuties.Slot slot = read.getSlots(100).get(0);
 		assertEquals(42, slot.id);
+		assertEquals(DepotDuties.Slot.START_ANY, slot.start);
 		final DepotDuties.DayDuty day = slot.getDuty(0);
 		assertEquals(43, day.nextDutyId);
 		assertEquals(200, day.returnSidingId);
@@ -69,6 +71,8 @@ class DutyIdsTest {
 		assertNotEquals(0, id);
 		assertEquals(id, second.getSlots(100).get(0).id);
 		assertEquals(DepotDuties.defaultId(100, 0), id);
+		// Saved before duties said where their train comes from: from their siding first, as before (S8)
+		assertEquals(DepotDuties.Slot.START_PREFER, first.getSlots(100).get(0).start);
 		assertEquals(0, first.getSlots(100).get(0).getDuty(0).nextDutyId);
 		assertEquals(1, first.getSlots(100).get(0).getDuty(0).segments.get(0).routeId);
 	}

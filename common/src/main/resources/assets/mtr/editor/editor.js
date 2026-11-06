@@ -1312,32 +1312,33 @@
 			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
-				// The trains each pool of its sidings has (P2-C), when more than one siding shares them
-				(depot.pools || []).filter(pool => (pool.sidings || []).length > 1 || pool.fleet !== null).forEach(pool => {
+				// Duties are the pool's (S8): by vehicle, each with the siding its train comes from; the sidings apart, as places
+				const dutyNode = (siding, slot, index) => {
+					const day = dutyOn(slot, state.weekday);
+					const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
+					const problems = day ? dutyProblems(depot, siding.id, index, state.weekday).length : 0;
+					return `<li>${node(`data-slot="${index}" data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">${tr("运用 {0}", index + 1)} <span class="hint">${escapeHtml(startText(slot, siding))}</span></span>${problems ? `<span class="draft-dot" title="${tr("运用有问题")}">!</span>` : ""}<span class="count">${day ? day.segments.length + tr(" 班") + (day.stay ? tr(" 留") : "") : tr("休")}</span>`, active)}</li>`;
+				};
+				const pools = (depot.pools || []).length ? depot.pools : [{ key: "", vehicle: "", fleet: null, sum: -1, sidings: depot.sidings.map(siding => siding.id) }];
+				pools.forEach(pool => {
 					const draftedFleet = draft.depots && draft.depots[depot.id] && draft.depots[depot.id].poolFleets ? draft.depots[depot.id].poolFleets[pool.key] : undefined;
-					parts.push(`<li class="hint">${escapeHtml(tr("车型 {0}：{1}", pool.vehicle || pool.key, poolFleetText(draftedFleet !== undefined ? draftedFleet : pool.fleet, pool.sum)))}</li>`);
+					const poolSidings = (pool.sidings || []).map(id => depot.sidings.find(siding => siding.id === id)).filter(Boolean);
+					const count = poolSidings.reduce((sum, siding) => sum + (duties.sidings[siding.id] || []).length, 0);
+					parts.push(`<li><div class="node"><span class="label group-label">${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key || "?"))}</span><span class="count">${escapeHtml(poolFleetText(draftedFleet !== undefined ? draftedFleet : pool.fleet, pool.sum))} · ${tr("{0} 份运用", count)}</span></div><ul>`);
+					poolSidings.forEach(siding => (duties.sidings[siding.id] || []).forEach((slot, index) => parts.push(dutyNode(siding, slot, index))));
+					if (!count) parts.push(`<li class="empty">${tr("没有运用")}</li>`);
+					parts.push(`</ul></li>`);
 				});
+				parts.push(`<li class="hint">${tr("存车线")}</li>`);
 				if (!depot.sidings.length) parts.push(`<li class="empty">${tr("没有存车线")}</li>`);
 				depot.sidings.forEach(siding => {
-					const slots = duties.sidings[siding.id] || [];
-					// A fleet, as a depot has trains: how many there are, not one row a train
+					// A place trains stand in: how many it holds, and the routes its trains are given
 					const drafted = draft.depots && draft.depots[depot.id] && draft.depots[depot.id].sidings && draft.depots[depot.id].sidings[siding.id];
 					const fleet = drafted ? drafted.fleet : siding.fleet;
 					const given = drafted ? drafted.routes : siding.routes || [];
 					const fleetText = fleet < 0 ? tr("停车不限") : tr("最多停 {0} 列", fleet);
 					const givenText = given.length ? tr("只跑：{0}", given.map(id => data.routeById.get(id) ? routeTitle(data.routeById.get(id)) : "?").join("、")) : tr("跑车厂的全部线路");
-					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, slots.length ? "▾" : "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || tr("存车线"))}</span><span class="count" title="${escapeHtml(givenText)}">${fleetText} · ${tr("{0} 份运用", slots.length)}${given.length ? " · " + tr("{0} 条线路", given.length) : ""}</span>`, false)}`);
-					if (slots.length) {
-						parts.push(`<ul>`);
-						slots.forEach((slot, index) => {
-							const day = dutyOn(slot, state.weekday);
-							const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
-							const problems = day ? dutyProblems(depot, siding.id, index, state.weekday).length : 0;
-							parts.push(`<li>${node(`data-slot="${index}" data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">${tr("运用 {0}", index + 1)}</span>${problems ? `<span class="draft-dot" title="${tr("运用有问题")}">!</span>` : ""}<span class="count">${day ? day.segments.length + tr(" 班") + (day.stay ? tr(" 留") : "") : tr("休")}</span>`, active)}</li>`);
-						});
-						parts.push(`</ul>`);
-					}
-					parts.push(`</li>`);
+					parts.push(`<li>${node(`data-siding="${siding.id}" data-of-depot="${depot.id}"`, "", `<span class="label leaf">${escapeHtml(shortName(siding.name) || tr("存车线"))}</span><span class="count" title="${escapeHtml(givenText)}">${fleetText}${given.length ? " · " + tr("{0} 条线路", given.length) : ""}</span>`, false)}</li>`);
 				});
 				parts.push(`</ul>`);
 			}
@@ -3549,6 +3550,14 @@
 	const segmentKey = segment => segment.route + "@" + segment.service;
 
 	/** Changes a depot's duties in the draft, dropping the draft when it ends up the same as the game's. */
+	/** Where a duty's train comes from (S8), the same on each of its days: "prefer", "only" or "any". */
+	const startOf = slot => (slot.find(day => day.start) || {}).start || "prefer";
+	const startText = (slot, siding) => {
+		const name = shortName(siding.name) || tr("存车线");
+		const start = startOf(slot);
+		return start === "any" ? tr("出车：不指定") : start === "only" ? tr("只从 {0} 出车", name) : tr("出车：{0}", name);
+	};
+
 	/** A new duty number, as a decimal string of a long like the game's. */
 	const newDutyId = () => String(1e15 + Math.floor(Math.random() * 8e15));
 	/** A slot's own number, from any of its days, or null if it has none yet. */
@@ -3617,7 +3626,7 @@
 		const made = {
 			days: group, stay: current ? current.stay : false, next: current && current.next !== undefined ? current.next : -1, segments: current ? current.segments.map(segment => ({ ...segment })) : [],
 			// The duty's own number, the same on all its days (P2-D), and where it goes on to and back to
-			duty: dutyIdOf(slot) || newDutyId(), nextDuty: current && current.nextDuty || "0", returnSiding: current && current.returnSiding || "0", fromOvernight: false,
+			duty: dutyIdOf(slot) || newDutyId(), nextDuty: current && current.nextDuty || "0", returnSiding: current && current.returnSiding || "0", fromOvernight: false, start: startOf(slot),
 		};
 		slot.forEach(day => { day.days &= ~group; });
 		for (let i = slot.length - 1; i >= 0; i--) if (!slot[i].days) slot.splice(i, 1);
@@ -3963,7 +3972,10 @@
 				return `<option value="${own ? "same:" + i : "duty:" + id}"${chosen ? " selected" : ""}>${escapeHtml(label)}</option>`;
 			})).join("")}</select></label>` : ""}
 			${day && day.segments.length && !day.stay ? `<label>${tr("回库存车线")} <select data-duty-return><option value="0">${tr("自动（车池里那时最早要用车的）")}</option>${poolSidings(depot, siding.id).map(other => `<option value="${other.id}"${day.returnSiding === other.id ? " selected" : ""}>${escapeHtml(shortName(other.name) || tr("存车线"))}</option>`).join("")}</select></label>` : ""}
-			${data.canEdit && poolSidings(depot, siding.id).length > 1 ? `<p><button type="button" class="link" data-duty-move>${tr("移到存车线 ▸")}</button></p>` : ""}
+			<label>${tr("出车方式")} <select data-duty-start>${[["prefer", tr("优先从这条存车线出")], ["only", tr("只从这条存车线出")], ["any", tr("不指定（车池里有车、出库最快的）")]].map(([value, text]) => `<option value="${value}"${startOf(slots[state.slot.index] || []) === value ? " selected" : ""}>${text}</option>`).join("")}</select></label>
+			${poolSidings(depot, siding.id).length > 1 ? `<label>${tr("出车存车线")} <select data-duty-siding>${poolSidings(depot, siding.id).map(other => `<option value="${other.id}"${other.id === siding.id ? " selected" : ""}>${escapeHtml(shortName(other.name) || tr("存车线"))}</option>`).join("")}</select></label>` : ""}
+			${startOf(slots[state.slot.index] || []) === "only" && siding.fleet === 0 ? `<p class="warn">${tr("只从这条存车线出车，但它最多停 0 列，这份运用不会有车")}</p>` : ""}
+			<p class="hint">${tr("重新生成运用时，出车方式和出车存车线按生成结果重来。")}</p>
 			<p class="hint">${tr("选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 {0} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。", daysText(group))}</p></div>`;
 	}
 
@@ -6133,37 +6145,7 @@
 		const remove = e.target.closest("[data-remove-segment]");
 		const depot = state.slot && depotById(state.slot.depot);
 		if (remove && depot) editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).segments.splice(+remove.dataset.removeSegment, 1); });
-		// Moving the duty to another siding of the pool, keeping its number; its siding's references by place become ones by
-		// number first, so they still find it (P2-D)
-		if (e.target.closest("[data-duty-move]") && depot) {
-			// The menu opens on this click, which mustn't then reach the page and close it again
-			e.stopPropagation();
-			const r = e.target.getBoundingClientRect(), from = state.slot.siding;
-			openMenu(r.left, r.bottom, poolSidings(depot, from).filter(other => other.id !== from).map(other => [shortName(other.name) || tr("存车线"), () => {
-				let moved = null;
-				editDuties(depot, duties => {
-					const slots = duties.sidings[from] || [];
-					slots.forEach(slot => { if (!dutyIdOf(slot)) { const id = newDutyId(); slot.forEach(day => { day.duty = id; }); } });
-					slots.forEach(slot => slot.forEach(day => {
-						if (day.stay && day.next >= 0 && slots[day.next] && (!day.nextDuty || day.nextDuty === "0")) {
-							day.nextDuty = dutyIdOf(slots[day.next]);
-							day.next = -1;
-						}
-					}));
-					const [slot] = slots.splice(state.slot.index, 1);
-					if (!slots.length) delete duties.sidings[from];
-					const target = duties.sidings[other.id] || (duties.sidings[other.id] = []);
-					target.push(slot);
-					moved = { depot: depot.id, siding: other.id, index: target.length - 1 };
-					return tr("运用移到了 {0}，编号不变", shortName(other.name) || tr("存车线"));
-				});
-				if (moved) {
-					state.slot = moved;
-					renderAll();
-				}
-			}]));
-			return;
-		}
+
 		if (e.target.closest("[data-remove-deleted]") && depot) editDuties(depot, duties => {
 			const day = dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday);
 			day.segments = day.segments.filter(segment => data.routeById.get(segment.route));
@@ -6179,6 +6161,36 @@
 				day.nextDuty = kind === "duty" ? value : "0";
 				day.next = kind === "duty" || Number(value) === state.slot.index ? -1 : Number(value);
 			});
+		}
+		// Where the duty's train comes from (S8): how, and from which siding of the pool, the duty moved there keeping its
+		// number; its siding's references by place become ones by number first, so they still find it (P2-D)
+		if (e.target.matches("[data-duty-start]") && depot) {
+			const start = e.target.value;
+			editDuties(depot, duties => { (duties.sidings[state.slot.siding][state.slot.index] || []).forEach(day => { day.start = start; }); });
+		}
+		if (e.target.matches("[data-duty-siding]") && depot && e.target.value !== state.slot.siding) {
+			const from = state.slot.siding, to = e.target.value, other = depot.sidings.find(each => each.id === to);
+			let moved = null;
+			editDuties(depot, duties => {
+				const slots = duties.sidings[from] || [];
+				slots.forEach(slot => { if (!dutyIdOf(slot)) { const id = newDutyId(); slot.forEach(day => { day.duty = id; }); } });
+				slots.forEach(slot => slot.forEach(day => {
+					if (day.stay && day.next >= 0 && slots[day.next] && (!day.nextDuty || day.nextDuty === "0")) {
+						day.nextDuty = dutyIdOf(slots[day.next]);
+						day.next = -1;
+					}
+				}));
+				const [slot] = slots.splice(state.slot.index, 1);
+				if (!slots.length) delete duties.sidings[from];
+				const target = duties.sidings[to] || (duties.sidings[to] = []);
+				target.push(slot);
+				moved = { depot: depot.id, siding: to, index: target.length - 1 };
+				return tr("运用移到了 {0}，编号不变", shortName(other ? other.name : "") || tr("存车线"));
+			});
+			if (moved) {
+				state.slot = moved;
+				renderAll();
+			}
 		}
 		if (e.target.matches("[data-duty-return]") && depot) {
 			const returnSiding = e.target.value;

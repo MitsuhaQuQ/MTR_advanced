@@ -47,6 +47,8 @@ public final class EditorDuties implements IPacket {
 				dayObject.addProperty("next", day.nextSlot);
 				// The duty's own number, on each of its days (P2-D), and where it goes on to and back to
 				dayObject.addProperty("duty", String.valueOf(slot.id));
+				// Where its train comes from, the same on each day of the slot (S8)
+				dayObject.addProperty("start", slot.start == DepotDuties.Slot.START_ONLY ? "only" : slot.start == DepotDuties.Slot.START_ANY ? "any" : "prefer");
 				dayObject.addProperty("nextDuty", String.valueOf(day.nextDutyId));
 				dayObject.addProperty("returnSiding", String.valueOf(day.returnSidingId));
 				dayObject.addProperty("fromOvernight", day.fromOvernight);
@@ -145,6 +147,10 @@ public final class EditorDuties implements IPacket {
 					usedDays |= day.weekdays;
 					day.stayOnLine = dayObject.get("stay").getAsBoolean();
 					day.nextSlot = day.stayOnLine && dayObject.has("next") ? dayObject.get("next").getAsInt() : -1;
+					if (dayObject.has("start")) {
+						final String start = getString(dayObject, "start");
+						slot.start = "only".equals(start) ? DepotDuties.Slot.START_ONLY : "any".equals(start) ? DepotDuties.Slot.START_ANY : DepotDuties.Slot.START_PREFER;
+					}
 					if (dayObject.has("duty") && slot.id == 0) {
 						slot.id = parseId(getString(dayObject, "duty"));
 					}

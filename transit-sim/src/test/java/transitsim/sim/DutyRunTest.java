@@ -765,6 +765,38 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aDutySetToLeaveFromItsSidingAloneWaitsForATrainThere() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		final DepotDuties duties = new DepotDuties();
+		duties.sidings.put(SIDING_ID, depot.slots);
+		depot.slots.get(0).start = DepotDuties.Slot.START_ONLY;
+		final Map<Long, Map<String, TripPath<TestTrack>>> sidingPaths = new HashMap<>();
+		sidingPaths.put(SIDING_ID, tripPaths);
+		sidingPaths.put(OTHER_SIDING_ID, tripPaths);
+		final long due = MONDAY + 8 * HOUR;
+		// Only the other siding of the pool has a train ready: none goes in its place (S8)
+		assertNull(new DepotDispatcher().findDutyDeploy(due, Collections.singletonList(OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool"));
+		assertEquals(SIDING_ID, new DepotDispatcher().findDutyDeploy(due, Arrays.asList(SIDING_ID, OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool").sidingId);
+	}
+
+	@Test
+	void aDutyLeavingFromAnySidingTakesTheQuickestThenTheLowestId() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		final DepotDuties duties = new DepotDuties();
+		duties.sidings.put(SIDING_ID, depot.slots);
+		depot.slots.get(0).start = DepotDuties.Slot.START_ANY;
+		final Map<Long, Map<String, TripPath<TestTrack>>> sidingPaths = new HashMap<>();
+		sidingPaths.put(SIDING_ID, tripPaths);
+		sidingPaths.put(OTHER_SIDING_ID, tripPaths);
+		final long due = MONDAY + 8 * HOUR;
+		// As quick from either: the lower ID, whichever is the duty's own (S8)
+		assertEquals(Math.min(SIDING_ID, OTHER_SIDING_ID), new DepotDispatcher().findDutyDeploy(due, Arrays.asList(SIDING_ID, OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool").sidingId);
+		assertEquals(OTHER_SIDING_ID, new DepotDispatcher().findDutyDeploy(due, Collections.singletonList(OTHER_SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> "pool").sidingId);
+	}
+
+	@Test
 	void trainsLeaveAtLeastTheReleaseIntervalApart() {
 		setSlots(
 				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)),

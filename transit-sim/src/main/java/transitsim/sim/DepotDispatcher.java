@@ -225,22 +225,27 @@ public class DepotDispatcher {
 				if (key == null) {
 					continue;
 				}
-				// The slot's own siding sends the train if it has one ready, else the first siding of its pool that has one and
-				// the path of the duty
+				// Where the train comes from, as the duty says (S8): its own siding first, else the first siding of its pool that
+				// has a train ready and the path of the duty; its own siding alone; or whichever of the pool has the quickest way
+				// out to the first stop, by ID when as quick
+				final int start = slots.get(i).start;
 				long sidingId = 0;
 				TripPath<T> dutyPath = null;
-				if (ready.contains(dutySidingId)) {
+				if (start != DepotDuties.Slot.START_ANY && ready.contains(dutySidingId)) {
 					dutyPath = getPath(tripPaths, dutySidingId, key);
 					sidingId = dutySidingId;
 				}
-				if (dutyPath == null) {
+				if (dutyPath == null && start != DepotDuties.Slot.START_ONLY) {
 					final Object pool = pools.apply(dutySidingId);
 					for (final long otherSidingId : ready) {
-						if (otherSidingId != dutySidingId && Objects.equals(pool, pools.apply(otherSidingId))) {
-							dutyPath = getPath(tripPaths, otherSidingId, key);
-							if (dutyPath != null) {
+						if ((start == DepotDuties.Slot.START_ANY || otherSidingId != dutySidingId) && Objects.equals(pool, pools.apply(otherSidingId))) {
+							final TripPath<T> otherPath = getPath(tripPaths, otherSidingId, key);
+							if (otherPath != null && (dutyPath == null || start == DepotDuties.Slot.START_ANY && otherPath.stopTimes.getLeadMillis() < dutyPath.stopTimes.getLeadMillis())) {
+								dutyPath = otherPath;
 								sidingId = otherSidingId;
-								break;
+								if (start != DepotDuties.Slot.START_ANY) {
+									break;
+								}
 							}
 						}
 					}
