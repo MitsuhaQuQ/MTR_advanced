@@ -237,6 +237,16 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 				train.setHostHold(null);
 				addEvent(tickMillis, SimEvent.Kind.RELEASED, resume.trainId, train.getHeadRail(), "");
 			}
+		} else if (input instanceof HostInput.Skip) {
+			final HostInput.Skip skip = (HostInput.Skip) input;
+			final TickRunner<T>.HeadlessTrain train = runner.getTrain(skip.trainId);
+			if (train != null) {
+				final java.util.Set<Long> platformIds = new java.util.TreeSet<>();
+				for (final long platformId : skip.platformIds) {
+					platformIds.add(platformId);
+				}
+				train.service.setSkipPlatforms(platformIds);
+			}
 		} else if (input instanceof HostInput.Remove) {
 			runner.removeTrain(((HostInput.Remove) input).trainId);
 			doorsOpen.remove(((HostInput.Remove) input).trainId);

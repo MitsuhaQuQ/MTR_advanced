@@ -319,6 +319,18 @@ public final class SimDataset {
 				newTripPath.generateTimes(generator);
 				siding.tripPaths.put(newTripPath.key, newTripPath);
 			});
+			// Its trains time a path passing stops the way its other paths were timed (D3)
+			siding.pathVariants = new transitsim.plan.PathVariants<DataTrack>() {
+				@Override
+				public DataTrack pass(DataTrack track) {
+					return track.passed();
+				}
+
+				@Override
+				public TimeGenerator<DataTrack> getTimeGenerator() {
+					return generator;
+				}
+			};
 			if (sidingData.turnBacks.length > 0) {
 				siding.turnBacks = TurnBacks.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(sidingData.turnBacks)));
 			}
@@ -868,6 +880,13 @@ public final class SimDataset {
 			this.canAccelerate = canAccelerate;
 			this.hasSignal = hasSignal;
 			this.twoWay = twoWay;
+		}
+
+		/**
+		 * @return the same track, which a train passes without stopping (D3)
+		 */
+		public DataTrack passed() {
+			return new DataTrack(startNode, endNode, length, platform, siding, stopId, 0, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay);
 		}
 
 		private void write(BinaryWriter writer) {

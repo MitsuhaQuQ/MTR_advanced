@@ -6071,10 +6071,11 @@
 
 	/** Why a train is reported, with how late it is or how long it has waited (D2). */
 	function alarmReasonText(alarm) {
-		if (alarm.reason === "DEADLOCK") return tr("和别的车互相等着走不了（锁死）");
-		if (alarm.reason === "WAITING") return tr("等进路已 {0} 分钟", Math.floor(alarm.waiting / 60));
-		if (alarm.reason === "LATE") return tr("晚点 {0} 分钟", Math.floor(alarm.late / 60));
-		return "";
+		const reason = alarm.reason === "DEADLOCK" ? tr("和别的车互相等着走不了（锁死）")
+			: alarm.reason === "WAITING" ? tr("等进路已 {0} 分钟", Math.floor(alarm.waiting / 60))
+			: alarm.reason === "LATE" ? tr("晚点 {0} 分钟", Math.floor(alarm.late / 60)) : "";
+		// Passing the stations a plan or a dispatcher's setting has it pass (D3)
+		return reason + (alarm.skipping ? tr("，跳站中") : "");
 	}
 
 	/** The rail system, a network of rails joined together, with its plans (D2). */

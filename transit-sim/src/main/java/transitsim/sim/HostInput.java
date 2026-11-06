@@ -59,6 +59,21 @@ public abstract class HostInput implements Comparable<HostInput> {
 	/**
 	 * The train is gone, deleted or cleared away, and gives up everything it held (3.1, rule 4).
 	 */
+	/**
+	 * Has the train pass these platforms without stopping from its next stop on, or none to stop as planned again (D3).
+	 */
+	public static final class Skip extends HostInput {
+
+		public final long trainId;
+		public final long[] platformIds;
+
+		public Skip(long time, long sequence, long trainId, long[] platformIds) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.platformIds = platformIds.clone();
+		}
+	}
+
 	public static final class Remove extends HostInput {
 
 		public final long trainId;

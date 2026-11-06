@@ -45,6 +45,7 @@ class DutyRunTest {
 		routes.put(1L, makeRoute(1, 1, 2, 3));
 		routes.put(2L, makeRoute(2, 4, 5));
 		routes.put(3L, makeRoute(3, 3, 2, 1));
+		routes.put(4L, makeRoute(4, 6, 7, 8, 9));
 	}
 
 	/**
@@ -921,6 +922,179 @@ class DutyRunTest {
 		train.service.updateOvernight();
 		assertNull(train.service.getOvernightHold());
 		assertSame(nextPath, train.followed);
+	}
+
+	/**
+	 * Passing a stop with the test tracks, timed by the stops left (D3).
+	 */
+	private static final transitsim.plan.PathVariants<TestTrack> SKIP_VARIANTS = new transitsim.plan.PathVariants<TestTrack>() {
+		@Override
+		public TestTrack pass(TestTrack track) {
+			return track.passed();
+		}
+
+		@Override
+		public transitsim.plan.TimeGenerator<TestTrack> getTimeGenerator() {
+			return new transitsim.plan.TimeGenerator<TestTrack>() {
+				@Override
+				public StopTimes calculateStopTimes(List<TestTrack> path) {
+					final StopTimes stopTimes = new StopTimes();
+					generateTimeSegments(path, new ArrayList<>(), stopTimes, 0, 0);
+					return stopTimes;
+				}
+
+				@Override
+				public void generateTimeSegments(List<TestTrack> path, List<transitsim.plan.TimeSegment> timeSegments, StopTimes stopTimes, int joinIndex, int lapEndIndex) {
+					final List<long[]> stops = new ArrayList<>();
+					for (int i = 0; i < path.size(); i++) {
+						if (path.get(i).getDwellTime() > 0 && !path.get(i).isSidingTrack()) {
+							stops.add(stop(i, path.get(i).getStopId(), i * 2));
+						}
+					}
+					stopTimes.copyFrom(StopTimes.of(stops.toArray(new long[0][])));
+				}
+			};
+		}
+	};
+
+	/**
+	 * One segment on route 4, stopping at platforms 6 to 9 on rails 1 to 4.
+	 */
+	private FakeTrain fourStops(TripPath<TestTrack>[] tripPath) {
+		setSlots(day(false, -1, new DepotDuties.Segment(4, (int) (8 * HOUR), 0, -1)));
+		final List<TestTrack> path = makePath(0, 6, 7, 8, 9, 0);
+		tripPath[0] = addPath(0, 0, new int[]{1}, path, stop(1, 6, 0), stop(2, 7, 2), stop(3, 8, 4), stop(4, 9, 6));
+		final FakeTrain train = newTrain(path);
+		train.service.setPathVariants(SKIP_VARIANTS);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath[0]);
+		train.nextStoppingIndex = 1;
+		return train;
+	}
+
+	@Test
+	void passesTheStationsItIsToldToFromItsNextStopOn() {
+		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
+		final FakeTrain train = fourStops(tripPath);
+		// Nothing told, nothing changes
+		assertFalse(train.service.chooseSkip());
+		assertSame(tripPath[0], train.followed);
+
+		train.service.setSkipPlatforms(new HashSet<>(Arrays.asList(7L, 8L)));
+		assertTrue(train.service.chooseSkip());
+		assertEquals(TripPath.getSkipKey(tripPath[0].key, new int[]{2, 3}), train.service.getTripPathKey());
+		assertTrue(train.service.isSkipping());
+		// The same rails, the same stop, only the stops passed
+		assertEquals(1, train.nextStoppingIndex);
+		assertEquals(tripPath[0].path.size(), train.followed.path.size());
+		assertEquals(0, train.followed.path.get(2).getDwellTime());
+		assertEquals(0, train.followed.path.get(3).getDwellTime());
+		assertEquals(10, train.followed.path.get(4).getDwellTime());
+		assertTrue(transitsim.plan.PathTimes.isPassingPlatform(train.followed.path, 2));
+		// Its siding's paths are left as they were
+		assertEquals(10, tripPath[0].path.get(2).getDwellTime());
+		assertNull(tripPaths.get(train.service.getTripPathKey()));
+		// It chooses once at a stop
+		assertFalse(train.service.chooseSkip());
+	}
+
+	@Test
+	void theFirstAndLastStopsOfEachSegmentAreAlwaysStops() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		train[0].service.setPathVariants(SKIP_VARIANTS);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].nextStoppingIndex = 1;
+		// Route 1 on rails 1 to 3, route 2 on rails 4 and 5: only platform 2 is between the two ends of a segment
+		train[0].service.setSkipPlatforms(new HashSet<>(Arrays.asList(1L, 2L, 3L, 4L, 5L)));
+		assertTrue(train[0].service.chooseSkip());
+		assertEquals(TripPath.getSkipKey(tripPath.key, new int[]{2}), train[0].service.getTripPathKey());
+	}
+
+	@Test
+	void toldToStopAgainItTakesItsUsualPathAtTheNextStop() {
+		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
+		final FakeTrain train = fourStops(tripPath);
+		train.service.setSkipPlatforms(Collections.singleton(8L));
+		assertTrue(train.service.chooseSkip());
+		assertTrue(train.service.isSkipping());
+
+		// At platform 7 it is told to stop again, so it stops at 8 after all
+		train.nextStoppingIndex = 2;
+		train.service.setSkipPlatforms(Collections.emptySet());
+		assertTrue(train.service.chooseSkip());
+		assertSame(tripPath[0], train.followed);
+		assertEquals(tripPath[0].key, train.service.getTripPathKey());
+		assertEquals(2, train.nextStoppingIndex);
+		assertFalse(train.service.isSkipping());
+	}
+
+	@Test
+	void stopsPassedStayPassedWhileItKeepsPassing() {
+		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
+		final FakeTrain train = fourStops(tripPath);
+		train.service.setSkipPlatforms(Collections.singleton(7L));
+		assertTrue(train.service.chooseSkip());
+		final TripPath<TestTrack> skipping = train.followed;
+		// Past platform 7 and at 8, told the same, it keeps the path rather than making it again
+		train.nextStoppingIndex = 3;
+		train.service.setSkipPlatforms(new HashSet<>(Collections.singleton(7L)));
+		assertFalse(train.service.chooseSkip());
+		assertSame(skipping, train.followed);
+	}
+
+	@Test
+	void aTrainPassingStopsIsPutBackOnItsPathFromASave() throws Exception {
+		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
+		final FakeTrain train = fourStops(tripPath);
+		train.service.setSkipPlatforms(new HashSet<>(Arrays.asList(7L, 8L)));
+		train.service.chooseSkip();
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		train.service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+
+		final FakeTrain restored = newTrain(tripPath[0].path);
+		restored.service.setPathVariants(SKIP_VARIANTS);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		assertEquals(train.service.getTripPathKey(), restored.service.getTripPathKey());
+		assertEquals(0, restored.followed.path.get(2).getDwellTime());
+		assertEquals(new TreeSet<>(Arrays.asList(7L, 8L)), restored.service.getSkipPlatforms());
+
+		// Without a way to make it, the path is gone as any other path that is
+		final FakeTrain noVariants = newTrain(tripPath[0].path);
+		noVariants.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertFalse(noVariants.service.restoreTripPath(tripPaths));
+	}
+
+	@Test
+	void aServiceWritesAsManyValuesAsItSays() throws Exception {
+		// The hosts write the size of a saved train before its values, so one too few breaks what comes after it
+		final int[] count = new int[1];
+		final transitsim.io.KeyedWriter counter = (transitsim.io.KeyedWriter) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{transitsim.io.KeyedWriter.class}, (proxy, method, args) -> {
+			count[0]++;
+			return null;
+		});
+		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
+		final FakeTrain train = fourStops(tripPath);
+		train.service.setSkipPlatforms(Collections.singleton(7L));
+		train.service.write(counter);
+		assertEquals(TrainService.SAVED_KEYS, count[0]);
+	}
+
+	@Test
+	void theKeysOfPathsPassingStopsKeepWhatTheyWere() {
+		final String returnKey = TripPath.getReturnKey("duty|1", OTHER_SIDING_ID);
+		final String skipKey = TripPath.getSkipKey(returnKey, new int[]{3, 5});
+		assertTrue(TripPath.isSkipKey(skipKey));
+		assertEquals(returnKey, TripPath.getSkipBase(skipKey));
+		assertArrayEquals(new int[]{3, 5}, TripPath.getSkipRails(skipKey));
+		assertEquals(OTHER_SIDING_ID, TripPath.getReturnSidingId(skipKey));
+		assertTrue(TripPath.isReturnKey(skipKey));
+		assertEquals(returnKey, TripPath.getSkipKey(returnKey, new int[0]));
+		assertFalse(TripPath.isSkipKey(returnKey));
 	}
 
 	private class FakeTrain implements TrainService.Vehicle<TestTrack> {

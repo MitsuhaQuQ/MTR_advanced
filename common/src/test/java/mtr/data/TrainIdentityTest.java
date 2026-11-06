@@ -32,6 +32,24 @@ class TrainIdentityTest {
 	}
 
 	@Test
+	void aSavedTrainIsAsLongAsItSaysWithWhatItIsToldToPass() throws IOException {
+		// A train saved one value short leaves its last one to be read as the next train of its siding (D3 found it)
+		final TrainServer train = train(5, 100);
+		train.getService().setSkipPlatforms(new TreeSet<>(Arrays.asList(3L, 4L)));
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(train.messagePackLength());
+		train.toMessagePack(packer);
+		packer.packString("next");
+		packer.close();
+		final org.msgpack.core.MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(packer.toByteArray());
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(unpacker.unpackValue());
+		assertEquals("next", unpacker.unpackString());
+		assertTrue(map.containsKey("cruise_cap"));
+		final TrainServer read = new TrainServer(100, 40, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), 0, 0, Train.ACCELERATION_DEFAULT, false, 0, 0, map);
+		assertEquals(new TreeSet<>(Arrays.asList(3L, 4L)), read.getService().getSkipPlatforms());
+	}
+
+	@Test
 	void theSameTrainOfAnotherSidingHoldsItsIdentity() {
 		final TrainServer train = train(77, 100);
 		final UUID rider = UUID.randomUUID();

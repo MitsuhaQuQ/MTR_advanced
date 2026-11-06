@@ -31,6 +31,13 @@ class TestTrack implements PlanTrack {
 		this.stopIndex = stopIndex;
 	}
 
+	/**
+	 * @return the same track with no stop at its end (D3)
+	 */
+	TestTrack passed() {
+		return new TestTrack(start, end, isSiding, stopId, 0, stopIndex);
+	}
+
 	@Override
 	public double getTrackLength() {
 		return Math.abs(end - start);

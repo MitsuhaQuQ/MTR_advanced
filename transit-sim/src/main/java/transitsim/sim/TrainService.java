@@ -5,6 +5,7 @@ import transitsim.io.KeyedWriter;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.DutyShapes;
 import transitsim.plan.OperatingDay;
+import transitsim.plan.PathVariants;
 import transitsim.plan.PlanRoute;
 import transitsim.plan.PlanTrack;
 import transitsim.plan.PlanVersions;
@@ -20,8 +21,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -146,6 +150,22 @@ public class TrainService<T extends PlanTrack> {
 	 * meanwhile, unlike a train back in the depot, which ends it.
 	 */
 	private boolean isLeavingForDuty;
+	/**
+	 * The platforms a plan or a dispatcher has the train pass without stopping for now, as the host tells it (D3).
+	 */
+	private Set<Long> skipPlatforms = Collections.emptySet();
+	/**
+	 * The stop at which the train chose which stops to pass, so it chooses once there, or -1.
+	 */
+	private int skipChosenStop = -1;
+	/**
+	 * Makes the paths passing stops on demand, or null where the host gives none, so the train never skips.
+	 */
+	private PathVariants<T> pathVariants;
+	/**
+	 * The last path passing stops made, which is the one the train is on, and those of its siding share no copy of it.
+	 */
+	private TripPath<T> skipPath;
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
 	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
@@ -168,7 +188,15 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_DUTY_SIDING = "duty_siding";
 	private static final String KEY_DUTY_ID = "duty_id";
-	public static final int SAVED_KEYS = 14;
+	/**
+	 * The platforms the train is told to pass (D3).
+	 */
+	private static final String KEY_SKIP_PLATFORMS = "skip_platforms";
+	/**
+	 * How many values {@link #write} writes, which hosts count into the size of what they save. Checked by a test, as it was
+	 * once left one short.
+	 */
+	public static final int SAVED_KEYS = 16;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
@@ -195,6 +223,12 @@ public class TrainService<T extends PlanTrack> {
 		dutyIndex = reader.getInt(KEY_DUTY_INDEX, 0);
 		dutySidingId = reader.getLong(KEY_DUTY_SIDING, 0);
 		dutyId = reader.getLong(KEY_DUTY_ID, 0);
+		final long[] skips = reader.getLongs(KEY_SKIP_PLATFORMS);
+		final Set<Long> newSkips = new TreeSet<>();
+		for (final long platformId : skips) {
+			newSkips.add(platformId);
+		}
+		skipPlatforms = newSkips.isEmpty() ? Collections.emptySet() : newSkips;
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
@@ -219,6 +253,118 @@ public class TrainService<T extends PlanTrack> {
 		writer.writeString(KEY_DUTY_DAY, dutySlot >= 0 && getDutyDay() != null ? getDutyDay().toText() : "");
 		writer.writeLong(KEY_DUTY_SIDING, dutySidingId);
 		writer.writeLong(KEY_DUTY_ID, dutyId);
+		writer.writeLongs(KEY_SKIP_PLATFORMS, skipPlatforms.stream().mapToLong(Long::longValue).toArray());
+	}
+
+	/**
+	 * Tells the train which platforms to pass without stopping from its next stop on, or none to stop as planned again
+	 * (D3). It changes over at a stop, never between two.
+	 */
+	public void setSkipPlatforms(Set<Long> platformIds) {
+		final Set<Long> newSkips = platformIds == null || platformIds.isEmpty() ? Collections.emptySet() : new TreeSet<>(platformIds);
+		if (!newSkips.equals(skipPlatforms)) {
+			skipPlatforms = newSkips;
+			skipChosenStop = -1;
+		}
+	}
+
+	public Set<Long> getSkipPlatforms() {
+		return Collections.unmodifiableSet(skipPlatforms);
+	}
+
+	/**
+	 * @return whether the train is on a path passing some of its stops it would stop at (D3)
+	 */
+	public boolean isSkipping() {
+		return TripPath.isSkipKey(tripPathKey);
+	}
+
+	public void setPathVariants(PathVariants<T> newPathVariants) {
+		pathVariants = newPathVariants;
+	}
+
+	/**
+	 * @return the path with this key among these, or one passing stops of one of them made from its key (D3), or null
+	 */
+	public TripPath<T> findPath(Map<String, TripPath<T>> paths, String key) {
+		final TripPath<T> path = paths.get(key);
+		if (path != null || !TripPath.isSkipKey(key)) {
+			return path;
+		}
+		if (skipPath != null && skipPath.key.equals(key)) {
+			return skipPath;
+		}
+		final TripPath<T> base = paths.get(TripPath.getSkipBase(key));
+		if (base == null || pathVariants == null) {
+			return null;
+		}
+		skipPath = TripPath.withSkips(base, TripPath.getSkipRails(key), pathVariants);
+		return skipPath;
+	}
+
+	/**
+	 * At a stop of its duty, ready to go, the train takes the version of its path that passes the stops it is told to pass
+	 * from here on, or its usual path again when it is told none (D3). The first and last stop of each segment of the duty
+	 * are always stops, where it starts and ends its services. Stops it has already passed stay passed, so the path's key
+	 * doesn't change at every stop.
+	 *
+	 * @return true if the train has just changed paths, so it waits a moment at the stop
+	 */
+	public boolean chooseSkip() {
+		if (!isOnDuty() || pathVariants == null) {
+			return false;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (stopIndex == skipChosenStop) {
+			return false;
+		}
+		skipChosenStop = stopIndex;
+		final String baseKey = TripPath.getSkipBase(tripPathKey);
+		final TripPath<T> base = tripPaths.get(baseKey);
+		if (base == null) {
+			return false;
+		}
+		final int lastStop = getLastDutyStop(base);
+		final Set<Integer> kept = new HashSet<>();
+		if (base.dutyStarts != null) {
+			for (final int start : base.dutyStarts) {
+				kept.add(start);
+				// The last stop of the segment before, where the train turns back onto this one
+				for (int i = start - 1; i >= 0; i--) {
+					if (base.path.get(i).getDwellTime() > 0) {
+						kept.add(i);
+						break;
+					}
+				}
+			}
+		}
+		final List<Integer> rails = new ArrayList<>();
+		for (final int rail : TripPath.getSkipRails(tripPathKey)) {
+			// Told to stop again, it takes its usual path at once
+			if (rail <= stopIndex && !skipPlatforms.isEmpty()) {
+				rails.add(rail);
+			}
+		}
+		for (int i = stopIndex + 1; i < lastStop; i++) {
+			final T track = base.path.get(i);
+			if (track.getDwellTime() > 0 && track.isPlatformTrack() && skipPlatforms.contains(track.getStopId()) && !kept.contains(i)) {
+				rails.add(i);
+			}
+		}
+		final int[] railArray = rails.stream().mapToInt(Integer::intValue).toArray();
+		final String newKey = TripPath.getSkipKey(baseKey, railArray);
+		if (newKey.equals(tripPathKey)) {
+			return false;
+		}
+		final TripPath<T> newPath = findPath(tripPaths, newKey);
+		if (newPath == null) {
+			return false;
+		}
+		tripPath = newPath;
+		tripPathKey = newPath.key;
+		stopTimes = newPath.stopTimes;
+		vehicle.changePath(newPath, stopIndex);
+		return true;
 	}
 
 	public void setSiding(long newSidingId) {
@@ -265,6 +411,9 @@ public class TrainService<T extends PlanTrack> {
 			dutySlot = -1;
 			dutySidingId = 0;
 			returnChosenStop = -1;
+			// What it is told to pass holds until the host tells it otherwise, on this duty or the next (D3)
+			skipChosenStop = -1;
+			skipPath = null;
 			dutyIndex = 0;
 			dutyDay = null;
 			isLeavingForDuty = false;
@@ -725,7 +874,7 @@ public class TrainService<T extends PlanTrack> {
 		}
 		turnBackStop = chosenStopIndex;
 		vehicle.reserveTurnBack(turnBackPoint.getRails(chosenWay), chosenStopIndex + turnBackPoint.getLength(chosenWay));
-		if (chosenPath == tripPath) {
+		if (chosenPath == tripPath || chosenPath != null && tripPath != null && chosenPath.key.equals(TripPath.getSkipBase(tripPath.key))) {
 			return false;
 		}
 		tripPath = chosenPath;
@@ -1210,7 +1359,7 @@ public class TrainService<T extends PlanTrack> {
 		// can be on another rail
 		final boolean otherWayRound = tripPath.turnBackPoint >= 0;
 		// Only a siding the duty has a way back to is chosen, rather than one it can't reach and then its own after all
-		final String returnFrom = otherWayRound ? tripPath.tripKey : tripPathKey;
+		final String returnFrom = otherWayRound ? tripPath.tripKey : TripPath.getSkipBase(tripPathKey);
 		final java.util.function.LongPredicate canGoBack = otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null;
 		// Set for the duty (A 出 B 入, P2-D): there if there is a way, otherwise told and as the pool would send it
 		final long setSidingId = dutyDay == null ? 0 : dutyDay.returnSidingId;
@@ -1219,7 +1368,7 @@ public class TrainService<T extends PlanTrack> {
 			depot.noteReturnMissed(sidingId, setSidingId, "no way back to the siding set for the duty");
 		}
 		final long returnSidingId = setReachable ? setSidingId : depot.chooseReturnSiding(sidingId, orderDepotId, canGoBack);
-		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(otherWayRound ? tripPath.tripKey : tripPathKey, returnSidingId));
+		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(returnFrom, returnSidingId));
 		if (returnPath == null) {
 			return false;
 		}
@@ -1348,7 +1497,8 @@ public class TrainService<T extends PlanTrack> {
 		if (tripPathKey.isEmpty()) {
 			return true;
 		}
-		final TripPath<T> newTripPath = newTripPaths.get(tripPathKey);
+		// A path passing stops is made again from its key (D3)
+		final TripPath<T> newTripPath = findPath(newTripPaths, tripPathKey);
 		if (newTripPath == null) {
 			return false;
 		}

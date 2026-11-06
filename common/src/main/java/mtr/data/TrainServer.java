@@ -413,7 +413,8 @@ public class TrainServer extends Train {
 			simulatedService = serviceBytes;
 			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(serviceBytes)));
 			final String key = service.getTripPathKey();
-			final TripPath<PathData> tripPath = key.isEmpty() ? null : lastTripPaths.get(key);
+			// A path passing stops (D3) isn't among the siding's, and is made from its key
+			final TripPath<PathData> tripPath = key.isEmpty() ? null : service.findPath(lastTripPaths, key);
 			if ((tripPath == null ? depotPath : tripPath.path) != path) {
 				new ServiceVehicle().followPath(tripPath);
 			}
@@ -786,7 +787,7 @@ public class TrainServer extends Train {
 	 * @return whether the train is on its way back to that siding of its pool, not its own
 	 */
 	public boolean isReturningTo(long otherSidingId) {
-		return isOnRoute && service.getTripPathKey().endsWith(TripPath.getReturnKey("", otherSidingId));
+		return isOnRoute && TripPath.getSkipBase(service.getTripPathKey()).endsWith(TripPath.getReturnKey("", otherSidingId));
 	}
 
 	/**
@@ -996,6 +997,13 @@ public class TrainServer extends Train {
 	 *
 	 * @return false if that path no longer exists
 	 */
+	/**
+	 * How its siding makes paths passing stops (D3).
+	 */
+	public void setPathVariants(transitsim.plan.PathVariants<PathData> pathVariants) {
+		service.setPathVariants(pathVariants);
+	}
+
 	public boolean restoreTripPath(Map<String, TripPath<PathData>> newTripPaths) {
 		return service.restoreTripPath(newTripPaths);
 	}

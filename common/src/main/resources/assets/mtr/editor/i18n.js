@@ -190,6 +190,7 @@ const I18N = (() => {
 			"和别的车互相等着走不了（锁死）": "stuck waiting on other trains (deadlock)",
 			"等进路已 {0} 分钟": "waiting for its way for {0} min",
 			"晚点 {0} 分钟": "{0} min late",
+			"，跳站中": ", passing stations",
 			"临时折返": "Turn back early",
 			"不折返": "No",
 			"最近的能折返的站": "At the nearest station that can",

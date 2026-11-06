@@ -701,6 +701,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				// Trains late or stuck with no plan on for them, and those a plan is on for (D2)
 				final List<String> alarms = mtr.packet.DelayAlarms.collect(depotSidings, dataCache, deadlockedTrains, contingencySystems, platformGraph, alarmLookups);
 				mtr.packet.DelayAlarms.log(depot, alarms, depot.loggedAlarms);
+				// Trains to pass other stations than they do now (D3): the simulator's through it, the game's directly
+				alarmLookups.skips.forEach((train, platformIds) -> {
+					if (!liveSimulation.submitSkip(train.id, platformIds)) {
+						train.getService().setSkipPlatforms(platformIds);
+					}
+				});
+				alarmLookups.skips.clear();
 				if (!alarms.equals(depot.clientAlarms) || resend && alarms.size() > 1) {
 					depot.clientAlarms = alarms;
 					mtr.packet.DelayAlarms.sendS2C(world, depot.id, alarms);

@@ -29,6 +29,44 @@ class DelayRulesTest {
 	}
 
 	@Test
+	void aPlanPassingStationsGivesTheirPlatformsUntilTheTrainIsAlmostOnTime() {
+		final Contingencies contingencies = new Contingencies();
+		final Contingency plan = plan(3, false, ROUTE);
+		plan.lateMinutes = 3;
+		plan.skipStationIds.add(50L);
+		plan.skipStationIds.add(60L);
+		contingencies.plans.put(plan.id, plan);
+		final java.util.List<Contingencies> systems = java.util.Collections.singletonList(contingencies);
+		final java.util.function.LongFunction<java.util.Collection<Long>> platforms = stationId -> stationId == 50 ? Arrays.asList(501L, 502L) : stationId == 60 ? java.util.Collections.singletonList(601L) : null;
+		final java.util.Set<Long> all = new java.util.TreeSet<>(Arrays.asList(501L, 502L, 601L));
+
+		final DelayRules.Outcome late = DelayRules.evaluate(systems, TRAIN, ROUTE, 3 * MINUTE, 0, false);
+		assertEquals(all, DelayRules.getSkipPlatforms(systems, late, TRAIN, ROUTE, 3 * MINUTE, 0, false, false, platforms));
+		// Under what starts the plan a train not passing stations doesn't start
+		final DelayRules.Outcome less = DelayRules.evaluate(systems, TRAIN, ROUTE, 2 * MINUTE, 0, false);
+		assertTrue(DelayRules.getSkipPlatforms(systems, less, TRAIN, ROUTE, 2 * MINUTE, 0, false, false, platforms).isEmpty());
+		// One passing them goes on until it is less than a minute late
+		assertEquals(all, DelayRules.getSkipPlatforms(systems, less, TRAIN, ROUTE, 2 * MINUTE, 0, false, true, platforms));
+		final DelayRules.Outcome almost = DelayRules.evaluate(systems, TRAIN, ROUTE, MINUTE - 1, 0, false);
+		assertTrue(DelayRules.getSkipPlatforms(systems, almost, TRAIN, ROUTE, MINUTE - 1, 0, false, true, platforms).isEmpty());
+
+		// A plan waiting for a dispatcher passes nothing until it is started, and stops as soon as it is turned off
+		plan.manual = true;
+		final DelayRules.Outcome waiting = DelayRules.evaluate(systems, TRAIN, ROUTE, 9 * MINUTE, 0, false);
+		assertTrue(DelayRules.getSkipPlatforms(systems, waiting, TRAIN, ROUTE, 9 * MINUTE, 0, false, true, platforms).isEmpty());
+		contingencies.active.add(plan.id);
+		final DelayRules.Outcome started = DelayRules.evaluate(systems, TRAIN, ROUTE, 9 * MINUTE, 0, false);
+		assertEquals(all, DelayRules.getSkipPlatforms(systems, started, TRAIN, ROUTE, 9 * MINUTE, 0, false, false, platforms));
+
+		// What a dispatcher sets for the train holds whatever it is
+		final Contingency adhoc = new Contingency();
+		adhoc.skipStationIds.add(60L);
+		contingencies.adhoc.put(TRAIN, adhoc);
+		final DelayRules.Outcome set = DelayRules.evaluate(systems, TRAIN, ROUTE, 0, 0, false);
+		assertEquals(java.util.Collections.singleton(601L), DelayRules.getSkipPlatforms(systems, set, TRAIN, ROUTE, 0, 0, false, false, platforms));
+	}
+
+	@Test
 	void withNoPlanALateTrainIsOnlyReported() {
 		final DelayRules.Outcome onTime = DelayRules.evaluate(new Contingencies(), TRAIN, ROUTE, 4 * MINUTE, 0, false);
 		assertNull(onTime.contingency);

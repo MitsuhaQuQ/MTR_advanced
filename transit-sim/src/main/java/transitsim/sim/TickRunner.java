@@ -651,6 +651,7 @@ public final class TickRunner<T extends RunTrack> {
 			final long keptId = takeFromPoolShed(sidingRun);
 			final HeadlessTrain train = new HeadlessTrain(keptId != 0 ? keptId : newTrainId(), sidingRun);
 			train.service.setStopTimes(sidingRun.siding.stopTimes, sidingRun.siding.tripPaths, sidingRun.siding.turnBacks);
+			train.service.setPathVariants(sidingRun.siding.pathVariants);
 			train.service.deployDuty(slot, dayStart, dutyPath);
 			train.onRoute = true;
 			movingTrain = train;
@@ -1285,6 +1286,10 @@ public final class TickRunner<T extends RunTrack> {
 		public final StopTimes stopTimes;
 		public final Map<String, TripPath<T>> tripPaths = new HashMap<>();
 		public TurnBacks turnBacks = TurnBacks.NONE;
+		/**
+		 * Makes the paths of its trains passing stops on demand (D3), or null for trains that never skip.
+		 */
+		public transitsim.plan.PathVariants<T> pathVariants;
 		public final String trainId;
 		public final int trainCars;
 		public final int spacing;
@@ -1654,6 +1659,7 @@ public final class TickRunner<T extends RunTrack> {
 			onRoute = trainRecord.onRoute;
 			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(trainRecord.service)));
 			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
+			service.setPathVariants(siding.pathVariants);
 			if (!service.restoreTripPath(siding.tripPaths) || nextStoppingIndex >= path.size()) {
 				return false;
 			}
@@ -1721,6 +1727,7 @@ public final class TickRunner<T extends RunTrack> {
 			movedMillis = millis;
 			trainTicks++;
 			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
+			service.setPathVariants(siding.pathVariants);
 			simulate();
 			syncedMillis = millis;
 			writePositions();

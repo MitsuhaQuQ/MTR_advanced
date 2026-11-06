@@ -75,6 +75,43 @@ public final class DelayRules {
 	}
 
 	/**
+	 * A train passing stations to catch up keeps passing them until it is less late than this (D3), rather than stopping
+	 * again as soon as it is under what started the plan, and passing again at the next stop.
+	 */
+	public static final long KEEP_SKIPPING_MILLIS = 60000;
+
+	/**
+	 * The platforms a train is to pass without stopping now (D3): those of the stations its plan, or what a dispatcher set
+	 * for it, passes. One passing them already goes on while it is a minute late or more and the same plan would still be
+	 * on for it were it as late as before, so a plan turned off or a setting taken away stops it at once.
+	 *
+	 * @param outcome           what {@link #evaluate(java.util.List, long, long, long, long, boolean)} gave for the train
+	 * @param skipping          whether it passes stations now
+	 * @param stationPlatforms  the platforms of a station
+	 * @return the platforms, or none
+	 */
+	public static java.util.Set<Long> getSkipPlatforms(java.util.List<Contingencies> systems, Outcome outcome, long trainId, long routeId, long lateMillis, long waitingMillis, boolean deadlocked, boolean skipping, java.util.function.LongFunction<? extends java.util.Collection<Long>> stationPlatforms) {
+		Contingency contingency = outcome.contingency;
+		if ((contingency == null || contingency.skipStationIds.isEmpty()) && skipping && lateMillis >= KEEP_SKIPPING_MILLIS) {
+			final Contingency kept = evaluate(systems, trainId, routeId, Long.MAX_VALUE / 4, waitingMillis, deadlocked).contingency;
+			if (kept != null && !kept.skipStationIds.isEmpty()) {
+				contingency = kept;
+			}
+		}
+		if (contingency == null || contingency.skipStationIds.isEmpty()) {
+			return java.util.Collections.emptySet();
+		}
+		final java.util.Set<Long> platformIds = new java.util.TreeSet<>();
+		for (final long stationId : contingency.skipStationIds) {
+			final java.util.Collection<Long> platforms = stationPlatforms.apply(stationId);
+			if (platforms != null) {
+				platformIds.addAll(platforms);
+			}
+		}
+		return platformIds;
+	}
+
+	/**
 	 * @return the plan a train falls under, or null
 	 */
 	public static Contingency affecting(Contingencies contingencies, long trainId, long routeId, long lateMillis, long waitingMillis, boolean deadlocked) {

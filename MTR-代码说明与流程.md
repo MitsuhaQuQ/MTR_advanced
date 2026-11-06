@@ -1076,7 +1076,7 @@ sequenceDiagram
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
-- **故障预案和报警**（0.29.0，晚点调度 D2）：晚点不自动处理，由故障预案决定；没有预案只报警。这一步只做预案、状态和报警，具体手段（跳站、临时折返、备车接替）在 D3–D5 接上。
+- **故障预案和报警**（0.29.0，晚点调度 D2）：晚点不自动处理，由故障预案决定；没有预案只报警。这一步只做预案、状态和报警，具体手段在 D3–D5 接上（跳站已在 D3 接上，见下面"跳站"）。
   - **归属**：预案属于**路网**（用户定的），不属于车厂：一片连通的轨道是一个路网，路网里所有线路的车不管来自哪个车厂，都用同一套预案。
     - 路网 id 在轨道每次改动后都会重算，所以路网用它的一个站台来认，叫锚点（`mtr.data.ContingencySystems`，锚点站台 → `Contingencies`）。
     - 线路属于哪个路网，看它首站所在的网络（`RailwayData.getPlatformGraph()`，即 `PathRegionSync.getLatest()` 的 `platformGraph`）里有哪些锚点（`anchorsForRoute`）。
@@ -1112,6 +1112,20 @@ sequenceDiagram
     - 数据多一项 `contingencySystems`（`EditorContingencies.systemsToJson`），每个有线路的路网一项：锚点、线路、经过的车站、预案（带是否已启用）、临时处置。
     - 线路和种别的右键菜单"路网故障预案…"编辑所在路网的预案，进草稿 `draft.contingencies[锚点]`，应用时用操作 `contingencies`（`system` 为锚点）整份替换。路网按它的线路名称称呼。
     - "同步状态"列出车厂的报警：每条可以"启用预案「X」"或"临时处置…"，已生效的可以"解除"或"停用预案"；各路网已启用的手动预案也列出来。这些命令都用操作 `contingency`（`activate` / `deactivate` / `adhoc` / `release`，`system` 为锚点）立即发出，不进草稿。
+- **跳站**（0.31.0，晚点调度 D3）：预案或临时处置里勾了"跳过的车站"，生效时列车从下一站起在这些车站通过不停，追回到晚点 1 分钟以内、预案停用或临时处置解除后，从下一站起恢复停站。只对按运用跑的车。
+  - **决定跳哪些站台**：`DelayAlarms.collect` 每 100 tick 给每列运用车算 `DelayRules.getSkipPlatforms`：生效的预案（或临时处置）的车站换成站台（`Lookups` 按 `dataCache.platformIdToStation` 反查，一次检查建一次）。
+    - 已经在跳站的车，只要晚点还有 1 分钟以上（`KEEP_SKIPPING_MILLIS`），就按"假如还像原来那么晚"再判断一次，同一个预案仍会生效就接着跳，免得在触发阈值附近来回切换；预案停用、临时处置解除时立刻不跳。
+    - 车不在运用上时，告诉它的站台清空。
+    - 和车现在的不同才放进 `Lookups.skips`；`RailwayData` 在报警那一轮里逐个告诉列车：组件跑的车经 `LiveSimulation.submitSkip` → `HostInput.Skip`（下一 tick 由 `EventSimulator.apply` 设到组件列车的 `TrainService`），游戏自己跑的车直接 `TrainService.setSkipPlatforms`。
+  - **列车换路径**：`TrainService.chooseSkip`，在 `TrainRules.isHeldAtStop` 的选择链最后（回库、运用回别的存车线、折返之后），每站准备发车时选一次。
+    - 从当前站之后、运用最后一站之前，找本来停站、站台在告诉的集合里、又不是运用某一段首站或末站的轨道；已经过去的站在继续跳站时保留，所以键不会每站变一次。
+    - 换上的是同一条路径的**跳站变体**：键是原路径键加 `~skip:轨道下标,…`（`TripPath.getSkipKey` / `getSkipBase` / `getSkipRails`），轨道下标、站序号都和原路径相同，只是这些站台的停站时间为 0（`PathTimes.isPassingPlatform` 就当它通过），并重算时刻（`TripPath.withSkips`）。`vehicle.changePath(变体, 同一站)`。
+    - 告诉的集合空了就换回原路径。
+    - 变体不预先生成、也不放进存车线的路径表：宿主给 `TrainService.setPathVariants`（`PathVariants`：把一条轨道复制成停站 0，以及宿主的计时器；游戏是 `Siding.pathVariants`，组件是 `SimDataset` 给 `TickRunner.Siding.pathVariants`），列车按键现建、留一份（`TrainService.findPath`）。存档恢复（`restoreTripPath`）、游戏照组件显示（`TrainServer.showSimulated`）都走 `findPath`，从键重建。
+    - 别的按键找路径的地方用原路径的键：`chooseDutyReturn` 回别的存车线、`chooseTurnBack` 照常的折返方向（不算换路径）、`TripPath.getReturnSidingId`、`TrainServer.isReturningTo`。折返或回库换了路径后，如果还在跳站，下一站再换上那条路径的变体。
+  - **计划时刻**：`StopTimes.matchRouteStops` 按站台对线路的站，变体里没有的站自动略过，后面各站的计划时刻不变，所以跳站的车变成"不那么晚"，巡航限速仍按计划到站时刻，不会早到。站台 PIDS 由变体的时间段（带 `pass`）写，显示通过。
+  - **存档**：`TrainService` 多存 `skip_platforms`（`SAVED_KEYS` 16）。顺手修了一个旧错：0.2x 加 `duty_id` 时 `SAVED_KEYS` 没跟着加，存档里每列车的 map 头少算一项，最后一项（巡航限速）会被读成同一存车线的下一列车；现在有测试数写出的项数（`DutyRunTest.aServiceWritesAsManyValuesAsItSays`、`TrainIdentityTest`）。
+  - **网页**：报警条目末尾多一个字段，1 表示正在跳站（`EditorContingencies` 读成 `skipping`），同步状态里原因后面加"，跳站中"。
 - **实测余量**（0.28.0，晚点调度 D1）：列车实际比计划多用的时间记下来，下次生成运用时加上，时刻表不变。
   - **记录**：组件 `transitsim.sim.BufferRecorder` 按列车的 `MotionEvent` 量三种用时：
     - 出库：存车线 `DEPARTED`（第 0 条轨道）→ 第一个站台 `STOPPED`，计划用时 `stopTimes.getLeadMillis()`；

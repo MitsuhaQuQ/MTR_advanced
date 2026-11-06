@@ -89,6 +89,8 @@ public final class EditorContingencies {
 			alarm.addProperty("waiting", waitingSince == 0 ? 0 : Math.max(0, serverNow - waitingSince) / 1000);
 			alarm.addProperty("plan", parts[7]);
 			alarm.addProperty("system", parts[8]);
+			// Passing stations now (D3), sent from 0.31.0
+			alarm.addProperty("skipping", parts.length > 9 && "1".equals(parts[9]));
 			alarm.addProperty("handled", handled);
 			alarms.add(alarm);
 		}

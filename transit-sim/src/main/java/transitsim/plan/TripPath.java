@@ -197,6 +197,97 @@ public class TripPath<T extends PlanTrack> {
 	}
 
 	/**
+	 * The same path as another under another key, along other tracks, as for passing some of its stops (D3).
+	 */
+	private TripPath(TripPath<T> base, String key, List<T> path) {
+		this.key = key;
+		tripKey = base.tripKey;
+		turnBackStops = base.turnBackStops;
+		turnBackPoint = base.turnBackPoint;
+		turnBackWay = base.turnBackWay;
+		changeStop = base.changeStop;
+		routeIds.addAll(base.routeIds);
+		cutStops.putAll(base.cutStops);
+		entryStops.putAll(base.entryStops);
+		entryTimes.putAll(base.entryTimes);
+		entryLeads.putAll(base.entryLeads);
+		joinIndex = base.joinIndex;
+		lapEnd = base.lapEnd;
+		this.path.addAll(path);
+		repeatIndex1 = base.repeatIndex1;
+		repeatIndex2 = base.repeatIndex2;
+		lapStop = base.lapStop;
+		entryRail = base.entryRail;
+		dutyStarts = base.dutyStarts;
+		staysOnLine = base.staysOnLine;
+	}
+
+	/**
+	 * The path with these stops of it passed without stopping (D3), timed again, for a train told to skip some stations.
+	 *
+	 * @param rails the rails of the stops passed, in order
+	 */
+	public static <T extends PlanTrack> TripPath<T> withSkips(TripPath<T> base, int[] rails, PathVariants<T> variants) {
+		final List<T> newPath = new ArrayList<>(base.path);
+		for (final int rail : rails) {
+			if (rail > 0 && rail < newPath.size()) {
+				newPath.set(rail, variants.pass(newPath.get(rail)));
+			}
+		}
+		final TripPath<T> tripPath = new TripPath<>(base, getSkipKey(base.key, rails), newPath);
+		tripPath.generateTimes(variants.getTimeGenerator());
+		return tripPath;
+	}
+
+	/**
+	 * @param baseKey the key of the path as it usually runs
+	 * @param rails   the rails of the stops passed, in order
+	 * @return the key of the same path passing those stops, or the base key if none (D3)
+	 */
+	public static String getSkipKey(String baseKey, int[] rails) {
+		if (rails.length == 0) {
+			return baseKey;
+		}
+		final StringBuilder builder = new StringBuilder(baseKey).append(SKIP_MARK);
+		for (int i = 0; i < rails.length; i++) {
+			builder.append(i == 0 ? "" : ",").append(rails[i]);
+		}
+		return builder.toString();
+	}
+
+	public static boolean isSkipKey(String key) {
+		return key.contains(SKIP_MARK);
+	}
+
+	/**
+	 * @return the key of the path as it usually runs, without the stops passed
+	 */
+	public static String getSkipBase(String key) {
+		final int index = key.indexOf(SKIP_MARK);
+		return index < 0 ? key : key.substring(0, index);
+	}
+
+	/**
+	 * @return the rails of the stops passed, or none if the key isn't of such a path
+	 */
+	public static int[] getSkipRails(String key) {
+		final int index = key.indexOf(SKIP_MARK);
+		if (index < 0) {
+			return new int[0];
+		}
+		try {
+			final String[] parts = key.substring(index + SKIP_MARK.length()).split(",");
+			final int[] rails = new int[parts.length];
+			for (int i = 0; i < parts.length; i++) {
+				rails[i] = Integer.parseInt(parts[i]);
+			}
+			return rails;
+		} catch (NumberFormatException e) {
+			return new int[0];
+		}
+	}
+
+	/**
 	 * A path read back as {@link #write} wrote it, with the path the host saved.
 	 */
 	public TripPath(KeyedReader reader, List<T> path) {
@@ -346,7 +437,8 @@ public class TripPath<T extends PlanTrack> {
 	/**
 	 * @return the siding a path going back to another siding goes to, or 0 if the key isn't of such a path
 	 */
-	public static long getReturnSidingId(String key) {
+	public static long getReturnSidingId(String fullKey) {
+		final String key = getSkipBase(fullKey);
 		final int index = key.lastIndexOf(RETURN_MARK);
 		if (index < 0) {
 			return 0;
@@ -366,6 +458,10 @@ public class TripPath<T extends PlanTrack> {
 	}
 
 	private static final char RETURN_MARK = '#';
+	/**
+	 * After the key of a path, the stops of it passed without stopping (D3); no other key has it.
+	 */
+	private static final String SKIP_MARK = "~skip:";
 
 	public void generateTimes(TimeGenerator<T> generator) {
 		stopTimes.cutStops.clear();

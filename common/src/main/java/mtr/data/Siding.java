@@ -142,6 +142,20 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private final Map<String, TripPath<PathData>> tripPaths = new HashMap<>();
 	private TurnBacks turnBacks = TurnBacks.NONE;
+	/**
+	 * Makes the paths of its trains passing stops a plan or a dispatcher has them pass (D3), timed as its other paths.
+	 */
+	private final transitsim.plan.PathVariants<PathData> pathVariants = new transitsim.plan.PathVariants<PathData>() {
+		@Override
+		public PathData pass(PathData pathData) {
+			return new PathData(pathData.rail, pathData.savedRailBaseId, 0, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex);
+		}
+
+		@Override
+		public TimeGenerator<PathData> getTimeGenerator() {
+			return timeGenerator;
+		}
+	};
 	private final TimeGenerator<PathData> timeGenerator = new TimeGenerator<PathData>() {
 		@Override
 		public StopTimes calculateStopTimes(List<PathData> path) {
@@ -244,7 +258,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		messagePackHelper.iterateArrayValue(KEY_SHED, value -> shed.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
 		generateDistances();
 		// A train on a path that no longer exists has nowhere to be, and starts again from the siding
-		trains.removeIf(train -> !train.restoreTripPath(tripPaths));
+		trains.removeIf(train -> {
+			// One passing stops is put back on such a path, made again (D3)
+			train.setPathVariants(pathVariants);
+			return !train.restoreTripPath(tripPaths);
+		});
 	}
 
 	@Deprecated
@@ -1303,6 +1321,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 
 			train.setStopTimes(stopTimes, tripPaths, turnBacks);
+			train.setPathVariants(pathVariants);
 			train.setSpeedCurve(useSpeedCurve, getDecelerationConstant());
 			// As the pool's vehicle runs now (R1), for trains made before it was set or changed
 			train.setVehicle(getAccelerationConstant(), getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime());
