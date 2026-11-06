@@ -53,9 +53,14 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 	@Shadow(remap = false) protected float doorValue;
 	@Shadow(remap = false) private List<PathData> path;
 	@Shadow(remap = false) protected List<Double> distances;
-    private Map<String, String> customConfigs = new HashMap<>();
-	private Map<String, ConfigResponder> configResponders = new HashMap<>();
-	private boolean isConfigsChanged = false;
+	@Shadow(remap = false) @org.spongepowered.asm.mixin.Final protected mtr.data.TrainIdentity identity;
+
+	/**
+	 * What ANTE keeps for the train, held by its identity so it stays with the train wherever it goes (R1).
+	 */
+	private cn.zbx1425.mtrsteamloco.data.TrainAnteState mtrsteamloco$state() {
+		return identity.getAttachment(cn.zbx1425.mtrsteamloco.data.TrainAnteState.KEY, cn.zbx1425.mtrsteamloco.data.TrainAnteState::new);
+	}
 	
 	@Shadow(remap = false) protected abstract boolean skipScanBlocks(Level world, double trainX, double trainY, double trainZ);
 	@Shadow(remap = false) protected abstract boolean openDoors(Level world, Block block, BlockPos checkPos, int dwellTicks);
@@ -63,32 +68,32 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 
 	@Override
 	public Map<String, String> getCustomConfigs() {
-		return customConfigs;
+		return mtrsteamloco$state().customConfigs;
 	}
 
 	@Override
 	public void setCustomConfigs(Map<String, String> customConfigs) {
-		this.customConfigs = customConfigs;
+		mtrsteamloco$state().customConfigs = customConfigs;
 	}
 
 	@Override
 	public boolean isConfigsChanged() {
-		return isConfigsChanged;
+		return mtrsteamloco$state().configsChanged;
 	}
 
 	@Override
 	public void isConfigsChanged(boolean isConfigsChanged) {
-		this.isConfigsChanged = isConfigsChanged;
+		mtrsteamloco$state().configsChanged = isConfigsChanged;
 	}
 
 	@Override
 	public void setConfigResponders(Map<String, ConfigResponder> configResponders) {
-		this.configResponders = configResponders;
+		mtrsteamloco$state().configResponders = configResponders;
 	}
 
 	@Override
 	public Map<String, ConfigResponder> getConfigResponders() {
-		return configResponders;
+		return mtrsteamloco$state().configResponders;
 	}
 
 	@Override
@@ -109,9 +114,9 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 	) {
 		MessagePackHelper messagePackHelper = new MessagePackHelper(map);
 		try {
-			customConfigs = StringMapSerializer.deserialize(messagePackHelper.getString("custom_configs"));
+			mtrsteamloco$state().customConfigs = StringMapSerializer.deserialize(messagePackHelper.getString("custom_configs"));
 		} catch (IOException e) {
-			customConfigs = new HashMap<>();
+			mtrsteamloco$state().customConfigs = new HashMap<>();
 		}
 	}
 
@@ -123,18 +128,18 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 			CompoundTag compoundTag, CallbackInfo ci
 	) {
 		try {
-			customConfigs = StringMapSerializer.deserialize(compoundTag.getString("custom_configs"));
+			mtrsteamloco$state().customConfigs = StringMapSerializer.deserialize(compoundTag.getString("custom_configs"));
 		} catch (IOException e) {
-			customConfigs = new HashMap<>();
+			mtrsteamloco$state().customConfigs = new HashMap<>();
 		}
 	}
 
 	@Inject(method = "<init>(Lnet/minecraft/network/FriendlyByteBuf;)V", at = @At("TAIL"))
 	private void fromFriendlyByteBuf(FriendlyByteBuf buffer, CallbackInfo ci) {
 		try {
-			customConfigs = StringMapSerializer.deserialize(buffer.readUtf());
+			mtrsteamloco$state().customConfigs = StringMapSerializer.deserialize(buffer.readUtf());
 		} catch (IOException e) {
-			customConfigs = new HashMap<>();
+			mtrsteamloco$state().customConfigs = new HashMap<>();
 		}
 	}
 
@@ -142,7 +147,7 @@ public abstract class TrainMixin implements TrainExtraSupplier{
     private void toMessagePack(MessagePacker messagePacker, CallbackInfo ci) throws IOException {
 		String res;
 		try {
-			res = StringMapSerializer.serializeToString(customConfigs);
+			res = StringMapSerializer.serializeToString(mtrsteamloco$state().customConfigs);
 		} catch (IOException e) {
 			res = "";
 		}
@@ -159,14 +164,14 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 	 */
 	@Inject(method = "getSyncKey", at = @At("RETURN"), cancellable = true, remap = false)
 	private void getSyncKey(CallbackInfoReturnable<Integer> cir) {
-		cir.setReturnValue(cir.getReturnValue() * 31 + java.util.Objects.hashCode(customConfigs));
+		cir.setReturnValue(cir.getReturnValue() * 31 + java.util.Objects.hashCode(mtrsteamloco$state().customConfigs));
 	}
 
 	@Inject(method = "writePacket", at = @At("TAIL"))
     private void toPacket(FriendlyByteBuf packet, CallbackInfo ci) {
 		String res;
 		try {
-			res = StringMapSerializer.serializeToString(customConfigs);
+			res = StringMapSerializer.serializeToString(mtrsteamloco$state().customConfigs);
 		} catch (IOException e) {
 			res = "";
 		}

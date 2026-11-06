@@ -182,6 +182,11 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 					GuiCompat.draw(matrices, font, MAX_MANUAL_SPEED, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
 					GuiCompat.draw(matrices, font, MANUAL_TO_AUTOMATIC_TIME, SQUARE_SIZE, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
 				}
+				// Set for the vehicle in the depot, the siding's own speeding up, braking and driving by hand don't count (R1)
+				final mtr.data.Depot depot = mtr.client.ClientData.DATA_CACHE.sidingIdToDepot.get(savedRailBase.id);
+				if (depot != null && depot.vehicleSettings.containsKey(savedRailBase.getPoolKey())) {
+					GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.siding_vehicle_by_depot").getString(), SQUARE_SIZE, height - SQUARE_SIZE * 2, ARGB_LIGHT_GRAY);
+				}
 			}
 		} else {
 			final int index = availableTrainsList.getHoverItemIndex();

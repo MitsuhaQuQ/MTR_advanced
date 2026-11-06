@@ -617,16 +617,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
-	 * @return a train of this siding standing for one of another siding of the pool (P2-C): the same train, its ID, its
-	 * cargo, riders and ANTE's settings, now this siding's
+	 * @return the same train going on as a train of this siding (P2-C, R1): a new train of the siding, with its run state
+	 * made afresh, holding the train's identity, so its ID, cargo, riders and ANTE's settings are the same
 	 */
 	private TrainServer adopt(TrainServer train) {
-		if (train.sidingId == id) {
-			return train;
-		}
-		final TrainServer adopted = new TrainServer(train.id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
-		adopted.carryFrom(train);
-		return adopted;
+		return train.sidingId == id ? train : new TrainServer(train, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime());
 	}
 
 	/**
@@ -640,7 +635,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		shed.clear();
 		shedIds.forEach(trainId -> {
 			final TrainServer train = own.containsKey(trainId) ? own.get(trainId) : known.get(trainId);
-			shed.add(train == null ? new TrainServer(trainId, id, railLength, this.trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime) : adopt(train));
+			shed.add(train == null ? new TrainServer(trainId, id, railLength, this.trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime()) : adopt(train));
 		});
 	}
 
@@ -660,15 +655,33 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return (int) trains.stream().filter(train -> train.isReturningTo(otherSidingId)).count();
 	}
 
+	/**
+	 * How its trains run on the server: its pool's vehicle (R1), set at the start of each tick; null until then, and on the
+	 * client, where the siding's own settings show.
+	 */
+	private VehicleSettings vehicle;
+
+	/**
+	 * @return how its trains run as set for the siding itself, which its pool takes when it is its first siding and the
+	 * depot has none set for it
+	 */
+	public VehicleSettings getOwnVehicleSettings() {
+		return new VehicleSettings(accelerationConstant, decelerationConstant, isManual, maxManualSpeed, dwellTime);
+	}
+
 	public float getAccelerationConstant() {
-		return accelerationConstant;
+		return vehicle == null || transportMode.continuousMovement ? accelerationConstant : vehicle.acceleration;
 	}
 
 	/**
 	 * @return how fast trains brake, which is how fast they speed up unless set
 	 */
 	public float getDecelerationConstant() {
-		return decelerationConstant <= 0 ? accelerationConstant : decelerationConstant;
+		return vehicle == null || transportMode.continuousMovement ? decelerationConstant <= 0 ? accelerationConstant : decelerationConstant : vehicle.getDeceleration();
+	}
+
+	public int getManualToAutomaticTime() {
+		return vehicle == null || transportMode.continuousMovement ? dwellTime : vehicle.manualToAutomaticTime;
 	}
 
 	public void setDecelerationConstant(float newDecelerationConstant, Consumer<FriendlyByteBuf> sendPacket) {
@@ -702,8 +715,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				generateDefaultPath(rails);
 				generateDistances();
 			}
-			// Turning speed curves on or off changes how long the path takes
-			if (depot.speedCurves != useSpeedCurve) {
+			// Turning speed curves on or off, or how the pool's vehicle speeds up and brakes (R1), changes how long the path takes
+			final VehicleSettings newVehicle = depot.getVehicleSettings(this);
+			// Made with its own settings, the siding's times change only once its pool's differ
+			final boolean vehicleChanged = !transportMode.continuousMovement && !newVehicle.equals(vehicle == null ? getOwnVehicleSettings() : vehicle);
+			vehicle = newVehicle;
+			if (depot.speedCurves != useSpeedCurve || vehicleChanged) {
 				useSpeedCurve = depot.speedCurves;
 				generateTimeSegments(path, timeSegments, platformTimes, stopTimes, loopJoinIndex, repeatIndex2);
 				tripPaths.values().forEach(tripPath -> tripPath.generateTimes(timeGenerator));
@@ -1285,6 +1302,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 			train.setStopTimes(stopTimes, tripPaths, turnBacks);
 			train.setSpeedCurve(useSpeedCurve, getDecelerationConstant());
+			// As the pool's vehicle runs now (R1), for trains made before it was set or changed
+			train.setVehicle(getAccelerationConstant(), getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime());
 			train.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
@@ -1354,12 +1373,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 					final boolean roomHere = fleetSize < 0 || getHeldCount() < fleetSize;
 					final int poolSlots = poolFleet < 0 ? depot.getPoolSlots(this) : 0;
 					if (poolFleet >= 0 ? poolTrains < poolFleet && roomHere : poolSlots > 0 && (trains.isEmpty() || poolTrains < poolSlots && (fleetSize < 0 || trains.size() < fleetSize))) {
-						trains.add(new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime));
+						trains.add(new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime()));
 					}
 				}
 			}
 		} else if (trainCars > 0 && (trains.isEmpty() || spawnTrain && (unlimitedTrains && trains.size() < MAX_UNLIMITED_TRAINS || trains.size() <= maxTrains))) {
-			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
+			final TrainServer train = new TrainServer(unlimitedTrains || maxTrains > 0 ? new Random().nextLong() : id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime());
 			trains.add(train);
 		}
 
@@ -1417,11 +1436,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 		turnBacksValues.writeTo(turnBacksWriter);
 		final SimDataset.SidingData sidingData = new SimDataset.SidingData(
-				id, depotId, routeIds, trainCars, TrainType.getSpacing(baseTrainType), railLength, accelerationConstant, getDecelerationConstant(),
+				id, depotId, routeIds, trainCars, TrainType.getSpacing(baseTrainType), railLength, getAccelerationConstant(), getDecelerationConstant(),
 				byDuties ? fleetSize < 0 ? SimDataset.UNLIMITED_TRAINS : fleetSize - 1 : unlimitedTrains ? SimDataset.UNLIMITED_TRAINS : maxTrains, useSpeedCurve && !transportMode.continuousMovement, RailType.getDefaultMaxBlocksPerTick(transportMode),
 				repeatIndex1, repeatIndex2, loopJoinIndex, toTracks.apply(path), turnBacksWriter.toBytes()
 		);
-		sidingData.manual = isManual;
+		sidingData.manual = getIsManual();
 		sidingData.poolKey = getPoolKey();
 		// The pool across the depots of its operating line (SimDataset 7)
 		final String lineUnitKey = depot == null ? "" : depot.getLineUnitKey();
@@ -1486,7 +1505,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		byId.forEach((simulatedId, simulatedTrain) -> {
 			if (!shown.contains(simulatedId)) {
 				final TrainServer knownTrain = known.get(simulatedId);
-				final TrainServer train = knownTrain != null ? adopt(knownTrain) : new TrainServer(simulatedId, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime);
+				final TrainServer train = knownTrain != null ? adopt(knownTrain) : new TrainServer(simulatedId, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime());
 				train.setSimulated(simulatedTrain);
 				trains.add(train);
 			}
@@ -1597,11 +1616,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	public boolean getIsManual() {
-		return isManual;
+		return vehicle == null || transportMode.continuousMovement ? isManual : vehicle.manual;
 	}
 
 	public int getMaxManualSpeed() {
-		return maxManualSpeed;
+		return vehicle == null || transportMode.continuousMovement ? maxManualSpeed : vehicle.maxManualSpeed;
 	}
 
 	public boolean getUnlimitedTrains() {
@@ -1647,7 +1666,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			path.add(new PathData(rails.get(pos1).get(pos2), id, 0, pos1, pos2, -1));
 		}
 
-		trains.add(new TrainServer(id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, dwellTime));
+		trains.add(new TrainServer(id, id, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, getAccelerationConstant(), timeSegments, getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime()));
 	}
 
 	private void generateDistances() {
@@ -1679,7 +1698,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @param speedCurves whether the train runs on speed curves, as its depot is set
 	 */
 	public PathTiming.Vehicle getTimingVehicle(boolean speedCurves) {
-		return new PathTiming.Vehicle(railLength, trainCars, TrainType.getSpacing(baseTrainType), accelerationConstant, getDecelerationConstant(), speedCurves, transportMode);
+		return new PathTiming.Vehicle(railLength, trainCars, TrainType.getSpacing(baseTrainType), getAccelerationConstant(), getDecelerationConstant(), speedCurves, transportMode);
 	}
 
 	/**

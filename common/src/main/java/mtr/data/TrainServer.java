@@ -131,7 +131,19 @@ public class TrainServer extends Train {
 	private static final double SWEEP_STEP = 0.5;
 
 	public TrainServer(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
-		super(id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, manualToAutomaticTime);
+		this(new TrainIdentity(), id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, manualToAutomaticTime);
+	}
+
+	/**
+	 * A train of a siding that is the same train as another, holding its identity (R1): as it goes on as a train of
+	 * another siding of its pool, with its run state made afresh.
+	 */
+	public TrainServer(TrainServer same, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
+		this(same.identity, same.id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, timeSegments, isManual, maxManualSpeed, manualToAutomaticTime);
+	}
+
+	private TrainServer(TrainIdentity identity, long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, List<TimeSegment> timeSegments, boolean isManual, int maxManualSpeed, int manualToAutomaticTime) {
+		super(identity, id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, manualToAutomaticTime);
 		this.timeSegments = timeSegments;
 		pathRepeatIndex1 = repeatIndex1;
 		pathRepeatIndex2 = repeatIndex2;
@@ -142,21 +154,6 @@ public class TrainServer extends Train {
 		depotRepeatIndex2 = repeatIndex2;
 		service = new TrainService<>(trainId, new ServiceVehicle(), System::currentTimeMillis);
 		service.setSiding(sidingId);
-	}
-
-	/**
-	 * Takes on what makes another train of the pool the same train, as it goes on as a train of this one's siding (P2-C):
-	 * its cargo, riders and ANTE's settings. Its ID is given when it is made.
-	 */
-	public void carryFrom(TrainServer other) {
-		for (int i = 0; i < Math.min(inventory.getContainerSize(), other.inventory.getContainerSize()); i++) {
-			inventory.setItem(i, other.inventory.getItem(i));
-		}
-		ridingEntities.clear();
-		ridingEntities.addAll(other.ridingEntities);
-		if ((Object) this instanceof cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier && (Object) other instanceof cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier) {
-			((cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier) (Object) this).setCustomConfigs(new HashMap<>(((cn.zbx1425.mtrsteamloco.data.TrainExtraSupplier) (Object) other).getCustomConfigs()));
-		}
 	}
 
 	public TrainServer(

@@ -336,6 +336,13 @@ public class TrainClient extends Train implements IGui {
 	}
 
 	public void copyFromTrain(Train train) {
+		// The same train gone on as a train of another siding of its pool stays the same train here (R1), its siding's
+		// depot and routes looked up again
+		if (sidingId != train.sidingId) {
+			sidingId = train.sidingId;
+			depot = null;
+			routeIds = new ArrayList<>();
+		}
 		path.clear();
 		distances.clear();
 		ridingEntities.clear();

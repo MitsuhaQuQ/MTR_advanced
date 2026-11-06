@@ -162,6 +162,17 @@ public final class EditorActions implements IPacket {
 			}
 			depot.setPoolFleets(poolFleets, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
 		}
+		// How the trains of each pool run (R1); a pool left out, or null, runs as its first siding has it set
+		if (operation.has("vehicleSettings") && operation.get("vehicleSettings").isJsonObject()) {
+			final Map<String, mtr.data.VehicleSettings> settings = new TreeMap<>();
+			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("vehicleSettings").entrySet()) {
+				if (entry.getValue().isJsonObject()) {
+					final JsonObject value = entry.getValue().getAsJsonObject();
+					settings.put(entry.getKey(), new mtr.data.VehicleSettings(value.get("acceleration").getAsFloat(), value.get("deceleration").getAsFloat(), value.get("manual").getAsBoolean(), value.get("maxManualSpeed").getAsInt(), value.get("manualToAutomaticTime").getAsInt()));
+				}
+			}
+			depot.setVehicleSettings(settings, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+		}
 		if (operation.has("sidings")) {
 			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("sidings").entrySet()) {
 				final mtr.data.Siding siding = ClientData.DATA_CACHE.sidingIdMap.get(parseId(entry.getKey()));

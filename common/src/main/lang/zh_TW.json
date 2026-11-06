@@ -349,5 +349,6 @@
   "gui.mtrsteamloco.route_path_creator.create_route": "建立路線",
   "gui.mtrsteamloco.select_screen.title": "選擇",
   "tooltip.mtrsteamloco.route_path_creator.last_position": "上一個位置：%s",
-  "tooltip.mtrsteamloco.route_path_creator.rail": "軌道：%s %s km/h %s m %s 秒"
+  "tooltip.mtrsteamloco.route_path_creator.rail": "軌道：%s %s km/h %s m %s 秒",
+  "gui.mtr.siding_vehicle_by_depot": "這個車型的加速、減速和手動駕駛在車廠裡統一設定，這裡的設定不起作用"
 }

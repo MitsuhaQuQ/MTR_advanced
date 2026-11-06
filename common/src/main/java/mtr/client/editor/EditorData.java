@@ -127,6 +127,16 @@ public final class EditorData {
 				final JsonArray ids = new JsonArray();
 				eachSidings.forEach(siding -> ids.add(String.valueOf(siding.id)));
 				poolObject.add("sidings", ids);
+				// How its trains run (R1): as set for it in the depot, or as its first siding has it
+				final mtr.data.VehicleSettings vehicle = depot.vehicleSettings.containsKey(poolKey) ? depot.vehicleSettings.get(poolKey) : eachSidings.stream().min(Comparator.comparingLong(siding -> siding.id)).get().getOwnVehicleSettings();
+				final JsonObject vehicleObject = new JsonObject();
+				vehicleObject.addProperty("set", depot.vehicleSettings.containsKey(poolKey));
+				vehicleObject.addProperty("acceleration", vehicle.acceleration);
+				vehicleObject.addProperty("deceleration", vehicle.deceleration);
+				vehicleObject.addProperty("manual", vehicle.manual);
+				vehicleObject.addProperty("maxManualSpeed", vehicle.maxManualSpeed);
+				vehicleObject.addProperty("manualToAutomaticTime", vehicle.manualToAutomaticTime);
+				poolObject.add("vehicleSettings", vehicleObject);
 				poolsArray.add(poolObject);
 			});
 			depotObject.add("pools", poolsArray);

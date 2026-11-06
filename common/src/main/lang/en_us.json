@@ -253,5 +253,6 @@
   "gui.mtrsteamloco.route_path_creator.create_route": "Create Route",
   "gui.mtrsteamloco.select_screen.title": "Select",
   "tooltip.mtrsteamloco.route_path_creator.last_position": "Last position: %s",
-  "tooltip.mtrsteamloco.route_path_creator.rail": "Rail: %s %s km/h %s m %s s"
+  "tooltip.mtrsteamloco.route_path_creator.rail": "Rail: %s %s km/h %s m %s s",
+  "gui.mtr.siding_vehicle_by_depot": "How this vehicle speeds up, brakes and is driven by hand is set for it in the depot"
 }

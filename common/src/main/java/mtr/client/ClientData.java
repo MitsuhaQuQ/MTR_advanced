@@ -140,10 +140,6 @@ public final class ClientData {
 			final TrainClient existingTrain = getTrainById(newTrain.id);
 			if (existingTrain == null) {
 				TRAINS.add(newTrain);
-			} else if (existingTrain.sidingId != newTrain.sidingId) {
-				// The same train gone on as a train of another siding of its pool (P2-C)
-				TRAINS.remove(existingTrain);
-				TRAINS.add(newTrain);
 			} else {
 				existingTrain.copyFromTrain(newTrain);
 			}

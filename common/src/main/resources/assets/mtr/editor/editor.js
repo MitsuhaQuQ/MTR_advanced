@@ -312,7 +312,7 @@
 		});
 		// What a depot runs goes first, so its duties are applied to the routes and sidings as drafted
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
-			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null });
+			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null });
 			owners.push({ depotOf: depotId });
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
@@ -4020,6 +4020,13 @@
 	 * What a depot runs, drafted: the routes it's responsible for (in no order for one running by a timetable), whether its
 	 * trains may wait on the line, and each siding's fleet and the routes its trains run (none ticked for all of them).
 	 */
+	/** Whether the settings drafted for a pool's vehicle are what the game has (null for none set). */
+	function sameVehicle(drafted, game) {
+		const set = game && game.set ? game : null;
+		if (!drafted || !set) return !drafted && !set;
+		return ["acceleration", "deceleration", "manual"].every(key => key === "manual" ? drafted.manual === set.manual : Math.abs(drafted[key] - set[key]) < 1e-6);
+	}
+
 	/** What a pool of a depot's sidings has: as given, or its sidings' fleets added up when not (null). */
 	function poolFleetText(fleet, sum) {
 		if (fleet === null || fleet === undefined) return sum < 0 ? tr("配属按需要（存车线相加）") : tr("配属 {0} 列（存车线相加）", sum);
@@ -4030,9 +4037,20 @@
 		const drafted = (draft.depots || {})[depot.id];
 		const current = drafted || { routes: depot.routes.slice(), cycleRoutes: depot.cycleRoutes, sidings: {} };
 		const poolFleetOf = pool => current.poolFleets && current.poolFleets[pool.key] !== undefined ? current.poolFleets[pool.key] : pool.fleet;
+		// How the trains of a pool run (R1), m/tick² shown as m/s²
+		const vehicleOf = pool => current.vehicleSettings && current.vehicleSettings[pool.key] !== undefined ? current.vehicleSettings[pool.key] : pool.vehicleSettings && pool.vehicleSettings.set ? pool.vehicleSettings : null;
+		const perSecond = value => Math.round(value * 400 * 100) / 100;
 		const poolRows = (depot.pools || []).map(pool => {
 			const fleet = poolFleetOf(pool);
-			return `<label data-pool-row="${escapeHtml(pool.key)}">${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key))} ${tr("配属车数")} <input type="number" min="0" max="999" name="poolFleet" placeholder="${escapeHtml(pool.sum < 0 ? tr("存车线相加：按需要") : tr("存车线相加：{0}", pool.sum))}" value="${fleet === null || fleet === undefined || fleet < 0 ? "" : fleet}"></label>`;
+			const shown = vehicleOf(pool) || pool.vehicleSettings || {};
+			const set = Boolean(vehicleOf(pool));
+			return `<fieldset data-pool-row="${escapeHtml(pool.key)}"><legend>${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key))}</legend>
+				<label>${tr("配属车数")} <input type="number" min="0" max="999" name="poolFleet" placeholder="${escapeHtml(pool.sum < 0 ? tr("存车线相加：按需要") : tr("存车线相加：{0}", pool.sum))}" value="${fleet === null || fleet === undefined || fleet < 0 ? "" : fleet}"></label>
+				<label><input type="checkbox" name="vehicleSet"${set ? " checked" : ""}> ${tr("统一设置这个车型的加减速和手动驾驶（不勾就按第一条存车线的）")}</label>
+				<label>${tr("加速度 m/s²")} <input type="number" step="0.01" min="0.4" max="20" name="acceleration" value="${perSecond(shown.acceleration || 0.01)}"></label>
+				<label>${tr("减速度 m/s²（空着同加速度）")} <input type="number" step="0.01" min="0" max="20" name="deceleration" value="${shown.deceleration > 0 ? perSecond(shown.deceleration) : ""}"></label>
+				<label><input type="checkbox" name="manual"${shown.manual ? " checked" : ""}> ${tr("允许手动驾驶")}</label>
+			</fieldset>`;
 		}).join("");
 		const sidingOf = siding => current.sidings[siding.id] || { routes: (siding.routes || []).slice(), fleet: siding.fleet };
 		const lines = data.lines.filter(line => line.routes.length);
@@ -4064,17 +4082,28 @@
 				sidings[row.dataset.sidingRow] = { fleet, routes: [...row.querySelectorAll("input[name=sidingRoute]:checked")].map(box => box.value).filter(id => routes.includes(id)) };
 			});
 			const poolFleets = {};
+			const vehicleSettings = {};
 			form.querySelectorAll("[data-pool-row]").forEach(row => {
 				const text = row.querySelector("input[name=poolFleet]").value.trim();
 				if (text !== "" && !Number.isFinite(Number(text))) bad = true;
 				poolFleets[row.dataset.poolRow] = text === "" ? null : Math.max(0, Math.min(999, Math.round(Number(text))));
+				const pool = (depot.pools || []).find(each => each.key === row.dataset.poolRow) || {};
+				if (row.querySelector("input[name=vehicleSet]").checked) {
+					const acceleration = Number(row.querySelector("input[name=acceleration]").value) / 400;
+					const decelerationText = row.querySelector("input[name=deceleration]").value.trim();
+					if (!(acceleration > 0) || decelerationText !== "" && !(Number(decelerationText) >= 0)) bad = true;
+					const base = pool.vehicleSettings || {};
+					vehicleSettings[row.dataset.poolRow] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: row.querySelector("input[name=manual]").checked, maxManualSpeed: base.maxManualSpeed || 0, manualToAutomaticTime: base.manualToAutomaticTime || 0 };
+				} else {
+					vehicleSettings[row.dataset.poolRow] = null;
+				}
 			});
 			if (bad) return tr("车数写成数字，或者留空");
-			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets };
+			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings };
 			const sorted = list => JSON.stringify(list.slice().sort());
 			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
 				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
-				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet);
+				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings));
 			if (same) delete draft.depots[depot.id];
 			else draft.depots[depot.id] = entry;
 			saveDraft();

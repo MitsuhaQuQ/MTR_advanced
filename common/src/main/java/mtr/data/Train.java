@@ -100,17 +100,21 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	private Level motionWorld;
 	private Depot motionDepot;
 
-	public final long sidingId;
+	/**
+	 * The siding the train is a train of; the client's train takes on another one as the same train goes on as a train of
+	 * another siding of its pool (R1).
+	 */
+	public long sidingId;
 	public final String trainId;
 	public final String baseTrainType;
 	public final TransportMode transportMode;
 	public final int spacing;
 	public final int width;
 	public final int trainCars;
-	public final float accelerationConstant;
-	public final boolean isManualAllowed;
-	public final int maxManualSpeed;
-	public final int manualToAutomaticTime;
+	public float accelerationConstant;
+	public boolean isManualAllowed;
+	public int maxManualSpeed;
+	public int manualToAutomaticTime;
 	public List<PathData> path;
 
 	protected List<Double> distances;
@@ -120,7 +124,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected final List<Long> tripRouteIds = new ArrayList<>();
 	protected int repeatIndex1;
 	protected int repeatIndex2;
-	protected final Set<UUID> ridingEntities = new HashSet<>();
+	/**
+	 * What makes it the same train wherever it goes (R1): its riders, cargo and what other parts keep for it.
+	 */
+	protected final TrainIdentity identity;
+	protected final Set<UUID> ridingEntities;
 	protected final SimpleContainer inventory;
 
 	private final float railLength;
@@ -147,7 +155,16 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	private static final String KEY_CARGO = "cargo";
 
 	public Train(long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, boolean isManualAllowed, int maxManualSpeed, int manualToAutomaticTime) {
+		this(new TrainIdentity(), id, sidingId, railLength, trainId, baseTrainType, trainCars, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManualAllowed, maxManualSpeed, manualToAutomaticTime);
+	}
+
+	/**
+	 * A train of a siding holding an identity, its own or that of the same train as a train of another siding (R1).
+	 */
+	protected Train(TrainIdentity identity, long id, long sidingId, float railLength, String trainId, String baseTrainType, int trainCars, List<PathData> path, List<Double> distances, int repeatIndex1, int repeatIndex2, float accelerationConstant, boolean isManualAllowed, int maxManualSpeed, int manualToAutomaticTime) {
 		super(id);
+		this.identity = identity;
+		ridingEntities = identity.ridingEntities;
 		this.sidingId = sidingId;
 		this.railLength = RailwayData.round(railLength, 3);
 		this.trainId = trainId;
@@ -169,7 +186,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		this.repeatIndex2 = repeatIndex2;
 		final float tempAccelerationConstant = RailwayData.round(accelerationConstant, 3);
 		this.accelerationConstant = tempAccelerationConstant <= 0 ? ACCELERATION_DEFAULT : tempAccelerationConstant;
-		inventory = new SimpleContainer(trainCars);
+		if (identity.inventory == null) {
+			identity.inventory = new SimpleContainer(trainCars);
+		}
+		inventory = identity.inventory;
 	}
 
 	public Train(
@@ -179,6 +199,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			Map<String, Value> map
 	) {
 		super(map);
+		identity = new TrainIdentity();
+		ridingEntities = identity.ridingEntities;
 		final MessagePackHelper messagePackHelper = new MessagePackHelper(map);
 
 		this.sidingId = sidingId;
@@ -228,6 +250,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			}
 		}
 		inventory = inventory1;
+		identity.inventory = inventory1;
 	}
 
 	@Deprecated
@@ -238,6 +261,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			CompoundTag compoundTag
 	) {
 		super(compoundTag);
+		identity = new TrainIdentity();
+		ridingEntities = identity.ridingEntities;
 
 		this.sidingId = sidingId;
 		this.railLength = RailwayData.round(railLength, 3);
@@ -272,10 +297,13 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		final NonNullList<ItemStack> stacks = NonNullList.withSize(trainCars, ItemStack.EMPTY);
 		ContainerHelper.loadAllItems(compoundTag.getCompound(KEY_CARGO), stacks);
 		inventory = new SimpleContainer(stacks.toArray(new ItemStack[0]));
+		identity.inventory = inventory;
 	}
 
 	public Train(FriendlyByteBuf packet) {
 		super(packet);
+		identity = new TrainIdentity();
+		ridingEntities = identity.ridingEntities;
 
 		path = new ArrayList<>();
 		distances = new ArrayList<>();
@@ -594,6 +622,25 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			cappedProfile = null;
 		}
 		return speedCurves;
+	}
+
+	/**
+	 * Runs as its pool's vehicle runs now (R1), set once for the pool rather than for each siding.
+	 */
+	public final void setVehicle(float newAccelerationConstant, boolean newManualAllowed, int newMaxManualSpeed, int newManualToAutomaticTime) {
+		if (transportMode.continuousMovement) {
+			return;
+		}
+		if (newAccelerationConstant != accelerationConstant) {
+			accelerationConstant = newAccelerationConstant;
+			invalidateSpeedCurves();
+		}
+		if (newManualAllowed != isManualAllowed && !newManualAllowed) {
+			isCurrentlyManual = false;
+		}
+		isManualAllowed = newManualAllowed;
+		maxManualSpeed = newMaxManualSpeed;
+		manualToAutomaticTime = newManualToAutomaticTime;
 	}
 
 	protected final void invalidateSpeedCurves() {

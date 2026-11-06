@@ -100,6 +100,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final Map<String, Integer> poolFleets = new TreeMap<>();
 	/**
+	 * How the trains of each pool of its sidings run (R1), by the pool's key; a pool left out runs as its first siding has
+	 * it set.
+	 */
+	public final Map<String, VehicleSettings> vehicleSettings = new TreeMap<>();
+	/**
 	 * Which services each train runs, set in the advanced editor. See {@link DepotDuties}.
 	 */
 	public final DepotDuties duties = new DepotDuties();
@@ -234,6 +239,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_LAST_DEPLOYED_TRIPS = "last_deployed_trips";
 	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
 	private static final String KEY_POOL_FLEETS = "pool_fleets";
+	private static final String KEY_VEHICLE_SETTINGS = "vehicle_settings";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
@@ -289,6 +295,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> dispatcher.lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
 		messagePackHelper.iterateMapValue(KEY_POOL_FLEETS, entry -> poolFleets.put(entry.getKey().asStringValue().asString(), Mth.clamp(entry.getValue().asIntegerValue().asInt(), -1, MAX_POOL_FLEET)));
+		messagePackHelper.iterateMapValue(KEY_VEHICLE_SETTINGS, entry -> {
+			try {
+				final org.msgpack.value.ArrayValue values = entry.getValue().asArrayValue();
+				vehicleSettings.put(entry.getKey().asStringValue().asString(), new VehicleSettings(values.get(0).asFloatValue().toFloat(), values.get(1).asFloatValue().toFloat(), values.get(2).asBooleanValue().getBoolean(), values.get(3).asIntegerValue().asInt(), values.get(4).asIntegerValue().asInt()));
+			} catch (Exception ignored) {
+			}
+		});
 		final Value dutiesValue = map.get(KEY_DUTIES);
 		if (dutiesValue != null && dutiesValue.isBinaryValue()) {
 			duties.fromBytes(dutiesValue.asBinaryValue().asByteArray());
@@ -353,6 +366,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		releaseInterval = packet.readInt();
 		lineShortfall = Shortfall.read(packet);
 		readPoolFleets(packet);
+		readVehicleSettings(packet);
 	}
 
 	@Override
@@ -407,6 +421,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			messagePacker.packString(entry.getKey()).packInt(entry.getValue());
 		}
 
+		messagePacker.packString(KEY_VEHICLE_SETTINGS).packMapHeader(vehicleSettings.size());
+		for (final Map.Entry<String, VehicleSettings> entry : vehicleSettings.entrySet()) {
+			final VehicleSettings settings = entry.getValue();
+			messagePacker.packString(entry.getKey()).packArrayHeader(5).packFloat(settings.acceleration).packFloat(settings.deceleration).packBoolean(settings.manual).packInt(settings.maxManualSpeed).packInt(settings.manualToAutomaticTime);
+		}
+
 		final byte[] dutyBytes = duties.toBytes();
 		messagePacker.packString(KEY_DUTIES).packBinaryHeader(dutyBytes.length);
 		messagePacker.writePayload(dutyBytes);
@@ -418,7 +438,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 18;
+		return super.messagePackLength() + 19;
 	}
 
 	@Override
@@ -455,6 +475,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeInt(releaseInterval);
 		Shortfall.write(lineShortfall, packet);
 		writePoolFleets(packet);
+		writeVehicleSettings(packet);
 	}
 
 	/**
@@ -509,6 +530,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			releaseInterval = Mth.clamp(packet.readInt(), 0, MAX_RELEASE_INTERVAL);
 		} else if (KEY_POOL_FLEETS.equals(key)) {
 			readPoolFleets(packet);
+		} else if (KEY_VEHICLE_SETTINGS.equals(key)) {
+			readVehicleSettings(packet);
 		} else if (KEY_DUTY_MODE.equals(key)) {
 			duties.diagramMode = packet.readBoolean();
 		} else if (KEY_DUTY_SLOT.equals(key)) {
@@ -1464,6 +1487,57 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			total += fleet;
 		}
 		return total;
+	}
+
+	/**
+	 * Sets how the trains of each pool of its sidings run (R1); a pool left out runs as its first siding has it set.
+	 */
+	public void setVehicleSettings(Map<String, VehicleSettings> newSettings, Consumer<FriendlyByteBuf> sendPacket) {
+		vehicleSettings.clear();
+		newSettings.forEach((poolKey, settings) -> {
+			if (vehicleSettings.size() < MAX_ROUTES) {
+				vehicleSettings.put(poolKey, settings);
+			}
+		});
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_VEHICLE_SETTINGS);
+		writeVehicleSettings(packet);
+		sendPacket.accept(packet);
+		isDirty = true;
+	}
+
+	/**
+	 * @return how the trains of the siding's pool run: as set for the pool, or as its first siding, by ID, has it set
+	 */
+	public VehicleSettings getVehicleSettings(Siding siding) {
+		final VehicleSettings set = vehicleSettings.get(siding.getPoolKey());
+		if (set != null) {
+			return set;
+		}
+		final Siding first = getPool(siding).stream().min(Comparator.comparingLong(poolSiding -> poolSiding.id)).orElse(siding);
+		return first.getOwnVehicleSettings();
+	}
+
+	private void readVehicleSettings(FriendlyByteBuf packet) {
+		vehicleSettings.clear();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			final String poolKey = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			final VehicleSettings settings = VehicleSettings.read(packet);
+			if (i < MAX_ROUTES) {
+				vehicleSettings.put(poolKey, settings);
+			}
+		}
+	}
+
+	private void writeVehicleSettings(FriendlyByteBuf packet) {
+		packet.writeInt(vehicleSettings.size());
+		vehicleSettings.forEach((poolKey, settings) -> {
+			packet.writeUtf(poolKey);
+			settings.write(packet);
+		});
 	}
 
 	private void readPoolFleets(FriendlyByteBuf packet) {
