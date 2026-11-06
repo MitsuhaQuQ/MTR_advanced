@@ -686,15 +686,26 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					contingenciesChanged = true;
 				}
 			}
+			// Each depot's sidings, found once for the pass rather than for each depot (D2)
+			final Map<Depot, List<Siding>> sidingsByDepot = new HashMap<>();
+			sidings.forEach(siding -> {
+				final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
+				if (depot != null) {
+					sidingsByDepot.computeIfAbsent(depot, key -> new ArrayList<>()).add(siding);
+				}
+			});
+			final mtr.packet.DelayAlarms.Lookups alarmLookups = new mtr.packet.DelayAlarms.Lookups();
+			final transitsim.network.PlatformGraph platformGraph = getPlatformGraph();
 			for (final Depot depot : depots) {
+				final List<Siding> depotSidings = sidingsByDepot.getOrDefault(depot, Collections.emptyList());
 				// Trains late or stuck with no plan on for them, and those a plan is on for (D2)
-				final List<String> alarms = mtr.packet.DelayAlarms.collect(depot, sidings, dataCache, deadlockedTrains, contingencySystems, getPlatformGraph());
+				final List<String> alarms = mtr.packet.DelayAlarms.collect(depotSidings, dataCache, deadlockedTrains, contingencySystems, platformGraph, alarmLookups);
 				mtr.packet.DelayAlarms.log(depot, alarms, depot.loggedAlarms);
 				if (!alarms.equals(depot.clientAlarms) || resend && alarms.size() > 1) {
 					depot.clientAlarms = alarms;
 					mtr.packet.DelayAlarms.sendS2C(world, depot.id, alarms);
 				}
-				final List<String> held = mtr.packet.HeldTrains.collect(depot, sidings, dataCache);
+				final List<String> held = mtr.packet.HeldTrains.collect(depot, depotSidings, dataCache);
 				final List<String> misses;
 				synchronized (depot.returnOrderMisses) {
 					misses = new ArrayList<>(depot.returnOrderMisses);

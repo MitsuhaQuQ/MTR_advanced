@@ -30,43 +30,55 @@ public final class DelayAlarms implements IPacket {
 	}
 
 	/**
-	 * @param deadlocked the trains in a circle of trains waiting on each other
-	 * @return each train reported, as {@code <train> <siding> <slot> <route> <reason> <late seconds> <waiting seconds> <plan>
-	 * <system>}, the plan being one waiting for a dispatcher, or 0, and the system the anchor of its route's rail system;
-	 * and, after a {@code |}, each train a plan or a dispatcher's setting is on for, the same, the plan 0 for what a
-	 * dispatcher set
+	 * What one pass over the depots looks up once for each route, as many trains run the same routes.
 	 */
-	public static List<String> collect(Depot depot, Set<Siding> sidings, DataCache dataCache, Set<Long> deadlocked, mtr.data.ContingencySystems systems, transitsim.network.PlatformGraph platformGraph) {
+	public static final class Lookups {
+
+		private final Map<Long, List<Long>> anchorsByRoute = new HashMap<>();
+		private final Map<Long, Long> anchorByRoute = new HashMap<>();
+	}
+
+	/**
+	 * @param depotSidings the depot's sidings
+	 * @param deadlocked   the trains in a circle of trains waiting on each other
+	 * @return each train reported, as {@code <train> <siding> <slot> <route> <reason> <late since> <waiting since> <plan>
+	 * <system>}: the moments it has been late and waiting since, or 0, which stay the same while nothing changes, so the
+	 * list is only sent again when something does; the plan one waiting for a dispatcher, or 0; the system the anchor of
+	 * its route's rail system. After a {@code |}, each train a plan or a dispatcher's setting is on for, the same, the plan
+	 * 0 for what a dispatcher set
+	 */
+	public static List<String> collect(Collection<Siding> depotSidings, DataCache dataCache, Set<Long> deadlocked, mtr.data.ContingencySystems systems, transitsim.network.PlatformGraph platformGraph, Lookups lookups) {
 		final List<String> alarms = new ArrayList<>();
 		final List<String> handled = new ArrayList<>();
-		sidings.forEach(siding -> {
-			if (dataCache.sidingIdToDepot.get(siding.id) != depot) {
+		depotSidings.forEach(siding -> siding.forEachTrain(train -> {
+			final TrainService<?> service = train.getService();
+			if (!service.isOnDuty()) {
 				return;
 			}
-			siding.forEachTrain(train -> {
-				final TrainService<?> service = train.getService();
-				if (!service.isOnDuty()) {
-					return;
-				}
-				final long lateMillis = service.getLateMillis();
-				final long waitingMillis = train.getWaitingMillis();
-				// The plans of the rail system its route is in, whichever depot it comes from
-				final mtr.data.Route route = dataCache.routeIdMap.get(service.getTripRouteId());
-				// All the systems rails joined into its network, none of them lost, the lowest anchor first
-				final List<Long> anchors = systems.anchorsForRoute(route, platformGraph);
-				final List<transitsim.plan.Contingencies> contingencyList = new ArrayList<>();
-				anchors.forEach(eachAnchor -> contingencyList.add(systems.systems.get(eachAnchor)));
-				final DelayRules.Outcome outcome = DelayRules.evaluate(contingencyList, train.id, service.getTripRouteId(), lateMillis, waitingMillis, deadlocked.contains(train.id) && waitingMillis > 0);
-				final long anchor = outcome.systemIndex >= 0 ? anchors.get(outcome.systemIndex) : route == null || route.platformIds.isEmpty() ? 0 : systems.anchorOf(platformGraph.getNetworkOf(route.getFirstPlatformId()), platformGraph);
-				final transitsim.plan.Contingencies contingencies = outcome.systemIndex >= 0 ? contingencyList.get(outcome.systemIndex) : null;
-				final String entry = train.id + " " + siding.id + " " + service.getDutySlot() + " " + service.getTripRouteId() + " ";
-				if (outcome.alarm != null) {
-					alarms.add(entry + outcome.alarm + " " + lateMillis / 1000 + " " + waitingMillis / 1000 + " " + outcome.waitingPlanId + " " + anchor);
-				} else if (outcome.contingency != null) {
-					handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateMillis / 1000 + " " + waitingMillis / 1000 + " " + (contingencies.adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor);
-				}
-			});
-		});
+			final long lateSince = service.getLateSinceMillis();
+			final long waitingSince = train.getWaitingSinceMillis();
+			final long lateMillis = service.getLateMillis();
+			final long waitingMillis = train.getWaitingMillis();
+			// The plans of the rail system its route is in, whichever depot it comes from; all the systems rails joined into
+			// its network, none of them lost, the lowest anchor first
+			final long routeId = service.getTripRouteId();
+			final mtr.data.Route route = dataCache.routeIdMap.get(routeId);
+			final List<Long> anchors = lookups.anchorsByRoute.computeIfAbsent(routeId, key -> systems.anchorsForRoute(route, platformGraph));
+			final List<transitsim.plan.Contingencies> contingencyList = new ArrayList<>();
+			anchors.forEach(eachAnchor -> contingencyList.add(systems.systems.get(eachAnchor)));
+			final DelayRules.Outcome outcome = DelayRules.evaluate(contingencyList, train.id, routeId, lateMillis, waitingMillis, deadlocked.contains(train.id) && waitingMillis > 0);
+			if (outcome.alarm == null && outcome.contingency == null) {
+				return;
+			}
+			// Only for the trains listed, and once for each route
+			final long anchor = outcome.systemIndex >= 0 ? anchors.get(outcome.systemIndex) : lookups.anchorByRoute.computeIfAbsent(routeId, key -> route == null || route.platformIds.isEmpty() ? 0L : systems.anchorOf(platformGraph.getNetworkOf(route.getFirstPlatformId()), platformGraph));
+			final String entry = train.id + " " + siding.id + " " + service.getDutySlot() + " " + routeId + " ";
+			if (outcome.alarm != null) {
+				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor);
+			} else {
+				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor);
+			}
+		}));
 		alarms.sort(String::compareTo);
 		handled.sort(String::compareTo);
 		alarms.add("|");
@@ -102,6 +114,8 @@ public final class DelayAlarms implements IPacket {
 	public static void sendS2C(Level world, long depotId, List<String> alarms) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
+		// The server's clock, so the clients work out how late from the moments in the list whatever their own clock says
+		packet.writeLong(System.currentTimeMillis());
 		final int count = Math.min(alarms.size(), MAX_ENTRIES);
 		packet.writeInt(count);
 		alarms.stream().limit(count).forEach(entry -> packet.writeUtf(entry.length() > MAX_LENGTH ? entry.substring(0, MAX_LENGTH) : entry));
@@ -110,6 +124,7 @@ public final class DelayAlarms implements IPacket {
 
 	public static void receiveS2C(FriendlyByteBuf packet) {
 		final long depotId = packet.readLong();
+		final long clockOffset = packet.readLong() - System.currentTimeMillis();
 		final int count = packet.readInt();
 		if (count < 0 || count > MAX_ENTRIES) {
 			throw new IllegalArgumentException("Too many entries: " + count);
@@ -122,6 +137,7 @@ public final class DelayAlarms implements IPacket {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
 				depot.clientAlarms = alarms;
+				depot.clientAlarmClockOffset = clockOffset;
 			}
 		});
 	}

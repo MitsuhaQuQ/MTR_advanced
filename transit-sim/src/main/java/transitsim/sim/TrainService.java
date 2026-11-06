@@ -1618,11 +1618,24 @@ public class TrainService<T extends PlanTrack> {
 	 * @return how late the train is: past the planned departure from its next stop, or the one it stands at, or 0 (D2)
 	 */
 	public long getLateMillis() {
+		final long since = getLateSinceMillis();
+		return since == 0 ? 0 : Math.max(0, clock.getAsLong() - since);
+	}
+
+	/**
+	 * @return the planned departure from its next stop, or the one it stands at, if that has passed: the moment the train
+	 * has been late since, which stays the same while it is late there, unlike how late it is; or 0
+	 */
+	public long getLateSinceMillis() {
 		if (tripMillis == 0) {
 			return 0;
 		}
 		final RouteTimetable.StopPlan stopPlan = getPlanAt(vehicle.getNextStoppingIndex());
-		return stopPlan == null ? 0 : Math.max(0, clock.getAsLong() - getPlannedMillis(stopPlan.departureMillis));
+		if (stopPlan == null) {
+			return 0;
+		}
+		final long departureMillis = getPlannedMillis(stopPlan.departureMillis);
+		return departureMillis < clock.getAsLong() ? departureMillis : 0;
 	}
 
 	public long getPlannedArrivalMillis(int stopIndex) {

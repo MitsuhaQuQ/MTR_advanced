@@ -941,7 +941,7 @@ sequenceDiagram
 **确定性寻路对按时刻表跑的车厂总是开**（2026-11-07 复查）：`Depot.getPathGraph` 对 `supportsTimetable` 的运输方式不看 `useDeterministicPath`，总用 `DeterministicPathFinder`，和线路路径、最快时刻、运用路径一致；游戏车厂界面不再显示这个勾选（`EditDepotScreen.showDeterministicPath`）。存档字段不变，老存档里关着的也照样按确定性寻路。
 
 **寻路边界只约束计算**（2026-11-07，用户定的）：寻路边界只决定"先在哪里找"，不决定"能不能走"；不让正线车走某段轨道是联络线的事。
-- `RailRouter.route` 先按 `getLegRegions` 在每段两端所在的区域里找；找不到完整的路，就在整个路网里再找一次（联络线的 `avoid` 两次都照样生效）。第二次才找到的，`Result.crossedRegions` 为 true。区域内有路时照旧用区域内的路，所以大路网上还是快，也不会绕进无关的区域。
+- `RailRouter.route` 先按 `getLegRegions` 在每段两端所在的区域里找；找不到完整的路，**而且这次搜索确实因为区域剪掉过分支**（`Result.prunedByRegions`），才在整个路网里再找一次（联络线的 `avoid` 两次都照样生效）。区域里根本没碰到边界就失败的（被联络线挡住、方向不对），不再全网重找一遍，失败的搜索不会因此变成两次、范围也不会扩大到全网。第二次才找到的，`Result.crossedRegions` 为 true。区域内有路时照旧用区域内的路，所以大路网上还是快，也不会绕进无关的区域。
 - `PlatformGraph` 不再用区域判断站台之间能不能到（`isAllowed` 总是 true），站台之间的连通只看轨道。每条分支本来只走到遇到的第一个站台，用不着区域限制计算量。
 - `PathFailure.diagnose` 不再给出 `BOUNDARY`；枚举值保留，因为包里按序号写。
 - 跟着变的：车厂和线路的寻路、最快时刻、沙箱和预览寻路都用同一个 `RailRouter`；咽喉锁的网络（`LockNetworks`）由运用路径拼成，路径不再被边界隔开，就跟着连在一起。
@@ -1100,8 +1100,10 @@ sequenceDiagram
     - 锁死：`RailwayData.deadlockedTrains`，由 `takeDeadlocks` 加入，列车不再等进路时移出。
   - **报警**：`RailwayData` 每 100 tick 对每个车厂调 `mtr.packet.DelayAlarms.collect`，按列车所在线路的路网取预案。
     - 结果分两段，中间用 `|` 隔开：前一段是报警的车，后一段是预案或临时处置正在生效的车；每条末尾带路网锚点。
+    - 每条写的是**从什么时刻起**晚点、等进路（`TrainService.getLateSinceMillis` 是下一站计划发车时刻，`TrainServer.getWaitingSinceMillis`），不是晚了几秒，所以车的情况不变时内容不变，不会每 5 秒重发（0.30.0）。包头带服务端时钟，客户端记下和本机的差（`Depot.clientAlarmClockOffset`），网页显示时自己算晚了多久。
     - 每列车的原因变了才写日志。
     - 内容变了，或每分钟有内容时，发 `PACKET_DELAY_ALARMS`，客户端存进 `Depot.clientAlarms`。
+    - **省的地方**：一次检查先把存车线按车厂分好组（原来每个车厂都把全部存车线筛一遍，`HeldTrains.collect` 一起改）；路网锚点只给要列出的车算，同一条线路在一次检查里只查一次（`DelayAlarms.Lookups`）。
   - **存放和同步**：
     - 新的存档类别 `contingency-systems`，每个路网一条（锚点、二进制的预案和状态、备用站台），每次存档都整份写；
     - `PACKET_CONTINGENCIES`：服务端在玩家进入时发全部路网，有人改了就再发给所有人，客户端存进 `ClientData.CONTINGENCY_SYSTEMS`；

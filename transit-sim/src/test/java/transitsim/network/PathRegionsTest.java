@@ -117,6 +117,26 @@ class PathRegionsTest {
 	}
 
 	@Test
+	void aRouteWithNoWayAnywhereStillHasNone() {
+		// Line Y alone, cut off by boundaries, and kept off as a connecting line's: no way within the regions or beyond
+		final RailGraph.Builder<String> builder = new RailGraph.Builder<>();
+		add(builder, 0, 0, 10, 0, Kind.PLATFORM, 2);
+		add(builder, 100, 0, 110, 0, Kind.PLATFORM, 2);
+		add(builder, 10, 0, 20, 50, Kind.NORMAL, 8);
+		add(builder, 20, 50, 90, 50, Kind.NORMAL, 8);
+		add(builder, 90, 50, 100, 0, Kind.NORMAL, 8);
+		final RailGraph<String> graph = builder.build();
+		graph.setRegions(yCutOff());
+		final Result<String> result = RailRouter.route(graph, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0)), connection -> "20,50>90,50".equals(connection.rail) || "90,50>20,50".equals(connection.rail));
+		assertFalse(result.isSuccess());
+		assertFalse(result.crossedRegions);
+		// With no boundary in the way the search fails at once, not twice
+		final RailGraph<String> plain = builder.build();
+		final Result<String> plainResult = RailRouter.route(plain, Arrays.asList(saved(0, 0, 10, 0), saved(100, 0, 110, 0)), connection -> "20,50>90,50".equals(connection.rail) || "90,50>20,50".equals(connection.rail));
+		assertFalse(plainResult.isSuccess());
+	}
+
+	@Test
 	void searchesCanCrossIntoTheNextRegion() {
 		final RailGraph<String> graph = twoLines().build();
 		graph.setRegions(yCutOff());

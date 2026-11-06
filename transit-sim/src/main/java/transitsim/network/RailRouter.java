@@ -50,7 +50,9 @@ public final class RailRouter {
 		// that has a way; keeping trains off rails is what connecting lines are for
 		final BitSet[] legs = getLegRegions(graph, targets);
 		final Result<R> inRegions = search(graph, targets, avoid, legs);
-		if (inRegions.isSuccess() || legs == null) {
+		// Looking beyond the regions only helps where they cut a way off; a route with no way at all isn't searched for
+		// over the whole network a second time
+		if (inRegions.isSuccess() || legs == null || !inRegions.prunedByRegions) {
 			return inRegions;
 		}
 		final Result<R> anywhere = search(graph, targets, avoid, null);
@@ -58,6 +60,12 @@ public final class RailRouter {
 	}
 
 	private static <R> Result<R> search(RailGraph<R> graph, List<Target> targets, Predicate<Connection<R>> avoid, BitSet[] legs) {
+		final boolean[] pruned = {false};
+		final Result<R> result = searchPruned(graph, targets, avoid, legs, pruned);
+		return pruned[0] ? new Result<>(result.steps, result.completedTargets, result.crossedRegions, true) : result;
+	}
+
+	private static <R> Result<R> searchPruned(RailGraph<R> graph, List<Target> targets, Predicate<Connection<R>> avoid, BitSet[] legs, boolean[] pruned) {
 		// The estimate also counts the straight distance between every later pair of targets, so a search far from the end
 		// of a long route doesn't spread out over the whole network for each of the earlier targets
 		final double speed = Math.max(graph.maxChordPerCost, Double.MIN_VALUE);
@@ -81,8 +89,8 @@ public final class RailRouter {
 		if (forward == null || backward == null) {
 			return new Result<>(Collections.emptyList(), 0);
 		}
-		push(graph, targets, legs, remainingAfter, best, queue, null, forward, 1, 0, false, avoid);
-		push(graph, targets, legs, remainingAfter, best, queue, null, backward, 1, 0, false, avoid);
+		push(graph, targets, legs, remainingAfter, best, queue, null, forward, 1, 0, false, avoid, pruned);
+		push(graph, targets, legs, remainingAfter, best, queue, null, backward, 1, 0, false, avoid, pruned);
 
 		int mostCompleted = 1;
 		int expanded = 0;
@@ -104,7 +112,7 @@ public final class RailRouter {
 			if (state.justCompletedRail) {
 				final Connection<R> opposite = graph.reverseOf(connection);
 				if (opposite != null) {
-					push(graph, targets, legs, remainingAfter, best, queue, state, opposite, state.completed, state.cost + opposite.cost + TURN_BACK_PENALTY, true, avoid);
+					push(graph, targets, legs, remainingAfter, best, queue, state, opposite, state.completed, state.cost + opposite.cost + TURN_BACK_PENALTY, true, avoid, pruned);
 				}
 			}
 
@@ -114,7 +122,7 @@ public final class RailRouter {
 					final boolean reversing = next.toPos == connection.fromPos;
 					final boolean isTarget = targets.get(state.completed).matches(next);
 					final double penalty = (reversing ? TURN_BACK_PENALTY : 0) + (next.kind == Kind.PLATFORM && !isTarget ? OTHER_PLATFORM_PENALTY : 0);
-					push(graph, targets, legs, remainingAfter, best, queue, state, next, state.completed, state.cost + next.cost + penalty, false, avoid);
+					push(graph, targets, legs, remainingAfter, best, queue, state, next, state.completed, state.cost + next.cost + penalty, false, avoid, pruned);
 				}
 			}
 		}
@@ -140,8 +148,10 @@ public final class RailRouter {
 		return legs;
 	}
 
-	private static <R> void push(RailGraph<R> graph, List<Target> targets, BitSet[] legs, double[] remainingAfter, Map<Long, State<R>> best, PriorityQueue<State<R>> queue, State<R> parent, Connection<R> connection, int completedBefore, double cost, boolean reversal, Predicate<Connection<R>> avoid) {
+	private static <R> void push(RailGraph<R> graph, List<Target> targets, BitSet[] legs, double[] remainingAfter, Map<Long, State<R>> best, PriorityQueue<State<R>> queue, State<R> parent, Connection<R> connection, int completedBefore, double cost, boolean reversal, Predicate<Connection<R>> avoid, boolean[] pruned) {
 		if (legs != null && !graph.getRegions().allows(connection, legs[completedBefore])) {
+			// Noted, so a search that found no way only looks beyond the regions if they cut something off
+			pruned[0] = true;
 			return;
 		}
 		if (avoid != null && avoid.test(connection) && targets.stream().noneMatch(target -> target.matches(connection))) {
@@ -270,10 +280,20 @@ public final class RailRouter {
 			this(steps, completedTargets, false);
 		}
 
+		/**
+		 * The search left out some way because it ran out of the regions of the pathfinding boundaries.
+		 */
+		private final boolean prunedByRegions;
+
 		private Result(List<Step<R>> steps, int completedTargets, boolean crossedRegions) {
+			this(steps, completedTargets, crossedRegions, false);
+		}
+
+		private Result(List<Step<R>> steps, int completedTargets, boolean crossedRegions, boolean prunedByRegions) {
 			this.steps = Collections.unmodifiableList(steps);
 			this.completedTargets = completedTargets;
 			this.crossedRegions = crossedRegions;
+			this.prunedByRegions = prunedByRegions;
 		}
 
 		public boolean isSuccess() {

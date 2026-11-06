@@ -889,6 +889,13 @@ public class TrainServer extends Train {
 		return waitingSinceMillis == 0 ? 0 : System.currentTimeMillis() - waitingSinceMillis;
 	}
 
+	/**
+	 * @return since when it has waited for the run it asked for, or 0 (D2)
+	 */
+	public long getWaitingSinceMillis() {
+		return waitingSinceMillis;
+	}
+
 	private boolean isRunGranted(int fromIndex) {
 		final RunReservations reservations = getRunReservations();
 		if (reservations == null) {

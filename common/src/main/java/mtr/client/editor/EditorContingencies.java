@@ -65,6 +65,8 @@ public final class EditorContingencies {
 	 */
 	public static void addToDepot(JsonObject depotObject, Depot depot) {
 		final JsonArray alarms = new JsonArray();
+		// How late and how long waited, by the server's clock, from the moments sent
+		final long serverNow = System.currentTimeMillis() + depot.clientAlarmClockOffset;
 		boolean handled = false;
 		for (final String entry : depot.clientAlarms) {
 			if ("|".equals(entry)) {
@@ -81,8 +83,10 @@ public final class EditorContingencies {
 			alarm.addProperty("slot", Integer.parseInt(parts[2]));
 			alarm.addProperty("route", parts[3]);
 			alarm.addProperty("reason", parts[4]);
-			alarm.addProperty("late", Long.parseLong(parts[5]));
-			alarm.addProperty("waiting", Long.parseLong(parts[6]));
+			final long lateSince = Long.parseLong(parts[5]);
+			final long waitingSince = Long.parseLong(parts[6]);
+			alarm.addProperty("late", lateSince == 0 ? 0 : Math.max(0, serverNow - lateSince) / 1000);
+			alarm.addProperty("waiting", waitingSince == 0 ? 0 : Math.max(0, serverNow - waitingSince) / 1000);
 			alarm.addProperty("plan", parts[7]);
 			alarm.addProperty("system", parts[8]);
 			alarm.addProperty("handled", handled);

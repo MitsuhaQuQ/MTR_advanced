@@ -109,6 +109,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public volatile List<String> clientAlarms = Collections.emptyList();
 	/**
+	 * On the clients, the server's clock less theirs when the alarms came, to work out how late from the moments in them.
+	 */
+	public volatile long clientAlarmClockOffset;
+	/**
 	 * On the server, train → reason as last written to the log.
 	 */
 	public final Map<Long, String> loggedAlarms = new HashMap<>();

@@ -15,6 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -34,7 +35,7 @@ public final class HeldTrains implements IPacket {
 	/**
 	 * @return the depot's trains staying on the line with no duty to go on with, as {@code <siding> <slot> <platform> <reason>}
 	 */
-	public static List<String> collect(Depot depot, Set<Siding> sidings, DataCache dataCache) {
+	public static List<String> collect(Depot depot, Collection<Siding> sidings, DataCache dataCache) {
 		final List<String> held = new ArrayList<>();
 		sidings.forEach(siding -> {
 			if (dataCache.sidingIdToDepot.get(siding.id) == depot) {
