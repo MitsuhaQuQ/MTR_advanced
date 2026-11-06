@@ -89,6 +89,10 @@ public class TrainServer extends Train {
 	 */
 	private Map<UUID, Long> throatZones;
 	private int requestedRunEnd = -1;
+	/**
+	 * Since when it has waited for the run it asked for, or 0 (D2).
+	 */
+	private long waitingSinceMillis;
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
 	private List<TimeSegment> timeSegments;
@@ -878,6 +882,13 @@ public class TrainServer extends Train {
 	 *
 	 * @return true once the train holds the run
 	 */
+	/**
+	 * @return how long it has waited for the run it asked for, or 0 (D2)
+	 */
+	public long getWaitingMillis() {
+		return waitingSinceMillis == 0 ? 0 : System.currentTimeMillis() - waitingSinceMillis;
+	}
+
 	private boolean isRunGranted(int fromIndex) {
 		final RunReservations reservations = getRunReservations();
 		if (reservations == null) {
@@ -891,12 +902,16 @@ public class TrainServer extends Train {
 		if (requestedRunEnd == runEnd && reservations.takeGrant(id)) {
 			grantedRunEnd = runEnd;
 			requestedRunEnd = -1;
+			waitingSinceMillis = 0;
 			if (locks != null) {
 				locks.onGranted();
 			}
 			return true;
 		}
 		requestedRunEnd = runEnd;
+		if (waitingSinceMillis == 0) {
+			waitingSinceMillis = System.currentTimeMillis();
+		}
 		final List<RunReservations.Move> moves = getRunMoves(runEnd);
 		if (locks != null) {
 			// The way out through the throat of the stop it is leaving goes with the run, all of it or none
@@ -1214,6 +1229,7 @@ public class TrainServer extends Train {
 			// Runs are rails of the path, so a run given on the old one is asked for again
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
+			waitingSinceMillis = 0;
 		}
 
 		@Override
@@ -1278,6 +1294,7 @@ public class TrainServer extends Train {
 			nextPlatformIndex = stopIndex;
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
+			waitingSinceMillis = 0;
 		}
 
 		@Override

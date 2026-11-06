@@ -104,6 +104,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final transitsim.sim.BufferRecorder bufferRecorder = new transitsim.sim.BufferRecorder();
 	/**
+	 * On the clients, its trains reported late or stuck and those a contingency plan is on for
+	 * ({@link mtr.packet.DelayAlarms}); on the server, as last sent.
+	 */
+	public volatile List<String> clientAlarms = Collections.emptyList();
+	/**
+	 * On the server, train → reason as last written to the log.
+	 */
+	public final Map<Long, String> loggedAlarms = new HashMap<>();
+	/**
 	 * What the duties are planned with: the recorder's on the server, as sent on the clients.
 	 */
 	private transitsim.plan.Buffers buffers = transitsim.plan.Buffers.NONE;

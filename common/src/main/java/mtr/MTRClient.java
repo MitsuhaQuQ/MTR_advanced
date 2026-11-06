@@ -323,6 +323,8 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_EDIT_RESULT, ClientEditing::receiveResultS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_ROUTE_PREVIEW, mtr.packet.RoutePreview::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_HELD_TRAINS, mtr.packet.HeldTrains::receiveS2C);
+		RegistryClient.registerNetworkReceiver(PACKET_DELAY_ALARMS, mtr.packet.DelayAlarms::receiveS2C);
+		RegistryClient.registerNetworkReceiver(PACKET_CONTINGENCIES, mtr.packet.ContingencyPackets::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_EDIT_DATA, packet -> ClientEditing.receiveDataS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_UPDATE_LIFTS, packet -> ClientData.updateLifts(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_DELETE_TRAINS, packet -> ClientData.deleteTrains(Minecraft.getInstance(), packet));

@@ -49,6 +49,10 @@ public final class ClientData {
 	 * The pathfinding boundaries and the regions they make, sent by the server whenever they change.
 	 */
 	public static RegionData PATH_REGIONS = RegionData.EMPTY;
+	/**
+	 * The contingency plans of each rail system, as the server sent them (D2).
+	 */
+	public static final ContingencySystems CONTINGENCY_SYSTEMS = new ContingencySystems();
 	public static final List<MapRail> MAP_RAILS = new ArrayList<>();
 	public static final Map<Long, long[]> MAP_ROUTES = new HashMap<>();
 	public static final Map<Long, long[]> MAP_SIDINGS = new HashMap<>();

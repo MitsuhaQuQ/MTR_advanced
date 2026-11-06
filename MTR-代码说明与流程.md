@@ -1065,6 +1065,40 @@ sequenceDiagram
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
+- **故障预案和报警**（0.29.0，晚点调度 D2）：晚点不自动处理，由故障预案决定；没有预案只报警。这一步只做预案、状态和报警，具体手段（跳站、临时折返、备车接替）在 D3–D5 接上。
+  - **归属**：预案属于**路网**（用户定的），不属于车厂：一片连通的轨道是一个路网，路网里所有线路的车不管来自哪个车厂，都用同一套预案。
+    - 路网 id 在轨道每次改动后都会重算，所以路网用它的一个站台来认，叫锚点（`mtr.data.ContingencySystems`，锚点站台 → `Contingencies`）。
+    - 线路属于哪个路网，看它首站所在的网络（`RailwayData.getPlatformGraph()`，即 `PathRegionSync.getLatest()` 的 `platformGraph`）里有哪些锚点（`anchorsForRoute`）。
+    - 还没有预案的路网，锚点取网络里 id 最小的站台（`anchorOf`）。
+    - **轨道接通、两个路网合成一个时不丢数据**（用户要求）：两套都照旧存着、都生效。`DelayRules.evaluate(List<Contingencies>, …)` 先看各套里给这列车的临时处置，再按锚点从小到大逐套看预案；结果带 `systemIndex`，报警记下是哪一套的锚点，命令发给那一套。网页把同一网络里锚点较大的几套列为 `others`：同步状态提示"由 N 套预案接在一起"；"路网故障预案…"列出它们，勾"合成一套"后把它们的预案并进主套、重新编号，那几套在草稿里清空。
+    - **锚点站台被删时换锚点**：服务端每 100 tick 调 `ContingencySystems.keepAnchors`：锚点还在时记下同一网络里另外最多 8 个站台（`backups`，跟着存档和同步）；锚点不在了就搬到其中第一个还在、又不是别的锚点的站台，写日志并重发。一个都不在时原样留着，不删。
+  - **数据**：组件 `transitsim.plan.Contingency`：
+    - 适用线路（空为路网的全部线路）；
+    - 触发条件：晚点分钟、等进路分钟（0 为不看），以及锁死开关；
+    - 启用方式：自动或手动；
+    - 手段：折返（不折返 / 最近站 / 指定站，折返后接线运营或回送回库）、跳过的车站、备车接替。
+    - `Contingencies` 存预案（按 id）、已启用的手动预案、调度员给单列车的临时处置（按车）。
+  - **判断**：组件 `transitsim.sim.DelayRules.evaluate`，两个宿主共用：
+    - 列车有临时处置时，临时处置生效；
+    - 否则按 id 从小到大，取第一个适用于当前线路、条件满足、并且是自动或已启用的预案；
+    - 条件满足但预案只能手动启用（且没启用）时报警，并给出这个预案；
+    - 路网没有适用于这条线路的预案时，按默认条件报警（晚点 5 分、等进路 10 分、锁死）。
+  - **输入**：
+    - 晚点：`TrainService.getLateMillis()`，等于当前时间减去下一站（或所在站）的计划发车时间，不小于 0；
+    - 等进路：`TickRunner.HeadlessTrain.getWaitingMillis()` 和 `TrainServer.getWaitingMillis()`，从申请走行没批下开始计，批下或换路径时清零，不存档；
+    - 锁死：`RailwayData.deadlockedTrains`，由 `takeDeadlocks` 加入，列车不再等进路时移出。
+  - **报警**：`RailwayData` 每 100 tick 对每个车厂调 `mtr.packet.DelayAlarms.collect`，按列车所在线路的路网取预案。
+    - 结果分两段，中间用 `|` 隔开：前一段是报警的车，后一段是预案或临时处置正在生效的车；每条末尾带路网锚点。
+    - 每列车的原因变了才写日志。
+    - 内容变了，或每分钟有内容时，发 `PACKET_DELAY_ALARMS`，客户端存进 `Depot.clientAlarms`。
+  - **存放和同步**：
+    - 新的存档类别 `contingency-systems`，每个路网一条（锚点、二进制的预案和状态、备用站台），每次存档都整份写；
+    - `PACKET_CONTINGENCIES`：服务端在玩家进入时发全部路网，有人改了就再发给所有人，客户端存进 `ClientData.CONTINGENCY_SYSTEMS`；
+    - 客户端改预案（`sendPlansC2S`）或状态（`sendStateC2S`）也用这个包，服务端检查编辑权限、锚点站台存在和路网数上限（64）后才改；删掉的预案同时停用，改到空的路网就删掉。
+  - **网页**：
+    - 数据多一项 `contingencySystems`（`EditorContingencies.systemsToJson`），每个有线路的路网一项：锚点、线路、经过的车站、预案（带是否已启用）、临时处置。
+    - 线路和种别的右键菜单"路网故障预案…"编辑所在路网的预案，进草稿 `draft.contingencies[锚点]`，应用时用操作 `contingencies`（`system` 为锚点）整份替换。路网按它的线路名称称呼。
+    - "同步状态"列出车厂的报警：每条可以"启用预案「X」"或"临时处置…"，已生效的可以"解除"或"停用预案"；各路网已启用的手动预案也列出来。这些命令都用操作 `contingency`（`activate` / `deactivate` / `adhoc` / `release`，`system` 为锚点）立即发出，不进草稿。
 - **实测余量**（0.28.0，晚点调度 D1）：列车实际比计划多用的时间记下来，下次生成运用时加上，时刻表不变。
   - **记录**：组件 `transitsim.sim.BufferRecorder` 按列车的 `MotionEvent` 量三种用时：
     - 出库：存车线 `DEPARTED`（第 0 条轨道）→ 第一个站台 `STOPPED`，计划用时 `stopTimes.getLeadMillis()`；

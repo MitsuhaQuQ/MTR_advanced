@@ -1614,6 +1614,17 @@ public class TrainService<T extends PlanTrack> {
 		return tripMillis + planMillis - routeStartMillis;
 	}
 
+	/**
+	 * @return how late the train is: past the planned departure from its next stop, or the one it stands at, or 0 (D2)
+	 */
+	public long getLateMillis() {
+		if (tripMillis == 0) {
+			return 0;
+		}
+		final RouteTimetable.StopPlan stopPlan = getPlanAt(vehicle.getNextStoppingIndex());
+		return stopPlan == null ? 0 : Math.max(0, clock.getAsLong() - getPlannedMillis(stopPlan.departureMillis));
+	}
+
 	public long getPlannedArrivalMillis(int stopIndex) {
 		if (vehicle.isRepeat() && stopIndex >= vehicle.getRepeatIndex2() || isJoiningLoop && stopTimes != null && stopIndex == getJoinEndIndex()) {
 			return nextTripMillis;

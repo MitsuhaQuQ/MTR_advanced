@@ -1555,6 +1555,10 @@ public final class TickRunner<T extends RunTrack> {
 		private int turnBackUntil;
 		private int grantedRunEnd = -1;
 		private int requestedRunEnd = -1;
+		/**
+		 * Since when it has waited for the run it asked for, or 0 (D2).
+		 */
+		private long waitingSinceMillis;
 		private long eventSequence;
 		/**
 		 * Why the host holds the train at its stops, or null.
@@ -1677,6 +1681,7 @@ public final class TickRunner<T extends RunTrack> {
 			manualNotch = speed > 0 ? 0 : -2;
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
+			waitingSinceMillis = 0;
 			nextStoppingIndex = TrainRules.findNextStoppingIndex(this, MotionConstants.findIndex(this, railProgress, false));
 			nextPlatformIndex = nextStoppingIndex;
 			// A stopped train counts as standing at its stop, so one given back anywhere else sets off as it does from a stop
@@ -2300,6 +2305,13 @@ public final class TickRunner<T extends RunTrack> {
 			return false;
 		}
 
+		/**
+		 * @return how long it has waited for the run it asked for, or 0 (D2)
+		 */
+		public long getWaitingMillis() {
+			return waitingSinceMillis == 0 ? 0 : millis - waitingSinceMillis;
+		}
+
 		@Override
 		public boolean isRunGranted(int fromIndex) {
 			final int runEnd = TrainRules.findRunEnd(this, fromIndex);
@@ -2310,6 +2322,7 @@ public final class TickRunner<T extends RunTrack> {
 			if (requestedRunEnd == runEnd && reservations.takeGrant(id)) {
 				grantedRunEnd = runEnd;
 				requestedRunEnd = -1;
+				waitingSinceMillis = 0;
 				requestedMoves = Collections.emptyList();
 				if (locks != null) {
 					locks.onGranted();
@@ -2317,6 +2330,9 @@ public final class TickRunner<T extends RunTrack> {
 				return true;
 			}
 			requestedRunEnd = runEnd;
+			if (waitingSinceMillis == 0) {
+				waitingSinceMillis = millis;
+			}
 			final List<RunReservations.Move> moves = getRunMoves(runEnd);
 			if (locks != null) {
 				// The way out through the throat of the stop it is leaving goes with the run, all of it or none
@@ -2734,6 +2750,7 @@ public final class TickRunner<T extends RunTrack> {
 			// Runs are rails of the path, so a run given on the old one is asked for again
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
+			waitingSinceMillis = 0;
 		}
 
 		@Override
@@ -2795,6 +2812,7 @@ public final class TickRunner<T extends RunTrack> {
 			nextPlatformIndex = stopIndex;
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
+			waitingSinceMillis = 0;
 		}
 
 		@Override

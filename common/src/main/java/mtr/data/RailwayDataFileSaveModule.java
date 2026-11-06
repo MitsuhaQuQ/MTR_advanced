@@ -102,7 +102,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private static final String TYPE_KEY_NODES = "key-nodes";
 	private static final String TYPE_BOUNDARY_NODES = "boundary-nodes";
 	private static final String TYPE_BOUNDARY_SEGMENTS = "boundary-segments";
-	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES, TYPE_BOUNDARY_NODES, TYPE_BOUNDARY_SEGMENTS};
+	private static final String TYPE_CONTINGENCY_SYSTEMS = "contingency-systems";
+	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES, TYPE_BOUNDARY_NODES, TYPE_BOUNDARY_SEGMENTS, TYPE_CONTINGENCY_SYSTEMS};
 
 	public RailwayDataFileSaveModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, Path savePath, SignalBlocks signalBlocks) {
 		super(railwayData, world, rails);
@@ -132,6 +133,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		readMessagePackFromFile(TYPE_KEY_NODES, KeyNode::new, keyNode -> railwayData.keyNodes.add(keyNode.pos), true);
 		readMessagePackFromFile(TYPE_BOUNDARY_NODES, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.nodes.add(entry.node), true);
 		readMessagePackFromFile(TYPE_BOUNDARY_SEGMENTS, PathBoundaries.Entry::new, entry -> railwayData.pathBoundaries.segments.add(entry.segment), true);
+		readMessagePackFromFile(TYPE_CONTINGENCY_SYSTEMS, ContingencySystems.Entry::new, entry -> {
+			railwayData.contingencySystems.systems.put(entry.anchor, entry.toContingencies());
+			railwayData.contingencySystems.backups.put(entry.anchor, new ArrayList<>(entry.backups));
+		}, true);
 
 		railwayData.graphRecords.load(dataStore);
 		try {
@@ -223,6 +228,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			railwayData.keyNodes.forEach(pos -> stage(new KeyNode(pos), pos.asLong(), TYPE_KEY_NODES));
 			railwayData.pathBoundaries.nodes.forEach(node -> stage(new PathBoundaries.Entry(node), node, TYPE_BOUNDARY_NODES));
 			railwayData.pathBoundaries.segments.forEach(segment -> stage(new PathBoundaries.Entry(segment), new PathBoundaries.Entry(segment).getId(), TYPE_BOUNDARY_SEGMENTS));
+			// Saved with each save, as they are few and a player's change is rare (D2)
+			railwayData.contingencySystems.systems.forEach((anchor, contingencies) -> stage(new ContingencySystems.Entry(anchor, contingencies, railwayData.contingencySystems.backups.get(anchor)), anchor, TYPE_CONTINGENCY_SYSTEMS));
 			snapshotMillis = System.currentTimeMillis() - snapshotStartMillis;
 			dirtyRailPositions.addAll(rails.keySet());
 			dataStore.backup();

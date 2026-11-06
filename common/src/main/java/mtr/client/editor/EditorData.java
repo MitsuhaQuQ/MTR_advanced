@@ -264,6 +264,8 @@ public final class EditorData {
 				}
 			});
 			depotObject.add("held", heldArray);
+			// Trains reported late or stuck and those a contingency plan is on for (D2)
+			EditorContingencies.addToDepot(depotObject, depot);
 			// Services set to go back to a depot whose trains couldn't: siding, depot, why (P1-B)
 			final JsonArray missesArray = new JsonArray();
 			synchronized (depot.returnOrderMisses) {
@@ -297,6 +299,8 @@ public final class EditorData {
 			depotsArray.add(depotObject);
 		});
 		data.add("depots", depotsArray);
+		// The contingency plans of each rail system (D2)
+		data.add("contingencySystems", EditorContingencies.systemsToJson());
 		return data;
 	}
 

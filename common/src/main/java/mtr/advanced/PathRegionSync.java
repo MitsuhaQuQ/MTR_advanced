@@ -101,6 +101,13 @@ public final class PathRegionSync {
 		thread.start();
 	}
 
+	/**
+	 * @return the regions and networks as last worked out
+	 */
+	public RegionData getLatest() {
+		return latest;
+	}
+
 	public void send(ServerPlayer player) {
 		if (computed) {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());

@@ -56,7 +56,7 @@
 	let coverage = null;
 	/** The services paired at their routes' ends on the day shown (terminalNow), until the data, the draft or the day changes. */
 	let terminal = null;
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -108,6 +108,7 @@
 		if (!draft.boundaries || typeof draft.boundaries !== "object") draft.boundaries = {};
 		if (!draft.depots || typeof draft.depots !== "object") draft.depots = {};
 		if (!draft.platformStations || typeof draft.platformStations !== "object") draft.platformStations = {};
+		if (!draft.contingencies || typeof draft.contingencies !== "object") draft.contingencies = {};
 		draftLoaded = true;
 	}
 
@@ -122,7 +123,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.contingencies || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -325,6 +326,11 @@
 			operations.push({ type: "pathBoundary", a, b, boundary });
 			owners.push({ boundaryOf: key });
 		});
+		// A rail system's contingency plans (D2), all of them in place of the system's
+		Object.entries(draft.contingencies || {}).forEach(([anchor, plans]) => {
+			operations.push({ type: "contingencies", system: anchor, plans });
+			owners.push({ contingenciesOf: anchor });
+		});
 		Object.entries(draft.platformStations || {}).forEach(([platform, station]) => {
 			operations.push({ type: "platformStation", platform, station });
 			owners.push({ platformStationOf: platform });
@@ -373,6 +379,7 @@
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
 			owners.filter(owner => owner && owner.depotOf && !failed.has(owner)).forEach(owner => delete draft.depots[owner.depotOf]);
 			owners.filter(owner => owner && owner.platformStationOf && !failed.has(owner)).forEach(owner => delete draft.platformStations[owner.platformStationOf]);
+			owners.filter(owner => owner && owner.contingenciesOf && !failed.has(owner)).forEach(owner => delete draft.contingencies[owner.contingenciesOf]);
 			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
 				delete draft.boundaries[owner.boundaryOf];
 				delete boundaryErrors[owner.boundaryOf];
@@ -1182,6 +1189,11 @@
 				<div class="draft-actions"><button type="button" data-diff-open="${id}">${tr("跳到这里")}</button>${entry.conflict ? "" : `<button type="button" data-diff-drop="${id}">${tr("放弃这条的草稿")}</button>`}</div></section>`);
 		});
 		draft.created.forEach(made => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${made.source ? tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length) : tr("新建线路：{0} 站", made.stops.length)}</li></ul></section>`));
+		// A rail system's contingency plans, drafted in "路网故障预案…" (D2)
+		Object.entries(draft.contingencies || {}).forEach(([anchor, plans]) => {
+			const owner = plansByAnchor(anchor);
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(tr("路网{0}的故障预案", owner ? systemTitle(owner.system) : anchor) + (owner && owner.system.anchor !== anchor ? tr("（原来接进来的一套）") : ""))}</h3><ul>${plans.length ? plans.map(plan => `<li>${escapeHtml(tr("预案 {0}「{1}」：{2}", plan.id, plan.name, plan.manual ? tr("手动启用") : tr("自动启用")))}</li>`).join("") : `<li>${tr("删除全部预案")}</li>`}</ul></section>`);
+		});
 		// What a depot runs, drafted in "编辑车厂…"
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
 			const depot = depotById(depotId);
@@ -5908,6 +5920,16 @@
 			if (entry.error) problems.push({ level: "err", text: tr("车厂{0}的设置没有应用：{1}", shortName(depotById(id) ? depotById(id).name : "?"), entry.error) });
 		});
 		(draft.created || []).filter(made => made.error).forEach(made => problems.push({ level: "err", text: tr("新种别 {0} 没有建成：{1}", shortName(made.name), made.error) }));
+		// Plans a dispatcher started, on until ended, and settings for trains no longer reported (D2)
+		const reported = new Set(data.depots.flatMap(depot => (depot.alarms || []).map(alarm => alarm.train)));
+		(data.contingencySystems || []).forEach(system => {
+			[system].concat(system.others || []).forEach(owner => {
+				owner.plans.filter(plan => plan.active).forEach(plan => problems.push({ level: "warn", text: tr("路网{0}：预案「{1}」已启用", systemTitle(system), plan.name || plan.id), actions: [{ label: tr("停用预案"), op: { type: "contingency", system: owner.anchor, action: "deactivate", plan: plan.id } }] }));
+				Object.keys(owner.adhoc || {}).filter(train => !reported.has(train)).forEach(train => problems.push({ level: "warn", text: tr("路网{0}：列车 {1} 有临时处置", systemTitle(system), train), actions: [{ label: tr("解除"), op: { type: "contingency", system: owner.anchor, action: "release", train } }] }));
+			});
+			// Rails joined systems that each have plans: both hold, until merged (D2)
+			if ((system.others || []).some(other => other.plans.length)) problems.push({ level: "warn", text: tr("路网{0}由 {1} 套故障预案接在一起，都还生效（原锚点小的优先）。在线路右键“路网故障预案…”里可以合成一套", systemTitle(system), 1 + system.others.length) });
+		});
 		data.depots.forEach(depot => {
 			const name = shortName(depot.name) || tr("（未命名车厂）");
 			const path = depot.path || {};
@@ -5922,6 +5944,24 @@
 				const siding = depot.sidings.find(other => other.id === held.siding);
 				const why = held.reason === "OTHER_PLATFORM" ? tr("第二天的运用不从这个站台出发") : held.reason === "ALREADY_RUN" ? tr("第二天的运用已经由别的车跑了") : tr("第二天没有接着跑的运用");
 				problems.push({ level: "err", text: tr("车厂{0}：{1} 车 {2} 留在线上过夜后{3}，停在 {4} 等处理。改好运用后它会接着跑", name, shortName(siding ? siding.name : "") || tr("存车线"), held.slot + 1, why, shortName(held.platform)), recall: { depot: depot.id, siding: held.siding, slot: held.slot } });
+			});
+			// Trains late or stuck with no plan on for them, and those a plan or a dispatcher's setting is on for (D2)
+			(depot.alarms || []).forEach(alarm => {
+				const siding = depot.sidings.find(other => other.id === alarm.siding);
+				const r = data.routeById.get(alarm.route);
+				const trainText = tr("{0} 车 {1}（{2}）", shortName(siding ? siding.name : "") || tr("存车线"), alarm.slot + 1, r ? routeTitle(r) : alarm.route);
+				const owner = plansByAnchor(alarm.system);
+				const plan = owner ? owner.plans.find(each => each.id === alarm.plan) : null;
+				if (!alarm.handled) {
+					const actions = [];
+					if (plan) actions.push({ label: tr("启用预案「{0}」", plan.name || plan.id), op: { type: "contingency", system: alarm.system, action: "activate", plan: plan.id } });
+					actions.push({ label: tr("临时处置…"), adhoc: { system: alarm.system, train: alarm.train } });
+					problems.push({ level: "err", text: tr("车厂{0}：{1}{2}，没有生效的故障预案", name, trainText, alarmReasonText(alarm)), actions });
+				} else {
+					const actions = alarm.plan === "0" ? [{ label: tr("解除"), op: { type: "contingency", system: alarm.system, action: "release", train: alarm.train } }]
+						: plan && plan.manual ? [{ label: tr("停用预案"), op: { type: "contingency", system: alarm.system, action: "deactivate", plan: plan.id } }] : [];
+					problems.push({ level: "warn", text: tr("车厂{0}：{1}{2}，按{3}处理", name, trainText, alarmReasonText(alarm), alarm.plan === "0" ? tr("临时处置") : tr("预案「{0}」", plan ? plan.name || plan.id : alarm.plan)), actions });
+				}
 			});
 			(depot.returnMisses || []).forEach(miss => problems.push({ level: "warn", text: tr("车厂{0}：一班设了回送车厂 {1}，但那里没有同车型、有空位又有路的存车线，车按平常回库了", name, shortName((depotById(miss.depot) || {}).name || miss.depot)) }));
 			turnPairsOf(depot).filter(pair => pair.millis === null).forEach(pair => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 换不过去（同站换站台没有路），自动排班不会让车这样接续", name, stopLabel(pair.from), stopLabel(pair.to)) }));
@@ -5987,7 +6027,8 @@
 
 	function syncDialog() {
 		const problems = syncProblems();
-		const items = problems.map(p => `<li class="${p.level}">${p.route ? `<a data-open-route="${p.route}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)}${p.recall && data.canEdit ? ` <button type="button" class="link" data-recall='${escapeHtml(JSON.stringify(p.recall))}'>${tr("直接收回")}</button>` : ""}</li>`).join("");
+		const actionButtons = p => data.canEdit ? (p.actions || []).map(action => ` <button type="button" class="link" ${action.adhoc ? `data-adhoc='${escapeHtml(JSON.stringify(action.adhoc))}'` : `data-command='${escapeHtml(JSON.stringify(action.op))}'`}>${escapeHtml(action.label)}</button>`).join("") : "";
+		const items = problems.map(p => `<li class="${p.level}">${p.route ? `<a data-open-route="${p.route}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)}${p.recall && data.canEdit ? ` <button type="button" class="link" data-recall='${escapeHtml(JSON.stringify(p.recall))}'>${tr("直接收回")}</button>` : ""}${actionButtons(p)}</li>`).join("");
 		// The changes of platform as measured on the rails, which the planner and the duty check go by
 		const turns = data ? data.depots.flatMap(depot => turnPairsOf(depot).filter(pair => pair.millis !== null).map(pair => `<li>${escapeHtml(tr("车厂{0}：{1} → {2} 实际要 {3}", shortName(depot.name) || tr("（未命名车厂）"), stopLabel(pair.from), stopLabel(pair.to), formatDuration(pair.millis)))}</li>`)) : [];
 		const turnsText = turns.length ? `<h3>${tr("同站换站台用时（轨道上实测，含 30 秒余量）")}</h3><ul class="sync-turns">${turns.slice(0, 40).join("")}</ul>` : "";
@@ -6004,11 +6045,166 @@
 				button.disabled = false;
 			}
 		}));
+		// A dispatcher's commands about contingency plans, sent at once like taking a train back (D2)
+		dialog.querySelectorAll("[data-command]").forEach(button => button.addEventListener("click", async () => {
+			button.disabled = true;
+			try {
+				await sendJson("api/apply", "POST", { operations: [JSON.parse(button.dataset.command)] });
+				button.textContent = tr("已发送");
+			} catch (e) {
+				button.disabled = false;
+			}
+		}));
+		dialog.querySelectorAll("[data-adhoc]").forEach(button => button.addEventListener("click", () => {
+			const target = JSON.parse(button.dataset.adhoc);
+			const owner = plansByAnchor(target.system);
+			if (owner) adhocDialog(owner.system, target.train, target.system);
+		}));
 		dialog.querySelectorAll("[data-open-route]").forEach(link => link.addEventListener("click", () => {
 			dialog.close();
 			const r = data.routeById.get(link.dataset.openRoute);
 			if (r) openView("table", r.lineKey, r.id);
 		}));
+	}
+
+	/** Why a train is reported, with how late it is or how long it has waited (D2). */
+	function alarmReasonText(alarm) {
+		if (alarm.reason === "DEADLOCK") return tr("和别的车互相等着走不了（锁死）");
+		if (alarm.reason === "WAITING") return tr("等进路已 {0} 分钟", Math.floor(alarm.waiting / 60));
+		if (alarm.reason === "LATE") return tr("晚点 {0} 分钟", Math.floor(alarm.late / 60));
+		return "";
+	}
+
+	/** The rail system, a network of rails joined together, with its plans (D2). */
+	const systemByAnchor = anchor => (data.contingencySystems || []).find(system => system.anchor === anchor) || null;
+	/**
+	 * The plans of an anchor, a rail system's own or one of those rails joined into it, as
+	 * { anchor, plans, adhoc, system }, the system being the network's.
+	 */
+	const plansByAnchor = anchor => {
+		for (const system of data.contingencySystems || []) {
+			if (system.anchor === anchor) return { anchor, plans: system.plans, adhoc: system.adhoc, system };
+			const other = (system.others || []).find(each => each.anchor === anchor);
+			if (other) return { anchor, plans: other.plans, adhoc: other.adhoc, system };
+		}
+		return null;
+	};
+	const systemOfRoute = routeId => (data.contingencySystems || []).find(system => system.routes.includes(routeId)) || null;
+	const systemOfLine = lineKey => {
+		const line = data.lines.find(each => each.key === lineKey);
+		return line ? line.routes.map(r => systemOfRoute(r.id)).find(Boolean) || null : null;
+	};
+	/** A rail system named by the lines it has, as a network has no name of its own. */
+	function systemTitle(system) {
+		const lineNames = [...new Set(system.routes.map(id => data.routeById.get(id)).filter(Boolean).map(r => shortName(r.line)))];
+		return lineNames.length > 3 ? tr("{0} 等 {1} 条线", lineNames.slice(0, 3).join("、"), lineNames.length) : lineNames.join("、");
+	}
+
+	/** The fields of what is done with a train, in a plan or set there and then (D2). */
+	function contingencyMeasureFields(system, plan) {
+		const stations = system.stations || [];
+		const stationOptions = stations.map(station => `<option value="${station.id}"${plan.turnStation === station.id ? " selected" : ""}>${escapeHtml(shortName(station.name))}</option>`).join("");
+		const skipBoxes = stations.map(station => `<label><input type="checkbox" name="skip" value="${station.id}"${(plan.skipStations || []).includes(station.id) ? " checked" : ""}> ${escapeHtml(shortName(station.name))}</label>`).join("");
+		return `<label>${tr("临时折返")} <select name="turn">
+				<option value="none"${plan.turn === "none" ? " selected" : ""}>${tr("不折返")}</option>
+				<option value="nearest"${plan.turn === "nearest" ? " selected" : ""}>${tr("最近的能折返的站")}</option>
+				<option value="station"${plan.turn === "station" ? " selected" : ""}>${tr("指定车站")}</option></select></label>
+			<label>${tr("折返站")} <select name="turnStation"><option value="0">—</option>${stationOptions}</select></label>
+			<label>${tr("折返以后")} <select name="afterTurn">
+				<option value="resume"${plan.afterTurn !== "deadhead" ? " selected" : ""}>${tr("接线运营（空车折返后重新载客）")}</option>
+				<option value="deadhead"${plan.afterTurn === "deadhead" ? " selected" : ""}>${tr("回送回库")}</option></select></label>
+			<p class="hint">${tr("折返前都先在折返站清客。")}</p>
+			<div class="hint">${tr("跳过这些站（通过不停）：")}</div>${skipBoxes || `<span class="hint">${tr("路网的线路还没有车站")}</span>`}
+			<label><input type="checkbox" name="takeover"${plan.takeover ? " checked" : ""}> ${tr("由备车接替余下的运用")}</label>`;
+	}
+
+	function readMeasureFields(row, plan) {
+		plan.turn = row.querySelector("select[name=turn]").value;
+		plan.turnStation = row.querySelector("select[name=turnStation]").value;
+		plan.afterTurn = row.querySelector("select[name=afterTurn]").value;
+		plan.skipStations = [...row.querySelectorAll("input[name=skip]:checked")].map(box => box.value);
+		plan.takeover = row.querySelector("input[name=takeover]").checked;
+		return plan.turn === "station" && plan.turnStation === "0" ? tr("选了指定车站折返，但没选车站") : null;
+	}
+
+	/**
+	 * A rail system's plans for trains running late or stuck (故障预案, D2), for every route of the network whichever depot
+	 * runs it: which routes, what makes a train fall under one, whether it starts by itself or waits for a dispatcher, and
+	 * what is done. Drafted.
+	 */
+	function contingencyDialog(system) {
+		const plans = (draft.contingencies[system.anchor] || system.plans || []).map(plan => Object.assign({}, plan));
+		const routes = system.routes.map(id => data.routeById.get(id)).filter(Boolean);
+		const planRow = plan => `<fieldset data-plan-row="${escapeHtml(plan.id)}"><legend>${escapeHtml(tr("预案 {0}", plan.id))}${plan.active ? ` <span class="hint">${tr("已启用")}</span>` : ""}</legend>
+			<label>${tr("名称")} <input type="text" name="name" maxlength="64" value="${escapeHtml(plan.name || "")}"></label>
+			<div class="hint">${tr("适用线路（都不勾就是路网的全部线路）：")}</div>
+			${routes.map(r => `<label><input type="checkbox" name="planRoute" value="${r.id}"${(plan.routes || []).includes(r.id) ? " checked" : ""}> ${escapeHtml(routeTitle(r))}</label>`).join("")}
+			<div class="hint">${tr("满足任一条件的车受影响（填 0 不看这一条）：")}</div>
+			<label>${tr("晚点达到（分钟）")} <input type="number" min="0" max="1440" name="lateMinutes" value="${plan.lateMinutes}"></label>
+			<label>${tr("等进路达到（分钟）")} <input type="number" min="0" max="1440" name="waitMinutes" value="${plan.waitMinutes}"></label>
+			<label><input type="checkbox" name="deadlock"${plan.deadlock ? " checked" : ""}> ${tr("锁死（和别的车互相等着走不了）")}</label>
+			<label>${tr("启用方式")} <select name="manual"><option value="auto"${plan.manual ? "" : " selected"}>${tr("条件满足就自动启用")}</option><option value="manual"${plan.manual ? " selected" : ""}>${tr("只报警，等调度员启用")}</option></select></label>
+			${contingencyMeasureFields(system, plan)}
+			<label><input type="checkbox" name="delete"> ${tr("删除这个预案")}</label>
+		</fieldset>`;
+		const nextId = () => String(Math.max(0, ...plans.map(plan => Number(plan.id) || 0)) + 1);
+		const blank = () => ({ id: nextId(), name: "", routes: [], lateMinutes: 5, waitMinutes: 10, deadlock: true, manual: true, turn: "none", turnStation: "0", afterTurn: "resume", skipStations: [], takeover: false });
+		const others = (system.others || []).filter(other => other.plans.length || draft.contingencies[other.anchor]);
+		const othersText = others.length ? `<p class="warn">${tr("轨道接通后，这片路网里还有 {0} 套原来别的路网的预案，都还生效，排在这一套之后：", others.length)}</p>
+			<ul>${others.map(other => `<li>${escapeHtml((draft.contingencies[other.anchor] || other.plans).map(plan => tr("预案 {0}「{1}」", plan.id, plan.name)).join("、") || tr("（已在草稿里清空）"))}</li>`).join("")}</ul>
+			<label><input type="checkbox" name="mergeOthers"> ${tr("合成一套：把它们的预案并进这一套（重新编号），那几套清空")}</label>` : "";
+		openDialog(tr("路网故障预案：{0}", escapeHtml(systemTitle(system))), `
+			<p class="hint">${tr("一片连通的轨道（路网）共用一套预案，管路网里所有线路的车，不管来自哪个车厂。列车晚点、等进路太久或锁死时按预案处理。没有预案的线路只报警，运行照常；几个预案都符合时取编号最小的。报警和启用在“同步状态”里。")}</p>
+			${othersText}
+			<div data-plans>${plans.map(planRow).join("") || ""}</div>
+			<button type="button" data-new-plan>${tr("新建预案")}</button>`, tr("放进草稿"), form => {
+			const result = [];
+			let error = null;
+			form.querySelectorAll("[data-plan-row]").forEach(row => {
+				if (row.querySelector("input[name=delete]").checked) return;
+				const plan = { id: row.dataset.planRow, name: row.querySelector("input[name=name]").value.trim().slice(0, 64), routes: [...row.querySelectorAll("input[name=planRoute]:checked")].map(box => box.value),
+					lateMinutes: Math.max(0, Math.min(1440, Math.round(Number(row.querySelector("input[name=lateMinutes]").value) || 0))),
+					waitMinutes: Math.max(0, Math.min(1440, Math.round(Number(row.querySelector("input[name=waitMinutes]").value) || 0))),
+					deadlock: row.querySelector("input[name=deadlock]").checked, manual: row.querySelector("select[name=manual]").value === "manual" };
+				error = error || readMeasureFields(row, plan);
+				if (!plan.lateMinutes && !plan.waitMinutes && !plan.deadlock) error = error || tr("预案“{0}”没有任何条件，不会生效", plan.name || plan.id);
+				result.push(plan);
+			});
+			if (error) return error;
+			const mergeBox = form.querySelector("input[name=mergeOthers]");
+			if (mergeBox && mergeBox.checked) {
+				let nextNumber = Math.max(0, ...result.map(plan => Number(plan.id) || 0));
+				others.forEach(other => {
+					(draft.contingencies[other.anchor] || other.plans).forEach(plan => result.push(Object.assign({}, plan, { id: String(++nextNumber), active: undefined })));
+					draft.contingencies[other.anchor] = [];
+				});
+				if (result.length > 64) return tr("合在一起超过 64 个预案");
+			}
+			const strip = list => JSON.stringify(list.map(plan => Object.assign({}, plan, { active: undefined })));
+			if (strip(result) === strip(system.plans || [])) delete draft.contingencies[system.anchor];
+			else draft.contingencies[system.anchor] = result;
+			saveDraft();
+			renderAll();
+		});
+		dialog.querySelector("[data-new-plan]").addEventListener("click", () => {
+			const plan = blank();
+			plans.push(plan);
+			dialog.querySelector("[data-plans]").insertAdjacentHTML("beforeend", planRow(plan));
+		});
+	}
+
+	/** What is done with one train there and then, by a dispatcher, until ended (D2). */
+	function adhocDialog(system, train, anchor) {
+		const target = anchor || system.anchor;
+		const current = ((plansByAnchor(target) || system).adhoc || {})[train] || { turn: "nearest", turnStation: "0", afterTurn: "resume", skipStations: [], takeover: false };
+		openDialog(tr("临时处置：列车 {0}", escapeHtml(train)), `<div data-adhoc-row>${contingencyMeasureFields(system, current)}</div>
+			<p class="hint">${tr("马上发给游戏，不进草稿；在“同步状态”里解除。")}</p>`, tr("发送"), form => {
+			const setting = {};
+			const error = readMeasureFields(form.querySelector("[data-adhoc-row]"), setting);
+			if (error) return error;
+			if (setting.turn === "none" && !setting.skipStations.length && !setting.takeover) return tr("什么处置都没选");
+			sendJson("api/apply", "POST", { operations: [{ type: "contingency", system: target, action: "adhoc", train, setting }] }).catch(() => {});
+		});
 	}
 
 	function renderStatus() {
@@ -6081,8 +6277,8 @@
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
-		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null]]
-			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
+		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null]]
+			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("路网故障预案…"), systemOfRoute(r.id) ? () => contingencyDialog(systemOfRoute(r.id)) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
 				isDeleted(r) ? [tr("取消删除"), () => keepType(r)] : [tr("删除这个种别…"), data.canEdit ? () => deleteTypeDialog(r) : null]]
 				: created ? [[tr("删除这个新建的种别"), () => removeCreated(created)]] : null;
 		if (!items) return;

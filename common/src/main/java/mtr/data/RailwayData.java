@@ -70,6 +70,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public final Set<BlockPos> keyNodes = new HashSet<>();
 	public final PathBoundaries pathBoundaries = new PathBoundaries();
 	/**
+	 * The contingency plans of each rail system, for every route of a network whichever depot runs it (D2).
+	 */
+	public final ContingencySystems contingencySystems = new ContingencySystems();
+	/**
+	 * Set when a player changed them, to send them to the players.
+	 */
+	public volatile boolean contingenciesChanged;
+	/**
 	 * The compressed network and the paths found on it, which the save loop writes into the database. See {@link GraphRecords}.
 	 */
 	public final GraphRecords graphRecords = new GraphRecords();
@@ -222,6 +230,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * (decoupling document 3.7).
 	 */
 	private final List<MotionEvent> motionEvents = new ArrayList<>();
+	/**
+	 * Trains found in a circle of trains waiting on each other, until given their run (D2).
+	 */
+	private final Set<Long> deadlockedTrains = new HashSet<>();
 	private final List<MotionEvent> lastMotionEvents = new ArrayList<>();
 	/**
 	 * Depots that failed sending trains out, each said in the log once.
@@ -523,6 +535,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		});
 		// Trains back in a shed in this tick are kept there from the next, whichever order the sidings ran in (P2-C)
 		sortedSidings.forEach(Siding::keepArrived);
+		// Contingency plans a player changed go to every player (D2)
+		if (contingenciesChanged) {
+			contingenciesChanged = false;
+			mtr.packet.ContingencyPackets.sendAllS2C(world, this);
+		}
 		// Buffers measured off what they were planned with by more than a little go to the players (D1)
 		depots.forEach(depot -> depot.sendBuffersIfChanged(packet -> world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_UPDATE_DEPOT, packet))));
 		handleMotionEvents();
@@ -531,6 +548,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// Trains waiting on each other in a circle, which the arbiter holds as they are, said once each so the server log shows them
 		for (final Set<Long> deadlock : runReservations.takeDeadlocks()) {
 			System.out.println("Minecraft Transit Railway: trains waiting on each other for their runs " + deadlock);
+			deadlockedTrains.addAll(deadlock);
 		}
 		depots.forEach(depot -> {
 			// A depot that fails doesn't stop the others or the rest of the tick
@@ -652,7 +670,30 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// when they change, and now and then while there are any, for players who joined since
 		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0) {
 			final boolean resend = world.getGameTime() % (AUTO_DUTIES_CHECK_TICKS * 12) == 0;
+			// A train given its run is out of its deadlock (D2)
+			final Set<Long> stillWaiting = new HashSet<>();
+			sidings.forEach(siding -> siding.forEachTrain(train -> {
+				if (train.getWaitingMillis() > 0) {
+					stillWaiting.add(train.id);
+				}
+			}));
+			deadlockedTrains.retainAll(stillWaiting);
+			// A rail system whose anchor platform was removed moves to another platform of its network (D2)
+			if (getPlatformGraph().size() > 0) {
+				final Map<Long, Long> moved = contingencySystems.keepAnchors(getPlatformGraph(), platformId -> dataCache.platformIdMap.containsKey(platformId));
+				moved.forEach((from, to) -> System.out.println("Minecraft Transit Railway: the anchor platform " + from + " of a rail system's contingency plans was removed, so they are kept with platform " + to));
+				if (!moved.isEmpty()) {
+					contingenciesChanged = true;
+				}
+			}
 			for (final Depot depot : depots) {
+				// Trains late or stuck with no plan on for them, and those a plan is on for (D2)
+				final List<String> alarms = mtr.packet.DelayAlarms.collect(depot, sidings, dataCache, deadlockedTrains, contingencySystems, getPlatformGraph());
+				mtr.packet.DelayAlarms.log(depot, alarms, depot.loggedAlarms);
+				if (!alarms.equals(depot.clientAlarms) || resend && alarms.size() > 1) {
+					depot.clientAlarms = alarms;
+					mtr.packet.DelayAlarms.sendS2C(world, depot.id, alarms);
+				}
 				final List<String> held = mtr.packet.HeldTrains.collect(depot, sidings, dataCache);
 				final List<String> misses;
 				synchronized (depot.returnOrderMisses) {
@@ -678,9 +719,17 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		boolean test(Rail rail, BlockPos startPos, BlockPos endPos, Vec3 playerPos);
 	}
 
+	/**
+	 * @return the networks of the platforms, as last worked out for the players' regions
+	 */
+	public transitsim.network.PlatformGraph getPlatformGraph() {
+		return pathRegionSync.getLatest().platformGraph;
+	}
+
 	public void onPlayerJoin(ServerPlayer serverPlayer) {
 		PacketTrainDataGuiServer.sendAllInChunks(serverPlayer, stations, platforms, sidings, routes, depots, lifts, signalBlocks, keyNodes);
 		pathRegionSync.send(serverPlayer);
+		mtr.packet.ContingencyPackets.sendS2C(serverPlayer, this);
 		railwayDataCoolDownModule.onPlayerJoin(serverPlayer);
 	}
 
