@@ -32,7 +32,7 @@ public final class DepotDuties {
 	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started
 	 * with the mode, a boolean, so it reads as 0 or 1 there.
 	 */
-	private static final int FORMAT_VERSION = 2;
+	private static final int FORMAT_VERSION = 3;
 
 	public boolean isEmpty() {
 		return sidings.values().stream().allMatch(List::isEmpty);
@@ -52,9 +52,14 @@ public final class DepotDuties {
 			slots.remove(slots.size() - 1);
 		}
 		while (slots.size() < count) {
-			slots.add(new Slot());
+			final Slot added = new Slot();
+			added.id = defaultId(sidingId, slots.size());
+			slots.add(added);
 		}
 		if (index >= 0 && index < count && slot != null) {
+			if (slot.id == 0) {
+				slot.id = defaultId(sidingId, index);
+			}
 			slots.set(index, slot);
 		}
 		if (slots.isEmpty()) {
@@ -73,9 +78,39 @@ public final class DepotDuties {
 		});
 	}
 
+	/**
+	 * @return the siding and the index of the slot with this duty number, or null if there is none
+	 */
+	public long[] findSlot(long id) {
+		if (id == 0) {
+			return null;
+		}
+		for (final Map.Entry<Long, List<Slot>> entry : sidings.entrySet()) {
+			for (int i = 0; i < entry.getValue().size(); i++) {
+				if (entry.getValue().get(i).id == id) {
+					return new long[]{entry.getKey(), i};
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The duty number of a slot that had none, as in data saved before duties had numbers: the same for the same siding and
+	 * index, so older data reads the same every time until saved with them (P2-D).
+	 */
+	public static long defaultId(long sidingId, int index) {
+		long value = sidingId * 0x9E3779B97F4A7C15L + (index + 1) * 0xBF58476D1CE4E5B9L;
+		value ^= value >>> 31;
+		value *= 0x94D049BB133111EBL;
+		value ^= value >>> 29;
+		return value == 0 ? 1 : value;
+	}
+
 	public void read(BinaryReader packet) {
 		final int first = packet.readUnsignedByte();
-		final boolean hasVersion = first >= FORMAT_VERSION;
+		final boolean hasVersion = first >= 2 && first <= FORMAT_VERSION;
+		final int version = hasVersion ? first : 1;
 		diagramMode = hasVersion ? packet.readBoolean() : first != 0;
 		sidings.clear();
 		final int sidingCount = limit(packet.readVarInt(), 1 << 16);
@@ -84,7 +119,11 @@ public final class DepotDuties {
 			final int slotCount = limit(packet.readVarInt(), MAX_SLOTS);
 			final List<Slot> slots = new ArrayList<>();
 			for (int j = 0; j < slotCount; j++) {
-				slots.add(Slot.read(packet, hasVersion));
+				final Slot slot = Slot.read(packet, version);
+				if (slot.id == 0) {
+					slot.id = defaultId(sidingId, j);
+				}
+				slots.add(slot);
 			}
 			if (!slots.isEmpty()) {
 				sidings.put(sidingId, slots);
@@ -120,6 +159,10 @@ public final class DepotDuties {
 	 */
 	public static final class Slot {
 
+		/**
+		 * The duty's own number, which stays the same wherever its siding and place in the list (P2-D); 0 until given one.
+		 */
+		public long id;
 		public final List<DayDuty> days = new ArrayList<>();
 
 		/**
@@ -136,11 +179,15 @@ public final class DepotDuties {
 		}
 
 		public void write(BinaryWriter packet) {
+			packet.writeLong(id);
 			packet.writeVarInt(days.size());
 			days.forEach(day -> {
 				packet.writeByte(day.weekdays);
 				packet.writeBoolean(day.stayOnLine);
 				packet.writeVarInt(day.nextSlot + 1);
+				packet.writeLong(day.nextDutyId);
+				packet.writeLong(day.returnSidingId);
+				packet.writeBoolean(day.fromOvernight);
 				packet.writeVarInt(day.segments.size());
 				day.segments.forEach(segment -> {
 					packet.writeLong(segment.routeId);
@@ -152,14 +199,18 @@ public final class DepotDuties {
 		}
 
 		public static Slot read(BinaryReader packet) {
-			return read(packet, true);
+			return read(packet, FORMAT_VERSION);
 		}
 
 		/**
-		 * @param hasNextSlot false for data saved before overnight trains could pick their next duty
+		 * @param version 1 for data saved before overnight trains could pick their next duty, 2 before duties had numbers
 		 */
-		public static Slot read(BinaryReader packet, boolean hasNextSlot) {
+		public static Slot read(BinaryReader packet, int version) {
+			final boolean hasNextSlot = version >= 2;
 			final Slot slot = new Slot();
+			if (version >= 3) {
+				slot.id = packet.readLong();
+			}
 			final int dayCount = limit(packet.readVarInt(), MAX_DAYS);
 			int usedDays = 0;
 			for (int i = 0; i < dayCount; i++) {
@@ -169,6 +220,11 @@ public final class DepotDuties {
 				usedDays |= day.weekdays;
 				day.stayOnLine = packet.readBoolean();
 				day.nextSlot = hasNextSlot ? Math.min(packet.readVarInt(), MAX_SLOTS) - 1 : -1;
+				if (version >= 3) {
+					day.nextDutyId = packet.readLong();
+					day.returnSidingId = packet.readLong();
+					day.fromOvernight = packet.readBoolean();
+				}
 				final int segmentCount = limit(packet.readVarInt(), MAX_SEGMENTS);
 				for (int j = 0; j < segmentCount; j++) {
 					day.segments.add(new Segment(packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt() - 1));
@@ -195,6 +251,21 @@ public final class DepotDuties {
 		 * For a train staying on the line, the slot of the same siding whose next day's duty it runs, or -1 for its own.
 		 */
 		public int nextSlot = -1;
+		/**
+		 * For a train staying on the line, the duty it runs the next day by its number, which may be of another siding of the
+		 * depot; 0 to go by {@link #nextSlot} (P2-D).
+		 */
+		public long nextDutyId;
+		/**
+		 * The siding the train goes back to after the last segment (A 出 B 入), one of its pool; 0 for the one its pool needs a
+		 * train in next, as at runtime (P1-B).
+		 */
+		public long returnSidingId;
+		/**
+		 * Run by a train that stayed on the line overnight from another siding's duty ({@link #nextDutyId}), so no train
+		 * leaves the siding for it and it starts on the line.
+		 */
+		public boolean fromOvernight;
 		public final List<Segment> segments = new ArrayList<>();
 
 		/**
@@ -205,6 +276,9 @@ public final class DepotDuties {
 			copy.weekdays = weekdays;
 			copy.stayOnLine = stayOnLine;
 			copy.nextSlot = nextSlot;
+			copy.nextDutyId = nextDutyId;
+			copy.returnSidingId = returnSidingId;
+			copy.fromOvernight = fromOvernight;
 			copy.segments.addAll(segments);
 			return copy;
 		}
@@ -213,7 +287,7 @@ public final class DepotDuties {
 		 * @return the duty as text, for a train to keep the duty it took with it when saved (decoupling document, step D)
 		 */
 		public String toText() {
-			final StringBuilder builder = new StringBuilder().append(weekdays).append(',').append(stayOnLine ? 1 : 0).append(',').append(nextSlot);
+			final StringBuilder builder = new StringBuilder().append(weekdays).append(',').append(stayOnLine ? 1 : 0).append(',').append(nextSlot).append(',').append(nextDutyId).append(',').append(returnSidingId).append(',').append(fromOvernight ? 1 : 0);
 			segments.forEach(segment -> builder.append(';').append(segment.routeId).append(',').append(segment.service).append(',').append(segment.fromStop).append(',').append(segment.toStop));
 			return builder.toString();
 		}
@@ -232,6 +306,12 @@ public final class DepotDuties {
 				day.weekdays = Integer.parseInt(head[0]);
 				day.stayOnLine = Integer.parseInt(head[1]) != 0;
 				day.nextSlot = Integer.parseInt(head[2]);
+				// Written before duties had numbers: none
+				if (head.length >= 6) {
+					day.nextDutyId = Long.parseLong(head[3]);
+					day.returnSidingId = Long.parseLong(head[4]);
+					day.fromOvernight = Integer.parseInt(head[5]) != 0;
+				}
 				for (int i = 1; i < parts.length; i++) {
 					final String[] values = parts[i].split(",");
 					day.segments.add(new Segment(Long.parseLong(values[0]), Integer.parseInt(values[1]), Integer.parseInt(values[2]), Integer.parseInt(values[3])));

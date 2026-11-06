@@ -129,6 +129,7 @@
   "gui.mtr.editor_too_many_slots": "%s keeps at most %s duties",
   "gui.mtr.editor_duty_days_overlap": "%s train %s: the days of its duties overlap",
   "gui.mtr.editor_duty_next_missing": "%s train %s: the slot it continues as after the night doesn't exist",
+  "gui.mtr.editor_duty_return_siding": "Siding %s, train %s: the siding to go back to must be of the same vehicle",
   "gui.mtr.editor_duty_too_many": "%s train %s: at most %s services a day",
   "gui.mtr.editor_duty_error": "%s train %s: %s",
   "gui.mtr.editor_duty_same_next": "%s has two trains staying out overnight that continue as the same slot the next day (train %s)",

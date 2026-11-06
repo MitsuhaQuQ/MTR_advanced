@@ -162,13 +162,23 @@ public class DepotDispatcher {
 		return (int) (tripMillis - leadMillis - currentMillis);
 	}
 
+	/**
+	 * A siding's slots, to keep what has run by the duty's number rather than its place (P2-D), or null to go by place.
+	 */
+	public java.util.function.LongFunction<List<DepotDuties.Slot>> slotsOf;
+
+	private String runKey(long sidingId, int slot) {
+		final List<DepotDuties.Slot> slots = slotsOf == null ? null : slotsOf.apply(sidingId);
+		return slots != null && slot >= 0 && slot < slots.size() && slots.get(slot).id != 0 ? "#" + slots.get(slot).id : sidingId + ":" + slot;
+	}
+
 	public boolean hasDutyRun(long sidingId, int slot, long day) {
-		final Long runDay = dutyRunDays.get(sidingId + ":" + slot);
+		final Long runDay = dutyRunDays.get(runKey(sidingId, slot));
 		return runDay != null && runDay == day;
 	}
 
 	public void markDutyRun(long sidingId, int slot, long day) {
-		dutyRunDays.put(sidingId + ":" + slot, day);
+		dutyRunDays.put(runKey(sidingId, slot), day);
 		// Days long gone don't need remembering
 		dutyRunDays.values().removeIf(runDay -> runDay < day - 2);
 	}

@@ -45,6 +45,11 @@ public final class EditorDuties implements IPacket {
 				dayObject.addProperty("days", day.weekdays);
 				dayObject.addProperty("stay", day.stayOnLine);
 				dayObject.addProperty("next", day.nextSlot);
+				// The duty's own number, on each of its days (P2-D), and where it goes on to and back to
+				dayObject.addProperty("duty", String.valueOf(slot.id));
+				dayObject.addProperty("nextDuty", String.valueOf(day.nextDutyId));
+				dayObject.addProperty("returnSiding", String.valueOf(day.returnSidingId));
+				dayObject.addProperty("fromOvernight", day.fromOvernight);
 				final JsonArray segmentsArray = new JsonArray();
 				day.segments.forEach(segment -> {
 					final JsonObject segmentObject = new JsonObject();
@@ -140,6 +145,19 @@ public final class EditorDuties implements IPacket {
 					usedDays |= day.weekdays;
 					day.stayOnLine = dayObject.get("stay").getAsBoolean();
 					day.nextSlot = day.stayOnLine && dayObject.has("next") ? dayObject.get("next").getAsInt() : -1;
+					if (dayObject.has("duty") && slot.id == 0) {
+						slot.id = parseId(getString(dayObject, "duty"));
+					}
+					day.nextDutyId = day.stayOnLine && dayObject.has("nextDuty") ? parseId(getString(dayObject, "nextDuty")) : 0;
+					day.fromOvernight = dayObject.has("fromOvernight") && dayObject.get("fromOvernight").getAsBoolean();
+					day.returnSidingId = dayObject.has("returnSiding") ? parseId(getString(dayObject, "returnSiding")) : 0;
+					// Back to another siding of the same pool only, which the duty's path has a way back to (P2-D)
+					if (day.returnSidingId != 0) {
+						final Siding returnSiding = ClientData.DATA_CACHE.sidingIdMap.get(day.returnSidingId);
+						if (returnSiding == null || !returnSiding.getPoolKey().equals(siding.getPoolKey())) {
+							return TranslatedMessage.get("gui.mtr.editor_duty_return_siding", sidingName, i + 1);
+						}
+					}
 					if (day.nextSlot >= slotsArray.size() || day.nextSlot < -1) {
 						return TranslatedMessage.get("gui.mtr.editor_duty_next_missing", sidingName, i + 1);
 					}
@@ -157,6 +175,9 @@ public final class EditorDuties implements IPacket {
 						day.segments.add(segment);
 					}
 					slot.days.add(day);
+				}
+				if (slot.id == 0) {
+					slot.id = DepotDuties.defaultId(sidingId, i);
 				}
 				slots.add(slot);
 			}

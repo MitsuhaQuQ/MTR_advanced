@@ -198,6 +198,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Which services trains have taken and which duties have run; saved here, decided in the component.
 	 */
 	private final DepotDispatcher dispatcher = new DepotDispatcher();
+
+	{
+		// What has run is kept by the duty's number, so a duty moved to another siding or place keeps it (P2-D)
+		dispatcher.slotsOf = this::getDutySlots;
+	}
 	/**
 	 * Whether the component's simulator sends out the depot's trains (G1).
 	 */
@@ -1001,6 +1006,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				deployableSidings.get(deploy.sidingId).joinDutyLate();
 			}
 		}
+	}
+
+	@Override
+	public long[] findDuty(long dutyId) {
+		final DepotDuties runDuties = getRunDuties();
+		return runDuties == null ? null : runDuties.findSlot(dutyId);
+	}
+
+	@Override
+	public void noteReturnMissed(long sidingId, long targetSidingId, String reason) {
+		noteReturnOrderMissed(sidingId, targetSidingId, reason);
 	}
 
 	@Override

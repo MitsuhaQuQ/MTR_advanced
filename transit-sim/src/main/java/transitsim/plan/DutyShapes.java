@@ -89,10 +89,15 @@ public final class DutyShapes {
 	 * @return the slot whose train stays overnight to run this slot's duty on a weekday, or -1 if it starts from the siding
 	 */
 	public static int getOvernightSlot(List<DepotDuties.Slot> slots, int slotIndex, int weekday) {
+		// Taken over by a train of another siding's duty, by number (P2-D)
+		final DepotDuties.DayDuty own = slotIndex < slots.size() ? slots.get(slotIndex).getDuty(weekday) : null;
+		if (own != null && own.fromOvernight) {
+			return slotIndex;
+		}
 		final int dayBefore = Math.floorMod(weekday - 1, 7);
 		for (int i = 0; i < slots.size(); i++) {
 			final DepotDuties.DayDuty day = slots.get(i).getDuty(dayBefore);
-			if (day != null && day.stayOnLine && !day.segments.isEmpty() && getNextSlot(day, i) == slotIndex) {
+			if (day != null && day.stayOnLine && !day.segments.isEmpty() && day.nextDutyId == 0 && getNextSlot(day, i) == slotIndex) {
 				return i;
 			}
 		}

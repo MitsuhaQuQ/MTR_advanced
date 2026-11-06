@@ -371,6 +371,8 @@ public final class DutyGenerator {
 			final List<DepotDuties.Slot> slots = new ArrayList<>();
 			for (int slotIndex = 0; slotIndex < Math.min(slotCount, DepotDuties.MAX_SLOTS); slotIndex++) {
 				final DepotDuties.Slot slot = new DepotDuties.Slot();
+				// Its own number, the same as long as the plan gives the siding the same slots (P2-D)
+				slot.id = DepotDuties.defaultId(siding.sidingId, slotIndex);
 				for (int day = 0; day < 7; day++) {
 					final Piece piece = days.get(day).get(slotIndex);
 					if (piece == null) {

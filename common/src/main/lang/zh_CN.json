@@ -129,6 +129,7 @@
   "gui.mtr.editor_too_many_slots": "%s 最多 %s 个库位",
   "gui.mtr.editor_duty_days_overlap": "%s 车 %s 的运用星期重叠",
   "gui.mtr.editor_duty_next_missing": "%s 车 %s 过夜后接的库位不存在",
+  "gui.mtr.editor_duty_return_siding": "存车线 %s 车 %s：回库存车线必须是同车型的",
   "gui.mtr.editor_duty_too_many": "%s 车 %s 一天最多跑 %s 班",
   "gui.mtr.editor_duty_error": "%s 车 %s：%s",
   "gui.mtr.editor_duty_same_next": "%s 有两列过夜的车第二天接同一个库位（车 %s）",

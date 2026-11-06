@@ -111,6 +111,11 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private long dutySidingId;
 	/**
+	 * The number of the duty the train runs, kept with it when saved, so the duty is found again wherever it has been moved
+	 * (P2-D); 0 if not known.
+	 */
+	private long dutyId;
+	/**
 	 * The stop at which the train chose the siding to go back to after its duty, so it chooses once, or -1.
 	 */
 	private int returnChosenStop = -1;
@@ -162,6 +167,7 @@ public class TrainService<T extends PlanTrack> {
 	 * The siding whose slot the train runs, if not its own (decoupling document, step D).
 	 */
 	private static final String KEY_DUTY_SIDING = "duty_siding";
+	private static final String KEY_DUTY_ID = "duty_id";
 	public static final int SAVED_KEYS = 14;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
@@ -188,6 +194,7 @@ public class TrainService<T extends PlanTrack> {
 		dutyDayStart = reader.getLong(KEY_DUTY_DAY_START, 0);
 		dutyIndex = reader.getInt(KEY_DUTY_INDEX, 0);
 		dutySidingId = reader.getLong(KEY_DUTY_SIDING, 0);
+		dutyId = reader.getLong(KEY_DUTY_ID, 0);
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
@@ -211,6 +218,7 @@ public class TrainService<T extends PlanTrack> {
 		writer.writeInt(KEY_DUTY_INDEX, dutyIndex);
 		writer.writeString(KEY_DUTY_DAY, dutySlot >= 0 && getDutyDay() != null ? getDutyDay().toText() : "");
 		writer.writeLong(KEY_DUTY_SIDING, dutySidingId);
+		writer.writeLong(KEY_DUTY_ID, dutyId);
 	}
 
 	public void setSiding(long newSidingId) {
@@ -914,6 +922,7 @@ public class TrainService<T extends PlanTrack> {
 	public void deployDuty(int slot, long newDutySidingId, long dayStart, TripPath<T> dutyPath) {
 		dutySlot = slot;
 		dutySidingId = newDutySidingId == sidingId ? 0 : newDutySidingId;
+		dutyId = currentDutyId();
 		returnChosenStop = -1;
 		dutyDayStart = dayStart;
 		dutyDay = readDutyDay();
@@ -1061,9 +1070,11 @@ public class TrainService<T extends PlanTrack> {
 		}
 		// The new day is where an edit takes effect, so which slot comes next is read as the depot has it now
 		final DepotDuties.DayDuty day = readDutyDay();
-		final long slotSidingId = getDutySidingId();
+		// The next duty by its number, which may be of another siding of the depot (P2-D)
+		final long[] nextDuty = day == null || day.nextDutyId == 0 ? null : depot.findDuty(day.nextDutyId);
+		final long slotSidingId = nextDuty != null ? nextDuty[0] : getDutySidingId();
 		final List<DepotDuties.Slot> slots = depot.getDutySlots(slotSidingId);
-		final int nextSlot = day == null ? -1 : DutyShapes.getNextSlot(day, dutySlot);
+		final int nextSlot = day == null || day.nextDutyId != 0 && nextDuty == null ? -1 : nextDuty != null ? (int) nextDuty[1] : DutyShapes.getNextSlot(day, dutySlot);
 		final int weekday = OperatingDay.getWeekday(dayStart);
 		final String key = nextSlot < 0 || routes == null ? null : DutyShapes.getSlotKey(slots, nextSlot, weekday, routes);
 		final TripPath<T> nextPath = key == null ? null : tripPaths.get(key);
@@ -1081,7 +1092,9 @@ public class TrainService<T extends PlanTrack> {
 		}
 		overnightHold = null;
 		depot.markDutyRun(slotSidingId, nextSlot, dayNumber);
+		dutySidingId = slotSidingId == sidingId ? 0 : slotSidingId;
 		dutySlot = nextSlot;
+		dutyId = currentDutyId();
 		dutyDayStart = dayStart;
 		dutyDay = readDutyDay();
 		tripPath = nextPath;
@@ -1133,9 +1146,26 @@ public class TrainService<T extends PlanTrack> {
 	/**
 	 * @return a copy of the duty of the train's slot on its day, as the depot has it now
 	 */
+	/**
+	 * @return the number of the duty in the slot the train runs, or 0
+	 */
+	private long currentDutyId() {
+		if (depot == null || dutySlot < 0) {
+			return 0;
+		}
+		final List<DepotDuties.Slot> slots = depot.getDutySlots(getDutySidingId());
+		return dutySlot < slots.size() ? slots.get(dutySlot).id : 0;
+	}
+
 	private DepotDuties.DayDuty readDutyDay() {
 		if (depot == null || dutySlot < 0) {
 			return null;
+		}
+		// The duty may have been moved to another siding or place since: found again by its number (P2-D)
+		final long[] found = dutyId == 0 ? null : depot.findDuty(dutyId);
+		if (found != null) {
+			dutySidingId = found[0] == sidingId ? 0 : found[0];
+			dutySlot = (int) found[1];
 		}
 		final List<DepotDuties.Slot> slots = depot.getDutySlots(getDutySidingId());
 		final DepotDuties.DayDuty day = dutySlot < slots.size() ? slots.get(dutySlot).getDuty(OperatingDay.getWeekday(dutyDayStart + OperatingDay.MILLIS_PER_DAY / 2)) : null;
@@ -1181,7 +1211,14 @@ public class TrainService<T extends PlanTrack> {
 		final boolean otherWayRound = tripPath.turnBackPoint >= 0;
 		// Only a siding the duty has a way back to is chosen, rather than one it can't reach and then its own after all
 		final String returnFrom = otherWayRound ? tripPath.tripKey : tripPathKey;
-		final long returnSidingId = depot.chooseReturnSiding(sidingId, orderDepotId, otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null);
+		final java.util.function.LongPredicate canGoBack = otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null;
+		// Set for the duty (A 出 B 入, P2-D): there if there is a way, otherwise told and as the pool would send it
+		final long setSidingId = dutyDay == null ? 0 : dutyDay.returnSidingId;
+		final boolean setReachable = setSidingId != 0 && canGoBack.test(setSidingId);
+		if (setSidingId != 0 && !setReachable) {
+			depot.noteReturnMissed(sidingId, setSidingId, "no way back to the siding set for the duty");
+		}
+		final long returnSidingId = setReachable ? setSidingId : depot.chooseReturnSiding(sidingId, orderDepotId, canGoBack);
 		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(otherWayRound ? tripPath.tripKey : tripPathKey, returnSidingId));
 		if (returnPath == null) {
 			return false;
@@ -1728,6 +1765,19 @@ public class TrainService<T extends PlanTrack> {
 		 */
 		default long chooseReturnSiding(long sidingId, long depotId, java.util.function.LongPredicate canGoBack) {
 			return sidingId;
+		}
+
+		/**
+		 * @return the siding and the index of the slot with this duty number, or null if there is none (P2-D)
+		 */
+		default long[] findDuty(long dutyId) {
+			return null;
+		}
+
+		/**
+		 * A duty set to go back to a siding whose train couldn't, told rather than silently going back elsewhere.
+		 */
+		default void noteReturnMissed(long sidingId, long targetSidingId, String reason) {
 		}
 	}
 }

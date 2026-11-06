@@ -566,6 +566,91 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aTrainStayingOvernightRunsTheDutyOfAnotherSidingByItsNumber() {
+		// Monday: route 1 to platform 3, staying on the line; Tuesday it runs duty 77 of the other siding
+		setSlots(day(true, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)));
+		depot.slots.get(0).id = 11;
+		depot.slots.get(0).days.get(0).weekdays = 1;
+		depot.slots.get(0).days.get(0).nextDutyId = 77;
+		final DepotDuties.Slot other = new DepotDuties.Slot();
+		other.id = 77;
+		final DepotDuties.DayDuty tuesday = day(false, -1, new DepotDuties.Segment(3, (int) (7 * HOUR), 0, -1));
+		tuesday.weekdays = 1 << 1;
+		tuesday.fromOvernight = true;
+		other.days.add(tuesday);
+		depot.otherSlots = new ArrayList<>(Collections.singletonList(other));
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final String otherKey = DutyShapes.getSlotKey(depot.otherSlots, 0, 1, routes::get);
+		final DutyPlan<TestTrack, Object> otherPlan = new DutyPlan<>(otherKey, Collections.singletonList(3L), new HashMap<>(), new HashMap<>(), new HashMap<>(), makePath(3, 2, 1, 0), new int[]{0}, null, null, true, false);
+		final TripPath<TestTrack> nextPath = TripPath.ofDuty(otherPlan, new int[]{0}, makePath(3, 2, 1, 0), StopTimes.of(stop(0, 3, 0), stop(1, 2, 2), stop(2, 1, 4)));
+		tripPaths.put(otherKey, nextPath);
+		final FakeTrain train = newTrain(stayPath);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+		train.nextStoppingIndex = 3;
+
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
+		train.service.updateOvernight();
+		assertNull(train.service.getOvernightHold());
+		assertSame(nextPath, train.followed);
+		assertEquals(OTHER_SIDING_ID, train.service.getDutySidingId());
+		// The other siding doesn't send a train for it: taken over overnight
+		assertTrue(DutyShapes.getOvernightSlot(depot.otherSlots, 0, 1) >= 0);
+	}
+
+	@Test
+	void aTrainStayingOvernightWithItsNextDutyGoneWaits() {
+		setSlots(day(true, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)));
+		depot.slots.get(0).days.get(0).weekdays = 1;
+		depot.slots.get(0).days.get(0).nextDutyId = 99;
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final FakeTrain train = newTrain(stayPath);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+		train.nextStoppingIndex = 3;
+		now = MONDAY + OperatingDay.MILLIS_PER_DAY + HOUR;
+		train.service.updateOvernight();
+		assertEquals(TrainService.HoldReason.NO_DUTY, train.service.getOvernightHold());
+	}
+
+	@Test
+	void aDutySetToGoBackToASidingGoesThereIfItCan() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		depot.slots.get(0).getDuty(0).returnSidingId = OTHER_SIDING_ID;
+		final List<TestTrack> otherPath = new ArrayList<>(tripPath.path);
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(tripPath.key, Arrays.asList(1L, 2L), new HashMap<>(), new HashMap<>(), new HashMap<>(), otherPath, tripPath.dutyStarts, null, null, false, false);
+		final TripPath<TestTrack> returnPath = new TripPath<>(dutyPlan, tripPath.dutyStarts, otherPath, TripPath.getReturnKey(tripPath.key, OTHER_SIDING_ID));
+		tripPaths.put(returnPath.key, returnPath);
+		// The pool would keep it at its own siding
+		depot.returnTo = SIDING_ID;
+
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		train[0].nextStoppingIndex = 5;
+		assertTrue(train[0].service.chooseDutyReturn());
+		assertSame(returnPath, train[0].followed);
+		assertTrue(depot.missed.isEmpty());
+	}
+
+	@Test
+	void aDutySetToGoBackToASidingWithNoWayThereIsTold() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		depot.slots.get(0).getDuty(0).returnSidingId = OTHER_SIDING_ID;
+		depot.returnTo = SIDING_ID;
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		train[0].nextStoppingIndex = 5;
+		assertFalse(train[0].service.chooseDutyReturn());
+		assertEquals(Collections.singletonList(SIDING_ID + ">" + OTHER_SIDING_ID), depot.missed);
+	}
+
+	@Test
 	void aSidingTheDutyHasNoWayBackToIsntChosen() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final TripPath<TestTrack> tripPath = twoRoutes(train);
@@ -913,7 +998,28 @@ class DutyRunTest {
 		 */
 		long orderedDepot;
 		final List<Long> refused = new ArrayList<>();
+		final List<String> missed = new ArrayList<>();
 		final Set<String> reserved = new HashSet<>();
+
+		@Override
+		public long[] findDuty(long dutyId) {
+			for (int i = 0; i < slots.size(); i++) {
+				if (slots.get(i).id == dutyId) {
+					return new long[]{SIDING_ID, i};
+				}
+			}
+			for (int i = 0; i < otherSlots.size(); i++) {
+				if (otherSlots.get(i).id == dutyId) {
+					return new long[]{OTHER_SIDING_ID, i};
+				}
+			}
+			return null;
+		}
+
+		@Override
+		public void noteReturnMissed(long sidingId, long targetSidingId, String reason) {
+			missed.add(sidingId + ">" + targetSidingId);
+		}
 		final Map<String, Long> runDays = new HashMap<>();
 
 		@Override

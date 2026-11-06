@@ -17,6 +17,10 @@ public final class DepotBoard implements TrainService.Board {
 
 	public final DepotDispatcher dispatcher = new DepotDispatcher();
 	public final DepotDuties duties = new DepotDuties();
+
+	{
+		dispatcher.slotsOf = duties::getSlots;
+	}
 	private final List<PlanRoute> routes = new ArrayList<>();
 	/**
 	 * The routes of vehicles that only run some types of service, by the vehicle, when they aren't all the depot's.
@@ -176,6 +180,16 @@ public final class DepotBoard implements TrainService.Board {
 	@Override
 	public void markDutyRun(long sidingId, int slot, long day) {
 		dispatcher.markDutyRun(sidingId, slot, day);
+	}
+
+	@Override
+	public long[] findDuty(long dutyId) {
+		return duties.findSlot(dutyId);
+	}
+
+	@Override
+	public void noteReturnMissed(long sidingId, long targetSidingId, String reason) {
+		returnOrderMisses.add(sidingId + " " + targetSidingId);
 	}
 
 	@Override
