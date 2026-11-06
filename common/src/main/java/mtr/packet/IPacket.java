@@ -25,6 +25,7 @@ public interface IPacket {
 	ResourceLocation PACKET_OPEN_PIDS_CONFIG_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_pids_config_screen");
 	ResourceLocation PACKET_OPEN_ARRIVAL_PROJECTOR_CONFIG_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_arrival_projector_config_screen");
 	ResourceLocation PACKET_OPEN_RAILWAY_SIGN_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_railway_sign_screen");
+	ResourceLocation PACKET_OPEN_STATION_AREA_TOOL = new ResourceLocation(MTR.MOD_ID, "packet_open_station_area_tool");
 	ResourceLocation PACKET_OPEN_TICKET_MACHINE_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_ticket_machine_screen");
 	ResourceLocation PACKET_OPEN_TRAIN_SENSOR_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_train_sensor_screen");
 	ResourceLocation PACKET_OPEN_NODE_ANGLE_SCREEN = new ResourceLocation(MTR.MOD_ID, "packet_open_node_angle_screen");

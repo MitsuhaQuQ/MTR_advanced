@@ -1278,13 +1278,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		return rails.containsKey(pos1) && rails.get(pos1).containsKey(pos2);
 	}
 
+	/**
+	 * See {@link DataCache#getStationAt}: by the platform next to it, else the station whose area takes it in, at its height,
+	 * with the platform nearest to it.
+	 */
 	public static Station getStation(Set<Station> stations, DataCache dataCache, BlockPos pos) {
 		try {
-			if (dataCache.blockPosToStation.containsKey(pos)) {
-				return dataCache.blockPosToStation.get(pos);
-			} else {
-				return stations.stream().filter(station -> station.inArea(pos.getX(), pos.getZ())).findFirst().orElse(null);
-			}
+			return dataCache.getStationAt(pos);
 		} catch (Exception e) {
 			e.printStackTrace();
 			return null;

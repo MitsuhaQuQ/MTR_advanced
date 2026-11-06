@@ -25,7 +25,7 @@
   "gui.mtr.remove_station_area": "刪除範圍",
   "gui.mtr.platform_station": "所屬車站：%s",
   "gui.mtr.platform_station_auto": "所屬車站：自動",
-  "gui.mtr.station_overlap_notice": "%s 個月台與其他車站重疊，請在清單中編輯並指定所屬車站",
+  "gui.mtr.station_overlap_notice": "%s 個月台在幾個車站的範圍裡，按最近的月台自動歸屬；可以在清單中編輯並指定所屬車站",
   "gui.mtr.show_passing_trains": "顯示通過列車",
   "gui.mtr.passing": "通過",
   "gui.mtr.passing_cjk": "通過",
@@ -348,5 +348,14 @@
   "gui.mtr.siding_vehicle_by_depot": "這個車型的加速、減速和手動駕駛在車廠裡統一設定，這裡的設定不起作用",
   "gui.mtr.depot_fill_timetable": "按這些發車填進時刻表",
   "gui.mtr.depot_headway": "每 %s 分鐘一班",
-  "gui.mtr.depot_headway_none": "不發車"
+  "gui.mtr.depot_headway_none": "不發車",
+  "item.mtr.station_area_tool": "車站範圍工具",
+  "gui.mtr.station_area_tool_first": "第一個角 %s，再點對角的方塊",
+  "gui.mtr.station_area_tool_choose_station": "這個框給哪個車站？",
+  "gui.mtr.station_area_tool_choose_area": "作為 %s 的哪塊範圍？",
+  "gui.mtr.station_area_tool_box": "X %s 到 %s，Z %s 到 %s，高度 %s 到 %s",
+  "gui.mtr.station_area_tool_main": "主範圍",
+  "gui.mtr.station_area_tool_extra": "範圍 %s",
+  "gui.mtr.station_area_tool_new": "新增一塊範圍",
+  "gui.mtr.platform_station_outside": "不在這個車站範圍內"
 }

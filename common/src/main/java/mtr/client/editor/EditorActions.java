@@ -350,6 +350,17 @@ public final class EditorActions implements IPacket {
 		if ("depot".equals(getString(operation, "type"))) {
 			return applyDepot(operation);
 		}
+		// The station a platform is put in, wherever it is, or "0" for by its area (R6)
+		if ("platformStation".equals(getString(operation, "type"))) {
+			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(parseId(getString(operation, "platform")));
+			final long stationId = parseId(getString(operation, "station"));
+			if (platform == null || stationId != 0 && !ClientData.DATA_CACHE.stationIdMap.containsKey(stationId)) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			platform.setStationId(stationId, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
+			ClientData.DATA_CACHE.sync();
+			return null;
+		}
 		// A pathfinding boundary on a rail belongs to the network, set the same way as in the game's node screen
 		if ("pathBoundary".equals(getString(operation, "type"))) {
 			final long node1 = parseId(getString(operation, "a"));

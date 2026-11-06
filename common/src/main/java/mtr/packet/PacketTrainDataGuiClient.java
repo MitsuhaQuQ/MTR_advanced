@@ -131,6 +131,16 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		});
 	}
 
+	public static void openStationAreaToolScreenS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
+		final BlockPos pos1 = packet.readBlockPos();
+		final BlockPos pos2 = packet.readBlockPos();
+		minecraftClient.execute(() -> {
+			if (ClientData.hasPermission()) {
+				UtilitiesClient.setScreen(minecraftClient, new mtr.screen.StationAreaToolScreen(pos1, pos2));
+			}
+		});
+	}
+
 	public static void openRailwaySignScreenS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final BlockPos pos = packet.readBlockPos();
 		minecraftClient.execute(() -> {

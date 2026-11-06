@@ -12,6 +12,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
 
 /**
@@ -35,6 +37,13 @@ public class DataCache {
 	public final Map<Long, Depot> routeIdToOneDepot = new HashMap<>();
 	public final Map<Station, Set<Station>> stationIdToConnectingStations = new HashMap<>();
 	public final Map<BlockPos, Station> blockPosToStation = new HashMap<>();
+	/**
+	 * Platforms in more than one station's area, at their heights, with no station set for them, and the station each was
+	 * given by the nearest platform ({@link #mapPlatformsToStations}); those the station was chosen for by its ID alone, as
+	 * none of the stations had a platform to go by, in {@link #platformsByIdAlone}.
+	 */
+	public final Map<Long, Station> overlappingPlatforms = new TreeMap<>();
+	public final Set<Long> platformsByIdAlone = new TreeSet<>();
 	public final Long2LongOpenHashMap blockPosToPlatformId = new Long2LongOpenHashMap();
 	public final Long2ObjectOpenHashMap<Long2ObjectOpenHashMap<RailwayDataRouteFinderModule.ConnectionDetails>> platformConnections = new Long2ObjectOpenHashMap<>();
 
@@ -50,6 +59,11 @@ public class DataCache {
 	 */
 	private int version;
 
+	/**
+	 * How much more a difference in height counts than one across, in finding the nearest platform: stations one above
+	 * another are much the same across and apart in height.
+	 */
+	public static final int HEIGHT_WEIGHT = 4;
 	private static final int AREA_CELL_BITS = 8;
 	private static final int MAX_AREA_CELLS = 1024;
 
@@ -185,14 +199,7 @@ public class DataCache {
 				}
 			}
 
-			mapSavedRailIdToStation(platformIdToStation, platforms, stations);
-			platforms.forEach(platform -> {
-				final Station station = stationIdMap.get(platform.stationId);
-				final BlockPos pos = platform.getMidPos();
-				if (station != null && station.inArea(pos.getX(), pos.getZ())) {
-					platformIdToStation.put(platform.id, station);
-				}
-			});
+			mapPlatformsToStations();
 			mapSavedRailIdToStation(sidingIdToDepot, sidings, depots);
 
 			blockPosToPlatformId.clear();
@@ -271,6 +278,135 @@ public class DataCache {
 	protected static <U extends NameColorDataBase> void mapIds(Map<Long, U> map, Set<U> source) {
 		map.clear();
 		source.forEach(data -> map.put(data.id, data));
+	}
+
+	/**
+	 * Gives each platform its station: the one set for it, wherever that is; else the one whose area takes it in, at its
+	 * height where the area has heights; and with more than one, the one with a platform nearest to it, the height counting
+	 * {@link #HEIGHT_WEIGHT} times, going by the platforms whose station is already known (set, or in one station's area
+	 * alone), so it doesn't go round in a circle. Each one the same however the data is ordered.
+	 */
+	private void mapPlatformsToStations() {
+		platformIdToStation.clear();
+		overlappingPlatforms.clear();
+		platformsByIdAlone.clear();
+		final List<Station> sortedStations = new ArrayList<>(stations);
+		sortedStations.sort(Comparator.comparingLong(station -> station.id));
+		final List<Platform> sortedPlatforms = new ArrayList<>(platforms);
+		sortedPlatforms.sort(Comparator.comparingLong(platform -> platform.id));
+		final Map<Station, List<BlockPos>> known = new HashMap<>();
+		final List<Platform> undecided = new ArrayList<>();
+		final Map<Long, List<Station>> candidatesOf = new HashMap<>();
+		for (final Platform platform : sortedPlatforms) {
+			final Station set = stationIdMap.get(platform.stationId);
+			if (set != null) {
+				platformIdToStation.put(platform.id, set);
+				known.computeIfAbsent(set, key -> new ArrayList<>()).add(platform.getMidPos());
+				continue;
+			}
+			final List<Station> candidates = getCandidates(sortedStations, platform.getMidPos());
+			if (candidates.size() == 1) {
+				platformIdToStation.put(platform.id, candidates.get(0));
+				known.computeIfAbsent(candidates.get(0), key -> new ArrayList<>()).add(platform.getMidPos());
+			} else if (candidates.size() > 1) {
+				undecided.add(platform);
+				candidatesOf.put(platform.id, candidates);
+			}
+		}
+		for (final Platform platform : undecided) {
+			final List<Station> candidates = candidatesOf.get(platform.id);
+			noteByIdAlone(platform.id, candidates.stream().noneMatch(known::containsKey));
+			final Station station = nearestByPlatforms(candidates, platform.getMidPos(), known);
+			platformIdToStation.put(platform.id, station);
+			overlappingPlatforms.put(platform.id, station);
+		}
+	}
+
+	/**
+	 * @return the stations whose areas take the place in, in order of their IDs: those taking in its height where the area
+	 * has heights, or, if none does, those taking it in across
+	 */
+	private static List<Station> getCandidates(List<Station> sortedStations, BlockPos pos) {
+		final List<Station> across = new ArrayList<>();
+		for (final Station station : sortedStations) {
+			if (station.inArea(pos.getX(), pos.getZ())) {
+				across.add(station);
+			}
+		}
+		if (across.size() < 2) {
+			return across;
+		}
+		final List<Station> atHeight = new ArrayList<>();
+		for (final Station station : across) {
+			if (station.inArea(pos.getX(), pos.getY(), pos.getZ())) {
+				atHeight.add(station);
+			}
+		}
+		return atHeight.isEmpty() ? across : atHeight;
+	}
+
+	/**
+	 * @return of the stations, the one with a platform nearest to the place, the height counting more; with none to go by,
+	 * or equally near, the one of the lowest ID
+	 */
+	private Station nearestByPlatforms(List<Station> candidates, BlockPos pos, Map<Station, List<BlockPos>> platformsOf) {
+		Station best = null;
+		double bestDistance = Double.MAX_VALUE;
+		for (final Station station : candidates) {
+			for (final BlockPos platformPos : platformsOf.getOrDefault(station, java.util.Collections.emptyList())) {
+				final double distance = weightedDistance(pos, platformPos);
+				if (distance < bestDistance || distance == bestDistance && best != null && station.id < best.id) {
+					bestDistance = distance;
+					best = station;
+				}
+			}
+		}
+		return best == null ? candidates.get(0) : best;
+	}
+
+	private void noteByIdAlone(long platformId, boolean byIdAlone) {
+		if (byIdAlone) {
+			platformsByIdAlone.add(platformId);
+		}
+	}
+
+	public static double weightedDistance(BlockPos a, BlockPos b) {
+		final double dx = a.getX() - b.getX(), dz = a.getZ() - b.getZ(), dy = (a.getY() - b.getY()) * (double) HEIGHT_WEIGHT;
+		return Math.sqrt(dx * dx + dz * dz + dy * dy);
+	}
+
+	/**
+	 * @return the station a block belongs to (station names, signs, PIDS, ticket barriers): the station of the platform next
+	 * to it if there is one, so blocks by a platform set to another station show that station, and blocks of each level
+	 * of stations one above another their own; else, of the stations whose areas take it in, the one with a platform
+	 * nearest to it; null for none. Kept by the place until the data changes.
+	 */
+	public Station getStationAt(BlockPos pos) {
+		final Station kept = blockPosToStation.get(pos);
+		if (kept != null || blockPosToStation.containsKey(pos)) {
+			return kept;
+		}
+		final long platformId = RailwayData.getClosePlatformId(platforms, this, pos);
+		Station station = platformId == 0 ? null : platformIdToStation.get(platformId);
+		if (station == null) {
+			final List<Station> sortedStations = new ArrayList<>(stations);
+			sortedStations.sort(Comparator.comparingLong(eachStation -> eachStation.id));
+			final List<Station> candidates = getCandidates(sortedStations, pos);
+			if (candidates.size() == 1) {
+				station = candidates.get(0);
+			} else if (candidates.size() > 1) {
+				final Map<Station, List<BlockPos>> platformsOf = new HashMap<>();
+				platformIdToStation.forEach((eachPlatformId, eachStation) -> {
+					final Platform platform = platformIdMap.get(eachPlatformId);
+					if (platform != null) {
+						platformsOf.computeIfAbsent(eachStation, key -> new ArrayList<>()).add(platform.getMidPos());
+					}
+				});
+				station = nearestByPlatforms(candidates, pos, platformsOf);
+			}
+		}
+		blockPosToStation.put(pos, station);
+		return station;
 	}
 
 	private static <U extends SavedRailBase, V extends AreaBase> void mapSavedRailIdToStation(Map<Long, V> map, Set<U> savedRails, Set<V> areas) {

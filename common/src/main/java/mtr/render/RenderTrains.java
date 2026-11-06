@@ -262,6 +262,7 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 		}, newLastFrameDuration));
 
 		RenderRailInspect.render(matrices, vertexConsumers, player, MTRClient.getGameTick());
+		RenderStationAreas.render(matrices, vertexConsumers, player);
 
 		final boolean renderColors = isHoldingRailRelated(player);
 		final int maxRailDistance = renderDistanceChunks * 16;

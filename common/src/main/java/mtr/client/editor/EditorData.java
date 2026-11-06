@@ -508,6 +508,14 @@ public final class EditorData {
 			platformObject.addProperty("stationName", station == null ? "" : station.name);
 			platformObject.addProperty("mode", platform == null ? "" : platform.transportMode.toString());
 			platformObject.addProperty("passingTrack", platform != null && platform.passingTrack);
+			// The station set for it, "0" for none, and where it is, for choosing a station to put it in
+			platformObject.addProperty("stationSet", platform == null ? "0" : String.valueOf(platform.stationId));
+			if (platform != null) {
+				final BlockPos mid = platform.getMidPos();
+				platformObject.addProperty("x", mid.getX());
+				platformObject.addProperty("y", mid.getY());
+				platformObject.addProperty("z", mid.getZ());
+			}
 			platformObject.addProperty("network", String.valueOf(platformGraph.getNetwork(i)));
 			// Where it lies, so the page can put a station's tracks in the order they lie side by side
 			if (platform != null) {
@@ -548,6 +556,27 @@ public final class EditorData {
 			platformsArray.add(platformObject);
 		}
 		topology.add("platforms", platformsArray);
+		// The stations a platform can be put in, by where their main areas are
+		final JsonArray stationsArray = new JsonArray();
+		ClientData.STATIONS.stream().filter(AreaBase::nonNullCorners).sorted(Comparator.comparingLong(station -> station.id)).forEach(station -> {
+			final JsonObject stationObject = new JsonObject();
+			stationObject.addProperty("id", String.valueOf(station.id));
+			stationObject.addProperty("name", station.name);
+			stationObject.addProperty("x", (station.corner1.getA() + station.corner2.getA()) / 2);
+			stationObject.addProperty("z", (station.corner1.getB() + station.corner2.getB()) / 2);
+			stationsArray.add(stationObject);
+		});
+		topology.add("stations", stationsArray);
+		// Platforms in more than one station's area with none set, and the station each went to by the nearest platform
+		final JsonArray overlappingArray = new JsonArray();
+		ClientData.DATA_CACHE.overlappingPlatforms.forEach((platformId, station) -> {
+			final JsonObject overlapObject = new JsonObject();
+			overlapObject.addProperty("platform", String.valueOf(platformId));
+			overlapObject.addProperty("station", String.valueOf(station.id));
+			overlapObject.addProperty("byIdAlone", ClientData.DATA_CACHE.platformsByIdAlone.contains(platformId));
+			overlappingArray.add(overlapObject);
+		});
+		topology.add("overlapping", overlappingArray);
 		topology.addProperty("networkCount", platformGraph.getNetworkCount());
 		return topology;
 	}

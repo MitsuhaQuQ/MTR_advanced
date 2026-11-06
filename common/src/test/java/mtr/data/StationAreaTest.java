@@ -34,7 +34,7 @@ class StationAreaTest {
 	}
 
 	@Test
-	void chosenStationWinsOnlyInsideItsArea() {
+	void chosenStationWinsWherever() {
 		final Station farStation = station(1, 300, 300, 310, 310);
 		farStation.extraAreas.add(new int[]{0, 0, 20, 20});
 		final Station nearStation = station(2, 0, 0, 20, 20);
@@ -55,9 +55,10 @@ class StationAreaTest {
 		dataCache.sync();
 		assertEquals(farStation, dataCache.platformIdToStation.get(platform.id));
 
+		// A station set for a platform counts wherever it is, not only where its area takes the platform in
 		platform.stationId = otherStation.id;
 		dataCache.sync();
-		assertTrue(dataCache.platformIdToStation.get(platform.id) != otherStation);
+		assertEquals(otherStation, dataCache.platformIdToStation.get(platform.id));
 	}
 
 	private static Station station(long id, int x1, int z1, int x2, int z2) {

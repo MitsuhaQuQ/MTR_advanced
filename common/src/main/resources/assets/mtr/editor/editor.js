@@ -56,7 +56,7 @@
 	let coverage = null;
 	/** The services paired at their routes' ends on the day shown (terminalNow), until the data, the draft or the day changes. */
 	let terminal = null;
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -107,6 +107,7 @@
 		if (!draft.duties || typeof draft.duties !== "object") draft.duties = {};
 		if (!draft.boundaries || typeof draft.boundaries !== "object") draft.boundaries = {};
 		if (!draft.depots || typeof draft.depots !== "object") draft.depots = {};
+		if (!draft.platformStations || typeof draft.platformStations !== "object") draft.platformStations = {};
 		draftLoaded = true;
 	}
 
@@ -121,7 +122,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -324,6 +325,10 @@
 			operations.push({ type: "pathBoundary", a, b, boundary });
 			owners.push({ boundaryOf: key });
 		});
+		Object.entries(draft.platformStations || {}).forEach(([platform, station]) => {
+			operations.push({ type: "platformStation", platform, station });
+			owners.push({ platformStationOf: platform });
+		});
 		draft.created.forEach(made => {
 			operations.push({ type: "newRoute", route: made.source, mode: made.mode || "", line: made.lineName || "", name: made.name, serviceType: made.serviceType, color: made.color, stops: made.stops, services: made.services, table: made.table, depot: made.depot || "" });
 			owners.push(made);
@@ -351,6 +356,8 @@
 						if (draft.duties[id.dutiesOf]) draft.duties[id.dutiesOf].error = error.message;
 					} else if (id.boundaryOf) {
 						boundaryErrors[id.boundaryOf] = error.message;
+					} else if (id.platformStationOf) {
+						boundaryErrors["station:" + id.platformStationOf] = error.message;
 					} else {
 						id.error = error.message;
 					}
@@ -365,6 +372,7 @@
 			draft.created = draft.created.filter(made => failed.has(made));
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
 			owners.filter(owner => owner && owner.depotOf && !failed.has(owner)).forEach(owner => delete draft.depots[owner.depotOf]);
+			owners.filter(owner => owner && owner.platformStationOf && !failed.has(owner)).forEach(owner => delete draft.platformStations[owner.platformStationOf]);
 			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
 				delete draft.boundaries[owner.boundaryOf];
 				delete boundaryErrors[owner.boundaryOf];
@@ -1200,6 +1208,10 @@
 			const errors = boundaryKeys.map(key => boundaryErrors[key]).filter(Boolean);
 			sections.push(`<section class="draft-change"><h3>${tr("隔离")}</h3>${errors.length ? `<p class="err">${escapeHtml(errors[0])}</p>` : ""}<ul>${added ? `<li>${tr("设为寻路边界 {0} 段", added)}</li>` : ""}${boundaryKeys.length - added ? `<li>${tr("取消寻路边界 {0} 段", boundaryKeys.length - added)}</li>` : ""}</ul>
 				<div class="draft-actions"><button type="button" data-diff-boundaries>${tr("放弃隔离的草稿")}</button></div></section>`);
+		}
+		const platformStationKeys = Object.keys(draft.platformStations || {});
+		if (platformStationKeys.length) {
+			sections.push(`<section class="draft-change"><h3>${tr("站台归属")}</h3><ul>${platformStationKeys.map(platformId => `<li>${escapeHtml(tr("{0} 归到 {1}", platformText(platformId), stationNameOf(draft.platformStations[platformId])))}</li>`).join("")}</ul></section>`);
 		}
 		openDialog(tr("草稿的改动"), `<p class="hint">${tr("和游戏里现在的版本比。按“应用”才发给游戏。")}</p><div class="draft-changes">${sections.join("")}</div>`, tr("关闭"), () => {});
 	}
@@ -3324,6 +3336,35 @@
 		return items.length ? items : [[tr("没有赶得上的班次"), null]];
 	}
 
+	/** The name of a station by its ID, or the automatic choice for "0". */
+	function stationNameOf(stationId) {
+		if (!stationId || stationId === "0") return tr("自动（按车站范围和最近的站台）");
+		const station = (topo ? topo.stations : []).find(each => each.id === stationId);
+		return station ? shortName(station.name) || tr("（未命名车站）") : tr("已删除的车站");
+	}
+
+	/**
+	 * The menu choosing the station a platform belongs to (R6): automatic, by the areas and the nearest platform, or any of
+	 * the nearest stations, wherever the platform is; into the draft.
+	 */
+	function platformStationItems(platformId) {
+		const p = platformById(platformId);
+		if (!p || !data.canEdit) return null;
+		const current = draft.platformStations && platformId in draft.platformStations ? draft.platformStations[platformId] : p.stationSet || "0";
+		const choose = stationId => () => {
+			if (stationId === (p.stationSet || "0")) delete draft.platformStations[platformId];
+			else draft.platformStations[platformId] = stationId;
+			saveDraft();
+			renderAll();
+		};
+		const near = (topo ? topo.stations : []).slice().sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z)).slice(0, 8);
+		if (current !== "0" && !near.some(station => station.id === current)) {
+			const set = (topo ? topo.stations : []).find(station => station.id === current);
+			if (set) near.push(set);
+		}
+		return [[`${current === "0" ? "✓ " : ""}${stationNameOf("0")}`, choose("0")], ...near.map(station => [`${current === station.id ? "✓ " : ""}${shortName(station.name) || tr("（未命名车站）")}`, choose(station.id)])];
+	}
+
 	function cellMenu(e, cell) {
 		const s = findService(cell.dataset.svc), stop = +cell.dataset.stop;
 		if (!s) return;
@@ -3408,6 +3449,9 @@
 				renderAll();
 			}]);
 		}
+		// Which station the stop's platform belongs to, wherever it is (R6)
+		const stationItems = s.route.stops[stop] ? platformStationItems(s.route.stops[stop].platformId) : null;
+		if (stationItems) items.push([tr("站台 {0} 归属车站", platformText(s.route.stops[stop].platformId)), stationItems]);
 		if (items.length) openMenu(e.clientX, e.clientY, items);
 	}
 
@@ -4192,7 +4236,7 @@
 			if (!byStation.has(key)) byStation.set(key, []);
 			byStation.get(key).push(i);
 		});
-		topo = { platforms: source.platforms, index: new Map(source.platforms.map((p, i) => [p.id, i])), byStation, reach: new Map(), problems: new Map(), networkCount: source.networkCount || 0 };
+		topo = { platforms: source.platforms, index: new Map(source.platforms.map((p, i) => [p.id, i])), byStation, reach: new Map(), problems: new Map(), networkCount: source.networkCount || 0, stations: source.stations || [], overlapping: source.overlapping || [] };
 	}
 
 	const isUsable = s => Boolean(topo.platforms[s >> 1] && topo.platforms[s >> 1].ways[s & 1].usable);
@@ -5875,6 +5919,10 @@
 			});
 			if (duties.mode === "diagram" && depot.sidings.some(siding => (duties.sidings[siding.id] || []).length && !siding.legs)) problems.push({ level: "warn", text: tr("车厂{0}还没有出入库时刻，刷新路径后运行图上才画出出库和回库", name) });
 		});
+		// Platforms in more than one station's area with none set for them, and where they went (R6)
+		(topo ? topo.overlapping : []).slice(0, 20).forEach(overlap => problems.push({ level: "hint", text: overlap.byIdAlone
+			? tr("{0} 在几个车站的范围里，这些车站都还没有别的站台可参照，暂时归到 {1}；右键时刻表里这一站可以指定", platformText(overlap.platform), stationNameOf(overlap.station))
+			: tr("{0} 在几个车站的范围里，按最近的站台归到 {1}；右键时刻表里这一站可以指定", platformText(overlap.platform), stationNameOf(overlap.station)) }));
 		// Platforms trains turning back hold for long, or that have no room for one at all (terminalNow)
 		terminalNow().warnings.slice(0, 12).forEach(warning => {
 			const from = findService(warning.from);

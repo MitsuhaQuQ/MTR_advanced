@@ -272,7 +272,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 						final Map<Long, Platform> platformData = editingArea instanceof Station ? ClientData.DATA_CACHE.getPlatformsInArea((Station) editingArea) : ClientData.DATA_CACHE.requestStationIdToPlatforms(editingArea.id);
 						dashboardList.setData(platformData == null ? new ArrayList<>() : new ArrayList<>(platformData.values()), true, false, true, false, false, false);
 						if (platformData != null) {
-							final long unassigned = platformData.values().stream().filter(platform -> platform.stationId == 0 && ClientData.DATA_CACHE.getStationsAt(platform.getMidPos()).size() > 1).count();
+							final long unassigned = platformData.values().stream().filter(platform -> ClientData.DATA_CACHE.overlappingPlatforms.containsKey(platform.id)).count();
 							widgetMap.setAreaNotice(unassigned > 0 ? Text.translatable("gui.mtr.station_overlap_notice", unassigned).getString() : "");
 						}
 					}
@@ -645,9 +645,14 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			if (editingAreaIndex > extraAreas.size()) {
 				extraAreas.add(extraArea);
 			} else {
+				// Drawn again, the rectangle keeps the heights it had
+				((Station) editingArea).moveHeight(extraAreas.get(editingAreaIndex - 1), extraArea);
 				extraAreas.set(editingAreaIndex - 1, extraArea);
 			}
 		} else {
+			if (editingArea instanceof Station && AreaBase.nonNullCorners(editingArea)) {
+				((Station) editingArea).moveHeight(new int[]{editingArea.corner1.getA(), editingArea.corner1.getB(), editingArea.corner2.getA(), editingArea.corner2.getB()}, new int[]{corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB()});
+			}
 			editingArea.corner1 = corner1;
 			editingArea.corner2 = corner2;
 		}
@@ -659,6 +664,9 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			((Station) editingArea).setExtraAreas(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
 		} else {
 			editingArea.setCorners(packet -> PacketTrainDataGuiClient.sendUpdate(editingArea instanceof Station ? PACKET_UPDATE_STATION : PACKET_UPDATE_DEPOT, packet));
+		}
+		if (editingArea instanceof Station && ((Station) editingArea).hasHeights()) {
+			((Station) editingArea).setAreaHeights(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
 		}
 	}
 
@@ -794,7 +802,11 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		buttonRemoveStationArea.visible = showStationAreas;
 		if (showStationAreas) {
 			final int extraAreaCount = ((Station) editingArea).extraAreas.size();
-			buttonStationArea.setMessage(Text.translatable("gui.mtr.station_area", editingAreaIndex + 1, Math.max(extraAreaCount + 1, editingAreaIndex + 1)));
+			// With the heights the rectangle takes in, set with the station area tool
+			final Station station = (Station) editingArea;
+			final int[] rectangle = editingAreaIndex == 0 ? AreaBase.nonNullCorners(station) ? new int[]{station.corner1.getA(), station.corner1.getB(), station.corner2.getA(), station.corner2.getB()} : null : editingAreaIndex <= extraAreaCount ? station.extraAreas.get(editingAreaIndex - 1) : null;
+			final int[] height = rectangle == null ? null : station.getHeight(rectangle);
+			buttonStationArea.setMessage(Text.literal(Text.translatable("gui.mtr.station_area", editingAreaIndex + 1, Math.max(extraAreaCount + 1, editingAreaIndex + 1)).getString() + (height == null ? "" : " Y" + height[0] + "-" + height[1])));
 			buttonAddStationArea.active = AreaBase.nonNullCorners(editingArea) && extraAreaCount < Station.MAX_EXTRA_AREAS && editingAreaIndex <= extraAreaCount;
 			buttonRemoveStationArea.active = editingAreaIndex > 0;
 		}

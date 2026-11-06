@@ -9,8 +9,10 @@ import org.msgpack.value.Value;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -25,12 +27,19 @@ public final class Station extends AreaBase {
 	 * Rectangles as {x1, z1, x2, z2} in addition to the corners, which older data and other mods read.
 	 */
 	public final List<int[]> extraAreas = new ArrayList<>();
+	/**
+	 * The heights each rectangle of the station takes in, {lowest y, highest y}, by the rectangle ({@link #rectangleKey});
+	 * a rectangle left out takes in every height, as before. Set with the station area tool, so stations one above another,
+	 * such as an underground line under a main line, are told apart.
+	 */
+	public final Map<String, int[]> areaHeights = new HashMap<>();
 
 	public static final int MAX_EXTRA_AREAS = 15;
 
 	private static final String KEY_ZONE = "zone";
 	private static final String KEY_EXITS = "exits";
 	private static final String KEY_EXTRA_AREAS = "extra_areas";
+	private static final String KEY_AREA_HEIGHTS = "area_heights";
 
 	private static final String KEY_EXIT_EDIT_PARENT = "exit_edit_parent";
 	private static final String KEY_EXIT_DELETE_PARENT = "exit_delete_parent";
@@ -61,6 +70,12 @@ public final class Station extends AreaBase {
 		messagePackHelper.iterateArrayValue(KEY_EXTRA_AREAS, value -> values.add(value.asIntegerValue().asInt()));
 		for (int i = 0; i + 3 < values.size() && extraAreas.size() < MAX_EXTRA_AREAS; i += 4) {
 			extraAreas.add(new int[]{values.get(i), values.get(i + 1), values.get(i + 2), values.get(i + 3)});
+		}
+
+		final List<Integer> heightValues = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_AREA_HEIGHTS, value -> heightValues.add(value.asIntegerValue().asInt()));
+		for (int i = 0; i + 5 < heightValues.size() && areaHeights.size() <= MAX_EXTRA_AREAS; i += 6) {
+			putHeight(new int[]{heightValues.get(i), heightValues.get(i + 1), heightValues.get(i + 2), heightValues.get(i + 3)}, heightValues.get(i + 4), heightValues.get(i + 5));
 		}
 	}
 
@@ -94,6 +109,7 @@ public final class Station extends AreaBase {
 			exits.put(parent, destinations);
 		}
 		readExtraAreas(packet);
+		readAreaHeights(packet);
 	}
 
 	@Override
@@ -119,11 +135,19 @@ public final class Station extends AreaBase {
 				messagePacker.packInt(value);
 			}
 		}
+
+		final List<int[]> heights = getHeightEntries();
+		messagePacker.packString(KEY_AREA_HEIGHTS).packArrayHeader(heights.size() * 6);
+		for (final int[] entry : heights) {
+			for (final int value : entry) {
+				messagePacker.packInt(value);
+			}
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 3;
+		return super.messagePackLength() + 4;
 	}
 
 	@Override
@@ -137,6 +161,7 @@ public final class Station extends AreaBase {
 			destinations.forEach(packet::writeUtf);
 		});
 		writeExtraAreas(packet);
+		writeAreaHeights(packet);
 	}
 
 	@Override
@@ -162,6 +187,9 @@ public final class Station extends AreaBase {
 				break;
 			case KEY_EXTRA_AREAS:
 				readExtraAreas(packet);
+				break;
+			case KEY_AREA_HEIGHTS:
+				readAreaHeights(packet);
 				break;
 			case KEY_ZONE:
 				name = packet.readUtf(PACKET_STRING_READ_LENGTH);
@@ -190,6 +218,115 @@ public final class Station extends AreaBase {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * @return whether the station takes the place in, in one of its rectangles and within that rectangle's heights
+	 */
+	public boolean inArea(int x, int y, int z) {
+		for (final int[] rectangle : getRectangles()) {
+			if (RailwayData.isBetween(x, rectangle[0], rectangle[2]) && RailwayData.isBetween(z, rectangle[1], rectangle[3])) {
+				final int[] height = areaHeights.get(rectangleKey(rectangle));
+				if (height == null || y >= height[0] && y <= height[1]) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @return whether any of its rectangles is given heights
+	 */
+	public boolean hasHeights() {
+		return getRectangles().stream().anyMatch(rectangle -> areaHeights.containsKey(rectangleKey(rectangle)));
+	}
+
+	/**
+	 * @return the heights a rectangle takes in, {lowest, highest}, or null for every height
+	 */
+	public int[] getHeight(int[] rectangle) {
+		return areaHeights.get(rectangleKey(rectangle));
+	}
+
+	/**
+	 * Gives a rectangle the heights it takes in, or every height for null.
+	 */
+	public void setHeight(int[] rectangle, int[] height) {
+		if (height == null) {
+			areaHeights.remove(rectangleKey(rectangle));
+		} else {
+			putHeight(rectangle, height[0], height[1]);
+		}
+	}
+
+	/**
+	 * A rectangle drawn again keeps the heights it had.
+	 */
+	public void moveHeight(int[] oldRectangle, int[] newRectangle) {
+		final int[] height = oldRectangle == null ? null : areaHeights.remove(rectangleKey(oldRectangle));
+		if (height != null && newRectangle != null) {
+			putHeight(newRectangle, height[0], height[1]);
+		}
+	}
+
+	public void setAreaHeights(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_AREA_HEIGHTS);
+		writeAreaHeights(packet);
+		sendPacket.accept(packet);
+	}
+
+	/**
+	 * @return a rectangle {x1, z1, x2, z2} the same whichever way round its corners are given
+	 */
+	public static String rectangleKey(int[] rectangle) {
+		return Math.min(rectangle[0], rectangle[2]) + "," + Math.min(rectangle[1], rectangle[3]) + "," + Math.max(rectangle[0], rectangle[2]) + "," + Math.max(rectangle[1], rectangle[3]);
+	}
+
+	private void putHeight(int[] rectangle, int y1, int y2) {
+		areaHeights.put(rectangleKey(rectangle), new int[]{Math.min(y1, y2), Math.max(y1, y2)});
+	}
+
+	/**
+	 * @return the heights of the station's own rectangles, each as {x1, z1, x2, z2, lowest, highest}, those of rectangles
+	 * it no longer has left out
+	 */
+	private List<int[]> getHeightEntries() {
+		final List<int[]> entries = new ArrayList<>();
+		final Set<String> written = new HashSet<>();
+		for (final int[] rectangle : getRectangles()) {
+			final String key = rectangleKey(rectangle);
+			final int[] height = areaHeights.get(key);
+			if (height != null && written.add(key)) {
+				entries.add(new int[]{Math.min(rectangle[0], rectangle[2]), Math.min(rectangle[1], rectangle[3]), Math.max(rectangle[0], rectangle[2]), Math.max(rectangle[1], rectangle[3]), height[0], height[1]});
+			}
+		}
+		return entries;
+	}
+
+	private void readAreaHeights(FriendlyByteBuf packet) {
+		areaHeights.clear();
+		final int count = packet.readInt();
+		for (int i = 0; i < count; i++) {
+			final int[] rectangle = {packet.readInt(), packet.readInt(), packet.readInt(), packet.readInt()};
+			final int y1 = packet.readInt(), y2 = packet.readInt();
+			if (i <= MAX_EXTRA_AREAS) {
+				putHeight(rectangle, y1, y2);
+			}
+		}
+	}
+
+	private void writeAreaHeights(FriendlyByteBuf packet) {
+		final List<int[]> entries = getHeightEntries();
+		packet.writeInt(entries.size());
+		entries.forEach(entry -> {
+			for (final int value : entry) {
+				packet.writeInt(value);
+			}
+		});
 	}
 
 	@Override

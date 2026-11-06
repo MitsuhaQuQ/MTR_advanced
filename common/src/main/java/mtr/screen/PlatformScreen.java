@@ -39,7 +39,8 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 
 	public PlatformScreen(Platform savedRailBase, TransportMode transportMode, DashboardScreen dashboardScreen) {
 		super(savedRailBase, transportMode, dashboardScreen, DWELL_TIME_TEXT);
-		stationsHere = ClientData.DATA_CACHE.getStationsAt(savedRailBase.getMidPos());
+		// Any station can be chosen (R6): those whose areas take the platform in, then the nearest others, then the one set
+		stationsHere = getStationChoices(savedRailBase);
 		selectedStationId = savedRailBase.stationId;
 		buttonStation = UtilitiesClient.newButton(Text.literal(""), button -> cycleStation());
 		timetableBoundary = savedRailBase.timetableBoundary;
@@ -67,6 +68,23 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		});
 	}
 
+	private static List<Station> getStationChoices(Platform platform) {
+		final net.minecraft.core.BlockPos pos = platform.getMidPos();
+		final List<Station> choices = new ArrayList<>(ClientData.DATA_CACHE.getStationsAt(pos));
+		final List<Station> others = new ArrayList<>(ClientData.STATIONS);
+		others.removeIf(station -> choices.contains(station) || !mtr.data.AreaBase.nonNullCorners(station));
+		others.sort(Comparator.comparingDouble((Station station) -> {
+			final double dx = (station.corner1.getA() + station.corner2.getA()) / 2D - pos.getX(), dz = (station.corner1.getB() + station.corner2.getB()) / 2D - pos.getZ();
+			return dx * dx + dz * dz;
+		}).thenComparingLong(station -> station.id));
+		choices.addAll(others.subList(0, Math.min(8, others.size())));
+		final Station set = ClientData.DATA_CACHE.stationIdMap.get(platform.stationId);
+		if (set != null && !choices.contains(set)) {
+			choices.add(set);
+		}
+		return choices;
+	}
+
 	private void cycleStation() {
 		int index = -1;
 		for (int i = 0; i < stationsHere.size(); i++) {
@@ -92,7 +110,9 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 
 	private void updateStationButton() {
 		final Station station = ClientData.DATA_CACHE.stationIdMap.get(selectedStationId);
-		buttonStation.setMessage(station == null ? Text.translatable("gui.mtr.platform_station_auto") : Text.translatable("gui.mtr.platform_station", station.name));
+		final net.minecraft.core.BlockPos pos = savedRailBase.getMidPos();
+		final boolean outside = station != null && !station.inArea(pos.getX(), pos.getZ());
+		buttonStation.setMessage(station == null ? Text.translatable("gui.mtr.platform_station_auto") : Text.literal(Text.translatable("gui.mtr.platform_station", station.name).getString() + (outside ? " (" + Text.translatable("gui.mtr.platform_station_outside").getString() + ")" : "")));
 	}
 
 	@Override
@@ -100,14 +120,14 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		super.init();
 		UtilitiesClient.setWidgetY(sliderDwellTimeMin, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING);
 		UtilitiesClient.setWidgetY(sliderDwellTimeSec, SQUARE_SIZE * 5 / 2 + TEXT_FIELD_PADDING);
-		if (stationsHere.size() > 1) {
+		if (!stationsHere.isEmpty()) {
 			IDrawing.setPositionAndWidth(buttonStation, SQUARE_SIZE, SQUARE_SIZE * 7 / 2 + TEXT_FIELD_PADDING, width - SQUARE_SIZE * 2);
 			updateStationButton();
 			addDrawableChild(buttonStation);
 		}
 		if (showScheduleControls) {
 			// Where services can leave or join a route part of the way along, see TimetableBoundaries
-			final int rowY = (stationsHere.size() > 1 ? SQUARE_SIZE * 9 / 2 : SQUARE_SIZE * 7 / 2) + TEXT_FIELD_PADDING;
+			final int rowY = (!stationsHere.isEmpty() ? SQUARE_SIZE * 9 / 2 : SQUARE_SIZE * 7 / 2) + TEXT_FIELD_PADDING;
 			final int halfWidth = (width - SQUARE_SIZE * 2) / 2;
 			IDrawing.setPositionAndWidth(buttonBoundary, SQUARE_SIZE, rowY, halfWidth);
 			updateBoundaryButton();
@@ -143,7 +163,7 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	}
 
 	private int getRowsTop() {
-		return SQUARE_SIZE * (stationsHere.size() > 1 ? 5 : 7 / 2) + (showScheduleControls ? SQUARE_SIZE : 0) + TEXT_FIELD_PADDING + SQUARE_SIZE / 2;
+		return SQUARE_SIZE * (!stationsHere.isEmpty() ? 5 : 7 / 2) + (showScheduleControls ? SQUARE_SIZE : 0) + TEXT_FIELD_PADDING + SQUARE_SIZE / 2;
 	}
 
 	private int getVisibleRows() {

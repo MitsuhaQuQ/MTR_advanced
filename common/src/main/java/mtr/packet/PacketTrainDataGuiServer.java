@@ -116,6 +116,17 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		Registry.sendToPlayer(player, PACKET_OPEN_DASHBOARD_SCREEN, packet);
 	}
 
+	/**
+	 * The box made with the station area tool, for the player to give to a station.
+	 */
+	public static void openStationAreaToolScreenS2C(ServerPlayer player, BlockPos pos1, BlockPos pos2) {
+		editPermissionS2C(player);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeBlockPos(pos1);
+		packet.writeBlockPos(pos2);
+		Registry.sendToPlayer(player, PACKET_OPEN_STATION_AREA_TOOL, packet);
+	}
+
 	public static void openRailwaySignScreenS2C(ServerPlayer player, BlockPos signPos) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(signPos);
