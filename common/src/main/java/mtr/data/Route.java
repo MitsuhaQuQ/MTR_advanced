@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -112,6 +113,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_TIMETABLE_LINKS = "timetable_links";
 	private static final long TIMETABLE_LINKS_MARKER = -5;
 	private static final String KEY_TIMETABLE_RETURNS = "timetable_returns";
+	private static final String KEY_TIMETABLE_SUSPENDED = "timetable_suspended";
 	/**
 	 * Services joined or left part of the way by a train from or to a depot (MTM_Logic 0.8.0): service, kind (0 deploy, 1
 	 * return), stop and depot, four longs each; older saves have none.
@@ -211,6 +213,8 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		timetable.entryPlatformId = messagePackHelper.getLong(KEY_ENTRY_PLATFORM);
 		readLinks(messagePackHelper, timetable);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_RETURNS, value -> timetable.returnServices.add(value.asIntegerValue().asInt()));
+		// Services that don't run; an older save has none
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SUSPENDED, value -> timetable.suspended.add(value.asIntegerValue().asInt()));
 		readOrders(messagePackHelper, timetable);
 		readExceptions(messagePackHelper, timetable);
 
@@ -390,7 +394,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 33 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 34 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -451,9 +455,16 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		}
 	}
 
+	/**
+	 * Writes the services after which the train goes back, and the services that don't run: two keys.
+	 */
 	private static void writeReturns(MessagePacker messagePacker, RouteTimetable table) throws IOException {
 		messagePacker.packString(KEY_TIMETABLE_RETURNS).packArrayHeader(table.returnServices.size());
 		for (final int service : table.returnServices) {
+			messagePacker.packInt(service);
+		}
+		messagePacker.packString(KEY_TIMETABLE_SUSPENDED).packArrayHeader(table.suspended.size());
+		for (final int service : new TreeSet<>(table.suspended)) {
 			messagePacker.packInt(service);
 		}
 	}
@@ -487,6 +498,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> table.services.add(service.asIntegerValue().asInt()));
 		readLinks(messagePackHelper, table);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_RETURNS, value -> table.returnServices.add(value.asIntegerValue().asInt()));
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SUSPENDED, value -> table.suspended.add(value.asIntegerValue().asInt()));
 		readOrders(messagePackHelper, table);
 		readExceptions(messagePackHelper, table);
 		timetable.addTable(table);
@@ -515,7 +527,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	private void writeTable(MessagePacker messagePacker, int tableIndex) throws IOException {
 		final RouteTimetable table = timetable.getTable(tableIndex);
-		messagePacker.packMapHeader(11);
+		messagePacker.packMapHeader(12);
 		writeLinks(messagePacker, table);
 		writeReturns(messagePacker, table);
 		writeOrders(messagePacker, table);
@@ -823,6 +835,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			newTable.services.addAll(table.services);
 			newTable.links.putAll(table.links);
 			newTable.returnServices.addAll(table.returnServices);
+			newTable.suspended.addAll(table.suspended);
 			newTable.returnOrders.putAll(table.returnOrders);
 			newTable.deployOrders.putAll(table.deployOrders);
 			ServiceExceptions.copy(table, newTable);
@@ -1078,6 +1091,14 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 				table.returnServices.add(service);
 			}
 		}
+		table.suspended.clear();
+		final int suspendedCount = packet.readInt();
+		for (int i = 0; i < suspendedCount; i++) {
+			final int service = packet.readInt();
+			if (i < RouteTimetable.MAX_SERVICES) {
+				table.suspended.add(service);
+			}
+		}
 		table.returnOrders.clear();
 		table.deployOrders.clear();
 		for (int kind = 0; kind < 2; kind++) {
@@ -1114,6 +1135,8 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			});
 			packet.writeInt(table.returnServices.size());
 			table.returnServices.forEach(packet::writeInt);
+			packet.writeInt(table.suspended.size());
+			new TreeSet<>(table.suspended).forEach(packet::writeInt);
 			for (final Map<Integer, RouteTimetable.ServiceOrder> orders : Arrays.asList(table.deployOrders, table.returnOrders)) {
 				packet.writeInt(orders.size());
 				new TreeMap<>(orders).forEach((service, order) -> {

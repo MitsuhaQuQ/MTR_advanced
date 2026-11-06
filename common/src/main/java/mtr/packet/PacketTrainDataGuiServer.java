@@ -732,7 +732,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 						final TimetableConflicts.RouteTimes newRouteTimes = new TimetableConflicts.RouteTimes(testRoute.id, testRoute.platformIds);
 						for (int i = 0; i < testRoute.timetable.getTableCount(); i++) {
 							final RouteTimetable table = testRoute.timetable.getTable(i);
-							newRouteTimes.addTable(i, table.weekdays, table.services, table.marginPercent, times, table.exceptions, table.deployOrders, table.returnOrders);
+							// Services that don't run can't clash with anything
+							final List<Integer> running = new ArrayList<>(table.services);
+							running.removeAll(table.suspended);
+							newRouteTimes.addTable(i, table.weekdays, running, table.marginPercent, times, table.exceptions, table.deployOrders, table.returnOrders);
 						}
 						newRouteTimes.nextRouteId = nextRouteIds.getOrDefault(testRoute.id, 0L);
 						newRouteTimes.terminalPlatforms.addAll(testRoute.terminalPlatforms);

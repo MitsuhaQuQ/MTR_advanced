@@ -236,5 +236,6 @@
   "gui.mtr.timetable_conflicts_found_throat": "%1$s conflicts. This service: the turnout at %3$s in the throat of %2$s, by another way than %4$s at %5$s",
   "gui.mtr.timetable_deploy_order": "Sent out of %2$s at %1$s",
   "gui.mtr.timetable_return_order": "Ends at %1$s, back to %2$s",
+  "gui.mtr.timetable_suspended": "Not running (set in the advanced editor)",
   "gui.mtr.timetable_order_any_depot": "any depot"
 }

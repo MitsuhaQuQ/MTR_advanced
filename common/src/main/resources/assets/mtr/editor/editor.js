@@ -726,6 +726,8 @@
 						id: r.id + "@" + service, route: r, service, table, tableIndex,
 						link: table.links.find(l => l.service === service),
 						returns: table.returns.includes(service),
+						// Kept in the table, but not running: no train, no conflicts, nothing planned
+						suspended: (table.suspended || []).includes(service),
 						// Set on the running diagram: joined part of the way by a train from a depot, or left part of the way back to one
 						deployOrder: (table.orders || []).find(order => order.service === service && order.kind === "deploy") || null,
 						returnOrder: (table.orders || []).find(order => order.service === service && order.kind === "return") || null,
@@ -758,6 +760,7 @@
 		timetable.tables.forEach(table => {
 			table.services.sort((a, b) => a - b);
 			table.returns.sort((a, b) => a - b);
+			table.suspended = (table.suspended || []).slice().sort((a, b) => a - b);
 			table.orders = table.orders || [];
 			table.orders.sort((a, b) => a.service - b.service || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 			table.links.sort((a, b) => a.service - b.service);
@@ -773,7 +776,7 @@
 			enabled: r.timetable, entryPlatform: r.entryPlatform, pass: r.stops.map(stop => stop.pass),
 			tables: r.tables.map(table => ({
 				name: table.name, weekdays: table.weekdays, marginPercent: table.marginPercent,
-				services: [...table.services], returns: [...table.returns],
+				services: [...table.services], returns: [...table.returns], suspended: [...(table.suspended || [])],
 				orders: (table.orders || []).map(order => ({ ...order })),
 				links: table.links.map(link => ({ ...link })),
 				stops: table.stops.map(stop => ({ ...stop })),
@@ -822,14 +825,24 @@
 		table.services[table.services.indexOf(oldService)] = newService;
 		table.links.forEach(link => { if (link.service === oldService) link.service = newService; });
 		table.returns = table.returns.map(service => service === oldService ? newService : service);
+		table.suspended = (table.suspended || []).map(service => service === oldService ? newService : service);
 		(table.orders || []).forEach(order => { if (order.service === oldService) order.service = newService; });
 		table.exceptions.forEach(exception => { if (exception.service === oldService) exception.service = newService; });
+	}
+
+	/** Sets services of a table not to run, or to run again; their times and everything else stay. */
+	function setSuspended(table, services, suspended) {
+		const set = new Set(table.suspended || []);
+		services.forEach(service => suspended ? set.add(service) : set.delete(service));
+		table.suspended = [...set].filter(service => table.services.includes(service)).sort((a, b) => a - b);
+		return suspended ? tr("{0} 班停运，留在表里，右键可以恢复", services.length) : tr("{0} 班恢复运行，和别的班次冲突的话同步后会提示", services.length);
 	}
 
 	function removeService(table, service) {
 		table.services = table.services.filter(s => s !== service);
 		table.links = table.links.filter(link => link.service !== service);
 		table.returns = table.returns.filter(s => s !== service);
+		table.suspended = (table.suspended || []).filter(s => s !== service);
 		table.orders = (table.orders || []).filter(order => order.service !== service);
 		table.exceptions = table.exceptions.filter(exception => exception.service !== service);
 	}
@@ -1010,7 +1023,7 @@
 					const copied = +form.copy.value >= 0 && edited.tables[+form.copy.value];
 					edited.tables.push({
 						name, weekdays: mask, marginPercent: copied ? copied.marginPercent : edited.tables[0].marginPercent,
-						services: copied ? [...copied.services] : [], returns: copied ? [...copied.returns] : [], orders: copied ? (copied.orders || []).map(order => ({ ...order })) : [],
+						services: copied ? [...copied.services] : [], returns: copied ? [...copied.returns] : [], suspended: copied ? [...(copied.suspended || [])] : [], orders: copied ? (copied.orders || []).map(order => ({ ...order })) : [],
 						links: copied ? copied.links.map(link => ({ ...link })) : [],
 						stops: (copied || edited.tables[0]).stops.map(stop => ({ ...stop })),
 						exceptions: copied ? JSON.parse(JSON.stringify(copied.exceptions)) : [],
@@ -1114,6 +1127,10 @@
 			const returned = now.returns.filter(service => !oldReturns.has(service)), unreturned = old.returns.filter(service => !newReturns.has(service));
 			if (returned.length) lines.push(tr("回库：{0}", someServices(returned)));
 			if (unreturned.length) lines.push(tr("不再回库：{0}", someServices(unreturned)));
+			const oldSuspended = new Set(old.suspended || []), newSuspended = new Set(now.suspended || []);
+			const suspended = (now.suspended || []).filter(service => !oldSuspended.has(service)), resumed = (old.suspended || []).filter(service => !newSuspended.has(service));
+			if (suspended.length) lines.push(tr("停运：{0}", someServices(suspended)));
+			if (resumed.length) lines.push(tr("恢复运行：{0}", someServices(resumed)));
 			const orderText = order => tr(order.kind === "deploy" ? "{0} 从{1}出车（{2}）" : "{0} 在{1}转回送（{2}）", serviceClock(order.service), escapeHtml(stopName(r, order.stop)), escapeHtml(orderDepotName(order)));
 			const oldOrders = new Map((old.orders || []).map(order => [order.service + order.kind, JSON.stringify(order)])), newOrders = new Map((now.orders || []).map(order => [order.service + order.kind, JSON.stringify(order)]));
 			(now.orders || []).filter(order => oldOrders.get(order.service + order.kind) !== JSON.stringify(order)).forEach(order => lines.push(tr("设{0}", orderText(order))));
@@ -2377,13 +2394,17 @@
 			}
 			// A service no train of the depots running it by duties runs: thin and grey, or red when those are picked out;
 			// one with a train in the route's colour, a little wider. Colour, not dashes, so dense diagrams still show it
-			const noTrain = s.route.hasTimes && diagramRoutes.has(s.route.id) && !assigned.has(key);
-			const covered = !noTrain && s.route.hasTimes && diagramRoutes.has(s.route.id);
+			const noTrain = !s.suspended && s.route.hasTimes && diagramRoutes.has(s.route.id) && !assigned.has(key);
+			const covered = !s.suspended && !noTrain && s.route.hasTimes && diagramRoutes.has(s.route.id);
 			// Grey for a service no train ran in the simulated day
 			ctx.strokeStyle = sim.on && sim.notRun.has(key) ? c.muted : noTrain ? (showNoTrain ? c.warn : c.muted) : colorOf(s.route.color);
 			ctx.lineWidth = isSelected ? 2.5 : noTrain ? 1 : covered ? 2 : 1.5;
-			// Dashed: no times yet
-			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : []);
+			// Dashed: no times yet, or not running (faint too)
+			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : s.suspended ? [2, 4] : []);
+			if (s.suspended) {
+				ctx.strokeStyle = c.muted;
+				ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.45);
+			}
 			if (noTrain && !showNoTrain) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.35);
 			if (covered && showNoTrain) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.25);
 			polyline(points);
@@ -2931,8 +2952,8 @@
 	let tableRoute = null;
 	/** The head of a service's column: its time, which starts editing it, and notes. */
 	function serviceHead(s, selected, notes) {
-		const noTrain = hasNoTrain(s);
-		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
+		const noTrain = !s.suspended && hasNoTrain(s);
+		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}${s.suspended ? " suspended" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${s.suspended ? tr("停运：留在表里，不出车、不排运用，右键恢复") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.suspended ? `<span class="note suspended-note">${tr("停运")}</span>` : ""}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
 	}
 
 	/** A service's arrival, departure or passing time at a stop, as a cell to click and type into. @param t its times there */
@@ -3210,10 +3231,15 @@
 					edit(table => run.forEach(o => removeService(table, o.service)));
 					state.range = null;
 				}]);
+				// Not running, kept to run again: conflicts are only told once they run (setSuspended)
+				const run = rangeServices();
+				if (run.some(o => !o.suspended)) items.push([tr("停运选中的 {0} 班", run.length), () => edit(table => setSuspended(table, run.map(o => o.service), true))]);
+				if (run.some(o => o.suspended)) items.push([tr("恢复选中的 {0} 班", run.length), () => edit(table => setSuspended(table, run.map(o => o.service), false))]);
 			}
 			items.push([tr("在左边新建一列"), () => addBeside(s, -1)]);
 			items.push([tr("在右边新建一列"), () => addBeside(s, 1)]);
 			items.push([tr("删除这一班"), () => edit(table => removeService(table, s.service))]);
+			items.push([s.suspended ? tr("恢复这一班") : tr("停运这一班"), () => edit(table => setSuspended(table, [s.service], !s.suspended))]);
 			if (!s.link) items.push([s.returns ? tr("跑完这一班不回库") : tr("跑完这一班回库"), () => edit(table => { table.returns = s.returns ? table.returns.filter(x => x !== s.service) : [...table.returns, s.service]; })]);
 			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => {
 				const minutes = Number(prompt(tr("平移多少分钟？负数是提前"), "5"));
@@ -3429,7 +3455,7 @@
 		const routes = new Set(data ? data.depots.filter(depot => dutiesOf(depot).mode === "diagram").flatMap(depot => depot.routes || []) : []);
 		const noTrain = new Set();
 		if (data) data.routes.forEach(r => {
-			if (routes.has(r.id) && r.hasTimes) (r.services || []).forEach(s => { if (!assigned.has(s.id)) noTrain.add(s.id); });
+			if (routes.has(r.id) && r.hasTimes) (r.services || []).forEach(s => { if (!s.suspended && !assigned.has(s.id)) noTrain.add(s.id); });
 		});
 		coverage = { weekday: state.weekday, routes, noTrain };
 		return coverage;
@@ -3439,11 +3465,11 @@
 	/** A route's services on the day shown, with a train and without, or why that isn't known. */
 	function coverageText(r) {
 		if (!coverageNow().routes.has(r.id)) return `<span class="hint" title="${escapeHtml(tr("这条线路还没有车厂的运用（车厂没选这条线路，或自动排班还没生成），看不出哪班有车"))}"> · ${tr("看不出哪班有车")}</span>`;
-		const today = (r.services || []).filter(s => s.table.weekdays >> state.weekday & 1);
-		const without = today.filter(hasNoTrain).length;
+		const all = (r.services || []).filter(s => s.table.weekdays >> state.weekday & 1), today = all.filter(s => !s.suspended);
+		const without = today.filter(hasNoTrain).length, suspendedCount = all.length - today.length;
 		const depots = data.depots.filter(depot => (depot.routes || []).includes(r.id) && depot.shortfall && depot.shortfall.uncovered > 0);
 		const title = depots.map(depot => shortName(depot.name) + "：" + shortfallText(depot.shortfall)).join("\n");
-		return `<span${without ? ` class="err" title="${escapeHtml(title)}"` : ""}> · ${tr("有车 {0} · 没车 {1}", today.length - without, without)}</span>`;
+		return `<span${without ? ` class="err" title="${escapeHtml(title)}"` : ""}> · ${tr("有车 {0} · 没车 {1}", today.length - without, without)}${suspendedCount ? tr("（停运 {0}）", suspendedCount) : ""}</span>`;
 	}
 
 	let showNoTrain = false;
@@ -3477,6 +3503,7 @@
 				return;
 			}
 			if (!depot.routes.includes(segment.route)) problems.push({ i, text: tr("线路不在这个车厂") });
+			if (s.suspended) problems.push({ i, text: tr("这一班停运了：自动排班不会排它，这份运用里请移出，或在时刻表里恢复") });
 			// A service set to come out of a depot starts a train's duty, from a siding of that depot
 			if (s.deployOrder && i > 0 && segment.from === s.deployOrder.stop) problems.push({ i, text: tr("这一班设了从车厂出车，不能接在上一班后面，要放在一份运用的开头") });
 			else if (s.deployOrder && i === 0 && s.deployOrder.depot !== "0" && s.deployOrder.depot !== depot.id) problems.push({ i, text: tr("这一班设了由车厂 {0} 出车，这份运用却在车厂 {1}", orderDepotName(s.deployOrder), shortName(depot.name)) });
@@ -5425,6 +5452,7 @@
 			edited.services = [];
 			edited.links = [];
 			edited.returns = [];
+			edited.suspended = [];
 			edited.orders = [];
 			edited.exceptions = [];
 			return tr("已清空“{0}”", tableName(edited, index));

@@ -394,6 +394,10 @@ public final class EditorData {
 			final JsonArray returnsArray = new JsonArray();
 			table.returnServices.forEach(returnsArray::add);
 			tableObject.add("returns", returnsArray);
+			// Services that don't run, kept to run again
+			final JsonArray suspendedArray = new JsonArray();
+			new java.util.TreeSet<>(table.suspended).forEach(suspendedArray::add);
+			tableObject.add("suspended", suspendedArray);
 			// Services joined or left part of the way by a train from or to a depot
 			final JsonArray ordersArray = new JsonArray();
 			table.deployOrders.forEach((service, order) -> ordersArray.add(orderJson(service, "deploy", order)));

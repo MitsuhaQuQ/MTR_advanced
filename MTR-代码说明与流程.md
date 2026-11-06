@@ -1063,6 +1063,11 @@ sequenceDiagram
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
+- **停运的班次**（0.19.0）：每张表的 `RouteTimetable.suspended`（班次时刻的集合）是停运的班次：留在表里，时刻、例外、直通和指令都在，可以恢复。
+  - 运行时：`getServicesBetween`、`getNextService`、`getLatestService` 经 `runsAt` 跳过它们，所以不出车、站台不显示。`isSuspended(serviceMillis)` 按那天的表查。
+  - 规划和检查：`DutyGenerator.servicesOf` 不生成它们；时刻表冲突检查（`PacketTrainDataGuiServer` 里 `TimetableConflicts.addTable` 的调用）只传照常运行的班次，所以停运的班次和别的班次重合也不报，恢复后才按平常检查。
+  - 存档：`Route` 的 `timetable_suspended`（每张表一个，和 `timetable_returns` 一样，`writeReturns` 一起写）；时刻表包在回库班次之后写个数和各班次；`TimetableBinary` 写在所有表和指令之后，读时还有字节才读。`sanitize` 去掉表里已经没有的班次。
+  - 网页：表头右键"停运这一班 / 恢复这一班"，Shift 选一段后"停运 / 恢复选中的 N 班"（`setSuspended`）；表头时刻划掉并写"停运"，运行图上画成淡的虚线；"有车 / 没车"不算它们，卡片另写"（停运 N）"；平移和改间隔经 `retimeService` 带着停运标记走。手工运用里排了停运的班次，`dutyProblems` 报出来；运行时按运用跑的车仍按运用里写的班次跑，要从运用里移出。游戏的时刻表界面在指令按钮上显示"停运"（只看）。
 - **出车和回送指令**（MTM_Logic 0.8.0）：时刻表每张表有 `deployOrders` 和 `returnOrders`，按班次记"第 j 站由车厂 D 出车接上""第 k 站转回送回车厂 D"（`RouteTimetable.ServiceOrder`，D 为 0 是自动），在网页汇总时刻表右键某格设。
   - **存档**：线路的 `timetable_orders`，每项四个数（班次、种类 0 出车 / 1 回送、站、车厂），旧档没有就是空。线路的包在回库班次之后带两组。`TimetableBinary` 把它们写在所有表之后，读的时候还有字节才读（`BinaryReader.hasMore`），所以旧的组件数据照常读。
   - **含义**：班次只在 j 到 k 之间载客（`RouteTimetable.getFirstStop`、`getLastStop`、`servesStop`）。时刻表冲突检查把这之外的站当作没到（`TimetableConflicts.RouteTimes.addTable` 多两个参数），站台时刻和到站显示跟着列车的运用路径走，本来就不含这些站。

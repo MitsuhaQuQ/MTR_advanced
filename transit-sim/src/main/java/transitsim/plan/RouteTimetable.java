@@ -48,6 +48,11 @@ public class RouteTimetable {
 	 */
 	public final Set<Integer> returnServices = new HashSet<>();
 	/**
+	 * Services of this table that don't run, kept with their times, exceptions, links and orders so they can run again: no
+	 * train is sent for them and nothing is planned for them.
+	 */
+	public final Set<Integer> suspended = new HashSet<>();
+	/**
 	 * Services of this table that end part of the way, at a stop, and run empty from there to a depot, by service (set on
 	 * the running diagram). See {@link ServiceOrder}.
 	 */
@@ -121,6 +126,7 @@ public class RouteTimetable {
 		timetable.revision = revision;
 		timetable.links.putAll(links);
 		timetable.returnServices.addAll(returnServices);
+		timetable.suspended.addAll(suspended);
 		timetable.returnOrders.putAll(returnOrders);
 		timetable.deployOrders.putAll(deployOrders);
 		exceptions.forEach((service, stops) -> {
@@ -146,6 +152,7 @@ public class RouteTimetable {
 		name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
 		links.keySet().retainAll(services);
 		returnServices.retainAll(services);
+		suspended.retainAll(services);
 		returnOrders.keySet().retainAll(services);
 		deployOrders.keySet().retainAll(services);
 		returnOrders.values().removeIf(order -> order.stop < 0);
@@ -267,6 +274,23 @@ public class RouteTimetable {
 	}
 
 	/**
+	 * @param serviceMillis a service as a full timestamp
+	 * @return true if the table it belongs to that day has it as not running
+	 */
+	public boolean isSuspended(long serviceMillis) {
+		final int index = findTableIndex(serviceMillis);
+		return index >= 0 && getTables().get(index).suspended.contains((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
+	}
+
+	/**
+	 * @return whether a service runs at this time: a table of that day has it, and doesn't have it as not running
+	 */
+	private boolean runsAt(long serviceMillis) {
+		final int index = findTableIndex(serviceMillis);
+		return index >= 0 && !getTables().get(index).suspended.contains((int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY));
+	}
+
+	/**
 	 * @return the service a service of this route carries on onto on any day, or null. Unlike {@link #getLink(long)} this
 	 * doesn't need the day, as a path is made for a service before it runs.
 	 */
@@ -330,7 +354,7 @@ public class RouteTimetable {
 		for (long day = Math.floorDiv(fromMillis, (long) OperatingDay.MILLIS_PER_DAY); day <= Math.floorDiv(beforeMillis, (long) OperatingDay.MILLIS_PER_DAY); day++) {
 			for (final int service : runningServices) {
 				final long serviceMillis = day * OperatingDay.MILLIS_PER_DAY + service;
-				if (serviceMillis >= fromMillis && serviceMillis < beforeMillis && findTableIndex(serviceMillis) >= 0) {
+				if (serviceMillis >= fromMillis && serviceMillis < beforeMillis && runsAt(serviceMillis)) {
 					serviceMillisList.add(serviceMillis);
 				}
 			}
@@ -416,7 +440,7 @@ public class RouteTimetable {
 				if (serviceMillis >= beforeMillis) {
 					return 0;
 				}
-				if (serviceMillis >= fromMillis && !linkedServices.contains(service) && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
+				if (serviceMillis >= fromMillis && !linkedServices.contains(service) && runsAt(serviceMillis) && !isTaken.test(serviceMillis)) {
 					return serviceMillis;
 				}
 			}
@@ -436,7 +460,7 @@ public class RouteTimetable {
 				if (serviceMillis <= afterMillis) {
 					return 0;
 				}
-				if (serviceMillis <= latestMillis && !linkedServices.contains(runningServices.get(i)) && findTableIndex(serviceMillis) >= 0 && !isTaken.test(serviceMillis)) {
+				if (serviceMillis <= latestMillis && !linkedServices.contains(runningServices.get(i)) && runsAt(serviceMillis) && !isTaken.test(serviceMillis)) {
 					return serviceMillis;
 				}
 			}

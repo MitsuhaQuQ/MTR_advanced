@@ -41,6 +41,11 @@ public final class TimetableBinary {
 			writeOrders(writer, table.returnOrders);
 			writeOrders(writer, table.deployOrders);
 		}
+		// Then the services that don't run, the same way
+		for (final RouteTimetable table : tables) {
+			writer.writeVarInt(table.suspended.size());
+			new java.util.TreeSet<>(table.suspended).forEach(writer::writeInt);
+		}
 	}
 
 	private static void writeOrders(BinaryWriter writer, java.util.Map<Integer, RouteTimetable.ServiceOrder> orders) {
@@ -101,6 +106,13 @@ public final class TimetableBinary {
 			for (final RouteTimetable table : tables) {
 				readOrders(reader, table.returnOrders);
 				readOrders(reader, table.deployOrders);
+			}
+		}
+		if (reader.hasMore()) {
+			for (final RouteTimetable table : tables) {
+				for (int i = reader.readVarInt(); i > 0; i--) {
+					table.suspended.add(reader.readInt());
+				}
 			}
 		}
 		timetable.sanitize();

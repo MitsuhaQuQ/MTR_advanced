@@ -519,6 +519,9 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		buttonReturnToDepot.visible = hasService && link == null;
 		// Set on the running diagram in the advanced editor, only shown here
 		final List<String> orders = new ArrayList<>();
+		if (hasService && getTable().suspended.contains(baseMillis)) {
+			orders.add(Text.translatable("gui.mtr.timetable_suspended").getString());
+		}
 		final RouteTimetable.ServiceOrder deployOrder = hasService ? getTable().deployOrders.get(baseMillis) : null;
 		final RouteTimetable.ServiceOrder returnOrder = hasService ? getTable().returnOrders.get(baseMillis) : null;
 		if (deployOrder != null) {

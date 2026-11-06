@@ -65,6 +65,10 @@ public final class DutyGenerator {
 					continue;
 				}
 				for (final int service : table.services) {
+					// A service that doesn't run has nothing planned for it
+					if (table.suspended.contains(service)) {
+						continue;
+					}
 					final List<StopRules.StopTime> stopTimes = StopRules.times(route.getStops(), times, table.marginPercent, i, table.exceptions.get(service));
 					final long[][] plans = new long[platformIds.length][];
 					final boolean[] pass = new boolean[platformIds.length];

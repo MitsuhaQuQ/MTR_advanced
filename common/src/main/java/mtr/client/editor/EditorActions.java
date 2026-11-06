@@ -533,6 +533,7 @@ public final class EditorActions implements IPacket {
 			table.services.clear();
 			table.links.clear();
 			table.returnServices.clear();
+			table.suspended.clear();
 			table.returnOrders.clear();
 			table.deployOrders.clear();
 			table.exceptions.clear();
@@ -702,6 +703,10 @@ public final class EditorActions implements IPacket {
 			});
 			table.returnServices.clear();
 			tableObject.getAsJsonArray("returns").forEach(service -> table.returnServices.add(service.getAsInt()));
+			table.suspended.clear();
+			if (tableObject.has("suspended")) {
+				tableObject.getAsJsonArray("suspended").forEach(service -> table.suspended.add(service.getAsInt()));
+			}
 			table.returnOrders.clear();
 			table.deployOrders.clear();
 			if (tableObject.has("orders")) {

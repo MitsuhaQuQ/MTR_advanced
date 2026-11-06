@@ -53,8 +53,9 @@ class ServiceOrdersTest {
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
 		TimetableBinary.write(writer, route.timetable);
 		final byte[] bytes = writer.toBytes();
-		// One table with no orders ends with two empty counts, which older data doesn't have
-		final RouteTimetable read = TimetableBinary.read(new ByteArrayBinary.Reader(Arrays.copyOf(bytes, bytes.length - 2)));
+		// One table with no orders ends with two empty counts, then an empty count of services that don't run, which older
+		// data doesn't have
+		final RouteTimetable read = TimetableBinary.read(new ByteArrayBinary.Reader(Arrays.copyOf(bytes, bytes.length - 3)));
 		assertEquals(route.timetable.services, read.services);
 		assertTrue(read.deployOrders.isEmpty() && read.returnOrders.isEmpty());
 	}

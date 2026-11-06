@@ -236,5 +236,6 @@
   "gui.mtr.timetable_conflicts_found_throat": "冲突 %1$s 处。这一班：%2$s 站咽喉的道岔（%3$s）和 %4$s 的 %5$s 班进路交叉",
   "gui.mtr.timetable_deploy_order": "%2$s出车，从%1$s站接上",
   "gui.mtr.timetable_return_order": "在%1$s站转回送，回%2$s",
+  "gui.mtr.timetable_suspended": "停运（在高级编辑器里设）",
   "gui.mtr.timetable_order_any_depot": "自动选的车厂"
 }

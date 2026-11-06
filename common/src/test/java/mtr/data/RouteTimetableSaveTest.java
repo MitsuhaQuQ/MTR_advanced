@@ -99,6 +99,53 @@ class RouteTimetableSaveTest {
 	}
 
 	@Test
+	void servicesThatDontRunSurviveSavingPacketsAndUpdates() throws IOException {
+		final Route route = new Route(TransportMode.TRAIN);
+		route.platformIds.add(new Route.RoutePlatform(1));
+		route.platformIds.add(new Route.RoutePlatform(2));
+		route.timetable.enabled = true;
+		route.timetable.weekdays = 0b0011111;
+		route.timetable.services.addAll(Arrays.asList(1000, 2000));
+		route.timetable.suspended.add(2000);
+		assertEquals(1, route.addTable(0));
+		final RouteTimetable weekend = route.timetable.getTable(1);
+		weekend.weekdays = 0b1100000;
+		weekend.services.add(3000);
+		weekend.suspended.add(3000);
+
+		final Route saved = saveAndLoad(route);
+		assertEquals(java.util.Collections.singleton(2000), saved.timetable.suspended);
+		assertEquals(java.util.Collections.singleton(3000), saved.timetable.getTable(1).suspended);
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		route.writePacket(packet);
+		final Route sent = new Route(packet);
+		assertEquals(java.util.Collections.singleton(2000), sent.timetable.suspended);
+		assertEquals(java.util.Collections.singleton(3000), sent.timetable.getTable(1).suspended);
+
+		// The timetable as the editors send it
+		final Route updated = new Route(route.id, TransportMode.TRAIN);
+		route.setTimetable(update -> {
+			update.readLong();
+			update.readUtf();
+			updated.update(update.readUtf(), update);
+		});
+		assertEquals(java.util.Collections.singleton(2000), updated.timetable.suspended);
+		assertEquals(java.util.Collections.singleton(3000), updated.timetable.getTable(1).suspended);
+
+		// An older save has none
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		final Route plain = new Route(TransportMode.TRAIN);
+		plain.timetable.services.add(1000);
+		packer.packMapHeader(plain.messagePackLength());
+		plain.toMessagePack(packer);
+		packer.close();
+		final java.util.Map<String, org.msgpack.value.Value> map = new java.util.HashMap<>(RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue()));
+		map.remove("timetable_suspended");
+		assertTrue(new Route(map).timetable.suspended.isEmpty());
+	}
+
+	@Test
 	void everyTableSurvivesSaving() throws IOException {
 		final Route route = new Route(TransportMode.TRAIN);
 		route.platformIds.add(new Route.RoutePlatform(1));
