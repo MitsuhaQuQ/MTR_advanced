@@ -51,6 +51,29 @@ class PoolReturnPlanTest {
 	}
 
 	@Test
+	void aTrainWithNoWayBackToItsOwnSidingGoesBackToOneOfItsPoolItCanReach() {
+		// Nothing needs the up train that day, so it would go back to A, but path generation found no way back to A from
+		// platform 4: it goes back to B
+		final TestRoute up = route(1, 6 * HOUR, 1, 2, 3, 4), down = route(2, 6 * HOUR, 8, 5, 6, 7);
+		final Map<Long, Map<Long, Long>> backLinks = Collections.singletonMap(A, Collections.singletonMap(4L, transitsim.planning.OperationNetwork.UNREACHABLE));
+		final DutyGenerator.Result result = DutyGenerator.generate(services(up, down), Arrays.asList(siding(A, 1), siding(B, 8)), Collections.emptyMap(), 5 * MINUTE, new DutyGenerator.PlanInputs(null, backLinks));
+		assertEquals(0, result.uncovered, String.join(", ", result.issues));
+		assertEquals(Long.valueOf(B), result.returnSidings.get(A + "/0/0"), result.returnSidings.toString());
+		assertTrue(result.issues.stream().noneMatch(issue -> issue.startsWith("NO_WAY_BACK")), result.issues.toString());
+	}
+
+	@Test
+	void aTrainWithNoWayBackToAnySidingIsTold() {
+		final TestRoute up = route(1, 6 * HOUR, 1, 2, 3, 4), down = route(2, 6 * HOUR, 8, 5, 6, 7);
+		final Map<Long, Map<Long, Long>> backLinks = new HashMap<>();
+		backLinks.put(A, Collections.singletonMap(4L, transitsim.planning.OperationNetwork.UNREACHABLE));
+		backLinks.put(B, Collections.singletonMap(4L, transitsim.planning.OperationNetwork.UNREACHABLE));
+		final DutyGenerator.Result result = DutyGenerator.generate(services(up, down), Arrays.asList(siding(A, 1), siding(B, 8)), Collections.emptyMap(), 5 * MINUTE, new DutyGenerator.PlanInputs(null, backLinks));
+		assertTrue(result.issues.contains("NO_WAY_BACK " + A + " 4"), result.issues.toString());
+		assertTrue(result.returnSidings.isEmpty(), "back to its own anyway");
+	}
+
+	@Test
 	void aServiceSetToGoBackToADepotGoesBackThere() {
 		// The down service leaves before the up train is back, so only the order sends the train to B, depot 8's
 		final TestRoute up = route(1, 6 * HOUR, 1, 2, 3, 4), down = route(2, 6 * HOUR, 8, 5, 6, 7);

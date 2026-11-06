@@ -17,6 +17,14 @@ import java.util.function.ToLongFunction;
 public final class DepotLegs {
 
 	public static final DepotLegs NONE = new DepotLegs(0, Collections.emptyMap(), Collections.emptyMap());
+	/**
+	 * First stop platforms the siding's trains were found to have no way out to, at the last path generation.
+	 */
+	public final Set<Long> unreachableOut;
+	/**
+	 * Last stop platforms they were found to have no way back from.
+	 */
+	public final Set<Long> unreachableBack;
 	private static final int MILLIS_PER_TICK = 50;
 	private static final int MAX_PLATFORMS = 256;
 
@@ -34,9 +42,31 @@ public final class DepotLegs {
 	public final Map<Long, Long> backMillis;
 
 	public DepotLegs(long entrancePlatform, Map<Long, Long> outMillis, Map<Long, Long> backMillis) {
+		this(entrancePlatform, outMillis, backMillis, Collections.emptySet(), Collections.emptySet());
+	}
+
+	public DepotLegs(long entrancePlatform, Map<Long, Long> outMillis, Map<Long, Long> backMillis, Set<Long> unreachableOut, Set<Long> unreachableBack) {
 		this.entrancePlatform = entrancePlatform;
 		this.outMillis = Collections.unmodifiableMap(new TreeMap<>(outMillis));
 		this.backMillis = Collections.unmodifiableMap(new TreeMap<>(backMillis));
+		this.unreachableOut = Collections.unmodifiableSet(limit(unreachableOut, outMillis.keySet()));
+		this.unreachableBack = Collections.unmodifiableSet(limit(unreachableBack, backMillis.keySet()));
+	}
+
+	/**
+	 * @return the platforms with no way, leaving out any with a way measured, at most as many as are written
+	 */
+	private static Set<Long> limit(Set<Long> unreachable, Set<Long> measured) {
+		final Set<Long> set = new TreeSet<>();
+		unreachable.stream().filter(platformId -> !measured.contains(platformId)).limit(MAX_PLATFORMS).forEach(set::add);
+		return set;
+	}
+
+	/**
+	 * @return these legs with the platforms the path generation found no way out to, or back from
+	 */
+	public DepotLegs withUnreachable(Set<Long> out, Set<Long> back) {
+		return new DepotLegs(entrancePlatform, outMillis, backMillis, out, back);
 	}
 
 	/**
@@ -98,10 +128,12 @@ public final class DepotLegs {
 		final boolean outChanged = recordInto(out, measured.outMillis, estimate);
 		final boolean backChanged = recordInto(back, measured.backMillis, estimate);
 		final long entrance = measured.entrancePlatform != 0 ? measured.entrancePlatform : kept.entrancePlatform;
-		if (!outChanged && !backChanged && entrance == kept.entrancePlatform) {
+		// Ways found missing are what this path generation found, which a way measured clears (P2-A)
+		final DepotLegs recorded = new DepotLegs(entrance, out, back, measured.unreachableOut, measured.unreachableBack);
+		if (!outChanged && !backChanged && entrance == kept.entrancePlatform && recorded.unreachableOut.equals(kept.unreachableOut) && recorded.unreachableBack.equals(kept.unreachableBack)) {
 			return kept;
 		}
-		return new DepotLegs(entrance, out, back);
+		return recorded;
 	}
 
 	private static boolean recordInto(Map<Long, Long> kept, Map<Long, Long> measured, ToLongFunction<Long> estimate) {
@@ -136,6 +168,10 @@ public final class DepotLegs {
 			list.add(platformId);
 			list.add(millis);
 		});
+		list.add((long) unreachableOut.size());
+		list.addAll(unreachableOut);
+		list.add((long) unreachableBack.size());
+		list.addAll(unreachableBack);
 		return list;
 	}
 
@@ -156,7 +192,18 @@ public final class DepotLegs {
 			for (int i = 0; i < backCount; i++) {
 				back.put(list.get(index++), list.get(index++));
 			}
-			return new DepotLegs(entrance, out, back);
+			// Saved before ways found missing were kept: none
+			final Set<Long> unreachableOut = new TreeSet<>();
+			final Set<Long> unreachableBack = new TreeSet<>();
+			if (index < list.size()) {
+				for (int i = Math.min(list.get(index++).intValue(), MAX_PLATFORMS); i > 0; i--) {
+					unreachableOut.add(list.get(index++));
+				}
+				for (int i = Math.min(list.get(index++).intValue(), MAX_PLATFORMS); i > 0; i--) {
+					unreachableBack.add(list.get(index++));
+				}
+			}
+			return new DepotLegs(entrance, out, back, unreachableOut, unreachableBack);
 		} catch (IndexOutOfBoundsException | NullPointerException e) {
 			return NONE;
 		}
@@ -166,13 +213,34 @@ public final class DepotLegs {
 		packet.writeLong(entrancePlatform);
 		writeMap(packet, outMillis);
 		writeMap(packet, backMillis);
+		writeSet(packet, unreachableOut);
+		writeSet(packet, unreachableBack);
 	}
 
 	public static DepotLegs readPacket(FriendlyByteBuf packet) {
 		final long entrance = packet.readLong();
 		final Map<Long, Long> out = readMap(packet);
 		final Map<Long, Long> back = readMap(packet);
-		return new DepotLegs(entrance, out, back);
+		final Set<Long> unreachableOut = readSet(packet);
+		final Set<Long> unreachableBack = readSet(packet);
+		return new DepotLegs(entrance, out, back, unreachableOut, unreachableBack);
+	}
+
+	private static void writeSet(FriendlyByteBuf packet, Set<Long> set) {
+		packet.writeInt(set.size());
+		set.forEach(packet::writeLong);
+	}
+
+	private static Set<Long> readSet(FriendlyByteBuf packet) {
+		final int count = packet.readInt();
+		if (count < 0 || count > MAX_PLATFORMS) {
+			throw new IllegalArgumentException("Too many platforms: " + count);
+		}
+		final Set<Long> set = new TreeSet<>();
+		for (int i = 0; i < count; i++) {
+			set.add(packet.readLong());
+		}
+		return set;
 	}
 
 	private static void writeMap(FriendlyByteBuf packet, Map<Long, Long> map) {

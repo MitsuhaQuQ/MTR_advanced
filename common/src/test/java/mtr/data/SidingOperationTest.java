@@ -90,6 +90,23 @@ class SidingOperationTest {
 	}
 
 	@Test
+	void aSidingWithNoWayOutToAPlatformDoesntStartTrainsThere() {
+		final Siding siding = siding();
+		final Platform reachable = new Platform(21, TransportMode.TRAIN, new BlockPos(100, 64, 0), new BlockPos(120, 64, 0));
+		final Platform cutOff = new Platform(22, TransportMode.TRAIN, new BlockPos(200, 64, 0), new BlockPos(220, 64, 0));
+		final DataCache dataCache = new DataCache(new HashSet<>(), new HashSet<>(Arrays.asList(reachable, cutOff)), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>());
+		dataCache.platformIdMap.put(21L, reachable);
+		dataCache.platformIdMap.put(22L, cutOff);
+		siding.setRecordedLegs(DepotLegs.NONE.withUnreachable(Collections.singleton(22L), Collections.singleton(21L)), packet -> {
+		});
+		// Out: only where there is a way, by estimate as not measured
+		assertEquals(Collections.singleton(21L), LineDuties.sidingLinks(siding, Arrays.asList(21L, 22L), dataCache).keySet());
+		// Back: no way from 21, told to the planner
+		assertEquals(Long.valueOf(transitsim.planning.OperationNetwork.UNREACHABLE), LineDuties.sidingBackLinks(siding, Arrays.asList(21L, 22L), dataCache).get(21L));
+		assertTrue(LineDuties.sidingBackLinks(siding, Arrays.asList(21L, 22L), dataCache).get(22L) > 0);
+	}
+
+	@Test
 	void anOldSaveKeepsWhatItsSidingHeld() throws IOException {
 		final Siding siding = siding();
 		siding.setUnlimitedTrains(false, 4, false, 0, Train.ACCELERATION_DEFAULT, 0, false, packet -> {

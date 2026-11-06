@@ -134,6 +134,19 @@ public final class EditorData {
 					legsObject.add("back", back);
 					sidingObject.add("legs", legsObject);
 				}
+				// Ways out and back the planning goes by: found missing, or not measured yet (estimated), P2-A
+				final mtr.data.DepotLegs recorded = siding.getRecordedLegs();
+				final JsonArray noWayOut = new JsonArray();
+				recorded.unreachableOut.forEach(platformId -> noWayOut.add(String.valueOf(platformId)));
+				sidingObject.add("noWayOut", noWayOut);
+				final JsonArray noWayBack = new JsonArray();
+				recorded.unreachableBack.forEach(platformId -> noWayBack.add(String.valueOf(platformId)));
+				sidingObject.add("noWayBack", noWayBack);
+				final JsonArray measuredOut = new JsonArray();
+				final java.util.Set<Long> measuredOutIds = new java.util.TreeSet<>(recorded.outMillis.keySet());
+				measuredOutIds.addAll(legs.outMillis.keySet());
+				measuredOutIds.forEach(platformId -> measuredOut.add(String.valueOf(platformId)));
+				sidingObject.add("measuredOut", measuredOut);
 				sidingsArray.add(sidingObject);
 			});
 			depotObject.add("sidings", sidingsArray);

@@ -121,7 +121,8 @@ public final class DutyGenerator {
 		 */
 		public final Map<Long, Map<Long, Long>> turnTimes;
 		/**
-		 * Siding → platform → milliseconds back to the siding.
+		 * Siding → platform → milliseconds back to the siding, or {@link OperationNetwork#UNREACHABLE} where path generation
+		 * found no way back.
 		 */
 		public final Map<Long, Map<Long, Long>> backLinks;
 

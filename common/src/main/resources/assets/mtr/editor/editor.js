@@ -5736,6 +5736,15 @@
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
 			if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) });
 			if (depot.shortfall && depot.shortfall.uncovered > 0) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, shortfallText(depot.shortfall)) });
+			// Ways out and back path generation found missing, which the planning keeps off; and those not measured yet
+			depot.sidings.forEach(siding => {
+				const sidingName = shortName(siding.name) || tr("存车线");
+				(siding.noWayOut || []).forEach(platformId => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 没有出库的路，这条存车线不从这里出车", name, sidingName, platformText(platformId)) }));
+				(siding.noWayBack || []).forEach(platformId => problems.push({ level: "warn", text: tr("车厂{0}：从 {2} 回不到 {1}，车改回车池里别的存车线", name, sidingName, platformText(platformId)) }));
+				const firsts = [...new Set((depot.routes || []).map(id => data.routeById.get(id)).filter(Boolean).filter(r => !(siding.routes || []).length || siding.routes.includes(r.id)).map(r => r.stops[0] && r.stops[0].platformId).filter(Boolean))];
+				const estimated = firsts.filter(platformId => !(siding.measuredOut || []).includes(platformId) && !(siding.noWayOut || []).includes(platformId));
+				if (estimated.length && siding.measuredOut) problems.push({ level: "hint", text: tr("车厂{0}：{1} 到 {2} 的出库还没量过，按距离估计排，刷新车厂路径后按实测", name, sidingName, estimated.map(platformText).join("、")) });
+			});
 			if (duties.mode === "diagram" && depot.sidings.some(siding => (duties.sidings[siding.id] || []).length && !siding.legs)) problems.push({ level: "warn", text: tr("车厂{0}还没有出入库时刻，刷新路径后运行图上才画出出库和回库", name) });
 		});
 		// Platforms trains turning back hold for long, or that have no room for one at all (terminalNow)
@@ -5752,7 +5761,8 @@
 	function renderSyncButton() {
 		const button = $("btn-sync");
 		if (!button) return;
-		const problems = syncProblems(), errors = problems.filter(p => p.level === "err").length;
+		// Hints (ways not measured yet) aren't problems, and aren't counted
+		const problems = syncProblems().filter(p => p.level !== "hint"), errors = problems.filter(p => p.level === "err").length;
 		button.textContent = problems.length ? tr("同步状态 · {0}", problems.length) : tr("同步状态 · 正常");
 		button.classList.toggle("bad", errors > 0);
 		button.classList.toggle("warn", !errors && problems.length > 0);

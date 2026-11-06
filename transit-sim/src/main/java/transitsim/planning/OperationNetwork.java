@@ -114,6 +114,15 @@ public final class OperationNetwork {
 		 * @return how long a train takes from the platform back to the depot: measured, or the way out from there, or, with
 		 * neither, the longest way out the depot has, rather than nothing as if the train were back the moment it arrived
 		 */
+		/**
+		 * @return whether a train can get back here from the platform: not found to have no way (a back link of
+		 * {@link #UNREACHABLE}, as path generation found)
+		 */
+		public boolean canGoBack(long platformId) {
+			final Long back = backLinks.get(platformId);
+			return back == null || back != UNREACHABLE;
+		}
+
 		public long backMillis(long platformId) {
 			final Long back = backLinks.get(platformId);
 			if (back != null) {

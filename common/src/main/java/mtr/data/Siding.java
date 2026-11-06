@@ -83,6 +83,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private volatile DepotLegs recordedLegs = DepotLegs.NONE;
 	/**
+	 * First and last stop platforms the path generation running now found no way out to or back from (P2-A).
+	 */
+	private final Set<Long> foundNoWayOut = new TreeSet<>();
+	private final Set<Long> foundNoWayBack = new TreeSet<>();
+	/**
 	 * How many trains run from the siding for a depot running by duties, as a depot's fleet, which needn't fit on the
 	 * rails here; -1 for as many as the duties need.
 	 */
@@ -758,6 +763,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final StopTimes tempStopTimes = new StopTimes();
 		generateTimeSegments(tempPath, tempTimeSegments, tempPlatformTimes, tempStopTimes, tempLoopJoinIndex, tempRepeatIndex2);
 		final List<String> failedDuties = new ArrayList<>();
+		foundNoWayOut.clear();
+		foundNoWayBack.clear();
 		final Map<String, List<PathData>> returnTails = new HashMap<>();
 		// The duties' turn back points come after the usual path's
 		final List<TurnBackPoint> dutyPoints = new ArrayList<>();
@@ -769,7 +776,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
-		lastDepotLegs = DepotLegs.of(tempTripPaths.values());
+		lastDepotLegs = DepotLegs.of(tempTripPaths.values()).withUnreachable(new TreeSet<>(foundNoWayOut), new TreeSet<>(foundNoWayBack));
 		final TurnBacks newTurnBacks = tempTurnBacks.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
@@ -822,6 +829,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	public void generateDutyRoute(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<DutyPlan<PathData, SavedRailBase>> dutyPlans, List<Siding> poolSidings) {
 		final Map<String, TripPath<PathData>> tempTripPaths = new HashMap<>();
 		final List<String> failedDuties = new ArrayList<>();
+		foundNoWayOut.clear();
+		foundNoWayBack.clear();
 		final Map<String, List<PathData>> returnTails = new HashMap<>();
 		final List<TurnBackPoint> dutyPoints = new ArrayList<>();
 		dutyPlans.forEach(dutyPlan -> {
@@ -831,7 +840,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
-		lastDepotLegs = DepotLegs.of(tempTripPaths.values());
+		lastDepotLegs = DepotLegs.of(tempTripPaths.values()).withUnreachable(new TreeSet<>(foundNoWayOut), new TreeSet<>(foundNoWayBack));
 		final TurnBacks newTurnBacks = TurnBacks.NONE.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
@@ -871,11 +880,18 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		if (!dutyPlan.startsOnLine) {
 			PathFinder.findPath(wayOut, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
 			if (wayOut.isEmpty()) {
+				// No way out to the first stop (P2-A), told only by path generation itself, not a draft's
+				if (dutyPoints != null && dutyPlan.firstPlatform != null) {
+					foundNoWayOut.add(dutyPlan.firstPlatform.id);
+				}
 				return false;
 			}
 		}
 		final List<PathData> pathToDepot = dutyPlan.staysOnLine ? null : getReturnTail(dutyPlan, this, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
 		if (!dutyPlan.staysOnLine && pathToDepot == null) {
+			if (dutyPoints != null && dutyPlan.lastPlatform != null) {
+				foundNoWayBack.add(dutyPlan.lastPlatform.id);
+			}
 			return false;
 		}
 
@@ -1285,6 +1301,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	/**
 	 * True when a rail of the generated path was removed or reshaped since the path was generated.
 	 */
+	/**
+	 * @return whether a rail of any duty's path, which its ways out and back were measured along, is gone or changed, so
+	 * the ways kept as measured no longer hold
+	 */
+	public boolean areTripPathsStale(Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		return tripPaths.values().stream().anyMatch(tripPath -> RoutePaths.isStale(tripPath.path, rails));
+	}
+
 	public boolean isPathStale(Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		if (transportMode == TransportMode.AIRPLANE || path.size() < 2) {
 			return false;

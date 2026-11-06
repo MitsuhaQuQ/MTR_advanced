@@ -38,6 +38,11 @@ public final class OperationPlan {
 
 	public enum IssueType {
 		/**
+		 * A train has no way back from its last platform to any siding it could go back to, as path generation found: it is
+		 * planned back to its own, which can't take it. Detail: the siding and the platform.
+		 */
+		NO_WAY_BACK,
+		/**
 		 * A service with a train has no train available, so that trip is not run.
 		 */
 		NO_TRAIN,

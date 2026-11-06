@@ -345,4 +345,5 @@ body.network-view #btn-split, body.network-view #btn-simulate, body.network-view
 ul.sync-problems { max-height: 60vh; overflow: auto; padding-left: 1.2em; }
 ul.sync-problems li { margin: 4px 0; }
 ul.sync-problems li.err { color: var(--warn); }
+ul.sync-problems li.hint { color: var(--muted); }
 ul.sync-problems a { cursor: pointer; text-decoration: underline; }

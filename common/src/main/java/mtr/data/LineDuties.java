@@ -31,14 +31,20 @@ public final class LineDuties {
 	 * ({@link Siding#getRecordedLegs}), otherwise the estimate.
 	 */
 	public static Map<Long, Long> sidingLinks(Siding siding, Collection<Long> platformIds, DataCache dataCache) {
-		return legsOrEstimates(siding, siding.getRecordedLegs().outMillis, platformIds, dataCache);
+		// No way out found there: the siding doesn't start trains there (P2-A)
+		final Set<Long> reachable = new TreeSet<>(platformIds);
+		reachable.removeAll(siding.getRecordedLegs().unreachableOut);
+		return legsOrEstimates(siding, siding.getRecordedLegs().outMillis, reachable, dataCache);
 	}
 
 	/**
 	 * How long the siding's trains take back from each of the platforms, the same way.
 	 */
 	public static Map<Long, Long> sidingBackLinks(Siding siding, Collection<Long> platformIds, DataCache dataCache) {
-		return legsOrEstimates(siding, siding.getRecordedLegs().backMillis, platformIds, dataCache);
+		final Map<Long, Long> links = legsOrEstimates(siding, siding.getRecordedLegs().backMillis, platformIds, dataCache);
+		// No way back found from there: the planner sends its trains to another siding of the pool (P2-A)
+		siding.getRecordedLegs().unreachableBack.forEach(platformId -> links.put(platformId, transitsim.planning.OperationNetwork.UNREACHABLE));
+		return links;
 	}
 
 	/**

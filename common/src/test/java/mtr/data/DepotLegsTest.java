@@ -67,4 +67,35 @@ class DepotLegsTest {
 		assertEquals(legs.backMillis, read.backMillis);
 		assertSame(DepotLegs.NONE, DepotLegs.fromList(Collections.singletonList(3L)), "a broken list reads as none");
 	}
+
+	@Test
+	void waysFoundMissingAreSavedAndSentAndOlderSavesStillRead() {
+		final DepotLegs legs = legs(11, 100000, 12, 20000).withUnreachable(Collections.singleton(13L), Collections.singleton(14L));
+		final DepotLegs read = DepotLegs.fromList(legs.toList());
+		assertEquals(Collections.singleton(13L), read.unreachableOut);
+		assertEquals(Collections.singleton(14L), read.unreachableBack);
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		legs.writePacket(packet);
+		final DepotLegs sent = DepotLegs.readPacket(packet);
+		assertEquals(legs.unreachableOut, sent.unreachableOut);
+		assertEquals(legs.unreachableBack, sent.unreachableBack);
+
+		// Saved before: the list ends after the ways back
+		final java.util.List<Long> older = legs(11, 100000, 12, 20000).toList();
+		final DepotLegs old = DepotLegs.fromList(older.subList(0, older.size() - 2));
+		assertTrue(old.unreachableOut.isEmpty() && old.unreachableBack.isEmpty());
+		assertEquals(Long.valueOf(100000), old.outMillis.get(11L));
+	}
+
+	@Test
+	void aWayFoundMissingIsKeptUntilOneIsMeasured() {
+		final DepotLegs missing = DepotLegs.record(DepotLegs.NONE, DepotLegs.NONE.withUnreachable(Collections.singleton(11L), Collections.emptySet()), platform -> 60000);
+		assertEquals(Collections.singleton(11L), missing.unreachableOut);
+		// Found again, as far as estimated: no longer missing, and nothing else to keep
+		final DepotLegs found = DepotLegs.record(missing, legs(11, 65000, 12, 60000), platform -> 60000);
+		assertTrue(found.unreachableOut.isEmpty());
+		// The same found missing again: unchanged
+		assertSame(missing, DepotLegs.record(missing, DepotLegs.NONE.withUnreachable(Collections.singleton(11L), Collections.emptySet()), platform -> 60000));
+	}
 }

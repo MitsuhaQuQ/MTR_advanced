@@ -34,6 +34,10 @@ public final class DutyPlanner {
 	private final OperationNetwork network;
 	private final long maxLayoverMillis;
 	private final List<Issue> issues = new ArrayList<>();
+	/**
+	 * The sidings and platforms told as {@link IssueType#NO_WAY_BACK} already, once each.
+	 */
+	private final Set<String> noWayBack = new HashSet<>();
 	private final List<Trip> trips = new ArrayList<>();
 	/**
 	 * The trips with orders set on the running diagram, and the service they are of.
@@ -292,11 +296,33 @@ public final class DutyPlanner {
 		final long day = nowMillis == Long.MAX_VALUE ? Long.MAX_VALUE : Math.floorDiv(nowMillis, OperationTime.DAY_MILLIS);
 		returning.values().forEach(trains -> trains.removeIf(train -> {
 			if (Math.floorDiv(train.duty.endMillis, OperationTime.DAY_MILLIS) < day) {
-				land(train, train.fallback, depotReady);
+				land(train, wayBack(train), depotReady);
 				return true;
 			}
 			return false;
 		}));
+	}
+
+	/**
+	 * Where a train no siding of its pool sent a train out for goes back: its own (or the first of the depot set), or, if
+	 * path generation found no way back there, the first of those it may go back to that it has a way back to; with none,
+	 * its own anyway, told as {@link IssueType#NO_WAY_BACK}.
+	 */
+	private long wayBack(Returning train) {
+		final long platformId = train.duty.platformId;
+		if (network.depot(train.fallback).canGoBack(platformId)) {
+			return train.fallback;
+		}
+		final String poolKey = network.depot(train.duty.depotId).poolKey;
+		for (final OperationNetwork.Depot depot : network.depots()) {
+			if ((train.allowed == null ? depot.poolKey.equals(poolKey) : train.allowed.contains(depot.id)) && depot.canGoBack(platformId)) {
+				return depot.id;
+			}
+		}
+		if (noWayBack.add(train.fallback + " " + platformId)) {
+			issues.add(new Issue(IssueType.NO_WAY_BACK, train.fallback + " " + platformId));
+		}
+		return train.fallback;
 	}
 
 	/**
@@ -307,7 +333,7 @@ public final class DutyPlanner {
 	private boolean maySendTo(Returning train, OperationNetwork.Depot depot, long leaveMillis, Map<Long, List<Long>> depotReady) {
 		final OpenDuty duty = train.duty;
 		return duty.endMillis <= leaveMillis && Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS) == Math.floorDiv(leaveMillis, OperationTime.DAY_MILLIS)
-				&& (train.allowed == null || train.allowed.contains(depot.id))
+				&& (train.allowed == null || train.allowed.contains(depot.id)) && depot.canGoBack(duty.platformId)
 				&& (depot.id == duty.depotId || depot.trainCount >= DepotDuties.MAX_SLOTS || depotReady.get(depot.id).size() < depot.trainCount);
 	}
 

@@ -623,6 +623,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		mainPaths.forEach(mainPath -> mainPath.routeSearch = routeSearch);
 
 		pathDetours.clear();
+		// Ways out and back kept as measured along rails since changed no longer hold: planned by estimates until measured
+		// again (P2-A)
+		sidings.forEach(siding -> {
+			if (liveDataCache.sidingIdToDepot.get(siding.id) == this && siding.getRecordedLegs() != DepotLegs.NONE && siding.areTripPathsStale(liveRails)) {
+				System.out.println("Minecraft Transit Railway: the rails of siding " + siding.id + "'s duties changed, so its ways out and back are measured again");
+				siding.setRecordedLegs(DepotLegs.NONE, packet -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_SIDING, packet)));
+			}
+		});
 		final Thread thread = new Thread(() -> {
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
