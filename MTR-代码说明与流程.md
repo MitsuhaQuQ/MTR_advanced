@@ -23,7 +23,7 @@
 | `resources/fabric/`、`resources/forge/` | 加载器专用资源；`no-ante` 是不带 ANTE 的构建用的；`resources/fabric/mtm_logic` 是嵌在 Fabric jar 里的 MTM_Logic 小 jar（`fabric.mod.json` 和图标 `assets/mtm_logic/icon.png`），Forge 的 MTM_Logic 图标是 `resources/forge/normal/mtm_logic_icon.png`（`mods.toml` 第三个 `[[mods]]` 的 `logoFile`） |
 | `examples/` | 自定义资源包示例 |
 
-**主线程上每 tick 都会调到的地方不要每次重算**（2026-11-05 量过，见解耦文档 L3）：`SavedRailBase` 的端点和中点算一次就留着（`positionArray`、`midPos`，端点不会变）；列车写时刻时，时间段在路径上的位置留在 `TimeSegment` 上（`Train.getSegmentIndex`，路径的距离表换了或变长变短才重算）；按频率发车的车厂的存车线列表留着（`Depot.getSidingsInDepot`）；上游路线查找没有请求时十个 tick 才搜一次（`RailwayDataRouteFinderModule`，只供网站地图的连接密度）。
+**主线程上每 tick 都会调到的地方不要每次重算**（2026-11-05、11-07 量过，见解耦文档 L3；11-07 的结果：平时每 tick 约 10 毫秒，三分之二在 `Siding.simulateTrain` 照组件结果更新列车；组件重建 `LiveSimulation.start` 一次约 0.5 秒、整段在主线程上，是下一个要移到后台的地方）：`SavedRailBase` 的端点和中点算一次就留着（`positionArray`、`midPos`，端点不会变）；列车写时刻时，时间段在路径上的位置留在 `TimeSegment` 上（`Train.getSegmentIndex`，路径的距离表换了或变长变短才重算）；按频率发车的车厂的存车线列表留着（`Depot.getSidingsInDepot`）；上游路线查找没有请求时十个 tick 才搜一次（`RailwayDataRouteFinderModule`，只供网站地图的连接密度）。
 
 **本项目新加的游戏内文字要放在 `common/src/main/lang/*.json`**：构建前的准备步骤用 Crowdin 的翻译包覆盖 `common/src/main/resources/assets/mtr/lang`，再把 `common/src/main/lang` 里没有的键合并进去（根目录 `build.gradle`）。写在 `assets/mtr/lang` 里的中文会被覆盖，游戏退回显示英文。只合并缺的键，所以改上游已有的文字要改 Crowdin 那边；值里不能有英文双引号，因为合并时不转义。
   - **文件名一律小写**（2026-11-06）：Minecraft 按小写的语言代码找 `lang/zh_cn.json`，jar 里的文件名区分大小写，而 Crowdin 包里是 `zh_CN.json`，以前正式 jar 里 MTR 的非英文翻译都找不到，退回英文（开发环境的 Windows 目录不分大小写，看不出来）。准备步骤先删掉 `assets/mtr/lang` 里旧的翻译文件（`en_us.json` 不在包里，保留），解包时改成小写，合并时也按小写文件名找。
