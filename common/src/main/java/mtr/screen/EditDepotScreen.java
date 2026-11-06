@@ -387,8 +387,12 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		return PANELS_START + SQUARE_SIZE * (2 + (showDeterministicPath() ? 1 : 0) + (checkboxRepeatIndefinitely.visible || checkboxCycleRoutes.visible ? 1 : 0)) + (showCruisingAltitude ? SQUARE_SIZE + TEXT_FIELD_PADDING : 0);
 	}
 
+	/**
+	 * Train depots always find their paths the deterministic way, as route paths, fastest times and duties do (2026-11-07
+	 * review, L1): the choice is left only to the other kinds that still have it.
+	 */
 	private boolean showDeterministicPath() {
-		return showScheduleControls && !showCruisingAltitude;
+		return showScheduleControls && !showCruisingAltitude && !Depot.supportsTimetable(data.transportMode);
 	}
 
 	@Override

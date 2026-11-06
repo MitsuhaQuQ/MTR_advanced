@@ -48,6 +48,11 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 
 	private static final Component SELECTED_TRAIN_TEXT = Text.translatable("gui.mtr.selected_vehicle");
 	private static final Component MAX_TRAINS_TEXT = Text.translatable("gui.mtr.max_vehicles");
+	/**
+	 * For kinds running by timetables, the same number as the web editor's "trains it holds" (2026-11-07 review): what the
+	 * siding holds, its pool's trains being shared.
+	 */
+	private static final Component CAPACITY_TEXT = Text.translatable("gui.mtr.siding_capacity");
 	private static final Component ACCELERATION_CONSTANT_TEXT = Text.translatable("gui.mtr.acceleration");
 	private static final Component MANUAL_TO_AUTOMATIC_TIME = Text.translatable("gui.mtr.manual_to_automatic_time");
 	private static final Component MAX_MANUAL_SPEED = Text.translatable("gui.mtr.max_manual_speed");
@@ -61,7 +66,7 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 	private static final Map<String, String> WIKIPEDIA_ARTICLES = new HashMap<>();
 
 	public SidingScreen(Siding siding, TransportMode transportMode, DashboardScreen dashboardScreen) {
-		super(siding, transportMode, dashboardScreen, SELECTED_TRAIN_TEXT, MAX_TRAINS_TEXT, ACCELERATION_CONSTANT_TEXT, MANUAL_TO_AUTOMATIC_TIME, MAX_MANUAL_SPEED, SERVICE_TYPES_TEXT);
+		super(siding, transportMode, dashboardScreen, SELECTED_TRAIN_TEXT, capacityText(transportMode), ACCELERATION_CONSTANT_TEXT, MANUAL_TO_AUTOMATIC_TIME, MAX_MANUAL_SPEED, SERVICE_TYPES_TEXT);
 		this.transportMode = transportMode;
 		depot = ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
 		textFieldServiceTypes = new WidgetBetterTextField(Text.translatable("gui.mtr.vehicle_service_types_suggestion").getString());
@@ -149,14 +154,29 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		if (showScheduleControls) {
 			addDrawableChild(buttonUnlimitedTrains);
 			addDrawableChild(textFieldMaxTrains);
-			addDrawableChild(sliderAccelerationConstant);
-			addDrawableChild(sliderDecelerationConstant);
-			addDrawableChild(buttonIsManual);
-			addDrawableChild(sliderMaxManualSpeed);
+			// Set for the vehicle in the depot, the siding's own don't count (R1), so they aren't offered here (2026-11-07 review)
+			if (!isVehicleSetInDepot()) {
+				addDrawableChild(sliderAccelerationConstant);
+				addDrawableChild(sliderDecelerationConstant);
+				addDrawableChild(buttonIsManual);
+				addDrawableChild(sliderMaxManualSpeed);
+			}
 			if (showServiceTypes()) {
 				addDrawableChild(textFieldServiceTypes);
 			}
 		}
+	}
+
+	/**
+	 * @return whether its depot sets how its vehicle speeds up, brakes and is driven by hand (R1), so the siding's don't count
+	 */
+	private boolean isVehicleSetInDepot() {
+		final mtr.data.Depot depot = mtr.client.ClientData.DATA_CACHE.sidingIdToDepot.get(savedRailBase.id);
+		return depot != null && depot.vehicleSettings.containsKey(savedRailBase.getPoolKey());
+	}
+
+	private static Component capacityText(TransportMode transportMode) {
+		return mtr.data.Depot.supportsTimetable(transportMode) ? CAPACITY_TEXT : MAX_TRAINS_TEXT;
 	}
 
 	@Override
@@ -173,18 +193,20 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		if (!isSelectingTrain) {
 			GuiCompat.draw(matrices, font, SELECTED_TRAIN_TEXT, SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING + TEXT_PADDING, ARGB_WHITE);
 			if (showScheduleControls) {
-				GuiCompat.draw(matrices, font, MAX_TRAINS_TEXT, SQUARE_SIZE, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
-				GuiCompat.draw(matrices, font, ACCELERATION_CONSTANT_TEXT, SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
+				GuiCompat.draw(matrices, font, capacityText(transportMode), SQUARE_SIZE, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
+				final boolean vehicleSetInDepot = isVehicleSetInDepot();
+				if (!vehicleSetInDepot) {
+					GuiCompat.draw(matrices, font, ACCELERATION_CONSTANT_TEXT, SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
+				}
 				if (showServiceTypes()) {
 					GuiCompat.draw(matrices, font, SERVICE_TYPES_TEXT, SQUARE_SIZE, SQUARE_SIZE * 5 + TEXT_FIELD_PADDING * 5 / 2F + TEXT_PADDING, ARGB_WHITE);
 				}
-				if (buttonIsManual.selected()) {
+				if (!vehicleSetInDepot && buttonIsManual.selected()) {
 					GuiCompat.draw(matrices, font, MAX_MANUAL_SPEED, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
 					GuiCompat.draw(matrices, font, MANUAL_TO_AUTOMATIC_TIME, SQUARE_SIZE, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
 				}
 				// Set for the vehicle in the depot, the siding's own speeding up, braking and driving by hand don't count (R1)
-				final mtr.data.Depot depot = mtr.client.ClientData.DATA_CACHE.sidingIdToDepot.get(savedRailBase.id);
-				if (depot != null && depot.vehicleSettings.containsKey(savedRailBase.getPoolKey())) {
+				if (vehicleSetInDepot) {
 					GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.siding_vehicle_by_depot").getString(), SQUARE_SIZE, height - SQUARE_SIZE * 2, ARGB_LIGHT_GRAY);
 				}
 			}

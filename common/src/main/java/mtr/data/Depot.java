@@ -1042,7 +1042,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Like {@link #getPathGraph(Map)}, kept to the regions of the pathfinding boundaries.
 	 */
 	public RailGraph<Rail> getPathGraph(Map<BlockPos, Map<BlockPos, Rail>> rails, PathBoundaries boundaries) {
-		return useDeterministicPath && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails, boundaries) : null;
+		// Train depots always search deterministically, the same way as their routes' paths (2026-11-07 review, L1), whatever
+		// an old save has
+		return (useDeterministicPath || supportsTimetable(transportMode)) && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails, boundaries) : null;
 	}
 
 	/**

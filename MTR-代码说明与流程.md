@@ -936,6 +936,10 @@ sequenceDiagram
 3. 键 = 站台和站台停站时间、途经点 + 联络线的标记和轨道哈希；和已有的相同且路径上的轨道没变就直接用。
 4. 否则 `DeterministicPathFinder.findPath(..., exclusion::avoids)`。找不到时照常 `PathFailure.diagnose`；有联络线时再不避开地找一次，如果那条路经过联络线，失败原因改成 `CONNECTING_LINE`（位置字段是联络线的 ID）。
 
+**存车线界面和车型设置不再重复**（2026-11-07 复查）：车厂给这个车型设了加减速和手动驾驶（`VehicleSettings`，R1）时，`SidingScreen` 不再显示存车线自己的那几项（本来就不起作用），只留一行提示去网页车厂对话框设；没设时照旧显示，存车线的值仍是车池第一条存车线的后备。按时刻表跑的运输方式，"侧轨车辆总数上限"改叫"最多停几列"（`gui.mtr.siding_capacity`），和网页一致：两者本来就是同一个值（`setUnlimitedTrains` 写 `fleetSize = getTrainLimit()`）。
+
+**确定性寻路对按时刻表跑的车厂总是开**（2026-11-07 复查）：`Depot.getPathGraph` 对 `supportsTimetable` 的运输方式不看 `useDeterministicPath`，总用 `DeterministicPathFinder`，和线路路径、最快时刻、运用路径一致；游戏车厂界面不再显示这个勾选（`EditDepotScreen.showDeterministicPath`）。存档字段不变，老存档里关着的也照样按确定性寻路。
+
 **寻路边界只约束计算**（2026-11-07，用户定的）：寻路边界只决定"先在哪里找"，不决定"能不能走"；不让正线车走某段轨道是联络线的事。
 - `RailRouter.route` 先按 `getLegRegions` 在每段两端所在的区域里找；找不到完整的路，就在整个路网里再找一次（联络线的 `avoid` 两次都照样生效）。第二次才找到的，`Result.crossedRegions` 为 true。区域内有路时照旧用区域内的路，所以大路网上还是快，也不会绕进无关的区域。
 - `PlatformGraph` 不再用区域判断站台之间能不能到（`isAllowed` 总是 true），站台之间的连通只看轨道。每条分支本来只走到遇到的第一个站台，用不着区域限制计算量。
