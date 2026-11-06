@@ -254,5 +254,8 @@
   "gui.mtrsteamloco.select_screen.title": "Select",
   "tooltip.mtrsteamloco.route_path_creator.last_position": "Last position: %s",
   "tooltip.mtrsteamloco.route_path_creator.rail": "Rail: %s %s km/h %s m %s s",
-  "gui.mtr.siding_vehicle_by_depot": "How this vehicle speeds up, brakes and is driven by hand is set for it in the depot"
+  "gui.mtr.siding_vehicle_by_depot": "How this vehicle speeds up, brakes and is driven by hand is set for it in the depot",
+  "gui.mtr.depot_fill_timetable": "Add these to the timetable",
+  "gui.mtr.depot_headway": "Every %s min",
+  "gui.mtr.depot_headway_none": "No trains"
 }

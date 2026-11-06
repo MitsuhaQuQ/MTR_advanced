@@ -33,4 +33,25 @@ assert.deepStrictEqual(batch.runBetween(["a", "b", "c", "d", "e"], "b", "d"), ["
 assert.deepStrictEqual(batch.runBetween(["a", "b", "c", "d", "e"], "d", "b"), ["b", "c", "d"]);
 assert.deepStrictEqual(batch.runBetween(["a", "b"], "a", "x"), []);
 
+// Filling a span again fits the services already in it to the new times
+{
+	// 08:00, 08:07 and 08:30 in the span, 07:50 and 09:10 outside; every 15 minutes from 08:00 until 09:00
+	const fit = batch.fitSpan([7 * H + 50 * M, 8 * H, 8 * H + 7 * M, 8 * H + 30 * M, 9 * H + 10 * M], 8 * H, 9 * H, batch.stepTimes(8 * H, 9 * H, 15 * M));
+	assert.deepStrictEqual(fit.keep, [8 * H, 8 * H + 30 * M]);
+	assert.deepStrictEqual(fit.moves, [[8 * H + 7 * M, 8 * H + 15 * M]]);
+	assert.deepStrictEqual(fit.adds, [8 * H + 45 * M, 9 * H]);
+	assert.deepStrictEqual(fit.removes, []);
+	// Fewer services: those left over are taken away
+	const fewer = batch.fitSpan([8 * H, 8 * H + 10 * M, 8 * H + 20 * M, 8 * H + 30 * M], 8 * H, 8 * H + 30 * M, batch.stepTimes(8 * H, 8 * H + 30 * M, 30 * M));
+	assert.deepStrictEqual(fewer.keep, [8 * H, 8 * H + 30 * M]);
+	assert.deepStrictEqual(fewer.moves, []);
+	assert.deepStrictEqual(fewer.removes, [8 * H + 10 * M, 8 * H + 20 * M]);
+	// Moving later goes from the end first, so none lands on another
+	const later = batch.fitSpan([8 * H + 1 * M, 8 * H + 6 * M], 8 * H, 8 * H + 10 * M, [8 * H + 5 * M, 8 * H + 10 * M]);
+	assert.deepStrictEqual(later.moves, [[8 * H + 6 * M, 8 * H + 10 * M], [8 * H + 1 * M, 8 * H + 5 * M]]);
+	// Past midnight
+	assert.ok(batch.inSpan(0, 23 * H, 1 * H));
+	assert.ok(!batch.inSpan(2 * H, 23 * H, 1 * H));
+}
 console.log("batch.test.js: all passed");
+

@@ -1174,6 +1174,10 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			return;
 		}
+		// A depot of trains sends them out by duties only (R2)
+		if (depot.dutiesOnly) {
+			return;
+		}
 		if (depot.sidingOrder.isEmpty()) {
 			for (final SidingRun sidingRun : ready) {
 				if (deployTrain(depot, sidingRun, false)) {

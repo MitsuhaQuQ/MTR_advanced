@@ -56,7 +56,9 @@ public final class SimExport {
 		railwayData.depots.stream().sorted(Comparator.comparingLong(depot -> depot.id)).forEach(depot -> {
 			final SimDataset.DepotData depotData = new SimDataset.DepotData(depot.id, toArray(depot.routeIds), depot.cycleRoutes, depot.getRunDuties() != null ? depot.getRunDuties().toBytes() : new byte[0]);
 			// Sending trains out by frequency, the depot takes its sidings in turn in their order by name, as the game's does
-			depotData.departures = depot.getDeployTimes(railwayData.getWorld());
+			depotData.departures = Depot.supportsTimetable(depot.transportMode) ? new int[0] : depot.getDeployTimes(railwayData.getWorld());
+			// A depot of trains sends them out by duties only (R2), as the game's does
+			depotData.dutiesOnly = Depot.supportsTimetable(depot.transportMode);
 			depotData.sidingOrder = railwayData.sidings.stream().filter(siding -> railwayData.dataCache.sidingIdToDepot.get(siding.id) == depot).sorted().mapToLong(siding -> siding.id).toArray();
 			depotData.releaseInterval = depot.releaseInterval;
 			dataset.depots.add(depotData);

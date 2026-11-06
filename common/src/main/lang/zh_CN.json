@@ -349,5 +349,8 @@
   "gui.mtrsteamloco.select_screen.title": "选择",
   "tooltip.mtrsteamloco.route_path_creator.last_position": "上一个位置：%s",
   "tooltip.mtrsteamloco.route_path_creator.rail": "轨道：%s %s km/h %s m %s 秒",
-  "gui.mtr.siding_vehicle_by_depot": "这个车型的加速、减速和手动驾驶在车厂里统一设置，这里的设置不起作用"
+  "gui.mtr.siding_vehicle_by_depot": "这个车型的加速、减速和手动驾驶在车厂里统一设置，这里的设置不起作用",
+  "gui.mtr.depot_fill_timetable": "按这些发车填进时刻表",
+  "gui.mtr.depot_headway": "每 %s 分钟一班",
+  "gui.mtr.depot_headway_none": "不发车"
 }

@@ -45,6 +45,11 @@ public final class DepotBoard implements TrainService.Board {
 	public long lastDeployedMillis;
 	public int deployIndex;
 	/**
+	 * Whether it sends trains out by duties only (R2): none until it has duties, rather than by frequency or by its
+	 * timetable in turn.
+	 */
+	public boolean dutiesOnly;
+	/**
 	 * Whether the services taken changed in this tick, so trains waiting to be sent out work out again when they can go
 	 * (S4f).
 	 */

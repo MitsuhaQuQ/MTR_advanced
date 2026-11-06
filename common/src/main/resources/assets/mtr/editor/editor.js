@@ -909,7 +909,7 @@
 		return near + mod(local - oldLocal + DAY / 2, DAY) - DAY / 2;
 	}
 
-	const PATTERN_HINT = tr("填起始时刻、结束时刻和期望间隔（分钟，从起始时刻起每隔这么久一班，到结束时刻为止），或者只在起始时刻一栏写 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
+	const PATTERN_HINT = tr("填起始时刻、结束时刻和期望间隔（分钟，从起始时刻起每隔这么久一班，到结束时刻为止；这段时间里已有的班次按新间隔调整，挪动、补上或删掉多出的），或者只在起始时刻一栏写 07:10 + 10 * 00:03（07:10 起每 3 分钟一班，再加 10 班）");
 	/** @return the services, in UTC milliseconds of the day, that a pattern like "07:10 + 10 * 00:03" stands for */
 	function parsePattern(value) {
 		const text = value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFF10 + 48)).replace(/[：]/g, ":").replace(/＋/g, "+").replace(/[＊×]/g, "*");
@@ -5731,6 +5731,28 @@
 			return;
 		}
 		const today = timetableOf(r).tables.findIndex(table => table.weekdays >> state.weekday & 1);
+		// From a time to a time every so often: the services already in that span are fitted to the new times, moved,
+		// added or taken away as needed, rather than the new ones put in beside them
+		const startTime = parseClock(addInputs.start.trim()), endTime = addInputs.end.trim() ? parseClock(addInputs.end.trim()) : null;
+		if (startTime !== null && endTime !== null && addInputs.count.trim()) {
+			const start = mod(startTime - data.offsetMillis, DAY), end = mod(endTime - data.offsetMillis, DAY);
+			const fit = Batch.fitSpan(timetableOf(r).tables[today].services, start, end, services);
+			if (fit.removes.length && !confirm(tr("{0}–{1} 已有的班次比新间隔多 {2} 班，多出的要删掉（连同接续和例外）。改动先放进草稿，确定吗？", addInputs.start.trim(), addInputs.end.trim(), fit.removes.length))) return;
+			editTimetable(r, timetable => {
+				const table = timetable.tables[today];
+				fit.removes.forEach(service => removeService(table, service));
+				for (const [from, to] of fit.moves) {
+					const error = retimeService(table, from, to);
+					if (error) return error;
+				}
+				if (table.services.length + fit.adds.length > MAX_SERVICES) return `${tr("一张表最多 {0} 个班次", MAX_SERVICES)}`;
+				table.services.push(...fit.adds);
+				return tr("{0}–{1}：保留 {2} 班，挪动 {3} 班，新增 {4} 班，删掉 {5} 班", addInputs.start.trim(), addInputs.end.trim(), fit.keep.length, fit.moves.length, fit.adds.length, fit.removes.length);
+			});
+			const next = $("add-service");
+			if (next) next.focus();
+			return;
+		}
 		editTimetable(r, timetable => {
 			const table = timetable.tables[today];
 			const added = services.filter(service => !table.services.includes(service));

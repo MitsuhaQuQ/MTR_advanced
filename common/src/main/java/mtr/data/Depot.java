@@ -105,6 +105,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final Map<String, VehicleSettings> vehicleSettings = new TreeMap<>();
 	/**
+	 * Whether its frequencies or list of departures were made its routes' services (R2), once, when its path was first
+	 * found after; they are kept, but no longer send trains out, except for vehicles moving all the time and aircraft.
+	 */
+	public boolean frequenciesMigrated;
+	/**
+	 * Whether a player asked for the frequencies or the list of departures to be added to the timetable again, which adds
+	 * them to routes already running by a timetable too; not saved.
+	 */
+	private boolean fillRequested;
+	/**
 	 * Which services each train runs, set in the advanced editor. See {@link DepotDuties}.
 	 */
 	public final DepotDuties duties = new DepotDuties();
@@ -201,6 +211,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 
 	private final int[] frequencies = new int[HOURS_IN_DAY];
+	/**
+	 * For a depot of trains (R2): the minutes between trains in each hour of the real day, from midnight, 0 for none, which
+	 * the depot screen fills the timetable by. An old depot's are its frequencies as close as whole minutes go.
+	 */
+	private final int[] headways = new int[HOURS_IN_DAY];
 	private final Map<Long, TrainServer> deployableSidings = new HashMap<>();
 	private DataCache dataCache;
 	private final Map<String, List<Route>> trainRoutes = new HashMap<>();
@@ -234,12 +249,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final int MAX_POOL_FLEET = 999;
 	private static final String KEY_USE_REAL_TIME = "use_real_time";
 	private static final String KEY_FREQUENCIES = "frequencies";
+	private static final String KEY_HEADWAYS = "headway_minutes";
 	private static final String KEY_DEPARTURES = "departures";
 	private static final String KEY_LAST_DEPLOYED = "last_deployed";
 	private static final String KEY_LAST_DEPLOYED_TRIPS = "last_deployed_trips";
 	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
 	private static final String KEY_POOL_FLEETS = "pool_fleets";
 	private static final String KEY_VEHICLE_SETTINGS = "vehicle_settings";
+	private static final String KEY_FREQUENCIES_MIGRATED = "frequencies_migrated";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
 	private static final String KEY_REPEAT_INFINITELY = "repeat_infinitely";
 	private static final String KEY_CRUISING_ALTITUDE = "cruising_altitude";
@@ -295,6 +312,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePackHelper.iterateMapValue(KEY_LAST_DEPLOYED_TRIPS, entry -> dispatcher.lastDeployedTrips.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SERVICE_TYPES, entry -> vehicleServiceTypes.put(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString()));
 		messagePackHelper.iterateMapValue(KEY_POOL_FLEETS, entry -> poolFleets.put(entry.getKey().asStringValue().asString(), Mth.clamp(entry.getValue().asIntegerValue().asInt(), -1, MAX_POOL_FLEET)));
+		frequenciesMigrated = messagePackHelper.getBoolean(KEY_FREQUENCIES_MIGRATED);
+		if (map.containsKey(KEY_HEADWAYS)) {
+			final List<Integer> savedHeadways = new ArrayList<>();
+			messagePackHelper.iterateArrayValue(KEY_HEADWAYS, value -> savedHeadways.add(value.asIntegerValue().asInt()));
+			for (int i = 0; i < Math.min(HOURS_IN_DAY, savedHeadways.size()); i++) {
+				headways[i] = Mth.clamp(savedHeadways.get(i), 0, transitsim.planning.FrequencyTimetable.MAX_HEADWAY_MINUTES);
+			}
+		} else {
+			headwaysFromFrequencies();
+		}
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SETTINGS, entry -> {
 			try {
 				final org.msgpack.value.ArrayValue values = entry.getValue().asArrayValue();
@@ -326,6 +353,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		for (int i = 0; i < HOURS_IN_DAY; i++) {
 			frequencies[i] = compoundTag.getInt(KEY_FREQUENCIES + i);
 		}
+		headwaysFromFrequencies();
 
 		lastDeployedMillis = System.currentTimeMillis() - compoundTag.getLong(KEY_LAST_DEPLOYED);
 		deployIndex = Math.max(0, compoundTag.getInt(KEY_DEPLOY_INDEX));
@@ -367,6 +395,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		lineShortfall = Shortfall.read(packet);
 		readPoolFleets(packet);
 		readVehicleSettings(packet);
+		frequenciesMigrated = packet.readBoolean();
+		readHeadways(packet);
 	}
 
 	@Override
@@ -421,6 +451,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			messagePacker.packString(entry.getKey()).packInt(entry.getValue());
 		}
 
+		messagePacker.packString(KEY_FREQUENCIES_MIGRATED).packBoolean(frequenciesMigrated);
+		messagePacker.packString(KEY_HEADWAYS).packArrayHeader(HOURS_IN_DAY);
+		for (final int headway : headways) {
+			messagePacker.packInt(headway);
+		}
+
 		messagePacker.packString(KEY_VEHICLE_SETTINGS).packMapHeader(vehicleSettings.size());
 		for (final Map.Entry<String, VehicleSettings> entry : vehicleSettings.entrySet()) {
 			final VehicleSettings settings = entry.getValue();
@@ -438,7 +474,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 19;
+		return super.messagePackLength() + 21;
 	}
 
 	@Override
@@ -476,6 +512,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		Shortfall.write(lineShortfall, packet);
 		writePoolFleets(packet);
 		writeVehicleSettings(packet);
+		packet.writeBoolean(frequenciesMigrated);
+		writeHeadways(packet);
 	}
 
 	/**
@@ -528,10 +566,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			readVehicleServiceTypes(packet);
 			speedCurves = packet.readBoolean();
 			releaseInterval = Mth.clamp(packet.readInt(), 0, MAX_RELEASE_INTERVAL);
+			readHeadways(packet);
 		} else if (KEY_POOL_FLEETS.equals(key)) {
 			readPoolFleets(packet);
 		} else if (KEY_VEHICLE_SETTINGS.equals(key)) {
 			readVehicleSettings(packet);
+		} else if (KEY_FREQUENCIES_MIGRATED.equals(key)) {
+			frequenciesMigrated = packet.readBoolean();
+			fillRequested = !frequenciesMigrated;
 		} else if (KEY_DUTY_MODE.equals(key)) {
 			duties.diagramMode = packet.readBoolean();
 		} else if (KEY_DUTY_SLOT.equals(key)) {
@@ -585,7 +627,40 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		writeVehicleServiceTypes(packet);
 		packet.writeBoolean(speedCurves);
 		packet.writeInt(releaseInterval);
+		writeHeadways(packet);
 		sendPacket.accept(packet);
+	}
+
+	/**
+	 * @return the minutes between trains in an hour of the real day, for a depot of trains (R2), 0 for none
+	 */
+	public int getHeadway(int hour) {
+		return hour >= 0 && hour < HOURS_IN_DAY ? headways[hour] : 0;
+	}
+
+	public void setHeadway(int minutes, int hour) {
+		if (hour >= 0 && hour < HOURS_IN_DAY) {
+			headways[hour] = Mth.clamp(minutes, 0, transitsim.planning.FrequencyTimetable.MAX_HEADWAY_MINUTES);
+		}
+		isDirty = true;
+	}
+
+	private void headwaysFromFrequencies() {
+		for (int i = 0; i < HOURS_IN_DAY; i++) {
+			headways[i] = transitsim.planning.FrequencyTimetable.headwayOf(frequencies[i]);
+		}
+	}
+
+	private void readHeadways(FriendlyByteBuf packet) {
+		for (int i = 0; i < HOURS_IN_DAY; i++) {
+			headways[i] = Mth.clamp(packet.readInt(), 0, transitsim.planning.FrequencyTimetable.MAX_HEADWAY_MINUTES);
+		}
+	}
+
+	private void writeHeadways(FriendlyByteBuf packet) {
+		for (final int headway : headways) {
+			packet.writeInt(headway);
+		}
 	}
 
 	public void setDutyMode(Consumer<FriendlyByteBuf> sendPacket) {
@@ -617,7 +692,65 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		sendPacket.accept(packet);
 	}
 
+	/**
+	 * Has the frequencies or the list of departures made its routes' services again when its path is next found (R2), as
+	 * the depot screen's button to fill the timetable by them asks.
+	 */
+	public void setFrequenciesToMigrate(Consumer<FriendlyByteBuf> sendPacket) {
+		frequenciesMigrated = false;
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_FREQUENCIES_MIGRATED);
+		packet.writeBoolean(false);
+		sendPacket.accept(packet);
+	}
+
+	/**
+	 * Makes the frequencies, or the list of departures, of a depot sending trains out by them its routes' services (R2),
+	 * so it runs by duties: the first route's services as the trains were sent out, and each next route's a turn after the
+	 * one before arrives, as a train ran them one after another. Done once; a route running by a timetable already keeps it,
+	 * and so does a depot one of whose routes does. Vehicles moving all the time and aircraft go on as before.
+	 */
+	private void migrateFrequencies(Level world, DataCache liveDataCache, Map<BlockPos, Map<BlockPos, Rail>> liveRails) {
+		if (frequenciesMigrated || !supportsTimetable(transportMode)) {
+			return;
+		}
+		frequenciesMigrated = true;
+		isDirty = true;
+		final boolean asked = fillRequested;
+		fillRequested = false;
+		final List<Route> routes = getRoutes(liveDataCache);
+		if (routes.isEmpty() || !asked && (findTimetabledRoute(routes) != null || duties.diagramMode)) {
+			return;
+		}
+		// By the real clock: the list of departures, or the minutes between trains in each hour
+		final List<Integer> departures = useRealTime ? transitsim.planning.FrequencyTimetable.cleaned(this.departures, RouteTimetable.MAX_SERVICES) : transitsim.planning.FrequencyTimetable.departuresOfHeadways(headways, RouteTimetable.MAX_SERVICES);
+		if (departures.isEmpty()) {
+			return;
+		}
+		final RailwayData railwayData = RailwayData.getInstance(world);
+		final RoutePaths.Search search = railwayData == null ? null : new RoutePaths.Search(railwayData.routePaths, liveRails, getPathGraph(liveRails, railwayData.pathBoundaries), railwayData.pathBoundaries, RoutePaths.getVehicles(railwayData));
+		final List<long[][]> routeTimes = new ArrayList<>();
+		routes.forEach(route -> routeTimes.add(search == null ? null : search.getFastestTimes(route, liveDataCache)));
+		final List<List<Integer>> services = transitsim.planning.FrequencyTimetable.chain(departures, routeTimes);
+		for (int i = 0; i < services.size(); i++) {
+			final Route route = routes.get(i);
+			if (route.timetable.isActive() && !asked) {
+				continue;
+			}
+			route.timetable.enabled = true;
+			route.timetable.services.addAll(services.get(i));
+			route.timetable.sanitize();
+			route.timetable.revision++;
+			route.setTimetable(packet -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_ROUTE, packet)));
+		}
+		System.out.println("Minecraft Transit Railway: depot " + name + " sends its trains out by a timetable from now on, " + departures.size() + " services a day" + (departures.size() >= RouteTimetable.MAX_SERVICES ? " (as many as a timetable takes; the rest left out)" : "") + (services.size() < routes.size() ? ", only " + services.size() + " of its " + routes.size() + " routes as the others' times aren't known" : ""));
+	}
+
 	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, Map<BlockPos, Map<BlockPos, Rail>> liveRails, Set<Siding> sidings, Consumer<Thread> callback) {
+		// By frequency or a list of departures, the depot runs by a timetable from now on (R2)
+		migrateFrequencies(world, liveDataCache, liveRails);
 		// The thread works on the rails and data as they are now, so a player laying track meanwhile can't break it part of
 		// the way through or have it find a path on a network changed half way
 		final DataCache dataCache = liveDataCache.copyIdMaps();
@@ -986,6 +1119,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		if (getRunDuties() != null) {
 			deployDutyTrain(railwayData);
+			departureOffset = 0;
+			deployableSidings.clear();
+			return;
+		}
+
+		// A depot of trains runs by duties only (R2): until its duties are worked out, none are sent out; vehicles moving all
+		// the time and aircraft go on by frequency, a list of departures or a timetable as before
+		if (supportsTimetable(transportMode)) {
 			departureOffset = 0;
 			deployableSidings.clear();
 			return;

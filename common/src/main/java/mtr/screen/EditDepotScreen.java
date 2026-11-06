@@ -8,6 +8,7 @@ import mtr.client.PathFailureText;
 import mtr.data.*;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
+import mtr.packet.IPacket;
 import mtr.packet.PacketTrainDataGuiClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -30,6 +31,15 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 	private final Button buttonUseRealTime;
 	private final Button buttonReset;
+	/**
+	 * Whether the sliders are the minutes between trains in each real hour, as for a depot of trains (R2).
+	 */
+	private final boolean byHeadway;
+	/**
+	 * For a depot of trains, which runs by duties only (R2): makes the frequencies or the list of departures its routes'
+	 * services, as the depot's trains were sent out by them.
+	 */
+	private final Button buttonFillTimetable;
 	private final WidgetShorterSlider[] sliders = new WidgetShorterSlider[Depot.HOURS_IN_DAY];
 	private final WidgetBetterTextField textFieldDeparture;
 	private final Button buttonAddDeparture;
@@ -66,12 +76,18 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		sliderWidthWithText = SLIDER_WIDTH + TEXT_PADDING + font.width(getSliderString(0));
 		rightPanelsX = sliderX + SLIDER_WIDTH + TEXT_PADDING * 2 + font.width(getSliderString(1));
 		showScheduleControls = !transportMode.continuousMovement;
+		byHeadway = Depot.supportsTimetable(transportMode);
 		showCruisingAltitude = transportMode == TransportMode.AIRPLANE;
 
 		buttonUseRealTime = UtilitiesClient.newButton(Text.translatable("gui.mtr.schedule_mode_real_time_off"), button -> {
 			depot.useRealTime = !depot.useRealTime;
 			toggleRealTime();
 			saveData();
+		});
+		buttonFillTimetable = UtilitiesClient.newButton(Text.translatable("gui.mtr.depot_fill_timetable"), button -> {
+			saveData();
+			depot.setFrequenciesToMigrate(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+			PacketTrainDataGuiClient.generatePathC2S(depot.id);
 		});
 		buttonReset = UtilitiesClient.newButton(Text.translatable("gui.mtr.reset_sign"), button -> {
 			for (int i = 0; i < Depot.HOURS_IN_DAY; i++) {
@@ -84,7 +100,8 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 
 		for (int i = 0; i < Depot.HOURS_IN_DAY; i++) {
 			final int currentIndex = i;
-			sliders[currentIndex] = new WidgetShorterSlider(sliderX, SLIDER_WIDTH, MAX_TRAINS_PER_HOUR * 2, EditDepotScreen::getSliderString, value -> {
+			// A depot of trains is given the minutes between trains in each hour of the real day (R2); others the game's frequencies
+			sliders[currentIndex] = new WidgetShorterSlider(sliderX, SLIDER_WIDTH, byHeadway ? transitsim.planning.FrequencyTimetable.MAX_HEADWAY_MINUTES : MAX_TRAINS_PER_HOUR * 2, byHeadway ? EditDepotScreen::getHeadwayString : EditDepotScreen::getSliderString, value -> {
 				for (int j = 0; j < Depot.HOURS_IN_DAY; j++) {
 					if (j != currentIndex) {
 						sliders[j].setValue(value);
@@ -176,12 +193,13 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			}
 		}
 		for (int i = 0; i < Depot.HOURS_IN_DAY; i++) {
-			sliders[i].setValue(data.getFrequency(i));
+			sliders[i].setValue(byHeadway ? data.getHeadway(i) : data.getFrequency(i));
 		}
 
 		final int leftWidth = rightPanelsX - 1;
 		IDrawing.setPositionAndWidth(buttonUseRealTime, 0, 0, leftWidth - SQUARE_SIZE * 3);
 		IDrawing.setPositionAndWidth(buttonReset, leftWidth - SQUARE_SIZE * 3, 0, SQUARE_SIZE * 3);
+		IDrawing.setPositionAndWidth(buttonFillTimetable, 0, SQUARE_SIZE, leftWidth);
 
 		departuresList.y = SQUARE_SIZE;
 		departuresList.height = height - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING;
@@ -200,6 +218,10 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		if (showScheduleControls) {
 			addDrawableChild(buttonUseRealTime);
 			addDrawableChild(buttonReset);
+			// A depot of trains sends them out by duties only (R2), so the frequencies only fill the timetable
+			if (Depot.supportsTimetable(data.transportMode)) {
+				addDrawableChild(buttonFillTimetable);
+			}
 			addDrawableChild(buttonClearTrains);
 			addDrawableChild(checkboxRepeatIndefinitely);
 			addDrawableChild(checkboxCycleRoutes);
@@ -228,7 +250,11 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 		textFieldReleaseInterval.tick();
 
 		for (int i = 0; i < Depot.HOURS_IN_DAY; i++) {
-			data.setFrequency(sliders[i].getIntValue(), i);
+			if (byHeadway) {
+				data.setHeadway(sliders[i].getIntValue(), i);
+			} else {
+				data.setFrequency(sliders[i].getIntValue(), i);
+			}
 		}
 
 		if (data.routeIds.isEmpty()) {
@@ -553,6 +579,13 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			headwayText = " (" + RailwayData.round((float) Depot.TRAIN_FREQUENCY_MULTIPLIER * SECONDS_PER_MC_HOUR / value, 1) + Text.translatable("gui.mtr.s").getString() + ")";
 		}
 		return value / (float) Depot.TRAIN_FREQUENCY_MULTIPLIER + Text.translatable("gui.mtr.tph").getString() + headwayText;
+	}
+
+	/**
+	 * @return the minutes between trains in an hour of the real day, for a depot of trains (R2)
+	 */
+	private static String getHeadwayString(int minutes) {
+		return minutes == 0 ? Text.translatable("gui.mtr.depot_headway_none").getString() : Text.translatable("gui.mtr.depot_headway", minutes).getString();
 	}
 
 	private static String getTimeString(int hour) {

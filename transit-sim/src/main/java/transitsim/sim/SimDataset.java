@@ -44,7 +44,7 @@ public final class SimDataset {
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; older data is read without them.
 	 */
-	public static final int VERSION = 11;
+	public static final int VERSION = 12;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -116,6 +116,7 @@ public final class SimDataset {
 			writer.writeBoolean(isInterlockBlock(i));
 		}
 		sidings.forEach(siding -> writer.writeInt(siding.poolFleet));
+		depots.forEach(depot -> writer.writeBoolean(depot.dutiesOnly));
 		return writer.toBytes();
 	}
 
@@ -198,6 +199,11 @@ public final class SimDataset {
 				siding.poolFleet = reader.readInt();
 			}
 		}
+		if (version >= 12) {
+			for (final DepotData depot : dataset.depots) {
+				depot.dutiesOnly = reader.readBoolean();
+			}
+		}
 		return dataset;
 	}
 
@@ -234,6 +240,7 @@ public final class SimDataset {
 				newDepot.departures = depot.departures;
 				newDepot.sidingOrder = depot.sidingOrder;
 				newDepot.releaseInterval = depot.releaseInterval;
+				newDepot.dutiesOnly = depot.dutiesOnly;
 				depots.set(i, newDepot);
 				return true;
 			}
@@ -265,6 +272,7 @@ public final class SimDataset {
 			final DepotBoard board = new DepotBoard(toRoutes(depot.routeIds, routeMap));
 			board.cycleRoutes = depot.cycleRoutes;
 			board.dispatcher.releaseIntervalMillis = depot.releaseInterval * 1000;
+			board.dutiesOnly = depot.dutiesOnly;
 			for (final int departure : depot.departures) {
 				board.departures.add(departure);
 			}
@@ -675,6 +683,11 @@ public final class SimDataset {
 		 * The shortest time in seconds between two trains it sends out by its duties, or 0.
 		 */
 		public int releaseInterval;
+		/**
+		 * Whether it sends trains out by duties only (R2), as a depot of trains does: none until it has duties, rather than by
+		 * frequency or by its timetable in turn.
+		 */
+		public boolean dutiesOnly;
 
 		public DepotData(long id, long[] routeIds, boolean cycleRoutes, byte[] duties) {
 			this.id = id;

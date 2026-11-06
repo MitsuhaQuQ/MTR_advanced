@@ -69,7 +69,39 @@
 		return ids.slice(Math.min(a, b), Math.max(a, b) + 1);
 	}
 
-	const api = { DAY, evenTimes, stepTimes, respace, besideTime, runBetween };
+	/**
+	 * @return {boolean} whether a time is from start to end, both included; an end before the start runs on past midnight
+	 */
+	function inSpan(time, start, end) {
+		return mod(time - start, DAY) <= mod(end - start, DAY);
+	}
+
+	/**
+	 * A table's services from one time to another fitted to new times, as filling that span every so often again: a
+	 * service already at one of the new times stays, the others move to the rest in their order, keeping all they have,
+	 * and new times left over are added, services left over taken away.
+	 *
+	 * @param services the table's services
+	 * @param targets the new times, from the start of the span in order
+	 * @return {{keep: number[], moves: number[][], adds: number[], removes: number[]}} moves as [from, to], those moving
+	 * later from the end first and those moving earlier from the start, so none lands on another
+	 */
+	function fitSpan(services, start, end, targets) {
+		const order = time => mod(time - start, DAY);
+		const inside = services.filter(time => inSpan(time, start, end)).sort((a, b) => order(a) - order(b));
+		const targetSet = new Set(targets);
+		const keep = inside.filter(time => targetSet.has(time));
+		const kept = new Set(keep);
+		const free = inside.filter(time => !kept.has(time));
+		const open = targets.filter(time => !kept.has(time)).sort((a, b) => order(a) - order(b));
+		const paired = Math.min(free.length, open.length);
+		const pairs = [];
+		for (let i = 0; i < paired; i++) pairs.push([free[i], open[i]]);
+		const later = pairs.filter(([from, to]) => order(to) > order(from)).reverse(), earlier = pairs.filter(([from, to]) => order(to) < order(from));
+		return { keep, moves: [...later, ...earlier], adds: open.slice(paired), removes: free.slice(paired) };
+	}
+
+	const api = { DAY, evenTimes, stepTimes, respace, besideTime, runBetween, inSpan, fitSpan };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	else root.TimetableBatch = api;
 })(typeof window !== "undefined" ? window : this);
