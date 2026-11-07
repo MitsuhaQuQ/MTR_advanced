@@ -96,6 +96,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	/**
 	 * Works out again which depots share track with a depot not running by duties, and says so in the log when it changes.
 	 */
+	private static UUID getSavedRailKey(SavedRailBase savedRail) {
+		final List<BlockPos> positions = savedRail.getOrderedPositions(BlockPos.ZERO, false);
+		return mtr.advanced.PathBoundaries.segmentKey(positions.get(0).asLong(), positions.get(1).asLong());
+	}
+
 	private void updateLockNetworks() {
 		// Joining every node of every path takes long on large networks, so it is done only when the paths or depots change
 		long signature = 17;
@@ -205,6 +210,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	public final RoutePaths routePaths = new RoutePaths();
 	private static final int AUTO_DUTIES_CHECK_TICKS = 100;
+	private static final int TRACK_SECTIONS_CHECK_TICKS = 40;
 
 	public SignalBlocks getSignalBlocks() {
 		return signalBlocks;
@@ -598,6 +604,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		railwayDataRailActionsModule.tick();
 		railwayDataRouteFinderModule.tick();
 		pathRegionSync.tick(world, this, rails);
+		// The track section layer follows the rails (stages document round 1)
+		if (MTR.isGameTickInterval(TRACK_SECTIONS_CHECK_TICKS)) {
+			final Map<UUID, Long> savedRails = new HashMap<>();
+			platforms.forEach(platform -> savedRails.put(getSavedRailKey(platform), platform.id));
+			sidings.forEach(siding -> savedRails.put(getSavedRailKey(siding), siding.id));
+			graphRecords.update(rails, keyNodes, pathBoundaries.nodes, savedRails, signalBlocks.getBlockRailsById(), signalBlocks.getVersion());
+		}
 		updateNearbyTrains.tick();
 		updateNearbyLifts.tick();
 

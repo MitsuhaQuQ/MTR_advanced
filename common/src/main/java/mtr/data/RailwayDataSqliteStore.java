@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
@@ -57,7 +58,9 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	 */
 	private static final String KEY_SCHEMA_VERSION = "schema_version";
 	private static final int SCHEMA_VERSION = 1;
-	private static final String KEY_GRAPH_FINGERPRINT = "graph_fingerprint";
+	private static final String KEY_TRACK_VERSION = "track_version";
+	private static final String KEY_TRACK_FINGERPRINT = "track_fingerprint";
+	private static final String KEY_TRACK_COUNT = "track_count";
 	private static final long BACKUP_INTERVAL_MILLIS = 60 * 60 * 1000;
 	private static final String RESTORE_REQUEST = "restore.txt";
 	private static final int BACKUP_WAIT_SECONDS = 60;
@@ -92,6 +95,10 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 			// Our own tables for the physical network, apart from the entries of the data itself
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_sections (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			// The track section layer by content hash: the version each row came in and the one that removed it, so a
+			// version is read whole even when a later one was only partly written
+			statement.execute("CREATE TABLE IF NOT EXISTS track_sections (id INTEGER PRIMARY KEY, data BLOB NOT NULL, added_in INTEGER NOT NULL, removed_in INTEGER)");
+			statement.execute("CREATE TABLE IF NOT EXISTS signal_overlay (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_paths (owner TEXT PRIMARY KEY, graph_fingerprint INTEGER NOT NULL, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS sim_data (key TEXT PRIMARY KEY, data BLOB NOT NULL)");
 			// The revision of each part players edit, kept so edits are checked the same after the server is started again
@@ -162,24 +169,107 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	}
 
 	@Override
-	public void replaceGraphSections(Map<Long, byte[]> sections, long fingerprint) throws Exception {
-		try (final Statement statement = connection.createStatement()) {
-			statement.execute("DELETE FROM graph_sections");
+	public void publishTrackSections(long version, Map<Long, byte[]> added, Collection<Long> removed, Map<Long, byte[]> overlayPut, Collection<Long> overlayRemoved, long fingerprint, int count) throws Exception {
+		// A row removed before and not yet swept comes back as part of this version
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT INTO track_sections (id, data, added_in, removed_in) VALUES (?, ?, ?, NULL) ON CONFLICT(id) DO UPDATE SET data = excluded.data, added_in = excluded.added_in, removed_in = NULL")) {
+			for (final Map.Entry<Long, byte[]> entry : added.entrySet()) {
+				statement.setLong(1, entry.getKey());
+				statement.setBytes(2, entry.getValue());
+				statement.setLong(3, version);
+				statement.addBatch();
+			}
+			statement.executeBatch();
 		}
-		try (final PreparedStatement statement = connection.prepareStatement("INSERT INTO graph_sections (id, data) VALUES (?, ?)")) {
-			for (final Map.Entry<Long, byte[]> entry : sections.entrySet()) {
+		try (final PreparedStatement statement = connection.prepareStatement("UPDATE track_sections SET removed_in = ? WHERE id = ? AND removed_in IS NULL")) {
+			for (final long id : removed) {
+				statement.setLong(1, version);
+				statement.setLong(2, id);
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO signal_overlay (id, data) VALUES (?, ?)")) {
+			for (final Map.Entry<Long, byte[]> entry : overlayPut.entrySet()) {
 				statement.setLong(1, entry.getKey());
 				statement.setBytes(2, entry.getValue());
 				statement.addBatch();
 			}
 			statement.executeBatch();
 		}
+		try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM signal_overlay WHERE id = ?")) {
+			for (final long id : overlayRemoved) {
+				statement.setLong(1, id);
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		// The root record last: until it is written, the version before is the one read
 		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)")) {
-			statement.setString(1, KEY_GRAPH_FINGERPRINT);
+			statement.setString(1, KEY_TRACK_VERSION);
+			statement.setString(2, String.valueOf(version));
+			statement.addBatch();
+			statement.setString(1, KEY_TRACK_FINGERPRINT);
 			statement.setString(2, String.valueOf(fingerprint));
-			statement.executeUpdate();
+			statement.addBatch();
+			statement.setString(1, KEY_TRACK_COUNT);
+			statement.setString(2, String.valueOf(count));
+			statement.addBatch();
+			statement.executeBatch();
 		}
 		hasPendingChanges = true;
+	}
+
+	@Override
+	public void sweepTrackSections(long version) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM track_sections WHERE removed_in IS NOT NULL AND removed_in <= ?")) {
+			statement.setLong(1, version);
+			if (statement.executeUpdate() > 0) {
+				hasPendingChanges = true;
+			}
+		}
+	}
+
+	@Override
+	public long[] loadTrackSections(BiConsumer<Long, byte[]> sections, BiConsumer<Long, byte[]> overlay) throws Exception {
+		final String version = readMeta(KEY_TRACK_VERSION);
+		if (version == null) {
+			return null;
+		}
+		final long publishedVersion = Long.parseLong(version);
+		// What a version never published wrote is undone
+		try (final Statement statement = connection.createStatement()) {
+			final int dropped = statement.executeUpdate("DELETE FROM track_sections WHERE added_in > " + publishedVersion);
+			final int kept = statement.executeUpdate("UPDATE track_sections SET removed_in = NULL WHERE removed_in > " + publishedVersion);
+			if (dropped > 0 || kept > 0) {
+				System.out.println("Minecraft Transit Railway: a version of the track sections was only partly written; " + dropped + " rows of it dropped and " + kept + " kept again");
+				connection.commit();
+			}
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT id, data FROM track_sections WHERE removed_in IS NULL OR removed_in > ?")) {
+			statement.setLong(1, publishedVersion);
+			try (final ResultSet resultSet = statement.executeQuery()) {
+				while (resultSet.next()) {
+					sections.accept(resultSet.getLong(1), resultSet.getBytes(2));
+				}
+			}
+		}
+		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT id, data FROM signal_overlay")) {
+			while (resultSet.next()) {
+				overlay.accept(resultSet.getLong(1), resultSet.getBytes(2));
+			}
+		}
+		final String fingerprint = readMeta(KEY_TRACK_FINGERPRINT);
+		final String count = readMeta(KEY_TRACK_COUNT);
+		return new long[]{publishedVersion, fingerprint == null ? 0 : Long.parseLong(fingerprint), count == null ? -1 : Long.parseLong(count)};
+	}
+
+	private String readMeta(String key) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT value FROM meta WHERE key = ?")) {
+			statement.setString(1, key);
+			try (final ResultSet resultSet = statement.executeQuery()) {
+				return resultSet.next() ? resultSet.getString(1) : null;
+			}
+		}
 	}
 
 	@Override
@@ -200,25 +290,6 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.executeUpdate();
 		}
 		hasPendingChanges = true;
-	}
-
-	@Override
-	public void forEachGraphSection(BiConsumer<Long, byte[]> consumer) throws Exception {
-		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT id, data FROM graph_sections")) {
-			while (resultSet.next()) {
-				consumer.accept(resultSet.getLong(1), resultSet.getBytes(2));
-			}
-		}
-	}
-
-	@Override
-	public long getGraphFingerprint() throws Exception {
-		try (final PreparedStatement statement = connection.prepareStatement("SELECT value FROM meta WHERE key = ?")) {
-			statement.setString(1, KEY_GRAPH_FINGERPRINT);
-			try (final ResultSet resultSet = statement.executeQuery()) {
-				return resultSet.next() ? Long.parseLong(resultSet.getString(1)) : 0;
-			}
-		}
 	}
 
 	@Override

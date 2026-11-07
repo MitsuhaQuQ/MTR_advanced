@@ -789,6 +789,19 @@ flowchart TD
 
 存档格式只能加内容，不能改已有的内容。
 
+### 7.4 轨道段层（优化第一轮）
+
+存档里最底层的多级结构（`MTR-优化实施阶段.md` 第一轮）：轨道在"发生事情的节点"切成轨道段，每段用内容的 64 位哈希当 ID，随轨道增量维护，按版本写进 `mtr.db`。
+
+- **组件**：`transitsim.network.TrackSections`（切段、哈希、增量维护、读档核对修复）、`SpeedLimits`（限速两值：60 及以上物理 +5、计划按标的值；60 以下物理按标的值、计划 −5；这一轮只存不用）、`SignalOverlay`（每个轨道段上的信号区段切分和所属信号区段，规则同 `BlockSections`）。
+- **切点**：分岔或尽头（连着的轨道不是两条）、关键节点、寻路边界节点、站台/存车线/折返线的两端（它们各自成段）；没有切点的环从最小的节点开始。
+- **哈希**：节点序列，加每条轨道的长度、形状（两端朝向）、限速标的值、能否加速、类型、可走方向、站台或存车线，加两端的标记。碰撞时同一哈希下的几段按内容字节序排，第一段用原哈希，其余用"原哈希 + 序号"，所以哈希只取决于现有的段，与顺序无关。
+- **游戏**：`advanced/GraphRecords` 持有这一层。`RailwayData` 每 40 tick 调 `GraphRecords.update`：先算轨道、关键节点、边界节点、站台和存车线位置的廉价指纹，变了才把全部轨道转成 `TrackSections.Rail`（`toTrackRails`，单向轨道按能走的方向取类型）交给 `TrackSections.sync`，它比对出增删、只重切受影响的段；轨道段或信号区段变了就重算信号层，只记下不同的项。第一次检查时用读档读出的段做 `TrackSections.restore`：和现有轨道对照，不一致的连同邻段重切并写日志，旧存档（没有这一层）全部生成。
+- **写档**：保存循环之后、图数据自己的事务里，`GraphRecords.flush` 写一个新版本（`RailwayDataStore.publishTrackSections`）：新增的行（`added_in` = 新版本）、删掉的行只标 `removed_in`、信号层的增删，最后写根记录（`meta` 的 `track_version`、`track_fingerprint`、`track_count`）。提交成功（`flushCommitted`）后，下一次保存才真正删掉被标记的行（`sweepTrackSections`）；提交失败（`flushFailed`）就把这一版的增删放回待写。
+- **读档**：`RailwayDataStore.loadTrackSections` 只读根记录发布的版本：`added_in` 大于它的行（没发布完的版本）删掉，`removed_in` 大于它的行恢复。
+- 表：`track_sections (id, data, added_in, removed_in)`、`signal_overlay (id, data)`，都进备份。旧的 `graph_sections` 不再写；`graph_paths` 改为记轨道段哈希序列（`TrackSections.toSectionPath`），带这一层的指纹。`PathRegionSync` 不再压缩整张线网（原来只为写 `graph_sections`）。
+- 64 份黄线（19,696 条轨道，7,738 个轨道段）：首次生成 205 ms，重启读回核对 124 ms（都只在开服时一次）；预热后每次有改动的检查约 17 ms（两万条轨道，`GraphRecordsTest`）。
+
 ## 8. 玩家编辑数据
 
 ### 8.1 普通的改动

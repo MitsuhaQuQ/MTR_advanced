@@ -35,6 +35,8 @@ public final class RailwayDataBackups {
 			{{"entries"}, {"type", "id"}, {"data"}},
 			{{"meta"}, {"key"}, {"value"}},
 			{{"graph_sections"}, {"id"}, {"data"}},
+			{{"track_sections"}, {"id"}, {"data", "added_in", "removed_in"}},
+			{{"signal_overlay"}, {"id"}, {"data"}},
 			{{"graph_paths"}, {"owner"}, {"graph_fingerprint", "data"}},
 			{{"sim_data"}, {"key"}, {"data"}},
 			{{"edit_revisions"}, {"key"}, {"revision", "editor", "deleted"}},

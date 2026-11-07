@@ -254,6 +254,15 @@ public class SignalBlocks {
 	}
 
 	/**
+	 * @return the rails of each signal block by the block's ID, for the signal layer of the track sections
+	 */
+	public Map<Long, List<UUID>> getBlockRailsById() {
+		final Map<Long, List<UUID>> blockRails = new TreeMap<>();
+		signalBlocks.forEach(signalBlock -> blockRails.computeIfAbsent(signalBlock.id, key -> new ArrayList<>()).addAll(signalBlock.rails));
+		return blockRails;
+	}
+
+	/**
 	 * Works out the block sections of the signal blocks again if they have changed since: each block is one section, with
 	 * every piece of its rails.
 	 */

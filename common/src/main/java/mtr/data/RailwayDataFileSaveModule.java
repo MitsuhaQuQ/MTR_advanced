@@ -312,6 +312,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			try {
 				railwayData.graphRecords.flush(dataStore);
 				dataStore.commit();
+				railwayData.graphRecords.flushCommitted();
 			} catch (Exception e) {
 				System.out.println("Minecraft Transit Railway could not save the track graph of " + world.dimension().location() + "; it is saved again with the next tick");
 				e.printStackTrace();

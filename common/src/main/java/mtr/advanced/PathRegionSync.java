@@ -11,17 +11,13 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
-import transitsim.network.Network;
-import transitsim.network.PathRegions;
 import transitsim.network.RailGraph;
 import transitsim.network.RegionComputer;
 import transitsim.network.RegionData;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Keeps the players' {@link RegionData} up to date. A cheap fingerprint of the rails, boundaries, platforms and routes
@@ -34,10 +30,6 @@ public final class PathRegionSync {
 	private boolean computed;
 	private boolean computing;
 	private RegionData latest = RegionData.EMPTY;
-	/**
-	 * The order networks are published in (contracts document 5.1).
-	 */
-	private long networkVersion;
 
 	private static final int CHECK_INTERVAL_TICKS = 40;
 
@@ -61,7 +53,6 @@ public final class PathRegionSync {
 		fingerprint = newFingerprint;
 		computing = true;
 		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
-		final long version = ++networkVersion;
 		final PathBoundaries boundariesCopy = boundaries.copy();
 		final List<RegionComputer.SavedRail> platforms = new ArrayList<>();
 		railwayData.platforms.forEach(platform -> {
@@ -73,23 +64,14 @@ public final class PathRegionSync {
 
 		final Thread thread = new Thread(() -> {
 			RegionData data = null;
-			Network network = null;
 			try {
 				data = RegionComputer.compute(graph, boundariesCopy, platforms, sidings);
-				final Map<UUID, Long> savedRails = new HashMap<>();
-				platforms.forEach(platform -> savedRails.put(PathBoundaries.segmentKey(platform.pos1, platform.pos2), platform.id));
-				sidings.forEach(siding -> savedRails.put(PathBoundaries.segmentKey(siding.pos1, siding.pos2), siding.id));
-				network = RailNetworks.compress(graph, PathRegions.compute(graph, boundariesCopy), boundariesCopy, savedRails, version);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 			final RegionData finalData = data;
-			final Network finalNetwork = network;
 			minecraftServer.execute(() -> {
 				computing = false;
-				if (finalNetwork != null) {
-					railwayData.graphRecords.setGraph(finalNetwork);
-				}
 				if (finalData != null) {
 					latest = finalData;
 					computed = true;

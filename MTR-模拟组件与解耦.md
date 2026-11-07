@@ -49,7 +49,7 @@ B 级的类已经能在单元测试里不开游戏运行，因为测试的类路
 | `transitsim.network.Straightener`（新） | 约 150 | 无 | A | **组件里的新规则**：沿一条路径把轨道拉直成（里程，侧向偏移），给线路配线图用；宿主的 `advanced/RouteLayouts` 取点和写网络包；有无头测试 `StraightenerTest` |
 | `transitsim.network.RegionData`（原 `advanced/RegionData`） | 约 40 | `Boundaries`、`PlatformGraph` | A | **已在组件**（S1）；带上 `PlatformGraph`，网络包读写在宿主的 `advanced/RegionDataPackets` |
 | `transitsim.network.Network`、`NetworkBuilder`、`Resource`、`SectionType`、`RailAttributes`（原 `advanced/PhysicalGraph`） | 约 590 | 无 | A | **已在组件**（S1）：线网快照、压缩算法（对任意 `RailGraph<R>`，轨道属性由宿主通过 `RailAttributes` 给）、资源、版本。宿主只剩 `advanced/RailNetworks`（用 `Rail` 实现属性） |
-| `advanced/GraphRecords` | 126 | `RailwayDataStore`、`PathData`、组件的 `Network` | B | 留在宿主：SQLite 读写，内容格式由组件的 `Network.Section`、`SectionPath` 定义 |
+| `advanced/GraphRecords` | 约 330 | `RailwayDataStore`、`PathData`、`Rail`、组件的 `TrackSections`、`SignalOverlay` | B | 留在宿主：把 MTR 的轨道转成组件的轨道段层并按版本读写 SQLite；切段、哈希、增量维护、核对修复、信号层都在组件（`transitsim.network.TrackSections`、`SpeedLimits`、`SignalOverlay`，优化第一轮），格式由 `TrackSections.Section`、`SignalOverlay.Entry`、`Network.SectionPath` 定义 |
 | `advanced/PathRegionSync` | 132 | `MinecraftServer`、`ServerPlayer`、网络包 | C | 留在宿主：后台计算触发和同步 |
 
 **速度和运动**
@@ -136,7 +136,7 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 - **`TrainService` 的时钟**：可替换，测试里用固定时间。
 - **`Train` 的钩子**：见 2.2 节。
 - **`RailwayData.simulateTrains(RailNearPlayer)`**：每 tick 的入口，按"轨道是否靠近玩家"参数化。ANTE 的 mixin 只传入它自己的判断。
-- **`RailwayDataStore` 的线网读写**：`replaceGraphSections`、`writeGraphPath`、`forEachGraphSection`、`getGraphFingerprint`。SQLite 的 `graph_sections`、`graph_paths` 表以后改由组件的 `io` 定义内容格式。
+- **`RailwayDataStore` 的线网读写**：`publishTrackSections`、`sweepTrackSections`、`loadTrackSections`（轨道段层按版本读写，根记录最后写，读档只认已发布版本）、`writeGraphPath`。SQLite 的 `track_sections`、`signal_overlay`、`graph_paths` 表的内容格式由组件定义；旧的 `graph_sections` 不再写。
 
 ### 2.4 不开游戏就能跑的测试
 

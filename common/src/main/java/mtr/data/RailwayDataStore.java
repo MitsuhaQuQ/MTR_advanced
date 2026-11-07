@@ -1,5 +1,6 @@
 package mtr.data;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -39,10 +40,28 @@ public interface RailwayDataStore {
 	void close() throws Exception;
 
 	/**
-	 * Replaces the compressed rail network (see {@link transitsim.network.Network}). Only the SQLite store keeps it, in its
-	 * own tables; the fallback of separate files doesn't.
+	 * Writes a version of the track section layer ({@link transitsim.network.TrackSections}): the sections added, those
+	 * removed (kept until {@link #sweepTrackSections}, so the version before can still be read), the signal layer's rows,
+	 * and last the root record that publishes the version. Only the SQLite store keeps it, in its own tables; the fallback
+	 * of separate files doesn't.
 	 */
-	default void replaceGraphSections(Map<Long, byte[]> sections, long fingerprint) throws Exception {
+	default void publishTrackSections(long version, Map<Long, byte[]> added, Collection<Long> removed, Map<Long, byte[]> overlayPut, Collection<Long> overlayRemoved, long fingerprint, int count) throws Exception {
+	}
+
+	/**
+	 * Deletes the rows of the track sections removed in this published version or before.
+	 */
+	default void sweepTrackSections(long version) throws Exception {
+	}
+
+	/**
+	 * Reads the track sections of the published version and the signal layer. Rows of a version never published, as when
+	 * the server stopped while writing one, are dropped, and rows it removed are kept again.
+	 *
+	 * @return the published version as {version, fingerprint, count}, or null if none was ever published
+	 */
+	default long[] loadTrackSections(BiConsumer<Long, byte[]> sections, BiConsumer<Long, byte[]> overlay) throws Exception {
+		return null;
 	}
 
 	/**
@@ -51,17 +70,10 @@ public interface RailwayDataStore {
 	default void writeGraphPath(String owner, long fingerprint, byte[] data) throws Exception {
 	}
 
-	default void forEachGraphSection(BiConsumer<Long, byte[]> consumer) throws Exception {
-	}
-
 	/**
 	 * Replaces what the component's simulator needs of the world (S4e), which the day tool reads. Only the SQLite store
 	 * keeps it.
 	 */
 	default void writeSimulationData(byte[] data) throws Exception {
-	}
-
-	default long getGraphFingerprint() throws Exception {
-		return 0;
 	}
 }
