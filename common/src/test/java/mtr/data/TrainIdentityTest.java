@@ -99,7 +99,7 @@ class TrainIdentityTest {
 		final Depot depot = new Depot(1, TransportMode.TRAIN);
 		final List<FriendlyByteBuf> sent = new ArrayList<>();
 		final Map<String, VehicleSettings> settings = new TreeMap<>();
-		settings.put("train/2", new VehicleSettings(0.03F, 0, true, 4, 20));
+		settings.put("train/2", new VehicleSettings(0.03F, 0, true, 4, 20, 90));
 		depot.setVehicleSettings(settings, sent::add);
 
 		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();

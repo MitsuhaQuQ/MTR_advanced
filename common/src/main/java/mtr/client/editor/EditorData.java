@@ -82,6 +82,9 @@ public final class EditorData {
 
 		final List<Route> routes = ClientData.ROUTES.stream().filter(route -> !route.isHidden).sorted(Comparator.comparing((Route route) -> route.name).thenComparingLong(route -> route.id)).collect(Collectors.toList());
 		final JsonArray routesArray = new JsonArray();
+		// The speed limit of each rail, to tell each route the fastest rail along it (line speed limits)
+		railSpeeds.clear();
+		ClientData.MAP_RAILS.forEach(mapRail -> railSpeeds.put(transitsim.network.RailKeys.of(mapRail.node1, mapRail.node2), mapRail.speedLimit));
 		routes.forEach(route -> routesArray.add(buildRoute(route, stationPlatforms)));
 		data.add("routes", routesArray);
 
@@ -154,6 +157,7 @@ public final class EditorData {
 				vehicleObject.addProperty("manual", vehicle.manual);
 				vehicleObject.addProperty("maxManualSpeed", vehicle.maxManualSpeed);
 				vehicleObject.addProperty("manualToAutomaticTime", vehicle.manualToAutomaticTime);
+				vehicleObject.addProperty("maxSpeed", vehicle.maxSpeed);
 				poolObject.add("vehicleSettings", vehicleObject);
 				poolsArray.add(poolObject);
 			});
@@ -306,8 +310,25 @@ public final class EditorData {
 
 	private static Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
 
+	private static final Map<java.util.UUID, Integer> railSpeeds = new HashMap<>();
+
+	/**
+	 * @return the highest speed limit of the rails along a route's path on the map, in km/h, or 0 if not known
+	 */
+	private static int getFastestRail(Route route) {
+		final long[] nodes = ClientData.MAP_ROUTES.get(route.id);
+		int fastest = 0;
+		for (int i = 0; nodes != null && i + 1 < nodes.length; i++) {
+			fastest = Math.max(fastest, railSpeeds.getOrDefault(transitsim.network.RailKeys.of(nodes[i], nodes[i + 1]), 0));
+		}
+		return fastest;
+	}
+
 	private static JsonObject buildRoute(Route route, Map<Long, List<Platform>> stationPlatforms) {
 		final JsonObject routeObject = new JsonObject();
+		// Its speed limit, and the fastest rail along it, above which it can't be set (line speed limits)
+		routeObject.addProperty("speedLimit", route.speedLimit);
+		routeObject.addProperty("fastestRail", getFastestRail(route));
 		// Ids don't fit in a JavaScript number
 		routeObject.addProperty("id", String.valueOf(route.id));
 		routeObject.addProperty("name", route.name);

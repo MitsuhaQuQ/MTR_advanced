@@ -1147,6 +1147,17 @@ sequenceDiagram
   - **清客和不运营**：`TrainService.isClearingOut`（停在 p）、`isOutOfService`（离开 p 之后，到接上第 k+1 段为止；回送一直到库）。游戏的列车在不运营时把骑乘者放下（`TrainServer.simulateTrain`，和回库时一样），所以在 p 下车的人留在站台，之后也上不了车。
   - **宿主下发**：和跳站一样在报警那一轮里，`DelayRules.getTurnBack` 从生效的预案或临时处置取方式、车站（换成站台）和之后怎么走；正在折返的车晚点 1 分钟以上继续算生效。不同才发：组件的车经 `LiveSimulation.submitTurnBack` → `HostInput.TurnBack`，游戏的车直接 `setTurnBack`。车不在运用上时清掉。
   - **存档和报警**：`TrainService` 多存 `turn_back`（`SAVED_KEYS` 17）。报警条目末尾再加折返状态（0 无、1 将折返、2 已折返、3 指定站折不回去），网页在原因后面写出来。
+- **速度设置**（0.34.0）：一条轨道上列车实际能跑的速度 = min(轨道限速, 线路限速, 列车最高速度)，都不设时和以前一样。信号闭塞按什么速度切分（`BlockSections`、`TrainServer.cutSpeed`）和寻路代价（`DeterministicPathFinder`）仍只看轨道，不受这两个设置影响。
+  - **45 km/h 轨道**：`RailType.COPPER(45, 赤陶橙)`，加在枚举**最后**。轨道存档按名字存，但手动驾驶最高速度按序号存（`Train.convertMaxManualSpeed`），附属模组也可能按序号用，所以不插在 40 和 60 之间；手动驾驶可选挡位不变。物品 `rail_connector_45`、`rail_connector_45_one_way`（`Items`、`MTR.registerItem`、`MTRClient` 的选中模型），配方用铜锭，贴图和配方在 `resources/common/normal`，模型在 `common/src/main/resources`，名称在 `common/src/main/lang`。颜色常量 `TERRACOTTA_ORANGE` 加在 `common/src/main/compat/legacy|modern/MaterialColor.java`（`mtr/compat` 下的那份是构建时从这里复制的）。
+  - **线路限速写进路径**：`Route.speedLimit`（km/h，0 不限；存档键 `speed_limit`、整包、`setExtraData` 的更新里都有，改了就 `timetable.revision++` 让车厂重新生成路径）。`PathData.speedCap`（每 tick 格数，0 无；存档里只有设了才写 `speed_cap`，网络包里总写）和 `PathData.getMaxSpeed()` = min(轨道, 上限)；`PathData.copy` 复制时带上它，原来各处 `new PathData(x.rail, …)` 的复制都改用它。写入点：
+    - `RoutePaths.find` 给线路自己的路径全程设上（路径缓存的键带上限速，改了就重找），所以线路最快时刻和按这条路径切出的运用段都带上限；
+    - `Depot.getDutyPlan` 给每一段 `segmentPath`（线路两站之间）设上，段间连接、出入库、D4/D5 的折返连接和出库路都不设；
+    - 老车厂主路径在没有线路自己路径时找到的那段也设上。
+  - **读速度的地方**改成读 `PathData.getMaxSpeed()`：`Train.getRailSpeed`、`Train` 的 `MotionTrack.getMaxSpeed`、`PathTiming`、`TrackViews`、`SimExport`（导出给组件的 `DataTrack.maxSpeed`，所以组件不用改就拿到线路限速）。
+  - **列车最高速度跟着车**：`VehicleSettings.maxSpeed`（km/h，车厂统一设置的车型；存档数组第 6 项、包、网页）和 `Siding` 自己的 `maxSpeed`（存档键 `max_speed`、整包、更新键）。`Siding.getMaxSpeed()` 有车厂统一设置时用车厂的。生效：
+    - 游戏：`Siding` 每 tick 设 `Train.vehicleMaxSpeed`，`getRailSpeed`、`getMaxSpeed(rail)`、`getDefaultMaxSpeed` 和速度曲线（`TrackViews.of(path, mode, maxSpeed)`，最高速度变了曲线重建）都取 min；计时用 `Siding.getTimingVehicle` → `PathTiming.Vehicle.maxSpeed`。
+    - 组件：`SimDataset` 第 15 版 `SidingData.vehicleMaxSpeed` → `TickRunner.Siding.vehicleMaxSpeed`，`HeadlessTrain.getMaxSpeed`、`getDefaultMaxSpeed`、`RunTrack.toTrackView(path, minSpeed, vehicleMaxSpeed)` 都取 min（不加速的轨道上用的最低巡航速度也不超过它）。
+  - **网页**：线路和种别右键"线路限速…"，对话框按线路列出输入框，上限是沿途最快的轨道限速（地图轨道数据第三个数的高位带上轨道限速，`MapRail.speedLimit`；`EditorData` 按 `MAP_ROUTES` 的节点求每条线路的 `fastestRail`），放进草稿，应用时发操作 `speedLimit`；时刻表面板标题旁显示"限速 X km/h"。车厂对话框车型那一栏加"最高速度"。游戏存车线界面在"手动驾驶"旁加"最高速度"滑条（5 km/h 一挡，车厂统一设置时不显示）。
 - **备车接替**（0.33.0，晚点调度 D5）：预案或临时处置勾了"备车接替"时，晚点车跑完某一段在末站清客、空车回本存车线；运用后面的段由车厂里一列备车从存车线开出去接上。列车不凭空出现或消失（用户定的规则，见解耦文档）。
   - **出库路和回库路**（游戏）：`Depot.MainPath.setTurnLinks`（D4 那一处）同时列出每份运用除第一段外每段首站的站台（段首是在站台上折返的，取到达的那条站台），和除最后一段外每段末站的站台，交给存车线（`Siding.setTurnLinks(links, targets, wayOutTargets)`）。存车线在生成路径时找"存车线 → 段首站"的出库路（`findWayOuts`，存 `wayOuts`，存档键 `way_outs`），段末站的回库路和 D4 的回送路一起存在 `turnReturns`。`SimDataset` 第 14 版带 `wayOuts`。
   - **两种按需拼的路径**（组件 `TripPath`）：

@@ -42,7 +42,7 @@ public final class PathTiming {
 		stopTimes.clear();
 		stopTimes.setJoinIndex(joinIndex);
 		if (vehicle.useSpeedCurve && !vehicle.transportMode.continuousMovement && !path.isEmpty()) {
-			final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, vehicle.transportMode), (vehicle.railLength + vehicle.trainCars * vehicle.spacing) / 2, vehicle.trainCars * vehicle.spacing, vehicle.acceleration, vehicle.deceleration);
+			final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, vehicle.transportMode, vehicle.maxSpeed), (vehicle.railLength + vehicle.trainCars * vehicle.spacing) / 2, vehicle.trainCars * vehicle.spacing, vehicle.acceleration, vehicle.deceleration);
 			PathTimes.curveTimes(path, curves, timeSegments, platformTimes, stopTimes);
 			stopTimes.linkJoinStops(lapEndIndex);
 			return;
@@ -76,7 +76,7 @@ public final class PathTiming {
 			}
 
 			final PathData pathData = path.get(i);
-			final float railSpeed = pathData.rail.railType.canAccelerate ? pathData.rail.railType.maxBlocksPerTick : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode));
+			final float railSpeed = vehicle.limit(pathData.rail.railType.canAccelerate ? pathData.getMaxSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
 			distanceSum2 += pathData.rail.getLength();
 
 			while (railProgress < distanceSum2) {
@@ -155,8 +155,16 @@ public final class PathTiming {
 		public final float deceleration;
 		public final boolean useSpeedCurve;
 		public final TransportMode transportMode;
+		/**
+		 * The highest speed of the vehicle, in blocks per tick, or 0 for none.
+		 */
+		public final float maxSpeed;
 
 		public Vehicle(float railLength, int trainCars, int spacing, float acceleration, float deceleration, boolean useSpeedCurve, TransportMode transportMode) {
+			this(railLength, trainCars, spacing, acceleration, deceleration, useSpeedCurve, transportMode, 0);
+		}
+
+		public Vehicle(float railLength, int trainCars, int spacing, float acceleration, float deceleration, boolean useSpeedCurve, TransportMode transportMode, float maxSpeed) {
 			this.railLength = railLength;
 			this.trainCars = trainCars;
 			this.spacing = spacing;
@@ -164,6 +172,14 @@ public final class PathTiming {
 			this.deceleration = deceleration;
 			this.useSpeedCurve = useSpeedCurve;
 			this.transportMode = transportMode;
+			this.maxSpeed = maxSpeed;
+		}
+
+		/**
+		 * @return a speed limit for this vehicle, no higher than its highest speed
+		 */
+		public float limit(float speedLimit) {
+			return maxSpeed > 0 ? Math.min(speedLimit, maxSpeed) : speedLimit;
 		}
 
 		@Override

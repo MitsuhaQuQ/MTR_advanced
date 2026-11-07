@@ -612,12 +612,13 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 */
 	protected final SpeedCurves getSpeedCurves() {
 		final double length = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
-		if (speedCurves == null || speedCurvesPath != path || speedCurvesSize != path.size() || speedCurvesLength != length || speedCurvesDeceleration != decelerationConstant) {
-			speedCurves = SpeedCurves.of(TrackViews.of(path, transportMode), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
+		if (speedCurves == null || speedCurvesPath != path || speedCurvesSize != path.size() || speedCurvesLength != length || speedCurvesDeceleration != decelerationConstant || speedCurvesMaxSpeed != vehicleMaxSpeed) {
+			speedCurves = SpeedCurves.of(TrackViews.of(path, transportMode, vehicleMaxSpeed), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
 			speedCurvesPath = path;
 			speedCurvesSize = path.size();
 			speedCurvesLength = length;
 			speedCurvesDeceleration = decelerationConstant;
+			speedCurvesMaxSpeed = vehicleMaxSpeed;
 			cappedProfile = null;
 		}
 		return speedCurves;
@@ -759,15 +760,29 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	public final float getRailSpeed(int railIndex) {
-		final RailType thisRail = path.get(railIndex).rail.railType;
+		final PathData thisPathData = path.get(railIndex);
+		final RailType thisRail = thisPathData.rail.railType;
 		final float railSpeed;
 		if (thisRail.canAccelerate) {
-			railSpeed = thisRail.maxBlocksPerTick;
+			railSpeed = thisPathData.getMaxSpeed();
 		} else {
-			final RailType lastRail = railIndex > 0 ? path.get(railIndex - 1).rail.railType : thisRail;
-			railSpeed = Math.max(lastRail.canAccelerate ? lastRail.maxBlocksPerTick : RailType.getDefaultMaxBlocksPerTick(transportMode), speed);
+			final PathData lastPathData = railIndex > 0 ? path.get(railIndex - 1) : thisPathData;
+			railSpeed = Math.max(lastPathData.rail.railType.canAccelerate ? lastPathData.getMaxSpeed() : RailType.getDefaultMaxBlocksPerTick(transportMode), speed);
 		}
-		return railSpeed;
+		return limitToVehicle(railSpeed);
+	}
+
+	/**
+	 * The highest speed of the train's vehicle, in blocks per tick, or 0 for none, as its siding or depot sets it.
+	 */
+	public float vehicleMaxSpeed;
+	private float speedCurvesMaxSpeed;
+
+	/**
+	 * @return a speed limit no higher than the vehicle's highest speed
+	 */
+	protected final float limitToVehicle(float speedLimit) {
+		return vehicleMaxSpeed > 0 ? Math.min(speedLimit, vehicleMaxSpeed) : speedLimit;
 	}
 
 	public final boolean isPlayerRiding(Player player) {
@@ -1174,7 +1189,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 		@Override
 		public float getMaxSpeed(int rail) {
-			return path.get(rail).rail.railType.maxBlocksPerTick;
+			return limitToVehicle(path.get(rail).getMaxSpeed());
 		}
 
 		@Override
@@ -1229,7 +1244,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 		@Override
 		public float getDefaultMaxSpeed() {
-			return RailType.getDefaultMaxBlocksPerTick(transportMode);
+			return limitToVehicle(RailType.getDefaultMaxBlocksPerTick(transportMode));
 		}
 
 		@Override

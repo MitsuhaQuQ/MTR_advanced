@@ -13,6 +13,7 @@ import org.msgpack.value.Value;
 import transitsim.plan.PlanTrack;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,6 +27,11 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	public long savedRailBaseId;
 	public int dwellTime;
 	public int stopIndex;
+	/**
+	 * The speed limit of the route this rail is a part of, in blocks per tick, or 0 for none: trains run it no faster than
+	 * this nor than the rail allows (see {@link #getMaxSpeed}).
+	 */
+	public float speedCap;
 
 	public final BlockPos startingPos;
 	private final BlockPos endingPos;
@@ -36,6 +42,7 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	private static final String KEY_STOP_INDEX = "stop_index";
 	private static final String KEY_STARTING_POS = "starting_pos";
 	private static final String KEY_ENDING_POS = "ending_pos";
+	private static final String KEY_SPEED_CAP = "speed_cap";
 
 	public PathData(Rail rail, long savedRailBaseId, int dwellTime, BlockPos startingPos, BlockPos endingPos, int stopIndex) {
 		this.rail = rail;
@@ -54,6 +61,7 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 		stopIndex = messagePackHelper.getInt(KEY_STOP_INDEX);
 		startingPos = BlockPos.of(messagePackHelper.getLong(KEY_STARTING_POS));
 		endingPos = BlockPos.of(messagePackHelper.getLong(KEY_ENDING_POS));
+		speedCap = messagePackHelper.getFloat(KEY_SPEED_CAP, 0);
 	}
 
 	@Deprecated
@@ -73,6 +81,7 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 		stopIndex = packet.readInt();
 		startingPos = BlockPos.of(packet.readLong());
 		endingPos = BlockPos.of(packet.readLong());
+		speedCap = packet.readFloat();
 	}
 
 	@Override
@@ -86,11 +95,14 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 		messagePacker.packString(KEY_STOP_INDEX).packInt(stopIndex);
 		messagePacker.packString(KEY_STARTING_POS).packLong(startingPos.asLong());
 		messagePacker.packString(KEY_ENDING_POS).packLong(endingPos.asLong());
+		if (speedCap > 0) {
+			messagePacker.packString(KEY_SPEED_CAP).packFloat(speedCap);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 6;
+		return speedCap > 0 ? 7 : 6;
 	}
 
 	@Override
@@ -101,6 +113,34 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 		packet.writeInt(stopIndex);
 		packet.writeLong(startingPos.asLong());
 		packet.writeLong(endingPos.asLong());
+		packet.writeFloat(speedCap);
+	}
+
+	/**
+	 * @return how fast a train may run this rail: the rail's speed limit, or the route's where that is lower
+	 */
+	public float getMaxSpeed() {
+		final float railSpeed = rail.railType.maxBlocksPerTick;
+		return speedCap > 0 ? Math.min(railSpeed, speedCap) : railSpeed;
+	}
+
+	/**
+	 * @return a copy of this rail of the path with another stop, keeping the route's speed limit
+	 */
+	public PathData copy(long newSavedRailBaseId, int newDwellTime) {
+		final PathData copy = new PathData(rail, newSavedRailBaseId, newDwellTime, startingPos, endingPos, stopIndex);
+		copy.speedCap = speedCap;
+		return copy;
+	}
+
+	/**
+	 * Sets a route's speed limit on rails of its path (decoupling document, line speed limits).
+	 *
+	 * @param speedLimit in km/h, or 0 for none
+	 */
+	public static void capSpeed(List<PathData> path, int speedLimit) {
+		final float cap = speedLimit > 0 ? speedLimit / 3.6F / 20 : 0;
+		path.forEach(pathData -> pathData.speedCap = cap);
 	}
 
 	public BlockPos getLastPos() {

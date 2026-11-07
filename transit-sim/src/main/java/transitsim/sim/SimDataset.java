@@ -43,9 +43,10 @@ public final class SimDataset {
 	 * frequency and order of sidings, and which sidings are driven by hand (G1); version 5 the depots' release intervals
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; version 13 the sidings' ways for turning back early (D4);
-	 * version 14 their ways out to where segments of their duties start (D5); older data is read without them.
+	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
+	 * highest speed of their vehicles; older data is read without them.
 	 */
-	public static final int VERSION = 14;
+	public static final int VERSION = 15;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -131,6 +132,7 @@ public final class SimDataset {
 				writeTracks(writer, tracks);
 			});
 		});
+		sidings.forEach(siding -> writeFloat(writer, siding.vehicleMaxSpeed));
 		sidings.forEach(siding -> {
 			writer.writeVarInt(siding.wayOuts.size());
 			siding.wayOuts.forEach((platformId, tracks) -> {
@@ -238,6 +240,11 @@ public final class SimDataset {
 					final long platformId = reader.readLong();
 					siding.turnReturns.put(platformId, readTracks(reader));
 				}
+			}
+		}
+		if (version >= 15) {
+			for (final SidingData siding : dataset.sidings) {
+				siding.vehicleMaxSpeed = readFloat(reader);
 			}
 		}
 		if (version >= 14) {
@@ -354,6 +361,7 @@ public final class SimDataset {
 			final StopTimes stopTimes = getStopTimes(sidingData);
 			final TickRunner.Siding<DataTrack> siding = new TickRunner.Siding<>(sidingData.path, sidingData.repeatIndex1, sidingData.repeatIndex2, stopTimes, trainId, sidingData.trainCars, sidingData.spacing, sidingData.railLength, sidingData.acceleration, sidingData.deceleration, sidingData.maxTrains);
 			siding.minSpeed = sidingData.minSpeed;
+			siding.vehicleMaxSpeed = sidingData.vehicleMaxSpeed;
 			siding.usesSpeedCurve = sidingData.usesSpeedCurve;
 			siding.manual = sidingData.manual;
 			siding.poolKey = sidingData.poolKey;
@@ -529,6 +537,7 @@ public final class SimDataset {
 	private static TickRunner.Siding<DataTrack> untimed(SidingData sidingData) {
 		final TickRunner.Siding<DataTrack> untimed = new TickRunner.Siding<>(sidingData.path, sidingData.repeatIndex1, sidingData.repeatIndex2, null, "siding:" + sidingData.id, sidingData.trainCars, sidingData.spacing, sidingData.railLength, sidingData.acceleration, sidingData.deceleration, sidingData.maxTrains);
 		untimed.minSpeed = sidingData.minSpeed;
+		untimed.vehicleMaxSpeed = sidingData.vehicleMaxSpeed;
 		return untimed;
 	}
 
@@ -556,7 +565,7 @@ public final class SimDataset {
 				stopTimes.clear();
 				stopTimes.setJoinIndex(joinIndex);
 				if (!path.isEmpty()) {
-					final SpeedCurves curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
+					final SpeedCurves curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed, siding.vehicleMaxSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
 					PathTimes.curveTimes(path, curves, timeSegments, new HashMap<>(), stopTimes);
 				}
 				stopTimes.linkJoinStops(lapEndIndex);
@@ -861,6 +870,10 @@ public final class SimDataset {
 		 * trains sent out late (D5).
 		 */
 		public final Map<Long, List<DataTrack>> wayOuts = new java.util.TreeMap<>();
+		/**
+		 * The highest speed of its vehicles, in blocks per tick, or 0 for none.
+		 */
+		public float vehicleMaxSpeed;
 
 		public void addTurnLink(long fromPlatformId, long toPlatformId, List<DataTrack> tracks) {
 			turnLinks.put(new long[]{fromPlatformId, toPlatformId}, tracks);

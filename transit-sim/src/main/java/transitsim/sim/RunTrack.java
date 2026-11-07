@@ -41,6 +41,13 @@ public interface RunTrack extends PlanTrack {
 	 * @param minSpeed the lowest cruising speed of the kind of vehicle
 	 */
 	static TrackView toTrackView(List<? extends RunTrack> path, double minSpeed) {
+		return toTrackView(path, minSpeed, 0);
+	}
+
+	/**
+	 * @param vehicleMaxSpeed the highest speed of the vehicle, in blocks per tick, or 0 for none: no rail is run faster
+	 */
+	static TrackView toTrackView(List<? extends RunTrack> path, double minSpeed, double vehicleMaxSpeed) {
 		final int count = path.size();
 		final double[] lengths = new double[count];
 		final double[] limits = new double[count];
@@ -49,10 +56,18 @@ public interface RunTrack extends PlanTrack {
 		for (int i = 0; i < count; i++) {
 			final RunTrack track = path.get(i);
 			lengths[i] = track.getTrackLength();
-			limits[i] = track.canAccelerate() ? track.getMaxSpeed() : -1;
+			limits[i] = track.canAccelerate() ? limit(track.getMaxSpeed(), vehicleMaxSpeed) : -1;
 			stops[i] = track.getDwellTime() > 0;
 			reversals[i] = i + 1 < count && track.isOppositeOf(path.get(i + 1));
 		}
-		return new TrackView(lengths, limits, stops, reversals, minSpeed);
+		// Where rails don't set the speed, the vehicle's lowest cruising speed, which its highest speed caps too
+		return new TrackView(lengths, limits, stops, reversals, limit((float) minSpeed, vehicleMaxSpeed));
+	}
+
+	/**
+	 * @return a rail's speed limit for a vehicle with a highest speed, or 0 for none
+	 */
+	static float limit(float railSpeed, double vehicleMaxSpeed) {
+		return vehicleMaxSpeed > 0 ? (float) Math.min(railSpeed, vehicleMaxSpeed) : railSpeed;
 	}
 }

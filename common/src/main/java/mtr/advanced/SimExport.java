@@ -91,7 +91,7 @@ public final class SimExport {
 			return new SimDataset.DataTrack(
 					pathData.startingPos.asLong(), pathData.getLastPos().asLong(), pathData.rail.getLength(),
 					railType == RailType.PLATFORM, railType == RailType.SIDING, pathData.savedRailBaseId, pathData.dwellTime, pathData.stopIndex,
-					railType.maxBlocksPerTick, railType.canAccelerate, railType.hasSignal, backwards != null && backwards.railType != RailType.NONE
+					pathData.getMaxSpeed(), railType.canAccelerate, railType.hasSignal, backwards != null && backwards.railType != RailType.NONE
 			);
 		}).collect(Collectors.toList());
 	}

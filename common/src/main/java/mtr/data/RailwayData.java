@@ -875,7 +875,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				final List<Long> region = regions.computeIfAbsent(regionKey, key -> new ArrayList<>());
 				region.add(startPos.asLong());
 				region.add(endPos.asLong());
-				region.add((long) rail.transportMode.ordinal());
+				// The transport mode, and above it the rail's speed limit in km/h for the editor (line speed limits)
+				region.add((long) rail.transportMode.ordinal() | (long) rail.railType.speedLimit << 16);
 				final float[] shape = rail.getMapShape();
 				if (shape != null) {
 					final List<Long> shapeRegion = shapeRegions.computeIfAbsent(regionKey, key -> new ArrayList<>());

@@ -1,4 +1,8 @@
 {
+  "gui.mtr.siding_max_speed": "最高速度：%s km/h",
+  "gui.mtr.siding_max_speed_none": "最高速度：不限",
+  "item.mtr.rail_connector_45": "铜制轨道连接器",
+  "item.mtr.rail_connector_45_one_way": "铜制轨道连接器（单向）",
   "gui.mtr.platform_timetable_boundary_on": "时刻边界：是（可接出接入）",
   "gui.mtr.platform_timetable_boundary_off": "时刻边界：否",
   "gui.mtr.timetable_editor_managed": "这条线路由高级编辑器管理，这里只能查看。可以在高级编辑器里把它交回游戏内编辑。",

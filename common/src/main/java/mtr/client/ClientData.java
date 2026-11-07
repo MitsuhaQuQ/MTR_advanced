@@ -418,7 +418,17 @@ public final class ClientData {
 		public final long node1;
 		public final long node2;
 
+		/**
+		 * The rail's speed limit in km/h, or 0 if not known.
+		 */
+		public final int speedLimit;
+
 		public MapRail(BlockPos pos1, BlockPos pos2, TransportMode transportMode) {
+			this(pos1, pos2, transportMode, 0);
+		}
+
+		public MapRail(BlockPos pos1, BlockPos pos2, TransportMode transportMode, int speedLimit) {
+			this.speedLimit = speedLimit;
 			node1 = pos1.asLong();
 			node2 = pos2.asLong();
 			x1 = pos1.getX();

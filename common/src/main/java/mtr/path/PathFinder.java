@@ -84,7 +84,7 @@ public class PathFinder {
 				final PathData pathData = path.get(j);
 				if (pathData.savedRailBaseId == routePlatform.platformId && pathData.dwellTime > 0) {
 					final int dwellTime = routePlatform.getStopDwell(canPass, pathData.dwellTime, pathData.rail.transportMode.continuousMovement);
-					path.set(j, new PathData(pathData.rail, pathData.savedRailBaseId, dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
+					path.set(j, pathData.copy(pathData.savedRailBaseId, dwellTime));
 					pathIndex = j + 1;
 					break;
 				}

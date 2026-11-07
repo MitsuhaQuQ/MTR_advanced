@@ -1,4 +1,8 @@
 {
+  "gui.mtr.siding_max_speed": "Highest speed: %s km/h",
+  "gui.mtr.siding_max_speed_none": "Highest speed: none",
+  "item.mtr.rail_connector_45": "Copper Rail Connector",
+  "item.mtr.rail_connector_45_one_way": "Copper Rail Connector (One-way)",
   "gui.mtr.platform_timetable_boundary_on": "Timetable boundary: yes",
   "gui.mtr.platform_timetable_boundary_off": "Timetable boundary: no",
   "gui.mtr.timetable_editor_managed": "This route is managed in the advanced editor, so it can only be viewed here. The editor can hand it back to in-game editing.",

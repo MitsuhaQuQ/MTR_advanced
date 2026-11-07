@@ -142,6 +142,8 @@
 	}
 	const isManaged = r => draftOf(r) && "managed" in draftOf(r) ? draftOf(r).managed : r.editorManaged;
 	const isConnecting = r => draftOf(r) && "connectingLine" in draftOf(r) ? draftOf(r).connectingLine : Boolean(r.connectingLine);
+	/** A route's speed limit in km/h, 0 for none, as drafted or as the game has it (line speed limits). */
+	const speedLimitOf = r => draftOf(r) && "speedLimit" in draftOf(r) ? draftOf(r).speedLimit : (r.speedLimit || 0);
 	// A type marked for deletion stays in the game until the draft is applied
 	const isDeleted = r => Boolean(draftOf(r) && draftOf(r).deleted);
 
@@ -246,6 +248,43 @@
 		return [...texts];
 	}
 
+	/** Drafts a route's speed limit in km/h, 0 for none (line speed limits). */
+	function setSpeedLimit(r, speedLimit) {
+		const entry = draftEntry(r);
+		if (speedLimit === (r.speedLimit || 0)) delete entry.speedLimit;
+		else entry.speedLimit = speedLimit;
+		if (!entry.conflict) delete entry.error;
+		tidyDraft(r.id);
+	}
+
+	/**
+	 * The speed limits of routes, each no higher than the fastest rail along it: trains run its rails between its stops no
+	 * faster than either (line speed limits).
+	 */
+	function speedLimitDialog(routes) {
+		const rows = routes.map(r => {
+			const fastest = r.fastestRail || 0;
+			const limit = speedLimitOf(r);
+			return `<label data-speed-route="${r.id}">${escapeHtml(routeTitle(r))} <input type="number" min="0" max="${fastest || 300}" step="1" name="speed" value="${limit > 0 ? limit : ""}" placeholder="${tr("不限")}"> km/h
+				<span class="hint">${fastest ? tr("轨道限速最高 {0} km/h", fastest) : tr("还不知道沿途轨道的限速")}</span></label>`;
+		}).join("");
+		openDialog(tr("线路限速"), `<p class="hint">${tr("列车在这条线路两站之间的轨道上不超过这个速度，也不超过轨道自己的限速；出入库和折返不受影响。空着为不限。")}</p>${rows}`, tr("放进草稿"), form => {
+			const values = [];
+			for (const row of form.querySelectorAll("[data-speed-route]")) {
+				const r = data.routeById.get(row.dataset.speedRoute);
+				const text = row.querySelector("input[name=speed]").value.trim();
+				const value = text === "" ? 0 : Math.round(Number(text));
+				if (!(value >= 0) || value > 300) return tr("限速要在 0 到 300 km/h 之间");
+				if (r.fastestRail && value > r.fastestRail) return tr("{0}：不能高于轨道限速 {1} km/h", routeTitle(r), r.fastestRail);
+				values.push([r, value]);
+			}
+			values.forEach(([r, value]) => setSpeedLimit(r, value));
+			saveDraft();
+			renderAll();
+			return null;
+		});
+	}
+
 	/** A connecting line: other lines' paths keep off its rails, while services can run through it with passengers. */
 	function setConnecting(r, connecting) {
 		const entry = draftEntry(r);
@@ -300,6 +339,10 @@
 			}
 			if ("connectingLine" in entry) {
 				operations.push({ type: "connectingLine", route: id, base, parts, force: Boolean(entry.force), connectingLine: entry.connectingLine });
+				owners.push(id);
+			}
+			if ("speedLimit" in entry) {
+				operations.push({ type: "speedLimit", route: id, base, parts, force: Boolean(entry.force), speedLimit: entry.speedLimit });
 				owners.push(id);
 			}
 			if (entry.connectingReleased) {
@@ -1088,6 +1131,7 @@
 		if (entry.deleted) items.push(tr("删除这个种别"));
 		if ("managed" in entry) items.push(entry.managed ? tr("改由高级编辑器管理") : tr("交回游戏内编辑"));
 		if ("connectingLine" in entry) items.push(entry.connectingLine ? tr("设为联络线") : tr("取消联络线"));
+		if ("speedLimit" in entry) items.push(entry.speedLimit > 0 ? tr("限速 {0} km/h", entry.speedLimit) : tr("取消限速"));
 		if (entry.connectingReleased) items.push(tr("联络线放行 {0} 段", entry.connectingReleased.length));
 		if (entry.terminalPlatforms) items.push(tr("轮用站台 {0} 个", entry.terminalPlatforms.length));
 		if (entry.startPlatforms) items.push(tr("优先股道 {0} 个", entry.startPlatforms.length));
@@ -3176,7 +3220,8 @@
 			<span class="pill${managed ? " managed" : ""}" title="${tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}">${managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}${pending ? tr("（草稿）") : ""}</span>
 			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button>
 			${connecting ? `<span class="pill" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${tr("联络线")}${connectingPending ? tr("（草稿）") : ""}</span>` : ""}
-			<button data-connecting="${!connecting}" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${connecting ? tr("取消联络线") : tr("设为联络线")}</button></div>
+			<button data-connecting="${!connecting}" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${connecting ? tr("取消联络线") : tr("设为联络线")}</button>
+			${speedLimitOf(r) > 0 ? `<span class="pill" title="${tr("列车在这条线路两站之间的轨道上不超过这个速度，也不超过轨道自己的限速")}">${tr("限速 {0} km/h", speedLimitOf(r))}${draftOf(r) && "speedLimit" in draftOf(r) ? tr("（草稿）") : ""}</span>` : ""}</div>
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint">${tr("余裕")} <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
 			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
@@ -4116,10 +4161,11 @@
 			const set = Boolean(vehicleOf(pool));
 			return `<fieldset data-pool-row="${escapeHtml(pool.key)}"><legend>${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key))}</legend>
 				<label>${tr("配属车数")} <input type="number" min="0" max="999" name="poolFleet" placeholder="${escapeHtml(pool.sum < 0 ? tr("存车线相加：按需要") : tr("存车线相加：{0}", pool.sum))}" value="${fleet === null || fleet === undefined || fleet < 0 ? "" : fleet}"></label>
-				<label><input type="checkbox" name="vehicleSet"${set ? " checked" : ""}> ${tr("统一设置这个车型的加减速和手动驾驶（不勾就按第一条存车线的）")}</label>
+				<label><input type="checkbox" name="vehicleSet"${set ? " checked" : ""}> ${tr("统一设置这个车型的加减速、最高速度和手动驾驶（不勾就按第一条存车线的）")}</label>
 				<label>${tr("加速度 m/s²")} <input type="number" step="0.01" min="0.4" max="20" name="acceleration" value="${perSecond(shown.acceleration || 0.01)}"></label>
 				<label>${tr("减速度 m/s²（空着同加速度）")} <input type="number" step="0.01" min="0" max="20" name="deceleration" value="${shown.deceleration > 0 ? perSecond(shown.deceleration) : ""}"></label>
 				<label><input type="checkbox" name="manual"${shown.manual ? " checked" : ""}> ${tr("允许手动驾驶")}</label>
+				<label>${tr("最高速度 km/h（空着不限）")} <input type="number" step="1" min="0" max="300" name="maxSpeed" value="${shown.maxSpeed > 0 ? shown.maxSpeed : ""}"></label>
 			</fieldset>`;
 		}).join("");
 		const sidingOf = siding => current.sidings[siding.id] || { routes: (siding.routes || []).slice(), fleet: siding.fleet };
@@ -4171,7 +4217,10 @@
 					const decelerationText = row.querySelector("input[name=deceleration]").value.trim();
 					if (!(acceleration > 0) || decelerationText !== "" && !(Number(decelerationText) >= 0)) bad = true;
 					const base = pool.vehicleSettings || {};
-					vehicleSettings[row.dataset.poolRow] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: row.querySelector("input[name=manual]").checked, maxManualSpeed: base.maxManualSpeed || 0, manualToAutomaticTime: base.manualToAutomaticTime || 0 };
+					const maxSpeedText = row.querySelector("input[name=maxSpeed]").value.trim();
+					const maxSpeed = maxSpeedText === "" ? 0 : Math.round(Number(maxSpeedText));
+					if (!(maxSpeed >= 0) || maxSpeed > 300) bad = true;
+					vehicleSettings[row.dataset.poolRow] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: row.querySelector("input[name=manual]").checked, maxManualSpeed: base.maxManualSpeed || 0, manualToAutomaticTime: base.manualToAutomaticTime || 0, maxSpeed };
 				} else {
 					vehicleSettings[row.dataset.poolRow] = null;
 				}
@@ -6283,8 +6332,9 @@
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
-		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null]]
-			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("路网故障预案…"), systemOfRoute(r.id) ? () => contingencyDialog(systemOfRoute(r.id)) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
+		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null],
+			[tr("线路限速…"), data.canEdit && (data.lines.find(each => each.key === line) || {}).routes ? () => speedLimitDialog(data.lines.find(each => each.key === line).routes) : null]]
+			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("路网故障预案…"), systemOfRoute(r.id) ? () => contingencyDialog(systemOfRoute(r.id)) : null], [tr("线路限速…"), data.canEdit ? () => speedLimitDialog([r]) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
 				isDeleted(r) ? [tr("取消删除"), () => keepType(r)] : [tr("删除这个种别…"), data.canEdit ? () => deleteTypeDialog(r) : null]]
 				: created ? [[tr("删除这个新建的种别"), () => removeCreated(created)]] : null;
 		if (!items) return;

@@ -222,6 +222,8 @@ public final class RoutePaths {
 				}
 			}
 		}
+		// The route's speed limit on its rails (line speed limits)
+		PathData.capSpeed(path, route.speedLimit);
 		System.out.println("Minecraft Transit Railway: " + (path.isEmpty() ? "found no path for" : "found the path of") + " route " + (route.name.isEmpty() ? String.valueOf(route.id) : route.name) + " (" + path.size() + " rails) in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
 		return new RoutePath(route.id, key, path, failure);
 	}
@@ -232,7 +234,8 @@ public final class RoutePaths {
 	 * the path, as they are applied by whoever uses it.
 	 */
 	static String getKey(Route route, DataCache dataCache) {
-		final StringBuilder key = new StringBuilder();
+		// A new speed limit finds the path again, with the limit on it
+		final StringBuilder key = new StringBuilder().append(route.speedLimit).append('|');
 		route.platformIds.forEach(routePlatform -> {
 			final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
 			key.append(routePlatform.platformId).append('/').append(platform == null ? -1 : platform.getDwellTime()).append('[');
@@ -266,7 +269,7 @@ public final class RoutePaths {
 
 	static List<PathData> copy(List<PathData> path) {
 		final List<PathData> copy = new ArrayList<>(path.size());
-		path.forEach(pathData -> copy.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+		path.forEach(pathData -> copy.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime)));
 		return copy;
 	}
 
@@ -494,7 +497,7 @@ public final class RoutePaths {
 			}
 			final List<PathData> slice = copy(rawPath.subList(start, end + 1));
 			final PathData first = slice.get(0);
-			slice.set(0, new PathData(first.rail, first.savedRailBaseId, 0, first.startingPos, first.getLastPos(), first.stopIndex));
+			slice.set(0, first.copy(first.savedRailBaseId, 0));
 			return slice;
 		}
 

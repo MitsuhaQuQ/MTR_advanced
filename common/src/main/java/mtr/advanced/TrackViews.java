@@ -16,6 +16,13 @@ public final class TrackViews {
 	}
 
 	public static TrackView of(List<PathData> path, TransportMode transportMode) {
+		return of(path, transportMode, 0);
+	}
+
+	/**
+	 * @param maxSpeed the highest speed of the vehicle, in blocks per tick, or 0 for none
+	 */
+	public static TrackView of(List<PathData> path, TransportMode transportMode, float maxSpeed) {
 		final int count = path.size();
 		final double[] lengths = new double[count];
 		final double[] limits = new double[count];
@@ -25,10 +32,14 @@ public final class TrackViews {
 			final PathData pathData = path.get(i);
 			final RailType railType = pathData.rail.railType;
 			lengths[i] = pathData.rail.getLength();
-			limits[i] = railType.canAccelerate ? railType.maxBlocksPerTick : -1;
+			limits[i] = railType.canAccelerate ? limit(pathData.getMaxSpeed(), maxSpeed) : -1;
 			stops[i] = pathData.dwellTime > 0;
 			reversals[i] = i + 1 < count && pathData.isOppositeRail(path.get(i + 1));
 		}
-		return new TrackView(lengths, limits, stops, reversals, RailType.getDefaultMaxBlocksPerTick(transportMode));
+		return new TrackView(lengths, limits, stops, reversals, limit(RailType.getDefaultMaxBlocksPerTick(transportMode), maxSpeed));
+	}
+
+	private static float limit(float speedLimit, float maxSpeed) {
+		return maxSpeed > 0 ? Math.min(speedLimit, maxSpeed) : speedLimit;
 	}
 }

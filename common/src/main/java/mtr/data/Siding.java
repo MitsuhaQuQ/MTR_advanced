@@ -171,7 +171,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		@Override
 		public PathData withStop(PathData pathData, int dwellTime, long platformId) {
-			return new PathData(pathData.rail, platformId, dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex);
+			return pathData.copy(platformId, dwellTime);
 		}
 
 		@Override
@@ -251,6 +251,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_SHED = "shed";
 	private static final String KEY_ACCELERATION_CONSTANT = "acceleration_constant";
 	private static final String KEY_DECELERATION_CONSTANT = "deceleration_constant";
+	private static final String KEY_MAX_SPEED = "max_speed";
 
 	public Siding(long id, TransportMode transportMode, BlockPos pos1, BlockPos pos2, float railLength) {
 		super(id, transportMode, pos1, pos2);
@@ -296,6 +297,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final float tempAccelerationConstant = RailwayData.round(messagePackHelper.getFloat(KEY_ACCELERATION_CONSTANT, Train.ACCELERATION_DEFAULT), 3);
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant <= 0 ? Train.ACCELERATION_DEFAULT : tempAccelerationConstant;
 		decelerationConstant = clampDeceleration(messagePackHelper.getFloat(KEY_DECELERATION_CONSTANT, 0));
+		maxSpeed = clampMaxSpeed(messagePackHelper.getInt(KEY_MAX_SPEED, 0));
 
 		messagePackHelper.iterateArrayValue(KEY_PATH, pathSection -> path.add(new PathData(RailwayData.castMessagePackValueToSKMap(pathSection))));
 
@@ -386,6 +388,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final float tempAccelerationConstant = RailwayData.round(packet.readFloat(), 3);
 		accelerationConstant = transportMode.continuousMovement ? Train.MAX_ACCELERATION : tempAccelerationConstant <= 0 ? Train.ACCELERATION_DEFAULT : tempAccelerationConstant;
 		decelerationConstant = clampDeceleration(packet.readFloat());
+		maxSpeed = clampMaxSpeed(packet.readInt());
 		readOperation(packet);
 		recordedLegs = DepotLegs.readPacket(packet);
 	}
@@ -425,6 +428,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		messagePacker.packString(KEY_LOOP_JOIN_INDEX).packInt(loopJoinIndex);
 		messagePacker.packString(KEY_ACCELERATION_CONSTANT).packFloat(accelerationConstant);
 		messagePacker.packString(KEY_DECELERATION_CONSTANT).packFloat(decelerationConstant);
+		messagePacker.packString(KEY_MAX_SPEED).packInt(maxSpeed);
 		RailwayData.writeMessagePackDataset(messagePacker, path, KEY_PATH);
 		messagePacker.packString(KEY_TRIP_PATHS).packArrayHeader(tripPaths.size());
 		for (final TripPath<PathData> tripPath : tripPaths.values()) {
@@ -457,7 +461,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 24;
+		return super.messagePackLength() + 25;
 	}
 
 	/**
@@ -544,6 +548,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		packet.writeInt(maxManualSpeed);
 		packet.writeFloat(accelerationConstant);
 		packet.writeFloat(decelerationConstant);
+		packet.writeInt(maxSpeed);
 		writeOperation(packet);
 		recordedLegs.writePacket(packet);
 	}
@@ -553,6 +558,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		switch (key) {
 			case KEY_DECELERATION_CONSTANT:
 				decelerationConstant = clampDeceleration(packet.readFloat());
+				break;
+			case KEY_MAX_SPEED:
+				maxSpeed = clampMaxSpeed(packet.readInt());
 				break;
 			case KEY_OPERATION:
 				readOperation(packet);
@@ -854,7 +862,40 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * depot has none set for it
 	 */
 	public VehicleSettings getOwnVehicleSettings() {
-		return new VehicleSettings(accelerationConstant, decelerationConstant, isManual, maxManualSpeed, dwellTime);
+		return new VehicleSettings(accelerationConstant, decelerationConstant, isManual, maxManualSpeed, dwellTime, maxSpeed);
+	}
+
+	/**
+	 * The highest speed of its trains as set for the siding itself, in km/h, or 0 for none.
+	 */
+	private int maxSpeed;
+
+	/**
+	 * @return the highest speed of its trains, in km/h, or 0 for none: its pool's as the depot sets it, or its own
+	 */
+	public int getMaxSpeed() {
+		return vehicle == null || transportMode.continuousMovement ? maxSpeed : vehicle.maxSpeed;
+	}
+
+	/**
+	 * @return the siding's own highest speed, in km/h, or 0 for none, which counts unless the depot sets its vehicle
+	 */
+	public int getOwnMaxSpeed() {
+		return maxSpeed;
+	}
+
+	public void setMaxSpeed(int newMaxSpeed, Consumer<FriendlyByteBuf> sendPacket) {
+		maxSpeed = clampMaxSpeed(newMaxSpeed);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_MAX_SPEED);
+		packet.writeInt(maxSpeed);
+		sendPacket.accept(packet);
+	}
+
+	private static int clampMaxSpeed(int value) {
+		return Math.max(0, Math.min(value, VehicleSettings.MAX_SPEED));
 	}
 
 	public float getAccelerationConstant() {
@@ -1260,7 +1301,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				changedEnd = section.start + length - 1;
 				extraRails = newWay.size() - length;
 			}
-			planBody.forEach(pathData -> body.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+			planBody.forEach(pathData -> body.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime)));
 			segmentStarts = new int[dutyPlan.segmentStarts.length];
 			for (int i = 0; i < segmentStarts.length; i++) {
 				segmentStarts[i] = dutyPlan.segmentStarts[i] + (dutyPlan.segmentStarts[i] > changedStart ? extraRails : 0);
@@ -1329,7 +1370,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	private static List<PathData> copyPath(List<PathData> path) {
 		final List<PathData> copy = new ArrayList<>();
-		path.forEach(pathData -> copy.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+		path.forEach(pathData -> copy.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime)));
 		return copy;
 	}
 
@@ -1509,6 +1550,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			train.setSpeedCurve(useSpeedCurve, getDecelerationConstant());
 			// As the pool's vehicle runs now (R1), for trains made before it was set or changed
 			train.setVehicle(getAccelerationConstant(), getIsManual(), getMaxManualSpeed(), getManualToAutomaticTime());
+			// And no faster than the vehicle may run (vehicle highest speeds)
+			train.vehicleMaxSpeed = VehicleSettings.toBlocksPerTick(getMaxSpeed());
 			train.lastSchedulesForPlatform = lastSchedulesForPlatform;
 			if (train.simulateTrain(world, ticksElapsed, depot, dataCache, trainPositions, trainsInPlayerRange, schedulesForPlatform, trainDelays)) {
 				trainsToSync.add(train);
@@ -1664,6 +1707,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		sidingData.linePool = lineUnitKey.isEmpty() ? "" : lineUnitKey + "|" + getPoolKey();
 		// The trains its pool has in all (SimDataset 11, P2-C)
 		sidingData.poolFleet = byDuties && depot != null ? depot.getLinePoolFleet(this) : -1;
+		// The highest speed of its vehicle (SimDataset 15)
+		sidingData.vehicleMaxSpeed = VehicleSettings.toBlocksPerTick(getMaxSpeed());
 		// The ways for turning back early (SimDataset 13, D4)
 		new TreeMap<>(turnLinks).forEach((pair, linkPath) -> {
 			final String[] platforms = pair.split(">");
@@ -1923,7 +1968,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * @param speedCurves whether the train runs on speed curves, as its depot is set
 	 */
 	public PathTiming.Vehicle getTimingVehicle(boolean speedCurves) {
-		return new PathTiming.Vehicle(railLength, trainCars, TrainType.getSpacing(baseTrainType), getAccelerationConstant(), getDecelerationConstant(), speedCurves, transportMode);
+		return new PathTiming.Vehicle(railLength, trainCars, TrainType.getSpacing(baseTrainType), getAccelerationConstant(), getDecelerationConstant(), speedCurves, transportMode, VehicleSettings.toBlocksPerTick(getMaxSpeed()));
 	}
 
 	/**

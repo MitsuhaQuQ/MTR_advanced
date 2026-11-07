@@ -168,7 +168,7 @@ public final class EditorActions implements IPacket {
 			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("vehicleSettings").entrySet()) {
 				if (entry.getValue().isJsonObject()) {
 					final JsonObject value = entry.getValue().getAsJsonObject();
-					settings.put(entry.getKey(), new mtr.data.VehicleSettings(value.get("acceleration").getAsFloat(), value.get("deceleration").getAsFloat(), value.get("manual").getAsBoolean(), value.get("maxManualSpeed").getAsInt(), value.get("manualToAutomaticTime").getAsInt()));
+					settings.put(entry.getKey(), new mtr.data.VehicleSettings(value.get("acceleration").getAsFloat(), value.get("deceleration").getAsFloat(), value.get("manual").getAsBoolean(), value.get("maxManualSpeed").getAsInt(), value.get("manualToAutomaticTime").getAsInt(), value.has("maxSpeed") && !value.get("maxSpeed").isJsonNull() ? value.get("maxSpeed").getAsInt() : 0));
 				}
 			}
 			depot.setVehicleSettings(settings, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
@@ -428,6 +428,15 @@ public final class EditorActions implements IPacket {
 				return null;
 			case "connectingLine":
 				route.connectingLine = operation.get("connectingLine").getAsBoolean();
+				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				return null;
+			case "speedLimit":
+				// The route's speed limit in km/h, 0 for none, no higher than the fastest rail along it (line speed limits)
+				final int speedLimit = operation.has("speedLimit") && !operation.get("speedLimit").isJsonNull() ? operation.get("speedLimit").getAsInt() : 0;
+				if (speedLimit < 0 || speedLimit > mtr.data.VehicleSettings.MAX_SPEED) {
+					return TranslatedMessage.get("gui.mtr.editor_bad_change");
+				}
+				route.speedLimit = speedLimit;
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
 			case "connectingRelease":

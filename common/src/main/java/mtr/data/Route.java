@@ -87,6 +87,11 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	 */
 	public String serviceType = "";
 	/**
+	 * The route's speed limit in km/h, or 0 for none: its trains run between its stops no faster than this nor than the
+	 * rails allow, which the editor keeps it no higher than.
+	 */
+	public int speedLimit;
+	/**
 	 * Set up in the advanced editor, so the game's own timetable controls only show it. See {@link mtr.client.editor.EditorServer}.
 	 */
 	public boolean editorManaged;
@@ -131,6 +136,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_CONNECTING_RELEASED = "connecting_released";
 	private static final String KEY_TERMINAL_PLATFORMS = "terminal_platforms";
 	private static final String KEY_START_PLATFORMS = "start_platforms";
+	private static final String KEY_SPEED_LIMIT = "speed_limit";
 	private static final String DUPLICATE_SUFFIX = "_duplicate";
 	private static final Pattern DUPLICATE_PATTERN = Pattern.compile("(" + DUPLICATE_SUFFIX + ")+$");
 
@@ -195,6 +201,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		lineName = messagePackHelper.getString(KEY_LINE_NAME);
 		ownColor = messagePackHelper.getInt(KEY_DIAGRAM_COLOR, -1);
 		serviceType = messagePackHelper.getString(KEY_SERVICE_TYPE);
+		speedLimit = Math.max(0, messagePackHelper.getInt(KEY_SPEED_LIMIT, 0));
 		editorManaged = messagePackHelper.getBoolean(KEY_EDITOR_MANAGED);
 		connectingLine = messagePackHelper.getBoolean(KEY_CONNECTING_LINE);
 		final List<Long> releasedNodes = new ArrayList<>();
@@ -286,6 +293,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		connectingLine = packet.readBoolean();
 		readConnectingReleased(packet);
 		readTurnPlatforms(packet);
+		speedLimit = packet.readInt();
 
 		final int pathSize = packet.readInt();
 		for (int i = 0; i < pathSize; i++) {
@@ -335,6 +343,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		messagePacker.packString(KEY_LINE_NAME).packString(lineName);
 		messagePacker.packString(KEY_DIAGRAM_COLOR).packInt(getOwnColor());
 		messagePacker.packString(KEY_SERVICE_TYPE).packString(serviceType);
+		messagePacker.packString(KEY_SPEED_LIMIT).packInt(speedLimit);
 		messagePacker.packString(KEY_EDITOR_MANAGED).packBoolean(editorManaged);
 		messagePacker.packString(KEY_CONNECTING_LINE).packBoolean(connectingLine);
 		messagePacker.packString(KEY_CONNECTING_RELEASED).packArrayHeader(connectingReleased.size() * 2);
@@ -394,7 +403,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 34 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 35 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -607,6 +616,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeBoolean(connectingLine);
 		writeConnectingReleased(packet);
 		writeTurnPlatforms(packet);
+		packet.writeInt(speedLimit);
 
 		packet.writeInt(pathData.size());
 		pathData.forEach(data -> data.writePacket(packet));
@@ -648,6 +658,12 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 				connectingLine = packet.readBoolean();
 				readConnectingReleased(packet);
 				readTurnPlatforms(packet);
+				// A new speed limit times the route and its duties again
+				final int newSpeedLimit = Math.max(0, packet.readInt());
+				if (newSpeedLimit != speedLimit) {
+					speedLimit = newSpeedLimit;
+					timetable.revision++;
+				}
 				break;
 			case KEY_TIMETABLE_SERVICES:
 				readTimetable(packet);
@@ -725,6 +741,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		packet.writeBoolean(connectingLine);
 		writeConnectingReleased(packet);
 		writeTurnPlatforms(packet);
+		packet.writeInt(speedLimit);
 		sendPacket.accept(packet);
 	}
 
@@ -811,6 +828,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		route.lineName = lineName;
 		route.ownColor = ownColor;
 		route.serviceType = serviceType;
+		route.speedLimit = speedLimit;
 		route.pathData = new ArrayList<>(pathData);
 		platformIds.forEach(routePlatform -> {
 			final RoutePlatform newRoutePlatform = new RoutePlatform(routePlatform.platformId);

@@ -41,6 +41,11 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 	private final WidgetBetterTextField textFieldMaxTrains;
 	private final WidgetShorterSlider sliderAccelerationConstant;
 	private final WidgetShorterSlider sliderDecelerationConstant;
+	/**
+	 * The highest speed of the siding's trains, in steps of {@link #MAX_SPEED_STEP} km/h, 0 for none.
+	 */
+	private final WidgetShorterSlider sliderMaxSpeed;
+	private static final int MAX_SPEED_STEP = 5;
 	private final WidgetBetterCheckbox buttonIsManual;
 	private final WidgetShorterSlider sliderMaxManualSpeed;
 	private final WidgetBetterTextField textFieldServiceTypes;
@@ -75,6 +80,7 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		textFieldMaxTrains = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "", MAX_TRAINS_TEXT_LENGTH);
 		sliderAccelerationConstant = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, Math.round((Train.MAX_ACCELERATION - Train.MIN_ACCELERATION) * SLIDER_SCALE), this::accelerationSliderFormatter, null);
 		sliderDecelerationConstant = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, Math.round((Train.MAX_ACCELERATION - Train.MIN_ACCELERATION) * SLIDER_SCALE), this::decelerationSliderFormatter, null);
+		sliderMaxSpeed = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, mtr.data.VehicleSettings.MAX_SPEED / MAX_SPEED_STEP, value -> value == 0 ? Text.translatable("gui.mtr.siding_max_speed_none").getString() : Text.translatable("gui.mtr.siding_max_speed", value * MAX_SPEED_STEP).getString(), null);
 		buttonIsManual = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_manual"), checked -> {
 			if (checked && !textFieldMaxTrains.getValue().equals("1")) {
 				textFieldMaxTrains.setValue("1");
@@ -139,7 +145,12 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		IDrawing.setPositionAndWidth(textFieldServiceTypes, SQUARE_SIZE + textWidth + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 5 + TEXT_FIELD_PADDING * 5 / 2, width - textWidth - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING);
 		updateServiceTypes();
 
-		IDrawing.setPositionAndWidth(buttonIsManual, SQUARE_SIZE, SQUARE_SIZE * 6 + TEXT_FIELD_PADDING * 2, width - textWidth - SQUARE_SIZE * 2);
+		IDrawing.setPositionAndWidth(buttonIsManual, SQUARE_SIZE, SQUARE_SIZE * 6 + TEXT_FIELD_PADDING * 2, (width - textWidth - SQUARE_SIZE * 2) / 2);
+		// The highest speed beside driving by hand
+		UtilitiesClient.setWidgetX(sliderMaxSpeed, SQUARE_SIZE + (width - textWidth - SQUARE_SIZE * 2) / 2 + TEXT_PADDING);
+		UtilitiesClient.setWidgetY(sliderMaxSpeed, SQUARE_SIZE * 6 + TEXT_FIELD_PADDING * 2);
+		sliderMaxSpeed.setHeight(SQUARE_SIZE);
+		sliderMaxSpeed.setValue(savedRailBase.getOwnMaxSpeed() / MAX_SPEED_STEP);
 
 		UtilitiesClient.setWidgetX(sliderMaxManualSpeed, SQUARE_SIZE + textWidth);
 		UtilitiesClient.setWidgetY(sliderMaxManualSpeed, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2);
@@ -160,6 +171,7 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 				addDrawableChild(sliderDecelerationConstant);
 				addDrawableChild(buttonIsManual);
 				addDrawableChild(sliderMaxManualSpeed);
+				addDrawableChild(sliderMaxSpeed);
 			}
 			if (showServiceTypes()) {
 				addDrawableChild(textFieldServiceTypes);
@@ -258,6 +270,10 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 			depot.setVehicleServiceTypes(savedRailBase.getTrainId(), textFieldServiceTypes.getValue(), packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
 		}
 		final float decelerationConstant = RailwayData.round(Mth.clamp((float) sliderDecelerationConstant.getIntValue() / SLIDER_SCALE + Train.MIN_ACCELERATION, Train.MIN_ACCELERATION, Train.MAX_ACCELERATION), 3);
+		final int maxSpeed = sliderMaxSpeed.getIntValue() * MAX_SPEED_STEP;
+		if (!isVehicleSetInDepot() && maxSpeed != savedRailBase.getOwnMaxSpeed()) {
+			savedRailBase.setMaxSpeed(maxSpeed, packet -> PacketTrainDataGuiClient.sendUpdate(getPacketIdentifier(), packet));
+		}
 		if (decelerationConstant != savedRailBase.getDecelerationConstant()) {
 			savedRailBase.setDecelerationConstant(decelerationConstant, packet -> PacketTrainDataGuiClient.sendUpdate(getPacketIdentifier(), packet));
 		}
@@ -325,6 +341,7 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		textFieldMaxTrains.visible = !isSelectingTrain;
 		sliderAccelerationConstant.visible = !isSelectingTrain;
 		sliderDecelerationConstant.visible = !isSelectingTrain;
+		sliderMaxSpeed.visible = !isSelectingTrain;
 		textFieldServiceTypes.visible = !isSelectingTrain;
 		buttonIsManual.visible = !isSelectingTrain;
 		sliderMaxManualSpeed.visible = !isSelectingTrain && buttonIsManual.selected();

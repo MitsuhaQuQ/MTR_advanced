@@ -355,7 +355,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePackHelper.iterateMapValue(KEY_VEHICLE_SETTINGS, entry -> {
 			try {
 				final org.msgpack.value.ArrayValue values = entry.getValue().asArrayValue();
-				vehicleSettings.put(entry.getKey().asStringValue().asString(), new VehicleSettings(values.get(0).asFloatValue().toFloat(), values.get(1).asFloatValue().toFloat(), values.get(2).asBooleanValue().getBoolean(), values.get(3).asIntegerValue().asInt(), values.get(4).asIntegerValue().asInt()));
+				// The highest speed is saved from 0.34.0
+				vehicleSettings.put(entry.getKey().asStringValue().asString(), new VehicleSettings(values.get(0).asFloatValue().toFloat(), values.get(1).asFloatValue().toFloat(), values.get(2).asBooleanValue().getBoolean(), values.get(3).asIntegerValue().asInt(), values.get(4).asIntegerValue().asInt(), values.size() > 5 ? values.get(5).asIntegerValue().asInt() : 0));
 			} catch (Exception ignored) {
 			}
 		});
@@ -500,7 +501,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePacker.packString(KEY_VEHICLE_SETTINGS).packMapHeader(vehicleSettings.size());
 		for (final Map.Entry<String, VehicleSettings> entry : vehicleSettings.entrySet()) {
 			final VehicleSettings settings = entry.getValue();
-			messagePacker.packString(entry.getKey()).packArrayHeader(5).packFloat(settings.acceleration).packFloat(settings.deceleration).packBoolean(settings.manual).packInt(settings.maxManualSpeed).packInt(settings.manualToAutomaticTime);
+			messagePacker.packString(entry.getKey()).packArrayHeader(6).packFloat(settings.acceleration).packFloat(settings.deceleration).packBoolean(settings.manual).packInt(settings.maxManualSpeed).packInt(settings.manualToAutomaticTime).packInt(settings.maxSpeed);
 		}
 
 		final byte[] dutyBytes = duties.toBytes();
@@ -2044,7 +2045,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 			routes.forEach(route -> {
 				final List<PathData> routePath = new ArrayList<>();
-				route.getPathData().forEach(pathData -> routePath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex)));
+				route.getPathData().forEach(pathData -> routePath.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime)));
 				final List<SavedRailBase> routePlatforms = new ArrayList<>();
 				final List<List<BlockPos>> routeWaypoints = new ArrayList<>();
 				final List<Route.RoutePlatform> routeStopSettings = new ArrayList<>();
@@ -2223,7 +2224,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					final List<PathData> joinPath = new ArrayList<>();
 					for (int j = joinRail; j < routePath.size(); j++) {
 						final PathData pathData = routePath.get(j);
-						joinPath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
+						joinPath.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime));
 					}
 					entryRail = tailPath.size() - 1;
 					addToTail(tailPath, mainPath.get(leaveRail), joinPath);
@@ -2369,6 +2370,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					return null;
 				}
 				PathFinder.applyStopSettings(segmentPath, stopSettings);
+				// The route's speed limit on its own rails, not on the ways between segments or in and out (line speed limits)
+				PathData.capSpeed(segmentPath, route.speedLimit);
 
 				if (lastPlatform != null && lastPlatform.id != platforms.get(0).id) {
 					final List<PathData> connectingPath = new ArrayList<>();
@@ -2398,7 +2401,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					// stop of a route's own path has no stop time, and without the way there's it would run straight through
 					final boolean arrivedHere = k > 0 && first.savedRailBaseId != 0 && first.dwellTime == 0 && last.savedRailBaseId == first.savedRailBaseId;
 					final int stopDwell = Math.max(last.dwellTime, platforms.get(0).getDwellTime());
-					body.set(body.size() - 1, arrivedHere && stopDwell > 0 ? new PathData(first.rail, first.savedRailBaseId, stopDwell, first.startingPos, first.getLastPos(), first.stopIndex) : first);
+					body.set(body.size() - 1, arrivedHere && stopDwell > 0 ? first.copy(first.savedRailBaseId, stopDwell) : first);
 					body.addAll(segmentPath.subList(1, segmentPath.size()));
 				} else if (last != null && first.isOppositeRail(last)) {
 					// Turning back on the platform: the stop is the arrival there, and the platform reversed is only the way out
@@ -2948,7 +2951,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			if (joinRail >= 0) {
 				for (int i = joinRail; i < mainPath.size(); i++) {
 					final PathData pathData = mainPath.get(i);
-					loopJoinPath.add(new PathData(pathData.rail, pathData.savedRailBaseId, pathData.dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex));
+					loopJoinPath.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime));
 				}
 			}
 			return loopJoinPath;
@@ -2998,6 +3001,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						break;
 					}
 					PathFinder.applyStopSettings(routePath, stopSettingsInRoute.get(i));
+					PathData.capSpeed(routePath, mainRoutes.get(i).speedLimit);
 				}
 
 				if (routePath.size() > 2) {

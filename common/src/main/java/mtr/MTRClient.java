@@ -425,6 +425,8 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_20_ONE_WAY.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_40.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_40_ONE_WAY.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_45.get(), ItemBlockClickingBase.TAG_POS);
+			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_45_ONE_WAY.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_60.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_60_ONE_WAY.get(), ItemBlockClickingBase.TAG_POS);
 			RegistryClient.registerItemModelPredicate(MTR.MOD_ID + ":selected", Items.RAIL_CONNECTOR_80.get(), ItemBlockClickingBase.TAG_POS);

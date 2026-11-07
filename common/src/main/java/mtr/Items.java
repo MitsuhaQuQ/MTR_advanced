@@ -35,6 +35,8 @@ public interface Items {
 	RegistryObject<Item> RAIL_CONNECTOR_20_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.WOODEN));
 	RegistryObject<Item> RAIL_CONNECTOR_40 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.STONE));
 	RegistryObject<Item> RAIL_CONNECTOR_40_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.STONE));
+	RegistryObject<Item> RAIL_CONNECTOR_45 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.COPPER));
+	RegistryObject<Item> RAIL_CONNECTOR_45_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.COPPER));
 	RegistryObject<Item> RAIL_CONNECTOR_60 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.EMERALD));
 	RegistryObject<Item> RAIL_CONNECTOR_60_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.EMERALD));
 	RegistryObject<Item> RAIL_CONNECTOR_80 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.IRON));

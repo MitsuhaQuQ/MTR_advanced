@@ -1333,6 +1333,10 @@ public final class TickRunner<T extends RunTrack> {
 		 */
 		public float minSpeed = 0.5F;
 		/**
+		 * The highest speed of its kind of vehicle, in blocks per tick, or 0 for none: its trains run no rail faster.
+		 */
+		public float vehicleMaxSpeed;
+		/**
 		 * What the depot's sidings whose trains can run each other's duties have in common, or empty for a pool of its own
 		 * (decoupling document, step D, depots sending trains out 4 and 5).
 		 */
@@ -2322,7 +2326,7 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public SpeedCurves getSpeedCurves() {
 			if (curves == null || curvesPath != path) {
-				curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
+				curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed, siding.vehicleMaxSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
 				curvesPath = path;
 				cappedProfile = null;
 			}
@@ -2533,7 +2537,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public float getMaxSpeed(int rail) {
-			return path.get(rail).getMaxSpeed();
+			return RunTrack.limit(path.get(rail).getMaxSpeed(), siding.vehicleMaxSpeed);
 		}
 
 		@Override
@@ -2580,7 +2584,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public float getDefaultMaxSpeed() {
-			return siding.minSpeed;
+			return RunTrack.limit(siding.minSpeed, siding.vehicleMaxSpeed);
 		}
 
 		@Override

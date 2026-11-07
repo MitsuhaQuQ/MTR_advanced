@@ -18,7 +18,12 @@ public enum RailType implements IGui {
 	CABLE_CAR_STATION(2, MaterialColor.SNOW, false, true, true, RailSlopeStyle.CURVE),
 	RUNWAY(300, MaterialColor.ICE, false, true, false, RailSlopeStyle.CURVE),
 	AIRPLANE_DUMMY(900, MaterialColor.COLOR_BLACK, false, true, false, RailSlopeStyle.CURVE),
-	NONE(20, MaterialColor.COLOR_BLACK, false, false, true, RailSlopeStyle.CURVE);
+	NONE(20, MaterialColor.COLOR_BLACK, false, false, true, RailSlopeStyle.CURVE),
+	/**
+	 * 45 km/h, between stone and emerald. Last, so the numbers of the others, which manual driving speeds are saved by, stay
+	 * as they were.
+	 */
+	COPPER(45, MaterialColor.TERRACOTTA_ORANGE, false, true, true, RailSlopeStyle.CURVE);
 
 	public final int speedLimit;
 	public final float maxBlocksPerTick;

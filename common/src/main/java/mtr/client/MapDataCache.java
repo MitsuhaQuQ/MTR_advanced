@@ -162,7 +162,7 @@ public final class MapDataCache {
 			ClientData.MAP_RAILS.clear();
 			ENTRIES.get(kind).values().forEach(entry -> {
 				for (int i = 0; i + 2 < entry.payload.length; i += MapSyncData.RAIL_LONGS) {
-					ClientData.MAP_RAILS.add(new ClientData.MapRail(BlockPos.of(entry.payload[i]), BlockPos.of(entry.payload[i + 1]), TransportMode.values()[(int) entry.payload[i + 2]]));
+					ClientData.MAP_RAILS.add(new ClientData.MapRail(BlockPos.of(entry.payload[i]), BlockPos.of(entry.payload[i + 1]), TransportMode.values()[(int) (entry.payload[i + 2] & 0xFFFF)], (int) (entry.payload[i + 2] >>> 16)));
 				}
 			});
 		} else if (kind == MapSyncData.KIND_RAIL_SHAPES) {
