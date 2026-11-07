@@ -1825,6 +1825,20 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		/**
+		 * @return how far the authority reaches for a record, with grants not taken yet, or NaN
+		 */
+		public double getRecordAuthorityEnd() {
+			return authority.getRecordEnd();
+		}
+
+		/**
+		 * @return the run segment the train is on, standing or not, for a record, or null
+		 */
+		public RunSegment.Spec getRecordSegment() {
+			return runSegment == null ? null : runSegment.describe(millis);
+		}
+
+		/**
 		 * @return the rail of the path the head is on, which for a train standing at the end of a rail is that rail
 		 */
 		public int getHeadRail() {
@@ -1895,11 +1909,15 @@ public final class TickRunner<T extends RunTrack> {
 		 */
 		private void runLayerTick() {
 			if (restoredSegment != null) {
-				// The same curve as before the record was made, as far along as then
+				// The same curve as before the record was made, as far along as then; not if the train isn't where it has it,
+				// as after a long stop, when it sets off afresh from where it is rather than jump along the curve
 				final SpeedCurves.Run run = getRun(restoredSegment.startPosition);
 				if (run != null) {
-					runSegment = restoredSegment.rebuild(run);
-					runSegment.advance(restoredSegment.getTicksAt(millis - TICK));
+					final RunSegment rebuilt = restoredSegment.rebuild(run);
+					rebuilt.advance(restoredSegment.getTicksAt(millis - TICK));
+					if (Math.abs(rebuilt.getPosition() - railProgress) <= 1E-3) {
+						runSegment = rebuilt;
+					}
 				}
 				restoredSegment = null;
 			}

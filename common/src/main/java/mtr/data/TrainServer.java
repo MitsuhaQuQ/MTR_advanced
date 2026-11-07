@@ -123,6 +123,14 @@ public class TrainServer extends Train {
 	 * to its next stop at another time than it would have.
 	 */
 	private static final String KEY_CRUISE_CAP = "cruise_cap";
+	/**
+	 * The run layer's movement authority and run segment of the train (5.5), from the component, so a train carries on
+	 * after a restart as it was going (0.41.0).
+	 */
+	private static final String KEY_AUTHORITY_END = "authority_end";
+	private static final String KEY_RUN_SEGMENT = "run_segment";
+	private double authorityEnd = Double.NaN;
+	private transitsim.motion.RunSegment.Spec runSegmentSpec;
 	private static final int TRAIN_UPDATE_DISTANCE = 128;
 	private static final int TICKS_TO_SEND_RAIL_PROGRESS = 40;
 
@@ -183,7 +191,22 @@ public class TrainServer extends Train {
 		} else {
 			cruiseCapMissing = true;
 		}
+		final MessagePackHelper helper = new MessagePackHelper(map);
+		authorityEnd = map.containsKey(KEY_AUTHORITY_END) ? helper.getDouble(KEY_AUTHORITY_END) : Double.NaN;
+		runSegmentSpec = map.containsKey(KEY_RUN_SEGMENT) ? parseSegment(helper.getString(KEY_RUN_SEGMENT)) : null;
 		repairLoaded();
+	}
+
+	private static transitsim.motion.RunSegment.Spec parseSegment(String text) {
+		final String[] parts = text.split(",");
+		if (parts.length != 6) {
+			return null;
+		}
+		try {
+			return new transitsim.motion.RunSegment.Spec(Integer.parseInt(parts[0]), Long.parseLong(parts[1]), Double.parseDouble(parts[2]), Double.parseDouble(parts[3]), Double.parseDouble(parts[4]), Double.parseDouble(parts[5]));
+		} catch (NumberFormatException e) {
+			return null;
+		}
 	}
 
 	@Deprecated
@@ -213,11 +236,14 @@ public class TrainServer extends Train {
 		super.toMessagePack(messagePacker);
 		service.write(new MessagePackKeyed.Writer(messagePacker));
 		messagePacker.packString(KEY_CRUISE_CAP).packFloat(cruiseCap);
+		messagePacker.packString(KEY_AUTHORITY_END).packDouble(authorityEnd);
+		final transitsim.motion.RunSegment.Spec spec = runSegmentSpec;
+		messagePacker.packString(KEY_RUN_SEGMENT).packString(spec == null ? "" : spec.version + "," + spec.startMillis + "," + spec.startPosition + "," + spec.startSpeed + "," + spec.cap + "," + spec.target);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + TrainService.SAVED_KEYS + 1;
+		return super.messagePackLength() + TrainService.SAVED_KEYS + 3;
 	}
 
 	@Override
@@ -432,6 +458,8 @@ public class TrainServer extends Train {
 		doorValue = train.getDoorValue();
 		cruiseCap = (float) train.getCruiseCap();
 		cruiseCapMissing = false;
+		authorityEnd = train.getRecordAuthorityEnd();
+		runSegmentSpec = train.getRecordSegment();
 		if (repeatIndex1 != train.getRepeatIndex1() || repeatIndex2 != train.getRepeatIndex2()) {
 			repeatIndex1 = train.getRepeatIndex1();
 			repeatIndex2 = train.getRepeatIndex2();
@@ -556,7 +584,10 @@ public class TrainServer extends Train {
 					cruiseCap = getCruiseCap();
 				}
 			}
+			// Driven by hand, the train goes no further than its movement authority (run layer, 5.5): an automatic brake
+			final double manualEnd = updateManualAuthority();
 			simulateTrain(world, ticksElapsed, depot);
+			limitToAuthority(manualEnd);
 			holdRun();
 			service.update(isOnRoute);
 		}
@@ -702,7 +733,7 @@ public class TrainServer extends Train {
 		}
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
 		values.writeTo(writer);
-		return new RunRecord.TrainRecord(sidingId, id, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, isOnRoute, writer.toBytes(), cruiseCapMissing ? Float.NaN : cruiseCap);
+		return new RunRecord.TrainRecord(sidingId, id, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, isOnRoute, writer.toBytes(), cruiseCapMissing ? Float.NaN : cruiseCap, authorityEnd, runSegmentSpec);
 	}
 
 	public boolean needsAlignment() {
@@ -825,6 +856,11 @@ public class TrainServer extends Train {
 	private void holdRun() {
 		final RunReservations reservations = getRunReservations();
 		if (reservations == null) {
+			return;
+		}
+		if (isOnRoute && isCurrentlyManual && manualAuthority != null) {
+			// Its movement authority holds what it needs
+			grantedRunEnd = -1;
 			return;
 		}
 		if (!isOnRoute || isCurrentlyManual || !service.isOnDuty() || path.isEmpty()) {
@@ -1005,6 +1041,75 @@ public class TrainServer extends Train {
 
 	private long getPlannedDepartureMillis() {
 		return TrainRules.getPlannedDepartureMillis(rules);
+	}
+
+	/**
+	 * The movement authority of a train driven by hand (run layer, 5.5), asked for as far as it takes to stop and a little
+	 * more, through the same arbiter as the trains running by themselves; and the path's tracks as the arbiter reads them.
+	 */
+	private transitsim.run.Authority manualAuthority;
+	private List<transitsim.sim.SimDataset.DataTrack> manualTracks;
+	private List<PathData> manualTracksFor;
+
+	/**
+	 * @return how far the train driven by hand may run, or NaN if it isn't driven by hand on the line
+	 */
+	private double updateManualAuthority() {
+		final RailwayData railwayData = world == null ? null : RailwayData.getInstance(world);
+		if (railwayData == null || !isOnRoute || !isCurrentlyManual || path.isEmpty() || transportMode.continuousMovement) {
+			if (manualAuthority != null) {
+				manualAuthority.release();
+				manualAuthority = null;
+			}
+			return Double.NaN;
+		}
+		if (manualAuthority == null) {
+			manualAuthority = new transitsim.run.Authority(id, this::getRunReservations);
+		}
+		if (manualTracksFor != path) {
+			manualTracks = mtr.advanced.SimExport.toTracks(path, railwayData.getRails());
+			manualTracksFor = path;
+		}
+		final List<transitsim.sim.SimDataset.DataTrack> tracks = manualTracks;
+		final List<Double> ends = distances;
+		final transitsim.run.PathClaims.Path<transitsim.sim.SimDataset.DataTrack> claimPath = new transitsim.run.PathClaims.Path<transitsim.sim.SimDataset.DataTrack>() {
+			@Override
+			public List<transitsim.sim.SimDataset.DataTrack> getTracks() {
+				return tracks;
+			}
+
+			@Override
+			public double getEnd(int track) {
+				return ends.get(track);
+			}
+
+			@Override
+			public boolean turnsBack(int track, int nextTrack) {
+				return tracks.get(track).isOppositeOf(tracks.get(nextTrack));
+			}
+		};
+		final double head = railProgress;
+		final double braking = 0.5 * speed * speed / Math.max(decelerationConstant, 1E-4F) + speed + ThroatLocks.APPROACH_MARGIN;
+		final double target = Math.min(distances.get(distances.size() - 1), head + braking);
+		return manualAuthority.update(claimPath, path, Math.max(0, head - trainCars * spacing), head, target, null, System.currentTimeMillis());
+	}
+
+	/**
+	 * Brakes a train driven by hand so it stops where its authority ends, and never runs past it.
+	 */
+	private void limitToAuthority(double end) {
+		if (Double.isNaN(end) || !isCurrentlyManual) {
+			return;
+		}
+		if (railProgress > end) {
+			railProgress = end;
+			speed = 0;
+		} else {
+			final float allowed = (float) Math.sqrt(2 * Math.max(decelerationConstant, 1E-4F) * Math.max(0, end - railProgress));
+			if (speed > allowed) {
+				speed = allowed;
+			}
+		}
 	}
 
 	private RunReservations getRunReservations() {
