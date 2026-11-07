@@ -3,7 +3,7 @@ package mtr.data;
 import mtr.compat.MaterialColor;
 
 public enum RailType implements IGui {
-	WOODEN(20, MaterialColor.WOOD, false, true, true, RailSlopeStyle.CURVE),
+	WOODEN(25, MaterialColor.WOOD, false, true, true, RailSlopeStyle.CURVE),
 	STONE(40, MaterialColor.STONE, false, true, true, RailSlopeStyle.CURVE),
 	EMERALD(60, MaterialColor.EMERALD, false, true, true, RailSlopeStyle.CURVE),
 	IRON(80, MaterialColor.METAL, false, true, true, RailSlopeStyle.CURVE),
@@ -23,7 +23,11 @@ public enum RailType implements IGui {
 	 * 45 km/h, between stone and emerald. Last, so the numbers of the others, which manual driving speeds are saved by, stay
 	 * as they were.
 	 */
-	COPPER(45, MaterialColor.TERRACOTTA_ORANGE, false, true, true, RailSlopeStyle.CURVE);
+	COPPER(45, MaterialColor.TERRACOTTA_ORANGE, false, true, true, RailSlopeStyle.CURVE),
+	/**
+	 * 35 km/h, between wooden and stone. Last for the same reason.
+	 */
+	SANDSTONE(35, MaterialColor.SAND, false, true, true, RailSlopeStyle.CURVE);
 
 	public final int speedLimit;
 	public final float maxBlocksPerTick;

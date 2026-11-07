@@ -19,6 +19,7 @@ public final class MaterialColor {
 	public static final MaterialColor COLOR_PURPLE = new MaterialColor(net.minecraft.world.level.material.MapColor.COLOR_PURPLE);
 	public static final MaterialColor COLOR_ORANGE = new MaterialColor(net.minecraft.world.level.material.MapColor.COLOR_ORANGE);
 	public static final MaterialColor TERRACOTTA_ORANGE = new MaterialColor(net.minecraft.world.level.material.MapColor.TERRACOTTA_ORANGE);
+	public static final MaterialColor SAND = new MaterialColor(net.minecraft.world.level.material.MapColor.SAND);
 	public static final MaterialColor COLOR_LIGHT_GRAY = new MaterialColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_GRAY);
 	public static final MaterialColor COLOR_BROWN = new MaterialColor(net.minecraft.world.level.material.MapColor.COLOR_BROWN);
 	public static final MaterialColor COLOR_BLUE = new MaterialColor(net.minecraft.world.level.material.MapColor.COLOR_BLUE);

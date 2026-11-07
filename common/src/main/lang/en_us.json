@@ -1,4 +1,6 @@
 {
+  "item.mtr.rail_connector_35": "Sandstone Rail Connector",
+  "item.mtr.rail_connector_35_one_way": "Sandstone Rail Connector (One-way)",
   "gui.mtr.siding_max_speed": "Highest speed: %s km/h",
   "gui.mtr.siding_max_speed_none": "Highest speed: none",
   "item.mtr.rail_connector_45": "Copper Rail Connector",

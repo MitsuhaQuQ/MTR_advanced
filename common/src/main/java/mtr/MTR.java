@@ -116,6 +116,8 @@ public class MTR implements IPacket {
 			registerItem.accept("psd_glass_end_2", Items.PSD_GLASS_END_2);
 			registerItem.accept("rail_connector_20", Items.RAIL_CONNECTOR_20);
 			registerItem.accept("rail_connector_20_one_way", Items.RAIL_CONNECTOR_20_ONE_WAY);
+			registerItem.accept("rail_connector_35", Items.RAIL_CONNECTOR_35);
+			registerItem.accept("rail_connector_35_one_way", Items.RAIL_CONNECTOR_35_ONE_WAY);
 			registerItem.accept("rail_connector_40", Items.RAIL_CONNECTOR_40);
 			registerItem.accept("rail_connector_40_one_way", Items.RAIL_CONNECTOR_40_ONE_WAY);
 			registerItem.accept("rail_connector_45", Items.RAIL_CONNECTOR_45);

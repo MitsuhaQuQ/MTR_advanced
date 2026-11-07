@@ -36,6 +36,12 @@ class SpeedLimitsTest {
 		assertNull(Train.convertMaxManualSpeed(RailType.COPPER.ordinal()));
 		assertEquals(45, RailType.COPPER.speedLimit);
 		assertTrue(RailType.COPPER.canAccelerate);
+		assertEquals(RailType.COPPER.ordinal() + 1, RailType.SANDSTONE.ordinal());
+		assertNull(Train.convertMaxManualSpeed(RailType.SANDSTONE.ordinal()));
+		assertEquals(35, RailType.SANDSTONE.speedLimit);
+		assertTrue(RailType.SANDSTONE.canAccelerate);
+		// The wooden rails, the slowest, now run at 25 km/h
+		assertEquals(25, RailType.WOODEN.speedLimit);
 	}
 
 	@Test

@@ -33,6 +33,8 @@ public interface Items {
 	RegistryObject<Item> PSD_GLASS_END_2 = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS_END, ItemPSDAPGBase.EnumPSDAPGType.PSD_2));
 	RegistryObject<Item> RAIL_CONNECTOR_20 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.WOODEN));
 	RegistryObject<Item> RAIL_CONNECTOR_20_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.WOODEN));
+	RegistryObject<Item> RAIL_CONNECTOR_35 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.SANDSTONE));
+	RegistryObject<Item> RAIL_CONNECTOR_35_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.SANDSTONE));
 	RegistryObject<Item> RAIL_CONNECTOR_40 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.STONE));
 	RegistryObject<Item> RAIL_CONNECTOR_40_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.STONE));
 	RegistryObject<Item> RAIL_CONNECTOR_45 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.COPPER));

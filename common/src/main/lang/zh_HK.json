@@ -1,4 +1,6 @@
 {
+  "item.mtr.rail_connector_35": "砂岩鐵軌連接器",
+  "item.mtr.rail_connector_35_one_way": "砂岩鐵軌連接器 （單向）",
   "gui.mtr.siding_max_speed": "最高速度：%s km/h",
   "gui.mtr.siding_max_speed_none": "最高速度：不限",
   "item.mtr.rail_connector_45": "銅鐵軌連接器",
