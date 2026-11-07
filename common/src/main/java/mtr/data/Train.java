@@ -779,11 +779,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		final PathData thisPathData = path.get(railIndex);
 		final RailType thisRail = thisPathData.rail.railType;
 		final float railSpeed;
-		if (thisRail.canAccelerate) {
+		if (!SpeedRules.keepsLimitBefore(thisRail, transportMode)) {
 			railSpeed = thisPathData.getRunSpeed();
 		} else {
 			final PathData lastPathData = railIndex > 0 ? path.get(railIndex - 1) : thisPathData;
-			railSpeed = Math.max(lastPathData.rail.railType.canAccelerate ? lastPathData.getRunSpeed() : RailType.getDefaultMaxBlocksPerTick(transportMode), speed);
+			railSpeed = Math.max(!SpeedRules.keepsLimitBefore(lastPathData.rail.railType, transportMode) ? lastPathData.getRunSpeed() : RailType.getDefaultMaxBlocksPerTick(transportMode), speed);
 		}
 		return limitToVehicle(railSpeed);
 	}
@@ -1201,7 +1201,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 		@Override
 		public boolean canAccelerate(int rail) {
-			return path.get(rail).rail.railType.canAccelerate;
+			// Platforms, sidings and turn back rails run by their own limits (round 3b)
+			return !SpeedRules.keepsLimitBefore(path.get(rail).rail.railType, transportMode);
 		}
 
 		@Override

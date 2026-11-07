@@ -41,7 +41,7 @@ public final class TrackViews {
 			final PathData pathData = path.get(i);
 			final RailType railType = pathData.rail.railType;
 			lengths[i] = pathData.rail.getLength();
-			limits[i] = railType.canAccelerate ? limit(plan ? pathData.getPlanSpeed() : pathData.getRunSpeed(), vehicleSpeed) : -1;
+			limits[i] = !mtr.data.SpeedRules.keepsLimitBefore(railType, transportMode) ? limit(plan ? pathData.getPlanSpeed() : pathData.getRunSpeed(), vehicleSpeed) : -1;
 			stops[i] = pathData.dwellTime > 0;
 			reversals[i] = i + 1 < count && pathData.isOppositeRail(path.get(i + 1));
 		}

@@ -56,7 +56,9 @@ public interface RunTrack extends PlanTrack {
 		for (int i = 0; i < count; i++) {
 			final RunTrack track = path.get(i);
 			lengths[i] = track.getTrackLength();
-			limits[i] = track.canAccelerate() ? runSpeed(track, vehicleMaxSpeed) : -1;
+			// Every track by its own limit, platforms, sidings and turn back rails too (round 3b); canAccelerate only keeps
+			// them from being cut into block sections
+			limits[i] = runSpeed(track, vehicleMaxSpeed);
 			stops[i] = track.getDwellTime() > 0;
 			reversals[i] = i + 1 < count && track.isOppositeOf(path.get(i + 1));
 		}

@@ -120,7 +120,7 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	 * @return how fast a train may run this rail: the rail's speed limit, or the route's where that is lower
 	 */
 	public float getMaxSpeed() {
-		final float railSpeed = rail.railType.maxBlocksPerTick;
+		final float railSpeed = mtr.data.SpeedRules.label(rail.railType, rail.transportMode);
 		return speedCap > 0 ? Math.min(railSpeed, speedCap) : railSpeed;
 	}
 

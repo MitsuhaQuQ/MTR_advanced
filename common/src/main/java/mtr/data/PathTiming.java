@@ -77,7 +77,7 @@ public final class PathTiming {
 			}
 
 			final PathData pathData = path.get(i);
-			final float railSpeed = vehicle.limit(pathData.rail.railType.canAccelerate ? pathData.getPlanSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
+			final float railSpeed = vehicle.limit(!SpeedRules.keepsLimitBefore(pathData.rail.railType, vehicle.transportMode) ? pathData.getPlanSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
 			distanceSum2 += pathData.rail.getLength();
 
 			while (railProgress < distanceSum2) {

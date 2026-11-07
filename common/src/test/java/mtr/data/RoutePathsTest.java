@@ -101,6 +101,34 @@ class RoutePathsTest {
 	}
 
 	@Test
+	void runTimesCutAtAStopAreThoseOfTheWholePath() {
+		// Platforms run by their own limits (round 3b), so a run from a stop doesn't depend on the rails before it: timed from
+		// the stop, standing with its head at the end of the stop's rail, it takes what the whole path takes
+		final List<PathData> path = new ArrayList<>();
+		path.add(rail(0, 200, RailType.PLATFORM, 1, 40, 1));
+		path.add(rail(200, 600, RailType.QUARTZ, 0, 0, 2));
+		path.add(rail(600, 700, RailType.STONE, 0, 0, 2));
+		path.add(rail(700, 900, RailType.PLATFORM, 2, 40, 2));
+		path.add(rail(900, 1500, RailType.DIAMOND, 0, 0, 3));
+		path.add(rail(1500, 1700, RailType.PLATFORM, 3, 0, 3));
+		path.add(rail(1700, 1900, RailType.IRON, 0, 0, 3));
+		path.add(rail(1900, 2100, RailType.PLATFORM, 4, 40, 4));
+		path.add(rail(2100, 2300, RailType.EMERALD, 0, 0, 5));
+		path.add(rail(2300, 2500, RailType.PLATFORM, 5, 40, 5));
+		final int[] stops = {3, 7, 9};
+		for (final PathTiming.Vehicle vehicle : Arrays.asList(SLOW, FAST, new PathTiming.Vehicle(160, 8, 20, 0.003F, 0.003F, true, TransportMode.TRAIN))) {
+			final transitsim.plan.StopTimes whole = PathTiming.calculateStopTimes(vehicle, path);
+			for (int i = 0; i + 1 < stops.length; i++) {
+				final List<PathData> span = new ArrayList<>(path.subList(stops[i], stops[i + 1] + 1));
+				// A train starts with its middle at the middle of the rail length given: its head at the end of the stop's rail
+				final PathTiming.Vehicle standing = new PathTiming.Vehicle(2 * 200 - vehicle.trainCars * vehicle.spacing, vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode);
+				final long spanMillis = PathTiming.calculateStopTimes(standing, span).getRunMillis(0, stops[i + 1] - stops[i]);
+				assertEquals(whole.getRunMillis(stops[i], stops[i + 1]), spanMillis, 1, (vehicle.useSpeedCurve ? "curves " : "ticks ") + stops[i] + " to " + stops[i + 1]);
+			}
+		}
+	}
+
+	@Test
 	void aRouteNoDepotRunsIsTimedWithTheDefaultVehicle() {
 		final Route route = route();
 		final PathTiming.Vehicle vehicle = RoutePaths.getDefaultVehicle(TransportMode.TRAIN);

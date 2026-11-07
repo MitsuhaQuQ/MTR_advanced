@@ -13,6 +13,47 @@ public final class SpeedRules {
 	}
 
 	/**
+	 * The speed label of a siding, in km/h, which trains run on by its own limit (optimisation round 3b, the user's value).
+	 */
+	public static final int SIDING_KMH = 25;
+	/**
+	 * The speed label of a turn back rail, in km/h.
+	 */
+	public static final int TURN_BACK_KMH = 65;
+
+	/**
+	 * @return the speed label of a rail type in km/h: sidings and turn back rails have their own (round 3b), other rails
+	 * the type's; for modes the two speeds don't apply to, always the type's
+	 */
+	public static int labelKmh(RailType railType, TransportMode transportMode) {
+		if (applies(transportMode)) {
+			if (railType == RailType.SIDING) {
+				return SIDING_KMH;
+			} else if (railType == RailType.TURN_BACK) {
+				return TURN_BACK_KMH;
+			}
+		}
+		return railType.speedLimit;
+	}
+
+	/**
+	 * @return the speed label of a rail type in blocks per tick
+	 */
+	public static float label(RailType railType, TransportMode transportMode) {
+		final int kmh = labelKmh(railType, transportMode);
+		return kmh == railType.speedLimit ? railType.maxBlocksPerTick : SpeedLimits.toBlocksPerTick(kmh);
+	}
+
+	/**
+	 * @return whether a rail of the type keeps the speed limit of the rail before it, as platforms, sidings and turn back
+	 * rails did; since round 3b only for modes the two speeds don't apply to. Signal blocks still never cut them
+	 * ({@link RailType#canAccelerate}).
+	 */
+	public static boolean keepsLimitBefore(RailType railType, TransportMode transportMode) {
+		return !railType.canAccelerate && !applies(transportMode);
+	}
+
+	/**
 	 * @return whether the two speeds apply to the transport mode
 	 */
 	public static boolean applies(TransportMode transportMode) {

@@ -2716,7 +2716,8 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean canAccelerate(int rail) {
-			return path.get(rail).canAccelerate();
+			// Every track by its own limit (round 3b); canAccelerate only keeps tracks from being cut into block sections
+			return true;
 		}
 
 		@Override

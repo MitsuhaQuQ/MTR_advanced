@@ -514,7 +514,7 @@ public final class GraphRecords {
 			final long shape = (long) Float.floatToIntBits(rail.facingStart.angleDegrees) << 32 | Float.floatToIntBits(rail.facingEnd.angleDegrees) & 0xFFFFFFFFL;
 			// Facings as seen from the lower node, the same whichever way the rail is kept
 			final long lowerShape = start < end ? shape : (long) Float.floatToIntBits(rail.facingEnd.angleDegrees) << 32 | Float.floatToIntBits(rail.facingStart.angleDegrees) & 0xFFFFFFFFL;
-			trackRails.put(key, new TrackSections.Rail(start, end, rail.getLength(), lowerShape, railType.speedLimit, railType.canAccelerate, getType(railType), forwards, backwards, savedRails.getOrDefault(key, 0L)));
+			trackRails.put(key, new TrackSections.Rail(start, end, rail.getLength(), lowerShape, mtr.data.SpeedRules.labelKmh(railType, rail.transportMode), railType.canAccelerate, getType(railType), forwards, backwards, savedRails.getOrDefault(key, 0L)));
 		}));
 		return trackRails;
 	}
