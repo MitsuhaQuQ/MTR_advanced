@@ -70,6 +70,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public final Set<BlockPos> keyNodes = new HashSet<>();
 	public final PathBoundaries pathBoundaries = new PathBoundaries();
 	/**
+	 * The duties planned lately by planning unit, shared by the depots' path generations ({@link LineDuties.PlanCache}).
+	 */
+	public final LineDuties.PlanCache<LineDuties.Plan> linePlans = new LineDuties.PlanCache<>();
+	/**
 	 * The contingency plans of each rail system, for every route of a network whichever depot runs it (D2).
 	 */
 	public final ContingencySystems contingencySystems = new ContingencySystems();
@@ -665,12 +669,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			updateLockNetworks();
 		}
 		// A depot running by a timetable with no duties set has its duties worked out with its paths, so its paths are found
-		// again when its timetables or sidings change, and once after the world is loaded; one depot at a time
-		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && railwayDataPathGenerationModule.canGenerate()) {
+		// again when its timetables or sidings change, and once after the world is loaded; as many depots at once as there
+		// are threads free, sharing one copy of the rails (RailwayDataPathGenerationModule)
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null) {
 			for (final Depot depot : depots) {
+				if (!railwayDataPathGenerationModule.canGenerate()) {
+					break;
+				}
 				if (depot.takeAutoDutiesChange(dataCache, sidings)) {
 					railwayDataPathGenerationModule.generatePath(world.getServer(), depot.id);
-					break;
 				}
 			}
 		}

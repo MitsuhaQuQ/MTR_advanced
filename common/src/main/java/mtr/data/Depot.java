@@ -859,13 +859,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		System.out.println("Minecraft Transit Railway: depot " + name + " sends its trains out by a timetable from now on, " + departures.size() + " services a day" + (departures.size() >= RouteTimetable.MAX_SERVICES ? " (as many as a timetable takes; the rest left out)" : "") + (services.size() < routes.size() ? ", only " + services.size() + " of its " + routes.size() + " routes as the others' times aren't known" : ""));
 	}
 
-	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, Map<BlockPos, Map<BlockPos, Rail>> liveRails, Set<Siding> sidings, Consumer<Thread> callback) {
+	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, RailwayDataPathGenerationModule.Snapshot snapshot, Set<Siding> sidings, Consumer<Thread> callback) {
+		final RailwayData railwayData = RailwayData.getInstance(world);
 		// By frequency or a list of departures, the depot runs by a timetable from now on (R2)
-		migrateFrequencies(world, liveDataCache, liveRails);
-		// The thread works on the rails and data as they are now, so a player laying track meanwhile can't break it part of
-		// the way through or have it find a path on a network changed half way
-		final DataCache dataCache = liveDataCache.copyIdMaps();
-		final Map<BlockPos, Map<BlockPos, Rail>> rails = DataCache.copyRails(liveRails);
+		migrateFrequencies(world, liveDataCache, railwayData == null ? snapshot.rails : railwayData.getRails());
+		// The thread works on the rails and data as they were when it was started, so a player laying track meanwhile can't
+		// break it part of the way through or have it find a path on a network changed half way; depots started in the same
+		// tick share the copy, which nothing writes
+		final DataCache dataCache = snapshot.dataCache;
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = snapshot.rails;
+		final Map<BlockPos, Map<BlockPos, Rail>> liveRails = railwayData == null ? rails : railwayData.getRails();
 		// The planning unit of the depot's lines, read here on the server thread, as the other depots and their duties may
 		// change while the path is found
 		final LineDuties.Unit lineUnit = LineDuties.of(this, liveDataCache, sidings);
@@ -905,10 +908,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			mainPaths.add(mainPath);
 		});
 
-		final RailwayData railwayData = RailwayData.getInstance(world);
-		final RailGraph<Rail> graph = getPathGraph(rails, railwayData == null ? null : railwayData.pathBoundaries);
+		final RailGraph<Rail> graph = usesPathGraph() ? snapshot.getGraph() : null;
 		// Depots running by a timetable take their routes' paths from the routes (decoupling document 5.4, L1)
-		final RoutePaths.Search routeSearch = railwayData == null ? null : new RoutePaths.Search(railwayData.routePaths, rails, graph, railwayData.pathBoundaries, RoutePaths.getVehicles(railwayData));
+		final RoutePaths.Search routeSearch = railwayData == null ? null : new RoutePaths.Search(railwayData.routePaths, rails, graph, railwayData.pathBoundaries, snapshot.vehicles);
 		mainPaths.forEach(mainPath -> mainPath.routeSearch = routeSearch);
 
 		pathDetours.clear();
@@ -929,13 +931,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final Map<Long, Map<Long, Long>> turnTimes = mainPaths.isEmpty() ? new TreeMap<>() : mainPaths.get(0).turnTimesFor(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), rails, graph, useFastSpeed);
 				clientTurnTimes = turnTimes;
 				turnTimesMeasured = !mainPaths.isEmpty();
-				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null ? null : lineUnit.plan(route -> {
-					final long[][] times = routeSearch.getFastestTimes(route, dataCache);
-					return times == null || times.length == 0 ? null : times;
-				}, TimetableConfig.getDayStartMillis(), turnTimes);
-				if (linePlan != null) {
-					System.out.println("Minecraft Transit Railway: planned the duties of " + linePlan.describe());
-				}
+				// The depots of the unit found again together plan the same duties: one plans them, the others take its plan
+				final int dayStartMillis = TimetableConfig.getDayStartMillis();
+				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes, () -> {
+					final LineDuties.Plan plan = lineUnit.plan(route -> {
+						final long[][] times = routeSearch.getFastestTimes(route, dataCache);
+						return times == null || times.length == 0 ? null : times;
+					}, dayStartMillis, turnTimes);
+					System.out.println("Minecraft Transit Railway: planned the duties of " + plan.describe());
+					return plan;
+				});
 				for (final MainPath mainPath : mainPaths) {
 					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, linePlan));
 					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
@@ -1100,9 +1105,18 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Like {@link #getPathGraph(Map)}, kept to the regions of the pathfinding boundaries.
 	 */
 	public RailGraph<Rail> getPathGraph(Map<BlockPos, Map<BlockPos, Rail>> rails, PathBoundaries boundaries) {
-		// Train depots always search deterministically, the same way as their routes' paths (2026-11-07 review, L1), whatever
-		// an old save has
-		return (useDeterministicPath || supportsTimetable(transportMode)) && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement ? DeterministicPathFinder.compile(rails, boundaries) : null;
+		return usesPathGraph() ? DeterministicPathFinder.compile(rails, boundaries) : null;
+	}
+
+	/**
+	 * Train depots always search deterministically, the same way as their routes' paths (2026-11-07 review, L1), whatever an
+	 * old save has.
+	 *
+	 * @return whether the depot's paths are found on the network to search ({@link DeterministicPathFinder}) rather than by
+	 * the old search
+	 */
+	public boolean usesPathGraph() {
+		return (useDeterministicPath || supportsTimetable(transportMode)) && transportMode != TransportMode.AIRPLANE && !transportMode.continuousMovement;
 	}
 
 	/**

@@ -1,21 +1,33 @@
 package mtr.data;
 
 import mtr.packet.PacketTrainDataGuiServer;
+import mtr.path.DeterministicPathFinder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
+import transitsim.network.RailGraph;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
+/**
+ * Starts the depots' path generations, each on a thread of its own, as many at once as the machine has cores to spare.
+ * Depots started in the same tick share one copy of the rails and data and one network to search, made on the server
+ * thread once for them all ({@link Snapshot}).
+ */
 public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 
 	private final Map<Long, Long> lastRequestMillis = new HashMap<>();
 
 	private static final int MIN_REQUEST_INTERVAL_MILLIS = 1000;
-	private static final int MAX_THREADS = 4;
+	/**
+	 * How many path generations run at once: the cores but one, at least 2 and at most 8.
+	 */
+	public static final int MAX_THREADS = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() - 1));
 
 	private final Map<Long, Thread> generatingPathThreads = new HashMap<>();
+	private Snapshot snapshot;
 
 	public RailwayDataPathGenerationModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		super(railwayData, world, rails);
@@ -46,11 +58,61 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 			} else {
 				System.out.println("Starting path generation" + (depot.name.isEmpty() ? "" : " for " + depot.name));
 			}
-			depot.generateMainRoute(minecraftServer, world, railwayData.dataCache, rails, railwayData.sidings, thread -> generatingPathThreads.put(depotId, thread));
+			depot.generateMainRoute(minecraftServer, world, railwayData.dataCache, getSnapshot(), railwayData.sidings, thread -> generatingPathThreads.put(depotId, thread));
 			railwayData.resetTrainDelays(depot);
 		} else {
 			PacketTrainDataGuiServer.generatePathS2C(world, depotId, 0);
 			System.out.println("Failed to generate path, depot is null");
+		}
+	}
+
+	/**
+	 * @return the copy of the rails and data the path generations started in this tick work on
+	 */
+	private Snapshot getSnapshot() {
+		final long tick = world.getGameTime();
+		// Rails or data changed within the tick, as a player's edit applied before a request, make a new one
+		final int version = railwayData.dataCache.getVersion();
+		if (snapshot == null || snapshot.tick != tick || snapshot.version != version || snapshot.liveRailCount != rails.size()) {
+			snapshot = new Snapshot(tick, version, rails.size(), railwayData.dataCache.copyIdMaps(), DataCache.copyRails(rails), RoutePaths.getVehicles(railwayData), railwayData.pathBoundaries);
+		}
+		return snapshot;
+	}
+
+	/**
+	 * The rails and data as they were when path generations were started, which threads read and nothing writes. The
+	 * network to search is made the first time a depot needs it, on the server thread, as the pathfinding boundaries it
+	 * keeps searches to are the live ones.
+	 */
+	public static final class Snapshot {
+
+		public final DataCache dataCache;
+		public final Map<BlockPos, Map<BlockPos, Rail>> rails;
+		public final Map<Long, Set<PathTiming.Vehicle>> vehicles;
+		private final long tick;
+		private final int version;
+		private final int liveRailCount;
+		private final mtr.advanced.PathBoundaries boundaries;
+		private RailGraph<Rail> graph;
+
+		private Snapshot(long tick, int version, int liveRailCount, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Map<Long, Set<PathTiming.Vehicle>> vehicles, mtr.advanced.PathBoundaries boundaries) {
+			this.tick = tick;
+			this.version = version;
+			this.liveRailCount = liveRailCount;
+			this.dataCache = dataCache;
+			this.rails = rails;
+			this.vehicles = vehicles;
+			this.boundaries = boundaries;
+		}
+
+		/**
+		 * Called on the server thread only.
+		 */
+		public RailGraph<Rail> getGraph() {
+			if (graph == null) {
+				graph = DeterministicPathFinder.compile(rails, boundaries);
+			}
+			return graph;
 		}
 	}
 }

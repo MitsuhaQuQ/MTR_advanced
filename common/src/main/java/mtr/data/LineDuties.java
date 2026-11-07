@@ -487,6 +487,47 @@ public final class LineDuties {
 	}
 
 	/**
+	 * The plans worked out lately, by what they were planned from, so the depots of a planning unit found again together
+	 * plan their duties once: the first to ask plans them, the others asking meanwhile wait for its plan rather than plan
+	 * the same again (path generation runs several depots at once). Plans are only read once made.
+	 */
+	public static final class PlanCache<T> {
+
+		private static final int MAX_PLANS = 64;
+		private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.FutureTask<T>> plans = new java.util.concurrent.ConcurrentHashMap<>();
+
+		/**
+		 * @param key everything the plan is made from: the unit's key, the start of the operating day and the times
+		 *            between platforms
+		 */
+		public T get(String key, java.util.concurrent.Callable<T> planner) throws Exception {
+			final java.util.concurrent.FutureTask<T> task = new java.util.concurrent.FutureTask<>(planner);
+			final java.util.concurrent.FutureTask<T> existing = plans.putIfAbsent(key, task);
+			if (existing == null) {
+				if (plans.size() > MAX_PLANS) {
+					plans.keySet().removeIf(other -> !other.equals(key));
+				}
+				task.run();
+			}
+			try {
+				return (existing == null ? task : existing).get();
+			} catch (java.util.concurrent.ExecutionException e) {
+				// The thread planning it failed or was stopped for a newer request: this one plans for itself
+				plans.remove(key, existing == null ? task : existing);
+				if (e.getCause() instanceof java.util.concurrent.CancellationException) {
+					if (existing == null) {
+						throw (java.util.concurrent.CancellationException) e.getCause();
+					}
+					return planner.call();
+				}
+				throw e;
+			} catch (InterruptedException e) {
+				throw new java.util.concurrent.CancellationException("Interrupted waiting for a plan");
+			}
+		}
+	}
+
+	/**
 	 * The duties of a unit: the slots of every siding, and whether it has trains enough.
 	 */
 	public static final class Plan {
