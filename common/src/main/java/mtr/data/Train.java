@@ -780,10 +780,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		final RailType thisRail = thisPathData.rail.railType;
 		final float railSpeed;
 		if (thisRail.canAccelerate) {
-			railSpeed = thisPathData.getMaxSpeed();
+			railSpeed = thisPathData.getRunSpeed();
 		} else {
 			final PathData lastPathData = railIndex > 0 ? path.get(railIndex - 1) : thisPathData;
-			railSpeed = Math.max(lastPathData.rail.railType.canAccelerate ? lastPathData.getMaxSpeed() : RailType.getDefaultMaxBlocksPerTick(transportMode), speed);
+			railSpeed = Math.max(lastPathData.rail.railType.canAccelerate ? lastPathData.getRunSpeed() : RailType.getDefaultMaxBlocksPerTick(transportMode), speed);
 		}
 		return limitToVehicle(railSpeed);
 	}
@@ -798,7 +798,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * @return a speed limit no higher than the vehicle's highest speed
 	 */
 	protected final float limitToVehicle(float speedLimit) {
-		return vehicleMaxSpeed > 0 ? Math.min(speedLimit, vehicleMaxSpeed) : speedLimit;
+		// The vehicle's highest speed is a label too, run up to its physical limit
+		return vehicleMaxSpeed > 0 ? Math.min(speedLimit, SpeedRules.run(vehicleMaxSpeed, transportMode)) : speedLimit;
 	}
 
 	public final boolean isPlayerRiding(Player player) {
@@ -1205,7 +1206,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 		@Override
 		public float getMaxSpeed(int rail) {
-			return limitToVehicle(path.get(rail).getMaxSpeed());
+			return limitToVehicle(path.get(rail).getRunSpeed());
 		}
 
 		@Override

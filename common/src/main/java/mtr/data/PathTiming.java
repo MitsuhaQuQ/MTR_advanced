@@ -42,7 +42,8 @@ public final class PathTiming {
 		stopTimes.clear();
 		stopTimes.setJoinIndex(joinIndex);
 		if (vehicle.useSpeedCurve && !vehicle.transportMode.continuousMovement && !path.isEmpty()) {
-			final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, vehicle.transportMode, vehicle.maxSpeed), (vehicle.railLength + vehicle.trainCars * vehicle.spacing) / 2, vehicle.trainCars * vehicle.spacing, vehicle.acceleration, vehicle.deceleration);
+			// Timetables are planned at the planned speeds, below what trains may run, which leaves them room to catch up
+			final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, vehicle.transportMode, vehicle.maxSpeed, true), (vehicle.railLength + vehicle.trainCars * vehicle.spacing) / 2, vehicle.trainCars * vehicle.spacing, vehicle.acceleration, vehicle.deceleration);
 			PathTimes.curveTimes(path, curves, timeSegments, platformTimes, stopTimes);
 			stopTimes.linkJoinStops(lapEndIndex);
 			return;
@@ -76,7 +77,7 @@ public final class PathTiming {
 			}
 
 			final PathData pathData = path.get(i);
-			final float railSpeed = vehicle.limit(pathData.rail.railType.canAccelerate ? pathData.getMaxSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
+			final float railSpeed = vehicle.limit(pathData.rail.railType.canAccelerate ? pathData.getPlanSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
 			distanceSum2 += pathData.rail.getLength();
 
 			while (railProgress < distanceSum2) {
@@ -179,7 +180,7 @@ public final class PathTiming {
 		 * @return a speed limit for this vehicle, no higher than its highest speed
 		 */
 		public float limit(float speedLimit) {
-			return maxSpeed > 0 ? Math.min(speedLimit, maxSpeed) : speedLimit;
+			return maxSpeed > 0 ? Math.min(speedLimit, SpeedRules.plan(maxSpeed, transportMode)) : speedLimit;
 		}
 
 		@Override

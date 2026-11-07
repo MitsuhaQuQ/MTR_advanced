@@ -760,6 +760,11 @@ public final class EditorActions implements IPacket {
 			table.name = getString(tableObject, "name");
 			table.weekdays = tableObject.get("weekdays").getAsInt();
 			table.marginPercent = tableObject.get("marginPercent").getAsInt();
+			if (tableObject.has("minAcceleration")) {
+				table.minAcceleration = Math.max(0, tableObject.get("minAcceleration").getAsFloat());
+				table.minDeceleration = Math.max(0, tableObject.get("minDeceleration").getAsFloat());
+				table.minMaxSpeed = Math.max(0, tableObject.get("minMaxSpeed").getAsFloat());
+			}
 			table.services.clear();
 			tableObject.getAsJsonArray("services").forEach(service -> table.services.add(service.getAsInt()));
 			table.links.clear();

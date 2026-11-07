@@ -20,9 +20,10 @@ class VehicleMaxSpeedTest {
 
 	private static final long START = MONDAY + 4 * HOUR + 50 * MINUTE;
 	/**
-	 * Below the line's rails, which allow 0.5 blocks per tick.
+	 * 20 km/h, below the line's rails, which allow 0.5 blocks per tick; under 60 km/h, a vehicle's label is its physical
+	 * limit too (optimisation document 5.6).
 	 */
-	private static final float MAX_SPEED = 0.3F;
+	private static final float MAX_SPEED = transitsim.network.SpeedLimits.toBlocksPerTick(20);
 
 	@BeforeEach
 	void setUtc() {
@@ -57,6 +58,16 @@ class VehicleMaxSpeedTest {
 			}
 		}
 		assertTrue(freeFastest > MAX_SPEED + 0.05, "free ran at " + freeFastest);
+	}
+
+	@Test
+	void aVehicleOf60OrMoreRunsUpTo5KmhFaster() {
+		// 30 km/h on rails of 36 km/h: under 60, no faster than its label
+		assertEquals(transitsim.network.SpeedLimits.toBlocksPerTick(30), transitsim.network.SpeedLimits.physicalBlocksPerTick(transitsim.network.SpeedLimits.toBlocksPerTick(30)), 1E-6);
+		// 80 km/h: up to 85
+		assertEquals(transitsim.network.SpeedLimits.toBlocksPerTick(85), transitsim.network.SpeedLimits.physicalBlocksPerTick(transitsim.network.SpeedLimits.toBlocksPerTick(80)), 1E-6);
+		assertEquals(transitsim.network.SpeedLimits.toBlocksPerTick(80), transitsim.network.SpeedLimits.planBlocksPerTick(transitsim.network.SpeedLimits.toBlocksPerTick(80)), 1E-6);
+		assertEquals(0, transitsim.network.SpeedLimits.physicalBlocksPerTick(0), 0);
 	}
 
 	@Test

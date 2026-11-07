@@ -36,6 +36,30 @@ public final class SpeedLimits {
 	}
 
 	/**
+	 * @param blocksPerTick a speed label as blocks per tick, as rail types and settings keep it, or 0 or less for none
+	 * @return the physical limit it stands for, in blocks per tick; none stays none
+	 */
+	public static float physicalBlocksPerTick(float blocksPerTick) {
+		final int kmh = toKmh(blocksPerTick);
+		return kmh <= 0 ? blocksPerTick : toBlocksPerTick(physicalKmh(kmh));
+	}
+
+	/**
+	 * @return the speed planned at for a label given as blocks per tick; none stays none
+	 */
+	public static float planBlocksPerTick(float blocksPerTick) {
+		final int kmh = toKmh(blocksPerTick);
+		return kmh <= 0 ? blocksPerTick : toBlocksPerTick(planKmh(kmh));
+	}
+
+	/**
+	 * @return a speed in blocks per tick as the km/h it was set as, rounded
+	 */
+	public static int toKmh(float blocksPerTick) {
+		return blocksPerTick <= 0 ? 0 : Math.round(blocksPerTick * 72);
+	}
+
+	/**
 	 * @return a speed in km/h as blocks per tick
 	 */
 	public static float toBlocksPerTick(int kmh) {

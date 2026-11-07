@@ -1423,7 +1423,7 @@ public final class TickRunner<T extends RunTrack> {
 			for (final T track : path) {
 				distance += track.getTrackLength();
 				distances.add(distance);
-				highestSpeed = Math.max(highestSpeed, track.getMaxSpeed());
+				highestSpeed = Math.max(highestSpeed, transitsim.network.SpeedLimits.physicalBlocksPerTick(track.getMaxSpeed()));
 			}
 			maxSpeed = highestSpeed;
 			this.repeatIndex1 = repeatIndex1;
@@ -2721,7 +2721,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public float getMaxSpeed(int rail) {
-			return RunTrack.limit(path.get(rail).getMaxSpeed(), siding.vehicleMaxSpeed);
+			return RunTrack.runSpeed(path.get(rail), siding.vehicleMaxSpeed);
 		}
 
 		@Override
@@ -2768,7 +2768,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public float getDefaultMaxSpeed() {
-			return RunTrack.limit(siding.minSpeed, siding.vehicleMaxSpeed);
+			return RunTrack.limit(siding.minSpeed, transitsim.network.SpeedLimits.physicalBlocksPerTick(siding.vehicleMaxSpeed));
 		}
 
 		@Override

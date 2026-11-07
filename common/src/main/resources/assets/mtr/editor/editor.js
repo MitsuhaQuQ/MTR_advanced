@@ -3396,7 +3396,7 @@
 			<button data-connecting="${!connecting}" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${connecting ? tr("取消联络线") : tr("设为联络线")}</button>
 			${speedLimitOf(r) > 0 ? `<span class="pill" title="${tr("列车在这条线路两站之间的轨道上不超过这个速度，也不超过轨道自己的限速")}">${tr("限速 {0} km/h", speedLimitOf(r))}${draftOf(r) && "speedLimit" in draftOf(r) ? tr("（草稿）") : ""}</span>` : ""}</div>
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
-			${today >= 0 ? `<label class="hint">${tr("余裕")} <input class="margin" data-margin value="${timetable.tables[today].marginPercent}" inputmode="numeric"> %</label>` : ""}
+			${today >= 0 ? `<label class="hint" title="${tr("运行时分按这组性能算，换车型时刻表不变；跑这条线的车比它慢时会提示")}">${tr("最低性能")} ${tr("加速")} <input class="perf" data-perf="a" value="${perfText(timetable.tables[today], "a")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("减速")} <input class="perf" data-perf="d" value="${perfText(timetable.tables[today], "d")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("最高")} <input class="perf" data-perf="v" value="${perfText(timetable.tables[today], "v")}" inputmode="numeric" style="width:3.5em"> km/h</label>` : ""}
 			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
 			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("间隔 5")}" title="${tr("期望间隔，分钟（也可以写 04:30 表示 4 分 30 秒）")}" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:5em"><button data-add-service>${tr("添加")}</button><button data-clear-table title="${tr("删掉这张表的全部班次，连同直通、回库、出入库指令和例外；表本身、停站时分和运行的星期保留")}">${tr("清空")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
 		if (!services.length) {
@@ -6769,10 +6769,30 @@
 			cellMenu(e, cell);
 		}
 	});
+	/**
+	 * A table's least performance as shown: acceleration and deceleration in m/s², highest speed in km/h, or empty if unset.
+	 */
+	function perfText(table, key) {
+		const value = key === "a" ? table.minAcceleration : key === "d" ? table.minDeceleration : table.minMaxSpeed;
+		if (!(value > 0)) return "";
+		return key === "v" ? String(Math.round(value * 72)) : (value * 400).toFixed(2);
+	}
+
 	$("view-table").addEventListener("change", e => {
 		const r = tableRouteOf();
 		if (!r) return;
-		if (e.target.matches("[data-margin]")) {
+		if (e.target.matches("[data-perf]")) {
+			const key = e.target.dataset.perf, value = Number(e.target.value);
+			const today = timetableOf(r).tables.findIndex(table => table.weekdays >> state.weekday & 1);
+			if (!(value > 0)) return;
+			editTimetable(r, timetable => {
+				const table = timetable.tables[today];
+				// Kept as the game keeps them: m/tick² (m/s² ÷ 400) and blocks per tick (km/h ÷ 72)
+				if (key === "a") table.minAcceleration = value / 400;
+				else if (key === "d") table.minDeceleration = value / 400;
+				else table.minMaxSpeed = value / 72;
+			});
+		} else if (e.target.matches("[data-margin]")) {
 			const value = Math.max(0, Math.min(100, Math.round(Number(e.target.value)) || 0));
 			const today = timetableOf(r).tables.findIndex(table => table.weekdays >> state.weekday & 1);
 			editTimetable(r, timetable => { timetable.tables[today].marginPercent = value; });

@@ -442,6 +442,13 @@ public class TrainServer extends Train {
 			final String key = service.getTripPathKey();
 			// A path passing stops (D3) isn't among the siding's, and is made from its key
 			final TripPath<PathData> tripPath = key.isEmpty() ? null : service.findPath(lastTripPaths, key);
+			if (!key.isEmpty() && tripPath == null) {
+				// The siding's paths were found again since the simulator took its data, as after a timetable changed, and
+				// this one isn't among them: where the simulator has the train means nothing on the paths here, so the train
+				// stays as it is until the simulator is started again on the new paths, and the service is read again then
+				simulatedService = new byte[0];
+				return;
+			}
 			if ((tripPath == null ? depotPath : tripPath.path) != path) {
 				new ServiceVehicle().followPath(tripPath);
 			}

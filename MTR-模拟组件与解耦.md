@@ -136,6 +136,7 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 - **`TrainService` 的时钟**：可替换，测试里用固定时间。
 - **`Train` 的钩子**：见 2.2 节。
 - **`RailwayData.simulateTrains(RailNearPlayer)`**：每 tick 的入口，按"轨道是否靠近玩家"参数化。ANTE 的 mixin 只传入它自己的判断。
+- **限速两值**（优化第三轮）：规则在组件 `SpeedLimits`（含格每 tick 的换算）；组件运行器用 `RunTrack.runSpeed` 取物理最高，游戏用 `SpeedRules`（加上缆车、飞机不适用）；排时刻表的计划速度在宿主的 `PathTiming`。时刻表的最低性能是组件 `RouteTimetable` 的字段，读写在 `TimetableBinary`。
 - **站间段层和配属层**（优化第二轮）：`transitsim.network.LegRouter`（按轨道段找站间段，记搜索域）、`RouteLegs`（站台两个方向的动态规划）、`LegCache`（按搜索域失效，按版本拒收旧结果）、`TrackOwnership`（配属，硬约束）都在组件，`RouteLegsTest` 守住"和整条搜索用时相同、新捷径会重算、配属、增量等于重算、1 线程等于 8 线程"。宿主只剩 `RoutePaths`（把站台和途经点交给组件、把轨道段展开成 `PathData`、诊断失败原因）和 `GraphRecords`（快照、存档）。
 - **`RailwayDataStore` 的线网读写**：`publishTrackSections`、`sweepTrackSections`、`loadTrackSections`（轨道段层按版本读写，根记录最后写，读档只认已发布版本）、`writeGraphPath`。SQLite 的 `track_sections`、`signal_overlay`、`graph_paths` 表的内容格式由组件定义；旧的 `graph_sections` 不再写。
 

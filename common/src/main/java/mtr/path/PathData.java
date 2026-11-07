@@ -125,6 +125,21 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	}
 
 	/**
+	 * @return how fast a train may run this rail: the physical limit of the rail's or the route's speed label
+	 * (optimisation document 5.6); {@link #getMaxSpeed} stays the label, which signal blocks are cut by
+	 */
+	public float getRunSpeed() {
+		return mtr.data.SpeedRules.run(getMaxSpeed(), rail.transportMode);
+	}
+
+	/**
+	 * @return the speed timetables are planned at on this rail
+	 */
+	public float getPlanSpeed() {
+		return mtr.data.SpeedRules.plan(getMaxSpeed(), rail.transportMode);
+	}
+
+	/**
 	 * @return a copy of this rail of the path with another stop, keeping the route's speed limit
 	 */
 	public PathData copy(long newSavedRailBaseId, int newDwellTime) {

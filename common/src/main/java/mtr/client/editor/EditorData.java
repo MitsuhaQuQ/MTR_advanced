@@ -462,6 +462,9 @@ public final class EditorData {
 			tableObject.addProperty("name", table.name);
 			tableObject.addProperty("weekdays", table.weekdays);
 			tableObject.addProperty("marginPercent", table.marginPercent);
+			tableObject.addProperty("minAcceleration", table.minAcceleration);
+			tableObject.addProperty("minDeceleration", table.minDeceleration);
+			tableObject.addProperty("minMaxSpeed", table.minMaxSpeed);
 			final JsonArray servicesArray = new JsonArray();
 			table.services.forEach(servicesArray::add);
 			tableObject.add("services", servicesArray);

@@ -46,6 +46,12 @@ public final class TimetableBinary {
 			writer.writeVarInt(table.suspended.size());
 			new java.util.TreeSet<>(table.suspended).forEach(writer::writeInt);
 		}
+		// The least performance of each table comes last, so data written before it still reads
+		for (final RouteTimetable table : tables) {
+			writer.writeInt(Float.floatToIntBits(table.minAcceleration));
+			writer.writeInt(Float.floatToIntBits(table.minDeceleration));
+			writer.writeInt(Float.floatToIntBits(table.minMaxSpeed));
+		}
 	}
 
 	private static void writeOrders(BinaryWriter writer, java.util.Map<Integer, RouteTimetable.ServiceOrder> orders) {
@@ -113,6 +119,13 @@ public final class TimetableBinary {
 				for (int i = reader.readVarInt(); i > 0; i--) {
 					table.suspended.add(reader.readInt());
 				}
+			}
+		}
+		if (reader.hasMore()) {
+			for (final RouteTimetable table : tables) {
+				table.minAcceleration = Float.intBitsToFloat(reader.readInt());
+				table.minDeceleration = Float.intBitsToFloat(reader.readInt());
+				table.minMaxSpeed = Float.intBitsToFloat(reader.readInt());
 			}
 		}
 		timetable.sanitize();

@@ -201,6 +201,68 @@ public final class RoutePaths {
 	}
 
 	/**
+	 * Sets the least performance of the tables of routes running by a timetable that have none (optimisation round 3):
+	 * that of the slowest vehicle running the route when it is first timed, or the default vehicle's. Called on the server
+	 * thread.
+	 *
+	 * @param vehicles the vehicles running each route ({@link #getVehicles(RailwayData)})
+	 * @return the routes changed
+	 */
+	public static List<Route> fillMinPerformance(Collection<Route> routes, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
+		final List<Route> changed = new ArrayList<>();
+		// A depot often lists one way of a line and runs the other too, so the vehicles of the whole line count
+		final Map<String, Set<PathTiming.Vehicle>> lineVehicles = new HashMap<>();
+		routes.forEach(route -> lineVehicles.computeIfAbsent(LineDuties.getLineKey(route), key -> new HashSet<>()).addAll(vehicles.getOrDefault(route.id, Collections.emptySet())));
+		routes.forEach(route -> {
+			if (!timesByPath(route) || !route.timetable.isActive()) {
+				return;
+			}
+			final Set<PathTiming.Vehicle> ofLine = lineVehicles.get(LineDuties.getLineKey(route));
+			final Collection<PathTiming.Vehicle> routeVehicles = ofLine == null || ofLine.isEmpty() ? getVehicles(vehicles, route) : ofLine;
+			float acceleration = Float.MAX_VALUE;
+			float deceleration = Float.MAX_VALUE;
+			float maxSpeed = Float.MAX_VALUE;
+			for (final PathTiming.Vehicle vehicle : routeVehicles) {
+				acceleration = Math.min(acceleration, vehicle.acceleration);
+				deceleration = Math.min(deceleration, vehicle.deceleration);
+				if (vehicle.maxSpeed > 0) {
+					maxSpeed = Math.min(maxSpeed, vehicle.maxSpeed);
+				}
+			}
+			boolean set = false;
+			for (final transitsim.plan.RouteTimetable table : route.timetable.getTables()) {
+				if (!table.hasMinPerformance()) {
+					table.minAcceleration = acceleration;
+					table.minDeceleration = deceleration;
+					table.minMaxSpeed = maxSpeed == Float.MAX_VALUE ? 0 : maxSpeed;
+					set = true;
+				}
+			}
+			if (set) {
+				route.timetable.revision++;
+				changed.add(route);
+			}
+		});
+		return changed;
+	}
+
+	/**
+	 * @return the vehicles running the route that are slower than its timetable's least performance, to point out
+	 */
+	public static List<PathTiming.Vehicle> getSlowerVehicles(Route route, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
+		final transitsim.plan.RouteTimetable table = route.timetable;
+		final List<PathTiming.Vehicle> slower = new ArrayList<>();
+		if (table.hasMinPerformance()) {
+			vehicles.getOrDefault(route.id, Collections.emptySet()).forEach(vehicle -> {
+				if (vehicle.acceleration < table.minAcceleration - 1E-7 || vehicle.deceleration < table.minDeceleration - 1E-7 || table.minMaxSpeed > 0 && vehicle.maxSpeed > 0 && vehicle.maxSpeed < table.minMaxSpeed - 1E-6) {
+					slower.add(vehicle);
+				}
+			});
+		}
+		return slower;
+	}
+
+	/**
 	 * @return the rails released from connecting lines by hand, which other routes may run over
 	 */
 	public static Set<UUID> getReleasedRails(DataCache dataCache) {
@@ -741,11 +803,25 @@ public final class RoutePaths {
 				return new long[0][];
 			}
 			long[][] slowest = null;
-			for (final PathTiming.Vehicle vehicle : vehicles) {
+			for (final PathTiming.Vehicle vehicle : withMinPerformance(route, vehicles)) {
 				final long[][] times = getStopTimes(vehicle, route.platformIds).getFastestTimesFromFirstStop(route);
 				slowest = slowest == null ? times : slowest(slowest, times);
 			}
 			return slowest == null ? new long[0][] : slowest;
+		}
+
+		/**
+		 * @return the vehicles with the least performance the route's timetable asks for in place of their own
+		 * (optimisation round 3), so the times don't change with the vehicles running it; as they are if it asks for none
+		 */
+		static Collection<PathTiming.Vehicle> withMinPerformance(Route route, Collection<PathTiming.Vehicle> vehicles) {
+			final transitsim.plan.RouteTimetable table = route.timetable;
+			if (!table.hasMinPerformance()) {
+				return vehicles;
+			}
+			final Set<PathTiming.Vehicle> timed = new java.util.LinkedHashSet<>();
+			vehicles.forEach(vehicle -> timed.add(new PathTiming.Vehicle(vehicle.railLength, vehicle.trainCars, vehicle.spacing, table.minAcceleration, table.minDeceleration, vehicle.useSpeedCurve, vehicle.transportMode, table.minMaxSpeed)));
+			return timed;
 		}
 
 		private StopTimes getStopTimes(PathTiming.Vehicle vehicle, List<Route.RoutePlatform> stopSettings) {

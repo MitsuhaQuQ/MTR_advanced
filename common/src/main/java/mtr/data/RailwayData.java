@@ -161,6 +161,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	private Long lockNetworksSignature;
 	/**
+	 * Routes run by a vehicle slower than their timetable's least performance, as last told.
+	 */
+	private final Set<Long> slowerRoutes = new HashSet<>();
+	/**
 	 * Which version of each part of the data players edit the server has (multiplayer edit conflicts).
 	 */
 	public final EditRevisions editRevisions = new EditRevisions();
@@ -712,6 +716,20 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// are threads free, sharing one copy of the rails (RailwayDataPathGenerationModule)
 		// The units are made once for all the depots, each unit once for all its depots, as reading the world for each depot
 		// took seconds on large networks
+		// The least performance of timetables with none, from the vehicles running them (optimisation round 3)
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0) {
+			final Map<Long, Set<PathTiming.Vehicle>> routeVehicles = RoutePaths.getVehicles(this);
+			RoutePaths.fillMinPerformance(routes, routeVehicles).forEach(route -> {
+				System.out.println("Minecraft Transit Railway: the timetable of route " + route.name + " is now timed for its slowest vehicle: acceleration " + route.timetable.minAcceleration * 400 + " m/s², deceleration " + route.timetable.minDeceleration * 400 + " m/s², highest speed " + Math.round(route.timetable.minMaxSpeed * 72) + " km/h");
+				route.setTimetable(packet -> world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, IPacket.PACKET_UPDATE_ROUTE, packet)));
+			});
+			routes.forEach(route -> {
+				final boolean slower = !RoutePaths.getSlowerVehicles(route, routeVehicles).isEmpty();
+				if (slower ? slowerRoutes.add(route.id) : slowerRoutes.remove(route.id)) {
+					System.out.println("Minecraft Transit Railway: " + (slower ? "a vehicle running route " + route.name + " is slower than its timetable asks for" : "every vehicle running route " + route.name + " keeps to its timetable's least performance again"));
+				}
+			});
+		}
 		// Paths are made of legs on the track sections, so not before they are there
 		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && graphRecords.getLegs() != null && routePaths.isOwnersReady() && railwayDataPathGenerationModule.canGenerate()) {
 			final Map<Long, LineDuties.Unit> units = LineDuties.unitsOf(depots, dataCache, sidings);

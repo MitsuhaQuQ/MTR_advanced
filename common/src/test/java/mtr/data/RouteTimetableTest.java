@@ -272,15 +272,16 @@ class RouteTimetableTest {
 	}
 
 	@Test
-	void automaticTimesAddTheMarginToRunningTimeOnly() {
+	void theMarginNoLongerAddsToRunningTimes() {
+		// Running times are worked out at the planned speeds, which leave the room a margin used to (optimisation round 3)
 		final RouteTimetable timetable = timetable(10);
 		timetable.marginPercent = 10;
 		final List<RouteTimetable.StopPlan> stops = Arrays.asList(stop(0, 30, -1, -1, false), stop(130, 160, -1, -1, false));
 		timetable.applyPlan(stops);
 
 		assertEquals(30000, stops.get(0).departureMillis);
-		assertEquals(140000, stops.get(1).arrivalMillis);
-		assertEquals(170000, stops.get(1).departureMillis);
+		assertEquals(130000, stops.get(1).arrivalMillis);
+		assertEquals(160000, stops.get(1).departureMillis);
 	}
 
 	@Test

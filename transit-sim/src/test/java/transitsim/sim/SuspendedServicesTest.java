@@ -66,9 +66,30 @@ class SuspendedServicesTest {
 		final byte[] bytes = writer.toBytes();
 		assertEquals(Collections.singleton(SEVEN), TimetableBinary.read(new ByteArrayBinary.Reader(bytes)).suspended);
 
-		// Data written before has no count of them at the end: one table, one byte for the count of one service and four for it
-		final RouteTimetable old = TimetableBinary.read(new ByteArrayBinary.Reader(Arrays.copyOf(bytes, bytes.length - 5)));
+		// Data written before has no count of them at the end: one table, one byte for the count of one service and four for
+		// it, before the 12 bytes of its least performance, which is newer still
+		final RouteTimetable old = TimetableBinary.read(new ByteArrayBinary.Reader(Arrays.copyOf(bytes, bytes.length - 5 - 12)));
 		assertTrue(old.suspended.isEmpty());
+		assertEquals(route.timetable.services, old.services);
+	}
+
+	@Test
+	void theLeastPerformanceIsKeptWithTheTimetableAndOldDataHasNone() {
+		final TestRoute route = SimDatasetTest.route(1, 0, 10, 1, 2, 3);
+		route.timetable.minAcceleration = 0.002F;
+		route.timetable.minDeceleration = 0.0025F;
+		route.timetable.minMaxSpeed = 1.5F;
+		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		TimetableBinary.write(writer, route.timetable);
+		final byte[] bytes = writer.toBytes();
+		final RouteTimetable read = TimetableBinary.read(new ByteArrayBinary.Reader(bytes));
+		assertTrue(read.hasMinPerformance());
+		assertEquals(0.002F, read.minAcceleration);
+		assertEquals(0.0025F, read.minDeceleration);
+		assertEquals(1.5F, read.minMaxSpeed);
+		// Written before: none, to be set from the vehicles
+		final RouteTimetable old = TimetableBinary.read(new ByteArrayBinary.Reader(Arrays.copyOf(bytes, bytes.length - 12)));
+		assertFalse(old.hasMinPerformance());
 		assertEquals(route.timetable.services, old.services);
 	}
 

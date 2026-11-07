@@ -136,14 +136,13 @@ class TrainServiceTest {
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);
 		assertEquals(2 * MINUTE, train.service.getPlanAt(2).arrivalMillis);
 
-		// Half as much time again between stops, from now on
-		line.route.timetable.marginPercent = 50;
+		// Half as much time again to the second stop, from now on, set as its arrival
+		((TestRoute.Stop) line.route.getStops().get(1)).arrival = (int) ((2 * MINUTE + (2 * MINUTE - 10 * SECOND) / 2) / SECOND);
 		line.route.timetable.revision++;
 		assertEquals(2 * MINUTE, train.service.getPlanAt(2).arrivalMillis);
 
 		// A train leaving after the change runs by the new plan at once
 		final FakeTrain newTrain = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
-		// The margin adds to the running time, not to the 10 seconds stopped at the first stop
 		assertEquals(2 * MINUTE + (2 * MINUTE - 10 * SECOND) / 2, newTrain.service.getPlanAt(2).arrivalMillis);
 		assertEquals(2 * MINUTE, train.service.getPlanAt(2).arrivalMillis);
 	}
@@ -154,7 +153,7 @@ class TrainServiceTest {
 		final FakeTrain train = loop.deploy(MONDAY + 6 * HOUR);
 		final long oldArrival = train.service.getPlanAt(2).arrivalMillis;
 
-		loop.depot.routes.get(0).timetable.marginPercent = 50;
+		((TestRoute.Stop) loop.depot.routes.get(0).getStops().get(1)).arrival = (int) ((oldArrival + (oldArrival - 10 * SECOND) / 2) / SECOND);
 		loop.depot.routes.get(0).timetable.revision++;
 		assertEquals(oldArrival, train.service.getPlanAt(2).arrivalMillis);
 

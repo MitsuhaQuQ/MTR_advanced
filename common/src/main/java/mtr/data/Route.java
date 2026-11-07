@@ -110,6 +110,10 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_CUSTOM_PATH = "ante_path";
 	private static final String KEY_TIMETABLE_ENABLED = "timetable_enabled";
 	private static final String KEY_TIMETABLE_MARGIN = "timetable_margin";
+	/**
+	 * The least performance a vehicle running a table must manage: acceleration, deceleration, highest speed.
+	 */
+	private static final String KEY_TIMETABLE_MIN_PERFORMANCE = "timetable_min_performance";
 	private static final String KEY_TIMETABLE_SERVICES = "timetable_services";
 	private static final String KEY_TIMETABLE_NAME = "timetable_name";
 	private static final String KEY_TIMETABLE_WEEKDAYS = "timetable_weekdays";
@@ -214,6 +218,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		messagePackHelper.iterateArrayValue(KEY_CUSTOM_PATH, value -> pathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(value))));
 		timetable.enabled = messagePackHelper.getBoolean(KEY_TIMETABLE_ENABLED);
 		timetable.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
+		readMinPerformance(messagePackHelper, timetable);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> timetable.services.add(service.asIntegerValue().asInt()));
 		timetable.name = messagePackHelper.getString(KEY_TIMETABLE_NAME);
 		timetable.weekdays = messagePackHelper.getInt(KEY_TIMETABLE_WEEKDAYS, RouteTimetable.ALL_WEEKDAYS);
@@ -362,6 +367,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 		messagePacker.packString(KEY_TIMETABLE_ENABLED).packBoolean(timetable.enabled);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(timetable.marginPercent);
+		writeMinPerformance(messagePacker, timetable);
 		messagePacker.packString(KEY_TIMETABLE_SERVICES).packArrayHeader(timetable.services.size());
 		for (final int service : timetable.services) {
 			messagePacker.packInt(service);
@@ -403,7 +409,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 35 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 36 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -504,6 +510,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		table.name = messagePackHelper.getString(KEY_TIMETABLE_NAME);
 		table.weekdays = messagePackHelper.getInt(KEY_TIMETABLE_WEEKDAYS, RouteTimetable.ALL_WEEKDAYS);
 		table.marginPercent = messagePackHelper.getInt(KEY_TIMETABLE_MARGIN, RouteTimetable.DEFAULT_MARGIN_PERCENT);
+		readMinPerformance(messagePackHelper, table);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_SERVICES, service -> table.services.add(service.asIntegerValue().asInt()));
 		readLinks(messagePackHelper, table);
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_RETURNS, value -> table.returnServices.add(value.asIntegerValue().asInt()));
@@ -534,9 +541,32 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		});
 	}
 
+	private static void writeMinPerformance(MessagePacker messagePacker, RouteTimetable table) throws IOException {
+		messagePacker.packString(KEY_TIMETABLE_MIN_PERFORMANCE).packArrayHeader(3);
+		messagePacker.packFloat(table.minAcceleration);
+		messagePacker.packFloat(table.minDeceleration);
+		messagePacker.packFloat(table.minMaxSpeed);
+	}
+
+	private static void readMinPerformance(MessagePackHelper messagePackHelper, RouteTimetable table) {
+		final List<Float> values = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_MIN_PERFORMANCE, value -> values.add(value.asFloatValue().toFloat()));
+		if (values.size() == 3) {
+			table.minAcceleration = values.get(0);
+			table.minDeceleration = values.get(1);
+			table.minMaxSpeed = values.get(2);
+		}
+	}
+
+	private static void copyMinPerformance(RouteTimetable from, RouteTimetable to) {
+		to.minAcceleration = from.minAcceleration;
+		to.minDeceleration = from.minDeceleration;
+		to.minMaxSpeed = from.minMaxSpeed;
+	}
+
 	private void writeTable(MessagePacker messagePacker, int tableIndex) throws IOException {
 		final RouteTimetable table = timetable.getTable(tableIndex);
-		messagePacker.packMapHeader(12);
+		messagePacker.packMapHeader(13);
 		writeLinks(messagePacker, table);
 		writeReturns(messagePacker, table);
 		writeOrders(messagePacker, table);
@@ -544,6 +574,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		messagePacker.packString(KEY_TIMETABLE_NAME).packString(table.name);
 		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(table.weekdays);
 		messagePacker.packString(KEY_TIMETABLE_MARGIN).packInt(table.marginPercent);
+		writeMinPerformance(messagePacker, table);
 		messagePacker.packString(KEY_TIMETABLE_SERVICES).packArrayHeader(table.services.size());
 		for (final int service : table.services) {
 			messagePacker.packInt(service);
@@ -573,6 +604,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		}
 		final RouteTimetable table = new RouteTimetable();
 		table.marginPercent = timetable.getTable(copiedTable).marginPercent;
+		copyMinPerformance(timetable.getTable(copiedTable), table);
 		timetable.addTable(table);
 		final int tableIndex = timetable.getTableCount() - 1;
 		platformIds.forEach(routePlatform -> {
@@ -850,6 +882,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			newTable.name = table.name;
 			newTable.weekdays = table.weekdays;
 			newTable.marginPercent = table.marginPercent;
+			copyMinPerformance(table, newTable);
 			newTable.services.addAll(table.services);
 			newTable.links.putAll(table.links);
 			newTable.returnServices.addAll(table.returnServices);
@@ -1084,6 +1117,9 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		table.name = packet.readUtf(PACKET_STRING_READ_LENGTH);
 		table.weekdays = packet.readInt();
 		table.marginPercent = packet.readInt();
+		table.minAcceleration = packet.readFloat();
+		table.minDeceleration = packet.readFloat();
+		table.minMaxSpeed = packet.readFloat();
 		table.services.clear();
 		final int serviceCount = packet.readInt();
 		for (int i = 0; i < serviceCount; i++) {
@@ -1141,6 +1177,9 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			packet.writeUtf(table.name);
 			packet.writeInt(table.weekdays);
 			packet.writeInt(table.marginPercent);
+			packet.writeFloat(table.minAcceleration);
+			packet.writeFloat(table.minDeceleration);
+			packet.writeFloat(table.minMaxSpeed);
 			packet.writeInt(table.services.size());
 			table.services.forEach(packet::writeInt);
 			packet.writeInt(table.links.size());

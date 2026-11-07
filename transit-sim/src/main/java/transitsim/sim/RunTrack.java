@@ -56,17 +56,25 @@ public interface RunTrack extends PlanTrack {
 		for (int i = 0; i < count; i++) {
 			final RunTrack track = path.get(i);
 			lengths[i] = track.getTrackLength();
-			limits[i] = track.canAccelerate() ? limit(track.getMaxSpeed(), vehicleMaxSpeed) : -1;
+			limits[i] = track.canAccelerate() ? runSpeed(track, vehicleMaxSpeed) : -1;
 			stops[i] = track.getDwellTime() > 0;
 			reversals[i] = i + 1 < count && track.isOppositeOf(path.get(i + 1));
 		}
 		// Where rails don't set the speed, the vehicle's lowest cruising speed, which its highest speed caps too
-		return new TrackView(lengths, limits, stops, reversals, limit((float) minSpeed, vehicleMaxSpeed));
+		return new TrackView(lengths, limits, stops, reversals, limit((float) minSpeed, transitsim.network.SpeedLimits.physicalBlocksPerTick((float) vehicleMaxSpeed)));
 	}
 
 	/**
 	 * @return a rail's speed limit for a vehicle with a highest speed, or 0 for none
 	 */
+	/**
+	 * @return how fast a train may run a track: the physical limits of the track's speed label and of the vehicle's
+	 * (optimisation document 5.6), the lower of the two
+	 */
+	static float runSpeed(RunTrack track, double vehicleMaxSpeed) {
+		return limit(transitsim.network.SpeedLimits.physicalBlocksPerTick(track.getMaxSpeed()), transitsim.network.SpeedLimits.physicalBlocksPerTick((float) vehicleMaxSpeed));
+	}
+
 	static float limit(float railSpeed, double vehicleMaxSpeed) {
 		return vehicleMaxSpeed > 0 ? (float) Math.min(railSpeed, vehicleMaxSpeed) : railSpeed;
 	}

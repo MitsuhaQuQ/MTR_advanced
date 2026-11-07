@@ -811,6 +811,20 @@ flowchart TD
 - **找不到路的原因**：途经点不再是关键节点（`NOT_KEY_NODE`）；只能走别的线配属的轨道（`OTHER_LINE`，给出第一段的两端）；只能走联络线（`CONNECTING_LINE`，照旧）；其余照旧由 `PathFailure.diagnose` 判断。
 - **数字**：黄线 4 条线路和第一轮版本的轨道条数一致（138、97、100、119）；64 份黄线从头算全部站间段时 128 个车厂寻路 47 s（第一轮 71 s），重启读回 4,717 个站间段，线路寻路每条最多 6 ms；配属表 62 KB。
 
+### 7.6 限速两值、最低性能、去掉余量（优化第三轮 3a）
+
+- **限速两值进运行层**：标的值（轨道类型、线路限速、车速上限）按 60 为界分出物理最高和计划速度（组件 `SpeedLimits`，游戏 `SpeedRules`，缆车和飞机不适用）。
+  - 列车按物理最高跑：游戏 `Train.getRailSpeed`、`limitToVehicle`、运动用的 `TrackViews.of(..., plan = false)`；组件 `RunTrack.runSpeed`（`toTrackView`、`TickRunner` 的限速和巡航上限）。
+  - 时刻表按计划速度排：`PathTiming`（速度曲线用 `TrackViews.of(..., plan = true)`，逐 tick 的旧算法用 `PathData.getPlanSpeed`，车速上限用计划值）。
+  - `PathData.getMaxSpeed()` 和组件 `RunTrack.getMaxSpeed()` 仍是标的值，信号区段照旧按它切（`PathClaims`、`BlockSections`）。
+- **去掉余量**：`RouteTimetable.addMargin` 不再加时间；`marginPercent` 照旧读写存档和包，不再使用；游戏时刻表界面和网页"余裕"输入框去掉。
+- **最低性能**：每张表 `RouteTimetable.minAcceleration`、`minDeceleration`、`minMaxSpeed`（存档键 `timetable_min_performance`，包里在表头的余量后面，组件二进制 `TimetableBinary` 追加在末尾，旧数据读出为未设）。
+  - 默认值：`RailwayData` 每 100 tick 调 `RoutePaths.fillMinPerformance`，给有效时刻表里还没设的表填上这条线路组（同一营运线的各方向）所有车型里最慢的（加速度、减速度、最高速度各取最小；都没有就用默认车型），`revision++` 并发给玩家，之后固定。
+  - 使用：`RoutePath.getFastestTimes` 先用 `withMinPerformance` 把各车型的性能换成表的（车长照旧各取各的），所以换车型时刻不变。现在取第一张表的性能，各表分别生效要等最快时刻按表算。
+  - 跑这条线的车比要求慢（`RoutePaths.getSlowerVehicles`）时服务端日志提示，恢复时也提示。
+  - 网页时刻表面板"最低性能：加速、减速（m/s²）、最高（km/h）"可改（`perfText`、`data-perf`，JSON 字段 `minAcceleration` 等，`EditorData`、`EditorActions`）。
+- **组件模拟器的列车找不到它的运用路径时原地等**（`TrainServer.showSimulated`）：时刻表改动让车厂重新生成路径，模拟器还没换上新数据时，模拟器里某列车的运用路径在游戏这边已经没有了。以前会退到车厂路径、用旧的停站序号，越界报错（64 份黄线上一次 5,296 条）；现在这列车停在原处，等模拟器换上新路径再读一次。
+
 ## 8. 玩家编辑数据
 
 ### 8.1 普通的改动

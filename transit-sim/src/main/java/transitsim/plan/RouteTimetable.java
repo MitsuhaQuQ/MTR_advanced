@@ -25,6 +25,14 @@ public class RouteTimetable {
 
 	public boolean enabled;
 	public int marginPercent = DEFAULT_MARGIN_PERCENT;
+	/**
+	 * The least a vehicle running this table must manage (optimisation round 3): its running times are worked out for it,
+	 * so they don't change with the vehicles running it. Acceleration and deceleration in m/tick², highest speed in
+	 * blocks per tick, 0 for none. Not set until {@link #minAcceleration} is more than 0.
+	 */
+	public float minAcceleration;
+	public float minDeceleration;
+	public float minMaxSpeed;
 	public final List<Integer> services = new ArrayList<>();
 	public String name = "";
 	/**
@@ -119,6 +127,9 @@ public class RouteTimetable {
 		final RouteTimetable timetable = new RouteTimetable();
 		timetable.enabled = enabled;
 		timetable.marginPercent = marginPercent;
+		timetable.minAcceleration = minAcceleration;
+		timetable.minDeceleration = minDeceleration;
+		timetable.minMaxSpeed = minMaxSpeed;
 		timetable.services.addAll(services);
 		timetable.name = name;
 		timetable.entryPlatformId = entryPlatformId;
@@ -367,10 +378,19 @@ public class RouteTimetable {
 	}
 
 	/**
-	 * Applies the planned extra time to a calculated running time, which is what lets a late train catch up.
+	 * @return whether the least performance a vehicle must manage is set
+	 */
+	public boolean hasMinPerformance() {
+		return minAcceleration > 0 && minDeceleration > 0;
+	}
+
+	/**
+	 * The running time as planned. There is no extra time any more (optimisation document 5.6, round 3): running times
+	 * are worked out at the planned speeds, below the physical limits trains run at, which is what lets a late train catch
+	 * up. {@link #marginPercent} is still read and saved, so older saves keep it, but isn't used.
 	 */
 	public long addMargin(long millis) {
-		return millis * (100 + marginPercent) / 100;
+		return millis;
 	}
 
 	/**

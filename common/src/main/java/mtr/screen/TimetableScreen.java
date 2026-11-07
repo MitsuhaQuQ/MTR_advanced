@@ -314,7 +314,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 		addDrawableChild(textFieldService);
 		addDrawableChild(buttonAddService);
 		addDrawableChild(checkboxEnabled);
-		addDrawableChild(textFieldMargin);
+		// The margin is no longer set: running times are planned at the planned speeds (optimisation round 3)
 
 		for (int i = 0; i < rowCount; i++) {
 			final int y = ROWS_Y + SQUARE_SIZE * i;
@@ -378,7 +378,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 
 			final int rightX = LIST_WIDTH + TEXT_PADDING;
 			final int headerY = SQUARE_SIZE * 2 + TEXT_PADDING;
-			GuiCompat.draw(matrices, font, marginText, rightX, getMarginY() + TEXT_PADDING + TEXT_FIELD_PADDING / 2F, ARGB_WHITE);
+			// No margin to show (optimisation round 3)
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_station"), rightX, headerY, ARGB_LIGHT_GRAY);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_platform"), columnPlatform, headerY, ARGB_LIGHT_GRAY);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.timetable_fastest"), columnFastest, headerY, ARGB_LIGHT_GRAY);
@@ -571,7 +571,7 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void saveTableFields() {
-		getTable().marginPercent = parseMargin();
+		// The margin is kept as saved, unused (optimisation round 3)
 		getTable().name = textFieldTableName.getValue();
 	}
 

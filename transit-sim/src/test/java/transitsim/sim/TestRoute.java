@@ -61,6 +61,10 @@ class TestRoute implements PlanRoute {
 	static class Stop implements PlanStop {
 
 		final long platformId;
+		/**
+		 * A set arrival in seconds from where the route starts, or -1.
+		 */
+		int arrival = -1;
 
 		Stop(long platformId) {
 			this.platformId = platformId;
@@ -78,7 +82,7 @@ class TestRoute implements PlanRoute {
 
 		@Override
 		public int getArrival(int table) {
-			return -1;
+			return arrival;
 		}
 
 		@Override

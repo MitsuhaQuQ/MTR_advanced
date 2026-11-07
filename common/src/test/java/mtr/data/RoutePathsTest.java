@@ -60,6 +60,29 @@ class RoutePathsTest {
 	}
 
 	@Test
+	void aTimetableIsTimedForItsLeastPerformanceWhateverRunsIt() {
+		final Route route = route();
+		route.timetable.enabled = true;
+		route.timetable.services.add(8 * 3600 * 1000);
+		final Map<Long, java.util.Set<PathTiming.Vehicle>> vehicles = new HashMap<>();
+		vehicles.put(route.id, new HashSet<>(Arrays.asList(FAST, SLOW)));
+		// Set from the slowest vehicle running it the first time
+		assertEquals(Collections.singletonList(route), RoutePaths.fillMinPerformance(Collections.singletonList(route), vehicles));
+		assertEquals(SLOW.acceleration, route.timetable.minAcceleration);
+		assertTrue(RoutePaths.fillMinPerformance(Collections.singletonList(route), vehicles).isEmpty());
+
+		// Then the times are the same whatever runs it
+		final RoutePaths.RoutePath routePath = new RoutePaths.RoutePath(route.id, "", path(), PathFailure.NONE);
+		assertArrayEquals(routePath.getFastestTimes(route, Collections.singleton(SLOW)), routePath.getFastestTimes(route, Collections.singleton(FAST)));
+		assertTrue(RoutePaths.getSlowerVehicles(route, vehicles).isEmpty());
+
+		// A vehicle slower than it asks for is pointed out
+		final PathTiming.Vehicle slower = new PathTiming.Vehicle(160, 8, 20, 0.001F, 0.001F, false, TransportMode.TRAIN);
+		vehicles.get(route.id).add(slower);
+		assertEquals(Collections.singletonList(slower), RoutePaths.getSlowerVehicles(route, vehicles));
+	}
+
+	@Test
 	void aRouteNoDepotRunsIsTimedWithTheDefaultVehicle() {
 		final Route route = route();
 		final PathTiming.Vehicle vehicle = RoutePaths.getDefaultVehicle(TransportMode.TRAIN);

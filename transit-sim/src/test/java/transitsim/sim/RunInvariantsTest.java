@@ -56,7 +56,7 @@ class RunInvariantsTest {
 
 	@Test
 	void anOverlapIsFound() {
-		final ScenarioLine line = new ScenarioLine(2400, 6, 6);
+		final ScenarioLine line = new ScenarioLine(6000, 6, 6);
 		final List<TickRunner<ScenarioTrack>.HeadlessTrain> trains = twoOnLine(line);
 		final RunInvariants<ScenarioTrack> invariants = new RunInvariants<>(line.runner);
 		trains.get(1).setRailProgress(trains.get(0).getRailProgress());
@@ -66,7 +66,7 @@ class RunInvariantsTest {
 
 	@Test
 	void aTrainTakenOffTheLineIsFoundUnlessExpected() {
-		final ScenarioLine line = new ScenarioLine(2400, 6, 6);
+		final ScenarioLine line = new ScenarioLine(6000, 6, 6);
 		final List<TickRunner<ScenarioTrack>.HeadlessTrain> trains = twoOnLine(line);
 		final RunInvariants<ScenarioTrack> invariants = new RunInvariants<>(line.runner);
 		invariants.check();
