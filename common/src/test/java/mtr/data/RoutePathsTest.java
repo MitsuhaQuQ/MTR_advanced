@@ -112,6 +112,64 @@ class RoutePathsTest {
 		assertTrue(routePaths.getFound(through, dataCache, rails) != null);
 	}
 
+	@Test
+	void aConnectingLineBranchingOffTheMainLineKeepsOnlyItsBranch() {
+		// Main line A, P, C in a row; at X (z 200) a branch leaves for platform Q beside the line. The connecting line runs
+		// from P along the main line to X and off along the branch to Q
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
+		final DataCache dataCache = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>());
+		final Platform a = platform(dataCache, rails, 1, 0);
+		connect(rails, 20, 100);
+		final Platform p = platform(dataCache, rails, 2, 100);
+		connect(rails, 120, 200);
+		connect(rails, 200, 300);
+		final Platform c = platform(dataCache, rails, 4, 300);
+		final BlockPos fork = new BlockPos(0, 64, 200);
+		final BlockPos branchEnd = new BlockPos(10, 64, 260);
+		addRail(rails, fork, branchEnd, RailType.DIAMOND);
+		final BlockPos qEnd = new BlockPos(10, 64, 280);
+		addRail(rails, branchEnd, qEnd, RailType.PLATFORM);
+		final Platform q = new Platform(3, TransportMode.TRAIN, branchEnd, qEnd);
+		dataCache.platformIdMap.put(3L, q);
+		final Route connectingLine = route(dataCache, 10, p, q);
+		connectingLine.connectingLine = true;
+		final Route through = route(dataCache, 12, a, c);
+		final Route toQ = route(dataCache, 13, a, q);
+		RoutePaths routePaths = new RoutePaths();
+		RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
+
+		assertTrue(routePaths.get(connectingLine, dataCache, rails, () -> graph).isFound());
+		// The main line it starts along stays the others', the branch is its own
+		assertTrue(routePaths.get(through, dataCache, rails, () -> graph).isFound());
+		final RoutePaths.RoutePath toQPath = routePaths.get(toQ, dataCache, rails, () -> graph);
+		assertFalse(toQPath.isFound());
+		assertEquals(PathFailure.Type.CONNECTING_LINE, toQPath.failure.type);
+
+		// Another fork before X, a siding off the main line at z 160: without waypoints the connecting line's own part starts
+		// there, taking the main line from there to X
+		rails.get(new BlockPos(0, 64, 120)).remove(fork);
+		rails.get(fork).remove(new BlockPos(0, 64, 120));
+		connect(rails, 120, 160);
+		connect(rails, 160, 200);
+		addRail(rails, new BlockPos(0, 64, 160), new BlockPos(6, 64, 190), RailType.DIAMOND);
+		final RailGraph<Rail> graph2 = DeterministicPathFinder.compile(rails);
+		routePaths = new RoutePaths();
+		final RoutePaths finalRoutePaths = routePaths;
+		assertTrue(finalRoutePaths.get(connectingLine, dataCache, rails, () -> graph2).isFound());
+		assertFalse(finalRoutePaths.get(through, dataCache, rails, () -> graph2).isFound());
+		// A key node at X says where it leaves the main line
+		connectingLine.platformIds.get(0).waypoints.add(fork);
+		final RoutePaths.RoutePath withKey = finalRoutePaths.get(connectingLine, dataCache, rails, () -> graph2);
+		assertTrue(withKey.isFound(), withKey.failure.type + " " + withKey.failure.pos + " " + withKey.failure.node1 + " " + withKey.failure.node2);
+		assertTrue(finalRoutePaths.get(through, dataCache, rails, () -> graph2).isFound());
+		assertFalse(finalRoutePaths.get(toQ, dataCache, rails, () -> graph2).isFound());
+		// Key nodes at both ends of the branch, one rail apart: that rail alone is its own
+		connectingLine.platformIds.get(0).waypoints.add(branchEnd);
+		assertTrue(finalRoutePaths.get(connectingLine, dataCache, rails, () -> graph2).isFound());
+		assertTrue(finalRoutePaths.get(through, dataCache, rails, () -> graph2).isFound());
+		assertFalse(finalRoutePaths.get(toQ, dataCache, rails, () -> graph2).isFound());
+	}
+
 	private static Route route() {
 		final Route route = new Route(1, TransportMode.TRAIN);
 		route.platformIds.add(new Route.RoutePlatform(1));

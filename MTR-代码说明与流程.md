@@ -934,7 +934,7 @@ sequenceDiagram
 | `RoutePaths` | 每条线路一份 `RoutePath`，按线路加锁，`get` 不存在或过期才找，`getFound` 只读不找；`getVehicles` 在主线程上收集跑每条线路的车型；`timesByPath` 判断线路是否按自己的路径算时刻（不是手画路径、飞机、连续运动） |
 | `RoutePaths.Search` | 一个路径生成线程看到的线路路径：它那份轨道副本，要找时才建一次 `RailGraph`；`getFastestTimes(route)` |
 | `RoutePaths.RoutePath` | 原始路径（每站用站台自己的停站时间，第 k 站在第一个 `stopIndex == k+1` 且有站台 ID 的轨道上，第 0 段停站为 0）；`getPath(停站设置)`、`getSlice(首站, 末站)`（第一段停站为 0，像从那站重新找的一样）、`getFastestTimes(route, 车型)`（逐站取最慢，按车型和停站设置缓存） |
-| `RoutePaths.Exclusion` | 一条线路要避开的轨道：同一运输方式的联络线路径上首末站台之间、不是站台的轨道，双向，记着属于哪条联络线 |
+| `RoutePaths.Exclusion` | 一条线路要避开的轨道：同一运输方式的联络线自己的那一段（`getOwnRange`：从第一个关键节点、没有就从离开首站后的第一个分岔起，到其后最后一个关键节点、没有就到进末站前的最后一个分岔止）上不是站台的轨道，双向，记着属于哪条联络线 |
 | `PathTiming` | 车厂和线路共用的计时：`Vehicle`（存车线长、编组、车距、加减速、速度曲线、运输方式）和 `generateTimeSegments`，从 `Siding` 搬出来，规则不变 |
 
 **找一条线路**（`RoutePaths.get`）：
@@ -959,6 +959,7 @@ sequenceDiagram
 
 **隔离（寻路边界和联络线画在同一层，分开画法）**：
 
+- 联络线自己的那一段（2026-11-07）：以前首末站台之间不是站台的轨道全算联络线的，联络线从一条线的站台出发、沿正线走一段再分岔时，正线那段也被挡住，这条线自己的线路就找不到路（压力测试线网上查出）。现在 `RoutePaths.getOwnRange` 只取联络线自己的那一段：设了关键节点（`waypoints`）时从第一个关键节点起，到它之后最后一个关键节点止（只有一个时到进末站前的最后一个分岔）；没设时从离开首站后的第一个分岔（连着三段以上轨道的节点，`isFork`）到进末站前的最后一个分岔；一个分岔都没有的照旧全算。客户端地图（`MapIsolation.getOwnRange`）按同一规则画。站内咽喉有渡线时，没设关键节点会从渡线算起，这时在离开正线处设关键节点。
 - `RoutePaths.getConnectingRails` 给出联络线的轨道：`RAIL_TAKEN` 是独占，`RAIL_RELEASED` 是放行（`Route.connectingReleased`）。`RailwayData.sendRouteLayout` 再加上寻路边界的轨道段（`RAIL_BOUNDARY`）和边界节点，一起交给 `RouteLayouts.write`。
 - 配线图的包里，每段轨道带上它的两个节点和隔离状态（`Layout.keys`），后面跟边界节点的位置（`Layout.boundaryNodes`）。`EditorLayout` 把它们转成 `railKeys`、`boundaryNodes` 给网页。
 - 网页上右键一段轨道打开菜单（`railMenu`）：边界放进草稿 `draft.boundaries`，应用时是操作 `pathBoundary`，客户端用 `sendPathBoundaryC2S` 发出；放行是操作 `connectingRelease`，客户端用 `Route.setExtraData` 发出。

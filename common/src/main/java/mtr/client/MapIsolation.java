@@ -36,7 +36,8 @@ public final class MapIsolation {
 				return;
 			}
 			final Set<UUID> released = getReleased(route);
-			for (int i = 1; i < nodes.length; i++) {
+			final int[] range = getOwnRange(route, nodes);
+			for (int i = range[0] + 1; i <= range[1]; i++) {
 				final UUID key = RailKeys.of(nodes[i - 1], nodes[i]);
 				if (!platformRails.contains(key)) {
 					statuses.merge(key, released.contains(key) ? RoutePaths.RAIL_RELEASED : RoutePaths.RAIL_TAKEN, Math::min);
@@ -45,6 +46,54 @@ public final class MapIsolation {
 		});
 		ClientData.PATH_REGIONS.boundaries.segments.forEach(segment -> statuses.put(segment, RoutePaths.RAIL_BOUNDARY));
 		return statuses;
+	}
+
+	/**
+	 * A connecting line's own part as {@link RoutePaths} takes it: from its first waypoint, or else the first fork after its
+	 * first stop, to its last waypoint after that, or else the last fork before its last stop.
+	 *
+	 * @return the first and last index of its nodes
+	 */
+	private static int[] getOwnRange(Route route, long[] nodes) {
+		final List<Long> keyNodes = new java.util.ArrayList<>();
+		route.platformIds.forEach(routePlatform -> routePlatform.waypoints.forEach(waypoint -> keyNodes.add(waypoint.asLong())));
+		if (!keyNodes.isEmpty()) {
+			int from = -1;
+			int to = -1;
+			for (int i = 0; i < nodes.length; i++) {
+				if (from < 0 && nodes[i] == keyNodes.get(0)) {
+					from = i;
+				}
+				if (from >= 0 && i > from && nodes[i] == keyNodes.get(keyNodes.size() - 1)) {
+					to = i;
+				}
+			}
+			if (from >= 0) {
+				return new int[]{from, to > from ? to : lastFork(nodes, from)};
+			}
+		}
+		int from = 0;
+		for (int i = 1; i < nodes.length - 1; i++) {
+			if (isFork(nodes[i])) {
+				from = i;
+				break;
+			}
+		}
+		return new int[]{from, lastFork(nodes, from)};
+	}
+
+	private static int lastFork(long[] nodes, int from) {
+		for (int i = nodes.length - 2; i > from; i--) {
+			if (isFork(nodes[i])) {
+				return i;
+			}
+		}
+		return nodes.length - 1;
+	}
+
+	private static boolean isFork(long node) {
+		final Map<BlockPos, ?> connections = ClientData.RAILS.get(BlockPos.of(node));
+		return connections != null && connections.size() > 2;
 	}
 
 	public static Set<UUID> getPlatformRails() {

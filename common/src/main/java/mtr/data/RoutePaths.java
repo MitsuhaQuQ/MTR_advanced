@@ -95,7 +95,7 @@ public final class RoutePaths {
 		final Exclusion exclusion = new Exclusion();
 		dataCache.routeIdMap.values().stream().filter(other -> other.connectingLine && other.id != route.id && other.transportMode == route.transportMode && timesByPath(other)).sorted(Comparator.comparingLong(other -> other.id)).forEach(other -> {
 			final RoutePath connectingPath = graph == null ? getFound(other, dataCache, rails) : get(other, dataCache, rails, graph);
-			exclusion.add(other, connectingPath);
+			exclusion.add(other, connectingPath, rails);
 		});
 		exclusion.finish();
 		return exclusion;
@@ -120,7 +120,7 @@ public final class RoutePaths {
 		dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode && timesByPath(route)).forEach(route -> {
 			final RoutePath connectingPath = graph == null ? getFound(route, dataCache, rails) : get(route, dataCache, rails, graph);
 			final Set<UUID> released = getReleased(route);
-			forEachLineRail(connectingPath, (fromPos, toPos) -> {
+			forEachLineRail(route, connectingPath, rails, (fromPos, toPos) -> {
 				final UUID key = RailKeys.of(fromPos, toPos);
 				statuses.merge(key, released.contains(key) ? RAIL_RELEASED : RAIL_TAKEN, Math::min);
 			});
@@ -135,19 +135,74 @@ public final class RoutePaths {
 	}
 
 	/**
-	 * Gives each rail of a connecting line's path strictly between its first and last platform that isn't a platform rail.
+	 * Gives each rail of a connecting line's own part that isn't a platform rail: from its first waypoint (key node), or
+	 * else the first fork after its first platform, to its last waypoint after that, or else the last fork before its last
+	 * platform.
+	 * A connecting line leaving a station along the main line and branching off later keeps only the branch to itself, not
+	 * the main line it starts on (decoupling document 5.4: the ends joining main lines or platforms don't count); with no
+	 * fork at all, everything between its first and last platform is its own, as before.
 	 */
-	private static void forEachLineRail(RoutePath connectingPath, java.util.function.BiConsumer<Long, Long> consumer) {
+	private static void forEachLineRail(Route connectingLine, RoutePath connectingPath, Map<BlockPos, Map<BlockPos, Rail>> rails, java.util.function.BiConsumer<Long, Long> consumer) {
 		if (connectingPath == null || !connectingPath.isFound()) {
 			return;
 		}
 		final int lastStop = connectingPath.getStopRail(connectingPath.getStopCount() - 1);
-		for (int i = 1; i < lastStop; i++) {
+		final int[] range = getOwnRange(connectingLine, connectingPath, rails, lastStop);
+		for (int i = range[0]; i < range[1]; i++) {
 			final PathData pathData = connectingPath.rawPath.get(i);
 			if (pathData.rail.railType != RailType.PLATFORM) {
 				consumer.accept(pathData.startingPos.asLong(), pathData.getLastPos().asLong());
 			}
 		}
+	}
+
+	/**
+	 * @return the connecting line's own part of its path, as the first and one past the last index of its rails
+	 */
+	private static int[] getOwnRange(Route connectingLine, RoutePath connectingPath, Map<BlockPos, Map<BlockPos, Rail>> rails, int lastStop) {
+		final List<BlockPos> keyNodes = new ArrayList<>();
+		connectingLine.platformIds.forEach(routePlatform -> keyNodes.addAll(routePlatform.waypoints));
+		if (!keyNodes.isEmpty()) {
+			final BlockPos first = keyNodes.get(0);
+			final BlockPos last = keyNodes.get(keyNodes.size() - 1);
+			int from = -1;
+			int to = -1;
+			for (int i = 1; i < lastStop; i++) {
+				final PathData pathData = connectingPath.rawPath.get(i);
+				if (from < 0 && pathData.startingPos.equals(first)) {
+					from = i;
+				}
+				if (from >= 0 && i >= from && pathData.getLastPos().equals(last)) {
+					to = i + 1;
+				}
+			}
+			if (from >= 0) {
+				// With one key node, or none after the first, it ends at the last fork before its last platform
+				return new int[]{from, to > from ? to : lastForkEnd(connectingPath, rails, from, lastStop)};
+			}
+		}
+		int from = 1;
+		for (int i = 1; i < lastStop; i++) {
+			if (isFork(rails, connectingPath.rawPath.get(i).startingPos)) {
+				from = i;
+				break;
+			}
+		}
+		return new int[]{from, lastForkEnd(connectingPath, rails, from, lastStop)};
+	}
+
+	private static int lastForkEnd(RoutePath connectingPath, Map<BlockPos, Map<BlockPos, Rail>> rails, int from, int lastStop) {
+		for (int i = lastStop - 1; i > from; i--) {
+			if (isFork(rails, connectingPath.rawPath.get(i).getLastPos())) {
+				return i + 1;
+			}
+		}
+		return lastStop;
+	}
+
+	private static boolean isFork(Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos) {
+		final Map<BlockPos, Rail> connections = rails == null ? null : rails.get(pos);
+		return connections != null && connections.size() > 2;
 	}
 
 	/**
@@ -302,7 +357,7 @@ public final class RoutePaths {
 		/**
 		 * @param connectingPath the connecting line's path, or null if it has none yet
 		 */
-		void add(Route connectingLine, RoutePath connectingPath) {
+		void add(Route connectingLine, RoutePath connectingPath, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 			final long connectingLineId = connectingLine.id;
 			final Set<UUID> released = getReleased(connectingLine);
 			keyBuilder.append("|x").append(connectingLineId).append(':');
@@ -311,7 +366,7 @@ public final class RoutePaths {
 				return;
 			}
 			final long[] hash = {17};
-			forEachLineRail(connectingPath, (fromPos, toPos) -> {
+			forEachLineRail(connectingLine, connectingPath, rails, (fromPos, toPos) -> {
 				if (!released.contains(RailKeys.of(fromPos, toPos))) {
 					lines.computeIfAbsent(fromPos, pos -> new HashMap<>()).put(toPos, connectingLineId);
 					lines.computeIfAbsent(toPos, pos -> new HashMap<>()).put(fromPos, connectingLineId);
