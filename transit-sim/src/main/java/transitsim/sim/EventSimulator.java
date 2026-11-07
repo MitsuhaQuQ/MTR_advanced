@@ -257,6 +257,12 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 				}
 				train.service.setTurnBack(turnBack.mode, platformIds, turnBack.after);
 			}
+		} else if (input instanceof HostInput.HandOver) {
+			final HostInput.HandOver takeover = (HostInput.HandOver) input;
+			final TickRunner<T>.HeadlessTrain train = runner.getTrain(takeover.trainId);
+			if (train != null) {
+				train.service.setTakeover(takeover.takeover);
+			}
 		} else if (input instanceof HostInput.Remove) {
 			runner.removeTrain(((HostInput.Remove) input).trainId);
 			doorsOpen.remove(((HostInput.Remove) input).trainId);

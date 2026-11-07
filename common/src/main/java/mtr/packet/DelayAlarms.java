@@ -45,6 +45,10 @@ public final class DelayAlarms implements IPacket {
 		 * The trains to be told otherwise where to turn back early (D4): {mode, after, platforms...}.
 		 */
 		public final Map<TrainServer, long[]> turns = new LinkedHashMap<>();
+		/**
+		 * The trains to be told otherwise whether to hand their duty over to a spare (D5).
+		 */
+		public final Map<TrainServer, Boolean> handOvers = new LinkedHashMap<>();
 
 		private Collection<Long> getStationPlatforms(DataCache dataCache, long stationId) {
 			if (stationPlatforms == null) {
@@ -62,7 +66,8 @@ public final class DelayAlarms implements IPacket {
 	 * <system>}: the moments it has been late and waiting since, or 0, which stay the same while nothing changes, so the
 	 * list is only sent again when something does; the plan one waiting for a dispatcher, or 0; the system the anchor of
 	 * its route's rail system; then 1 if it passes stations now (D3), else 0; then where it is with turning back early
-	 * (D4): 0 not told to, 1 on its way, 2 turned back, 3 told a station it can't turn back at. After a {@code |}, each
+	 * (D4): 0 not told to, 1 on its way, 2 turned back, 3 told a station it can't turn back at; then where it is with handing
+	 * its duty over (D5), as {@link TrainService#getTakeoverState}. After a {@code |}, each
 	 * train a plan or a dispatcher's setting is on for, the same, the plan 0 for what a dispatcher set. The trains to be told
 	 * which platforms to pass are put in {@link Lookups#skips}, those to be told where to turn back in {@link Lookups#turns}.
 	 */
@@ -79,6 +84,9 @@ public final class DelayAlarms implements IPacket {
 				}
 				if (service.getTurnMode() != 0) {
 					lookups.turns.put(train, new long[]{0, 0});
+				}
+				if (service.getTakeover()) {
+					lookups.handOvers.put(train, false);
 				}
 				return;
 			}
@@ -110,6 +118,12 @@ public final class DelayAlarms implements IPacket {
 				lookups.turns.put(train, turn);
 			}
 			final int turnState = service.getTurnState();
+			// Whether its plan has a spare take its duty over, while it is late enough (D5)
+			final boolean handOver = DelayRules.getTakeover(contingencyList, outcome, train.id, routeId, lateMillis, waitingMillis, isDeadlocked, service.getTakeover());
+			if (handOver != service.getTakeover()) {
+				lookups.handOvers.put(train, handOver);
+			}
+			final int takeoverState = service.getTakeoverState();
 			if (outcome.alarm == null && outcome.contingency == null) {
 				return;
 			}
@@ -117,9 +131,9 @@ public final class DelayAlarms implements IPacket {
 			final long anchor = outcome.systemIndex >= 0 ? anchors.get(outcome.systemIndex) : lookups.anchorByRoute.computeIfAbsent(routeId, key -> route == null || route.platformIds.isEmpty() ? 0L : systems.anchorOf(platformGraph.getNetworkOf(route.getFirstPlatformId()), platformGraph));
 			final String entry = train.id + " " + siding.id + " " + service.getDutySlot() + " " + routeId + " ";
 			if (outcome.alarm != null) {
-				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState);
+				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState + " " + takeoverState);
 			} else {
-				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState);
+				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState + " " + takeoverState);
 			}
 		}));
 		alarms.sort(String::compareTo);

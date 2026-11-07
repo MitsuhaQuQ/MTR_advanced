@@ -149,6 +149,19 @@ public final class LiveSimulation {
 	}
 
 	/**
+	 * Tells one of its trains whether to hand its duty over to a spare (D5), applied in its next tick.
+	 *
+	 * @return false if it doesn't run that train, which the game then tells itself
+	 */
+	public boolean submitHandOver(long trainId, boolean handOver) {
+		if (simulator == null || !driving || takenOver.contains(trainId) || !simulator.getRunner().hasTrain(trainId)) {
+			return false;
+		}
+		simulator.submit(new transitsim.sim.HostInput.HandOver(Math.max(lastMillis, System.currentTimeMillis()), inputs.nextSequence(), trainId, handOver));
+		return true;
+	}
+
+	/**
 	 * Runs the simulator on to now, before the game's sidings move their trains in this tick.
 	 *
 	 * @param trainPositions the game's rails taken, of the tick before and of this one

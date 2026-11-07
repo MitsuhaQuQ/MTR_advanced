@@ -144,6 +144,24 @@ public final class DelayRules {
 	}
 
 	/**
+	 * Whether a train is to hand its duty over to a spare now (D5), from its plan or what a dispatcher set for it, as for
+	 * passing stations ({@link #getSkipPlatforms}): one told to already goes on while it is a minute late or more and the
+	 * same plan would still be on for it.
+	 *
+	 * @param takingOver whether it is told to now
+	 */
+	public static boolean getTakeover(java.util.List<Contingencies> systems, Outcome outcome, long trainId, long routeId, long lateMillis, long waitingMillis, boolean deadlocked, boolean takingOver) {
+		Contingency contingency = outcome.contingency;
+		if ((contingency == null || !contingency.takeover) && takingOver && lateMillis >= KEEP_SKIPPING_MILLIS) {
+			final Contingency kept = evaluate(systems, trainId, routeId, Long.MAX_VALUE / 4, waitingMillis, deadlocked).contingency;
+			if (kept != null && kept.takeover) {
+				contingency = kept;
+			}
+		}
+		return contingency != null && contingency.takeover;
+	}
+
+	/**
 	 * @return the plan a train falls under, or null
 	 */
 	public static Contingency affecting(Contingencies contingencies, long trainId, long routeId, long lateMillis, long waitingMillis, boolean deadlocked) {

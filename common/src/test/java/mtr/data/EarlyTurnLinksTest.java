@@ -28,6 +28,10 @@ class EarlyTurnLinksTest {
 	 *
 	 * @param northZ where the north terminal starts
 	 */
+	private static Siding lastSiding;
+	private static Map<BlockPos, Map<BlockPos, Rail>> lastRails;
+	private static RailGraph<Rail> lastGraph;
+
 	private static Map<String, List<PathData>> turnLinks(int northZ) {
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 		final DataCache dataCache = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>());
@@ -71,6 +75,9 @@ class EarlyTurnLinksTest {
 		duties.sidings.put(siding.id, Collections.singletonList(slot));
 
 		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
+		lastSiding = siding;
+		lastRails = rails;
+		lastGraph = graph;
 		return depot.findTurnLinks(duties, dataCache, rails, graph, siding, false);
 	}
 
@@ -81,6 +88,17 @@ class EarlyTurnLinksTest {
 		final List<PathData> link = links.get(PLATFORM_A + ">" + PLATFORM_B);
 		assertEquals(PLATFORM_A, link.get(0).savedRailBaseId);
 		assertEquals(PLATFORM_B, link.get(link.size() - 1).savedRailBaseId);
+	}
+
+	@Test
+	void theSidingFindsAWayOutToWhereTheSecondSegmentStarts() {
+		turnLinks(320);
+		// The up route starts at the north terminal, where the down route turned back on the platform (D5)
+		final Map<Long, List<PathData>> wayOuts = lastSiding.findWayOuts(lastRails, lastGraph, 0, false);
+		assertEquals(Collections.singleton(NORTH), wayOuts.keySet());
+		final List<PathData> wayOut = wayOuts.get(NORTH);
+		assertEquals(RailType.SIDING, wayOut.get(0).rail.railType);
+		assertEquals(NORTH, wayOut.get(wayOut.size() - 1).savedRailBaseId);
 	}
 
 	@Test

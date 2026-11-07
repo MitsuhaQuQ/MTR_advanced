@@ -6076,7 +6076,9 @@
 			: alarm.reason === "LATE" ? tr("晚点 {0} 分钟", Math.floor(alarm.late / 60)) : "";
 		// Passing the stations a plan or a dispatcher's setting has it pass (D3), and turning back early (D4)
 		const turn = alarm.turn === 1 ? tr("，将提前折返") : alarm.turn === 2 ? tr("，已提前折返") : alarm.turn === 3 ? tr("，指定的车站折不回去") : "";
-		return reason + (alarm.skipping ? tr("，跳站中") : "") + turn;
+		// And handing its duty over to a spare (D5)
+		const takeover = alarm.takeover === 1 ? tr("，等备车接替") : alarm.takeover === 2 ? tr("，已交给备车，空车回库") : alarm.takeover === 3 ? tr("，没有备车可接替") : alarm.takeover === 4 ? tr("，备车出场要经过受影响区段") : "";
+		return reason + (alarm.skipping ? tr("，跳站中") : "") + turn + takeover;
 	}
 
 	/** The rail system, a network of rails joined together, with its plans (D2). */

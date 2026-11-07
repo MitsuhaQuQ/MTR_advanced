@@ -769,8 +769,15 @@ public class TrainServer extends Train {
 	 * @param dutySidingId the siding whose slot it is, when this train is sent in place of that siding's
 	 */
 	public void deployDuty(int slot, long dutySidingId, long dayStart, TripPath<PathData> dutyPath) {
+		deployDuty(slot, dutySidingId, dayStart, dutyPath, 0);
+	}
+
+	/**
+	 * @param startSegment the segment it starts the duty at, out of the siding (D5)
+	 */
+	public void deployDuty(int slot, long dutySidingId, long dayStart, TripPath<PathData> dutyPath, int startSegment) {
 		canDeploy = true;
-		service.deployDuty(slot, dutySidingId, dayStart, dutyPath);
+		service.deployDuty(slot, dutySidingId, dayStart, dutyPath, startSegment);
 	}
 
 	/**

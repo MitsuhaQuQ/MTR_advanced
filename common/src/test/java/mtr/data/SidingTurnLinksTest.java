@@ -62,6 +62,12 @@ class SidingTurnLinksTest {
 			packer.packString("to").packLong(5);
 			RailwayData.writeMessagePackDataset(packer, Arrays.asList(UP, ROUND, DOWN), "path");
 		}));
+		map.put("way_outs", value(packer -> {
+			packer.packArrayHeader(1);
+			packer.packMapHeader(2);
+			packer.packString("platform").packLong(5);
+			RailwayData.writeMessagePackDataset(packer, Arrays.asList(BACK, DOWN), "path");
+		}));
 		map.put("turn_returns", value(packer -> {
 			packer.packArrayHeader(1);
 			packer.packMapHeader(2);
@@ -78,6 +84,8 @@ class SidingTurnLinksTest {
 		assertEquals(3, again.getTurnLinks().get("2>5").size());
 		assertTrue(again.getTurnLinks().get("2>5").get(1).isSameRail(ROUND));
 		assertEquals(2, again.getTurnReturns().get(5L).size());
+		// And the ways out for spares (D5)
+		assertEquals(2, again.getWayOuts().get(5L).size());
 	}
 
 	private interface MessagePackWrite {

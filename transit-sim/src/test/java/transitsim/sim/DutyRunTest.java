@@ -1133,9 +1133,16 @@ class DutyRunTest {
 
 		@Override
 		public List<TestTrack> getTurnReturn(long platformId) {
-			return platformId == 2 ? Arrays.asList(new TestTrack(40, 20, false, 2, 0, 2), new TestTrack(20, 0, true, 0, 0, 2)) : null;
+			return platformId == 2 ? Arrays.asList(new TestTrack(40, 20, false, 2, 0, 2), new TestTrack(20, 0, true, 0, 0, 2)) : platformId == 3 ? Arrays.asList(new TestTrack(60, 80, false, 3, 10, 3), new TestTrack(80, 200, false, 0, 0, 3), new TestTrack(200, 220, true, 0, 0, 3)) : null;
+		}
+
+		@Override
+		public List<TestTrack> getWayOut(long platformId) {
+			return platformId == 3 ? Arrays.asList(WAY_OUT_SIDING, WAY_OUT_LINE, new TestTrack(60, 80, false, 3, 10, 3)) : null;
 		}
 	};
+	private static final TestTrack WAY_OUT_SIDING = new TestTrack(300, 320, true, 0, 0, 0);
+	private static final TestTrack WAY_OUT_LINE = new TestTrack(320, 360, false, 0, 0, 0);
 
 	/**
 	 * Route 1 out on rails 1 to 3, route 3 back on rails 3 to 5, platform 2 on rails 2 and 4.
@@ -1256,6 +1263,121 @@ class DutyRunTest {
 		assertEquals(transitsim.plan.Contingency.TURN_NEAREST, restored.service.getTurnMode());
 	}
 
+	private DepotDuties dutiesOfSlots() {
+		final DepotDuties duties = new DepotDuties();
+		duties.diagramMode = true;
+		duties.sidings.put(SIDING_ID, depot.slots);
+		return duties;
+	}
+
+	@Test
+	void aSpareStartsTheDutyAtALaterSegmentOutOfTheSiding() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		final TripPath<TestTrack> from = TripPath.withFrom(tripPath, TripPath.getFromKey(tripPath.key, 1), TURN_VARIANTS);
+		// Out of the siding by its own way to platform 3, then route 3 as the duty runs it
+		assertEquals(Arrays.asList(0L, 0L, 3L, 2L, 1L, 0L), from.path.stream().map(TestTrack::getStopId).collect(java.util.stream.Collectors.toList()));
+		assertSame(WAY_OUT_SIDING, from.path.get(0));
+		assertArrayEquals(new int[]{2, 2}, from.dutyStarts);
+
+		final FakeTrain spare = newTrain(from.path);
+		spare.service.setPathVariants(TURN_VARIANTS);
+		now = MONDAY + 8 * HOUR + 10 * MINUTE;
+		spare.service.deployDuty(0, 0, MONDAY, from, 1);
+		assertEquals(3, spare.service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, spare.service.getTripMillis());
+		spare.nextStoppingIndex = 3;
+		spare.service.onStopReached();
+		assertEquals(3, spare.service.getTripRouteId());
+		assertTrue(spare.service.getPlannedArrivalMillis(3) > MONDAY + 8 * HOUR + 20 * MINUTE);
+
+		// Put back from a save by its key
+		final FakeTrain restored = newTrain(tripPath.path);
+		restored.service.setPathVariants(TURN_VARIANTS);
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		try {
+			spare.service.write(values);
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		assertEquals(from.path.size(), restored.followed.path.size());
+	}
+
+	@Test
+	void aLateTrainHandsItsDutyOverAndGoesBackEmpty() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		depot.dispatcher.findDutyDeploy(MONDAY + 7 * HOUR, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		now = MONDAY + 8 * HOUR + 1 * MINUTE;
+		assertFalse(train[0].service.chooseHandOver());
+		train[0].service.setTakeover(true);
+		assertEquals(1, train[0].service.getTakeoverState());
+		assertTrue(train[0].service.chooseHandOver());
+		// It runs route 1 to platform 3, where everyone gets off, then back to the siding empty
+		assertEquals(TripPath.getEndKey(tripPath.key, 0, 3), train[0].service.getTripPathKey());
+		assertEquals(Arrays.asList(0L, 1L, 2L, 3L, 0L, 0L), train[0].followed.path.stream().map(TestTrack::getStopId).collect(java.util.stream.Collectors.toList()));
+		assertEquals(2, train[0].service.getTakeoverState());
+		train[0].nextStoppingIndex = 5;
+		assertTrue(train[0].service.isOutOfService());
+		assertEquals(0, train[0].service.getTurnState());
+		// The depot sends a spare out of the siding for route 3 in time for its 08:20 service, 4 minutes out, at 08:15:45
+		assertEquals(Collections.singletonList(SIDING_ID + " 0 " + MONDAY + " 1"), depot.dispatcher.takeovers);
+		assertNull(depot.dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 10 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS));
+		final DepotDispatcher.DutyDeploy<TestTrack> deploy = depot.dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 16 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		assertNotNull(deploy);
+		assertEquals(1, deploy.startSegment);
+		assertEquals(TripPath.getFromKey(tripPath.key, 1), deploy.path.key);
+		assertTrue(depot.dispatcher.takeovers.isEmpty());
+	}
+
+	@Test
+	void noSpareIsSentWhoseWayOutRunsWhereTheLateTrainIs() {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		depot.dispatcher.findDutyDeploy(MONDAY + 7 * HOUR, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		now = MONDAY + 8 * HOUR + 1 * MINUTE;
+		// The late train is held up by one holding the rail the spare's way out runs along
+		train[0].affected.add(WAY_OUT_LINE.getTrackKey());
+		train[0].service.setTakeover(true);
+		assertFalse(train[0].service.chooseHandOver());
+		assertEquals(TrainService.TAKEOVER_CROSSES, train[0].service.getTakeoverState());
+		assertTrue(depot.dispatcher.takeovers.isEmpty());
+	}
+
+	@Test
+	void withNoSpareInTheDepotTheTrainRunsOn() {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		// No train ready in any siding
+		depot.dispatcher.findDutyDeploy(MONDAY + 7 * HOUR, Collections.emptySet(), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		now = MONDAY + 8 * HOUR + 1 * MINUTE;
+		train[0].service.setTakeover(true);
+		assertFalse(train[0].service.chooseHandOver());
+		assertEquals(TrainService.TAKEOVER_NO_SPARE, train[0].service.getTakeoverState());
+	}
+
+	@Test
+	void aTrainSentOutLateLeavesForTheFirstSegmentItCanGetTo() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		final DepotDispatcher dispatcher = new DepotDispatcher();
+		// Route 1 at 08:00 is long missed at 08:12; route 3 at 08:20 can still be got to, 4 minutes out of the siding
+		assertNull(dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 12 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS));
+		final DepotDispatcher.DutyDeploy<TestTrack> deploy = dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 16 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		assertNotNull(deploy);
+		assertFalse(deploy.late);
+		assertEquals(1, deploy.startSegment);
+		assertEquals(TripPath.getFromKey(tripPath.key, 1), deploy.path.key);
+		// Too late for route 3 as well while the duty still runs, it isn't sent at all, nor put on the line
+		final DepotDispatcher tooLate = new DepotDispatcher();
+		assertNull(tooLate.findDutyDeploy(MONDAY + 8 * HOUR + 20 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS));
+		assertTrue(tooLate.hasDutyRun(SIDING_ID, 0, transitsim.plan.DutyShapes.getDayNumber(MONDAY)));
+	}
+
 	@Test
 	void aTripPathWritesAsManyValuesAsItSays() throws Exception {
 		final int[] count = new int[1];
@@ -1311,6 +1433,10 @@ class DutyRunTest {
 		final Set<UUID> takenRails = new HashSet<>();
 		final Set<UUID> heldRails = new HashSet<>();
 		List<UUID> reserved;
+		/**
+		 * Rails where trains holding up this one are (D5).
+		 */
+		final Set<UUID> affected = new HashSet<>();
 
 		FakeTrain(List<TestTrack> path) {
 			this.path = path;
@@ -1357,6 +1483,13 @@ class DutyRunTest {
 		}
 
 		@Override
+		public Collection<UUID> getAffectedRails(List<UUID> remaining) {
+			final Set<UUID> rails = new HashSet<>(remaining);
+			rails.addAll(affected);
+			return rails;
+		}
+
+		@Override
 		public void changePath(TripPath<TestTrack> tripPath, int newStopIndex) {
 			followed = tripPath;
 			nextStoppingIndex = newStopIndex;
@@ -1395,6 +1528,13 @@ class DutyRunTest {
 	}
 
 	private class DutyDepot implements TrainService.Board {
+
+		final DepotDispatcher dispatcher = new DepotDispatcher();
+
+		@Override
+		public int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<UUID> affected) {
+			return dispatcher.requestTakeover(now, dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected, sidingId -> sidingId == SIDING_ID ? tripPaths : null, sidingId -> TURN_VARIANTS, sidingId -> sidingId);
+		}
 
 		List<DepotDuties.Slot> slots = new ArrayList<>();
 		List<DepotDuties.Slot> otherSlots = new ArrayList<>();

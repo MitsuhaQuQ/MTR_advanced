@@ -19,6 +19,7 @@ import transitsim.plan.TurnBacks;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -186,6 +187,30 @@ public class TrainService<T extends PlanTrack> {
 	 * The last path turned back early made, which is the one the train is on or passes stops of.
 	 */
 	private TripPath<T> turnPath;
+	/**
+	 * Told to hand the rest of its duty over to a spare train from the depot (D5).
+	 */
+	private boolean takeover;
+	/**
+	 * The stop at which the train chose whether to hand over, so it chooses once there, or -1.
+	 */
+	private int handOverChosenStop = -1;
+	/**
+	 * Why it couldn't hand over when it last tried: {@link #TAKEOVER_NO_SPARE} or {@link #TAKEOVER_CROSSES}, or 0.
+	 */
+	private int handOverFailure;
+	/**
+	 * A spare is on its way: it may take over, and has.
+	 */
+	public static final int TAKEOVER_OK = 0;
+	/**
+	 * No spare can leave in time, or none is in the depot.
+	 */
+	public static final int TAKEOVER_NO_SPARE = 3;
+	/**
+	 * A spare could, but its way out runs through where the late train is held up or still has to run (D5).
+	 */
+	public static final int TAKEOVER_CROSSES = 4;
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
 	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
@@ -217,10 +242,14 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_TURN_BACK = "turn_back";
 	/**
+	 * Whether the train is told to hand its duty over (D5).
+	 */
+	private static final String KEY_TAKEOVER = "takeover";
+	/**
 	 * How many values {@link #write} writes, which hosts count into the size of what they save. Checked by a test, as it was
 	 * once left one short.
 	 */
-	public static final int SAVED_KEYS = 17;
+	public static final int SAVED_KEYS = 18;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
@@ -261,6 +290,7 @@ public class TrainService<T extends PlanTrack> {
 		turnMode = turnValues.length >= 2 ? (int) turnValues[0] : 0;
 		turnAfter = turnValues.length >= 2 ? (int) turnValues[1] : 0;
 		turnPlatforms = newTurnPlatforms.isEmpty() ? Collections.emptySet() : newTurnPlatforms;
+		takeover = reader.getBoolean(KEY_TAKEOVER, false);
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
@@ -296,6 +326,110 @@ public class TrainService<T extends PlanTrack> {
 			}
 		}
 		writer.writeLongs(KEY_TURN_BACK, turnValues);
+		writer.writeBoolean(KEY_TAKEOVER, takeover);
+	}
+
+	/**
+	 * Tells the train to hand the rest of its duty over to a spare train from the depot (D5), or not to. It chooses at a
+	 * stop where, once.
+	 */
+	public void setTakeover(boolean newTakeover) {
+		if (newTakeover != takeover) {
+			takeover = newTakeover;
+			handOverChosenStop = -1;
+			handOverFailure = 0;
+		}
+	}
+
+	public boolean getTakeover() {
+		return takeover;
+	}
+
+	/**
+	 * @return 0 if not told to hand over, 1 waiting for where to, 2 handed over and going back, {@link #TAKEOVER_NO_SPARE}
+	 * or {@link #TAKEOVER_CROSSES} if it couldn't when it last tried (D5)
+	 */
+	public int getTakeoverState() {
+		if (TripPath.isEndKey(tripPathKey)) {
+			return 2;
+		}
+		return !takeover ? 0 : handOverFailure != 0 ? handOverFailure : 1;
+	}
+
+	/**
+	 * At a stop of its duty, ready to go, a train told to hand its duty over chooses after which segment, from the one it
+	 * is on, a spare train from the depot can take the next one over: one that can get out to its first stop in time, by a
+	 * way out that doesn't run through where this train is held up or still has to run (D5). The depot takes the request;
+	 * this train runs on to that segment's last stop, where everyone gets off, and goes back to its siding empty.
+	 *
+	 * @return true if the train has just changed paths, so it waits a moment at the stop
+	 */
+	public boolean chooseHandOver() {
+		if (!takeover || !isOnDuty() || depot == null || routes == null || pathVariants == null) {
+			return false;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (stopIndex == handOverChosenStop) {
+			return false;
+		}
+		handOverChosenStop = stopIndex;
+		final String baseKey = TripPath.getSkipBase(tripPathKey);
+		if (TripPath.isChangedKey(baseKey) || TripPath.isReturnKey(baseKey)) {
+			return false;
+		}
+		final TripPath<T> base = tripPaths.get(baseKey);
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (base == null || base.dutyStarts == null || segments.size() != base.dutyStarts.length || base.stopTimes.getSegmentEntry(0) < 0) {
+			return false;
+		}
+		final List<PlanRoute> dutyRoutes = new ArrayList<>();
+		for (final long routeId : base.routeIds) {
+			final PlanRoute route = routes.apply(routeId);
+			if (route == null) {
+				return false;
+			}
+			dutyRoutes.add(route);
+		}
+		int failure = TAKEOVER_NO_SPARE;
+		for (int segment = dutyIndex; segment + 1 < segments.size(); segment++) {
+			final long[][] times = base.stopTimes.getSegmentTimes(segment, dutyRoutes);
+			int lastStopRail = -1;
+			for (final long[] time : times) {
+				if (time[0] >= 0) {
+					lastStopRail = (int) time[2];
+				}
+			}
+			if (lastStopRail < stopIndex) {
+				continue;
+			}
+			// Where the train still runs before it hands over, and where it is held up
+			final Set<java.util.UUID> affected = new HashSet<>();
+			final List<java.util.UUID> remaining = new ArrayList<>();
+			for (int i = Math.max(0, stopIndex - 1); i <= lastStopRail && i < base.path.size(); i++) {
+				remaining.add(base.path.get(i).getTrackKey());
+			}
+			affected.addAll(vehicle.getAffectedRails(remaining));
+			final int next = segment + 1;
+			final long serviceMillis = DutyShapes.getServiceMillis(dutyDayStart, segments.get(next).service);
+			final int result = depot.requestTakeover(getDutySidingId(), dutySlot, dutyDayStart, next, TripPath.getFromKey(baseKey, next), serviceMillis, affected);
+			if (result == TAKEOVER_OK) {
+				final TripPath<T> newPath = findPath(tripPaths, TripPath.getEndKey(baseKey, segment, lastStopRail));
+				if (newPath == null) {
+					return false;
+				}
+				handOverFailure = 0;
+				tripPath = newPath;
+				tripPathKey = newPath.key;
+				stopTimes = newPath.stopTimes;
+				vehicle.changePath(newPath, stopIndex);
+				return true;
+			}
+			if (result == TAKEOVER_CROSSES) {
+				failure = TAKEOVER_CROSSES;
+			}
+		}
+		handOverFailure = failure;
+		return false;
 	}
 
 	/**
@@ -335,7 +469,7 @@ public class TrainService<T extends PlanTrack> {
 	 * station it can't (D4)
 	 */
 	public int getTurnState() {
-		if (tripPath != null && tripPath.turnRail >= 0) {
+		if (tripPath != null && tripPath.turnRail >= 0 && TripPath.isTurnKey(tripPathKey)) {
 			return 2;
 		}
 		return turnMode == 0 ? 0 : turnUnreachable ? 3 : 1;
@@ -505,13 +639,13 @@ public class TrainService<T extends PlanTrack> {
 			skipPath = TripPath.withSkips(base, TripPath.getSkipRails(key), pathVariants);
 			return skipPath;
 		}
-		if (TripPath.isTurnKey(key)) {
-			// A path turned back early (D4)
+		if (TripPath.isChangedKey(key)) {
+			// A path turned back early (D4), or starting or ending part of the way through the duty (D5)
 			if (turnPath != null && turnPath.key.equals(key)) {
 				return turnPath;
 			}
 			final TripPath<T> base = paths.get(TripPath.getTurnBase(key));
-			final TripPath<T> newPath = base == null ? null : TripPath.withTurn(base, key, pathVariants);
+			final TripPath<T> newPath = base == null ? null : TripPath.isTurnKey(key) ? TripPath.withTurn(base, key, pathVariants) : TripPath.isFromKey(key) ? TripPath.withFrom(base, key, pathVariants) : TripPath.withEnd(base, key, pathVariants);
 			if (newPath != null) {
 				turnPath = newPath;
 			}
@@ -636,6 +770,8 @@ public class TrainService<T extends PlanTrack> {
 			turnChosenStop = -1;
 			turnUnreachable = false;
 			turnPath = null;
+			handOverChosenStop = -1;
+			handOverFailure = 0;
 			dutyIndex = 0;
 			dutyDay = null;
 			isLeavingForDuty = false;
@@ -807,8 +943,10 @@ public class TrainService<T extends PlanTrack> {
 			return;
 		}
 		final long currentMillis = clock.getAsLong();
-		int index = 0;
-		for (int i = segments.size() - 1; i > 0; i--) {
+		// A duty started part of the way through starts at that segment (D5)
+		final int firstSegment = Math.min(TripPath.getFromSegment(tripPathKey), segments.size() - 1);
+		int index = firstSegment;
+		for (int i = segments.size() - 1; i > firstSegment; i--) {
 			if (DutyShapes.getServiceMillis(dutyDayStart, segments.get(i).service) <= currentMillis) {
 				index = i;
 				break;
@@ -1296,6 +1434,14 @@ public class TrainService<T extends PlanTrack> {
 	 * @param newDutySidingId the siding whose slot it is, if not the train's own, else 0 or the train's own
 	 */
 	public void deployDuty(int slot, long newDutySidingId, long dayStart, TripPath<T> dutyPath) {
+		deployDuty(slot, newDutySidingId, dayStart, dutyPath, 0);
+	}
+
+	/**
+	 * @param startSegment the segment it starts the duty at, out of the siding: a spare taking the rest of a duty over, or a
+	 *                     train sent out late (D5); its path is the duty's from that segment ({@link TripPath#withFrom})
+	 */
+	public void deployDuty(int slot, long newDutySidingId, long dayStart, TripPath<T> dutyPath, int startSegment) {
 		dutySlot = slot;
 		dutySidingId = newDutySidingId == sidingId ? 0 : newDutySidingId;
 		dutyId = currentDutyId();
@@ -1307,7 +1453,7 @@ public class TrainService<T extends PlanTrack> {
 		linkedService = -1;
 		linkedRouteId = 0;
 		useTripPath(dutyPath);
-		startDutySegment(0);
+		startDutySegment(startSegment);
 	}
 
 	/**
@@ -1586,7 +1732,7 @@ public class TrainService<T extends PlanTrack> {
 		// A train that went another way round a turn back point takes the way back of the duty's usual path, whose last stop
 		// can be on another rail
 		// The same for a path turned back early (D4), whose rails after the turn are numbered differently
-		final boolean otherWayRound = tripPath.turnBackPoint >= 0 || tripPath.turnRail >= 0;
+		final boolean otherWayRound = tripPath.turnBackPoint >= 0 || tripPath.turnRail >= 0 || TripPath.isFromKey(tripPathKey);
 		// Only a siding the duty has a way back to is chosen, rather than one it can't reach and then its own after all
 		final String returnFrom = tripPath.turnBackPoint >= 0 ? tripPath.tripKey : TripPath.getTurnBase(tripPathKey);
 		final java.util.function.LongPredicate canGoBack = otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null;
@@ -2043,6 +2189,14 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	public interface Vehicle<T extends PlanTrack> {
 
+		/**
+		 * @param remaining the rails the train still runs before it hands its duty over
+		 * @return those rails, with the rails held by trains holding any of them, where the train is held up (D5)
+		 */
+		default Collection<java.util.UUID> getAffectedRails(List<java.util.UUID> remaining) {
+			return remaining;
+		}
+
 		List<T> getPath();
 
 		int getNextStoppingIndex();
@@ -2188,6 +2342,18 @@ public class TrainService<T extends PlanTrack> {
 		 * A duty set to go back to a siding whose train couldn't, told rather than silently going back elsewhere.
 		 */
 		default void noteReturnMissed(long sidingId, long targetSidingId, String reason) {
+		}
+
+		/**
+		 * Asks the depot for a spare train to take a duty over from a segment on (D5), which it then sends out in time.
+		 *
+		 * @param fromKey       the key of the duty's path starting at that segment
+		 * @param serviceMillis when that segment's service is due
+		 * @param affected      rails the spare's way out mustn't run along
+		 * @return {@link TrainService#TAKEOVER_OK} if a spare is on its way, else why not
+		 */
+		default int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<java.util.UUID> affected) {
+			return TAKEOVER_NO_SPARE;
 		}
 	}
 }

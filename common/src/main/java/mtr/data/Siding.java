@@ -155,12 +155,23 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private Map<String, List<PathData>> pendingTurnLinks = Collections.emptyMap();
 	private Map<Long, SavedRailBase> pendingTurnTargets = Collections.emptyMap();
 	/**
+	 * The ways out of the siding to the platforms where later segments of its duties start (D5), for spares taking duties
+	 * over and trains sent out late; and the platforms the depot found for them.
+	 */
+	private Map<Long, List<PathData>> wayOuts = Collections.emptyMap();
+	private Map<Long, SavedRailBase> pendingWayOutTargets = Collections.emptyMap();
+	/**
 	 * Makes the paths of its trains passing stops a plan or a dispatcher has them pass (D3), timed as its other paths.
 	 */
 	private final transitsim.plan.PathVariants<PathData> pathVariants = new transitsim.plan.PathVariants<PathData>() {
 		@Override
 		public PathData pass(PathData pathData) {
-			return new PathData(pathData.rail, pathData.savedRailBaseId, 0, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex);
+			return withStop(pathData, 0, pathData.savedRailBaseId);
+		}
+
+		@Override
+		public PathData withStop(PathData pathData, int dwellTime, long platformId) {
+			return new PathData(pathData.rail, platformId, dwellTime, pathData.startingPos, pathData.getLastPos(), pathData.stopIndex);
 		}
 
 		@Override
@@ -190,6 +201,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		public List<PathData> getTurnReturn(long platformId) {
 			return turnReturns.get(platformId);
 		}
+
+		@Override
+		public List<PathData> getWayOut(long platformId) {
+			return wayOuts.get(platformId);
+		}
 	};
 	private final TimeGenerator<PathData> timeGenerator = new TimeGenerator<PathData>() {
 		@Override
@@ -210,6 +226,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_TURN_FROM = "from";
 	private static final String KEY_TURN_TO = "to";
 	private static final String KEY_TURN_PLATFORM = "platform";
+	private static final String KEY_WAY_OUTS = "way_outs";
 	private static final String KEY_BASE_TRAIN_TYPE = "train_type";
 	private static final String KEY_TRAIN_ID = "train_custom_id";
 	private static final String KEY_UNLIMITED_TRAINS = "unlimited_trains";
@@ -301,6 +318,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		turnLinks = loadedLinks;
 		turnReturns = loadedReturns;
+		// Saved from 0.33.0 (D5)
+		final Map<Long, List<PathData>> loadedWayOuts = new HashMap<>();
+		messagePackHelper.iterateArrayValue(KEY_WAY_OUTS, value -> {
+			final MessagePackHelper wayOutHelper = new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value));
+			final List<PathData> wayOutPath = new ArrayList<>();
+			wayOutHelper.iterateArrayValue(KEY_PATH, pathValue -> wayOutPath.add(new PathData(RailwayData.castMessagePackValueToSKMap(pathValue))));
+			loadedWayOuts.put(wayOutHelper.getLong(KEY_TURN_PLATFORM), wayOutPath);
+		});
+		wayOuts = loadedWayOuts;
 
 		messagePackHelper.iterateArrayValue(KEY_TRIP_PATHS, value -> {
 			final MessagePackHelper tripHelper = new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value));
@@ -421,11 +447,17 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			messagePacker.packString(KEY_TURN_PLATFORM).packLong(entry.getKey());
 			RailwayData.writeMessagePackDataset(messagePacker, entry.getValue(), KEY_PATH);
 		}
+		messagePacker.packString(KEY_WAY_OUTS).packArrayHeader(wayOuts.size());
+		for (final Map.Entry<Long, List<PathData>> entry : new TreeMap<>(wayOuts).entrySet()) {
+			messagePacker.packMapHeader(2);
+			messagePacker.packString(KEY_TURN_PLATFORM).packLong(entry.getKey());
+			RailwayData.writeMessagePackDataset(messagePacker, entry.getValue(), KEY_PATH);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 23;
+		return super.messagePackLength() + 24;
 	}
 
 	/**
@@ -433,8 +465,40 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * {@code from>to}, and the platforms they lead to, from which the siding finds its ways back.
 	 */
 	public void setTurnLinks(Map<String, List<PathData>> links, Map<Long, SavedRailBase> targets) {
+		setTurnLinks(links, targets, Collections.emptyMap());
+	}
+
+	/**
+	 * @param wayOutTargets the platforms where later segments of its duties start, to which it finds ways out (D5); the
+	 *                      targets include the platforms where segments end, from which it finds ways back
+	 */
+	public void setTurnLinks(Map<String, List<PathData>> links, Map<Long, SavedRailBase> targets, Map<Long, SavedRailBase> wayOutTargets) {
 		pendingTurnLinks = links;
 		pendingTurnTargets = targets;
+		pendingWayOutTargets = wayOutTargets;
+	}
+
+	public Map<Long, List<PathData>> getWayOuts() {
+		return Collections.unmodifiableMap(wayOuts);
+	}
+
+	public transitsim.plan.PathVariants<PathData> getPathVariants() {
+		return pathVariants;
+	}
+
+	/**
+	 * @return the ways out of the siding to the platforms where later segments of its duties start (D5)
+	 */
+	Map<Long, List<PathData>> findWayOuts(Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed) {
+		final Map<Long, List<PathData>> newWayOuts = new HashMap<>();
+		pendingWayOutTargets.forEach((platformId, platform) -> {
+			final List<PathData> wayOut = new ArrayList<>();
+			PathFinder.findPath(wayOut, rails, graph, Arrays.asList(this, platform), null, 0, cruisingAltitude, useFastSpeed);
+			if (wayOut.size() >= 2) {
+				newWayOuts.put(platformId, wayOut);
+			}
+		});
+		return newWayOuts;
 	}
 
 	public Map<String, List<PathData>> getTurnLinks() {
@@ -982,6 +1046,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		// Turning back early (D4): the ways round the depot found, and from where they lead back to this siding
 		final Map<String, List<PathData>> newTurnLinks = pendingTurnLinks;
 		final Map<Long, List<PathData>> newTurnReturns = findTurnReturns(rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+		final Map<Long, List<PathData>> newWayOuts = findWayOuts(rails, graph, cruisingAltitude, useFastSpeed);
 		final TurnBacks newTurnBacks = tempTurnBacks.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
@@ -1016,6 +1081,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				turnBacks = newTurnBacks;
 				turnLinks = newTurnLinks;
 				turnReturns = newTurnReturns;
+				wayOuts = newWayOuts;
 				recordPaths();
 				if (!tempPath.isEmpty()) {
 					relocateTrains(oldRails, oldDistances);
@@ -1051,6 +1117,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		// Turning back early (D4): the ways round the depot found, and from where they lead back to this siding
 		final Map<String, List<PathData>> newTurnLinks = pendingTurnLinks;
 		final Map<Long, List<PathData>> newTurnReturns = findTurnReturns(rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+		final Map<Long, List<PathData>> newWayOuts = findWayOuts(rails, graph, cruisingAltitude, useFastSpeed);
 		final TurnBacks newTurnBacks = TurnBacks.NONE.with(dutyPoints);
 
 		minecraftServer.execute(() -> {
@@ -1069,6 +1136,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				turnBacks = newTurnBacks;
 				turnLinks = newTurnLinks;
 				turnReturns = newTurnReturns;
+				wayOuts = newWayOuts;
 				recordPaths();
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -1602,6 +1670,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			sidingData.addTurnLink(Long.parseLong(platforms[0]), Long.parseLong(platforms[1]), toTracks.apply(linkPath));
 		});
 		new TreeMap<>(turnReturns).forEach((platformId, returnPath) -> sidingData.turnReturns.put(platformId, toTracks.apply(returnPath)));
+		// The ways out for spares and late trains (SimDataset 14, D5)
+		new TreeMap<>(wayOuts).forEach((platformId, wayOut) -> sidingData.wayOuts.put(platformId, toTracks.apply(wayOut)));
 		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
 	}

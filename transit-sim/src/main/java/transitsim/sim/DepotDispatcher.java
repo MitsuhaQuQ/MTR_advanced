@@ -4,12 +4,14 @@ import transitsim.plan.DepotDuties;
 import transitsim.plan.DutyShapes;
 import transitsim.plan.OperatingDay;
 import transitsim.plan.PlanRoute;
+import transitsim.plan.PathVariants;
 import transitsim.plan.PlanTrack;
 import transitsim.plan.RouteTimetable;
 import transitsim.plan.TripPath;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -55,6 +57,28 @@ public class DepotDispatcher {
 	 */
 	public int releaseIntervalMillis;
 	private long lastReleaseMillis = Long.MIN_VALUE / 2;
+	/**
+	 * Duties a spare train takes over from a segment on (D5), each as {@code "dutySiding slot dayStart fromSegment"}, in the
+	 * order asked. The host saves them.
+	 */
+	public final List<String> takeovers = new ArrayList<>();
+	/**
+	 * For each of {@link #takeovers}, the rails the spare's way out mustn't run along, as when it was asked; not saved.
+	 */
+	private final Map<String, Set<java.util.UUID>> takeoverAffected = new HashMap<>();
+	/**
+	 * The sidings with a train ready to leave, as the depot last looked, for a train asking for a spare between two looks.
+	 */
+	private Set<Long> lastReadySidings = new TreeSet<>();
+	/**
+	 * The paths of duties starting part of the way through made for spares and late trains, by siding and key, with the
+	 * usual path each was made from, so one is made again only when that changes.
+	 */
+	private final Map<String, Object[]> fromPaths = new HashMap<>();
+	/**
+	 * How far past its time a spare or late train may still leave for a segment; later, it takes the next segment.
+	 */
+	private static final long FROM_TOLERANCE_MILLIS = 30000;
 
 	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
 
@@ -205,8 +229,26 @@ public class DepotDispatcher {
 	 * @param pools the pool of a siding, the same for the sidings whose trains can run each other's duties
 	 */
 	public <T extends PlanTrack> DutyDeploy<T> findDutyDeploy(long currentMillis, Collection<Long> sidingIds, DepotDuties duties, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<? extends PlanRoute> routes, LongFunction<Object> pools) {
+		return findDutyDeploy(currentMillis, sidingIds, duties, tripPaths, routes, pools, sidingId -> null);
+	}
+
+	/**
+	 * As {@link #findDutyDeploy(long, Collection, DepotDuties, LongFunction, LongFunction, LongFunction)}, with how each
+	 * siding makes the paths of duties starting part of the way through (D5): spares taking duties over are sent out first,
+	 * when due; and a train sent out much later than its duty needed leaves for the first segment it can still get to in time,
+	 * out of the siding, rather than being put on the line, or not at all if it can get to none.
+	 *
+	 * @param variants how a siding makes paths on demand, or null for one that can't
+	 */
+	public <T extends PlanTrack> DutyDeploy<T> findDutyDeploy(long currentMillis, Collection<Long> sidingIds, DepotDuties duties, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<? extends PlanRoute> routes, LongFunction<Object> pools, LongFunction<PathVariants<T>> variants) {
+		lastReadySidings = new TreeSet<>(sidingIds);
 		if (releaseIntervalMillis > 0 && currentMillis < lastReleaseMillis + releaseIntervalMillis) {
 			return null;
+		}
+		final DutyDeploy<T> takeoverDeploy = findTakeoverDeploy(currentMillis, sidingIds, duties, tripPaths, routes, pools, variants);
+		if (takeoverDeploy != null) {
+			lastReleaseMillis = currentMillis;
+			return takeoverDeploy;
 		}
 		final long dayStart = DutyShapes.getDayStart(currentMillis);
 		final long day = DutyShapes.getDayNumber(dayStart);
@@ -258,6 +300,22 @@ public class DepotDispatcher {
 				// still keep to it instead of the duty being left out, while the duty runs
 				final boolean late = currentMillis > departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS;
 				final boolean running = duty.stayOnLine || currentMillis < departureMillis + dutyPath.stopTimes.getDurationMillis();
+				if (late && running) {
+					// Trains don't appear on the line (D5): it leaves for the first segment it can still get to in time, out of
+					// the siding, when that is due; none, and the duty isn't run today
+					final Object[] from = findFrom(currentMillis, dayStart, duty, key, 1, Collections.singletonList(sidingId), tripPaths, variants, Collections.emptySet());
+					if (from == null) {
+						markDutyRun(dutySidingId, i, day);
+						System.out.println("A duty sent out too late for any of its segments isn't run today: " + key);
+						continue;
+					}
+					final long fromDeparture = (long) from[2];
+					@SuppressWarnings("unchecked") final TripPath<T> fromPath = (TripPath<T>) from[1];
+					if (currentMillis >= fromDeparture && (best == null || fromDeparture < best.departureMillis)) {
+						best = new DutyDeploy<>(sidingId, dutySidingId, i, dayStart, fromPath, fromDeparture, false, (int) from[3]);
+					}
+					continue;
+				}
 				if (currentMillis >= departureMillis && (!late || running) && (best == null || best.late && !late || best.late == late && departureMillis < best.departureMillis)) {
 					best = new DutyDeploy<>(sidingId, dutySidingId, i, dayStart, dutyPath, departureMillis, late);
 				}
@@ -268,6 +326,179 @@ public class DepotDispatcher {
 			lastReleaseMillis = currentMillis;
 		}
 		return best;
+	}
+
+	/**
+	 * A spare train asked for to take a duty over from a segment on (D5): of the sidings with a train ready, the duty's own
+	 * first and then the rest of its pool, one with a way out to the segment's first stop that leaves in time and doesn't
+	 * run along the rails given. The spare is sent out when due ({@link #findDutyDeploy}).
+	 *
+	 * @param fromKey       the key of the duty's path starting at the segment
+	 * @param serviceMillis when the segment's service is due
+	 * @return {@link TrainService#TAKEOVER_OK} if taken, {@link TrainService#TAKEOVER_CROSSES} if a spare could only by
+	 * running along those rails, else {@link TrainService#TAKEOVER_NO_SPARE}
+	 */
+	public <T extends PlanTrack> int requestTakeover(long currentMillis, long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<java.util.UUID> affected, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<PathVariants<T>> variants, LongFunction<Object> pools) {
+		boolean crosses = false;
+		for (final long sidingId : getPoolOrder(dutySidingId, lastReadySidings, pools)) {
+			final TripPath<T> path = getFromPath(sidingId, fromKey, tripPaths, variants);
+			if (path == null || currentMillis + path.stopTimes.getLeadMillis() + DUTY_DEPLOY_MARGIN_MILLIS > serviceMillis) {
+				continue;
+			}
+			if (crosses(path, fromSegment, affected)) {
+				crosses = true;
+				continue;
+			}
+			final String prefix = dutySidingId + " " + slot + " " + dayStart + " ";
+			takeovers.removeIf(takeover -> takeover.startsWith(prefix));
+			final String takeover = prefix + fromSegment;
+			takeovers.add(takeover);
+			takeoverAffected.put(takeover, new HashSet<>(affected));
+			return TrainService.TAKEOVER_OK;
+		}
+		return crosses ? TrainService.TAKEOVER_CROSSES : TrainService.TAKEOVER_NO_SPARE;
+	}
+
+	/**
+	 * The spare due to leave for a duty taken over, if any (D5). A segment no spare can get to in time any more is passed to
+	 * the next one; with none left, the duty isn't taken over.
+	 */
+	private <T extends PlanTrack> DutyDeploy<T> findTakeoverDeploy(long currentMillis, Collection<Long> sidingIds, DepotDuties duties, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<? extends PlanRoute> routes, LongFunction<Object> pools, LongFunction<PathVariants<T>> variants) {
+		for (int index = 0; index < takeovers.size(); index++) {
+			final String takeover = takeovers.get(index);
+			final String[] parts = takeover.split(" ");
+			final long dutySidingId;
+			final int slot;
+			final long dayStart;
+			final int fromSegment;
+			try {
+				dutySidingId = Long.parseLong(parts[0]);
+				slot = Integer.parseInt(parts[1]);
+				dayStart = Long.parseLong(parts[2]);
+				fromSegment = Integer.parseInt(parts[3]);
+			} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+				takeovers.remove(index--);
+				continue;
+			}
+			final List<DepotDuties.Slot> slots = duties.getSlots(dutySidingId);
+			final int weekday = OperatingDay.getWeekday(dayStart);
+			final DepotDuties.DayDuty duty = slot < slots.size() ? slots.get(slot).getDuty(weekday) : null;
+			final String key = duty == null ? null : DutyShapes.getSlotKey(slots, slot, weekday, routes);
+			final Object[] from = key == null ? null : findFrom(currentMillis, dayStart, duty, key, fromSegment, getPoolOrder(dutySidingId, sidingIds, pools), tripPaths, variants, takeoverAffected.getOrDefault(takeover, Collections.emptySet()));
+			if (from == null) {
+				// Only once no siding of the pool can get a spare to any segment left in time, as a spare may come in later
+				if (key == null || findFrom(currentMillis, dayStart, duty, key, fromSegment, getPoolOrder(dutySidingId, new TreeSet<>(getAllSidings(duties)), pools), tripPaths, variants, Collections.emptySet()) == null && isPastAll(currentMillis, dayStart, duty, fromSegment)) {
+					System.out.println("A duty to be taken over by a spare train has none to take it over: " + takeover);
+					takeovers.remove(index--);
+					takeoverAffected.remove(takeover);
+				}
+				continue;
+			}
+			final int segment = (int) from[3];
+			if (segment != fromSegment) {
+				final String moved = dutySidingId + " " + slot + " " + dayStart + " " + segment;
+				takeovers.set(index, moved);
+				takeoverAffected.put(moved, takeoverAffected.remove(takeover));
+			}
+			final long departureMillis = (long) from[2];
+			if (currentMillis >= departureMillis) {
+				takeoverAffected.remove(takeovers.remove(index));
+				@SuppressWarnings("unchecked") final TripPath<T> path = (TripPath<T>) from[1];
+				return new DutyDeploy<>((long) from[0], dutySidingId, slot, dayStart, path, departureMillis, false, segment);
+			}
+		}
+		return null;
+	}
+
+	private static boolean isPastAll(long currentMillis, long dayStart, DepotDuties.DayDuty duty, int fromSegment) {
+		for (int segment = fromSegment; segment < duty.segments.size(); segment++) {
+			if (DutyShapes.getServiceMillis(dayStart, duty.segments.get(segment).service) > currentMillis) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static Collection<Long> getAllSidings(DepotDuties duties) {
+		return duties.sidings.keySet();
+	}
+
+	/**
+	 * Of these sidings, the duty's own first, then the others of its pool, in order.
+	 */
+	private static List<Long> getPoolOrder(long dutySidingId, Collection<Long> sidingIds, LongFunction<Object> pools) {
+		final List<Long> order = new ArrayList<>();
+		if (sidingIds.contains(dutySidingId)) {
+			order.add(dutySidingId);
+		}
+		final Object pool = pools.apply(dutySidingId);
+		new TreeSet<>(sidingIds).forEach(sidingId -> {
+			if (sidingId != dutySidingId && Objects.equals(pool, pools.apply(sidingId))) {
+				order.add(sidingId);
+			}
+		});
+		return order;
+	}
+
+	/**
+	 * The first segment from this one on a train of one of these sidings can get to in time out of the siding, by a way out
+	 * not along the rails given (D5).
+	 *
+	 * @return {siding, path, departure, segment}, or null if there is none
+	 */
+	private <T extends PlanTrack> Object[] findFrom(long currentMillis, long dayStart, DepotDuties.DayDuty duty, String key, int fromSegment, List<Long> sidingIds, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<PathVariants<T>> variants, Set<java.util.UUID> affected) {
+		for (int segment = Math.max(1, fromSegment); segment < duty.segments.size(); segment++) {
+			final long serviceMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(segment).service);
+			for (final long sidingId : sidingIds) {
+				final TripPath<T> path = getFromPath(sidingId, TripPath.getFromKey(key, segment), tripPaths, variants);
+				if (path == null || crosses(path, segment, affected)) {
+					continue;
+				}
+				final long departureMillis = serviceMillis - path.stopTimes.getLeadMillis() - DUTY_DEPLOY_MARGIN_MILLIS;
+				if (currentMillis <= departureMillis + FROM_TOLERANCE_MILLIS) {
+					return new Object[]{sidingId, path, departureMillis, segment};
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * @return the duty's path starting at a later segment out of a siding (D5), made once from the siding's usual path
+	 */
+	@SuppressWarnings("unchecked")
+	private <T extends PlanTrack> TripPath<T> getFromPath(long sidingId, String fromKey, LongFunction<Map<String, TripPath<T>>> tripPaths, LongFunction<PathVariants<T>> variants) {
+		final Map<String, TripPath<T>> sidingPaths = tripPaths.apply(sidingId);
+		final PathVariants<T> sidingVariants = variants.apply(sidingId);
+		final TripPath<T> base = sidingPaths == null ? null : sidingPaths.get(TripPath.getTurnBase(fromKey));
+		if (base == null || sidingVariants == null) {
+			return null;
+		}
+		final String cacheKey = sidingId + "|" + fromKey;
+		final Object[] cached = fromPaths.get(cacheKey);
+		if (cached != null && cached[0] == base) {
+			return (TripPath<T>) cached[1];
+		}
+		final TripPath<T> path = TripPath.withFrom(base, fromKey, sidingVariants);
+		fromPaths.put(cacheKey, new Object[]{base, path});
+		return path;
+	}
+
+	/**
+	 * @return whether a path's way out, before it gets to the segment's first stop, runs along any of the rails. The first
+	 * stop itself doesn't count: it is where the late train hands over, and the spare gets there once that train has gone.
+	 */
+	private static <T extends PlanTrack> boolean crosses(TripPath<T> path, int segment, Set<java.util.UUID> affected) {
+		if (affected.isEmpty() || path.dutyStarts == null) {
+			return false;
+		}
+		final int end = Math.min(path.dutyStarts[Math.min(segment, path.dutyStarts.length - 1)], path.path.size());
+		for (int i = 0; i < end; i++) {
+			if (affected.contains(path.path.get(i).getTrackKey())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static <T extends PlanTrack> TripPath<T> getPath(LongFunction<Map<String, TripPath<T>>> tripPaths, long sidingId, String key) {
@@ -399,8 +630,16 @@ public class DepotDispatcher {
 		 * (see {@link TrainService#joinDutyLate}).
 		 */
 		public final boolean late;
+		/**
+		 * The segment the train starts the duty at, out of the siding: a later one for a spare or a train sent out late (D5).
+		 */
+		public final int startSegment;
 
 		private DutyDeploy(long sidingId, long dutySidingId, int slot, long dayStart, TripPath<T> path, long departureMillis, boolean late) {
+			this(sidingId, dutySidingId, slot, dayStart, path, departureMillis, late, 0);
+		}
+
+		private DutyDeploy(long sidingId, long dutySidingId, int slot, long dayStart, TripPath<T> path, long departureMillis, boolean late, int startSegment) {
 			this.sidingId = sidingId;
 			this.dutySidingId = dutySidingId;
 			this.slot = slot;
@@ -408,6 +647,7 @@ public class DepotDispatcher {
 			this.path = path;
 			this.departureMillis = departureMillis;
 			this.late = late;
+			this.startSegment = startSegment;
 		}
 	}
 }

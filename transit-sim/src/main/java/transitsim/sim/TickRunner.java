@@ -224,7 +224,20 @@ public final class TickRunner<T extends RunTrack> {
 			depotSidings.computeIfAbsent(eachSidingRun.depot, key -> new ArrayList<>()).add(eachSidingRun);
 		});
 		depot.returnChooser = (eachSidingId, depotId, canGoBack) -> depotId == 0 ? chooseReturnSiding(depot, eachSidingId, canGoBack) : chooseOrderedReturnSiding(depot, eachSidingId, depotId, canGoBack);
+		depot.takeoverRequests = (dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected) -> depot.dispatcher.requestTakeover(millis, dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected, this::getSidingPaths, this::getSidingVariants, this::getSidingPool);
 		return sidingRun;
+	}
+
+	private Map<String, TripPath<T>> getSidingPaths(long sidingId) {
+		return sidings.containsKey(sidingId) ? sidings.get(sidingId).siding.tripPaths : null;
+	}
+
+	private transitsim.plan.PathVariants<T> getSidingVariants(long sidingId) {
+		return sidings.containsKey(sidingId) ? sidings.get(sidingId).siding.pathVariants : null;
+	}
+
+	private Object getSidingPool(long sidingId) {
+		return sidings.containsKey(sidingId) ? getPoolKey(sidings.get(sidingId)) : sidingId;
 	}
 
 	private Object getPoolKey(SidingRun sidingRun) {
@@ -522,6 +535,9 @@ public final class TickRunner<T extends RunTrack> {
 				record.dutyRunDays.put(sidingRun.sidingId, new TreeMap<>(sidingRun.depot.dispatcher.dutyRunDays));
 				record.lastDeployedMillis.put(sidingRun.sidingId, sidingRun.depot.lastDeployedMillis);
 				record.deployIndices.put(sidingRun.sidingId, sidingRun.depot.deployIndex);
+				if (!sidingRun.depot.dispatcher.takeovers.isEmpty()) {
+					record.takeovers.put(sidingRun.sidingId, new ArrayList<>(sidingRun.depot.dispatcher.takeovers));
+				}
 			}
 			sidingRun.trains.forEach(train -> record.trains.add(train.toRecord()));
 			if (!sidingRun.shed.isEmpty() || !sidingRun.arriving.isEmpty()) {
@@ -549,6 +565,12 @@ public final class TickRunner<T extends RunTrack> {
 			final SidingRun sidingRun = sidings.get(sidingId);
 			if (sidingRun != null) {
 				sidingRun.depot.dispatcher.dutyRunDays.putAll(days);
+			}
+		});
+		record.takeovers.forEach((sidingId, takeovers) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				sidingRun.depot.dispatcher.takeovers.addAll(takeovers);
 			}
 		});
 		record.lastDeployedMillis.forEach((sidingId, lastDeployedMillis) -> {
@@ -1152,11 +1174,11 @@ public final class TickRunner<T extends RunTrack> {
 		if (depot.duties.diagramMode) {
 			final Map<Long, HeadlessTrain> readyTrains = new TreeMap<>();
 			ready.forEach(sidingRun -> readyTrains.put(sidingRun.sidingId, sidingRun.waitingTrain));
-			final DepotDispatcher.DutyDeploy<T> deploy = depot.dispatcher.findDutyDeploy(millis, readyTrains.keySet(), depot.duties, sidingId -> sidings.containsKey(sidingId) ? sidings.get(sidingId).siding.tripPaths : null, routes, sidingId -> sidings.containsKey(sidingId) ? getPoolKey(sidings.get(sidingId)) : sidingId);
+			final DepotDispatcher.DutyDeploy<T> deploy = depot.dispatcher.findDutyDeploy(millis, readyTrains.keySet(), depot.duties, this::getSidingPaths, routes, this::getSidingPool, this::getSidingVariants);
 			if (deploy != null) {
 				final HeadlessTrain train = readyTrains.get(deploy.sidingId);
 				train.catchUp(millis);
-				train.deployDuty(deploy.slot, deploy.dutySidingId, deploy.dayStart, deploy.path);
+				train.deployDuty(deploy.slot, deploy.dutySidingId, deploy.dayStart, deploy.path, deploy.startSegment);
 				if (deploy.late) {
 					train.joinDutyLate();
 				}
@@ -2849,9 +2871,31 @@ public final class TickRunner<T extends RunTrack> {
 			speed = 0;
 		}
 
-		private void deployDuty(int slot, long dutySidingId, long dayStart, TripPath<T> dutyPath) {
+		private void deployDuty(int slot, long dutySidingId, long dayStart, TripPath<T> dutyPath, int startSegment) {
 			canDeploy = true;
-			service.deployDuty(slot, dutySidingId, dayStart, dutyPath);
+			service.deployDuty(slot, dutySidingId, dayStart, dutyPath, startSegment);
+		}
+
+		/**
+		 * The rails it still runs, with those of trains holding any of them, where it is held up (D5).
+		 */
+		@Override
+		public Collection<UUID> getAffectedRails(List<UUID> remaining) {
+			final Set<UUID> rails = new HashSet<>(remaining);
+			for (final long holder : reservations.getHolders()) {
+				if (holder == id) {
+					continue;
+				}
+				final List<RunReservations.Move> held = reservations.getHeld(holder);
+				if (held.stream().anyMatch(move -> !move.zone && !move.turnout && rails.contains(move.rail))) {
+					held.forEach(move -> {
+						if (!move.zone && !move.turnout) {
+							rails.add(move.rail);
+						}
+					});
+				}
+			}
+			return rails;
 		}
 
 		/**

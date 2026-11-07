@@ -43,9 +43,9 @@ public final class SimDataset {
 	 * frequency and order of sidings, and which sidings are driven by hand (G1); version 5 the depots' release intervals
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; version 13 the sidings' ways for turning back early (D4);
-	 * older data is read without them.
+	 * version 14 their ways out to where segments of their duties start (D5); older data is read without them.
 	 */
-	public static final int VERSION = 13;
+	public static final int VERSION = 14;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -127,6 +127,13 @@ public final class SimDataset {
 			});
 			writer.writeVarInt(siding.turnReturns.size());
 			siding.turnReturns.forEach((platformId, tracks) -> {
+				writer.writeLong(platformId);
+				writeTracks(writer, tracks);
+			});
+		});
+		sidings.forEach(siding -> {
+			writer.writeVarInt(siding.wayOuts.size());
+			siding.wayOuts.forEach((platformId, tracks) -> {
 				writer.writeLong(platformId);
 				writeTracks(writer, tracks);
 			});
@@ -230,6 +237,15 @@ public final class SimDataset {
 				for (int i = 0; i < returnCount; i++) {
 					final long platformId = reader.readLong();
 					siding.turnReturns.put(platformId, readTracks(reader));
+				}
+			}
+		}
+		if (version >= 14) {
+			for (final SidingData siding : dataset.sidings) {
+				final int count = reader.readVarInt();
+				for (int i = 0; i < count; i++) {
+					final long platformId = reader.readLong();
+					siding.wayOuts.put(platformId, readTracks(reader));
 				}
 			}
 		}
@@ -356,6 +372,11 @@ public final class SimDataset {
 				}
 
 				@Override
+				public DataTrack withStop(DataTrack track, int dwellTime, long platformId) {
+					return track.withStop(dwellTime, platformId);
+				}
+
+				@Override
 				public TimeGenerator<DataTrack> getTimeGenerator() {
 					return generator;
 				}
@@ -373,6 +394,11 @@ public final class SimDataset {
 				@Override
 				public List<DataTrack> getTurnReturn(long platformId) {
 					return sidingData.turnReturns.get(platformId);
+				}
+
+				@Override
+				public List<DataTrack> getWayOut(long platformId) {
+					return sidingData.wayOuts.get(platformId);
 				}
 			};
 			if (sidingData.turnBacks.length > 0) {
@@ -830,6 +856,11 @@ public final class SimDataset {
 		 * The ways back to the siding from the platforms trains turn back to, for going back empty (D4).
 		 */
 		public final Map<Long, List<DataTrack>> turnReturns = new java.util.TreeMap<>();
+		/**
+		 * The ways out of the siding to the platforms where segments of its duties start, for spares taking duties over and
+		 * trains sent out late (D5).
+		 */
+		public final Map<Long, List<DataTrack>> wayOuts = new java.util.TreeMap<>();
 
 		public void addTurnLink(long fromPlatformId, long toPlatformId, List<DataTrack> tracks) {
 			turnLinks.put(new long[]{fromPlatformId, toPlatformId}, tracks);
@@ -970,7 +1001,14 @@ public final class SimDataset {
 		 * @return the same track, which a train passes without stopping (D3)
 		 */
 		public DataTrack passed() {
-			return new DataTrack(startNode, endNode, length, platform, siding, stopId, 0, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay);
+			return withStop(0, stopId);
+		}
+
+		/**
+		 * @return the same track, which a train stops at the end of for this long, at this platform (D5)
+		 */
+		public DataTrack withStop(int newDwellTime, long newStopId) {
+			return new DataTrack(startNode, endNode, length, platform, siding, newStopId, newDwellTime, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay);
 		}
 
 		private void write(BinaryWriter writer) {

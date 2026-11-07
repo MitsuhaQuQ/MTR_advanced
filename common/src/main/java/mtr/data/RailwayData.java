@@ -719,6 +719,13 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					}
 				});
 				alarmLookups.turns.clear();
+				// And whether to hand their duty over to a spare (D5)
+				alarmLookups.handOvers.forEach((train, handOver) -> {
+					if (!liveSimulation.submitHandOver(train.id, handOver)) {
+						train.getService().setTakeover(handOver);
+					}
+				});
+				alarmLookups.handOvers.clear();
 				if (!alarms.equals(depot.clientAlarms) || resend && alarms.size() > 1) {
 					depot.clientAlarms = alarms;
 					mtr.packet.DelayAlarms.sendS2C(world, depot.id, alarms);

@@ -197,6 +197,21 @@ public final class DepotBoard implements TrainService.Board {
 		returnOrderMisses.add(sidingId + " " + targetSidingId);
 	}
 
+	/**
+	 * Takes a train's request for a spare to take its duty over (D5), with the runner's sidings, or null for none.
+	 */
+	public TakeoverRequests takeoverRequests;
+
+	@Override
+	public int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, java.util.Set<java.util.UUID> affected) {
+		return takeoverRequests == null ? TrainService.TAKEOVER_NO_SPARE : takeoverRequests.request(dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected);
+	}
+
+	@FunctionalInterface
+	public interface TakeoverRequests {
+		int request(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, java.util.Set<java.util.UUID> affected);
+	}
+
 	@Override
 	public long chooseReturnSiding(long sidingId, long depotId, java.util.function.LongPredicate canGoBack) {
 		return returnChooser == null ? sidingId : returnChooser.choose(sidingId, depotId, canGoBack);

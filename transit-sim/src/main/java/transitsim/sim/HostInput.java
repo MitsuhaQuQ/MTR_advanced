@@ -93,6 +93,21 @@ public abstract class HostInput implements Comparable<HostInput> {
 		}
 	}
 
+	/**
+	 * Has the train hand the rest of its duty over to a spare train, or not (D5): see {@link TrainService#setTakeover}.
+	 */
+	public static final class HandOver extends HostInput {
+
+		public final long trainId;
+		public final boolean takeover;
+
+		public HandOver(long time, long sequence, long trainId, boolean takeover) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.takeover = takeover;
+		}
+	}
+
 	public static final class Remove extends HostInput {
 
 		public final long trainId;

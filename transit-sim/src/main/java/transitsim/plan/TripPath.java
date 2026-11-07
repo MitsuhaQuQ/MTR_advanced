@@ -329,7 +329,7 @@ public class TripPath<T extends PlanTrack> {
 	 * A duty's path turned back early (D4): the same up to the stop where it turns back, then round to the other platform
 	 * of the station and on with the rest of the duty from there, or back to the siding.
 	 */
-	private TripPath(TripPath<T> base, String key, List<T> path, int[] dutyStarts, int segmentCount, int[] turnBackStops, int turnRail, int turnResumeRail) {
+	private TripPath(TripPath<T> base, String key, List<T> path, int[] dutyStarts, int segmentCount, int[] turnBackStops, int turnRail, int turnResumeRail, boolean staysOnLine) {
 		this.key = key;
 		tripKey = base.tripKey;
 		this.turnBackStops = turnBackStops;
@@ -370,7 +370,7 @@ public class TripPath<T extends PlanTrack> {
 		lapStop = 0;
 		entryRail = -1;
 		this.dutyStarts = dutyStarts;
-		staysOnLine = turnResumeRail >= 0 && base.staysOnLine;
+		this.staysOnLine = staysOnLine;
 		this.turnRail = turnRail;
 		this.turnResumeRail = turnResumeRail;
 	}
@@ -394,11 +394,168 @@ public class TripPath<T extends PlanTrack> {
 	}
 
 	/**
-	 * @return the key of the path as it usually runs, without turning back early or passing stops
+	 * @return the key of the path as it usually runs, without turning back early, starting or ending part of the way through
+	 * the duty, or passing stops
 	 */
 	public static String getTurnBase(String key) {
-		final int index = key.indexOf(TURN_MARK);
+		int index = -1;
+		for (final String mark : new String[]{TURN_MARK, FROM_MARK, END_MARK}) {
+			final int markIndex = key.indexOf(mark);
+			if (markIndex >= 0 && (index < 0 || markIndex < index)) {
+				index = markIndex;
+			}
+		}
 		return index < 0 ? getSkipBase(key) : key.substring(0, index);
+	}
+
+	/**
+	 * @return whether the key is of a duty's path changed from its usual one, turned back early or starting or ending part
+	 * of the way through (D4, D5), with or without stops passed
+	 */
+	public static boolean isChangedKey(String key) {
+		return key.contains(TURN_MARK) || key.contains(FROM_MARK) || key.contains(END_MARK);
+	}
+
+	/**
+	 * @return the key of the duty's path for a train starting it at a later segment, out of the siding (D5)
+	 */
+	public static String getFromKey(String baseKey, int segment) {
+		return baseKey + FROM_MARK + segment;
+	}
+
+	public static boolean isFromKey(String key) {
+		return key.contains(FROM_MARK);
+	}
+
+	/**
+	 * @return the segment a path starting part of the way through the duty starts at, or 0
+	 */
+	public static int getFromSegment(String key) {
+		final String fromKey = getSkipBase(key);
+		final int index = fromKey.indexOf(FROM_MARK);
+		try {
+			return index < 0 ? 0 : Integer.parseInt(fromKey.substring(index + FROM_MARK.length()));
+		} catch (NumberFormatException e) {
+			return 0;
+		}
+	}
+
+	/**
+	 * @param lastStopRail the rail of the segment's last stop
+	 * @return the key of the duty's path for a train handing the rest over after a segment and going back to its siding
+	 * empty from that segment's last stop (D5)
+	 */
+	public static String getEndKey(String baseKey, int segment, int lastStopRail) {
+		return baseKey + END_MARK + segment + ":" + lastStopRail;
+	}
+
+	public static boolean isEndKey(String key) {
+		return key.contains(END_MARK);
+	}
+
+	/**
+	 * A duty's path starting at a later segment (D5): out of the siding the way the host found to that segment's first stop,
+	 * then the rest of the duty as usual. The segments before it run no stops.
+	 */
+	public static <T extends PlanTrack> TripPath<T> withFrom(TripPath<T> base, String key, PathVariants<T> variants) {
+		if (base.dutyStarts == null || !base.segmentsKnown) {
+			return null;
+		}
+		final int segment = getFromSegment(key);
+		final int segmentCount = base.dutyStarts.length;
+		if (segment <= 0 || segment >= segmentCount) {
+			return null;
+		}
+		final int startRail = base.dutyStarts[segment];
+		// A segment starting where the one before turned back on the platform has its stop on the arrival there, and the
+		// platform the other way only as the way out, with no stop or platform of its own
+		final T firstStop = base.path.get(startRail);
+		final T arrival = startRail > 0 ? base.path.get(startRail - 1) : null;
+		final boolean turnedOnPlatform = firstStop.getDwellTime() == 0 && arrival != null && arrival.getDwellTime() > 0 && arrival.isOppositeOf(firstStop);
+		final long platformId = turnedOnPlatform && firstStop.getStopId() == 0 ? arrival.getStopId() : firstStop.getStopId();
+		final int dwellTime = turnedOnPlatform ? arrival.getDwellTime() : firstStop.getDwellTime();
+		final List<T> wayOut = variants.getWayOut(platformId);
+		if (wayOut == null || wayOut.size() < 2) {
+			return null;
+		}
+		final T wayOutEnd = wayOut.get(wayOut.size() - 1);
+		final List<T> newPath = new ArrayList<>(wayOut.subList(0, wayOut.size() - 1));
+		final int newStart = newPath.size();
+		final int shift;
+		if (turnedOnPlatform && wayOutEnd.isOppositeOf(firstStop)) {
+			// Out of the siding onto the platform the way the duty arrives there: it stops, then turns back as the duty does
+			final T stopped = variants.withStop(wayOutEnd, dwellTime, platformId);
+			if (stopped == null) {
+				return null;
+			}
+			newPath.add(stopped);
+			shift = newStart + 1 - startRail;
+			newPath.addAll(base.path.subList(startRail, base.path.size()));
+		} else {
+			// Onto the platform the way the segment leaves it: it stops there
+			final T stopped = turnedOnPlatform ? variants.withStop(firstStop, dwellTime, platformId) : firstStop;
+			if (stopped == null) {
+				return null;
+			}
+			newPath.add(stopped);
+			shift = newStart - startRail;
+			newPath.addAll(base.path.subList(startRail + 1, base.path.size()));
+		}
+		final int[] newStarts = new int[segmentCount];
+		for (int i = 0; i < segmentCount; i++) {
+			newStarts[i] = i <= segment ? newStart : base.dutyStarts[i] + shift;
+		}
+		final int[] newTurnBackStops = base.turnBackStops.clone();
+		for (int i = 0; i < newTurnBackStops.length; i++) {
+			newTurnBackStops[i] = newTurnBackStops[i] < startRail ? -1 : newTurnBackStops[i] + shift;
+		}
+		final TripPath<T> tripPath = new TripPath<>(base, getSkipBase(key), newPath, newStarts, segmentCount, newTurnBackStops, -1, -1, base.staysOnLine);
+		// The segments before run none of their stops
+		for (int i = 0; i < segment; i++) {
+			tripPath.segmentCuts.put(i, -1);
+			tripPath.segmentEntries.remove(i);
+		}
+		tripPath.generateTimes(variants.getTimeGenerator());
+		return tripPath;
+	}
+
+	/**
+	 * A duty's path handed over after a segment (D5): the same up to that segment's last stop, where everyone gets off,
+	 * then back to the siding empty the way the host found.
+	 */
+	public static <T extends PlanTrack> TripPath<T> withEnd(TripPath<T> base, String key, PathVariants<T> variants) {
+		final String endKey = getSkipBase(key);
+		final int index = endKey.indexOf(END_MARK);
+		if (index < 0 || base.dutyStarts == null || !base.segmentsKnown) {
+			return null;
+		}
+		final String[] parts = endKey.substring(index + END_MARK.length()).split(":");
+		final int segment;
+		final int lastStopRail;
+		try {
+			segment = Integer.parseInt(parts[0]);
+			lastStopRail = Integer.parseInt(parts[1]);
+		} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+			return null;
+		}
+		if (segment < 0 || segment + 1 >= base.dutyStarts.length || lastStopRail < base.dutyStarts[segment] || lastStopRail >= base.path.size()) {
+			return null;
+		}
+		final List<T> back = variants.getTurnReturn(base.path.get(lastStopRail).getStopId());
+		if (back == null || back.size() < 2) {
+			return null;
+		}
+		final List<T> newPath = new ArrayList<>(base.path.subList(0, lastStopRail + 1));
+		for (int i = 1; i < back.size(); i++) {
+			newPath.add(passing(back.get(i), variants));
+		}
+		final int[] newTurnBackStops = base.turnBackStops.clone();
+		for (int i = 0; i < newTurnBackStops.length; i++) {
+			newTurnBackStops[i] = newTurnBackStops[i] < lastStopRail ? newTurnBackStops[i] : -1;
+		}
+		final TripPath<T> tripPath = new TripPath<>(base, endKey, newPath, java.util.Arrays.copyOf(base.dutyStarts, segment + 1), segment + 1, newTurnBackStops, lastStopRail, -1, false);
+		tripPath.generateTimes(variants.getTimeGenerator());
+		return tripPath;
 	}
 
 	/**
@@ -464,7 +621,7 @@ public class TripPath<T extends PlanTrack> {
 				final int stop = newTurnBackStops[i];
 				newTurnBackStops[i] = stop <= turnRail ? stop : stop < targetRail ? -1 : stop + shift;
 			}
-			tripPath = new TripPath<>(base, key, newPath, newStarts, segmentCount, newTurnBackStops, turnRail, resumeRail);
+			tripPath = new TripPath<>(base, key, newPath, newStarts, segmentCount, newTurnBackStops, turnRail, resumeRail, base.staysOnLine);
 			tripPath.segmentCuts.put(segment, cutStop);
 			tripPath.segmentEntries.put(segment + 1, entryStop);
 			tripPath.segmentEntryTimes.remove(segment + 1);
@@ -486,7 +643,7 @@ public class TripPath<T extends PlanTrack> {
 			for (int i = 0; i < newTurnBackStops.length; i++) {
 				newTurnBackStops[i] = newTurnBackStops[i] <= turnRail ? newTurnBackStops[i] : -1;
 			}
-			tripPath = new TripPath<>(base, key, newPath, newStarts, segment + 1, newTurnBackStops, turnRail, -1);
+			tripPath = new TripPath<>(base, key, newPath, newStarts, segment + 1, newTurnBackStops, turnRail, -1, false);
 			tripPath.segmentCuts.put(segment, cutStop);
 		}
 		tripPath.generateTimes(variants.getTimeGenerator());
@@ -758,6 +915,12 @@ public class TripPath<T extends PlanTrack> {
 	 * After the key of a duty's path, where it turns back early (D4); before {@link #SKIP_MARK} when both.
 	 */
 	private static final String TURN_MARK = "~turn:";
+	/**
+	 * After the key of a duty's path, the segment a train starts it at out of the siding, or the segment after which it
+	 * hands the rest over (D5); before {@link #SKIP_MARK} when both.
+	 */
+	private static final String FROM_MARK = "~from:";
+	private static final String END_MARK = "~end:";
 
 	public void generateTimes(TimeGenerator<T> generator) {
 		stopTimes.cutStops.clear();

@@ -296,6 +296,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_DUTY_MODE = "duty_mode";
 	private static final String KEY_DUTY_SLOT = "duty_slot";
 	private static final String KEY_DUTY_RUN_DAYS = "duty_run_days";
+	/**
+	 * The duties a spare takes over (D5), as {@link DepotDispatcher#takeovers}.
+	 */
+	private static final String KEY_DUTY_TAKEOVERS = "duty_takeovers";
 	private static final String DUTY_MODE_DIAGRAM = "diagram";
 	private static final String DUTY_MODE_ONLINE = "online";
 
@@ -365,6 +369,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			autoDuties.fromBytes(autoDutiesValue.asBinaryValue().asByteArray());
 		}
 		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dispatcher.dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
+		messagePackHelper.iterateArrayValue(KEY_DUTY_TAKEOVERS, value -> dispatcher.takeovers.add(value.asStringValue().asString()));
 		final List<Long> bufferSamples = new ArrayList<>();
 		messagePackHelper.iterateArrayValue(KEY_MEASURED_BUFFERS, value -> bufferSamples.add(value.asIntegerValue().asLong()));
 		bufferRecorder.readList(bufferSamples);
@@ -443,6 +448,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		for (final Map.Entry<String, Long> entry : dispatcher.dutyRunDays.entrySet()) {
 			messagePacker.packString(entry.getKey()).packLong(entry.getValue());
 		}
+		messagePacker.packString(KEY_DUTY_TAKEOVERS).packArrayHeader(dispatcher.takeovers.size());
+		for (final String takeover : dispatcher.takeovers) {
+			messagePacker.packString(takeover);
+		}
 	}
 
 	@Override
@@ -510,7 +519,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 22;
+		return super.messagePackLength() + 23;
 	}
 
 	@Override
@@ -973,6 +982,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		dispatcher.lastDeployedTrips.putAll(simulated.dispatcher.lastDeployedTrips);
 		dispatcher.dutyRunDays.clear();
 		dispatcher.dutyRunDays.putAll(simulated.dispatcher.dutyRunDays);
+		dispatcher.takeovers.clear();
+		dispatcher.takeovers.addAll(simulated.dispatcher.takeovers);
 		lastDeployedMillis = simulated.lastDeployedMillis;
 		deployIndex = Math.max(0, simulated.deployIndex);
 	}
@@ -982,6 +993,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		record.dutyRunDays.put(sidingId, new TreeMap<>(dispatcher.dutyRunDays));
 		record.lastDeployedMillis.put(sidingId, lastDeployedMillis);
 		record.deployIndices.put(sidingId, deployIndex);
+		if (!dispatcher.takeovers.isEmpty()) {
+			record.takeovers.put(sidingId, new ArrayList<>(dispatcher.takeovers));
+		}
 	}
 
 	/**
@@ -1132,6 +1146,29 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public int getPoolTrains(Siding siding) {
 		return getLinePool(siding).stream().mapToInt(poolSiding -> poolSiding.getTrainCount() + poolSiding.getShedCount()).sum();
+	}
+
+	private Map<String, TripPath<PathData>> getSidingPaths(long sidingId) {
+		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
+		return siding == null ? null : siding.getTripPaths();
+	}
+
+	private Object getSidingPool(long sidingId) {
+		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
+		return siding == null ? sidingId : siding.getPoolKey();
+	}
+
+	private transitsim.plan.PathVariants<PathData> getSidingVariants(long sidingId) {
+		final Siding siding = dataCache == null ? null : dataCache.sidingIdMap.get(sidingId);
+		return siding == null ? null : siding.getPathVariants();
+	}
+
+	/**
+	 * A train of the game asks for a spare to take its duty over (D5). See {@link DepotDispatcher#requestTakeover}.
+	 */
+	@Override
+	public int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<UUID> affected) {
+		return dispatcher.requestTakeover(System.currentTimeMillis(), dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected, this::getSidingPaths, this::getSidingVariants, this::getSidingPool);
 	}
 
 	@Override
@@ -1293,16 +1330,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private void deployDutyTrain(RailwayData railwayData) {
 		final long currentMillis = System.currentTimeMillis();
 		dispatcher.releaseIntervalMillis = releaseInterval * 1000;
-		final DepotDispatcher.DutyDeploy<PathData> deploy = dispatcher.findDutyDeploy(currentMillis, new TreeSet<>(deployableSidings.keySet()), getRunDuties(), sidingId -> {
-			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
-			return siding == null ? null : siding.getTripPaths();
-		}, railwayData.dataCache.routeIdMap::get, sidingId -> {
-			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
-			return siding == null ? sidingId : siding.getPoolKey();
-		});
+		final DepotDispatcher.DutyDeploy<PathData> deploy = dispatcher.findDutyDeploy(currentMillis, new TreeSet<>(deployableSidings.keySet()), getRunDuties(), this::getSidingPaths, railwayData.dataCache.routeIdMap::get, this::getSidingPool, this::getSidingVariants);
 		if (deploy != null) {
 			lastDeployedMillis = currentMillis;
-			deployableSidings.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dutySidingId, deploy.dayStart, deploy.path);
+			deployableSidings.get(deploy.sidingId).deployDuty(deploy.slot, deploy.dutySidingId, deploy.dayStart, deploy.path, deploy.startSegment);
 			if (deploy.late) {
 				deployableSidings.get(deploy.sidingId).joinDutyLate();
 			}
@@ -2712,7 +2743,29 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					}
 				}
 			}
-			siding.setTurnLinks(links, targets);
+			// Handing a duty over (D5): ways back from where each segment but the last ends, and ways out to where each but the
+			// first starts, the platform a segment starting by turning back on it arrives on
+			final Map<Long, SavedRailBase> wayOutTargets = new HashMap<>();
+			for (final DutyPlan<PathData, SavedRailBase> dutyPlan : dutyPlans) {
+				for (int k = 0; k < dutyPlan.segmentStarts.length; k++) {
+					final List<Long> stops = getSegmentStops(dutyPlan, k);
+					if (k + 1 < dutyPlan.segmentStarts.length && !stops.isEmpty()) {
+						final Platform end = dataCache.platformIdMap.get(stops.get(stops.size() - 1));
+						if (end != null) {
+							targets.put(end.id, end);
+						}
+					}
+					if (k > 0) {
+						final int start = dutyPlan.segmentStarts[k];
+						final long startId = dutyPlan.body.get(start).savedRailBaseId != 0 ? dutyPlan.body.get(start).savedRailBaseId : start > 0 ? dutyPlan.body.get(start - 1).savedRailBaseId : 0;
+						final Platform startPlatform = dataCache.platformIdMap.get(startId);
+						if (startPlatform != null) {
+							wayOutTargets.put(startId, startPlatform);
+						}
+					}
+				}
+			}
+			siding.setTurnLinks(links, targets, wayOutTargets);
 			return links;
 		}
 
