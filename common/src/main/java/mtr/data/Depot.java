@@ -1055,6 +1055,30 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	/**
+	 * Gives each siding the paths of its duties as path generation does for a depot running by duties, at once and without
+	 * a server: the end-to-end check of "the game finds the paths, the component runs the trains".
+	 */
+	public void generateDutyPathsNow(DepotDuties runDuties, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, Set<Siding> sidings, boolean useFastSpeed, Consumer<String> failed) {
+		final Map<String, List<Siding>> sidingGroups = new LinkedHashMap<>();
+		sidings.forEach(siding -> {
+			final BlockPos sidingMidPos = siding.getMidPos();
+			if (siding.isTransportMode(transportMode) && inArea(sidingMidPos.getX(), sidingMidPos.getZ())) {
+				sidingGroups.computeIfAbsent(getSidingGroupKey(getServiceTypes(siding.getTrainId()), siding), key -> new ArrayList<>()).add(siding);
+			}
+		});
+		sidingGroups.forEach((groupKey, sidingGroup) -> {
+			final MainPath mainPath = new MainPath(getSidingRoutes(sidingGroup.get(0), dataCache), sidingGroup, dataCache);
+			final Map<String, List<PathData>> turnLinkCache = new HashMap<>();
+			sidingGroup.forEach(siding -> {
+				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = mainPath.getDutyPlans(runDuties, siding, rails, graph, useFastSpeed, failed);
+				mainPath.setTurnLinks(siding, dutyPlans, turnLinkCache, rails, graph, useFastSpeed);
+				siding.generateDutyRoute(Runnable::run, rails, graph, cruisingAltitude, useFastSpeed, dutyPlans, mainPath.getPoolSidings(siding));
+				siding.getLastFailedDuties().forEach(failed);
+			});
+		});
+	}
+
+	/**
 	 * Where a siding's duties can turn back early (D4), as path generation finds it, for the tests: the ways round by
 	 * {@code from>to}.
 	 */

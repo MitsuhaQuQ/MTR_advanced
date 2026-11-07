@@ -116,7 +116,14 @@ public final class RunReservations {
 	 */
 	public List<Move> getHeld(long trainId) {
 		final List<Move> moves = new ArrayList<>();
-		arbiter.getHoldings(trainId).forEach(claim -> moves.add(claim.kind == transitsim.network.Resource.Kind.TRACK ? Move.zoneOf(claim.resource) : claim.kind == transitsim.network.Resource.Kind.TURNOUT ? new Move(claim.resource, claim.way) : new Move(claim.resource, claim.way > 0)));
+		arbiter.getHoldings(trainId).forEach(claim -> {
+			if (claim.kind == transitsim.network.Resource.Kind.SINGLE_TRACK && claim.way == 0) {
+				moves.add(new Move(claim.resource, true));
+				moves.add(new Move(claim.resource, false));
+			} else {
+				moves.add(claim.kind == transitsim.network.Resource.Kind.TRACK ? Move.zoneOf(claim.resource) : claim.kind == transitsim.network.Resource.Kind.TURNOUT ? new Move(claim.resource, claim.way) : new Move(claim.resource, claim.way > 0));
+			}
+		});
 		return moves;
 	}
 
@@ -128,8 +135,25 @@ public final class RunReservations {
 	}
 
 	private static List<Arbiter.Claim<UUID>> toClaims(List<Move> moves) {
+		// A rail asked for both ways by the same train, as a stop it turns back at, is one claim of it both ways: a train
+		// holds one claim of each rail, so the second way would otherwise take the place of the first
+		final java.util.Map<UUID, Integer> singleTracks = new java.util.HashMap<>();
 		final List<Arbiter.Claim<UUID>> claims = new ArrayList<>();
-		moves.forEach(move -> claims.add(move.zone ? Arbiter.Claim.track(move.rail) : move.turnout ? Arbiter.Claim.turnout(move.rail, move.way) : Arbiter.Claim.singleTrack(move.rail, move.forwards)));
+		moves.forEach(move -> {
+			if (move.zone) {
+				claims.add(Arbiter.Claim.track(move.rail));
+			} else if (move.turnout) {
+				claims.add(Arbiter.Claim.turnout(move.rail, move.way));
+			} else {
+				final Integer index = singleTracks.get(move.rail);
+				if (index == null) {
+					singleTracks.put(move.rail, claims.size());
+					claims.add(Arbiter.Claim.singleTrack(move.rail, move.forwards));
+				} else if (claims.get(index).way != (move.forwards ? 1 : -1)) {
+					claims.set(index, Arbiter.Claim.singleTrackBothWays(move.rail));
+				}
+			}
+		});
 		return claims;
 	}
 

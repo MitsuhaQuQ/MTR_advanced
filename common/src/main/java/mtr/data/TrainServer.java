@@ -339,8 +339,9 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean canDeploy(Depot depot) {
-		// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift
-		if (path.size() > 1 && depot != null && !isRailOccupied(1)) {
+		// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift. By duties the
+		// siding alone is its path, and the train leaves along its duty's path once the duty is due (end-to-end check)
+		if (depot != null && (path.size() > 1 ? !isRailOccupied(1) : depot.getRunDuties() != null)) {
 			depot.requestDeploy(sidingId, this);
 		}
 		// A train sent out for a duty also waits for the run out of the siding, like any other run
@@ -986,6 +987,15 @@ public class TrainServer extends Train {
 				moves.add(new RunReservations.Move(pathData.startingPos.asLong(), pathData.getLastPos().asLong()));
 			}
 		}
+		// A train turning back at the stop its run ends at takes the way back out of it too (掉头车优先), as the component's
+		final int turnRail = Math.min(runEnd, path.size() - 1) + 1;
+		if (turnRail > 0 && turnRail < path.size() && path.get(turnRail - 1).isOppositeRail(path.get(turnRail))) {
+			final PathData turnData = path.get(turnRail);
+			final Rail backwards = DataCache.tryGet(rails, turnData.getLastPos(), turnData.startingPos);
+			if (backwards != null && backwards.railType != RailType.NONE) {
+				moves.add(new RunReservations.Move(turnData.startingPos.asLong(), turnData.getLastPos().asLong()));
+			}
+		}
 		return moves;
 	}
 
@@ -1281,6 +1291,13 @@ public class TrainServer extends Train {
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
 			waitingSinceMillis = 0;
+			// Back in the siding on its own path, the next stop is its start again: a stop of the duty's path further along than
+			// the siding's has rails would keep the train from ever leaving again (found by the end-to-end check, where a
+			// siding running by duties has itself alone as its path)
+			if (!getIsOnRoute() && nextStoppingIndex >= path.size()) {
+				nextStoppingIndex = 0;
+				nextPlatformIndex = 0;
+			}
 		}
 
 		@Override

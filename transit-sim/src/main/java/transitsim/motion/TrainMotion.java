@@ -114,8 +114,10 @@ public final class TrainMotion {
 						if (!Double.isNaN(ownTaken)) {
 							state.setNextStoppingIndex(headIndex);
 							sectionStop = ownTaken;
-						} else if (blockedIndex >= 0 && !Double.isNaN(blockedAt) && blockedAt > track.getDistance(blockedIndex - 1) + 1E-6) {
-							// Free from the start of the rail to the taken section
+						} else if (blockedIndex >= 0 && blockedIndex <= lastCheckIndex && !Double.isNaN(blockedAt) && blockedAt > track.getDistance(blockedIndex - 1) + 1E-6) {
+							// Free from the start of the rail to the taken section. Not beyond the next stop, which the train
+							// stops at first: a train behind one just past its platform would otherwise run through the platform
+							// to stop short of it (found by the end-to-end check)
 							state.setNextStoppingIndex(blockedIndex);
 							sectionStop = blockedAt;
 						} else if (blockedIndex >= 0) {

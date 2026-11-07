@@ -1154,6 +1154,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * another doesn't keep the old ones.
 	 */
 	public void generateDutyRoute(MinecraftServer minecraftServer, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<DutyPlan<PathData, SavedRailBase>> dutyPlans, List<Siding> poolSidings) {
+		generateDutyRoute((java.util.concurrent.Executor) minecraftServer, rails, graph, cruisingAltitude, useFastSpeed, dutyPlans, poolSidings);
+	}
+
+	/**
+	 * @param applier runs what is found on the server thread, or at once where there is no server, as in the end-to-end
+	 *                check of path generation
+	 */
+	public void generateDutyRoute(java.util.concurrent.Executor applier, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<DutyPlan<PathData, SavedRailBase>> dutyPlans, List<Siding> poolSidings) {
 		final Map<String, TripPath<PathData>> tempTripPaths = new HashMap<>();
 		final List<String> failedDuties = new ArrayList<>();
 		foundNoWayOut.clear();
@@ -1174,7 +1182,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final Map<Long, List<PathData>> newWayOuts = findWayOuts(rails, graph, cruisingAltitude, useFastSpeed);
 		final TurnBacks newTurnBacks = TurnBacks.NONE.with(dutyPoints);
 
-		minecraftServer.execute(() -> {
+		applier.execute(() -> {
 			try {
 				path.clear();
 				generateDefaultPath(rails);

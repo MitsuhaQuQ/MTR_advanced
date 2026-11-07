@@ -2283,6 +2283,12 @@ public final class TickRunner<T extends RunTrack> {
 					moves.add(new RunReservations.Move(track.getStartNode(), track.getEndNode()));
 				}
 			}
+			// A train turning back at the stop its run ends at takes the way back out of it too (掉头车优先): a train behind
+			// asking for the stop then waits outside it, rather than coming in after it and blocking its way out
+			final int turnRail = Math.min(runEnd, path.size() - 1) + 1;
+			if (turnRail < path.size() && path.get(turnRail).isTwoWay() && isOppositeRail(turnRail - 1, turnRail)) {
+				moves.add(new RunReservations.Move(path.get(turnRail).getStartNode(), path.get(turnRail).getEndNode()));
+			}
 			return moves;
 		}
 
@@ -2606,8 +2612,10 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean canDeploy() {
-			// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift
-			if (path.size() > 1 && !isRailOccupied(1)) {
+			// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift. By duties the
+			// siding alone is its path, as the game makes it for a depot running by duties only, and the train leaves along its
+			// duty's path once the duty is due (found by the end-to-end check: such a train never asked to leave)
+			if (path.size() > 1 ? !isRailOccupied(1) : sidingRun.depot.duties.diagramMode) {
 				requestedDeploy = true;
 			}
 			// A train sent out for a duty also waits for the run out of the siding, like any other run
@@ -2784,6 +2792,13 @@ public final class TickRunner<T extends RunTrack> {
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
 			waitingSinceMillis = 0;
+			// Back in the siding on its own path, the next stop is its start again: a stop of the duty's path further along than
+			// the siding's has rails would keep the train from ever leaving again (found by the end-to-end check, where a
+			// siding running by duties has itself alone as its path)
+			if (!onRoute && nextStoppingIndex >= path.size()) {
+				nextStoppingIndex = 0;
+				nextPlatformIndex = 0;
+			}
 		}
 
 		@Override

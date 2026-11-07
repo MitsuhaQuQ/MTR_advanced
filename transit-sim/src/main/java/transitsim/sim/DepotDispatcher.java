@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -81,6 +82,19 @@ public class DepotDispatcher {
 	private static final long FROM_TOLERANCE_MILLIS = 30000;
 
 	private static final int DUTY_DEPLOY_MARGIN_MILLIS = 15000;
+	/**
+	 * Longer than any train takes from its siding to the first stop of its duty.
+	 */
+	static final long MAX_LEAD_MILLIS = 4 * 3600000L;
+	/**
+	 * The keys of the duties' paths as last worked out, kept for a minute of the day (end-to-end check: working them out
+	 * every tick for every duty took most of a simulated day). A key changes only with the duties, the weekday or the
+	 * routes; a change to a route is seen within the minute.
+	 */
+	private final Map<DepotDuties.Slot, String> slotKeys = new IdentityHashMap<>();
+	private long slotKeysMinute = Long.MIN_VALUE;
+	private int slotKeysWeekday = -1;
+	private DepotDuties slotKeysDuties;
 
 	/**
 	 * Called once a tick before trains reserve their services, which forgets the ones no train reserved last tick.
@@ -263,7 +277,12 @@ public class DepotDispatcher {
 				if (duty == null || duty.segments.isEmpty() || hasDutyRun(dutySidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) >= 0) {
 					continue;
 				}
-				final String key = DutyShapes.getSlotKey(slots, i, weekday, routes);
+				// Not due for hours: no way out of a siding takes that long, so it can't leave now (found by the whole-day
+				// check, where working out every later duty's key each tick took most of the time)
+				if (DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - currentMillis > MAX_LEAD_MILLIS) {
+					continue;
+				}
+				final String key = getSlotKey(currentMillis, duties, slots, i, weekday, routes);
 				if (key == null) {
 					continue;
 				}
@@ -326,6 +345,23 @@ public class DepotDispatcher {
 			lastReleaseMillis = currentMillis;
 		}
 		return best;
+	}
+
+	private String getSlotKey(long currentMillis, DepotDuties duties, List<DepotDuties.Slot> slots, int slotIndex, int weekday, LongFunction<? extends PlanRoute> routes) {
+		final long minute = Math.floorDiv(currentMillis, 60000);
+		if (minute != slotKeysMinute || weekday != slotKeysWeekday || duties != slotKeysDuties) {
+			slotKeys.clear();
+			slotKeysMinute = minute;
+			slotKeysWeekday = weekday;
+			slotKeysDuties = duties;
+		}
+		final DepotDuties.Slot slot = slots.get(slotIndex);
+		if (slotKeys.containsKey(slot)) {
+			return slotKeys.get(slot);
+		}
+		final String key = DutyShapes.getSlotKey(slots, slotIndex, weekday, routes);
+		slotKeys.put(slot, key);
+		return key;
 	}
 
 	/**

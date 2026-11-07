@@ -1,7 +1,9 @@
 package transitsim.tools;
 
 import transitsim.plan.OperatingDay;
+import transitsim.sim.DayRun;
 import transitsim.sim.EventSimulator;
+import transitsim.sim.RunInvariants;
 import transitsim.sim.SimDataset;
 import transitsim.sim.SimEvent;
 import transitsim.sim.SimScope;
@@ -28,7 +30,10 @@ import java.util.TreeSet;
  * ({@link SimDataset}), and prints what the trains did and how long it took.
  * <p>
  * Arguments: the database, then optionally the day ({@code yyyy-mm-dd}, today if left out), the time zone ({@code UTC}
- * if left out), the hour the operating day starts at (3 if left out) and {@code --events} to print every event.
+ * if left out), the hour the operating day starts at (3 if left out), and the flags {@code --events} to print every event
+ * and {@code --check} for the end-to-end check: the rules no train may break ({@link RunInvariants}) looked at every
+ * second, and how the day went against the timetables ({@link DayRun}); it exits with 1 if a rule was broken or the
+ * trains deadlocked.
  */
 public final class SimulateDay {
 
@@ -39,22 +44,35 @@ public final class SimulateDay {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0) {
-			System.out.println("Usage: SimulateDay <mtr.db> [yyyy-mm-dd] [time zone] [day start hour] [--events]");
+			System.out.println("Usage: SimulateDay <mtr.db> [yyyy-mm-dd] [time zone] [day start hour] [--events] [--check]");
 			return;
 		}
-		final boolean printEvents = args[args.length - 1].equals("--events");
-		final int count = printEvents ? args.length - 1 : args.length;
-		final LocalDate day = count > 1 ? LocalDate.parse(args[1]) : LocalDate.now();
-		final String timeZone = count > 2 ? args[2] : "UTC";
-		final int dayStartHour = count > 3 ? Integer.parseInt(args[3]) : OperatingDay.DEFAULT_DAY_START_HOUR;
+		final List<String> flags = new ArrayList<>();
+		final List<String> values = new ArrayList<>();
+		for (final String arg : args) {
+			(arg.startsWith("--") ? flags : values).add(arg);
+		}
+		final boolean printEvents = flags.contains("--events");
+		final boolean check = flags.contains("--check");
+		final int count = values.size();
+		final LocalDate day = count > 1 ? LocalDate.parse(values.get(1)) : LocalDate.now();
+		final String timeZone = count > 2 ? values.get(2) : "UTC";
+		final int dayStartHour = count > 3 ? Integer.parseInt(values.get(3)) : OperatingDay.DEFAULT_DAY_START_HOUR;
 		OperatingDay.set(timeZone, dayStartHour);
 
-		byte[] data = read(args[0]);
+		byte[] data = read(values.get(0));
 		if (data == null) {
 			System.out.println("The database has no simulation data. Save the world with this version of the mod first.");
 			return;
 		}
-		SimDataset dataset = SimDataset.fromBytes(data);
+		SimDataset dataset;
+		try {
+			dataset = SimDataset.fromBytes(data);
+		} catch (Exception e) {
+			// Saved by an older version: the world needs saving with this one, as upgrading resets what isn't its map
+			System.out.println("UNREADABLE simulation data, saved by another version: " + e);
+			return;
+		}
 		// -Dmtr.noLinePools=true runs without trains going back to other depots of their line, to compare
 		if (Boolean.getBoolean("mtr.noLinePools")) {
 			dataset.sidings.forEach(siding -> siding.linePool = "");
@@ -88,7 +106,15 @@ public final class SimulateDay {
 		final long runStart = System.nanoTime();
 		// -Dmtr.simHours=N simulates only the first N hours, to compare runs of a big world quickly
 		final long hours = Long.getLong("mtr.simHours", 24L);
-		simulator.advanceTo(dayStart + hours * HOUR);
+		final RunInvariants<SimDataset.DataTrack> invariants = check ? new RunInvariants<>(simulator.getRunner()) : null;
+		if (invariants == null) {
+			simulator.advanceTo(dayStart + hours * HOUR);
+		} else {
+			for (long time = dayStart; time < dayStart + hours * HOUR; time += 1000) {
+				simulator.advanceTo(time);
+				invariants.check();
+			}
+		}
 		final long runEnd = System.nanoTime();
 
 		final List<SimEvent> events = simulator.events(0);
@@ -143,6 +169,20 @@ public final class SimulateDay {
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
 		final long ticks = hours * HOUR / 50;
 		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, trains moved in %.2f%% of ticks%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, trains.isEmpty() ? 0 : 100.0 * simulator.getRunner().getTrainTicks() / ticks / trains.size());
+		if (invariants != null) {
+			final long deadlocks = kinds.getOrDefault(SimEvent.Kind.DEADLOCK, 0);
+			System.out.printf("CHECK %d rules broken, %d trains stuck over 10 minutes, %d deadlocks%n", invariants.getViolations().size(), invariants.getStuck().size(), deadlocks);
+			invariants.getViolations().stream().limit(30).forEach(line -> System.out.println("  broken: " + line));
+			invariants.getStuck().values().stream().limit(30).forEach(line -> System.out.println("  stuck: " + line));
+			// How the day went against the timetables, run again on its own
+			final DayRun dayRun = DayRun.run(dataset, dayStart, Collections.emptySet(), Collections.emptyList(), () -> false);
+			final Map<DayRun.ProblemKind, Integer> problems = new TreeMap<>();
+			dayRun.problems.forEach(problem -> problems.merge(problem.kind, 1, Integer::sum));
+			System.out.printf("DAY %d trips, problems %s%n", dayRun.trips.size(), problems);
+			if (!invariants.getViolations().isEmpty() || deadlocks > 0) {
+				System.exit(1);
+			}
+		}
 	}
 
 	/**

@@ -363,7 +363,8 @@ public final class Arbiter<K extends Comparable<K>> {
 	private static <K> boolean conflicts(Claim<K> claim, Claim<K> other) {
 		switch (claim.kind) {
 			case SINGLE_TRACK:
-				return claim.way != other.way;
+				// Both ways, as by a train turning back on it, keeps every other train off it
+				return claim.way != other.way || claim.way == 0;
 			case TURNOUT:
 				// Trains on the same route through it follow each other, which the block sections keep apart
 				return claim.way != other.way;
@@ -466,6 +467,14 @@ public final class Arbiter<K extends Comparable<K>> {
 		 */
 		public static <K> Claim<K> singleTrack(K resource, boolean forwards) {
 			return new Claim<>(resource, Resource.Kind.SINGLE_TRACK, forwards ? 1 : -1, 1);
+		}
+
+		/**
+		 * A single track run along both ways by one train, as a stop it turns back at (掉头车优先): no other train has it
+		 * either way meanwhile.
+		 */
+		public static <K> Claim<K> singleTrackBothWays(K resource) {
+			return new Claim<>(resource, Resource.Kind.SINGLE_TRACK, 0, 1);
 		}
 
 		/**

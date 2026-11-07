@@ -1411,6 +1411,14 @@ sequenceDiagram
 
 线路、车站和时刻事件引用上传的音频（自动报站用它）；客户端缓存的容量上限和清理。按位置播放已经有了：上传的音频是游戏声音，单声道的录音按位置衰减（2026-11-05）。
 
+### 端到端检查（0.39.0）
+
+- `transitsim.sim.RunInvariants`：只读的不变量检查，宿主或测试每 tick（或每秒）调 `check()`；违规在 `getViolations()`，想走走不了太久的在 `getStuck()`。规则见 `MTR-模拟组件与解耦.md` 2.4 节。
+- `WholeDayTest`（组件，`-Dbenchmark=true` 才跑）、`GameChainTest`（common）、`RunInvariantsTest`（组件）。
+- `SimulateDay --check`；`C:/gtmp/fast/e2e.sh` 跑本机存档的副本。
+- 为了不开服务器也能生成运用路径：`Siding.generateDutyRoute(Executor, …)`（原来取 `MinecraftServer` 的那个调它）和 `Depot.generateDutyPathsNow`（照 `generateDutiesOnly` 给每条存车线找运用路径，结果立刻应用）。
+- 修复的位置：`TickRunner.HeadlessTrain.canDeploy` 和 `TrainServer.canDeploy`（按运用跑、路径只有存车线时也请求出库）；两边的 `followPath`（回到存车线路径时归零下一个停车点）；`TrainMotion` 前方被占的分支（闭塞区段停车点不越过下一个站台）；`DepotDispatcher.findDutyDeploy`（`MAX_LEAD_MILLIS`、`getSlotKey` 按分钟缓存）；`RunReservations.toClaims` 和 `Arbiter.Claim.singleTrackBothWays`（同一列车两个方向合成双向占用），两边的 `getRunMoves`（到要掉头的站台为止时加上反方向）。
+
 ## 12. 读代码的几点提示
 
 - **一份数据，服务端和客户端各有一份**：`Station`、`Route`、`Depot` 等在两边都有，都能用 msgpack（存档）和 `FriendlyByteBuf`（网络）读写。改字段时，存档读写、网络读写、`update(key, packet)` 三处都要改。
