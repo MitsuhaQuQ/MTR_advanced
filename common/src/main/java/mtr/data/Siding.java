@@ -784,6 +784,26 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		tripPaths.values().forEach(tripPath -> consumer.accept(nodesOf(tripPath.path)));
 	}
 
+	/**
+	 * @return a hash of the ends and lengths of its paths, which changes when path generation gives it other paths, for
+	 * checks that would otherwise go through every node of every path
+	 */
+	public long getPathSignature() {
+		long hash = pathSignature(path);
+		// Added up, so the order the trip paths are kept in doesn't matter
+		for (final Map.Entry<String, TripPath<PathData>> entry : tripPaths.entrySet()) {
+			hash += (entry.getKey().hashCode() * 0x9E3779B97F4A7C15L) ^ pathSignature(entry.getValue().path);
+		}
+		return hash;
+	}
+
+	private static long pathSignature(List<PathData> pathDataList) {
+		if (pathDataList.isEmpty()) {
+			return 0;
+		}
+		return (pathDataList.size() * 31L + pathDataList.get(0).startingPos.asLong()) * 31 + pathDataList.get(pathDataList.size() - 1).getLastPos().asLong();
+	}
+
 	private static long[] nodesOf(List<PathData> pathDataList) {
 		if (pathDataList.isEmpty()) {
 			return new long[0];

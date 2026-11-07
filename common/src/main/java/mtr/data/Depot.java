@@ -1486,7 +1486,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * @return whether the auto duties need working out again, which is then taken as done
 	 */
 	public boolean takeAutoDutiesChange(DataCache dataCache, Set<Siding> sidings) {
-		final LineDuties.Unit unit = LineDuties.of(this, dataCache, sidings);
+		return takeAutoDutiesChange(LineDuties.of(this, dataCache, sidings));
+	}
+
+	/**
+	 * @param unit the depot's planning unit, as {@link LineDuties#unitsOf} gives it, or null if it doesn't plan by line
+	 * @return whether the auto duties need working out again, which is then taken as done
+	 */
+	public boolean takeAutoDutiesChange(LineDuties.Unit unit) {
 		setLineUnit(unit);
 		final String key = unit == null ? null : unit.key;
 		if (key == null) {

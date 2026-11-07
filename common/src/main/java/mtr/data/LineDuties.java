@@ -158,73 +158,116 @@ public final class LineDuties {
 		if (!plansByLine(depot, dataCache) && !(forDraft && canPlanByLine(depot, dataCache))) {
 			return null;
 		}
-		// The routes of each line, and the depots planning by line, by the lines they run
-		final Map<String, List<Route>> lineRoutes = new TreeMap<>();
-		dataCache.routeIdMap.values().forEach(route -> {
-			if (route.transportMode == depot.transportMode) {
-				lineRoutes.computeIfAbsent(getLineKey(route), key -> new ArrayList<>()).add(route);
-			}
-		});
-		final Map<String, List<Depot>> lineDepots = new HashMap<>();
-		final Map<Long, Set<String>> depotLines = new HashMap<>();
-		dataCache.depotIdMap.values().forEach(other -> {
-			if (other.transportMode == depot.transportMode && (plansByLine(other, dataCache) || forDraft && other == depot)) {
-				other.getRoutes(dataCache).forEach(route -> {
-					final String lineKey = getLineKey(route);
-					depotLines.computeIfAbsent(other.id, key -> new TreeSet<>()).add(lineKey);
-					final List<Depot> depots = lineDepots.computeIfAbsent(lineKey, key -> new ArrayList<>());
-					if (!depots.contains(other)) {
-						depots.add(other);
-					}
-				});
-			}
-		});
-		// Lines joined by through links between their services
-		final Map<String, Set<String>> linkedLines = new HashMap<>();
-		dataCache.routeIdMap.values().forEach(route -> {
-			if (route.transportMode != depot.transportMode) {
+		final Lines lines = new Lines(depot.transportMode, dataCache, forDraft ? depot : null);
+		return lines.unitOf(depot, dataCache, sidings, forDraft ? depot.id : 0);
+	}
+
+	/**
+	 * The planning units of the depots, the routes and depots of the world read once for them all and each unit made once
+	 * for all its depots, as the check for changes to the auto duties does for every depot at once.
+	 *
+	 * @param sidings every siding of the world
+	 * @return each depot's planning unit by its id, left out if it doesn't plan by line; depots of one unit share it
+	 */
+	public static Map<Long, Unit> unitsOf(Collection<Depot> depots, DataCache dataCache, Collection<Siding> sidings) {
+		final Map<Long, Unit> units = new HashMap<>();
+		final Map<TransportMode, Lines> linesByMode = new EnumMap<>(TransportMode.class);
+		depots.forEach(depot -> {
+			if (units.containsKey(depot.id) || !plansByLine(depot, dataCache)) {
 				return;
 			}
-			for (int i = 0; i < route.timetable.getTableCount(); i++) {
-				route.timetable.getTable(i).links.values().forEach(link -> {
-					final Route linked = dataCache.routeIdMap.get(link.routeId);
-					if (linked != null && linked.transportMode == route.transportMode) {
-						linkedLines.computeIfAbsent(getLineKey(route), key -> new TreeSet<>()).add(getLineKey(linked));
-						linkedLines.computeIfAbsent(getLineKey(linked), key -> new TreeSet<>()).add(getLineKey(route));
-					}
-				});
-			}
+			final Lines lines = linesByMode.computeIfAbsent(depot.transportMode, transportMode -> new Lines(transportMode, dataCache, null));
+			final Unit unit = lines.unitOf(depot, dataCache, sidings, 0);
+			// The unit is everything reached from any of its depots, so it is the same unit from each of them
+			unit.depotIds.forEach(depotId -> units.put(depotId, unit));
 		});
+		return units;
+	}
 
-		// The unit: everything reached from the depot through the lines it runs
-		final Set<String> lines = new TreeSet<>();
-		final Set<Long> depotIds = new TreeSet<>();
-		final ArrayDeque<Object> queue = new ArrayDeque<>();
-		depotIds.add(depot.id);
-		queue.add(depot);
-		while (!queue.isEmpty()) {
-			final Object next = queue.poll();
-			if (next instanceof Depot) {
-				depotLines.getOrDefault(((Depot) next).id, Collections.emptySet()).forEach(lineKey -> {
-					if (lines.add(lineKey)) {
-						queue.add(lineKey);
-					}
-				});
-			} else {
-				final String lineKey = (String) next;
-				lineDepots.getOrDefault(lineKey, Collections.emptyList()).forEach(other -> {
-					if (depotIds.add(other.id)) {
-						queue.add(other);
-					}
-				});
-				linkedLines.getOrDefault(lineKey, Collections.emptySet()).forEach(other -> {
-					if (lines.add(other)) {
-						queue.add(other);
-					}
-				});
-			}
+	/**
+	 * The lines of one transport mode and the depots planning by line, joined by the routes they list and the through
+	 * links between services.
+	 */
+
+	private static final class Lines {
+
+		private final Map<String, List<Route>> lineRoutes = new TreeMap<>();
+		private final Map<String, List<Depot>> lineDepots = new HashMap<>();
+		private final Map<Long, Set<String>> depotLines = new HashMap<>();
+		private final Map<String, Set<String>> linkedLines = new HashMap<>();
+
+		/**
+		 * @param draftDepot the depot drafting its duties, counted as planning by line though it has duties set, or null
+		 */
+		private Lines(TransportMode transportMode, DataCache dataCache, Depot draftDepot) {
+			// The routes of each line, and the depots planning by line, by the lines they run
+			dataCache.routeIdMap.values().forEach(route -> {
+				if (route.transportMode == transportMode) {
+					lineRoutes.computeIfAbsent(getLineKey(route), key -> new ArrayList<>()).add(route);
+				}
+			});
+			dataCache.depotIdMap.values().forEach(other -> {
+				if (other.transportMode == transportMode && (plansByLine(other, dataCache) || other == draftDepot)) {
+					other.getRoutes(dataCache).forEach(route -> {
+						final String lineKey = getLineKey(route);
+						depotLines.computeIfAbsent(other.id, key -> new TreeSet<>()).add(lineKey);
+						final List<Depot> depots = lineDepots.computeIfAbsent(lineKey, key -> new ArrayList<>());
+						if (!depots.contains(other)) {
+							depots.add(other);
+						}
+					});
+				}
+			});
+			// Lines joined by through links between their services
+			dataCache.routeIdMap.values().forEach(route -> {
+				if (route.transportMode != transportMode) {
+					return;
+				}
+				for (int i = 0; i < route.timetable.getTableCount(); i++) {
+					route.timetable.getTable(i).links.values().forEach(link -> {
+						final Route linked = dataCache.routeIdMap.get(link.routeId);
+						if (linked != null && linked.transportMode == route.transportMode) {
+							linkedLines.computeIfAbsent(getLineKey(route), key -> new TreeSet<>()).add(getLineKey(linked));
+							linkedLines.computeIfAbsent(getLineKey(linked), key -> new TreeSet<>()).add(getLineKey(route));
+						}
+					});
+				}
+			});
 		}
-		return new Unit(lines, lineRoutes, depotIds, dataCache, sidings, forDraft ? depot.id : 0);
+
+		/**
+		 * @return the unit: everything reached from the depot through the lines it runs
+		 */
+		private Unit unitOf(Depot depot, DataCache dataCache, Collection<Siding> sidings, long draftDepotId) {
+			final Set<String> lines = new TreeSet<>();
+			final Set<Long> depotIds = new TreeSet<>();
+			final ArrayDeque<Object> queue = new ArrayDeque<>();
+			depotIds.add(depot.id);
+			queue.add(depot);
+			while (!queue.isEmpty()) {
+				final Object next = queue.poll();
+				if (next instanceof Depot) {
+					depotLines.getOrDefault(((Depot) next).id, Collections.emptySet()).forEach(lineKey -> {
+						if (lines.add(lineKey)) {
+							queue.add(lineKey);
+						}
+					});
+				} else {
+					final String lineKey = (String) next;
+					lineDepots.getOrDefault(lineKey, Collections.emptyList()).forEach(other -> {
+						if (depotIds.add(other.id)) {
+							queue.add(other);
+						}
+					});
+					linkedLines.getOrDefault(lineKey, Collections.emptySet()).forEach(other -> {
+						if (lines.add(other)) {
+							queue.add(other);
+						}
+					});
+				}
+			}
+			return new Unit(lines, lineRoutes, depotIds, dataCache, sidings, draftDepotId);
+		}
 	}
 
 	/**

@@ -601,7 +601,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
         - 线路拓扑：车厂列车走的轨道，即存车线路径和运用路径的节点，共用节点的连成一张网。寻路边界挡住寻路，自然把网分开。
         - 一张网上新旧都有，这张网上按运用的车厂就不锁咽喉。
       - **实现**：`transitsim.network.LockNetworks`（并查集），两边宿主共用。
-        - 游戏：`RailwayData.updateLockNetworks` 每 100 tick 算一次，`TrainServer.getThroatLocks` 查 `isThroatLocksOff`；状态变化时服务端日志列出受影响的车厂和旧算法车厂。
+        - 游戏：`RailwayData.updateLockNetworks` 每 100 tick 检查一次，各存车线路径的签名（`Siding.getPathSignature`：每条路径的条数和两端）和车厂的运行方式没变就跳过，变了才把所有路径节点重新并一遍（64 份黄线上每次 230 毫秒），`TrainServer.getThroatLocks` 查 `isThroatLocksOff`；状态变化时服务端日志列出受影响的车厂和旧算法车厂。
         - 组件：`SimDataset.getLockNetworks`，`DepotBoard.throatLocksAllowed`。
         - 网页：客户端按它看到的存车线路径（地图同步的 `MAP_SIDINGS`，没有运用路径）算一遍。车厂树里旧算法车厂标"旧逻辑"，受影响的标"咽喉锁未启用"，停站编辑的咽喉说明下写原因和办法。
       - **yel**：没有一张网新旧都有。按运用的黄线、机场线和按频率的车厂不共用轨道，所以咽喉锁照常启用，日志也没有警告。日跑工具（新版服务端存的数据，03:00–08:00）：85 张网，0 张新旧混用，201 个车厂都不受影响；859 列车，到站 80627、发车 84168、回库 3698，没有卡死。

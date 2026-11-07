@@ -97,6 +97,18 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * Works out again which depots share track with a depot not running by duties, and says so in the log when it changes.
 	 */
 	private void updateLockNetworks() {
+		// Joining every node of every path takes long on large networks, so it is done only when the paths or depots change
+		long signature = 17;
+		for (final Siding siding : sidings) {
+			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
+			if (depot != null) {
+				signature += (siding.id * 31 + depot.id) * 0x9E3779B97F4A7C15L ^ (depot.transportMode.ordinal() * 2L + (depot.getRunDuties() != null || Depot.supportsTimetable(depot.transportMode) ? 1 : 0)) * 0xBF58476D1CE4E5B9L ^ siding.getPathSignature();
+			}
+		}
+		if (lockNetworksSignature != null && lockNetworksSignature == signature) {
+			return;
+		}
+		lockNetworksSignature = signature;
 		final transitsim.network.LockNetworks lockNetworks = new transitsim.network.LockNetworks();
 		sidings.forEach(siding -> {
 			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
@@ -139,6 +151,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	private Set<Long> throatLocksOffDepots = Collections.emptySet();
 	private String lockNetworksState = null;
+	/**
+	 * What the lock networks were last worked out from ({@link #updateLockNetworks}).
+	 */
+	private Long lockNetworksSignature;
 	/**
 	 * Which version of each part of the data players edit the server has (multiplayer edit conflicts).
 	 */
@@ -671,12 +687,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// A depot running by a timetable with no duties set has its duties worked out with its paths, so its paths are found
 		// again when its timetables or sidings change, and once after the world is loaded; as many depots at once as there
 		// are threads free, sharing one copy of the rails (RailwayDataPathGenerationModule)
-		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null) {
+		// The units are made once for all the depots, each unit once for all its depots, as reading the world for each depot
+		// took seconds on large networks
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && railwayDataPathGenerationModule.canGenerate()) {
+			final Map<Long, LineDuties.Unit> units = LineDuties.unitsOf(depots, dataCache, sidings);
 			for (final Depot depot : depots) {
 				if (!railwayDataPathGenerationModule.canGenerate()) {
 					break;
 				}
-				if (depot.takeAutoDutiesChange(dataCache, sidings)) {
+				if (depot.takeAutoDutiesChange(units.get(depot.id))) {
 					railwayDataPathGenerationModule.generatePath(world.getServer(), depot.id);
 				}
 			}
