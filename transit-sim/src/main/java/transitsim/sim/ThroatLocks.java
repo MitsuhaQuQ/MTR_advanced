@@ -88,6 +88,19 @@ public final class ThroatLocks {
 	}
 
 	/**
+	 * @return every turnout and zone of the stops' ways in and out along the path, each once, for the run layer (5.5),
+	 * which claims each with the section the train needs to pass its node
+	 */
+	public List<ThroatRoutes.Item> getItems() {
+		final Map<Long, ThroatRoutes.Item> items = new TreeMap<>();
+		stops.forEach(stop -> {
+			stop.throat.entry.forEach(item -> items.putIfAbsent(grantKey(item), item));
+			stop.throat.exit.forEach(item -> items.putIfAbsent(grantKey(item), item));
+		});
+		return new ArrayList<>(items.values());
+	}
+
+	/**
 	 * @return the turnouts of the exit route of the stop on this rail, to ask for with the run leaving it
 	 */
 	public List<ThroatRoutes.Item> getExit(int platformRail) {

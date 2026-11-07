@@ -39,14 +39,12 @@ class RestoreTest {
 		}
 	}
 
-	@Test
-	void withoutTheCruisingCapATrainStoppingShortGetsThereAtAnotherTime() {
-		// What the game saves now leaves it out, so G0 saves it as well (review A08)
-		assertCarriesOn(SimDatasetTest.lines(3, 400, 2, 8, 3).toBytes(), false);
-	}
+	// The run layer (5.5) keeps the run segment in the record, cap and all, so a record without the cruising cap alone no
+	// longer makes a run come out different, as it did with the rules taken over from MTR
 
 	/**
-	 * @param withCap false to leave the cruising cap out of the records, which should then make some run come out different
+	 * @param withCap false to leave the cruising cap and the run segment out of the records, as the game's saves before
+	 *                version 5 of the records, which should then make some run come out different
 	 */
 	private static void assertCarriesOn(byte[] bytes, boolean withCap) {
 		boolean allSame = true;
@@ -61,7 +59,7 @@ class RestoreTest {
 			if (!withCap) {
 				final List<RunRecord.TrainRecord> trains = new ArrayList<>(record.trains);
 				record.trains.clear();
-				trains.forEach(train -> record.trains.add(new RunRecord.TrainRecord(train.sidingId, train.trainId, train.speed, train.railProgress, train.elapsedDwellTicks, train.nextStoppingIndex, train.nextPlatformIndex, train.reversed, train.onRoute, train.service, Float.NaN)));
+				trains.forEach(train -> record.trains.add(new RunRecord.TrainRecord(train.sidingId, train.trainId, train.speed, train.railProgress, train.elapsedDwellTicks, train.nextStoppingIndex, train.nextPlatformIndex, train.reversed, train.onRoute, train.service, Float.NaN, train.authorityEnd, null)));
 			}
 			final EventSimulator<SimDataset.DataTrack> resumed = EventSimulator.resume(startMillis -> SimDataset.start(bytes, startMillis).get(), record, time);
 			resumed.advanceTo(end);

@@ -267,6 +267,8 @@ Both versions need [Architectury API](https://modrinth.com/mod/architectury-api)
 
 The simulation component in `transit-sim` is a plain Java project without Minecraft (Java 8 by default, raised when needed), built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 
+Trains on rails run by the project's own run layer (`transitsim.run`) instead of the rules taken over from MTR: one arbiter grants each train its movement authority section by section, single track stretches and station throats whole, and a platform a train turns back at both ways at once, so trains bunched after a delay don't lock up at a terminal; a train waits where its authority ends, at its stop if the way ahead is taken.
+
 The end-to-end check runs the whole chain without the game: `transitsim.sim.WholeDayTest` (a day of a line run by duties with every way of handling delays, `-Dbenchmark=true`), common `GameChainTest` (the game finds a depot's duty paths, the component runs them) and `SimulateDay --check` on a saved world's database, all checked for trains appearing or vanishing away from sidings, jumping, overlapping or being stuck.
 
 Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.

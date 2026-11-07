@@ -1411,6 +1411,15 @@ sequenceDiagram
 
 线路、车站和时刻事件引用上传的音频（自动报站用它）；客户端缓存的容量上限和清理。按位置播放已经有了：上传的音频是游戏声音，单声道的录音按位置衰减（2026-11-05）。
 
+### 运行层（0.40.0，`transitsim.run`）
+
+规则见 `MTR-模拟组件与解耦.md` 5.5 节。组件里的列车类由它跑（`TickRunner.RUN_LAYER`，缆车仍走 `TrainMotion`）。
+- `PathClaims`：路径上一段换成按顺序的资源组：普通区段每段一组（`BlockSections` 的段，涂色信号区段整块），连续的单线区间连同方向一组，要原地掉头的站台连同两个方向一组（掉头车优先）；方向是单独的资源键（`directionOf`）。`attach` 把咽喉道岔和联锁区并进经过其节点的那一组。
+- `Authority`：每列车的移动授权。每 tick：车身和已批的组照常保持（`RunReservations.holdClaims`），前方没批的组按顺序一起申请（`requestGroups`），仲裁器结算时批最长可用前缀（`Arbiter.requestGroups` / `takeGrantedGroups`，批准的并进已有占用）；授权终点到下一组的起点为止，后面没有要申请的就到目标。已批的组被外部东西站上就收回到它之前。换路径时当场占上能占的；续跑时用记录里的终点（`restore`）。
+- `RunMotion`：每 tick 的运动。下一站每 tick 从位置推出（`findNextStop`，车在动时不算刚离开的那站）；按运行段开到"下一站"和"授权终点"较近的一个；停在授权终点只等不开门；到站记在车停在站上的第一个 tick；在库和回库同原来。
+- `TickRunner.HeadlessTrain.runLayerTick`：目标是在站时再下一站、在路上下一站、在库里第一个站台；先更新授权，再推进；`isRunGranted` 直接看授权是否已超过车头。`publishOccupied` 每 tick 结算前把外部占用、外部列车、被接管的车和已拆除的轨道报给仲裁器（`Arbiter.setOccupied`）。新内核下 `getQuietTicks` 返回 0。
+- `RunRecord` 第 5 版：`authorityEnd`、`segment`（`RunSegment.Spec`），续跑时在第一个 tick 重建运行段。
+
 ### 端到端检查（0.39.0）
 
 - `transitsim.sim.RunInvariants`：只读的不变量检查，宿主或测试每 tick（或每秒）调 `check()`；违规在 `getViolations()`，想走走不了太久的在 `getStuck()`。规则见 `MTR-模拟组件与解耦.md` 2.4 节。

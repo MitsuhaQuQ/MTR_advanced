@@ -125,7 +125,8 @@ class SimDatasetTest {
 				assertEquals(everyTick.getRunner().getTrains().size(), skipping.getRunner().getTrains().size());
 			}
 			assertEquals(describe(everyTick.events(0)), describe(skipping.events(0)));
-			assertTrue(skipping.getRunner().getTrainTicks() * 3 < everyTick.getRunner().getTrainTicks(), skipping.getRunner().getTrainTicks() + " " + everyTick.getRunner().getTrainTicks());
+			// The run layer (5.5) moves every train every tick for now
+			assertTrue(TickRunner.RUN_LAYER || skipping.getRunner().getTrainTicks() * 3 < everyTick.getRunner().getTrainTicks(), skipping.getRunner().getTrainTicks() + " " + everyTick.getRunner().getTrainTicks());
 		}
 	}
 

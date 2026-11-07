@@ -90,6 +90,11 @@ public final class TickRunner<T extends RunTrack> {
 	 */
 	private final Map<UUID, Long> externalUntil = new TreeMap<>();
 	/**
+	 * The tracks the block sections were cut from, and who the arbiter was last told stands where (run layer, 5.5).
+	 */
+	private Map<UUID, RunTrack> blockTracks = new HashMap<>();
+	private final Set<Long> publishedOccupants = new HashSet<>();
+	/**
 	 * The rails of trains the runner doesn't move, by their IDs, and who stands for each of them on the rails (G0).
 	 */
 	private final Map<Long, Set<UUID>> externalTrainRails = new HashMap<>();
@@ -187,6 +192,10 @@ public final class TickRunner<T extends RunTrack> {
 	 * The occupant of rails taken from outside.
 	 */
 	public static final long EXTERNAL_OCCUPANT = -1;
+	/**
+	 * What stands on tracks taken out of the network, for the arbiter (run layer, 5.5).
+	 */
+	private static final long REMOVED_OCCUPANT = -2;
 	private static final long TICK = MotionConstants.MILLIS_PER_TICK;
 	/**
 	 * The longest a standing train is left alone before it works out again how long it stands, ten minutes.
@@ -197,6 +206,12 @@ public final class TickRunner<T extends RunTrack> {
 	 * @param startMillis the time of the first tick, as the timetable counts it
 	 * @param routes      finds a route by ID
 	 */
+	/**
+	 * Whether trains that aren't cable cars run by the run layer (decoupling document 5.5) instead of the rules taken over
+	 * from MTR, while both are kept.
+	 */
+	public static volatile boolean RUN_LAYER = !"false".equals(System.getProperty("mtr.runLayer"));
+
 	public TickRunner(long startMillis, LongFunction<? extends PlanRoute> routes) {
 		millis = startMillis;
 		lastTickMillis = startMillis;
@@ -367,6 +382,7 @@ public final class TickRunner<T extends RunTrack> {
 	private transitsim.network.BlockSections getBlockSections() {
 		if (blockSections == null) {
 			final Map<UUID, RunTrack> tracks = new HashMap<>();
+			blockTracks = tracks;
 			sidings.values().forEach(sidingRun -> {
 				sidingRun.siding.path.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track));
 				sidingRun.siding.tripPaths.values().forEach(tripPath -> tripPath.path.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track)));
@@ -442,6 +458,52 @@ public final class TickRunner<T extends RunTrack> {
 	public void occupyUntil(UUID rail, long untilMillis) {
 		externalUntil.put(rail, untilMillis);
 		addOccupant(rail, Occupant.EXTERNAL);
+	}
+
+	/**
+	 * Tells the arbiter what stands where without being moved by the run layer (5.5): rails taken from outside until a
+	 * time, trains the host moves, and trains the host has taken over, each as the block sections of its rails.
+	 */
+	private void publishOccupied() {
+		final Map<Long, Set<UUID>> occupied = new HashMap<>();
+		externalUntil.forEach((rail, untilMillis) -> {
+			if (untilMillis > millis) {
+				occupied.computeIfAbsent(EXTERNAL_OCCUPANT, key -> new HashSet<>()).addAll(getUnits(rail));
+			}
+		});
+		externalTrainRails.forEach((trainId, rails) -> rails.forEach(rail -> occupied.computeIfAbsent(trainId, key -> new HashSet<>()).addAll(getUnits(rail))));
+		// A track taken out of the network is as good as stood on: no train is let onto it
+		removedTracks.forEach(rail -> occupied.computeIfAbsent(REMOVED_OCCUPANT, key -> new HashSet<>()).addAll(getUnits(rail)));
+		trainsById.values().forEach(train -> {
+			if (train.takenOver) {
+				train.heldRails.forEach(rail -> occupied.computeIfAbsent(train.id, key -> new HashSet<>()).add(rail));
+			}
+		});
+		publishedOccupants.forEach(occupant -> {
+			if (!occupied.containsKey(occupant)) {
+				reservations.setOccupied(occupant, Collections.emptySet());
+			}
+		});
+		occupied.forEach(reservations::setOccupied);
+		publishedOccupants.clear();
+		publishedOccupants.addAll(occupied.keySet());
+	}
+
+	/**
+	 * @return the block sections of a rail: its pieces, as the run layer claims them
+	 */
+	private List<UUID> getUnits(UUID rail) {
+		getBlockSections();
+		final RunTrack track = blockTracks.get(rail);
+		if (track == null) {
+			return Collections.singletonList(rail);
+		}
+		final int count = transitsim.network.BlockSections.getPieceCount(track.getTrackLength(), track.canAccelerate() ? cutSpeed(track) : -1);
+		final List<UUID> units = new ArrayList<>(count);
+		for (int k = 0; k < count; k++) {
+			units.add(transitsim.network.BlockSections.getPieceKey(rail, k));
+		}
+		return units;
 	}
 
 	/**
@@ -926,6 +988,9 @@ public final class TickRunner<T extends RunTrack> {
 		}
 		movingTrain = null;
 		tickPosition = Occupant.LAST;
+		if (RUN_LAYER) {
+			publishOccupied();
+		}
 		if (!hostResolves) {
 			reservations.resolve(millis);
 		}
@@ -1635,6 +1700,17 @@ public final class TickRunner<T extends RunTrack> {
 		 * What it goes by while it stands at a stop and is left alone.
 		 */
 		private Standing standing;
+		/**
+		 * The movement authority of the run layer (5.5), and where the head was and how far the train may run at its last
+		 * update.
+		 */
+		private final transitsim.run.Authority authority;
+		private double authorityHead;
+		private double authorityEnd;
+		/**
+		 * The run segment of the record it carries on from, rebuilt in its first tick, when its speed curves are there.
+		 */
+		private RunSegment.Spec restoredSegment;
 
 		private HeadlessTrain(long id, SidingRun sidingRun) {
 			this.id = id;
@@ -1652,6 +1728,7 @@ public final class TickRunner<T extends RunTrack> {
 			service = new TrainService<>(siding.trainId, this, () -> millis);
 			service.setSiding(sidingRun.sidingId);
 			service.setNetwork(sidingRun.depot, routes, null);
+			authority = new transitsim.run.Authority(id, () -> reservations);
 		}
 
 		public boolean isTakenOver() {
@@ -1667,7 +1744,7 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
 			values.writeTo(writer);
-			return new RunRecord.TrainRecord(sidingRun.sidingId, id, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, onRoute, writer.toBytes(), cruiseCap);
+			return new RunRecord.TrainRecord(sidingRun.sidingId, id, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, onRoute, writer.toBytes(), cruiseCap, authority.getRecordEnd(), runSegment == null ? null : runSegment.describe(millis));
 		}
 
 		/**
@@ -1683,6 +1760,10 @@ public final class TickRunner<T extends RunTrack> {
 			nextPlatformIndex = trainRecord.nextPlatformIndex;
 			reversed = trainRecord.reversed;
 			onRoute = trainRecord.onRoute;
+			if (!Double.isNaN(trainRecord.authorityEnd)) {
+				authority.restore(trainRecord.authorityEnd);
+			}
+			restoredSegment = trainRecord.segment;
 			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(trainRecord.service)));
 			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
 			service.setPathVariants(siding.pathVariants);
@@ -1737,6 +1818,13 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		/**
+		 * @return how far along its path the run layer last let the train run
+		 */
+		public double getAuthorityEnd() {
+			return authorityEnd;
+		}
+
+		/**
 		 * @return the rail of the path the head is on, which for a train standing at the end of a rail is that rail
 		 */
 		public int getHeadRail() {
@@ -1784,8 +1872,12 @@ public final class TickRunner<T extends RunTrack> {
 			requestedDeploy = false;
 			blockedRail = -1;
 			service.updateOvernight();
-			TrainMotion.tick(this, this, this, this, this, 1);
-			holdRun();
+			if (RUN_LAYER && !isContinuousMovement()) {
+				runLayerTick();
+			} else {
+				TrainMotion.tick(this, this, this, this, this, 1);
+				holdRun();
+			}
 			// What it reserves now it reserves again in every tick it is left alone
 			final List<Long> trips = new ArrayList<>(2);
 			sidingRun.depot.record(trips);
@@ -1794,6 +1886,66 @@ public final class TickRunner<T extends RunTrack> {
 			if (!trips.equals(recordedTrips)) {
 				recordedTrips = trips;
 				sidingRun.depot.changed = true;
+			}
+		}
+
+		/**
+		 * A tick of the run layer (5.5): the movement authority from where the head is towards where the train is going, then
+		 * the move along a run segment no further than it.
+		 */
+		private void runLayerTick() {
+			if (restoredSegment != null) {
+				// The same curve as before the record was made, as far along as then
+				final SpeedCurves.Run run = getRun(restoredSegment.startPosition);
+				if (run != null) {
+					runSegment = restoredSegment.rebuild(run);
+					runSegment.advance(restoredSegment.getTicksAt(millis - TICK));
+				}
+				restoredSegment = null;
+			}
+			final double trainLength = siding.trainCars * siding.spacing;
+			final double head = onRoute ? railProgress : (siding.railLength + trainLength) / 2;
+			authorityHead = head;
+			if (onRoute || service.isOnDuty()) {
+				final int stop = transitsim.run.RunMotion.findNextStop(this, head, onRoute && speed > 0);
+				final boolean atStop = !onRoute || speed <= 0 && Math.abs(distances.get(stop) - head) <= 1E-3;
+				final int targetStop = onRoute && atStop ? transitsim.run.RunMotion.findStopAfter(this, stop) : stop;
+				final List<T> claimTracks = path;
+				final List<Double> claimEnds = distances;
+				final transitsim.run.PathClaims.Path<T> claimPath = new transitsim.run.PathClaims.Path<T>() {
+					@Override
+					public List<T> getTracks() {
+						return claimTracks;
+					}
+
+					@Override
+					public double getEnd(int track) {
+						return claimEnds.get(track);
+					}
+
+					@Override
+					public boolean turnsBack(int track, int nextTrack) {
+						return claimTracks.get(track).isOppositeOf(claimTracks.get(nextTrack));
+					}
+				};
+				// The turnouts and zones of the stations' throats, claimed with the section taking the train past each (L2)
+				final List<transitsim.run.PathClaims.Attached> throats = new ArrayList<>();
+				final ThroatLocks locks = getThroatLocks();
+				if (locks != null) {
+					for (final transitsim.network.ThroatRoutes.Item item : locks.getItems()) {
+						final double itemStart = item.index <= 0 ? 0 : distances.get(Math.min(item.index, distances.size()) - 1);
+						final double itemEnd = item.endIndex <= 0 ? 0 : distances.get(Math.min(item.endIndex, distances.size()) - 1);
+						throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
+					}
+				}
+				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, distances.get(targetStop), getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
+			} else {
+				authority.release();
+				authorityEnd = head;
+			}
+			transitsim.run.RunMotion.tick(this, this, this, this, this, authorityEnd);
+			if (!onRoute && !service.isOnDuty()) {
+				authority.release();
 			}
 		}
 
@@ -1910,6 +2062,10 @@ public final class TickRunner<T extends RunTrack> {
 		 * has stood, or 0
 		 */
 		private long getQuietTicks() {
+			// The run layer moves every train every tick: these predictions are of the rules taken over from MTR (5.5)
+			if (RUN_LAYER && !isContinuousMovement()) {
+				return 0;
+			}
 			// A new train gets its stop times in its first tick, and works out when to leave from them
 			if (!siding.usesSpeedCurve || path.isEmpty() || service.isOnDuty() || sidingRun.depot.duties.diagramMode || service.getStopTimes() == null) {
 				return 0;
@@ -2353,6 +2509,10 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean isRunGranted(int fromIndex) {
+			if (RUN_LAYER && !isContinuousMovement()) {
+				// The run layer asks for the way ahead every tick; the train may go once some of it is granted
+				return authority.isGrantedBeyond(authorityHead);
+			}
 			final int runEnd = TrainRules.findRunEnd(this, fromIndex);
 			if (grantedRunEnd == runEnd) {
 				return true;

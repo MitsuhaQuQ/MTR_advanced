@@ -48,7 +48,8 @@ class DayRunTest {
 		final List<HostInput> inputs = Collections.singletonList(new HostInput.ExternalOccupancy(MONDAY + 6 * HOUR + 5 * MINUTE, 1, SimDatasetTest.plain(3, 4, 400).getTrackKey(), MONDAY + 6 * HOUR + 14 * MINUTE));
 		final DayRun dayRun = DayRun.run(SimDatasetTest.lines(1, 400, 2, 4, 10), DAY_START, Collections.emptySet(), inputs, () -> false);
 		final List<String> problems = describe(dayRun.problems);
-		assertTrue(dayRun.problems.stream().anyMatch(problem -> problem.kind == DayRun.ProblemKind.HELD_ON_LINE || problem.kind == DayRun.ProblemKind.WAITING_FOR_PLATFORM), problems.toString());
+		// The run layer keeps it at its stop until the way ahead is clear, rather than letting it out to be stopped on the line
+		assertTrue(dayRun.problems.stream().anyMatch(problem -> problem.kind == DayRun.ProblemKind.HELD_ON_LINE || problem.kind == DayRun.ProblemKind.WAITING_FOR_PLATFORM || problem.kind == DayRun.ProblemKind.LONG_DWELL), problems.toString());
 		assertTrue(dayRun.problems.stream().anyMatch(problem -> problem.kind == DayRun.ProblemKind.LATE && problem.durationMillis > 2 * MINUTE), problems.toString());
 	}
 

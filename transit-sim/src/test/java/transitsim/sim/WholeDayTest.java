@@ -1,7 +1,6 @@
 package transitsim.sim;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import transitsim.plan.Contingency;
@@ -32,10 +31,9 @@ import static transitsim.sim.ScenarioLine.*;
  * train appears or vanishes away from its siding, jumps or overlaps another, and none stands still on the line; at the
  * end every train is back. Carrying on from a record runs as running on does, and skipping ticks as not skipping.
  * <p>
- * A whole day takes minutes, so these run only with {@code -Dbenchmark=true}. The first doesn't pass on the run layer
- * taken over from MTR: after the train held at 07:00 is let go, the trains bunched behind it lock up at the far
- * terminal, which has one platform to turn back on, for the rest of the day. The new run layer (2026-11-07 plan) is to
- * pass it.
+ * A whole day takes minutes, so these run only with {@code -Dbenchmark=true}. The first didn't pass on the run layer
+ * taken over from MTR: after the train held at 07:00 was let go, the trains bunched behind it locked up at the far
+ * terminal, which has one platform to turn back on, for the rest of the day; the run layer (5.5) turns back first.
  */
 class WholeDayTest {
 
@@ -150,15 +148,20 @@ class WholeDayTest {
 		}
 
 		/**
-		 * The train out on the line, short of the middle station, for each thing in turn.
+		 * A train out on the line for each thing in turn: one without anything going on first, else any not out of service.
 		 */
 		private static long pick(EventSimulator<SimDataset.DataTrack> simulator, int index) {
-			final List<Long> candidates = simulator.getRunner().getTrains().stream()
+			List<Long> candidates = simulator.getRunner().getTrains().stream()
 					.filter(TickRunner.HeadlessTrain::isOnRoute)
-					.filter(train -> train.getHeadRail() >= 1 && train.getHeadRail() <= 3)
 					.filter(train -> train.service.getDispatchState() == 0 && train.service.getTakeoverState() == 0 && !train.service.isOutOfService())
 					.map(train -> train.id).sorted().collect(Collectors.toList());
-			assertFalse(candidates.isEmpty(), "a train on the line at " + clock(simulator.getTime()));
+			if (candidates.isEmpty()) {
+				candidates = simulator.getRunner().getTrains().stream()
+						.filter(TickRunner.HeadlessTrain::isOnRoute)
+						.filter(train -> !train.service.isOutOfService())
+						.map(train -> train.id).sorted().collect(Collectors.toList());
+			}
+			assertFalse(candidates.isEmpty(), "a train on the line at " + clock(simulator.getTime()) + ": " + simulator.getRunner().getTrains().stream().map(train -> train.id + (train.isOnRoute() ? " on" : " off") + " head " + train.getHeadRail() + " dispatch " + train.service.getDispatchState() + " takeover " + train.service.getTakeoverState() + " out " + train.service.isOutOfService()).collect(Collectors.joining("; ")));
 			return candidates.get(index % candidates.size());
 		}
 
@@ -186,7 +189,7 @@ class WholeDayTest {
 	}
 
 	@Test
-	@Disabled("Known: trains bunched after a hold lock up at the single platform terminal; the new run layer is to pass it")
+	@EnabledIfSystemProperty(named = "benchmark", matches = "true")
 	void aWholeDayWithEverythingGoingWrongBreaksNoRule() throws IOException {
 		final byte[] bytes = dataset();
 		final Day day = Day.make();

@@ -45,7 +45,7 @@ public final class RunRecord {
 	 * Version 2 adds the depots sending trains out by frequency, version 3 the sidings' sheds, version 4 the duties taken
 	 * over by spares (D5); older records are read without them.
 	 */
-	private static final int VERSION = 4;
+	private static final int VERSION = 5;
 
 	public RunRecord(long time) {
 		this.time = time;
@@ -108,7 +108,7 @@ public final class RunRecord {
 		}
 		final RunRecord record = new RunRecord(reader.readLong());
 		for (int i = reader.readVarInt(); i > 0; i--) {
-			record.trains.add(TrainRecord.read(reader));
+			record.trains.add(TrainRecord.read(reader, version));
 		}
 		for (int i = reader.readVarInt(); i > 0; i--) {
 			final Map<Long, Long> trips = record.lastDeployedTrips.computeIfAbsent(reader.readLong(), key -> new TreeMap<>());
@@ -170,8 +170,22 @@ public final class RunRecord {
 		 * short of a taken rail, which then gets to its stop at another time.
 		 */
 		public final float cruiseCap;
+		/**
+		 * How far along its path the train's movement authority reached (run layer, 5.5, version 5), or NaN.
+		 */
+		public final double authorityEnd;
+		/**
+		 * The run segment the train was on (version 5), or null: carried on from, the train goes on along the same curve.
+		 */
+		public final transitsim.motion.RunSegment.Spec segment;
 
 		public TrainRecord(long sidingId, long trainId, float speed, double railProgress, float elapsedDwellTicks, int nextStoppingIndex, int nextPlatformIndex, boolean reversed, boolean onRoute, byte[] service, float cruiseCap) {
+			this(sidingId, trainId, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, onRoute, service, cruiseCap, Double.NaN, null);
+		}
+
+		public TrainRecord(long sidingId, long trainId, float speed, double railProgress, float elapsedDwellTicks, int nextStoppingIndex, int nextPlatformIndex, boolean reversed, boolean onRoute, byte[] service, float cruiseCap, double authorityEnd, transitsim.motion.RunSegment.Spec segment) {
+			this.authorityEnd = authorityEnd;
+			this.segment = segment;
 			this.sidingId = sidingId;
 			this.trainId = trainId;
 			this.speed = speed;
@@ -200,9 +214,19 @@ public final class RunRecord {
 				writer.writeByte(value);
 			}
 			writer.writeInt(Float.floatToIntBits(cruiseCap));
+			writer.writeLong(Double.doubleToLongBits(authorityEnd));
+			writer.writeBoolean(segment != null);
+			if (segment != null) {
+				writer.writeInt(segment.version);
+				writer.writeLong(segment.startMillis);
+				writer.writeLong(Double.doubleToLongBits(segment.startPosition));
+				writer.writeLong(Double.doubleToLongBits(segment.startSpeed));
+				writer.writeLong(Double.doubleToLongBits(segment.cap));
+				writer.writeLong(Double.doubleToLongBits(segment.target));
+			}
 		}
 
-		private static TrainRecord read(BinaryReader reader) {
+		private static TrainRecord read(BinaryReader reader, int version) {
 			final long sidingId = reader.readLong();
 			final long trainId = reader.readLong();
 			final float speed = Float.intBitsToFloat(reader.readInt());
@@ -216,7 +240,13 @@ public final class RunRecord {
 			for (int i = 0; i < service.length; i++) {
 				service[i] = reader.readByte();
 			}
-			return new TrainRecord(sidingId, trainId, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, onRoute, service, Float.intBitsToFloat(reader.readInt()));
+			final float cruiseCap = Float.intBitsToFloat(reader.readInt());
+			final double authorityEnd = version >= 5 ? Double.longBitsToDouble(reader.readLong()) : Double.NaN;
+			transitsim.motion.RunSegment.Spec segment = null;
+			if (version >= 5 && reader.readBoolean()) {
+				segment = new transitsim.motion.RunSegment.Spec(reader.readInt(), reader.readLong(), Double.longBitsToDouble(reader.readLong()), Double.longBitsToDouble(reader.readLong()), Double.longBitsToDouble(reader.readLong()), Double.longBitsToDouble(reader.readLong()));
+			}
+			return new TrainRecord(sidingId, trainId, speed, railProgress, elapsedDwellTicks, nextStoppingIndex, nextPlatformIndex, reversed, onRoute, service, cruiseCap, authorityEnd, segment);
 		}
 	}
 

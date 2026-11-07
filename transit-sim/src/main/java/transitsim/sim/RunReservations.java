@@ -3,6 +3,7 @@ package transitsim.sim;
 import transitsim.network.RailKeys;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -41,6 +42,60 @@ public final class RunReservations {
 	 */
 	public void hold(long trainId, List<Move> moves) {
 		arbiter.hold(trainId, toClaims(moves));
+	}
+
+	/**
+	 * Sets what a train holds this tick as the run layer asks for it (5.5): sections, directions, turnouts and zones.
+	 */
+	public void holdClaims(long trainId, List<Arbiter.Claim<UUID>> claims) {
+		arbiter.hold(trainId, claims);
+	}
+
+	/**
+	 * Asks for what a train is to hold from the next tick, granted whole or not at all, as the run layer asks for it.
+	 */
+	public void requestClaims(long trainId, List<Arbiter.Claim<UUID>> claims, long plannedMillis) {
+		arbiter.request(trainId, claims, plannedMillis);
+	}
+
+	/**
+	 * What something the run layer doesn't move stands on now, such as rails taken from outside or a train the host drives,
+	 * in place of what it stood on: no train is granted those resources.
+	 */
+	public void setOccupied(long occupant, Collection<UUID> resources) {
+		arbiter.setOccupied(occupant, resources);
+	}
+
+	/**
+	 * Asks for groups of resources in the order the train reaches them, as many of the first granted as can be, each whole.
+	 */
+	public void requestGroups(long trainId, List<List<Arbiter.Claim<UUID>>> groups, long plannedMillis) {
+		arbiter.requestGroups(trainId, groups, plannedMillis);
+	}
+
+	/**
+	 * @return whether the train could hold these resources now, nothing else holding or standing on them against it
+	 */
+	public boolean canHoldClaims(long trainId, List<Arbiter.Claim<UUID>> claims) {
+		return arbiter.canHold(trainId, claims);
+	}
+
+	public int peekGrantedGroups(long trainId) {
+		return arbiter.peekGrantedGroups(trainId);
+	}
+
+	/**
+	 * @return how many groups of the train's last request of groups were granted, once
+	 */
+	public int takeGrantedGroups(long trainId) {
+		return arbiter.takeGrantedGroups(trainId);
+	}
+
+	/**
+	 * @return whether another train holds this resource, any way
+	 */
+	public boolean isHeldByOther(long trainId, UUID resource) {
+		return arbiter.isHeldByOther(trainId, resource);
 	}
 
 	/**
@@ -132,6 +187,13 @@ public final class RunReservations {
 	 */
 	public List<Set<Long>> takeDeadlocks() {
 		return arbiter.takeDeadlocks();
+	}
+
+	/**
+	 * @return the arbiter's claims of some moves: rails with their direction, turnouts with their way, zones
+	 */
+	public static List<Arbiter.Claim<UUID>> claimsOf(List<Move> moves) {
+		return toClaims(moves);
 	}
 
 	private static List<Arbiter.Claim<UUID>> toClaims(List<Move> moves) {

@@ -5,6 +5,7 @@ import transitsim.network.Resource;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -51,6 +52,10 @@ public final class Arbiter<K extends Comparable<K>> {
 	private final Map<Long, Request<K>> requests = new HashMap<>();
 	private final Map<Long, Long> firstRequestMillis = new HashMap<>();
 	private final Set<Long> grants = new HashSet<>();
+	/**
+	 * How many groups of each holder's last request of groups were granted.
+	 */
+	private final Map<Long, Integer> grantedGroups = new HashMap<>();
 	/**
 	 * Resources of a deadlock, with the holders in it, which no other holder is granted until it clears.
 	 */
@@ -116,6 +121,18 @@ public final class Arbiter<K extends Comparable<K>> {
 	/**
 	 * @return everybody granted something, in order
 	 */
+	/**
+	 * @return whether a holder other than this one holds the resource, or something stands on it
+	 */
+	public boolean isHeldByOther(long holder, K resource) {
+		final Map<Long, Claim<K>> resourceHolders = holders.get(resource);
+		if (resourceHolders != null && resourceHolders.keySet().stream().anyMatch(other -> other != holder)) {
+			return true;
+		}
+		final Set<Long> resourceOccupants = occupants.get(resource);
+		return resourceOccupants != null && resourceOccupants.stream().anyMatch(other -> other != holder);
+	}
+
 	public Set<Long> getHolders() {
 		return new TreeSet<>(holdings.keySet());
 	}
@@ -202,6 +219,33 @@ public final class Arbiter<K extends Comparable<K>> {
 	/**
 	 * @return true once, after the holder's request was granted, when it holds what it asked for
 	 */
+	/**
+	 * Asks for groups of claims in the order the holder reaches them: at the end of the tick as many of the first ones are
+	 * granted as can be held, each whole, added to what the holder has (run layer, 5.5).
+	 */
+	public void requestGroups(long holder, List<List<Claim<K>>> groups, long plannedMillis) {
+		if (!groups.isEmpty()) {
+			requests.put(holder, new Request<>(holder, new ArrayList<>(groups.get(0)), plannedMillis, new ArrayList<>(groups)));
+		}
+	}
+
+	/**
+	 * @return how many groups of the holder's request of groups were granted at the end of the last tick, leaving them to take
+	 */
+	public int peekGrantedGroups(long holder) {
+		final Integer count = grantedGroups.get(holder);
+		return count == null ? 0 : count;
+	}
+
+	/**
+	 * @return how many groups of the holder's request of groups were granted at the end of the last tick, once
+	 */
+	public int takeGrantedGroups(long holder) {
+		final Integer count = grantedGroups.remove(holder);
+		grants.remove(holder);
+		return count == null ? 0 : count;
+	}
+
 	public boolean takeGrant(long holder) {
 		return grants.remove(holder);
 	}
@@ -217,6 +261,7 @@ public final class Arbiter<K extends Comparable<K>> {
 			}
 		});
 		grants.clear();
+		grantedGroups.clear();
 		firstRequestMillis.keySet().retainAll(requests.keySet());
 		// A deadlock one of whose holders is gone, removed by the host, is over
 		knownDeadlocks.removeIf(deadlock -> deadlock.stream().anyMatch(holder -> !requests.containsKey(holder)));
@@ -241,8 +286,29 @@ public final class Arbiter<K extends Comparable<K>> {
 		final Map<K, Claim<K>> waitedFor = new HashMap<>();
 		final List<Request<K>> notGranted = new ArrayList<>();
 		for (final Request<K> request : waiting) {
-			if (canHold(request.holder, request.claims) && !isFrozenFor(request) && (holdsAny(request.holder, waitedFor) || !isAgainst(request.claims, waitedFor))) {
-				hold(request.holder, request.claims);
+			if (request.groups != null && canHold(request.holder, request.claims) && !isFrozenFor(request) && (holdsAny(request.holder, waitedFor) || !isAgainst(request.claims, waitedFor))) {
+				// As many groups as can be held, in order, each whole
+				int count = 0;
+				for (final List<Claim<K>> group : request.groups) {
+					if (count > 0 && (!canHold(request.holder, group) || isAgainst(group, waitedFor) && !holdsAny(request.holder, waitedFor) || group.stream().anyMatch(claim -> frozen.containsKey(claim.resource) && !frozen.get(claim.resource).contains(request.holder)))) {
+						break;
+					}
+					final Map<K, Claim<K>> merged = new LinkedHashMap<>();
+					getHoldings(request.holder).forEach(claim -> merged.put(claim.resource, claim));
+					group.forEach(claim -> merged.put(claim.resource, claim));
+					hold(request.holder, new ArrayList<>(merged.values()));
+					count++;
+				}
+				grants.add(request.holder);
+				grantedGroups.put(request.holder, count);
+				firstRequestMillis.remove(request.holder);
+			} else if (request.groups == null && canHold(request.holder, request.claims) && !isFrozenFor(request) && (holdsAny(request.holder, waitedFor) || !isAgainst(request.claims, waitedFor))) {
+				// Added to what the holder has: the run layer asks only for the next group (5.5); a request of everything, as
+				// the rules taken over from MTR make, is the same, as those hold it all again next tick
+				final Map<K, Claim<K>> merged = new LinkedHashMap<>();
+				getHoldings(request.holder).forEach(claim -> merged.put(claim.resource, claim));
+				request.claims.forEach(claim -> merged.put(claim.resource, claim));
+				hold(request.holder, new ArrayList<>(merged.values()));
 				grants.add(request.holder);
 				firstRequestMillis.remove(request.holder);
 			} else {
@@ -492,13 +558,25 @@ public final class Arbiter<K extends Comparable<K>> {
 	private static final class Request<K> {
 
 		private final long holder;
+		/**
+		 * The first group's claims, which the holder waits for when nothing is granted.
+		 */
 		private final List<Claim<K>> claims;
 		private final long plannedMillis;
+		/**
+		 * Groups granted in order as far as they can be, each whole (run layer, 5.5), or null for one group.
+		 */
+		private final List<List<Claim<K>>> groups;
 
 		private Request(long holder, List<Claim<K>> claims, long plannedMillis) {
+			this(holder, claims, plannedMillis, null);
+		}
+
+		private Request(long holder, List<Claim<K>> claims, long plannedMillis, List<List<Claim<K>>> groups) {
 			this.holder = holder;
 			this.claims = claims;
 			this.plannedMillis = plannedMillis;
+			this.groups = groups;
 		}
 	}
 }
