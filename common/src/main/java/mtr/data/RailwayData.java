@@ -1469,6 +1469,29 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		return resultMap;
 	}
 
+	/**
+	 * Gives a train a dispatcher's command (D6): through the component's simulator for its trains, else directly.
+	 *
+	 * @return false if there is no such train
+	 */
+	public boolean dispatch(long trainId, int command, long value, Set<Long> platformIds) {
+		for (final Siding siding : sidings) {
+			final TrainServer[] found = new TrainServer[1];
+			siding.forEachTrain(train -> {
+				if (train.id == trainId) {
+					found[0] = train;
+				}
+			});
+			if (found[0] != null) {
+				if (!liveSimulation.submitDispatch(trainId, command, value, platformIds)) {
+					found[0].getService().dispatch(command, value, platformIds);
+				}
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static boolean hasNoPermission(ServerPlayer serverPlayer) {
 		return !hasPermission(serverPlayer.gameMode.getGameModeForPlayer()) || !serverPlayer.hasPermissions(SecurityConfig.editPermissionLevel);
 	}

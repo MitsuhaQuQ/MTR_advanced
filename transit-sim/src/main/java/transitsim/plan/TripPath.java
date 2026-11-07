@@ -449,6 +449,14 @@ public class TripPath<T extends PlanTrack> {
 		return baseKey + END_MARK + segment + ":" + lastStopRail;
 	}
 
+	/**
+	 * @param clearOutRail the rail of the stop where everyone gets off, the segment's last or an earlier one, from which
+	 *                     the train runs the rest of the segment empty (D6)
+	 */
+	public static String getEndKey(String baseKey, int segment, int lastStopRail, int clearOutRail) {
+		return clearOutRail == lastStopRail ? getEndKey(baseKey, segment, lastStopRail) : getEndKey(baseKey, segment, lastStopRail) + ":" + clearOutRail;
+	}
+
 	public static boolean isEndKey(String key) {
 		return key.contains(END_MARK);
 	}
@@ -532,28 +540,39 @@ public class TripPath<T extends PlanTrack> {
 		final String[] parts = endKey.substring(index + END_MARK.length()).split(":");
 		final int segment;
 		final int lastStopRail;
+		final int clearOutRail;
 		try {
 			segment = Integer.parseInt(parts[0]);
 			lastStopRail = Integer.parseInt(parts[1]);
+			clearOutRail = parts.length > 2 ? Integer.parseInt(parts[2]) : lastStopRail;
 		} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
 			return null;
 		}
-		if (segment < 0 || segment + 1 >= base.dutyStarts.length || lastStopRail < base.dutyStarts[segment] || lastStopRail >= base.path.size()) {
+		if (clearOutRail > lastStopRail) {
 			return null;
 		}
-		final List<T> back = variants.getTurnReturn(base.path.get(lastStopRail).getStopId());
-		if (back == null || back.size() < 2) {
+		if (segment < 0 || segment >= base.dutyStarts.length || lastStopRail < base.dutyStarts[segment] || lastStopRail >= base.path.size()) {
+			return null;
+		}
+		// The last segment goes back the duty's own way; an earlier one the way the host found from its last stop
+		final boolean last = segment + 1 == base.dutyStarts.length;
+		final List<T> back = last ? new ArrayList<>(base.path.subList(lastStopRail, base.path.size())) : variants.getTurnReturn(base.path.get(lastStopRail).getStopId());
+		if (back == null || back.size() < 2 && !last) {
 			return null;
 		}
 		final List<T> newPath = new ArrayList<>(base.path.subList(0, lastStopRail + 1));
 		for (int i = 1; i < back.size(); i++) {
-			newPath.add(passing(back.get(i), variants));
+			newPath.add(last ? back.get(i) : passing(back.get(i), variants));
 		}
 		final int[] newTurnBackStops = base.turnBackStops.clone();
 		for (int i = 0; i < newTurnBackStops.length; i++) {
 			newTurnBackStops[i] = newTurnBackStops[i] < lastStopRail ? newTurnBackStops[i] : -1;
 		}
-		final TripPath<T> tripPath = new TripPath<>(base, endKey, newPath, java.util.Arrays.copyOf(base.dutyStarts, segment + 1), segment + 1, newTurnBackStops, lastStopRail, -1, false);
+		// From where everyone gets off, it runs empty, passing the stops left
+		for (int i = clearOutRail + 1; i <= lastStopRail; i++) {
+			newPath.set(i, passing(newPath.get(i), variants));
+		}
+		final TripPath<T> tripPath = new TripPath<>(base, endKey, newPath, java.util.Arrays.copyOf(base.dutyStarts, segment + 1), segment + 1, newTurnBackStops, clearOutRail, -1, false);
 		tripPath.generateTimes(variants.getTimeGenerator());
 		return tripPath;
 	}

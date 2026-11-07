@@ -1147,6 +1147,14 @@ sequenceDiagram
   - **清客和不运营**：`TrainService.isClearingOut`（停在 p）、`isOutOfService`（离开 p 之后，到接上第 k+1 段为止；回送一直到库）。游戏的列车在不运营时把骑乘者放下（`TrainServer.simulateTrain`，和回库时一样），所以在 p 下车的人留在站台，之后也上不了车。
   - **宿主下发**：和跳站一样在报警那一轮里，`DelayRules.getTurnBack` 从生效的预案或临时处置取方式、车站（换成站台）和之后怎么走；正在折返的车晚点 1 分钟以上继续算生效。不同才发：组件的车经 `LiveSimulation.submitTurnBack` → `HostInput.TurnBack`，游戏的车直接 `setTurnBack`。车不在运用上时清掉。
   - **存档和报警**：`TrainService` 多存 `turn_back`（`SAVED_KEYS` 17）。报警条目末尾再加折返状态（0 无、1 将折返、2 已折返、3 指定站折不回去），网页在原因后面写出来。
+- **调度控制台**（0.35.0，晚点调度 D6）：网页全网配线视图上的"调度台"，按信号区段看列车，并对单列车下命令。管的是物理层：一个维度里所有运用车，可以按路网（D2 的锚点）筛选。
+  - **命令**（组件 `TrainService.dispatch`，存档键 `dispatch`，`SAVED_KEYS` 19）：扣停（`DISPATCH_HOLD`）、放行、延长停站 N 秒（先记 `extraDwellMillis`，到站发车前 `isDispatchHeld` 换成 `holdUntilMillis`）、提前折返到某站（`dispatchTurnPlatforms`，比预案优先）、下一站清客（`DISPATCH_CLEAR_OUT`）、本段跑完回库（`DISPATCH_RETURN`）、撤销。`TrainRules.isHeldAtStop` 最先看扣停和延长停站。
+  - **选择链**：`chooseDutyReturn` → `chooseTurnBack` → `chooseDispatch` → `chooseHandOver` → `chooseEarlyTurn` → `chooseSkip`。
+    - `chooseEarlyTurn` 的核心抽成 `turnAt(mode, platforms, resume, onlyRail, stopIndex)`；调度员给的车站优先于预案，有"下一站清客"时折返后回送。
+    - `chooseDispatch`：下一站清客时，有折返要做就交给 `chooseEarlyTurn`；否则下一站能回送就在那里折返回送（`turnAt` 只看那一站）；都不行就换到 `~end` 路径：键可多带一个"清客站"（`TripPath.getEndKey(base, k, 末站, 清客站)`），清客站之后的站都不停，`turnRail` 设成清客站，所以从那里起就不运营。本段跑完回库同样用 `~end`，不派备车。最后一段的 `~end` 沿用运用自己的回库路。
+  - **宿主**：组件跑的车经 `HostInput.Dispatch`（`LiveSimulation.submitDispatch`），游戏的车直接 `dispatch`；`RailwayData.dispatch` 按 id 找车。
+  - **数据**：`mtr.packet.DispatchConsole`，`PACKET_CONSOLE`（网页每 2 秒经 `api/console` 让客户端请求，每秒最多一次；服务端只回给请求的玩家）：占用的信号区段 id，和每列运用车的存车线、线路、槽位、车头轨道（`TrainServer.getHeadRail`）、下一站、晚点和等进路起点、跳站、不运营、折返、接替和调度状态。`PACKET_DISPATCH` 带命令，服务端查编辑权限后执行并写日志。
+  - **网页**：`EditorConsole.build` 用客户端的 `SIGNAL_BLOCKS` 把车头轨道换成所在区段（按颜色取第一个），只给占用的和有车的区段带上轨道；`applyCommand` 处理操作 `dispatch`。全网配线视图加"调度台"按钮：区段按轨道画（占用红、有车橙，缩小时跟着示意图走），车次标在车头轨道中间，右侧列车表带命令按钮（没有编辑权限只能看）。报警条目末尾多一个调度状态，同步状态里写"有调度命令"。
 - **速度设置**（0.34.0）：一条轨道上列车实际能跑的速度 = min(轨道限速, 线路限速, 列车最高速度)，都不设时和以前一样。信号闭塞按什么速度切分（`BlockSections`、`TrainServer.cutSpeed`）和寻路代价（`DeterministicPathFinder`）仍只看轨道，不受这两个设置影响。
   - **45 km/h 轨道**：`RailType.COPPER(45, 赤陶橙)`，加在枚举**最后**。轨道存档按名字存，但手动驾驶最高速度按序号存（`Train.convertMaxManualSpeed`），附属模组也可能按序号用，所以不插在 40 和 60 之间；手动驾驶可选挡位不变。物品 `rail_connector_45`、`rail_connector_45_one_way`（`Items`、`MTR.registerItem`、`MTRClient` 的选中模型），配方用铜锭，贴图和配方在 `resources/common/normal`，模型在 `common/src/main/resources`，名称在 `common/src/main/lang`。颜色常量 `TERRACOTTA_ORANGE` 加在 `common/src/main/compat/legacy|modern/MaterialColor.java`（`mtr/compat` 下的那份是构建时从这里复制的）。
   - **线路限速写进路径**：`Route.speedLimit`（km/h，0 不限；存档键 `speed_limit`、整包、`setExtraData` 的更新里都有，改了就 `timetable.revision++` 让车厂重新生成路径）。`PathData.speedCap`（每 tick 格数，0 无；存档里只有设了才写 `speed_cap`，网络包里总写）和 `PathData.getMaxSpeed()` = min(轨道, 上限)；`PathData.copy` 复制时带上它，原来各处 `new PathData(x.rail, …)` 的复制都改用它。写入点：

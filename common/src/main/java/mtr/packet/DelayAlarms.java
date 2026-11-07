@@ -131,9 +131,9 @@ public final class DelayAlarms implements IPacket {
 			final long anchor = outcome.systemIndex >= 0 ? anchors.get(outcome.systemIndex) : lookups.anchorByRoute.computeIfAbsent(routeId, key -> route == null || route.platformIds.isEmpty() ? 0L : systems.anchorOf(platformGraph.getNetworkOf(route.getFirstPlatformId()), platformGraph));
 			final String entry = train.id + " " + siding.id + " " + service.getDutySlot() + " " + routeId + " ";
 			if (outcome.alarm != null) {
-				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState + " " + takeoverState);
+				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState + " " + takeoverState + " " + service.getDispatchState());
 			} else {
-				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState + " " + takeoverState);
+				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState + " " + takeoverState + " " + service.getDispatchState());
 			}
 		}));
 		alarms.sort(String::compareTo);

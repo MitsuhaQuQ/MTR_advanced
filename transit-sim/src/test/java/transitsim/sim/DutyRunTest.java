@@ -103,6 +103,8 @@ class DutyRunTest {
 		final List<Long> routeIds = new ArrayList<>();
 		day.segments.forEach(segment -> routeIds.add(segment.routeId));
 		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, routeIds, new HashMap<>(), new HashMap<>(), new HashMap<>(), path, starts, null, null, false, day.stayOnLine);
+		// Every route in full, so by segment as by route
+		dutyPlan.segmentsKnown = true;
 		final TripPath<TestTrack> tripPath = TripPath.ofDuty(dutyPlan, starts, path, StopTimes.of(stops));
 		tripPaths.put(key, tripPath);
 		return tripPath;
@@ -1376,6 +1378,115 @@ class DutyRunTest {
 		final DepotDispatcher tooLate = new DepotDispatcher();
 		assertNull(tooLate.findDutyDeploy(MONDAY + 8 * HOUR + 20 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS));
 		assertTrue(tooLate.hasDutyRun(SIDING_ID, 0, transitsim.plan.DutyShapes.getDayNumber(MONDAY)));
+	}
+
+	@Test
+	void aDispatcherHoldsATrainAndLetsItGo() {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		assertFalse(train[0].service.isDispatchHeld());
+		train[0].service.dispatch(TrainService.COMMAND_HOLD, 0, null);
+		assertTrue(train[0].service.isDispatchHeld());
+		assertEquals(TrainService.DISPATCH_HOLD, train[0].service.getDispatchState());
+		train[0].service.dispatch(TrainService.COMMAND_RELEASE, 0, null);
+		assertFalse(train[0].service.isDispatchHeld());
+		assertFalse(train[0].service.hasDispatch());
+	}
+
+	@Test
+	void aDispatcherHasATrainStandLongerAtItsStop() {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		train[0].service.dispatch(TrainService.COMMAND_EXTEND_DWELL, MINUTE, null);
+		// Counted from when it would leave the stop
+		now = MONDAY + 8 * HOUR;
+		assertTrue(train[0].service.isDispatchHeld());
+		now = MONDAY + 8 * HOUR + 59 * SECOND;
+		assertTrue(train[0].service.isDispatchHeld());
+		now = MONDAY + 8 * HOUR + MINUTE;
+		assertFalse(train[0].service.isDispatchHeld());
+		assertFalse(train[0].service.hasDispatch());
+	}
+
+	@Test
+	void clearedOutAtItsNextStopItTurnsBackThereEmptyIfItCan() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		train[0].service.dispatch(TrainService.COMMAND_CLEAR_OUT, 0, null);
+		assertTrue(train[0].service.chooseDispatch());
+		// At platform 1, its next stop platform 2 has a way round: back from there empty
+		assertEquals(TripPath.getTurnKey(tripPath.key, 0, 2, 1, 2, 0, false), train[0].service.getTripPathKey());
+		train[0].nextStoppingIndex = 3;
+		assertTrue(train[0].service.isOutOfService());
+		assertEquals(0, train[0].service.getDispatchState());
+	}
+
+	@Test
+	void clearedOutWhereItCantTurnBackItRunsTheSegmentEmptyAndGoesBack() {
+		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
+		final FakeTrain train = fourStops(tripPath);
+		train.service.setPathVariants(TURN_VARIANTS);
+		// At platform 6, the next stop platform 7 has no way round: everyone gets off at 7, then it runs empty past 8 and 9
+		train.service.dispatch(TrainService.COMMAND_CLEAR_OUT, 0, null);
+		assertTrue(train.service.chooseDispatch());
+		assertEquals(TripPath.getEndKey(tripPath[0].key, 0, 4, 2), train.service.getTripPathKey());
+		assertEquals(0, train.followed.path.get(3).getDwellTime());
+		assertEquals(0, train.followed.path.get(4).getDwellTime());
+		assertEquals(tripPath[0].path.size(), train.followed.path.size());
+		train.nextStoppingIndex = 2;
+		assertTrue(train.service.isClearingOut());
+		train.nextStoppingIndex = 5;
+		assertTrue(train.service.isOutOfService());
+	}
+
+	@Test
+	void sentBackItRunsThisSegmentAndGoesBackEmpty() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		train[0].service.dispatch(TrainService.COMMAND_RETURN, 0, null);
+		assertTrue(train[0].service.chooseDispatch());
+		assertEquals(TripPath.getEndKey(tripPath.key, 0, 3), train[0].service.getTripPathKey());
+		// No spare is asked for
+		assertTrue(depot.dispatcher.takeovers.isEmpty());
+	}
+
+	@Test
+	void turnedBackByADispatcherAndClearedOutItGoesBackEmpty() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		train[0].service.dispatch(TrainService.COMMAND_TURN_AT, 0, Collections.singleton(2L));
+		final FakeTrain[] other = new FakeTrain[1];
+		// Turned back alone, it goes on with its duty
+		assertTrue(train[0].service.chooseEarlyTurn());
+		assertEquals(TripPath.getTurnKey(tripPath.key, 0, 2, 1, 4, 1, true), train[0].service.getTripPathKey());
+
+		final TripPath<TestTrack> again = outAndBack(other);
+		other[0].service.dispatch(TrainService.COMMAND_TURN_AT, 0, Collections.singleton(2L));
+		other[0].service.dispatch(TrainService.COMMAND_CLEAR_OUT, 0, null);
+		// Clearing out leaves the turning back to it, which then goes back empty
+		assertFalse(other[0].service.chooseDispatch());
+		assertTrue(other[0].service.chooseEarlyTurn());
+		assertEquals(TripPath.getTurnKey(again.key, 0, 2, 1, 2, 0, false), other[0].service.getTripPathKey());
+		assertEquals(0, other[0].service.getDispatchState());
+	}
+
+	@Test
+	void whatADispatcherOrderedIsKeptThroughASave() throws Exception {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		train[0].service.dispatch(TrainService.COMMAND_HOLD, 0, null);
+		train[0].service.dispatch(TrainService.COMMAND_TURN_AT, 0, Collections.singleton(2L));
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		train[0].service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		final FakeTrain restored = newTrain(train[0].path);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertEquals(train[0].service.getDispatchState(), restored.service.getDispatchState());
+		assertEquals(Collections.singleton(2L), restored.service.getDispatchTurnPlatforms());
+		// Cancelled, nothing is left
+		restored.service.dispatch(TrainService.COMMAND_CANCEL, 0, null);
+		assertFalse(restored.service.hasDispatch());
 	}
 
 	@Test

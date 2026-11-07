@@ -108,6 +108,25 @@ public abstract class HostInput implements Comparable<HostInput> {
 		}
 	}
 
+	/**
+	 * A dispatcher's command for the train (D6): see {@link TrainService#dispatch}.
+	 */
+	public static final class Dispatch extends HostInput {
+
+		public final long trainId;
+		public final int command;
+		public final long value;
+		public final long[] platformIds;
+
+		public Dispatch(long time, long sequence, long trainId, int command, long value, long[] platformIds) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.command = command;
+			this.value = value;
+			this.platformIds = platformIds.clone();
+		}
+	}
+
 	public static final class Remove extends HostInput {
 
 		public final long trainId;

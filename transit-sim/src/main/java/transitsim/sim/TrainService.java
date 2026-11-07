@@ -188,6 +188,35 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private TripPath<T> turnPath;
 	/**
+	 * What a dispatcher ordered for the train (D6): {@link #DISPATCH_HOLD} to keep it at its next stop until let go,
+	 * {@link #DISPATCH_CLEAR_OUT} to clear it out at its next stop and take it back empty, {@link #DISPATCH_RETURN} to take
+	 * it back after this segment; the station to turn it back at; and how much longer to stand at a stop.
+	 */
+	private int dispatchFlags;
+	private Set<Long> dispatchTurnPlatforms = Collections.emptySet();
+	private long extraDwellMillis;
+	/**
+	 * Standing at a stop longer than planned, until when, or 0.
+	 */
+	private long holdUntilMillis;
+	/**
+	 * The stop at which the train carried out what a dispatcher ordered, so it does once there, or -1.
+	 */
+	private int dispatchChosenStop = -1;
+	public static final int DISPATCH_HOLD = 1;
+	public static final int DISPATCH_CLEAR_OUT = 2;
+	public static final int DISPATCH_RETURN = 4;
+	/**
+	 * The commands of {@link #dispatch}.
+	 */
+	public static final int COMMAND_HOLD = 1;
+	public static final int COMMAND_RELEASE = 2;
+	public static final int COMMAND_EXTEND_DWELL = 3;
+	public static final int COMMAND_TURN_AT = 4;
+	public static final int COMMAND_CLEAR_OUT = 5;
+	public static final int COMMAND_RETURN = 6;
+	public static final int COMMAND_CANCEL = 7;
+	/**
 	 * Told to hand the rest of its duty over to a spare train from the depot (D5).
 	 */
 	private boolean takeover;
@@ -246,10 +275,14 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_TAKEOVER = "takeover";
 	/**
+	 * What a dispatcher ordered (D6): flags, extra dwell, held until, then the platforms to turn back at.
+	 */
+	private static final String KEY_DISPATCH = "dispatch";
+	/**
 	 * How many values {@link #write} writes, which hosts count into the size of what they save. Checked by a test, as it was
 	 * once left one short.
 	 */
-	public static final int SAVED_KEYS = 18;
+	public static final int SAVED_KEYS = 19;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
@@ -291,6 +324,15 @@ public class TrainService<T extends PlanTrack> {
 		turnAfter = turnValues.length >= 2 ? (int) turnValues[1] : 0;
 		turnPlatforms = newTurnPlatforms.isEmpty() ? Collections.emptySet() : newTurnPlatforms;
 		takeover = reader.getBoolean(KEY_TAKEOVER, false);
+		final long[] dispatchValues = reader.getLongs(KEY_DISPATCH);
+		dispatchFlags = dispatchValues.length >= 3 ? (int) dispatchValues[0] : 0;
+		extraDwellMillis = dispatchValues.length >= 3 ? dispatchValues[1] : 0;
+		holdUntilMillis = dispatchValues.length >= 3 ? dispatchValues[2] : 0;
+		final Set<Long> newDispatchTurn = new TreeSet<>();
+		for (int i = 3; i < dispatchValues.length; i++) {
+			newDispatchTurn.add(dispatchValues[i]);
+		}
+		dispatchTurnPlatforms = newDispatchTurn.isEmpty() ? Collections.emptySet() : newDispatchTurn;
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
@@ -327,6 +369,182 @@ public class TrainService<T extends PlanTrack> {
 		}
 		writer.writeLongs(KEY_TURN_BACK, turnValues);
 		writer.writeBoolean(KEY_TAKEOVER, takeover);
+		final long[] dispatchValues = new long[hasDispatch() ? 3 + dispatchTurnPlatforms.size() : 0];
+		if (dispatchValues.length > 0) {
+			dispatchValues[0] = dispatchFlags;
+			dispatchValues[1] = extraDwellMillis;
+			dispatchValues[2] = holdUntilMillis;
+			int i = 3;
+			for (final long platformId : dispatchTurnPlatforms) {
+				dispatchValues[i++] = platformId;
+			}
+		}
+		writer.writeLongs(KEY_DISPATCH, dispatchValues);
+	}
+
+	/**
+	 * Carries out a dispatcher's command (D6). Holding and standing longer take effect at the stop the train is at or comes
+	 * to; turning back, clearing out and going back take effect when it chooses at a stop, and override the plans.
+	 *
+	 * @param command   one of the {@code COMMAND_} values
+	 * @param value     for standing longer, how much, in milliseconds
+	 * @param platforms for turning back, the platforms of the station
+	 */
+	public void dispatch(int command, long value, Set<Long> platforms) {
+		switch (command) {
+			case COMMAND_HOLD:
+				dispatchFlags |= DISPATCH_HOLD;
+				break;
+			case COMMAND_RELEASE:
+				dispatchFlags &= ~DISPATCH_HOLD;
+				holdUntilMillis = 0;
+				extraDwellMillis = 0;
+				break;
+			case COMMAND_EXTEND_DWELL:
+				extraDwellMillis = Math.max(0, Math.min(value, MAX_EXTRA_DWELL_MILLIS));
+				break;
+			case COMMAND_TURN_AT:
+				dispatchTurnPlatforms = platforms == null || platforms.isEmpty() ? Collections.emptySet() : new TreeSet<>(platforms);
+				turnChosenStop = -1;
+				break;
+			case COMMAND_CLEAR_OUT:
+				dispatchFlags |= DISPATCH_CLEAR_OUT;
+				dispatchChosenStop = -1;
+				turnChosenStop = -1;
+				break;
+			case COMMAND_RETURN:
+				dispatchFlags |= DISPATCH_RETURN;
+				dispatchChosenStop = -1;
+				break;
+			case COMMAND_CANCEL:
+				dispatchFlags = 0;
+				dispatchTurnPlatforms = Collections.emptySet();
+				extraDwellMillis = 0;
+				holdUntilMillis = 0;
+				break;
+			default:
+				break;
+		}
+	}
+
+	/**
+	 * The longest a dispatcher may have a train stand longer at a stop.
+	 */
+	public static final long MAX_EXTRA_DWELL_MILLIS = 30 * 60 * 1000;
+
+	public boolean hasDispatch() {
+		return dispatchFlags != 0 || !dispatchTurnPlatforms.isEmpty() || extraDwellMillis > 0 || holdUntilMillis > 0;
+	}
+
+	/**
+	 * @return what a dispatcher ordered, as {@code DISPATCH_} flags, with 8 for standing longer and 16 for turning back
+	 */
+	public int getDispatchState() {
+		return dispatchFlags | (extraDwellMillis > 0 || holdUntilMillis > clock.getAsLong() ? 8 : 0) | (dispatchTurnPlatforms.isEmpty() ? 0 : 16);
+	}
+
+	public Set<Long> getDispatchTurnPlatforms() {
+		return Collections.unmodifiableSet(dispatchTurnPlatforms);
+	}
+
+	/**
+	 * @return whether a dispatcher keeps the train at the stop it is at (D6): held until let go, or standing longer, which
+	 * starts counting at this stop
+	 */
+	public boolean isDispatchHeld() {
+		final long currentMillis = clock.getAsLong();
+		if (extraDwellMillis > 0) {
+			holdUntilMillis = currentMillis + extraDwellMillis;
+			extraDwellMillis = 0;
+		}
+		if (holdUntilMillis != 0 && currentMillis >= holdUntilMillis) {
+			holdUntilMillis = 0;
+		}
+		return (dispatchFlags & DISPATCH_HOLD) != 0 || holdUntilMillis != 0;
+	}
+
+	/**
+	 * At a stop of its duty, ready to go, the train carries out a dispatcher's order to clear out or go back (D6):
+	 * <ul>
+	 * <li>to clear out at its next stop, it turns back there and goes back empty if it can (as {@link #chooseEarlyTurn});
+	 * otherwise it runs empty from there to the end of this segment and back to its siding. With a station to turn back at,
+	 * turning back does it, going back empty;</li>
+	 * <li>to go back, it runs this segment to its end, everyone gets off, and goes back to its siding empty.</li>
+	 * </ul>
+	 *
+	 * @return true if the train has just changed paths, so it waits a moment at the stop
+	 */
+	public boolean chooseDispatch() {
+		if ((dispatchFlags & (DISPATCH_CLEAR_OUT | DISPATCH_RETURN)) == 0 || !isOnDuty() || pathVariants == null || routes == null) {
+			return false;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (stopIndex == dispatchChosenStop) {
+			return false;
+		}
+		dispatchChosenStop = stopIndex;
+		final String baseKey = TripPath.getSkipBase(tripPathKey);
+		if (TripPath.isChangedKey(baseKey) || TripPath.isReturnKey(baseKey)) {
+			// Already going back, or turned back
+			dispatchFlags &= ~(DISPATCH_CLEAR_OUT | DISPATCH_RETURN);
+			return false;
+		}
+		final TripPath<T> base = tripPaths.get(baseKey);
+		if (base == null || base.dutyStarts == null || base.stopTimes.getSegmentEntry(0) < 0) {
+			return false;
+		}
+		final List<PlanRoute> dutyRoutes = new ArrayList<>();
+		for (final long routeId : base.routeIds) {
+			final PlanRoute route = routes.apply(routeId);
+			if (route == null) {
+				return false;
+			}
+			dutyRoutes.add(route);
+		}
+		final int segment = dutyIndex;
+		if (segment >= dutyRoutes.size()) {
+			return false;
+		}
+		final long[][] times = base.stopTimes.getSegmentTimes(segment, dutyRoutes);
+		int lastStopRail = -1;
+		int nextStopRail = -1;
+		for (final long[] time : times) {
+			if (time[0] >= 0) {
+				lastStopRail = (int) time[2];
+				if (nextStopRail < 0 && time[2] > stopIndex) {
+					nextStopRail = (int) time[2];
+				}
+			}
+		}
+		final boolean clearOut = (dispatchFlags & DISPATCH_CLEAR_OUT) != 0;
+		if (clearOut) {
+			// A station to turn back at takes it there, going back empty (chooseEarlyTurn)
+			if (!dispatchTurnPlatforms.isEmpty() || turnMode != 0) {
+				return false;
+			}
+			if (nextStopRail >= 0 && turnAt(transitsim.plan.Contingency.TURN_NEAREST, Collections.emptySet(), false, nextStopRail, stopIndex)) {
+				dispatchFlags &= ~DISPATCH_CLEAR_OUT;
+				return true;
+			}
+		}
+		// The last segment goes back anyway, so going back after it changes nothing; clearing out at its next stop still runs
+		// it empty from there
+		final boolean lastSegment = segment + 1 >= base.dutyStarts.length;
+		if (lastStopRail < stopIndex || lastSegment && (!clearOut || nextStopRail < 0 || nextStopRail >= lastStopRail)) {
+			dispatchFlags &= ~(DISPATCH_CLEAR_OUT | DISPATCH_RETURN);
+			return false;
+		}
+		final String endKey = TripPath.getEndKey(baseKey, segment, lastStopRail, clearOut && nextStopRail >= 0 ? nextStopRail : lastStopRail);
+		final TripPath<T> newPath = findPath(tripPaths, endKey);
+		if (newPath == null) {
+			return false;
+		}
+		dispatchFlags &= ~(DISPATCH_CLEAR_OUT | DISPATCH_RETURN);
+		tripPath = newPath;
+		tripPathKey = newPath.key;
+		stopTimes = newPath.stopTimes;
+		vehicle.changePath(newPath, stopIndex);
+		return true;
 	}
 
 	/**
@@ -509,7 +727,12 @@ public class TrainService<T extends PlanTrack> {
 	 * @return true if the train has just changed paths, so it waits a moment at the stop
 	 */
 	public boolean chooseEarlyTurn() {
-		if (turnMode == 0 || !isOnDuty() || pathVariants == null || routes == null || tripPath.turnRail >= 0) {
+		// What a dispatcher ordered comes before the plans (D6); told to clear out, the train goes back empty after turning
+		final boolean dispatched = !dispatchTurnPlatforms.isEmpty();
+		final int mode = dispatched ? transitsim.plan.Contingency.TURN_STATION : turnMode;
+		final Set<Long> platforms = dispatched ? dispatchTurnPlatforms : turnPlatforms;
+		final boolean resume = (dispatched ? transitsim.plan.Contingency.AFTER_RESUME : turnAfter) != transitsim.plan.Contingency.AFTER_DEADHEAD && (dispatchFlags & DISPATCH_CLEAR_OUT) == 0;
+		if (mode == 0 || !isOnDuty() || pathVariants == null || routes == null || tripPath.turnRail >= 0) {
 			return false;
 		}
 		final int stopIndex = vehicle.getNextStoppingIndex();
@@ -517,6 +740,26 @@ public class TrainService<T extends PlanTrack> {
 			return false;
 		}
 		turnChosenStop = stopIndex;
+		if (turnAt(mode, platforms, resume, -1, stopIndex)) {
+			turnUnreachable = false;
+			if (dispatched) {
+				dispatchTurnPlatforms = Collections.emptySet();
+				dispatchFlags &= ~DISPATCH_CLEAR_OUT;
+			}
+			return true;
+		}
+		turnUnreachable = mode == transitsim.plan.Contingency.TURN_STATION;
+		return false;
+	}
+
+	/**
+	 * Changes the train onto its duty's path turned back early (D4), at the first stop of this segment from here that has a
+	 * way round, among these platforms for a station, or only on this rail.
+	 *
+	 * @param onlyRail the only rail of a stop it turns back at, or -1 for any
+	 * @return true if it changed paths
+	 */
+	private boolean turnAt(int mode, Set<Long> platforms, boolean resume, int onlyRail, int stopIndex) {
 		final String baseKey = TripPath.getSkipBase(tripPathKey);
 		final TripPath<T> base = tripPaths.get(baseKey);
 		if (base == null || base.dutyStarts == null || TripPath.isReturnKey(baseKey)) {
@@ -534,7 +777,6 @@ public class TrainService<T extends PlanTrack> {
 		if (segment >= dutyRoutes.size() || base.stopTimes.getSegmentEntry(segment) < 0) {
 			return false;
 		}
-		final boolean resume = turnAfter != transitsim.plan.Contingency.AFTER_DEADHEAD;
 		if (resume && segment + 1 >= dutyRoutes.size()) {
 			return false;
 		}
@@ -549,11 +791,11 @@ public class TrainService<T extends PlanTrack> {
 		final PlanRoute route = dutyRoutes.get(segment);
 		for (int i = 0; i < lastStop; i++) {
 			final int rail = (int) times[i][2];
-			if (times[i][0] < 0 || rail < stopIndex) {
+			if (times[i][0] < 0 || rail < stopIndex || onlyRail >= 0 && rail != onlyRail) {
 				continue;
 			}
 			final long platformId = route.getStops().get(i).getPlatformId();
-			if (turnMode == transitsim.plan.Contingency.TURN_STATION && !turnPlatforms.contains(platformId)) {
+			if (mode == transitsim.plan.Contingency.TURN_STATION && !platforms.contains(platformId)) {
 				continue;
 			}
 			final java.util.Collection<Long> targets = pathVariants.getTurnTargets(platformId);
@@ -581,7 +823,6 @@ public class TrainService<T extends PlanTrack> {
 			}
 			final TripPath<T> newPath = key == null ? null : findPath(tripPaths, key);
 			if (newPath != null) {
-				turnUnreachable = false;
 				tripPath = newPath;
 				tripPathKey = newPath.key;
 				stopTimes = newPath.stopTimes;
@@ -589,7 +830,6 @@ public class TrainService<T extends PlanTrack> {
 				return true;
 			}
 		}
-		turnUnreachable = turnMode == transitsim.plan.Contingency.TURN_STATION;
 		return false;
 	}
 
@@ -772,6 +1012,11 @@ public class TrainService<T extends PlanTrack> {
 			turnPath = null;
 			handOverChosenStop = -1;
 			handOverFailure = 0;
+			dispatchChosenStop = -1;
+			holdUntilMillis = 0;
+			extraDwellMillis = 0;
+			dispatchFlags &= ~(DISPATCH_CLEAR_OUT | DISPATCH_RETURN);
+			dispatchTurnPlatforms = Collections.emptySet();
 			dutyIndex = 0;
 			dutyDay = null;
 			isLeavingForDuty = false;

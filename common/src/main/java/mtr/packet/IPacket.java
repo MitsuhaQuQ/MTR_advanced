@@ -94,6 +94,11 @@ public interface IPacket {
 	ResourceLocation PACKET_RECALL_TRAIN = new ResourceLocation(MTR.MOD_ID, "packet_recall_train");
 	ResourceLocation PACKET_DELAY_ALARMS = new ResourceLocation(MTR.MOD_ID, "packet_delay_alarms");
 	ResourceLocation PACKET_CONTINGENCIES = new ResourceLocation(MTR.MOD_ID, "packet_contingencies");
+	/**
+	 * The dispatcher's console (D6): asked for and sent back, and a command for a train.
+	 */
+	ResourceLocation PACKET_CONSOLE = new ResourceLocation(MTR.MOD_ID, "packet_console");
+	ResourceLocation PACKET_DISPATCH = new ResourceLocation(MTR.MOD_ID, "packet_dispatch");
 	ResourceLocation PACKET_UPDATE_LIFTS = new ResourceLocation(MTR.MOD_ID, "update_lifts");
 	ResourceLocation PACKET_DELETE_LIFTS = new ResourceLocation(MTR.MOD_ID, "delete_lifts");
 	ResourceLocation PACKET_UPDATE_TRAIN_PASSENGERS = new ResourceLocation(MTR.MOD_ID, "update_train_passengers");

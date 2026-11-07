@@ -1518,6 +1518,8 @@
 		const d = net.data;
 		net.grid = new Map();
 		net.byPair = new Map();
+		net.nodeById = new Map();
+		(d && d.nodes ? d.nodes : []).forEach((node, index) => net.nodeById.set(node[2], index));
 		net.railPoints = [];
 		if (!d || !d.rails) return;
 		d.rails.forEach((rail, index) => {
@@ -1873,6 +1875,7 @@
 			});
 			g.textAlign = "start";
 		}
+		drawConsole(g, chains, stroke);
 		drawPicking(g);
 	}
 
@@ -1944,6 +1947,174 @@
 		const run = net.scale < NET_EXACT_SCALE && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
 		return `${kind}${isolation ? " · " + isolation : ""} · ${Math.floor(a[0])}, ${Math.floor(a[1])} → ${Math.floor(b[0])}, ${Math.floor(b[1])}${run > 1 ? tr("（示意图里这一段有 {0} 条轨道，放大后逐条显示）", run) : ""}`;
 	}
+
+	/**
+	 * The dispatcher's console over the network view (D6): the signal blocks taken and the trains on duties at the block
+	 * their heads are in, from the game every two seconds, and commands for each train, sent at once.
+	 */
+	const consoleState = { open: false, data: null, timer: null, system: "", selected: "" };
+	const CONSOLE_POLL_MS = 2000;
+
+	async function loadConsole() {
+		try {
+			consoleState.data = await fetchJson("api/console");
+		} catch (e) {
+			consoleState.data = null;
+		}
+		renderConsole();
+		drawNetwork();
+	}
+
+	function toggleConsole(open) {
+		consoleState.open = open;
+		$("net-console-toggle").setAttribute("aria-pressed", String(open));
+		$("net-console").hidden = !open;
+		if (open && !consoleState.timer) {
+			loadConsole();
+			consoleState.timer = setInterval(() => { if (!document.hidden && state.view === "network") loadConsole(); }, CONSOLE_POLL_MS);
+		} else if (!open && consoleState.timer) {
+			clearInterval(consoleState.timer);
+			consoleState.timer = null;
+		}
+		renderConsole();
+		drawNetwork();
+	}
+
+	/** The trains of the rail system chosen, or all. */
+	function consoleTrains() {
+		const trains = consoleState.data && consoleState.data.trains || [];
+		const system = consoleState.system ? systemByAnchor(consoleState.system) : null;
+		return system ? trains.filter(train => system.routes.includes(train.route)) : trains;
+	}
+
+	/** The index of a rail of the network view from its two nodes as the console gives them, or -1. */
+	function consoleRail(pair) {
+		if (!net.nodeById) return -1;
+		const a = net.nodeById.get(pair[0]), b = net.nodeById.get(pair[1]);
+		if (a === undefined || b === undefined) return -1;
+		const index = net.byPair.get(Math.min(a, b) + "," + Math.max(a, b));
+		return index === undefined ? -1 : index;
+	}
+
+	/** Blocks taken in red, blocks with a train of the system in amber, and each train's name at its head. */
+	function drawConsole(g, chains, stroke) {
+		if (!consoleState.open || !consoleState.data || !consoleState.data.available || !net.data) return;
+		g.globalAlpha = 1;
+		const shapeOf = index => net.scale < NET_EXACT_SCALE && chains ? chainShape(chains[net.railChain[index]]) : net.railPoints[index];
+		const trains = consoleTrains();
+		const trainBlocks = new Set(trains.map(train => train.block).filter(Boolean));
+		(consoleState.data.blocks || []).forEach(block => {
+			if (!block.occupied && !trainBlocks.has(block.id)) return;
+			const color = trainBlocks.has(block.id) ? "#e8a33a" : "#d9534f";
+			block.rails.forEach(pair => {
+				const index = consoleRail(pair);
+				if (index >= 0) stroke(shapeOf(index), color, 6);
+			});
+		});
+		g.font = "bold 12px sans-serif";
+		g.textAlign = "center";
+		trains.forEach(train => {
+			const index = consoleRail(train.head);
+			if (index < 0) return;
+			const points = net.railPoints[index];
+			// Halfway along the rail, between the points either side of its middle
+			const half = points.length / 2, lower = Math.max(0, Math.floor((half - 1) / 2) * 2), upper = Math.min(points.length - 2, lower + 2);
+			const x = netX((points[lower] + points[upper]) / 2), y = netZ((points[lower + 1] + points[upper + 1]) / 2);
+			const text = consoleTrainName(train);
+			g.fillStyle = train.id === consoleState.selected ? css("--sel") : train.late >= 300 ? "#d9534f" : css("--ink");
+			g.fillText(text, x, y - 10);
+		});
+		g.textAlign = "start";
+	}
+
+	const consoleTrainName = train => tr("{0} 车 {1}", shortName(train.sidingName) || tr("存车线"), train.slot + 1);
+
+	/** What is going on with a train, as the console lists it. */
+	function consoleTrainState(train) {
+		const parts = [];
+		if (train.late >= 60) parts.push(tr("晚点 {0} 分钟", Math.floor(train.late / 60)));
+		if (train.waiting >= 60) parts.push(tr("等进路已 {0} 分钟", Math.floor(train.waiting / 60)));
+		if (train.dispatch & 1) parts.push(tr("扣停"));
+		if (train.dispatch & 8) parts.push(tr("延长停站"));
+		if (train.dispatch & 16) parts.push(tr("将在指定站折返"));
+		if (train.dispatch & 2) parts.push(tr("下一站清客"));
+		if (train.dispatch & 4) parts.push(tr("本段跑完回库"));
+		if (train.skipping) parts.push(tr("跳站中"));
+		if (train.turn === 2) parts.push(tr("已提前折返"));
+		if (train.takeover === 2) parts.push(tr("已交给备车"));
+		if (train.outOfService) parts.push(tr("不载客"));
+		return parts.join("，");
+	}
+
+	function renderConsole() {
+		const panel = $("net-console");
+		if (!consoleState.open) return;
+		const d = consoleState.data;
+		const systems = (data && data.contingencySystems || []).filter(system => system.routes.length);
+		const systemOptions = `<option value="">${tr("全部路网")}</option>` + systems.map(system => `<option value="${system.anchor}"${system.anchor === consoleState.system ? " selected" : ""}>${escapeHtml(systemTitle(system))}</option>`).join("");
+		if (!d || !d.available) {
+			panel.innerHTML = `<p><select id="console-system">${systemOptions}</select></p><p class="hint">${tr("正在向游戏要各列车的位置…")}</p>`;
+		} else {
+			const trains = consoleTrains().slice().sort((a, b) => (b.late - a.late) || a.id.localeCompare(b.id));
+			const canEdit = data && data.canEdit;
+			const rows = trains.map(train => {
+				const held = (train.dispatch & 1) !== 0;
+				const cmds = canEdit ? `<div class="cmds">
+					<button data-console-cmd="${held ? "release" : "hold"}" data-train="${train.id}">${held ? tr("放行") : tr("扣停")}</button>
+					<button data-console-extend="${train.id}">${tr("延长停站…")}</button>
+					<button data-console-turn="${train.id}" data-route="${train.route}">${tr("提前折返…")}</button>
+					<button data-console-cmd="clearOut" data-train="${train.id}">${tr("下一站清客")}</button>
+					<button data-console-cmd="return" data-train="${train.id}">${tr("指定回库")}</button>
+					${train.dispatch ? `<button data-console-cmd="cancel" data-train="${train.id}">${tr("撤销")}</button>` : ""}
+				</div>` : "";
+				return `<tr class="${train.id === consoleState.selected ? "sel" : ""}" data-console-train="${train.id}"><td><b>${escapeHtml(consoleTrainName(train))}</b> ${escapeHtml(shortName(train.routeName))}<br>
+					<span class="hint">${train.next ? tr("下一站 {0}", escapeHtml(shortName(train.next))) : ""}${train.block ? tr("，区段 {0}", train.block.slice(-4)) : ""}</span><br>${escapeHtml(consoleTrainState(train))}${cmds}</td></tr>`;
+			}).join("");
+			panel.innerHTML = `<p><select id="console-system">${systemOptions}</select> <span class="hint">${tr("{0} 列运用车，{1} 秒前", trains.length, d.age || 0)}</span></p>
+				<p class="hint">${tr("红：占用的信号区段　橙：有列车的区段")}${canEdit ? "" : tr("。没有编辑权限，只能看")}</p>
+				<table>${rows || `<tr><td class="hint">${tr("没有运用车在线上")}</td></tr>`}</table>`;
+		}
+		$("console-system").addEventListener("change", e => { consoleState.system = e.target.value; renderConsole(); drawNetwork(); });
+		panel.querySelectorAll("[data-console-train]").forEach(row => row.addEventListener("click", e => {
+			if (e.target.closest("button")) return;
+			consoleState.selected = row.dataset.consoleTrain;
+			renderConsole();
+			drawNetwork();
+		}));
+		panel.querySelectorAll("[data-console-cmd]").forEach(button => button.addEventListener("click", () => consoleCommand(button, { train: button.dataset.train, command: button.dataset.consoleCmd })));
+		panel.querySelectorAll("[data-console-extend]").forEach(button => button.addEventListener("click", () => {
+			openDialog(tr("延长停站"), `<label>${tr("多停")} <input type="number" name="seconds" min="1" max="1800" value="60"> ${tr("秒")}</label><p class="hint">${tr("正停在站上的就在这一站，正在跑的在下一站。")}</p>`, tr("发送"), form => {
+				const seconds = Math.round(Number(form.seconds.value));
+				if (!(seconds > 0) || seconds > 1800) return tr("要在 1 到 1800 秒之间");
+				consoleCommand(null, { train: button.dataset.consoleExtend, command: "extend", seconds });
+				return null;
+			});
+		}));
+		panel.querySelectorAll("[data-console-turn]").forEach(button => button.addEventListener("click", () => {
+			const r = data.routeById.get(button.dataset.route);
+			const system = r ? systemOfRoute(r.id) : null;
+			const stations = system ? system.stations || [] : (r ? r.stops.map(stop => ({ id: stop.station, name: stop.name })) : []);
+			const options = stations.filter(station => station.id).map(station => `<option value="${station.id}">${escapeHtml(shortName(station.name))}</option>`).join("");
+			openDialog(tr("提前折返"), `<label>${tr("在")} <select name="station">${options}</select> ${tr("折返")}</label><p class="hint">${tr("在那一站清客后空车折到对向站台，接着跑运用的下一段。同时下了“下一站清客”的，折返后空车回库。")}</p>`, tr("发送"), form => {
+				if (!form.station.value) return tr("选一个车站");
+				consoleCommand(null, { train: button.dataset.consoleTurn, command: "turn", station: form.station.value });
+				return null;
+			});
+		}));
+	}
+
+	async function consoleCommand(button, operation) {
+		if (button) button.disabled = true;
+		try {
+			await sendJson("api/apply", "POST", { operations: [Object.assign({ type: "dispatch" }, operation)] });
+			if (button) button.textContent = tr("已发送");
+			setTimeout(loadConsole, 600);
+		} catch (e) {
+			if (button) button.disabled = false;
+		}
+	}
+
+	$("net-console-toggle").addEventListener("click", () => toggleConsole(!consoleState.open));
 
 	function renderNetworkTools() {
 		const d = net.data, select = $("net-mode");
@@ -6126,8 +6297,10 @@
 		// Passing the stations a plan or a dispatcher's setting has it pass (D3), and turning back early (D4)
 		const turn = alarm.turn === 1 ? tr("，将提前折返") : alarm.turn === 2 ? tr("，已提前折返") : alarm.turn === 3 ? tr("，指定的车站折不回去") : "";
 		// And handing its duty over to a spare (D5)
+		// And what a dispatcher ordered (D6)
+		const dispatched = alarm.dispatch ? tr("，有调度命令") : "";
 		const takeover = alarm.takeover === 1 ? tr("，等备车接替") : alarm.takeover === 2 ? tr("，已交给备车，空车回库") : alarm.takeover === 3 ? tr("，没有备车可接替") : alarm.takeover === 4 ? tr("，备车出场要经过受影响区段") : "";
-		return reason + (alarm.skipping ? tr("，跳站中") : "") + turn + takeover;
+		return reason + (alarm.skipping ? tr("，跳站中") : "") + turn + takeover + dispatched;
 	}
 
 	/** The rail system, a network of rails joined together, with its plans (D2). */

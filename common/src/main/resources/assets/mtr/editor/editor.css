@@ -334,6 +334,14 @@ table.audio-list button.danger { color: var(--warn); }
 .net-wrap { position: relative; min-height: 0; overflow: hidden; }
 .net-wrap canvas { position: absolute; inset: 0; cursor: grab; }
 .net-wrap canvas:active { cursor: grabbing; }
+/* The dispatcher's console over the network view (D6) */
+.net-console { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100%); overflow: auto; background: var(--panel); border-left: 1px solid var(--grid); padding: 8px 10px; font-size: 13px; }
+.net-console table { width: 100%; border-collapse: collapse; }
+.net-console td { padding: 4px 2px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+.net-console tr.sel td { background: color-mix(in srgb, var(--sel) 18%, transparent); }
+.net-console .cmds { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.net-console .cmds button { font-size: 12px; padding: 1px 6px; }
+#net-console-toggle[aria-pressed="true"] { background: var(--sel); color: var(--panel); }
 body.network-view #btn-split, body.network-view #btn-simulate, body.network-view #btn-zoom-in, body.network-view #btn-zoom-out { display: none; }
 
 /* How trains turn back at a route's ends, under the station diagram */

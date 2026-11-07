@@ -137,6 +137,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new SimulateServlet()), "/api/simulate");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
 		context.addServlet(new ServletHolder(new RouteLayoutServlet()), "/api/route-layout");
+		context.addServlet(new ServletHolder(new ConsoleServlet()), "/api/console");
 		context.addServlet(new ServletHolder(new NetworkServlet()), "/api/network");
 		context.addServlet(new ServletHolder(new RoutePreviewServlet()), "/api/route-preview");
 		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
@@ -491,6 +492,25 @@ public final class EditorServer {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 			}
+		}
+	}
+
+	/**
+	 * The dispatcher's console (D6): the last snapshot the server sent, asking it for a new one.
+	 */
+	private static class ConsoleServlet extends HttpServlet {
+
+		@Override
+		protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String content;
+			try {
+				content = onGameThread(() -> EditorConsole.build().toString());
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				return;
+			}
+			sendJson(response, content);
 		}
 	}
 

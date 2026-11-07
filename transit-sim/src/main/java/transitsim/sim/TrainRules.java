@@ -64,6 +64,10 @@ public final class TrainRules {
 			return false;
 		}
 		final TrainService<?> service = train.getService();
+		// Held or standing longer by a dispatcher (D6)
+		if (service.isDispatchHeld()) {
+			return true;
+		}
 		// A train on a duty stays overnight at its last stop, waits for each segment's planned departure, and doesn't leave
 		// onto rails another train of a duty has booked the other way
 		if (service.isStayingOnLine()) {
@@ -89,7 +93,7 @@ public final class TrainRules {
 		}
 		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
 		// Passing stops a plan or a dispatcher has it pass (D3) is chosen last, on the path the other choices left it on
-		if (!train.isContinuousMovement() && (service.chooseDepotReturn() || service.chooseDutyReturn() || service.chooseTurnBack() || service.chooseHandOver() || service.chooseEarlyTurn() || service.chooseSkip())) {
+		if (!train.isContinuousMovement() && (service.chooseDepotReturn() || service.chooseDutyReturn() || service.chooseTurnBack() || service.chooseDispatch() || service.chooseHandOver() || service.chooseEarlyTurn() || service.chooseSkip())) {
 			return true;
 		}
 		// The run is asked for last, on the path the train leaves by, so it isn't kept from other trains while this one waits

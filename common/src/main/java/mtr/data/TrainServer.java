@@ -904,6 +904,31 @@ public class TrainServer extends Train {
 	/**
 	 * @return since when it has waited for the run it asked for, or 0 (D2)
 	 */
+	/**
+	 * @return whether the train is out on the line, for the dispatcher's console (D6)
+	 */
+	public boolean isOnRouteNow() {
+		return isOnRoute;
+	}
+
+	/**
+	 * @return the rail its head is on, or null, for the dispatcher's console (D6)
+	 */
+	public UUID getHeadRail() {
+		if (path == null || path.isEmpty()) {
+			return null;
+		}
+		final int index = Math.max(0, Math.min(path.size() - 1, getIndex(railProgress, false)));
+		return path.get(index).getRailProduct();
+	}
+
+	/**
+	 * @return the platform of its next stop, or 0
+	 */
+	public long getNextStopId() {
+		return path != null && nextStoppingIndex >= 0 && nextStoppingIndex < path.size() ? path.get(nextStoppingIndex).savedRailBaseId : 0;
+	}
+
 	public long getWaitingSinceMillis() {
 		return waitingSinceMillis;
 	}

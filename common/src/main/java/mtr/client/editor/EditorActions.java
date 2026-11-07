@@ -347,6 +347,10 @@ public final class EditorActions implements IPacket {
 		if ("contingency".equals(getString(operation, "type"))) {
 			return EditorContingencies.applyCommand(operation);
 		}
+		// A dispatcher's command for one train, from the console, sent at once (D6)
+		if ("dispatch".equals(getString(operation, "type"))) {
+			return EditorConsole.applyCommand(operation);
+		}
 		// A train waiting on the line with no duty, taken straight back to its siding by the player's command (P1-C)
 		if ("recall".equals(getString(operation, "type"))) {
 			final long depotId = parseId(getString(operation, "depot"));

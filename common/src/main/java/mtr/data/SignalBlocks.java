@@ -423,6 +423,13 @@ public class SignalBlocks {
 			return occupied > 0;
 		}
 
+		/**
+		 * @return its rails, for the dispatcher's console (D6)
+		 */
+		public Set<UUID> getRails() {
+			return Collections.unmodifiableSet(rails);
+		}
+
 		private boolean isConnected(UUID checkRail) {
 			final long checkPos1 = checkRail.getLeastSignificantBits();
 			final long checkPos2 = checkRail.getMostSignificantBits();
