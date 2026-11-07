@@ -29,6 +29,10 @@ public class RailwayDataMixin {
 	private static int RAIL_UPDATE_DISTANCE;
 
 	public void simulateTrains() {
+		if (!mtr.SecurityConfig.anteRunHooks) {
+			((RailwayData) (Object) this).simulateTrains(RailwayData::isRailNearInBox);
+			return;
+		}
 		RAIL_UPDATE_DISTANCE = world.getServer().getPlayerList().getViewDistance() * 16;
 		final int railUpdateDistance = RAIL_UPDATE_DISTANCE;
 		((RailwayData) (Object) this).simulateTrains((rail, startPos, endPos, playerPos) -> ((RailExtraSupplier) (Object) rail).isBetween(playerPos.x, playerPos.y, playerPos.z, railUpdateDistance));

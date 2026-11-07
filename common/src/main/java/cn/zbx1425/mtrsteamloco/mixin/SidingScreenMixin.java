@@ -25,6 +25,7 @@ public abstract class SidingScreenMixin {
         remap = false
     )
     private int modifySliderMaxValue(RailType railType) {
-        return RailType.valueOf("P10000").ordinal();
+        // The server says whether ANTE's run hooks are on; off, the slider goes as far as MTR's own speeds
+        return mtr.client.ClientData.anteRunHooks ? RailType.valueOf("P10000").ordinal() : railType.ordinal();
     }
 }

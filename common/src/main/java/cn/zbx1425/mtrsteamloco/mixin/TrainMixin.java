@@ -191,6 +191,10 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 
     @Inject(method = "scanDoors", at = @At("HEAD"), cancellable = true)
     private void onScanDoors(Level world, double trainX, double trainY, double trainZ, float checkYaw, float pitch, double halfSpacing, int dwellTicks, CallbackInfoReturnable<Boolean> ci) {
+		// Isolated for now: MTR's own platforms, screen doors and gates only
+		if (!mtr.SecurityConfig.anteRunHooks) {
+			return;
+		}
         if (skipScanBlocks(world, trainX, trainY, trainZ)) {
             ci.setReturnValue(false);
 			return;
@@ -257,6 +261,10 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 
 	@Inject(method = "convertMaxManualSpeed", at = @At("HEAD"), cancellable = true, remap = false)
 	private static void convertMaxManualSpeed(int maxManualSpeed, CallbackInfoReturnable<RailType> ci) {
+		// Isolated for now: MTR's own speeds, up to the diamond rail
+		if (!mtr.SecurityConfig.anteRunHooks) {
+			return;
+		}
 		maxManualSpeed = Math.min(maxManualSpeed, RailType.values().length - 1);
 		ci.setReturnValue(RailType.values()[maxManualSpeed]);
 		ci.cancel();

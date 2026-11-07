@@ -96,14 +96,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	/**
 	 * The client only knows the game mode, so this tells it whether the permission level the server asks for lets it edit,
-	 * as the server ignores changes it isn't allowed to make without saying so; and whether the editor may simulate days, a
-	 * debugging tool the server turns on.
+	 * as the server ignores changes it isn't allowed to make without saying so; whether the editor may simulate days, a
+	 * debugging tool the server turns on; the colour of interlocking zones; and whether ANTE's run hooks are on.
 	 */
 	public static void editPermissionS2C(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBoolean(player.hasPermissions(SecurityConfig.editPermissionLevel));
 		packet.writeBoolean(SecurityConfig.editorSimulation);
 		packet.writeInt(SecurityConfig.interlockColor.ordinal());
+		packet.writeBoolean(SecurityConfig.anteRunHooks);
 		Registry.sendToPlayer(player, PACKET_EDIT_PERMISSION, packet);
 	}
 

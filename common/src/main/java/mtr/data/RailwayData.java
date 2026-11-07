@@ -462,7 +462,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public void simulateTrains() {
-		simulateTrains((rail, startPos, endPos, playerPos) -> new AABB(startPos, endPos).inflate(RAIL_UPDATE_DISTANCE).contains(playerPos));
+		simulateTrains(RailwayData::isRailNearInBox);
+	}
+
+	/**
+	 * MTR's own way of telling a rail near a player: within a box around its ends. ANTE's mixin uses it too while its run
+	 * hooks are off ({@code SecurityConfig.anteRunHooks}).
+	 */
+	public static boolean isRailNearInBox(Rail rail, BlockPos startPos, BlockPos endPos, Vec3 playerPos) {
+		return new AABB(startPos, endPos).inflate(RAIL_UPDATE_DISTANCE).contains(playerPos);
 	}
 
 	/**

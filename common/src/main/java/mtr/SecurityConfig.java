@@ -43,6 +43,12 @@ public final class SecurityConfig {
 	 */
 	public static volatile boolean editorSimulation = false;
 	/**
+	 * ANTE's mixins that change how trains run: opening doors at its eye candy and Metropolis's platforms, manual driving
+	 * speeds of its own rail types, and its own way of telling which rails are near a player. Off, as for now, MTR's own
+	 * rules run; ANTE's models, blocks, scripts and saved data are kept either way.
+	 */
+	public static volatile boolean anteRunHooks = false;
+	/**
 	 * The signal block colour of interlocking zones (L2): blocks of it in a station throat are taken as a whole by a route
 	 * through it, besides being signal blocks as before.
 	 */
@@ -68,6 +74,7 @@ public final class SecurityConfig {
 	private static final String KEY_AUDIO_UPLOADS_PER_HOUR = "audioUploadsPerHour";
 	private static final String KEY_THROAT_LOCKS = "throatLocks";
 	private static final String KEY_EDITOR_SIMULATION = "editorSimulation";
+	private static final String KEY_ANTE_RUN_HOOKS = "anteRunHooks";
 	private static final String KEY_INTERLOCK_COLOR = "interlockColor";
 	private static final String KEY_BLOCK_DECELERATION = "blockDeceleration";
 	private static final String KEY_BLOCK_MIN_LENGTH = "blockMinLength";
@@ -97,6 +104,7 @@ public final class SecurityConfig {
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);
 				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
 				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
+				anteRunHooks = jsonObject.has(KEY_ANTE_RUN_HOOKS) && jsonObject.get(KEY_ANTE_RUN_HOOKS).getAsBoolean();
 				interlockColor = parseColor(jsonObject.has(KEY_INTERLOCK_COLOR) ? jsonObject.get(KEY_INTERLOCK_COLOR).getAsString() : "");
 				blockDeceleration = jsonObject.has(KEY_BLOCK_DECELERATION) ? Math.max(0.1, Math.min(10, jsonObject.get(KEY_BLOCK_DECELERATION).getAsDouble())) : 1.0;
 				blockMinLength = getInt(jsonObject, KEY_BLOCK_MIN_LENGTH, 400, 16, 10000);
@@ -149,6 +157,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
+		jsonObject.addProperty(KEY_ANTE_RUN_HOOKS, anteRunHooks);
 		jsonObject.addProperty(KEY_INTERLOCK_COLOR, interlockColor.name().toLowerCase(Locale.ROOT));
 		jsonObject.addProperty(KEY_BLOCK_DECELERATION, blockDeceleration);
 		jsonObject.addProperty(KEY_BLOCK_MIN_LENGTH, blockMinLength);

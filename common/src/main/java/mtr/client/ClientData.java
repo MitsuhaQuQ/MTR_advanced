@@ -375,6 +375,11 @@ public final class ClientData {
 	 */
 	public static boolean editorSimulation = false;
 	/**
+	 * Whether the server runs ANTE's run hooks ({@code anteRunHooks}), which lets the siding screen offer ANTE's manual
+	 * driving speeds.
+	 */
+	public static boolean anteRunHooks = false;
+	/**
 	 * The signal block colour of interlocking zones, as the server has it ({@code interlockColor}).
 	 */
 	public static net.minecraft.world.item.DyeColor interlockColor = net.minecraft.world.item.DyeColor.MAGENTA;
