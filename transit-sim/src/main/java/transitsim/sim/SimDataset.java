@@ -42,9 +42,10 @@ public final class SimDataset {
 	 * Version 2 adds the trains as they were (G0), version 3 the signal blocks (G1), version 4 the depots' departures by
 	 * frequency and order of sidings, and which sidings are driven by hand (G1); version 5 the depots' release intervals
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
-	 * an operating line, version 8 the routes' operating lines; older data is read without them.
+	 * an operating line, version 8 the routes' operating lines; version 13 the sidings' ways for turning back early (D4);
+	 * older data is read without them.
 	 */
-	public static final int VERSION = 12;
+	public static final int VERSION = 13;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -117,6 +118,19 @@ public final class SimDataset {
 		}
 		sidings.forEach(siding -> writer.writeInt(siding.poolFleet));
 		depots.forEach(depot -> writer.writeBoolean(depot.dutiesOnly));
+		sidings.forEach(siding -> {
+			writer.writeVarInt(siding.turnLinks.size());
+			siding.turnLinks.forEach((pair, tracks) -> {
+				writer.writeLong(pair[0]);
+				writer.writeLong(pair[1]);
+				writeTracks(writer, tracks);
+			});
+			writer.writeVarInt(siding.turnReturns.size());
+			siding.turnReturns.forEach((platformId, tracks) -> {
+				writer.writeLong(platformId);
+				writeTracks(writer, tracks);
+			});
+		});
 		return writer.toBytes();
 	}
 
@@ -202,6 +216,21 @@ public final class SimDataset {
 		if (version >= 12) {
 			for (final DepotData depot : dataset.depots) {
 				depot.dutiesOnly = reader.readBoolean();
+			}
+		}
+		if (version >= 13) {
+			for (final SidingData siding : dataset.sidings) {
+				final int linkCount = reader.readVarInt();
+				for (int i = 0; i < linkCount; i++) {
+					final long from = reader.readLong();
+					final long to = reader.readLong();
+					siding.addTurnLink(from, to, readTracks(reader));
+				}
+				final int returnCount = reader.readVarInt();
+				for (int i = 0; i < returnCount; i++) {
+					final long platformId = reader.readLong();
+					siding.turnReturns.put(platformId, readTracks(reader));
+				}
 			}
 		}
 		return dataset;
@@ -329,6 +358,21 @@ public final class SimDataset {
 				@Override
 				public TimeGenerator<DataTrack> getTimeGenerator() {
 					return generator;
+				}
+
+				@Override
+				public java.util.Collection<Long> getTurnTargets(long platformId) {
+					return sidingData.getTurnTargets(platformId);
+				}
+
+				@Override
+				public List<DataTrack> getTurnLink(long fromPlatformId, long toPlatformId) {
+					return sidingData.getTurnLink(fromPlatformId, toPlatformId);
+				}
+
+				@Override
+				public List<DataTrack> getTurnReturn(long platformId) {
+					return sidingData.turnReturns.get(platformId);
 				}
 			};
 			if (sidingData.turnBacks.length > 0) {
@@ -503,6 +547,20 @@ public final class SimDataset {
 			}
 		}
 		return list;
+	}
+
+	private static void writeTracks(BinaryWriter writer, List<DataTrack> tracks) {
+		writer.writeVarInt(tracks.size());
+		tracks.forEach(track -> track.write(writer));
+	}
+
+	private static List<DataTrack> readTracks(BinaryReader reader) {
+		final int count = reader.readVarInt();
+		final List<DataTrack> tracks = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			tracks.add(DataTrack.read(reader));
+		}
+		return tracks;
 	}
 
 	private static void writeLongs(BinaryWriter writer, long[] values) {
@@ -764,6 +822,32 @@ public final class SimDataset {
 		 * The trains its pool has in all (P2-C), or -1 for as many as its duties need.
 		 */
 		public int poolFleet = -1;
+		/**
+		 * The ways round from a platform to another of its station that path generation found (D4), by the two platforms.
+		 */
+		public final Map<long[], List<DataTrack>> turnLinks = new java.util.TreeMap<>((a, b) -> a[0] != b[0] ? Long.compare(a[0], b[0]) : Long.compare(a[1], b[1]));
+		/**
+		 * The ways back to the siding from the platforms trains turn back to, for going back empty (D4).
+		 */
+		public final Map<Long, List<DataTrack>> turnReturns = new java.util.TreeMap<>();
+
+		public void addTurnLink(long fromPlatformId, long toPlatformId, List<DataTrack> tracks) {
+			turnLinks.put(new long[]{fromPlatformId, toPlatformId}, tracks);
+		}
+
+		public List<DataTrack> getTurnLink(long fromPlatformId, long toPlatformId) {
+			return turnLinks.get(new long[]{fromPlatformId, toPlatformId});
+		}
+
+		public java.util.Collection<Long> getTurnTargets(long fromPlatformId) {
+			final List<Long> targets = new ArrayList<>();
+			turnLinks.keySet().forEach(pair -> {
+				if (pair[0] == fromPlatformId) {
+					targets.add(pair[1]);
+				}
+			});
+			return targets;
+		}
 
 		public SidingData(long id, long depotId, long[] routeIds, int trainCars, int spacing, float railLength, float acceleration, float deceleration, int maxTrains, boolean usesSpeedCurve, float minSpeed, int repeatIndex1, int repeatIndex2, int loopJoinIndex, List<DataTrack> path, byte[] turnBacks) {
 			this.id = id;

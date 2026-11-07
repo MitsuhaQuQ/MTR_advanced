@@ -708,6 +708,17 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					}
 				});
 				alarmLookups.skips.clear();
+				// And where to turn back early (D4)
+				alarmLookups.turns.forEach((train, turn) -> {
+					final Set<Long> platformIds = new TreeSet<>();
+					for (int i = 2; i < turn.length; i++) {
+						platformIds.add(turn[i]);
+					}
+					if (!liveSimulation.submitTurnBack(train.id, (int) turn[0], platformIds, (int) turn[1])) {
+						train.getService().setTurnBack((int) turn[0], platformIds, (int) turn[1]);
+					}
+				});
+				alarmLookups.turns.clear();
 				if (!alarms.equals(depot.clientAlarms) || resend && alarms.size() > 1) {
 					depot.clientAlarms = alarms;
 					mtr.packet.DelayAlarms.sendS2C(world, depot.id, alarms);

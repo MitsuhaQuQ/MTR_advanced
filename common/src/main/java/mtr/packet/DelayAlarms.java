@@ -41,6 +41,10 @@ public final class DelayAlarms implements IPacket {
 		 * The trains to be told other platforms to pass than they pass now (D3), found by the pass, for the host to tell them.
 		 */
 		public final Map<TrainServer, Set<Long>> skips = new LinkedHashMap<>();
+		/**
+		 * The trains to be told otherwise where to turn back early (D4): {mode, after, platforms...}.
+		 */
+		public final Map<TrainServer, long[]> turns = new LinkedHashMap<>();
 
 		private Collection<Long> getStationPlatforms(DataCache dataCache, long stationId) {
 			if (stationPlatforms == null) {
@@ -57,9 +61,10 @@ public final class DelayAlarms implements IPacket {
 	 * @return each train reported, as {@code <train> <siding> <slot> <route> <reason> <late since> <waiting since> <plan>
 	 * <system>}: the moments it has been late and waiting since, or 0, which stay the same while nothing changes, so the
 	 * list is only sent again when something does; the plan one waiting for a dispatcher, or 0; the system the anchor of
-	 * its route's rail system; then 1 if it passes stations now (D3), else 0. After a {@code |}, each train a plan or a
-	 * dispatcher's setting is on for, the same, the plan 0 for what a dispatcher set. The trains to be told which platforms
-	 * to pass are put in {@link Lookups#skips}.
+	 * its route's rail system; then 1 if it passes stations now (D3), else 0; then where it is with turning back early
+	 * (D4): 0 not told to, 1 on its way, 2 turned back, 3 told a station it can't turn back at. After a {@code |}, each
+	 * train a plan or a dispatcher's setting is on for, the same, the plan 0 for what a dispatcher set. The trains to be told
+	 * which platforms to pass are put in {@link Lookups#skips}, those to be told where to turn back in {@link Lookups#turns}.
 	 */
 	public static List<String> collect(Collection<Siding> depotSidings, DataCache dataCache, Set<Long> deadlocked, mtr.data.ContingencySystems systems, transitsim.network.PlatformGraph platformGraph, Lookups lookups) {
 		final List<String> alarms = new ArrayList<>();
@@ -71,6 +76,9 @@ public final class DelayAlarms implements IPacket {
 				// What it was told to pass ends with its duty
 				if (!skipping.isEmpty()) {
 					lookups.skips.put(train, Collections.emptySet());
+				}
+				if (service.getTurnMode() != 0) {
+					lookups.turns.put(train, new long[]{0, 0});
 				}
 				return;
 			}
@@ -92,6 +100,16 @@ public final class DelayAlarms implements IPacket {
 			if (!skips.equals(skipping)) {
 				lookups.skips.put(train, skips);
 			}
+			// Where its plan turns it back early, while it is late enough (D4)
+			final long[] turn = DelayRules.getTurnBack(contingencyList, outcome, train.id, routeId, lateMillis, waitingMillis, isDeadlocked, service.getTurnMode() != 0, stationId -> lookups.getStationPlatforms(dataCache, stationId));
+			final Set<Long> turnPlatforms = new TreeSet<>();
+			for (int i = 2; i < turn.length; i++) {
+				turnPlatforms.add(turn[i]);
+			}
+			if (turn[0] != service.getTurnMode() || turn[0] != 0 && (turn[1] != service.getTurnAfter() || !turnPlatforms.equals(service.getTurnPlatforms()))) {
+				lookups.turns.put(train, turn);
+			}
+			final int turnState = service.getTurnState();
 			if (outcome.alarm == null && outcome.contingency == null) {
 				return;
 			}
@@ -99,9 +117,9 @@ public final class DelayAlarms implements IPacket {
 			final long anchor = outcome.systemIndex >= 0 ? anchors.get(outcome.systemIndex) : lookups.anchorByRoute.computeIfAbsent(routeId, key -> route == null || route.platformIds.isEmpty() ? 0L : systems.anchorOf(platformGraph.getNetworkOf(route.getFirstPlatformId()), platformGraph));
 			final String entry = train.id + " " + siding.id + " " + service.getDutySlot() + " " + routeId + " ";
 			if (outcome.alarm != null) {
-				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1));
+				alarms.add(entry + outcome.alarm + " " + lateSince + " " + waitingSince + " " + outcome.waitingPlanId + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState);
 			} else {
-				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1));
+				handled.add(entry + (outcome.reason == null ? "-" : outcome.reason.toString()) + " " + lateSince + " " + waitingSince + " " + (contingencyList.get(outcome.systemIndex).adhoc.containsKey(train.id) ? 0 : outcome.contingency.id) + " " + anchor + " " + (skipping.isEmpty() ? 0 : 1) + " " + turnState);
 			}
 		}));
 		alarms.sort(String::compareTo);

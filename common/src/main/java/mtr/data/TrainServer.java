@@ -538,6 +538,10 @@ public class TrainServer extends Train {
 		final boolean oldIsCurrentlyManual = isCurrentlyManual;
 		final boolean oldStopped = speed == 0;
 		final boolean oldDoorOpen = doorTarget;
+		// Turned back early, it runs empty from where everyone got off to where it takes riders again (D4)
+		if (service.isOutOfService() && !ridingEntities.isEmpty()) {
+			ridingEntities.clear();
+		}
 
 		this.world = world;
 		if (simulated != null) {

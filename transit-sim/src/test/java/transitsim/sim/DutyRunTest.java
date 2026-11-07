@@ -1070,6 +1070,206 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aRouteCutShortInOneSegmentRunsInFullInALaterOne() {
+		// D4: route 1 to platform 2 only, back on route 3 from platform 2, then route 1 in full; cut and joined part of the
+		// way along by segment, so the third segment still has platform 3
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, 1), new DepotDuties.Segment(3, (int) (8 * HOUR + 10 * MINUTE), 1, -1), new DepotDuties.Segment(1, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
+		final List<TestTrack> path = makePath(0, 1, 2, 1, 2, 3, 0);
+		final String key = DutyShapes.getSlotKey(depot.slots, 0, 0, routes::get);
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, Arrays.asList(1L, 3L, 1L), new HashMap<>(Collections.singletonMap(1L, 1)), new HashMap<>(Collections.singletonMap(3L, 1)), new HashMap<>(), path, new int[]{1, 2, 3}, null, null, false, false);
+		dutyPlan.segmentCuts.put(0, 1);
+		dutyPlan.segmentEntries.put(1, 1);
+		dutyPlan.segmentsKnown = true;
+		final TripPath<TestTrack> tripPath = TripPath.ofDuty(dutyPlan, new int[]{1, 2, 3}, path, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 1, 4), stop(4, 2, 6), stop(5, 3, 8)));
+		tripPaths.put(key, tripPath);
+		final FakeTrain train = newTrain(path);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+		train.nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 21 * MINUTE;
+		train.service.onStopReached();
+		assertEquals(1, train.service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, train.service.getTripMillis());
+		final List<PlanRoute> dutyRoutes = Arrays.asList(routes.get(1L), routes.get(3L), routes.get(1L));
+		// The third segment runs route 1 to its end, the first only to platform 2
+		final long[][] third = tripPath.stopTimes.getSegmentTimes(2, dutyRoutes);
+		assertTrue(third[2][0] >= 0, Arrays.deepToString(third));
+		final long[][] first = tripPath.stopTimes.getSegmentTimes(0, dutyRoutes);
+		assertTrue(first[1][0] >= 0);
+		assertEquals(-1, first[2][0]);
+		// The second joins route 3 at its second stop
+		assertEquals(-1, tripPath.stopTimes.getSegmentTimes(1, dutyRoutes)[0][0]);
+		assertEquals(1, tripPath.stopTimes.getSegmentEntry(1));
+		// By route, as before, the cut of the first segment would cut the third short too
+		dutyPlan.segmentsKnown = false;
+		final TripPath<TestTrack> byRoute = TripPath.ofDuty(dutyPlan, new int[]{1, 2, 3}, path, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 1, 4), stop(4, 2, 6), stop(5, 3, 8)));
+		assertEquals(-1, byRoute.stopTimes.getSegmentTimes(2, dutyRoutes)[2][0]);
+	}
+
+	/**
+	 * Turning back early with the test tracks (D4): from platform 2 round a turn back rail to platform 2 the other way, and
+	 * from there back to the siding.
+	 */
+	private static final transitsim.plan.PathVariants<TestTrack> TURN_VARIANTS = new transitsim.plan.PathVariants<TestTrack>() {
+		@Override
+		public TestTrack pass(TestTrack track) {
+			return SKIP_VARIANTS.pass(track);
+		}
+
+		@Override
+		public transitsim.plan.TimeGenerator<TestTrack> getTimeGenerator() {
+			return SKIP_VARIANTS.getTimeGenerator();
+		}
+
+		@Override
+		public Collection<Long> getTurnTargets(long platformId) {
+			return platformId == 2 ? Collections.singletonList(2L) : Collections.emptyList();
+		}
+
+		@Override
+		public List<TestTrack> getTurnLink(long fromPlatformId, long toPlatformId) {
+			return fromPlatformId == 2 && toPlatformId == 2 ? Arrays.asList(new TestTrack(20, 40, false, 2, 10, 2), new TestTrack(40, 50, false, 0, 0, 2), new TestTrack(50, 40, false, 0, 0, 2), new TestTrack(40, 20, false, 2, 0, 2)) : null;
+		}
+
+		@Override
+		public List<TestTrack> getTurnReturn(long platformId) {
+			return platformId == 2 ? Arrays.asList(new TestTrack(40, 20, false, 2, 0, 2), new TestTrack(20, 0, true, 0, 0, 2)) : null;
+		}
+	};
+
+	/**
+	 * Route 1 out on rails 1 to 3, route 3 back on rails 3 to 5, platform 2 on rails 2 and 4.
+	 */
+	private TripPath<TestTrack> outAndBack(FakeTrain[] train) {
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(3, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
+		final List<TestTrack> path = makePath(0, 1, 2, 3, 2, 1, 0);
+		final String key = DutyShapes.getSlotKey(depot.slots, 0, 0, routes::get);
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, Arrays.asList(1L, 3L), new HashMap<>(), new HashMap<>(), new HashMap<>(), path, new int[]{1, 3}, null, null, false, false);
+		dutyPlan.segmentsKnown = true;
+		final TripPath<TestTrack> tripPath = TripPath.ofDuty(dutyPlan, new int[]{1, 3}, path, StopTimes.of(stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 2, 22), stop(5, 1, 24)));
+		tripPaths.put(key, tripPath);
+		train[0] = newTrain(path);
+		train[0].service.setPathVariants(TURN_VARIANTS);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].nextStoppingIndex = 1;
+		return tripPath;
+	}
+
+	@Test
+	void turnsBackEarlyAtTheNearestStopItCanAndGoesOnWithItsDuty() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		assertFalse(train[0].service.chooseEarlyTurn());
+		train[0].service.setTurnBack(transitsim.plan.Contingency.TURN_NEAREST, Collections.emptySet(), transitsim.plan.Contingency.AFTER_RESUME);
+		assertEquals(1, train[0].service.getTurnState());
+		// Platform 1 has no way round, platform 2 has, and platform 3 is where the duty turns back anyway
+		assertTrue(train[0].service.chooseEarlyTurn());
+		final TripPath<TestTrack> turned = train[0].followed;
+		assertEquals(TripPath.getTurnKey(tripPath.key, 0, 2, 1, 4, 1, true), train[0].service.getTripPathKey());
+		assertEquals(2, train[0].service.getTurnState());
+		assertEquals(1, train[0].nextStoppingIndex);
+		// Out to platform 2, round the turn back rail, then on with route 3 from platform 2
+		assertEquals(Arrays.asList(0L, 1L, 2L, 0L, 0L, 2L, 1L, 0L), turned.path.stream().map(TestTrack::getStopId).collect(java.util.stream.Collectors.toList()));
+		assertArrayEquals(new int[]{1, 5}, turned.dutyStarts);
+		assertEquals(2, turned.turnRail);
+		assertEquals(5, turned.turnResumeRail);
+		assertFalse(train[0].service.isClearingOut());
+
+		// Riders get off at platform 2, it runs empty round, and takes riders again from platform 2 the other way
+		train[0].nextStoppingIndex = 2;
+		assertTrue(train[0].service.isClearingOut());
+		assertFalse(train[0].service.isOutOfService());
+		train[0].nextStoppingIndex = 4;
+		assertTrue(train[0].service.isOutOfService());
+		// On its way to platform 2 the other way, still empty, until it gets there
+		train[0].nextStoppingIndex = 5;
+		assertTrue(train[0].service.isOutOfService());
+		now = MONDAY + 8 * HOUR + 5 * MINUTE;
+		train[0].service.onStopReached();
+		assertFalse(train[0].service.isOutOfService());
+		assertEquals(3, train[0].service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, train[0].service.getTripMillis());
+		// Its service on route 3 left platform 3 at 08:20, so it is planned at platform 2 later than that, and waits there
+		assertTrue(train[0].service.getPlannedArrivalMillis(5) > MONDAY + 8 * HOUR + 20 * MINUTE, String.valueOf(train[0].service.getPlannedArrivalMillis(5) - MONDAY - 8 * HOUR));
+		// Turned back once, it doesn't again
+		train[0].nextStoppingIndex = 5;
+		assertFalse(train[0].service.chooseEarlyTurn());
+	}
+
+	@Test
+	void turnsBackAtAGivenStationAndGoesBackEmpty() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		train[0].service.setTurnBack(transitsim.plan.Contingency.TURN_STATION, Collections.singleton(2L), transitsim.plan.Contingency.AFTER_DEADHEAD);
+		assertTrue(train[0].service.chooseEarlyTurn());
+		final TripPath<TestTrack> turned = train[0].followed;
+		assertEquals(Arrays.asList(0L, 1L, 2L, 0L, 0L, 2L, 0L), turned.path.stream().map(TestTrack::getStopId).collect(java.util.stream.Collectors.toList()));
+		assertArrayEquals(new int[]{1}, turned.dutyStarts);
+		assertEquals(Collections.singletonList(1L), turned.routeIds);
+		assertEquals(-1, turned.turnResumeRail);
+		// Nothing after platform 2 is a stop until the siding
+		for (int i = 3; i < turned.path.size() - 1; i++) {
+			assertEquals(0, turned.path.get(i).getDwellTime());
+		}
+		train[0].nextStoppingIndex = 6;
+		assertTrue(train[0].service.isOutOfService());
+		assertFalse(train[0].service.chooseDutyReturn());
+	}
+
+	@Test
+	void toldAStationItCantTurnBackAtItSaysSo() {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		train[0].service.setTurnBack(transitsim.plan.Contingency.TURN_STATION, Collections.singleton(1L), transitsim.plan.Contingency.AFTER_RESUME);
+		assertFalse(train[0].service.chooseEarlyTurn());
+		assertEquals(3, train[0].service.getTurnState());
+		// Told none, it is told nothing
+		train[0].service.setTurnBack(0, Collections.emptySet(), 0);
+		assertEquals(0, train[0].service.getTurnState());
+	}
+
+	@Test
+	void aTrainTurnedBackIsPutBackOnItsPathFromASaveAndCanPassStopsToo() throws Exception {
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train);
+		train[0].service.setTurnBack(transitsim.plan.Contingency.TURN_NEAREST, Collections.emptySet(), transitsim.plan.Contingency.AFTER_RESUME);
+		train[0].service.chooseEarlyTurn();
+		final String key = train[0].service.getTripPathKey();
+		// Passing stops of the turned path keeps it turned
+		train[0].service.setSkipPlatforms(Collections.singleton(1L));
+		train[0].nextStoppingIndex = 2;
+		train[0].service.chooseSkip();
+		assertEquals(TripPath.getSkipKey(key, new int[0]), TripPath.getSkipBase(train[0].service.getTripPathKey()));
+		assertEquals(key, TripPath.getSkipBase(train[0].service.getTripPathKey()));
+
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		train[0].service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		final FakeTrain restored = newTrain(train[0].path);
+		restored.service.setPathVariants(TURN_VARIANTS);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		assertEquals(train[0].service.getTripPathKey(), restored.service.getTripPathKey());
+		assertEquals(train[0].followed.path.size(), restored.followed.path.size());
+		assertEquals(transitsim.plan.Contingency.TURN_NEAREST, restored.service.getTurnMode());
+	}
+
+	@Test
+	void aTripPathWritesAsManyValuesAsItSays() throws Exception {
+		final int[] count = new int[1];
+		final transitsim.io.KeyedWriter counter = (transitsim.io.KeyedWriter) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{transitsim.io.KeyedWriter.class}, (proxy, method, args) -> {
+			count[0]++;
+			return null;
+		});
+		final FakeTrain[] train = new FakeTrain[1];
+		outAndBack(train)
+				.write(counter);
+		assertEquals(TripPath.WRITTEN_VALUES, count[0]);
+	}
+
+	@Test
 	void aServiceWritesAsManyValuesAsItSays() throws Exception {
 		// The hosts write the size of a saved train before its values, so one too few breaks what comes after it
 		final int[] count = new int[1];

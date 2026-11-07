@@ -33,6 +33,19 @@ public class DutyPlan<T extends PlanTrack, P> {
 	 * rail, and each way starts on it) to the first stop of the next segment.
 	 */
 	public final List<TurnBackSection<T>> turnBackSections = new ArrayList<>();
+	/**
+	 * By segment, the last stop of its route it runs to, where that isn't the route's last (D4). A route can be in several
+	 * segments of a duty, each cut and joined at its own stops, which {@link #cutStops} by route can't tell apart.
+	 */
+	public final Map<Integer, Integer> segmentCuts = new java.util.TreeMap<>();
+	/**
+	 * By segment, the stop of its route where it joins it, where that isn't the route's first (D4).
+	 */
+	public final Map<Integer, Integer> segmentEntries = new java.util.TreeMap<>();
+	/**
+	 * Whether {@link #segmentCuts} and {@link #segmentEntries} are filled in, so the plans go by them rather than by route.
+	 */
+	public boolean segmentsKnown;
 
 	public DutyPlan(String key, List<Long> routeIds, Map<Long, Integer> cutStops, Map<Long, Integer> entryStops, Map<Long, List<T>> entryLeads, List<T> body, int[] segmentStarts, P firstPlatform, P lastPlatform, boolean startsOnLine, boolean staysOnLine) {
 		this.key = key;

@@ -1076,7 +1076,7 @@ sequenceDiagram
   - 原来的"共用线路的车厂让班次"（`getSharedTaken`、`autoTaken`）对按线路排的车厂不再用：一个班次在单元里只排一次。设了运用的车厂仍然先占它们的班次。
 - **自动重算**：`RailwayData` 每 100 tick 检查一次，车厂的 `getAutoDutiesKey` 现在是整个规划单元的键（各线路的时刻表、站台和停站设置，各存车线的上限、车型和出车站台，设了运用的车厂占的班次，联络线），单元里任何一处变了，单元里每个车厂都会重新寻路，每次最多一个车厂；读档后也会算一次。车厂不再按线路排时（线路删了、时刻表停用了，`getAutoDutiesKey` 为空），如果还留着自动运用，就再寻路一次（`takeAutoDutiesChange` 记 `NOT_BY_LINE`，之后不再重复），`generateAutoDuties` 去掉这些存车线的自动运用并发给客户端（以前只在服务端去掉，不发，网页一直显示已删除线路的运用）。网页运用面板里，已删除线路的班次不再逐行列出"--:-- ?"，而是合成一句"有 N 班属于已经删除的线路"：自动运用说明会重排，设好的运用给"全部移出"；线路还在但时刻表里没有这一班时，写明星期和时刻。
 - **网页"一键生成运用"**（MTM_Logic 0.8.1）：`EditorDuties.prepareGeneration` 在客户端线程上取 `LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true)`（`forDraft`：车厂设了运用也算进单元，它自己的运用不算 `taken`），复制一份最快时刻，在后台 `unit.plan(...)`，只把这个车厂存车线的槽位放进结果，另带 `byLine`、`lineNames`、`lineDepots`、`needed`、`available`、`suggestedSiding` 给页面提示；不能按线路排的车厂照旧单独调 `DutyGenerator`。组件测试用的对照是 `PlanCheck.generateByLine` / `checkByLine`（线路组来自 `SimDataset.RouteData.lineKey`，格式 8）。
-- **故障预案和报警**（0.29.0，晚点调度 D2）：晚点不自动处理，由故障预案决定；没有预案只报警。这一步只做预案、状态和报警，具体手段在 D3–D5 接上（跳站已在 D3 接上，见下面"跳站"）。
+- **故障预案和报警**（0.29.0，晚点调度 D2）：晚点不自动处理，由故障预案决定；没有预案只报警。这一步只做预案、状态和报警，具体手段在 D3–D5 接上（跳站、临时折返已在 D3、D4 接上，见下面）。
   - **归属**：预案属于**路网**（用户定的），不属于车厂：一片连通的轨道是一个路网，路网里所有线路的车不管来自哪个车厂，都用同一套预案。
     - 路网 id 在轨道每次改动后都会重算，所以路网用它的一个站台来认，叫锚点（`mtr.data.ContingencySystems`，锚点站台 → `Contingencies`）。
     - 线路属于哪个路网，看它首站所在的网络（`RailwayData.getPlatformGraph()`，即 `PathRegionSync.getLatest()` 的 `platformGraph`）里有哪些锚点（`anchorsForRoute`）。
@@ -1126,6 +1126,27 @@ sequenceDiagram
   - **计划时刻**：`StopTimes.matchRouteStops` 按站台对线路的站，变体里没有的站自动略过，后面各站的计划时刻不变，所以跳站的车变成"不那么晚"，巡航限速仍按计划到站时刻，不会早到。站台 PIDS 由变体的时间段（带 `pass`）写，显示通过。
   - **存档**：`TrainService` 多存 `skip_platforms`（`SAVED_KEYS` 16）。顺手修了一个旧错：0.2x 加 `duty_id` 时 `SAVED_KEYS` 没跟着加，存档里每列车的 map 头少算一项，最后一项（巡航限速）会被读成同一存车线的下一列车；现在有测试数写出的项数（`DutyRunTest.aServiceWritesAsManyValuesAsItSays`、`TrainIdentityTest`）。
   - **网页**：报警条目末尾多一个字段，1 表示正在跳站（`EditorContingencies` 读成 `skipping`），同步状态里原因后面加"，跳站中"。
+- **临时折返**（0.32.0，晚点调度 D4）：预案或临时处置设了"最近站"或"指定站"折返时，运用车在第 k 段中途的一站清客，空车绕到同站对向站台：接线运营就从那里接上第 k+1 段（中途加入，早到就等计划时刻），回送就空车回本存车线、这份运用剩下的放弃。一份运用只折返一次。
+  - **折返能力在路径生成时测**（游戏）：`Depot.MainPath.setTurnLinks`，在生成每条存车线的运用路径前调用。
+    - 对每份运用的每对相邻段 k、k+1：第 k 段除末站外的每个停站 p，和第 k+1 段除末站外、同一车站的停站 p'，用 `findConnection(p, p', null)` 找绕过去的路（和段与段之间折返同一种找法）。
+    - 超过 `MAX_TURN_LINK_BLOCKS`（1000 格）的不要。同一对站台在一轮生成里只找一次。
+    - 结果交给存车线（`Siding.setTurnLinks`），存车线在生成时再对每个 p' 找回本存车线的路（`findTurnReturns`，和回库尾巴共用缓存），换路径时一起换上（`turnLinks`、`turnReturns`）。
+    - 随存车线存档（`turn_links`、`turn_returns`，先读这两项再恢复列车），随 `SimDataset` 第 13 版发给组件（`SidingData.turnLinks`、`turnReturns`）。
+  - **折返路径按需拼**（组件 `TripPath.withTurn`）：键是 `原键~turn:段:p 的轨道:p 在线路上的站号:目标:p' 在线路上的站号:r|d`（目标在接线运营时是 p' 在原路径上的轨道，回送时是 p' 的站台），`~skip:` 仍在最后。
+    - 接线运营：原路径到 p + 连接中间的轨道 + 原路径从 p' 起的全部；第 k+1 段的起点改成 p' 的新轨道，后面各段平移。
+    - 回送：原路径到 p + 连接 + p' 的回库路；运用只剩到第 k 段为止。p 之后的站台一律停站 0，只在存车线停。
+    - 宿主经 `PathVariants.getTurnTargets` / `getTurnLink` / `getTurnReturn` 提供连接；和跳站一样从键重建（`TrainService.findPath`，跳站变体的底路径也可以是折返路径）。
+    - 路径上记 `turnRail`（清客的站）和 `turnResumeRail`（接线的站，回送为 -1）。
+  - **每段的切点和入点**（组件 `StopTimes`）：原来 `cutStops`、`entryStops` 按线路存，同一条线路在一份运用里出现几次就分不开。现在运用路径另存按段的 `segmentCuts`、`segmentEntries`、`segmentEntryTimes`（`segmentsKnown` 时用它们，老路径照旧按线路），`matchRouteStops` 带上段号，`RouteStop` 记下是哪一段的站。`Depot.getDutyPlan` 生成时填好（`DutyPlan.segmentCuts` 等）。
+    - 折返路径的第 k+1 段从 p' 中途加入，它从线路首站到 p' 的最快时刻，在做计划时由原路径同一段的停站时刻算出（`segmentLeadSources`，`getSegmentLead`），所以拼路径时不需要线路数据，存档恢复时也能重建。
+    - `TripPath` 多写四项（`WRITTEN_VALUES` 20，有测试数项数）。
+  - **列车选择**（组件 `TrainService.chooseEarlyTurn`）：在 `TrainRules.isHeldAtStop` 的选择链里排在 `chooseTurnBack` 之后、`chooseSkip` 之前，每站发车前选一次。
+    - 从当前站起，第 k 段里第一个（最近站）或属于指定车站的（指定站）、不是末站、有连接的站 p；接线运营还要第 k+1 段有对应的 p'（不是末站），回送要 p' 有回库路。
+    - 指定站折不回去时记下（`getTurnState` 为 3），报警里写出来。
+    - 换到折返路径以后，其他方向的折返选择（`chooseTurnBack`）不再做，因为那会换回原路径；回别的存车线时按原路径的回库路径、在它的末站换上。
+  - **清客和不运营**：`TrainService.isClearingOut`（停在 p）、`isOutOfService`（离开 p 之后，到接上第 k+1 段为止；回送一直到库）。游戏的列车在不运营时把骑乘者放下（`TrainServer.simulateTrain`，和回库时一样），所以在 p 下车的人留在站台，之后也上不了车。
+  - **宿主下发**：和跳站一样在报警那一轮里，`DelayRules.getTurnBack` 从生效的预案或临时处置取方式、车站（换成站台）和之后怎么走；正在折返的车晚点 1 分钟以上继续算生效。不同才发：组件的车经 `LiveSimulation.submitTurnBack` → `HostInput.TurnBack`，游戏的车直接 `setTurnBack`。车不在运用上时清掉。
+  - **存档和报警**：`TrainService` 多存 `turn_back`（`SAVED_KEYS` 17）。报警条目末尾再加折返状态（0 无、1 将折返、2 已折返、3 指定站折不回去），网页在原因后面写出来。
 - **实测余量**（0.28.0，晚点调度 D1）：列车实际比计划多用的时间记下来，下次生成运用时加上，时刻表不变。
   - **记录**：组件 `transitsim.sim.BufferRecorder` 按列车的 `MotionEvent` 量三种用时：
     - 出库：存车线 `DEPARTED`（第 0 条轨道）→ 第一个站台 `STOPPED`，计划用时 `stopTimes.getLeadMillis()`；

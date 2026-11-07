@@ -247,6 +247,16 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 				}
 				train.service.setSkipPlatforms(platformIds);
 			}
+		} else if (input instanceof HostInput.TurnBack) {
+			final HostInput.TurnBack turnBack = (HostInput.TurnBack) input;
+			final TickRunner<T>.HeadlessTrain train = runner.getTrain(turnBack.trainId);
+			if (train != null) {
+				final java.util.Set<Long> platformIds = new java.util.TreeSet<>();
+				for (final long platformId : turnBack.platformIds) {
+					platformIds.add(platformId);
+				}
+				train.service.setTurnBack(turnBack.mode, platformIds, turnBack.after);
+			}
 		} else if (input instanceof HostInput.Remove) {
 			runner.removeTrain(((HostInput.Remove) input).trainId);
 			doorsOpen.remove(((HostInput.Remove) input).trainId);

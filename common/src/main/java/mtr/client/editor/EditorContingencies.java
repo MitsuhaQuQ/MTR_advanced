@@ -91,6 +91,8 @@ public final class EditorContingencies {
 			alarm.addProperty("system", parts[8]);
 			// Passing stations now (D3), sent from 0.31.0
 			alarm.addProperty("skipping", parts.length > 9 && "1".equals(parts[9]));
+			// Where it is with turning back early (D4), sent from 0.32.0
+			alarm.addProperty("turn", parts.length > 10 ? Integer.parseInt(parts[10]) : 0);
 			alarm.addProperty("handled", handled);
 			alarms.add(alarm);
 		}

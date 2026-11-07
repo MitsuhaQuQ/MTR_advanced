@@ -6074,8 +6074,9 @@
 		const reason = alarm.reason === "DEADLOCK" ? tr("和别的车互相等着走不了（锁死）")
 			: alarm.reason === "WAITING" ? tr("等进路已 {0} 分钟", Math.floor(alarm.waiting / 60))
 			: alarm.reason === "LATE" ? tr("晚点 {0} 分钟", Math.floor(alarm.late / 60)) : "";
-		// Passing the stations a plan or a dispatcher's setting has it pass (D3)
-		return reason + (alarm.skipping ? tr("，跳站中") : "");
+		// Passing the stations a plan or a dispatcher's setting has it pass (D3), and turning back early (D4)
+		const turn = alarm.turn === 1 ? tr("，将提前折返") : alarm.turn === 2 ? tr("，已提前折返") : alarm.turn === 3 ? tr("，指定的车站折不回去") : "";
+		return reason + (alarm.skipping ? tr("，跳站中") : "") + turn;
 	}
 
 	/** The rail system, a network of rails joined together, with its plans (D2). */

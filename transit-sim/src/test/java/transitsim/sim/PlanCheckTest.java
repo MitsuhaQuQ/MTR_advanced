@@ -242,6 +242,8 @@ class PlanCheckTest {
 		}
 		final int[] segmentStarts = shape.size() == 2 ? new int[]{0, 5} : new int[]{0};
 		final DutyPlan<SimDataset.DataTrack, Object> dutyPlan = new DutyPlan<>(key, shape, new HashMap<>(), new HashMap<>(), new HashMap<>(), path.subList(bodyStart, bodyEnd + 1), segmentStarts, null, null, false, false);
+		// Every route runs in full, so by segment is the same as by route (D4)
+		dutyPlan.segmentsKnown = true;
 		final int[] dutyStarts = new int[segmentStarts.length];
 		for (int i = 0; i < dutyStarts.length; i++) {
 			dutyStarts[i] = segmentStarts[i] + bodyStart;

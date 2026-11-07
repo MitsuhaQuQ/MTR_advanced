@@ -169,6 +169,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private static final int DETOUR_MIN_BLOCKS = 300;
 	private static final int DETOUR_FACTOR = 5;
+	/**
+	 * A way round for turning back early longer than this isn't taken (D4), as a train would run a long way empty.
+	 */
+	private static final int MAX_TURN_LINK_BLOCKS = 1000;
 	private static final int MAX_RUN_PROBLEMS = 16;
 	/**
 	 * Added to the measured time of a change of platform, for stopping and starting.
@@ -1033,6 +1037,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			});
 		});
 		return dutyPaths;
+	}
+
+	/**
+	 * Where a siding's duties can turn back early (D4), as path generation finds it, for the tests: the ways round by
+	 * {@code from>to}.
+	 */
+	public Map<String, List<PathData>> findTurnLinks(DepotDuties draft, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, Siding siding, boolean useFastSpeed) {
+		final MainPath mainPath = new MainPath(getSidingRoutes(siding, dataCache), Collections.singletonList(siding), dataCache);
+		final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = mainPath.getDutyPlans(draft, siding, rails, graph, useFastSpeed, key -> {
+		});
+		return mainPath.setTurnLinks(siding, dutyPlans, new HashMap<>(), rails, graph, useFastSpeed);
 	}
 
 	/**
@@ -2274,6 +2289,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final Map<Long, Integer> cutStops = new HashMap<>();
 			final Map<Long, Integer> entryStops = new HashMap<>();
 			final Map<Long, List<PathData>> entryLeads = new HashMap<>();
+			// Where each segment is cut and joined, by segment, as a route can be in several (D4)
+			final Map<Integer, Integer> segmentCuts = new HashMap<>();
+			final Map<Integer, Integer> segmentEntries = new HashMap<>();
 			SavedRailBase firstPlatform = null;
 			SavedRailBase lastPlatform = null;
 			Route previousRoute = null;
@@ -2374,6 +2392,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				routeIds.add(route.id);
 				if (lastStop < route.platformIds.size() - 1) {
 					cutStops.putIfAbsent(route.id, lastStop);
+					segmentCuts.put(k, lastStop);
+				}
+				if (firstStop > 0) {
+					segmentEntries.put(k, firstStop);
 				}
 				if (firstStop > 0 && !entryStops.containsKey(route.id)) {
 					// The plan of a route joined part of the way along counts from its first stop, so the way there is timed too
@@ -2408,6 +2430,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			}
 			final DutyPlan<PathData, SavedRailBase> dutyPlan = new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
 			dutyPlan.turnBackSections.addAll(turnBackSections);
+			dutyPlan.segmentCuts.putAll(segmentCuts);
+			dutyPlan.segmentEntries.putAll(segmentEntries);
+			dutyPlan.segmentsKnown = true;
 			return dutyPlan;
 		}
 
@@ -2601,9 +2626,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			}
 
 			final DepotDuties runDuties = duties.diagramMode ? duties : generateAutoDuties(minecraftServer, linePlan);
+			// Ways round for turning back early, found once for each pair of platforms in this generation (D4)
+			final Map<String, List<PathData>> turnLinkCache = new HashMap<>();
 			for (final Siding siding : sidings) {
 				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = runDuties != null ? getDutyPlans(runDuties, siding, rails, graph, useFastSpeed, key -> {
 				}) : new ArrayList<>();
+				setTurnLinks(siding, dutyPlans, turnLinkCache, rails, graph, useFastSpeed);
 				siding.generateDutyRoute(minecraftServer, rails, graph, cruisingAltitude, useFastSpeed, dutyPlans, getPoolSidings(siding));
 			}
 			return failure == PathFailure.NONE ? DUTIES_ONLY_FOUND : 0;
@@ -2648,6 +2676,62 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @param start where the ways round start on the main path
 		 * @return the ways round, or null if none of them can be used
 		 */
+		/**
+		 * Finds where the siding's duties can turn back early (D4) and tells the siding: from each stop of a segment but its
+		 * last, round to each platform of the same station the next segment stops at but its last, the way a duty turns back
+		 * between two segments ({@link #findConnection}), if there is one no longer than {@link #MAX_TURN_LINK_BLOCKS}.
+		 */
+		private Map<String, List<PathData>> setTurnLinks(Siding siding, List<DutyPlan<PathData, SavedRailBase>> dutyPlans, Map<String, List<PathData>> cache, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final Map<String, List<PathData>> links = new HashMap<>();
+			final Map<Long, SavedRailBase> targets = new HashMap<>();
+			for (final DutyPlan<PathData, SavedRailBase> dutyPlan : dutyPlans) {
+				for (int k = 0; k + 1 < dutyPlan.segmentStarts.length; k++) {
+					final List<Long> from = getSegmentStops(dutyPlan, k);
+					final List<Long> to = getSegmentStops(dutyPlan, k + 1);
+					for (int i = 0; i + 1 < from.size(); i++) {
+						final Station station = dataCache.platformIdToStation.get(from.get(i));
+						for (int j = 0; j + 1 < to.size(); j++) {
+							final long fromId = from.get(i);
+							final long toId = to.get(j);
+							final Station toStation = dataCache.platformIdToStation.get(toId);
+							final Platform fromPlatform = dataCache.platformIdMap.get(fromId);
+							final Platform toPlatform = dataCache.platformIdMap.get(toId);
+							if (fromId == toId || station == null || toStation == null || station.id != toStation.id || fromPlatform == null || toPlatform == null) {
+								continue;
+							}
+							final List<PathData> link = cache.computeIfAbsent(fromId + ">" + toId, key -> {
+								final List<PathData> connectingPath = new ArrayList<>();
+								findConnection(connectingPath, fromPlatform, toPlatform, null, rails, graph, useFastSpeed);
+								return connectingPath.size() >= 2 && pathLength(connectingPath) <= MAX_TURN_LINK_BLOCKS ? connectingPath : Collections.emptyList();
+							});
+							if (!link.isEmpty()) {
+								links.put(fromId + ">" + toId, link);
+								targets.put(toId, toPlatform);
+							}
+						}
+					}
+				}
+			}
+			siding.setTurnLinks(links, targets);
+			return links;
+		}
+
+		/**
+		 * @return the platforms a segment of a duty stops at, in order
+		 */
+		private List<Long> getSegmentStops(DutyPlan<PathData, SavedRailBase> dutyPlan, int segment) {
+			final int start = dutyPlan.segmentStarts[segment];
+			final int end = segment + 1 < dutyPlan.segmentStarts.length ? dutyPlan.segmentStarts[segment + 1] : dutyPlan.body.size() - 1;
+			final List<Long> stops = new ArrayList<>();
+			for (int i = start; i <= end && i < dutyPlan.body.size(); i++) {
+				final PathData pathData = dutyPlan.body.get(i);
+				if (pathData.savedRailBaseId != 0 && pathData.dwellTime > 0 && pathData.rail.railType == RailType.PLATFORM && (stops.isEmpty() || stops.get(stops.size() - 1) != pathData.savedRailBaseId)) {
+					stops.add(pathData.savedRailBaseId);
+				}
+			}
+			return stops;
+		}
+
 		/**
 		 * The way between two services, from where one ends to where the next starts, as a duty runs it: round the turn
 		 * back rails the route before lists after its end, or, with none listed, the shorter of the way found and the way
@@ -2915,6 +2999,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final List<TripTail<PathData, SavedRailBase>> tripTails = getTripTails(tempPath, rails, graph, useFastSpeed);
 
 			final DepotDuties runDuties = duties.diagramMode ? duties : generateAutoDuties(minecraftServer, linePlan);
+			// Ways round for turning back early, found once for each pair of platforms in this generation (D4)
+			final Map<String, List<PathData>> turnLinkCache = new HashMap<>();
 
 			int successfulSegments = Integer.MAX_VALUE;
 			for (final Siding siding : sidings) {
@@ -2922,6 +3008,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final SavedRailBase finalPlatform = platformsMerged.isEmpty() ? null : platformsMerged.get(platformsMerged.size() - 1);
 				final List<DutyPlan<PathData, SavedRailBase>> dutyPlans = runDuties != null ? getDutyPlans(runDuties, siding, rails, graph, useFastSpeed, key -> {
 				}) : new ArrayList<>();
+				setTurnLinks(siding, dutyPlans, turnLinkCache, rails, graph, useFastSpeed);
 				successfulSegments = Math.min(successfulSegments, siding.generateRoute(minecraftServer, tempPath, platformsMerged.size(), rails, graph, firstPlatform, finalPlatform, repeatPath, cruisingAltitude, useFastSpeed, loopJoinPath, tripTails, turnBackSections, depotReturns, dutyPlans, getPoolSidings(siding)));
 			}
 			return successfulSegments;

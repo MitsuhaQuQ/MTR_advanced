@@ -50,6 +50,19 @@ public class StopTimes {
 	 */
 	final Map<Long, Integer> entryStops = new HashMap<>();
 	final Map<Long, long[][]> entryTimes = new HashMap<>();
+	/**
+	 * For a duty's path, the same by segment (D4): a route can be in several segments, each cut and joined at its own stops.
+	 * Used instead of the ones by route when {@link #segmentsKnown}.
+	 */
+	final Map<Integer, Integer> segmentCuts = new HashMap<>();
+	final Map<Integer, Integer> segmentEntries = new HashMap<>();
+	final Map<Integer, long[][]> segmentEntryTimes = new HashMap<>();
+	/**
+	 * For a segment joined part of the way along on a path turned back early (D4), the stop times of the usual path, whose
+	 * same segment runs from further back: the times to where it joins are worked out from them when the plan is made.
+	 */
+	final Map<Integer, StopTimes> segmentLeadSources = new HashMap<>();
+	boolean segmentsKnown;
 
 	/**
 	 * Stop times of a path worked out elsewhere, for running services without a world.
@@ -101,6 +114,15 @@ public class StopTimes {
 		entryStops.putAll(stopTimes.entryStops);
 		entryTimes.clear();
 		entryTimes.putAll(stopTimes.entryTimes);
+		segmentCuts.clear();
+		segmentCuts.putAll(stopTimes.segmentCuts);
+		segmentEntries.clear();
+		segmentEntries.putAll(stopTimes.segmentEntries);
+		segmentEntryTimes.clear();
+		segmentEntryTimes.putAll(stopTimes.segmentEntryTimes);
+		segmentLeadSources.clear();
+		segmentLeadSources.putAll(stopTimes.segmentLeadSources);
+		segmentsKnown = stopTimes.segmentsKnown;
 		tailJoinStart = stopTimes.tailJoinStart;
 		tailJoinEnd = stopTimes.tailJoinEnd;
 		tailLapEnd = stopTimes.tailLapEnd;
@@ -294,7 +316,7 @@ public class StopTimes {
 			}
 			stopPlan.startsRoute = routeStop != null && routeStop.startsRoute;
 			if (stopPlan.startsRoute && routeStop.departureIndex > 0) {
-				stopPlan.routeStartOffsetMillis = getEntryOffset(routeStop.departureRoute, routeStop.departureIndex, departureTable, routeStop.departureRoute.getRouteId() == routeId ? stopExceptions : null);
+				stopPlan.routeStartOffsetMillis = getEntryOffset(routes, routeStop.departureRoute, routeStop.departureSegment, routeStop.departureIndex, departureTable, routeStop.departureRoute.getRouteId() == routeId ? stopExceptions : null);
 			}
 			stopPlan.route = stopPlan.startsRoute ? routeStop.departureRoute : null;
 			stopPlan.waitsForService = stopPlan.startsRoute && routeStop.departureRoute.getTimetable().isActive();
@@ -315,7 +337,7 @@ public class StopTimes {
 	 */
 	public long getEntryOffsetMillis(PlanRoute route, int entryStop, int table, int service) {
 		final Map<Integer, ServiceExceptions.StopException> stopExceptions = service < 0 || table >= route.getTimetable().getTableCount() ? null : route.getTimetable().getTable(table).exceptions.get(service);
-		return getEntryOffset(route, entryStop, table, stopExceptions);
+		return getEntryOffset(null, route, 0, entryStop, table, stopExceptions);
 	}
 
 	/**
@@ -323,8 +345,8 @@ public class StopTimes {
 	 *
 	 * @return the planned time from the first stop of the route to the stop where the train joins it
 	 */
-	private long getEntryOffset(PlanRoute route, int entryStop, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
-		final long[][] leadTimes = entryTimes.get(route.getRouteId());
+	private long getEntryOffset(List<? extends PlanRoute> routes, PlanRoute route, int segment, int entryStop, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
+		final long[][] leadTimes = segmentsKnown ? getSegmentLead(segment, routes) : entryTimes.get(route.getRouteId());
 		if (leadTimes == null || entryStop >= route.getStops().size()) {
 			return 0;
 		}
@@ -373,6 +395,74 @@ public class StopTimes {
 		}
 		times[0] = new long[]{0, 0};
 		return times;
+	}
+
+	/**
+	 * Like {@link #getFastestTimes}, for one segment of a duty's path (D4), whose route may be in other segments as well:
+	 * the arrival and departure from the start of the path, and the rail, of each stop of that segment's route, or -1 for
+	 * the stops it doesn't run.
+	 */
+	public long[][] getSegmentTimes(int segment, List<? extends PlanRoute> routes) {
+		if (segment < 0 || segment >= routes.size()) {
+			return new long[0][];
+		}
+		final int stopCount = routes.get(segment).getStops().size();
+		final long[][] times = new long[stopCount][];
+		for (int i = 0; i < stopCount; i++) {
+			times[i] = new long[]{-1, -1, -1};
+		}
+		matchRouteStops(routes, (stop, routeStop) -> {
+			if (routeStop != null && routeStop.departureSegment == segment && times[routeStop.departureIndex][0] < 0) {
+				times[routeStop.departureIndex] = new long[]{stop.arrivalMillis, stop.departureMillis, stop.index};
+			} else if (routeStop != null && routeStop.arrivalSegment == segment && times[routeStop.arrivalIndex][0] < 0) {
+				times[routeStop.arrivalIndex] = new long[]{stop.arrivalMillis, stop.arrivalMillis, stop.index};
+			}
+		});
+		return times;
+	}
+
+	/**
+	 * @return the fastest times from a segment's route's first stop to each stop up to where the segment joins it: the
+	 * path's own, or worked out from the usual path a path turned back early took it from (D4); or null
+	 */
+	private long[][] getSegmentLead(int segment, List<? extends PlanRoute> routes) {
+		final long[][] own = segmentEntryTimes.get(segment);
+		final StopTimes source = segmentLeadSources.get(segment);
+		if (own != null || source == null || routes == null) {
+			return own;
+		}
+		final long[][] times = source.getSegmentTimes(segment, routes);
+		final int from = Math.max(0, source.getSegmentEntry(segment));
+		final long[][] sourceLead = from > 0 ? source.getSegmentLead(segment, routes) : null;
+		if (from >= times.length || times[from][0] < 0 || from > 0 && (sourceLead == null || sourceLead.length <= from)) {
+			return null;
+		}
+		final long start = from > 0 ? sourceLead[from][0] : 0;
+		final long[][] lead = new long[times.length][];
+		for (int i = 0; i < times.length; i++) {
+			if (i < from) {
+				lead[i] = sourceLead[i];
+			} else if (times[i][0] >= 0) {
+				lead[i] = new long[]{start + times[i][0] - times[from][0], start + times[i][1] - times[from][0]};
+			} else {
+				lead[i] = new long[]{-1, -1};
+			}
+		}
+		return lead;
+	}
+
+	/**
+	 * @return for a duty's path, the stop of the segment's route where it joins it, or -1 if it isn't known by segment
+	 */
+	public int getSegmentEntry(int segment) {
+		return segmentsKnown ? segmentEntries.getOrDefault(segment, 0) : -1;
+	}
+
+	/**
+	 * @return for a duty's path, the times from the route's first stop to the stop where the segment joins it, or null
+	 */
+	public long[][] getSegmentEntryTimes(int segment) {
+		return segmentsKnown ? segmentEntryTimes.get(segment) : null;
 	}
 
 	private long[][] matchFastestTimes(PlanRoute route, List<? extends PlanRoute> routes) {
@@ -425,18 +515,22 @@ public class StopTimes {
 	private void matchRouteStops(List<? extends PlanRoute> routes, BiConsumer<Stop, RouteStop> consumer) {
 		final List<RouteStop> routeStops = new ArrayList<>();
 		PlanRoute lastRoute = null;
-		for (final PlanRoute route : routes) {
-			final int stopCount = cutStops.containsKey(route.getRouteId()) ? Math.min(cutStops.get(route.getRouteId()) + 1, route.getStops().size()) : route.getStops().size();
+		for (int segment = 0; segment < routes.size(); segment++) {
+			final PlanRoute route = routes.get(segment);
+			// A duty's path says where each segment is cut and joined (D4), as one route can be in several segments
+			final Integer cut = segmentsKnown ? segmentCuts.get(segment) : cutStops.get(route.getRouteId());
+			final int stopCount = cut != null ? Math.min(cut + 1, route.getStops().size()) : route.getStops().size();
 			// A route joined part of the way along starts at the stop where the train joins it
 			// A duty's first segment can join its route part of the way along too
-			final int firstStop = lastRoute == null && !firstRouteJoined ? 0 : Math.min(entryStops.getOrDefault(route.getRouteId(), 0), Math.max(0, stopCount - 1));
+			final int entry = segmentsKnown ? segmentEntries.getOrDefault(segment, 0) : entryStops.getOrDefault(route.getRouteId(), 0);
+			final int firstStop = lastRoute == null && !firstRouteJoined ? 0 : Math.min(entry, Math.max(0, stopCount - 1));
 			for (int i = firstStop; i < stopCount; i++) {
 				final PlanStop routePlatform = route.getStops().get(i);
 				final RouteStop lastStop = routeStops.isEmpty() ? null : routeStops.get(routeStops.size() - 1);
 				if (i == firstStop && lastStop != null && lastStop.arrivalRoute == lastRoute && lastStop.platformId == routePlatform.getPlatformId()) {
-					routeStops.set(routeStops.size() - 1, new RouteStop(lastStop.arrivalRoute, lastStop.arrivalIndex, route, firstStop, true));
+					routeStops.set(routeStops.size() - 1, new RouteStop(lastStop.arrivalRoute, lastStop.arrivalSegment, lastStop.arrivalIndex, route, segment, firstStop, true));
 				} else {
-					routeStops.add(new RouteStop(route, i, route, i, i == firstStop && lastRoute != null));
+					routeStops.add(new RouteStop(route, segment, i, route, segment, i, i == firstStop && lastRoute != null));
 				}
 			}
 			lastRoute = route;
@@ -453,7 +547,7 @@ public class StopTimes {
 				if (expected.platformId != stop.platformId && expected.arrivalIndex == arrivalStops.size() - 1 && expected.arrivalRoute.getTerminalPlatforms().contains(stop.platformId)) {
 					final RouteStop next = nextRouteStop + 1 < routeStops.size() ? routeStops.get(nextRouteStop + 1) : null;
 					if (expected.departureRoute == expected.arrivalRoute && next != null && next.startsRoute) {
-						matchedStop = new RouteStop(expected.arrivalRoute, expected.arrivalIndex, next.departureRoute, next.departureIndex, true);
+						matchedStop = new RouteStop(expected.arrivalRoute, expected.arrivalSegment, expected.arrivalIndex, next.departureRoute, next.departureSegment, next.departureIndex, true);
 						nextRouteStop += 2;
 					} else {
 						matchedStop = expected;
@@ -493,17 +587,24 @@ public class StopTimes {
 
 		private final long platformId;
 		private final PlanRoute arrivalRoute;
+		/**
+		 * Which of the routes of the path, in order, it is a stop of: for a duty, its segment.
+		 */
+		private final int arrivalSegment;
 		private final int arrivalIndex;
 		private final PlanRoute departureRoute;
+		private final int departureSegment;
 		private final int departureIndex;
 		private final PlanStop arrivalStop;
 		private final PlanStop departureStop;
 		private final boolean startsRoute;
 
-		private RouteStop(PlanRoute arrivalRoute, int arrivalIndex, PlanRoute departureRoute, int departureIndex, boolean startsRoute) {
+		private RouteStop(PlanRoute arrivalRoute, int arrivalSegment, int arrivalIndex, PlanRoute departureRoute, int departureSegment, int departureIndex, boolean startsRoute) {
 			this.arrivalRoute = arrivalRoute;
+			this.arrivalSegment = arrivalSegment;
 			this.arrivalIndex = arrivalIndex;
 			this.departureRoute = departureRoute;
+			this.departureSegment = departureSegment;
 			this.departureIndex = departureIndex;
 			this.startsRoute = startsRoute;
 			arrivalStop = arrivalRoute.getStops().get(arrivalIndex);

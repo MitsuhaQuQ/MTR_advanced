@@ -112,6 +112,38 @@ public final class DelayRules {
 	}
 
 	/**
+	 * Where a train is to turn back early now (D4), from its plan or what a dispatcher set for it, as for passing stations
+	 * ({@link #getSkipPlatforms}): one turned back or on its way there goes on while it is a minute late or more and the same
+	 * plan would still be on for it.
+	 *
+	 * @param turning whether it is told to turn back now
+	 * @return {mode, after}, with the platforms of a given station after them; or {0, 0} not to
+	 */
+	public static long[] getTurnBack(java.util.List<Contingencies> systems, Outcome outcome, long trainId, long routeId, long lateMillis, long waitingMillis, boolean deadlocked, boolean turning, java.util.function.LongFunction<? extends java.util.Collection<Long>> stationPlatforms) {
+		Contingency contingency = outcome.contingency;
+		if ((contingency == null || contingency.turn == Contingency.TURN_NONE) && turning && lateMillis >= KEEP_SKIPPING_MILLIS) {
+			final Contingency kept = evaluate(systems, trainId, routeId, Long.MAX_VALUE / 4, waitingMillis, deadlocked).contingency;
+			if (kept != null && kept.turn != Contingency.TURN_NONE) {
+				contingency = kept;
+			}
+		}
+		if (contingency == null || contingency.turn == Contingency.TURN_NONE) {
+			return new long[]{0, 0};
+		}
+		final java.util.Collection<Long> platforms = contingency.turn == Contingency.TURN_STATION ? stationPlatforms.apply(contingency.turnStationId) : null;
+		final long[] values = new long[2 + (platforms == null ? 0 : platforms.size())];
+		values[0] = contingency.turn;
+		values[1] = contingency.afterTurn;
+		if (platforms != null) {
+			int i = 2;
+			for (final long platformId : new java.util.TreeSet<>(platforms)) {
+				values[i++] = platformId;
+			}
+		}
+		return values;
+	}
+
+	/**
 	 * @return the plan a train falls under, or null
 	 */
 	public static Contingency affecting(Contingencies contingencies, long trainId, long routeId, long lateMillis, long waitingMillis, boolean deadlocked) {

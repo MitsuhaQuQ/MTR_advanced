@@ -74,6 +74,25 @@ public abstract class HostInput implements Comparable<HostInput> {
 		}
 	}
 
+	/**
+	 * Has the train turn back early (D4), or {@code mode} 0 not to: see {@link TrainService#setTurnBack}.
+	 */
+	public static final class TurnBack extends HostInput {
+
+		public final long trainId;
+		public final int mode;
+		public final long[] platformIds;
+		public final int after;
+
+		public TurnBack(long time, long sequence, long trainId, int mode, long[] platformIds, int after) {
+			super(time, sequence);
+			this.trainId = trainId;
+			this.mode = mode;
+			this.platformIds = platformIds.clone();
+			this.after = after;
+		}
+	}
+
 	public static final class Remove extends HostInput {
 
 		public final long trainId;

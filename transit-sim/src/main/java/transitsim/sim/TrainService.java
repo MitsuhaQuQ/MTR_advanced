@@ -166,6 +166,26 @@ public class TrainService<T extends PlanTrack> {
 	 * The last path passing stops made, which is the one the train is on, and those of its siding share no copy of it.
 	 */
 	private TripPath<T> skipPath;
+	/**
+	 * Where the host has the train turn back early (D4): 0 not, {@link transitsim.plan.Contingency#TURN_NEAREST} at the
+	 * nearest stop it can, {@link transitsim.plan.Contingency#TURN_STATION} at one of {@link #turnPlatforms}; and then on with
+	 * its duty or back to the siding ({@link transitsim.plan.Contingency#AFTER_RESUME} or {@code AFTER_DEADHEAD}).
+	 */
+	private int turnMode;
+	private Set<Long> turnPlatforms = Collections.emptySet();
+	private int turnAfter;
+	/**
+	 * The stop at which the train chose whether to turn back, so it chooses once there, or -1.
+	 */
+	private int turnChosenStop = -1;
+	/**
+	 * Told to turn back at a station it can't turn back at, as far as its duty goes on that segment.
+	 */
+	private boolean turnUnreachable;
+	/**
+	 * The last path turned back early made, which is the one the train is on or passes stops of.
+	 */
+	private TripPath<T> turnPath;
 
 	private static final String KEY_TRIP_MILLIS = "trip_millis";
 	private static final String KEY_NEXT_TRIP_MILLIS = "next_trip_millis";
@@ -193,10 +213,14 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_SKIP_PLATFORMS = "skip_platforms";
 	/**
+	 * Where the train is told to turn back early (D4): mode, then what after, then the platforms.
+	 */
+	private static final String KEY_TURN_BACK = "turn_back";
+	/**
 	 * How many values {@link #write} writes, which hosts count into the size of what they save. Checked by a test, as it was
 	 * once left one short.
 	 */
-	public static final int SAVED_KEYS = 16;
+	public static final int SAVED_KEYS = 17;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
@@ -229,6 +253,14 @@ public class TrainService<T extends PlanTrack> {
 			newSkips.add(platformId);
 		}
 		skipPlatforms = newSkips.isEmpty() ? Collections.emptySet() : newSkips;
+		final long[] turnValues = reader.getLongs(KEY_TURN_BACK);
+		final Set<Long> newTurnPlatforms = new TreeSet<>();
+		for (int i = 2; i < turnValues.length; i++) {
+			newTurnPlatforms.add(turnValues[i]);
+		}
+		turnMode = turnValues.length >= 2 ? (int) turnValues[0] : 0;
+		turnAfter = turnValues.length >= 2 ? (int) turnValues[1] : 0;
+		turnPlatforms = newTurnPlatforms.isEmpty() ? Collections.emptySet() : newTurnPlatforms;
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
@@ -254,6 +286,177 @@ public class TrainService<T extends PlanTrack> {
 		writer.writeLong(KEY_DUTY_SIDING, dutySidingId);
 		writer.writeLong(KEY_DUTY_ID, dutyId);
 		writer.writeLongs(KEY_SKIP_PLATFORMS, skipPlatforms.stream().mapToLong(Long::longValue).toArray());
+		final long[] turnValues = new long[turnMode == 0 ? 0 : 2 + turnPlatforms.size()];
+		if (turnMode != 0) {
+			turnValues[0] = turnMode;
+			turnValues[1] = turnAfter;
+			int i = 2;
+			for (final long platformId : turnPlatforms) {
+				turnValues[i++] = platformId;
+			}
+		}
+		writer.writeLongs(KEY_TURN_BACK, turnValues);
+	}
+
+	/**
+	 * Tells the train where to turn back early (D4), or {@code mode} 0 not to. It turns back once on a duty, choosing at a
+	 * stop, never between two.
+	 *
+	 * @param mode        0, {@link transitsim.plan.Contingency#TURN_NEAREST} or {@link transitsim.plan.Contingency#TURN_STATION}
+	 * @param platformIds for a station, its platforms
+	 * @param after       {@link transitsim.plan.Contingency#AFTER_RESUME} or {@link transitsim.plan.Contingency#AFTER_DEADHEAD}
+	 */
+	public void setTurnBack(int mode, Set<Long> platformIds, int after) {
+		final Set<Long> newPlatforms = mode == 0 || platformIds == null || platformIds.isEmpty() ? Collections.emptySet() : new TreeSet<>(platformIds);
+		final int newAfter = mode == 0 ? 0 : after;
+		if (mode != turnMode || newAfter != turnAfter || !newPlatforms.equals(turnPlatforms)) {
+			turnMode = mode;
+			turnAfter = newAfter;
+			turnPlatforms = newPlatforms;
+			turnChosenStop = -1;
+			turnUnreachable = false;
+		}
+	}
+
+	public int getTurnMode() {
+		return turnMode;
+	}
+
+	public int getTurnAfter() {
+		return turnAfter;
+	}
+
+	public Set<Long> getTurnPlatforms() {
+		return Collections.unmodifiableSet(turnPlatforms);
+	}
+
+	/**
+	 * @return 0 if not told to turn back, 1 on its way to where it turns back, 2 turned back, 3 told to turn back at a
+	 * station it can't (D4)
+	 */
+	public int getTurnState() {
+		if (tripPath != null && tripPath.turnRail >= 0) {
+			return 2;
+		}
+		return turnMode == 0 ? 0 : turnUnreachable ? 3 : 1;
+	}
+
+	/**
+	 * @return whether the train stops where it turns back early, where all riders get off (D4)
+	 */
+	public boolean isClearingOut() {
+		return tripPath != null && tripPath.turnRail >= 0 && vehicle.getNextStoppingIndex() == tripPath.turnRail;
+	}
+
+	/**
+	 * @return whether the train runs empty, from where it turned back early to where it goes on with its duty or back to the
+	 * siding (D4)
+	 */
+	public boolean isOutOfService() {
+		if (tripPath == null || tripPath.turnRail < 0) {
+			return false;
+		}
+		// Until it reaches where it goes on with its duty, which starts the next segment there
+		int turnSegment = 0;
+		for (int i = 0; tripPath.dutyStarts != null && i < tripPath.dutyStarts.length; i++) {
+			if (tripPath.dutyStarts[i] <= tripPath.turnRail) {
+				turnSegment = i;
+			}
+		}
+		return vehicle.getNextStoppingIndex() > tripPath.turnRail && (tripPath.turnResumeRail < 0 || dutyIndex <= turnSegment);
+	}
+
+	/**
+	 * At a stop of its duty, ready to go, a train told to turn back early takes its duty's path turned back at the stop it
+	 * is told to, from here on and on this segment, if path generation found a way round to the other platform there
+	 * (D4). Going on with its duty, it joins the next segment where it gets to, and waits there for that service; otherwise
+	 * it goes back to the siding empty. The last stop of the segment doesn't count, as the duty turns back there anyway.
+	 *
+	 * @return true if the train has just changed paths, so it waits a moment at the stop
+	 */
+	public boolean chooseEarlyTurn() {
+		if (turnMode == 0 || !isOnDuty() || pathVariants == null || routes == null || tripPath.turnRail >= 0) {
+			return false;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (stopIndex == turnChosenStop) {
+			return false;
+		}
+		turnChosenStop = stopIndex;
+		final String baseKey = TripPath.getSkipBase(tripPathKey);
+		final TripPath<T> base = tripPaths.get(baseKey);
+		if (base == null || base.dutyStarts == null || TripPath.isReturnKey(baseKey)) {
+			return false;
+		}
+		final List<PlanRoute> dutyRoutes = new ArrayList<>();
+		for (final long routeId : base.routeIds) {
+			final PlanRoute route = routes.apply(routeId);
+			if (route == null) {
+				return false;
+			}
+			dutyRoutes.add(route);
+		}
+		final int segment = dutyIndex;
+		if (segment >= dutyRoutes.size() || base.stopTimes.getSegmentEntry(segment) < 0) {
+			return false;
+		}
+		final boolean resume = turnAfter != transitsim.plan.Contingency.AFTER_DEADHEAD;
+		if (resume && segment + 1 >= dutyRoutes.size()) {
+			return false;
+		}
+		final long[][] times = base.stopTimes.getSegmentTimes(segment, dutyRoutes);
+		int lastStop = -1;
+		for (int i = 0; i < times.length; i++) {
+			if (times[i][0] >= 0) {
+				lastStop = i;
+			}
+		}
+		final long[][] nextTimes = resume ? base.stopTimes.getSegmentTimes(segment + 1, dutyRoutes) : null;
+		final PlanRoute route = dutyRoutes.get(segment);
+		for (int i = 0; i < lastStop; i++) {
+			final int rail = (int) times[i][2];
+			if (times[i][0] < 0 || rail < stopIndex) {
+				continue;
+			}
+			final long platformId = route.getStops().get(i).getPlatformId();
+			if (turnMode == transitsim.plan.Contingency.TURN_STATION && !turnPlatforms.contains(platformId)) {
+				continue;
+			}
+			final java.util.Collection<Long> targets = pathVariants.getTurnTargets(platformId);
+			String key = null;
+			if (resume) {
+				// The first stop of the next segment, short of its last, the train can get round to from here
+				final PlanRoute nextRoute = dutyRoutes.get(segment + 1);
+				int nextLast = -1;
+				for (int j = 0; j < nextTimes.length; j++) {
+					if (nextTimes[j][0] >= 0) {
+						nextLast = j;
+					}
+				}
+				for (int j = 0; j < nextLast && key == null; j++) {
+					if (nextTimes[j][0] >= 0 && targets.contains(nextRoute.getStops().get(j).getPlatformId())) {
+						key = TripPath.getTurnKey(baseKey, segment, rail, i, nextTimes[j][2], j, true);
+					}
+				}
+			} else {
+				for (final long target : targets) {
+					if (key == null && pathVariants.getTurnReturn(target) != null) {
+						key = TripPath.getTurnKey(baseKey, segment, rail, i, target, 0, false);
+					}
+				}
+			}
+			final TripPath<T> newPath = key == null ? null : findPath(tripPaths, key);
+			if (newPath != null) {
+				turnUnreachable = false;
+				tripPath = newPath;
+				tripPathKey = newPath.key;
+				stopTimes = newPath.stopTimes;
+				vehicle.changePath(newPath, stopIndex);
+				return true;
+			}
+		}
+		turnUnreachable = turnMode == transitsim.plan.Contingency.TURN_STATION;
+		return false;
 	}
 
 	/**
@@ -288,18 +491,33 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	public TripPath<T> findPath(Map<String, TripPath<T>> paths, String key) {
 		final TripPath<T> path = paths.get(key);
-		if (path != null || !TripPath.isSkipKey(key)) {
+		if (path != null || pathVariants == null) {
 			return path;
 		}
-		if (skipPath != null && skipPath.key.equals(key)) {
+		if (TripPath.isSkipKey(key)) {
+			if (skipPath != null && skipPath.key.equals(key)) {
+				return skipPath;
+			}
+			final TripPath<T> base = findPath(paths, TripPath.getSkipBase(key));
+			if (base == null) {
+				return null;
+			}
+			skipPath = TripPath.withSkips(base, TripPath.getSkipRails(key), pathVariants);
 			return skipPath;
 		}
-		final TripPath<T> base = paths.get(TripPath.getSkipBase(key));
-		if (base == null || pathVariants == null) {
-			return null;
+		if (TripPath.isTurnKey(key)) {
+			// A path turned back early (D4)
+			if (turnPath != null && turnPath.key.equals(key)) {
+				return turnPath;
+			}
+			final TripPath<T> base = paths.get(TripPath.getTurnBase(key));
+			final TripPath<T> newPath = base == null ? null : TripPath.withTurn(base, key, pathVariants);
+			if (newPath != null) {
+				turnPath = newPath;
+			}
+			return newPath;
 		}
-		skipPath = TripPath.withSkips(base, TripPath.getSkipRails(key), pathVariants);
-		return skipPath;
+		return null;
 	}
 
 	/**
@@ -320,7 +538,8 @@ public class TrainService<T extends PlanTrack> {
 		}
 		skipChosenStop = stopIndex;
 		final String baseKey = TripPath.getSkipBase(tripPathKey);
-		final TripPath<T> base = tripPaths.get(baseKey);
+		// A path turned back early (D4) isn't among the siding's
+		final TripPath<T> base = findPath(tripPaths, baseKey);
 		if (base == null) {
 			return false;
 		}
@@ -414,6 +633,9 @@ public class TrainService<T extends PlanTrack> {
 			// What it is told to pass holds until the host tells it otherwise, on this duty or the next (D3)
 			skipChosenStop = -1;
 			skipPath = null;
+			turnChosenStop = -1;
+			turnUnreachable = false;
+			turnPath = null;
 			dutyIndex = 0;
 			dutyDay = null;
 			isLeavingForDuty = false;
@@ -791,6 +1013,11 @@ public class TrainService<T extends PlanTrack> {
 	 * @return true while the train has to wait at the stop, as every way round is taken or it has only just changed paths
 	 */
 	public boolean chooseTurnBack() {
+		// The other ways round of a path turned back early (D4) would take the train back onto its usual path, so it keeps
+		// the usual way round
+		if (tripPath != null && tripPath.turnRail >= 0) {
+			return false;
+		}
 		final int stopIndex = vehicle.getNextStoppingIndex();
 		if (turnBackStop == stopIndex) {
 			return false;
@@ -1345,7 +1572,8 @@ public class TrainService<T extends PlanTrack> {
 	 * @return true if the train has just changed paths, so it waits a moment at the stop
 	 */
 	public boolean chooseDutyReturn() {
-		if (depot == null || !isOnDuty() || tripPath.staysOnLine || TripPath.isReturnKey(tripPathKey)) {
+		// Turned back early to go back empty (D4), it goes back to its own siding
+		if (depot == null || !isOnDuty() || tripPath.staysOnLine || TripPath.isReturnKey(tripPathKey) || tripPath.turnRail >= 0 && tripPath.turnResumeRail < 0) {
 			return false;
 		}
 		final int stopIndex = vehicle.getNextStoppingIndex();
@@ -1357,9 +1585,10 @@ public class TrainService<T extends PlanTrack> {
 		final long orderDepotId = getReturnOrderDepot();
 		// A train that went another way round a turn back point takes the way back of the duty's usual path, whose last stop
 		// can be on another rail
-		final boolean otherWayRound = tripPath.turnBackPoint >= 0;
+		// The same for a path turned back early (D4), whose rails after the turn are numbered differently
+		final boolean otherWayRound = tripPath.turnBackPoint >= 0 || tripPath.turnRail >= 0;
 		// Only a siding the duty has a way back to is chosen, rather than one it can't reach and then its own after all
-		final String returnFrom = otherWayRound ? tripPath.tripKey : TripPath.getSkipBase(tripPathKey);
+		final String returnFrom = tripPath.turnBackPoint >= 0 ? tripPath.tripKey : TripPath.getTurnBase(tripPathKey);
 		final java.util.function.LongPredicate canGoBack = otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null;
 		// Set for the duty (A 出 B 入, P2-D): there if there is a way, otherwise told and as the pool would send it
 		final long setSidingId = dutyDay == null ? 0 : dutyDay.returnSidingId;

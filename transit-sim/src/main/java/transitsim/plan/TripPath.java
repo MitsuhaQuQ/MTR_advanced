@@ -32,10 +32,14 @@ public class TripPath<T extends PlanTrack> {
 	public static final String KEY_TRIP_DUTY_STARTS = "trip_duty_starts";
 	public static final String KEY_TRIP_DUTY_STAYS = "trip_duty_stays";
 	public static final String KEY_LOOP_JOIN_INDEX = "loop_join_index";
+	public static final String KEY_TRIP_SEGMENT_CUTS = "trip_segment_cuts";
+	public static final String KEY_TRIP_SEGMENT_ENTRIES = "trip_segment_entries";
+	public static final String KEY_TRIP_SEGMENT_ENTRY_TIMES = "trip_segment_entry_times";
+	public static final String KEY_TRIP_SEGMENTS_KNOWN = "trip_segments_known";
 	/**
-	 * How many values {@link #write} writes. The host saves the path itself after them.
+	 * How many values {@link #write} writes. The host saves the path itself after them. Checked by a test.
 	 */
-	public static final int WRITTEN_VALUES = 16;
+	public static final int WRITTEN_VALUES = 20;
 
 	public final String key;
 	public final List<Long> routeIds = new ArrayList<>();
@@ -81,6 +85,24 @@ public class TripPath<T extends PlanTrack> {
 	private final Map<Long, Integer> entryStops = new HashMap<>();
 	private final Map<Long, long[][]> entryTimes = new HashMap<>();
 	private final Map<Long, List<T>> entryLeads = new HashMap<>();
+	/**
+	 * For a duty's path, where each segment is cut and joined, by segment (D4), and for a segment joined part of the way
+	 * along where its route's lead isn't known by route, the times from the route's first stop.
+	 */
+	private final Map<Integer, Integer> segmentCuts = new HashMap<>();
+	private final Map<Integer, Integer> segmentEntries = new HashMap<>();
+	private final Map<Integer, long[][]> segmentEntryTimes = new HashMap<>();
+	private boolean segmentsKnown;
+	/**
+	 * For a path turned back early (D4): the stops of the usual path its segment joined part of the way along is timed by.
+	 */
+	private final Map<Integer, StopTimes> segmentLeadSources = new HashMap<>();
+	/**
+	 * For a path turned back early (D4), the rail of the stop where it turns back, where riders get off, or -1; and the
+	 * rail where it goes on running its duty, or -1 when it goes back to the siding empty from there.
+	 */
+	public final int turnRail;
+	public final int turnResumeRail;
 	private final int joinIndex;
 	private final int lapEnd;
 	/**
@@ -141,6 +163,9 @@ public class TripPath<T extends PlanTrack> {
 		cutStops.putAll(dutyPlan.cutStops);
 		entryStops.putAll(dutyPlan.entryStops);
 		entryLeads.putAll(dutyPlan.entryLeads);
+		segmentCuts.putAll(dutyPlan.segmentCuts);
+		segmentEntries.putAll(dutyPlan.segmentEntries);
+		segmentsKnown = dutyPlan.segmentsKnown;
 		joinIndex = 0;
 		lapEnd = 0;
 		this.path.addAll(path);
@@ -150,11 +175,15 @@ public class TripPath<T extends PlanTrack> {
 		entryRail = -1;
 		this.dutyStarts = dutyStarts;
 		staysOnLine = dutyPlan.staysOnLine;
+		turnRail = -1;
+		turnResumeRail = -1;
 	}
 
 	public TripPath(String key, int turnBackPoint, int turnBackWay, int[] turnBackStops, TripTail<T, ?> tripTail, int joinIndex, int lapEnd, int tailStart, int repeatEnd, List<T> path) {
 		dutyStarts = null;
 		staysOnLine = false;
+		turnRail = -1;
+		turnResumeRail = -1;
 		this.key = key;
 		tripKey = tripTail.key;
 		this.turnBackStops = turnBackStops;
@@ -181,6 +210,8 @@ public class TripPath<T extends PlanTrack> {
 	public TripPath(String key, int turnBackPoint, int turnBackWay, int[] turnBackStops, int joinIndex, int repeatIndex1, int repeatIndex2, int changeStop, List<T> path) {
 		dutyStarts = null;
 		staysOnLine = false;
+		turnRail = -1;
+		turnResumeRail = -1;
 		this.key = key;
 		tripKey = "";
 		this.turnBackStops = turnBackStops;
@@ -211,6 +242,11 @@ public class TripPath<T extends PlanTrack> {
 		entryStops.putAll(base.entryStops);
 		entryTimes.putAll(base.entryTimes);
 		entryLeads.putAll(base.entryLeads);
+		segmentCuts.putAll(base.segmentCuts);
+		segmentEntries.putAll(base.segmentEntries);
+		segmentEntryTimes.putAll(base.segmentEntryTimes);
+		segmentsKnown = base.segmentsKnown;
+		segmentLeadSources.putAll(base.segmentLeadSources);
 		joinIndex = base.joinIndex;
 		lapEnd = base.lapEnd;
 		this.path.addAll(path);
@@ -220,6 +256,8 @@ public class TripPath<T extends PlanTrack> {
 		entryRail = base.entryRail;
 		dutyStarts = base.dutyStarts;
 		staysOnLine = base.staysOnLine;
+		turnRail = base.turnRail;
+		turnResumeRail = base.turnResumeRail;
 	}
 
 	/**
@@ -288,6 +326,181 @@ public class TripPath<T extends PlanTrack> {
 	}
 
 	/**
+	 * A duty's path turned back early (D4): the same up to the stop where it turns back, then round to the other platform
+	 * of the station and on with the rest of the duty from there, or back to the siding.
+	 */
+	private TripPath(TripPath<T> base, String key, List<T> path, int[] dutyStarts, int segmentCount, int[] turnBackStops, int turnRail, int turnResumeRail) {
+		this.key = key;
+		tripKey = base.tripKey;
+		this.turnBackStops = turnBackStops;
+		turnBackPoint = -1;
+		turnBackWay = -1;
+		changeStop = -1;
+		routeIds.addAll(base.routeIds.subList(0, Math.min(segmentCount, base.routeIds.size())));
+		cutStops.putAll(base.cutStops);
+		entryStops.putAll(base.entryStops);
+		entryTimes.putAll(base.entryTimes);
+		entryLeads.putAll(base.entryLeads);
+		base.segmentCuts.forEach((segment, stop) -> {
+			if (segment < segmentCount) {
+				segmentCuts.put(segment, stop);
+			}
+		});
+		base.segmentEntries.forEach((segment, stop) -> {
+			if (segment < segmentCount) {
+				segmentEntries.put(segment, stop);
+			}
+		});
+		base.segmentEntryTimes.forEach((segment, times) -> {
+			if (segment < segmentCount) {
+				segmentEntryTimes.put(segment, times);
+			}
+		});
+		base.segmentLeadSources.forEach((segment, source) -> {
+			if (segment < segmentCount) {
+				segmentLeadSources.put(segment, source);
+			}
+		});
+		segmentsKnown = true;
+		joinIndex = 0;
+		lapEnd = 0;
+		this.path.addAll(path);
+		repeatIndex1 = 0;
+		repeatIndex2 = 0;
+		lapStop = 0;
+		entryRail = -1;
+		this.dutyStarts = dutyStarts;
+		staysOnLine = turnResumeRail >= 0 && base.staysOnLine;
+		this.turnRail = turnRail;
+		this.turnResumeRail = turnResumeRail;
+	}
+
+	/**
+	 * @param segment     the segment of the duty it turns back on
+	 * @param turnRail    the rail of the stop where it turns back
+	 * @param cutStop     that stop's number on the segment's route
+	 * @param target      for going on with the duty, the rail of the stop of the next segment it goes on from; otherwise the
+	 *                    platform it turns back to
+	 * @param entryStop   for going on with the duty, that stop's number on the next segment's route
+	 * @param resume      whether it goes on with the duty, or back to the siding empty
+	 * @return the key of the duty's path turned back early there (D4)
+	 */
+	public static String getTurnKey(String baseKey, int segment, int turnRail, int cutStop, long target, int entryStop, boolean resume) {
+		return baseKey + TURN_MARK + segment + ":" + turnRail + ":" + cutStop + ":" + target + ":" + entryStop + ":" + (resume ? "r" : "d");
+	}
+
+	public static boolean isTurnKey(String key) {
+		return key.contains(TURN_MARK);
+	}
+
+	/**
+	 * @return the key of the path as it usually runs, without turning back early or passing stops
+	 */
+	public static String getTurnBase(String key) {
+		final int index = key.indexOf(TURN_MARK);
+		return index < 0 ? getSkipBase(key) : key.substring(0, index);
+	}
+
+	/**
+	 * The duty's path turned back early, as its key says (D4), with the ways the host found, timed again; or null if the
+	 * key doesn't fit the path or the host has no such way.
+	 */
+	public static <T extends PlanTrack> TripPath<T> withTurn(TripPath<T> base, String key, PathVariants<T> variants) {
+		final String turnKey = getSkipBase(key);
+		final int index = turnKey.indexOf(TURN_MARK);
+		if (index < 0 || base.dutyStarts == null || !base.segmentsKnown) {
+			return null;
+		}
+		final String[] parts = turnKey.substring(index + TURN_MARK.length()).split(":");
+		if (parts.length != 6) {
+			return null;
+		}
+		final int segment;
+		final int turnRail;
+		final int cutStop;
+		final long target;
+		final int entryStop;
+		try {
+			segment = Integer.parseInt(parts[0]);
+			turnRail = Integer.parseInt(parts[1]);
+			cutStop = Integer.parseInt(parts[2]);
+			target = Long.parseLong(parts[3]);
+			entryStop = Integer.parseInt(parts[4]);
+		} catch (NumberFormatException e) {
+			return null;
+		}
+		final boolean resume = "r".equals(parts[5]);
+		final int segmentCount = base.dutyStarts.length;
+		if (segment < 0 || segment >= segmentCount || turnRail <= base.dutyStarts[segment] || turnRail >= base.path.size()) {
+			return null;
+		}
+		final long platformId = base.path.get(turnRail).getStopId();
+		final List<T> newPath = new ArrayList<>(base.path.subList(0, turnRail + 1));
+		final int[] newStarts;
+		final int[] newTurnBackStops = base.turnBackStops.clone();
+		final int resumeRail;
+		final TripPath<T> tripPath;
+		if (resume) {
+			final int targetRail = (int) target;
+			if (segment + 1 >= segmentCount || targetRail < base.dutyStarts[segment + 1] || targetRail >= base.path.size() || segment + 2 < segmentCount && targetRail >= base.dutyStarts[segment + 2]) {
+				return null;
+			}
+			final List<T> link = variants.getTurnLink(platformId, base.path.get(targetRail).getStopId());
+			if (link == null || link.size() < 2) {
+				return null;
+			}
+			for (int i = 1; i < link.size() - 1; i++) {
+				newPath.add(passing(link.get(i), variants));
+			}
+			resumeRail = newPath.size();
+			final int shift = resumeRail - targetRail;
+			newPath.addAll(base.path.subList(targetRail, base.path.size()));
+			newStarts = base.dutyStarts.clone();
+			newStarts[segment + 1] = resumeRail;
+			for (int i = segment + 2; i < segmentCount; i++) {
+				newStarts[i] += shift;
+			}
+			for (int i = 0; i < newTurnBackStops.length; i++) {
+				final int stop = newTurnBackStops[i];
+				newTurnBackStops[i] = stop <= turnRail ? stop : stop < targetRail ? -1 : stop + shift;
+			}
+			tripPath = new TripPath<>(base, key, newPath, newStarts, segmentCount, newTurnBackStops, turnRail, resumeRail);
+			tripPath.segmentCuts.put(segment, cutStop);
+			tripPath.segmentEntries.put(segment + 1, entryStop);
+			tripPath.segmentEntryTimes.remove(segment + 1);
+			// Timed from its route's first stop by the usual path, whose same segment runs from further back
+			tripPath.segmentLeadSources.put(segment + 1, base.stopTimes);
+		} else {
+			final List<T> link = variants.getTurnLink(platformId, target);
+			final List<T> back = variants.getTurnReturn(target);
+			if (link == null || link.size() < 2 || back == null || back.size() < 2) {
+				return null;
+			}
+			for (int i = 1; i < link.size(); i++) {
+				newPath.add(passing(link.get(i), variants));
+			}
+			for (int i = 1; i < back.size(); i++) {
+				newPath.add(passing(back.get(i), variants));
+			}
+			newStarts = java.util.Arrays.copyOf(base.dutyStarts, segment + 1);
+			for (int i = 0; i < newTurnBackStops.length; i++) {
+				newTurnBackStops[i] = newTurnBackStops[i] <= turnRail ? newTurnBackStops[i] : -1;
+			}
+			tripPath = new TripPath<>(base, key, newPath, newStarts, segment + 1, newTurnBackStops, turnRail, -1);
+			tripPath.segmentCuts.put(segment, cutStop);
+		}
+		tripPath.generateTimes(variants.getTimeGenerator());
+		return tripPath;
+	}
+
+	/**
+	 * @return the track a train turned back early runs along out of service, stopping nowhere but at a siding at the end
+	 */
+	private static <T extends PlanTrack> T passing(T track, PathVariants<T> variants) {
+		return track.getDwellTime() > 0 && track.isPlatformTrack() ? variants.pass(track) : track;
+	}
+
+	/**
 	 * A path read back as {@link #write} wrote it, with the path the host saved.
 	 */
 	public TripPath(KeyedReader reader, List<T> path) {
@@ -332,9 +545,89 @@ public class TripPath<T extends PlanTrack> {
 			i += 3 + count * 2;
 		}
 		this.path.addAll(path);
+		final long[] segmentCutValues = reader.getLongs(KEY_TRIP_SEGMENT_CUTS);
+		for (int i = 0; i + 1 < segmentCutValues.length; i += 2) {
+			segmentCuts.put((int) segmentCutValues[i], (int) segmentCutValues[i + 1]);
+		}
+		final long[] segmentEntryValues = reader.getLongs(KEY_TRIP_SEGMENT_ENTRIES);
+		for (int i = 0; i + 1 < segmentEntryValues.length; i += 2) {
+			segmentEntries.put((int) segmentEntryValues[i], (int) segmentEntryValues[i + 1]);
+		}
+		readTimes(reader.getLongs(KEY_TRIP_SEGMENT_ENTRY_TIMES), (segment, times) -> segmentEntryTimes.put((int) (long) segment, times));
+		segmentsKnown = reader.getBoolean(KEY_TRIP_SEGMENTS_KNOWN, false);
 		final int[] starts = toInts(reader.getLongs(KEY_TRIP_DUTY_STARTS));
 		dutyStarts = key.startsWith(DutyShapes.KEY_PREFIX) ? starts : null;
 		staysOnLine = reader.getBoolean(KEY_TRIP_DUTY_STAYS, false);
+		turnRail = -1;
+		turnResumeRail = -1;
+	}
+
+	/**
+	 * Reads what {@link #writeTimes} wrote: for each, its key, how many stops, then the arrival and departure at each.
+	 */
+	private static void readTimes(long[] values, java.util.function.BiConsumer<Long, long[][]> consumer) {
+		for (int i = 0; i + 1 < values.length; ) {
+			final int count = (int) values[i + 1];
+			if (count < 0 || i + 2 + count * 2 > values.length) {
+				break;
+			}
+			final long[][] times = new long[count][];
+			for (int j = 0; j < count; j++) {
+				times[j] = new long[]{values[i + 2 + j * 2], values[i + 3 + j * 2]};
+			}
+			consumer.accept(values[i], times);
+			i += 2 + count * 2;
+		}
+	}
+
+	private static long[] writeTimes(Map<Integer, long[][]> timesByKey) {
+		final List<Long> values = new ArrayList<>();
+		new java.util.TreeMap<>(timesByKey).forEach((key, times) -> {
+			values.add((long) key);
+			values.add((long) times.length);
+			for (final long[] time : times) {
+				values.add(time[0]);
+				values.add(time[1]);
+			}
+		});
+		return values.stream().mapToLong(Long::longValue).toArray();
+	}
+
+	private static long[] writePairs(Map<Integer, Integer> pairs) {
+		final List<Long> values = new ArrayList<>();
+		new java.util.TreeMap<>(pairs).forEach((key, value) -> {
+			values.add((long) key);
+			values.add((long) value);
+		});
+		return values.stream().mapToLong(Long::longValue).toArray();
+	}
+
+	/**
+	 * Gives the stop times of the path what the plans need to know of where its routes are cut and joined.
+	 */
+	private void applyShape(StopTimes times) {
+		times.cutStops.clear();
+		times.cutStops.putAll(cutStops);
+		times.entryStops.clear();
+		times.entryStops.putAll(entryStops);
+		times.entryTimes.clear();
+		times.entryTimes.putAll(entryTimes);
+		times.segmentsKnown = segmentsKnown;
+		times.segmentCuts.clear();
+		times.segmentCuts.putAll(segmentCuts);
+		times.segmentEntries.clear();
+		times.segmentEntries.putAll(segmentEntries);
+		times.segmentLeadSources.clear();
+		times.segmentLeadSources.putAll(segmentLeadSources);
+		times.segmentEntryTimes.clear();
+		// A segment joined part of the way along takes its route's lead, unless the path has its own for it
+		segmentEntries.forEach((segment, entry) -> {
+			final long[][] own = segmentEntryTimes.get(segment);
+			final long[][] byRoute = segment < routeIds.size() && entryStops.getOrDefault(routeIds.get(segment), -1).equals(entry) ? entryTimes.get(routeIds.get(segment)) : null;
+			if (own != null || byRoute != null) {
+				times.segmentEntryTimes.put(segment, own != null ? own : byRoute);
+			}
+		});
 	}
 
 	private static int[] toInts(long[] values) {
@@ -362,10 +655,9 @@ public class TripPath<T extends PlanTrack> {
 
 	private static <T extends PlanTrack> TripPath<T> ofDuty(TripPath<T> tripPath, StopTimes newStopTimes) {
 		tripPath.stopTimes.copyFrom(newStopTimes);
-		tripPath.stopTimes.cutStops.clear();
-		tripPath.stopTimes.cutStops.putAll(tripPath.cutStops);
-		tripPath.stopTimes.entryStops.clear();
-		tripPath.stopTimes.entryStops.putAll(tripPath.entryStops);
+		// The times worked out elsewhere keep their own leads of routes joined part of the way along
+		tripPath.entryTimes.putAll(newStopTimes.entryTimes);
+		tripPath.applyShape(tripPath.stopTimes);
 		tripPath.stopTimes.firstRouteJoined = true;
 		return tripPath;
 	}
@@ -462,6 +754,10 @@ public class TripPath<T extends PlanTrack> {
 	 * After the key of a path, the stops of it passed without stopping (D3); no other key has it.
 	 */
 	private static final String SKIP_MARK = "~skip:";
+	/**
+	 * After the key of a duty's path, where it turns back early (D4); before {@link #SKIP_MARK} when both.
+	 */
+	private static final String TURN_MARK = "~turn:";
 
 	public void generateTimes(TimeGenerator<T> generator) {
 		stopTimes.cutStops.clear();
@@ -473,11 +769,8 @@ public class TripPath<T extends PlanTrack> {
 				entryTimes.put(routeId, leadTimes.stops.stream().map(stop -> new long[]{stop.arrivalMillis, stop.departureMillis}).toArray(long[][]::new));
 			}
 		});
-		stopTimes.entryStops.clear();
-		stopTimes.entryStops.putAll(entryStops);
+		applyShape(stopTimes);
 		stopTimes.firstRouteJoined = isDuty();
-		stopTimes.entryTimes.clear();
-		stopTimes.entryTimes.putAll(entryTimes);
 		stopTimes.tailJoinStart = entryRail;
 		stopTimes.tailJoinEnd = entryRail < 0 ? 0 : lapStop;
 		stopTimes.tailLapEnd = repeatIndex2;
@@ -525,5 +818,9 @@ public class TripPath<T extends PlanTrack> {
 		writer.writeLongs(KEY_TRIP_ENTRIES, entryValues.stream().mapToLong(Long::longValue).toArray());
 		writer.writeInts(KEY_TRIP_DUTY_STARTS, dutyStarts == null ? new int[0] : dutyStarts);
 		writer.writeBoolean(KEY_TRIP_DUTY_STAYS, staysOnLine);
+		writer.writeLongs(KEY_TRIP_SEGMENT_CUTS, writePairs(segmentCuts));
+		writer.writeLongs(KEY_TRIP_SEGMENT_ENTRIES, writePairs(segmentEntries));
+		writer.writeLongs(KEY_TRIP_SEGMENT_ENTRY_TIMES, writeTimes(segmentEntryTimes));
+		writer.writeBoolean(KEY_TRIP_SEGMENTS_KNOWN, segmentsKnown);
 	}
 }
