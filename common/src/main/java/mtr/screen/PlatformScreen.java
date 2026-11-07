@@ -26,6 +26,12 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	private final Button buttonStation;
 	private final Button buttonBoundary;
 	private final Button buttonTrackType;
+	private final Button buttonPassSpeed;
+	private int passSpeed;
+	/**
+	 * The pass speeds the button goes through, in km/h.
+	 */
+	private static final int[] PASS_SPEEDS = {80, 100, 120, 160, 200, 300};
 	private long selectedStationId;
 	private boolean timetableBoundary;
 	private boolean passingTrack;
@@ -54,6 +60,18 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		buttonTrackType = UtilitiesClient.newButton(Text.literal(""), button -> {
 			passingTrack = !passingTrack;
 			updateTrackTypeButton();
+		});
+		passSpeed = savedRailBase.getPassSpeedKmh();
+		buttonPassSpeed = UtilitiesClient.newButton(Text.literal(""), button -> {
+			int next = PASS_SPEEDS[0];
+			for (final int speed : PASS_SPEEDS) {
+				if (speed > passSpeed) {
+					next = speed;
+					break;
+				}
+			}
+			passSpeed = next;
+			updatePassSpeedButton();
 		});
 
 		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
@@ -108,6 +126,10 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		buttonTrackType.setMessage(Text.literal(Text.translatable(passingTrack ? "gui.mtr.platform_passing_track" : "gui.mtr.platform_main_track").getString() + (workedOut.isEmpty() ? "" : Text.translatable("gui.mtr.track_worked_out", workedOut).getString())));
 	}
 
+	private void updatePassSpeedButton() {
+		buttonPassSpeed.setMessage(Text.translatable("gui.mtr.platform_pass_speed", passSpeed));
+	}
+
 	private void updateStationButton() {
 		final Station station = ClientData.DATA_CACHE.stationIdMap.get(selectedStationId);
 		final net.minecraft.core.BlockPos pos = savedRailBase.getMidPos();
@@ -128,14 +150,18 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		if (showScheduleControls) {
 			// Where services can leave or join a route part of the way along, see TimetableBoundaries
 			final int rowY = (!stationsHere.isEmpty() ? SQUARE_SIZE * 9 / 2 : SQUARE_SIZE * 7 / 2) + TEXT_FIELD_PADDING;
-			final int halfWidth = (width - SQUARE_SIZE * 2) / 2;
-			IDrawing.setPositionAndWidth(buttonBoundary, SQUARE_SIZE, rowY, halfWidth);
+			final int thirdWidth = (width - SQUARE_SIZE * 2) / 3;
+			IDrawing.setPositionAndWidth(buttonBoundary, SQUARE_SIZE, rowY, thirdWidth);
 			updateBoundaryButton();
 			addDrawableChild(buttonBoundary);
 			// Main line or passing track, for the advanced editor's track picker and overtaking checks
-			IDrawing.setPositionAndWidth(buttonTrackType, SQUARE_SIZE + halfWidth, rowY, halfWidth);
+			IDrawing.setPositionAndWidth(buttonTrackType, SQUARE_SIZE + thirdWidth, rowY, thirdWidth);
 			updateTrackTypeButton();
 			addDrawableChild(buttonTrackType);
+			// How fast trains may pass over it (round 3b)
+			IDrawing.setPositionAndWidth(buttonPassSpeed, SQUARE_SIZE + thirdWidth * 2, rowY, thirdWidth);
+			updatePassSpeedButton();
+			addDrawableChild(buttonPassSpeed);
 		}
 	}
 
@@ -216,6 +242,9 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		}
 		if (timetableBoundary != savedRailBase.timetableBoundary) {
 			savedRailBase.setTimetableBoundary(timetableBoundary, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
+		}
+		if (passSpeed != savedRailBase.getPassSpeedKmh()) {
+			savedRailBase.setPassSpeed(passSpeed == mtr.data.PlatformSpeeds.DEFAULT_KMH ? 0 : passSpeed, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
 		}
 		if (passingTrack != savedRailBase.passingTrack) {
 			savedRailBase.setPassingTrack(passingTrack, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));

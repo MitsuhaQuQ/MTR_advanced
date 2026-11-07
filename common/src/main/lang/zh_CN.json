@@ -26,6 +26,7 @@
   "gui.mtr.path_failure_disconnected": "刷新失败：车站之间没有连通",
   "gui.mtr.path_failure_not_key_node": "刷新失败：必经节点 %s 已经不是关键节点",
   "gui.mtr.path_failure_other_line": "刷新失败：要经过配属其他线路的轨道（%s 附近）。线路只走配属本线的轨道，配属由寻路边界划分",
+  "gui.mtr.platform_pass_speed": "过站限速 %s km/h",
   "gui.mtr.path_failure_cycle_back": "刷新失败：列车不回车厂，要从最后一条线路的终点 %s 开回第一条线路的起点 %s，找不到路。用轨道把这两个站台接起来，或者让两条线路在同一个站台折返",
   "gui.mtr.path_failure_no_route": "刷新失败：按行进方向走不通",
   "gui.mtr.path_stale": "轨道已变动，路径已过期",

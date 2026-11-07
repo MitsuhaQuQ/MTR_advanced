@@ -111,6 +111,8 @@ public class DataCache {
 		try {
 			mapIds(stationIdMap, stations);
 			mapIds(platformIdMap, platforms);
+			// Platforms set to pass faster or slower than the default, which paths look up as they run (round 3b)
+			PlatformSpeeds.update(this, platforms);
 			mapIds(sidingIdMap, sidings);
 			mapIds(routeIdMap, routes);
 			mapIds(depotIdMap, depots);

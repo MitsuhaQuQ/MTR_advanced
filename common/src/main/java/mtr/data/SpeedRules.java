@@ -26,8 +26,18 @@ public final class SpeedRules {
 	 * the type's; for modes the two speeds don't apply to, always the type's
 	 */
 	public static int labelKmh(RailType railType, TransportMode transportMode) {
+		return labelKmh(railType, transportMode, 0, 0);
+	}
+
+	/**
+	 * @param node1 a node of the rail, for a platform's own pass speed ({@link PlatformSpeeds}), or 0
+	 * @return the speed label of a rail in km/h
+	 */
+	public static int labelKmh(RailType railType, TransportMode transportMode, long node1, long node2) {
 		if (applies(transportMode)) {
-			if (railType == RailType.SIDING) {
+			if (railType == RailType.PLATFORM && node1 != node2) {
+				return PlatformSpeeds.getKmh(node1, node2);
+			} else if (railType == RailType.SIDING) {
 				return SIDING_KMH;
 			} else if (railType == RailType.TURN_BACK) {
 				return TURN_BACK_KMH;
@@ -40,7 +50,14 @@ public final class SpeedRules {
 	 * @return the speed label of a rail type in blocks per tick
 	 */
 	public static float label(RailType railType, TransportMode transportMode) {
-		final int kmh = labelKmh(railType, transportMode);
+		return label(railType, transportMode, 0, 0);
+	}
+
+	/**
+	 * @return the speed label of a rail in blocks per tick, a platform's its own pass speed
+	 */
+	public static float label(RailType railType, TransportMode transportMode, long node1, long node2) {
+		final int kmh = labelKmh(railType, transportMode, node1, node2);
 		return kmh == railType.speedLimit ? railType.maxBlocksPerTick : SpeedLimits.toBlocksPerTick(kmh);
 	}
 

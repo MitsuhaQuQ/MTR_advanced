@@ -824,6 +824,7 @@ flowchart TD
   - 跑这条线的车比要求慢（`RoutePaths.getSlowerVehicles`）时服务端日志提示，恢复时也提示。
   - 网页时刻表面板"最低性能：加速、减速（m/s²）、最高（km/h）"可改（`perfText`、`data-perf`，JSON 字段 `minAcceleration` 等，`EditorData`、`EditorActions`）。
 - **停车点轨道按自己的限速**（3b 第 1 步）：站台、存车线、折返线不再继承前一条轨道的限速（`SpeedRules.keepsLimitBefore` 只对缆车、飞机为真），游戏 `Train.getRailSpeed`、运动接口的 `canAccelerate`、`TrackViews`、`PathTiming`，组件 `RunTrack.toTrackView` 和 `TickRunner` 运动接口的 `canAccelerate` 都按自己的限速；`RailType.canAccelerate` 只留给信号区段"不切"（`TrainServer.cutSpeed`、`PathClaims`、`SignalOverlay`）。存车线标的值 25、折返线 65（`SpeedRules.labelKmh`，`PathData.getMaxSpeed` 和轨道段层都用它），站台暂按 80，第 2 步改为站台自己的过站限速。所以运行时分可以在停车点切开：从停车点、车头在站台末端静止出发算的一段，等于整条算出的同一段（`RoutePathsTest`）。
+- **站台的过站限速**（3b 第 2 步）：`Platform.passSpeed`（km/h，0 为默认 80；存档键 `pass_speed`，包里在通过线后面，`update` 键同名，`setPassSpeed`）。`DataCache.sync` 把各数据缓存（服务端每个维度、客户端）设了非默认值的站台交给 `PlatformSpeeds`，合在一起按站台轨道查；`SpeedRules.label(..., node1, node2)` 对站台轨道取它，所以 `PathData.getMaxSpeed` 和轨道段层随之变，改了立即生效，不用重新寻路（轨道段层的指纹含 `PlatformSpeeds.fingerprint()`，站台段的哈希变，经过它的站间段重算）。游戏站台界面第三个按钮在 80、100、120、160、200、300 之间切换；网页停站右键菜单"站台 … 过站限速"进草稿（`draft.platformSpeeds`，应用时 `platformSpeed` 操作）。
 - **组件模拟器的列车找不到它的运用路径时原地等**（`TrainServer.showSimulated`）：时刻表改动让车厂重新生成路径，模拟器还没换上新数据时，模拟器里某列车的运用路径在游戏这边已经没有了。以前会退到车厂路径、用旧的停站序号，越界报错（64 份黄线上一次 5,296 条）；现在这列车停在原处，等模拟器换上新路径再读一次。
 
 ## 8. 玩家编辑数据

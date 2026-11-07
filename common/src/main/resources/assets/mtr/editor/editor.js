@@ -56,7 +56,7 @@
 	let coverage = null;
 	/** The services paired at their routes' ends on the day shown (terminalNow), until the data, the draft or the day changes. */
 	let terminal = null;
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -108,6 +108,7 @@
 		if (!draft.boundaries || typeof draft.boundaries !== "object") draft.boundaries = {};
 		if (!draft.depots || typeof draft.depots !== "object") draft.depots = {};
 		if (!draft.platformStations || typeof draft.platformStations !== "object") draft.platformStations = {};
+		if (!draft.platformSpeeds || typeof draft.platformSpeeds !== "object") draft.platformSpeeds = {};
 		if (!draft.contingencies || typeof draft.contingencies !== "object") draft.contingencies = {};
 		draftLoaded = true;
 	}
@@ -123,7 +124,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.contingencies || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.contingencies || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -375,6 +376,10 @@
 			operations.push({ type: "contingencies", system: anchor, plans });
 			owners.push({ contingenciesOf: anchor });
 		});
+		Object.entries(draft.platformSpeeds || {}).forEach(([platform, speed]) => {
+			operations.push({ type: "platformSpeed", platform, speed });
+			owners.push({ platformSpeedOf: platform });
+		});
 		Object.entries(draft.platformStations || {}).forEach(([platform, station]) => {
 			operations.push({ type: "platformStation", platform, station });
 			owners.push({ platformStationOf: platform });
@@ -423,6 +428,7 @@
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
 			owners.filter(owner => owner && owner.depotOf && !failed.has(owner)).forEach(owner => delete draft.depots[owner.depotOf]);
 			owners.filter(owner => owner && owner.platformStationOf && !failed.has(owner)).forEach(owner => delete draft.platformStations[owner.platformStationOf]);
+			owners.filter(owner => owner && owner.platformSpeedOf && !failed.has(owner)).forEach(owner => delete draft.platformSpeeds[owner.platformSpeedOf]);
 			owners.filter(owner => owner && owner.contingenciesOf && !failed.has(owner)).forEach(owner => delete draft.contingencies[owner.contingenciesOf]);
 			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
 				delete draft.boundaries[owner.boundaryOf];
@@ -1266,6 +1272,10 @@
 			const errors = boundaryKeys.map(key => boundaryErrors[key]).filter(Boolean);
 			sections.push(`<section class="draft-change"><h3>${tr("隔离")}</h3>${errors.length ? `<p class="err">${escapeHtml(errors[0])}</p>` : ""}<ul>${added ? `<li>${tr("设为寻路边界 {0} 段", added)}</li>` : ""}${boundaryKeys.length - added ? `<li>${tr("取消寻路边界 {0} 段", boundaryKeys.length - added)}</li>` : ""}</ul>
 				<div class="draft-actions"><button type="button" data-diff-boundaries>${tr("放弃隔离的草稿")}</button></div></section>`);
+		}
+		const platformSpeedKeys = Object.keys(draft.platformSpeeds || {});
+		if (platformSpeedKeys.length) {
+			sections.push(`<section class="draft-change"><h3>${tr("过站限速")}</h3><ul>${platformSpeedKeys.map(platformId => `<li>${escapeHtml(tr("{0} 过站限速 {1} km/h", platformText(platformId), draft.platformSpeeds[platformId]))}</li>`).join("")}</ul></section>`);
 		}
 		const platformStationKeys = Object.keys(draft.platformStations || {});
 		if (platformStationKeys.length) {
@@ -3577,6 +3587,22 @@
 	}
 
 	/**
+	 * The menu choosing how fast trains may pass over a platform (round 3b), into the draft.
+	 */
+	function platformSpeedItems(platformId) {
+		const p = platformById(platformId);
+		if (!p || !data.canEdit) return null;
+		const set = p.passSpeed || 80;
+		const current = draft.platformSpeeds && platformId in draft.platformSpeeds ? draft.platformSpeeds[platformId] : set;
+		return [80, 100, 120, 160, 200, 300].map(speed => [`${current === speed ? "✓ " : ""}${speed} km/h`, () => {
+			if (speed === set) delete draft.platformSpeeds[platformId];
+			else draft.platformSpeeds[platformId] = speed;
+			saveDraft();
+			renderAll();
+		}]);
+	}
+
+	/**
 	 * The menu choosing the station a platform belongs to (R6): automatic, by the areas and the nearest platform, or any of
 	 * the nearest stations, wherever the platform is; into the draft.
 	 */
@@ -3685,6 +3711,8 @@
 		// Which station the stop's platform belongs to, wherever it is (R6)
 		const stationItems = s.route.stops[stop] ? platformStationItems(s.route.stops[stop].platformId) : null;
 		if (stationItems) items.push([tr("站台 {0} 归属车站", platformText(s.route.stops[stop].platformId)), stationItems]);
+		const speedItems = s.route.stops[stop] ? platformSpeedItems(s.route.stops[stop].platformId) : null;
+		if (speedItems) items.push([tr("站台 {0} 过站限速", platformText(s.route.stops[stop].platformId)), speedItems]);
 		if (items.length) openMenu(e.clientX, e.clientY, items);
 	}
 

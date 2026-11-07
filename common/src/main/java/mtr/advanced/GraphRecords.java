@@ -106,7 +106,7 @@ public final class GraphRecords {
 	 * @param blocksVersion a number that changes when the signal blocks do
 	 */
 	public void update(Map<BlockPos, Map<BlockPos, Rail>> rails, Set<BlockPos> keyNodes, Set<Long> boundaryNodes, Set<UUID> boundaryRails, Set<UUID> releasedRails, Map<UUID, Long> savedRails, Map<Long, ? extends Collection<UUID>> blocks, long blocksVersion) {
-		final long newFingerprint = fingerprint(rails, keyNodes, boundaryNodes, savedRails) + 31 * hashRails(boundaryRails, 5) + 37 * hashRails(releasedRails, 6);
+		final long newFingerprint = fingerprint(rails, keyNodes, boundaryNodes, savedRails) + 31 * hashRails(boundaryRails, 5) + 37 * hashRails(releasedRails, 6) + 41 * mtr.data.PlatformSpeeds.fingerprint();
 		final boolean sectionsChanged;
 		if (!restored || newFingerprint != railsFingerprint) {
 			final long start = System.currentTimeMillis();
@@ -514,7 +514,7 @@ public final class GraphRecords {
 			final long shape = (long) Float.floatToIntBits(rail.facingStart.angleDegrees) << 32 | Float.floatToIntBits(rail.facingEnd.angleDegrees) & 0xFFFFFFFFL;
 			// Facings as seen from the lower node, the same whichever way the rail is kept
 			final long lowerShape = start < end ? shape : (long) Float.floatToIntBits(rail.facingEnd.angleDegrees) << 32 | Float.floatToIntBits(rail.facingStart.angleDegrees) & 0xFFFFFFFFL;
-			trackRails.put(key, new TrackSections.Rail(start, end, rail.getLength(), lowerShape, mtr.data.SpeedRules.labelKmh(railType, rail.transportMode), railType.canAccelerate, getType(railType), forwards, backwards, savedRails.getOrDefault(key, 0L)));
+			trackRails.put(key, new TrackSections.Rail(start, end, rail.getLength(), lowerShape, mtr.data.SpeedRules.labelKmh(railType, rail.transportMode, start, end), railType.canAccelerate, getType(railType), forwards, backwards, savedRails.getOrDefault(key, 0L)));
 		}));
 		return trackRails;
 	}

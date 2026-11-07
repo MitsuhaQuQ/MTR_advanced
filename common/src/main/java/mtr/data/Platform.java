@@ -32,8 +32,14 @@ public final class Platform extends SavedRailBase {
 	 * have a train overtaken.
 	 */
 	public boolean passingTrack;
+	/**
+	 * How fast trains may pass over the platform, as a speed label in km/h (optimisation round 3b, step 2), or 0 for the
+	 * default ({@link PlatformSpeeds#DEFAULT_KMH}). A trait of the track, like its length.
+	 */
+	public int passSpeed;
 
 	private static final String KEY_DWELL_TIME = "dwell_time";
+	private static final String KEY_PASS_SPEED = "pass_speed";
 	private static final String KEY_STATION_ID = "station_id";
 	private static final String KEY_TIMETABLE_BOUNDARY = "timetable_boundary";
 	private static final String KEY_PASSING_TRACK = "passing_track";
@@ -52,6 +58,7 @@ public final class Platform extends SavedRailBase {
 		stationId = messagePackHelper.getLong(KEY_STATION_ID);
 		timetableBoundary = messagePackHelper.getBoolean(KEY_TIMETABLE_BOUNDARY);
 		passingTrack = messagePackHelper.getBoolean(KEY_PASSING_TRACK);
+		passSpeed = Math.max(0, messagePackHelper.getInt(KEY_PASS_SPEED, 0));
 	}
 
 	@Deprecated
@@ -64,6 +71,7 @@ public final class Platform extends SavedRailBase {
 		stationId = packet.readLong();
 		timetableBoundary = packet.readBoolean();
 		passingTrack = packet.readBoolean();
+		passSpeed = packet.readInt();
 	}
 
 	@Override
@@ -72,11 +80,12 @@ public final class Platform extends SavedRailBase {
 		messagePacker.packString(KEY_STATION_ID).packLong(stationId);
 		messagePacker.packString(KEY_TIMETABLE_BOUNDARY).packBoolean(timetableBoundary);
 		messagePacker.packString(KEY_PASSING_TRACK).packBoolean(passingTrack);
+		messagePacker.packString(KEY_PASS_SPEED).packInt(passSpeed);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 3;
+		return super.messagePackLength() + 4;
 	}
 
 	@Override
@@ -85,6 +94,7 @@ public final class Platform extends SavedRailBase {
 		packet.writeLong(stationId);
 		packet.writeBoolean(timetableBoundary);
 		packet.writeBoolean(passingTrack);
+		packet.writeInt(passSpeed);
 	}
 
 	@Override
@@ -95,6 +105,8 @@ public final class Platform extends SavedRailBase {
 			timetableBoundary = packet.readBoolean();
 		} else if (KEY_PASSING_TRACK.equals(key)) {
 			passingTrack = packet.readBoolean();
+		} else if (KEY_PASS_SPEED.equals(key)) {
+			passSpeed = Math.max(0, packet.readInt());
 		} else if (KEY_DWELL_TIME.equals(key)) {
 			name = packet.readUtf(PACKET_STRING_READ_LENGTH);
 			color = packet.readInt();
@@ -133,6 +145,23 @@ public final class Platform extends SavedRailBase {
 		packet.writeUtf(KEY_PASSING_TRACK);
 		packet.writeBoolean(passingTrack);
 		sendPacket.accept(packet);
+	}
+
+	public void setPassSpeed(int newPassSpeed, Consumer<FriendlyByteBuf> sendPacket) {
+		passSpeed = Math.max(0, newPassSpeed);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_PASS_SPEED);
+		packet.writeInt(passSpeed);
+		sendPacket.accept(packet);
+	}
+
+	/**
+	 * @return how fast trains may pass over the platform, as a speed label in km/h
+	 */
+	public int getPassSpeedKmh() {
+		return passSpeed > 0 ? passSpeed : PlatformSpeeds.DEFAULT_KMH;
 	}
 
 	public void setDwellTime(int newDwellTime, Consumer<FriendlyByteBuf> sendPacket) {

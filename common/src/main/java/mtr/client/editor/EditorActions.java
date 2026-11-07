@@ -374,6 +374,17 @@ public final class EditorActions implements IPacket {
 		if ("depot".equals(getString(operation, "type"))) {
 			return applyDepot(operation);
 		}
+		// How fast trains may pass over a platform (round 3b)
+		if ("platformSpeed".equals(getString(operation, "type"))) {
+			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(parseId(getString(operation, "platform")));
+			if (platform == null || !operation.has("speed") || operation.get("speed").getAsInt() <= 0 || operation.get("speed").getAsInt() > 1000) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			final int speed = operation.get("speed").getAsInt();
+			platform.setPassSpeed(speed == mtr.data.PlatformSpeeds.DEFAULT_KMH ? 0 : speed, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
+			ClientData.DATA_CACHE.sync();
+			return null;
+		}
 		// The station a platform is put in, wherever it is, or "0" for by its area (R6)
 		if ("platformStation".equals(getString(operation, "type"))) {
 			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(parseId(getString(operation, "platform")));

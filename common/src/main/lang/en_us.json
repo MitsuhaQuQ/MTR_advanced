@@ -26,6 +26,7 @@
   "gui.mtr.path_failure_disconnected": "Refresh failed: stations are not connected",
   "gui.mtr.path_failure_not_key_node": "Refresh failed: the waypoint %s is no longer a key node",
   "gui.mtr.path_failure_other_line": "Refresh failed: the route would have to run over track another line owns (near %s); routes keep to the track of their own line, which the pathfinding boundaries mark out",
+  "gui.mtr.platform_pass_speed": "Pass at %s km/h",
   "gui.mtr.path_failure_cycle_back": "Refresh failed: trains staying on the line can't get from %s, where the last route ends, back to %s, where the first one starts. Join the two platforms with track, or end and start the routes at the same platform",
   "gui.mtr.path_failure_no_route": "Refresh failed: no route in the direction of travel",
   "gui.mtr.path_stale": "Rails changed, path out of date",
