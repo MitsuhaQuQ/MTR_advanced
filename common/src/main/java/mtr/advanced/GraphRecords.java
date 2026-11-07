@@ -5,10 +5,7 @@ import mtr.data.RailType;
 import mtr.data.RailwayDataStore;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
-import transitsim.network.RailKeys;
-import transitsim.network.SectionType;
-import transitsim.network.SignalOverlay;
-import transitsim.network.TrackSections;
+import transitsim.network.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -65,6 +62,42 @@ public final class GraphRecords {
 	private static final int MAX_PENDING_PATHS = 65536;
 
 	/**
+	 * The leg layer (stages document round 2): the sections as last cut, the owners of each, and the legs found on them.
+	 * The snapshot and owners are replaced on the server thread before the cache is told what changed, so a leg found
+	 * on another thread is never taken in for a network it wasn't found on.
+	 */
+	private volatile TrackSections.Snapshot snapshot;
+	private volatile Map<Long, Set<String>> owners = Collections.emptyMap();
+	private volatile double maxChordPerCost;
+	private final LegCache legCache = new LegCache();
+	private List<byte[]> loadedLegs = new ArrayList<>();
+	private Map<Long, Set<String>> loadedOwners = new HashMap<>();
+	/**
+	 * What was written of the leg layer, to write only what differs.
+	 */
+	private final Map<Long, LegRouter.Leg> writtenLegs = new HashMap<>();
+	private final Map<Long, Set<String>> writtenOwners = new HashMap<>();
+	private final Map<Long, Map<Long, LegRouter.Leg>> flushedLegs = new HashMap<>();
+	private final Map<Long, Set<String>> flushedOwners = new HashMap<>();
+	private final Set<Long> flushedLegRemovals = new HashSet<>();
+	private final Set<Long> flushedOwnerRemovals = new HashSet<>();
+
+	/**
+	 * Where nodes are: a node is a block position.
+	 */
+	public static final LegRouter.Coordinates COORDINATES = new LegRouter.Coordinates() {
+		@Override
+		public int getX(long node) {
+			return BlockPos.getX(node);
+		}
+
+		@Override
+		public int getZ(long node) {
+			return BlockPos.getZ(node);
+		}
+	};
+
+	/**
 	 * Brings the layer up to date if anything it is made from changed, and the signal layer if the signal blocks did.
 	 * Called on the server thread now and then.
 	 *
@@ -72,13 +105,13 @@ public final class GraphRecords {
 	 * @param blocks      the rails of each signal block by its ID
 	 * @param blocksVersion a number that changes when the signal blocks do
 	 */
-	public void update(Map<BlockPos, Map<BlockPos, Rail>> rails, Set<BlockPos> keyNodes, Set<Long> boundaryNodes, Map<UUID, Long> savedRails, Map<Long, ? extends Collection<UUID>> blocks, long blocksVersion) {
-		final long newFingerprint = fingerprint(rails, keyNodes, boundaryNodes, savedRails);
+	public void update(Map<BlockPos, Map<BlockPos, Rail>> rails, Set<BlockPos> keyNodes, Set<Long> boundaryNodes, Set<UUID> boundaryRails, Set<UUID> releasedRails, Map<UUID, Long> savedRails, Map<Long, ? extends Collection<UUID>> blocks, long blocksVersion) {
+		final long newFingerprint = fingerprint(rails, keyNodes, boundaryNodes, savedRails) + 31 * hashRails(boundaryRails, 5) + 37 * hashRails(releasedRails, 6);
 		final boolean sectionsChanged;
 		if (!restored || newFingerprint != railsFingerprint) {
 			final long start = System.currentTimeMillis();
 			final Map<UUID, TrackSections.Rail> trackRails = toTrackRails(rails, savedRails);
-			final Map<Long, Integer> marks = toMarks(keyNodes, boundaryNodes);
+			final Map<Long, Integer> marks = toMarks(keyNodes, boundaryNodes, boundaryRails, releasedRails);
 			final TrackSections.Change change;
 			if (restored) {
 				change = trackSections.sync(trackRails, marks);
@@ -103,6 +136,9 @@ public final class GraphRecords {
 			if (sectionsChanged) {
 				System.out.println("Minecraft Transit Railway: track sections " + change + " in " + (System.currentTimeMillis() - start) + " ms, " + trackSections.getSections().size() + " in all");
 			}
+			if (sectionsChanged || snapshot == null) {
+				updateLegs(change);
+			}
 		} else {
 			sectionsChanged = false;
 		}
@@ -121,6 +157,133 @@ public final class GraphRecords {
 			});
 			overlay = newOverlay;
 		}
+	}
+
+	/**
+	 * A new snapshot for the legs, then the legs the change touches dropped: those that touched a section added or
+	 * removed, or went on from a node a new section joins.
+	 */
+	private void updateLegs(TrackSections.Change change) {
+		final TrackSections.Snapshot newSnapshot = trackSections.snapshot();
+		maxChordPerCost = LegRouter.getMaxChordPerCost(newSnapshot, COORDINATES);
+		final boolean first = snapshot == null;
+		snapshot = newSnapshot;
+		if (first) {
+			owners = loadedOwners;
+			writtenOwners.putAll(loadedOwners);
+			// The legs as saved, where every section they touched is still there; the change drops the rest
+			int taken = 0;
+			for (final byte[] data : loadedLegs) {
+				try {
+					final LegRouter.Leg leg = LegRouter.Leg.fromBytes(data, legCache.getVersion());
+					if (leg != null && Arrays.stream(leg.domainSections).allMatch(newSnapshot.sections::containsKey) && legCache.put(leg)) {
+						writtenLegs.put(leg.request.key, leg);
+						taken++;
+					}
+				} catch (Exception e) {
+					System.out.println("Minecraft Transit Railway: a saved leg couldn't be read: " + e.getMessage());
+				}
+			}
+			if (!loadedLegs.isEmpty()) {
+				System.out.println("Minecraft Transit Railway: " + taken + " of " + loadedLegs.size() + " saved legs taken back");
+			}
+			loadedLegs = new ArrayList<>();
+			loadedOwners = new HashMap<>();
+		}
+		final Set<Long> changed = new HashSet<>(change.added);
+		changed.addAll(change.removed);
+		final Set<Long> joined = new HashSet<>();
+		change.added.forEach(hash -> {
+			final TrackSections.Section section = newSnapshot.sections.get(hash);
+			if (section != null) {
+				joined.add(section.getStart());
+				joined.add(section.getEnd());
+			}
+		});
+		final Set<Long> dropped = legCache.change(changed, joined);
+		if (!dropped.isEmpty()) {
+			System.out.println("Minecraft Transit Railway: " + dropped.size() + " legs to find again");
+		}
+	}
+
+	/**
+	 * Replaces the owners of the sections, then drops the legs that touched a section whose owners changed. Called on the
+	 * server thread.
+	 *
+	 * @return the sections whose owners changed
+	 */
+	public Set<Long> setOwners(Map<Long, Set<String>> newOwners) {
+		final Set<Long> changed = TrackOwnership.changed(owners, newOwners);
+		owners = Collections.unmodifiableMap(new HashMap<>(newOwners));
+		if (!changed.isEmpty()) {
+			final Set<Long> dropped = legCache.changeOwners(changed);
+			System.out.println("Minecraft Transit Railway: the owners of " + changed.size() + " track sections changed, " + dropped.size() + " legs to find again");
+		}
+		return changed;
+	}
+
+	/**
+	 * @return the legs as they can be found now, or null before the first check
+	 */
+	public Legs getLegs() {
+		// The version first: a snapshot replaced after it makes the legs found older than a change, never newer
+		final long legVersion = legCache.getVersion();
+		final TrackSections.Snapshot currentSnapshot = snapshot;
+		return currentSnapshot == null ? null : new Legs(legVersion, currentSnapshot, owners, maxChordPerCost, legCache);
+	}
+
+	/**
+	 * The legs of one moment: kept ones, or found on the snapshot of that moment and kept. Used from any thread.
+	 */
+	public static final class Legs implements RouteLegs.LegSource {
+
+		public final TrackSections.Snapshot snapshot;
+		public final Map<Long, Set<String>> owners;
+		private final long version;
+		private final double maxChordPerCost;
+		private final LegCache legCache;
+
+		private Legs(long version, TrackSections.Snapshot snapshot, Map<Long, Set<String>> owners, double maxChordPerCost, LegCache legCache) {
+			this.version = version;
+			this.snapshot = snapshot;
+			this.owners = owners;
+			this.maxChordPerCost = maxChordPerCost;
+			this.legCache = legCache;
+		}
+
+		@Override
+		public LegRouter.Leg get(LegRouter.Request request) {
+			final LegRouter.Leg kept = legCache.get(request);
+			if (kept != null) {
+				return kept;
+			}
+			final LegRouter.Leg leg = LegRouter.find(snapshot, version, owners, request, COORDINATES, maxChordPerCost);
+			// Another thread may have found it at the same time: what is kept is used, so the routes agree on it
+			final LegRouter.Leg taken = legCache.keep(leg);
+			return taken == null ? leg : taken;
+		}
+
+		/**
+		 * @return whether the legs are still the ones kept
+		 */
+		public boolean holds(Collection<LegRouter.Leg> legs) {
+			return legCache.holds(legs);
+		}
+	}
+
+	/**
+	 * @return the ID of a set of owners, from its content
+	 */
+	private static long getOwnerSetId(Set<String> sectionOwners) {
+		long hash = 17;
+		for (final String owner : new TreeSet<>(sectionOwners)) {
+			hash = mix(hash, owner.hashCode(), owner.length());
+		}
+		return hash;
+	}
+
+	public LegCache getLegCache() {
+		return legCache;
 	}
 
 	private TrackSections.Change restore(Map<UUID, TrackSections.Rail> trackRails, Map<Long, Integer> marks) {
@@ -194,6 +357,46 @@ public final class GraphRecords {
 			pendingRemoved.clear();
 			pendingOverlay.clear();
 		}
+		// The leg layer: what differs from what was written
+		flushedLegs.clear();
+		flushedOwners.clear();
+		flushedLegRemovals.clear();
+		flushedOwnerRemovals.clear();
+		final Map<Long, LegRouter.Leg> currentLegs = new HashMap<>();
+		legCache.getLegs().forEach(leg -> currentLegs.put(leg.request.key, leg));
+		final Map<Long, byte[]> legsPut = new TreeMap<>();
+		currentLegs.forEach((key, leg) -> {
+			if (writtenLegs.get(key) != leg) {
+				legsPut.put(key, leg.toBytes());
+				flushedLegs.computeIfAbsent(0L, k -> new HashMap<>()).put(key, leg);
+			}
+		});
+		writtenLegs.keySet().forEach(key -> {
+			if (!currentLegs.containsKey(key)) {
+				flushedLegRemovals.add(key);
+			}
+		});
+		final Map<Long, Set<String>> currentOwners = owners;
+		// Each different set of owners is written once, and each section names its set
+		final Map<Long, byte[]> ownersPut = new TreeMap<>();
+		final Map<Long, byte[]> ownerSetsPut = new TreeMap<>();
+		currentOwners.forEach((hash, sectionOwners) -> {
+			if (!sectionOwners.equals(writtenOwners.get(hash))) {
+				final long setId = getOwnerSetId(sectionOwners);
+				ownersPut.put(hash, java.nio.ByteBuffer.allocate(8).putLong(setId).array());
+				ownerSetsPut.putIfAbsent(setId, TrackOwnership.toBytes(sectionOwners));
+				flushedOwners.put(hash, sectionOwners);
+			}
+		});
+		writtenOwners.keySet().forEach(hash -> {
+			if (!currentOwners.containsKey(hash)) {
+				flushedOwnerRemovals.add(hash);
+			}
+		});
+		if (!legsPut.isEmpty() || !flushedLegRemovals.isEmpty() || !ownersPut.isEmpty() || !flushedOwnerRemovals.isEmpty()) {
+			store.writeLegLayer(legsPut, flushedLegRemovals, ownersPut, flushedOwnerRemovals, ownerSetsPut);
+		}
+
 		final long fingerprint = trackSections.getFingerprint();
 		PendingPath pendingPath;
 		while ((pendingPath = pendingPaths.poll()) != null) {
@@ -206,6 +409,14 @@ public final class GraphRecords {
 	 * What the last flush wrote was committed: its version is the published one, and the rows it removed go with the next.
 	 */
 	public void flushCommitted() {
+		flushedLegs.values().forEach(writtenLegs::putAll);
+		flushedLegRemovals.forEach(writtenLegs::remove);
+		writtenOwners.putAll(flushedOwners);
+		flushedOwnerRemovals.forEach(writtenOwners::remove);
+		flushedLegs.clear();
+		flushedOwners.clear();
+		flushedLegRemovals.clear();
+		flushedOwnerRemovals.clear();
 		if (!flushedAdded.isEmpty() || !flushedRemoved.isEmpty() || !flushedOverlay.isEmpty()) {
 			version = flushedVersion;
 			sweepVersion = version;
@@ -220,6 +431,11 @@ public final class GraphRecords {
 	 * What the last flush wrote wasn't committed, so it is written again with the next.
 	 */
 	public void flushFailed() {
+		// What differs is worked out again from what was written, so nothing of the leg layer needs keeping
+		flushedLegs.clear();
+		flushedOwners.clear();
+		flushedLegRemovals.clear();
+		flushedOwnerRemovals.clear();
 		flushedAdded.forEach(hash -> {
 			if (!pendingRemoved.remove(hash)) {
 				pendingAdded.add(hash);
@@ -257,6 +473,15 @@ public final class GraphRecords {
 					loadedOverlay.put(id, SignalOverlay.Entry.fromBytes(data));
 				} catch (Exception e) {
 					System.out.println("Minecraft Transit Railway: a saved signal layer entry couldn't be read: " + e.getMessage());
+				}
+			});
+			final Map<Long, Set<String>> ownerSets = new HashMap<>();
+			final Map<Long, Long> sectionSets = new HashMap<>();
+			store.loadLegLayer((id, data) -> loadedLegs.add(data), (id, data) -> sectionSets.put(id, java.nio.ByteBuffer.wrap(data).getLong()), (id, data) -> ownerSets.put(id, TrackOwnership.fromBytes(data)));
+			sectionSets.forEach((hash, setId) -> {
+				final Set<String> sectionOwners = ownerSets.get(setId);
+				if (sectionOwners != null) {
+					loadedOwners.put(hash, sectionOwners);
 				}
 			});
 		} catch (Exception e) {
@@ -316,11 +541,28 @@ public final class GraphRecords {
 		}
 	}
 
-	private static Map<Long, Integer> toMarks(Set<BlockPos> keyNodes, Set<Long> boundaryNodes) {
+	private static Map<Long, Integer> toMarks(Set<BlockPos> keyNodes, Set<Long> boundaryNodes, Set<UUID> boundaryRails, Set<UUID> releasedRails) {
 		final Map<Long, Integer> marks = new HashMap<>();
 		keyNodes.forEach(pos -> marks.merge(pos.asLong(), TrackSections.MARK_KEY, (mark1, mark2) -> mark1 | mark2));
 		boundaryNodes.forEach(node -> marks.merge(node, TrackSections.MARK_BOUNDARY, (mark1, mark2) -> mark1 | mark2));
+		// A boundary rail, and a rail released from a connecting line, make sections of their own
+		boundaryRails.forEach(rail -> {
+			marks.merge(rail.getMostSignificantBits(), TrackSections.MARK_BOUNDARY_RAIL, (mark1, mark2) -> mark1 | mark2);
+			marks.merge(rail.getLeastSignificantBits(), TrackSections.MARK_BOUNDARY_RAIL, (mark1, mark2) -> mark1 | mark2);
+		});
+		releasedRails.forEach(rail -> {
+			marks.merge(rail.getMostSignificantBits(), TrackSections.MARK_RELEASED, (mark1, mark2) -> mark1 | mark2);
+			marks.merge(rail.getLeastSignificantBits(), TrackSections.MARK_RELEASED, (mark1, mark2) -> mark1 | mark2);
+		});
 		return marks;
+	}
+
+	private static long hashRails(Set<UUID> rails, long salt) {
+		long sum = 0;
+		for (final UUID rail : rails) {
+			sum += mix(rail.getMostSignificantBits() * 31 + rail.getLeastSignificantBits(), salt, 0);
+		}
+		return sum;
 	}
 
 	/**

@@ -31,6 +31,14 @@ public final class TrackSections {
 	 * A node marked as a pathfinding boundary.
 	 */
 	public static final int MARK_BOUNDARY = 2;
+	/**
+	 * A node at an end of a pathfinding boundary rail, which so makes a section of its own.
+	 */
+	public static final int MARK_BOUNDARY_RAIL = 4;
+	/**
+	 * A node at an end of a rail released from a connecting line by hand, which so makes a section of its own.
+	 */
+	public static final int MARK_RELEASED = 8;
 
 	private static final int FORMAT = 1;
 
@@ -64,7 +72,9 @@ public final class TrackSections {
 		public final long node2;
 		public final double length;
 		/**
-		 * A hash of the rail's shape between its nodes, as the facings at both ends, the same seen from either end.
+		 * The rail's shape as the way it leaves each of its nodes: the facing leaving the lower node in the high 32 bits, the
+		 * facing leaving the higher node in the low 32. Two rails leaving a node with the same facing don't continue into
+		 * each other there, as {@link RailGraph.Connection#continuesFrom} has it.
 		 */
 		public final long shape;
 		/**
@@ -109,6 +119,20 @@ public final class TrackSections {
 
 		public UUID getKey() {
 			return RailKeys.of(node1, node2);
+		}
+
+		/**
+		 * @return the facing the rail leaves one of its nodes with
+		 */
+		public int getFacing(long node) {
+			return node == node1 ? (int) (shape >>> 32) : (int) shape;
+		}
+
+		/**
+		 * @return the cost of running it, its length over its speed limit in blocks per tick, as {@link RailGraph} costs it
+		 */
+		public double getCost() {
+			return length / (speedKmh / 3.6F / 20);
 		}
 
 		/**
@@ -204,6 +228,40 @@ public final class TrackSections {
 		 */
 		public boolean isAlong(int index) {
 			return nodes[index] == rails[index].node1 && nodes[index + 1] == rails[index].node2;
+		}
+
+		/**
+		 * @return whether a train can run the section from this end node, along its order from its start or against it
+		 * from its end
+		 */
+		public boolean canRun(boolean along) {
+			return along ? isForwards() : isBackwards();
+		}
+
+		/**
+		 * @return the facing the section leaves one of its end nodes with
+		 */
+		public int getEndFacing(boolean atStart) {
+			return atStart ? rails[0].getFacing(nodes[0]) : rails[rails.length - 1].getFacing(nodes[nodes.length - 1]);
+		}
+
+		/**
+		 * @return the cost of running all of it, its rails' lengths over their speed limits
+		 */
+		public double getCost() {
+			double cost = 0;
+			for (final Rail rail : rails) {
+				cost += rail.getCost();
+			}
+			return cost;
+		}
+
+		public SectionType getType() {
+			return rails.length == 1 ? rails[0].type : SectionType.NORMAL;
+		}
+
+		public long getSavedRailId() {
+			return rails.length == 1 ? rails[0].savedRailId : 0;
 		}
 
 		public double getLength() {
@@ -613,6 +671,52 @@ public final class TrackSections {
 	}
 
 	/**
+	 * @return a copy that never changes, for searches on other threads
+	 */
+	public Snapshot snapshot() {
+		return new Snapshot(new HashMap<>(sections), new HashMap<>(railSections), getFingerprint());
+	}
+
+	/**
+	 * The sections as they were at one moment, with each node's sections, read from any thread.
+	 */
+	public static final class Snapshot {
+
+		public final Map<Long, Section> sections;
+		private final Map<UUID, Long> railSections;
+		private final Map<Long, long[]> nodeSections = new HashMap<>();
+		public final long fingerprint;
+
+		private Snapshot(Map<Long, Section> sections, Map<UUID, Long> railSections, long fingerprint) {
+			this.sections = Collections.unmodifiableMap(sections);
+			this.railSections = railSections;
+			this.fingerprint = fingerprint;
+			final Map<Long, TreeSet<Long>> byNode = new HashMap<>();
+			sections.values().forEach(section -> {
+				byNode.computeIfAbsent(section.getStart(), key -> new TreeSet<>()).add(section.hash);
+				byNode.computeIfAbsent(section.getEnd(), key -> new TreeSet<>()).add(section.hash);
+			});
+			byNode.forEach((node, hashes) -> nodeSections.put(node, hashes.stream().mapToLong(Long::longValue).toArray()));
+		}
+
+		/**
+		 * @return the hashes of the sections starting or ending at a node, in order
+		 */
+		public long[] getSectionsAt(long node) {
+			final long[] hashes = nodeSections.get(node);
+			return hashes == null ? new long[0] : hashes;
+		}
+
+		/**
+		 * @return the section a rail is in, or null
+		 */
+		public Section getSectionOf(long node1, long node2) {
+			final Long hash = railSections.get(RailKeys.of(node1, node2));
+			return hash == null ? null : sections.get(hash);
+		}
+	}
+
+	/**
 	 * @return a fingerprint of the whole layer, the same for the same sections whatever order they came in
 	 */
 	public long getFingerprint() {
@@ -676,6 +780,10 @@ public final class TrackSections {
 	public boolean isCut(long node) {
 		final List<UUID> incident = nodeRails.get(node);
 		if (incident == null || incident.size() != 2 || marks.getOrDefault(node, 0) != 0) {
+			return true;
+		}
+		// Two rails leaving the node the same way meet in a point a train can't run through
+		if (rails.get(incident.get(0)).getFacing(node) == rails.get(incident.get(1)).getFacing(node)) {
 			return true;
 		}
 		for (final UUID key : incident) {

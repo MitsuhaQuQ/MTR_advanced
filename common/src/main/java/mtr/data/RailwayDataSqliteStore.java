@@ -99,6 +99,9 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			// version is read whole even when a later one was only partly written
 			statement.execute("CREATE TABLE IF NOT EXISTS track_sections (id INTEGER PRIMARY KEY, data BLOB NOT NULL, added_in INTEGER NOT NULL, removed_in INTEGER)");
 			statement.execute("CREATE TABLE IF NOT EXISTS signal_overlay (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS track_legs (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS track_ownership (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS track_owner_sets (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_paths (owner TEXT PRIMARY KEY, graph_fingerprint INTEGER NOT NULL, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS sim_data (key TEXT PRIMARY KEY, data BLOB NOT NULL)");
 			// The revision of each part players edit, kept so edits are checked the same after the server is started again
@@ -217,6 +220,45 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.executeBatch();
 		}
 		hasPendingChanges = true;
+	}
+
+	@Override
+	public void writeLegLayer(Map<Long, byte[]> legsPut, Collection<Long> legsRemoved, Map<Long, byte[]> ownersPut, Collection<Long> ownersRemoved, Map<Long, byte[]> ownerSetsPut) throws Exception {
+		writeRows("track_legs", legsPut, legsRemoved);
+		writeRows("track_ownership", ownersPut, ownersRemoved);
+		writeRows("track_owner_sets", ownerSetsPut, Collections.emptyList());
+		hasPendingChanges = true;
+	}
+
+	private void writeRows(String table, Map<Long, byte[]> put, Collection<Long> removed) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO " + table + " (id, data) VALUES (?, ?)")) {
+			for (final Map.Entry<Long, byte[]> entry : put.entrySet()) {
+				statement.setLong(1, entry.getKey());
+				statement.setBytes(2, entry.getValue());
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM " + table + " WHERE id = ?")) {
+			for (final long id : removed) {
+				statement.setLong(1, id);
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+	}
+
+	@Override
+	public void loadLegLayer(BiConsumer<Long, byte[]> legs, BiConsumer<Long, byte[]> owners, BiConsumer<Long, byte[]> ownerSets) throws Exception {
+		final String[] tables = {"track_legs", "track_ownership", "track_owner_sets"};
+		final List<BiConsumer<Long, byte[]>> consumers = java.util.Arrays.asList(legs, owners, ownerSets);
+		for (int i = 0; i < tables.length; i++) {
+			try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT id, data FROM " + tables[i])) {
+				while (resultSet.next()) {
+					consumers.get(i).accept(resultSet.getLong(1), resultSet.getBytes(2));
+				}
+			}
+		}
 	}
 
 	@Override

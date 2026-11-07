@@ -110,6 +110,15 @@ public final class PathFailure {
 		 * Trains staying on the line can't get from the last stop of the depot's last route back to the first stop of its
 		 * first route; the position is the platform they leave from, {@link #node1} the one they should reach.
 		 */
-		CYCLE_BACK
+		CYCLE_BACK,
+		/**
+		 * A key node the route lists isn't one any more, so sections don't meet there; the position is the node.
+		 */
+		NOT_KEY_NODE,
+		/**
+		 * The route can only be found over track another line owns (stages document round 2); {@link #node1} and
+		 * {@link #node2} are the ends of the first such track section.
+		 */
+		OTHER_LINE
 	}
 }

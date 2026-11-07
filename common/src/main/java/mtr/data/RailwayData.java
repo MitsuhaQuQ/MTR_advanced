@@ -208,7 +208,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	/**
 	 * Each route's path, found once for the depots running it by a timetable (decoupling document 5.4, L1).
 	 */
-	public final RoutePaths routePaths = new RoutePaths();
+	public final RoutePaths routePaths = new RoutePaths(graphRecords);
 	private static final int AUTO_DUTIES_CHECK_TICKS = 100;
 	private static final int TRACK_SECTIONS_CHECK_TICKS = 40;
 
@@ -609,7 +609,17 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			final Map<UUID, Long> savedRails = new HashMap<>();
 			platforms.forEach(platform -> savedRails.put(getSavedRailKey(platform), platform.id));
 			sidings.forEach(siding -> savedRails.put(getSavedRailKey(siding), siding.id));
-			graphRecords.update(rails, keyNodes, pathBoundaries.nodes, savedRails, signalBlocks.getBlockRailsById(), signalBlocks.getVersion());
+			graphRecords.update(rails, keyNodes, pathBoundaries.nodes, pathBoundaries.segments, RoutePaths.getReleasedRails(dataCache), savedRails, signalBlocks.getBlockRailsById(), signalBlocks.getVersion());
+			// Then the owners of the sections, which keep each route to its line's track (stages document round 2)
+			final RailGraph<Rail>[] ownersGraph = new RailGraph[1];
+			if (world.getServer() != null) {
+				routePaths.updateOwners(dataCache, rails, pathBoundaries, () -> {
+					if (ownersGraph[0] == null) {
+						ownersGraph[0] = DeterministicPathFinder.compile(rails, pathBoundaries);
+					}
+					return ownersGraph[0];
+				}, world.getServer());
+			}
 		}
 		updateNearbyTrains.tick();
 		updateNearbyLifts.tick();
@@ -702,7 +712,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// are threads free, sharing one copy of the rails (RailwayDataPathGenerationModule)
 		// The units are made once for all the depots, each unit once for all its depots, as reading the world for each depot
 		// took seconds on large networks
-		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && railwayDataPathGenerationModule.canGenerate()) {
+		// Paths are made of legs on the track sections, so not before they are there
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && graphRecords.getLegs() != null && routePaths.isOwnersReady() && railwayDataPathGenerationModule.canGenerate()) {
 			final Map<Long, LineDuties.Unit> units = LineDuties.unitsOf(depots, dataCache, sidings);
 			for (final Depot depot : depots) {
 				if (!railwayDataPathGenerationModule.canGenerate()) {

@@ -802,6 +802,15 @@ flowchart TD
 - 表：`track_sections (id, data, added_in, removed_in)`、`signal_overlay (id, data)`，都进备份。旧的 `graph_sections` 不再写；`graph_paths` 改为记轨道段哈希序列（`TrackSections.toSectionPath`），带这一层的指纹。`PathRegionSync` 不再压缩整张线网（原来只为写 `graph_sections`）。
 - 64 份黄线（19,696 条轨道，7,738 个轨道段）：首次生成 205 ms，重启读回核对 124 ms（都只在开服时一次）；预热后每次有改动的检查约 17 ms（两万条轨道，`GraphRecordsTest`）。
 
+### 7.5 站间段层和配属层（优化第二轮）
+
+- **组件**：`TrackSections.snapshot()` 给出不可变的段图（节点 → 轨道段）；`LegRouter` 在段图上找一个站间段（从一个站台按一个方向出发，经过途经关键节点，到下一个站台的两个方向），规则同 `RailRouter`（过节点看两端朝向能否接续，折返线末端可以任意接，停站后可以立即折返、加罚分，经过别的站台加罚分），并记下搜索域：碰过的全部轨道段和展开过的节点；`RouteLegs.plan` 对每个站台的两个方向做动态规划拼出整条线路，用时和整条 `RailRouter` 相同；`LegCache` 按搜索域建反查索引，轨道段增删、在展开过的节点上接了新段、配属变化（只影响受配属约束的站间段）时丢掉相关站间段，旧版本快照上算出的站间段如果碰过之后改动的部分就不收；`TrackOwnership` 由寻路边界节点和边界轨道划区域，区域里有哪些线路组的站台就配属哪些，边界轨道属于两侧，联络线自己那一段只属于它，没有站台的区域谁都能走。
+- **切点补充**：两条轨道朝同一方向离开节点（尖角）时切开；边界轨道和手动放行的联络线轨道两端切开（`MARK_BOUNDARY_RAIL`、`MARK_RELEASED`），让它们自成一段。
+- **游戏**：`GraphRecords` 在轨道段变化时先换快照，再通知 `LegCache`；`getLegs()` 先取版本号再取快照和配属，所以在别的线程上算出的站间段只会"比改动旧"而被拒，不会被错收。`RoutePaths.updateOwners` 每 40 tick 检查配属的输入，变了在后台重算。
+- **存档**：`track_legs`（站间段：请求、两个方向的用时和步骤、搜索域）、`track_ownership`（轨道段 → 配属集合编号）、`track_owner_sets`（每种配属集合存一次）；读档时读回的站间段只要碰过的轨道段都还在就收下，再按读档修复的变化丢掉相关的。都进备份。
+- **找不到路的原因**：途经点不再是关键节点（`NOT_KEY_NODE`）；只能走别的线配属的轨道（`OTHER_LINE`，给出第一段的两端）；只能走联络线（`CONNECTING_LINE`，照旧）；其余照旧由 `PathFailure.diagnose` 判断。
+- **数字**：黄线 4 条线路和第一轮版本的轨道条数一致（138、97、100、119）；64 份黄线从头算全部站间段时 128 个车厂寻路 47 s（第一轮 71 s），重启读回 4,717 个站间段，线路寻路每条最多 6 ms；配属表 62 KB。
+
 ## 8. 玩家编辑数据
 
 ### 8.1 普通的改动
@@ -947,15 +956,15 @@ sequenceDiagram
 | `RoutePaths` | 每条线路一份 `RoutePath`，按线路加锁，`get` 不存在或过期才找，`getFound` 只读不找；`getVehicles` 在主线程上收集跑每条线路的车型；`timesByPath` 判断线路是否按自己的路径算时刻（不是手画路径、飞机、连续运动） |
 | `RoutePaths.Search` | 一个路径生成线程看到的线路路径：它那份轨道副本，要找时才建一次 `RailGraph`；`getFastestTimes(route)` |
 | `RoutePaths.RoutePath` | 原始路径（每站用站台自己的停站时间，第 k 站在第一个 `stopIndex == k+1` 且有站台 ID 的轨道上，第 0 段停站为 0）；`getPath(停站设置)`、`getSlice(首站, 末站)`（第一段停站为 0，像从那站重新找的一样）、`getFastestTimes(route, 车型)`（逐站取最慢，按车型和停站设置缓存） |
-| `RoutePaths.Exclusion` | 一条线路要避开的轨道：同一运输方式的联络线自己的那一段（`getOwnRange`：从第一个关键节点、没有就从离开首站后的第一个分岔起，到其后最后一个关键节点、没有就到进末站前的最后一个分岔止）上不是站台的轨道，双向，记着属于哪条联络线 |
+| `RoutePaths.updateOwners` | 配属层（优化第二轮）：主线程只复制输入，在后台线程找出联络线的路径、算出每条联络线自己那一段（`getOwnRange`，减去手动放行的轨道）占的轨道段，加上"站台 → 线路组"（`LineDuties.getLineKey`），交给组件 `TrackOwnership.compute`，回到主线程 `GraphRecords.setOwners`；第一次算好之前车厂不寻路（`isOwnersReady`）。原来的 `Exclusion` 去掉了 |
 | `PathTiming` | 车厂和线路共用的计时：`Vehicle`（存车线长、编组、车距、加减速、速度曲线、运输方式）和 `generateTimeSegments`，从 `Siding` 搬出来，规则不变 |
 
 **找一条线路**（`RoutePaths.get`）：
 
 1. 手画路径的线路返回 null，调用的人照旧处理。
-2. 不是联络线时先算 `Exclusion`：对每条联络线先 `get` 它的路径（联络线自己不避开别人，所以不会互相等）。
-3. 键 = 站台和站台停站时间、途经点 + 联络线的标记和轨道哈希；和已有的相同且路径上的轨道没变就直接用。
-4. 否则 `DeterministicPathFinder.findPath(..., exclusion::avoids)`。找不到时照常 `PathFailure.diagnose`；有联络线时再不避开地找一次，如果那条路经过联络线，失败原因改成 `CONNECTING_LINE`（位置字段是联络线的 ID）。
+2. 键 = 线路限速、线路组（联络线记"connecting"）、站台和站台停站时间、途经点。和已有的相同、**它查过的每个站间段都还是缓存里那一个**（`RoutePath.holds` → `LegCache.holds`，包括动态规划查过但没选中的），且路径上的轨道没变，就直接用。
+3. 否则由站间段拼（优化第二轮）：每个站台取它所在的轨道段，`RouteLegs.plan(站台段, 途经关键节点, 线路组或 null, GraphRecords.Legs)`；缺的站间段在当前线程用 `LegRouter.find` 在只读快照上找，放进 `LegCache`（同一段两个线程同时找到时保留先放进去的）；拼好后 `expand` 把轨道段展开成 `PathData`，规则和 `DeterministicPathFinder` 相同（首站、停站、折返停留）。
+4. 以下是第二轮之前的做法：`DeterministicPathFinder.findPath(..., exclusion::avoids)`。找不到时照常 `PathFailure.diagnose`；有联络线时再不避开地找一次，如果那条路经过联络线，失败原因改成 `CONNECTING_LINE`（位置字段是联络线的 ID）。
 
 **存车线界面只管名称、颜色和车型**（0.38.0，5c 存车线这一步）：`SidingScreen` 只能改编号（名称）、颜色和车型；车数、加减速、最高速度、手动驾驶、手动驾驶最高速度、手动转自动时间、种别都只显示实际生效的值（`Depot.getVehicleSettings`：车池设了用车池的，没设用车池第一条存车线原来的），底下一行提示去网页改（`gui.mtr.siding_set_on_web`）。关界面只发名称颜色包（`NameColorDataBase.setNameColor`），不再发 `unlimited_trains`、`max_speed`、`deceleration_constant`，所以网页设的车数和配属不会被盖掉；服务端照旧接受这些包。网页车厂对话框车型一栏补上"手动驾驶最高速度"（按本体速度挡位的序号，`EditorData` 给车厂带 `manualSpeeds`，超出的序号保留成"其他"）、"多久不操作转回自动"（秒，存半秒）和"种别"（同一车型的几种编组共用，只在第一栏显示；操作 `depot` 的 `serviceTypes`，车型 → 文本，`EditorActions.applyDepot` 只发改了的，走 `Depot.setVehicleServiceTypes`）。网页设存车线车数（`Siding.setOperation` 和 `readOperation`）时也把上限（`unlimitedTrains`、`maxTrains`）设成一样（`limitToFleet`），不按运用跑的运输方式（飞机）还看上限。缆车照旧没有这些项。测试 `SidingSettingsTest`。
 
@@ -963,7 +972,7 @@ sequenceDiagram
 
 **确定性寻路对按时刻表跑的车厂总是开**（2026-11-07 复查）：`Depot.getPathGraph` 对 `supportsTimetable` 的运输方式不看 `useDeterministicPath`，总用 `DeterministicPathFinder`，和线路路径、最快时刻、运用路径一致；游戏车厂界面不再显示这个勾选（`EditDepotScreen.showDeterministicPath`）。存档字段不变，老存档里关着的也照样按确定性寻路。
 
-**寻路边界只约束计算**（2026-11-07，用户定的）：寻路边界只决定"先在哪里找"，不决定"能不能走"；不让正线车走某段轨道是联络线的事。
+**寻路边界只约束计算**（2026-11-07，用户定的；**线路路径部分已由 2026-11-08 的配属层取代**：寻路边界划出的区域就是线路配属，线路只走配属本线的轨道，见 9.0 和 7.4）：寻路边界只决定"先在哪里找"，不决定"能不能走"；不让正线车走某段轨道是联络线的事。
 - `RailRouter.route` 先按 `getLegRegions` 在每段两端所在的区域里找；找不到完整的路，**而且这次搜索确实因为区域剪掉过分支**（`Result.prunedByRegions`），才在整个路网里再找一次（联络线的 `avoid` 两次都照样生效）。区域里根本没碰到边界就失败的（被联络线挡住、方向不对），不再全网重找一遍，失败的搜索不会因此变成两次、范围也不会扩大到全网。第二次才找到的，`Result.crossedRegions` 为 true。区域内有路时照旧用区域内的路，所以大路网上还是快，也不会绕进无关的区域。
 - `PlatformGraph` 不再用区域判断站台之间能不能到（`isAllowed` 总是 true），站台之间的连通只看轨道。每条分支本来只走到遇到的第一个站台，用不着区域限制计算量。
 - `PathFailure.diagnose` 不再给出 `BOUNDARY`；枚举值保留，因为包里按序号写。

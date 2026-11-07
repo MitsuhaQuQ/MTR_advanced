@@ -18,22 +18,34 @@ class TrackSectionsTest {
 	/**
 	 * The rails of a generated network as the layer takes them, each with a speed label of its own.
 	 */
-	private static Map<UUID, TrackSections.Rail> railsOf(LegalNetworks network) {
+	static Map<UUID, TrackSections.Rail> railsOf(LegalNetworks network) {
+		return railsOf(network, 0);
+	}
+
+	/**
+	 * @param speed one speed for every rail, platforms too, or 0 for a speed of each rail's own
+	 */
+	static Map<UUID, TrackSections.Rail> railsOf(LegalNetworks network, int speed) {
 		final Map<UUID, List<RailGraph.Connection<String>>> byKey = new TreeMap<>();
 		network.graph().connections.forEach(connection -> byKey.computeIfAbsent(RailKeys.of(connection.fromPos, connection.toPos), key -> new ArrayList<>()).add(connection));
 		final Map<UUID, TrackSections.Rail> rails = new HashMap<>();
-		byKey.forEach((key, connections) -> rails.put(key, railOf(key, connections, SPEEDS[Math.floorMod(key.hashCode(), SPEEDS.length)])));
+		byKey.forEach((key, connections) -> rails.put(key, railOf(key, connections, speed > 0 ? speed : SPEEDS[Math.floorMod(key.hashCode(), SPEEDS.length)], speed > 0)));
 		return rails;
 	}
 
-	private static TrackSections.Rail railOf(UUID key, List<RailGraph.Connection<String>> connections, int speed) {
+	private static TrackSections.Rail railOf(UUID key, List<RailGraph.Connection<String>> connections, int speed, boolean platformsToo) {
 		final long node1 = key.getMostSignificantBits();
 		final long node2 = key.getLeastSignificantBits();
 		boolean forwards = false;
 		boolean backwards = false;
 		boolean platform = false;
 		double length = 0;
+		long shape = 0;
 		for (final RailGraph.Connection<String> connection : connections) {
+			// The facings leaving the lower node and the higher one
+			final int facing1 = connection.fromPos == node1 ? connection.getStartFacing() : connection.getEndFacing();
+			final int facing2 = connection.fromPos == node1 ? connection.getEndFacing() : connection.getStartFacing();
+			shape = (long) facing1 << 32 | facing2 & 0xFFFFFFFFL;
 			final boolean runs = connection.kind != RailGraph.Kind.DISABLED;
 			if (connection.fromPos == node1) {
 				forwards |= runs;
@@ -43,7 +55,7 @@ class TrackSectionsTest {
 			platform |= connection.kind == RailGraph.Kind.PLATFORM;
 			length = connection.cost;
 		}
-		return new TrackSections.Rail(node1, node2, length, 0, platform ? 80 : speed, !platform, platform ? SectionType.PLATFORM : SectionType.NORMAL, forwards, backwards, platform ? key.hashCode() | 1 : 0);
+		return new TrackSections.Rail(node1, node2, length, shape, platform && !platformsToo ? 80 : speed, !platform, platform ? SectionType.PLATFORM : SectionType.NORMAL, forwards, backwards, platform ? key.hashCode() | 1 : 0);
 	}
 
 	private static TrackSections build(Map<UUID, TrackSections.Rail> rails, Map<Long, Integer> marks) {

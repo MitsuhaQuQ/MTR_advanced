@@ -147,6 +147,20 @@ public final class RailGraph<R> {
 			return index;
 		}
 
+		/**
+		 * @return the facing the rail leaves its start with
+		 */
+		public int getStartFacing() {
+			return startFacing;
+		}
+
+		/**
+		 * @return the facing the rail leaves its end with, back towards its start
+		 */
+		public int getEndFacing() {
+			return endFacing;
+		}
+
 		public boolean continuesFrom(Connection<R> previous) {
 			return kind != Kind.DISABLED && startFacing != previous.endFacing;
 		}

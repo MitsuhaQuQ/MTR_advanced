@@ -43,6 +43,12 @@ public final class PathFailureText {
 				final BlockPos node2 = BlockPos.of(failure.node2);
 				final BlockPos middle = new BlockPos((node1.getX() + node2.getX()) / 2, (node1.getY() + node2.getY()) / 2, (node1.getZ() + node2.getZ()) / 2);
 				return Text.translatable("gui.mtr.path_failure_connecting_line", connectingLine == null ? String.valueOf(failure.pos) : IGui.formatStationName(connectingLine.name), format(middle)).getString();
+			case NOT_KEY_NODE:
+				return Text.translatable("gui.mtr.path_failure_not_key_node", format(pos)).getString();
+			case OTHER_LINE:
+				final BlockPos end1 = BlockPos.of(failure.node1);
+				final BlockPos end2 = BlockPos.of(failure.node2);
+				return Text.translatable("gui.mtr.path_failure_other_line", format(new BlockPos((end1.getX() + end2.getX()) / 2, (end1.getY() + end2.getY()) / 2, (end1.getZ() + end2.getZ()) / 2))).getString();
 			case CYCLE_BACK:
 				return Text.translatable("gui.mtr.path_failure_cycle_back", platformName(failure.pos), platformName(failure.node1)).getString();
 			default:

@@ -189,7 +189,7 @@ public final class RailRouter {
 	private static <R> List<Step<R>> unwind(State<R> last) {
 		final List<Step<R>> steps = new ArrayList<>();
 		for (State<R> state = last; state != null; state = state.parent) {
-			steps.add(new Step<>(state.connection, state.completedTarget, state.reversal));
+			steps.add(new Step<>(state.connection, state.completedTarget, state.reversal, state.cost));
 		}
 		Collections.reverse(steps);
 		return steps;
@@ -230,6 +230,14 @@ public final class RailRouter {
 			return rail;
 		}
 
+		public long getPos1() {
+			return pos1;
+		}
+
+		public long getPos2() {
+			return pos2;
+		}
+
 		private int[] getRegions(RailGraph<?> graph, PathRegions regions) {
 			return rail ? regions.railRegions(graph, pos1, pos2) : regions.nodeRegions(pos1);
 		}
@@ -259,11 +267,16 @@ public final class RailRouter {
 		public final Connection<R> connection;
 		public final int completedTarget;
 		public final boolean reversal;
+		/**
+		 * The cost from the start up to and with this step.
+		 */
+		public final double cost;
 
-		private Step(Connection<R> connection, int completedTarget, boolean reversal) {
+		private Step(Connection<R> connection, int completedTarget, boolean reversal, double cost) {
 			this.connection = connection;
 			this.completedTarget = completedTarget;
 			this.reversal = reversal;
+			this.cost = cost;
 		}
 	}
 

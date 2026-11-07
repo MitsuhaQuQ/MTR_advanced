@@ -49,6 +49,20 @@ public interface RailwayDataStore {
 	}
 
 	/**
+	 * Writes what changed of the leg layer: legs and the owners of track sections, by key. Legs are checked against the
+	 * track sections when read back, so they need no version of their own.
+	 */
+	default void writeLegLayer(Map<Long, byte[]> legsPut, Collection<Long> legsRemoved, Map<Long, byte[]> ownersPut, Collection<Long> ownersRemoved, Map<Long, byte[]> ownerSetsPut) throws Exception {
+	}
+
+	/**
+	 * @param owners    each section's set of owners, by the section's hash
+	 * @param ownerSets each set of owners, by its ID
+	 */
+	default void loadLegLayer(BiConsumer<Long, byte[]> legs, BiConsumer<Long, byte[]> owners, BiConsumer<Long, byte[]> ownerSets) throws Exception {
+	}
+
+	/**
 	 * Deletes the rows of the track sections removed in this published version or before.
 	 */
 	default void sweepTrackSections(long version) throws Exception {

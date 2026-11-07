@@ -8,6 +8,7 @@ import mtr.path.PathFinder;
 import net.minecraft.core.BlockPos;
 import transitsim.network.RailGraph;
 import transitsim.network.RailKeys;
+import transitsim.network.RouteLegs;
 import transitsim.plan.StopTimes;
 
 import java.util.ArrayList;
@@ -48,57 +49,174 @@ public final class RoutePaths {
 
 	private final Map<Long, RoutePath> paths = new ConcurrentHashMap<>();
 	private final Map<Long, Object> locks = new ConcurrentHashMap<>();
+	/**
+	 * The track sections, their owners and the legs found on them (stages document round 2).
+	 */
+	private final mtr.advanced.GraphRecords graphRecords;
+	/**
+	 * What the owners were last worked out from.
+	 */
+	private long ownersFingerprint;
+	private volatile boolean ownersWorking;
+	private volatile boolean ownersReady;
+
+	public RoutePaths(mtr.advanced.GraphRecords graphRecords) {
+		this.graphRecords = graphRecords;
+	}
 
 	/**
-	 * @param graph the rail network to search, made once a path has to be found
-	 * @return the route's path, found now if there is none for its platforms and rails as they are; null if the route
-	 * has a path drawn by hand, which is used as it is
+	 * @param graph the rail network, made only to tell why a path wasn't found
+	 * @return the route's path, made again of its legs if any of them changed; null if the route has a path drawn by hand,
+	 * which is used as it is
 	 */
 	public RoutePath get(Route route, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Supplier<RailGraph<Rail>> graph) {
 		if (!route.getPathData().isEmpty()) {
 			return null;
 		}
-		// The connecting lines get their paths first, as this route's path keeps off them
-		final Exclusion exclusion = getExclusion(route, dataCache, rails, graph);
-		final String key = getKey(route, dataCache) + exclusion.key;
+		final String key = getKey(route, dataCache);
 		synchronized (locks.computeIfAbsent(route.id, id -> new Object())) {
 			final RoutePath existing = paths.get(route.id);
-			if (existing != null && existing.key.equals(key) && !existing.isStale(rails)) {
+			if (existing != null && existing.key.equals(key) && existing.holds(graphRecords) && !existing.isStale(rails)) {
 				return existing;
 			}
-			final RoutePath found = find(route, key, dataCache, rails, graph.get(), exclusion);
+			final RoutePath found = find(route, key, dataCache, rails, graph);
 			paths.put(route.id, found);
 			return found;
 		}
 	}
 
 	/**
-	 * @return the route's path if it was found for its platforms, the connecting lines and rails as they are now, without
-	 * searching
+	 * @return the route's path if it was made for its platforms and its legs still hold, without finding anything
 	 */
 	public RoutePath getFound(Route route, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		final RoutePath existing = paths.get(route.id);
-		return existing != null && existing.key.equals(getKey(route, dataCache) + getExclusion(route, dataCache, rails, null).key) && existing.isFound() && !existing.isStale(rails) ? existing : null;
+		return existing != null && existing.key.equals(getKey(route, dataCache)) && existing.isFound() && existing.holds(graphRecords) && !existing.isStale(rails) ? existing : null;
 	}
 
 	/**
-	 * The rails of the connecting lines of the route's kind (decoupling document 5.4, L1), which its path keeps off: those
-	 * of each one's path strictly between its first and last platform, other than platform rails. A connecting line
-	 * itself runs over every rail.
-	 *
-	 * @param graph the network to find the connecting lines' paths in, or null to take only those found already
+	 * Works out the owners of the track sections again if anything they come from changed (stages document round 2): the
+	 * pathfinding boundaries cut the network into regions owned by the lines with platforms in them, and each connecting
+	 * line owns its own part, but the rails released from it by hand. Called on the server thread, after the sections are
+	 * brought up to date; the connecting lines' paths are found here, as they run anywhere.
 	 */
-	private Exclusion getExclusion(Route route, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Supplier<RailGraph<Rail>> graph) {
-		if (route.connectingLine || !timesByPath(route)) {
-			return route.connectingLine ? Exclusion.CONNECTING_LINE : Exclusion.NONE;
+	public void updateOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph) {
+		updateOwners(dataCache, rails, boundaries, graph, null);
+	}
+
+	/**
+	 * @param serverThread runs what is given on the server thread, to work the owners out on a thread of their own and
+	 *                     put them in there; null to work them out at once
+	 */
+	public void updateOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph, java.util.concurrent.Executor serverThread) {
+		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
+		if (legs == null || ownersWorking) {
+			return;
 		}
-		final Exclusion exclusion = new Exclusion();
-		dataCache.routeIdMap.values().stream().filter(other -> other.connectingLine && other.id != route.id && other.transportMode == route.transportMode && timesByPath(other)).sorted(Comparator.comparingLong(other -> other.id)).forEach(other -> {
-			final RoutePath connectingPath = graph == null ? getFound(other, dataCache, rails) : get(other, dataCache, rails, graph);
-			exclusion.add(other, connectingPath, rails);
+		long fingerprint = legs.snapshot.fingerprint;
+		for (final long node : boundaries.nodes) {
+			fingerprint += mixKey(node, 1);
+		}
+		for (final UUID segment : boundaries.segments) {
+			fingerprint += mixKey(segment.getMostSignificantBits() * 31 + segment.getLeastSignificantBits(), 2);
+		}
+		for (final Route route : dataCache.routeIdMap.values()) {
+			fingerprint += mixKey(route.id, (getKey(route, dataCache) + "|" + route.connectingLine + "|" + LineDuties.getLineKey(route) + "|" + getReleased(route)).hashCode());
+		}
+		if (fingerprint == ownersFingerprint && ownersReady) {
+			return;
+		}
+		ownersFingerprint = fingerprint;
+		if (serverThread == null) {
+			graphRecords.setOwners(computeOwners(dataCache, rails, boundaries, graph, legs));
+			ownersReady = true;
+			return;
+		}
+		// The connecting lines' paths can take long to find on a large network: on a thread of their own, on copies
+		ownersWorking = true;
+		final DataCache dataCopy = dataCache.copyIdMaps();
+		final Map<BlockPos, Map<BlockPos, Rail>> railsCopy = DataCache.copyRails(rails);
+		final mtr.advanced.PathBoundaries boundariesCopy = boundaries.copy();
+		final Thread thread = new Thread(() -> {
+			Map<Long, Set<String>> owners = null;
+			try {
+				final long start = System.currentTimeMillis();
+				final RailGraph<Rail>[] copyGraph = new RailGraph[1];
+				owners = computeOwners(dataCopy, railsCopy, boundariesCopy, () -> {
+					if (copyGraph[0] == null) {
+						copyGraph[0] = DeterministicPathFinder.compile(railsCopy, boundariesCopy);
+					}
+					return copyGraph[0];
+				}, legs);
+				System.out.println("Minecraft Transit Railway: worked out the owners of the track sections in " + (System.currentTimeMillis() - start) + " ms");
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			final Map<Long, Set<String>> finalOwners = owners;
+			serverThread.execute(() -> {
+				if (finalOwners != null) {
+					graphRecords.setOwners(finalOwners);
+					ownersReady = true;
+				}
+				ownersWorking = false;
+			});
+		}, "MTR track owners");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	/**
+	 * @return whether the owners have been worked out once, so routes keep to their lines' track
+	 */
+	public boolean isOwnersReady() {
+		return ownersReady;
+	}
+
+	private Map<Long, Set<String>> computeOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph, mtr.advanced.GraphRecords.Legs legs) {
+		final Map<Long, List<String>> platformLines = new HashMap<>();
+		final Map<Long, String> connectingSections = new HashMap<>();
+		dataCache.routeIdMap.values().stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
+			if (route.connectingLine) {
+				if (timesByPath(route)) {
+					final Set<UUID> released = getReleased(route);
+					forEachLineRail(route, get(route, dataCache, rails, graph), rails, (fromPos, toPos) -> {
+						if (!released.contains(RailKeys.of(fromPos, toPos))) {
+							final transitsim.network.TrackSections.Section section = legs.snapshot.getSectionOf(fromPos, toPos);
+							if (section != null) {
+								connectingSections.put(section.hash, String.valueOf(route.id));
+							}
+						}
+					});
+				}
+			} else {
+				route.platformIds.forEach(routePlatform -> {
+					final List<String> lines = platformLines.computeIfAbsent(routePlatform.platformId, id -> new ArrayList<>());
+					final String line = LineDuties.getLineKey(route);
+					if (!lines.contains(line)) {
+						lines.add(line);
+					}
+				});
+			}
 		});
-		exclusion.finish();
-		return exclusion;
+		return transitsim.network.TrackOwnership.compute(legs.snapshot, boundaries.nodes, boundaries.segments, platformLines, connectingSections);
+	}
+
+	/**
+	 * @return the rails released from connecting lines by hand, which other routes may run over
+	 */
+	public static Set<UUID> getReleasedRails(DataCache dataCache) {
+		final Set<UUID> released = new HashSet<>();
+		dataCache.routeIdMap.values().forEach(route -> {
+			if (route.connectingLine) {
+				released.addAll(getReleased(route));
+			}
+		});
+		return released;
+	}
+
+	private static long mixKey(long value1, long value2) {
+		long hash = value1 * 0x9E3779B97F4A7C15L + value2;
+		hash = (hash ^ hash >>> 31) * 0xBF58476D1CE4E5B9L;
+		return hash ^ hash >>> 29;
 	}
 
 	/**
@@ -248,49 +366,143 @@ public final class RoutePaths {
 		return routeVehicles == null || routeVehicles.isEmpty() ? Collections.singleton(getDefaultVehicle(route.transportMode)) : routeVehicles;
 	}
 
-	private static RoutePath find(Route route, String key, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, Exclusion exclusion) {
+	/**
+	 * The route's path made of its legs (stages document round 2): each stop's track section, the key nodes after it, and
+	 * the route's line, whose track it keeps to; a connecting line runs anywhere.
+	 */
+	private RoutePath find(Route route, String key, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, Supplier<RailGraph<Rail>> graph) {
 		final long startNanos = System.nanoTime();
+		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
+		if (legs == null) {
+			// Before the track sections are there: found again as soon as they are
+			return new RoutePath(route.id, key, Collections.emptyList(), new PathFailure(PathFailure.Type.NO_ROUTE, 0), null);
+		}
 		final List<SavedRailBase> platforms = new ArrayList<>();
-		final List<List<BlockPos>> waypoints = new ArrayList<>();
+		final List<Long> stopSections = new ArrayList<>();
+		final List<long[]> waypoints = new ArrayList<>();
+		final List<List<BlockPos>> waypointPositions = new ArrayList<>();
 		for (final Route.RoutePlatform routePlatform : route.platformIds) {
 			final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
 			if (platform == null) {
-				return new RoutePath(route.id, key, Collections.emptyList(), new PathFailure(PathFailure.Type.NO_ROUTE, 0));
+				return new RoutePath(route.id, key, Collections.emptyList(), new PathFailure(PathFailure.Type.NO_ROUTE, 0), Collections.emptyList());
 			}
+			final List<BlockPos> positions = platform.getOrderedPositions(BlockPos.ZERO, false);
+			final transitsim.network.TrackSections.Section section = legs.snapshot.getSectionOf(positions.get(0).asLong(), positions.get(1).asLong());
 			platforms.add(platform);
-			waypoints.add(routePlatform.waypoints);
+			stopSections.add(section == null ? 0L : section.hash);
+			waypoints.add(routePlatform.waypoints.stream().mapToLong(BlockPos::asLong).toArray());
+			waypointPositions.add(routePlatform.waypoints);
 		}
-		final List<PathData> path = new ArrayList<>();
-		final int reached = platforms.size() < 2 ? 0 : DeterministicPathFinder.findPath(path, graph, platforms, waypoints, 1, exclusion.isEmpty() ? null : exclusion::avoids);
-		PathFailure failure = path.isEmpty() && platforms.size() >= 2 ? PathFailure.diagnose(graph, platforms, waypoints, reached) : PathFailure.NONE;
-		if (path.isEmpty() && platforms.size() >= 2 && !exclusion.isEmpty()) {
-			// Found only over a connecting line, the route says which one it would have to run over
-			final List<PathData> unrestricted = new ArrayList<>();
-			DeterministicPathFinder.findPath(unrestricted, graph, platforms, waypoints, 1);
-			for (final PathData pathData : unrestricted) {
-				final long fromPos = pathData.startingPos.asLong();
-				final long toPos = pathData.getLastPos().asLong();
-				final long connectingLineId = exclusion.getLine(fromPos, toPos);
-				if (connectingLineId != 0) {
-					failure = new PathFailure(PathFailure.Type.CONNECTING_LINE, connectingLineId, fromPos, toPos);
-					break;
-				}
-			}
+		final String line = route.connectingLine ? null : LineDuties.getLineKey(route);
+		final RouteLegs.Plan plan = RouteLegs.plan(stopSections, waypoints, line, legs);
+		final List<transitsim.network.LegRouter.Leg> consulted = new ArrayList<>(plan.consulted);
+		List<PathData> path = plan.isFound() ? expand(plan, legs.snapshot, platforms, rails) : Collections.emptyList();
+		PathFailure failure = PathFailure.NONE;
+		if (path == null) {
+			// The rails copy and the sections differ for a moment: found again with the next
+			path = Collections.emptyList();
+			failure = new PathFailure(PathFailure.Type.NO_ROUTE, 0);
+			consulted.clear();
+		} else if (path.isEmpty() && platforms.size() >= 2) {
+			failure = diagnose(plan, line, stopSections, waypoints, waypointPositions, platforms, legs, consulted, graph);
 		}
 		// The route's speed limit on its rails (line speed limits)
 		PathData.capSpeed(path, route.speedLimit);
-		System.out.println("Minecraft Transit Railway: " + (path.isEmpty() ? "found no path for" : "found the path of") + " route " + (route.name.isEmpty() ? String.valueOf(route.id) : route.name) + " (" + path.size() + " rails) in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
-		return new RoutePath(route.id, key, path, failure);
+		System.out.println("Minecraft Transit Railway: " + (path.isEmpty() ? "found no path for" : "found the path of") + " route " + (route.name.isEmpty() ? String.valueOf(route.id) : route.name) + " (" + path.size() + " rails, " + plan.legs.size() + " legs) in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
+		return new RoutePath(route.id, key, path, failure, consulted);
+	}
+
+	/**
+	 * Why no path: a key node that isn't one any more, another line's track or a connecting line in the way, or the
+	 * network itself.
+	 */
+	private static PathFailure diagnose(RouteLegs.Plan plan, String line, List<Long> stopSections, List<long[]> waypoints, List<List<BlockPos>> waypointPositions, List<SavedRailBase> platforms, mtr.advanced.GraphRecords.Legs legs, List<transitsim.network.LegRouter.Leg> consulted, Supplier<RailGraph<Rail>> graph) {
+		if (plan.badWaypoint != 0) {
+			// A node with rails that isn't where sections meet isn't a key node any more
+			return new PathFailure(graph.get().hasNode(plan.badWaypoint) ? PathFailure.Type.NOT_KEY_NODE : PathFailure.Type.MISSING_WAYPOINT, plan.badWaypoint);
+		}
+		if (line != null) {
+			// Found when it may run anywhere: the first section it would have to take that its line doesn't own
+			final RouteLegs.Plan anywhere = RouteLegs.plan(stopSections, waypoints, null, legs);
+			consulted.addAll(anywhere.consulted);
+			if (anywhere.isFound()) {
+				for (final long[] step : anywhere.steps) {
+					final Set<String> owners = legs.owners.get(step[0]);
+					if (!transitsim.network.TrackOwnership.mayRun(owners, line)) {
+						final transitsim.network.TrackSections.Section section = legs.snapshot.sections.get(step[0]);
+						final long node1 = section == null ? 0 : section.getStart();
+						final long node2 = section == null ? 0 : section.getEnd();
+						final String owner = owners.iterator().next();
+						if (owner.startsWith(transitsim.network.TrackOwnership.CONNECTING_PREFIX)) {
+							return new PathFailure(PathFailure.Type.CONNECTING_LINE, Long.parseLong(owner.substring(transitsim.network.TrackOwnership.CONNECTING_PREFIX.length())), node1, node2);
+						}
+						return new PathFailure(PathFailure.Type.OTHER_LINE, 0, node1, node2);
+					}
+				}
+			}
+		}
+		return PathFailure.diagnose(graph.get(), platforms, waypointPositions, plan.reachedStops);
+	}
+
+	/**
+	 * The plan's sections as the rails a train runs, each with its stop, as {@link DeterministicPathFinder} lays a path
+	 * out.
+	 *
+	 * @return the path, or null if a rail of the sections isn't in the rails given
+	 */
+	static List<PathData> expand(RouteLegs.Plan plan, transitsim.network.TrackSections.Snapshot snapshot, List<SavedRailBase> platforms, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		// The stop each step is, the last where several are the same step
+		final Map<Integer, Integer> stopOfStep = new HashMap<>();
+		for (int i = 0; i < plan.stopSteps.length; i++) {
+			stopOfStep.put(plan.stopSteps[i], i);
+		}
+		final List<PathData> path = new ArrayList<>();
+		int reached = 0;
+		for (int i = 0; i < plan.steps.size(); i++) {
+			final long[] step = plan.steps.get(i);
+			final transitsim.network.TrackSections.Section section = snapshot.sections.get(step[0]);
+			if (section == null) {
+				return null;
+			}
+			final long[] nodes = section.getNodes();
+			final boolean along = step[1] == 1;
+			final boolean reversal = step[2] == 1;
+			final Integer stop = stopOfStep.get(i);
+			final boolean turningBack = section.getType() == transitsim.network.SectionType.TURN_BACK && i + 1 < plan.steps.size() && plan.steps.get(i + 1)[0] == step[0] && plan.steps.get(i + 1)[1] != step[1];
+			for (int j = 0; j < section.getRailCount(); j++) {
+				final long from = along ? nodes[j] : nodes[nodes.length - 1 - j];
+				final long to = along ? nodes[j + 1] : nodes[nodes.length - 2 - j];
+				final BlockPos startPos = BlockPos.of(from);
+				final BlockPos endPos = BlockPos.of(to);
+				final Rail rail = DataCache.tryGet(rails, startPos, endPos);
+				if (rail == null) {
+					return null;
+				}
+				final boolean lastRail = j == section.getRailCount() - 1;
+				if (i == 0) {
+					path.add(new PathData(rail, platforms.get(0).id, 0, startPos, endPos, 1));
+				} else if (stop != null && lastRail && !reversal) {
+					reached = stop;
+					final SavedRailBase savedRailBase = platforms.get(reached);
+					path.add(new PathData(rail, savedRailBase.id, savedRailBase instanceof Platform ? savedRailBase.getDwellTime() : 0, startPos, endPos, 1 + reached));
+				} else if (reversal) {
+					path.add(new PathData(rail, platforms.get(reached).id, 0, startPos, endPos, 1 + reached));
+				} else {
+					path.add(new PathData(rail, 0, turningBack ? rail.getTurnBackDwellTime() : 0, startPos, endPos, 1 + reached));
+				}
+			}
+		}
+		return path;
 	}
 
 	/**
 	 * What a route's path is found from: its platforms in order with their own dwell times, and the waypoints after each;
-	 * the connecting lines it keeps off are added to it ({@link Exclusion#key}). The route's stop settings don't change
+	 * its line, whose track it keeps to, or that it is a connecting line. The route's stop settings don't change
 	 * the path, as they are applied by whoever uses it.
 	 */
 	static String getKey(Route route, DataCache dataCache) {
 		// A new speed limit finds the path again, with the limit on it
-		final StringBuilder key = new StringBuilder().append(route.speedLimit).append('|');
+		final StringBuilder key = new StringBuilder().append(route.speedLimit).append('|').append(route.connectingLine ? "connecting" : LineDuties.getLineKey(route)).append('|');
 		route.platformIds.forEach(routePlatform -> {
 			final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
 			key.append(routePlatform.platformId).append('/').append(platform == null ? -1 : platform.getDwellTime()).append('[');
@@ -326,77 +538,6 @@ public final class RoutePaths {
 		final List<PathData> copy = new ArrayList<>(path.size());
 		path.forEach(pathData -> copy.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime)));
 		return copy;
-	}
-
-	/**
-	 * The rails a route's path keeps off, by the connecting line each belongs to, in both directions.
-	 */
-	static final class Exclusion {
-
-		static final Exclusion NONE = new Exclusion();
-		/**
-		 * A connecting line runs over every rail, and its key says it is one, so it is found again when that changes.
-		 */
-		static final Exclusion CONNECTING_LINE = new Exclusion("|connecting");
-
-		private final Map<Long, Map<Long, Long>> lines = new HashMap<>();
-		private final StringBuilder keyBuilder = new StringBuilder();
-		/**
-		 * The connecting lines and their rails, so the route is found again when one changes.
-		 */
-		String key;
-
-		Exclusion() {
-			key = "";
-		}
-
-		private Exclusion(String key) {
-			this.key = key;
-		}
-
-		/**
-		 * @param connectingPath the connecting line's path, or null if it has none yet
-		 */
-		void add(Route connectingLine, RoutePath connectingPath, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-			final long connectingLineId = connectingLine.id;
-			final Set<UUID> released = getReleased(connectingLine);
-			keyBuilder.append("|x").append(connectingLineId).append(':');
-			if (connectingPath == null || !connectingPath.isFound()) {
-				keyBuilder.append('-');
-				return;
-			}
-			final long[] hash = {17};
-			forEachLineRail(connectingLine, connectingPath, rails, (fromPos, toPos) -> {
-				if (!released.contains(RailKeys.of(fromPos, toPos))) {
-					lines.computeIfAbsent(fromPos, pos -> new HashMap<>()).put(toPos, connectingLineId);
-					lines.computeIfAbsent(toPos, pos -> new HashMap<>()).put(fromPos, connectingLineId);
-					hash[0] = hash[0] * 31 + fromPos;
-					hash[0] = hash[0] * 31 + toPos;
-				}
-			});
-			keyBuilder.append(Long.toHexString(hash[0]));
-		}
-
-		void finish() {
-			key = keyBuilder.toString();
-		}
-
-		boolean isEmpty() {
-			return lines.isEmpty();
-		}
-
-		boolean avoids(RailGraph.Connection<Rail> connection) {
-			return getLine(connection.fromPos, connection.toPos) != 0;
-		}
-
-		/**
-		 * @return the connecting line a rail belongs to, or 0
-		 */
-		long getLine(long fromPos, long toPos) {
-			final Map<Long, Long> connections = lines.get(fromPos);
-			final Long line = connections == null ? null : connections.get(toPos);
-			return line == null ? 0 : line;
-		}
 	}
 
 	/**
@@ -477,12 +618,28 @@ public final class RoutePaths {
 		 */
 		private final List<PathData> rawPath;
 		private final Map<List<Object>, StopTimes> times = new ConcurrentHashMap<>();
+		/**
+		 * Every leg it was worked out from, chosen or not, or null if it is to be found again at once.
+		 */
+		private final List<transitsim.network.LegRouter.Leg> consulted;
 
 		RoutePath(long routeId, String key, List<PathData> rawPath, PathFailure failure) {
+			this(routeId, key, rawPath, failure, Collections.emptyList());
+		}
+
+		RoutePath(long routeId, String key, List<PathData> rawPath, PathFailure failure, List<transitsim.network.LegRouter.Leg> consulted) {
 			this.routeId = routeId;
 			this.key = key;
 			this.rawPath = Collections.unmodifiableList(rawPath);
 			this.failure = failure;
+			this.consulted = consulted == null ? null : Collections.unmodifiableList(new ArrayList<>(consulted));
+		}
+
+		/**
+		 * @return whether every leg it was worked out from is still the one kept, so nothing it depends on changed
+		 */
+		private boolean holds(mtr.advanced.GraphRecords graphRecords) {
+			return consulted != null && graphRecords.getLegCache().holds(consulted);
 		}
 
 		public boolean isFound() {
