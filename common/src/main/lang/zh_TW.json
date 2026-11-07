@@ -229,6 +229,7 @@
   "gui.mtr.edit_failed": "你的修改沒能完成，涉及的內容都已恢復原樣",
   "gui.mtr.line_shortfall": "跑滿需要 %s 列，現有 %s 列，每天 %s 班沒有車",
   "gui.mtr.line_shortfall_suggest": "，建議加到 %s",
+  "gui.mtr.line_shortfall_unsettled": "運用排不成每週一樣，算不出需要幾列；現有 %s 列，每天 %s 班沒有車",
   "gui.mtr.track_up": "上行",
   "gui.mtr.track_down": "下行",
   "gui.mtr.track_both": "雙向",

@@ -433,6 +433,11 @@ public final class LineDuties {
 					plan.needed += result.trains;
 				}
 			}
+			// Duties that don't settle into the same week each week were planned a week on its own, so what they'd need isn't
+			// known: -1, shown as that rather than as a number of trains
+			if (plan.issues.stream().anyMatch(issue -> issue.startsWith("NOT_PERIODIC"))) {
+				plan.needed = -1;
+			}
 			return plan;
 		}
 
@@ -489,7 +494,8 @@ public final class LineDuties {
 		public final String lineNames;
 		public final Map<Long, List<DepotDuties.Slot>> sidings = new TreeMap<>();
 		/**
-		 * The trains the duties use at most, those needed to run every service, and those the sidings hold.
+		 * The trains the duties use at most, those needed to run every service (-1 if not known, as the duties don't repeat
+		 * week after week), and those the sidings hold.
 		 */
 		public int trains;
 		public int needed;
@@ -519,7 +525,8 @@ public final class LineDuties {
 		}
 
 		public String describe() {
-			return "line " + lineNames + ": needs " + needed + " trains, has " + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + shortTurnarounds();
+			final boolean settled = needed >= 0;
+			return "line " + lineNames + (settled ? ": needs " + needed + " trains, has " : ": the duties don't repeat week after week, so the trains needed aren't known; has ") + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + shortTurnarounds();
 		}
 
 		private String shortTurnarounds() {

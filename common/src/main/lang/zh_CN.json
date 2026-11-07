@@ -230,6 +230,7 @@
   "gui.mtr.connecting_line": "联络线（别的线路线内不走，可以直通载客）",
   "gui.mtr.line_shortfall": "跑满需要 %s 列，现有 %s 列，每天 %s 班没有车",
   "gui.mtr.line_shortfall_suggest": "，建议加到 %s",
+  "gui.mtr.line_shortfall_unsettled": "运用排不成每周一样，算不出需要几列；现有 %s 列，每天 %s 班没有车",
   "gui.mtr.track_up": "上行",
   "gui.mtr.track_down": "下行",
   "gui.mtr.track_both": "双向",

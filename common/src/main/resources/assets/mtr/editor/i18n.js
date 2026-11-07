@@ -576,6 +576,8 @@ const I18N = (() => {
 			"{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车": "{0}: needs {1} trains to run every service, has {2}; {3} services a day have no train",
 			"，建议加到 {0}": "; add trains to {0}",
 			"缺 {0} 列": "{0} trains short",
+			"缺车": "trains short",
+			"{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车": "{0}: the duties don't repeat week after week, so the trains needed aren't known; has {1}, {2} services a day have no train",
 			"（示意图里这一段有 {0} 条轨道，放大后逐条显示）": " (this run has {0} rails in the schematic; zoom in to see each)",
 			"放大后按实际走向画，缩小时画成示意图（只有横、竖和 45°）": "Drawn as the track runs when zoomed in, and as a schematic of horizontal, vertical and 45° lines when zoomed out",
 			"运输方式": "Transport mode",
