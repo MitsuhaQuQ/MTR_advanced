@@ -194,7 +194,7 @@ Done so far: the simulation component and its move into the game (steps S0 to S6
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
-The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). Where the code lives and how the main flows run (server tick, train sync, rendering, resource loading, saving, editing, path generation, ANTE scripts) are in [MTR-代码说明与流程.md](MTR-代码说明与流程.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese). Performance measured on a stress test network, the logic problems it showed and the agreed architecture of the saved network layers (rails, track sections, legs between stops, run times, assembled paths, duties) are in [MTR-性能与逻辑优化.md](MTR-性能与逻辑优化.md) (Chinese).
+The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). Where the code lives and how the main flows run (server tick, train sync, rendering, resource loading, saving, editing, path generation, ANTE scripts) are in [MTR-代码说明与流程.md](MTR-代码说明与流程.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese). Performance measured on a stress test network, the logic problems it showed and the agreed architecture of the saved network layers (rails, track sections, legs between stops, run times, assembled paths, duties) are in [MTR-性能与逻辑优化.md](MTR-性能与逻辑优化.md) (Chinese). How it is carried out round by round is in [MTR-优化实施阶段.md](MTR-优化实施阶段.md) (Chinese).
 
 ## Project complexity
 
