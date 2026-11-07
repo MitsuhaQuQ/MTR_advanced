@@ -159,9 +159,18 @@ public final class EditorData {
 				vehicleObject.addProperty("manualToAutomaticTime", vehicle.manualToAutomaticTime);
 				vehicleObject.addProperty("maxSpeed", vehicle.maxSpeed);
 				poolObject.add("vehicleSettings", vehicleObject);
+				// What its vehicle runs, shared by the pools of the same vehicle (5c)
+				poolObject.addProperty("serviceTypes", depot.vehicleServiceTypes.getOrDefault(eachSidings.get(0).getTrainId(), ""));
 				poolsArray.add(poolObject);
 			});
 			depotObject.add("pools", poolsArray);
+			// The highest speeds driving by hand can have, by number (5c): MTR's own rails, up to the diamond one
+			final JsonArray manualSpeeds = new JsonArray();
+			for (int i = 0; i <= mtr.data.RailType.DIAMOND.ordinal(); i++) {
+				manualSpeeds.add(mtr.data.RailType.values()[i].speedLimit);
+			}
+			depotObject.add("manualSpeeds", manualSpeeds);
+			depotObject.addProperty("serviceTypesUsed", Depot.supportsTimetable(depot.transportMode));
 			// How much longer than planned its trains were measured to take out, round and back, which its duties are
 			// planned with (D1)
 			final JsonArray buffersArray = new JsonArray();

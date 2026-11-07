@@ -1,4 +1,7 @@
 {
+  "gui.mtr.siding_manual_allowed": "允許手動駕駛",
+  "gui.mtr.siding_manual_not_allowed": "不允許手動駕駛",
+  "gui.mtr.siding_set_on_web": "車數、加減速、最高速度、手動駕駛和種別在網頁編輯器的車廠設定裡改",
   "item.mtr.rail_connector_35": "砂岩鐵軌連接器",
   "item.mtr.rail_connector_35_one_way": "砂岩鐵軌連接器 （單向）",
   "gui.mtr.siding_max_speed": "最高速度：%s km/h",

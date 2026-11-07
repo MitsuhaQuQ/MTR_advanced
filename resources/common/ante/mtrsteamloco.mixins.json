@@ -31,7 +31,6 @@
     "TrainRendererBaseAccessor",
     "VehicleRidingClientMixin",
     "CameraMixin",
-    "SidingScreenMixin",
     "RenderTrainsAccessor",
     "ItemRendererMixin",
     "ModelBakeryMixin"

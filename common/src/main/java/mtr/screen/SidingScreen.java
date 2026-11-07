@@ -18,7 +18,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
-import net.minecraft.util.Mth;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,29 +25,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * A siding in the game: its number, colour and vehicle. How many trains it holds and how its trains run (speeding up,
+ * braking, highest speed, driving by hand, service types) are only shown here, as they run, and set in the web editor's
+ * depot dialog (5c), so what the web sets isn't put back when this screen closes.
+ */
 public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 
 	private boolean isSelectingTrain;
-	private final float oldAcceleration;
-	private final boolean oldIsManual;
-	private final int oldMaxManualSpeed;
-	private final int oldDwellTime;
 
 	private final TransportMode transportMode;
 	private final Button buttonSelectTrain;
 	private final DashboardList availableTrainsList;
-	private final WidgetBetterCheckbox buttonUnlimitedTrains;
-	private final WidgetBetterTextField textFieldMaxTrains;
-	private final WidgetShorterSlider sliderAccelerationConstant;
-	private final WidgetShorterSlider sliderDecelerationConstant;
-	/**
-	 * The highest speed of the siding's trains, in steps of {@link #MAX_SPEED_STEP} km/h, 0 for none.
-	 */
-	private final WidgetShorterSlider sliderMaxSpeed;
-	private static final int MAX_SPEED_STEP = 5;
-	private final WidgetBetterCheckbox buttonIsManual;
-	private final WidgetShorterSlider sliderMaxManualSpeed;
-	private final WidgetBetterTextField textFieldServiceTypes;
 	private final Depot depot;
 
 	private static final Component SELECTED_TRAIN_TEXT = Text.translatable("gui.mtr.selected_vehicle");
@@ -62,10 +50,7 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 	private static final Component MANUAL_TO_AUTOMATIC_TIME = Text.translatable("gui.mtr.manual_to_automatic_time");
 	private static final Component MAX_MANUAL_SPEED = Text.translatable("gui.mtr.max_manual_speed");
 	private static final Component SERVICE_TYPES_TEXT = Text.translatable("gui.mtr.vehicle_service_types");
-	private static final int MAX_TRAINS_TEXT_LENGTH = 3;
-	private static final int MAX_TRAINS_WIDTH = 80;
 	private static final int DESCRIPTION_WIDTH = 160;
-	private static final int SLIDER_SCALE = 1000;
 	private static final float ACCELERATION_UNIT_CONVERSION_1 = 20 * 20; // m/tick^2 to m/s^2
 	private static final float ACCELERATION_UNIT_CONVERSION_2 = ACCELERATION_UNIT_CONVERSION_1 * 3.6F; // m/tick^2 to km/h/s
 	private static final Map<String, String> WIKIPEDIA_ARTICLES = new HashMap<>();
@@ -74,35 +59,8 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		super(siding, transportMode, dashboardScreen, SELECTED_TRAIN_TEXT, capacityText(transportMode), ACCELERATION_CONSTANT_TEXT, MANUAL_TO_AUTOMATIC_TIME, MAX_MANUAL_SPEED, SERVICE_TYPES_TEXT);
 		this.transportMode = transportMode;
 		depot = ClientData.DATA_CACHE.sidingIdToDepot.get(siding.id);
-		textFieldServiceTypes = new WidgetBetterTextField(Text.translatable("gui.mtr.vehicle_service_types_suggestion").getString());
 		buttonSelectTrain = UtilitiesClient.newButton(button -> onSelectingTrain());
 		availableTrainsList = new DashboardList(null, null, null, null, this::onAdd, null, null, () -> ClientData.TRAINS_SEARCH, text -> ClientData.TRAINS_SEARCH = text);
-		textFieldMaxTrains = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "", MAX_TRAINS_TEXT_LENGTH);
-		sliderAccelerationConstant = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, Math.round((Train.MAX_ACCELERATION - Train.MIN_ACCELERATION) * SLIDER_SCALE), this::accelerationSliderFormatter, null);
-		sliderDecelerationConstant = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, Math.round((Train.MAX_ACCELERATION - Train.MIN_ACCELERATION) * SLIDER_SCALE), this::decelerationSliderFormatter, null);
-		sliderMaxSpeed = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, mtr.data.VehicleSettings.MAX_SPEED / MAX_SPEED_STEP, value -> value == 0 ? Text.translatable("gui.mtr.siding_max_speed_none").getString() : Text.translatable("gui.mtr.siding_max_speed", value * MAX_SPEED_STEP).getString(), null);
-		buttonIsManual = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.is_manual"), checked -> {
-			if (checked && !textFieldMaxTrains.getValue().equals("1")) {
-				textFieldMaxTrains.setValue("1");
-			}
-			setIsSelectingTrain(false);
-		});
-		sliderMaxManualSpeed = new WidgetShorterSlider(0, MAX_TRAINS_WIDTH, RailType.DIAMOND.ordinal(), this::speedSliderFormatter, null);
-		buttonUnlimitedTrains = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.unlimited_vehicles"), checked -> {
-			if (checked) {
-				buttonIsManual.setChecked(false);
-			}
-			if (checked && !textFieldMaxTrains.getValue().isEmpty()) {
-				textFieldMaxTrains.setValue("");
-			} else if (!checked && textFieldMaxTrains.getValue().isEmpty()) {
-				textFieldMaxTrains.setValue("1");
-			}
-			setIsSelectingTrain(false);
-		});
-		oldAcceleration = savedRailBase.getAccelerationConstant();
-		oldIsManual = savedRailBase.getIsManual();
-		oldMaxManualSpeed = savedRailBase.getMaxManualSpeed();
-		oldDwellTime = savedRailBase.getDwellTime();
 	}
 
 	@Override
@@ -110,8 +68,6 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		super.init();
 
 		IDrawing.setPositionAndWidth(buttonSelectTrain, SQUARE_SIZE + textWidth, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING, width - textWidth - SQUARE_SIZE * 2);
-		IDrawing.setPositionAndWidth(buttonUnlimitedTrains, SQUARE_SIZE + textWidth + MAX_TRAINS_WIDTH + TEXT_FIELD_PADDING + TEXT_FIELD_PADDING, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2, width - textWidth - SQUARE_SIZE * 2);
-
 		addDrawableChild(buttonSelectTrain);
 
 		availableTrainsList.y = SQUARE_SIZE;
@@ -119,84 +75,24 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		availableTrainsList.width = width - DESCRIPTION_WIDTH - SQUARE_SIZE * 3;
 		availableTrainsList.init(this::addDrawableChild);
 
-		buttonIsManual.setChecked(savedRailBase.getIsManual());
-		buttonUnlimitedTrains.setChecked(savedRailBase.getUnlimitedTrains());
-
-		IDrawing.setPositionAndWidth(textFieldMaxTrains, SQUARE_SIZE + textWidth + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2, MAX_TRAINS_WIDTH - TEXT_FIELD_PADDING);
-		textFieldMaxTrains.setValue(savedRailBase.getUnlimitedTrains() ? "" : String.valueOf(savedRailBase.getMaxTrains() + 1));
-		textFieldMaxTrains.setResponder(text -> {
-			buttonUnlimitedTrains.setChecked(text.isEmpty());
-			if (!text.equals("1")) {
-				buttonIsManual.setChecked(false);
-			}
-			setIsSelectingTrain(false);
-		});
-
-		UtilitiesClient.setWidgetX(sliderAccelerationConstant, SQUARE_SIZE + textWidth);
-		UtilitiesClient.setWidgetY(sliderAccelerationConstant, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2);
-		sliderAccelerationConstant.setHeight(SQUARE_SIZE);
-		sliderAccelerationConstant.setValue(Math.round((savedRailBase.getAccelerationConstant() - Train.MIN_ACCELERATION) * SLIDER_SCALE));
-		// Braking sits beside speeding up, after the text of the first slider
-		UtilitiesClient.setWidgetX(sliderDecelerationConstant, SQUARE_SIZE + textWidth + MAX_TRAINS_WIDTH + TEXT_PADDING * 2 + font.width(accelerationSliderFormatter(Math.round((Train.MAX_ACCELERATION - Train.MIN_ACCELERATION) * SLIDER_SCALE))));
-		UtilitiesClient.setWidgetY(sliderDecelerationConstant, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2);
-		sliderDecelerationConstant.setHeight(SQUARE_SIZE);
-		sliderDecelerationConstant.setValue(Math.round((savedRailBase.getDecelerationConstant() - Train.MIN_ACCELERATION) * SLIDER_SCALE));
-
-		IDrawing.setPositionAndWidth(textFieldServiceTypes, SQUARE_SIZE + textWidth + TEXT_FIELD_PADDING / 2, SQUARE_SIZE * 5 + TEXT_FIELD_PADDING * 5 / 2, width - textWidth - SQUARE_SIZE * 2 - TEXT_FIELD_PADDING);
-		updateServiceTypes();
-
-		IDrawing.setPositionAndWidth(buttonIsManual, SQUARE_SIZE, SQUARE_SIZE * 6 + TEXT_FIELD_PADDING * 2, (width - textWidth - SQUARE_SIZE * 2) / 2);
-		// The highest speed beside driving by hand
-		UtilitiesClient.setWidgetX(sliderMaxSpeed, SQUARE_SIZE + (width - textWidth - SQUARE_SIZE * 2) / 2 + TEXT_PADDING);
-		UtilitiesClient.setWidgetY(sliderMaxSpeed, SQUARE_SIZE * 6 + TEXT_FIELD_PADDING * 2);
-		sliderMaxSpeed.setHeight(SQUARE_SIZE);
-		sliderMaxSpeed.setValue(savedRailBase.getOwnMaxSpeed() / MAX_SPEED_STEP);
-
-		UtilitiesClient.setWidgetX(sliderMaxManualSpeed, SQUARE_SIZE + textWidth);
-		UtilitiesClient.setWidgetY(sliderMaxManualSpeed, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2);
-		sliderMaxManualSpeed.setHeight(SQUARE_SIZE);
-		sliderMaxManualSpeed.setValue(savedRailBase.getMaxManualSpeed());
-
-		UtilitiesClient.setWidgetY(sliderDwellTimeMin, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING * 2);
-		UtilitiesClient.setWidgetY(sliderDwellTimeSec, SQUARE_SIZE * 17 / 2 + TEXT_FIELD_PADDING * 2);
-
 		setIsSelectingTrain(false);
-
-		if (showScheduleControls) {
-			addDrawableChild(buttonUnlimitedTrains);
-			addDrawableChild(textFieldMaxTrains);
-			// Set for the vehicle in the depot, the siding's own don't count (R1), so they aren't offered here (2026-11-07 review)
-			if (!isVehicleSetInDepot()) {
-				addDrawableChild(sliderAccelerationConstant);
-				addDrawableChild(sliderDecelerationConstant);
-				addDrawableChild(buttonIsManual);
-				addDrawableChild(sliderMaxManualSpeed);
-				addDrawableChild(sliderMaxSpeed);
-			}
-			if (showServiceTypes()) {
-				addDrawableChild(textFieldServiceTypes);
-			}
-		}
-	}
-
-	/**
-	 * @return whether its depot sets how its vehicle speeds up, brakes and is driven by hand (R1), so the siding's don't count
-	 */
-	private boolean isVehicleSetInDepot() {
-		final mtr.data.Depot depot = mtr.client.ClientData.DATA_CACHE.sidingIdToDepot.get(savedRailBase.id);
-		return depot != null && depot.vehicleSettings.containsKey(savedRailBase.getPoolKey());
 	}
 
 	private static Component capacityText(TransportMode transportMode) {
 		return mtr.data.Depot.supportsTimetable(transportMode) ? CAPACITY_TEXT : MAX_TRAINS_TEXT;
 	}
 
+	/**
+	 * @return how its trains run: its pool's as the depot sets it, or as its pool's first siding has it
+	 */
+	private VehicleSettings getVehicle() {
+		return depot == null ? savedRailBase.getOwnVehicleSettings() : depot.getVehicleSettings(savedRailBase);
+	}
+
 	@Override
 	public void tick() {
 		super.tick();
 		availableTrainsList.tick();
-		textFieldMaxTrains.tick();
-		textFieldServiceTypes.tick();
 	}
 
 	@Override
@@ -205,22 +101,7 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		if (!isSelectingTrain) {
 			GuiCompat.draw(matrices, font, SELECTED_TRAIN_TEXT, SQUARE_SIZE, SQUARE_SIZE * 2 + TEXT_FIELD_PADDING + TEXT_PADDING, ARGB_WHITE);
 			if (showScheduleControls) {
-				GuiCompat.draw(matrices, font, capacityText(transportMode), SQUARE_SIZE, SQUARE_SIZE * 3 + TEXT_FIELD_PADDING * 3 / 2F + TEXT_PADDING, ARGB_WHITE);
-				final boolean vehicleSetInDepot = isVehicleSetInDepot();
-				if (!vehicleSetInDepot) {
-					GuiCompat.draw(matrices, font, ACCELERATION_CONSTANT_TEXT, SQUARE_SIZE, SQUARE_SIZE * 4 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
-				}
-				if (showServiceTypes()) {
-					GuiCompat.draw(matrices, font, SERVICE_TYPES_TEXT, SQUARE_SIZE, SQUARE_SIZE * 5 + TEXT_FIELD_PADDING * 5 / 2F + TEXT_PADDING, ARGB_WHITE);
-				}
-				if (!vehicleSetInDepot && buttonIsManual.selected()) {
-					GuiCompat.draw(matrices, font, MAX_MANUAL_SPEED, SQUARE_SIZE, SQUARE_SIZE * 7 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
-					GuiCompat.draw(matrices, font, MANUAL_TO_AUTOMATIC_TIME, SQUARE_SIZE, SQUARE_SIZE * 8 + TEXT_FIELD_PADDING * 2 + TEXT_PADDING, ARGB_WHITE);
-				}
-				// Set for the vehicle in the depot, the siding's own speeding up, braking and driving by hand don't count (R1)
-				if (vehicleSetInDepot) {
-					GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.siding_vehicle_by_depot").getString(), SQUARE_SIZE, height - SQUARE_SIZE * 2, ARGB_LIGHT_GRAY);
-				}
+				renderSettings(matrices);
 			}
 		} else {
 			final int index = availableTrainsList.getHoverItemIndex();
@@ -247,37 +128,42 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		}
 	}
 
+	/**
+	 * What the web editor sets for the siding and its pool, as its trains run with it.
+	 */
+	private void renderSettings(PoseStack matrices) {
+		final VehicleSettings vehicle = getVehicle();
+		final int valueX = SQUARE_SIZE + textWidth + TEXT_FIELD_PADDING / 2;
+		int row = 3;
+		final int limit = savedRailBase.getFleetSize();
+		drawSetting(matrices, capacityText(transportMode), limit < 0 ? Text.translatable("gui.mtr.unlimited").getString() : String.valueOf(limit), row++, valueX);
+		drawSetting(matrices, ACCELERATION_CONSTANT_TEXT, accelerationText(vehicle.acceleration) + "   " + Text.translatable("gui.mtr.deceleration", RailwayData.round(vehicle.getDeceleration() * ACCELERATION_UNIT_CONVERSION_1, 1)).getString(), row++, valueX);
+		if (depot != null && Depot.supportsTimetable(transportMode)) {
+			final String serviceTypes = depot.vehicleServiceTypes.getOrDefault(savedRailBase.getTrainId(), "");
+			drawSetting(matrices, SERVICE_TYPES_TEXT, serviceTypes.isEmpty() ? "-" : serviceTypes, row++, valueX);
+		}
+		final String maxSpeed = vehicle.maxSpeed == 0 ? Text.translatable("gui.mtr.siding_max_speed_none").getString() : Text.translatable("gui.mtr.siding_max_speed", vehicle.maxSpeed).getString();
+		GuiCompat.draw(matrices, font, Text.translatable(vehicle.manual ? "gui.mtr.siding_manual_allowed" : "gui.mtr.siding_manual_not_allowed").getString() + "   " + maxSpeed, SQUARE_SIZE, rowY(row++), ARGB_WHITE);
+		if (vehicle.manual) {
+			drawSetting(matrices, MAX_MANUAL_SPEED, speedText(vehicle.maxManualSpeed), row++, valueX);
+			drawSetting(matrices, MANUAL_TO_AUTOMATIC_TIME, Text.translatable("gui.mtr.arrival_sec", vehicle.manualToAutomaticTime / 2F).getString(), row, valueX);
+		}
+		GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.siding_set_on_web").getString(), SQUARE_SIZE, height - SQUARE_SIZE * 2, ARGB_LIGHT_GRAY);
+	}
+
+	private void drawSetting(PoseStack matrices, Component label, String value, int row, int valueX) {
+		GuiCompat.draw(matrices, font, label, SQUARE_SIZE, rowY(row), ARGB_WHITE);
+		GuiCompat.draw(matrices, font, value, valueX, rowY(row), ARGB_LIGHT_GRAY);
+	}
+
+	private static int rowY(int row) {
+		return SQUARE_SIZE * row + TEXT_FIELD_PADDING * 2 + TEXT_PADDING;
+	}
+
 	@Override
 	public void onClose() {
-		int maxTrains;
-		try {
-			maxTrains = Math.max(0, Integer.parseInt(textFieldMaxTrains.getValue()) - 1);
-		} catch (Exception ignored) {
-			maxTrains = 0;
-		}
-		float accelerationConstant;
-		try {
-			accelerationConstant = RailwayData.round(Mth.clamp((float) sliderAccelerationConstant.getIntValue() / SLIDER_SCALE + Train.MIN_ACCELERATION, Train.MIN_ACCELERATION, Train.MAX_ACCELERATION), 3);
-		} catch (Exception ignored) {
-			accelerationConstant = Train.ACCELERATION_DEFAULT;
-		}
-		final boolean isManual = buttonIsManual.selected();
-		final int maxManualSpeed = sliderMaxManualSpeed.getIntValue();
-		final int minutes = sliderDwellTimeMin.getIntValue();
-		final float second = sliderDwellTimeSec.getIntValue() / 2F;
-		final int dwellTime = (int) ((second + minutes * SECONDS_PER_MINUTE) * 2);
-		if (showServiceTypes() && !Depot.parseServiceTypes(textFieldServiceTypes.getValue()).equals(depot.getServiceTypes(savedRailBase.getTrainId()))) {
-			depot.setVehicleServiceTypes(savedRailBase.getTrainId(), textFieldServiceTypes.getValue(), packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
-		}
-		final float decelerationConstant = RailwayData.round(Mth.clamp((float) sliderDecelerationConstant.getIntValue() / SLIDER_SCALE + Train.MIN_ACCELERATION, Train.MIN_ACCELERATION, Train.MAX_ACCELERATION), 3);
-		final int maxSpeed = sliderMaxSpeed.getIntValue() * MAX_SPEED_STEP;
-		if (!isVehicleSetInDepot() && maxSpeed != savedRailBase.getOwnMaxSpeed()) {
-			savedRailBase.setMaxSpeed(maxSpeed, packet -> PacketTrainDataGuiClient.sendUpdate(getPacketIdentifier(), packet));
-		}
-		if (decelerationConstant != savedRailBase.getDecelerationConstant()) {
-			savedRailBase.setDecelerationConstant(decelerationConstant, packet -> PacketTrainDataGuiClient.sendUpdate(getPacketIdentifier(), packet));
-		}
-		savedRailBase.setUnlimitedTrains(buttonUnlimitedTrains.selected(), maxTrains, isManual, maxManualSpeed, accelerationConstant, dwellTime, oldAcceleration != accelerationConstant || oldIsManual != isManual || oldMaxManualSpeed != maxManualSpeed || oldDwellTime != dwellTime, packet -> PacketTrainDataGuiClient.sendUpdate(getPacketIdentifier(), packet));
+		// Only its number and colour are set here
+		savedRailBase.setNameColor(packet -> PacketTrainDataGuiClient.sendUpdate(getPacketIdentifier(), packet));
 		super.onClose();
 	}
 
@@ -312,14 +198,6 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		return PACKET_UPDATE_SIDING;
 	}
 
-	private boolean showServiceTypes() {
-		return depot != null && Depot.supportsTimetable(transportMode);
-	}
-
-	private void updateServiceTypes() {
-		textFieldServiceTypes.setValue(depot == null ? "" : depot.vehicleServiceTypes.getOrDefault(savedRailBase.getTrainId(), ""));
-	}
-
 	private void onSelectingTrain() {
 		final List<TrainForList> trainsForListTemp = new ArrayList<>();
 		final List<TrainForList> trainsForListUnavailable = new ArrayList<>();
@@ -337,16 +215,9 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 	private void setIsSelectingTrain(boolean isSelectingTrain) {
 		this.isSelectingTrain = isSelectingTrain;
 		buttonSelectTrain.visible = !isSelectingTrain;
-		buttonUnlimitedTrains.visible = !isSelectingTrain;
-		textFieldMaxTrains.visible = !isSelectingTrain;
-		sliderAccelerationConstant.visible = !isSelectingTrain;
-		sliderDecelerationConstant.visible = !isSelectingTrain;
-		sliderMaxSpeed.visible = !isSelectingTrain;
-		textFieldServiceTypes.visible = !isSelectingTrain;
-		buttonIsManual.visible = !isSelectingTrain;
-		sliderMaxManualSpeed.visible = !isSelectingTrain && buttonIsManual.selected();
-		sliderDwellTimeMin.visible = !isSelectingTrain && buttonIsManual.selected();
-		sliderDwellTimeSec.visible = !isSelectingTrain && buttonIsManual.selected();
+		// How long until driving by hand goes back to automatic is set in the web editor too
+		sliderDwellTimeMin.visible = false;
+		sliderDwellTimeSec.visible = false;
 		buttonSelectTrain.setMessage(TrainClientRegistry.getTrainProperties(savedRailBase.getTrainId()).name);
 		availableTrainsList.x = isSelectingTrain ? SQUARE_SIZE : width;
 	}
@@ -361,17 +232,11 @@ public class SidingScreen extends SavedRailScreenBase<Siding> implements Icons {
 		}
 	}
 
-	private String accelerationSliderFormatter(int value) {
-		final float valueMeterPerTickSquared = ((float) value / SLIDER_SCALE + Train.MIN_ACCELERATION);
+	private static String accelerationText(float valueMeterPerTickSquared) {
 		return String.format("%s m/s² (%s km/h/s)", RailwayData.round(valueMeterPerTickSquared * ACCELERATION_UNIT_CONVERSION_1, 1), RailwayData.round(valueMeterPerTickSquared * ACCELERATION_UNIT_CONVERSION_2, 1));
 	}
 
-	private String decelerationSliderFormatter(int value) {
-		final float valueMeterPerTickSquared = ((float) value / SLIDER_SCALE + Train.MIN_ACCELERATION);
-		return Text.translatable("gui.mtr.deceleration", RailwayData.round(valueMeterPerTickSquared * ACCELERATION_UNIT_CONVERSION_1, 1)).getString();
-	}
-
-	private String speedSliderFormatter(int value) {
+	private static String speedText(int value) {
 		final RailType railType = Train.convertMaxManualSpeed(value);
 		return railType == null ? Text.translatable("gui.mtr.unlimited").getString() : String.format("%s km/h", railType.speedLimit);
 	}

@@ -173,6 +173,15 @@ public final class EditorActions implements IPacket {
 			}
 			depot.setVehicleSettings(settings, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
 		}
+		// What each vehicle runs, set here instead of in the siding screen (5c); only those changed are sent
+		if (operation.has("serviceTypes") && operation.get("serviceTypes").isJsonObject()) {
+			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("serviceTypes").entrySet()) {
+				final String text = entry.getValue().isJsonNull() ? "" : entry.getValue().getAsString();
+				if (!Depot.parseServiceTypes(text).equals(depot.getServiceTypes(entry.getKey()))) {
+					depot.setVehicleServiceTypes(entry.getKey(), text, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+				}
+			}
+		}
 		// Forget how much longer than planned its trains were measured to take (D1)
 		if (operation.has("clearBuffers") && operation.get("clearBuffers").getAsBoolean()) {
 			depot.clearBuffers(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));

@@ -1,4 +1,7 @@
 {
+  "gui.mtr.siding_manual_allowed": "Driven by hand: allowed",
+  "gui.mtr.siding_manual_not_allowed": "Driven by hand: not allowed",
+  "gui.mtr.siding_set_on_web": "How many trains it holds and how they run are set in the web editor, in the depot dialog",
   "item.mtr.rail_connector_35": "Sandstone Rail Connector",
   "item.mtr.rail_connector_35_one_way": "Sandstone Rail Connector (One-way)",
   "gui.mtr.siding_max_speed": "Highest speed: %s km/h",

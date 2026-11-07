@@ -357,7 +357,7 @@
 		});
 		// What a depot runs goes first, so its duties are applied to the routes and sidings as drafted
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
-			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null, clearBuffers: Boolean(entry.clearBuffers) });
+			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null, serviceTypes: entry.serviceTypes || null, clearBuffers: Boolean(entry.clearBuffers) });
 			owners.push({ depotOf: depotId });
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
@@ -1251,6 +1251,7 @@
 				const fleet = entry.poolFleets ? entry.poolFleets[pool.key] : undefined;
 				if (fleet !== undefined) lines.push(tr("车型 {0}：{1}", pool.vehicle || pool.key, poolFleetText(fleet, pool.sum)));
 			});
+			Object.entries(entry.serviceTypes || {}).forEach(([vehicle, text]) => lines.push(tr("车型 {0} 的种别：{1}", vehicle, text || tr("不限"))));
 			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul></section>`);
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
@@ -4310,7 +4311,7 @@
 	function sameVehicle(drafted, game) {
 		const set = game && game.set ? game : null;
 		if (!drafted || !set) return !drafted && !set;
-		return ["acceleration", "deceleration", "manual"].every(key => key === "manual" ? drafted.manual === set.manual : Math.abs(drafted[key] - set[key]) < 1e-6);
+		return ["acceleration", "deceleration", "manual", "maxSpeed", "maxManualSpeed", "manualToAutomaticTime"].every(key => key === "manual" ? drafted.manual === set.manual : Math.abs((drafted[key] || 0) - (set[key] || 0)) < 1e-6);
 	}
 
 	/** What a pool of a depot's sidings has: as given, or its sidings' fleets added up when not (null). */
@@ -4326,17 +4327,34 @@
 		// How the trains of a pool run (R1), m/tick² shown as m/s²
 		const vehicleOf = pool => current.vehicleSettings && current.vehicleSettings[pool.key] !== undefined ? current.vehicleSettings[pool.key] : pool.vehicleSettings && pool.vehicleSettings.set ? pool.vehicleSettings : null;
 		const perSecond = value => Math.round(value * 400 * 100) / 100;
+		// The service types of a vehicle, shared by its pools: shown with its first one (5c)
+		const serviceTypesOf = pool => current.serviceTypes && current.serviceTypes[pool.vehicle] !== undefined ? current.serviceTypes[pool.vehicle] : pool.serviceTypes || "";
+		const firstOfVehicle = pool => (depot.pools || []).find(each => each.vehicle === pool.vehicle) === pool;
+		const manualSpeeds = depot.manualSpeeds || [];
+		const manualSpeedOptions = value => {
+			const options = manualSpeeds.map((speed, index) => `<option value="${index}"${index === value ? " selected" : ""}>${speed} km/h</option>`);
+			// Beyond MTR's own speeds, as ANTE's rails may have it set: kept as it is
+			if (value >= manualSpeeds.length) options.push(`<option value="${value}" selected>${escapeHtml(tr("其他（{0}）", value))}</option>`);
+			return options.join("");
+		};
 		const poolRows = (depot.pools || []).map(pool => {
 			const fleet = poolFleetOf(pool);
 			const shown = vehicleOf(pool) || pool.vehicleSettings || {};
 			const set = Boolean(vehicleOf(pool));
+			const shared = (depot.pools || []).filter(each => each.vehicle === pool.vehicle).length;
+			const serviceTypesRow = !depot.serviceTypesUsed ? "" : firstOfVehicle(pool)
+				? `<label>${tr("种别（逗号隔开，空着不限）")} <input type="text" name="serviceTypes" value="${escapeHtml(serviceTypesOf(pool))}"></label>${shared > 1 ? `<span class="hint">${tr("同一车型的 {0} 种编组共用", shared)}</span>` : ""}`
+				: `<span class="hint">${tr("种别和上面同车型的一样")}</span>`;
 			return `<fieldset data-pool-row="${escapeHtml(pool.key)}"><legend>${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key))}</legend>
 				<label>${tr("配属车数")} <input type="number" min="0" max="999" name="poolFleet" placeholder="${escapeHtml(pool.sum < 0 ? tr("存车线相加：按需要") : tr("存车线相加：{0}", pool.sum))}" value="${fleet === null || fleet === undefined || fleet < 0 ? "" : fleet}"></label>
-				<label><input type="checkbox" name="vehicleSet"${set ? " checked" : ""}> ${tr("统一设置这个车型的加减速、最高速度和手动驾驶（不勾就按第一条存车线的）")}</label>
+				<label><input type="checkbox" name="vehicleSet"${set ? " checked" : ""}> ${tr("统一设置这个车型的加减速、最高速度和手动驾驶（不勾就按第一条存车线原来的）")}</label>
 				<label>${tr("加速度 m/s²")} <input type="number" step="0.01" min="0.4" max="20" name="acceleration" value="${perSecond(shown.acceleration || 0.01)}"></label>
 				<label>${tr("减速度 m/s²（空着同加速度）")} <input type="number" step="0.01" min="0" max="20" name="deceleration" value="${shown.deceleration > 0 ? perSecond(shown.deceleration) : ""}"></label>
 				<label><input type="checkbox" name="manual"${shown.manual ? " checked" : ""}> ${tr("允许手动驾驶")}</label>
 				<label>${tr("最高速度 km/h（空着不限）")} <input type="number" step="1" min="0" max="300" name="maxSpeed" value="${shown.maxSpeed > 0 ? shown.maxSpeed : ""}"></label>
+				<label>${tr("手动驾驶最高速度（允许手动驾驶时才有用）")} <select name="maxManualSpeed">${manualSpeedOptions(shown.maxManualSpeed || 0)}</select></label>
+				<label>${tr("多久不操作转回自动 秒")} <input type="number" step="0.5" min="0" max="3600" name="manualToAutomaticTime" value="${(shown.manualToAutomaticTime || 0) / 2}"></label>
+				${serviceTypesRow}
 			</fieldset>`;
 		}).join("");
 		const sidingOf = siding => current.sidings[siding.id] || { routes: (siding.routes || []).slice(), fleet: siding.fleet };
@@ -4378,7 +4396,15 @@
 			});
 			const poolFleets = {};
 			const vehicleSettings = {};
+			const serviceTypes = {};
 			form.querySelectorAll("[data-pool-row]").forEach(row => {
+				const typesBox = row.querySelector("input[name=serviceTypes]");
+				const vehicle = ((depot.pools || []).find(each => each.key === row.dataset.poolRow) || {}).vehicle;
+				if (typesBox && vehicle !== undefined) {
+					const before = ((depot.pools || []).find(each => each.vehicle === vehicle) || {}).serviceTypes || "";
+					const text = typesBox.value.split(/[,，、]/).map(part => part.trim()).filter(Boolean).join(",");
+					if (text !== before.split(/[,，、]/).map(part => part.trim()).filter(Boolean).join(",")) serviceTypes[vehicle] = text;
+				}
 				const text = row.querySelector("input[name=poolFleet]").value.trim();
 				if (text !== "" && !Number.isFinite(Number(text))) bad = true;
 				poolFleets[row.dataset.poolRow] = text === "" ? null : Math.max(0, Math.min(999, Math.round(Number(text))));
@@ -4387,22 +4413,25 @@
 					const acceleration = Number(row.querySelector("input[name=acceleration]").value) / 400;
 					const decelerationText = row.querySelector("input[name=deceleration]").value.trim();
 					if (!(acceleration > 0) || decelerationText !== "" && !(Number(decelerationText) >= 0)) bad = true;
-					const base = pool.vehicleSettings || {};
+					const maxManualSpeed = Number(row.querySelector("select[name=maxManualSpeed]").value) || 0;
+					const switchText = row.querySelector("input[name=manualToAutomaticTime]").value.trim();
+					const manualToAutomaticTime = switchText === "" ? 0 : Math.round(Number(switchText) * 2);
+					if (!(manualToAutomaticTime >= 0) || manualToAutomaticTime > 7200) bad = true;
 					const maxSpeedText = row.querySelector("input[name=maxSpeed]").value.trim();
 					const maxSpeed = maxSpeedText === "" ? 0 : Math.round(Number(maxSpeedText));
 					if (!(maxSpeed >= 0) || maxSpeed > 300) bad = true;
-					vehicleSettings[row.dataset.poolRow] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: row.querySelector("input[name=manual]").checked, maxManualSpeed: base.maxManualSpeed || 0, manualToAutomaticTime: base.manualToAutomaticTime || 0, maxSpeed };
+					vehicleSettings[row.dataset.poolRow] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: row.querySelector("input[name=manual]").checked, maxManualSpeed, manualToAutomaticTime, maxSpeed };
 				} else {
 					vehicleSettings[row.dataset.poolRow] = null;
 				}
 			});
 			if (bad) return tr("车数写成数字，或者留空");
 			const clearBox = form.querySelector("input[name=clearBuffers]");
-			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, clearBuffers: Boolean(clearBox && clearBox.checked) };
+			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, serviceTypes, clearBuffers: Boolean(clearBox && clearBox.checked) };
 			const sorted = list => JSON.stringify(list.slice().sort());
 			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
 				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
-				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings)) && !entry.clearBuffers;
+				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings)) && !Object.keys(serviceTypes).length && !entry.clearBuffers;
 			if (same) delete draft.depots[depot.id];
 			else draft.depots[depot.id] = entry;
 			saveDraft();

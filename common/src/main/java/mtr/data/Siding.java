@@ -724,6 +724,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		routeIds.clear();
 		newRouteIds.stream().limit(MAX_ROUTE_IDS).forEach(routeIds::add);
 		fleetSize = Mth.clamp(newFleetSize, -1, MAX_TRAINS + 1);
+		limitToFleet();
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(id);
 		packet.writeUtf(transportMode.toString());
@@ -748,6 +749,18 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			routeIds.add(packet.readLong());
 		}
 		fleetSize = Mth.clamp(packet.readInt(), -1, MAX_TRAINS + 1);
+		limitToFleet();
+	}
+
+	/**
+	 * What the web editor sets the siding to hold is its limit too, which kinds not running by duties go by, as the game's
+	 * siding screen no longer sets it (5c).
+	 */
+	private void limitToFleet() {
+		unlimitedTrains = fleetSize < 0 || transportMode.continuousMovement;
+		if (fleetSize >= 0) {
+			maxTrains = Mth.clamp(fleetSize - 1, -1, MAX_TRAINS);
+		}
 	}
 
 	/**

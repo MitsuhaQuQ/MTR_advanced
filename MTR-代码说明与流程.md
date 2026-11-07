@@ -221,7 +221,7 @@ ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时�
 **运行钩子暂时隔离**（0.37.0，用户定的"暂时隔离 ANTE 有关部分"，只隔离影响列车运行的 mixin）：服务端 `config/mtr_security.json` 的 `anteRunHooks`（`SecurityConfig.anteRunHooks`）默认 `false`，文件里没有这一项也是关。关着时下面几个钩子一开头就返回，走本体自己的逻辑；改成 `true` 重启恢复 ANTE 原来的行为。
 - `TrainMixin.onScanDoors`：不再在 ANTE 装饰物（当站台用的 eye candy）和 Metropolis 的站台方块旁开门，只认本体的站台、屏蔽门和安全门。
 - `TrainMixin.convertMaxManualSpeed`：手动驾驶最高速度按本体的规则（只到钻石轨道，超出按铁轨速度）。
-- `SidingScreenMixin`：滑块范围回到本体的（到钻石轨道）。客户端从 `PACKET_EDIT_PERMISSION` 末尾多出的布尔值知道开关（`ClientData.anteRunHooks`），旧包没有这一位时当作关。
+- `SidingScreenMixin`：0.38.0 起删掉了，存车线界面不再有手动驾驶速度滑块（5c，见下）。客户端仍从 `PACKET_EDIT_PERMISSION` 末尾多出的布尔值知道开关（`ClientData.anteRunHooks`），旧包没有这一位时当作关，目前没有界面用到它。
 - `RailwayDataMixin.simulateTrains()`：调本体的方框判断 `RailwayData.isRailNearInBox`（原来 `simulateTrains()` 里的 lambda 抽出来的），不改 `RAIL_UPDATE_DISTANCE`。
 
 不隔离的：P 类型速度轨道（`RailTypeMixin`，按名字存档，关掉会读成铁轨再存就丢了）、`RailMixin` 的竖曲线和侧倾（是形状，和绘制配套）、列车和轨道上 ANTE 的存档和网络包字段、渲染和骑乘这些客户端 mixin、模型和 JS 脚本。组件本来就不依赖 ANTE。测试 `AnteRunHooksTest`。
@@ -237,7 +237,7 @@ ANTE 不改本体的源码，靠 `mixin/` 里的注入改行为。读代码时�
 | `TrainClientMixin` | 构造和 `copyFromTrain` 后带上 ANTE 的数据；`handlePositions` 是 ANTE 的版本（多了车身侧倾）。以前它还整个替换 `TrainClient.simulateTrain`，用的是一份旧代码，本体后来加的直通班次线路（`tripRouteIds`）因此不生效；2026-11-05 去掉了，`simulateTrain` 是本体自己的 |
 | `TrainMixin`、`VehicleRidingClientMixin` | 给列车和乘客加额外数据（`TrainExtraSupplier`、`VehicleRidingClientExtraSupplier`），并改乘客的位置计算 |
 | `RailMixin` | 3D 轨道的模型、侧倾、竖曲线（`getPositionY`）、开门方向、自定义配置和带侧倾的绘制（`RailExtraSupplier`）。轨道的形状、长度和角度是本体自己的：2026-11-05 去掉了 ANTE 的贝塞尔模式和对 `getLength`、`getPosition`、`getRailAngle`、`isValid` 的重写，读档时也不再用 ANTE 存的弧度角覆盖本体的角度。ANTE 存成贝塞尔的旧轨道由 `Rail(Map)`（`fromAnteBezier`）按两端位置和方向算成本体的形状，算不出有效轨道的保留原样。以前它还把 `goodRadius()` 改成总是成立，2026-11-05 去掉了，新连的轨道又要满足本体的最小半径（2 格） |
-| `RailTypeMixin`、`SidingScreenMixin` | ANTE 的 P 类型速度轨道（P-1 至 P600、P1000 至 P10000），以及存车线界面的限速滑块范围 |
+| `RailTypeMixin` | ANTE 的 P 类型速度轨道（P-1 至 P600、P1000 至 P10000）。原来配套的 `SidingScreenMixin`（存车线界面手动驾驶速度滑块的范围）0.38.0 随滑块一起删了 |
 | 已去掉的 | 2026-11-05：`ItemNodeModifierBaseMixin` 整个替换连轨工具的 `onEndClick`，本体自己的连轨（0.1° 角度、不能折回的检查）从没跑过；`ItemRailModifierMixin` 切换贝塞尔路径模式。全向节点只剩方块注册名 `mtrsteamloco:direct_node`（`BlockDirectNode` 是普通的本体节点，保留是为了已有存档里的这些方块和它们的轨道），物品、设角度的界面、方块实体、绘制和换节点的包都删了；贝塞尔路径编辑器（`RailPathEditor`）也删了 |
 | `FQ*`、`FQGraalServices` | 让 GraalJS 在模组环境里能加载 |
 | `ItemWithCreativeTabBaseMixin` | 刷子点节点时打开 ANTE 的轨道编辑界面（模型、侧倾等）；它和本体"刷子右键节点输入精确角度"的关系还要在游戏里看 |
@@ -944,7 +944,9 @@ sequenceDiagram
 3. 键 = 站台和站台停站时间、途经点 + 联络线的标记和轨道哈希；和已有的相同且路径上的轨道没变就直接用。
 4. 否则 `DeterministicPathFinder.findPath(..., exclusion::avoids)`。找不到时照常 `PathFailure.diagnose`；有联络线时再不避开地找一次，如果那条路经过联络线，失败原因改成 `CONNECTING_LINE`（位置字段是联络线的 ID）。
 
-**存车线界面和车型设置不再重复**（2026-11-07 复查）：车厂给这个车型设了加减速和手动驾驶（`VehicleSettings`，R1）时，`SidingScreen` 不再显示存车线自己的那几项（本来就不起作用），只留一行提示去网页车厂对话框设；没设时照旧显示，存车线的值仍是车池第一条存车线的后备。按时刻表跑的运输方式，"侧轨车辆总数上限"改叫"最多停几列"（`gui.mtr.siding_capacity`），和网页一致：两者本来就是同一个值（`setUnlimitedTrains` 写 `fleetSize = getTrainLimit()`）。
+**存车线界面只管名称、颜色和车型**（0.38.0，5c 存车线这一步）：`SidingScreen` 只能改编号（名称）、颜色和车型；车数、加减速、最高速度、手动驾驶、手动驾驶最高速度、手动转自动时间、种别都只显示实际生效的值（`Depot.getVehicleSettings`：车池设了用车池的，没设用车池第一条存车线原来的），底下一行提示去网页改（`gui.mtr.siding_set_on_web`）。关界面只发名称颜色包（`NameColorDataBase.setNameColor`），不再发 `unlimited_trains`、`max_speed`、`deceleration_constant`，所以网页设的车数和配属不会被盖掉；服务端照旧接受这些包。网页车厂对话框车型一栏补上"手动驾驶最高速度"（按本体速度挡位的序号，`EditorData` 给车厂带 `manualSpeeds`，超出的序号保留成"其他"）、"多久不操作转回自动"（秒，存半秒）和"种别"（同一车型的几种编组共用，只在第一栏显示；操作 `depot` 的 `serviceTypes`，车型 → 文本，`EditorActions.applyDepot` 只发改了的，走 `Depot.setVehicleServiceTypes`）。网页设存车线车数（`Siding.setOperation` 和 `readOperation`）时也把上限（`unlimitedTrains`、`maxTrains`）设成一样（`limitToFleet`），不按运用跑的运输方式（飞机）还看上限。缆车照旧没有这些项。测试 `SidingSettingsTest`。
+
+以下是 0.38.0 之前的做法。**存车线界面和车型设置不再重复**（2026-11-07 复查）：车厂给这个车型设了加减速和手动驾驶（`VehicleSettings`，R1）时，`SidingScreen` 不再显示存车线自己的那几项（本来就不起作用），只留一行提示去网页车厂对话框设；没设时照旧显示，存车线的值仍是车池第一条存车线的后备。按时刻表跑的运输方式，"侧轨车辆总数上限"改叫"最多停几列"（`gui.mtr.siding_capacity`），和网页一致：两者本来就是同一个值（`setUnlimitedTrains` 写 `fleetSize = getTrainLimit()`）。
 
 **确定性寻路对按时刻表跑的车厂总是开**（2026-11-07 复查）：`Depot.getPathGraph` 对 `supportsTimetable` 的运输方式不看 `useDeterministicPath`，总用 `DeterministicPathFinder`，和线路路径、最快时刻、运用路径一致；游戏车厂界面不再显示这个勾选（`EditDepotScreen.showDeterministicPath`）。存档字段不变，老存档里关着的也照样按确定性寻路。
 
