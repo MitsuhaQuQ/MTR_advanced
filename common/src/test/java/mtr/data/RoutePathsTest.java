@@ -83,6 +83,24 @@ class RoutePathsTest {
 	}
 
 	@Test
+	void aTrainTimedWithoutSpeedCurvesSetsOffFromStandingAfterAStop() {
+		// The same run after a stop, reached once at full speed and once slowly: the time from the stop on is the same, as
+		// the train sets off from standing either way (it used to keep the speed braking had left it at the stop)
+		final long[] runs = new long[2];
+		for (int i = 0; i < 2; i++) {
+			final List<PathData> path = new ArrayList<>();
+			path.add(rail(0, 200, RailType.PLATFORM, 1, 40, 1));
+			path.add(rail(200, 800, i == 0 ? RailType.DIAMOND : RailType.STONE, 0, 0, 2));
+			path.add(rail(800, 1000, RailType.PLATFORM, 2, 40, 2));
+			path.add(rail(1000, 1600, RailType.DIAMOND, 0, 0, 3));
+			path.add(rail(1600, 1800, RailType.PLATFORM, 3, 40, 3));
+			runs[i] = PathTiming.calculateStopTimes(FAST, path).getRunMillis(2, 4);
+		}
+		assertTrue(runs[0] > 0);
+		assertEquals(runs[0], runs[1]);
+	}
+
+	@Test
 	void aRouteNoDepotRunsIsTimedWithTheDefaultVehicle() {
 		final Route route = route();
 		final PathTiming.Vehicle vehicle = RoutePaths.getDefaultVehicle(TransportMode.TRAIN);

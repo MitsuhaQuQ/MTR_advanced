@@ -129,6 +129,10 @@ public final class PathTiming {
 			}
 
 			time += pathData.dwellTime * 5;
+			// A train stopping sets off again from standing, though braking to the end of the rail may leave it some speed
+			if (pathData.dwellTime > 0) {
+				speed = 0;
+			}
 
 			if (i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1))) {
 				railProgress += vehicle.spacing * vehicle.trainCars;
