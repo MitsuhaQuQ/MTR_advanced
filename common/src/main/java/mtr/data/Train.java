@@ -552,6 +552,22 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 *
 	 * @return false if there is no segment to follow, or it has ended, so the train moves as before
 	 */
+	/**
+	 * On a client, a train the server's run layer moves (decoupling document 5.5) moves only along the run segments the
+	 * server sends; without one it stands where the server has it, its doors going as the server says, rather than the
+	 * client working out on its own whether it is at a stop. Cable cars and trains driven by hand go as before.
+	 *
+	 * @return true if the train stood this frame
+	 */
+	private boolean standsForRunLayer(Level world, float ticksElapsed) {
+		if (!world.isClientSide() || !usesSpeedCurve() || transportMode.continuousMovement || isCurrentlyManual || path.isEmpty()) {
+			return false;
+		}
+		speed = 0;
+		doorValue = MotionConstants.clamp(doorValue + ticksElapsed * (doorTarget ? 1 : -1) / MotionConstants.DOOR_MOVE_TIME, 0, 1);
+		return true;
+	}
+
 	private boolean followSegment(Level world) {
 		if (!world.isClientSide() || segmentSpec == null || !usesSpeedCurve() || path.isEmpty()) {
 			followedSegment = null;
@@ -833,7 +849,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			// The rules moving the train are in the component (decoupling document 2.2), the only ones (R4)
 			motionWorld = world;
 			motionDepot = depot;
-			final int totalDwellTicks = movedBySimulator || followSegment(world) ? motion.getTotalDwellTicks() : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
+			final int totalDwellTicks = movedBySimulator || followSegment(world) || standsForRunLayer(world, ticksElapsed) ? motion.getTotalDwellTicks() : TrainMotion.tick(motion, motion, motion, motion, motion, ticksElapsed);
 			if (totalDwellTicks < 0) {
 				return;
 			}

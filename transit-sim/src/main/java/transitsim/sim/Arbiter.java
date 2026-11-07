@@ -70,8 +70,12 @@ public final class Arbiter<K extends Comparable<K>> {
 	 * its tail onwards.
 	 */
 	public void hold(long holder, List<Claim<K>> claims) {
-		removeHoldings(holder);
 		heldThisTick.add(holder);
+		if (isSame(holdings.get(holder), claims)) {
+			// Held again as it was, as by most trains most ticks: nothing changes
+			return;
+		}
+		removeHoldings(holder);
 		if (!claims.isEmpty()) {
 			holdings.put(holder, new ArrayList<>(claims));
 			claims.forEach(claim -> holders.computeIfAbsent(claim.resource, key -> new HashMap<>()).put(holder, claim));
@@ -318,7 +322,7 @@ public final class Arbiter<K extends Comparable<K>> {
 				}
 			}
 		}
-		findDeadlocks(notGranted);
+		findDeadlocks(notGranted, currentMillis);
 		requests.clear();
 		// Every holder renewing by tick says what it holds again next tick, including what was just granted
 		heldThisTick.clear();
@@ -339,11 +343,18 @@ public final class Arbiter<K extends Comparable<K>> {
 
 	/**
 	 * Holders waiting for what others are granted or stand on make a graph, and a circle in it is a deadlock. Its resources
-	 * are kept from new holders while it lasts; nothing is let go.
+	 * are kept from new holders while it lasts; nothing is let go. Only holders granted nothing for {@link #AGING_MILLIS}
+	 * count as waiting: trains following each other round a loop ask for what the one ahead has while all of them still
+	 * run on what they were granted, which is no deadlock.
 	 */
-	private void findDeadlocks(List<Request<K>> notGranted) {
+	private void findDeadlocks(List<Request<K>> notGranted, long currentMillis) {
 		final Map<Long, Request<K>> waitingRequests = new TreeMap<>();
-		notGranted.forEach(request -> waitingRequests.put(request.holder, request));
+		notGranted.forEach(request -> {
+			final Long first = firstRequestMillis.get(request.holder);
+			if (first != null && currentMillis - first >= AGING_MILLIS) {
+				waitingRequests.put(request.holder, request);
+			}
+		});
 		final Map<Long, Set<Long>> waitsFor = new TreeMap<>();
 		waitingRequests.values().forEach(request -> {
 			final Set<Long> others = new TreeSet<>();
@@ -480,6 +491,20 @@ public final class Arbiter<K extends Comparable<K>> {
 			}
 		}
 		return false;
+	}
+
+	private static <K> boolean isSame(List<Claim<K>> held, List<Claim<K>> claims) {
+		if (held == null || held.size() != claims.size()) {
+			return false;
+		}
+		for (int i = 0; i < held.size(); i++) {
+			final Claim<K> claim1 = held.get(i);
+			final Claim<K> claim2 = claims.get(i);
+			if (claim1 != claim2 && (claim1.kind != claim2.kind || claim1.way != claim2.way || claim1.capacity != claim2.capacity || !claim1.resource.equals(claim2.resource))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private void removeHoldings(long holder) {

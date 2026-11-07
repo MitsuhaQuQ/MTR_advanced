@@ -1419,7 +1419,7 @@ sequenceDiagram
 - `RunMotion`：每 tick 的运动。下一站每 tick 从位置推出（`findNextStop`，车在动时不算刚离开的那站）；按运行段开到"下一站"和"授权终点"较近的一个；停在授权终点只等不开门；到站记在车停在站上的第一个 tick；在库和回库同原来。
 - `TickRunner.HeadlessTrain.runLayerTick`：目标是在站时再下一站、在路上下一站、在库里第一个站台；先更新授权，再推进；`isRunGranted` 直接看授权是否已超过车头。`publishOccupied` 每 tick 结算前把外部占用、外部列车、被接管的车和已拆除的轨道报给仲裁器（`Arbiter.setOccupied`）。新内核下 `getQuietTicks` 返回 0。
 - `RunRecord` 第 5 版：`authorityEnd`、`segment`（`RunSegment.Spec`），续跑时在第一个 tick 重建运行段（重建位置和列车对不上就不用）。
-- 游戏（0.41.0）：`TrainServer` 的 `authority_end`、`run_segment` 两个存档键（`showSimulated` 从 `HeadlessTrain.getRecordAuthorityEnd` / `getRecordSegment` 抄，`toRecord` 交回）；手动驾驶的车 `updateManualAuthority`（在推进前）和 `limitToAuthority`（推进后）；`holdRun` 对有授权的手动车不再放掉占用。
+- 游戏（0.41.0）：`TrainServer` 的 `authority_end`、`run_segment` 两个存档键（`showSimulated` 从 `HeadlessTrain.getRecordAuthorityEnd` / `getRecordSegment` 抄，`toRecord` 交回）；手动驾驶的车 `updateManualAuthority`（在推进前）和 `limitToAuthority`（推进后）；`holdRun` 对有授权的手动车不再放掉占用。客户端 `Train.standsForRunLayer`：服务端新运行层跑的车，没有运行段时客户端原地不动、门按服务端状态，不跑 `TrainMotion`。
 
 ### 端到端检查（0.39.0）
 

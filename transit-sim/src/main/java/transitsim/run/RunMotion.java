@@ -121,7 +121,8 @@ public final class RunMotion {
 				hooks.onStopReached();
 			}
 			final boolean wayClear = authorityEnd > stopPosition + AT;
-			if (state.getElapsedDwellTicks() < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1 || !hooks.isHeldAtStop() && wayClear) {
+			// Counting from the first tick, so a stop shorter than the doors take, waiting for the way ahead, arrives once
+			if (state.getElapsedDwellTicks() == 0 || state.getElapsedDwellTicks() < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1 || !hooks.isHeldAtStop() && wayClear) {
 				state.setElapsedDwellTicks(state.getElapsedDwellTicks() + 1);
 			}
 			doorsOpen = hooks.openDoors();

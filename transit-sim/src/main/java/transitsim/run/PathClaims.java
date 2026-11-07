@@ -137,7 +137,18 @@ public final class PathClaims {
 		List<Arbiter.Claim<UUID>> singleTrack = null;
 		double singleTrackStart = from;
 		double singleTrackEnd = from;
-		for (int i = 0; i < tracks.size(); i++) {
+		// Tracks ending before the range add nothing: start at the first one that doesn't, as the ends grow along the path
+		int firstTrack = 0;
+		int searchEnd = tracks.size();
+		while (firstTrack < searchEnd) {
+			final int middle = (firstTrack + searchEnd) >>> 1;
+			if (path.getEnd(middle) < from - 1E-6) {
+				firstTrack = middle + 1;
+			} else {
+				searchEnd = middle;
+			}
+		}
+		for (int i = firstTrack; i < tracks.size(); i++) {
 			final double start = i == 0 ? 0 : path.getEnd(i - 1);
 			final double end = path.getEnd(i);
 			final boolean along = end > from + 1E-6 && start < to - 1E-6;

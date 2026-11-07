@@ -145,14 +145,15 @@ class ArbiterTest {
 	@Test
 	void trainsWaitingForEachOtherAreReportedOnce() {
 		final Arbiter<Long> arbiter = new Arbiter<>();
-		// Two trains each on a track the other needs next, and a third wanting one of them
-		for (int step = 0; step < 3; step++) {
+		// Two trains each on a track the other needs next: a deadlock once neither has been granted anything for a while, as
+		// trains following each other round a loop wait for each other too while they still run
+		for (int step = 0; step < 4; step++) {
 			arbiter.hold(1, claims(Arbiter.Claim.track(10L)));
 			arbiter.hold(2, claims(Arbiter.Claim.track(11L)));
 			arbiter.request(1, claims(Arbiter.Claim.track(10L), Arbiter.Claim.track(11L)), NOW);
 			arbiter.request(2, claims(Arbiter.Claim.track(11L), Arbiter.Claim.track(10L)), NOW);
-			resolve(arbiter, NOW + step * 1000L);
-			if (step == 0) {
+			resolve(arbiter, NOW + (step == 0 ? 0 : Arbiter.AGING_MILLIS + step * 1000L));
+			if (step == 1) {
 				assertEquals(Collections.singletonList(new TreeSet<>(Arrays.asList(1L, 2L))), arbiter.takeDeadlocks());
 			} else {
 				assertTrue(arbiter.takeDeadlocks().isEmpty());
@@ -174,6 +175,12 @@ class ArbiterTest {
 		arbiter.request(1, claims(Arbiter.Claim.singleTrack(10L, true), Arbiter.Claim.singleTrack(11L, true)), NOW);
 		arbiter.request(2, claims(Arbiter.Claim.singleTrack(11L, false), Arbiter.Claim.singleTrack(10L, false)), NOW);
 		resolve(arbiter, NOW);
+		assertTrue(arbiter.takeDeadlocks().isEmpty());
+		arbiter.hold(1, claims(Arbiter.Claim.singleTrack(10L, true)));
+		arbiter.hold(2, claims(Arbiter.Claim.singleTrack(11L, false)));
+		arbiter.request(1, claims(Arbiter.Claim.singleTrack(10L, true), Arbiter.Claim.singleTrack(11L, true)), NOW);
+		arbiter.request(2, claims(Arbiter.Claim.singleTrack(11L, false), Arbiter.Claim.singleTrack(10L, false)), NOW);
+		resolve(arbiter, NOW + Arbiter.AGING_MILLIS);
 		assertEquals(1, arbiter.takeDeadlocks().size());
 		// Train 3 following train 1 the same way could share track 10, but isn't let into the deadlock
 		arbiter.hold(1, claims(Arbiter.Claim.singleTrack(10L, true)));
@@ -181,13 +188,13 @@ class ArbiterTest {
 		arbiter.request(1, claims(Arbiter.Claim.singleTrack(10L, true), Arbiter.Claim.singleTrack(11L, true)), NOW);
 		arbiter.request(2, claims(Arbiter.Claim.singleTrack(11L, false), Arbiter.Claim.singleTrack(10L, false)), NOW);
 		arbiter.request(3, claims(Arbiter.Claim.singleTrack(10L, true)), NOW);
-		resolve(arbiter, NOW + 1000);
+		resolve(arbiter, NOW + Arbiter.AGING_MILLIS + 1000);
 		assertFalse(arbiter.takeGrant(3));
 		// Once the host removes train 2, the deadlock is gone
 		arbiter.remove(2);
 		arbiter.hold(1, claims(Arbiter.Claim.singleTrack(10L, true)));
 		arbiter.request(1, claims(Arbiter.Claim.singleTrack(10L, true), Arbiter.Claim.singleTrack(11L, true)), NOW);
-		resolve(arbiter, NOW + 2000);
+		resolve(arbiter, NOW + Arbiter.AGING_MILLIS + 2000);
 		assertTrue(arbiter.takeGrant(1));
 		assertFalse(arbiter.isFrozen(10L));
 	}
