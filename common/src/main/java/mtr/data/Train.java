@@ -473,7 +473,9 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 	/**
 	 * @return a number that changes when the train's path or what else only {@link #writePacket} sends changes, so a client
-	 * that has the train with the same number only needs {@link #writeStatePacket}
+	 * that has the train with the same number only needs {@link #writeStatePacket}. The vehicle is part of it: a siding
+	 * given another vehicle can keep its train's ID, and a client still drawing the old vehicle's cars on the new train's
+	 * progress put its back cars beyond the start of the siding, all on one point and turned across the track.
 	 */
 	public int getSyncKey() {
 		int key = path.size();
@@ -481,7 +483,18 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			key = key * 31 + Long.hashCode(pathData.startingPos.asLong());
 			key = key * 31 + Long.hashCode(pathData.getLastPos().asLong());
 		}
+		key = key * 31 + trainId.hashCode();
+		key = key * 31 + baseTrainType.hashCode();
+		key = key * 31 + trainCars;
+		key = key * 31 + spacing;
 		return key * 31 + Float.hashCode(railLength);
+	}
+
+	/**
+	 * @return whether the other train is the same vehicle: the same model and type, as many cars as far apart
+	 */
+	public final boolean isSameVehicle(Train other) {
+		return trainId.equals(other.trainId) && baseTrainType.equals(other.baseTrainType) && trainCars == other.trainCars && spacing == other.spacing;
 	}
 
 	/**

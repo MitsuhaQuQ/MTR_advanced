@@ -140,9 +140,20 @@ public abstract class BlockPSDAPGDoorBase extends BlockPSDAPGBase implements Ent
 		public void writeCompoundTag(CompoundTag compoundTag) {
 			compoundTag.putInt(KEY_OPEN, open);
 			compoundTag.putBoolean(KEY_TEMP, temp);
-			if (temp && level != null) {
-				level.setBlockAndUpdate(worldPosition, level.getBlockState(worldPosition).setValue(TEMP, false));
+			if (temp && level instanceof net.minecraft.server.level.ServerLevel) {
 				temp = false;
+				// Never changes the block while the data is written: this runs as the chunk sends its changed blocks to the
+				// players (the update packet of the block entity), and a block changed then leaves the chunk section marked as
+				// changed with no change to send, so nothing in that section reaches the players again until the server
+				// restarts (broken blocks come back on the clients). Done on the next tick instead.
+				final net.minecraft.server.level.ServerLevel serverLevel = (net.minecraft.server.level.ServerLevel) level;
+				final BlockPos pos = worldPosition;
+				serverLevel.getServer().tell(new net.minecraft.server.TickTask(serverLevel.getServer().getTickCount(), () -> {
+					final BlockState state = serverLevel.getBlockState(pos);
+					if (state.getBlock() instanceof BlockPSDAPGDoorBase) {
+						serverLevel.setBlockAndUpdate(pos, state.setValue(TEMP, false));
+					}
+				}));
 			}
 		}
 

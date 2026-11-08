@@ -144,6 +144,12 @@ public final class ClientData {
 			final TrainClient existingTrain = getTrainById(newTrain.id);
 			if (existingTrain == null) {
 				TRAINS.add(newTrain);
+			} else if (!existingTrain.isSameVehicle(newTrain)) {
+				// The siding was given another vehicle and kept the train's ID: the cars, their spacing and the model are
+				// fixed for a train, so the new one takes the old one's place rather than having its path copied in
+				existingTrain.isRemoved = true;
+				TRAINS.remove(existingTrain);
+				TRAINS.add(newTrain);
 			} else {
 				existingTrain.copyFromTrain(newTrain);
 			}

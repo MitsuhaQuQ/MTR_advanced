@@ -136,6 +136,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 
 - Fixes the precision problem that made trains and displays shake with the camera far from the world origin.
 - Resource packs can give a train two custom bogies (model, texture, position), as in MTR 4. Its cars are then placed on their bogies, and near the camera the bogies turn along the track. Built-in bogies turn along the track too, with a client setting that is on by default.
+- A siding given another vehicle no longer leaves a parked train drawn as the old vehicle until the server restarts, with its back cars stacked on one point and turned across the track: clients replace a train whose vehicle changed instead of copying its path into the old one.
 
 **Storage and reliability**
 
@@ -155,6 +156,8 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Hardens the network packet entry points, server permissions, value checks and the built-in web server. The configuration file is `config/mtr_security.json`.
 
 **Platforms**
+
+- Blocks near a newly placed platform screen door or automatic platform gate can be broken again on Minecraft 1.20.1. The door used to change its block while its data was being sent, which stopped every later block change in that part of the chunk from reaching the players until the server restarted, so broken blocks came back on the clients.
 
 - Supports Fabric and Forge on Minecraft 1.20.1, with Architectury updated to 9.2.14.
 - Supported versions are 1.16.5, 1.17.1, 1.18.2, 1.19.4 and 1.20.1. Of the 1.19 versions, only 1.19.4 remains.

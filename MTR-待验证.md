@@ -43,3 +43,25 @@
 - **构建后要检查的**：编译通过即可（Manifold 预处理只认行首的 `#`，注释里的 `#init` 等不受影响）。
 - **游戏内测试**：无。
 - **已知风险**：无。
+
+### 换车型后客户端整列替换（本会话，工作区，2026-11-09）
+
+- **改了什么**：存车线换车型后列车 ID 可以不变，客户端原来只 `copyFromTrain` 抄路径和进度，节数、间距、模型还是旧车的，旧车的后几节超出存车线起点、叠在一点横在轨道上，重启服务器才好。现在 `Train.getSyncKey` 加进车型（`trainId`、`baseTrainType`）、节数、间距，换车型后服务端一定发整包；`ClientData.updateTrains` 遇到车型不同（新的 `Train.isSameVehicle`）就把旧 `TrainClient` 标 `isRemoved` 换成新的。
+- **文件**：`common/src/main/java/mtr/data/Train.java`、`common/src/main/java/mtr/client/ClientData.java`；文档 `MTR-代码说明与流程.md`（第 507、511 行附近）、`MTR-模拟组件与解耦.md`（G2c 行）、`MTR-测试项目清单.md`（U318）、`README.md`（Rendering）。
+- **协议和存档**：都没有变化（同步键只在服务端比较，包里照样是一个 int），不用升 `mtm_version`。
+- **和别的改动的关系**：不碰工作区里另一会话正在改的 `Depot`、`LineDuties`、编辑器文件；断点标签 `pre-client-vehicle-sync`，旧 jar 在 `P:/mtr-ante/test-jars/baseline-client-vehicle-sync`。
+- **已经验证的**：只读过代码，没有编译。ANTE 的 `TrainMixin` 在 `getSyncKey` 返回值上再乘 `customConfigs`，不受影响。
+- **构建后要检查的**：编译通过；common 测试照常。
+- **游戏内测试**：U318。
+- **已知风险**：换车型时正坐在这列车上的玩家，客户端换成新对象后乘车状态要等服务端下一次乘车包才恢复，可能闪一下。
+
+### 屏蔽门旁的方块敲了会回来（本会话，工作区，2026-11-09）
+
+- **改了什么**：`BlockPSDAPGDoorBase.TileEntityPSDAPGDoorBase.writeCompoundTag` 以前在 `temp` 为真（刚放下的门）时直接 `setBlockAndUpdate` 改 `TEMP`。写数据发生在 `ChunkHolder.broadcastChanges` 发方块实体更新包的途中，这时改方块会让 `changedBlocksPerSection[i]` 留着、`hasChangedSections` 却在发完后被置回 false，之后这一截区块（16 格高）的所有方块变化都不再发给玩家，客户端敲掉的方块弹回来，直到重启。在 Q:\MTM_1.20.1 上用调试版确认过：`blockChanged` 有调用，之后每一刻 `broadcastChanges` 都是 `has changed sections false`，没有任何方块更新包。现在改成下一刻用 `TickTask` 改。
+- **文件**：`common/src/main/java/mtr/block/BlockPSDAPGDoorBase.java`；文档 `MTR-代码说明与流程.md`（第 351 行）、`MTR-模拟组件与解耦.md`（第 4 节约束）、`MTR-测试项目清单.md`（U322）、`README.md`（Platforms）。
+- **协议和存档**：都没有变化。
+- **和别的改动的关系**：断点标签 `pre-psd-update-fix`。只碰这一个文件。
+- **已经验证的**：同样的改动放在 0.52.0（`32de80f`）上、带调试日志的私有构建能编译（`C:/gtmp/dbg`，jar 在 `P:/mtr-ante/test-jars/debug-break/…-FIX-DEBUG.jar`），2026-11-09 01:21 用户在 Q:\MTM_1.20.1 上用它确认修好：敲掉的方块不再回来，日志里 `broadcastChanges` 为 `has changed sections true`，服务端发出 9 个方块更新包。U322 里另一名玩家、列车开关门后、重启后几项还没测。
+- **构建后要检查的**：编译通过；common 测试照常。
+- **游戏内测试**：U322。
+- **已知风险**：新放的门要到下一刻才把 `TEMP` 改成 false，客户端重画晚一刻，看不出来。

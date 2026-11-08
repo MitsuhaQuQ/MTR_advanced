@@ -348,6 +348,7 @@ sequenceDiagram
    - 车头下方要检查的方块：列车红石感应器、货物装卸器（和相邻容器交换物品）、报站器（对车上乘客报站）。只查已加载的区块。
    - 附近没有玩家时返回 false，后面不再逐车厢处理。
 4. **逐车厢 `calculateCar`**：车厢中心取两端点的平均再加 1 格高；`yaw = atan2(Δx, Δz)`，`pitch = asin(Δy / 车厢实际长度)`；左右各扫一次门旁边的方块（`scanDoors`），有站台或屏蔽门且门在开才算这一侧开门。结果交给子类的 `simulateCar`：服务端处理乘客上下车和座位，客户端画车（第 5 节）。
+   - 屏蔽门、安全门开门时改的是门的方块实体（`TileEntityPSDAPGDoorBase.setOpen`），刚放下的门（`temp`）第一次写出数据时要把方块的 `TEMP` 改成 false 让客户端重画；这一步放到下一刻用 `TickTask` 做，不能在 `writeCompoundTag` 里直接改方块：那时区块正在把改过的方块发给玩家（方块实体的更新包），这时改方块会让这一截区块（16 格高）留下"有改动"的记录却没有发送标记，1.20.1 的 `ChunkHolder` 之后再也不发这一截的方块变化，玩家敲掉的方块在客户端又回来，直到服务器重启（2026-11-09）。
 
 **活动图**（`Train.simulateTrain`）：
 
@@ -504,11 +505,11 @@ sequenceDiagram
 
 1. 有列车离开某玩家范围（或被删除），给他发一个 `PACKET_DELETE_TRAINS`，内容是**还要保留**的列车 ID 列表；客户端把不在列表里的列车标为 `isRemoved`，下一帧移除。
 2. 对范围内要同步的列车（本 tick `simulateTrain` 返回 true，或刚进入范围）：
-   - 玩家已经有这列车，且路径没变（`getSyncKey` 相同）：只发状态包（`writeStatePacket`，G2），合并到 `PACKET_UPDATE_TRAIN_STATES`。
+   - 玩家已经有这列车，且路径和车型没变（`getSyncKey` 相同：路径各段端点、车型 `trainId`/`baseTrainType`、节数、车厢间距、车长，加 ANTE 的 `customConfigs`）：只发状态包（`writeStatePacket`，G2），合并到 `PACKET_UPDATE_TRAIN_STATES`。
    - 否则发完整数据（`writePacket`，含整条路径），记下 sync key。
 3. 完整数据按 1 MB 一个包拼起来发 `PACKET_UPDATE_TRAINS`；单列车超过 1 MB 的不发。
 
-客户端在网络线程读包、在主线程（`client.execute`）改数据：`updateTrains` 新的列车加进 `ClientData.TRAINS`，已有的 `copyFromTrain`；`updateTrainStates` 对已有列车 `applyState`。两次更新之间客户端用同样的运动规则自己推算位置。
+客户端在网络线程读包、在主线程（`client.execute`）改数据：`updateTrains` 新的列车加进 `ClientData.TRAINS`，已有的同一车型（`Train.isSameVehicle`）`copyFromTrain`，换了车型的（存车线换车型后列车 ID 可以不变）整列换成新的 `TrainClient`，旧的标 `isRemoved`——节数、间距和模型是列车构造时定的，只抄路径和进度会让旧车的后几节超出存车线起点、叠在一点横在轨道上；`updateTrainStates` 对已有列车 `applyState`。两次更新之间客户端用同样的运动规则自己推算位置。
 
 **时序图**：
 
