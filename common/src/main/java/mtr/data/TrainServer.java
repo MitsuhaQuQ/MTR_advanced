@@ -1300,6 +1300,11 @@ public class TrainServer extends Train {
 		}
 
 		@Override
+		public long getEarlyThresholdMillis() {
+			return dataCache == null ? TrainRules.DEFAULT_EARLY_THRESHOLD_MILLIS : dataCache.networkSettings.earlyThresholdMillis;
+		}
+
+		@Override
 		public TrainService<?> getService() {
 			return service;
 		}

@@ -66,6 +66,10 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	 * Whether a train setting off part of the way along a run gets a cap from where it is, as with the new rules, or none.
 	 */
 	boolean capFromState = true;
+	/**
+	 * The network's early threshold, as the rules read it (round 4, step 5); 0 to arrive on time.
+	 */
+	long earlyThresholdMillis;
 	int tick;
 
 	// What happened
@@ -368,7 +372,7 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 		if (speedCurve && plannedArrivalTick > 0 && nextStoppingIndex == plannedStopRail) {
 			final SpeedCurves.Run run = getCurves().getRun(railProgress);
 			if (capFromState || run != null && Math.abs(railProgress - run.fastest.startPosition) <= 1) {
-				cruiseCap = (float) getCurves().findCruiseCap(railProgress, speed, nextStoppingIndex, plannedArrivalTick - tick);
+				cruiseCap = (float) getCurves().findCruiseCap(railProgress, speed, nextStoppingIndex, transitsim.sim.TrainRules.getTargetTicks(plannedArrivalTick * 50L, tick * 50L, earlyThresholdMillis));
 			} else {
 				cruiseCap = Float.POSITIVE_INFINITY;
 			}

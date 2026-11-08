@@ -146,6 +146,11 @@ public final class TickRunner<T extends RunTrack> {
 	private final Set<DepotBoard> readyDepots = new HashSet<>();
 	private final LongFunction<? extends PlanRoute> routes;
 	private long millis;
+	/**
+	 * How early a train may reach its next stop at full speed before it cruises slower (round 4, step 5); 0, arriving on
+	 * time, unless set, as the data from the game sets it.
+	 */
+	private long earlyThresholdMillis;
 	private long nextTrainId = 1;
 	/**
 	 * Gives each new train its ID, or null to count up from 1.
@@ -211,6 +216,13 @@ public final class TickRunner<T extends RunTrack> {
 	 * from MTR, while both are kept.
 	 */
 	public static volatile boolean RUN_LAYER = !"false".equals(System.getProperty("mtr.runLayer"));
+
+	/**
+	 * Sets the network's early threshold ({@link TrainRules#getCruiseCap}).
+	 */
+	public void setEarlyThresholdMillis(long earlyThresholdMillis) {
+		this.earlyThresholdMillis = Math.max(0, earlyThresholdMillis);
+	}
 
 	public TickRunner(long startMillis, LongFunction<? extends PlanRoute> routes) {
 		millis = startMillis;
@@ -2471,6 +2483,11 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public long getMillis() {
 			return millis;
+		}
+
+		@Override
+		public long getEarlyThresholdMillis() {
+			return earlyThresholdMillis;
 		}
 
 		@Override

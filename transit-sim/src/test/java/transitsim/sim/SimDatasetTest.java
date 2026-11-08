@@ -58,6 +58,14 @@ class SimDatasetTest {
 	}
 
 	@Test
+	void theEarlyThresholdReadsBackAndReachesTheRunner() {
+		final SimDataset dataset = lines(1, 400, 2, 4, 10);
+		assertEquals(TrainRules.DEFAULT_EARLY_THRESHOLD_MILLIS, dataset.earlyThresholdMillis);
+		dataset.earlyThresholdMillis = 45000;
+		assertEquals(45000, SimDataset.fromBytes(dataset.toBytes()).earlyThresholdMillis);
+	}
+
+	@Test
 	void routesKeepTheFastestTimesTheGameWorkedOut() {
 		final SimDataset dataset = lines(1, 400, 2, 4, 10);
 		final long[][] times = {{0, 0}, {30000, 50000}, {90000, 90000}};
@@ -92,7 +100,10 @@ class SimDatasetTest {
 
 	@Test
 	void aWorldFromTheDataRunsAsTheScenarioDoes() throws Exception {
-		final TickRunner<SimDataset.DataTrack> runner = SimDataset.fromBytes(lines(1, 400, 2, 4, 10).toBytes()).buildRunner(MONDAY + 5 * HOUR + 50 * MINUTE);
+		// The scenario was recorded with trains arriving on time, before the early threshold (round 4, step 5)
+		final SimDataset dataset = lines(1, 400, 2, 4, 10);
+		dataset.earlyThresholdMillis = 0;
+		final TickRunner<SimDataset.DataTrack> runner = SimDataset.fromBytes(dataset.toBytes()).buildRunner(MONDAY + 5 * HOUR + 50 * MINUTE);
 		runner.runUntil(MONDAY + 7 * HOUR);
 		final List<String> lines = new ArrayList<>();
 		for (final MotionEvent event : runner.getEvents()) {

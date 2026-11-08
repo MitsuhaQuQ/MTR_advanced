@@ -46,7 +46,7 @@ public final class SimDataset {
 	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
 	 * highest speed of their vehicles; older data is read without them.
 	 */
-	public static final int VERSION = 16;
+	public static final int VERSION = 17;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -73,6 +73,10 @@ public final class SimDataset {
 	 * platform ID; put on the tracks by {@link #applyStopPositions()}.
 	 */
 	public final Map<Long, Integer> stopPositions = new java.util.TreeMap<>();
+	/**
+	 * The network's early threshold (round 4, step 5, {@link TrainRules#getCruiseCap}); the default in data from before.
+	 */
+	public long earlyThresholdMillis = TrainRules.DEFAULT_EARLY_THRESHOLD_MILLIS;
 
 	/**
 	 * @return whether the signal block with this index is an interlocking zone
@@ -150,6 +154,7 @@ public final class SimDataset {
 			writer.writeLong(platformId);
 			writer.writeInt(setting);
 		});
+		writer.writeLong(earlyThresholdMillis);
 		return writer.toBytes();
 	}
 
@@ -273,6 +278,9 @@ public final class SimDataset {
 			}
 			dataset.applyStopPositions();
 		}
+		if (version >= 17) {
+			dataset.earlyThresholdMillis = Math.max(0, reader.readLong());
+		}
 		return dataset;
 	}
 
@@ -345,6 +353,7 @@ public final class SimDataset {
 	public TickRunner<DataTrack> buildRunner(long startMillis) {
 		final Map<Long, DataRoute> routeMap = buildRoutes();
 		final TickRunner<DataTrack> runner = new TickRunner<>(startMillis, routeMap::get);
+		runner.setEarlyThresholdMillis(earlyThresholdMillis);
 		runner.setSignalBlocks(signalBlocks);
 		final List<List<UUID>> zones = new ArrayList<>();
 		for (int i = 0; i < signalBlocks.size(); i++) {

@@ -78,6 +78,13 @@ public final class SimulateDay {
 			dataset.sidings.forEach(siding -> siding.linePool = "");
 			data = dataset.toBytes();
 		}
+		// -Dmtr.earlyThreshold=millis runs the day with another early threshold (round 4, step 5), to compare
+		final String earlyThreshold = System.getProperty("mtr.earlyThreshold", "");
+		if (!earlyThreshold.isEmpty()) {
+			dataset.earlyThresholdMillis = Long.parseLong(earlyThreshold);
+			data = dataset.toBytes();
+		}
+		System.out.printf("Early threshold %d ms%n", dataset.earlyThresholdMillis);
 		// -Dmtr.simRoutes=id,id simulates only those routes' part of the world, as the editor does (SimScope);
 		// -Dmtr.simRoutes=scopes lists how big that part is for each depot's routes, without simulating
 		final String simRoutes = System.getProperty("mtr.simRoutes", "");
@@ -128,6 +135,28 @@ public final class SimulateDay {
 			}
 		}
 		System.out.printf("%d trains ran; %s%n", trains.size(), kinds);
+		// How long trains run between stops and stand at them: with an early threshold they run faster and stand longer
+		final Map<Long, Long> lastDepart = new java.util.HashMap<>();
+		final Map<Long, Long> lastArrive = new java.util.HashMap<>();
+		long runMillis = 0, runs = 0, standMillis = 0, stands = 0;
+		for (final SimEvent event : events) {
+			if (event.kind == SimEvent.Kind.ARRIVE) {
+				final Long departed = lastDepart.remove(event.trainId);
+				if (departed != null) {
+					runMillis += event.time - departed;
+					runs++;
+				}
+				lastArrive.put(event.trainId, event.time);
+			} else if (event.kind == SimEvent.Kind.DEPART) {
+				final Long arrived = lastArrive.remove(event.trainId);
+				if (arrived != null) {
+					standMillis += event.time - arrived;
+					stands++;
+				}
+				lastDepart.put(event.trainId, event.time);
+			}
+		}
+		System.out.printf("Between stops: %d runs, %.1f s on average; at stops: %d stops, %.1f s on average%n", runs, runs == 0 ? 0 : runMillis / 1000.0 / runs, stands, stands == 0 ? 0 : standMillis / 1000.0 / stands);
 		// -Pmtr.debugStuck=true lists trains standing between stations at the end, and what is ahead of them
 		if (Boolean.getBoolean("mtr.debugStuck")) {
 			int listed = 0;

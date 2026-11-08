@@ -349,7 +349,11 @@ public final class EventSimulator<T extends RunTrack> implements Simulator {
 		if (!recovered.isEmpty()) {
 			tickEvents.add(new Object[]{SimEvent.Kind.RECOVERED, 0L, -1, Integer.MAX_VALUE, String.join(", ", recovered)});
 		}
-		for (final Set<Long> deadlock : runner.getReservations().takeDeadlocks()) {
+		// By index, not by iterator: under load the JDK 17 C2 compiler was seen to give this fresh list's iterator a null array
+		// (NullPointerException in ArrayList$Itr.next, gone with -XX:-DoEscapeAnalysis), optimisation round 4, step 5
+		final List<Set<Long>> deadlocks = runner.getReservations().takeDeadlocks();
+		for (int i = 0; i < deadlocks.size(); i++) {
+			final Set<Long> deadlock = deadlocks.get(i);
 			tickEvents.add(new Object[]{SimEvent.Kind.DEADLOCK, Collections.min(deadlock), -1, Integer.MAX_VALUE, deadlock.toString()});
 		}
 		tickEvents.sort((event1, event2) -> {

@@ -55,6 +55,8 @@ tasks.register("simulateDay", JavaExec) {
 	systemProperty "mtr.simRoutes", project.findProperty("mtr.simRoutes") ?: ""
 	// -Pmtr.noLinePools=true runs without trains going back to other depots of their line
 	systemProperty "mtr.noLinePools", project.findProperty("mtr.noLinePools") ?: "false"
+	// -Pmtr.earlyThreshold=millis runs the day with another early threshold than the world's, to compare
+	systemProperty "mtr.earlyThreshold", project.findProperty("mtr.earlyThreshold") ?: ""
 	// -Pmtr.blockMinLength=100000 runs without long track cut into block sections, to compare; -Pmtr.debugStuck=true lists
 	// the trains standing between stations at the end and what holds them up
 	systemProperty "mtr.blockMinLength", project.findProperty("mtr.blockMinLength") ?: "400"

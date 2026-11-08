@@ -101,12 +101,33 @@ public final class TrainRules {
 	}
 
 	/**
-	 * With time to spare before the planned arrival at the next stop, the train cruises slower to arrive on time instead of
-	 * early. A late train gets no cap and runs as fast as it can to catch up (design document 8.2). A train setting off
-	 * again after being held back on the way gets a cap from where it is (review A04); with the old motion rules it got
-	 * none, being late already.
+	 * How early a train may reach its next stop running at full speed before it cruises slower (早到阈值, optimisation
+	 * round 4, step 5), unless the network sets another: 30 seconds.
+	 */
+	public static final long DEFAULT_EARLY_THRESHOLD_MILLIS = 30000;
+
+	/**
+	 * With time to spare before the planned arrival at the next stop, the train cruises slower, but only by as much as it
+	 * would be more than the early threshold early ({@link Train#getEarlyThresholdMillis}): a train up to that early runs
+	 * at full speed and spends the time it has in hand standing at the stop, which leaves it room for a delay ahead; one
+	 * earlier still cruises to arrive that much early rather than on time (round 4, step 5). With a threshold of 0 it
+	 * arrives on time, as before. A late train gets no cap and runs as fast as it can to catch up (design document 8.2). A
+	 * train setting off again after being held back on the way gets a cap from where it is (review A04); with the old
+	 * motion rules it got none, being late already.
 	 */
 	public static float getCruiseCap(Train train) {
+		return getCruiseCapOf(train);
+	}
+
+	/**
+	 * @return the ticks a train has to reach its next stop in, by the rule of {@link #getCruiseCap}: until the planned
+	 * arrival less the early threshold; a run that takes no longer at full speed is run at full speed
+	 */
+	public static double getTargetTicks(long plannedMillis, long nowMillis, long earlyThresholdMillis) {
+		return (plannedMillis - Math.max(0, earlyThresholdMillis) - nowMillis) / (double) MotionConstants.MILLIS_PER_TICK;
+	}
+
+	private static float getCruiseCapOf(Train train) {
 		final MotionState state = train.getState();
 		final int nextStoppingIndex = state.getNextStoppingIndex();
 		if (!train.usesSpeedCurve() || nextStoppingIndex >= train.getTrack().size()) {
@@ -115,7 +136,7 @@ public final class TrainRules {
 		final long plannedMillis = train.getService().getPlannedArrivalMillis(nextStoppingIndex);
 		final SpeedCurves curves = train.getSpeedCurves();
 		final double railProgress = state.getRailProgress();
-		final double ticks = (plannedMillis - train.getMillis()) / (double) MotionConstants.MILLIS_PER_TICK;
+		final double ticks = getTargetTicks(plannedMillis, train.getMillis(), train.getEarlyThresholdMillis());
 		return plannedMillis <= 0 ? Float.POSITIVE_INFINITY : (float) curves.findCruiseCap(railProgress, state.getSpeed(), nextStoppingIndex, ticks);
 	}
 
@@ -244,6 +265,14 @@ public final class TrainRules {
 		 * on another platform of the station
 		 */
 		boolean isOvertakingTrainComing(long platformId, long arrivalMillis, long departureMillis, long currentMillis);
+
+		/**
+		 * @return how early the train may reach its next stop at full speed before it cruises slower, the network's early
+		 * threshold (round 4, step 5); 0 to arrive on time
+		 */
+		default long getEarlyThresholdMillis() {
+			return 0;
+		}
 
 		/**
 		 * Asks for the run from this rail of the path to the next stop after it.
