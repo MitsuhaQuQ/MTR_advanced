@@ -6,7 +6,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        minecraft: [ 1.16.5, 1.17.1, 1.18.2, 1.19.4, 1.20.1 ]
+        # Only 1.20.1 is built for now (user 2026-11-08); the others are put back when they are worked on again:
+        # [ 1.16.5, 1.17.1, 1.18.2, 1.19.4, 1.20.1 ]
+        minecraft: [ 1.20.1 ]
         variation: [ normal, server, lifts ]
     runs-on: ubuntu-latest
     steps:
@@ -67,7 +69,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        minecraft: [ 1.16.5, 1.17.1, 1.18.2, 1.19.4, 1.20.1 ]
+        # Only 1.20.1 is built for now (user 2026-11-08); the others are put back when they are worked on again:
+        # [ 1.16.5, 1.17.1, 1.18.2, 1.19.4, 1.20.1 ]
+        minecraft: [ 1.20.1 ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
