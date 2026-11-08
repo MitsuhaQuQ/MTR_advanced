@@ -78,6 +78,13 @@ public final class SimExport {
 				}
 			}
 		});
+		// Where trains stop on each platform set to stop them other than at the exit end (round 4)
+		railwayData.platforms.forEach(platform -> {
+			if (platform.stopPosition != transitsim.plan.StopPositions.EXIT_END) {
+				dataset.stopPositions.put(platform.id, platform.stopPosition);
+			}
+		});
+		dataset.applyStopPositions();
 		dataset.trains = trains;
 		dataset.signalBlocks.addAll(railwayData.getSignalBlocks().getBlockRails());
 		dataset.interlockBlocks.addAll(railwayData.getSignalBlocks().getInterlockFlags(mtr.SecurityConfig.interlockColor));

@@ -26,6 +26,14 @@ public final class MotionConstants {
 	}
 
 	/**
+	 * How far the head moves as a train standing at a stop turns back: the head goes to where the tail was, on the rail
+	 * running back, which is the train's length plus twice the stop offset further along the path (round 4).
+	 */
+	public static double getReversalAdvance(MotionTrack track, int stop, double trainLength) {
+		return trainLength + (stop >= 0 && stop < track.size() ? 2 * track.getStopOffset(stop) : 0);
+	}
+
+	/**
 	 * @return the first rail ending after the progress, or the last rail. Distances never decrease along a path.
 	 */
 	public static int findIndex(MotionTrack track, double tempRailProgress, boolean roundDown) {

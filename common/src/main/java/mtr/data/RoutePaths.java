@@ -831,6 +831,8 @@ public final class RoutePaths {
 				key.add(routePlatform.pass);
 				key.add(routePlatform.dwellOverride);
 			});
+			// Where trains stop on the platforms (round 4), so the times follow a change at once
+			key.add(PlatformStops.fingerprint());
 			return times.computeIfAbsent(key, k -> PathTiming.calculateStopTimes(vehicle, getPath(stopSettings)));
 		}
 

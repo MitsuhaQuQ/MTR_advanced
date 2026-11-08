@@ -1272,7 +1272,7 @@ public class TrainService<T extends PlanTrack> {
 		if (currentMillis <= departMillis || currentMillis >= arriveMillis || !vehicle.isStopFree(stopIndex)) {
 			return false;
 		}
-		final double from = tripPath.distances.get(fromStop), to = tripPath.distances.get(stopIndex);
+		final double from = tripPath.getStopDistance(fromStop, vehicle.getTrainLength()), to = tripPath.getStopDistance(stopIndex, vehicle.getTrainLength());
 		final double fastFrom = getFastTime(from, true), fastTo = getFastTime(to, false);
 		if (Double.isNaN(fastFrom) || Double.isNaN(fastTo) || fastTo <= fastFrom) {
 			return false;
@@ -2443,6 +2443,13 @@ public class TrainService<T extends PlanTrack> {
 		}
 
 		List<T> getPath();
+
+		/**
+		 * @return the length of the train, which platforms' stop positions depend on (round 4)
+		 */
+		default double getTrainLength() {
+			return 0;
+		}
 
 		int getNextStoppingIndex();
 

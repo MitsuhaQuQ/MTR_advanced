@@ -45,6 +45,15 @@ public class TripPath<T extends PlanTrack> {
 	public final List<Long> routeIds = new ArrayList<>();
 	public final List<T> path = new ArrayList<>();
 	public final List<Double> distances = new ArrayList<>();
+
+	/**
+	 * @return where the head of a train this long stands at the stop at the end of a rail: short of its end by the
+	 * platform's stop offset (round 4)
+	 */
+	public double getStopDistance(int rail, double trainLength) {
+		final T track = path.get(rail);
+		return distances.get(rail) - (track.getDwellTime() > 0 ? track.getStopOffset(trainLength) : 0);
+	}
 	public final List<TimeSegment> timeSegments = new ArrayList<>();
 	public final StopTimes stopTimes = new StopTimes();
 	/**

@@ -167,6 +167,21 @@ public final class TrainRules {
 	}
 
 	/**
+	 * The next stop of a train whose head is here: the first stop ahead of it, so a train standing at a stop short of the
+	 * end of its rail (round 4) doesn't take the same stop again.
+	 *
+	 * @return the stop, or the end of the path
+	 */
+	public static int findNextStop(MotionTrack track, double railProgress) {
+		for (int i = MotionConstants.findIndex(track, railProgress, false); i < track.size(); i++) {
+			if (track.getDwellTime(i) > 0 && track.getStopDistance(i) > railProgress) {
+				return i;
+			}
+		}
+		return track.size() - 1;
+	}
+
+	/**
 	 * @return the first stop on or after this rail of the path, or the end of the path
 	 */
 	public static int findRunEnd(MotionTrack track, int fromIndex) {

@@ -273,7 +273,7 @@ public class TrainServer extends Train {
 		elapsedDwellTicks = 0;
 		speed = Train.ACCELERATION_DEFAULT;
 		if (isOppositeRail) {
-			railProgress += trainCars * trainSpacing;
+			railProgress += transitsim.motion.MotionConstants.getReversalAdvance(getMotionTrack(), nextStoppingIndex, trainCars * trainSpacing);
 			reversed = !reversed;
 		}
 		nextStoppingIndex = getNextStoppingIndex();
@@ -1206,7 +1206,7 @@ public class TrainServer extends Train {
 	}
 
 	private int getNextStoppingIndex() {
-		return TrainRules.findNextStoppingIndex(getMotionTrack(), getIndex(0, 0, false));
+		return TrainRules.findNextStop(getMotionTrack(), railProgress);
 	}
 
 	/**
@@ -1358,6 +1358,11 @@ public class TrainServer extends Train {
 		}
 
 		@Override
+		public double getTrainLength() {
+			return trainCars * spacing;
+		}
+
+		@Override
 		public int getNextStoppingIndex() {
 			return nextStoppingIndex;
 		}
@@ -1414,9 +1419,9 @@ public class TrainServer extends Train {
 
 		@Override
 		public void changePath(TripPath<PathData> tripPath, int newStopIndex) {
-			final double distanceToStop = distances.get(nextStoppingIndex) - railProgress;
+			final double distanceToStop = getMotionTrack().getStopDistance(nextStoppingIndex) - railProgress;
 			followPath(tripPath);
-			railProgress = distances.get(newStopIndex) - distanceToStop;
+			railProgress = getMotionTrack().getStopDistance(newStopIndex) - distanceToStop;
 			nextStoppingIndex = newStopIndex;
 			nextPlatformIndex = newStopIndex;
 		}
@@ -1466,7 +1471,7 @@ public class TrainServer extends Train {
 					reversed = !reversed;
 				}
 			}
-			railProgress = distances.get(stopIndex);
+			railProgress = getMotionTrack().getStopDistance(stopIndex);
 			speed = 0;
 			manualNotch = -2;
 			elapsedDwellTicks = 0;

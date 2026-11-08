@@ -48,7 +48,16 @@ public interface RunTrack extends PlanTrack {
 	 * @param vehicleMaxSpeed the highest speed of the vehicle, in blocks per tick, or 0 for none: no rail is run faster
 	 */
 	static TrackView toTrackView(List<? extends RunTrack> path, double minSpeed, double vehicleMaxSpeed) {
+		return toTrackView(path, minSpeed, vehicleMaxSpeed, Double.NaN);
+	}
+
+	/**
+	 * @param trainLength the length of the train, which platforms' stop positions depend on (round 4), or NaN to stop at
+	 *                    the end of every rail
+	 */
+	static TrackView toTrackView(List<? extends RunTrack> path, double minSpeed, double vehicleMaxSpeed, double trainLength) {
 		final int count = path.size();
+		final double[] stopOffsets = new double[count];
 		final double[] lengths = new double[count];
 		final double[] limits = new double[count];
 		final boolean[] stops = new boolean[count];
@@ -61,9 +70,10 @@ public interface RunTrack extends PlanTrack {
 			limits[i] = runSpeed(track, vehicleMaxSpeed);
 			stops[i] = track.getDwellTime() > 0;
 			reversals[i] = i + 1 < count && track.isOppositeOf(path.get(i + 1));
+			stopOffsets[i] = stops[i] && !Double.isNaN(trainLength) ? track.getStopOffset(trainLength) : 0;
 		}
 		// Where rails don't set the speed, the vehicle's lowest cruising speed, which its highest speed caps too
-		return new TrackView(lengths, limits, stops, reversals, limit((float) minSpeed, transitsim.network.SpeedLimits.physicalBlocksPerTick((float) vehicleMaxSpeed)));
+		return new TrackView(lengths, limits, stops, reversals, stopOffsets, limit((float) minSpeed, transitsim.network.SpeedLimits.physicalBlocksPerTick((float) vehicleMaxSpeed)));
 	}
 
 	/**

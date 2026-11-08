@@ -199,6 +199,19 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 		return savedRailBaseId;
 	}
 
+	/**
+	 * Short of the exit end of a platform set to stop trains elsewhere (optimisation round 4), as the platform's setting
+	 * has it now ({@link mtr.data.PlatformStops}).
+	 */
+	@Override
+	public double getStopOffset(double trainLength) {
+		if (rail.railType != RailType.PLATFORM || savedRailBaseId == 0) {
+			return 0;
+		}
+		final int setting = mtr.data.PlatformStops.get(savedRailBaseId);
+		return setting == transitsim.plan.StopPositions.EXIT_END ? 0 : transitsim.plan.StopPositions.getOffset(setting, rail.getLength(), trainLength);
+	}
+
 	@Override
 	public int getStopIndex() {
 		return stopIndex;

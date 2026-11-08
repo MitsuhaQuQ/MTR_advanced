@@ -52,8 +52,12 @@ public final class SpeedCurves {
 		double runStart = startPosition;
 		for (int i = 0; i < count; i++) {
 			if (track.isStop(i) || i == count - 1) {
-				runs.add(new Run(runStart, Math.max(runStart, ends[i]), i, ends, limits, trainLength, acceleration, deceleration));
-				runStart = ends[i] + (i + 1 < count && track.reversesAfter(i) ? trainLength : 0);
+				// The train stands short of the end of the rail by the stop's offset, and turning back puts the head where the
+				// tail was (round 4); with no offset these are the end of the rail and a train's length on
+				final double offset = track.isStop(i) ? track.getStopOffset(i) : 0;
+				final double stopAt = ends[i] - offset;
+				runs.add(new Run(runStart, Math.max(runStart, stopAt), i, ends, limits, trainLength, acceleration, deceleration));
+				runStart = i + 1 < count && track.reversesAfter(i) ? ends[i] + offset + trainLength : stopAt;
 			}
 		}
 		return new SpeedCurves(runs, acceleration, deceleration, minSpeed);

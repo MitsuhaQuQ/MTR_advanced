@@ -43,19 +43,21 @@ public final class PathTiming {
 		stopTimes.setJoinIndex(joinIndex);
 		if (vehicle.useSpeedCurve && !vehicle.transportMode.continuousMovement && !path.isEmpty()) {
 			// Timetables are planned at the planned speeds, below what trains may run, which leaves them room to catch up
-			final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, vehicle.transportMode, vehicle.maxSpeed, true), (vehicle.railLength + vehicle.trainCars * vehicle.spacing) / 2, vehicle.trainCars * vehicle.spacing, vehicle.acceleration, vehicle.deceleration);
+			final SpeedCurves curves = SpeedCurves.of(TrackViews.of(path, vehicle.transportMode, vehicle.maxSpeed, true, vehicle.trainCars * vehicle.spacing), (vehicle.railLength + vehicle.trainCars * vehicle.spacing) / 2, vehicle.trainCars * vehicle.spacing, vehicle.acceleration, vehicle.deceleration);
 			PathTimes.curveTimes(path, curves, timeSegments, platformTimes, stopTimes);
 			stopTimes.linkJoinStops(lapEndIndex);
 			return;
 		}
 
 		final float accelerationConstant = vehicle.acceleration;
+		final double trainLength = vehicle.trainCars * vehicle.spacing;
 		double distanceSum1 = 0;
 		final List<Double> stoppingDistances = new ArrayList<>();
 		for (final PathData pathData : path) {
 			distanceSum1 += pathData.rail.getLength();
 			if (pathData.dwellTime > 0) {
-				stoppingDistances.add(distanceSum1);
+				// Where the train stands, short of the end of a platform set to stop it elsewhere (round 4)
+				stoppingDistances.add(distanceSum1 - pathData.getStopOffset(trainLength));
 			}
 		}
 
@@ -79,8 +81,11 @@ public final class PathTiming {
 			final PathData pathData = path.get(i);
 			final float railSpeed = vehicle.limit(!SpeedRules.keepsLimitBefore(pathData.rail.railType, vehicle.transportMode) ? pathData.getPlanSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
 			distanceSum2 += pathData.rail.getLength();
+			final double stopOffset = pathData.dwellTime > 0 ? pathData.getStopOffset(trainLength) : 0;
+			// A train stopping here runs to where it stands, which may be short of the end of the rail
+			final double runEnd = distanceSum2 - stopOffset;
 
-			while (railProgress < distanceSum2) {
+			while (railProgress < runEnd) {
 				final int speedChange;
 				if (speed > railSpeed || nextStoppingDistance - railProgress + 1 < 0.5 * speed * speed / accelerationConstant) {
 					speed = Math.max(speed - accelerationConstant, accelerationConstant);
@@ -97,14 +102,14 @@ public final class PathTiming {
 					startNewSegment = false;
 				}
 
-				railProgress = Math.min(railProgress + speed, distanceSum2);
+				railProgress = Math.min(railProgress + speed, runEnd);
 				time++;
 
 				final TimeSegment timeSegment = timeSegments.get(timeSegments.size() - 1);
 				timeSegment.endRailProgress = railProgress;
 				timeSegment.endTime = time;
 				timeSegment.pass = railProgress == distanceSum2 && PathTimes.isPassingPlatform(path, i);
-				timeSegment.savedRailBaseId = timeSegment.pass || nextStoppingDistance != distanceSum1 && railProgress == distanceSum2 && pathData.dwellTime > 0 ? pathData.savedRailBaseId : 0;
+				timeSegment.savedRailBaseId = timeSegment.pass || nextStoppingDistance != distanceSum1 && railProgress == runEnd && pathData.dwellTime > 0 ? pathData.savedRailBaseId : 0;
 				// The next rail would otherwise extend this segment and clear the platform
 				startNewSegment = timeSegment.pass;
 			}
@@ -135,7 +140,8 @@ public final class PathTiming {
 			}
 
 			if (i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1))) {
-				railProgress += vehicle.spacing * vehicle.trainCars;
+				// The head goes to where the tail was (round 4: past the train's length and the stop offset twice)
+				railProgress += trainLength + 2 * stopOffset;
 			}
 		}
 

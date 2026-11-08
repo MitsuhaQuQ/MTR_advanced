@@ -1795,10 +1795,10 @@ public final class TickRunner<T extends RunTrack> {
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
 			waitingSinceMillis = 0;
-			nextStoppingIndex = TrainRules.findNextStoppingIndex(this, MotionConstants.findIndex(this, railProgress, false));
+			nextStoppingIndex = TrainRules.findNextStop(this, railProgress);
 			nextPlatformIndex = nextStoppingIndex;
 			// A stopped train counts as standing at its stop, so one given back anywhere else sets off as it does from a stop
-			if (speed <= 0 && Math.abs(distances.get(nextStoppingIndex) - railProgress) > 1E-3) {
+			if (speed <= 0 && Math.abs(getStopDistance(nextStoppingIndex) - railProgress) > 1E-3) {
 				speed = MotionConstants.ACCELERATION_DEFAULT;
 			}
 			cruiseCap = TrainRules.getCruiseCap(this);
@@ -1926,7 +1926,7 @@ public final class TickRunner<T extends RunTrack> {
 			authorityHead = head;
 			if (onRoute || service.isOnDuty()) {
 				final int stop = transitsim.run.RunMotion.findNextStop(this, head, onRoute && speed > 0);
-				final boolean atStop = !onRoute || speed <= 0 && Math.abs(distances.get(stop) - head) <= 1E-3;
+				final boolean atStop = !onRoute || speed <= 0 && Math.abs(getStopDistance(stop) - head) <= 1E-3;
 				final int targetStop = onRoute && atStop ? transitsim.run.RunMotion.findStopAfter(this, stop) : stop;
 				final List<T> claimTracks = path;
 				final List<Double> claimEnds = distances;
@@ -1956,7 +1956,7 @@ public final class TickRunner<T extends RunTrack> {
 						throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
 					}
 				}
-				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, distances.get(targetStop), getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
+				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, getStopDistance(targetStop), getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
 			} else {
 				authority.release();
 				authorityEnd = head;
@@ -2152,7 +2152,7 @@ public final class TickRunner<T extends RunTrack> {
 			final int headIndex = MotionConstants.findIndex(this, railProgress, false);
 			final int tailIndex = MotionConstants.findIndex(this, railProgress - trainLength, false);
 			// Head and tail stay on their rails, the train stays clear of the siding and of where it stops
-			double bound = Math.min(getNextSectionStart(headIndex, railProgress), distances.get(nextStoppingIndex));
+			double bound = Math.min(getNextSectionStart(headIndex, railProgress), getStopDistance(nextStoppingIndex));
 			if (railProgress - trainLength >= 0) {
 				bound = Math.min(bound, getNextSectionStart(tailIndex, railProgress - trainLength) + trainLength);
 			}
@@ -2506,7 +2506,7 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public SpeedCurves getSpeedCurves() {
 			if (curves == null || curvesPath != path) {
-				curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed, siding.vehicleMaxSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
+				curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed, siding.vehicleMaxSpeed, siding.trainCars * siding.spacing), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
 				curvesPath = path;
 				cappedProfile = null;
 			}
@@ -2710,6 +2710,22 @@ public final class TickRunner<T extends RunTrack> {
 		}
 
 		@Override
+		public double getStopOffset(int rail) {
+			final T track = path.get(rail);
+			return track.getDwellTime() > 0 ? track.getStopOffset(siding.trainCars * siding.spacing) : 0;
+		}
+
+		@Override
+		public double getStopDistance(int rail) {
+			return distances.get(rail) - getStopOffset(rail);
+		}
+
+		@Override
+		public double getTrainLength() {
+			return siding.trainCars * siding.spacing;
+		}
+
+		@Override
 		public int getDwellTime(int rail) {
 			return path.get(rail).getDwellTime();
 		}
@@ -2808,10 +2824,10 @@ public final class TickRunner<T extends RunTrack> {
 			elapsedDwellTicks = 0;
 			speed = MotionConstants.ACCELERATION_DEFAULT;
 			if (isOppositeRail) {
-				railProgress += siding.trainCars * siding.spacing;
+				railProgress += MotionConstants.getReversalAdvance(this, nextStoppingIndex, siding.trainCars * siding.spacing);
 				reversed = !reversed;
 			}
-			nextStoppingIndex = TrainRules.findNextStoppingIndex(this, MotionConstants.findIndex(this, railProgress, false));
+			nextStoppingIndex = TrainRules.findNextStop(this, railProgress);
 			cruiseCap = TrainRules.getCruiseCap(this);
 			doorTarget = false;
 			doorValue = 0;
@@ -2982,9 +2998,9 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public void changePath(TripPath<T> tripPath, int newStopIndex) {
-			final double distanceToStop = distances.get(nextStoppingIndex) - railProgress;
+			final double distanceToStop = getStopDistance(nextStoppingIndex) - railProgress;
 			followPath(tripPath);
-			railProgress = distances.get(newStopIndex) - distanceToStop;
+			railProgress = getStopDistance(newStopIndex) - distanceToStop;
 			nextStoppingIndex = newStopIndex;
 			nextPlatformIndex = newStopIndex;
 		}
@@ -3031,7 +3047,7 @@ public final class TickRunner<T extends RunTrack> {
 					reversed = !reversed;
 				}
 			}
-			railProgress = distances.get(stopIndex);
+			railProgress = getStopDistance(stopIndex);
 			speed = 0;
 			manualNotch = -2;
 			elapsedDwellTicks = 0;

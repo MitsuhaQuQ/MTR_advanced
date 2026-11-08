@@ -130,7 +130,7 @@ public final class TrainMotion {
 						}
 					}
 
-					final double stoppingPosition = Double.isNaN(sectionStop) ? track.getDistance(state.getNextStoppingIndex()) : Math.min(sectionStop, track.getDistance(state.getNextStoppingIndex()));
+					final double stoppingPosition = Double.isNaN(sectionStop) ? track.getStopDistance(state.getNextStoppingIndex()) : Math.min(sectionStop, track.getStopDistance(state.getNextStoppingIndex()));
 					final double stoppingDistance = stoppingPosition - state.getRailProgress();
 					if (vehicle.usesSpeedCurve()) {
 						if (hooks.isClientSide()) {
@@ -187,9 +187,9 @@ public final class TrainMotion {
 					state.setSpeed(0);
 					state.setManualNotch(-2);
 				}
-				if (!vehicle.isContinuousMovement() && state.getRailProgress() > track.getDistance(state.getNextStoppingIndex())) {
+				if (!vehicle.isContinuousMovement() && state.getRailProgress() > track.getStopDistance(state.getNextStoppingIndex())) {
 					if (mustStop(state, track, hooks, state.getNextStoppingIndex())) {
-						state.setRailProgress(track.getDistance(state.getNextStoppingIndex()));
+						state.setRailProgress(track.getStopDistance(state.getNextStoppingIndex()));
 						state.setSpeed(0);
 						state.setManualNotch(-2);
 					} else {
@@ -395,7 +395,7 @@ public final class TrainMotion {
 
 	private static boolean isOppositeRail(MotionState state, MotionTrack track) {
 		final int nextStoppingIndex = state.getNextStoppingIndex();
-		return track.size() > nextStoppingIndex + 1 && state.getRailProgress() == track.getDistance(nextStoppingIndex) && track.isOppositeRail(nextStoppingIndex, nextStoppingIndex + 1);
+		return track.size() > nextStoppingIndex + 1 && state.getRailProgress() == track.getStopDistance(nextStoppingIndex) && track.isOppositeRail(nextStoppingIndex, nextStoppingIndex + 1);
 	}
 
 	private static int getIndex(MotionState state, MotionTrack track, int car, int trainSpacing, boolean roundDown) {

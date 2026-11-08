@@ -32,6 +32,12 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	 * The pass speeds the button goes through, in km/h.
 	 */
 	private static final int[] PASS_SPEEDS = {80, 100, 120, 160, 200, 300};
+	private final Button buttonStopPosition;
+	private int stopPosition;
+	/**
+	 * The stop positions the button goes through (round 4): the exit end, centred, then blocks short of the exit end.
+	 */
+	private static final int[] STOP_POSITIONS = {transitsim.plan.StopPositions.EXIT_END, transitsim.plan.StopPositions.CENTRED, 2, 5, 10, 20};
 	private long selectedStationId;
 	private boolean timetableBoundary;
 	private boolean passingTrack;
@@ -72,6 +78,18 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 			}
 			passSpeed = next;
 			updatePassSpeedButton();
+		});
+		stopPosition = savedRailBase.stopPosition;
+		buttonStopPosition = UtilitiesClient.newButton(Text.literal(""), button -> {
+			int index = 0;
+			for (int i = 0; i < STOP_POSITIONS.length; i++) {
+				if (STOP_POSITIONS[i] == stopPosition) {
+					index = i + 1;
+					break;
+				}
+			}
+			stopPosition = STOP_POSITIONS[index % STOP_POSITIONS.length];
+			updateStopPositionButton();
 		});
 
 		final List<Route> routes = new ArrayList<>(ClientData.getFilteredDataSet(transportMode, ClientData.ROUTES));
@@ -130,6 +148,10 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		buttonPassSpeed.setMessage(Text.translatable("gui.mtr.platform_pass_speed", passSpeed));
 	}
 
+	private void updateStopPositionButton() {
+		buttonStopPosition.setMessage(stopPosition == transitsim.plan.StopPositions.EXIT_END ? Text.translatable("gui.mtr.platform_stop_exit_end") : stopPosition == transitsim.plan.StopPositions.CENTRED ? Text.translatable("gui.mtr.platform_stop_centred") : Text.translatable("gui.mtr.platform_stop_blocks", stopPosition));
+	}
+
 	private void updateStationButton() {
 		final Station station = ClientData.DATA_CACHE.stationIdMap.get(selectedStationId);
 		final net.minecraft.core.BlockPos pos = savedRailBase.getMidPos();
@@ -150,7 +172,7 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		if (showScheduleControls) {
 			// Where services can leave or join a route part of the way along, see TimetableBoundaries
 			final int rowY = (!stationsHere.isEmpty() ? SQUARE_SIZE * 9 / 2 : SQUARE_SIZE * 7 / 2) + TEXT_FIELD_PADDING;
-			final int thirdWidth = (width - SQUARE_SIZE * 2) / 3;
+			final int thirdWidth = (width - SQUARE_SIZE * 2) / 4;
 			IDrawing.setPositionAndWidth(buttonBoundary, SQUARE_SIZE, rowY, thirdWidth);
 			updateBoundaryButton();
 			addDrawableChild(buttonBoundary);
@@ -162,6 +184,10 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 			IDrawing.setPositionAndWidth(buttonPassSpeed, SQUARE_SIZE + thirdWidth * 2, rowY, thirdWidth);
 			updatePassSpeedButton();
 			addDrawableChild(buttonPassSpeed);
+			// Where trains stop on it (round 4)
+			IDrawing.setPositionAndWidth(buttonStopPosition, SQUARE_SIZE + thirdWidth * 3, rowY, thirdWidth);
+			updateStopPositionButton();
+			addDrawableChild(buttonStopPosition);
 		}
 	}
 
@@ -242,6 +268,9 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 		}
 		if (timetableBoundary != savedRailBase.timetableBoundary) {
 			savedRailBase.setTimetableBoundary(timetableBoundary, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
+		}
+		if (stopPosition != savedRailBase.stopPosition) {
+			savedRailBase.setStopPosition(stopPosition, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
 		}
 		if (passSpeed != savedRailBase.getPassSpeedKmh()) {
 			savedRailBase.setPassSpeed(passSpeed == mtr.data.PlatformSpeeds.DEFAULT_KMH ? 0 : passSpeed, packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));

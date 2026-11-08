@@ -56,7 +56,7 @@
 	let coverage = null;
 	/** The services paired at their routes' ends on the day shown (terminalNow), until the data, the draft or the day changes. */
 	let terminal = null;
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -109,6 +109,7 @@
 		if (!draft.depots || typeof draft.depots !== "object") draft.depots = {};
 		if (!draft.platformStations || typeof draft.platformStations !== "object") draft.platformStations = {};
 		if (!draft.platformSpeeds || typeof draft.platformSpeeds !== "object") draft.platformSpeeds = {};
+		if (!draft.platformStops || typeof draft.platformStops !== "object") draft.platformStops = {};
 		if (!draft.contingencies || typeof draft.contingencies !== "object") draft.contingencies = {};
 		draftLoaded = true;
 	}
@@ -124,7 +125,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.contingencies || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.platformStops || {}).length + Object.keys(draft.contingencies || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -380,6 +381,10 @@
 			operations.push({ type: "platformSpeed", platform, speed });
 			owners.push({ platformSpeedOf: platform });
 		});
+		Object.entries(draft.platformStops || {}).forEach(([platform, position]) => {
+			operations.push({ type: "platformStop", platform, position });
+			owners.push({ platformStopOf: platform });
+		});
 		Object.entries(draft.platformStations || {}).forEach(([platform, station]) => {
 			operations.push({ type: "platformStation", platform, station });
 			owners.push({ platformStationOf: platform });
@@ -429,6 +434,7 @@
 			owners.filter(owner => owner && owner.depotOf && !failed.has(owner)).forEach(owner => delete draft.depots[owner.depotOf]);
 			owners.filter(owner => owner && owner.platformStationOf && !failed.has(owner)).forEach(owner => delete draft.platformStations[owner.platformStationOf]);
 			owners.filter(owner => owner && owner.platformSpeedOf && !failed.has(owner)).forEach(owner => delete draft.platformSpeeds[owner.platformSpeedOf]);
+			owners.filter(owner => owner && owner.platformStopOf && !failed.has(owner)).forEach(owner => delete draft.platformStops[owner.platformStopOf]);
 			owners.filter(owner => owner && owner.contingenciesOf && !failed.has(owner)).forEach(owner => delete draft.contingencies[owner.contingenciesOf]);
 			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
 				delete draft.boundaries[owner.boundaryOf];
@@ -1277,6 +1283,10 @@
 		const platformSpeedKeys = Object.keys(draft.platformSpeeds || {});
 		if (platformSpeedKeys.length) {
 			sections.push(`<section class="draft-change"><h3>${tr("过站限速")}</h3><ul>${platformSpeedKeys.map(platformId => `<li>${escapeHtml(tr("{0} 过站限速 {1} km/h", platformText(platformId), draft.platformSpeeds[platformId]))}</li>`).join("")}</ul></section>`);
+		}
+		const platformStopKeys = Object.keys(draft.platformStops || {});
+		if (platformStopKeys.length) {
+			sections.push(`<section class="draft-change"><h3>${tr("停车位置")}</h3><ul>${platformStopKeys.map(platformId => `<li>${escapeHtml(platformText(platformId) + " " + stopPositionText(draft.platformStops[platformId]))}</li>`).join("")}</ul></section>`);
 		}
 		const platformStationKeys = Object.keys(draft.platformStations || {});
 		if (platformStationKeys.length) {
@@ -3603,6 +3613,27 @@
 		}]);
 	}
 
+	/** How a platform's stop position reads (round 4). */
+	function stopPositionText(position) {
+		return position === 0 ? tr("停在出站端") : position < 0 ? tr("按车长居中停车") : tr("离出站端 {0} 格停车", position);
+	}
+
+	/**
+	 * The menu choosing where trains stop on a platform (round 4), into the draft.
+	 */
+	function platformStopItems(platformId) {
+		const p = platformById(platformId);
+		if (!p || !data.canEdit) return null;
+		const set = p.stopPosition || 0;
+		const current = draft.platformStops && platformId in draft.platformStops ? draft.platformStops[platformId] : set;
+		return [0, -1, 2, 5, 10, 20].map(position => [`${current === position ? "✓ " : ""}${stopPositionText(position)}`, () => {
+			if (position === set) delete draft.platformStops[platformId];
+			else draft.platformStops[platformId] = position;
+			saveDraft();
+			renderAll();
+		}]);
+	}
+
 	/**
 	 * The menu choosing the station a platform belongs to (R6): automatic, by the areas and the nearest platform, or any of
 	 * the nearest stations, wherever the platform is; into the draft.
@@ -3724,6 +3755,8 @@
 		}
 		const speedItems = s.route.stops[stop] ? platformSpeedItems(s.route.stops[stop].platformId) : null;
 		if (speedItems) items.push([tr("站台 {0} 过站限速", platformText(s.route.stops[stop].platformId)), speedItems]);
+		const stopItems = s.route.stops[stop] ? platformStopItems(s.route.stops[stop].platformId) : null;
+		if (stopItems) items.push([tr("站台 {0} 停车位置", platformText(s.route.stops[stop].platformId)), stopItems]);
 		if (items.length) openMenu(e.clientX, e.clientY, items);
 	}
 

@@ -629,7 +629,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected final SpeedCurves getSpeedCurves() {
 		final double length = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
 		if (speedCurves == null || speedCurvesPath != path || speedCurvesSize != path.size() || speedCurvesLength != length || speedCurvesDeceleration != decelerationConstant || speedCurvesMaxSpeed != vehicleMaxSpeed) {
-			speedCurves = SpeedCurves.of(TrackViews.of(path, transportMode, vehicleMaxSpeed), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
+			speedCurves = SpeedCurves.of(TrackViews.of(path, transportMode, vehicleMaxSpeed, false, this::getStopOffset), (railLength + trainCars * spacing) / 2, trainCars * spacing, accelerationConstant, decelerationConstant);
 			speedCurvesPath = path;
 			speedCurvesSize = path.size();
 			speedCurvesLength = length;
@@ -793,6 +793,33 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 */
 	public float vehicleMaxSpeed;
 	private float speedCurvesMaxSpeed;
+	/**
+	 * How far short of the end of each rail with a stop the train stands (optimisation round 4), taken from the platforms
+	 * when the train is given a path, so its motion and its speed curves always agree.
+	 */
+	private double[] stopOffsets = new double[0];
+	private List<PathData> stopOffsetsPath;
+	private int stopOffsetsSize = -1;
+	private double stopOffsetsLength = -1;
+
+	/**
+	 * @return how far short of the end of the rail the train stands when it stops there
+	 */
+	protected final double getStopOffset(int rail) {
+		final double length = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
+		if (stopOffsetsPath != path || stopOffsetsSize != path.size() || stopOffsetsLength != length) {
+			final double[] offsets = new double[path.size()];
+			for (int i = 0; i < offsets.length; i++) {
+				final PathData pathData = path.get(i);
+				offsets[i] = pathData.dwellTime > 0 ? pathData.getStopOffset(trainCars * spacing) : 0;
+			}
+			stopOffsets = offsets;
+			stopOffsetsPath = path;
+			stopOffsetsSize = path.size();
+			stopOffsetsLength = length;
+		}
+		return rail >= 0 && rail < stopOffsets.length ? stopOffsets[rail] : 0;
+	}
 
 	/**
 	 * @return a speed limit no higher than the vehicle's highest speed
@@ -1192,6 +1219,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		@Override
 		public double getDistance(int rail) {
 			return distances.get(rail);
+		}
+
+		@Override
+		public double getStopOffset(int rail) {
+			return Train.this.getStopOffset(rail);
 		}
 
 		@Override

@@ -32,7 +32,7 @@ public final class RunMotion {
 	 */
 	public static int findNextStop(MotionTrack track, double position, boolean moving) {
 		for (int i = 0; i < track.size(); i++) {
-			if (track.getDwellTime(i) > 0 && (moving ? track.getDistance(i) > position + AT : track.getDistance(i) >= position - AT)) {
+			if (track.getDwellTime(i) > 0 && (moving ? track.getStopDistance(i) > position + AT : track.getStopDistance(i) >= position - AT)) {
 				return i;
 			}
 		}
@@ -56,7 +56,7 @@ public final class RunMotion {
 	 */
 	public static boolean isAtStop(MotionState state, MotionTrack track) {
 		final int stop = findNextStop(track, state.getRailProgress());
-		return state.getSpeed() <= 0 && Math.abs(track.getDistance(stop) - state.getRailProgress()) <= AT;
+		return state.getSpeed() <= 0 && Math.abs(track.getStopDistance(stop) - state.getRailProgress()) <= AT;
 	}
 
 	/**
@@ -105,10 +105,16 @@ public final class RunMotion {
 			return 0;
 		}
 
-		final int stop = findNextStop(track, state.getRailProgress(), state.getSpeed() > 0);
+		int stop = findNextStop(track, state.getRailProgress(), state.getSpeed() > 0);
+		// A train still moving a hair short of the stop it is braking for keeps it, rather than taking the one after: the
+		// stop it has just left is never its next one, as setting off moves that on (round 4, stops short of a rail's end)
+		final int kept = state.getNextStoppingIndex();
+		if (state.getSpeed() > 0 && kept >= 0 && kept < stop && track.getDwellTime(kept) > 0 && track.getStopDistance(kept) >= state.getRailProgress() - AT) {
+			stop = kept;
+		}
 		state.setNextStoppingIndex(stop);
 		state.setNextPlatformIndex(stop);
-		final double stopPosition = track.getDistance(stop);
+		final double stopPosition = track.getStopDistance(stop);
 		final int totalDwellTicks = hooks.getTotalDwellTicks();
 		boolean doorsOpen = false;
 

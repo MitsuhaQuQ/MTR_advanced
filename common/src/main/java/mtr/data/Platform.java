@@ -37,9 +37,15 @@ public final class Platform extends SavedRailBase {
 	 * default ({@link PlatformSpeeds#DEFAULT_KMH}). A trait of the track, like its length.
 	 */
 	public int passSpeed;
+	/**
+	 * Where trains stop on the platform (optimisation round 4, stop points): {@link transitsim.plan.StopPositions#EXIT_END}
+	 * (the default, as always), {@link transitsim.plan.StopPositions#CENTRED}, or a number of blocks short of the exit end.
+	 */
+	public int stopPosition;
 
 	private static final String KEY_DWELL_TIME = "dwell_time";
 	private static final String KEY_PASS_SPEED = "pass_speed";
+	private static final String KEY_STOP_POSITION = "stop_position";
 	private static final String KEY_STATION_ID = "station_id";
 	private static final String KEY_TIMETABLE_BOUNDARY = "timetable_boundary";
 	private static final String KEY_PASSING_TRACK = "passing_track";
@@ -59,6 +65,7 @@ public final class Platform extends SavedRailBase {
 		timetableBoundary = messagePackHelper.getBoolean(KEY_TIMETABLE_BOUNDARY);
 		passingTrack = messagePackHelper.getBoolean(KEY_PASSING_TRACK);
 		passSpeed = Math.max(0, messagePackHelper.getInt(KEY_PASS_SPEED, 0));
+		stopPosition = transitsim.plan.StopPositions.normalise(messagePackHelper.getInt(KEY_STOP_POSITION, 0));
 	}
 
 	@Deprecated
@@ -72,6 +79,7 @@ public final class Platform extends SavedRailBase {
 		timetableBoundary = packet.readBoolean();
 		passingTrack = packet.readBoolean();
 		passSpeed = packet.readInt();
+		stopPosition = packet.readInt();
 	}
 
 	@Override
@@ -81,11 +89,12 @@ public final class Platform extends SavedRailBase {
 		messagePacker.packString(KEY_TIMETABLE_BOUNDARY).packBoolean(timetableBoundary);
 		messagePacker.packString(KEY_PASSING_TRACK).packBoolean(passingTrack);
 		messagePacker.packString(KEY_PASS_SPEED).packInt(passSpeed);
+		messagePacker.packString(KEY_STOP_POSITION).packInt(stopPosition);
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 4;
+		return super.messagePackLength() + 5;
 	}
 
 	@Override
@@ -95,6 +104,7 @@ public final class Platform extends SavedRailBase {
 		packet.writeBoolean(timetableBoundary);
 		packet.writeBoolean(passingTrack);
 		packet.writeInt(passSpeed);
+		packet.writeInt(stopPosition);
 	}
 
 	@Override
@@ -107,6 +117,8 @@ public final class Platform extends SavedRailBase {
 			passingTrack = packet.readBoolean();
 		} else if (KEY_PASS_SPEED.equals(key)) {
 			passSpeed = Math.max(0, packet.readInt());
+		} else if (KEY_STOP_POSITION.equals(key)) {
+			stopPosition = transitsim.plan.StopPositions.normalise(packet.readInt());
 		} else if (KEY_DWELL_TIME.equals(key)) {
 			name = packet.readUtf(PACKET_STRING_READ_LENGTH);
 			color = packet.readInt();
@@ -154,6 +166,16 @@ public final class Platform extends SavedRailBase {
 		packet.writeUtf(transportMode.toString());
 		packet.writeUtf(KEY_PASS_SPEED);
 		packet.writeInt(passSpeed);
+		sendPacket.accept(packet);
+	}
+
+	public void setStopPosition(int newStopPosition, Consumer<FriendlyByteBuf> sendPacket) {
+		stopPosition = transitsim.plan.StopPositions.normalise(newStopPosition);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_STOP_POSITION);
+		packet.writeInt(stopPosition);
 		sendPacket.accept(packet);
 	}
 

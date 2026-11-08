@@ -385,6 +385,16 @@ public final class EditorActions implements IPacket {
 			ClientData.DATA_CACHE.sync();
 			return null;
 		}
+		// Where trains stop on a platform (round 4): 0 the exit end, -1 centred, or blocks short of the exit end
+		if ("platformStop".equals(getString(operation, "type"))) {
+			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(parseId(getString(operation, "platform")));
+			if (platform == null || !operation.has("position") || operation.get("position").getAsInt() < -1 || operation.get("position").getAsInt() > 1000) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			platform.setStopPosition(operation.get("position").getAsInt(), packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_PLATFORM, packet));
+			ClientData.DATA_CACHE.sync();
+			return null;
+		}
 		// The station a platform is put in, wherever it is, or "0" for by its area (R6)
 		if ("platformStation".equals(getString(operation, "type"))) {
 			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(parseId(getString(operation, "platform")));

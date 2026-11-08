@@ -53,8 +53,10 @@ public final class PathTimes {
 			// Segments end where the train stops or passes a platform, so arrivals can be read off them
 			final TreeMap<Double, Integer> ends = new TreeMap<>();
 			for (int i = 0; i <= run.stopRailIndex; i++) {
-				if (railEnds[i] > run.fastest.startPosition && railEnds[i] <= run.fastest.endPosition && (isPassingPlatform(path, i) || i == run.stopRailIndex)) {
-					ends.put(railEnds[i], i);
+				// A stop ends where the train stands, which may be short of the end of its rail (round 4)
+				final double position = i == run.stopRailIndex ? run.fastest.endPosition : railEnds[i];
+				if (position > run.fastest.startPosition && position <= run.fastest.endPosition && (isPassingPlatform(path, i) || i == run.stopRailIndex)) {
+					ends.put(position, i);
 				}
 			}
 			final List<double[]> pieces = run.fastest.getPieces();
@@ -82,7 +84,7 @@ public final class PathTimes {
 			}
 			final SpeedCurves.Run run = curves.runs.get(runIndex);
 			final PlanTrack pathData = path.get(i);
-			final float time = (float) (runStarts[runIndex] + run.fastest.getTime(railEnds[i]));
+			final float time = (float) (runStarts[runIndex] + run.fastest.getTime(i == run.stopRailIndex ? run.fastest.endPosition : railEnds[i]));
 			final boolean isPlatformStop = pathData.isPlatformTrack() && pathData.getStopId() != 0;
 			if (pathData.getDwellTime() > 0 || isPassingPlatform(path, i)) {
 				final boolean isTurnBack = !isPlatformStop && i + 1 < path.size() && pathData.isOppositeOf(path.get(i + 1));

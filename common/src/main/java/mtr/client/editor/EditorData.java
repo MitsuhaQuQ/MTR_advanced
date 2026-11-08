@@ -581,6 +581,7 @@ public final class EditorData {
 			platformObject.addProperty("mode", platform == null ? "" : platform.transportMode.toString());
 			platformObject.addProperty("passingTrack", platform != null && platform.passingTrack);
 			platformObject.addProperty("passSpeed", platform == null ? mtr.data.PlatformSpeeds.DEFAULT_KMH : platform.getPassSpeedKmh());
+			platformObject.addProperty("stopPosition", platform == null ? 0 : platform.stopPosition);
 			// The station set for it, "0" for none, and where it is, for choosing a station to put it in
 			platformObject.addProperty("stationSet", platform == null ? "0" : String.valueOf(platform.stationId));
 			if (platform != null) {

@@ -113,6 +113,8 @@ public class DataCache {
 			mapIds(platformIdMap, platforms);
 			// Platforms set to pass faster or slower than the default, which paths look up as they run (round 3b)
 			PlatformSpeeds.update(this, platforms);
+			// Platforms stopping trains other than at the exit end, which paths look up (round 4)
+			PlatformStops.update(this, platforms);
 			mapIds(sidingIdMap, sidings);
 			mapIds(routeIdMap, routes);
 			mapIds(depotIdMap, depots);

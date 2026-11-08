@@ -46,7 +46,7 @@ public final class SimDataset {
 	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
 	 * highest speed of their vehicles; older data is read without them.
 	 */
-	public static final int VERSION = 15;
+	public static final int VERSION = 16;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -68,6 +68,11 @@ public final class SimDataset {
 	 * station throat takes as a whole (L2); none in data from before.
 	 */
 	public final List<Boolean> interlockBlocks = new ArrayList<>();
+	/**
+	 * Where trains stop at each platform with a stop position set (round 4, {@link transitsim.plan.StopPositions}), by
+	 * platform ID; put on the tracks by {@link #applyStopPositions()}.
+	 */
+	public final Map<Long, Integer> stopPositions = new java.util.TreeMap<>();
 
 	/**
 	 * @return whether the signal block with this index is an interlocking zone
@@ -139,6 +144,11 @@ public final class SimDataset {
 				writer.writeLong(platformId);
 				writeTracks(writer, tracks);
 			});
+		});
+		writer.writeVarInt(stopPositions.size());
+		stopPositions.forEach((platformId, setting) -> {
+			writer.writeLong(platformId);
+			writer.writeInt(setting);
 		});
 		return writer.toBytes();
 	}
@@ -256,7 +266,29 @@ public final class SimDataset {
 				}
 			}
 		}
+		if (version >= 16) {
+			for (int i = reader.readVarInt(); i > 0; i--) {
+				final long platformId = reader.readLong();
+				dataset.stopPositions.put(platformId, reader.readInt());
+			}
+			dataset.applyStopPositions();
+		}
 		return dataset;
+	}
+
+	/**
+	 * Puts the platforms' stop positions on every track of every siding's paths, ways round and ways out, so a train
+	 * stops where its platform has it (round 4). Call it again after changing {@link #stopPositions}.
+	 */
+	public void applyStopPositions() {
+		final java.util.function.Consumer<List<DataTrack>> apply = tracks -> tracks.forEach(track -> track.stopPosition = track.platform ? stopPositions.getOrDefault(track.stopId, 0) : 0);
+		sidings.forEach(siding -> {
+			apply.accept(siding.path);
+			siding.tripPaths.forEach(tripPath -> apply.accept(tripPath.path));
+			siding.turnLinks.values().forEach(apply);
+			siding.turnReturns.values().forEach(apply);
+			siding.wayOuts.values().forEach(apply);
+		});
 	}
 
 	/**
@@ -565,7 +597,7 @@ public final class SimDataset {
 				stopTimes.clear();
 				stopTimes.setJoinIndex(joinIndex);
 				if (!path.isEmpty()) {
-					final SpeedCurves curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed, siding.vehicleMaxSpeed), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
+					final SpeedCurves curves = SpeedCurves.of(RunTrack.toTrackView(path, siding.minSpeed, siding.vehicleMaxSpeed, siding.trainCars * siding.spacing), (siding.railLength + siding.trainCars * siding.spacing) / 2, siding.trainCars * siding.spacing, siding.acceleration, siding.deceleration);
 					PathTimes.curveTimes(path, curves, timeSegments, new HashMap<>(), stopTimes);
 				}
 				stopTimes.linkJoinStops(lapEndIndex);
@@ -994,6 +1026,11 @@ public final class SimDataset {
 		private final boolean hasSignal;
 		private final boolean twoWay;
 		private int stopIndex;
+		/**
+		 * Where trains stop on it, if it is a platform (round 4, {@link transitsim.plan.StopPositions}), set from the
+		 * dataset's {@link #stopPositions}.
+		 */
+		private int stopPosition;
 
 		public DataTrack(long startNode, long endNode, double length, boolean platform, boolean siding, long stopId, int dwellTime, int stopIndex, float maxSpeed, boolean canAccelerate, boolean hasSignal, boolean twoWay) {
 			this.startNode = startNode;
@@ -1021,7 +1058,23 @@ public final class SimDataset {
 		 * @return the same track, which a train stops at the end of for this long, at this platform (D5)
 		 */
 		public DataTrack withStop(int newDwellTime, long newStopId) {
-			return new DataTrack(startNode, endNode, length, platform, siding, newStopId, newDwellTime, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay);
+			final DataTrack track = new DataTrack(startNode, endNode, length, platform, siding, newStopId, newDwellTime, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay);
+			track.stopPosition = newStopId == stopId ? stopPosition : 0;
+			return track;
+		}
+
+		/**
+		 * @return the same track with trains stopping on it as a platform with this setting has them (round 4)
+		 */
+		public DataTrack withStopPosition(int setting) {
+			final DataTrack track = withStop(dwellTime, stopId);
+			track.stopPosition = platform ? setting : 0;
+			return track;
+		}
+
+		@Override
+		public double getStopOffset(double trainLength) {
+			return platform && stopPosition != 0 ? transitsim.plan.StopPositions.getOffset(stopPosition, length, trainLength) : 0;
 		}
 
 		private void write(BinaryWriter writer) {

@@ -30,6 +30,14 @@ public interface PlanTrack {
 	long getStopId();
 
 	/**
+	 * @return how far short of the end of this track a train this long stands when it stops here (optimisation round 4):
+	 * set by the platform ({@link StopPositions}), 0 for every other track
+	 */
+	default double getStopOffset(double trainLength) {
+		return 0;
+	}
+
+	/**
 	 * @return how many stops come before this track on the path
 	 */
 	int getStopIndex();

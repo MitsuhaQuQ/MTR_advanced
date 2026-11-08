@@ -34,7 +34,7 @@ class RestoreTest {
 
 	@Test
 	void carryingOnFromARecordRunsAsRunningOnDoes() {
-		for (final SimDataset dataset : new SimDataset[]{SimDatasetTest.lines(1, 400, 2, 4, 10), SimDatasetTest.lines(3, 400, 2, 8, 3), byDuties(), FleetPoolTest.byDuties(3), SignalBlockTest.line(true), SimDatasetTest.lines(1, 2400, 2, 8, 1)}) {
+		for (final SimDataset dataset : new SimDataset[]{SimDatasetTest.lines(1, 400, 2, 4, 10), SimDatasetTest.lines(3, 400, 2, 8, 3), byDuties(), FleetPoolTest.byDuties(3), SignalBlockTest.line(true), SimDatasetTest.lines(1, 2400, 2, 8, 1), StopPositionsTest.centred(SimDatasetTest.lines(1, 400, 2, 4, 10))}) {
 			assertCarriesOn(dataset.toBytes(), true);
 		}
 	}
