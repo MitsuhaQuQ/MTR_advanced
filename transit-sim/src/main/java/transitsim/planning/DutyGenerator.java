@@ -567,6 +567,18 @@ public final class DutyGenerator {
 		public int returnStop = -1;
 		public long returnDepot;
 
+		/**
+		 * @return the same service on only these of its days
+		 */
+		public ServiceInput withWeekdays(int newWeekdays) {
+			final ServiceInput copy = new ServiceInput(routeId, service, newWeekdays, startMillis, platformIds, plans, pass, linkRoute, linkService, linkFromStop, linkToStop);
+			copy.deployStop = deployStop;
+			copy.deployDepot = deployDepot;
+			copy.returnStop = returnStop;
+			copy.returnDepot = returnDepot;
+			return copy;
+		}
+
 		public ServiceInput(long routeId, int service, int weekdays, long startMillis, long[] platformIds, long[][] plans, boolean[] pass, long linkRoute, int linkService, int linkFromStop, int linkToStop) {
 			this.routeId = routeId;
 			this.service = service;
@@ -639,6 +651,99 @@ public final class DutyGenerator {
 		}
 		// Not even one service a route has a train for every kept one: as many as the trains can take, early first
 		return all;
+	}
+
+	/**
+	 * The days that run the same services, as by one timetable of each route (duty groups, step 2), each as weekdays (bit 0
+	 * Monday), in the order of their first day; days with no service are left out.
+	 */
+	public static List<Integer> dayTypes(List<ServiceInput> services) {
+		final Map<List<Integer>, Integer> byServices = new LinkedHashMap<>();
+		for (int day = 0; day < 7; day++) {
+			final List<Integer> running = new ArrayList<>();
+			for (int i = 0; i < services.size(); i++) {
+				if ((services.get(i).weekdays >> day & 1) != 0) {
+					running.add(i);
+				}
+			}
+			if (!running.isEmpty()) {
+				byServices.merge(running, 1 << day, (a, b) -> a | b);
+			}
+		}
+		return new ArrayList<>(byServices.values());
+	}
+
+	/**
+	 * Plans each day type ({@link #dayTypes}) on its own, as a group of duties of its own (duty groups, step 2, option B),
+	 * with {@link #generateSpread}, and puts the groups together: a train's slot runs the duty of its index in each group.
+	 * Trains don't stay on the line from one day type into another, nor over a whole day; from one day of a type to the next
+	 * they do as before. With one day type it is
+	 * {@link #generateSpread}'s result.
+	 */
+	public static Result generateByDayType(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
+		return generateByDayType(services, sidings, stationOf, maxLayoverMillis, inputs, true);
+	}
+
+	/**
+	 * @param spread with {@link #generateSpread} for each type, else with {@link #generate}
+	 */
+	public static Result generateByDayType(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs, boolean spread) {
+		final List<Integer> types = dayTypes(services);
+		if (types.size() <= 1) {
+			return spread ? generateSpread(services, sidings, stationOf, maxLayoverMillis, inputs) : generate(services, sidings, stationOf, maxLayoverMillis, inputs);
+		}
+		final Result merged = new Result();
+		for (final int mask : types) {
+			final Result result = generateDayType(services, mask, sidings, stationOf, maxLayoverMillis, inputs, spread);
+			merged.trains = Math.max(merged.trains, result.trains);
+			merged.uncovered += result.uncovered;
+			result.issues.stream().filter(issue -> !merged.issues.contains(issue)).forEach(merged.issues::add);
+			merged.returnSidings.putAll(result.returnSidings);
+			result.sidings.forEach((sidingId, slots) -> {
+				final List<DepotDuties.Slot> mergedSlots = merged.sidings.computeIfAbsent(sidingId, key -> new ArrayList<>());
+				for (int i = 0; i < slots.size(); i++) {
+					while (mergedSlots.size() <= i) {
+						final DepotDuties.Slot slot = new DepotDuties.Slot();
+						slot.id = DepotDuties.defaultId(sidingId, mergedSlots.size());
+						mergedSlots.add(slot);
+					}
+					for (final DepotDuties.DayDuty day : slots.get(i).days) {
+						// Only its own type's days, which no other type has
+						day.weekdays &= mask;
+						if (day.weekdays != 0) {
+							mergedSlots.get(i).days.add(day);
+						}
+					}
+				}
+			});
+		}
+		// In the order of the weekdays, as one plan gives them
+		merged.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.sort(Comparator.comparingInt(day -> Integer.numberOfTrailingZeros(day.weekdays)))));
+		return merged;
+	}
+
+	/**
+	 * @return the services running on these days, on only these of their days
+	 */
+	public static List<ServiceInput> onDays(List<ServiceInput> services, int mask) {
+		final List<ServiceInput> part = new ArrayList<>();
+		services.forEach(service -> {
+			if ((service.weekdays & mask) != 0) {
+				part.add(service.weekdays == (service.weekdays & mask) ? service : service.withWeekdays(service.weekdays & mask));
+			}
+		});
+		return part;
+	}
+
+	/**
+	 * Plans one day type ({@link #dayTypes}) as a group of duties of its own: the services on those days. A train may stay
+	 * out overnight to the next day, not over a whole day, as the days between are another type's, whose duties start from
+	 * the sidings.
+	 */
+	public static Result generateDayType(List<ServiceInput> services, int mask, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs, boolean spread) {
+		final List<ServiceInput> part = onDays(services, mask);
+		final long layover = (mask & DepotDuties.ALL_WEEKDAYS) == DepotDuties.ALL_WEEKDAYS ? maxLayoverMillis : Math.min(maxLayoverMillis, OperatingDay.MILLIS_PER_DAY);
+		return spread ? generateSpread(part, sidings, stationOf, layover, inputs) : generate(part, sidings, stationOf, layover, inputs);
 	}
 
 	/**

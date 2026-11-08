@@ -1051,6 +1051,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					final List<String> why = new ArrayList<>();
 					final LineDuties.Plan kept = lineUnit.keep(keptRecords, keptSlots, fastestTimes, dayStartMillis, turnTimes, measuredWays, why::add);
 					final long checkMillis = (System.nanoTime() - checkStart) / 1000000;
+					if (kept != null && !kept.kept) {
+						// Some duty groups kept, the others planned again (duty groups, step 2)
+						System.out.println("Minecraft Transit Railway: planned the duties of " + kept.describe() + " (" + String.join("; ", why) + ")");
+						return kept;
+					}
 					if (kept != null) {
 						System.out.println("Minecraft Transit Railway: kept the duties of " + kept.describe() + ", as they still hold (checked in " + checkMillis + " ms)" + (kept.replanHint.isEmpty() ? "" : "; settings changed since they were planned, " + kept.replanHint + ", so planning them again is suggested"));
 						return kept;

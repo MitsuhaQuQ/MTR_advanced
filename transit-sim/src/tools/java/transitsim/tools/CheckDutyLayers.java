@@ -68,6 +68,28 @@ public final class CheckDutyLayers {
 		shared.bodies.putAll(bodies);
 		shared.groups.putAll(groups);
 		final long sharedBytes = shared.toBytes().length;
+		// How the weekdays are split and how many duties stay on the line overnight, for planning by timetable (step 2)
+		final Map<Integer, Integer> weekdaySets = new TreeMap<>();
+		final int[] overnight = {0, 0};
+		for (final SimDataset.DepotData depot : dataset.depots) {
+			if (depot.duties.length == 0) {
+				continue;
+			}
+			final DepotDuties duties = new DepotDuties();
+			duties.fromBytes(depot.duties);
+			duties.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> {
+				weekdaySets.merge(day.weekdays, 1, Integer::sum);
+				if (day.stayOnLine) {
+					overnight[0]++;
+				}
+				if (day.fromOvernight || day.stayOnLine && day.nextDutyId != 0) {
+					overnight[1]++;
+				}
+			})));
+		}
+		final StringBuilder sets = new StringBuilder();
+		weekdaySets.forEach((mask, count) -> sets.append(' ').append(Integer.toBinaryString(mask | 0x80).substring(1)).append('=').append(count));
+		System.out.println("Weekday sets (Sunday..Monday) and duty rows:" + sets + "; rows staying on the line: " + overnight[0] + ", carried to another duty: " + overnight[1]);
 		System.out.println("Depots with duties: " + depots + ", back exactly: " + same + (different.isEmpty() ? "" : ", not: " + different));
 		System.out.println("Duty rows (slot and weekdays): " + rows + ", bodies: " + bodies.size() + ", groups: " + groups.size());
 		System.out.println("Duties as saved: " + dutyBytes / 1000 + " kB; as layers: bodies and groups once " + sharedBytes / 1000 + " kB + assignments " + assignmentBytes / 1000 + " kB");

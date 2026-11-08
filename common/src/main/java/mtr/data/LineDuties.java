@@ -526,7 +526,8 @@ public final class LineDuties {
 				}
 				if (!basis.equals(depotRecord.basis)) {
 					why.accept("depot " + depotId + "'s duties were planned from other timetables or sidings (" + depotRecord.basis + ", now " + basis + ")");
-					return null;
+					// The duty groups whose own services and sidings are the same may still be kept (duty groups, step 2)
+					return keepParts(depotRecord, slots, fastestTimes, dayStartMillis, turnTimes, measured, why);
 				}
 				record = record == null ? depotRecord : record;
 			}
@@ -563,7 +564,8 @@ public final class LineDuties {
 					text.append(i == 0 ? "" : "; ").append(breaks.get(i));
 				}
 				why.accept(text.append(breaks.size() > 5 ? "; ..." : "").toString());
-				return null;
+				// The duty groups whose duties still hold are kept, the others planned again (duty groups, step 2)
+				return keepParts(kept, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, breaks);
 			}
 			kept.kept = true;
 			// Kept with settings changed since: a player may want them planned again by the new settings
@@ -583,7 +585,17 @@ public final class LineDuties {
 		 *                 just now (round 4, step 3), by siding, in place of what was kept; null to plan with what was kept
 		 */
 		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured) {
-			final DutyGenerator.PlanInputs inputs = inputsOf(turnTimes, measured);
+			return build(fastestTimes, dayStartMillis, inputsOf(turnTimes, measured), measured, null, null);
+		}
+
+		/**
+		 * Plans the unit by duty groups (duty groups, step 2): each group of sidings in turn, leaving the services it takes to
+		 * the groups after it, and within it each day type ({@link DutyGenerator#dayTypes}) on its own.
+		 *
+		 * @param kept  the duty groups kept as they were, by key, or null to plan them all
+		 * @param slots the duties the sidings have, which the groups kept take theirs from
+		 */
+		private Plan build(Function<Route, long[][]> fastestTimes, int dayStartMillis, DutyGenerator.PlanInputs inputs, Map<Long, DepotLegs> measured, Map<String, Part> kept, Map<Long, List<DepotDuties.Slot>> slots) {
 			final Plan plan = new Plan(name);
 			plan.basis = basis;
 			plan.minReverseMillis = minReverseMillis;
@@ -592,43 +604,75 @@ public final class LineDuties {
 			final long maxLayover = getMaxLayover();
 			for (final Group group : groups) {
 				final List<Route> missing = new ArrayList<>();
-				final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(group.routes, route -> fastestTimes.apply((Route) route), dayStartMillis, route -> missing.add((Route) route));
+				final List<DutyGenerator.ServiceInput> allServices = DutyGenerator.servicesOf(group.routes, route -> fastestTimes.apply((Route) route), dayStartMillis, route -> missing.add((Route) route));
+				allServices.removeIf(service -> taken.contains(service.routeId + "@" + service.service));
+				final List<DutyGenerator.ServiceInput> services = new ArrayList<>(allServices);
 				services.removeIf(service -> unitTaken.contains(service.routeId + "@" + service.service));
 				plan.missingTimes += missing.size();
 				if (services.isEmpty() || group.sidings.isEmpty()) {
 					continue;
 				}
 				final List<DutyGenerator.SidingInput> groupSidings = withMeasured(group.sidings, measured);
-				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, groupSidings, stationOf, maxLayover, inputs);
-				plan.sidings.putAll(result.sidings);
-				plan.returnSidings.putAll(result.returnSidings);
-				result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
-				plan.trains += result.trains;
-				plan.uncovered += result.uncovered;
-				final Pool pool = new Pool(String.join("/", group.vehicles), 0, group.available, result.uncovered);
+				final Pool pool = new Pool(String.join("/", group.vehicles), 0, group.available, 0);
 				plan.pools.add(pool);
-				result.issues.stream().filter(issue -> !plan.issues.contains(issue)).forEach(plan.issues::add);
 				plan.available += group.available;
-				if (result.uncovered > 0) {
-					// Where to add trains: the siding nearest the line
-					DutyGenerator.SidingInput nearest = null;
-					long nearestMillis = Long.MAX_VALUE;
-					for (final DutyGenerator.SidingInput siding : groupSidings) {
-						final long millis = siding.links == null || siding.links.isEmpty() ? Long.MAX_VALUE : Collections.min(siding.links.values());
-						if (siding.maxTrains >= 0 && (nearest == null || millis < nearestMillis)) {
-							nearest = siding;
-							nearestMillis = millis;
+				int groupTrains = 0;
+				int groupNeeded = 0;
+				final Map<Long, List<DepotDuties.Slot>> groupSlots = new TreeMap<>();
+				for (final int mask : DutyGenerator.dayTypes(services)) {
+					final Part part = new Part(partKey(group, mask), partBasis(group, DutyGenerator.onDays(allServices, mask), mask, dayStartMillis));
+					final Part keptPart = kept == null ? null : kept.get(part.key);
+					final Map<Long, List<DepotDuties.Slot>> partSlots;
+					if (keptPart != null && keptPart.basis.equals(part.basis)) {
+						// Kept as it was: its own days of the sidings' duties, with what was found when it was planned
+						partSlots = slotsOn(group, slots, mask);
+						part.trains = keptPart.trains;
+						part.needed = keptPart.needed;
+						part.uncovered = keptPart.uncovered;
+						part.issues.addAll(keptPart.issues);
+						keptPart.returnSidings.forEach(plan.returnSidings::put);
+						part.returnSidings.putAll(keptPart.returnSidings);
+						plan.keptParts.add(part.key);
+					} else {
+						final DutyGenerator.Result result = DutyGenerator.generateDayType(services, mask, groupSidings, stationOf, maxLayover, inputs, true);
+						partSlots = result.sidings;
+						part.trains = result.trains;
+						part.uncovered = result.uncovered;
+						part.issues.addAll(result.issues);
+						part.returnSidings.putAll(result.returnSidings);
+						plan.returnSidings.putAll(result.returnSidings);
+						if (result.uncovered > 0) {
+							final DutyGenerator.SidingInput nearest = nearestLimited(groupSidings);
+							part.needed = group.available + (nearest == null ? 0 : extraTrains(services, mask, groupSidings, nearest, maxLayover, inputs));
+						} else {
+							part.needed = result.trains;
+						}
+						if (kept != null) {
+							plan.plannedParts.add(part.key);
 						}
 					}
-					pool.needed = group.available + (nearest == null ? 0 : extraTrains(services, groupSidings, nearest, maxLayover, inputs));
-					plan.needed += pool.needed;
-					if (nearest != null && plan.suggestedSiding.isEmpty()) {
+					mergeSlots(groupSlots, partSlots, mask);
+					plan.parts.add(part);
+					part.issues.stream().filter(issue -> !plan.issues.contains(issue)).forEach(plan.issues::add);
+					pool.uncovered += part.uncovered;
+					groupTrains = Math.max(groupTrains, part.trains);
+					groupNeeded = Math.max(groupNeeded, part.needed);
+				}
+				// In the order of the weekdays, as one plan gives them
+				groupSlots.values().forEach(list -> list.forEach(slot -> slot.days.sort(Comparator.comparingInt(day -> Integer.numberOfTrailingZeros(day.weekdays)))));
+				plan.sidings.putAll(groupSlots);
+				groupSlots.values().forEach(list -> list.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
+				plan.trains += groupTrains;
+				plan.uncovered += pool.uncovered;
+				pool.needed = groupNeeded;
+				plan.needed += groupNeeded;
+				if (pool.uncovered > 0 && plan.suggestedSiding.isEmpty()) {
+					// Where to add trains: the siding nearest the line
+					final DutyGenerator.SidingInput nearest = nearestLimited(groupSidings);
+					if (nearest != null) {
 						final Depot depot = group.depotOf.get(nearest.sidingId);
 						plan.suggestedSiding = (depot == null || depot.name.isEmpty() ? "" : IGui.formatStationName(depot.name) + " ") + IGui.formatStationName(group.sidingNames.getOrDefault(nearest.sidingId, ""));
 					}
-				} else {
-					pool.needed = result.trains;
-					plan.needed += result.trains;
 				}
 			}
 			// Duties that don't settle into the same week each week were planned a week on its own, so what they'd need isn't
@@ -637,6 +681,209 @@ public final class LineDuties {
 				plan.needed = -1;
 				plan.pools.forEach(pool -> pool.needed = -1);
 			}
+			return plan;
+		}
+
+		/**
+		 * @return the siding nearest the line by its way out that holds a number of trains, to add trains to, or null
+		 */
+		private static DutyGenerator.SidingInput nearestLimited(List<DutyGenerator.SidingInput> sidings) {
+			DutyGenerator.SidingInput nearest = null;
+			long nearestMillis = Long.MAX_VALUE;
+			for (final DutyGenerator.SidingInput siding : sidings) {
+				final long millis = siding.links == null || siding.links.isEmpty() ? Long.MAX_VALUE : Collections.min(siding.links.values());
+				if (siding.maxTrains >= 0 && (nearest == null || millis < nearestMillis)) {
+					nearest = siding;
+					nearestMillis = millis;
+				}
+			}
+			return nearest;
+		}
+
+		/**
+		 * @return the key of a duty group: the group of sidings and its day type
+		 */
+		private static String partKey(Group group, int mask) {
+			return String.join("/", group.vehicles) + "#" + digest(group.serviceTypes + "|" + group.routeIds + "|" + group.sidings.stream().map(siding -> String.valueOf(siding.sidingId)).collect(java.util.stream.Collectors.joining(","))).substring(0, 8) + "|" + mask;
+		}
+
+		/**
+		 * @return what a duty group is made of, leaving out every time: its services on its days (their stops, links and
+		 * orders), its sidings and their trains, the pools' trains and the start of the operating day
+		 */
+		private String partBasis(Group group, List<DutyGenerator.ServiceInput> services, int mask, int dayStartMillis) {
+			final StringBuilder builder = new StringBuilder().append(mask).append(':');
+			services.stream().sorted(Comparator.comparingLong((DutyGenerator.ServiceInput service) -> service.routeId).thenComparingInt(service -> service.service).thenComparingInt(service -> service.weekdays)).forEach(service -> {
+				builder.append(service.routeId).append('@').append(service.service).append('/').append(service.weekdays).append('/').append(service.startMillis).append('/').append(Arrays.toString(service.platformIds)).append(Arrays.toString(service.pass));
+				builder.append('/').append(service.linkRoute).append(',').append(service.linkService).append(',').append(service.linkFromStop).append(',').append(service.linkToStop);
+				builder.append('/').append(service.deployStop).append(',').append(service.deployDepot).append(',').append(service.returnStop).append(',').append(service.returnDepot).append(';');
+			});
+			builder.append('[').append(group.serviceTypes).append(group.routeIds).append(']');
+			group.sidings.forEach(siding -> builder.append(siding.sidingId).append('/').append(siding.maxTrains).append(';'));
+			group.depotOf.values().stream().map(depot -> depot.id).distinct().sorted().forEach(depotId -> {
+				final Depot depot = group.depotOf.values().stream().filter(other -> other.id == depotId).findFirst().orElse(null);
+				builder.append("pools:").append(depotId).append(depot == null ? "" : depot.poolFleets);
+			});
+			builder.append("day:").append(dayStartMillis);
+			return digest(builder.toString());
+		}
+
+		/**
+		 * @return the duties of the group's sidings on these days, as copies; a slot keeps its place and number
+		 */
+		private static Map<Long, List<DepotDuties.Slot>> slotsOn(Group group, Map<Long, List<DepotDuties.Slot>> slots, int mask) {
+			final Map<Long, List<DepotDuties.Slot>> on = new TreeMap<>();
+			group.sidings.forEach(siding -> {
+				final List<DepotDuties.Slot> sidingSlots = slots.get(siding.sidingId);
+				if (sidingSlots == null) {
+					return;
+				}
+				final List<DepotDuties.Slot> copies = new ArrayList<>();
+				sidingSlots.forEach(slot -> {
+					final DepotDuties.Slot copy = new DepotDuties.Slot();
+					copy.id = slot.id;
+					copy.start = slot.start;
+					slot.days.forEach(day -> {
+						if ((day.weekdays & ~mask) == 0) {
+							copy.days.add(day.copy());
+						}
+					});
+					copies.add(copy);
+				});
+				on.put(siding.sidingId, copies);
+			});
+			return on;
+		}
+
+		/**
+		 * Adds a duty group's duties to the slots of its sidings, a slot running the duty of its place in each group.
+		 */
+		private static void mergeSlots(Map<Long, List<DepotDuties.Slot>> merged, Map<Long, List<DepotDuties.Slot>> part, int mask) {
+			part.forEach((sidingId, slots) -> {
+				final List<DepotDuties.Slot> mergedSlots = merged.computeIfAbsent(sidingId, key -> new ArrayList<>());
+				for (int i = 0; i < slots.size(); i++) {
+					while (mergedSlots.size() <= i) {
+						final DepotDuties.Slot slot = new DepotDuties.Slot();
+						slot.id = DepotDuties.defaultId(sidingId, mergedSlots.size());
+						mergedSlots.add(slot);
+					}
+					final DepotDuties.Slot from = slots.get(i);
+					final DepotDuties.Slot into = mergedSlots.get(i);
+					if (into.days.isEmpty()) {
+						into.id = from.id;
+						into.start = from.start;
+					}
+					for (final DepotDuties.DayDuty day : from.days) {
+						day.weekdays &= mask;
+						if (day.weekdays != 0) {
+							into.days.add(day);
+						}
+					}
+				}
+			});
+			// Slots with nothing at the end, as a group with fewer trains leaves them, aren't kept
+			merged.values().forEach(list -> {
+				while (!list.isEmpty() && list.get(list.size() - 1).days.isEmpty()) {
+					list.remove(list.size() - 1);
+				}
+			});
+		}
+
+		private Plan keepParts(Plan record, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why) {
+			return keepParts(record, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, Collections.emptyList());
+		}
+
+		/**
+		 * Keeps the duty groups planned from the same services and sidings whose duties still hold, and plans the others again
+		 * (duty groups, step 2): a group broken, or changed, takes the groups after it on the same days and routes with it,
+		 * as it may run other services than before. What comes out is checked whole; broken anywhere, it is planned again.
+		 *
+		 * @param breaks the rules the duties broke as they are
+		 * @return the plan, or null to plan them all again, as when the record has no duty groups or none can be kept
+		 */
+		private Plan keepParts(Plan record, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why, List<DutyCheck.Break> breaks) {
+			if (record.parts.isEmpty()) {
+				return null;
+			}
+			final Map<String, Part> recorded = new HashMap<>();
+			record.parts.forEach(part -> recorded.put(part.key, part));
+			// The groups each kept part would be, by its day type now, and whether its duties fit those days
+			final Map<String, Part> candidates = new HashMap<>();
+			final Map<String, Integer> candidateMasks = new HashMap<>();
+			final Map<String, Group> candidateGroups = new HashMap<>();
+			final List<String> order = new ArrayList<>();
+			final Map<String, Set<Long>> partRoutes = new HashMap<>();
+			final Map<String, Integer> partMasks = new HashMap<>();
+			for (final Group group : groups) {
+				final List<DutyGenerator.ServiceInput> allServices = DutyGenerator.servicesOf(group.routes, route -> fastestTimes.apply((Route) route), dayStartMillis, route -> {
+				});
+				allServices.removeIf(service -> taken.contains(service.routeId + "@" + service.service));
+				final List<Integer> types = DutyGenerator.dayTypes(allServices);
+				// Each duty of the group's sidings has to lie within one day type, or none of its parts is kept
+				final boolean fits = group.sidings.stream().allMatch(siding -> slots.getOrDefault(siding.sidingId, Collections.emptyList()).stream().allMatch(slot -> slot.days.stream().allMatch(day -> types.stream().anyMatch(mask -> (day.weekdays & ~mask) == 0))));
+				final Set<Long> routeIds = new HashSet<>();
+				group.routes.forEach(route -> routeIds.add(route.id));
+				for (final int mask : types) {
+					final String key = partKey(group, mask);
+					order.add(key);
+					partRoutes.put(key, routeIds);
+					partMasks.put(key, mask);
+					final Part part = recorded.get(key);
+					if (fits && part != null && part.basis.equals(partBasis(group, DutyGenerator.onDays(allServices, mask), mask, dayStartMillis))) {
+						candidates.put(key, part);
+						candidateMasks.put(key, mask);
+						candidateGroups.put(key, group);
+					}
+				}
+			}
+			// Broken where its duties break a rule
+			breaks.forEach(broken -> candidateGroups.forEach((key, group) -> {
+				if ((candidateMasks.get(key) >> broken.day & 1) != 0 && group.sidings.stream().anyMatch(siding -> siding.sidingId == broken.sidingId)) {
+					candidates.remove(key);
+				}
+			}));
+			// A group planned again takes the later groups on its days and routes with it
+			for (int i = 0; i < order.size(); i++) {
+				if (candidates.containsKey(order.get(i))) {
+					continue;
+				}
+				for (int j = i + 1; j < order.size(); j++) {
+					final String later = order.get(j);
+					if ((partMasks.get(later) & partMasks.get(order.get(i))) != 0 && !Collections.disjoint(partRoutes.get(later), partRoutes.get(order.get(i)))) {
+						candidates.remove(later);
+					}
+				}
+			}
+			if (candidates.isEmpty()) {
+				why.accept("no duty group can be kept");
+				return null;
+			}
+			final DutyGenerator.PlanInputs inputs = inputsOf(turnTimes, measured);
+			final Plan plan = build(fastestTimes, dayStartMillis, inputs, measured, candidates, slots);
+			// Checked whole: the groups kept and those planned again together
+			final List<DutyCheck.Group> checkGroups = new ArrayList<>();
+			for (final Group group : groups) {
+				final Map<Long, List<DepotDuties.Slot>> groupSlots = new TreeMap<>();
+				group.sidings.forEach(siding -> {
+					final List<DepotDuties.Slot> sidingSlots = plan.sidings.get(siding.sidingId);
+					if (sidingSlots != null && !sidingSlots.isEmpty()) {
+						groupSlots.put(siding.sidingId, sidingSlots);
+					}
+				});
+				if (!groupSlots.isEmpty()) {
+					checkGroups.add(new DutyCheck.Group(DutyGenerator.servicesOf(group.routes, route -> fastestTimes.apply((Route) route), dayStartMillis, route -> {
+					}), withMeasured(group.sidings, measured), groupSlots));
+				}
+			}
+			final List<DutyCheck.Break> after = DutyCheck.check(checkGroups, stationOf, getMaxLayover(), inputs);
+			// Those planned again break rules of their own as a plan from scratch would, told as issues; only a kept one broken
+			// counts
+			final boolean keptBroken = after.stream().anyMatch(broken -> plan.keptParts.stream().anyMatch(key -> (partMasks.get(key) >> broken.day & 1) != 0 && candidateGroups.get(key).sidings.stream().anyMatch(siding -> siding.sidingId == broken.sidingId)));
+			if (keptBroken) {
+				why.accept("the duty groups kept don't hold with those planned again");
+				return null;
+			}
+			why.accept("kept " + plan.keptParts.size() + " of " + (plan.keptParts.size() + plan.plannedParts.size()) + " duty groups, planned again " + plan.plannedParts);
 			return plan;
 		}
 
@@ -682,13 +929,13 @@ public final class LineDuties {
 		/**
 		 * @return how few trains added to the siding run as many services as any number of trains could, found by halving
 		 */
-		private int extraTrains(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, long maxLayover, DutyGenerator.PlanInputs inputs) {
-			final int best = uncoveredWith(services, sidings, siding, DepotDuties.MAX_SLOTS, maxLayover, inputs);
+		private int extraTrains(List<DutyGenerator.ServiceInput> services, int mask, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, long maxLayover, DutyGenerator.PlanInputs inputs) {
+			final int best = uncoveredWith(services, mask, sidings, siding, DepotDuties.MAX_SLOTS, maxLayover, inputs);
 			int low = 0;
 			int high = Math.max(0, DepotDuties.MAX_SLOTS - siding.maxTrains);
 			while (low < high) {
 				final int middle = (low + high) / 2;
-				if (uncoveredWith(services, sidings, siding, siding.maxTrains + middle, maxLayover, inputs) <= best) {
+				if (uncoveredWith(services, mask, sidings, siding, siding.maxTrains + middle, maxLayover, inputs) <= best) {
 					high = middle;
 				} else {
 					low = middle + 1;
@@ -697,10 +944,10 @@ public final class LineDuties {
 			return low;
 		}
 
-		private int uncoveredWith(List<DutyGenerator.ServiceInput> services, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, int trains, long maxLayover, DutyGenerator.PlanInputs inputs) {
+		private int uncoveredWith(List<DutyGenerator.ServiceInput> services, int mask, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, int trains, long maxLayover, DutyGenerator.PlanInputs inputs) {
 			final List<DutyGenerator.SidingInput> changed = new ArrayList<>();
 			sidings.forEach(other -> changed.add(other == siding ? new DutyGenerator.SidingInput(other.sidingId, Math.min(trains, DepotDuties.MAX_SLOTS), other.links, other.depotId) : other));
-			return DutyGenerator.generate(services, changed, stationOf, maxLayover, inputs).uncovered;
+			return DutyGenerator.generateDayType(services, mask, changed, stationOf, maxLayover, inputs, false).uncovered;
 		}
 	}
 
@@ -788,6 +1035,30 @@ public final class LineDuties {
 	}
 
 	/**
+	 * A duty group as planned (duty groups, step 2): a group of sidings on one day type, what it was planned from and what
+	 * was found, so it can be kept while its own services and sidings stay the same and its duties still hold, however the
+	 * other groups change.
+	 */
+	public static final class Part {
+
+		public final String key;
+		public final String basis;
+		public int trains;
+		public int needed;
+		/**
+		 * Services with no train, counted once for each day of the week they run.
+		 */
+		public int uncovered;
+		public final List<String> issues = new ArrayList<>();
+		public final Map<String, Long> returnSidings = new TreeMap<>();
+
+		public Part(String key, String basis) {
+			this.key = key;
+			this.basis = basis;
+		}
+	}
+
+	/**
 	 * What a group of sidings planned apart needs and has (as {@link Plan#needed}).
 	 */
 	public static final class Pool {
@@ -798,7 +1069,7 @@ public final class LineDuties {
 		/**
 		 * Services no train of the group was free for, counted once for each day of the week they run.
 		 */
-		public final int uncovered;
+		public int uncovered;
 
 		public Pool(String label, int needed, int available, int uncovered) {
 			this.label = label;
@@ -872,6 +1143,13 @@ public final class LineDuties {
 		 * another: one short while another has more than it needs isn't covered by the total.
 		 */
 		public final List<Pool> pools = new ArrayList<>();
+		/**
+		 * The duty groups it was planned as (record 5); and, planned with some kept as they were, those kept and those
+		 * planned again, by key, for the log.
+		 */
+		public final List<Part> parts = new ArrayList<>();
+		public final List<String> keptParts = new ArrayList<>();
+		public final List<String> plannedParts = new ArrayList<>();
 
 		private Plan(String lineNames) {
 			this.lineNames = lineNames;
@@ -908,6 +1186,22 @@ public final class LineDuties {
 				writer.writeInt(pool.available);
 				writer.writeInt(pool.uncovered);
 			});
+			// From record 5
+			writer.writeVarInt(Math.min(parts.size(), MAX_RECORD_ITEMS));
+			parts.stream().limit(MAX_RECORD_ITEMS).forEach(part -> {
+				writeString(writer, part.key);
+				writeString(writer, part.basis);
+				writer.writeInt(part.trains);
+				writer.writeInt(part.needed);
+				writer.writeInt(part.uncovered);
+				writer.writeVarInt(Math.min(part.issues.size(), MAX_PART_ITEMS));
+				part.issues.stream().limit(MAX_PART_ITEMS).forEach(issue -> writeString(writer, issue));
+				writer.writeVarInt(Math.min(part.returnSidings.size(), MAX_PART_ITEMS));
+				part.returnSidings.entrySet().stream().limit(MAX_PART_ITEMS).forEach(entry -> {
+					writeString(writer, entry.getKey());
+					writer.writeLong(entry.getValue());
+				});
+			});
 			return writer.toBytes();
 		}
 
@@ -922,7 +1216,7 @@ public final class LineDuties {
 				final transitsim.io.ByteArrayBinary.Reader reader = new transitsim.io.ByteArrayBinary.Reader(bytes);
 				// Record 3, before the groups' counts, reads the same without them
 				final int version = reader.readByte();
-				if (version != RECORD_VERSION && version != 3) {
+				if (version < 3 || version > RECORD_VERSION) {
 					return null;
 				}
 				final Plan plan = new Plan(lineNames);
@@ -946,13 +1240,29 @@ public final class LineDuties {
 						plan.pools.add(new Pool(readString(reader), reader.readInt(), reader.readInt(), reader.readInt()));
 					}
 				}
+				if (version >= 5) {
+					for (int i = Math.min(reader.readVarInt(), MAX_RECORD_ITEMS); i > 0; i--) {
+						final Part part = new Part(readString(reader), readString(reader));
+						part.trains = reader.readInt();
+						part.needed = reader.readInt();
+						part.uncovered = reader.readInt();
+						for (int j = Math.min(reader.readVarInt(), MAX_PART_ITEMS); j > 0; j--) {
+							part.issues.add(readString(reader));
+						}
+						for (int j = Math.min(reader.readVarInt(), MAX_PART_ITEMS); j > 0; j--) {
+							part.returnSidings.put(readString(reader), reader.readLong());
+						}
+						plan.parts.add(part);
+					}
+				}
 				return plan;
 			} catch (RuntimeException e) {
 				return null;
 			}
 		}
 
-		private static final int RECORD_VERSION = 4;
+		private static final int RECORD_VERSION = 5;
+		private static final int MAX_PART_ITEMS = 256;
 		private static final int MAX_RECORD_ITEMS = 4096;
 		private static final int MAX_STRING_BYTES = 65536;
 

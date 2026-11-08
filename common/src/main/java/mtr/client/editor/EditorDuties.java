@@ -345,7 +345,8 @@ public final class EditorDuties implements IPacket {
 		final long maxLayoverMillis = depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
 
 		return () -> {
-			final DutyGenerator.Result result = DutyGenerator.generateSpread(services, sidings, stationOf, maxLayoverMillis, inputs);
+			// As the server plans them: each timetable's days on their own (duty groups, step 2)
+			final DutyGenerator.Result result = DutyGenerator.generateByDayType(services, sidings, stationOf, maxLayoverMillis, inputs);
 			final DepotDuties duties = new DepotDuties();
 			duties.diagramMode = depot.duties.diagramMode;
 			duties.sidings.putAll(result.sidings);
