@@ -50,6 +50,34 @@ class LineDutiesKeepTest {
 	}
 
 	@Test
+	void buffersAdoptedChangeTheKeyButNotWhatTheDutiesAreMadeOf() {
+		final Route up = route(10, 1, 2), down = route(11, 2, 1);
+		final DataCache dataCache = dataCache(up, down);
+		final LineDuties.Unit before = unit(dataCache);
+		// Adopted from what was measured (round 4, step 6): planned with, so path generation runs again, but checked
+		final Depot depot = dataCache.depotIdMap.get(1L);
+		depot.setAddedBuffers(new transitsim.plan.Buffers(Collections.singletonMap(transitsim.plan.Buffers.key(transitsim.plan.Buffers.TURN, 2, 2), 40000L)), packet -> {
+		});
+		final LineDuties.Unit after = unit(dataCache);
+		assertNotEquals(before.key, after.key);
+		assertEquals(before.basis, after.basis);
+		// Planned with them, a plan says so in its record
+		assertNotEquals(before.plan(route -> null, 0).buffersKey, after.plan(route -> null, 0).buffersKey);
+		assertEquals("", before.plan(route -> null, 0).buffersKey);
+	}
+
+	@Test
+	void buffersAdoptedAreKeptWithinBounds() {
+		final Depot depot = new Depot(1, TransportMode.TRAIN);
+		final Map<String, Long> millis = new TreeMap<>();
+		millis.put(transitsim.plan.Buffers.key(transitsim.plan.Buffers.OUT, 5, 2), 999999999L);
+		millis.put(transitsim.plan.Buffers.key(transitsim.plan.Buffers.BACK, 2, 5), -5L);
+		depot.setAddedBuffers(new transitsim.plan.Buffers(millis), packet -> {
+		});
+		assertEquals(Collections.singletonMap(transitsim.plan.Buffers.key(transitsim.plan.Buffers.OUT, 5, 2), transitsim.sim.BufferRecorder.MAX_EXCESS_MILLIS), depot.getAddedBuffers().getMillis());
+	}
+
+	@Test
 	void aChangedTimetableChangesWhatTheDutiesAreMadeOf() {
 		final Route up = route(10, 1, 2), down = route(11, 2, 1);
 		final DataCache dataCache = dataCache(up, down);
@@ -66,6 +94,7 @@ class LineDutiesKeepTest {
 		assertEquals(unit.basis, plan.basis);
 		assertEquals(dataCache.networkSettings.minReverseMillis, plan.minReverseMillis, "planned with the network's least time to change ends");
 		plan.minReverseMillis = 45000;
+		plan.buffersKey = "abc";
 		plan.trains = 3;
 		plan.needed = 4;
 		plan.issues.add("SHORT_TURNAROUND 2 25000 30000");
@@ -75,6 +104,7 @@ class LineDutiesKeepTest {
 		assertNotNull(read);
 		assertEquals(plan.basis, read.basis);
 		assertEquals(45000, read.minReverseMillis);
+		assertEquals("abc", read.buffersKey);
 		assertEquals(3, read.trains);
 		assertEquals(4, read.needed);
 		assertEquals(plan.missingTimes, read.missingTimes);

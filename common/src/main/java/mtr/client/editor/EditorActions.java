@@ -182,9 +182,24 @@ public final class EditorActions implements IPacket {
 				}
 			}
 		}
-		// Forget how much longer than planned its trains were measured to take (D1)
+		// Forget how much longer than planned its trains were measured to take (D1); what was adopted stays
 		if (operation.has("clearBuffers") && operation.get("clearBuffers").getAsBoolean()) {
 			depot.clearBuffers(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+		}
+		// The time added to the ways out, turns round and ways back, by key in seconds (round 4, step 6); all of them
+		if (operation.has("addedBuffers") && operation.get("addedBuffers").isJsonObject()) {
+			final Map<String, Long> added = new TreeMap<>();
+			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("addedBuffers").entrySet()) {
+				try {
+					final long[] parts = transitsim.plan.Buffers.parse(entry.getKey());
+					final long seconds = entry.getValue().getAsLong();
+					if (seconds > 0) {
+						added.put(transitsim.plan.Buffers.key((int) parts[0], parts[1], parts[2]), seconds * 1000);
+					}
+				} catch (Exception ignored) {
+				}
+			}
+			depot.setAddedBuffers(added.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(added), packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
 		}
 		if (operation.has("sidings")) {
 			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("sidings").entrySet()) {

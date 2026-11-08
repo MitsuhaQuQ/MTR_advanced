@@ -731,6 +731,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - （2026-11-06 已做，0.21.0）P2-D 运用有自己的编号，挪存车线不变；过夜可以按编号接本车厂别的存车线的运用；运用可以写明回同车池的哪条存车线（A 出 B 入）。运用仍按存车线分组存放（兼容层），出库和营业、回送还没有拆成单独的任务；回非同车池的存车线不支持。
   - 规划的车池回库是按"下一次出车的存车线"近似运行时的选法；车池跨了规划分组（同车型、不同线路组）时，规划只在自己的分组里算。
 - **规划和实际运行对不上的地方**（2026-11-06 排查 12 站时整理）：
+  - （优化第四轮第 6 步：D1 实测余量只作建议，规划用车厂上采用的附加时间 `added_buffers`；组件不变，`DutyGenerator.PlanInputs.buffers` 由宿主改传采用的值）
   - （优化第四轮第 5 步：巡航上限按"计划到站 − 早到阈值"求，早到不超过阈值的全速跑、在站台多停；阈值经 `TrainRules.Train.getEarlyThresholdMillis` 给两个宿主，`SimDataset` 17 版带上；测试 `EarlyArrivalTest`（夹具 `MotionFixture` 改用 `TrainRules.getTargetTicks`，测的是同一条规则）、`SimDatasetTest.theEarlyThresholdReadsBackAndReachesTheRunner`；录好的场景 `terminal-line.txt` 按阈值 0 对照）
   - （优化第四轮第 4 步：现有运用在新的用时下仍满足规划器的全部规则就沿用，有一条被打破才重排。组件 `transitsim.planning.DutyCheck` 用和 `DutyPlanner` 同一套规则检查：班次还在、出库有路、到站 + 换端 + 换站台用时 ≤ 下一班发车、停留不超过线路允许、站台被别的车占用时改在折返线上等且折返线同时只停一列、回库有路、过夜后从停下的站台接着走；`DutyGenerator.networkOf`、`timetableServicesOf` 从 `generate` 抽出来，规划和检查共用。测试 `DutyCheckTest` 8 项。游戏 `LineDuties.Unit.basis`、`keep`，车厂存档 `auto_duties_basis`）
   - （优化第四轮第 3 步改为：寻路时在轨道段上按运行方向直接算出入库用时，当次就用来排运用，运用路径的出库、回库段也是同一条路；不再"估、量、记、重排"）（2026-11-06 已做，0.17.0）出入库用时先估计，实测偏差超过 15 秒才记下并存档，规划用记下的值；寻路开始和失败时客户端不再把换站台当成全都走不通；网页换站台检查和规划一样加 30 秒最短折返。

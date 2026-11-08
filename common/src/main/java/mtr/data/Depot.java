@@ -117,9 +117,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final Map<Long, String> loggedAlarms = new HashMap<>();
 	/**
-	 * What the duties are planned with: the recorder's on the server, as sent on the clients.
+	 * How much longer than planned its trains were measured to take: the recorder's on the server, as sent on the clients.
+	 * Suggestions only since optimisation round 4, step 6; the duties are planned with {@link #addedBuffers}.
 	 */
 	private transitsim.plan.Buffers buffers = transitsim.plan.Buffers.NONE;
+	/**
+	 * The time added to the ways out, turns round and ways back, as a player adopted it from what was measured or set it
+	 * (round 4, step 6, user 2026-11-08: kept on the depot); what the duties are planned with.
+	 */
+	private transitsim.plan.Buffers addedBuffers = transitsim.plan.Buffers.NONE;
 	/**
 	 * How the trains of each pool of its sidings run (R1), by the pool's key; a pool left out runs as its first siding has
 	 * it set.
@@ -281,6 +287,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
 	private static final String KEY_POOL_FLEETS = "pool_fleets";
 	private static final String KEY_MEASURED_BUFFERS = "measured_buffers";
+	private static final String KEY_ADDED_BUFFERS = "added_buffers";
 	/**
 	 * What the auto duties were planned from and what the plan found ({@link LineDuties.Plan#toBytes}), so they are kept
 	 * while they still hold (round 4, step 4).
@@ -384,6 +391,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePackHelper.iterateArrayValue(KEY_MEASURED_BUFFERS, value -> bufferSamples.add(value.asIntegerValue().asLong()));
 		bufferRecorder.readList(bufferSamples);
 		buffers = bufferRecorder.getBuffers();
+		final List<Long> added = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_ADDED_BUFFERS, value -> added.add(value.asIntegerValue().asLong()));
+		addedBuffers = limitAdded(transitsim.plan.Buffers.fromList(added));
 	}
 
 	@Deprecated
@@ -443,6 +453,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		frequenciesMigrated = packet.readBoolean();
 		readHeadways(packet);
 		readBuffers(packet);
+		addedBuffers = readBufferList(packet);
 	}
 
 	@Override
@@ -527,11 +538,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		for (final long value : bufferSamples) {
 			messagePacker.packLong(value);
 		}
+		final List<Long> added = addedBuffers.toList();
+		messagePacker.packString(KEY_ADDED_BUFFERS).packArrayHeader(added.size());
+		for (final long value : added) {
+			messagePacker.packLong(value);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 24;
+		return super.messagePackLength() + 25;
 	}
 
 	@Override
@@ -572,29 +588,78 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		packet.writeBoolean(frequenciesMigrated);
 		writeHeadways(packet);
 		writeBuffers(packet);
+		writeBufferList(packet, addedBuffers);
 	}
 
 	private void writeBuffers(FriendlyByteBuf packet) {
-		final List<Long> list = buffers.toList();
+		writeBufferList(packet, buffers);
+	}
+
+	private void readBuffers(FriendlyByteBuf packet) {
+		buffers = readBufferList(packet);
+	}
+
+	private static void writeBufferList(FriendlyByteBuf packet, transitsim.plan.Buffers bufferList) {
+		final List<Long> list = bufferList.toList();
 		packet.writeVarInt(list.size());
 		list.forEach(packet::writeLong);
 	}
 
-	private void readBuffers(FriendlyByteBuf packet) {
+	private static transitsim.plan.Buffers readBufferList(FriendlyByteBuf packet) {
 		final int size = packet.readVarInt();
+		if (size < 0 || size > 1 + 4 * MAX_ADDED_BUFFERS) {
+			throw new IllegalArgumentException("Too many buffers: " + size);
+		}
 		final List<Long> list = new ArrayList<>();
 		for (int i = 0; i < size; i++) {
 			list.add(packet.readLong());
 		}
-		buffers = transitsim.plan.Buffers.fromList(list);
+		return transitsim.plan.Buffers.fromList(list);
 	}
 
 	/**
-	 * @return how much longer than planned its trains were measured to take out, round and back, which its duties are
-	 * planned with (D1)
+	 * At most as many as a recorder keeps, each from nothing to the most a recorder takes.
+	 */
+	private static final int MAX_ADDED_BUFFERS = 1024;
+
+	private static transitsim.plan.Buffers limitAdded(transitsim.plan.Buffers added) {
+		final Map<String, Long> millis = new TreeMap<>();
+		added.getMillis().forEach((key, value) -> {
+			if (millis.size() < MAX_ADDED_BUFFERS && value > 0) {
+				millis.put(key, Math.min(value, transitsim.sim.BufferRecorder.MAX_EXCESS_MILLIS));
+			}
+		});
+		return millis.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(millis);
+	}
+
+	/**
+	 * @return how much longer than planned its trains were measured to take out, round and back (D1): suggestions, which
+	 * a player may adopt ({@link #getAddedBuffers})
 	 */
 	public transitsim.plan.Buffers getBuffers() {
 		return buffers;
+	}
+
+	/**
+	 * @return the time added to the ways out, turns round and ways back that its duties are planned with, as adopted (round
+	 * 4, step 6)
+	 */
+	public transitsim.plan.Buffers getAddedBuffers() {
+		return addedBuffers;
+	}
+
+	/**
+	 * Sets the time added to the ways out, turns round and ways back, from the web editor (round 4, step 6).
+	 */
+	public void setAddedBuffers(transitsim.plan.Buffers newAddedBuffers, Consumer<FriendlyByteBuf> sendPacket) {
+		addedBuffers = limitAdded(newAddedBuffers);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_ADDED_BUFFERS);
+		writeBufferList(packet, addedBuffers);
+		sendPacket.accept(packet);
+		isDirty = true;
 	}
 
 	/**
@@ -691,6 +756,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			} else if (bufferRecorder.hasSamples()) {
 				buffers = bufferRecorder.getBuffers();
 			}
+		} else if (KEY_ADDED_BUFFERS.equals(key)) {
+			addedBuffers = limitAdded(readBufferList(packet));
 		} else if (KEY_VEHICLE_SETTINGS.equals(key)) {
 			readVehicleSettings(packet);
 		} else if (KEY_FREQUENCIES_MIGRATED.equals(key)) {
@@ -2281,7 +2348,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				sidingInput.poolKey = siding.getPoolKey();
 				sidingInputs.add(sidingInput);
 			});
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getBuffers(), dataCache.networkSettings.minReverseMillis);
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getAddedBuffers(), dataCache.networkSettings.minReverseMillis);
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();

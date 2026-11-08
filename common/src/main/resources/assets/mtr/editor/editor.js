@@ -251,7 +251,7 @@
 		if (!shortfall || !shortfall.replan) return "";
 		const parts = shortfall.replan.split(";").map(item => {
 			const [name, then, now] = item.split(":");
-			return name === "minReverse" ? tr("换端最短时间 {0} 秒 → {1} 秒", Math.round(+then / 1000), Math.round(+now / 1000)) : name;
+			return name === "minReverse" ? tr("换端最短时间 {0} 秒 → {1} 秒", Math.round(+then / 1000), Math.round(+now / 1000)) : name === "buffers" ? tr("采用的实测余量变了") : name;
 		});
 		return tr("运用是按原来的设置排的（{0}）。现在的运用照样接得上，所以没有自动重排；按新设置重排可能更省车，需要时在车厂右键菜单里选“重新排运用”。", parts.join("，"));
 	}
@@ -389,7 +389,7 @@
 		});
 		// What a depot runs goes first, so its duties are applied to the routes and sidings as drafted
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
-			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null, serviceTypes: entry.serviceTypes || null, clearBuffers: Boolean(entry.clearBuffers) });
+			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null, serviceTypes: entry.serviceTypes || null, clearBuffers: Boolean(entry.clearBuffers), addedBuffers: entry.addedBuffers || null });
 			owners.push({ depotOf: depotId });
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
@@ -4485,13 +4485,19 @@
 				${boxes || `<span class="hint">${tr("先在上面选车厂负责的线路，放进草稿后再打开这里分给存车线")}</span>`}
 			</fieldset>`;
 		}).join("");
-		// How much longer than planned its trains were measured to take out, round and back (D1)
+		// How much longer than planned its trains were measured to take out, round and back (D1), as suggestions, and the time
+		// adopted, which the duties are planned with (round 4, step 6)
 		const bufferKinds = { out: tr("出库"), turn: tr("折返"), back: tr("回库") };
-		const bufferRows = (depot.buffers || []).map(buffer => `<tr><td>${escapeHtml(bufferKinds[buffer.kind] || buffer.kind)}</td><td>${escapeHtml(buffer.from)} → ${escapeHtml(buffer.to)}</td><td>+${buffer.seconds} s</td></tr>`).join("");
+		const addedOf = buffer => current.addedBuffers ? current.addedBuffers[buffer.key] : buffer.added;
+		const bufferRows = (depot.buffers || []).map(buffer => {
+			const added = addedOf(buffer);
+			return `<tr data-buffer-row="${escapeHtml(buffer.key)}"><td>${escapeHtml(bufferKinds[buffer.kind] || buffer.kind)}</td><td>${escapeHtml(buffer.from)} → ${escapeHtml(buffer.to)}</td><td>${buffer.seconds ? tr("实测 +{0} 秒", buffer.seconds) : tr("没有实测")}</td>
+				<td><label><input type="checkbox" name="adoptBuffer"${added ? " checked" : ""}> ${tr("采用")}</label> <input type="number" name="addedSeconds" min="1" max="1200" value="${added || buffer.seconds || ""}"> ${trc("seconds unit", "秒")}</td></tr>`;
+		}).join("");
 		const bufferSection = `<h3>${tr("实测余量")}</h3>
-			<p class="hint">${tr("列车实际比计划多用的时间（最近 20 次的 85% 分位，多 15 秒以上才记），生成运用时加在折返和出入库上，时刻表不变。")}</p>
+			<p class="hint">${tr("列车实际比计划多用的时间（最近 20 次的 85% 分位，多 15 秒以上才记），只作建议。勾上“采用”的才加在出入库和折返上排运用，时刻表不变；采用的变了，现有运用接得上就不自动重排，在车厂右键菜单里“重新排运用”。")}</p>
 			${bufferRows ? `<table class="buffers"><tbody>${bufferRows}</tbody></table>
-			<label><input type="checkbox" name="clearBuffers"${current.clearBuffers ? " checked" : ""}> ${tr("清空实测余量")}</label>` : `<p class="hint">${tr("还没有记下")}</p>`}
+			<label><input type="checkbox" name="clearBuffers"${current.clearBuffers ? " checked" : ""}> ${tr("清空实测余量（采用的不变）")}</label>` : `<p class="hint">${tr("还没有记下")}</p>`}
 			<h3>${tr("全网设置")}</h3>
 			<label>${tr("换端最短时间（全网，秒）")} <input type="number" min="0" max="600" name="minReverse" value="${Math.round(minReverseMillis() / 1000)}"></label>`;
 		const cycleLabel = depot.byTimetable ? tr("允许长时间停在线上（两班之间不回库，运用跑完才回）") : tr("列车不回车厂，跑完最后一条线路后折返回第一条");
@@ -4551,11 +4557,23 @@
 			const appliedReverse = (data.networkSettings || {}).minReverseMillis;
 			draft.networkSettings = reverseMillis === appliedReverse ? null : { minReverseMillis: reverseMillis };
 			const clearBox = form.querySelector("input[name=clearBuffers]");
-			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, serviceTypes, clearBuffers: Boolean(clearBox && clearBox.checked) };
+			// The time adopted, by key in seconds, all of them (round 4, step 6)
+			const addedBuffers = {};
+			form.querySelectorAll("[data-buffer-row]").forEach(row => {
+				if (!row.querySelector("input[name=adoptBuffer]").checked) return;
+				const seconds = Math.round(Number(row.querySelector("input[name=addedSeconds]").value));
+				if (!(seconds > 0) || seconds > 1200) bad = true;
+				else addedBuffers[row.dataset.bufferRow] = seconds;
+			});
+			if (bad) return tr("车数写成数字，或者留空；采用的余量写 1 到 1200 秒");
+			const appliedAdded = {};
+			(depot.buffers || []).forEach(buffer => { if (buffer.added) appliedAdded[buffer.key] = buffer.added; });
+			const sameAdded = JSON.stringify(Object.entries(addedBuffers).sort()) === JSON.stringify(Object.entries(appliedAdded).sort());
+			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, serviceTypes, clearBuffers: Boolean(clearBox && clearBox.checked), addedBuffers: sameAdded ? null : addedBuffers };
 			const sorted = list => JSON.stringify(list.slice().sort());
 			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
 				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
-				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings)) && !Object.keys(serviceTypes).length && !entry.clearBuffers;
+				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings)) && !Object.keys(serviceTypes).length && !entry.clearBuffers && sameAdded;
 			if (same) delete draft.depots[depot.id];
 			else draft.depots[depot.id] = entry;
 			saveDraft();

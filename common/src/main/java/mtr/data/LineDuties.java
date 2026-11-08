@@ -284,13 +284,17 @@ public final class LineDuties {
 		 */
 		public final String basis;
 		/**
-		 * What the unit's depots measured (D1).
+		 * The time the unit's depots add to the ways out, turns round and ways back, as adopted (D1, round 4, step 6).
 		 */
 		private final transitsim.plan.Buffers buffers;
 		/**
 		 * The network's least time to change ends (round 4).
 		 */
 		private final long minReverseMillis;
+		/**
+		 * A digest of {@link #buffers}, empty for none, for telling the duties kept were planned with others (round 4, step 6).
+		 */
+		private final String buffersKey;
 		/**
 		 * The names of the unit's lines, for the log and the shortfall.
 		 */
@@ -417,10 +421,12 @@ public final class LineDuties {
 			if (Boolean.getBoolean("mtr.debugPlanBasis")) {
 				System.out.println("Minecraft Transit Railway plan basis " + basis + " of " + name + ": " + basisBuilder);
 			}
-			// How much longer than planned the unit's trains were measured to take out, round and back (D1)
+			// The time its depots add to the ways out, turns round and ways back, as adopted from what was measured (D1, round 4,
+			// step 6): what was measured alone no longer changes the plan
 			final Map<String, Long> unitBuffers = new TreeMap<>();
-			depotIds.stream().sorted().map(dataCache.depotIdMap::get).filter(Objects::nonNull).forEach(depot -> depot.getBuffers().getMillis().forEach((bufferKey, millis) -> unitBuffers.merge(bufferKey, millis, Math::max)));
+			depotIds.stream().sorted().map(dataCache.depotIdMap::get).filter(Objects::nonNull).forEach(depot -> depot.getAddedBuffers().getMillis().forEach((bufferKey, millis) -> unitBuffers.merge(bufferKey, millis, Math::max)));
 			buffers = unitBuffers.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(unitBuffers);
+			buffersKey = unitBuffers.isEmpty() ? "" : digest(unitBuffers.toString());
 			keyBuilder.append("buffers:").append(unitBuffers);
 			// The network's least time to change ends (round 4)
 			minReverseMillis = dataCache.networkSettings.minReverseMillis;
@@ -559,7 +565,14 @@ public final class LineDuties {
 			}
 			kept.kept = true;
 			// Kept with settings changed since: a player may want them planned again by the new settings
-			kept.replanHint = kept.minReverseMillis == minReverseMillis ? "" : "minReverse:" + kept.minReverseMillis + ":" + minReverseMillis;
+			final List<String> hints = new ArrayList<>();
+			if (kept.minReverseMillis != minReverseMillis) {
+				hints.add("minReverse:" + kept.minReverseMillis + ":" + minReverseMillis);
+			}
+			if (!kept.buffersKey.equals(buffersKey)) {
+				hints.add("buffers");
+			}
+			kept.replanHint = String.join(";", hints);
 			return kept;
 		}
 
@@ -572,6 +585,7 @@ public final class LineDuties {
 			final Plan plan = new Plan(name);
 			plan.basis = basis;
 			plan.minReverseMillis = minReverseMillis;
+			plan.buffersKey = buffersKey;
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = getMaxLayover();
 			for (final Group group : groups) {
@@ -780,6 +794,10 @@ public final class LineDuties {
 		 */
 		public long minReverseMillis = DutyGenerator.MIN_TURNAROUND_MILLIS;
 		/**
+		 * A digest of the time added to the ways out, turns round and ways back the duties were planned with, empty for none.
+		 */
+		public String buffersKey = "";
+		/**
 		 * The settings changed since the duties kept were planned, each as {@code name:then:now}, joined by ';': planned
 		 * again only when a player asks (user 2026-11-08), so the duties don't change of themselves; empty if none.
 		 */
@@ -823,6 +841,7 @@ public final class LineDuties {
 			writer.writeByte(RECORD_VERSION);
 			writeString(writer, basis);
 			writer.writeLong(minReverseMillis);
+			writeString(writer, buffersKey);
 			writer.writeInt(trains);
 			writer.writeInt(needed);
 			writer.writeInt(available);
@@ -855,6 +874,7 @@ public final class LineDuties {
 				final Plan plan = new Plan(lineNames);
 				plan.basis = readString(reader);
 				plan.minReverseMillis = reader.readLong();
+				plan.buffersKey = readString(reader);
 				plan.trains = reader.readInt();
 				plan.needed = reader.readInt();
 				plan.available = reader.readInt();
@@ -873,7 +893,7 @@ public final class LineDuties {
 			}
 		}
 
-		private static final int RECORD_VERSION = 2;
+		private static final int RECORD_VERSION = 3;
 		private static final int MAX_RECORD_ITEMS = 4096;
 		private static final int MAX_STRING_BYTES = 65536;
 

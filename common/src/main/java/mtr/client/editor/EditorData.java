@@ -176,17 +176,24 @@ public final class EditorData {
 			}
 			depotObject.add("manualSpeeds", manualSpeeds);
 			depotObject.addProperty("serviceTypesUsed", Depot.supportsTimetable(depot.transportMode));
-			// How much longer than planned its trains were measured to take out, round and back, which its duties are
-			// planned with (D1)
+			// How much longer than planned its trains were measured to take out, round and back (D1), as suggestions, and the
+			// time adopted, which its duties are planned with (round 4, step 6): every place either has, by key
 			final JsonArray buffersArray = new JsonArray();
-			depot.getBuffers().getMillis().forEach((bufferKey, millis) -> {
+			final Set<String> bufferKeys = new TreeSet<>(depot.getBuffers().getMillis().keySet());
+			bufferKeys.addAll(depot.getAddedBuffers().getMillis().keySet());
+			bufferKeys.forEach(bufferKey -> {
 				final long[] parts = transitsim.plan.Buffers.parse(bufferKey);
 				final JsonObject bufferObject = new JsonObject();
 				final int kind = (int) parts[0];
+				bufferObject.addProperty("key", bufferKey);
 				bufferObject.addProperty("kind", kind == transitsim.plan.Buffers.OUT ? "out" : kind == transitsim.plan.Buffers.TURN ? "turn" : "back");
 				bufferObject.addProperty("from", bufferPlaceName(kind == transitsim.plan.Buffers.OUT, parts[1]));
 				bufferObject.addProperty("to", bufferPlaceName(kind == transitsim.plan.Buffers.BACK, parts[2]));
-				bufferObject.addProperty("seconds", millis / 1000);
+				bufferObject.addProperty("seconds", depot.getBuffers().getMillis().getOrDefault(bufferKey, 0L) / 1000);
+				final Long added = depot.getAddedBuffers().getMillis().get(bufferKey);
+				if (added != null) {
+					bufferObject.addProperty("added", added / 1000);
+				}
 				buffersArray.add(bufferObject);
 			});
 			depotObject.add("buffers", buffersArray);
