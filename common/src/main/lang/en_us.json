@@ -236,6 +236,7 @@
   "gui.mtr.connecting_line": "Connecting line (other lines don't run over it, through services can)",
   "gui.mtr.line_shortfall": "Needs %s trains to run every service, has %s; %s services a day have no train",
   "gui.mtr.line_shortfall_suggest": "; add trains to %s",
+  "gui.mtr.line_shortfall_unrunnable": " (%s a day no number of trains could run: check the ways out and turn backs)",
   "gui.mtr.line_shortfall_pool": "%s: needs %s trains, has %s, %s services a day with no train",
   "gui.mtr.line_shortfall_unsettled": "The duties don't repeat week after week, so the trains needed aren't known; has %s, %s services a day have no train",
   "gui.mtr.track_up": "Up",

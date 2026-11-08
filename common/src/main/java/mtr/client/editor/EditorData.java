@@ -357,6 +357,8 @@ public final class EditorData {
 					dutyGroups.add(groupObject);
 				});
 				shortfallObject.add("groups", dutyGroups);
+				// Services no number of trains could run: a way out or round is missing, not trains
+				shortfallObject.addProperty("unrunnable", depot.lineShortfall.unrunnablePerDay);
 				depotObject.add("shortfall", shortfallObject);
 			}
 			depotsArray.add(depotObject);

@@ -624,6 +624,14 @@ public final class LineDuties {
 					continue;
 				}
 				final List<DutyGenerator.SidingInput> groupSidings = withMeasured(group.sidings, measured);
+				// With -Dmtr.debugPlanInputs=true, what the planner is given, to tell why services have no train
+				if (Boolean.getBoolean("mtr.debugPlanInputs")) {
+					final StringBuilder text = new StringBuilder("Minecraft Transit Railway plan inputs of " + name + " group " + String.join("/", group.vehicles) + ": " + services.size() + " services, day types " + DutyGenerator.dayTypes(services) + ", routes " + group.routes.stream().map(route -> route.id + "=" + route.platformIds.stream().map(platform -> String.valueOf(platform.platformId)).collect(java.util.stream.Collectors.joining(">"))).collect(java.util.stream.Collectors.joining(" ")));
+					groupSidings.forEach(siding -> text.append("; siding ").append(siding.sidingId).append(" trains ").append(siding.maxTrains).append(" pool ").append(siding.poolKey).append(" out ").append(siding.links).append(" back ").append(inputs.backLinks.get(siding.sidingId)));
+					text.append("; turns ").append(inputs.turnTimes).append("; stations ");
+					group.routes.forEach(route -> route.platformIds.forEach(platform -> text.append(platform.platformId).append('@').append(stationOf.get(platform.platformId)).append(' ')));
+					System.out.println(text);
+				}
 				final Pool pool = new Pool(String.join("/", group.vehicles), 0, group.available, 0);
 				plan.pools.add(pool);
 				plan.available += group.available;
@@ -653,8 +661,14 @@ public final class LineDuties {
 						part.returnSidings.putAll(result.returnSidings);
 						plan.returnSidings.putAll(result.returnSidings);
 						if (result.uncovered > 0) {
-							final DutyGenerator.SidingInput nearest = nearestLimited(groupSidings);
-							part.needed = group.available + (nearest == null ? 0 : extraTrains(services, mask, groupSidings, nearest, maxLayover, inputs));
+							// Services no number of trains could run, as no siding reaches them and no train can turn to them,
+							// aren't trains short: told apart, so the trains needed aren't all the trains there are (2026-11-09)
+							final int unrunnable = DutyGenerator.unrunnable(DutyGenerator.onDays(services, mask), groupSidings, stationOf, DutyGenerator.layoverOf(mask, maxLayover), inputs);
+							if (unrunnable > 0) {
+								part.issues.add(UNRUNNABLE + " " + unrunnable);
+							}
+							final DutyGenerator.SidingInput nearest = unrunnable >= result.uncovered ? null : nearestLimited(groupSidings);
+							part.needed = nearest == null ? result.trains : group.available + extraTrains(services, mask, groupSidings, nearest, maxLayover, inputs);
 						} else {
 							part.needed = result.trains;
 						}
@@ -664,7 +678,8 @@ public final class LineDuties {
 					}
 					mergeSlots(groupSlots, partSlots, mask);
 					plan.parts.add(part);
-					part.issues.stream().filter(issue -> !plan.issues.contains(issue)).forEach(plan.issues::add);
+					// Counts of each part add up rather than standing for one another
+					part.issues.stream().filter(issue -> issue.startsWith(UNRUNNABLE + " ") || !plan.issues.contains(issue)).forEach(plan.issues::add);
 					pool.uncovered += part.uncovered;
 					groupTrains = Math.max(groupTrains, part.trains);
 					groupNeeded = Math.max(groupNeeded, part.needed);
@@ -677,7 +692,8 @@ public final class LineDuties {
 				plan.uncovered += pool.uncovered;
 				pool.needed = groupNeeded;
 				plan.needed += groupNeeded;
-				if (pool.uncovered > 0 && plan.suggestedSiding.isEmpty()) {
+				// Where trains are short, not where they can't get to the services
+				if (groupNeeded > group.available && plan.suggestedSiding.isEmpty()) {
 					// Where to add trains: the siding nearest the line
 					final DutyGenerator.SidingInput nearest = nearestLimited(groupSidings);
 					if (nearest != null) {
@@ -962,6 +978,10 @@ public final class LineDuties {
 	}
 
 	private static final String CUSTOM_TRAIN_PREFIX = "mtr_custom_train_";
+	/**
+	 * An issue of a plan: how many services, counted once for each day they run, no number of trains could run.
+	 */
+	public static final String UNRUNNABLE = "UNRUNNABLE";
 
 	private static final class Group {
 
@@ -1297,9 +1317,26 @@ public final class LineDuties {
 			return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 		}
 
+		/**
+		 * @return how many services no number of trains could run, counted once for each day they run
+		 */
+		public int getUnrunnable() {
+			int unrunnable = 0;
+			for (final String issue : issues) {
+				if (issue.startsWith(UNRUNNABLE + " ")) {
+					try {
+						unrunnable += Integer.parseInt(issue.substring(UNRUNNABLE.length() + 1));
+					} catch (NumberFormatException ignored) {
+					}
+				}
+			}
+			return Math.min(unrunnable, uncovered);
+		}
+
 		public String describe() {
 			final boolean settled = needed >= 0;
-			return "line " + lineNames + (settled ? ": needs " + needed + " trains, has " : ": the duties don't repeat week after week, so the trains needed aren't known; has ") + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + (pools.size() > 1 ? " (" + pools.stream().map(Pool::toString).collect(java.util.stream.Collectors.joining("; ")) + ")" : "") + shortTurnarounds();
+			final int unrunnable = getUnrunnable();
+			return "line " + lineNames + (settled ? ": needs " + needed + " trains, has " : ": the duties don't repeat week after week, so the trains needed aren't known; has ") + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (unrunnable == 0 ? "" : " (" + unrunnable / 7 + " of them no number of trains could run: no siding reaches them and no train can turn to them)") + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + (pools.size() > 1 ? " (" + pools.stream().map(Pool::toString).collect(java.util.stream.Collectors.joining("; ")) + ")" : "") + shortTurnarounds();
 		}
 
 		private String shortTurnarounds() {

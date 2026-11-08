@@ -255,7 +255,9 @@
 		const pools = (shortfall.pools || []).filter(pool => pool.uncovered > 0);
 		const main = (shortfall.pools || []).length > 1 && pools.length ? tr("{0}：", shortfall.lines) + pools.map(pool => pool.needed < 0 ? tr("{0} 算不出需要几列，现有 {1} 列，每天 {2} 班没有车", pool.label, pool.available, pool.uncovered) : tr("{0} 跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", pool.label, pool.needed, pool.available, pool.uncovered)).join(tr("；"))
 			: shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered);
-		return main + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
+		// Services no number of trains could run aren't trains short: a way out of the sidings or a turn is missing
+		const unrunnable = shortfall.unrunnable ? tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable) : "";
+		return main + unrunnable + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
 	}
 
 	/**

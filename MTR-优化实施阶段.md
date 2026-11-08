@@ -509,6 +509,18 @@
 - 套用其他车厂的组：网页车厂右键"运用组…"对话框列出别的车厂同车型的运用组（按车型和星期分，`dutyGroupsOf`），"套用到本车厂"把那组运用按存车线顺序放进本车厂的运用草稿（`applyDutyGroup`，本车厂改为按运用图，那几天原来的运用换掉，新的库位给新编号，过夜接续和回哪条存车线清空），检查后照旧应用；原车厂不变。
 - 测试：游戏 `DutyGroupsKeepTest.aGroupAskedForIsPlannedAgainAloneAndTheGroupsGoToTheClients`（指定周末组：工作日原样、只重排周末；运用组随缺车提示经包往返）。网页对话框没有自动测试，见测试清单 U320。
 
+### 修好：加车也跑不了的班次让车不够的分配把班次丢掉（2026-11-09，MTM_Logic 0.57.0）
+
+- 用户 Q 盘存档（`Q:/MTM_1.20.1`，车厂 Village，线路 Line 1 上下行每 10 分钟一班）：日志"needs 256 trains, has 256, 171 services a day with no train; add trains to Village 1"，配了 250 多列车也只发一两列。日模拟：一天只有 1 列车跑、到站 101 次，终点一停 40 分钟。
+- 查法：复制服务器目录（换成现在的 jar、清掉复制品里的规划记录）重排，加调试开关 `-Dmtr.debugPlanInputs=true` 打出交给规划器的输入（存车线只能出库到上行首站、`-4665` 回不去、折返 108 秒）；同样的输入直接 `generate` 只有一周 7 班没车（一班在车到不了的地方），走 `generateSpread` 就是一周 1197 班没车、3 份运用。
+- 原因：`generateSpread` 只要有班次没车、存车线车数有限，就当作车不够，按"每 k 班保留一班"均匀分配，直到保留下来的全有车；可那几班是加多少车都跑不了的，于是一直丢到只剩三分之一。之后算需要几列时加车也减不了没车的班次，就写成"需要 = 现有全部"，还建议加车。
+- 修法：
+  - 组件 `DutyGenerator.unrunnable`：车数不限、车池也不限时还没车的班次（加多少车都跑不了）。`generateSpread` 只在没车的班次多于它时才分配，分配到没车的不多于它为止。`PlanInputs.withoutPoolFleets`；`neededTrains` 也不受车池限制。`layoverOf` 给按日类型排时的停留上限。
+  - 游戏 `LineDuties.build`：有班次没车时算 `unrunnable`，记成问题 `UNRUNNABLE n`；全是加车也跑不了的，需要几列按实际用到的车数，不建议加车；`Plan.getUnrunnable`、`describe` 写出其中几班加车也跑不了。`Depot.Shortfall.unrunnablePerDay`（包末尾），网页缺车提示和游戏车厂界面写"其中每天 N 班加多少车都跑不了，查出入库路线或折返"。
+- 结果（同一份复制存档重排）：`needs 2 trains, has 256, 1 services a day with no train (1 of them no number of trains could run …)`；日模拟 2 列车跑、到站 796 次、都回库，在站平均 134 秒。
+- 测试：组件 `UnrunnableServicesTest`（车到不了的一班不让别的班被分配掉；真缺车照样分配；车池只有一列时缺的是车，不算跑不了）。
+- 用户存档里的规划记录还是旧 jar 排的、照样"沿用"：换上新 jar 后车厂右键"重新排运用"一次才按新规则排。
+
 ### 第五轮之后：留下的问题（2026-11-09 记录，未做）
 
 主线程（64 份线网实测，见第五轮第 4、5 步）：

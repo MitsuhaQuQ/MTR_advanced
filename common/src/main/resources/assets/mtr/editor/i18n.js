@@ -410,6 +410,7 @@ const I18N = (() => {
 			"车站等距画": "Stations evenly apart",
 			"按时刻表把列车摆到现在的位置…": "Put trains where the timetable has them now…",
 			"重新排运用…": "Plan duties again…",
+			"（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）": " ({0} services a day no number of trains could run: no siding gets out to them and no train can turn to them; check the ways out and the turn backs)",
 			"放弃这项草稿": "Drop this from the draft",
 			"清空全部草稿…": "Clear the whole draft…",
 			"清空全部草稿？草稿里的 {0} 项改动都丢掉，不能撤销；游戏里的不受影响。": "Clear the whole draft? Its {0} changes are dropped and can't be brought back; the game isn't changed.",

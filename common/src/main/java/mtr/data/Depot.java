@@ -2321,6 +2321,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * The duty groups of the unit (duty groups, step 4): each group of sidings on one day type, for the advanced editor.
 		 */
 		public final List<DutyGroup> groups = new ArrayList<>();
+		/**
+		 * Services a day no number of trains could run, as no siding reaches them and no train can turn to them: not
+		 * trains short, but a way out of the sidings or round missing.
+		 */
+		public int unrunnablePerDay;
 
 		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding, String replanHint, List<LineDuties.Pool> pools) {
 			this.lineNames = lineNames;
@@ -2335,6 +2340,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		Shortfall(LineDuties.Plan plan) {
 			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding, plan.replanHint, perDay(plan.pools));
 			plan.parts.forEach(part -> groups.add(new DutyGroup(part.key, part.trains, part.needed, part.uncovered / 7, plan.kept || plan.keptParts.contains(part.key))));
+			unrunnablePerDay = plan.getUnrunnable() / 7;
 		}
 
 		private static List<LineDuties.Pool> perDay(List<LineDuties.Pool> pools) {
@@ -2386,6 +2392,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					packet.writeInt(group.uncoveredPerDay);
 					packet.writeBoolean(group.kept);
 				});
+				packet.writeVarInt(shortfall.unrunnablePerDay);
 			}
 		}
 
@@ -2407,6 +2414,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (int i = Math.min(packet.readVarInt(), 4096); i > 0; i--) {
 				shortfall.groups.add(new DutyGroup(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readBoolean()));
 			}
+			shortfall.unrunnablePerDay = packet.readVarInt();
 			return shortfall;
 		}
 	}

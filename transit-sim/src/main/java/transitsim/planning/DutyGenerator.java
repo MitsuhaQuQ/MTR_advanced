@@ -167,6 +167,13 @@ public final class DutyGenerator {
 			this.poolFleets = poolFleets == null ? Collections.emptyMap() : poolFleets;
 			this.buffers = buffers == null ? transitsim.plan.Buffers.NONE : buffers;
 		}
+
+		/**
+		 * @return the same with no pool held to a number of trains, to plan as if trains were no limit
+		 */
+		public PlanInputs withoutPoolFleets() {
+			return poolFleets.isEmpty() ? this : new PlanInputs(turnTimes, backLinks, Collections.emptyMap(), buffers, minReverseMillis);
+		}
 	}
 
 	public static Result generate(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
@@ -614,6 +621,13 @@ public final class DutyGenerator {
 		if (held <= 0) {
 			return all;
 		}
+		// Only where more trains would run more services: a service no train can get to, as one starting where no siding
+		// reaches and no train turns, isn't a matter of trains, and spreading for it left most services without a train on
+		// a player's line with 256 trains (2026-11-09)
+		final int unrunnable = unrunnable(services, sidings, stationOf, maxLayoverMillis, inputs);
+		if (unrunnable >= all.uncovered) {
+			return all;
+		}
 
 		// Each route's services on the same days, in the order they leave in the operating day
 		final Map<String, List<ServiceInput>> groups = new TreeMap<>();
@@ -643,8 +657,9 @@ public final class DutyGenerator {
 					}
 				}
 				final Result result = generate(kept, sidings, stationOf, maxLayoverMillis, inputs);
-				if (result.uncovered == 0) {
-					result.uncovered = left;
+				// No more without a train than no number of trains could run
+				if (result.uncovered <= unrunnable) {
+					result.uncovered += left;
 					return result;
 				}
 			}
@@ -742,8 +757,15 @@ public final class DutyGenerator {
 	 */
 	public static Result generateDayType(List<ServiceInput> services, int mask, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs, boolean spread) {
 		final List<ServiceInput> part = onDays(services, mask);
-		final long layover = (mask & DepotDuties.ALL_WEEKDAYS) == DepotDuties.ALL_WEEKDAYS ? maxLayoverMillis : Math.min(maxLayoverMillis, OperatingDay.MILLIS_PER_DAY);
+		final long layover = layoverOf(mask, maxLayoverMillis);
 		return spread ? generateSpread(part, sidings, stationOf, layover, inputs) : generate(part, sidings, stationOf, layover, inputs);
+	}
+
+	/**
+	 * @return the longest a train may stay out planning a day type: over no whole day unless the type is the whole week
+	 */
+	public static long layoverOf(int mask, long maxLayoverMillis) {
+		return (mask & DepotDuties.ALL_WEEKDAYS) == DepotDuties.ALL_WEEKDAYS ? maxLayoverMillis : Math.min(maxLayoverMillis, OperatingDay.MILLIS_PER_DAY);
 	}
 
 	/**
@@ -755,13 +777,28 @@ public final class DutyGenerator {
 	}
 
 	public static int neededTrains(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
+		return generate(services, unlimited(sidings), stationOf, maxLayoverMillis, inputs.withoutPoolFleets()).trains;
+	}
+
+	/**
+	 * @return how many of the services no number of trains could run, counted once for each day they run: those no siding
+	 * reaches and no train can turn to, which only a way out or round could change
+	 */
+	public static int unrunnable(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
+		return generate(services, unlimited(sidings), stationOf, maxLayoverMillis, inputs.withoutPoolFleets()).uncovered;
+	}
+
+	/**
+	 * @return the sidings with as many trains as they like
+	 */
+	private static List<SidingInput> unlimited(List<SidingInput> sidings) {
 		final List<SidingInput> unlimited = new ArrayList<>();
 		sidings.forEach(siding -> {
 			final SidingInput copy = new SidingInput(siding.sidingId, -1, siding.links, siding.depotId);
 			copy.poolKey = siding.poolKey;
 			unlimited.add(copy);
 		});
-		return generate(services, unlimited, stationOf, maxLayoverMillis, inputs).trains;
+		return unlimited;
 	}
 
 	public static final class SidingInput {
