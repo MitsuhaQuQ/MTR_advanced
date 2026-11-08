@@ -8,6 +8,8 @@ import net.minecraft.world.level.Level;
 import transitsim.network.RailGraph;
 
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,6 +29,14 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 	public static final int MAX_THREADS = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() - 1));
 
 	private final Map<Long, Thread> generatingPathThreads = new HashMap<>();
+	/**
+	 * Depots waiting for their paths to be found, with the tick they were queued in (optimisation round 5, step 3).
+	 */
+	private final Map<Long, Long> queued = new LinkedHashMap<>();
+	/**
+	 * While a queued depot is started, the tick it was queued in: a copy of the rails made since then serves it as well.
+	 */
+	private long startingQueuedSince = -1;
 	private Snapshot snapshot;
 
 	public RailwayDataPathGenerationModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails) {
@@ -39,6 +49,31 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 	public boolean canGenerate() {
 		generatingPathThreads.keySet().removeIf(id -> !generatingPathThreads.get(id).isAlive());
 		return generatingPathThreads.size() < MAX_THREADS;
+	}
+
+	/**
+	 * Has the depot's paths found as soon as a thread is free ({@link #startQueued}); queued again, it keeps its place.
+	 */
+	public void queue(long depotId) {
+		queued.putIfAbsent(depotId, world.getGameTime());
+	}
+
+	/**
+	 * Starts the depots queued, as many as threads are free, each with a copy of the rails made no earlier than it was
+	 * queued; called each tick.
+	 */
+	public void startQueued(MinecraftServer minecraftServer) {
+		final Iterator<Map.Entry<Long, Long>> iterator = queued.entrySet().iterator();
+		while (iterator.hasNext() && canGenerate()) {
+			final Map.Entry<Long, Long> entry = iterator.next();
+			iterator.remove();
+			startingQueuedSince = entry.getValue();
+			try {
+				generatePath(minecraftServer, entry.getKey());
+			} finally {
+				startingQueuedSince = -1;
+			}
+		}
 	}
 
 	public void generatePath(MinecraftServer minecraftServer, long depotId) {
@@ -73,7 +108,9 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 		final long tick = world.getGameTime();
 		// Rails or data changed within the tick, as a player's edit applied before a request, make a new one
 		final int version = railwayData.dataCache.getVersion();
-		if (snapshot == null || snapshot.tick != tick || snapshot.version != version || snapshot.liveRailCount != rails.size()) {
+		// A depot queued in an earlier tick takes a copy made since, as it would have had starting then
+		final boolean recentEnough = snapshot != null && (snapshot.tick == tick || startingQueuedSince >= 0 && snapshot.tick >= startingQueuedSince);
+		if (!recentEnough || snapshot.version != version || snapshot.liveRailCount != rails.size()) {
 			snapshot = new Snapshot(tick, version, rails.size(), railwayData.dataCache.copyIdMaps(), DataCache.copyRails(rails), RoutePaths.getVehicles(railwayData), railwayData.pathBoundaries);
 		}
 		return snapshot;

@@ -757,16 +757,19 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			});
 		}
 		// Paths are made of legs on the track sections, so not before they are there
-		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && graphRecords.getLegs() != null && routePaths.isOwnersReady() && railwayDataPathGenerationModule.canGenerate()) {
+		// Those found are queued and started as threads come free, rather than only as many as are free every 100 ticks, which
+		// left a large network's depots waiting most of a minute for paths each found in under a second (optimisation round 5,
+		// step 3)
+		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && graphRecords.getLegs() != null && routePaths.isOwnersReady()) {
 			final Map<Long, LineDuties.Unit> units = LineDuties.unitsOf(depots, dataCache, sidings);
 			for (final Depot depot : depots) {
-				if (!railwayDataPathGenerationModule.canGenerate()) {
-					break;
-				}
 				if (depot.takeAutoDutiesChange(units.get(depot.id))) {
-					railwayDataPathGenerationModule.generatePath(world.getServer(), depot.id);
+					railwayDataPathGenerationModule.queue(depot.id);
 				}
 			}
+		}
+		if (world.getServer() != null) {
+			railwayDataPathGenerationModule.startQueued(world.getServer());
 		}
 		// Trains waiting on the line with no duty and orders to go back that couldn't be kept, for the advanced editor: sent
 		// when they change, and now and then while there are any, for players who joined since

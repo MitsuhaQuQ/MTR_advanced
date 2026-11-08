@@ -1083,6 +1083,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
+				if (ConnectionStats.ON) {
+					ConnectionStats.print();
+				}
 			} catch (CancellationException e) {
 				// A newer request restarted path generation, and that thread reports the result
 				System.out.println("Stopped path generation" + (name.isEmpty() ? "" : " for " + name));
@@ -2279,6 +2282,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private class MainPath {
 
 		/**
+		 * The turn back rails of the rails searched, as start and end, and the dead ends near each platform found from them
+		 * ({@link #getNearbyTurnBackNodes}).
+		 */
+		private Map<BlockPos, Map<BlockPos, Rail>> turnBackRailsOf;
+		private final List<BlockPos[]> turnBackRails = new ArrayList<>();
+		private final Map<Long, List<BlockPos>> nearbyTurnBackNodes = new HashMap<>();
+
+		/**
 		 * Works out the duties of these sidings from the timetables of their routes when the depot runs by a timetable
 		 * and has none set, and gives them to the depot on the server thread (decoupling document, step D). The routes'
 		 * fastest times are the routes' own ({@link RoutePaths.RoutePath#getFastestTimes}), for the slowest vehicle
@@ -2846,6 +2857,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @param nextStart     the rail of the body where the next route starts
 		 */
 		private void addFrontTurnBack(List<PathData> body, Route previousRoute, List<SavedRailBase> previousPlatforms, List<List<BlockPos>> previousWaypoints, int previousStart, Route route, List<SavedRailBase> platforms, List<List<BlockPos>> waypoints, int nextStart, List<TurnBackSection<PathData>> turnBackSections, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final long start = ConnectionStats.ON ? System.nanoTime() : 0;
+			try {
+				addFrontTurnBackTimed(body, previousRoute, previousPlatforms, previousWaypoints, previousStart, route, platforms, waypoints, nextStart, turnBackSections, rails, graph, useFastSpeed);
+			} finally {
+				if (ConnectionStats.ON) {
+					ConnectionStats.front(previousRoute.id + ">" + route.id, System.nanoTime() - start);
+				}
+			}
+		}
+
+		private void addFrontTurnBackTimed(List<PathData> body, Route previousRoute, List<SavedRailBase> previousPlatforms, List<List<BlockPos>> previousWaypoints, int previousStart, Route route, List<SavedRailBase> platforms, List<List<BlockPos>> waypoints, int nextStart, List<TurnBackSection<PathData>> turnBackSections, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			if (previousRoute.terminalPlatforms.isEmpty() || previousPlatforms.size() < 2 || platforms.size() < 2 || graph == null) {
 				return;
 			}
@@ -3164,6 +3186,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @return the ways round a turn back rail when there are any, or null
 		 */
 		private TurnBackSection<PathData> findConnection(List<PathData> connectingPath, SavedRailBase from, SavedRailBase to, Route routeBefore, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+			final long start = ConnectionStats.ON ? System.nanoTime() : 0;
+			try {
+				return findConnectionTimed(connectingPath, from, to, routeBefore, rails, graph, useFastSpeed);
+			} finally {
+				if (ConnectionStats.ON) {
+					ConnectionStats.connection(from.id + ">" + to.id + ">" + (routeBefore == null ? 0 : routeBefore.id), System.nanoTime() - start);
+				}
+			}
+		}
+
+		private TurnBackSection<PathData> findConnectionTimed(List<PathData> connectingPath, SavedRailBase from, SavedRailBase to, Route routeBefore, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final List<BlockPos> turnBackNodes = routeBefore != null ? getTurnBackNodes(routeBefore, graph) : Collections.emptyList();
 			if (!turnBackNodes.isEmpty()) {
 				final TurnBackSection<PathData> listed = findTurnBackSection(from, to, turnBackNodes, 0, rails, graph, useFastSpeed);
@@ -3341,18 +3374,46 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * when a route lists none
 		 */
 		private List<BlockPos> getNearbyTurnBackNodes(SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+			final long start = ConnectionStats.ON ? System.nanoTime() : 0;
+			try {
+				return getNearbyTurnBackNodesTimed(platform, rails);
+			} finally {
+				if (ConnectionStats.ON) {
+					ConnectionStats.nearby(platform.id, System.nanoTime() - start);
+				}
+			}
+		}
+
+		private List<BlockPos> getNearbyTurnBackNodesTimed(SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+			// The rails searched don't change while the paths are found, so the turn back rails are listed once and each
+			// platform's looked up once (optimisation round 5, step 3: it read all the rails of the world each time, about
+			// 13 000 times on a large network)
+			if (turnBackRailsOf != rails) {
+				turnBackRailsOf = rails;
+				turnBackRails.clear();
+				nearbyTurnBackNodes.clear();
+				rails.forEach((startPos, connections) -> connections.forEach((endPos, rail) -> {
+					if (rail.railType == RailType.TURN_BACK) {
+						turnBackRails.add(new BlockPos[]{startPos, endPos});
+					}
+				}));
+			}
+			return nearbyTurnBackNodes.computeIfAbsent(platform.id, id -> findNearbyTurnBackNodes(platform, rails));
+		}
+
+		private List<BlockPos> findNearbyTurnBackNodes(SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 			final BlockPos center = platform.getMidPos();
 			final Set<BlockPos> ends = new HashSet<>();
-			rails.forEach((startPos, connections) -> connections.forEach((endPos, rail) -> {
-				if (rail.railType == RailType.TURN_BACK && Math.min(startPos.distSqr(center), endPos.distSqr(center)) <= NEARBY_TURN_BACK_BLOCKS * NEARBY_TURN_BACK_BLOCKS) {
-					for (final BlockPos pos : new BlockPos[]{startPos, endPos}) {
+			for (final BlockPos[] turnBackRail : turnBackRails) {
+				if (Math.min(turnBackRail[0].distSqr(center), turnBackRail[1].distSqr(center)) <= NEARBY_TURN_BACK_BLOCKS * NEARBY_TURN_BACK_BLOCKS) {
+					for (final BlockPos pos : turnBackRail) {
 						final Map<BlockPos, Rail> from = rails.get(pos);
 						if (from != null && from.size() == 1) {
 							ends.add(pos);
 						}
 					}
 				}
-			}));
+			}
 			final List<BlockPos> sorted = new ArrayList<>(ends);
 			sorted.sort(Comparator.comparingDouble((BlockPos pos) -> pos.distSqr(center)).thenComparingLong(BlockPos::asLong));
 			return sorted.size() > MAX_NEARBY_TURN_BACKS ? sorted.subList(0, MAX_NEARBY_TURN_BACKS) : sorted;
