@@ -469,6 +469,26 @@
 - `StopLengthsTest`：短站台被指出，通过站和允许超长的不算，车够短或没车跑时不提示。
 - 顺带修好 3a 的漏洞：网页的时刻表编辑对象没带最低性能。
 
+### 第五轮之后：留下的问题（2026-11-09 记录，未做）
+
+主线程（64 份线网实测，见第五轮第 4、5 步）：
+- 读完档后主线程还要追约 150 tick：第一个 tick 重建咽喉锁网络（`RailwayData.updateLockNetworks` → `LockNetworks.addPath`，按存车线全部路径节点并查集）、站间段层更新（`GraphRecords.updateLegs` → `LegCache.put`）、`PathRegionSync` 编译寻路网络，各一两秒。
+- 车厂寻路由主线程每个 tick 放出，每次启动前的准备在主线程上（`Depot.generateMainRoute` 前半：`migrateFrequencies`、`LineDuties.of` 读整个线网、线路名 `Route.getAutoLineName`），开服时正赶上主线程追 tick，寻路开始得早、放得慢。
+- 开服备份（`RailwayDataSqliteStore` 构造时 `createBackup`）同步做，2.4 秒。
+- 组件模拟器启动 2.5 秒（数据集生成两份各 0.4 秒、`buildRunner`），每 5 分钟的检查还剩生成数据集 0.4～0.5 秒。
+- 平时主线程约两成忙，信号区段占用重算（`SignalBlocks.resetOccupied`）占其中 5%～15%。
+
+其他：
+- 段间连接仍是宿主的整条搜索（只占 0.15 秒，留待运用组时一起看是否换成站间段拼）。
+- 车厂寻路改到低于主线程的优先级后，新档 64 份线网慢 1～2 秒（9 秒 vs 6～8 秒）。
+- 老测试档（yel、g1f）没分层，见记忆"Old test saves not layered"。
+
+### 第五轮之后：需要几列按车池分开写（MTM_Logic 0.54.0）
+
+- 黄线三条存车线分属两个车池（不同车型，不能互借车），提示却把两组加起来写成"需要 19 列、有 21 列，每天 205 班没有车"。规划本来就按组（同种别、同线路范围的存车线）分别排，现在每组的需要、现有、每天没车的班数也记下来：规划记录第 4 版（第 3 版照样读，没有按组的数，沿用时照旧显示总数，下次重排后才有）、`Depot.Shortfall.pools`（包末尾）、网页车厂数据的 `pools` 和 `missing`、日志。组多于一个时，游戏车厂界面和网页只写缺车的组（按车型名，去掉 `mtr_custom_train_` 前缀）；网页车厂树上的"缺 N 列"改为各组各自缺的相加（`Shortfall.getMissingTrains`），以前用总数相减，黄线显示成缺 0 列。
+- 黄线（没有记录的分层档）日志：`needs 19 trains, has 21, 205 services a day with no train … (pm178: needs 13, has 11, 205 services a day with no train; sh03b01: needs 6, has 10)`。
+- 测试：`LineDutiesKeepTest.eachPoolsCountsReadBackAndAreShortOnTheirOwn`（按组的数读回、缺的按组算、第 3 版记录读成没有按组的数）。
+
 ### 第五轮第 5 步：车厂寻路进共用线程池，段间连接去重（断点 `pre-main-thread` 之后）
 
 - 先量：新档时车厂寻路线程约三成在给运用路径计时、三成半在运用规划、6% 在站间段寻路。按内容哈希给整个寻路任务去重测不出收益（64 份线网各份坐标不同，没有相同的任务；真实存档里会重复的规划单元和沿用前几轮已处理），只给一次寻路里的段间连接去重（13028 次调用、1894 个不同）。

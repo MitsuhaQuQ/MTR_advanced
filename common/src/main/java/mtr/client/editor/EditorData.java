@@ -331,6 +331,18 @@ public final class EditorData {
 				shortfallObject.addProperty("suggested", depot.lineShortfall.suggestedSiding);
 				// Settings changed since the duties kept were planned, as name:then:now joined by ';' (round 4, step 4)
 				shortfallObject.addProperty("replan", depot.lineShortfall.replanHint);
+				// Each group of sidings planned apart (each pool of vehicles), as trains aren't lent between them
+				final JsonArray shortfallPools = new JsonArray();
+				depot.lineShortfall.pools.forEach(pool -> {
+					final JsonObject poolObject = new JsonObject();
+					poolObject.addProperty("label", pool.label);
+					poolObject.addProperty("needed", pool.needed);
+					poolObject.addProperty("available", pool.available);
+					poolObject.addProperty("uncovered", pool.uncovered);
+					shortfallPools.add(poolObject);
+				});
+				shortfallObject.add("pools", shortfallPools);
+				shortfallObject.addProperty("missing", depot.lineShortfall.getMissingTrains());
 				depotObject.add("shortfall", shortfallObject);
 			}
 			depotsArray.add(depotObject);

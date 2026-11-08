@@ -124,6 +124,37 @@ class LineDutiesKeepTest {
 	}
 
 	@Test
+	void eachPoolsCountsReadBackAndAreShortOnTheirOwn() {
+		final DataCache dataCache = dataCache(route(10, 1, 2), route(11, 2, 1));
+		final LineDuties.Plan plan = unit(dataCache).plan(route -> null, 0);
+		final byte[] before = plan.toBytes();
+		// One pool short while another has more than it needs: the totals (19 needed, 21 had) show none short
+		plan.pools.clear();
+		plan.pools.add(new LineDuties.Pool("sh03b01", 13, 10, 205 * 7));
+		plan.pools.add(new LineDuties.Pool("pm178", 6, 11, 0));
+		plan.needed = 19;
+		plan.available = 21;
+		plan.uncovered = 205 * 7;
+		final LineDuties.Plan read = LineDuties.Plan.fromBytes(plan.toBytes(), plan.lineNames);
+		assertNotNull(read);
+		assertEquals(2, read.pools.size());
+		assertEquals("sh03b01", read.pools.get(0).label);
+		assertEquals(13, read.pools.get(0).needed);
+		assertEquals(10, read.pools.get(0).available);
+		assertEquals(205 * 7, read.pools.get(0).uncovered);
+		final Depot.Shortfall shortfall = new Depot.Shortfall(read);
+		assertEquals(3, shortfall.getMissingTrains(), "the short pool's own shortfall, not the totals'");
+		assertEquals(205, shortfall.pools.get(0).uncovered, "services a day");
+		// A record of version 3, before the pools, reads with none
+		final byte[] old = java.util.Arrays.copyOf(before, before.length - 1);
+		old[0] = 3;
+		final LineDuties.Plan oldRead = LineDuties.Plan.fromBytes(old, plan.lineNames);
+		assertNotNull(oldRead);
+		assertTrue(oldRead.pools.isEmpty());
+		assertEquals(0, new Depot.Shortfall(oldRead).getMissingTrains());
+	}
+
+	@Test
 	void withNoRecordTheDutiesArePlannedAgain() {
 		final DataCache dataCache = dataCache(route(10, 1, 2), route(11, 2, 1));
 		final LineDuties.Unit unit = unit(dataCache);

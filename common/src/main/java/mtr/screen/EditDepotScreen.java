@@ -336,7 +336,12 @@ public class EditDepotScreen extends EditNameColorScreenBase<Depot> {
 			// The lines planned with this depot are short of trains (LineDuties)
 			final Depot.Shortfall shortfall = data.lineShortfall;
 			if (shortfall != null && shortfall.uncoveredPerDay > 0 && !data.duties.diagramMode) {
-				final String shortfallText = (shortfall.needed < 0 ? Text.translatable("gui.mtr.line_shortfall_unsettled", shortfall.available, shortfall.uncoveredPerDay) : Text.translatable("gui.mtr.line_shortfall", shortfall.needed, shortfall.available, shortfall.uncoveredPerDay)).getString() + (shortfall.suggestedSiding.isEmpty() ? "" : Text.translatable("gui.mtr.line_shortfall_suggest", shortfall.suggestedSiding).getString());
+				// Each group of vehicles short, by name where there is more than one, as trains aren't lent between them
+				final StringBuilder poolsText = new StringBuilder();
+				if (shortfall.pools.size() > 1) {
+					shortfall.pools.stream().filter(pool -> pool.uncovered > 0).forEach(pool -> poolsText.append(poolsText.length() == 0 ? "" : "; ").append(Text.translatable("gui.mtr.line_shortfall_pool", pool.label, pool.needed < 0 ? "?" : String.valueOf(pool.needed), pool.available, pool.uncovered).getString()));
+				}
+				final String shortfallText = (poolsText.length() > 0 ? poolsText.toString() : (shortfall.needed < 0 ? Text.translatable("gui.mtr.line_shortfall_unsettled", shortfall.available, shortfall.uncoveredPerDay) : Text.translatable("gui.mtr.line_shortfall", shortfall.needed, shortfall.available, shortfall.uncoveredPerDay)).getString()) + (shortfall.suggestedSiding.isEmpty() ? "" : Text.translatable("gui.mtr.line_shortfall_suggest", shortfall.suggestedSiding).getString());
 				GuiCompat.draw(matrices, font, Text.literal(font.plainSubstrByWidth(shortfallText, width - rightPanelsX - TEXT_PADDING * 2)), rightPanelsX + TEXT_PADDING, yStartRightPane + SQUARE_SIZE * 2 + (TEXT_HEIGHT + TEXT_PADDING) * (stringSplit.length + (pathStatus.isEmpty() ? 0 : 1)), 0xFFFF8080);
 			}
 

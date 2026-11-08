@@ -381,6 +381,8 @@ public final class LineDuties {
 					group.sidings.add(sidingInput);
 					group.depotOf.put(siding.id, depot);
 					group.sidingNames.put(siding.id, siding.name);
+					// Named as players know the vehicle, without the prefix of custom trains
+					group.vehicles.add(siding.getTrainId().startsWith(CUSTOM_TRAIN_PREFIX) ? siding.getTrainId().substring(CUSTOM_TRAIN_PREFIX.length()) : siding.getTrainId());
 					// The trains its pool has: what the depot gives the pool, once, or else each siding's fleet (P2-C)
 					final Integer poolFleet = depot.poolFleets.get(siding.getPoolKey());
 					if (poolFleet == null) {
@@ -603,6 +605,8 @@ public final class LineDuties {
 				result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
 				plan.trains += result.trains;
 				plan.uncovered += result.uncovered;
+				final Pool pool = new Pool(String.join("/", group.vehicles), 0, group.available, result.uncovered);
+				plan.pools.add(pool);
 				result.issues.stream().filter(issue -> !plan.issues.contains(issue)).forEach(plan.issues::add);
 				plan.available += group.available;
 				if (result.uncovered > 0) {
@@ -616,12 +620,14 @@ public final class LineDuties {
 							nearestMillis = millis;
 						}
 					}
-					plan.needed += group.available + (nearest == null ? 0 : extraTrains(services, groupSidings, nearest, maxLayover, inputs));
+					pool.needed = group.available + (nearest == null ? 0 : extraTrains(services, groupSidings, nearest, maxLayover, inputs));
+					plan.needed += pool.needed;
 					if (nearest != null && plan.suggestedSiding.isEmpty()) {
 						final Depot depot = group.depotOf.get(nearest.sidingId);
 						plan.suggestedSiding = (depot == null || depot.name.isEmpty() ? "" : IGui.formatStationName(depot.name) + " ") + IGui.formatStationName(group.sidingNames.getOrDefault(nearest.sidingId, ""));
 					}
 				} else {
+					pool.needed = result.trains;
 					plan.needed += result.trains;
 				}
 			}
@@ -629,6 +635,7 @@ public final class LineDuties {
 			// known: -1, shown as that rather than as a number of trains
 			if (plan.issues.stream().anyMatch(issue -> issue.startsWith("NOT_PERIODIC"))) {
 				plan.needed = -1;
+				plan.pools.forEach(pool -> pool.needed = -1);
 			}
 			return plan;
 		}
@@ -697,6 +704,8 @@ public final class LineDuties {
 		}
 	}
 
+	private static final String CUSTOM_TRAIN_PREFIX = "mtr_custom_train_";
+
 	private static final class Group {
 
 		private final Set<String> serviceTypes;
@@ -710,6 +719,10 @@ public final class LineDuties {
 		private final Map<Long, String> sidingNames = new HashMap<>();
 		private int available;
 		private final Set<String> countedPools = new HashSet<>();
+		/**
+		 * The vehicles of its sidings, which name it where the unit has more than one group.
+		 */
+		private final Set<String> vehicles = new TreeSet<>();
 
 		private Group(Set<String> serviceTypes, Set<Long> routeIds) {
 			this.serviceTypes = serviceTypes;
@@ -775,6 +788,32 @@ public final class LineDuties {
 	}
 
 	/**
+	 * What a group of sidings planned apart needs and has (as {@link Plan#needed}).
+	 */
+	public static final class Pool {
+
+		public final String label;
+		public int needed;
+		public final int available;
+		/**
+		 * Services no train of the group was free for, counted once for each day of the week they run.
+		 */
+		public final int uncovered;
+
+		public Pool(String label, int needed, int available, int uncovered) {
+			this.label = label;
+			this.needed = needed;
+			this.available = available;
+			this.uncovered = uncovered;
+		}
+
+		@Override
+		public String toString() {
+			return label + ": " + (needed < 0 ? "needs ?" : "needs " + needed) + ", has " + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train");
+		}
+	}
+
+	/**
 	 * The duties of a unit: the slots of every siding, and whether it has trains enough.
 	 */
 	public static final class Plan {
@@ -828,6 +867,11 @@ public final class LineDuties {
 		 * The siding to add trains to when there are too few, as depot and siding name, or empty.
 		 */
 		public String suggestedSiding = "";
+		/**
+		 * The same for each group of sidings planned apart (each pool of vehicles), as trains aren't lent from one to
+		 * another: one short while another has more than it needs isn't covered by the total.
+		 */
+		public final List<Pool> pools = new ArrayList<>();
 
 		private Plan(String lineNames) {
 			this.lineNames = lineNames;
@@ -856,6 +900,14 @@ public final class LineDuties {
 				writer.writeLong(entry.getValue());
 			});
 			writeString(writer, suggestedSiding);
+			// From record 4
+			writer.writeVarInt(Math.min(pools.size(), MAX_RECORD_ITEMS));
+			pools.stream().limit(MAX_RECORD_ITEMS).forEach(pool -> {
+				writeString(writer, pool.label);
+				writer.writeInt(pool.needed);
+				writer.writeInt(pool.available);
+				writer.writeInt(pool.uncovered);
+			});
 			return writer.toBytes();
 		}
 
@@ -868,7 +920,9 @@ public final class LineDuties {
 			}
 			try {
 				final transitsim.io.ByteArrayBinary.Reader reader = new transitsim.io.ByteArrayBinary.Reader(bytes);
-				if (reader.readByte() != RECORD_VERSION) {
+				// Record 3, before the groups' counts, reads the same without them
+				final int version = reader.readByte();
+				if (version != RECORD_VERSION && version != 3) {
 					return null;
 				}
 				final Plan plan = new Plan(lineNames);
@@ -887,13 +941,18 @@ public final class LineDuties {
 					plan.returnSidings.put(readString(reader), reader.readLong());
 				}
 				plan.suggestedSiding = readString(reader);
+				if (version >= 4) {
+					for (int i = Math.min(reader.readVarInt(), MAX_RECORD_ITEMS); i > 0; i--) {
+						plan.pools.add(new Pool(readString(reader), reader.readInt(), reader.readInt(), reader.readInt()));
+					}
+				}
 				return plan;
 			} catch (RuntimeException e) {
 				return null;
 			}
 		}
 
-		private static final int RECORD_VERSION = 3;
+		private static final int RECORD_VERSION = 4;
 		private static final int MAX_RECORD_ITEMS = 4096;
 		private static final int MAX_STRING_BYTES = 65536;
 
@@ -920,7 +979,7 @@ public final class LineDuties {
 
 		public String describe() {
 			final boolean settled = needed >= 0;
-			return "line " + lineNames + (settled ? ": needs " + needed + " trains, has " : ": the duties don't repeat week after week, so the trains needed aren't known; has ") + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + shortTurnarounds();
+			return "line " + lineNames + (settled ? ": needs " + needed + " trains, has " : ": the duties don't repeat week after week, so the trains needed aren't known; has ") + available + (uncovered == 0 ? "" : ", " + uncovered / 7 + " services a day with no train" + (suggestedSiding.isEmpty() ? "" : "; add trains to " + suggestedSiding)) + (missingTimes == 0 ? "" : ", " + missingTimes + " routes left out as their times aren't known") + (returnSidings.isEmpty() ? "" : ", " + returnSidings.size() + " duties a week go back to another siding of their pool") + (pools.size() > 1 ? " (" + pools.stream().map(Pool::toString).collect(java.util.stream.Collectors.joining("; ")) + ")" : "") + shortTurnarounds();
 		}
 
 		private String shortTurnarounds() {

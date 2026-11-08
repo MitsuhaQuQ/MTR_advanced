@@ -240,13 +240,24 @@
 	/** Whether a planning unit's lines have trains enough, as the server worked out their duties by line. */
 	function shortfallText(shortfall) {
 		// -1: the duties don't repeat week after week, so what they need isn't known
-		return (shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered)) + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
+		// Each group of vehicles short on its own, where there is more than one: trains aren't lent between them, so the totals
+		// could show enough trains while one is short
+		const pools = (shortfall.pools || []).filter(pool => pool.uncovered > 0);
+		const main = (shortfall.pools || []).length > 1 && pools.length ? tr("{0}：", shortfall.lines) + pools.map(pool => pool.needed < 0 ? tr("{0} 算不出需要几列，现有 {1} 列，每天 {2} 班没有车", pool.label, pool.available, pool.uncovered) : tr("{0} 跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", pool.label, pool.needed, pool.available, pool.uncovered)).join(tr("；"))
+			: shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered);
+		return main + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
 	}
 
 	/**
 	 * The settings changed since the auto duties kept were planned (round 4, step 4), as a sentence, or empty: the game keeps
 	 * duties that still hold rather than plan them again of itself, and only suggests it.
 	 */
+	/** How many trains short, each group of vehicles counted on its own (-1 if not known), as the server works it out. */
+	function missingTrains(shortfall) {
+		if (shortfall.missing !== undefined) return shortfall.missing;
+		return shortfall.needed < 0 ? -1 : Math.max(0, shortfall.needed - shortfall.available);
+	}
+
 	function replanText(shortfall) {
 		if (!shortfall || !shortfall.replan) return "";
 		const parts = shortfall.replan.split(";").map(item => {
@@ -1425,7 +1436,7 @@
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${depot.shortfall.needed < 0 ? tr("缺车") : tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}${duties.auto && depot.shortfall && depot.shortfall.replan ? `<span class="hint" title="${escapeHtml(replanText(depot.shortfall))}"> · ${tr("建议重排")}</span>` : ""}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${missingTrains(depot.shortfall) < 0 ? tr("缺车") : tr("缺 {0} 列", missingTrains(depot.shortfall))}</span>` : ""}${duties.auto && depot.shortfall && depot.shortfall.replan ? `<span class="hint" title="${escapeHtml(replanText(depot.shortfall))}"> · ${tr("建议重排")}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
 				// Duties are the pool's (S8): by vehicle, each with the siding its train comes from; the sidings apart, as places

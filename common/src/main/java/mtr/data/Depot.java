@@ -2248,18 +2248,49 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * The settings changed since the duties kept were planned ({@link LineDuties.Plan#replanHint}), or empty.
 		 */
 		public final String replanHint;
+		/**
+		 * The same for each group of sidings planned apart, by its vehicles, with services a day: trains aren't lent from
+		 * one group to another, so the totals alone can show enough trains while one group is short.
+		 */
+		public final List<LineDuties.Pool> pools;
 
-		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding, String replanHint) {
+		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding, String replanHint, List<LineDuties.Pool> pools) {
 			this.lineNames = lineNames;
 			this.needed = needed;
 			this.available = available;
 			this.uncoveredPerDay = uncoveredPerDay;
 			this.suggestedSiding = suggestedSiding;
 			this.replanHint = replanHint;
+			this.pools = pools;
 		}
 
 		Shortfall(LineDuties.Plan plan) {
-			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding, plan.replanHint);
+			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding, plan.replanHint, perDay(plan.pools));
+		}
+
+		private static List<LineDuties.Pool> perDay(List<LineDuties.Pool> pools) {
+			final List<LineDuties.Pool> perDay = new ArrayList<>();
+			pools.forEach(pool -> perDay.add(new LineDuties.Pool(pool.label, pool.needed, pool.available, pool.uncovered / 7)));
+			return perDay;
+		}
+
+		/**
+		 * @return how many trains short the groups are, each counted on its own, or -1 if one's need isn't known
+		 */
+		public int getMissingTrains() {
+			if (pools.isEmpty()) {
+				return needed < 0 ? -1 : Math.max(0, needed - available);
+			}
+			int missing = 0;
+			for (final LineDuties.Pool pool : pools) {
+				if (pool.uncovered > 0) {
+					if (pool.needed < 0) {
+						return -1;
+					}
+					missing += Math.max(0, pool.needed - pool.available);
+				}
+			}
+			return missing;
 		}
 
 		public static void write(Shortfall shortfall, FriendlyByteBuf packet) {
@@ -2271,11 +2302,31 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				packet.writeInt(shortfall.uncoveredPerDay);
 				packet.writeUtf(shortfall.suggestedSiding);
 				packet.writeUtf(shortfall.replanHint);
+				packet.writeVarInt(shortfall.pools.size());
+				shortfall.pools.forEach(pool -> {
+					packet.writeUtf(pool.label);
+					packet.writeInt(pool.needed);
+					packet.writeInt(pool.available);
+					packet.writeInt(pool.uncovered);
+				});
 			}
 		}
 
 		public static Shortfall read(FriendlyByteBuf packet) {
-			return packet.readBoolean() ? new Shortfall(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readUtf(PACKET_STRING_READ_LENGTH)) : null;
+			if (!packet.readBoolean()) {
+				return null;
+			}
+			final String lineNames = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			final int needed = packet.readInt();
+			final int available = packet.readInt();
+			final int uncoveredPerDay = packet.readInt();
+			final String suggestedSiding = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			final String replanHint = packet.readUtf(PACKET_STRING_READ_LENGTH);
+			final List<LineDuties.Pool> pools = new ArrayList<>();
+			for (int i = Math.min(packet.readVarInt(), 256); i > 0; i--) {
+				pools.add(new LineDuties.Pool(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt()));
+			}
+			return new Shortfall(lineNames, needed, available, uncoveredPerDay, suggestedSiding, replanHint, pools);
 		}
 	}
 
