@@ -85,6 +85,11 @@ public final class SimScope {
 		// Trains of the sidings left out find no siding and are left out as well
 		scoped.trains = full.trains;
 		scoped.signalBlocks.addAll(full.signalBlocks);
+		// Everything else of the network the part runs by: interlocking zones (L2), where trains stop at platforms (round 4,
+		// step 1) and the early threshold (round 4, step 5); left out, the part ran without them
+		scoped.interlockBlocks.addAll(full.interlockBlocks);
+		scoped.stopPositions.putAll(full.stopPositions);
+		scoped.earlyThresholdMillis = full.earlyThresholdMillis;
 		return new SimScope(scoped, scoped.depots.size(), full.depots.size(), own.size());
 	}
 

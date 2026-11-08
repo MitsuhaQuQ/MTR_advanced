@@ -56,6 +56,20 @@ class SimScopeTest {
 	}
 
 	@Test
+	void thePartKeepsTheNetworksStopPositionsInterlockingAndEarlyThreshold() {
+		final SimDataset dataset = SimDatasetTest.lines(3, 400, 2, 8, 3);
+		dataset.stopPositions.put(5L, transitsim.plan.StopPositions.CENTRED);
+		dataset.signalBlocks.add(Collections.singletonList(new java.util.UUID(1, 2)));
+		dataset.interlockBlocks.add(true);
+		dataset.earlyThresholdMillis = 45000;
+		// Written and read back, as the editor's simulation and the day tool run it
+		final SimDataset scoped = SimDataset.fromBytes(SimScope.of(dataset, Collections.singleton(1L)).dataset.toBytes());
+		assertEquals(dataset.stopPositions, scoped.stopPositions);
+		assertEquals(dataset.interlockBlocks, scoped.interlockBlocks);
+		assertEquals(45000, scoped.earlyThresholdMillis);
+	}
+
+	@Test
 	void noRoutesKeepsTheWholeWorld() {
 		final SimDataset dataset = SimDatasetTest.lines(3, 400, 2, 8, 3);
 		final SimScope scope = SimScope.of(dataset, Collections.emptySet());
