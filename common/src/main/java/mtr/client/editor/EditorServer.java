@@ -440,8 +440,12 @@ public final class EditorServer {
 				return;
 			}
 			final long depotId;
+			final String group;
 			try {
-				depotId = Long.parseLong(new JsonParser().parse(body).getAsJsonObject().get("depot").getAsString());
+				final com.google.gson.JsonObject object = new JsonParser().parse(body).getAsJsonObject();
+				depotId = Long.parseLong(object.get("depot").getAsString());
+				// One duty group, or all (duty groups, step 4)
+				group = object.has("group") ? object.get("group").getAsString() : "";
 			} catch (Exception e) {
 				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
 				return;
@@ -451,7 +455,7 @@ public final class EditorServer {
 					if (!mtr.client.ClientData.hasPermission() || mtr.client.ClientData.DATA_CACHE.depotIdMap.get(depotId) == null) {
 						return false;
 					}
-					mtr.packet.PacketTrainDataGuiClient.replanDutiesC2S(depotId);
+					mtr.packet.PacketTrainDataGuiClient.replanDutiesC2S(depotId, group);
 					return true;
 				});
 				sendJson(response, "{\"ok\":" + sent + "}");

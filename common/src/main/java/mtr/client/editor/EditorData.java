@@ -343,6 +343,20 @@ public final class EditorData {
 				});
 				shortfallObject.add("pools", shortfallPools);
 				shortfallObject.addProperty("missing", depot.lineShortfall.getMissingTrains());
+				// The duty groups of the unit: each group of sidings on one day type (duty groups, step 4)
+				final JsonArray dutyGroups = new JsonArray();
+				depot.lineShortfall.groups.forEach(group -> {
+					final JsonObject groupObject = new JsonObject();
+					groupObject.addProperty("key", group.key);
+					groupObject.addProperty("label", group.getLabel());
+					groupObject.addProperty("days", group.getWeekdays());
+					groupObject.addProperty("trains", group.trains);
+					groupObject.addProperty("needed", group.needed);
+					groupObject.addProperty("uncovered", group.uncoveredPerDay);
+					groupObject.addProperty("kept", group.kept);
+					dutyGroups.add(groupObject);
+				});
+				shortfallObject.add("groups", dutyGroups);
 				depotObject.add("shortfall", shortfallObject);
 			}
 			depotsArray.add(depotObject);

@@ -153,6 +153,33 @@ class DutyGroupsKeepTest {
 	}
 
 	@Test
+	void aGroupAskedForIsPlannedAgainAloneAndTheGroupsGoToTheClients() {
+		final World world = new World(route(10, 1, 2, 7 * 60, 8 * 60), route(11, 2, 1, 7 * 60, 8 * 60));
+		final LineDuties.Plan planned = world.unit().plan(TIMES, 0);
+		final String weekend = planned.parts.get(1).key;
+		final List<String> why = new ArrayList<>();
+		final LineDuties.Plan plan = world.unit().keep(Collections.singletonMap(1L, planned.toBytes()), planned.sidings, TIMES, 0, null, null, Collections.singleton(weekend), why::add);
+		assertNotNull(plan, why.toString());
+		assertFalse(plan.kept);
+		assertEquals(Collections.singletonList(planned.parts.get(0).key), plan.keptParts, why.toString());
+		assertEquals(Collections.singletonList(weekend), plan.plannedParts);
+		assertEquals(dutiesOn(planned, WEEKDAYS), dutiesOn(plan, WEEKDAYS));
+
+		// The clients get the groups with the depot's shortfall
+		final Depot.Shortfall shortfall = new Depot.Shortfall(plan);
+		final net.minecraft.network.FriendlyByteBuf packet = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+		Depot.Shortfall.write(shortfall, packet);
+		final Depot.Shortfall read = Depot.Shortfall.read(packet);
+		assertNotNull(read);
+		assertEquals(2, read.groups.size());
+		assertTrue(read.groups.get(0).kept);
+		assertFalse(read.groups.get(1).kept);
+		assertEquals(WEEKEND, read.groups.get(1).getWeekdays());
+		assertEquals(weekend, read.groups.get(1).key);
+		assertFalse(read.groups.get(1).getLabel().contains("|"));
+	}
+
+	@Test
 	void unchangedTheDutiesAreKeptWhole() {
 		final World world = new World(route(10, 1, 2, 7 * 60, 8 * 60), route(11, 2, 1, 7 * 60, 8 * 60));
 		final LineDuties.Plan planned = world.unit().plan(TIMES, 0);

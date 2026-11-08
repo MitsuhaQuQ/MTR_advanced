@@ -514,6 +514,13 @@ public final class LineDuties {
 		 * @return the plan kept, or null to plan again
 		 */
 		public Plan keep(Map<Long, byte[]> records, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why) {
+			return keep(records, slots, fastestTimes, dayStartMillis, turnTimes, measured, Collections.emptySet(), why);
+		}
+
+		/**
+		 * @param forced the duty groups a player asked to have planned again, by key (duty groups, step 4)
+		 */
+		public Plan keep(Map<Long, byte[]> records, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, Set<String> forced, java.util.function.Consumer<String> why) {
 			// Every depot with sidings in the unit was given its duties from a plan made of the same
 			Plan record = null;
 			final Set<Long> sidingDepots = new TreeSet<>();
@@ -527,7 +534,7 @@ public final class LineDuties {
 				if (!basis.equals(depotRecord.basis)) {
 					why.accept("depot " + depotId + "'s duties were planned from other timetables or sidings (" + depotRecord.basis + ", now " + basis + ")");
 					// The duty groups whose own services and sidings are the same may still be kept (duty groups, step 2)
-					return keepParts(depotRecord, slots, fastestTimes, dayStartMillis, turnTimes, measured, why);
+					return keepParts(depotRecord, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, Collections.emptyList(), forced);
 				}
 				record = record == null ? depotRecord : record;
 			}
@@ -558,6 +565,10 @@ public final class LineDuties {
 				return null;
 			}
 			final List<DutyCheck.Break> breaks = DutyCheck.check(checkGroups, stationOf, getMaxLayover(), inputs);
+			if (breaks.isEmpty() && !forced.isEmpty()) {
+				why.accept("a player asked to plan duty groups " + forced + " again");
+				return keepParts(kept, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, breaks, forced);
+			}
 			if (!breaks.isEmpty()) {
 				final StringBuilder text = new StringBuilder(breaks.size() + " rules broke: ");
 				for (int i = 0; i < Math.min(breaks.size(), 5); i++) {
@@ -565,7 +576,7 @@ public final class LineDuties {
 				}
 				why.accept(text.append(breaks.size() > 5 ? "; ..." : "").toString());
 				// The duty groups whose duties still hold are kept, the others planned again (duty groups, step 2)
-				return keepParts(kept, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, breaks);
+				return keepParts(kept, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, breaks, forced);
 			}
 			kept.kept = true;
 			// Kept with settings changed since: a player may want them planned again by the new settings
@@ -789,19 +800,16 @@ public final class LineDuties {
 			});
 		}
 
-		private Plan keepParts(Plan record, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why) {
-			return keepParts(record, slots, fastestTimes, dayStartMillis, turnTimes, measured, why, Collections.emptyList());
-		}
-
 		/**
 		 * Keeps the duty groups planned from the same services and sidings whose duties still hold, and plans the others again
 		 * (duty groups, step 2): a group broken, or changed, takes the groups after it on the same days and routes with it,
 		 * as it may run other services than before. What comes out is checked whole; broken anywhere, it is planned again.
 		 *
 		 * @param breaks the rules the duties broke as they are
+		 * @param forced the groups a player asked to have planned again
 		 * @return the plan, or null to plan them all again, as when the record has no duty groups or none can be kept
 		 */
-		private Plan keepParts(Plan record, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why, List<DutyCheck.Break> breaks) {
+		private Plan keepParts(Plan record, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why, List<DutyCheck.Break> breaks, Set<String> forced) {
 			if (record.parts.isEmpty()) {
 				return null;
 			}
@@ -842,6 +850,8 @@ public final class LineDuties {
 					candidates.remove(key);
 				}
 			}));
+			// Asked for by a player
+			forced.forEach(candidates::remove);
 			// A group planned again takes the later groups on its days and routes with it
 			for (int i = 0; i < order.size(); i++) {
 				if (candidates.containsKey(order.get(i))) {

@@ -613,6 +613,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 */
 	public static void receiveReplanDutiesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final long depotId = packet.readLong();
+		// One duty group of the unit, or empty for all (duty groups, step 4)
+		final String group = packet.isReadable() ? packet.readUtf(SerializedDataBase.PACKET_STRING_READ_LENGTH) : "";
 		PacketGuard.execute(minecraftServer, () -> {
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData == null || RailwayData.hasNoPermission(player)) {
@@ -624,11 +626,15 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			}
 			final LineDuties.Unit unit = LineDuties.of(depot, railwayData.dataCache, railwayData.sidings);
 			final Set<Long> depotIds = unit == null ? Collections.singleton(depotId) : unit.depotIds;
-			System.out.println("Minecraft Transit Railway: planning the duties of " + (unit == null ? "depot " + depot.name : "line " + unit.name) + " again, as a player asked");
+			System.out.println("Minecraft Transit Railway: planning " + (group.isEmpty() ? "the duties" : "the duty group " + group) + " of " + (unit == null ? "depot " + depot.name : "line " + unit.name) + " again, as a player asked");
 			depotIds.forEach(id -> {
 				final Depot other = railwayData.dataCache.depotIdMap.get(id);
 				if (other != null) {
-					other.forgetAutoPlan();
+					if (group.isEmpty()) {
+						other.forgetAutoPlan();
+					} else {
+						other.replanGroup(group);
+					}
 				}
 			});
 			depotIds.forEach(id -> railwayData.railwayDataPathGenerationModule.generatePath(minecraftServer, id));

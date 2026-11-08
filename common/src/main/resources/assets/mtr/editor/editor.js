@@ -282,6 +282,105 @@
 		});
 	}
 
+	/**
+	 * The duty groups of a depot's duties as the web works them out (duty groups, step 4): its duties of each vehicle on
+	 * each set of weekdays, by "vehicle|days".
+	 */
+	function dutyGroupsOf(depot) {
+		const duties = dutiesOf(depot);
+		const groups = new Map();
+		if (duties.mode !== "diagram") return groups;
+		const vehicleOf = new Map((depot.sidings || []).map(siding => [String(siding.id), siding.vehicle || ""]));
+		Object.entries(duties.sidings).forEach(([sidingId, slots]) => slots.forEach(slot => slot.forEach(day => {
+			const key = (vehicleOf.get(sidingId) || "") + "|" + day.days;
+			groups.set(key, (groups.get(key) || 0) + 1);
+		})));
+		return groups;
+	}
+
+	/**
+	 * The duty groups of a depot's planning unit as the server planned them, each to be planned again on its own, and the
+	 * duty groups of the other depots, each to be put into this depot's draft as a template (duty groups, step 4).
+	 */
+	function dutyGroupsDialog(depot) {
+		const vehicleName = vehicle => String(vehicle || "").replace(/^mtr_custom_train_/, "") || tr("（无车型）");
+		const planned = (depot.shortfall && depot.shortfall.groups) || [];
+		const plannedRows = planned.map((group, index) => `<tr><td>${escapeHtml(group.label)}</td><td>${escapeHtml(daysText(group.days))}</td>
+			<td>${group.needed < 0 ? tr("最多同时 {0} 列，需要几列算不出", group.trains) : tr("最多同时 {0} 列，跑满需要 {1} 列", group.trains, group.needed)}${group.uncovered ? tr("，每天 {0} 班没有车", group.uncovered) : ""}</td>
+			<td>${group.kept ? tr("沿用") : tr("这次排的")}</td>
+			<td>${data.canEdit && dutiesOf(depot).auto ? `<button type="button" data-replan-group="${index}">${tr("只重排这组")}</button>` : ""}</td></tr>`).join("");
+		const others = [];
+		data.depots.filter(other => other.id !== depot.id).forEach(other => {
+			[...dutyGroupsOf(other).entries()].sort().forEach(([key, count]) => {
+				const [vehicle, days] = key.split("|");
+				if ((depot.sidings || []).some(siding => (siding.vehicle || "") === vehicle)) others.push({ other, vehicle, days: Number(days), count });
+			});
+		});
+		const otherRows = others.map((entry, index) => `<tr><td>${escapeHtml(shortName(entry.other.name))}</td><td>${escapeHtml(vehicleName(entry.vehicle))}</td><td>${escapeHtml(daysText(entry.days))}</td><td>${tr("{0} 份运用", entry.count)}</td>
+			<td>${data.canEdit ? `<button type="button" data-template="${index}">${tr("套用到本车厂")}</button>` : ""}</td></tr>`).join("");
+		openDialog(tr("运用组：{0}", escapeHtml(shortName(depot.name))), `
+			<p class="hint">${tr("运用按“车型 × 时刻表的星期”分组排：每张时刻表的日子各排一组，只改一张表时只重排它那一组，其他组沿用。")}</p>
+			<h3>${tr("本规划单元的运用组")}</h3>
+			${plannedRows ? `<table class="duty-groups"><tbody>${plannedRows}</tbody></table>
+			<p class="hint">${tr("“只重排这组”：下次寻路时只把这一组重新排一遍，其他组接得上就照旧；排在它后面、同一天跑同样线路的组会跟着重排。")}</p>` : `<p class="hint">${tr("还没有按组排过（自动运用重排一次后会列出来）")}</p>`}
+			<h3>${tr("套用其他车厂的运用组")}</h3>
+			${otherRows ? `<table class="duty-groups"><tbody>${otherRows}</tbody></table>
+			<p class="hint">${tr("把那个车厂这组运用（同车型、同样的星期）按存车线顺序放进本车厂的运用草稿，本车厂改为按运用图；那几天本车厂原来的运用换掉。原车厂不变：两边排了同样的班次时，要改掉一边再应用。")}</p>` : `<p class="hint">${tr("其他车厂没有同车型的运用")}</p>`}`, tr("关闭"), () => null);
+		dialog.querySelectorAll("[data-replan-group]").forEach(button => button.addEventListener("click", () => {
+			const group = planned[Number(button.dataset.replanGroup)];
+			dialog.close();
+			sendJson("api/replan-duties", "POST", { depot: depot.id, group: group.key }).then(result => {
+				dutyNotice = result.ok ? tr("已请求只重排“{0}”{1} {2} 这一组运用。", shortName(depot.name), group.label, daysText(group.days)) : tr("没有权限，或者游戏里没有这个车厂。");
+				renderBanner();
+			}).catch(() => {
+				dutyNotice = tr("发送失败，游戏可能已经关闭");
+				renderBanner();
+			});
+		}));
+		dialog.querySelectorAll("[data-template]").forEach(button => button.addEventListener("click", () => {
+			const entry = others[Number(button.dataset.template)];
+			dialog.close();
+			applyDutyGroup(depot, entry.other, entry.vehicle, entry.days);
+		}));
+	}
+
+	/**
+	 * Puts another depot's duties of one vehicle on some weekdays into this depot's draft (duty groups, step 4): its sidings
+	 * of the vehicle in order take the other's in order, the last taking the rest; this depot's duties on those days are
+	 * replaced, and it runs by its duties.
+	 */
+	function applyDutyGroup(depot, source, vehicle, mask) {
+		const targets = (depot.sidings || []).filter(siding => (siding.vehicle || "") === vehicle);
+		if (!targets.length) return;
+		const from = dutiesOf(source);
+		const sourceSidings = (source.sidings || []).filter(siding => (siding.vehicle || "") === vehicle);
+		editDuties(depot, duties => {
+			duties.mode = "diagram";
+			targets.forEach(target => (duties.sidings[target.id] || []).forEach(slot => {
+				for (let i = slot.length - 1; i >= 0; i--) {
+					slot[i].days &= ~mask;
+					if (!slot[i].days) slot.splice(i, 1);
+				}
+			}));
+			let count = 0;
+			sourceSidings.forEach((sourceSiding, k) => {
+				const target = targets[Math.min(k, targets.length - 1)];
+				const slots = duties.sidings[target.id] || (duties.sidings[target.id] = []);
+				(from.sidings[sourceSiding.id] || []).forEach(slot => slot.filter(day => day.days === mask).forEach(day => {
+					let index = slots.findIndex(each => !each.some(other => other.days & day.days));
+					if (index < 0) {
+						index = slots.length;
+						slots.push([]);
+					}
+					const id = dutyIdOf(slots[index]) || newDutyId();
+					slots[index].push({ days: day.days, stay: day.stay, next: -1, duty: id, start: slots[index].length ? startOf(slots[index]) : "prefer", nextDuty: "0", returnSiding: "0", fromOvernight: false, segments: JSON.parse(JSON.stringify(day.segments)) });
+					count++;
+				}));
+			});
+			return tr("已把“{0}”{1} {2} 的 {3} 份运用放进“{4}”的运用草稿（按运用图），检查后再应用；原车厂的运用没变。", shortName(source.name), vehicle.replace(/^mtr_custom_train_/, ""), daysText(mask), count, shortName(depot.name));
+		});
+	}
+
 	/** The shortfalls of the depots running a route, each unit once. */
 	function shortfallsOf(r) {
 		const texts = new Set();
@@ -6686,6 +6785,7 @@
 			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
 			[tr("按时刻表把列车摆到现在的位置…"), data.canEdit ? () => placeTrainsDialog(depot) : null],
 			[tr("重新排运用…"), data.canEdit && dutiesOf(depot).auto ? () => replanDialog(depot) : null],
+			[tr("运用组…"), () => dutyGroupsDialog(depot)],
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],

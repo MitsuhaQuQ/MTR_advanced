@@ -626,8 +626,16 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	}
 
 	public static void replanDutiesC2S(long depotId) {
+		replanDutiesC2S(depotId, "");
+	}
+
+	/**
+	 * @param group the key of one duty group of the depot's planning unit to plan again, or empty for all (duty groups, step 4)
+	 */
+	public static void replanDutiesC2S(long depotId, String group) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
+		packet.writeUtf(group);
 		RegistryClient.sendToServer(PACKET_REPLAN_DUTIES, packet);
 	}
 

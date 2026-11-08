@@ -160,6 +160,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private byte[] autoPlanRecord = new byte[0];
 	/**
+	 * The duty groups players asked to have planned again, by key, until the next path generation takes them.
+	 */
+	private final Set<String> replanGroups = new TreeSet<>();
+	/**
 	 * {@link #autoDutiesKey} once the depot no longer plans by line and its paths were found again for that.
 	 */
 	private static final String NOT_BY_LINE = "";
@@ -1004,10 +1008,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		// still hold (round 4, step 4)
 		final Map<Long, byte[]> keptRecords = new HashMap<>();
 		final Map<Long, List<DepotDuties.Slot>> keptSlots = new TreeMap<>();
+		// The duty groups players asked to have planned again (duty groups, step 4), taken now
+		final Set<String> forcedGroups = new TreeSet<>();
 		if (lineUnit != null) {
 			lineUnit.depotIds.forEach(depotId -> {
 				final Depot depot = liveDataCache.depotIdMap.get(depotId);
 				// A depot the plan gave no duties has none, and its record all the same
+				if (depot != null) {
+					forcedGroups.addAll(depot.replanGroups);
+					depot.replanGroups.clear();
+				}
 				if (depot != null && !depot.duties.diagramMode) {
 					keptRecords.put(depotId, depot.autoPlanRecord);
 					depot.autoDuties.sidings.forEach((sidingId, slots) -> keptSlots.put(sidingId, new ArrayList<>(slots)));
@@ -1040,7 +1050,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				// The depots of the unit found again together plan the same duties: one plans them, the others take its plan
 				final int dayStartMillis = TimetableConfig.getDayStartMillis();
-				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes + "|" + describeWays(measuredWays), () -> {
+				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes + "|" + describeWays(measuredWays) + "|" + forcedGroups, () -> {
 					final java.util.function.Function<Route, long[][]> fastestTimes = route -> {
 						final long[][] times = routeSearch.getFastestTimes(route, dataCache);
 						return times == null || times.length == 0 ? null : times;
@@ -1049,7 +1059,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					// planned again once one breaks (round 4, step 4)
 					final long checkStart = System.nanoTime();
 					final List<String> why = new ArrayList<>();
-					final LineDuties.Plan kept = lineUnit.keep(keptRecords, keptSlots, fastestTimes, dayStartMillis, turnTimes, measuredWays, why::add);
+					final LineDuties.Plan kept = lineUnit.keep(keptRecords, keptSlots, fastestTimes, dayStartMillis, turnTimes, measuredWays, forcedGroups, why::add);
 					final long checkMillis = (System.nanoTime() - checkStart) / 1000000;
 					if (kept != null && !kept.kept) {
 						// Some duty groups kept, the others planned again (duty groups, step 2)
@@ -1793,6 +1803,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		autoPlanRecord = new byte[0];
 	}
 
+	/**
+	 * Has a duty group of the depot's planning unit planned again with the next path generation, the others kept while
+	 * they hold (duty groups, step 4). Not saved.
+	 */
+	public void replanGroup(String key) {
+		replanGroups.add(key);
+	}
+
 	public String getLineUnitKey() {
 		return lineUnitKey;
 	}
@@ -2242,6 +2260,47 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Whether a planning unit's lines have trains enough ({@link LineDuties.Plan}): the trains needed to run every service,
 	 * those the sidings hold, the services a day with no train and where to add trains.
 	 */
+	/**
+	 * A duty group as the clients see it (duty groups, step 4): its key ({@link LineDuties.Part#key}: the vehicles, a
+	 * digest of the group of sidings and the weekdays), the trains it runs at most and needs, the services a day with no
+	 * train, and whether the last plan kept it as it was.
+	 */
+	public static final class DutyGroup {
+
+		public final String key;
+		public final int trains;
+		public final int needed;
+		public final int uncoveredPerDay;
+		public final boolean kept;
+
+		public DutyGroup(String key, int trains, int needed, int uncoveredPerDay, boolean kept) {
+			this.key = key;
+			this.trains = trains;
+			this.needed = needed;
+			this.uncoveredPerDay = uncoveredPerDay;
+			this.kept = kept;
+		}
+
+		/**
+		 * @return the vehicles of its sidings
+		 */
+		public String getLabel() {
+			final int end = key.indexOf('#');
+			return end < 0 ? key : key.substring(0, end);
+		}
+
+		/**
+		 * @return its weekdays, bit 0 Monday
+		 */
+		public int getWeekdays() {
+			try {
+				return Integer.parseInt(key.substring(key.lastIndexOf('|') + 1));
+			} catch (RuntimeException e) {
+				return 0;
+			}
+		}
+	}
+
 	public static final class Shortfall {
 
 		public final String lineNames;
@@ -2258,6 +2317,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * one group to another, so the totals alone can show enough trains while one group is short.
 		 */
 		public final List<LineDuties.Pool> pools;
+		/**
+		 * The duty groups of the unit (duty groups, step 4): each group of sidings on one day type, for the advanced editor.
+		 */
+		public final List<DutyGroup> groups = new ArrayList<>();
 
 		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding, String replanHint, List<LineDuties.Pool> pools) {
 			this.lineNames = lineNames;
@@ -2271,6 +2334,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		Shortfall(LineDuties.Plan plan) {
 			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding, plan.replanHint, perDay(plan.pools));
+			plan.parts.forEach(part -> groups.add(new DutyGroup(part.key, part.trains, part.needed, part.uncovered / 7, plan.kept || plan.keptParts.contains(part.key))));
 		}
 
 		private static List<LineDuties.Pool> perDay(List<LineDuties.Pool> pools) {
@@ -2314,6 +2378,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					packet.writeInt(pool.available);
 					packet.writeInt(pool.uncovered);
 				});
+				packet.writeVarInt(shortfall.groups.size());
+				shortfall.groups.forEach(group -> {
+					packet.writeUtf(group.key);
+					packet.writeInt(group.trains);
+					packet.writeInt(group.needed);
+					packet.writeInt(group.uncoveredPerDay);
+					packet.writeBoolean(group.kept);
+				});
 			}
 		}
 
@@ -2331,7 +2403,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (int i = Math.min(packet.readVarInt(), 256); i > 0; i--) {
 				pools.add(new LineDuties.Pool(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt()));
 			}
-			return new Shortfall(lineNames, needed, available, uncoveredPerDay, suggestedSiding, replanHint, pools);
+			final Shortfall shortfall = new Shortfall(lineNames, needed, available, uncoveredPerDay, suggestedSiding, replanHint, pools);
+			for (int i = Math.min(packet.readVarInt(), 4096); i > 0; i--) {
+				shortfall.groups.add(new DutyGroup(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readBoolean()));
+			}
+			return shortfall;
 		}
 	}
 
