@@ -12,6 +12,7 @@ import transitsim.network.RouteLegs;
 import transitsim.plan.StopTimes;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -504,6 +505,82 @@ public final class RoutePaths {
 			}
 		}
 		return PathFailure.diagnose(graph.get(), platforms, waypointPositions, plan.reachedStops);
+	}
+
+	/**
+	 * A way out of a siding to a platform, or back from a platform to a siding, found on the track sections as a route's
+	 * legs are (optimisation round 4, step 3: measured against the depot's own paths before it replaces them), and timed for
+	 * a vehicle: out, from the middle of the siding to standing at the platform; back, from standing at the platform to the
+	 * end of the way.
+	 *
+	 * @return the milliseconds, or -1 with no way
+	 */
+	public long measureDepotLeg(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, PathTiming.Vehicle vehicle, boolean out) {
+		return measureDepotLeg(from, to, rails, vehicle, out, 0);
+	}
+
+	/**
+	 * @param platformEnd the node the line runs the platform towards (at the first stop going out, at the last coming
+	 *                    back), so the train runs it the same way; 0 for either
+	 */
+	public long measureDepotLeg(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, PathTiming.Vehicle vehicle, boolean out, long platformEnd) {
+		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
+		if (legs == null) {
+			return -1;
+		}
+		final List<transitsim.network.TrackSections.Section> sections = new ArrayList<>();
+		for (final SavedRailBase savedRailBase : Arrays.asList(from, to)) {
+			final List<BlockPos> positions = savedRailBase.getOrderedPositions(BlockPos.ZERO, false);
+			final transitsim.network.TrackSections.Section section = legs.snapshot.getSectionOf(positions.get(0).asLong(), positions.get(1).asLong());
+			if (section == null) {
+				return -1;
+			}
+			sections.add(section);
+		}
+		// The platform run the way the line runs it (round 4): along the section's order if that is where it ends
+		final transitsim.network.TrackSections.Section platformSection = sections.get(out ? 1 : 0);
+		final long[] platformNodes = platformSection.getNodes();
+		final Boolean platformAlong = platformEnd == 0 ? null : platformEnd == platformNodes[platformNodes.length - 1];
+		// Not kept for now: measured against the depot's paths before it replaces them
+		final RouteLegs.Plan plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, legs.withoutKeeping());
+		if (!plan.isFound()) {
+			return -1;
+		}
+		if (Boolean.getBoolean("mtr.debugDepotLegs") && !plan.consulted.isEmpty()) {
+			int domain = 0;
+			for (final transitsim.network.LegRouter.Leg leg : plan.consulted) {
+				domain = Math.max(domain, leg.domainSections.length);
+			}
+			System.out.println("Minecraft Transit Railway depot leg domain: " + domain + " sections of " + legs.snapshot.sections.size());
+		}
+		final List<PathData> path = expand(plan, legs.snapshot, Arrays.asList(from, to), rails);
+		if (path == null || path.isEmpty()) {
+			return -1;
+		}
+		if (Boolean.getBoolean("mtr.debugDepotLegs")) {
+			final StringBuilder builder = new StringBuilder();
+			double length = 0;
+			int reversals = 0;
+			for (int i = 0; i < path.size(); i++) {
+				length += path.get(i).rail.getLength();
+				if (i + 1 < path.size() && path.get(i).isOppositeRail(path.get(i + 1))) {
+					reversals++;
+					builder.append(" reverse@").append(Math.round(length));
+				}
+				if (path.get(i).savedRailBaseId != 0 && (i == 0 || path.get(i - 1).savedRailBaseId != path.get(i).savedRailBaseId)) {
+					builder.append(" ").append(path.get(i).rail.railType).append(":").append(path.get(i).savedRailBaseId).append("@").append(Math.round(length));
+				}
+			}
+			System.out.println("Minecraft Transit Railway depot leg path: " + (out ? "out" : "back") + " " + from.id + " -> " + to.id + ": " + path.size() + " rails, " + Math.round(length) + " blocks, " + reversals + " reversals, cost " + Math.round(plan.cost) + ":" + builder);
+		}
+		if (out) {
+			return PathTiming.calculateStopTimes(vehicle, path).getLeadMillis();
+		}
+		final double headStart = path.get(0).rail.getLength();
+		final PathTiming.Vehicle standing = new PathTiming.Vehicle((float) (2 * headStart - vehicle.trainCars * vehicle.spacing), vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode, vehicle.maxSpeed);
+		final List<transitsim.plan.TimeSegment> timeSegments = new ArrayList<>();
+		PathTiming.generateTimeSegments(standing, path, timeSegments, new HashMap<>(), new StopTimes(), 0, 0);
+		return timeSegments.isEmpty() ? -1 : (long) (timeSegments.get(timeSegments.size() - 1).endTime * 50);
 	}
 
 	/**

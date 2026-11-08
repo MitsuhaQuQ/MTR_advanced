@@ -956,6 +956,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						siding.setRecordedLegs(recorded, packet -> minecraftServer.execute(() -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_SIDING, packet))));
 					}
 				}));
+				// With -Dmtr.debugDepotLegs=true, the ways out and back as measured on the depot's paths against the ways found on
+				// the track sections (optimisation round 4, step 3, measured before one replaces the other)
+				if (Boolean.getBoolean("mtr.debugDepotLegs") && railwayData != null) {
+					mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> debugDepotLegs(siding, railwayData.routePaths, rails, dataCache)));
+				}
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes);
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name));
 			} catch (CancellationException e) {
@@ -969,6 +974,57 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		});
 		callback.accept(thread);
 		thread.start();
+	}
+
+	/**
+	 * @return the node a route runs the platform towards, where it is the route's first stop or its last, or 0 if no route
+	 * found on the rails does
+	 */
+	private static long runningEnd(long platformId, boolean first, RoutePaths routePaths, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		for (final Route route : dataCache.routeIdMap.values()) {
+			if (route.platformIds.isEmpty() || (first ? route.getFirstPlatformId() : route.getLastPlatformId()) != platformId) {
+				continue;
+			}
+			final RoutePaths.RoutePath routePath = routePaths.getFound(route, dataCache, rails);
+			if (routePath == null || !routePath.isFound()) {
+				continue;
+			}
+			final List<PathData> path = routePath.getPath(route.platformIds);
+			for (int i = first ? 0 : path.size() - 1; first ? i < path.size() : i >= 0; i += first ? 1 : -1) {
+				if (path.get(i).savedRailBaseId == platformId) {
+					return path.get(i).getLastPos().asLong();
+				}
+			}
+		}
+		return 0;
+	}
+
+	private static void debugDepotLegs(Siding siding, RoutePaths routePaths, Map<BlockPos, Map<BlockPos, Rail>> rails, DataCache dataCache) {
+		final DepotLegs measured = siding.getDepotLegs();
+		final PathTiming.Vehicle vehicle = siding.getTimingVehicle();
+		measured.outMillis.forEach((platformId, millis) -> {
+			final Platform platform = dataCache.platformIdMap.get(platformId);
+			final long byLegs = platform == null ? -1 : routePaths.measureDepotLeg(siding, platform, rails, vehicle, true, runningEnd(platformId, true, routePaths, dataCache, rails));
+			System.out.println("Minecraft Transit Railway depot leg: out of siding " + siding.name + " (" + siding.id + ") to " + (platform == null ? "?" : platform.name) + " (" + platformId + "): paths " + millis + " ms, legs " + byLegs + " ms, difference " + (byLegs < 0 ? "no way" : (byLegs - millis) + " ms"));
+		});
+		measured.backMillis.forEach((platformId, millis) -> {
+			final Platform platform = dataCache.platformIdMap.get(platformId);
+			// Back to the siding or any other of its pool, as the depot's paths go back to any of them, the nearest counting
+			long moving = -1;
+			if (platform != null) {
+				for (final Siding target : dataCache.sidingIdMap.values()) {
+					if (target == siding || dataCache.sidingIdToDepot.get(target.id) == dataCache.sidingIdToDepot.get(siding.id) && siding.getPoolKey().equals(target.getPoolKey())) {
+						final long toTarget = routePaths.measureDepotLeg(platform, target, rails, vehicle, false, runningEnd(platformId, false, routePaths, dataCache, rails));
+						if (toTarget >= 0 && (moving < 0 || toTarget < moving)) {
+							moving = toTarget;
+						}
+					}
+				}
+			}
+			// The depot's paths count the last stop's dwell in the way back
+			final long byLegs = moving < 0 ? -1 : moving + platform.getDwellTime() * 500L;
+			System.out.println("Minecraft Transit Railway depot leg: back from " + (platform == null ? "?" : platform.name) + " (" + platformId + ") to siding " + siding.name + " (" + siding.id + "): paths " + millis + " ms, legs " + byLegs + " ms, difference " + (byLegs < 0 ? "no way" : (byLegs - millis) + " ms"));
+		});
 	}
 
 	/**

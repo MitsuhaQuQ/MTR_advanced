@@ -70,7 +70,7 @@ public final class GraphRecords {
 	private volatile Map<Long, Set<String>> owners = Collections.emptyMap();
 	private volatile double maxChordPerCost;
 	private final LegCache legCache = new LegCache();
-	private List<byte[]> loadedLegs = new ArrayList<>();
+	private Map<Long, byte[]> loadedLegs = new HashMap<>();
 	private Map<Long, Set<String>> loadedOwners = new HashMap<>();
 	/**
 	 * What was written of the leg layer, to write only what differs.
@@ -173,21 +173,28 @@ public final class GraphRecords {
 			writtenOwners.putAll(loadedOwners);
 			// The legs as saved, where every section they touched is still there; the change drops the rest
 			int taken = 0;
-			for (final byte[] data : loadedLegs) {
+			for (final Map.Entry<Long, byte[]> entry : loadedLegs.entrySet()) {
+				boolean kept = false;
 				try {
-					final LegRouter.Leg leg = LegRouter.Leg.fromBytes(data, legCache.getVersion());
+					final LegRouter.Leg leg = LegRouter.Leg.fromBytes(entry.getValue(), legCache.getVersion());
 					if (leg != null && Arrays.stream(leg.domainSections).allMatch(newSnapshot.sections::containsKey) && legCache.put(leg)) {
 						writtenLegs.put(leg.request.key, leg);
+						kept = leg.request.key == entry.getKey();
 						taken++;
 					}
 				} catch (Exception e) {
 					System.out.println("Minecraft Transit Railway: a saved leg couldn't be read: " + e.getMessage());
 				}
+				// A row not taken back, as one found by other rules (round 4), is removed with the next write: written as
+				// nothing, it isn't among the legs kept
+				if (!kept) {
+					writtenLegs.putIfAbsent(entry.getKey(), null);
+				}
 			}
 			if (!loadedLegs.isEmpty()) {
 				System.out.println("Minecraft Transit Railway: " + taken + " of " + loadedLegs.size() + " saved legs taken back");
 			}
-			loadedLegs = new ArrayList<>();
+			loadedLegs = new HashMap<>();
 			loadedOwners = new HashMap<>();
 		}
 		final Set<Long> changed = new HashSet<>(change.added);
@@ -261,6 +268,17 @@ public final class GraphRecords {
 			// Another thread may have found it at the same time: what is kept is used, so the routes agree on it
 			final LegRouter.Leg taken = legCache.keep(leg);
 			return taken == null ? leg : taken;
+		}
+
+		/**
+		 * @return the same legs, found without keeping what is found: for measuring ways the cache isn't for, so their
+		 * search domains don't weigh on it or on the save
+		 */
+		public RouteLegs.LegSource withoutKeeping() {
+			return request -> {
+				final LegRouter.Leg kept = legCache.get(request);
+				return kept != null ? kept : LegRouter.find(snapshot, version, owners, request, COORDINATES, maxChordPerCost);
+			};
 		}
 
 		/**
@@ -477,7 +495,7 @@ public final class GraphRecords {
 			});
 			final Map<Long, Set<String>> ownerSets = new HashMap<>();
 			final Map<Long, Long> sectionSets = new HashMap<>();
-			store.loadLegLayer((id, data) -> loadedLegs.add(data), (id, data) -> sectionSets.put(id, java.nio.ByteBuffer.wrap(data).getLong()), (id, data) -> ownerSets.put(id, TrackOwnership.fromBytes(data)));
+			store.loadLegLayer(loadedLegs::put, (id, data) -> sectionSets.put(id, java.nio.ByteBuffer.wrap(data).getLong()), (id, data) -> ownerSets.put(id, TrackOwnership.fromBytes(data)));
 			sectionSets.forEach((hash, setId) -> {
 				final Set<String> sectionOwners = ownerSets.get(setId);
 				if (sectionOwners != null) {

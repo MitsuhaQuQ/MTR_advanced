@@ -72,6 +72,44 @@ public final class RouteLegs {
 	 * @param waypoints    the key nodes after each stop, before the next
 	 * @param line         the route's line, or null for a connecting line
 	 */
+	/**
+	 * A way out of a depot to a platform or back from one (optimisation round 4, step 3): the train leaves and arrives the
+	 * ways given, as the line runs at the platform, never turning back where it starts; a way not given (at a siding) may
+	 * be either. It keeps to no line's track.
+	 *
+	 * @param fromAlong the way it leaves the first section, along its order or against it, or null for either
+	 * @param toAlong   the way it arrives at the last, or null for either
+	 */
+	public static Plan planBetween(long fromSection, Boolean fromAlong, long toSection, Boolean toAlong, LegSource legSource) {
+		final List<LegRouter.Leg> consulted = new ArrayList<>();
+		LegRouter.Leg best = null;
+		int bestFrom = 0;
+		int bestTo = 0;
+		double bestCost = Double.POSITIVE_INFINITY;
+		for (final int fromWay : fromAlong == null ? new int[]{1, 0} : new int[]{fromAlong ? 1 : 0}) {
+			final LegRouter.Leg leg = legSource.get(new LegRouter.Request(fromSection, fromWay == 1, toSection, new long[0], null, false));
+			consulted.add(leg);
+			for (final int toWay : toAlong == null ? new int[]{1, 0} : new int[]{toAlong ? 1 : 0}) {
+				final double cost = leg.getCost(toWay == 1);
+				if (cost < bestCost) {
+					bestCost = cost;
+					best = leg;
+					bestFrom = fromWay;
+					bestTo = toWay;
+				}
+			}
+		}
+		if (best == null) {
+			return new Plan(1, Double.POSITIVE_INFINITY, new ArrayList<>(), new int[2], new ArrayList<>(), 0, consulted);
+		}
+		final List<long[]> steps = new ArrayList<>();
+		steps.add(new long[]{fromSection, bestFrom, 0});
+		steps.addAll(best.getSteps(bestTo == 1));
+		final List<LegRouter.Request> requests = new ArrayList<>();
+		requests.add(best.request);
+		return new Plan(2, bestCost, steps, new int[]{0, steps.size() - 1}, requests, 0, consulted);
+	}
+
 	public static Plan plan(List<Long> stopSections, List<long[]> waypoints, String line, LegSource legSource) {
 		final int stopCount = stopSections.size();
 		final List<LegRouter.Leg> consulted = new ArrayList<>();

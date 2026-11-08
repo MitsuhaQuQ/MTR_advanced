@@ -128,6 +128,103 @@ class RouteLegsTest {
 	}
 
 	@Test
+	void aWayToASidingIsDoneOnceTheSidingIsReached() {
+		// Platform P, track east to a siding at the end of the line; west of P a long line with a spur at every node
+		final TrackSections.Rail platform = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);
+		final TrackSections.Rail siding = rail(60, 0, 100, 0, SectionType.SIDING, 9);
+		final List<TrackSections.Rail> all = new ArrayList<>(Arrays.asList(platform, siding, track(20, 0, 60, 0)));
+		for (int i = 0; i < 50; i++) {
+			all.add(track(-i * 20, 0, -(i + 1) * 20, 0));
+			all.add(track(-(i + 1) * 20, 0, -(i + 1) * 20 - 10, 40));
+		}
+		final TrackSections sections = new TrackSections();
+		sections.sync(railMap(all.toArray(new TrackSections.Rail[0])), Collections.emptyMap());
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final long from = sections.getSectionOf(platform.getKey());
+		final long to = sections.getSectionOf(siding.getKey());
+		final LegRouter.Leg leg = fresh(snapshot, 0, Collections.emptyMap()).get(new LegRouter.Request(from, true, to, new long[0], null));
+		// Found the way it can be reached, and not the line west of the platform, which the other way would have searched
+		assertTrue(Double.isFinite(Math.min(leg.getCost(true), leg.getCost(false))));
+		assertTrue(leg.domainSections.length < 10, leg.domainSections.length + " of " + snapshot.sections.size());
+		assertTrue(RouteLegs.plan(Arrays.asList(from, to), Collections.emptyList(), null, fresh(snapshot, 0, Collections.emptyMap())).isFound());
+	}
+
+	@Test
+	void aLegToATerminusDoesntSearchForTheWayThatEndsThere() throws java.io.IOException {
+		// A terminus platform at the end of the track, reached from the east; west of the first platform a long line with
+		// a spur at every node, which looking for the terminus's other way would have searched
+		final TrackSections.Rail platform = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);
+		final TrackSections.Rail terminus = rail(100, 0, 120, 0, SectionType.PLATFORM, 2);
+		final List<TrackSections.Rail> all = new ArrayList<>(Arrays.asList(platform, terminus, track(20, 0, 100, 0)));
+		for (int i = 0; i < 50; i++) {
+			all.add(track(-i * 20, 0, -(i + 1) * 20, 0));
+			all.add(track(-(i + 1) * 20, 0, -(i + 1) * 20 - 10, 40));
+		}
+		final TrackSections sections = new TrackSections();
+		sections.sync(railMap(all.toArray(new TrackSections.Rail[0])), Collections.emptyMap());
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final long from = sections.getSectionOf(platform.getKey());
+		final long to = sections.getSectionOf(terminus.getKey());
+		final LegRouter.Leg leg = fresh(snapshot, 0, Collections.emptyMap()).get(new LegRouter.Request(from, true, to, new long[0], "A"));
+		assertTrue(Double.isFinite(Math.min(leg.getCost(true), leg.getCost(false))));
+		assertTrue(leg.domainSections.length < 10, leg.domainSections.length + " of " + snapshot.sections.size());
+		// Saved and read back as it was, the way it may start too
+		final LegRouter.Leg strict = fresh(snapshot, 0, Collections.emptyMap()).get(new LegRouter.Request(from, true, to, new long[0], null, false));
+		final LegRouter.Leg read = LegRouter.Leg.fromBytes(strict.toBytes(), 0);
+		assertNotNull(read);
+		assertEquals(strict.request.key, read.request.key);
+		assertFalse(read.request.turnAtStart);
+	}
+
+	@Test
+	void theOtherWayIsNotLookedForBeyondWhereItCouldMatter() {
+		// Beyond the last stop a short track to the end of the line, so the stop could be entered from there but can't be
+		// reached that way; behind the first stop a long line with a spur at every node, which a train turning back at once
+		// could search; a connecting line, which may run anywhere
+		final TrackSections.Rail platform = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);
+		final TrackSections.Rail stop = rail(100, 0, 120, 0, SectionType.PLATFORM, 2);
+		final List<TrackSections.Rail> all = new ArrayList<>(Arrays.asList(platform, stop, track(20, 0, 100, 0), track(120, 0, 160, 0)));
+		for (int i = 0; i < 50; i++) {
+			all.add(track(-i * 20, 0, -(i + 1) * 20, 0));
+			all.add(track(-(i + 1) * 20, 0, -(i + 1) * 20 - 10, 40));
+		}
+		final TrackSections sections = new TrackSections();
+		sections.sync(railMap(all.toArray(new TrackSections.Rail[0])), Collections.emptyMap());
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final long from = sections.getSectionOf(platform.getKey());
+		final long to = sections.getSectionOf(stop.getKey());
+		final boolean eastIsAlong = sections.getSection(from).getNodes()[1] == pos(20, 0);
+		final LegRouter.Leg leg = fresh(snapshot, 0, Collections.emptyMap()).get(new LegRouter.Request(from, eastIsAlong, to, new long[0], null));
+		assertTrue(Double.isFinite(Math.min(leg.getCost(true), leg.getCost(false))));
+		assertTrue(leg.domainSections.length < 20, leg.domainSections.length + " of " + snapshot.sections.size());
+	}
+
+	@Test
+	void waysOutAndBackRunThePlatformTheWayTheLineDoes() {
+		// A siding at each end of a platform
+		final TrackSections.Rail platform = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);
+		final TrackSections.Rail east = rail(60, 0, 100, 0, SectionType.SIDING, 8);
+		final TrackSections.Rail west = rail(-40, 0, -80, 0, SectionType.SIDING, 9);
+		final TrackSections sections = new TrackSections();
+		sections.sync(railMap(platform, east, west, track(20, 0, 60, 0), track(0, 0, -40, 0)), Collections.emptyMap());
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final long p = sections.getSectionOf(platform.getKey());
+		final long e = sections.getSectionOf(east.getKey());
+		final long w = sections.getSectionOf(west.getKey());
+		final boolean eastIsAlong = sections.getSection(p).getNodes()[1] == pos(20, 0);
+		final RouteLegs.LegSource source = fresh(snapshot, 0, Collections.emptyMap());
+		// Back from a line running east: on to the east siding, never turning back on the platform for the west one
+		assertTrue(RouteLegs.planBetween(p, eastIsAlong, e, null, source).isFound());
+		assertFalse(RouteLegs.planBetween(p, eastIsAlong, w, null, source).isFound());
+		assertTrue(RouteLegs.planBetween(p, !eastIsAlong, w, null, source).isFound());
+		// A route's leg may turn back at once at a cost, as before
+		assertTrue(RouteLegs.plan(Arrays.asList(p, w), Collections.emptyList(), null, source).isFound());
+		// Out to a line running east: from the west siding, arriving the line's way; from the east one it can't
+		assertTrue(RouteLegs.planBetween(w, null, p, eastIsAlong, source).isFound());
+		assertFalse(RouteLegs.planBetween(e, null, p, eastIsAlong, source).isFound());
+	}
+
+	@Test
 	void aNewShortcutFindsTheLegAgain() {
 		// Platform A, a way round by C, platform B; then a straight way from A to B
 		final TrackSections.Rail platformA = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);

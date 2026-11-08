@@ -21,7 +21,7 @@ public final class LegRouter {
 	/**
 	 * Changed whenever the rules change, so legs found by older rules are found again.
 	 */
-	public static final int VERSION = 1;
+	public static final int VERSION = 3;
 
 	private LegRouter() {
 	}
@@ -49,9 +49,19 @@ public final class LegRouter {
 		 * The route's line, or null for a connecting line, which runs anywhere.
 		 */
 		public final String line;
+		/**
+		 * Whether the train may turn back at once on the first stop, at a cost; not for a way out of or back to a depot,
+		 * which runs the way the line does (round 4, step 3).
+		 */
+		public final boolean turnAtStart;
 		public final long key;
 
 		public Request(long fromSection, boolean fromAlong, long toSection, long[] waypoints, String line) {
+			this(fromSection, fromAlong, toSection, waypoints, line, true);
+		}
+
+		public Request(long fromSection, boolean fromAlong, long toSection, long[] waypoints, String line, boolean turnAtStart) {
+			this.turnAtStart = turnAtStart;
 			this.fromSection = fromSection;
 			this.fromAlong = fromAlong;
 			this.toSection = toSection;
@@ -64,7 +74,9 @@ public final class LegRouter {
 			for (final long waypoint : waypoints) {
 				hash = mix(hash, waypoint);
 			}
-			key = mix(hash, line == null ? 0 : line.hashCode() * 31L + line.length());
+			hash = mix(hash, line == null ? 0 : line.hashCode() * 31L + line.length());
+			// Requests as before keep their keys
+			key = turnAtStart ? hash : mix(hash, 3);
 		}
 	}
 
@@ -117,6 +129,7 @@ public final class LegRouter {
 				if (request.line != null) {
 					output.writeUTF(request.line);
 				}
+				output.writeBoolean(request.turnAtStart);
 				for (int i = 0; i < 2; i++) {
 					output.writeDouble(costs[i]);
 					output.writeInt(steps[i] == null ? -1 : steps[i].size());
@@ -151,6 +164,7 @@ public final class LegRouter {
 			final long toSection = input.readLong();
 			final long[] waypoints = readLongs(input);
 			final String line = input.readBoolean() ? input.readUTF() : null;
+			final boolean turnAtStart = input.readBoolean();
 			final double[] costs = new double[2];
 			final List<long[]>[] steps = new List[2];
 			for (int i = 0; i < 2; i++) {
@@ -172,7 +186,7 @@ public final class LegRouter {
 			final long[] domainSections = readLongs(input);
 			final long[] domainNodes = readLongs(input);
 			final long badWaypoint = input.readLong();
-			return new Leg(new Request(fromSection, fromAlong, toSection, waypoints, line), version, costs, steps, domainSections, domainNodes, badWaypoint);
+			return new Leg(new Request(fromSection, fromAlong, toSection, waypoints, line, turnAtStart), version, costs, steps, domainSections, domainNodes, badWaypoint);
 		}
 
 		/**
@@ -225,12 +239,33 @@ public final class LegRouter {
 		final Search search = new Search(graph, owners, request, coordinates, Math.max(maxChordPerCost, Double.MIN_VALUE), domainSections);
 		// From the first stop run its way, or turned back onto it at once at a cost
 		search.push(null, from, request.fromAlong, 0, 0, false, true);
-		search.push(null, from, !request.fromAlong, 0, from.getCost() + RailRouter.TURN_BACK_PENALTY, true, true);
+		if (request.turnAtStart) {
+			search.push(null, from, !request.fromAlong, 0, from.getCost() + RailRouter.TURN_BACK_PENALTY, true, true);
+		}
+		// Only the ways the last stop can be entered by are looked for (optimisation round 4): a way whose end of the section
+		// is the end of the track, as at a terminus, can't be, and searching for it would search the whole network. A
+		// siding is reached one way only, the way it is entered. Found legs are the same, their search domains smaller
+		final int wanted;
+		if (to.getType() == SectionType.SIDING) {
+			wanted = 1;
+		} else if (request.fromSection == request.toSection) {
+			wanted = 2;
+		} else {
+			wanted = Math.max(1, (canEnter(graph, to, to.getStart()) ? 1 : 0) + (canEnter(graph, to, to.getEnd()) ? 1 : 0));
+		}
 		int found = 0;
-		while (!search.queue.isEmpty() && found < 2) {
+		// Once one way is found, the other only matters if it costs less than that way and turning back at the start of the
+		// next leg, which a route's next leg may always do; beyond that it is never taken, so the search stops there
+		// (round 4) rather than searching the whole network for a way that may not be there. Not for ways out and back,
+		// which ask for a way of their own
+		double bound = Double.POSITIVE_INFINITY;
+		while (!search.queue.isEmpty() && found < wanted) {
 			final State state = search.queue.poll();
 			if (state.stale) {
 				continue;
+			}
+			if (state.estimate > bound) {
+				break;
 			}
 			if (state.stage == search.targetCount) {
 				final int index = state.along ? 1 : 0;
@@ -238,12 +273,27 @@ public final class LegRouter {
 					costs[index] = state.cost;
 					steps[index] = unwind(state);
 					found++;
+					if (request.turnAtStart) {
+						bound = state.cost + to.getCost() + RailRouter.TURN_BACK_PENALTY;
+					}
 				}
 				continue;
 			}
 			search.expand(state, domainNodes);
 		}
 		return new Leg(request, version, costs, steps, toArray(domainSections), toArray(domainNodes), 0);
+	}
+
+	/**
+	 * @return whether a train can come onto the section at this end of it: another section meets it there
+	 */
+	private static boolean canEnter(TrackSections.Snapshot graph, TrackSections.Section section, long node) {
+		for (final long hash : graph.getSectionsAt(node)) {
+			if (hash != section.hash) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
