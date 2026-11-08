@@ -973,6 +973,46 @@ public class TrainServer extends Train {
 		return path != null && nextStoppingIndex >= 0 && nextStoppingIndex < path.size() ? path.get(nextStoppingIndex).savedRailBaseId : 0;
 	}
 
+	/**
+	 * @return the platform of the last stop before its next one, the one it left or stands at, or 0, for the run monitor
+	 */
+	public long getLastStopId() {
+		final int index = getLastStopIndex();
+		return index < 0 ? 0 : path.get(index).savedRailBaseId;
+	}
+
+	/**
+	 * @return {@link #STOP_STATE_RUNNING} between stops, {@link #STOP_STATE_AT_NEXT} standing at its next stop, or
+	 * {@link #STOP_STATE_AT_LAST} standing at the stop before it, for the run monitor
+	 */
+	public int getStopState() {
+		if (path == null || path.isEmpty() || getSpeed() > 0) {
+			return STOP_STATE_RUNNING;
+		}
+		final int head = Math.max(0, Math.min(path.size() - 1, getIndex(railProgress, false)));
+		if (head == nextStoppingIndex) {
+			return STOP_STATE_AT_NEXT;
+		}
+		return head == getLastStopIndex() ? STOP_STATE_AT_LAST : STOP_STATE_RUNNING;
+	}
+
+	private int getLastStopIndex() {
+		if (path == null) {
+			return -1;
+		}
+		for (int i = Math.min(nextStoppingIndex, path.size()) - 1; i >= 0; i--) {
+			final PathData pathData = path.get(i);
+			if (pathData.dwellTime > 0 && pathData.savedRailBaseId != 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	public static final int STOP_STATE_RUNNING = 0;
+	public static final int STOP_STATE_AT_NEXT = 1;
+	public static final int STOP_STATE_AT_LAST = 2;
+
 	public long getWaitingSinceMillis() {
 		return waitingSinceMillis;
 	}

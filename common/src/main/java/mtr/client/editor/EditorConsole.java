@@ -73,6 +73,12 @@ public final class EditorConsole {
 			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(train.nextStopId);
 			final Station station = platform == null ? null : ClientData.DATA_CACHE.platformIdToStation.get(platform.id);
 			trainObject.addProperty("next", station == null ? "" : station.name);
+			// Where it is by stations, for the run monitor: the station before and after it, and whether it stands at one
+			trainObject.addProperty("nextStation", station == null ? "" : String.valueOf(station.id));
+			final Station lastStation = ClientData.DATA_CACHE.platformIdToStation.get(train.lastStopId);
+			trainObject.addProperty("lastStation", lastStation == null ? "" : String.valueOf(lastStation.id));
+			trainObject.addProperty("lastName", lastStation == null ? "" : lastStation.name);
+			trainObject.addProperty("stopState", train.stopState);
 			trainObject.addProperty("late", train.lateSince == 0 ? 0 : Math.max(0, serverNow - train.lateSince) / 1000);
 			trainObject.addProperty("waiting", train.waitingSince == 0 ? 0 : Math.max(0, serverNow - train.waitingSince) / 1000);
 			trainObject.addProperty("skipping", (train.flags & 1) != 0);

@@ -34,6 +34,9 @@ class DispatchConsoleTest {
 		packet.writeVarInt(1);
 		packet.writeVarInt(2);
 		packet.writeVarInt(16);
+		// Where it is by stops, for the run monitor
+		packet.writeLong(8);
+		packet.writeVarInt(1);
 		final DispatchConsole.Snapshot snapshot = DispatchConsole.read(packet);
 		assertEquals(1000, snapshot.serverMillis);
 		assertEquals(Collections.singleton(77L), snapshot.occupiedBlocks);
@@ -51,6 +54,8 @@ class DispatchConsoleTest {
 		assertEquals(1, train.turnState);
 		assertEquals(2, train.takeoverState);
 		assertEquals(16, train.dispatchState);
+		assertEquals(8, train.lastStopId);
+		assertEquals(1, train.stopState);
 		assertEquals(0, packet.readableBytes());
 	}
 }

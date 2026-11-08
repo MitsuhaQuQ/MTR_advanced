@@ -95,6 +95,9 @@ public final class DispatchConsole implements IPacket {
 			packet.writeVarInt(service.getTurnState());
 			packet.writeVarInt(service.getTakeoverState());
 			packet.writeVarInt(service.getDispatchState());
+			// Where it is by stops, for the run monitor
+			packet.writeLong(train.getLastStopId());
+			packet.writeVarInt(train.getStopState());
 		});
 		return packet;
 	}
@@ -113,7 +116,7 @@ public final class DispatchConsole implements IPacket {
 		final List<TrainState> trains = new ArrayList<>();
 		final int trainCount = Math.min(packet.readVarInt(), MAX_TRAINS);
 		for (int i = 0; i < trainCount; i++) {
-			trains.add(new TrainState(packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), new UUID(packet.readLong(), packet.readLong()), packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt()));
+			trains.add(new TrainState(packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), new UUID(packet.readLong(), packet.readLong()), packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readLong(), packet.readVarInt()));
 		}
 		return new Snapshot(serverMillis, System.currentTimeMillis() - serverMillis, occupied, trains);
 	}
@@ -189,8 +192,13 @@ public final class DispatchConsole implements IPacket {
 		public final int turnState;
 		public final int takeoverState;
 		public final int dispatchState;
+		/**
+		 * The platform of the stop before the next, and whether it stands at either (see {@link mtr.data.TrainServer#getStopState}).
+		 */
+		public final long lastStopId;
+		public final int stopState;
 
-		TrainState(long trainId, long sidingId, long routeId, int slot, UUID headRail, long nextStopId, long lateSince, long waitingSince, int flags, int turnState, int takeoverState, int dispatchState) {
+		TrainState(long trainId, long sidingId, long routeId, int slot, UUID headRail, long nextStopId, long lateSince, long waitingSince, int flags, int turnState, int takeoverState, int dispatchState, long lastStopId, int stopState) {
 			this.trainId = trainId;
 			this.sidingId = sidingId;
 			this.routeId = routeId;
@@ -203,6 +211,8 @@ public final class DispatchConsole implements IPacket {
 			this.turnState = turnState;
 			this.takeoverState = takeoverState;
 			this.dispatchState = dispatchState;
+			this.lastStopId = lastStopId;
+			this.stopState = stopState;
 		}
 	}
 }
