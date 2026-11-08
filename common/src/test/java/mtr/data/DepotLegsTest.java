@@ -41,24 +41,6 @@ class DepotLegsTest {
 	}
 
 	@Test
-	void theEstimateStaysWhereMeasuringFindsItRoughlyRight() {
-		// Estimated a minute both ways, measured 10 s more: the plan stays as it is
-		final DepotLegs kept = DepotLegs.record(DepotLegs.NONE, legs(11, 70000, 12, 50000), platform -> 60000);
-		assertTrue(kept.outMillis.isEmpty() && kept.backMillis.isEmpty(), "nothing kept: " + kept.outMillis + " " + kept.backMillis);
-	}
-
-	@Test
-	void aMeasuredTimeFarOffTheEstimateIsKept() {
-		final DepotLegs kept = DepotLegs.record(DepotLegs.NONE, legs(11, 100000, 12, 20000), platform -> 60000);
-		assertEquals(100000L, kept.outMillis.get(11L));
-		assertEquals(20000L, kept.backMillis.get(12L));
-		// Measured again much the same: unchanged, so the duties aren't planned again
-		assertSame(kept, DepotLegs.record(kept, legs(11, 104000, 12, 25000), platform -> 60000));
-		// Off what was kept by more than the tolerance: kept anew
-		assertEquals(130000L, DepotLegs.record(kept, legs(11, 130000, 12, 25000), platform -> 60000).outMillis.get(11L));
-	}
-
-	@Test
 	void keptLegsReadBackAsSaved() {
 		final DepotLegs legs = legs(11, 100000, 12, 20000);
 		final DepotLegs read = DepotLegs.fromList(legs.toList());
@@ -88,14 +70,4 @@ class DepotLegsTest {
 		assertEquals(Long.valueOf(100000), old.outMillis.get(11L));
 	}
 
-	@Test
-	void aWayFoundMissingIsKeptUntilOneIsMeasured() {
-		final DepotLegs missing = DepotLegs.record(DepotLegs.NONE, DepotLegs.NONE.withUnreachable(Collections.singleton(11L), Collections.emptySet()), platform -> 60000);
-		assertEquals(Collections.singleton(11L), missing.unreachableOut);
-		// Found again, as far as estimated: no longer missing, and nothing else to keep
-		final DepotLegs found = DepotLegs.record(missing, legs(11, 65000, 12, 60000), platform -> 60000);
-		assertTrue(found.unreachableOut.isEmpty());
-		// The same found missing again: unchanged
-		assertSame(missing, DepotLegs.record(missing, DepotLegs.NONE.withUnreachable(Collections.singleton(11L), Collections.emptySet()), platform -> 60000));
-	}
 }

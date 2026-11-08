@@ -78,13 +78,30 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private volatile DepotLegs lastDepotLegs = DepotLegs.NONE;
 	/**
-	 * The ways out and back the duties are planned by where measuring found the estimate off (DepotLegs.record): saved,
-	 * sent to the clients, and kept across path generations, unlike {@link #lastDepotLegs}.
+	 * The ways out and back the duties are planned by, as path generation found them on the track sections (optimisation
+	 * round 4, step 3; before, only where measuring found the estimate off): saved, sent to the clients, and kept across
+	 * path generations, unlike {@link #lastDepotLegs}.
 	 */
 	private volatile DepotLegs recordedLegs = DepotLegs.NONE;
 	/**
 	 * First and last stop platforms the path generation running now found no way out to or back from (P2-A).
 	 */
+	/**
+	 * The ways out of a siding to a platform and back, found on the track sections running the platform the way the line
+	 * runs it (optimisation round 4, step 3), for the duty paths found on this thread; unset, they are searched for on the
+	 * rails as before (drafts, tests).
+	 */
+	public interface DepotWays {
+
+		/**
+		 * @param platformEnd the node the line runs the platform towards, or 0
+		 * @return the rails, empty with no way, or null to search the rails instead
+		 */
+		List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd);
+	}
+
+	public static final ThreadLocal<DepotWays> DEPOT_WAYS = new ThreadLocal<>();
+
 	private final Set<Long> foundNoWayOut = new TreeSet<>();
 	private final Set<Long> foundNoWayBack = new TreeSet<>();
 	/**
@@ -1240,7 +1257,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private boolean addDutyPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, List<Siding> poolSidings, Map<String, List<PathData>> returnTails, List<TurnBackPoint> dutyPoints, int firstDutyPoint) {
 		final List<PathData> wayOut = new ArrayList<>();
 		if (!dutyPlan.startsOnLine) {
-			PathFinder.findPath(wayOut, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
+			// Into the first stop the way the line runs it, where the track sections are there (round 4)
+			final DepotWays ways = DEPOT_WAYS.get();
+			final List<PathData> found = ways == null ? null : ways.find(this, dutyPlan.firstPlatform, true, runningEnd(dutyPlan, true));
+			if (found != null) {
+				wayOut.addAll(found);
+			} else {
+				PathFinder.findPath(wayOut, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
+			}
 			if (wayOut.isEmpty()) {
 				// No way out to the first stop (P2-A), told only by path generation itself, not a draft's
 				if (dutyPoints != null && dutyPlan.firstPlatform != null) {
@@ -1402,11 +1426,34 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private static List<PathData> getReturnTail(DutyPlan<PathData, SavedRailBase> dutyPlan, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, Map<String, List<PathData>> returnTails) {
 		final List<PathData> tail = returnTails.computeIfAbsent(dutyPlan.lastPlatform.id + ":" + siding.id, key -> {
+			// Out of the last stop the way the line runs it, where the track sections are there (round 4)
+			final DepotWays ways = DEPOT_WAYS.get();
+			final List<PathData> found = ways == null ? null : ways.find(dutyPlan.lastPlatform, siding, false, runningEnd(dutyPlan, false));
+			if (found != null) {
+				return found;
+			}
 			final List<PathData> pathToDepot = new ArrayList<>();
 			PathFinder.findPath(pathToDepot, rails, graph, Arrays.asList(dutyPlan.lastPlatform, siding), null, 0, cruisingAltitude, useFastSpeed);
 			return pathToDepot;
 		});
 		return tail.isEmpty() ? null : copyPath(tail);
+	}
+
+	/**
+	 * @return the node the duty runs its first stop towards, or its last, or 0 if its body doesn't have it
+	 */
+	private static long runningEnd(DutyPlan<PathData, SavedRailBase> dutyPlan, boolean first) {
+		final List<PathData> body = dutyPlan.body;
+		final SavedRailBase platform = first ? dutyPlan.firstPlatform : dutyPlan.lastPlatform;
+		if (platform == null || body == null) {
+			return 0;
+		}
+		for (int i = first ? 0 : body.size() - 1; first ? i < body.size() : i >= 0; i += first ? 1 : -1) {
+			if (body.get(i).savedRailBaseId == platform.id) {
+				return body.get(i).getLastPos().asLong();
+			}
+		}
+		return 0;
 	}
 
 	private static List<PathData> copyPath(List<PathData> path) {

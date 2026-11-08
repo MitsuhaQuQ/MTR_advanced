@@ -55,8 +55,8 @@ public final class LineDuties {
 	}
 
 	/**
-	 * How long the siding's trains take out to each of the platforms: as kept where measuring found the estimate off
-	 * ({@link Siding#getRecordedLegs}), otherwise the estimate.
+	 * How long the siding's trains take out to each of the platforms: as path generation found it on the track sections
+	 * ({@link Siding#getRecordedLegs}, round 4), otherwise, before that, the estimate.
 	 */
 	public static Map<Long, Long> sidingLinks(Siding siding, Collection<Long> platformIds, DataCache dataCache) {
 		// No way out found there: the siding doesn't start trains there (P2-A)
@@ -298,6 +298,11 @@ public final class LineDuties {
 		 * Each siding's way back from each platform, as measured at the last path generation.
 		 */
 		private final Map<Long, Map<Long, Long>> backLinks = new TreeMap<>();
+		/**
+		 * Each siding's first stops, which its trains go out to, and last stops, which they come back from.
+		 */
+		private final Map<Long, List<Long>> sidingFirsts = new TreeMap<>();
+		private final Map<Long, List<Long>> sidingLasts = new TreeMap<>();
 
 		/**
 		 * @param draftDepotId the depot drafting its duties, whose own set duties aren't taken, or 0
@@ -353,6 +358,8 @@ public final class LineDuties {
 						firstPlatforms.add(route.getFirstPlatformId());
 						lastPlatforms.add(route.getLastPlatformId());
 					});
+					sidingFirsts.put(siding.id, firstPlatforms);
+					sidingLasts.put(siding.id, lastPlatforms);
 					final Map<Long, Long> links = sidingLinks(siding, firstPlatforms, dataCache);
 					// And back to it from each last stop
 					backLinks.put(siding.id, sidingBackLinks(siding, lastPlatforms, dataCache));
@@ -391,7 +398,8 @@ public final class LineDuties {
 			});
 			groups.forEach(group -> {
 				keyBuilder.append('[').append(group.serviceTypes).append(group.routeIds).append(']');
-				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(siding.links).append(backLinks.get(siding.sidingId)).append(';'));
+				// The ways out and back aren't in the key: path generation measures them and plans with them at once (round 4)
+				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(';'));
 			});
 			keyBuilder.append("taken:").append(taken.hashCode());
 			// How much longer than planned the unit's trains were measured to take out, round and back (D1)
@@ -441,9 +449,31 @@ public final class LineDuties {
 		 *                  way between, or null to estimate them
 		 */
 		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes) {
+			return plan(fastestTimes, dayStartMillis, turnTimes, null);
+		}
+
+		/**
+		 * @param measured the ways out and back of the unit's sidings as path generation found them on the track sections
+		 *                 just now (round 4, step 3), by siding, in place of what was kept; null to plan with what was kept
+		 */
+		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured) {
 			final Map<String, Integer> poolFleets = new HashMap<>();
 			groups.forEach(group -> poolFleets.putAll(poolFleetsOf(group.sidings, group.depotOf::get)));
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks, poolFleets, buffers, minReverseMillis);
+			final Map<Long, Map<Long, Long>> planBackLinks = new TreeMap<>(backLinks);
+			if (measured != null) {
+				measured.forEach((sidingId, legs) -> {
+					final Map<Long, Long> back = new TreeMap<>(planBackLinks.getOrDefault(sidingId, Collections.emptyMap()));
+					sidingLasts.getOrDefault(sidingId, Collections.emptyList()).forEach(platformId -> {
+						if (legs.unreachableBack.contains(platformId)) {
+							back.put(platformId, transitsim.planning.OperationNetwork.UNREACHABLE);
+						} else if (legs.backMillis.containsKey(platformId)) {
+							back.put(platformId, legs.backMillis.get(platformId));
+						}
+					});
+					planBackLinks.put(sidingId, back);
+				});
+			}
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, planBackLinks, poolFleets, buffers, minReverseMillis);
 			final Plan plan = new Plan(name);
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
@@ -455,7 +485,8 @@ public final class LineDuties {
 				if (services.isEmpty() || group.sidings.isEmpty()) {
 					continue;
 				}
-				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, group.sidings, stationOf, maxLayover, inputs);
+				final List<DutyGenerator.SidingInput> groupSidings = withMeasured(group.sidings, measured);
+				final DutyGenerator.Result result = DutyGenerator.generateSpread(services, groupSidings, stationOf, maxLayover, inputs);
 				plan.sidings.putAll(result.sidings);
 				plan.returnSidings.putAll(result.returnSidings);
 				result.sidings.values().forEach(slots -> slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> unitTaken.add(segment.routeId + "@" + segment.service)))));
@@ -467,14 +498,14 @@ public final class LineDuties {
 					// Where to add trains: the siding nearest the line
 					DutyGenerator.SidingInput nearest = null;
 					long nearestMillis = Long.MAX_VALUE;
-					for (final DutyGenerator.SidingInput siding : group.sidings) {
+					for (final DutyGenerator.SidingInput siding : groupSidings) {
 						final long millis = siding.links == null || siding.links.isEmpty() ? Long.MAX_VALUE : Collections.min(siding.links.values());
 						if (siding.maxTrains >= 0 && (nearest == null || millis < nearestMillis)) {
 							nearest = siding;
 							nearestMillis = millis;
 						}
 					}
-					plan.needed += group.available + (nearest == null ? 0 : extraTrains(services, group.sidings, nearest, maxLayover, inputs));
+					plan.needed += group.available + (nearest == null ? 0 : extraTrains(services, groupSidings, nearest, maxLayover, inputs));
 					if (nearest != null && plan.suggestedSiding.isEmpty()) {
 						final Depot depot = group.depotOf.get(nearest.sidingId);
 						plan.suggestedSiding = (depot == null || depot.name.isEmpty() ? "" : IGui.formatStationName(depot.name) + " ") + IGui.formatStationName(group.sidingNames.getOrDefault(nearest.sidingId, ""));
@@ -489,6 +520,45 @@ public final class LineDuties {
 				plan.needed = -1;
 			}
 			return plan;
+		}
+
+		/**
+		 * @return the sidings with their ways out as measured just now, where they were: out to each of their first stops
+		 * they have a way to, none where they have none
+		 */
+		private List<DutyGenerator.SidingInput> withMeasured(List<DutyGenerator.SidingInput> sidings, Map<Long, DepotLegs> measured) {
+			if (measured == null) {
+				return sidings;
+			}
+			final List<DutyGenerator.SidingInput> result = new ArrayList<>();
+			sidings.forEach(siding -> {
+				final DepotLegs legs = measured.get(siding.sidingId);
+				if (legs == null) {
+					result.add(siding);
+					return;
+				}
+				final Map<Long, Long> links = new TreeMap<>();
+				sidingFirsts.getOrDefault(siding.sidingId, Collections.emptyList()).forEach(platformId -> {
+					if (legs.outMillis.containsKey(platformId)) {
+						links.put(platformId, legs.outMillis.get(platformId));
+					} else if (!legs.unreachableOut.contains(platformId) && siding.links != null && siding.links.containsKey(platformId)) {
+						links.put(platformId, siding.links.get(platformId));
+					}
+				});
+				final DutyGenerator.SidingInput changed = new DutyGenerator.SidingInput(siding.sidingId, siding.maxTrains, links, siding.depotId);
+				changed.poolKey = siding.poolKey;
+				result.add(changed);
+			});
+			return result;
+		}
+
+		/**
+		 * @return each siding of the unit with its first and last stops, for path generation to measure the ways out and back
+		 */
+		public Map<Long, List<List<Long>>> getSidingStops() {
+			final Map<Long, List<List<Long>>> stops = new TreeMap<>();
+			sidingFirsts.forEach((sidingId, firsts) -> stops.put(sidingId, Arrays.asList(firsts, sidingLasts.getOrDefault(sidingId, Collections.emptyList()))));
+			return stops;
 		}
 
 		/**

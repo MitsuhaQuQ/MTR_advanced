@@ -927,19 +927,41 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final Map<Long, Map<Long, Long>> turnTimes = mainPaths.isEmpty() ? new TreeMap<>() : mainPaths.get(0).turnTimesFor(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), rails, graph, useFastSpeed);
 				clientTurnTimes = turnTimes;
 				turnTimesMeasured = !mainPaths.isEmpty();
+				// The ways out of the sidings to their first stops and back from their last, found on the track sections the way
+				// the line runs the platforms and timed (round 4, step 3): planned with at once, kept for the clients and the
+				// next plans, and the duties' paths take the same ways
+				final Map<Long, DepotLegs> measuredWays = new TreeMap<>();
+				if (railwayData != null && routeSearch != null) {
+					final Map<Long, List<List<Long>>> sidingStops = lineUnit == null ? ownSidingStops(dataCache) : lineUnit.getSidingStops();
+					measuredWays.putAll(measureDepotWays(sidingStops, railwayData.routePaths, routeSearch, lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache, rails));
+					measuredWays.forEach((sidingId, legs) -> {
+						final Siding siding = dataCache.sidingIdMap.get(sidingId);
+						if (siding != null && !sameWays(siding.getRecordedLegs(), legs)) {
+							siding.setRecordedLegs(legs, packet -> minecraftServer.execute(() -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_SIDING, packet))));
+						}
+					});
+				}
 				// The depots of the unit found again together plan the same duties: one plans them, the others take its plan
 				final int dayStartMillis = TimetableConfig.getDayStartMillis();
-				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes, () -> {
+				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes + "|" + describeWays(measuredWays), () -> {
 					final LineDuties.Plan plan = lineUnit.plan(route -> {
 						final long[][] times = routeSearch.getFastestTimes(route, dataCache);
 						return times == null || times.length == 0 ? null : times;
-					}, dayStartMillis, turnTimes);
+					}, dayStartMillis, turnTimes, measuredWays);
 					System.out.println("Minecraft Transit Railway: planned the duties of " + plan.describe());
 					return plan;
 				});
-				for (final MainPath mainPath : mainPaths) {
-					successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, linePlan));
-					failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
+				// The duties' ways out and back are the ones measured: found on the track sections the same way (round 4)
+				if (railwayData != null) {
+					Siding.DEPOT_WAYS.set((from, to, out, platformEnd) -> railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd));
+				}
+				try {
+					for (final MainPath mainPath : mainPaths) {
+						successfulSegments = Math.min(successfulSegments, mainPath.generate(minecraftServer, rails, graph, useFastSpeed, linePlan));
+						failure = mainPath.failure == PathFailure.NONE ? failure : mainPath.failure;
+					}
+				} finally {
+					Siding.DEPOT_WAYS.remove();
 				}
 				final List<String> detours = new ArrayList<>(pathDetours);
 				final List<String> failedDuties = new ArrayList<>();
@@ -947,15 +969,6 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// How each siding's trains get out to their first stops and back, for the advanced editor's running diagram
 				final Map<Long, DepotLegs> depotLegs = new TreeMap<>();
 				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> depotLegs.put(siding.id, siding.getDepotLegs())));
-				// Where the times measured are off the plan's by more than a little, the plan goes by them from now on: kept
-				// in the save and sent to the clients, which plans the unit again (its key holds them)
-				mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> {
-					final DepotLegs recorded = DepotLegs.record(siding.getRecordedLegs(), siding.getDepotLegs(), platformId -> LineDuties.estimateMillis(siding, platformId, dataCache));
-					if (recorded != siding.getRecordedLegs()) {
-						System.out.println("Minecraft Transit Railway: siding " + siding.id + " takes longer or shorter out or back than planned, kept as measured: out " + recorded.outMillis + ", back " + recorded.backMillis);
-						siding.setRecordedLegs(recorded, packet -> minecraftServer.execute(() -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_SIDING, packet))));
-					}
-				}));
 				// With -Dmtr.debugDepotLegs=true, the ways out and back as measured on the depot's paths against the ways found on
 				// the track sections (optimisation round 4, step 3, measured before one replaces the other)
 				if (Boolean.getBoolean("mtr.debugDepotLegs") && railwayData != null) {
@@ -974,6 +987,133 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		});
 		callback.accept(thread);
 		thread.start();
+	}
+
+	/**
+	 * @return this depot's sidings with the first and last stops of their routes, for a depot not planning by line
+	 */
+	private Map<Long, List<List<Long>>> ownSidingStops(DataCache dataCache) {
+		final Map<Long, List<List<Long>>> stops = new TreeMap<>();
+		dataCache.sidingIdMap.values().forEach(siding -> {
+			if (dataCache.sidingIdToDepot.get(siding.id) == this) {
+				final List<Long> firsts = new ArrayList<>();
+				final List<Long> lasts = new ArrayList<>();
+				getSidingRoutes(siding, dataCache).forEach(route -> {
+					if (!route.platformIds.isEmpty()) {
+						firsts.add(route.getFirstPlatformId());
+						lasts.add(route.getLastPlatformId());
+					}
+				});
+				stops.put(siding.id, Arrays.asList(firsts, lasts));
+			}
+		});
+		return stops;
+	}
+
+	/**
+	 * The ways out of the sidings to their first stops and back from their last (round 4, step 3), found on the track
+	 * sections running the platforms the way the routes do, and timed for each siding's vehicle. Back is to the nearest
+	 * siding of the same pool of the depot, as the trains go back to (user 2026-11-08). A stop with no way is told so; one
+	 * not measured, before the track sections are there, is left to what was kept.
+	 *
+	 * @return by siding
+	 */
+	private static Map<Long, DepotLegs> measureDepotWays(Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		// The node each route runs its first stop and its last towards
+		final Map<Long, Long> firstEnds = new HashMap<>();
+		final Map<Long, Long> lastEnds = new HashMap<>();
+		routes.forEach(route -> {
+			if (route.platformIds.isEmpty()) {
+				return;
+			}
+			final RoutePaths.RoutePath routePath = routeSearch.get(route, dataCache);
+			if (routePath == null || !routePath.isFound()) {
+				return;
+			}
+			final List<PathData> path = routePath.getPath(route.platformIds);
+			for (final PathData pathData : path) {
+				if (pathData.savedRailBaseId == route.getFirstPlatformId()) {
+					firstEnds.putIfAbsent(route.getFirstPlatformId(), pathData.getLastPos().asLong());
+					break;
+				}
+			}
+			for (int i = path.size() - 1; i >= 0; i--) {
+				if (path.get(i).savedRailBaseId == route.getLastPlatformId()) {
+					lastEnds.putIfAbsent(route.getLastPlatformId(), path.get(i).getLastPos().asLong());
+					break;
+				}
+			}
+		});
+		final Map<Long, DepotLegs> measured = new TreeMap<>();
+		sidingStops.forEach((sidingId, stops) -> {
+			final Siding siding = dataCache.sidingIdMap.get(sidingId);
+			if (siding == null) {
+				return;
+			}
+			final PathTiming.Vehicle vehicle = siding.getTimingVehicle();
+			final Map<Long, Long> out = new TreeMap<>();
+			final Map<Long, Long> back = new TreeMap<>();
+			final Set<Long> noWayOut = new TreeSet<>();
+			final Set<Long> noWayBack = new TreeSet<>();
+			boolean any = false;
+			for (final long platformId : stops.get(0)) {
+				final Platform platform = dataCache.platformIdMap.get(platformId);
+				final List<PathData> way = platform == null || out.containsKey(platformId) ? null : routePaths.findDepotWay(siding, platform, rails, true, firstEnds.getOrDefault(platformId, 0L));
+				if (way != null) {
+					any = true;
+					if (way.isEmpty()) {
+						noWayOut.add(platformId);
+					} else {
+						out.put(platformId, RoutePaths.timeDepotWay(way, vehicle, true));
+					}
+				}
+			}
+			final Depot depot = dataCache.sidingIdToDepot.get(sidingId);
+			for (final long platformId : stops.get(1)) {
+				final Platform platform = dataCache.platformIdMap.get(platformId);
+				if (platform == null || back.containsKey(platformId) || noWayBack.contains(platformId)) {
+					continue;
+				}
+				long best = -1;
+				boolean measuredAny = false;
+				for (final Siding target : dataCache.sidingIdMap.values()) {
+					if (target != siding && (depot == null || dataCache.sidingIdToDepot.get(target.id) != depot || !siding.getPoolKey().equals(target.getPoolKey()))) {
+						continue;
+					}
+					final List<PathData> way = routePaths.findDepotWay(platform, target, rails, false, lastEnds.getOrDefault(platformId, 0L));
+					if (way != null) {
+						measuredAny = true;
+						final long millis = RoutePaths.timeDepotWay(way, vehicle, false);
+						if (millis >= 0 && (best < 0 || millis < best)) {
+							best = millis;
+						}
+					}
+				}
+				if (measuredAny) {
+					any = true;
+					if (best < 0) {
+						noWayBack.add(platformId);
+					} else {
+						// The depot's paths count the last stop's stop time in the way back
+						back.put(platformId, best + platform.getDwellTime() * 500L);
+					}
+				}
+			}
+			if (any) {
+				measured.put(sidingId, new DepotLegs(siding.getDepotLegs().entrancePlatform, out, back).withUnreachable(noWayOut, noWayBack));
+			}
+		});
+		return measured;
+	}
+
+	private static boolean sameWays(DepotLegs legs1, DepotLegs legs2) {
+		return legs1.outMillis.equals(legs2.outMillis) && legs1.backMillis.equals(legs2.backMillis) && legs1.unreachableOut.equals(legs2.unreachableOut) && legs1.unreachableBack.equals(legs2.unreachableBack);
+	}
+
+	private static String describeWays(Map<Long, DepotLegs> ways) {
+		final StringBuilder builder = new StringBuilder();
+		ways.forEach((sidingId, legs) -> builder.append(sidingId).append(legs.outMillis).append(legs.backMillis).append(legs.unreachableOut).append(legs.unreachableBack).append(';'));
+		return builder.toString();
 	}
 
 	/**
@@ -2401,6 +2541,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			poolSidings.add(siding);
 			sidings.stream().filter(other -> other != siding && other.getPoolKey().equals(siding.getPoolKey())).sorted(Comparator.comparingLong(other -> other.id)).forEach(poolSidings::add);
 			lineSidings.stream().filter(other -> other.getPoolKey().equals(siding.getPoolKey())).sorted(Comparator.comparingLong(other -> other.id)).forEach(poolSidings::add);
+			// Every siding of the pool in the depot, whatever routes it is given, as the plan sends trains back to the nearest
+			// of them (round 4, step 3)
+			dataCache.sidingIdMap.values().stream().filter(other -> !poolSidings.contains(other) && dataCache.sidingIdToDepot.get(other.id) == Depot.this && other.getPoolKey().equals(siding.getPoolKey())).sorted(Comparator.comparingLong(other -> other.id)).forEach(poolSidings::add);
 			return poolSidings;
 		}
 
