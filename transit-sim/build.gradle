@@ -45,6 +45,13 @@ dependencies {
 	toolsImplementation "org.xerial:sqlite-jdbc:3.46.1.3"
 }
 
+// Splits every depot's duties of a world into duty layers and back (duty groups, step 1):
+//   ./gradlew -p transit-sim checkDutyLayers --args="path/to/mtr.db"
+tasks.register("checkDutyLayers", JavaExec) {
+	classpath = sourceSets.tools.runtimeClasspath
+	mainClass = "transitsim.tools.CheckDutyLayers"
+}
+
 tasks.register("simulateDay", JavaExec) {
 	classpath = sourceSets.tools.runtimeClasspath
 	mainClass = "transitsim.tools.SimulateDay"
