@@ -23,6 +23,10 @@ public final class LegCache {
 	 */
 	private final ArrayDeque<Object[]> changes = new ArrayDeque<>();
 	private long version;
+	/**
+	 * Counts each leg taken in or dropped, so a host can tell nothing changed since it last saved the legs.
+	 */
+	private long modifications;
 
 	private static final int MAX_CHANGES = 256;
 
@@ -50,6 +54,13 @@ public final class LegCache {
 	 */
 	public synchronized long getVersion() {
 		return version;
+	}
+
+	/**
+	 * @return how many times a leg was taken in or dropped so far: the same as before if the legs kept are the same
+	 */
+	public synchronized long getModifications() {
+		return modifications;
 	}
 
 	/**
@@ -91,6 +102,7 @@ public final class LegCache {
 		}
 		remove(leg.request.key);
 		legs.put(leg.request.key, leg);
+		modifications++;
 		for (final long section : leg.domainSections) {
 			bySection.computeIfAbsent(section, key -> new HashSet<>()).add(leg.request.key);
 		}
@@ -144,6 +156,7 @@ public final class LegCache {
 	 */
 	public synchronized void clear() {
 		legs.clear();
+		modifications++;
 		bySection.clear();
 		byNode.clear();
 		version++;
@@ -166,6 +179,7 @@ public final class LegCache {
 		if (leg == null) {
 			return;
 		}
+		modifications++;
 		for (final long section : leg.domainSections) {
 			final Set<Long> keys = bySection.get(section);
 			if (keys != null) {

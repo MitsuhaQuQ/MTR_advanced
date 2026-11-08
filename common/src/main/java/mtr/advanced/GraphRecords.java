@@ -81,6 +81,15 @@ public final class GraphRecords {
 	private final Map<Long, Set<String>> flushedOwners = new HashMap<>();
 	private final Set<Long> flushedLegRemovals = new HashSet<>();
 	private final Set<Long> flushedOwnerRemovals = new HashSet<>();
+	/**
+	 * The leg cache's count of changes and the owners as the leg layer was last written and committed, so a flush with
+	 * neither changed compares nothing; and as the flush in progress has them.
+	 */
+	private long writtenLegModifications = -1;
+	private Map<Long, Set<String>> writtenOwnersMap;
+	private boolean flushingLegLayer;
+	private long flushingLegModifications;
+	private Map<Long, Set<String>> flushingOwnersMap;
 
 	/**
 	 * Where nodes are: a node is a block position.
@@ -380,39 +389,48 @@ public final class GraphRecords {
 		flushedOwners.clear();
 		flushedLegRemovals.clear();
 		flushedOwnerRemovals.clear();
-		final Map<Long, LegRouter.Leg> currentLegs = new HashMap<>();
-		legCache.getLegs().forEach(leg -> currentLegs.put(leg.request.key, leg));
-		final Map<Long, byte[]> legsPut = new TreeMap<>();
-		currentLegs.forEach((key, leg) -> {
-			if (writtenLegs.get(key) != leg) {
-				legsPut.put(key, leg.toBytes());
-				flushedLegs.computeIfAbsent(0L, k -> new HashMap<>()).put(key, leg);
+		// Only when the legs or the owners changed since they were last written: worked out every tick otherwise, the comparison
+		// of every leg and every section's owners took a third of the server thread on a large network (round 5)
+		final long legModifications = legCache.getModifications();
+		final Map<Long, Set<String>> ownersNow = owners;
+		flushingLegLayer = legModifications != writtenLegModifications || ownersNow != writtenOwnersMap;
+		if (flushingLegLayer) {
+			flushingLegModifications = legModifications;
+			flushingOwnersMap = ownersNow;
+			final Map<Long, LegRouter.Leg> currentLegs = new HashMap<>();
+			legCache.getLegs().forEach(leg -> currentLegs.put(leg.request.key, leg));
+			final Map<Long, byte[]> legsPut = new TreeMap<>();
+			currentLegs.forEach((key, leg) -> {
+				if (writtenLegs.get(key) != leg) {
+					legsPut.put(key, leg.toBytes());
+					flushedLegs.computeIfAbsent(0L, k -> new HashMap<>()).put(key, leg);
+				}
+			});
+			writtenLegs.keySet().forEach(key -> {
+				if (!currentLegs.containsKey(key)) {
+					flushedLegRemovals.add(key);
+				}
+			});
+			final Map<Long, Set<String>> currentOwners = ownersNow;
+			// Each different set of owners is written once, and each section names its set
+			final Map<Long, byte[]> ownersPut = new TreeMap<>();
+			final Map<Long, byte[]> ownerSetsPut = new TreeMap<>();
+			currentOwners.forEach((hash, sectionOwners) -> {
+				if (!sectionOwners.equals(writtenOwners.get(hash))) {
+					final long setId = getOwnerSetId(sectionOwners);
+					ownersPut.put(hash, java.nio.ByteBuffer.allocate(8).putLong(setId).array());
+					ownerSetsPut.putIfAbsent(setId, TrackOwnership.toBytes(sectionOwners));
+					flushedOwners.put(hash, sectionOwners);
+				}
+			});
+			writtenOwners.keySet().forEach(hash -> {
+				if (!currentOwners.containsKey(hash)) {
+					flushedOwnerRemovals.add(hash);
+				}
+			});
+			if (!legsPut.isEmpty() || !flushedLegRemovals.isEmpty() || !ownersPut.isEmpty() || !flushedOwnerRemovals.isEmpty()) {
+				store.writeLegLayer(legsPut, flushedLegRemovals, ownersPut, flushedOwnerRemovals, ownerSetsPut);
 			}
-		});
-		writtenLegs.keySet().forEach(key -> {
-			if (!currentLegs.containsKey(key)) {
-				flushedLegRemovals.add(key);
-			}
-		});
-		final Map<Long, Set<String>> currentOwners = owners;
-		// Each different set of owners is written once, and each section names its set
-		final Map<Long, byte[]> ownersPut = new TreeMap<>();
-		final Map<Long, byte[]> ownerSetsPut = new TreeMap<>();
-		currentOwners.forEach((hash, sectionOwners) -> {
-			if (!sectionOwners.equals(writtenOwners.get(hash))) {
-				final long setId = getOwnerSetId(sectionOwners);
-				ownersPut.put(hash, java.nio.ByteBuffer.allocate(8).putLong(setId).array());
-				ownerSetsPut.putIfAbsent(setId, TrackOwnership.toBytes(sectionOwners));
-				flushedOwners.put(hash, sectionOwners);
-			}
-		});
-		writtenOwners.keySet().forEach(hash -> {
-			if (!currentOwners.containsKey(hash)) {
-				flushedOwnerRemovals.add(hash);
-			}
-		});
-		if (!legsPut.isEmpty() || !flushedLegRemovals.isEmpty() || !ownersPut.isEmpty() || !flushedOwnerRemovals.isEmpty()) {
-			store.writeLegLayer(legsPut, flushedLegRemovals, ownersPut, flushedOwnerRemovals, ownerSetsPut);
 		}
 
 		final long fingerprint = trackSections.getFingerprint();
@@ -427,6 +445,11 @@ public final class GraphRecords {
 	 * What the last flush wrote was committed: its version is the published one, and the rows it removed go with the next.
 	 */
 	public void flushCommitted() {
+		if (flushingLegLayer) {
+			writtenLegModifications = flushingLegModifications;
+			writtenOwnersMap = flushingOwnersMap;
+			flushingLegLayer = false;
+		}
 		flushedLegs.values().forEach(writtenLegs::putAll);
 		flushedLegRemovals.forEach(writtenLegs::remove);
 		writtenOwners.putAll(flushedOwners);
@@ -450,6 +473,7 @@ public final class GraphRecords {
 	 */
 	public void flushFailed() {
 		// What differs is worked out again from what was written, so nothing of the leg layer needs keeping
+		flushingLegLayer = false;
 		flushedLegs.clear();
 		flushedOwners.clear();
 		flushedLegRemovals.clear();

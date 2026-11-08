@@ -731,6 +731,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - （2026-11-06 已做，0.21.0）P2-D 运用有自己的编号，挪存车线不变；过夜可以按编号接本车厂别的存车线的运用；运用可以写明回同车池的哪条存车线（A 出 B 入）。运用仍按存车线分组存放（兼容层），出库和营业、回送还没有拆成单独的任务；回非同车池的存车线不支持。
   - 规划的车池回库是按"下一次出车的存车线"近似运行时的选法；车池跨了规划分组（同车型、不同线路组）时，规划只在自己的分组里算。
 - **规划和实际运行对不上的地方**（2026-11-06 排查 12 站时整理）：
+  - （第五轮第 1 步：`LegCache.getModifications()` 计存入、丢掉的次数，宿主据此判断站间段有没有变；测试在 `RouteLegsTest` 的新捷径用例里）
   - （黄线死锁检查时修：`SimScope` 截取后保留联锁区标记、站台停车位置、早到阈值，测试 `SimScopeTest.thePartKeepsTheNetworksStopPositionsInterlockingAndEarlyThreshold`）
   - （优化第四轮第 6 步：D1 实测余量只作建议，规划用车厂上采用的附加时间 `added_buffers`；组件不变，`DutyGenerator.PlanInputs.buffers` 由宿主改传采用的值）
   - （优化第四轮第 5 步：巡航上限按"计划到站 − 早到阈值"求，早到不超过阈值的全速跑、在站台多停；阈值经 `TrainRules.Train.getEarlyThresholdMillis` 给两个宿主，`SimDataset` 17 版带上；测试 `EarlyArrivalTest`（夹具 `MotionFixture` 改用 `TrainRules.getTargetTicks`，测的是同一条规则）、`SimDatasetTest.theEarlyThresholdReadsBackAndReachesTheRunner`；录好的场景 `terminal-line.txt` 按阈值 0 对照）

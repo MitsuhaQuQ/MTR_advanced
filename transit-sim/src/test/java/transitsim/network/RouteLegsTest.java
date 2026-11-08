@@ -240,6 +240,11 @@ class RouteLegsTest {
 		// The leg from each way the first stop can be run
 		final int foundBefore = found[0];
 		assertEquals(2, foundBefore);
+		// Taking legs in counts as a change of what is kept, for a host to save them; asking again for the same doesn't
+		final long modifications = cache.getModifications();
+		assertTrue(modifications >= 2);
+		RouteLegs.plan(stops, Collections.emptyList(), "A", cached(cache, sections.snapshot(), Collections.emptyMap(), found));
+		assertEquals(modifications, cache.getModifications());
 
 		// The new rail touches none of the sections of the old way, but joins at a node the search went on from
 		final TrackSections.Rail shortcut = track(20, 0, 220, 0);
@@ -253,6 +258,7 @@ class RouteLegsTest {
 			joined.add(sections.getSection(hash).getEnd());
 		});
 		assertFalse(cache.change(changed, joined).isEmpty());
+		assertTrue(cache.getModifications() > modifications, "dropping legs counts too");
 		final RouteLegs.Plan after = RouteLegs.plan(stops, Collections.emptyList(), "A", cached(cache, sections.snapshot(), Collections.emptyMap(), found));
 		assertTrue(found[0] > foundBefore, "found again");
 		assertTrue(after.cost < before.cost);
