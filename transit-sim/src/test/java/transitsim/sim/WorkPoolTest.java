@@ -68,6 +68,51 @@ class WorkPoolTest {
 	}
 
 	@Test
+	void workSplitWhileThePoolIsBusyWithLongTasksIsDoneByTheCaller() throws Exception {
+		final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+		final List<java.util.concurrent.Future<?>> longTasks = new ArrayList<>();
+		for (int i = 0; i < WorkPool.THREADS; i++) {
+			longTasks.add(WorkPool.submit(() -> {
+				try {
+					release.await();
+				} catch (InterruptedException ignored) {
+				}
+			}));
+		}
+		try {
+			final List<Part> parts = parts();
+			WorkPool.forEach(parts, Part::work);
+			final List<Part> serial = parts();
+			serial.forEach(Part::work);
+			for (int i = 0; i < serial.size(); i++) {
+				assertEquals(serial.get(i).result, parts.get(i).result);
+			}
+		} finally {
+			release.countDown();
+		}
+		for (final java.util.concurrent.Future<?> longTask : longTasks) {
+			longTask.get();
+		}
+	}
+
+	@Test
+	void aLongTaskCancelledIsInterrupted() throws Exception {
+		final java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
+		final java.util.concurrent.CountDownLatch interrupted = new java.util.concurrent.CountDownLatch(1);
+		final java.util.concurrent.Future<?> task = WorkPool.submit(() -> {
+			started.countDown();
+			try {
+				Thread.sleep(60000);
+			} catch (InterruptedException e) {
+				interrupted.countDown();
+			}
+		});
+		started.await();
+		task.cancel(true);
+		assertTrue(interrupted.await(10, java.util.concurrent.TimeUnit.SECONDS));
+	}
+
+	@Test
 	void workSplitAgainFromThePoolIsDoneThereRatherThanWaitingForItself() {
 		final List<Integer> outer = new ArrayList<>();
 		for (int i = 0; i < WorkPool.THREADS * 3; i++) {

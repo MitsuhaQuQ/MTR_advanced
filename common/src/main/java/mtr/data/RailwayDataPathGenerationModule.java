@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Future;
 
 /**
  * Starts the depots' path generations, each on a thread of its own, as many at once as the machine has cores to spare.
@@ -24,11 +25,12 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 
 	private static final int MIN_REQUEST_INTERVAL_MILLIS = 1000;
 	/**
-	 * How many path generations run at once: the cores but one, at least 2 and at most 8.
+	 * How many path generations run at once: as many as the threads shared by the whole server
+	 * ({@link transitsim.sim.WorkPool}, the cores but one, at most 8, or {@code -Dmtr.workThreads}), which they run on.
 	 */
-	public static final int MAX_THREADS = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() - 1));
+	public static final int MAX_THREADS = transitsim.sim.WorkPool.THREADS;
 
-	private final Map<Long, Thread> generatingPathThreads = new HashMap<>();
+	private final Map<Long, Future<?>> generatingPathThreads = new HashMap<>();
 	/**
 	 * Depots waiting for their paths to be found, with the tick they were queued in (optimisation round 5, step 3).
 	 */
@@ -47,7 +49,7 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 	 * @return whether a new path generation can start now, as only a few run at once
 	 */
 	public boolean canGenerate() {
-		generatingPathThreads.keySet().removeIf(id -> !generatingPathThreads.get(id).isAlive());
+		generatingPathThreads.keySet().removeIf(id -> generatingPathThreads.get(id).isDone());
 		return generatingPathThreads.size() < MAX_THREADS;
 	}
 
@@ -77,7 +79,7 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 	}
 
 	public void generatePath(MinecraftServer minecraftServer, long depotId) {
-		generatingPathThreads.keySet().removeIf(id -> !generatingPathThreads.get(id).isAlive());
+		generatingPathThreads.keySet().removeIf(id -> generatingPathThreads.get(id).isDone());
 		final long millis = System.currentTimeMillis();
 		if (millis - lastRequestMillis.getOrDefault(depotId, 0L) < MIN_REQUEST_INTERVAL_MILLIS || !generatingPathThreads.containsKey(depotId) && generatingPathThreads.size() >= MAX_THREADS) {
 			PacketTrainDataGuiServer.generatePathS2C(world, depotId, 0);
@@ -88,12 +90,13 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 		final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
 		if (depot != null) {
 			if (generatingPathThreads.containsKey(depotId)) {
-				generatingPathThreads.get(depotId).interrupt();
+				// Interrupted, as the thread was before: the search stops with a CancellationException and says so
+				generatingPathThreads.get(depotId).cancel(true);
 				System.out.println("Restarting path generation" + (depot.name.isEmpty() ? "" : " for " + depot.name));
 			} else {
 				System.out.println("Starting path generation" + (depot.name.isEmpty() ? "" : " for " + depot.name));
 			}
-			depot.generateMainRoute(minecraftServer, world, railwayData.dataCache, getSnapshot(), railwayData.sidings, thread -> generatingPathThreads.put(depotId, thread));
+			depot.generateMainRoute(minecraftServer, world, railwayData.dataCache, getSnapshot(), railwayData.sidings, task -> generatingPathThreads.put(depotId, task));
 			railwayData.resetTrainDelays(depot);
 		} else {
 			PacketTrainDataGuiServer.generatePathS2C(world, depotId, 0);

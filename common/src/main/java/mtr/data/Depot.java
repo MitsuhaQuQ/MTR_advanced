@@ -937,7 +937,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		System.out.println("Minecraft Transit Railway: depot " + name + " sends its trains out by a timetable from now on, " + departures.size() + " services a day" + (departures.size() >= RouteTimetable.MAX_SERVICES ? " (as many as a timetable takes; the rest left out)" : "") + (services.size() < routes.size() ? ", only " + services.size() + " of its " + routes.size() + " routes as the others' times aren't known" : ""));
 	}
 
-	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, RailwayDataPathGenerationModule.Snapshot snapshot, Set<Siding> sidings, Consumer<Thread> callback) {
+	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, RailwayDataPathGenerationModule.Snapshot snapshot, Set<Siding> sidings, Consumer<java.util.concurrent.Future<?>> callback) {
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		// By frequency or a list of departures, the depot runs by a timetable from now on (R2)
 		migrateFrequencies(world, liveDataCache, railwayData == null ? snapshot.rails : railwayData.getRails());
@@ -1014,7 +1014,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			});
 		}
-		final Thread thread = new Thread(() -> {
+		// On the threads shared by the whole server (optimisation round 5, step 5)
+		final Runnable task = () -> {
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
 				PathFailure failure = PathFailure.NONE;
@@ -1094,9 +1095,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				PacketTrainDataGuiServer.generatePathS2C(world, id, 0);
 				System.out.println("Failed to generate path" + (name.isEmpty() ? "" : " for " + name));
 			}
-		});
-		callback.accept(thread);
-		thread.start();
+		};
+		callback.accept(transitsim.sim.WorkPool.submit(task));
 	}
 
 	/**
@@ -2279,6 +2279,51 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 	}
 
+	/**
+	 * A way between two services as found, given out as copies that keep which rails the way and its ways round a turn
+	 * back rail share.
+	 */
+	private static final class Connection {
+
+		private final List<PathData> path;
+		private final TurnBackSection<PathData> section;
+
+		private Connection(List<PathData> path, TurnBackSection<PathData> section) {
+			this.path = path;
+			this.section = section;
+		}
+
+		/**
+		 * @return a copy of the ways round, or null for none, with the way itself copied into {@code connectingPath}
+		 */
+		private TurnBackSection<PathData> copyInto(List<PathData> connectingPath) {
+			final Map<PathData, PathData> copies = new IdentityHashMap<>();
+			path.forEach(pathData -> connectingPath.add(copyOf(pathData, copies)));
+			if (section == null) {
+				return null;
+			}
+			final List<List<PathData>> ways = new ArrayList<>();
+			for (final List<PathData> way : section.ways) {
+				if (way == null) {
+					ways.add(null);
+				} else {
+					final List<PathData> copy = new ArrayList<>(way.size());
+					way.forEach(pathData -> copy.add(copyOf(pathData, copies)));
+					ways.add(copy);
+				}
+			}
+			return new TurnBackSection<>(section.start, ways, section.defaultWay);
+		}
+
+		private static PathData copyOf(PathData pathData, Map<PathData, PathData> copies) {
+			return copies.computeIfAbsent(pathData, key -> {
+				final PathData copy = key.copy(key.savedRailBaseId, key.dwellTime);
+				copy.stopIndex = key.stopIndex;
+				return copy;
+			});
+		}
+	}
+
 	private class MainPath {
 
 		/**
@@ -2286,6 +2331,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * ({@link #getNearbyTurnBackNodes}).
 		 */
 		private Map<BlockPos, Map<BlockPos, Rail>> turnBackRailsOf;
+		/**
+		 * The ways between services found in this search ({@link #findConnection}), by the rails searched.
+		 */
+		private Map<BlockPos, Map<BlockPos, Rail>> connectionsOf;
+		private final Map<String, Connection> connections = new HashMap<>();
 		private final List<BlockPos[]> turnBackRails = new ArrayList<>();
 		private final Map<Long, List<BlockPos>> nearbyTurnBackNodes = new HashMap<>();
 
@@ -3188,7 +3238,22 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private TurnBackSection<PathData> findConnection(List<PathData> connectingPath, SavedRailBase from, SavedRailBase to, Route routeBefore, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final long start = ConnectionStats.ON ? System.nanoTime() : 0;
 			try {
-				return findConnectionTimed(connectingPath, from, to, routeBefore, rails, graph, useFastSpeed);
+				// The same way between two services is asked for again for each duty and siding (on a large network 13 000
+				// times for 1 900 ways): found once per search, and each asking given a copy of its own, as the duty's path
+				// numbers its stops and changes its stops (optimisation round 5, step 5)
+				if (connectionsOf != rails) {
+					connectionsOf = rails;
+					connections.clear();
+				}
+				final String key = from.id + ">" + to.id + ">" + (routeBefore == null ? 0 : routeBefore.id) + ">" + useFastSpeed;
+				Connection connection = connections.get(key);
+				if (connection == null) {
+					final List<PathData> path = new ArrayList<>();
+					final TurnBackSection<PathData> section = findConnectionTimed(path, from, to, routeBefore, rails, graph, useFastSpeed);
+					connection = new Connection(path, section);
+					connections.put(key, connection);
+				}
+				return connection.copyInto(connectingPath);
 			} finally {
 				if (ConnectionStats.ON) {
 					ConnectionStats.connection(from.id + ">" + to.id + ">" + (routeBefore == null ? 0 : routeBefore.id), System.nanoTime() - start);
