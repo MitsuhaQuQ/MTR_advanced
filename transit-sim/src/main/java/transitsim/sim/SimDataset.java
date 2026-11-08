@@ -408,11 +408,11 @@ public final class SimDataset {
 			siding.poolKey = sidingData.poolKey;
 			siding.linePool = sidingData.linePool;
 			siding.poolFleet = sidingData.poolFleet;
-			sidingData.tripPaths.forEach(tripPath -> {
-				final TripPath<DataTrack> newTripPath = new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path);
-				newTripPath.generateTimes(generator);
-				siding.tripPaths.put(newTripPath.key, newTripPath);
-			});
+			// Timed on the shared threads, each path on its own, and kept in their order (optimisation round 5, step 4)
+			final List<TripPath<DataTrack>> newTripPaths = new ArrayList<>();
+			sidingData.tripPaths.forEach(tripPath -> newTripPaths.add(new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path)));
+			WorkPool.forEach(newTripPaths, newTripPath -> newTripPath.generateTimes(generator));
+			newTripPaths.forEach(newTripPath -> siding.tripPaths.put(newTripPath.key, newTripPath));
 			// Its trains time a path passing stops the way its other paths were timed (D3)
 			siding.pathVariants = new transitsim.plan.PathVariants<DataTrack>() {
 				@Override

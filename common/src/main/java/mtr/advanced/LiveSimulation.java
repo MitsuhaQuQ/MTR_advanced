@@ -16,6 +16,7 @@ import transitsim.sim.SimDataset;
 import transitsim.sim.SimEvent;
 import transitsim.sim.TickRunner;
 
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -28,6 +29,9 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
 
 /**
@@ -80,7 +84,21 @@ public final class LiveSimulation {
 	 */
 	private boolean driving;
 	private Set<Long> sidingIds = Collections.emptySet();
-	private byte[] startedData = new byte[0];
+	/**
+	 * The game's data it started from, a copy of its own apart from the one the simulator runs on, and the digest of it
+	 * written, worked out on a thread of its own; and the same of a check going on (optimisation round 5, step 4: writing
+	 * it out took over a second of the server thread at the start and with each check).
+	 */
+	private SimDataset startedDataset;
+	private Future<String> startedDigest;
+	private SimDataset checkingDataset;
+	private Future<String> checkingDigest;
+	private static final ExecutorService COMPARING = Executors.newSingleThreadExecutor(runnable -> {
+		final Thread thread = new Thread(runnable, "MTR simulator comparing");
+		thread.setDaemon(true);
+		thread.setPriority(Thread.NORM_PRIORITY - 1);
+		return thread;
+	});
 	private long startedMillis;
 	private long checkedMillis;
 	/**
@@ -300,8 +318,13 @@ public final class LiveSimulation {
 			return;
 		}
 
+		final long startMillis0 = System.currentTimeMillis();
 		final SimDataset dataset = getDataset(railwayData);
-		startedData = dataset.toBytes();
+		final long datasetMillis = System.currentTimeMillis() - startMillis0;
+		startedDataset = getDataset(railwayData);
+		startedDigest = digestOf(startedDataset);
+		checkingDataset = null;
+		checkingDigest = null;
 		final RunRecord record = new RunRecord(recordMillis);
 		final Set<Long> recordedDepots = new HashSet<>();
 		railwayData.sidings.stream().filter(siding -> sidingIds.contains(siding.id)).sorted().forEach(siding -> {
@@ -329,6 +352,8 @@ public final class LiveSimulation {
 		eventCursor = 0;
 		simulator.forgetEvents(Long.MAX_VALUE);
 		restoredTrains = simulator.getRunner().getTrains().size();
+		// How long starting took on the server thread (optimisation round 5, step 4)
+		System.out.println("Minecraft Transit Railway: the component's simulator started in " + (System.currentTimeMillis() - startMillis0) + " ms (the game's data " + datasetMillis + " ms, twice)");
 		// The game's trains the simulator couldn't carry on would be taken away by showing its trains, so their sidings are
 		// left to the game
 		final Set<Long> lostSidings = new TreeSet<>();
@@ -553,6 +578,23 @@ public final class LiveSimulation {
 		if (railwayData.sidings.stream().anyMatch(siding -> sidingIds.contains(siding.id) && siding.hasTrainsRelocated())) {
 			return true;
 		}
+		// A check going on is looked at once its digest is worked out
+		if (checkingDigest != null) {
+			if (!checkingDigest.isDone() || !startedDigest.isDone()) {
+				return false;
+			}
+			final SimDataset dataset = checkingDataset;
+			final boolean same = getDigest(checkingDigest).equals(getDigest(startedDigest));
+			checkingDataset = null;
+			checkingDigest = null;
+			if (same) {
+				return false;
+			}
+			System.out.println("Minecraft Transit Railway: the component's simulator starts again from the game's trains, as these changed: " + describeChange(startedDataset, dataset));
+			// What changed may let it carry on the trains of the sidings it left to the game
+			excludedSidings.clear();
+			return true;
+		}
 		// Looked at once a change to the game's data has settled, and every few minutes in case something changed unannounced
 		final long version = getVersion(railwayData);
 		if (version != checkedVersion && versionChangedMillis == 0) {
@@ -568,14 +610,36 @@ public final class LiveSimulation {
 		if (!getRunSidingIds(railwayData).equals(sidingIds)) {
 			return true;
 		}
-		final SimDataset dataset = getDataset(railwayData);
-		if (Arrays.equals(dataset.toBytes(), startedData)) {
-			return false;
+		// Written out and compared on a thread of its own, and looked at in a later tick
+		checkingDataset = getDataset(railwayData);
+		checkingDigest = digestOf(checkingDataset);
+		return false;
+	}
+
+	/**
+	 * @return the SHA-256 of the data as written, worked out on the comparing thread
+	 */
+	private static Future<String> digestOf(SimDataset dataset) {
+		return COMPARING.submit(() -> {
+			final byte[] digest = MessageDigest.getInstance("SHA-256").digest(dataset.toBytes());
+			final StringBuilder builder = new StringBuilder();
+			for (final byte value : digest) {
+				builder.append(String.format("%02x", value));
+			}
+			return builder.toString();
+		});
+	}
+
+	/**
+	 * @return the digest, or empty if it couldn't be worked out, which counts as a change
+	 */
+	private static String getDigest(Future<String> digest) {
+		try {
+			return digest.get();
+		} catch (Exception e) {
+			e.printStackTrace();
+			return "";
 		}
-		System.out.println("Minecraft Transit Railway: the component's simulator starts again from the game's trains, as these changed: " + describeChange(SimDataset.fromBytes(startedData), dataset));
-		// What changed may let it carry on the trains of the sidings it left to the game
-		excludedSidings.clear();
-		return true;
 	}
 
 	/**

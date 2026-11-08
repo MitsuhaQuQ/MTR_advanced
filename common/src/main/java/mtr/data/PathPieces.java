@@ -37,6 +37,11 @@ public final class PathPieces {
 
 	private static final ThreadLocal<Writer> WRITING = new ThreadLocal<>();
 	private static final ThreadLocal<Reader> READING = new ThreadLocal<>();
+	/**
+	 * Paths cut where they were made, as on a depot's path generation thread, until a save writes them. A list's hash and
+	 * equality go by its elements, which don't override them, so this goes by the path itself; a path let go is forgotten.
+	 */
+	private static final Map<List<PathData>, Cut> PRECUT = Collections.synchronizedMap(new WeakHashMap<>());
 
 	private PathPieces() {
 	}
@@ -72,7 +77,10 @@ public final class PathPieces {
 			return null;
 		}
 		final List<Value> values = references.asArrayValue().list();
+		final long[] read = new long[values.size() - values.size() % 2];
 		for (int i = 0; i + 1 < values.size(); i += 2) {
+			read[i] = values.get(i).asIntegerValue().toLong();
+			read[i + 1] = values.get(i + 1).asIntegerValue().toLong();
 			final List<PathData> piece = reader.get(values.get(i).asIntegerValue().toLong());
 			if (piece == null) {
 				return null;
@@ -84,7 +92,33 @@ public final class PathPieces {
 				path.add(copy);
 			}
 		}
+		reader.read.put(path, read);
 		return path;
+	}
+
+	/**
+	 * Has the path a host keeps (as a trip path's own copy) written with the pieces {@code read} was put together from,
+	 * so the first save after loading doesn't cut it again; nothing for a path read in full or with no reader set.
+	 */
+	public static void remember(List<PathData> read, List<PathData> kept) {
+		final Reader reader = READING.get();
+		final long[] references = reader == null ? null : reader.read.remove(read);
+		if (references != null && read.size() == kept.size()) {
+			reader.remembered.put(kept, references);
+		}
+	}
+
+	/**
+	 * Cuts the paths of these trip paths into pieces now, on this thread, for the next save to take.
+	 */
+	public static void precut(Collection<? extends transitsim.plan.TripPath<PathData>> tripPaths) {
+		for (final transitsim.plan.TripPath<PathData> tripPath : tripPaths) {
+			try {
+				PRECUT.put(tripPath.path, new Cut(tripPath.path));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 
 	/**
@@ -178,9 +212,20 @@ public final class PathPieces {
 
 		private final Map<Long, byte[]> stored;
 		private final Map<Long, List<PathData>> decoded = new HashMap<>();
+		private final Map<List<PathData>, long[]> read = new IdentityHashMap<>();
+		private final Map<List<PathData>, long[]> remembered = new IdentityHashMap<>();
 
 		public Reader(Map<Long, byte[]> stored) {
 			this.stored = stored;
+		}
+
+		/**
+		 * Gives the writer the pieces of the paths read, by the path kept ({@link #remember}).
+		 */
+		public void seed(Writer writer) {
+			remembered.forEach((path, references) -> writer.cutPaths.put(path, new Cut(path.size(), references)));
+			remembered.clear();
+			read.clear();
 		}
 
 		private List<PathData> get(long key) {
@@ -249,6 +294,9 @@ public final class PathPieces {
 			if (cut == null) {
 				cut = cutPaths.get(path);
 			}
+			if (cut == null) {
+				cut = PRECUT.remove(path);
+			}
 			if (cut == null || cut.size != path.size()) {
 				cut = new Cut(path);
 			}
@@ -293,6 +341,19 @@ public final class PathPieces {
 		private final long[] keys;
 		private final byte[][] bytes;
 		private final long[] references;
+
+		/**
+		 * A path read from pieces stored: their bytes are in the database.
+		 */
+		private Cut(int size, long[] references) {
+			this.size = size;
+			this.references = references;
+			keys = new long[references.length / 2];
+			bytes = new byte[keys.length][];
+			for (int i = 0; i < keys.length; i++) {
+				keys[i] = references[i * 2];
+			}
+		}
 
 		private Cut(List<PathData> path) throws IOException {
 			size = path.size();

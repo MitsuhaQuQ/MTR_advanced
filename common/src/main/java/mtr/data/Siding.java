@@ -133,6 +133,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * Whether the depot runs this siding's trains on speed curves, which the times of the paths follow too.
 	 */
 	private boolean useSpeedCurve;
+	/**
+	 * Whether the trip paths read from the save are still to be timed, which is done with the depot's settings the first
+	 * time the siding is given them (optimisation round 5, step 4).
+	 */
+	private boolean tripTimesPending;
 
 	public final float railLength;
 	private final List<PathData> path = new ArrayList<>();
@@ -347,6 +352,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		});
 		wayOuts = loadedWayOuts;
 
+		final List<TripPath<PathData>> loadedTripPaths = new ArrayList<>();
 		messagePackHelper.iterateArrayValue(KEY_TRIP_PATHS, value -> {
 			final Map<String, Value> tripMap = RailwayData.castMessagePackValueToSKMap(value);
 			final MessagePackHelper tripHelper = new MessagePackHelper(tripMap);
@@ -357,9 +363,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				return;
 			}
 			final TripPath<PathData> tripPath = new TripPath<>(new MessagePackKeyed.Reader(tripHelper), tripPathData);
-			tripPath.generateTimes(timeGenerator);
-			tripPaths.put(tripPath.key, tripPath);
+			// The first save after loading writes it as the pieces it was read from, without cutting it again
+			PathPieces.remember(tripPathData, tripPath.path);
+			loadedTripPaths.add(tripPath);
 		});
+		// Timed once the siding knows its depot's settings (setSidingData), rather than here with its own and then again
+		// (optimisation round 5, step 4)
+		loadedTripPaths.forEach(tripPath -> tripPaths.put(tripPath.key, tripPath));
+		tripTimesPending = !tripPaths.isEmpty();
 
 		messagePackHelper.iterateArrayValue(KEY_TRAINS, value -> trains.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
 		messagePackHelper.iterateArrayValue(KEY_SHED, value -> shed.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
@@ -1004,10 +1015,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			// Made with its own settings, the siding's times change only once its pool's differ
 			final boolean vehicleChanged = !transportMode.continuousMovement && !newVehicle.equals(vehicle == null ? getOwnVehicleSettings() : vehicle);
 			vehicle = newVehicle;
-			if (depot.speedCurves != useSpeedCurve || vehicleChanged) {
-				useSpeedCurve = depot.speedCurves;
-				generateTimeSegments(path, timeSegments, platformTimes, stopTimes, loopJoinIndex, repeatIndex2);
-				tripPaths.values().forEach(tripPath -> tripPath.generateTimes(timeGenerator));
+			if (depot.speedCurves != useSpeedCurve || vehicleChanged || tripTimesPending) {
+				if (depot.speedCurves != useSpeedCurve || vehicleChanged) {
+					useSpeedCurve = depot.speedCurves;
+					generateTimeSegments(path, timeSegments, platformTimes, stopTimes, loopJoinIndex, repeatIndex2);
+				}
+				// Each path on its own on the shared threads, as the same as one after another (optimisation round 5, step 4)
+				transitsim.sim.WorkPool.forEach(new ArrayList<>(tripPaths.values()), tripPath -> tripPath.generateTimes(timeGenerator));
+				tripTimesPending = false;
 			}
 			depot.platformTimes.clear();
 			depot.platformTimes.putAll(platformTimes);
@@ -1144,6 +1159,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final Map<Long, List<PathData>> newTurnReturns = findTurnReturns(rails, graph, cruisingAltitude, useFastSpeed, returnTails);
 		final Map<Long, List<PathData>> newWayOuts = findWayOuts(rails, graph, cruisingAltitude, useFastSpeed);
 		final TurnBacks newTurnBacks = tempTurnBacks.with(dutyPoints);
+		// Cut into the pieces they are saved as here rather than in the save on the server thread (optimisation round 5, step 4)
+		PathPieces.precut(tempTripPaths.values());
 
 		minecraftServer.execute(() -> {
 			try {
@@ -1223,6 +1240,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final Map<Long, List<PathData>> newTurnReturns = findTurnReturns(rails, graph, cruisingAltitude, useFastSpeed, returnTails);
 		final Map<Long, List<PathData>> newWayOuts = findWayOuts(rails, graph, cruisingAltitude, useFastSpeed);
 		final TurnBacks newTurnBacks = TurnBacks.NONE.with(dutyPoints);
+		// Cut into the pieces they are saved as here rather than in the save on the server thread (optimisation round 5, step 4)
+		PathPieces.precut(tempTripPaths.values());
 
 		applier.execute(() -> {
 			try {

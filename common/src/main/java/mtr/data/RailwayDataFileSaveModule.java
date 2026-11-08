@@ -53,6 +53,14 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 */
 	private int lastSimulationHash;
 	/**
+	 * When it was last worked out, and whether the save going on is the one on stopping: it is worked out on stopping and
+	 * at most every {@link #SIMULATION_DATA_INTERVAL_MILLIS} otherwise, as working it out took seconds of the server thread
+	 * with each save on large networks (optimisation round 5, step 4).
+	 */
+	private long lastSimulationMillis = System.currentTimeMillis();
+	private boolean stopping;
+	private static final long SIMULATION_DATA_INTERVAL_MILLIS = 30 * 60 * 1000;
+	/**
 	 * Whether a save is going on, writing and then deleting a little each tick.
 	 */
 	private boolean saveInProgress;
@@ -94,6 +102,13 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 */
 	private final PathPieces.Store pathPieces;
 	private final PathPieces.Writer pathPieceWriter;
+	/**
+	 * How long opening the store took (with its backup on starting) and each part of loading, for the line logged once
+	 * loaded (optimisation round 5, step 4).
+	 */
+	private final long openMillis;
+	private final StringBuilder loadTimes = new StringBuilder();
+	private long loadMarkMillis;
 
 	private static final char KEY_SEPARATOR = ':';
 	private static final String TYPE_STATIONS = "stations";
@@ -121,30 +136,43 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			e.printStackTrace();
 		}
 
+		final long openStartMillis = System.currentTimeMillis();
 		dataStore = RailwayDataFileStore.open(savePath, TYPES);
+		openMillis = System.currentTimeMillis() - openStartMillis;
 		pathPieces = dataStore.storesPathPieces() ? new PathPieces.Store() : null;
 		pathPieceWriter = pathPieces == null ? null : new PathPieces.Writer(pathPieces.stored);
 	}
 
 	public void load() {
+		PathPieces.Reader pathPieceReader = null;
 		loadStarted = true;
 		skippedEntries = 0;
 		existingFiles.clear();
+		final long loadStartMillis = System.currentTimeMillis();
+		loadTimes.setLength(0);
+		loadMarkMillis = loadStartMillis;
 		readMessagePackFromFile(TYPE_STATIONS, Station::new, railwayData.stations::add, false);
 		readMessagePackFromFile(TYPE_PLATFORMS, Platform::new, railwayData.platforms::add, true);
+		markLoaded("stations and platforms");
 		if (pathPieces != null) {
 			try {
 				// Read once each, for the sidings whose paths refer to them, then let go
-				PathPieces.startReading(new PathPieces.Reader(pathPieces.load(dataStore)));
+				pathPieceReader = new PathPieces.Reader(pathPieces.load(dataStore));
+				PathPieces.startReading(pathPieceReader);
 			} catch (Exception e) {
 				throw new IllegalStateException("Could not read the path pieces of Minecraft Transit Railway data", e);
 			}
 		}
 		try {
+			markLoaded("path pieces");
 			readMessagePackFromFile(TYPE_SIDINGS, Siding::new, railwayData.sidings::add, true);
 		} finally {
 			PathPieces.stopReading();
+			if (pathPieceReader != null) {
+				pathPieceReader.seed(pathPieceWriter);
+			}
 		}
+		markLoaded("sidings");
 		readMessagePackFromFile(TYPE_ROUTES, Route::new, railwayData.routes::add, false);
 		readMessagePackFromFile(TYPE_DEPOTS, Depot::new, railwayData.depots::add, false);
 		readMessagePackFromFile(TYPE_LIFTS, LiftServer::new, railwayData.lifts::add, true);
@@ -159,14 +187,16 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		}, true);
 		readMessagePackFromFile(TYPE_NETWORK_SETTINGS, NetworkSettings::new, railwayData.dataCache.networkSettings::copyFrom, true);
 
+		markLoaded("the rest");
 		railwayData.graphRecords.load(dataStore);
+		markLoaded("track graph");
 		try {
 			dataStore.forEachEditRevision(railwayData.editRevisions::restore);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
-		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location());
+		System.out.println("Minecraft Transit Railway data successfully loaded for " + world.dimension().location() + " in " + (System.currentTimeMillis() - loadStartMillis) + " ms (opening the store and backing it up before " + openMillis + " ms;" + loadTimes + ")");
 		if (skippedEntries > 0) {
 			System.out.println("Minecraft Transit Railway: " + skippedEntries + " data entries of " + world.dimension().location() + " couldn't be read and are kept as they are; nothing is deleted from the saved data until the server is started again with them readable");
 		}
@@ -174,7 +204,14 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		dataLoaded = true;
 	}
 
+	private void markLoaded(String part) {
+		final long millis = System.currentTimeMillis();
+		loadTimes.append(' ').append(part).append(' ').append(millis - loadMarkMillis).append(" ms");
+		loadMarkMillis = millis;
+	}
+
 	public void fullSave() {
+		stopping = true;
 		dirtyStationIds.clear();
 		dirtyPlatformIds.clear();
 		dirtySidingIds.clear();
@@ -374,9 +411,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			}
 			writePathPieces(pendingWrites.values(), checkFilesToDelete, Collections.emptyList());
 			// What the component's day tool simulates, written again only when it changed
-			final byte[] simulationData = SimExport.build(railwayData);
-			final int simulationHash = Arrays.hashCode(simulationData);
-			if (simulationHash != lastSimulationHash) {
+			final long millis = System.currentTimeMillis();
+			final boolean simulationDue = stopping || millis - lastSimulationMillis >= SIMULATION_DATA_INTERVAL_MILLIS;
+			final byte[] simulationData = simulationDue ? SimExport.build(railwayData) : null;
+			final int simulationHash = simulationData == null ? lastSimulationHash : Arrays.hashCode(simulationData);
+			if (simulationData != null && simulationHash != lastSimulationHash) {
 				dataStore.writeSimulationData(simulationData);
 			}
 			dataStore.commit();
@@ -384,6 +423,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				pathPieces.committed();
 			}
 			lastSimulationHash = simulationHash;
+			if (simulationDue) {
+				lastSimulationMillis = millis;
+			}
 			pendingWrites.forEach((key, pendingWrite) -> existingFiles.put(key, pendingWrite.hash));
 			checkFilesToDelete.forEach(existingFiles::remove);
 			filesWritten = pendingWrites.size();

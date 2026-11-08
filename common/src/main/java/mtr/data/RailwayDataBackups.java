@@ -41,7 +41,8 @@ public final class RailwayDataBackups {
 			{{"track_ownership"}, {"id"}, {"data"}},
 			{{"track_owner_sets"}, {"id"}, {"data"}},
 			{{"graph_paths"}, {"owner"}, {"graph_fingerprint", "data"}},
-			{{"sim_data"}, {"key"}, {"data"}},
+			// Not sim_data: what the day tool simulates is worked out again from the rest when saving on stopping, and was most of
+			// each backup on large networks (optimisation round 5, step 4)
 			{{"path_pieces"}, {"id"}, {"data"}},
 			{{"path_piece_refs"}, {"owner", "piece"}, {}},
 			{{"edit_revisions"}, {"key"}, {"revision", "editor", "deleted"}},

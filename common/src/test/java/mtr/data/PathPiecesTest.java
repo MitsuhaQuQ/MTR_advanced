@@ -175,6 +175,35 @@ class PathPiecesTest {
 	}
 
 	@Test
+	void aPathReadFromPiecesIsWrittenAsThemWithoutCuttingItAgain() throws IOException {
+		final PathPieces.Writer first = new PathPieces.Writer(new HashSet<>());
+		first.startOwner();
+		final Map<String, Value> map = written(path(1, 9), first);
+		final PathPieces.Owner owner = first.endOwner();
+
+		final Set<Long> stored = new HashSet<>(owner.pieces);
+		final PathPieces.Writer writer = new PathPieces.Writer(stored);
+		final PathPieces.Reader reader = new PathPieces.Reader(owner.newPieces);
+		final List<PathData> kept;
+		PathPieces.startReading(reader);
+		try {
+			final List<PathData> read = PathPieces.readPath(map, "path");
+			kept = new ArrayList<>(read);
+			PathPieces.remember(read, kept);
+		} finally {
+			PathPieces.stopReading();
+		}
+		reader.seed(writer);
+
+		writer.startOwner();
+		final Map<String, Value> again = written(kept, writer);
+		final PathPieces.Owner second = writer.endOwner();
+		assertEquals(owner.pieces, second.pieces);
+		assertTrue(second.newPieces.isEmpty());
+		assertEquals(map.get(PathPieces.KEY_PATH_PIECES), again.get(PathPieces.KEY_PATH_PIECES));
+	}
+
+	@Test
 	void piecesNoOneRefersToAreSweptInTheSameTransaction() throws Exception {
 		final MemoryStore dataStore = new MemoryStore();
 		final PathPieces.Store store = new PathPieces.Store();
