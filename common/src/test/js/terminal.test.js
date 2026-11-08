@@ -73,4 +73,21 @@ const downB = (id, start, extra) => run(id, [11, 3, 4], [12, 3, 4], start, extra
 	assert.strictEqual(rail.next.get("u1").fromDeparture, 6 * H + 4 * M + 20000);
 }
 
+// The rail's in and out legs as measured (round 4): 30 s in, 90 s out of the two minutes round
+{
+	const runs = [up("u1", 6 * H, { terminalPlatforms: [] }), up("u2", 6 * H + 10 * M), down("d1", 6 * H + 20 * M), down("d2", 6 * H + 40 * M)];
+	const rail = T.pair({ runs, manual: { u1: "d2" }, turnTimes: { 10: { 10: 2 * M } }, holdIns: { 10: 30000 } });
+	assert.strictEqual(rail.next.get("u1").kind, "hold");
+	assert.strictEqual(rail.next.get("u1").railStart, 6 * H + 4 * M + 20000 + 30000);
+	assert.strictEqual(rail.next.get("u1").railEnd, 6 * H + 40 * M - 90000);
+}
+
+// The network's least time to change ends (round 4): a service arriving 40 s after the train leaves its last stop is taken with
+// 30 s, not with 60 s
+{
+	const runs = [up("u1", 6 * H), down("d1", 6 * H + 4 * M + 20000 + 40000)];
+	assert.strictEqual(T.pair({ runs }).next.get("u1").to.id, "d1");
+	assert.strictEqual(T.pair({ runs, minTurn: 60000 }).next.size, 0);
+}
+
 console.log("terminal.js: all checks passed");

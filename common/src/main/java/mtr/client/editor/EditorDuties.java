@@ -339,7 +339,7 @@ public final class EditorDuties implements IPacket {
 			sidingInput.poolKey = siding.getPoolKey();
 			sidings.add(sidingInput);
 		});
-		final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(depot)), LineDuties.backLinksOf(depotSidings, lastPlatforms, ClientData.DATA_CACHE), LineDuties.poolFleetsOf(sidings, sidingId -> depot), depot.getBuffers());
+		final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(depot)), LineDuties.backLinksOf(depotSidings, lastPlatforms, ClientData.DATA_CACHE), LineDuties.poolFleetsOf(sidings, sidingId -> depot), depot.getBuffers(), ClientData.DATA_CACHE.networkSettings.minReverseMillis);
 		final Map<Long, Long> stationOf = new HashMap<>();
 		ClientData.DATA_CACHE.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 		final long maxLayoverMillis = depot.cycleRoutes ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;

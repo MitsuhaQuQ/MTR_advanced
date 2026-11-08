@@ -103,7 +103,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private static final String TYPE_BOUNDARY_NODES = "boundary-nodes";
 	private static final String TYPE_BOUNDARY_SEGMENTS = "boundary-segments";
 	private static final String TYPE_CONTINGENCY_SYSTEMS = "contingency-systems";
-	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES, TYPE_BOUNDARY_NODES, TYPE_BOUNDARY_SEGMENTS, TYPE_CONTINGENCY_SYSTEMS};
+	private static final String TYPE_NETWORK_SETTINGS = "network-settings";
+	private static final String[] TYPES = {TYPE_STATIONS, TYPE_PLATFORMS, TYPE_SIDINGS, TYPE_ROUTES, TYPE_DEPOTS, TYPE_LIFTS, TYPE_RAILS, TYPE_SIGNAL_BLOCKS, TYPE_KEY_NODES, TYPE_BOUNDARY_NODES, TYPE_BOUNDARY_SEGMENTS, TYPE_CONTINGENCY_SYSTEMS, TYPE_NETWORK_SETTINGS};
 
 	public RailwayDataFileSaveModule(RailwayData railwayData, Level world, Map<BlockPos, Map<BlockPos, Rail>> rails, Path savePath, SignalBlocks signalBlocks) {
 		super(railwayData, world, rails);
@@ -137,6 +138,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			railwayData.contingencySystems.systems.put(entry.anchor, entry.toContingencies());
 			railwayData.contingencySystems.backups.put(entry.anchor, new ArrayList<>(entry.backups));
 		}, true);
+		readMessagePackFromFile(TYPE_NETWORK_SETTINGS, NetworkSettings::new, railwayData.dataCache.networkSettings::copyFrom, true);
 
 		railwayData.graphRecords.load(dataStore);
 		try {
@@ -230,6 +232,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			railwayData.pathBoundaries.segments.forEach(segment -> stage(new PathBoundaries.Entry(segment), new PathBoundaries.Entry(segment).getId(), TYPE_BOUNDARY_SEGMENTS));
 			// Saved with each save, as they are few and a player's change is rare (D2)
 			railwayData.contingencySystems.systems.forEach((anchor, contingencies) -> stage(new ContingencySystems.Entry(anchor, contingencies, railwayData.contingencySystems.backups.get(anchor)), anchor, TYPE_CONTINGENCY_SYSTEMS));
+			// The network's settings, one entry (round 4)
+			final NetworkSettings networkSettings = new NetworkSettings();
+			networkSettings.copyFrom(railwayData.dataCache.networkSettings);
+			stage(networkSettings, NetworkSettings.ID, TYPE_NETWORK_SETTINGS);
 			snapshotMillis = System.currentTimeMillis() - snapshotStartMillis;
 			dirtyRailPositions.addAll(rails.keySet());
 			dataStore.backup();

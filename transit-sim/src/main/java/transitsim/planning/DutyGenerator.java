@@ -19,13 +19,21 @@ import java.util.function.Function;
 public final class DutyGenerator {
 
 	/**
-	 * The least time a train waits at the end of a service before its next one.
+	 * The least time a train takes to change ends where it turns back (换端最短时间, optimisation round 4), unless the
+	 * network sets another ({@link PlanInputs#minReverseMillis}).
 	 */
 	public static final long MIN_TURNAROUND_MILLIS = 30000;
 	/**
-	 * The time to turn back onto another platform of the same station, as nothing finds the real time yet.
+	 * The time to turn back onto another platform of the same station before the depot's paths have been found, when
+	 * nothing has measured it on the rails yet; once measured, the measured time is used.
 	 */
 	public static final long TURN_BACK_MILLIS = 120000;
+	/**
+	 * In the measured changes of platform ({@link PlanInputs#turnTimes}), the key under a platform for how long a train takes
+	 * from it into the turn back rail beyond it (the in leg, round 4); the platform's own key holds the way in and back out
+	 * together, so the out leg is the rest. No platform has this ID.
+	 */
+	public static final long HOLD_IN_KEY = Long.MIN_VALUE;
 	private static final int MAX_LINKS = 8;
 	private static final int UNLIMITED_TRAINS = DepotDuties.MAX_SLOTS;
 	private static final int MAX_SPREAD_OFFSETS = 8;
@@ -134,6 +142,11 @@ public final class DutyGenerator {
 		 * How much longer than planned trains were measured to take out, round and back (D1), added to each.
 		 */
 		public final transitsim.plan.Buffers buffers;
+		/**
+		 * The least time a train takes to change ends where it turns back (换端最短时间, round 4): at the platform, on
+		 * the turn back rail, or at another platform of the station. A network setting.
+		 */
+		public final long minReverseMillis;
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks) {
 			this(turnTimes, backLinks, Collections.emptyMap());
@@ -144,6 +157,11 @@ public final class DutyGenerator {
 		}
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets, transitsim.plan.Buffers buffers) {
+			this(turnTimes, backLinks, poolFleets, buffers, MIN_TURNAROUND_MILLIS);
+		}
+
+		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets, transitsim.plan.Buffers buffers, long minReverseMillis) {
+			this.minReverseMillis = Math.max(0, minReverseMillis);
 			this.turnTimes = turnTimes;
 			this.backLinks = backLinks == null ? Collections.emptyMap() : backLinks;
 			this.poolFleets = poolFleets == null ? Collections.emptyMap() : poolFleets;
@@ -231,11 +249,16 @@ public final class DutyGenerator {
 		// The way back to each siding, as measured from each platform
 		sidings.forEach(siding -> inputs.backLinks.getOrDefault(siding.sidingId, Collections.emptyMap()).forEach((platformId, millis) -> network.addDepotBackLink(siding.sidingId, platformId, millis == OperationNetwork.UNREACHABLE ? millis : millis + inputs.buffers.back(platformId, siding.sidingId))));
 		lastPlatforms.forEach(lastPlatform -> {
-			network.setTurnaround(lastPlatform, MIN_TURNAROUND_MILLIS + inputs.buffers.turn(lastPlatform, lastPlatform));
-			// Measured from the platform back to itself by way of a turn back rail beyond it: a train may wait there (混合折返)
-			final Long holdMillis = inputs.turnTimes == null ? null : inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap()).get(lastPlatform);
+			// Changing ends takes the network's least time, wherever the train turns back (round 4)
+			network.setTurnaround(lastPlatform, inputs.minReverseMillis + inputs.buffers.turn(lastPlatform, lastPlatform));
+			// Measured from the platform back to itself by way of a turn back rail beyond it: a train may wait there (混合折返),
+			// running in and out as long as each leg was measured; halves where only the whole was measured
+			final Map<Long, Long> fromHere = inputs.turnTimes == null ? Collections.emptyMap() : inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap());
+			final Long holdMillis = fromHere.get(lastPlatform);
 			if (holdMillis != null) {
-				network.setTurnBackHold(lastPlatform, holdMillis / 2, holdMillis - holdMillis / 2);
+				final Long inMillis = fromHere.get(HOLD_IN_KEY);
+				final long in = inMillis == null ? holdMillis / 2 : Math.min(inMillis, holdMillis);
+				network.setTurnBackHold(lastPlatform, in, holdMillis - in);
 			}
 			final Long station = stationOf.get(lastPlatform);
 			firstPlatforms.forEach(firstPlatform -> {

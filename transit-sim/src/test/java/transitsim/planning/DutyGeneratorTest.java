@@ -358,6 +358,16 @@ class DutyGeneratorTest {
 	}
 
 	@Test
+	void aChangeOfPlatformTakesTheNetworksLeastTimeToChangeEnds() {
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1));
+		final Map<Long, Map<Long, Long>> turnTimes = Collections.singletonMap(104L, Collections.singletonMap(105L, 5 * MINUTE));
+		// The legs in and out measured at 5 minutes, and changing ends 30 s by default: in time for 15 past
+		assertEquals(Arrays.asList(0L, 15L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE, new DutyGenerator.PlanInputs(turnTimes, null, null, null, 30000))));
+		// The network set to take 10 minutes to change ends (round 4): in time for neither
+		assertEquals(Collections.singletonList(0L), mondayRun(DutyGenerator.generate(changeOfPlatform(8, 15), sidings, changeOfPlatformStations(), 30 * MINUTE, new DutyGenerator.PlanInputs(turnTimes, null, null, null, 10 * MINUTE))));
+	}
+
+	@Test
 	void aBufferMeasuredRoundIsAddedToTheChangeOfPlatform() {
 		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1));
 		final Map<Long, Map<Long, Long>> turnTimes = Collections.singletonMap(104L, Collections.singletonMap(105L, 5 * MINUTE));

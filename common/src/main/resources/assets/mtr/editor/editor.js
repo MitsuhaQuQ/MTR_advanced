@@ -56,7 +56,7 @@
 	let coverage = null;
 	/** The services paired at their routes' ends on the day shown (terminalNow), until the data, the draft or the day changes. */
 	let terminal = null;
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, networkSettings: null, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -110,6 +110,7 @@
 		if (!draft.platformStations || typeof draft.platformStations !== "object") draft.platformStations = {};
 		if (!draft.platformSpeeds || typeof draft.platformSpeeds !== "object") draft.platformSpeeds = {};
 		if (!draft.platformStops || typeof draft.platformStops !== "object") draft.platformStops = {};
+		if (!draft.networkSettings || typeof draft.networkSettings !== "object") draft.networkSettings = null;
 		if (!draft.contingencies || typeof draft.contingencies !== "object") draft.contingencies = {};
 		draftLoaded = true;
 	}
@@ -125,7 +126,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.platformStops || {}).length + Object.keys(draft.contingencies || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.platformStops || {}).length + (draft.networkSettings ? 1 : 0) + Object.keys(draft.contingencies || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -385,6 +386,10 @@
 			operations.push({ type: "platformStop", platform, position });
 			owners.push({ platformStopOf: platform });
 		});
+		if (draft.networkSettings) {
+			operations.push(Object.assign({ type: "networkSettings" }, draft.networkSettings));
+			owners.push({ networkSettingsOf: true });
+		}
 		Object.entries(draft.platformStations || {}).forEach(([platform, station]) => {
 			operations.push({ type: "platformStation", platform, station });
 			owners.push({ platformStationOf: platform });
@@ -435,6 +440,7 @@
 			owners.filter(owner => owner && owner.platformStationOf && !failed.has(owner)).forEach(owner => delete draft.platformStations[owner.platformStationOf]);
 			owners.filter(owner => owner && owner.platformSpeedOf && !failed.has(owner)).forEach(owner => delete draft.platformSpeeds[owner.platformSpeedOf]);
 			owners.filter(owner => owner && owner.platformStopOf && !failed.has(owner)).forEach(owner => delete draft.platformStops[owner.platformStopOf]);
+			if (owners.some(owner => owner && owner.networkSettingsOf && !failed.has(owner))) draft.networkSettings = null;
 			owners.filter(owner => owner && owner.contingenciesOf && !failed.has(owner)).forEach(owner => delete draft.contingencies[owner.contingenciesOf]);
 			owners.filter(owner => owner && owner.boundaryOf && !failed.has(owner)).forEach(owner => {
 				delete draft.boundaries[owner.boundaryOf];
@@ -1283,6 +1289,9 @@
 		const platformSpeedKeys = Object.keys(draft.platformSpeeds || {});
 		if (platformSpeedKeys.length) {
 			sections.push(`<section class="draft-change"><h3>${tr("过站限速")}</h3><ul>${platformSpeedKeys.map(platformId => `<li>${escapeHtml(tr("{0} 过站限速 {1} km/h", platformText(platformId), draft.platformSpeeds[platformId]))}</li>`).join("")}</ul></section>`);
+		}
+		if (draft.networkSettings) {
+			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul><li>${escapeHtml(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)))}</li></ul></section>`);
 		}
 		const platformStopKeys = Object.keys(draft.platformStops || {});
 		if (platformStopKeys.length) {
@@ -3575,7 +3584,7 @@
 		const candidates = data.routes.flatMap(r => r.services || []).filter(o => {
 			if (o === s || o.suspended || servedStops(o)[0] !== 0) return false;
 			const first = o.route.stops[0], times = timesOf(o)[0];
-			return (first.platformId === last.platformId || last.station && first.station === last.station) && times[0] >= arrival + TerminalPairs.MIN_TURN && times[1] - arrival <= TerminalPairs.MAX_WAIT;
+			return (first.platformId === last.platformId || last.station && first.station === last.station) && times[0] >= arrival + minReverseMillis() && times[1] - arrival <= TerminalPairs.MAX_WAIT;
 		}).sort((a, b) => (a.route.stops[0].platformId !== last.platformId) - (b.route.stops[0].platformId !== last.platformId) || timesOf(a)[0][1] - timesOf(b)[0][1]).slice(0, 8);
 		const items = candidates.map(o => {
 			const before = pairs.previous.get(o.id), takenBy = before && before.from.id !== s.id && before.source !== "nearest" ? findService(before.from.id) : null;
@@ -3977,7 +3986,7 @@
 	 */
 	function terminalNow() {
 		if (terminal && terminal.weekday === state.weekday) return terminal;
-		const runs = [], manual = {}, turnTimes = {}, duties = [];
+		const runs = [], manual = {}, turnTimes = {}, holdIns = {}, duties = [];
 		if (data) {
 			data.routes.forEach(r => (r.services || []).forEach(s => {
 				if (!r.hasTimes) return;
@@ -3990,13 +3999,14 @@
 			}));
 			data.depots.forEach(depot => {
 				Object.entries((depot.path || {}).turnTimes || {}).forEach(([from, times]) => { turnTimes[from] = Object.assign(turnTimes[from] || {}, times); });
+				Object.assign(holdIns, (depot.path || {}).holdIns || {});
 				Object.values(dutiesOf(depot).sidings).forEach(slots => slots.forEach(slot => {
 					const day = dutyOn(slot, state.weekday);
 					if (day && day.segments.length) duties.push(day.segments.map(segmentKey));
 				}));
 			});
 		}
-		terminal = Object.assign(TerminalPairs.pair({ runs, manual, duties, turnTimes }), { weekday: state.weekday });
+		terminal = Object.assign(TerminalPairs.pair({ runs, manual, duties, turnTimes, holdIns, minTurn: minReverseMillis() }), { weekday: state.weekday });
 		return terminal;
 	}
 	/** A platform as the whole network's topology has it (id, name, station, stationName), or null. */
@@ -4068,13 +4078,13 @@
 				if (gap < 0) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
 				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` });
 				else if (endStop && startStop && endStop.platformId === startStop.platformId) {
-					if (gap < TURN_MIN_MILLIS) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(TURN_MIN_MILLIS), formatDuration(gap)) });
+					if (gap < minReverseMillis()) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(minReverseMillis()), formatDuration(gap)) });
 				} else if (endStop && startStop) {
 					// A change of platform takes as long as the server measured on the rails, or has no way at all
 					const turn = turnTimeOf(depot, endStop.platformId, startStop.platformId);
 					if (turn === null) problems.push({ i, text: tr("这两个站台之间没有路：{0} 到 {1} 换不过去，刷新路径后还是这样就要加折返线或渡线", stopLabel(endStop), stopLabel(startStop)) });
 					// As the planner: the least turnaround at the platform arrived at, then the way to the other one
-					else if (turn !== undefined && gap < TURN_MIN_MILLIS + turn) problems.push({ i, text: tr("衔接时间不够：从 {0} 换到 {1} 实际要 {2}，这里只有 {3}", stopLabel(endStop), stopLabel(startStop), formatDuration(TURN_MIN_MILLIS + turn), formatDuration(gap)) });
+					else if (turn !== undefined && gap < minReverseMillis() + turn) problems.push({ i, text: tr("衔接时间不够：从 {0} 换到 {1} 实际要 {2}，这里只有 {3}", stopLabel(endStop), stopLabel(startStop), formatDuration(minReverseMillis() + turn), formatDuration(gap)) });
 				}
 			}
 		});
@@ -4106,8 +4116,12 @@
 		return r ? (r.stops[segment.from] || {}).platformId : null;
 	}
 
-	/** The least time a train turns back at the platform it arrived at, as the planner takes it. */
-	const TURN_MIN_MILLIS = 30000;
+	/** The least time a train changes ends where it turns back, as the planner takes it: the network's setting (round 4). */
+	function minReverseMillis() {
+		const settings = (data && data.networkSettings) || {};
+		const pending = draft.networkSettings && Number.isFinite(draft.networkSettings.minReverseMillis) ? draft.networkSettings.minReverseMillis : undefined;
+		return pending !== undefined ? pending : Number.isFinite(settings.minReverseMillis) ? settings.minReverseMillis : 30000;
+	}
 	/**
 	 * How long a change of platform within a station takes as the server measured it on the rails: the millis, null with
 	 * no way between, or undefined when not measured yet.
@@ -4149,7 +4163,7 @@
 		let current = first;
 		for (let guard = 0; guard < 4096 && current !== last; guard++) {
 			const times = timesOf(current), endStation = stationAt(current, current.route.stops.length - 1), arrival = times[times.length - 1][0];
-			const next = pool.filter(o => o !== current && !chain.includes(o) && stationAt(o, 0) === endStation && timesOf(o)[0][1] >= arrival + 30000).sort((x, y) => timesOf(x)[0][1] - timesOf(y)[0][1])[0];
+			const next = pool.filter(o => o !== current && !chain.includes(o) && stationAt(o, 0) === endStation && timesOf(o)[0][1] >= arrival + minReverseMillis()).sort((x, y) => timesOf(x)[0][1] - timesOf(y)[0][1])[0];
 			if (!next || next.start > last.start) return [];
 			chain.push(next);
 			current = next;
@@ -4449,7 +4463,9 @@
 		const bufferSection = `<h3>${tr("实测余量")}</h3>
 			<p class="hint">${tr("列车实际比计划多用的时间（最近 20 次的 85% 分位，多 15 秒以上才记），生成运用时加在折返和出入库上，时刻表不变。")}</p>
 			${bufferRows ? `<table class="buffers"><tbody>${bufferRows}</tbody></table>
-			<label><input type="checkbox" name="clearBuffers"${current.clearBuffers ? " checked" : ""}> ${tr("清空实测余量")}</label>` : `<p class="hint">${tr("还没有记下")}</p>`}`;
+			<label><input type="checkbox" name="clearBuffers"${current.clearBuffers ? " checked" : ""}> ${tr("清空实测余量")}</label>` : `<p class="hint">${tr("还没有记下")}</p>`}
+			<h3>${tr("全网设置")}</h3>
+			<label>${tr("换端最短时间（全网，秒）")} <input type="number" min="0" max="600" name="minReverse" value="${Math.round(minReverseMillis() / 1000)}"></label>`;
 		const cycleLabel = depot.byTimetable ? tr("允许长时间停在线上（两班之间不回库，运用跑完才回）") : tr("列车不回车厂，跑完最后一条线路后折返回第一条");
 		openDialog(tr("编辑车厂：{0}", escapeHtml(shortName(depot.name))), `
 			<p class="hint">${tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；车按车型配属给车厂，同车型的存车线共用这些车，车回到哪条存车线都还是同一列。存车线可以只跑其中几条线路，最多停几列是它能停的车数。配属车数留空时按各存车线相加。")}</p>
@@ -4498,7 +4514,14 @@
 					vehicleSettings[row.dataset.poolRow] = null;
 				}
 			});
+			// The network's least time to change ends (round 4), drafted apart from the depot
+			const reverseText = form.querySelector("input[name=minReverse]").value.trim();
+			const reverseSeconds = Number(reverseText);
+			if (reverseText === "" || !(reverseSeconds >= 0) || reverseSeconds > 600) bad = true;
 			if (bad) return tr("车数写成数字，或者留空");
+			const reverseMillis = Math.round(reverseSeconds) * 1000;
+			const appliedReverse = (data.networkSettings || {}).minReverseMillis;
+			draft.networkSettings = reverseMillis === appliedReverse ? null : { minReverseMillis: reverseMillis };
 			const clearBox = form.querySelector("input[name=clearBuffers]");
 			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, serviceTypes, clearBuffers: Boolean(clearBox && clearBox.checked) };
 			const sorted = list => JSON.stringify(list.slice().sort());

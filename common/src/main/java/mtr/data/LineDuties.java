@@ -281,6 +281,10 @@ public final class LineDuties {
 		 */
 		private final transitsim.plan.Buffers buffers;
 		/**
+		 * The network's least time to change ends (round 4).
+		 */
+		private final long minReverseMillis;
+		/**
 		 * The names of the unit's lines, for the log and the shortfall.
 		 */
 		public final String name;
@@ -395,6 +399,9 @@ public final class LineDuties {
 			depotIds.stream().sorted().map(dataCache.depotIdMap::get).filter(Objects::nonNull).forEach(depot -> depot.getBuffers().getMillis().forEach((bufferKey, millis) -> unitBuffers.merge(bufferKey, millis, Math::max)));
 			buffers = unitBuffers.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(unitBuffers);
 			keyBuilder.append("buffers:").append(unitBuffers);
+			// The network's least time to change ends (round 4)
+			minReverseMillis = dataCache.networkSettings.minReverseMillis;
+			keyBuilder.append("reverse:").append(minReverseMillis);
 			// The routes' paths keep off the connecting lines, which changes their times
 			keyBuilder.append("connecting:");
 			dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode).sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
@@ -436,7 +443,7 @@ public final class LineDuties {
 		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes) {
 			final Map<String, Integer> poolFleets = new HashMap<>();
 			groups.forEach(group -> poolFleets.putAll(poolFleetsOf(group.sidings, group.depotOf::get)));
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks, poolFleets, buffers);
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, backLinks, poolFleets, buffers, minReverseMillis);
 			final Plan plan = new Plan(name);
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;

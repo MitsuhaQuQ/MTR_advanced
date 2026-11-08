@@ -385,6 +385,20 @@ public final class EditorActions implements IPacket {
 			ClientData.DATA_CACHE.sync();
 			return null;
 		}
+		// The network's settings (round 4): the least time to change ends and the early arrival threshold, in milliseconds
+		if ("networkSettings".equals(getString(operation, "type"))) {
+			final mtr.data.NetworkSettings settings = new mtr.data.NetworkSettings();
+			settings.copyFrom(ClientData.DATA_CACHE.networkSettings);
+			if (operation.has("minReverseMillis")) {
+				settings.minReverseMillis = mtr.data.NetworkSettings.clamp(operation.get("minReverseMillis").getAsLong());
+			}
+			if (operation.has("earlyThresholdMillis")) {
+				settings.earlyThresholdMillis = mtr.data.NetworkSettings.clamp(operation.get("earlyThresholdMillis").getAsLong());
+			}
+			ClientData.DATA_CACHE.networkSettings.copyFrom(settings);
+			mtr.packet.NetworkSettingsPackets.sendC2S(settings);
+			return null;
+		}
 		// Where trains stop on a platform (round 4): 0 the exit end, -1 centred, or blocks short of the exit end
 		if ("platformStop".equals(getString(operation, "type"))) {
 			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(parseId(getString(operation, "platform")));

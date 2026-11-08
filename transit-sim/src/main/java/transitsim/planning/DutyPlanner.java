@@ -39,16 +39,6 @@ public final class DutyPlanner {
 	 * The start of every trip, by its first platform, in order.
 	 */
 	private final Map<Long, long[]> startsByFirstPlatform = new TreeMap<>();
-	/**
-	 * The train set to spend the night on the turn back rail beyond each platform, as the rail takes one ({@link #waitFrom}).
-	 */
-	private final Map<Long, OpenDuty> nightOnRail = new TreeMap<>();
-	/**
-	 * Whether a train may spend the night on the turn back rail beyond its last platform and leave from another platform of
-	 * the station in the morning. Off until the runtime takes trains onto the rail for the night ({@link
-	 * transitsim.sim.TrainService#updateOvernight} still holds a train whose next duty starts at another platform).
-	 */
-	static final boolean NIGHT_ON_RAIL = false;
 	private final List<Issue> issues = new ArrayList<>();
 	/**
 	 * The sidings and platforms told as {@link IssueType#NO_WAY_BACK} already, once each.
@@ -193,7 +183,6 @@ public final class DutyPlanner {
 		platformStops.clear();
 		returning.clear();
 		holds.clear();
-		nightOnRail.clear();
 		final Map<Long, List<Long>> depotReady = new TreeMap<>();
 		// A pool given its trains in all shares them between its sidings (R3)
 		final Map<Long, Integer> startingTrains = network.getStartingTrains();
@@ -293,11 +282,6 @@ public final class DutyPlanner {
 		if (duty.waitFromReady == duty.readyMillis && duty.waitFromPlatform == duty.platformId) {
 			return duty.waitFrom;
 		}
-		// The rail takes one train for the night: another still waiting there for its morning has it
-		final OpenDuty onRail = nightOnRail.get(duty.platformId);
-		final boolean railTaken = onRail != null && onRail != duty && open.contains(onRail) && onRail.platformId == duty.platformId && onRail.waitFromReady == onRail.readyMillis;
-		final boolean rail = NIGHT_ON_RAIL && network.turnBackHold(duty.platformId) != null && !railTaken;
-		boolean firstOnRail = false;
 		long first = Long.MAX_VALUE;
 		for (final Map.Entry<Long, long[]> entry : startsByFirstPlatform.entrySet()) {
 			final long platformId = entry.getKey();
@@ -306,15 +290,11 @@ public final class DutyPlanner {
 				continue;
 			}
 			final long start = firstStart(entry.getValue(), duty.readyMillis + connectionMillis);
-			// After a night on the line, only from the platform it stopped at, or out of the turn back rail beyond it
+			// After a night on the line, only from the platform it stopped at
 			final boolean sameDay = Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS) == Math.floorDiv(start, OperationTime.DAY_MILLIS);
-			if (start != Long.MAX_VALUE && (platformId == duty.platformId || sameDay || rail) && start < first) {
+			if (start != Long.MAX_VALUE && (platformId == duty.platformId || sameDay) && start < first) {
 				first = start;
-				firstOnRail = platformId != duty.platformId && !sameDay;
 			}
-		}
-		if (firstOnRail) {
-			nightOnRail.put(duty.platformId, duty);
 		}
 		duty.waitFromReady = duty.readyMillis;
 		duty.waitFromPlatform = duty.platformId;
@@ -434,16 +414,13 @@ public final class DutyPlanner {
 			// A train staying on the line overnight goes on the next day from the platform it stopped at: the next day's
 			// duty starts on the same track, so a change of platform is only within one operating day
 			final boolean overnightMove = duty.platformId != trip.firstPlatform() && Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS) != Math.floorDiv(trip.startMillis(), OperationTime.DAY_MILLIS);
-			// Unless it spends the night on the turn back rail beyond its platform, if that is free, and comes out of it to
-			// the other platform in the morning
-			final boolean overnightOnRail = NIGHT_ON_RAIL && overnightMove && connectionMillis != OperationNetwork.UNREACHABLE && isHoldFree(duty, trip);
-			final boolean reachable = (!overnightMove || overnightOnRail) && connectionMillis != OperationNetwork.UNREACHABLE && duty.readyMillis + connectionMillis <= trip.startMillis();
+			final boolean reachable = !overnightMove && connectionMillis != OperationNetwork.UNREACHABLE && duty.readyMillis + connectionMillis <= trip.startMillis();
 			final boolean samePlatform = duty.platformId == trip.firstPlatform();
 			// With the platform taken meanwhile, a train can wait on a turn back rail beyond it if one is free (混合折返)
 			final boolean platformFree = !samePlatform || isPlatformFree(duty.platformId, duty.endMillis, trip.startMillis());
 			// A long wait goes on the rail too, as the runtime sends it there (TrainService.LONG_TURN_BACK_WAIT_MILLIS)
 			final boolean longWait = samePlatform && trip.startMillis() - duty.endMillis >= transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS;
-			final boolean railFree = overnightOnRail || (!platformFree || longWait) && reachable && isHoldFree(duty, trip);
+			final boolean railFree = (!platformFree || longWait) && reachable && isHoldFree(duty, trip);
 			if (reachable && (platformFree || railFree) && (best == null || duty.readyMillis > best.readyMillis)) {
 				best = duty;
 				bestHolds = railFree;

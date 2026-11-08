@@ -86,8 +86,8 @@ class DutyTurnBackTest {
 		// It stops at B for its departure, rather than running straight through
 		assertTrue(path.get(atB).dwellTime > 0, "stops at B");
 
-		// The planner is told how long A to B takes the way the duty runs it: the run round the turn back rail and back,
-		// over 600 blocks with a reversal, on top of the 30 second margin, rather than a fixed guess
+		// The planner is told how long A to B takes the way the duty runs it: the legs in to the turn back rail and back out,
+		// over 600 blocks, without standing there to change ends, which the plan adds as the network's least time (round 4)
 		final Station station = new Station(50);
 		dataCache.platformIdToStation.put(PLATFORM_A, station);
 		dataCache.platformIdToStation.put(PLATFORM_B, station);
@@ -95,7 +95,14 @@ class DutyTurnBackTest {
 		final Map<Long, Map<Long, Long>> turnTimes = depot.measureTurnTimes(routes, dataCache, rails, graph, false);
 		final Long aToB = turnTimes.getOrDefault(PLATFORM_A, Collections.emptyMap()).get(PLATFORM_B);
 		assertNotNull(aToB, "A to B measured: " + turnTimes);
-		assertTrue(aToB > 60000 && aToB < 300000, "the run round the turn back rail: " + aToB);
+		assertTrue(aToB > 30000 && aToB < 270000, "the run round the turn back rail: " + aToB);
+		// Round the turn back rail and back to A, where a train may wait: its in leg kept apart, shorter than the round
+		final Map<Long, Long> fromA = turnTimes.getOrDefault(PLATFORM_A, Collections.emptyMap());
+		if (fromA.containsKey(PLATFORM_A)) {
+			final Long in = fromA.get(transitsim.planning.DutyGenerator.HOLD_IN_KEY);
+			assertNotNull(in, "the in leg is measured: " + fromA);
+			assertTrue(in > 0 && in < fromA.get(PLATFORM_A), "in " + in + " of " + fromA.get(PLATFORM_A));
+		}
 
 		// Without the turn back rail there's no way from A to B, and the planner is told so
 		rails.get(pos(0, 300)).remove(pos(0, 500));

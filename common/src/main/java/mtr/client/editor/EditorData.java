@@ -66,6 +66,11 @@ public final class EditorData {
 		// Local time of day is UTC time of day plus this
 		data.addProperty("offsetMillis", Math.floorMod(TimetableConfig.getDayStartHour() * 3600000L - dayStartMillis, (long) Depot.MILLISECONDS_PER_DAY));
 		data.addProperty("canEdit", ClientData.hasPermission());
+		// The network's settings (round 4)
+		final JsonObject networkSettingsObject = new JsonObject();
+		networkSettingsObject.addProperty("minReverseMillis", ClientData.DATA_CACHE.networkSettings.minReverseMillis);
+		networkSettingsObject.addProperty("earlyThresholdMillis", ClientData.DATA_CACHE.networkSettings.earlyThresholdMillis);
+		data.add("networkSettings", networkSettingsObject);
 		// The fast simulation of a day is a debugging tool the server turns on
 		data.addProperty("simulation", ClientData.editorSimulation);
 		data.addProperty("language", getLanguage());
@@ -257,12 +262,22 @@ public final class EditorData {
 			// a pair left out having no way between once measured
 			pathObject.addProperty("turnTimesMeasured", depot.turnTimesMeasured);
 			final JsonObject turnTimesObject = new JsonObject();
+			// How long the in leg of the way round a turn back rail takes, by platform (round 4); the rest of the round is
+			// the out leg
+			final JsonObject holdInsObject = new JsonObject();
 			depot.clientTurnTimes.forEach((from, times) -> {
 				final JsonObject toObject = new JsonObject();
-				times.forEach((to, millis) -> toObject.addProperty(String.valueOf(to), millis));
+				times.forEach((to, millis) -> {
+					if (to == transitsim.planning.DutyGenerator.HOLD_IN_KEY) {
+						holdInsObject.addProperty(String.valueOf(from), millis);
+					} else {
+						toObject.addProperty(String.valueOf(to), millis);
+					}
+				});
 				turnTimesObject.add(String.valueOf(from), toObject);
 			});
 			pathObject.add("turnTimes", turnTimesObject);
+			pathObject.add("holdIns", holdInsObject);
 			// Trains waiting on the line with no duty: siding, slot, where and why (P1-C)
 			final JsonArray heldArray = new JsonArray();
 			depot.clientHeldTrains.forEach(entry -> {

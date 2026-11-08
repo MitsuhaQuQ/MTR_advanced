@@ -24,12 +24,17 @@
 	 * @param input.duties    each a train's services of the day, in order
 	 * @param input.turnTimes from platform → to platform → the time a change of platform takes; a platform to itself, the
 	 *                        time round a turn back rail beyond it
+	 * @param input.holdIns   by platform, how much of the time round its turn back rail is the way in (round 4); half
+	 *                        where not given
+	 * @param input.minTurn   the network's least time to change ends (round 4), {@link MIN_TURN} if not given
 	 * @return { next, previous: Map id → pair, warnings: [] }; a pair is { from, to, kind: "same" | "change" | "hold",
 	 * source: "manual" | "duty" | "nearest", platform, fromDeparture, toArrival, moved }
 	 */
 	function pair(input) {
 		const runs = new Map(input.runs.map(run => [run.id, run]));
 		const turnTimes = input.turnTimes || {};
+		const holdIns = input.holdIns || {};
+		const minTurn = Number.isFinite(input.minTurn) ? input.minTurn : MIN_TURN;
 		const next = new Map(), previous = new Map(), warnings = [];
 		const ends = run => run && !run.suspended && !run.returns && run.last === run.platforms.length - 1;
 		const starts = run => run && !run.suspended && run.first === 0;
@@ -57,7 +62,7 @@
 			runs.forEach(to => {
 				if (!starts(to) || previous.has(to.id) || to.id === from.id || to.stations[0] !== station) return;
 				const same = to.platforms[0] === platform;
-				const ready = leaving(from) + MIN_TURN + (same ? 0 : turnTime(platform, to.platforms[0]) === undefined ? Infinity : turnTime(platform, to.platforms[0]));
+				const ready = leaving(from) + minTurn + (same ? 0 : turnTime(platform, to.platforms[0]) === undefined ? Infinity : turnTime(platform, to.platforms[0]));
 				if (ready > firstArrival(to) || departure(to) - arrival(from) > MAX_WAIT) return;
 				if (!best || same && !bestSame || same === bestSame && departure(to) < departure(best)) {
 					best = to;
@@ -70,7 +75,7 @@
 		// Where each train turning back at its platform stands, in the order they arrive: its own platform, or the next one
 		// of those it may turn back at that is free; or a turn back rail beyond it; or, with neither, its own, in conflict
 		const taken = new Map(), holds = new Map();
-		const free = (list, start, end) => !(list || []).some(other => other.start < end + MIN_TURN && start < other.end + MIN_TURN);
+		const free = (list, start, end) => !(list || []).some(other => other.start < end + minTurn && start < other.end + minTurn);
 		// The stops of trains that don't turn back there take the platform as they stop
 		input.runs.forEach(run => {
 			if (run.suspended) return;
@@ -89,7 +94,7 @@
 			const round = turnTime(own, own);
 			const onRail = () => {
 				if (round === undefined) return false;
-				const runIn = round / 2, runOut = round - runIn;
+				const runIn = Number.isFinite(holdIns[own]) ? Math.min(holdIns[own], round) : round / 2, runOut = round - runIn;
 				const railStart = leaving(from) + runIn, railEnd = firstArrival(to) - runOut;
 				if (railStart > railEnd || !free(taken.get(own), start, leaving(from)) || !free(taken.get(own), firstArrival(to), end) || !free(holds.get(own), railStart, railEnd)) return false;
 				pairing.kind = "hold";
@@ -106,11 +111,11 @@
 				pairing.platform = chosen;
 				pairing.moved = chosen !== own;
 				add(taken, chosen, { start, end, id: from.id, pairing });
-				if (pairing.moved) blockedBy(taken.get(own), start, end).forEach(other => other.pairing && (other.pairing.displaced = (other.pairing.displaced || 0) + 1));
+				if (pairing.moved) blockedBy(taken.get(own), start, end, minTurn).forEach(other => other.pairing && (other.pairing.displaced = (other.pairing.displaced || 0) + 1));
 				return;
 			}
 			if (onRail()) {
-				blockedBy(taken.get(own), start, end).forEach(other => other.pairing && (other.pairing.displaced = (other.pairing.displaced || 0) + 1));
+				blockedBy(taken.get(own), start, end, minTurn).forEach(other => other.pairing && (other.pairing.displaced = (other.pairing.displaced || 0) + 1));
 				return;
 			}
 			pairing.conflict = true;
@@ -134,8 +139,8 @@
 		map.get(key).push(entry);
 	}
 
-	function blockedBy(list, start, end) {
-		return (list || []).filter(other => other.start < end + MIN_TURN && start < other.end + MIN_TURN);
+	function blockedBy(list, start, end, minTurn) {
+		return (list || []).filter(other => other.start < end + minTurn && start < other.end + minTurn);
 	}
 
 	const api = { MIN_TURN, LONG_WAIT, MAX_WAIT, pair };

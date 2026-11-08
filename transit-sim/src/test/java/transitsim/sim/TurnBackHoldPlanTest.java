@@ -48,6 +48,34 @@ class TurnBackHoldPlanTest {
 	}
 
 	@Test
+	void theRailIsHeldAsLongAsEachLegWasMeasured() {
+		// Up reaches the platform at 06:06, another line stops there at 06:12, down leaves at 06:30; 21 minutes round the
+		// rail. Coming out takes the platform from when the train sets off back to it, so how the round splits matters
+		final TestRoute up = route(1, 6 * HOUR, 1, 2, 3, PLATFORM);
+		final TestRoute other = route(2, 6 * HOUR + 6 * MINUTE, 8, 9, 10, PLATFORM, 11);
+		final TestRoute down = route(3, 6 * HOUR + 30 * MINUTE, PLATFORM, 5, 6, 7);
+		final Map<Long, Long> links = new HashMap<>();
+		links.put(1L, 0L);
+		links.put(8L, 0L);
+		links.put(PLATFORM, 60000L);
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, -1, links, 7));
+		final java.util.function.LongFunction<DutyGenerator.Result> plan = inMillis -> {
+			final Map<Long, Long> fromPlatform = new HashMap<>();
+			fromPlatform.put(PLATFORM, 21 * MINUTE);
+			if (inMillis >= 0) {
+				fromPlatform.put(DutyGenerator.HOLD_IN_KEY, inMillis);
+			}
+			return DutyGenerator.generate(services(up, other, down), sidings, Collections.emptyMap(), HOUR, new DutyGenerator.PlanInputs(Collections.singletonMap(PLATFORM, fromPlatform), Collections.emptyMap()));
+		};
+		// Halves where only the round was measured: back at the platform at about 06:20, after the other line has gone
+		assertTrue(sameDuty(plan.apply(-1), 1, 3));
+		// 20 minutes in, one out: back at 06:29
+		assertTrue(sameDuty(plan.apply(20 * MINUTE), 1, 3));
+		// One minute in, 20 out: it would take the platform again from 06:10, while the other line stops there
+		assertFalse(sameDuty(plan.apply(MINUTE), 1, 3));
+	}
+
+	@Test
 	void aTrainCantWaitOnTheRailWithNoTimeToRunInAndOut() {
 		final TestRoute up = route(1, 6 * HOUR, 1, 2, 3, PLATFORM);
 		final TestRoute other = route(2, 6 * HOUR + 6 * MINUTE, 8, 9, 10, PLATFORM, 11);

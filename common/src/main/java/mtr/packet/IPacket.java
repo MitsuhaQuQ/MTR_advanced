@@ -94,6 +94,7 @@ public interface IPacket {
 	ResourceLocation PACKET_RECALL_TRAIN = new ResourceLocation(MTR.MOD_ID, "packet_recall_train");
 	ResourceLocation PACKET_DELAY_ALARMS = new ResourceLocation(MTR.MOD_ID, "packet_delay_alarms");
 	ResourceLocation PACKET_CONTINGENCIES = new ResourceLocation(MTR.MOD_ID, "packet_contingencies");
+	ResourceLocation PACKET_NETWORK_SETTINGS = new ResourceLocation(MTR.MOD_ID, "packet_network_settings");
 	/**
 	 * The dispatcher's console (D6): asked for and sent back, and a command for a train.
 	 */

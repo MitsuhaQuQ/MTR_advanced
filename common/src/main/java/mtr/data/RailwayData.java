@@ -82,6 +82,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	public volatile boolean contingenciesChanged;
 	/**
+	 * Set when a player changed the network's settings, which then go to every player (round 4).
+	 */
+	public volatile boolean networkSettingsChanged;
+	/**
 	 * The compressed network and the paths found on it, which the save loop writes into the database. See {@link GraphRecords}.
 	 */
 	public final GraphRecords graphRecords = new GraphRecords();
@@ -582,6 +586,11 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			contingenciesChanged = false;
 			mtr.packet.ContingencyPackets.sendAllS2C(world, this);
 		}
+		// The network's settings a player changed go to every player (round 4)
+		if (networkSettingsChanged) {
+			networkSettingsChanged = false;
+			mtr.packet.NetworkSettingsPackets.sendAllS2C(world, this);
+		}
 		// Buffers measured off what they were planned with by more than a little go to the players (D1)
 		depots.forEach(depot -> depot.sendBuffersIfChanged(packet -> world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_UPDATE_DEPOT, packet))));
 		handleMotionEvents();
@@ -859,6 +868,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		PacketTrainDataGuiServer.sendAllInChunks(serverPlayer, stations, platforms, sidings, routes, depots, lifts, signalBlocks, keyNodes);
 		pathRegionSync.send(serverPlayer);
 		mtr.packet.ContingencyPackets.sendS2C(serverPlayer, this);
+		mtr.packet.NetworkSettingsPackets.sendS2C(serverPlayer, this);
 		railwayDataCoolDownModule.onPlayerJoin(serverPlayer);
 	}
 

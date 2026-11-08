@@ -137,6 +137,7 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 - **`Train` 的钩子**：见 2.2 节。
 - **`RailwayData.simulateTrains(RailNearPlayer)`**：每 tick 的入口，按"轨道是否靠近玩家"参数化。ANTE 的 mixin 只传入它自己的判断。
 - **停车点轨道按自己的限速**（优化第三轮 3b）：组件里 `RunTrack.toTrackView` 和运行器的运动接口不再让站台、存车线、折返线继承前一条轨道的限速；`RunTrack.canAccelerate()` 只用于信号区段不切。存车线 25、折返线 65 由宿主导出的限速带进来（`SimExport` 用 `PathData.getMaxSpeed`）。
+- **折返的进、出两段和换端最短时间**（优化第四轮第 2 步）：`DutyGenerator.PlanInputs.minReverseMillis`（宿主从全网设置给，默认 `MIN_TURNAROUND_MILLIS` 30 秒）代替固定的最短折返；换站台的用时是宿主量出的进段 + 出段；在折返线上等的车取 `turnTimes` 里 `HOLD_IN_KEY` 记的进段，出段为来回总用时减进段，没有就对半。测试：`DutyGeneratorTest.aChangeOfPlatformTakesTheNetworksLeastTimeToChangeEnds`、`TurnBackHoldPlanTest.theRailIsHeldAsLongAsEachLegWasMeasured`。
 - **停车点的停车位置**（优化第四轮第 1 步）：`MotionTrack.getStopOffset` / `getStopDistance`（默认 0 和轨道末端），`TrackView` 带每个停车点的偏移，`SpeedCurves` 每段终点 = 末端 − 偏移、掉头后下一段从末端 + 偏移 + 车长起，`PathTimes` 的停站点跟着；运动规则按停车位置停车、找下一站（`TrainRules.findNextStop`），掉头由 `MotionConstants.getReversalAdvance` 给出车头移动的距离。偏移由 `PlanTrack.getStopOffset(车长)` 给，`transitsim.plan.StopPositions` 是两边共用的算法；组件的 `DataTrack` 从 `SimDataset` 第 16 版的 `stopPositions`（站台 ID → 设置）取。测试 `StopPositionsTest`：偏移不让车尾出站台、速度曲线停在偏移处并从车尾原位置掉头出发、列车确实停在站台中间、各车到发和通过的站和停在出站端时一样（没有重复取同一站或漏站）、跳 tick 等于逐 tick；`RestoreTest` 加一个全部居中的线路，读档续跑等于一直跑。
 - **限速两值**（优化第三轮）：规则在组件 `SpeedLimits`（含格每 tick 的换算）；组件运行器用 `RunTrack.runSpeed` 取物理最高，游戏用 `SpeedRules`（加上缆车、飞机不适用）；排时刻表的计划速度在宿主的 `PathTiming`。时刻表的最低性能是组件 `RouteTimetable` 的字段，读写在 `TimetableBinary`。
 - **站间段层和配属层**（优化第二轮）：`transitsim.network.LegRouter`（按轨道段找站间段，记搜索域）、`RouteLegs`（站台两个方向的动态规划）、`LegCache`（按搜索域失效，按版本拒收旧结果）、`TrackOwnership`（配属，硬约束）都在组件，`RouteLegsTest` 守住"和整条搜索用时相同、新捷径会重算、配属、增量等于重算、1 线程等于 8 线程"。宿主只剩 `RoutePaths`（把站台和途经点交给组件、把轨道段展开成 `PathData`、诊断失败原因）和 `GraphRecords`（快照、存档）。
@@ -990,7 +991,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - 手动驾驶受授权限制（ATP）：手动车每 tick 经同一个仲裁器申请到"制动距离加 32 格"为止的授权（`TrainServer.updateManualAuthority`，路径用 `SimExport.toTracks` 换成仲裁器读的轨道），推进后不越过授权终点，速度高于在终点前能停下的速度就降下来（`limitToAuthority`）。单线方向、掉头的双向占用对手动车同样生效；涂色信号区段对手动车暂时按段而不是整块算。
 - 客户端（同 0.41.0，不改包）：走速度曲线、不是缆车、不是手动驾驶的车，客户端只按服务端发来的运行段移动（`Train.followSegment`）；没有运行段时原地不动，门按服务端的 `doorTarget` 开关（`Train.standsForRunLayer`），不再自己用旧规则判断是不是停在站上。缆车、飞机、手动驾驶照旧。已知：组件出错后的 5 分钟回退期里，游戏用旧规则推进的车没有运行段，客户端只在每次状态包时跳到新位置。
 - 规划（2026-11-07，在 yel 去掉辅助线路的副本上发现）：留在线上的线路（最长停留 8 天），上下行班次数不等时多出来的车在终点停几天，车厂每天出新车，逐周重放越积越多，黄线算出要 140 至 200 列（实际 12 列左右）。现在没活的车从"最早能接的一趟"起再等 30 分钟就回库（代码说明 9.4"留在线上的车等多久"）；运用重放不收敛时车数记成"算不出"。回归测试 `YellowLinePlanTest`（黄线的原始输入）、`UnevenServicesTest`（随机的上下行班次数不等的线路）。还没做：
-  - 运行时在折返轨上过夜：规划里写好了，开关 `DutyPlanner.NIGHT_ON_RAIL` 关着，等运行时 `TrainService.updateOvernight` 能把车开上折返轨过夜、第二天从同站别的站台出发再开。
+  - 运行时在折返轨上过夜：规划里原来写好的分支和开关 `DutyPlanner.NIGHT_ON_RAIL` 一直关着，优化第四轮第 2 步删掉了；以后要做时按进、出两段重新做。
   - 车在到达站台上等下一班：`DutyPlanner.addLayover` 和运行时都让车停在到达站台等，到出发前才换站台。黄线西端下行到站后差 20 秒赶不上下一班上行，在到达站台上等约 6.7 分钟，下一列下行进不来（规划报每天约 780 次站台冲突，运行时会在站外等）。应该到站后尽快去出发站台或折返轨上等。
   - 离线一天模拟（`SimulateDay`）在 yel 副本上只跑了 6 列车，游戏里同一存档线上有 400 多列，两边读的数据不一致，待查。
 - 压力测试线网（2026-11-07，用户定的做法）：把 yel 的黄线复制 N 份放在远处，相邻两份之间在随机车站加联络线，约 1/4 班次改成经联络线跨到下一份的线路（这条线路本身就是联络线，分岔和接入处设关键节点），约 1/4 改成在中间站站前折返（加交叉渡线）。脚本在本机 `C:/gtmp/fast/stress/make_stress.py`、`stress_extras.py`，日志统计 `log_report.py`。只用来测寻路和模拟的开销；死锁只在黄线上判断。64 份时量出：车厂寻路串行排队 18 分钟、同一线路排运用多达 5 次、组件重建和变更检查在主线程上一次卡 4 至 7 秒、自动保存卡 1 至 3 秒、平时每 tick 15 至 20 毫秒。车厂寻路已并行（代码说明 9.1），其余待做。

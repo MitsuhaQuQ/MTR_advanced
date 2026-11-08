@@ -27,6 +27,10 @@ public class DataCache {
 
 	public final Map<Long, Station> stationIdMap = new HashMap<>();
 	public final Map<Long, Platform> platformIdMap = new HashMap<>();
+	/**
+	 * The settings of the dimension's whole network (optimisation round 4): the server's own, or what it sent the client.
+	 */
+	public final NetworkSettings networkSettings = new NetworkSettings();
 	public final Map<Long, Siding> sidingIdMap = new HashMap<>();
 	public final Map<Long, Route> routeIdMap = new HashMap<>();
 	public final Map<Long, Depot> depotIdMap = new HashMap<>();

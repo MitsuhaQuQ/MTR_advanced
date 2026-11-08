@@ -174,10 +174,6 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private static final int MAX_TURN_LINK_BLOCKS = 1000;
 	private static final int MAX_RUN_PROBLEMS = 16;
-	/**
-	 * Added to the measured time of a change of platform, for stopping and starting.
-	 */
-	private static final long TURN_MARGIN_MILLIS = 30000;
 
 	private static double pathLength(List<PathData> path) {
 		return path.stream().mapToDouble(pathData -> pathData.rail.getLength()).sum();
@@ -2032,7 +2028,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				sidingInput.poolKey = siding.getPoolKey();
 				sidingInputs.add(sidingInput);
 			});
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getBuffers());
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getBuffers(), dataCache.networkSettings.minReverseMillis);
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();
@@ -2891,11 +2887,18 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : listed;
 					final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : findTurnBackSection(from, from, nodes, 0, rails, graph, useFastSpeed);
 					if (hold != null && !hold.getDefaultWay().isEmpty()) {
-						long millis = 0;
+						// In to the turn back rail and back out, each leg as measured (round 4): the slowest vehicle's
+						long[] slowest = {0, 0};
 						for (final PathTiming.Vehicle vehicle : vehiclesOf(before, before)) {
-							millis = Math.max(millis, connectionMillis(vehicle, hold.getDefaultWay()));
+							final long[] legs = legMillis(vehicle, hold.getDefaultWay());
+							if (legs[0] + legs[1] > slowest[0] + slowest[1]) {
+								slowest = legs;
+							}
 						}
-						turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(from.id, millis + TURN_MARGIN_MILLIS);
+						final Map<Long, Long> fromHere = turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>());
+						fromHere.put(from.id, slowest[0] + slowest[1]);
+						fromHere.put(DutyGenerator.HOLD_IN_KEY, slowest[0]);
+						debugTurnTime(from, from, before, before, hold.getDefaultWay(), slowest);
 					}
 				}
 				for (final Route after : routes) {
@@ -2910,11 +2913,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					findConnection(connectingPath, from, to, before, rails, graph, useFastSpeed);
 					if (!connectingPath.isEmpty()) {
 						// Timed for the slowest of the vehicles running either route
-						long millis = 0;
+						// The legs in and out, without standing where it turns back: changing ends there is the network's least time,
+						// which the plan adds (round 4)
+						long[] slowest = {0, 0};
 						for (final PathTiming.Vehicle vehicle : vehiclesOf(before, after)) {
-							millis = Math.max(millis, connectionMillis(vehicle, connectingPath));
+							final long[] legs = legMillis(vehicle, connectingPath);
+							if (legs[0] + legs[1] > slowest[0] + slowest[1]) {
+								slowest = legs;
+							}
 						}
-						turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(to.id, millis + TURN_MARGIN_MILLIS);
+						turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(to.id, slowest[0] + slowest[1]);
+						debugTurnTime(from, to, before, after, connectingPath, slowest);
 					}
 				}
 			}
@@ -2939,6 +2948,62 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @return how long the vehicle takes along a way between two services, starting with its head at the end of the
 		 * platform it stopped at, as a train stands there, rather than with its middle at the middle of a siding
 		 */
+		/**
+		 * The way round cut where the train turns back (optimisation round 4): how long it runs in, from setting off to
+		 * standing where it turns back, and out, from setting off again to arriving; standing there is left out. A way
+		 * with no turn back is all in.
+		 *
+		 * @return the in and out legs in milliseconds
+		 */
+		private long[] legMillis(PathTiming.Vehicle vehicle, List<PathData> connectingPath) {
+			final double headStart = connectingPath.get(0).rail.getLength();
+			final PathTiming.Vehicle standing = new PathTiming.Vehicle((float) (2 * headStart - vehicle.trainCars * vehicle.spacing), vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode);
+			final List<TimeSegment> timeSegments = new ArrayList<>();
+			PathTiming.generateTimeSegments(standing, connectingPath, timeSegments, new HashMap<>(), new StopTimes(), 0, 0);
+			if (timeSegments.isEmpty()) {
+				return new long[]{0, 0};
+			}
+			final double endTicks = timeSegments.get(timeSegments.size() - 1).endTime;
+			double reversal = -1;
+			double distance = 0;
+			for (int i = 0; i + 1 < connectingPath.size(); i++) {
+				distance += connectingPath.get(i).rail.getLength();
+				if (connectingPath.get(i).isOppositeRail(connectingPath.get(i + 1))) {
+					reversal = distance - (connectingPath.get(i).dwellTime > 0 ? connectingPath.get(i).getStopOffset(vehicle.trainCars * vehicle.spacing) : 0);
+					break;
+				}
+			}
+			if (reversal < 0) {
+				return new long[]{(long) (endTicks * MILLIS_PER_TICK), 0};
+			}
+			double inTicks = 0;
+			double outStartTicks = endTicks;
+			for (final TimeSegment timeSegment : timeSegments) {
+				if (timeSegment.endRailProgress <= reversal + 1E-6) {
+					inTicks = Math.max(inTicks, timeSegment.endTime);
+				} else if (timeSegment.startRailProgress > reversal + 1E-6) {
+					outStartTicks = Math.min(outStartTicks, timeSegment.getTime(timeSegment.startRailProgress));
+				}
+			}
+			return new long[]{(long) (inTicks * MILLIS_PER_TICK), (long) (Math.max(0, endTicks - outStartTicks) * MILLIS_PER_TICK)};
+		}
+
+		/**
+		 * With {@code -Dmtr.debugTurnTimes=true}, logs a measured turn round as planned before round 4 (30 s to turn round,
+		 * the whole way with its standing, 30 s margin) and now (the network's least time to change ends, in and out legs).
+		 */
+		private void debugTurnTime(Platform from, Platform to, Route before, Route after, List<PathData> way, long[] legs) {
+			if (!Boolean.getBoolean("mtr.debugTurnTimes")) {
+				return;
+			}
+			long whole = 0;
+			for (final PathTiming.Vehicle vehicle : vehiclesOf(before, after)) {
+				whole = Math.max(whole, connectionMillis(vehicle, way));
+			}
+			final long reverse = dataCache.networkSettings.minReverseMillis;
+			System.out.println("Minecraft Transit Railway turn time: " + from.name + " (" + from.id + ") to " + to.name + " (" + to.id + "): before " + (30000 + whole + 30000) + " ms (30000 + " + whole + " + 30000), now " + (reverse + legs[0] + legs[1]) + " ms (" + reverse + " + in " + legs[0] + " + out " + legs[1] + ")");
+		}
+
 		private long connectionMillis(PathTiming.Vehicle vehicle, List<PathData> connectingPath) {
 			final double headStart = connectingPath.get(0).rail.getLength();
 			final PathTiming.Vehicle standing = new PathTiming.Vehicle((float) (2 * headStart - vehicle.trainCars * vehicle.spacing), vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode);
