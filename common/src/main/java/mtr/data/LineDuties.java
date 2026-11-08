@@ -3,6 +3,7 @@ package mtr.data;
 import net.minecraft.core.BlockPos;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.RouteTimetable;
+import transitsim.planning.DutyCheck;
 import transitsim.planning.DutyGenerator;
 
 import java.util.*;
@@ -277,6 +278,12 @@ public final class LineDuties {
 
 		public final String key;
 		/**
+		 * What the duties are made of, leaving out every time (round 4, step 4): the timetables and stops, the sidings and
+		 * their trains, the services left to others and the start of the operating day. Duties planned from the same are
+		 * kept while they still hold with new times ({@link #keep}).
+		 */
+		public final String basis;
+		/**
 		 * What the unit's depots measured (D1).
 		 */
 		private final transitsim.plan.Buffers buffers;
@@ -402,6 +409,14 @@ public final class LineDuties {
 				group.sidings.forEach(siding -> keyBuilder.append(siding.sidingId).append('/').append(siding.maxTrains).append(';'));
 			});
 			keyBuilder.append("taken:").append(taken.hashCode());
+			// Each depot's trains for each pool, which the planner shares between the pool's sidings
+			final StringBuilder basisBuilder = new StringBuilder(keyBuilder);
+			depotIds.stream().sorted().map(dataCache.depotIdMap::get).filter(Objects::nonNull).forEach(depot -> basisBuilder.append("pools:").append(depot.id).append(depot.poolFleets));
+			basisBuilder.append("day:").append(TimetableConfig.getDayStartMillis());
+			basis = digest(basisBuilder.toString());
+			if (Boolean.getBoolean("mtr.debugPlanBasis")) {
+				System.out.println("Minecraft Transit Railway plan basis " + basis + " of " + name + ": " + basisBuilder);
+			}
 			// How much longer than planned the unit's trains were measured to take out, round and back (D1)
 			final Map<String, Long> unitBuffers = new TreeMap<>();
 			depotIds.stream().sorted().map(dataCache.depotIdMap::get).filter(Objects::nonNull).forEach(depot -> depot.getBuffers().getMillis().forEach((bufferKey, millis) -> unitBuffers.merge(bufferKey, millis, Math::max)));
@@ -453,10 +468,10 @@ public final class LineDuties {
 		}
 
 		/**
-		 * @param measured the ways out and back of the unit's sidings as path generation found them on the track sections
-		 *                 just now (round 4, step 3), by siding, in place of what was kept; null to plan with what was kept
+		 * What the planner plans by, as measured: the changes of platform, the ways back, the pools' trains, what was measured
+		 * on top (D1) and the least time to change ends.
 		 */
-		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured) {
+		private DutyGenerator.PlanInputs inputsOf(Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured) {
 			final Map<String, Integer> poolFleets = new HashMap<>();
 			groups.forEach(group -> poolFleets.putAll(poolFleetsOf(group.sidings, group.depotOf::get)));
 			final Map<Long, Map<Long, Long>> planBackLinks = new TreeMap<>(backLinks);
@@ -473,10 +488,92 @@ public final class LineDuties {
 					planBackLinks.put(sidingId, back);
 				});
 			}
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(turnTimes, planBackLinks, poolFleets, buffers, minReverseMillis);
+			return new DutyGenerator.PlanInputs(turnTimes, planBackLinks, poolFleets, buffers, minReverseMillis);
+		}
+
+		private long getMaxLayover() {
+			return staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
+		}
+
+		/**
+		 * The duties planned before, kept if they were planned from what the unit is made of now and still hold with these
+		 * times (optimisation round 4, step 4): checked by the planner's rules ({@link DutyCheck}), so a small change in the
+		 * times leaves them as they are, and one breaking a rule by however little has them planned again.
+		 *
+		 * @param records each depot's record of the plan its duties were given from ({@link Plan#toBytes}), by depot
+		 * @param slots   the duties each siding has, by siding
+		 * @param why     told why they are planned again, for the log
+		 * @return the plan kept, or null to plan again
+		 */
+		public Plan keep(Map<Long, byte[]> records, Map<Long, List<DepotDuties.Slot>> slots, Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured, java.util.function.Consumer<String> why) {
+			// Every depot with sidings in the unit was given its duties from a plan made of the same
+			Plan record = null;
+			final Set<Long> sidingDepots = new TreeSet<>();
+			groups.forEach(group -> group.depotOf.values().forEach(depot -> sidingDepots.add(depot.id)));
+			for (final long depotId : sidingDepots) {
+				final Plan depotRecord = Plan.fromBytes(records.get(depotId), name);
+				if (depotRecord == null) {
+					why.accept("depot " + depotId + " has no record of the plan its duties came from");
+					return null;
+				}
+				if (!basis.equals(depotRecord.basis)) {
+					why.accept("depot " + depotId + "'s duties were planned from other timetables or sidings (" + depotRecord.basis + ", now " + basis + ")");
+					return null;
+				}
+				record = record == null ? depotRecord : record;
+			}
+			if (record == null) {
+				why.accept("no depot has sidings");
+				return null;
+			}
+			final Plan kept = record;
+			final DutyGenerator.PlanInputs inputs = inputsOf(turnTimes, measured);
+			final List<DutyCheck.Group> checkGroups = new ArrayList<>();
+			for (final Group group : groups) {
+				final Map<Long, List<DepotDuties.Slot>> groupSlots = new TreeMap<>();
+				group.sidings.forEach(siding -> {
+					final List<DepotDuties.Slot> sidingSlots = slots.get(siding.sidingId);
+					if (sidingSlots != null && !sidingSlots.isEmpty()) {
+						groupSlots.put(siding.sidingId, sidingSlots);
+						kept.sidings.put(siding.sidingId, sidingSlots);
+					}
+				});
+				if (!groupSlots.isEmpty()) {
+					final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(group.routes, route -> fastestTimes.apply((Route) route), dayStartMillis, route -> {
+					});
+					checkGroups.add(new DutyCheck.Group(services, withMeasured(group.sidings, measured), groupSlots));
+				}
+			}
+			if (kept.sidings.isEmpty()) {
+				why.accept("there are no duties");
+				return null;
+			}
+			final List<DutyCheck.Break> breaks = DutyCheck.check(checkGroups, stationOf, getMaxLayover(), inputs);
+			if (!breaks.isEmpty()) {
+				final StringBuilder text = new StringBuilder(breaks.size() + " rules broke: ");
+				for (int i = 0; i < Math.min(breaks.size(), 5); i++) {
+					text.append(i == 0 ? "" : "; ").append(breaks.get(i));
+				}
+				why.accept(text.append(breaks.size() > 5 ? "; ..." : "").toString());
+				return null;
+			}
+			kept.kept = true;
+			// Kept with settings changed since: a player may want them planned again by the new settings
+			kept.replanHint = kept.minReverseMillis == minReverseMillis ? "" : "minReverse:" + kept.minReverseMillis + ":" + minReverseMillis;
+			return kept;
+		}
+
+		/**
+		 * @param measured the ways out and back of the unit's sidings as path generation found them on the track sections
+		 *                 just now (round 4, step 3), by siding, in place of what was kept; null to plan with what was kept
+		 */
+		public Plan plan(Function<Route, long[][]> fastestTimes, int dayStartMillis, Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured) {
+			final DutyGenerator.PlanInputs inputs = inputsOf(turnTimes, measured);
 			final Plan plan = new Plan(name);
+			plan.basis = basis;
+			plan.minReverseMillis = minReverseMillis;
 			final Set<String> unitTaken = new HashSet<>(taken);
-			final long maxLayover = staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
+			final long maxLayover = getMaxLayover();
 			for (final Group group : groups) {
 				final List<Route> missing = new ArrayList<>();
 				final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(group.routes, route -> fastestTimes.apply((Route) route), dayStartMillis, route -> missing.add((Route) route));
@@ -607,6 +704,22 @@ public final class LineDuties {
 	}
 
 	/**
+	 * @return a short digest of a key, for keeping in saves
+	 */
+	static String digest(String key) {
+		try {
+			final byte[] hash = java.security.MessageDigest.getInstance("SHA-256").digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			final StringBuilder builder = new StringBuilder();
+			for (int i = 0; i < 16; i++) {
+				builder.append(String.format("%02x", hash[i]));
+			}
+			return builder.toString();
+		} catch (java.security.NoSuchAlgorithmException e) {
+			return Integer.toHexString(key.hashCode());
+		}
+	}
+
+	/**
 	 * The plans worked out lately, by what they were planned from, so the depots of a planning unit found again together
 	 * plan their duties once: the first to ask plans them, the others asking meanwhile wait for its plan rather than plan
 	 * the same again (path generation runs several depots at once). Plans are only read once made.
@@ -655,6 +768,23 @@ public final class LineDuties {
 		public final String lineNames;
 		public final Map<Long, List<DepotDuties.Slot>> sidings = new TreeMap<>();
 		/**
+		 * What the unit was made of when planned ({@link Unit#basis}).
+		 */
+		public String basis = "";
+		/**
+		 * The duties planned before, kept as they still hold (round 4, step 4).
+		 */
+		public boolean kept;
+		/**
+		 * The network's least time to change ends the duties were planned with.
+		 */
+		public long minReverseMillis = DutyGenerator.MIN_TURNAROUND_MILLIS;
+		/**
+		 * The settings changed since the duties kept were planned, each as {@code name:then:now}, joined by ';': planned
+		 * again only when a player asks (user 2026-11-08), so the duties don't change of themselves; empty if none.
+		 */
+		public String replanHint = "";
+		/**
 		 * The trains the duties use at most, those needed to run every service (-1 if not known, as the duties don't repeat
 		 * week after week), and those the sidings hold.
 		 */
@@ -683,6 +813,89 @@ public final class LineDuties {
 
 		private Plan(String lineNames) {
 			this.lineNames = lineNames;
+		}
+
+		/**
+		 * For the depots' saves: what it was planned from and what it found, all but the duties, which the depots keep.
+		 */
+		public byte[] toBytes() {
+			final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+			writer.writeByte(RECORD_VERSION);
+			writeString(writer, basis);
+			writer.writeLong(minReverseMillis);
+			writer.writeInt(trains);
+			writer.writeInt(needed);
+			writer.writeInt(available);
+			writer.writeInt(uncovered);
+			writer.writeInt(missingTimes);
+			// At most as many as are read back, so what follows still lines up
+			writer.writeVarInt(Math.min(issues.size(), MAX_RECORD_ITEMS));
+			issues.stream().limit(MAX_RECORD_ITEMS).forEach(issue -> writeString(writer, issue));
+			writer.writeVarInt(Math.min(returnSidings.size(), MAX_RECORD_ITEMS));
+			returnSidings.entrySet().stream().limit(MAX_RECORD_ITEMS).forEach(entry -> {
+				writeString(writer, entry.getKey());
+				writer.writeLong(entry.getValue());
+			});
+			writeString(writer, suggestedSiding);
+			return writer.toBytes();
+		}
+
+		/**
+		 * @return as {@link #toBytes} wrote it, with no duties, or null if there is none or it doesn't read
+		 */
+		public static Plan fromBytes(byte[] bytes, String lineNames) {
+			if (bytes == null || bytes.length == 0) {
+				return null;
+			}
+			try {
+				final transitsim.io.ByteArrayBinary.Reader reader = new transitsim.io.ByteArrayBinary.Reader(bytes);
+				if (reader.readByte() != RECORD_VERSION) {
+					return null;
+				}
+				final Plan plan = new Plan(lineNames);
+				plan.basis = readString(reader);
+				plan.minReverseMillis = reader.readLong();
+				plan.trains = reader.readInt();
+				plan.needed = reader.readInt();
+				plan.available = reader.readInt();
+				plan.uncovered = reader.readInt();
+				plan.missingTimes = reader.readInt();
+				for (int i = Math.min(reader.readVarInt(), MAX_RECORD_ITEMS); i > 0; i--) {
+					plan.issues.add(readString(reader));
+				}
+				for (int i = Math.min(reader.readVarInt(), MAX_RECORD_ITEMS); i > 0; i--) {
+					plan.returnSidings.put(readString(reader), reader.readLong());
+				}
+				plan.suggestedSiding = readString(reader);
+				return plan;
+			} catch (RuntimeException e) {
+				return null;
+			}
+		}
+
+		private static final int RECORD_VERSION = 2;
+		private static final int MAX_RECORD_ITEMS = 4096;
+		private static final int MAX_STRING_BYTES = 65536;
+
+		private static void writeString(transitsim.io.ByteArrayBinary.Writer writer, String text) {
+			final byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			final int length = Math.min(bytes.length, MAX_STRING_BYTES);
+			writer.writeVarInt(length);
+			for (int i = 0; i < length; i++) {
+				writer.writeByte(bytes[i]);
+			}
+		}
+
+		private static String readString(transitsim.io.ByteArrayBinary.Reader reader) {
+			final int length = reader.readVarInt();
+			if (length < 0 || length > MAX_STRING_BYTES) {
+				throw new IllegalArgumentException("String too long: " + length);
+			}
+			final byte[] bytes = new byte[length];
+			for (int i = 0; i < length; i++) {
+				bytes[i] = reader.readByte();
+			}
+			return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 		}
 
 		public String describe() {

@@ -133,6 +133,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
 		context.addServlet(new ServletHolder(new PlaceTrainsServlet()), "/api/place-trains");
+		context.addServlet(new ServletHolder(new ReplanDutiesServlet()), "/api/replan-duties");
 		context.addServlet(new ServletHolder(new TimesServlet()), "/api/times");
 		context.addServlet(new ServletHolder(new SimulateServlet()), "/api/simulate");
 		context.addServlet(new ServletHolder(new LayoutServlet()), "/api/layout");
@@ -416,6 +417,41 @@ public final class EditorServer {
 						return false;
 					}
 					mtr.packet.PacketTrainDataGuiClient.placeTrainsC2S(depotId);
+					return true;
+				});
+				sendJson(response, "{\"ok\":" + sent + "}");
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+	}
+
+	/**
+	 * Asks the server to plan the auto duties of a depot's planning unit again rather than keep them (round 4, step 4).
+	 */
+	private static class ReplanDutiesServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final long depotId;
+			try {
+				depotId = Long.parseLong(new JsonParser().parse(body).getAsJsonObject().get("depot").getAsString());
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				final boolean sent = onGameThread(() -> {
+					if (!mtr.client.ClientData.hasPermission() || mtr.client.ClientData.DATA_CACHE.depotIdMap.get(depotId) == null) {
+						return false;
+					}
+					mtr.packet.PacketTrainDataGuiClient.replanDutiesC2S(depotId);
 					return true;
 				});
 				sendJson(response, "{\"ok\":" + sent + "}");

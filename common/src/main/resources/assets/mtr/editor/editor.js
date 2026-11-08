@@ -243,6 +243,34 @@
 		return (shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered)) + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
 	}
 
+	/**
+	 * The settings changed since the auto duties kept were planned (round 4, step 4), as a sentence, or empty: the game keeps
+	 * duties that still hold rather than plan them again of itself, and only suggests it.
+	 */
+	function replanText(shortfall) {
+		if (!shortfall || !shortfall.replan) return "";
+		const parts = shortfall.replan.split(";").map(item => {
+			const [name, then, now] = item.split(":");
+			return name === "minReverse" ? tr("换端最短时间 {0} 秒 → {1} 秒", Math.round(+then / 1000), Math.round(+now / 1000)) : name;
+		});
+		return tr("运用是按原来的设置排的（{0}）。现在的运用照样接得上，所以没有自动重排；按新设置重排可能更省车，需要时在车厂右键菜单里选“重新排运用”。", parts.join("，"));
+	}
+
+	function replanDialog(depot) {
+		const hint = replanText(depot.shortfall);
+		openDialog(tr("重新排运用"), `<p>${tr("按现在的时刻表、存车线和设置，把“{0}”所在规划单元（同一运营线路上自动排运用的车厂）的运用全部重新排一遍。", escapeHtml(shortName(depot.name)))}</p>
+			${hint ? `<p>${escapeHtml(hint)}</p>` : ""}
+			<p class="hint">${tr("现有运用接得上时游戏不会自己重排，免得运用跟着用时的小变化换来换去。重排后哪份运用跑哪几班、车回哪条存车线都可能变。结果在服务端日志和这里的运用里。")}</p>`, tr("重新排"), () => {
+			sendJson("api/replan-duties", "POST", { depot: depot.id }).then(result => {
+				dutyNotice = result.ok ? tr("已请求重新排“{0}”的运用。", shortName(depot.name)) : tr("没有权限，或者游戏里没有这个车厂。");
+				renderBanner();
+			}).catch(() => {
+				dutyNotice = tr("发送失败，游戏可能已经关闭");
+				renderBanner();
+			});
+		});
+	}
+
 	/** The shortfalls of the depots running a route, each unit once. */
 	function shortfallsOf(r) {
 		const texts = new Set();
@@ -1397,7 +1425,7 @@
 		data.depots.forEach(depot => {
 			const open = state.openNodes.has("depot:" + depot.id);
 			const duties = dutiesOf(depot);
-			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${depot.shortfall.needed < 0 ? tr("缺车") : tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}</span>`, false)}`);
+			parts.push(`<li>${node(`data-depot="${depot.id}"`, open ? "▾" : "▸", `<span class="label group-label">${escapeHtml(shortName(depot.name))}</span>${lockMark(depot)}${draft.duties[depot.id] ? `<span class="draft-dot" title="${escapeHtml(draft.duties[depot.id].error || tr("运用有没应用的草稿"))}">${draft.duties[depot.id].error ? "!" : "•"}</span>` : ""}<span class="count">${duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}${duties.auto && depot.shortfall && depot.shortfall.uncovered > 0 ? `<span class="err" title="${escapeHtml(shortfallText(depot.shortfall))}"> · ${depot.shortfall.needed < 0 ? tr("缺车") : tr("缺 {0} 列", Math.max(0, depot.shortfall.needed - depot.shortfall.available))}</span>` : ""}${duties.auto && depot.shortfall && depot.shortfall.replan ? `<span class="hint" title="${escapeHtml(replanText(depot.shortfall))}"> · ${tr("建议重排")}</span>` : ""}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
 				// Duties are the pool's (S8): by vehicle, each with the siding its train comes from; the sidings apart, as places
@@ -6316,6 +6344,7 @@
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
 			if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) });
 			if (depot.shortfall && depot.shortfall.uncovered > 0) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, shortfallText(depot.shortfall)) });
+			if (duties.auto && depot.shortfall && depot.shortfall.replan) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, replanText(depot.shortfall)) });
 			// Ways out and back path generation found missing, which the planning keeps off; and those not measured yet
 			depot.sidings.forEach(siding => {
 				const sidingName = shortName(siding.name) || tr("存车线");
@@ -6627,6 +6656,7 @@
 			[tr("编辑车厂…"), () => depotDialog(depot)],
 			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
 			[tr("按时刻表把列车摆到现在的位置…"), data.canEdit ? () => placeTrainsDialog(depot) : null],
+			[tr("重新排运用…"), data.canEdit && dutiesOf(depot).auto ? () => replanDialog(depot) : null],
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],

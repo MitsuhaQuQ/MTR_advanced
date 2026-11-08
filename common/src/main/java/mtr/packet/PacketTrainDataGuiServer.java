@@ -606,6 +606,35 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		});
 	}
 
+	/**
+	 * Plans the auto duties of a depot's planning unit again, as a player asked, rather than keep them while they hold
+	 * (round 4, step 4): every depot of the unit forgets what its duties were planned from and finds its paths again, at
+	 * once, so they plan the unit together.
+	 */
+	public static void receiveReplanDutiesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final long depotId = packet.readLong();
+		PacketGuard.execute(minecraftServer, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData == null || RailwayData.hasNoPermission(player)) {
+				return;
+			}
+			final Depot depot = railwayData.dataCache.depotIdMap.get(depotId);
+			if (depot == null) {
+				return;
+			}
+			final LineDuties.Unit unit = LineDuties.of(depot, railwayData.dataCache, railwayData.sidings);
+			final Set<Long> depotIds = unit == null ? Collections.singleton(depotId) : unit.depotIds;
+			System.out.println("Minecraft Transit Railway: planning the duties of " + (unit == null ? "depot " + depot.name : "line " + unit.name) + " again, as a player asked");
+			depotIds.forEach(id -> {
+				final Depot other = railwayData.dataCache.depotIdMap.get(id);
+				if (other != null) {
+					other.forgetAutoPlan();
+				}
+			});
+			depotIds.forEach(id -> railwayData.railwayDataPathGenerationModule.generatePath(minecraftServer, id));
+		});
+	}
+
 	public static void receiveTimetableTimesC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
 		final long routeId = packet.readLong();
 		PacketGuard.execute(minecraftServer, () -> {

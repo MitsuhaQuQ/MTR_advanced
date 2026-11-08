@@ -517,6 +517,14 @@ public final class RoutePaths {
 	 * @return the rails, empty with no way, or null before the track sections are there
 	 */
 	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd) {
+		return findDepotWay(from, to, rails, out, platformEnd, true);
+	}
+
+	/**
+	 * @param keep whether the legs found are kept for later and the save; not for a measurement only for the log, which
+	 *             would otherwise keep every way it tried (optimisation round 4, step 4)
+	 */
+	private List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, boolean keep) {
 		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
 		if (legs == null) {
 			return null;
@@ -533,7 +541,7 @@ public final class RoutePaths {
 		// The platform run the way the line runs it: along the section's order if that is where it ends
 		final long[] platformNodes = sections.get(out ? 1 : 0).getNodes();
 		final Boolean platformAlong = platformEnd == 0 ? null : platformEnd == platformNodes[platformNodes.length - 1];
-		final RouteLegs.Plan plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, legs);
+		final RouteLegs.Plan plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, keep ? legs : legs.withoutKeeping());
 		if (!plan.isFound()) {
 			return Collections.emptyList();
 		}
@@ -560,10 +568,11 @@ public final class RoutePaths {
 	}
 
 	/**
-	 * @return {@link #findDepotWay} timed by {@link #timeDepotWay}, or -1 with no way
+	 * @return {@link #findDepotWay} timed by {@link #timeDepotWay}, or -1 with no way; for the log only, so nothing found is
+	 * kept
 	 */
 	public long measureDepotLeg(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, PathTiming.Vehicle vehicle, boolean out, long platformEnd) {
-		return timeDepotWay(findDepotWay(from, to, rails, out, platformEnd), vehicle, out);
+		return timeDepotWay(findDepotWay(from, to, rails, out, platformEnd, false), vehicle, out);
 	}
 
 	/**

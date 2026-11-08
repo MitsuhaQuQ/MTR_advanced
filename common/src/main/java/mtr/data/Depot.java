@@ -150,6 +150,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private String autoDutiesKey;
 	/**
+	 * The plan the auto duties were given from, as {@link LineDuties.Plan#toBytes} wrote it, or empty; server only.
+	 */
+	private byte[] autoPlanRecord = new byte[0];
+	/**
 	 * {@link #autoDutiesKey} once the depot no longer plans by line and its paths were found again for that.
 	 */
 	private static final String NOT_BY_LINE = "";
@@ -277,6 +281,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_VEHICLE_SERVICE_TYPES = "vehicle_service_types";
 	private static final String KEY_POOL_FLEETS = "pool_fleets";
 	private static final String KEY_MEASURED_BUFFERS = "measured_buffers";
+	/**
+	 * What the auto duties were planned from and what the plan found ({@link LineDuties.Plan#toBytes}), so they are kept
+	 * while they still hold (round 4, step 4).
+	 */
+	private static final String KEY_AUTO_PLAN = "auto_duties_basis";
 	private static final String KEY_VEHICLE_SETTINGS = "vehicle_settings";
 	private static final String KEY_FREQUENCIES_MIGRATED = "frequencies_migrated";
 	private static final String KEY_DEPLOY_INDEX = "deploy_index";
@@ -364,6 +373,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final Value autoDutiesValue = map.get(KEY_AUTO_DUTIES);
 		if (autoDutiesValue != null && autoDutiesValue.isBinaryValue()) {
 			autoDuties.fromBytes(autoDutiesValue.asBinaryValue().asByteArray());
+		}
+		final Value autoPlanValue = map.get(KEY_AUTO_PLAN);
+		if (autoPlanValue != null && autoPlanValue.isBinaryValue()) {
+			autoPlanRecord = autoPlanValue.asBinaryValue().asByteArray();
 		}
 		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dispatcher.dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateArrayValue(KEY_DUTY_TAKEOVERS, value -> dispatcher.takeovers.add(value.asStringValue().asString()));
@@ -507,6 +520,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final byte[] autoDutyBytes = autoDuties.toBytes();
 		messagePacker.packString(KEY_AUTO_DUTIES).packBinaryHeader(autoDutyBytes.length);
 		messagePacker.writePayload(autoDutyBytes);
+		messagePacker.packString(KEY_AUTO_PLAN).packBinaryHeader(autoPlanRecord.length);
+		messagePacker.writePayload(autoPlanRecord);
 		final List<Long> bufferSamples = bufferRecorder.toList();
 		messagePacker.packString(KEY_MEASURED_BUFFERS).packArrayHeader(bufferSamples.size());
 		for (final long value : bufferSamples) {
@@ -516,7 +531,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 23;
+		return super.messagePackLength() + 24;
 	}
 
 	@Override
@@ -918,6 +933,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				siding.setRecordedLegs(DepotLegs.NONE, packet -> world.players().forEach(player -> mtr.Registry.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, mtr.packet.IPacket.PACKET_UPDATE_SIDING, packet)));
 			}
 		});
+		// The unit's duties as planned before and what they were planned from, read here on the server thread: kept if they
+		// still hold (round 4, step 4)
+		final Map<Long, byte[]> keptRecords = new HashMap<>();
+		final Map<Long, List<DepotDuties.Slot>> keptSlots = new TreeMap<>();
+		if (lineUnit != null) {
+			lineUnit.depotIds.forEach(depotId -> {
+				final Depot depot = liveDataCache.depotIdMap.get(depotId);
+				// A depot the plan gave no duties has none, and its record all the same
+				if (depot != null && !depot.duties.diagramMode) {
+					keptRecords.put(depotId, depot.autoPlanRecord);
+					depot.autoDuties.sidings.forEach((sidingId, slots) -> keptSlots.put(sidingId, new ArrayList<>(slots)));
+				}
+			});
+		}
 		final Thread thread = new Thread(() -> {
 			try {
 				int successfulSegments = Integer.MAX_VALUE;
@@ -944,11 +973,22 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// The depots of the unit found again together plan the same duties: one plans them, the others take its plan
 				final int dayStartMillis = TimetableConfig.getDayStartMillis();
 				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes + "|" + describeWays(measuredWays), () -> {
-					final LineDuties.Plan plan = lineUnit.plan(route -> {
+					final java.util.function.Function<Route, long[][]> fastestTimes = route -> {
 						final long[][] times = routeSearch.getFastestTimes(route, dataCache);
 						return times == null || times.length == 0 ? null : times;
-					}, dayStartMillis, turnTimes, measuredWays);
-					System.out.println("Minecraft Transit Railway: planned the duties of " + plan.describe());
+					};
+					// Planned before from the same timetables and sidings: kept while every rule still holds with these times,
+					// planned again once one breaks (round 4, step 4)
+					final long checkStart = System.nanoTime();
+					final List<String> why = new ArrayList<>();
+					final LineDuties.Plan kept = lineUnit.keep(keptRecords, keptSlots, fastestTimes, dayStartMillis, turnTimes, measuredWays, why::add);
+					final long checkMillis = (System.nanoTime() - checkStart) / 1000000;
+					if (kept != null) {
+						System.out.println("Minecraft Transit Railway: kept the duties of " + kept.describe() + ", as they still hold (checked in " + checkMillis + " ms)" + (kept.replanHint.isEmpty() ? "" : "; settings changed since they were planned, " + kept.replanHint + ", so planning them again is suggested"));
+						return kept;
+					}
+					final LineDuties.Plan plan = lineUnit.plan(fastestTimes, dayStartMillis, turnTimes, measuredWays);
+					System.out.println("Minecraft Transit Railway: planned the duties of " + plan.describe() + (why.isEmpty() ? "" : " (planned again: " + why.get(0) + ")"));
 					return plan;
 				});
 				// The duties' ways out and back are the ones measured: found on the track sections the same way (round 4)
@@ -1670,6 +1710,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	/**
 	 * @return the key of the depot's planning unit, or empty if it doesn't plan by line
 	 */
+	/**
+	 * Forgets what the auto duties were planned from, so the next path generation plans them again rather than keep them:
+	 * a player asked for it (round 4, step 4).
+	 */
+	public void forgetAutoPlan() {
+		autoPlanRecord = new byte[0];
+	}
+
 	public String getLineUnitKey() {
 		return lineUnitKey;
 	}
@@ -2126,17 +2174,22 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		public final int available;
 		public final int uncoveredPerDay;
 		public final String suggestedSiding;
+		/**
+		 * The settings changed since the duties kept were planned ({@link LineDuties.Plan#replanHint}), or empty.
+		 */
+		public final String replanHint;
 
-		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding) {
+		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding, String replanHint) {
 			this.lineNames = lineNames;
 			this.needed = needed;
 			this.available = available;
 			this.uncoveredPerDay = uncoveredPerDay;
 			this.suggestedSiding = suggestedSiding;
+			this.replanHint = replanHint;
 		}
 
 		Shortfall(LineDuties.Plan plan) {
-			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding);
+			this(plan.lineNames, plan.needed, plan.available, plan.uncovered / 7, plan.suggestedSiding, plan.replanHint);
 		}
 
 		public static void write(Shortfall shortfall, FriendlyByteBuf packet) {
@@ -2147,11 +2200,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				packet.writeInt(shortfall.available);
 				packet.writeInt(shortfall.uncoveredPerDay);
 				packet.writeUtf(shortfall.suggestedSiding);
+				packet.writeUtf(shortfall.replanHint);
 			}
 		}
 
 		public static Shortfall read(FriendlyByteBuf packet) {
-			return packet.readBoolean() ? new Shortfall(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readUtf(PACKET_STRING_READ_LENGTH)) : null;
+			return packet.readBoolean() ? new Shortfall(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readUtf(PACKET_STRING_READ_LENGTH)) : null;
 		}
 	}
 
@@ -2173,6 +2227,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				minecraftServer.execute(() -> {
 					autoDuties.sidings.keySet().removeAll(sidingIds);
 					autoDuties.diagramMode = !autoDuties.sidings.isEmpty();
+					autoPlanRecord = new byte[0];
 					// The clients drop them too, or the editor goes on showing duties of routes no longer run
 					sendAutoDuties(minecraftServer);
 				});
@@ -2188,10 +2243,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						planned.sidings.put(sidingId, slots);
 					}
 				});
+				final byte[] record = linePlan.toBytes();
 				minecraftServer.execute(() -> {
 					autoDuties.sidings.keySet().removeAll(sidingIds);
 					autoDuties.sidings.putAll(planned.sidings);
 					autoDuties.diagramMode = true;
+					autoPlanRecord = record;
 					lineShortfall = new Shortfall(linePlan);
 					sendAutoDuties(minecraftServer);
 				});
@@ -2236,6 +2293,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				autoDuties.sidings.keySet().removeAll(sidingIds);
 				autoDuties.sidings.putAll(generated.duties.sidings);
 				autoDuties.diagramMode = true;
+				autoPlanRecord = new byte[0];
 				sendAutoDuties(minecraftServer);
 			});
 			return generated.duties;

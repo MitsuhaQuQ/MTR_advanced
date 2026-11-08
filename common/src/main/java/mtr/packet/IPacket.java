@@ -55,6 +55,7 @@ public interface IPacket {
 
 	ResourceLocation PACKET_GENERATE_PATH = new ResourceLocation(MTR.MOD_ID, "packet_generate_path");
 	ResourceLocation PACKET_PLACE_TRAINS = new ResourceLocation(MTR.MOD_ID, "packet_place_trains");
+	ResourceLocation PACKET_REPLAN_DUTIES = new ResourceLocation(MTR.MOD_ID, "packet_replan_duties");
 	ResourceLocation PACKET_AUTO_DUTIES = new ResourceLocation(MTR.MOD_ID, "packet_auto_duties");
 	ResourceLocation PACKET_CLEAR_TRAINS = new ResourceLocation(MTR.MOD_ID, "packet_clear_trains");
 	ResourceLocation PACKET_SIGN_TYPES = new ResourceLocation(MTR.MOD_ID, "packet_sign_types");

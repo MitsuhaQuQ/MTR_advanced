@@ -180,11 +180,12 @@ public interface ServiceExceptions {
 	}
 
 	/**
-	 * @return the exceptions as a flat list for saving, {@link #SAVED_INTS} for each
+	 * @return the exceptions as a flat list for saving, {@link #SAVED_INTS} for each, by service and stop: the same
+	 * exceptions are always written the same, which the keys of what duties are planned from rely on (round 4, step 4)
 	 */
 	static int[] toInts(RouteTimetable table) {
 		final List<Integer> values = new ArrayList<>();
-		table.exceptions.forEach((service, stopExceptions) -> stopExceptions.forEach((stop, stopException) -> {
+		new java.util.TreeMap<>(table.exceptions).forEach((service, stopExceptions) -> new java.util.TreeMap<>(stopExceptions).forEach((stop, stopException) -> {
 			values.add(service);
 			values.add(stop);
 			values.add(stopException.runSeconds);

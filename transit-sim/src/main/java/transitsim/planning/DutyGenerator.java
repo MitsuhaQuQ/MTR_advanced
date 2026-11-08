@@ -176,6 +176,27 @@ public final class DutyGenerator {
 		}
 
 		final List<Chain> chains = buildChains(services);
+		final List<TimetableService> timetableServices = timetableServicesOf(chains, sidings, result.issues);
+		final OperationNetwork network = networkOf(timetableServices, sidings, stationOf, inputs);
+
+		final OperationPlan plan = DutyPlanner.plan(timetableServices, Collections.emptyList(), network, maxLayoverMillis);
+		plan.issues.forEach(issue -> {
+			if (issue.type == OperationPlan.IssueType.NO_TRAIN) {
+				result.uncovered++;
+			} else if (issue.type != OperationPlan.IssueType.UNUSED_BLANK) {
+				result.issues.add(issue.type + " " + issue.detail);
+			}
+		});
+		result.trains = plan.peakTrains;
+		assignSlots(plan, chains, sidings, result);
+		return result;
+	}
+
+	/**
+	 * The chains as the planner's services, each with the sidings it has to come out of or go back to where the running
+	 * diagram sets them; what can't be kept to is told in the issues.
+	 */
+	static List<TimetableService> timetableServicesOf(List<Chain> chains, List<SidingInput> sidings, List<String> issues) {
 		final List<TimetableService> timetableServices = new ArrayList<>();
 		for (int i = 0; i < chains.size(); i++) {
 			final Chain chain = chains.get(i);
@@ -191,7 +212,7 @@ public final class DutyGenerator {
 				// A depot set by the player is kept to: with no siding of it here the service has no train, rather than one
 				// from anywhere (P1-A)
 				if (startDepots.isEmpty()) {
-					result.issues.add("DEPLOY_DEPOT " + chain.deployDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
+					issues.add("DEPLOY_DEPOT " + chain.deployDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
 				}
 				timetableService.startDepots = startDepots;
 			}
@@ -205,13 +226,21 @@ public final class DutyGenerator {
 					}
 				});
 				if (returnDepots.isEmpty()) {
-					result.issues.add("RETURN_DEPOT " + chain.returnDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
+					issues.add("RETURN_DEPOT " + chain.returnDepot + " has no siding for " + chain.segments.get(0).routeId + "@" + chain.segments.get(0).service);
 				}
 				timetableService.returnDepots = returnDepots;
 			}
 			timetableServices.add(timetableService);
 		}
+		return timetableServices;
+	}
 
+	/**
+	 * What the planner plans on: the sidings and their trains, the ways out and back, changing ends and the changes of
+	 * platform within a station, as measured or set. The same for planning and for checking duties already planned
+	 * ({@link DutyCheck}).
+	 */
+	static OperationNetwork networkOf(List<TimetableService> timetableServices, List<SidingInput> sidings, Map<Long, Long> stationOf, PlanInputs inputs) {
 		final OperationNetwork network = new OperationNetwork();
 		sidings.forEach(siding -> network.addDepot(siding.sidingId, siding.maxTrains < 0 ? UNLIMITED_TRAINS : Math.min(siding.maxTrains, UNLIMITED_TRAINS), siding.poolKey));
 		inputs.poolFleets.forEach(network::setPoolFleet);
@@ -277,25 +306,14 @@ public final class DutyGenerator {
 				}
 			});
 		});
-
-		final OperationPlan plan = DutyPlanner.plan(timetableServices, Collections.emptyList(), network, maxLayoverMillis);
-		plan.issues.forEach(issue -> {
-			if (issue.type == OperationPlan.IssueType.NO_TRAIN) {
-				result.uncovered++;
-			} else if (issue.type != OperationPlan.IssueType.UNUSED_BLANK) {
-				result.issues.add(issue.type + " " + issue.detail);
-			}
-		});
-		result.trains = plan.peakTrains;
-		assignSlots(plan, chains, sidings, result);
-		return result;
+		return network;
 	}
 
 	/**
 	 * A service and the services its through links carry it on to, as one trip. A linked service runs as part of the
 	 * trip on the days both run, and on its own on the other days.
 	 */
-	private static List<Chain> buildChains(List<ServiceInput> services) {
+	static List<Chain> buildChains(List<ServiceInput> services) {
 		final Map<String, List<ServiceInput>> byService = new HashMap<>();
 		services.forEach(service -> byService.computeIfAbsent(service.routeId + "@" + service.service, key -> new ArrayList<>()).add(service));
 
@@ -448,9 +466,9 @@ public final class DutyGenerator {
 		private boolean stayOnLine;
 	}
 
-	private static final class Chain {
+	static final class Chain {
 
-		private int weekdays;
+		int weekdays;
 		/**
 		 * The depot a train for it has to come out of, 0 for any, or -1 if it may be any train.
 		 */
@@ -460,9 +478,9 @@ public final class DutyGenerator {
 		 * The depot the train goes back to after it, 0 for any, or -1 if it doesn't end the duty.
 		 */
 		private long returnDepot = -1;
-		private long startMillis = -1;
-		private final List<DepotDuties.Segment> segments = new ArrayList<>();
-		private final List<TimetableService.Stop> stops = new ArrayList<>();
+		long startMillis = -1;
+		final List<DepotDuties.Segment> segments = new ArrayList<>();
+		final List<TimetableService.Stop> stops = new ArrayList<>();
 		// The services, kept to cut the last one where it leaves for the next
 		private final List<ServiceInput> inputs = new ArrayList<>();
 		private final List<Integer> fromStops = new ArrayList<>();

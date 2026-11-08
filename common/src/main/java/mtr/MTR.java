@@ -460,6 +460,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_CONSOLE, mtr.packet.DispatchConsole::receiveRequestC2S);
 		PacketGuard.register(PACKET_DISPATCH, mtr.packet.DispatchConsole::receiveCommandC2S);
 		PacketGuard.register(PACKET_PLACE_TRAINS, PacketTrainDataGuiServer::receivePlaceTrainsC2S);
+		PacketGuard.register(PACKET_REPLAN_DUTIES, PacketTrainDataGuiServer::receiveReplanDutiesC2S);
 		PacketGuard.register(PACKET_CLEAR_TRAINS, PacketTrainDataGuiServer::clearTrainsC2S);
 		PacketGuard.register(PACKET_SIGN_TYPES, PacketTrainDataGuiServer::receiveSignIdsC2S);
 		PacketGuard.register(PACKET_ADD_BALANCE, PacketTrainDataGuiServer::receiveAddBalanceC2S);

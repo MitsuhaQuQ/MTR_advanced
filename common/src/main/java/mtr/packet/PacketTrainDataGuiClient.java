@@ -625,6 +625,12 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		RegistryClient.sendToServer(PACKET_PLACE_TRAINS, packet);
 	}
 
+	public static void replanDutiesC2S(long depotId) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(depotId);
+		RegistryClient.sendToServer(PACKET_REPLAN_DUTIES, packet);
+	}
+
 	public static void generatePathC2S(long sidingId) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(sidingId);

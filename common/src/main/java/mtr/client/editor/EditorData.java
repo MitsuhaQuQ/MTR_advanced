@@ -322,6 +322,8 @@ public final class EditorData {
 				shortfallObject.addProperty("available", depot.lineShortfall.available);
 				shortfallObject.addProperty("uncovered", depot.lineShortfall.uncoveredPerDay);
 				shortfallObject.addProperty("suggested", depot.lineShortfall.suggestedSiding);
+				// Settings changed since the duties kept were planned, as name:then:now joined by ';' (round 4, step 4)
+				shortfallObject.addProperty("replan", depot.lineShortfall.replanHint);
 				depotObject.add("shortfall", shortfallObject);
 			}
 			depotsArray.add(depotObject);
