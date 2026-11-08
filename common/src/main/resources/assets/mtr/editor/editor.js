@@ -115,6 +115,16 @@
 		draftLoaded = true;
 	}
 
+	/** Drops the whole draft: the game's data is what shows again, and the empty draft is saved. */
+	function clearDraft() {
+		draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, networkSettings: null, contingencies: {} };
+		plannedReturns.clear();
+		dutyNotice = tr("草稿已清空。");
+		saveDraft();
+		buildServices();
+		renderAll();
+	}
+
 	/** Saves the draft shortly after the last change, so typing doesn't write it on every key. */
 	function saveDraft() {
 		coverage = null;
@@ -1390,11 +1400,11 @@
 			sections.push(`<section class="draft-change"><h3>${escapeHtml(routeTitle(r))}</h3>${conflict}<ul>${items.length ? items.map(item => `<li>${item}</li>`).join("") : `<li>${tr("没有和游戏不同的地方")}</li>`}</ul>
 				<div class="draft-actions"><button type="button" data-diff-open="${id}">${tr("跳到这里")}</button>${entry.conflict ? "" : `<button type="button" data-diff-drop="${id}">${tr("放弃这条的草稿")}</button>`}</div></section>`);
 		});
-		draft.created.forEach(made => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${made.source ? tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length) : tr("新建线路：{0} 站", made.stops.length)}</li></ul></section>`));
+		draft.created.forEach((made, index) => sections.push(`<section class="draft-change"><h3>＋ ${escapeHtml(shortName(made.name))}</h3>${made.error ? `<p class="err">${escapeHtml(made.error)}</p>` : ""}<ul><li>${made.source ? tr("新建种别：{0} 站，{1} 班", made.stops.length, (made.services || []).length) : tr("新建线路：{0} 站", made.stops.length)}</li></ul><div class="draft-actions"><button type="button" data-diff-part="created" data-diff-key="${index}">${tr("放弃这项草稿")}</button></div></section>`));
 		// A rail system's contingency plans, drafted in "路网故障预案…" (D2)
 		Object.entries(draft.contingencies || {}).forEach(([anchor, plans]) => {
 			const owner = plansByAnchor(anchor);
-			sections.push(`<section class="draft-change"><h3>${escapeHtml(tr("路网{0}的故障预案", owner ? systemTitle(owner.system) : anchor) + (owner && owner.system.anchor !== anchor ? tr("（原来接进来的一套）") : ""))}</h3><ul>${plans.length ? plans.map(plan => `<li>${escapeHtml(tr("预案 {0}「{1}」：{2}", plan.id, plan.name, plan.manual ? tr("手动启用") : tr("自动启用")))}</li>`).join("") : `<li>${tr("删除全部预案")}</li>`}</ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(tr("路网{0}的故障预案", owner ? systemTitle(owner.system) : anchor) + (owner && owner.system.anchor !== anchor ? tr("（原来接进来的一套）") : ""))}</h3><ul>${plans.length ? plans.map(plan => `<li>${escapeHtml(tr("预案 {0}「{1}」：{2}", plan.id, plan.name, plan.manual ? tr("手动启用") : tr("自动启用")))}</li>`).join("") : `<li>${tr("删除全部预案")}</li>`}</ul><div class="draft-actions"><button type="button" data-diff-part="contingencies" data-diff-key="${escapeHtml(anchor)}">${tr("放弃这项草稿")}</button></div></section>`);
 		});
 		// What a depot runs, drafted in "编辑车厂…"
 		Object.entries(draft.depots || {}).forEach(([depotId, entry]) => {
@@ -1410,12 +1420,12 @@
 				if (fleet !== undefined) lines.push(tr("车型 {0}：{1}", pool.vehicle || pool.key, poolFleetText(fleet, pool.sum)));
 			});
 			Object.entries(entry.serviceTypes || {}).forEach(([vehicle, text]) => lines.push(tr("车型 {0} 的种别：{1}", vehicle, text || tr("不限"))));
-			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="depots" data-diff-key="${escapeHtml(depotId)}">${tr("放弃这项草稿")}</button></div></section>`);
 		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
 			const depot = depotById(depotId);
 			const slots = Object.values(entry.duties.sidings || {}).reduce((a, list) => a + list.length, 0);
-			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul><li>${tr("运用改了：{0}，{1} 个运用", entry.duties.mode === "diagram" ? tr("按运用图") : tr("自动排班"), slots)}</li></ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${escapeHtml(shortName(depot ? depot.name : "?"))}</h3>${entry.error ? `<p class="err">${escapeHtml(entry.error)}</p>` : ""}<ul><li>${tr("运用改了：{0}，{1} 个运用", entry.duties.mode === "diagram" ? tr("按运用图") : tr("自动排班"), slots)}</li></ul><div class="draft-actions"><button type="button" data-diff-part="duties" data-diff-key="${escapeHtml(depotId)}">${tr("放弃这项草稿")}</button></div></section>`);
 		});
 		const boundaryKeys = Object.keys(draft.boundaries || {});
 		if (boundaryKeys.length) {
@@ -1426,20 +1436,21 @@
 		}
 		const platformSpeedKeys = Object.keys(draft.platformSpeeds || {});
 		if (platformSpeedKeys.length) {
-			sections.push(`<section class="draft-change"><h3>${tr("过站限速")}</h3><ul>${platformSpeedKeys.map(platformId => `<li>${escapeHtml(tr("{0} 过站限速 {1} km/h", platformText(platformId), draft.platformSpeeds[platformId]))}</li>`).join("")}</ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${tr("过站限速")}</h3><ul>${platformSpeedKeys.map(platformId => `<li>${escapeHtml(tr("{0} 过站限速 {1} km/h", platformText(platformId), draft.platformSpeeds[platformId]))}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="platformSpeeds" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
 		if (draft.networkSettings) {
-			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul><li>${escapeHtml(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)))}</li></ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul><li>${escapeHtml(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)))}</li></ul><div class="draft-actions"><button type="button" data-diff-part="networkSettings" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
 		const platformStopKeys = Object.keys(draft.platformStops || {});
 		if (platformStopKeys.length) {
-			sections.push(`<section class="draft-change"><h3>${tr("停车位置")}</h3><ul>${platformStopKeys.map(platformId => `<li>${escapeHtml(platformText(platformId) + " " + stopPositionText(draft.platformStops[platformId]))}</li>`).join("")}</ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${tr("停车位置")}</h3><ul>${platformStopKeys.map(platformId => `<li>${escapeHtml(platformText(platformId) + " " + stopPositionText(draft.platformStops[platformId]))}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="platformStops" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
 		const platformStationKeys = Object.keys(draft.platformStations || {});
 		if (platformStationKeys.length) {
-			sections.push(`<section class="draft-change"><h3>${tr("站台归属")}</h3><ul>${platformStationKeys.map(platformId => `<li>${escapeHtml(tr("{0} 归到 {1}", platformText(platformId), stationNameOf(draft.platformStations[platformId])))}</li>`).join("")}</ul></section>`);
+			sections.push(`<section class="draft-change"><h3>${tr("站台归属")}</h3><ul>${platformStationKeys.map(platformId => `<li>${escapeHtml(tr("{0} 归到 {1}", platformText(platformId), stationNameOf(draft.platformStations[platformId])))}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="platformStations" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
-		openDialog(tr("草稿的改动"), `<p class="hint">${tr("和游戏里现在的版本比。按“应用”才发给游戏。")}</p><div class="draft-changes">${sections.join("")}</div>`, tr("关闭"), () => {});
+		openDialog(tr("草稿的改动"), `<p class="hint">${tr("和游戏里现在的版本比。按“应用”才发给游戏。")}</p>
+			<div class="draft-actions"><button type="button" data-diff-clear>${tr("清空全部草稿…")}</button></div><div class="draft-changes">${sections.join("")}</div>`, tr("关闭"), () => {});
 	}
 
 	$("draft-tag").addEventListener("click", draftChangesDialog);
@@ -1451,6 +1462,30 @@
 			saveDraft();
 			renderAll();
 			dialog.close();
+			return;
+		}
+		// Everything in the draft dropped at once, after asking
+		if (e.target.closest("[data-diff-clear]")) {
+			e.preventDefault();
+			if (!confirm(tr("清空全部草稿？草稿里的 {0} 项改动都丢掉，不能撤销；游戏里的不受影响。", draftCount()))) return;
+			clearDraft();
+			dialog.close();
+			return;
+		}
+		// One part of the draft that has no way of its own to drop it
+		const part = e.target.closest("[data-diff-part]");
+		if (part) {
+			e.preventDefault();
+			const kind = part.dataset.diffPart, partKey = part.dataset.diffKey;
+			if (kind === "created") draft.created.splice(Number(partKey), 1);
+			else if (kind === "networkSettings") draft.networkSettings = null;
+			else if (partKey === "") draft[kind] = {};
+			else delete draft[kind][partKey];
+			saveDraft();
+			buildServices();
+			renderAll();
+			if (draftCount()) draftChangesDialog();
+			else dialog.close();
 			return;
 		}
 		if (!open && !drop && !keep) return;
