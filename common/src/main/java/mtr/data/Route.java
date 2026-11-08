@@ -132,6 +132,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	private static final String KEY_PLAN_ARRIVALS = "plan_arrivals";
 	private static final String KEY_PLAN_DEPARTURES = "plan_departures";
 	private static final String KEY_OVERTAKES = "overtakes";
+	private static final String KEY_ALLOW_LONGER = "allow_longer";
 	private static final String KEY_LINE_NAME = "line_name";
 	private static final String KEY_DIAGRAM_COLOR = "diagram_color";
 	private static final String KEY_SERVICE_TYPE = "service_type";
@@ -248,6 +249,13 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 				platformIds.get(planIndex[2]).overtake = value.asBooleanValue().getBoolean();
 			}
 			planIndex[2]++;
+		});
+		final int[] longerIndex = {0};
+		messagePackHelper.iterateArrayValue(KEY_ALLOW_LONGER, value -> {
+			if (longerIndex[0] < platformIds.size()) {
+				platformIds.get(longerIndex[0]).allowLonger = value.asBooleanValue().getBoolean();
+			}
+			longerIndex[0]++;
 		});
 
 		messagePackHelper.iterateArrayValue(KEY_TIMETABLE_TABLES, value -> readTable(new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value))));
@@ -385,6 +393,10 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		for (final RoutePlatform routePlatform : platformIds) {
 			messagePacker.packBoolean(routePlatform.overtake);
 		}
+		messagePacker.packString(KEY_ALLOW_LONGER).packArrayHeader(platformIds.size());
+		for (final RoutePlatform routePlatform : platformIds) {
+			messagePacker.packBoolean(routePlatform.allowLonger);
+		}
 
 		messagePacker.packString(KEY_TIMETABLE_NAME).packString(timetable.name);
 		messagePacker.packString(KEY_TIMETABLE_WEEKDAYS).packInt(timetable.weekdays);
@@ -409,7 +421,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 36 + (pathData.isEmpty() ? 0 : 1);
+		return super.messagePackLength() + 37 + (pathData.isEmpty() ? 0 : 1);
 	}
 
 	private static void readLinks(MessagePackHelper messagePackHelper, RouteTimetable table) {
@@ -867,6 +879,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			newRoutePlatform.customDestination = routePlatform.customDestination;
 			newRoutePlatform.waypoints.addAll(routePlatform.waypoints);
 			newRoutePlatform.pass = routePlatform.pass;
+			newRoutePlatform.allowLonger = routePlatform.allowLonger;
 			newRoutePlatform.dwellOverride = routePlatform.dwellOverride;
 			for (int i = 0; i < timetable.getTableCount(); i++) {
 				newRoutePlatform.setArrival(i, routePlatform.getArrival(i));
@@ -1236,6 +1249,11 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 		 * The train waits here for trains that should pass it before it leaves, on another platform of this station.
 		 */
 		public boolean overtake;
+		/**
+		 * Trains longer than the platform may stop here all the same (optimisation round 3b, step 3): set by hand where
+		 * the check of lengths would otherwise point it out.
+		 */
+		public boolean allowLonger;
 		private int arrival = -1;
 		private int departure = -1;
 		/**
@@ -1381,6 +1399,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			setArrival(packet.readInt());
 			setDeparture(packet.readInt());
 			overtake = packet.readBoolean();
+			allowLonger = packet.readBoolean();
 		}
 
 		private void writeWaypoints(FriendlyByteBuf packet) {
@@ -1391,6 +1410,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 			packet.writeInt(arrival);
 			packet.writeInt(departure);
 			packet.writeBoolean(overtake);
+			packet.writeBoolean(allowLonger);
 		}
 	}
 

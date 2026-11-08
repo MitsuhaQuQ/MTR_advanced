@@ -703,6 +703,7 @@ public final class EditorActions implements IPacket {
 			newStop.waypoints.addAll(oldStop.waypoints);
 			newStop.dwellOverride = oldStop.dwellOverride;
 			newStop.pass = oldStop.pass;
+			newStop.allowLonger = oldStop.allowLonger;
 			for (int j = 0; j < tableCount; j++) {
 				newStop.setArrival(j, oldStop.getArrival(j));
 				newStop.setDeparture(j, oldStop.getDeparture(j));
@@ -829,6 +830,10 @@ public final class EditorActions implements IPacket {
 		}
 		for (int j = 0; j < stopCount; j++) {
 			route.platformIds.get(j).pass = pass.get(j).getAsBoolean();
+			// Trains longer than the platform allowed to stop, set from the page (round 3b)
+			if (timetable.has("allowLonger") && timetable.getAsJsonArray("allowLonger").size() == pass.size()) {
+				route.platformIds.get(j).allowLonger = timetable.getAsJsonArray("allowLonger").get(j).getAsBoolean();
+			}
 		}
 		return null;
 	}

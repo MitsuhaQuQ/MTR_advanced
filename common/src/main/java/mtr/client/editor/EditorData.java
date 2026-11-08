@@ -375,6 +375,8 @@ public final class EditorData {
 		routeObject.add("parts", parts);
 
 		final JsonArray stopsArray = new JsonArray();
+		// Stops where the longest train running the route is longer than the platform (round 3b)
+		final java.util.List<Integer> tooShort = mtr.data.StopLengths.getTooShort(route, ClientData.DATA_CACHE, mtr.data.StopLengths.getLongestTrain(route, ClientData.DATA_CACHE, ClientData.SIDINGS));
 		for (int i = 0; i < route.platformIds.size(); i++) {
 			final Route.RoutePlatform routePlatform = route.platformIds.get(i);
 			final JsonObject stopObject = new JsonObject();
@@ -388,6 +390,9 @@ public final class EditorData {
 			stopObject.addProperty("name", station == null ? "" : station.name);
 			stopObject.addProperty("platform", platform == null ? "" : platform.name);
 			stopObject.addProperty("pass", routePlatform.pass);
+			stopObject.addProperty("allowLonger", routePlatform.allowLonger);
+			stopObject.addProperty("tooShort", tooShort.contains(i));
+			stopObject.addProperty("platformLength", platform == null ? 0 : (int) Math.round(mtr.data.StopLengths.getLength(platform)));
 			stopObject.addProperty("passingTrack", platform != null && platform.passingTrack);
 			// After the last stop these are the nodes of the turn back rails (站后折返)
 			stopObject.addProperty("waypoints", routePlatform.waypoints.size());

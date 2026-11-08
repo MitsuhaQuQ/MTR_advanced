@@ -618,6 +618,8 @@ const I18N = (() => {
 			"余裕": "Margin",
 			"最低性能": "Least performance",
 			"过站限速": "Pass speeds",
+			"允许比站台长的车停靠": "Allow trains longer than the platform to stop",
+			"车比站台长（站台 {0} 格）": "Train longer than the platform ({0} blocks)",
 			"{0} 过站限速 {1} km/h": "{0} passed at {1} km/h",
 			"站台 {0} 过站限速": "Pass speed of platform {0}",
 			"加速": "acceleration",

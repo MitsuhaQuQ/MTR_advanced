@@ -165,6 +165,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	private final Set<Long> slowerRoutes = new HashSet<>();
 	/**
+	 * Routes with stops too short for their trains, as last told.
+	 */
+	private final Map<Long, List<Integer>> tooShortStops = new HashMap<>();
+	/**
 	 * Which version of each part of the data players edit the server has (multiplayer edit conflicts).
 	 */
 	public final EditRevisions editRevisions = new EditRevisions();
@@ -722,6 +726,19 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			RoutePaths.fillMinPerformance(routes, routeVehicles).forEach(route -> {
 				System.out.println("Minecraft Transit Railway: the timetable of route " + route.name + " is now timed for its slowest vehicle: acceleration " + route.timetable.minAcceleration * 400 + " m/s², deceleration " + route.timetable.minDeceleration * 400 + " m/s², highest speed " + Math.round(route.timetable.minMaxSpeed * 72) + " km/h");
 				route.setTimetable(packet -> world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, IPacket.PACKET_UPDATE_ROUTE, packet)));
+			});
+			// Stops where a train running the route is longer than the platform, not allowed by hand (round 3b)
+			routes.forEach(route -> {
+				final double longestTrain = StopLengths.getLongestTrain(route, dataCache, sidings);
+				final List<Integer> tooShort = StopLengths.getTooShort(route, dataCache, longestTrain);
+				if (!tooShort.equals(tooShortStops.getOrDefault(route.id, Collections.emptyList()))) {
+					if (tooShort.isEmpty()) {
+						tooShortStops.remove(route.id);
+					} else {
+						tooShortStops.put(route.id, tooShort);
+						System.out.println("Minecraft Transit Railway: on route " + route.name + ", trains of " + Math.round(longestTrain) + " blocks are longer than the platforms of stops " + tooShort.stream().map(stop -> (stop + 1) + " (" + Math.round(StopLengths.getLength(dataCache.platformIdMap.get(route.platformIds.get(stop).platformId))) + ")").collect(Collectors.joining(", ")) + "; allow it on those stops in the advanced editor if it is meant");
+					}
+				}
 			});
 			routes.forEach(route -> {
 				final boolean slower = !RoutePaths.getSlowerVehicles(route, routeVehicles).isEmpty();

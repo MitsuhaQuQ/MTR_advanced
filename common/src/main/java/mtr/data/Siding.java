@@ -1688,6 +1688,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		}
 	}
 
+	/**
+	 * @return how long the siding's trains are, in blocks
+	 */
+	public double getTrainLength() {
+		return (double) trainCars * TrainType.getSpacing(baseTrainType);
+	}
+
 	public boolean isValidVehicle(int spacing) {
 		return Math.max(2, railLength) >= spacing;
 	}

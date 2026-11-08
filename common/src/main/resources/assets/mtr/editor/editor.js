@@ -842,9 +842,10 @@
 	/** A route's timetable from the game, in the form the editor sends it back. */
 	function fromGame(r) {
 		return normalize({
-			enabled: r.timetable, entryPlatform: r.entryPlatform, pass: r.stops.map(stop => stop.pass),
+			enabled: r.timetable, entryPlatform: r.entryPlatform, pass: r.stops.map(stop => stop.pass), allowLonger: r.stops.map(stop => Boolean(stop.allowLonger)),
 			tables: r.tables.map(table => ({
 				name: table.name, weekdays: table.weekdays, marginPercent: table.marginPercent,
+				minAcceleration: table.minAcceleration || 0, minDeceleration: table.minDeceleration || 0, minMaxSpeed: table.minMaxSpeed || 0,
 				services: [...table.services], returns: [...table.returns], suspended: [...(table.suspended || [])],
 				orders: (table.orders || []).map(order => ({ ...order })),
 				links: table.links.map(link => ({ ...link })),
@@ -3426,7 +3427,7 @@
 			kinds.forEach((kind, k) => {
 				const cells = services.map((s, j) => timeCell(s, i, kind, allTimes[j][i], isSelected(s))).join("");
 				const label = { dep: tr("发"), arr: trc("arrival", "到"), pass: tr("通过") }[kind];
-				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${escapeHtml(trackTitle(stop))}${stop.boundary ? tr("（时刻边界，可以在这里接出或接入）") : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> ${tr("界")}</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="${tr("车厂的列车从这里接入环线")}"> ${tr("入")}</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
+				rows.push(`<tr class="${k === 0 ? "first-of-station" : ""}">${k === 0 ? `<th class="st" rowspan="${kinds.length}" title="${escapeHtml(stop.name)}${escapeHtml(trackTitle(stop))}${stop.boundary ? tr("（时刻边界，可以在这里接出或接入）") : ""}">${escapeHtml(shortName(stop.name))}${stop.boundary ? `<span class="boundary"> ${tr("界")}</span>` : ""}${stop.tooShort ? `<span class="err" title="${tr("车比站台长（站台 {0} 格）", stop.platformLength)}"> ⚠</span>` : ""}${isLoop(r) && i > 0 && i < r.stops.length - 1 && loopEntryStop(r) === i ? `<span class="entry" title="${tr("车厂的列车从这里接入环线")}"> ${tr("入")}</span>` : ""}</th>` : ""}<th class="kind">${label}</th>${cells}</tr>`);
 			});
 		});
 		view.innerHTML = tools + `<table class="tt">${head}<tbody>${rows.join("")}</tbody></table>`;
@@ -3711,6 +3712,16 @@
 		// Which station the stop's platform belongs to, wherever it is (R6)
 		const stationItems = s.route.stops[stop] ? platformStationItems(s.route.stops[stop].platformId) : null;
 		if (stationItems) items.push([tr("站台 {0} 归属车站", platformText(s.route.stops[stop].platformId)), stationItems]);
+		// Trains longer than the platform allowed to stop here (round 3b)
+		if (s.route.stops[stop] && data.canEdit) {
+			const allowed = (timetableOf(s.route).allowLonger || [])[stop];
+			items.push([`${allowed ? "✓ " : ""}${tr("允许比站台长的车停靠")}`, () => {
+				editTimetable(s.route, timetable => {
+					if (!timetable.allowLonger || timetable.allowLonger.length !== s.route.stops.length) timetable.allowLonger = s.route.stops.map(each => Boolean(each.allowLonger));
+					timetable.allowLonger[stop] = !allowed;
+				});
+			}]);
+		}
 		const speedItems = s.route.stops[stop] ? platformSpeedItems(s.route.stops[stop].platformId) : null;
 		if (speedItems) items.push([tr("站台 {0} 过站限速", platformText(s.route.stops[stop].platformId)), speedItems]);
 		if (items.length) openMenu(e.clientX, e.clientY, items);
