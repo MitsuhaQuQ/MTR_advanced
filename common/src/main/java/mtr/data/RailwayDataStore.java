@@ -90,4 +90,34 @@ public interface RailwayDataStore {
 	 */
 	default void writeSimulationData(byte[] data) throws Exception {
 	}
+
+	/**
+	 * @return whether paths can be saved as references to shared pieces ({@link PathPieces}); only the SQLite store keeps
+	 * them, in tables of their own
+	 */
+	default boolean storesPathPieces() {
+		return false;
+	}
+
+	/**
+	 * @param pieces each piece, by its key
+	 * @param refs   each owner and a piece it refers to
+	 */
+	default void loadPathPieces(BiConsumer<Long, byte[]> pieces, BiConsumer<Long, Long> refs) throws Exception {
+	}
+
+	/**
+	 * Adds pieces; one already there is kept as it is.
+	 */
+	default void writePathPieces(Map<Long, byte[]> pieces) throws Exception {
+	}
+
+	/**
+	 * Replaces the pieces an owner refers to; none drops the owner.
+	 */
+	default void writePathPieceRefs(long owner, Collection<Long> pieces) throws Exception {
+	}
+
+	default void deletePathPieces(Collection<Long> pieces) throws Exception {
+	}
 }

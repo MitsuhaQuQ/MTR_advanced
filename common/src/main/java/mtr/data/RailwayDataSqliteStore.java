@@ -61,6 +61,7 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 	private static final String KEY_TRACK_VERSION = "track_version";
 	private static final String KEY_TRACK_FINGERPRINT = "track_fingerprint";
 	private static final String KEY_TRACK_COUNT = "track_count";
+	private static final long COMPACT_MIN_FREE_BYTES = 64L * 1024 * 1024;
 	private static final long BACKUP_INTERVAL_MILLIS = 60 * 60 * 1000;
 	private static final String RESTORE_REQUEST = "restore.txt";
 	private static final int BACKUP_WAIT_SECONDS = 60;
@@ -104,6 +105,11 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.execute("CREATE TABLE IF NOT EXISTS track_owner_sets (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS graph_paths (owner TEXT PRIMARY KEY, graph_fingerprint INTEGER NOT NULL, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS sim_data (key TEXT PRIMARY KEY, data BLOB NOT NULL)");
+			// Pieces of paths by content hash, and which owner (a siding) refers to which, so a piece is stored once and
+			// swept when no one refers to it (optimisation round 5, step 2)
+			statement.execute("CREATE TABLE IF NOT EXISTS path_pieces (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS path_piece_refs (owner INTEGER NOT NULL, piece INTEGER NOT NULL, PRIMARY KEY (owner, piece)) WITHOUT ROWID");
+			statement.execute("CREATE INDEX IF NOT EXISTS path_piece_refs_piece ON path_piece_refs (piece)");
 			// The revision of each part players edit, kept so edits are checked the same after the server is started again
 			statement.execute("CREATE TABLE IF NOT EXISTS edit_revisions (key TEXT PRIMARY KEY, revision INTEGER NOT NULL, editor TEXT NOT NULL, deleted INTEGER NOT NULL)");
 		}
@@ -115,6 +121,37 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 
 		checkSchemaVersion();
 		migrate(types);
+		// Only a database this jar may write; outside a transaction, as VACUUM needs
+		connection.commit();
+		connection.setAutoCommit(true);
+		compactIfMostlyFree();
+		connection.setAutoCommit(false);
+	}
+
+	/**
+	 * Gives the space of deleted rows back to the disk when most of the file is free, as after paths were first saved as
+	 * shared pieces (optimisation round 5, step 2); SQLite otherwise keeps the file as large as it ever was.
+	 */
+	private void compactIfMostlyFree() {
+		try (final Statement statement = connection.createStatement()) {
+			final long pageSize = readPragma(statement, "page_size");
+			final long pages = readPragma(statement, "page_count");
+			final long free = readPragma(statement, "freelist_count");
+			if (free * pageSize >= COMPACT_MIN_FREE_BYTES && free * 2 > pages) {
+				final long startMillis = System.currentTimeMillis();
+				statement.execute("VACUUM");
+				System.out.println("Minecraft Transit Railway compacted " + databasePath + " from " + pages * pageSize / 1000000 + " MB to " + readPragma(statement, "page_count") * pageSize / 1000000 + " MB in " + (System.currentTimeMillis() - startMillis) + " ms");
+			}
+		} catch (Exception e) {
+			System.out.println("Minecraft Transit Railway could not compact " + databasePath + "; it is used as it is");
+			e.printStackTrace();
+		}
+	}
+
+	private static long readPragma(Statement statement, String name) throws SQLException {
+		try (final ResultSet resultSet = statement.executeQuery("PRAGMA " + name)) {
+			return resultSet.next() ? resultSet.getLong(1) : 0;
+		}
 	}
 
 	/**
@@ -246,6 +283,75 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			}
 			statement.executeBatch();
 		}
+	}
+
+	@Override
+	public boolean storesPathPieces() {
+		return true;
+	}
+
+	@Override
+	public void loadPathPieces(BiConsumer<Long, byte[]> pieces, BiConsumer<Long, Long> refs) throws Exception {
+		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT id, data FROM path_pieces")) {
+			while (resultSet.next()) {
+				pieces.accept(resultSet.getLong(1), resultSet.getBytes(2));
+			}
+		}
+		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT owner, piece FROM path_piece_refs")) {
+			while (resultSet.next()) {
+				refs.accept(resultSet.getLong(1), resultSet.getLong(2));
+			}
+		}
+	}
+
+	@Override
+	public void writePathPieces(Map<Long, byte[]> pieces) throws Exception {
+		if (pieces.isEmpty()) {
+			return;
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO path_pieces (id, data) VALUES (?, ?)")) {
+			for (final Map.Entry<Long, byte[]> entry : pieces.entrySet()) {
+				statement.setLong(1, entry.getKey());
+				statement.setBytes(2, entry.getValue());
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void writePathPieceRefs(long owner, Collection<Long> pieces) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM path_piece_refs WHERE owner = ?")) {
+			statement.setLong(1, owner);
+			statement.executeUpdate();
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT INTO path_piece_refs (owner, piece) VALUES (?, ?)")) {
+			for (final long piece : pieces) {
+				statement.setLong(1, owner);
+				statement.setLong(2, piece);
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void deletePathPieces(Collection<Long> pieces) throws Exception {
+		if (pieces.isEmpty()) {
+			return;
+		}
+		// Only pieces no one refers to, whatever the caller worked out
+		try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM path_pieces WHERE id = ? AND NOT EXISTS (SELECT 1 FROM path_piece_refs WHERE piece = ?)")) {
+			for (final long piece : pieces) {
+				statement.setLong(1, piece);
+				statement.setLong(2, piece);
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		hasPendingChanges = true;
 	}
 
 	@Override

@@ -348,9 +348,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		wayOuts = loadedWayOuts;
 
 		messagePackHelper.iterateArrayValue(KEY_TRIP_PATHS, value -> {
-			final MessagePackHelper tripHelper = new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(value));
-			final List<PathData> tripPathData = new ArrayList<>();
-			tripHelper.iterateArrayValue(KEY_PATH, pathValue -> tripPathData.add(new PathData(RailwayData.castMessagePackValueToSKMap(pathValue))));
+			final Map<String, Value> tripMap = RailwayData.castMessagePackValueToSKMap(value);
+			final MessagePackHelper tripHelper = new MessagePackHelper(tripMap);
+			// Saved in full, or as references to pieces shared with other paths (optimisation round 5, step 2); one whose
+			// pieces are missing is made again
+			final List<PathData> tripPathData = PathPieces.readPath(tripMap, KEY_PATH);
+			if (tripPathData == null) {
+				return;
+			}
 			final TripPath<PathData> tripPath = new TripPath<>(new MessagePackKeyed.Reader(tripHelper), tripPathData);
 			tripPath.generateTimes(timeGenerator);
 			tripPaths.put(tripPath.key, tripPath);
@@ -451,7 +456,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		for (final TripPath<PathData> tripPath : tripPaths.values()) {
 			messagePacker.packMapHeader(TripPath.WRITTEN_VALUES + 1);
 			tripPath.write(new MessagePackKeyed.Writer(messagePacker));
-			RailwayData.writeMessagePackDataset(messagePacker, tripPath.path, KEY_PATH);
+			PathPieces.writePath(messagePacker, tripPath.path, KEY_PATH);
 		}
 		turnBacks.write(new MessagePackKeyed.Writer(messagePacker));
 		messagePacker.packString(KEY_TURN_LINKS).packArrayHeader(turnLinks.size());

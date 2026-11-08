@@ -89,6 +89,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private final Set<String> objectsToSaveNow = new LinkedHashSet<>();
 
 	private final RailwayDataStore dataStore;
+	/**
+	 * The pieces the paths of sidings are saved as, where the store keeps them (optimisation round 5, step 2), or null.
+	 */
+	private final PathPieces.Store pathPieces;
+	private final PathPieces.Writer pathPieceWriter;
 
 	private static final char KEY_SEPARATOR = ':';
 	private static final String TYPE_STATIONS = "stations";
@@ -117,6 +122,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		}
 
 		dataStore = RailwayDataFileStore.open(savePath, TYPES);
+		pathPieces = dataStore.storesPathPieces() ? new PathPieces.Store() : null;
+		pathPieceWriter = pathPieces == null ? null : new PathPieces.Writer(pathPieces.stored);
 	}
 
 	public void load() {
@@ -125,7 +132,19 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		existingFiles.clear();
 		readMessagePackFromFile(TYPE_STATIONS, Station::new, railwayData.stations::add, false);
 		readMessagePackFromFile(TYPE_PLATFORMS, Platform::new, railwayData.platforms::add, true);
-		readMessagePackFromFile(TYPE_SIDINGS, Siding::new, railwayData.sidings::add, true);
+		if (pathPieces != null) {
+			try {
+				// Read once each, for the sidings whose paths refer to them, then let go
+				PathPieces.startReading(new PathPieces.Reader(pathPieces.load(dataStore)));
+			} catch (Exception e) {
+				throw new IllegalStateException("Could not read the path pieces of Minecraft Transit Railway data", e);
+			}
+		}
+		try {
+			readMessagePackFromFile(TYPE_SIDINGS, Siding::new, railwayData.sidings::add, true);
+		} finally {
+			PathPieces.stopReading();
+		}
 		readMessagePackFromFile(TYPE_ROUTES, Route::new, railwayData.routes::add, false);
 		readMessagePackFromFile(TYPE_DEPOTS, Depot::new, railwayData.depots::add, false);
 		readMessagePackFromFile(TYPE_LIFTS, LiftServer::new, railwayData.lifts::add, true);
@@ -223,6 +242,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			railwayData.dataCache.stationIdMap.forEach((id, data) -> stage(data, id, TYPE_STATIONS));
 			railwayData.dataCache.platformIdMap.forEach((id, data) -> stage(data, id, TYPE_PLATFORMS));
 			railwayData.dataCache.sidingIdMap.forEach((id, data) -> stage(data, id, TYPE_SIDINGS));
+			if (pathPieceWriter != null) {
+				// The paths of sidings gone or made again since the last save are let go
+				pathPieceWriter.endRound();
+			}
 			railwayData.dataCache.routeIdMap.forEach((id, data) -> stage(data, id, TYPE_ROUTES));
 			railwayData.dataCache.depotIdMap.forEach((id, data) -> stage(data, id, TYPE_DEPOTS));
 			railwayData.dataCache.liftsServerIdMap.forEach((id, data) -> stage(data, id, TYPE_LIFTS));
@@ -349,6 +372,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
 				dataStore.delete(key.substring(0, separatorIndex), Long.parseLong(key.substring(separatorIndex + 1)));
 			}
+			writePathPieces(pendingWrites.values(), checkFilesToDelete, Collections.emptyList());
 			// What the component's day tool simulates, written again only when it changed
 			final byte[] simulationData = SimExport.build(railwayData);
 			final int simulationHash = Arrays.hashCode(simulationData);
@@ -356,6 +380,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				dataStore.writeSimulationData(simulationData);
 			}
 			dataStore.commit();
+			if (pathPieces != null) {
+				pathPieces.committed();
+			}
 			lastSimulationHash = simulationHash;
 			pendingWrites.forEach((key, pendingWrite) -> existingFiles.put(key, pendingWrite.hash));
 			checkFilesToDelete.forEach(existingFiles::remove);
@@ -366,6 +393,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			lastSaveFailed = true;
 			System.out.println("Minecraft Transit Railway could not save " + world.dimension().location() + "; the saved data stays as it was after the last save, and the next save tries again");
 			e.printStackTrace();
+			if (pathPieces != null) {
+				pathPieces.rolledBack();
+			}
 			try {
 				dataStore.rollback();
 			} catch (Exception e2) {
@@ -513,7 +543,12 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			for (final Object[] revision : revisions) {
 				dataStore.writeEditRevision((String) revision[0], (Integer) revision[1], (String) revision[2], (Boolean) revision[3]);
 			}
+			// The pieces the save going on has worked out are kept for it
+			writePathPieces(writes.values(), deletes, pendingWrites.values());
 			dataStore.commit();
+			if (pathPieces != null) {
+				pathPieces.committed();
+			}
 			writes.forEach((key, write) -> existingFiles.put(key, write.hash));
 			deletes.forEach(existingFiles::remove);
 			// What the save going on worked out earlier for these is out of date now
@@ -526,6 +561,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			System.out.println("Minecraft Transit Railway could not save what was just changed in " + world.dimension().location() + "; it is saved with the next save");
 			e.printStackTrace();
 			railwayData.editRevisions.keepUnsaved(revisions);
+			if (pathPieces != null) {
+				pathPieces.rolledBack();
+			}
 			try {
 				dataStore.rollback();
 			} catch (Exception e2) {
@@ -537,10 +575,63 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	private void addWrite(Map<String, PendingWrite> writes, SerializedDataBase data, long id, String type) {
-		final byte[] bytes = toBytes(data);
-		if (bytes != null) {
-			writes.put(getKey(type, id), new PendingWrite(type, id, bytes));
+		final PendingWrite pendingWrite = toPendingWrite(data, id, type);
+		if (pendingWrite != null) {
+			writes.put(getKey(type, id), pendingWrite);
 		}
+	}
+
+	/**
+	 * @return the entry as it is saved, a siding with its paths as references to pieces where the store keeps them; or null
+	 * if it can't be written
+	 */
+	private PendingWrite toPendingWrite(SerializedDataBase data, long id, String type) {
+		if (pathPieceWriter == null || !type.equals(TYPE_SIDINGS)) {
+			final byte[] bytes = toBytes(data);
+			return bytes == null ? null : new PendingWrite(type, id, bytes, null);
+		}
+		pathPieceWriter.startOwner();
+		PathPieces.startWriting(pathPieceWriter);
+		final byte[] bytes;
+		try {
+			bytes = toBytes(data);
+		} finally {
+			PathPieces.stopWriting();
+		}
+		final PathPieces.Owner owner = pathPieceWriter.endOwner();
+		return bytes == null ? null : new PendingWrite(type, id, bytes, owner);
+	}
+
+	/**
+	 * Writes, in the transaction going on, the pieces of the sidings written and their references, drops those of the
+	 * sidings deleted and sweeps pieces no one refers to any more.
+	 *
+	 * @param kept entries worked out but not written yet, whose pieces are kept
+	 */
+	private void writePathPieces(Collection<PendingWrite> writes, Collection<String> deletes, Collection<PendingWrite> kept) throws Exception {
+		if (pathPieces == null) {
+			return;
+		}
+		final Map<Long, PathPieces.Owner> written = new HashMap<>();
+		writes.forEach(write -> {
+			if (write.type.equals(TYPE_SIDINGS)) {
+				written.put(write.id, write.pathPieces);
+			}
+		});
+		final List<Long> deleted = new ArrayList<>();
+		deletes.forEach(key -> {
+			final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
+			if (key.substring(0, separatorIndex).equals(TYPE_SIDINGS)) {
+				deleted.add(Long.parseLong(key.substring(separatorIndex + 1)));
+			}
+		});
+		final Set<Long> keptPieces = new HashSet<>();
+		kept.forEach(write -> {
+			if (write.pathPieces != null) {
+				keptPieces.addAll(write.pathPieces.pieces);
+			}
+		});
+		pathPieces.write(dataStore, written, deleted, keptPieces);
 	}
 
 	private <T extends SerializedDataBase> void readMessagePackFromFile(String type, Function<Map<String, Value>, T> getData, Consumer<T> callback, boolean skipVerify) {
@@ -572,12 +663,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	}
 
 	private String writeMessagePackToFile(SerializedDataBase data, long id, String type) {
-		final byte[] bytes = toBytes(data);
-		if (bytes == null) {
+		final PendingWrite pendingWrite = toPendingWrite(data, id, type);
+		if (pendingWrite == null) {
 			return null;
 		}
 		final String key = getKey(type, id);
-		final PendingWrite pendingWrite = new PendingWrite(type, id, bytes);
 		// Everything an entry saves counts, so a train's position or a depot's last service sent out are saved each time
 		if (!existingFiles.containsKey(key) || pendingWrite.hash != existingFiles.get(key)) {
 			pendingWrites.put(key, pendingWrite);
@@ -607,11 +697,16 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		private final long id;
 		private final byte[] data;
 		private final int hash;
+		/**
+		 * For a siding, the pieces its paths refer to, or null when it is written with them in full.
+		 */
+		private final PathPieces.Owner pathPieces;
 
-		private PendingWrite(String type, long id, byte[] data) {
+		private PendingWrite(String type, long id, byte[] data, PathPieces.Owner pathPieces) {
 			this.type = type;
 			this.id = id;
 			this.data = data;
+			this.pathPieces = pathPieces;
 			hash = Arrays.hashCode(data);
 		}
 	}

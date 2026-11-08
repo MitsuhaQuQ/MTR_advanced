@@ -42,6 +42,8 @@ public final class RailwayDataBackups {
 			{{"track_owner_sets"}, {"id"}, {"data"}},
 			{{"graph_paths"}, {"owner"}, {"graph_fingerprint", "data"}},
 			{{"sim_data"}, {"key"}, {"data"}},
+			{{"path_pieces"}, {"id"}, {"data"}},
+			{{"path_piece_refs"}, {"owner", "piece"}, {}},
 			{{"edit_revisions"}, {"key"}, {"revision", "editor", "deleted"}},
 	};
 	/**
