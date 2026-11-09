@@ -100,3 +100,49 @@
 .legacy.legacy-slot .inspector .sim-problems button.link { color: var(--ink); text-align: left; padding: 2px 0; }
 .legacy.legacy-slot .inspector .sim-problems button.link:hover { color: var(--sel); }
 .legacy.legacy-slot .inspector > p.hint { margin: 0; }
+
+/* ---------- Whole network map and the dispatcher's console ---------- */
+.legacy.legacy-slot .net-tools { gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--grid); font-size: 13px; }
+.legacy.legacy-slot .net-tools .hint { font-size: 12px; }
+.legacy.legacy-slot .net-legend { color: var(--muted); }
+.legacy.legacy-slot #net-console-toggle[aria-pressed="true"], .legacy.legacy-slot .net-tools button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+.legacy.legacy-slot .net-wrap { background: var(--panel); }
+.legacy.legacy-slot .net-console { width: min(400px, 100%); padding: 12px; background: var(--bg); border-left: 1px solid var(--grid-strong); font-size: 13px; box-shadow: var(--shadow); }
+.legacy.legacy-slot .net-console h2, .legacy.legacy-slot .net-console h3 { margin: 4px 0 8px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+.legacy.legacy-slot .net-console table { background: var(--panel); border: 1px solid var(--grid); border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+.legacy.legacy-slot .net-console td { padding: 6px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.legacy.legacy-slot .net-console tr:last-child td { border-bottom: 0; }
+.legacy.legacy-slot .net-console tr.sel td { background: color-mix(in srgb, var(--sel) 12%, transparent); }
+.legacy.legacy-slot .net-console .cmds { gap: 4px; margin-top: 6px; }
+.legacy.legacy-slot .net-console .cmds button { height: 24px; padding: 0 8px; font-size: 12px; }
+
+/* ---------- The old dialogs and the tooltip ---------- */
+.legacy.legacy-overlays dialog {
+  border: 1px solid var(--grid); border-radius: 8px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
+  width: min(560px, calc(100vw - 32px));
+}
+.legacy.legacy-overlays dialog.wide { width: min(1100px, calc(100vw - 32px)); }
+.legacy.legacy-overlays dialog::backdrop { background: color-mix(in srgb, var(--ink) 30%, transparent); }
+.legacy.legacy-overlays dialog form { padding: 16px 20px; gap: 12px; }
+.legacy.legacy-overlays dialog h2 { font-size: 16px; font-weight: 700; }
+.legacy.legacy-overlays dialog h3 { font-size: 13px; font-weight: 600; margin: 4px 0 0; }
+.legacy.legacy-overlays dialog label { font-size: 13px; gap: 6px 8px; }
+.legacy.legacy-overlays dialog input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), .legacy.legacy-overlays dialog select, .legacy.legacy-overlays dialog textarea {
+  min-height: 28px; padding: 0 8px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); color: var(--ink); font-size: 13px;
+}
+.legacy.legacy-overlays dialog textarea { padding: 6px 8px; }
+.legacy.legacy-overlays dialog input[type=checkbox], .legacy.legacy-overlays dialog input[type=radio] { accent-color: var(--accent); }
+.legacy.legacy-overlays dialog fieldset { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 12px; gap: 4px 12px; }
+.legacy.legacy-overlays dialog legend { font-size: 12px; color: var(--muted); }
+.legacy.legacy-overlays dialog button:not(.link) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px;
+  border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); color: var(--ink); font-size: 13px; cursor: pointer;
+}
+.legacy.legacy-overlays dialog button:not(.link):hover:not(:disabled) { border-color: var(--accent); }
+.legacy.legacy-overlays dialog button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.legacy.legacy-overlays dialog button.table-chip.on { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+.legacy.legacy-overlays dialog .actions { gap: 8px; padding-top: 4px; }
+.legacy.legacy-overlays dialog .hint { font-size: 12px; line-height: 18px; color: var(--muted); }
+.legacy.legacy-overlays dialog .err { color: var(--warn); }
+.legacy.legacy-overlays dialog :focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+.legacy.legacy-overlays .tooltip { border: 1px solid var(--grid); border-radius: 6px; box-shadow: var(--shadow); padding: 8px 10px; font-size: 12px; line-height: 18px; }
