@@ -19,7 +19,8 @@
 	// In the line track layout: how far apart rows of station names are, and how far a rail may wander from where it
 	// usually runs beside the route and still be drawn straight
 	const LABEL_ROW_PX = 14, RAIL_WOBBLE_BLOCKS = 2;
-	const ZOOMS = [0.5, 1, 2, 3, 4, 6, 8, 12, 16];
+	// Pixels a minute: from the whole day at a glance to about a pixel a second (2026-11-09)
+	const ZOOMS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 	const WEEKDAY_NAMES = translatedList(["周一", "周二", "周三", "周四", "周五", "周六", "周日"]);
 	const WEEKDAY_SHORT = translatedList(["一", "二", "三", "四", "五", "六", "日"]);
 	// The same as RouteTimetable.MAX_SERVICES and MAX_TABLES in the game
@@ -210,7 +211,8 @@
 			const drafted = draft.boundaries && key in draft.boundaries;
 			const boundary = drafted ? draft.boundaries[key] : status === 3;
 			// Right-click any rail to change its isolation; a connecting line's own rails also switch with a click
-			const attrs = canEdit ? ` data-rail="${a},${b}" data-rail-status="${status}"` : "";
+			// Marked without the right to edit too, so a right-click there says so rather than showing nothing
+			const attrs = ` data-rail="${a},${b}" data-rail-status="${status}"`;
 			if (boundary) return { cls: " boundary" + (canEdit ? " clickable" : ""), attrs, title: `<title>${escapeHtml(tr("寻路边界：只划分先在哪里找路，区域内找不到会越过，不挡车") + (drafted ? tr("（草稿）") : ""))}</title>` };
 			if (status !== 1 && status !== 2) return { cls: drafted ? " unbounded" : "", attrs, title: drafted ? `<title>${escapeHtml(tr("取消寻路边界（草稿）"))}</title>` : "" };
 			const isReleased = released ? released.has(key) : status === 2;
@@ -244,7 +246,7 @@
 			const released = releasedOf(r).some(other => railKey(other[0], other[1]) === key);
 			items.push([released ? tr("取消放行") : tr("放行（别的线路可以走）"), () => { toggleReleased(r, a, b); rerender(); }]);
 		}
-		openMenu(e.clientX, e.clientY, items);
+		openMenuAt(e, items);
 	}
 
 	/** Whether a planning unit's lines have trains enough, as the server worked out their duties by line. */
@@ -1157,11 +1159,28 @@
 	 */
 	function openMenu(x, y, items) {
 		closeMenu();
-		menu = buildMenu(items, 0);
-		document.body.appendChild(menu);
+		// A place with a menu always shows it, saying so when there is nothing to do there just now (right-click 2026-11-09)
+		menu = buildMenu(items.length ? items : [[tr("这里没有可用的操作"), null]], 0);
+		menuHost().appendChild(menu);
 		menu.style.left = Math.min(x, innerWidth - menu.offsetWidth - 8) + "px";
 		menu.style.top = Math.min(y, innerHeight - menu.offsetHeight - 8) + "px";
 	}
+	/**
+	 * A menu at where a right-click was, or beside the element when the menu key or Shift+F10 asked for it.
+	 */
+	function openMenuAt(e, items) {
+		if (e.clientX || e.clientY) {
+			openMenu(e.clientX, e.clientY, items);
+		} else {
+			const box = e.target.getBoundingClientRect();
+			openMenu(box.left + 8, box.bottom + 2, items);
+		}
+	}
+	/**
+	 * Where a menu goes: into the dialog open on top, which the page beneath can't show over or be clicked through, or the
+	 * page (a rail's menu in the route's track diagram was hidden behind its dialog before)
+	 */
+	const menuHost = () => document.querySelector("dialog[open]") || document.body;
 	let subMenu = null;
 	function buildMenu(items, level) {
 		const element = document.createElement("div");
@@ -1177,7 +1196,7 @@
 					if (subMenu) subMenu.remove();
 					subMenu = buildMenu(action, level + 1);
 					subMenu.owner = button;
-					document.body.appendChild(subMenu);
+					menuHost().appendChild(subMenu);
 					const box = button.getBoundingClientRect();
 					const left = box.right + subMenu.offsetWidth + 4 > innerWidth ? box.left - subMenu.offsetWidth - 2 : box.right + 2;
 					subMenu.style.left = Math.max(8, left) + "px";
@@ -1208,6 +1227,21 @@
 		menu = null;
 	}
 	document.addEventListener("click", e => { if (menu && !menu.contains(e.target) && !(subMenu && subMenu.contains(e.target))) closeMenu(); });
+	// Right-click the same everywhere (2026-11-09): where the page has a menu, the handler of that place opens it and
+	// takes the event; text fields and selected text keep the browser's menu, for copying and pasting; anywhere else no
+	// menu at all, rather than the browser's sometimes. Registered on the document, it runs after those of the places.
+	const browserMenuFields = "input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=range]):not([type=color]), textarea, [contenteditable]:not([contenteditable=false])";
+	document.addEventListener("contextmenu", e => {
+		if (e.defaultPrevented) return;
+		closeMenu();
+		const selection = getSelection();
+		if (e.target.closest && e.target.closest(browserMenuFields) || selection && !selection.isCollapsed && selection.containsNode(e.target, true)) return;
+		e.preventDefault();
+	});
+	document.addEventListener("keydown", e => { if (e.key === "Escape" && menu) closeMenu(); });
+	addEventListener("scroll", e => { if (menu && !menu.contains(e.target) && !(subMenu && subMenu.contains(e.target))) closeMenu(); }, true);
+	addEventListener("resize", () => closeMenu());
+	addEventListener("blur", () => closeMenu());
 
 	const dialog = $("dialog");
 	/** A form whose OK button runs onOk, which returns an error to show and keep the form open, or nothing to close it. */
@@ -2381,8 +2415,12 @@
 	netCanvas.addEventListener("contextmenu", e => {
 		const rect = netCanvas.getBoundingClientRect();
 		const index = netRailAt(e.clientX - rect.left, e.clientY - rect.top);
-		if (index < 0 || !data || !data.canEdit) return;
+		if (index < 0 || !data) return;
 		e.preventDefault();
+		if (!data.canEdit) {
+			openMenuAt(e, [[tr("没有编辑权限"), null]]);
+			return;
+		}
 		const d = net.data, rail = d.rails[index];
 		railMenu(e, net.connectingOf.get(index) || null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork);
 	});
@@ -2512,7 +2550,7 @@
 			addPickedStop(platforms[0]);
 			return;
 		}
-		openMenu(e.clientX, e.clientY, platforms.map(p => {
+		openMenuAt(e, platforms.map(p => {
 			const using = data.routes.filter(r => r.stops.some(stop => stop.platformId === p.id)).map(r => shortName(r.name));
 			return [`${trackLabel(p.id, p.name, p.passingTrack)}${using.length ? " · " + using.slice(0, 3).join("、") : ""}`, () => addPickedStop(p)];
 		}));
@@ -2701,6 +2739,15 @@
 	}
 
 	const xOf = millis => LABEL_W + (millis - state.viewStart) / 60000 * state.pxPerMin;
+	/**
+	 * The time axis at the zoom: lines as close as ten pixels apart, times at least 44 pixels apart, both on round times.
+	 */
+	function axisSteps() {
+		const px = millis => millis / 60000 * state.pxPerMin;
+		const grid = [10000, 30000, 60000, 300000, 600000, 1800000, 3600000].find(step => px(step) >= 10) || 3600000;
+		const label = [10000, 30000, 60000, 300000, 600000, 1800000, 3600000, 7200000, 10800000].find(step => step >= grid && px(step) >= 44) || 10800000;
+		return { grid, label };
+	}
 	const millisAt = x => state.viewStart + (x - LABEL_W) / state.pxPerMin * 60000;
 
 	function resizeCanvas() {
@@ -2739,24 +2786,27 @@
 		const { line, ys } = layout;
 		const yOf = row => ys[row] - state.scrollY;
 
-		// Hour and ten minute lines
-		const step = state.pxPerMin >= 4 ? 10 : state.pxPerMin >= 1 ? 30 : 60;
-		const first = Math.floor(state.viewStart / 60000 / step) * step;
+		// Hour lines, and finer ones the further the view is zoomed in, down to ten seconds; times on some of them
+		const axis = axisSteps();
+		const isHour = millis => mod(millis + data.dayStartMillis + data.offsetMillis, DAY) % 3600000 === 0;
+		const first = Math.floor(state.viewStart / axis.grid) * axis.grid;
 		ctx.font = `11px ${css("--font-num")}`;
 		ctx.textAlign = "center";
-		for (let m = first; xOf(m * 60000) < w; m += step) {
-			const x = xOf(m * 60000);
+		for (let millis = first; xOf(millis) < w; millis += axis.grid) {
+			const x = xOf(millis);
 			if (x < LABEL_W) continue;
-			const hour = mod(m * 60000 + data.dayStartMillis + data.offsetMillis, DAY) % 3600000 === 0;
+			const hour = isHour(millis), labelled = mod(millis + data.dayStartMillis + data.offsetMillis, axis.label) === 0;
 			ctx.strokeStyle = hour ? c.strong : c.grid;
+			ctx.globalAlpha = hour || labelled ? 1 : 0.45;
 			ctx.lineWidth = 1;
 			ctx.beginPath();
 			ctx.moveTo(Math.round(x) + 0.5, AXIS_H);
 			ctx.lineTo(Math.round(x) + 0.5, h);
 			ctx.stroke();
-			if (hour || state.pxPerMin >= 4) {
+			ctx.globalAlpha = 1;
+			if (labelled) {
 				ctx.fillStyle = hour ? c.ink : c.muted;
-				ctx.fillText(clock(m * 60000), x, AXIS_H - 10);
+				ctx.fillText(clock(millis, axis.label < 60000), x, AXIS_H - 10);
 			}
 		}
 
@@ -2982,12 +3032,11 @@
 		// Redo the time labels the station column covered
 		ctx.font = `11px ${css("--font-num")}`;
 		ctx.textAlign = "center";
-		for (let m = first; xOf(m * 60000) < w; m += step) {
-			const x = xOf(m * 60000);
-			const hour = mod(m * 60000 + data.dayStartMillis + data.offsetMillis, DAY) % 3600000 === 0;
-			if (x < LABEL_W || !(hour || state.pxPerMin >= 4)) continue;
-			ctx.fillStyle = hour ? c.ink : c.muted;
-			ctx.fillText(clock(m * 60000), x, AXIS_H - 10);
+		for (let millis = first; xOf(millis) < w; millis += axis.grid) {
+			const x = xOf(millis);
+			if (x < LABEL_W || mod(millis + data.dayStartMillis + data.offsetMillis, axis.label) !== 0) continue;
+			ctx.fillStyle = isHour(millis) ? c.ink : c.muted;
+			ctx.fillText(clock(millis, axis.label < 60000), x, AXIS_H - 10);
 		}
 	}
 
@@ -3237,7 +3286,7 @@
 			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
 			if (troubled.length) parts.push(`<h2>${tr("股道问题")}</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">${tr("右键线路“编辑停站…”在连通图上改股道。")}</p></div>`);
 		}
-		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖动平移，Shift + 滚轮上下移动。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("按运用跑的车厂：线路色较粗的线有车跑，灰色细线没有车；顶栏“没车的班次”把没车的标成红色。")}<br>${tr("时刻表里点格子直接输入，右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
+		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖空白处平移，Shift + 滚轮上下移动。")}<br>${tr("按住一条线左右拖，平移这一班；Shift 点选一段、Ctrl 点选加入或剔除一班（Ctrl+Shift 加入或剔除一段），拖其中任一条一起平移；按住 Alt 拖按秒取整。右键一条线可以选中它和之后的全部班次。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("按运用跑的车厂：线路色较粗的线有车跑，灰色细线没有车；顶栏“没车的班次”把没车的标成红色。")}<br>${tr("时刻表里点格子直接输入，回车只改这一班，Shift+回车连之后的全部班次一起改；右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
 		inspector.innerHTML = parts.join("");
 	}
 
@@ -3248,6 +3297,19 @@
 			return;
 		}
 		tooltip.innerHTML = `<b>${escapeHtml(routeTitle(s.route))}</b> ${clock(s.start)}${stopsHtml(s)}${simTooltip(s)}`;
+		tooltip.hidden = false;
+		const box = tooltip.getBoundingClientRect();
+		tooltip.style.left = Math.min(clientX + 14, innerWidth - box.width - 8) + "px";
+		tooltip.style.top = Math.min(clientY + 14, innerHeight - box.height - 8) + "px";
+	}
+
+	/** How far a drag moves services, beside the pointer, in the tooltip's place. */
+	function showDragTip(text, clientX, clientY) {
+		if (!text) {
+			tooltip.hidden = true;
+			return;
+		}
+		tooltip.textContent = text;
 		tooltip.hidden = false;
 		const box = tooltip.getBoundingClientRect();
 		tooltip.style.left = Math.min(clientX + 14, innerWidth - box.width - 8) + "px";
@@ -3649,7 +3711,9 @@
 		const input = target.querySelector("input");
 		input.focus();
 		input.select();
+		input.title = tr("回车只改这一班，Shift+回车把同样的改动用到这一班和之后的全部班次");
 		let done = false;
+		let toLater = false;
 		const commit = move => {
 			if (done) return;
 			const time = typedTime(input.value, old);
@@ -3659,7 +3723,7 @@
 			}
 			done = true;
 			const cells = [...$("view-table").querySelectorAll("td")], index = cells.indexOf(cell);
-			if (Math.abs(time - old) >= 1000) changeTime(s, stop, kind, time);
+			if (Math.abs(time - old) >= 1000) changeTime(s, stop, kind, time, toLater);
 			else renderTable();
 			if (move) {
 				const next = $("view-table").querySelectorAll("td")[index + move];
@@ -3667,7 +3731,7 @@
 			}
 		};
 		input.addEventListener("keydown", e => {
-			if (e.key === "Enter") { e.preventDefault(); commit(0); }
+			if (e.key === "Enter") { e.preventDefault(); toLater = e.shiftKey; commit(0); }
 			else if (e.key === "Tab") { e.preventDefault(); commit(e.shiftKey ? -1 : 1); }
 			else if (e.key === "Escape") { done = true; renderTable(); }
 		});
@@ -3678,17 +3742,27 @@
 	 * A time typed for one service. The first stop's departure moves the whole service; an arrival or passing time is its
 	 * own running time from the stop before, and a departure its own stop time, kept as exceptions of this service.
 	 */
-	function changeTime(s, stop, kind, time) {
+	function changeTime(s, stop, kind, time, toLater) {
 		const times = timesOf(s);
+		// Shift+Enter: the same change, to the second, for this service and every later one of its table (2026-11-09)
+		const services = toLater ? [s, ...laterServices(s)] : [s];
 		editTimetable(s.route, timetable => {
 			const table = timetable.tables[s.tableIndex];
 			if (stop === 0) {
-				return retimeService(table, s.service, mod(s.service + time - times[0][1], DAY));
+				const shift = time - times[0][1];
+				const moving = services.map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
+				for (const service of moving) {
+					const error = retimeService(table, service, mod(service + shift, DAY));
+					if (error) return error;
+				}
 			} else if (kind === "dep") {
-				setStopException(table, s.service, stop, { dwell: Math.max(0, Math.round((time - times[stop][0]) / 1000)) });
+				const dwell = Math.max(0, Math.round((time - times[stop][0]) / 1000));
+				services.forEach(o => setStopException(table, o.service, stop, { dwell }));
 			} else {
-				setStopException(table, s.service, stop, { run: Math.max(1, Math.round((time - times[stop - 1][1]) / 1000)) });
+				const run = Math.max(1, Math.round((time - times[stop - 1][1]) / 1000));
+				services.forEach(o => setStopException(table, o.service, stop, { run }));
 			}
+			if (services.length > 1) return tr("这一班和之后的 {0} 班一起改了", services.length - 1);
 		});
 		const moved = stop === 0 ? data.routeById.get(s.route.id).services.find(o => o.tableIndex === s.tableIndex && o.service === mod(s.service + time - times[0][1], DAY)) : null;
 		if (moved) state.selected = moved.id;
@@ -3712,6 +3786,79 @@
 		}
 		state.range = { anchor: anchor.id, ids: Batch.runBetween(tableRun(s).map(o => o.id), anchor.id, s.id) };
 		return true;
+	}
+
+	/**
+	 * Ctrl-click (⌘ on a Mac): a service put in or taken out of the chosen ones; with Shift as well, every service from the
+	 * one Ctrl-clicked last (or the start of the run) to this one, taken out if this one was chosen, else put in. The
+	 * chosen ones start as the run, the route chosen with a double click, or the selected service (2026-11-09).
+	 *
+	 * @return whether the choice changed
+	 */
+	function toggleChosen(s, span) {
+		const run = tableRun(s).map(o => o.id);
+		let ids = state.range ? state.range.ids.slice() : state.selectedRoute === s.route.id ? run.slice() : state.selected ? [state.selected] : [];
+		const first = ids.length ? findService(ids[0]) : null;
+		if (first && (first.route !== s.route || first.tableIndex !== s.tableIndex)) ids = [];
+		const fromId = state.range && (state.range.toggled || state.range.anchor) || state.selected;
+		const affected = span && fromId && run.includes(fromId) ? Batch.runBetween(run, fromId, s.id) : [s.id];
+		const chosen = new Set(ids), remove = chosen.has(s.id);
+		affected.forEach(id => remove ? chosen.delete(id) : chosen.add(id));
+		const order = run.filter(id => chosen.has(id));
+		state.selectedRoute = null;
+		state.range = order.length ? { anchor: state.range && order.includes(state.range.anchor) ? state.range.anchor : order[0], ids: order, toggled: s.id } : null;
+		state.selected = order.length ? (order.includes(s.id) ? s.id : order[0]) : null;
+		return true;
+	}
+
+	/** Chooses a service and every later one of its table, to move or change together. */
+	function chooseLater(s) {
+		const ids = [s, ...laterServices(s)].map(o => o.id);
+		state.selectedRoute = null;
+		state.selected = s.id;
+		state.range = { anchor: s.id, ids };
+		tableMessage = tr("选中 {0} 班，右键表头可以调整间隔", ids.length);
+		renderAll();
+	}
+
+	/**
+	 * Moves a service and every later one of its table by a time asked for: minutes, or seconds as 90s, 1:30 or -0:45.
+	 */
+	function shiftLaterDialog(s) {
+		const later = laterServices(s);
+		const shift = parseShift(prompt(tr("这一班和之后的 {0} 班平移多少？写分钟，或写秒：90s、1:30、-0:45；负数是提前", later.length), "5"));
+		if (!shift) return;
+		editTimetable(s.route, timetable => {
+			const table = timetable.tables[s.tableIndex];
+			const moving = [s, ...later].map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
+			for (const service of moving) {
+				const error = retimeService(table, service, mod(service + shift, DAY));
+				if (error) return error;
+			}
+			return tr("{0} 班{1}了 {2}", moving.length, shift > 0 ? tr("推后") : tr("提前"), durationText(Math.abs(shift)));
+		});
+	}
+
+	/**
+	 * @return a time typed as a shift in milliseconds: minutes (5, -2.5, 5m, 5分), seconds (90s, 90秒), m:ss (1:30,
+	 * -0:45) or minutes and seconds (1m30s, 1分30秒); null if it isn't one
+	 */
+	function parseShift(text) {
+		if (text === null || text === undefined) return null;
+		const typed = String(text).trim().replace(/\s+/g, "").replace(/^−/, "-");
+		const sign = typed.startsWith("-") ? -1 : 1, body = typed.replace(/^[-+]/, "");
+		let m;
+		if ((m = body.match(/^(\d+):(\d{1,2})$/))) return sign * (Number(m[1]) * 60 + Number(m[2])) * 1000;
+		if ((m = body.match(/^(\d+(?:\.\d+)?)(?:s|秒)$/i))) return sign * Math.round(Number(m[1]) * 1000);
+		if ((m = body.match(/^(\d+)(?:m|min|分|分钟)(\d+)(?:s|秒)?$/i))) return sign * (Number(m[1]) * 60 + Number(m[2])) * 1000;
+		if ((m = body.match(/^(\d+(?:\.\d+)?)(?:m|min|分|分钟)?$/i))) return sign * Math.round(Number(m[1]) * 60000);
+		return null;
+	}
+
+	/** A length of time as minutes and seconds, as 1 分 30 秒, 45 秒 or 5 分钟. */
+	function durationText(millis) {
+		const seconds = Math.round(millis / 1000), minutes = Math.floor(seconds / 60), rest = seconds % 60;
+		return !minutes ? tr("{0} 秒", rest) : rest ? tr("{0} 分 {1} 秒", minutes, rest) : tr("{0} 分钟", minutes);
 	}
 
 	/** Spaces the chosen services evenly from the first, keeping each one's stops and run times. */
@@ -3842,10 +3989,13 @@
 
 	function cellMenu(e, cell) {
 		const s = findService(cell.dataset.svc), stop = +cell.dataset.stop;
-		if (!s) return;
+		if (!s) {
+			openMenuAt(e, []);
+			return;
+		}
 		// The departure from the last stop follows the next service: choosing which one is all there is to do with it
 		if (cell.dataset.kind === "derived") {
-			if (stop === s.route.stops.length - 1) openMenu(e.clientX, e.clientY, [[tr("接下一班"), nextServiceItems(s)]]);
+			openMenuAt(e, stop === s.route.stops.length - 1 ? [[tr("接下一班"), nextServiceItems(s)]] : []);
 			return;
 		}
 		const n = s.route.stops.length, middle = stop > 0 && stop < n - 1, plan = s.plans[stop];
@@ -3872,18 +4022,8 @@
 			items.push([s.suspended ? tr("恢复这一班") : tr("停运这一班"), () => edit(table => setSuspended(table, [s.service], !s.suspended))]);
 			if (!s.returnOrder && !s.returns) items.push([tr("接下一班"), nextServiceItems(s)]);
 			if (!s.link) items.push([s.returns ? tr("跑完这一班不回库") : tr("跑完这一班回库"), () => edit(table => { table.returns = s.returns ? table.returns.filter(x => x !== s.service) : [...table.returns, s.service]; })]);
-			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => {
-				const minutes = Number(prompt(tr("平移多少分钟？负数是提前"), "5"));
-				if (!minutes) return;
-				edit(table => {
-					const shift = Math.round(minutes * 60000);
-					const moving = [s, ...later].map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
-					for (const service of moving) {
-						const error = retimeService(table, service, mod(service + shift, DAY));
-						if (error) return error;
-					}
-				});
-			}]);
+			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => shiftLaterDialog(s)]);
+			if (later.length) items.push([`${tr("选中这一班和之后的 {0} 班", later.length)}`, () => chooseLater(s)]);
 			if (s.exceptions) items.push([tr("清除这一班的全部例外"), () => edit(table => { table.exceptions = table.exceptions.filter(x => x.service !== s.service); })]);
 			if (s.link) items.push([tr("清除这一班的直通"), () => edit(table => { table.links = table.links.filter(link => link.service !== s.service); })]);
 			items.push([tr("批量新建直通关系…"), () => throughDialog(s.route)]);
@@ -3941,7 +4081,7 @@
 		if (speedItems) items.push([tr("站台 {0} 过站限速", platformText(s.route.stops[stop].platformId)), speedItems]);
 		const stopItems = s.route.stops[stop] ? platformStopItems(s.route.stops[stop].platformId) : null;
 		if (stopItems) items.push([tr("站台 {0} 停车位置", platformText(s.route.stops[stop].platformId)), stopItems]);
-		if (items.length) openMenu(e.clientX, e.clientY, items);
+		openMenuAt(e, items);
 	}
 
 	// ---------- Loops ----------
@@ -6107,6 +6247,10 @@
 			const rail = e.target.closest("[data-rail]");
 			if (!rail) return;
 			e.preventDefault();
+			if (!data.canEdit) {
+				openMenuAt(e, [[tr("没有编辑权限"), null]]);
+				return;
+			}
 			const [a, b] = rail.dataset.rail.split(",");
 			railMenu(e, r, { a, b, status: +rail.dataset.railStatus }, () => render(form));
 		});
@@ -6830,10 +6974,9 @@
 			[tr("线路限速…"), data.canEdit && (data.lines.find(each => each.key === line) || {}).routes ? () => speedLimitDialog(data.lines.find(each => each.key === line).routes) : null]]
 			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("路网故障预案…"), systemOfRoute(r.id) ? () => contingencyDialog(systemOfRoute(r.id)) : null], [tr("线路限速…"), data.canEdit ? () => speedLimitDialog([r]) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
 				isDeleted(r) ? [tr("取消删除"), () => keepType(r)] : [tr("删除这个种别…"), data.canEdit ? () => deleteTypeDialog(r) : null]]
-				: created ? [[tr("删除这个新建的种别"), () => removeCreated(created)]] : null;
-		if (!items) return;
+				: created ? [[tr("删除这个新建的种别"), () => removeCreated(created)]] : [];
 		e.preventDefault();
-		openMenu(e.clientX, e.clientY, items);
+		openMenuAt(e, items);
 	});
 	$("tree").addEventListener("keydown", e => {
 		if (e.key === "Enter" || e.key === " ") {
@@ -7014,6 +7157,14 @@
 			return;
 		}
 		const cell = e.target.closest("td[data-svc], th[data-svc]");
+		if (cell && (e.ctrlKey || e.metaKey) && cell.tagName === "TH") {
+			const s = findService(cell.dataset.svc);
+			if (s && toggleChosen(s, e.shiftKey)) {
+				tableMessage = state.range ? tr("选中 {0} 班，右键表头可以调整间隔", state.range.ids.length) : "";
+				renderAll();
+				return;
+			}
+		}
 		if (cell && e.shiftKey && cell.tagName === "TH") {
 			const s = findService(cell.dataset.svc);
 			if (s && chooseRange(s)) {
@@ -7023,7 +7174,7 @@
 				return;
 			}
 		}
-		if (cell && !e.shiftKey) state.range = null;
+		if (cell && !e.shiftKey && !e.ctrlKey && !e.metaKey) state.range = null;
 		if (cell) {
 			if (state.selected !== cell.dataset.svc || state.selectedRoute) {
 				state.selected = cell.dataset.svc;
@@ -7045,7 +7196,7 @@
 		if (tableButton && r) {
 			e.preventDefault();
 			const index = +tableButton.dataset.table, timetable = timetableOf(r);
-			openMenu(e.clientX, e.clientY, [
+			openMenuAt(e, [
 				[tr("改名和运行的星期…"), () => tableDialog(r, index)],
 				[tr("清空这张表的班次"), timetable.tables[index].services.length ? () => clearTable(r, index) : null],
 				[timetable.tables.length > 1 ? tr("删除这张表") : tr("删除这张表（至少要留一张）"), timetable.tables.length > 1 ? () => {
@@ -7105,6 +7256,8 @@
 	});
 
 	let drag = null, lastClick = null;
+	/** Whether the drag going on rounds to the second, with Alt held. */
+	let dragFine = false;
 	const hitHandle = (x, y) => handles.find(h => Math.abs(h.x - x) < 7 && Math.abs(h.y - y) < 7);
 
 	/**
@@ -7113,7 +7266,8 @@
 	 */
 	function dragDwell(handle, x) {
 		const s = handle.s, i = handle.i, arrival = timesOf(s)[i][0];
-		const dwell = Math.max(0, Math.round((millisAt(x) - arrival) / 5000) * 5);
+		const step = dragFine || state.pxPerMin >= 32 ? 1 : 5;
+		const dwell = Math.max(0, Math.round((millisAt(x) - arrival) / 1000 / step) * step);
 		editTimetable(s.route, timetable => {
 			const table = timetable.tables[s.tableIndex];
 			if (state.selectedRoute === s.route.id) {
@@ -7135,13 +7289,16 @@
 		const unedited = list => list.filter(o => o === s || !o.exceptions);
 		if (inRange(s)) return unedited(rangeServices()).map(o => o.id);
 		if (state.selectedRoute === s.route.id) return unedited(s.route.services.filter(o => o.tableIndex === s.tableIndex)).map(o => o.id);
-		if (state.selected === s.id) return [s.id];
-		return null;
+		// Any other line moves on its own, chosen or not (2026-11-09), so it needn't be clicked first
+		return [s.id];
 	}
 
-	/** How far a drag moves services: whole seconds, rounded more coarsely the further the view is zoomed out. */
-	function moveShift(dx) {
-		const step = state.pxPerMin >= 8 ? 5000 : state.pxPerMin >= 3 ? 15000 : state.pxPerMin >= 1 ? 60000 : 300000;
+	/**
+	 * How far a drag moves services: whole seconds, rounded more coarsely the further the view is zoomed out; to the
+	 * second when zoomed right in or with Alt held.
+	 */
+	function moveShift(dx, fine) {
+		const step = fine || state.pxPerMin >= 32 ? 1000 : state.pxPerMin >= 8 ? 5000 : state.pxPerMin >= 3 ? 15000 : state.pxPerMin >= 1 ? 60000 : 300000;
 		return Math.round(dx / state.pxPerMin * 60000 / step) * step;
 	}
 
@@ -7151,7 +7308,10 @@
 		if (!services.length || !shift) return;
 		const r = services[0].route, tableIndex = services[0].tableIndex;
 		const wasSelected = state.selected && ids.includes(state.selected) ? state.selected : null;
+		// Only those moved get their new times: a line dragged on its own leaves the others chosen as they are
+		const movedIds = new Set(ids);
 		const moved = id => {
+			if (!movedIds.has(id)) return id;
 			const [routeId, service] = id.split("@");
 			return routeId + "@" + mod(Number(service) + shift, DAY);
 		};
@@ -7171,8 +7331,7 @@
 				const error = retimeService(table, service, mod(service + shift, DAY));
 				if (error) return error;
 			}
-			const minutes = Math.round(shift / 1000) / 60;
-			return tr("{0} 班{1}了 {2} 分钟", services.length, shift > 0 ? tr("推后") : tr("提前"), Math.abs(minutes) % 1 ? Math.abs(minutes).toFixed(2) : Math.abs(minutes));
+			return tr("{0} 班{1}了 {2}", services.length, shift > 0 ? tr("推后") : tr("提前"), durationText(Math.abs(shift)));
 		});
 		// The moved services keep being chosen, under their new times
 		if (!failed) {
@@ -7188,6 +7347,7 @@
 		const s = !handle && hitService(e.clientX - box.left, e.clientY - box.top);
 		const ids = s ? servicesToMove(s) : null;
 		const chosen = !ids ? 0 : inRange(s) ? state.range.ids.length : state.selectedRoute === s.route.id ? s.route.services.filter(o => o.tableIndex === s.tableIndex).length : 1;
+		dragFine = e.altKey;
 		drag = handle ? { handle, moved: false } : ids ? { move: ids, kept: chosen - ids.length, x: e.clientX, y: e.clientY, moved: false } : { x: e.clientX, y: e.clientY, viewStart: state.viewStart, scrollY: state.scrollY, moved: false };
 		canvas.setPointerCapture(e.pointerId);
 	});
@@ -7195,6 +7355,7 @@
 		const box = canvas.getBoundingClientRect();
 		if (drag && drag.handle) {
 			drag.moved = true;
+			dragFine = e.altKey;
 			canvas.classList.add("dragging");
 			dragDwell(drag.handle, e.clientX - box.left);
 			return;
@@ -7204,10 +7365,10 @@
 			if (Math.abs(dx) > 3) drag.moved = true;
 			if (drag.moved) {
 				canvas.classList.add("dragging");
-				state.move = { ids: drag.move, shift: moveShift(dx) };
-				const minutes = Math.round(state.move.shift / 1000) / 60;
+				state.move = { ids: drag.move, shift: moveShift(dx, e.altKey) };
 				showTooltip(null);
-				canvas.title = tr("{0} 班，{1}{2} 分钟", drag.move.length, minutes >= 0 ? "+" : "−", Math.abs(minutes)) + (drag.kept ? tr("（{0} 班单独编辑过，不动）", drag.kept) : "");
+				canvas.title = tr("{0} 班，{1}{2}", drag.move.length, state.move.shift >= 0 ? "+" : "−", durationText(Math.abs(state.move.shift))) + (drag.kept ? tr("（{0} 班单独编辑过，不动）", drag.kept) : "");
+				showDragTip(canvas.title, e.clientX, e.clientY);
 				draw();
 			}
 			return;
@@ -7235,6 +7396,7 @@
 			state.move = null;
 			drag = null;
 			canvas.title = "";
+			showDragTip(null);
 			canvas.classList.remove("dragging");
 			if (move) moveServices(move.ids, move.shift);
 			else draw();
@@ -7262,6 +7424,12 @@
 				renderAll();
 				return;
 			}
+			if (s && (e.ctrlKey || e.metaKey) && toggleChosen(s, e.shiftKey)) {
+				drag = null;
+				canvas.classList.remove("dragging");
+				renderAll();
+				return;
+			}
 			if (s && e.shiftKey && chooseRange(s)) {
 				drag = null;
 				canvas.classList.remove("dragging");
@@ -7280,6 +7448,25 @@
 		canvas.classList.remove("dragging");
 	});
 	canvas.addEventListener("pointerleave", () => showTooltip(null));
+	// Right-click a line: choose it and every later service of its table, or move them together (2026-11-09)
+	canvas.addEventListener("contextmenu", e => {
+		const box = canvas.getBoundingClientRect();
+		const s = data && hitService(e.clientX - box.left, e.clientY - box.top);
+		if (!s) return;
+		e.preventDefault();
+		const later = laterServices(s);
+		const items = [];
+		if (later.length) {
+			items.push([tr("选中这一班和之后的 {0} 班", later.length), () => chooseLater(s)]);
+			items.push([tr("这一班和之后的 {0} 班一起平移…", later.length), data.canEdit && !state.slot ? () => shiftLaterDialog(s) : null]);
+		}
+		if (state.range || state.selectedRoute) items.push([tr("取消选择"), () => {
+			state.range = null;
+			state.selectedRoute = null;
+			renderAll();
+		}]);
+		openMenuAt(e, items);
+	});
 	canvas.addEventListener("wheel", e => {
 		e.preventDefault();
 		if (e.shiftKey) {
