@@ -2,7 +2,7 @@
  * The layers' work areas. The views are still the old page's (borrowed with LegacySlot, run by the old code), each with
  * the new page's own tool bar; the tree on the left shows only the layer's own part of the old tree.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { legacy, renderLegacy, useLegacy, type MenuItem } from "../legacy/engine"
 import { LegacySlot } from "../legacy/Slot"
 import { menuHost } from "../legacy/engine"
@@ -34,11 +34,19 @@ export function LayerWork({ layer }: { layer: LayerId }) {
     if (v.data) renderLegacy()
   }, [layer, fn, v])
 
+  // Choosing on the network map (a new line's stations, a depot's way out or back) shows the map whatever the layer
+  const picking = Boolean(v.picking || v.wayPick)
+  useEffect(() => {
+    if (picking || layer === "physical" || layer === "owners" || layer === "dispatch") return
+    if (v.state.view === "network") { v.state.view = "diagram"; renderLegacy() }
+  }, [picking, layer, v])
   if (!v.data) return <p className="p-4 text-[13px] text-dim">{tr("正在读取…")}</p>
   const part = TREE_PART[layer]
+  const floating = picking && layer !== "physical" && layer !== "owners" && layer !== "dispatch"
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       {part && <Navigator part={part} />}
+      {floating && <FloatingMap />}
       {layer === "physical" ? <PhysicalWork /> : layer === "owners" || layer === "dispatch" ? <NetworkWork owners={layer === "owners"} /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
     </div>
   )
@@ -53,6 +61,37 @@ function NetworkWork({ owners }: { owners: boolean }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
       {map}
       <OwnershipPanel className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
+    </div>
+  )
+}
+
+/**
+ * The network map in a small window over the layer, while something is chosen on it (a new line's stations, a depot's way
+ * out or back): moved by its title bar, resized from its corner; what is being chosen shows in the map's own panel.
+ */
+function FloatingMap() {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const { fn, v } = legacy
+  const cancel = () => { if (v.wayPick) fn.finishWayPick(false); else if (v.picking) fn.stopPicking() }
+  return (
+    <div ref={box} role="dialog" aria-label={tr("在图上选择")}
+      className="fixed z-30 flex flex-col overflow-hidden rounded-lg border border-gridstrong bg-panel"
+      style={{ boxShadow: "var(--shadow)", resize: "both", width: "min(760px, 92vw)", height: "min(540px, 70vh)", minWidth: 320, minHeight: 240,
+        ...(at ? { left: at.x, top: at.y } : { right: 16, bottom: 40 }) }}>
+      <div className="flex shrink-0 cursor-move select-none items-center gap-2 border-b border-grid bg-panel2 px-3 py-1.5"
+        onPointerDown={e => {
+          const r = box.current!.getBoundingClientRect()
+          drag.current = { x: e.clientX, y: e.clientY, left: r.left, top: r.top }
+          ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+        }}
+        onPointerMove={e => { const d = drag.current; if (d) setAt({ x: Math.max(0, d.left + e.clientX - d.x), y: Math.max(0, d.top + e.clientY - d.y) }) }}
+        onPointerUp={() => { drag.current = null; fn.drawNetwork() }}>
+        <b className="min-w-0 flex-1 truncate text-[13px]">{v.wayPick ? tr("在图上点出入库的轨道") : tr("在图上选站")}</b>
+        <button className="btn h-6 px-2 text-[12px]" onPointerDown={e => e.stopPropagation()} onClick={cancel}>{tr("取消")}</button>
+      </div>
+      <NetworkWork owners={false} />
     </div>
   )
 }

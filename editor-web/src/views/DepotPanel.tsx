@@ -7,7 +7,7 @@
  * change only those two values and keep the rest of the drafted settings (the old dialog dropped logical lines and the
  * like from the draft).
  */
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
@@ -205,6 +205,132 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
         <label className="flex flex-col gap-0.5 text-[12px] text-dim">{tr("等候分界（全网，秒：两班之间等得比这长就离开站台去折返线）")}
           <input className={field + " num"} type="number" min={0} max={3600} value={waitThreshold} onChange={e => setWaitThreshold(e.target.value)} /></label>
       </div>
+    </SidePanel>
+  )
+}
+
+// ---------- A depot's rules for going out and back ----------
+
+type Rule = { id: string; lines: string[]; weekdays: number; outEntrance: string; backEntrance: string; extraLead: number; backSiding: string; outPath: string; backPath: string; waitThreshold: number }
+type WayPath = { id: string; name: string; kind: string; from: string; to: string; waypoints: unknown[] }
+
+/**
+ * A depot's rules for going out and back, and its named deadhead paths (old depotRulesDialog): a card per rule with its
+ * lines and days as buttons, a card per path. "在图上点轨道…" closes the panel for the network map, as before; when the
+ * way is chosen there the old code opens it again with the rules being edited.
+ */
+export function DepotRules({ depotId, editing, onClose }: { depotId: string; editing: any; onClose: () => void }) {
+  useLegacy()
+  const { fn, v } = legacy
+  const data = v.data, draft = v.draft
+  const depot = data ? fn.depotById(depotId) : null
+  // Edited in place, as the old dialog did, so a way chosen on the map comes back into it (rulesEditing)
+  const [value] = useState<{ rules: Rule[]; paths: WayPath[] }>(() => editing || (depot ? fn.rulesOf(depot) : { rules: [], paths: [] }))
+  const [, setTick] = useState(0)
+  useEffect(() => { if (depot) v.rulesEditing = { depot: depot.id, value } }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!depot) return null
+  const changed = () => setTick(t => t + 1)
+  const lines: [string, string][] = fn.depotLines(depot)
+  const unset: string[] = (depot.shortfall && depot.shortfall.entrancesUnset) || []
+  const days: string[] = v.WEEKDAY_SHORT
+  const seconds = (millis: number) => (millis >= 0 ? String(Math.round(millis / 1000)) : "")
+  const millisOf = (text: string, none: number) => (text.trim() === "" ? none : Math.max(0, Math.min(3600, Math.round(Number(text)) || 0)) * 1000)
+  const wayText = (pathId: string, entrance: string) => {
+    const path = pathId && pathId !== "0" ? value.paths.find(each => each.id === pathId) : null
+    if (path) return tr("经 {0} 段轨道（{1}）", Math.floor(path.waypoints.length / 2), path.name || path.id)
+    return entrance && entrance !== "0" ? fn.stationNameOf(entrance) : tr("（自动：只有一个出入口时）")
+  }
+  const pick = (target: { rule?: number; path?: number; out: boolean }) => {
+    v.rulesEditing = { depot: depot.id, value }
+    onClose()
+    fn.startWayPick(depot, target)
+  }
+  const save = () => {
+    draft.depotRules = draft.depotRules || {}
+    if (JSON.stringify(value) === JSON.stringify(depot.rules || { rules: [], paths: [] })) delete draft.depotRules[depot.id]
+    else draft.depotRules[depot.id] = { rules: value }
+    v.rulesEditing = null
+    fn.saveDraft()
+    fn.renderAll()
+    onClose()
+  }
+  const small = "flex items-center gap-1.5 text-[13px]"
+  const chip = (on: boolean) => "inline-flex h-6 items-center rounded-pill border px-2 text-[12px] " + (on ? "tint-accent border-brand text-brand" : "border-ctl bg-panel")
+  return (
+    <SidePanel open onClose={() => { v.rulesEditing = null; onClose() }} title={tr("出入库规则：{0}", fn.shortName(depot.name))} width={640}
+      hint={tr("按线路和星期定列车怎么出库、回库：从哪个车站出入（车厂接到线路上不止一个车站时必须指定）、比出库路线用时再早发多少、回哪条存车线、走哪条回送路径、两班之间等多久就离开站台去折返线。同一班次按“线路和星期都指定 > 只指定线路 > 只指定星期 > 都不指定”取一条规则。出口、回口和回送路径都在全网配线图上点选，点了就画出路线和用时。")}
+      footer={<>
+        <button className="btn btn-primary" disabled={!data.canEdit} onClick={save}>{tr("放进草稿")}</button>
+        <button className="btn" onClick={() => { value.rules.push({ id: String(Date.now()), lines: [], weekdays: 0, outEntrance: "0", backEntrance: "0", extraLead: 0, backSiding: "0", outPath: "0", backPath: "0", waitThreshold: -1 }); changed() }}>{tr("新增规则")}</button>
+        <button className="btn" onClick={() => { value.paths.push({ id: String(Date.now()), name: "", kind: "out", from: "0", to: "0", waypoints: [] }); changed() }}>{tr("新增出库路径")}</button>
+        <button className="btn" onClick={() => { value.paths.push({ id: String(Date.now() + 1), name: "", kind: "back", from: "0", to: "0", waypoints: [] }); changed() }}>{tr("新增回库路径")}</button>
+      </>}>
+      {unset.length > 0 && <p className="tint-warn m-0 mb-3 rounded-md p-2 text-[12px] text-warn">{tr("这个车厂接到线路上不止一个车站，这些线路还没指定出入口，不给排运用：{0}", unset.map(key => (lines.find(([k]) => k === key) || [key, key])[1]).join("、"))}</p>}
+      <h3 className="label-sm m-0 mb-1.5">{tr("规则")}</h3>
+      {!value.rules.length && <p className="text-[12px] text-dim">{tr("还没有规则：都按默认（最近车站后顺线路方向出入库）")}</p>}
+      {value.rules.map((rule, i) => (
+        <section key={rule.id} className="mb-3 rounded-lg border border-grid p-3" data-rule={i}>
+          <div className="mb-2 flex items-center gap-2">
+            <b className="text-[13px]">{tr("规则 {0}", i + 1)}</b>
+            <span className="flex-1" />
+            <button className="btn btn-ghost h-6 px-2 text-[12px]" onClick={() => { value.rules.splice(i, 1); changed() }}>{tr("删除这条规则")}</button>
+          </div>
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+            <span className="w-10 text-[12px] text-dim">{tr("线路")}</span>
+            {lines.map(([key, name]) => <button key={key} type="button" className={chip(rule.lines.includes(key))} aria-pressed={rule.lines.includes(key)}
+              onClick={() => { rule.lines = rule.lines.includes(key) ? rule.lines.filter(k => k !== key) : [...rule.lines, key]; changed() }}>{name}</button>)}
+            {!rule.lines.length && <span className="text-[11px] text-dim">{tr("都不勾 = 全部线路")}</span>}
+          </div>
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="w-10 text-[12px] text-dim">{tr("星期")}</span>
+            {days.map((day, d) => <button key={d} type="button" className={chip(Boolean((rule.weekdays >> d) & 1))} aria-pressed={Boolean((rule.weekdays >> d) & 1)}
+              onClick={() => { rule.weekdays ^= 1 << d; changed() }}>{day}</button>)}
+            {!rule.weekdays && <span className="text-[11px] text-dim">{tr("都不勾 = 每天")}</span>}
+          </div>
+          <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-2">
+            {([true, false] as const).map(out => (
+              <div key={String(out)} className="text-[13px]">
+                <span className="text-[12px] text-dim">{out ? tr("出库") : tr("回库")}：</span><b>{wayText(out ? rule.outPath : rule.backPath, out ? rule.outEntrance : rule.backEntrance)}</b>
+                <button className="btn ml-1 h-6 px-2 text-[12px]" onClick={() => pick({ rule: i, out })}>{tr("在图上点轨道…")}</button>
+              </div>
+            ))}
+            {([["outPath", "out", tr("出库路径")], ["backPath", "back", tr("回库路径")]] as const).map(([key, kind, label]) => (
+              <label key={key} className={small}>{label}
+                <select className={field} value={rule[key]} onChange={e => { rule[key] = e.target.value; changed() }}>
+                  <option value="0">{tr("最近车站后顺线路方向（默认）")}</option>
+                  {value.paths.filter(p => p.kind === kind).map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
+                </select></label>
+            ))}
+            <label className={small}>{tr("回哪条存车线")}
+              <select className={field} value={rule.backSiding} onChange={e => { rule.backSiding = e.target.value; changed() }}>
+                <option value="0">{tr("车池里下一班最早要车的")}</option>
+                {depot.sidings.map((s: any) => <option key={s.id} value={s.id}>{s.name || s.id}</option>)}
+              </select></label>
+            <label className={small}>{tr("比出库路线用时再早发（秒）")}
+              <input className={field + " num w-20"} type="number" min={0} max={3600} defaultValue={seconds(rule.extraLead)} onChange={e => { rule.extraLead = millisOf(e.target.value, 0) }} /></label>
+            <label className={small + " sm:col-span-2"}>{tr("等候分界（秒，留空用车站或全网的）")}
+              <input className={field + " num w-20"} type="number" min={0} max={3600} defaultValue={seconds(rule.waitThreshold)} onChange={e => { rule.waitThreshold = millisOf(e.target.value, -1) }} /></label>
+          </div>
+        </section>
+      ))}
+      <h3 className="label-sm m-0 mb-1.5 mt-4">{tr("回送路径")}</h3>
+      {!value.paths.length && <p className="text-[12px] text-dim">{tr("还没有命名的回送路径")}</p>}
+      {value.paths.map((path, i) => (
+        <div key={path.id} className="mb-1.5 flex flex-wrap items-center gap-2 rounded-md border border-grid p-2 text-[13px]" data-path={i}>
+          <input className={field + " w-36"} maxLength={32} placeholder={tr("回送路径 {0}", i + 1)} aria-label={tr("名字")} defaultValue={path.name} onChange={e => { path.name = e.target.value.trim(); changed() }} />
+          <select className={field} value={path.kind} aria-label={tr("种类")} onChange={e => { path.kind = e.target.value; changed() }}>
+            <option value="out">{tr("出库")}</option><option value="back">{tr("回库")}</option>
+          </select>
+          <span className="text-[12px] text-dim">{tr("途经 {0} 个点", path.waypoints.length)}</span>
+          <span className="flex-1" />
+          <button className="btn h-6 px-2 text-[12px]" onClick={() => pick({ path: i, out: path.kind !== "back" })}>{tr("在图上画…")}</button>
+          <button className="btn btn-ghost h-6 px-2 text-[12px]" onClick={() => {
+            const removed = value.paths.splice(i, 1)[0]
+            value.rules.forEach(rule => { if (rule.outPath === removed.id) rule.outPath = "0"; if (rule.backPath === removed.id) rule.backPath = "0" })
+            changed()
+          }}>{tr("删除")}</button>
+        </div>
+      ))}
     </SidePanel>
   )
 }

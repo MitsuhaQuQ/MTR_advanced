@@ -364,6 +364,36 @@ describe("the old code in the new page", () => {
     expect(last.networkSettings.logicalLines).toEqual({ "77": { name: "干线", color: 1, connecting: false } })
     engine.pushDraft({ routes: {} })
   })
+  it("edits a depot's rules, keeping them across choosing a way on the map", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LinePanels } = await import("../src/views/LinePanels")
+    const { fn, v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(LinePanels)))
+    await act(async () => fn.depotRulesDialog(fn.depotById("9001")))
+    const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent === text) as HTMLElement
+    await act(async () => button("新增规则").click())
+    await act(async () => ([...host.querySelectorAll("[data-rule='0'] button[aria-pressed]")].find(b => b.textContent === "1号线") as HTMLElement).click())
+    await act(async () => ([...host.querySelectorAll("[data-rule='0'] button[aria-pressed]")].find(b => b.textContent === "六") as HTMLElement).click())
+    // Off to the map and back without choosing: the panel opens again with the rule as it was
+    await act(async () => ([...host.querySelectorAll("[data-rule='0'] button")].find(b => b.textContent === "在图上点轨道…") as HTMLElement).click())
+    expect(v.wayPick).toBeTruthy()
+    expect(host.textContent).toBe("")
+    await act(async () => fn.finishWayPick(false))
+    expect(v.wayPick).toBe(null)
+    expect(host.querySelector("[data-rule='0']")).toBeTruthy()
+    await act(async () => { button("放进草稿").click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const rule = changes[changes.length - 1].depotRules["9001"].rules.rules[0]
+    expect(rule).toMatchObject({ lines: ["TRAIN|1号线|Line 1"], weekdays: 32 })
+    v.state.view = "diagram"
+    engine.pushDraft({ routes: {} })
+  })
   it("paints sections and ticks logical lines in the ownership panel", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

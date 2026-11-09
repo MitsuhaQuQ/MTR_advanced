@@ -26,7 +26,7 @@ export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { k
 export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { current: null }
 
 /** One of the line layer's other panels (views/LinePanels.tsx): speed limits, through services, contingency plans */
-export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string }
+export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string } | { kind: "rules"; depotId: string; editing: any; opened: number }
 export const panelHost: { current: ((target: PanelTarget) => void) | null } = { current: null }
 
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
@@ -68,6 +68,7 @@ const env = {
   contingencyDialog: (system: { anchor: string }) => panelHost.current?.({ kind: "contingency", anchor: system.anchor }),
   tableDialog: (r: { id: string }, index: number) => panelHost.current?.({ kind: "table", routeId: r.id, index }),
   depotDialog: (depot: { id: string }) => panelHost.current?.({ kind: "depot", depotId: depot.id }),
+  depotRulesDialog: (depot: { id: string }, editing?: unknown) => panelHost.current?.({ kind: "rules", depotId: depot.id, editing: editing || null, opened: Date.now() }),
   render: (name: string) => onRender(name),
 }
 
