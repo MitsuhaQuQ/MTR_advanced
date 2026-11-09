@@ -12,6 +12,7 @@ import { Navigator, type Part } from "./Navigator"
 import { Inspector } from "./Inspector"
 import { DutyBoard } from "./DutyBoard"
 import { RunningDiagram } from "./RunningDiagram"
+import { SummaryTable } from "./SummaryTable"
 import { OwnershipPanel } from "./OwnershipPanel"
 import { NetworkSchematic, type TrainMark } from "./NetworkSchematic"
 
@@ -229,7 +230,9 @@ function DiagramWork({ extra }: { extra?: ReactNode }) {
               {!oldDiagram && <RunningDiagram />}
             </div>
           )}
-          {showsTable && <LegacySlot id="view-table" className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />}
+          {showsTable && (oldDiagram
+            ? <LegacySlot id="view-table" className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />
+            : <SummaryTable className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />)}
         </div>
         <Inspector className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
       </div>
@@ -291,7 +294,7 @@ function DiagramTools({ extra }: { extra?: ReactNode }) {
       <Group label={tr("显示")}>
         <Toggle on={v.showDepots} title={tr("车厂行和出入库回送")} onClick={() => { v.showDepots = !v.showDepots; remember("mtr-editor-show-depots", v.showDepots); fn.renderAll() }}>{tr("显示车厂")}</Toggle>
         <Toggle on={v.showAccess} title={tr("别的线路走同一段轨道的班次，只读")} onClick={() => { v.showAccess = !v.showAccess; remember("mtr-editor-show-access", v.showAccess); fn.renderAll() }}>{tr("显示接入")}</Toggle>
-        <Toggle on={v.oldDiagram === true} title={tr("用旧版的画法画运行图，对照新画法用；新画法有问题时也可以先切回去")} onClick={() => { v.oldDiagram = !(v.oldDiagram === true); remember("mtr-next-old-diagram", v.oldDiagram); fn.renderAll() }}>{tr("旧版画法")}</Toggle>
+        <Toggle on={v.oldDiagram === true} title={tr("用旧版的画法画运行图和汇总时刻表，对照新画法用；新画法有问题时也可以先切回去")} onClick={() => { v.oldDiagram = !(v.oldDiagram === true); remember("mtr-next-old-diagram", v.oldDiagram); fn.renderAll() }}>{tr("旧版画法")}</Toggle>
         <Toggle on={v.showNoTrain} title={tr("把没有车跑的班次标成红色，有车的变淡")} onClick={() => { v.showNoTrain = !v.showNoTrain; remember("mtr-editor-show-no-train", v.showNoTrain); fn.renderAll() }}>{tr("没车的班次")}</Toggle>
       </Group>
       {data && data.simulation && (

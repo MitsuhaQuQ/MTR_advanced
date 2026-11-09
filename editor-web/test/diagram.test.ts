@@ -178,6 +178,50 @@ describe("the running diagram's geometry", () => {
     engine.pushDraft({ routes: {} })
     v.state.selected = null
   })
+  it("lays out the summary timetable cell for cell as the old page does", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { SummaryTable } = await import("../src/views/SummaryTable")
+    const { fn, v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    v.state.view = "table"
+    v.state.selected = null
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(SummaryTable, { className: "" })))
+    const cells = (root: Element) => [...root.querySelectorAll("table.tt td, table.tt th")].map(c => [c.tagName, c.className, c.textContent!.replace(/\s+/g, " ").trim(), (c as HTMLElement).dataset.svc || "", (c as HTMLElement).dataset.stop || "", (c as HTMLElement).dataset.kind || ""])
+    for (const route of [null, "101", "103"]) {
+      v.state.route = route
+      fn.renderTable()
+      await act(async () => { engine.flushLegacy() })
+      const old = cells(document.getElementById("view-table")!), mine = cells(host)
+      expect(mine.length).toBeGreaterThan(50)
+      expect(mine).toEqual(old)
+    }
+    // Editing a time: typed, Enter, into the draft through the old changeTime
+    v.state.route = "101"
+    await act(async () => { engine.flushLegacy() })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const cell = host.querySelector('td[data-kind="dep"]:not(.unserved):not(.derived)') as HTMLElement
+    await act(async () => { cell.dispatchEvent(new MouseEvent("click", { bubbles: true })) })
+    let input = host.querySelector("td input") as HTMLInputElement
+    expect(input).toBeTruthy()
+    const time = fn.clock(fn.timesOf(fn.findService(cell.dataset.svc))[Number(cell.dataset.stop)][1] + 60000, true)
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, time)
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+    input = host.querySelector("td input") as HTMLInputElement
+    await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })) })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); engine.flushLegacy() })
+    expect(changes[changes.length - 1].routes["101"].timetable).toBeTruthy()
+    // Tab went on to the next cell
+    expect(host.querySelector("td input")).toBeTruthy()
+    engine.pushDraft({ routes: {} })
+    v.state.view = "diagram"
+    v.state.route = null
+  })
   it("draws services as the old page does: colour, width and strength", () => {
     expect(diagram.serviceLook({ selected: false, dim: false, noTrain: false, covered: true, hasTimes: true, suspended: false, notRun: false, showNoTrain: false })).toEqual({ color: "route", width: 2, alpha: 1 })
     expect(diagram.serviceLook({ selected: false, dim: false, noTrain: true, covered: false, hasTimes: true, suspended: false, notRun: false, showNoTrain: true })).toEqual({ color: "warn", width: 1, alpha: 1 })
