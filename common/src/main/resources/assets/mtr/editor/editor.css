@@ -11,19 +11,22 @@
 	--accent-ink: #ffffff;
 	--sel: #1d63d8;
 	--warn: #d4362c;
+	/* Control borders (3:1 on --panel) and warnings short of errors (5.9:1), from the design system */
+	--control-line: #758a87;
+	--caution: #8a5a12;
 	--font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
 	--font-num: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
 		--bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
-		--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f;
+		--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a;
 		color-scheme: dark;
 	}
 }
 :root[data-theme="dark"] {
 	--bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
-	--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f;
+	--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a;
 	color-scheme: dark;
 }
 [hidden] { display: none !important; }
@@ -306,27 +309,15 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); }
 button.link { border: none; background: none; padding: 0 2px; color: var(--sel); cursor: pointer; text-decoration: underline; font-size: inherit; }
 
 
-/* The announcement audio page: one list of the server's files */
-.button-link { color: inherit; text-decoration: none; border: 1px solid var(--grid-strong); border-radius: 6px; padding: 4px 10px; background: var(--panel); }
-.button-link:hover { border-color: var(--accent); }
-main.audio-page { grid-template-rows: auto 1fr; overflow: hidden; }
-.audio-body { overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.audio-body .hint { margin: 0; }
-.audio-requests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.audio-requests li { padding: 4px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--grid); }
-.audio-requests li.error { color: var(--warn); border-color: var(--warn); }
-.audio-requests li.ok { color: var(--accent); }
+/* The media library's list of files (media.js) */
 table.audio-list { border-collapse: collapse; background: var(--panel); border: 1px solid var(--grid); border-radius: 8px; font-size: 13px; width: 100%; }
 table.audio-list th, table.audio-list td { padding: 6px 10px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
 table.audio-list th { color: var(--muted); font-weight: 500; font-size: 12px; }
 table.audio-list td.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 table.audio-list td.name { white-space: normal; word-break: break-word; min-width: 8em; }
-table.audio-list td.actions { display: flex; gap: 6px; justify-content: flex-end; }
+table.audio-list td.actions { text-align: right; }
 table.audio-list button { font-size: 12px; padding: 2px 8px; }
-table.audio-list button.danger { color: var(--warn); }
-@media (max-width: 720px) {
-	table.audio-list th:nth-child(4), table.audio-list td:nth-child(4), table.audio-list th:nth-child(5), table.audio-list td:nth-child(5) { display: none; }
-}
+button.danger { color: var(--warn); border-color: var(--warn); }
 /* Whole network track view */
 .network-view { grid-template-rows: auto 1fr; }
 .net-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--grid); }
@@ -376,3 +367,81 @@ table.stop-list button { font-size: 12px; padding: 1px 6px; margin-right: 3px; }
 .owner-choices { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; margin: 6px 0; }
 .owner-choice { display: flex; align-items: center; gap: 6px; }
 .owner-choice .swatch { display: inline-block; width: 18px; height: 6px; border-radius: 3px; }
+
+/* Two workspaces on one page (shell.js): the timetable editor and the media library; marked parts show only in theirs */
+body[data-ws="media"] [data-ws="timetable"], body[data-ws="timetable"] [data-ws="media"] { display: none !important; }
+/* The workspaces are the first level, an underline; the views inside the timetable stay filled tabs, a level below */
+.ws-tabs { display: flex; align-self: stretch; gap: 4px; margin: -8px 0 -9px 4px; }
+.ws-tab { display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; }
+.ws-tab:hover { color: var(--ink); }
+.ws-tab[aria-selected="true"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
+.ws-tab:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; border-radius: 4px; }
+/* The draft not yet applied, seen from the media library too */
+.ws-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--sel); flex: none; }
+/* How much of the server's room the media use: amber from nine tenths, red when full */
+.usage { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-family: var(--font-num); }
+.usage .meter { width: 80px; height: 6px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.usage .meter i { display: block; height: 100%; width: 0; background: var(--accent); }
+.usage.high { color: var(--caution); }
+.usage.high .meter i { background: var(--caution); }
+.usage.full { color: var(--warn); }
+.usage.full .meter i { background: var(--warn); }
+
+/* The media library (media.js): kinds | files | the file picked */
+.media-app { display: grid; grid-template-columns: 250px minmax(0, 1fr) 280px; min-height: 0; position: relative; }
+body.media-side-closed .media-app { grid-template-columns: minmax(0, 1fr) 280px; }
+body.media-side-closed .media-side { display: none; }
+.media-side { background: var(--panel); border-right: 1px solid var(--grid-strong); overflow: auto; padding: 8px; }
+.media-side .section { font-size: 12px; color: var(--muted); padding: 10px 6px 4px; }
+.media-side .node { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; border-radius: 4px; background: transparent; padding: 4px 6px; text-align: left; }
+.media-side .node:hover { background: var(--panel-2); }
+.media-side .node.active { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.media-side .count { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--font-num); font-weight: 400; }
+.media-side .node.active .count { color: inherit; }
+.media-requests { list-style: none; margin: 0; padding: 0 2px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.media-requests li { padding: 4px 6px; border-radius: 4px; background: var(--bg); display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.media-requests li.error { color: var(--warn); }
+.media-requests li.ok { color: var(--accent); }
+/* Above the timetable's split rows (body.split main), which don't apply here */
+body .media-app main.media-main { grid-template-rows: auto auto auto minmax(0, 1fr); background: var(--panel); }
+.media-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--grid); }
+.media-tools input[type=search] { width: 16em; max-width: 100%; padding: 4px 8px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); }
+.media-tools input:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+#media-missing[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.media-limits { margin: 0; padding: 6px 12px 0; }
+.media-list { grid-row: 4; position: relative; overflow: auto; min-height: 0; padding: 8px 12px 12px; container-type: inline-size; }
+.media-list td.name { min-width: 12em; }
+/* The uploader is in the detail too, so a narrow list leaves it out */
+@container (max-width: 520px) { .media-list .uploader { display: none; } }
+.media-list table.audio-list thead th { position: sticky; top: -8px; background: var(--panel); z-index: 1; }
+.media-list tr[data-key] { cursor: pointer; }
+.media-list tr[data-key]:hover td { background: var(--panel-2); }
+.media-list tr.sel td { background: color-mix(in srgb, var(--sel) 12%, var(--panel)); }
+.media-list tr[data-key]:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
+.media-list td .ref { font: 11px var(--font-num); color: var(--muted); }
+.media-list td.missing { color: var(--muted); }
+.media-empty { padding: 4px 0; }
+/* Files dragged over the list: a frame saying where they go, red when they would be refused */
+.media-drop { position: absolute; inset: 6px; z-index: 2; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; pointer-events: none;
+	border: 2px dashed var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, var(--panel)); color: var(--accent); font-weight: 700; }
+.media-drop[hidden] { display: none; }
+.media-drop.refused { border-color: var(--warn); color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
+.media-player { display: flex; align-items: center; gap: 8px; }
+.media-player .bar { flex: 1; height: 4px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.media-player .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.media-player .t { font: 11px var(--font-num); color: var(--muted); font-variant-numeric: tabular-nums; }
+.media-ref { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 12px; }
+.media-ref .label { color: var(--muted); }
+.media-ref code { font-family: var(--font-num); overflow-wrap: anywhere; }
+.media-detail .hint { margin: 0; }
+.media-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (orientation: portrait) and (max-width: 1100px) {
+	.media-app, body.media-side-closed .media-app { grid-template-columns: minmax(0, 1fr) 280px; }
+	.media-side { position: absolute; z-index: 15; top: 0; bottom: 0; left: 0; width: min(280px, 82vw); box-shadow: 4px 0 24px rgb(0 0 0 / .2); transition: transform .18s ease; }
+	body.media-side-closed .media-side { display: block; transform: translateX(-105%); box-shadow: none; }
+	body:not(.media-side-closed) #media-scrim { display: block; position: absolute; inset: 0; z-index: 14; background: rgb(0 0 0 / .25); }
+}
+@media (max-width: 860px) {
+	.media-app, body.media-side-closed .media-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+	.media-detail { border-left: 0; border-top: 1px solid var(--grid-strong); max-height: 38vh; }
+}

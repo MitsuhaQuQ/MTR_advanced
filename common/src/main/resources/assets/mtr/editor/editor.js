@@ -38,16 +38,10 @@
 	// Names written as "中文|English" show their first part
 	const shortName = name => String(name || "").split("||")[0].split("|")[0] || tr("（未命名）");
 
-	const key = (() => {
-		const match = location.hash.match(/key=([0-9a-f]+)/);
-		try {
-			if (match) sessionStorage.setItem("mtr-editor-key", match[1]);
-			return match ? match[1] : sessionStorage.getItem("mtr-editor-key") || "";
-		} catch (e) {
-			return match ? match[1] : "";
-		}
-	})();
-	if (location.hash) history.replaceState(null, "", location.pathname);
+	// The key from the address, read by the shell (shell.js), which also keeps which workspace shows; while the media
+	// library shows, nothing here draws, the game is asked less often and Escape leaves the diagram's selection alone
+	const key = MTREditor.key;
+	const inTimetable = () => MTREditor.inTimetable();
 
 	let data = null, revision = null, lastLoaded = 0, connection = "connecting";
 	/**
@@ -652,6 +646,8 @@
 		tag.textContent = applying ? tr("正在应用…") : count ? `${tr("草稿 {0} 项", count)}` : tr("没有草稿");
 		tag.classList.toggle("has-draft", count > 0);
 		tag.title = count ? tr("点这里看草稿改了哪些地方") : "";
+		// Seen from the media library too, on the timetable's workspace tab
+		$("ws-draft-dot").hidden = !count;
 		// Each route is applied as a whole; one changed in the game meanwhile is kept in the draft and left out until settled
 		const conflicts = Object.values(draft.routes).filter(entry => entry.conflict).length;
 		$("btn-apply").disabled = applying || !count || count <= conflicts || !(data && data.canEdit);
@@ -679,7 +675,7 @@
 		renderStatus();
 		renderDraftState();
 		renderSyncButton();
-		if (!once) setTimeout(poll, document.hidden ? POLL_HIDDEN_MILLIS : POLL_MILLIS);
+		if (!once) setTimeout(poll, document.hidden || !inTimetable() ? POLL_HIDDEN_MILLIS : POLL_MILLIS);
 	}
 
 	/** The routes of each line, the stations of its diagram, and each route's services on the chosen day. */
@@ -1829,7 +1825,7 @@
 
 	// ---------- Views ----------
 	const canSplit = () => innerWidth >= 1100 && innerHeight >= 820;
-	const showsDiagram = () => state.view === "diagram" || (state.split && canSplit() && state.view !== "network");
+	const showsDiagram = () => inTimetable() && (state.view === "diagram" || (state.split && canSplit() && state.view !== "network"));
 	const showsTable = () => state.view === "table" || (state.split && canSplit() && state.view !== "network");
 
 	function openView(view, lineKey, routeId) {
@@ -1908,7 +1904,7 @@
 		const open = state.view === "network";
 		if (open && !net.timer) {
 			loadNetwork(true);
-			net.timer = setInterval(() => { if (!document.hidden) loadNetwork(false); }, NET_POLL_MS);
+			net.timer = setInterval(() => { if (!document.hidden && inTimetable()) loadNetwork(false); }, NET_POLL_MS);
 		} else if (!open && net.timer) {
 			clearInterval(net.timer);
 			net.timer = null;
@@ -2481,7 +2477,7 @@
 	}
 
 	function drawNetwork() {
-		if (state.view !== "network") return;
+		if (state.view !== "network" || !inTimetable()) return;
 		const ratio = devicePixelRatio || 1, w = netWrap.clientWidth, h = netWrap.clientHeight;
 		if (netCanvas.width !== Math.round(w * ratio) || netCanvas.height !== Math.round(h * ratio)) {
 			netCanvas.width = Math.round(w * ratio);
@@ -2737,7 +2733,7 @@
 		$("net-console").hidden = !open;
 		if (open && !consoleState.timer) {
 			loadConsole();
-			consoleState.timer = setInterval(() => { if (!document.hidden && state.view === "network") loadConsole(); }, CONSOLE_POLL_MS);
+			consoleState.timer = setInterval(() => { if (!document.hidden && state.view === "network" && inTimetable()) loadConsole(); }, CONSOLE_POLL_MS);
 		} else if (!open && consoleState.timer) {
 			clearInterval(consoleState.timer);
 			consoleState.timer = null;
@@ -8599,7 +8595,8 @@
 			onTreeClick(e.target);
 		}
 	});
-	$("btn-tree").addEventListener("click", () => setTreeOpen(!state.treeOpen));
+	// The same button folds the media library's kinds while that shows (media.js)
+	$("btn-tree").addEventListener("click", () => { if (inTimetable()) setTreeOpen(!state.treeOpen); });
 	$("scrim").addEventListener("click", () => setTreeOpen(false));
 	$("tab-diagram").addEventListener("click", () => { state.view = "diagram"; renderAll(); });
 	$("tab-table").addEventListener("click", () => { state.view = "table"; renderAll(); });
@@ -9179,6 +9176,7 @@
 		}
 	}, { passive: false });
 	document.addEventListener("keydown", e => {
+		if (!inTimetable()) return;
 		if (e.key === "Escape" && state.slot && !dialog.open && e.target.tagName !== "INPUT") {
 			state.slot = null;
 			renderAll();
@@ -9191,9 +9189,15 @@
 		}
 	});
 	new ResizeObserver(() => draw()).observe(wrap);
+	// Back from the media library: the views were left alone meanwhile, so draw them as they are now, and ask the game at once
+	document.addEventListener("mtr:workspace", e => {
+		if (e.detail.ws !== "timetable") return;
+		renderAll();
+		poll(true);
+	});
 	// The line of the time now moves on
 	setInterval(() => { if (data) draw(); }, 30000);
-	addEventListener("resize", renderAll);
+	addEventListener("resize", () => { if (inTimetable()) renderAll(); });
 	portrait.addEventListener("change", () => setTreeOpen(!portrait.matches));
 	matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 

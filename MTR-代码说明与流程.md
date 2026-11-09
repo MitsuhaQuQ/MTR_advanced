@@ -48,8 +48,8 @@
 | `advanced/` | 本分支加的功能和组件的适配器 | `LiveSimulation`（组件模拟器跑列车）、`PathRegionSync`、`RouteLayouts`、`StationLayouts`、`GraphRecords`、`TrackViews`、`SandboxRuns` |
 | `packet/` | 网络包 | `IPacket`（包 ID）、`PacketTrainDataGuiServer`/`PacketTrainDataGuiClient`（收发）、`PacketGuard`（大小和频率限制）、`EditGuard`（多人编辑冲突） |
 | `client/` | 客户端数据和资源 | `ClientData`（客户端看到的数据）、`ClientCache`、`CustomResources`（读资源包）、`TrainClientRegistry`/`TrainProperties`（车型）、`DynamicTrainModel`、`MapDataCache`/`MapCacheDatabase`（地图缓存）、`RouteMapGenerator`（线路牌、PIDS 上的线路图贴图：`MapRoute` 把线路裁成停车站；只有一条环线时 `generateLoopMap` 画成闭合的环，本站在下排、上排绕回、箭头指方向，否则按直线往前往后各半圈） |
-| `client/editor/` | 高级编辑器（文中的"网页编辑器"） | `EditorServer`：客户端自己在本机开一个网页服务，只监听本机、随机端口，只认本次会话生成的密钥，用系统浏览器打开。它读客户端已知的数据，单人和服务器上用法一样；改动仍然通过游戏的网络包发给服务器检查（8.2 节）。页面在 `common/src/main/resources/assets/mtr/editor/`（`editor.js`、`i18n.js`）。它和服务器给所有人开的地图网页服务（`servlet/`）是两回事 |
-| `render/` | 绘制 | `RenderTrains`（列车、电梯和轨道的总入口）、`TrainRendererBase`/`JonModelTrainRenderer`（画车厢）、各种站牌和信号 |
+| `client/editor/` | 高级编辑器（文中的"网页编辑器"） | `EditorServer`：客户端自己在本机开一个网页服务，只监听本机、随机端口，只认本次会话生成的密钥，用系统浏览器打开。它读客户端已知的数据，单人和服务器上用法一样；改动仍然通过游戏的网络包发给服务器检查（8.2 节）。页面在 `common/src/main/resources/assets/mtr/editor/`（`index.html` 一个页面两个工作区：`shell.js` 切换，`editor.js` 运行编辑，`media.js` 媒体库；`i18n.js` 翻译；8.6 节）。它和服务器给所有人开的地图网页服务（`servlet/`）是两回事 |
+| `render/` | 绘制 | `RenderTrains`（列车、电梯和轨道的总入口）、`TrainRendererBase`/`JonModelTrainRenderer`（画车厢）、各种站牌和信号。方向牌和站名牌的文字一律繁中、英语、日语三行（2026-11-09）：固定文字取 `data/SignTexts` 的三语词表（`BlockRailwaySign.SignType` 建 `customText` 时，表里没有的照旧按游戏语言），车站牌 `SignTexts.station`（"X站｜X Station｜X駅"）、方向箭头 `SignTexts.to`（"往X｜To X｜X方面"，`RouteMapGenerator.generateDirectionArrow`，线路牌和屏蔽门上方的线路显示也用它）、带标志的入口站名牌 `RenderStationNameTiled` 同样；站名按 `\|` 分段，第一段汉字是繁中名、第一段字母是英文名、第二段汉字或假名是日文名（没有就用中文名），只有英文的只画英文一行，只有中文的不画英文行；多个站名经 `IGui.mergeStations` 合并后用 `SignTexts.ordered` 排回繁中、英文、日文的顺序 |
 | `screen/` | 界面 | 车厂、线路、站台、仪表盘等界面 |
 | `block/`、`item/`、`entity/` | 方块、物品、实体 | `EntitySeat`（玩家坐的座位实体，也是画车的触发点） |
 | `model/` | 内置车型的 Java 模型 | |
@@ -951,6 +951,17 @@ sequenceDiagram
 
 子集里的列车编号和整个世界跑时不同（编号按车出现的先后发），其余的到发、问题都相同（`SimScopeTest`）。
 
+### 8.6 网页的两个工作区（2026-11-09）
+
+高级编辑器是一个页面 `index.html`，顶栏左边切换两个工作区：**运行编辑**（目录树、汇总时刻表 / 运行图 / 全网配线、检查器）和**媒体库**（报站音频，以后的图片等也放这里）。切换不重新加载页面，运行图的缩放、滚动、选中都保留。
+
+1. **`shell.js`**（在 `editor.js` 之前加载）：从地址 `#key=…` 读出密钥（`EditorServer.getUrl` 给的，存进 sessionStorage），马上把地址换成工作区路由 `#/timetable` 或 `#/media/<类别>`；设 `body[data-ws]`，带 `data-ws` 属性的元素只在自己的工作区显示（`editor.css`）；切换用 `history.pushState`，浏览器后退能回去；每次切换发 `mtr:workspace` 事件。对外是 `MTREditor`（`key`、`ws`、`part`、`open`、`inTimetable`）。第一次进媒体库时才插入 `media.js`。
+2. **`editor.js`**：密钥取 `MTREditor.key`。不在运行编辑时 `showsDiagram`、`drawNetwork` 不画，`poll` 按页面隐藏时的间隔（5 秒）问游戏，配线图和调度台的定时刷新、窗口大小变化、Esc 都不处理；收到回到运行编辑的 `mtr:workspace` 时 `renderAll` 并立即 `poll(true)`。`renderDraftState` 同时显示顶栏"运行编辑"标签上的草稿圆点（`ws-draft-dot`）。草稿本来就随改随存到 `api/draft`，切换不影响。
+3. **`media.js`**：类别表 `KINDS`，每类一项（API、收哪些文件、列表的列、详情、上传 / 删除 / 改名的做法），现在只有音频（`api/audio`、`api/audio-file`，和原来的 `audio.js` 相同）。左边类别栏和"上传与消息"（本页拒收的文件、复制结果、游戏回的上传结果），中间搜索、上传者、只看本机没有和列表，右边详情（试听进度、引用名和 /playsound 名的复制、改声音 ID、删除）；文件可以拖到列表上上传，拖着时框子提示收不收。列表每 2 秒问一次，只在媒体库显示且页面可见时问；各块内容没变就不重写（`setHtml`），键盘焦点和悬停不丢。离开媒体库时停止试听。
+4. **`audio.html`** 只剩一个跳转：把 `#key=` 存好后转到 `index.html#/media/audio`，旧链接和书签照样能用。
+
+以后加图片：服务端加一组 API，`media.js` 的 `KINDS` 加一项（列表改成缩略图网格、详情显示大图和尺寸），类别栏有两类以上时自动出现"全部"。
+
 ## 9. 车厂生成路径
 
 **时序图**：
@@ -1459,7 +1470,7 @@ sequenceDiagram
 | `audio/AnnouncementSound` | 两边 | 报站方块"音频文件"一栏的三种写法：上传的文件（`steve:下一站.ogg`）、游戏或资源包声音（`mtr:ticket_barrier`）、网址（`https://...`）；上传文件的声音 ID 规则和游戏里的声音名 `mtr_audio:<上传者>/<声音 ID>` |
 | `audio/AudioServer` | 服务端 | 存档的 `mtr/announce.db`，所有维度共用；收上传、删除、下载请求，按块发文件；`/mtr deleteaudio` 命令 |
 | `client/AudioCache` | 客户端 | 本机缓存 `mtr_audio_cache`，按哈希存，所有世界和服务器共用；收列表后在后台下载缺的（`audio_download_all`、`audio_prefetch_max_kilobytes` 以内），被更新的文件马上下载；也替网页编辑器的音频页上传、删除、改声音 ID，等不到回复的请求超时标成失败 |
-| `client/editor/EditorAudio` | 客户端 | 高级编辑器的"报站音频"页（`audio.html`）：列表、上传、试听、删除 |
+| `client/editor/EditorAudio` | 客户端 | 高级编辑器媒体库里的音频（`index.html#/media/audio`，`media.js`；8.6 节）的接口 `api/audio`、`api/audio-file`：列表、上传、试听、删除、改声音 ID |
 | `client/AnnouncementPlayer` | 客户端 | 播放：上传的文件作为游戏声音播放（`UploadedSounds`），只有它没生效时才自己解码、用 Java 的音频输出播放；游戏声音走游戏的声音系统；网址只在 `config/mtr.json` 允许的网站下载 |
 | `client/UploadedSounds` | 客户端 | 把服务器的音频登记成游戏声音 `mtr_audio:<上传者>/<声音 ID>`，`/playsound` 也能播；游戏要这个声音的数据时从缓存取出解码。由 mixin `SoundManagerMixin`（每次加载声音后重新登记）、`SoundBufferLibraryMixin`（取声音数据）调用，Fabric 和 Forge 各一份 |
 

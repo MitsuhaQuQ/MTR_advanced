@@ -3,37 +3,21 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title data-i18n="MTR 报站音频">MTR 报站音频</title>
-	<link rel="stylesheet" href="editor.css">
+	<title>MTR</title>
+	<!-- The announcement audio page is now the editor's media library; an old link or bookmark opens it there, the key kept -->
+	<script>
+		(() => {
+			const match = location.hash.match(/key=([0-9a-f]+)/);
+			try {
+				if (match) sessionStorage.setItem("mtr-editor-key", match[1]);
+			} catch (e) {
+				// Passed on in the address below instead
+			}
+			location.replace("index.html#/media/audio" + (match ? "&key=" + match[1] : ""));
+		})();
+	</script>
 </head>
 <body>
-<header class="top">
-	<a class="button-link" href="index.html" title="回到运行图和时刻表" data-i18n-title="回到运行图和时刻表" data-i18n="← 高级编辑器">← 高级编辑器</a>
-	<h1 data-i18n="报站音频">报站音频</h1>
-	<span class="tag" id="usage"></span>
-	<span class="spacer"></span>
-	<input type="file" id="file" accept=".ogg,audio/ogg" multiple hidden>
-	<button id="btn-upload" class="primary" disabled data-i18n="上传音频">上传音频</button>
-</header>
-
-<main class="audio-page">
-	<div class="banner" id="banner" hidden></div>
-	<section class="audio-body">
-		<p class="hint" id="limits"></p>
-		<ul class="audio-requests" id="requests"></ul>
-		<table class="audio-list">
-			<thead>
-			<tr><th data-i18n="名称">名称</th><th data-i18n="时长">时长</th><th data-i18n="大小">大小</th><th data-i18n="上传者">上传者</th><th data-i18n="上传时间">上传时间</th><th data-i18n="本机">本机</th><th></th></tr>
-			</thead>
-			<tbody id="entries"></tbody>
-		</table>
-		<p class="hint" id="empty" data-i18n="服务器上还没有报站音频。" hidden>服务器上还没有报站音频。</p>
-	</section>
-</main>
-
-<footer class="status" id="status"></footer>
-<audio id="player" hidden></audio>
-<script src="i18n.js"></script>
-<script src="audio.js"></script>
+<p><a href="index.html#/media/audio">→ index.html#/media/audio</a></p>
 </body>
 </html>

@@ -8,12 +8,18 @@
 </head>
 <body>
 <header class="top">
-	<button class="tree-toggle" id="btn-tree" aria-controls="tree" aria-expanded="true" title="显示或收起线路和车厂" data-i18n-title="显示或收起线路和车厂">☰</button>
+	<button class="tree-toggle" id="btn-tree" aria-controls="tree" aria-expanded="true" title="显示或收起左栏" data-i18n-title="显示或收起左栏">☰</button>
 	<h1 data-i18n="MTR 高级编辑器">MTR 高级编辑器</h1>
-	<span class="tag" id="draft-tag" data-i18n="没有草稿">没有草稿</span>
+	<nav class="ws-tabs" role="tablist" aria-label="工作区" data-i18n-aria-label="工作区">
+		<a href="#/timetable" class="ws-tab" role="tab" data-ws-tab="timetable" aria-selected="true"><span data-i18n="运行编辑">运行编辑</span><span class="ws-dot" id="ws-draft-dot" title="有还没应用的草稿" data-i18n-title="有还没应用的草稿" hidden></span></a>
+		<a href="#/media/audio" class="ws-tab" role="tab" data-ws-tab="media" data-ws-part="audio" aria-selected="false" title="上传和管理报站音频等媒体文件" data-i18n-title="上传和管理报站音频等媒体文件" data-i18n="媒体库">媒体库</a>
+	</nav>
 	<span class="spacer"></span>
-	<a class="button-link" href="audio.html" title="上传和管理报站音频" data-i18n-title="上传和管理报站音频" data-i18n="报站音频">报站音频</a>
-	<label class="day"><span data-i18n="运行日">运行日</span>
+	<span class="tag" id="draft-tag" data-ws="timetable" data-i18n="没有草稿">没有草稿</span>
+	<span class="usage" id="media-usage" data-ws="media"><span class="meter"><i id="media-meter"></i></span><span id="media-usage-text"></span></span>
+	<input type="file" id="media-file" multiple hidden>
+	<button id="media-upload" class="primary" data-ws="media" disabled data-i18n="上传音频">上传音频</button>
+	<label class="day" data-ws="timetable"><span data-i18n="运行日">运行日</span>
 		<select id="day">
 			<option value="0" data-i18n="周一">周一</option>
 			<option value="1" data-i18n="周二">周二</option>
@@ -24,13 +30,13 @@
 			<option value="6" data-i18n="周日">周日</option>
 		</select>
 	</label>
-	<button id="btn-new" aria-haspopup="menu" data-i18n="新建 ▾">新建 ▾</button>
-	<button id="btn-delete" disabled title="先选中一个种别" data-i18n-title="先选中一个种别" data-i18n="删除种别">删除种别</button>
-	<button id="btn-sync" title="页面和游戏哪里不一致、游戏哪里没做成" data-i18n-title="页面和游戏哪里不一致、游戏哪里没做成">同步状态</button>
-	<button id="btn-apply" class="primary" disabled title="把草稿发给游戏" data-i18n-title="把草稿发给游戏" data-i18n="应用">应用</button>
+	<button id="btn-new" data-ws="timetable" aria-haspopup="menu" data-i18n="新建 ▾">新建 ▾</button>
+	<button id="btn-delete" data-ws="timetable" disabled title="先选中一个种别" data-i18n-title="先选中一个种别" data-i18n="删除种别">删除种别</button>
+	<button id="btn-sync" data-ws="timetable" title="页面和游戏哪里不一致、游戏哪里没做成" data-i18n-title="页面和游戏哪里不一致、游戏哪里没做成">同步状态</button>
+	<button id="btn-apply" data-ws="timetable" class="primary" disabled title="把草稿发给游戏" data-i18n-title="把草稿发给游戏" data-i18n="应用">应用</button>
 </header>
 
-<div class="app">
+<div class="app" data-ws="timetable">
 	<nav class="tree" id="tree" aria-label="线路和车厂" data-i18n-aria-label="线路和车厂"></nav>
 	<div class="scrim" id="scrim"></div>
 	<main>
@@ -75,10 +81,44 @@
 	</main>
 </div>
 
-<footer class="status" id="status"></footer>
+<!-- The media library (media.js): kinds on the left, the files of one kind, and the file picked -->
+<div class="media-app" id="media-app" data-ws="media">
+	<nav class="media-side" id="media-side" aria-label="媒体类别" data-i18n-aria-label="媒体类别">
+		<div class="section" data-i18n="媒体">媒体</div>
+		<div id="media-kinds" role="list"></div>
+		<div class="section" id="media-requests-head" data-i18n="上传与消息" hidden>上传与消息</div>
+		<ul class="media-requests" id="media-requests"></ul>
+	</nav>
+	<div class="scrim" id="media-scrim"></div>
+	<main class="media-main">
+		<div class="banner warn" id="media-banner" hidden></div>
+		<div class="media-tools">
+			<input type="search" id="media-search" placeholder="搜索名称或声音 ID" data-i18n-placeholder="搜索名称或声音 ID" aria-label="搜索" data-i18n-aria-label="搜索">
+			<select id="media-uploader" aria-label="上传者" data-i18n-aria-label="上传者"></select>
+			<button id="media-missing" aria-pressed="false" title="只列出这台电脑还没有下载的文件" data-i18n-title="只列出这台电脑还没有下载的文件" data-i18n="只看本机没有">只看本机没有</button>
+		</div>
+		<p class="hint media-limits" id="media-limits"></p>
+		<div class="media-list" id="media-list">
+			<table class="audio-list">
+				<thead>
+				<tr><th data-i18n="名称">名称</th><th data-i18n="时长">时长</th><th data-i18n="大小">大小</th><th class="uploader" data-i18n="上传者">上传者</th><th data-i18n="本机">本机</th><th></th></tr>
+				</thead>
+				<tbody id="media-entries"></tbody>
+			</table>
+			<p class="hint media-empty" id="media-empty" hidden></p>
+			<div class="media-drop" id="media-drop" hidden></div>
+		</div>
+	</main>
+	<aside class="inspector media-detail" id="media-detail"></aside>
+</div>
+
+<footer class="status" id="status" data-ws="timetable"></footer>
+<footer class="status" id="media-status" data-ws="media"></footer>
+<audio id="media-player" hidden></audio>
 <div class="tooltip" id="tooltip" hidden></div>
 <dialog id="dialog"></dialog>
 <script src="i18n.js"></script>
+<script src="shell.js"></script>
 <script src="batch.js"></script>
 <script src="terminal.js"></script>
 <script src="editor.js"></script>

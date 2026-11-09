@@ -66,6 +66,17 @@
 - **游戏内测试**：U322。
 - **已知风险**：新放的门要到下一刻才把 `TEMP` 改成 false，客户端重画晚一刻，看不出来。
 
+### 网页媒体库工作区（本会话，工作区，2026-11-09）
+
+- **改了什么**：高级编辑器分成"运行编辑"和"媒体库"两个工作区，在 `index.html` 顶栏切换、不重新加载（`shell.js`，地址 `#/timetable`、`#/media/audio`）；报站音频从单独的 `audio.html` 搬进媒体库（`media.js` 由 `audio.js` 改写，按类别表组织，以后的图片加一类即可）：搜索、上传者筛选、只看本机没有、右侧详情、拖放上传。`audio.html` 改成跳转页。运行编辑在媒体库显示时不画、少问游戏。新增颜色变量 `--control-line`、`--caution`（设计系统里的值）。
+- **文件**：`common/src/main/resources/assets/mtr/editor/` 下 `index.html`、`shell.js`（新）、`media.js`（新）、`audio.html`、`audio.js`（删除）、`editor.js`（密钥改取 `MTREditor.key`，几处 `inTimetable()` 判断，草稿圆点）、`editor.css`、`i18n.js`；文档 `MTR-代码说明与流程.md`（第 51 行、8.6 节、11.1 节）、`MTR-模拟组件与解耦.md`、`MTR-测试项目清单.md`（U366–U369）、`README.md`。
+- **协议和存档**：都没有变化，不用加 `mtm_version`。Java 没改：`EditorServer` 整个目录当静态文件提供，新文件自动能访问。
+- **和别的改动的关系**：断点标签 `pre-media-workspace`，基线 jar 在 `P:/mtr-ante/test-jars/baseline-media-workspace`。和工作区里别的会话的站牌改动（`BlockRailwaySign` 等 Java 文件、`SignTexts`）不碰同一个文件；`editor.js` 若别的会话也在改，按块合并即可，这次只改了 key 读取、`renderDraftState`、`poll`、`showsDiagram`、`drawNetwork`、两个定时器、`btn-tree`、Esc 和 resize 的监听。
+- **已经验证的**：`node --check` 全部通过；英文词典覆盖所有新文字；用本地模拟服务（假的 `api/audio`，别的接口 503）在内置浏览器里看过：旧地址跳转并带过密钥、媒体库列表 / 选中 / 详情 / 搜索、切到运行编辑再后退回来状态保留、手机宽度和深色模式。没有构建模组，没进游戏。
+- **构建后要检查的**：编译和 jar 里 `assets/mtr/editor/` 有 `shell.js`、`media.js`、没有 `audio.js`；common 测试照常。
+- **游戏内测试**：U366–U369（已写进测试清单）。
+- **已知风险**：别的会话若在 `editor.js` 新加读取 `location.hash` 的代码，会和路由冲突；浏览器缓存了旧 `media.js` 时要强制刷新一次（服务端是 no-cache，正常不会）。
+
 ## 环线线路图画成闭合的环（2026-11-09）
 
 - 改动：`RouteMapGenerator.generateLoopMap`。站台只停一条环线、线路牌不是竖排时画成闭合的环；`MapRoute.loopStationIds`；站名和换乘的画法提出到 `drawStationWithText`、`getInterchanges`（直线画法不变）。

@@ -42,6 +42,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - On the running diagram's summary timetable a service can be set to be joined part of the way by a train sent out of a chosen depot, or to end part of the way and run empty to a chosen depot; vehicle working plans those services as the start or the end of a duty.
 - The editor's one-click vehicle working plans a depot together with the other depots of its lines, as the game does, and drafts the depot's own part.
 - The dashboard map draws long curved rails along their curve, from a few points per curve the server sends with the map data.
+- The advanced editor has two workspaces on one page, switched in its top bar without reloading: operations (lines, timetables, the running diagram and the network view) and a media library. Announcement audio moved from its own page into the media library, with search, uploader and missing-here filters, a detail panel for playing, copying names, renaming and deleting, and drag-and-drop upload; other media such as images will be added there as further kinds. The old audio page address opens it.
 - The advanced editor has a whole-network track view: every rail of a transport mode with platforms, sidings, the isolation layer and the chosen line's routes, with pan, zoom and the same right-click isolation menu. Zoomed out it is drawn as a schematic of horizontal, vertical and 45° lines, each run of track between junctions simplified; zoomed in it follows the real track.
 
 **Route operation**
