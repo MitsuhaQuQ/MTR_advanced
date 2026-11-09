@@ -8,6 +8,7 @@ import { SyncPanel, useSyncProblems } from "./shell/Sync"
 import { Banner } from "./shell/Banner"
 import { conflictCount, draftCount } from "./core/draft"
 import { LayerWork } from "./views/Layers"
+import { Boundary } from "./ui/Boundary"
 import { LegacyMenu, LegacySlot } from "./legacy/Slot"
 import { setMediaShown } from "./legacy/media"
 import { legacy, useLegacy } from "./legacy/engine"
@@ -63,7 +64,7 @@ function Shell() {
             {info.step && <span>{tr("第 {0} 层", info.step)}</span>}
             <span className="text-ink">{tr(info.hint)}</span>
           </div>
-          {layer === "media" ? <MediaWork /> : <LayerWork layer={layer} />}
+          <Boundary resetKey={layer}>{layer === "media" ? <MediaWork /> : <LayerWork layer={layer} />}</Boundary>
         </main>
       </div>
       <StatusBar />

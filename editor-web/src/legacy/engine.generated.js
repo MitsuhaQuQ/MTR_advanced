@@ -4141,40 +4141,7 @@ export function createLegacy(env) {
 		}).join("")}</div>`;
 	}
 
-	function renderInspector() {
-		const inspector = $("inspector");
-		const s = state.selected && data ? findService(state.selected) : null;
-		const parts = [];
-		if (picking && data) parts.push(pickingPanel());
-		if (wayPick && data) parts.push(wayPickPanel());
-		// The network view has no inspector: the panel goes over its map, with the buttons to keep or drop the choice
-		const netPanel = $("net-waypick");
-		if (netPanel) {
-			const show = Boolean(wayPick && data && state.view === "network");
-			netPanel.hidden = !show;
-			netPanel.innerHTML = show ? wayPickPanel() : "";
-		}
-		if (state.slot && data) parts.push(dutyPanel());
-		if (s) {
-			const next = s.link && data.routeById.get(s.link.route);
-			parts.push(`<h2>${tr("选中的班次")}</h2><div class="card"><div class="title"><span class="swatch" style="display:inline-block;width:12px;height:4px;background:${colorOf(s.route.color)}"></span>${escapeHtml(routeTitle(s.route))}</div>
-				<dl class="kv"><dt>${tr("班次")}</dt><dd>${clock(s.start)}</dd><dt>${tr("表")}</dt><dd>${escapeHtml(s.table.name || tr("表 ") + (s.tableIndex + 1))}</dd>
-				${s.link ? `<dt>${tr("接续")}</dt><dd>${escapeHtml(next ? routeTitle(next) : "?")} ${clock(mod(s.link.toService - data.dayStartMillis, DAY))}</dd>` : ""}
-				${s.returns ? `<dt>${tr("之后")}</dt><dd>${tr("回库")}</dd>` : ""}</dl>${stopsHtml(s)}</div>`);
-		}
-		if (sim.on && data) parts.push(simPanel(currentLine()));
-		const loopRoute = s && isLoop(s.route) ? s.route : state.route && data && data.routeById.get(state.route) && isLoop(data.routeById.get(state.route)) ? data.routeById.get(state.route) : null;
-		if (loopRoute) parts.push(loopPanel(loopRoute));
-		const line = currentLine();
-		if (line) {
-			parts.push(`<h2>${tr("线路")}</h2><div class="card"><div class="title">${escapeHtml(shortName(line.name))}${line.routes.length > 1 ? ` <button type="button" class="link" data-line-diagram title="${tr("整个线路组的配线图，分支画在下面")}">${tr("线路组配线图")}</button>` : ""}</div><dl class="kv">${line.routes.map(r => `<dt>${escapeHtml(routeTitle(r))}</dt><dd>${tr("{0} 班", r.services.length)}${coverageText(r)} <button type="button" class="link" data-route-diagram="${r.id}" title="${tr("整条线路的配线图")}">${tr("配线图")}</button></dd>`).join("")}</dl></div>`);
-			// Tracks that don't run along the rails, which make the diagram jump about, are listed until they are put right
-			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
-			if (troubled.length) parts.push(`<h2>${tr("股道问题")}</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">${tr("右键线路“编辑停站…”在连通图上改股道。")}</p></div>`);
-		}
-		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖空白处平移，Shift + 滚轮上下移动。")}<br>${tr("按住一条线左右拖，平移这一班；Shift 点选一段、Ctrl 点选加入或剔除一班（Ctrl+Shift 加入或剔除一段），拖其中任一条一起平移；按住 Alt 拖按秒取整。右键一条线可以选中它和之后的全部班次。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("按运用跑的车厂：线路色较粗的线有车跑，灰色细线没有车；顶栏“没车的班次”把没车的标成红色。")}<br>${tr("时刻表里点格子直接输入，回车只改这一班，Shift+回车连之后的全部班次一起改；右键可以设通过、待避、推到之后的班次；右键班次表头可以把这一班各站的时刻改动整列同步到之后的每一班。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
-		inspector.innerHTML = parts.join("");
-	}
+	function renderInspector(...args) { return env.render("renderInspector", args) }
 
 	const tooltip = $("tooltip");
 	function showTooltip(s, clientX, clientY, accessed) {
@@ -8263,7 +8230,7 @@ export function createLegacy(env) {
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
-		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("能走的逻辑线路…"), data.canEdit && usesLogicalLines() ? () => lineTracksDialog(line) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null],
+		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("线路组配线图…"), (data.lines.find(each => each.key === line) || { routes: [] }).routes.length > 1 ? () => lineDiagramDialog(data.lines.find(each => each.key === line)) : null], [tr("能走的逻辑线路…"), data.canEdit && usesLogicalLines() ? () => lineTracksDialog(line) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null],
 			[tr("线路限速…"), data.canEdit && (data.lines.find(each => each.key === line) || {}).routes ? () => speedLimitDialog(data.lines.find(each => each.key === line).routes) : null]]
 			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("路网故障预案…"), systemOfRoute(r.id) ? () => contingencyDialog(systemOfRoute(r.id)) : null], [tr("线路限速…"), data.canEdit ? () => speedLimitDialog([r]) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
 				isDeleted(r) ? [tr("取消删除"), () => keepType(r)] : [tr("删除这个种别…"), data.canEdit ? () => deleteTypeDialog(r) : null]]
@@ -8323,15 +8290,6 @@ export function createLegacy(env) {
 				centerOn(s);
 				renderAll();
 			}
-			return;
-		}
-		if (e.target.closest("[data-line-diagram]") && currentLine()) {
-			lineDiagramDialog(currentLine());
-			return;
-		}
-		const diagramButton = e.target.closest("[data-route-diagram]");
-		if (diagramButton && data && data.routeById.get(diagramButton.dataset.routeDiagram)) {
-			routeDiagramDialog(data.routeById.get(diagramButton.dataset.routeDiagram));
 			return;
 		}
 		const remove = e.target.closest("[data-remove-segment]");

@@ -42,7 +42,6 @@ describe("the old code in the new page", () => {
     v.state.split = false
     engine.renderLegacy()
     expect(document.getElementById("view-table")!.querySelectorAll("td").length).toBeGreaterThan(10)
-    expect(document.getElementById("inspector")!.textContent!.length).toBeGreaterThan(0)
     expect(() => fn.draw()).not.toThrow()
   })
   it("hands its draft changes to the page as one step", async () => {
@@ -72,14 +71,14 @@ describe("the old code in the new page", () => {
     await act(async () => createRoot(host).render(createElement(Navigator, { part: 4 })))
     const line = v.data.lines[0], r = line.routes[1]
     v.state.line = line.key
-    await act(async () => engine.renderLegacy())
+    await act(async () => { engine.renderLegacy(); engine.flushLegacy() })
     // A route's row opens its views; its chip opens the summary table (onTreeClick)
     const row = document.querySelector(`#tree .node[data-route="${r.id}"]:not([data-view])`) as HTMLElement
     expect(row).toBeTruthy()
-    await act(async () => row.click())
+    await act(async () => { row.click(); engine.flushLegacy() })
     const chip = document.querySelector(`#tree .node[data-route="${r.id}"][data-view="table"]`) as HTMLElement
     expect(chip).toBeTruthy()
-    await act(async () => chip.click())
+    await act(async () => { chip.click(); engine.flushLegacy() })
     expect(v.state.route).toBe(r.id)
     expect(v.state.view).toBe("table")
     // A right-click opens the old code's menu for it
@@ -87,6 +86,27 @@ describe("the old code in the new page", () => {
     engine.menuHost.current = { open: (_x, _y, list) => { items = list }, close: () => {} }
     await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })))
     expect(items.map(item => item[0])).toContain("新建时刻表…")
+  })
+  it("shows the selected service and the line in the new inspector", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { Inspector } = await import("../src/views/Inspector")
+    ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
+    const { v } = engine.legacy
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(Inspector, { className: "" })))
+    const line = v.data.lines[0], r = line.routes[0]
+    v.state.line = line.key
+    v.state.selected = r.services[0].id
+    await act(async () => { engine.renderLegacy(); engine.flushLegacy() })
+    const text = document.getElementById("inspector")!.textContent!
+    expect(text).toContain("选中的班次")
+    expect(text).toContain("线路")
+    // Drawn again after another choice, without losing its nodes
+    v.state.selected = r.services[1].id
+    await act(async () => { engine.renderLegacy(); engine.flushLegacy() })
+    expect(document.getElementById("inspector")!.textContent).toContain("选中的班次")
   })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")

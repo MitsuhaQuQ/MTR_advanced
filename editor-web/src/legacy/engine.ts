@@ -59,14 +59,22 @@ export const legacy: { fn: Record<string, any>; v: Record<string, any> } = {
 // ---------- Drawing again ----------
 let version = 0
 const listeners = new Set<() => void>()
-let frame = 0
+// Batched to once per turn of the event loop; not by animation frame, which a hidden tab doesn't get
+let pending = false
 function notify() {
-  if (frame) return
-  frame = requestAnimationFrame(() => {
-    frame = 0
+  if (pending) return
+  pending = true
+  setTimeout(() => {
+    pending = false
     version++
     listeners.forEach(listener => listener())
   })
+}
+/** Tells the components to draw again now, not on the next turn (for tests, inside act). */
+export function flushLegacy() {
+  pending = false
+  version++
+  listeners.forEach(listener => listener())
 }
 /** Re-renders a component whenever the old code draws again. */
 export const useLegacy = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => version)
@@ -82,7 +90,6 @@ export function renderLegacy() {
   fn.watchNetwork()
   fn.drawNetwork()
   fn.draw()
-  fn.renderInspector()
   fn.renderTable()
   fn.renderSimStatus()
 }

@@ -9,6 +9,7 @@ import { menuHost } from "../legacy/engine"
 import { tr } from "../i18n"
 import type { LayerId } from "../shell/layers"
 import { Navigator, type Part } from "./Navigator"
+import { Inspector } from "./Inspector"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
 const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
@@ -60,7 +61,7 @@ function DiagramWork() {
           {showsDiagram && <LegacySlot id="canvas-wrap" className={"flex min-h-0 " + (showsTable ? "basis-1/2" : "flex-1")} style={{ minHeight: 240 }} onResize={redraw} />}
           {showsTable && <LegacySlot id="view-table" className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />}
         </div>
-        <LegacySlot id="inspector" className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
+        <Inspector className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
       </div>
       {!state.line && <p className="p-4 text-[13px] text-dim">{tr("在左边选一条线路的汇总时刻表")}</p>}
     </div>

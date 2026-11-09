@@ -1226,6 +1226,7 @@ const I18N = (() => {
 			"读取线路配线图失败": "Couldn't load the route's track layout",
 			"线路配线图：{0}": "Route track layout: {0}",
 			"线路组配线图": "Line track layout",
+			"线路组配线图…": "Line track layout…",
 			"线路组配线图：{0}": "Line track layout: {0}",
 			"整个线路组的配线图，分支画在下面": "Track layout of the whole line, with branches drawn below",
 			"每一段沿走得最远的一条线路的路径拉直，从左往右按运行图上车站的顺序；支线和另一路画在下面，从分出的车站斜着接出。按游戏里已应用的线路画。": "Each section is drawn straight along the path of the route that goes furthest along it, left to right in the order of the stations on the diagram; branches and other ways are drawn below, slanting off the station they leave from. It shows the routes as applied in the game.",
@@ -1411,7 +1412,13 @@ const I18N = (() => {
 			"车厂行和出入库回送": "The depot row and runs out and back",
 			"别的线路走同一段轨道的班次，只读": "Services of other lines on the same track, read only",
 			"报站音频等媒体文件在旧版的媒体库里管理。": "Announcement audio and other media are managed in the old editor's media library.",
-			"打开媒体库": "Open the media library"
+			"打开媒体库": "Open the media library",
+			"这一层出错了，草稿不受影响。": "This layer ran into an error; the draft is not affected.",
+			"重新载入页面": "Reload the page",
+			"在时刻表里看": "Show in the timetable",
+			"怎么操作": "How to work it",
+			"有只改这一班的例外": "Has times of its own",
+			"导航": "Navigation"
 		}
 	};
 	const STORAGE_KEY = "mtr-editor-language";
