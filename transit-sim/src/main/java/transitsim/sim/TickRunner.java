@@ -737,6 +737,52 @@ public final class TickRunner<T extends RunTrack> {
 				}
 			}
 		}
+		return place(due, day);
+	}
+
+	/**
+	 * Puts a train on every duty run today by a train that stayed on the line overnight ({@link DutyShapes#getOvernightSlot}),
+	 * standing where the duty starts, as it would have been left there the night before (2026-11-09): a day simulated from
+	 * its start has no trains of the day before, and the dispatcher sends none from the siding for such a duty, so these
+	 * duties weren't run at all. Called on a runner just built at the start of the operating day, before its first tick, so
+	 * a simulator built again from the same start puts them the same way.
+	 *
+	 * @return how many trains were put on the line
+	 */
+	public int placeOvernightTrains() {
+		final long dayStart = DutyShapes.getDayStart(millis);
+		final long day = DutyShapes.getDayNumber(dayStart);
+		final int weekday = OperatingDay.getWeekday(millis);
+		final List<Object[]> due = new ArrayList<>();
+		for (final DepotBoard depot : depots) {
+			if (!depot.duties.diagramMode) {
+				continue;
+			}
+			for (final SidingRun sidingRun : depotSidings.get(depot)) {
+				final List<DepotDuties.Slot> slots = depot.duties.getSlots(sidingRun.sidingId);
+				for (int i = 0; i < slots.size(); i++) {
+					final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
+					if (duty == null || duty.segments.isEmpty() || depot.dispatcher.hasDutyRun(sidingRun.sidingId, i, day) || DutyShapes.getOvernightSlot(slots, i, weekday) < 0) {
+						continue;
+					}
+					final String key = DutyShapes.getSlotKey(slots, i, weekday, routes);
+					final TripPath<T> dutyPath = key == null ? null : sidingRun.siding.tripPaths.get(key);
+					if (dutyPath != null) {
+						due.add(new Object[]{DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service), sidingRun, i, dutyPath, depot});
+					}
+				}
+			}
+		}
+		return place(due, day);
+	}
+
+	/**
+	 * Puts a train on each of these duties, where the duty has it now, the earliest first, and marks them sent out today.
+	 *
+	 * @param due each as {when it left or starts, siding, slot, duty path, depot}
+	 */
+	private int place(List<Object[]> due, long day) {
+		final long dayStart = DutyShapes.getDayStart(millis);
 		due.sort(Comparator.comparingLong(entry -> (Long) entry[0]));
 		int placed = 0;
 		aligning = true;

@@ -149,6 +149,26 @@ class TurnBackHoldPlanTest {
 		return result.sidings.values().stream().flatMap(List::stream).flatMap(slot -> slot.days.stream()).filter(day -> (day.weekdays & 1) != 0 && day.waits.contains(DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL)).count();
 	}
 
+	@Test
+	void aLoopsTrainGoesRoundAgainWithoutChangingEnds() {
+		// A loop from platform 1 round to platform 1, a lap of six minutes and its 20 s stand; the next lap leaves 10 s after,
+		// less than the least time to change ends (30 s): the train goes round again, changing no ends (2026-11-09)
+		final TestRoute lap1 = route(1, 6 * HOUR, 1, 2, 3, 1);
+		final TestRoute lap2 = route(2, 6 * HOUR + 6 * MINUTE + 30000, 1, 2, 3, 1);
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, -1, Collections.singletonMap(1L, 0L), 7));
+		final DutyGenerator.Result result = DutyGenerator.generate(services(lap1, lap2), sidings, Collections.emptyMap(), HOUR);
+		assertEquals(0, result.uncovered, String.join(", ", result.issues));
+		assertTrue(sameDuty(result, 1, 2), "one train runs both laps");
+		// A line ending where it doesn't start still changes ends there
+		final TestRoute up = route(3, 6 * HOUR, 4, 5, 6, 7);
+		final TestRoute down = route(4, 6 * HOUR + 6 * MINUTE + 30000, 7, 8, 9, 4);
+		final Map<Long, Long> links = new HashMap<>();
+		links.put(4L, 0L);
+		links.put(7L, 0L);
+		final DutyGenerator.Result line = DutyGenerator.generate(services(up, down), Collections.singletonList(new DutyGenerator.SidingInput(100, -1, links, 7)), Collections.emptyMap(), HOUR);
+		assertFalse(sameDuty(line, 3, 4), "20 s isn't time to change ends");
+	}
+
 	private static boolean sameDuty(DutyGenerator.Result result, long routeA, long routeB) {
 		return result.sidings.values().stream().flatMap(List::stream).flatMap(slot -> slot.days.stream()).anyMatch(day -> (day.weekdays & 1) != 0 && has(day, routeA) && has(day, routeB));
 	}

@@ -268,9 +268,16 @@ public final class DutyGenerator {
 		inputs.waitThresholds.forEach(network::setWaitThreshold);
 		final Set<Long> firstPlatforms = new TreeSet<>();
 		final Set<Long> lastPlatforms = new TreeSet<>();
+		// Platforms only loops end at, where they started: a train going round again doesn't change ends (2026-11-09)
+		final Set<Long> notLoopEnds = new TreeSet<>();
 		timetableServices.forEach(service -> {
-			firstPlatforms.add(service.stops.get(0).platformId);
-			lastPlatforms.add(service.stops.get(service.stops.size() - 1).platformId);
+			final long first = service.stops.get(0).platformId;
+			final long last = service.stops.get(service.stops.size() - 1).platformId;
+			firstPlatforms.add(first);
+			lastPlatforms.add(last);
+			if (first != last) {
+				notLoopEnds.add(last);
+			}
 		});
 		// A siding with links of its own starts its trains only there, the nearest first; otherwise at any first stop
 		sidings.forEach(siding -> {
@@ -300,8 +307,9 @@ public final class DutyGenerator {
 		// The way back to each siding, as measured from each platform
 		sidings.forEach(siding -> inputs.backLinks.getOrDefault(siding.sidingId, Collections.emptyMap()).forEach((platformId, millis) -> network.addDepotBackLink(siding.sidingId, platformId, millis == OperationNetwork.UNREACHABLE ? millis : millis + inputs.buffers.back(platformId, siding.sidingId))));
 		lastPlatforms.forEach(lastPlatform -> {
-			// Changing ends takes the network's least time, wherever the train turns back (round 4)
-			network.setTurnaround(lastPlatform, inputs.minReverseMillis + inputs.buffers.turn(lastPlatform, lastPlatform));
+			// Changing ends takes the network's least time, wherever the train turns back (round 4); a loop's train only goes
+			// round again, standing as long as the timetable has it
+			network.setTurnaround(lastPlatform, (notLoopEnds.contains(lastPlatform) ? inputs.minReverseMillis : 0) + inputs.buffers.turn(lastPlatform, lastPlatform));
 			// Measured from the platform back to itself by way of a turn back rail beyond it: a train may wait there (混合折返),
 			// running in and out as long as each leg was measured; halves where only the whole was measured
 			final Map<Long, Long> fromHere = inputs.turnTimes == null ? Collections.emptyMap() : inputs.turnTimes.getOrDefault(lastPlatform, Collections.emptyMap());

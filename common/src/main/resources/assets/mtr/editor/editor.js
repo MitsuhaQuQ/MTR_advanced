@@ -592,7 +592,8 @@
 					} else if (id.platformStationOf) {
 						boundaryErrors["station:" + id.platformStationOf] = error.message;
 					} else {
-						id.error = error.message;
+						// Changed in the game since the draft was made: said as that, not as the server's code (2026-11-09)
+						id.error = error.message === "CONFLICT" ? tr("游戏里的这一项在草稿之后改过（可能是自动排了新的运用），草稿没有写入；看一下游戏里现在的，不需要就放弃这项草稿") : error.message;
 					}
 					return;
 				}
@@ -3564,7 +3565,16 @@
 			ctx.strokeStyle = pairing.conflict ? c.warn : colorOf(from.route.color);
 			ctx.lineWidth = pairing.source === "manual" ? 3 : 2;
 			ctx.beginPath();
-			if (pairing.kind === "same") {
+			if (pairing.kind === "same" && pairing.loop && inLine.has(to.route.id)) {
+				// A loop going round again (2026-11-09): its reference station is a row at either end of the diagram, the train
+				// standing at the last row and going on from the first, so the stand is drawn on both, as one line wrapping round
+				const yFirst = yOf(to.route.rows[0]);
+				ctx.moveTo(xOf(arrive), y1);
+				ctx.lineTo(xOf(leave), y1);
+				ctx.moveTo(xOf(arrive), yFirst);
+				ctx.lineTo(xOf(leave), yFirst);
+				ctx.stroke();
+			} else if (pairing.kind === "same") {
 				ctx.moveTo(xOf(arrive), y1);
 				ctx.lineTo(xOf(leave), y1);
 				ctx.stroke();
@@ -4685,6 +4695,8 @@
 		const auto = depot.autoDuties;
 		return set.mode !== "diagram" && auto && auto.mode === "diagram" && Object.keys(auto.sidings).length ? Object.assign({}, auto, { auto: true }) : set;
 	};
+	/** A loop: marked clockwise or anticlockwise, or ending at the platform it starts from (2026-11-09). */
+	const routeIsLoop = r => r.stops.length > 2 && (Boolean(r.circular) || r.stops[0].platformId === r.stops[r.stops.length - 1].platformId);
 	const dutyOn = (slot, weekday) => slot.find(day => day.days >> weekday & 1) || null;
 	const depotById = id => data.depots.find(depot => depot.id === id);
 	const segmentKey = segment => segment.route + "@" + segment.service;
@@ -4839,6 +4851,8 @@
 				runs.push({
 					id: s.id, platforms: r.stops.map(stop => stop.platformId), stations: r.stops.map(stop => stop.station || "p" + stop.platformId),
 					times: timesOf(s), first, last, suspended: !!s.suspended, returns: !!(s.returns || s.returnOrder), terminalPlatforms: r.terminalPlatforms || [],
+					// Marked clockwise or anticlockwise: a loop, whose trains go round again (2026-11-09)
+					circular: Boolean(r.circular),
 				});
 				if (s.link && s.link.fromStop < 0 && s.link.toStop === 0) manual[s.id] = s.link.route + "@" + s.link.toService;
 			}));
@@ -4866,6 +4880,7 @@
 		const wait = Math.max(0, pairing.to.times[0][1] - pairing.from.times[pairing.from.last][0]);
 		const where = pairing.kind === "hold" ? tr("停在 {0} 后面的折返线上等 {1}", platformText(pairing.platform), formatDuration(pairing.railEnd - pairing.railStart))
 			: pairing.kind === "change" ? tr("换到 {0}，共 {1}", platformText(pairing.to.platforms[0]), formatDuration(wait))
+			: pairing.loop ? tr("环线续跑，在 {0} 停 {1}", platformText(pairing.platform), formatDuration(wait))
 			: tr("在 {0} 折返，停 {1}", platformText(pairing.platform), formatDuration(wait));
 		const how = pairing.source === "manual" ? tr("（指定）") : pairing.source === "nearest" ? tr("（推测）") : "";
 		return where + how + (pairing.moved ? tr("，改用这个站台") : "") + (pairing.conflict ? tr("，站台被占") : "");
@@ -4927,7 +4942,9 @@
 				if (gap < 0) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
 				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` });
 				else if (endStop && startStop && endStop.platformId === startStop.platformId) {
-					if (gap < minReverseMillis()) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(minReverseMillis()), formatDuration(gap)) });
+					// A loop going round again from where it came round doesn't change ends (2026-11-09)
+					const goesRound = routeIsLoop(beforeService.route) && routeIsLoop(s.route) && lastStopOf(before, beforeService.route) === beforeService.route.stops.length - 1 && segment.from === 0;
+					if (!goesRound && gap < minReverseMillis()) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(minReverseMillis()), formatDuration(gap)) });
 				} else if (endStop && startStop) {
 					// A change of platform takes as long as the server measured on the rails, or has no way at all
 					const turn = turnTimeOf(depot, endStop.platformId, startStop.platformId);

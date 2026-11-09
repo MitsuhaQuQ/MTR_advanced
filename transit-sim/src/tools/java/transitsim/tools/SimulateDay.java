@@ -109,7 +109,8 @@ public final class SimulateDay {
 		final transitsim.network.LockNetworks.Result lockResult = dataset.getLockNetworks().result();
 		System.out.printf("%d track networks, %d shared with depots not running by duties: throat locks off for %d of %d depots%n", lockResult.networks, lockResult.mixed.size(), lockResult.offDepots.size(), dataset.depots.size());
 		final long buildStart = System.nanoTime();
-		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(SimDataset.start(data, dayStart));
+		// With the trains that stayed on the line overnight where they stood (2026-11-09)
+		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(transitsim.sim.DayRun.startOfDay(data, dayStart));
 		final long runStart = System.nanoTime();
 		// -Dmtr.simHours=N simulates only the first N hours, to compare runs of a big world quickly
 		final long hours = Long.getLong("mtr.simHours", 24L);
@@ -158,7 +159,9 @@ public final class SimulateDay {
 		}
 		System.out.printf("Between stops: %d runs, %.1f s on average; at stops: %d stops, %.1f s on average%n", runs, runs == 0 ? 0 : runMillis / 1000.0 / runs, stands, stands == 0 ? 0 : standMillis / 1000.0 / stands);
 		// -Pmtr.debugStuck=true lists trains standing between stations at the end, and what is ahead of them
-		if (Boolean.getBoolean("mtr.debugStuck")) {
+		// =all lists those standing at platforms too, as a train waiting at one may hold up one between stations
+		final boolean stuckAll = "all".equals(System.getProperty("mtr.debugStuck"));
+		if (Boolean.getBoolean("mtr.debugStuck") || stuckAll) {
 			int listed = 0;
 			for (final transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train : simulator.getRunner().getTrains()) {
 				if (listed >= 400 || !train.isOnRoute() || train.getSpeed() > 0) {
@@ -166,7 +169,7 @@ public final class SimulateDay {
 				}
 				final int head = train.getHeadRail();
 				final java.util.List<SimDataset.DataTrack> path = train.getPath();
-				if (head < 0 || head >= path.size() || path.get(head).isPlatformTrack() || path.get(head).isSidingTrack()) {
+				if (head < 0 || head >= path.size() || !stuckAll && (path.get(head).isPlatformTrack() || path.get(head).isSidingTrack())) {
 					continue;
 				}
 				listed++;
@@ -190,6 +193,16 @@ public final class SimulateDay {
 					}
 				}
 				System.out.printf("blocker of %d is %d%n", train.id, blocker);
+				// Where it stands and what is next, as block positions (x, y, z), to find the place in the game
+				System.out.printf("  at %s -> %s, next %s -> %s%n", pos(track.getStartNode()), pos(track.getEndNode()), next == null ? "-" : pos(next.getStartNode()), next == null ? "-" : pos(next.getEndNode()));
+				System.out.printf("  route %d, duty %d of siding %d%n", train.service.getTripRouteId(), train.service.getDutySlot(), train.getSidingId());
+				// =all also gives the way it came and goes, a few rails each side, with the stops marked
+				if (stuckAll) {
+					for (int i = Math.max(0, head - 14); i <= Math.min(path.size() - 1, head + 6); i++) {
+						final SimDataset.DataTrack each = path.get(i);
+						System.out.printf("    %s%d %s -> %s%s%n", i == head ? "*" : " ", i, pos(each.getStartNode()), pos(each.getEndNode()), each.getStopId() != 0 ? " stop " + each.getStopId() + " dwell " + each.getDwellTime() : each.getDwellTime() > 0 ? " turn, dwell " + each.getDwellTime() : "");
+					}
+				}
 				System.out.printf("stuck %d head rail %d/%d len %.0f speed %.2f accel %b pieces %d progress %.1f own %.1f nextBlocked %b nextLen %.0f nextPieces %d nextPlatform %b blockedRail %d nextStop %d%n",
 						train.id, head, path.size(), track.getTrackLength(), track.getMaxSpeed(), track.canAccelerate(), transitsim.network.BlockSections.getPieceCount(track.getTrackLength(), track.canAccelerate() ? track.getMaxSpeed() : -1), train.getRailProgress(),
 						train.getSectionBlockedPosition(head, train.getRailProgress()), next != null && train.isRailBlocked(head + 1), next == null ? 0 : next.getTrackLength(), next == null ? 0 : transitsim.network.BlockSections.getPieceCount(next.getTrackLength(), next.canAccelerate() ? next.getMaxSpeed() : -1), next != null && next.isPlatformTrack(), train.getBlockedRail(), train.getNextStoppingIndex());
@@ -255,6 +268,16 @@ public final class SimulateDay {
 			}
 			throw e;
 		}
+	}
+
+	/**
+	 * @return a node as the block position it is packed from, as Minecraft packs one into a long
+	 */
+	private static String pos(long node) {
+		final long x = node >> 38;
+		final long y = node << 52 >> 52;
+		final long z = node << 26 >> 38;
+		return "(" + x + ", " + y + ", " + z + ")";
 	}
 
 	private static String clock(long millis) {

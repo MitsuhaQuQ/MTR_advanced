@@ -77,6 +77,19 @@ public final class DayRun {
 	 * @param inputs       anything the host puts in on the way, such as rails taken from outside
 	 * @param cancelled    asked every ten simulated minutes; true stops the run
 	 */
+	/**
+	 * @return a runner of the day from its start, with the trains that stayed on the line overnight standing where their
+	 * duties start (2026-11-09), as built again the same way
+	 */
+	public static java.util.function.Supplier<TickRunner<SimDataset.DataTrack>> startOfDay(byte[] bytes, long dayStart) {
+		final java.util.function.Supplier<TickRunner<SimDataset.DataTrack>> start = SimDataset.start(bytes, dayStart);
+		return () -> {
+			final TickRunner<SimDataset.DataTrack> runner = start.get();
+			runner.placeOvernightTrains();
+			return runner;
+		};
+	}
+
 	public static DayRun run(SimDataset dataset, long dayStart, Set<Long> reportRoutes, List<HostInput> inputs, BooleanSupplier cancelled) {
 		return run(dataset, dayStart, dayStart, reportRoutes, inputs, cancelled);
 	}
@@ -89,7 +102,7 @@ public final class DayRun {
 		final Recorder recorder = new Recorder(dataset, reportRoutes);
 		final byte[] bytes = dataset.toBytes();
 		final boolean fromTrains = fromMillis > dayStart && dataset.trains != null;
-		final EventSimulator<SimDataset.DataTrack> simulator = fromTrains ? EventSimulator.resume(startMillis -> SimDataset.start(bytes, startMillis).get(), dataset.trains, fromMillis) : new EventSimulator<>(SimDataset.start(bytes, dayStart));
+		final EventSimulator<SimDataset.DataTrack> simulator = fromTrains ? EventSimulator.resume(startMillis -> SimDataset.start(bytes, startMillis).get(), dataset.trains, fromMillis) : new EventSimulator<>(startOfDay(bytes, dayStart));
 		final long start = simulator.getTime();
 		simulator.getRunner().setTrainListener(recorder::onEvent);
 		inputs.forEach(simulator::submit);

@@ -44,12 +44,16 @@
 		const arrival = run => run.times[run.last][0], leaving = run => run.times[run.last][1];
 		const departure = run => run.times[0][1], firstArrival = run => run.times[0][0];
 		const turnTime = (from, to) => (turnTimes[from] || {})[to];
+		// A loop run in full ends where it starts: a train going round again doesn't change ends (2026-11-09)
+		// Marked circular, or ending at the platform it starts from
+		const isLoop = run => run.first === 0 && run.last === run.platforms.length - 1 && run.platforms.length > 2 && (run.circular || run.platforms[0] === run.platforms[run.platforms.length - 1]);
+		const goesRound = (from, to) => isLoop(from) && isLoop(to) && from.platforms[from.last] === to.platforms[0];
 
 		const link = (from, to, source) => {
 			if (!ends(from) || !starts(to) || next.has(from.id) || previous.has(to.id) || from.id === to.id) return;
 			const fromPlatform = from.platforms[from.last], toPlatform = to.platforms[0];
 			if (from.stations[from.last] !== to.stations[0] && fromPlatform !== toPlatform) return;
-			const pairing = { from, to, kind: fromPlatform === toPlatform ? "same" : "change", source, platform: fromPlatform, moved: false };
+			const pairing = { from, to, kind: fromPlatform === toPlatform ? "same" : "change", source, platform: fromPlatform, moved: false, loop: goesRound(from, to) };
 			next.set(from.id, pairing);
 			previous.set(to.id, pairing);
 		};
@@ -65,7 +69,7 @@
 			runs.forEach(to => {
 				if (!starts(to) || previous.has(to.id) || to.id === from.id || to.stations[0] !== station) return;
 				const same = to.platforms[0] === platform;
-				const ready = leaving(from) + minTurn + (same ? 0 : turnTime(platform, to.platforms[0]) === undefined ? Infinity : turnTime(platform, to.platforms[0]));
+				const ready = leaving(from) + (same && goesRound(from, to) ? 0 : minTurn) + (same ? 0 : turnTime(platform, to.platforms[0]) === undefined ? Infinity : turnTime(platform, to.platforms[0]));
 				if (ready > firstArrival(to) || departure(to) - arrival(from) > MAX_WAIT) return;
 				if (!best || same && !bestSame || same === bestSame && departure(to) < departure(best)) {
 					best = to;
@@ -96,7 +100,8 @@
 		[...next.values()].filter(pairing => pairing.kind === "same").sort((a, b) => arrival(a.from) - arrival(b.from)).forEach(pairing => {
 			const { from, to } = pairing;
 			const start = arrival(from), end = departure(to);
-			const choices = [from.platforms[from.last], ...(from.terminalPlatforms || []).filter(platform => platform !== from.platforms[from.last])];
+			// A loop's train going round again stays on its own platform
+			const choices = pairing.loop ? [from.platforms[from.last]] : [from.platforms[from.last], ...(from.terminalPlatforms || []).filter(platform => platform !== from.platforms[from.last])];
 			const own = choices[0];
 			// Waiting on a turn back rail beyond the platform, which takes it only to set down and to pick up: first for a
 			// long wait, as the game's trains do, otherwise when no platform is free

@@ -81,6 +81,8 @@ const I18N = (() => {
 			"{0} 班，{1}{2} 分钟": "{0} services, {1}{2} min",
 			"清空这张表的班次": "Clear this table's services",
 			"这里没有可用的操作": "Nothing to do here",
+			"环线续跑，在 {0} 停 {1}": "goes round again, standing at {0} for {1}",
+			"游戏里的这一项在草稿之后改过（可能是自动排了新的运用），草稿没有写入；看一下游戏里现在的，不需要就放弃这项草稿": "This was changed in the game after the draft was made (new duties may have been planned), so the draft wasn't written; look at what the game has now, and drop this draft if it isn't needed",
 			"{0} 的车": "a train of {0}",
 			"不在运用中（没有运用，或者运用已经改了）": "on no duty (it has none, or its duty was changed)",
 			"{0} 列车在线上{1}，{2} 秒前": "{0} trains on the line{1}, {2} s ago",

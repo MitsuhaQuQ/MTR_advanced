@@ -105,4 +105,18 @@ const downB = (id, start, extra) => run(id, [11, 3, 4], [12, 3, 4], start, extra
 	assert.strictEqual(T.pair({ runs, minTurn: 60000 }).next.size, 0);
 }
 
+// A loop going round again (2026-11-09): no time to change ends, as its train only stands at the platform and goes on;
+// a line turning back at the same platform still needs it
+{
+	const lap = (id, start) => run(id, [20, 21, 22, 20], [30, 31, 32, 30], start);
+	const loop = T.pair({ runs: [lap("l1", 6 * H), lap("l2", 6 * H + 6 * M + 30000)] });
+	assert.strictEqual(loop.next.get("l1").to.id, "l2");
+	assert.strictEqual(loop.next.get("l1").loop, true);
+	const back = T.pair({ runs: [run("u1", [40, 41, 42], [50, 51, 52], 6 * H), run("d1", [42, 41, 40], [52, 51, 50], 6 * H + 4 * M + 30000)] });
+	assert.strictEqual(back.next.size, 0, "30 s needed to change ends, 10 s had");
+	// Marked circular, a loop even where it is laid out to end at another platform of the station it starts from
+	const marked = (id, start) => run(id, [60, 61, 62, 60], [70, 71, 72, 70], start, { circular: true });
+	assert.strictEqual(T.pair({ runs: [marked("c1", 6 * H), marked("c2", 6 * H + 6 * M + 30000)] }).next.get("c1").loop, true);
+}
+
 console.log("terminal.js: all checks passed");

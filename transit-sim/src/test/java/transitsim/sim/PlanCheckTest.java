@@ -228,8 +228,19 @@ class PlanCheckTest {
 	 * stopping, as the way between a platform and the siding has no stops.
 	 */
 	private static SimDataset.TripPathData dutyPath(List<SimDataset.DataTrack> sidingPath, String key, List<Long> shape) {
+		return dutyPath(sidingPath, key, shape, false);
+	}
+
+	/**
+	 * @param onLine a duty starting where a train stayed overnight and staying on the line after: the routes alone, with no
+	 *               way out of the siding or back to it
+	 */
+	static SimDataset.TripPathData dutyPath(List<SimDataset.DataTrack> sidingPath, String key, List<Long> shape, boolean onLine) {
 		final int bodyStart = shape.get(0) == UP ? 2 : 7;
 		final int bodyEnd = shape.get(shape.size() - 1) == DOWN ? 11 : 6;
+		if (onLine) {
+			return onLinePath(sidingPath.subList(bodyStart, bodyEnd + 1), key, shape);
+		}
 		final List<SimDataset.DataTrack> path = new ArrayList<>();
 		int stopIndex = 1;
 		for (int i = 0; i < sidingPath.size(); i++) {
@@ -249,6 +260,31 @@ class PlanCheckTest {
 			dutyStarts[i] = segmentStarts[i] + bodyStart;
 		}
 		final TripPath<SimDataset.DataTrack> tripPath = new TripPath<>(dutyPlan, dutyStarts, path);
+		final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
+		try {
+			tripPath.write(values);
+		} catch (IOException e) {
+			throw new AssertionError(e);
+		}
+		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		return new SimDataset.TripPathData(writer.toBytes(), path);
+	}
+
+	private static SimDataset.TripPathData onLinePath(List<SimDataset.DataTrack> body, String key, List<Long> shape) {
+		final List<SimDataset.DataTrack> path = new ArrayList<>();
+		int stopIndex = 1;
+		for (int i = 0; i < body.size(); i++) {
+			final SimDataset.DataTrack track = body.get(i);
+			if (i > 0 && track.isPlatformTrack() && track.getStopId() != 0 && !body.get(i - 1).isPlatformTrack()) {
+				stopIndex++;
+			}
+			path.add(new SimDataset.DataTrack(track.getStartNode(), track.getEndNode(), track.getTrackLength(), track.isPlatformTrack(), track.isSidingTrack(), track.getStopId(), track.getDwellTime(), stopIndex, track.getMaxSpeed(), track.canAccelerate(), track.hasSignal(), track.isTwoWay()));
+		}
+		final int[] segmentStarts = shape.size() == 2 ? new int[]{0, 5} : new int[]{0};
+		final DutyPlan<SimDataset.DataTrack, Object> dutyPlan = new DutyPlan<>(key, shape, new HashMap<>(), new HashMap<>(), new HashMap<>(), path, segmentStarts, null, null, true, true);
+		dutyPlan.segmentsKnown = true;
+		final TripPath<SimDataset.DataTrack> tripPath = new TripPath<>(dutyPlan, segmentStarts.clone(), path);
 		final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
 		try {
 			tripPath.write(values);

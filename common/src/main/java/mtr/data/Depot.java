@@ -196,6 +196,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * A way round for turning back early longer than this isn't taken (D4), as a train would run a long way empty.
 	 */
 	private static final int MAX_TURN_LINK_BLOCKS = 1000;
+	/**
+	 * How far from its platform a change of platform may go, in blocks (2026-11-09).
+	 */
+	private static final int MAX_PLATFORM_CHANGE_REACH = 300;
 	private static final int MAX_RUN_PROBLEMS = 16;
 
 	private static double pathLength(List<PathData> path) {
@@ -3723,6 +3727,16 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					}
 					final List<PathData> connectingPath = new ArrayList<>();
 					findConnection(connectingPath, from, to, before, rails, graph, useFastSpeed);
+					// A change of platform stays by the station, as at a turn back rail or a crossover outside the platforms; going far
+					// off, it runs along the line and back on track other trains run the other way, and isn't one (2026-11-09: a
+					// loop's train sent to the other loop's platform at the same station went back towards the next station to turn,
+					// meeting the other loop's trains head on)
+					if (!connectingPath.isEmpty() && farthestFrom(from, connectingPath) > MAX_PLATFORM_CHANGE_REACH) {
+						if (Boolean.getBoolean("mtr.debugTurnTimes")) {
+							System.out.println("Minecraft Transit Railway turn time: " + from.name + " (" + from.id + ") to " + to.name + " (" + to.id + "): turns back " + countReversals(connectingPath) + " times, " + Math.round(farthestFrom(from, connectingPath)) + " blocks off, not a change of platform");
+						}
+						connectingPath.clear();
+					}
 					if (!connectingPath.isEmpty()) {
 						// Timed for the slowest of the vehicles running either route
 						// The legs in and out, without standing where it turns back: changing ends there is the network's least time,
@@ -3814,6 +3828,28 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			}
 			final long reverse = dataCache.networkSettings.minReverseMillis;
 			System.out.println("Minecraft Transit Railway turn time: " + from.name + " (" + from.id + ") to " + to.name + " (" + to.id + "): before " + (30000 + whole + 30000) + " ms (30000 + " + whole + " + 30000), now " + (reverse + legs[0] + legs[1]) + " ms (" + reverse + " + in " + legs[0] + " + out " + legs[1] + ")");
+		}
+
+		/**
+		 * @return how many times a path turns back: a rail followed by itself the other way
+		 */
+		private double farthestFrom(SavedRailBase platform, List<PathData> path) {
+			final BlockPos center = platform.getMidPos();
+			double farthest = 0;
+			for (final PathData pathData : path) {
+				farthest = Math.max(farthest, Math.sqrt(pathData.getLastPos().distSqr(center)));
+			}
+			return farthest;
+		}
+
+		private int countReversals(List<PathData> path) {
+			int reversals = 0;
+			for (int i = 0; i + 1 < path.size(); i++) {
+				if (path.get(i).isOppositeRail(path.get(i + 1))) {
+					reversals++;
+				}
+			}
+			return reversals;
 		}
 
 		private long connectionMillis(PathTiming.Vehicle vehicle, List<PathData> connectingPath) {
