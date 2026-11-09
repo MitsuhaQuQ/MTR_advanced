@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -517,22 +518,32 @@ public final class RoutePaths {
 	 * @return the rails, empty with no way, or null before the track sections are there
 	 */
 	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd) {
-		return findDepotWay(from, to, rails, out, platformEnd, true);
+		return findDepotWay(from, to, rails, out, platformEnd, true, null);
+	}
+
+	/**
+	 * For a depot anywhere along the line (2026-11-09, user: out to the station nearest the depot, then on by the rules):
+	 * out to the station nearest the siding, entered either way and turned back at if need be, then only the way the line
+	 * runs, along its routes, turning back where the line does; back the other way round ({@link transitsim.network.LineDepotWays}).
+	 *
+	 * @param depotLine the depot's routes, or null for the way straight between them
+	 */
+	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, DepotLine depotLine) {
+		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine);
 	}
 
 	/**
 	 * @param keep whether the legs found are kept for later and the save; not for a measurement only for the log, which
 	 *             would otherwise keep every way it tried (optimisation round 4, step 4)
 	 */
-	private List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, boolean keep) {
+	private List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, boolean keep, DepotLine depotLine) {
 		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
 		if (legs == null) {
 			return null;
 		}
 		final List<transitsim.network.TrackSections.Section> sections = new ArrayList<>();
 		for (final SavedRailBase savedRailBase : Arrays.asList(from, to)) {
-			final List<BlockPos> positions = savedRailBase.getOrderedPositions(BlockPos.ZERO, false);
-			final transitsim.network.TrackSections.Section section = legs.snapshot.getSectionOf(positions.get(0).asLong(), positions.get(1).asLong());
+			final transitsim.network.TrackSections.Section section = sectionOf(savedRailBase, legs);
 			if (section == null) {
 				return null;
 			}
@@ -541,13 +552,132 @@ public final class RoutePaths {
 		// The platform run the way the line runs it: along the section's order if that is where it ends
 		final long[] platformNodes = sections.get(out ? 1 : 0).getNodes();
 		final Boolean platformAlong = platformEnd == 0 ? null : platformEnd == platformNodes[platformNodes.length - 1];
-		final RouteLegs.Plan plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, keep ? legs : legs.withoutKeeping());
+		final RouteLegs.LegSource source = keep ? legs : legs.withoutKeeping();
+		final DepotLine.Plans linePlans = depotLine == null ? null : depotLine.plansFor(legs, source);
+		// The stations a train may go out and back by, by section: the few nearest the siding as the crow flies, among which
+		// the nearest by the way there is; looking at every stop of the line found ways to all of them and filled the memory
+		// on a large network
+		final List<Long> nearby = new ArrayList<>();
+		if (linePlans != null) {
+			final BlockPos sidingPos = (out ? from : to).getMidPos();
+			final List<Map.Entry<Long, SavedRailBase>> stations = new ArrayList<>(linePlans.stations.entrySet());
+			stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
+			stations.subList(0, Math.min(NEARBY_STATIONS, stations.size())).forEach(station -> nearby.add(station.getKey()));
+		}
+		final RouteLegs.Plan plan;
+		if (nearby.isEmpty()) {
+			plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, source);
+		} else if (out) {
+			plan = transitsim.network.LineDepotWays.planOut(sections.get(0).hash, sections.get(1).hash, platformAlong, nearby, linePlans.plans, linePlans.lines, legs.snapshot, source);
+		} else {
+			plan = transitsim.network.LineDepotWays.planBack(sections.get(0).hash, platformAlong, sections.get(1).hash, nearby, linePlans.plans, linePlans.lines, legs.snapshot, source);
+		}
+		// With -Dmtr.debugDepotWays=true, each way out or back and the platforms it turns back at
+		if (Boolean.getBoolean("mtr.debugDepotWays")) {
+			System.out.println("Minecraft Transit Railway depot way " + (out ? "out of " + from.id + " to " + to.id : "back from " + from.id + " to " + to.id) + " (platform " + (platformAlong == null ? "either way" : platformAlong ? "along" : "against") + "): nearby " + nearby.stream().map(section -> String.valueOf(linePlans.stations.get(section).id)).collect(java.util.stream.Collectors.joining(",")) + (plan.isFound() ? ", stops " + Arrays.stream(RouteLegs.getStopSections(plan)).mapToObj(section -> section == sections.get(0).hash ? "start" : section == sections.get(1).hash ? "end" : linePlans == null || !linePlans.stations.containsKey(section) ? "?" : String.valueOf(linePlans.stations.get(section).id)).collect(java.util.stream.Collectors.joining(" > ")) + ", " + plan.steps.size() + " sections, cost " + Math.round(plan.cost) : ", none"));
+		}
 		if (!plan.isFound()) {
 			return Collections.emptyList();
 		}
-		final List<PathData> path = expand(plan, legs.snapshot, Arrays.asList(from, to), rails);
-		return path == null ? null : path;
+		// Each stop as what it is: the siding, a platform turned back at on the way, the platform
+		final List<SavedRailBase> stops = new ArrayList<>();
+		for (final long section : RouteLegs.getStopSections(plan)) {
+			stops.add(section == sections.get(0).hash ? from : section == sections.get(1).hash ? to : linePlans == null ? null : linePlans.stations.get(section));
+		}
+		if (stops.contains(null)) {
+			return Collections.emptyList();
+		}
+		final List<PathData> path = expand(plan, legs.snapshot, stops, rails);
+		if (path != null && stops.size() > 2) {
+			// A platform turned back at on the way isn't a stop: the train only changes ends there, as on a turn back rail.
+			// A stop there had a train going back to its siding after its duty wait at it for a departure no plan has
+			for (int i = 1; i < path.size() - 1; i++) {
+				final PathData pathData = path.get(i);
+				if (pathData.savedRailBaseId != 0) {
+					if (pathData.dwellTime > 0) {
+						pathData.dwellTime = pathData.rail.getTurnBackDwellTime();
+					}
+					pathData.savedRailBaseId = 0;
+				}
+			}
+		}
+		return path;
 	}
+
+	private static transitsim.network.TrackSections.Section sectionOf(SavedRailBase savedRailBase, mtr.advanced.GraphRecords.Legs legs) {
+		final List<BlockPos> positions = savedRailBase.getOrderedPositions(BlockPos.ZERO, false);
+		return legs.snapshot.getSectionOf(positions.get(0).asLong(), positions.get(1).asLong());
+	}
+
+	/**
+	 * A depot's routes for its ways out and back: their platforms by section, and their paths on the track sections as the
+	 * line's way at each, found again with the sections.
+	 */
+	public static final class DepotLine {
+
+		private final List<Route> routes = new ArrayList<>();
+		private final DataCache dataCache;
+		private Plans plans;
+
+		public DepotLine(Collection<Route> routes, DataCache dataCache) {
+			routes.forEach(route -> {
+				if (!route.connectingLine) {
+					this.routes.add(route);
+				}
+			});
+			this.dataCache = dataCache;
+		}
+
+		private synchronized Plans plansFor(mtr.advanced.GraphRecords.Legs legs, RouteLegs.LegSource source) {
+			if (plans == null || plans.snapshot != legs.snapshot) {
+				final Map<Long, SavedRailBase> stations = new LinkedHashMap<>();
+				final List<RouteLegs.Plan> routePlans = new ArrayList<>();
+				final List<String> lines = new ArrayList<>();
+				for (final Route route : routes) {
+					final List<Long> stopSections = new ArrayList<>();
+					final List<long[]> waypoints = new ArrayList<>();
+					for (final Route.RoutePlatform routePlatform : route.platformIds) {
+						final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
+						final transitsim.network.TrackSections.Section section = platform == null ? null : sectionOf(platform, legs);
+						if (section == null) {
+							stopSections.clear();
+							break;
+						}
+						stations.putIfAbsent(section.hash, platform);
+						stopSections.add(section.hash);
+						waypoints.add(routePlatform.waypoints.stream().mapToLong(BlockPos::asLong).toArray());
+					}
+					if (stopSections.size() >= 2) {
+						final String line = LineDuties.getLineKey(route);
+						routePlans.add(RouteLegs.plan(stopSections, waypoints, line, source));
+						lines.add(line);
+					}
+				}
+				plans = new Plans(legs.snapshot, stations, routePlans, lines);
+			}
+			return plans;
+		}
+
+		private static final class Plans {
+
+			private final transitsim.network.TrackSections.Snapshot snapshot;
+			private final Map<Long, SavedRailBase> stations;
+			private final List<RouteLegs.Plan> plans;
+			private final List<String> lines;
+
+			private Plans(transitsim.network.TrackSections.Snapshot snapshot, Map<Long, SavedRailBase> stations, List<RouteLegs.Plan> plans, List<String> lines) {
+				this.snapshot = snapshot;
+				this.stations = stations;
+				this.plans = plans;
+				this.lines = lines;
+			}
+		}
+	}
+
+	/**
+	 * How many stations nearest a siding as the crow flies a way out or back may turn back at.
+	 */
+	private static final int NEARBY_STATIONS = 4;
 
 	/**
 	 * @return how long a way out or back takes a vehicle: out, from the middle of the siding to standing at the platform;
@@ -557,8 +687,16 @@ public final class RoutePaths {
 		if (path == null || path.isEmpty()) {
 			return -1;
 		}
-		if (out) {
+		// Straight into the platform: to standing there. By a station turned back at, or turning back at the platform itself,
+		// to the end of the way, standing at the platform the line's way
+		final boolean straight = path.get(path.size() - 1).dwellTime > 0 && path.subList(0, path.size() - 1).stream().noneMatch(pathData -> pathData.dwellTime > 0);
+		if (out && straight) {
 			return PathTiming.calculateStopTimes(vehicle, path).getLeadMillis();
+		}
+		if (out) {
+			final List<transitsim.plan.TimeSegment> timeSegments = new ArrayList<>();
+			PathTiming.generateTimeSegments(vehicle, path, timeSegments, new HashMap<>(), new StopTimes(), 0, 0);
+			return timeSegments.isEmpty() ? -1 : (long) (timeSegments.get(timeSegments.size() - 1).endTime * 50);
 		}
 		final double headStart = path.get(0).rail.getLength();
 		final PathTiming.Vehicle standing = new PathTiming.Vehicle((float) (2 * headStart - vehicle.trainCars * vehicle.spacing), vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode, vehicle.maxSpeed);
@@ -572,7 +710,7 @@ public final class RoutePaths {
 	 * kept
 	 */
 	public long measureDepotLeg(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, PathTiming.Vehicle vehicle, boolean out, long platformEnd) {
-		return timeDepotWay(findDepotWay(from, to, rails, out, platformEnd, false), vehicle, out);
+		return timeDepotWay(findDepotWay(from, to, rails, out, platformEnd, false, null), vehicle, out);
 	}
 
 	/**

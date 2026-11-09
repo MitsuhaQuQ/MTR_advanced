@@ -733,6 +733,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - 规划的车池回库是按"下一次出车的存车线"近似运行时的选法；车池跨了规划分组（同车型、不同线路组）时，规划只在自己的分组里算。
 - **规划和实际运行对不上的地方**（2026-11-06 排查 12 站时整理）：
   - （调度台带上车站位置：只改宿主的调度包和网页数据）
+  - （车厂在线路中间：组件 `LineDepotWays`，出库到最近车站后只顺线路方向沿交路走、交路终点按线路折返，回库反过来；`RouteLegs.Plan` 构造和 `turnStep` 包内可用；测试 `MidLineDepotTest`）
   - （加车也跑不了的班次：组件 `DutyGenerator.unrunnable`、`PlanInputs.withoutPoolFleets`、`layoverOf`，`generateSpread` 只在车不够时分配；测试 `UnrunnableServicesTest`）
   - （网页清空草稿：只改网页，组件不变）
   - （运用组第 3 步不建表；第 4 步网页的运用组、只重排一组都在宿主，组件不变）

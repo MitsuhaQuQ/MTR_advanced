@@ -52,7 +52,7 @@ public final class RouteLegs {
 		 */
 		public final List<LegRouter.Leg> consulted;
 
-		private Plan(int reachedStops, double cost, List<long[]> steps, int[] stopSteps, List<LegRouter.Request> legs, long badWaypoint, List<LegRouter.Leg> consulted) {
+		Plan(int reachedStops, double cost, List<long[]> steps, int[] stopSteps, List<LegRouter.Request> legs, long badWaypoint, List<LegRouter.Leg> consulted) {
 			this.reachedStops = reachedStops;
 			this.cost = cost;
 			this.steps = Collections.unmodifiableList(steps);
@@ -108,6 +108,25 @@ public final class RouteLegs {
 		final List<LegRouter.Request> requests = new ArrayList<>();
 		requests.add(best.request);
 		return new Plan(2, bestCost, steps, new int[]{0, steps.size() - 1}, requests, 0, consulted);
+	}
+
+	/**
+	 * @return turning back on the section at once to run it this way, as a leg starting with a turn has it (a leg from a
+	 * section to itself finds no turn)
+	 */
+	static long[] turnStep(long section, int way) {
+		return new long[]{section, way, 1};
+	}
+
+	/**
+	 * @return the section of each stop of the plan, in order
+	 */
+	public static long[] getStopSections(Plan plan) {
+		final long[] sections = new long[plan.stopSteps.length];
+		for (int i = 0; i < sections.length; i++) {
+			sections[i] = plan.steps.get(plan.stopSteps[i])[0];
+		}
+		return sections;
 	}
 
 	public static Plan plan(List<Long> stopSections, List<long[]> waypoints, String line, LegSource legSource) {

@@ -1076,7 +1076,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				});
 				// The duties' ways out and back are the ones measured: found on the track sections the same way (round 4)
 				if (railwayData != null) {
-					Siding.DEPOT_WAYS.set((from, to, out, platformEnd) -> railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd));
+					// By the station nearest the siding, then along the line, for a depot anywhere along the line (2026-11-09)
+					final RoutePaths.DepotLine depotLine = new RoutePaths.DepotLine(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache);
+					Siding.DEPOT_WAYS.set((from, to, out, platformEnd) -> railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd, depotLine));
 				}
 				try {
 					for (final MainPath mainPath : mainPaths) {
@@ -1144,6 +1146,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * @return by siding
 	 */
 	private static Map<Long, DepotLegs> measureDepotWays(Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		final RoutePaths.DepotLine depotLine = new RoutePaths.DepotLine(routes, dataCache);
 		// The node each route runs its first stop and its last towards
 		final Map<Long, Long> firstEnds = new HashMap<>();
 		final Map<Long, Long> lastEnds = new HashMap<>();
@@ -1183,7 +1186,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			boolean any = false;
 			for (final long platformId : stops.get(0)) {
 				final Platform platform = dataCache.platformIdMap.get(platformId);
-				final List<PathData> way = platform == null || out.containsKey(platformId) ? null : routePaths.findDepotWay(siding, platform, rails, true, firstEnds.getOrDefault(platformId, 0L));
+				final List<PathData> way = platform == null || out.containsKey(platformId) ? null : routePaths.findDepotWay(siding, platform, rails, true, firstEnds.getOrDefault(platformId, 0L), depotLine);
 				if (way != null) {
 					any = true;
 					if (way.isEmpty()) {
@@ -1205,7 +1208,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					if (target != siding && (depot == null || dataCache.sidingIdToDepot.get(target.id) != depot || !siding.getPoolKey().equals(target.getPoolKey()))) {
 						continue;
 					}
-					final List<PathData> way = routePaths.findDepotWay(platform, target, rails, false, lastEnds.getOrDefault(platformId, 0L));
+					final List<PathData> way = routePaths.findDepotWay(platform, target, rails, false, lastEnds.getOrDefault(platformId, 0L), depotLine);
 					if (way != null) {
 						measuredAny = true;
 						final long millis = RoutePaths.timeDepotWay(way, vehicle, false);
