@@ -45,6 +45,19 @@ class TurnBackHoldPlanTest {
 		final DutyGenerator.Result with = DutyGenerator.generate(services(up, other, down), sidings, Collections.emptyMap(), HOUR, new DutyGenerator.PlanInputs(turnTimes, Collections.emptyMap()));
 		assertEquals(0, with.uncovered, String.join(", ", with.issues));
 		assertTrue(sameDuty(with, 1, 3), "the up train waits on the turn back rail and runs the down service");
+
+		// Where it waits, when it leaves the siding and where it goes back to are kept with the duty (运用补完 step 1)
+		final DepotDuties.DayDuty planned = with.sidings.values().stream().flatMap(List::stream).flatMap(slot -> slot.days.stream()).filter(day -> (day.weekdays & 1) != 0 && has(day, 1) && has(day, 3)).findFirst().orElseThrow(AssertionError::new);
+		assertEquals(Collections.singletonList(DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL), planned.waits);
+		assertEquals(0, planned.outLeadMillis, "out of the siding as long before as its way out to platform 1 takes");
+		assertEquals(100, planned.returnSidingId);
+		// Without a rail to wait on, the duties that do run wait at the platform where they wait at all
+		without.sidings.values().stream().flatMap(List::stream).flatMap(slot -> slot.days.stream()).forEach(day -> {
+			assertEquals(Math.max(0, day.segments.size() - 1), day.waits.size());
+			assertFalse(day.waits.contains(DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL));
+			assertTrue(day.outLeadMillis >= 0);
+			assertEquals(100, day.returnSidingId);
+		});
 	}
 
 	@Test

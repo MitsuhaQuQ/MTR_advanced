@@ -728,7 +728,9 @@ public final class TickRunner<T extends RunTrack> {
 					if (dutyPath == null) {
 						continue;
 					}
-					final long leaveMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - dutyPath.stopTimes.getLeadMillis();
+					// When the duty's train left, as planned (运用补完 step 1), or by the way out for a duty planned before
+					final long wayOut = dutyPath.stopTimes.getLeadMillis();
+					final long leaveMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - (duty.outLeadMillis >= 0 ? DepotDispatcher.outLeadMillis(duty, wayOut) : wayOut);
 					if (leaveMillis <= millis) {
 						due.add(new Object[]{leaveMillis, sidingRun, i, dutyPath, depot});
 					}

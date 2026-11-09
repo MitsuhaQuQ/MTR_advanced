@@ -32,7 +32,7 @@ public final class DepotDuties {
 	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started
 	 * with the mode, a boolean, so it reads as 0 or 1 there.
 	 */
-	private static final int FORMAT_VERSION = 4;
+	private static final int FORMAT_VERSION = 5;
 
 	public boolean isEmpty() {
 		return sidings.values().stream().allMatch(List::isEmpty);
@@ -206,6 +206,7 @@ public final class DepotDuties {
 					packet.writeVarInt(segment.fromStop);
 					packet.writeVarInt(segment.toStop + 1);
 				});
+				day.writeItems(packet);
 			});
 		}
 
@@ -215,7 +216,8 @@ public final class DepotDuties {
 
 		/**
 		 * @param version 1 for data saved before overnight trains could pick their next duty, 2 before duties had numbers, 3
-	 *                before they said where their train comes from
+	 *                before they said where their train comes from, 4 before they said where trains wait and when they
+	 *                leave the siding
 		 */
 		public static Slot read(BinaryReader packet, int version) {
 			final boolean hasNextSlot = version >= 2;
@@ -244,6 +246,9 @@ public final class DepotDuties {
 				final int segmentCount = limit(packet.readVarInt(), MAX_SEGMENTS);
 				for (int j = 0; j < segmentCount; j++) {
 					day.segments.add(new Segment(packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt() - 1));
+				}
+				if (version >= 5) {
+					day.readItems(packet);
 				}
 				if (day.weekdays != 0) {
 					slot.days.add(day);
@@ -283,6 +288,79 @@ public final class DepotDuties {
 		 */
 		public boolean fromOvernight;
 		public final List<Segment> segments = new ArrayList<>();
+		/**
+		 * Where the train waits after each segment but the last for the next, as the planner had it ({@code WAIT_*}, 运用补完
+		 * step 1); empty, or {@link #WAIT_ANY} for one, where the runtime decides as before.
+		 */
+		public final List<Integer> waits = new ArrayList<>();
+		/**
+		 * How long before the first service leaves its first stop the train leaves the siding, as planned; -1 for the
+		 * runtime's own (the way out's time and a margin), as for duties planned before.
+		 */
+		public long outLeadMillis = -1;
+		/**
+		 * The station the train goes out by and the one it comes back by (出入口), for a depot reaching the line at more
+		 * than one; 0 for the way out or back found as before.
+		 */
+		public long outEntrance;
+		public long backEntrance;
+
+		/**
+		 * The runtime decides, as before (and between the parts of a service run through).
+		 */
+		public static final int WAIT_ANY = 0;
+		/**
+		 * At the platform the segment ends at, which the next starts from.
+		 */
+		public static final int WAIT_PLATFORM = 1;
+		/**
+		 * On a turn back rail beyond the platform (混合折返), clear of the platform.
+		 */
+		public static final int WAIT_TURN_BACK_RAIL = 2;
+		/**
+		 * At the platform it arrived at, then over to another platform of the station for the next segment.
+		 */
+		public static final int WAIT_CHANGE_PLATFORM = 3;
+		private static final int MAX_WAIT_KIND = 3;
+
+		/**
+		 * @return where the train waits after a segment, {@link #WAIT_ANY} where not planned
+		 */
+		public int getWait(int segment) {
+			return segment >= 0 && segment < waits.size() ? waits.get(segment) : WAIT_ANY;
+		}
+
+		/**
+		 * @return whether it says anything more than duties planned before did
+		 */
+		public boolean hasItems() {
+			return outLeadMillis >= 0 || outEntrance != 0 || backEntrance != 0 || waits.stream().anyMatch(wait -> wait != WAIT_ANY);
+		}
+
+		private void writeItems(BinaryWriter packet) {
+			packet.writeVarInt(waits.size());
+			waits.forEach(packet::writeByte);
+			packet.writeLong(outLeadMillis + 1);
+			packet.writeLong(outEntrance);
+			packet.writeLong(backEntrance);
+		}
+
+		private void readItems(BinaryReader packet) {
+			for (int i = limit(packet.readVarInt(), MAX_SEGMENTS); i > 0; i--) {
+				final int wait = packet.readUnsignedByte();
+				waits.add(wait <= MAX_WAIT_KIND ? wait : WAIT_ANY);
+			}
+			outLeadMillis = Math.max(-1, packet.readLong() - 1);
+			outEntrance = packet.readLong();
+			backEntrance = packet.readLong();
+		}
+
+		/**
+		 * @return whether another day's duty is the same in all but its weekdays
+		 */
+		public boolean sameAs(DayDuty other) {
+			return stayOnLine == other.stayOnLine && segments.equals(other.segments) && waits.equals(other.waits) && outLeadMillis == other.outLeadMillis && outEntrance == other.outEntrance && backEntrance == other.backEntrance;
+		}
 
 		/**
 		 * @return a copy that later edits of the duties don't change, sharing the segments, which never change
@@ -296,6 +374,10 @@ public final class DepotDuties {
 			copy.returnSidingId = returnSidingId;
 			copy.fromOvernight = fromOvernight;
 			copy.segments.addAll(segments);
+			copy.waits.addAll(waits);
+			copy.outLeadMillis = outLeadMillis;
+			copy.outEntrance = outEntrance;
+			copy.backEntrance = backEntrance;
 			return copy;
 		}
 
@@ -304,6 +386,11 @@ public final class DepotDuties {
 		 */
 		public String toText() {
 			final StringBuilder builder = new StringBuilder().append(weekdays).append(',').append(stayOnLine ? 1 : 0).append(',').append(nextSlot).append(',').append(nextDutyId).append(',').append(returnSidingId).append(',').append(fromOvernight ? 1 : 0);
+			// Where it waits and when it leaves, only when planned, so duties as before write as before
+			if (hasItems()) {
+				builder.append(',').append(outLeadMillis).append(',').append(outEntrance).append(',').append(backEntrance).append(',').append('w');
+				waits.forEach(builder::append);
+			}
 			segments.forEach(segment -> builder.append(';').append(segment.routeId).append(',').append(segment.service).append(',').append(segment.fromStop).append(',').append(segment.toStop));
 			return builder.toString();
 		}
@@ -327,6 +414,15 @@ public final class DepotDuties {
 					day.nextDutyId = Long.parseLong(head[3]);
 					day.returnSidingId = Long.parseLong(head[4]);
 					day.fromOvernight = Integer.parseInt(head[5]) != 0;
+				}
+				if (head.length >= 10) {
+					day.outLeadMillis = Long.parseLong(head[6]);
+					day.outEntrance = Long.parseLong(head[7]);
+					day.backEntrance = Long.parseLong(head[8]);
+					for (int i = 1; i < head[9].length(); i++) {
+						final int wait = head[9].charAt(i) - '0';
+						day.waits.add(wait >= 0 && wait <= MAX_WAIT_KIND ? wait : WAIT_ANY);
+					}
 				}
 				for (int i = 1; i < parts.length; i++) {
 					final String[] values = parts[i].split(",");

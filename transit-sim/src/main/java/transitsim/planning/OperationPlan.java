@@ -148,11 +148,26 @@ public final class OperationPlan {
 		 * train next, else its own.
 		 */
 		public final long returnDepotId;
+		/**
+		 * Where the train waits after each trip but the last for the next ({@code DepotDuties.DayDuty.WAIT_*}).
+		 */
+		public final List<Integer> waits;
+		/**
+		 * How long before its first trip the train leaves its siding, the way out as planned; 0 for one carried on from
+		 * the day before.
+		 */
+		public final long leaveMillis;
 
 		Duty(int index, long depotId, List<Trip> trips, int previousDuty, int nextDuty, List<Phase> phases, long returnDepotId) {
+			this(index, depotId, trips, previousDuty, nextDuty, phases, returnDepotId, Collections.emptyList(), 0);
+		}
+
+		Duty(int index, long depotId, List<Trip> trips, int previousDuty, int nextDuty, List<Phase> phases, long returnDepotId, List<Integer> waits, long leaveMillis) {
 			this.index = index;
 			this.depotId = depotId;
 			this.returnDepotId = returnDepotId;
+			this.waits = Collections.unmodifiableList(new ArrayList<>(waits));
+			this.leaveMillis = leaveMillis;
 			this.trips = Collections.unmodifiableList(new ArrayList<>(trips));
 			this.previousDuty = previousDuty;
 			this.nextDuty = nextDuty;

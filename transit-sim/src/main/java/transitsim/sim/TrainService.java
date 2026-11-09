@@ -1423,6 +1423,10 @@ public class TrainService<T extends PlanTrack> {
 		// the platforms to others (混合折返), where both are ways round; the planner and the web editor take the same way
 		// (LONG_TURN_BACK_WAIT_MILLIS)
 		boolean hasPlatformWay = false;
+		// Where the duty has the train wait after this segment, as planned (运用补完 step 1): only ways of that kind, waiting
+		// here while they are taken; the runtime's own choice where nothing is planned, as for duties planned before
+		final DepotDuties.DayDuty plannedDay = isOnDuty() ? getDutyDay() : null;
+		final int plannedWait = plannedDay == null ? DepotDuties.DayDuty.WAIT_ANY : plannedDay.getWait(dutyIndex);
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
@@ -1430,7 +1434,7 @@ public class TrainService<T extends PlanTrack> {
 				hasPlatformWay = true;
 			}
 		}
-		for (int way = 0; hasPlatformWay && way < turnBackPoint.getWayCount(); way++) {
+		for (int way = 0; hasPlatformWay && plannedWait != DepotDuties.DayDuty.WAIT_PLATFORM && way < turnBackPoint.getWayCount(); way++) {
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
@@ -1445,7 +1449,7 @@ public class TrainService<T extends PlanTrack> {
 			final List<UUID> wayRails = turnBackPoint.getWayRails(way);
 			// How long the wait is, from when the train could be ready to its next duty segment's service
 			final long nextMillis = getNextSegmentServiceMillis();
-			if (times != null && nextMillis > 0 && (wayRails == null || vehicle.isWayClear(wayRails)) && times[0] <= nextMillis && nextMillis - times[0] >= LONG_TURN_BACK_WAIT_MILLIS) {
+			if (times != null && nextMillis > 0 && (wayRails == null || vehicle.isWayClear(wayRails)) && times[0] <= nextMillis && (plannedWait == DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL || nextMillis - times[0] >= LONG_TURN_BACK_WAIT_MILLIS)) {
 				chosenWay = way;
 				chosenPath = newPath;
 				chosenStopIndex = newStopIndex;
@@ -1461,6 +1465,9 @@ public class TrainService<T extends PlanTrack> {
 				continue;
 			}
 			final int newStopIndex = turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point);
+			if (hasPlatformWay && plannedWait != DepotDuties.DayDuty.WAIT_ANY && plannedWait != DepotDuties.DayDuty.WAIT_CHANGE_PLATFORM && isRailWay(newPath, newStopIndex, turnBackPoint.getLength(way)) != (plannedWait == DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL)) {
+				continue;
+			}
 			final long[] times = getWayTimes(newPath, newStopIndex, newStopIndex + turnBackPoint.getLength(way), nowMillis);
 			final List<UUID> wayRails = turnBackPoint.getWayRails(way);
 			final boolean clear = wayRails == null || vehicle.isWayClear(wayRails);

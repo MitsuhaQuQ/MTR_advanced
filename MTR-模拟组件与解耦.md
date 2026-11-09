@@ -736,6 +736,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - （车厂在线路中间：组件 `LineDepotWays`，出库到最近车站后只顺线路方向沿交路走、交路终点按线路折返，回库反过来；存车线和车站之间不逆向穿过别的站台（防回库对顶），逆行按 `AGAINST_WEIGHT` 加权优先顺向；`RouteLegs.Plan` 构造和 `turnStep` 包内可用；测试 `MidLineDepotTest`）
   - （加车也跑不了的班次：组件 `DutyGenerator.unrunnable`、`PlanInputs.withoutPoolFleets`、`layoverOf`，`generateSpread` 只在车不够时分配；测试 `UnrunnableServicesTest`）
   - （网页运行图放大、拖线、Ctrl 点选剔除、按秒改到后续：只改网页，组件不变）
+  - （运用补完第 1 步前半：组件 `DepotDuties` 第 5 版和 `DutyLayers` 第 2 版记下等候、出库提前量、出入口；`DutyPlanner`/`DutyGenerator` 把规划时的决定写进运用，`DepotDispatcher.outLeadMillis`、`TrainService.chooseTurnBack` 照计划；测试 `DutyItemsTest` 等）
   - （网页右键行为统一：只改网页，组件不变）
   - （网页清空草稿：只改网页，组件不变）
   - （运用组第 3 步不建表；第 4 步网页的运用组、只重排一组都在宿主，组件不变）

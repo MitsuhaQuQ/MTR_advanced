@@ -62,6 +62,16 @@ public final class EditorDuties implements IPacket {
 					segmentsArray.add(segmentObject);
 				});
 				dayObject.add("segments", segmentsArray);
+				// Where it waits, when it leaves and the stations it goes out and back by, as planned (运用补完 step 1): kept
+				// through an edit in the page
+				if (day.hasItems()) {
+					final JsonArray waitsArray = new JsonArray();
+					day.waits.forEach(waitsArray::add);
+					dayObject.add("waits", waitsArray);
+					dayObject.addProperty("outLead", day.outLeadMillis);
+					dayObject.addProperty("outEntrance", String.valueOf(day.outEntrance));
+					dayObject.addProperty("backEntrance", String.valueOf(day.backEntrance));
+				}
 				daysArray.add(dayObject);
 			});
 			slotsArray.add(daysArray);
@@ -179,6 +189,16 @@ public final class EditorDuties implements IPacket {
 							return TranslatedMessage.get("gui.mtr.editor_duty_error", sidingName, i + 1, error);
 						}
 						day.segments.add(segment);
+					}
+					// Kept as planned while the duty's services are as many as they were; changed, the runtime decides again
+					if (dayObject.has("waits")) {
+						final JsonArray waitsArray = dayObject.getAsJsonArray("waits");
+						if (waitsArray.size() == Math.max(0, day.segments.size() - 1)) {
+							waitsArray.forEach(wait -> day.waits.add(Math.max(DepotDuties.DayDuty.WAIT_ANY, Math.min(DepotDuties.DayDuty.WAIT_CHANGE_PLATFORM, wait.getAsInt()))));
+						}
+						day.outLeadMillis = dayObject.has("outLead") ? Math.max(-1, dayObject.get("outLead").getAsLong()) : -1;
+						day.outEntrance = dayObject.has("outEntrance") ? parseId(getString(dayObject, "outEntrance")) : 0;
+						day.backEntrance = dayObject.has("backEntrance") ? parseId(getString(dayObject, "backEntrance")) : 0;
 					}
 					slot.days.add(day);
 				}

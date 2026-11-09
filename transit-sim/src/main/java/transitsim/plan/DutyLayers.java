@@ -32,7 +32,7 @@ public final class DutyLayers {
 	 */
 	public final List<Assignment> assignments = new ArrayList<>();
 
-	private static final int FORMAT_VERSION = 1;
+	private static final int FORMAT_VERSION = 2;
 
 	/**
 	 * Splits duties into layers.
@@ -56,7 +56,7 @@ public final class DutyLayers {
 					placed.add(new Object[]{sidingId, slotIndex, slot, null, null, -1});
 				}
 				for (final DepotDuties.DayDuty day : slot.days) {
-					final Body body = new Body(day.stayOnLine, day.segments);
+					final Body body = new Body(day.stayOnLine, day.segments, day.waits);
 					layers.bodies.putIfAbsent(body.key, body);
 					final String groupName = poolKey + "|" + day.weekdays;
 					groupPools.put(groupName, poolKey);
@@ -92,6 +92,9 @@ public final class DutyLayers {
 			assignment.nextDutyId = day.nextDutyId;
 			assignment.returnSidingId = day.returnSidingId;
 			assignment.fromOvernight = day.fromOvernight;
+			assignment.outLeadMillis = day.outLeadMillis;
+			assignment.outEntrance = day.outEntrance;
+			assignment.backEntrance = day.backEntrance;
 		}
 		return layers;
 	}
@@ -126,6 +129,10 @@ public final class DutyLayers {
 			day.returnSidingId = assignment.returnSidingId;
 			day.fromOvernight = assignment.fromOvernight;
 			day.segments.addAll(body.segments);
+			day.waits.addAll(body.waits);
+			day.outLeadMillis = assignment.outLeadMillis;
+			day.outEntrance = assignment.outEntrance;
+			day.backEntrance = assignment.backEntrance;
 			slot.days.add(day);
 		}
 		return duties;
@@ -163,13 +170,14 @@ public final class DutyLayers {
 	public static DutyLayers fromBytes(byte[] bytes) {
 		try {
 			final ByteArrayBinary.Reader reader = new ByteArrayBinary.Reader(bytes);
-			if (reader.readUnsignedByte() != FORMAT_VERSION) {
+			final int version = reader.readUnsignedByte();
+			if (version < 1 || version > FORMAT_VERSION) {
 				return null;
 			}
 			final DutyLayers layers = new DutyLayers();
 			layers.diagramMode = reader.readBoolean();
 			for (int i = limit(reader.readVarInt()); i > 0; i--) {
-				final Body body = Body.read(reader);
+				final Body body = Body.read(reader, version);
 				layers.bodies.put(body.key, body);
 			}
 			for (int i = limit(reader.readVarInt()); i > 0; i--) {
@@ -177,7 +185,7 @@ public final class DutyLayers {
 				layers.groups.put(group.key, group);
 			}
 			for (int i = limit(reader.readVarInt()); i > 0; i--) {
-				layers.assignments.add(Assignment.read(reader));
+				layers.assignments.add(Assignment.read(reader, version));
 			}
 			return layers;
 		} catch (RuntimeException e) {
@@ -231,22 +239,43 @@ public final class DutyLayers {
 	}
 
 	/**
-	 * The services a train runs in a day, in order, and whether it stays on the line after the last: no depot, siding or
-	 * weekday in it.
+	 * The services a train runs in a day, in order, where it waits between them, and whether it stays on the line after the
+	 * last: no depot, siding or weekday in it.
 	 */
 	public static final class Body {
 
 		public final long key;
 		public final boolean stayOnLine;
 		public final List<DepotDuties.Segment> segments;
+		/**
+		 * Where the train waits after each segment ({@link DepotDuties.DayDuty#waits}), empty where the runtime decides.
+		 */
+		public final List<Integer> waits;
 
 		public Body(boolean stayOnLine, List<DepotDuties.Segment> segments) {
+			this(stayOnLine, segments, Collections.emptyList());
+		}
+
+		public Body(boolean stayOnLine, List<DepotDuties.Segment> segments, List<Integer> waits) {
 			this.stayOnLine = stayOnLine;
 			this.segments = Collections.unmodifiableList(new ArrayList<>(segments));
+			this.waits = Collections.unmodifiableList(new ArrayList<>(waits));
 			key = keyOf(this::writeContent);
 		}
 
+		/**
+		 * The content the key is of: a body with no waits keys as it did before they were kept, so duties planned before
+		 * are the same bodies.
+		 */
 		private void writeContent(BinaryWriter writer) {
+			writeSegments(writer);
+			if (!waits.isEmpty()) {
+				writer.writeVarInt(waits.size());
+				waits.forEach(writer::writeByte);
+			}
+		}
+
+		private void writeSegments(BinaryWriter writer) {
 			writer.writeBoolean(stayOnLine);
 			writer.writeVarInt(segments.size());
 			segments.forEach(segment -> {
@@ -258,16 +287,24 @@ public final class DutyLayers {
 		}
 
 		private void write(BinaryWriter writer) {
-			writeContent(writer);
+			writeSegments(writer);
+			writer.writeVarInt(waits.size());
+			waits.forEach(writer::writeByte);
 		}
 
-		private static Body read(BinaryReader reader) {
+		private static Body read(BinaryReader reader, int version) {
 			final boolean stayOnLine = reader.readBoolean();
 			final List<DepotDuties.Segment> segments = new ArrayList<>();
 			for (int i = Math.min(reader.readVarInt(), DepotDuties.MAX_SEGMENTS); i > 0; i--) {
 				segments.add(new DepotDuties.Segment(reader.readLong(), reader.readVarInt(), reader.readVarInt(), reader.readVarInt() - 1));
 			}
-			return new Body(stayOnLine, segments);
+			final List<Integer> waits = new ArrayList<>();
+			if (version >= 2) {
+				for (int i = Math.min(reader.readVarInt(), DepotDuties.MAX_SEGMENTS); i > 0; i--) {
+					waits.add(reader.readUnsignedByte());
+				}
+			}
+			return new Body(stayOnLine, segments, waits);
 		}
 	}
 
@@ -321,6 +358,13 @@ public final class DutyLayers {
 		public long nextDutyId;
 		public long returnSidingId;
 		public boolean fromOvernight;
+		/**
+		 * When the train leaves the siding before its first service, and the stations it goes out and back by
+		 * ({@link DepotDuties.DayDuty#outLeadMillis}): what depends on the depot of the way out and back.
+		 */
+		public long outLeadMillis = -1;
+		public long outEntrance;
+		public long backEntrance;
 
 		/**
 		 * @return whether it only keeps the place and number of a slot with no duty
@@ -341,9 +385,12 @@ public final class DutyLayers {
 			writer.writeLong(nextDutyId);
 			writer.writeLong(returnSidingId);
 			writer.writeBoolean(fromOvernight);
+			writer.writeLong(outLeadMillis + 1);
+			writer.writeLong(outEntrance);
+			writer.writeLong(backEntrance);
 		}
 
-		private static Assignment read(BinaryReader reader) {
+		private static Assignment read(BinaryReader reader, int version) {
 			final Assignment assignment = new Assignment();
 			assignment.sidingId = reader.readLong();
 			assignment.slotIndex = Math.min(reader.readVarInt(), DepotDuties.MAX_SLOTS - 1);
@@ -356,6 +403,11 @@ public final class DutyLayers {
 			assignment.nextDutyId = reader.readLong();
 			assignment.returnSidingId = reader.readLong();
 			assignment.fromOvernight = reader.readBoolean();
+			if (version >= 2) {
+				assignment.outLeadMillis = Math.max(-1, reader.readLong() - 1);
+				assignment.outEntrance = reader.readLong();
+				assignment.backEntrance = reader.readLong();
+			}
 			return assignment;
 		}
 	}

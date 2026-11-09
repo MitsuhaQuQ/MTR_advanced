@@ -430,6 +430,10 @@ public final class DutyPlanner {
 				missed = duty;
 			}
 		}
+		// Where it waits for the trip, kept with the duty so the runtime does as planned (运用补完 step 1)
+		if (best != null) {
+			best.waits.add(bestHolds ? transitsim.plan.DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL : best.platformId == trip.firstPlatform() ? transitsim.plan.DepotDuties.DayDuty.WAIT_PLATFORM : transitsim.plan.DepotDuties.DayDuty.WAIT_CHANGE_PLATFORM);
+		}
 		if (best != null && bestHolds) {
 			final long[] hold = network.turnBackHold(best.platformId);
 			holds.computeIfAbsent(best.platformId, key -> new ArrayList<>()).add(new long[]{best.endMillis + hold[0], trip.startMillis() - holdOutMillis(best, trip, hold)});
@@ -615,7 +619,10 @@ public final class DutyPlanner {
 			final int nextIndex = nextDuties.getOrDefault(duty, OperationPlan.NONE);
 			final long nextStartMillis = nextIndex == OperationPlan.NONE ? Long.MIN_VALUE : openDuties.get(nextIndex).trips.get(0).startMillis() + OperationTime.WEEK_MILLIS;
 			final long nextPlatform = nextIndex == OperationPlan.NONE ? 0 : openDuties.get(nextIndex).trips.get(0).firstPlatform();
-			duties.add(new Duty(indices.get(duty), duty.depotId, duty.trips, previousDuties.getOrDefault(duty, OperationPlan.NONE), nextIndex, buildPhases(duty, previousDuties.containsKey(duty), nextIndex != OperationPlan.NONE, nextStartMillis, nextPlatform), duty.returnDepotId == 0 ? duty.depotId : duty.returnDepotId));
+			// The waits between its own trips, the last ones the duty found its train for (a duty carried on from the week
+			// before has one more, overnight, first)
+			final List<Integer> waits = duty.waits.subList(Math.max(0, duty.waits.size() - Math.max(0, duty.trips.size() - 1)), duty.waits.size());
+			duties.add(new Duty(indices.get(duty), duty.depotId, duty.trips, previousDuties.getOrDefault(duty, OperationPlan.NONE), nextIndex, buildPhases(duty, previousDuties.containsKey(duty), nextIndex != OperationPlan.NONE, nextStartMillis, nextPlatform), duty.returnDepotId == 0 ? duty.depotId : duty.returnDepotId, waits, duty.leaveMillis));
 		});
 
 		checkPlatformOccupancy(duties, planIssues);
@@ -698,6 +705,10 @@ public final class DutyPlanner {
 		private long endMillis;
 		private long readyMillis;
 		private long returnDepotAtMillis;
+		/**
+		 * Where the train waited for each trip it was found for in service ({@code DayDuty.WAIT_*}).
+		 */
+		private final List<Integer> waits = new ArrayList<>();
 		/**
 		 * The depot it went back to, or 0 while it hasn't.
 		 */

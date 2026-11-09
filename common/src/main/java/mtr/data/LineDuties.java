@@ -531,6 +531,10 @@ public final class LineDuties {
 					why.accept("depot " + depotId + " has no record of the plan its duties came from");
 					return null;
 				}
+				if (depotRecord.beforeItems) {
+					why.accept("depot " + depotId + "'s duties were planned before duties kept where trains wait, when they leave and where they go back");
+					return null;
+				}
 				if (!basis.equals(depotRecord.basis)) {
 					why.accept("depot " + depotId + "'s duties were planned from other timetables or sidings (" + depotRecord.basis + ", now " + basis + ")");
 					// The duty groups whose own services and sidings are the same may still be kept (duty groups, step 2)
@@ -1126,6 +1130,11 @@ public final class LineDuties {
 		 */
 		public String basis = "";
 		/**
+		 * Read from a record made before duties kept where trains wait, when they leave and where they go back (运用补完
+		 * step 1): shown as it is, but not kept, so the duties are planned again once
+		 */
+		boolean beforeItems;
+		/**
 		 * The duties planned before, kept as they still hold (round 4, step 4).
 		 */
 		public boolean kept;
@@ -1250,6 +1259,7 @@ public final class LineDuties {
 					return null;
 				}
 				final Plan plan = new Plan(lineNames);
+				plan.beforeItems = version < RECORD_VERSION;
 				plan.basis = readString(reader);
 				plan.minReverseMillis = reader.readLong();
 				plan.buffersKey = readString(reader);
@@ -1291,7 +1301,11 @@ public final class LineDuties {
 			}
 		}
 
-		private static final int RECORD_VERSION = 5;
+		/**
+		 * 6: duties planned since keep where trains wait, when they leave and where they go back (运用补完 step 1); a
+		 * record before that reads as none, so those duties are planned again once, with them
+		 */
+		private static final int RECORD_VERSION = 6;
 		private static final int MAX_PART_ITEMS = 256;
 		private static final int MAX_RECORD_ITEMS = 4096;
 		private static final int MAX_STRING_BYTES = 65536;

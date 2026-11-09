@@ -448,6 +448,17 @@
 
 **断点**：`pre-duty-items`，基线 jar 放 `P:/mtr-ante/test-jars/baseline-duty-items`。
 
+### 第 1 步进度（2026-11-09，MTM_Logic 0.58.0，前半）
+
+- 做了：运用记下规划时定的等候、出库提前量、出入口和回库存车线；运行时照做。
+  - 组件 `DepotDuties` 第 5 版：`DayDuty.waits`（每段之后：`WAIT_ANY` 运行时自定、`WAIT_PLATFORM`、`WAIT_TURN_BACK_RAIL`、`WAIT_CHANGE_PLATFORM`）、`outLeadMillis`（-1 为旧做法）、`outEntrance`、`backEntrance`；`sameAs`、`hasItems`、`getWait`；`toText` 只在有计划时多写字段，旧运用写法不变。`DutyLayers` 第 2 版：等候进主体（没有等候的主体键不变），出库提前量和出入口进分配。
+  - 规划：`DutyPlanner.findTrainInService` 选中车时记下这次等在哪（`OpenDuty.waits`），`OperationPlan.Duty.waits`、`leaveMillis`；`DutyGenerator.assignSlots` 按段对齐写进 `DayDuty.waits`，首日写 `outLeadMillis`，末日写 `returnSidingId`（以前只给网页看，运行时另挑）。
+  - 运行：`DepotDispatcher.outLeadMillis`（计划提前量，不少于出库路线用时；旧运用照旧"用时 + 15 秒"），`TickRunner.placeDutyTrains` 同样；`TrainService.chooseTurnBack` 按计划的等候只走那一类路（站台或折返线），被占就原地等。
+  - 游戏：运用记录第 6 版（`LineDuties.Plan.beforeItems`：旧记录照常读出来显示缺车，但不沿用，开服重排一次带上计划）；网页运用 JSON 带 `waits`、`outLead`、`outEntrance`、`backEntrance`，编辑后段数没变才保留等候。
+- 测试：`DutyItemsTest`（各种形式读写、旧运用不变、出库提前量规则）、`DutyRunTest` 三项（计划站台就算久等也在站台、计划折返线就算短等也去折返线、折返线被占原地等）、`TurnBackHoldPlanTest`（规划记下折返线等候、提前量、回库存车线）。组件 523、游戏 364 全过。
+- 实测：黄线所在世界开服重排，42 天份运用全部带计划（398 处换站台等候，回库存车线全定好）；`DayRun` 问题和基线完全相同（411 趟，晚点 402、站内久停 1354、未开行 230）——规划器原来的选择和运行时一致，这一步只把决定从运行时移到规划，行为不变。
+- 还没做：`duty_*` 表（复用和索引）、回送和等候进冲突检查、Q 盘和 64 份线网回归。
+
 ## 记录
 
 （每轮完成后在这里写：提交号、改了什么、测试结果、64 份线网上的数字、发现的问题。）

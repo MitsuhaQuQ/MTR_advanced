@@ -314,7 +314,7 @@ public class DepotDispatcher {
 				if (dutyPath == null) {
 					continue;
 				}
-				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - dutyPath.stopTimes.getLeadMillis() - DUTY_DEPLOY_MARGIN_MILLIS;
+				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - outLeadMillis(duty, dutyPath.stopTimes.getLeadMillis());
 				// Missed by much, as when the depot had no train or the server stopped, the train joins its duty where it can
 				// still keep to it instead of the duty being left out, while the duty runs
 				final boolean late = currentMillis > departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS;
@@ -345,6 +345,14 @@ public class DepotDispatcher {
 			lastReleaseMillis = currentMillis;
 		}
 		return best;
+	}
+
+	/**
+	 * How long before its first service a duty's train leaves the siding: as planned (运用补完 step 1), though never less
+	 * than the way out takes; for a duty planned before, the way out and a margin.
+	 */
+	public static long outLeadMillis(DepotDuties.DayDuty duty, long wayOutMillis) {
+		return duty.outLeadMillis >= 0 ? Math.max(duty.outLeadMillis, wayOutMillis) : wayOutMillis + DUTY_DEPLOY_MARGIN_MILLIS;
 	}
 
 	private String getSlotKey(long currentMillis, DepotDuties duties, List<DepotDuties.Slot> slots, int slotIndex, int weekday, LongFunction<? extends PlanRoute> routes) {

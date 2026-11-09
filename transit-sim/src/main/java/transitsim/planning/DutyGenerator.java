@@ -404,13 +404,33 @@ public final class DutyGenerator {
 				// A duty carried over from the week before keeps the slot of the duty it continues
 				final int carriedSlot = duty.previousDuty == OperationPlan.NONE ? -1 : slotOfDuty.getOrDefault(duty.previousDuty, -1);
 				final Map<Integer, Piece> pieces = new TreeMap<>();
-				for (final OperationPlan.Trip trip : duty.trips) {
+				for (int k = 0; k < duty.trips.size(); k++) {
+					final OperationPlan.Trip trip = duty.trips.get(k);
 					final int day = (int) Math.floorMod(trip.startMillis() / OperationTime.DAY_MILLIS, 7L);
-					pieces.computeIfAbsent(day, key -> new Piece()).segments.addAll(chains.get((int) trip.sourceId).segments);
+					final Piece piece = pieces.computeIfAbsent(day, key -> new Piece());
+					final List<DepotDuties.Segment> segments = chains.get((int) trip.sourceId).segments;
+					// Where the train waits for this trip, after the one before on the same day; none between the parts of a
+					// service run through (运用补完 step 1)
+					if (!piece.segments.isEmpty()) {
+						piece.waits.add(k > 0 && k - 1 < duty.waits.size() ? duty.waits.get(k - 1) : DepotDuties.DayDuty.WAIT_ANY);
+					}
+					for (int j = 1; j < segments.size(); j++) {
+						piece.waits.add(DepotDuties.DayDuty.WAIT_ANY);
+					}
+					piece.segments.addAll(segments);
 				}
 				final List<Integer> pieceDays = new ArrayList<>(pieces.keySet());
 				for (int i = 0; i + 1 < pieceDays.size(); i++) {
 					pieces.get(pieceDays.get(i)).stayOnLine = true;
+				}
+				// Out of the siding the planned time before the first trip, and back to the siding planned
+				if (!pieceDays.isEmpty()) {
+					if (duty.previousDuty == OperationPlan.NONE) {
+						pieces.get(pieceDays.get(0)).outLeadMillis = duty.leaveMillis;
+					}
+					if (duty.nextDuty == OperationPlan.NONE) {
+						pieces.get(pieceDays.get(pieceDays.size() - 1)).returnSidingId = duty.returnDepotId;
+					}
 				}
 				if (duty.nextDuty != OperationPlan.NONE && !pieceDays.isEmpty()) {
 					pieces.get(pieceDays.get(pieceDays.size() - 1)).stayOnLine = true;
@@ -448,12 +468,16 @@ public final class DutyGenerator {
 					if (piece == null) {
 						continue;
 					}
-					final DepotDuties.DayDuty same = slot.days.stream().filter(dayDuty -> dayDuty.stayOnLine == piece.stayOnLine && dayDuty.segments.equals(piece.segments)).findFirst().orElse(null);
+					final DepotDuties.DayDuty dayDuty = new DepotDuties.DayDuty();
+					dayDuty.stayOnLine = piece.stayOnLine;
+					final int segmentCount = Math.min(piece.segments.size(), DepotDuties.MAX_SEGMENTS);
+					dayDuty.segments.addAll(piece.segments.subList(0, segmentCount));
+					dayDuty.waits.addAll(piece.waits.subList(0, Math.min(piece.waits.size(), Math.max(0, segmentCount - 1))));
+					dayDuty.outLeadMillis = piece.outLeadMillis;
+					dayDuty.returnSidingId = piece.returnSidingId;
+					final DepotDuties.DayDuty same = slot.days.stream().filter(other -> other.sameAs(dayDuty) && other.returnSidingId == dayDuty.returnSidingId).findFirst().orElse(null);
 					if (same == null) {
-						final DepotDuties.DayDuty dayDuty = new DepotDuties.DayDuty();
 						dayDuty.weekdays = 1 << day;
-						dayDuty.stayOnLine = piece.stayOnLine;
-						dayDuty.segments.addAll(piece.segments.subList(0, Math.min(piece.segments.size(), DepotDuties.MAX_SEGMENTS)));
 						slot.days.add(dayDuty);
 					} else {
 						same.weekdays |= 1 << day;
@@ -470,7 +494,10 @@ public final class DutyGenerator {
 	private static final class Piece {
 
 		private final List<DepotDuties.Segment> segments = new ArrayList<>();
+		private final List<Integer> waits = new ArrayList<>();
 		private boolean stayOnLine;
+		private long outLeadMillis = -1;
+		private long returnSidingId;
 	}
 
 	static final class Chain {

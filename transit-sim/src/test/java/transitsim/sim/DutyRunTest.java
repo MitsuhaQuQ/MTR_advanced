@@ -179,7 +179,16 @@ class DutyRunTest {
 	 * usual way, 站前) or on a turn back rail where the train stops (站后): both two rails from platform 3 to platform 4.
 	 */
 	private List<TripPath<TestTrack>> mixedTurnBackDuty(FakeTrain[] train) {
-		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 20 * MINUTE), 0, -1)));
+		return mixedTurnBackDuty(train, DepotDuties.DayDuty.WAIT_ANY);
+	}
+
+	/**
+	 * @param wait where the duty has the train wait between the two routes, as the planner had it (运用补完 step 1)
+	 */
+	private List<TripPath<TestTrack>> mixedTurnBackDuty(FakeTrain[] train, int wait) {
+		final DepotDuties.DayDuty dutyDay = day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 20 * MINUTE), 0, -1));
+		dutyDay.waits.add(wait);
+		setSlots(dutyDay);
 		final String key = DutyShapes.getSlotKey(depot.slots, 0, 0, routes::get);
 		final List<TestTrack> platformPath = makePath(0, 1, 2, 3, 9, 4, 5, 0);
 		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(key, Arrays.asList(1L, 2L), new HashMap<>(), new HashMap<>(), new HashMap<>(), platformPath, new int[]{1, 5}, null, null, false, false);
@@ -199,6 +208,42 @@ class DutyRunTest {
 		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
 		assertTrue(train[0].service.chooseTurnBack());
 		assertSame(paths.get(1), train[0].followed);
+		assertEquals(SECOND_TURN_BACK, train[0].reserved);
+	}
+
+	@Test
+	void aWaitPlannedAtThePlatformStaysThereHoweverLong() {
+		// The same long wait, planned at the platform: the train does as planned, not its own choice of the rail
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = mixedTurnBackDuty(train, DepotDuties.DayDuty.WAIT_PLATFORM);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		assertFalse(train[0].service.chooseTurnBack());
+		assertEquals(FIRST_TURN_BACK, train[0].reserved);
+	}
+
+	@Test
+	void aWaitPlannedOnTheRailTakesItHoweverShort() {
+		// A short wait the runtime would make at the platform, planned on the rail
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = mixedTurnBackDuty(train, DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 15 * MINUTE);
+		assertTrue(train[0].service.chooseTurnBack());
+		assertSame(paths.get(1), train[0].followed);
+		assertEquals(SECOND_TURN_BACK, train[0].reserved);
+	}
+
+	@Test
+	void aWaitPlannedOnTheRailWaitsWhileTheRailIsTaken() {
+		// Planned on the rail and the rail taken: it waits at the stop rather than turning back at the platform
+		final FakeTrain[] train = new FakeTrain[1];
+		final List<TripPath<TestTrack>> paths = mixedTurnBackDuty(train, DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL);
+		atTurnBackStop(paths, train[0], MONDAY + 8 * HOUR + 4 * MINUTE);
+		train[0].takenRails.addAll(SECOND_TURN_BACK);
+		assertTrue(train[0].service.chooseTurnBack());
+		assertNull(train[0].reserved);
+		// Free again, it takes the rail
+		train[0].takenRails.clear();
+		assertTrue(train[0].service.chooseTurnBack());
 		assertEquals(SECOND_TURN_BACK, train[0].reserved);
 	}
 
