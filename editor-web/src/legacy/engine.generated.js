@@ -3632,7 +3632,7 @@ export function createLegacy(env) {
 		state.scrollY = Math.min(Math.max(state.scrollY, 0), maxScroll);
 	}
 
-	function draw() {
+	function drawBefore() {
 		if (!showsDiagram()) return;
 		resizeCanvas();
 		layout = computeLayout();
@@ -3914,6 +3914,7 @@ export function createLegacy(env) {
 			ctx.fillText(clock(millis, axis.label < 60000), x, AXIS_H - 10);
 		}
 	}
+	function draw(...args) { const result = drawBefore(...args); env.render("draw", args); return result }
 
 	/**
 	 * A line through points. Where a route goes on in another section of the stations, the step between the station's

@@ -38,6 +38,11 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
  */
 const WRAPPED = ["stopsDialog", "newLineDialog", "newTypeDialog", "speedLimitDialog", "throughDialog", "contingencyDialog", "tableDialog", "depotDialog", "depotRulesDialog", "vehicleDialog", "dutyGroupsDialog", "releasePlanDialog"]
 const oldName = name => "old" + name[0].toUpperCase() + name.slice(1)
+/**
+ * Run as before, then tell the page (env.render(name)): the old running diagram's draw(), which many old functions call
+ * on their own, so the new page's running diagram (views/RunningDiagram.tsx) draws again with it
+ */
+const NOTIFY = ["draw"]
 /** Panels the new page draws itself: the old function becomes a call to env.render(name, args) */
 const RENDERS = ["renderAll", "renderTree", "renderInspector", "renderViews", "renderBanner", "renderStatus", "renderSyncButton", "renderDraftState"]
 
@@ -52,13 +57,15 @@ if (bodyStart < 9 || bodyEnd < 0) throw new Error("editor.js is no longer (() =>
 const startDecls = declarations(src).filter(d => d.start >= bodyEnd && d.kind !== "function" && !d.names.includes("pickToday"))
 const decls = declarations(src).filter(d => d.start >= bodyStart && d.end <= bodyEnd).concat(startDecls)
 const named = name => decls.find(d => d.names.includes(name))
-const missing = [...FROM_ENV, ...WRAPPED, ...RENDERS].filter(name => !named(name))
+const missing = [...FROM_ENV, ...WRAPPED, ...NOTIFY, ...RENDERS].filter(name => !named(name))
 if (missing.length) throw new Error("editor.js no longer has " + missing.join(", ") + ": update gen-legacy.mjs")
 
 // Replacements, by position in the body, applied from the end so earlier positions hold
 const replacements = []
 for (const name of FROM_ENV) replacements.push({ ...named(name), text: `/* ${name}: from env */` })
 for (const name of WRAPPED) replacements.push({ ...named(name), text: named(name).text.replace(`function ${name}(`, `function ${oldName(name)}(`) })
+for (const name of NOTIFY) replacements.push({ ...named(name), text: named(name).text.replace(`function ${name}(`, `function ${name}Before(`) + `
+	function ${name}(...args) { const result = ${name}Before(...args); env.render(${JSON.stringify(name)}, args); return result }` })
 for (const name of RENDERS) replacements.push({ ...named(name), text: `function ${name}(...args) { return env.render(${JSON.stringify(name)}, args) }` })
 replacements.sort((a, b) => b.start - a.start)
 let body = src.slice(bodyStart, bodyEnd)

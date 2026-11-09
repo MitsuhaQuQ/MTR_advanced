@@ -118,6 +118,66 @@ describe("the running diagram's geometry", () => {
       expect([mine.viewStart, mine.scrollY]).toEqual([v.state.viewStart, v.state.scrollY])
     }
   })
+  it("draws the whole day as the old page does: services, runs out and back, other lines on its track", async () => {
+    const { draw } = await import("../src/views/RunningDiagram")
+    const { v } = engine.legacy
+    v.showDepots = true
+    v.showAccess = true
+    const { drawn } = oldDraw(state => { state.pxPerMin = 4; state.viewStart = 2 * 3600000; state.scrollY = 0 })
+    const g = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D
+    const mine = draw(g, W, H, null, null)
+    expect(mine.drawn.map(d => [d.s.id, d.points])).toEqual(drawn.map(d => [d.s.id, d.points]))
+    expect(mine.legs.map(l => [l.kind, l.a, l.b, l.text])).toEqual(v.legsDrawn.map((l: any) => [l.kind, l.a, l.b, l.text]))
+    expect(mine.legs.length).toBeGreaterThan(5)
+    expect(mine.access.map(d => [d.s.id, d.points])).toEqual(v.accessDrawn.map((d: any) => [d.s.id, d.points]))
+    // Services being dragged are drawn where they would go
+    const moved = drawn[3].s
+    const shifted = draw(g, W, H, { ids: [moved.id], shift: 600000 }, null)
+    const before = drawn[3].points[0][0], after = shifted.drawn.find(d => d.s.id === moved.id)!.points[0][0]
+    expect(after - before).toBeCloseTo(10 * v.state.pxPerMin)
+  })
+  it("chooses, moves and changes a dwell by the pointer, through the old rules", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { RunningDiagram } = await import("../src/views/RunningDiagram")
+    ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
+    const { v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    v.state.pxPerMin = 4
+    v.state.viewStart = 2 * 3600000
+    v.state.scrollY = 0
+    v.state.selected = null
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(RunningDiagram)))
+    const box = host.querySelector("[data-running-diagram]") as HTMLElement, canvas = box.querySelector("canvas") as HTMLCanvasElement
+    Object.defineProperty(box, "clientWidth", { value: W })
+    Object.defineProperty(box, "clientHeight", { value: H })
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: W, bottom: H, width: W, height: H, x: 0, y: 0, toJSON() {} })
+    canvas.setPointerCapture = () => {}
+    await act(async () => { engine.flushLegacy() })
+    const { draw } = await import("../src/views/RunningDiagram")
+    const g = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D
+    const target = draw(g, W, H, null, null).drawn[4]
+    const [x, y] = target.points[1]
+    const fire = async (type: string, px: number, py: number) => act(async () => { canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: px, clientY: py, pointerId: 1, button: 0 })) })
+    // A click chooses it
+    await fire("pointerdown", x, y)
+    await fire("pointerup", x, y)
+    expect(v.state.selected).toBe(target.s.id)
+    // Dragged 40 px right: moved later, into the draft
+    await fire("pointerdown", x, y)
+    await fire("pointermove", x + 20, y)
+    await fire("pointermove", x + 40, y)
+    await fire("pointerup", x + 40, y)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(changes.length).toBeGreaterThan(0)
+    expect(changes[changes.length - 1].routes[target.s.route.id].timetable).toBeTruthy()
+    engine.pushDraft({ routes: {} })
+    v.state.selected = null
+  })
   it("draws services as the old page does: colour, width and strength", () => {
     expect(diagram.serviceLook({ selected: false, dim: false, noTrain: false, covered: true, hasTimes: true, suspended: false, notRun: false, showNoTrain: false })).toEqual({ color: "route", width: 2, alpha: 1 })
     expect(diagram.serviceLook({ selected: false, dim: false, noTrain: true, covered: false, hasTimes: true, suspended: false, notRun: false, showNoTrain: true })).toEqual({ color: "warn", width: 1, alpha: 1 })

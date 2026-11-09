@@ -84,6 +84,9 @@ export const legacy: { fn: Record<string, any>; v: Record<string, any> } = {
   v: created.v,
 }
 
+// The running diagram the old way (views/RunningDiagram.tsx draws it otherwise), as the viewer last chose
+try { legacy.v.oldDiagram = localStorage.getItem("mtr-next-old-diagram") === "1" } catch { /* private window */ }
+
 // ---------- Drawing again ----------
 let version = 0
 const listeners = new Set<() => void>()
