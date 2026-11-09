@@ -21,6 +21,8 @@ describe("abstractNetwork", () => {
     // 北湖's turn back tracks are its own, not platforms
     const lake = stations.find(p => p.name.startsWith("北湖"))!
     expect(lake.lanes.filter(l => l.platform).length).toBe(2)
+    // The passing loop's turnouts in its throats, at both ends
+    expect(new Set(central.turnouts.map(t => t.end))).toEqual(new Set([-1, 1]))
     const expo = stations.find(p => p.name.startsWith("会展中心"))!
     expect(expo.lanes.map(l => l.name).sort()).toEqual(["1", "2"])
   })
@@ -33,6 +35,11 @@ describe("abstractNetwork", () => {
     expect(between("会展中心", "机场")!.tracks).toBe(1)
     // Line 2 colours its corridor
     expect(between("会展中心", "机场")!.colors).toEqual(["#0072ce"])
+    // Each track meets its own lane at both ends: the two tracks of a double-track section don't share one
+    const pier = between("港湾", "码头街")!
+    expect(new Set(pier.lines.map(t => t.aLane)).size).toBe(2)
+    expect(new Set(pier.lines.map(t => t.bLane)).size).toBe(2)
+    expect(pier.lines.every(t => t.aLane >= 0 && t.bLane >= 0)).toBe(true)
     // Nothing but stations and the corridors between them: no junctions left over
     expect(s.places.filter(p => p.kind === "junction")).toEqual([])
   })

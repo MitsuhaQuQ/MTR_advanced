@@ -10,12 +10,18 @@
  *
  * A click that pans the map doesn't paint; Esc or the brush again puts it down. Right-click menus still work.
  */
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { ConfirmButton } from "../ui/bits"
 import { tr } from "../i18n"
 
 export type Brush = { kind: "logical"; id: string | null } | { kind: "owner"; lines: string[] | null; label: string }
+
+/** The brush in hand, shared by the panel, the real map and the logical schematic */
+let brushNow: Brush | null = null
+const brushListeners = new Set<() => void>()
+export function setBrushNow(brush: Brush | null) { brushNow = brush; brushListeners.forEach(listener => listener()) }
+export const useBrush = () => useSyncExternalStore(listener => { brushListeners.add(listener); return () => brushListeners.delete(listener) }, () => brushNow)
 
 /** Paints one rail's section with a brush, as the old menus would. */
 export function paint(index: number, brush: Brush) {
@@ -58,7 +64,9 @@ export function OwnershipPanel({ className }: { className: string }) {
   const version = useLegacy()
   const { fn, v } = legacy
   const data = v.data, net = v.net
-  const [brush, setBrush] = useState<Brush | null>(null)
+  const brush = useBrush(), setBrush = setBrushNow
+  // Put down when the panel goes
+  useEffect(() => () => setBrushNow(null), [])
   const canEdit = Boolean(data?.canEdit)
   const logical = fn.usesLogicalLines() as boolean
 

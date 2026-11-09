@@ -23,8 +23,12 @@ export type NetData = {
 export type TopoPlatform = { id: string; name: string; station: string; line?: number[]; passingTrack?: boolean }
 
 export type Lane = { offset: number; platform: boolean; name: string; colors: string[] }
-export type Place = { id: string; kind: "station" | "junction" | "end"; name: string; x: number; z: number; px: number; py: number; angle: number; lanes: Lane[] }
-export type Corridor = { a: string; b: string; tracks: number; length: number; colors: string[]; crossovers: number; rails: number[] }
+/** A turnout in a station's throat: from one of its lanes to another, at one end of it (-1 the start of its axis, 1 the end) */
+export type Turnout = { from: number; to: number; end: number }
+export type Place = { id: string; kind: "station" | "junction" | "end"; name: string; x: number; z: number; px: number; py: number; angle: number; lanes: Lane[]; turnouts: Turnout[] }
+/** One track of a corridor: the lane it meets at each end (-1 at a junction or a dead end) and the routes on it */
+export type Track = { aLane: number; bLane: number; colors: string[] }
+export type Corridor = { a: string; b: string; tracks: number; length: number; colors: string[]; crossovers: number; rails: number[]; lines: Track[] }
 export type Schematic = { places: Place[]; corridors: Corridor[]; width: number; height: number }
 
 const KIND_PLATFORM = 1
@@ -67,7 +71,7 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
     platformRails.get(id)!.push(i)
   })
   const areaOf = new Map<number, string>()
-  type Area = { id: string; u: number[]; n: number[]; nodes: number[] }
+  type Area = { id: string; u: number[]; n: number[]; nodes: number[]; centre: number; offsets: number[] }
   const areas = new Map<string, Area>()
   // Nodes by grid cell, to find those in each box quickly
   const CELL = 64, grid = new Map<string, number[]>()
@@ -91,9 +95,11 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
       }
     }
     inside.forEach(k => areaOf.set(k, id))
-    areas.set(id, { id, u, n, nodes: inside })
+    areas.set(id, { id, u, n, nodes: inside, centre: (Math.min(...along) + Math.max(...along)) / 2, offsets: [] })
   })
 
+  /** How far a node lies across a station's axis */
+  const across = (k: number, area: { n: number[] }) => nodes[k][0] * area.n[0] + nodes[k][1] * area.n[1]
   // The tracks through each station, side by side
   const platformName = (rail: number) => {
     const [x, z] = mid(rails[rail])
@@ -104,9 +110,8 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
     const lanes: { offset: number; platform: boolean; names: Set<string>; colors: Set<string> }[] = []
     rails.forEach((r, i) => {
       if (areaOf.get(r[0]) !== area.id || areaOf.get(r[1]) !== area.id) return
-      const length = lengthOf(r) || 1
-      const dot = Math.abs(((nodes[r[1]][0] - nodes[r[0]][0]) * area.u[0] + (nodes[r[1]][1] - nodes[r[0]][1]) * area.u[1]) / length)
-      if (dot < 0.9) return
+      // Along a track its two ends lie side by side the same; a turnout's change lanes
+      if (Math.abs(across(r[0], area) - across(r[1], area)) > 1.5) return
       const [x, z] = mid(r)
       const offset = x * area.n[0] + z * area.n[1]
       let lane = lanes.find(l => Math.abs(l.offset - offset) < 2.5)
@@ -115,7 +120,35 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
       railColors[i].forEach(c => lane!.colors.add(c))
     })
     const base = lanes.length ? Math.min(...lanes.map(l => l.offset)) : 0
-    return lanes.sort((a, b) => a.offset - b.offset).map(l => ({ offset: l.offset - base, platform: l.platform, name: [...l.names].join("/"), colors: [...l.colors] }))
+    lanes.sort((a, b) => a.offset - b.offset)
+    area.offsets = lanes.map(l => l.offset)
+    return lanes.map(l => ({ offset: l.offset - base, platform: l.platform, name: [...l.names].join("/"), colors: [...l.colors] }))
+  }
+  const laneLists = new Map<string, Lane[]>()
+  areas.forEach(area => laneLists.set(area.id, lanesOf(area)))
+  /** The lane of a station a node lies on: the nearest side by side */
+  const laneOf = (k: number) => {
+    const area = areas.get(areaOf.get(k)!)
+    if (!area || !area.offsets.length) return -1
+    const offset = nodes[k][0] * area.n[0] + nodes[k][1] * area.n[1]
+    let best = 0
+    area.offsets.forEach((o, i) => { if (Math.abs(o - offset) < Math.abs(area.offsets[best] - offset)) best = i })
+    return best
+  }
+  /** The turnouts in a station's throats: its rails across the axis, from lane to lane, at one end or the other */
+  const turnoutsOf = (area: Area): Turnout[] => {
+    const found = new Map<string, Turnout>()
+    rails.forEach(r => {
+      if (areaOf.get(r[0]) !== area.id || areaOf.get(r[1]) !== area.id) return
+      if (Math.abs(across(r[0], area) - across(r[1], area)) <= 1.5) return
+      const from = laneOf(r[0]), to = laneOf(r[1])
+      if (from < 0 || to < 0 || from === to) return
+      const [x, z] = mid(r)
+      const end = x * area.u[0] + z * area.u[1] < area.centre ? -1 : 1
+      const key = Math.min(from, to) + "," + Math.max(from, to) + "," + end
+      if (!found.has(key)) found.set(key, { from: Math.min(from, to), to: Math.max(from, to), end })
+    })
+    return [...found.values()]
   }
 
   // ---------- 2. Chains between anchors ----------
@@ -135,7 +168,7 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
   })
   const placeOf = (k: number) => areaOf.has(k) ? "s:" + areaOf.get(k) : adjacent[k].length > 2 ? "j:" + find(k) : "e:" + k
 
-  type Chain = { a: string; b: string; rails: number[]; length: number }
+  type Chain = { a: string; b: string; rails: number[]; length: number; startNode: number; endNode: number }
   const chains: Chain[] = []
   const walked = new Set<number>()
   nodes.forEach((_, start) => {
@@ -155,22 +188,27 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
         length += lengthOf(rails[next])
         node = other(next, node)
       }
-      chains.push({ a: placeOf(start), b: placeOf(node), rails: list, length })
+      chains.push({ a: placeOf(start), b: placeOf(node), rails: list, length, startNode: start, endNode: node })
     })
   })
 
   // ---------- 3. Corridors ----------
   const corridorMap = new Map<string, Corridor>()
+  const laneAt = (k: number) => (areaOf.has(k) ? laneOf(k) : -1)
+  const colorsOf = (list: number[]) => { const set = new Set<string>(); list.forEach(r => railColors[r].forEach(c => set.add(c))); return [...set] }
   chains.forEach(chain => {
     if (chain.a === chain.b) return
-    const [a, b] = chain.a < chain.b ? [chain.a, chain.b] : [chain.b, chain.a]
+    const forward = chain.a < chain.b
+    const [a, b] = forward ? [chain.a, chain.b] : [chain.b, chain.a]
+    const track: Track = { aLane: laneAt(forward ? chain.startNode : chain.endNode), bLane: laneAt(forward ? chain.endNode : chain.startNode), colors: colorsOf(chain.rails) }
     const key = a + "|" + b
     const corridor = corridorMap.get(key)
     if (corridor) {
       corridor.tracks++
       corridor.length = Math.max(corridor.length, chain.length)
       corridor.rails.push(...chain.rails)
-    } else corridorMap.set(key, { a, b, tracks: 1, length: chain.length, colors: [], crossovers: 0, rails: chain.rails.slice() })
+      corridor.lines.push(track)
+    } else corridorMap.set(key, { a, b, tracks: 1, length: chain.length, colors: [], crossovers: 0, rails: chain.rails.slice(), lines: [track] })
   })
   let corridors = [...corridorMap.values()]
   // A junction between only two places is a crossover on the line: the corridor runs through it
@@ -184,10 +222,17 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
       const a = c1.a === place ? c1.b : c1.a, b = c2.a === place ? c2.b : c2.a
       if (a === b) continue
       const [x, y] = a < b ? [a, b] : [b, a]
-      const merged: Corridor = { a: x, b: y, tracks: Math.max(c1.tracks, c2.tracks), length: c1.length + c2.length, colors: [], crossovers: c1.crossovers + c2.crossovers + 1, rails: [...c1.rails, ...c2.rails] }
+      // The lanes each track meets at the two outer places, paired side by side
+      const outer = (c: Corridor, at: string) => c.lines.map(t => (c.a === at ? t.aLane : t.bLane)).sort((p, q) => p - q)
+      const atA = outer(c1.a === a || c1.b === a ? c1 : c2, a), atB = outer(c1.a === b || c1.b === b ? c1 : c2, b)
+      const count = Math.max(c1.tracks, c2.tracks)
+      const lanesX = x === a ? atA : atB, lanesY = x === a ? atB : atA
+      const colors = colorsOf([...c1.rails, ...c2.rails])
+      const lines: Track[] = Array.from({ length: count }, (_, i) => ({ aLane: lanesX[Math.min(i, lanesX.length - 1)] ?? -1, bLane: lanesY[Math.min(i, lanesY.length - 1)] ?? -1, colors }))
+      const merged: Corridor = { a: x, b: y, tracks: count, length: c1.length + c2.length, colors: [], crossovers: c1.crossovers + c2.crossovers + 1, rails: [...c1.rails, ...c2.rails], lines }
       corridors = corridors.filter(c => c !== c1 && c !== c2)
       const same = corridors.find(c => c.a === x && c.b === y)
-      if (same) { same.tracks = Math.max(same.tracks, merged.tracks); same.rails.push(...merged.rails); same.crossovers += merged.crossovers }
+      if (same) { same.tracks = Math.max(same.tracks, merged.tracks); same.rails.push(...merged.rails); same.crossovers += merged.crossovers; if (same.lines.length < merged.lines.length) same.lines = merged.lines }
       else corridors.push(merged)
       changed = true
       break
@@ -204,18 +249,32 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
   used.forEach(id => {
     if (id.startsWith("s:")) {
       const area = areas.get(id.slice(2))!, station = stationById.get(area.id)!
-      places.push({ id, kind: "station", name: station.name, x: station.x, z: station.z, px: 0, py: 0, angle: Math.round(Math.atan2(area.u[1], area.u[0]) / SNAP) * SNAP, lanes: lanesOf(area) })
+      places.push({ id, kind: "station", name: station.name, x: station.x, z: station.z, px: 0, py: 0, angle: Math.round(Math.atan2(area.u[1], area.u[0]) / SNAP) * SNAP, lanes: laneLists.get(area.id)!, turnouts: turnoutsOf(area) })
     } else if (id.startsWith("j:")) {
       const root = +id.slice(2)
       const [x, z] = centre(junctionNodes.filter(k => find(k) === root))
-      places.push({ id, kind: "junction", name: "", x, z, px: 0, py: 0, angle: 0, lanes: [] })
+      places.push({ id, kind: "junction", name: "", x, z, px: 0, py: 0, angle: 0, lanes: [], turnouts: [] })
     } else {
       const k = +id.slice(2)
-      places.push({ id, kind: "end", name: "", x: nodes[k][0], z: nodes[k][1], px: 0, py: 0, angle: 0, lanes: [] })
+      places.push({ id, kind: "end", name: "", x: nodes[k][0], z: nodes[k][1], px: 0, py: 0, angle: 0, lanes: [], turnouts: [] })
     }
   })
-  // A station's tracks lie across its axis; keep its box upright-ish (angle in -90…90)
-  places.forEach(p => { if (p.angle > Math.PI / 2 + 1e-6) p.angle -= Math.PI; if (p.angle < -Math.PI / 2 - 1e-6) p.angle += Math.PI })
+  // A station's axis kept in -90…90°; turned round, its lanes and the ends of its turnouts turn round with it
+  const flipped = new Set<string>()
+  places.forEach(p => {
+    const turn = p.angle > Math.PI / 2 + 1e-6 ? -Math.PI : p.angle < -Math.PI / 2 - 1e-6 ? Math.PI : 0
+    if (!turn) return
+    p.angle += turn
+    flipped.add(p.id)
+    const n = p.lanes.length, width = n ? p.lanes[n - 1].offset : 0
+    p.lanes = p.lanes.slice().reverse().map(l => ({ ...l, offset: width - l.offset }))
+    p.turnouts = p.turnouts.map(t => ({ from: n - 1 - t.to, to: n - 1 - t.from, end: -t.end }))
+  })
+  const placeLanes = new Map(places.map(p => [p.id, p.lanes.length]))
+  corridors.forEach(c => c.lines.forEach(t => {
+    if (flipped.has(c.a) && t.aLane >= 0) t.aLane = placeLanes.get(c.a)! - 1 - t.aLane
+    if (flipped.has(c.b) && t.bLane >= 0) t.bLane = placeLanes.get(c.b)! - 1 - t.bLane
+  }))
   layout(places, corridors)
   const xs = places.map(p => p.px), ys = places.map(p => p.py)
   const minX = Math.min(...xs, 0), minY = Math.min(...ys, 0)
@@ -234,10 +293,10 @@ export function layout(places: Place[], corridors: Corridor[]) {
   const wants = corridors.map(c => {
     const a = places[index.get(c.a)!], b = places[index.get(c.b)!]
     const angle = Math.round(Math.atan2(b.z - a.z, b.x - a.x) / SNAP) * SNAP
-    const length = Math.max(90, Math.min(280, 40 + 5 * Math.sqrt(c.length)))
+    const length = Math.max(140, Math.min(320, 80 + 5 * Math.sqrt(c.length)))
     return { a: index.get(c.a)!, b: index.get(c.b)!, dx: Math.cos(angle) * length, dy: Math.sin(angle) * length }
   })
-  const near = 70
+  const near = 100
   const linked = new Set(wants.map(w => Math.min(w.a, w.b) + "," + Math.max(w.a, w.b)))
   // Then the directions alone for the last rounds, so they end up straight
   for (let iteration = 0; iteration < 600; iteration++) {

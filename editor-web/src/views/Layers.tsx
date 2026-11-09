@@ -56,10 +56,31 @@ function NetworkWork({ owners }: { owners: boolean }) {
   const redraw = useCallback(() => legacy.fn.drawNetwork(), [])
   const map = <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={redraw} />
   if (!owners) return map
-  // The ownership layer: its brushes and the operating lines' logical lines beside the map
+  // The ownership layer: the logical map or the real one, with its brushes and the operating lines' logical lines beside
+  return <OwnersWork map={map} />
+}
+
+function OwnersWork({ map }: { map: ReactNode }) {
+  const [view, setView] = useState<"logical" | "real">(() => { try { return localStorage.getItem("mtr-next-owners-view") === "real" ? "real" : "logical" } catch { return "logical" } })
+  const choose = (next: "logical" | "real") => {
+    setView(next)
+    try { localStorage.setItem("mtr-next-owners-view", next) } catch { /* private window */ }
+    if (next === "real") setTimeout(() => legacy.fn.drawNetwork())
+  }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
-      {map}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
+          <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
+            {([["logical", tr("逻辑图")], ["real", tr("实际图")]] as const).map(([id, label], i) => (
+              <button key={id} type="button" aria-pressed={view === id} onClick={() => choose(id)}
+                className={"px-2.5 text-[13px] " + (i ? "border-l border-gridstrong " : "") + (view === id ? "bg-brand font-medium text-brandink" : "bg-panel")}>{label}</button>
+            ))}
+          </div>
+          <span className="text-[12px] text-dim">{view === "logical" ? tr("车站和区间，按逻辑线路着色；画笔点区间") : tr("按游戏坐标画；画笔点轨道，右键改归属和联络线")}</span>
+        </div>
+        {view === "logical" ? <NetworkSchematic mode="logical" onShowReal={() => choose("real")} /> : map}
+      </div>
       <OwnershipPanel className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
     </div>
   )

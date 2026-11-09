@@ -451,6 +451,39 @@ describe("the old code in the new page", () => {
     await act(async () => { central.dispatchEvent(new MouseEvent("click", { bubbles: true })) })
     expect(host.textContent).toContain("5 号站台")
     expect(host.textContent).toContain("在实际图上看")
+    // The tracks drawing: platforms beside their tracks, turnouts as diagonals in 中央广场
+    expect(central.querySelectorAll("rect title").length).toBe(3)
+    expect(central.querySelectorAll("g > line").length).toBeGreaterThan(3)
+  })
+  it("paints a whole section on the logical map with a brush", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { NetworkSchematic } = await import("../src/views/NetworkSchematic")
+    const { setBrushNow } = await import("../src/views/OwnershipPanel")
+    const { exampleTrack } = await import("../mock/track")
+    const { v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    v.net.data = exampleTrack().network
+    v.net.ownerOf = new Map()
+    v.net.sectionRails = new Map()
+    v.net.layer = "owners"
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(NetworkSchematic, { onShowReal: () => {}, mode: "logical" })))
+    expect(host.querySelector("svg")!.getAttribute("aria-label")).toBe("全网逻辑图")
+    await act(async () => setBrushNow({ kind: "owner", lines: ["TRAIN|2号线|Line 2"], label: "" }))
+    // The section from 会展中心 to 机场, line 2's single track
+    const sections = [...host.querySelectorAll("g.cursor-crosshair")]
+    expect(sections.length).toBeGreaterThan(5)
+    await act(async () => { sections[sections.length - 1].dispatchEvent(new MouseEvent("click", { bubbles: true })); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const overrides = changes[changes.length - 1].networkSettings.ownerOverrides
+    expect(Object.values(overrides).length).toBeGreaterThan(0)
+    expect(Object.values(overrides).every((lines: any) => lines[0] === "TRAIN|2号线|Line 2")).toBe(true)
+    await act(async () => setBrushNow(null))
+    engine.pushDraft({ routes: {} })
   })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
