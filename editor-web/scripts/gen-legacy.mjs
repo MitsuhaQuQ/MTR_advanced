@@ -31,7 +31,7 @@ const CSS_OUT = path.resolve(here, "../public/legacy.css")
 /** Taken from env instead of editor.js */
 const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson", "sendJson", "setTreeOpen"]
 /** Panels the new page draws itself: the old function becomes a call to env.render(name, args) */
-const RENDERS = ["renderAll", "renderViews", "renderBanner", "renderStatus", "renderSyncButton", "renderDraftState"]
+const RENDERS = ["renderAll", "renderTree", "renderViews", "renderBanner", "renderStatus", "renderSyncButton", "renderDraftState"]
 
 // Line ends as checked out on Windows
 const src = fs.readFileSync(path.join(EDITOR, "editor.js"), "utf8").replace(/\r\n/g, "\n")

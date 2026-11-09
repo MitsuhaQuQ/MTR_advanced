@@ -47,13 +47,13 @@ export function mockData() {
     depots: [
       {
         id: "9001", name: "北湖车厂|North Lake Depot", routes: ["101", "102", "103"],
-        sidings: [{ id: "8001", name: "1 道", maxTrains: 3 }, { id: "8002", name: "2 道", maxTrains: 3 }, { id: "8003", name: "3 道", maxTrains: 2 }],
+        sidings: [{ id: "8001", name: "1 道", maxTrains: 3, fleet: 3, routes: [] }, { id: "8002", name: "2 道", maxTrains: 3, fleet: 3, routes: [] }, { id: "8003", name: "3 道", maxTrains: 2, fleet: 2, routes: ["101", "102"] }],
         pools: [{ key: "a6", vehicle: "A 型 6 节", fleet: 9, sum: 8, sidings: ["8001", "8002", "8003"] }],
         path: { state: "found", text: "", failedDuties: 0 }, duties: { mode: "auto", sidings: {} }, shortfall: { uncovered: 4 },
       },
       {
         id: "9002", name: "机场车厂|Airport Depot", routes: ["201", "202"],
-        sidings: [{ id: "8101", name: "1 道", maxTrains: 4 }],
+        sidings: [{ id: "8101", name: "1 道", maxTrains: 4, fleet: -1, routes: [] }],
         pools: [{ key: "b4", vehicle: "B 型 4 节", fleet: null, sum: -1, sidings: ["8101"] }],
         path: { state: "generating", text: "", failedDuties: 0 }, duties: { mode: "auto", sidings: {} },
       },

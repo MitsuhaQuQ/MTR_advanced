@@ -8,9 +8,10 @@ import { LegacySlot } from "../legacy/Slot"
 import { menuHost } from "../legacy/engine"
 import { tr } from "../i18n"
 import type { LayerId } from "../shell/layers"
+import { Navigator, type Part } from "./Navigator"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
-const TREE_PART: Partial<Record<LayerId, number>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
+const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
 
 export function LayerWork({ layer }: { layer: LayerId }) {
   useLegacy()
@@ -33,17 +34,9 @@ export function LayerWork({ layer }: { layer: LayerId }) {
   const part = TREE_PART[layer]
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      {part && <TreePart part={part} />}
+      {part && <Navigator part={part} />}
       {layer === "physical" || layer === "owners" || layer === "dispatch" ? <NetworkWork /> : <DiagramWork />}
     </div>
-  )
-}
-
-function TreePart({ part }: { part: number }) {
-  return (
-    <aside className="tree-part hidden w-[270px] shrink-0 flex-col border-r border-grid bg-bg md:flex" data-part={part}>
-      <LegacySlot id="tree" className="scroll-thin min-h-0 flex-1 overflow-y-auto" />
-    </aside>
   )
 }
 

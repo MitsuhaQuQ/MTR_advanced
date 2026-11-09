@@ -79,7 +79,6 @@ export function renderLegacy() {
     if (!data.simulation && sim.on) fn.setSimulation(false)
     if (sim.on && !sim.timer && (sim.line !== state.line || sim.weekday !== state.weekday)) fn.scheduleSimulation()
   }
-  fn.renderTree()
   fn.watchNetwork()
   fn.drawNetwork()
   fn.draw()

@@ -41,7 +41,6 @@ describe("the old code in the new page", () => {
     v.state.view = "table"
     v.state.split = false
     engine.renderLegacy()
-    expect(document.getElementById("tree")!.textContent).toContain("1号线")
     expect(document.getElementById("view-table")!.querySelectorAll("td").length).toBeGreaterThan(10)
     expect(document.getElementById("inspector")!.textContent!.length).toBeGreaterThan(0)
     expect(() => fn.draw()).not.toThrow()
@@ -61,6 +60,33 @@ describe("the old code in the new page", () => {
     const { v } = engine.legacy
     engine.pushDraft({ routes: {} })
     expect(v.draft.routes).toEqual({})
+  })
+  it("drives the old tree's handlers from the new navigator", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { Navigator } = await import("../src/views/Navigator")
+    ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
+    const { v } = engine.legacy
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(Navigator, { part: 4 })))
+    const line = v.data.lines[0], r = line.routes[1]
+    v.state.line = line.key
+    await act(async () => engine.renderLegacy())
+    // A route's row opens its views; its chip opens the summary table (onTreeClick)
+    const row = document.querySelector(`#tree .node[data-route="${r.id}"]:not([data-view])`) as HTMLElement
+    expect(row).toBeTruthy()
+    await act(async () => row.click())
+    const chip = document.querySelector(`#tree .node[data-route="${r.id}"][data-view="table"]`) as HTMLElement
+    expect(chip).toBeTruthy()
+    await act(async () => chip.click())
+    expect(v.state.route).toBe(r.id)
+    expect(v.state.view).toBe("table")
+    // A right-click opens the old code's menu for it
+    let items: any[] = []
+    engine.menuHost.current = { open: (_x, _y, list) => { items = list }, close: () => {} }
+    await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })))
+    expect(items.map(item => item[0])).toContain("新建时刻表…")
   })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")

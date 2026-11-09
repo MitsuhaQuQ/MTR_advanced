@@ -70,10 +70,10 @@
 .legacy-slot > #media-upload, .legacy-slot > #media-usage { flex: none; }
 .legacy-slot > #sim-status { flex: none; }
 .legacy-overlays { position: fixed; inset: 0 auto auto 0; width: 0; height: 0; z-index: 45; }
-/* Each layer shows its own part of the old tree: its five sections are pairs of a heading and a list */
-.tree-part #tree > .section, .tree-part #tree > ul { display: none; }
-.tree-part[data-part="1"] #tree > ul:nth-of-type(1), .tree-part[data-part="2"] #tree > ul:nth-of-type(2),
-.tree-part[data-part="3"] #tree > ul:nth-of-type(3), .tree-part[data-part="4"] #tree > ul:nth-of-type(4),
-.tree-part[data-part="5"] #tree > ul:nth-of-type(5) { display: block; }
+/* Marks the old code still writes into navigator rows (problemDot, lockMark) */
+.nav-raw .problem-dot { font-weight: 700; }
+.nav-raw .problem-dot.error, .nav-raw .count.warn { color: var(--warn); }
+.nav-raw .problem-dot.warn { color: var(--caution); }
+.nav-raw .count { font-size: 11px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
