@@ -22,7 +22,7 @@ export type DiagramTarget = { kind: "route"; routeId: string } | { kind: "line";
 export const diagramHost: { current: ((target: DiagramTarget) => void) | null } = { current: null }
 
 /** The stops of a route to edit, at a stop or not, or a new line group to make (views/StopsEditor.tsx) */
-export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { kind: "new" }
+export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { kind: "new" } | { kind: "type"; lineKey: string; baseId: string }
 export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { current: null }
 
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
@@ -58,6 +58,7 @@ const env = {
   // The old stops and new line dialogs: the new page's stops editor instead (the old ones stay as oldStopsDialog …)
   stopsDialog: (r: { id: string }, stop?: number) => stopsHost.current?.({ kind: "route", routeId: r.id, stop: stop ?? -1 }),
   newLineDialog: () => stopsHost.current?.({ kind: "new" }),
+  newTypeDialog: (lineKey: string, base?: { id: string }) => stopsHost.current?.({ kind: "type", lineKey, baseId: base ? base.id : "" }),
   render: (name: string) => onRender(name),
 }
 

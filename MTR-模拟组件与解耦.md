@@ -1113,7 +1113,7 @@ S0 之前，已经不依赖世界的部件：
 
 **新版网页编辑器，迁移第 0 步（2026-11-10）**：只加网页，组件、宿主、包和存档都不变。新版页面放在 `assets/mtr/editor/next/`（源码 `editor-web/`，构建结果提交进仓库），和旧版并存、共用接口和草稿；第 0 步只有外框和各层的只读概览，编辑仍在旧版。以后各层搬过去时也只改网页这一层：规则在组件，网页只是宿主的一个界面。代码说明 8.7 节，规格第 11 节，测试 U370–U372。第 1 步（同日）把草稿变成操作、应用后的处理、改动说明和同步状态搬成新页面的模块（`editor-web/src/core/`），用对拍测试和旧版逐项比对；仍只是网页，不改组件和宿主。同日第一轮把各层接进新外壳：迁移期间新页面运行构建时从 `editor.js` 生成的旧代码（`editor-web/scripts/gen-legacy.mjs`），两版的规则和画法因此始终一样。
 
-**新版网页编辑器，停站编辑和新建线路（2026-11-10）**：仍然只改网页。新版的停站面板和新建线路面板（`editor-web/src/views/StopsEditor.tsx`）只是新的画法，选股道、判断走不走得通、排车站仍是旧页面的 `solveStops` / `legCost` / `findCorridor`（在 `api/data` 的站台连通图上），写草稿和改站序也走旧的 `draftEntry` / `editTimetable` / `sendStopList`，组件和宿主不变。归属画笔（`OwnershipPanel.tsx`）同样只是换了操作方式，写的还是 `networkSettings` 的 `ownerOverrides` / `railLines` / `lineTracks` / `logicalLines`，服务端和组件的 `LogicalLines` 不变。全网示意配线图（`abstractNet.ts`）是网页自己从 `api/network` 推出的画法，不进组件：它只用于看，任何规则都不读它；以后若服务端要给出"车站区域 / 区间股数"，应在组件的 `RailGraph` 上算，再由网页直接画。
+**新版网页编辑器，停站编辑和新建线路（2026-11-10）**：仍然只改网页。新版的停站面板、新建线路和新建种别面板（`editor-web/src/views/StopsEditor.tsx`）只是新的画法，选股道、判断走不走得通、排车站仍是旧页面的 `solveStops` / `legCost` / `findCorridor`（在 `api/data` 的站台连通图上），写草稿和改站序也走旧的 `draftEntry` / `editTimetable` / `sendStopList`，组件和宿主不变。归属画笔（`OwnershipPanel.tsx`）同样只是换了操作方式，写的还是 `networkSettings` 的 `ownerOverrides` / `railLines` / `lineTracks` / `logicalLines`，服务端和组件的 `LogicalLines` 不变。全网示意配线图（`abstractNet.ts`）是网页自己从 `api/network` 推出的画法，不进组件：它只用于看，任何规则都不读它；以后若服务端要给出"车站区域 / 区间股数"，应在组件的 `RailGraph` 上算，再由网页直接画。
 
 **网页分层第 4 步：导航按层排（2026-11-09，0.63.3）**：只改网页。左侧树按存档的层分五栏（物理线路、区段归属、运营线路、时刻表和交路、车厂），车型设置挂在车厂下的车型上；组件和存档不变。
 

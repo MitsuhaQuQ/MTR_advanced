@@ -29,6 +29,7 @@ export function StopsEditor() {
   const close = () => setTarget(null)
   return target.kind === "route"
     ? <RouteStops key={target.routeId + "/" + target.stop} routeId={target.routeId} onClose={close} />
+    : target.kind === "type" ? <NewType key={target.lineKey + "/" + target.baseId} lineKey={target.lineKey} baseId={target.baseId} onClose={close} />
     : <NewLine onClose={close} />
 }
 
@@ -461,6 +462,182 @@ function NewLine({ onClose }: { onClose: () => void }) {
         </>}
         {models.length > 0 && lineName.trim() && type.trim() && <p className="text-[12px] text-dim">{tr("建出：{0}", models.map(nameOf).join("、"))}</p>}
       </>}
+    </SidePanel>
+  )
+}
+
+// ---------- A new type of a line ----------
+
+/**
+ * A new type of a line group (old newTypeDialog): one of the group's routes gives the timetable, the depot and, at each
+ * station, the track it would rather use; the stations are those the shortest way along the rails passes from the start
+ * to the end through the stations chosen, not copied from the route.
+ */
+function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string; onClose: () => void }) {
+  useLegacy()
+  const { fn, v } = legacy
+  const data = v.data, topo = v.topo
+  const line = data?.lines.find((l: any) => l.key === lineKey) || fn.currentLine()
+  const bases: any[] = line ? line.routes.filter((r: any) => r.stops.length > 1) : []
+  const [baseChosen, setBase] = useState(baseId)
+  const base = bases.find(r => r.id === baseChosen) || bases[0]
+  const trackOf = (id: string): number => (topo && topo.index.has(id) ? topo.index.get(id) : -1)
+  // The stations on the same rails as the base route, by the first track of each
+  const stations = useMemo(() => {
+    if (!base || !topo) return [] as { station: string; track: number; name: string }[]
+    const first = trackOf(base.stops[0].platformId)
+    if (first < 0) return []
+    const network = topo.platforms[first].network, seen = new Map<string, number>()
+    topo.platforms.forEach((p: any, i: number) => { if (p.network === network && p.station && !seen.has(p.station)) seen.set(p.station, i) })
+    return [...seen.entries()].map(([station, i]) => ({ station, track: i, name: fn.shortName(topo.platforms[i].stationName) as string })).sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"))
+  }, [base?.id, topo]) // eslint-disable-line react-hooks/exhaustive-deps
+  const has = (station: string) => stations.some(s => s.station === station)
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
+  const [fromTrack, setFromTrack] = useState("")
+  const [vias, setVias] = useState<string[]>([])
+  const [both, setBoth] = useState(true)
+  const [type, setType] = useState("")
+  const [color, setColor] = useState("#2f9e55")
+  const [name, setName] = useState("")
+  const [pattern, setPattern] = useState("")
+  const [depot, setDepot] = useState<string | null>(null)
+  const [dir, setDir] = useState(0)
+  const [error, setError] = useState("")
+  const fromNow = has(from) ? from : (base ? base.stops[0].station : "")
+  const toNow = has(to) ? to : (base ? base.stops[base.stops.length - 1].station : "")
+  const viasNow = vias.filter(has)
+  const tracksOf = (station: string): number[] => { const s = stations.find(o => o.station === station); return s ? fn.stationTracks(s.track) : [] }
+  const startTracks = tracksOf(fromNow)
+  const startTrack = fromTrack !== "" && startTracks.includes(Number(fromTrack)) ? Number(fromTrack) : -1
+  const depots: any[] = base ? data.depots.filter((d: any) => d.routes.includes(base.id)) : []
+  const depotNow = depot !== null && (depot === "" || depots.some(d => d.id === depot)) ? depot : (depots[0]?.id ?? "")
+  const nameOf = (station: string) => stations.find(o => o.station === station)?.name ?? "?"
+
+  const planKey = [base?.id, fromNow, toNow, startTrack, both, viasNow.join(">")].join("|")
+  const [planned, setPlanned] = useState<{ key: string; models: StopsModel[]; error: string }>({ key: "", models: [], error: "" })
+  if (base && topo && planned.key !== planKey) {
+    const models: StopsModel[] = []
+    let routeError = ""
+    if (!fromNow || !toNow || fromNow === toNow) routeError = tr("选好不同的起点站和终点站")
+    else {
+      // Ways along different tracks often cost the same: each station then takes the track the line's route that way uses
+      const make = (start: number[], ends: number[], stops: string[], hint: any, pinnedStart: number): StopsModel | null => {
+        const tracks = fn.findCorridor([start, ...stops.map(tracksOf), ends])
+        if (!tracks || tracks.length < 2) return null
+        const model: StopsModel = fn.topologyModel(tracks, tracks.map(() => true), color)
+        if (pinnedStart >= 0) model.pins.set(0, pinnedStart)
+        const hinted = new Map<string, number>((hint ? hint.stops : []).filter((stop: any) => topo.index.has(stop.platformId)).map((stop: any) => [stop.station, topo.index.get(stop.platformId)]))
+        const preferred = model.layers.map((layer, i) => { const track = hinted.get(topo.platforms[layer[0]].station); return track !== undefined && layer.includes(track) ? track : model.picks[i] })
+        const solution = fn.solveStops(model.layers, preferred, model.pins)
+        if (solution.ok) model.picks = solution.picks
+        return model
+      }
+      const forward = make(startTrack >= 0 ? [startTrack] : startTracks, tracksOf(toNow), viasNow, base, startTrack)
+      if (!forward) routeError = tr("从{0}{1}到{2}沿轨道走不通", nameOf(fromNow), viasNow.length ? tr("经过选的途经站") : "", nameOf(toNow))
+      else {
+        models.push(forward)
+        if (both) {
+          const backward = make(tracksOf(toNow), startTracks, viasNow.slice().reverse(), fn.counterpartOf(base), -1)
+          if (backward) models.push(backward)
+          else routeError = tr("反方向沿轨道走不通，只建这个方向")
+        }
+      }
+    }
+    setPlanned({ key: planKey, models, error: routeError })
+  }
+  if (!line || !base) return null
+  const models = planned.models.map(m => ({ ...m, color }))
+  const shown = Math.min(dir, models.length - 1)
+  const setModel = (model: StopsModel) => setPlanned(p => ({ ...p, models: p.models.map((m, i) => (i === shown ? model : m)) }))
+  const kind = type.trim()
+  // The other way is named after the line's route that way, or marked as the way back when there is none
+  const titleOf = (i: number) => {
+    const source = i === 0 ? base : fn.counterpartOf(base) || base
+    return i === 0 && name.trim() ? name.trim() : i > 0 && source === base ? fn.withSuffix(fn.typedName(base, kind), " 返") : fn.typedName(source, kind)
+  }
+
+  const create = () => {
+    if (!kind) { setError(tr("写上种别名，例如 急行")); return }
+    if (!models.length) { setError(planned.error || tr("选好起点和终点")); return }
+    if (models.some(m => m.conflict)) { setError(tr("有固定的股道连不起来")); return }
+    const times = pattern.trim() ? fn.parsePattern(pattern) : []
+    if (!times) { setError(v.PATTERN_HINT); return }
+    const value = parseInt(color.slice(1), 16)
+    models.forEach((model, i) => {
+      const source = i === 0 ? base : fn.counterpartOf(base) || base
+      const table = Math.max(0, fn.timetableOf(source).tables.findIndex((t: any) => (t.weekdays >> v.state.weekday) & 1))
+      v.draft.created.push({
+        key: "n" + Date.now().toString(36) + i, source: source.id, lineKey: source.lineKey, name: titleOf(i), serviceType: kind, color: value,
+        stops: model.picks.map((p, k) => ({ platformId: topo.platforms[p].id, pass: !model.stop[k] && k > 0 && k < model.picks.length - 1 })),
+        services: times, table, depot: depotNow,
+      })
+    })
+    v.state.openNodes.add("line:" + line.key)
+    fn.saveDraft()
+    fn.renderAll()
+    onClose()
+  }
+
+  const field = "h-7 rounded-md border border-ctl bg-panel px-2 text-[13px]"
+  const label = "flex flex-col gap-0.5 text-[12px] text-dim"
+  const options = stations.map(s => <option key={s.station} value={s.station}>{s.name}</option>)
+  return (
+    <SidePanel open onClose={onClose} title={tr("新建种别：{0}", fn.shortName(line.name))} width={640}
+      hint={tr("线路组的这条线路给出颜色、时刻表和车厂。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。")}
+      footer={<>
+        <button className="btn btn-primary" disabled={!data.canEdit} onClick={create}>{tr("新建")}</button>
+        <button className="btn" onClick={onClose}>{tr("取消")}</button>
+        {error && <span className="text-[12px] text-warn" role="alert">{error}</span>}
+      </>}>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+        <label className={label + " col-span-2"}>{tr("照着")}
+          <select className={field} value={base.id} onChange={e => { setBase(e.target.value); setVias([]); setFrom(""); setTo(""); setFromTrack("") }}>
+            {bases.map(r => <option key={r.id} value={r.id}>{fn.routeTitle(r)}</option>)}
+          </select></label>
+        <label className={label}>{tr("种别")}<input className={field} value={type} maxLength={16} placeholder={tr("急行")} onChange={e => { setType(e.target.value); setError("") }} /></label>
+        <label className={label}>{tr("颜色")}<input className="h-7 w-full rounded-md border border-ctl bg-panel" type="color" value={color} onChange={e => setColor(e.target.value)} /></label>
+        <label className={label}>{tr("起点")}<select className={field} value={fromNow} onChange={e => { setFrom(e.target.value); setFromTrack("") }}>{options}</select></label>
+        <label className={label}>{tr("站台")}
+          <select className={field} value={startTrack >= 0 ? String(startTrack) : ""} onChange={e => setFromTrack(e.target.value)}>
+            <option value="">{tr("任一股")}</option>
+            {startTracks.map(p => <option key={p} value={p}>{fn.trackLabel(topo.platforms[p].id, fn.platformLabel(p), topo.platforms[p].passingTrack)}</option>)}
+          </select></label>
+        <label className={label}>{tr("终点")}<select className={field} value={toNow} onChange={e => setTo(e.target.value)}>{options}</select></label>
+        <label className="flex items-end gap-1.5 pb-1 text-[13px]"><input type="checkbox" checked={both} onChange={e => setBoth(e.target.checked)} /> {tr("反方向一起建")}</label>
+        <label className={label + " col-span-2"}>{tr("线路名")}<input className={field} value={name} maxLength={128} placeholder={kind ? fn.typedName(base, kind) : tr("按线路组和种别自动起名")} onChange={e => setName(e.target.value)} /></label>
+        <label className={label + " col-span-2"}>{tr("加入车厂")}
+          <select className={field} value={depotNow} onChange={e => setDepot(e.target.value)}>
+            {depots.map(d => <option key={d.id} value={d.id}>{fn.shortName(d.name)}</option>)}
+            <option value="">{tr("不加入，之后在游戏里加")}</option>
+          </select></label>
+        <label className={label + " col-span-2 sm:col-span-4"}>{tr("班次")}<input className={field} value={pattern} placeholder={tr("可以留空，例如 08:05 + 12 * 00:30")} onChange={e => { setPattern(e.target.value); setError("") }} /></label>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[12px] text-dim">{tr("途经站")}</span>
+        {viasNow.map((station, k) => (
+          <button key={station + k} className="btn h-6 px-2 text-[12px]" title={tr("点一下去掉")} onClick={() => setVias(viasNow.filter((_, i) => i !== k))}>{nameOf(station)} ✕</button>
+        ))}
+        <select className={field} value="" aria-label={tr("＋ 途经站…")} onChange={e => { if (e.target.value) setVias([...viasNow, e.target.value]) }}>
+          <option value="">{tr("＋ 途经站…")}</option>{options}
+        </select>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-grid pt-3">
+        <b className="text-[14px]">{tr("车站和股道")}</b>
+        {models.length > 1 && models.map((m, i) => (
+          <button key={i} className={"btn h-6 px-2 text-[12px]" + (i === shown ? " tint-accent font-semibold text-brand" : "")} aria-pressed={i === shown} style={i === shown ? { borderColor: "var(--accent)" } : undefined} onClick={() => setDir(i)}>
+            {fn.stationLabel(m.picks[0])} → {fn.stationLabel(m.picks[m.picks.length - 1])}
+          </button>
+        ))}
+      </div>
+      <p className="my-2 text-[12px] text-dim">{tr("车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站，不照抄现有线路；每站先用这条线路在那里用的股道。点一股固定它，其他站自动换成走得通的股道。")}</p>
+      {planned.error && <p className="my-2 text-[13px] text-warn" role="alert">{planned.error}</p>}
+      {models[shown] && <>
+        {models[shown].conflict && <p className="my-2 text-[13px] text-warn" role="alert">{models[shown].conflict}</p>}
+        <Strip model={models[shown]} setModel={m => { setModel(m); setError("") }} />
+        <p className="mt-2 text-[12px] text-dim">{fn.stopsSummaryOf(models[shown])}</p>
+      </>}
+      {models.length > 0 && kind && <p className="text-[12px] text-dim">{tr("建出：{0}", models.map((_, i) => titleOf(i)).join("、"))}</p>}
     </SidePanel>
   )
 }

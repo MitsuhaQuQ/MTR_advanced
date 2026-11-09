@@ -205,6 +205,35 @@ describe("the old code in the new page", () => {
     expect(created[1].stops[0].platformId).toBe("1105")
     engine.pushDraft({ routes: {} })
   })
+  it("makes a new type of a line both ways in the new type editor", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { StopsEditor } = await import("../src/views/StopsEditor")
+    const { fn, v } = engine.legacy
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(StopsEditor)))
+    await act(async () => fn.newTypeDialog("TRAIN|1号线|Line 1", v.data.routeById.get("101")))
+    expect(host.textContent).toContain("新建种别")
+    // The ends of route 101 to start with, both ways
+    expect(host.querySelectorAll("li[data-stop]").length).toBe(6)
+    const type = [...host.querySelectorAll("label")].find(l => l.textContent!.startsWith("种别"))!.querySelector("input") as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(type, "急行")
+      type.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+    await act(async () => { ([...host.querySelectorAll("button")].find(b => b.textContent === "新建") as HTMLElement).click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const created = changes[changes.length - 1].created
+    expect(created.map((c: any) => [c.serviceType, c.source])).toEqual([["急行", "101"], ["急行", "102"]])
+    // Each way on the tracks its route uses there
+    expect(created[0].stops.map((s: any) => s.platformId)).toEqual(["1000", "1001", "1002", "1003", "1004", "1005"])
+    expect(created[1].stops.map((s: any) => s.platformId)).toEqual(["1105", "1104", "1103", "1102", "1101", "1100"])
+    expect(created[0].depot).toBe("9001")
+    engine.pushDraft({ routes: {} })
+  })
   it("paints sections and ticks logical lines in the ownership panel", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")
