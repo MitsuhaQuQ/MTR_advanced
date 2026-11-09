@@ -65,3 +65,9 @@
 - **构建后要检查的**：编译通过；common 测试照常。
 - **游戏内测试**：U322。
 - **已知风险**：新放的门要到下一刻才把 `TEMP` 改成 false，客户端重画晚一刻，看不出来。
+
+## 环线线路图画成闭合的环（2026-11-09）
+
+- 改动：`RouteMapGenerator.generateLoopMap`。站台只停一条环线、线路牌不是竖排时画成闭合的环；`MapRoute.loopStationIds`；站名和换乘的画法提出到 `drawStationWithText`、`getInterchanges`（直线画法不变）。
+- 已验证：只带这次改动在 HEAD 上构建通过，transit-sim 528 项、common 368 项测试全过。
+- 未验证：没进游戏看过，见测试清单 U332。要和其他改动一起做合并构建、复制 jar。

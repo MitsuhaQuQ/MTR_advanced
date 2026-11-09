@@ -712,6 +712,49 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		isDirty = true;
 	}
 
+	/**
+	 * Hands the duties set for the depot on to their pools where a siding is gone or now holds another vehicle (运用补完
+	 * step 5, {@link DepotDuties#rehome}), after the pools are gathered each tick; looked at again only when the sidings,
+	 * their pools or the duties' sidings changed. Duties worked out from the timetables are planned again for new sidings
+	 * anyway.
+	 *
+	 * @param sendPacket where the duties go to the players when slots moved
+	 */
+	public void rehomeDuties(Consumer<FriendlyByteBuf> sendPacket) {
+		if (duties.sidings.isEmpty() && duties.unplaced.isEmpty()) {
+			return;
+		}
+		long signature = duties.sidings.keySet().hashCode() * 31L + duties.unplaced.keySet().hashCode();
+		for (final Map.Entry<String, List<Siding>> entry : pools.entrySet()) {
+			for (final Siding siding : entry.getValue()) {
+				signature = signature * 31 + Long.hashCode(siding.id) * 17L + entry.getKey().hashCode();
+			}
+		}
+		if (signature == rehomeSignature) {
+			return;
+		}
+		rehomeSignature = signature;
+		final Map<Long, String> livePools = new TreeMap<>();
+		pools.forEach((poolKey, poolSidings) -> poolSidings.forEach(siding -> livePools.put(siding.id, poolKey)));
+		final Map<Long, String> recordedBefore = new TreeMap<>(duties.sidingPools);
+		final boolean moved = duties.rehome(livePools);
+		if (moved) {
+			final int unplacedCount = duties.unplaced.values().stream().mapToInt(List::size).sum();
+			System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " handed duties of sidings gone or changed to another vehicle on to their pools" + (unplacedCount > 0 ? "; " + unplacedCount + " left with no siding of their vehicle, not run" : ""));
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+			packet.writeLong(id);
+			packet.writeUtf(transportMode.toString());
+			packet.writeUtf(KEY_DUTIES);
+			duties.write(PacketBinary.of(packet));
+			sendPacket.accept(packet);
+		}
+		if (moved || !recordedBefore.equals(duties.sidingPools)) {
+			isDirty = true;
+		}
+	}
+
+	private long rehomeSignature;
+
 	private void sendBuffers(Consumer<FriendlyByteBuf> sendPacket) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(id);
@@ -795,6 +838,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			fillRequested = !frequenciesMigrated;
 		} else if (KEY_DUTY_MODE.equals(key)) {
 			duties.diagramMode = packet.readBoolean();
+		} else if (KEY_DUTIES.equals(key)) {
+			// All of the duties, as the server sends them after handing a siding's on to its pool (运用补完 step 5)
+			final DepotDuties read = new DepotDuties();
+			read.read(PacketBinary.of(packet));
+			final boolean diagramMode = duties.diagramMode;
+			duties.fromBytes(read.toBytes());
+			duties.diagramMode = diagramMode;
 		} else if (KEY_DUTY_SLOT.equals(key)) {
 			final long sidingId = packet.readLong();
 			final int slotCount = packet.readVarInt();

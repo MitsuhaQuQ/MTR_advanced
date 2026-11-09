@@ -571,6 +571,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				depot.addToPool(siding);
 			}
 		});
+		// Duties of sidings gone or changed to another vehicle go on to their pools (运用补完 step 5)
+		depots.forEach(depot -> depot.rehomeDuties(packet -> world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_UPDATE_DEPOT, packet))));
 		// The component's simulator moves on first, seeing the game's trains where they were at the end of the last tick (G1)
 		liveSimulation.tick(this, trainPositions);
 		sortedSidings.forEach(siding -> {

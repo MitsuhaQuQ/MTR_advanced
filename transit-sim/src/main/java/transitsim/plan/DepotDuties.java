@@ -23,6 +23,22 @@ public final class DepotDuties {
 	 * Siding ID → its slots, in order.
 	 */
 	public final Map<Long, List<Slot>> sidings = new TreeMap<>();
+	/**
+	 * The pool each siding with slots was in when they were last placed there (运用补完 step 5): the duties are the pool's,
+	 * the siding only where their trains start, so a siding gone or changed to another vehicle hands them on to its pool.
+	 */
+	public final Map<Long, String> sidingPools = new TreeMap<>();
+	/**
+	 * Pool → the slots of a pool left with no siding in the depot, kept rather than lost and not run, until a siding of the
+	 * pool is there again.
+	 */
+	public final Map<String, List<Slot>> unplaced = new TreeMap<>();
+	/**
+	 * The slots moved to another siding of their pool or left unplaced, the latest last, for the editor to say so until a
+	 * player changes the duties.
+	 */
+	public final List<Move> moves = new ArrayList<>();
+	public static final int MAX_MOVES = 64;
 
 	public static final int MAX_SLOTS = 256;
 	public static final int MAX_DAYS = 7;
@@ -32,10 +48,85 @@ public final class DepotDuties {
 	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started
 	 * with the mode, a boolean, so it reads as 0 or 1 there.
 	 */
-	private static final int FORMAT_VERSION = 6;
+	private static final int FORMAT_VERSION = 7;
 
 	public boolean isEmpty() {
 		return sidings.values().stream().allMatch(List::isEmpty);
+	}
+
+	/**
+	 * Hands each siding's slots on to its pool where the siding is gone or now in another pool (运用补完 step 5): to the
+	 * pool's siding with the fewest slots, or unplaced where the pool has none left; and puts unplaced slots back once a
+	 * siding of their pool is there. Sidings whose pool was never recorded, as in data saved before, are taken as they are.
+	 *
+	 * @param livePools each siding of the depot now and its pool
+	 * @return whether any slot moved
+	 */
+	public boolean rehome(Map<Long, String> livePools) {
+		boolean moved = false;
+		for (final Long sidingId : new ArrayList<>(sidings.keySet())) {
+			final List<Slot> slots = sidings.get(sidingId);
+			final String livePool = livePools.get(sidingId);
+			final String recorded = sidingPools.get(sidingId);
+			if (livePool != null && (recorded == null || recorded.equals(livePool))) {
+				continue;
+			}
+			// Gone with no pool recorded: unplaced under no pool, so they are not lost
+			final String pool = recorded == null ? "" : recorded;
+			sidings.remove(sidingId);
+			sidingPools.remove(sidingId);
+			place(pool, slots, sidingId, livePools);
+			moved = true;
+		}
+		for (final String pool : new ArrayList<>(unplaced.keySet())) {
+			if (findSiding(pool, livePools) != null) {
+				place(pool, unplaced.remove(pool), 0, livePools);
+				moved = true;
+			}
+		}
+		// The pools as they are now, of the sidings with slots
+		sidings.keySet().forEach(sidingId -> {
+			final String livePool = livePools.get(sidingId);
+			if (livePool != null) {
+				sidingPools.put(sidingId, livePool);
+			}
+		});
+		sidingPools.keySet().retainAll(sidings.keySet());
+		return moved;
+	}
+
+	private void place(String pool, List<Slot> slots, long fromSidingId, Map<Long, String> livePools) {
+		for (final Slot slot : slots) {
+			final Long target = findSiding(pool, livePools);
+			if (target == null) {
+				unplaced.computeIfAbsent(pool, key -> new ArrayList<>()).add(slot);
+			} else {
+				sidings.computeIfAbsent(target, key -> new ArrayList<>()).add(slot);
+				sidingPools.put(target, pool);
+			}
+			addMove(new Move(slot.id, fromSidingId, target == null ? 0 : target, pool));
+		}
+	}
+
+	/**
+	 * @return the siding of the pool with the fewest slots and room for one more, the lowest ID first, or null
+	 */
+	private Long findSiding(String pool, Map<Long, String> livePools) {
+		Long best = null;
+		for (final Map.Entry<Long, String> entry : new TreeMap<>(livePools).entrySet()) {
+			final int count = getSlots(entry.getKey()).size();
+			if (entry.getValue().equals(pool) && count < MAX_SLOTS && (best == null || count < getSlots(best).size())) {
+				best = entry.getKey();
+			}
+		}
+		return best;
+	}
+
+	private void addMove(Move move) {
+		moves.add(move);
+		while (moves.size() > MAX_MOVES) {
+			moves.remove(0);
+		}
 	}
 
 	public List<Slot> getSlots(long sidingId) {
@@ -47,6 +138,8 @@ public final class DepotDuties {
 	 */
 	public void setSlot(long sidingId, int slotCount, int index, Slot slot) {
 		final int count = Math.max(0, Math.min(slotCount, MAX_SLOTS));
+		// A player changing the duties has seen where they were moved to
+		moves.clear();
 		final List<Slot> slots = sidings.computeIfAbsent(sidingId, key -> new ArrayList<>());
 		while (slots.size() > count) {
 			slots.remove(slots.size() - 1);
@@ -75,6 +168,25 @@ public final class DepotDuties {
 			packet.writeLong(sidingId);
 			packet.writeVarInt(slots.size());
 			slots.forEach(slot -> slot.write(packet));
+		});
+		// Format 7 (运用补完 step 5): the sidings' pools, the unplaced slots and the moves
+		packet.writeVarInt(sidingPools.size());
+		sidingPools.forEach((sidingId, pool) -> {
+			packet.writeLong(sidingId);
+			DepotRules.writeString(packet, pool);
+		});
+		packet.writeVarInt(unplaced.size());
+		unplaced.forEach((pool, slots) -> {
+			DepotRules.writeString(packet, pool);
+			packet.writeVarInt(slots.size());
+			slots.forEach(slot -> slot.write(packet));
+		});
+		packet.writeVarInt(moves.size());
+		moves.forEach(move -> {
+			packet.writeLong(move.slotId);
+			packet.writeLong(move.fromSidingId);
+			packet.writeLong(move.toSidingId);
+			DepotRules.writeString(packet, move.pool);
 		});
 	}
 
@@ -129,6 +241,47 @@ public final class DepotDuties {
 				sidings.put(sidingId, slots);
 			}
 		}
+		sidingPools.clear();
+		unplaced.clear();
+		moves.clear();
+		if (version >= 7) {
+			for (int i = limit(packet.readVarInt(), 1 << 16); i > 0; i--) {
+				final long sidingId = packet.readLong();
+				sidingPools.put(sidingId, DepotRules.readString(packet));
+			}
+			for (int i = limit(packet.readVarInt(), 1 << 16); i > 0; i--) {
+				final String pool = DepotRules.readString(packet);
+				final List<Slot> slots = new ArrayList<>();
+				for (int j = limit(packet.readVarInt(), MAX_SLOTS * 16); j > 0; j--) {
+					slots.add(Slot.read(packet, version));
+				}
+				if (!slots.isEmpty()) {
+					unplaced.put(pool, slots);
+				}
+			}
+			for (int i = limit(packet.readVarInt(), MAX_MOVES); i > 0; i--) {
+				moves.add(new Move(packet.readLong(), packet.readLong(), packet.readLong(), DepotRules.readString(packet)));
+			}
+		}
+	}
+
+	/**
+	 * A slot handed on to another siding of its pool, or left unplaced (to 0), as its siding was gone or changed pool; from
+	 * 0 when put back from unplaced.
+	 */
+	public static final class Move {
+
+		public final long slotId;
+		public final long fromSidingId;
+		public final long toSidingId;
+		public final String pool;
+
+		public Move(long slotId, long fromSidingId, long toSidingId, String pool) {
+			this.slotId = slotId;
+			this.fromSidingId = fromSidingId;
+			this.toSidingId = toSidingId;
+			this.pool = pool;
+		}
 	}
 
 	public byte[] toBytes() {
@@ -144,6 +297,9 @@ public final class DepotDuties {
 			e.printStackTrace();
 			diagramMode = false;
 			sidings.clear();
+			sidingPools.clear();
+			unplaced.clear();
+			moves.clear();
 		}
 	}
 

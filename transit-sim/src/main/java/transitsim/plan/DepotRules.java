@@ -117,7 +117,7 @@ public final class DepotRules {
 		return count;
 	}
 
-	private static void writeString(BinaryWriter writer, String text) {
+	static void writeString(BinaryWriter writer, String text) {
 		final byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
 		writer.writeVarInt(bytes.length);
 		for (final byte value : bytes) {
@@ -125,7 +125,7 @@ public final class DepotRules {
 		}
 	}
 
-	private static String readString(BinaryReader reader) {
+	static String readString(BinaryReader reader) {
 		final byte[] bytes = new byte[limit(reader.readVarInt(), 4096)];
 		for (int i = 0; i < bytes.length; i++) {
 			bytes[i] = reader.readByte();

@@ -25,7 +25,8 @@ public final class EditorDuties implements IPacket {
 	}
 
 	/**
-	 * @return {@code {mode, sidings: {sidingId: [slot: [{days, stay, segments: [{route, service, from, to}]}]]}}}
+	 * @return {@code {mode, sidings: {sidingId: [slot: [{days, stay, segments: [{route, service, from, to}]}]]}, unplaced:
+	 * {pool: count}, moves: [{duty, from, to, pool}]}}
 	 */
 	public static JsonObject toJson(DepotDuties duties) {
 		final JsonObject object = new JsonObject();
@@ -33,6 +34,21 @@ public final class EditorDuties implements IPacket {
 		final JsonObject sidingsObject = new JsonObject();
 		duties.sidings.forEach((sidingId, slots) -> sidingsObject.add(String.valueOf(sidingId), slotsToJson(slots)));
 		object.add("sidings", sidingsObject);
+		// Slots of a pool with no siding of its vehicle left, kept and not run, and the slots handed on to another siding of
+		// their pool (运用补完 step 5)
+		final JsonObject unplacedObject = new JsonObject();
+		duties.unplaced.forEach((pool, slots) -> unplacedObject.addProperty(pool, slots.size()));
+		object.add("unplaced", unplacedObject);
+		final JsonArray movesArray = new JsonArray();
+		duties.moves.forEach(move -> {
+			final JsonObject moveObject = new JsonObject();
+			moveObject.addProperty("duty", String.valueOf(move.slotId));
+			moveObject.addProperty("from", String.valueOf(move.fromSidingId));
+			moveObject.addProperty("to", String.valueOf(move.toSidingId));
+			moveObject.addProperty("pool", move.pool);
+			movesArray.add(moveObject);
+		});
+		object.add("moves", movesArray);
 		return object;
 	}
 
