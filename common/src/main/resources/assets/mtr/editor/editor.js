@@ -1603,28 +1603,40 @@
 			return;
 		}
 		const node = (attrs, caret, content, active) => `<div class="node${active ? " active" : ""}" tabindex="0" ${attrs}><span class="caret">${caret}</span>${content}</div>`;
-		const parts = [`<div class="section">${tr("线路")}</div><ul>`];
+		// The tree by the layers of the save (web layers step 4): the physical track, who owns each section, the lines and their
+		// stops, their timetables and diagrams, and the depots with their vehicles
+		const lineLabel = line => `<span class="swatch" style="background:${colorOf(line.color)}"></span><span class="label group-label">${escapeHtml(shortName(line.name))}</span>`;
+		const routeLabel = r => `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || tr("将删除：按“应用”后从游戏里删掉，右键取消"))}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="${tr("有没应用的草稿")}">•</span>` : ""}${problemDot(r)}`;
+		const createdNode = (made, title) => `<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || title)}">${made.error ? "!" : "•"}</span>`, false)}</li>`;
+		const onNetwork = layer => state.view === "network" && net.layer === layer;
+		const parts = [];
+
+		// 1. The physical track
+		parts.push(`<div class="section">${tr("物理线路")}</div><ul>`);
+		parts.push(`<li>${node(`data-layer="physical" title="${tr("轨道、寻路边界、留置位；右键轨道设寻路边界")}"`, "", `<span class="label leaf">${tr("全网配线")}</span>`, onNetwork("physical"))}</li>`);
+		parts.push(`</ul>`);
+
+		// 2. Who owns each section of track, with the connecting lines, which belong to this layer
+		const connectingLines = data.routes.filter(isConnecting).sort((a, b) => routeTitle(a).localeCompare(routeTitle(b)));
+		parts.push(`<div class="section">${tr("区段归属")}</div><ul>`);
+		parts.push(`<li>${node(`data-layer="owners" title="${tr("每段轨道归哪些线路；右键轨道改归属、设联络线")}"`, "", `<span class="label leaf">${tr("归属图")}</span>`, onNetwork("owners") && !state.route)}`);
+		if (connectingLines.length) {
+			parts.push(`<ul><li class="hint">${tr("联络线")}</li>`);
+			connectingLines.forEach(r => parts.push(`<li>${node(`data-connecting="${r.id}"`, "", routeLabel(r), onNetwork("owners") && state.route === r.id)}</li>`));
+			parts.push(`</ul>`);
+		}
+		parts.push(`</li></ul>`);
+
+		// 3. The operating lines: their types and stops
+		parts.push(`<div class="section">${tr("运营线路")}</div><ul>`);
 		if (!data.lines.length) parts.push(`<li class="empty">${tr("没有线路")}${data.canEdit ? ` <button type="button" data-new-line>${tr("＋ 新建线路")}</button>` : ""}</li>`);
 		data.lines.forEach(line => {
-			const open = state.openNodes.has("line:" + line.key) || line.key === state.line;
-			const count = line.routes.reduce((a, r) => a + r.services.length, 0);
-			parts.push(`<li>${node(`data-line="${escapeHtml(line.key)}"`, open ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(line.color)}"></span><span class="label group-label">${escapeHtml(shortName(line.name))}</span><span class="count">${count}</span>`, state.line === line.key && !state.route && state.view === "diagram")}`);
+			const open = state.openNodes.has("oline:" + line.key);
+			parts.push(`<li>${node(`data-line="${escapeHtml(line.key)}" data-section="lines"`, open ? "▾" : "▸", `${lineLabel(line)}<span class="count">${tr("{0} 个种别", line.routes.length)}</span>`, false)}`);
 			if (open) {
 				parts.push(`<ul>`);
-				line.routes.forEach(r => {
-					const routeOpen = state.openNodes.has("route:" + r.id) || state.route === r.id;
-					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `<span class="swatch" style="background:${colorOf(r.color)}"></span><span class="label${isDeleted(r) ? " deleted" : ""}">${escapeHtml(routeTitle(r))}</span>${isDeleted(r) ? `<span class="draft-dot" title="${escapeHtml(draftOf(r).error || tr("将删除：按“应用”后从游戏里删掉，右键取消"))}">${draftOf(r).error ? "!" : "−"}</span>` : draftOf(r) ? `<span class="draft-dot" title="${tr("有没应用的草稿")}">•</span>` : ""}${problemDot(r)}<span class="count">${r.services.length}</span>`, false)}`);
-					if (routeOpen) {
-						parts.push(`<ul>`);
-						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">${tr("汇总时刻表")}</span>`, state.route === r.id && state.view === "table")}</li>`);
-						parts.push(`<li>${node(`data-route="${r.id}" data-view="diagram"`, "", `<span class="label leaf">${tr("运行图")}</span>`, state.route === r.id && state.view === "diagram")}</li>`);
-						parts.push(`</ul>`);
-					}
-					parts.push(`</li>`);
-				});
-				draft.created.filter(made => made.lineKey === line.key).forEach(made => {
-					parts.push(`<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || tr("新建的种别，应用后才在游戏里出现；右键删除"))}">${made.error ? "!" : "•"}</span>`, false)}</li>`);
-				});
+				line.routes.forEach(r => parts.push(`<li>${node(`data-route="${r.id}" data-section="lines" title="${tr("点开编辑停站；右键更多")}"`, "", `${routeLabel(r)}<span class="count">${tr("{0} 站", r.stops.length)}</span>`, false)}</li>`));
+				draft.created.filter(made => made.lineKey === line.key).forEach(made => parts.push(createdNode(made, tr("新建的种别，应用后才在游戏里出现；右键删除"))));
 				parts.push(`</ul>`);
 			}
 			parts.push(`</li>`);
@@ -1637,8 +1649,35 @@
 		});
 		draftLines.forEach(list => {
 			parts.push(`<li>${node("", "▾", `<span class="swatch" style="background:${colorOf(list[0].color)}"></span><span class="label group-label">${tr("（草稿）{0}", escapeHtml(list[0].lineName))}</span>`, false)}<ul>`);
-			list.forEach(made => parts.push(`<li>${node(`data-created="${made.key}"`, "", `<span class="swatch" style="background:${colorOf(made.color)}"></span><span class="label">＋ ${escapeHtml(shortName(made.name))}</span><span class="draft-dot" title="${escapeHtml(made.error || tr("新建的线路，应用后才在游戏里出现；右键删除"))}">${made.error ? "!" : "•"}</span>`, false)}</li>`));
+			list.forEach(made => parts.push(createdNode(made, tr("新建的线路，应用后才在游戏里出现；右键删除"))));
 			parts.push(`</ul></li>`);
+		});
+		parts.push(`</ul>`);
+
+		// 4. Timetables and diagrams, of a line and of each of its types
+		parts.push(`<div class="section">${tr("时刻表和交路")}</div><ul>`);
+		data.lines.forEach(line => {
+			const open = state.openNodes.has("line:" + line.key) || line.key === state.line;
+			const count = line.routes.reduce((a, r) => a + r.services.length, 0);
+			parts.push(`<li>${node(`data-line="${escapeHtml(line.key)}"`, open ? "▾" : "▸", `${lineLabel(line)}<span class="count">${count}</span>`, false)}`);
+			if (open) {
+				parts.push(`<ul>`);
+				parts.push(`<li>${node(`data-line="${escapeHtml(line.key)}" data-view="table"`, "", `<span class="label leaf">${tr("汇总时刻表")}</span>`, state.line === line.key && !state.route && state.view === "table")}</li>`);
+				parts.push(`<li>${node(`data-line="${escapeHtml(line.key)}" data-view="diagram"`, "", `<span class="label leaf">${tr("运行图")}</span>`, state.line === line.key && !state.route && state.view === "diagram")}</li>`);
+				line.routes.forEach(r => {
+					const routeOpen = state.openNodes.has("route:" + r.id) || state.route === r.id;
+					parts.push(`<li>${node(`data-route="${r.id}"`, routeOpen ? "▾" : "▸", `${routeLabel(r)}<span class="count">${r.services.length}</span>`, false)}`);
+					if (routeOpen) {
+						parts.push(`<ul>`);
+						parts.push(`<li>${node(`data-route="${r.id}" data-view="table"`, "", `<span class="label leaf">${tr("汇总时刻表")}</span>`, state.route === r.id && state.view === "table")}</li>`);
+						parts.push(`<li>${node(`data-route="${r.id}" data-view="diagram"`, "", `<span class="label leaf">${tr("运行图")}</span>`, state.route === r.id && state.view === "diagram")}</li>`);
+						parts.push(`</ul>`);
+					}
+					parts.push(`</li>`);
+				});
+				parts.push(`</ul>`);
+			}
+			parts.push(`</li>`);
 		});
 		parts.push(`</ul><div class="section">${tr("车厂")}</div><ul>`);
 		if (!data.depots.length) parts.push(`<li class="empty">${tr("没有车厂")}</li>`);
@@ -1660,7 +1699,8 @@
 					const draftedFleet = draft.depots && draft.depots[depot.id] && draft.depots[depot.id].poolFleets ? draft.depots[depot.id].poolFleets[pool.key] : undefined;
 					const poolSidings = (pool.sidings || []).map(id => depot.sidings.find(siding => siding.id === id)).filter(Boolean);
 					const count = poolSidings.reduce((sum, siding) => sum + (duties.sidings[siding.id] || []).length, 0);
-					parts.push(`<li><div class="node"><span class="label group-label">${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key || "?"))}</span><span class="count">${escapeHtml(poolFleetText(draftedFleet !== undefined ? draftedFleet : pool.fleet, pool.sum))} · ${tr("{0} 份运用", count)}</span></div><ul>`);
+					const vehicleDrafted = draft.depots && draft.depots[depot.id] && (draft.depots[depot.id].vehicleSettings && draft.depots[depot.id].vehicleSettings[pool.key] !== undefined && !sameVehicle(draft.depots[depot.id].vehicleSettings[pool.key], pool.vehicleSettings) || draft.depots[depot.id].serviceTypes && draft.depots[depot.id].serviceTypes[pool.vehicle] !== undefined);
+					parts.push(`<li>${node(`data-pool="${escapeHtml(pool.key)}" data-of-depot="${depot.id}" title="${tr("右键“车型设置…”改加减速、最高速度、手动驾驶和能跑的种别")}"`, "", `<span class="label group-label">${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key || "?"))}</span>${vehicleDrafted ? `<span class="draft-dot" title="${tr("有没应用的草稿")}">•</span>` : ""}<span class="count">${escapeHtml(poolFleetText(draftedFleet !== undefined ? draftedFleet : pool.fleet, pool.sum))} · ${tr("{0} 份运用", count)}</span>`, false)}<ul>`);
 					// Numbered on through the pool, as the duties are the pool's (运用补完 step 5)
 					let number = 0;
 					poolSidings.forEach(siding => (duties.sidings[siding.id] || []).forEach((slot, index) => parts.push(dutyNode(siding, slot, index, ++number))));
@@ -1689,9 +1729,42 @@
 	function onTreeClick(target) {
 		const el = target.closest(".node");
 		if (!el) return;
-		const { line, route, view, depot, slot, siding, ofDepot } = el.dataset;
+		const { line, route, view, depot, slot, siding, ofDepot, layer, connecting, section, pool } = el.dataset;
 		if (slot !== undefined) {
 			selectSlot(ofDepot, siding, +slot);
+			return;
+		}
+		// The layers of the whole network map, and a connecting line drawn over its owners
+		if (layer) {
+			setNetLayer(layer);
+			openView("network", state.line, null);
+			return;
+		}
+		if (connecting) {
+			const r = data.routeById.get(connecting);
+			if (!r) return;
+			setNetLayer("owners");
+			openView("network", r.lineKey, r.id);
+			return;
+		}
+		if (pool !== undefined) return;
+		// The operating lines: a line opens its types, a type its stops to edit
+		if (section === "lines") {
+			if (route) {
+				const r = data.routeById.get(route);
+				if (!r) return;
+				state.line = r.lineKey;
+				state.route = r.id;
+				renderAll();
+				if (data.canEdit && r.stops.length > 1) stopsDialog(r);
+			} else if (line) {
+				if (!state.openNodes.delete("oline:" + line)) state.openNodes.add("oline:" + line);
+				renderTree();
+			}
+			return;
+		}
+		if (line && view) {
+			openView(view, line, null);
 			return;
 		}
 		if (line) {
@@ -1765,6 +1838,14 @@
 	// Which layer the map shows (web layers step 2): the physical track, or which lines own each section
 	try { if (localStorage.getItem("mtr-editor-net-layer") === "owners") net.layer = "owners"; } catch (e) {}
 	const netCanvas = $("net-canvas"), netWrap = $("net-wrap"), netCtx = netCanvas.getContext("2d");
+
+	/** Shows the physical track or the owners of the sections on the whole network map, and remembers it. */
+	function setNetLayer(layer) {
+		net.layer = layer === "owners" ? "owners" : "physical";
+		try { localStorage.setItem("mtr-editor-net-layer", net.layer); } catch (error) {}
+		net.hover = -1;
+		renderNetworkTools();
+	}
 
 	async function loadNetwork(fresh) {
 		try {
@@ -2592,11 +2673,8 @@
 
 	$("net-mode").addEventListener("change", e => { net.mode = e.target.value; net.version = -1; loadNetwork(false); });
 	$("net-layer").addEventListener("change", e => {
-		net.layer = e.target.value === "owners" ? "owners" : "physical";
-		try { localStorage.setItem("mtr-editor-net-layer", net.layer); } catch (error) {}
-		net.hover = -1;
-		renderNetworkTools();
-		drawNetwork();
+		setNetLayer(e.target.value);
+		renderAll();
 	});
 	$("net-fit").addEventListener("click", () => { fitNetwork(); drawNetwork(); });
 	$("net-zoom-in").addEventListener("click", () => { net.scale = Math.min(32, net.scale * 1.5); drawNetwork(); });
@@ -5730,35 +5808,16 @@
 		const poolFleetOf = pool => current.poolFleets && current.poolFleets[pool.key] !== undefined ? current.poolFleets[pool.key] : pool.fleet;
 		// How the trains of a pool run (R1), m/tick² shown as m/s²
 		const vehicleOf = pool => current.vehicleSettings && current.vehicleSettings[pool.key] !== undefined ? current.vehicleSettings[pool.key] : pool.vehicleSettings && pool.vehicleSettings.set ? pool.vehicleSettings : null;
-		const perSecond = value => Math.round(value * 400 * 100) / 100;
-		// The service types of a vehicle, shared by its pools: shown with its first one (5c)
+		// The service types of a vehicle, shared by its pools (5c)
 		const serviceTypesOf = pool => current.serviceTypes && current.serviceTypes[pool.vehicle] !== undefined ? current.serviceTypes[pool.vehicle] : pool.serviceTypes || "";
-		const firstOfVehicle = pool => (depot.pools || []).find(each => each.vehicle === pool.vehicle) === pool;
-		const manualSpeeds = depot.manualSpeeds || [];
-		const manualSpeedOptions = value => {
-			const options = manualSpeeds.map((speed, index) => `<option value="${index}"${index === value ? " selected" : ""}>${speed} km/h</option>`);
-			// Beyond MTR's own speeds, as ANTE's rails may have it set: kept as it is
-			if (value >= manualSpeeds.length) options.push(`<option value="${value}" selected>${escapeHtml(tr("其他（{0}）", value))}</option>`);
-			return options.join("");
-		};
 		const poolRows = (depot.pools || []).map(pool => {
 			const fleet = poolFleetOf(pool);
 			const shown = vehicleOf(pool) || pool.vehicleSettings || {};
 			const set = Boolean(vehicleOf(pool));
-			const shared = (depot.pools || []).filter(each => each.vehicle === pool.vehicle).length;
-			const serviceTypesRow = !depot.serviceTypesUsed ? "" : firstOfVehicle(pool)
-				? `<label>${tr("种别（逗号隔开，空着不限）")} <input type="text" name="serviceTypes" value="${escapeHtml(serviceTypesOf(pool))}"></label>${shared > 1 ? `<span class="hint">${tr("同一车型的 {0} 种编组共用", shared)}</span>` : ""}`
-				: `<span class="hint">${tr("种别和上面同车型的一样")}</span>`;
+			// The vehicle's own settings are set on the vehicle under the depot in the tree (web layers step 4)
 			return `<fieldset data-pool-row="${escapeHtml(pool.key)}"><legend>${escapeHtml(tr("车型 {0}", pool.vehicle || pool.key))}</legend>
 				<label>${tr("配属车数")} <input type="number" min="0" max="999" name="poolFleet" placeholder="${escapeHtml(pool.sum < 0 ? tr("存车线相加：按需要") : tr("存车线相加：{0}", pool.sum))}" value="${fleet === null || fleet === undefined || fleet < 0 ? "" : fleet}"></label>
-				<label><input type="checkbox" name="vehicleSet"${set ? " checked" : ""}> ${tr("统一设置这个车型的加减速、最高速度和手动驾驶（不勾就按第一条存车线原来的）")}</label>
-				<label>${tr("加速度 m/s²")} <input type="number" step="0.01" min="0.4" max="20" name="acceleration" value="${perSecond(shown.acceleration || 0.01)}"></label>
-				<label>${tr("减速度 m/s²（空着同加速度）")} <input type="number" step="0.01" min="0" max="20" name="deceleration" value="${shown.deceleration > 0 ? perSecond(shown.deceleration) : ""}"></label>
-				<label><input type="checkbox" name="manual"${shown.manual ? " checked" : ""}> ${tr("允许手动驾驶")}</label>
-				<label>${tr("最高速度 km/h（空着不限）")} <input type="number" step="1" min="0" max="300" name="maxSpeed" value="${shown.maxSpeed > 0 ? shown.maxSpeed : ""}"></label>
-				<label>${tr("手动驾驶最高速度（允许手动驾驶时才有用）")} <select name="maxManualSpeed">${manualSpeedOptions(shown.maxManualSpeed || 0)}</select></label>
-				<label>${tr("多久不操作转回自动 秒")} <input type="number" step="0.5" min="0" max="3600" name="manualToAutomaticTime" value="${(shown.manualToAutomaticTime || 0) / 2}"></label>
-				${serviceTypesRow}
+				<span class="hint">${escapeHtml(vehicleSummary(pool, set ? shown : null, serviceTypesOf(pool)))}</span>
 			</fieldset>`;
 		}).join("");
 		const sidingOf = siding => current.sidings[siding.id] || { routes: (siding.routes || []).slice(), fleet: siding.fleet };
@@ -5810,33 +5869,14 @@
 			const poolFleets = {};
 			const vehicleSettings = {};
 			const serviceTypes = {};
+			// The vehicles' settings and service types as the vehicle dialog left them in the draft, or as the game has them
+			Object.assign(serviceTypes, current.serviceTypes || {});
 			form.querySelectorAll("[data-pool-row]").forEach(row => {
-				const typesBox = row.querySelector("input[name=serviceTypes]");
-				const vehicle = ((depot.pools || []).find(each => each.key === row.dataset.poolRow) || {}).vehicle;
-				if (typesBox && vehicle !== undefined) {
-					const before = ((depot.pools || []).find(each => each.vehicle === vehicle) || {}).serviceTypes || "";
-					const text = typesBox.value.split(/[,，、]/).map(part => part.trim()).filter(Boolean).join(",");
-					if (text !== before.split(/[,，、]/).map(part => part.trim()).filter(Boolean).join(",")) serviceTypes[vehicle] = text;
-				}
 				const text = row.querySelector("input[name=poolFleet]").value.trim();
 				if (text !== "" && !Number.isFinite(Number(text))) bad = true;
 				poolFleets[row.dataset.poolRow] = text === "" ? null : Math.max(0, Math.min(999, Math.round(Number(text))));
-				const pool = (depot.pools || []).find(each => each.key === row.dataset.poolRow) || {};
-				if (row.querySelector("input[name=vehicleSet]").checked) {
-					const acceleration = Number(row.querySelector("input[name=acceleration]").value) / 400;
-					const decelerationText = row.querySelector("input[name=deceleration]").value.trim();
-					if (!(acceleration > 0) || decelerationText !== "" && !(Number(decelerationText) >= 0)) bad = true;
-					const maxManualSpeed = Number(row.querySelector("select[name=maxManualSpeed]").value) || 0;
-					const switchText = row.querySelector("input[name=manualToAutomaticTime]").value.trim();
-					const manualToAutomaticTime = switchText === "" ? 0 : Math.round(Number(switchText) * 2);
-					if (!(manualToAutomaticTime >= 0) || manualToAutomaticTime > 7200) bad = true;
-					const maxSpeedText = row.querySelector("input[name=maxSpeed]").value.trim();
-					const maxSpeed = maxSpeedText === "" ? 0 : Math.round(Number(maxSpeedText));
-					if (!(maxSpeed >= 0) || maxSpeed > 300) bad = true;
-					vehicleSettings[row.dataset.poolRow] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: row.querySelector("input[name=manual]").checked, maxManualSpeed, manualToAutomaticTime, maxSpeed };
-				} else {
-					vehicleSettings[row.dataset.poolRow] = null;
-				}
+				const pool = (depot.pools || []).find(each => each.key === row.dataset.poolRow);
+				vehicleSettings[row.dataset.poolRow] = pool ? vehicleOf(pool) : null;
 			});
 			// The network's least time to change ends (round 4), drafted apart from the depot
 			const reverseText = form.querySelector("input[name=minReverse]").value.trim();
@@ -5854,6 +5894,8 @@
 			if (waitMillis !== appliedWait) changes.waitThresholdMillis = waitMillis;
 			const stationWaits = draft.networkSettings && draft.networkSettings.stationWaitThresholds;
 			if (stationWaits) changes.stationWaitThresholds = stationWaits;
+			const ownerOverrides = draft.networkSettings && draft.networkSettings.ownerOverrides;
+			if (ownerOverrides) changes.ownerOverrides = ownerOverrides;
 			draft.networkSettings = Object.keys(changes).length ? changes : null;
 			const clearBox = form.querySelector("input[name=clearBuffers]");
 			// The time adopted, by key in seconds, all of them (round 4, step 6)
@@ -5869,14 +5911,108 @@
 			(depot.buffers || []).forEach(buffer => { if (buffer.added) appliedAdded[buffer.key] = buffer.added; });
 			const sameAdded = JSON.stringify(Object.entries(addedBuffers).sort()) === JSON.stringify(Object.entries(appliedAdded).sort());
 			const entry = { base: drafted ? drafted.base : depot.revision, routes, cycleRoutes: form.querySelector("input[name=cycle]").checked, sidings, poolFleets, vehicleSettings, serviceTypes, clearBuffers: Boolean(clearBox && clearBox.checked), addedBuffers: sameAdded ? null : addedBuffers };
-			const sorted = list => JSON.stringify(list.slice().sort());
-			const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
-				&& depot.sidings.every(siding => sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
-				&& (depot.pools || []).every(pool => poolFleets[pool.key] === pool.fleet && sameVehicle(vehicleSettings[pool.key], pool.vehicleSettings)) && !Object.keys(serviceTypes).length && !entry.clearBuffers && sameAdded;
-			if (same) delete draft.depots[depot.id];
-			else draft.depots[depot.id] = entry;
-			saveDraft();
-			renderAll();
+			storeDepotEntry(depot, entry, sameAdded);
+		});
+	}
+
+	/**
+	 * A depot's changes as the draft has them, or as the game has the depot when there are none, to change and store again
+	 * with {@link storeDepotEntry}: the depot dialog and the vehicle dialog change parts of the same entry.
+	 */
+	function depotEntryOf(depot) {
+		const drafted = (draft.depots || {})[depot.id];
+		if (drafted) {
+			const copy = JSON.parse(JSON.stringify(drafted));
+			copy.vehicleSettings = copy.vehicleSettings || {};
+			copy.serviceTypes = copy.serviceTypes || {};
+			copy.poolFleets = copy.poolFleets || {};
+			(depot.pools || []).forEach(pool => {
+				if (!(pool.key in copy.vehicleSettings)) copy.vehicleSettings[pool.key] = pool.vehicleSettings && pool.vehicleSettings.set ? Object.assign({}, pool.vehicleSettings) : null;
+				if (!(pool.key in copy.poolFleets)) copy.poolFleets[pool.key] = pool.fleet;
+			});
+			return copy;
+		}
+		const sidings = {};
+		depot.sidings.forEach(siding => sidings[siding.id] = { fleet: siding.fleet, routes: (siding.routes || []).slice() });
+		const poolFleets = {}, vehicleSettings = {};
+		(depot.pools || []).forEach(pool => {
+			poolFleets[pool.key] = pool.fleet;
+			vehicleSettings[pool.key] = pool.vehicleSettings && pool.vehicleSettings.set ? Object.assign({}, pool.vehicleSettings) : null;
+		});
+		return { base: depot.revision, routes: depot.routes.slice(), cycleRoutes: depot.cycleRoutes, sidings, poolFleets, vehicleSettings, serviceTypes: {}, clearBuffers: false, addedBuffers: null };
+	}
+
+	/** Puts a depot's changes in the draft, or takes them out when they change nothing. */
+	function storeDepotEntry(depot, entry, sameAdded) {
+		const sorted = list => JSON.stringify(list.slice().sort());
+		const sidings = entry.sidings || {};
+		const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
+			&& depot.sidings.every(siding => sidings[siding.id] && sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
+			&& (depot.pools || []).every(pool => entry.poolFleets[pool.key] === pool.fleet && sameVehicle(entry.vehicleSettings[pool.key], pool.vehicleSettings)) && !Object.keys(entry.serviceTypes || {}).length && !entry.clearBuffers && (sameAdded === undefined ? !entry.addedBuffers : sameAdded);
+		if (same) delete draft.depots[depot.id];
+		else draft.depots[depot.id] = entry;
+		saveDraft();
+		renderAll();
+	}
+
+	/** A vehicle's settings in a line: as set for its pool, or as its first siding has them, and the types it runs. */
+	function vehicleSummary(pool, settings, serviceTypes) {
+		const shown = settings || pool.vehicleSettings || {};
+		const parts = [tr("加速 {0} m/s²", Math.round((shown.acceleration || 0) * 400 * 100) / 100)];
+		if (shown.maxSpeed > 0) parts.push(tr("最高 {0} km/h", shown.maxSpeed));
+		if (shown.manual) parts.push(tr("可手动驾驶"));
+		if (serviceTypes) parts.push(tr("种别 {0}", serviceTypes));
+		return (settings ? "" : tr("（按第一条存车线）")) + parts.join(tr("，")) + tr("；在左侧车厂下的车型右键“车型设置…”里改");
+	}
+
+	/**
+	 * A vehicle's settings in a depot (web layers step 4): how its trains accelerate, brake and how fast they may run, driving
+	 * by hand, and the service types it runs. Kept for the depot's pool of the vehicle, in the depot's draft.
+	 */
+	function vehicleDialog(depot, pool) {
+		const entry = depotEntryOf(depot);
+		const settings = entry.vehicleSettings[pool.key];
+		const shown = settings || pool.vehicleSettings || {};
+		const perSecond = value => Math.round(value * 400 * 100) / 100;
+		const typesOf = text => String(text || "").split(/[,，、]/).map(part => part.trim()).filter(Boolean).join(",");
+		const gameTypes = ((depot.pools || []).find(each => each.vehicle === pool.vehicle) || {}).serviceTypes || "";
+		const types = entry.serviceTypes[pool.vehicle] !== undefined ? entry.serviceTypes[pool.vehicle] : gameTypes;
+		const shared = (depot.pools || []).filter(each => each.vehicle === pool.vehicle).length;
+		const manualSpeeds = depot.manualSpeeds || [];
+		const value = shown.maxManualSpeed || 0;
+		const speedOptions = manualSpeeds.map((speed, index) => `<option value="${index}"${index === value ? " selected" : ""}>${speed} km/h</option>`).join("")
+			+ (value >= manualSpeeds.length ? `<option value="${value}" selected>${escapeHtml(tr("其他（{0}）", value))}</option>` : "");
+		openDialog(tr("车型设置：{0}", escapeHtml(pool.vehicle || pool.key)), `
+			<p class="hint">${tr("车厂“{0}”里这种车型（{1}）的列车怎么跑。同车型的存车线共用这些设置；别的车厂的同车型在那个车厂下设。", escapeHtml(shortName(depot.name)), escapeHtml(pool.key || pool.vehicle))}</p>
+			<label><input type="checkbox" name="vehicleSet"${settings ? " checked" : ""}> ${tr("统一设置这个车型的加减速、最高速度和手动驾驶（不勾就按第一条存车线原来的）")}</label>
+			<label>${tr("加速度 m/s²")} <input type="number" step="0.01" min="0.4" max="20" name="acceleration" value="${perSecond(shown.acceleration || 0.01)}"></label>
+			<label>${tr("减速度 m/s²（空着同加速度）")} <input type="number" step="0.01" min="0" max="20" name="deceleration" value="${shown.deceleration > 0 ? perSecond(shown.deceleration) : ""}"></label>
+			<label>${tr("最高速度 km/h（空着不限）")} <input type="number" step="1" min="0" max="300" name="maxSpeed" value="${shown.maxSpeed > 0 ? shown.maxSpeed : ""}"></label>
+			<label><input type="checkbox" name="manual"${shown.manual ? " checked" : ""}> ${tr("允许手动驾驶")}</label>
+			<label>${tr("手动驾驶最高速度（允许手动驾驶时才有用）")} <select name="maxManualSpeed">${speedOptions}</select></label>
+			<label>${tr("多久不操作转回自动 秒")} <input type="number" step="0.5" min="0" max="3600" name="manualToAutomaticTime" value="${(shown.manualToAutomaticTime || 0) / 2}"></label>
+			<h3>${tr("能跑的种别")}</h3>
+			<label>${tr("种别（逗号隔开，空着不限）")} <input type="text" name="serviceTypes" value="${escapeHtml(types)}"></label>
+			${shared > 1 ? `<span class="hint">${tr("同一车型的 {0} 种编组共用", shared)}</span>` : ""}
+			<p class="hint">${tr("改动先放进这个车厂的草稿，点“应用”才发给游戏。")}</p>`, tr("放进草稿"), form => {
+			if (form.vehicleSet.checked) {
+				const acceleration = Number(form.acceleration.value) / 400;
+				const decelerationText = form.deceleration.value.trim();
+				const switchText = form.manualToAutomaticTime.value.trim();
+				const manualToAutomaticTime = switchText === "" ? 0 : Math.round(Number(switchText) * 2);
+				const maxSpeedText = form.maxSpeed.value.trim();
+				const maxSpeed = maxSpeedText === "" ? 0 : Math.round(Number(maxSpeedText));
+				if (!(acceleration > 0) || decelerationText !== "" && !(Number(decelerationText) >= 0)) return tr("加速度写正数，减速度写数字或者留空");
+				if (!(manualToAutomaticTime >= 0) || manualToAutomaticTime > 7200) return tr("转回自动写 0 到 3600 秒");
+				if (!(maxSpeed >= 0) || maxSpeed > 300) return tr("最高速度写 0 到 300，或者留空");
+				entry.vehicleSettings[pool.key] = { acceleration, deceleration: decelerationText === "" ? 0 : Number(decelerationText) / 400, manual: form.manual.checked, maxManualSpeed: Number(form.maxManualSpeed.value) || 0, manualToAutomaticTime, maxSpeed };
+			} else {
+				entry.vehicleSettings[pool.key] = null;
+			}
+			const text = typesOf(form.serviceTypes.value);
+			if (text !== typesOf(gameTypes)) entry.serviceTypes[pool.vehicle] = text;
+			else delete entry.serviceTypes[pool.vehicle];
+			storeDepotEntry(depot, entry);
 		});
 	}
 
@@ -8183,12 +8319,16 @@
 	$("tree").addEventListener("contextmenu", e => {
 		const el = e.target.closest(".node");
 		if (!el || !data) return;
-		const { line, route, created, depot: depotId, siding: sidingId, slot, ofDepot } = el.dataset;
+		const { line, route, created, depot: depotId, siding: sidingId, slot, ofDepot, pool: poolKey, connecting } = el.dataset;
 		const r = route && data.routeById.get(route);
 		const depot = depotById(depotId || ofDepot);
 		const sidingSlots = () => (dutiesOf(depot).sidings[sidingId] || []);
 		const siding = depot && sidingId && depot.sidings.find(o => o.id === sidingId);
-		const items = slot !== undefined && depot ? [
+		const vehiclePool = poolKey !== undefined && depot ? (depot.pools || []).find(each => each.key === poolKey) : null;
+		const connectingRoute = connecting && data.routeById.get(connecting);
+		const items = vehiclePool ? [[tr("车型设置…"), data.canEdit ? () => vehicleDialog(depot, vehiclePool) : null]]
+			: connectingRoute ? [[tr("取消联络线：{0}", routeTitle(connectingRoute)), data.canEdit ? () => setConnecting(connectingRoute, false) : null]]
+			: slot !== undefined && depot ? [
 			[tr("清空这列车当天的运用"), () => editDuties(depot, duties => { const day = dutyOn(duties.sidings[sidingId][+slot], state.weekday); if (day) dutyForEditing(depot, duties.sidings[sidingId][+slot], state.weekday).segments = []; })],
 			[tr("删除这个库位"), () => changeSlots(depot, sidingId, slots => slots.splice(+slot, 1))],
 		] : siding ? [
