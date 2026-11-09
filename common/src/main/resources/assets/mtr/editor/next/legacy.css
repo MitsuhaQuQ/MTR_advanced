@@ -16,19 +16,22 @@
 	/* Control borders (3:1 on --panel) and warnings short of errors (5.9:1), from the design system */
 	--control-line: #758a87;
 	--caution: #8a5a12;
+	/* The train being edited and the time now on the running diagram, so red is only for problems (design system) */
+	--duty: #b45309;
+	--now: #1b2a2d;
 	--font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
 	--font-num: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
 		--bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
-		--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a;
+		--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a; --duty: #f59e4b; --now: #dbe6e3;
 		color-scheme: dark;
 	}
 }
 :root[data-theme="dark"] {
 	--bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
-	--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a;
+	--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a; --duty: #f59e4b; --now: #dbe6e3;
 	color-scheme: dark;
 }
 [hidden] { display: none !important; }

@@ -3634,7 +3634,9 @@ export function createLegacy(env) {
 		layout = computeLayout();
 		clampView();
 		const w = wrap.clientWidth, h = wrap.clientHeight;
-		const c = { panel: css("--panel"), panel2: css("--panel-2"), ink: css("--ink"), muted: css("--muted"), grid: css("--grid"), strong: css("--grid-strong"), sel: css("--sel"), warn: css("--warn") };
+		const c = { panel: css("--panel"), panel2: css("--panel-2"), ink: css("--ink"), muted: css("--muted"), grid: css("--grid"), strong: css("--grid-strong"), sel: css("--sel"), warn: css("--warn"),
+			// Red is for problems only (design system): the time now in ink, the train being edited in amber
+			now: css("--now") || css("--ink"), duty: css("--duty") || css("--warn") };
 		ctx.fillStyle = c.panel;
 		ctx.fillRect(0, 0, w, h);
 		drawn = [];
@@ -3676,7 +3678,7 @@ export function createLegacy(env) {
 		const nowMillis = mod(Date.now() - data.dayStartMillis, DAY);
 		const nowX = xOf(nowMillis);
 		if (state.weekday === mod(nowDay() + FIRST_DAY_WEEKDAY, 7) && nowX >= LABEL_W && nowX <= w) {
-			ctx.strokeStyle = c.warn;
+			ctx.strokeStyle = c.now;
 			ctx.lineWidth = 1.5;
 			ctx.setLineDash([6, 4]);
 			ctx.beginPath();
@@ -3684,7 +3686,7 @@ export function createLegacy(env) {
 			ctx.lineTo(Math.round(nowX) + 0.5, h);
 			ctx.stroke();
 			ctx.setLineDash([]);
-			ctx.fillStyle = c.warn;
+			ctx.fillStyle = c.now;
 			ctx.textAlign = "left";
 			ctx.fillText(tr("现在 {0}", clock(nowMillis)), nowX + 4, AXIS_H + 12);
 			ctx.textAlign = "center";
@@ -3761,7 +3763,7 @@ export function createLegacy(env) {
 			}
 			const key = s.route.id + "@" + s.service;
 			if (inSlot.has(key)) {
-				ctx.strokeStyle = c.warn;
+				ctx.strokeStyle = c.duty;
 				ctx.lineWidth = 7;
 				ctx.globalAlpha = 0.3;
 				polyline(points);
@@ -3851,7 +3853,7 @@ export function createLegacy(env) {
 		});
 		// The selected train's moves between its services
 		slotPoints.sort((a, b) => a.time - b.time);
-		ctx.strokeStyle = c.warn;
+		ctx.strokeStyle = c.duty;
 		ctx.lineWidth = 1;
 		ctx.setLineDash([2, 3]);
 		for (let i = 1; i < slotPoints.length; i++) {
@@ -3867,7 +3869,7 @@ export function createLegacy(env) {
 		else legsDrawn = [];
 		drawSimulated(line, yOf, c, w);
 		if (slotPoints.length) {
-			ctx.fillStyle = c.warn;
+			ctx.fillStyle = c.duty;
 			ctx.font = `bold 11px ${css("--font-ui")}`;
 			ctx.textAlign = "right";
 			ctx.fillText(`${tr("车 {0}", dutyNumber(depotById(state.slot.depot), state.slot.siding, state.slot.index))}`, slotPoints[0].start[0] - 4, slotPoints[0].start[1] - 4);
@@ -4040,7 +4042,7 @@ export function createLegacy(env) {
 					const deadheads = deadheadTimes(siding, day);
 					// A deadhead as planned, blue where set for the duty alone (运用补完 step 3), moved while being dragged
 					const style = exception => {
-						ctx.strokeStyle = active ? c.warn : exception ? c.sel : c.muted;
+						ctx.strokeStyle = active ? c.duty : exception ? c.sel : c.muted;
 						ctx.lineWidth = active || exception ? 2 : 1;
 						ctx.setLineDash([4, 3]);
 					};
