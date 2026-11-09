@@ -78,6 +78,17 @@
 - **合并构建**（2026-11-09 23:58，`mtm_version` 0.64.1，和逻辑线路 `d4d94ea`、站牌三语一起）：编译通过，transit-sim 541、common 389 全过，附加 mod 兼容扫描 0 缺失，Fabric、Forge 服务端都能启动；jar 里 `assets/mtr/editor/` 有 `shell.js`、`media.js`，没有 `audio.js`。还没进游戏（U366–U369）。
 - **已知风险**：别的会话若在 `editor.js` 新加读取 `location.hash` 的代码，会和路由冲突；浏览器缓存了旧 `media.js` 时要强制刷新一次（服务端是 no-cache，正常不会）。
 
+### 新版网页编辑器，迁移第 0 步（本会话，分支 claude/modern-web-editor-design-8ec467，2026-11-10）
+
+- **改了什么**：新版编辑器和旧版并存，放在 `assets/mtr/editor/next/`；源码在仓库根目录 `editor-web/`（React + TypeScript + Vite + Tailwind），构建结果一起提交，模组构建不需要 Node。这一步只有外框（顶栏、层级栏、状态栏、连接提示）、和旧版共用的密钥与草稿、各层只读概览（线路组的种别、车厂），编辑仍在旧版。旧版顶栏加"试用新版"。迁移步骤写在 `MTR-网页编辑器规格.md` 第 11 节。
+- **文件**：新增 `editor-web/`（源码、`build.sh`、`mock/`）和 `common/src/main/resources/assets/mtr/editor/next/`（构建结果）；改 `assets/mtr/editor/index.html`（入口链接）、`editor.css`（`.try-next`）、`i18n.js`（新版的英文，45 条）；文档 `MTR-代码说明与流程.md`（第 51 行、8.7 节）、`MTR-模拟组件与解耦.md`、`MTR-测试项目清单.md`（U370–U372）、`MTR-网页编辑器规格.md`（第 9–11 节）、`README.md`。
+- **协议和存档**：都没有变化，Java 没改（`EditorServer` 整个目录当静态文件，`next/` 自动能访问）。规格第 1 节写"网页改动也升 `mtm_version`"，但上一次媒体库工作区没升；统一构建时按那边的决定办。
+- **和别的改动的关系**：断点标签 `pre-web-next-0`（`2075096`），基线 jar 在 `P:/mtr-ante/test-jars/baseline-web-next`。只在 `index.html`、`editor.css`、`i18n.js` 末尾各加了几行，和别的会话改 `editor.js` 不冲突；`i18n.js` 若同时有人在 en_us 末尾加词条，按块合并。`next/assets/` 里的文件名带哈希，每次 `build.sh` 都会换名，合并时以最后一次构建为准（重跑 `bash editor-web/build.sh`）。
+- **已经验证的**：`npm run check`（TypeScript）通过；`build.sh` 构建通过（js 234 KB、css 10 KB，没有内联脚本）；`node --check i18n.js` 通过，新版用到的文字在 `i18n.js` 里都有英文。用 `editor-web/mock/serve-built.mjs`（和 `EditorServer` 一样的 CSP、要密钥）在内置浏览器里看过：从旧版点"试用新版"进新版、密钥带过去、读出数据、线路和车厂两层、层切换、草稿项数从共用草稿读到（写入 2 项后 5 秒内显示）、深色模式。没有构建模组，没进游戏。
+- **构建后要检查的**：编译通过；jar 里 `assets/mtr/editor/next/index.html` 和 `next/assets/*.js`、`*.css` 都在；common 测试照常。
+- **游戏内测试**：U370–U372（已写进测试清单）。
+- **已知风险**：浏览器缓存了旧的 `next/index.html` 时，引用的带哈希文件可能已不在（服务端是 no-cache，正常不会）；`i18n.js` 先于 React 加载，若它加载失败新版只显示中文。
+
 ## 环线线路图画成闭合的环（2026-11-09）
 
 - 改动：`RouteMapGenerator.generateLoopMap`。站台只停一条环线、线路牌不是竖排时画成闭合的环；`MapRoute.loopStationIds`；站名和换乘的画法提出到 `drawStationWithText`、`getInterchanges`（直线画法不变）。

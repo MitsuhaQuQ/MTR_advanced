@@ -123,10 +123,33 @@
 
 ## 9. 文件
 
-`assets/mtr/editor/`：`index.html`（骨架）、`shell.js`（工作区和密钥）、`editor.js`（运行编辑）、`media.js`（媒体库）、`terminal.js`（终点站折返、环线判断，也有单元测试 `terminal.test.js`）、`batch.js`（批量选班）、`i18n.js`、`editor.css`、`audio.html`（跳转）。客户端 Java 在 `common/src/main/java/mtr/client/editor/`：`EditorServer`、`EditorData`、`EditorActions`、`EditorNetwork`、`EditorLayout`、`EditorTimes`、`EditorDuties`、`EditorSimulation`、`EditorAudio`。
+`assets/mtr/editor/`：`index.html`（骨架）、`shell.js`（工作区和密钥）、`editor.js`（运行编辑）、`media.js`（媒体库）、`terminal.js`（终点站折返、环线判断，也有单元测试 `terminal.test.js`）、`batch.js`（批量选班）、`i18n.js`、`editor.css`、`audio.html`（跳转）、`next/`（新版页面的构建结果，源码在仓库根目录 `editor-web/`，见第 11 节）。客户端 Java 在 `common/src/main/java/mtr/client/editor/`：`EditorServer`、`EditorData`、`EditorActions`、`EditorNetwork`、`EditorLayout`、`EditorTimes`、`EditorDuties`、`EditorSimulation`、`EditorAudio`。
 
 ## 10. 验证方式
 
 - 网页逻辑：本地模拟页（scratchpad 的 `mock/build_mock*.py` 把网页和假的接口打成一个页面，`localhost:8931`），在内置浏览器里点；`node --check`；`terminal.test.js`。
 - 数据和规则：组件和游戏的单元测试（`LogicalLinesTest`、`TrackOwnersPacketsTest`、`NetworkSettingsTest` 等）。
 - 进游戏：测试清单 U344 以后的网页项目。
+- 新版页面：`editor-web/` 里 `npm run check`（类型检查）、`npm run dev`（假接口）、`node mock/serve-built.mjs`（像 `EditorServer` 一样带 CSP 提供构建好的页面）。
+
+## 11. 迁移到新版（2026-11-10 起）
+
+新版和旧版并存，新版在 `next/`，旧版顶栏"试用新版"进去，新版"回到旧版"回来。两边用同一套接口和同一份 `api/draft` 草稿，**新版完全按现有接口和草稿格式做**，不改服务端协议；原型里服务端还不支持的东西（媒体库的图片、应用前的影响预估）放到最后另做。
+
+- **技术**：React + TypeScript + Vite + Tailwind，构建结果提交进仓库（`editor-web/build.sh`），模组构建不需要 Node。运行图和配线图用 Canvas（班次多，且旧版 `draw()`、`drawNetwork()` 的示意图算法可以直接搬），React 管外框和面板；只引入用得到的少量组件库。
+- **样式**：设计系统"MTM 运行图编辑器"的颜色、字号、间距和运行图线型；颜色变量和 `editor.css` 同名同值。
+- **文字**：新文字照样写进 `i18n.js`，两个页面共用。
+- **页面结构**：顶栏（草稿、应用、运行日、同步状态、搜索）、左侧层级栏（配线、归属、线路、时刻、车厂 | 调度、媒体）、各层自己的导航和工作区、右侧检查栏、状态栏。草稿应用前打开审阅面板，按类列出每一处改动，可以逐条丢弃，有撤销、重做。
+
+| 步 | 内容 | 做完的标准 |
+|---|---|---|
+| 0 | 外框、颜色、`i18n.js` 复用、密钥、接口客户端、各层只读概览、旧版入口（**已做**，代码说明 8.7 节） | `next/` 在 CSP 下打开，读出 `api/data`，英文客户端显示英文（U370–U372） |
+| 1 | 草稿和应用：`draftOperations()`、`routeChanges()`、`syncProblems()` 搬成有类型的模块，审阅面板、逐条丢弃、撤销重做、应用、冲突处理 | 两边草稿互通；应用结果和旧版一致 |
+| 2 | 时刻层：Canvas 运行图（拖动、选一段、例外、运用光晕、出入库、接入、模拟叠加）；汇总时刻表的输入和右键菜单 | 第 5.1、5.2 节逐项对过 |
+| 3 | 车厂层：运用甘特图、运用组和运行日、生成和重排运用、放车、存车线和车池、出入库规则、车型设置 | 第 4 节车厂栏的右键功能全有 |
+| 4 | 配线和归属层：物理图层、归属图层、逻辑线路、联络线、寻路边界、站台设置、地图上选点 | 第 5.3 节逐项对过 |
+| 5 | 线路层：新建线路和种别、停站编辑、线路配线图、直通、故障预案、线路限速 | 第 4 节运营线路栏的右键功能全有 |
+| 6 | 调度和媒体：调度台、应急预案、媒体库 | 调度命令在测试服上实际下发 |
+| 7 | 新版作默认页，旧版移到 `classic/` 留一个版本，之后删除 | 游戏内全套网页测试通过 |
+
+每一步单独提交，提交前打 `pre-web-next-N` 标签、基线 jar 放 `P:/mtr-ante/test-jars/baseline-web-next*`。

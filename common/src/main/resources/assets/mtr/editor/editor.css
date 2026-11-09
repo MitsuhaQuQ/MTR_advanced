@@ -376,6 +376,9 @@ body[data-ws="media"] [data-ws="timetable"], body[data-ws="timetable"] [data-ws=
 .ws-tab:hover { color: var(--ink); }
 .ws-tab[aria-selected="true"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
 .ws-tab:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; border-radius: 4px; }
+/* The way to the new editor (editor-web/, served at next/), while it is moved over layer by layer */
+.try-next { margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; color: var(--accent); text-decoration: none; background: color-mix(in srgb, var(--accent) 13%, transparent); white-space: nowrap; }
+.try-next:hover { text-decoration: underline; }
 /* The draft not yet applied, seen from the media library too */
 .ws-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--sel); flex: none; }
 /* How much of the server's room the media use: amber from nine tenths, red when full */

@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tokens of the design system "MTM 运行图编辑器": the same names and values as the old page's editor.css, plus the
+   tokens it proposed (duty, now, connecting, boundary, late). Keep the two files in step. */
+:root {
+  --bg: #f3f6f5; --panel: #ffffff; --panel-2: #e9efed; --ink: #1b2a2d; --muted: #5b6d70;
+  --grid: #dde6e3; --grid-strong: #b9c8c4; --control-line: #758a87;
+  --accent: #0a7a73; --accent-ink: #ffffff; --sel: #1d63d8; --warn: #d4362c; --caution: #8a5a12;
+  --duty: #b45309; --now: #1b2a2d; --connecting: #c46a00; --boundary: #7a5fd0; --late: #c0392b;
+  --shadow: 0 8px 28px rgba(16, 32, 34, .16);
+  --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-num: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
+    --grid: #223235; --grid-strong: #34494d; --control-line: #5f7a7f;
+    --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --caution: #e0a64a;
+    --duty: #f59e4b; --now: #dbe6e3; --connecting: #f0a04b; --boundary: #a993ee; --late: #ff7a70;
+    --shadow: 0 10px 32px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
+  --grid: #223235; --grid-strong: #34494d; --control-line: #5f7a7f;
+  --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --caution: #e0a64a;
+  --duty: #f59e4b; --now: #dbe6e3; --connecting: #f0a04b; --boundary: #a993ee; --late: #ff7a70;
+  --shadow: 0 10px 32px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { margin: 0; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 20px; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+  .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+}
+
+@layer components {
+  .tint-sel { background: color-mix(in srgb, var(--sel) 12%, transparent); }
+  .tint-warn { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .tint-caution { background: color-mix(in srgb, var(--caution) 14%, transparent); }
+  .tint-accent { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; min-width: 28px; padding: 0 10px;
+    border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); color: var(--ink);
+    font-size: 13px; white-space: nowrap; cursor: pointer; flex-shrink: 0; text-decoration: none;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 500; }
+  .btn-ghost { border-color: transparent; background: transparent; }
+  .btn-ghost:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+  .label-sm { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .scroll-thin { scrollbar-width: thin; scrollbar-color: var(--grid-strong) transparent; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

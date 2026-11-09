@@ -48,7 +48,7 @@
 | `advanced/` | 本分支加的功能和组件的适配器 | `LiveSimulation`（组件模拟器跑列车）、`PathRegionSync`、`RouteLayouts`、`StationLayouts`、`GraphRecords`、`TrackViews`、`SandboxRuns` |
 | `packet/` | 网络包 | `IPacket`（包 ID）、`PacketTrainDataGuiServer`/`PacketTrainDataGuiClient`（收发）、`PacketGuard`（大小和频率限制）、`EditGuard`（多人编辑冲突） |
 | `client/` | 客户端数据和资源 | `ClientData`（客户端看到的数据）、`ClientCache`、`CustomResources`（读资源包）、`TrainClientRegistry`/`TrainProperties`（车型）、`DynamicTrainModel`、`MapDataCache`/`MapCacheDatabase`（地图缓存）、`RouteMapGenerator`（线路牌、PIDS 上的线路图贴图：`MapRoute` 把线路裁成停车站；只有一条环线时 `generateLoopMap` 画成闭合的环，本站在下排、上排绕回、箭头指方向，否则按直线往前往后各半圈） |
-| `client/editor/` | 高级编辑器（文中的"网页编辑器"） | `EditorServer`：客户端自己在本机开一个网页服务，只监听本机、随机端口，只认本次会话生成的密钥，用系统浏览器打开。它读客户端已知的数据，单人和服务器上用法一样；改动仍然通过游戏的网络包发给服务器检查（8.2 节）。页面在 `common/src/main/resources/assets/mtr/editor/`（`index.html` 一个页面两个工作区：`shell.js` 切换，`editor.js` 运行编辑，`media.js` 媒体库；`i18n.js` 翻译；8.6 节）。它和服务器给所有人开的地图网页服务（`servlet/`）是两回事 |
+| `client/editor/` | 高级编辑器（文中的"网页编辑器"） | `EditorServer`：客户端自己在本机开一个网页服务，只监听本机、随机端口，只认本次会话生成的密钥，用系统浏览器打开。它读客户端已知的数据，单人和服务器上用法一样；改动仍然通过游戏的网络包发给服务器检查（8.2 节）。页面在 `common/src/main/resources/assets/mtr/editor/`（`index.html` 一个页面两个工作区：`shell.js` 切换，`editor.js` 运行编辑，`media.js` 媒体库；`i18n.js` 翻译；8.6 节）。正在逐层搬过去的新版页面在同一目录的 `next/`，源码在仓库根目录 `editor-web/`（8.7 节）。它和服务器给所有人开的地图网页服务（`servlet/`）是两回事 |
 | `render/` | 绘制 | `RenderTrains`（列车、电梯和轨道的总入口）、`TrainRendererBase`/`JonModelTrainRenderer`（画车厢）、各种站牌和信号。方向牌和站名牌的文字一律繁中、英语、日语三行（2026-11-09）：固定文字取 `data/SignTexts` 的三语词表（`BlockRailwaySign.SignType` 建 `customText` 时，表里没有的照旧按游戏语言），车站牌 `SignTexts.station`（"X站｜X Station｜X駅"）、方向箭头 `SignTexts.to`（"往X｜To X｜X方面"，`RouteMapGenerator.generateDirectionArrow`，线路牌和屏蔽门上方的线路显示也用它）、带标志的入口站名牌 `RenderStationNameTiled` 同样；站名按 `\|` 分段，第一段汉字是繁中名、第一段字母是英文名、第二段汉字或假名是日文名（没有就用中文名），只有英文的只画英文一行，只有中文的不画英文行；多个站名经 `IGui.mergeStations` 合并后用 `SignTexts.ordered` 排回繁中、英文、日文的顺序 |
 | `screen/` | 界面 | 车厂、线路、站台、仪表盘等界面 |
 | `block/`、`item/`、`entity/` | 方块、物品、实体 | `EntitySeat`（玩家坐的座位实体，也是画车的触发点） |
@@ -961,6 +961,18 @@ sequenceDiagram
 4. **`audio.html`** 只剩一个跳转：把 `#key=` 存好后转到 `index.html#/media/audio`，旧链接和书签照样能用。
 
 以后加图片：服务端加一组 API，`media.js` 的 `KINDS` 加一项（列表改成缩略图网格、详情显示大图和尺寸），类别栏有两类以上时自动出现"全部"。
+
+### 8.7 新版网页编辑器 `next/`（2026-11-10，迁移第 0 步）
+
+新版编辑器和旧版并存，按层一步步搬过去（步骤见 `MTR-网页编辑器规格.md` 第 11 节）。两个页面用同一套接口和同一份草稿（`api/draft`），在哪边改的草稿另一边都看得到。Java 不用改：`EditorServer` 把整个 `assets/mtr/editor/` 当静态文件，`next/` 是其中一个子目录。
+
+1. **源码和构建**：源码在仓库根目录 `editor-web/`（React + TypeScript + Vite + Tailwind）。`bash editor-web/build.sh` 构建到 `common/src/main/resources/assets/mtr/editor/next/`（`index.html` 和 `assets/` 下带哈希的 js、css），**构建结果和源码一起提交**，所以 Gradle、`round.sh` 不需要 Node。`build.sh` 最后检查 `next/index.html` 里没有内联脚本：`EditorServer` 的 CSP 是 `script-src 'self'`，内联脚本会被拦。字体只用系统字体（CSP 不让加载外部字体）。
+2. **页面启动**：`next/index.html` 先用普通 `<script>` 加载上一级的 `../i18n.js`（两个页面共用一份词典，新文字也加在那里），再加载自己的模块脚本。`src/api/client.ts` 读密钥：地址里有 `#key=` 就存进 sessionStorage 的 `mtr-editor-key`（和 `shell.js` 同一个名字），否则从 sessionStorage 取，所以从旧页面点"试用新版"、从新页面点"回到旧版"都不用重新进游戏打开。接口用根路径 `/api/…`。
+3. **数据**：`src/state/useEditor.ts` 和旧页面一样每 1.5 秒（页面隐藏时 5 秒）问 `api/revision`，变了才读 `api/data`，并按数据里的 `language` 切换语言；每 5 秒读一次 `api/draft`（旧页面可能开在另一个标签里改草稿）。草稿的项数按旧页面 `draftCount` 的算法算。类型在 `src/api/types.ts`，只写了新页面已经读的字段，草稿的其它键原样保留。
+4. **外框**（`src/App.tsx`）：顶栏（草稿项数、回到旧版）、左侧层级栏（配线、归属、线路、时刻、车厂，分隔线后调度、媒体；地址 `#/<层>`）、面包屑、状态栏（连接状态、数据读取了多久、没有编辑权限）、连接出错时的提示条（密钥不对 401、还没进世界 503、连不上）。颜色变量和旧页面 `editor.css` 同名同值，另加设计系统的 `--duty`、`--now`、`--connecting`、`--boundary`、`--late`。
+5. **第 0 步各层的内容**（`src/views/Overview.tsx`）：线路和时刻层按线路组列出种别（停站数和起止站、时刻表张数、班次数、有草稿、寻路失败、环线、联络线、谁在编辑）；车厂层列出车厂（存车线数、车型、跑的线路、运用有草稿、没设置、寻路状态）；其余层只写"在迁移第 N 步搬过来"。每层都有"在旧版里编辑"。
+6. **旧页面的入口**：`index.html` 顶栏工作区标签后面的"试用新版"（`.try-next`）链到 `next/#/timetable`。
+7. **不进游戏的检查**：`cd editor-web && npm run dev` 用 `vite.config.ts` 里的假接口（`mock/fixture.ts`）开发；`node editor-web/mock/serve-built.mjs` 像 `EditorServer` 一样提供整个编辑器目录（同样的 CSP，`/api/` 要密钥 `abc`），用来检查构建好的新页面。旧页面需要 `api/times` 等完整数据，这个假服务画不出它的运行图。
 
 ## 9. 车厂生成路径
 

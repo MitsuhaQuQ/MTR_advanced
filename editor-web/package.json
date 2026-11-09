@@ -1,0 +1,26 @@
+{
+  "name": "mtr-editor-next",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The new advanced web editor. Built into common/src/main/resources/assets/mtr/editor/next/ (committed), so the mod build needs no Node.",
+  "scripts": {
+    "dev": "vite",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc --noEmit -p tsconfig.json && vite build"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "autoprefixer": "10.6.2",
+    "postcss": "8.5.32",
+    "tailwindcss": "3.4.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.6"
+  }
+}
