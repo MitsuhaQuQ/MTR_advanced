@@ -11,6 +11,7 @@ import { legacy, useLegacy } from "../legacy/engine"
 import { LegacySlot } from "../legacy/Slot"
 import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
+import { DutyDetail } from "./DutyDetail"
 
 export function Inspector({ className }: { className: string }) {
   const element = legacyElement("inspector")!
@@ -59,10 +60,10 @@ function Content() {
     <>
       {v.picking && <Raw html={fn.pickingPanel()} />}
       {v.wayPick && <Raw html={fn.wayPickPanel()} />}
-      {state.slot && <Raw html={fn.dutyPanel()} />}
+      {state.slot && <DutyDetail />}
       {s && <Selected s={s} />}
-      {v.sim.on && <Raw html={fn.simPanel(line)} />}
-      {loopRoute && <Raw html={fn.loopPanel(loopRoute)} />}
+      {v.sim.on && <SimProblems line={line} />}
+      {loopRoute && <LoopRuns r={loopRoute} />}
       {line && <Line line={line} />}
       <Hints />
     </>
@@ -185,5 +186,80 @@ function Hints() {
       <summary className="cursor-pointer select-none font-medium text-ink">{tr("怎么操作")}</summary>
       <ul className="mb-0 mt-2 flex flex-col gap-1.5 pl-4">{items.map((text, i) => <li key={i}>{text}</li>)}</ul>
     </details>
+  )
+}
+
+/** The simulated day's problems on this line (old simPanel): each a button choosing its service on the diagram */
+function SimProblems({ line }: { line: any }) {
+  const { fn, v } = legacy
+  const data = v.data, sim = v.sim, state = v.state
+  const routes = new Map<string, any>(line ? line.routes.map((r: any) => [r.id, r]) : [])
+  const checkDepot = sim.checkDepot && fn.depotById(sim.checkDepot)
+  if (checkDepot) checkDepot.routes.forEach((id: string) => { if (!routes.has(id) && data.routeById.get(id)) routes.set(id, data.routeById.get(id)) })
+  const problems: any[] = sim.result ? sim.result.problems.filter((p: any) => p.kind === "DEADLOCK" || routes.has(p.route)) : []
+  sim.listed = problems
+  const notes: string[] = []
+  if (sim.notSimulated) notes.push(tr("改站序、新建或删除种别的修改没有模拟（{0} 项）", sim.notSimulated))
+  if (sim.ignored) notes.push(tr("{0} 项草稿和服务端的线路对不上，没有用上", sim.ignored))
+  if (sim.missingPaths) notes.push(tr("{0} 种运用在轨道上找不到路径，这些车不会发车", sim.missingPaths))
+  if (sim.result && sim.allDepots && sim.scopeDepots < sim.allDepots) notes.push(tr("只模拟了有关的 {0} / {1} 个车厂：跑这些线路的，和车经过同样轨道的；其余的车没有模拟", sim.scopeDepots, sim.allDepots))
+  const choose = (p: any) => {
+    const s = fn.findService(p.route + "@" + p.service)
+    if (!s) return
+    state.selected = s.id
+    fn.centerOn(s)
+    fn.renderAll()
+  }
+  return (
+    <Section title={tr("模拟问题")}>
+      <Card>
+        {problems.length ? (
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {problems.slice(0, v.SIM_MAX_LISTED).map((p, i) => {
+              const r = routes.get(p.route)
+              const stop = r && p.stop >= 0 && p.stop < r.stops.length ? fn.shortName(r.stops[p.stop].name) : ""
+              return (
+                <li key={i}>
+                  <button type="button" className="w-full rounded-md px-1.5 py-1 text-left text-[12px] hover:bg-panel2" onClick={() => choose(p)}>
+                    <span className="num">{fn.clock(p.time)}</span> <b className={p.kind === "DEADLOCK" ? "text-warn" : "text-caution"}>{tr(v.SIM_KINDS[p.kind] || p.kind)}</b>{" "}
+                    {r ? `${fn.routeTitle(r)} ${fn.clock(fn.mod(p.service - data.dayStartMillis, v.DAY))}` : p.detail}{stop ? " · " + stop : ""}{p.duration > 0 ? " · " + fn.formatDuration(p.duration) : ""}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        ) : sim.result ? <p className="m-0 text-[12px] text-dim">{tr("这一天没有发现问题。")}</p> : null}
+        {problems.length > v.SIM_MAX_LISTED && <p className="m-0 text-[12px] text-dim">{tr("只列出前 {0} 条。", v.SIM_MAX_LISTED)}</p>}
+        {notes.map(note => <p key={note} className="m-0 text-[12px] text-dim">{note}</p>)}
+        <p className="m-0 text-[12px] text-dim">{sim.result && sim.result.from > 0 ? tr("从 {0} 起接着游戏里列车当时的位置模拟，之前的班次不计。", fn.clock(sim.result.from)) : tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p>
+      </Card>
+    </Section>
+  )
+}
+
+/** A loop's trains going round lap after lap on the day shown (old loopPanel) */
+function LoopRuns({ r }: { r: any }) {
+  const { fn, v } = legacy
+  const data = v.data
+  const runs = fn.loopRuns(r), entry = fn.loopEntryStop(r)
+  const ending = (s: any) => (s.link ? "→ " + fn.routeTitle(data.routeById.get(s.link.route) || r) : runs.maxWait > v.MAX_LAYOVER_MILLIS ? tr("留在线上") : tr("回库"))
+  return (
+    <Section title={tr("环线运行（{0}）", v.WEEKDAY_NAMES[v.state.weekday])}>
+      <Card>
+        <div className="flex items-center gap-2 text-[14px] font-semibold"><Swatch color={r.color} />{fn.routeTitle(r)}</div>
+        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
+          <dt className="text-dim">{tr("列车")}</dt><dd className="m-0">{tr("{0} 列跑 {1} 班", runs.trains.length, r.services.length)}</dd>
+          <dt className="text-dim">{tr("出库接入")}</dt><dd className="m-0">{fn.stopName(r, entry)}{entry ? "" : tr("（首站）")}</dd>
+          <dt className="text-dim">{tr("等下一圈")}</dt><dd className="m-0">{tr("最多 {0}", runs.maxWait > v.MAX_LAYOVER_MILLIS ? tr("8 天（车厂不回库）") : tr("30 分钟"))}</dd>
+        </dl>
+        <ol className="m-0 flex list-none flex-col gap-0.5 p-0 text-[12px]">
+          {runs.trains.slice(0, 40).map((laps: any[], i: number) => (
+            <li key={i}><b>{tr("车 {0}：", i + 1)}</b><span className="num">{laps.map(s => fn.clock(s.start)).join(" → ")}</span> <span className="text-dim">{ending(laps[laps.length - 1])}</span></li>
+          ))}
+          {runs.trains.length > 40 && <li>…</li>}
+        </ol>
+        <p className="m-0 text-[12px] text-dim">{tr("每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。")}</p>
+      </Card>
+    </Section>
   )
 }

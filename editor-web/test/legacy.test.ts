@@ -553,6 +553,36 @@ describe("the old code in the new page", () => {
     await act(async () => setBrushNow(null))
     engine.pushDraft({ routes: {} })
   })
+  it("shows and edits the chosen train's duty in the inspector", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { DutyDetail } = await import("../src/views/DutyDetail")
+    const { v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    v.state.slot = { depot: "9001", siding: "8001", index: 1 }
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(DutyDetail)))
+    expect(host.textContent).toContain("运用：车 2")
+    const rows = () => host.querySelectorAll("ol > li").length
+    const before = rows()
+    expect(before).toBe(6)
+    await act(async () => { (host.querySelector("button[aria-label='移出这一班']") as HTMLElement).click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const day = (draft: any) => draft.duties["9001"].duties.sidings["8001"][1].find((each: any) => (each.days >> v.state.weekday) & 1)
+    expect(day(changes[changes.length - 1]).segments.length).toBe(before - 1)
+    await act(async () => { engine.flushLegacy() })
+    expect(rows()).toBe(before - 1)
+    // A night on the line
+    const stay = [...host.querySelectorAll("label")].find(l => l.textContent!.includes("留在线上过夜"))!.querySelector("input") as HTMLInputElement
+    await act(async () => { stay.click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(day(changes[changes.length - 1]).stay).toBe(true)
+    v.state.slot = null
+    engine.pushDraft({ routes: {} })
+  })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
     expect(() => media.setMediaShown(true)).not.toThrow()
