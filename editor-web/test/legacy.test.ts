@@ -523,6 +523,49 @@ describe("the old code in the new page", () => {
     expect(chosen).toEqual(["t2"])
     v.consoleState.data = null
   })
+  it("sends the dispatcher's commands from a train's card", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { DispatchConsole } = await import("../src/views/DispatchConsole")
+    const { exampleTrack } = await import("../mock/track")
+    const { v } = engine.legacy
+    v.consoleState.data = exampleTrack().console
+    v.consoleState.system = ""
+    const sent: any[] = []
+    const fetchBefore = globalThis.fetch
+    globalThis.fetch = (async (_: string, init?: RequestInit) => {
+      if (init && init.body) sent.push(...JSON.parse(String(init.body)).operations)
+      return new Response(JSON.stringify({ ok: true, errors: [] }), { status: 200 })
+    }) as typeof fetch
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(DispatchConsole, { className: "", onChoose: () => {} })))
+    // The late train first, held already
+    const cards = [...host.querySelectorAll("[data-console-card]")]
+    expect(cards.map(c => c.getAttribute("data-console-card"))).toEqual(["t2", "t1"])
+    expect(cards[0].textContent).toContain("晚点 6 分钟")
+    const press = async (card: Element, text: string) => act(async () => { ([...card.querySelectorAll("button")].find(b => b.textContent === text) as HTMLElement).click(); await new Promise(resolve => setTimeout(resolve, 10)) })
+    await press(cards[0], "放行")
+    await press(cards[1], "下一站清客后回库")
+    expect(sent).toEqual([
+      { type: "dispatch", train: "t2", command: "release" },
+      { type: "dispatch", train: "t1", command: "clearOut" },
+      { type: "dispatch", train: "t1", command: "return" },
+    ])
+    expect(cards[0].textContent).toContain("已发送")
+    // A longer stop, checked before it goes
+    await press(cards[1], "延长停站…")
+    const seconds = cards[1].querySelector("input[type=number]") as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(seconds, "5000")
+      seconds.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+    await press(cards[1], "发送")
+    expect(cards[1].textContent).toContain("要在 1 到 1800 秒之间")
+    expect(sent.length).toBe(3)
+    globalThis.fetch = fetchBefore
+    v.consoleState.data = null
+  })
   it("paints a whole section on the logical map with a brush", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

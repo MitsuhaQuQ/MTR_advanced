@@ -885,6 +885,7 @@ const I18N = (() => {
 			"都不勾时，走它停靠的站台所在的逻辑线路。联络线和不属于任何逻辑线路的轨道谁都能走。": "With none ticked, a line runs on the logical lines of its platforms. Connecting lines and track in no logical line are open to all.",
 			"按站台": "by platforms",
 			"{0} 走 {1}": "{0} runs on {1}",
+			"路网": "Rail system",
 			"用旧版的画法画运行图和汇总时刻表，对照新画法用；新画法有问题时也可以先切回去": "Draw the running diagram and the summary timetable the old way, to compare with the new one, or to go back to while the new one has a problem",
 			"用旧版的画法画运行图，对照新画法用；新画法有问题时也可以先切回去": "Draw the running diagram the old way, to compare with the new one, or to go back to while the new one has a problem",
 			"旧版画法": "Old drawing",

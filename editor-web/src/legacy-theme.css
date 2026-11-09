@@ -160,5 +160,5 @@
 .legacy.legacy-overlays dialog :focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
 .legacy.legacy-overlays .tooltip { border: 1px solid var(--grid); border-radius: 6px; box-shadow: var(--shadow); padding: 8px 10px; font-size: 12px; line-height: 18px; }
 
-/* The dispatcher's console borrowed out of the map into the dispatch layer's own column */
-.legacy.legacy-slot.dispatch-console > .net-console { position: static; inset: auto; width: auto; max-height: none; box-shadow: none; border: 0; }
+/* The old dispatcher's console still reads the trains, unseen: the dispatch layer's own column (DispatchConsole) shows them */
+.legacy #net-console { display: none !important; }

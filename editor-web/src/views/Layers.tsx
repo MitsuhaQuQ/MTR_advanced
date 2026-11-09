@@ -13,6 +13,7 @@ import { Inspector } from "./Inspector"
 import { DutyBoard } from "./DutyBoard"
 import { RunningDiagram } from "./RunningDiagram"
 import { SummaryTable } from "./SummaryTable"
+import { DispatchConsole } from "./DispatchConsole"
 import { OwnershipPanel } from "./OwnershipPanel"
 import { NetworkSchematic, type TrainMark } from "./NetworkSchematic"
 
@@ -158,7 +159,8 @@ function DispatchWork() {
           ? <NetworkSchematic onShowReal={() => choose("real")} trains={trains} onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
           : <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={() => fn.drawNetwork()} />}
       </div>
-      <LegacySlot id="net-console" className="dispatch-console scroll-thin max-h-[45%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[340px] lg:border-l lg:border-t-0" />
+      <DispatchConsole className="scroll-thin max-h-[45%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[340px] lg:border-l lg:border-t-0"
+        onChoose={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
     </div>
   )
 }
