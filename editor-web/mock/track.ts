@@ -6,6 +6,11 @@
 type Rail = [a: number, b: number, d1: number, o1: number, d2: number, o2: number]
 
 const STATIONS = [100, 600, 1100, 1600, 2100, 2600]
+
+/** Where a point along route 101's path lies in the world: x east along it, a gentle curve, offsets to the left north */
+export const trackPosition = (d: number, offset: number): [number, number] => [d, Math.round((260 * Math.sin(d / 800) - offset) * 10) / 10]
+/** Line 2's single track north from the junction, with a passing loop at 会展中心 and two tracks at 机场 */
+export const LINE2_X = 1300
 const NAMES = ["港湾|Harbour", "码头街|Pier St", "中央广场|Central Sq", "市政厅|City Hall", "西门|West Gate", "北湖|North Lake"]
 
 export function exampleTrack() {
@@ -50,20 +55,37 @@ export function exampleTrack() {
     turnouts, platforms, boundaryNodes: [],
   }
 
-  // The network: every node with its key; each route's path as node indices
+  // The network: every node with its key and place; rails with their kind (1 platform, 2 siding); each route's path
   const nodes: (number | string)[][] = []
   const index = new Map<number, number>()
-  const indexOf = (n: number) => { if (!index.has(n)) { index.set(n, nodes.length); nodes.push([0, 0, String(n)]) } return index.get(n)! }
+  const placeOf = new Map<number, [number, number]>()
+  nodeAt.forEach((n, key) => { const [d, o] = key.split(",").map(Number); placeOf.set(n, trackPosition(d, o)) })
+  const indexOf = (n: number) => { if (!index.has(n)) { index.set(n, nodes.length); const [x, z] = placeOf.get(n) || [0, 0]; nodes.push([x, z, String(n)]) } return index.get(n)! }
   const path = (offset: number, ds: number[]) => ds.map(d => indexOf(nodeAt.get(d + "," + offset)!))
   const upPath = path(0, up)
+  const kindOf = ([, , d1, o1, d2, o2]: Rail) => d1 >= 2620 ? 2
+    : platforms.some(p => p.line[1] === o1 && o1 === o2 && d1 >= p.line[0] - 0.1 && d2 <= p.line[2] + 0.1) ? 1 : 0
+  const networkRails: (number | string)[][] = rails.map(rail => [indexOf(rail[0]), indexOf(rail[1]), kindOf(rail), 0])
+  // Line 2 on its own coordinates: north from the junction, a loop at 会展中心, two tracks at 机场
+  const extra = (x: number, z: number) => { const n = node(); placeOf.set(n, [x, z]); return indexOf(n) }
+  const join = (a: number, b: number, kind = 0) => networkRails.push([a, b, kind, 0])
+  const X = LINE2_X, fork = indexOf(branch[1])
+  const p1 = extra(X, -150), loopIn = extra(X, -400), e1 = extra(X, -420), e2 = extra(X, -460), w1 = extra(X + 4, -420), w2 = extra(X + 4, -460), loopOut = extra(X, -480)
+  const p2 = extra(X, -880), apIn = extra(X, -900), a1 = extra(X, -920), a2 = extra(X, -960), b1 = extra(X + 4, -920), b2 = extra(X + 4, -960)
+  join(fork, p1); join(p1, loopIn); join(loopIn, e1); join(e1, e2, 1); join(e2, loopOut); join(loopIn, w1); join(w1, w2, 1); join(w2, loopOut)
+  join(loopOut, p2); join(p2, apIn); join(apIn, a1); join(a1, a2, 1); join(apIn, b1); join(b1, b2, 1)
+  const stationAt = (id: string, name: string, d: number) => { const [x, z] = trackPosition(d, -2); return { id, name, x, z } }
   const network = {
-    version: 1, mode: "TRAIN", modes: ["TRAIN"], rails: [], stations: [], boundaryNodes: [], owners: { ready: false, names: [], rails: [] },
+    version: 1, mode: "TRAIN", modes: ["TRAIN"], rails: networkRails, boundaryNodes: [],
+    stations: [...STATIONS.map((d, i) => stationAt("s" + (i + 1), NAMES[i], d)), { id: "t2", name: "会展中心|Expo", x: X + 2, z: -440 }, { id: "t1", name: "机场|Airport", x: X + 2, z: -940 }],
+    // Each rail its own section, owned by the line running on it
+    owners: { ready: true, names: ["TRAIN|1号线|Line 1", "TRAIN|2号线|Line 2"], rails: networkRails.map((_, i) => [i, 0, "r" + i, "", i < rails.length ? 0 : 1]) },
     nodes,
     routes: [
       { id: "101", name: "1号线 全程 北行", color: 0xc8102e, lineKey: "TRAIN|1号线|Line 1", nodes: upPath, stopNodes: [] },
       { id: "102", name: "1号线 全程 南行", color: 0xc8102e, lineKey: "TRAIN|1号线|Line 1", nodes: path(-4, down).reverse(), stopNodes: [] },
       { id: "103", name: "1号线 区间 北行", color: 0xe8758a, lineKey: "TRAIN|1号线|Line 1", nodes: path(0, up.filter(d => d <= 1620)), stopNodes: [] },
-      { id: "201", name: "2号线 东行", color: 0x0072ce, lineKey: "TRAIN|2号线|Line 2", nodes: [...path(0, [1120, 1160, 1180]), indexOf(branch[1])], stopNodes: [] },
+      { id: "201", name: "2号线 东行", color: 0x0072ce, lineKey: "TRAIN|2号线|Line 2", nodes: [...path(0, [1120, 1160, 1180]), fork, p1, loopIn, e1, e2, loopOut, p2, apIn, a1, a2], stopNodes: [] },
     ],
   }
   return { layout, network }

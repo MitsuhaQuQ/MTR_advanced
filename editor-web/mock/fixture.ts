@@ -2,6 +2,8 @@
  * Example data for `npm run dev`, in the shape of api/data: two line groups sharing a station, a short-turn route, and
  * two depots, one of them still finding its paths. Not shipped.
  */
+import { LINE2_X, trackPosition } from "./track.ts"
+
 const MIN = 60000
 
 type StopIn = [station: string, name: string, platform: string, id: string]
@@ -51,11 +53,15 @@ export function exampleTopology() {
     platforms.push({ id, name, station, stationName, network, mode: "TRAIN", line, ways: [{ usable: true, edges: [] }, { usable: true, edges: [] }], track: { direction, kind }, ...(kind === "passing" ? { passingTrack: true } : {}) })
     return platforms.length - 1
   }
-  const up = L1_NAMES.map((s, k) => add(String(1000 + k), "1", s, 0, [0, -200 * k + 20, 0, -200 * k - 20], "up"))
-  const down = L1_NAMES.map((s, k) => add(String(1100 + k), "2", s, 0, [6, -200 * k - 20, 6, -200 * k + 20], "down"))
-  const loop = add("1200", "5", L1_NAMES[2], 0, [-6, -380, -6, -420], "both", "passing")
-  const east = L2_NAMES.map((s, k) => add(String(2000 + k), s[0] === "s3" ? "3" : "1", s, 1, [-400 + 200 * k - 20, -420, -400 + 200 * k + 20, -420], "up"))
-  const west = L2_NAMES.map((s, k) => add(String(2100 + k), s[0] === "s3" ? "4" : "2", s, 1, [-400 + 200 * k + 20, -426, -400 + 200 * k - 20, -426], "down"))
+  // Where the mock's network map (track.ts) has them: line 1 eastward along a curve, line 2 north from 中央广场
+  const place = (d: number, offset: number, back = false) => { const a = trackPosition(d - 20, offset), b = trackPosition(d + 20, offset); return back ? [...b, ...a] : [...a, ...b] }
+  const STOPS = [100, 600, 1100, 1600, 2100, 2600]
+  const up = L1_NAMES.map((s, k) => add(String(1000 + k), "1", s, 0, place(STOPS[k], 0), "up"))
+  const down = L1_NAMES.map((s, k) => add(String(1100 + k), "2", s, 0, place(STOPS[k], -4, true), "down"))
+  const loop = add("1200", "5", L1_NAMES[2], 0, place(1100, 4), "both", "passing")
+  const north = [-940, -440, 0, 2000]
+  const east = L2_NAMES.map((s, k) => add(String(2000 + k), s[0] === "s3" ? "3" : "1", s, 1, [LINE2_X, north[k] + 20, LINE2_X, north[k] - 20], "up"))
+  const west = L2_NAMES.map((s, k) => add(String(2100 + k), s[0] === "s3" ? "4" : "2", s, 1, [LINE2_X + 4, north[k] - 20, LINE2_X + 4, north[k] + 20], "down"))
   // From platform a leaving on way wa to platform b arriving on way wb; the main tracks one way, the crossovers both ways
   const link = (a: number, wa: number, b: number, wb: number, length = 200, back = false) => {
     platforms[a].ways[wa].edges.push(b * 2 + wb, length)

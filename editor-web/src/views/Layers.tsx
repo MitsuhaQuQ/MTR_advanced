@@ -12,6 +12,7 @@ import { Navigator, type Part } from "./Navigator"
 import { Inspector } from "./Inspector"
 import { DutyBoard } from "./DutyBoard"
 import { OwnershipPanel } from "./OwnershipPanel"
+import { NetworkSchematic } from "./NetworkSchematic"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
 const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
@@ -38,7 +39,7 @@ export function LayerWork({ layer }: { layer: LayerId }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       {part && <Navigator part={part} />}
-      {layer === "physical" || layer === "owners" || layer === "dispatch" ? <NetworkWork owners={layer === "owners"} /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
+      {layer === "physical" ? <PhysicalWork /> : layer === "owners" || layer === "dispatch" ? <NetworkWork owners={layer === "owners"} /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
     </div>
   )
 }
@@ -52,6 +53,30 @@ function NetworkWork({ owners }: { owners: boolean }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
       {map}
       <OwnershipPanel className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
+    </div>
+  )
+}
+
+/** The track layer: the schematic of the whole network (the default), or the real map where boundaries are edited. */
+function PhysicalWork() {
+  const [view, setView] = useState<"schematic" | "real">(() => { try { return localStorage.getItem("mtr-next-net-view") === "real" ? "real" : "schematic" } catch { return "schematic" } })
+  const choose = (next: "schematic" | "real") => {
+    setView(next)
+    try { localStorage.setItem("mtr-next-net-view", next) } catch { /* private window */ }
+    if (next === "real") setTimeout(() => legacy.fn.drawNetwork())
+  }
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
+        <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
+          {([["schematic", tr("示意图")], ["real", tr("实际图")]] as const).map(([id, label], i) => (
+            <button key={id} type="button" aria-pressed={view === id} onClick={() => choose(id)}
+              className={"px-2.5 text-[13px] " + (i ? "border-l border-gridstrong " : "") + (view === id ? "bg-brand font-medium text-brandink" : "bg-panel")}>{label}</button>
+          ))}
+        </div>
+        <span className="text-[12px] text-dim">{view === "schematic" ? tr("看配线：车站和区间几股道、谁在走") : tr("按游戏坐标画；右键轨道设寻路边界")}</span>
+      </div>
+      {view === "schematic" ? <NetworkSchematic onShowReal={() => choose("real")} /> : <NetworkWork owners={false} />}
     </div>
   )
 }

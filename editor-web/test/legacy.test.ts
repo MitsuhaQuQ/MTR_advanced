@@ -246,6 +246,23 @@ describe("the old code in the new page", () => {
     expect(changes[changes.length - 1].networkSettings).toEqual({ ownerOverrides: { "2,3": ["TRAIN|1号线|Line 1"] } })
     engine.pushDraft({ routes: {} })
   })
+  it("draws the network schematic and shows a station's tracks", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { NetworkSchematic } = await import("../src/views/NetworkSchematic")
+    const { exampleTrack } = await import("../mock/track")
+    const { v } = engine.legacy
+    v.net.data = exampleTrack().network
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(NetworkSchematic, { onShowReal: () => {} })))
+    const stations = [...host.querySelectorAll("g[role=button]")]
+    expect(stations.length).toBe(8)
+    const central = stations.find(g => g.getAttribute("aria-label") === "中央广场")!
+    await act(async () => { central.dispatchEvent(new MouseEvent("click", { bubbles: true })) })
+    expect(host.textContent).toContain("5 号站台")
+    expect(host.textContent).toContain("在实际图上看")
+  })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
     expect(() => media.setMediaShown(true)).not.toThrow()
