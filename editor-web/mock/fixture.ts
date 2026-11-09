@@ -11,8 +11,10 @@ function route(id: string, name: string, line: string, color: number, lineColor:
   for (let t = 6 * 60 * MIN; t <= 23 * 60 * MIN; t += every * MIN) services.push(t)
   // Run times as the game's fastest train gives them: 3 minutes a stop, 30 s dwell; the old page needs a full table
   const fastest = stops.map((_, k) => [k * 3 * MIN, k * 3 * MIN + (k === 0 ? 0 : 30000)])
+  // Each stop as the game sends its times: [arrival, departure, overtake, passes, tooFast], millis from the first stop
+  const times = fastest.map(([arrival, departure]) => [arrival, departure, 0, 0, 0])
   const table = (name: string, weekdays: number, list: number[]) => ({
-    name, weekdays, marginPercent: 0, services: list, plans: fastest.map(f => [...f]),
+    name, weekdays, marginPercent: 0, services: list, plans: fastest.map(f => [...f]), times,
     stops: stops.map(() => ({ arrival: -1, departure: -1, overtake: false })), links: [], returns: [], exceptions: [],
   })
   return {

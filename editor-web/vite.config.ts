@@ -8,7 +8,7 @@ import { createMockApi } from "./mock/api.ts"
 const EDITOR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../common/src/main/resources/assets/mtr/editor")
 
 /**
- * `npm run dev` only: stands in for the game's EditorServer. Serves the shared i18n.js from the old editor's folder and
+ * `npm run dev` only: stands in for the game's EditorServer. Serves the shared scripts from the old editor's folder and
  * the fake endpoints of mock/api.ts, so the page can be worked on without starting Minecraft.
  */
 function mockEditorServer(): Plugin {
@@ -18,9 +18,11 @@ function mockEditorServer(): Plugin {
     apply: "serve",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if ((req.url || "").split("?")[0] === "/i18n.js") {
+        // The old page's scripts both pages load
+        const file = (req.url || "").split("?")[0].slice(1)
+        if (["i18n.js", "batch.js", "terminal.js"].includes(file)) {
           res.setHeader("Content-Type", "text/javascript")
-          res.end(fs.readFileSync(path.join(EDITOR, "i18n.js")))
+          res.end(fs.readFileSync(path.join(EDITOR, file)))
           return
         }
         if (!(await handle(req, res))) next()

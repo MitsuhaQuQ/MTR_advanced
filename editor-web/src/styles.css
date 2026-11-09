@@ -58,4 +58,20 @@
   .label-sm { font-size: 12px; color: var(--muted); font-weight: 500; }
   .scroll-thin { scrollbar-width: thin; scrollbar-color: var(--grid-strong) transparent; }
 }
+/* ---------- The old page's elements borrowed into the layout (src/legacy/Slot.tsx) ---------- */
+.legacy-slot { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.legacy-slot > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.legacy-slot > .tree { border-right: 0; background: transparent; overflow: visible; }
+.legacy-slot > .canvas-wrap { display: block; }
+.legacy-slot > .inspector { border-left: 0; overflow: visible; }
+.legacy-slot > .table-view { display: block; overflow: visible; }
+.legacy-slot > #view-network { display: grid; grid-template-rows: auto 1fr; }
+.legacy-slot > #sim-status { flex: none; }
+.legacy-overlays { position: fixed; inset: 0 auto auto 0; width: 0; height: 0; z-index: 45; }
+/* Each layer shows its own part of the old tree: its five sections are pairs of a heading and a list */
+.tree-part #tree > .section, .tree-part #tree > ul { display: none; }
+.tree-part[data-part="1"] #tree > ul:nth-of-type(1), .tree-part[data-part="2"] #tree > ul:nth-of-type(2),
+.tree-part[data-part="3"] #tree > ul:nth-of-type(3), .tree-part[data-part="4"] #tree > ul:nth-of-type(4),
+.tree-part[data-part="5"] #tree > ul:nth-of-type(5) { display: block; }
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

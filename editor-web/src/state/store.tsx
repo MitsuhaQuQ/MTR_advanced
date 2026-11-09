@@ -11,6 +11,7 @@ import type { EditorData } from "../api/types"
 import { setLanguage, tr } from "../i18n"
 import { buildModel, type Model } from "../core/model"
 import { type ApplyResult, type Draft, draftOperations, emptyDraft, normalizeDraft, settleApply } from "../core/draft"
+import { onLegacyDraft, pushData, pushDraft } from "../legacy/engine"
 
 const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000, DRAFT_MILLIS = 5000, SAVE_DELAY = 400, UNDO_DEPTH = 100
 
@@ -72,6 +73,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           revision.current = next
           setLanguage(fresh.language)
           setData(fresh)
+          // The old code draws the views it still owns from its own copy
+          pushData(fresh)
           setLanguageState(fresh.language)
           setLoadedAt(Date.now())
         }
@@ -146,6 +149,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }), [save])
 
   const model = useMemo(() => (data ? buildModel(data) : null), [data])
+
+  // The old code works from the same draft: given ours whenever it changes, and its changes come back as steps of undo
+  useEffect(() => { pushDraft(history.now) }, [history.now])
+  useEffect(() => { onLegacyDraft(draft => edit(() => normalizeDraft(draft))) }, [edit])
 
   // ---------- Applying ----------
   const apply = useCallback(async () => {

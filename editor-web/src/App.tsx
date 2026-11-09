@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from "react"
 import { StoreProvider, useStore } from "./state/store"
 import { tr } from "./i18n"
 import { Icon } from "./shell/icons"
-import { LAYERS, layerOf, type LayerId, type LayerInfo } from "./shell/layers"
+import { LAYERS, layerOf, type LayerId } from "./shell/layers"
 import { ReviewPanel } from "./shell/Review"
 import { SyncPanel, useSyncProblems } from "./shell/Sync"
 import { Banner } from "./shell/Banner"
 import { conflictCount, draftCount } from "./core/draft"
-import { DepotsOverview, LinesOverview, NotYetHere } from "./views/Overview"
+import { LayerWork } from "./views/Layers"
+import { LegacyMenu } from "./legacy/Slot"
+import { legacy, useLegacy } from "./legacy/engine"
 
 export function App() {
   return <StoreProvider><Shell /></StoreProvider>
@@ -25,6 +27,13 @@ function Shell() {
   }, [])
   const open = (id: LayerId) => { if (id !== layer) { history.pushState(null, "", "#/" + id); setLayer(id) } }
   const closePanel = useCallback(() => setPanel(null), [])
+  /** Shows a route's summary timetable, from the lists of changes and problems (openView in the old page). */
+  const openRoute = (routeId: string) => {
+    const r = legacy.v.data && legacy.v.data.routeById.get(routeId)
+    if (!r) return
+    open("timetable")
+    legacy.fn.openView("table", r.lineKey, r.id)
+  }
 
   // Undo and redo anywhere but in a text field; Ctrl+Enter opens the draft's changes to apply
   useEffect(() => {
@@ -53,27 +62,27 @@ function Shell() {
             {info.step && <span>{tr("第 {0} 层", info.step)}</span>}
             <span className="text-ink">{tr(info.hint)}</span>
           </div>
-          <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
-            <Work layer={info} />
-          </div>
+          {layer === "media" ? <MediaWork /> : <LayerWork layer={layer} />}
         </main>
       </div>
       <StatusBar />
-      <ReviewPanel open={panel === "review"} onClose={closePanel} />
-      <SyncPanel open={panel === "sync"} onClose={closePanel} />
+      <ReviewPanel open={panel === "review"} onClose={closePanel} onOpenRoute={openRoute} />
+      <SyncPanel open={panel === "sync"} onClose={closePanel} onOpenRoute={openRoute} />
+      <LegacyMenu />
     </div>
   )
 }
 
-function Work({ layer }: { layer: LayerInfo }) {
-  const { model, draft } = useStore()
-  if (!model) return <p className="text-[13px] text-dim">{tr("正在读取…")}</p>
-  switch (layer.id) {
-    case "lines":
-    case "timetable": return <LinesOverview model={model} draft={draft} layer={layer} />
-    case "depots": return <DepotsOverview model={model} draft={draft} layer={layer} />
-    default: return <NotYetHere layer={layer} />
-  }
+/** The media library is still the old page's workspace (media.js), opened there until it moves over. */
+function MediaWork() {
+  return (
+    <div className="p-4">
+      <div className="flex max-w-3xl flex-wrap items-center gap-3 rounded-lg border border-grid bg-panel px-3 py-2 text-[13px]">
+        <span className="text-dim">{tr("报站音频等媒体文件在旧版的媒体库里管理。")}</span>
+        <a className="btn ml-auto" href="../#/media/audio">{tr("打开媒体库")}</a>
+      </div>
+    </div>
+  )
 }
 
 function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void }) {
@@ -91,6 +100,7 @@ function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void
       <h1 className="m-0 hidden truncate text-[15px] font-bold sm:block">{tr("MTR 高级编辑器")}</h1>
       <span className="hidden shrink-0 rounded-pill px-2 text-[12px] font-medium leading-5 tint-accent text-brand sm:inline">{tr("新版预览")}</span>
       <span className="flex-1" />
+      <Weekday />
       <button className={"btn btn-ghost " + (errors ? "text-warn" : problems.length ? "text-caution" : "text-dim")} onClick={onSync} title={tr("页面和游戏哪里不一致、游戏哪里没做成")}>
         <span className={"h-2 w-2 rounded-full " + (errors ? "bg-warn" : problems.length ? "bg-caution" : "bg-brand")} />
         {problems.length ? tr("同步状态 · {0}", problems.length) : tr("同步状态 · 正常")}
@@ -105,6 +115,22 @@ function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void
         <Icon name="back" size={14} /><span className="hidden md:inline">{tr("回到旧版")}</span>
       </a>
     </header>
+  )
+}
+
+const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+/** The day the diagrams and tables show (setWeekday in the old page: each day runs its own table). */
+function Weekday() {
+  useLegacy()
+  const { fn, v } = legacy
+  if (!v.data) return null
+  return (
+    <label className="flex shrink-0 items-center gap-1.5 text-[12px] text-dim">
+      <span className="hidden lg:inline">{tr("运行日")}</span>
+      <select className="h-7 rounded-md border border-ctl bg-panel px-1.5 text-[13px] text-ink" value={v.state.weekday} onChange={e => fn.setWeekday(Number(e.target.value))}>
+        {WEEKDAYS.map((day, i) => <option key={day} value={i}>{tr(day)}</option>)}
+      </select>
+    </label>
   )
 }
 

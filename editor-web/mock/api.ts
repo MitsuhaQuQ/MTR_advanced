@@ -31,6 +31,15 @@ export function createMockApi() {
         if (req.method === "GET") json(draft)
         else { draft = JSON.parse((await readBody(req)) || "{}"); json({ ok: true }) }
         return true
+      case "/api/times": {
+        // The draft's times as the game would work them out: here the routes' own run times, for each table
+        const { routes } = JSON.parse((await readBody(req)) || "{}")
+        json({ routes: routes.map((r: any) => {
+          const route = data.routes.find((each: any) => each.id === r.id)
+          return { id: r.id, tables: r.timetable.tables.map(() => ({ times: route ? route.tables[0].times : [], exceptions: [] })) }
+        }) })
+        return true
+      }
       case "/api/apply": {
         const { operations } = JSON.parse((await readBody(req)) || "{}")
         applied = operations

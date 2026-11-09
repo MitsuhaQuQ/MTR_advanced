@@ -1403,7 +1403,15 @@ const I18N = (() => {
 			"重做（Ctrl+Y）": "Redo (Ctrl+Y)",
 			"看草稿": "See the draft",
 			"改动先进草稿，按“应用”才发给游戏": "Changes go into the draft and reach the game on Apply",
-			"清空全部草稿？草稿里的 {0} 项改动都丢掉；游戏里的不受影响。": "Clear the whole draft? Its {0} changes are dropped; the game is not affected."
+			"清空全部草稿？草稿里的 {0} 项改动都丢掉；游戏里的不受影响。": "Clear the whole draft? Its {0} changes are dropped; the game is not affected.",
+			"视图": "View",
+			"显示": "Show",
+			"模拟": "Simulation",
+			"缩放": "Zoom",
+			"车厂行和出入库回送": "The depot row and runs out and back",
+			"别的线路走同一段轨道的班次，只读": "Services of other lines on the same track, read only",
+			"报站音频等媒体文件在旧版的媒体库里管理。": "Announcement audio and other media are managed in the old editor's media library.",
+			"打开媒体库": "Open the media library"
 		}
 	};
 	const STORAGE_KEY = "mtr-editor-language";
