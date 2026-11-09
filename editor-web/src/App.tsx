@@ -1,27 +1,51 @@
-import { useEffect, useState } from "react"
-import { useEditor, type EditorState } from "./state/useEditor"
-import { draftCount } from "./api/types"
+import { useCallback, useEffect, useState } from "react"
+import { StoreProvider, useStore } from "./state/store"
 import { tr } from "./i18n"
 import { Icon } from "./shell/icons"
 import { LAYERS, layerOf, type LayerId, type LayerInfo } from "./shell/layers"
+import { ReviewPanel } from "./shell/Review"
+import { SyncPanel, useSyncProblems } from "./shell/Sync"
+import { Banner } from "./shell/Banner"
+import { conflictCount, draftCount } from "./core/draft"
 import { DepotsOverview, LinesOverview, NotYetHere } from "./views/Overview"
 
-/** The new editor's shell: top bar, layer rail, the layer's work area, status bar. */
 export function App() {
-  const editor = useEditor()
+  return <StoreProvider><Shell /></StoreProvider>
+}
+
+/** The new editor's shell: top bar, layer rail, the layer's work area, status bar, and the panels over them. */
+function Shell() {
+  const store = useStore()
   const [layer, setLayer] = useState<LayerId>(() => layerOf(location.hash))
+  const [panel, setPanel] = useState<"review" | "sync" | null>(null)
   useEffect(() => {
     const follow = () => setLayer(layerOf(location.hash))
     addEventListener("hashchange", follow)
     return () => removeEventListener("hashchange", follow)
   }, [])
   const open = (id: LayerId) => { if (id !== layer) { history.pushState(null, "", "#/" + id); setLayer(id) } }
-  const info = LAYERS.find(l => l.id === layer)!
+  const closePanel = useCallback(() => setPanel(null), [])
 
+  // Undo and redo anywhere but in a text field; Ctrl+Enter opens the draft's changes to apply
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return
+      const mod = e.ctrlKey || e.metaKey
+      if (!mod) return
+      const k = e.key.toLowerCase()
+      if (k === "z") { e.preventDefault(); if (e.shiftKey) store.redo(); else store.undo() }
+      else if (k === "y") { e.preventDefault(); store.redo() }
+      else if (e.key === "Enter") { e.preventDefault(); setPanel("review") }
+    }
+    addEventListener("keydown", onKey)
+    return () => removeEventListener("keydown", onKey)
+  }, [store])
+
+  const info = LAYERS.find(l => l.id === layer)!
   return (
     <div className="flex h-full flex-col">
-      <TopBar editor={editor} />
-      <Banner editor={editor} />
+      <TopBar onReview={() => setPanel("review")} onSync={() => setPanel("sync")} />
+      <Banner onReview={() => setPanel("review")} />
       <div className="flex min-h-0 flex-1">
         <LayerRail layer={layer} open={open} />
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -30,58 +54,58 @@ export function App() {
             <span className="text-ink">{tr(info.hint)}</span>
           </div>
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
-            <Work layer={info} editor={editor} />
+            <Work layer={info} />
           </div>
         </main>
       </div>
-      <StatusBar editor={editor} />
+      <StatusBar />
+      <ReviewPanel open={panel === "review"} onClose={closePanel} />
+      <SyncPanel open={panel === "sync"} onClose={closePanel} />
     </div>
   )
 }
 
-function Work({ layer, editor }: { layer: LayerInfo; editor: EditorState }) {
-  if (!editor.data) return <p className="text-[13px] text-dim">{tr("正在读取…")}</p>
+function Work({ layer }: { layer: LayerInfo }) {
+  const { model, draft } = useStore()
+  if (!model) return <p className="text-[13px] text-dim">{tr("正在读取…")}</p>
   switch (layer.id) {
     case "lines":
-    case "timetable": return <LinesOverview data={editor.data} draft={editor.draft} layer={layer} />
-    case "depots": return <DepotsOverview data={editor.data} draft={editor.draft} layer={layer} />
+    case "timetable": return <LinesOverview model={model} draft={draft} layer={layer} />
+    case "depots": return <DepotsOverview model={model} draft={draft} layer={layer} />
     default: return <NotYetHere layer={layer} />
   }
 }
 
-function TopBar({ editor }: { editor: EditorState }) {
-  const count = draftCount(editor.draft)
+function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void }) {
+  const store = useStore()
+  const count = draftCount(store.draft), conflicts = conflictCount(store.draft)
+  const problems = useSyncProblems().filter(p => p.level !== "hint")
+  const errors = problems.filter(p => p.level === "err").length
+  const canApply = !store.applying && count > conflicts && Boolean(store.model?.canEdit)
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-grid bg-panel px-3">
       <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden className="shrink-0">
         <rect x="1" y="1" width="20" height="20" rx="5" fill="var(--accent)" />
         <path d="M5 15 L9 7 L13 13 L17 6" fill="none" stroke="var(--accent-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <h1 className="m-0 truncate text-[15px] font-bold">{tr("MTR 高级编辑器")}</h1>
-      <span className="shrink-0 rounded-pill px-2 text-[12px] font-medium leading-5 tint-accent text-brand">{tr("新版预览")}</span>
+      <h1 className="m-0 hidden truncate text-[15px] font-bold sm:block">{tr("MTR 高级编辑器")}</h1>
+      <span className="hidden shrink-0 rounded-pill px-2 text-[12px] font-medium leading-5 tint-accent text-brand sm:inline">{tr("新版预览")}</span>
       <span className="flex-1" />
-      <span className={"flex shrink-0 items-center gap-1.5 text-[13px] " + (count ? "text-sel" : "text-dim")}
-        title={count ? tr("草稿和旧版共用；现在请在旧版里查看和应用") : ""}>
+      <button className={"btn btn-ghost " + (errors ? "text-warn" : problems.length ? "text-caution" : "text-dim")} onClick={onSync} title={tr("页面和游戏哪里不一致、游戏哪里没做成")}>
+        <span className={"h-2 w-2 rounded-full " + (errors ? "bg-warn" : problems.length ? "bg-caution" : "bg-brand")} />
+        {problems.length ? tr("同步状态 · {0}", problems.length) : tr("同步状态 · 正常")}
+      </button>
+      <button className="btn" onClick={onReview} title={count ? tr("点这里看草稿改了哪些地方") : ""}>
         <span className={"h-2 w-2 rounded-full " + (count ? "bg-sel" : "bg-gridstrong")} />
-        {count ? tr("草稿 {0} 项", count) : tr("没有草稿")}
-      </span>
-      <a className="btn" href="../#/timetable" title={tr("回到旧版编辑器，草稿和选择都在")}>
-        <Icon name="back" size={14} />{tr("回到旧版")}
+        {store.applying ? tr("正在应用…") : count ? tr("草稿 {0} 项", count) : tr("没有草稿")}
+      </button>
+      <button className="btn btn-primary" disabled={!canApply} onClick={onReview}
+        title={conflicts ? tr("有 {0} 条线路在游戏里被改过，应用时先不发，处理后再应用", conflicts) : tr("把草稿发给游戏")}>{tr("应用")}</button>
+      <a className="btn btn-ghost" href="../#/timetable" title={tr("回到旧版编辑器，草稿和选择都在")}>
+        <Icon name="back" size={14} /><span className="hidden md:inline">{tr("回到旧版")}</span>
       </a>
     </header>
   )
-}
-
-function Banner({ editor }: { editor: EditorState }) {
-  const text = {
-    connecting: "",
-    ok: "",
-    key: tr("密钥不对：请从游戏里重新打开编辑器。"),
-    world: tr("游戏还没进入世界，进入后会自动读取。"),
-    offline: tr("连不上游戏：游戏关掉了，或编辑器的服务停了。"),
-  }[editor.connection]
-  if (!text) return null
-  return <div role="status" className="shrink-0 border-b border-grid tint-warn px-3 py-1.5 text-[13px] text-warn">{text}</div>
 }
 
 function LayerRail({ layer, open }: { layer: LayerId; open: (id: LayerId) => void }) {
@@ -106,20 +130,21 @@ function LayerRail({ layer, open }: { layer: LayerId; open: (id: LayerId) => voi
   )
 }
 
-function StatusBar({ editor }: { editor: EditorState }) {
+function StatusBar() {
+  const store = useStore()
   const [, tick] = useState(0)
   useEffect(() => { const id = setInterval(() => tick(t => t + 1), 1000); return () => clearInterval(id) }, [])
-  const ago = editor.loadedAt ? Math.max(0, Math.round((Date.now() - editor.loadedAt) / 1000)) : -1
-  const ok = editor.connection === "ok"
+  const ago = store.loadedAt ? Math.max(0, Math.round((Date.now() - store.loadedAt) / 1000)) : -1
+  const ok = store.connection === "ok"
   return (
     <footer className="flex h-7 shrink-0 items-center gap-4 overflow-hidden whitespace-nowrap border-t border-grid bg-panel px-3 text-[12px] text-dim">
       <span className="flex items-center gap-1.5">
-        <span className={"h-1.5 w-1.5 rounded-full " + (ok ? "bg-brand" : editor.connection === "connecting" ? "bg-gridstrong" : "bg-warn")} />
-        {ok ? tr("已连接游戏") : editor.connection === "connecting" ? tr("正在连接…") : tr("没有连接")}
+        <span className={"h-1.5 w-1.5 rounded-full " + (ok ? "bg-brand" : store.connection === "connecting" ? "bg-gridstrong" : "bg-warn")} />
+        {ok ? tr("已连接游戏") : store.connection === "connecting" ? tr("正在连接…") : tr("没有连接")}
       </span>
       {ago >= 0 && <span>{tr("数据读取于 {0} 秒前", ago)}</span>}
-      {editor.data && !editor.data.canEdit && <span className="text-caution">{tr("没有编辑权限，只能看")}</span>}
-      <span className="ml-auto hidden md:inline">{tr("新版逐层搬过来；还没搬的在旧版里改")}</span>
+      {store.model && !store.model.canEdit && <span className="text-caution">{tr("没有编辑权限，只能看")}</span>}
+      <span className="ml-auto hidden md:inline">{tr("改动先进草稿，按“应用”才发给游戏")}</span>
     </footer>
   )
 }

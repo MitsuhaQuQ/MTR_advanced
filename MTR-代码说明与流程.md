@@ -972,7 +972,12 @@ sequenceDiagram
 4. **外框**（`src/App.tsx`）：顶栏（草稿项数、回到旧版）、左侧层级栏（配线、归属、线路、时刻、车厂，分隔线后调度、媒体；地址 `#/<层>`）、面包屑、状态栏（连接状态、数据读取了多久、没有编辑权限）、连接出错时的提示条（密钥不对 401、还没进世界 503、连不上）。颜色变量和旧页面 `editor.css` 同名同值，另加设计系统的 `--duty`、`--now`、`--connecting`、`--boundary`、`--late`。
 5. **第 0 步各层的内容**（`src/views/Overview.tsx`）：线路和时刻层按线路组列出种别（停站数和起止站、时刻表张数、班次数、有草稿、寻路失败、环线、联络线、谁在编辑）；车厂层列出车厂（存车线数、车型、跑的线路、运用有草稿、没设置、寻路状态）；其余层只写"在迁移第 N 步搬过来"。每层都有"在旧版里编辑"。
 6. **旧页面的入口**：`index.html` 顶栏工作区标签后面的"试用新版"（`.try-next`）链到 `next/#/timetable`。
-7. **不进游戏的检查**：`cd editor-web && npm run dev` 用 `vite.config.ts` 里的假接口（`mock/fixture.ts`）开发；`node editor-web/mock/serve-built.mjs` 像 `EditorServer` 一样提供整个编辑器目录（同样的 CSP，`/api/` 要密钥 `abc`），用来检查构建好的新页面。旧页面需要 `api/times` 等完整数据，这个假服务画不出它的运行图。
+7. **不进游戏的检查**：`cd editor-web && npm run dev` 用假接口（`mock/api.ts`、`mock/fixture.ts`）开发；`node editor-web/mock/serve-built.mjs` 像 `EditorServer` 一样提供整个编辑器目录（同样的 CSP，`/api/` 要密钥 `abc`），用来检查构建好的新页面。假的 `api/apply` 收下所有操作，只把种别 202 不带 `force` 的时刻表当作冲突（`CONFLICT`）退回；`GET /api/mock/applied` 看最后一次发来的操作。旧页面需要 `api/times` 等完整数据，这个假服务画不出它的运行图。
+8. **对拍测试**（`editor-web/test/`，`npm test`，`build.sh` 里也跑）：`test/old.ts` 从 `editor.js` 原文里按名字切出顶层函数和常量（认得字符串、模板字符串、正则和注释），放进 Node 的沙盒，带上测试给的 `data`、`draft` 等变量和 `i18n.js` 运行；同一份数据和草稿再交给新模块，两边结果必须一样。这样搬过来的逻辑和旧版有出入时测试会失败。旧版里函数改了，测试跟着用新的。
+9. **第 1 步：草稿、审阅、应用、同步状态**（2026-11-10）。
+   - 逻辑在 `src/core/`：`model.ts`（`buildModel` 按旧版 `setData` 建 `routeById`、`lines`，加 `clock`、`daysText` 等）；`draft.ts`（`normalizeDraft`=`loadDraft`，`draftCount`，`tidy`，`draftOperations`，`settleApply`=`applyDraft` 收到回复以后的部分，`resolveConflict`，`drop`=改动列表里各种"放弃"，`gameTimetable`，`routeChanges`，`changeSections`=`draftChangesDialog` 的内容）；`depots.ts`（`dutiesOf`、`shortfallText`、`replanText`、`turnPairsOf`、`alarmReasonText` 等）；`sync.ts`（`syncProblems`，终点站折返的警告由时刻层传进来，第 2 步接上）。这些函数都不改参数，返回新的草稿。
+   - 状态在 `src/state/store.tsx`：轮询游戏数据（同旧版），草稿改了 400 毫秒后存（同旧版）；每 5 秒读一次存着的草稿，和自己上次存的不同、自己又没有待存的改动时，说明旧版在别的标签里改过，就换成它的并清空撤销记录。撤销、重做最多 100 步（Ctrl+Z、Ctrl+Y / Ctrl+Shift+Z）。应用：`draftOperations` → `api/apply` → `settleApply`，应用掉的部分不算一步撤销；之后马上重读游戏数据。调度类的即时命令（收回列车、停用预案）走 `sendNow`，不进草稿。
+   - 界面：顶栏"同步状态 · N"、"草稿 N 项"、"应用"；审阅面板 `src/shell/Review.tsx`（右侧滑出，按旧版对话框的分节，冲突两个按钮，每节"放弃这项草稿"，撤销、重做、清空全部要再点一次确认，底部"应用"）；同步状态 `src/shell/Sync.tsx`（错误红、提醒黄、说明灰，收回列车要再确认，临时处置暂时去旧版做）；提示条 `src/shell/Banner.tsx`（同旧版 `renderBanner` 的连接、没有权限、冲突、应用结果几种）。Ctrl+Enter 打开审阅面板。
 
 ## 9. 车厂生成路径
 

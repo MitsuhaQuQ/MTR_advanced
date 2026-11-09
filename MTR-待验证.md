@@ -78,7 +78,10 @@
 - **合并构建**（2026-11-09 23:58，`mtm_version` 0.64.1，和逻辑线路 `d4d94ea`、站牌三语一起）：编译通过，transit-sim 541、common 389 全过，附加 mod 兼容扫描 0 缺失，Fabric、Forge 服务端都能启动；jar 里 `assets/mtr/editor/` 有 `shell.js`、`media.js`，没有 `audio.js`。还没进游戏（U366–U369）。
 - **已知风险**：别的会话若在 `editor.js` 新加读取 `location.hash` 的代码，会和路由冲突；浏览器缓存了旧 `media.js` 时要强制刷新一次（服务端是 no-cache，正常不会）。
 
-### 新版网页编辑器，迁移第 0 步（本会话，分支 claude/modern-web-editor-design-8ec467，2026-11-10）
+### 新版网页编辑器，迁移第 0、1 步（本会话，分支 claude/modern-web-editor-design-8ec467，2026-11-10）
+
+- **第 1 步**（提交在第 0 步之后，断点标签 `pre-web-next-1`）：新版能审阅和应用草稿、处理冲突、看同步状态，逻辑和旧版对拍（`editor-web/test/`，14 项，`build.sh` 里跑）；没改 Java、包和存档。游戏内测试 U373–U375。
+
 
 - **改了什么**：新版编辑器和旧版并存，放在 `assets/mtr/editor/next/`；源码在仓库根目录 `editor-web/`（React + TypeScript + Vite + Tailwind），构建结果一起提交，模组构建不需要 Node。这一步只有外框（顶栏、层级栏、状态栏、连接提示）、和旧版共用的密钥与草稿、各层只读概览（线路组的种别、车厂），编辑仍在旧版。旧版顶栏加"试用新版"。迁移步骤写在 `MTR-网页编辑器规格.md` 第 11 节。
 - **文件**：新增 `editor-web/`（源码、`build.sh`、`mock/`）和 `common/src/main/resources/assets/mtr/editor/next/`（构建结果）；改 `assets/mtr/editor/index.html`（入口链接）、`editor.css`（`.try-next`）、`i18n.js`（新版的英文，45 条）；文档 `MTR-代码说明与流程.md`（第 51 行、8.7 节）、`MTR-模拟组件与解耦.md`、`MTR-测试项目清单.md`（U370–U372）、`MTR-网页编辑器规格.md`（第 9–11 节）、`README.md`。

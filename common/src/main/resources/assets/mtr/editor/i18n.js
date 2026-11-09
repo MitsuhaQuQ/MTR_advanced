@@ -1394,7 +1394,16 @@ const I18N = (() => {
 			"没设置": "Not set up",
 			"正在寻路": "Finding paths",
 			"要重新寻路": "Paths out of date",
-			"车型": "Vehicle"
+			"车型": "Vehicle",
+			"提醒": "Warning",
+			"说明": "Note",
+			"错误": "Error",
+			"重做": "Redo",
+			"撤销（Ctrl+Z）": "Undo (Ctrl+Z)",
+			"重做（Ctrl+Y）": "Redo (Ctrl+Y)",
+			"看草稿": "See the draft",
+			"改动先进草稿，按“应用”才发给游戏": "Changes go into the draft and reach the game on Apply",
+			"清空全部草稿？草稿里的 {0} 项改动都丢掉；游戏里的不受影响。": "Clear the whole draft? Its {0} changes are dropped; the game is not affected."
 		}
 	};
 	const STORAGE_KEY = "mtr-editor-language";

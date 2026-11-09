@@ -1,4 +1,4 @@
-import type { Draft, EditorData } from "./types"
+import type { EditorData } from "./types"
 
 /**
  * The game opens the editor as …#key=<hex>. The old page's shell.js keeps the key in sessionStorage under the same name,
@@ -19,7 +19,8 @@ if (/key=/.test(location.hash)) history.replaceState(null, "", location.pathname
 
 /** An endpoint answered with an error; status 401 is a wrong key, 503 no world loaded. */
 export class ApiError extends Error {
-  constructor(readonly status: number) { super(String(status)) }
+  readonly status: number
+  constructor(status: number) { super(String(status)); this.status = status }
 }
 
 // Endpoints live at the server's root, the page in /next/
@@ -50,8 +51,10 @@ async function sendJson<T>(path: string, method: "POST" | "PUT", body: unknown):
 export const api = {
   data: () => getJson<EditorData>("data"),
   revision: () => getJson<{ revision: number }>("revision"),
-  draft: () => getJson<Draft | null>("draft"),
-  saveDraft: (draft: Draft) => sendJson<unknown>("draft", "PUT", draft),
+  draft: () => getJson<unknown>("draft"),
+  saveDraft: (draft: unknown) => sendJson<unknown>("draft", "PUT", draft),
+  /** Applies operations (EditorActions): { ok, errors: [{ index, message }], created: [{ id }] } */
+  apply: (operations: unknown[]) => sendJson<{ ok: boolean; errors?: { index: number; message: string }[]; created?: { id: string }[] }>("apply", "POST", { operations }),
 }
 
 export type Connection = "connecting" | "ok" | "key" | "world" | "offline"

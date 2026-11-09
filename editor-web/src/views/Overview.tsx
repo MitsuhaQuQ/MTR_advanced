@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
-import { colorOf, shortName, type Depot, type Draft, type EditorData, type Route } from "../api/types"
+import type { Depot, Route } from "../api/types"
+import type { Draft } from "../core/draft"
+import { colorOf, shortName, type Model } from "../core/model"
 import { tr } from "../i18n"
 import type { LayerInfo } from "../shell/layers"
 
@@ -27,22 +29,11 @@ const Pill = ({ tone, children }: { tone: "warn" | "caution" | "sel" | "plain"; 
   }[tone]}>{children}</span>
 )
 
-type LineGroup = { key: string; name: string; color: number; routes: Route[] }
-
-/** The routes of each line group, as the old page groups them (setData in editor.js). */
-export function linesOf(data: EditorData): LineGroup[] {
-  const lines = new Map<string, LineGroup>()
-  data.routes.forEach(r => {
-    if (!lines.has(r.lineKey)) lines.set(r.lineKey, { key: r.lineKey, name: r.line, color: r.lineColor, routes: [] })
-    lines.get(r.lineKey)!.routes.push(r)
-  })
-  return [...lines.values()].sort((a, b) => a.name.localeCompare(b.name))
-}
 
 const servicesOf = (r: Route) => r.tables.reduce((sum, t) => sum + t.services.length, 0)
 
-export function LinesOverview({ data, draft, layer }: { data: EditorData; draft: Draft | null; layer: LayerInfo }) {
-  const lines = linesOf(data)
+export function LinesOverview({ model, draft, layer }: { model: Model; draft: Draft; layer: LayerInfo }) {
+  const lines = model.lines
   return (
     <div className="flex max-w-5xl flex-col gap-4">
       <MovesIn layer={layer} />
@@ -78,7 +69,7 @@ export function LinesOverview({ data, draft, layer }: { data: EditorData; draft:
                     <td className="num px-3 py-1.5 text-right">{servicesOf(r)}</td>
                     <td className="px-3 py-1.5">
                       <span className="flex flex-wrap gap-1">
-                        {draft?.routes[r.id] && <Pill tone="sel">{tr("有草稿")}</Pill>}
+                        {draft.routes[r.id] && <Pill tone="sel">{tr("有草稿")}</Pill>}
                         {r.pathFailure && <Pill tone="warn">{tr("寻路失败")}</Pill>}
                         {r.circular && <Pill tone="plain">{tr("环线")}</Pill>}
                         {r.connectingLine && <Pill tone="caution">{tr("联络线")}</Pill>}
@@ -105,7 +96,8 @@ const pathText = (depot: Depot) => {
   }
 }
 
-export function DepotsOverview({ data, draft, layer }: { data: EditorData; draft: Draft | null; layer: LayerInfo }) {
+export function DepotsOverview({ model, draft, layer }: { model: Model; draft: Draft; layer: LayerInfo }) {
+  const data = model
   return (
     <div className="flex max-w-5xl flex-col gap-4">
       <MovesIn layer={layer} />
@@ -119,7 +111,7 @@ export function DepotsOverview({ data, draft, layer }: { data: EditorData; draft
               <h2 className="m-0 flex items-center gap-2 text-[14px] font-semibold">
                 <span className="min-w-0 truncate">{shortName(depot.name) || tr("（未命名）")}</span>
                 <span className="ml-auto flex gap-1">
-                  {draft?.duties?.[depot.id] !== undefined && <Pill tone="sel">{tr("运用有草稿")}</Pill>}
+                  {draft.duties[depot.id] !== undefined && <Pill tone="sel">{tr("运用有草稿")}</Pill>}
                   {depot.notConfigured && <Pill tone="caution">{tr("没设置")}</Pill>}
                   {path && <Pill tone={path.tone}>{path.text}</Pill>}
                 </span>

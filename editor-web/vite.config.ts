@@ -3,35 +3,27 @@ import react from "@vitejs/plugin-react"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { mockData } from "./mock/fixture"
+import { createMockApi } from "./mock/api.ts"
 
 const EDITOR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../common/src/main/resources/assets/mtr/editor")
 
 /**
  * `npm run dev` only: stands in for the game's EditorServer. Serves the shared i18n.js from the old editor's folder and
- * fake api/data, api/revision and api/draft, so the page can be worked on without starting Minecraft.
+ * the fake endpoints of mock/api.ts, so the page can be worked on without starting Minecraft.
  */
 function mockEditorServer(): Plugin {
-  let draft: unknown = { routes: {} }
+  const handle = createMockApi()
   return {
     name: "mtr-mock-editor-server",
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const url = (req.url || "").split("?")[0]
-        const json = (body: unknown) => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(body)) }
-        if (url === "/i18n.js") { res.setHeader("Content-Type", "text/javascript"); res.end(fs.readFileSync(path.join(EDITOR, "i18n.js"))); return }
-        if (url === "/api/data") return json(mockData())
-        if (url === "/api/revision") return json({ revision: 1 })
-        if (url === "/api/draft") {
-          if (req.method === "GET") return json(draft)
-          let body = ""
-          req.on("data", chunk => body += chunk)
-          req.on("end", () => { draft = JSON.parse(body || "{}"); json({ ok: true }) })
+      server.middlewares.use(async (req, res, next) => {
+        if ((req.url || "").split("?")[0] === "/i18n.js") {
+          res.setHeader("Content-Type", "text/javascript")
+          res.end(fs.readFileSync(path.join(EDITOR, "i18n.js")))
           return
         }
-        if (url.startsWith("/api/")) { res.statusCode = 503; res.end(); return }
-        next()
+        if (!(await handle(req, res))) next()
       })
     },
   }
