@@ -2218,9 +2218,9 @@
 	}
 
 	function ownerColor(owner) {
-		if (owner.startsWith("connecting:")) return "#e8891a";
+		if (owner.startsWith("connecting:")) return css("--connecting");
 		const line = data && data.lines.find(l => l.key === owner);
-		return line ? colorOf(line.color) : "#888";
+		return line ? colorOf(line.color) : css("--muted");
 	}
 
 	/**
@@ -2492,7 +2492,7 @@
 		const d = net.data;
 		if (!d || !d.rails || !d.rails.length) {
 			g.fillStyle = css("--muted");
-			g.font = "14px sans-serif";
+			g.font = `14px ${css("--font-ui")}`;
 			g.fillText(net.error || (d ? tr("游戏里还没有这种运输方式的轨道，或地图数据还没传来") : tr("正在读取…")), 20, 30);
 			return;
 		}
@@ -2524,7 +2524,7 @@
 			const points = chainShape(chain);
 			if (!visible(points)) return;
 			// Stabling blocks (运用补完 step 4) brown and a little heavier, one train each
-			stroke(points, chain.kind === 1 ? ink : chain.kind === 2 ? "#d9a520" : chain.kind === 3 ? "#9a5b2c" : plain, chain.kind === 1 ? 3 : chain.kind === 3 ? 2.5 : 1.5);
+			stroke(points, chain.kind === 1 ? ink : chain.kind === 2 ? css("--siding") : chain.kind === 3 ? css("--stabling") : plain, chain.kind === 1 ? 3 : chain.kind === 3 ? 2.5 : 1.5);
 		});
 		g.globalAlpha = 1;
 		// The ownership layer (web layers step 2): each rail in its owners' colours, striped where several lines own it;
@@ -2573,14 +2573,15 @@
 			if (!chain.status || !visible(points)) return;
 			// A pathfinding boundary only splits where searches look first, so it is drawn thin and dotted, apart from the
 			// connecting lines, which keep trains off
-			if (chain.status === 3) stroke(points, "#7a5fd0", 1.5, [2, 4]);
-			else if (chain.status === 1) stroke(points, "#e8891a", 2.5, [6, 3]);
+			if (chain.status === 3) stroke(points, css("--boundary"), 1.5, [2, 4]);
+			else if (chain.status === 1) stroke(points, css("--connecting"), 2.5, [6, 3]);
 			else stroke(points, plain, 2, [3, 3]);
 		});
 		g.setLineDash([]);
 		(d.boundaryNodes || []).forEach(index => {
 			const n = d.nodes[index];
-			g.fillStyle = "#d33";
+			// The boundary's nodes in the boundary's colour, as its rails (they were red, which the legend didn't say)
+			g.fillStyle = css("--boundary");
 			g.beginPath();
 			g.arc(netX(n[0]), netZ(n[1]), 4, 0, Math.PI * 2);
 			g.fill();
@@ -2618,7 +2619,7 @@
 		if (net.hover >= 0 && net.hover < d.rails.length) stroke(net.scale < NET_EXACT_SCALE ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
 		if (net.scale >= NET_STATION_SCALE) {
 			g.fillStyle = ink;
-			g.font = "12px sans-serif";
+			g.font = `12px ${css("--font-ui")}`;
 			g.textAlign = "center";
 			(d.stations || []).forEach(station => {
 				const x = netX(station.x), y = netZ(station.z);
@@ -2767,13 +2768,13 @@
 		const trainBlocks = new Set(trains.map(train => train.block).filter(Boolean));
 		(consoleState.data.blocks || []).forEach(block => {
 			if (!block.occupied && !trainBlocks.has(block.id)) return;
-			const color = trainBlocks.has(block.id) ? "#e8a33a" : "#d9534f";
+			const color = trainBlocks.has(block.id) ? css("--connecting") : css("--warn");
 			block.rails.forEach(pair => {
 				const index = consoleRail(pair);
 				if (index >= 0) stroke(shapeOf(index), color, 6);
 			});
 		});
-		g.font = "bold 12px sans-serif";
+		g.font = `bold 12px ${css("--font-ui")}`;
 		g.textAlign = "center";
 		trains.forEach(train => {
 			const index = consoleRail(train.head);
@@ -2783,7 +2784,7 @@
 			const half = points.length / 2, lower = Math.max(0, Math.floor((half - 1) / 2) * 2), upper = Math.min(points.length - 2, lower + 2);
 			const x = netX((points[lower] + points[upper]) / 2), y = netZ((points[lower + 1] + points[upper + 1]) / 2);
 			const text = consoleTrainName(train);
-			g.fillStyle = train.id === consoleState.selected ? css("--sel") : train.late >= 300 ? "#d9534f" : css("--ink");
+			g.fillStyle = train.id === consoleState.selected ? css("--sel") : train.late >= 300 ? css("--late") : css("--ink");
 			g.fillText(text, x, y - 10);
 		});
 		g.textAlign = "start";
@@ -2993,7 +2994,7 @@
 	let picking = null;
 
 	function startPicking() {
-		picking = { mode: net.mode || "TRAIN", stops: [], legs: [], activeLeg: -1, color: "#3b82f6", requestId: 0 };
+		picking = { mode: net.mode || "TRAIN", stops: [], legs: [], activeLeg: -1, color: css("--sel"), requestId: 0 };
 		openView("network", state.line, null);
 		dutyNotice = tr("在全网配线图上依次点车站；站里有多个站台时选一个。选好后在右侧完成。");
 		renderAll();
@@ -3158,7 +3159,7 @@
 					g.setLineDash([]);
 					if (leg && leg.failure) {
 						g.fillStyle = css("--warn");
-						g.font = "12px sans-serif";
+						g.font = `12px ${css("--font-ui")}`;
 						g.fillText(leg.failure, (netX(a.x) + netX(b.x)) / 2 + 6, (netZ(a.z) + netZ(b.z)) / 2);
 					}
 				}
@@ -3183,8 +3184,8 @@
 			g.arc(x, y, 9, 0, Math.PI * 2);
 			g.fill();
 			g.stroke();
-			g.fillStyle = stop.pass ? picking.color : "#fff";
-			g.font = "bold 11px sans-serif";
+			g.fillStyle = stop.pass ? picking.color : css("--panel");
+			g.font = `bold 11px ${css("--font-ui")}`;
 			g.textAlign = "center";
 			g.fillText(String(i + 1), x, y + 4);
 		});
@@ -3624,7 +3625,7 @@
 			g.beginPath();
 			g.arc(netX(node[0]), netZ(node[1]), 6, 0, Math.PI * 2);
 			g.fill();
-			g.fillStyle = "#fff";
+			g.fillStyle = css("--panel");
 			g.font = `10px ${css("--font-num")}`;
 			g.textAlign = "center";
 			g.fillText(String(k + 1), netX(node[0]), netZ(node[1]) + 3);
@@ -3780,7 +3781,9 @@
 		accessLegs(line).forEach(({ r, legs }) => {
 			ctx.strokeStyle = colorOf(r.color);
 			ctx.lineWidth = 1.2;
-			ctx.setLineDash([5, 3]);
+			// Dotted: a background reference, read only
+			ctx.setLineDash([1, 3]);
+			ctx.lineCap = "round";
 			ctx.globalAlpha = state.route ? 0.2 : 0.6;
 			r.services.forEach(s => {
 				if (s.suspended) return;
@@ -3804,6 +3807,7 @@
 				flush();
 			});
 			ctx.setLineDash([]);
+			ctx.lineCap = "butt";
 			ctx.globalAlpha = 1;
 		});
 	}
@@ -4012,8 +4016,10 @@
 			// Grey for a service no train ran in the simulated day
 			ctx.strokeStyle = sim.on && sim.notRun.has(key) ? c.muted : noTrain ? (showNoTrain ? c.warn : c.muted) : colorOf(s.route.color);
 			ctx.lineWidth = isSelected ? 2.5 : noTrain ? 1 : covered ? 2 : 1.5;
-			// Dashed: no times yet, or not running (faint too)
-			ctx.setLineDash(!s.route.hasTimes ? [4, 3] : s.suspended ? [2, 4] : []);
+			// No times yet: faint in the route's colour; not running: faint and grey. By colour and strength, not by dashes,
+			// which can't be told apart where services are dense (design system)
+			ctx.setLineDash([]);
+			if (!s.route.hasTimes) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.5);
 			if (s.suspended) {
 				ctx.strokeStyle = c.muted;
 				ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.45);
@@ -4079,7 +4085,7 @@
 					ctx.strokeStyle = c.sel;
 					ctx.lineWidth = 2;
 					ctx.beginPath();
-					ctx.rect(x - 3.5, y - 3.5, 7, 7);
+					ctx.rect(x - 4.5, y - 4.5, 9, 9);
 					ctx.fill();
 					ctx.stroke();
 					handles.push({ x, y, s, i });
@@ -4090,7 +4096,7 @@
 		slotPoints.sort((a, b) => a.time - b.time);
 		ctx.strokeStyle = c.duty;
 		ctx.lineWidth = 1;
-		ctx.setLineDash([2, 3]);
+		ctx.setLineDash([3, 3]);
 		for (let i = 1; i < slotPoints.length; i++) {
 			ctx.beginPath();
 			ctx.moveTo(...slotPoints[i - 1].end);
@@ -4111,10 +4117,11 @@
 		}
 		ctx.restore();
 
-		// Station names over everything at the left
+		// Station names over everything at the left, on the page colour so the column reads apart from the plot
 		ctx.fillStyle = c.panel;
-		ctx.fillRect(0, 0, LABEL_W, h);
 		ctx.fillRect(0, 0, w, AXIS_H);
+		ctx.fillStyle = css("--bg");
+		ctx.fillRect(0, 0, LABEL_W, h);
 		ctx.strokeStyle = c.strong;
 		ctx.beginPath();
 		ctx.moveTo(LABEL_W + 0.5, 0);
@@ -4279,7 +4286,7 @@
 					const style = exception => {
 						ctx.strokeStyle = active ? c.duty : exception ? c.sel : c.muted;
 						ctx.lineWidth = active || exception ? 2 : 1;
-						ctx.setLineDash([4, 3]);
+						ctx.setLineDash([3, 3]);
 					};
 					// Out to the first stop
 					if (deadheads.out) {
@@ -4321,7 +4328,7 @@
 		depotRows.forEach(({ y, name }) => {
 			ctx.strokeStyle = c.grid;
 			ctx.lineWidth = 1;
-			ctx.setLineDash([1, 4]);
+			ctx.setLineDash([1, 3]);
 			ctx.beginPath();
 			ctx.moveTo(LABEL_W, y);
 			ctx.lineTo(w, y);
@@ -4577,7 +4584,7 @@
 		if (!sim.on || !sim.result) return;
 		const routes = new Map(line.routes.map(r => [r.id, r]));
 		ctx.lineWidth = 1.5;
-		ctx.setLineDash([5, 3]);
+		ctx.setLineDash([5, 4]);
 		sim.trips.forEach(trip => {
 			const r = routes.get(trip.route);
 			if (!r) return;

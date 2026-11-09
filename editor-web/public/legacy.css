@@ -19,19 +19,25 @@
 	/* The train being edited and the time now on the running diagram, so red is only for problems (design system) */
 	--duty: #b45309;
 	--now: #1b2a2d;
+	/* Drawing colours that were written into the code: connecting lines, path boundaries, late trains, sidings, stabling */
+	--connecting: #c46a00;
+	--boundary: #7a5fd0;
+	--late: #c0392b;
+	--siding: #a67c00;
+	--stabling: #9a5b2c;
 	--font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
 	--font-num: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
 		--bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
-		--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a; --duty: #f59e4b; --now: #dbe6e3;
+		--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a; --duty: #f59e4b; --now: #dbe6e3; --connecting: #f0a04b; --boundary: #a993ee; --late: #ff7a70; --siding: #d9a520; --stabling: #c98a5a;
 		color-scheme: dark;
 	}
 }
 :root[data-theme="dark"] {
 	--bg: #0f1617; --panel: #152022; --panel-2: #1b292c; --ink: #dbe6e3; --muted: #93a6a8;
-	--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a; --duty: #f59e4b; --now: #dbe6e3;
+	--grid: #223235; --grid-strong: #34494d; --accent: #3fb8ae; --accent-ink: #062523; --sel: #6ea2ff; --warn: #ff6b5f; --control-line: #5f7a7f; --caution: #e0a64a; --duty: #f59e4b; --now: #dbe6e3; --connecting: #f0a04b; --boundary: #a993ee; --late: #ff7a70; --siding: #d9a520; --stabling: #c98a5a;
 	color-scheme: dark;
 }
 [hidden] { display: none !important; }
@@ -43,7 +49,7 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 button, select {
-	background: var(--panel); border: 1px solid var(--grid-strong); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+	background: var(--panel); border: 1px solid var(--control-line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
 }
 button:hover, select:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
@@ -89,7 +95,7 @@ button:focus-visible, select:focus-visible, .tree .node:focus-visible, td:focus-
 .tree .node.active .leaf { color: inherit; }
 .tree .count { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--font-num); }
 .tree .node.active .count { color: inherit; }
-.tree .section { font-size: 12px; color: var(--muted); letter-spacing: .08em; padding: 10px 6px 4px; }
+.tree .section { font-size: 12px; color: var(--muted); font-weight: 500; padding: 10px 6px 4px; }
 .tree .empty { font-size: 12px; color: var(--muted); padding: 2px 6px; }
 
 main { display: grid; grid-template-rows: auto auto 1fr; min-width: 0; min-height: 0; }
@@ -119,7 +125,7 @@ canvas { display: block; touch-action: none; cursor: grab; }
 canvas.dragging { cursor: grabbing; }
 canvas.pointer { cursor: pointer; }
 .inspector { border-left: 1px solid var(--grid-strong); background: var(--bg); overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-.inspector h2 { font-size: 13px; margin: 0; color: var(--muted); font-weight: 500; letter-spacing: .06em; }
+.inspector h2 { font-size: 13px; margin: 0; color: var(--muted); font-weight: 500; }
 .card { background: var(--panel); border: 1px solid var(--grid); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .card .title { font-weight: 700; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; margin: 0; }
@@ -156,7 +162,7 @@ table.tt .hl { background: color-mix(in srgb, var(--sel) 14%, var(--panel)); }
 table.tt th.svc-head.no-train .time { color: var(--muted); text-decoration: line-through; }
 table.tt th.svc-head.hl { background: color-mix(in srgb, var(--sel) 24%, var(--panel-2)); color: var(--sel); }
 .table-empty { padding: 16px; color: var(--muted); }
-.tt-tools input[type=text], .tt-tools input:not([type]) { font-family: var(--font-num); padding: 3px 6px; border: 1px solid var(--grid-strong); border-radius: 6px; background: var(--panel); }
+.tt-tools input[type=text], .tt-tools input:not([type]) { font-family: var(--font-num); padding: 3px 6px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); }
 .tt-tools #add-service { width: 15em; }
 .tt-tools .margin { width: 3.5em; }
 .tt-tools .err { color: var(--warn); font-size: 12px; }
@@ -166,7 +172,7 @@ table.tt th.svc-head.hl { background: color-mix(in srgb, var(--sel) 24%, var(--p
 .track-rows { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; border: 1px solid var(--grid); border-radius: 8px; padding: 6px 8px; }
 .track-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .track-station { min-width: 6em; font-size: 13px; }
-.table-chip.track.on { color: #fff; }
+.table-chip.track.on { color: var(--accent-ink); }
 .table-chip.track.pass { opacity: .55; border-style: dashed; }
 /* A train's duty: its services in order */
 ol.duty { margin: 6px 0; padding-left: 20px; font-size: 12px; line-height: 1.7; }
@@ -193,7 +199,7 @@ table.tt th.svc-head .exc-mark { color: var(--sel); }
 .menu button:hover { background: var(--panel-2); }
 .menu button:disabled { color: var(--muted); }
 .svc-head.suspended .time { text-decoration: line-through; color: var(--muted); font-style: italic; }
-.svc-head .suspended-note { color: #b7791f; font-weight: 600; }
+.svc-head .suspended-note { color: var(--caution); font-weight: 600; }
 .tt td.derived { color: var(--muted); font-style: italic; }
 .tt td.derived.inferred { opacity: .6; }
 .menu.sub { z-index: 41; max-height: 60vh; overflow-y: auto; min-width: 160px; }
@@ -203,7 +209,7 @@ dialog::backdrop { background: rgb(0 0 0 / .3); }
 dialog form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 dialog h2 { margin: 0; font-size: 16px; }
 dialog label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
-dialog input:not([type=checkbox]), dialog select { padding: 4px 6px; border: 1px solid var(--grid-strong); border-radius: 6px; background: var(--panel); }
+dialog input:not([type=checkbox]), dialog select { padding: 4px 6px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); }
 dialog fieldset { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; }
 dialog legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
 dialog fieldset label { gap: 4px; }
@@ -251,18 +257,18 @@ body.tree-closed .tree { display: none; }
 dialog ul.warn { color: var(--warn); margin: 8px 0; padding-left: 1.2em; }
 .tree .problem-dot { font-weight: 700; flex: none; }
 .tree .problem-dot.error, .warn li.error { color: var(--warn); }
-.tree .problem-dot.warn, .warn li.warn { color: #b7791f; }
+.tree .problem-dot.warn, .warn li.warn { color: var(--caution); }
 .topo-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--grid); border-radius: 8px; background: var(--panel); }
 .topo { display: block; font-size: 12px; }
 .topo .station { text-anchor: middle; font-weight: 700; fill: var(--ink); }
-.topo .turn { text-anchor: middle; fill: #b7791f; font-weight: 700; }
+.topo .turn { text-anchor: middle; fill: var(--caution); font-weight: 700; }
 .topo .link { stroke: var(--grid-strong); stroke-width: 1.5; }
 .topo .link.on { stroke-width: 4; }
 .topo .same-station { stroke: var(--muted); stroke-dasharray: 2 3; }
 .topo .track { cursor: pointer; }
 .topo .track rect { fill: var(--panel); stroke: var(--grid-strong); }
 .topo .track text { text-anchor: middle; fill: var(--ink); pointer-events: none; }
-.topo .track.on text { fill: #fff; font-weight: 700; }
+.topo .track.on text { fill: var(--accent-ink); font-weight: 700; }
 .topo .track.dead rect { stroke-dasharray: 3 2; }
 .topo .track.dead text { fill: var(--muted); }
 .topo .track.pinned rect { stroke-width: 2; }
@@ -294,12 +300,12 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); }
 .route-diagram { display: block; }
 .route-diagram .route-path { stroke-width: 7; opacity: .25; stroke-linecap: round; }
 .route-diagram .rail { stroke: var(--grid-strong); stroke-width: 1.5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
-.route-diagram .rail.connecting { stroke: #e8891a; stroke-width: 2.5; stroke-dasharray: 6 3; }
+.route-diagram .rail.connecting { stroke: var(--connecting); stroke-width: 2.5; stroke-dasharray: 6 3; }
 .route-diagram .rail.released { stroke: var(--grid-strong); stroke-dasharray: 3 3; }
-.route-diagram .rail.boundary { stroke: #7a5fd0; stroke-width: 1.5; stroke-dasharray: 2 4; }
+.route-diagram .rail.boundary { stroke: var(--boundary); stroke-width: 1.5; stroke-dasharray: 2 4; }
 .route-diagram .rail.unbounded { stroke-dasharray: 1 3; }
 .route-diagram .rail.clickable { cursor: pointer; stroke-width: 4; }
-.route-diagram .boundary-node { fill: #7a5fd0; stroke: none; }
+.route-diagram .boundary-node { fill: var(--boundary); stroke: none; }
 .route-diagram .turnout { fill: var(--muted); }
 .route-diagram .platform line { stroke-width: 5; stroke-linecap: round; }
 .route-diagram .platform.other line { stroke: var(--grid); }
@@ -309,7 +315,7 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); }
 .route-diagram .stop-mark text { font-size: 12px; font-weight: 700; text-anchor: middle; fill: var(--ink); }
 .route-diagram .stop-mark.passes text { fill: var(--muted); font-weight: 400; }
 .route-diagram .stop-mark.error text { fill: var(--warn); }
-.route-diagram .stop-mark.warn text { fill: #b7791f; }
+.route-diagram .stop-mark.warn text { fill: var(--caution); }
 .route-diagram .stop-mark:focus text { text-decoration: underline; }
 button.link { border: none; background: none; padding: 0 2px; color: var(--sel); cursor: pointer; text-decoration: underline; font-size: inherit; }
 
