@@ -11,8 +11,20 @@ import java.util.*;
  * <p>
  * Running only the line's way is what keeps a train going out off the track of trains coming the other way: a way found
  * on the track alone took the line's other track against its trains to the first stop and met them head on.
+ * <p>
+ * Between the siding and the station the train may run the line's track against it, but never through another of the
+ * line's platforms that way (user 2026-11-09: check entering a platform against the line for head-on deadlocks): a train
+ * standing at the station to go back would hold it while asking for the platform before, and a train of the line standing
+ * there would hold that while asking for the station, each waiting for the other for ever. Of the ways there are, those
+ * running the line the way it runs are preferred (user: 有多路径时优先顺向): a section run against the line counts
+ * {@link #AGAINST_WEIGHT} times more on top of its cost.
  */
 public final class LineDepotWays {
+
+	/**
+	 * How much more a section run against the line counts, on top of its cost, when ways are compared.
+	 */
+	public static final double AGAINST_WEIGHT = 2;
 
 	private LineDepotWays() {
 	}
@@ -35,7 +47,7 @@ public final class LineDepotWays {
 			double cost = Double.POSITIVE_INFINITY;
 			for (final int fromWay : new int[]{1, 0}) {
 				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(siding, fromWay == 1, station, new long[0], null, false));
-				cost = Math.min(cost, Math.min(leg.getCost(true), leg.getCost(false)));
+				cost = Math.min(cost, Math.min(graph.freeCost(leg, true, station), graph.freeCost(leg, false, station)));
 			}
 			return cost;
 		});
@@ -49,12 +61,12 @@ public final class LineDepotWays {
 			Arrival arrival = null;
 			for (final int fromWay : new int[]{1, 0}) {
 				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(siding, fromWay == 1, section, new long[0], null, false));
-				final double straight = leg.getCost(way == 1);
+				final double straight = graph.freeCost(leg, way == 1, section);
 				if (straight < (arrival == null ? Double.POSITIVE_INFINITY : arrival.cost)) {
 					arrival = new Arrival(straight, fromWay, leg, way, false);
 				}
 				// Entered against the line and turned back at
-				final double turned = leg.getCost(way != 1) + RailRouter.TURN_BACK_PENALTY;
+				final double turned = graph.freeCost(leg, way != 1, section) + RailRouter.TURN_BACK_PENALTY;
 				if (turned < (arrival == null ? Double.POSITIVE_INFINITY : arrival.cost)) {
 					arrival = new Arrival(turned, fromWay, leg, 1 - way, true);
 				}
@@ -106,7 +118,7 @@ public final class LineDepotWays {
 			double cost = Double.POSITIVE_INFINITY;
 			for (final int leaveWay : new int[]{1, 0}) {
 				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(station, leaveWay == 1, siding, new long[0], null, false));
-				cost = Math.min(cost, Math.min(leg.getCost(true), leg.getCost(false)));
+				cost = Math.min(cost, Math.min(graph.freeCost(leg, true, station), graph.freeCost(leg, false, station)));
 			}
 			return cost;
 		});
@@ -122,7 +134,7 @@ public final class LineDepotWays {
 			for (final int leaveWay : new int[]{way, 1 - way}) {
 				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(section, leaveWay == 1, siding, new long[0], null, false));
 				for (final int toWay : new int[]{1, 0}) {
-					final double cost = leg.getCost(toWay == 1) + (leaveWay == way ? 0 : RailRouter.TURN_BACK_PENALTY);
+					final double cost = graph.freeCost(leg, toWay == 1, section) + (leaveWay == way ? 0 : RailRouter.TURN_BACK_PENALTY);
 					if (cost < (leave == null ? Double.POSITIVE_INFINITY : leave.cost)) {
 						leave = new Arrival(cost, leaveWay, leg, toWay, leaveWay != way);
 					}
@@ -214,6 +226,14 @@ public final class LineDepotWays {
 		private final int[] offsets;
 		private final List<LegRouter.Leg> consulted = new ArrayList<>();
 		private final Map<Long, Turn> turns = new HashMap<>();
+		/**
+		 * The ways the line runs each section of its routes, as bits: 2 along its order, 1 against.
+		 */
+		private final Map<Long, Integer> lineWays = new HashMap<>();
+		/**
+		 * The sections of the routes' stops.
+		 */
+		private final Set<Long> stopSections = new HashSet<>();
 
 		private Graph(List<RouteLegs.Plan> routes, List<String> lines, TrackSections.Snapshot snapshot, RouteLegs.LegSource legSource) {
 			this.routes = new ArrayList<>();
@@ -228,8 +248,53 @@ public final class LineDepotWays {
 			this.legSource = legSource;
 			offsets = new int[this.routes.size() + 1];
 			for (int i = 0; i < this.routes.size(); i++) {
-				offsets[i + 1] = offsets[i] + this.routes.get(i).stopSteps.length;
+				final RouteLegs.Plan plan = this.routes.get(i);
+				offsets[i + 1] = offsets[i] + plan.stopSteps.length;
+				plan.steps.forEach(step -> lineWays.merge(step[0], 1 << step[1], (a, b) -> a | b));
+				for (final int stopStep : plan.stopSteps) {
+					stopSections.add(plan.steps.get(stopStep)[0]);
+				}
 			}
+		}
+
+		private boolean isAgainst(long[] step) {
+			final Integer ways = lineWays.get(step[0]);
+			return ways != null && (ways >> step[1] & 1) == 0;
+		}
+
+		/**
+		 * @return the cost of a leg with what it runs against the line weighted ({@link #AGAINST_WEIGHT})
+		 */
+		private double weighted(LegRouter.Leg leg, boolean toAlong) {
+			final double cost = leg.getCost(toAlong);
+			if (Double.isInfinite(cost)) {
+				return cost;
+			}
+			double against = 0;
+			for (final long[] step : leg.getSteps(toAlong)) {
+				if (isAgainst(step)) {
+					final TrackSections.Section section = snapshot.sections.get(step[0]);
+					against += section == null ? 0 : section.getCost();
+				}
+			}
+			return cost + AGAINST_WEIGHT * against;
+		}
+
+		/**
+		 * @param station the station the leg goes out to or back from, which alone it may run against the line
+		 * @return the cost of a leg between the siding and a station, weighted as {@link #weighted}; infinite if it runs
+		 * through another of the line's platforms against the line
+		 */
+		private double freeCost(LegRouter.Leg leg, boolean toAlong, long station) {
+			if (Double.isInfinite(leg.getCost(toAlong))) {
+				return Double.POSITIVE_INFINITY;
+			}
+			for (final long[] step : leg.getSteps(toAlong)) {
+				if (step[0] != station && stopSections.contains(step[0]) && isAgainst(step)) {
+					return Double.POSITIVE_INFINITY;
+				}
+			}
+			return weighted(leg, toAlong);
 		}
 
 		private double[] newCosts() {
@@ -290,7 +355,7 @@ public final class LineDepotWays {
 				for (final String line : lines.get(fromRoute) == null ? new String[]{null} : new String[]{lines.get(fromRoute), null}) {
 					for (final int leaveWay : new int[]{fromWay, 1 - fromWay}) {
 						final LegRouter.Leg leg = leg(new LegRouter.Request(from, leaveWay == 1, to, new long[0], line, false));
-						final double cost = leg.getCost(toWay == 1) + (leaveWay == fromWay ? 0 : RailRouter.TURN_BACK_PENALTY);
+						final double cost = weighted(leg, toWay == 1) + (leaveWay == fromWay ? 0 : RailRouter.TURN_BACK_PENALTY);
 						if (Double.isFinite(cost) && cost < (best == null ? Double.POSITIVE_INFINITY : best.cost)) {
 							final List<long[]> steps = new ArrayList<>();
 							if (leaveWay != fromWay) {

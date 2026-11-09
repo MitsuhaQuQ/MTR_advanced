@@ -206,6 +206,13 @@ class MidLineDepotTest {
 				final Set<Long> ways = lineWays.get(step[0]);
 				assertTrue(ways == null || ways.contains(step[1]), name + ": step " + i + " runs a section of the line against it");
 			}
+			// Between the siding and the station, no other platform of the line is run against it: a train standing at one
+			// and asking for the other would meet a train of the line doing the same (head-on deadlock)
+			for (int i = out ? 0 : station + 1; i < (out ? station : plan.steps.size()); i++) {
+				final long[] step = plan.steps.get(i);
+				final Set<Long> ways = lineWays.get(step[0]);
+				assertFalse(layout.platformSections.contains(step[0]) && ways != null && !ways.contains(step[1]), name + ": step " + i + " runs another platform against the line");
+			}
 		});
 	}
 
