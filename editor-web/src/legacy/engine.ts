@@ -26,7 +26,7 @@ export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { k
 export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { current: null }
 
 /** One of the line layer's other panels (views/LinePanels.tsx): speed limits, through services, contingency plans */
-export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string } | { kind: "rules"; depotId: string; editing: any; opened: number }
+export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string } | { kind: "rules"; depotId: string; editing: any; opened: number } | { kind: "vehicle"; depotId: string; poolKey: string } | { kind: "groups"; depotId: string } | { kind: "release"; depotId: string }
 export const panelHost: { current: ((target: PanelTarget) => void) | null } = { current: null }
 
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
@@ -69,6 +69,9 @@ const env = {
   tableDialog: (r: { id: string }, index: number) => panelHost.current?.({ kind: "table", routeId: r.id, index }),
   depotDialog: (depot: { id: string }) => panelHost.current?.({ kind: "depot", depotId: depot.id }),
   depotRulesDialog: (depot: { id: string }, editing?: unknown) => panelHost.current?.({ kind: "rules", depotId: depot.id, editing: editing || null, opened: Date.now() }),
+  vehicleDialog: (depot: { id: string }, pool: { key: string }) => panelHost.current?.({ kind: "vehicle", depotId: depot.id, poolKey: pool.key }),
+  dutyGroupsDialog: (depot: { id: string }) => panelHost.current?.({ kind: "groups", depotId: depot.id }),
+  releasePlanDialog: (depot: { id: string }) => panelHost.current?.({ kind: "release", depotId: depot.id }),
   render: (name: string) => onRender(name),
 }
 

@@ -394,6 +394,50 @@ describe("the old code in the new page", () => {
     v.state.view = "diagram"
     engine.pushDraft({ routes: {} })
   })
+  it("edits a vehicle and shows the release plan and duty groups in their panels", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LinePanels } = await import("../src/views/LinePanels")
+    const { fn } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(LinePanels)))
+    const depot = fn.depotById("9001")
+    const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent === text) as HTMLButtonElement
+    const input = (text: string) => [...host.querySelectorAll("label")].find(l => l.textContent!.trim().startsWith(text))!.querySelector("input") as HTMLInputElement
+    const type = async (element: HTMLInputElement, value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value)
+      element.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+
+    // A vehicle's settings: a wrong acceleration is refused as typed
+    await act(async () => fn.vehicleDialog(depot, depot.pools[0]))
+    await act(async () => input("统一设置").click())
+    await type(input("加速度"), "0")
+    expect(host.textContent).toContain("加速度写正数")
+    expect(button("放进草稿").disabled).toBe(true)
+    await type(input("加速度"), "1.2")
+    await act(async () => { button("放进草稿").click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(changes[changes.length - 1].depots["9001"].vehicleSettings.a6.acceleration).toBeCloseTo(1.2 / 400)
+
+    // The release plan: six trains, on any day chosen in the panel
+    await act(async () => fn.releasePlanDialog(depot))
+    expect(host.querySelectorAll("tbody tr").length).toBe(6)
+    await act(async () => ([...host.querySelectorAll("button[aria-pressed]")].find(b => b.textContent === "周六") as HTMLElement).click())
+    expect(host.textContent).toContain("周六")
+    expect(host.querySelectorAll("tbody tr").length).toBe(6)
+    await act(async () => button("关闭").click())
+
+    // Duty groups: none planned yet
+    await act(async () => fn.dutyGroupsDialog(depot))
+    expect(host.textContent).toContain("还没有按组排过")
+    await act(async () => button("关闭").click())
+    engine.pushDraft({ routes: {} })
+  })
   it("paints sections and ticks logical lines in the ownership panel", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

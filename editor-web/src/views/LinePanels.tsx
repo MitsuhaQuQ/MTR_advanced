@@ -13,6 +13,7 @@ import { legacy, panelHost, useLegacy, type PanelTarget } from "../legacy/engine
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { DepotPanel, DepotRules } from "./DepotPanel"
+import { DutyGroupsPanel, ReleasePlanPanel, VehiclePanel } from "./DepotExtras"
 
 export function LinePanels() {
   const [target, setTarget] = useState<PanelTarget | null>(null)
@@ -23,6 +24,9 @@ export function LinePanels() {
   if (!target) return null
   const close = () => setTarget(null)
   if (target.kind === "speed") return <SpeedLimits key={target.routeIds.join()} routeIds={target.routeIds} onClose={close} />
+  if (target.kind === "vehicle") return <VehiclePanel key={target.depotId + "/" + target.poolKey} depotId={target.depotId} poolKey={target.poolKey} onClose={close} />
+  if (target.kind === "groups") return <DutyGroupsPanel key={target.depotId} depotId={target.depotId} onClose={close} />
+  if (target.kind === "release") return <ReleasePlanPanel key={target.depotId} depotId={target.depotId} onClose={close} />
   if (target.kind === "rules") return <DepotRules key={target.depotId + "/" + target.opened} depotId={target.depotId} editing={target.editing} onClose={close} />
   if (target.kind === "depot") return <DepotPanel key={target.depotId} depotId={target.depotId} onClose={close} />
   if (target.kind === "table") return <TableDays key={target.routeId + "/" + target.index} routeId={target.routeId} index={target.index} onClose={close} />
