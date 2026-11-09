@@ -12,8 +12,8 @@ import { Boundary } from "./ui/Boundary"
 import { TrackDiagram } from "./views/TrackDiagram"
 import { StopsEditor } from "./views/StopsEditor"
 import { LinePanels } from "./views/LinePanels"
-import { LegacyMenu, LegacySlot } from "./legacy/Slot"
-import { setMediaShown } from "./legacy/media"
+import { MediaLibrary } from "./views/MediaLibrary"
+import { LegacyMenu } from "./legacy/Slot"
 import { legacy, useLegacy } from "./legacy/engine"
 
 export function App() {
@@ -67,7 +67,7 @@ function Shell() {
             {info.step && <span>{tr("第 {0} 层", info.step)}</span>}
             <span className="text-ink">{tr(info.hint)}</span>
           </div>
-          <Boundary resetKey={layer}>{layer === "media" ? <MediaWork /> : <LayerWork layer={layer} />}</Boundary>
+          <Boundary resetKey={layer}>{layer === "media" ? <MediaLibrary /> : <LayerWork layer={layer} />}</Boundary>
         </main>
       </div>
       <StatusBar />
@@ -77,26 +77,6 @@ function Shell() {
       <TrackDiagram />
       <StopsEditor />
       <LinePanels />
-    </div>
-  )
-}
-
-/** The media library: the old one (media.js), with its upload button and usage in a tool bar of the new page. */
-function MediaWork() {
-  useEffect(() => {
-    setMediaShown(true)
-    return () => setMediaShown(false)
-  }, [])
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
-        <span className="text-[13px] font-medium">{tr("媒体库")}</span>
-        <span className="flex-1" />
-        <LegacySlot id="media-usage" className="text-[12px]" />
-        <LegacySlot id="media-upload" />
-      </div>
-      <LegacySlot id="media-app" className="min-h-0 flex-1" />
-      <LegacySlot id="media-status" className="shrink-0" />
     </div>
   )
 }

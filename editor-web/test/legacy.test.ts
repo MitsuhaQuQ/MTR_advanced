@@ -652,9 +652,60 @@ describe("the old code in the new page", () => {
     expect(v.wayPick).toBe(null)
     expect(host.textContent).toBe("")
   })
-  it("starts the media library", async () => {
-    const media = await import("../src/legacy/media")
-    expect(() => media.setMediaShown(true)).not.toThrow()
-    expect(() => media.setMediaShown(false)).not.toThrow()
+  it("lists, filters, uploads and deletes in the media library", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { MediaLibrary } = await import("../src/views/MediaLibrary")
+    const entry = (key: string, name: string, cached: boolean, mine: boolean) => ({
+      key, name, reference: key, sound: "mtr_audio:" + key.replace(":", "/"), soundId: name.replace(".ogg", ""), hash: key.length.toString(16).padStart(64, "0"),
+      uploaderName: key.split(":")[0], size: 182400, durationMillis: 6200, uploadedAt: Date.now() - 3600000, cached, downloading: false, mine, canDelete: mine,
+    })
+    const library = { language: "zh_cn", canUpload: true, maxFileBytes: 2 * 1024 * 1024, maxTotalBytes: 50 * 1024 * 1024, totalBytes: 364800, maxSeconds: 60, requests: [],
+      entries: [entry("mitsuha:next_central.ogg", "next_central.ogg", true, true), entry("rail_fan:transfer_l2.ogg", "transfer_l2.ogg", false, false)] }
+    const posts: any[] = []
+    const fetchBefore = globalThis.fetch
+    globalThis.fetch = (async (_: string, init?: RequestInit) => {
+      if (init && init.method === "POST") { posts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify({ ok: true }), { status: 200 }) }
+      return new Response(JSON.stringify(library), { status: 200 })
+    }) as typeof fetch
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => { createRoot(host).render(createElement(MediaLibrary)); await new Promise(resolve => setTimeout(resolve, 20)) })
+    const rows = () => [...host.querySelectorAll("tr[data-entry]")]
+    expect(rows().length).toBe(2)
+    const set = async (input: HTMLInputElement, value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+    await set(host.querySelector("input[type=search]") as HTMLInputElement, "transfer")
+    expect(rows().map(r => r.getAttribute("data-entry"))).toEqual(["rail_fan:transfer_l2.ogg"])
+    await set(host.querySelector("input[type=search]") as HTMLInputElement, "")
+    const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent === text) as HTMLElement
+    await act(async () => button("只看本机没有的").click())
+    expect(rows().length).toBe(1)
+    await act(async () => button("只看本机没有的").click())
+    // Chosen: its names to copy
+    await act(async () => (rows().find(r => r.getAttribute("data-entry") === "mitsuha:next_central.ogg") as HTMLElement).click())
+    expect(host.querySelector("aside")!.textContent).toContain("mtr_audio:mitsuha/next_central.ogg")
+    // A file named in Chinese is asked for a sound ID in the page
+    const file = new File([new Uint8Array([1, 2, 3])], "下一站.ogg", { type: "audio/ogg" })
+    const input = host.querySelector("input[type=file]") as HTMLInputElement
+    Object.defineProperty(input, "files", { value: [file], configurable: true })
+    await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })) })
+    const soundId = host.querySelector("input[aria-label='声音 ID']") as HTMLInputElement
+    expect(soundId.value).toBe("")
+    await set(soundId, "Bad ID")
+    await act(async () => button("上传").click())
+    expect(host.textContent).toContain("声音 ID 只能用小写字母")
+    expect(posts.length).toBe(0)
+    await set(host.querySelector("input[aria-label='声音 ID']") as HTMLInputElement, "next_stop")
+    await act(async () => { button("上传").click(); await new Promise(resolve => setTimeout(resolve, 30)) })
+    expect(posts[0]).toMatchObject({ action: "upload", name: "下一站.ogg", soundId: "next_stop" })
+    // Deleting asks first
+    await act(async () => button("删除").click())
+    expect(posts.length).toBe(1)
+    await act(async () => { button("确定").click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(posts[1]).toEqual({ action: "delete", key: "mitsuha:next_central.ogg" })
+    globalThis.fetch = fetchBefore
   })
 })
