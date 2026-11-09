@@ -298,6 +298,42 @@ describe("the old code in the new page", () => {
     expect(changes[changes.length - 1].contingencies.a1).toMatchObject([{ id: "1", name: "中断", turn: "station", turnStation: "s3", lateMinutes: 5 }])
     engine.pushDraft({ routes: {} })
   })
+  it("makes a new table for a line's routes in the table panel", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LinePanels } = await import("../src/views/LinePanels")
+    const { fn, v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(LinePanels)))
+    await act(async () => fn.tableDialog(v.data.routeById.get("101"), -1))
+    // Sunday belongs to 周末 now
+    const sunday = [...host.querySelectorAll("button[aria-pressed]")].find(b => b.textContent!.startsWith("周日")) as HTMLElement
+    expect(sunday.textContent).toContain("周末")
+    const name = [...host.querySelectorAll("label")].find(l => l.textContent!.startsWith("表名"))!.querySelector("input") as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(name, "周日")
+      name.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+    await act(async () => sunday.click())
+    const copy = [...host.querySelectorAll("select")].find(s => [...s.options].some(o => o.textContent!.includes("周末"))) as HTMLSelectElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(copy, "1")
+      copy.dispatchEvent(new Event("change", { bubbles: true }))
+    })
+    await act(async () => { ([...host.querySelectorAll("button")].find(b => b.textContent === "新建") as HTMLElement).click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const routes = changes[changes.length - 1].routes
+    for (const id of ["101", "102", "103"]) {
+      const tables = routes[id].timetable.tables
+      expect(tables.map((t: any) => [t.name, t.weekdays])).toEqual([["平日", 31], ["周末", 32], ["周日", 64]])
+      expect(tables[2].services).toEqual(tables[1].services)
+    }
+    engine.pushDraft({ routes: {} })
+  })
   it("paints sections and ticks logical lines in the ownership panel", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

@@ -4,7 +4,8 @@
  * - line speed limits: a row per route, checked as typed against 0–300 km/h and the fastest rail along it;
  * - through services: from a route at its last stop or a boundary into another at its first stop or a boundary, each
  *   service in the time range linked to the first of the other's it can catch; every pair listed, each can be left out;
- * - a rail system's contingency plans: a card per plan, added and removed in place.
+ * - a rail system's contingency plans: a card per plan, added and removed in place;
+ * - a route's timetable: a new one, or a table's name and days, the week shown as it will be.
  * Each puts its changes in the draft (through links as setLink does), as before.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react"
@@ -21,6 +22,7 @@ export function LinePanels() {
   if (!target) return null
   const close = () => setTarget(null)
   if (target.kind === "speed") return <SpeedLimits key={target.routeIds.join()} routeIds={target.routeIds} onClose={close} />
+  if (target.kind === "table") return <TableDays key={target.routeId + "/" + target.index} routeId={target.routeId} index={target.index} onClose={close} />
   if (target.kind === "through") return <Through key={target.routeId} routeId={target.routeId} onClose={close} />
   return <Contingency key={target.anchor} anchor={target.anchor} onClose={close} />
 }
@@ -303,6 +305,103 @@ function Contingency({ anchor, onClose }: { anchor: string; onClose: () => void 
           <label className={small + " mt-2"}><input type="checkbox" checked={p.takeover} onChange={e => change(i, { takeover: e.target.checked })} /> {tr("由备车接替余下的运用")}</label>
         </section>
       ))}
+    </SidePanel>
+  )
+}
+
+// ---------- A timetable's days ----------
+
+/**
+ * A new table of a route, or a table's name and days (old tableDialog): the week as seven buttons, each saying which
+ * table runs that day now; a day ticked moves to this table, and the week below shows every table's days as they will
+ * be. A new table can copy another's services (with their one-off changes) and be made for the line's every route.
+ */
+function TableDays({ routeId, index, onClose }: { routeId: string; index: number; onClose: () => void }) {
+  useLegacy()
+  const { fn, v } = legacy
+  const r = v.data?.routeById.get(routeId)
+  const timetable = r ? fn.timetableOf(r) : null
+  const isNew = index < 0
+  const table = timetable && !isNew ? timetable.tables[index] : null
+  const line = r ? v.data.lines.find((l: any) => l.key === r.lineKey) : null
+  const [name, setName] = useState(table ? table.name : "")
+  const [mask, setMask] = useState<number>(table ? table.weekdays : 0)
+  const [copy, setCopy] = useState(-1)
+  const [all, setAll] = useState(Boolean(line && line.routes.length > 1))
+  const [error, setError] = useState("")
+  if (!r || !timetable) return null
+  const days: string[] = v.WEEKDAY_SHORT
+  const ownerOf = (day: number) => timetable.tables.findIndex((t: any) => (t.weekdays >> day) & 1)
+  const tableTitle = (t: any, i: number) => fn.tableName(t, i)
+  // Every table's days once this is done; this table last when new
+  const after = [...timetable.tables.map((t: any, i: number) => ({ name: i === index ? name || tableTitle(t, i) : tableTitle(t, i), mask: i === index ? mask : t.weekdays & ~mask, self: i === index })),
+    ...(isNew ? [{ name: name || tr("新表"), mask, self: true }] : [])]
+  const save = () => {
+    const routes = isNew && all && line ? line.routes : [r]
+    if (isNew && routes.some((route: any) => fn.timetableOf(route).tables.length >= v.MAX_TABLES)) { setError(tr("一条线路最多 {0} 张表", v.MAX_TABLES)); return }
+    routes.forEach((route: any) => fn.editTimetable(route, (edited: any) => {
+      edited.tables.forEach((t: any, i: number) => { if (i !== index) t.weekdays &= ~mask })
+      if (isNew) {
+        const copied = copy >= 0 && edited.tables[copy]
+        edited.tables.push({
+          name: name.trim(), weekdays: mask, marginPercent: copied ? copied.marginPercent : edited.tables[0].marginPercent,
+          services: copied ? [...copied.services] : [], returns: copied ? [...copied.returns] : [], suspended: copied ? [...(copied.suspended || [])] : [], orders: copied ? (copied.orders || []).map((order: any) => ({ ...order })) : [],
+          links: copied ? copied.links.map((link: any) => ({ ...link })) : [],
+          stops: (copied || edited.tables[0]).stops.map((stop: any) => ({ ...stop })),
+          exceptions: copied ? JSON.parse(JSON.stringify(copied.exceptions)) : [],
+        })
+      } else {
+        edited.tables[index].name = name.trim()
+        edited.tables[index].weekdays = mask
+      }
+    }))
+    if (mask) fn.setWeekday(days.findIndex((_, i) => (mask >> i) & 1))
+    onClose()
+  }
+  return (
+    <SidePanel open onClose={onClose} title={(isNew ? tr("新建时刻表") : tr("时刻表设置")) + "：" + fn.routeTitle(r)} width={560}
+      hint={tr("一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。")}
+      footer={<Footer error={error}>
+        <button className="btn btn-primary" disabled={!v.data.canEdit} onClick={save}>{isNew ? tr("新建") : tr("确定")}</button>
+        <button className="btn" onClick={onClose}>{tr("取消")}</button>
+      </Footer>}>
+      <label className="flex flex-col gap-0.5 text-[12px] text-dim">{tr("表名")}
+        <input className={field} value={name} maxLength={32} placeholder={tr("休日")} onChange={e => setName(e.target.value)} /></label>
+      <div className="label-sm mb-1 mt-3">{tr("运行的星期")}</div>
+      <div className="grid grid-cols-7 gap-1" role="group" aria-label={tr("运行的星期")}>
+        {days.map((day, i) => {
+          const on = Boolean((mask >> i) & 1), owner = ownerOf(i)
+          return (
+            <button key={i} type="button" aria-pressed={on} onClick={() => { setMask(mask ^ (1 << i)); setError("") }}
+              className={"flex flex-col items-center rounded-md border px-1 py-1.5 text-[13px] " + (on ? "tint-accent border-brand font-semibold text-brand" : "border-ctl bg-panel")}>
+              {tr("周{0}", day)}
+              <span className="mt-0.5 max-w-full truncate text-[11px] font-normal text-dim">{owner < 0 ? tr("无") : tableTitle(timetable.tables[owner], owner)}</span>
+            </button>
+          )
+        })}
+      </div>
+      {isNew && <>
+        <label className="mt-3 flex flex-col gap-0.5 text-[12px] text-dim">{tr("班次")}
+          <select className={field} value={copy} onChange={e => setCopy(+e.target.value)}>
+            <option value={-1}>{tr("空表")}</option>
+            {timetable.tables.map((t: any, i: number) => <option key={i} value={i}>{tr("复制“{0}”的班次", tableTitle(t, i))}</option>)}
+          </select></label>
+        <label className="mt-2 flex items-center gap-1.5 text-[13px]">
+          <input type="checkbox" checked={all} disabled={!line || line.routes.length < 2} onChange={e => setAll(e.target.checked)} /> {tr("{0}的全部线路一起建", fn.shortName(r.line))}
+        </label>
+      </>}
+      <div className="label-sm mb-1 mt-4">{tr("改完以后")}</div>
+      <table className="w-full border-collapse text-[12px]">
+        <tbody>
+          {after.map((t, i) => (
+            <tr key={i} className="border-t border-grid">
+              <td className={"max-w-[140px] truncate py-1 pr-2 " + (t.self ? "font-semibold text-brand" : "")}>{t.name}</td>
+              {days.map((day, d) => <td key={d} className="w-8 text-center">{(t.mask >> d) & 1 ? <span className={"inline-block h-4 w-6 rounded-sm " + (t.self ? "bg-brand" : "bg-gridstrong")} title={tr("周{0}", day)} /> : null}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!mask && <p className="mt-2 text-[12px] text-caution">{tr("没勾任何一天：这张表不会运行。")}</p>}
     </SidePanel>
   )
 }
