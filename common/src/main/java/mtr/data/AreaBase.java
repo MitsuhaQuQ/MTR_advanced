@@ -120,6 +120,21 @@ public abstract class AreaBase extends NameColorDataBase {
 	}
 
 	/**
+	 * @return whether the area takes the place in, within the heights of its rectangle where it has some (stations and
+	 * depots set with the station area tool); across every height otherwise
+	 */
+	public boolean inArea(int x, int y, int z) {
+		return inArea(x, z);
+	}
+
+	/**
+	 * @return the heights a rectangle of the area takes in, {lowest, highest}, or null for every height
+	 */
+	public int[] getHeight(int[] rectangle) {
+		return null;
+	}
+
+	/**
 	 * @return every rectangle of this area as {x1, z1, x2, z2}
 	 */
 	public List<int[]> getRectangles() {

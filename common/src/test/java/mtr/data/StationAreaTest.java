@@ -10,9 +10,43 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StationAreaTest {
+
+	@Test
+	void aRectangleIsFoundAndTakenAwayWithItsHeights() {
+		// Station area editing (2026-11-09): the main area, a 3D rectangle inside it and a 2D one elsewhere
+		final Station station = station(1, 0, 0, 100, 100);
+		station.extraAreas.add(new int[]{10, 10, 20, 20});
+		station.extraAreas.add(new int[]{200, 200, 210, 210});
+		station.setHeight(station.extraAreas.get(0), new int[]{60, 80});
+		assertEquals(1, station.rectangleAt(15, 15), "the smallest where they overlap");
+		assertEquals(0, station.rectangleAt(50, 50));
+		assertEquals(2, station.rectangleAt(205, 205));
+		assertEquals(-1, station.rectangleAt(150, 150));
+		assertTrue(station.hasHeights());
+
+		// The 3D one goes with its heights; the same corners drawn again later take in every height
+		assertTrue(station.removeRectangle(1));
+		assertFalse(station.hasHeights());
+		station.extraAreas.add(new int[]{10, 10, 20, 20});
+		assertTrue(station.inArea(15, 0, 15));
+
+		// The main area taken away: the next one takes over; the last one stays
+		assertTrue(station.removeRectangle(0));
+		assertEquals(200, station.corner1.getA());
+		assertEquals(1, station.extraAreas.size());
+		assertTrue(station.removeRectangle(1));
+		assertFalse(station.removeRectangle(0), "a station keeps its only rectangle");
+		assertEquals(1, station.getRectangles().size());
+
+		// Drawn again on the map, a rectangle with heights takes in every height
+		station.setHeight(station.getRectangle(0), new int[]{1, 2});
+		station.clearHeight(station.getRectangle(0));
+		assertNull(station.getHeight(station.getRectangle(0)));
+	}
 
 	@Test
 	void extraRectanglesCountAsTheStation() {

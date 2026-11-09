@@ -3,6 +3,7 @@ package mtr.data;
 import io.netty.buffer.Unpooled;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.util.Tuple;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 
@@ -223,6 +224,7 @@ public final class Station extends AreaBase {
 	/**
 	 * @return whether the station takes the place in, in one of its rectangles and within that rectangle's heights
 	 */
+	@Override
 	public boolean inArea(int x, int y, int z) {
 		for (final int[] rectangle : getRectangles()) {
 			if (RailwayData.isBetween(x, rectangle[0], rectangle[2]) && RailwayData.isBetween(z, rectangle[1], rectangle[3])) {
@@ -245,6 +247,7 @@ public final class Station extends AreaBase {
 	/**
 	 * @return the heights a rectangle takes in, {lowest, highest}, or null for every height
 	 */
+	@Override
 	public int[] getHeight(int[] rectangle) {
 		return areaHeights.get(rectangleKey(rectangle));
 	}
@@ -334,6 +337,75 @@ public final class Station extends AreaBase {
 		final List<int[]> rectangles = super.getRectangles();
 		rectangles.addAll(extraAreas);
 		return rectangles;
+	}
+
+	/**
+	 * @return the rectangle of the station at this place, as 0 for the main area and each other one from 1, the smallest
+	 * where they overlap; -1 if none
+	 */
+	public int rectangleAt(double x, double z) {
+		int found = -1;
+		long foundSize = Long.MAX_VALUE;
+		for (int i = 0; i <= extraAreas.size(); i++) {
+			final int[] rectangle = getRectangle(i);
+			if (rectangle != null && RailwayData.isBetween(x, rectangle[0], rectangle[2]) && RailwayData.isBetween(z, rectangle[1], rectangle[3])) {
+				final long size = (long) (Math.abs(rectangle[2] - rectangle[0]) + 1) * (Math.abs(rectangle[3] - rectangle[1]) + 1);
+				if (size < foundSize) {
+					found = i;
+					foundSize = size;
+				}
+			}
+		}
+		return found;
+	}
+
+	/**
+	 * @param index 0 for the main area, then each other rectangle from 1
+	 * @return the rectangle, or null if there is none
+	 */
+	public int[] getRectangle(int index) {
+		if (index == 0) {
+			return AreaBase.nonNullCorners(this) ? new int[]{corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB()} : null;
+		}
+		return index > 0 && index <= extraAreas.size() ? extraAreas.get(index - 1) : null;
+	}
+
+	/**
+	 * Takes a rectangle away with its heights (station area editing, 2026-11-09): the main area is taken over by the next
+	 * one. A station's only rectangle stays.
+	 *
+	 * @param index 0 for the main area, then each other rectangle from 1
+	 * @return whether it was taken away
+	 */
+	public boolean removeRectangle(int index) {
+		final int[] rectangle = getRectangle(index);
+		if (rectangle == null || extraAreas.isEmpty()) {
+			return false;
+		}
+		if (index == 0) {
+			final int[] next = extraAreas.remove(0);
+			corner1 = new Tuple<>(next[0], next[1]);
+			corner2 = new Tuple<>(next[2], next[3]);
+		} else {
+			extraAreas.remove(index - 1);
+		}
+		// Its heights go with it, unless another rectangle of the station is the same one
+		final String key = rectangleKey(rectangle);
+		if (getRectangles().stream().noneMatch(other -> rectangleKey(other).equals(key))) {
+			areaHeights.remove(key);
+		}
+		return true;
+	}
+
+	/**
+	 * A rectangle drawn on the dashboard's map takes in every height (station area editing, 2026-11-09): heights come from
+	 * the station area tool only, and a rectangle with heights isn't drawn again.
+	 */
+	public void clearHeight(int[] rectangle) {
+		final String key = rectangleKey(rectangle);
+		if (getRectangles().stream().filter(other -> rectangleKey(other).equals(key)).count() <= 1) {
+			areaHeights.remove(key);
+		}
 	}
 
 	public void setExtraAreas(Consumer<FriendlyByteBuf> sendPacket) {

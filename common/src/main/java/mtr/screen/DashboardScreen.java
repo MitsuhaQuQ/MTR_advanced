@@ -94,6 +94,8 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		colorSelector = new WidgetColorSelector(this, true, this::toggleButtons);
 		widgetMap = new WidgetMap(transportMode, this::onDrawCorners, this::onDrawCornersMouseRelease, this::onClickAddPlatformToRoute, this::onClickAddKeyNodeToRoute, this::onClickEditSavedRail, colorSelector::isMouseOver);
 		widgetMap.setRoutesToDraw(this::getRoutesToDraw);
+		// A station rectangle with heights (3D) is only taken away here, and the right button takes any away (2026-11-09)
+		widgetMap.setAreaEditing(() -> getEditingHeights() != null, this::removeStationAreaAt);
 		MapDataCache.open();
 
 		buttonTabStations = UtilitiesClient.newButton(Text.translatable("gui.mtr.stations"), button -> onSelectTab(SelectedTab.STATIONS));
@@ -639,20 +641,19 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private void onDrawCorners(Tuple<Integer, Integer> corner1, Tuple<Integer, Integer> corner2) {
+		// Only rectangles taking in every height (2D) are drawn here; those with heights are locked (2026-11-09)
+		if (getEditingHeights() != null) {
+			return;
+		}
 		if (editingAreaIndex > 0) {
 			final List<int[]> extraAreas = ((Station) editingArea).extraAreas;
 			final int[] extraArea = {corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB()};
 			if (editingAreaIndex > extraAreas.size()) {
 				extraAreas.add(extraArea);
 			} else {
-				// Drawn again, the rectangle keeps the heights it had
-				((Station) editingArea).moveHeight(extraAreas.get(editingAreaIndex - 1), extraArea);
 				extraAreas.set(editingAreaIndex - 1, extraArea);
 			}
 		} else {
-			if (editingArea instanceof Station && AreaBase.nonNullCorners(editingArea)) {
-				((Station) editingArea).moveHeight(new int[]{editingArea.corner1.getA(), editingArea.corner1.getB(), editingArea.corner2.getA(), editingArea.corner2.getB()}, new int[]{corner1.getA(), corner1.getB(), corner2.getA(), corner2.getB()});
-			}
 			editingArea.corner1 = corner1;
 			editingArea.corner2 = corner2;
 		}
@@ -665,9 +666,63 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		} else {
 			editingArea.setCorners(packet -> PacketTrainDataGuiClient.sendUpdate(editingArea instanceof Station ? PACKET_UPDATE_STATION : PACKET_UPDATE_DEPOT, packet));
 		}
-		if (editingArea instanceof Station && ((Station) editingArea).hasHeights()) {
-			((Station) editingArea).setAreaHeights(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		if (editingArea instanceof Station) {
+			// The rectangle drawn takes in every height, whatever one with the same corners had
+			final Station station = (Station) editingArea;
+			final int[] drawn = station.getRectangle(editingAreaIndex);
+			if (drawn != null && station.getHeight(drawn) != null) {
+				station.clearHeight(drawn);
+				station.setAreaHeights(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+			}
 		}
+	}
+
+	/**
+	 * @return the heights of the station rectangle being edited, or null if it takes in every height or isn't a station's
+	 */
+	private int[] getEditingHeights() {
+		if (editingArea instanceof Depot) {
+			return AreaBase.nonNullCorners(editingArea) ? editingArea.getHeight(null) : null;
+		}
+		if (!(editingArea instanceof Station)) {
+			return null;
+		}
+		final Station station = (Station) editingArea;
+		final int[] rectangle = station.getRectangle(editingAreaIndex);
+		return rectangle == null ? null : station.getHeight(rectangle);
+	}
+
+	/**
+	 * Takes away the rectangle of the station being edited under the mouse, pressed with the right button (2026-11-09).
+	 */
+	private void removeStationAreaAt(double worldX, double worldZ) {
+		if (!(editingArea instanceof Station) || selectedTab != SelectedTab.STATIONS) {
+			return;
+		}
+		final int index = ((Station) editingArea).rectangleAt(worldX, worldZ);
+		if (index >= 0) {
+			removeStationArea(index);
+		}
+	}
+
+	/**
+	 * Takes a rectangle of the station being edited away, with its heights; the main area is taken over by the next one,
+	 * and a station's only rectangle stays.
+	 */
+	private void removeStationArea(int index) {
+		final Station station = (Station) editingArea;
+		if (!station.removeRectangle(index)) {
+			widgetMap.setAreaInfo(Text.translatable("gui.mtr.station_area_only_one").getString());
+			return;
+		}
+		if (index == 0) {
+			station.setCorners(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		}
+		station.setExtraAreas(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		station.setAreaHeights(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		ClientData.DATA_CACHE.sync();
+		selectStationArea(Math.min(index == 0 ? 0 : index - 1, station.extraAreas.size()));
+		widgetMap.setAreaInfo(Text.translatable("gui.mtr.station_area_removed", index + 1).getString());
 	}
 
 	private void selectStationArea(int index) {
@@ -687,10 +742,10 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private void removeStationArea() {
 		final Station station = (Station) editingArea;
 		if (editingAreaIndex > 0 && editingAreaIndex <= station.extraAreas.size()) {
-			station.extraAreas.remove(editingAreaIndex - 1);
-			station.setExtraAreas(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+			removeStationArea(editingAreaIndex);
+		} else {
+			selectStationArea(Math.max(0, editingAreaIndex - 1));
 		}
-		selectStationArea(editingAreaIndex - 1);
 	}
 
 	private void onClickAddPlatformToRoute(long platformId) {
@@ -809,6 +864,11 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			buttonStationArea.setMessage(Text.literal(Text.translatable("gui.mtr.station_area", editingAreaIndex + 1, Math.max(extraAreaCount + 1, editingAreaIndex + 1)).getString() + (height == null ? "" : " Y" + height[0] + "-" + height[1])));
 			buttonAddStationArea.active = AreaBase.nonNullCorners(editingArea) && extraAreaCount < Station.MAX_EXTRA_AREAS && editingAreaIndex <= extraAreaCount;
 			buttonRemoveStationArea.active = editingAreaIndex > 0;
+			widgetMap.setAreaInfo(height == null ? "" : Text.translatable("gui.mtr.station_area_locked", height[0], height[1]).getString());
+		} else {
+			// A depot's area with heights (3D) is locked too
+			final int[] depotHeights = editingArea instanceof Depot ? getEditingHeights() : null;
+			widgetMap.setAreaInfo(depotHeights == null ? "" : Text.translatable("gui.mtr.depot_area_locked", depotHeights[0], depotHeights[1]).getString());
 		}
 		textFieldCustomDestination.visible = showRouteDestinationFields;
 		textFieldDwellOverride.visible = showRouteDestinationFields;

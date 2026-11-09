@@ -6,6 +6,7 @@ import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import mtr.data.AreaBase;
+import mtr.data.Depot;
 import mtr.data.IGui;
 import mtr.data.Station;
 import mtr.mappings.Text;
@@ -21,9 +22,10 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Gives the box made with the station area tool to a station: first the station, those whose areas take its middle in
- * first, then the nearest others; then which of its rectangles it becomes, its main area, one of its others or a new one,
- * with the heights of the box.
+ * Gives the box made with the station area tool to a station or a depot: first the station or depot, those whose areas
+ * take its middle in first, then the nearest others; for a station then which of its rectangles it becomes, its main area,
+ * one of its others or a new one, with the heights of the box. A depot's area becomes the box with its heights, so depots
+ * one above another each take in their own sidings (2026-11-09).
  */
 public class StationAreaToolScreen extends ScreenBase implements IGui, IPacket {
 
@@ -33,7 +35,9 @@ public class StationAreaToolScreen extends ScreenBase implements IGui, IPacket {
 	private final List<Button> buttons = new ArrayList<>();
 	private Station chosen;
 
+	private final List<Depot> depots = new ArrayList<>();
 	private static final int MAX_STATIONS = 10;
+	private static final int MAX_DEPOTS = 5;
 
 	public StationAreaToolScreen(BlockPos pos1, BlockPos pos2) {
 		super(Text.literal(""));
@@ -47,6 +51,13 @@ public class StationAreaToolScreen extends ScreenBase implements IGui, IPacket {
 			return dx * dx + dz * dz;
 		}).thenComparingLong(station -> station.id));
 		stations.addAll(all.subList(0, Math.min(MAX_STATIONS, all.size())));
+		final List<Depot> allDepots = new ArrayList<>(ClientData.DEPOTS);
+		allDepots.removeIf(depot -> !AreaBase.nonNullCorners(depot));
+		allDepots.sort(Comparator.comparing((Depot depot) -> !depot.inArea(middleX, middleZ)).thenComparingDouble(depot -> {
+			final double dx = (depot.corner1.getA() + depot.corner2.getA()) / 2D - middleX, dz = (depot.corner1.getB() + depot.corner2.getB()) / 2D - middleZ;
+			return dx * dx + dz * dz;
+		}).thenComparingLong(depot -> depot.id));
+		depots.addAll(allDepots.subList(0, Math.min(MAX_DEPOTS, allDepots.size())));
 	}
 
 	@Override
@@ -58,6 +69,7 @@ public class StationAreaToolScreen extends ScreenBase implements IGui, IPacket {
 				chosen = station;
 				rebuildWidgets();
 			})));
+			depots.forEach(depot -> buttons.add(UtilitiesClient.newButton(Text.translatable("gui.mtr.station_area_tool_depot", IGui.formatStationName(depot.name)), button -> applyDepot(depot))));
 		} else {
 			buttons.add(UtilitiesClient.newButton(Text.translatable("gui.mtr.station_area_tool_main"), button -> apply(0)));
 			for (int i = 0; i < chosen.extraAreas.size(); i++) {
@@ -111,6 +123,19 @@ public class StationAreaToolScreen extends ScreenBase implements IGui, IPacket {
 		}
 		station.setHeight(rectangle, height);
 		station.setAreaHeights(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_STATION, packet));
+		ClientData.DATA_CACHE.sync();
+		onClose();
+	}
+
+	/**
+	 * The depot's area becomes the box, taking in its heights only.
+	 */
+	private void applyDepot(Depot depot) {
+		depot.corner1 = new Tuple<>(rectangle[0], rectangle[1]);
+		depot.corner2 = new Tuple<>(rectangle[2], rectangle[3]);
+		depot.setCorners(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
+		depot.setAreaHeights(height[0], height[1]);
+		depot.sendAreaHeights(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_DEPOT, packet));
 		ClientData.DATA_CACHE.sync();
 		onClose();
 	}

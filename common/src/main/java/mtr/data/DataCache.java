@@ -453,18 +453,21 @@ public class DataCache {
 		savedRails.forEach(savedRail -> {
 			final BlockPos pos = savedRail.getMidPos();
 			final List<Integer> cellAreas = grid.get(getCellKey(pos.getX() >> AREA_CELL_BITS, pos.getZ() >> AREA_CELL_BITS));
-			final int index = Math.min(getFirstMatch(areaList, cellAreas, savedRail, pos), getFirstMatch(areaList, largeAreas, savedRail, pos));
+			// The first area with heights taking in its height (depots one above another, 2026-11-09); else the first taking
+			// it in across, as before
+			final int atHeight = Math.min(getFirstMatch(areaList, cellAreas, savedRail, pos, true), getFirstMatch(areaList, largeAreas, savedRail, pos, true));
+			final int index = atHeight < areaList.size() ? atHeight : Math.min(getFirstMatch(areaList, cellAreas, savedRail, pos, false), getFirstMatch(areaList, largeAreas, savedRail, pos, false));
 			if (index < areaList.size()) {
 				map.put(savedRail.id, areaList.get(index));
 			}
 		});
 	}
 
-	private static <U extends SavedRailBase, V extends AreaBase> int getFirstMatch(List<V> areaList, List<Integer> indices, U savedRail, BlockPos pos) {
+	private static <U extends SavedRailBase, V extends AreaBase> int getFirstMatch(List<V> areaList, List<Integer> indices, U savedRail, BlockPos pos, boolean atHeight) {
 		if (indices != null) {
 			for (final int index : indices) {
 				final V area = areaList.get(index);
-				if (area.isTransportMode(savedRail.transportMode) && area.inArea(pos.getX(), pos.getZ())) {
+				if (area.isTransportMode(savedRail.transportMode) && (atHeight ? area.inArea(pos.getX(), pos.getY(), pos.getZ()) && area.getRectangles().stream().anyMatch(rectangle -> area.getHeight(rectangle) != null) : area.inArea(pos.getX(), pos.getZ()))) {
 					return index;
 				}
 			}

@@ -740,6 +740,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - （运用表复用和索引：组件只加 `DutyLayers` 各层的 `toBytes` 和 `Assignment.getBodyKey`；表在游戏的 SQLite 存储里）
   - （运用补完第 2 步：组件 `DepotRules`（规则、命名回送路径、`match`），`DepotDuties` 第 6 版路径编号和例外位、`keepExceptions`，`DutyLayers` 第 3 版，`OperationNetwork.waitThreshold`、`PlanInputs.waitThresholds`；测试 `DepotRulesTest`）
   - （运用补完第 3 步：组件 `DutyShapes.getSlotKey` 带回送路径编号、`getPathId`；其余在网页）
+  - （2026-11-09 车站和车厂的 3D 范围：只在游戏宿主，`Station`、`Depot.areaHeights`、`DataCache` 存车线归属、仪表盘和车站范围工具；组件不变）
   - （运用补完第 5 步：组件 `DepotDuties.rehome`、`sidingPools`、`unplaced`、`moves`，运用格式 7，测试 `DutyRehomeTest`；游戏 `Depot.rehomeDuties` 每 tick 调用）
   - （运用补完第 4 步：组件 `OperationNetwork.setTurnBackHold(…, count)`、`DutyGenerator.HOLD_COUNT_KEY`、`DutyPlanner.isHoldFree` 按位置数、`DutyCheck` 按位置数；留置位分区的识别在游戏 `Depot`，测试 `TurnBackHoldPlanTest`）
   - （网页右键行为统一：只改网页，组件不变）

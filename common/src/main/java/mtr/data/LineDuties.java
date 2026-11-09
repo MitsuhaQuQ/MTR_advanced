@@ -390,7 +390,8 @@ public final class LineDuties {
 			});
 			for (final Depot depot : depots) {
 				anyStays |= depot.cycleRoutes;
-				sidings.stream().filter(siding -> siding.isTransportMode(depot.transportMode) && depot.inArea(siding.getMidPos().getX(), siding.getMidPos().getZ())).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> {
+				// The depot's own sidings, as the game gives them out: by the heights too, for depots one above another
+				sidings.stream().filter(siding -> siding.isTransportMode(depot.transportMode) && isOwnSiding(dataCache, depot, siding)).sorted(Comparator.comparing((Siding siding) -> siding.name).thenComparingLong(siding -> siding.id)).forEach(siding -> {
 					final Set<String> serviceTypes = depot.getServiceTypes(siding.getTrainId());
 					// Sidings given only some of the routes are planned apart, with those routes
 					final Group group = groupsByTypes.computeIfAbsent(Depot.getSidingGroupKey(serviceTypes, siding), key -> new Group(serviceTypes, siding.getRouteIds()));
@@ -1050,6 +1051,15 @@ public final class LineDuties {
 	/**
 	 * @return a short digest of a key, for keeping in saves
 	 */
+	/**
+	 * @return whether the siding is the depot's: as the game gives sidings out, by the heights too where depots are one
+	 * above another; one not given out yet, as in a copy of the data, if the depot's area takes it in across
+	 */
+	private static boolean isOwnSiding(DataCache dataCache, Depot depot, Siding siding) {
+		final Depot given = dataCache.sidingIdToDepot.get(siding.id);
+		return given == null ? depot.inArea(siding.getMidPos().getX(), siding.getMidPos().getZ()) : given == depot;
+	}
+
 	static String digest(String key) {
 		try {
 			final byte[] hash = java.security.MessageDigest.getInstance("SHA-256").digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));

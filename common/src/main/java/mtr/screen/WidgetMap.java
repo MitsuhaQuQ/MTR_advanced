@@ -61,6 +61,26 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	private final Consumer<Long> onClickAddPlatformToRoute;
 	private final Consumer<BlockPos> onClickAddKeyNodeToRoute;
 	private String areaNotice = "";
+	/**
+	 * A second line under the notice, for the area being edited (station area editing, 2026-11-09).
+	 */
+	private String areaInfo = "";
+	/**
+	 * Whether the area being edited can't be drawn again, as a station rectangle with heights (3D) isn't.
+	 */
+	private java.util.function.BooleanSupplier areaLocked = () -> false;
+	/**
+	 * Told where on the map the right button was pressed while an area is edited, to take a rectangle away.
+	 */
+	private BiConsumer<Double, Double> onRightClickArea = (worldX, worldZ) -> {
+	};
+	/**
+	 * A rectangle being drawn with the left button, and whether the mouse has moved since; the one shown before, put back
+	 * when the button is let go without drawing.
+	 */
+	private boolean drawingArea;
+	private boolean drewArea;
+	private Tuple<Integer, Integer> drawBefore1, drawBefore2;
 	private Supplier<Collection<Route>> routesToDraw = Collections::emptyList;
 	private BooleanSupplier canPickRoute = () -> false;
 	private Consumer<Route> onPickRoute = route -> {
@@ -181,6 +201,10 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 					if (AreaBase.nonNullCorners(station)) {
 						for (final int[] rectangle : station.getRectangles()) {
 							drawRectangleFromWorldCoords(buffer, new Tuple<>(rectangle[0], rectangle[1]), new Tuple<>(rectangle[2], rectangle[3]), ARGB_BLACK_TRANSLUCENT + station.color);
+							// A rectangle taking in only some heights (3D) outlined, as it can only be taken away here
+							if (station.getHeight(rectangle) != null) {
+								drawOutlineFromWorldCoords(buffer, rectangle, ARGB_KEY_NODE);
+							}
 							if (station.id == selectedStationId || hoveredStations.contains(station)) {
 								drawRectangleFromWorldCoords(buffer, new Tuple<>(rectangle[0], rectangle[1]), new Tuple<>(rectangle[2], rectangle[3]), ARGB_AREA_HIGHLIGHT);
 							}
@@ -193,6 +217,9 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 				for (final Depot depot : ClientData.DEPOTS) {
 					if (depot.isTransportMode(transportMode) && AreaBase.nonNullCorners(depot)) {
 						drawRectangleFromWorldCoords(buffer, depot.corner1, depot.corner2, ARGB_BLACK_TRANSLUCENT + depot.color);
+						if (depot.getHeight(null) != null) {
+							drawOutlineFromWorldCoords(buffer, new int[]{depot.corner1.getA(), depot.corner1.getB(), depot.corner2.getA(), depot.corner2.getB()}, ARGB_KEY_NODE);
+						}
 						if (depot.id == selectedDepotId || hoveredDepots.contains(depot)) {
 							drawRectangleFromWorldCoords(buffer, depot.corner1, depot.corner2, ARGB_AREA_HIGHLIGHT);
 						}
@@ -244,6 +271,9 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		if (mapState == MapState.EDITING_AREA) {
 			if (!areaNotice.isEmpty()) {
 				GuiCompat.drawString(matrices, textRenderer, areaNotice, x + TEXT_PADDING, y + TEXT_PADDING + SQUARE_SIZE, ARGB_KEY_NODE);
+			}
+			if (!areaInfo.isEmpty()) {
+				GuiCompat.drawString(matrices, textRenderer, areaInfo, x + TEXT_PADDING, y + TEXT_PADDING + SQUARE_SIZE * (areaNotice.isEmpty() ? 1 : 2), ARGB_KEY_NODE);
 			}
 		}
 
@@ -297,6 +327,36 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			GuiCompat.drawString(matrices, textRenderer, names, textX, mouseY - TEXT_HEIGHT - TEXT_PADDING, ARGB_WHITE);
 		}
 
+		// Which rectangle of each station is under the mouse, and whether it takes in some heights only (3D) or every one
+		if (showStations && isMouseOver(mouseX, mouseY)) {
+			int line = 0;
+			for (final Station station : getStationsAt(mouseWorldPos)) {
+				final int index = station.rectangleAt(mouseWorldPos.getA(), mouseWorldPos.getB());
+				final int[] rectangle = station.getRectangle(index);
+				if (rectangle == null || line >= 4) {
+					continue;
+				}
+				final int[] heights = station.getHeight(rectangle);
+				final String text = heights == null ? Text.translatable("gui.mtr.station_area_hover_2d", IGui.formatStationName(station.name), index + 1).getString() : Text.translatable("gui.mtr.station_area_hover_3d", IGui.formatStationName(station.name), index + 1, heights[0], heights[1]).getString();
+				final int textX = Math.min(mouseX + TEXT_PADDING * 2, x + width - textRenderer.width(text) - TEXT_PADDING);
+				GuiCompat.drawString(matrices, textRenderer, text, textX, mouseY + TEXT_PADDING * 2 + line * (TEXT_HEIGHT + TEXT_PADDING), heights == null ? ARGB_WHITE : ARGB_KEY_NODE);
+				line++;
+			}
+		} else if (isMouseOver(mouseX, mouseY)) {
+			// The same for depots, whose areas take in some heights only (3D) where set with the station area tool
+			int line = 0;
+			for (final Depot depot : getDepotsAt(mouseWorldPos)) {
+				if (line >= 4) {
+					break;
+				}
+				final int[] heights = depot.getHeight(null);
+				final String text = heights == null ? Text.translatable("gui.mtr.depot_area_hover_2d", depot.name).getString() : Text.translatable("gui.mtr.depot_area_hover_3d", depot.name, heights[0], heights[1]).getString();
+				final int textX = Math.min(mouseX + TEXT_PADDING * 2, x + width - textRenderer.width(text) - TEXT_PADDING);
+				GuiCompat.drawString(matrices, textRenderer, text, textX, mouseY + TEXT_PADDING * 2 + line * (TEXT_HEIGHT + TEXT_PADDING), heights == null ? ARGB_WHITE : ARGB_KEY_NODE);
+				line++;
+			}
+		}
+
 		final String mousePosText = String.format("(%s, %s)", RailwayData.round(mouseWorldPos.getA(), 1), RailwayData.round(mouseWorldPos.getB(), 1));
 		final int mousePosX = x + width - TEXT_PADDING - textRenderer.width(mousePosText);
 		// Down in the corner below when the hint along the top would run into it
@@ -306,7 +366,8 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 
 	@Override
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-		if (mapState == MapState.EDITING_AREA) {
+		if (mapState == MapState.EDITING_AREA && drawingArea && drawArea1 != null) {
+			drewArea = true;
 			drawArea2 = coordsToWorldPos((int) Math.round(mouseX - x), (int) Math.round(mouseY - y));
 			if (drawArea1.getA().equals(drawArea2.getA())) {
 				drawArea2 = new Tuple<>(drawArea2.getA() + 1, drawArea2.getB());
@@ -325,7 +386,16 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 	@Override
 	public boolean mouseReleased(double mouseX, double mouseY, int button) {
 		if (mapState == MapState.EDITING_AREA) {
-			onDrawCornersMouseRelease.run();
+			if (drawingArea) {
+				drawingArea = false;
+				if (drewArea) {
+					onDrawCornersMouseRelease.run();
+				} else {
+					// Pressed and let go without drawing: nothing changes, and the rectangle shows again
+					drawArea1 = drawBefore1;
+					drawArea2 = drawBefore2;
+				}
+			}
 		} else if (isMouseOver(mouseX, mouseY) && Math.hypot(mouseX - pressMouseX, mouseY - pressMouseY) <= CLICK_MAX_MOVE_PIXELS) {
 			if (canPickRoute.getAsBoolean()) {
 				pickRoute(coordsToWorldPos(mouseX - x, mouseY - y));
@@ -345,8 +415,18 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 			pressMouseY = mouseY;
 			if (ClientData.hasPermission()) {
 				if (mapState == MapState.EDITING_AREA) {
-					drawArea1 = coordsToWorldPos((int) (mouseX - x), (int) (mouseY - y));
-					drawArea2 = null;
+					// The right button takes a rectangle away; the left draws one, unless it is locked (3D), when it moves the map
+					if (button == 1) {
+						final Tuple<Double, Double> mouseWorldPos = coordsToWorldPos(mouseX - x, mouseY - y);
+						onRightClickArea.accept(mouseWorldPos.getA(), mouseWorldPos.getB());
+					} else if (button == 0 && !areaLocked.getAsBoolean()) {
+						drawBefore1 = drawArea1;
+						drawBefore2 = drawArea2;
+						drawArea1 = coordsToWorldPos((int) (mouseX - x), (int) (mouseY - y));
+						drawArea2 = null;
+						drawingArea = true;
+						drewArea = false;
+					}
 				} else if (mapState == MapState.EDITING_ROUTE) {
 					final Tuple<Double, Double> mouseWorldPos = coordsToWorldPos(mouseX - x, mouseY - y);
 					final boolean[] clickedPlatform = {false};
@@ -441,6 +521,15 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 
 	public void setAreaNotice(String areaNotice) {
 		this.areaNotice = areaNotice;
+	}
+
+	public void setAreaInfo(String areaInfo) {
+		this.areaInfo = areaInfo;
+	}
+
+	public void setAreaEditing(java.util.function.BooleanSupplier areaLocked, BiConsumer<Double, Double> onRightClickArea) {
+		this.areaLocked = areaLocked;
+		this.onRightClickArea = onRightClickArea;
 	}
 
 	public void startEditingRoute() {
@@ -829,6 +918,17 @@ public class WidgetMap implements WidgetBase, SelectableMapper, GuiEventListener
 		if (x1 < width && y1 < height && x2 >= 0 && y2 >= 0) {
 			IDrawing.drawRectangle(buffer, x + Math.max(0, x1), y + y1, x + x2, y + y2, color);
 		}
+	}
+
+	private void drawOutlineFromWorldCoords(BufferBuilder buffer, int[] rectangle, int color) {
+		final double x1 = (Math.min(rectangle[0], rectangle[2]) - centerX) * scale + width / 2D;
+		final double z1 = (Math.min(rectangle[1], rectangle[3]) - centerY) * scale + height / 2D;
+		final double x2 = (Math.max(rectangle[0], rectangle[2]) - centerX) * scale + width / 2D;
+		final double z2 = (Math.max(rectangle[1], rectangle[3]) - centerY) * scale + height / 2D;
+		drawRectangle(buffer, x1, z1, x2, z1 + 1, color);
+		drawRectangle(buffer, x1, z2 - 1, x2, z2, color);
+		drawRectangle(buffer, x1, z1, x1 + 1, z2, color);
+		drawRectangle(buffer, x2 - 1, z1, x2, z2, color);
 	}
 
 	private boolean canDrawAreaText(AreaBase areaBase) {

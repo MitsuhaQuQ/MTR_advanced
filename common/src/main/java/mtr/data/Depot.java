@@ -302,6 +302,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_MEASURED_BUFFERS = "measured_buffers";
 	private static final String KEY_ADDED_BUFFERS = "added_buffers";
 	private static final String KEY_DEPOT_RULES = "depot_rules";
+	private static final String KEY_AREA_HEIGHTS = "area_heights";
 	/**
 	 * What the auto duties were planned from and what the plan found ({@link LineDuties.Plan#toBytes}), so they are kept
 	 * while they still hold (round 4, step 4).
@@ -399,6 +400,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		if (rulesValue != null && rulesValue.isBinaryValue()) {
 			rules.fromBytes(rulesValue.asBinaryValue().asByteArray());
 		}
+		final Value heightsValue = map.get(KEY_AREA_HEIGHTS);
+		if (heightsValue != null && heightsValue.isArrayValue() && heightsValue.asArrayValue().size() == 2) {
+			setAreaHeights(heightsValue.asArrayValue().get(0).asIntegerValue().asInt(), heightsValue.asArrayValue().get(1).asIntegerValue().asInt());
+		}
 		final Value autoPlanValue = map.get(KEY_AUTO_PLAN);
 		if (autoPlanValue != null && autoPlanValue.isBinaryValue()) {
 			autoPlanRecord = autoPlanValue.asBinaryValue().asByteArray();
@@ -473,6 +478,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		readBuffers(packet);
 		addedBuffers = readBufferList(packet);
 		rules.fromBytes(packet.readByteArray(1 << 20));
+		readAreaHeights(packet);
 	}
 
 	@Override
@@ -555,6 +561,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final byte[] rulesBytes = rules.toBytes();
 		messagePacker.packString(KEY_DEPOT_RULES).packBinaryHeader(rulesBytes.length);
 		messagePacker.writePayload(rulesBytes);
+		// The heights the area takes in, none for every height (2026-11-09)
+		messagePacker.packString(KEY_AREA_HEIGHTS).packArrayHeader(areaHeights == null ? 0 : 2);
+		if (areaHeights != null) {
+			messagePacker.packInt(areaHeights[0]).packInt(areaHeights[1]);
+		}
 		final List<Long> bufferSamples = bufferRecorder.toList();
 		messagePacker.packString(KEY_MEASURED_BUFFERS).packArrayHeader(bufferSamples.size());
 		for (final long value : bufferSamples) {
@@ -569,7 +580,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 27;
+		return super.messagePackLength() + 28;
 	}
 
 	/**
@@ -617,6 +628,60 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		writeBuffers(packet);
 		writeBufferList(packet, addedBuffers);
 		packet.writeByteArray(rules.toBytes());
+		writeAreaHeights(packet);
+	}
+
+	/**
+	 * The heights the depot's area takes in, {lowest, highest}, or null for every height, as before (2026-11-09): set with
+	 * the station area tool, so depots one above another each take in their own sidings.
+	 */
+	private int[] areaHeights;
+
+	@Override
+	public boolean inArea(int x, int y, int z) {
+		return inArea(x, z) && (areaHeights == null || y >= areaHeights[0] && y <= areaHeights[1]);
+	}
+
+	@Override
+	public int[] getHeight(int[] rectangle) {
+		return areaHeights == null ? null : areaHeights.clone();
+	}
+
+	public void setAreaHeights(int y1, int y2) {
+		areaHeights = new int[]{Math.min(y1, y2), Math.max(y1, y2)};
+	}
+
+	public void clearAreaHeights() {
+		areaHeights = null;
+	}
+
+	/**
+	 * Sends the heights the area takes in, as set with the station area tool.
+	 */
+	public void sendAreaHeights(Consumer<FriendlyByteBuf> sendPacket) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_AREA_HEIGHTS);
+		writeAreaHeights(packet);
+		sendPacket.accept(packet);
+		isDirty = true;
+	}
+
+	private void writeAreaHeights(FriendlyByteBuf packet) {
+		packet.writeBoolean(areaHeights != null);
+		if (areaHeights != null) {
+			packet.writeInt(areaHeights[0]);
+			packet.writeInt(areaHeights[1]);
+		}
+	}
+
+	private void readAreaHeights(FriendlyByteBuf packet) {
+		if (packet.isReadable() && packet.readBoolean()) {
+			setAreaHeights(packet.readInt(), packet.readInt());
+		} else {
+			areaHeights = null;
+		}
 	}
 
 	private void writeBuffers(FriendlyByteBuf packet) {
@@ -817,6 +882,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			readHeadways(packet);
 		} else if (KEY_POOL_FLEETS.equals(key)) {
 			readPoolFleets(packet);
+		} else if (KEY_AREA_HEIGHTS.equals(key)) {
+			readAreaHeights(packet);
 		} else if (KEY_DEPOT_RULES.equals(key)) {
 			rules.fromBytes(packet.readByteArray(1 << 20));
 		} else if (KEY_MEASURED_BUFFERS.equals(key)) {
