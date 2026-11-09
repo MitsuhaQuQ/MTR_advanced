@@ -626,6 +626,32 @@ describe("the old code in the new page", () => {
     v.state.slot = null
     engine.pushDraft({ routes: {} })
   })
+  it("shows choosing on the map in its own panel", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { PickPanel } = await import("../src/views/PickPanels")
+    const { v } = engine.legacy
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    // A new line's stations, one leg with no way
+    v.picking = { stops: [{ name: "港湾", waypoints: [], pass: false }, { name: "码头街", waypoints: [], pass: false }, { name: "中央广场", waypoints: [], pass: false }], legs: [{ found: true, nodes: [1, 2, 3] }, { found: false, failure: "断了" }], activeLeg: -1, error: "" }
+    await act(async () => createRoot(host).render(createElement(PickPanel, { className: "" })))
+    const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent === text) as HTMLButtonElement
+    expect(host.textContent).toContain("走不通：断了")
+    expect(button("填线名和种别…").disabled).toBe(true)
+    await act(async () => { (host.querySelectorAll("button[aria-label='删掉这一站']")[2] as HTMLElement).click(); engine.flushLegacy() })
+    expect(v.picking.stops.map((s: any) => s.name)).toEqual(["港湾", "码头街"])
+    await act(async () => { v.picking = null; engine.flushLegacy() })
+    // A depot's way out, worked out
+    v.rulesEditing = { depot: "9001", value: { rules: [{ id: "1", lines: [], weekdays: 0, outEntrance: "0", backEntrance: "0", extraLead: 0, backSiding: "0", outPath: "0", backPath: "0", waitThreshold: -1 }], paths: [] } }
+    v.wayPick = { depot: "9001", siding: "8001", target: { rule: 0, out: true }, out: true, result: { found: true, millis: 120000, entrances: ["s1"] }, targets: [{ platform: "1000", name: "港湾", first: 21600000, last: 80000000, count: 3 }], platform: "1000", waypoints: [], error: "" }
+    await act(async () => { engine.flushLegacy() })
+    expect(host.textContent).toContain("选出口")
+    expect(host.textContent).toContain("出库用时")
+    await act(async () => { button("取消").click(); engine.flushLegacy() })
+    expect(v.wayPick).toBe(null)
+    expect(host.textContent).toBe("")
+  })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
     expect(() => media.setMediaShown(true)).not.toThrow()

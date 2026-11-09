@@ -16,6 +16,7 @@ export function DutyDetail() {
   useLegacy()
   const { fn, v } = legacy
   const data = v.data, state = v.state
+  if (!data || !state.slot) return null
   const depot = fn.depotById(state.slot.depot)
   const siding = depot && depot.sidings.find((o: any) => o.id === state.slot.siding)
   if (!siding) return null

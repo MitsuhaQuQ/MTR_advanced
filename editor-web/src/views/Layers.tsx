@@ -14,6 +14,7 @@ import { DutyBoard } from "./DutyBoard"
 import { RunningDiagram } from "./RunningDiagram"
 import { SummaryTable } from "./SummaryTable"
 import { DispatchConsole } from "./DispatchConsole"
+import { PickPanel } from "./PickPanels"
 import { OwnershipPanel } from "./OwnershipPanel"
 import { NetworkSchematic, type TrainMark } from "./NetworkSchematic"
 
@@ -55,9 +56,15 @@ export function LayerWork({ layer }: { layer: LayerId }) {
   )
 }
 
-function NetworkWork({ owners }: { owners: boolean }) {
+/** The real map; with the picking panel over it unless the floating window has it beside the map */
+function NetworkWork({ owners, panel = true }: { owners: boolean; panel?: boolean }) {
   const redraw = useCallback(() => legacy.fn.drawNetwork(), [])
-  const map = <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={redraw} />
+  const map = (
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={redraw} />
+      {panel && <PickPanel className="scroll-thin absolute right-3 top-24 z-10 max-h-[70%] w-[280px] overflow-y-auto rounded-lg border border-grid bg-panel" />}
+    </div>
+  )
   if (!owners) return map
   // The ownership layer: the logical map or the real one, with its brushes and the operating lines' logical lines beside
   return <OwnersWork map={map} />
@@ -115,7 +122,10 @@ function FloatingMap() {
         <b className="min-w-0 flex-1 truncate text-[13px]">{v.wayPick ? tr("在图上点出入库的轨道") : tr("在图上选站")}</b>
         <button className="btn h-6 px-2 text-[12px]" onPointerDown={e => e.stopPropagation()} onClick={cancel}>{tr("取消")}</button>
       </div>
-      <NetworkWork owners={false} />
+      <div className="flex min-h-0 flex-1">
+        <NetworkWork owners={false} panel={false} />
+        <PickPanel className="scroll-thin w-[280px] shrink-0 overflow-y-auto border-l border-grid bg-panel" />
+      </div>
     </div>
   )
 }

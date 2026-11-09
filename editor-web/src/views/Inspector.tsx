@@ -23,8 +23,6 @@ export function Inspector({ className }: { className: string }) {
   )
 }
 
-/** The old code's HTML for a panel, its data attributes kept for its handlers. */
-const Raw = ({ html }: { html: string }) => (html ? <div className="inspector-raw flex flex-col gap-3" dangerouslySetInnerHTML={{ __html: html }} /> : null)
 
 const Section = ({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) => (
   <section className="flex flex-col gap-2">
@@ -48,9 +46,9 @@ function Content() {
   useEffect(() => {
     const netPanel = legacyElement("net-waypick")
     if (!netPanel) return
-    const show = Boolean(v.wayPick && data && state.view === "network")
-    netPanel.hidden = !show
-    netPanel.innerHTML = show ? fn.wayPickPanel() : ""
+    // The way being chosen shows in the new page's own panel beside the map (views/PickPanels.tsx)
+    netPanel.hidden = true
+    netPanel.innerHTML = ""
   })
   if (!data) return null
   const s = state.selected ? fn.findService(state.selected) : null
@@ -58,8 +56,6 @@ function Content() {
   const line = fn.currentLine()
   return (
     <>
-      {v.picking && <Raw html={fn.pickingPanel()} />}
-      {v.wayPick && <Raw html={fn.wayPickPanel()} />}
       {state.slot && <DutyDetail />}
       {s && <Selected s={s} />}
       {v.sim.on && <SimProblems line={line} />}
