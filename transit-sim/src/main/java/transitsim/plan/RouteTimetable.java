@@ -116,8 +116,13 @@ public class RouteTimetable {
 	 */
 	public static final int MAX_TRIP_LINKS = 7;
 
+	/**
+	 * @return whether the route runs by its timetable: whenever it has services (user 2026-11-09: a route with services
+	 * planned never runs by nothing at all). {@link #enabled} is still saved and sent, but no longer switches a timetable
+	 * off; a line is stopped for a while by suspending its services.
+	 */
 	public boolean isActive() {
-		return enabled && getTables().stream().anyMatch(table -> !table.services.isEmpty());
+		return getTables().stream().anyMatch(table -> !table.services.isEmpty());
 	}
 
 	/**

@@ -268,7 +268,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.8.1. It goes up whenever packets or saved data change. Jars with ANTE are about 136 MB.
+Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.62.3. It goes up whenever packets or saved data change.
 
 The simulation component in `transit-sim` is a plain Java project without Minecraft (Java 8 by default, raised when needed), built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 
@@ -276,7 +276,9 @@ Trains on rails run by the project's own run layer (`transitsim.run`) instead of
 
 The end-to-end check runs the whole chain without the game: `transitsim.sim.WholeDayTest` (a day of a line run by duties with every way of handling delays, `-Dbenchmark=true`), common `GameChainTest` (the game finds a depot's duty paths, the component runs them) and `SimulateDay --check` on a saved world's database, all checked for trains appearing or vanishing away from sidings, jumping, overlapping or being stuck.
 
-Each build also makes a `-server.jar` of about 20 MB for dedicated servers. It is the same build without fonts, sounds, textures, models and the script engine of ANTE, which only clients use, so it always matches the full jar of the same build. Clients still need the full jar.
+Since 2026-11-09 the mod comes as two jars for clients: the logic, `MTR3-MTM-<version>-<loader>-<Minecraft version>.jar` (about 60 MB: the code, its libraries, language files, the web editor and the game data), and the assets, `MTR3-MTM-Assets-<assets version>-<loader>-<Minecraft version>.jar` (about 77 MB: fonts, sounds, textures, models, ANTE's scripts), shown as MTM_Assets. Clients need both; the assets change seldom and have a version of their own, so a new version of the logic is only the first jar. A client without the assets says so when it joins a world.
+
+Each build also makes a `-server.jar` of about 22 MB for dedicated servers. It is the same build without the assets and the script engine of ANTE, which only clients use, so it always matches the logic jar of the same build. Servers don't need the assets jar (Fabric leaves it out there; Forge loads it harmlessly).
 
 ## License and credits
 

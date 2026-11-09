@@ -413,7 +413,7 @@ public final class EditorData {
 		routeObject.addProperty("color", route.getOwnColor());
 		routeObject.addProperty("lineColor", route.color);
 		routeObject.addProperty("circular", route.circularState != Route.CircularState.NONE);
-		routeObject.addProperty("timetable", route.timetable.enabled);
+		routeObject.addProperty("timetable", route.timetable.isActive());
 		routeObject.addProperty("entryPlatform", String.valueOf(route.timetable.entryPlatformId));
 		routeObject.addProperty("editorManaged", route.editorManaged);
 		routeObject.addProperty("connectingLine", route.connectingLine);

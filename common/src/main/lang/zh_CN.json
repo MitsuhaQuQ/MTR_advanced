@@ -383,5 +383,13 @@
   "gui.mtr.station_area_tool_depot": "车厂：%s",
   "gui.mtr.depot_area_hover_2d": "%s：2D（所有高度）",
   "gui.mtr.depot_area_hover_3d": "%s：3D（高度 %s 到 %s）",
-  "gui.mtr.depot_area_locked": "这个车厂范围是 3D（高度 %s 到 %s），这里不能改；要改请用车站范围工具重新框选"
+  "gui.mtr.depot_area_locked": "这个车厂范围是 3D（高度 %s 到 %s），这里不能改；要改请用车站范围工具重新框选",
+  "gui.mtr.assets_missing": "MTR-MTM_Enhanced：缺少资源模组 MTM_Assets，MTR 的贴图、模型和声音都显示不出来。请把 MTR3-MTM-Assets 放进客户端的 mods 文件夹。",
+  "gui.mtr.editor_server_rejected_self": "草稿做好以后，你在游戏里又改过其中的线路，为了不覆盖游戏里的修改，服务端没有写入，草稿保留。请逐条选择：以最新版本为基础覆盖，或放弃草稿用游戏里的",
+  "gui.mtr.clockwise_next": "Clockwise loop, next %s",
+  "gui.mtr.clockwise_next_cjk": "顺时针环线 下一站%s",
+  "gui.mtr.anticlockwise_next": "Anticlockwise loop, next %s",
+  "gui.mtr.anticlockwise_next_cjk": "逆时针环线 下一站%s",
+  "gui.mtr.loop_next": "Loop, next %s",
+  "gui.mtr.loop_next_cjk": "环线 下一站%s"
 }

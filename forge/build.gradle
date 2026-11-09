@@ -174,6 +174,41 @@ task serverJar(type: Zip) {
 
 build.dependsOn serverJar
 
+// The logic and the assets as two mods (2026-11-09): the logic jar is the build without the assets, which only clients use
+// and which change seldom; MTM_Assets is the assets alone, with its own version
+task assetsJar(type: Zip) {
+	dependsOn remapJar
+	inputs.property "mtm_assets_version", rootProject.mtm_assets_version
+	from(zipTree(remapJar.archiveFile)) {
+		include rootProject.assets_jar_includes
+	}
+	from(zipTree(remapJar.archiveFile)) {
+		include "mtm/assets/**"
+	}
+	from("../resources/forge/mtm_assets") {
+		filesMatching("META-INF/mods.toml") {
+			expand "version": rootProject.mtm_assets_version
+		}
+	}
+	archiveFileName = remapJar.archiveFileName.map { it.replace(".jar", "-assets.jar") }
+	destinationDirectory = file("build/libs")
+	zip64 true
+}
+
+task logicJar(type: Zip) {
+	dependsOn remapJar
+	from(zipTree(remapJar.archiveFile)) {
+		exclude rootProject.assets_jar_includes
+		// The assets mod's own class goes in its jar
+		exclude "mtm/assets/**"
+	}
+	archiveFileName = remapJar.archiveFileName.map { it.replace(".jar", "-logic.jar") }
+	destinationDirectory = file("build/libs")
+	zip64 true
+}
+
+build.dependsOn assetsJar, logicJar
+
 task moveForgeBuilds() {
 	doLast {
 		delete fileTree("../build/release").matching {
@@ -187,12 +222,16 @@ task moveForgeBuilds() {
 		}
 		copy {
 			from "build/libs"
-			include "*${rootProject.mod_version}.jar", "*${rootProject.mod_version}-server.jar"
-			into "../build/release"
 			if (rootProject.variation == "normal") {
-				// MTR3-MTM-<this fork's version>-forge-<Minecraft version>.jar
-				rename { fileName -> "MTR3-MTM-${rootProject.mtm_version}-forge-${rootProject.minecraft_version}" + (fileName.endsWith("-server.jar") ? "-server.jar" : ".jar") }
+				// MTR3-MTM-<this fork's version>-forge-<Minecraft version>.jar is the logic without the assets, and
+				// MTR3-MTM-Assets-<assets version>-forge-<Minecraft version>.jar the assets alone (2026-11-09)
+				include "*${rootProject.mod_version}-logic.jar", "*${rootProject.mod_version}-server.jar", "*${rootProject.mod_version}-assets.jar"
+				rename { fileName -> fileName.endsWith("-assets.jar") ? "MTR3-MTM-Assets-${rootProject.mtm_assets_version}-forge-${rootProject.minecraft_version}.jar" : "MTR3-MTM-${rootProject.mtm_version}-forge-${rootProject.minecraft_version}" + (fileName.endsWith("-server.jar") ? "-server.jar" : ".jar") }
 			} else {
+				include "*${rootProject.mod_version}.jar", "*${rootProject.mod_version}-server.jar"
+			}
+			into "../build/release"
+			if (rootProject.variation != "normal") {
 				rename "(.+)", "${rootProject.variation_header}-\$1"
 			}
 		}

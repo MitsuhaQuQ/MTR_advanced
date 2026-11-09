@@ -288,5 +288,13 @@
   "gui.mtr.station_area_tool_depot": "Depot: %s",
   "gui.mtr.depot_area_hover_2d": "%s: 2D (every height)",
   "gui.mtr.depot_area_hover_3d": "%s: 3D (heights %s to %s)",
-  "gui.mtr.depot_area_locked": "This depot area is 3D (heights %s to %s) and can not be changed here; box it again with the Station Area Tool to change it"
+  "gui.mtr.depot_area_locked": "This depot area is 3D (heights %s to %s) and can not be changed here; box it again with the Station Area Tool to change it",
+  "gui.mtr.assets_missing": "MTR-MTM_Enhanced: the assets mod MTM_Assets is missing, so textures, models and sounds of MTR won't show. Put MTR3-MTM-Assets in the mods folder of this client.",
+  "gui.mtr.editor_server_rejected_self": "You changed some of these routes in the game after the draft was made, so the server didn't write them over and the draft is kept. Choose for each: build on the latest version and write over that change, or drop the draft for the game's version",
+  "gui.mtr.clockwise_next": "Clockwise loop, next %s",
+  "gui.mtr.clockwise_next_cjk": "順時針環線 下一站%s",
+  "gui.mtr.anticlockwise_next": "Anticlockwise loop, next %s",
+  "gui.mtr.anticlockwise_next_cjk": "逆時針環線 下一站%s",
+  "gui.mtr.loop_next": "Loop, next %s",
+  "gui.mtr.loop_next_cjk": "環線 下一站%s"
 }

@@ -37,11 +37,28 @@ class DutyRehomeTest {
 	}
 
 	@Test
-	void aSidingChangedToAnotherVehicleHandsItsSlotsOnAndThoseWithNoSidingWait() {
+	void aSidingGivenAnotherVehicleKeepsItsSlotsWhereNoOtherHasTheOldOne() {
+		// The depot's only DMU siding given EMUs: its vehicle is what changed, so its duty stays with it
 		final DepotDuties duties = duties(1, 2, 2, 1);
 		duties.rehome(pools(1, EMU, 2, DMU));
-		// Siding 2 now holds EMUs too; the DMU pool has no siding left, so its slot waits unplaced and isn't run
-		assertTrue(duties.rehome(pools(1, EMU, 2, EMU)));
+		assertFalse(duties.rehome(pools(1, EMU, 2, EMU)));
+		assertEquals(1, duties.getSlots(2).size());
+		assertEquals(EMU, duties.sidingPools.get(2L));
+		assertTrue(duties.unplaced.isEmpty());
+		// With another DMU siding left, the duty goes on to it, as the DMUs still run it
+		final DepotDuties two = duties(1, 1, 2, 1, 3, 0);
+		two.rehome(pools(1, EMU, 2, DMU, 3, DMU));
+		assertTrue(two.rehome(pools(1, EMU, 2, EMU, 3, DMU)));
+		assertEquals(1, two.getSlots(3).size());
+		assertFalse(two.sidings.containsKey(2L));
+	}
+
+	@Test
+	void aGoneSidingsSlotsWithNoSidingOfTheirVehicleWaitUnplaced() {
+		final DepotDuties duties = duties(1, 2, 2, 1);
+		duties.rehome(pools(1, EMU, 2, DMU));
+		// The DMU siding is taken away and the depot has no other: its slot waits unplaced and isn't run
+		assertTrue(duties.rehome(pools(1, EMU)));
 		assertEquals(2, duties.getSlots(1).size());
 		assertFalse(duties.sidings.containsKey(2L));
 		assertEquals(1, duties.unplaced.get(DMU).size());
@@ -56,7 +73,7 @@ class DutyRehomeTest {
 		assertEquals(1, read.moves.size());
 
 		// A DMU siding again: the slot goes back to it
-		assertTrue(read.rehome(pools(1, EMU, 2, EMU, 5, DMU)));
+		assertTrue(read.rehome(pools(1, EMU, 5, DMU)));
 		assertTrue(read.unplaced.isEmpty());
 		assertEquals(1, read.getSlots(5).size());
 		assertEquals(DMU, read.sidingPools.get(5L));

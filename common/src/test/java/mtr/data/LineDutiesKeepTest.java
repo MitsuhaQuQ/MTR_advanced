@@ -155,6 +155,38 @@ class LineDutiesKeepTest {
 	}
 
 	@Test
+	void whichWaysTheTrackGivesIsKeptAndChangesWithTheWaysNotTheirTimes() {
+		// Changes of platform and ways out and back as measured; the times alone don't change the key (2026-11-09)
+		final Map<Long, Map<Long, Long>> turns = new TreeMap<>();
+		turns.computeIfAbsent(3540L, key -> new TreeMap<>()).put(3540L, 60000L);
+		final Map<Long, DepotLegs> legs = new TreeMap<>();
+		legs.put(100L, new DepotLegs(0, Collections.singletonMap(2L, 30000L), Collections.singletonMap(1L, 40000L)));
+		final String key = LineDuties.Unit.waysKey(turns, legs);
+		assertFalse(key.isEmpty());
+		turns.get(3540L).put(3540L, 90000L);
+		assertEquals(key, LineDuties.Unit.waysKey(turns, legs), "only slower");
+		// A turn from one platform of the terminus to the other, as a crossover laid there
+		turns.get(3540L).put(-3432L, 52000L);
+		assertNotEquals(key, LineDuties.Unit.waysKey(turns, legs));
+		// Not measured just now: not known
+		assertEquals("", LineDuties.Unit.waysKey(turns, null));
+
+		// Kept in the record; a record of version 6 reads with none, and isn't planned again for it
+		final DataCache dataCache = dataCache(route(10, 1, 2), route(11, 2, 1));
+		final LineDuties.Plan plan = unit(dataCache).plan(route -> null, 0);
+		plan.waysKey = key;
+		assertEquals(key, LineDuties.Plan.fromBytes(plan.toBytes(), plan.lineNames).waysKey);
+		plan.waysKey = "";
+		final byte[] six = plan.toBytes();
+		final byte[] old = Arrays.copyOf(six, six.length - 1);
+		old[0] = 6;
+		final LineDuties.Plan oldRead = LineDuties.Plan.fromBytes(old, plan.lineNames);
+		assertNotNull(oldRead);
+		assertEquals("", oldRead.waysKey);
+		assertFalse(oldRead.beforeItems);
+	}
+
+	@Test
 	void withNoRecordTheDutiesArePlannedAgain() {
 		final DataCache dataCache = dataCache(route(10, 1, 2), route(11, 2, 1));
 		final LineDuties.Unit unit = unit(dataCache);

@@ -33,7 +33,7 @@ class LineDutiesUnitsTest {
 	void unitsMadeAtOnceAreTheUnitsMadeDepotByDepot() {
 		// Line A run by depots 1 and 2, line B by depot 3, line C with no timetable by depot 4
 		final Route a1 = route(10, "A", 1, 2), a2 = route(11, "A", 2, 1), b = route(20, "B", 3, 4), c = route(30, "C", 5, 6);
-		c.timetable.enabled = false;
+		c.timetable.services.clear();
 		final List<Depot> depots = Arrays.asList(depot(1, 10), depot(2, 11), depot(3, 20), depot(4, 30));
 		final List<Route> routes = Arrays.asList(a1, a2, b, c);
 		final DataCache dataCache = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(routes), new HashSet<>(depots), new HashSet<>());

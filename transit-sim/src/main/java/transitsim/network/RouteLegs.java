@@ -129,6 +129,53 @@ public final class RouteLegs {
 		return sections;
 	}
 
+	/**
+	 * The key nodes of a way chosen by clicking tracks in the editor (2026-11-09), as the search takes them: each rail
+	 * clicked, two nodes in the order it is run, becomes running its whole track section that way, as the node the section is
+	 * left at; a rail of the first or last stop's section is left out, as the way starts or ends there anyway; a node that is
+	 * no rail with the next, as of paths chosen node by node before, stays as it is. A section run twice in a row counts once.
+	 *
+	 * @param nodes        the nodes as chosen
+	 * @param firstSection the section of the first stop, such as the siding a way out leaves
+	 * @param lastSection  the section of the last stop
+	 */
+	public static long[] railWaypoints(long[] nodes, TrackSections.Snapshot snapshot, long firstSection, long lastSection) {
+		final List<Long> waypoints = new ArrayList<>();
+		for (int i = 0; i < nodes.length; i++) {
+			final TrackSections.Section section = i + 1 < nodes.length ? snapshot.getSectionOf(nodes[i], nodes[i + 1]) : null;
+			final long waypoint;
+			if (section == null) {
+				waypoint = nodes[i];
+			} else {
+				i++;
+				if (section.hash == firstSection || section.hash == lastSection) {
+					continue;
+				}
+				// Run along the section where the first node of the rail comes before the second in it
+				final long[] sectionNodes = section.getNodes();
+				int first = -1;
+				int second = -1;
+				for (int k = 0; k < sectionNodes.length; k++) {
+					if (sectionNodes[k] == nodes[i - 1]) {
+						first = k;
+					}
+					if (sectionNodes[k] == nodes[i]) {
+						second = k;
+					}
+				}
+				waypoint = first <= second ? section.getEnd() : section.getStart();
+			}
+			if (waypoints.isEmpty() || waypoints.get(waypoints.size() - 1) != waypoint) {
+				waypoints.add(waypoint);
+			}
+		}
+		final long[] result = new long[waypoints.size()];
+		for (int i = 0; i < result.length; i++) {
+			result[i] = waypoints.get(i);
+		}
+		return result;
+	}
+
 	public static Plan plan(List<Long> stopSections, List<long[]> waypoints, String line, LegSource legSource) {
 		final int stopCount = stopSections.size();
 		final List<LegRouter.Leg> consulted = new ArrayList<>();

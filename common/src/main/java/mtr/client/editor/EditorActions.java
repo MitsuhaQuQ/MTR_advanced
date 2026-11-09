@@ -325,7 +325,10 @@ public final class EditorActions implements IPacket {
 					return result;
 				}
 				final String[] first = rejected.values().iterator().next();
-				general = TranslatedMessage.get(Boolean.parseBoolean(first[0]) ? "gui.mtr.editor_server_deleted" : "gui.mtr.editor_server_rejected", first[1].isEmpty() ? "?" : first[1]);
+				// Changed in the game by the player themself, as on the dashboard after the draft was made: said as that (2026-11-09)
+				final net.minecraft.client.player.LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
+				final boolean self = player != null && player.getGameProfile().getName().equals(first[1]);
+				general = Boolean.parseBoolean(first[0]) ? TranslatedMessage.get("gui.mtr.editor_server_deleted", first[1].isEmpty() ? "?" : first[1]) : self ? TranslatedMessage.get("gui.mtr.editor_server_rejected_self") : TranslatedMessage.get("gui.mtr.editor_server_rejected", first[1].isEmpty() ? "?" : first[1]);
 			} catch (Exception e) {
 				rejected = null;
 				general = TranslatedMessage.get("gui.mtr.editor_no_answer");
@@ -836,7 +839,8 @@ public final class EditorActions implements IPacket {
 		while (route.timetable.getTableCount() < tables.size()) {
 			route.addTable(0);
 		}
-		route.timetable.enabled = timetable.get("enabled").getAsBoolean();
+		// A timetable with services runs whatever this says (2026-11-09); saved as on, so older readers run it too
+		route.timetable.enabled = true;
 		route.timetable.entryPlatformId = parseId(getString(timetable, "entryPlatform"));
 
 		for (int i = 0; i < tables.size(); i++) {

@@ -56,7 +56,8 @@ public final class DepotDuties {
 
 	/**
 	 * Hands each siding's slots on to its pool where the siding is gone or now in another pool (运用补完 step 5): to the
-	 * pool's siding with the fewest slots, or unplaced where the pool has none left; and puts unplaced slots back once a
+	 * pool's siding with the fewest slots, or unplaced where the pool has none left; a siding given another vehicle with no
+	 * other siding of the one it had keeps them, as its vehicle was what changed; and puts unplaced slots back once a
 	 * siding of their pool is there. Sidings whose pool was never recorded, as in data saved before, are taken as they are.
 	 *
 	 * @param livePools each siding of the depot now and its pool
@@ -69,6 +70,12 @@ public final class DepotDuties {
 			final String livePool = livePools.get(sidingId);
 			final String recorded = sidingPools.get(sidingId);
 			if (livePool != null && (recorded == null || recorded.equals(livePool))) {
+				continue;
+			}
+			// Given another vehicle, with no other siding of the vehicle it had in the depot: the vehicle of this siding was
+			// changed, and its duties go with it (user 2026-11-09, as a depot's only siding was given another vehicle)
+			if (livePool != null && findSiding(recorded, livePools) == null) {
+				sidingPools.put(sidingId, livePool);
 				continue;
 			}
 			// Gone with no pool recorded: unplaced under no pool, so they are not lost

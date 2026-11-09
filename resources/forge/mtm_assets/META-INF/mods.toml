@@ -1,0 +1,19 @@
+modLoader = "javafml"
+loaderVersion = "[36,)"
+license = "MIT"
+
+[[mods]]
+modId = "mtm_assets"
+version = "${version}"
+displayName = "MTM_Assets"
+authors = "Mitsuha_QuQ"
+description = "The fonts, sounds, textures and models of MTR-MTM_Enhanced, apart from its logic so a new version of the logic is a small jar. Needed on clients only."
+logoFile = "mtm_assets_icon.png"
+displayTest = "IGNORE_ALL_VERSION"
+
+[[dependencies.mtm_assets]]
+modId = "mtr"
+mandatory = true
+versionRange = "[0,)"
+ordering = "AFTER"
+side = "CLIENT"

@@ -589,7 +589,8 @@ public final class RoutePaths {
 		final RouteLegs.Plan plan;
 		if (wayRule.waypoints.length > 0) {
 			// Through the path's nodes in order
-			final List<long[]> waypoints = Arrays.asList(wayRule.waypoints, new long[0]);
+			// Rails clicked in the editor run their whole sections (2026-11-09)
+			final List<long[]> waypoints = Arrays.asList(RouteLegs.railWaypoints(wayRule.waypoints, legs.snapshot, sections.get(0).hash, sections.get(1).hash), new long[0]);
 			plan = RouteLegs.plan(Arrays.asList(sections.get(0).hash, sections.get(1).hash), waypoints, null, source);
 		} else if (nearby.isEmpty()) {
 			plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, source);

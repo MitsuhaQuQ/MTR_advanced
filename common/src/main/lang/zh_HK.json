@@ -384,5 +384,13 @@
   "gui.mtr.station_area_tool_depot": "車廠：%s",
   "gui.mtr.depot_area_hover_2d": "%s：2D（所有高度）",
   "gui.mtr.depot_area_hover_3d": "%s：3D（高度 %s 到 %s）",
-  "gui.mtr.depot_area_locked": "這個車廠範圍是 3D（高度 %s 到 %s），這裡不能改；要改請用車站範圍工具重新框選"
+  "gui.mtr.depot_area_locked": "這個車廠範圍是 3D（高度 %s 到 %s），這裡不能改；要改請用車站範圍工具重新框選",
+  "gui.mtr.assets_missing": "MTR-MTM_Enhanced：缺少資源模組 MTM_Assets，MTR 的貼圖、模型和聲音都顯示不出來。請把 MTR3-MTM-Assets 放進用戶端的 mods 資料夾。",
+  "gui.mtr.editor_server_rejected_self": "草稿做好以後，你在遊戲裡又改過其中的路線，為了不覆蓋遊戲裡的修改，服務端沒有寫入，草稿保留。請逐條選擇：以最新版本為基礎覆蓋，或放棄草稿用遊戲裡的",
+  "gui.mtr.clockwise_next": "Clockwise loop, next %s",
+  "gui.mtr.clockwise_next_cjk": "順時針環線 下一站%s",
+  "gui.mtr.anticlockwise_next": "Anticlockwise loop, next %s",
+  "gui.mtr.anticlockwise_next_cjk": "逆時針環線 下一站%s",
+  "gui.mtr.loop_next": "Loop, next %s",
+  "gui.mtr.loop_next_cjk": "環線 下一站%s"
 }

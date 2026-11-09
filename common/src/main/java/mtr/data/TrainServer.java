@@ -648,7 +648,13 @@ public class TrainServer extends Train {
 						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getSegmentIndex(timeSegment)) : 0;
 						// The estimate doesn't know about waiting for the timetable at earlier stops
 						final long arrivalMillis = Math.max(estimatedMillis, scheduledMillis);
-						addSchedule = () -> schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis));
+						addSchedule = () -> {
+							schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis));
+							// With -Dmtr.debugSchedules=<platform ID>, what each train tells that platform, every 10 s
+							if (DEBUG_SCHEDULES != 0 && platformId == DEBUG_SCHEDULES && System.currentTimeMillis() / 50 % 200 == 0) {
+								System.out.println("Minecraft Transit Railway schedule at " + platformId + ": train " + id + " siding " + sidingId + (service.isOnDuty() ? " duty " + service.getDutySlot() : " no duty") + ", route " + timeSegment.routeId + " stop " + timeSegment.currentStationIndex + ", in " + (arrivalMillis - System.currentTimeMillis()) / 1000 + " s, trip routes " + tripRouteIds + ", path stop " + path.get(getSegmentIndex(timeSegment)).stopIndex);
+							}
+						};
 						if (!startsOver) {
 							addSchedule.run();
 							addSchedule = null;
@@ -951,6 +957,8 @@ public class TrainServer extends Train {
 	/**
 	 * @return whether the train is out on the line, for the dispatcher's console (D6)
 	 */
+	private static final long DEBUG_SCHEDULES = Long.getLong("mtr.debugSchedules", 0);
+
 	public boolean isOnRouteNow() {
 		return isOnRoute;
 	}

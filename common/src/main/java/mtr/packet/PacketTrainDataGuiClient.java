@@ -69,7 +69,29 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 			ClientData.editorSimulation = editorSimulation;
 			ClientData.anteRunHooks = anteRunHooks;
 			ClientData.interlockColor = interlockColor >= 0 && interlockColor < DyeColor.values().length ? DyeColor.values()[interlockColor] : DyeColor.MAGENTA;
+			warnIfAssetsMissing(minecraftClient);
 		});
+	}
+
+	private static boolean assetsWarned;
+	/**
+	 * A texture of MTR's, in the assets mod (MTM_Assets) since the logic and the assets are two mods (2026-11-09).
+	 */
+	private static final ResourceLocation ASSETS_CHECK = new ResourceLocation("mtr", "textures/item/tunnel_wall_creator_6_9.png");
+
+	/**
+	 * Says once, on joining a world, when the assets mod isn't there: blocks, trains and signs would show without their
+	 * textures, models and sounds. Not made a dependency of the logic mod, as servers don't need it.
+	 */
+	private static void warnIfAssetsMissing(Minecraft minecraftClient) {
+		if (assetsWarned || UtilitiesClient.hasResource(ASSETS_CHECK)) {
+			return;
+		}
+		assetsWarned = true;
+		System.out.println("Minecraft Transit Railway: the assets mod MTM_Assets is missing; textures, models and sounds of MTR won't show");
+		if (minecraftClient.player != null) {
+			minecraftClient.player.displayClientMessage(Text.translatable("gui.mtr.assets_missing"), false);
+		}
 	}
 
 	public static void receiveServerTimeS2C(FriendlyByteBuf packet) {

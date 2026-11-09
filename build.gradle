@@ -47,6 +47,13 @@ rootProject.ext.server_jar_excludes = [
 		"cn/zbx1425/mtrsteamloco/mixin/FQ*", "mtrsteamloco.mixins.json"
 ]
 
+// What the assets mod, MTM_Assets, holds and the logic jar leaves out (2026-11-09): what only clients use and the server jar
+// leaves out too, but the script engine, which is code
+rootProject.ext.assets_jar_includes = [
+		"assets/*/font/**", "assets/*/sounds/**", "assets/*/textures/**", "assets/*/models/**", "assets/*/blockstates/**",
+		"assets/*/particles/**", "assets/*/scripts/**", "assets/minecraft/atlases/**"
+]
+
 /**
  * Writes the ANTE mixin config for the server jar, without the mixins into the script engine, which that jar leaves out.
  */

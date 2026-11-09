@@ -73,7 +73,9 @@ public final class DispatchConsole implements IPacket {
 		final List<TrainServer> trains = new ArrayList<>();
 		final Map<TrainServer, Siding> trainSidings = new HashMap<>();
 		railwayData.sidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> siding.forEachTrain(train -> {
-			if (train.getService().isOnDuty() && train.isOnRouteNow() && trains.size() < MAX_TRAINS) {
+			// Every train out on the line, on a duty or not (2026-11-09: one standing at a terminus off its duty took a block and
+			// the console listed nothing)
+			if (train.isOnRouteNow() && trains.size() < MAX_TRAINS) {
 				trains.add(train);
 				trainSidings.put(train, siding);
 			}
@@ -91,7 +93,7 @@ public final class DispatchConsole implements IPacket {
 			packet.writeLong(train.getNextStopId());
 			packet.writeLong(service.getLateSinceMillis());
 			packet.writeLong(train.getWaitingSinceMillis());
-			packet.writeVarInt((service.getSkipPlatforms().isEmpty() ? 0 : 1) | (service.isOutOfService() ? 2 : 0));
+			packet.writeVarInt((service.getSkipPlatforms().isEmpty() ? 0 : 1) | (service.isOutOfService() ? 2 : 0) | (service.isOnDuty() ? 0 : 4));
 			packet.writeVarInt(service.getTurnState());
 			packet.writeVarInt(service.getTakeoverState());
 			packet.writeVarInt(service.getDispatchState());

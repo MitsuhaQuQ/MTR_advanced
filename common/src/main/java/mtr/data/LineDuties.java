@@ -536,6 +536,27 @@ public final class LineDuties {
 			return new DutyGenerator.PlanInputs(turnTimes, planBackLinks, poolFleets, buffers, minReverseMillis, waitThresholds);
 		}
 
+		/**
+		 * @return a digest of which ways the track gives, not how long they take: the changes of platform and turns round
+		 * measured, and the first and last stops each siding was found to have a way out to and back from; empty where the
+		 * ways out and back weren't measured just now
+		 */
+		static String waysKey(Map<Long, Map<Long, Long>> turnTimes, Map<Long, DepotLegs> measured) {
+			if (measured == null) {
+				return "";
+			}
+			final StringBuilder key = new StringBuilder();
+			if (turnTimes != null) {
+				new TreeMap<>(turnTimes).forEach((from, times) -> new TreeSet<>(times.keySet()).forEach(to -> {
+					if (to != DutyGenerator.HOLD_IN_KEY) {
+						key.append(from).append('>').append(to).append(';');
+					}
+				}));
+			}
+			new TreeMap<>(measured).forEach((sidingId, legs) -> key.append('s').append(sidingId).append(new TreeSet<>(legs.outMillis.keySet())).append(new TreeSet<>(legs.unreachableOut)).append(new TreeSet<>(legs.backMillis.keySet())).append(new TreeSet<>(legs.unreachableBack)).append(';'));
+			return digest(key.toString());
+		}
+
 		private long getMaxLayover() {
 			return staysOnLine ? RouteTimetable.MAX_STAY_MILLIS : RouteTimetable.MAX_LAYOVER_MILLIS;
 		}
@@ -628,6 +649,12 @@ public final class LineDuties {
 			if (!kept.buffersKey.equals(buffersKey)) {
 				hints.add("buffers");
 			}
+			// Ways the track gives that it didn't, or the other way round, with services left with no train: planned again,
+			// more of them may be run (2026-11-09, a turn added at a terminus)
+			final String waysNow = waysKey(turnTimes, measured);
+			if (kept.uncovered > 0 && !kept.waysKey.isEmpty() && !waysNow.isEmpty() && !kept.waysKey.equals(waysNow)) {
+				hints.add("ways");
+			}
 			kept.replanHint = String.join(";", hints);
 			return kept;
 		}
@@ -652,6 +679,7 @@ public final class LineDuties {
 			plan.basis = basis;
 			plan.minReverseMillis = minReverseMillis;
 			plan.buffersKey = buffersKey;
+			plan.waysKey = waysKey(inputs.turnTimes, measured);
 			final Set<String> unitTaken = new HashSet<>(taken);
 			final long maxLayover = getMaxLayover();
 			for (final Group group : groups) {
@@ -1193,6 +1221,10 @@ public final class LineDuties {
 		 */
 		public String buffersKey = "";
 		/**
+		 * A digest of which ways the track gave when planned ({@link Unit#waysKey}), empty if not known (record 7).
+		 */
+		public String waysKey = "";
+		/**
 		 * The settings changed since the duties kept were planned, each as {@code name:then:now}, joined by ';': planned
 		 * again only when a player asks (user 2026-11-08), so the duties don't change of themselves; empty if none.
 		 */
@@ -1287,6 +1319,8 @@ public final class LineDuties {
 					writer.writeLong(entry.getValue());
 				});
 			});
+			// From record 7
+			writeString(writer, waysKey);
 			return writer.toBytes();
 		}
 
@@ -1305,7 +1339,7 @@ public final class LineDuties {
 					return null;
 				}
 				final Plan plan = new Plan(lineNames);
-				plan.beforeItems = version < RECORD_VERSION;
+				plan.beforeItems = version < 6;
 				plan.basis = readString(reader);
 				plan.minReverseMillis = reader.readLong();
 				plan.buffersKey = readString(reader);
@@ -1341,6 +1375,9 @@ public final class LineDuties {
 						plan.parts.add(part);
 					}
 				}
+				if (version >= 7) {
+					plan.waysKey = readString(reader);
+				}
 				return plan;
 			} catch (RuntimeException e) {
 				return null;
@@ -1349,9 +1386,10 @@ public final class LineDuties {
 
 		/**
 		 * 6: duties planned since keep where trains wait, when they leave and where they go back (运用补完 step 1); a
-		 * record before that reads as none, so those duties are planned again once, with them
+		 * record before that reads as none, so those duties are planned again once, with them. 7: which ways the track gave
+		 * (2026-11-09), for suggesting a plan again when they change
 		 */
-		private static final int RECORD_VERSION = 6;
+		private static final int RECORD_VERSION = 7;
 		private static final int MAX_PART_ITEMS = 256;
 		private static final int MAX_RECORD_ITEMS = 4096;
 		private static final int MAX_STRING_BYTES = 65536;

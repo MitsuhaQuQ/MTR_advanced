@@ -83,6 +83,7 @@ public final class EditorConsole {
 			trainObject.addProperty("waiting", train.waitingSince == 0 ? 0 : Math.max(0, serverNow - train.waitingSince) / 1000);
 			trainObject.addProperty("skipping", (train.flags & 1) != 0);
 			trainObject.addProperty("outOfService", (train.flags & 2) != 0);
+			trainObject.addProperty("noDuty", (train.flags & 4) != 0);
 			trainObject.addProperty("turn", train.turnState);
 			trainObject.addProperty("takeover", train.takeoverState);
 			trainObject.addProperty("dispatch", train.dispatchState);

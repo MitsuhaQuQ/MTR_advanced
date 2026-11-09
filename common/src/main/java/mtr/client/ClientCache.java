@@ -212,6 +212,19 @@ public class ClientCache extends DataCache implements IGui {
 				return customDestination;
 			}
 
+			// A loop, marked circular or ending where it starts: its direction and the next station, as trains go round and
+			// round (user 2026-11-09); at the end of a lap, the next is the first after the start, the next lap's
+			if (route.circularState != Route.CircularState.NONE || route.isLoop()) {
+				final int size = route.platformIds.size();
+				int next = currentStationIndex >= size - 1 && route.isLoop() ? 1 : currentStationIndex + 1;
+				while (next < size - 1 && route.platformIds.get(next).pass) {
+					next++;
+				}
+				final Station nextStation = next < size ? platformIdToStation.get(route.platformIds.get(next).platformId) : null;
+				final String text = nextStation == null ? platformIdToStation.get(route.getLastPlatformId()).name : nextStation.name;
+				final String kind = route.circularState == Route.CircularState.CLOCKWISE ? "clockwise" : route.circularState == Route.CircularState.ANTICLOCKWISE ? "anticlockwise" : "loop";
+				return circularMarker + IGui.insertTranslation("gui.mtr." + kind + "_next_cjk", "gui.mtr." + kind + "_next", 1, text);
+			}
 			if (route.circularState == Route.CircularState.NONE) {
 				return platformIdToStation.get(route.getLastPlatformId()).name;
 			} else {

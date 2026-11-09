@@ -213,12 +213,13 @@ class RouteTimetableTest {
 	}
 
 	@Test
-	void emptyOrDisabledTimetableIsNotActive() {
+	void onlyAnEmptyTimetableIsNotActive() {
 		assertFalse(timetable().isActive());
 		final RouteTimetable timetable = timetable(10);
 		assertTrue(timetable.isActive());
+		// Switched off, a timetable with services still runs (2026-11-09): services planned never run by nothing at all
 		timetable.enabled = false;
-		assertFalse(timetable.isActive());
+		assertTrue(timetable.isActive());
 	}
 
 	@Test

@@ -1,0 +1,13 @@
+{
+	"schemaVersion": 1,
+	"id": "mtm_assets",
+	"version": "${version}",
+	"name": "MTM_Assets",
+	"description": "The fonts, sounds, textures and models of MTR-MTM_Enhanced, apart from its logic so a new version of the logic is a small jar. Needed on clients only.",
+	"license": "MIT",
+	"icon": "assets/mtm_assets/icon.png",
+	"environment": "client",
+	"depends": {
+		"mtr": "*"
+	}
+}

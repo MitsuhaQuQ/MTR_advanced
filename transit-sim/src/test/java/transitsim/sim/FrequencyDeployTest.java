@@ -46,7 +46,8 @@ class FrequencyDeployTest {
 		final List<SimDataset.RouteData> routes = new ArrayList<>();
 		for (final long id : new long[]{1, 2, 11, 12}) {
 			final TestRoute route = id % 10 == 1 ? SimDatasetTest.route(id, 0, 3, id / 10 * 100 + 1, id / 10 * 100 + 2, id / 10 * 100 + 3) : SimDatasetTest.route(id, 1, 3, id / 10 * 100 + 3, id / 10 * 100 + 5, id / 10 * 100 + 4);
-			route.timetable.enabled = false;
+			// No services: the depot sends its trains by its departures (a timetable with services runs whatever its switch)
+			route.timetable.services.clear();
 			routes.add(new SimDataset.RouteData(route));
 		}
 		dataset.routes.clear();

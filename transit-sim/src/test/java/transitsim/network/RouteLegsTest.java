@@ -128,6 +128,37 @@ class RouteLegsTest {
 	}
 
 	@Test
+	void aRailClickedInTheMiddleOfASectionRunsThatSection() {
+		// A siding, three rails to a platform, one section of them; the editor gives the middle rail's two nodes as clicked
+		// (2026-11-09). As key nodes they are inside the section, which no search can pass: as the section left at its end
+		// they are
+		final TrackSections sections = new TrackSections();
+		sections.sync(railMap(rail(-100, 0, -60, 0, SectionType.SIDING, 9), track(-60, 0, -40, 0), track(-40, 0, -20, 0), track(-20, 0, 0, 0), rail(0, 0, 40, 0, SectionType.PLATFORM, 1)), Collections.emptyMap());
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final long siding = snapshot.getSectionOf(pos(-100, 0), pos(-60, 0)).hash;
+		final long platform = snapshot.getSectionOf(pos(0, 0), pos(40, 0)).hash;
+		final TrackSections.Section middle = snapshot.getSectionOf(pos(-40, 0), pos(-20, 0));
+		assertNotEquals(pos(-40, 0), middle.getStart());
+		assertNotEquals(pos(-40, 0), middle.getEnd());
+		final RouteLegs.LegSource legs = fresh(snapshot, 0, Collections.emptyMap());
+		final long[] clicked = {pos(-40, 0), pos(-20, 0)};
+		assertNotEquals(0, RouteLegs.plan(Arrays.asList(siding, platform), Arrays.asList(clicked, new long[0]), null, legs).badWaypoint, "inside a section, as clicked");
+
+		// Run towards the platform: the section is left where it meets the platform
+		final long[] towards = RouteLegs.railWaypoints(clicked, snapshot, siding, platform);
+		final long exit = middle.getNodes()[0] == pos(-60, 0) ? middle.getEnd() : middle.getStart();
+		assertArrayEquals(new long[]{exit}, towards);
+		assertEquals(pos(0, 0), exit);
+		assertTrue(RouteLegs.plan(Arrays.asList(siding, platform), Arrays.asList(towards, new long[0]), null, legs).isFound());
+		// Clicked the other way round, it is run the other way
+		assertArrayEquals(new long[]{pos(-60, 0)}, RouteLegs.railWaypoints(new long[]{pos(-20, 0), pos(-40, 0)}, snapshot, siding, platform));
+		// The siding's own rail and the platform's are where the way starts and ends anyway; a node that is no rail with the
+		// next, as paths chosen node by node have, stays
+		assertArrayEquals(new long[0], RouteLegs.railWaypoints(new long[]{pos(-100, 0), pos(-60, 0), pos(0, 0), pos(40, 0)}, snapshot, siding, platform));
+		assertArrayEquals(new long[]{pos(-60, 0), pos(0, 0)}, RouteLegs.railWaypoints(new long[]{pos(-60, 0), pos(0, 0)}, snapshot, siding, platform));
+	}
+
+	@Test
 	void aWayToASidingIsDoneOnceTheSidingIsReached() {
 		// Platform P, track east to a siding at the end of the line; west of P a long line with a spur at every node
 		final TrackSections.Rail platform = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);

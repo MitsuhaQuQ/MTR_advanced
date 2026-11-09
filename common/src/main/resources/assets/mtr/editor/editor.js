@@ -238,7 +238,7 @@
 	}
 
 	/** The menu of a rail in a track diagram: a pathfinding boundary, which only narrows searches, or a connecting line's rail. */
-	function railMenu(e, r, rail, rerender) {
+	function railMenu(e, r, rail, rerender, routesHere) {
 		const { a, b, status } = rail, key = railKey(a, b);
 		const wasBoundary = status === 3;
 		const boundary = key in draft.boundaries ? draft.boundaries[key] : wasBoundary;
@@ -247,6 +247,11 @@
 			const released = releasedOf(r).some(other => railKey(other[0], other[1]) === key);
 			items.push([released ? tr("取消放行") : tr("放行（别的线路可以走）"), () => { toggleReleased(r, a, b); rerender(); }]);
 		}
+		// On the whole network map: the lines whose paths run on the rail, each made a connecting line or not (2026-11-09)
+		(routesHere || []).slice(0, 8).forEach(other => {
+			const connecting = isConnecting(other);
+			items.push([tr(connecting ? "取消联络线：{0}" : "设为联络线：{0}", routeTitle(other)), () => { setConnecting(other, !connecting); rerender(); }]);
+		});
 		openMenuAt(e, items);
 	}
 
@@ -259,7 +264,12 @@
 		const main = (shortfall.pools || []).length > 1 && pools.length ? tr("{0}：", shortfall.lines) + pools.map(pool => pool.needed < 0 ? tr("{0} 算不出需要几列，现有 {1} 列，每天 {2} 班没有车", pool.label, pool.available, pool.uncovered) : tr("{0} 跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", pool.label, pool.needed, pool.available, pool.uncovered)).join(tr("；"))
 			: shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered);
 		// Services no number of trains could run aren't trains short: a way out of the sidings or a turn is missing
-		const unrunnable = shortfall.unrunnable ? tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable) : "";
+		// A depot reaching the line at more than one station plans no line with no rule saying which station its trains go by
+		// (运用补完 step 2): said as that, not as a way missing
+		const unset = (shortfall.entrancesUnset || []).map(key => key.split("|").slice(1).join("|") || key);
+		const unrunnable = !shortfall.unrunnable ? "" : unset.length
+			? tr("（其中每天 {0} 班没排：车厂接到线路的车站不止一个，{1} 还没有出入库规则指定从哪站进出；在车厂右键「出入库规则…」里加一条）", shortfall.unrunnable, unset.join("、"))
+			: tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable);
 		return main + unrunnable + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
 	}
 
@@ -277,7 +287,7 @@
 		if (!shortfall || !shortfall.replan) return "";
 		const parts = shortfall.replan.split(";").map(item => {
 			const [name, then, now] = item.split(":");
-			return name === "minReverse" ? tr("换端最短时间 {0} 秒 → {1} 秒", Math.round(+then / 1000), Math.round(+now / 1000)) : name === "buffers" ? tr("采用的实测余量变了") : name;
+			return name === "minReverse" ? tr("换端最短时间 {0} 秒 → {1} 秒", Math.round(+then / 1000), Math.round(+now / 1000)) : name === "buffers" ? tr("采用的实测余量变了") : name === "ways" ? tr("轨道变了：出入库或站内换站台的路和排运用时不一样，现在没车的班次也许能排上") : name;
 		});
 		return tr("运用是按原来的设置排的（{0}）。现在的运用照样接得上，所以没有自动重排；按新设置重排可能更省车，需要时在车厂右键菜单里选“重新排运用”。", parts.join("，"));
 	}
@@ -1798,12 +1808,18 @@
 		});
 		// Which connecting line a taken or released rail belongs to, for the release item of the menu
 		net.connectingOf = new Map();
+		// And every line whose path runs on a rail, for making it a connecting line from the map
+		net.routesOf = new Map();
 		(d.routes || []).forEach(route => {
 			const r = data && data.routeById.get(route.id);
-			if (!r || !r.connectingLine) return;
+			if (!r) return;
 			for (let i = 1; i < route.nodes.length; i++) {
 				const index = net.byPair.get(Math.min(route.nodes[i - 1], route.nodes[i]) + "," + Math.max(route.nodes[i - 1], route.nodes[i]));
-				if (index !== undefined) net.connectingOf.set(index, r);
+				if (index === undefined) continue;
+				if (r.connectingLine) net.connectingOf.set(index, r);
+				const here = net.routesOf.get(index) || [];
+				if (!here.includes(r)) here.push(r);
+				net.routesOf.set(index, here);
 			}
 		});
 	}
@@ -2283,11 +2299,13 @@
 		g.textAlign = "start";
 	}
 
-	const consoleTrainName = train => tr("{0} 车 {1}", shortName(train.sidingName) || tr("存车线"), train.slot + 1);
+	const consoleTrainName = train => train.slot < 0 ? tr("{0} 的车", shortName(train.sidingName) || tr("存车线")) : tr("{0} 车 {1}", shortName(train.sidingName) || tr("存车线"), train.slot + 1);
 
 	/** What is going on with a train, as the console lists it. */
 	function consoleTrainState(train) {
 		const parts = [];
+		// Out on the line with no duty, or a duty no longer there (2026-11-09): it takes track but runs no service
+		if (train.noDuty) parts.push(tr("不在运用中（没有运用，或者运用已经改了）"));
 		if (train.late >= 60) parts.push(tr("晚点 {0} 分钟", Math.floor(train.late / 60)));
 		if (train.waiting >= 60) parts.push(tr("等进路已 {0} 分钟", Math.floor(train.waiting / 60)));
 		if (train.dispatch & 1) parts.push(tr("扣停"));
@@ -2315,7 +2333,7 @@
 			const canEdit = data && data.canEdit;
 			const rows = trains.map(train => {
 				const held = (train.dispatch & 1) !== 0;
-				const cmds = canEdit ? `<div class="cmds">
+				const cmds = canEdit && !train.noDuty ? `<div class="cmds">
 					<button data-console-cmd="${held ? "release" : "hold"}" data-train="${train.id}">${held ? tr("放行") : tr("扣停")}</button>
 					<button data-console-extend="${train.id}">${tr("延长停站…")}</button>
 					<button data-console-turn="${train.id}" data-route="${train.route}">${tr("提前折返…")}</button>
@@ -2327,9 +2345,9 @@
 				return `<tr class="${train.id === consoleState.selected ? "sel" : ""}" data-console-train="${train.id}"><td><b>${escapeHtml(consoleTrainName(train))}</b> ${escapeHtml(shortName(train.routeName))}<br>
 					<span class="hint">${train.next ? tr("下一站 {0}", escapeHtml(shortName(train.next))) : ""}${train.block ? tr("，区段 {0}", train.block.slice(-4)) : ""}</span><br>${escapeHtml(consoleTrainState(train))}${cmds}</td></tr>`;
 			}).join("");
-			panel.innerHTML = `<p><select id="console-system">${systemOptions}</select> <span class="hint">${tr("{0} 列运用车，{1} 秒前", trains.length, d.age || 0)}</span></p>
+			panel.innerHTML = `<p><select id="console-system">${systemOptions}</select> <span class="hint">${tr("{0} 列车在线上{1}，{2} 秒前", trains.length, trains.some(train => train.noDuty) ? tr("（{0} 列不在运用中）", trains.filter(train => train.noDuty).length) : "", d.age || 0)}</span></p>
 				<p class="hint">${tr("红：占用的信号区段　橙：有列车的区段")}${canEdit ? "" : tr("。没有编辑权限，只能看")}</p>
-				<table>${rows || `<tr><td class="hint">${tr("没有运用车在线上")}</td></tr>`}</table>`;
+				<table>${rows || `<tr><td class="hint">${tr("没有车在线上")}</td></tr>`}</table>`;
 		}
 		$("console-system").addEventListener("change", e => { consoleState.system = e.target.value; renderConsole(); drawNetwork(); });
 		panel.querySelectorAll("[data-console-train]").forEach(row => row.addEventListener("click", e => {
@@ -2454,7 +2472,7 @@
 			return;
 		}
 		const d = net.data, rail = d.rails[index];
-		railMenu(e, net.connectingOf.get(index) || null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork);
+		railMenu(e, net.connectingOf.get(index) || null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork, net.routesOf.get(index) || []);
 	});
 	addEventListener("resize", () => drawNetwork());
 
@@ -2713,15 +2731,26 @@
 		});
 	}
 
+	function onWayPickPanelClick(e) {
+		if (!wayPick) return false;
+		const targetButton = e.target.closest("[data-waypick-target]");
+		if (e.target.closest("[data-waypick-done]")) finishWayPick(true);
+		else if (e.target.closest("[data-waypick-cancel]")) finishWayPick(false);
+		else if (targetButton) {
+			wayPick.platform = targetButton.dataset.waypickTarget;
+			refreshWayPick();
+		} else if (e.target.closest("[data-waypick-clear]")) {
+			wayPick.waypoints = [];
+			wayPick.turned = new Set();
+			refreshWayPick();
+		} else return false;
+		return true;
+	}
+
+	$("net-waypick").addEventListener("click", onWayPickPanelClick);
+
 	$("inspector").addEventListener("click", e => {
-		if (wayPick && e.target.closest("[data-waypick-done]")) {
-			finishWayPick(true);
-			return;
-		}
-		if (wayPick && e.target.closest("[data-waypick-cancel]")) {
-			finishWayPick(false);
-			return;
-		}
+		if (onWayPickPanelClick(e)) return;
 		if (!picking) return;
 		const button = e.target.closest("[data-pick-up], [data-pick-down], [data-pick-remove], [data-pick-leg], [data-pick-finish], [data-pick-cancel], [data-pick-old]");
 		if (!button) return;
@@ -2798,13 +2827,18 @@
 		const lines = depotLines(depot);
 		const unset = depot.shortfall && depot.shortfall.entrancesUnset || [];
 		const stationText = id => id && id !== "0" ? escapeHtml(stationNameOf(id)) : tr("（自动：只有一个出入口时）");
+		// The tracks a rule's way goes by, as a path of its own, or the station of older rules (2026-11-09)
+		const wayText = (pathId, entrance) => {
+			const path = pathId && pathId !== "0" ? value.paths.find(each => each.id === pathId) : null;
+			return path ? escapeHtml(tr("经 {0} 段轨道（{1}）", Math.floor(path.waypoints.length / 2), path.name || path.id)) : stationText(entrance);
+		};
 		const sidingOptions = selected => `<option value="0">${tr("车池里下一班最早要车的")}</option>` + depot.sidings.map(siding => `<option value="${siding.id}"${siding.id === selected ? " selected" : ""}>${escapeHtml(siding.name || siding.id)}</option>`).join("");
 		const pathOptions = (selected, kind) => `<option value="0">${tr("最近车站后顺线路方向（默认）")}</option>` + value.paths.filter(path => path.kind === kind).map(path => `<option value="${path.id}"${path.id === selected ? " selected" : ""}>${escapeHtml(path.name || path.id)}</option>`).join("");
 		const ruleRows = value.rules.map((rule, i) => `<fieldset data-rule="${i}"><legend>${tr("规则 {0}", i + 1)}</legend>
 			<div>${tr("线路")}：${lines.map(([key, name]) => `<label><input type="checkbox" name="line" value="${escapeHtml(key)}"${rule.lines.includes(key) ? " checked" : ""}> ${escapeHtml(name)}</label>`).join("")} <span class="hint">${tr("都不勾 = 全部线路")}</span></div>
 			<div>${tr("星期")}：${WEEKDAY_SHORT.map((day, d) => `<label><input type="checkbox" name="day" value="${d}"${rule.weekdays >> d & 1 ? " checked" : ""}> ${day}</label>`).join("")} <span class="hint">${tr("都不勾 = 每天")}</span></div>
-			<div>${tr("出口")}：<b>${stationText(rule.outEntrance)}</b> <button type="button" data-rule-pick="${i}" data-out="1">${tr("在图上选…")}</button>
-				${tr("回口")}：<b>${stationText(rule.backEntrance)}</b> <button type="button" data-rule-pick="${i}" data-out="0">${tr("在图上选…")}</button></div>
+			<div>${tr("出库")}：<b>${wayText(rule.outPath, rule.outEntrance)}</b> <button type="button" data-rule-pick="${i}" data-out="1">${tr("在图上点轨道…")}</button>
+				${tr("回库")}：<b>${wayText(rule.backPath, rule.backEntrance)}</b> <button type="button" data-rule-pick="${i}" data-out="0">${tr("在图上点轨道…")}</button></div>
 			<label>${tr("比出库路线用时再早发（秒）")} <input type="number" name="extraLead" min="0" max="3600" value="${secondsText(rule.extraLead)}"></label>
 			<label>${tr("回哪条存车线")} <select name="backSiding">${sidingOptions(rule.backSiding)}</select></label>
 			<label>${tr("出库路径")} <select name="outPath">${pathOptions(rule.outPath, "out")}</select></label>
@@ -2898,6 +2932,47 @@
 		return "0";
 	}
 
+	/**
+	 * Where the rule's trains go out to, or come back from, as the running diagram has them on the day shown: the first stop
+	 * of each duty's first service (the last stop of its last, back), or of every service where the depot has no duties;
+	 * by platform, the earliest first (the latest last, back), with how many and when (2026-11-09).
+	 */
+	function ruleTargets(depot, lines, out) {
+		const byPlatform = new Map();
+		const add = (stop, at) => {
+			const target = byPlatform.get(stop.platformId) || { platform: stop.platformId, name: stop.name, count: 0, first: Infinity, last: -Infinity };
+			target.count++;
+			target.first = Math.min(target.first, at);
+			target.last = Math.max(target.last, at);
+			byPlatform.set(stop.platformId, target);
+		};
+		const runs = r => r && (depot.routes || []).includes(r.id) && (!lines.length || lines.includes(r.lineKey));
+		const duties = dutiesOf(depot);
+		let fromDuties = false;
+		if (duties.mode === "diagram") {
+			depot.sidings.forEach(siding => (duties.sidings[siding.id] || []).forEach(slot => {
+				const day = dutyOn(slot, state.weekday);
+				if (!day || !day.segments.length) return;
+				const segment = out ? day.segments[0] : day.segments[day.segments.length - 1];
+				const service = segmentService(segment);
+				if (!service || !runs(service.route)) return;
+				const k = out ? segment.from : lastStopOf(segment, service.route);
+				const times = timesOf(service)[k];
+				if (!times || !service.route.stops[k]) return;
+				add(service.route.stops[k], out ? times[1] : times[0]);
+				fromDuties = true;
+			}));
+		}
+		if (!fromDuties) {
+			(depot.routes || []).map(id => data.routeById.get(id)).filter(runs).forEach(r => (r.services || []).filter(service => !service.suspended).forEach(service => {
+				const k = out ? 0 : r.stops.length - 1;
+				const times = timesOf(service)[k];
+				if (times && r.stops[k]) add(r.stops[k], out ? times[1] : times[0]);
+			}));
+		}
+		return [...byPlatform.values()].sort((a, b) => out ? a.first - b.first : b.last - a.last);
+	}
+
 	function startWayPick(depot, target) {
 		const value = rulesEditing.value;
 		const siding = depot.sidings[0];
@@ -2908,15 +2983,18 @@
 		}
 		const rule = target.rule !== undefined ? value.rules[target.rule] : null;
 		const path = target.path !== undefined ? value.paths[target.path] : null;
+		// A rule's way: the tracks it goes by, kept as a path of its own; where to, as the running diagram has it
+		const rulePath = rule ? value.paths.find(each => each.id === (target.out ? rule.outPath : rule.backPath)) : null;
+		const targets = rule ? ruleTargets(depot, rule.lines, target.out) : [];
 		wayPick = {
-			depot: depot.id, siding: siding.id, target, out: target.out, requestId: 0, result: null, error: "",
-			entrance: rule ? (target.out ? rule.outEntrance : rule.backEntrance) : "0",
-			platform: path ? (target.out ? path.to : path.from) : rulePlatform(depot, rule ? rule.lines : [], target.out),
-			waypoints: path ? path.waypoints.slice() : [],
+			depot: depot.id, siding: siding.id, target, out: target.out, requestId: 0, result: null, error: "", targets,
+			entrance: rule && !rulePath ? (target.out ? rule.outEntrance : rule.backEntrance) : "0",
+			platform: path ? (target.out ? path.to : path.from) : targets.length ? targets[0].platform : rulePlatform(depot, rule ? rule.lines : [], target.out),
+			waypoints: path ? path.waypoints.slice() : rulePath ? rulePath.waypoints.slice() : [],
 		};
 		if (wayPick.platform === "0") wayPick.platform = rulePlatform(depot, [], target.out);
 		openView("network", state.line, null);
-		dutyNotice = path ? tr("在全网配线图上依次点回送路径途经的节点；点车站换终点。右侧显示路线和用时。") : tr("在全网配线图上点高亮的车站作为{0}。右侧显示路线和用时。", target.out ? tr("出口") : tr("回口"));
+		dutyNotice = path ? tr("在全网配线图上依次点回送路径途经的节点；点车站换终点。右侧显示路线和用时。") : tr("按行车顺序在全网配线图上点{0}要经过的轨道；再点同一段换方向，点第三次去掉。右上角选运行图上从哪一站{1}，并显示路线和用时。", target.out ? tr("出库") : tr("回库"), target.out ? tr("发车") : tr("回来"));
 		refreshWayPick();
 	}
 
@@ -2939,6 +3017,10 @@
 	/** A click on the map while choosing: a station the siding reaches, a node of the path, or another end. */
 	function wayPickAt(e, px, pz) {
 		const choosingPath = wayPick.target.path !== undefined;
+		if (!choosingPath) {
+			toggleWayRail(netRailAt(px, pz));
+			return;
+		}
 		if (choosingPath) {
 			const node = netNodeAt(px, pz);
 			if (node) {
@@ -2968,6 +3050,38 @@
 			wayPick.platform = platforms[0].id;
 			refreshWayPick();
 		}
+	}
+
+	/**
+	 * A rule's way goes by a track clicked (2026-11-09): its two nodes in the order the train runs them, the way shown now
+	 * if it runs there; a second click turns it round, a third takes it away.
+	 */
+	function toggleWayRail(index) {
+		if (index < 0 || !net.data) return;
+		const rail = net.data.rails[index];
+		const a = net.data.nodes[rail[0]][2], b = net.data.nodes[rail[1]][2];
+		const points = wayPick.waypoints;
+		let at = -1;
+		for (let k = 0; k + 1 < points.length; k += 2) {
+			if (points[k] === a && points[k + 1] === b || points[k] === b && points[k + 1] === a) at = k;
+		}
+		wayPick.turned = wayPick.turned || new Set();
+		const key = Math.min(rail[0], rail[1]) + "," + Math.max(rail[0], rail[1]);
+		if (at >= 0 && !wayPick.turned.has(key)) {
+			points.splice(at, 2, points[at + 1], points[at]);
+			wayPick.turned.add(key);
+		} else if (at >= 0) {
+			points.splice(at, 2);
+			wayPick.turned.delete(key);
+		} else if (points.length < 64) {
+			// As the way shown runs it, where it does
+			const shown = (wayPick.result && wayPick.result.nodes) || [];
+			const nodeA = net.data.nodes[rail[0]], nodeB = net.data.nodes[rail[1]];
+			const indexOf = node => shown.findIndex(([x, z]) => Math.abs(x - node[0]) < 1 && Math.abs(z - node[1]) < 1);
+			const ia = indexOf(nodeA), ib = indexOf(nodeB);
+			points.push(...(ia >= 0 && ib >= 0 && ib < ia ? [b, a] : [a, b]));
+		}
+		refreshWayPick();
 	}
 
 	/** Over the map: the stations the siding reaches, ringed, and the way as chosen. */
@@ -3021,7 +3135,9 @@
 		return `<h2>${choosingPath ? tr("画回送路径") : wayPick.out ? tr("选出口") : tr("选回口")}</h2><div class="card">
 			<p>${escapeHtml(shortName(depot ? depot.name : ""))} · ${tr("存车线")} ${escapeHtml((depot && depot.sidings.find(s => s.id === wayPick.siding) || {}).name || "")}</p>
 			<p>${tr("这条存车线的出入口")}：${entrances.length ? entrances.map(id => escapeHtml(stationNameOf(id))).join("、") : tr("（还没算出）")}</p>
-			${choosingPath ? `<p>${tr("途经 {0} 个点；点节点加入或去掉，点车站换终点。", wayPick.waypoints.length)}</p>` : `<p>${tr("选的")}：${wayPick.entrance && wayPick.entrance !== "0" ? escapeHtml(stationNameOf(wayPick.entrance)) : tr("（没选）")}</p>`}
+			${choosingPath ? `<p>${tr("途经 {0} 个点；点节点加入或去掉，点车站换终点。", wayPick.waypoints.length)}</p>` : `<p>${wayPick.out ? tr("运行图上从这些站发车（出库开到哪）") : tr("运行图上在这些站收车（从哪回库）")}：</p>
+			<div>${(wayPick.targets || []).length ? wayPick.targets.map(each => `<button type="button" data-waypick-target="${escapeHtml(each.platform)}" aria-pressed="${each.platform === wayPick.platform}">${escapeHtml(shortName(each.name))} · ${wayPick.out ? tr("最早 {0}", clock(each.first)) : tr("最晚 {0}", clock(each.last))} · ${tr("{0} 班", each.count)}</button>`).join(" ") : `<span class="hint">${tr("这天运行图上没有这些线路的班次")}</span>`}</div>
+			<p>${tr("经过的轨道：{0} 段（按点的顺序）", Math.floor(wayPick.waypoints.length / 2))} ${wayPick.waypoints.length ? `<button type="button" data-waypick-clear>${tr("清空")}</button>` : ""}</p>`}
 			<p class="${result && !found ? "err" : ""}">${!result ? tr("正在计算…") : found ? tr("{0}用时 {1}", wayPick.out ? tr("出库") : tr("回库"), time) : tr("这样走不通")}</p>
 			${wayPick.error ? `<p class="err">${escapeHtml(wayPick.error)}</p>` : ""}
 			<button class="primary" data-waypick-done>${tr("用这个")}</button> <button data-waypick-cancel>${tr("取消")}</button></div>`;
@@ -3035,8 +3151,23 @@
 			const target = wayPick.target;
 			if (target.rule !== undefined) {
 				const rule = value.rules[target.rule];
-				if (wayPick.out) rule.outEntrance = wayPick.entrance;
-				else rule.backEntrance = wayPick.entrance;
+				const pathKey = wayPick.out ? "outPath" : "backPath";
+				let path = value.paths.find(each => each.id === rule[pathKey]);
+				if (wayPick.waypoints.length) {
+					// The tracks clicked, as the rule's own path, which says where its trains reach the line too
+					if (!path) {
+						path = { id: String(Date.now()), name: tr("规则 {0} {1}", target.rule + 1, wayPick.out ? tr("出库") : tr("回库")), kind: wayPick.out ? "out" : "back", from: "0", to: "0", waypoints: [] };
+						value.paths.push(path);
+						rule[pathKey] = path.id;
+					}
+					path.waypoints = wayPick.waypoints.slice();
+					path.from = wayPick.out ? wayPick.siding : wayPick.platform;
+					path.to = wayPick.out ? wayPick.platform : wayPick.siding;
+					if (wayPick.out) rule.outEntrance = "0";
+					else rule.backEntrance = "0";
+				} else {
+					rule[pathKey] = "0";
+				}
 			} else {
 				const path = value.paths[target.path];
 				path.waypoints = wayPick.waypoints.slice();
@@ -3605,6 +3736,13 @@
 		const parts = [];
 		if (picking && data) parts.push(pickingPanel());
 		if (wayPick && data) parts.push(wayPickPanel());
+		// The network view has no inspector: the panel goes over its map, with the buttons to keep or drop the choice
+		const netPanel = $("net-waypick");
+		if (netPanel) {
+			const show = Boolean(wayPick && data && state.view === "network");
+			netPanel.hidden = !show;
+			netPanel.innerHTML = show ? wayPickPanel() : "";
+		}
 		if (state.slot && data) parts.push(dutyPanel());
 		if (s) {
 			const next = s.link && data.routeById.get(s.link.route);
@@ -4039,7 +4177,7 @@
 			${speedLimitOf(r) > 0 ? `<span class="pill" title="${tr("列车在这条线路两站之间的轨道上不超过这个速度，也不超过轨道自己的限速")}">${tr("限速 {0} km/h", speedLimitOf(r))}${draftOf(r) && "speedLimit" in draftOf(r) ? tr("（草稿）") : ""}</span>` : ""}</div>
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint" title="${tr("运行时分按这组性能算，换车型时刻表不变；跑这条线的车比它慢时会提示")}">${tr("最低性能")} ${tr("加速")} <input class="perf" data-perf="a" value="${perfText(timetable.tables[today], "a")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("减速")} <input class="perf" data-perf="d" value="${perfText(timetable.tables[today], "d")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("最高")} <input class="perf" data-perf="v" value="${perfText(timetable.tables[today], "v")}" inputmode="numeric" style="width:3.5em"> km/h</label>` : ""}
-			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
+			</div>
 			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("间隔 5")}" title="${tr("期望间隔，分钟（也可以写 04:30 表示 4 分 30 秒）")}" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:5em"><button data-add-service>${tr("添加")}</button><label class="hint"><input type="checkbox" data-show-deadheads${showDeadheads ? " checked" : ""}> ${tr("显示回送")}</label><button data-clear-table title="${tr("删掉这张表的全部班次，连同直通、回库、出入库指令和例外；表本身、停站时分和运行的星期保留")}">${tr("清空")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
 		if (!services.length) {
 			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
@@ -5831,7 +5969,18 @@
 			: tr("和不按运用跑的车厂（{0}）共用轨道，咽喉进路锁不启用；把它们改成按时刻表，或用寻路边界隔开后启用。", names);
 	}
 
-	const lockMark = depot => depot.notConfigured ? `<span class="count" title="${escapeHtml(tr("这个车厂还没有时刻表，也没有按频率发车的设置，不发车。"))}"> · ${tr("未配置")}</span>` : depot.throatLocksOffBy || depot.oldLogic ? `<span class="count warn" title="${escapeHtml(lockOffText(depot))}"> · ${depot.oldLogic ? tr("旧逻辑") : tr("咽喉锁未启用")}</span>` : "";
+	/**
+	 * Why a depot sends no trains, as far as the page can tell (2026-11-09): its lines' timetables all switched off, or duties
+	 * set but not run by the duty diagram; or nothing set at all.
+	 */
+	const notConfiguredText = depot => {
+		const routes = (depot.routes || []).map(id => data.routeById.get(id)).filter(Boolean);
+		const reasons = [];
+		const set = depot.duties || { mode: "online", sidings: {} };
+		if (set.mode !== "diagram" && Object.values(set.sidings || {}).some(slots => slots.length)) reasons.push(tr("设好的运用没有用上：车厂右键切到“按运用图”才按它们发车"));
+		return reasons.length ? tr("这个车厂不发车。{0}", reasons.join(tr("；"))) : tr("这个车厂还没有时刻表，也没有按频率发车的设置，不发车。");
+	};
+	const lockMark = depot => depot.notConfigured ? `<span class="count warn" title="${escapeHtml(notConfiguredText(depot))}"> · ${tr("不发车")}</span>` : depot.throatLocksOffBy || depot.oldLogic ? `<span class="count warn" title="${escapeHtml(lockOffText(depot))}"> · ${depot.oldLogic ? tr("旧逻辑") : tr("咽喉锁未启用")}</span>` : "";
 
 	function throatHtml(r, i) {
 		const stop = r && r.stops[i];
@@ -7193,6 +7342,12 @@
 			const deleted = Object.values(duties.sidings).some(slots => slots.some(slot => slot.some(day => day.segments.some(segment => !data.routeById.get(segment.route)))));
 			if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) });
 			if (depot.shortfall && depot.shortfall.uncovered > 0) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, shortfallText(depot.shortfall)) });
+			// Lines not planned for want of a rule saying which station the depot's trains go by
+			const unsetLines = depot.shortfall && depot.shortfall.entrancesUnset || [];
+			if (unsetLines.length) {
+				const lineName = key => { const found = depotLines(depot).find(([lineKey]) => lineKey === key); return found ? found[1] : key.split("|").slice(1).join("|") || key; };
+				problems.push({ level: "err", text: tr("车厂{0}接到线路的车站不止一个，{1} 没有出入库规则指定从哪站进出，这些线路不排运用；在车厂右键「出入库规则…」里加一条", name, unsetLines.map(lineName).join("、")) });
+			}
 			if (duties.auto && depot.shortfall && depot.shortfall.replan) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, replanText(depot.shortfall)) });
 			// Ways out and back path generation found missing, which the planning keeps off; and those not measured yet
 			depot.sidings.forEach(siding => {
