@@ -77,6 +77,8 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	int stopsReached;
 	int ridersCleared;
 	int startUps;
+	int dwellRail = -1;
+	float departureTicks = -1;
 	final List<MotionEvent> events = new ArrayList<>();
 
 	MotionFixture rail(double length, int dwellTime, float maxSpeed) {
@@ -405,6 +407,12 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	@Override
 	public void onStopReached() {
 		stopsReached++;
+	}
+
+	@Override
+	public void onDwell(int rail, float departureTicks) {
+		dwellRail = rail;
+		this.departureTicks = departureTicks;
 	}
 
 	@Override

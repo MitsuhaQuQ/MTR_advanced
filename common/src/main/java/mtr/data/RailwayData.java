@@ -288,6 +288,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final UpdateNearbyMovingObjects<LiftServer> updateNearbyLifts;
 	private final Map<Long, List<ScheduleEntry>> schedulesForPlatform = new HashMap<>();
 	private final Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
+	private final Map<Long, List<StationCall>> stationCalls = new HashMap<>();
+	private Map<Long, PidsSchedules.PlannedArrival> plannedPidsArrivals;
+	private long pidsSlowToldMillis;
+	private static final long PIDS_SLOW_MILLIS = 50;
 	private final Map<Long, Map<BlockPos, TrainDelay>> trainDelays = new HashMap<>();
 
 	private static final int RAIL_UPDATE_DISTANCE = 128;
@@ -559,6 +563,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		lastSchedulesForPlatform.clear();
 		lastSchedulesForPlatform.putAll(schedulesForPlatform);
 		schedulesForPlatform.clear();
+		stationCalls.clear();
 		signalBlocks.resetOccupied();
 		// Long rails and long signal blocks are cut into block sections, by what the rails are
 		signalBlocks.updateSections(SecurityConfig.interlockColor, railInfo);
@@ -650,6 +655,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		updateNearbyLifts.tick();
 
 		if (MTR.isGameTickInterval(SCHEDULE_UPDATE_TICKS)) {
+			plannedPidsArrivals = null;
 			players.forEach(player -> {
 				if (!playersToSyncSchedules.contains(player)) {
 					playersToSyncSchedules.add(player);
@@ -682,17 +688,25 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			railsToAdd.forEach(rail -> occupiedRails.put(rail, occupancy.isOccupiedNow(rail)));
 
 			if (!platformIds.isEmpty() || !signalBlockStatus.isEmpty() || !occupiedRails.isEmpty()) {
+				final long now = System.currentTimeMillis();
+				if (!platformIds.isEmpty() && plannedPidsArrivals == null) {
+					// Worked out on the server thread every few seconds while players are by platforms: said when slow, so it can
+					// be measured on large networks
+					final long startNanos = System.nanoTime();
+					plannedPidsArrivals = PidsSchedules.nextArrivals(depots, dataCache, now);
+					final long tookMillis = (System.nanoTime() - startNanos) / 1000000;
+					if (tookMillis >= PIDS_SLOW_MILLIS && now - pidsSlowToldMillis >= 60000) {
+						pidsSlowToldMillis = now;
+						System.out.println("Minecraft Transit Railway: worked out the planned arrivals for passenger displays in " + tookMillis + " ms");
+					}
+				}
 				final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 				packet.writeInt(platformIds.size());
 				platformIds.forEach(platformId -> {
 					packet.writeLong(platformId);
-					final List<ScheduleEntry> scheduleEntries = schedulesForPlatform.get(platformId);
-					if (scheduleEntries == null) {
-						packet.writeInt(0);
-					} else {
-						packet.writeInt(scheduleEntries.size());
-						scheduleEntries.forEach(scheduleEntry -> scheduleEntry.writePacket(packet));
-					}
+					final List<ScheduleEntry> scheduleEntries = PidsSchedules.forDisplay(schedulesForPlatform.get(platformId), plannedPidsArrivals.get(platformId), now);
+					packet.writeInt(scheduleEntries.size());
+					scheduleEntries.forEach(scheduleEntry -> scheduleEntry.writePacket(packet));
 				});
 
 				packet.writeInt(signalBlockStatus.size());
@@ -1315,6 +1329,18 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	public List<ScheduleEntry> getSchedulesAtPlatform(long platformId) {
 		return schedulesForPlatform.get(platformId);
+	}
+
+	void addStationCall(StationCall call) {
+		stationCalls.computeIfAbsent(call.platformId, id -> new ArrayList<>()).add(call);
+	}
+
+	public List<StationCall> getStationCalls(BlockPos pos) {
+		if (stationCalls.isEmpty()) {
+			return Collections.emptyList();
+		}
+		final long platform = getClosePlatformId(platforms, dataCache, pos, 4, 4, 4);
+		return stationCalls.getOrDefault(platform, Collections.emptyList());
 	}
 
 	public Map<Long, Map<BlockPos, TrainDelay>> getTrainDelays() {

@@ -19,11 +19,13 @@ public final class TrainMotion {
 	 */
 	public static int tick(MotionState state, MotionTrack track, MotionVehicle vehicle, MotionHooks hooks, MotionCurves curves, float ticksElapsed) {
 		if (state.getNextStoppingIndex() >= track.size()) {
+			PlatformDwell.report(state, track, hooks, -1);
 			return -1;
 		}
 
 		final boolean tempDoorOpen;
 		final float tempDoorValue;
+		float departureTicks = -1;
 		final int totalDwellTicks = hooks.getTotalDwellTicks();
 		final int trainCars = vehicle.getTrainCars();
 		final int spacing = vehicle.getSpacing();
@@ -90,8 +92,11 @@ public final class TrainMotion {
 						}
 
 						// Holding can change the way the train leaves by, so it is checked even while the usual way is blocked
-						if (state.getElapsedDwellTicks() < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - ticksElapsed || !hooks.isHeldAtStop() && !railBlocked) {
+						if (state.getElapsedDwellTicks() < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - ticksElapsed) {
 							state.setElapsedDwellTicks(state.getElapsedDwellTicks() + ticksElapsed);
+						} else if (!hooks.isHeldAtStop() && !railBlocked) {
+							state.setElapsedDwellTicks(state.getElapsedDwellTicks() + ticksElapsed);
+							departureTicks = Math.max(0, totalDwellTicks - state.getElapsedDwellTicks());
 						}
 
 						tempDoorOpen = hooks.openDoors();
@@ -211,6 +216,7 @@ public final class TrainMotion {
 			state.setManualNotch(-2);
 		}
 
+		PlatformDwell.report(state, track, hooks, departureTicks);
 		return totalDwellTicks;
 	}
 

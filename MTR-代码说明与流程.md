@@ -373,6 +373,10 @@ flowchart TD
     L --> Z
 ```
 
+PIDS 发包时，`PidsSchedules` 从已生效的车厂运用和运用路径补每站台最近一班尚未开始的计划到站。运用开始后由列车上报实时到站。计划条目仅合并到发给客户端的站台显示数据。计划到站在服务端线程每 3 秒（`SCHEDULE_UPDATE_TICKS`，有玩家在站台附近时）全网重算一次，一次超过 50 ms 写一条日志（每分钟最多一条），用来在大线网上量。
+
+`TrainServer` 把实际在线列车下一载客站的实时预测和运动内核的停站状态汇成 `StationCall`，广播器和时刻传感器按站台读取。一次停靠中每个方块只触发一次。发车预告只在已有的发车检查放行后计时，不提前申请进路。
+
 ### 4.4 组件的运动规则：`TrainMotion.tick`
 
 在 `transit-sim` 的 `transitsim.motion`，不依赖 Minecraft。`Train` 把自己实现成 `MotionState`（速度、位置、门、下一停车点）、`MotionTrack`（路径和每段的累计距离）、`MotionVehicle`（车厢数、间距、加减速度）、`MotionHooks`（能否发车、轨道是否被占、开门、到站回调）交进去。

@@ -34,6 +34,7 @@ import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 import transitsim.motion.RunSegment;
+import transitsim.motion.PlatformDwell;
 import transitsim.motion.SpeedCurves;
 import transitsim.sim.Occupancy;
 import transitsim.sim.RunReservations;
@@ -96,6 +97,8 @@ public class TrainServer extends Train {
 	public Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 
 	private List<TimeSegment> timeSegments;
+	private PlatformDwell platformDwell;
+	private StationCall stationCall;
 	private final List<PathData> depotPath;
 	private final List<Double> depotDistances;
 	private final List<TimeSegment> depotTimeSegments;
@@ -264,6 +267,21 @@ public class TrainServer extends Train {
 	@Override
 	protected void onStopReached() {
 		service.onStopReached();
+	}
+
+	@Override
+	protected void onDwell(int rail, float departureTicks) {
+		final long platformId = rail >= 0 && path.get(rail).isPlatformTrack() && !service.isOutOfService() ? path.get(rail).getStopId() : 0;
+		platformDwell = PlatformDwell.update(platformDwell, platformId, System.currentTimeMillis(), departureTicks);
+	}
+
+	void forEachRider(Consumer<Player> consumer) {
+		ridingEntities.forEach(uuid -> {
+			final Player player = world.getPlayerByUUID(uuid);
+			if (player != null) {
+				consumer.accept(player);
+			}
+		});
 	}
 
 	@Override
@@ -464,6 +482,7 @@ public class TrainServer extends Train {
 					System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " can't be shown where the simulator has it, as the siding has no path " + key);
 				}
 				simulatedService = new byte[0];
+				platformDwell = null;
 				return;
 			}
 			if ((tripPath == null ? depotPath : tripPath.path) != path) {
@@ -476,6 +495,7 @@ public class TrainServer extends Train {
 		elapsedDwellTicks = train.getElapsedDwellTicks();
 		nextStoppingIndex = train.getNextStoppingIndex();
 		nextPlatformIndex = train.getNextPlatformIndex();
+		platformDwell = train.getPlatformDwell();
 		reversed = train.isReversed();
 		isOnRoute = train.isOnRoute();
 		doorTarget = train.getDoorTarget();
@@ -616,7 +636,10 @@ public class TrainServer extends Train {
 			service.update(isOnRoute);
 		}
 
+		final int platformRail = platformDwell == null ? nextPlatformIndex : nextStoppingIndex;
+		final RailwayData railwayData = prepareStationCall(platformRail);
 		final int nextDepartureTicks = isOnRoute ? 0 : service.getStopTimes() == null ? depot.getNextDepartureMillis() : depot.getNextDepartureMillis(trainId, getLeadMillis());
+		final boolean standingForDuty = !isOnRoute && depot.getRunDuties() != null;
 		final long currentMillis = System.currentTimeMillis() - (long) (elapsedDwellTicks * Depot.MILLIS_PER_TICK) + (long) Math.max(0, nextDepartureTicks);
 
 		double currentTime = -1;
@@ -665,8 +688,14 @@ public class TrainServer extends Train {
 						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getSegmentIndex(timeSegment)) : 0;
 						// The estimate doesn't know about waiting for the timetable at earlier stops
 						final long arrivalMillis = Math.max(estimatedMillis, scheduledMillis);
+						if (railwayData != null && stationCall.dwell == null && stationCall.approachMillis == 0 && !timeSegment.pass
+								&& platformId == stationCall.platformId && i < timeSegments.size() && getSegmentIndex(timeSegment) == platformRail) {
+							stationCall.approachMillis = arrivalMillis;
+							stationCall.routeId = timeSegment.routeId;
+							railwayData.addStationCall(stationCall);
+						}
 						addSchedule = () -> {
-							schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis));
+							schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis, false, standingForDuty));
 							// With -Dmtr.debugSchedules=<platform ID>, what each train tells that platform, every 10 s
 							if (DEBUG_SCHEDULES != 0 && platformId == DEBUG_SCHEDULES && System.currentTimeMillis() / 50 % 200 == 0) {
 								System.out.println("Minecraft Transit Railway schedule at " + platformId + ": train " + id + " siding " + sidingId + (service.isOnDuty() ? " duty " + service.getDutySlot() : " no duty") + ", route " + timeSegment.routeId + " stop " + timeSegment.currentStationIndex + ", in " + (arrivalMillis - System.currentTimeMillis()) / 1000 + " s, trip routes " + tripRouteIds + ", path stop " + path.get(getSegmentIndex(timeSegment)).stopIndex);
@@ -724,6 +753,42 @@ public class TrainServer extends Train {
 		final boolean newSegment = segmentVersion != sentSegmentVersion;
 		sentSegmentVersion = segmentVersion;
 		return newSegment || oldPassengerCount > ridingEntities.size() || oldStoppingIndex != nextStoppingIndex || oldIsCurrentlyManual != isCurrentlyManual || oldStopped && speed != 0 || oldDoorOpen != doorTarget || oldSyncRepeatIndices;
+	}
+
+	/**
+	 * Retains one identity as the ETA changes and the train stops, then retires it when the train leaves.
+	 * Only a train on its path to the next passenger stop can advertise an approach.
+	 */
+	private RailwayData prepareStationCall(int rail) {
+		if (!isOnRoute || service.isOutOfService() || rail < 0 || rail >= path.size()) {
+			stationCall = null;
+			return null;
+		}
+		final PathData stop = path.get(rail);
+		final long platformId = stop.getStopId();
+		if (!stop.isPlatformTrack() || stop.dwellTime <= 0 || platformId == 0 || platformDwell != null && platformDwell.platformId != platformId) {
+			stationCall = null;
+			return null;
+		}
+		if (platformDwell == null && railProgress >= getMotionTrack().getStopDistance(rail)) {
+			// A newly attached simulator may need its first tick to report a stop already in progress.
+			return null;
+		}
+		if (stationCall == null || stationCall.platformId != platformId || platformDwell == null && stationCall.dwell != null) {
+			stationCall = new StationCall(platformId, this);
+		}
+		stationCall.approachMillis = 0;
+		stationCall.dwell = platformDwell;
+		final RailwayData railwayData = RailwayData.getInstance(world);
+		if (railwayData != null && platformDwell != null) {
+			if (stationCall.routeId == 0) {
+				RailwayData.useRoutesAndStationsFromIndex(stop.stopIndex - 1, tripRouteIds.isEmpty() ? depot.getRouteIds(trainId, dataCache) : tripRouteIds, dataCache, (index, route, nextRoute, station, nextStation, lastStation) -> {
+					stationCall.routeId = route == null ? 0 : route.id;
+				});
+			}
+			railwayData.addStationCall(stationCall);
+		}
+		return railwayData;
 	}
 
 	public void writeTrainPositions(List<Map<UUID, Long>> trainPositions, SignalBlocks signalBlocks) {

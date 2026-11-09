@@ -41,13 +41,15 @@
 - 时刻表右键班次表头，把这一班各站的时刻改动整列同步到之后的每一班（`syncExceptions`，U349）。
 - 修复：列车按时刻表摆放后玩家看不到。一整天的运用路径太长，发给客户端的包超过 1 MB 被丢掉；改成轨道只写一次、按轮发送，到折返站换下一轮（见"记录"里"长路径分轮发送"，U346、U347）。
 - 修复：按轮发送后状态包的同步编号绕过了 ANTE 的 mixin，客户端拒收所有状态包，车门不开、按住 Shift 下不了车（U358）。
-- 资源模组暂时合回一个 jar（`split_assets=false`，U348）；看不到车的原因不是拆分，以后可以再打开。
+- 资源模组曾暂时合回一个 jar；看不到车的原因不是拆分，之后又改回分开（`split_assets=true`，0.63.2，U348）。
 
 测试 jar：`P:/mtr-ante/test-jars/merged` 的 0.63.1 是 `e0dd324` 单独构建的（不含另一个会话没做完的改动），组件 536、游戏 380 全过。还没推送。
 
+接手合并的 PIDS 更新（2026-11-09，0.63.2）：另一个会话停下后，用户要求修正并合并它的工作——PIDS 在运用出库前显示下一班的计划到站（`PidsSchedules`，`ScheduleEntry.planned` 进网络包，所以升 `mtm_version`），广播器和时刻表感应器按实际到站、停站、确认发车前触发（`StationCall`、组件 `PlatformDwell` 和 `MotionHooks.onDwell`），测试项 U350、U353。审过：`ScheduleEntry.compareTo` 改成同时同线路返回 0，客户端用 `HashSet` 存、只用来排序，没问题；客户端时区来自服务端的包。补的：计划到站在服务端线程每 3 秒全网重算一次，超过 50 ms 写日志（大线网上待量）。它当时不过的 `PlatformDwellTest` 现在单独跑和整体构建都过。同时资源模组改回分开。
+
 和另一个会话的关系：
 
-- 另一个会话同时在同一目录做 PIDS 运用候车显示、到站与发车广播（`PidsSchedules`、`StationCall`、`PlatformDwell`，以及 `RailwayData`、`Train`、`TrainServer`、运动内核里的改动），测试项 U350、U353 是它的。它的改动没有提交，留在工作区；它新加的 `PlatformDwellTest` 目前不过，所以整个工作区直接构建会失败。
+- 另一个会话做了 PIDS 运用候车显示、到站与发车广播（测试项 U350、U353 是它的）；它停下后已由本会话接手合并（见上）。
 - 两边改同一文件时，只提交自己的部分：按另一个会话的名字（`StationCall`、`PlatformDwell`、`onDwell`、`PidsSchedules` 等）分出它的改动块，从提交版本加上自己的改动块写进暂存区（scratchpad 的 `stage_hunks.py`），再用暂存区单独构建验证（`build-index.sh`）。
 - `mtm_version` 现在是 0.63.1，另一个会话改包或存档时要接着往上升。
 

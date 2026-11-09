@@ -49,6 +49,10 @@ public interface MotionHooks {
 	 */
 	void onStopReached();
 
+	/** Actual dwell at a stop, or rail -1 once no longer there. Negative remaining ticks means departure is unconfirmed. */
+	default void onDwell(int rail, float departureTicks) {
+	}
+
 	/**
 	 * While true, a stopped train keeps its doors open and doesn't leave.
 	 */

@@ -9,6 +9,7 @@ import transitsim.motion.MotionHooks;
 import transitsim.motion.MotionState;
 import transitsim.motion.MotionTrack;
 import transitsim.motion.MotionVehicle;
+import transitsim.motion.PlatformDwell;
 import transitsim.motion.RunSegment;
 import transitsim.motion.SpeedCurves;
 import transitsim.motion.SpeedProfile;
@@ -1680,6 +1681,7 @@ public final class TickRunner<T extends RunTrack> {
 
 		public final long id;
 		public final TrainService<T> service;
+		private PlatformDwell platformDwell;
 		private final SidingRun sidingRun;
 		private final Siding<T> siding;
 		private List<T> path;
@@ -2921,6 +2923,16 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public void onStopReached() {
 			service.onStopReached();
+		}
+
+		@Override
+		public void onDwell(int rail, float departureTicks) {
+			final long platformId = rail >= 0 && path.get(rail).isPlatformTrack() && !service.isOutOfService() ? path.get(rail).getStopId() : 0;
+			platformDwell = PlatformDwell.update(platformDwell, platformId, millis, departureTicks);
+		}
+
+		public PlatformDwell getPlatformDwell() {
+			return platformDwell;
 		}
 
 		@Override

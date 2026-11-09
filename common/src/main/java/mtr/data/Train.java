@@ -1127,6 +1127,9 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	protected void onStopReached() {
 	}
 
+	protected void onDwell(int rail, float departureTicks) {
+	}
+
 	/**
 	 * While true, a stopped train keeps its doors open and doesn't leave, the same way as when the rail ahead is blocked.
 	 */
@@ -1504,6 +1507,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		@Override
 		public void onStopReached() {
 			Train.this.onStopReached();
+		}
+
+		@Override
+		public void onDwell(int rail, float departureTicks) {
+			Train.this.onDwell(rail, departureTicks);
 		}
 
 		@Override

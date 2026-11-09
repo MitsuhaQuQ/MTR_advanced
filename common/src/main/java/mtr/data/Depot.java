@@ -1792,6 +1792,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		// The simulator sends out the trains of its depots (G1)
 		if (runBySimulator) {
+			departureOffset = 0;
 			deployableSidings.clear();
 			return;
 		}

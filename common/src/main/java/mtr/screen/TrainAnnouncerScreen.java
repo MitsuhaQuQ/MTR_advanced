@@ -6,12 +6,15 @@ import mtr.audio.AnnouncementSound;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.client.AnnouncementPlayer;
 import mtr.client.AudioCache;
+import mtr.client.IDrawing;
 import mtr.data.DataConverter;
 import mtr.data.RailwayData;
+import mtr.data.StationCall;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
@@ -28,14 +31,18 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 
 	private final String initialMessage;
 	private final String initialSoundIdString;
+	private int seconds = 5;
+	private StationCall.Trigger trigger = StationCall.Trigger.LEGACY;
+	private boolean toRiders;
 	private final DashboardList availableSoundsList;
 	private final Map<String, String> uploadedSounds = new HashMap<>();
 
 	private static final int MAX_MESSAGE_LENGTH = 256;
 	public TrainAnnouncerScreen(BlockPos pos) {
-		super(pos, true,
+		super(pos, true, true,
 				new Tuple<>(new WidgetBetterTextField("", MAX_MESSAGE_LENGTH), Text.translatable("gui.mtr.announcement_message")),
-				new Tuple<>(new WidgetBetterTextField("", AnnouncementSound.MAX_LENGTH), Text.translatable("gui.mtr.sound_file"))
+				new Tuple<>(new WidgetBetterTextField("", AnnouncementSound.MAX_LENGTH), Text.translatable("gui.mtr.sound_file")),
+				new Tuple<>(new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "", 5), Text.translatable("gui.mtr.station_trigger_seconds"))
 		);
 
 		minecraft = Minecraft.getInstance();
@@ -43,8 +50,12 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 		if (world != null) {
 			final BlockEntity entity = world.getBlockEntity(pos);
 			if (entity instanceof BlockTrainAnnouncer.TileEntityTrainAnnouncer) {
-				initialMessage = ((BlockTrainAnnouncer.TileEntityTrainAnnouncer) entity).getMessage();
-				initialSoundIdString = ((BlockTrainAnnouncer.TileEntityTrainAnnouncer) entity).getSoundIdString();
+				final BlockTrainAnnouncer.TileEntityTrainAnnouncer announcer = (BlockTrainAnnouncer.TileEntityTrainAnnouncer) entity;
+				initialMessage = announcer.getMessage();
+				initialSoundIdString = announcer.getSoundIdString();
+				trigger = announcer.getTrigger();
+				seconds = trigger == StationCall.Trigger.LEGACY && announcer.getSeconds() == 0 ? 5 : announcer.getSeconds();
+				toRiders = announcer.getToRiders();
 			} else {
 				initialMessage = "";
 				initialSoundIdString = "";
@@ -84,12 +95,39 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 		super.init();
 		textFields[0].setValue(initialMessage);
 		textFields[1].setValue(initialSoundIdString);
+		textFields[2].setValue(String.valueOf(seconds));
+		final int optionWidth = (width - SQUARE_SIZE * 3) / 2;
+		addTriggerButton(() -> trigger, value -> trigger = value, optionWidth);
+		final Button audience = UtilitiesClient.newButton(Text.translatable(audienceKey()), button -> {
+			toRiders = !toRiders;
+			button.setMessage(Text.translatable(audienceKey()));
+		});
+		IDrawing.setPositionAndWidth(audience, SQUARE_SIZE * 2 + optionWidth, optionsY, optionWidth);
+		addDrawableChild(audience);
 
 		setListVisibility(false);
 		availableSoundsList.y = SQUARE_SIZE * 2 + TEXT_HEIGHT + TEXT_PADDING + TEXT_FIELD_PADDING;
 		availableSoundsList.height = height - availableSoundsList.y - SQUARE_SIZE;
 		availableSoundsList.width = width / 2 - SQUARE_SIZE;
 		availableSoundsList.init(this::addDrawableChild);
+	}
+
+	private String audienceKey() {
+		return toRiders ? "gui.mtr.station_audience_train" : "gui.mtr.station_audience_platform";
+	}
+
+	@Override
+	protected int getNumber() {
+		try {
+			return Integer.parseInt(textFields[2].getValue());
+		} catch (NumberFormatException e) {
+			return 0;
+		}
+	}
+
+	@Override
+	protected String[] getTimingSettings() {
+		return new String[]{trigger.name(), Boolean.toString(toRiders)};
 	}
 
 	@Override

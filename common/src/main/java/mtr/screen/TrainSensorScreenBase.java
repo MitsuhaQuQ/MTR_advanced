@@ -9,6 +9,7 @@ import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.NameColorDataBase;
 import mtr.data.Route;
+import mtr.data.StationCall;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
@@ -22,6 +23,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, IPacket {
 
@@ -30,6 +33,7 @@ public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, 
 
 	protected final BlockPos pos;
 	protected final WidgetBetterTextField[] textFields;
+	protected final int optionsY;
 
 	private final Set<Long> filterRouteIds;
 	private final int textFieldCount;
@@ -42,6 +46,11 @@ public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, 
 
 	@SafeVarargs
 	public TrainSensorScreenBase(BlockPos pos, boolean hasSpeedCheckboxes, Tuple<WidgetBetterTextField, Component>... textFieldsAndLabels) {
+		this(pos, hasSpeedCheckboxes, false, textFieldsAndLabels);
+	}
+
+	@SafeVarargs
+	protected TrainSensorScreenBase(BlockPos pos, boolean hasSpeedCheckboxes, boolean hasTimingOptions, Tuple<WidgetBetterTextField, Component>... textFieldsAndLabels) {
 		super(Text.literal(""));
 		this.pos = pos;
 
@@ -80,7 +89,8 @@ public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, 
 		});
 
 		this.hasSpeedCheckboxes = hasSpeedCheckboxes;
-		yStart = (textFieldCount == 0 ? SQUARE_SIZE : SQUARE_SIZE * 3 + TEXT_HEIGHT + TEXT_PADDING * 2 + TEXT_FIELD_PADDING) + (hasSpeedCheckboxes ? 2 * SQUARE_SIZE : 0);
+		optionsY = textFieldCount == 0 ? SQUARE_SIZE : SQUARE_SIZE * 3 + TEXT_HEIGHT + TEXT_PADDING * 2 + TEXT_FIELD_PADDING;
+		yStart = optionsY + (hasTimingOptions ? SQUARE_SIZE : 0) + (hasSpeedCheckboxes ? 2 * SQUARE_SIZE : 0);
 	}
 
 	@Override
@@ -118,7 +128,7 @@ public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, 
 		try {
 			renderBackground(matrices);
 			for (int i = 0; i < textFieldCount; i++) {
-				GuiCompat.draw(matrices, font, textFieldLabels[i], SQUARE_SIZE + (float) (width / 2 - SQUARE_SIZE) * i, SQUARE_SIZE, ARGB_WHITE);
+				GuiCompat.draw(matrices, font, textFieldLabels[i], UtilitiesClient.getWidgetX(textFields[i]), SQUARE_SIZE, ARGB_WHITE);
 			}
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.filtered_routes", filterRouteIds.size()), SQUARE_SIZE, yStart + TEXT_PADDING, ARGB_WHITE);
 			GuiCompat.draw(matrices, font, Text.translatable(filterRouteIds.isEmpty() ? "gui.mtr.filtered_routes_empty" : "gui.mtr.filtered_routes_condition"), SQUARE_SIZE, yStart + SQUARE_SIZE + TEXT_PADDING, ARGB_WHITE);
@@ -139,10 +149,12 @@ public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, 
 
 	@Override
 	public void onClose() {
-		final String[] strings = new String[textFieldCount];
+		final String[] settings = getTimingSettings();
+		final String[] strings = new String[textFieldCount + settings.length];
 		for (int i = 0; i < textFieldCount; i++) {
 			strings[i] = textFields[i].getValue();
 		}
+		System.arraycopy(settings, 0, strings, textFieldCount, settings.length);
 		PacketTrainDataGuiClient.sendTrainSensorC2S(pos, filterRouteIds, stoppedOnly, movingOnly, getNumber(), strings);
 		super.onClose();
 	}
@@ -157,6 +169,24 @@ public abstract class TrainSensorScreenBase extends ScreenBase implements IGui, 
 
 	protected int getNumber() {
 		return 0;
+	}
+
+	protected String[] getTimingSettings() {
+		return new String[0];
+	}
+
+	protected void addTriggerButton(Supplier<StationCall.Trigger> getTrigger, Consumer<StationCall.Trigger> setTrigger, int buttonWidth) {
+		final Button button = UtilitiesClient.newButton(triggerText(getTrigger.get()), pressed -> {
+			final StationCall.Trigger[] triggers = StationCall.Trigger.values();
+			setTrigger.accept(triggers[(getTrigger.get().ordinal() + 1) % triggers.length]);
+			pressed.setMessage(triggerText(getTrigger.get()));
+		});
+		IDrawing.setPositionAndWidth(button, SQUARE_SIZE, optionsY, buttonWidth);
+		addDrawableChild(button);
+	}
+
+	private static Component triggerText(StationCall.Trigger trigger) {
+		return Text.translatable("gui.mtr.station_trigger_" + trigger.name().toLowerCase(Locale.ROOT));
 	}
 
 	private void setChecked(boolean newStoppedOnly, boolean newMovingOnly) {

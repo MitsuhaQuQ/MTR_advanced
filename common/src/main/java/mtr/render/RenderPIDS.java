@@ -22,12 +22,17 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import transitsim.plan.OperatingDay;
 
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 import static mtr.block.IBlock.HALF;
 
 public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRendererMapper<T> implements IGui {
+
+	private static final DateTimeFormatter PLANNED_TIME = DateTimeFormatter.ofPattern("HH:mm");
 
 	private final float scale;
 	private final float totalScaledWidth;
@@ -272,18 +277,16 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 						// Get arrival time
 						final int seconds = (int) ((currentSchedule.arrivalMillis - ClientClock.INSTANCE.serverMillis()) / 1000);
 						final int delayMinutes = currentSchedule.getDelayMinutes();
-						if (seconds >= 60) {
-							if ((arrivalLine == 1 && renderVertical) || (arrivalLine == 0 && renderSingle) || renderClassic) {
-								arrivalText = Text.translatable(isCJK ? "gui.mtr.arrival_min_cjk" : "gui.mtr.arrival_min", seconds / 60).append(appendDotAfterMin && !isCJK ? "." : "").append(delayMinutes > 0 ? " +" + delayMinutes : "");
-							} else {
-								arrivalText = Text.literal("");
-							}
+						final boolean timeLine = (arrivalLine == 1 && renderVertical) || (arrivalLine == 0 && renderSingle) || renderClassic;
+						if (!timeLine) {
+							arrivalText = Text.literal("");
+						} else if (currentSchedule.planned) {
+							final String time = PLANNED_TIME.format(Instant.ofEpochMilli(currentSchedule.arrivalMillis).atZone(OperatingDay.getTimeZone()));
+							arrivalText = Text.translatable("gui.mtr.arrival_planned", time);
+						} else if (seconds >= 60) {
+							arrivalText = Text.translatable(isCJK ? "gui.mtr.arrival_min_cjk" : "gui.mtr.arrival_min", seconds / 60).append(appendDotAfterMin && !isCJK ? "." : "").append(delayMinutes > 0 ? " +" + delayMinutes : "");
 						} else {
-							if ((arrivalLine == 1 && renderVertical) || (arrivalLine == 0 && renderSingle) || renderClassic) {
-								arrivalText = seconds > 0 ? Text.translatable(isCJK ? "gui.mtr.arrival_sec_cjk" : "gui.mtr.arrival_sec", seconds).append(appendDotAfterMin && !isCJK ? "." : "") : null;
-							} else {
-								arrivalText = Text.literal("");
-							}
+							arrivalText = seconds > 0 ? Text.translatable(isCJK ? "gui.mtr.arrival_sec_cjk" : "gui.mtr.arrival_sec", seconds).append(appendDotAfterMin && !isCJK ? "." : "") : null;
 						}
 
 						// Get car length text
@@ -503,6 +506,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 		}
 
 		final boolean showPassingTrains = entity instanceof IPIDS.TileEntityPIDS && ((IPIDS.TileEntityPIDS) entity).getShowPassingTrains();
+		final long now = ClientClock.INSTANCE.serverMillis();
 		schedules = new HashSet<>();
 		platforms.values().forEach(platform -> {
 			if (platformIds.isEmpty() || platformIds.contains(platform.id)) {
@@ -510,7 +514,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 				if (scheduleForPlatform != null) {
 					scheduleForPlatform.forEach(scheduleEntry -> {
 						final Route route = ClientData.DATA_CACHE.routeIdMap.get(scheduleEntry.routeId);
-						if (route != null && (showPassingTrains || !scheduleEntry.pass) && (renderType.showTerminatingPlatforms || scheduleEntry.currentStationIndex < route.platformIds.size() - 1)) {
+						if (route != null && (!scheduleEntry.planned || scheduleEntry.arrivalMillis > now) && (showPassingTrains || !scheduleEntry.pass) && (renderType.showTerminatingPlatforms || scheduleEntry.currentStationIndex < route.platformIds.size() - 1)) {
 							schedules.add(scheduleEntry);
 							platformIdToName.put(platform.id, platform.name);
 						}

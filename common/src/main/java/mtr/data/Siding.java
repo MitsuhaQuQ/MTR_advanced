@@ -1523,6 +1523,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return Collections.unmodifiableMap(tripPaths);
 	}
 
+	public int getTrainCars() {
+		return trainCars;
+	}
+
 	private void addTripPath(Map<String, TripPath<PathData>> tempTripPaths, List<PathData> pathBeforeMain, List<PathData> mainPath, TripTail<PathData, SavedRailBase> tripTail, int leaveRail, List<PathData> pathToDepot, int joinIndex, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
 		final List<PathData> tripPath = new ArrayList<>(pathBeforeMain);
 		PathFinder.appendPath(tripPath, new ArrayList<>(mainPath.subList(0, leaveRail + 1)));

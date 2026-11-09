@@ -67,6 +67,7 @@ public final class RunMotion {
 	 */
 	public static int tick(MotionState state, MotionTrack track, MotionVehicle vehicle, MotionHooks hooks, MotionCurves curves, double authorityEnd) {
 		if (track.size() == 0) {
+			PlatformDwell.report(state, track, hooks, -1);
 			return -1;
 		}
 		final int trainCars = vehicle.getTrainCars();
@@ -90,6 +91,7 @@ public final class RunMotion {
 					emit(hooks, MotionEvent.Type.DEPARTED, 0);
 				}
 			}
+			PlatformDwell.report(state, track, hooks, -1);
 			return 0;
 		}
 
@@ -102,6 +104,7 @@ public final class RunMotion {
 			emit(hooks, MotionEvent.Type.RETURNED, track.size() - 1);
 			state.setDoorTarget(false);
 			state.setDoorValue(0);
+			PlatformDwell.report(state, track, hooks, -1);
 			return 0;
 		}
 
@@ -117,6 +120,7 @@ public final class RunMotion {
 		final double stopPosition = track.getStopDistance(stop);
 		final int totalDwellTicks = hooks.getTotalDwellTicks();
 		boolean doorsOpen = false;
+		float departureTicks = -1;
 
 		if (state.getSpeed() <= 0 && Math.abs(stopPosition - state.getRailProgress()) <= AT) {
 			// At the stop: doors, the stop time, and away once the train may go and has somewhere to go to
@@ -128,8 +132,11 @@ public final class RunMotion {
 			}
 			final boolean wayClear = authorityEnd > stopPosition + AT;
 			// Counting from the first tick, so a stop shorter than the doors take, waiting for the way ahead, arrives once
-			if (state.getElapsedDwellTicks() == 0 || state.getElapsedDwellTicks() < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1 || !hooks.isHeldAtStop() && wayClear) {
+			if (state.getElapsedDwellTicks() == 0 || state.getElapsedDwellTicks() < totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1) {
 				state.setElapsedDwellTicks(state.getElapsedDwellTicks() + 1);
+			} else if (!hooks.isHeldAtStop() && wayClear) {
+				state.setElapsedDwellTicks(state.getElapsedDwellTicks() + 1);
+				departureTicks = Math.max(0, totalDwellTicks - state.getElapsedDwellTicks());
 			}
 			doorsOpen = hooks.openDoors();
 			if (!hooks.isClientSide() && state.getElapsedDwellTicks() >= totalDwellTicks && wayClear && !hooks.isHeldAtStop()) {
@@ -171,6 +178,7 @@ public final class RunMotion {
 
 		state.setDoorTarget(doorsOpen);
 		state.setDoorValue(MotionConstants.clamp(state.getDoorValue() + (doorsOpen ? 1F : -1F) / MotionConstants.DOOR_MOVE_TIME, 0, 1));
+		PlatformDwell.report(state, track, hooks, departureTicks);
 		return totalDwellTicks;
 	}
 

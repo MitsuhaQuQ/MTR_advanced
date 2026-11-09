@@ -14,12 +14,19 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 	 * The arrival planned by the timetable, or 0 for a train without one.
 	 */
 	public final long scheduledMillis;
+	public final boolean planned;
+	// A depot estimate replaced by the duty plan on passenger displays only.
+	final boolean standingForDuty;
 
 	public ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass) {
 		this(arrivalMillis, trainCars, routeId, currentStationIndex, trainId, pass, 0);
 	}
 
 	public ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass, long scheduledMillis) {
+		this(arrivalMillis, trainCars, routeId, currentStationIndex, trainId, pass, scheduledMillis, false, false);
+	}
+
+	ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass, long scheduledMillis, boolean planned, boolean standingForDuty) {
 		this.arrivalMillis = arrivalMillis;
 		this.trainCars = trainCars;
 		this.routeId = routeId;
@@ -27,6 +34,8 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		this.trainId = trainId;
 		this.pass = pass;
 		this.scheduledMillis = scheduledMillis;
+		this.planned = planned;
+		this.standingForDuty = standingForDuty;
 	}
 
 	public ScheduleEntry(FriendlyByteBuf packet) {
@@ -37,6 +46,8 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		trainId = packet.readLong();
 		pass = packet.readBoolean();
 		scheduledMillis = packet.readLong();
+		planned = packet.readBoolean();
+		standingForDuty = false;
 	}
 
 	public void writePacket(FriendlyByteBuf packet) {
@@ -47,6 +58,7 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		packet.writeLong(trainId);
 		packet.writeBoolean(pass);
 		packet.writeLong(scheduledMillis);
+		packet.writeBoolean(planned);
 	}
 
 	/**
@@ -58,10 +70,7 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 
 	@Override
 	public int compareTo(mtr.data.ScheduleEntry o) {
-		if (arrivalMillis == o.arrivalMillis) {
-			return routeId > o.routeId ? 1 : -1;
-		} else {
-			return arrivalMillis > o.arrivalMillis ? 1 : -1;
-		}
+		final int byTime = Long.compare(arrivalMillis, o.arrivalMillis);
+		return byTime == 0 ? Long.compare(routeId, o.routeId) : byTime;
 	}
 }
