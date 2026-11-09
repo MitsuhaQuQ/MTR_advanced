@@ -82,6 +82,27 @@ public final class EditorData {
 			ownerOverridesObject.add(mtr.data.NetworkSettings.railKeyText(railKey), linesArray);
 		});
 		networkSettingsObject.add("ownerOverrides", ownerOverridesObject);
+		// The logical lines of the track, the sections put in them by a rail, and the ones each operating line runs on
+		final JsonArray logicalLinesArray = new JsonArray();
+		ClientData.DATA_CACHE.networkSettings.logicalLines.forEach((id, line) -> {
+			final JsonObject lineObject = new JsonObject();
+			lineObject.addProperty("id", String.valueOf(id));
+			lineObject.addProperty("name", line.name);
+			lineObject.addProperty("color", line.color);
+			lineObject.addProperty("connecting", line.connecting);
+			logicalLinesArray.add(lineObject);
+		});
+		networkSettingsObject.add("logicalLines", logicalLinesArray);
+		final JsonObject railLinesObject = new JsonObject();
+		ClientData.DATA_CACHE.networkSettings.railLines.forEach((railKey, id) -> railLinesObject.addProperty(mtr.data.NetworkSettings.railKeyText(railKey), String.valueOf(id)));
+		networkSettingsObject.add("railLines", railLinesObject);
+		final JsonObject lineTracksObject = new JsonObject();
+		ClientData.DATA_CACHE.networkSettings.lineTracks.forEach((lineKey, ids) -> {
+			final JsonArray idsArray = new JsonArray();
+			ids.forEach(id -> idsArray.add(String.valueOf(id)));
+			lineTracksObject.add(lineKey, idsArray);
+		});
+		networkSettingsObject.add("lineTracks", lineTracksObject);
 		data.add("networkSettings", networkSettingsObject);
 		// The fast simulation of a day is a debugging tool the server turns on
 		data.addProperty("simulation", ClientData.editorSimulation);

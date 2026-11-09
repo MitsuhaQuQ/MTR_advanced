@@ -469,6 +469,62 @@ public final class EditorActions implements IPacket {
 					return TranslatedMessage.get("gui.mtr.editor_bad_change");
 				}
 			}
+			// Logical lines (2026-11-09): by ID, {name, color, connecting}, or null to take one away with its sections and choices
+			try {
+				if (operation.has("logicalLines") && operation.get("logicalLines").isJsonObject()) {
+					for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("logicalLines").entrySet()) {
+						final long id = Long.parseLong(entry.getKey());
+						if (entry.getValue().isJsonNull()) {
+							settings.logicalLines.remove(id);
+							settings.railLines.values().removeIf(lineId -> lineId == id);
+							settings.lineTracks.values().forEach(ids -> ids.remove(id));
+						} else {
+							final JsonObject lineObject = entry.getValue().getAsJsonObject();
+							settings.logicalLines.put(id, new mtr.data.NetworkSettings.LogicalLine(getString(lineObject, "name"), lineObject.has("color") ? lineObject.get("color").getAsInt() : 0, lineObject.has("connecting") && lineObject.get("connecting").getAsBoolean()));
+						}
+					}
+				}
+				// The sections put in them, by a rail's two nodes: the logical line, or null to take the section out
+				if (operation.has("railLines") && operation.get("railLines").isJsonObject()) {
+					for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("railLines").entrySet()) {
+						final java.util.UUID railKey = mtr.data.NetworkSettings.parseRailKey(entry.getKey());
+						if (railKey == null) {
+							return TranslatedMessage.get("gui.mtr.editor_bad_change");
+						}
+						if (entry.getValue().isJsonNull()) {
+							settings.railLines.remove(railKey);
+						} else {
+							final long id = Long.parseLong(entry.getValue().getAsString());
+							if (!settings.logicalLines.containsKey(id)) {
+								return TranslatedMessage.get("gui.mtr.editor_bad_change");
+							}
+							settings.railLines.put(railKey, id);
+						}
+					}
+				}
+				// The logical lines each operating line runs on, or null to go by its platforms
+				if (operation.has("lineTracks") && operation.get("lineTracks").isJsonObject()) {
+					for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("lineTracks").entrySet()) {
+						if (entry.getValue().isJsonNull()) {
+							settings.lineTracks.remove(entry.getKey());
+						} else {
+							final List<Long> ids = new ArrayList<>();
+							for (final JsonElement element : entry.getValue().getAsJsonArray()) {
+								final long id = Long.parseLong(element.getAsString());
+								if (settings.logicalLines.containsKey(id) && !ids.contains(id)) {
+									ids.add(id);
+								}
+							}
+							settings.lineTracks.put(entry.getKey(), ids);
+						}
+					}
+				}
+			} catch (RuntimeException e) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			if (settings.logicalLines.size() > mtr.data.NetworkSettings.MAX_LOGICAL_LINES || settings.railLines.size() > mtr.data.NetworkSettings.MAX_RAIL_LINES || settings.lineTracks.size() > mtr.data.NetworkSettings.MAX_LINE_TRACKS) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
 			ClientData.DATA_CACHE.networkSettings.copyFrom(settings);
 			mtr.packet.NetworkSettingsPackets.sendC2S(settings);
 			return null;

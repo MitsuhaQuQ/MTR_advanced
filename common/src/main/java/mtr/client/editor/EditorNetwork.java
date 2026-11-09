@@ -37,7 +37,7 @@ public final class EditorNetwork {
 	 * @param seenVersion the version of the map the page has, which is answered with only the version if nothing changed
 	 * @return {@code {version, mode, modes: [name], nodes: [[x, z, id]], rails: [[node, node, kind, isolation, x, z, ...]],
 	 * boundaryNodes: [node], stations: [{name, x, z}], routes: [{id, color, lineKey, name, nodes: [node], stopNodes: [index in nodes of each stop, or -1]}],
-	 * owners: {ready, names: [owner], rails: [[rail, manual, section, owner, ...]]}}}: the owners of the rails whose section has any,
+	 * owners: {ready, names: [owner], rails: [[rail, manual, section, logical line or "", owner, ...]]}}}: the owners of the rails whose section has any,
 	 * as the server worked them out (web layers step 2), each an index in {@code names}; manual 1 where set by hand
 	 */
 	public static JsonObject build(String modeName, boolean fresh, int seenVersion) {
@@ -103,6 +103,8 @@ public final class EditorNetwork {
 				ownedRail.add(railsArray.size());
 				ownedRail.add(owners.manual ? 1 : 0);
 				ownedRail.add(sectionNumbers.computeIfAbsent(owners, entry -> sectionNumbers.size()));
+				// The section's logical line (2026-11-09), or empty
+				ownedRail.add(owners.logicalLine == 0 ? "" : String.valueOf(owners.logicalLine));
 				for (final int owner : owners.owners) {
 					ownedRail.add(owner);
 				}

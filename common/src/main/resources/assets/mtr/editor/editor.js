@@ -1512,6 +1512,18 @@
 			if (Number.isFinite(draft.networkSettings.minReverseMillis)) settingItems.push(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)));
 			if (Number.isFinite(draft.networkSettings.waitThresholdMillis)) settingItems.push(tr("等候分界 {0} 秒", Math.round(draft.networkSettings.waitThresholdMillis / 1000)));
 			Object.entries(draft.networkSettings.stationWaitThresholds || {}).forEach(([station, millis]) => settingItems.push(millis === null ? tr("{0}：等候分界改回全网的", stationNameOf(station)) : tr("{0}：等候分界 {1} 秒", stationNameOf(station), Math.round(millis / 1000))));
+			// Logical lines (2026-11-09)
+			Object.entries(draft.networkSettings.logicalLines || {}).forEach(([id, line]) => {
+				const was = (savedSettings().logicalLines || []).find(each => each.id === id);
+				settingItems.push(line === null ? tr("删除逻辑线路 {0}", was ? was.name : id) : was ? tr("逻辑线路 {0}：改为 {1}{2}", was.name, line.name, line.connecting ? tr("（联络线）") : "") : tr("新建逻辑线路 {0}{1}", line.name, line.connecting ? tr("（联络线）") : ""));
+			});
+			const railLineCount = Object.keys(draft.networkSettings.railLines || {}).length;
+			if (railLineCount) settingItems.push(tr("{0} 段轨道改了所属的逻辑线路", railLineCount));
+			Object.entries(draft.networkSettings.lineTracks || {}).forEach(([lineKey, ids]) => {
+				const line = data.lines.find(each => each.key === lineKey);
+				const name = line ? shortName(line.name) : lineKey;
+				settingItems.push(ids === null ? tr("{0}：按站台所在的逻辑线路走", name) : tr("{0}：走逻辑线路 {1}", name, ids.map(id => (logicalLinesShown().get(id) || { name: id }).name).join(tr("、"))));
+			});
 			// Section owners set by hand (web layers step 2), by the rail chosen
 			Object.entries(draft.networkSettings.ownerOverrides || {}).forEach(([key, lines]) => settingItems.push(lines === null ? tr("轨道 {0}：区段归属恢复自动", key) : lines.length ? tr("轨道 {0}：区段归属 {1}", key, lines.map(ownerText).join(tr("、"))) : tr("轨道 {0}：区段对所有线路开放", key)));
 			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul>${settingItems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="networkSettings" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
@@ -1616,16 +1628,26 @@
 		parts.push(`<li>${node(`data-layer="physical" title="${tr("轨道、寻路边界、留置位；右键轨道设寻路边界")}"`, "", `<span class="label leaf">${tr("全网配线")}</span>`, onNetwork("physical"))}</li>`);
 		parts.push(`</ul>`);
 
-		// 2. Who owns each section of track, with the connecting lines, which belong to this layer
-		const connectingLines = data.routes.filter(isConnecting).sort((a, b) => routeTitle(a).localeCompare(routeTitle(b)));
-		parts.push(`<div class="section">${tr("区段归属")}</div><ul>`);
-		parts.push(`<li>${node(`data-layer="owners" title="${tr("每段轨道归哪些线路；右键轨道改归属、设联络线")}"`, "", `<span class="label leaf">${tr("归属图")}</span>`, onNetwork("owners") && !state.route)}`);
-		if (connectingLines.length) {
-			parts.push(`<ul><li class="hint">${tr("联络线")}</li>`);
-			connectingLines.forEach(r => parts.push(`<li>${node(`data-connecting="${r.id}"`, "", routeLabel(r), onNetwork("owners") && state.route === r.id)}</li>`));
-			parts.push(`</ul>`);
+		// 2. The logical lines of the track, apart from the operating lines (2026-11-09); before there are any, the owners worked
+		// out from boundaries and platforms, with the connecting lines
+		const logicalLines = [...logicalLinesShown().values()].sort((a, b) => a.name.localeCompare(b.name));
+		parts.push(`<div class="section">${tr("逻辑归属")}</div><ul>`);
+		parts.push(`<li>${node(`data-layer="owners" title="${tr("每段轨道属于哪条逻辑线路；右键轨道划入或移出")}"`, "", `<span class="label leaf">${tr("归属图")}</span>`, onNetwork("owners") && !state.route && !net.focusLogical)}`);
+		parts.push(`<ul>`);
+		if (logicalLines.length) {
+			const drafted = draftSettings().logicalLines || {};
+			logicalLines.forEach(line => parts.push(`<li>${node(`data-logical="${line.id}" title="${tr("点开在归属图上看它；右键改名、改颜色、设为联络线或删除")}"`, "", `<span class="swatch" style="background:${colorOf(line.color)}"></span><span class="label">${escapeHtml(line.name)}</span>${line.connecting ? `<span class="count">${tr("联络线")}</span>` : ""}${line.id in drafted ? `<span class="draft-dot" title="${tr("有没应用的草稿")}">•</span>` : ""}`, onNetwork("owners") && net.focusLogical === line.id)}</li>`));
+		} else {
+			parts.push(`<li class="hint">${tr("还没有逻辑线路：现在按寻路边界和站台自动算归属")}</li>`);
+			if (data.canEdit) parts.push(`<li>${node(`data-generate-logical="1"`, "", `<span class="label leaf">${tr("按现在的归属生成初稿…")}</span>`, false)}</li>`);
+			const connectingLines = data.routes.filter(isConnecting).sort((a, b) => routeTitle(a).localeCompare(routeTitle(b)));
+			if (connectingLines.length) {
+				parts.push(`<li class="hint">${tr("联络线")}</li>`);
+				connectingLines.forEach(r => parts.push(`<li>${node(`data-connecting="${r.id}"`, "", routeLabel(r), onNetwork("owners") && state.route === r.id)}</li>`));
+			}
 		}
-		parts.push(`</li></ul>`);
+		if (data.canEdit) parts.push(`<li>${node(`data-new-logical="1"`, "", `<span class="label leaf">${tr("＋ 新建逻辑线路…")}</span>`, false)}</li>`);
+		parts.push(`</ul></li></ul>`);
 
 		// 3. The operating lines: their types and stops
 		parts.push(`<div class="section">${tr("运营线路")}</div><ul>`);
@@ -1729,15 +1751,30 @@
 	function onTreeClick(target) {
 		const el = target.closest(".node");
 		if (!el) return;
-		const { line, route, view, depot, slot, siding, ofDepot, layer, connecting, section, pool } = el.dataset;
+		const { line, route, view, depot, slot, siding, ofDepot, layer, connecting, section, pool, logical, newLogical, generateLogical } = el.dataset;
 		if (slot !== undefined) {
 			selectSlot(ofDepot, siding, +slot);
 			return;
 		}
 		// The layers of the whole network map, and a connecting line drawn over its owners
 		if (layer) {
+			net.focusLogical = null;
 			setNetLayer(layer);
 			openView("network", state.line, null);
+			return;
+		}
+		if (logical) {
+			net.focusLogical = logical;
+			setNetLayer("owners");
+			openView("network", state.line, null);
+			return;
+		}
+		if (newLogical) {
+			logicalLineDialog(null);
+			return;
+		}
+		if (generateLogical) {
+			logicalDraftDialog();
 			return;
 		}
 		if (connecting) {
@@ -1834,7 +1871,7 @@
 	// Zoomed out further than this many pixels a block, the network is drawn as a schematic: each run of track between two
 	// junctions simplified to within a few pixels, with its straight runs set along the horizontal, vertical and 45°
 	const NET_EXACT_SCALE = 2, NET_SIMPLIFY_PX = 10, NET_ALIGNED = 0.12;
-	const net = { data: null, version: -1, mode: "", scale: 0, cx: 0, cz: 0, grid: null, hover: -1, error: "", timer: null, drag: null, layer: "physical" };
+	const net = { data: null, version: -1, mode: "", scale: 0, cx: 0, cz: 0, grid: null, hover: -1, error: "", timer: null, drag: null, layer: "physical", focusLogical: null };
 	// Which layer the map shows (web layers step 2): the physical track, or which lines own each section
 	try { if (localStorage.getItem("mtr-editor-net-layer") === "owners") net.layer = "owners"; } catch (e) {}
 	const netCanvas = $("net-canvas"), netWrap = $("net-wrap"), netCtx = netCanvas.getContext("2d");
@@ -1912,8 +1949,8 @@
 		net.sectionRails = new Map();
 		const owned = d.owners || {}, names = owned.names || [];
 		(owned.rails || []).forEach(entry => {
-			const [index, manual, section, ...owners] = entry;
-			net.ownerOf.set(index, { owners: owners.map(owner => names[owner]), manual: manual === 1, section });
+			const [index, manual, section, logical, ...owners] = entry;
+			net.ownerOf.set(index, { owners: owners.map(owner => names[owner]), manual: manual === 1, section, logical });
 			if (!net.sectionRails.has(section)) net.sectionRails.set(section, []);
 			net.sectionRails.get(section).push(index);
 		});
@@ -2232,6 +2269,185 @@
 		});
 	}
 
+	// ---------- Logical lines (2026-11-09) ----------
+	/*
+	 * Lines of the track itself, apart from the operating lines: each section in at most one, kept by a rail of it; an
+	 * operating line runs on the logical lines chosen for it, or those of its platforms (transitsim LogicalLines). Once there
+	 * are any, they decide where operating lines may run instead of the owners worked out from boundaries and platforms.
+	 */
+	const draftSettings = () => draft.networkSettings || {};
+	const savedSettings = () => data && data.networkSettings || {};
+	const compareRailKeys = (a, b) => {
+		const [a1, a2] = a.split(",").map(BigInt), [b1, b2] = b.split(",").map(BigInt);
+		return a1 < b1 ? -1 : a1 > b1 ? 1 : a2 < b2 ? -1 : a2 > b2 ? 1 : 0;
+	};
+
+	/** The logical lines as the draft has them, by ID: {id, name, color, connecting}. */
+	function logicalLinesShown() {
+		const lines = new Map((savedSettings().logicalLines || []).map(line => [line.id, Object.assign({}, line)]));
+		Object.entries(draftSettings().logicalLines || {}).forEach(([id, line]) => {
+			if (line === null) lines.delete(id);
+			else lines.set(id, Object.assign({ id }, line));
+		});
+		return lines;
+	}
+	const usesLogicalLines = () => logicalLinesShown().size > 0;
+
+	/** Each section's logical line by a rail of it, as the draft has them. */
+	const railLinesShown = () => Object.assign({}, savedSettings().railLines || {}, draftSettings().railLines || {});
+
+	/** The logical line of a rail's section as the draft has it, or null; of several rails set, the lowest key counts, as on the server. */
+	function railLogicalLine(index) {
+		const effective = railLinesShown(), lines = logicalLinesShown();
+		const keys = sectionOf(index).map(netRailKey).filter(key => effective[key] !== null && effective[key] !== undefined && lines.has(effective[key])).sort(compareRailKeys);
+		return keys.length ? lines.get(effective[keys[0]]) : null;
+	}
+	const railLogicalDrafted = index => sectionOf(index).map(netRailKey).some(key => key in (draftSettings().railLines || {}));
+
+	/** Changes one part of the drafted network settings, taking out what is as the game has it, and the settings when nothing is left. */
+	function draftSettingsPart(part, change) {
+		const saved = part === "logicalLines" ? Object.fromEntries((savedSettings().logicalLines || []).map(line => [line.id, { name: line.name, color: line.color, connecting: line.connecting }])) : savedSettings()[part] || {};
+		const drafted = Object.assign({}, draftSettings()[part] || {});
+		change(drafted, saved);
+		Object.keys(drafted).forEach(key => {
+			if (drafted[key] === null ? !(key in saved) : JSON.stringify(drafted[key]) === JSON.stringify(saved[key])) delete drafted[key];
+		});
+		const settings = Object.assign({}, draft.networkSettings || {});
+		if (Object.keys(drafted).length) settings[part] = drafted;
+		else delete settings[part];
+		draft.networkSettings = Object.keys(settings).length ? settings : null;
+		saveDraft();
+		renderAll();
+		renderNetworkTools();
+		drawNetwork();
+	}
+
+	/** Puts a rail's section in a logical line, or out of any with null, by the rail chosen. */
+	function setRailLogicalLine(index, id) {
+		const key = netRailKey(index);
+		draftSettingsPart("railLines", (drafted, saved) => {
+			sectionOf(index).map(netRailKey).forEach(other => {
+				if (other === key && id !== null) return;
+				if (other in saved) drafted[other] = null;
+				else delete drafted[other];
+			});
+			if (id !== null) drafted[key] = id;
+		});
+	}
+
+	const newLogicalId = () => String(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+
+	/** A new logical line, or one changed: name, colour, connecting line; then what is done with its ID. */
+	function logicalLineDialog(line, then) {
+		const isNew = !line;
+		openDialog(isNew ? tr("新建逻辑线路") : tr("逻辑线路：{0}", escapeHtml(line.name)), `
+			<label>${tr("名称")} <input name="name" maxlength="64" value="${escapeHtml(line ? line.name : "")}" placeholder="${tr("例如 京沪线")}" required></label>
+			<label>${tr("颜色")} <input type="color" name="color" value="${colorOf(line ? line.color : 0x3b82f6)}"></label>
+			<label><input type="checkbox" name="connecting"${line && line.connecting ? " checked" : ""}> ${tr("联络线：所有运营线路都能走")}</label>
+			<p class="hint">${tr("逻辑线路是轨道本身的线路，和运营线路分开：每段轨道最多属于一条；运营线路走它勾选的逻辑线路，没勾时走它停靠的站台所在的逻辑线路。")}</p>`, isNew ? tr("新建") : tr("确定"), form => {
+			const name = form.name.value.trim();
+			if (!name) return tr("写上名称");
+			const id = isNew ? newLogicalId() : line.id;
+			const value = { name, color: parseInt(form.color.value.slice(1), 16), connecting: form.connecting.checked };
+			draftSettingsPart("logicalLines", drafted => { drafted[id] = value; });
+			if (then) then(id);
+		});
+	}
+
+	/** Takes a logical line away, with its sections and the operating lines' choices of it. */
+	function deleteLogicalLine(line) {
+		if (!confirm(tr("删除逻辑线路“{0}”？它的轨道不再属于任何逻辑线路，运营线路对它的勾选也去掉。应用前都在草稿里。", line.name))) return;
+		draftSettingsPart("railLines", (drafted, saved) => {
+			Object.entries(railLinesShown()).forEach(([key, id]) => {
+				if (id !== line.id) return;
+				if (key in saved) drafted[key] = null;
+				else delete drafted[key];
+			});
+		});
+		draftSettingsPart("lineTracks", (drafted, saved) => {
+			Object.entries(Object.assign({}, saved, drafted)).forEach(([lineKey, ids]) => {
+				if (ids && ids.includes(line.id)) drafted[lineKey] = ids.filter(id => id !== line.id);
+			});
+		});
+		draftSettingsPart("logicalLines", drafted => { drafted[line.id] = null; });
+	}
+
+	/** The logical lines an operating line runs on: ticked, or none for those of its platforms. */
+	function lineTracksDialog(lineKey) {
+		const line = data.lines.find(each => each.key === lineKey);
+		const tracks = Object.assign({}, savedSettings().lineTracks || {}, draftSettings().lineTracks || {});
+		const chosen = tracks[lineKey] || [];
+		const boxes = [...logicalLinesShown().values()].filter(each => !each.connecting).map(each => `<label class="owner-choice"><input type="checkbox" name="logical" value="${each.id}"${chosen.includes(each.id) ? " checked" : ""}><span class="swatch" style="background:${colorOf(each.color)}"></span>${escapeHtml(each.name)}</label>`).join("");
+		openDialog(tr("能走的逻辑线路：{0}", escapeHtml(line ? shortName(line.name) : lineKey)), `
+			<p>${tr("这条运营线路的各种别只走勾选的逻辑线路（和联络线、不属于任何逻辑线路的轨道）。都不勾时，走它停靠的站台所在的逻辑线路。")}</p>
+			<div class="owner-choices">${boxes || `<p class="hint">${tr("还没有逻辑线路")}</p>`}</div>
+			<p class="hint">${tr("改动先存为草稿，点“应用”后服务端重新算，走不了的线路会重新寻路。")}</p>`, tr("确定"), form => {
+			const ticked = [...form.querySelectorAll("input[name=logical]:checked")].map(input => input.value);
+			draftSettingsPart("lineTracks", drafted => { drafted[lineKey] = ticked.length ? ticked : null; });
+		});
+	}
+
+	/**
+	 * A first draft of logical lines from the owners worked out now: the sections owned by the same operating lines one
+	 * logical line, named after them, a connecting line's own sections a connecting logical line; each operating line given
+	 * the logical lines it owns, so it runs where it does now.
+	 */
+	function logicalDraftDialog() {
+		if (!net.data || !net.data.owners || !net.data.owners.ready || !net.sectionRails) {
+			ensureNetworkFor(net.mode || "TRAIN");
+			alert(tr("全网配线的归属还没从服务端读来，稍等几秒再试。"));
+			return;
+		}
+		const groups = new Map();
+		net.sectionRails.forEach(rails => {
+			const entry = net.ownerOf.get(rails[0]);
+			if (!entry || !entry.owners.length) return;
+			const key = entry.owners.slice().sort().join("\n");
+			if (!groups.has(key)) groups.set(key, { owners: entry.owners.slice().sort(), rails: [] });
+			groups.get(key).rails.push(rails[0]);
+		});
+		if (!groups.size) {
+			alert(tr("现在没有任何轨道有归属，没有可以生成的初稿。"));
+			return;
+		}
+		openDialog(tr("按现在的归属生成逻辑线路初稿"), `<p>${tr("按现在算出的归属，把归同一组运营线路的区段放进同一条逻辑线路（共 {0} 条），联络线自己的区段成为标了联络线的逻辑线路；每条运营线路勾上它现在归属的逻辑线路，寻路和现在一样。", groups.size)}</p>
+			<p class="hint">${tr("放进草稿，应用后改按逻辑线路寻路。之后可以改名、合并、重新划分。")}</p>`, tr("生成"), () => {
+			const lineIdsOf = new Map();
+			const created = {}, railLines = {};
+			let serial = 0;
+			groups.forEach(group => {
+				const id = String(Date.now() * 1000 + serial++);
+				const connecting = group.owners.length === 1 && group.owners[0].startsWith("connecting:");
+				const first = data.lines.find(each => each.key === group.owners[0]);
+				created[id] = { name: group.owners.map(ownerText).join(tr("、")), color: connecting ? 0xE8891A : first ? first.color & 0xFFFFFF : 0x888888, connecting };
+				group.rails.forEach(index => { railLines[netRailKey(index)] = id; });
+				if (!connecting) group.owners.forEach(owner => {
+					if (!lineIdsOf.has(owner)) lineIdsOf.set(owner, []);
+					lineIdsOf.get(owner).push(id);
+				});
+			});
+			draftSettingsPart("logicalLines", drafted => Object.assign(drafted, created));
+			draftSettingsPart("railLines", drafted => Object.assign(drafted, railLines));
+			draftSettingsPart("lineTracks", drafted => lineIdsOf.forEach((ids, lineKey) => { drafted[lineKey] = ids; }));
+		});
+	}
+
+	/** The menu of a rail on the ownership layer with logical lines: its section's logical line, and the connecting lines over it. */
+	function logicalMenu(e, index) {
+		const current = railLogicalLine(index);
+		const lines = [...logicalLinesShown().values()].sort((a, b) => a.name.localeCompare(b.name));
+		const items = [[tr("划入逻辑线路"), lines.map(line => [`${current && current.id === line.id ? "✓ " : ""}${line.name}${line.connecting ? tr("（联络线）") : ""}`, () => setRailLogicalLine(index, line.id)])],
+			[tr("新建逻辑线路并划入…"), () => logicalLineDialog(null, id => setRailLogicalLine(index, id))]];
+		if (current) items.push([tr("移出逻辑线路“{0}”", current.name), () => setRailLogicalLine(index, null)]);
+		const d = net.data, rail = d.rails[index], a = d.nodes[rail[0]][2], b = d.nodes[rail[1]][2], key = railKey(a, b);
+		const r = net.connectingOf.get(index) || null, status = rail[3];
+		if (r && r.connectingLine && (status === 1 || status === 2)) {
+			const released = releasedOf(r).some(other => railKey(other[0], other[1]) === key);
+			items.push([released ? tr("取消放行") : tr("放行（别的线路可以走）"), () => { toggleReleased(r, a, b); drawNetwork(); }]);
+		}
+		openMenuAt(e, items);
+	}
+
 	/** The menu of a rail on the ownership layer: its section's owners, and the connecting lines over it. */
 	function ownersMenu(e, index) {
 		const d = net.data, rail = d.rails[index];
@@ -2239,7 +2455,7 @@
 		const shown = railOwnersShown(index);
 		const saved = savedOwnerOverrides();
 		const setByHand = shown.manual || sectionOf(index).map(netRailKey).some(other => other in saved || other in draftOwnerOverrides());
-		const items = [[tr("归属线路…"), () => ownersDialog(index)], [tr("对所有线路开放"), () => setOwnerOverride(index, [])]];
+		const items = [[tr("归属线路…"), () => ownersDialog(index)], [tr("对所有线路开放"), () => setOwnerOverride(index, [])], [tr("改用逻辑线路：按现在的归属生成初稿…"), () => logicalDraftDialog()]];
 		if (setByHand && !shown.auto) items.push([tr("恢复自动归属"), () => setOwnerOverride(index, null)]);
 		// Connecting lines belong to this layer: releasing their rails, and making lines connecting lines
 		const r = net.connectingOf.get(index) || null, status = rail[3];
@@ -2317,7 +2533,21 @@
 		g.globalAlpha = 1;
 		// The ownership layer (web layers step 2): each rail in its owners' colours, striped where several lines own it;
 		// set by hand with a dark edge, dotted while only in the draft; open to every line by hand grey and dashed
-		if (net.layer === "owners") {
+		if (net.layer === "owners" && usesLogicalLines()) {
+			// By logical line (2026-11-09): its colour, connecting lines dashed, drafted sections with a dark dotted edge, one
+			// logical line chosen in the tree drawn over the others faded
+			d.rails.forEach((rail, index) => {
+				const points = net.railPoints[index];
+				if (!visible(points)) return;
+				const line = railLogicalLine(index), drafted = railLogicalDrafted(index);
+				if (!line && !drafted) return;
+				g.globalAlpha = net.focusLogical && (!line || line.id !== net.focusLogical) ? 0.25 : 1;
+				if (drafted) stroke(points, ink, 6.5, [3, 3]);
+				if (line) stroke(points, colorOf(line.color), 3.5, line.connecting ? [8, 4] : []);
+			});
+			g.globalAlpha = 1;
+			g.setLineDash([]);
+		} else if (net.layer === "owners") {
 			const colors = new Map();
 			d.rails.forEach((rail, index) => {
 				const points = net.railPoints[index];
@@ -2472,7 +2702,11 @@
 		const isolation = status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("联络线已放行") : "";
 		const run = net.scale < NET_EXACT_SCALE && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
 		let owners = "";
-		if (net.layer === "owners") {
+		if (net.layer === "owners" && usesLogicalLines()) {
+			const line = railLogicalLine(index), entry = net.ownerOf && net.ownerOf.get(index);
+			const runs = entry && !railLogicalDrafted(index) && line && !line.connecting ? entry.owners.map(ownerText).join(tr("、")) : "";
+			owners = " · " + (line ? tr("逻辑线路：{0}", line.name) + (line.connecting ? tr("（联络线，所有运营线路都能走）") : runs ? tr("；能走：{0}", runs) : entry && !railLogicalDrafted(index) ? tr("；没有运营线路走它") : "") : tr("不属于任何逻辑线路，所有运营线路都能走")) + (railLogicalDrafted(index) ? tr("（草稿）") : "");
+		} else if (net.layer === "owners") {
 			const shown = railOwnersShown(index);
 			const how = shown.auto ? tr("草稿：恢复自动") : shown.drafted ? tr("草稿：手改") : shown.manual ? tr("手改") : tr("自动");
 			owners = " · " + (shown.auto ? tr("应用后按边界和站台重新算归属（{0}）", how) : shown.owners.length ? tr("归属：{0}（{1}）", shown.owners.map(ownerText).join(tr("、")), how) : shown.manual || shown.drafted ? tr("所有线路都能走（{0}）", how) : tr("没有归属，所有线路都能走"));
@@ -2666,7 +2900,9 @@
 		const layers = `<option value="physical"${net.layer === "physical" ? " selected" : ""}>${tr("物理线路")}</option><option value="owners"${net.layer === "owners" ? " selected" : ""}>${tr("区段归属")}</option>`;
 		if ($("net-layer").innerHTML !== layers) $("net-layer").innerHTML = layers;
 		const ready = !d || !d.owners || d.owners.ready;
-		$("net-legend").textContent = net.layer === "owners"
+		$("net-legend").textContent = net.layer === "owners" && usesLogicalLines()
+			? tr("逻辑线路的颜色：属于这条逻辑线路　虚线：联络线　深色虚边：草稿里改过　无色：不属于任何逻辑线路，所有运营线路都能走")
+			: net.layer === "owners"
 			? tr("线路色：归属这条线路　条纹：几条线路共用　橙：联络线　深色边：手改（虚边：草稿）　灰虚线：手改为所有线路都能走　无色：所有线路都能走") + (ready ? "" : tr("（服务端还没算好归属）"))
 			: tr("红：寻路边界　橙虚线：联络线独占　灰虚线：已放行　粗线：站台　黄：存车线　棕：留置位");
 	}
@@ -2742,7 +2978,8 @@
 			return;
 		}
 		if (net.layer === "owners") {
-			ownersMenu(e, index);
+			if (usesLogicalLines()) logicalMenu(e, index);
+			else ownersMenu(e, index);
 			return;
 		}
 		// The physical layer has the boundaries only: connecting lines are on the ownership layer (web layers step 2)
@@ -8326,7 +8563,11 @@
 		const siding = depot && sidingId && depot.sidings.find(o => o.id === sidingId);
 		const vehiclePool = poolKey !== undefined && depot ? (depot.pools || []).find(each => each.key === poolKey) : null;
 		const connectingRoute = connecting && data.routeById.get(connecting);
-		const items = vehiclePool ? [[tr("车型设置…"), data.canEdit ? () => vehicleDialog(depot, vehiclePool) : null]]
+		const logicalLine = el.dataset.logical && logicalLinesShown().get(el.dataset.logical);
+		const items = logicalLine ? [[tr("改名和颜色…"), data.canEdit ? () => logicalLineDialog(logicalLine) : null],
+			[logicalLine.connecting ? tr("改为普通逻辑线路") : tr("设为联络线（所有运营线路都能走）"), data.canEdit ? () => draftSettingsPart("logicalLines", drafted => { drafted[logicalLine.id] = { name: logicalLine.name, color: logicalLine.color, connecting: !logicalLine.connecting }; }) : null],
+			[tr("删除这条逻辑线路…"), data.canEdit ? () => deleteLogicalLine(logicalLine) : null]]
+			: vehiclePool ? [[tr("车型设置…"), data.canEdit ? () => vehicleDialog(depot, vehiclePool) : null]]
 			: connectingRoute ? [[tr("取消联络线：{0}", routeTitle(connectingRoute)), data.canEdit ? () => setConnecting(connectingRoute, false) : null]]
 			: slot !== undefined && depot ? [
 			[tr("清空这列车当天的运用"), () => editDuties(depot, duties => { const day = dutyOn(duties.sidings[sidingId][+slot], state.weekday); if (day) dutyForEditing(depot, duties.sidings[sidingId][+slot], state.weekday).segments = []; })],
@@ -8344,7 +8585,7 @@
 			[tr("出入库计划…"), () => releasePlanDialog(depot)],
 			[dutiesOf(depot).mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图"), () => setDutyMode(depot, dutiesOf(depot).mode === "diagram" ? "online" : "diagram")],
 			[tr("丢掉运用的草稿"), draft.duties[depot.id] ? () => { delete draft.duties[depot.id]; saveDraft(); renderAll(); } : null],
-		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null],
+		] : line ? [[tr("新建种别…"), data.canEdit ? () => newTypeDialog(line, null) : null], [tr("能走的逻辑线路…"), data.canEdit && usesLogicalLines() ? () => lineTracksDialog(line) : null], [tr("路网故障预案…"), systemOfLine(line) ? () => contingencyDialog(systemOfLine(line)) : null],
 			[tr("线路限速…"), data.canEdit && (data.lines.find(each => each.key === line) || {}).routes ? () => speedLimitDialog(data.lines.find(each => each.key === line).routes) : null]]
 			: r ? [[tr("编辑停站…"), data.canEdit && r.stops.length > 1 ? () => stopsDialog(r) : null], [tr("路网故障预案…"), systemOfRoute(r.id) ? () => contingencyDialog(systemOfRoute(r.id)) : null], [tr("线路限速…"), data.canEdit ? () => speedLimitDialog([r]) : null], [tr("新建时刻表…"), () => tableDialog(r, -1)], [tr("照着它新建种别…"), data.canEdit ? () => newTypeDialog(r.lineKey, r) : null], [tr("线路配线图…"), () => routeDiagramDialog(r)],
 				isDeleted(r) ? [tr("取消删除"), () => keepType(r)] : [tr("删除这个种别…"), data.canEdit ? () => deleteTypeDialog(r) : null]]

@@ -47,10 +47,15 @@ public final class TrackOwnersPackets implements IPacket {
 
 		public final int[] owners;
 		public final boolean manual;
+		/**
+		 * The section's logical line, or 0.
+		 */
+		public final long logicalLine;
 
-		private Owners(int[] owners, boolean manual) {
+		private Owners(int[] owners, boolean manual, long logicalLine) {
 			this.owners = owners;
 			this.manual = manual;
+			this.logicalLine = logicalLine;
 		}
 	}
 
@@ -84,15 +89,16 @@ public final class TrackOwnersPackets implements IPacket {
 		if (legs == null || !railwayData.routePaths.isOwnersReady()) {
 			return null;
 		}
-		return write(legs.snapshot, legs.owners, railwayData.routePaths.getManualSections(), railwayData.routePaths.getOwnersVersion(), PART_BYTES);
+		return write(legs.snapshot, legs.owners, railwayData.routePaths.getManualSections(), railwayData.routePaths.getSectionLogicalLines(), railwayData.routePaths.getOwnersVersion(), PART_BYTES);
 	}
 
 	/**
 	 * @param partBytes about how many bytes of sections a packet holds before the next part starts
 	 */
-	static List<FriendlyByteBuf> write(TrackSections.Snapshot snapshot, Map<Long, Set<String>> sectionOwners, Set<Long> manual, int sendVersion, int partBytes) {
+	static List<FriendlyByteBuf> write(TrackSections.Snapshot snapshot, Map<Long, Set<String>> sectionOwners, Set<Long> manual, Map<Long, Long> logical, int sendVersion, int partBytes) {
 		final Set<Long> hashes = new TreeSet<>(sectionOwners.keySet());
 		hashes.addAll(manual);
+		hashes.addAll(logical.keySet());
 		final Map<String, Integer> nameIndices = new LinkedHashMap<>();
 		sectionOwners.values().forEach(owners -> owners.forEach(owner -> nameIndices.putIfAbsent(owner, nameIndices.size())));
 
@@ -111,6 +117,7 @@ public final class TrackOwnersPackets implements IPacket {
 				sections.writeVarInt(nameIndices.get(owner));
 			}
 			sections.writeBoolean(manual.contains(hash));
+			sections.writeLong(logical.getOrDefault(hash, 0L));
 			final int railCount = Math.min(section.getRailCount(), MAX_RAILS);
 			sections.writeVarInt(railCount);
 			for (int i = 0; i < railCount; i++) {
@@ -183,7 +190,8 @@ public final class TrackOwnersPackets implements IPacket {
 						return;
 					}
 				}
-				final Owners entry = new Owners(owners, packet.readBoolean());
+				final boolean manual = packet.readBoolean();
+				final Owners entry = new Owners(owners, manual, packet.readLong());
 				final int railCount = packet.readVarInt();
 				if (railCount < 0 || railCount > MAX_RAILS) {
 					receivingVersion = -1;

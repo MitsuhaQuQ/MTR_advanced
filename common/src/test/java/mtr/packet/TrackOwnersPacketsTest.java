@@ -43,7 +43,7 @@ class TrackOwnersPacketsTest {
 		final Map<Long, Set<String>> owners = TrackOwnership.compute(snapshot, Collections.emptySet(), Collections.singleton(boundary.getKey()), platformLines, Collections.emptyMap(), overrides);
 		final Set<Long> manual = TrackOwnership.getOverrides(snapshot, overrides).keySet();
 
-		receive(TrackOwnersPackets.write(snapshot, owners, manual, 7, 1 << 20));
+		receive(TrackOwnersPackets.write(snapshot, owners, manual, Collections.emptyMap(), 7, 1 << 20));
 		final Map<UUID, TrackOwnersPackets.Owners> received = TrackOwnersPackets.railOwners;
 		assertEquals(Collections.singletonList("TRAIN|X"), names(received.get(platform.getKey())));
 		assertEquals(Collections.singletonList("TRAIN|X"), names(received.get(approach.getKey())));
@@ -59,10 +59,21 @@ class TrackOwnersPacketsTest {
 		overrides.put(beyond.getKey(), Collections.emptyList());
 		final Map<Long, Set<String>> open = TrackOwnership.compute(snapshot, Collections.emptySet(), Collections.singleton(boundary.getKey()), platformLines, Collections.emptyMap(), overrides);
 		final int version = TrackOwnersPackets.version;
-		receive(TrackOwnersPackets.write(snapshot, open, TrackOwnership.getOverrides(snapshot, overrides).keySet(), 8, 1 << 20));
+		receive(TrackOwnersPackets.write(snapshot, open, TrackOwnership.getOverrides(snapshot, overrides).keySet(), Collections.emptyMap(), 8, 1 << 20));
 		assertEquals(version + 1, TrackOwnersPackets.version);
 		assertEquals(0, TrackOwnersPackets.railOwners.get(beyond.getKey()).owners.length);
 		assertTrue(TrackOwnersPackets.railOwners.get(beyond.getKey()).manual);
+		// The logical line of each section goes too (2026-11-09), also of a section no operating line may run on
+		final Map<Long, Long> logical = new HashMap<>();
+		logical.put(sections.getSectionOf(platform.getKey()), 11L);
+		logical.put(sections.getSectionOf(beyond.getKey()), 12L);
+		final Map<Long, Set<String>> logicalOwners = new HashMap<>();
+		logicalOwners.put(sections.getSectionOf(platform.getKey()), Collections.singleton("TRAIN|X"));
+		receive(TrackOwnersPackets.write(snapshot, logicalOwners, Collections.emptySet(), logical, 9, 1 << 20));
+		assertEquals(11L, TrackOwnersPackets.railOwners.get(platform.getKey()).logicalLine);
+		assertEquals(12L, TrackOwnersPackets.railOwners.get(end.getKey()).logicalLine);
+		assertEquals(0, TrackOwnersPackets.railOwners.get(end.getKey()).owners.length);
+		assertNull(TrackOwnersPackets.railOwners.get(boundary.getKey()));
 	}
 
 	@Test
@@ -88,7 +99,7 @@ class TrackOwnersPacketsTest {
 		sections.sync(rails, marks);
 		final TrackSections.Snapshot snapshot = sections.snapshot();
 		final Map<Long, Set<String>> owners = TrackOwnership.compute(snapshot, Collections.emptySet(), boundaries, platformLines, Collections.emptyMap());
-		final List<FriendlyByteBuf> packets = TrackOwnersPackets.write(snapshot, owners, Collections.emptySet(), 9, 200);
+		final List<FriendlyByteBuf> packets = TrackOwnersPackets.write(snapshot, owners, Collections.emptySet(), Collections.emptyMap(), 9, 200);
 		assertTrue(packets.size() > 5, packets.size() + " parts");
 
 		// A part missed at the start: nothing changes until a whole set has come

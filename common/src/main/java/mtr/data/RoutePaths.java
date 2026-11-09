@@ -70,6 +70,65 @@ public final class RoutePaths {
 	 * Goes up each time the owners are worked out again, so players are sent them only when they changed.
 	 */
 	private volatile int ownersVersion;
+	/**
+	 * The logical line of each section in one, as last worked out; none while there are no logical lines.
+	 */
+	private volatile Map<Long, Long> sectionLogicalLines = Collections.emptyMap();
+
+	/**
+	 * What working the owners out gives: the owners of the sections, those set by hand, and each section's logical line.
+	 */
+	private static final class Owners {
+
+		private final Map<Long, Set<String>> owners;
+		private final Set<Long> manual;
+		private final Map<Long, Long> logical;
+
+		private Owners(Map<Long, Set<String>> owners, Set<Long> manual, Map<Long, Long> logical) {
+			this.owners = owners;
+			this.manual = manual;
+			this.logical = logical;
+		}
+	}
+
+	/**
+	 * The logical lines and what they are given, copied for the thread working the owners out (2026-11-09).
+	 */
+	private static final class Logical {
+
+		private final Map<UUID, Long> railLines = new HashMap<>();
+		private final Set<Long> connecting = new HashSet<>();
+		private final Map<String, List<Long>> chosen = new HashMap<>();
+		private final boolean used;
+
+		private Logical(NetworkSettings settings) {
+			used = settings.usesLogicalLines();
+			settings.logicalLines.forEach((id, line) -> {
+				if (line.connecting) {
+					connecting.add(id);
+				}
+			});
+			// Only rails and choices of logical lines that are there
+			settings.railLines.forEach((railKey, id) -> {
+				if (settings.logicalLines.containsKey(id)) {
+					railLines.put(railKey, id);
+				}
+			});
+			settings.lineTracks.forEach((lineKey, ids) -> {
+				final List<Long> kept = new ArrayList<>();
+				ids.forEach(id -> {
+					if (settings.logicalLines.containsKey(id)) {
+						kept.add(id);
+					}
+				});
+				chosen.put(lineKey, kept);
+			});
+		}
+
+		private long fingerprint() {
+			return (railLines.hashCode() * 31L + connecting.hashCode()) * 31 + chosen.hashCode() + (used ? 1 : 0);
+		}
+	}
 
 	public RoutePaths(mtr.advanced.GraphRecords graphRecords) {
 		this.graphRecords = graphRecords;
@@ -137,15 +196,15 @@ public final class RoutePaths {
 		final Map<UUID, List<String>> overrides = new HashMap<>();
 		dataCache.networkSettings.ownerOverrides.forEach((railKey, lines) -> overrides.put(railKey, new ArrayList<>(lines)));
 		fingerprint += mixKey(overrides.hashCode(), 3);
+		// The logical lines, which decide instead once there are any
+		final Logical logical = new Logical(dataCache.networkSettings);
+		fingerprint += mixKey(logical.fingerprint(), 4);
 		if (fingerprint == ownersFingerprint && ownersReady) {
 			return;
 		}
 		ownersFingerprint = fingerprint;
 		if (serverThread == null) {
-			graphRecords.setOwners(computeOwners(dataCache, rails, boundaries, graph, legs, overrides));
-			manualSections = transitsim.network.TrackOwnership.getOverrides(legs.snapshot, overrides).keySet();
-			ownersVersion++;
-			ownersReady = true;
+			setOwners(computeOwners(dataCache, rails, boundaries, graph, legs, overrides, logical));
 			return;
 		}
 		// The connecting lines' paths can take long to find on a large network: on a thread of their own, on copies
@@ -154,7 +213,7 @@ public final class RoutePaths {
 		final Map<BlockPos, Map<BlockPos, Rail>> railsCopy = DataCache.copyRails(rails);
 		final mtr.advanced.PathBoundaries boundariesCopy = boundaries.copy();
 		final Thread thread = new Thread(() -> {
-			Map<Long, Set<String>> owners = null;
+			Owners owners = null;
 			try {
 				final long start = System.currentTimeMillis();
 				final RailGraph<Rail>[] copyGraph = new RailGraph[1];
@@ -163,18 +222,15 @@ public final class RoutePaths {
 						copyGraph[0] = DeterministicPathFinder.compile(railsCopy, boundariesCopy);
 					}
 					return copyGraph[0];
-				}, legs, overrides);
-				System.out.println("Minecraft Transit Railway: worked out the owners of the track sections in " + (System.currentTimeMillis() - start) + " ms");
+				}, legs, overrides, logical);
+				System.out.println("Minecraft Transit Railway: worked out the owners of the track sections" + (logical.used ? " by their logical lines" : "") + " in " + (System.currentTimeMillis() - start) + " ms");
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-			final Map<Long, Set<String>> finalOwners = owners;
+			final Owners finalOwners = owners;
 			serverThread.execute(() -> {
 				if (finalOwners != null) {
-					graphRecords.setOwners(finalOwners);
-					manualSections = transitsim.network.TrackOwnership.getOverrides(legs.snapshot, overrides).keySet();
-					ownersVersion++;
-					ownersReady = true;
+					setOwners(finalOwners);
 				}
 				ownersWorking = false;
 			});
@@ -188,6 +244,21 @@ public final class RoutePaths {
 	 */
 	public boolean isOwnersReady() {
 		return ownersReady;
+	}
+
+	private void setOwners(Owners owners) {
+		graphRecords.setOwners(owners.owners);
+		manualSections = owners.manual;
+		sectionLogicalLines = owners.logical;
+		ownersVersion++;
+		ownersReady = true;
+	}
+
+	/**
+	 * @return the logical line of each section in one, by hash, as last worked out
+	 */
+	public Map<Long, Long> getSectionLogicalLines() {
+		return sectionLogicalLines;
 	}
 
 	/**
@@ -204,10 +275,14 @@ public final class RoutePaths {
 		return ownersVersion;
 	}
 
-	private Map<Long, Set<String>> computeOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph, mtr.advanced.GraphRecords.Legs legs, Map<UUID, List<String>> overrides) {
+	private Owners computeOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph, mtr.advanced.GraphRecords.Legs legs, Map<UUID, List<String>> overrides, Logical logical) {
 		final Map<Long, List<String>> platformLines = new HashMap<>();
 		final Map<Long, String> connectingSections = new HashMap<>();
 		dataCache.routeIdMap.values().stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
+			// With logical lines, a connecting line's own track is whatever logical line it is put in, so its path isn't needed
+			if (route.connectingLine && logical.used) {
+				return;
+			}
 			if (route.connectingLine) {
 				if (timesByPath(route)) {
 					final Set<UUID> released = getReleased(route);
@@ -230,7 +305,11 @@ public final class RoutePaths {
 				});
 			}
 		});
-		return transitsim.network.TrackOwnership.compute(legs.snapshot, boundaries.nodes, boundaries.segments, platformLines, connectingSections, overrides);
+		if (logical.used) {
+			final transitsim.network.LogicalLines.Result result = transitsim.network.LogicalLines.compute(legs.snapshot, logical.railLines, logical.connecting, logical.chosen, platformLines);
+			return new Owners(new HashMap<>(result.owners), Collections.emptySet(), result.sectionLines);
+		}
+		return new Owners(transitsim.network.TrackOwnership.compute(legs.snapshot, boundaries.nodes, boundaries.segments, platformLines, connectingSections, overrides), transitsim.network.TrackOwnership.getOverrides(legs.snapshot, overrides).keySet(), Collections.emptyMap());
 	}
 
 	/**

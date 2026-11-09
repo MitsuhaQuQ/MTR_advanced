@@ -59,7 +59,10 @@ class NetworkSettingsTest {
 		packet.writeVarInt(1);
 		packet.writeLong(77);
 		packet.writeLong(-1);
-		// No owners set by hand
+		// No owners set by hand, no logical lines, no sections put in them, no lines given them
+		packet.writeVarInt(0);
+		packet.writeVarInt(0);
+		packet.writeVarInt(0);
 		packet.writeVarInt(0);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
@@ -110,5 +113,48 @@ class NetworkSettingsTest {
 		final Map<String, Value> old = new HashMap<>(map);
 		old.remove("owner_overrides");
 		assertTrue(new NetworkSettings(old).ownerOverrides.isEmpty());
+	}
+
+	@Test
+	void logicalLinesAreSavedSentAndCopied() throws IOException {
+		// The logical lines of the track (2026-11-09): lines, the sections put in them by a rail, the lines each operating line runs on
+		final NetworkSettings settings = new NetworkSettings();
+		assertFalse(settings.usesLogicalLines());
+		settings.logicalLines.put(11L, new NetworkSettings.LogicalLine("京沪线", 0xFF0000, false));
+		settings.logicalLines.put(12L, new NetworkSettings.LogicalLine("联络线 A", 0x00FF00, true));
+		settings.railLines.put(NetworkSettings.parseRailKey("200,100"), 11L);
+		settings.railLines.put(NetworkSettings.parseRailKey("300,400"), 12L);
+		settings.lineTracks.put("TRAIN|Line 1", new java.util.ArrayList<>(java.util.Arrays.asList(11L, 12L)));
+		assertTrue(settings.usesLogicalLines());
+
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(settings.messagePackLength());
+		settings.toMessagePack(packer);
+		packer.close();
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
+		final NetworkSettings saved = new NetworkSettings(map);
+		assertEquals(settings, saved);
+		assertEquals("京沪线", saved.logicalLines.get(11L).name);
+		assertTrue(saved.logicalLines.get(12L).connecting);
+		assertEquals(11L, (long) saved.railLines.get(NetworkSettings.parseRailKey("100,200")));
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		settings.writePacket(packet);
+		final NetworkSettings read = new NetworkSettings();
+		read.read(packet);
+		assertEquals(settings, read);
+		assertEquals(0, packet.readableBytes());
+
+		final NetworkSettings copy = new NetworkSettings();
+		copy.copyFrom(settings);
+		copy.lineTracks.get("TRAIN|Line 1").remove(0);
+		assertEquals(2, settings.lineTracks.get("TRAIN|Line 1").size());
+
+		// A save from before has none
+		final Map<String, Value> old = new HashMap<>(map);
+		old.remove("logical_lines");
+		old.remove("rail_lines");
+		old.remove("line_tracks");
+		assertFalse(new NetworkSettings(old).usesLogicalLines());
 	}
 }

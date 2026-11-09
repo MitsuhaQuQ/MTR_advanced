@@ -58,6 +58,53 @@ public final class NetworkSettings extends SerializedDataBase {
 	public final Map<java.util.UUID, List<String>> ownerOverrides = new java.util.TreeMap<>();
 
 	public static final int MAX_OWNER_OVERRIDES = 4096;
+
+	/**
+	 * The logical lines of the track (逻辑线路, 2026-11-09), by ID: lines of the track itself, apart from the operating lines
+	 * that run on them ({@link transitsim.network.LogicalLines}). With any, they decide which operating lines may run on
+	 * each section instead of the owners worked out from boundaries and platforms.
+	 */
+	public final Map<Long, LogicalLine> logicalLines = new java.util.TreeMap<>();
+	/**
+	 * The logical line of each section put in one, by the key of a rail of it.
+	 */
+	public final Map<java.util.UUID, Long> railLines = new java.util.TreeMap<>();
+	/**
+	 * The logical lines each operating line may run on, by the line's key ({@link LineDuties#getLineKey}); a line not here
+	 * runs on those its platforms are on.
+	 */
+	public final Map<String, List<Long>> lineTracks = new java.util.TreeMap<>();
+
+	public static final int MAX_LOGICAL_LINES = 1024;
+	public static final int MAX_RAIL_LINES = 65536;
+	public static final int MAX_LINE_TRACKS = 4096;
+	private static final int MAX_NAME_LENGTH = 256;
+
+	public static final class LogicalLine {
+
+		public final String name;
+		public final int color;
+		/**
+		 * Every operating line may run on a connecting line.
+		 */
+		public final boolean connecting;
+
+		public LogicalLine(String name, int color, boolean connecting) {
+			this.name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
+			this.color = color;
+			this.connecting = connecting;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return object instanceof LogicalLine && ((LogicalLine) object).name.equals(name) && ((LogicalLine) object).color == color && ((LogicalLine) object).connecting == connecting;
+		}
+
+		@Override
+		public int hashCode() {
+			return (name.hashCode() * 31 + color) * 2 + (connecting ? 1 : 0);
+		}
+	}
 	public static final int MAX_OVERRIDE_LINES = 32;
 	private static final int MAX_LINE_KEY_LENGTH = 256;
 
@@ -70,6 +117,9 @@ public final class NetworkSettings extends SerializedDataBase {
 	private static final String KEY_WAIT_THRESHOLD_MILLIS = "wait_threshold_millis";
 	private static final String KEY_STATION_WAIT_THRESHOLDS = "station_wait_thresholds";
 	private static final String KEY_OWNER_OVERRIDES = "owner_overrides";
+	private static final String KEY_LOGICAL_LINES = "logical_lines";
+	private static final String KEY_RAIL_LINES = "rail_lines";
+	private static final String KEY_LINE_TRACKS = "line_tracks";
 
 	public NetworkSettings() {
 	}
@@ -96,6 +146,40 @@ public final class NetworkSettings extends SerializedDataBase {
 				ownerOverrides.put(railKey, lines);
 			}
 		});
+		messagePackHelper.iterateMapValue(KEY_LOGICAL_LINES, entry -> {
+			if (logicalLines.size() < MAX_LOGICAL_LINES && entry.getValue().isMapValue()) {
+				final Map<String, Value> line = RailwayData.castMessagePackValueToSKMap(entry.getValue());
+				final MessagePackHelper lineHelper = new MessagePackHelper(line);
+				try {
+					logicalLines.put(Long.parseLong(entry.getKey().asStringValue().asString()), new LogicalLine(lineHelper.getString("name", ""), lineHelper.getInt("color", 0), lineHelper.getBoolean("connecting", false)));
+				} catch (NumberFormatException ignored) {
+				}
+			}
+		});
+		messagePackHelper.iterateMapValue(KEY_RAIL_LINES, entry -> {
+			final java.util.UUID railKey = parseRailKey(entry.getKey().asStringValue().asString());
+			if (railKey != null && railLines.size() < MAX_RAIL_LINES && entry.getValue().isIntegerValue()) {
+				railLines.put(railKey, entry.getValue().asIntegerValue().asLong());
+			}
+		});
+		messagePackHelper.iterateMapValue(KEY_LINE_TRACKS, entry -> {
+			if (lineTracks.size() < MAX_LINE_TRACKS && entry.getValue().isArrayValue()) {
+				final List<Long> ids = new ArrayList<>();
+				entry.getValue().asArrayValue().forEach(id -> {
+					if (ids.size() < MAX_LOGICAL_LINES && id.isIntegerValue()) {
+						ids.add(id.asIntegerValue().asLong());
+					}
+				});
+				lineTracks.put(entry.getKey().asStringValue().asString(), ids);
+			}
+		});
+	}
+
+	/**
+	 * @return whether the logical lines decide which operating lines may run where, as there are any
+	 */
+	public boolean usesLogicalLines() {
+		return !logicalLines.isEmpty();
 	}
 
 	/**
@@ -151,6 +235,36 @@ public final class NetworkSettings extends SerializedDataBase {
 			}
 			ownerOverrides.put(railKey, lines);
 		}
+		logicalLines.clear();
+		final int lineCount = readCount(packet, MAX_LOGICAL_LINES);
+		for (int i = 0; i < lineCount; i++) {
+			final long id = packet.readLong();
+			logicalLines.put(id, new LogicalLine(packet.readUtf(MAX_NAME_LENGTH), packet.readInt(), packet.readBoolean()));
+		}
+		railLines.clear();
+		final int railCount = readCount(packet, MAX_RAIL_LINES);
+		for (int i = 0; i < railCount; i++) {
+			railLines.put(transitsim.network.RailKeys.of(packet.readLong(), packet.readLong()), packet.readLong());
+		}
+		lineTracks.clear();
+		final int trackCount = readCount(packet, MAX_LINE_TRACKS);
+		for (int i = 0; i < trackCount; i++) {
+			final String lineKey = packet.readUtf(MAX_LINE_KEY_LENGTH);
+			final int idCount = readCount(packet, MAX_LOGICAL_LINES);
+			final List<Long> ids = new ArrayList<>();
+			for (int j = 0; j < idCount; j++) {
+				ids.add(packet.readLong());
+			}
+			lineTracks.put(lineKey, ids);
+		}
+	}
+
+	private static int readCount(FriendlyByteBuf packet, int max) {
+		final int count = packet.readVarInt();
+		if (count < 0 || count > max) {
+			throw new IllegalArgumentException("Too many: " + count);
+		}
+		return count;
 	}
 
 	public void copyFrom(NetworkSettings other) {
@@ -161,6 +275,12 @@ public final class NetworkSettings extends SerializedDataBase {
 		stationWaitThresholds.putAll(other.stationWaitThresholds);
 		ownerOverrides.clear();
 		other.ownerOverrides.forEach((railKey, lines) -> ownerOverrides.put(railKey, new ArrayList<>(lines)));
+		logicalLines.clear();
+		logicalLines.putAll(other.logicalLines);
+		railLines.clear();
+		railLines.putAll(other.railLines);
+		lineTracks.clear();
+		other.lineTracks.forEach((lineKey, ids) -> lineTracks.put(lineKey, new ArrayList<>(ids)));
 	}
 
 	@Override
@@ -179,11 +299,29 @@ public final class NetworkSettings extends SerializedDataBase {
 				messagePacker.packString(line);
 			}
 		}
+		messagePacker.packString(KEY_LOGICAL_LINES).packMapHeader(logicalLines.size());
+		for (final Map.Entry<Long, LogicalLine> entry : logicalLines.entrySet()) {
+			messagePacker.packString(String.valueOf(entry.getKey())).packMapHeader(3);
+			messagePacker.packString("name").packString(entry.getValue().name);
+			messagePacker.packString("color").packInt(entry.getValue().color);
+			messagePacker.packString("connecting").packBoolean(entry.getValue().connecting);
+		}
+		messagePacker.packString(KEY_RAIL_LINES).packMapHeader(railLines.size());
+		for (final Map.Entry<java.util.UUID, Long> entry : railLines.entrySet()) {
+			messagePacker.packString(railKeyText(entry.getKey())).packLong(entry.getValue());
+		}
+		messagePacker.packString(KEY_LINE_TRACKS).packMapHeader(lineTracks.size());
+		for (final Map.Entry<String, List<Long>> entry : lineTracks.entrySet()) {
+			messagePacker.packString(entry.getKey()).packArrayHeader(entry.getValue().size());
+			for (final long id : entry.getValue()) {
+				messagePacker.packLong(id);
+			}
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 5;
+		return 8;
 	}
 
 	@Override
@@ -203,16 +341,35 @@ public final class NetworkSettings extends SerializedDataBase {
 			packet.writeVarInt(lines.size());
 			lines.forEach(line -> packet.writeUtf(line, MAX_LINE_KEY_LENGTH));
 		});
+		packet.writeVarInt(logicalLines.size());
+		logicalLines.forEach((id, line) -> {
+			packet.writeLong(id);
+			packet.writeUtf(line.name, MAX_NAME_LENGTH);
+			packet.writeInt(line.color);
+			packet.writeBoolean(line.connecting);
+		});
+		packet.writeVarInt(railLines.size());
+		railLines.forEach((railKey, id) -> {
+			packet.writeLong(railKey.getMostSignificantBits());
+			packet.writeLong(railKey.getLeastSignificantBits());
+			packet.writeLong(id);
+		});
+		packet.writeVarInt(lineTracks.size());
+		lineTracks.forEach((lineKey, ids) -> {
+			packet.writeUtf(lineKey, MAX_LINE_KEY_LENGTH);
+			packet.writeVarInt(ids.size());
+			ids.forEach(packet::writeLong);
+		});
 	}
 
 	@Override
 	public boolean equals(Object object) {
-		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides);
+		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks);
 	}
 
 	@Override
 	public int hashCode() {
-		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode();
+		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode();
 	}
 
 	public static long clampWait(long millis) {
