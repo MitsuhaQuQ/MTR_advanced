@@ -334,6 +334,36 @@ describe("the old code in the new page", () => {
     }
     engine.pushDraft({ routes: {} })
   })
+  it("edits a depot's routes and sidings in the depot panel", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LinePanels } = await import("../src/views/LinePanels")
+    const { fn } = engine.legacy
+    // Something else drafted in the network settings, which the depot panel must keep
+    engine.pushDraft({ routes: {}, networkSettings: { logicalLines: { "77": { name: "干线", color: 1, connecting: false } } } })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(LinePanels)))
+    await act(async () => fn.depotDialog(fn.depotById("9001")))
+    const columns = () => host.querySelectorAll("tr[data-siding='8001'] input[type=checkbox]").length
+    expect(columns()).toBe(3)
+    // The depot stops running route 103: the sidings' table loses its column at once
+    const route103 = [...host.querySelectorAll("button[aria-pressed]")].find(b => b.textContent!.includes("区间")) as HTMLElement
+    await act(async () => route103.click())
+    expect(columns()).toBe(2)
+    const box = host.querySelector("input[aria-label='1 道 跑 1号线 全程 南行 → 港湾']") as HTMLInputElement
+    await act(async () => box.click())
+    await act(async () => { ([...host.querySelectorAll("button")].find(b => b.textContent === "放进草稿") as HTMLElement).click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const last = changes[changes.length - 1]
+    expect(last.depots["9001"].routes.sort()).toEqual(["101", "102"])
+    expect(last.depots["9001"].sidings["8001"].routes).toEqual(["102"])
+    expect(last.depots["9001"].sidings["8003"].routes.sort()).toEqual(["101", "102"])
+    expect(last.networkSettings.logicalLines).toEqual({ "77": { name: "干线", color: 1, connecting: false } })
+    engine.pushDraft({ routes: {} })
+  })
   it("paints sections and ticks logical lines in the ownership panel", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

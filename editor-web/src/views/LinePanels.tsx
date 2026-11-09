@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { legacy, panelHost, useLegacy, type PanelTarget } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
+import { DepotPanel } from "./DepotPanel"
 
 export function LinePanels() {
   const [target, setTarget] = useState<PanelTarget | null>(null)
@@ -22,6 +23,7 @@ export function LinePanels() {
   if (!target) return null
   const close = () => setTarget(null)
   if (target.kind === "speed") return <SpeedLimits key={target.routeIds.join()} routeIds={target.routeIds} onClose={close} />
+  if (target.kind === "depot") return <DepotPanel key={target.depotId} depotId={target.depotId} onClose={close} />
   if (target.kind === "table") return <TableDays key={target.routeId + "/" + target.index} routeId={target.routeId} index={target.index} onClose={close} />
   if (target.kind === "through") return <Through key={target.routeId} routeId={target.routeId} onClose={close} />
   return <Contingency key={target.anchor} anchor={target.anchor} onClose={close} />
