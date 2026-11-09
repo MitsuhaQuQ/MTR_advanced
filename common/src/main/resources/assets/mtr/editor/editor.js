@@ -1070,6 +1070,21 @@
 		if (!exception.stops.length) table.exceptions.splice(table.exceptions.indexOf(exception), 1);
 	}
 
+	/**
+	 * Makes the services the same as one service in all it changes at its stops, stop by stop in order (2026-11-09): its
+	 * running and stop times, passing and waiting kept as its own are copied to each of them, and what they had changed
+	 * themselves is replaced, so each runs as that one does, from its own start.
+	 *
+	 * @return what was done, to show
+	 */
+	function syncExceptions(table, from, services) {
+		const source = table.exceptions.find(e => e.service === from);
+		const targets = new Set(services.filter(service => service !== from));
+		table.exceptions = table.exceptions.filter(e => !targets.has(e.service));
+		if (source && source.stops.length) targets.forEach(service => table.exceptions.push({ service, stops: source.stops.map(stop => ({ ...stop })) }));
+		return tr("{0} 班已经和这一班的各站时刻改动一样", targets.size);
+	}
+
 	/** Moves a service to another time, with what belongs to it. @return why it can't, or nothing */
 	function retimeService(table, oldService, newService) {
 		if (oldService === newService) return;
@@ -1497,6 +1512,8 @@
 			if (Number.isFinite(draft.networkSettings.minReverseMillis)) settingItems.push(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)));
 			if (Number.isFinite(draft.networkSettings.waitThresholdMillis)) settingItems.push(tr("等候分界 {0} 秒", Math.round(draft.networkSettings.waitThresholdMillis / 1000)));
 			Object.entries(draft.networkSettings.stationWaitThresholds || {}).forEach(([station, millis]) => settingItems.push(millis === null ? tr("{0}：等候分界改回全网的", stationNameOf(station)) : tr("{0}：等候分界 {1} 秒", stationNameOf(station), Math.round(millis / 1000))));
+			// Section owners set by hand (web layers step 2), by the rail chosen
+			Object.entries(draft.networkSettings.ownerOverrides || {}).forEach(([key, lines]) => settingItems.push(lines === null ? tr("轨道 {0}：区段归属恢复自动", key) : lines.length ? tr("轨道 {0}：区段归属 {1}", key, lines.map(ownerText).join(tr("、"))) : tr("轨道 {0}：区段对所有线路开放", key)));
 			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul>${settingItems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="networkSettings" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
 		const platformStopKeys = Object.keys(draft.platformStops || {});
@@ -1744,7 +1761,9 @@
 	// Zoomed out further than this many pixels a block, the network is drawn as a schematic: each run of track between two
 	// junctions simplified to within a few pixels, with its straight runs set along the horizontal, vertical and 45°
 	const NET_EXACT_SCALE = 2, NET_SIMPLIFY_PX = 10, NET_ALIGNED = 0.12;
-	const net = { data: null, version: -1, mode: "", scale: 0, cx: 0, cz: 0, grid: null, hover: -1, error: "", timer: null, drag: null };
+	const net = { data: null, version: -1, mode: "", scale: 0, cx: 0, cz: 0, grid: null, hover: -1, error: "", timer: null, drag: null, layer: "physical" };
+	// Which layer the map shows (web layers step 2): the physical track, or which lines own each section
+	try { if (localStorage.getItem("mtr-editor-net-layer") === "owners") net.layer = "owners"; } catch (e) {}
 	const netCanvas = $("net-canvas"), netWrap = $("net-wrap"), netCtx = netCanvas.getContext("2d");
 
 	async function loadNetwork(fresh) {
@@ -1806,6 +1825,16 @@
 					net.grid.get(key).push(index);
 				}
 			}
+		});
+		// The owners of each rail whose section has any, as the server worked them out, and the rails of each such section
+		net.ownerOf = new Map();
+		net.sectionRails = new Map();
+		const owned = d.owners || {}, names = owned.names || [];
+		(owned.rails || []).forEach(entry => {
+			const [index, manual, section, ...owners] = entry;
+			net.ownerOf.set(index, { owners: owners.map(owner => names[owner]), manual: manual === 1, section });
+			if (!net.sectionRails.has(section)) net.sectionRails.set(section, []);
+			net.sectionRails.get(section).push(index);
 		});
 		// Which connecting line a taken or released rail belongs to, for the release item of the menu
 		net.connectingOf = new Map();
@@ -2027,6 +2056,123 @@
 	const netWorldX = px => (px - netWrap.clientWidth / 2) / net.scale + net.cx;
 	const netWorldZ = pz => (pz - netWrap.clientHeight / 2) / net.scale + net.cz;
 
+	// ---------- Section owners (web layers step 2) ----------
+	const draftOwnerOverrides = () => draft.networkSettings && draft.networkSettings.ownerOverrides || {};
+	const savedOwnerOverrides = () => data && data.networkSettings && data.networkSettings.ownerOverrides || {};
+	const netRailKey = index => {
+		const d = net.data, rail = d.rails[index];
+		return railKey(d.nodes[rail[0]][2], d.nodes[rail[1]][2]);
+	};
+	/** The rails of a rail's section, as far as the page knows: a section no line owns isn't sent, so it is the rail alone. */
+	const sectionOf = index => {
+		const entry = net.ownerOf && net.ownerOf.get(index);
+		return entry ? net.sectionRails.get(entry.section) : [index];
+	};
+
+	/**
+	 * Who a rail is shown as owned by: as the server worked it out, or as the draft sets its section by hand. Owners set by
+	 * hand on several rails of a section are all of theirs, as the server takes them.
+	 *
+	 * @return {owners: [owner], manual, drafted, auto} where auto is a section the draft gives back to being worked out
+	 */
+	function railOwnersShown(index) {
+		const entry = net.ownerOf && net.ownerOf.get(index);
+		const drafted = draftOwnerOverrides(), saved = savedOwnerOverrides();
+		const keys = sectionOf(index).map(netRailKey).filter(key => key in drafted);
+		if (!keys.length) return { owners: entry ? entry.owners : [], manual: Boolean(entry && entry.manual), drafted: false, auto: false };
+		// What the section will be: the drafted rails as drafted, its other rails set by hand as saved
+		const lines = new Set();
+		let anySet = false;
+		sectionOf(index).map(netRailKey).forEach(key => {
+			const value = key in drafted ? drafted[key] : saved[key];
+			if (value === undefined || value === null) return;
+			anySet = true;
+			value.forEach(line => lines.add(line));
+		});
+		if (!anySet) return { owners: [], manual: false, drafted: true, auto: true };
+		return { owners: [...lines], manual: true, drafted: true, auto: false };
+	}
+
+	/** An owner as a person reads it: a line's name, or a connecting line's. */
+	function ownerText(owner) {
+		if (owner.startsWith("connecting:")) {
+			const r = data && data.routeById.get(owner.slice("connecting:".length));
+			return tr("联络线 {0}", r ? routeTitle(r) : owner.slice("connecting:".length));
+		}
+		const line = data && data.lines.find(l => l.key === owner);
+		return line ? shortName(line.name) : owner.split("|").slice(1).join("|") || owner;
+	}
+
+	function ownerColor(owner) {
+		if (owner.startsWith("connecting:")) return "#e8891a";
+		const line = data && data.lines.find(l => l.key === owner);
+		return line ? colorOf(line.color) : "#888";
+	}
+
+	/**
+	 * Sets the owners of a rail's section by hand in the draft: the lines, none to open it to every line, or null to have
+	 * them worked out again. Kept on the rail chosen, and taken off the section's other rails.
+	 */
+	function setOwnerOverride(index, lines) {
+		const saved = savedOwnerOverrides();
+		const overrides = Object.assign({}, draftOwnerOverrides());
+		const key = netRailKey(index);
+		sectionOf(index).map(netRailKey).forEach(other => {
+			if (other === key && lines !== null) return;
+			if (other in saved) overrides[other] = null;
+			else delete overrides[other];
+		});
+		if (lines !== null) overrides[key] = lines;
+		// What only takes back a change not made yet is no change
+		Object.keys(overrides).forEach(other => {
+			if (overrides[other] === null && !(other in saved)) delete overrides[other];
+			else if (overrides[other] !== null && JSON.stringify(overrides[other]) === JSON.stringify(saved[other])) delete overrides[other];
+		});
+		const settings = Object.assign({}, draft.networkSettings || {});
+		if (Object.keys(overrides).length) settings.ownerOverrides = overrides;
+		else delete settings.ownerOverrides;
+		draft.networkSettings = Object.keys(settings).length ? settings : null;
+		saveDraft();
+		renderAll();
+		drawNetwork();
+	}
+
+	/** Choosing the lines that own a rail's section, from the lines of the map's kind of transport. */
+	function ownersDialog(index) {
+		const shown = railOwnersShown(index);
+		const lines = data.lines.filter(line => line.key.startsWith((net.mode || "TRAIN") + "|"));
+		const boxes = lines.map(line => `<label class="owner-choice"><input type="checkbox" name="owner" value="${escapeHtml(line.key)}"${shown.owners.includes(line.key) ? " checked" : ""}><span class="swatch" style="background:${colorOf(line.color)}"></span>${escapeHtml(shortName(line.name))}</label>`).join("");
+		openDialog(tr("区段归属"), `<p>${tr("这一段轨道（到下一个道岔或边界为止的整个区段）只让勾选的线路走。联络线和没有站台的线路不受限制。")}</p>
+			<div class="owner-choices">${boxes || `<p class="hint">${tr("没有这种运输方式的线路")}</p>`}</div>
+			<p class="hint">${tr("改动先存为草稿，点“应用”后服务端重新算归属，走不了的线路会重新寻路。")}</p>`, tr("确定"), form => {
+			const ticked = [...form.querySelectorAll("input[name=owner]:checked")].map(input => input.value);
+			if (!ticked.length) return tr("至少勾一条线路；要让所有线路都能走，请用右键“对所有线路开放”");
+			setOwnerOverride(index, ticked);
+		});
+	}
+
+	/** The menu of a rail on the ownership layer: its section's owners, and the connecting lines over it. */
+	function ownersMenu(e, index) {
+		const d = net.data, rail = d.rails[index];
+		const a = d.nodes[rail[0]][2], b = d.nodes[rail[1]][2], key = railKey(a, b);
+		const shown = railOwnersShown(index);
+		const saved = savedOwnerOverrides();
+		const setByHand = shown.manual || sectionOf(index).map(netRailKey).some(other => other in saved || other in draftOwnerOverrides());
+		const items = [[tr("归属线路…"), () => ownersDialog(index)], [tr("对所有线路开放"), () => setOwnerOverride(index, [])]];
+		if (setByHand && !shown.auto) items.push([tr("恢复自动归属"), () => setOwnerOverride(index, null)]);
+		// Connecting lines belong to this layer: releasing their rails, and making lines connecting lines
+		const r = net.connectingOf.get(index) || null, status = rail[3];
+		if (r && r.connectingLine && (status === 1 || status === 2)) {
+			const released = releasedOf(r).some(other => railKey(other[0], other[1]) === key);
+			items.push([released ? tr("取消放行") : tr("放行（别的线路可以走）"), () => { toggleReleased(r, a, b); drawNetwork(); }]);
+		}
+		(net.routesOf.get(index) || []).slice(0, 8).forEach(other => {
+			const connecting = isConnecting(other);
+			items.push([tr(connecting ? "取消联络线：{0}" : "设为联络线：{0}", routeTitle(other)), () => { setConnecting(other, !connecting); drawNetwork(); }]);
+		});
+		openMenuAt(e, items);
+	}
+
 	/** A rail's isolation with the draft's boundaries on top: 0, 1 taken by a connecting line, 2 released, 3 a boundary. */
 	function netStatus(index) {
 		const d = net.data, rail = d.rails[index];
@@ -2088,8 +2234,34 @@
 			stroke(points, chain.kind === 1 ? ink : chain.kind === 2 ? "#d9a520" : chain.kind === 3 ? "#9a5b2c" : plain, chain.kind === 1 ? 3 : chain.kind === 3 ? 2.5 : 1.5);
 		});
 		g.globalAlpha = 1;
+		// The ownership layer (web layers step 2): each rail in its owners' colours, striped where several lines own it;
+		// set by hand with a dark edge, dotted while only in the draft; open to every line by hand grey and dashed
+		if (net.layer === "owners") {
+			const colors = new Map();
+			d.rails.forEach((rail, index) => {
+				const points = net.railPoints[index];
+				if (!visible(points)) return;
+				const shown = railOwnersShown(index);
+				if (!shown.owners.length && !shown.manual && !shown.drafted) return;
+				if (shown.manual || shown.drafted) stroke(points, ink, 6.5, shown.drafted ? [3, 3] : []);
+				if (!shown.owners.length) {
+					stroke(points, plain, 3, [5, 4]);
+					return;
+				}
+				const owners = shown.owners.map(owner => {
+					if (!colors.has(owner)) colors.set(owner, ownerColor(owner));
+					return colors.get(owner);
+				});
+				owners.forEach((color, i) => {
+					g.lineDashOffset = -i * 8;
+					stroke(points, color, 3.5, owners.length > 1 ? [8, 8 * (owners.length - 1)] : []);
+				});
+				g.lineDashOffset = 0;
+			});
+			g.setLineDash([]);
+		}
 		// The isolation layer, in the colours of the track diagrams
-		chains.forEach(chain => {
+		if (net.layer !== "owners") chains.forEach(chain => {
 			const points = chainShape(chain);
 			if (!chain.status || !visible(points)) return;
 			// A pathfinding boundary only splits where searches look first, so it is drawn thin and dotted, apart from the
@@ -2218,7 +2390,13 @@
 		const kind = rail[2] === 1 ? tr("站台") : rail[2] === 2 ? tr("存车线") : rail[2] === 3 ? tr("留置位（一列车，在游戏里用留置色的信号闭塞分区标出）") : tr("轨道");
 		const isolation = status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("联络线已放行") : "";
 		const run = net.scale < NET_EXACT_SCALE && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
-		return `${kind}${isolation ? " · " + isolation : ""} · ${Math.floor(a[0])}, ${Math.floor(a[1])} → ${Math.floor(b[0])}, ${Math.floor(b[1])}${run > 1 ? tr("（示意图里这一段有 {0} 条轨道，放大后逐条显示）", run) : ""}`;
+		let owners = "";
+		if (net.layer === "owners") {
+			const shown = railOwnersShown(index);
+			const how = shown.auto ? tr("草稿：恢复自动") : shown.drafted ? tr("草稿：手改") : shown.manual ? tr("手改") : tr("自动");
+			owners = " · " + (shown.auto ? tr("应用后按边界和站台重新算归属（{0}）", how) : shown.owners.length ? tr("归属：{0}（{1}）", shown.owners.map(ownerText).join(tr("、")), how) : shown.manual || shown.drafted ? tr("所有线路都能走（{0}）", how) : tr("没有归属，所有线路都能走"));
+		}
+		return `${kind}${isolation ? " · " + isolation : ""}${owners} · ${Math.floor(a[0])}, ${Math.floor(a[1])} → ${Math.floor(b[0])}, ${Math.floor(b[1])}${run > 1 ? tr("（示意图里这一段有 {0} 条轨道，放大后逐条显示）", run) : ""}`;
 	}
 
 	/**
@@ -2404,9 +2582,22 @@
 		const html = modes.map(mode => `<option value="${mode}"${mode === net.mode ? " selected" : ""}>${escapeHtml(names[mode] || mode)}</option>`).join("");
 		if (select.innerHTML !== html) select.innerHTML = html;
 		$("net-info").textContent = d && d.rails ? tr("{0} 段轨道，{1} 个车站", d.rails.length, (d.stations || []).length) : "";
+		const layers = `<option value="physical"${net.layer === "physical" ? " selected" : ""}>${tr("物理线路")}</option><option value="owners"${net.layer === "owners" ? " selected" : ""}>${tr("区段归属")}</option>`;
+		if ($("net-layer").innerHTML !== layers) $("net-layer").innerHTML = layers;
+		const ready = !d || !d.owners || d.owners.ready;
+		$("net-legend").textContent = net.layer === "owners"
+			? tr("线路色：归属这条线路　条纹：几条线路共用　橙：联络线　深色边：手改（虚边：草稿）　灰虚线：手改为所有线路都能走　无色：所有线路都能走") + (ready ? "" : tr("（服务端还没算好归属）"))
+			: tr("红：寻路边界　橙虚线：联络线独占　灰虚线：已放行　粗线：站台　黄：存车线　棕：留置位");
 	}
 
 	$("net-mode").addEventListener("change", e => { net.mode = e.target.value; net.version = -1; loadNetwork(false); });
+	$("net-layer").addEventListener("change", e => {
+		net.layer = e.target.value === "owners" ? "owners" : "physical";
+		try { localStorage.setItem("mtr-editor-net-layer", net.layer); } catch (error) {}
+		net.hover = -1;
+		renderNetworkTools();
+		drawNetwork();
+	});
 	$("net-fit").addEventListener("click", () => { fitNetwork(); drawNetwork(); });
 	$("net-zoom-in").addEventListener("click", () => { net.scale = Math.min(32, net.scale * 1.5); drawNetwork(); });
 	$("net-zoom-out").addEventListener("click", () => { net.scale = Math.max(0.002, net.scale / 1.5); drawNetwork(); });
@@ -2453,7 +2644,7 @@
 		const hover = netRailAt(e.clientX - rect.left, e.clientY - rect.top);
 		if (hover !== net.hover) {
 			net.hover = hover;
-			netCanvas.title = hover >= 0 ? netRailText(hover) + (data && data.canEdit ? tr("；右键改隔离") : "") : "";
+			netCanvas.title = hover >= 0 ? netRailText(hover) + (data && data.canEdit ? net.layer === "owners" ? tr("；右键改归属和联络线") : tr("；右键设寻路边界") : "") : "";
 			drawNetwork();
 		}
 	});
@@ -2472,8 +2663,13 @@
 			openMenuAt(e, [[tr("没有编辑权限"), null]]);
 			return;
 		}
+		if (net.layer === "owners") {
+			ownersMenu(e, index);
+			return;
+		}
+		// The physical layer has the boundaries only: connecting lines are on the ownership layer (web layers step 2)
 		const d = net.data, rail = d.rails[index];
-		railMenu(e, net.connectingOf.get(index) || null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork, net.routesOf.get(index) || []);
+		railMenu(e, null, { a: d.nodes[rail[0]][2], b: d.nodes[rail[1]][2], status: rail[3] }, drawNetwork, []);
 	});
 	addEventListener("resize", () => drawNetwork());
 
@@ -3190,6 +3386,131 @@
 	const canvas = $("canvas"), wrap = $("canvas-wrap"), ctx = canvas.getContext("2d");
 	let layout = null, drawn = [], handles = [];
 
+	// ---------- Other lines on this line's track (web layers step 3) ----------
+	/**
+	 * Services of other lines drawn on a line's running diagram where they run on its track: a leg between two of their
+	 * stops, both stations of this line's diagram next to each other, whose rails between the two (their platforms when
+	 * there are none between) are rails this line's routes run on too. Read only: they are changed in their own line.
+	 */
+	let showAccess = true;
+	try { showAccess = localStorage.getItem("mtr-editor-show-access") !== "0"; } catch (e) {}
+	let accessDrawn = [];
+	const access = { key: "", legs: [], askedMillis: 0 };
+
+	/** Has the whole network map's data, which has the routes' paths, read for a kind of transport, once in a while. */
+	function ensureNetworkFor(mode) {
+		const has = net.data && net.data.mode === mode && net.data.routes && net.data.routes.length;
+		if (has || net.loadingFor || Date.now() - access.askedMillis < 5000) return;
+		access.askedMillis = Date.now();
+		net.loadingFor = mode;
+		net.mode = mode;
+		loadNetwork(!net.data).finally(() => {
+			net.loadingFor = "";
+			access.key = "";
+			draw();
+		});
+	}
+
+	function accessLegs(line) {
+		const mode = line.key.split("|")[0] || "TRAIN";
+		ensureNetworkFor(mode);
+		const d = net.data;
+		if (!d || d.mode !== mode || !d.routes || !net.byPair) return [];
+		const key = [line.key, net.version, line.rows.length, data.routes.length].join("/");
+		if (access.key !== key) {
+			access.key = key;
+			access.legs = findAccessLegs(line, d);
+		}
+		return access.legs;
+	}
+
+	function findAccessLegs(line, d) {
+		const stationOf = stop => stop.station || "?" + stop.name;
+		const railOf = (nodes, k) => net.byPair.get(Math.min(nodes[k - 1], nodes[k]) + "," + Math.max(nodes[k - 1], nodes[k]));
+		// The rails this line's routes run on
+		const own = new Set();
+		d.routes.filter(route => route.lineKey === line.key).forEach(route => {
+			for (let k = 1; k < route.nodes.length; k++) {
+				const rail = railOf(route.nodes, k);
+				if (rail !== undefined) own.add(rail);
+			}
+		});
+		const rowsOf = new Map();
+		line.rows.forEach((row, i) => rowsOf.set(row.id, (rowsOf.get(row.id) || []).concat(i)));
+		const nextTo = (from, to) => {
+			for (const a of from) for (const b of to) if (Math.abs(a - b) === 1 && line.rows[a].section === line.rows[b].section) return [a, b];
+			return null;
+		};
+		const result = [];
+		d.routes.forEach(route => {
+			const r = data.routeById.get(route.id);
+			if (!r || r.lineKey === line.key || !route.stopNodes) return;
+			const legs = [];
+			for (let i = 0; i + 1 < r.stops.length; i++) {
+				const a = route.stopNodes[i], b = route.stopNodes[i + 1];
+				if (a === undefined || b === undefined || a < 0 || b <= a || b >= route.nodes.length) continue;
+				const rows = nextTo(rowsOf.get(stationOf(r.stops[i])) || [], rowsOf.get(stationOf(r.stops[i + 1])) || []);
+				if (!rows) continue;
+				// The rails between the two platforms, or the platforms themselves when one leads straight into the other
+				const from = b - a > 1 ? a + 1 : a, to = b - a > 1 ? b - 1 : b;
+				let shared = false;
+				for (let k = from; k <= to && !shared; k++) shared = own.has(railOf(route.nodes, k));
+				if (shared) legs.push({ i, rowA: rows[0], rowB: rows[1] });
+			}
+			if (legs.length) result.push({ r, legs });
+		});
+		return result;
+	}
+
+	/** Draws the other lines' services on this line's track, under its own, and keeps where for the tooltip. */
+	function drawAccess(line, yOf, w) {
+		accessDrawn = [];
+		if (!showAccess) return;
+		accessLegs(line).forEach(({ r, legs }) => {
+			ctx.strokeStyle = colorOf(r.color);
+			ctx.lineWidth = 1.2;
+			ctx.setLineDash([5, 3]);
+			ctx.globalAlpha = state.route ? 0.2 : 0.6;
+			r.services.forEach(s => {
+				if (s.suspended) return;
+				const times = timesOf(s);
+				let points = [];
+				const flush = () => {
+					if (points.length > 1 && points.some(([x]) => x >= LABEL_W - 40 && x <= w + 40)) {
+						accessDrawn.push({ s, points });
+						polyline(points);
+					}
+					points = [];
+				};
+				legs.forEach((leg, k) => {
+					const before = legs[k - 1];
+					if (!before || before.i !== leg.i - 1 || before.rowB !== leg.rowA) flush();
+					if (!points.length) points.push([xOf(times[leg.i][1]), yOf(leg.rowA)]);
+					points.push([xOf(times[leg.i + 1][0]), yOf(leg.rowB)]);
+					const next = legs[k + 1];
+					if (next && next.i === leg.i + 1 && times[leg.i + 1][1] !== times[leg.i + 1][0]) points.push([xOf(times[leg.i + 1][1]), yOf(leg.rowB)]);
+				});
+				flush();
+			});
+			ctx.setLineDash([]);
+			ctx.globalAlpha = 1;
+		});
+	}
+
+	function hitAccess(x, y) {
+		let best = null, bestDistance = 5;
+		accessDrawn.forEach(d => {
+			for (let i = 1; i < d.points.length; i++) {
+				const distance = segmentDistance(x, y, d.points[i - 1], d.points[i]);
+				if (distance < bestDistance) {
+					bestDistance = distance;
+					best = d.s;
+				}
+			}
+		});
+		return best;
+	}
+
 	function computeLayout() {
 		const line = currentLine();
 		if (!line) return null;
@@ -3321,6 +3642,8 @@
 		ctx.beginPath();
 		ctx.rect(LABEL_W, AXIS_H, w - LABEL_W, h - AXIS_H);
 		ctx.clip();
+		// Other lines' services on this line's track, under its own (web layers step 3)
+		drawAccess(line, yOf, w);
 		const services = line.routes.flatMap(r => r.services);
 		const selectedRoute = state.route;
 		const loopNext = new Map();
@@ -3771,17 +4094,19 @@
 			const troubled = line.routes.map(r => [r, routeProblems(r)]).filter(([, problems]) => problems.length);
 			if (troubled.length) parts.push(`<h2>${tr("股道问题")}</h2><div class="card">${troubled.map(([r, problems]) => `<div class="title">${escapeHtml(routeTitle(r))}</div><ul class="warn">${problems.map(p => `<li class="${p.level}">${escapeHtml(p.text)}</li>`).join("")}</ul>`).join("")}<p class="hint">${tr("右键线路“编辑停站…”在连通图上改股道。")}</p></div>`);
 		}
-		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖空白处平移，Shift + 滚轮上下移动。")}<br>${tr("按住一条线左右拖，平移这一班；Shift 点选一段、Ctrl 点选加入或剔除一班（Ctrl+Shift 加入或剔除一段），拖其中任一条一起平移；按住 Alt 拖按秒取整。右键一条线可以选中它和之后的全部班次。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("按运用跑的车厂：线路色较粗的线有车跑，灰色细线没有车；顶栏“没车的班次”把没车的标成红色。")}<br>${tr("时刻表里点格子直接输入，回车只改这一班，Shift+回车连之后的全部班次一起改；右键可以设通过、待避、推到之后的班次。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
+		parts.push(`<p class="hint">${tr("滚轮缩放时间轴，拖空白处平移，Shift + 滚轮上下移动。")}<br>${tr("按住一条线左右拖，平移这一班；Shift 点选一段、Ctrl 点选加入或剔除一班（Ctrl+Shift 加入或剔除一段），拖其中任一条一起平移；按住 Alt 拖按秒取整。右键一条线可以选中它和之后的全部班次。")}<br>${tr("单击一条线选中这一班，拖它停站末端的方块只改这一班（例外，蓝色）。双击选中同一种别同一方向的全部班次，拖方块改整张表的停站时间。")}<br>${tr("按运用跑的车厂：线路色较粗的线有车跑，灰色细线没有车；顶栏“没车的班次”把没车的标成红色。")}<br>${tr("时刻表里点格子直接输入，回车只改这一班，Shift+回车连之后的全部班次一起改；右键可以设通过、待避、推到之后的班次；右键班次表头可以把这一班各站的时刻改动整列同步到之后的每一班。改动先存为草稿，点顶栏的“应用”才发给游戏。")}</p>`);
 		inspector.innerHTML = parts.join("");
 	}
 
 	const tooltip = $("tooltip");
-	function showTooltip(s, clientX, clientY) {
+	function showTooltip(s, clientX, clientY, accessed) {
 		if (!s) {
 			tooltip.hidden = true;
 			return;
 		}
-		tooltip.innerHTML = `<b>${escapeHtml(routeTitle(s.route))}</b> ${clock(s.start)}${stopsHtml(s)}${simTooltip(s)}`;
+		tooltip.innerHTML = accessed
+			? `<b>${tr("接入")} · ${escapeHtml(routeTitle(s.route))}</b> ${clock(s.start)}<div class="hint">${tr("别的线路在这条线路的轨道上跑的班次，只读；在{0}里改", escapeHtml(shortName(s.route.line)))}</div>${stopsHtml(s)}`
+			: `<b>${escapeHtml(routeTitle(s.route))}</b> ${clock(s.start)}${stopsHtml(s)}${simTooltip(s)}`;
 		tooltip.hidden = false;
 		const box = tooltip.getBoundingClientRect();
 		tooltip.style.left = Math.min(clientX + 14, innerWidth - box.width - 8) + "px";
@@ -4546,6 +4871,10 @@
 			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => shiftLaterDialog(s)]);
 			if (later.length) items.push([`${tr("选中这一班和之后的 {0} 班", later.length)}`, () => chooseLater(s)]);
 			if (s.exceptions) items.push([tr("清除这一班的全部例外"), () => edit(table => { table.exceptions = table.exceptions.filter(x => x.service !== s.service); })]);
+			// This service's changes at every stop, in order, to every later one: each runs as this one does from its own start
+			if (later.length && (s.exceptions || later.some(o => o.exceptions))) items.push([tr("把这一班各站的时刻改动同步到之后的 {0} 班", later.length), () => edit(table => syncExceptions(table, s.service, later.map(o => o.service)))]);
+			const chosenLater = inRange(s) ? rangeServices().filter(o => o !== s) : [];
+			if (chosenLater.length && chosenLater.length !== later.length && (s.exceptions || chosenLater.some(o => o.exceptions))) items.push([tr("把这一班各站的时刻改动同步到选中的另外 {0} 班", chosenLater.length), () => edit(table => syncExceptions(table, s.service, chosenLater.map(o => o.service)))]);
 			if (s.link) items.push([tr("清除这一班的直通"), () => edit(table => { table.links = table.links.filter(link => link.service !== s.service); })]);
 			items.push([tr("批量新建直通关系…"), () => throughDialog(s.route)]);
 		} else {
@@ -8030,6 +8359,12 @@
 	$("btn-sync").addEventListener("click", syncDialog);
 	$("btn-no-train").setAttribute("aria-pressed", String(showNoTrain));
 	$("chk-depots").checked = showDepots;
+	$("chk-access").checked = showAccess;
+	$("chk-access").addEventListener("change", e => {
+		showAccess = e.target.checked;
+		try { localStorage.setItem("mtr-editor-show-access", showAccess ? "1" : "0"); } catch (error) {}
+		draw();
+	});
 	$("chk-depots").addEventListener("change", e => {
 		showDepots = e.target.checked;
 		try { localStorage.setItem("mtr-editor-show-depots", showDepots ? "1" : "0"); } catch (error) {}
@@ -8338,7 +8673,8 @@
 		}
 		const s = hitService(e.clientX - box.left, e.clientY - box.top);
 		canvas.classList.toggle("pointer", Boolean(s) || Boolean(hitHandle(e.clientX - box.left, e.clientY - box.top)));
-		showTooltip(s, e.clientX, e.clientY);
+		const accessed = !s && hitAccess(e.clientX - box.left, e.clientY - box.top);
+		showTooltip(s || accessed, e.clientX, e.clientY, Boolean(accessed));
 	});
 	canvas.addEventListener("pointerup", e => {
 		const box = canvas.getBoundingClientRect();

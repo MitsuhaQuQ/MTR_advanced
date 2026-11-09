@@ -30,6 +30,7 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 	 * For each player, the sync key of each train last sent in full.
 	 */
 	private final Map<Player, Map<Long, Integer>> sentKeys = new HashMap<>();
+	private static final Set<Long> TOLD_TOO_BIG = Collections.synchronizedSet(new HashSet<>());
 
 	public UpdateNearbyMovingObjects(ResourceLocation deletePacketId, ResourceLocation updatePacketId) {
 		this(deletePacketId, updatePacketId, null);
@@ -91,6 +92,9 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 							if (data instanceof Train) {
 								playerKeys.put(data.id, ((Train) data).getSyncKey());
 							}
+						} else if (TOLD_TOO_BIG.add(data.id)) {
+							// Said once, as the player won't see it at all
+							System.out.println("Minecraft Transit Railway: " + data.getClass().getSimpleName() + " " + data.id + " is too big to send to players (" + packet.readableBytes() + " bytes), so they don't see it");
 						}
 					}
 				}

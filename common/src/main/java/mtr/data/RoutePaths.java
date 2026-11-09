@@ -62,6 +62,14 @@ public final class RoutePaths {
 	private long ownersFingerprint;
 	private volatile boolean ownersWorking;
 	private volatile boolean ownersReady;
+	/**
+	 * The sections whose owners were set by hand, with the owners last worked out (web layers step 2), for players to see.
+	 */
+	private volatile Set<Long> manualSections = Collections.emptySet();
+	/**
+	 * Goes up each time the owners are worked out again, so players are sent them only when they changed.
+	 */
+	private volatile int ownersVersion;
 
 	public RoutePaths(mtr.advanced.GraphRecords graphRecords) {
 		this.graphRecords = graphRecords;
@@ -125,12 +133,18 @@ public final class RoutePaths {
 		for (final Route route : dataCache.routeIdMap.values()) {
 			fingerprint += mixKey(route.id, (getKey(route, dataCache) + "|" + route.connectingLine + "|" + LineDuties.getLineKey(route) + "|" + getReleased(route)).hashCode());
 		}
+		// The owners set by hand (web layers step 2), copied, as they are read on the thread working the owners out
+		final Map<UUID, List<String>> overrides = new HashMap<>();
+		dataCache.networkSettings.ownerOverrides.forEach((railKey, lines) -> overrides.put(railKey, new ArrayList<>(lines)));
+		fingerprint += mixKey(overrides.hashCode(), 3);
 		if (fingerprint == ownersFingerprint && ownersReady) {
 			return;
 		}
 		ownersFingerprint = fingerprint;
 		if (serverThread == null) {
-			graphRecords.setOwners(computeOwners(dataCache, rails, boundaries, graph, legs));
+			graphRecords.setOwners(computeOwners(dataCache, rails, boundaries, graph, legs, overrides));
+			manualSections = transitsim.network.TrackOwnership.getOverrides(legs.snapshot, overrides).keySet();
+			ownersVersion++;
 			ownersReady = true;
 			return;
 		}
@@ -149,7 +163,7 @@ public final class RoutePaths {
 						copyGraph[0] = DeterministicPathFinder.compile(railsCopy, boundariesCopy);
 					}
 					return copyGraph[0];
-				}, legs);
+				}, legs, overrides);
 				System.out.println("Minecraft Transit Railway: worked out the owners of the track sections in " + (System.currentTimeMillis() - start) + " ms");
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -158,6 +172,8 @@ public final class RoutePaths {
 			serverThread.execute(() -> {
 				if (finalOwners != null) {
 					graphRecords.setOwners(finalOwners);
+					manualSections = transitsim.network.TrackOwnership.getOverrides(legs.snapshot, overrides).keySet();
+					ownersVersion++;
 					ownersReady = true;
 				}
 				ownersWorking = false;
@@ -174,7 +190,21 @@ public final class RoutePaths {
 		return ownersReady;
 	}
 
-	private Map<Long, Set<String>> computeOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph, mtr.advanced.GraphRecords.Legs legs) {
+	/**
+	 * @return the sections whose owners were set by hand, as last worked out
+	 */
+	public Set<Long> getManualSections() {
+		return manualSections;
+	}
+
+	/**
+	 * @return a number that goes up each time the owners are worked out again
+	 */
+	public int getOwnersVersion() {
+		return ownersVersion;
+	}
+
+	private Map<Long, Set<String>> computeOwners(DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails, mtr.advanced.PathBoundaries boundaries, Supplier<RailGraph<Rail>> graph, mtr.advanced.GraphRecords.Legs legs, Map<UUID, List<String>> overrides) {
 		final Map<Long, List<String>> platformLines = new HashMap<>();
 		final Map<Long, String> connectingSections = new HashMap<>();
 		dataCache.routeIdMap.values().stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
@@ -200,7 +230,7 @@ public final class RoutePaths {
 				});
 			}
 		});
-		return transitsim.network.TrackOwnership.compute(legs.snapshot, boundaries.nodes, boundaries.segments, platformLines, connectingSections);
+		return transitsim.network.TrackOwnership.compute(legs.snapshot, boundaries.nodes, boundaries.segments, platformLines, connectingSections, overrides);
 	}
 
 	/**

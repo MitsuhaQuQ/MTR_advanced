@@ -306,11 +306,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 		path = new ArrayList<>();
 		distances = new ArrayList<>();
-		final int pathSize = packet.readInt();
-		for (int i = 0; i < pathSize; i++) {
-			path.add(new PathData(packet));
-			distances.add(packet.readDouble());
-		}
+		readPath(packet, path, distances);
 		repeatIndex1 = packet.readInt();
 		repeatIndex2 = packet.readInt();
 		final int tripRouteCount = packet.readInt();
@@ -405,12 +401,13 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	public void writePacket(FriendlyByteBuf packet) {
 		super.writePacket(packet);
 
-		final int pathSize = Math.min(path.size(), distances.size());
-		packet.writeInt(pathSize);
-		for (int i = 0; i < pathSize; i++) {
-			path.get(i).writePacket(packet);
-			packet.writeDouble(distances.get(i));
+		final int[] window = getSendWindow();
+		final double base = getWindowBase(window);
+		final List<Double> sentDistances = new ArrayList<>();
+		for (int i = window[0]; i < window[1]; i++) {
+			sentDistances.add(distances.get(i) - base);
 		}
+		writePath(packet, path.subList(window[0], window[1]), sentDistances);
 		packet.writeInt(repeatIndex1);
 		packet.writeInt(repeatIndex2);
 		packet.writeInt(tripRouteIds.size());
@@ -420,10 +417,10 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeFloat(railLength);
 		packet.writeFloat(speed);
 		packet.writeFloat(accelerationConstant);
-		packet.writeDouble(railProgress);
+		packet.writeDouble(railProgress - base);
 		packet.writeFloat(elapsedDwellTicks);
-		packet.writeInt(nextStoppingIndex);
-		packet.writeInt(nextPlatformIndex);
+		packet.writeInt(Math.max(0, nextStoppingIndex - window[0]));
+		packet.writeInt(Math.max(0, nextPlatformIndex - window[0]));
 		packet.writeBoolean(reversed);
 		packet.writeUtf(trainId);
 		packet.writeUtf(baseTrainType);
@@ -439,7 +436,138 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeBoolean(useSpeedCurve);
 		packet.writeFloat(decelerationConstant);
 		packet.writeFloat(cruiseCap);
-		writeSegmentSpec(packet, getSegmentSpecToSend());
+		writeSegmentSpec(packet, rebase(getSegmentSpecToSend(), base));
+	}
+
+	/**
+	 * Players are sent only this part of a long path (2026-11-09), numbered from 0 as a path of its own: the round the
+	 * train's front is on and the next one, with as much before as the train is long. A round ends where the path turns
+	 * back; a path going round and round without turning back is cut at a stop every {@link #SEND_BLOCK} pieces or so. The
+	 * part moves on as the front goes into the next round, while the train stands at the stop where it turns back, so
+	 * players get it again in full there ({@link #getSyncKey} changes). A duty's path of a whole day was too big for a
+	 * packet.
+	 *
+	 * @return the first piece and the one after the last
+	 */
+	protected int[] getSendWindow() {
+		final int size = Math.min(path.size(), distances.size());
+		// A path running round from its repeat indices is sent whole, as are the paths short enough anyway
+		if (size <= SEND_WINDOW_MIN || repeatIndex1 != 0 || repeatIndex2 != 0) {
+			return new int[]{0, size};
+		}
+		final int[] rounds = getRounds(size);
+		final int front = findIndex(distances, size, railProgress, false);
+		int round = 0;
+		while (round + 1 < rounds.length && rounds[round + 1] <= front) {
+			round++;
+		}
+		final int start = rounds[round];
+		final double startDistance = start == 0 ? 0 : distances.get(start - 1);
+		final int from = Math.min(start, findIndex(distances, size, Math.max(0, startDistance - railLength - SEND_BACK_MARGIN), true));
+		final int to = Math.max(rounds[Math.min(round + 2, rounds.length - 1)], Math.min(size, Math.max(nextStoppingIndex, nextPlatformIndex) + 1));
+		return new int[]{from, to};
+	}
+
+	private List<PathData> roundsPath;
+	private int roundsSize;
+	private int[] rounds;
+
+	/**
+	 * @return the first piece of each round of the path, and its size last
+	 */
+	private int[] getRounds(int size) {
+		if (roundsPath == path && roundsSize == size && rounds != null) {
+			return rounds;
+		}
+		final List<Integer> starts = new ArrayList<>();
+		starts.add(0);
+		int lastCut = 0;
+		int lastStop = -1;
+		for (int i = 1; i < size; i++) {
+			final PathData before = path.get(i - 1);
+			final PathData piece = path.get(i);
+			// Turning back: the piece runs the one before backwards
+			if (piece.startingPos.equals(before.getLastPos()) && piece.getLastPos().equals(before.startingPos)) {
+				starts.add(i);
+				lastCut = i;
+				lastStop = -1;
+				continue;
+			}
+			if (before.dwellTime > 0) {
+				lastStop = i;
+			}
+			if (i - lastCut >= SEND_BLOCK) {
+				final int cut = lastStop > lastCut ? lastStop : i;
+				starts.add(cut);
+				lastCut = cut;
+				lastStop = -1;
+			}
+		}
+		starts.add(size);
+		rounds = starts.stream().mapToInt(Integer::intValue).toArray();
+		roundsPath = path;
+		roundsSize = size;
+		return rounds;
+	}
+
+	private double getWindowBase(int[] window) {
+		return window[0] == 0 ? 0 : distances.get(window[0] - 1);
+	}
+
+	private static RunSegment.Spec rebase(RunSegment.Spec spec, double base) {
+		return spec == null || base == 0 ? spec : new RunSegment.Spec(spec.version, spec.startMillis, spec.startPosition - base, spec.startSpeed, spec.cap, spec.target - base);
+	}
+
+	/**
+	 * Paths longer than this many pieces are sent in parts ({@link #getSendWindow}).
+	 */
+	public static final int SEND_WINDOW_MIN = 2048;
+	public static final int SEND_BLOCK = 512;
+	private static final double SEND_BACK_MARGIN = 64;
+
+	/**
+	 * Writes the path with each of its rails once, then each piece by the number of its rail (2026-11-09): a duty's path
+	 * of a whole day on a loop runs the same rails thousands of times, and written in full it was bigger than a packet may
+	 * be, so players never got the train and didn't see it.
+	 */
+	public static void writePath(FriendlyByteBuf packet, List<PathData> path, List<Double> distances) {
+		final int pathSize = Math.min(path.size(), distances.size());
+		final Map<java.nio.ByteBuffer, Integer> railIndices = new HashMap<>();
+		final List<FriendlyByteBuf> rails = new ArrayList<>();
+		final int[] indices = new int[pathSize];
+		for (int i = 0; i < pathSize; i++) {
+			final FriendlyByteBuf railPacket = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+			path.get(i).rail.writePacket(railPacket);
+			final byte[] bytes = new byte[railPacket.readableBytes()];
+			railPacket.getBytes(railPacket.readerIndex(), bytes);
+			final int index = railIndices.computeIfAbsent(java.nio.ByteBuffer.wrap(bytes), key -> {
+				rails.add(railPacket);
+				return rails.size() - 1;
+			});
+			indices[i] = index;
+		}
+		packet.writeVarInt(rails.size());
+		rails.forEach(packet::writeBytes);
+		packet.writeInt(pathSize);
+		for (int i = 0; i < pathSize; i++) {
+			packet.writeVarInt(indices[i]);
+			path.get(i).writePacketWithoutRail(packet);
+			packet.writeDouble(distances.get(i));
+		}
+	}
+
+	public static void readPath(FriendlyByteBuf packet, List<PathData> path, List<Double> distances) {
+		final int railCount = packet.readVarInt();
+		final List<Rail> rails = new ArrayList<>();
+		for (int i = 0; i < railCount; i++) {
+			rails.add(new Rail(packet));
+		}
+		final int pathSize = packet.readInt();
+		for (int i = 0; i < pathSize; i++) {
+			final int index = packet.readVarInt();
+			path.add(new PathData(rails.get(index), packet));
+			distances.add(packet.readDouble());
+		}
 	}
 
 	/**
@@ -447,17 +575,21 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * {@link #writePacket} writes but what the train is and its path.
 	 */
 	public final void writeStatePacket(FriendlyByteBuf packet) {
+		final int[] window = getSendWindow();
+		final double base = getWindowBase(window);
 		packet.writeLong(id);
+		// The public one, which ANTE's mixin adds its settings to, as the client works it out the same way and drops a state
+		// whose key differs: written as getSyncKey(window), every state was dropped and trains never opened their doors
 		packet.writeInt(getSyncKey());
 		packet.writeInt(repeatIndex1);
 		packet.writeInt(repeatIndex2);
 		packet.writeInt(tripRouteIds.size());
 		tripRouteIds.forEach(packet::writeLong);
 		packet.writeFloat(speed);
-		packet.writeDouble(railProgress);
+		packet.writeDouble(railProgress - base);
 		packet.writeFloat(elapsedDwellTicks);
-		packet.writeInt(nextStoppingIndex);
-		packet.writeInt(nextPlatformIndex);
+		packet.writeInt(Math.max(0, nextStoppingIndex - window[0]));
+		packet.writeInt(Math.max(0, nextPlatformIndex - window[0]));
 		packet.writeBoolean(reversed);
 		packet.writeBoolean(isCurrentlyManual);
 		packet.writeBoolean(isOnRoute);
@@ -468,7 +600,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeBoolean(useSpeedCurve);
 		packet.writeFloat(decelerationConstant);
 		packet.writeFloat(cruiseCap);
-		writeSegmentSpec(packet, getSegmentSpecToSend());
+		writeSegmentSpec(packet, rebase(getSegmentSpecToSend(), base));
 	}
 
 	/**
@@ -478,10 +610,23 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * progress put its back cars beyond the start of the siding, all on one point and turned across the track.
 	 */
 	public int getSyncKey() {
-		int key = path.size();
-		for (final PathData pathData : path) {
+		return getSyncKey(getSendWindow());
+	}
+
+	/**
+	 * Of the part of the path sent ({@link #getSendWindow}), worked out the same way by the client on the path it has. What
+	 * stops the pieces have is part of it, so two parts of a path running the same rails count as the same only when they
+	 * are the same in all that is sent.
+	 */
+	private int getSyncKey(int[] window) {
+		int key = window[1] - window[0];
+		for (int i = window[0]; i < window[1]; i++) {
+			final PathData pathData = path.get(i);
 			key = key * 31 + Long.hashCode(pathData.startingPos.asLong());
 			key = key * 31 + Long.hashCode(pathData.getLastPos().asLong());
+			key = key * 31 + Long.hashCode(pathData.savedRailBaseId);
+			key = key * 31 + pathData.stopIndex;
+			key = key * 31 + pathData.dwellTime;
 		}
 		key = key * 31 + trainId.hashCode();
 		key = key * 31 + baseTrainType.hashCode();

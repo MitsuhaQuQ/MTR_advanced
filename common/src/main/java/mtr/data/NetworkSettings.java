@@ -5,6 +5,8 @@ import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,6 +50,17 @@ public final class NetworkSettings extends SerializedDataBase {
 	 */
 	public final Map<Long, Long> stationWaitThresholds = new java.util.TreeMap<>();
 
+	/**
+	 * The owners of track sections set by hand (web layers step 2, 2026-11-09), by the key of a rail of the section
+	 * ({@link transitsim.network.RailKeys}): the lines that may run there, or none for a section open to every line. Laid
+	 * over the owners worked out from boundaries and platforms ({@link transitsim.network.TrackOwnership}).
+	 */
+	public final Map<java.util.UUID, List<String>> ownerOverrides = new java.util.TreeMap<>();
+
+	public static final int MAX_OWNER_OVERRIDES = 4096;
+	public static final int MAX_OVERRIDE_LINES = 32;
+	private static final int MAX_LINE_KEY_LENGTH = 256;
+
 	public static final long DEFAULT_WAIT_THRESHOLD_MILLIS = transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS;
 	public static final long MAX_WAIT_THRESHOLD_MILLIS = 3600000;
 	private static final int MAX_STATION_THRESHOLDS = 4096;
@@ -56,6 +69,7 @@ public final class NetworkSettings extends SerializedDataBase {
 	private static final String KEY_EARLY_THRESHOLD_MILLIS = "early_threshold_millis";
 	private static final String KEY_WAIT_THRESHOLD_MILLIS = "wait_threshold_millis";
 	private static final String KEY_STATION_WAIT_THRESHOLDS = "station_wait_thresholds";
+	private static final String KEY_OWNER_OVERRIDES = "owner_overrides";
 
 	public NetworkSettings() {
 	}
@@ -70,6 +84,34 @@ public final class NetworkSettings extends SerializedDataBase {
 				stationWaitThresholds.put(Long.parseLong(entry.getKey().asStringValue().asString()), clampWait(entry.getValue().asIntegerValue().asLong()));
 			}
 		});
+		messagePackHelper.iterateMapValue(KEY_OWNER_OVERRIDES, entry -> {
+			final java.util.UUID railKey = parseRailKey(entry.getKey().asStringValue().asString());
+			if (railKey != null && ownerOverrides.size() < MAX_OWNER_OVERRIDES && entry.getValue().isArrayValue()) {
+				final List<String> lines = new ArrayList<>();
+				entry.getValue().asArrayValue().forEach(line -> {
+					if (lines.size() < MAX_OVERRIDE_LINES && line.isStringValue()) {
+						lines.add(line.asStringValue().asString());
+					}
+				});
+				ownerOverrides.put(railKey, lines);
+			}
+		});
+	}
+
+	/**
+	 * @return a rail key written as its two nodes, {@code "node1,node2"}, or null if it isn't one
+	 */
+	public static java.util.UUID parseRailKey(String text) {
+		final String[] parts = text.split(",");
+		try {
+			return parts.length == 2 ? transitsim.network.RailKeys.of(Long.parseLong(parts[0].trim()), Long.parseLong(parts[1].trim())) : null;
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
+	public static String railKeyText(java.util.UUID railKey) {
+		return railKey.getMostSignificantBits() + "," + railKey.getLeastSignificantBits();
 	}
 
 	/**
@@ -92,6 +134,23 @@ public final class NetworkSettings extends SerializedDataBase {
 				stationWaitThresholds.put(stationId, millis);
 			}
 		}
+		ownerOverrides.clear();
+		final int overrideCount = packet.readVarInt();
+		if (overrideCount < 0 || overrideCount > MAX_OWNER_OVERRIDES) {
+			throw new IllegalArgumentException("Too many owners set by hand: " + overrideCount);
+		}
+		for (int i = 0; i < overrideCount; i++) {
+			final java.util.UUID railKey = transitsim.network.RailKeys.of(packet.readLong(), packet.readLong());
+			final int lineCount = packet.readVarInt();
+			if (lineCount < 0 || lineCount > MAX_OVERRIDE_LINES) {
+				throw new IllegalArgumentException("Too many lines for a section: " + lineCount);
+			}
+			final List<String> lines = new ArrayList<>();
+			for (int j = 0; j < lineCount; j++) {
+				lines.add(packet.readUtf(MAX_LINE_KEY_LENGTH));
+			}
+			ownerOverrides.put(railKey, lines);
+		}
 	}
 
 	public void copyFrom(NetworkSettings other) {
@@ -100,6 +159,8 @@ public final class NetworkSettings extends SerializedDataBase {
 		waitThresholdMillis = other.waitThresholdMillis;
 		stationWaitThresholds.clear();
 		stationWaitThresholds.putAll(other.stationWaitThresholds);
+		ownerOverrides.clear();
+		other.ownerOverrides.forEach((railKey, lines) -> ownerOverrides.put(railKey, new ArrayList<>(lines)));
 	}
 
 	@Override
@@ -111,11 +172,18 @@ public final class NetworkSettings extends SerializedDataBase {
 		for (final Map.Entry<Long, Long> entry : stationWaitThresholds.entrySet()) {
 			messagePacker.packString(String.valueOf(entry.getKey())).packLong(entry.getValue());
 		}
+		messagePacker.packString(KEY_OWNER_OVERRIDES).packMapHeader(ownerOverrides.size());
+		for (final Map.Entry<java.util.UUID, List<String>> entry : ownerOverrides.entrySet()) {
+			messagePacker.packString(railKeyText(entry.getKey())).packArrayHeader(entry.getValue().size());
+			for (final String line : entry.getValue()) {
+				messagePacker.packString(line);
+			}
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 4;
+		return 5;
 	}
 
 	@Override
@@ -128,16 +196,23 @@ public final class NetworkSettings extends SerializedDataBase {
 			packet.writeLong(stationId);
 			packet.writeLong(millis);
 		});
+		packet.writeVarInt(ownerOverrides.size());
+		ownerOverrides.forEach((railKey, lines) -> {
+			packet.writeLong(railKey.getMostSignificantBits());
+			packet.writeLong(railKey.getLeastSignificantBits());
+			packet.writeVarInt(lines.size());
+			lines.forEach(line -> packet.writeUtf(line, MAX_LINE_KEY_LENGTH));
+		});
 	}
 
 	@Override
 	public boolean equals(Object object) {
-		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds);
+		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides);
 	}
 
 	@Override
 	public int hashCode() {
-		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode();
+		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode();
 	}
 
 	public static long clampWait(long millis) {

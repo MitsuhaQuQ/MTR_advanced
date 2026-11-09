@@ -52,7 +52,7 @@ public final class NetworkSettingsPackets implements IPacket {
 				return;
 			}
 			railwayData.dataCache.networkSettings.copyFrom(read);
-			System.out.println("Minecraft Transit Railway: " + player.getGameProfile().getName() + " set the network's least time to change ends to " + read.minReverseMillis + " ms and the early arrival threshold to " + read.earlyThresholdMillis + " ms");
+			System.out.println("Minecraft Transit Railway: " + player.getGameProfile().getName() + " set the network's least time to change ends to " + read.minReverseMillis + " ms, the early arrival threshold to " + read.earlyThresholdMillis + " ms and the owners of " + read.ownerOverrides.size() + " track sections by hand");
 			railwayData.networkSettingsChanged = true;
 		});
 	}

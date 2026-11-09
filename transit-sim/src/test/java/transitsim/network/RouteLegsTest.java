@@ -297,6 +297,67 @@ class RouteLegsTest {
 	}
 
 	@Test
+	void ownersSetByHandAreLaidOverWhatIsWorkedOut() {
+		// The same two lines as below: X round the long way, Y straight, crossovers at both ends as boundary rails
+		final TrackSections.Rail x1 = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);
+		final TrackSections.Rail x2 = rail(220, 0, 240, 0, SectionType.PLATFORM, 2);
+		final TrackSections.Rail y1 = rail(0, 10, 20, 10, SectionType.PLATFORM, 3);
+		final TrackSections.Rail y2 = rail(220, 10, 240, 10, SectionType.PLATFORM, 4);
+		final TrackSections.Rail crossover1 = track(40, 0, 60, 10);
+		final TrackSections.Rail crossover2 = track(180, 10, 200, 0);
+		final TrackSections.Rail yMiddle = track(60, 10, 180, 10);
+		final Map<UUID, TrackSections.Rail> rails = railMap(x1, x2, y1, y2, crossover1, crossover2,
+				track(20, 0, 40, 0), track(40, 0, 120, -200), track(120, -200, 200, 0), track(200, 0, 220, 0),
+				track(20, 10, 60, 10), yMiddle, track(180, 10, 220, 10));
+		final Map<Long, Integer> marks = new HashMap<>();
+		for (final TrackSections.Rail crossover : new TrackSections.Rail[]{crossover1, crossover2}) {
+			marks.put(crossover.node1, TrackSections.MARK_BOUNDARY_RAIL);
+			marks.put(crossover.node2, TrackSections.MARK_BOUNDARY_RAIL);
+		}
+		final TrackSections sections = new TrackSections();
+		sections.sync(rails, marks);
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final Map<Long, List<String>> platformLines = new HashMap<>();
+		platformLines.put(1L, Collections.singletonList("X"));
+		platformLines.put(2L, Collections.singletonList("X"));
+		platformLines.put(3L, Collections.singletonList("Y"));
+		platformLines.put(4L, Collections.singletonList("Y"));
+		final Set<UUID> boundaryRails = new HashSet<>(Arrays.asList(crossover1.getKey(), crossover2.getKey()));
+		final long yTrack = sections.getSectionOf(yMiddle.getKey());
+		final long crossover = sections.getSectionOf(crossover1.getKey());
+		final Map<Long, Set<String>> worked = TrackOwnership.compute(snapshot, Collections.emptySet(), boundaryRails, platformLines, Collections.emptyMap());
+		assertEquals(Collections.singleton("Y"), worked.get(yTrack));
+
+		// Y's track given to X as well, by a rail of it; the crossover opened to every line
+		final Map<UUID, List<String>> overrides = new HashMap<>();
+		overrides.put(RailKeys.of(yMiddle.node2, yMiddle.node1), Arrays.asList("X", "Y"));
+		overrides.put(crossover1.getKey(), Collections.emptyList());
+		final Map<Long, Set<String>> owned = TrackOwnership.compute(snapshot, Collections.emptySet(), boundaryRails, platformLines, Collections.emptyMap(), overrides);
+		assertEquals(new TreeSet<>(Arrays.asList("X", "Y")), owned.get(yTrack));
+		assertFalse(owned.containsKey(crossover), "open to every line");
+		assertTrue(TrackOwnership.mayRun(owned.get(crossover), "Z"));
+		// The rest is as worked out
+		assertEquals(worked.get(sections.getSectionOf(x1.getKey())), owned.get(sections.getSectionOf(x1.getKey())));
+		assertEquals(new TreeSet<>(Arrays.asList(yTrack, crossover)), TrackOwnership.getOverrides(snapshot, overrides).keySet());
+
+		// Two rails of one section set by hand: the section belongs to all the lines they name
+		final TrackSections.Rail yStart = track(20, 10, 60, 10);
+		final Map<UUID, List<String>> two = new HashMap<>();
+		two.put(yStart.getKey(), Collections.singletonList("X"));
+		two.put(yMiddle.getKey(), Collections.singletonList("Z"));
+		final Map<Long, Set<String>> both = TrackOwnership.compute(snapshot, Collections.emptySet(), boundaryRails, platformLines, Collections.emptyMap(), two);
+		if (sections.getSectionOf(yStart.getKey()).equals(yTrack)) {
+			assertEquals(new TreeSet<>(Arrays.asList("X", "Z")), both.get(yTrack));
+		} else {
+			assertEquals(Collections.singleton("Z"), both.get(yTrack));
+		}
+		// A rail no longer there is left alone
+		final Map<UUID, List<String>> gone = new HashMap<>();
+		gone.put(RailKeys.of(pos(999, 0), pos(1000, 0)), Collections.singletonList("X"));
+		assertEquals(worked, TrackOwnership.compute(snapshot, Collections.emptySet(), boundaryRails, platformLines, Collections.emptyMap(), gone));
+	}
+
+	@Test
 	void routesKeepToTheTrackTheirLineOwns() {
 		// Line X runs a long way round from X1 to X2; line Y runs straight beside it; crossovers join them at both ends
 		final TrackSections.Rail x1 = rail(0, 0, 20, 0, SectionType.PLATFORM, 1);

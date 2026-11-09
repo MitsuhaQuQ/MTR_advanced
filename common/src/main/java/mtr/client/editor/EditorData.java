@@ -74,6 +74,14 @@ public final class EditorData {
 		final JsonObject stationWaitThresholdsObject = new JsonObject();
 		ClientData.DATA_CACHE.networkSettings.stationWaitThresholds.forEach((stationId, millis) -> stationWaitThresholdsObject.addProperty(String.valueOf(stationId), millis));
 		networkSettingsObject.add("stationWaitThresholds", stationWaitThresholdsObject);
+		// The owners of track sections set by hand, by a rail's two nodes (web layers step 2)
+		final JsonObject ownerOverridesObject = new JsonObject();
+		ClientData.DATA_CACHE.networkSettings.ownerOverrides.forEach((railKey, lines) -> {
+			final JsonArray linesArray = new JsonArray();
+			lines.forEach(linesArray::add);
+			ownerOverridesObject.add(mtr.data.NetworkSettings.railKeyText(railKey), linesArray);
+		});
+		networkSettingsObject.add("ownerOverrides", ownerOverridesObject);
 		data.add("networkSettings", networkSettingsObject);
 		// The fast simulation of a day is a debugging tool the server turns on
 		data.addProperty("simulation", ClientData.editorSimulation);

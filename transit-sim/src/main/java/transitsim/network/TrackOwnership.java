@@ -11,6 +11,10 @@ import java.util.*;
  * <p>
  * Kept by section hash, so a change of boundaries or routes changes only the sections whose owners change, and a search
  * that touched them is found again.
+ * <p>
+ * A player can set a section's owners by hand (web layers step 2, 2026-11-09): kept by the key of a rail in it, so it
+ * stays as the track is cut into sections again, and laid over what is worked out. A section with several rails set by
+ * hand belongs to all the lines they name; set to no line, it is open to every line.
  */
 public final class TrackOwnership {
 
@@ -30,6 +34,43 @@ public final class TrackOwnership {
 	 * @return the owners of each section with any, by hash; a section with none can be run by every line
 	 */
 	public static Map<Long, Set<String>> compute(TrackSections.Snapshot graph, Set<Long> boundaryNodes, Set<UUID> boundaryRails, Map<Long, ? extends Collection<String>> platformLines, Map<Long, String> connectingSections) {
+		return compute(graph, boundaryNodes, boundaryRails, platformLines, connectingSections, Collections.emptyMap());
+	}
+
+	/**
+	 * @param overrides the owners set by hand, by the key of a rail of the section; none for a section open to every line
+	 * @see #compute(TrackSections.Snapshot, Set, Set, Map, Map)
+	 */
+	public static Map<Long, Set<String>> compute(TrackSections.Snapshot graph, Set<Long> boundaryNodes, Set<UUID> boundaryRails, Map<Long, ? extends Collection<String>> platformLines, Map<Long, String> connectingSections, Map<UUID, ? extends Collection<String>> overrides) {
+		final Map<Long, Set<String>> owners = computeWorkedOut(graph, boundaryNodes, boundaryRails, platformLines, connectingSections);
+		getOverrides(graph, overrides).forEach((hash, lines) -> {
+			if (lines.isEmpty()) {
+				owners.remove(hash);
+			} else {
+				owners.put(hash, lines);
+			}
+		});
+		return owners;
+	}
+
+	/**
+	 * @return the owners set by hand of each section with any, by hash: all the lines its rails set by hand name, or none
+	 * for a section open to every line
+	 */
+	public static Map<Long, Set<String>> getOverrides(TrackSections.Snapshot graph, Map<UUID, ? extends Collection<String>> overrides) {
+		final Map<Long, TreeSet<String>> bySection = new TreeMap<>();
+		overrides.forEach((railKey, lines) -> {
+			final TrackSections.Section section = graph.getSectionOf(railKey.getMostSignificantBits(), railKey.getLeastSignificantBits());
+			if (section != null) {
+				bySection.computeIfAbsent(section.hash, hash -> new TreeSet<>()).addAll(lines);
+			}
+		});
+		final Map<Long, Set<String>> result = new TreeMap<>();
+		bySection.forEach((hash, lines) -> result.put(hash, Collections.unmodifiableSet(lines)));
+		return result;
+	}
+
+	private static Map<Long, Set<String>> computeWorkedOut(TrackSections.Snapshot graph, Set<Long> boundaryNodes, Set<UUID> boundaryRails, Map<Long, ? extends Collection<String>> platformLines, Map<Long, String> connectingSections) {
 		// Regions: sections meeting at a node are in one unless it is a boundary node; a boundary rail joins none
 		final List<Long> hashes = new ArrayList<>(new TreeSet<>(graph.sections.keySet()));
 		final Map<Long, Long> parents = new HashMap<>();

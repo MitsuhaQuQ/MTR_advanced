@@ -227,6 +227,7 @@ public final class LiveSimulation {
 			if (stopped || placement != null || hasChanged(railwayData, now)) {
 				start(railwayData, now, true, stopped ? lastMillis : now);
 			}
+			debugPlace(railwayData, now);
 		} else if (simulator == null && (!started || now >= startedMillis + (sidingIds.isEmpty() ? RETRY_MILLIS : RESTART_MILLIS))) {
 			// The first time after the world is loaded, the game has already put the trains where the plan has them
 			start(railwayData, now, drive, now);
@@ -377,7 +378,44 @@ public final class LiveSimulation {
 		if (placed != null && placedTrains != null) {
 			final List<String> counts = new ArrayList<>();
 			placed.depotIds.forEach(depotId -> counts.add(getDepotName(railwayData, depotId) + " " + placedTrains.getOrDefault(depotId, 0)));
-			placed.player.displayClientMessage(Text.translatable("gui.mtr.place_trains_done", String.join(", ", counts)), false);
+			tell(placed.player, Text.translatable("gui.mtr.place_trains_done", String.join(", ", counts)));
+			System.out.println("Minecraft Transit Railway: put by timetable: " + String.join(", ", counts));
+		}
+	}
+
+	/**
+	 * Tells the player who asked, or no one when it was asked for by {@link #DEBUG_PLACE}.
+	 */
+	private static void tell(ServerPlayer player, net.minecraft.network.chat.Component text) {
+		if (player != null) {
+			player.displayClientMessage(text, false);
+		}
+	}
+
+	/**
+	 * For finding why trains put by their timetables aren't seen (2026-11-09): -Dmtr.debugPlace=depot name puts that
+	 * depot's trains by timetable once the simulator runs, as a player asking would, and prints the game's trains of the
+	 * sidings it runs every five seconds.
+	 */
+	private static final String DEBUG_PLACE = System.getProperty("mtr.debugPlace", "");
+	private boolean debugPlaced;
+	private long debugPrintedMillis;
+
+	private void debugPlace(RailwayData railwayData, long now) {
+		if (DEBUG_PLACE.isEmpty()) {
+			return;
+		}
+		if (!debugPlaced && now >= startedMillis + 10000) {
+			debugPlaced = true;
+			railwayData.depots.stream().filter(depot -> getDepotName(railwayData, depot.id).equals(DEBUG_PLACE)).findFirst().ifPresent(depot -> placeByTimetable(railwayData, null, depot.id));
+		}
+		if (now >= debugPrintedMillis + 5000) {
+			debugPrintedMillis = now;
+			railwayData.sidings.forEach(siding -> {
+				if (sidingIds.contains(siding.id)) {
+					siding.forEachTrain(train -> System.out.println("Minecraft Transit Railway: debug train " + train.id + " of siding " + siding.id + ": " + train.describeShown()));
+				}
+			});
 		}
 	}
 
@@ -395,11 +433,11 @@ public final class LiveSimulation {
 	public void placeByTimetable(RailwayData railwayData, ServerPlayer player, long depotId) {
 		final boolean runs = simulator != null && driving && railwayData.sidings.stream().anyMatch(siding -> sidingIds.contains(siding.id) && railwayData.dataCache.sidingIdToDepot.get(siding.id) != null && railwayData.dataCache.sidingIdToDepot.get(siding.id).id == depotId);
 		if (!runs) {
-			player.displayClientMessage(Text.translatable("gui.mtr.place_trains_not_run"), false);
+			tell(player, Text.translatable("gui.mtr.place_trains_not_run"));
 			return;
 		}
 		if (placement != null) {
-			player.displayClientMessage(Text.translatable("gui.mtr.place_trains_busy"), false);
+			tell(player, Text.translatable("gui.mtr.place_trains_busy"));
 			return;
 		}
 
@@ -428,7 +466,7 @@ public final class LiveSimulation {
 
 		final List<String> names = new ArrayList<>();
 		depotIds.forEach(id -> names.add(getDepotName(railwayData, id)));
-		player.displayClientMessage(Text.translatable("gui.mtr.place_trains_working", String.join(", ", names)), false);
+		tell(player, Text.translatable("gui.mtr.place_trains_working", String.join(", ", names)));
 		// Depots running by duties have their trains put straight where the duties have them; the others are worked out
 		// from the start of the day
 		final boolean byDuties = dataset.depots.stream().allMatch(depot -> depot.duties.length > 0);
@@ -484,7 +522,7 @@ public final class LiveSimulation {
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
-				player.displayClientMessage(Text.translatable("gui.mtr.place_trains_failed"), false);
+				tell(player, Text.translatable("gui.mtr.place_trains_failed"));
 				return null;
 			}
 			System.out.println("Minecraft Transit Railway: worked out where the trains of depots " + depotIds + " are now by their timetables" + (byDuties ? ", from their duties," : "") + " in " + (System.nanoTime() - startNanos) / 1000000 + " ms");

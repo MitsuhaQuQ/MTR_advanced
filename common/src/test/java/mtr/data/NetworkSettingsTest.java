@@ -59,11 +59,56 @@ class NetworkSettingsTest {
 		packet.writeVarInt(1);
 		packet.writeLong(77);
 		packet.writeLong(-1);
+		// No owners set by hand
+		packet.writeVarInt(0);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
 		assertEquals(0, read.minReverseMillis);
 		assertEquals(NetworkSettings.MAX_MILLIS, read.earlyThresholdMillis);
 		assertEquals(NetworkSettings.MAX_WAIT_THRESHOLD_MILLIS, read.waitThresholdMillis);
 		assertEquals(0, read.getWaitThreshold(77));
+	}
+
+	@Test
+	void ownersSetByHandAreSavedSentAndKeptByRail() throws IOException {
+		// Web layers step 2: the owners of a section set by hand, by a rail's two nodes in either order
+		final NetworkSettings settings = new NetworkSettings();
+		final java.util.UUID railKey = NetworkSettings.parseRailKey("200,100");
+		assertEquals(railKey, NetworkSettings.parseRailKey("100, 200"));
+		assertEquals("100,200", NetworkSettings.railKeyText(railKey));
+		assertNull(NetworkSettings.parseRailKey("100"));
+		assertNull(NetworkSettings.parseRailKey("a,b"));
+		settings.ownerOverrides.put(railKey, java.util.Arrays.asList("TRAIN|Line 1", "TRAIN|Line 2"));
+		// Open to every line
+		settings.ownerOverrides.put(NetworkSettings.parseRailKey("300,400"), new java.util.ArrayList<>());
+
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(settings.messagePackLength());
+		settings.toMessagePack(packer);
+		packer.close();
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
+		final NetworkSettings saved = new NetworkSettings(map);
+		assertEquals(settings, saved);
+		assertEquals(java.util.Arrays.asList("TRAIN|Line 1", "TRAIN|Line 2"), saved.ownerOverrides.get(railKey));
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		settings.writePacket(packet);
+		final NetworkSettings read = new NetworkSettings();
+		read.read(packet);
+		assertEquals(settings, read);
+		assertEquals(0, packet.readableBytes());
+
+		// Copied, not shared
+		final NetworkSettings copy = new NetworkSettings();
+		copy.copyFrom(settings);
+		assertEquals(settings, copy);
+		copy.ownerOverrides.get(railKey).set(0, "TRAIN|Line 3");
+		assertEquals("TRAIN|Line 1", settings.ownerOverrides.get(railKey).get(0));
+		assertNotEquals(settings, copy);
+
+		// A save from before has none
+		final Map<String, Value> old = new HashMap<>(map);
+		old.remove("owner_overrides");
+		assertTrue(new NetworkSettings(old).ownerOverrides.isEmpty());
 	}
 }

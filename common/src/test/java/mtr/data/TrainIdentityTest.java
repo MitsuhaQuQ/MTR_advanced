@@ -120,4 +120,43 @@ class TrainIdentityTest {
 		updated.update(update.readUtf(), update);
 		assertEquals(settings, updated.vehicleSettings);
 	}
+
+	@Test
+	void aWholeDaysPathOnALoopFitsInAPacketAndReadsBackTheSame() {
+		// A duty of a whole day on a loop runs the same rails thousands of times; written rail by rail it was bigger than a
+		// packet may be, and players never saw the train (2026-11-09)
+		final List<mtr.path.PathData> path = new ArrayList<>();
+		final List<Double> distances = new ArrayList<>();
+		final mtr.path.PathData[] loop = new mtr.path.PathData[4];
+		for (int i = 0; i < loop.length; i++) {
+			final BlockPos start = new BlockPos(i * 20, 64, 0);
+			final BlockPos end = new BlockPos(i * 20 + 20, 64, 0);
+			loop[i] = new mtr.path.PathData(new Rail(start, mtr.data.RailAngle.E, end, mtr.data.RailAngle.W, mtr.data.RailType.IRON, TransportMode.TRAIN), i == 0 ? 7 : 0, i == 0 ? 20 : 0, start, end, i);
+		}
+		double distance = 0;
+		for (int i = 0; i < 7000; i++) {
+			// Each lap's pieces are pieces of their own, with their own stop numbers, on the same rails
+			final mtr.path.PathData piece = loop[i % loop.length];
+			path.add(new mtr.path.PathData(piece.rail, piece.savedRailBaseId, piece.dwellTime, piece.startingPos, piece.getLastPos(), i / loop.length));
+			distance += 20;
+			distances.add(distance);
+		}
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		Train.writePath(packet, path, distances);
+		assertTrue(packet.readableBytes() < mtr.packet.IPacket.MAX_PACKET_BYTES / 2, packet.readableBytes() + " bytes");
+
+		final List<mtr.path.PathData> readPath = new ArrayList<>();
+		final List<Double> readDistances = new ArrayList<>();
+		Train.readPath(packet, readPath, readDistances);
+		assertEquals(0, packet.readableBytes());
+		assertEquals(distances, readDistances);
+		assertEquals(path.size(), readPath.size());
+		for (int i = 0; i < path.size(); i++) {
+			final FriendlyByteBuf expected = new FriendlyByteBuf(Unpooled.buffer());
+			final FriendlyByteBuf actual = new FriendlyByteBuf(Unpooled.buffer());
+			path.get(i).writePacket(expected);
+			readPath.get(i).writePacket(actual);
+			assertEquals(expected, actual, "piece " + i);
+		}
+	}
 }

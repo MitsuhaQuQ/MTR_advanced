@@ -75,7 +75,14 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	}
 
 	public PathData(FriendlyByteBuf packet) {
-		rail = new Rail(packet);
+		this(new Rail(packet), packet);
+	}
+
+	/**
+	 * Reads what {@link #writePacketWithoutRail} writes, with the rail read apart.
+	 */
+	public PathData(Rail rail, FriendlyByteBuf packet) {
+		this.rail = rail;
 		savedRailBaseId = packet.readLong();
 		dwellTime = packet.readInt();
 		stopIndex = packet.readInt();
@@ -108,6 +115,13 @@ public class PathData extends SerializedDataBase implements PlanTrack {
 	@Override
 	public void writePacket(FriendlyByteBuf packet) {
 		rail.writePacket(packet);
+		writePacketWithoutRail(packet);
+	}
+
+	/**
+	 * Writes all but the rail, for a path that writes each of its rails once however often it runs it (2026-11-09).
+	 */
+	public void writePacketWithoutRail(FriendlyByteBuf packet) {
 		packet.writeLong(savedRailBaseId);
 		packet.writeInt(dwellTime);
 		packet.writeInt(stopIndex);

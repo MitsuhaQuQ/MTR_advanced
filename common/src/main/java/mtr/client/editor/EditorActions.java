@@ -447,6 +447,28 @@ public final class EditorActions implements IPacket {
 			if (operation.has("earlyThresholdMillis")) {
 				settings.earlyThresholdMillis = mtr.data.NetworkSettings.clamp(operation.get("earlyThresholdMillis").getAsLong());
 			}
+			// The owners of track sections set by hand, by a rail's two nodes: the lines, none for open to every line, or null
+			// to work them out again (web layers step 2)
+			if (operation.has("ownerOverrides") && operation.get("ownerOverrides").isJsonObject()) {
+				for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("ownerOverrides").entrySet()) {
+					final java.util.UUID railKey = mtr.data.NetworkSettings.parseRailKey(entry.getKey());
+					if (railKey == null) {
+						return TranslatedMessage.get("gui.mtr.editor_bad_change");
+					}
+					if (entry.getValue().isJsonNull()) {
+						settings.ownerOverrides.remove(railKey);
+					} else if (entry.getValue().isJsonArray() && entry.getValue().getAsJsonArray().size() <= mtr.data.NetworkSettings.MAX_OVERRIDE_LINES) {
+						final List<String> lines = new ArrayList<>();
+						entry.getValue().getAsJsonArray().forEach(line -> lines.add(line.getAsString()));
+						settings.ownerOverrides.put(railKey, lines);
+					} else {
+						return TranslatedMessage.get("gui.mtr.editor_bad_change");
+					}
+				}
+				if (settings.ownerOverrides.size() > mtr.data.NetworkSettings.MAX_OWNER_OVERRIDES) {
+					return TranslatedMessage.get("gui.mtr.editor_bad_change");
+				}
+			}
 			ClientData.DATA_CACHE.networkSettings.copyFrom(settings);
 			mtr.packet.NetworkSettingsPackets.sendC2S(settings);
 			return null;

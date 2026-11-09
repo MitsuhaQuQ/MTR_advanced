@@ -86,6 +86,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 */
 	public volatile boolean networkSettingsChanged;
 	/**
+	 * The owners of the track sections last sent to the players ({@link mtr.packet.TrackOwnersPackets}).
+	 */
+	public int ownersSentVersion;
+	/**
 	 * The compressed network and the paths found on it, which the save loop writes into the database. See {@link GraphRecords}.
 	 */
 	public final GraphRecords graphRecords = new GraphRecords();
@@ -639,6 +643,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					return ownersGraph[0];
 				}, world.getServer());
 			}
+			// The owners worked out again go to the players, for the editor's map (web layers step 2)
+			mtr.packet.TrackOwnersPackets.sendAllIfChanged(world, this);
 		}
 		updateNearbyTrains.tick();
 		updateNearbyLifts.tick();
@@ -973,6 +979,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			return;
 		}
 		lastMapRailsRequestMillis.put(player.getUUID(), millis);
+		mtr.packet.TrackOwnersPackets.send(player, this);
 
 		final Map<Long, List<Long>> regions = new HashMap<>();
 		final Map<Long, List<Long>> shapeRegions = new HashMap<>();

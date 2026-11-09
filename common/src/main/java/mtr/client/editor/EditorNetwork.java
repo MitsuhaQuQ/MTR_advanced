@@ -36,7 +36,9 @@ public final class EditorNetwork {
 	 * @param fresh       true when the page has just opened the view, which asks the server for the map again
 	 * @param seenVersion the version of the map the page has, which is answered with only the version if nothing changed
 	 * @return {@code {version, mode, modes: [name], nodes: [[x, z, id]], rails: [[node, node, kind, isolation, x, z, ...]],
-	 * boundaryNodes: [node], stations: [{name, x, z}], routes: [{id, color, lineKey, name, nodes: [node]}]}}
+	 * boundaryNodes: [node], stations: [{name, x, z}], routes: [{id, color, lineKey, name, nodes: [node], stopNodes: [index in nodes of each stop, or -1]}],
+	 * owners: {ready, names: [owner], rails: [[rail, manual, section, owner, ...]]}}}: the owners of the rails whose section has any,
+	 * as the server worked them out (web layers step 2), each an index in {@code names}; manual 1 where set by hand
 	 */
 	public static JsonObject build(String modeName, boolean fresh, int seenVersion) {
 		if (fresh) {
@@ -53,7 +55,7 @@ public final class EditorNetwork {
 		}
 		// The stabling blocks are drawn too, so a change to the signal blocks or their colour is a new map
 		final Map<UUID, Long> stablingRails = ClientData.SIGNAL_BLOCKS.getZones(ClientData.stablingColor);
-		final int version = (MapDataCache.getVersion() * 31 + (mode == null ? 0 : mode.ordinal())) * 31 + ClientData.SIGNAL_BLOCKS.getVersion() * 17 + ClientData.stablingColor.ordinal();
+		final int version = ((MapDataCache.getVersion() * 31 + (mode == null ? 0 : mode.ordinal())) * 31 + ClientData.SIGNAL_BLOCKS.getVersion() * 17 + ClientData.stablingColor.ordinal()) * 31 + mtr.packet.TrackOwnersPackets.version;
 		network.addProperty("version", version);
 		if (version == seenVersion && !fresh) {
 			network.addProperty("same", true);
@@ -79,6 +81,10 @@ public final class EditorNetwork {
 		final Map<UUID, Integer> statuses = MapIsolation.getStatuses(mode);
 
 		final JsonArray railsArray = new JsonArray();
+		final Map<UUID, mtr.packet.TrackOwnersPackets.Owners> railOwners = mtr.packet.TrackOwnersPackets.railOwners;
+		final JsonArray ownedArray = new JsonArray();
+		// Each section a number, so the page can show a change to its owners on all its rails
+		final Map<mtr.packet.TrackOwnersPackets.Owners, Integer> sectionNumbers = new IdentityHashMap<>();
 		ClientData.MAP_RAILS.forEach(mapRail -> {
 			if (mapRail.transportMode != shownMode) {
 				return;
@@ -91,6 +97,17 @@ public final class EditorNetwork {
 			railArray.add(nodeIndex(upper, nodeIndices, nodesArray));
 			railArray.add(platformRails.contains(key) ? KIND_PLATFORM : sidingRails.contains(key) ? KIND_SIDING : stablingRails.containsKey(key) ? KIND_STABLING : KIND_PLAIN);
 			railArray.add(statuses.getOrDefault(key, 0));
+			final mtr.packet.TrackOwnersPackets.Owners owners = railOwners.get(key);
+			if (owners != null) {
+				final JsonArray ownedRail = new JsonArray();
+				ownedRail.add(railsArray.size());
+				ownedRail.add(owners.manual ? 1 : 0);
+				ownedRail.add(sectionNumbers.computeIfAbsent(owners, entry -> sectionNumbers.size()));
+				for (final int owner : owners.owners) {
+					ownedRail.add(owner);
+				}
+				ownedArray.add(ownedRail);
+			}
 			// The points along a curve run from the lower node, as the server sends them
 			final float[] shape = ClientData.MAP_RAIL_SHAPES.get(key);
 			if (shape != null) {
@@ -101,6 +118,13 @@ public final class EditorNetwork {
 			railsArray.add(railArray);
 		});
 		network.add("rails", railsArray);
+		final JsonObject ownersObject = new JsonObject();
+		ownersObject.addProperty("ready", mtr.packet.TrackOwnersPackets.version > 0);
+		final JsonArray namesArray = new JsonArray();
+		mtr.packet.TrackOwnersPackets.ownerNames.forEach(namesArray::add);
+		ownersObject.add("names", namesArray);
+		ownersObject.add("rails", ownedArray);
+		network.add("owners", ownersObject);
 
 		final JsonArray boundaryArray = new JsonArray();
 		ClientData.PATH_REGIONS.boundaries.nodes.forEach(node -> {
@@ -151,6 +175,29 @@ public final class EditorNetwork {
 				routeNodes.add(nodeIndex(node, nodeIndices, nodesArray));
 			}
 			routeObject.add("nodes", routeNodes);
+			// Where each stop is along the path: the index of the node ending its platform's rail, or -1 (web layers step 3,
+			// so the page knows which rails a route runs between two stops)
+			final JsonArray stopNodes = new JsonArray();
+			int from = 1;
+			for (final mtr.data.Route.RoutePlatform routePlatform : route.platformIds) {
+				final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(routePlatform.platformId);
+				int found = -1;
+				if (platform != null) {
+					final List<BlockPos> positions = platform.getOrderedPositions(BlockPos.ZERO, false);
+					final UUID platformKey = RailKeys.of(positions.get(0).asLong(), positions.get(1).asLong());
+					for (int i = from; i < nodes.length; i++) {
+						if (RailKeys.of(nodes[i - 1], nodes[i]).equals(platformKey)) {
+							found = i;
+							break;
+						}
+					}
+				}
+				stopNodes.add(found);
+				if (found >= 0) {
+					from = found + 1;
+				}
+			}
+			routeObject.add("stopNodes", stopNodes);
 			routesArray.add(routeObject);
 		});
 		network.add("routes", routesArray);

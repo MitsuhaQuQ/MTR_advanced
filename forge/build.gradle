@@ -198,7 +198,10 @@ task assetsJar(type: Zip) {
 task logicJar(type: Zip) {
 	dependsOn remapJar
 	from(zipTree(remapJar.archiveFile)) {
-		exclude rootProject.assets_jar_includes
+		// With the assets in one jar with the logic (split_assets=false), only the assets mod's own class is left out
+		if (rootProject.split_assets == "true") {
+			exclude rootProject.assets_jar_includes
+		}
 		// The assets mod's own class goes in its jar
 		exclude "mtm/assets/**"
 	}
@@ -207,7 +210,10 @@ task logicJar(type: Zip) {
 	zip64 true
 }
 
-build.dependsOn assetsJar, logicJar
+build.dependsOn logicJar
+if (rootProject.split_assets == "true") {
+	build.dependsOn assetsJar
+}
 
 task moveForgeBuilds() {
 	doLast {
@@ -225,7 +231,10 @@ task moveForgeBuilds() {
 			if (rootProject.variation == "normal") {
 				// MTR3-MTM-<this fork's version>-forge-<Minecraft version>.jar is the logic without the assets, and
 				// MTR3-MTM-Assets-<assets version>-forge-<Minecraft version>.jar the assets alone (2026-11-09)
-				include "*${rootProject.mod_version}-logic.jar", "*${rootProject.mod_version}-server.jar", "*${rootProject.mod_version}-assets.jar"
+				include "*${rootProject.mod_version}-logic.jar", "*${rootProject.mod_version}-server.jar"
+				if (rootProject.split_assets == "true") {
+					include "*${rootProject.mod_version}-assets.jar"
+				}
 				rename { fileName -> fileName.endsWith("-assets.jar") ? "MTR3-MTM-Assets-${rootProject.mtm_assets_version}-forge-${rootProject.minecraft_version}.jar" : "MTR3-MTM-${rootProject.mtm_version}-forge-${rootProject.minecraft_version}" + (fileName.endsWith("-server.jar") ? "-server.jar" : ".jar") }
 			} else {
 				include "*${rootProject.mod_version}.jar", "*${rootProject.mod_version}-server.jar"

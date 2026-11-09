@@ -414,6 +414,19 @@ public class TrainServer extends Train {
 		return simulated == null ? null : simulated.getSegmentSpec();
 	}
 
+	/**
+	 * @return what the game shows of the train, for -Dmtr.debugPlace
+	 */
+	public String describeShown() {
+		final TickRunner<SimDataset.DataTrack>.HeadlessTrain train = simulated;
+		final net.minecraft.network.FriendlyByteBuf packet = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+		writePacket(packet);
+		final int[] window = getSendWindow();
+		return "packet " + packet.readableBytes() + " bytes, sent pieces " + window[0] + "-" + window[1] + ", onRoute " + isOnRoute + ", path " + path.size() + (path == depotPath ? " (depot path)" : "") + ", progress " + Math.round(railProgress) + ", speed " + speed + ", key '" + service.getTripPathKey() + "'" + (train == null ? ", not simulated" : ", simulator: onRoute " + train.isOnRoute() + ", progress " + Math.round(train.getRailProgress()) + ", path " + train.getPath().size());
+	}
+
+	private boolean missingPathTold;
+
 	public void setSimulated(TickRunner<SimDataset.DataTrack>.HeadlessTrain newSimulated) {
 		simulated = newSimulated;
 		movedBySimulator = newSimulated != null;
@@ -446,6 +459,10 @@ public class TrainServer extends Train {
 				// The siding's paths were found again since the simulator took its data, as after a timetable changed, and
 				// this one isn't among them: where the simulator has the train means nothing on the paths here, so the train
 				// stays as it is until the simulator is started again on the new paths, and the service is read again then
+				if (!missingPathTold) {
+					missingPathTold = true;
+					System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " can't be shown where the simulator has it, as the siding has no path " + key);
+				}
 				simulatedService = new byte[0];
 				return;
 			}

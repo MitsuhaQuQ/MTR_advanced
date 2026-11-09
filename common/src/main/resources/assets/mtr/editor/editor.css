@@ -371,3 +371,8 @@ table.stop-list td { padding: 3px 6px; border-bottom: 1px solid var(--grid); }
 table.stop-list td.num { font-family: var(--font-num); color: var(--muted); width: 2em; }
 table.stop-list button { font-size: 12px; padding: 1px 6px; margin-right: 3px; }
 .stop-insert { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+
+/* Choosing the lines that own a section of track (web layers step 2) */
+.owner-choices { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; margin: 6px 0; }
+.owner-choice { display: flex; align-items: center; gap: 6px; }
+.owner-choice .swatch { display: inline-block; width: 18px; height: 6px; border-radius: 3px; }
