@@ -1876,6 +1876,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
+	 * @return why {@link #canBeSimulated} says no, for the log
+	 */
+	public String whyNotSimulated() {
+		return path.isEmpty() ? "it has no path (path generation found none, or hasn't run since it changed)" : trainCars <= 0 ? "its trains have no cars (" + trainId + " longer than the siding, " + Math.round(railLength) + " blocks)" : "nothing";
+	}
+
+	/**
 	 * Has the siding's trains show the simulator's trains of the siding (G1): a train for each of them, with the same ID,
 	 * and none other, apart from the trains the game moves itself as they are driven by hand.
 	 *

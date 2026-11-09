@@ -4182,8 +4182,6 @@
 		const tools = `<div class="tt-tools"><b>${escapeHtml(routeTitle(r))}</b><span class="hint">${tr("{0} · {1} 班{2}{3}", WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>${r.pathFailure ? `<span class="err">${escapeHtml(r.pathFailure)}</span>` : ""}${shortfallsOf(r).map(text => `<span class="err">${escapeHtml(text)}</span>`).join("")}
 			<span class="pill${managed ? " managed" : ""}" title="${tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}">${managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}${pending ? tr("（草稿）") : ""}</span>
 			<button data-managed="${!managed}">${managed ? tr("交回游戏内编辑") : tr("改由高级编辑器管理")}</button>
-			${connecting ? `<span class="pill" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${tr("联络线")}${connectingPending ? tr("（草稿）") : ""}</span>` : ""}
-			<button data-connecting="${!connecting}" title="${tr("别的线路的路径不走这条线路两端站台之间的轨道，列车可以直通载客")}">${connecting ? tr("取消联络线") : tr("设为联络线")}</button>
 			${speedLimitOf(r) > 0 ? `<span class="pill" title="${tr("列车在这条线路两站之间的轨道上不超过这个速度，也不超过轨道自己的限速")}">${tr("限速 {0} km/h", speedLimitOf(r))}${draftOf(r) && "speedLimit" in draftOf(r) ? tr("（草稿）") : ""}</span>` : ""}</div>
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint" title="${tr("运行时分按这组性能算，换车型时刻表不变；跑这条线的车比它慢时会提示")}">${tr("最低性能")} ${tr("加速")} <input class="perf" data-perf="a" value="${perfText(timetable.tables[today], "a")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("减速")} <input class="perf" data-perf="d" value="${perfText(timetable.tables[today], "d")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("最高")} <input class="perf" data-perf="v" value="${perfText(timetable.tables[today], "v")}" inputmode="numeric" style="width:3.5em"> km/h</label>` : ""}
@@ -6612,7 +6610,7 @@
 		openDialog(`${tr("停站：{0}", escapeHtml(routeTitle(r)))}`, `
 			<div id="dlg-problems"></div>
 			<div class="picker">
-				<p class="hint">${tr("连线表示列车不掉头能开过去。点一股固定它，其他站自动换成走得通、改动最少的股道；最下一行点一下在停车和通过之间切换。车站的先后和增删在游戏的仪表盘里改。")}</p>
+				<p class="hint">${tr("连线表示列车不掉头能开过去。点一股固定它，其他站自动换成走得通、改动最少的股道；最下一行点一下在停车和通过之间切换。")} <button type="button" data-stop-list>${tr("增删和排序停站…")}</button></p>
 				<div id="dlg-pick"></div>
 				<div class="hint" id="dlg-pick-summary"></div>
 			</div>
@@ -6636,8 +6634,202 @@
 			render(form);
 		}
 		form.addEventListener("click", e => {
+			if (e.target.closest("[data-stop-list]")) {
+				dialog.close();
+				stopListDialog(r);
+				return;
+			}
 			if (topologyClick(model, e.target)) render(form);
 		});
+	}
+
+	/**
+	 * The stops of a route in order, to add, take away and move (web layers, step 1, 2026-11-09). Sent to the game at once,
+	 * as its times along the new stops come from the game: with the route's timetable, the through services of other routes
+	 * into it and the duties running it, renumbered to the new stops, and the same done to them in the draft. A stop with a
+	 * through service, a depot order or the start or end of a duty segment on it isn't taken away (user's choice).
+	 */
+	function stopListDialog(r) {
+		const pass = timetableOf(r).pass;
+		const list = r.stops.map((stop, i) => ({ platformId: stop.platformId, from: i, pass: Boolean(pass[i]) }));
+		let message = "";
+		const platformName = id => platformText(id);
+		const stationPlatforms = (topo ? topo.platforms : []).filter(platform => platform.station);
+		const stations = [...new Map(stationPlatforms.map(platform => [platform.station, platform.stationName])).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+		const render = form => {
+			form.querySelector("#dlg-stop-list").innerHTML = `<table class="stop-list">${list.map((stop, i) => `<tr>
+				<td class="num">${i + 1}</td><td>${escapeHtml(platformName(stop.platformId))}${stop.from < 0 ? ` <span class="pill">${tr("新加")}</span>` : ""}</td>
+				<td>${i > 0 && i < list.length - 1 ? `<label class="hint"><input type="checkbox" data-stop-pass="${i}"${stop.pass ? " checked" : ""}> ${tr("通过")}</label>` : ""}</td>
+				<td><button type="button" data-stop-up="${i}"${i === 0 ? " disabled" : ""}>↑</button><button type="button" data-stop-down="${i}"${i === list.length - 1 ? " disabled" : ""}>↓</button><button type="button" data-stop-remove="${i}"${list.length <= 2 ? " disabled" : ""}>${tr("删除")}</button><button type="button" data-stop-insert="${i}">${tr("在后面插入")}</button></td></tr>`).join("")}</table>
+				<div class="stop-insert" id="dlg-stop-insert" hidden><label>${tr("车站")} <select name="station">${stations.map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(shortName(name) || id)}</option>`).join("")}</select></label>
+				<label>${tr("站台")} <select name="platform"></select></label> <button type="button" data-stop-insert-ok>${tr("插入")}</button></div>
+				${message ? `<p class="err">${escapeHtml(message)}</p>` : ""}`;
+		};
+		let insertAfter = -1;
+		const fillPlatforms = form => {
+			const station = form.querySelector("select[name=station]").value;
+			form.querySelector("select[name=platform]").innerHTML = stationPlatforms.filter(platform => platform.station === station).map(platform => `<option value="${escapeHtml(platform.id)}">${escapeHtml(platform.name || platform.id)}</option>`).join("");
+		};
+		openDialog(tr("增删和排序停站：{0}", escapeHtml(routeTitle(r))), `
+			<p class="hint">${tr("改好后点“发给游戏”马上生效：时刻表、直通、出入库指令和运用按新的站序重新对应，草稿里的也一样。股道在“停站”里再挑。")}</p>
+			<div id="dlg-stop-list"></div>`, tr("发给游戏"), () => {
+			const result = sendStopList(r, list);
+			if (result) return result;
+		}, render);
+		const form = dialog.querySelector("form");
+		form.addEventListener("change", e => {
+			if (e.target.matches("select[name=station]")) fillPlatforms(form);
+			const passBox = e.target.closest("[data-stop-pass]");
+			if (passBox) list[+passBox.dataset.stopPass].pass = passBox.checked;
+		});
+		form.addEventListener("click", e => {
+			const button = e.target.closest("button");
+			if (!button) return;
+			message = "";
+			if (button.dataset.stopUp !== undefined) {
+				const i = +button.dataset.stopUp;
+				[list[i - 1], list[i]] = [list[i], list[i - 1]];
+			} else if (button.dataset.stopDown !== undefined) {
+				const i = +button.dataset.stopDown;
+				[list[i], list[i + 1]] = [list[i + 1], list[i]];
+			} else if (button.dataset.stopRemove !== undefined) {
+				const i = +button.dataset.stopRemove;
+				const hanging = list[i].from < 0 ? [] : stopHangers(r, list[i].from);
+				if (hanging.length) message = tr("这一站上还挂着：{0}。先处理掉再删。", hanging.join(tr("；")));
+				else list.splice(i, 1);
+			} else if (button.dataset.stopInsert !== undefined) {
+				insertAfter = +button.dataset.stopInsert;
+				render(form);
+				const box = form.querySelector("#dlg-stop-insert");
+				box.hidden = false;
+				fillPlatforms(form);
+				return;
+			} else if (button.dataset.stopInsertOk !== undefined) {
+				const platformId = form.querySelector("select[name=platform]").value;
+				if (platformId) list.splice(insertAfter + 1, 0, { platformId, from: -1, pass: false });
+			} else {
+				return;
+			}
+			// The first and last stops are always stopped at
+			list.forEach((stop, i) => { if (i === 0 || i === list.length - 1) stop.pass = false; });
+			render(form);
+		});
+	}
+
+	/**
+	 * @return what keeps a stop of a route from being taken away, as the game and the draft have them: through services
+	 * from it or into it, depot orders at it, duty segments starting or ending at it
+	 */
+	function stopHangers(r, stop) {
+		const found = [];
+		const timetables = [gameTimetable(r), timetableOf(r)];
+		timetables.forEach(tt => tt.tables.forEach(table => {
+			table.links.forEach(link => { if (link.fromStop === stop) found.push(tr("{0} 班直通", clock(mod(link.service - data.dayStartMillis, DAY)))); });
+			(table.orders || []).forEach(order => { if (order.stop === stop) found.push(tr("{0} 班出入库指令", clock(mod(order.service - data.dayStartMillis, DAY)))); });
+		}));
+		data.routes.forEach(other => [gameTimetable(other), timetableOf(other)].forEach(tt => tt.tables.forEach(table => table.links.forEach(link => {
+			if (link.route === r.id && link.toStop === stop) found.push(tr("{0} 直通接入", routeTitle(other)));
+		}))));
+		data.depots.forEach(depot => [depot.duties, dutiesOf(depot)].forEach(duties => Object.values((duties || {}).sidings || {}).forEach(slots => slots.forEach(slot => slot.forEach(day => day.segments.forEach(segment => {
+			if (segment.route === r.id && (segment.from === stop && stop > 0 || segment.to === stop)) found.push(tr("车厂{0}的运用起止", shortName(depot.name)));
+		}))))));
+		return [...new Set(found)];
+	}
+
+	/** A route's timetable renumbered to its new stops: newOf[old stop] is its new number, or -1 if it was taken away. */
+	function renumberTimetable(tt, list, newOf) {
+		const copy = JSON.parse(JSON.stringify(tt));
+		copy.pass = list.map(stop => stop.pass);
+		copy.allowLonger = list.map(stop => stop.from >= 0 ? Boolean((tt.allowLonger || [])[stop.from]) : false);
+		copy.tables.forEach(table => {
+			table.stops = list.map(stop => stop.from >= 0 && table.stops[stop.from] ? table.stops[stop.from] : { arrival: -1, departure: -1 });
+			table.orders = (table.orders || []).map(order => Object.assign({}, order, { stop: newOf[order.stop] })).filter(order => order.stop >= 0);
+			table.links = table.links.map(link => Object.assign({}, link, { fromStop: link.fromStop < 0 ? link.fromStop : newOf[link.fromStop] }));
+			table.exceptions = table.exceptions.map(exception => ({ service: exception.service, stops: exception.stops.map(stop => Object.assign({}, stop, { stop: newOf[stop.stop] })).filter(stop => stop.stop >= 0) })).filter(exception => exception.stops.length);
+		});
+		return normalize(copy);
+	}
+
+	/** Through services of another route into this one, renumbered to its new stops. */
+	function renumberLinksInto(tt, routeId, newOf) {
+		const copy = JSON.parse(JSON.stringify(tt));
+		let changed = false;
+		copy.tables.forEach(table => table.links.forEach(link => {
+			if (link.route === routeId && link.toStop >= 0 && newOf[link.toStop] !== link.toStop) {
+				link.toStop = newOf[link.toStop];
+				changed = true;
+			}
+		}));
+		return changed ? copy : null;
+	}
+
+	/** A depot's duties with the segments of this route renumbered to its new stops, or null if none is. */
+	function renumberDuties(duties, routeId, newOf, newCount) {
+		if (!duties) return null;
+		const copy = JSON.parse(JSON.stringify(duties));
+		let changed = false;
+		Object.values(copy.sidings || {}).forEach(slots => slots.forEach(slot => slot.forEach(day => day.segments.forEach(segment => {
+			if (segment.route !== routeId) return;
+			// From the first stop and to the last stay so; others follow their stops
+			const from = segment.from > 0 ? newOf[segment.from] : 0;
+			const to = segment.to < 0 ? segment.to : newOf[segment.to];
+			if (from !== segment.from || to !== segment.to) {
+				segment.from = from;
+				segment.to = to;
+				changed = true;
+			}
+		}))));
+		return changed ? copy : null;
+	}
+
+	/**
+	 * Sends a route's new stops to the game with what counts its stops, and renumbers the same in the draft.
+	 *
+	 * @return why it can't, or nothing
+	 */
+	function sendStopList(r, list) {
+		if (list.length < 2) return tr("至少要两站");
+		const newOf = r.stops.map(() => -1);
+		list.forEach((stop, i) => { if (stop.from >= 0) newOf[stop.from] = i; });
+		const operations = [{ type: "stops", route: r.id, force: true, stops: list.map(stop => ({ platformId: stop.platformId, from: stop.from, pass: stop.pass })) }];
+		operations.push({ type: "timetable", route: r.id, force: true, timetable: renumberTimetable(gameTimetable(r), list, newOf) });
+		data.routes.forEach(other => {
+			if (other === r) return;
+			const renumbered = renumberLinksInto(gameTimetable(other), r.id, newOf);
+			if (renumbered) operations.push({ type: "timetable", route: other.id, force: true, timetable: renumbered });
+		});
+		data.depots.forEach(depot => {
+			const renumbered = renumberDuties(depot.duties, r.id, newOf, list.length);
+			if (renumbered && renumbered.mode === "diagram") operations.push({ type: "duties", depot: depot.id, duties: renumbered });
+		});
+		// The draft follows the new stops too
+		const entry = draftOf(r);
+		if (entry && entry.timetable) entry.timetable = renumberTimetable(entry.timetable, list, newOf);
+		if (entry) delete entry.platforms;
+		data.routes.forEach(other => {
+			const otherEntry = draftOf(other);
+			if (other !== r && otherEntry && otherEntry.timetable) {
+				const renumbered = renumberLinksInto(otherEntry.timetable, r.id, newOf);
+				if (renumbered) otherEntry.timetable = renumbered;
+			}
+		});
+		Object.values(draft.duties || {}).forEach(drafted => {
+			const renumbered = renumberDuties(drafted.duties, r.id, newOf, list.length);
+			if (renumbered) drafted.duties = renumbered;
+		});
+		saveDraft();
+		(async () => {
+			try {
+				const result = await sendJson("api/apply", "POST", { operations });
+				const errors = (result.errors || []).map(error => error.message).filter(Boolean);
+				dutyNotice = errors.length ? tr("停站没改成：{0}", errors.join(tr("；"))) : tr("“{0}”的停站已发给游戏，{1} 站。车厂路径刷新后各站时刻会更新。", routeTitle(r), list.length);
+			} catch (e) {
+				dutyNotice = tr("发送失败，游戏可能已经关闭");
+			}
+			renderBanner();
+			revision = null;
+			poll(true);
+		})();
 	}
 
 	/**

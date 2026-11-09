@@ -364,3 +364,10 @@ ul.sync-problems a { cursor: pointer; text-decoration: underline; }
 /* A duty's own exception (运用补完 step 3), blue like a service's own times */
 .exception { color: var(--sel); }
 select.exception { border-color: var(--sel); }
+
+/* A route's stops to add, take away and move (web layers, step 1) */
+table.stop-list { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.stop-list td { padding: 3px 6px; border-bottom: 1px solid var(--grid); }
+table.stop-list td.num { font-family: var(--font-num); color: var(--muted); width: 2em; }
+table.stop-list button { font-size: 12px; padding: 1px 6px; margin-right: 3px; }
+.stop-insert { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }

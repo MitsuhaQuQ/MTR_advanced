@@ -522,6 +522,19 @@ public final class EditorActions implements IPacket {
 				route.setTimetable(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
 				return null;
+			case "stops":
+				// The stops in a new order, some added or taken away (web layers, step 1, 2026-11-09); the timetables and duties
+				// that count stops come in the same batch, renumbered by the page
+				final String stopsError = changeStops(route, operation.getAsJsonArray("stops"));
+				if (stopsError != null) {
+					return stopsError;
+				}
+				route.editorManaged = true;
+				route.setPlatformIds(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				route.setCustomPath(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
+				ClientData.DATA_CACHE.sync();
+				return null;
 			case "managed":
 				route.editorManaged = operation.get("managed").getAsBoolean();
 				route.setExtraData(packet -> PacketTrainDataGuiClient.sendUpdate(PACKET_UPDATE_ROUTE, packet));
@@ -744,6 +757,50 @@ public final class EditorActions implements IPacket {
 	 *
 	 * @return why it can't, or null once the route has been changed
 	 */
+	/**
+	 * Gives a route a new list of stops: each as a platform, whether it is passed, and the stop it was before (-1 for one
+	 * added), which keeps what was set for it while its platform is the same. The way from each stop to the next must be
+	 * there, and a path drawn for the old stops is dropped.
+	 *
+	 * @return why it can't, or null once the route has been changed
+	 */
+	private static String changeStops(Route route, JsonArray stops) {
+		if (stops == null || stops.size() < 2 || stops.size() > MAX_STOPS) {
+			return TranslatedMessage.get("gui.mtr.editor_stop_count", MAX_STOPS);
+		}
+		final int stopCount = stops.size();
+		final long[] platformIds = new long[stopCount];
+		final List<Route.RoutePlatform> newStops = new ArrayList<>();
+		final Set<Integer> taken = new HashSet<>();
+		for (int i = 0; i < stopCount; i++) {
+			final JsonObject stop = stops.get(i).getAsJsonObject();
+			platformIds[i] = parseId(getString(stop, "platformId"));
+			final Platform platform = ClientData.DATA_CACHE.platformIdMap.get(platformIds[i]);
+			if (platform == null) {
+				return TranslatedMessage.get("gui.mtr.editor_platform_missing", i + 1);
+			}
+			if (platform.transportMode != route.transportMode) {
+				return TranslatedMessage.get("gui.mtr.editor_platform_mode", i + 1);
+			}
+			final int from = stop.has("from") ? stop.get("from").getAsInt() : -1;
+			final boolean kept = from >= 0 && from < route.platformIds.size() && taken.add(from) && route.platformIds.get(from).platformId == platformIds[i];
+			final Route.RoutePlatform newStop = kept ? route.platformIds.get(from) : new Route.RoutePlatform(platformIds[i]);
+			newStop.pass = stop.has("pass") && stop.get("pass").getAsBoolean() && i > 0 && i < stopCount - 1;
+			newStops.add(newStop);
+		}
+		final String connectionError = checkConnected(platformIds);
+		if (connectionError != null) {
+			return connectionError;
+		}
+		route.platformIds.clear();
+		route.platformIds.addAll(newStops);
+		route.getPathData().clear();
+		if (route.platformIds.stream().noneMatch(routePlatform -> routePlatform.platformId == route.timetable.entryPlatformId)) {
+			route.timetable.entryPlatformId = 0;
+		}
+		return null;
+	}
+
 	private static String changePlatforms(Route route, JsonArray platforms) {
 		final int stopCount = route.platformIds.size();
 		if (platforms == null || platforms.size() != stopCount) {

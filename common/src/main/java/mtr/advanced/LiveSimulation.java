@@ -744,6 +744,8 @@ public final class LiveSimulation {
 	/**
 	 * The sidings of depots with speed curves, not moving continuously, that have a path and a vehicle.
 	 */
+	private static final Set<Long> LEFT_OUT = java.util.Collections.synchronizedSet(new HashSet<>());
+
 	private static Set<Long> getSidingIds(RailwayData railwayData) {
 		final Map<Long, List<Siding>> depotSidings = new HashMap<>();
 		railwayData.sidings.forEach(siding -> {
@@ -759,6 +761,10 @@ public final class LiveSimulation {
 				sidings.forEach(siding -> {
 					if (siding.canBeSimulated()) {
 						sidingIds.add(siding.id);
+						LEFT_OUT.remove(siding.id);
+					} else if (LEFT_OUT.add(siding.id)) {
+						// Said once each, so a depot found no longer run (2026-11-09, after applying drafts) says why
+						System.out.println("Minecraft Transit Railway: the component's simulator leaves siding " + siding.id + " of depot " + depot.name + " to the game: " + siding.whyNotSimulated());
 					}
 				});
 			}
