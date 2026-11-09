@@ -27,12 +27,21 @@ public final class OperationNetwork {
 	 * (混合折返): the run in, and the run back out to the platform, in milliseconds.
 	 */
 	public OperationNetwork setTurnBackHold(long platformId, long inMillis, long outMillis) {
-		turnBackHolds.put(platformId, new long[]{inMillis, outMillis});
+		return setTurnBackHold(platformId, inMillis, outMillis, 1);
+	}
+
+	/**
+	 * As {@link #setTurnBackHold(long, long, long)}, with how many trains can wait there at once (运用补完 step 4: each turn
+	 * back rail and each stabling block beyond the platform holds one), timed as the nearest.
+	 */
+	public OperationNetwork setTurnBackHold(long platformId, long inMillis, long outMillis, int count) {
+		turnBackHolds.put(platformId, new long[]{inMillis, outMillis, Math.max(1, count)});
 		return this;
 	}
 
 	/**
-	 * @return the run in and out of the turn back rail a train can wait on beyond the platform, or null if there is none
+	 * @return the run in and out of the turn back rail a train can wait on beyond the platform, and how many trains can
+	 * wait there at once, or null if there is none
 	 */
 	public long[] turnBackHold(long platformId) {
 		return turnBackHolds.get(platformId);

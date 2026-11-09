@@ -82,6 +82,21 @@ const downB = (id, start, extra) => run(id, [11, 3, 4], [12, 3, 4], start, extra
 	assert.strictEqual(rail.next.get("u1").railEnd, 6 * H + 40 * M - 90000);
 }
 
+// As many trains wait beyond the platform at once as it has places, turn back rails and stabling blocks (运用补完 step 4):
+// two trains with long waits overlapping, the second has nowhere with one place and waits beyond too with two
+{
+	const runs = [up("u1", 6 * H), up("u2", 6 * H + 10 * M), down("d1", 6 * H + 40 * M), down("d2", 6 * H + 50 * M)];
+	const manual = { u1: "d1", u2: "d2" };
+	const one = T.pair({ runs, manual, turnTimes: { 10: { 10: 2 * M } } });
+	assert.strictEqual(one.next.get("u1").kind, "hold");
+	assert.notStrictEqual(one.next.get("u2").kind, "hold");
+	assert.ok(one.warnings.some(w => w.type === "NO_FREE_PLATFORM" && w.from === "u2"), JSON.stringify(one.warnings));
+	const two = T.pair({ runs, manual, turnTimes: { 10: { 10: 2 * M } }, holdCounts: { 10: 2 } });
+	assert.strictEqual(two.next.get("u1").kind, "hold");
+	assert.strictEqual(two.next.get("u2").kind, "hold");
+	assert.ok(!two.warnings.some(w => w.type === "NO_FREE_PLATFORM"), JSON.stringify(two.warnings));
+}
+
 // The network's least time to change ends (round 4): a service arriving 40 s after the train leaves its last stop is taken with
 // 30 s, not with 60 s
 {

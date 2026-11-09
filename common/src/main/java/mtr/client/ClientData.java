@@ -389,6 +389,10 @@ public final class ClientData {
 	 * The signal block colour of interlocking zones, as the server has it ({@code interlockColor}).
 	 */
 	public static net.minecraft.world.item.DyeColor interlockColor = net.minecraft.world.item.DyeColor.MAGENTA;
+	/**
+	 * The signal block colour of stabling blocks, as the server has it ({@code stablingColor}, 运用补完 step 4).
+	 */
+	public static net.minecraft.world.item.DyeColor stablingColor = net.minecraft.world.item.DyeColor.BROWN;
 
 	public static boolean hasPermission() {
 		final LocalPlayer player = Minecraft.getInstance().player;

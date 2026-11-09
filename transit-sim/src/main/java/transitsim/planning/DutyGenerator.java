@@ -34,6 +34,11 @@ public final class DutyGenerator {
 	 * together, so the out leg is the rest. No platform has this ID.
 	 */
 	public static final long HOLD_IN_KEY = Long.MIN_VALUE;
+	/**
+	 * In {@link PlanInputs#turnTimes}, from a platform: how many trains can wait beyond it at once, on its turn back rails
+	 * and stabling blocks (运用补完 step 4); one where not given.
+	 */
+	public static final long HOLD_COUNT_KEY = Long.MIN_VALUE + 1;
 	private static final int MAX_LINKS = 8;
 	private static final int UNLIMITED_TRAINS = DepotDuties.MAX_SLOTS;
 	private static final int MAX_SPREAD_OFFSETS = 8;
@@ -304,7 +309,8 @@ public final class DutyGenerator {
 			if (holdMillis != null) {
 				final Long inMillis = fromHere.get(HOLD_IN_KEY);
 				final long in = inMillis == null ? holdMillis / 2 : Math.min(inMillis, holdMillis);
-				network.setTurnBackHold(lastPlatform, in, holdMillis - in);
+				final Long count = fromHere.get(HOLD_COUNT_KEY);
+				network.setTurnBackHold(lastPlatform, in, holdMillis - in, count == null ? 1 : (int) Math.min(count, Integer.MAX_VALUE));
 			}
 			final Long station = stationOf.get(lastPlatform);
 			firstPlatforms.forEach(firstPlatform -> {

@@ -111,10 +111,14 @@ public class RailwayDataPathGenerationModule extends RailwayDataModuleBase {
 		final long tick = world.getGameTime();
 		// Rails or data changed within the tick, as a player's edit applied before a request, make a new one
 		final int version = railwayData.dataCache.getVersion();
+		// Stabling blocks (运用补完 step 4) are ways round at termini, so a change to them is a change to the network
+		final java.util.Map<java.util.UUID, Long> stablingRails = railwayData.getSignalBlocks().getZones(mtr.SecurityConfig.stablingColor);
 		// A depot queued in an earlier tick takes a copy made since, as it would have had starting then
 		final boolean recentEnough = snapshot != null && (snapshot.tick == tick || startingQueuedSince >= 0 && snapshot.tick >= startingQueuedSince);
-		if (!recentEnough || snapshot.version != version || snapshot.liveRailCount != rails.size()) {
-			snapshot = new Snapshot(tick, version, rails.size(), railwayData.dataCache.copyIdMaps(), DataCache.copyRails(rails), RoutePaths.getVehicles(railwayData), railwayData.pathBoundaries);
+		if (!recentEnough || snapshot.version != version || snapshot.liveRailCount != rails.size() || snapshot.dataCache.stablingRails != stablingRails) {
+			final DataCache copy = railwayData.dataCache.copyIdMaps();
+			copy.stablingRails = stablingRails;
+			snapshot = new Snapshot(tick, version, rails.size(), copy, DataCache.copyRails(rails), RoutePaths.getVehicles(railwayData), railwayData.pathBoundaries);
 		}
 		return snapshot;
 	}

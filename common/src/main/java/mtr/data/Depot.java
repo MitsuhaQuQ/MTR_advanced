@@ -2593,6 +2593,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private final Map<String, Connection> connections = new HashMap<>();
 		private final List<BlockPos[]> turnBackRails = new ArrayList<>();
 		private final Map<Long, List<BlockPos>> nearbyTurnBackNodes = new HashMap<>();
+		/**
+		 * The stabling blocks' nodes of {@link #nearbyTurnBackNodes}, by platform (运用补完 step 4).
+		 */
+		private final Map<Long, List<BlockPos>> nearbyStablingNodes = new HashMap<>();
 
 		/**
 		 * Works out the duties of these sidings from the timetables of their routes when the depot runs by a timetable
@@ -3371,7 +3375,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 		private boolean addConnection(List<PathData> tempPath, SavedRailBase from, SavedRailBase to, int routeBefore, List<TurnBackSection<PathData>> turnBackSections, List<DepotReturn<PathData, SavedRailBase>> depotReturns, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 			final int start = tempPath.size();
-			final List<BlockPos> turnBackNodes = routeBefore >= 0 ? getTurnBackNodes(mainRoutes.get(routeBefore), graph) : Collections.emptyList();
+			final List<BlockPos> listedNodes = routeBefore >= 0 ? getTurnBackNodes(mainRoutes.get(routeBefore), graph) : Collections.emptyList();
+			// With the stabling blocks near the platform as more ways round (运用补完 step 4)
+			final List<BlockPos> turnBackNodes = listedNodes.isEmpty() ? listedNodes : withStabling(listedNodes, from, rails);
 			final List<PathData> connectingPath = new ArrayList<>();
 			if (turnBackNodes.isEmpty()) {
 				PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(from, to), null, 1, cruisingAltitude, useFastSpeed);
@@ -3523,7 +3529,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 
 		private TurnBackSection<PathData> findConnectionTimed(List<PathData> connectingPath, SavedRailBase from, SavedRailBase to, Route routeBefore, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-			final List<BlockPos> turnBackNodes = routeBefore != null ? getTurnBackNodes(routeBefore, graph) : Collections.emptyList();
+			final List<BlockPos> listedNodes = routeBefore != null ? getTurnBackNodes(routeBefore, graph) : Collections.emptyList();
+			final List<BlockPos> turnBackNodes = listedNodes.isEmpty() ? listedNodes : withStabling(listedNodes, from, rails);
 			if (!turnBackNodes.isEmpty()) {
 				final TurnBackSection<PathData> listed = findTurnBackSection(from, to, turnBackNodes, 0, rails, graph, useFastSpeed);
 				if (listed != null) {
@@ -3567,7 +3574,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// there while others use the platform (混合折返); only once for each platform
 				if (!turnTimes.getOrDefault(from.id, Collections.emptyMap()).containsKey(from.id)) {
 					final List<BlockPos> listed = getTurnBackNodes(before, graph);
-					final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : listed;
+					final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : withStabling(listed, from, rails);
 					final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : findTurnBackSection(from, from, nodes, 0, rails, graph, useFastSpeed);
 					if (hold != null && !hold.getDefaultWay().isEmpty()) {
 						// In to the turn back rail and back out, each leg as measured (round 4): the slowest vehicle's
@@ -3581,6 +3588,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						final Map<Long, Long> fromHere = turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>());
 						fromHere.put(from.id, slowest[0] + slowest[1]);
 						fromHere.put(DutyGenerator.HOLD_IN_KEY, slowest[0]);
+						// How many trains can wait there at once, one on each way round that can be used (运用补完 step 4)
+						final long places = hold.ways.stream().filter(Objects::nonNull).count();
+						if (places > 1) {
+							fromHere.put(DutyGenerator.HOLD_COUNT_KEY, places);
+						}
 						debugTurnTime(from, from, before, before, hold.getDefaultWay(), slowest);
 					}
 				}
@@ -3718,6 +3730,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				turnBackRailsOf = rails;
 				turnBackRails.clear();
 				nearbyTurnBackNodes.clear();
+				nearbyStablingNodes.clear();
 				rails.forEach((startPos, connections) -> connections.forEach((endPos, rail) -> {
 					if (rail.railType == RailType.TURN_BACK) {
 						turnBackRails.add(new BlockPos[]{startPos, endPos});
@@ -3730,8 +3743,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		private List<BlockPos> findNearbyTurnBackNodes(SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 			final BlockPos center = platform.getMidPos();
 			final Set<BlockPos> ends = new HashSet<>();
+			// The stabling blocks within reach (运用补完 step 4): each one way round, by the turn back rails in it
+			final Map<Long, List<BlockPos[]>> stablingBlocks = new TreeMap<>();
 			for (final BlockPos[] turnBackRail : turnBackRails) {
 				if (Math.min(turnBackRail[0].distSqr(center), turnBackRail[1].distSqr(center)) <= NEARBY_TURN_BACK_BLOCKS * NEARBY_TURN_BACK_BLOCKS) {
+					final Long block = dataCache.stablingRails.get(PathData.getRailProduct(turnBackRail[0], turnBackRail[1]));
+					if (block != null) {
+						stablingBlocks.computeIfAbsent(block, key -> new ArrayList<>()).add(turnBackRail);
+						continue;
+					}
 					for (final BlockPos pos : turnBackRail) {
 						final Map<BlockPos, Rail> from = rails.get(pos);
 						if (from != null && from.size() == 1) {
@@ -3742,7 +3762,66 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			}
 			final List<BlockPos> sorted = new ArrayList<>(ends);
 			sorted.sort(Comparator.comparingDouble((BlockPos pos) -> pos.distSqr(center)).thenComparingLong(BlockPos::asLong));
-			return sorted.size() > MAX_NEARBY_TURN_BACKS ? sorted.subList(0, MAX_NEARBY_TURN_BACKS) : sorted;
+			final List<BlockPos> nodes = new ArrayList<>(sorted.size() > MAX_NEARBY_TURN_BACKS ? sorted.subList(0, MAX_NEARBY_TURN_BACKS) : sorted);
+			// After the turn back rails, each stabling block's node, the nearest block first, as many again at most
+			final List<BlockPos> stablingNodes = new ArrayList<>();
+			stablingBlocks.values().forEach(blockRails -> {
+				final BlockPos node = stablingNode(blockRails, center, rails);
+				if (!nodes.contains(node) && !stablingNodes.contains(node)) {
+					stablingNodes.add(node);
+				}
+			});
+			stablingNodes.sort(Comparator.comparingDouble((BlockPos pos) -> pos.distSqr(center)).thenComparingLong(BlockPos::asLong));
+			final List<BlockPos> stablingKept = new ArrayList<>(stablingNodes.size() > MAX_NEARBY_TURN_BACKS ? stablingNodes.subList(0, MAX_NEARBY_TURN_BACKS) : stablingNodes);
+			nearbyStablingNodes.put(platform.id, stablingKept);
+			nodes.addAll(stablingKept);
+			return nodes;
+		}
+
+		/**
+		 * @return the turn back nodes a route lists after its last stop, with the stabling blocks near the platform after them
+		 * (运用补完 step 4), as a player marks those for any route turning back there
+		 */
+		private List<BlockPos> withStabling(List<BlockPos> listed, SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+			getNearbyTurnBackNodes(platform, rails);
+			final List<BlockPos> stabling = nearbyStablingNodes.getOrDefault(platform.id, Collections.emptyList());
+			if (stabling.isEmpty()) {
+				return listed;
+			}
+			final List<BlockPos> nodes = new ArrayList<>(listed);
+			stabling.forEach(node -> {
+				if (!nodes.contains(node)) {
+					nodes.add(node);
+				}
+			});
+			return nodes;
+		}
+
+		/**
+		 * @return where a train turns back in a stabling block: a dead end of a turn back rail in it if there is one, the
+		 * nearest; else the end of its turn back rails furthest from the platform, as the train runs in from the platform
+		 */
+		private BlockPos stablingNode(List<BlockPos[]> blockRails, BlockPos center, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+			BlockPos deadEnd = null;
+			BlockPos furthest = null;
+			for (final BlockPos[] turnBackRail : blockRails) {
+				for (final BlockPos pos : turnBackRail) {
+					final Map<BlockPos, Rail> from = rails.get(pos);
+					if (from != null && from.size() == 1 && (deadEnd == null || isBefore(pos, deadEnd, center, false))) {
+						deadEnd = pos;
+					}
+					if (furthest == null || isBefore(pos, furthest, center, true)) {
+						furthest = pos;
+					}
+				}
+			}
+			return deadEnd == null ? furthest : deadEnd;
+		}
+
+		private boolean isBefore(BlockPos pos, BlockPos other, BlockPos center, boolean furthestFirst) {
+			final double distance = pos.distSqr(center);
+			final double otherDistance = other.distSqr(center);
+			return distance == otherDistance ? pos.asLong() < other.asLong() : furthestFirst == distance > otherDistance;
 		}
 
 		private TurnBackSection<PathData> findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {

@@ -23,6 +23,10 @@ public final class EditorNetwork {
 	public static final int KIND_PLAIN = 0;
 	public static final int KIND_PLATFORM = 1;
 	public static final int KIND_SIDING = 2;
+	/**
+	 * A rail in a stabling block (运用补完 step 4), a place for one train to wait near a terminus; marked in the game only.
+	 */
+	public static final int KIND_STABLING = 3;
 
 	private EditorNetwork() {
 	}
@@ -47,7 +51,9 @@ public final class EditorNetwork {
 				mode = testMode;
 			}
 		}
-		final int version = MapDataCache.getVersion() * 31 + (mode == null ? 0 : mode.ordinal());
+		// The stabling blocks are drawn too, so a change to the signal blocks or their colour is a new map
+		final Map<UUID, Long> stablingRails = ClientData.SIGNAL_BLOCKS.getZones(ClientData.stablingColor);
+		final int version = (MapDataCache.getVersion() * 31 + (mode == null ? 0 : mode.ordinal())) * 31 + ClientData.SIGNAL_BLOCKS.getVersion() * 17 + ClientData.stablingColor.ordinal();
 		network.addProperty("version", version);
 		if (version == seenVersion && !fresh) {
 			network.addProperty("same", true);
@@ -83,7 +89,7 @@ public final class EditorNetwork {
 			final JsonArray railArray = new JsonArray();
 			railArray.add(nodeIndex(lower, nodeIndices, nodesArray));
 			railArray.add(nodeIndex(upper, nodeIndices, nodesArray));
-			railArray.add(platformRails.contains(key) ? KIND_PLATFORM : sidingRails.contains(key) ? KIND_SIDING : KIND_PLAIN);
+			railArray.add(platformRails.contains(key) ? KIND_PLATFORM : sidingRails.contains(key) ? KIND_SIDING : stablingRails.containsKey(key) ? KIND_STABLING : KIND_PLAIN);
 			railArray.add(statuses.getOrDefault(key, 0));
 			// The points along a curve run from the lower node, as the server sends them
 			final float[] shape = ClientData.MAP_RAIL_SHAPES.get(key);

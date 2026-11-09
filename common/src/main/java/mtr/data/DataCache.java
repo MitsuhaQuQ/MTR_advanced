@@ -89,6 +89,12 @@ public class DataCache {
 	 * emptied and filled again by {@link #sync} part of the way through. The data in them is the same, not copied, and the
 	 * copy is never synced.
 	 */
+	/**
+	 * The rails of stabling blocks by block (运用补完 step 4, {@code SecurityConfig.stablingColor}), given to the copy path
+	 * generation works on; empty elsewhere.
+	 */
+	public Map<java.util.UUID, Long> stablingRails = java.util.Collections.emptyMap();
+
 	public DataCache copyIdMaps() {
 		final DataCache copy = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>());
 		copy.stationIdMap.putAll(stationIdMap);
@@ -97,6 +103,7 @@ public class DataCache {
 		copy.routeIdMap.putAll(routeIdMap);
 		copy.depotIdMap.putAll(depotIdMap);
 		copy.platformIdToStation.putAll(platformIdToStation);
+		copy.stablingRails = stablingRails;
 		return copy;
 	}
 

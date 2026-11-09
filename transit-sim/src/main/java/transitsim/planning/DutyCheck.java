@@ -174,19 +174,29 @@ public final class DutyCheck {
 			}
 		}
 
-		// One train at a time on a turn back rail
+		// No more trains at once than there are places to wait beyond the platform, turn back rails and stabling blocks
+		// (运用补完 step 4): a train coming in when they are all taken. Two coming in at the same time, the later listed
+		// is the one that doesn't fit
 		groupHolds.forEach(holds -> holds.forEach((platformId, intervals) -> {
 			intervals.sort(Comparator.comparingLong(interval -> interval[0]));
-			for (int i = 0; i < intervals.size(); i++) {
-				for (int j = i + 1; j < intervals.size(); j++) {
+			for (int j = 0; j < intervals.size(); j++) {
+				final long[] b = intervals.get(j);
+				int before = 0;
+				for (int i = 0; i < intervals.size(); i++) {
+					if (i == j) {
+						continue;
+					}
 					final long[] a = intervals.get(i);
-					final long[] b = intervals.get(j);
 					for (int week = -1; week <= 1; week++) {
 						final long shift = week * OperationTime.WEEK_MILLIS;
-						if (a[0] < b[1] + shift && b[0] + shift < a[1]) {
-							breaks.add(new Break(b[2], b[3], (int) b[4], Kind.TURN_BACK_RAIL_TAKEN, platformId, 0, 0));
+						final boolean on = a[0] + shift < b[0] && b[0] < a[1] + shift || a[0] + shift == b[0] && i < j;
+						if (on) {
+							before++;
 						}
 					}
+				}
+				if (before >= b[5]) {
+					breaks.add(new Break(b[2], b[3], (int) b[4], Kind.TURN_BACK_RAIL_TAKEN, platformId, 0, 0));
 				}
 			}
 		}));
@@ -289,7 +299,7 @@ public final class DutyCheck {
 			final long fromMillis = from.endMillis() + hold[0];
 			final long toMillis = to.startMillis() - outMillis;
 			if (readyMillis + hold[0] + outMillis <= to.startMillis() && fromMillis <= toMillis && isPlatformFree(platformStops, to.firstPlatform(), toMillis, to.startMillis())) {
-				holds.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new long[]{fromMillis, toMillis, piece.sidingId, piece.slotId, piece.day});
+				holds.computeIfAbsent(platformId, key -> new ArrayList<>()).add(new long[]{fromMillis, toMillis, piece.sidingId, piece.slotId, piece.day, hold.length > 2 ? hold[2] : 1});
 				return;
 			}
 		}

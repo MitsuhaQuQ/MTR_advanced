@@ -537,15 +537,38 @@ public final class DutyPlanner {
 		if (duty.readyMillis + hold[0] + outMillis > trip.startMillis() || fromMillis > toMillis || !isPlatformFree(trip.firstPlatform(), toMillis, trip.startMillis())) {
 			return false;
 		}
-		for (final long[] other : holds.getOrDefault(duty.platformId, Collections.emptyList())) {
+		// As many trains at once as there are places to wait (运用补完 step 4): the most waiting meanwhile is reached when
+		// one of them comes in, or as this one does
+		final List<long[]> others = holds.getOrDefault(duty.platformId, Collections.emptyList());
+		final long count = hold.length > 2 ? hold[2] : 1;
+		if (holdsAt(others, fromMillis) >= count) {
+			return false;
+		}
+		for (final long[] other : others) {
 			for (int week = -1; week <= 1; week++) {
-				final long shift = week * OperationTime.WEEK_MILLIS;
-				if (other[0] + shift < toMillis && fromMillis < other[1] + shift) {
+				final long start = other[0] + week * OperationTime.WEEK_MILLIS;
+				if (start > fromMillis && start < toMillis && holdsAt(others, start) >= count) {
 					return false;
 				}
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * @return how many of the waits, the week round, are on at that time
+	 */
+	static int holdsAt(List<long[]> holds, long millis) {
+		int count = 0;
+		for (final long[] hold : holds) {
+			for (int week = -1; week <= 1; week++) {
+				final long shift = week * OperationTime.WEEK_MILLIS;
+				if (hold[0] + shift <= millis && millis < hold[1] + shift) {
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 
 	private long holdOutMillis(OpenDuty duty, Trip trip, long[] hold) {

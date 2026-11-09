@@ -2065,7 +2065,8 @@
 		chains.forEach(chain => {
 			const points = chainShape(chain);
 			if (!visible(points)) return;
-			stroke(points, chain.kind === 1 ? ink : chain.kind === 2 ? "#d9a520" : plain, chain.kind === 1 ? 3 : 1.5);
+			// Stabling blocks (运用补完 step 4) brown and a little heavier, one train each
+			stroke(points, chain.kind === 1 ? ink : chain.kind === 2 ? "#d9a520" : chain.kind === 3 ? "#9a5b2c" : plain, chain.kind === 1 ? 3 : chain.kind === 3 ? 2.5 : 1.5);
 		});
 		g.globalAlpha = 1;
 		// The isolation layer, in the colours of the track diagrams
@@ -2195,7 +2196,7 @@
 	function netRailText(index) {
 		const d = net.data, rail = d.rails[index], status = netStatus(index);
 		const a = d.nodes[rail[0]], b = d.nodes[rail[1]];
-		const kind = rail[2] === 1 ? tr("站台") : rail[2] === 2 ? tr("存车线") : tr("轨道");
+		const kind = rail[2] === 1 ? tr("站台") : rail[2] === 2 ? tr("存车线") : rail[2] === 3 ? tr("留置位（一列车，在游戏里用留置色的信号闭塞分区标出）") : tr("轨道");
 		const isolation = status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("联络线已放行") : "";
 		const run = net.scale < NET_EXACT_SCALE && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
 		return `${kind}${isolation ? " · " + isolation : ""} · ${Math.floor(a[0])}, ${Math.floor(a[1])} → ${Math.floor(b[0])}, ${Math.floor(b[1])}${run > 1 ? tr("（示意图里这一段有 {0} 条轨道，放大后逐条显示）", run) : ""}`;
@@ -4674,7 +4675,7 @@
 	 */
 	function terminalNow() {
 		if (terminal && terminal.weekday === state.weekday) return terminal;
-		const runs = [], manual = {}, turnTimes = {}, holdIns = {}, duties = [];
+		const runs = [], manual = {}, turnTimes = {}, holdIns = {}, holdCounts = {}, duties = [];
 		if (data) {
 			data.routes.forEach(r => (r.services || []).forEach(s => {
 				if (!r.hasTimes) return;
@@ -4688,13 +4689,14 @@
 			data.depots.forEach(depot => {
 				Object.entries((depot.path || {}).turnTimes || {}).forEach(([from, times]) => { turnTimes[from] = Object.assign(turnTimes[from] || {}, times); });
 				Object.assign(holdIns, (depot.path || {}).holdIns || {});
+				Object.assign(holdCounts, (depot.path || {}).holdCounts || {});
 				Object.values(dutiesOf(depot).sidings).forEach(slots => slots.forEach(slot => {
 					const day = dutyOn(slot, state.weekday);
 					if (day && day.segments.length) duties.push(day.segments.map(segmentKey));
 				}));
 			});
 		}
-		terminal = Object.assign(TerminalPairs.pair({ runs, manual, duties, turnTimes, holdIns, minTurn: minReverseMillis() }), { weekday: state.weekday });
+		terminal = Object.assign(TerminalPairs.pair({ runs, manual, duties, turnTimes, holdIns, holdCounts, minTurn: minReverseMillis() }), { weekday: state.weekday });
 		return terminal;
 	}
 	/** A platform as the whole network's topology has it (id, name, station, stationName), or null. */

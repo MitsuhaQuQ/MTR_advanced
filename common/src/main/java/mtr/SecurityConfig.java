@@ -54,6 +54,11 @@ public final class SecurityConfig {
 	 */
 	public static volatile DyeColor interlockColor = DyeColor.MAGENTA;
 	/**
+	 * The signal block colour of stabling blocks (运用补完 step 4): each holds one train waiting for its next service near a
+	 * terminus, turning back on a turn back rail in it, as one more way round besides the turn back rails beyond the platform.
+	 */
+	public static volatile DyeColor stablingColor = DyeColor.BROWN;
+	/**
 	 * Long rails are cut into block sections of the braking distance at their speed limit for this
 	 * deceleration, in m/s², and at least this long, in blocks ({@code BlockSections}).
 	 */
@@ -76,6 +81,7 @@ public final class SecurityConfig {
 	private static final String KEY_EDITOR_SIMULATION = "editorSimulation";
 	private static final String KEY_ANTE_RUN_HOOKS = "anteRunHooks";
 	private static final String KEY_INTERLOCK_COLOR = "interlockColor";
+	private static final String KEY_STABLING_COLOR = "stablingColor";
 	private static final String KEY_BLOCK_DECELERATION = "blockDeceleration";
 	private static final String KEY_BLOCK_MIN_LENGTH = "blockMinLength";
 
@@ -106,6 +112,7 @@ public final class SecurityConfig {
 				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
 				anteRunHooks = jsonObject.has(KEY_ANTE_RUN_HOOKS) && jsonObject.get(KEY_ANTE_RUN_HOOKS).getAsBoolean();
 				interlockColor = parseColor(jsonObject.has(KEY_INTERLOCK_COLOR) ? jsonObject.get(KEY_INTERLOCK_COLOR).getAsString() : "");
+				stablingColor = parseColor(jsonObject.has(KEY_STABLING_COLOR) ? jsonObject.get(KEY_STABLING_COLOR).getAsString() : "", DyeColor.BROWN);
 				blockDeceleration = jsonObject.has(KEY_BLOCK_DECELERATION) ? Math.max(0.1, Math.min(10, jsonObject.get(KEY_BLOCK_DECELERATION).getAsDouble())) : 1.0;
 				blockMinLength = getInt(jsonObject, KEY_BLOCK_MIN_LENGTH, 400, 16, 10000);
 			} else {
@@ -159,6 +166,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
 		jsonObject.addProperty(KEY_ANTE_RUN_HOOKS, anteRunHooks);
 		jsonObject.addProperty(KEY_INTERLOCK_COLOR, interlockColor.name().toLowerCase(Locale.ROOT));
+		jsonObject.addProperty(KEY_STABLING_COLOR, stablingColor.name().toLowerCase(Locale.ROOT));
 		jsonObject.addProperty(KEY_BLOCK_DECELERATION, blockDeceleration);
 		jsonObject.addProperty(KEY_BLOCK_MIN_LENGTH, blockMinLength);
 		jsonObject.addProperty(KEY_AUDIO_MAX_TOTAL_MEGABYTES, audioMaxTotalMegabytes);
@@ -172,11 +180,15 @@ public final class SecurityConfig {
 	 * @return the dye colour of this name, such as {@code magenta}, or magenta for anything else
 	 */
 	public static DyeColor parseColor(String name) {
+		return parseColor(name, DyeColor.MAGENTA);
+	}
+
+	public static DyeColor parseColor(String name, DyeColor fallback) {
 		for (final DyeColor color : DyeColor.values()) {
 			if (color.name().equalsIgnoreCase(name.trim())) {
 				return color;
 			}
 		}
-		return DyeColor.MAGENTA;
+		return fallback;
 	}
 }

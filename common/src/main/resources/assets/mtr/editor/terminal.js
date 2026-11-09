@@ -26,6 +26,8 @@
 	 *                        time round a turn back rail beyond it
 	 * @param input.holdIns   by platform, how much of the time round its turn back rail is the way in (round 4); half
 	 *                        where not given
+	 * @param input.holdCounts by platform, how many trains can wait beyond it at once, on its turn back rails and stabling
+	 *                        blocks (运用补完 step 4); one where not given
 	 * @param input.minTurn   the network's least time to change ends (round 4), {@link MIN_TURN} if not given
 	 * @return { next, previous: Map id → pair, warnings: [] }; a pair is { from, to, kind: "same" | "change" | "hold",
 	 * source: "manual" | "duty" | "nearest", platform, fromDeparture, toArrival, moved }
@@ -34,6 +36,7 @@
 		const runs = new Map(input.runs.map(run => [run.id, run]));
 		const turnTimes = input.turnTimes || {};
 		const holdIns = input.holdIns || {};
+		const holdCounts = input.holdCounts || {};
 		const minTurn = Number.isFinite(input.minTurn) ? input.minTurn : MIN_TURN;
 		const next = new Map(), previous = new Map(), warnings = [];
 		const ends = run => run && !run.suspended && !run.returns && run.last === run.platforms.length - 1;
@@ -76,6 +79,12 @@
 		// of those it may turn back at that is free; or a turn back rail beyond it; or, with neither, its own, in conflict
 		const taken = new Map(), holds = new Map();
 		const free = (list, start, end) => !(list || []).some(other => other.start < end + minTurn && start < other.end + minTurn);
+		// Fewer trains waiting at once than there are places, the most reached as this one comes in or another does
+		const placesFree = (list, start, end, count) => {
+			const over = (list || []).filter(other => other.start < end + minTurn && start < other.end + minTurn);
+			if (over.length < count) return true;
+			return [start, ...over.map(other => other.start).filter(at => at > start)].every(at => over.filter(other => other.start - minTurn <= at && at < other.end + minTurn).length < count);
+		};
 		// The stops of trains that don't turn back there take the platform as they stop
 		input.runs.forEach(run => {
 			if (run.suspended) return;
@@ -96,7 +105,7 @@
 				if (round === undefined) return false;
 				const runIn = Number.isFinite(holdIns[own]) ? Math.min(holdIns[own], round) : round / 2, runOut = round - runIn;
 				const railStart = leaving(from) + runIn, railEnd = firstArrival(to) - runOut;
-				if (railStart > railEnd || !free(taken.get(own), start, leaving(from)) || !free(taken.get(own), firstArrival(to), end) || !free(holds.get(own), railStart, railEnd)) return false;
+				if (railStart > railEnd || !free(taken.get(own), start, leaving(from)) || !free(taken.get(own), firstArrival(to), end) || !placesFree(holds.get(own), railStart, railEnd, Math.max(1, Number(holdCounts[own]) || 1))) return false;
 				pairing.kind = "hold";
 				pairing.railStart = railStart;
 				pairing.railEnd = railEnd;

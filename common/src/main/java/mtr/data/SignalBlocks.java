@@ -16,7 +16,7 @@ public class SignalBlocks {
 	private int version;
 
 	private final Map<UUID, Set<SignalBlock>> railToSignalBlocks = new HashMap<>();
-	private Map<UUID, Long> zones = Collections.emptyMap();
+	private final Map<DyeColor, Map<UUID, Long>> zonesByColor = new EnumMap<>(DyeColor.class);
 	/**
 	 * The signal blocks cut into block sections, made again when the blocks or the interlocking colour change.
 	 */
@@ -36,7 +36,6 @@ public class SignalBlocks {
 	private DyeColor sectionsColor;
 	private int sectionsRailsVersion;
 	private int zonesVersion = -1;
-	private DyeColor zonesColor;
 	public final List<SignalBlock> signalBlocks = new ArrayList<>();
 
 	public long add(long id, DyeColor color, UUID rail) {
@@ -306,18 +305,20 @@ public class SignalBlocks {
 	 * @return the zone of each rail in one, by the block's ID
 	 */
 	public synchronized Map<UUID, Long> getZones(DyeColor color) {
-		if (zonesVersion != version || zonesColor != color) {
+		// Each colour asked for kept apart, as interlocking zones and stabling blocks (运用补完 step 4) are both asked for
+		if (zonesVersion != version) {
+			zonesByColor.clear();
+			zonesVersion = version;
+		}
+		return zonesByColor.computeIfAbsent(color, key -> {
 			final Map<UUID, Long> newZones = new HashMap<>();
 			signalBlocks.forEach(signalBlock -> {
 				if (signalBlock.color == color) {
 					signalBlock.rails.forEach(rail -> newZones.putIfAbsent(rail, signalBlock.id));
 				}
 			});
-			zones = Collections.unmodifiableMap(newZones);
-			zonesVersion = version;
-			zonesColor = color;
-		}
-		return zones;
+			return Collections.unmodifiableMap(newZones);
+		});
 	}
 
 	/**

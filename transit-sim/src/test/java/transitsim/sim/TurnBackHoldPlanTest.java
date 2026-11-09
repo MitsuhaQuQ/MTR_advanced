@@ -104,6 +104,51 @@ class TurnBackHoldPlanTest {
 		assertFalse(sameDuty(result, 1, 3));
 	}
 
+	@Test
+	void asManyTrainsWaitAtOnceAsThereArePlacesBeyondThePlatform() {
+		// Two trains reach platform 4, at 06:06 and 06:14; another line stops there at 06:20; the two leave it again at
+		// 06:30 and 06:40. Both wait beyond the platform at the same time only with two places there (运用补完 step 4:
+		// turn back rails and stabling blocks, one train each)
+		final TestRoute upA = route(1, 6 * HOUR, 1, 2, 3, PLATFORM);
+		final TestRoute upB = route(4, 6 * HOUR + 8 * MINUTE, 12, 13, 14, PLATFORM);
+		final TestRoute other = route(2, 6 * HOUR + 14 * MINUTE, 8, 9, 10, PLATFORM, 11);
+		final TestRoute downA = route(3, 6 * HOUR + 30 * MINUTE, PLATFORM, 5, 6, 7);
+		final TestRoute downB = route(5, 6 * HOUR + 40 * MINUTE, PLATFORM, 15, 16, 17);
+		final Map<Long, Long> links = new HashMap<>();
+		links.put(1L, 0L);
+		links.put(12L, 0L);
+		links.put(8L, 0L);
+		links.put(PLATFORM, 60000L);
+		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, -1, links, 7));
+		final List<DutyGenerator.ServiceInput> services = services(upA, upB, other, downA, downB);
+		final java.util.function.LongFunction<DutyGenerator.PlanInputs> places = count -> {
+			final Map<Long, Long> fromPlatform = new HashMap<>();
+			fromPlatform.put(PLATFORM, 2 * MINUTE);
+			fromPlatform.put(DutyGenerator.HOLD_IN_KEY, MINUTE);
+			if (count > 0) {
+				fromPlatform.put(DutyGenerator.HOLD_COUNT_KEY, count);
+			}
+			return new DutyGenerator.PlanInputs(Collections.singletonMap(PLATFORM, fromPlatform), Collections.emptyMap());
+		};
+		final java.util.function.LongFunction<DutyGenerator.Result> plan = count -> DutyGenerator.generate(services, sidings, Collections.emptyMap(), HOUR, places.apply(count));
+		assertEquals(1, waitingBeyond(plan.apply(0)), "one place where none is given");
+		assertEquals(1, waitingBeyond(plan.apply(1)));
+		final DutyGenerator.Result two = plan.apply(2);
+		assertEquals(2, waitingBeyond(two), String.join(", ", two.issues));
+		assertEquals(0, two.uncovered);
+		// The check of the duties as planned agrees: two trains at once fit two places, not one
+		final java.util.function.LongFunction<List<transitsim.planning.DutyCheck.Break>> check = count -> transitsim.planning.DutyCheck.check(Collections.singletonList(new transitsim.planning.DutyCheck.Group(services, sidings, two.sidings)), Collections.emptyMap(), HOUR, places.apply(count));
+		assertEquals(Collections.emptyList(), check.apply(2));
+		assertTrue(check.apply(1).stream().anyMatch(broken -> broken.kind == transitsim.planning.DutyCheck.Kind.TURN_BACK_RAIL_TAKEN && broken.platformId == PLATFORM), check.apply(1).toString());
+	}
+
+	/**
+	 * @return how many of Monday's duties wait beyond the platform between two services
+	 */
+	private static long waitingBeyond(DutyGenerator.Result result) {
+		return result.sidings.values().stream().flatMap(List::stream).flatMap(slot -> slot.days.stream()).filter(day -> (day.weekdays & 1) != 0 && day.waits.contains(DepotDuties.DayDuty.WAIT_TURN_BACK_RAIL)).count();
+	}
+
 	private static boolean sameDuty(DutyGenerator.Result result, long routeA, long routeB) {
 		return result.sidings.values().stream().flatMap(List::stream).flatMap(slot -> slot.days.stream()).anyMatch(day -> (day.weekdays & 1) != 0 && has(day, routeA) && has(day, routeB));
 	}

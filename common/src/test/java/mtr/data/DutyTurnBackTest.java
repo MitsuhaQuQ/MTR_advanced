@@ -111,6 +111,48 @@ class DutyTurnBackTest {
 		assertNull(noTurnBack.getOrDefault(PLATFORM_A, Collections.emptyMap()).get(PLATFORM_B), "no way from A to B: " + noTurnBack);
 	}
 
+	@Test
+	void aStablingBlockIsOneMorePlaceToWaitBeyondThePlatform() {
+		// The same terminal; beyond the far turnout, besides the dead end turn back rail, a track to one side with a turn
+		// back rail in the middle and no dead end of its own on it. Only marked as a stabling block (运用补完 step 4) is it a
+		// way round, and a second place for a train to wait beyond platform A
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
+		final DataCache dataCache = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>());
+		addRail(rails, pos(0, -60), pos(0, -40), RailType.SIDING);
+		addRail(rails, pos(0, -40), pos(0, 0), RailType.IRON);
+		final Platform south = platform(dataCache, rails, SOUTH, pos(0, 0), pos(0, 20));
+		addRail(rails, pos(0, 20), pos(0, 200), RailType.IRON);
+		addRail(rails, pos(0, 200), pos(-4, 240), RailType.IRON);
+		addRail(rails, pos(0, 200), pos(4, 240), RailType.IRON);
+		platform(dataCache, rails, PLATFORM_A, pos(-4, 240), pos(-4, 260));
+		final Platform b = platform(dataCache, rails, PLATFORM_B, pos(4, 240), pos(4, 260));
+		addRail(rails, pos(-4, 260), pos(0, 300), RailType.IRON);
+		addRail(rails, pos(4, 260), pos(0, 300), RailType.IRON);
+		addRail(rails, pos(0, 300), pos(0, 500), RailType.TURN_BACK);
+		addRail(rails, pos(0, 300), pos(12, 340), RailType.IRON);
+		addRail(rails, pos(12, 340), pos(12, 440), RailType.TURN_BACK);
+		addRail(rails, pos(12, 440), pos(12, 460), RailType.IRON);
+
+		final Route down = route(dataCache, DOWN, south, dataCache.platformIdMap.get(PLATFORM_A));
+		final Route up = route(dataCache, UP, b, south);
+		final Depot depot = new Depot(1, TransportMode.TRAIN);
+		depot.routeIds.add(DOWN);
+		depot.routeIds.add(UP);
+		dataCache.depotIdMap.put(depot.id, depot);
+		final Station station = new Station(50);
+		dataCache.platformIdToStation.put(PLATFORM_A, station);
+		dataCache.platformIdToStation.put(PLATFORM_B, station);
+		final List<Route> routes = Arrays.asList(down, up);
+
+		final Map<Long, Long> unmarked = depot.measureTurnTimes(routes, dataCache, rails, DeterministicPathFinder.compile(rails), false).getOrDefault(PLATFORM_A, Collections.emptyMap());
+		assertTrue(unmarked.containsKey(PLATFORM_A), "a train can wait beyond A: " + unmarked);
+		assertNull(unmarked.get(transitsim.planning.DutyGenerator.HOLD_COUNT_KEY), "one place: " + unmarked);
+
+		dataCache.stablingRails = Collections.singletonMap(PathData.getRailProduct(pos(12, 340), pos(12, 440)), 7L);
+		final Map<Long, Long> marked = depot.measureTurnTimes(routes, dataCache, rails, DeterministicPathFinder.compile(rails), false).getOrDefault(PLATFORM_A, Collections.emptyMap());
+		assertEquals(2L, marked.get(transitsim.planning.DutyGenerator.HOLD_COUNT_KEY), "the turn back rail and the stabling block: " + marked);
+	}
+
 	private static int indexOf(List<PathData> path, long platformId) {
 		for (int i = 0; i < path.size(); i++) {
 			if (path.get(i).savedRailBaseId == platformId) {

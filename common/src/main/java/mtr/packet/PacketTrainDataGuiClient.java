@@ -62,7 +62,9 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final boolean editorSimulation = packet.isReadable() && packet.readBoolean();
 		final int interlockColor = packet.readableBytes() >= 4 ? packet.readInt() : DyeColor.MAGENTA.ordinal();
 		final boolean anteRunHooks = packet.isReadable() && packet.readBoolean();
+		final int stablingColor = packet.readableBytes() >= 4 ? packet.readInt() : DyeColor.BROWN.ordinal();
 		minecraftClient.execute(() -> {
+			ClientData.stablingColor = stablingColor >= 0 && stablingColor < DyeColor.values().length ? DyeColor.values()[stablingColor] : DyeColor.BROWN;
 			ClientData.hasEditPermissionLevel = hasPermissionLevel;
 			ClientData.editorSimulation = editorSimulation;
 			ClientData.anteRunHooks = anteRunHooks;

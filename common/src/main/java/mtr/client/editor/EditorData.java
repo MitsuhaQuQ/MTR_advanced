@@ -276,11 +276,15 @@ public final class EditorData {
 			// How long the in leg of the way round a turn back rail takes, by platform (round 4); the rest of the round is
 			// the out leg
 			final JsonObject holdInsObject = new JsonObject();
+			// How many trains can wait beyond each platform at once, on its turn back rails and stabling blocks (运用补完 step 4)
+			final JsonObject holdCountsObject = new JsonObject();
 			depot.clientTurnTimes.forEach((from, times) -> {
 				final JsonObject toObject = new JsonObject();
 				times.forEach((to, millis) -> {
 					if (to == transitsim.planning.DutyGenerator.HOLD_IN_KEY) {
 						holdInsObject.addProperty(String.valueOf(from), millis);
+					} else if (to == transitsim.planning.DutyGenerator.HOLD_COUNT_KEY) {
+						holdCountsObject.addProperty(String.valueOf(from), millis);
 					} else {
 						toObject.addProperty(String.valueOf(to), millis);
 					}
@@ -289,6 +293,7 @@ public final class EditorData {
 			});
 			pathObject.add("turnTimes", turnTimesObject);
 			pathObject.add("holdIns", holdInsObject);
+			pathObject.add("holdCounts", holdCountsObject);
 			// Trains waiting on the line with no duty: siding, slot, where and why (P1-C)
 			final JsonArray heldArray = new JsonArray();
 			depot.clientHeldTrains.forEach(entry -> {
