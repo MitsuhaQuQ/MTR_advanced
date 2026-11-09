@@ -1,0 +1,79 @@
+/*
+ * The new design for the old views the new page still borrows (LegacySlot): their markup and handlers stay the old
+ * code's, the look follows the design system "MTM 运行图编辑器". Every rule starts with .legacy.legacy-slot (or
+ * .legacy.legacy-overlays for dialogs), so it is more specific than the old styles (public/legacy.css, inside .legacy)
+ * and touches nothing else. Plain CSS, no nesting: it goes through PostCSS with the rest.
+ */
+
+/* ---------- Controls inside the old views ---------- */
+.legacy.legacy-slot button:not(.link):not(.node) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); color: var(--ink);
+  font-size: 13px; line-height: 1; cursor: pointer; white-space: nowrap;
+}
+.legacy.legacy-slot button:not(.link):not(.node):hover:not(:disabled) { border-color: var(--accent); }
+.legacy.legacy-slot button:disabled { opacity: .45; cursor: default; }
+.legacy.legacy-slot button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.legacy.legacy-slot button.link { color: var(--sel); padding: 0 2px; }
+.legacy.legacy-slot button.link:hover { color: var(--sel); text-decoration: underline; }
+.legacy.legacy-slot input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), .legacy.legacy-slot select {
+  height: 28px; padding: 0 8px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); color: var(--ink); font-size: 13px;
+}
+.legacy.legacy-slot input:focus-visible, .legacy.legacy-slot select:focus-visible, .legacy.legacy-slot button:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+.legacy.legacy-slot input[type=checkbox] { accent-color: var(--accent); }
+.legacy.legacy-slot .hint { font-size: 12px; line-height: 18px; color: var(--muted); }
+.legacy.legacy-slot .err { color: var(--warn); }
+.legacy.legacy-slot .pill { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 0; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 500; }
+.legacy.legacy-slot .pill.managed { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+
+/* ---------- Summary timetable ---------- */
+.legacy.legacy-slot .table-view { background: var(--panel); }
+.legacy.legacy-slot .tt-tools {
+  gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--grid); font-size: 13px; z-index: 4;
+}
+.legacy.legacy-slot .tt-tools + .tt-tools { padding-top: 0; border-top: 0; }
+.legacy.legacy-slot .tt-tools:has(+ .tt-tools) { border-bottom: 0; }
+.legacy.legacy-slot .tt-tools > b { font-size: 14px; font-weight: 600; }
+.legacy.legacy-slot .tt-tools label { display: inline-flex; align-items: center; gap: 6px; }
+.legacy.legacy-slot .tt-tools input.perf { width: 4.5em; font-family: var(--font-num); text-align: right; }
+.legacy.legacy-slot .tt-tools #add-service { width: 15em; font-family: var(--font-num); }
+.legacy.legacy-slot .tt-tools #add-end, .legacy.legacy-slot .tt-tools #add-count { font-family: var(--font-num); }
+/* Tables of the route and directions of a line, as chips */
+.legacy.legacy-slot button.table-chip {
+  height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 400;
+}
+.legacy.legacy-slot button.table-chip.on { background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 500; }
+
+.legacy.legacy-slot table.tt { font-size: 13px; }
+.legacy.legacy-slot table.tt th, .legacy.legacy-slot table.tt td { padding: 4px 10px; border-color: var(--grid); }
+.legacy.legacy-slot table.tt td { height: 28px; }
+.legacy.legacy-slot table.tt thead th { background: var(--panel); border-bottom: 1px solid var(--grid-strong); vertical-align: top; text-align: left; }
+.legacy.legacy-slot table.tt th.svc-head { min-width: 78px; }
+.legacy.legacy-slot table.tt th.svc-head .time { font-size: 13px; font-weight: 600; color: var(--ink); }
+.legacy.legacy-slot table.tt th.svc-head .note { font-size: 11px; line-height: 15px; color: var(--muted); }
+.legacy.legacy-slot table.tt th.svc-head:hover { background: var(--panel-2); }
+/* The station names on the page colour, apart from the times (design system, point 6) */
+.legacy.legacy-slot table.tt th.st { background: var(--bg); border-right: 1px solid var(--grid-strong); font-size: 12px; font-weight: 500; color: var(--ink); }
+.legacy.legacy-slot table.tt th.kind { background: var(--bg); color: var(--muted); font-size: 11px; }
+.legacy.legacy-slot table.tt thead th.st, .legacy.legacy-slot table.tt thead th.kind { background: var(--bg); }
+.legacy.legacy-slot table.tt th.st.repeat { color: var(--muted); font-weight: 400; }
+.legacy.legacy-slot table.tt tr.first-of-station > * { border-top: 1px solid var(--grid-strong); }
+.legacy.legacy-slot table.tt td:hover { background: var(--panel-2); }
+.legacy.legacy-slot table.tt td.pass { color: var(--muted); }
+/* Selected: the service chosen on the diagram, or the run chosen */
+.legacy.legacy-slot table.tt .hl { background: color-mix(in srgb, var(--sel) 10%, var(--panel)); }
+.legacy.legacy-slot table.tt th.svc-head.hl { background: color-mix(in srgb, var(--sel) 16%, var(--panel)); box-shadow: inset 0 -2px 0 var(--sel); }
+.legacy.legacy-slot table.tt th.svc-head.hl .time { color: var(--sel); }
+/* A service no train runs: its column head marked, as on the diagram */
+.legacy.legacy-slot table.tt th.svc-head.no-train { background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.legacy.legacy-slot table.tt th.svc-head.no-train .time { color: var(--warn); text-decoration: none; }
+.legacy.legacy-slot table.tt th.svc-head.suspended .time { color: var(--muted); text-decoration: line-through; font-style: normal; }
+.legacy.legacy-slot .svc-head .suspended-note { color: var(--caution); }
+/* Times of this service only: blue, on a light blue ground */
+.legacy.legacy-slot table.tt td.exc { color: var(--sel); font-weight: 600; background: color-mix(in srgb, var(--sel) 8%, transparent); }
+.legacy.legacy-slot table.tt td.fast { color: var(--warn); font-weight: 600; }
+.legacy.legacy-slot table.tt td.wait::before { color: var(--sel); font-family: var(--font-ui); }
+.legacy.legacy-slot table.tt td.derived { color: var(--muted); font-style: normal; }
+.legacy.legacy-slot table.tt td.out { box-shadow: inset -2px 0 0 var(--accent); }
+.legacy.legacy-slot table.tt td input { height: 22px; width: 6em; border: 1px solid var(--sel); border-radius: 4px; font-size: 13px; }
+.legacy.legacy-slot .table-empty { padding: 24px 16px; font-size: 13px; color: var(--muted); }
