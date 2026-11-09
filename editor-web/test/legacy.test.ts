@@ -205,6 +205,47 @@ describe("the old code in the new page", () => {
     expect(created[1].stops[0].platformId).toBe("1105")
     engine.pushDraft({ routes: {} })
   })
+  it("paints sections and ticks logical lines in the ownership panel", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { OwnershipPanel, paint } = await import("../src/views/OwnershipPanel")
+    const { fn, v } = engine.legacy
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    // Three rails in two sections, as api/network gives them
+    v.net.mode = "TRAIN"
+    v.net.layer = "owners"
+    v.net.data = { modes: ["TRAIN"], nodes: [[0, 0, "1"], [10, 0, "2"], [20, 0, "3"], [30, 0, "4"]], rails: [[0, 1, 0, 0], [1, 2, 0, 0], [2, 3, 0, 0]], owners: { ready: true } }
+    v.net.sectionRails = new Map([["a", [0, 1]], ["b", [2]]])
+    v.net.ownerOf = new Map([[0, { section: "a", owners: [], manual: false }], [1, { section: "a", owners: [], manual: false }], [2, { section: "b", owners: [], manual: false }]])
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(OwnershipPanel, { className: "" })))
+    // Without logical lines: the operating lines are the brushes
+    expect(host.textContent).toContain("只归 1号线")
+    await act(async () => { paint(1, { kind: "owner", lines: ["TRAIN|1号线|Line 1"], label: "" }); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(changes[changes.length - 1].networkSettings.ownerOverrides).toEqual({ "2,3": ["TRAIN|1号线|Line 1"] })
+    // A logical line, then a section painted into it: its brush counts one section
+    await act(async () => { fn.draftSettingsPart("logicalLines", (drafted: any) => { drafted["77"] = { name: "干线", color: 0x3366cc, connecting: false } }); engine.flushLegacy() })
+    expect(host.textContent).toContain("逻辑线路画笔")
+    await act(async () => { paint(2, { kind: "logical", id: "77" }); engine.flushLegacy() })
+    const row = [...host.querySelectorAll("li")].find(li => li.textContent!.includes("干线"))!
+    expect(row.textContent).toContain("1")
+    // Line 1 runs on it
+    const box = host.querySelector('input[aria-label="1号线 走 干线"]') as HTMLInputElement
+    await act(async () => { box.click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const settings = changes[changes.length - 1].networkSettings
+    expect(settings.railLines).toEqual({ "3,4": "77" })
+    expect(settings.lineTracks).toEqual({ "TRAIN|1号线|Line 1": ["77"] })
+    // Deleting it takes its sections and ticks with it
+    const { removeLogicalLine } = await import("../src/views/OwnershipPanel")
+    await act(async () => { removeLogicalLine("77"); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(changes[changes.length - 1].networkSettings).toEqual({ ownerOverrides: { "2,3": ["TRAIN|1号线|Line 1"] } })
+    engine.pushDraft({ routes: {} })
+  })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
     expect(() => media.setMediaShown(true)).not.toThrow()

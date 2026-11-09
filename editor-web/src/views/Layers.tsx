@@ -11,6 +11,7 @@ import type { LayerId } from "../shell/layers"
 import { Navigator, type Part } from "./Navigator"
 import { Inspector } from "./Inspector"
 import { DutyBoard } from "./DutyBoard"
+import { OwnershipPanel } from "./OwnershipPanel"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
 const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
@@ -37,14 +38,22 @@ export function LayerWork({ layer }: { layer: LayerId }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       {part && <Navigator part={part} />}
-      {layer === "physical" || layer === "owners" || layer === "dispatch" ? <NetworkWork /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
+      {layer === "physical" || layer === "owners" || layer === "dispatch" ? <NetworkWork owners={layer === "owners"} /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
     </div>
   )
 }
 
-function NetworkWork() {
+function NetworkWork({ owners }: { owners: boolean }) {
   const redraw = useCallback(() => legacy.fn.drawNetwork(), [])
-  return <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={redraw} />
+  const map = <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={redraw} />
+  if (!owners) return map
+  // The ownership layer: its brushes and the operating lines' logical lines beside the map
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
+      {map}
+      <OwnershipPanel className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
+    </div>
+  )
 }
 
 /** The depot layer: the duty board (the default), or the running diagram where duties can be edited too. */
