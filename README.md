@@ -54,6 +54,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - The minimum dwell time is now 8.5 seconds. Doors never opened on very short dwells in the original, so older settings below the minimum are raised to 8.5 seconds when paths are refreshed.
 - Timetable sensors now fire when the remaining time first reaches the set value, and only once for each arrival of a train.
 - PIDS shows the next assigned duty's planned arrival before the train leaves its depot, then uses the live countdown. Planned display entries do not trigger timetable sensors.
+- Railway signs and station name signs show their words in Traditional Chinese, English and Japanese, whatever language the game is in. A station or line name can have a Japanese part after its Chinese and English ones (`新宿|Shinjuku|しんじゅく`); without one, the Chinese name is used.
 - Announcers and timetable sensors support live approach, time since an actual platform stop, and time until a cleared departure. Timed announcers can play to nearby players or to the train's riders.
 
 **Timetables**
@@ -202,7 +203,7 @@ Done so far: the simulation component and its move into the game (steps S0 to S6
 
 The first round of load work is done: with 69 resource packs a full reload takes about 110 seconds and fits in a 16 GB heap.
 
-The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). Where the code lives and how the main flows run (server tick, train sync, rendering, resource loading, saving, editing, path generation, ANTE scripts) are in [MTR-代码说明与流程.md](MTR-代码说明与流程.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese). Performance measured on a stress test network, the logic problems it showed and the agreed architecture of the saved network layers (rails, track sections, legs between stops, run times, assembled paths, duties) are in [MTR-性能与逻辑优化.md](MTR-性能与逻辑优化.md) (Chinese). How it is carried out round by round is in [MTR-优化实施阶段.md](MTR-优化实施阶段.md) (Chinese).
+The full design, rules and verification records are in [MTR-3.x改造记录与寻路方案.md](MTR-3.x改造记录与寻路方案.md) (Chinese). Where the code lives and how the main flows run (server tick, train sync, rendering, resource loading, saving, editing, path generation, ANTE scripts) are in [MTR-代码说明与流程.md](MTR-代码说明与流程.md) (Chinese). The behaviour to check in large-scale use is listed in [MTR-测试项目清单.md](MTR-测试项目清单.md) (Chinese). Performance measured on a stress test network, the logic problems it showed and the agreed architecture of the saved network layers (rails, track sections, legs between stops, run times, assembled paths, duties) are in [MTR-性能与逻辑优化.md](MTR-性能与逻辑优化.md) (Chinese). How it is carried out round by round is in [MTR-优化实施阶段.md](MTR-优化实施阶段.md) (Chinese). What the advanced web editor is made of and does, layer by layer, is in [MTR-网页编辑器规格.md](MTR-网页编辑器规格.md) (Chinese).
 
 ## Project complexity
 
@@ -271,7 +272,7 @@ JDK 17 is required.
 
 The output is in `build/release/`. Without `-PbuildVersion`, Gradle builds 1.16.5. Before committing, run Gradle once with the default version so that the generated mappings return to their default content.
 
-Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.64.0. It goes up whenever packets or saved data change.
+Both versions need [Architectury API](https://modrinth.com/mod/architectury-api) for their loader, and the Fabric version also needs [Fabric API](https://modrinth.com/mod/fabric-api). Clients and servers must use jars with the same MTM_Logic version (shown in the mod list, and in the jar name `MTR3-MTM-<version>-...`), which is currently 0.64.1. It goes up whenever packets or saved data change.
 
 The simulation component in `transit-sim` is a plain Java project without Minecraft (Java 8 by default, raised when needed), built into the Fabric and Forge jars. `./gradlew :transit-sim:test` runs its tests, and `./gradlew -p transit-sim test --offline` builds and tests it on its own, without Minecraft or a network once its dependencies are cached.
 

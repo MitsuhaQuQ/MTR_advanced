@@ -299,8 +299,11 @@ public class RouteMapGenerator implements IGui {
 				String destinationString = IGui.mergeStations(destinations);
 				final boolean noToString = destinationString.startsWith(TEMP_CIRCULAR_MARKER);
 				destinationString = destinationString.replace(TEMP_CIRCULAR_MARKER, "");
+				// In Traditional Chinese, English and Japanese (2026-11-09)
 				if (!destinationString.isEmpty() && showToString && !noToString) {
-					destinationString = IGui.insertTranslation("gui.mtr.to_cjk", "gui.mtr.to", 1, destinationString);
+					destinationString = mtr.data.SignTexts.to(destinationString);
+				} else {
+					destinationString = mtr.data.SignTexts.ordered(destinationString);
 				}
 
 				final int tilePadding = tileSize / 4;

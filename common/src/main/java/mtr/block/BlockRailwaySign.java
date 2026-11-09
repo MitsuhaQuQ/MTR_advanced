@@ -391,7 +391,10 @@ public class BlockRailwaySign extends BlockDirectionalMapper implements EntityBl
 
 		SignType(String texture, String translation, boolean small, boolean flipTexture, boolean flipCustomText, boolean hasCustomText, int backgroundColor) {
 			textureId = new ResourceLocation("mtr:textures/block/sign/" + texture + ".png");
-			customText = hasCustomText ? Text.translatable("sign.mtr." + translation + "_cjk").append("|").append(Text.translatable("sign.mtr." + translation)).getString() : "";
+			// In Traditional Chinese, English and Japanese whatever the game's language (2026-11-09), or as translated where the
+			// sign's words aren't in that list
+			final String threeLanguages = hasCustomText ? mtr.data.SignTexts.forSign(translation) : null;
+			customText = !hasCustomText ? "" : threeLanguages != null ? threeLanguages : Text.translatable("sign.mtr." + translation + "_cjk").append("|").append(Text.translatable("sign.mtr." + translation)).getString();
 			this.small = small;
 			this.flipTexture = flipTexture;
 			this.flipCustomText = flipCustomText;
