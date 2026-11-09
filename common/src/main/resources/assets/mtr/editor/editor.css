@@ -355,3 +355,7 @@ ul.sync-problems li { margin: 4px 0; }
 ul.sync-problems li.err { color: var(--warn); }
 ul.sync-problems li.hint { color: var(--muted); }
 ul.sync-problems a { cursor: pointer; text-decoration: underline; }
+
+/* A duty's own exception (运用补完 step 3), blue like a service's own times */
+.exception { color: var(--sel); }
+select.exception { border-color: var(--sel); }

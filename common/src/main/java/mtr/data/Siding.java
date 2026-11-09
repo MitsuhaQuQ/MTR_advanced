@@ -98,6 +98,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * @return the rails, empty with no way, or null to search the rails instead
 		 */
 		List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd);
+
+		/**
+		 * @param pathId a named deadhead path of the depot the duty takes (运用补完 step 3), or 0 for the way by its rules
+		 */
+		default List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd, long pathId) {
+			return find(from, to, out, platformEnd);
+		}
 	}
 
 	public static final ThreadLocal<DepotWays> DEPOT_WAYS = new ThreadLocal<>();
@@ -1283,7 +1290,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		if (!dutyPlan.startsOnLine) {
 			// Into the first stop the way the line runs it, where the track sections are there (round 4)
 			final DepotWays ways = DEPOT_WAYS.get();
-			final List<PathData> found = ways == null ? null : ways.find(this, dutyPlan.firstPlatform, true, runningEnd(dutyPlan, true));
+			final List<PathData> found = ways == null ? null : ways.find(this, dutyPlan.firstPlatform, true, runningEnd(dutyPlan, true), transitsim.plan.DutyShapes.getPathId(dutyPlan.key, true));
 			if (found != null) {
 				wayOut.addAll(found);
 			} else {
@@ -1449,10 +1456,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 * is none
 	 */
 	private static List<PathData> getReturnTail(DutyPlan<PathData, SavedRailBase> dutyPlan, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, int cruisingAltitude, boolean useFastSpeed, Map<String, List<PathData>> returnTails) {
-		final List<PathData> tail = returnTails.computeIfAbsent(dutyPlan.lastPlatform.id + ":" + siding.id, key -> {
+		final long backPathId = transitsim.plan.DutyShapes.getPathId(dutyPlan.key, false);
+		final List<PathData> tail = returnTails.computeIfAbsent(dutyPlan.lastPlatform.id + ":" + siding.id + ":" + backPathId, key -> {
 			// Out of the last stop the way the line runs it, where the track sections are there (round 4)
 			final DepotWays ways = DEPOT_WAYS.get();
-			final List<PathData> found = ways == null ? null : ways.find(dutyPlan.lastPlatform, siding, false, runningEnd(dutyPlan, false));
+			final List<PathData> found = ways == null ? null : ways.find(dutyPlan.lastPlatform, siding, false, runningEnd(dutyPlan, false), backPathId);
 			if (found != null) {
 				return found;
 			}

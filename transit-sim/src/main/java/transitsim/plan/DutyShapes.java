@@ -138,8 +138,45 @@ public final class DutyShapes {
 		}
 		final int overnightSlot = getOvernightSlot(slots, slotIndex, weekday);
 		final long startPlatform = overnightSlot < 0 ? 0 : getEndPlatform(slots.get(overnightSlot).getDuty(Math.floorMod(weekday - 1, 7)), routes);
-		return getKey(day.segments, routes, weekday, startPlatform, day.stayOnLine);
+		final String key = getKey(day.segments, routes, weekday, startPlatform, day.stayOnLine);
+		if (key == null) {
+			return null;
+		}
+		// The named deadhead paths out and back, as the duty has them (运用补完 step 3): a path of its own for each
+		final StringBuilder builder = new StringBuilder(key);
+		if (day.outPathId != 0 && overnightSlot < 0) {
+			builder.append(PATH_MARK).append('o').append(day.outPathId);
+		}
+		if (day.backPathId != 0 && !day.stayOnLine) {
+			builder.append(PATH_MARK).append('b').append(day.backPathId);
+		}
+		return builder.toString();
 	}
+
+	/**
+	 * @return the named deadhead path out ({@code out}) or back a duty's key says, or 0 for the way by the rules
+	 */
+	public static long getPathId(String key, boolean out) {
+		if (key == null) {
+			return 0;
+		}
+		final String mark = PATH_MARK + (out ? "o" : "b");
+		final int index = key.indexOf(mark);
+		if (index < 0) {
+			return 0;
+		}
+		int end = index + mark.length();
+		while (end < key.length() && (Character.isDigit(key.charAt(end)) || key.charAt(end) == '-' && end == index + mark.length())) {
+			end++;
+		}
+		try {
+			return Long.parseLong(key.substring(index + mark.length(), end));
+		} catch (NumberFormatException e) {
+			return 0;
+		}
+	}
+
+	private static final String PATH_MARK = "!";
 
 	/**
 	 * @return when the operating day of a time started

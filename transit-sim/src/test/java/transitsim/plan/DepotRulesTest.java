@@ -72,6 +72,18 @@ class DepotRulesTest {
 	}
 
 	@Test
+	void aDutysKeyCarriesTheDeadheadPathsItTakes() {
+		// The paths out and back are in the key, so a duty taking its own gets a path of its own (运用补完 step 3)
+		final String key = "duty|0|1@0-3:0000>depot!o12!b-34";
+		assertEquals(12, DutyShapes.getPathId(key, true));
+		assertEquals(-34, DutyShapes.getPathId(key, false));
+		assertEquals(0, DutyShapes.getPathId("duty|0|1@0-3:0000>depot", true));
+		// With the marks of other ways round after it
+		assertEquals(12, DutyShapes.getPathId(key + "#99~skip:4,5", true));
+		assertEquals(0, DutyShapes.getPathId(null, false));
+	}
+
+	@Test
 	void aDutysOwnExceptionsAreKeptWhenPlannedAgain() {
 		final DepotDuties.DayDuty old = new DepotDuties.DayDuty();
 		old.segments.add(new DepotDuties.Segment(1, 0, 0, -1));

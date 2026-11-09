@@ -534,6 +534,13 @@ public final class RoutePaths {
 	}
 
 	/**
+	 * Through the nodes of a named deadhead path a duty takes on its own (运用补完 step 3), in place of the depot's rules.
+	 */
+	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, DepotLine depotLine, long[] waypoints) {
+		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine == null ? null : depotLine.through(waypoints));
+	}
+
+	/**
 	 * @param keep whether the legs found are kept for later and the save; not for a measurement only for the log, which
 	 *             would otherwise keep every way it tried (optimisation round 4, step 4)
 	 */
@@ -658,6 +665,16 @@ public final class RoutePaths {
 		public DepotLine withWay(long entrance, long[] waypoints) {
 			override = new WayRule(entrance, waypoints);
 			return this;
+		}
+
+		/**
+		 * @return the same routes and rules, every way through these nodes; sharing what is worked out for the routes
+		 */
+		DepotLine through(long[] waypoints) {
+			final DepotLine line = new DepotLine(routes, dataCache, rules, entrancesUnset);
+			line.plans = plans;
+			line.override = new WayRule(0, waypoints);
+			return line;
 		}
 
 		public DepotLine(Collection<Route> routes, DataCache dataCache) {

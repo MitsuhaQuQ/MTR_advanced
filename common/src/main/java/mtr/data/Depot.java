@@ -1104,7 +1104,18 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				if (railwayData != null) {
 					// By the station nearest the siding, then along the line, for a depot anywhere along the line (2026-11-09)
 					final RoutePaths.DepotLine depotLine = new RoutePaths.DepotLine(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache, rules, entrancesUnset);
-					Siding.DEPOT_WAYS.set((from, to, out, platformEnd) -> railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd, depotLine));
+					Siding.DEPOT_WAYS.set(new Siding.DepotWays() {
+						@Override
+						public List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd) {
+							return railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd, depotLine);
+						}
+
+						@Override
+						public List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd, long pathId) {
+							final transitsim.plan.DepotRules.DeadheadPath path = pathId == 0 ? null : rules.getPath(pathId);
+							return path == null ? find(from, to, out, platformEnd) : railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd, depotLine, path.waypoints);
+						}
+					});
 				}
 				try {
 					for (final MainPath mainPath : mainPaths) {

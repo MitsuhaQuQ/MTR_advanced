@@ -2318,6 +2318,7 @@
 					<button data-console-turn="${train.id}" data-route="${train.route}">${tr("提前折返…")}</button>
 					<button data-console-cmd="clearOut" data-train="${train.id}">${tr("下一站清客")}</button>
 					<button data-console-cmd="return" data-train="${train.id}">${tr("指定回库")}</button>
+					<button data-console-clear-return="${train.id}">${tr("下一站清客后回库")}</button>
 					${train.dispatch ? `<button data-console-cmd="cancel" data-train="${train.id}">${tr("撤销")}</button>` : ""}
 				</div>` : "";
 				return `<tr class="${train.id === consoleState.selected ? "sel" : ""}" data-console-train="${train.id}"><td><b>${escapeHtml(consoleTrainName(train))}</b> ${escapeHtml(shortName(train.routeName))}<br>
@@ -2335,6 +2336,11 @@
 			drawNetwork();
 		}));
 		panel.querySelectorAll("[data-console-cmd]").forEach(button => button.addEventListener("click", () => consoleCommand(button, { train: button.dataset.train, command: button.dataset.consoleCmd })));
+		// Cleared at the next station, then back to the depot: the two commands at once (运用补完 step 3)
+		panel.querySelectorAll("[data-console-clear-return]").forEach(button => button.addEventListener("click", async () => {
+			await consoleCommand(null, { train: button.dataset.consoleClearReturn, command: "clearOut" });
+			await consoleCommand(button, { train: button.dataset.consoleClearReturn, command: "return" });
+		}));
 		panel.querySelectorAll("[data-console-extend]").forEach(button => button.addEventListener("click", () => {
 			openDialog(tr("延长停站"), `<label>${tr("多停")} <input type="number" name="seconds" min="1" max="1800" value="60"> ${tr("秒")}</label><p class="hint">${tr("正停在站上的就在这一站，正在跑的在下一站。")}</p>`, tr("发送"), form => {
 				const seconds = Math.round(Number(form.seconds.value));
@@ -3055,7 +3061,7 @@
 		const height = wrap.clientHeight;
 		const totalGap = line.rows.reduce((a, row) => a + row.gap, 0) || 1;
 		// Room above the first station and below the last for the depots' rows beside them (drawDepotLegs)
-		const depotRoom = data.depots.some(depot => dutiesOf(depot).mode === "diagram" && depot.sidings.some(siding => siding.legs)) ? DEPOT_ROW_ROOM : 0;
+		const depotRoom = showDepots && data.depots.some(depot => dutiesOf(depot).mode === "diagram" && depot.sidings.some(siding => siding.legs)) ? DEPOT_ROW_ROOM : 0;
 		const unit = Math.max(MIN_ROW_GAP, (height - AXIS_H - PAD_BOTTOM - 12 - depotRoom * 2) / totalGap);
 		let y = AXIS_H + 12 + depotRoom;
 		const ys = line.rows.map(row => (y += row.gap * unit));
@@ -3322,7 +3328,9 @@
 		}
 		ctx.setLineDash([]);
 		drawTerminalLinks(line, yOf, c, w);
-		drawDepotLegs(line, yOf, c, w, layout.ys.length > 1 ? layout.ys[1] - layout.ys[0] : MIN_ROW_GAP);
+		// The depots' rows and the deadheads out and back, unless hidden (2026-11-09)
+		if (showDepots) drawDepotLegs(line, yOf, c, w, layout.ys.length > 1 ? layout.ys[1] - layout.ys[0] : MIN_ROW_GAP);
+		else legsDrawn = [];
 		drawSimulated(line, yOf, c, w);
 		if (slotPoints.length) {
 			ctx.fillStyle = c.warn;
@@ -3485,43 +3493,44 @@
 					const key = depot.id + ":" + baseRow;
 					if (!depotRows.has(key)) depotRows.set(key, { y: depotY, name: shortName(depot.name) || tr("车厂") });
 					const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index;
-					ctx.strokeStyle = active ? c.warn : c.muted;
-					ctx.lineWidth = active ? 2 : 1;
-					ctx.setLineDash([4, 3]);
 					const sidingName = shortName(siding.name) || tr("存车线");
+					const deadheads = deadheadTimes(siding, day);
+					// A deadhead as planned, blue where set for the duty alone (运用补完 step 3), moved while being dragged
+					const style = exception => {
+						ctx.strokeStyle = active ? c.warn : exception ? c.sel : c.muted;
+						ctx.lineWidth = active || exception ? 2 : 1;
+						ctx.setLineDash([4, 3]);
+					};
 					// Out to the first stop
-					const firstTimes = timesOf(firstService), outMillis = legs.out[firstService.route.stops[first.from].platformId];
-					if (outMillis !== undefined) {
-						const arrive = firstTimes[first.from][0], leave = arrive - outMillis - 15000;
-						const a = [xOf(leave), depotY], b = [xOf(arrive), yOf(firstService.route.rows[first.from])];
+					if (deadheads.out) {
+						const dragged = drag && drag.deadhead && drag.deadhead.depot === depot.id && drag.deadhead.siding === siding.id && drag.deadhead.index === index ? drag.deadhead.shift || 0 : 0;
+						const leave = deadheads.out.leave + dragged;
+						const a = [xOf(leave), depotY], b = [xOf(deadheads.out.arrive), yOf(deadheads.out.row)];
+						style(deadheads.out.exception || dragged !== 0);
 						ctx.beginPath();
 						ctx.moveTo(...a);
 						ctx.lineTo(...b);
 						ctx.stroke();
-						legsDrawn.push({ a, b, depot: depot.id, siding: siding.id, index, text: tr("出库 {0} ← {1} {2}", clock(leave, true), shortName(depot.name), sidingName) });
+						legsDrawn.push({ a, b, kind: "out", depot: depot.id, siding: siding.id, index, text: `${deadheads.out.number} ${tr("出库 {0} ← {1} {2}", clock(leave, true), shortName(depot.name), sidingName)}${deadheads.out.exception ? tr("（这份运用的例外）") : ""}` });
 						if (state.pxPerMin >= 3) {
-							ctx.fillStyle = c.muted;
+							ctx.fillStyle = ctx.strokeStyle;
 							ctx.textAlign = "right";
-							ctx.fillText(clock(leave), a[0] - 2, depotY + (side < 0 ? -2 : 9));
+							ctx.fillText(`${deadheads.out.number} ${clock(leave)}`, a[0] - 2, depotY + (side < 0 ? -2 : 9));
 						}
 					}
 					// Back from the last stop, unless the train stays on the line
-					if (!day.stay && lastService && lineRoutes.has(lastService.route.id)) {
-						const lastStop = lastStopOf(last, lastService.route), backMillis = legs.back[lastService.route.stops[lastStop].platformId];
-						if (backMillis !== undefined) {
-							// Measured from where the train leaves the last stop, after its stop there
-							const lastTimes = timesOf(lastService)[lastStop], leave = Math.max(lastTimes[0], lastTimes[1]), home = leave + backMillis;
-							const a = [xOf(leave), yOf(lastService.route.rows[lastStop])], b = [xOf(home), depotY];
-							ctx.beginPath();
-							ctx.moveTo(...a);
-							ctx.lineTo(...b);
-							ctx.stroke();
-							legsDrawn.push({ a, b, depot: depot.id, siding: siding.id, index, text: tr("回库 {0} → {1} {2}", clock(home, true), shortName(depot.name), sidingName) });
-							if (state.pxPerMin >= 3) {
-								ctx.fillStyle = c.muted;
-								ctx.textAlign = "left";
-								ctx.fillText(clock(home), b[0] + 2, depotY + (side < 0 ? -2 : 9));
-							}
+					if (deadheads.back && lineRoutes.has(lastService.route.id)) {
+						const a = [xOf(deadheads.back.leave), yOf(deadheads.back.row)], b = [xOf(deadheads.back.home), depotY];
+						style(deadheads.back.exception);
+						ctx.beginPath();
+						ctx.moveTo(...a);
+						ctx.lineTo(...b);
+						ctx.stroke();
+						legsDrawn.push({ a, b, kind: "back", depot: depot.id, siding: siding.id, index, text: `${deadheads.back.number} ${tr("回库 {0} → {1} {2}", clock(deadheads.back.home, true), shortName(depot.name), sidingName)}${deadheads.back.exception ? tr("（这份运用的例外）") : ""}` });
+						if (state.pxPerMin >= 3) {
+							ctx.fillStyle = ctx.strokeStyle;
+							ctx.textAlign = "left";
+							ctx.fillText(`${deadheads.back.number} ${clock(deadheads.back.home)}`, b[0] + 2, depotY + (side < 0 ? -2 : 9));
 						}
 					}
 					ctx.setLineDash([]);
@@ -3855,9 +3864,46 @@
 	// ---------- Summary timetable ----------
 	let tableRoute = null;
 	/** The head of a service's column: its time, which starts editing it, and notes. */
+	/**
+	 * Whether the timetable shows the deadheads of the duties (运用补完 step 3), by the services they join and leave.
+	 */
+	let showDeadheads = false;
+	try { showDeadheads = localStorage.getItem("mtr-editor-show-deadheads") === "1"; } catch (e) {}
+
+	/**
+	 * @return service → the deadhead out of a depot to it and back after it, as {out, back, depot}, on the day shown
+	 */
+	function deadheadsByService() {
+		const index = new Map();
+		if (!data) return index;
+		data.depots.forEach(depot => {
+			const duties = dutiesOf(depot);
+			if (duties.mode !== "diagram") return;
+			depot.sidings.forEach(siding => (duties.sidings[siding.id] || []).forEach(slot => {
+				const day = dutyOn(slot, state.weekday);
+				if (!day || !day.segments.length) return;
+				const times = deadheadTimes(siding, day);
+				const first = segmentService(day.segments[0]), last = segmentService(day.segments[day.segments.length - 1]);
+				const name = shortName(depot.name) || tr("车厂");
+				if (first && times.out) index.set(first.id, Object.assign(index.get(first.id) || {}, { out: times.out, depot: name }));
+				if (last && times.back) index.set(last.id, Object.assign(index.get(last.id) || {}, { back: times.back, depot: name }));
+			}));
+		});
+		return index;
+	}
+	let deadheadIndex = new Map();
+
+	function deadheadNotes(s) {
+		const deadheads = showDeadheads && deadheadIndex.get(s.id);
+		if (!deadheads) return "";
+		const out = deadheads.out ? `<span class="note${deadheads.out.exception ? " exception" : ""}" title="${tr("出库回送")}">${escapeHtml(deadheads.out.number)} ${clock(deadheads.out.leave, true)} ← ${escapeHtml(deadheads.depot)}</span>` : "";
+		const back = deadheads.back ? `<span class="note${deadheads.back.exception ? " exception" : ""}" title="${tr("回库回送")}">${escapeHtml(deadheads.back.number)} → ${escapeHtml(deadheads.depot)} ${clock(deadheads.back.home, true)}</span>` : "";
+		return out + back;
+	}
+
 	function serviceHead(s, selected, notes) {
 		const noTrain = !s.suspended && hasNoTrain(s);
-		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}${s.suspended ? " suspended" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${s.suspended ? tr("停运：留在表里，不出车、不排运用，右键恢复") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${s.suspended ? `<span class="note suspended-note">${tr("停运")}</span>` : ""}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link && s.link.fromStop < 0 && s.link.toStop === 0 ? `<span class="note">${tr("接 {0}", clock(mod(s.link.toService - data.dayStartMillis, DAY)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
+		return `<th class="svc-head${selected ? " hl" : ""}${noTrain ? " no-train" : ""}${s.suspended ? " suspended" : ""}" data-svc="${s.id}" data-stop="0" data-kind="dep" title="${noTrain ? tr("没有车跑这一班") + "\n" : ""}${s.suspended ? tr("停运：留在表里，不出车、不排运用，右键恢复") + "\n" : ""}${tr("点这里改班次时刻；右键更多")}"><span class="time">${clock(s.start)}${s.exceptions ? `<span class="exc-mark" title="${tr("有只改这一班的例外")}"> *</span>` : ""}</span>${notes}${deadheadNotes(s)}${s.suspended ? `<span class="note suspended-note">${tr("停运")}</span>` : ""}${s.deployOrder ? `<span class="note">${tr("出车 ← {0}", escapeHtml(orderDepotName(s.deployOrder)))}</span>` : ""}${s.returnOrder ? `<span class="note">${tr("回送 → {0}", escapeHtml(orderDepotName(s.returnOrder)))}</span>` : s.link && s.link.fromStop < 0 && s.link.toStop === 0 ? `<span class="note">${tr("接 {0}", clock(mod(s.link.toService - data.dayStartMillis, DAY)))}</span>` : s.link ? `<span class="note">${tr("直通")}</span>` : s.returns ? `<span class="note">${tr("回库")}</span>` : ""}</th>`;
 	}
 
 	/** A service's arrival, departure or passing time at a stop, as a cell to click and type into. @param t its times there */
@@ -3914,7 +3960,7 @@
 		const position = new Map(order.map((row, t) => [row, t]));
 		const ends = w => [...new Set(ways[w].map(r => shortName(r.stops[r.stops.length - 1].name)))].join(tr("、"));
 		const services = ways[way].flatMap(r => r.services).sort((a, b) => a.start - b.start);
-		const tools = `<div class="tt-tools"><b>${escapeHtml(shortName(line.name))}</b><span class="hint">${tr("{0} · {1} 班 · 在左边选一个种别可以改表和添加班次", WEEKDAY_NAMES[state.weekday], services.length)}</span></div>
+		const tools = `<div class="tt-tools"><b>${escapeHtml(shortName(line.name))}</b><span class="hint">${tr("{0} · {1} 班 · 在左边选一个种别可以改表和添加班次", WEEKDAY_NAMES[state.weekday], services.length)}</span><label class="hint"><input type="checkbox" data-show-deadheads${showDeadheads ? " checked" : ""}> ${tr("显示回送")}</label></div>
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("方向")}</span>${[0, 1].filter(w => ways[w].length).map(w => `<button class="table-chip${w === way ? " on" : ""}" data-way="${w}">${tr("往{0}", escapeHtml(ends(w)))}</button>`).join("")}</div>`;
 		if (!services.length) {
 			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
@@ -3967,6 +4013,7 @@
 	}
 
 	function renderTable() {
+		deadheadIndex = showDeadheads ? deadheadsByService() : new Map();
 		const view = $("view-table");
 		if (!showsTable()) return;
 		const line = currentLine();
@@ -3990,7 +4037,7 @@
 			<div class="tt-tools"><span class="hint" style="flex:none">${tr("表")}</span>${timetable.tables.map((table, i) => `<button class="table-chip${i === today ? " on" : ""}" data-table="${i}" title="${tr("切到这张表运行的第一天；右键改名、改星期或删除")}">${escapeHtml(tableName(table, i))} · ${daysText(table.weekdays)}</button>`).join("")}<button class="table-chip" data-new-table>${tr("＋ 新建表")}</button>
 			${today >= 0 ? `<label class="hint" title="${tr("运行时分按这组性能算，换车型时刻表不变；跑这条线的车比它慢时会提示")}">${tr("最低性能")} ${tr("加速")} <input class="perf" data-perf="a" value="${perfText(timetable.tables[today], "a")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("减速")} <input class="perf" data-perf="d" value="${perfText(timetable.tables[today], "d")}" inputmode="decimal" style="width:3.5em"> m/s² ${tr("最高")} <input class="perf" data-perf="v" value="${perfText(timetable.tables[today], "v")}" inputmode="numeric" style="width:3.5em"> km/h</label>` : ""}
 			<label class="hint"><input type="checkbox" data-enabled ${timetable.enabled ? "checked" : ""}> ${tr("启用时刻表")}</label></div>
-			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("间隔 5")}" title="${tr("期望间隔，分钟（也可以写 04:30 表示 4 分 30 秒）")}" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:5em"><button data-add-service>${tr("添加")}</button><button data-clear-table title="${tr("删掉这张表的全部班次，连同直通、回库、出入库指令和例外；表本身、停站时分和运行的星期保留")}">${tr("清空")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
+			${today >= 0 ? `<div class="tt-tools"><label for="add-service">${tr("添加班次")}</label><input id="add-service" placeholder="${tr("起始 07:10")}" title="${tr("起始时刻；也可以写 07:10 + 10 * 00:03")}" autocomplete="off" value="${escapeHtml(addInputs.start)}"><input id="add-end" placeholder="${tr("结束 09:10")}" autocomplete="off" value="${escapeHtml(addInputs.end)}" style="width:7em"><input id="add-count" placeholder="${tr("间隔 5")}" title="${tr("期望间隔，分钟（也可以写 04:30 表示 4 分 30 秒）")}" autocomplete="off" value="${escapeHtml(addInputs.count)}" style="width:5em"><button data-add-service>${tr("添加")}</button><label class="hint"><input type="checkbox" data-show-deadheads${showDeadheads ? " checked" : ""}> ${tr("显示回送")}</label><button data-clear-table title="${tr("删掉这张表的全部班次，连同直通、回库、出入库指令和例外；表本身、停站时分和运行的星期保留")}">${tr("清空")}</button><span class="err">${escapeHtml(tableMessage)}</span></div>` : `<div class="tt-tools"><span class="err">${tr("{0}没有表，这一天不运行。{1}", WEEKDAY_NAMES[state.weekday], escapeHtml(tableMessage))}</span></div>`}`;
 		if (!services.length) {
 			view.innerHTML = tools + `<div class="table-empty">${tr("这条线路{0}没有班次", WEEKDAY_NAMES[state.weekday])}</div>`;
 			return;
@@ -4369,10 +4416,9 @@
 				setStopException(table, s.service, stop, { run: -1, dwell: -1 });
 			})]);
 			if (exception) items.push([tr("恢复按表的时刻"), () => edit(table => setStopException(table, s.service, stop, { run: -1, dwell: -1, pass: -1, overtake: -1 }))]);
-			// Joined or left part of the way by a train from or to a depot, set by hand
-			if (!s.link && stop < n - 1 && (!s.returnOrder || stop < s.returnOrder.stop)) items.push([s.deployOrder && s.deployOrder.stop === stop ? tr("改出车的车厂…") : tr("从这一站出车…"), () => serviceOrderDialog(s, "deploy", stop)]);
-			// The depots right in the menu: those running the line first, then the others
-			if (stop > 0 && (!s.deployOrder || stop > s.deployOrder.stop)) items.push([tr("回送"), orderDepotItems(s, "return", stop)]);
+			// Sending a train out or back part of the way is a dispatcher's command now, given to a running train in the console
+			// (运用补完 step 3, user: 时刻表里拿掉); orders already set are still shown and can be taken back here
+			if (s.deployOrder && s.deployOrder.stop === stop) items.push([tr("改出车的车厂…"), () => serviceOrderDialog(s, "deploy", stop)]);
 			if (s.deployOrder) items.push([tr("取消出车指令"), () => edit(table => setServiceOrder(table, s.service, "deploy", 0, null))]);
 			if (s.returnOrder) items.push([tr("取消回送"), () => edit(table => setServiceOrder(table, s.service, "return", 0, null))]);
 			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`${tr("设为出库列车接入这条环线的站")}`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
@@ -4581,6 +4627,8 @@
 			// The duty's own number, the same on all its days (P2-D), and where it goes on to and back to
 			duty: dutyIdOf(slot) || newDutyId(), nextDuty: current && current.nextDuty || "0", returnSiding: current && current.returnSiding || "0", fromOvernight: false, start: startOf(slot),
 		};
+		// Where it waits, when it leaves, its deadhead paths and its own exceptions, as the day it was split from (运用补完)
+		if (current) ["waits", "outLead", "outEntrance", "backEntrance", "outPath", "backPath", "exceptions"].forEach(key => { if (current[key] !== undefined) made[key] = JSON.parse(JSON.stringify(current[key])); });
 		slot.forEach(day => { day.days &= ~group; });
 		for (let i = slot.length - 1; i >= 0; i--) if (!slot[i].days) slot.splice(i, 1);
 		slot.push(made);
@@ -4677,6 +4725,9 @@
 
 	let showNoTrain = false;
 	try { showNoTrain = localStorage.getItem("mtr-editor-show-no-train") === "1"; } catch (e) {}
+	/** Whether the diagram shows the depots' rows and the deadheads out and back. */
+	let showDepots = true;
+	try { showDepots = localStorage.getItem("mtr-editor-show-depots") !== "0"; } catch (e) {}
 
 	/** Where each service is run on the chosen day: route@service → {depot, siding, index}. */
 	function dutyAssignments() {
@@ -4934,7 +4985,11 @@
 			const s = segmentService(segment), r = data.routeById.get(segment.route);
 			const where = r ? `${shortName(r.stops[segment.from] ? r.stops[segment.from].name : "?")} → ${shortName(r.stops[lastStopOf(segment, r)] ? r.stops[lastStopOf(segment, r)].name : "?")}` : tr("已删除的线路");
 			const goesOn = i + 1 < day.segments.length && terminalNow().next.get(segmentKey(segment));
-			return `<li><span class="num">${s ? clock(segmentStart(segment)) + "–" + clock(segmentEnd(segment)) : "--:--"}</span> ${escapeHtml(r ? shortName(r.name) : "?")} <span class="muted">${escapeHtml(where)}</span><button class="link" data-remove-segment="${i}" title="${tr("移出这一班")}">×</button>${goesOn ? `<div class="hint">${escapeHtml(terminalText(goesOn))}</div>` : ""}${problemAt(i)}</li>`;
+			// Where the train waits for the next service (运用补完 step 3): as planned, or set for the duty alone
+			const wait = day.waits && i < day.waits.length ? day.waits[i] : 0;
+			const waitOwn = (day.exceptions || 0) & EXCEPTION.WAITS;
+			const waitSelect = i + 1 < day.segments.length && data.canEdit ? `<div class="hint">${tr("等候")} <select data-duty-wait="${i}"${waitOwn ? ' class="exception"' : ""}>${[[0, tr("运行时定")], [1, tr("在站台等")], [2, tr("去折返线等")], [3, tr("换站台再发")]].map(([value, text]) => `<option value="${value}"${value === wait ? " selected" : ""}>${text}</option>`).join("")}</select>${waitOwn ? ` <span class="exception">${tr("例外")}</span>` : ""}</div>` : "";
+			return `<li><span class="num">${s ? clock(segmentStart(segment)) + "–" + clock(segmentEnd(segment)) : "--:--"}</span> ${escapeHtml(r ? shortName(r.name) : "?")} <span class="muted">${escapeHtml(where)}</span><button class="link" data-remove-segment="${i}" title="${tr("移出这一班")}">×</button>${goesOn ? `<div class="hint">${escapeHtml(terminalText(goesOn))}</div>` : ""}${waitSelect}${problemAt(i)}</li>`;
 		}).join("") : "";
 		return `<h2>${tr("运用：车 {0}", state.slot.index + 1)}</h2><div class="card"><div class="title">${escapeHtml(shortName(depot.name))} · ${escapeHtml(shortName(siding.name) || tr("存车线"))}</div>
 			<dl class="kv"><dt>${tr("运行日")}</dt><dd>${daysText(group)}${day && day.days !== group ? `${tr("（现在和 {0} 共用，改了会分开）", daysText(day.days & ~group))}` : ""}</dd>
@@ -4974,18 +5029,113 @@
 	 * running diagram draws them; "--:--" where not known yet.
 	 */
 	function legTimes(siding, day) {
+		const times = deadheadTimes(siding, day);
+		const mark = exception => exception ? " ✎" : "";
+		return {
+			out: times.out ? `${times.out.number} ${clock(times.out.leave, true)}${mark(times.out.exception)}` : "--:--",
+			home: day.stay ? tr("留线") : times.back ? `${times.back.number} ${clock(times.back.home, true)}${mark(times.back.exception)}` : "--:--",
+		};
+	}
+
+	// The exceptions a duty may have on its own (运用补完 step 2, DepotDuties.DayDuty.EXCEPTION_*)
+	const EXCEPTION = { OUT_LEAD: 1, OUT_PATH: 2, BACK_SIDING: 4, BACK_PATH: 8, WAITS: 16, ENTRANCES: 32 };
+	const hhmm = millis => clock(millis).replace(":", "");
+
+	/**
+	 * A duty's deadheads (回送, 运用补完 step 3): out of the siding to its first service and back after its last, each with
+	 * its number (出 or 回 and the time of the service it joins or leaves), when it leaves and gets there as planned (how
+	 * long before the first service the duty has the train leave, never sooner than its way out takes; the way out and 15
+	 * seconds for a duty planned before), and whether it was set for the duty alone.
+	 */
+	function deadheadTimes(siding, day) {
 		const legs = siding.legs, first = day.segments[0], last = day.segments[day.segments.length - 1];
-		const firstService = segmentService(first), lastService = segmentService(last);
-		let out = "--:--", home = day.stay ? tr("留线") : "--:--";
-		if (legs && firstService) {
+		const firstService = first && segmentService(first), lastService = last && segmentService(last);
+		const result = { out: null, back: null };
+		const exceptions = day.exceptions || 0;
+		if (legs && firstService && !day.fromOvernight) {
 			const millis = legs.out[firstService.route.stops[first.from].platformId];
-			if (millis !== undefined) out = clock(timesOf(firstService)[first.from][0] - millis - 15000, true);
+			if (millis !== undefined) {
+				const times = timesOf(firstService)[first.from];
+				const lead = day.outLead >= 0 ? Math.max(day.outLead, millis) : millis + 15000;
+				result.out = { number: tr("出{0}", hhmm(times[1])), leave: times[1] - lead, arrive: times[0], lead, wayOut: millis, row: firstService.route.rows[first.from], exception: (exceptions & (EXCEPTION.OUT_LEAD | EXCEPTION.OUT_PATH | EXCEPTION.ENTRANCES)) !== 0, path: day.outPath };
+			}
 		}
 		if (legs && lastService && !day.stay) {
 			const lastStop = lastStopOf(last, lastService.route), millis = legs.back[lastService.route.stops[lastStop].platformId];
-			if (millis !== undefined) home = clock(timesOf(lastService)[lastStop][0] + millis, true);
+			if (millis !== undefined) {
+				const times = timesOf(lastService)[lastStop], leave = Math.max(times[0], times[1]);
+				result.back = { number: tr("回{0}", hhmm(times[0])), leave, home: leave + millis, row: lastService.route.rows[lastStop], exception: (exceptions & (EXCEPTION.BACK_SIDING | EXCEPTION.BACK_PATH)) !== 0, siding: day.returnSiding, path: day.backPath };
+			}
 		}
-		return { out, home };
+		return result;
+	}
+
+	/**
+	 * Changes a duty's own deadhead or wait as an exception (运用补完 step 3), in the draft of its depot's duties.
+	 */
+	function editDutyException(depot, sidingId, index, change) {
+		editDuties(depot, duties => {
+			const slot = duties.sidings[sidingId] && duties.sidings[sidingId][index];
+			if (!slot) return;
+			const day = dutyForEditing(depot, slot, state.weekday);
+			return change(day);
+		});
+	}
+
+	/** The menu of a duty's deadhead on the diagram: its time, path or siding, or back to the rules. */
+	function deadheadMenu(e, leg) {
+		const depot = depotById(leg.depot);
+		const siding = depot && depot.sidings.find(o => o.id === leg.siding);
+		const slot = siding && (dutiesOf(depot).sidings[siding.id] || [])[leg.index];
+		const day = slot && dutyOn(slot, state.weekday);
+		if (!day) {
+			openMenuAt(e, []);
+			return;
+		}
+		const canEdit = data.canEdit;
+		const paths = (rulesOf(depot).paths || []).filter(path => path.kind === (leg.kind === "out" ? "out" : "back"));
+		const pathItems = [[`${!day[leg.kind === "out" ? "outPath" : "backPath"] || day[leg.kind === "out" ? "outPath" : "backPath"] === "0" ? "✓ " : ""}${tr("最近车站后顺线路方向（默认）")}`, () => editDutyException(depot, siding.id, leg.index, edited => {
+			edited[leg.kind === "out" ? "outPath" : "backPath"] = "0";
+			edited.exceptions = (edited.exceptions || 0) | (leg.kind === "out" ? EXCEPTION.OUT_PATH : EXCEPTION.BACK_PATH);
+		})], ...paths.map(path => [`${day[leg.kind === "out" ? "outPath" : "backPath"] === path.id ? "✓ " : ""}${path.name || path.id}`, () => editDutyException(depot, siding.id, leg.index, edited => {
+			edited[leg.kind === "out" ? "outPath" : "backPath"] = path.id;
+			edited.exceptions = (edited.exceptions || 0) | (leg.kind === "out" ? EXCEPTION.OUT_PATH : EXCEPTION.BACK_PATH);
+		})])];
+		const items = [];
+		if (leg.kind === "out") {
+			items.push([tr("出库提前量…"), canEdit ? () => {
+				const times = deadheadTimes(siding, day).out;
+				const text = prompt(tr("比首班早多少出库（秒，不少于出库路线用时 {0} 秒）", Math.round(times.wayOut / 1000)), String(Math.round(times.lead / 1000)));
+				if (text === null) return;
+				const seconds = Math.round(Number(text));
+				if (!(seconds >= 0)) return;
+				editDutyException(depot, siding.id, leg.index, edited => {
+					edited.outLead = Math.max(times.wayOut, seconds * 1000);
+					edited.exceptions = (edited.exceptions || 0) | EXCEPTION.OUT_LEAD;
+					return tr("{0} 改为首班前 {1} 出库（这份运用的例外）", times.number, durationText(edited.outLead));
+				});
+			} : null]);
+			items.push([tr("出库路径"), canEdit ? pathItems : null]);
+			items.push([tr("按规则恢复"), canEdit && (day.exceptions & (EXCEPTION.OUT_LEAD | EXCEPTION.OUT_PATH | EXCEPTION.ENTRANCES)) ? () => editDutyException(depot, siding.id, leg.index, edited => {
+				edited.exceptions = (edited.exceptions || 0) & ~(EXCEPTION.OUT_LEAD | EXCEPTION.OUT_PATH | EXCEPTION.ENTRANCES);
+				return tr("出库按规则，重新排运用时按规则重算");
+			}) : null]);
+		} else {
+			items.push([tr("回库存车线"), canEdit ? poolSidings(depot, siding.id).map(other => [`${day.returnSiding === other.id ? "✓ " : ""}${shortName(other.name) || tr("存车线")}`, () => editDutyException(depot, siding.id, leg.index, edited => {
+				edited.returnSiding = other.id;
+				edited.exceptions = (edited.exceptions || 0) | EXCEPTION.BACK_SIDING;
+			})]) : null]);
+			items.push([tr("回库路径"), canEdit ? pathItems : null]);
+			items.push([tr("按规则恢复"), canEdit && (day.exceptions & (EXCEPTION.BACK_SIDING | EXCEPTION.BACK_PATH)) ? () => editDutyException(depot, siding.id, leg.index, edited => {
+				edited.exceptions = (edited.exceptions || 0) & ~(EXCEPTION.BACK_SIDING | EXCEPTION.BACK_PATH);
+				return tr("回库按规则，重新排运用时按规则重算");
+			}) : null]);
+		}
+		items.push([tr("选中这份运用"), () => {
+			state.slot = { depot: depot.id, siding: siding.id, index: leg.index };
+			renderAll();
+		}]);
+		openMenuAt(e, items);
 	}
 
 	function releasePlanDialog(depot) {
@@ -7453,7 +7603,22 @@
 		}
 		if (e.target.matches("[data-duty-return]") && depot) {
 			const returnSiding = e.target.value;
-			editDuties(depot, duties => { dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday).returnSiding = returnSiding; });
+			editDuties(depot, duties => {
+				const day = dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday);
+				day.returnSiding = returnSiding;
+				// Set by hand: kept when the duties are planned again (运用补完 step 2)
+				day.exceptions = returnSiding === "0" ? (day.exceptions || 0) & ~EXCEPTION.BACK_SIDING : (day.exceptions || 0) | EXCEPTION.BACK_SIDING;
+			});
+		}
+		if (e.target.matches("[data-duty-wait]") && depot) {
+			const i = +e.target.dataset.dutyWait, wait = +e.target.value;
+			editDuties(depot, duties => {
+				const day = dutyForEditing(depot, duties.sidings[state.slot.siding][state.slot.index], state.weekday);
+				const waits = Array.isArray(day.waits) && day.waits.length === day.segments.length - 1 ? day.waits : new Array(Math.max(0, day.segments.length - 1)).fill(0);
+				waits[i] = wait;
+				day.waits = waits;
+				day.exceptions = (day.exceptions || 0) | EXCEPTION.WAITS;
+			});
 		}
 		if (e.target.matches("[data-duty-stay]") && depot) {
 			const stay = e.target.checked;
@@ -7470,6 +7635,12 @@
 	$("btn-zoom-in").addEventListener("click", () => zoom(1));
 	$("btn-sync").addEventListener("click", syncDialog);
 	$("btn-no-train").setAttribute("aria-pressed", String(showNoTrain));
+	$("chk-depots").checked = showDepots;
+	$("chk-depots").addEventListener("change", e => {
+		showDepots = e.target.checked;
+		try { localStorage.setItem("mtr-editor-show-depots", showDepots ? "1" : "0"); } catch (error) {}
+		draw();
+	});
 	$("btn-no-train").addEventListener("click", () => {
 		showNoTrain = !showNoTrain;
 		$("btn-no-train").setAttribute("aria-pressed", String(showNoTrain));
@@ -7582,6 +7753,12 @@
 	}
 
 	$("view-table").addEventListener("change", e => {
+		if (e.target.matches("[data-show-deadheads]")) {
+			showDeadheads = e.target.checked;
+			try { localStorage.setItem("mtr-editor-show-deadheads", showDeadheads ? "1" : "0"); } catch (error) {}
+			renderTable();
+			return;
+		}
 		const r = tableRouteOf();
 		if (!r) return;
 		if (e.target.matches("[data-perf]")) {
@@ -7709,6 +7886,13 @@
 		const ids = s ? servicesToMove(s) : null;
 		const chosen = !ids ? 0 : inRange(s) ? state.range.ids.length : state.selectedRoute === s.route.id ? s.route.services.filter(o => o.tableIndex === s.tableIndex).length : 1;
 		dragFine = e.altKey;
+		// A duty's run out of its depot, dragged to leave earlier or later (运用补完 step 3)
+		const leg = !handle && !s && data && data.canEdit && !state.slot ? hitDepotLeg(e.clientX - box.left, e.clientY - box.top) : null;
+		if (leg && leg.kind === "out") {
+			drag = { deadhead: { depot: leg.depot, siding: leg.siding, index: leg.index, shift: 0 }, x: e.clientX, y: e.clientY, moved: false, leg };
+			canvas.setPointerCapture(e.pointerId);
+			return;
+		}
 		drag = handle ? { handle, moved: false } : ids ? { move: ids, kept: chosen - ids.length, x: e.clientX, y: e.clientY, moved: false } : { x: e.clientX, y: e.clientY, viewStart: state.viewStart, scrollY: state.scrollY, moved: false };
 		canvas.setPointerCapture(e.pointerId);
 	});
@@ -7719,6 +7903,18 @@
 			dragFine = e.altKey;
 			canvas.classList.add("dragging");
 			dragDwell(drag.handle, e.clientX - box.left);
+			return;
+		}
+		if (drag && drag.deadhead) {
+			const dx = e.clientX - drag.x;
+			if (Math.abs(dx) > 3) drag.moved = true;
+			if (drag.moved) {
+				canvas.classList.add("dragging");
+				drag.deadhead.shift = moveShift(dx, e.altKey);
+				const shift = drag.deadhead.shift;
+				showDragTip(tr("出库 {0}{1}", shift >= 0 ? tr("晚 ") : tr("早 "), durationText(Math.abs(shift))), e.clientX, e.clientY);
+				draw();
+			}
 			return;
 		}
 		if (drag && drag.move) {
@@ -7752,6 +7948,31 @@
 	});
 	canvas.addEventListener("pointerup", e => {
 		const box = canvas.getBoundingClientRect();
+		if (drag && drag.deadhead && drag.moved) {
+			const moved = drag.deadhead;
+			drag = null;
+			showDragTip(null);
+			canvas.classList.remove("dragging");
+			const depot = depotById(moved.depot), siding = depot && depot.sidings.find(o => o.id === moved.siding);
+			const slot = siding && (dutiesOf(depot).sidings[siding.id] || [])[moved.index];
+			const day = slot && dutyOn(slot, state.weekday);
+			const out = day && deadheadTimes(siding, day).out;
+			if (out && moved.shift) {
+				editDutyException(depot, siding.id, moved.index, edited => {
+					// Leaving later is a shorter lead, never shorter than the way out takes
+					edited.outLead = Math.max(out.wayOut, out.lead - moved.shift);
+					edited.exceptions = (edited.exceptions || 0) | EXCEPTION.OUT_LEAD;
+					return tr("{0} 改为首班前 {1} 出库（这份运用的例外）", out.number, durationText(edited.outLead));
+				});
+			} else {
+				draw();
+			}
+			return;
+		}
+		if (drag && drag.deadhead) {
+			// A click on the run out: as a click on a depot's run, choosing its duty
+			drag = { x: drag.x, y: drag.y, moved: false };
+		}
 		if (drag && drag.move && drag.moved) {
 			const move = state.move;
 			state.move = null;
@@ -7813,6 +8034,12 @@
 	canvas.addEventListener("contextmenu", e => {
 		const box = canvas.getBoundingClientRect();
 		const s = data && hitService(e.clientX - box.left, e.clientY - box.top);
+		const leg = !s && data ? hitDepotLeg(e.clientX - box.left, e.clientY - box.top) : null;
+		if (leg) {
+			e.preventDefault();
+			deadheadMenu(e, leg);
+			return;
+		}
 		if (!s) return;
 		e.preventDefault();
 		const later = laterServices(s);
