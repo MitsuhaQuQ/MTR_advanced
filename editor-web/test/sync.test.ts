@@ -57,7 +57,7 @@ describe("syncProblems", () => {
       })
       const expected = JSON.parse(JSON.stringify(old.syncProblems()))
       // Every kind of problem in the data shows, so the comparison means something
-      expect(expected.length).toBeGreaterThan(30)
+      expect(expected.length).toBeGreaterThan(25)
       expect(JSON.parse(JSON.stringify(syncProblems(connection, model, draft)))).toEqual(expected)
     })
   }

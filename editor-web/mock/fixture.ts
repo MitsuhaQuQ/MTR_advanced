@@ -32,6 +32,21 @@ function route(id: string, name: string, line: string, color: number, lineColor:
 const L1: StopIn[] = [["s1", "港湾|Harbour", "1"], ["s2", "码头街|Pier St", "1"], ["s3", "中央广场|Central Sq", "1"], ["s4", "市政厅|City Hall", "1"], ["s5", "西门|West Gate", "1"], ["s6", "北湖|North Lake", "1"]]
 const L2: StopIn[] = [["t1", "机场|Airport", "1"], ["t2", "会展中心|Expo", "1"], ["s3", "中央广场|Central Sq", "3"], ["t4", "东站|East", "1"]]
 
+/**
+ * Duties of the north depot by its diagram: six trains, each going north on route 101 and back south on 102 three times
+ * in the morning, then home. The rest of the day's services have no train (the board's "没车" row).
+ */
+function exampleDuties() {
+  const slot = (k: number) => [{
+    days: 127, stay: k === 5, next: -1, duty: String(k + 1), returnSiding: "0", waits: [], outLead: -1, exceptions: k === 2 ? 1 : 0,
+    segments: [0, 1, 2].flatMap(lap => [
+      { route: "101", service: (6 * 60 + k * 6 + lap * 48) * MIN, from: 0, to: -1 },
+      { route: "102", service: (6 * 60 + 24 + k * 6 + lap * 48) * MIN, from: 0, to: -1 },
+    ]),
+  }]
+  return { mode: "diagram", sidings: { "8001": [slot(0), slot(1), slot(2)], "8002": [slot(3), slot(4)], "8003": [slot(5)] } }
+}
+
 export function mockData() {
   return {
     dayStartMillis: 4 * 60 * MIN, offsetMillis: 8 * 60 * MIN, canEdit: true, simulation: false, language: "zh_cn", regionCount: 3,
@@ -47,9 +62,9 @@ export function mockData() {
     depots: [
       {
         id: "9001", name: "北湖车厂|North Lake Depot", routes: ["101", "102", "103"],
-        sidings: [{ id: "8001", name: "1 道", maxTrains: 3, fleet: 3, routes: [] }, { id: "8002", name: "2 道", maxTrains: 3, fleet: 3, routes: [] }, { id: "8003", name: "3 道", maxTrains: 2, fleet: 2, routes: ["101", "102"] }],
+        sidings: [{ id: "8001", name: "1 道", maxTrains: 3, fleet: 3, routes: [], legs: { entrance: "s1", out: { "1000": 150000, "1005": 150000 }, back: { "1000": 200000, "1005": 200000 } } }, { id: "8002", name: "2 道", maxTrains: 3, fleet: 3, routes: [], legs: { entrance: "s1", out: { "1000": 150000, "1005": 150000 }, back: { "1000": 200000, "1005": 200000 } } }, { id: "8003", name: "3 道", maxTrains: 2, fleet: 2, routes: ["101", "102"], legs: { entrance: "s1", out: { "1000": 150000, "1005": 150000 }, back: { "1000": 200000, "1005": 200000 } } }],
         pools: [{ key: "a6", vehicle: "A 型 6 节", fleet: 9, sum: 8, sidings: ["8001", "8002", "8003"] }],
-        path: { state: "found", text: "", failedDuties: 0 }, duties: { mode: "auto", sidings: {} }, shortfall: { uncovered: 4, lines: "1号线", needed: 10, available: 9, missing: 1 },
+        path: { state: "found", text: "", failedDuties: 0 }, duties: exampleDuties(), shortfall: { uncovered: 4, lines: "1号线", needed: 10, available: 9, missing: 1 },
       },
       {
         id: "9002", name: "机场车厂|Airport Depot", routes: ["201", "202"],

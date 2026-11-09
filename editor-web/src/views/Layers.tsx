@@ -2,7 +2,7 @@
  * The layers' work areas. The views are still the old page's (borrowed with LegacySlot, run by the old code), each with
  * the new page's own tool bar; the tree on the left shows only the layer's own part of the old tree.
  */
-import { useCallback, useEffect, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { legacy, renderLegacy, useLegacy, type MenuItem } from "../legacy/engine"
 import { LegacySlot } from "../legacy/Slot"
 import { menuHost } from "../legacy/engine"
@@ -10,6 +10,7 @@ import { tr } from "../i18n"
 import type { LayerId } from "../shell/layers"
 import { Navigator, type Part } from "./Navigator"
 import { Inspector } from "./Inspector"
+import { DutyBoard } from "./DutyBoard"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
 const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
@@ -36,7 +37,7 @@ export function LayerWork({ layer }: { layer: LayerId }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       {part && <Navigator part={part} />}
-      {layer === "physical" || layer === "owners" || layer === "dispatch" ? <NetworkWork /> : <DiagramWork />}
+      {layer === "physical" || layer === "owners" || layer === "dispatch" ? <NetworkWork /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
     </div>
   )
 }
@@ -46,8 +47,32 @@ function NetworkWork() {
   return <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={redraw} />
 }
 
+/** The depot layer: the duty board (the default), or the running diagram where duties can be edited too. */
+function DepotWork() {
+  const [view, setView] = useState<"board" | "diagram">(() => { try { return localStorage.getItem("mtr-next-depot-view") === "diagram" ? "diagram" : "board" } catch { return "board" } })
+  const choose = (next: "board" | "diagram") => { setView(next); try { localStorage.setItem("mtr-next-depot-view", next) } catch { /* private window */ } }
+  const tabs = (
+    <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
+      {([["board", tr("运用表")], ["diagram", tr("运行图")]] as const).map(([id, label], i) => (
+        <button key={id} type="button" aria-pressed={view === id} onClick={() => choose(id)}
+          className={"px-2.5 text-[13px] " + (i ? "border-l border-gridstrong " : "") + (view === id ? "bg-brand font-medium text-brandink" : "bg-panel")}>{label}</button>
+      ))}
+    </div>
+  )
+  if (view === "diagram") return <DiagramWork extra={tabs} />
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">{tabs}</div>
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <DutyBoard />
+        <Inspector className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
+      </div>
+    </div>
+  )
+}
+
 /** The running diagram and the summary timetable, with the inspector beside them. */
-function DiagramWork() {
+function DiagramWork({ extra }: { extra?: ReactNode }) {
   useLegacy()
   const { fn, v } = legacy
   const state = v.state
@@ -55,7 +80,7 @@ function DiagramWork() {
   const redraw = useCallback(() => legacy.fn.draw(), [])
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <DiagramTools />
+      <DiagramTools extra={extra} />
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {showsDiagram && <LegacySlot id="canvas-wrap" className={"flex min-h-0 " + (showsTable ? "basis-1/2" : "flex-1")} style={{ minHeight: 240 }} onResize={redraw} />}
@@ -83,7 +108,7 @@ const Toggle = ({ on, onClick, children, title }: { on: boolean; onClick: () => 
 const remember = (key: string, on: boolean) => { try { localStorage.setItem(key, on ? "1" : "0") } catch { /* private window */ } }
 
 /** The new page's tool bar over the diagram: views, what to show, simulation, zoom, and making new things. */
-function DiagramTools() {
+function DiagramTools({ extra }: { extra?: ReactNode }) {
   useLegacy()
   const { fn, v } = legacy
   const state = v.state, data = v.data, sim = v.sim
@@ -109,6 +134,7 @@ function DiagramTools() {
   }
   return (
     <div className="scroll-thin flex shrink-0 items-center gap-3 overflow-x-auto border-b border-grid bg-panel px-3 py-2">
+      {extra && <Group>{extra}</Group>}
       <Group>
         <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
           {([["diagram", tr("运行图")], ["table", tr("汇总时刻表")], ...(fn.canSplit() ? [["split", tr("上下显示")]] : [])] as [string, string][]).map(([view, label], i) => (

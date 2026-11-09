@@ -1428,7 +1428,24 @@ const I18N = (() => {
 			"紫色点线是寻路边界，橙色虚线是联络线独占，灰色虚线是已放行；右键一段轨道改，放进草稿。": "Purple dots: path boundary; dashed orange: taken by a connecting line; dashed grey: released. Right-click a rail to change it in the draft.",
 			"线路组按停站最多的种别画，分支只画到离开这条路径为止。": "A line group is drawn along its route with the most stops; branches are drawn until they leave that path.",
 			"这一天的班次": "Services this day",
-			"道岔": "Turnout"
+			"道岔": "Turnout",
+			"先在左边选一列车": "Choose a train on the left first",
+			"全天": "Whole day",
+			"标准": "Normal",
+			"细看": "Close",
+			"在 {0} 添加运用": "Add a duty at {0}",
+			"已选中一列车：点色块把那一班移出，点“没车”一行或别的车的色块把那一班加进来；Esc 取消选择。": "A train is chosen: click one of its services to take it out, or a service in the no-train row or another train's to bring it in; Esc to let go.",
+			"按时刻表排出运用，放进草稿看过再应用": "Plan duties from the timetables into the draft, to look over before applying",
+			"更多 ▾": "More ▾",
+			"没车": "No train",
+			"点一下从这列车移出": "Click to take it off this train",
+			"点一下加进选中的车": "Click to add it to the chosen train",
+			"点一下移到选中的车": "Click to move it to the chosen train",
+			"点左边一列车选中它，再点班次加进它的运用或移出。右键一列车可以清空或删除。": "Click a train on the left, then click services to add them to its duty or take them out. Right-click a train to clear or delete it.",
+			"留": "stays",
+			"车 / 存车线": "Train / siding",
+			"运用表": "Duty board",
+			"这一天休": "Off this day"
 		}
 	};
 	const STORAGE_KEY = "mtr-editor-language";

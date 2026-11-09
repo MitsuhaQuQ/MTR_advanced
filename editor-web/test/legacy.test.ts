@@ -108,6 +108,33 @@ describe("the old code in the new page", () => {
     await act(async () => { engine.renderLegacy(); engine.flushLegacy() })
     expect(document.getElementById("inspector")!.textContent).toContain("选中的班次")
   })
+  it("edits a duty on the duty board", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { DutyBoard } = await import("../src/views/DutyBoard")
+    ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
+    const { v } = engine.legacy
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => { createRoot(host).render(createElement(DutyBoard)); engine.flushLegacy() })
+    const train = () => [...host.querySelectorAll("button[aria-pressed]")].find(b => b.textContent!.startsWith("运用 2")) as HTMLElement
+    expect(train()).toBeTruthy()
+    // Choose the second train, take its first service out
+    await act(async () => { train().click(); engine.flushLegacy() })
+    expect(v.state.slot).toMatchObject({ depot: "9001", siding: "8001", index: 1 })
+    const blocks = () => [...train().parentElement!.querySelectorAll("button[title]")].filter(b => b !== train()) as HTMLElement[]
+    const before = blocks().length
+    await act(async () => { blocks()[0].click(); engine.flushLegacy() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); engine.flushLegacy() })
+    expect(blocks().length).toBe(before - 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const last = changes[changes.length - 1]
+    // The day edited is split off from the duty's other days; the day shown has one service fewer
+    const day = last.duties["9001"].duties.sidings["8001"][1].find((each: any) => (each.days >> v.state.weekday) & 1)
+    expect(day.segments.length).toBe(before - 1)
+  })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
     expect(() => media.setMediaShown(true)).not.toThrow()
