@@ -25,7 +25,7 @@ function route(id: string, name: string, line: string, color: number, lineColor:
     stops: stops.map(([station, stationName, platform, platformId]) => ({
       station, name: stationName, platformId, platform, pass: false, boundary: false, dwellOverride: 0,
     })),
-    hasTimes: true, fastest,
+    hasTimes: true, fastest, fastestRail: 120,
     tables: [table("平日", 31, services), table("周末", 96, services.filter((_, i) => i % 2 === 0))],
     ...extra,
   }
@@ -115,6 +115,8 @@ export function mockData() {
       route("201", "2号线 东行|Line 2", "2号线|Line 2", 0x0072ce, 0x0072ce, L2, 10),
       route("202", "2号线 西行|Line 2", "2号线|Line 2", 0x0072ce, 0x0072ce, L2_WEST, 10, { pathFailure: "会展中心到中央广场之间没有连通的轨道" }),
     ],
+    // Line 1's rail system, with its stations, and no plans yet
+    contingencySystems: [{ anchor: "a1", routes: ["101", "102", "103"], plans: [], adhoc: {}, others: [], stations: L1_NAMES.map(([id, name]) => ({ id, name })) }],
     depots: [
       {
         id: "9001", name: "北湖车厂|North Lake Depot", routes: ["101", "102", "103"],

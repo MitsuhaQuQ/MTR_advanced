@@ -25,6 +25,10 @@ export const diagramHost: { current: ((target: DiagramTarget) => void) | null } 
 export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { kind: "new" } | { kind: "type"; lineKey: string; baseId: string }
 export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { current: null }
 
+/** One of the line layer's other panels (views/LinePanels.tsx): speed limits, through services, contingency plans */
+export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string }
+export const panelHost: { current: ((target: PanelTarget) => void) | null } = { current: null }
+
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
 
 const env = {
@@ -59,6 +63,9 @@ const env = {
   stopsDialog: (r: { id: string }, stop?: number) => stopsHost.current?.({ kind: "route", routeId: r.id, stop: stop ?? -1 }),
   newLineDialog: () => stopsHost.current?.({ kind: "new" }),
   newTypeDialog: (lineKey: string, base?: { id: string }) => stopsHost.current?.({ kind: "type", lineKey, baseId: base ? base.id : "" }),
+  speedLimitDialog: (routes: { id: string }[]) => panelHost.current?.({ kind: "speed", routeIds: routes.map(r => r.id) }),
+  throughDialog: (r?: { id: string } | null) => panelHost.current?.({ kind: "through", routeId: r ? r.id : "" }),
+  contingencyDialog: (system: { anchor: string }) => panelHost.current?.({ kind: "contingency", anchor: system.anchor }),
   render: (name: string) => onRender(name),
 }
 

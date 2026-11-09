@@ -234,6 +234,70 @@ describe("the old code in the new page", () => {
     expect(created[0].depot).toBe("9001")
     engine.pushDraft({ routes: {} })
   })
+  it("edits speed limits, through services and contingency plans in their panels", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LinePanels } = await import("../src/views/LinePanels")
+    const { fn, v } = engine.legacy
+    engine.pushData(mockData())
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(LinePanels)))
+    const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent!.startsWith(text)) as HTMLElement
+    const type = async (input: HTMLInputElement, value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+    const settle = async () => { engine.flushLegacy(); await new Promise(resolve => setTimeout(resolve, 10)) }
+
+    // Speed limits: above the fastest rail is refused as typed, a good value goes in the draft
+    await act(async () => fn.speedLimitDialog([v.data.routeById.get("101")]))
+    const speed = host.querySelector('[data-speed-route="101"] input') as HTMLInputElement
+    await type(speed, "150")
+    expect(host.textContent).toContain("不能高于轨道限速 120 km/h")
+    await type(speed, "90")
+    await act(async () => { button("放进草稿").click(); await settle() })
+    await settle()
+    expect(changes[changes.length - 1].routes["101"].speedLimit).toBe(90)
+
+    // Through services: route 102 ends at 港湾, where 101 starts; leave the first pair out
+    await act(async () => fn.throughDialog(v.data.routeById.get("102")))
+    const boxes = [...host.querySelectorAll("tbody input[type=checkbox]")] as HTMLInputElement[]
+    expect(boxes.length).toBeGreaterThan(10)
+    await act(async () => boxes[0].click())
+    expect(button("新建 ").textContent).toBe(`新建 ${boxes.length - 1} 对`)
+    await act(async () => { button("新建 ").click(); await settle() })
+    await settle()
+    const links = changes[changes.length - 1].routes["102"].timetable.tables.flatMap((t: any) => t.links)
+    expect(links.length).toBe(boxes.length - 1)
+    expect(links.every((l: any) => l.route === "101")).toBe(true)
+
+    // Contingency plans: a new one, turning back at a chosen station
+    await act(async () => fn.contingencyDialog(v.data.contingencySystems[0]))
+    await act(async () => button("新建预案").click())
+    const plan = host.querySelector("[data-plan='1']") as HTMLElement
+    await type(plan.querySelector("input[aria-label=名称]") as HTMLInputElement, "中断")
+    const turn = [...plan.querySelectorAll("select")].find(s => [...s.options].some(o => o.value === "station")) as HTMLSelectElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(turn, "station")
+      turn.dispatchEvent(new Event("change", { bubbles: true }))
+    })
+    // No station chosen yet
+    await act(async () => button("放进草稿").click())
+    expect(host.textContent).toContain("选了指定车站折返，但没选车站")
+    const station = [...plan.querySelectorAll("select")].find(s => [...s.options].some(o => o.value === "s3")) as HTMLSelectElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(station, "s3")
+      station.dispatchEvent(new Event("change", { bubbles: true }))
+    })
+    await act(async () => { button("放进草稿").click(); await settle() })
+    await settle()
+    expect(changes[changes.length - 1].contingencies.a1).toMatchObject([{ id: "1", name: "中断", turn: "station", turnStation: "s3", lateMinutes: 5 }])
+    engine.pushDraft({ routes: {} })
+  })
   it("paints sections and ticks logical lines in the ownership panel", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

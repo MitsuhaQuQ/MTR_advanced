@@ -36,7 +36,7 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms
  */
-const WRAPPED = ["stopsDialog", "newLineDialog", "newTypeDialog"]
+const WRAPPED = ["stopsDialog", "newLineDialog", "newTypeDialog", "speedLimitDialog", "throughDialog", "contingencyDialog"]
 const oldName = name => "old" + name[0].toUpperCase() + name.slice(1)
 /** Panels the new page draws itself: the old function becomes a call to env.render(name, args) */
 const RENDERS = ["renderAll", "renderTree", "renderInspector", "renderViews", "renderBanner", "renderStatus", "renderSyncButton", "renderDraftState"]

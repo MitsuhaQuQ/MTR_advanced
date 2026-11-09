@@ -11,6 +11,7 @@ import { LayerWork } from "./views/Layers"
 import { Boundary } from "./ui/Boundary"
 import { TrackDiagram } from "./views/TrackDiagram"
 import { StopsEditor } from "./views/StopsEditor"
+import { LinePanels } from "./views/LinePanels"
 import { LegacyMenu, LegacySlot } from "./legacy/Slot"
 import { setMediaShown } from "./legacy/media"
 import { legacy, useLegacy } from "./legacy/engine"
@@ -75,6 +76,7 @@ function Shell() {
       <LegacyMenu />
       <TrackDiagram />
       <StopsEditor />
+      <LinePanels />
     </div>
   )
 }
