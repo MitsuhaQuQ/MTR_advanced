@@ -1419,7 +1419,16 @@ const I18N = (() => {
 			"在时刻表里看": "Show in the timetable",
 			"怎么操作": "How to work it",
 			"有只改这一班的例外": "Has times of its own",
-			"导航": "Navigation"
+			"导航": "Navigation",
+			"{0}，点一下打开这一站": "{0}: click to open this stop",
+			"右键轨道设寻路边界；出入库规则在车厂层里设。": "Right-click a rail for a path boundary; depot rules are set in the depot layer.",
+			"已放行": "Released",
+			"每条横线是一股轨道，按离线路远近排，不按实际距离；没有道岔和站台的长区间压短了（//）。粗线是这条线路走的轨道，细彩线是别的线路，灰线没有线路走；小圆点是道岔，短块是站台。": "Each line across is a track, in order out from the route, not to scale; long runs with no turnouts or platforms are shortened (//). The thick line is the route's track, thin coloured lines other routes', grey no route's; dots are turnouts, short bars platforms.",
+			"没有线路走这段轨道": "No route runs on this rail",
+			"紫色点线是寻路边界，橙色虚线是联络线独占，灰色虚线是已放行；右键一段轨道改，放进草稿。": "Purple dots: path boundary; dashed orange: taken by a connecting line; dashed grey: released. Right-click a rail to change it in the draft.",
+			"线路组按停站最多的种别画，分支只画到离开这条路径为止。": "A line group is drawn along its route with the most stops; branches are drawn until they leave that path.",
+			"这一天的班次": "Services this day",
+			"道岔": "Turnout"
 		}
 	};
 	const STORAGE_KEY = "mtr-editor-language";

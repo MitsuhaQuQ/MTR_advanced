@@ -5,6 +5,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { mockData } from "./fixture.ts"
+import { exampleTrack } from "./track.ts"
 
 export function createMockApi() {
   let draft: unknown = { routes: {} }
@@ -31,6 +32,8 @@ export function createMockApi() {
         if (req.method === "GET") json(draft)
         else { draft = JSON.parse((await readBody(req)) || "{}"); json({ ok: true }) }
         return true
+      case "/api/route-layout": await readBody(req); json(exampleTrack().layout); return true
+      case "/api/network": await readBody(req); json(exampleTrack().network); return true
       case "/api/audio": {
         // The media library's list (EditorAudio): two recordings, one not on this computer yet
         if (req.method === "POST") { await readBody(req); json({ ok: true }); return true }

@@ -17,6 +17,10 @@ export type MenuItem = [label: string, action: (() => void) | MenuItem[] | null 
 type MenuHandler = { open: (x: number, y: number, items: MenuItem[]) => void; close: () => void }
 export const menuHost: { current: MenuHandler | null } = { current: null }
 
+/** The track diagram to show: of a route, or of a line group (views/TrackDiagram.tsx) */
+export type DiagramTarget = { kind: "route"; routeId: string } | { kind: "line"; lineKey: string }
+export const diagramHost: { current: ((target: DiagramTarget) => void) | null } = { current: null }
+
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
 
 const env = {
@@ -44,6 +48,9 @@ const env = {
     return response.json()
   },
   setTreeOpen: () => {},
+  // The old code's track diagram dialogs: the new page's schematic instead
+  routeDiagramDialog: (r: { id: string }) => diagramHost.current?.({ kind: "route", routeId: r.id }),
+  lineDiagramDialog: (line: { key: string }) => diagramHost.current?.({ kind: "line", lineKey: line.key }),
   render: (name: string) => onRender(name),
 }
 

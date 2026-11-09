@@ -9,6 +9,7 @@ import { Banner } from "./shell/Banner"
 import { conflictCount, draftCount } from "./core/draft"
 import { LayerWork } from "./views/Layers"
 import { Boundary } from "./ui/Boundary"
+import { TrackDiagram } from "./views/TrackDiagram"
 import { LegacyMenu, LegacySlot } from "./legacy/Slot"
 import { setMediaShown } from "./legacy/media"
 import { legacy, useLegacy } from "./legacy/engine"
@@ -71,6 +72,7 @@ function Shell() {
       <ReviewPanel open={panel === "review"} onClose={closePanel} onOpenRoute={openRoute} />
       <SyncPanel open={panel === "sync"} onClose={closePanel} onOpenRoute={openRoute} />
       <LegacyMenu />
+      <TrackDiagram />
     </div>
   )
 }

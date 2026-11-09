@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -7317,76 +7317,7 @@ export function createLegacy(env) {
 	 * is a strip, the first along the top and each other below, slanting off the station it starts from. A loop is folded
 	 * in two, going along the top of its strip and back along the bottom.
 	 */
-	function lineDiagramDialog(line) {
-		const pieces = linePieces(line);
-		const routes = [...new Set(pieces.map(piece => piece.r))];
-		const view = { scale: 0, side: 2, layouts: new Map(), error: "", even: true, gap: 0 };
-		const render = form => {
-			form.querySelector("#dlg-line-diagram").innerHTML = lineDiagramHtml(line, pieces, view);
-			const even = form.querySelector("[data-line-even]");
-			if (even) even.textContent = view.even ? tr("按实际距离画") : tr("车站等距画");
-		};
-		openDialog(`${tr("线路组配线图：{0}", escapeHtml(shortName(line.name)))}`, `
-			<div class="diagram-head"><span class="hint">${tr("每一段沿走得最远的一条线路的路径拉直，从左往右按运行图上车站的顺序；支线和另一路画在下面，从分出的车站斜着接出。按游戏里已应用的线路画。")}</span>
-				<span class="tools"><button type="button" data-line-even></button><button type="button" data-line-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-line-zoom="out" title="${tr("缩小")}">−</button></span></div>
-			<div id="dlg-line-diagram"></div>`, tr("关闭"), () => {});
-		dialog.classList.add("wide");
-		dialog.addEventListener("close", () => dialog.classList.remove("wide"), { once: true });
-		const form = dialog.querySelector("form");
-		render(form);
-		form.addEventListener("click", e => {
-			if (e.target.closest("[data-line-even]")) {
-				view.even = !view.even;
-				render(form);
-				return;
-			}
-			const zoom = e.target.closest("[data-line-zoom]");
-			if (!zoom) return;
-			view.scale = Math.max(0.05, Math.min(8, view.scale * (zoom.dataset.lineZoom === "in" ? 1.5 : 1 / 1.5)));
-			render(form);
-		});
-		// The game keeps one route's track diagram at a time, so they are asked for one after another
-		(async () => {
-			for (const r of routes) {
-				for (let tries = 0; ; tries++) {
-					let result = null;
-					try {
-						result = await sendJson("api/route-layout", "POST", { route: r.id, halfWidth: LINE_DIAGRAM_HALF_WIDTH, fresh: tries === 0 });
-					} catch (e) {
-						view.error = tr("读取线路配线图失败");
-					}
-					if (result && result.ready) {
-						view.layouts.set(r.id, result);
-						break;
-					}
-					if (tries >= 15) {
-						view.error = tr("服务端没有回应，关掉再打开试试");
-						break;
-					}
-					if (result) view.error = tr("正在沿路径取轨道…（{0}/{1}）", view.layouts.size + 1, routes.length);
-					if (dialog.open) render(form);
-					await new Promise(resolve => setTimeout(resolve, 700));
-				}
-				if (!dialog.open) return;
-			}
-			if (view.layouts.size === routes.length) view.error = "";
-			if (!view.scale) {
-				let longest = 1, gap = 0;
-				pieces.forEach(piece => {
-					const layout = view.layouts.get(piece.r.id);
-					const length = layout && layout.found ? layout.stops[piece.to] - layout.stops[piece.from] : 0;
-					if (length > longest) {
-						longest = length;
-						// Evenly apart, the longest section is as wide as by distance
-						gap = length / Math.max(1, piece.to - piece.from);
-					}
-				});
-				view.gap = gap || longest;
-				view.scale = Math.max(0.05, Math.min(8, (form.querySelector("#dlg-line-diagram").clientWidth - 160) / longest));
-			}
-			if (dialog.open) render(form);
-		})();
-	}
+	/* lineDiagramDialog: from env */
 
 	function lineDiagramHtml(line, pieces, view) {
 		if (!view.scale) return `<p class="hint">${escapeHtml(view.error || tr("正在读取…"))}</p>`;
@@ -7537,73 +7468,7 @@ export function createLegacy(env) {
 			+ (view.error ? `<p class="hint">${escapeHtml(view.error)}</p>` : "");
 	}
 
-	function routeDiagramDialog(r) {
-		const view = { halfWidth: 24, scale: 0.6, side: 2, data: null, error: "", tries: 0 };
-		const render = form => {
-			form.querySelector("#dlg-route-diagram").innerHTML = routeDiagramHtml(r, view);
-		};
-		const load = async (form, fresh) => {
-			try {
-				const result = await sendJson("api/route-layout", "POST", { route: r.id, halfWidth: view.halfWidth, fresh });
-				if (!result.ready) {
-					view.error = tr("正在沿路径取轨道…");
-					if (view.tries++ < 15) setTimeout(() => load(form, false), 700);
-					else view.error = tr("服务端没有回应，关掉再打开试试");
-				} else {
-					// The first time, the whole line fits the width of the dialog
-					if (!view.data && result.found && result.length > 0) view.scale = Math.max(0.05, Math.min(8, (form.querySelector("#dlg-route-diagram").clientWidth - 56) / result.length));
-					view.data = result;
-					view.error = "";
-				}
-			} catch (e) {
-				view.error = tr("读取线路配线图失败");
-			}
-			if (dialog.open) render(form);
-		};
-		openDialog(`${tr("线路配线图：{0}", escapeHtml(routeTitle(r)))}`, `
-			<div class="diagram-head"><span class="hint">${tr("沿这条线路在游戏里的路径拉直，从左往右是行车方向，上方是行车方向的左侧。按游戏里已应用的线路画，草稿里的股道改动应用后才显示。")}</span>
-				<span class="tools"><button type="button" data-route-zoom="in" title="${tr("放大")}">＋</button><button type="button" data-route-zoom="out" title="${tr("缩小")}">−</button>
-				<button type="button" data-route-side="1" title="${tr("侧向不放大")}">1×</button><button type="button" data-route-side="2" title="${tr("侧向放大 2 倍")}">2×</button><button type="button" data-route-side="3" title="${tr("侧向放大 3 倍")}">3×</button></span></div>
-			<div id="dlg-route-diagram"></div>`, tr("关闭"), () => {});
-		dialog.classList.add("wide");
-		dialog.addEventListener("close", () => dialog.classList.remove("wide"), { once: true });
-		const form = dialog.querySelector("form");
-		render(form);
-		load(form, true);
-		form.addEventListener("contextmenu", e => {
-			const rail = e.target.closest("[data-rail]");
-			if (!rail) return;
-			e.preventDefault();
-			if (!data.canEdit) {
-				openMenuAt(e, [[tr("没有编辑权限"), null]]);
-				return;
-			}
-			const [a, b] = rail.dataset.rail.split(",");
-			railMenu(e, r, { a, b, status: +rail.dataset.railStatus }, () => render(form));
-		});
-		form.addEventListener("click", e => {
-			const zoom = e.target.closest("[data-route-zoom]");
-			const side = e.target.closest("[data-route-side]");
-			const station = e.target.closest("[data-route-stop]");
-			const release = e.target.closest("[data-release]");
-			if (release) {
-				const [a, b] = release.dataset.release.split(",");
-				toggleReleased(r, a, b);
-				render(form);
-				return;
-			}
-			if (zoom) view.scale = Math.max(0.05, Math.min(8, view.scale * (zoom.dataset.routeZoom === "in" ? 1.5 : 1 / 1.5)));
-			else if (side) view.side = +side.dataset.routeSide;
-			else if (station) {
-				// The station opens in the stop editor, with its own track diagram
-				const stop = +station.dataset.routeStop;
-				dialog.close();
-				if (data.canEdit && r.stops.length > 1) stopsDialog(r, stop);
-				return;
-			} else return;
-			render(form);
-		});
-	}
+	/* routeDiagramDialog: from env */
 
 	function routeDiagramHtml(r, view) {
 		const result = view.data;
@@ -8851,7 +8716,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, tidyDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, dutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, speedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, buildStations, timesSource, sendTimes, plansFor, buildServices, normalize, fromGame, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, tableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, depotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, changeTime, chooseRange, toggleChosen, chooseLater, shiftLaterDialog, parseShift, durationText, respaceRange, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, setLink, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, releasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, depotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, vehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, newTypeDialog, newLineDialog, stopsDialog, stopListDialog, stopHangers, renumberTimetable, renumberLinksInto, renumberDuties, sendStopList, linePieces, lineDiagramDialog, lineDiagramHtml, routeDiagramDialog, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, throughDialog, servicesToAdd, clearTable, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, contingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, servicesToMove, moveShift, moveServices },
+		fn: { loadDraft, clearDraft, saveDraft, tidyDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, dutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, speedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, buildStations, timesSource, sendTimes, plansFor, buildServices, normalize, fromGame, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, tableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, depotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, changeTime, chooseRange, toggleChosen, chooseLater, shiftLaterDialog, parseShift, durationText, respaceRange, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, setLink, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, releasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, depotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, vehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, newTypeDialog, newLineDialog, stopsDialog, stopListDialog, stopHangers, renumberTimetable, renumberLinksInto, renumberDuties, sendStopList, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, throughDialog, servicesToAdd, clearTable, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, contingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, servicesToMove, moveShift, moveServices },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },

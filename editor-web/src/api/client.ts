@@ -48,6 +48,9 @@ async function sendJson<T>(path: string, method: "POST" | "PUT", body: unknown):
   return response.json() as Promise<T>
 }
 
+/** Any endpoint by its name under /api/, posted. */
+export const post = <T,>(path: string, body: unknown) => sendJson<T>(path, "POST", body)
+
 export const api = {
   data: () => getJson<EditorData>("data"),
   revision: () => getJson<{ revision: number }>("revision"),
