@@ -66,6 +66,8 @@
 .legacy-slot > .inspector { border-left: 0; overflow: visible; }
 .legacy-slot > .table-view { display: block; overflow: visible; }
 .legacy-slot > #view-network { display: grid; grid-template-rows: auto 1fr; }
+.legacy-slot > #media-app { display: grid; }
+.legacy-slot > #media-upload, .legacy-slot > #media-usage { flex: none; }
 .legacy-slot > #sim-status { flex: none; }
 .legacy-overlays { position: fixed; inset: 0 auto auto 0; width: 0; height: 0; z-index: 45; }
 /* Each layer shows its own part of the old tree: its five sections are pairs of a heading and a list */

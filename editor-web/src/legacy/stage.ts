@@ -8,6 +8,7 @@
  * limited to.
  */
 import { LEGACY_MARKUP } from "./markup.generated"
+import { applyStatic } from "../i18n"
 
 export const stage = document.createElement("div")
 stage.className = "legacy"
@@ -22,8 +23,8 @@ for (const id of ["dialog", "tooltip"]) {
   const element = document.getElementById(id)
   if (element) overlays.appendChild(element)
 }
-globalThis.I18N?.applyStatic(stage)
-globalThis.I18N?.applyStatic(overlays)
+applyStatic(stage)
+applyStatic(overlays)
 
 /** An old element by ID; it exists for every ID of the old page. */
 export const legacyElement = (id: string) => document.getElementById(id)

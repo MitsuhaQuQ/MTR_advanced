@@ -31,6 +31,19 @@ export function createMockApi() {
         if (req.method === "GET") json(draft)
         else { draft = JSON.parse((await readBody(req)) || "{}"); json({ ok: true }) }
         return true
+      case "/api/audio": {
+        // The media library's list (EditorAudio): two recordings, one not on this computer yet
+        if (req.method === "POST") { await readBody(req); json({ ok: true }); return true }
+        const entry = (key: string, name: string, cached: boolean, mine: boolean) => ({
+          key, name, reference: key, sound: "mtr_audio:" + key.replace(":", "/"), soundId: name.replace(".ogg", ""), hash: key.length.toString(16).padStart(64, "0"),
+          uploaderName: key.split(":")[0], size: 182400, durationMillis: 6200, uploadedAt: Date.now() - 3600000, cached, downloading: false, mine, canDelete: mine,
+        })
+        json({
+          language: "zh_cn", canUpload: true, maxFileBytes: 2 * 1024 * 1024, maxTotalBytes: 50 * 1024 * 1024, totalBytes: 364800, maxSeconds: 60, requests: [],
+          entries: [entry("mitsuha:next_central.ogg", "next_central.ogg", true, true), entry("rail_fan:transfer_l2.ogg", "transfer_l2.ogg", false, false)],
+        })
+        return true
+      }
       case "/api/times": {
         // The draft's times as the game would work them out: here the routes' own run times, for each table
         const { routes } = JSON.parse((await readBody(req)) || "{}")

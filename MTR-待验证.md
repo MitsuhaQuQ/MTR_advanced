@@ -80,7 +80,7 @@
 
 ### 新版网页编辑器，迁移第 0、1 步（本会话，分支 claude/modern-web-editor-design-8ec467，2026-11-10）
 
-- **第 2–6 步第一轮**（断点标签 `pre-web-next-2`）：各层接进新外壳，迁移期间新页面运行构建时从 `editor.js` 生成的旧代码（`editor-web/src/legacy/engine.generated.js`、`markup.generated.ts`、`public/legacy.css`），旧视图和对话框原样托管；在假服务上看过时刻、车厂层的选择、表格输入、右键菜单、旧对话框改草稿和一步撤销，配线、归属、调度层要 `api/network`，只能进游戏看。**别的会话改了 `editor.js`、`editor.css` 或 `index.html` 后，统一构建前要先跑 `bash editor-web/build.sh`**，否则新版运行的是旧的一份。游戏内测试 U376–U378。
+- **第 2–6 步第一轮**（断点标签 `pre-web-next-2`）：各层接进新外壳，迁移期间新页面运行构建时从 `editor.js` 生成的旧代码（`editor-web/src/legacy/engine.generated.js`、`markup.generated.ts`、`public/legacy.css`），旧视图和对话框原样托管；在假服务上看过时刻、车厂层的选择、表格输入、右键菜单、旧对话框改草稿和一步撤销，配线、归属、调度层要 `api/network`，只能进游戏看。**别的会话改了 `editor.js`、`editor.css` 或 `index.html` 后，统一构建前要先跑 `bash editor-web/build.sh`**，否则新版运行的是旧的一份。游戏内测试 U376–U378。媒体层同样运行旧的 `media.js`（U379）。顺带修了新版一直没连上 `i18n.js` 词典的问题（英文客户端原来会显示中文）。冒烟测试 `editor-web/test/legacy.test.ts` 在构建里跑。
 - **第 1 步**（提交在第 0 步之后，断点标签 `pre-web-next-1`）：新版能审阅和应用草稿、处理冲突、看同步状态，逻辑和旧版对拍（`editor-web/test/`，14 项，`build.sh` 里跑）；没改 Java、包和存档。游戏内测试 U373–U375。
 
 

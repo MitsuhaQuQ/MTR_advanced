@@ -10,6 +10,7 @@ import "./stage"
 import { useSyncExternalStore } from "react"
 import { key } from "../api/client"
 import { createLegacy } from "./engine.generated.js"
+import { normalizeDraft } from "../core/draft"
 
 export type MenuItem = [label: string, action: (() => void) | MenuItem[] | null | undefined]
 
@@ -99,7 +100,9 @@ let draftListener: ((draft: any) => void) | null = null
 export const onLegacyDraft = (listener: (draft: any) => void) => { draftListener = listener }
 
 /** The store's draft, given to the old code, which then works out its services again. */
-export function pushDraft(draft: any) {
+export function pushDraft(given: any) {
+  // With every part present, as the old code's loadDraft leaves it
+  const draft = normalizeDraft(given)
   const json = JSON.stringify(draft)
   if (json === pushedJson) return
   pushedJson = json

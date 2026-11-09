@@ -8,7 +8,8 @@ import { SyncPanel, useSyncProblems } from "./shell/Sync"
 import { Banner } from "./shell/Banner"
 import { conflictCount, draftCount } from "./core/draft"
 import { LayerWork } from "./views/Layers"
-import { LegacyMenu } from "./legacy/Slot"
+import { LegacyMenu, LegacySlot } from "./legacy/Slot"
+import { setMediaShown } from "./legacy/media"
 import { legacy, useLegacy } from "./legacy/engine"
 
 export function App() {
@@ -73,14 +74,22 @@ function Shell() {
   )
 }
 
-/** The media library is still the old page's workspace (media.js), opened there until it moves over. */
+/** The media library: the old one (media.js), with its upload button and usage in a tool bar of the new page. */
 function MediaWork() {
+  useEffect(() => {
+    setMediaShown(true)
+    return () => setMediaShown(false)
+  }, [])
   return (
-    <div className="p-4">
-      <div className="flex max-w-3xl flex-wrap items-center gap-3 rounded-lg border border-grid bg-panel px-3 py-2 text-[13px]">
-        <span className="text-dim">{tr("报站音频等媒体文件在旧版的媒体库里管理。")}</span>
-        <a className="btn ml-auto" href="../#/media/audio">{tr("打开媒体库")}</a>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
+        <span className="text-[13px] font-medium">{tr("媒体库")}</span>
+        <span className="flex-1" />
+        <LegacySlot id="media-usage" className="text-[12px]" />
+        <LegacySlot id="media-upload" />
       </div>
+      <LegacySlot id="media-app" className="min-h-0 flex-1" />
+      <LegacySlot id="media-status" className="shrink-0" />
     </div>
   )
 }
