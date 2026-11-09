@@ -17,7 +17,10 @@ import { tr } from "../i18n"
 
 const GAP = 5, LANE = 7, BOX_W = 44
 
-export function NetworkSchematic({ onShowReal, mode = "tracks" }: { onShowReal: () => void; mode?: "tracks" | "logical" }) {
+/** A train to show on the tracks drawing: on the rail its head is on */
+export type TrainMark = { id: string; name: string; rail: number; late: boolean; selected: boolean }
+
+export function NetworkSchematic({ onShowReal, mode = "tracks", trains, onTrain }: { onShowReal: () => void; mode?: "tracks" | "logical"; trains?: TrainMark[]; onTrain?: (id: string) => void }) {
   const brush = useBrush()
   useLegacy()
   const { fn, v } = legacy
@@ -94,7 +97,7 @@ export function NetworkSchematic({ onShowReal, mode = "tracks" }: { onShowReal: 
         onPointerLeave={() => { drag.current = null }}>
         <svg className="absolute inset-0 h-full w-full" role="img" aria-label={mode === "tracks" ? tr("全网示意配线图") : tr("全网逻辑图")}>
           {mode === "tracks"
-            ? <TrackDrawing schematic={schematic} sx={sx} sy={sy} chosen={chosen} onChoose={id => { if (!drag.current?.moved) setChosen(id === chosen ? null : id) }} />
+            ? <TrackDrawing schematic={schematic} sx={sx} sy={sy} chosen={chosen} onChoose={id => { if (!drag.current?.moved) setChosen(id === chosen ? null : id) }} trains={trains} onTrain={onTrain} />
             : <>
               {schematic.corridors.map((c, i) => <LogicalCorridor key={i} corridor={c} a={at.get(c.a)!} b={at.get(c.b)!} sx={sx} sy={sy}
                 onPaint={brush ? () => { if (!drag.current?.moved) paintCorridor(c, brush) } : undefined} />)}
@@ -205,7 +208,7 @@ const HALF = 40, TRACK = 12
 /** A station's lane offset across its axis, in pixels, the lanes centred */
 const laneOffset = (p: Place, lane: number) => (lane - (p.lanes.length - 1) / 2) * TRACK
 
-function TrackDrawing({ schematic, sx, sy, chosen, onChoose }: { schematic: Schematic; sx: (p: Place) => number; sy: (p: Place) => number; chosen: string | null; onChoose: (id: string) => void }) {
+function TrackDrawing({ schematic, sx, sy, chosen, onChoose, trains, onTrain }: { schematic: Schematic; sx: (p: Place) => number; sy: (p: Place) => number; chosen: string | null; onChoose: (id: string) => void; trains?: TrainMark[]; onTrain?: (id: string) => void }) {
   const at = new Map(schematic.places.map(p => [p.id, p]))
   const axis = (p: Place) => [Math.cos(p.angle), Math.sin(p.angle)]
   /** Where a track meets a place: a station's lane at its end facing the other place, or across a junction */
@@ -219,14 +222,31 @@ function TrackDrawing({ schematic, sx, sy, chosen, onChoose }: { schematic: Sche
     const o = laneOffset(p, lane < 0 ? Math.min(index, p.lanes.length - 1) : lane)
     return [cx + ux * HALF * side - uy * o, cy + uy * HALF * side + ux * o]
   }
+  // Each corridor's tracks, end to end on the screen
+  const drawn = schematic.corridors.map(c => {
+    const a = at.get(c.a)!, b = at.get(c.b)!
+    const x1 = sx(a), y1 = sy(a), x2 = sx(b), y2 = sy(b)
+    const length = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / length, ny = (x2 - x1) / length
+    const lines = c.lines.length ? c.lines : [{ aLane: -1, bLane: -1, colors: c.colors }]
+    return { lines, ends: lines.map((t, k) => [endOf(a, t.aLane, b, k, lines.length, nx, ny), endOf(b, t.bLane, a, k, lines.length, nx, ny)]) }
+  })
+  /** Where a rail is on the screen: along its corridor's track, or on its station's lane */
+  const pointOf = (rail: number): number[] | null => {
+    const spot = schematic.spots.get(rail)
+    if (!spot) return null
+    if ("corridor" in spot) {
+      const e = drawn[spot.corridor].ends[Math.min(spot.track, drawn[spot.corridor].ends.length - 1)]
+      return [e[0][0] + (e[1][0] - e[0][0]) * spot.at, e[0][1] + (e[1][1] - e[0][1]) * spot.at]
+    }
+    const p = at.get(spot.place)
+    if (!p) return null
+    const o = laneOffset(p, Math.max(0, spot.lane))
+    return [sx(p) - Math.sin(p.angle) * o, sy(p) + Math.cos(p.angle) * o]
+  }
   return (
     <>
       {schematic.corridors.map((c, i) => {
-        const a = at.get(c.a)!, b = at.get(c.b)!
-        const x1 = sx(a), y1 = sy(a), x2 = sx(b), y2 = sy(b)
-        const length = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / length, ny = (x2 - x1) / length
-        const lines = c.lines.length ? c.lines : [{ aLane: -1, bLane: -1, colors: c.colors }]
-        const ends = lines.map((t, k) => [endOf(a, t.aLane, b, k, lines.length, nx, ny), endOf(b, t.bLane, a, k, lines.length, nx, ny)])
+        const { lines, ends } = drawn[i]
         return (
           <g key={i}>
             {lines.map((t, k) => {
@@ -246,6 +266,19 @@ function TrackDrawing({ schematic, sx, sy, chosen, onChoose }: { schematic: Sche
       {schematic.places.map(p => p.kind === "station"
         ? <StationTracks key={p.id} place={p} x={sx(p)} y={sy(p)} on={p.id === chosen} onClick={() => onChoose(p.id)} />
         : p.kind === "junction" ? <circle key={p.id} cx={sx(p)} cy={sy(p)} r={2.6} fill="var(--panel)" stroke="var(--ink)" strokeWidth={1.4}><title>{tr("道岔")}</title></circle> : null)}
+      {(trains || []).map(train => {
+        const point = pointOf(train.rail)
+        if (!point) return null
+        const color = train.selected ? "var(--sel)" : train.late ? "var(--late)" : "var(--ink)"
+        const width = Math.max(28, train.name.length * 11 + 10)
+        return (
+          <g key={train.id} className="cursor-pointer" role="button" aria-label={train.name} data-train={train.id} onClick={e => { e.stopPropagation(); onTrain?.(train.id) }}>
+            <circle cx={point[0]} cy={point[1]} r={5} fill={color} stroke="var(--panel)" strokeWidth={1.5} />
+            <rect x={point[0] - width / 2} y={point[1] - 25} width={width} height={17} rx={8.5} fill={color} />
+            <text x={point[0]} y={point[1] - 13} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--panel)">{train.name}</text>
+          </g>
+        )
+      })}
     </>
   )
 }

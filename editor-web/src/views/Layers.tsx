@@ -12,7 +12,7 @@ import { Navigator, type Part } from "./Navigator"
 import { Inspector } from "./Inspector"
 import { DutyBoard } from "./DutyBoard"
 import { OwnershipPanel } from "./OwnershipPanel"
-import { NetworkSchematic } from "./NetworkSchematic"
+import { NetworkSchematic, type TrainMark } from "./NetworkSchematic"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
 const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
@@ -25,7 +25,7 @@ export function LayerWork({ layer }: { layer: LayerId }) {
     const state = v.state
     if (layer === "physical" || layer === "owners" || layer === "dispatch") {
       state.view = "network"
-      if (layer !== "dispatch") fn.setNetLayer(layer === "owners" ? "owners" : "physical")
+      fn.setNetLayer(layer === "owners" ? "owners" : "physical")
       if (layer === "dispatch" && !v.consoleState.open) fn.toggleConsole(true)
       if (layer !== "dispatch" && v.consoleState.open) fn.toggleConsole(false)
     } else if (state.view === "network") {
@@ -47,7 +47,7 @@ export function LayerWork({ layer }: { layer: LayerId }) {
     <div className="flex min-h-0 min-w-0 flex-1">
       {part && <Navigator part={part} />}
       {floating && <FloatingMap />}
-      {layer === "physical" ? <PhysicalWork /> : layer === "owners" || layer === "dispatch" ? <NetworkWork owners={layer === "owners"} /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
+      {layer === "physical" ? <PhysicalWork /> : layer === "dispatch" ? <DispatchWork /> : layer === "owners" ? <NetworkWork owners /> : layer === "depots" ? <DepotWork /> : <DiagramWork />}
     </div>
   )
 }
@@ -113,6 +113,50 @@ function FloatingMap() {
         <button className="btn h-6 px-2 text-[12px]" onPointerDown={e => e.stopPropagation()} onClick={cancel}>{tr("取消")}</button>
       </div>
       <NetworkWork owners={false} />
+    </div>
+  )
+}
+
+/**
+ * The dispatch layer: the trains on the schematic (the default) or on the real map, with the dispatcher's console beside
+ * both (the old #net-console, borrowed out of the map). Clicking a train on the schematic chooses it in the console.
+ */
+function DispatchWork() {
+  useLegacy()
+  const { fn, v } = legacy
+  // The console reads the trains on its own timer and only redraws its canvas: look again every second
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const [view, setView] = useState<"schematic" | "real">(() => { try { return localStorage.getItem("mtr-next-dispatch-view") === "real" ? "real" : "schematic" } catch { return "schematic" } })
+  const choose = (next: "schematic" | "real") => {
+    setView(next)
+    try { localStorage.setItem("mtr-next-dispatch-view", next) } catch { /* private window */ }
+    if (next === "real") setTimeout(() => fn.drawNetwork())
+  }
+  // The console's trains as marks on the schematic, by the rail their heads are on
+  const trains: TrainMark[] = (v.consoleState.data && v.consoleState.data.available ? fn.consoleTrains() : []).map((train: any) => ({
+    id: train.id, name: fn.consoleTrainName(train), rail: fn.consoleRail(train.head), late: train.late >= 300, selected: train.id === v.consoleState.selected,
+  })).filter((train: TrainMark) => train.rail >= 0)
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
+          <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
+            {([["schematic", tr("示意图")], ["real", tr("实际图")]] as const).map(([id, label], i) => (
+              <button key={id} type="button" aria-pressed={view === id} onClick={() => choose(id)}
+                className={"px-2.5 text-[13px] " + (i ? "border-l border-gridstrong " : "") + (view === id ? "bg-brand font-medium text-brandink" : "bg-panel")}>{label}</button>
+            ))}
+          </div>
+          <span className="text-[12px] text-dim">{tr("{0} 列车在线上；点列车在右边看它和下命令", trains.length)}</span>
+        </div>
+        {view === "schematic"
+          ? <NetworkSchematic onShowReal={() => choose("real")} trains={trains} onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
+          : <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={() => fn.drawNetwork()} />}
+      </div>
+      <LegacySlot id="net-console" className="dispatch-console scroll-thin max-h-[45%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[340px] lg:border-l lg:border-t-0" />
     </div>
   )
 }

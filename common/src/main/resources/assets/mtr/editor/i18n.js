@@ -885,6 +885,7 @@ const I18N = (() => {
 			"都不勾时，走它停靠的站台所在的逻辑线路。联络线和不属于任何逻辑线路的轨道谁都能走。": "With none ticked, a line runs on the logical lines of its platforms. Connecting lines and track in no logical line are open to all.",
 			"按站台": "by platforms",
 			"{0} 走 {1}": "{0} runs on {1}",
+			"{0} 列车在线上；点列车在右边看它和下命令": "{0} trains on the line; click one to see it and give commands on the right",
 			"每条线一股道，颜色是走它的线路；站台画在股道旁，斜线是道岔和渡线。滚轮缩放，拖动平移。": "One line per track, in the colours of the routes on it; platforms beside their tracks, diagonals are turnouts and crossovers. Wheel to zoom, drag to pan.",
 			"点一段区间，把它整段画进画笔的逻辑线路。": "Click a section to paint all of it with the brush.",
 			"区间的颜色是它属于的逻辑线路（没有逻辑线路时是归属的线路）；车站框里一行一股。": "Sections in the colour of their logical line (of the lines owning them without logical lines); in a station's box one row per track.",

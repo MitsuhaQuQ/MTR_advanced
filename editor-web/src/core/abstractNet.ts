@@ -29,7 +29,9 @@ export type Place = { id: string; kind: "station" | "junction" | "end"; name: st
 /** One track of a corridor: the lane it meets at each end (-1 at a junction or a dead end) and the routes on it */
 export type Track = { aLane: number; bLane: number; colors: string[] }
 export type Corridor = { a: string; b: string; tracks: number; length: number; colors: string[]; crossovers: number; rails: number[]; lines: Track[] }
-export type Schematic = { places: Place[]; corridors: Corridor[]; width: number; height: number }
+/** Where a rail is drawn: on a corridor's track, a fraction of the way from its place a to b, or on a station's lane */
+export type Spot = { corridor: number; track: number; at: number } | { place: string; lane: number }
+export type Schematic = { places: Place[]; corridors: Corridor[]; width: number; height: number; spots: Map<number, Spot> }
 
 const KIND_PLATFORM = 1
 /** How far beyond its platforms a station reaches along them: its throats, where turnouts are its own */
@@ -195,6 +197,8 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
   // ---------- 3. Corridors ----------
   const corridorMap = new Map<string, Corridor>()
   const laneAt = (k: number) => (areaOf.has(k) ? laneOf(k) : -1)
+  // Where each rail outside the stations lies, by the corridor's key while corridors are still being merged
+  const railAt = new Map<number, { key: string; track: number; at: number }>()
   const colorsOf = (list: number[]) => { const set = new Set<string>(); list.forEach(r => railColors[r].forEach(c => set.add(c))); return [...set] }
   chains.forEach(chain => {
     if (chain.a === chain.b) return
@@ -203,6 +207,14 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
     const track: Track = { aLane: laneAt(forward ? chain.startNode : chain.endNode), bLane: laneAt(forward ? chain.endNode : chain.startNode), colors: colorsOf(chain.rails) }
     const key = a + "|" + b
     const corridor = corridorMap.get(key)
+    const trackIndex = corridor ? corridor.lines.length : 0
+    let gone = 0
+    chain.rails.forEach(rail => {
+      const length = lengthOf(rails[rail])
+      const middle = (gone + length / 2) / (chain.length || 1)
+      gone += length
+      railAt.set(rail, { key, track: trackIndex, at: forward ? middle : 1 - middle })
+    })
     if (corridor) {
       corridor.tracks++
       corridor.length = Math.max(corridor.length, chain.length)
@@ -230,6 +242,19 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
       const colors = colorsOf([...c1.rails, ...c2.rails])
       const lines: Track[] = Array.from({ length: count }, (_, i) => ({ aLane: lanesX[Math.min(i, lanesX.length - 1)] ?? -1, bLane: lanesY[Math.min(i, lanesY.length - 1)] ?? -1, colors }))
       const merged: Corridor = { a: x, b: y, tracks: count, length: c1.length + c2.length, colors: [], crossovers: c1.crossovers + c2.crossovers + 1, rails: [...c1.rails, ...c2.rails], lines }
+      // The rails of each half, now a fraction of the way along the whole, from x
+      const keyOf = (c: Corridor) => c.a + "|" + c.b
+      const half = (c: Corridor, from: string, offset: number) => {
+        const key = keyOf(c)
+        railAt.forEach((spot, rail) => {
+          if (spot.key !== key) return
+          const along = c.a === from ? spot.at : 1 - spot.at
+          const whole = offset + along / 2
+          railAt.set(rail, { key: x + "|" + y, track: Math.min(spot.track, count - 1), at: x === a ? whole : 1 - whole })
+        })
+      }
+      half(c1, a, 0)
+      half(c2, place, 0.5)
       corridors = corridors.filter(c => c !== c1 && c !== c2)
       const same = corridors.find(c => c.a === x && c.b === y)
       if (same) { same.tracks = Math.max(same.tracks, merged.tracks); same.rails.push(...merged.rails); same.crossovers += merged.crossovers; if (same.lines.length < merged.lines.length) same.lines = merged.lines }
@@ -239,6 +264,10 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
     }
   }
   corridors.forEach(c => { const colors = new Set<string>(); c.rails.forEach(r => railColors[r].forEach(color => colors.add(color))); c.colors = [...colors] })
+  const corridorIndex = new Map(corridors.map((c, i) => [c.a + "|" + c.b, i]))
+  const spots = new Map<number, Spot>()
+  railAt.forEach((spot, rail) => { const index = corridorIndex.get(spot.key); if (index !== undefined) spots.set(rail, { corridor: index, track: spot.track, at: spot.at }) })
+  rails.forEach((r, i) => { if (areaOf.has(r[0]) && areaOf.get(r[0]) === areaOf.get(r[1])) spots.set(i, { place: "s:" + areaOf.get(r[0]), lane: laneOf(r[0]) }) })
 
   // ---------- 4. Places and layout ----------
   const used = new Set(corridors.flatMap(c => [c.a, c.b]))
@@ -271,6 +300,7 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
     p.turnouts = p.turnouts.map(t => ({ from: n - 1 - t.to, to: n - 1 - t.from, end: -t.end }))
   })
   const placeLanes = new Map(places.map(p => [p.id, p.lanes.length]))
+  spots.forEach(spot => { if ("place" in spot && flipped.has(spot.place) && spot.lane >= 0) spot.lane = placeLanes.get(spot.place)! - 1 - spot.lane })
   corridors.forEach(c => c.lines.forEach(t => {
     if (flipped.has(c.a) && t.aLane >= 0) t.aLane = placeLanes.get(c.a)! - 1 - t.aLane
     if (flipped.has(c.b) && t.bLane >= 0) t.bLane = placeLanes.get(c.b)! - 1 - t.bLane
@@ -279,7 +309,7 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
   const xs = places.map(p => p.px), ys = places.map(p => p.py)
   const minX = Math.min(...xs, 0), minY = Math.min(...ys, 0)
   places.forEach(p => { p.px -= minX - 80; p.py -= minY - 80 })
-  return { places, corridors, width: Math.max(...xs, 0) - minX + 160, height: Math.max(...ys, 0) - minY + 160 }
+  return { places, corridors, width: Math.max(...xs, 0) - minX + 160, height: Math.max(...ys, 0) - minY + 160, spots }
 }
 
 /** The metro-map layout: directions rounded to 45°, lengths by the square root of the real ones, places kept apart. */

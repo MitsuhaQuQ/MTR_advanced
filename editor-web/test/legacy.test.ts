@@ -499,6 +499,30 @@ describe("the old code in the new page", () => {
     expect(central.querySelectorAll("rect title").length).toBe(3)
     expect(central.querySelectorAll("g > line").length).toBeGreaterThan(3)
   })
+  it("shows the console's trains on the schematic", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { NetworkSchematic } = await import("../src/views/NetworkSchematic")
+    const { exampleTrack } = await import("../mock/track")
+    const { fn, v } = engine.legacy
+    const track = exampleTrack()
+    v.net.data = track.network
+    fn.indexNetwork()
+    v.consoleState.data = track.console
+    const trains = fn.consoleTrains().map((train: any) => ({ id: train.id, name: fn.consoleTrainName(train), rail: fn.consoleRail(train.head), late: train.late >= 300, selected: false }))
+    expect(trains.every((train: any) => train.rail >= 0)).toBe(true)
+    const chosen: string[] = []
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(NetworkSchematic, { onShowReal: () => {}, trains, onTrain: (id: string) => chosen.push(id) })))
+    const marks = [...host.querySelectorAll("g[data-train]")]
+    expect(marks.map(m => m.getAttribute("aria-label"))).toEqual(["1 道 车 1", "1 道 车 2"])
+    // The late one in the late colour, and a click chooses it
+    expect(marks[1].querySelector("circle")!.getAttribute("fill")).toBe("var(--late)")
+    await act(async () => marks[1].dispatchEvent(new MouseEvent("click", { bubbles: true })))
+    expect(chosen).toEqual(["t2"])
+    v.consoleState.data = null
+  })
   it("paints a whole section on the logical map with a brush", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

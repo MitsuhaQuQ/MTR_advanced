@@ -34,6 +34,7 @@ export function createMockApi() {
         return true
       case "/api/route-layout": await readBody(req); json(exampleTrack().layout); return true
       case "/api/network": await readBody(req); json(exampleTrack().network); return true
+      case "/api/console": json(exampleTrack().console); return true
       case "/api/audio": {
         // The media library's list (EditorAudio): two recordings, one not on this computer yet
         if (req.method === "POST") { await readBody(req); json({ ok: true }); return true }

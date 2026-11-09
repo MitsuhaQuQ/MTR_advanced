@@ -88,5 +88,14 @@ export function exampleTrack() {
       { id: "201", name: "2号线 东行", color: 0x0072ce, lineKey: "TRAIN|2号线|Line 2", nodes: [...path(0, [1120, 1160, 1180]), fork, p1, loopIn, e1, e2, loopOut, p2, apIn, a1, a2], stopNodes: [] },
     ],
   }
-  return { layout, network }
+  // Two trains for the dispatcher's console (api/console): one between 港湾 and 码头街, one 6 minutes late at 中央广场
+  const key = (offset: number, d: number) => String(nodeAt.get(d + "," + offset))
+  const consoleData = {
+    available: true, blocks: [],
+    trains: [
+      { id: "t1", route: "101", slot: 0, sidingName: "1 道", late: 30, waiting: 0, dispatch: 0, head: [key(0, 120), key(0, 580)], next: "码头街|Pier St", block: "" },
+      { id: "t2", route: "101", slot: 1, sidingName: "1 道", late: 360, waiting: 0, dispatch: 1, head: [key(0, 1080), key(0, 1120)], next: "市政厅|City Hall", block: "" },
+    ],
+  }
+  return { layout, network, console: consoleData }
 }
