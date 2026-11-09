@@ -10,6 +10,7 @@ import { conflictCount, draftCount } from "./core/draft"
 import { LayerWork } from "./views/Layers"
 import { Boundary } from "./ui/Boundary"
 import { TrackDiagram } from "./views/TrackDiagram"
+import { StopsEditor } from "./views/StopsEditor"
 import { LegacyMenu, LegacySlot } from "./legacy/Slot"
 import { setMediaShown } from "./legacy/media"
 import { legacy, useLegacy } from "./legacy/engine"
@@ -73,6 +74,7 @@ function Shell() {
       <SyncPanel open={panel === "sync"} onClose={closePanel} onOpenRoute={openRoute} />
       <LegacyMenu />
       <TrackDiagram />
+      <StopsEditor />
     </div>
   )
 }

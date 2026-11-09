@@ -135,6 +135,76 @@ describe("the old code in the new page", () => {
     const day = last.duties["9001"].duties.sidings["8001"][1].find((each: any) => (each.days >> v.state.weekday) & 1)
     expect(day.segments.length).toBe(before - 1)
   })
+  it("changes a route's tracks and stops in the stops editor", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { StopsEditor } = await import("../src/views/StopsEditor")
+    ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
+    const { fn, v } = engine.legacy
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(StopsEditor)))
+    // The old code's call opens the new editor
+    await act(async () => fn.stopsDialog(v.data.routeById.get("101")))
+    const stop = (i: number) => host.querySelector(`li[data-stop="${i}"]`) as HTMLElement
+    expect(host.textContent).toContain("中央广场")
+    expect(host.textContent).not.toContain("沿轨道走不通")
+    // 中央广场's passing track: fixed there, the stations around still run on track 1
+    const loop = [...stop(2).querySelectorAll("button[aria-pressed]")].find(b => b.textContent!.includes("5")) as HTMLElement
+    await act(async () => loop.click())
+    expect(loop.getAttribute("aria-pressed")).toBe("true")
+    expect(stop(2).textContent).toContain("改了股道")
+    // 市政厅 passed
+    const toggle = [...stop(3).querySelectorAll("button")].find(b => b.textContent === "停车") as HTMLElement
+    await act(async () => toggle.click())
+    expect(toggle.textContent).toBe("通过")
+    const save = [...host.querySelectorAll("button")].find(b => b.textContent === "放进草稿") as HTMLElement
+    await act(async () => { save.click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const entry = changes[changes.length - 1].routes["101"]
+    expect(entry.platforms).toEqual(["1000", "1001", "1200", "1003", "1004", "1005"])
+    expect(entry.timetable.pass).toEqual([false, false, false, true, false, false])
+    expect(host.textContent).toBe("")
+    // A route whose rails don't run through shows where
+    await act(async () => fn.stopsDialog(v.data.routeById.get("202")))
+    expect(host.textContent).toContain("沿轨道走不通")
+    await act(async () => ([...host.querySelectorAll("button")].find(b => b.textContent === "取消") as HTMLElement).click())
+  })
+  it("makes a new line group both ways in the new line editor", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { StopsEditor } = await import("../src/views/StopsEditor")
+    const { fn } = engine.legacy
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(StopsEditor)))
+    await act(async () => fn.newLineDialog())
+    const set = async (element: HTMLInputElement | HTMLSelectElement, value: string) => {
+      const proto = element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(element, value)
+        element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }))
+      })
+    }
+    const labelled = (text: string) => [...host.querySelectorAll("label")].find(l => l.textContent!.startsWith(text))!.querySelector("input, select") as HTMLInputElement
+    await set(labelled("线路组名"), "3号线")
+    await set(labelled("种别"), "普通")
+    await set(labelled("起点"), "s1|0")
+    await set(labelled("终点"), "s6|0")
+    expect(host.querySelectorAll("li[data-stop]").length).toBe(6)
+    expect(host.textContent).toContain("建出：3号线 普通 上行、3号线 普通 下行")
+    await act(async () => { ([...host.querySelectorAll("button")].find(b => b.textContent === "新建") as HTMLElement).click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const created = changes[changes.length - 1].created
+    expect(created.map((c: any) => c.name)).toEqual(["3号线 普通 上行", "3号线 普通 下行"])
+    expect(created[0].stops.map((s: any) => s.platformId)).toEqual(["1000", "1001", "1002", "1003", "1004", "1005"])
+    expect(created[1].stops[0].platformId).toBe("1105")
+    engine.pushDraft({ routes: {} })
+  })
   it("starts the media library", async () => {
     const media = await import("../src/legacy/media")
     expect(() => media.setMediaShown(true)).not.toThrow()

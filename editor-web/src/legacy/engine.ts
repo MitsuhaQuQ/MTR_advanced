@@ -21,6 +21,10 @@ export const menuHost: { current: MenuHandler | null } = { current: null }
 export type DiagramTarget = { kind: "route"; routeId: string } | { kind: "line"; lineKey: string }
 export const diagramHost: { current: ((target: DiagramTarget) => void) | null } = { current: null }
 
+/** The stops of a route to edit, at a stop or not, or a new line group to make (views/StopsEditor.tsx) */
+export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { kind: "new" }
+export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { current: null }
+
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
 
 const env = {
@@ -51,6 +55,9 @@ const env = {
   // The old code's track diagram dialogs: the new page's schematic instead
   routeDiagramDialog: (r: { id: string }) => diagramHost.current?.({ kind: "route", routeId: r.id }),
   lineDiagramDialog: (line: { key: string }) => diagramHost.current?.({ kind: "line", lineKey: line.key }),
+  // The old stops and new line dialogs: the new page's stops editor instead (the old ones stay as oldStopsDialog …)
+  stopsDialog: (r: { id: string }, stop?: number) => stopsHost.current?.({ kind: "route", routeId: r.id, stop: stop ?? -1 }),
+  newLineDialog: () => stopsHost.current?.({ kind: "new" }),
   render: (name: string) => onRender(name),
 }
 
@@ -59,7 +66,7 @@ const created = createLegacy(env)
  * fn: the old functions by name, both `function f` and `const f = () => …`; v: its variables, read and written live.
  */
 export const legacy: { fn: Record<string, any>; v: Record<string, any> } = {
-  fn: new Proxy(created.fn, { get: (functions, name: string) => functions[name] ?? created.v[name] }),
+  fn: new Proxy(created.fn, { get: (functions, name: string) => functions[name] ?? created.v[name] ?? (env as Record<string, any>)[name] }),
   v: created.v,
 }
 

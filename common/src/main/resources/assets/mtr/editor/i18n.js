@@ -1445,7 +1445,25 @@ const I18N = (() => {
 			"留": "stays",
 			"车 / 存车线": "Train / siding",
 			"运用表": "Duty board",
-			"这一天休": "Off this day"
+			"这一天休": "Off this day",
+			"改了股道": "Track changed",
+			"掉头": "Turns back",
+			"固定": "Fixed",
+			"站内配线…": "Station layout…",
+			"首末站总是停车": "Trains always stop at the first and last station",
+			"点一下在停车和通过之间切换": "Click to switch between stopping and passing",
+			"{0}的股道": "Tracks at {0}",
+			"（和其他站连不起来）": " (no way to the other stations)",
+			"↓ {0} 格": "↓ {0} blocks",
+			"↓ 沿轨道走不通": "↓ No way along the rails",
+			"还原": "Reset",
+			"改了 {0} 处": "{0} changes",
+			"点一股固定它，其他站自动换成走得通、改动最少的股道；淡的股道和其他站连不起来。再点一下取消固定。": "Click a track to fix it; the other stations move to tracks that still run, with the fewest changes. Faded tracks have no way to the other stations. Click again to unfix.",
+			"马上改游戏里的站序，不经过草稿": "Changes the stations in the game now, not through the draft",
+			"返回": "Back",
+			"改在全网配线图上选站…": "Pick stations on the network map instead…",
+			"途经站": "Via",
+			"车站是沿轨道从起点到终点（依次经过途经站）最短的走法经过的车站。点一股固定它，其他站自动换成走得通的股道。": "The stations are those on the shortest way along the rails from start to end (through the via stations in order). Click a track to fix it; the other stations move to tracks that still run."
 		}
 	};
 	const STORAGE_KEY = "mtr-editor-language";
