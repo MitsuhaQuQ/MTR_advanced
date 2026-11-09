@@ -101,6 +101,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 * The pieces the paths of sidings are saved as, where the store keeps them (optimisation round 5, step 2), or null.
 	 */
 	private final PathPieces.Store pathPieces;
+	/**
+	 * Each depot and the fingerprint of the duties its layers were last written from (运用表复用和索引), or null where the
+	 * store doesn't keep them.
+	 */
+	private final Map<Long, Long> dutyFingerprints;
 	private final PathPieces.Writer pathPieceWriter;
 	/**
 	 * How long opening the store took (with its backup on starting) and each part of loading, for the line logged once
@@ -140,6 +145,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		dataStore = RailwayDataFileStore.open(savePath, TYPES);
 		openMillis = System.currentTimeMillis() - openStartMillis;
 		pathPieces = dataStore.storesPathPieces() ? new PathPieces.Store() : null;
+		dutyFingerprints = dataStore.storesDutyLayers() ? new HashMap<>() : null;
 		pathPieceWriter = pathPieces == null ? null : new PathPieces.Writer(pathPieces.stored);
 	}
 
@@ -188,6 +194,15 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		readMessagePackFromFile(TYPE_NETWORK_SETTINGS, NetworkSettings::new, railwayData.dataCache.networkSettings::copyFrom, true);
 
 		markLoaded("the rest");
+		if (dutyFingerprints != null) {
+			try {
+				dataStore.loadDutyFingerprints(dutyFingerprints::put);
+			} catch (Exception e) {
+				// Written again with the next save
+				e.printStackTrace();
+				dutyFingerprints.clear();
+			}
+		}
 		railwayData.graphRecords.load(dataStore);
 		markLoaded("track graph");
 		try {
@@ -410,6 +425,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 				dataStore.delete(key.substring(0, separatorIndex), Long.parseLong(key.substring(separatorIndex + 1)));
 			}
 			writePathPieces(pendingWrites.values(), checkFilesToDelete, Collections.emptyList());
+			final Map<Long, Long> dutyWritten = writeDutyLayers(pendingWrites.values(), checkFilesToDelete);
 			// What the component's day tool simulates, written again only when it changed
 			final long millis = System.currentTimeMillis();
 			final boolean simulationDue = stopping || millis - lastSimulationMillis >= SIMULATION_DATA_INTERVAL_MILLIS;
@@ -422,6 +438,7 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			if (pathPieces != null) {
 				pathPieces.committed();
 			}
+			committedDutyLayers(dutyWritten);
 			lastSimulationHash = simulationHash;
 			if (simulationDue) {
 				lastSimulationMillis = millis;
@@ -587,10 +604,12 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			}
 			// The pieces the save going on has worked out are kept for it
 			writePathPieces(writes.values(), deletes, pendingWrites.values());
+			final Map<Long, Long> dutyWritten = writeDutyLayers(writes.values(), deletes);
 			dataStore.commit();
 			if (pathPieces != null) {
 				pathPieces.committed();
 			}
+			committedDutyLayers(dutyWritten);
 			writes.forEach((key, write) -> existingFiles.put(key, write.hash));
 			deletes.forEach(existingFiles::remove);
 			// What the save going on worked out earlier for these is out of date now
@@ -630,7 +649,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	private PendingWrite toPendingWrite(SerializedDataBase data, long id, String type) {
 		if (pathPieceWriter == null || !type.equals(TYPE_SIDINGS)) {
 			final byte[] bytes = toBytes(data);
-			return bytes == null ? null : new PendingWrite(type, id, bytes, null);
+			final PendingWrite pendingWrite = bytes == null ? null : new PendingWrite(type, id, bytes, null);
+			if (pendingWrite != null && dutyFingerprints != null && data instanceof Depot) {
+				addDutyLayers(pendingWrite, (Depot) data);
+			}
+			return pendingWrite;
 		}
 		pathPieceWriter.startOwner();
 		PathPieces.startWriting(pathPieceWriter);
@@ -676,6 +699,69 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		pathPieces.write(dataStore, written, deleted, keptPieces);
 	}
 
+	/**
+	 * Works out a depot's duty layers when its duties changed since they were last written: the duties set by players and
+	 * the planned ones, a group being the bodies a pool of vehicles runs.
+	 */
+	private void addDutyLayers(PendingWrite pendingWrite, Depot depot) {
+		final byte[] userBytes = depot.duties.toBytes();
+		final byte[] autoBytes = depot.autoDuties.toBytes();
+		final long fingerprint = (long) Arrays.hashCode(userBytes) << 32 ^ Arrays.hashCode(autoBytes) & 0xFFFFFFFFL;
+		final Long written = dutyFingerprints.get(depot.id);
+		if (written != null && written == fingerprint) {
+			return;
+		}
+		final java.util.function.LongFunction<String> poolOf = sidingId -> {
+			final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
+			return siding == null ? "" : siding.getPoolKey();
+		};
+		pendingWrite.dutyLayers = new transitsim.plan.DutyLayers[]{transitsim.plan.DutyLayers.of(depot.duties, poolOf), transitsim.plan.DutyLayers.of(depot.autoDuties, poolOf)};
+		pendingWrite.dutyFingerprint = fingerprint;
+	}
+
+	/**
+	 * Writes, in the transaction going on, the duty layers of the depots written whose duties changed, drops those of the
+	 * depots deleted and sweeps the bodies and groups no one refers to any more.
+	 *
+	 * @return the depots written and their fingerprints, to remember once committed; a depot deleted has none
+	 */
+	private Map<Long, Long> writeDutyLayers(Collection<PendingWrite> writes, Collection<String> deletes) throws Exception {
+		final Map<Long, Long> written = new HashMap<>();
+		if (dutyFingerprints == null) {
+			return written;
+		}
+		for (final PendingWrite write : writes) {
+			if (write.dutyLayers != null) {
+				dataStore.writeDutyLayers(write.id, write.dutyFingerprint, write.dutyLayers[0], write.dutyLayers[1]);
+				written.put(write.id, write.dutyFingerprint);
+			}
+		}
+		for (final String key : deletes) {
+			final int separatorIndex = key.lastIndexOf(KEY_SEPARATOR);
+			if (key.substring(0, separatorIndex).equals(TYPE_DEPOTS)) {
+				final long depotId = Long.parseLong(key.substring(separatorIndex + 1));
+				dataStore.deleteDutyLayers(depotId);
+				written.put(depotId, null);
+			}
+		}
+		if (!written.isEmpty()) {
+			dataStore.sweepDutyLayers();
+		}
+		return written;
+	}
+
+	private void committedDutyLayers(Map<Long, Long> written) {
+		if (dutyFingerprints != null) {
+			written.forEach((depotId, fingerprint) -> {
+				if (fingerprint == null) {
+					dutyFingerprints.remove(depotId);
+				} else {
+					dutyFingerprints.put(depotId, fingerprint);
+				}
+			});
+		}
+	}
+
 	private <T extends SerializedDataBase> void readMessagePackFromFile(String type, Function<Map<String, Value>, T> getData, Consumer<T> callback, boolean skipVerify) {
 		try {
 			dataStore.forEach(type, (id, bytes) -> {
@@ -710,8 +796,9 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			return null;
 		}
 		final String key = getKey(type, id);
-		// Everything an entry saves counts, so a train's position or a depot's last service sent out are saved each time
-		if (!existingFiles.containsKey(key) || pendingWrite.hash != existingFiles.get(key)) {
+		// Everything an entry saves counts, so a train's position or a depot's last service sent out are saved each time; a
+		// depot whose duty layers are behind its duties too
+		if (!existingFiles.containsKey(key) || pendingWrite.hash != existingFiles.get(key) || pendingWrite.dutyLayers != null) {
 			pendingWrites.put(key, pendingWrite);
 		}
 		return key;
@@ -743,6 +830,12 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		 * For a siding, the pieces its paths refer to, or null when it is written with them in full.
 		 */
 		private final PathPieces.Owner pathPieces;
+		/**
+		 * For a depot whose duties changed since its layers were last written, the layers of its duties set by players and
+		 * planned, and their fingerprint; null otherwise.
+		 */
+		private transitsim.plan.DutyLayers[] dutyLayers;
+		private long dutyFingerprint;
 
 		private PendingWrite(String type, long id, byte[] data, PathPieces.Owner pathPieces) {
 			this.type = type;

@@ -110,6 +110,18 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.execute("CREATE TABLE IF NOT EXISTS path_pieces (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
 			statement.execute("CREATE TABLE IF NOT EXISTS path_piece_refs (owner INTEGER NOT NULL, piece INTEGER NOT NULL, PRIMARY KEY (owner, piece)) WITHOUT ROWID");
 			statement.execute("CREATE INDEX IF NOT EXISTS path_piece_refs_piece ON path_piece_refs (piece)");
+			// Depots' duties as layers (运用表复用和索引): each body and group once by content, the assignments of each depot
+			// referring to them, and indexes from a group to the depots using it and from a service to the bodies running it
+			statement.execute("CREATE TABLE IF NOT EXISTS duty_bodies (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS duty_groups (id INTEGER PRIMARY KEY, pool TEXT NOT NULL, data BLOB NOT NULL)");
+			statement.execute("CREATE TABLE IF NOT EXISTS duty_group_bodies (grp INTEGER NOT NULL, position INTEGER NOT NULL, body INTEGER NOT NULL, PRIMARY KEY (grp, position)) WITHOUT ROWID");
+			statement.execute("CREATE INDEX IF NOT EXISTS duty_group_bodies_body ON duty_group_bodies (body)");
+			statement.execute("CREATE TABLE IF NOT EXISTS duty_assignments (depot INTEGER NOT NULL, kind INTEGER NOT NULL, siding INTEGER NOT NULL, slot INTEGER NOT NULL, weekdays INTEGER NOT NULL, duty INTEGER NOT NULL, grp INTEGER NOT NULL, body INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (depot, kind, siding, slot, weekdays)) WITHOUT ROWID");
+			statement.execute("CREATE INDEX IF NOT EXISTS duty_assignments_grp ON duty_assignments (grp)");
+			statement.execute("CREATE INDEX IF NOT EXISTS duty_assignments_body ON duty_assignments (body)");
+			statement.execute("CREATE TABLE IF NOT EXISTS duty_body_services (route INTEGER NOT NULL, service INTEGER NOT NULL, body INTEGER NOT NULL, PRIMARY KEY (route, service, body)) WITHOUT ROWID");
+			statement.execute("CREATE INDEX IF NOT EXISTS duty_body_services_body ON duty_body_services (body)");
+			statement.execute("CREATE TABLE IF NOT EXISTS duty_depots (depot INTEGER PRIMARY KEY, fingerprint INTEGER NOT NULL)");
 			// The revision of each part players edit, kept so edits are checked the same after the server is started again
 			statement.execute("CREATE TABLE IF NOT EXISTS edit_revisions (key TEXT PRIMARY KEY, revision INTEGER NOT NULL, editor TEXT NOT NULL, deleted INTEGER NOT NULL)");
 		}
@@ -352,6 +364,135 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.executeBatch();
 		}
 		hasPendingChanges = true;
+	}
+
+	@Override
+	public boolean storesDutyLayers() {
+		return true;
+	}
+
+	@Override
+	public void loadDutyFingerprints(BiConsumer<Long, Long> fingerprints) throws Exception {
+		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT depot, fingerprint FROM duty_depots")) {
+			while (resultSet.next()) {
+				fingerprints.accept(resultSet.getLong(1), resultSet.getLong(2));
+			}
+		}
+	}
+
+	@Override
+	public void writeDutyLayers(long depotId, long fingerprint, transitsim.plan.DutyLayers user, transitsim.plan.DutyLayers auto) throws Exception {
+		deleteDutyLayers(depotId);
+		final transitsim.plan.DutyLayers[] kinds = {user, auto};
+		try (final PreparedStatement bodies = connection.prepareStatement("INSERT OR IGNORE INTO duty_bodies (id, data) VALUES (?, ?)");
+			 final PreparedStatement services = connection.prepareStatement("INSERT OR IGNORE INTO duty_body_services (route, service, body) VALUES (?, ?, ?)");
+			 final PreparedStatement groups = connection.prepareStatement("INSERT OR IGNORE INTO duty_groups (id, pool, data) VALUES (?, ?, ?)");
+			 final PreparedStatement groupBodies = connection.prepareStatement("INSERT OR IGNORE INTO duty_group_bodies (grp, position, body) VALUES (?, ?, ?)");
+			 final PreparedStatement assignments = connection.prepareStatement("INSERT OR REPLACE INTO duty_assignments (depot, kind, siding, slot, weekdays, duty, grp, body, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+			for (int kind = 0; kind < kinds.length; kind++) {
+				final transitsim.plan.DutyLayers layers = kinds[kind];
+				if (layers == null) {
+					continue;
+				}
+				for (final transitsim.plan.DutyLayers.Body body : layers.bodies.values()) {
+					bodies.setLong(1, body.key);
+					bodies.setBytes(2, body.toBytes());
+					bodies.addBatch();
+					for (final transitsim.plan.DepotDuties.Segment segment : body.segments) {
+						services.setLong(1, segment.routeId);
+						services.setInt(2, segment.service);
+						services.setLong(3, body.key);
+						services.addBatch();
+					}
+				}
+				for (final transitsim.plan.DutyLayers.Group group : layers.groups.values()) {
+					groups.setLong(1, group.key);
+					groups.setString(2, group.pool);
+					groups.setBytes(3, group.toBytes());
+					groups.addBatch();
+					for (int i = 0; i < group.bodies.size(); i++) {
+						groupBodies.setLong(1, group.key);
+						groupBodies.setInt(2, i);
+						groupBodies.setLong(3, group.bodies.get(i));
+						groupBodies.addBatch();
+					}
+				}
+				for (final transitsim.plan.DutyLayers.Assignment assignment : layers.assignments) {
+					assignments.setLong(1, depotId);
+					assignments.setInt(2, kind);
+					assignments.setLong(3, assignment.sidingId);
+					assignments.setInt(4, assignment.slotIndex);
+					assignments.setInt(5, assignment.weekdays);
+					assignments.setLong(6, assignment.dutyId);
+					assignments.setLong(7, assignment.isEmptySlot() ? 0 : assignment.groupKey);
+					assignments.setLong(8, assignment.getBodyKey(layers));
+					assignments.setBytes(9, assignment.toBytes());
+					assignments.addBatch();
+				}
+			}
+			bodies.executeBatch();
+			services.executeBatch();
+			groups.executeBatch();
+			groupBodies.executeBatch();
+			assignments.executeBatch();
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO duty_depots (depot, fingerprint) VALUES (?, ?)")) {
+			statement.setLong(1, depotId);
+			statement.setLong(2, fingerprint);
+			statement.executeUpdate();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void deleteDutyLayers(long depotId) throws Exception {
+		for (final String sql : new String[]{"DELETE FROM duty_assignments WHERE depot = ?", "DELETE FROM duty_depots WHERE depot = ?"}) {
+			try (final PreparedStatement statement = connection.prepareStatement(sql)) {
+				statement.setLong(1, depotId);
+				statement.executeUpdate();
+			}
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void sweepDutyLayers() throws Exception {
+		try (final Statement statement = connection.createStatement()) {
+			statement.executeUpdate("DELETE FROM duty_groups WHERE NOT EXISTS (SELECT 1 FROM duty_assignments WHERE grp = duty_groups.id)");
+			statement.executeUpdate("DELETE FROM duty_group_bodies WHERE NOT EXISTS (SELECT 1 FROM duty_groups WHERE id = duty_group_bodies.grp)");
+			statement.executeUpdate("DELETE FROM duty_bodies WHERE NOT EXISTS (SELECT 1 FROM duty_group_bodies WHERE body = duty_bodies.id)");
+			statement.executeUpdate("DELETE FROM duty_body_services WHERE NOT EXISTS (SELECT 1 FROM duty_bodies WHERE id = duty_body_services.body)");
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public List<long[]> findDutiesRunning(long routeId, int service) throws Exception {
+		final List<long[]> duties = new ArrayList<>();
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT a.depot, a.kind, a.siding, a.slot, a.weekdays, a.duty FROM duty_body_services s JOIN duty_assignments a ON a.body = s.body WHERE s.route = ? AND s.service = ? ORDER BY a.depot, a.kind, a.siding, a.slot, a.weekdays")) {
+			statement.setLong(1, routeId);
+			statement.setInt(2, service);
+			try (final ResultSet resultSet = statement.executeQuery()) {
+				while (resultSet.next()) {
+					duties.add(new long[]{resultSet.getLong(1), resultSet.getLong(2), resultSet.getLong(3), resultSet.getLong(4), resultSet.getLong(5), resultSet.getLong(6)});
+				}
+			}
+		}
+		return duties;
+	}
+
+	@Override
+	public List<Long> findDepotsUsingGroup(long groupKey) throws Exception {
+		final List<Long> depots = new ArrayList<>();
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT DISTINCT depot FROM duty_assignments WHERE grp = ? ORDER BY depot")) {
+			statement.setLong(1, groupKey);
+			try (final ResultSet resultSet = statement.executeQuery()) {
+				while (resultSet.next()) {
+					depots.add(resultSet.getLong(1));
+				}
+			}
+		}
+		return depots;
 	}
 
 	@Override

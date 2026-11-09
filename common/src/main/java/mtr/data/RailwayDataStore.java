@@ -1,6 +1,8 @@
 package mtr.data;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -119,5 +121,50 @@ public interface RailwayDataStore {
 	}
 
 	default void deletePathPieces(Collection<Long> pieces) throws Exception {
+	}
+
+	/**
+	 * @return whether depots' duties are also kept as layers in tables of their own, each body and group once by content,
+	 * with indexes (运用表复用和索引, 运用补完 step 1); only the SQLite store does. The depot's entry stays what is read.
+	 */
+	default boolean storesDutyLayers() {
+		return false;
+	}
+
+	/**
+	 * @param fingerprints each depot and the fingerprint of the duties its layers were written from
+	 */
+	default void loadDutyFingerprints(BiConsumer<Long, Long> fingerprints) throws Exception {
+	}
+
+	/**
+	 * Replaces a depot's assignments with those of its duties set by players ({@code user}) and planned ({@code auto}),
+	 * adding the bodies and groups not stored yet.
+	 */
+	default void writeDutyLayers(long depotId, long fingerprint, transitsim.plan.DutyLayers user, transitsim.plan.DutyLayers auto) throws Exception {
+	}
+
+	default void deleteDutyLayers(long depotId) throws Exception {
+	}
+
+	/**
+	 * Drops the groups no assignment refers to, and the bodies no group does.
+	 */
+	default void sweepDutyLayers() throws Exception {
+	}
+
+	/**
+	 * @return each duty running a service, as {depot, 0 for one set by players or 1 planned, siding, slot, weekdays, duty
+	 * number}
+	 */
+	default List<long[]> findDutiesRunning(long routeId, int service) throws Exception {
+		return Collections.emptyList();
+	}
+
+	/**
+	 * @return the depots with a duty of a group, by the group's key
+	 */
+	default List<Long> findDepotsUsingGroup(long groupKey) throws Exception {
+		return Collections.emptyList();
 	}
 }

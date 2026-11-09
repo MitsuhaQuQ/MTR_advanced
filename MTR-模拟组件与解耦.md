@@ -737,6 +737,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
   - （加车也跑不了的班次：组件 `DutyGenerator.unrunnable`、`PlanInputs.withoutPoolFleets`、`layoverOf`，`generateSpread` 只在车不够时分配；测试 `UnrunnableServicesTest`）
   - （网页运行图放大、拖线、Ctrl 点选剔除、按秒改到后续：只改网页，组件不变）
   - （运用补完第 1 步前半：组件 `DepotDuties` 第 5 版和 `DutyLayers` 第 2 版记下等候、出库提前量、出入口；`DutyPlanner`/`DutyGenerator` 把规划时的决定写进运用，`DepotDispatcher.outLeadMillis`、`TrainService.chooseTurnBack` 照计划；测试 `DutyItemsTest` 等）
+  - （运用表复用和索引：组件只加 `DutyLayers` 各层的 `toBytes` 和 `Assignment.getBodyKey`；表在游戏的 SQLite 存储里）
   - （网页右键行为统一：只改网页，组件不变）
   - （网页清空草稿：只改网页，组件不变）
   - （运用组第 3 步不建表；第 4 步网页的运用组、只重排一组都在宿主，组件不变）

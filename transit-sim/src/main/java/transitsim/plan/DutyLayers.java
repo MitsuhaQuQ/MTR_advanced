@@ -292,6 +292,15 @@ public final class DutyLayers {
 			waits.forEach(writer::writeByte);
 		}
 
+		/**
+		 * @return the body as stored on its own, as in a table of bodies
+		 */
+		public byte[] toBytes() {
+			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+			write(writer);
+			return writer.toBytes();
+		}
+
 		private static Body read(BinaryReader reader, int version) {
 			final boolean stayOnLine = reader.readBoolean();
 			final List<DepotDuties.Segment> segments = new ArrayList<>();
@@ -327,6 +336,15 @@ public final class DutyLayers {
 			writeString(writer, pool);
 			writer.writeVarInt(bodies.size());
 			bodies.forEach(writer::writeLong);
+		}
+
+		/**
+		 * @return the group as stored on its own, as in a table of groups
+		 */
+		public byte[] toBytes() {
+			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+			write(writer);
+			return writer.toBytes();
 		}
 
 		private static Group read(BinaryReader reader) {
@@ -388,6 +406,23 @@ public final class DutyLayers {
 			writer.writeLong(outLeadMillis + 1);
 			writer.writeLong(outEntrance);
 			writer.writeLong(backEntrance);
+		}
+
+		/**
+		 * @return the assignment as stored on its own, as in a table of assignments
+		 */
+		public byte[] toBytes() {
+			final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+			write(writer);
+			return writer.toBytes();
+		}
+
+		/**
+		 * @return the key of the body it runs, or 0 for a slot with no duty or a group not among these
+		 */
+		public long getBodyKey(DutyLayers layers) {
+			final Group group = layers.groups.get(groupKey);
+			return isEmptySlot() || group == null || bodyIndex >= group.bodies.size() ? 0 : group.bodies.get(bodyIndex);
 		}
 
 		private static Assignment read(BinaryReader reader, int version) {
