@@ -25,6 +25,11 @@ class NetworkSettingsTest {
 		assertEquals(30000, settings.minReverseMillis);
 		settings.minReverseMillis = 45000;
 		settings.earlyThresholdMillis = 60000;
+		// The wait thresholds of the network and of one station (运用补完 step 2)
+		settings.waitThresholdMillis = 420000;
+		settings.stationWaitThresholds.put(77L, 900000L);
+		assertEquals(900000, settings.getWaitThreshold(77));
+		assertEquals(420000, settings.getWaitThreshold(78));
 
 		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
 		packer.packMapHeader(settings.messagePackLength());
@@ -50,9 +55,15 @@ class NetworkSettingsTest {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(-5);
 		packet.writeLong(Long.MAX_VALUE);
+		packet.writeLong(Long.MAX_VALUE);
+		packet.writeVarInt(1);
+		packet.writeLong(77);
+		packet.writeLong(-1);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
 		assertEquals(0, read.minReverseMillis);
 		assertEquals(NetworkSettings.MAX_MILLIS, read.earlyThresholdMillis);
+		assertEquals(NetworkSettings.MAX_WAIT_THRESHOLD_MILLIS, read.waitThresholdMillis);
+		assertEquals(0, read.getWaitThreshold(77));
 	}
 }

@@ -141,6 +141,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new ConsoleServlet()), "/api/console");
 		context.addServlet(new ServletHolder(new NetworkServlet()), "/api/network");
 		context.addServlet(new ServletHolder(new RoutePreviewServlet()), "/api/route-preview");
+		context.addServlet(new ServletHolder(new DepotWayPreviewServlet()), "/api/depot-way-preview");
 		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
 		context.addServlet(new ServletHolder(new AudioFileServlet()), "/api/audio-file");
 		server.setHandler(context);
@@ -627,6 +628,63 @@ public final class EditorServer {
 				return;
 			}
 			sendJson(response, layout.toString());
+		}
+	}
+
+	/**
+	 * A depot's way out or back as a rule being chosen would have it, found by the server ({@link mtr.packet.DepotWayPreview},
+	 * 运用补完 step 2): the stations the siding reaches the line at, the way's nodes as {x, z, id} and how long it takes.
+	 */
+	private static class DepotWayPreviewServlet extends HttpServlet {
+
+		private static final int ANSWER_SECONDS = 8;
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final long depotId, sidingId, platformId, entrance;
+			final boolean out;
+			final List<Long> waypoints = new ArrayList<>();
+			try {
+				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				depotId = Long.parseLong(requestObject.get("depot").getAsString());
+				sidingId = Long.parseLong(requestObject.get("siding").getAsString());
+				platformId = requestObject.has("platform") ? Long.parseLong(requestObject.get("platform").getAsString()) : 0;
+				out = !requestObject.has("out") || requestObject.get("out").getAsBoolean();
+				entrance = requestObject.has("entrance") ? Long.parseLong(requestObject.get("entrance").getAsString()) : 0;
+				if (requestObject.has("waypoints")) {
+					requestObject.getAsJsonArray("waypoints").forEach(node -> waypoints.add(Long.parseLong(node.getAsString())));
+				}
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			final JsonObject result = new JsonObject();
+			try {
+				final mtr.packet.DepotWayPreview.Answer answer = onGameThread(() -> mtr.packet.DepotWayPreview.request(depotId, sidingId, platformId, out, entrance, waypoints)).get(ANSWER_SECONDS, TimeUnit.SECONDS);
+				final JsonArray entrancesArray = new JsonArray();
+				answer.entrances.forEach(station -> entrancesArray.add(String.valueOf(station)));
+				result.add("entrances", entrancesArray);
+				final JsonArray nodesArray = new JsonArray();
+				answer.nodes.forEach(node -> {
+					final net.minecraft.core.BlockPos pos = net.minecraft.core.BlockPos.of(node);
+					final JsonArray nodeArray = new JsonArray();
+					nodeArray.add(pos.getX() + 0.5);
+					nodeArray.add(pos.getZ() + 0.5);
+					nodeArray.add(String.valueOf(node));
+					nodesArray.add(nodeArray);
+				});
+				result.add("nodes", nodesArray);
+				result.addProperty("found", !answer.nodes.isEmpty());
+				result.addProperty("millis", answer.millis);
+			} catch (Exception e) {
+				result.addProperty("error", "no answer");
+			}
+			sendJson(response, result.toString());
 		}
 	}
 

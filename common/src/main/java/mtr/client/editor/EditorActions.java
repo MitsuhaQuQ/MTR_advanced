@@ -153,6 +153,13 @@ public final class EditorActions implements IPacket {
 		}
 		depot.setData(packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
 		// The trains it gives each pool of its sidings (P2-C); a pool left out, or null, has its sidings' fleets added up
+		// How its trains go out and back, and its named deadhead paths (运用补完 step 2)
+		if (operation.has("rules")) {
+			final transitsim.plan.DepotRules rules = EditorRules.fromJson(operation.get("rules"));
+			if (rules != null) {
+				depot.setRules(rules, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+			}
+		}
 		if (operation.has("poolFleets") && operation.get("poolFleets").isJsonObject()) {
 			final Map<String, Integer> poolFleets = new TreeMap<>();
 			for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("poolFleets").entrySet()) {
@@ -385,6 +392,19 @@ public final class EditorActions implements IPacket {
 			mtr.packet.HeldTrains.sendRecallC2S(depotId, sidingId, operation.get("slot").getAsInt());
 			return null;
 		}
+		// How a depot's trains go out and back, and its named deadhead paths (运用补完 step 2), on their own
+		if ("depotRules".equals(getString(operation, "type"))) {
+			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(parseId(getString(operation, "depot")));
+			final transitsim.plan.DepotRules rules = EditorRules.fromJson(operation.get("rules"));
+			if (depot == null) {
+				return TranslatedMessage.get("gui.mtr.editor_depot_missing");
+			}
+			if (rules == null) {
+				return TranslatedMessage.get("gui.mtr.editor_bad_change");
+			}
+			depot.setRules(rules, packet -> PacketTrainDataGuiClient.sendUpdate(IPacket.PACKET_UPDATE_DEPOT, packet));
+			return null;
+		}
 		// What a depot runs: its routes, whether its trains stay on the line, its sidings' routes and fleets
 		if ("depot".equals(getString(operation, "type"))) {
 			return applyDepot(operation);
@@ -406,6 +426,20 @@ public final class EditorActions implements IPacket {
 			settings.copyFrom(ClientData.DATA_CACHE.networkSettings);
 			if (operation.has("minReverseMillis")) {
 				settings.minReverseMillis = mtr.data.NetworkSettings.clamp(operation.get("minReverseMillis").getAsLong());
+			}
+			if (operation.has("waitThresholdMillis")) {
+				settings.waitThresholdMillis = mtr.data.NetworkSettings.clampWait(operation.get("waitThresholdMillis").getAsLong());
+			}
+			// Each station's own wait threshold; null takes it back to the network one (运用补完 step 2)
+			if (operation.has("stationWaitThresholds") && operation.get("stationWaitThresholds").isJsonObject()) {
+				for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("stationWaitThresholds").entrySet()) {
+					final long stationId = Long.parseLong(entry.getKey());
+					if (entry.getValue().isJsonNull()) {
+						settings.stationWaitThresholds.remove(stationId);
+					} else {
+						settings.stationWaitThresholds.put(stationId, mtr.data.NetworkSettings.clampWait(entry.getValue().getAsLong()));
+					}
+				}
 			}
 			if (operation.has("earlyThresholdMillis")) {
 				settings.earlyThresholdMillis = mtr.data.NetworkSettings.clamp(operation.get("earlyThresholdMillis").getAsLong());

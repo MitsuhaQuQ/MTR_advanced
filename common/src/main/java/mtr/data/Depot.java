@@ -151,6 +151,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final DepotDuties autoDuties = new DepotDuties();
 	/**
+	 * How the depot's trains go out and back, by line and weekday, and its named deadhead paths (出入库规则, 运用补完 step 2).
+	 */
+	public final transitsim.plan.DepotRules rules = new transitsim.plan.DepotRules();
+	/**
+	 * The lines whose trains a siding of the depot reaching the line at more than one station has no rule saying which it
+	 * goes by, as the last path generation found (运用补完 step 2): not planned until one does.
+	 */
+	public final Set<String> entrancesUnset = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	/**
 	 * What the auto duties were last worked out from, so they are worked out again when it changes; not saved, so they
 	 * are worked out again once after the world is loaded.
 	 */
@@ -292,6 +301,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private static final String KEY_POOL_FLEETS = "pool_fleets";
 	private static final String KEY_MEASURED_BUFFERS = "measured_buffers";
 	private static final String KEY_ADDED_BUFFERS = "added_buffers";
+	private static final String KEY_DEPOT_RULES = "depot_rules";
 	/**
 	 * What the auto duties were planned from and what the plan found ({@link LineDuties.Plan#toBytes}), so they are kept
 	 * while they still hold (round 4, step 4).
@@ -385,6 +395,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		if (autoDutiesValue != null && autoDutiesValue.isBinaryValue()) {
 			autoDuties.fromBytes(autoDutiesValue.asBinaryValue().asByteArray());
 		}
+		final Value rulesValue = map.get(KEY_DEPOT_RULES);
+		if (rulesValue != null && rulesValue.isBinaryValue()) {
+			rules.fromBytes(rulesValue.asBinaryValue().asByteArray());
+		}
 		final Value autoPlanValue = map.get(KEY_AUTO_PLAN);
 		if (autoPlanValue != null && autoPlanValue.isBinaryValue()) {
 			autoPlanRecord = autoPlanValue.asBinaryValue().asByteArray();
@@ -458,6 +472,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		readHeadways(packet);
 		readBuffers(packet);
 		addedBuffers = readBufferList(packet);
+		rules.fromBytes(packet.readByteArray(1 << 20));
 	}
 
 	@Override
@@ -537,6 +552,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		messagePacker.writePayload(autoDutyBytes);
 		messagePacker.packString(KEY_AUTO_PLAN).packBinaryHeader(autoPlanRecord.length);
 		messagePacker.writePayload(autoPlanRecord);
+		final byte[] rulesBytes = rules.toBytes();
+		messagePacker.packString(KEY_DEPOT_RULES).packBinaryHeader(rulesBytes.length);
+		messagePacker.writePayload(rulesBytes);
 		final List<Long> bufferSamples = bufferRecorder.toList();
 		messagePacker.packString(KEY_MEASURED_BUFFERS).packArrayHeader(bufferSamples.size());
 		for (final long value : bufferSamples) {
@@ -551,12 +569,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 25;
+		return super.messagePackLength() + 27;
 	}
 
+	/**
+	 * Without the five entries only {@link #toMessagePack} writes: where it left off sending, when, the trips sent, the
+	 * duties run and the takeovers (the takeovers were left out of the count, so a save's header stopped short of them and
+	 * they were never read back, until 2026-11-09).
+	 */
 	@Override
 	public int reducedMessagePackLength() {
-		return messagePackLength() - 4;
+		return messagePackLength() - 5;
 	}
 
 	@Override
@@ -593,6 +616,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		writeHeadways(packet);
 		writeBuffers(packet);
 		writeBufferList(packet, addedBuffers);
+		packet.writeByteArray(rules.toBytes());
 	}
 
 	private void writeBuffers(FriendlyByteBuf packet) {
@@ -750,6 +774,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			readHeadways(packet);
 		} else if (KEY_POOL_FLEETS.equals(key)) {
 			readPoolFleets(packet);
+		} else if (KEY_DEPOT_RULES.equals(key)) {
+			rules.fromBytes(packet.readByteArray(1 << 20));
 		} else if (KEY_MEASURED_BUFFERS.equals(key)) {
 			readBuffers(packet);
 			// Sent with none from the web editor: what was measured is forgotten. The server's are its recorder's whatever a
@@ -1040,7 +1066,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final Map<Long, DepotLegs> measuredWays = new TreeMap<>();
 				if (railwayData != null && routeSearch != null) {
 					final Map<Long, List<List<Long>>> sidingStops = lineUnit == null ? ownSidingStops(dataCache) : lineUnit.getSidingStops();
-					measuredWays.putAll(measureDepotWays(sidingStops, railwayData.routePaths, routeSearch, lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache, rails));
+					measuredWays.putAll(measureDepotWays(Depot.this, sidingStops, railwayData.routePaths, routeSearch, lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache, rails));
 					measuredWays.forEach((sidingId, legs) -> {
 						final Siding siding = dataCache.sidingIdMap.get(sidingId);
 						if (siding != null && !sameWays(siding.getRecordedLegs(), legs)) {
@@ -1077,7 +1103,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// The duties' ways out and back are the ones measured: found on the track sections the same way (round 4)
 				if (railwayData != null) {
 					// By the station nearest the siding, then along the line, for a depot anywhere along the line (2026-11-09)
-					final RoutePaths.DepotLine depotLine = new RoutePaths.DepotLine(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache);
+					final RoutePaths.DepotLine depotLine = new RoutePaths.DepotLine(lineUnit == null ? getRoutes(dataCache) : lineUnit.getRoutes(), dataCache, rules, entrancesUnset);
 					Siding.DEPOT_WAYS.set((from, to, out, platformEnd) -> railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd, depotLine));
 				}
 				try {
@@ -1145,8 +1171,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 *
 	 * @return by siding
 	 */
-	private static Map<Long, DepotLegs> measureDepotWays(Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		final RoutePaths.DepotLine depotLine = new RoutePaths.DepotLine(routes, dataCache);
+	/**
+	 * @param self the depot measuring, whose rules a siding of no depot found goes by (a siding of the unit outside every
+	 *             depot's area is the measuring depot's, as path generation has it)
+	 */
+	private static Map<Long, DepotLegs> measureDepotWays(Depot self, Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		// Each siding's ways by its own depot's rules (运用补完 step 2)
+		final Map<Depot, RoutePaths.DepotLine> depotLines = new HashMap<>();
 		// The node each route runs its first stop and its last towards
 		final Map<Long, Long> firstEnds = new HashMap<>();
 		final Map<Long, Long> lastEnds = new HashMap<>();
@@ -1179,6 +1210,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				return;
 			}
 			final PathTiming.Vehicle vehicle = siding.getTimingVehicle();
+			final Depot sidingDepot = dataCache.sidingIdToDepot.getOrDefault(sidingId, self);
+			final RoutePaths.DepotLine depotLine = depotLines.computeIfAbsent(sidingDepot, depot -> {
+				depot.entrancesUnset.clear();
+				return new RoutePaths.DepotLine(routes, dataCache, depot.rules, depot.entrancesUnset);
+			});
 			final Map<Long, Long> out = new TreeMap<>();
 			final Map<Long, Long> back = new TreeMap<>();
 			final Set<Long> noWayOut = new TreeSet<>();
@@ -2107,6 +2143,62 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	/**
 	 * Sets the trains the depot gives each pool of its sidings (P2-C), a pool left out keeping its sidings' fleets added up.
 	 */
+	/**
+	 * Applies the depot's rules for going out and back to duties just planned (运用补完 step 2): by the rule the first
+	 * service of each day matches, how much earlier than its way out the train leaves, the stations it goes out and back
+	 * by, the named deadhead paths and the siding it goes back to (one of its pool); then keeps what the duties planned
+	 * before set as exceptions, for the same duty number and weekdays.
+	 *
+	 * @param before the depot's duties as they were
+	 */
+	void applyRules(DepotDuties planned, DepotDuties before, DataCache dataCache) {
+		planned.sidings.forEach((sidingId, slots) -> {
+			final Siding siding = dataCache.sidingIdMap.get(sidingId);
+			final List<DepotDuties.Slot> beforeSlots = before.sidings.getOrDefault(sidingId, Collections.emptyList());
+			for (final DepotDuties.Slot slot : slots) {
+				for (final DepotDuties.DayDuty day : slot.days) {
+					if (day.segments.isEmpty()) {
+						continue;
+					}
+					final Route route = dataCache.routeIdMap.get(day.segments.get(0).routeId);
+					final transitsim.plan.DepotRules.Rule rule = route == null ? null : rules.match(LineDuties.getLineKey(route), Integer.numberOfTrailingZeros(day.weekdays));
+					if (rule != null) {
+						if (day.outLeadMillis >= 0) {
+							day.outLeadMillis += rule.extraLeadMillis;
+						}
+						day.outEntrance = rule.outEntrance;
+						day.backEntrance = rule.backEntrance;
+						day.outPathId = rule.outPath;
+						day.backPathId = rule.backPath;
+						final Siding backSiding = rule.backSiding == 0 || day.stayOnLine ? null : dataCache.sidingIdMap.get(rule.backSiding);
+						if (backSiding != null && siding != null && backSiding.getPoolKey().equals(siding.getPoolKey())) {
+							day.returnSidingId = backSiding.id;
+						}
+					}
+					for (final DepotDuties.Slot beforeSlot : beforeSlots) {
+						if (beforeSlot.id == slot.id) {
+							beforeSlot.days.stream().filter(beforeDay -> (beforeDay.weekdays & day.weekdays) != 0 && beforeDay.exceptions != 0).findFirst().ifPresent(day::keepExceptions);
+						}
+					}
+				}
+			}
+		});
+	}
+
+	/**
+	 * Replaces the depot's rules for going out and back and its named deadhead paths (运用补完 step 2).
+	 */
+	public void setRules(transitsim.plan.DepotRules newRules, Consumer<FriendlyByteBuf> sendPacket) {
+		rules.fromBytes(newRules.toBytes());
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeUtf(transportMode.toString());
+		packet.writeUtf(KEY_DEPOT_RULES);
+		packet.writeByteArray(rules.toBytes());
+		sendPacket.accept(packet);
+		isDirty = true;
+	}
+
 	public void setPoolFleets(Map<String, Integer> newPoolFleets, Consumer<FriendlyByteBuf> sendPacket) {
 		poolFleets.clear();
 		newPoolFleets.forEach((poolKey, fleet) -> {
@@ -2329,6 +2421,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * trains short, but a way out of the sidings or round missing.
 		 */
 		public int unrunnablePerDay;
+		/**
+		 * The lines the depot reaches at more than one station with no rule saying which its trains go by (运用补完 step 2).
+		 */
+		public final List<String> entrancesUnset = new ArrayList<>();
 
 		private Shortfall(String lineNames, int needed, int available, int uncoveredPerDay, String suggestedSiding, String replanHint, List<LineDuties.Pool> pools) {
 			this.lineNames = lineNames;
@@ -2396,6 +2492,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					packet.writeBoolean(group.kept);
 				});
 				packet.writeVarInt(shortfall.unrunnablePerDay);
+				packet.writeVarInt(shortfall.entrancesUnset.size());
+				shortfall.entrancesUnset.forEach(packet::writeUtf);
 			}
 		}
 
@@ -2418,6 +2516,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				shortfall.groups.add(new DutyGroup(packet.readUtf(PACKET_STRING_READ_LENGTH), packet.readInt(), packet.readInt(), packet.readInt(), packet.readBoolean()));
 			}
 			shortfall.unrunnablePerDay = packet.readVarInt();
+			for (int i = Math.min(packet.readVarInt(), 4096); i > 0; i--) {
+				shortfall.entrancesUnset.add(packet.readUtf(PACKET_STRING_READ_LENGTH));
+			}
 			return shortfall;
 		}
 	}
@@ -2514,6 +2615,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						planned.sidings.put(sidingId, slots);
 					}
 				});
+				applyRules(planned, autoDuties, dataCache);
 				final byte[] record = linePlan.toBytes();
 				minecraftServer.execute(() -> {
 					autoDuties.sidings.keySet().removeAll(sidingIds);
@@ -2521,6 +2623,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					autoDuties.diagramMode = true;
 					autoPlanRecord = record;
 					lineShortfall = new Shortfall(linePlan);
+					lineShortfall.entrancesUnset.addAll(new TreeSet<>(entrancesUnset));
+					if (!entrancesUnset.isEmpty()) {
+						System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " reaches the line at more than one station; lines with no rule saying which their trains go by, not planned: " + String.join(", ", new TreeSet<>(entrancesUnset)));
+					}
 					sendAutoDuties(minecraftServer);
 				});
 				return planned;
@@ -2552,13 +2658,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				sidingInput.poolKey = siding.getPoolKey();
 				sidingInputs.add(sidingInput);
 			});
-			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getAddedBuffers(), dataCache.networkSettings.minReverseMillis);
+			final DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(LineDuties.turnTimesOf(Collections.singletonList(Depot.this)), LineDuties.backLinksOf(sidings, lastPlatforms, dataCache), LineDuties.poolFleetsOf(sidingInputs, sidingId -> Depot.this), getAddedBuffers(), dataCache.networkSettings.minReverseMillis, LineDuties.waitThresholdsOf(mainRoutes, Collections.singletonList(Depot.this), dataCache));
 			final Map<Long, Long> stationOf = new HashMap<>();
 			dataCache.platformIdToStation.forEach((platformId, station) -> stationOf.put(platformId, station.id));
 			final Set<Long> mainRouteIds = new HashSet<>();
 			mainRoutes.forEach(route -> mainRouteIds.add(route.id));
 			final long leftToOthers = autoTaken.stream().filter(service -> mainRouteIds.contains(Long.parseLong(service.substring(0, service.indexOf('@'))))).count();
 			final AutoDuties generated = AutoDuties.generate(mainRoutes, route -> fastestTimes.get(route.getRouteId()), TimetableConfig.getDayStartMillis(), sidingInputs, stationOf, cycleRoutes, autoTaken, inputs);
+			applyRules(generated.duties, autoDuties, dataCache);
 			System.out.println("Minecraft Transit Railway: worked out the duties of depot " + (name.isEmpty() ? String.valueOf(id) : name) + " from its timetables: " + generated.trains + " trains, " + generated.uncovered / 7 + " services a day with no train" + (leftToOthers == 0 ? "" : ", " + leftToOthers + " services left to other sidings or depots running its routes") + (generated.missingTimes.isEmpty() ? "" : ", " + generated.missingTimes.size() + " routes left out as their times aren't known"));
 			minecraftServer.execute(() -> {
 				autoDuties.sidings.keySet().removeAll(sidingIds);

@@ -121,6 +121,35 @@ public final class LineDuties {
 	private LineDuties() {
 	}
 
+	/**
+	 * @return platform to from how long a wait for the next service a train waits on a turn back rail beyond it rather than
+	 * at the platform (运用补完 step 2), at the stops of the routes: by a rule of one of the depots for the route's line, else
+	 * the station's own, else the network one; only where not the runtime's default
+	 */
+	public static Map<Long, Long> waitThresholdsOf(Collection<Route> routes, Collection<Depot> depots, DataCache dataCache) {
+		final Map<Long, Long> thresholds = new TreeMap<>();
+		for (final Route route : routes) {
+			long ruleMillis = -1;
+			final String lineKey = getLineKey(route);
+			for (final Depot depot : depots) {
+				for (int weekday = 0; weekday < 7 && ruleMillis < 0; weekday++) {
+					final transitsim.plan.DepotRules.Rule rule = depot.rules.match(lineKey, weekday);
+					if (rule != null && rule.waitThresholdMillis >= 0) {
+						ruleMillis = rule.waitThresholdMillis;
+					}
+				}
+			}
+			for (final Route.RoutePlatform routePlatform : route.platformIds) {
+				final Station station = dataCache.platformIdToStation.get(routePlatform.platformId);
+				final long millis = ruleMillis >= 0 ? ruleMillis : dataCache.networkSettings.getWaitThreshold(station == null ? 0 : station.id);
+				if (millis != transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS) {
+					thresholds.put(routePlatform.platformId, millis);
+				}
+			}
+		}
+		return thresholds;
+	}
+
 	public static String getLineKey(Route route) {
 		return route.transportMode + "|" + route.getLineKey();
 	}
@@ -292,6 +321,10 @@ public final class LineDuties {
 		 */
 		private final long minReverseMillis;
 		/**
+		 * Platform to from how long a wait a train waits on a turn back rail beyond it, where not the default.
+		 */
+		private final Map<Long, Long> waitThresholds;
+		/**
 		 * A digest of {@link #buffers}, empty for none, for telling the duties kept were planned with others (round 4, step 6).
 		 */
 		private final String buffersKey;
@@ -433,6 +466,9 @@ public final class LineDuties {
 			// The network's least time to change ends (round 4)
 			minReverseMillis = dataCache.networkSettings.minReverseMillis;
 			keyBuilder.append("reverse:").append(minReverseMillis);
+			// From how long a wait trains wait off the platform, at each platform (运用补完 step 2)
+			waitThresholds = waitThresholdsOf(routes, depots, dataCache);
+			keyBuilder.append("waits:").append(waitThresholds);
 			// The routes' paths keep off the connecting lines, which changes their times
 			keyBuilder.append("connecting:");
 			dataCache.routeIdMap.values().stream().filter(route -> route.connectingLine && route.transportMode == transportMode).sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
@@ -496,7 +532,7 @@ public final class LineDuties {
 					planBackLinks.put(sidingId, back);
 				});
 			}
-			return new DutyGenerator.PlanInputs(turnTimes, planBackLinks, poolFleets, buffers, minReverseMillis);
+			return new DutyGenerator.PlanInputs(turnTimes, planBackLinks, poolFleets, buffers, minReverseMillis, waitThresholds);
 		}
 
 		private long getMaxLayover() {

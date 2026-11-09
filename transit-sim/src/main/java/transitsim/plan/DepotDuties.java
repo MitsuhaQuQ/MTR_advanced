@@ -32,7 +32,7 @@ public final class DepotDuties {
 	 * Saved and sent data starts with this. The first data saved, before overnight trains could pick their next duty, started
 	 * with the mode, a boolean, so it reads as 0 or 1 there.
 	 */
-	private static final int FORMAT_VERSION = 5;
+	private static final int FORMAT_VERSION = 6;
 
 	public boolean isEmpty() {
 		return sidings.values().stream().allMatch(List::isEmpty);
@@ -248,7 +248,7 @@ public final class DepotDuties {
 					day.segments.add(new Segment(packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt() - 1));
 				}
 				if (version >= 5) {
-					day.readItems(packet);
+					day.readItems(packet, version);
 				}
 				if (day.weekdays != 0) {
 					slot.days.add(day);
@@ -304,6 +304,25 @@ public final class DepotDuties {
 		 */
 		public long outEntrance;
 		public long backEntrance;
+		/**
+		 * The named deadhead paths out and back ({@link DepotRules.DeadheadPath#id}), or 0 for the way found by the station
+		 * nearest the depot (运用补完 step 2).
+		 */
+		public long outPathId;
+		public long backPathId;
+		/**
+		 * Which of what the duty says were set for it alone ({@code EXCEPTION_*}), kept as they are when the duties are
+		 * planned again; the rest follows the depot's rules.
+		 */
+		public int exceptions;
+
+		public static final int EXCEPTION_OUT_LEAD = 1;
+		public static final int EXCEPTION_OUT_PATH = 2;
+		public static final int EXCEPTION_BACK_SIDING = 4;
+		public static final int EXCEPTION_BACK_PATH = 8;
+		public static final int EXCEPTION_WAITS = 16;
+		public static final int EXCEPTION_ENTRANCES = 32;
+		public static final int EXCEPTION_ALL = 63;
 
 		/**
 		 * The runtime decides, as before (and between the parts of a service run through).
@@ -334,7 +353,7 @@ public final class DepotDuties {
 		 * @return whether it says anything more than duties planned before did
 		 */
 		public boolean hasItems() {
-			return outLeadMillis >= 0 || outEntrance != 0 || backEntrance != 0 || waits.stream().anyMatch(wait -> wait != WAIT_ANY);
+			return outLeadMillis >= 0 || outEntrance != 0 || backEntrance != 0 || outPathId != 0 || backPathId != 0 || exceptions != 0 || waits.stream().anyMatch(wait -> wait != WAIT_ANY);
 		}
 
 		private void writeItems(BinaryWriter packet) {
@@ -343,9 +362,12 @@ public final class DepotDuties {
 			packet.writeLong(outLeadMillis + 1);
 			packet.writeLong(outEntrance);
 			packet.writeLong(backEntrance);
+			packet.writeLong(outPathId);
+			packet.writeLong(backPathId);
+			packet.writeByte(exceptions);
 		}
 
-		private void readItems(BinaryReader packet) {
+		private void readItems(BinaryReader packet, int version) {
 			for (int i = limit(packet.readVarInt(), MAX_SEGMENTS); i > 0; i--) {
 				final int wait = packet.readUnsignedByte();
 				waits.add(wait <= MAX_WAIT_KIND ? wait : WAIT_ANY);
@@ -353,13 +375,49 @@ public final class DepotDuties {
 			outLeadMillis = Math.max(-1, packet.readLong() - 1);
 			outEntrance = packet.readLong();
 			backEntrance = packet.readLong();
+			if (version >= 6) {
+				outPathId = packet.readLong();
+				backPathId = packet.readLong();
+				exceptions = packet.readUnsignedByte() & EXCEPTION_ALL;
+			}
+		}
+
+		/**
+		 * Keeps what another duty set as exceptions, in place of what this one has, where the other has as many services.
+		 */
+		public void keepExceptions(DayDuty other) {
+			exceptions |= other.exceptions;
+			if ((other.exceptions & EXCEPTION_OUT_LEAD) != 0) {
+				outLeadMillis = other.outLeadMillis;
+			}
+			if ((other.exceptions & EXCEPTION_OUT_PATH) != 0) {
+				outPathId = other.outPathId;
+			}
+			if ((other.exceptions & EXCEPTION_BACK_SIDING) != 0) {
+				returnSidingId = other.returnSidingId;
+			}
+			if ((other.exceptions & EXCEPTION_BACK_PATH) != 0) {
+				backPathId = other.backPathId;
+			}
+			if ((other.exceptions & EXCEPTION_ENTRANCES) != 0) {
+				outEntrance = other.outEntrance;
+				backEntrance = other.backEntrance;
+			}
+			if ((other.exceptions & EXCEPTION_WAITS) != 0) {
+				if (other.waits.size() == waits.size()) {
+					waits.clear();
+					waits.addAll(other.waits);
+				} else {
+					exceptions &= ~EXCEPTION_WAITS;
+				}
+			}
 		}
 
 		/**
 		 * @return whether another day's duty is the same in all but its weekdays
 		 */
 		public boolean sameAs(DayDuty other) {
-			return stayOnLine == other.stayOnLine && segments.equals(other.segments) && waits.equals(other.waits) && outLeadMillis == other.outLeadMillis && outEntrance == other.outEntrance && backEntrance == other.backEntrance;
+			return stayOnLine == other.stayOnLine && segments.equals(other.segments) && waits.equals(other.waits) && outLeadMillis == other.outLeadMillis && outEntrance == other.outEntrance && backEntrance == other.backEntrance && outPathId == other.outPathId && backPathId == other.backPathId && exceptions == other.exceptions;
 		}
 
 		/**
@@ -378,6 +436,9 @@ public final class DepotDuties {
 			copy.outLeadMillis = outLeadMillis;
 			copy.outEntrance = outEntrance;
 			copy.backEntrance = backEntrance;
+			copy.outPathId = outPathId;
+			copy.backPathId = backPathId;
+			copy.exceptions = exceptions;
 			return copy;
 		}
 
@@ -390,6 +451,7 @@ public final class DepotDuties {
 			if (hasItems()) {
 				builder.append(',').append(outLeadMillis).append(',').append(outEntrance).append(',').append(backEntrance).append(',').append('w');
 				waits.forEach(builder::append);
+				builder.append(',').append(outPathId).append(',').append(backPathId).append(',').append(exceptions);
 			}
 			segments.forEach(segment -> builder.append(';').append(segment.routeId).append(',').append(segment.service).append(',').append(segment.fromStop).append(',').append(segment.toStop));
 			return builder.toString();
@@ -423,6 +485,11 @@ public final class DepotDuties {
 						final int wait = head[9].charAt(i) - '0';
 						day.waits.add(wait >= 0 && wait <= MAX_WAIT_KIND ? wait : WAIT_ANY);
 					}
+				}
+				if (head.length >= 13) {
+					day.outPathId = Long.parseLong(head[10]);
+					day.backPathId = Long.parseLong(head[11]);
+					day.exceptions = Integer.parseInt(head[12]) & EXCEPTION_ALL;
 				}
 				for (int i = 1; i < parts.length; i++) {
 					final String[] values = parts[i].split(",");

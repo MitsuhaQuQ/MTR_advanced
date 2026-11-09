@@ -454,6 +454,7 @@ public class MTR implements IPacket {
 
 		PacketGuard.register(PACKET_GENERATE_PATH, PacketTrainDataGuiServer::generatePathC2S);
 		PacketGuard.register(PACKET_ROUTE_PREVIEW, mtr.packet.RoutePreview::receiveC2S);
+		PacketGuard.register(PACKET_DEPOT_WAY_PREVIEW, mtr.packet.DepotWayPreview::receiveC2S);
 		PacketGuard.register(PACKET_RECALL_TRAIN, mtr.packet.HeldTrains::receiveRecallC2S);
 		PacketGuard.register(PACKET_CONTINGENCIES, mtr.packet.ContingencyPackets::receiveC2S);
 		PacketGuard.register(PACKET_NETWORK_SETTINGS, mtr.packet.NetworkSettingsPackets::receiveC2S);

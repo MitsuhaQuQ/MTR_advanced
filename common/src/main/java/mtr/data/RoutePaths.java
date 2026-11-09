@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -558,14 +559,32 @@ public final class RoutePaths {
 		// the nearest by the way there is; looking at every stop of the line found ways to all of them and filled the memory
 		// on a large network
 		final List<Long> nearby = new ArrayList<>();
-		if (linePlans != null) {
-			final BlockPos sidingPos = (out ? from : to).getMidPos();
+		final SavedRailBase siding = out ? from : to;
+		final SavedRailBase platform = out ? to : from;
+		// As the depot's rule for the platform's line has it (运用补完 step 2): a named deadhead path, or the station it goes
+		// out or back by, which must be set where the depot reaches the line at more than one
+		final DepotLine.WayRule wayRule = depotLine == null ? DepotLine.WayRule.NONE : depotLine.wayRuleFor(platform.id, out);
+		if (linePlans != null && wayRule.waypoints.length == 0) {
+			final BlockPos sidingPos = siding.getMidPos();
 			final List<Map.Entry<Long, SavedRailBase>> stations = new ArrayList<>(linePlans.stations.entrySet());
+			if (wayRule.entrance != 0) {
+				stations.removeIf(station -> depotLine.stationOf(station.getValue().id) != wayRule.entrance);
+				if (stations.isEmpty()) {
+					return Collections.emptyList();
+				}
+			} else if (depotLine.entrancesOf(siding, legs, linePlans, source).size() > 1) {
+				depotLine.reportEntranceUnset(siding, platform);
+				return Collections.emptyList();
+			}
 			stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
 			stations.subList(0, Math.min(NEARBY_STATIONS, stations.size())).forEach(station -> nearby.add(station.getKey()));
 		}
 		final RouteLegs.Plan plan;
-		if (nearby.isEmpty()) {
+		if (wayRule.waypoints.length > 0) {
+			// Through the path's nodes in order
+			final List<long[]> waypoints = Arrays.asList(wayRule.waypoints, new long[0]);
+			plan = RouteLegs.plan(Arrays.asList(sections.get(0).hash, sections.get(1).hash), waypoints, null, source);
+		} else if (nearby.isEmpty()) {
 			plan = RouteLegs.planBetween(sections.get(0).hash, out ? null : platformAlong, sections.get(1).hash, out ? platformAlong : null, source);
 		} else if (out) {
 			plan = transitsim.network.LineDepotWays.planOut(sections.get(0).hash, sections.get(1).hash, platformAlong, nearby, linePlans.plans, linePlans.lines, legs.snapshot, source);
@@ -619,13 +638,162 @@ public final class RoutePaths {
 		private final DataCache dataCache;
 		private Plans plans;
 
+		/**
+		 * The depot's rules for going out and back (运用补完 step 2), or none.
+		 */
+		private final transitsim.plan.DepotRules rules;
+		private final Map<Long, Set<Long>> entrances = new HashMap<>();
+		private transitsim.network.TrackSections.Snapshot entrancesSnapshot;
+		private final Set<String> reported = new HashSet<>();
+		private final Set<String> entrancesUnset;
+		private WayRule override;
+
+		/**
+		 * Every way out or back by this station or through these nodes, as a rule being chosen in the editor has it, in
+		 * place of the depot's rules.
+		 *
+		 * @param entrance  the station gone out or back by, or 0
+		 * @param waypoints the nodes of a named path, or none
+		 */
+		public DepotLine withWay(long entrance, long[] waypoints) {
+			override = new WayRule(entrance, waypoints);
+			return this;
+		}
+
 		public DepotLine(Collection<Route> routes, DataCache dataCache) {
+			this(routes, dataCache, null);
+		}
+
+		public DepotLine(Collection<Route> routes, DataCache dataCache, transitsim.plan.DepotRules rules) {
+			this(routes, dataCache, rules, null);
+		}
+
+		/**
+		 * @param entrancesUnset told the lines whose trains a siding reaching the line at more than one station has no rule
+		 *                       for, or null
+		 */
+		public DepotLine(Collection<Route> routes, DataCache dataCache, transitsim.plan.DepotRules rules, Set<String> entrancesUnset) {
+			this.entrancesUnset = entrancesUnset;
 			routes.forEach(route -> {
 				if (!route.connectingLine) {
 					this.routes.add(route);
 				}
 			});
 			this.dataCache = dataCache;
+			this.rules = rules;
+		}
+
+		long stationOf(long platformId) {
+			final Station station = dataCache.platformIdToStation.get(platformId);
+			return station == null ? 0 : station.id;
+		}
+
+		/**
+		 * How a way out to a platform, or back from one, goes by the depot's rules: the rule of the first line found
+		 * starting there (or ending there, back) that sets a station or a named path, on any weekday, as the ways are the
+		 * same every day.
+		 */
+		WayRule wayRuleFor(long platformId, boolean out) {
+			if (override != null) {
+				return override;
+			}
+			if (rules == null || rules.rules.isEmpty()) {
+				return WayRule.NONE;
+			}
+			for (final Route route : routes) {
+				if ((out ? route.getFirstPlatformId() : route.getLastPlatformId()) != platformId) {
+					continue;
+				}
+				final String lineKey = LineDuties.getLineKey(route);
+				for (int weekday = 0; weekday < 7; weekday++) {
+					final transitsim.plan.DepotRules.Rule rule = rules.match(lineKey, weekday);
+					if (rule == null) {
+						continue;
+					}
+					final long entrance = out ? rule.outEntrance : rule.backEntrance;
+					final transitsim.plan.DepotRules.DeadheadPath path = rules.getPath(out ? rule.outPath : rule.backPath);
+					if (entrance != 0 || path != null) {
+						return new WayRule(entrance, path == null ? new long[0] : path.waypoints);
+					}
+				}
+			}
+			return WayRule.NONE;
+		}
+
+		/**
+		 * @return the stations a siding reaches the line at (出入口): the first platform of the line its way to each station
+		 * near it runs onto, either way out of the siding, as the station of that platform
+		 */
+		synchronized Set<Long> entrancesOf(SavedRailBase siding, mtr.advanced.GraphRecords.Legs legs, Plans linePlans, RouteLegs.LegSource source) {
+			if (entrancesSnapshot != legs.snapshot) {
+				entrances.clear();
+				entrancesSnapshot = legs.snapshot;
+			}
+			return entrances.computeIfAbsent(siding.id, key -> {
+				final Set<Long> found = new TreeSet<>();
+				final transitsim.network.TrackSections.Section sidingSection = sectionOf(siding, legs);
+				if (sidingSection == null) {
+					return found;
+				}
+				final BlockPos sidingPos = siding.getMidPos();
+				final List<Map.Entry<Long, SavedRailBase>> stations = new ArrayList<>(linePlans.stations.entrySet());
+				stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
+				for (final Map.Entry<Long, SavedRailBase> station : stations.subList(0, Math.min(NEARBY_STATIONS * 2, stations.size()))) {
+					for (final boolean fromAlong : new boolean[]{true, false}) {
+						final transitsim.network.LegRouter.Leg leg = source.get(new transitsim.network.LegRouter.Request(sidingSection.hash, fromAlong, station.getKey(), new long[0], null, false));
+						for (final boolean toAlong : new boolean[]{true, false}) {
+							if (Double.isInfinite(leg.getCost(toAlong))) {
+								continue;
+							}
+							for (final long[] step : leg.getSteps(toAlong)) {
+								final SavedRailBase first = linePlans.stations.get(step[0]);
+								if (first != null) {
+									final long stationId = stationOf(first.id);
+									if (stationId != 0) {
+										found.add(stationId);
+									}
+									break;
+								}
+							}
+						}
+					}
+				}
+				if (Boolean.getBoolean("mtr.debugDepotWays")) {
+					System.out.println("Minecraft Transit Railway depot entrances of siding " + siding.id + ": " + found);
+				}
+				return found;
+			});
+		}
+
+		/**
+		 * Tells once that a siding reaching the line at more than one station has no rule saying which a line goes by.
+		 */
+		synchronized void reportEntranceUnset(SavedRailBase siding, SavedRailBase platform) {
+			if (entrancesUnset != null) {
+				routes.forEach(route -> {
+					if (route.getFirstPlatformId() == platform.id || route.getLastPlatformId() == platform.id) {
+						entrancesUnset.add(LineDuties.getLineKey(route));
+					}
+				});
+			}
+			if (reported.add(siding.id + "/" + platform.id)) {
+				System.out.println("Minecraft Transit Railway: siding " + siding.id + " reaches the line at more than one station, and no rule of its depot says which the trains for platform " + platform.id + " go by; none are planned there until one does" + (Boolean.getBoolean("mtr.debugDepotWays") ? " (" + (rules == null ? "no" : rules.rules.size()) + " rules, lines " + routes.stream().filter(route -> route.getFirstPlatformId() == platform.id || route.getLastPlatformId() == platform.id).map(LineDuties::getLineKey).collect(java.util.stream.Collectors.toList()) + ")" : ""));
+			}
+		}
+
+		/**
+		 * The station a way goes out or back by, or 0 for the nearest; the nodes of a named path, or none.
+		 */
+		static final class WayRule {
+
+			static final WayRule NONE = new WayRule(0, new long[0]);
+			final long entrance;
+			final long[] waypoints;
+
+			WayRule(long entrance, long[] waypoints) {
+				this.entrance = entrance;
+				this.waypoints = waypoints;
+			}
 		}
 
 		private synchronized Plans plansFor(mtr.advanced.GraphRecords.Legs legs, RouteLegs.LegSource source) {
@@ -672,6 +840,26 @@ public final class RoutePaths {
 				this.lines = lines;
 			}
 		}
+	}
+
+	/**
+	 * @return a way out or back as a depot's rule chosen in the editor would have it ({@link DepotLine#withWay}), found
+	 * as path generation finds it but kept for no one; null before the track sections are there
+	 */
+	public List<PathData> previewDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, DepotLine depotLine) {
+		return findDepotWay(from, to, rails, out, 0, false, depotLine);
+	}
+
+	/**
+	 * @return the stations a siding reaches the line at (出入口, 运用补完 step 2), or none before the track sections are there
+	 */
+	public Set<Long> findEntrances(SavedRailBase siding, DepotLine depotLine) {
+		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
+		if (legs == null) {
+			return Collections.emptySet();
+		}
+		final RouteLegs.LegSource source = legs.withoutKeeping();
+		return depotLine.entrancesOf(siding, legs, depotLine.plansFor(legs, source), source);
 	}
 
 	/**

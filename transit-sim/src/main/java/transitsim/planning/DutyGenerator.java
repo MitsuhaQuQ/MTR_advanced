@@ -147,6 +147,10 @@ public final class DutyGenerator {
 		 * the turn back rail, or at another platform of the station. A network setting.
 		 */
 		public final long minReverseMillis;
+		/**
+		 * Platform → from how long a wait a train waits on the turn back rail beyond it (运用补完 step 2), where set.
+		 */
+		public final Map<Long, Long> waitThresholds;
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks) {
 			this(turnTimes, backLinks, Collections.emptyMap());
@@ -161,6 +165,11 @@ public final class DutyGenerator {
 		}
 
 		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets, transitsim.plan.Buffers buffers, long minReverseMillis) {
+			this(turnTimes, backLinks, poolFleets, buffers, minReverseMillis, Collections.emptyMap());
+		}
+
+		public PlanInputs(Map<Long, Map<Long, Long>> turnTimes, Map<Long, Map<Long, Long>> backLinks, Map<String, Integer> poolFleets, transitsim.plan.Buffers buffers, long minReverseMillis, Map<Long, Long> waitThresholds) {
+			this.waitThresholds = waitThresholds == null ? Collections.emptyMap() : waitThresholds;
 			this.minReverseMillis = Math.max(0, minReverseMillis);
 			this.turnTimes = turnTimes;
 			this.backLinks = backLinks == null ? Collections.emptyMap() : backLinks;
@@ -172,7 +181,7 @@ public final class DutyGenerator {
 		 * @return the same with no pool held to a number of trains, to plan as if trains were no limit
 		 */
 		public PlanInputs withoutPoolFleets() {
-			return poolFleets.isEmpty() ? this : new PlanInputs(turnTimes, backLinks, Collections.emptyMap(), buffers, minReverseMillis);
+			return poolFleets.isEmpty() ? this : new PlanInputs(turnTimes, backLinks, Collections.emptyMap(), buffers, minReverseMillis, waitThresholds);
 		}
 	}
 
@@ -251,6 +260,7 @@ public final class DutyGenerator {
 		final OperationNetwork network = new OperationNetwork();
 		sidings.forEach(siding -> network.addDepot(siding.sidingId, siding.maxTrains < 0 ? UNLIMITED_TRAINS : Math.min(siding.maxTrains, UNLIMITED_TRAINS), siding.poolKey));
 		inputs.poolFleets.forEach(network::setPoolFleet);
+		inputs.waitThresholds.forEach(network::setWaitThreshold);
 		final Set<Long> firstPlatforms = new TreeSet<>();
 		final Set<Long> lastPlatforms = new TreeSet<>();
 		timetableServices.forEach(service -> {

@@ -71,6 +71,9 @@ public final class EditorDuties implements IPacket {
 					dayObject.addProperty("outLead", day.outLeadMillis);
 					dayObject.addProperty("outEntrance", String.valueOf(day.outEntrance));
 					dayObject.addProperty("backEntrance", String.valueOf(day.backEntrance));
+					dayObject.addProperty("outPath", String.valueOf(day.outPathId));
+					dayObject.addProperty("backPath", String.valueOf(day.backPathId));
+					dayObject.addProperty("exceptions", day.exceptions);
 				}
 				daysArray.add(dayObject);
 			});
@@ -199,6 +202,9 @@ public final class EditorDuties implements IPacket {
 						day.outLeadMillis = dayObject.has("outLead") ? Math.max(-1, dayObject.get("outLead").getAsLong()) : -1;
 						day.outEntrance = dayObject.has("outEntrance") ? parseId(getString(dayObject, "outEntrance")) : 0;
 						day.backEntrance = dayObject.has("backEntrance") ? parseId(getString(dayObject, "backEntrance")) : 0;
+						day.outPathId = dayObject.has("outPath") ? parseId(getString(dayObject, "outPath")) : 0;
+						day.backPathId = dayObject.has("backPath") ? parseId(getString(dayObject, "backPath")) : 0;
+						day.exceptions = dayObject.has("exceptions") ? dayObject.get("exceptions").getAsInt() & DepotDuties.DayDuty.EXCEPTION_ALL : 0;
 					}
 					slot.days.add(day);
 				}

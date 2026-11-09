@@ -57,7 +57,7 @@
 	let coverage = null;
 	/** The services paired at their routes' ends on the day shown (terminalNow), until the data, the draft or the day changes. */
 	let terminal = null;
-	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, networkSettings: null, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
+	let draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, depotRules: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, networkSettings: null, contingencies: {} }, draftLoaded = false, draftTimer = null, applyResult = null, applying = false;
 	const state = {
 		view: "diagram",
 		line: null,
@@ -108,6 +108,7 @@
 		if (!draft.duties || typeof draft.duties !== "object") draft.duties = {};
 		if (!draft.boundaries || typeof draft.boundaries !== "object") draft.boundaries = {};
 		if (!draft.depots || typeof draft.depots !== "object") draft.depots = {};
+		if (!draft.depotRules || typeof draft.depotRules !== "object") draft.depotRules = {};
 		if (!draft.platformStations || typeof draft.platformStations !== "object") draft.platformStations = {};
 		if (!draft.platformSpeeds || typeof draft.platformSpeeds !== "object") draft.platformSpeeds = {};
 		if (!draft.platformStops || typeof draft.platformStops !== "object") draft.platformStops = {};
@@ -118,7 +119,7 @@
 
 	/** Drops the whole draft: the game's data is what shows again, and the empty draft is saved. */
 	function clearDraft() {
-		draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, networkSettings: null, contingencies: {} };
+		draft = { routes: {}, created: [], duties: {}, boundaries: {}, depots: {}, depotRules: {}, platformStations: {}, platformSpeeds: {}, platformStops: {}, networkSettings: null, contingencies: {} };
 		plannedReturns.clear();
 		dutyNotice = tr("草稿已清空。");
 		saveDraft();
@@ -137,7 +138,7 @@
 	}
 
 	// New types wait in the draft too, as what to make, until they are applied
-	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.platformStops || {}).length + (draft.networkSettings ? 1 : 0) + Object.keys(draft.contingencies || {}).length;
+	const draftCount = () => Object.keys(draft.routes).length + draft.created.length + Object.keys(draft.duties).length + Object.keys(draft.boundaries || {}).length + Object.keys(draft.depots || {}).length + Object.keys(draft.depotRules || {}).length + Object.keys(draft.platformStations || {}).length + Object.keys(draft.platformSpeeds || {}).length + Object.keys(draft.platformStops || {}).length + (draft.networkSettings ? 1 : 0) + Object.keys(draft.contingencies || {}).length;
 	// A message about the last thing done to duties, shown in the banner
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
@@ -516,6 +517,11 @@
 			operations.push({ type: "depot", depot: depotId, base: entry.base, force: Boolean(entry.force), routes: entry.routes, cycleRoutes: entry.cycleRoutes, sidings: entry.sidings, poolFleets: entry.poolFleets || null, vehicleSettings: entry.vehicleSettings || null, serviceTypes: entry.serviceTypes || null, clearBuffers: Boolean(entry.clearBuffers), addedBuffers: entry.addedBuffers || null });
 			owners.push({ depotOf: depotId });
 		});
+		// How a depot's trains go out and back (运用补完 step 2), before its duties, which are planned by them
+		Object.entries(draft.depotRules || {}).forEach(([depotId, entry]) => {
+			operations.push({ type: "depotRules", depot: depotId, rules: entry.rules });
+			owners.push({ depotRulesOf: depotId });
+		});
 		Object.entries(draft.duties).forEach(([depotId, entry]) => {
 			operations.push({ type: "duties", depot: depotId, duties: entry.duties });
 			owners.push({ dutiesOf: depotId });
@@ -589,6 +595,7 @@
 			draft.created = draft.created.filter(made => failed.has(made));
 			owners.filter(owner => owner && owner.dutiesOf && !failed.has(owner)).forEach(owner => delete draft.duties[owner.dutiesOf]);
 			owners.filter(owner => owner && owner.depotOf && !failed.has(owner)).forEach(owner => delete draft.depots[owner.depotOf]);
+			owners.filter(owner => owner && owner.depotRulesOf && !failed.has(owner)).forEach(owner => delete draft.depotRules[owner.depotRulesOf]);
 			owners.filter(owner => owner && owner.platformStationOf && !failed.has(owner)).forEach(owner => delete draft.platformStations[owner.platformStationOf]);
 			owners.filter(owner => owner && owner.platformSpeedOf && !failed.has(owner)).forEach(owner => delete draft.platformSpeeds[owner.platformSpeedOf]);
 			owners.filter(owner => owner && owner.platformStopOf && !failed.has(owner)).forEach(owner => delete draft.platformStops[owner.platformStopOf]);
@@ -1475,7 +1482,11 @@
 			sections.push(`<section class="draft-change"><h3>${tr("过站限速")}</h3><ul>${platformSpeedKeys.map(platformId => `<li>${escapeHtml(tr("{0} 过站限速 {1} km/h", platformText(platformId), draft.platformSpeeds[platformId]))}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="platformSpeeds" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
 		if (draft.networkSettings) {
-			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul><li>${escapeHtml(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)))}</li></ul><div class="draft-actions"><button type="button" data-diff-part="networkSettings" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
+			const settingItems = [];
+			if (Number.isFinite(draft.networkSettings.minReverseMillis)) settingItems.push(tr("换端最短时间 {0} 秒", Math.round(draft.networkSettings.minReverseMillis / 1000)));
+			if (Number.isFinite(draft.networkSettings.waitThresholdMillis)) settingItems.push(tr("等候分界 {0} 秒", Math.round(draft.networkSettings.waitThresholdMillis / 1000)));
+			Object.entries(draft.networkSettings.stationWaitThresholds || {}).forEach(([station, millis]) => settingItems.push(millis === null ? tr("{0}：等候分界改回全网的", stationNameOf(station)) : tr("{0}：等候分界 {1} 秒", stationNameOf(station), Math.round(millis / 1000))));
+			sections.push(`<section class="draft-change"><h3>${tr("全网设置")}</h3><ul>${settingItems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><div class="draft-actions"><button type="button" data-diff-part="networkSettings" data-diff-key="${""}">${tr("放弃这项草稿")}</button></div></section>`);
 		}
 		const platformStopKeys = Object.keys(draft.platformStops || {});
 		if (platformStopKeys.length) {
@@ -2118,6 +2129,7 @@
 		}
 		drawConsole(g, chains, stroke);
 		drawPicking(g);
+		drawWayPick(g);
 	}
 
 	/**
@@ -2387,6 +2399,11 @@
 	});
 	// While picking a new line, a click that didn't pan the map picks a station or a waypoint
 	netCanvas.addEventListener("click", e => {
+		if (wayPick && !net.dragged) {
+			const box = netCanvas.getBoundingClientRect();
+			wayPickAt(e, e.clientX - box.left, e.clientY - box.top);
+			return;
+		}
 		if (!picking || net.dragged) return;
 		const rect = netCanvas.getBoundingClientRect();
 		pickAt(e, e.clientX - rect.left, e.clientY - rect.top);
@@ -2415,6 +2432,12 @@
 	netCanvas.addEventListener("contextmenu", e => {
 		const rect = netCanvas.getBoundingClientRect();
 		const index = netRailAt(e.clientX - rect.left, e.clientY - rect.top);
+		const station = data && netStationAt(e.clientX - rect.left, e.clientY - rect.top);
+		if (station && (index < 0 || Math.hypot(netX(station.x) - (e.clientX - rect.left), netZ(station.z) - (e.clientY - rect.top)) < 18)) {
+			e.preventDefault();
+			openMenuAt(e, [[tr("等候分界…"), data.canEdit ? () => stationWaitDialog(station) : null]]);
+			return;
+		}
 		if (index < 0 || !data) return;
 		e.preventDefault();
 		if (!data.canEdit) {
@@ -2682,6 +2705,14 @@
 	}
 
 	$("inspector").addEventListener("click", e => {
+		if (wayPick && e.target.closest("[data-waypick-done]")) {
+			finishWayPick(true);
+			return;
+		}
+		if (wayPick && e.target.closest("[data-waypick-cancel]")) {
+			finishWayPick(false);
+			return;
+		}
 		if (!picking) return;
 		const button = e.target.closest("[data-pick-up], [data-pick-down], [data-pick-remove], [data-pick-leg], [data-pick-finish], [data-pick-cancel], [data-pick-old]");
 		if (!button) return;
@@ -2720,6 +2751,299 @@
 			drawNetwork();
 		}
 	});
+
+	// ---------- A depot's rules for going out and back (运用补完 step 2) ----------
+	/**
+	 * A depot's rules and named deadhead paths as drafted, or as the game has them: {rules: [...], paths: [...]}.
+	 */
+	function rulesOf(depot) {
+		const drafted = draft.depotRules && draft.depotRules[depot.id];
+		const value = drafted ? drafted.rules : depot.rules;
+		return JSON.parse(JSON.stringify(value || { rules: [], paths: [] }));
+	}
+
+	/** The lines a depot runs, by key, with a name to show. */
+	function depotLines(depot) {
+		const lines = new Map();
+		(depot.routes || []).forEach(id => {
+			const r = data.routeById.get(id);
+			if (r && !lines.has(r.lineKey)) lines.set(r.lineKey, shortName(r.line) || r.lineKey);
+		});
+		return [...lines.entries()];
+	}
+
+	/** Seconds as written in a field, or the empty string for none. */
+	const secondsText = millis => millis >= 0 ? String(Math.round(millis / 1000)) : "";
+
+	/** The rules being edited in the dialog, kept while the dialog is closed to choose on the map. */
+	let rulesEditing = null;
+	/**
+	 * Choosing a rule's station or a deadhead path's way on the whole network map: the depot and siding, what is chosen,
+	 * and the server's answer for it.
+	 */
+	let wayPick = null;
+
+	function depotRulesDialog(depot, editing) {
+		const value = editing || rulesOf(depot);
+		rulesEditing = { depot: depot.id, value };
+		const lines = depotLines(depot);
+		const unset = depot.shortfall && depot.shortfall.entrancesUnset || [];
+		const stationText = id => id && id !== "0" ? escapeHtml(stationNameOf(id)) : tr("（自动：只有一个出入口时）");
+		const sidingOptions = selected => `<option value="0">${tr("车池里下一班最早要车的")}</option>` + depot.sidings.map(siding => `<option value="${siding.id}"${siding.id === selected ? " selected" : ""}>${escapeHtml(siding.name || siding.id)}</option>`).join("");
+		const pathOptions = (selected, kind) => `<option value="0">${tr("最近车站后顺线路方向（默认）")}</option>` + value.paths.filter(path => path.kind === kind).map(path => `<option value="${path.id}"${path.id === selected ? " selected" : ""}>${escapeHtml(path.name || path.id)}</option>`).join("");
+		const ruleRows = value.rules.map((rule, i) => `<fieldset data-rule="${i}"><legend>${tr("规则 {0}", i + 1)}</legend>
+			<div>${tr("线路")}：${lines.map(([key, name]) => `<label><input type="checkbox" name="line" value="${escapeHtml(key)}"${rule.lines.includes(key) ? " checked" : ""}> ${escapeHtml(name)}</label>`).join("")} <span class="hint">${tr("都不勾 = 全部线路")}</span></div>
+			<div>${tr("星期")}：${WEEKDAY_SHORT.map((day, d) => `<label><input type="checkbox" name="day" value="${d}"${rule.weekdays >> d & 1 ? " checked" : ""}> ${day}</label>`).join("")} <span class="hint">${tr("都不勾 = 每天")}</span></div>
+			<div>${tr("出口")}：<b>${stationText(rule.outEntrance)}</b> <button type="button" data-rule-pick="${i}" data-out="1">${tr("在图上选…")}</button>
+				${tr("回口")}：<b>${stationText(rule.backEntrance)}</b> <button type="button" data-rule-pick="${i}" data-out="0">${tr("在图上选…")}</button></div>
+			<label>${tr("比出库路线用时再早发（秒）")} <input type="number" name="extraLead" min="0" max="3600" value="${secondsText(rule.extraLead)}"></label>
+			<label>${tr("回哪条存车线")} <select name="backSiding">${sidingOptions(rule.backSiding)}</select></label>
+			<label>${tr("出库路径")} <select name="outPath">${pathOptions(rule.outPath, "out")}</select></label>
+			<label>${tr("回库路径")} <select name="backPath">${pathOptions(rule.backPath, "back")}</select></label>
+			<label>${tr("等候分界（秒，留空用车站或全网的）")} <input type="number" name="waitThreshold" min="0" max="3600" value="${secondsText(rule.waitThreshold)}"></label>
+			<button type="button" data-rule-remove="${i}">${tr("删除这条规则")}</button></fieldset>`).join("");
+		const pathRows = value.paths.map((path, i) => `<fieldset data-path="${i}"><legend>${escapeHtml(path.name || tr("回送路径 {0}", i + 1))}</legend>
+			<label>${tr("名字")} <input name="pathName" maxlength="32" value="${escapeHtml(path.name)}"></label>
+			<label>${tr("种类")} <select name="pathKind"><option value="out"${path.kind === "out" ? " selected" : ""}>${tr("出库")}</option><option value="back"${path.kind === "back" ? " selected" : ""}>${tr("回库")}</option></select></label>
+			<span class="hint">${tr("途经 {0} 个点", path.waypoints.length)}</span>
+			<button type="button" data-path-pick="${i}">${tr("在图上画…")}</button> <button type="button" data-path-remove="${i}">${tr("删除")}</button></fieldset>`).join("");
+		openDialog(tr("出入库规则：{0}", escapeHtml(shortName(depot.name))), `
+			<p class="hint">${tr("按线路和星期定列车怎么出库、回库：从哪个车站出入（车厂接到线路上不止一个车站时必须指定）、比出库路线用时再早发多少、回哪条存车线、走哪条回送路径、两班之间等多久就离开站台去折返线。同一班次按“线路和星期都指定 > 只指定线路 > 只指定星期 > 都不指定”取一条规则。出口、回口和回送路径都在全网配线图上点选，点了就画出路线和用时。")}</p>
+			${unset.length ? `<p class="err">${tr("这个车厂接到线路上不止一个车站，这些线路还没指定出入口，不给排运用：{0}", escapeHtml(unset.map(key => (lines.find(([k]) => k === key) || [key, key])[1]).join("、")))}</p>` : ""}
+			<h3>${tr("规则")}</h3>${ruleRows || `<p class="hint">${tr("还没有规则：都按默认（最近车站后顺线路方向出入库）")}</p>`}
+			<button type="button" data-rule-add>${tr("新增规则")}</button>
+			<h3>${tr("回送路径")}</h3>${pathRows || `<p class="hint">${tr("还没有命名的回送路径")}</p>`}
+			<button type="button" data-path-add="out">${tr("新增出库路径")}</button> <button type="button" data-path-add="back">${tr("新增回库路径")}</button>`, tr("放进草稿"), form => {
+			readRulesForm(form, value);
+			draft.depotRules = draft.depotRules || {};
+			if (JSON.stringify(value) === JSON.stringify(depot.rules || { rules: [], paths: [] })) delete draft.depotRules[depot.id];
+			else draft.depotRules[depot.id] = { rules: value };
+			rulesEditing = null;
+			saveDraft();
+			renderAll();
+		});
+		const form = dialog.querySelector("form");
+		form.addEventListener("click", e => {
+			const button = e.target.closest("[data-rule-add], [data-rule-remove], [data-rule-pick], [data-path-add], [data-path-remove], [data-path-pick]");
+			if (!button) return;
+			readRulesForm(form, value);
+			if (button.dataset.ruleAdd !== undefined) {
+				value.rules.push({ id: String(Date.now()), lines: [], weekdays: 0, outEntrance: "0", backEntrance: "0", extraLead: 0, backSiding: "0", outPath: "0", backPath: "0", waitThreshold: -1 });
+			} else if (button.dataset.ruleRemove !== undefined) {
+				value.rules.splice(+button.dataset.ruleRemove, 1);
+			} else if (button.dataset.pathAdd !== undefined) {
+				value.paths.push({ id: String(Date.now()), name: "", kind: button.dataset.pathAdd, from: "0", to: "0", waypoints: [] });
+			} else if (button.dataset.pathRemove !== undefined) {
+				const removed = value.paths.splice(+button.dataset.pathRemove, 1)[0];
+				value.rules.forEach(rule => {
+					if (rule.outPath === removed.id) rule.outPath = "0";
+					if (rule.backPath === removed.id) rule.backPath = "0";
+				});
+			} else if (button.dataset.rulePick !== undefined) {
+				dialog.close();
+				startWayPick(depot, { rule: +button.dataset.rulePick, out: button.dataset.out === "1" });
+				return;
+			} else if (button.dataset.pathPick !== undefined) {
+				dialog.close();
+				const path = value.paths[+button.dataset.pathPick];
+				startWayPick(depot, { path: +button.dataset.pathPick, out: path.kind !== "back" });
+				return;
+			}
+			dialog.close();
+			depotRulesDialog(depot, value);
+		});
+	}
+
+	/** What the dialog's fields say, into the rules being edited. */
+	function readRulesForm(form, value) {
+		form.querySelectorAll("[data-rule]").forEach(fieldset => {
+			const rule = value.rules[+fieldset.dataset.rule];
+			if (!rule) return;
+			rule.lines = [...fieldset.querySelectorAll("input[name=line]:checked")].map(box => box.value);
+			rule.weekdays = [...fieldset.querySelectorAll("input[name=day]:checked")].reduce((mask, box) => mask | 1 << +box.value, 0);
+			const lead = fieldset.querySelector("input[name=extraLead]").value.trim();
+			rule.extraLead = lead === "" ? 0 : Math.max(0, Math.min(3600, Math.round(Number(lead)) || 0)) * 1000;
+			rule.backSiding = fieldset.querySelector("select[name=backSiding]").value;
+			rule.outPath = fieldset.querySelector("select[name=outPath]").value;
+			rule.backPath = fieldset.querySelector("select[name=backPath]").value;
+			const wait = fieldset.querySelector("input[name=waitThreshold]").value.trim();
+			rule.waitThreshold = wait === "" ? -1 : Math.max(0, Math.min(3600, Math.round(Number(wait)) || 0)) * 1000;
+		});
+		form.querySelectorAll("[data-path]").forEach(fieldset => {
+			const path = value.paths[+fieldset.dataset.path];
+			if (!path) return;
+			path.name = fieldset.querySelector("input[name=pathName]").value.trim();
+			path.kind = fieldset.querySelector("select[name=pathKind]").value;
+		});
+	}
+
+	/**
+	 * The platform a way out ends at, or a way back starts from, for a rule: the first (or last) stop of a route of its
+	 * lines the depot runs.
+	 */
+	function rulePlatform(depot, lines, out) {
+		for (const id of depot.routes || []) {
+			const r = data.routeById.get(id);
+			if (r && r.stops.length > 1 && (!lines.length || lines.includes(r.lineKey))) return (out ? r.stops[0] : r.stops[r.stops.length - 1]).platformId;
+		}
+		return "0";
+	}
+
+	function startWayPick(depot, target) {
+		const value = rulesEditing.value;
+		const siding = depot.sidings[0];
+		if (!siding) {
+			dutyNotice = tr("这个车厂没有存车线");
+			depotRulesDialog(depot, value);
+			return;
+		}
+		const rule = target.rule !== undefined ? value.rules[target.rule] : null;
+		const path = target.path !== undefined ? value.paths[target.path] : null;
+		wayPick = {
+			depot: depot.id, siding: siding.id, target, out: target.out, requestId: 0, result: null, error: "",
+			entrance: rule ? (target.out ? rule.outEntrance : rule.backEntrance) : "0",
+			platform: path ? (target.out ? path.to : path.from) : rulePlatform(depot, rule ? rule.lines : [], target.out),
+			waypoints: path ? path.waypoints.slice() : [],
+		};
+		if (wayPick.platform === "0") wayPick.platform = rulePlatform(depot, [], target.out);
+		openView("network", state.line, null);
+		dutyNotice = path ? tr("在全网配线图上依次点回送路径途经的节点；点车站换终点。右侧显示路线和用时。") : tr("在全网配线图上点高亮的车站作为{0}。右侧显示路线和用时。", target.out ? tr("出口") : tr("回口"));
+		refreshWayPick();
+	}
+
+	/** Asks the server for the stations the siding reaches and the way as chosen, and draws them when they come. */
+	async function refreshWayPick() {
+		if (!wayPick) return;
+		const id = ++wayPick.requestId;
+		try {
+			const result = await sendJson("api/depot-way-preview", "POST", { depot: wayPick.depot, siding: wayPick.siding, platform: wayPick.platform, out: wayPick.out, entrance: wayPick.entrance, waypoints: wayPick.waypoints });
+			if (!wayPick || id !== wayPick.requestId) return;
+			wayPick.result = result;
+			wayPick.error = result.error ? tr("服务端没有回答，稍后再试") : "";
+		} catch (e) {
+			if (wayPick) wayPick.error = tr("发送失败，游戏可能已经关闭");
+		}
+		renderInspector();
+		drawNetwork();
+	}
+
+	/** A click on the map while choosing: a station the siding reaches, a node of the path, or another end. */
+	function wayPickAt(e, px, pz) {
+		const choosingPath = wayPick.target.path !== undefined;
+		if (choosingPath) {
+			const node = netNodeAt(px, pz);
+			if (node) {
+				const at = wayPick.waypoints.indexOf(node);
+				if (at >= 0) wayPick.waypoints.splice(at, 1);
+				else if (wayPick.waypoints.length < 64) wayPick.waypoints.push(node);
+				refreshWayPick();
+				return;
+			}
+		}
+		const station = netStationAt(px, pz);
+		if (!station) return;
+		if (!choosingPath) {
+			const entrances = wayPick.result && wayPick.result.entrances || [];
+			if (!entrances.includes(station.id)) {
+				dutyNotice = tr("{0} 不是这个车厂的出入口；点高亮的车站", shortName(station.name));
+				renderBanner();
+				return;
+			}
+			wayPick.entrance = station.id;
+			refreshWayPick();
+			return;
+		}
+		// Another end of the path: the station's platform of the depot's routes
+		const platforms = (topo ? topo.platforms : []).filter(p => p.station === station.id);
+		if (platforms.length) {
+			wayPick.platform = platforms[0].id;
+			refreshWayPick();
+		}
+	}
+
+	/** Over the map: the stations the siding reaches, ringed, and the way as chosen. */
+	function drawWayPick(g) {
+		if (!wayPick || !net.data) return;
+		const result = wayPick.result || {};
+		const stationById = new Map((net.data.stations || []).map(station => [station.id, station]));
+		g.save();
+		(result.entrances || []).forEach(id => {
+			const station = stationById.get(id);
+			if (!station) return;
+			g.strokeStyle = id === wayPick.entrance ? css("--sel") : css("--warn");
+			g.lineWidth = 3;
+			g.beginPath();
+			g.arc(netX(station.x), netZ(station.z), 14, 0, Math.PI * 2);
+			g.stroke();
+		});
+		if (result.nodes && result.nodes.length > 1) {
+			g.strokeStyle = css("--sel");
+			g.lineWidth = 5;
+			g.globalAlpha = 0.85;
+			g.beginPath();
+			result.nodes.forEach(([x, z], k) => k ? g.lineTo(netX(x), netZ(z)) : g.moveTo(netX(x), netZ(z)));
+			g.stroke();
+		}
+		const nodeById = new Map((net.data.nodes || []).map(node => [node[2], node]));
+		g.globalAlpha = 1;
+		wayPick.waypoints.forEach((id, k) => {
+			const node = nodeById.get(id);
+			if (!node) return;
+			g.fillStyle = css("--sel");
+			g.beginPath();
+			g.arc(netX(node[0]), netZ(node[1]), 6, 0, Math.PI * 2);
+			g.fill();
+			g.fillStyle = "#fff";
+			g.font = `10px ${css("--font-num")}`;
+			g.textAlign = "center";
+			g.fillText(String(k + 1), netX(node[0]), netZ(node[1]) + 3);
+		});
+		g.restore();
+	}
+
+	/** The panel beside the map while choosing: what is chosen, the way found and its time, and finishing. */
+	function wayPickPanel() {
+		const depot = depotById(wayPick.depot);
+		const result = wayPick.result;
+		const choosingPath = wayPick.target.path !== undefined;
+		const found = result && result.found;
+		const entrances = result && result.entrances || [];
+		const time = found && result.millis >= 0 ? durationText(result.millis) : "";
+		return `<h2>${choosingPath ? tr("画回送路径") : wayPick.out ? tr("选出口") : tr("选回口")}</h2><div class="card">
+			<p>${escapeHtml(shortName(depot ? depot.name : ""))} · ${tr("存车线")} ${escapeHtml((depot && depot.sidings.find(s => s.id === wayPick.siding) || {}).name || "")}</p>
+			<p>${tr("这条存车线的出入口")}：${entrances.length ? entrances.map(id => escapeHtml(stationNameOf(id))).join("、") : tr("（还没算出）")}</p>
+			${choosingPath ? `<p>${tr("途经 {0} 个点；点节点加入或去掉，点车站换终点。", wayPick.waypoints.length)}</p>` : `<p>${tr("选的")}：${wayPick.entrance && wayPick.entrance !== "0" ? escapeHtml(stationNameOf(wayPick.entrance)) : tr("（没选）")}</p>`}
+			<p class="${result && !found ? "err" : ""}">${!result ? tr("正在计算…") : found ? tr("{0}用时 {1}", wayPick.out ? tr("出库") : tr("回库"), time) : tr("这样走不通")}</p>
+			${wayPick.error ? `<p class="err">${escapeHtml(wayPick.error)}</p>` : ""}
+			<button class="primary" data-waypick-done>${tr("用这个")}</button> <button data-waypick-cancel>${tr("取消")}</button></div>`;
+	}
+
+	/** Puts what was chosen into the rules being edited, and goes back to the dialog. */
+	function finishWayPick(keep) {
+		const depot = depotById(wayPick.depot);
+		const value = rulesEditing.value;
+		if (keep) {
+			const target = wayPick.target;
+			if (target.rule !== undefined) {
+				const rule = value.rules[target.rule];
+				if (wayPick.out) rule.outEntrance = wayPick.entrance;
+				else rule.backEntrance = wayPick.entrance;
+			} else {
+				const path = value.paths[target.path];
+				path.waypoints = wayPick.waypoints.slice();
+				if (wayPick.out) {
+					path.from = wayPick.siding;
+					path.to = wayPick.platform;
+				} else {
+					path.from = wayPick.platform;
+					path.to = wayPick.siding;
+				}
+			}
+		}
+		wayPick = null;
+		renderAll();
+		if (depot) depotRulesDialog(depot, value);
+	}
 
 	// ---------- Running diagram ----------
 	const canvas = $("canvas"), wrap = $("canvas-wrap"), ctx = canvas.getContext("2d");
@@ -3268,6 +3592,7 @@
 		const s = state.selected && data ? findService(state.selected) : null;
 		const parts = [];
 		if (picking && data) parts.push(pickingPanel());
+		if (wayPick && data) parts.push(wayPickPanel());
 		if (state.slot && data) parts.push(dutyPanel());
 		if (s) {
 			const next = s.link && data.routeById.get(s.link.route);
@@ -4432,6 +4757,31 @@
 	}
 
 	/** The least time a train changes ends where it turns back, as the planner takes it: the network's setting (round 4). */
+	/** The network's wait threshold as drafted, or as the game has it (运用补完 step 2). */
+	function waitThresholdMillis() {
+		const pending = draft.networkSettings && Number.isFinite(draft.networkSettings.waitThresholdMillis) ? draft.networkSettings.waitThresholdMillis : undefined;
+		const settings = data && data.networkSettings || {};
+		return pending !== undefined ? pending : Number.isFinite(settings.waitThresholdMillis) ? settings.waitThresholdMillis : 300000;
+	}
+
+	/** A station's own wait threshold, set or taken back to the network's, into the draft. */
+	function stationWaitDialog(station) {
+		const settings = data && data.networkSettings || {};
+		const drafted = draft.networkSettings && draft.networkSettings.stationWaitThresholds || {};
+		const current = station.id in drafted ? drafted[station.id] : (settings.stationWaitThresholds || {})[station.id];
+		openDialog(tr("等候分界：{0}", escapeHtml(shortName(station.name))), `
+			<label>${tr("秒（留空用全网的 {0} 秒）", Math.round(waitThresholdMillis() / 1000))} <input type="number" name="seconds" min="0" max="3600" value="${current === null || current === undefined ? "" : Math.round(current / 1000)}"></label>
+			<p class="hint">${tr("在这个车站两班之间等得比这长，列车就离开站台去折返线等。出入库规则里还可以按线路再改。")}</p>`, tr("放进草稿"), form => {
+			const text = form.seconds.value.trim();
+			if (text !== "" && !(Number(text) >= 0 && Number(text) <= 3600)) return tr("写 0 到 3600 秒，或者留空");
+			draft.networkSettings = draft.networkSettings || {};
+			draft.networkSettings.stationWaitThresholds = Object.assign({}, draft.networkSettings.stationWaitThresholds || {});
+			draft.networkSettings.stationWaitThresholds[station.id] = text === "" ? null : Math.round(Number(text)) * 1000;
+			saveDraft();
+			renderAll();
+		});
+	}
+
 	function minReverseMillis() {
 		const settings = (data && data.networkSettings) || {};
 		const pending = draft.networkSettings && Number.isFinite(draft.networkSettings.minReverseMillis) ? draft.networkSettings.minReverseMillis : undefined;
@@ -4786,7 +5136,8 @@
 			${bufferRows ? `<table class="buffers"><tbody>${bufferRows}</tbody></table>
 			<label><input type="checkbox" name="clearBuffers"${current.clearBuffers ? " checked" : ""}> ${tr("清空实测余量（采用的不变）")}</label>` : `<p class="hint">${tr("还没有记下")}</p>`}
 			<h3>${tr("全网设置")}</h3>
-			<label>${tr("换端最短时间（全网，秒）")} <input type="number" min="0" max="600" name="minReverse" value="${Math.round(minReverseMillis() / 1000)}"></label>`;
+			<label>${tr("换端最短时间（全网，秒）")} <input type="number" min="0" max="600" name="minReverse" value="${Math.round(minReverseMillis() / 1000)}"></label>
+			<label>${tr("等候分界（全网，秒：两班之间等得比这长就离开站台去折返线）")} <input type="number" min="0" max="3600" name="waitThreshold" value="${Math.round(waitThresholdMillis() / 1000)}"></label>`;
 		const cycleLabel = depot.byTimetable ? tr("允许长时间停在线上（两班之间不回库，运用跑完才回）") : tr("列车不回车厂，跑完最后一条线路后折返回第一条");
 		openDialog(tr("编辑车厂：{0}", escapeHtml(shortName(depot.name))), `
 			<p class="hint">${tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；车按车型配属给车厂，同车型的存车线共用这些车，车回到哪条存车线都还是同一列。存车线可以只跑其中几条线路，最多停几列是它能停的车数。配属车数留空时按各存车线相加。")}</p>
@@ -4842,7 +5193,16 @@
 			if (bad) return tr("车数写成数字，或者留空");
 			const reverseMillis = Math.round(reverseSeconds) * 1000;
 			const appliedReverse = (data.networkSettings || {}).minReverseMillis;
-			draft.networkSettings = reverseMillis === appliedReverse ? null : { minReverseMillis: reverseMillis };
+			const waitSeconds = Number(form.querySelector("input[name=waitThreshold]").value.trim());
+			if (!(waitSeconds >= 0) || waitSeconds > 3600) return tr("等候分界写 0 到 3600 秒");
+			const waitMillis = Math.round(waitSeconds) * 1000;
+			const appliedWait = (data.networkSettings || {}).waitThresholdMillis;
+			const changes = {};
+			if (reverseMillis !== appliedReverse) changes.minReverseMillis = reverseMillis;
+			if (waitMillis !== appliedWait) changes.waitThresholdMillis = waitMillis;
+			const stationWaits = draft.networkSettings && draft.networkSettings.stationWaitThresholds;
+			if (stationWaits) changes.stationWaitThresholds = stationWaits;
+			draft.networkSettings = Object.keys(changes).length ? changes : null;
 			const clearBox = form.querySelector("input[name=clearBuffers]");
 			// The time adopted, by key in seconds, all of them (round 4, step 6)
 			const addedBuffers = {};
@@ -6963,6 +7323,7 @@
 			[tr("删除最后一个库位"), sidingSlots().length ? () => changeSlots(depot, sidingId, slots => slots.pop()) : null],
 		] : depotId && depot ? [
 			[tr("编辑车厂…"), () => depotDialog(depot)],
+			[tr("出入库规则…"), () => depotRulesDialog(depot)],
 			[tr("一键生成运用…"), data.canEdit ? () => generateDuties(depot) : null],
 			[tr("按时刻表把列车摆到现在的位置…"), data.canEdit ? () => placeTrainsDialog(depot) : null],
 			[tr("重新排运用…"), data.canEdit && dutiesOf(depot).auto ? () => replanDialog(depot) : null],

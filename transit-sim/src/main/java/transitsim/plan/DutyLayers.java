@@ -32,7 +32,7 @@ public final class DutyLayers {
 	 */
 	public final List<Assignment> assignments = new ArrayList<>();
 
-	private static final int FORMAT_VERSION = 2;
+	private static final int FORMAT_VERSION = 3;
 
 	/**
 	 * Splits duties into layers.
@@ -95,6 +95,9 @@ public final class DutyLayers {
 			assignment.outLeadMillis = day.outLeadMillis;
 			assignment.outEntrance = day.outEntrance;
 			assignment.backEntrance = day.backEntrance;
+			assignment.outPathId = day.outPathId;
+			assignment.backPathId = day.backPathId;
+			assignment.exceptions = day.exceptions;
 		}
 		return layers;
 	}
@@ -133,6 +136,9 @@ public final class DutyLayers {
 			day.outLeadMillis = assignment.outLeadMillis;
 			day.outEntrance = assignment.outEntrance;
 			day.backEntrance = assignment.backEntrance;
+			day.outPathId = assignment.outPathId;
+			day.backPathId = assignment.backPathId;
+			day.exceptions = assignment.exceptions;
 			slot.days.add(day);
 		}
 		return duties;
@@ -383,6 +389,13 @@ public final class DutyLayers {
 		public long outLeadMillis = -1;
 		public long outEntrance;
 		public long backEntrance;
+		/**
+		 * The named deadhead paths out and back, and which of what depends on the depot was set for this duty alone
+		 * ({@link DepotDuties.DayDuty#exceptions}).
+		 */
+		public long outPathId;
+		public long backPathId;
+		public int exceptions;
 
 		/**
 		 * @return whether it only keeps the place and number of a slot with no duty
@@ -406,6 +419,9 @@ public final class DutyLayers {
 			writer.writeLong(outLeadMillis + 1);
 			writer.writeLong(outEntrance);
 			writer.writeLong(backEntrance);
+			writer.writeLong(outPathId);
+			writer.writeLong(backPathId);
+			writer.writeByte(exceptions);
 		}
 
 		/**
@@ -442,6 +458,11 @@ public final class DutyLayers {
 				assignment.outLeadMillis = Math.max(-1, reader.readLong() - 1);
 				assignment.outEntrance = reader.readLong();
 				assignment.backEntrance = reader.readLong();
+			}
+			if (version >= 3) {
+				assignment.outPathId = reader.readLong();
+				assignment.backPathId = reader.readLong();
+				assignment.exceptions = reader.readUnsignedByte() & DepotDuties.DayDuty.EXCEPTION_ALL;
 			}
 			return assignment;
 		}

@@ -70,6 +70,10 @@ public final class EditorData {
 		final JsonObject networkSettingsObject = new JsonObject();
 		networkSettingsObject.addProperty("minReverseMillis", ClientData.DATA_CACHE.networkSettings.minReverseMillis);
 		networkSettingsObject.addProperty("earlyThresholdMillis", ClientData.DATA_CACHE.networkSettings.earlyThresholdMillis);
+		networkSettingsObject.addProperty("waitThresholdMillis", ClientData.DATA_CACHE.networkSettings.waitThresholdMillis);
+		final JsonObject stationWaitThresholdsObject = new JsonObject();
+		ClientData.DATA_CACHE.networkSettings.stationWaitThresholds.forEach((stationId, millis) -> stationWaitThresholdsObject.addProperty(String.valueOf(stationId), millis));
+		networkSettingsObject.add("stationWaitThresholds", stationWaitThresholdsObject);
 		data.add("networkSettings", networkSettingsObject);
 		// The fast simulation of a day is a debugging tool the server turns on
 		data.addProperty("simulation", ClientData.editorSimulation);
@@ -321,6 +325,8 @@ public final class EditorData {
 			depotObject.add("duties", EditorDuties.toJson(depot.duties));
 			// Worked out from the timetables when the depot runs by a timetable and has no duties set
 			depotObject.add("autoDuties", EditorDuties.toJson(depot.autoDuties));
+			// How its trains go out and back, and its named deadhead paths (运用补完 step 2)
+			depotObject.add("rules", EditorRules.toJson(depot.rules));
 			// Whether the lines planned with it have trains enough (LineDuties)
 			if (depot.lineShortfall != null) {
 				final JsonObject shortfallObject = new JsonObject();
@@ -359,6 +365,9 @@ public final class EditorData {
 				shortfallObject.add("groups", dutyGroups);
 				// Services no number of trains could run: a way out or round is missing, not trains
 				shortfallObject.addProperty("unrunnable", depot.lineShortfall.unrunnablePerDay);
+				final JsonArray entrancesUnsetArray = new JsonArray();
+				depot.lineShortfall.entrancesUnset.forEach(entrancesUnsetArray::add);
+				shortfallObject.add("entrancesUnset", entrancesUnsetArray);
 				depotObject.add("shortfall", shortfallObject);
 			}
 			depotsArray.add(depotObject);

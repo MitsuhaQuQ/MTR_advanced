@@ -43,6 +43,22 @@ public final class OperationNetwork {
 		return this;
 	}
 
+	/**
+	 * From how long a wait for the next service a train at a platform waits on a turn back rail beyond it rather than at
+	 * the platform (运用补完 step 2: the depot's rule, else the station's, else the network's); unset is
+	 * {@link transitsim.sim.TrainService#LONG_TURN_BACK_WAIT_MILLIS}.
+	 */
+	public OperationNetwork setWaitThreshold(long platformId, long millis) {
+		waitThresholds.put(platformId, millis);
+		return this;
+	}
+
+	public long waitThreshold(long platformId) {
+		return waitThresholds.getOrDefault(platformId, transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS);
+	}
+
+	private final java.util.Map<Long, Long> waitThresholds = new java.util.TreeMap<>();
+
 	public OperationNetwork addConnection(long fromPlatformId, long toPlatformId, long millis) {
 		connections.computeIfAbsent(fromPlatformId, key -> new TreeMap<>()).put(toPlatformId, millis);
 		return this;

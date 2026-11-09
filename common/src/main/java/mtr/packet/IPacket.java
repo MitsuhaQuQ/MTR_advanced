@@ -91,6 +91,7 @@ public interface IPacket {
 	ResourceLocation PACKET_EDITORS = new ResourceLocation(MTR.MOD_ID, "packet_editors");
 	ResourceLocation PACKET_EDIT_RESULT = new ResourceLocation(MTR.MOD_ID, "packet_edit_result");
 	ResourceLocation PACKET_ROUTE_PREVIEW = new ResourceLocation(MTR.MOD_ID, "packet_route_preview");
+	ResourceLocation PACKET_DEPOT_WAY_PREVIEW = new ResourceLocation(MTR.MOD_ID, "packet_depot_way_preview");
 	ResourceLocation PACKET_HELD_TRAINS = new ResourceLocation(MTR.MOD_ID, "packet_held_trains");
 	ResourceLocation PACKET_RECALL_TRAIN = new ResourceLocation(MTR.MOD_ID, "packet_recall_train");
 	ResourceLocation PACKET_DELAY_ALARMS = new ResourceLocation(MTR.MOD_ID, "packet_delay_alarms");

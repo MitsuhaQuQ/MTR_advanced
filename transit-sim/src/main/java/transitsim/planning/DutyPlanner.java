@@ -419,7 +419,7 @@ public final class DutyPlanner {
 			// With the platform taken meanwhile, a train can wait on a turn back rail beyond it if one is free (混合折返)
 			final boolean platformFree = !samePlatform || isPlatformFree(duty.platformId, duty.endMillis, trip.startMillis());
 			// A long wait goes on the rail too, as the runtime sends it there (TrainService.LONG_TURN_BACK_WAIT_MILLIS)
-			final boolean longWait = samePlatform && trip.startMillis() - duty.endMillis >= transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS;
+			final boolean longWait = samePlatform && trip.startMillis() - duty.endMillis >= network.waitThreshold(duty.platformId);
 			final boolean railFree = (!platformFree || longWait) && reachable && isHoldFree(duty, trip);
 			if (reachable && (platformFree || railFree) && (best == null || duty.readyMillis > best.readyMillis)) {
 				best = duty;
