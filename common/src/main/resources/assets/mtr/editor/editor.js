@@ -6131,13 +6131,13 @@
 			if (!(waitSeconds >= 0) || waitSeconds > 3600) return tr("等候分界写 0 到 3600 秒");
 			const waitMillis = Math.round(waitSeconds) * 1000;
 			const appliedWait = (data.networkSettings || {}).waitThresholdMillis;
-			const changes = {};
+			// Only these two network values change here; the rest of the drafted network settings (owners, logical lines,
+			// station wait thresholds) stay as they are
+			const changes = Object.assign({}, draft.networkSettings || {});
+			delete changes.minReverseMillis;
+			delete changes.waitThresholdMillis;
 			if (reverseMillis !== appliedReverse) changes.minReverseMillis = reverseMillis;
 			if (waitMillis !== appliedWait) changes.waitThresholdMillis = waitMillis;
-			const stationWaits = draft.networkSettings && draft.networkSettings.stationWaitThresholds;
-			if (stationWaits) changes.stationWaitThresholds = stationWaits;
-			const ownerOverrides = draft.networkSettings && draft.networkSettings.ownerOverrides;
-			if (ownerOverrides) changes.ownerOverrides = ownerOverrides;
 			draft.networkSettings = Object.keys(changes).length ? changes : null;
 			const clearBox = form.querySelector("input[name=clearBuffers]");
 			// The time adopted, by key in seconds, all of them (round 4, step 6)
