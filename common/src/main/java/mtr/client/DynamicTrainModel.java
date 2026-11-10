@@ -34,6 +34,8 @@ public class DynamicTrainModel extends ModelTrainBase implements IResourcePackCr
 	public final JsonObject properties;
 	public final int doorMax;
 	private final Map<String, Boolean> whitelistBlacklistCache = new HashMap<>();
+	private double geometryRadius = Double.POSITIVE_INFINITY;
+	private double cullRadius = -1;
 
 	public DynamicTrainModel(JsonObject model, JsonObject properties, DoorAnimationType doorAnimationType) {
 		super(doorAnimationType, false);
@@ -54,6 +56,7 @@ public class DynamicTrainModel extends ModelTrainBase implements IResourcePackCr
 				parts.put(elementObject.get("name").getAsString(), addChildren(elementObject, elementsByKey, uuidToParentString, modelDataWrapper));
 			});
 
+			final double[] radius = {0};
 			model.getAsJsonArray("elements").forEach(element -> {
 				final JsonObject elementObject = element.getAsJsonObject();
 				final String uuid = elementObject.get("uuid").getAsString();
@@ -77,6 +80,12 @@ public class DynamicTrainModel extends ModelTrainBase implements IResourcePackCr
 
 				final double inflate = elementObject.has("inflate") ? elementObject.get("inflate").getAsDouble() : 0;
 				final boolean mirror = elementObject.has("shade") && !elementObject.get("shade").getAsBoolean();
+				// A rotated cube is still within the radius from its pivot, plus the pivot's offset.
+				final double dx = Math.max(Math.abs(posFrom[0] - origin[0]), Math.abs(posTo[0] - origin[0])) + Math.abs(inflate) + 1;
+				final double dy = Math.max(Math.abs(posFrom[1] - origin[1]), Math.abs(posTo[1] - origin[1])) + Math.abs(inflate) + 1;
+				final double dz = Math.max(Math.abs(posFrom[2] - origin[2]), Math.abs(posTo[2] - origin[2])) + Math.abs(inflate) + 1;
+				radius[0] = Math.max(radius[0], (Math.sqrt(origin[0] * origin[0] + origin[1] * origin[1] + origin[2] * origin[2])
+						+ Math.sqrt(dx * dx + dy * dy + dz * dz)) / 16);
 
 				child.texOffs(uvOffset[0], uvOffset[1]).addBox(
 						origin[0].floatValue() - posTo[0].floatValue(), origin[1].floatValue() - posTo[1].floatValue(), posFrom[2].floatValue() - origin[2].floatValue(),
@@ -106,6 +115,7 @@ public class DynamicTrainModel extends ModelTrainBase implements IResourcePackCr
 				part.texOffs(0, 0).addBox(0, 0, 0, 0, 0, 0, 0, false);
 				part.setModelPart();
 			});
+			geometryRadius = radius[0];
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -113,6 +123,40 @@ public class DynamicTrainModel extends ModelTrainBase implements IResourcePackCr
 		IResourcePackCreatorProperties.checkSchema(properties);
 		this.properties = properties;
 		doorMax = properties.get(KEY_PROPERTIES_DOOR_MAX).getAsInt();
+	}
+
+	public void setGeometryRadius(double radius) {
+		geometryRadius = radius;
+		cullRadius = -1;
+	}
+
+	public double getCullRadius() {
+		if (cullRadius >= 0) {
+			return cullRadius;
+		}
+		try {
+			double offset = 0;
+			for (final JsonElement element : properties.getAsJsonArray(KEY_PROPERTIES_PARTS)) {
+				final JsonObject part = element.getAsJsonObject();
+				for (final JsonElement position : part.getAsJsonArray(KEY_PROPERTIES_POSITIONS)) {
+					final JsonArray coordinates = position.getAsJsonArray();
+					offset = Math.max(offset, Math.hypot(coordinates.get(0).getAsDouble(), coordinates.get(1).getAsDouble()) / 16);
+				}
+				if (part.has(KEY_PROPERTIES_DISPLAY)) {
+					final JsonObject display = part.getAsJsonObject(KEY_PROPERTIES_DISPLAY);
+					if (display.get(KEY_PROPERTIES_DISPLAY_X_PADDING).getAsDouble() < 0
+							|| display.get(KEY_PROPERTIES_DISPLAY_Y_PADDING).getAsDouble() < 0) {
+						return cullRadius = Double.POSITIVE_INFINITY;
+					}
+				}
+			}
+			// Covers door travel, the roll pivot and the display surface offset.
+			final double radius = geometryRadius + offset + (2 * Math.abs((double) doorMax) + 8) / 16 + 2;
+			cullRadius = Double.isFinite(radius) ? radius : Double.POSITIVE_INFINITY;
+		} catch (RuntimeException ignored) {
+			cullRadius = Double.POSITIVE_INFINITY;
+		}
+		return cullRadius;
 	}
 
 	@Override

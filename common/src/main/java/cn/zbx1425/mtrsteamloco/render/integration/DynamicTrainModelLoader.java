@@ -8,6 +8,7 @@ import cn.zbx1425.mtrsteamloco.mixin.ModelMapperAccessor;
 import cn.zbx1425.sowcer.math.Vector3f;
 import cn.zbx1425.sowcer.util.GlStateTracker;
 import cn.zbx1425.sowcerext.model.RawModel;
+import cn.zbx1425.sowcerext.model.RawMesh;
 import cn.zbx1425.sowcerext.model.loader.ObjModelLoader;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -55,6 +56,7 @@ public class DynamicTrainModelLoader {
     }
 
     public static void loadObjInto(JsonObject model, DynamicTrainModel target) {
+        target.setGeometryRadius(Double.POSITIVE_INFINITY);
         int bbDataType = MtrModelRegistryUtil.getDummyBbDataType(model);
         String path = MtrModelRegistryUtil.getPathFromDummyBbData(model);
         target.parts.clear();
@@ -274,13 +276,18 @@ public class DynamicTrainModelLoader {
                 target.properties.add(IResourcePackCreatorProperties.KEY_PROPERTIES_PARTS, partsPropArray);
                 boolean isLoadingFromEditor = !GlStateTracker.isStateProtected;
                 if (isLoadingFromEditor) GlStateTracker.capture();
+                double radiusSquared = 0;
                 for (Map.Entry<PartBatch, RawModel> entry : mergedModels.entrySet()) {
                     PartBatch batch = entry.getKey();
                     RawModel mergedModel = entry.getValue();
+                    for (RawMesh mesh : mergedModel.meshList.values()) {
+                        radiusSquared = Math.max(radiusSquared, mesh.getRadiusSquared());
+                    }
                     target.parts.put(batch.batchId, new SowcerModelAgent(mergedModel, false));
                     partsPropArray.add(batch.getPartObject());
                 }
                 if (isLoadingFromEditor) GlStateTracker.restore();
+                target.setGeometryRadius(Math.sqrt(radiusSquared));
             } else {
                 // Loading in RP editor. Don't merge the parts.
                 boolean isLoadingFromEditor = !GlStateTracker.isStateProtected;

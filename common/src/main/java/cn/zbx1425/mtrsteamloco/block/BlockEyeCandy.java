@@ -226,6 +226,7 @@ public class BlockEyeCandy extends BlockDirectionalMapper implements EntityBlock
         public boolean asPlatform = false;
         public float doorValue = 0;
         public boolean doorTarget = false;
+        private long doorTrainId;
 
         private String shape = "0, 0, 0, 16, 16, 16";
         private String collisionShape = "0, 0, 0, 0, 0, 0";
@@ -439,6 +440,19 @@ public class BlockEyeCandy extends BlockDirectionalMapper implements EntityBlock
 
         public void setDoorTarget(boolean target) {
             doorTarget = target;
+        }
+
+        public void syncTrainDoors(long trainId, boolean target, float value) {
+            doorTrainId = trainId;
+            setDoorTarget(target);
+            setDoorValue(value);
+        }
+
+        public void clearTrainDoors(long trainId) {
+            if (doorTrainId == trainId) {
+                setDoorTarget(false);
+                setDoorValue(0);
+            }
         }
 
         public boolean isPlatform() {

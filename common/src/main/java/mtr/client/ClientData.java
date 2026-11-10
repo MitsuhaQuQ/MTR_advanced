@@ -148,6 +148,7 @@ public final class ClientData {
 				// The siding was given another vehicle and kept the train's ID: the cars, their spacing and the model are
 				// fixed for a train, so the new one takes the old one's place rather than having its path copied in
 				existingTrain.isRemoved = true;
+				existingTrain.clearPlatformDoors();
 				TRAINS.remove(existingTrain);
 				TRAINS.add(newTrain);
 			} else {
@@ -185,6 +186,7 @@ public final class ClientData {
 			TRAINS.forEach(trainClient -> {
 				if (!trainIdsToKeep.contains(trainClient.id)) {
 					trainClient.isRemoved = true;
+					trainClient.clearPlatformDoors();
 				}
 			});
 			TRAINS.removeIf(trainClient -> trainClient.isRemoved);
@@ -348,6 +350,7 @@ public final class ClientData {
 			KEY_NODES.add(packetCopy.readBlockPos());
 		}
 
+		TRAINS.forEach(TrainClient::clearPlatformDoors);
 		TRAINS.clear();
 		ClientData.DATA_CACHE.sync();
 		ClientData.DATA_CACHE.refreshDynamicResources();

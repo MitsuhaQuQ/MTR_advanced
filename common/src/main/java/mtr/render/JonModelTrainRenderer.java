@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import mtr.MTRClient;
 import mtr.client.CustomBogie;
+import mtr.client.DynamicTrainModel;
 import mtr.client.TrainClientRegistry;
 import mtr.client.TrainProperties;
 import mtr.data.IGui;
@@ -73,6 +74,19 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 	@Override
 	public TrainRendererBase createTrainInstance(TrainClient train) {
 		return new JonModelTrainRenderer(model, textureId, gangwayConnectionId, trainBarrierId, train);
+	}
+
+	public double getCarCullRadius() {
+		if (model == null || model.getClass() != DynamicTrainModel.class || train.transportMode != TransportMode.TRAIN) {
+			return Double.POSITIVE_INFINITY;
+		}
+		final TrainProperties properties = TrainClientRegistry.getTrainProperties(train.trainId);
+		if (properties.hasCustomBogies()) {
+			return Double.POSITIVE_INFINITY;
+		}
+		// The built-in bogies may follow the track away from the car's chord on curves.
+		final double bogieRadius = train.spacing + Math.abs(properties.bogiePosition) + 4;
+		return Math.max(bogieRadius, ((DynamicTrainModel) model).getCullRadius());
 	}
 
 	@Override

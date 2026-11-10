@@ -49,8 +49,6 @@ import org.spongepowered.asm.mixin.Overwrite;
 @Mixin(Train.class)
 public abstract class TrainMixin implements TrainExtraSupplier{
 
-	@Shadow(remap = false) protected boolean doorTarget;
-	@Shadow(remap = false) protected float doorValue;
 	@Shadow(remap = false) private List<PathData> path;
 	@Shadow(remap = false) protected List<Double> distances;
 	@Shadow(remap = false) @org.spongepowered.asm.mixin.Final protected mtr.data.TrainIdentity identity;
@@ -245,9 +243,8 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 		if (entity instanceof BlockEyeCandy.BlockEntityEyeCandy) {
 			BlockEyeCandy.BlockEntityEyeCandy e = (BlockEyeCandy.BlockEntityEyeCandy) entity;
 			if (e.isPlatform()) {
-				if (isClientSide) {
-					e.setDoorTarget(doorTarget);
-					e.setDoorValue(doorValue);
+				if (isClientSide && (Object) this instanceof TrainClient) {
+					((TrainClient) (Object) this).syncPlatformDoor(e);
 				}
 				return true;
 			} else return false;

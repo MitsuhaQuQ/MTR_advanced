@@ -8,6 +8,32 @@ import static org.junit.jupiter.api.Assertions.*;
 class PlatformDwellTest {
 
 	@Test
+	void clientStopCheckDistinguishesDwellFromPassingAndParking() {
+		final MotionFixture train = new MotionFixture().rail(30, 0, 1).rail(100, 10, 1).rail(30, 0, 1);
+		train.clientSide = true;
+		train.onRoute = true;
+		train.nextStoppingIndex = 1;
+		train.railProgress = 130;
+		assertTrue(PlatformDwell.isAtStop(train, train));
+
+		train.speed = 0.1F;
+		assertFalse(PlatformDwell.isAtStop(train, train));
+
+		train.speed = 0;
+		train.railProgress = 129;
+		assertFalse(PlatformDwell.isAtStop(train, train));
+
+		train.nextStoppingIndex = 2;
+		train.railProgress = 160;
+		assertFalse(PlatformDwell.isAtStop(train, train));
+
+		train.onRoute = false;
+		train.nextStoppingIndex = 1;
+		train.railProgress = 130;
+		assertFalse(PlatformDwell.isAtStop(train, train));
+	}
+
+	@Test
 	void departureIsAvailableOnlyWithNoHoldAndAuthorityPastThePlatform() {
 		final MotionFixture train = new MotionFixture().rail(30, 0, 1).rail(100, 10, 1).rail(100, 0, 1);
 		train.onRoute = true;

@@ -10,4 +10,7 @@ public interface LevelRendererAccessor {
 
     @Accessor
     Frustum getCullingFrustum();
+
+    @Accessor
+    Frustum getCapturedFrustum();
 }

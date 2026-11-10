@@ -1,4 +1,5 @@
 {
+  "options.mtr.optimize_train_rendering": "Rendering optimizations (experimental)",
 	"gui.mtr.audio_speaker_choose_directions": "Choose listening directions",
 	"gui.mtr.audio_speaker_direction.none": "Muted",
 	"gui.mtr.audio_speaker_direction": "Listening direction: %s",

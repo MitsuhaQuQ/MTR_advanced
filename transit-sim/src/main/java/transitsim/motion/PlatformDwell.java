@@ -27,10 +27,14 @@ public final class PlatformDwell {
 	/** Reports a stop only at its stopping point, never a halt at a signal before it. */
 	public static void report(MotionState state, MotionTrack track, MotionHooks hooks, float departureTicks) {
 		if (!hooks.isClientSide()) {
-			final int rail = state.getNextStoppingIndex();
-			final boolean atStop = state.isOnRoute() && state.getSpeed() == 0 && rail >= 0 && rail < track.size()
-					&& track.getDwellTime(rail) > 0 && Math.abs(state.getRailProgress() - track.getStopDistance(rail)) <= 1E-3;
-			hooks.onDwell(atStop ? rail : -1, atStop && !state.isCurrentlyManual() ? departureTicks : -1);
+			final boolean atStop = isAtStop(state, track);
+			hooks.onDwell(atStop ? state.getNextStoppingIndex() : -1, atStop && !state.isCurrentlyManual() ? departureTicks : -1);
 		}
+	}
+
+	public static boolean isAtStop(MotionState state, MotionTrack track) {
+		final int rail = state.getNextStoppingIndex();
+		return state.isOnRoute() && state.getSpeed() == 0 && rail >= 0 && rail < track.size() && rail < track.getDistanceCount()
+				&& track.getDwellTime(rail) > 0 && Math.abs(state.getRailProgress() - track.getStopDistance(rail)) <= 1E-3;
 	}
 }

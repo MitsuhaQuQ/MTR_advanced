@@ -674,7 +674,7 @@ sequenceDiagram
 
 ### 5.3 一列车：`TrainClient`
 
-- 带 ANTE 时 `TrainClientMixin` 替换 `TrainClient.simulateTrain`：先清掉上一帧的半透明队列，按当前停站算出本站、下站、终点站和线路，处理报站和声音，再调 `Train.simulateTrain(world, 帧时长, null)`（4.3 的共用部分，客户端不检查方块），最后取消原方法。
+- 带 ANTE 时 `TrainClientMixin` 替换 `TrainClient.simulateTrain`：先清掉上一帧的半透明队列，按当前停站算出本站、下站、终点站和线路，处理报站和声音，再调 `Train.simulateTrain(world, 帧时长, null)`（4.3 的共用部分，车厢定位时检查两侧是否有站台），最后取消原方法。
 - `TrainClient.simulateCar`（每节车厢）：
   - `vehicleRidingClient` 移动坐车的玩家，算出视角偏移。
   - `trainRenderer.renderCar(...)` 马上画不透明部分，同时把同一调用加进半透明队列。
@@ -702,6 +702,18 @@ sequenceDiagram
 3. 算出车厢的位姿矩阵（`translateToWorld` 平移到车厢位置，再加乘客视角偏移、yaw、pitch、侧倾），连同左右门状态写进 `TrainWrapper`（脚本里的 `train` 对象），给脚本读。交给脚本的 `worldPose` 是世界原点的矩阵（`translateToWorld(viewOffset, 0, 0, 0)`），脚本按世界坐标画的东西照旧在原位。
 4. 把脚本**上一次** `render` 提交的模型按这个位姿画出来（`commitCar`）。
 5. 最后一节车厢处理完后 `extraFinished`，并 `tryCallRenderFunctionAsync` 让脚本在脚本线程上算下一帧要画什么（第 10 节）。所以脚本画出来的东西比列车位置晚一帧。
+
+### 5.6 多列车同屏渲染优化
+
+1. **仅停站时扫描列车两侧站台。** 游戏内「仪表盘 → 选项 → 渲染优化（实验）」立即生效并写入客户端的 `config/mtr.json`，键为 `optimize_train_rendering`，默认关闭。OBJ 和 BBModel 都经由 `Train.calculateCar` 进入同一扫描。启用后，`TrainClient` 用 `PlatformDwell.isAtStop` 确认车已停在有停站时间的站台停车点。车厂停放、通过站台和信号前临停跳过扫描。手动驾驶在站台旁停车并操作车门时也扫描，连续运行的缆车在路线上保留原扫描。启用 `anteRunHooks` 时，客户端记录已更新的装饰屏蔽门，离站或移除列车时直接关闭仍由该车控制的门。服务端的屏蔽门扫描照常执行。
+2. **视锥裁剪。** 共用的 `LevelRendererMixin` 在实体绘制前发布主相机视锥，每次渲染开始和返回时清空。OBJ 使用合批后的顶点范围，BBModel 使用立方体与旋转枢轴的范围，再预留部件偏移、车门运动和内置转向架的空间。车厢在计算转向架姿态之前判断一次，同时控制不透明绘制和半透明入队，风挡与护栏检查相邻车厢之间的范围。列车位置、乘客和声音照常更新。脚本车型、自定义转向架车体、未知范围、乘客视角偏移、光影和兼容渲染沿用原路径。
+3. **后续设计，减少模型提交开销。** BBModel 在资源加载阶段把 `DynamicTrainModel` 的 JSON 部件属性转成按绘制阶段筛选的列表，车门位置、灯光和目的地继续按车厢计算。OBJ 的 `BatchManager` 已共享材质状态，仍逐网格提交。先给同一网格、材质和阶段的不透明部件做 GPU 实例化，给每个实例传入变换和光照。透明绘制继续排序，Blaze3D 兼容路径继续可用。
+
+用同一世界、相机、资源包和视距分开测试 OBJ、BBModel，再测混合场景。记录 1、5、10 列车的实际车厢数、平均及 P95 帧时、`Train.scanDoors` 采样和绘制调用数。比较时固定动态帧率设置。流程与人工验收见 L09 和 L10。
+
+### 5.7 原版装饰方块实体裁剪
+
+同一实验开关也控制 `BlockEntityRenderDispatcherMixin`。主相机视锥完全排除方块周围的保守范围时，跳过原版旗帜、告示牌、悬挂告示牌和头颅的逐帧绘制。以渲染器类型确认目标，模组替换的渲染器、ANTE 装饰方块、物品预览和普通区块网格均走原路径。视野内的装饰模型仍按原方式绘制。测试时在同一个区块同时摆放镜头内外两组装饰，分别比较正对和背对时的帧时与方块实体绘制调用。
 
 ## 6. 资源包加载（客户端）
 

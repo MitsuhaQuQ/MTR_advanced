@@ -1,6 +1,7 @@
 package cn.zbx1425.mtrsteamloco.mixin;
 
 import cn.zbx1425.mtrsteamloco.MainClient;
+import cn.zbx1425.mtrsteamloco.ClientConfig;
 import cn.zbx1425.sowcerext.model.integration.BufferSourceProxy;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Camera;
@@ -13,6 +14,9 @@ import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.RenderBuffers;
 import cn.zbx1425.mtrsteamloco.render.block.BlockEntityEyeCandyRenderer;
 import cn.zbx1425.mtrsteamloco.data.Rolling;
+import mtr.MTRClient;
+import mtr.client.Config;
+import mtr.render.WorldRenderVisibility;
 
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -25,6 +29,27 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class LevelRendererMixin {
 
     @Shadow @Final private RenderBuffers renderBuffers;
+
+    @Inject(method = "renderLevel", at = {@At("HEAD"), @At("RETURN")})
+    private void resetRenderFrustum(CallbackInfo ci) {
+        WorldRenderVisibility.setFrustum(null);
+    }
+
+    @Inject(method = "renderLevel", at = @At(value = "CONSTANT", args = "stringValue=entities", ordinal = 0), require = 0)
+#if MC_VERSION >= "11903"
+    private void setRenderFrustum(PoseStack matrices, float partialTick, long finishTime, boolean renderBlockOutline, Camera camera, GameRenderer renderer, LightTexture lightTexture, org.joml.Matrix4f projection, CallbackInfo ci) {
+#else
+    private void setRenderFrustum(PoseStack matrices, float partialTick, long finishTime, boolean renderBlockOutline, Camera camera, GameRenderer renderer, LightTexture lightTexture, com.mojang.math.Matrix4f projection, CallbackInfo ci) {
+#endif
+        Minecraft client = Minecraft.getInstance();
+        LevelRendererAccessor accessor = (LevelRendererAccessor) this;
+        if (Config.optimizeTrainRendering() && ClientConfig.enableOptimization && client.levelRenderer == (Object) this
+                && camera == client.gameRenderer.getMainCamera() && accessor.getCapturedFrustum() == null
+                && !MTRClient.isVivecraft() && !MTRClient.isReplayMod()
+                && !ShadersModHandler.isRenderingShadowPass() && !ShadersModHandler.isShaderPackInUse()) {
+            WorldRenderVisibility.setFrustum(accessor.getCullingFrustum());
+        }
+    }
 
     @Inject(method = "renderLevel", at = @At(value = "CONSTANT", args = "stringValue=destroyProgress", ordinal = 0))
 #if MC_VERSION >= "11903"

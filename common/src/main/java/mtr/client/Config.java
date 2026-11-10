@@ -22,6 +22,7 @@ public class Config {
 	private static boolean useTTSAnnouncements;
 	private static boolean hideSpecialRailColors;
 	private static boolean hideTranslucentParts;
+	private static boolean optimizeTrainRendering;
 	private static boolean shiftToToggleSitting;
 	private static int languageOptions;
 	private static boolean useDynamicFPS = true;
@@ -45,6 +46,7 @@ public class Config {
 	private static final String SHOW_ANNOUNCEMENT_MESSAGES = "show_announcement_messages";
 	private static final String HIDE_SPECIAL_RAIL_COLORS = "hide_special_rail_colors";
 	private static final String HIDE_TRANSLUCENT_PARTS = "hide_translucent_parts";
+	private static final String OPTIMIZE_TRAIN_RENDERING = "optimize_train_rendering";
 	private static final String SHIFT_TO_TOGGLE_SITTING = "shift_to_toggle_sitting";
 	private static final String LANGUAGE_OPTIONS = "language_options";
 	private static final String USE_TTS_ANNOUNCEMENTS = "use_tts_announcements";
@@ -70,6 +72,10 @@ public class Config {
 
 	public static boolean hideTranslucentParts() {
 		return hideTranslucentParts;
+	}
+
+	public static boolean optimizeTrainRendering() {
+		return optimizeTrainRendering;
 	}
 
 	public static boolean shiftToToggleSitting() {
@@ -149,6 +155,12 @@ public class Config {
 		return hideTranslucentParts;
 	}
 
+	public static boolean setOptimizeTrainRendering(boolean value) {
+		optimizeTrainRendering = value;
+		writeToFile();
+		return optimizeTrainRendering;
+	}
+
 	public static boolean setShiftToToggleSitting(boolean value) {
 		shiftToToggleSitting = value;
 		writeToFile();
@@ -184,6 +196,7 @@ public class Config {
 
 	public static void refreshProperties() {
 		System.out.println("Refreshed MTR mod config");
+		optimizeTrainRendering = false;
 		try {
 			final JsonObject jsonConfig = new JsonParser().parse(String.join("", Files.readAllLines(CONFIG_FILE_PATH))).getAsJsonObject();
 			try {
@@ -204,6 +217,10 @@ public class Config {
 			}
 			try {
 				hideTranslucentParts = jsonConfig.get(HIDE_TRANSLUCENT_PARTS).getAsBoolean();
+			} catch (Exception ignored) {
+			}
+			try {
+				optimizeTrainRendering = jsonConfig.get(OPTIMIZE_TRAIN_RENDERING).getAsBoolean();
 			} catch (Exception ignored) {
 			}
 			try {
@@ -263,6 +280,7 @@ public class Config {
 		jsonConfig.addProperty(USE_TTS_ANNOUNCEMENTS, useTTSAnnouncements);
 		jsonConfig.addProperty(HIDE_SPECIAL_RAIL_COLORS, hideSpecialRailColors);
 		jsonConfig.addProperty(HIDE_TRANSLUCENT_PARTS, hideTranslucentParts);
+		jsonConfig.addProperty(OPTIMIZE_TRAIN_RENDERING, optimizeTrainRendering);
 		jsonConfig.addProperty(SHIFT_TO_TOGGLE_SITTING, shiftToToggleSitting);
 		jsonConfig.addProperty(LANGUAGE_OPTIONS, languageOptions);
 		jsonConfig.addProperty(TRACK_TEXTURE_OFFSET, trackTextureOffset);

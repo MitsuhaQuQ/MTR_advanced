@@ -34,7 +34,6 @@ import cn.zbx1425.mtrsteamloco.data.VehicleRidingClientExtraSupplier;
 import mtr.render.RenderDrivingOverlay;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.ArrayList;
 
@@ -77,8 +76,6 @@ public abstract class TrainClientMixin extends Train implements IGui{
 	@Shadow(remap = false) boolean justMounted;
 	@Shadow(remap = false) float oldSpeed;
 	@Shadow(remap = false) double oldRailProgress;
-	@Shadow(remap = false) float oldDoorValue;
-	@Shadow(remap = false) boolean doorOpening;
 	@Shadow(remap = false) boolean isSitting;
 	@Shadow(remap = false) boolean previousShifting;
 
@@ -88,7 +85,6 @@ public abstract class TrainClientMixin extends Train implements IGui{
     @Shadow(remap = false) TrainSoundBase trainSound;
     @Shadow(remap = false) VehicleRidingClient vehicleRidingClient;
     @Shadow(remap = false) TrainRendererBase trainRenderer;
-    @Shadow(remap = false) Set<Runnable> trainTranslucentRenders;
 	@Shadow(remap = false) SpeedCallback speedCallback;
 	@Shadow(remap = false) AnnouncementCallback announcementCallback;
 	@Shadow(remap = false) AnnouncementCallback lightRailAnnouncementCallback;
@@ -103,6 +99,8 @@ public abstract class TrainClientMixin extends Train implements IGui{
 
 	@Shadow(remap = false) abstract int getPreviousStoppingIndex(int headIndex);
 	@Shadow(remap = false) abstract boolean justOpening();
+	@Shadow(remap = false) protected abstract void renderCarModels(int car, double x, double y, double z, float yaw, float pitch, boolean leftOpen, boolean rightOpen);
+	@Shadow(remap = false) protected abstract boolean shouldRenderCarConnection(double x, double y, double z, double endX, double endY, double endZ);
 
 	protected boolean handlePositions(Level world, Vec3[] positions, float ticksElapsed) {
 		final Minecraft client = Minecraft.getInstance();
@@ -212,11 +210,9 @@ public abstract class TrainClientMixin extends Train implements IGui{
 		final double newY = carY - offset.y;
 		final double newZ = carZ - offset.z;
 
-		doorOpening = doorValue > oldDoorValue;
-		trainRenderer.renderCar(ridingCar, newX, newY, newZ, carYaw, carPitch, doorLeftOpen, doorRightOpen);
-		trainTranslucentRenders.add(() -> trainRenderer.renderCar(ridingCar, newX, newY, newZ, carYaw, carPitch, doorLeftOpen, doorRightOpen));
+		renderCarModels(ridingCar, newX, newY, newZ, carYaw, carPitch, doorLeftOpen, doorRightOpen);
 
-		if (ridingCar > 0) {
+		if (ridingCar > 0 && shouldRenderCarConnection(prevCarX, prevCarY, prevCarZ, carX, carY, carZ)) {
 			float roll = TrainExtraSupplier.getRollAngleAt((Train) (Object) this, ridingCar);
             float preRoll = TrainExtraSupplier.getRollAngleAt((Train) (Object) this, ridingCar - 1);
 			if (reversed) {

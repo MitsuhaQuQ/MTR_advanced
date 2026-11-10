@@ -473,6 +473,26 @@ public class RawMesh {
         return compactVertices == null ? vertices.size() : compactVertices.length / FLOATS_PER_VERTEX;
     }
 
+    public double getRadiusSquared() {
+        double radiusSquared = 0;
+        if (compactVertices == null) {
+            for (Vertex vertex : vertices) {
+                final double x = vertex.position.x();
+                final double y = vertex.position.y();
+                final double z = vertex.position.z();
+                radiusSquared = Math.max(radiusSquared, x * x + y * y + z * z);
+            }
+        } else {
+            for (int offset = 0; offset < compactVertices.length; offset += FLOATS_PER_VERTEX) {
+                final double x = compactVertices[offset];
+                final double y = compactVertices[offset + 1];
+                final double z = compactVertices[offset + 2];
+                radiusSquared = Math.max(radiusSquared, x * x + y * y + z * z);
+            }
+        }
+        return radiusSquared;
+    }
+
     public int getFaceCount() {
         return compactFaces == null ? faces.size() : compactFaces.length / VERTICES_PER_FACE;
     }

@@ -92,6 +92,14 @@ class RawMeshTest {
 	}
 
 	@Test
+	void renderRadiusIncludesAllCoordinatesBeforeAndAfterCompaction() {
+		final RawMesh mesh = compactableMesh();
+		assertEquals(194, mesh.getRadiusSquared());
+		mesh.compact();
+		assertEquals(194, mesh.getRadiusSquared());
+	}
+
+	@Test
 	void aCompactMeshDrawsTheSameAsBefore() {
 		final Matrix4f matrix = Matrix4f.translation(10F, 20F, 30F);
 		final List<Vertex[]> expected = blazeFaces(compactableMesh(), matrix);

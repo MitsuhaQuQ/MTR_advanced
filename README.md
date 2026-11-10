@@ -164,6 +164,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 
 **Performance**
 
+- The in-game Dashboard's Options screen has a local **Rendering optimizations (experimental)** toggle, off by default. It limits train platform scans to stops, skips off-screen OBJ and BBModel cars with known bounds, and skips off-screen vanilla banners, signs, hanging signs and skulls. Scripted models and car bodies with custom bogies keep their existing rendering. Shader passes, Replay Mod and Vivecraft keep their existing visibility rules.
 - Measured with Java Flight Recorder on a large test world, the server thread spends about 4.1 ms a tick on MTR instead of 6.7 ms: platform and siding positions, a time segment's place on its path and a depot's list of sidings are worked out once instead of every tick, and the background route search for the website map's density runs one tick in ten.
 - Optimises train pathfinding, data sync and the save loop. In a synthetic benchmark, pathfinding along a 20,000-segment single line went from 468 ms to 32 ms, and unreachable targets no longer cause long searches.
 

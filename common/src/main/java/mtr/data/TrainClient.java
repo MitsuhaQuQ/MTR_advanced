@@ -1,9 +1,12 @@
 package mtr.data;
 
+import cn.zbx1425.mtrsteamloco.block.BlockEyeCandy.BlockEntityEyeCandy;
 import mtr.MTRClient;
 import mtr.client.*;
 import mtr.render.RenderDrivingOverlay;
+import mtr.render.JonModelTrainRenderer;
 import mtr.render.TrainRendererBase;
+import mtr.render.WorldRenderVisibility;
 import mtr.sound.TrainSoundBase;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -15,6 +18,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
+import transitsim.motion.PlatformDwell;
 import transitsim.motion.RunSegment;
 
 import java.util.*;
@@ -57,6 +61,7 @@ public class TrainClient extends Train implements IGui {
 	public final List<ScrollingText> scrollingTexts = new ArrayList<>();
 
 	private final Set<Runnable> trainTranslucentRenders = new HashSet<>();
+	private final Set<BlockEntityEyeCandy> activePlatformDoors = new HashSet<>();
 
 	private static final float CONNECTION_HEIGHT = 2.25F;
 	private static final float CONNECTION_Z_OFFSET = 0.5F;
@@ -92,11 +97,9 @@ public class TrainClient extends Train implements IGui {
 		final double newY = carY - offset.y;
 		final double newZ = carZ - offset.z;
 
-		doorOpening = doorValue > oldDoorValue;
-		trainRenderer.renderCar(ridingCar, newX, newY, newZ, carYaw, carPitch, doorLeftOpen, doorRightOpen);
-		trainTranslucentRenders.add(() -> trainRenderer.renderCar(ridingCar, newX, newY, newZ, carYaw, carPitch, doorLeftOpen, doorRightOpen));
+		renderCarModels(ridingCar, newX, newY, newZ, carYaw, carPitch, doorLeftOpen, doorRightOpen);
 
-		if (ridingCar > 0) {
+		if (ridingCar > 0 && shouldRenderCarConnection(prevCarX, prevCarY, prevCarZ, carX, carY, carZ)) {
 			final double newPrevCarX = prevCarX - offset.x;
 			final double newPrevCarY = prevCarY - offset.y;
 			final double newPrevCarZ = prevCarZ - offset.z;
@@ -128,6 +131,21 @@ public class TrainClient extends Train implements IGui {
 				}
 			}
 		}
+	}
+
+	protected void renderCarModels(int car, double x, double y, double z, float yaw, float pitch, boolean leftOpen, boolean rightOpen) {
+		doorOpening = doorValue > oldDoorValue;
+		if (WorldRenderVisibility.hasFrustum() && trainRenderer.getClass() == JonModelTrainRenderer.class && getViewOffset() == null
+				&& !WorldRenderVisibility.isVisible(x, y, z, ((JonModelTrainRenderer) trainRenderer).getCarCullRadius())) {
+			return;
+		}
+		trainRenderer.renderCar(car, x, y, z, yaw, pitch, leftOpen, rightOpen);
+		trainTranslucentRenders.add(() -> trainRenderer.renderCar(car, x, y, z, yaw, pitch, leftOpen, rightOpen));
+	}
+
+	protected boolean shouldRenderCarConnection(double x, double y, double z, double endX, double endY, double endZ) {
+		return !WorldRenderVisibility.hasFrustum() || trainRenderer.getClass() != JonModelTrainRenderer.class || getViewOffset() != null
+				|| WorldRenderVisibility.isVisible(x, y, z, endX, endY, endZ, spacing / 2D + width / 2D + 5);
 	}
 
 	@Override
@@ -220,7 +238,52 @@ public class TrainClient extends Train implements IGui {
 
 	@Override
 	protected boolean skipScanBlocks(Level world, double trainX, double trainY, double trainZ) {
+		if (!Config.optimizeTrainRendering() || shouldScanPlatformDoors()) {
+			return false;
+		}
+		clearPlatformDoors();
+		return true;
+	}
+
+	private boolean shouldScanPlatformDoors() {
+		if (!isOnRoute) {
+			return false;
+		}
+		if (transportMode.continuousMovement) {
+			return true;
+		}
+		if (speed != 0) {
+			return false;
+		}
+		if (PlatformDwell.isAtStop(getMotionState(), getMotionTrack()) && path.get(nextStoppingIndex).savedRailBaseId != 0) {
+			return true;
+		}
+		// A driver can stop and operate the doors away from the scheduled stopping point.
+		if (isCurrentlyManual && (doorTarget || doorValue > 0)) {
+			final int head = getIndex(railProgress, true);
+			for (int i = getIndex(railProgress - trainCars * spacing, false); i >= 0 && i <= head; i++) {
+				if (path.get(i).rail.railType == RailType.PLATFORM) {
+					return true;
+				}
+			}
+		}
 		return false;
+	}
+
+	public void syncPlatformDoor(BlockEntityEyeCandy door) {
+		door.syncTrainDoors(id, doorTarget, doorValue);
+		if (!transportMode.continuousMovement && (doorTarget || doorValue > 0)) {
+			activePlatformDoors.add(door);
+		} else {
+			activePlatformDoors.remove(door);
+		}
+	}
+
+	public void clearPlatformDoors() {
+		if (!activePlatformDoors.isEmpty()) {
+			activePlatformDoors.forEach(door -> door.clearTrainDoors(id));
+			activePlatformDoors.clear();
+		}
 	}
 
 	@Override

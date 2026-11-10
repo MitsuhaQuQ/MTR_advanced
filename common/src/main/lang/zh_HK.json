@@ -396,6 +396,7 @@
   "options.mtr.language_options_2": "只顯示非中日韓文字",
   "options.mtr.track_texture_offset": "軌道貼圖偏移",
   "options.mtr.use_dynamic_fps": "動態提升影格率",
+  "options.mtr.optimize_train_rendering": "渲染優化（實驗）",
   "options.mtr.vehicle_render_distance_ratio": "車輛渲染距離佔 Minecraft 渲染距離的比例",
   "tooltip.mtr.psd_apg_door_2": "車門段",
   "tooltip.mtr.psd_apg_glass_2": "玻璃段",
