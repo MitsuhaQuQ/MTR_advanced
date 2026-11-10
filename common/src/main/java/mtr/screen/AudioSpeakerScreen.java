@@ -18,6 +18,7 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -28,6 +29,7 @@ import net.minecraft.world.level.block.Block;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 public final class AudioSpeakerScreen extends ScreenBase {
@@ -35,8 +37,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	private final BlockPos pos;
 	private final SpeakerSettings initialSettings;
 	private final WidgetBetterTextField radius, centerX, centerY, centerZ, triggerRadius;
-	private final Button modeButton, soundButton, appearanceButton;
+	private final Button modeButton, soundButton, directionButton, appearanceButton;
 	private SpeakerSettings.Mode mode;
+	private int audienceMask;
 	private String sound;
 	private ResourceLocation appearance;
 	private boolean invalid;
@@ -49,6 +52,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		initialSettings = settings;
 		sound = settings.sound;
 		mode = settings.mode;
+		audienceMask = settings.audienceMask;
 		appearance = settings.appearance;
 		radius = number(settings.radius, "", 3);
 		centerX = number(settings.triggerCenter.getX(), "X", 9);
@@ -61,6 +65,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			updateRegionFields();
 		});
 		soundButton = UtilitiesClient.newButton(soundLabel(), button -> chooseSound());
+		directionButton = UtilitiesClient.newButton(directionLabel(), button -> minecraft.setScreen(new DirectionPicker()));
 		appearanceButton = UtilitiesClient.newButton(appearanceLabel(), button -> chooseAppearance());
 	}
 
@@ -68,18 +73,19 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	protected void init() {
 		panelWidth = Math.min(width - 20, 320);
 		left = (width - panelWidth) / 2;
-		top = Math.max(18, (height - 206) / 2);
+		top = Math.max(18, (height - 222) / 2);
 		place(soundButton, left, top + 4, panelWidth);
-		place(modeButton, left, top + 28, panelWidth);
-		place(radius, left + panelWidth - 54, top + 52, 54);
+		place(modeButton, left, top + 26, panelWidth);
+		place(radius, left + panelWidth - 54, top + 48, 54);
+		place(directionButton, left, top + 70, panelWidth);
 		final int coordinateWidth = (panelWidth - 8) / 3;
-		place(centerX, left, top + 87, coordinateWidth);
-		place(centerY, left + coordinateWidth + 4, top + 87, coordinateWidth);
-		place(centerZ, left + 2 * (coordinateWidth + 4), top + 87, coordinateWidth);
-		place(triggerRadius, left + panelWidth - 54, top + 111, 54);
-		place(appearanceButton, left + 22, top + 137, panelWidth - 22);
-		place(UtilitiesClient.newButton(Text.translatable("gui.done"), button -> apply()), left, top + 163, panelWidth / 2 - 2);
-		place(UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose()), left + panelWidth / 2 + 2, top + 163, panelWidth / 2 - 2);
+		place(centerX, left, top + 106, coordinateWidth);
+		place(centerY, left + coordinateWidth + 4, top + 106, coordinateWidth);
+		place(centerZ, left + 2 * (coordinateWidth + 4), top + 106, coordinateWidth);
+		place(triggerRadius, left + panelWidth - 54, top + 128, 54);
+		place(appearanceButton, left + 22, top + 150, panelWidth - 22);
+		place(UtilitiesClient.newButton(Text.translatable("gui.done"), button -> apply()), left, top + 172, panelWidth / 2 - 2);
+		place(UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose()), left + panelWidth / 2 + 2, top + 172, panelWidth / 2 - 2);
 		updateRegionFields();
 	}
 
@@ -87,15 +93,15 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		renderBackground(matrices);
 		GuiCompat.drawCenteredString(matrices, font, title, width / 2, top - 13, 0xFFFFFF);
-		GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_radius"), left, top + 58, 0xFFFFFF);
+		GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_radius"), left, top + 54, 0xFFFFFF);
 		if (mode == SpeakerSettings.Mode.REGION) {
-			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_center"), left, top + 75, 0xFFFFFF);
-			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_trigger_radius"), left, top + 117, 0xFFFFFF);
+			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_center"), left, top + 94, 0xFFFFFF);
+			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_trigger_radius"), left, top + 134, 0xFFFFFF);
 		}
 		final Block block = BuiltInRegistries.BLOCK.get(appearance);
-		GuiCompat.graphics(matrices).renderItem(new ItemStack(block), left + 2, top + 139);
+		GuiCompat.graphics(matrices).renderItem(new ItemStack(block), left + 2, top + 152);
 		if (invalid) {
-			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.audio_speaker_invalid"), width / 2, top + 189, 0xFF7777);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.audio_speaker_invalid"), width / 2, top + 196, 0xFF7777);
 		}
 		super.render(matrices, mouseX, mouseY, delta);
 	}
@@ -141,7 +147,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			final BlockPos center = region ? new BlockPos(value(centerX), value(centerY), value(centerZ)) : initialSettings.triggerCenter;
 			if (region && !world.isInWorldBounds(center)) throw new IllegalArgumentException();
 			final int regionRadius = region ? value(triggerRadius) : initialSettings.triggerRadius;
-			final SpeakerSettings settings = new SpeakerSettings(sound, mode, value(radius), center, regionRadius, appearance);
+			final SpeakerSettings settings = new SpeakerSettings(sound, mode, value(radius), center, regionRadius, appearance, audienceMask);
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 			packet.writeBlockPos(pos);
 			settings.write(packet);
@@ -158,6 +164,26 @@ public final class AudioSpeakerScreen extends ScreenBase {
 
 	private Component appearanceLabel() {
 		return Text.translatable("gui.mtr.audio_speaker_appearance", BuiltInRegistries.BLOCK.get(appearance).getName());
+	}
+
+	private Component directionLabel() {
+		final String label;
+		if (audienceMask == SpeakerSettings.ALL_DIRECTIONS) {
+			label = Text.translatable("gui.mtr.audio_speaker_direction.all").getString();
+		} else if (audienceMask == 0) {
+			label = Text.translatable("gui.mtr.audio_speaker_direction.none").getString();
+		} else {
+			final List<String> names = new ArrayList<>();
+			for (final Direction face : Direction.values()) {
+				if ((audienceMask & SpeakerSettings.directionBit(face)) != 0) names.add(faceLabel(face).getString());
+			}
+			label = String.join(", ", names);
+		}
+		return Text.translatable("gui.mtr.audio_speaker_direction", Text.literal(label));
+	}
+
+	private static Component faceLabel(Direction face) {
+		return Text.translatable("gui.mtr.audio_speaker_direction." + face.name().toLowerCase(Locale.ROOT));
 	}
 
 	private Component modeLabel() {
@@ -185,6 +211,66 @@ public final class AudioSpeakerScreen extends ScreenBase {
 
 	private static int value(WidgetBetterTextField field) {
 		return Integer.parseInt(field.getValue());
+	}
+
+	private final class DirectionPicker extends ScreenBase {
+		private int selectedMask = audienceMask;
+
+		private DirectionPicker() {
+			super(Text.translatable("gui.mtr.audio_speaker_choose_directions"));
+		}
+
+		@Override
+		protected void init() {
+			final Direction[] faces = Direction.values();
+			final WidgetBetterCheckbox[] checkboxes = new WidgetBetterCheckbox[faces.length];
+			final int panel = Math.min(width - 20, 260);
+			final int left = (width - panel) / 2;
+			final int top = Math.max(22, (height - 114) / 2);
+			for (int i = 0; i < faces.length; i++) {
+				final Direction face = faces[i];
+				final int bit = SpeakerSettings.directionBit(face);
+				final WidgetBetterCheckbox checkbox = new WidgetBetterCheckbox(0, 0, 0, 20, faceLabel(face),
+						checked -> selectedMask = checked ? selectedMask | bit : selectedMask & ~bit);
+				checkbox.setChecked((selectedMask & bit) != 0);
+				checkboxes[i] = checkbox;
+				IDrawing.setPositionAndWidth(checkbox, left + i % 2 * panel / 2, top + i / 2 * 22, panel / 2);
+				addDrawableChild(checkbox);
+			}
+			final Button all = UtilitiesClient.newButton(Text.translatable("gui.mtr.audio_speaker_direction.all"), button -> {
+				selectedMask = SpeakerSettings.ALL_DIRECTIONS;
+				for (final WidgetBetterCheckbox checkbox : checkboxes) checkbox.setChecked(true);
+			});
+			IDrawing.setPositionAndWidth(all, left, top + 66, panel);
+			addDrawableChild(all);
+			final Button done = UtilitiesClient.newButton(Text.translatable("gui.done"), button -> {
+				audienceMask = selectedMask;
+				directionButton.setMessage(directionLabel());
+				onClose();
+			});
+			IDrawing.setPositionAndWidth(done, left, top + 90, panel / 2 - 2);
+			addDrawableChild(done);
+			final Button cancel = UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose());
+			IDrawing.setPositionAndWidth(cancel, left + panel / 2 + 2, top + 90, panel / 2 - 2);
+			addDrawableChild(cancel);
+		}
+
+		@Override
+		public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
+			renderBackground(matrices);
+			GuiCompat.drawCenteredString(matrices, font, title, width / 2, 8, 0xFFFFFF);
+			super.render(matrices, mouseX, mouseY, delta);
+		}
+
+		@Override
+		public void onClose() {
+			minecraft.setScreen(AudioSpeakerScreen.this);
+		}
+
+		@Override
+		public boolean isPauseScreen() {
+			return false;
+		}
 	}
 
 	private static final class Choice {

@@ -51,6 +51,7 @@ public final class AudioSpeakerPackets implements IPacket {
 		packet.writeUtf(settings.sound);
 		packet.writeUtf(hash, 64);
 		packet.writeVarInt(settings.radius);
+		packet.writeByte(settings.audienceMask);
 		Registry.sendToPlayer(player, PACKET_AUDIO_SPEAKER_PLAYBACK, packet);
 	}
 

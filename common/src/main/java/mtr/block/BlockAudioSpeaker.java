@@ -165,7 +165,7 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			final String hash = AudioServer.getUploadedHash(settings.sound);
 			if (hash == null) return;
 			for (final ServerPlayer player : world.players()) {
-				if (inside(player, worldPosition, settings.radius)) {
+				if (canHear(player)) {
 					AudioSpeakerPackets.play(player, world, worldPosition, settings, hash, AudioSpeakerPackets.Action.ONCE);
 				}
 			}
@@ -175,13 +175,13 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			listeners.removeIf(id -> {
 				final ServerPlayer player = world.getServer().getPlayerList().getPlayer(id);
 				if (player != null && player.serverLevel() == world) {
-					if (inside(player, worldPosition, settings.radius)) return false;
+					if (canHear(player)) return false;
 					AudioSpeakerPackets.stop(player, world, worldPosition);
 				}
 				return true;
 			});
 			for (final ServerPlayer player : world.players()) {
-				if (inside(player, worldPosition, settings.radius) && (listeners.add(player.getUUID()) || refresh)) {
+				if (canHear(player) && (listeners.add(player.getUUID()) || refresh)) {
 					AudioSpeakerPackets.play(player, world, worldPosition, settings, hash, AudioSpeakerPackets.Action.LOOP);
 				}
 			}
@@ -206,6 +206,10 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 
 		private static boolean inside(ServerPlayer player, BlockPos center, int radius) {
 			return SpeakerSettings.inRange(center, radius, player.getX(), player.getY(), player.getZ());
+		}
+
+		private boolean canHear(ServerPlayer player) {
+			return SpeakerSettings.audibleFrom(worldPosition, settings.radius, settings.audienceMask, player.getX(), player.getY(), player.getZ());
 		}
 	}
 }
