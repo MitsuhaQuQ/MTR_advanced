@@ -3,6 +3,7 @@ package mtr;
 import dev.architectury.injectables.annotations.ExpectPlatform;
 import mtr.mappings.BlockEntityMapper;
 import mtr.mappings.BlockEntityRendererMapper;
+import net.minecraft.client.Minecraft;
 import mtr.mappings.EntityRendererMapper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.player.LocalPlayer;
@@ -58,6 +59,11 @@ public class RegistryClient {
 
 	@ExpectPlatform
 	public static void registerPlayerJoinEvent(Consumer<LocalPlayer> consumer) {
+		throw new AssertionError();
+	}
+
+	@ExpectPlatform
+	public static void registerTickEvent(Consumer<Minecraft> consumer) {
 		throw new AssertionError();
 	}
 

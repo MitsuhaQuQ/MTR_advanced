@@ -173,6 +173,7 @@
 		"mtr:ticket_processor_exit",
 		"mtr:ticket_processor_enquiry",
 		"mtr:train_announcer",
+		"mtr:audio_speaker",
 		"mtr:train_cargo_loader",
 		"mtr:train_cargo_unloader",
 		"mtr:train_sensor",

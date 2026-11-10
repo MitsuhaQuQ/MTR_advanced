@@ -143,6 +143,8 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new RoutePreviewServlet()), "/api/route-preview");
 		context.addServlet(new ServletHolder(new DepotWayPreviewServlet()), "/api/depot-way-preview");
 		context.addServlet(new ServletHolder(new AudioServlet()), "/api/audio");
+		context.addServlet(new ServletHolder(new ImagesServlet()), "/api/images");
+		context.addServlet(new ServletHolder(new ImageFileServlet()), "/api/image-file");
 		context.addServlet(new ServletHolder(new AudioFileServlet()), "/api/audio-file");
 		server.setHandler(context);
 		server.start();
@@ -761,6 +763,31 @@ public final class EditorServer {
 	 * The announcement audio list, and adding or deleting a file ({@link EditorAudio}). The game answers an upload or a
 	 * deletion later, and the page sees it in the list it reads again.
 	 */
+	private static class ImagesServlet extends HttpServlet {
+		@Override protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			try { sendJson(response, onGameThread(() -> EditorImages.build().toString())); }
+			catch (Exception e) { response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE); }
+		}
+		@Override protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request); if (body == null) { response.sendError(413); return; }
+			try { final JsonObject json = new JsonParser().parse(body).getAsJsonObject(); final String name = json.get("name").getAsString(); if (json.has("action") && "delete".equals(json.get("action").getAsString())) sendJson(response, onGameThread(() -> EditorImages.delete(name).toString())); else { final String data = json.get("data").getAsString(); sendJson(response, onGameThread(() -> EditorImages.upload(name, data).toString())); } }
+			catch (Exception e) { response.sendError(400); }
+		}
+	}
+	private static class ImageFileServlet extends HttpServlet {
+		@Override protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			try {
+				final String hash = request.getParameter("hash");
+				final byte[] bytes = onGameThread(() -> mtr.client.ImportedImages.read(hash));
+				if (bytes == null) { response.sendError(404); return; }
+				response.setContentType(mtr.image.ImageFiles.isGif(bytes) ? "image/gif" : "image/png");
+				response.setContentLength(bytes.length);
+				response.getOutputStream().write(bytes);
+			}
+			catch (Exception e) { response.sendError(503); }
+		}
+	}
+
 	private static class AudioServlet extends HttpServlet {
 
 		@Override

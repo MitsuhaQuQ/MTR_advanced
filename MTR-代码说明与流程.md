@@ -81,6 +81,8 @@
 | `sim` | 无头模拟器 `Simulator`、事件模拟 `EventSimulator`、占用 `Occupancy`、走行预约 `RunReservations` |
 | `io` | 二进制读写 |
 
+线网测试分两层：组件的 `LogicalLinesTest` 把 Y 字口表示为主线两臂和一条独立支线，运营线路可以获准从支线直通主线；宿主的 `RailNetworksTest` 用真实 `BlockPos`、`RailAngle` 和 `Rail` 检查三臂两两寻路、同一 XZ 不同高度不误连，以及显式坡道连接上下层。
+
 ### 2.4 核心类的关系（UML 类图）
 
 服务端的数据模型。客户端有同样的数据类（`ClientData` 里的集合），列车换成 `TrainClient`。
@@ -1547,20 +1549,43 @@ sequenceDiagram
 | `audio/AnnouncementSound` | 两边 | 报站方块"音频文件"一栏的三种写法：上传的文件（`steve:下一站.ogg`）、游戏或资源包声音（`mtr:ticket_barrier`）、网址（`https://...`）；上传文件的声音 ID 规则和游戏里的声音名 `mtr_audio:<上传者>/<声音 ID>` |
 | `audio/AudioServer` | 服务端 | 存档的 `mtr/announce.db`，所有维度共用；收上传、删除、下载请求，按块发文件；`/mtr deleteaudio` 命令 |
 | `client/AudioCache` | 客户端 | 本机缓存 `mtr_audio_cache`，按哈希存，所有世界和服务器共用；收列表后在后台下载缺的（`audio_download_all`、`audio_prefetch_max_kilobytes` 以内），被更新的文件马上下载；也替网页编辑器的音频页上传、删除、改声音 ID，等不到回复的请求超时标成失败 |
-| `client/editor/EditorAudio` | 客户端 | 高级编辑器媒体库里的音频（`index.html#/media/audio`，`media.js`；8.6 节）的接口 `api/audio`、`api/audio-file`：列表、上传、试听、删除、改声音 ID |
+| `client/editor/EditorAudio` | 客户端 | 高级编辑器媒体库里的音频接口 `api/audio`、`api/audio-file`：列表和实际限制、上传、试听、删除、改声音 ID；新版页面是 `editor-web/src/views/MediaLibrary.tsx`，旧页面是 `index.html#/media/audio` 的 `media.js` |
 | `client/AnnouncementPlayer` | 客户端 | 播放：上传的文件作为游戏声音播放（`UploadedSounds`），只有它没生效时才自己解码、用 Java 的音频输出播放；游戏声音走游戏的声音系统；网址只在 `config/mtr.json` 允许的网站下载 |
 | `client/UploadedSounds` | 客户端 | 把服务器的音频登记成游戏声音 `mtr_audio:<上传者>/<声音 ID>`，`/playsound` 也能播；游戏要这个声音的数据时从缓存取出解码。由 mixin `SoundManagerMixin`（每次加载声音后重新登记）、`SoundBufferLibraryMixin`（取声音数据）调用，Fabric 和 Forge 各一份 |
 
-### 11.2 生命周期
+### 11.2 上传限制和旧配置迁移
 
-1. **开服**：`MTR.init` 注册的服务器启动事件里 `AudioServer.open`，打开 `mtr/announce.db`，读入索引；同时收集模组的命名空间（`minecraft`、`mtr` 和数据包里的），玩家名和它们重名时上传的命名空间加 `_player` 后缀，不会盖掉模组的声音。关服时 `AudioServer.close`。
-2. **玩家进服**：`AudioServer.sendList` 发 `PACKET_AUDIO_LIST`（每个名字和它的哈希、大小、时长、上传者；所有名字之后再跟一段声音 ID，旧版本读不到这一段时按没有处理）。客户端 `AudioCache.receiveListS2C` 对比本机缓存，把缺的哈希用 `PACKET_AUDIO_WANTED` 请求：`audio_download_all` 开着时下 `audio_prefetch_max_kilobytes`（默认 1 MB）以内的；名字换了录音（被更新）而本机有旧录音的，不论大小马上下。然后 `UploadedSounds.refresh` 把每个名字登记成游戏声音。
+上传时长的唯一服务端配置是 `config/mtr_security.json` 的 `audioMaxSeconds`，由 `SecurityConfig.load` 读取：
+
+| 配置内容 | 实际限制 |
+|---|---|
+| 没有 `audioMaxSeconds`（含新配置） | 300 秒 |
+| `audioMaxSeconds: 60` | 300 秒；60 是旧版本写进文件的默认值，加载时自动迁移 |
+| 其他值 | 保留管理员设置，并限制在 1 至 3600 秒 |
+
+因此旧服务器升级后不需要手改原来的 60；如果管理员确实要限制为约 1 分钟，应显式改成 59 或 61 等非旧默认值。配置文件本身不在加载时重写，运行中的值已是 300，下次启动会再次做同样迁移。
+
+`AudioServer.sendList` 把实际的 `audioMaxSeconds` 和 `audioMaxFileKilobytes` 下发给 `AudioCache`，`EditorAudio` 再通过 `api/audio` 给媒体库页面。客户端在发送前拒绝 `durationMillis > maxSeconds * 1000` 的文件；等号不拒绝，所以恰好 `5:00.000` 可以上传。服务端收齐全部分块、重新用 `AudioFiles.check` 验证 Ogg 后，再用自己的当前配置做同一个判断，客户端不能绕过。
+
+时长、文件大小和解码保护是三个独立限制：默认单文件仍是 2 MB，因此高码率的 5 分钟录音可能先因大小被拒；`AnnouncementPlayer.MAX_DECODED_MILLIS` 是播放端 10 分钟的内存保护，不决定上传额度。改成 5 分钟不改包字段、数据库或存档格式，也不用提升协议版本。
+
+**新版媒体库的 WAV 转换（2026-11-10）**：`MediaLibrary.tsx` 接收 `.wav` 和 `.ogg`，按文件顺序处理。WAV 先交给 `core/audioConversion.ts`：限制源文件 128 MB，读取 RIFF 的 `fmt` / `data` 块，检查单/双声道、采样率及是否超过服务端时长，截断或畸形文件直接报错。网页转换另有 10 分钟上限。通过后用 Web Audio 离线解码、默认混为单声道并重采样到 24 kHz，供游戏的声音系统计算声源方向和距离衰减；不播放声音，不使用麦克风。
+
+随后用同源经典 Worker `next/audio/convert-worker.js` 调用随包的 `OggVorbisEncoder.js`（libogg/libvorbis，Vorbis quality 0.3）分块编码，页面显示进度；取消、离开媒体库、超时或失败时终止 Worker。成功后按服务端 `maxFileBytes` 检查转换后的大小，把 `name.wav` 换为 `name.ogg`，再按转换后的名字匹配同名更新和生成声音 ID，进入原有 `EditorAudio` 上传链路。原 WAV 不发给游戏或远程网站；源 WAV 可以超过上传大小，只要转换结果符合限制。编码器及 MIT/BSD 许可证位于 `editor-web/public/audio/`，Vite 原样打包到 `next/audio/`，无需 CDN 或更改 CSP。旧版 `media.js` 兼容页面仍只接收预先转换好的 Ogg。
+
+**MP3 输入（2026-11-10）**：新版上传也接收 `.mp3` / `audio/mpeg`，和 WAV 共用 `convertAudio`。MP3 先用本地 Blob URL 和音频元素读取元数据时长（20 秒超时），拒绝超过服务端时长或网页 10 分钟上限的文件；随后 Web Audio 解码，再以实际解码时长复核，按实际样本长度创建离线混音上下文，避免 MP3 元数据估算造成截断。默认仍是 24 kHz 单声道 Vorbis，名字从 `.mp3` 换为 `.ogg`；支持相同的进度、取消、同名更新和输出大小检查。损坏或浏览器不支持的 MP3 显示专门错误。元数据读取完成、出错、超时、取消都会清理音频元素和 Blob URL，原 MP3 不上传。
+
+### 11.3 生命周期
+
+1. **开服**：先由 `SecurityConfig.load` 读取安全配置，把缺少或恰好为旧默认值 60 的 `audioMaxSeconds` 变成运行值 300；其他值保留。`MTR.init` 注册的服务器启动事件再由 `AudioServer.open` 打开 `mtr/announce.db`、读入索引；同时收集模组的命名空间（`minecraft`、`mtr` 和数据包里的），玩家名和它们重名时上传的命名空间加 `_player` 后缀，不会盖掉模组的声音。关服时 `AudioServer.close`。
+2. **玩家进服**：`AudioServer.sendList` 发 `PACKET_AUDIO_LIST`（先发实际的上传/管理权限、最大字节数和最大秒数，再发每个名字及其哈希、大小、时长、上传者；所有名字之后再跟一段声音 ID，旧版本读不到这一段时按没有处理）。`AudioCache.receiveListS2C` 保存这些限制并对比本机缓存，把缺的哈希用 `PACKET_AUDIO_WANTED` 请求：`audio_download_all` 开着时下 `audio_prefetch_max_kilobytes`（默认 1 MB）以内的；名字换了录音（被更新）而本机有旧录音的，不论大小马上下。然后 `UploadedSounds.refresh` 把每个名字登记成游戏声音。网页读取 `api/audio` 时，`EditorAudio` 把 `AudioCache` 中同一组限制返回给媒体库。
 3. **下载**：`AudioServer.receiveWantedC2S` 记下请求；`AudioServer.tick`（每个服务端 tick，由 `MTR.init` 的 tick 事件调用）给每个玩家发两块，每块 32 KB（`PACKET_AUDIO_DATA`，约 1.3 MB/s），大列表不会堵住连接。客户端 `receiveDataS2C` 收齐后**哈希不符就丢弃**，相符才存进缓存。
 4. **上传**（网页编辑器的音频页 → `EditorAudio` → `AudioCache.upload`）：
-   - 客户端先用 `AudioFiles` 检查一遍，再按顺序分块发 `PACKET_AUDIO_UPLOAD`。
+   - 新版页面若选中 WAV，先按上节流程在浏览器转换成 Ogg，并检查输出大小；Ogg 直接进入后续流程。
+   - 客户端先用 `AudioFiles` 检查一遍，并按服务端下发的 `audioMaxSeconds` 拒绝过长文件，再按顺序分块发 `PACKET_AUDIO_UPLOAD`。该配置默认 300 秒（5 分钟）；已有配置里的旧默认值 60 秒在加载时也迁移成 300 秒，其他显式值继续生效。
    - 服务端 `receiveUploadC2S`：第一块时 `checkUploadStart` 检查权限等级、单个文件大小、总容量、每小时次数（`config/mtr_security.json`，单人存档的主人不受限）；每个玩家同时只能有一份在传，块必须按顺序。
    - 声音 ID 跟在每块数据后面，空的由服务端按文件名或哈希生成（`AnnouncementSound.getDefaultSoundId`）。
-   - 收齐后 `finishUpload` 再校验一次，按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者已有同名但内容不同的文件时算作更新：换成新录音，声音 ID 不变，旧录音没有别的名字用时删掉；本机有旧录音的客户端收到新列表后马上下载新录音。服务端出错时也一定回结果，客户端等不到回复会超时标成失败。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
+   - 收齐后 `finishUpload` 再校验一次，并由服务端按同一个 `audioMaxSeconds` 做最终时长裁决；随后按"上传者命名空间 : 文件名"存索引，同一个哈希的音频已有就不再存；同一个上传者已有同名但内容不同的文件时算作更新：换成新录音，声音 ID 不变，旧录音没有别的名字用时删掉；本机有旧录音的客户端收到新列表后马上下载新录音。服务端出错时也一定回结果，客户端等不到回复会超时标成失败。成功后 `sendListToAll` 把新列表发给所有人，各客户端照第 2 步下载。结果用 `PACKET_AUDIO_RESULT` 回给上传者。
    - 改声音 ID：音频页"改声音 ID" → `AudioCache.setSoundId` → `PACKET_AUDIO_SOUND_ID` → `AudioServer.receiveSoundIdC2S`，上传者和管理员能改，同一个上传者内不能重复，然后 `sendListToAll`。
 5. **删除**（音频页 `PACKET_AUDIO_DELETE`，或 `/mtr deleteaudio <名字>`）：任何人能删自己上传的，达到管理权限等级的能删别人的。删掉名字后，没有别的名字再用这份音频才删音频本身，然后同样 `sendListToAll`。删除和上传都写进服务端日志。
 6. **播放**：列车车头经过报站方块时，`TrainServer.handlePositions` 对车上每位乘客调 `TileEntityTrainAnnouncer.announce`（同一玩家有冷却时间），服务端 `announceS2C` 把文字和"音频文件"一栏发给他。客户端 `AnnouncementPlayer.play`：
@@ -1574,22 +1599,47 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
+    participant SC as SecurityConfig
     participant Ed as 网页编辑器音频页
     participant AC as AudioCache（上传者的客户端）
     participant AS as AudioServer（服务端）
     participant DB as mtr/announce.db
     participant OC as 其他客户端的 AudioCache
     participant AP as AnnouncementPlayer
-    Ed->>AC: upload(文件名, 字节)
-    AC->>AC: AudioFiles 校验 Ogg Vorbis
-    loop 每块 32 KB，按顺序
-        AC->>AS: PACKET_AUDIO_UPLOAD
+    SC->>SC: load(mtr_security.json)
+    alt 缺少 audioMaxSeconds 或值为旧默认 60
+        SC->>SC: 运行值设为 300 秒
+    else 其他显式值
+        SC->>SC: 保留并钳制到 1..3600 秒
     end
-    AS->>AS: checkUploadStart：权限、大小、总量、次数
-    AS->>AS: finishUpload：再校验，算 SHA-256
-    AS->>DB: 索引加一行；同一哈希的音频已有就不再存
-    AS-->>AC: PACKET_AUDIO_RESULT
-    AS->>OC: PACKET_AUDIO_LIST（发给所有人）
+    AS->>AC: PACKET_AUDIO_LIST（权限、maxFileBytes、maxSeconds、文件列表）
+    AC->>Ed: api/audio（同一组实际限制）
+    opt 新版页面选中 WAV 或 MP3
+        Ed->>Ed: WAV 读 RIFF / MP3 读本地元数据：源大小、时长预检
+        Ed->>Ed: 解码后复核实际时长
+        Ed->>Ed: Web Audio 离线转为 24 kHz 单声道
+        Ed->>Ed: 同源 Worker 编码 Vorbis，显示进度，可取消
+        Ed->>Ed: 检查输出大小，改为 .ogg 名字并匹配声音 ID
+    end
+    Ed->>AC: upload(文件名, 字节)
+    AC->>AC: 检查权限、大小、Ogg Vorbis、duration ≤ maxSeconds
+    alt 客户端预检失败
+        AC-->>Ed: 本地返回具体拒绝原因，不发送
+    else 预检通过
+        loop 每块 32 KB，按顺序
+            AC->>AS: PACKET_AUDIO_UPLOAD
+        end
+        AS->>AS: checkUploadStart：权限、大小、总量、次数
+        AS->>AS: finishUpload：再验 Ogg，duration ≤ 当前服务端限制，算 SHA-256
+        alt 服务端终检失败
+            AS-->>AC: PACKET_AUDIO_RESULT（拒绝原因）
+            AC-->>Ed: 显示失败
+        else 服务端终检通过
+            AS->>DB: 索引加一行；同一哈希的音频已有就不再存
+            AS-->>AC: PACKET_AUDIO_RESULT（成功）
+            AS->>OC: PACKET_AUDIO_LIST（新列表和实际限制）
+        end
+    end
     OC->>AS: PACKET_AUDIO_WANTED(缺的哈希)
     loop 每 tick 每个玩家两块
         AS->>OC: PACKET_AUDIO_DATA
@@ -1602,7 +1652,7 @@ sequenceDiagram
     Note over AP,OC: 游戏第一次要这个声音的数据：SoundBufferLibraryMixin → UploadedSounds.getBuffer<br/>从缓存读出（按录音的哈希），后台线程解码成 SoundBuffer，游戏缓存到下次重载
 ```
 
-### 11.3 还没做的
+### 11.4 还没做的
 
 线路、车站和时刻事件引用上传的音频（自动报站用它）；客户端缓存的容量上限和清理。按位置播放已经有了：上传的音频是游戏声音，单声道的录音按位置衰减（2026-11-05）。
 
@@ -1624,7 +1674,45 @@ sequenceDiagram
 - 为了不开服务器也能生成运用路径：`Siding.generateDutyRoute(Executor, …)`（原来取 `MinecraftServer` 的那个调它）和 `Depot.generateDutyPathsNow`（照 `generateDutiesOnly` 给每条存车线找运用路径，结果立刻应用）。
 - 修复的位置：`TickRunner.HeadlessTrain.canDeploy` 和 `TrainServer.canDeploy`（按运用跑、路径只有存车线时也请求出库）；两边的 `followPath`（回到存车线路径时归零下一个停车点）；`TrainMotion` 前方被占的分支（闭塞区段停车点不越过下一个站台）；`DepotDispatcher.findDutyDeploy`（`MAX_LEAD_MILLIS`、`getSlotKey` 按分钟缓存）；`RunReservations.toClaims` 和 `Arbiter.Claim.singleTrackBothWays`（同一列车两个方向合成双向占用），两边的 `getRunMoves`（到要掉头的站台为止时加上反方向）。
 
-## 12. 读代码的几点提示
+### 11.5 音频方块
+
+音频方块 `mtr:audio_speaker` 由唱片机和红石粉合成。用刷子右键打开 `AudioSpeakerScreen`，可搜索并选择媒体库音频，也可搜索方块名称和注册 ID 来选择外观。默认外观为唱片机。渲染器绘制所选方块的默认模型，碰撞和交互采用音频方块本身的规则。
+
+`BlockAudioSpeaker` 仅向同维度、位于方块球形收听范围内的玩家发送播放包，半径为 1–128 格。
+
+- 循环模式在无信号时播放，每秒刷新一次循环状态。通电、离开收听范围、音频删除或方块卸载时停止。客户端收到停止包后结束相应实例，超时也会清理。
+- 红石模式在信号上升沿向收听范围播放一次。持续通电只触发一次。
+- 位置模式在指定球形区域由空变为有玩家时播放一次。触发球心用世界方块坐标，触发半径为 1–128 格。区域内持续有人时要等清空才会重新触发。旁观者不计入区域占用。
+
+`SpeakerSettings` 管理方块实体 NBT 与配置包。服务端在保存前检查编辑权限、刷子、8 格内距离、目标方块、范围、外观和音源。外观通过方块实体更新包同步。`SpeakerPlayback` 校对服务端发送的音频哈希并复用 `AudioCache` 与 `UploadedSounds`，缺失文件会先下载。播放以方块为声源，沿用游戏方块音量，由服务器的收听半径限定接收者。配置和播放包使用协议版本 `0.65.2`。
+
+## 12. 导入图片和原版画（2026-11-10）
+
+高级编辑器“媒体 → 图片”由 `editor-web/src/views/ImagesLibrary.tsx` 管理导入、多选拖放、筛选、搜索、预览和删除。JPG/PNG 在浏览器转成 PNG，GIF 保留原始文件。源文件最多 16 MB，图片宽高最多 2048 像素，实际上传的 PNG 或 GIF 最多 2 MB。`EditorImages` 提供 `api/images`（列表、上传、删除）和 `api/image-file`（本机预览）。预览接口按文件头返回 PNG 或 GIF 的 MIME 类型。
+
+### 12.1 存储、识别和权限
+
+`ImageDatabase` 在世界的 `mtr/pictures.db` 建两张表。`picture_index` 按命名空间和文件名的全小写键索引，记录文件名、哈希、宽高、字节数、上传者 UUID 和名字及上传时间。`picture_data` 按 SHA-256 保存 PNG 和 GIF。PNG 和 GIF 分别用 `.png` 和 `.gif` 内部引用，例如 `steve:站内导向.png` 和 `steve:发车提示.gif`。不同上传者可同名，同一内容只存一份。自己同名重新上传会更新现有引用，最后一个引用删除后才回收内容。索引、二进制和孤立数据回收在同一事务提交。玩家名与模组命名空间重名时加 `_player`。
+
+`config/mtr_security.json` 的 `imageUploadPermissionLevel` / `imageManagePermissionLevel` 默认均为 2，分别控制导入及管理他人图片；音频对应的 `audioUploadPermissionLevel` / `audioManagePermissionLevel` 仍独立配置。资源所有者按 UUID 判断，即使失去上传权限也能删自己的；OP 默认能删其他人的图片和音频。两类服务端删除共用 `MediaPermissions.canDelete`，不会只靠网页隐藏按钮。`ImageServer.tick` 每秒检查权限变化，变化时刷新图片和音频列表，在线授予/撤销 OP 后按钮随之更新。
+
+### 12.2 上传和同步流程
+
+1. `ImagesLibrary` 把 PNG 或 GIF 交给 `EditorImages.upload`。`ImportedImages` 先校验，再用 `PACKET_IMAGE_ACTION` 按 30 KB 分块上传，每名玩家同时上传一份。
+2. `ImageServer` 在主线程核对上传权限、分块顺序、大小、30 秒接收超时及每小时 30 次上限。`ImageFiles` 检查文件头和尺寸再解码，GIF 还会检查每帧的位置、尺寸及动画总量。图片库最多 256 个名称和 64 MB 不重复内容。
+3. 完成后事务更新 `pictures.db`，向上传者返回结果并广播名称列表（含每项的删除权限）。同名更新不能覆盖 UUID 属于别人的名称。
+4. 画或网页需要图片时，`ImportedImages` 把内部引用解析为哈希，请求服务端文件，每 tick 每名玩家最多两块。收齐后核对 SHA-256 并验证图片，按哈希存进本机 `mtr_image_cache/pictures.db`。缓存由所有世界和服务器共用。切换连接会清理名称和临时接收状态。客户端最多保留 16 张动态纹理，绘制后提交顶点再允许缓存淘汰纹理。
+5. 删除只删所选名字；仍被别的名字引用的内容保留。删除后画暂时显示原版内容，重新上传同一内部名字后自动恢复图片。
+
+### 12.3 刷子配置与渲染流程
+
+Fabric/Forge 各有三处 mixin：`PaintingBrushMixin` 拦截刷子右键原版 `Painting` 并打开 `ImportedPaintingScreen`；`PaintingImageMixin` 为画增加同步字符串及 NBT 键 `mtr_image`；`ImportedPaintingRendererMixin` 在图片可用时改画导入内容。
+
+界面可循环选图片或“原版画”，设置宽、高和右/上/前三个偏移。尺寸范围为 0.0625–16 方块，偏移范围为 -16–16 方块。画继续使用原版的挂墙锚点、朝向、碰撞和掉落规则。应用包带实体 ID 和配置。服务端再次检查编辑权限、手持刷子、距离不超过 8 格、实体类型、名称存在以及所有数字有限且在范围内。配置使用 `玩家:文件.png` 或 `玩家:文件.gif` 内部引用。
+
+渲染器按原版画的朝向旋转，应用本地坐标偏移，按最多一方块的格子绘制图片正面、背板和边缘并逐格取世界亮度。GIF 由 `AnimatedGif` 合成逻辑画布上的局部帧，处理透明、帧处置和循环次数。单个 GIF 最多 256 帧且所有帧的画布像素总数不超过 16,777,216。客户端按经过时间选择帧，帧变化时更新同一张动态纹理，动画缓存总量另有 33,554,432 像素上限。图片未下载或已删除时显示原版画。图片设置随实体 NBT 保存并同步给追踪玩家。支持 `.gif` 引用的版本为 `0.65.1`，已有 `.png` 引用可直接读取。
+
+## 13. 读代码的几点提示
 
 - **一份数据，服务端和客户端各有一份**：`Station`、`Route`、`Depot` 等在两边都有，都能用 msgpack（存档）和 `FriendlyByteBuf`（网络）读写。改字段时，存档读写、网络读写、`update(key, packet)` 三处都要改。
 - **`DataCache` 是索引**：`RailwayData` 里的数据是集合，按 ID 查找和"站台属于哪个站"这类关系都在 `DataCache` 里；数据结构变了要 `sync()`。

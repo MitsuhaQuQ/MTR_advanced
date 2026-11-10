@@ -5,6 +5,7 @@ import mtr.client.AudioCache;
 import mtr.client.ClientData;
 import mtr.client.ClientEditing;
 import mtr.client.Config;
+import mtr.client.SpeakerPlayback;
 import mtr.client.editor.EditorServer;
 import mtr.client.IDrawing;
 import mtr.data.*;
@@ -95,6 +96,7 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerBlockRenderType(RenderType.cutout(), Blocks.TICKET_PROCESSOR_EXIT.get());
 			RegistryClient.registerBlockRenderType(RenderType.cutout(), Blocks.TICKET_PROCESSOR_ENQUIRY.get());
 			RegistryClient.registerBlockRenderType(RenderType.cutout(), Blocks.TRAIN_ANNOUNCER.get());
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.AUDIO_SPEAKER_TILE_ENTITY.get(), RenderAudioSpeaker::new);
 			RegistryClient.registerBlockRenderType(RenderType.cutout(), Blocks.TRAIN_CARGO_LOADER.get());
 			RegistryClient.registerBlockRenderType(RenderType.cutout(), Blocks.TRAIN_CARGO_UNLOADER.get());
 			RegistryClient.registerBlockRenderType(RenderType.cutout(), Blocks.TRAIN_REDSTONE_SENSOR.get());
@@ -276,12 +278,16 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_MAP_DIGEST, packet -> PacketTrainDataGuiClient.receiveMapDigestS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_MAP_DATA, packet -> PacketTrainDataGuiClient.receiveMapDataS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_AUDIO_LIST, packet -> AudioCache.receiveListS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_IMAGE_DATA, mtr.client.ImportedImages::receive);
 		RegistryClient.registerNetworkReceiver(PACKET_AUDIO_RESULT, packet -> AudioCache.receiveResultS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_AUDIO_DATA, packet -> AudioCache.receiveDataS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_SET_KEY_NODE, packet -> PacketTrainDataGuiClient.setKeyNodeS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_NODE_ANGLE_SCREEN, packet -> PacketTrainDataGuiClient.openNodeAngleScreenS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_RESOURCE_PACK_CREATOR_SCREEN, packet -> PacketTrainDataGuiClient.openResourcePackCreatorScreen(Minecraft.getInstance()));
 		RegistryClient.registerNetworkReceiver(PACKET_ANNOUNCE, packet -> PacketTrainDataGuiClient.announceS2C(Minecraft.getInstance(), packet));
+		RegistryClient.registerNetworkReceiver(PACKET_OPEN_AUDIO_SPEAKER, SpeakerPlayback::open);
+		RegistryClient.registerNetworkReceiver(PACKET_AUDIO_SPEAKER_PLAYBACK, SpeakerPlayback::receive);
+		RegistryClient.registerTickEvent(SpeakerPlayback::tick);
 		RegistryClient.registerNetworkReceiver(PACKET_GENERATE_PATH, packet -> PacketTrainDataGuiClient.generatePathS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_AUTO_DUTIES, packet -> {
 			final long depotId = packet.readLong();

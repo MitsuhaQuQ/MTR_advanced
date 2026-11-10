@@ -11,6 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { key } from "../api/client"
 import { ConfirmButton } from "../ui/bits"
 import { tr } from "../i18n"
+import { convertAudio, isWav, isMp3 } from "../core/audioConversion"
+import { ImagesLibrary } from "./ImagesLibrary"
 
 const POLL_MILLIS = 2000, MAX_MESSAGES = 8, MAX_SOUND_ID = 64
 const SOUND_ID = /^[a-z0-9_.-]+(\/[a-z0-9_.-]+)*$/
@@ -21,7 +23,7 @@ export const formatSize = (bytes: number) => (bytes >= 1024 * 1024 ? (bytes / 10
 const formatDuration = (millis: number) => { const seconds = Math.round(millis / 100) / 10; return seconds >= 60 ? Math.floor(seconds / 60) + ":" + String(Math.round(seconds % 60)).padStart(2, "0") : seconds.toFixed(1) + tr(" 秒") }
 const formatClock = (seconds: number) => Math.floor(seconds / 60) + ":" + String(Math.floor(seconds % 60)).padStart(2, "0")
 const formatTime = (millis: number) => { const d = new Date(millis), pad = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}` }
-const takes = (file: { name: string; type: string }) => /\.ogg$/i.test(file.name) || /ogg/.test(file.type)
+const takes = (file: { name: string; type: string }) => /\.ogg$/i.test(file.name) || /ogg/.test(file.type) || isWav(file) || isMp3(file)
 
 type Entry = { key: string; name: string; reference: string; sound?: string; soundId: string; hash: string; uploaderName: string; size: number; durationMillis: number; uploadedAt: number; cached: boolean; downloading: boolean; mine: boolean; canDelete: boolean }
 type Library = { language?: string; canUpload: boolean; maxFileBytes: number; maxTotalBytes: number; totalBytes: number; maxSeconds: number; requests: { name: string; done: boolean; ok: boolean; message: string }[]; entries: Entry[] }
@@ -49,6 +51,17 @@ const readBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 })
 
 export function MediaLibrary() {
+  const [kind, setKind] = useState<"audio" | "images">("audio")
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <nav className="flex gap-2 border-b border-grid bg-panel px-3 py-2">
+      <button className="btn" aria-pressed={kind === "audio"} onClick={() => setKind("audio")}>{tr("音频")}</button>
+      <button className="btn" aria-pressed={kind === "images"} onClick={() => setKind("images")}>{tr("图片")}</button>
+    </nav>
+    {kind === "audio" ? <AudioLibrary /> : <ImagesLibrary />}
+  </div>
+}
+
+function AudioLibrary() {
   const [data, setData] = useState<Library | null>(null)
   const [connection, setConnection] = useState<"connecting" | "ok" | "key" | "world" | "offline">("connecting")
   const [selected, setSelected] = useState<string | null>(null)
@@ -59,6 +72,10 @@ export function MediaLibrary() {
   const [waiting, setWaiting] = useState<Waiting[]>([])
   const [drop, setDrop] = useState<{ refused: boolean; text: string } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const [converting, setConverting] = useState<{ name: string; percent: number } | null>(null)
+  const conversion = useRef<AbortController | null>(null)
+  const busy = useRef(false)
+  useEffect(() => () => conversion.current?.abort(), [])
   const note = (name: string, message: string, ok = false) => setMessages(list => [{ name, message, ok }, ...list].slice(0, MAX_MESSAGES))
 
   const load = useCallback(async () => {
@@ -135,17 +152,35 @@ export function MediaLibrary() {
     }
     load()
   }
-  const uploadFiles = (files: File[]) => {
+  const uploadFiles = async (files: File[]) => {
+    if (!data || !canUpload || busy.current) return
+    busy.current = true
+    const controller = new AbortController()
+    conversion.current = controller
     const ask: Waiting[] = []
-    for (const file of files) {
-      if (!takes(file)) { note(file.name, tr("只收 Ogg Vorbis（.ogg）文件")); continue }
-      if (data && file.size > data.maxFileBytes) { note(file.name, tr("文件不能超过 {0}", formatSize(data.maxFileBytes))); continue }
-      // One of this player's own files of the same name is updated: it keeps its sound ID, so nothing is asked
-      const fileName = /\.ogg$/i.test(file.name) ? file.name : file.name + ".ogg"
-      if (data && data.entries.some(each => each.mine && each.name.toLowerCase() === fileName.toLowerCase())) upload(file, "")
-      else ask.push({ file, soundId: soundIdFromName(file.name), bad: false })
-    }
-    if (ask.length) setWaiting(list => [...list, ...ask])
+    try {
+      for (const original of files) {
+        if (controller.signal.aborted) break
+        let file = original
+        if (!takes(file)) { note(file.name, tr("只收 Ogg Vorbis、WAV 或 MP3 文件")); continue }
+        if (isWav(file) || isMp3(file)) {
+          try {
+            setConverting({ name: file.name, percent: 0 })
+            file = await convertAudio(file, data.maxSeconds, data.maxFileBytes, percent => setConverting({ name: original.name, percent }), controller.signal)
+          } catch (e) {
+            if (controller.signal.aborted) break
+            note(original.name, (e as Error).message)
+            continue
+          } finally { setConverting(null) }
+        }
+        if (file.size > data.maxFileBytes) { note(file.name, tr("文件不能超过 {0}", formatSize(data.maxFileBytes))); continue }
+        // Match the converted name so updates keep an existing Ogg file's sound ID.
+        const fileName = /\.ogg$/i.test(file.name) ? file.name : file.name + ".ogg"
+        if (data.entries.some(each => each.mine && each.name.toLowerCase() === fileName.toLowerCase())) upload(file, "")
+        else ask.push({ file, soundId: soundIdFromName(file.name), bad: false })
+      }
+      if (!controller.signal.aborted && ask.length) setWaiting(list => [...list, ...ask])
+    } finally { busy.current = false; conversion.current = null; setConverting(null) }
   }
   const sendWaiting = (index: number) => {
     const item = waiting[index]
@@ -191,8 +226,8 @@ export function MediaLibrary() {
             {tr("已用 {0} / {1}", formatSize(data.totalBytes), formatSize(data.maxTotalBytes))}
           </span>
         )}
-        <input ref={fileInput} type="file" accept=".ogg,audio/ogg" multiple hidden onChange={e => { const files = [...(e.target.files || [])]; e.target.value = ""; uploadFiles(files) }} />
-        <button className="btn btn-primary" disabled={!canUpload || connection !== "ok"} title={canUpload ? tr("选择 Ogg Vorbis 文件（.ogg），也可以直接拖到列表上") : tr("没有上传音频的权限")} onClick={() => fileInput.current?.click()}>{tr("上传音频")}</button>
+        <input ref={fileInput} type="file" accept=".ogg,.wav,.mp3,audio/ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3" multiple hidden onChange={e => { const files = [...(e.target.files || [])]; e.target.value = ""; uploadFiles(files) }} />
+        <button className="btn btn-primary" disabled={!canUpload || connection !== "ok" || !!converting} title={canUpload ? tr("选择 Ogg Vorbis、WAV 或 MP3 文件，也可以直接拖到列表上") : tr("没有上传音频的权限")} onClick={() => fileInput.current?.click()}>{tr("上传音频")}</button>
       </div>
       {problems[connection] && <div className="tint-warn shrink-0 px-3 py-1.5 text-[13px] text-warn" role="alert">{problems[connection]}</div>}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -203,9 +238,9 @@ export function MediaLibrary() {
             e.preventDefault()
             // The browser tells the type, not the name, while dragging; an unknown type is let through and checked on the drop
             const wrong = [...e.dataTransfer.items].filter(item => item.kind === "file").some(item => item.type && !takes({ name: "", type: item.type }))
-            const refused = !canUpload || wrong
+            const refused = !canUpload || wrong || !!converting
             e.dataTransfer.dropEffect = refused ? "none" : "copy"
-            setDrop({ refused, text: !canUpload ? tr("没有上传音频的权限") : wrong ? tr("只收 Ogg Vorbis（.ogg）文件") : tr("松开上传到{0}", tr("音频")) })
+            setDrop({ refused, text: !canUpload ? tr("没有上传音频的权限") : wrong ? tr("只收 Ogg Vorbis、WAV 或 MP3 文件") : converting ? tr("正在转换音频…") : tr("松开上传到{0}", tr("音频")) })
           }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDrop(null) }}
           onDrop={e => {
@@ -222,7 +257,8 @@ export function MediaLibrary() {
             </select>
             <button className="btn" aria-pressed={missingOnly} style={missingOnly ? { borderColor: "var(--accent)" } : undefined} onClick={() => setMissingOnly(!missingOnly)}>{tr("只看本机没有的")}</button>
           </div>
-          {data && <p className="m-0 px-3 pb-1 text-[12px] text-dim">{data.maxFileBytes > 0 ? tr("只支持 Ogg Vorbis（.ogg），单个文件不超过 {0}、{1} 秒。单声道约每秒 6 KB。", formatSize(data.maxFileBytes), data.maxSeconds) + (data.canUpload ? "" : tr("你没有上传音频的权限。")) : tr("服务器没有开放上传音频。")} {tr("也可以把文件拖到列表上。")}</p>}
+          {data && <p className="m-0 px-3 pb-1 text-[12px] text-dim">{data.maxFileBytes > 0 ? tr("支持 Ogg Vorbis、WAV 和 MP3；WAV/MP3 在浏览器内转为单声道 Ogg（24 kHz）。上传文件不超过 {0}、{1} 秒。", formatSize(data.maxFileBytes), data.maxSeconds) + (data.canUpload ? "" : tr("你没有上传音频的权限。")) : tr("服务器没有开放上传音频。")} {tr("也可以把文件拖到列表上。")}</p>}
+          {converting && <div className="mx-3 mb-2 flex items-center gap-2 text-[12px]" role="status"><span>{tr("正在转换 {0}：{1}%", converting.name, converting.percent)}</span><button className="btn" onClick={() => conversion.current?.abort()}>{tr("取消转换")}</button></div>}
           {waiting.length > 0 && (
             <div className="mx-3 mb-2 flex flex-col gap-1.5 rounded-lg border border-brand p-2 text-[12px]">
               {waiting.map((item, i) => (

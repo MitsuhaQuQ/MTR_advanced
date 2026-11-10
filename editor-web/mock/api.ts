@@ -4,6 +4,7 @@
  * handling can be tried. GET /api/mock/applied returns the last operations sent, for checks.
  */
 import type { IncomingMessage, ServerResponse } from "node:http"
+import { createHash } from "node:crypto"
 import { mockData } from "./fixture.ts"
 import { exampleTrack, stationLayout } from "./track.ts"
 
@@ -12,6 +13,8 @@ export function createMockApi() {
   let revision = 1
   let applied: unknown[] = []
   const data = mockData()
+  let admin = false
+  const images: { name: string; hash: string; bytes: Buffer; width: number; height: number; uploaderName: string; uploadedAt: number }[] = []
 
   const readBody = (req: IncomingMessage) => new Promise<string>(resolve => {
     let body = ""
@@ -28,6 +31,31 @@ export function createMockApi() {
       case "/api/data": json(data); return true
       case "/api/revision": json({ revision }); return true
       case "/api/mock/applied": json(applied); return true
+      case "/api/mock/admin": admin = JSON.parse(await readBody(req)).admin; json({ ok: true }); return true
+      case "/api/images": {
+        if (req.method === "POST") {
+          const body = JSON.parse(await readBody(req)), name = body.action === "delete" ? body.name : "mitsuha:" + body.name
+          const index = images.findIndex(image => image.name.toLowerCase() === name.toLowerCase())
+          if (body.action === "delete") {
+            if (!admin && !name.startsWith("mitsuha:")) { json({ ok: false, message: "No permission" }); return true }
+            if (index >= 0) images.splice(index, 1)
+          } else {
+            const bytes = Buffer.from(body.data, "base64"), hash = createHash("sha256").update(bytes).digest("hex")
+            if (index >= 0) images.splice(index, 1)
+            const gif = name.endsWith(".gif")
+            const width = gif ? bytes.readUInt16LE(6) : bytes.readUInt32BE(16)
+            const height = gif ? bytes.readUInt16LE(8) : bytes.readUInt32BE(20)
+            images.push({ name, hash, bytes, width, height, uploaderName: "mitsuha", uploadedAt: Date.now() })
+          }
+          json({ ok: true }); return true
+        }
+        json({ canUpload: true, busy: false, message: "", maxBytes: 2097152, maxDimension: 2048, entries: images.map(({ bytes, ...image }) => ({ ...image, size: bytes.length, canDelete: admin || image.name.startsWith("mitsuha:") })) }); return true
+      }
+      case "/api/image-file": {
+        const hash = new URL(req.url || "", "http://localhost").searchParams.get("hash"), image = images.find(entry => entry.hash === hash)
+        if (!image) { res.statusCode = 404; res.end(); return true }
+        res.setHeader("Content-Type", image.name.endsWith(".gif") ? "image/gif" : "image/png"); res.end(image.bytes); return true
+      }
       case "/api/draft":
         if (req.method === "GET") json(draft)
         else { draft = JSON.parse((await readBody(req)) || "{}"); json({ ok: true }) }
@@ -45,10 +73,10 @@ export function createMockApi() {
         if (req.method === "POST") { await readBody(req); json({ ok: true }); return true }
         const entry = (key: string, name: string, cached: boolean, mine: boolean) => ({
           key, name, reference: key, sound: "mtr_audio:" + key.replace(":", "/"), soundId: name.replace(".ogg", ""), hash: key.length.toString(16).padStart(64, "0"),
-          uploaderName: key.split(":")[0], size: 182400, durationMillis: 6200, uploadedAt: Date.now() - 3600000, cached, downloading: false, mine, canDelete: mine,
+          uploaderName: key.split(":")[0], size: 182400, durationMillis: 6200, uploadedAt: Date.now() - 3600000, cached, downloading: false, mine, canDelete: admin || mine,
         })
         json({
-          language: "zh_cn", canUpload: true, maxFileBytes: 2 * 1024 * 1024, maxTotalBytes: 50 * 1024 * 1024, totalBytes: 364800, maxSeconds: 60, requests: [],
+          language: "zh_cn", canUpload: true, maxFileBytes: 2 * 1024 * 1024, maxTotalBytes: 50 * 1024 * 1024, totalBytes: 364800, maxSeconds: 300, requests: [],
           entries: [entry("mitsuha:next_central.ogg", "next_central.ogg", true, true), entry("rail_fan:transfer_l2.ogg", "transfer_l2.ogg", false, false)],
         })
         return true

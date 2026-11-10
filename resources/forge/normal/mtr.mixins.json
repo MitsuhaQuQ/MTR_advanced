@@ -4,9 +4,12 @@
 	"package": "mtr.mixin",
 	"compatibilityLevel": "JAVA_8",
 	"mixins": [
+		"PaintingImageMixin",
 		"PlayerTeleportationStateAccessor"
 	],
 	"client": [
+		"ImportedPaintingRendererMixin",
+		"PaintingBrushMixin",
 		"GameRendererMixin",
 		"LevelRendererMixin",
 		"PlayerRendererOffsetMixin",

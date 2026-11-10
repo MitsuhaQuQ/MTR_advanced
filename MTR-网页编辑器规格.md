@@ -111,11 +111,18 @@
 | `api/layout`、`api/route-layout` | 车站周围的配线图；一条线路拉直的配线图 |
 | `api/route-preview`、`api/depot-way-preview` | 新线路各段怎么走；出入库规则的路怎么走（服务端寻路） |
 | `api/console` | 调度台快照 |
-| `api/audio`、`api/audio-file` | 报站音频列表、上传删除；本机的音频文件 |
+| `api/audio`、`api/audio-file` | 报站音频列表、上传删除；本机的音频文件。列表响应带服务端实际的 `maxSeconds`、`maxFileBytes` 和上传/管理权限；页面只负责显示并发起请求，客户端 Java 预检，服务端终检 |
+| `api/images`、`api/image-file` | 图片列表、导入/删除和本机预览；列表给出内部名、上传者、宽高、大小、时间及逐项删除权限；仅使用内部命名空间，不支持外部 URL |
+
+新版媒体库也接受 WAV。源文件最多 128 MB，先按服务端 `maxSeconds` 检查时长（网页转换另限 10 分钟），再在本机离线解码并以后台 Worker 编成 24 kHz 单声道 Ogg Vorbis；显示进度、支持取消，离开媒体层时终止转换。转换后的字节受 `maxFileBytes` 限制，`.wav` 名字换为 `.ogg` 后参与同名更新和声音 ID 生成。只把转换后的 Ogg 交给 `api/audio`；编码器随构建打包，不请求 CDN，沿用现有 CSP。旧版媒体库仍只收 Ogg。
 
 服务端算好的数据靠游戏的包送到客户端，例如区段归属（`TrackOwnersPackets`，有变化才发、按区段分包）、全网设置（`NetworkSettingsPackets`）、全网配线（地图数据包）。
 
+MP3 与 WAV 使用同一转换入口，选择框和拖放均接受 `.mp3` / `audio/mpeg`。先用本地 Blob 读取 MP3 时长，再解码复核；转换输出仍为 24 kHz 单声道 Ogg，服务器时长、源文件上限和输出大小限制相同。损坏或不支持的 MP3 有明确错误；元数据读取限 20 秒，并在取消或结束后释放 Blob URL。
+
 ## 8. 文字和样式
+
+新版媒体层顶部切换“音频 / 图片”。图片页支持导入、拖放、搜索、按上传者筛选、预览和二次确认删除。JPG/PNG 转为 PNG 上传，GIF 原样上传并在预览中播放。同名导入更新现有内部引用。资源所有者和管理员可按服务端权限删除图片和音频。游戏内用刷子右键原版画配置图片、方块单位尺寸和右/上/前偏移。世界图片库为 `mtr/pictures.db`，同内容按哈希保存一次。
 
 - 网页文字写中文，`tr("中文")` 查 `i18n.js` 的英文；新文字必须同时加英文（用 scratchpad 的 `missing_tr.py` 查漏）。游戏里的文字在 `common/src/main/lang/*.json`，不在网页里。
 - 颜色只用 `editor.css` 里的变量（包括 `--control-line`、`--caution`），深色模式跟系统。

@@ -25,8 +25,20 @@ class RailNetworksTest {
 	private static void addRail(Map<BlockPos, Map<BlockPos, Rail>> rails, int x1, int x2, RailType railType) {
 		final BlockPos start = pos(x1, 0);
 		final BlockPos end = pos(x2, 0);
-		rails.computeIfAbsent(start, key -> new HashMap<>()).put(end, new Rail(start, RailAngle.E, end, RailAngle.W, railType, TransportMode.TRAIN));
-		rails.computeIfAbsent(end, key -> new HashMap<>()).put(start, new Rail(end, RailAngle.W, start, RailAngle.E, railType, TransportMode.TRAIN));
+		addRail(rails, start, RailAngle.E, end, RailAngle.W, railType);
+	}
+
+	private static void addRail(Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos start, RailAngle facingStart, BlockPos end, RailAngle facingEnd, RailType railType) {
+		rails.computeIfAbsent(start, key -> new HashMap<>()).put(end, new Rail(start, facingStart, end, facingEnd, railType, TransportMode.TRAIN));
+		rails.computeIfAbsent(end, key -> new HashMap<>()).put(start, new Rail(end, facingEnd, start, facingStart, railType, TransportMode.TRAIN));
+	}
+
+	private static RailRouter.Target target(BlockPos start, BlockPos end) {
+		return RailRouter.Target.rail(start.asLong(), start.getX(), start.getZ(), end.asLong(), end.getX(), end.getZ());
+	}
+
+	private static RailRouter.Result<Rail> route(RailGraph<Rail> graph, BlockPos start1, BlockPos start2, BlockPos end1, BlockPos end2) {
+		return RailRouter.route(graph, Arrays.asList(target(start1, start2), target(end1, end2)));
 	}
 
 	private static Network compute(Map<BlockPos, Map<BlockPos, Rail>> rails, Map<UUID, Long> savedRails) {
@@ -124,5 +136,72 @@ class RailNetworksTest {
 		final Network.SectionPath readPath = Network.SectionPath.fromBytes(sectionPath.toBytes());
 		assertEquals(sectionPath.steps.size(), readPath.steps.size());
 		assertArrayEquals(sectionPath.steps.get(0), readPath.steps.get(0));
+	}
+
+	@Test
+	void routesBetweenEveryPairOfArmsAtAYJunction() {
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
+		final BlockPos junction = new BlockPos(0, 64, 0);
+		final BlockPos westInner = new BlockPos(-20, 64, 0);
+		final BlockPos westOuter = new BlockPos(-40, 64, 0);
+		final BlockPos northEastInner = new BlockPos(20, 64, -20);
+		final BlockPos northEastOuter = new BlockPos(40, 64, -40);
+		final BlockPos southEastInner = new BlockPos(20, 64, 20);
+		final BlockPos southEastOuter = new BlockPos(40, 64, 40);
+
+		addRail(rails, westOuter, RailAngle.E, westInner, RailAngle.W, RailType.IRON);
+		addRail(rails, westInner, RailAngle.E, junction, RailAngle.W, RailType.IRON);
+		addRail(rails, junction, RailAngle.NE, northEastInner, RailAngle.SW, RailType.IRON);
+		addRail(rails, northEastInner, RailAngle.NE, northEastOuter, RailAngle.SW, RailType.IRON);
+		addRail(rails, junction, RailAngle.SE, southEastInner, RailAngle.NW, RailType.IRON);
+		addRail(rails, southEastInner, RailAngle.SE, southEastOuter, RailAngle.NW, RailType.IRON);
+
+		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
+		assertEquals(3, graph.outgoing(junction.asLong()).size());
+		assertTrue(route(graph, westOuter, westInner, northEastInner, northEastOuter).isSuccess());
+		assertTrue(route(graph, westOuter, westInner, southEastInner, southEastOuter).isSuccess());
+		assertTrue(route(graph, northEastOuter, northEastInner, southEastInner, southEastOuter).isSuccess());
+	}
+
+	@Test
+	void stackedTracksAtTheSameXZStayInSeparateNetworks() {
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
+		final BlockPos lowerWest = new BlockPos(-20, 64, 0);
+		final BlockPos lowerCentre = new BlockPos(0, 64, 0);
+		final BlockPos lowerEast = new BlockPos(20, 64, 0);
+		final BlockPos upperNorth = new BlockPos(0, 80, -20);
+		final BlockPos upperCentre = new BlockPos(0, 80, 0);
+		final BlockPos upperSouth = new BlockPos(0, 80, 20);
+
+		addRail(rails, lowerWest, RailAngle.E, lowerCentre, RailAngle.W, RailType.IRON);
+		addRail(rails, lowerCentre, RailAngle.E, lowerEast, RailAngle.W, RailType.IRON);
+		addRail(rails, upperNorth, RailAngle.S, upperCentre, RailAngle.N, RailType.IRON);
+		addRail(rails, upperCentre, RailAngle.S, upperSouth, RailAngle.N, RailType.IRON);
+
+		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
+		assertNotEquals(lowerCentre.asLong(), upperCentre.asLong());
+		assertFalse(graph.isConnected(lowerCentre.asLong(), upperCentre.asLong()));
+		assertFalse(route(graph, lowerWest, lowerCentre, upperCentre, upperSouth).isSuccess());
+	}
+
+	@Test
+	void anExplicitRampConnectsStackedLevels() {
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
+		final BlockPos lowerWest = new BlockPos(-20, 64, 0);
+		final BlockPos lowerEast = new BlockPos(20, 64, 0);
+		final BlockPos upperSouth = new BlockPos(20, 80, 20);
+		final BlockPos upperCentre = new BlockPos(0, 80, 0);
+		final BlockPos upperNorth = new BlockPos(0, 80, -20);
+
+		addRail(rails, lowerWest, RailAngle.E, lowerEast, RailAngle.W, RailType.IRON);
+		addRail(rails, lowerEast, RailAngle.S, upperSouth, RailAngle.N, RailType.IRON);
+		addRail(rails, upperSouth, RailAngle.NW, upperCentre, RailAngle.SE, RailType.IRON);
+		addRail(rails, upperCentre, RailAngle.N, upperNorth, RailAngle.S, RailType.IRON);
+
+		final RailGraph<Rail> graph = DeterministicPathFinder.compile(rails);
+		assertTrue(graph.isConnected(lowerWest.asLong(), upperNorth.asLong()));
+		final RailRouter.Result<Rail> result = route(graph, lowerWest, lowerEast, upperCentre, upperNorth);
+		assertTrue(result.isSuccess());
+		assertTrue(result.steps.stream().anyMatch(step -> step.connection.fromPos == lowerEast.asLong() && step.connection.toPos == upperSouth.asLong()));
 	}
 }

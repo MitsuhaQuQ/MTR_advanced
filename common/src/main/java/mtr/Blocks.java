@@ -195,6 +195,7 @@ public interface Blocks {
 	RegistryObject<Block> TICKET_PROCESSOR_EXIT = new RegistryObject<>(() -> new BlockTicketProcessor(true, false, true));
 	RegistryObject<Block> TICKET_PROCESSOR_ENQUIRY = new RegistryObject<>(BlockTicketProcessorEnquiry::new);
 	RegistryObject<Block> TRAIN_ANNOUNCER = new RegistryObject<>(BlockTrainAnnouncer::new);
+	RegistryObject<Block> AUDIO_SPEAKER = new RegistryObject<>(BlockAudioSpeaker::new);
 	RegistryObject<Block> TRAIN_CARGO_LOADER = new RegistryObject<>(BlockTrainCargoLoader::new);
 	RegistryObject<Block> TRAIN_CARGO_UNLOADER = new RegistryObject<>(BlockTrainCargoUnloader::new);
 	RegistryObject<Block> TRAIN_REDSTONE_SENSOR = new RegistryObject<>(BlockTrainRedstoneSensor::new);

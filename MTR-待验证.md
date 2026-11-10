@@ -27,6 +27,58 @@
 
 ## 待验证
 
+### 音频方块与外观选择器（本会话，工作区，2026-11-10）
+
+- 音频方块支持范围内循环、红石上升沿和独立位置区域触发。刷子界面可搜索音频和方块外观。
+- 改动涉及 `BlockAudioSpeaker`、`SpeakerSettings`、`AudioSpeakerPackets`、`SpeakerPlayback`、`AudioSpeakerScreen`、渲染器、注册和资源。
+- 协议版本 0.65.2。配置保存到方块实体 NBT，外观同步给追踪玩家，播放包只发给目标听众。
+- 音频相关 Java 测试 16 项通过，Fabric 和 Forge 打包成功，已核对产物中包含音频方块、渲染器、合成配方和模型。
+- 游戏内验证见 U412–U413。重点检查多玩家收听边界、通电停止、循环清理和选中模型的实际效果。
+
+### GIF 动图导入和画框播放（本会话，工作区，2026-11-10）
+
+- 高级编辑器接受 JPG、PNG 和 GIF。GIF 原样存入 `pictures.db`，网页用 `image/gif` 预览，画框纹理按帧延时和循环次数更新。
+- 改动涉及 `mtr/image/AnimatedGif.java`、图片验证和上传存储、`ImportedImages`、预览接口、网页图片库及测试和翻译。
+- `mtm_version` 升至 0.65.1，画的内部引用可使用 `.gif`。
+- 图片相关 Java 单测 9 项和前端测试 106 项通过，Fabric 与 Forge 编译成功。Chrome 在本机模拟接口上验证了 JPG、PNG 导入预览、GIF 字节完整上传和可见换帧。
+- 游戏内验证见 U411，重点检查画框动画和读档后的播放。
+
+### 图片管理、原版画和管理员资源权限（本会话，工作区，2026-11-10）
+
+- **改了什么**：高级编辑器媒体库增加图片类别，可导入 PNG/JPEG、搜索/筛选、预览和删除；世界 `mtr/pictures.db` 按音频的内部命名空间、UUID 所有权、同名更新、哈希去重及无人引用回收规则存储。无互联网 URL 入口。刷子右键原版画，选图、改尺寸和三轴偏移；沿用原版锚点、挂墙方向、背板和受光。OP 默认能删他人的图片和音频，权限变化刷新按钮。
+- **文件**：`mtr/image/`、`mtr/media/MediaPermissions`、`client/ImportedImages`、`client/editor/EditorImages`、`screen/ImportedPaintingScreen`、`render/ImportedPaintingRenderer`；两个加载器的三个画 mixin、normal 资源 mixin 配置；`MTR`/`MTRClient`、`SecurityConfig`、音频删除处理、`IPacket`、`EditorServer`；网页 `ImagesLibrary.tsx`、媒体类别入口、模拟接口、翻译和构建产物。
+- **协议和存档**：新增图片操作/数据包、原版画的 `mtr_image` 同步及 NBT 键；`mtm_version` 升到 0.65.0。图片存独立 `pictures.db`，不改变原版画既有键。
+- **已经验证的**：完整 common 401 项测试通过，包含图片/数据库/权限和客户端无名称缓存回归；前端类型检查、105 项测试及构建通过，Fabric 和 Forge 打包通过，成品中画 mixin 配置及 refmap 均有新增目标，网页脚本与源码构建一致。客户端按哈希缓存于 `mtr_image_cache/pictures.db`。真实 Chrome 在原 CSP 的模拟接口上通过图片类别、PNG 导入、内部名、本地预览、二次确认删除；普通用户看不到他人音频删除按钮，授予管理员后显示。图片管理员按钮另有前端单测。未启动游戏验证画的实际渲染和挂墙交互。
+- **游戏内测试**：U408–U410、S09；重点看四个挂墙方向、偏移方向、尺寸/边缘/受光、客户端追踪同步、重新进服/读档、管理员删除别人资源及恢复原版画。
+
+### 媒体库增加 MP3 输入（本会话，工作区，2026-11-10）
+
+- **改了什么**：新版媒体库接收 MP3，复用 WAV 的本地单声道 Ogg 转换流程；`convertWav` 整理为 `convertAudio`。MP3 元数据预检后再按实际解码时长校验和混音，避免估算长度导致截断；取消/结束释放 Blob URL。
+- **文件**：`editor-web/src/core/audioConversion.ts`、`src/views/MediaLibrary.tsx`、`test/audioConversion.test.ts`、共享 `i18n.js` 和 `next/` 构建；流程、规格、README、组件边界和测试清单同步。
+- **协议和存档**：没有变化，服务端仍只接收 Ogg Vorbis。
+- **已经验证的**：类型检查、前端测试 100 项及网页构建通过；MP3 后缀、MIME 识别及转换后文件名已纳入测试。无头 Chrome 使用真实 MP3，通过转换上传、单声道/24000 Hz、输出名和声音 ID、损坏文件拒绝及服务端时长限制检查。转换结果经实际 `AudioFiles.check` 校验通过，读回 1 声道、24000 Hz、97404 ms。
+- **游戏内测试**：U407；真实客户端上传 MP3 后检查服务端接受与报站器播放。
+
+### 新版媒体库 WAV 转 Ogg（本会话，工作区，2026-11-10）
+
+- **改了什么**：新版上传按钮和拖放接收 WAV；浏览器先检查 RIFF、源大小和时长，再离线转成 24 kHz 单声道 Ogg Vorbis。后台 Worker 显示进度、可取消；转换后的 `.ogg` 文件继续走原上传接口，同名更新保留声音 ID。
+- **文件**：`editor-web/src/core/audioConversion.ts`、`src/views/MediaLibrary.tsx`、`public/audio/` 的 Worker、编码器和许可证；测试 `test/audioConversion.test.ts`、模拟接口 `mock/api.ts`、共享 `i18n.js`、`next/` 构建产物，以及对应流程和规格文档。
+- **协议和存档**：没有变化；服务端仍只收 Vorbis。Worker 从本机编辑器加载，无 CDN，不改 CSP。
+- **已经验证的**：新版类型检查、构建及前端测试 100 项通过；真实编码器单测确认 Ogg/Vorbis 文件头、单声道、结束页和采样数。无头 Chrome 在与游戏相同 CSP 的模拟接口上通过：双声道 WAV 转为 1 声道/24 kHz 并上传、声音 ID 按 `.ogg` 名字生成、损坏与 301 秒文件拒绝、300 秒文件成功转换、同名更新保留声音 ID、取消后不上传；控制台无 CSP 错误。把浏览器生成的 300 秒文件交给已编译的实际 `AudioFiles.check`，校验通过并读回 1 声道、24000 Hz、300000 ms。
+- **构建后要检查的**：jar 包含 `assets/mtr/editor/next/audio/` 的 Worker、编码器和许可证；新版媒体库可离线打开转换。
+- **游戏内测试**：U406；特别检查 5 分钟转换后能被服务端 `AudioFiles` 接受，报站器能试听和播放。
+- **已知限制**：只在新版媒体库提供转换；支持浏览器能解码的单/双声道 PCM/浮点 WAV，源文件最多 128 MB，转换最多 10 分钟且受服务端时长限制；结果是单声道语音用途，编码大小仍可能超过服主设置。
+
+### 报站音频默认 5 分钟和旧配置迁移（本会话，工作区，2026-11-10）
+
+- **改了什么**：`audioMaxSeconds` 新默认值为 300 秒；缺少该键或旧配置恰好为 60 时加载为 300，其他显式值保留。客户端按服务端下发值预检，服务端收齐并重新校验 Ogg 后终检，恰好 5 分钟允许、超过才拒绝。2 MB 文件上限和播放端 10 分钟解码保护保持独立。
+- **文件**：`common/src/main/java/mtr/SecurityConfig.java`、`common/src/test/java/mtr/SecurityConfigTest.java`；README、代码流程、改造记录、组件边界、网页规格和测试清单。
+- **协议和存档**：没有变化，不升 `mtm_version`；只改变安全配置的加载结果，不重写配置文件。
+- **已经验证的**：`SecurityConfigTest` 3 项通过（缺键、旧 60、自定义 90）；`git diff --check` 通过。
+- **构建后要检查的**：完整 common 测试、Fabric/Forge 服务端启动；分别用无键、60、90 的配置确认启动后的页面显示 300、300、90。
+- **游戏内测试**：S07：上传恰好 5:00 和略超 5:00 的低码率 Ogg；另测一个时长合格但超过 2 MB 的文件按大小拒绝。
+- **已知风险**：无法区分“旧版本自动写入的 60”和“管理员有意设置的 60”，两者都会迁移为 300；确实要约一分钟限制时应配置 59 或 61。
+
 2026-11-03 统一构建了 ANTE 脚本沙箱、线路图两项和圆形隧道创建器（协议版本加到 30），编译、common 测试、ABI 扫描、两个服务端启动都通过；游戏内测试转为测试清单 U56 至 U60、C17。
 
 2026-11-03 统一构建了界面多语言（协议版本加到 32），编译、common 测试、合并后的语言文件、ABI 扫描、两个服务端启动都通过；游戏内测试转为测试清单 U64 至 U66。

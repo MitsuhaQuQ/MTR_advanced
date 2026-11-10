@@ -19,6 +19,8 @@ import java.util.Set;
 public final class SecurityConfig {
 
 	private static final String DEFAULT_BIND_HOST = "127.0.0.1";
+	private static final int LEGACY_AUDIO_MAX_SECONDS = 60;
+	static final int DEFAULT_AUDIO_MAX_SECONDS = 5 * 60;
 
 	public static volatile boolean webserverEnabled = true;
 	public static volatile String webserverBindHost = DEFAULT_BIND_HOST;
@@ -29,9 +31,11 @@ public final class SecurityConfig {
 	// Announcement audio: who can add files, who can delete anyone's, and how much each file and the server can hold
 	public static volatile int audioUploadPermissionLevel = 2;
 	public static volatile int audioManagePermissionLevel = 2;
+	public static volatile int imageUploadPermissionLevel = 2;
+	public static volatile int imageManagePermissionLevel = 2;
 	public static volatile int audioMaxFileKilobytes = 2048;
 	public static volatile int audioMaxTotalMegabytes = 64;
-	public static volatile int audioMaxSeconds = 60;
+	public static volatile int audioMaxSeconds = DEFAULT_AUDIO_MAX_SECONDS;
 	public static volatile int audioUploadsPerHour = 30;
 	/**
 	 * Trains on duty lock their way through station throats (L2, {@code ThroatLocks}); off, they run as before.
@@ -104,9 +108,15 @@ public final class SecurityConfig {
 				webserverAllowedHosts = allowedHosts;
 				audioUploadPermissionLevel = getInt(jsonObject, KEY_AUDIO_UPLOAD_PERMISSION_LEVEL, 2, 0, 4);
 				audioManagePermissionLevel = getInt(jsonObject, KEY_AUDIO_MANAGE_PERMISSION_LEVEL, 2, 0, 4);
+				imageUploadPermissionLevel = getInt(jsonObject, "imageUploadPermissionLevel", 2, 0, 4);
+				imageManagePermissionLevel = getInt(jsonObject, "imageManagePermissionLevel", 2, 0, 4);
 				audioMaxFileKilobytes = getInt(jsonObject, KEY_AUDIO_MAX_FILE_KILOBYTES, 2048, 0, AudioFiles.MAX_FILE_BYTES / 1024);
 				audioMaxTotalMegabytes = getInt(jsonObject, KEY_AUDIO_MAX_TOTAL_MEGABYTES, 64, 0, 4096);
-				audioMaxSeconds = getInt(jsonObject, KEY_AUDIO_MAX_SECONDS, 60, 1, 3600);
+				audioMaxSeconds = getInt(jsonObject, KEY_AUDIO_MAX_SECONDS, DEFAULT_AUDIO_MAX_SECONDS, 1, 3600);
+				// Existing installations wrote the old default into the file, so migrate that value as well as missing keys.
+				if (audioMaxSeconds == LEGACY_AUDIO_MAX_SECONDS) {
+					audioMaxSeconds = DEFAULT_AUDIO_MAX_SECONDS;
+				}
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);
 				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
 				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
@@ -161,6 +171,8 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_EDIT_PERMISSION_LEVEL, editPermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_UPLOAD_PERMISSION_LEVEL, audioUploadPermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_MANAGE_PERMISSION_LEVEL, audioManagePermissionLevel);
+		jsonObject.addProperty("imageUploadPermissionLevel", imageUploadPermissionLevel);
+		jsonObject.addProperty("imageManagePermissionLevel", imageManagePermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);

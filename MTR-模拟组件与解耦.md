@@ -152,7 +152,8 @@ S2 把这些钩子整理成一个接口，规则搬进组件的 `TrainMotion`。
 | `transitsim.planning.OperationSimulatorTest`（组件） | 运用规划、确定性、跨午夜、晚点恢复、对齐 |
 | `transitsim.network.RailRouterTest`、`transitsim.motion.PathRelocatorTest`（组件）、`path/StopSettingsTest`、`path/PathFinderTest` | 确定性寻路、刷新时列车保留原位、停站设置、旧寻路 |
 | `transitsim.network.PathRegionsTest`（组件） | 寻路边界和区域划分 |
-| `transitsim.network.NetworkTest`（组件，7 项）、`advanced/RailNetworksTest`（5 项） | 区间压缩、限速分段、ID 稳定、路径换算、读写、旧格式读入、四种资源的划分、版本和只读；`Rail` 的适配 |
+| `transitsim.network.NetworkTest`（组件，7 项）、`advanced/RailNetworksTest`（8 项） | 区间压缩、限速分段、ID 稳定、路径换算、读写、旧格式读入、四种资源的划分、版本和只读；`Rail` 的适配；Y 字三臂两两寻路；同一 XZ 不同高度不误连、显式坡道才连通 |
+| `transitsim.network.LogicalLinesTest`（组件） | 物理区段到逻辑线路和运营线路的归属；Y 字口的主线两臂保持一条逻辑线路，支线为另一条，支线运营线路可获准直通主线而不合并物理或逻辑拓扑 |
 | `transitsim.motion.SpeedProfileTest`（组件，10 项）、`transitsim.motion.SpeedCurvesTest`（组件，5 项）、`advanced/SpeedCurvesTest`（2 项） | 速度曲线、巡航上限；按轨道限速和折返分段；从任意位置和速度起步（S2b）；`PathData` 的适配 |
 | `transitsim.motion.TrainMotionRestartTest`（组件，2 项） | 区间里被拦停后重新起步：时间够时准点到，不够时和原来一样尽快跑 |
 | `transitsim.motion.MotionEventTest`（组件，6 项）、`transitsim.sim.OccupancyTest`（组件，4 项） | 事件的顺序、同样的运行得到同样的事件、旧规则和客户端没有事件、排序规则；司机命令；占用的两个 tick 和"先占先得" |
@@ -1110,6 +1111,18 @@ S0 之前，已经不依赖世界的部件：
 **逻辑线路（2026-11-09，0.64.0）**：组件新加 `transitsim.network.LogicalLines`：按轨道键把区段划进逻辑线路（一段最多一条），运营线路能走勾选的逻辑线路，没勾时走它站台所在的；输出和 `TrackOwnership` 一样是区段 → 能走的运营线路，联络线逻辑线路和不属于任何逻辑线路的区段谁都能走。宿主有逻辑线路时用它，没有时照旧用 `TrackOwnership`。测试 `LogicalLinesTest`。
 
 **网页的媒体库工作区（2026-11-09）**：只改网页，组件和宿主都不变，不改包和存档。高级编辑器分成"运行编辑"和"媒体库"两个工作区，在同一页面里切换（`shell.js`）；报站音频从单独的 `audio.html` 搬进媒体库（`media.js`，按类别表组织，以后的图片加一类即可）。运行编辑在媒体库显示时不画、少问游戏。代码说明 8.6 节，测试 U366–U369。
+
+**报站音频默认时长（2026-11-10）**：只改宿主安全配置，不进模拟组件，也不改包和存档。`audioMaxSeconds` 从 60 秒改为 300 秒；已有配置会把旧默认值 60 自动迁移为 300，其他显式值不覆盖。客户端按服务端下发值预检，服务端收齐后仍作最终校验。单文件 2 MB 限制独立保留。
+
+**网页 WAV 转 Ogg（2026-11-10）**：转换属于网页媒体层，不进组件；服务端仍只接收 Ogg Vorbis。新版 `MediaLibrary.tsx` → `core/audioConversion.ts` 预读 WAV 元数据、按服务端时长预检 → Web Audio 离线解码为 24 kHz 单声道 → 随包经典 Worker 用 libvorbis 编码 → 检查输出大小 → 原有 `EditorAudio` / `AudioCache` 上传。源文件不超过 128 MB，网页转换最多 10 分钟；支持进度、取消和超时清理。同名更新按转换后的 `.ogg` 名字判断，沿用原声音 ID。Worker 和编码器同源打包，无 CDN、不改 CSP、包或存档；旧页仍只收 Ogg。测试 `audioConversion.test.ts`，游戏项 U406。
+
+**MP3 输入补充（同日）**：新版媒体库也接受 MP3，共用 `convertAudio`、同一 Worker 和单声道输出。MP3 先用本地音频元素预读时长，再 Web Audio 解码并复核实际时长；损坏或不支持的文件拒绝，Blob URL 在结束/失败/取消时清理。`.mp3` 改名 `.ogg` 后按原上传规则判断更新，服务端格式要求和组件均不变。游戏项 U407。
+
+**图片库和原版画（2026-11-10，协议 0.65.0）**：只属于网页和 Minecraft 宿主，不进模拟组件。`ImagesLibrary` → `EditorImages` → `ImportedImages` → `ImageServer` → 世界 `mtr/pictures.db`；识别和存储同音频：内部命名空间、上传者 UUID、同名更新、内容 SHA-256 去重、无名称引用才清理内容。没有互联网 URL 功能。刷子右键原版画配置内部图片引用、尺寸和三轴偏移；配置经服务端权限/距离/持刷子校验，实体同步和 NBT 保存，渲染沿用挂墙朝向、背板、厚度及逐格受光。动态纹理最近 16 张；画的原锚点和碰撞不变。音频与图片共用所有权删除规则，OP 默认可删除他人的两类资源；权限变化触发列表刷新。代码流程第 12 节，测试 U408–U410、S09，`ImagesTest` 覆盖数据库、内部引用、配置数字边界和管理员权限。
+
+**GIF 动图（0.65.1）** 由网页媒体库保留原始 GIF 字节，Minecraft 宿主按逻辑画布合成帧，再根据 GIF 的帧延时和循环次数更新画框纹理。世界和客户端的 `pictures.db` 按哈希存储内容，原有 PNG 记录可继续读取。游戏内验证见 U411。
+
+**音频方块（0.65.2）** 在 Minecraft 宿主检测红石和玩家区域，由服务端选定收听者。客户端使用上传音频缓存和游戏声音系统播放。刷子配置的收听与触发范围和方块外观保存在方块实体，外观通过方块实体更新包同步。游戏内验证见 U412–U413。
 
 **新版网页编辑器，迁移第 0 步（2026-11-10）**：只加网页，组件、宿主、包和存档都不变。新版页面放在 `assets/mtr/editor/next/`（源码 `editor-web/`，构建结果提交进仓库），和旧版并存、共用接口和草稿；第 0 步只有外框和各层的只读概览，编辑仍在旧版。以后各层搬过去时也只改网页这一层：规则在组件，网页只是宿主的一个界面。代码说明 8.7 节，规格第 11 节，测试 U370–U372。第 1 步（同日）把草稿变成操作、应用后的处理、改动说明和同步状态搬成新页面的模块（`editor-web/src/core/`），用对拍测试和旧版逐项比对；仍只是网页，不改组件和宿主。同日第一轮把各层接进新外壳：迁移期间新页面运行构建时从 `editor.js` 生成的旧代码（`editor-web/scripts/gen-legacy.mjs`），两版的规则和画法因此始终一样。
 

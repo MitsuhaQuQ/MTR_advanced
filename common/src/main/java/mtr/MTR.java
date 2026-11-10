@@ -13,6 +13,7 @@ import mtr.data.TimetableConfig;
 import mtr.mappings.BlockEntityMapper;
 import mtr.mappings.RegistryUtilities;
 import mtr.packet.EditGuard;
+import mtr.packet.AudioSpeakerPackets;
 import mtr.packet.IPacket;
 import mtr.packet.PacketGuard;
 import mtr.packet.PacketTrainDataGuiServer;
@@ -382,6 +383,7 @@ public class MTR implements IPacket {
 			registerBlockItem.accept("ticket_processor_exit", Blocks.TICKET_PROCESSOR_EXIT, CreativeModeTabs.RAILWAY_FACILITIES);
 			registerBlockItem.accept("ticket_processor_enquiry", Blocks.TICKET_PROCESSOR_ENQUIRY, CreativeModeTabs.RAILWAY_FACILITIES);
 			registerBlockItem.accept("train_announcer", Blocks.TRAIN_ANNOUNCER, CreativeModeTabs.RAILWAY_FACILITIES);
+			registerBlockItem.accept("audio_speaker", Blocks.AUDIO_SPEAKER, CreativeModeTabs.RAILWAY_FACILITIES);
 			registerBlockItem.accept("train_cargo_loader", Blocks.TRAIN_CARGO_LOADER, CreativeModeTabs.RAILWAY_FACILITIES);
 			registerBlockItem.accept("train_cargo_unloader", Blocks.TRAIN_CARGO_UNLOADER, CreativeModeTabs.RAILWAY_FACILITIES);
 			registerBlockItem.accept("train_sensor", Blocks.TRAIN_REDSTONE_SENSOR, CreativeModeTabs.RAILWAY_FACILITIES);
@@ -438,6 +440,7 @@ public class MTR implements IPacket {
 			registerBlockEntityType.accept("station_name_tall_wall", BlockEntityTypes.STATION_NAME_TALL_WALL_TILE_ENTITY);
 			registerBlockEntityType.accept("tactile_map", BlockEntityTypes.TACTILE_MAP_TILE_ENTITY);
 			registerBlockEntityType.accept("train_announcer", BlockEntityTypes.TRAIN_ANNOUNCER_TILE_ENTITY);
+			registerBlockEntityType.accept("audio_speaker", BlockEntityTypes.AUDIO_SPEAKER_TILE_ENTITY);
 			registerBlockEntityType.accept("train_cargo_loader", BlockEntityTypes.TRAIN_CARGO_LOADER_TILE_ENTITY);
 			registerBlockEntityType.accept("train_cargo_unloader", BlockEntityTypes.TRAIN_CARGO_UNLOADER_TILE_ENTITY);
 			registerBlockEntityType.accept("train_redstone_sensor", BlockEntityTypes.TRAIN_REDSTONE_SENSOR_TILE_ENTITY);
@@ -482,6 +485,7 @@ public class MTR implements IPacket {
 		EditGuard.register(PACKET_DELETE_ROUTE, (minecraftServer, player, packet) -> PacketTrainDataGuiServer.reportRouteReferences(player, packet.getLong(packet.readerIndex()), () -> PacketTrainDataGuiServer.receiveUpdateOrDeleteC2S(minecraftServer, player, packet, PACKET_DELETE_ROUTE, railwayData -> railwayData.routes, railwayData -> railwayData.dataCache.routeIdMap, null, true)));
 		EditGuard.register(PACKET_DELETE_DEPOT, (minecraftServer, player, packet) -> PacketTrainDataGuiServer.receiveUpdateOrDeleteC2S(minecraftServer, player, packet, PACKET_DELETE_DEPOT, railwayData -> railwayData.depots, railwayData -> railwayData.dataCache.depotIdMap, null, true));
 		PacketGuard.register(PACKET_UPDATE_TRAIN_SENSOR, PacketTrainDataGuiServer::receiveTrainSensorC2S);
+		PacketGuard.register(PACKET_UPDATE_AUDIO_SPEAKER, AudioSpeakerPackets::edit);
 		PacketGuard.register(PACKET_UPDATE_NODE_ANGLE, PacketTrainDataGuiServer::receiveNodeAngleC2S);
 		PacketGuard.register(PACKET_UPDATE_PATH_BOUNDARY, PacketTrainDataGuiServer::receivePathBoundaryC2S);
 		PacketGuard.register(PACKET_REQUEST_MAP_RAILS, PacketTrainDataGuiServer::receiveRequestMapRailsC2S);
@@ -499,6 +503,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_TIMETABLE_CONFLICTS, PacketTrainDataGuiServer::receiveTimetableConflictsC2S);
 		PacketGuard.register(PACKET_PRESS_LIFT_BUTTON, PacketTrainDataGuiServer::receivePressLiftButtonC2S);
 		PacketGuard.register(PACKET_AUDIO_UPLOAD, AudioServer::receiveUploadC2S);
+		PacketGuard.register(PACKET_IMAGE_ACTION, mtr.image.ImageServer::receive);
 		PacketGuard.register(PACKET_AUDIO_DELETE, AudioServer::receiveDeleteC2S);
 		PacketGuard.register(PACKET_AUDIO_WANTED, AudioServer::receiveWantedC2S);
 		PacketGuard.register(PACKET_AUDIO_SOUND_ID, AudioServer::receiveSoundIdC2S);
@@ -512,6 +517,7 @@ public class MTR implements IPacket {
 				}
 			});
 			AudioServer.tick(minecraftServer);
+			mtr.image.ImageServer.tick(minecraftServer);
 
 			gameTick++;
 			if (gameTick % SERVER_TIME_TICKS == 0) {
@@ -531,6 +537,7 @@ public class MTR implements IPacket {
 			EditGuard.revisionsS2C(player);
 			PacketTrainDataGuiServer.editPermissionS2C(player);
 			AudioServer.sendList(player);
+			mtr.image.ImageServer.sendList(player);
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
 			if (railwayData != null) {
 				railwayData.onPlayerJoin(player);
@@ -544,6 +551,7 @@ public class MTR implements IPacket {
 			PacketGuard.forget(player);
 			EditGuard.onPlayerQuit(player.getServer(), player);
 			AudioServer.forget(player);
+			mtr.image.ImageServer.forget(player);
 		});
 
 		if (!Keys.LIFTS_ONLY) {
@@ -565,10 +573,12 @@ public class MTR implements IPacket {
 				MotionConfig.load(configPath.resolve(MotionConfig.FILE_NAME));
 				Webserver.start(configPath.resolve("mtr_webserver_port.txt"));
 				AudioServer.open(minecraftServer);
+				mtr.image.ImageServer.open(minecraftServer);
 			});
 			Registry.registerServerStoppingEvent(minecraftServer -> {
 				Webserver.stop();
 				AudioServer.close();
+				mtr.image.ImageServer.close();
 			});
 		}
 	}

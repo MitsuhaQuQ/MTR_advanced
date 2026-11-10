@@ -328,7 +328,7 @@ public final class AudioServer implements IPacket {
 		if (database == null || entry == null) {
 			return TranslatedMessage.encode("gui.mtr.audio_missing");
 		}
-		if (!canManage && !entry.uploader.equals(deleterId)) {
+		if (!mtr.media.MediaPermissions.canDelete(entry.uploader, deleterId, canManage)) {
 			return TranslatedMessage.encode("gui.mtr.audio_no_delete_permission");
 		}
 		try {
@@ -525,6 +525,12 @@ public final class AudioServer implements IPacket {
 		final Map<String, Integer> sizes = new HashMap<>();
 		ENTRIES.values().forEach(entry -> sizes.put(entry.hash, entry.size));
 		return sizes.values().stream().mapToLong(size -> size).sum();
+	}
+
+	public static String getUploadedHash(String reference) {
+		final String[] name = AnnouncementSound.splitUploaded(reference);
+		final Entry entry = name == null ? null : ENTRIES.get(AnnouncementSound.getNameKey(name[0], name[1]));
+		return entry == null || entry.getSoundLocation() == null ? null : entry.hash;
 	}
 
 	private static boolean hasHash(String hash) {

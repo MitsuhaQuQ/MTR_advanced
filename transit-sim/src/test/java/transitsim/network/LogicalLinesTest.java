@@ -91,6 +91,39 @@ class LogicalLinesTest {
 		assertTrue(LogicalLines.compute(snapshot, gone, Collections.emptySet(), Collections.emptyMap(), platformLines).sectionLines.isEmpty());
 	}
 
+	@Test
+	void aBranchMayRunThroughTheMainLineWithoutMergingTheirTrackLines() {
+		// A physical Y: the main line runs west-east and the branch leaves to the south-east. The two physical arms of the
+		// main line remain logical line A; the third arm is logical line B. Branch services are explicitly allowed on both.
+		final TrackSections.Rail mainWestPlatform = rail(-100, 0, -80, 0, SectionType.PLATFORM, 1);
+		final TrackSections.Rail mainWest = rail(-80, 0, 0, 0, SectionType.NORMAL, 0);
+		final TrackSections.Rail mainEast = rail(0, 0, 80, 0, SectionType.NORMAL, 0);
+		final TrackSections.Rail mainEastPlatform = rail(80, 0, 100, 0, SectionType.PLATFORM, 2);
+		final TrackSections.Rail branch = rail(0, 0, 60, 60, SectionType.NORMAL, 0);
+		final TrackSections.Rail branchPlatform = rail(60, 60, 80, 80, SectionType.PLATFORM, 3);
+		final TrackSections sections = sections(mainWestPlatform, mainWest, mainEast, mainEastPlatform, branch, branchPlatform);
+
+		final Map<UUID, Long> railLines = new HashMap<>();
+		for (final TrackSections.Rail rail : new TrackSections.Rail[]{mainWestPlatform, mainWest, mainEast, mainEastPlatform}) {
+			railLines.put(rail.getKey(), A);
+		}
+		railLines.put(branch.getKey(), B);
+		railLines.put(branchPlatform.getKey(), B);
+		final Map<Long, List<String>> platformLines = new HashMap<>();
+		platformLines.put(1L, Collections.singletonList("Main"));
+		platformLines.put(2L, Collections.singletonList("Main"));
+		platformLines.put(3L, Collections.singletonList("Branch"));
+		final Map<String, List<Long>> chosen = Collections.singletonMap("Branch", Arrays.asList(A, B));
+
+		final LogicalLines.Result result = LogicalLines.compute(sections.snapshot(), railLines, Collections.emptySet(), chosen, platformLines);
+		assertEquals(Collections.singleton(A), result.allowed.get("Main"));
+		assertEquals(new TreeSet<>(Arrays.asList(A, B)), result.allowed.get("Branch"));
+		assertEquals(new TreeSet<>(Arrays.asList("Branch", "Main")), result.owners.get(sections.getSectionOf(mainWest.getKey())));
+		assertEquals(Collections.singleton("Branch"), result.owners.get(sections.getSectionOf(branch.getKey())));
+		assertEquals(A, result.sectionLines.get(sections.getSectionOf(mainEast.getKey())));
+		assertEquals(B, result.sectionLines.get(sections.getSectionOf(branch.getKey())));
+	}
+
 	private static TrackSections sections(TrackSections.Rail... rails) {
 		final Map<UUID, TrackSections.Rail> map = new HashMap<>();
 		for (final TrackSections.Rail rail : rails) {
