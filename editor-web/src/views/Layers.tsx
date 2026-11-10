@@ -17,6 +17,7 @@ import { DispatchConsole } from "./DispatchConsole"
 import { PickPanel } from "./PickPanels"
 import { OwnershipPanel } from "./OwnershipPanel"
 import { NetworkSchematic, type TrainMark } from "./NetworkSchematic"
+import { currentLine } from "./now"
 
 /** Which part of the old tree each layer shows (its five sections, in order) */
 const TREE_PART: Partial<Record<LayerId, Part>> = { physical: 1, owners: 2, lines: 3, timetable: 4, depots: 5 }
@@ -279,7 +280,7 @@ function DiagramTools({ extra }: { extra?: ReactNode }) {
   }
   const split = state.split && fn.canSplit()
   const current = split ? "split" : state.view
-  const r = data && (state.route ? data.routeById.get(state.route) : fn.currentLine() && fn.currentLine().routes[0])
+  const r = data && (state.route ? data.routeById.get(state.route) : currentLine() && currentLine().routes[0])
   const selected = data && state.route && data.routeById.get(state.route)
   const newMenu = (e: React.MouseEvent) => {
     const box = e.currentTarget.getBoundingClientRect()

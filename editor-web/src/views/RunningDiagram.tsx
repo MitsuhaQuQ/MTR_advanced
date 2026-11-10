@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import * as D from "../core/diagram"
 import { tr } from "../i18n"
-import { clock, colorOf, durationText, mod, orderDepotName, shortName } from "./now"
+import { clock, colorOf, currentLine, durationText, findService, mod, orderDepotName, shortName, timesOf } from "./now"
 
 type Drawn = { s: any; points: D.Point[] }
 type Leg = { a: number[]; b: number[]; kind: "out" | "back"; depot: string; siding: string; index: number; text: string }
@@ -89,7 +89,7 @@ export function RunningDiagram() {
   const view = () => hits.current.view || { viewStart: v.state.viewStart, pxPerMin: v.state.pxPerMin, scrollY: v.state.scrollY, width: box.current?.clientWidth || 800, height: box.current?.clientHeight || 600 }
   /** A stop's dwell from where its handle is dragged to, as the old dragDwell */
   const dragDwell = (handle: { s: any; i: number }, x: number) => {
-    const s = handle.s, i = handle.i, arrival = fn.timesOf(s)[i][0]
+    const s = handle.s, i = handle.i, arrival = timesOf(s)[i][0]
     const step = fine.current || v.state.pxPerMin >= 32 ? 1 : 5
     const dwell = Math.max(0, Math.round((D.millisAt(view(), x) - arrival) / 1000 / step) * step)
     fn.editTimetable(s.route, (timetable: any) => {
@@ -214,7 +214,7 @@ export function RunningDiagram() {
       if (state.slot && s) {
         // Shift: every service the train can run one after another from the one clicked before to this one
         const before = v.lastSlotService
-        if (e.shiftKey && before && before !== s.id && fn.findService(before)) fn.addRangeToSlot(fn.findService(before), s)
+        if (e.shiftKey && before && before !== s.id && findService(before)) fn.addRangeToSlot(findService(before), s)
         else fn.toggleInSlot(s)
         v.lastSlotService = s.id
         fn.selectService(s.id, false)
@@ -291,7 +291,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   const out = { drawn: [] as Drawn[], handles: [] as { x: number; y: number; s: any; i: number }[], legs: [] as Leg[], access: [] as Drawn[], view: null as D.View | null }
   g.fillStyle = c.panel
   g.fillRect(0, 0, w, h)
-  const line = data && fn.currentLine()
+  const line = data && currentLine()
   if (!line) {
     g.fillStyle = c.muted
     g.font = `13px ${uiFont}`
@@ -391,7 +391,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
       g.globalAlpha = state.route ? 0.2 : 0.6
       r.services.forEach((s: any) => {
         if (s.suspended) return
-        const times = fn.timesOf(s)
+        const times = timesOf(s)
         let points: D.Point[] = []
         const flush = () => {
           if (points.length > 1 && points.some(([x]) => x >= D.LABEL_W - 40 && x <= w + 40)) { out.access.push({ s, points }); polyline(points) }
@@ -429,7 +429,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   services.forEach((s: any) => {
     // Being dragged along the time axis: drawn where it would go
     const shift = moving && moving.ids.includes(s.id) ? moving.shift : 0
-    const plain = fn.timesOf(s)
+    const plain = timesOf(s)
     const times = shift ? plain.map(([a, b]: number[]) => [a + shift, b + shift]) : plain
     if (!D.inView(times, xOf, w)) return
     const points = D.servicePath(s, times, xOf, yOf)
@@ -492,7 +492,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     // On a loop, the wait at the first stop for the next lap
     const nextLap = loopNext.get(s.id)
     if (nextLap) {
-      const startX = xOf(fn.timesOf(nextLap)[0][1])
+      const startX = xOf(timesOf(nextLap)[0][1])
       g.globalAlpha = dim ? 0.25 : 0.8
       g.strokeStyle = colorOf(s.route.color)
       g.lineWidth = isSelected ? 2 : 1
@@ -592,7 +592,7 @@ function drawTerminalLinks(g: CanvasRenderingContext2D, line: any, xOf: (m: numb
   const pairs = fn.terminalNow(), inLine = new Set(line.routes.map((r: any) => r.id))
   g.save()
   pairs.next.forEach((pairing: any) => {
-    const from = fn.findService(pairing.from.id), to = fn.findService(pairing.to.id)
+    const from = findService(pairing.from.id), to = findService(pairing.to.id)
     if (!from || !to || !inLine.has(from.route.id) || from.suspended) return
     const fromRow = from.route.rows[pairing.from.last], toRow = inLine.has(to.route.id) ? to.route.rows[0] : fromRow
     const arrive = pairing.from.times[pairing.from.last][0], leave = pairing.to.times[0][1]

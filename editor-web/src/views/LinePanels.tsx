@@ -14,7 +14,7 @@ import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { DepotPanel, DepotRules } from "./DepotPanel"
 import { DutyGroupsPanel, ReleasePlanPanel, VehiclePanel } from "./DepotExtras"
-import { DAY, clock, colorOf, mod, parseClock, routeTitle, shortName, stopName, systemTitle, tableName, trc, weekdayName, weekdaysShort } from "./now"
+import { DAY, clock, colorOf, mod, parseClock, routeTitle, shortName, stopName, systemTitle, tableName, timesOf, trc, weekdayName, weekdaysShort } from "./now"
 
 export function LinePanels() {
   const [target, setTarget] = useState<PanelTarget | null>(null)
@@ -127,8 +127,8 @@ function Through({ routeId, onClose }: { routeId: string; onClose: () => void })
     const used = new Set(b.services.map((s: any) => s.service).filter((service: number) => a.services.some((s: any) => !replace && s.link && s.link.route === b.id && s.link.toService === service)))
     const result: { s: any; out: number; to: any; into: number }[] = []
     a.services.filter((s: any) => local(s) >= start && local(s) <= end && (replace || !s.link)).forEach((s: any) => {
-      const out = fn.timesOf(s)[exitIndex][0]
-      const next = b.services.filter((o: any) => !used.has(o.service)).map((o: any) => ({ o, time: fn.timesOf(o)[toStopNow][1] }))
+      const out = timesOf(s)[exitIndex][0]
+      const next = b.services.filter((o: any) => !used.has(o.service)).map((o: any) => ({ o, time: timesOf(o)[toStopNow][1] }))
         .filter((x: any) => x.time >= out + gapMillis && x.time <= out + waitMillis).sort((x: any, y: any) => x.time - y.time)[0]
       if (!next) return
       used.add(next.o.service)

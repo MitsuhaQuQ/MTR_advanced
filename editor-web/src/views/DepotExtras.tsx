@@ -9,7 +9,7 @@ import { useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
-import { clock, daysText, shortName, weekdayName, weekdaysShort } from "./now"
+import { clock, daysText, shortName, timesOf, weekdayName, weekdaysShort } from "./now"
 
 const field = "h-7 rounded-md border border-ctl bg-panel px-2 text-[13px]"
 const label = "flex flex-col gap-0.5 text-[12px] text-dim"
@@ -177,8 +177,8 @@ export function ReleasePlanPanel({ depotId, onClose }: { depotId: string; onClos
       const lastStop = lastRoute ? fn.lastStopOf(last, lastRoute) : 0
       rows.push({
         start: fn.segmentStart(first), siding, index, stay: on.stay, count: on.segments.length, ...fn.legTimes(siding, on),
-        first: `${firstService ? clock(fn.timesOf(firstService)[Math.min(first.from, firstService.plans.length - 1)][1]) : "--:--"} ${placeOf(firstRoute, first.from)}`,
-        last: `${lastService ? clock(fn.timesOf(lastService)[fn.lastStopOf(last, lastService.route)][0]) : "--:--"} ${placeOf(lastRoute, lastStop)}`,
+        first: `${firstService ? clock(timesOf(firstService)[Math.min(first.from, firstService.plans.length - 1)][1]) : "--:--"} ${placeOf(firstRoute, first.from)}`,
+        last: `${lastService ? clock(timesOf(lastService)[fn.lastStopOf(last, lastService.route)][0]) : "--:--"} ${placeOf(lastRoute, lastStop)}`,
       })
     })
     if (siding.maxTrains >= 0) inDepot += Math.max(0, siding.maxTrains - used)

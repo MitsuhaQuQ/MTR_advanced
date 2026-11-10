@@ -11,6 +11,7 @@ import { useSyncExternalStore } from "react"
 import { key } from "../api/client"
 import { createLegacy } from "./engine.generated.js"
 import { normalizeDraft } from "../core/draft"
+import * as Services from "../core/services"
 
 export type MenuItem = [label: string, action: (() => void) | MenuItem[] | null | undefined]
 
@@ -72,6 +73,18 @@ const env = {
   vehicleDialog: (depot: { id: string }, pool: { key: string }) => panelHost.current?.({ kind: "vehicle", depotId: depot.id, poolKey: pool.key }),
   dutyGroupsDialog: (depot: { id: string }) => panelHost.current?.({ kind: "groups", depotId: depot.id }),
   releasePlanDialog: (depot: { id: string }) => panelHost.current?.({ kind: "release", depotId: depot.id }),
+  // Retiring the old code, step 3: the old code's rows and services made by the new page's (core/services.ts)
+  buildStations: Services.buildStations,
+  buildServices: () => {
+    const { fn, v } = legacy
+    v.data.routes.forEach((r: any) => { r.services = Services.routeServices(r, fn.timetableOf(r), fn.timesSource(r), v.state.weekday, v.data.dayStartMillis) })
+  },
+  plansFor: Services.plansFor,
+  toPlans: Services.toPlans,
+  gameSource: Services.gameSource,
+  findService: (id: string) => Services.findService(legacy.v.data.routeById, id),
+  timesOf: Services.timesOf,
+  currentLine: () => Services.currentLine(legacy.v.data, legacy.v.state.line),
   render: (name: string) => onRender(name),
 }
 

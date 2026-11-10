@@ -8,7 +8,7 @@
 import { useState, type ReactNode } from "react"
 import { legacy, menuHost, useLegacy, type MenuItem } from "../legacy/engine"
 import { tr } from "../i18n"
-import { clock, colorOf, daysText, routeTitle, shortName, weekdayName } from "./now"
+import { clock, colorOf, daysText, routeTitle, shortName, timesOf, weekdayName } from "./now"
 
 const HOUR = 3600000, LABEL = 148, ROW = 34
 
@@ -111,7 +111,7 @@ function Board({ depot, pxPerHour }: { depot: any; pxPerHour: number }) {
     if (legs.out) times.push(legs.out.leave)
     if (legs.back) times.push(legs.back.home)
   }))
-  noTrain.forEach((s: any) => { const t = fn.timesOf(s); times.push(t[0][1], t[t.length - 1][0]) })
+  noTrain.forEach((s: any) => { const t = timesOf(s); times.push(t[0][1], t[t.length - 1][0]) })
   const from = times.length ? Math.floor(Math.min(...times) / HOUR) * HOUR : 4 * HOUR
   const to = times.length ? Math.ceil(Math.max(...times) / HOUR) * HOUR : 24 * HOUR
   const x = (t: number) => ((t - from) / HOUR) * pxPerHour
@@ -123,7 +123,7 @@ function Board({ depot, pxPerHour }: { depot: any; pxPerHour: number }) {
   const packed = (() => {
     const ends: number[] = []
     const items: { s: any; a: number; b: number; lane: number }[] = noTrain.map((s: any) => {
-      const t = fn.timesOf(s), a = t[0][1], b = t[t.length - 1][0]
+      const t = timesOf(s), a = t[0][1], b = t[t.length - 1][0]
       let lane = ends.findIndex(end => x(a) > end + 3)
       if (lane < 0) { lane = ends.length; ends.push(0) }
       ends[lane] = x(b)

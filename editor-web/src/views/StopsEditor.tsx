@@ -16,7 +16,7 @@ import { diagramHost, legacy, stopsHost, useLegacy, type StopsTarget } from "../
 import { ConfirmButton, Pill, SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
-import { colorOf, parsePattern, routeTitle, shortName } from "./now"
+import { colorOf, currentLine, parsePattern, routeTitle, shortName } from "./now"
 
 /** The game's platforms on the rails and the ways between them, as the data last read has them */
 const T = () => topologyOf(legacy.v.data?.topology)
@@ -479,7 +479,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
   useLegacy()
   const { fn, v } = legacy
   const data = v.data, topo = T()
-  const line = data?.lines.find((l: any) => l.key === lineKey) || fn.currentLine()
+  const line = data?.lines.find((l: any) => l.key === lineKey) || currentLine()
   const bases: any[] = line ? line.routes.filter((r: any) => r.stops.length > 1) : []
   const [baseChosen, setBase] = useState(baseId)
   const base = bases.find(r => r.id === baseChosen) || bases[0]

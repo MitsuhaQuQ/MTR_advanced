@@ -13,7 +13,7 @@ import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
 import { DutyDetail } from "./DutyDetail"
-import { DAY, clock, colorOf, formatDuration, mod, routeTitle, shortName, stopName, weekdayName } from "./now"
+import { DAY, clock, colorOf, currentLine, findService, formatDuration, mod, routeTitle, shortName, stopName, timesOf, weekdayName } from "./now"
 
 export function Inspector({ className }: { className: string }) {
   const element = legacyElement("inspector")!
@@ -53,9 +53,9 @@ function Content() {
     netPanel.innerHTML = ""
   })
   if (!data) return null
-  const s = state.selected ? fn.findService(state.selected) : null
+  const s = state.selected ? findService(state.selected) : null
   const loopRoute = s && fn.isLoop(s.route) ? s.route : state.route && data.routeById.get(state.route) && fn.isLoop(data.routeById.get(state.route)) ? data.routeById.get(state.route) : null
-  const line = fn.currentLine()
+  const line = currentLine()
   return (
     <>
       {state.slot && <DutyDetail />}
@@ -73,7 +73,7 @@ function Selected({ s }: { s: any }) {
   const { fn, v } = legacy
   const data = v.data
   const next = s.link && data.routeById.get(s.link.route)
-  const times = fn.timesOf(s)
+  const times = timesOf(s)
   const noTrain = !s.suspended && fn.hasNoTrain(s)
   const facts: [string, ReactNode][] = [
     [tr("班次"), <span className="num">{clock(s.start)}</span>],
@@ -203,7 +203,7 @@ function SimProblems({ line }: { line: any }) {
   if (sim.missingPaths) notes.push(tr("{0} 种运用在轨道上找不到路径，这些车不会发车", sim.missingPaths))
   if (sim.result && sim.allDepots && sim.scopeDepots < sim.allDepots) notes.push(tr("只模拟了有关的 {0} / {1} 个车厂：跑这些线路的，和车经过同样轨道的；其余的车没有模拟", sim.scopeDepots, sim.allDepots))
   const choose = (p: any) => {
-    const s = fn.findService(p.route + "@" + p.service)
+    const s = findService(p.route + "@" + p.service)
     if (!s) return
     state.selected = s.id
     fn.centerOn(s)

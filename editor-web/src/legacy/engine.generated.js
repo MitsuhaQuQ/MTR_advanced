@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -720,161 +720,13 @@ export function createLegacy(env) {
 	 * (rows) and the row it leaves from (leaveRows), which are two rows of the same station where the route goes from one
 	 * section to another.
 	 */
-	function buildStations(line) {
-		const stationOf = stop => stop.station || "?" + stop.name;
-		const sections = [];
-		const rowsOf = id => sections.flatMap((section, k) => section.flatMap((row, j) => row.id === id ? [[k, j]] : []));
-		const newRow = (id, name, base) => {
-			const row = { id, name };
-			row.base = base || row;
-			return row;
-		};
-		[...line.routes].sort((a, b) => b.stops.length - a.stops.length || a.id.localeCompare(b.id)).forEach(r => {
-			let at = null, unfolded = false;
-			const visited = new Map(), shape = revisits(r.stops.map(stationOf), r.stops.map(stop => stop.platformId));
-			r.stops.forEach((stop, i) => {
-				const id = stationOf(stop), again = shape[i];
-				// Back at the station a Q branches off, on another platform: the rest of the route goes on down in rows of its own
-				if (again && !again.retrace && !again.samePlatform) unfolded = true;
-				let row = newRow(id, stop.name);
-				if (again && !again.retrace && again.samePlatform) {
-					row = newRow(id, stop.name, visited.get(id).base);
-				} else if (!unfolded && rowsOf(id).length) {
-					// Rejoining another route's station
-					const [k0, j0] = rowsOf(id)[0];
-					row = newRow(id, stop.name, sections[k0][j0].base);
-				}
-				if (!at) {
-					at = rowsOf(id)[0];
-					if (!at) {
-						sections.push([row]);
-						at = [sections.length - 1, 0];
-					}
-					visited.set(id, sections[at[0]][at[1]]);
-					return;
-				}
-				const [k, j] = at, section = sections[k], from = section[j];
-				if (from.id === id) return;
-				// Already side by side somewhere, preferably next to the row the route is on. Unfolded, only next to that row.
-				const starts = unfolded ? [at] : rowsOf(from.id).sort((a, b) => (b[0] === k && b[1] === j) - (a[0] === k && a[1] === j));
-				const side = starts.flatMap(([k2, j2]) => [[k2, j2 + 1], [k2, j2 - 1]]).find(([k2, j2]) => sections[k2][j2] && sections[k2][j2].id === id);
-				if (side) {
-					at = side;
-				} else if (j === section.length - 1) {
-					section.push(row);
-					at = [k, j + 1];
-				} else if (j === 0) {
-					section.unshift(row);
-					at = [k, 0];
-				} else {
-					sections.splice(k + 1, 0, [newRow(from.id, from.name, from.base), row]);
-					at = [k + 1, 1];
-				}
-				if (!visited.has(id)) visited.set(id, sections[at[0]][at[1]]);
-			});
-		});
-
-		// A Q coming back to the platform it branched off at: the loop on top, as a loop line is drawn, and the stretch
-		// leading to it in a section of its own below, starting from the station again
-		for (let k = 0; k < sections.length; k++) {
-			const section = sections[k], last = section[section.length - 1], j = section.indexOf(last.base);
-			if (last.base === last || j <= 0) continue;
-			sections.splice(k, 1, section.slice(j), [newRow(last.id, last.name, last.base), ...section.slice(0, j).reverse()]);
-			k++;
-		}
-
-		// A section with one end free and the other at the end of another section carries that one on. One left hanging
-		// off the middle of another goes down from the station it hangs off. A section coming back to itself, like the loop
-		// of a Q, stays as it is, and so does a loop another section hangs off.
-		const elsewhere = (k, id) => sections.some((section, k2) => k2 !== k && section.some(row => row.id === id));
-		for (let merged = true; merged;) {
-			merged = false;
-			for (let k = 0; k < sections.length && !merged; k++) {
-				const section = sections[k], first = section[0], last = section[section.length - 1];
-				if (section.length < 2 || elsewhere(k, first.id) === elsewhere(k, last.id)) continue;
-				// Turned so the end shared with another section is at the top
-				const ordered = elsewhere(k, first.id) ? section : section.slice().reverse();
-				const t = sections.findIndex((other, k2) => k2 !== k && other[0].id !== other[other.length - 1].id && (other[0].id === ordered[0].id || other[other.length - 1].id === ordered[0].id));
-				if (t >= 0) {
-					const other = sections[t], atEnd = other[other.length - 1].id === ordered[0].id;
-					// The station they share keeps the row that isn't a repeat
-					const end = atEnd ? other[other.length - 1] : other[0], shared = end.base === end ? end : ordered[0];
-					sections[t] = atEnd ? other.slice(0, -1).concat(shared, ordered.slice(1)) : ordered.slice(1).reverse().concat(shared, other.slice(1));
-					sections.splice(k, 1);
-					merged = true;
-				} else if (k > 0) {
-					sections[k] = ordered;
-				}
-			}
-		}
-
-		// A station repeated where a section starts or a loop closes is greyed; one a Q comes back to on another platform,
-		// and the stations it goes back along, are rows of their own
-		const rows = [], made = sections.flat();
-		sections.forEach((section, k) => section.forEach((row, j) => rows.push({ id: row.id, name: row.name, section: k, sectionStart: k > 0 && j === 0, repeat: row.base !== row, gap: 0 })));
-		rows.forEach((row, i) => row.group = made.indexOf(made[i].base));
-		const rowsById = new Map();
-		rows.forEach((row, i) => rowsById.set(row.id, (rowsById.get(row.id) || []).concat(i)));
-		const adjacent = (a, b) => a === b || Math.abs(a - b) === 1 && rows[a].section === rows[b].section;
-		line.routes.forEach(r => {
-			// The rows with the fewest changes from one section to another, by the cost of leaving each stop from each row
-			const options = r.stops.map(stop => rowsById.get(stationOf(stop)));
-			let cost = new Map(options.length ? options[0].map(d => [d, 0]) : []);
-			const back = [];
-			for (let i = 1; i < options.length; i++) {
-				const next = new Map(), choice = new Map();
-				options[i].forEach(d => options[i].forEach(a => {
-					let best = Infinity, before = -1;
-					cost.forEach((c, p) => {
-						const total = c + (adjacent(p, a) ? 0 : 100);
-						if (total < best) {
-							best = total;
-							before = p;
-						}
-					});
-					// Over to the station's row in another section, or to a row of its own, which is a way the route doesn't go
-					const total = best + (a === d ? 0 : rows[a].group === rows[d].group ? 1 : 150);
-					if (!next.has(d) || total < next.get(d)) {
-						next.set(d, total);
-						choice.set(d, [a, before]);
-					}
-				}));
-				back.push(choice);
-				cost = next;
-			}
-			r.rows = [];
-			r.leaveRows = [];
-			if (!options.length) return;
-			let d = [...cost.entries()].reduce((best, entry) => entry[1] < best[1] ? entry : best)[0];
-			for (let i = options.length - 1; i > 0; i--) {
-				const [a, before] = back[i - 1].get(d);
-				r.leaveRows[i] = d;
-				r.rows[i] = a;
-				d = before;
-			}
-			r.rows[0] = r.leaveRows[0] = d;
-		});
-
-		// The space above each row follows the fastest running time to it, half and half with even spacing, so close
-		// stations still have room. A section starts a little further down.
-		const gaps = rows.map(() => []);
-		line.routes.forEach(r => {
-			const plans = r.tables.length ? r.tables[0].plans : [];
-			for (let i = 1; i < r.rows.length; i++) {
-				const a = r.leaveRows[i - 1], b = r.rows[i];
-				if (a !== b && adjacent(a, b) && plans[i] && r.hasTimes) gaps[Math.max(a, b)].push(Math.max(0, plans[i][0] - plans[i - 1][1]));
-			}
-		});
-		const typical = gaps.flat().length ? gaps.flat().reduce((a, b) => a + b, 0) / gaps.flat().length : 1;
-		rows.forEach((row, i) => row.gap = i === 0 ? 0 : row.sectionStart ? SECTION_GAP : 0.5 + 0.5 * (gaps[i].length ? Math.min(...gaps[i]) / (typical || 1) : 1));
-		line.rows = rows;
-	}
+	/* buildStations: from env */
 
 	// ---------- Times ----------
 	// The page doesn't work out times itself: the game does, by the same rules trains run by (StopRules), and sends each
 	// stop as [arrival, departure, overtake, passes, tooFast], the times in milliseconds from the first stop
-	const toPlans = times => times.map(t => ({ arrival: t[0], departure: t[1], overtake: t[2] === 1, passes: t[3] === 1, tooFast: t[4] === 1 }));
-	const gameSource = r => r.gameSource || (r.gameSource = r.tables.map(table => ({ times: table.times, exceptions: new Map((table.exceptions || []).map(e => [e.service, e.times])) })));
+	/* toPlans: from env */
+	/* gameSource: from env */
 	// The times of each route's draft as the game worked them out, with the draft they are for
 	const draftTimes = new Map();
 	const requestedTimes = new Map();
@@ -921,55 +773,15 @@ export function createLegacy(env) {
 	 * The planned times at each stop of a table's services, or of one service with its own exceptions. A table or service
 	 * the game hasn't answered for yet takes the table's times, or none.
 	 */
-	function plansFor(r, source, tableIndex, service) {
-		const table = source[tableIndex];
-		const times = table ? service !== null && table.exceptions.get(service) || table.times : null;
-		if (times && times.length === r.stops.length) return toPlans(times);
-		return r.stops.map(() => ({ arrival: 0, departure: 0, overtake: false, passes: false, tooFast: false }));
-	}
+	/* plansFor: from env */
 
 	/** The table a route runs on a day for each of its services, which is the first of its tables that has it that day. */
-	function buildServices() {
-		const weekday = state.weekday;
-		data.routes.forEach(r => {
-			const timetable = timetableOf(r);
-			const source = timesSource(r);
-			const services = new Map();
-			timetable.tables.forEach((table, tableIndex) => {
-				if ((table.weekdays >> weekday & 1) === 0) return;
-				const tablePlans = plansFor(r, source, tableIndex, null);
-				const exceptions = new Map(table.exceptions.map(exception => [exception.service, new Map(exception.stops.map(stop => [stop.stop, stop]))]));
-				table.services.forEach(service => {
-					if (services.has(service)) return;
-					const stopExceptions = exceptions.get(service) || null;
-					services.set(service, {
-						id: r.id + "@" + service, route: r, service, table, tableIndex,
-						link: table.links.find(l => l.service === service),
-						returns: table.returns.includes(service),
-						// Kept in the table, but not running: no train, no conflicts, nothing planned
-						suspended: (table.suspended || []).includes(service),
-						// Set on the running diagram: joined part of the way by a train from a depot, or left part of the way back to one
-						deployOrder: (table.orders || []).find(order => order.service === service && order.kind === "deploy") || null,
-						returnOrder: (table.orders || []).find(order => order.service === service && order.kind === "return") || null,
-						// The time in the operating day, so the last trains after midnight come after the first ones
-						start: mod(service - data.dayStartMillis, DAY),
-						plans: stopExceptions ? plansFor(r, source, tableIndex, service) : tablePlans,
-						tablePlans, exceptions: stopExceptions,
-					});
-				});
-			});
-			r.services = [...services.values()].sort((a, b) => a.start - b.start);
-		});
-	}
+	/* buildServices: from env */
 
-	const findService = id => {
-		const [routeId, service] = id.split("@");
-		const r = data.routeById.get(routeId);
-		return r && r.services ? r.services.find(s => s.service === Number(service)) : null;
-	};
+	/* findService: from env */
 
 	/** Arrival and departure at each stop, in milliseconds into the operating day. */
-	const timesOf = s => s.plans.map(plan => [s.start + plan.arrival, s.start + plan.departure]);
+	/* timesOf: from env */
 
 	// ---------- Editing ----------
 	const daysText = mask => mask ? WEEKDAY_SHORT.filter((_, i) => mask >> i & 1).join(trc("weekday separator", "")) : tr("不运行");
@@ -1619,7 +1431,7 @@ export function createLegacy(env) {
 
 	function renderViews(...args) { return env.render("renderViews", args) }
 
-	const currentLine = () => data && data.lines.find(l => l.key === state.line);
+	/* currentLine: from env */
 
 
 	// ---------- Whole network track view ----------
@@ -8717,7 +8529,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, tidyDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, buildStations, timesSource, sendTimes, plansFor, buildServices, normalize, fromGame, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, changeTime, chooseRange, toggleChosen, chooseLater, shiftLaterDialog, parseShift, durationText, respaceRange, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, setLink, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, stopHangers, renumberTimetable, renumberLinksInto, renumberDuties, sendStopList, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, servicesToAdd, clearTable, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, servicesToMove, moveShift, moveServices },
+		fn: { loadDraft, clearDraft, saveDraft, tidyDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, timesSource, sendTimes, normalize, fromGame, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, changeTime, chooseRange, toggleChosen, chooseLater, shiftLaterDialog, parseShift, durationText, respaceRange, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, setLink, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, stopHangers, renumberTimetable, renumberLinksInto, renumberDuties, sendStopList, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, servicesToAdd, clearTable, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, servicesToMove, moveShift, moveServices },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },
@@ -8774,13 +8586,9 @@ export function createLegacy(env) {
 		get railKey() { return railKey },
 		get releasedOf() { return releasedOf },
 		get turnOf() { return turnOf },
-		get toPlans() { return toPlans },
-		get gameSource() { return gameSource },
 		get draftTimes() { return draftTimes },
 		get requestedTimes() { return requestedTimes },
 		get timesTimer() { return timesTimer }, set timesTimer(value) { timesTimer = value },
-		get findService() { return findService },
-		get timesOf() { return timesOf },
 		get daysText() { return daysText },
 		get tableName() { return tableName },
 		get gameTimetable() { return gameTimetable },
@@ -8802,7 +8610,6 @@ export function createLegacy(env) {
 		get canSplit() { return canSplit },
 		get showsDiagram() { return showsDiagram },
 		get showsTable() { return showsTable },
-		get currentLine() { return currentLine },
 		get NET_CELL() { return NET_CELL },
 		get NET_HIT_PX() { return NET_HIT_PX },
 		get NET_STATION_SCALE() { return NET_STATION_SCALE },

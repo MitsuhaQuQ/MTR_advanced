@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { tr } from "../i18n"
-import { DAY, clock, colorOf, daysText, mod, orderDepotName, parseClock, routeTitle, shortName, tableName, trc, typedTime, weekdayName, weekdaysShort } from "./now"
+import { DAY, clock, colorOf, currentLine, daysText, findService, mod, orderDepotName, parseClock, routeTitle, shortName, tableName, timesOf, trc, typedTime, weekdayName, weekdaysShort } from "./now"
 
 type Editing = { svc: string; stop: number; kind: string; value: string; old: number; bad: boolean }
 
@@ -32,20 +32,20 @@ export function SummaryTable({ className }: { className: string }) {
   }, [state.selected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!data || !fn.showsTable()) return null
-  const line = fn.currentLine()
+  const line = currentLine()
   const lineMode = !state.route && line && line.routes.length > 1
   const r = lineMode ? null : state.route ? data.routeById.get(state.route) : line && line.routes[0]
 
   // ---------- Editing a cell ----------
   const startEditing = (cell: HTMLElement) => {
-    const s = fn.findService(cell.dataset.svc), stop = Number(cell.dataset.stop), kind = cell.dataset.kind || ""
+    const s = findService(cell.dataset.svc || ""), stop = Number(cell.dataset.stop), kind = cell.dataset.kind || ""
     if (!s || kind === "derived" || (kind === "pass" && cell.textContent === "レ")) return
-    const t = fn.timesOf(s)[stop], old = kind === "dep" ? t[1] : t[0]
+    const t = timesOf(s)[stop], old = kind === "dep" ? t[1] : t[0]
     setEditing({ svc: s.id, stop, kind, value: clock(old, true), old, bad: false })
   }
   const commit = (move: number, toLater: boolean) => {
     if (!editing) return
-    const s = fn.findService(editing.svc)
+    const s = findService(editing.svc)
     const time = typedTime(editing.value, editing.old)
     if (time === null) { setEditing({ ...editing, bad: true }); return }
     const cells = [...(root.current?.querySelectorAll("td") || [])] as HTMLElement[]
@@ -137,7 +137,7 @@ export function SummaryTable({ className }: { className: string }) {
   const onClick = (e: React.MouseEvent) => {
     const cell = (e.target as HTMLElement).closest("td[data-svc], th[data-svc]") as HTMLElement | null
     if (!cell) return
-    const s = fn.findService(cell.dataset.svc)
+    const s = findService(cell.dataset.svc || "")
     if ((e.ctrlKey || e.metaKey) && cell.tagName === "TH" && s && fn.toggleChosen(s, e.shiftKey)) {
       v.tableMessage = state.range ? tr("选中 {0} 班，右键表头可以调整间隔", state.range.ids.length) : ""
       fn.renderAll()
@@ -184,7 +184,7 @@ export function SummaryTable({ className }: { className: string }) {
         {[0, 1].filter(w => ways[w].length).map(w => <button key={w} className={"table-chip" + (w === way ? " on" : "")} onClick={() => { state.lineWay = w; fn.renderAll() }}>{tr("往{0}", ends(w))}</button>)}</div>
     </>
     if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
-    const allTimes = services.map(fn.timesOf)
+    const allTimes = services.map(timesOf)
     const visits = services.map((s: any) => {
       const route = s.route, at = new Map<string, number>(), seen = new Set<number>()
       route.rows.forEach((row: number, i: number) => {
@@ -293,7 +293,7 @@ export function SummaryTable({ className }: { className: string }) {
   </>
   if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
   const multipleTables = timetable.tables.length > 1
-  const allTimes = services.map(fn.timesOf)
+  const allTimes = services.map(timesOf)
   const rows: ReactNode[] = []
   r.stops.forEach((stop: any, i: number) => {
     const last = i === r.stops.length - 1

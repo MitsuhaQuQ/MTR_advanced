@@ -31,7 +31,9 @@ const CSS_OUT = path.resolve(here, "../public/legacy.css")
 /** Taken from env instead of editor.js */
 const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson", "sendJson", "setTreeOpen",
   // The track diagrams of a route and of a line group: the new page's schematic (views/TrackDiagram.tsx)
-  "routeDiagramDialog", "lineDiagramDialog"]
+  "routeDiagramDialog", "lineDiagramDialog",
+  // Retiring the old code, step 3: the rows and services are the new page's (src/core/services.ts)
+  "buildStations", "buildServices", "plansFor", "toPlans", "gameSource", "findService", "timesOf", "currentLine"]
 /**
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms

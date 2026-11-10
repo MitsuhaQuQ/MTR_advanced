@@ -4,6 +4,7 @@
  */
 import { legacy } from "../legacy/engine"
 import * as F from "../core/format"
+import * as S from "../core/services"
 
 const day = (): F.Day => legacy.v.data || { dayStartMillis: 0, offsetMillis: 0 }
 
@@ -12,6 +13,10 @@ export const typedTime = (text: string, near: number) => F.typedTime(day(), text
 export const parsePattern = (value: string) => F.parsePattern(day(), value)
 export const orderDepotName = (order: { depot: string } | null | undefined) => F.orderDepotName(legacy.v.data, order)
 export const systemTitle = (system: { routes: string[] }) => F.systemTitle(legacy.v.data, system)
+/** A service by its id, route@service; the line group shown; a service's arrival and departure at each stop */
+export const findService = (id: string) => S.findService(legacy.v.data.routeById, id)
+export const currentLine = () => S.currentLine(legacy.v.data, legacy.v.state.line)
+export const timesOf = S.timesOf
 /** The weekdays' short names in the language shown: 一 二 三 … */
 export const weekdaysShort = () => F.WEEKDAY_SHORT_ZH.map((_, i) => F.weekdayShort(i))
 
