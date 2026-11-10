@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -4664,26 +4664,21 @@ export function createLegacy(env) {
 	// ---------- Duties (运用) ----------
 	const sortedObject = object => Object.fromEntries(Object.keys(object).sort().map(k => [k, object[k]]));
 	/** A depot's duties in a fixed order, so a draft changed back to the game's matches it. */
-	const canonDuties = duties => JSON.stringify({ mode: duties.mode, sidings: sortedObject(Object.fromEntries(Object.entries(duties.sidings).filter(([, slots]) => slots.length))) });
+	/* canonDuties: from env */
 	/**
 	 * The duties a depot runs by: the draft's, the ones set for it, or for a depot running by a timetable with none set the
 	 * ones the game worked out from its timetables, marked auto.
 	 */
-	const dutiesOf = depot => {
-		if (draft.duties[depot.id]) return draft.duties[depot.id].duties;
-		const set = depot.duties || { mode: "online", sidings: {} };
-		const auto = depot.autoDuties;
-		return set.mode !== "diagram" && auto && auto.mode === "diagram" && Object.keys(auto.sidings).length ? Object.assign({}, auto, { auto: true }) : set;
-	};
+	/* dutiesOf: from env */
 	/** A loop: marked clockwise or anticlockwise, or ending at the platform it starts from (2026-11-09). */
-	const routeIsLoop = r => r.stops.length > 2 && (Boolean(r.circular) || r.stops[0].platformId === r.stops[r.stops.length - 1].platformId);
-	const dutyOn = (slot, weekday) => slot.find(day => day.days >> weekday & 1) || null;
+	/* routeIsLoop: from env */
+	/* dutyOn: from env */
 	const depotById = id => data.depots.find(depot => depot.id === id);
-	const segmentKey = segment => segment.route + "@" + segment.service;
+	/* segmentKey: from env */
 
 	/** Changes a depot's duties in the draft, dropping the draft when it ends up the same as the game's. */
 	/** Where a duty's train comes from (S8), the same on each of its days: "prefer", "only" or "any". */
-	const startOf = slot => (slot.find(day => day.start) || {}).start || "prefer";
+	/* startOf: from env */
 	const startText = (slot, siding) => {
 		const name = shortName(siding.name) || tr("存车线");
 		const start = startOf(slot);
@@ -4691,164 +4686,55 @@ export function createLegacy(env) {
 	};
 
 	/** A new duty number, as a decimal string of a long like the game's. */
-	const newDutyId = () => String(1e15 + Math.floor(Math.random() * 8e15));
+	/* newDutyId: from env */
 	/** A slot's own number, from any of its days, or null if it has none yet. */
-	const dutyIdOf = slot => (slot.find(day => day.duty && day.duty !== "0") || {}).duty || null;
+	/* dutyIdOf: from env */
 	/** The slot with a duty number among a depot's duties: its siding, index and the slot, or null. */
 	/**
 	 * A duty's number as the player sees it: on through its pool, siding after siding in the pool's order, as the duties are
 	 * the pool's (运用补完 step 5).
 	 */
-	function dutyNumber(depot, sidingId, index) {
-		if (!depot) return index + 1;
-		const pool = (depot.pools || []).find(each => (each.sidings || []).some(id => String(id) === String(sidingId)));
-		const duties = dutiesOf(depot);
-		let before = 0;
-		for (const id of pool ? pool.sidings : [sidingId]) {
-			if (String(id) === String(sidingId)) break;
-			before += (duties.sidings[id] || []).length;
-		}
-		return before + index + 1;
-	}
+	/* dutyNumber: from env */
 
-	function findDutySlot(duties, id) {
-		if (!id || id === "0") return null;
-		for (const [siding, slots] of Object.entries(duties.sidings)) {
-			const index = slots.findIndex(slot => dutyIdOf(slot) === id);
-			if (index >= 0) return { siding, index, slot: slots[index] };
-		}
-		return null;
-	}
+	/* findDutySlot: from env */
 	/**
 	 * Marks the days a train staying overnight from another siding's duty takes over (fromOvernight), so no train leaves the
 	 * siding for them and they start on the line, as the game reads them.
 	 */
-	function relinkOvernight(duties) {
-		const all = Object.values(duties.sidings).flatMap(slots => slots.flatMap(slot => slot));
-		all.forEach(day => { day.fromOvernight = false; });
-		all.filter(day => day.stay && day.nextDuty && day.nextDuty !== "0").forEach(day => {
-			const nextDays = (day.days << 1 | day.days >> 6) & 0x7f;
-			all.filter(other => other.duty === day.nextDuty && (other.days & nextDays)).forEach(other => { other.fromOvernight = true; });
-		});
-	}
+	/* relinkOvernight: from env */
 	/** The sidings of a depot a siding's trains can go back to, or take duties of: the same vehicle. */
-	const poolSidings = (depot, sidingId) => {
-		const own = depot.sidings.find(siding => siding.id === sidingId);
-		return depot.sidings.filter(siding => !own || siding.vehicle === own.vehicle);
-	};
+	/* poolSidings: from env */
 
-	function editDuties(depot, change) {
-		if (!draft.duties[depot.id]) {
-			const start = JSON.parse(JSON.stringify(dutiesOf(depot)));
-			delete start.auto;
-			draft.duties[depot.id] = { duties: start };
-		}
-		const entry = draft.duties[depot.id];
-		const message = change(entry.duties);
-		Object.values(entry.duties.sidings).forEach(slots => slots.forEach(slot => slot.forEach(day => day.segments.sort((a, b) => segmentStart(a) - segmentStart(b)))));
-		relinkOvernight(entry.duties);
-		delete entry.error;
-		if (canonDuties(entry.duties) === canonDuties(depot.duties || { mode: "online", sidings: {} })) delete draft.duties[depot.id];
-		dutyNotice = typeof message === "string" ? message : "";
-		saveDraft();
-		renderAll();
-	}
+	/* editDuties: from env */
 
 	/**
 	 * The weekdays that run the same tables of a depot's routes as the given one (运行日类型). Editing a train's duty on a
 	 * day changes it for all of them.
 	 */
-	function dayGroup(depot, weekday) {
-		const signature = day => depot.routes.map(id => {
-			const r = data.routeById.get(id);
-			return r ? timetableOf(r).tables.findIndex(table => table.weekdays >> day & 1) : -2;
-		}).join(",");
-		const own = signature(weekday);
-		return WEEKDAY_SHORT.reduce((mask, _, day) => signature(day) === own ? mask | 1 << day : mask, 0);
-	}
+	/* dayGroup: from env */
 
 	/** A slot's duty for the day group of a weekday, split off from the days it shared with others first. */
-	function dutyForEditing(depot, slot, weekday) {
-		const group = dayGroup(depot, weekday), current = dutyOn(slot, weekday);
-		if (current && current.days === group) return current;
-		const made = {
-			days: group, stay: current ? current.stay : false, next: current && current.next !== undefined ? current.next : -1, segments: current ? current.segments.map(segment => ({ ...segment })) : [],
-			// The duty's own number, the same on all its days (P2-D), and where it goes on to and back to
-			duty: dutyIdOf(slot) || newDutyId(), nextDuty: current && current.nextDuty || "0", returnSiding: current && current.returnSiding || "0", fromOvernight: false, start: startOf(slot),
-		};
-		// Where it waits, when it leaves, its deadhead paths and its own exceptions, as the day it was split from (运用补完)
-		if (current) ["waits", "outLead", "outEntrance", "backEntrance", "outPath", "backPath", "exceptions"].forEach(key => { if (current[key] !== undefined) made[key] = JSON.parse(JSON.stringify(current[key])); });
-		slot.forEach(day => { day.days &= ~group; });
-		for (let i = slot.length - 1; i >= 0; i--) if (!slot[i].days) slot.splice(i, 1);
-		slot.push(made);
-		return made;
-	}
+	/* dutyForEditing: from env */
 
 	/** The service a segment runs on the chosen day, or null when it doesn't run that day. */
-	const segmentService = segment => {
-		const r = data.routeById.get(segment.route);
-		return r && r.services ? r.services.find(s => s.service === segment.service) || null : null;
-	};
-	const lastStopOf = (segment, r) => segment.to < 0 ? r.stops.length - 1 : segment.to;
-	function segmentStart(segment) {
-		const s = segmentService(segment);
-		return s ? timesOf(s)[Math.min(segment.from, s.plans.length - 1)][0] : Infinity;
-	}
-	function segmentEnd(segment) {
-		const s = segmentService(segment);
-		return s ? timesOf(s)[lastStopOf(segment, s.route)][1] : -Infinity;
-	}
+	/* segmentService: from env */
+	/* lastStopOf: from env */
+	/* segmentStart: from env */
+	/* segmentEnd: from env */
 
 	/**
 	 * On the day shown, the routes a depot running by its duties runs and the services no train of their duties runs;
 	 * worked out once until the data, the draft or the day changes ({@link coverage}, declared at the top).
 	 */
-	function coverageNow() {
-		if (coverage && coverage.weekday === state.weekday) return coverage;
-		const assigned = dutyAssignments();
-		const routes = new Set(data ? data.depots.filter(depot => dutiesOf(depot).mode === "diagram").flatMap(depot => depot.routes || []) : []);
-		const noTrain = new Set();
-		if (data) data.routes.forEach(r => {
-			if (routes.has(r.id) && r.hasTimes) (r.services || []).forEach(s => { if (!s.suspended && !assigned.has(s.id)) noTrain.add(s.id); });
-		});
-		coverage = { weekday: state.weekday, routes, noTrain };
-		return coverage;
-	}
-	const hasNoTrain = s => coverageNow().noTrain.has(s.id);
+	/* coverageNow: from env */
+	/* hasNoTrain: from env */
 
 	/**
 	 * On the day shown, which service each train runs next after the end of a route and where it waits meanwhile
 	 * (TerminalPairs, terminal.js): set by the player, in a duty, or the nearest; with the platforms it may turn back at in
 	 * turn and the turn back rails beyond, as the depots' path generation measured them.
 	 */
-	function terminalNow() {
-		if (terminal && terminal.weekday === state.weekday) return terminal;
-		const runs = [], manual = {}, turnTimes = {}, holdIns = {}, holdCounts = {}, duties = [];
-		if (data) {
-			data.routes.forEach(r => (r.services || []).forEach(s => {
-				if (!r.hasTimes) return;
-				const [first, last] = servedStops(s);
-				runs.push({
-					id: s.id, platforms: r.stops.map(stop => stop.platformId), stations: r.stops.map(stop => stop.station || "p" + stop.platformId),
-					times: timesOf(s), first, last, suspended: !!s.suspended, returns: !!(s.returns || s.returnOrder), terminalPlatforms: r.terminalPlatforms || [],
-					// Marked clockwise or anticlockwise: a loop, whose trains go round again (2026-11-09)
-					circular: Boolean(r.circular),
-				});
-				if (s.link && s.link.fromStop < 0 && s.link.toStop === 0) manual[s.id] = s.link.route + "@" + s.link.toService;
-			}));
-			data.depots.forEach(depot => {
-				Object.entries((depot.path || {}).turnTimes || {}).forEach(([from, times]) => { turnTimes[from] = Object.assign(turnTimes[from] || {}, times); });
-				Object.assign(holdIns, (depot.path || {}).holdIns || {});
-				Object.assign(holdCounts, (depot.path || {}).holdCounts || {});
-				Object.values(dutiesOf(depot).sidings).forEach(slots => slots.forEach(slot => {
-					const day = dutyOn(slot, state.weekday);
-					if (day && day.segments.length) duties.push(day.segments.map(segmentKey));
-				}));
-			});
-		}
-		terminal = Object.assign(TerminalPairs.pair({ runs, manual, duties, turnTimes, holdIns, holdCounts, minTurn: minReverseMillis() }), { weekday: state.weekday });
-		return terminal;
-	}
+	/* terminalNow: from env */
 	/** A platform as the whole network's topology has it (id, name, station, stationName), or null. */
 	const platformById = platformId => topo && topo.index.has(String(platformId)) ? topo.platforms[topo.index.get(String(platformId))] : null;
 	const platformText = platformId => {
@@ -4883,84 +4769,15 @@ export function createLegacy(env) {
 	try { showDepots = localStorage.getItem("mtr-editor-show-depots") !== "0"; } catch (e) {}
 
 	/** Where each service is run on the chosen day: route@service → {depot, siding, index}. */
-	function dutyAssignments() {
-		const assigned = new Map();
-		if (!data) return assigned;
-		data.depots.forEach(depot => Object.entries(dutiesOf(depot).sidings).forEach(([siding, slots]) => slots.forEach((slot, index) => {
-			const day = dutyOn(slot, state.weekday);
-			if (day) day.segments.forEach(segment => {
-				const key = segmentKey(segment);
-				if (!assigned.has(key)) assigned.set(key, []);
-				assigned.get(key).push({ depot: depot.id, siding, index });
-			});
-		})));
-		return assigned;
-	}
+	/* dutyAssignments: from env */
 
 	/** What is wrong with a train's duty on a day: services it can't reach in time or from where it is, or that don't run. */
-	function dutyProblems(depot, sidingId, index, weekday) {
-		const slots = dutiesOf(depot).sidings[sidingId] || [], day = slots[index] ? dutyOn(slots[index], weekday) : null;
-		if (!day) return [];
-		const problems = [], assigned = dutyAssignments();
-		day.segments.forEach((segment, i) => {
-			const s = segmentService(segment);
-			if (!s) {
-				// A deleted route is told once for the whole duty (dutyPanel); a route still there doesn't have this service
-				if (data.routeById.get(segment.route)) problems.push({ i, text: tr("{0}的时刻表里没有 {1} 这一班，可能时刻表改过", WEEKDAY_NAMES[weekday], clock(mod(segment.service - data.dayStartMillis, DAY))) });
-				return;
-			}
-			if (!depot.routes.includes(segment.route)) problems.push({ i, text: tr("线路不在这个车厂") });
-			if (s.suspended) problems.push({ i, text: tr("这一班停运了：自动排班不会排它，这份运用里请移出，或在时刻表里恢复") });
-			// A service set to come out of a depot starts a train's duty, from a siding of that depot
-			if (s.deployOrder && i > 0 && segment.from === s.deployOrder.stop) problems.push({ i, text: tr("这一班设了从车厂出车，不能接在上一班后面，要放在一份运用的开头") });
-			else if (s.deployOrder && i === 0 && s.deployOrder.depot !== "0" && s.deployOrder.depot !== depot.id) problems.push({ i, text: tr("这一班设了由车厂 {0} 出车，这份运用却在车厂 {1}", orderDepotName(s.deployOrder), shortName(depot.name)) });
-			if ((assigned.get(segmentKey(segment)) || []).length > 1) problems.push({ i, text: tr("这一班也分给了别的车") });
-			const before = day.segments[i - 1], beforeService = before && segmentService(before);
-			if (beforeService) {
-				const endStop = beforeService.route.stops[lastStopOf(before, beforeService.route)], startStop = s.route.stops[segment.from];
-				const gap = segmentStart(segment) - segmentEnd(before);
-				if (gap < 0) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
-				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` });
-				else if (endStop && startStop && endStop.platformId === startStop.platformId) {
-					// A loop going round again from where it came round doesn't change ends (2026-11-09)
-					const goesRound = routeIsLoop(beforeService.route) && routeIsLoop(s.route) && lastStopOf(before, beforeService.route) === beforeService.route.stops.length - 1 && segment.from === 0;
-					if (!goesRound && gap < minReverseMillis()) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(minReverseMillis()), formatDuration(gap)) });
-				} else if (endStop && startStop) {
-					// A change of platform takes as long as the server measured on the rails, or has no way at all
-					const turn = turnTimeOf(depot, endStop.platformId, startStop.platformId);
-					if (turn === null) problems.push({ i, text: tr("这两个站台之间没有路：{0} 到 {1} 换不过去，刷新路径后还是这样就要加折返线或渡线", stopLabel(endStop), stopLabel(startStop)) });
-					// As the planner: the least turnaround at the platform arrived at, then the way to the other one
-					else if (turn !== undefined && gap < minReverseMillis() + turn) problems.push({ i, text: tr("衔接时间不够：从 {0} 换到 {1} 实际要 {2}，这里只有 {3}", stopLabel(endStop), stopLabel(startStop), formatDuration(minReverseMillis() + turn), formatDuration(gap)) });
-				}
-			}
-		});
-		if (day.stay && day.nextDuty && day.nextDuty !== "0") {
-			// Another siding's duty, by its number (P2-D)
-			const found = findDutySlot(dutiesOf(depot), day.nextDuty);
-			const next = found ? dutyOn(found.slot, (weekday + 1) % 7) : null;
-			if (!found) problems.push({ i: -1, text: tr("留在线上过夜，但第二天接的运用已经不在了") });
-			else if (!next || !next.segments.length) problems.push({ i: -1, text: `${tr("留在线上过夜，但第二天接的车 {0} 没有运用", dutyNumber(depot, found.siding, found.index))}` });
-			else if (dutyEndPlatform(day) !== dutyStartPlatform(next)) problems.push({ i: -1, text: `${tr("第二天接的车 {0} 的运用不从这个站台出发（过夜的车第二天从停着的站台接着跑）", dutyNumber(depot, found.siding, found.index))}` });
-		} else if (day.stay) {
-			const target = nextSlotOf(day, index);
-			const next = slots[target] ? dutyOn(slots[target], (weekday + 1) % 7) : null;
-			if (!next || !next.segments.length) problems.push({ i: -1, text: `${tr("留在线上过夜，但第二天接的车 {0} 没有运用", target + 1)}` });
-			else if (dutyEndPlatform(day) !== dutyStartPlatform(next)) problems.push({ i: -1, text: `${tr("第二天接的车 {0} 的运用不从这个站台出发（过夜的车第二天从停着的站台接着跑）", target + 1)}` });
-			if (slots.some((slot, other) => other !== index && dutyOn(slot, weekday) && dutyOn(slot, weekday).stay && nextSlotOf(dutyOn(slot, weekday), other) === target)) problems.push({ i: -1, text: `${tr("还有一列过夜的车第二天也接车 {0}", target + 1)}` });
-		}
-		return problems;
-	}
+	/* dutyProblems: from env */
 
 	/** The slot a train staying overnight runs the next day: the one chosen, or its own. */
-	const nextSlotOf = (day, index) => day.next !== undefined && day.next >= 0 ? day.next : index;
-	function dutyEndPlatform(day) {
-		const segment = day.segments[day.segments.length - 1], r = segment && data.routeById.get(segment.route);
-		return r ? (r.stops[lastStopOf(segment, r)] || {}).platformId : null;
-	}
-	function dutyStartPlatform(day) {
-		const segment = day.segments[0], r = segment && data.routeById.get(segment.route);
-		return r ? (r.stops[segment.from] || {}).platformId : null;
-	}
+	/* nextSlotOf: from env */
+	/* dutyEndPlatform: from env */
+	/* dutyStartPlatform: from env */
 
 	/** The least time a train changes ends where it turns back, as the planner takes it: the network's setting (round 4). */
 	/** The network's wait threshold as drafted, or as the game has it (运用补完 step 2). */
@@ -4988,22 +4805,13 @@ export function createLegacy(env) {
 		});
 	}
 
-	function minReverseMillis() {
-		const settings = (data && data.networkSettings) || {};
-		const pending = draft.networkSettings && Number.isFinite(draft.networkSettings.minReverseMillis) ? draft.networkSettings.minReverseMillis : undefined;
-		return pending !== undefined ? pending : Number.isFinite(settings.minReverseMillis) ? settings.minReverseMillis : 30000;
-	}
+	/* minReverseMillis: from env */
 	/**
 	 * How long a change of platform within a station takes as the server measured it on the rails: the millis, null with
 	 * no way between, or undefined when not measured yet.
 	 */
-	function turnTimeOf(depot, from, to) {
-		const path = depot.path || {};
-		if (!path.turnTimesMeasured) return undefined;
-		const millis = ((path.turnTimes || {})[from] || {})[to];
-		return millis === undefined ? null : millis;
-	}
-	const stopLabel = stop => `${shortName(stop.name)} ${stop.platform}`.trim();
+	/* turnTimeOf: from env */
+	/* stopLabel: from env */
 
 	function selectSlot(depotId, sidingId, index) {
 		const depot = depotById(depotId);
@@ -6760,21 +6568,7 @@ export function createLegacy(env) {
 	 * @return what keeps a stop of a route from being taken away, as the game and the draft have them: through services
 	 * from it or into it, depot orders at it, duty segments starting or ending at it
 	 */
-	function stopHangers(r, stop) {
-		const found = [];
-		const timetables = [gameTimetable(r), timetableOf(r)];
-		timetables.forEach(tt => tt.tables.forEach(table => {
-			table.links.forEach(link => { if (link.fromStop === stop) found.push(tr("{0} 班直通", clock(mod(link.service - data.dayStartMillis, DAY)))); });
-			(table.orders || []).forEach(order => { if (order.stop === stop) found.push(tr("{0} 班出入库指令", clock(mod(order.service - data.dayStartMillis, DAY)))); });
-		}));
-		data.routes.forEach(other => [gameTimetable(other), timetableOf(other)].forEach(tt => tt.tables.forEach(table => table.links.forEach(link => {
-			if (link.route === r.id && link.toStop === stop) found.push(tr("{0} 直通接入", routeTitle(other)));
-		}))));
-		data.depots.forEach(depot => [depot.duties, dutiesOf(depot)].forEach(duties => Object.values((duties || {}).sidings || {}).forEach(slots => slots.forEach(slot => slot.forEach(day => day.segments.forEach(segment => {
-			if (segment.route === r.id && (segment.from === stop && stop > 0 || segment.to === stop)) found.push(tr("车厂{0}的运用起止", shortName(depot.name)));
-		}))))));
-		return [...new Set(found)];
-	}
+	/* stopHangers: from env */
 
 	/** A route's timetable renumbered to its new stops: newOf[old stop] is its new number, or -1 if it was taken away. */
 	/* renumberTimetable: from env */
@@ -6783,73 +6577,14 @@ export function createLegacy(env) {
 	/* renumberLinksInto: from env */
 
 	/** A depot's duties with the segments of this route renumbered to its new stops, or null if none is. */
-	function renumberDuties(duties, routeId, newOf, newCount) {
-		if (!duties) return null;
-		const copy = JSON.parse(JSON.stringify(duties));
-		let changed = false;
-		Object.values(copy.sidings || {}).forEach(slots => slots.forEach(slot => slot.forEach(day => day.segments.forEach(segment => {
-			if (segment.route !== routeId) return;
-			// From the first stop and to the last stay so; others follow their stops
-			const from = segment.from > 0 ? newOf[segment.from] : 0;
-			const to = segment.to < 0 ? segment.to : newOf[segment.to];
-			if (from !== segment.from || to !== segment.to) {
-				segment.from = from;
-				segment.to = to;
-				changed = true;
-			}
-		}))));
-		return changed ? copy : null;
-	}
+	/* renumberDuties: from env */
 
 	/**
 	 * Sends a route's new stops to the game with what counts its stops, and renumbers the same in the draft.
 	 *
 	 * @return why it can't, or nothing
 	 */
-	function sendStopList(r, list) {
-		if (list.length < 2) return tr("至少要两站");
-		const newOf = r.stops.map(() => -1);
-		list.forEach((stop, i) => { if (stop.from >= 0) newOf[stop.from] = i; });
-		const operations = [{ type: "stops", route: r.id, force: true, stops: list.map(stop => ({ platformId: stop.platformId, from: stop.from, pass: stop.pass })) }];
-		operations.push({ type: "timetable", route: r.id, force: true, timetable: renumberTimetable(gameTimetable(r), list, newOf) });
-		data.routes.forEach(other => {
-			if (other === r) return;
-			const renumbered = renumberLinksInto(gameTimetable(other), r.id, newOf);
-			if (renumbered) operations.push({ type: "timetable", route: other.id, force: true, timetable: renumbered });
-		});
-		data.depots.forEach(depot => {
-			const renumbered = renumberDuties(depot.duties, r.id, newOf, list.length);
-			if (renumbered && renumbered.mode === "diagram") operations.push({ type: "duties", depot: depot.id, duties: renumbered });
-		});
-		// The draft follows the new stops too
-		const entry = draftOf(r);
-		if (entry && entry.timetable) entry.timetable = renumberTimetable(entry.timetable, list, newOf);
-		if (entry) delete entry.platforms;
-		data.routes.forEach(other => {
-			const otherEntry = draftOf(other);
-			if (other !== r && otherEntry && otherEntry.timetable) {
-				const renumbered = renumberLinksInto(otherEntry.timetable, r.id, newOf);
-				if (renumbered) otherEntry.timetable = renumbered;
-			}
-		});
-		Object.values(draft.duties || {}).forEach(drafted => {
-			const renumbered = renumberDuties(drafted.duties, r.id, newOf, list.length);
-			if (renumbered) drafted.duties = renumbered;
-		});
-		saveDraft();
-		(async () => {
-			try {
-				const result = await sendJson("api/apply", "POST", { operations });
-				const errors = (result.errors || []).map(error => error.message).filter(Boolean);
-				dutyNotice = errors.length ? tr("停站没改成：{0}", errors.join(tr("；"))) : tr("“{0}”的停站已发给游戏，{1} 站。车厂路径刷新后各站时刻会更新。", routeTitle(r), list.length);
-			} catch (e) {
-				dutyNotice = tr("发送失败，游戏可能已经关闭");
-			}
-			renderBanner();
-			revision = null;
-			poll(true);
-		})();
-	}
+	/* sendStopList: from env */
 
 	/**
 	 * The track diagram of a whole route: the rails along its path straightened by the server (RouteLayouts), the distance
@@ -8230,7 +7965,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, stopHangers, renumberDuties, sendStopList, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
+		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, terminalText, coverageText, waitThresholdMillis, stationWaitDialog, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },
@@ -8370,26 +8105,12 @@ export function createLegacy(env) {
 		get isBoundary() { return isBoundary },
 		get stopName() { return stopName },
 		get sortedObject() { return sortedObject },
-		get canonDuties() { return canonDuties },
-		get dutiesOf() { return dutiesOf },
-		get routeIsLoop() { return routeIsLoop },
-		get dutyOn() { return dutyOn },
 		get depotById() { return depotById },
-		get segmentKey() { return segmentKey },
-		get startOf() { return startOf },
 		get startText() { return startText },
-		get newDutyId() { return newDutyId },
-		get dutyIdOf() { return dutyIdOf },
-		get poolSidings() { return poolSidings },
-		get segmentService() { return segmentService },
-		get lastStopOf() { return lastStopOf },
-		get hasNoTrain() { return hasNoTrain },
 		get platformById() { return platformById },
 		get platformText() { return platformText },
 		get showNoTrain() { return showNoTrain }, set showNoTrain(value) { showNoTrain = value },
 		get showDepots() { return showDepots }, set showDepots(value) { showDepots = value },
-		get nextSlotOf() { return nextSlotOf },
-		get stopLabel() { return stopLabel },
 		get lastSlotService() { return lastSlotService }, set lastSlotService(value) { lastSlotService = value },
 		get EXCEPTION() { return EXCEPTION },
 		get hhmm() { return hhmm },

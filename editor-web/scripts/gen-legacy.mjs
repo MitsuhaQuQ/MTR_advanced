@@ -38,7 +38,12 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
   "draftOf", "draftEntry", "tidyDraft", "gameTimetable", "fromGame", "normalize", "timetableOf", "editTimetable", "setStopException",
   "syncExceptions", "retimeService", "setSuspended", "removeService", "setServiceOrder", "changeTime", "laterServices", "moveServices",
   "shiftLaterDialog", "parseShift", "respaceRange", "setLink", "clearTable", "servicesToAdd", "renumberTimetable", "renumberLinksInto",
-  "inRange", "rangeServices", "chooseRange", "toggleChosen", "chooseLater", "servicesToMove", "timesSource", "sendTimes", "draftTimes", "requestedTimes", "timesTimer"]
+  "inRange", "rangeServices", "chooseRange", "toggleChosen", "chooseLater", "servicesToMove", "timesSource", "sendTimes", "draftTimes", "requestedTimes", "timesTimer",
+  // Step 5: the duty rules (src/core/duties.ts, through src/legacy/retired.ts)
+  "canonDuties", "dutiesOf", "routeIsLoop", "dutyOn", "segmentKey", "startOf", "newDutyId", "dutyIdOf", "findDutySlot", "dutyNumber", "relinkOvernight",
+  "poolSidings", "editDuties", "dayGroup", "dutyForEditing", "segmentService", "lastStopOf", "segmentStart", "segmentEnd", "coverageNow", "hasNoTrain",
+  "terminalNow", "dutyAssignments", "dutyProblems", "nextSlotOf", "dutyEndPlatform", "dutyStartPlatform", "minReverseMillis", "turnTimeOf", "stopLabel",
+  "stopHangers", "renumberDuties", "sendStopList"]
 /**
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms

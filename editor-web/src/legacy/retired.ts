@@ -7,7 +7,8 @@
 import { tr } from "../i18n"
 import * as T from "../core/timetable"
 import * as S from "../core/services"
-import { clock, DAY, mod, tableName } from "../core/format"
+import { clock, DAY, mod, routeTitle, tableName } from "../core/format"
+import * as D from "../core/duties"
 import { DraftTimes } from "../core/draftTimes"
 
 type Legacy = { fn: Record<string, any>; v: Record<string, any> }
@@ -118,5 +119,83 @@ export function timetableRules(get: () => Legacy) {
       fn.renderAll()
     },
     servicesToMove: (s: any) => T.servicesToMove(get().v.state, s, Boolean(get().v.data.canEdit), find),
+  }
+}
+
+/** Step 5: the duty rules (core/duties.ts) */
+export function dutyRules(get: () => Legacy) {
+  const at = () => { const { v } = get(); return { data: v.data, draft: v.draft, weekday: v.state.weekday } }
+  // Worked out once until the data, the draft or the day changes: the old page's own coverage and terminal, which its
+  // setData and saveDraft clear
+  const coverageNow = (): D.Coverage => {
+    const { v } = get()
+    if (v.coverage && v.coverage.weekday === v.state.weekday) return v.coverage
+    const { data, draft, weekday } = at()
+    return (v.coverage = D.coverage(data, draft, weekday))
+  }
+  const terminalNow = () => {
+    const { v } = get()
+    if (v.terminal && v.terminal.weekday === v.state.weekday) return v.terminal
+    const { data, draft, weekday } = at()
+    return (v.terminal = D.terminalPairs(data, draft, weekday))
+  }
+  return {
+    canonDuties: D.canonDuties,
+    dutiesOf: (depot: any) => D.dutiesOf(get().v.draft, depot),
+    routeIsLoop: D.routeIsLoop,
+    dutyOn: D.dutyOn,
+    segmentKey: D.segmentKey,
+    startOf: D.startOf,
+    newDutyId: D.newDutyId,
+    dutyIdOf: D.dutyIdOf,
+    findDutySlot: D.findDutySlot,
+    dutyNumber: (depot: any, sidingId: string, index: number) => D.dutyNumber(get().v.draft, depot, sidingId, index),
+    relinkOvernight: D.relinkOvernight,
+    poolSidings: D.poolSidings,
+    editDuties(depot: any, change: (duties: any) => unknown) {
+      const { fn, v } = get()
+      v.dutyNotice = D.applyDutyEdit(v.data, v.draft, depot, change)
+      fn.saveDraft()
+      fn.renderAll()
+    },
+    dayGroup: (depot: any, weekday: number) => D.dayGroup(get().v.data, get().v.draft, depot, weekday),
+    dutyForEditing: (depot: any, slot: any[], weekday: number) => D.dutyForEditing(get().v.data, get().v.draft, depot, slot, weekday),
+    segmentService: (segment: any) => D.segmentService(get().v.data, segment),
+    lastStopOf: D.lastStopOf,
+    segmentStart: (segment: any) => D.segmentStart(get().v.data, segment),
+    segmentEnd: (segment: any) => D.segmentEnd(get().v.data, segment),
+    coverageNow,
+    hasNoTrain: (s: any) => coverageNow().noTrain.has(s.id),
+    terminalNow,
+    dutyAssignments: () => { const { data, draft, weekday } = at(); return D.dutyAssignments(data, draft, weekday) },
+    dutyProblems: (depot: any, sidingId: string, index: number, weekday: number) => D.dutyProblems(get().v.data, get().v.draft, depot, sidingId, index, weekday),
+    nextSlotOf: D.nextSlotOf,
+    dutyEndPlatform: (day: any) => D.dutyEndPlatform(get().v.data, day),
+    dutyStartPlatform: (day: any) => D.dutyStartPlatform(get().v.data, day),
+    minReverseMillis: () => D.minReverseMillis(get().v.data, get().v.draft),
+    turnTimeOf: D.turnTimeOf,
+    stopLabel: D.stopLabel,
+    stopHangers: (r: any, stop: number) => D.stopHangers(get().v.data, get().v.draft, r, stop),
+    renumberDuties: (duties: any, routeId: string, newOf: number[]) => D.renumberDuties(duties, routeId, newOf),
+    /** Sends a route's new stops to the game, renumbering the same in the draft @return why it can't, or nothing */
+    sendStopList(r: any, list: D.StopListItem[]) {
+      const { fn, v } = get()
+      const change = D.stopListChange(v.data, v.draft, r, list)
+      if (typeof change === "string") return change
+      fn.saveDraft()
+      ;(async () => {
+        try {
+          const result = await fn.sendJson("api/apply", "POST", { operations: change.operations })
+          const errors = (result.errors || []).map((error: any) => error.message).filter(Boolean)
+          get().v.dutyNotice = errors.length ? tr("停站没改成：{0}", errors.join(tr("；"))) : tr("“{0}”的停站已发给游戏，{1} 站。车厂路径刷新后各站时刻会更新。", routeTitle(r), list.length)
+        } catch {
+          get().v.dutyNotice = tr("发送失败，游戏可能已经关闭")
+        }
+        fn.renderBanner()
+        get().v.revision = null
+        fn.poll(true)
+      })()
+      return undefined
+    },
   }
 }
