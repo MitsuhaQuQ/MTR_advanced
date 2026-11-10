@@ -355,7 +355,7 @@ function AddServices({ r, today, showDeadheadsBox, ask }: { r: any; today: numbe
     if (startTime !== null && endTime !== null && count.trim()) {
       const data = v.data
       const from = mod(startTime - data.offsetMillis, DAY), to = mod(endTime - data.offsetMillis, DAY)
-      const fit = (globalThis as any).Batch.fitSpan(fn.timetableOf(r).tables[today].services, from, to, services)
+      const fit = (globalThis as any).TimetableBatch.fitSpan(fn.timetableOf(r).tables[today].services, from, to, services)
       const apply = () => fn.editTimetable(r, (timetable: any) => {
         const table = timetable.tables[today]
         fit.removes.forEach((service: number) => fn.removeService(table, service))

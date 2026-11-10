@@ -12,6 +12,7 @@ import { LegacySlot } from "../legacy/Slot"
 import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
+import { SIM_KINDS, SIM_MAX_LISTED, simProblems } from "../core/dispatch"
 import { DutyDetail } from "./DutyDetail"
 import { DAY, clock, colorOf, currentLine, findService, formatDuration, mod, routeTitle, shortName, stopName, timesOf, weekdayName } from "./now"
 
@@ -192,16 +193,8 @@ function Hints() {
 function SimProblems({ line }: { line: any }) {
   const { fn, v } = legacy
   const data = v.data, sim = v.sim, state = v.state
-  const routes = new Map<string, any>(line ? line.routes.map((r: any) => [r.id, r]) : [])
-  const checkDepot = sim.checkDepot && fn.depotById(sim.checkDepot)
-  if (checkDepot) checkDepot.routes.forEach((id: string) => { if (!routes.has(id) && data.routeById.get(id)) routes.set(id, data.routeById.get(id)) })
-  const problems: any[] = sim.result ? sim.result.problems.filter((p: any) => p.kind === "DEADLOCK" || routes.has(p.route)) : []
+  const { routes, problems, notes } = simProblems(sim, data, line, sim.checkDepot && fn.depotById(sim.checkDepot))
   sim.listed = problems
-  const notes: string[] = []
-  if (sim.notSimulated) notes.push(tr("改站序、新建或删除种别的修改没有模拟（{0} 项）", sim.notSimulated))
-  if (sim.ignored) notes.push(tr("{0} 项草稿和服务端的线路对不上，没有用上", sim.ignored))
-  if (sim.missingPaths) notes.push(tr("{0} 种运用在轨道上找不到路径，这些车不会发车", sim.missingPaths))
-  if (sim.result && sim.allDepots && sim.scopeDepots < sim.allDepots) notes.push(tr("只模拟了有关的 {0} / {1} 个车厂：跑这些线路的，和车经过同样轨道的；其余的车没有模拟", sim.scopeDepots, sim.allDepots))
   const choose = (p: any) => {
     const s = findService(p.route + "@" + p.service)
     if (!s) return
@@ -214,13 +207,13 @@ function SimProblems({ line }: { line: any }) {
       <Card>
         {problems.length ? (
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {problems.slice(0, v.SIM_MAX_LISTED).map((p, i) => {
+            {problems.slice(0, SIM_MAX_LISTED).map((p, i) => {
               const r = routes.get(p.route)
               const stop = r && p.stop >= 0 && p.stop < r.stops.length ? shortName(r.stops[p.stop].name) : ""
               return (
                 <li key={i}>
                   <button type="button" className="w-full rounded-md px-1.5 py-1 text-left text-[12px] hover:bg-panel2" onClick={() => choose(p)}>
-                    <span className="num">{clock(p.time)}</span> <b className={p.kind === "DEADLOCK" ? "text-warn" : "text-caution"}>{tr(v.SIM_KINDS[p.kind] || p.kind)}</b>{" "}
+                    <span className="num">{clock(p.time)}</span> <b className={p.kind === "DEADLOCK" ? "text-warn" : "text-caution"}>{tr(SIM_KINDS[p.kind] || p.kind)}</b>{" "}
                     {r ? `${routeTitle(r)} ${clock(mod(p.service - data.dayStartMillis, DAY))}` : p.detail}{stop ? " · " + stop : ""}{p.duration > 0 ? " · " + formatDuration(p.duration) : ""}
                   </button>
                 </li>
@@ -228,7 +221,7 @@ function SimProblems({ line }: { line: any }) {
             })}
           </ul>
         ) : sim.result ? <p className="m-0 text-[12px] text-dim">{tr("这一天没有发现问题。")}</p> : null}
-        {problems.length > v.SIM_MAX_LISTED && <p className="m-0 text-[12px] text-dim">{tr("只列出前 {0} 条。", v.SIM_MAX_LISTED)}</p>}
+        {problems.length > SIM_MAX_LISTED && <p className="m-0 text-[12px] text-dim">{tr("只列出前 {0} 条。", SIM_MAX_LISTED)}</p>}
         {notes.map(note => <p key={note} className="m-0 text-[12px] text-dim">{note}</p>)}
         <p className="m-0 text-[12px] text-dim">{sim.result && sim.result.from > 0 ? tr("从 {0} 起接着游戏里列车当时的位置模拟，之前的班次不计。", clock(sim.result.from)) : tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p>
       </Card>

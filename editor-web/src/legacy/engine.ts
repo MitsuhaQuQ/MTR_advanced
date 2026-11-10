@@ -12,7 +12,7 @@ import { key } from "../api/client"
 import { createLegacy } from "./engine.generated.js"
 import { normalizeDraft } from "../core/draft"
 import * as Services from "../core/services"
-import { dutyRules, settingsRules, timetableRules } from "./retired"
+import { dispatchRules, dutyRules, settingsRules, timetableRules } from "./retired"
 
 export type MenuItem = [label: string, action: (() => void) | MenuItem[] | null | undefined]
 
@@ -90,6 +90,7 @@ const env = {
   ...timetableRules(() => legacy),
   ...dutyRules(() => legacy),
   ...settingsRules(() => legacy),
+  ...dispatchRules(() => legacy),
   render: (name: string) => onRender(name),
 }
 

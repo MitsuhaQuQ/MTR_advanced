@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, draftSettings, savedSettings, compareRailKeys, logicalLinesShown, usesLogicalLines, railLinesShown, railLogicalLine, railLogicalDrafted, draftSettingsPart, setRailLogicalLine, newLogicalId, deleteLogicalLine, draftOwnerOverrides, savedOwnerOverrides, railOwnersShown, setOwnerOverride, waitThresholdMillis, platformSpeedItems, platformStopItems, platformStationItems, rulesOf, sameVehicle, depotEntryOf, storeDepotEntry, setBoundary, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, draftSettings, savedSettings, compareRailKeys, logicalLinesShown, usesLogicalLines, railLinesShown, railLogicalLine, railLogicalDrafted, draftSettingsPart, setRailLogicalLine, newLogicalId, deleteLogicalLine, draftOwnerOverrides, savedOwnerOverrides, railOwnersShown, setOwnerOverride, waitThresholdMillis, platformSpeedItems, platformStopItems, platformStationItems, rulesOf, sameVehicle, depotEntryOf, storeDepotEntry, setBoundary, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, simFromNow, simLate, simTooltip, dutyCheckText, loadConsole, toggleConsole, consoleTrains, consoleTrainName, consoleTrainState, consoleCommand, isLoop, loopEntryStop, loopRuns, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -2086,37 +2086,12 @@ export function createLegacy(env) {
 	const consoleState = { open: false, data: null, timer: null, system: "", selected: "" };
 	const CONSOLE_POLL_MS = 2000;
 
-	async function loadConsole() {
-		try {
-			consoleState.data = await fetchJson("api/console");
-		} catch (e) {
-			consoleState.data = null;
-		}
-		renderConsole();
-		drawNetwork();
-	}
+	/* loadConsole: from env */
 
-	function toggleConsole(open) {
-		consoleState.open = open;
-		$("net-console-toggle").setAttribute("aria-pressed", String(open));
-		$("net-console").hidden = !open;
-		if (open && !consoleState.timer) {
-			loadConsole();
-			consoleState.timer = setInterval(() => { if (!document.hidden && state.view === "network" && inTimetable()) loadConsole(); }, CONSOLE_POLL_MS);
-		} else if (!open && consoleState.timer) {
-			clearInterval(consoleState.timer);
-			consoleState.timer = null;
-		}
-		renderConsole();
-		drawNetwork();
-	}
+	/* toggleConsole: from env */
 
 	/** The trains of the rail system chosen, or all. */
-	function consoleTrains() {
-		const trains = consoleState.data && consoleState.data.trains || [];
-		const system = consoleState.system ? systemByAnchor(consoleState.system) : null;
-		return system ? trains.filter(train => system.routes.includes(train.route)) : trains;
-	}
+	/* consoleTrains: from env */
 
 	/** The index of a rail of the network view from its two nodes as the console gives them, or -1. */
 	function consoleRail(pair) {
@@ -2158,26 +2133,10 @@ export function createLegacy(env) {
 		g.textAlign = "start";
 	}
 
-	const consoleTrainName = train => train.slot < 0 ? tr("{0} 的车", shortName(train.sidingName) || tr("存车线")) : tr("{0} 车 {1}", shortName(train.sidingName) || tr("存车线"), train.slot + 1);
+	/* consoleTrainName: from env */
 
 	/** What is going on with a train, as the console lists it. */
-	function consoleTrainState(train) {
-		const parts = [];
-		// Out on the line with no duty, or a duty no longer there (2026-11-09): it takes track but runs no service
-		if (train.noDuty) parts.push(tr("不在运用中（没有运用，或者运用已经改了）"));
-		if (train.late >= 60) parts.push(tr("晚点 {0} 分钟", Math.floor(train.late / 60)));
-		if (train.waiting >= 60) parts.push(tr("等进路已 {0} 分钟", Math.floor(train.waiting / 60)));
-		if (train.dispatch & 1) parts.push(tr("扣停"));
-		if (train.dispatch & 8) parts.push(tr("延长停站"));
-		if (train.dispatch & 16) parts.push(tr("将在指定站折返"));
-		if (train.dispatch & 2) parts.push(tr("下一站清客"));
-		if (train.dispatch & 4) parts.push(tr("本段跑完回库"));
-		if (train.skipping) parts.push(tr("跳站中"));
-		if (train.turn === 2) parts.push(tr("已提前折返"));
-		if (train.takeover === 2) parts.push(tr("已交给备车"));
-		if (train.outOfService) parts.push(tr("不载客"));
-		return parts.join("，");
-	}
+	/* consoleTrainState: from env */
 
 	function renderConsole() {
 		const panel = $("net-console");
@@ -2242,16 +2201,7 @@ export function createLegacy(env) {
 		}));
 	}
 
-	async function consoleCommand(button, operation) {
-		if (button) button.disabled = true;
-		try {
-			await sendJson("api/apply", "POST", { operations: [Object.assign({ type: "dispatch" }, operation)] });
-			if (button) button.textContent = tr("已发送");
-			setTimeout(loadConsole, 600);
-		} catch (e) {
-			if (button) button.disabled = false;
-		}
-	}
+	/* consoleCommand: from env */
 
 	$("net-console-toggle").addEventListener("click", () => toggleConsole(!consoleState.open));
 
@@ -3814,84 +3764,18 @@ export function createLegacy(env) {
 	// checkDepot is the depot whose generated duties the simulated day checks, whose routes are reported on as well
 	const sim = { on: false, request: 0, state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], madeAt: 0, line: null, weekday: null, timer: null, polling: false, notSimulated: 0, ignored: 0, missingPaths: 0, scopeDepots: 0, allDepots: 0, checkDepot: null, fromNow: false };
 	// Only today can carry on from the trains as they are in the game now (G0)
-	const simFromNow = () => sim.fromNow && state.weekday === mod(nowDay() + FIRST_DAY_WEEKDAY, 7);
+	/* simFromNow: from env */
 
-	function setSimulation(on) {
-		sim.on = on;
-		$("btn-simulate").setAttribute("aria-pressed", String(on));
-		$("btn-resimulate").hidden = !on;
-		clearTimeout(sim.timer);
-		sim.timer = null;
-		if (on) {
-			simulate();
-		} else {
-			Object.assign(sim, { state: "idle", result: null, trips: new Map(), notRun: new Set(), listed: [], checkDepot: null });
-		}
-		renderSimStatus();
-		draw();
-		renderInspector();
-	}
+	/* setSimulation: from env */
 
 	/** Simulates again a moment after the draft, day or line changes, so a run of changes is only simulated once. */
-	function scheduleSimulation() {
-		if (!sim.on) return;
-		clearTimeout(sim.timer);
-		sim.timer = setTimeout(simulate, 2000);
-	}
+	/* scheduleSimulation: from env */
 
-	async function simulate() {
-		clearTimeout(sim.timer);
-		sim.timer = null;
-		const line = currentLine(), checkDepot = sim.checkDepot && depotById(sim.checkDepot);
-		if (!sim.on || !line && !checkDepot) return;
-		sim.line = state.line;
-		sim.weekday = state.weekday;
-		const routes = new Set(line ? line.routes.map(r => r.id) : []);
-		if (checkDepot) checkDepot.routes.forEach(id => routes.add(id));
-		try {
-			const response = await sendJson("api/simulate", "POST", { weekday: state.weekday, fromNow: simFromNow(), routes: [...routes], operations: draftOperations().operations });
-			if (response.error) {
-				sim.state = response.error;
-			} else {
-				sim.request = response.request;
-				sim.state = "running";
-			}
-		} catch (e) {
-			sim.state = "error";
-		}
-		renderSimStatus();
-		pollSimulation();
-	}
+	/* simulate: from env */
 
-	async function pollSimulation() {
-		if (sim.polling) return;
-		sim.polling = true;
-		try {
-			while (sim.on && sim.state === "running") {
-				await new Promise(resolve => setTimeout(resolve, 500));
-				const status = await fetchJson("api/simulate");
-				// Another page asked since, or this request's answer hasn't come yet
-				if (status.request > sim.request) sim.state = "idle";
-				if (status.request !== sim.request || status.state === "running") continue;
-				Object.assign(sim, { state: status.state, notSimulated: status.notSimulated, ignored: status.ignored, missingPaths: status.missingPaths || 0, scopeDepots: status.scopeDepots || 0, allDepots: status.allDepots || 0 });
-				if (status.state === "done" && status.result) setSimResult(status.result);
-			}
-		} catch (e) {
-			sim.state = "error";
-		}
-		sim.polling = false;
-		renderSimStatus();
-		draw();
-		renderInspector();
-		renderBanner();
-	}
+	/* pollSimulation: from env */
 
-	function setSimResult(result) {
-		sim.result = result;
-		sim.madeAt = Date.now();
-		sim.trips = new Map(result.trips.map(trip => [trip.route + "@" + trip.service, trip]));
-		sim.notRun = new Set(result.problems.filter(problem => problem.kind === "NOT_RUN").map(problem => problem.route + "@" + problem.service));
-	}
+	/* setSimResult: from env */
 
 	function renderSimStatus() {
 		const texts = {
@@ -3908,7 +3792,7 @@ export function createLegacy(env) {
 	}
 
 	// A stop as [stop, arrival, departure, planned arrival, planned departure, passed], times in the operating day or -1
-	const simLate = stop => Math.max(stop[1] >= 0 && stop[3] >= 0 ? stop[1] - stop[3] : 0, stop[2] >= 0 && stop[4] >= 0 ? stop[2] - stop[4] : 0);
+	/* simLate: from env */
 	const formatDuration = millis => millis >= 60000 ? tr("{0} 分 {1} 秒", Math.floor(millis / 60000), Math.round(millis % 60000 / 1000)) : tr("{0} 秒", Math.round(millis / 1000));
 
 	/** Where each service of the line ran in the simulated day, dashed over the plan, red where it was late. */
@@ -3942,29 +3826,10 @@ export function createLegacy(env) {
 		ctx.globalAlpha = 1;
 	}
 
-	function simTooltip(s) {
-		if (!sim.on || !sim.result) return "";
-		const key = s.route.id + "@" + s.service, trip = sim.trips.get(key);
-		if (!trip) return `<div class="hint">${sim.notRun.has(key) ? tr("模拟：没有车跑这一班") : ""}</div>`;
-		const late = trip.stops.reduce((most, stop) => Math.max(most, simLate(stop)), 0);
-		return `<div class="hint">${late > SIM_LATE_MILLIS ? tr("模拟：最多晚 {0}", formatDuration(late)) : tr("模拟：准点")}</div>`;
-	}
+	/* simTooltip: from env */
 
 	/** How the depot's generated duties ran in the simulated day, in a line, or nothing if they aren't being checked. */
-	function dutyCheckText(depot) {
-		if (!sim.on || !depot || sim.checkDepot !== depot.id) return "";
-		if (sim.state === "running") return tr("内核验证中…");
-		if (!sim.result) return "";
-		const routes = new Set(depot.routes);
-		const count = kind => sim.result.problems.filter(problem => problem.kind === kind && routes.has(problem.route)).length;
-		const parts = [];
-		if (sim.missingPaths) parts.push(tr("{0} 种运用找不到路径", sim.missingPaths));
-		if (count("NOT_RUN")) parts.push(tr("未开行 {0} 班", count("NOT_RUN")));
-		if (count("LATE")) parts.push(tr("晚点 {0} 班", count("LATE")));
-		const deadlocks = sim.result.problems.filter(problem => problem.kind === "DEADLOCK").length;
-		if (deadlocks) parts.push(tr("锁死 {0} 次", deadlocks));
-		return parts.length ? tr("内核验证：{0}，见右侧“模拟问题”。", parts.join(trc("list separator", "、"))) : tr("内核验证：全部开行、准点。");
-	}
+	/* dutyCheckText: from env */
 
 	/** What went wrong on the line in the simulated day, each going to its service when clicked. */
 	function simPanel(line) {
@@ -4454,7 +4319,7 @@ export function createLegacy(env) {
 	}
 
 	// ---------- Loops ----------
-	const isLoop = r => r.stops.length > 2 && r.stops[0].platformId === r.stops[r.stops.length - 1].platformId;
+	/* isLoop: from env */
 
 	/** The platform a stop uses and the other tracks of its station on the same rails. */
 	function trackTitle(stop) {
@@ -4464,11 +4329,7 @@ export function createLegacy(env) {
 	}
 
 	/** The stop where trains from the depot join a loop, which is its first stop unless another is set. */
-	function loopEntryStop(r) {
-		const platformId = timetableOf(r).entryPlatform;
-		const stop = r.stops.findIndex((s, i) => i > 0 && i < r.stops.length - 1 && s.platformId === platformId);
-		return stop > 0 && !timetableOf(r).pass[stop] ? stop : 0;
-	}
+	/* loopEntryStop: from env */
 
 	/**
 	 * How the trains of a loop go round on the chosen day, the way the game runs them: when a lap ends at the first stop,
@@ -4478,25 +4339,7 @@ export function createLegacy(env) {
 	 *
 	 * @return the service each lap carries on into, and the trains as lists of services
 	 */
-	function loopRuns(r) {
-		const n = r.stops.length, services = r.services;
-		const keepsOnLine = data.depots.some(depot => depot.cycleRoutes && depot.routes.includes(r.id));
-		const maxWait = keepsOnLine ? MAX_STAY_MILLIS : MAX_LAYOVER_MILLIS;
-		const next = new Map(), taken = new Set();
-		services.filter(s => !s.link && !s.returns).map(s => ({ s, end: timesOf(s)[n - 1][0] })).sort((a, b) => a.end - b.end).forEach(({ s, end }) => {
-			const following = services.find(o => o !== s && !taken.has(o.id) && o.start >= end && o.start - end <= maxWait);
-			if (following) {
-				taken.add(following.id);
-				next.set(s.id, following);
-			}
-		});
-		const trains = services.filter(s => !taken.has(s.id)).map(first => {
-			const laps = [first];
-			while (next.has(laps[laps.length - 1].id)) laps.push(next.get(laps[laps.length - 1].id));
-			return laps;
-		});
-		return { next, trains, maxWait };
-	}
+	/* loopRuns: from env */
 
 	function loopPanel(r) {
 		const runs = loopRuns(r), entry = loopEntryStop(r);
@@ -7785,7 +7628,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, ownerText, ownerColor, ownersDialog, logicalLineDialog, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, stopPositionText, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, terminalText, coverageText, stationWaitDialog, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, poolFleetText, oldDepotDialog, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
+		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, ownerText, ownerColor, ownersDialog, logicalLineDialog, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, consoleRail, drawConsole, renderConsole, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, renderSimStatus, drawSimulated, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, stopPositionText, cellMenu, trackTitle, loopPanel, terminalText, coverageText, stationWaitDialog, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, poolFleetText, oldDepotDialog, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },
@@ -7879,7 +7722,6 @@ export function createLegacy(env) {
 		get sectionOf() { return sectionOf },
 		get consoleState() { return consoleState },
 		get CONSOLE_POLL_MS() { return CONSOLE_POLL_MS },
-		get consoleTrainName() { return consoleTrainName },
 		get picking() { return picking }, set picking(value) { picking = value },
 		get stationPlatforms() { return stationPlatforms },
 		get pickingRouteIds() { return pickingRouteIds },
@@ -7903,8 +7745,6 @@ export function createLegacy(env) {
 		get SIM_MAX_LISTED() { return SIM_MAX_LISTED },
 		get SIM_KINDS() { return SIM_KINDS },
 		get sim() { return sim },
-		get simFromNow() { return simFromNow },
-		get simLate() { return simLate },
 		get formatDuration() { return formatDuration },
 		get tableRoute() { return tableRoute }, set tableRoute(value) { tableRoute = value },
 		get showDeadheads() { return showDeadheads }, set showDeadheads(value) { showDeadheads = value },
@@ -7912,7 +7752,6 @@ export function createLegacy(env) {
 		get tableRouteOf() { return tableRouteOf },
 		get Batch() { return Batch },
 		get tableRun() { return tableRun },
-		get isLoop() { return isLoop },
 		get isBoundary() { return isBoundary },
 		get stopName() { return stopName },
 		get sortedObject() { return sortedObject },

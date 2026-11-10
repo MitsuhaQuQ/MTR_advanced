@@ -9,6 +9,7 @@ import * as T from "../core/timetable"
 import * as S from "../core/services"
 import { clock, DAY, mod, routeTitle, shortName, tableName } from "../core/format"
 import * as X from "../core/settings"
+import * as P from "../core/dispatch"
 import * as D from "../core/duties"
 import { DraftTimes } from "../core/draftTimes"
 
@@ -283,5 +284,107 @@ export function settingsRules(get: () => Legacy) {
       delete v.boundaryErrors[key]
       done()
     },
+  }
+}
+
+/** Step 7: dispatch and simulation (core/dispatch.ts); the state stays the old page's sim and consoleState objects */
+export function dispatchRules(get: () => Legacy) {
+  const io: P.SimIO = {
+    send: body => get().fn.sendJson("api/simulate", "POST", body),
+    fetch: () => get().fn.fetchJson("api/simulate"),
+    wait: millis => new Promise(resolve => setTimeout(resolve, millis)),
+  }
+  const simulate = async () => {
+    const { fn, v } = get()
+    const sim: P.Sim = v.sim
+    if (sim.timer) clearTimeout(sim.timer)
+    sim.timer = null
+    const line = fn.currentLine(), checkDepot = sim.checkDepot && fn.depotById(sim.checkDepot)
+    if (!sim.on || (!line && !checkDepot)) return
+    await P.startSimulation(sim, io, { line: v.state.line, weekday: v.state.weekday, fromNow: P.simFromNow(sim, v.data, v.state.weekday), routes: P.simRoutes(line, checkDepot), operations: fn.draftOperations().operations })
+    fn.renderSimStatus()
+    pollSimulation()
+  }
+  const pollSimulation = async () => {
+    const { v } = get()
+    if (!(await P.pollSimulation(v.sim, io))) return
+    const { fn } = get()
+    fn.renderSimStatus()
+    fn.draw()
+    fn.renderInspector()
+    fn.renderBanner()
+  }
+  /** Simulates again a moment after the draft, day or line changes, so a run of changes is only simulated once */
+  const scheduleSimulation = () => {
+    const sim: P.Sim = get().v.sim
+    if (!sim.on) return
+    if (sim.timer) clearTimeout(sim.timer)
+    sim.timer = setTimeout(simulate, 2000)
+  }
+  const loadConsole = async () => {
+    const { fn, v } = get()
+    try {
+      v.consoleState.data = await fn.fetchJson("api/console")
+    } catch {
+      v.consoleState.data = null
+    }
+    fn.renderConsole()
+    fn.drawNetwork()
+  }
+  return {
+    setSimulation(on: boolean) {
+      const { fn, v } = get()
+      const sim: P.Sim = v.sim
+      sim.on = on
+      if (sim.timer) clearTimeout(sim.timer)
+      sim.timer = null
+      if (on) simulate()
+      else P.clearSim(sim)
+      fn.renderSimStatus()
+      fn.draw()
+      fn.renderInspector()
+    },
+    scheduleSimulation,
+    simulate,
+    pollSimulation,
+    setSimResult: (result: any) => P.setSimResult(get().v.sim, result),
+    simFromNow: () => P.simFromNow(get().v.sim, get().v.data, get().v.state.weekday),
+    simLate: P.simLate,
+    simTooltip: (s: any) => { const sim: P.Sim = get().v.sim; return !sim.on || !sim.result ? "" : `<div class="hint">${P.simServiceText(sim, s)}</div>` },
+    dutyCheckText: (depot: any) => P.dutyCheckText(get().v.sim, depot),
+    loadConsole,
+    toggleConsole(open: boolean) {
+      const { fn, v } = get()
+      const consoleState: P.ConsoleState = v.consoleState
+      consoleState.open = open
+      document.getElementById("net-console-toggle")?.setAttribute("aria-pressed", String(open))
+      const panel = document.getElementById("net-console")
+      if (panel) panel.hidden = !open
+      if (open && !consoleState.timer) {
+        loadConsole()
+        consoleState.timer = setInterval(() => { const { v } = get(); if (!document.hidden && v.state.view === "network" && v.inTimetable()) loadConsole() }, P.CONSOLE_POLL_MS)
+      } else if (!open && consoleState.timer) {
+        clearInterval(consoleState.timer)
+        consoleState.timer = null
+      }
+      fn.renderConsole()
+      fn.drawNetwork()
+    },
+    consoleTrains: () => P.consoleTrains(get().v.data, get().v.consoleState),
+    consoleTrainName: P.consoleTrainName,
+    consoleTrainState: P.consoleTrainState,
+    async consoleCommand(button: HTMLButtonElement | null, operation: Record<string, unknown>) {
+      if (button) button.disabled = true
+      try {
+        await get().fn.sendJson("api/apply", "POST", P.dispatchOperation(operation))
+        if (button) button.textContent = tr("已发送")
+        setTimeout(loadConsole, 600)
+      } catch {
+        if (button) button.disabled = false
+      }
+    },
+    isLoop: P.isLoop,
+    loopEntryStop: (r: any) => P.loopEntryStop(get().v.draft, r),
+    loopRuns: (r: any) => P.loopRuns(get().v.data, r),
   }
 }

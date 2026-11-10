@@ -218,6 +218,23 @@ describe("the running diagram's geometry", () => {
     expect(changes[changes.length - 1].routes["101"].timetable).toBeTruthy()
     // Tab went on to the next cell
     expect(host.querySelector("td input")).toBeTruthy()
+    // Adding services from a start to an end at an interval: fitted around those already there (TimetableBatch.fitSpan)
+    engine.pushDraft({ routes: {} })
+    await act(async () => { engine.flushLegacy() })
+    const add = [...host.querySelectorAll("button")].find(b => b.textContent === "添加") as HTMLElement
+    const fields = [...add.parentElement!.querySelectorAll("input")] as HTMLInputElement[]
+    for (const [field, value] of [[fields[0], "03:00"], [fields[1], "03:20"], [fields[2], "5"]] as [HTMLInputElement, string][]) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value)
+        field.dispatchEvent(new Event("input", { bubbles: true }))
+      })
+    }
+    await act(async () => { add.click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); engine.flushLegacy() })
+    const added = Number(/新增 (\d+) 班/.exec(v.tableMessage)![1])
+    expect(v.tableMessage).toMatch(/^03:00–03:20：保留/)
+    expect(added).toBeGreaterThan(0)
+    expect(changes[changes.length - 1].routes["101"].timetable.tables[0].services.length).toBe(fn.gameTimetable(v.data.routeById.get("101")).tables[0].services.length + added)
     engine.pushDraft({ routes: {} })
     v.state.view = "diagram"
     v.state.route = null
