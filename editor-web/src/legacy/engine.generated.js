@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -127,18 +127,15 @@ export function createLegacy(env) {
 	let dutyNotice = "";
 	// The route to show once the game has made a new one
 	let pendingOpen = null;
-	const draftOf = r => draft.routes[r.id];
+	/* draftOf: from env */
 	// Each draft keeps the revision of each part of the route it was made from, which the game checks part by part
-	const draftEntry = r => draft.routes[r.id] || (draft.routes[r.id] = { base: r.revision, parts: Object.assign({}, r.parts || {}) });
+	/* draftEntry: from env */
 	/** The parts of a route the editor's changes send: the timetable, the stops and the route's settings sent with them. */
 	const EDITOR_PARTS = ["timetable_services", "platform_ids", "is_light_rail_route"];
 	/** Whether the game changed a part of the route the draft would send since the draft was made. */
 	const draftOutOfDate = (entry, r) => entry.parts ? EDITOR_PARTS.some(part => ((r.parts || {})[part] || 0) !== (entry.parts[part] || 0)) : r.revision !== entry.base;
 	/** A route's entry goes once nothing is left in it but where it came from. */
-	function tidyDraft(id) {
-		const entry = draft.routes[id];
-		if (entry && Object.keys(entry).every(k => k === "base" || k === "force" || k === "error" || k === "conflict")) delete draft.routes[id];
-	}
+	/* tidyDraft: from env */
 	const isManaged = r => draftOf(r) && "managed" in draftOf(r) ? draftOf(r).managed : r.editorManaged;
 	const isConnecting = r => draftOf(r) && "connectingLine" in draftOf(r) ? draftOf(r).connectingLine : Boolean(r.connectingLine);
 	/** A route's speed limit in km/h, 0 for none, as drafted or as the game has it (line speed limits). */
@@ -728,46 +725,15 @@ export function createLegacy(env) {
 	/* toPlans: from env */
 	/* gameSource: from env */
 	// The times of each route's draft as the game worked them out, with the draft they are for
-	const draftTimes = new Map();
-	const requestedTimes = new Map();
-	let timesTimer = 0;
+	/* draftTimes: from env */
+	/* requestedTimes: from env */
+	/* timesTimer: from env */
 
 	/** What a route's times are taken from: the game's for its own timetable, or the game's answer for the draft. */
-	function timesSource(r) {
-		const draftTimetable = draftOf(r) && draftOf(r).timetable;
-		if (!draftTimetable) return gameSource(r);
-		const key = JSON.stringify([draftTimetable, r.hasTimes ? r.fastest : null]);
-		const cached = draftTimes.get(r.id);
-		if ((!cached || cached.key !== key) && requestedTimes.get(r.id) !== key) {
-			requestedTimes.set(r.id, key);
-			clearTimeout(timesTimer);
-			timesTimer = setTimeout(sendTimes, 150);
-		}
-		// Until the game answers, the times it last gave are shown
-		return cached ? cached.tables : gameSource(r);
-	}
+	/* timesSource: from env */
 
 	/** Sends the drafts waiting for times to the game, and shows them once it answers. */
-	async function sendTimes() {
-		const sent = [...requestedTimes.entries()].filter(([id, key]) => !draftTimes.has(id) || draftTimes.get(id).key !== key);
-		const routes = sent.map(([id]) => data.routeById.get(id)).filter(r => r && draftOf(r) && draftOf(r).timetable);
-		if (!routes.length) return;
-		const keys = new Map(sent);
-		try {
-			const result = await sendJson("api/times", "POST", { routes: routes.map(r => ({ id: r.id, timetable: draftOf(r).timetable })) });
-			result.routes.forEach(route => draftTimes.set(route.id, {
-				key: keys.get(route.id),
-				tables: route.tables.map(table => ({ times: table.times, exceptions: new Map(table.exceptions.map(e => [e.service, e.times])) })),
-			}));
-		} catch (e) {
-			// Asked again with the next change
-			sent.forEach(([id]) => requestedTimes.delete(id));
-			return;
-		}
-		buildServices();
-		if (state.selected && !findService(state.selected)) state.selected = null;
-		renderAll();
-	}
+	/* sendTimes: from env */
 
 	/**
 	 * The planned times at each stop of a table's services, or of one service with its own exceptions. A table or service
@@ -788,68 +754,22 @@ export function createLegacy(env) {
 	const tableName = (table, index) => table.name || tr("表 ") + (index + 1);
 
 	/** Sorted the same way however it was made, so a draft changed back to the game's matches it. */
-	function normalize(timetable) {
-		timetable.tables.forEach(table => {
-			table.services.sort((a, b) => a - b);
-			table.returns.sort((a, b) => a - b);
-			table.suspended = (table.suspended || []).slice().sort((a, b) => a - b);
-			table.orders = table.orders || [];
-			table.orders.sort((a, b) => a.service - b.service || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
-			table.links.sort((a, b) => a.service - b.service);
-			table.exceptions.sort((a, b) => a.service - b.service);
-			table.exceptions.forEach(exception => exception.stops.sort((a, b) => a.stop - b.stop));
-		});
-		return timetable;
-	}
+	/* normalize: from env */
 
 	/** A route's timetable from the game, in the form the editor sends it back. */
-	function fromGame(r) {
-		return normalize({
-			enabled: r.timetable, entryPlatform: r.entryPlatform, pass: r.stops.map(stop => stop.pass), allowLonger: r.stops.map(stop => Boolean(stop.allowLonger)),
-			tables: r.tables.map(table => ({
-				name: table.name, weekdays: table.weekdays, marginPercent: table.marginPercent,
-				minAcceleration: table.minAcceleration || 0, minDeceleration: table.minDeceleration || 0, minMaxSpeed: table.minMaxSpeed || 0,
-				services: [...table.services], returns: [...table.returns], suspended: [...(table.suspended || [])],
-				orders: (table.orders || []).map(order => ({ ...order })),
-				links: table.links.map(link => ({ ...link })),
-				stops: table.stops.map(stop => ({ ...stop })),
-				exceptions: (table.exceptions || []).map(exception => ({ service: exception.service, stops: exception.stops.map(stop => ({ stop: stop.stop, run: stop.run, dwell: stop.dwell, pass: stop.pass, overtake: stop.overtake })) })),
-			})),
-		});
-	}
+	/* fromGame: from env */
 
-	const gameTimetable = r => r.gameTimetable || (r.gameTimetable = fromGame(r));
-	const timetableOf = r => draftOf(r) && draftOf(r).timetable ? draftOf(r).timetable : gameTimetable(r);
+	/* gameTimetable: from env */
+	/* timetableOf: from env */
 
 	/**
 	 * Changes a route's timetable in the draft, starting from a copy of the game's. A draft changed back to the game's is
 	 * dropped, so it doesn't sit there waiting to be applied.
 	 */
-	function editTimetable(r, change) {
-		const entry = draftEntry(r);
-		if (!entry.timetable) entry.timetable = JSON.parse(JSON.stringify(gameTimetable(r)));
-		const message = change(entry.timetable);
-		normalize(entry.timetable);
-		if (JSON.stringify(entry.timetable) === JSON.stringify(gameTimetable(r))) delete entry.timetable;
-		if (!entry.conflict) delete entry.error;
-		tidyDraft(r.id);
-		saveDraft();
-		buildServices();
-		if (state.selected && !findService(state.selected)) state.selected = null;
-		tableMessage = typeof message === "string" ? message : "";
-		renderAll();
-	}
+	/* editTimetable: from env */
 
 	/** Changes what one service does at one stop. A value of -1 follows the table again. */
-	function setStopException(table, service, stop, changes) {
-		let exception = table.exceptions.find(e => e.service === service);
-		if (!exception) table.exceptions.push(exception = { service, stops: [] });
-		let stopException = exception.stops.find(e => e.stop === stop);
-		if (!stopException) exception.stops.push(stopException = { stop, run: -1, dwell: -1, pass: -1, overtake: -1 });
-		Object.assign(stopException, changes);
-		if (stopException.run < 0 && stopException.dwell < 0 && stopException.pass < 0 && stopException.overtake < 0) exception.stops.splice(exception.stops.indexOf(stopException), 1);
-		if (!exception.stops.length) table.exceptions.splice(table.exceptions.indexOf(exception), 1);
-	}
+	/* setStopException: from env */
 
 	/**
 	 * Makes the services the same as one service in all it changes at its stops, stop by stop in order (2026-11-09): its
@@ -858,42 +778,15 @@ export function createLegacy(env) {
 	 *
 	 * @return what was done, to show
 	 */
-	function syncExceptions(table, from, services) {
-		const source = table.exceptions.find(e => e.service === from);
-		const targets = new Set(services.filter(service => service !== from));
-		table.exceptions = table.exceptions.filter(e => !targets.has(e.service));
-		if (source && source.stops.length) targets.forEach(service => table.exceptions.push({ service, stops: source.stops.map(stop => ({ ...stop })) }));
-		return tr("{0} 班已经和这一班的各站时刻改动一样", targets.size);
-	}
+	/* syncExceptions: from env */
 
 	/** Moves a service to another time, with what belongs to it. @return why it can't, or nothing */
-	function retimeService(table, oldService, newService) {
-		if (oldService === newService) return;
-		if (table.services.includes(newService)) return tr("这张表已经有这个时刻的班次");
-		table.services[table.services.indexOf(oldService)] = newService;
-		table.links.forEach(link => { if (link.service === oldService) link.service = newService; });
-		table.returns = table.returns.map(service => service === oldService ? newService : service);
-		table.suspended = (table.suspended || []).map(service => service === oldService ? newService : service);
-		(table.orders || []).forEach(order => { if (order.service === oldService) order.service = newService; });
-		table.exceptions.forEach(exception => { if (exception.service === oldService) exception.service = newService; });
-	}
+	/* retimeService: from env */
 
 	/** Sets services of a table not to run, or to run again; their times and everything else stay. */
-	function setSuspended(table, services, suspended) {
-		const set = new Set(table.suspended || []);
-		services.forEach(service => suspended ? set.add(service) : set.delete(service));
-		table.suspended = [...set].filter(service => table.services.includes(service)).sort((a, b) => a - b);
-		return suspended ? tr("{0} 班停运，留在表里，右键可以恢复", services.length) : tr("{0} 班恢复运行，和别的班次冲突的话同步后会提示", services.length);
-	}
+	/* setSuspended: from env */
 
-	function removeService(table, service) {
-		table.services = table.services.filter(s => s !== service);
-		table.links = table.links.filter(link => link.service !== service);
-		table.returns = table.returns.filter(s => s !== service);
-		table.suspended = (table.suspended || []).filter(s => s !== service);
-		table.orders = (table.orders || []).filter(order => order.service !== service);
-		table.exceptions = table.exceptions.filter(exception => exception.service !== service);
-	}
+	/* removeService: from env */
 
 	/** The first and last stops a service carries passengers at, which orders set on the running diagram can narrow. */
 	const servedStops = s => [s.deployOrder ? s.deployOrder.stop : 0, s.returnOrder ? Math.min(s.returnOrder.stop, s.route.stops.length - 1) : s.route.stops.length - 1];
@@ -903,10 +796,7 @@ export function createLegacy(env) {
 	};
 
 	/** Sets or clears where a service is joined by a train from a depot, or left for one. @param depot the depot's ID, "0" for any, or null to clear */
-	function setServiceOrder(table, service, kind, stop, depot) {
-		table.orders = (table.orders || []).filter(order => !(order.service === service && order.kind === kind));
-		if (depot !== null) table.orders.push({ service, kind, stop, depot: String(depot) });
-	}
+	/* setServiceOrder: from env */
 
 	/** Picks the depot for a service's order: the depots running the line's routes first, then the others of its transport mode. */
 	/** The depots a service can be set to go back to (or come out of) at a stop, as menu items, the one set ticked. */
@@ -4453,51 +4343,19 @@ export function createLegacy(env) {
 	 * A time typed for one service. The first stop's departure moves the whole service; an arrival or passing time is its
 	 * own running time from the stop before, and a departure its own stop time, kept as exceptions of this service.
 	 */
-	function changeTime(s, stop, kind, time, toLater) {
-		const times = timesOf(s);
-		// Shift+Enter: the same change, to the second, for this service and every later one of its table (2026-11-09)
-		const services = toLater ? [s, ...laterServices(s)] : [s];
-		editTimetable(s.route, timetable => {
-			const table = timetable.tables[s.tableIndex];
-			if (stop === 0) {
-				const shift = time - times[0][1];
-				const moving = services.map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
-				for (const service of moving) {
-					const error = retimeService(table, service, mod(service + shift, DAY));
-					if (error) return error;
-				}
-			} else if (kind === "dep") {
-				const dwell = Math.max(0, Math.round((time - times[stop][0]) / 1000));
-				services.forEach(o => setStopException(table, o.service, stop, { dwell }));
-			} else {
-				const run = Math.max(1, Math.round((time - times[stop - 1][1]) / 1000));
-				services.forEach(o => setStopException(table, o.service, stop, { run }));
-			}
-			if (services.length > 1) return tr("这一班和之后的 {0} 班一起改了", services.length - 1);
-		});
-		const moved = stop === 0 ? data.routeById.get(s.route.id).services.find(o => o.tableIndex === s.tableIndex && o.service === mod(s.service + time - times[0][1], DAY)) : null;
-		if (moved) state.selected = moved.id;
-	}
+	/* changeTime: from env */
 
 	/** Services of the same table that run after this one, in the operating day. */
-	const laterServices = s => s.route.services.filter(o => o.tableIndex === s.tableIndex && o.start > s.start);
+	/* laterServices: from env */
 
 	// A run of services chosen together: one route and table, one after another with none skipped (TimetableBatch)
 	const Batch = window.TimetableBatch;
 	const tableRun = s => s.route.services.filter(o => o.tableIndex === s.tableIndex);
-	const inRange = s => Boolean(state.range && state.range.ids.includes(s.id));
-	const rangeServices = () => state.range ? state.range.ids.map(findService).filter(Boolean) : [];
+	/* inRange: from env */
+	/* rangeServices: from env */
 
 	/** Chooses the services from the one chosen before to this one, if they're of one route and table. */
-	function chooseRange(s) {
-		const anchor = state.range ? findService(state.range.anchor) : state.selected && findService(state.selected);
-		if (!anchor || anchor.route !== s.route || anchor.tableIndex !== s.tableIndex) {
-			state.range = null;
-			return false;
-		}
-		state.range = { anchor: anchor.id, ids: Batch.runBetween(tableRun(s).map(o => o.id), anchor.id, s.id) };
-		return true;
-	}
+	/* chooseRange: from env */
 
 	/**
 	 * Ctrl-click (⌘ on a Mac): a service put in or taken out of the chosen ones; with Shift as well, every service from the
@@ -4506,65 +4364,21 @@ export function createLegacy(env) {
 	 *
 	 * @return whether the choice changed
 	 */
-	function toggleChosen(s, span) {
-		const run = tableRun(s).map(o => o.id);
-		let ids = state.range ? state.range.ids.slice() : state.selectedRoute === s.route.id ? run.slice() : state.selected ? [state.selected] : [];
-		const first = ids.length ? findService(ids[0]) : null;
-		if (first && (first.route !== s.route || first.tableIndex !== s.tableIndex)) ids = [];
-		const fromId = state.range && (state.range.toggled || state.range.anchor) || state.selected;
-		const affected = span && fromId && run.includes(fromId) ? Batch.runBetween(run, fromId, s.id) : [s.id];
-		const chosen = new Set(ids), remove = chosen.has(s.id);
-		affected.forEach(id => remove ? chosen.delete(id) : chosen.add(id));
-		const order = run.filter(id => chosen.has(id));
-		state.selectedRoute = null;
-		state.range = order.length ? { anchor: state.range && order.includes(state.range.anchor) ? state.range.anchor : order[0], ids: order, toggled: s.id } : null;
-		state.selected = order.length ? (order.includes(s.id) ? s.id : order[0]) : null;
-		return true;
-	}
+	/* toggleChosen: from env */
 
 	/** Chooses a service and every later one of its table, to move or change together. */
-	function chooseLater(s) {
-		const ids = [s, ...laterServices(s)].map(o => o.id);
-		state.selectedRoute = null;
-		state.selected = s.id;
-		state.range = { anchor: s.id, ids };
-		tableMessage = tr("选中 {0} 班，右键表头可以调整间隔", ids.length);
-		renderAll();
-	}
+	/* chooseLater: from env */
 
 	/**
 	 * Moves a service and every later one of its table by a time asked for: minutes, or seconds as 90s, 1:30 or -0:45.
 	 */
-	function shiftLaterDialog(s) {
-		const later = laterServices(s);
-		const shift = parseShift(prompt(tr("这一班和之后的 {0} 班平移多少？写分钟，或写秒：90s、1:30、-0:45；负数是提前", later.length), "5"));
-		if (!shift) return;
-		editTimetable(s.route, timetable => {
-			const table = timetable.tables[s.tableIndex];
-			const moving = [s, ...later].map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
-			for (const service of moving) {
-				const error = retimeService(table, service, mod(service + shift, DAY));
-				if (error) return error;
-			}
-			return tr("{0} 班{1}了 {2}", moving.length, shift > 0 ? tr("推后") : tr("提前"), durationText(Math.abs(shift)));
-		});
-	}
+	/* shiftLaterDialog: from env */
 
 	/**
 	 * @return a time typed as a shift in milliseconds: minutes (5, -2.5, 5m, 5分), seconds (90s, 90秒), m:ss (1:30,
 	 * -0:45) or minutes and seconds (1m30s, 1分30秒); null if it isn't one
 	 */
-	function parseShift(text) {
-		if (text === null || text === undefined) return null;
-		const typed = String(text).trim().replace(/\s+/g, "").replace(/^−/, "-");
-		const sign = typed.startsWith("-") ? -1 : 1, body = typed.replace(/^[-+]/, "");
-		let m;
-		if ((m = body.match(/^(\d+):(\d{1,2})$/))) return sign * (Number(m[1]) * 60 + Number(m[2])) * 1000;
-		if ((m = body.match(/^(\d+(?:\.\d+)?)(?:s|秒)$/i))) return sign * Math.round(Number(m[1]) * 1000);
-		if ((m = body.match(/^(\d+)(?:m|min|分|分钟)(\d+)(?:s|秒)?$/i))) return sign * (Number(m[1]) * 60 + Number(m[2])) * 1000;
-		if ((m = body.match(/^(\d+(?:\.\d+)?)(?:m|min|分|分钟)?$/i))) return sign * Math.round(Number(m[1]) * 60000);
-		return null;
-	}
+	/* parseShift: from env */
 
 	/** A length of time as minutes and seconds, as 1 分 30 秒, 45 秒 or 5 分钟. */
 	function durationText(millis) {
@@ -4573,25 +4387,7 @@ export function createLegacy(env) {
 	}
 
 	/** Spaces the chosen services evenly from the first, keeping each one's stops and run times. */
-	function respaceRange() {
-		const run = rangeServices();
-		if (run.length < 2) return;
-		const minutes = Number(prompt(tr("这 {0} 班相邻两班之间隔多少分钟？", run.length), String(Math.round((run[1].start - run[0].start) / 60000) || 5)));
-		if (!(minutes > 0)) return;
-		const targets = Batch.respace(run.map(o => o.service), Math.round(minutes * 60000));
-		editTimetable(run[0].route, timetable => {
-			const table = timetable.tables[run[0].tableIndex];
-			// Those moving later go first from the end, those moving earlier from the start, so none lands on another
-			const moves = run.map((o, i) => [o.service, targets[i]]).filter(([from, to]) => from !== to);
-			const later = moves.filter(([from, to]) => mod(to - from, DAY) < DAY / 2).reverse(), earlier = moves.filter(([from, to]) => mod(to - from, DAY) >= DAY / 2);
-			for (const [from, to] of [...later, ...earlier]) {
-				const error = retimeService(table, from, to);
-				if (error) return error;
-			}
-			state.range = null;
-			return tr("{0} 班已按 {1} 分钟间隔排开", run.length, minutes);
-		});
-	}
+	/* respaceRange: from env */
 
 	/** Puts a new service beside one, its time worked out from the services either side (TimetableBatch.besideTime). */
 	function addBeside(s, side) {
@@ -4859,15 +4655,7 @@ export function createLegacy(env) {
 	const stopName = (r, stop) => shortName(r.stops[stop].name);
 
 	/** Sets where a service runs through to, replacing any link it had. @param fromStop the stop it leaves, or -1 for the last */
-	function setLink(s, fromStop, target, toStop) {
-		editTimetable(s.route, timetable => {
-			const table = timetable.tables[s.tableIndex];
-			table.links = table.links.filter(link => link.service !== s.service);
-			table.links.push({ service: s.service, route: target.route.id, toService: target.service, fromStop, toStop });
-			// A service running through doesn't go back to the depot
-			table.returns = table.returns.filter(service => service !== s.service);
-		});
-	}
+	/* setLink: from env */
 
 	/**
 	 * Through links in bulk: each service of one route in a time range carries on as the first service of another route it
@@ -6989,31 +6777,10 @@ export function createLegacy(env) {
 	}
 
 	/** A route's timetable renumbered to its new stops: newOf[old stop] is its new number, or -1 if it was taken away. */
-	function renumberTimetable(tt, list, newOf) {
-		const copy = JSON.parse(JSON.stringify(tt));
-		copy.pass = list.map(stop => stop.pass);
-		copy.allowLonger = list.map(stop => stop.from >= 0 ? Boolean((tt.allowLonger || [])[stop.from]) : false);
-		copy.tables.forEach(table => {
-			table.stops = list.map(stop => stop.from >= 0 && table.stops[stop.from] ? table.stops[stop.from] : { arrival: -1, departure: -1 });
-			table.orders = (table.orders || []).map(order => Object.assign({}, order, { stop: newOf[order.stop] })).filter(order => order.stop >= 0);
-			table.links = table.links.map(link => Object.assign({}, link, { fromStop: link.fromStop < 0 ? link.fromStop : newOf[link.fromStop] }));
-			table.exceptions = table.exceptions.map(exception => ({ service: exception.service, stops: exception.stops.map(stop => Object.assign({}, stop, { stop: newOf[stop.stop] })).filter(stop => stop.stop >= 0) })).filter(exception => exception.stops.length);
-		});
-		return normalize(copy);
-	}
+	/* renumberTimetable: from env */
 
 	/** Through services of another route into this one, renumbered to its new stops. */
-	function renumberLinksInto(tt, routeId, newOf) {
-		const copy = JSON.parse(JSON.stringify(tt));
-		let changed = false;
-		copy.tables.forEach(table => table.links.forEach(link => {
-			if (link.route === routeId && link.toStop >= 0 && newOf[link.toStop] !== link.toStop) {
-				link.toStop = newOf[link.toStop];
-				changed = true;
-			}
-		}));
-		return changed ? copy : null;
-	}
+	/* renumberLinksInto: from env */
 
 	/** A depot's duties with the segments of this route renumbered to its new stops, or null if none is. */
 	function renumberDuties(duties, routeId, newOf, newCount) {
@@ -7453,35 +7220,13 @@ export function createLegacy(env) {
 	 * end, the start alone; or the start's own pattern when nothing else is filled in. The interval is in minutes, or
 	 * minutes and seconds as 04:30.
 	 */
-	function servicesToAdd(startText, endText, intervalText) {
-		if (!endText.trim() && !intervalText.trim()) return parsePattern(startText);
-		const start = parseClock(startText.trim()), end = endText.trim() ? parseClock(endText.trim()) : start;
-		const text = intervalText.trim(), parts = text.split(/[:：]/);
-		const step = parts.length === 2 ? (Number(parts[0]) * 60 + Number(parts[1])) * 1000 : Number(text) * 60000;
-		if (start === null || end === null || !(step >= 1000)) return null;
-		return Batch.stepTimes(start, end, Math.round(step / 1000) * 1000).map(time => mod(time - data.offsetMillis, DAY));
-	}
+	/* servicesToAdd: from env */
 
 	/**
 	 * Takes every service out of a table, with their through links, returns to the depot, orders and exceptions; the
 	 * table, its stop times and its days stay. Into the draft like any other change, so it can still be dropped.
 	 */
-	function clearTable(r, index) {
-		const table = timetableOf(r).tables[index];
-		if (!table || !table.services.length) return;
-		if (!confirm(tr("清空“{0}”的 {1} 个班次？改动先放进草稿，应用前都可以放弃。", tableName(table, index), table.services.length))) return;
-		state.range = null;
-		editTimetable(r, timetable => {
-			const edited = timetable.tables[index];
-			edited.services = [];
-			edited.links = [];
-			edited.returns = [];
-			edited.suspended = [];
-			edited.orders = [];
-			edited.exceptions = [];
-			return tr("已清空“{0}”", tableName(edited, index));
-		});
-	}
+	/* clearTable: from env */
 
 	function addServices() {
 		const r = tableRouteOf(), input = $("add-service");
@@ -8253,15 +7998,7 @@ export function createLegacy(env) {
 	 * The services a drag along a line moves: the chosen run when the line is in it, the selected service, or every
 	 * service of the route chosen with a double click; none while a duty is chosen, where clicks add services to it.
 	 */
-	function servicesToMove(s) {
-		if (!s || state.slot || !data.canEdit) return null;
-		// Of several chosen, the ones edited on their own (with exceptions, drawn blue) stay where they are
-		const unedited = list => list.filter(o => o === s || !o.exceptions);
-		if (inRange(s)) return unedited(rangeServices()).map(o => o.id);
-		if (state.selectedRoute === s.route.id) return unedited(s.route.services.filter(o => o.tableIndex === s.tableIndex)).map(o => o.id);
-		// Any other line moves on its own, chosen or not (2026-11-09), so it needn't be clicked first
-		return [s.id];
-	}
+	/* servicesToMove: from env */
 
 	/**
 	 * How far a drag moves services: whole seconds, rounded more coarsely the further the view is zoomed out; to the
@@ -8273,43 +8010,7 @@ export function createLegacy(env) {
 	}
 
 	/** Moves services by the same time each, keeping their stops and run times, into the draft. */
-	function moveServices(ids, shift) {
-		const services = ids.map(findService).filter(Boolean);
-		if (!services.length || !shift) return;
-		const r = services[0].route, tableIndex = services[0].tableIndex;
-		const wasSelected = state.selected && ids.includes(state.selected) ? state.selected : null;
-		// Only those moved get their new times: a line dragged on its own leaves the others chosen as they are
-		const movedIds = new Set(ids);
-		const moved = id => {
-			if (!movedIds.has(id)) return id;
-			const [routeId, service] = id.split("@");
-			return routeId + "@" + mod(Number(service) + shift, DAY);
-		};
-		let failed = false;
-		editTimetable(r, timetable => {
-			const table = timetable.tables[tableIndex];
-			// All or none: a service landing on one that stays where it is stops the whole move
-			const movingSet = new Set(services.map(o => o.service));
-			const blocked = services.map(o => mod(o.service + shift, DAY)).find(time => table.services.includes(time) && !movingSet.has(time));
-			if (blocked !== undefined) {
-				failed = true;
-				return tr("{0} 已经有一班，没有移动", clock(mod(blocked - data.dayStartMillis, DAY)));
-			}
-			// Moving later from the last, earlier from the first, so none lands on one not moved yet
-			const order = services.map(o => o.service).sort((a, b) => shift > 0 ? b - a : a - b);
-			for (const service of order) {
-				const error = retimeService(table, service, mod(service + shift, DAY));
-				if (error) return error;
-			}
-			return tr("{0} 班{1}了 {2}", services.length, shift > 0 ? tr("推后") : tr("提前"), durationText(Math.abs(shift)));
-		});
-		// The moved services keep being chosen, under their new times
-		if (!failed) {
-			if (state.range) state.range = { anchor: moved(state.range.anchor), ids: state.range.ids.map(moved) };
-			if (wasSelected) state.selected = moved(wasSelected);
-			renderAll();
-		}
-	}
+	/* moveServices: from env */
 
 	canvas.addEventListener("pointerdown", e => {
 		const box = canvas.getBoundingClientRect();
@@ -8529,7 +8230,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, tidyDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, timesSource, sendTimes, normalize, fromGame, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, changeTime, chooseRange, toggleChosen, chooseLater, shiftLaterDialog, parseShift, durationText, respaceRange, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, setLink, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, stopHangers, renumberTimetable, renumberLinksInto, renumberDuties, sendStopList, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, servicesToAdd, clearTable, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, servicesToMove, moveShift, moveServices },
+		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, dutyNumber, findDutySlot, relinkOvernight, editDuties, dayGroup, dutyForEditing, segmentStart, segmentEnd, coverageNow, terminalNow, terminalText, coverageText, dutyAssignments, dutyProblems, dutyEndPlatform, dutyStartPlatform, waitThresholdMillis, stationWaitDialog, minReverseMillis, turnTimeOf, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, stopHangers, renumberDuties, sendStopList, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },
@@ -8574,8 +8275,6 @@ export function createLegacy(env) {
 		get draftCount() { return draftCount },
 		get dutyNotice() { return dutyNotice }, set dutyNotice(value) { dutyNotice = value },
 		get pendingOpen() { return pendingOpen }, set pendingOpen(value) { pendingOpen = value },
-		get draftOf() { return draftOf },
-		get draftEntry() { return draftEntry },
 		get EDITOR_PARTS() { return EDITOR_PARTS },
 		get draftOutOfDate() { return draftOutOfDate },
 		get isManaged() { return isManaged },
@@ -8586,13 +8285,8 @@ export function createLegacy(env) {
 		get railKey() { return railKey },
 		get releasedOf() { return releasedOf },
 		get turnOf() { return turnOf },
-		get draftTimes() { return draftTimes },
-		get requestedTimes() { return requestedTimes },
-		get timesTimer() { return timesTimer }, set timesTimer(value) { timesTimer = value },
 		get daysText() { return daysText },
 		get tableName() { return tableName },
-		get gameTimetable() { return gameTimetable },
-		get timetableOf() { return timetableOf },
 		get servedStops() { return servedStops },
 		get orderDepotName() { return orderDepotName },
 		get PATTERN_HINT() { return PATTERN_HINT },
@@ -8670,11 +8364,8 @@ export function createLegacy(env) {
 		get showDeadheads() { return showDeadheads }, set showDeadheads(value) { showDeadheads = value },
 		get deadheadIndex() { return deadheadIndex }, set deadheadIndex(value) { deadheadIndex = value },
 		get tableRouteOf() { return tableRouteOf },
-		get laterServices() { return laterServices },
 		get Batch() { return Batch },
 		get tableRun() { return tableRun },
-		get inRange() { return inRange },
-		get rangeServices() { return rangeServices },
 		get isLoop() { return isLoop },
 		get isBoundary() { return isBoundary },
 		get stopName() { return stopName },

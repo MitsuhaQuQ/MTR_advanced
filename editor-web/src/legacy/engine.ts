@@ -12,6 +12,7 @@ import { key } from "../api/client"
 import { createLegacy } from "./engine.generated.js"
 import { normalizeDraft } from "../core/draft"
 import * as Services from "../core/services"
+import { timetableRules } from "./retired"
 
 export type MenuItem = [label: string, action: (() => void) | MenuItem[] | null | undefined]
 
@@ -85,6 +86,8 @@ const env = {
   findService: (id: string) => Services.findService(legacy.v.data.routeById, id),
   timesOf: Services.timesOf,
   currentLine: () => Services.currentLine(legacy.v.data, legacy.v.state.line),
+  // Step 4: the timetable rules
+  ...timetableRules(() => legacy),
   render: (name: string) => onRender(name),
 }
 

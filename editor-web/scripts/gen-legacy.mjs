@@ -33,7 +33,12 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
   // The track diagrams of a route and of a line group: the new page's schematic (views/TrackDiagram.tsx)
   "routeDiagramDialog", "lineDiagramDialog",
   // Retiring the old code, step 3: the rows and services are the new page's (src/core/services.ts)
-  "buildStations", "buildServices", "plansFor", "toPlans", "gameSource", "findService", "timesOf", "currentLine"]
+  "buildStations", "buildServices", "plansFor", "toPlans", "gameSource", "findService", "timesOf", "currentLine",
+  // Step 4: the timetable rules (src/core/timetable.ts, through src/legacy/retired.ts)
+  "draftOf", "draftEntry", "tidyDraft", "gameTimetable", "fromGame", "normalize", "timetableOf", "editTimetable", "setStopException",
+  "syncExceptions", "retimeService", "setSuspended", "removeService", "setServiceOrder", "changeTime", "laterServices", "moveServices",
+  "shiftLaterDialog", "parseShift", "respaceRange", "setLink", "clearTable", "servicesToAdd", "renumberTimetable", "renumberLinksInto",
+  "inRange", "rangeServices", "chooseRange", "toggleChosen", "chooseLater", "servicesToMove", "timesSource", "sendTimes", "draftTimes", "requestedTimes", "timesTimer"]
 /**
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms
