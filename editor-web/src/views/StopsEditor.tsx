@@ -9,13 +9,15 @@
  * there is no way. Turning back at a station is marked.
  *
  * "改站序" switches to adding, removing and reordering stations, which goes to the game at once (sendStopList), as before.
- * A station's own track diagram, with its throats and turn platforms, is still the old dialog (oldStopsDialog).
+ * "站内配线…" shows a station's own track diagram in the same panel (views/StationTracks.tsx), with its throat and turn
+ * platforms; its tracks are fixed there as in the strip.
  */
 import { useEffect, useMemo, useState } from "react"
 import { diagramHost, legacy, stopsHost, useLegacy, type StopsTarget } from "../legacy/engine"
 import { ConfirmButton, Pill, SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
+import { StationTracks } from "./StationTracks"
 import { colorOf, currentLine, parsePattern, routeTitle, shortName } from "./now"
 
 /** The game's platforms on the rails and the ways between them, as the data last read has them */
@@ -33,7 +35,7 @@ export function StopsEditor() {
   if (!target) return null
   const close = () => setTarget(null)
   return target.kind === "route"
-    ? <RouteStops key={target.routeId + "/" + target.stop} routeId={target.routeId} onClose={close} />
+    ? <RouteStops key={target.routeId + "/" + target.stop} routeId={target.routeId} stop={target.stop} onClose={close} />
     : target.kind === "type" ? <NewType key={target.lineKey + "/" + target.baseId} lineKey={target.lineKey} baseId={target.baseId} onClose={close} />
     : <NewLine onClose={close} />
 }
@@ -145,13 +147,15 @@ function modelOf(r: any): StopsModel | null {
   return T().model(tracks, r.stops.map((_: unknown, i: number) => !pass[i]), colorOf(r.color))
 }
 
-function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void }) {
+function RouteStops({ routeId, stop, onClose }: { routeId: string; stop: number; onClose: () => void }) {
   useLegacy()
   const { fn, v } = legacy
   const r = v.data?.routeById.get(routeId)
   const [model, setModel] = useState<StopsModel | null>(() => (r && T() ? modelOf(r) : null))
   const [ordering, setOrdering] = useState(false)
   const [error, setError] = useState("")
+  // The stop whose own track diagram is shown, or null for the strip of all stations
+  const [station, setStation] = useState<number | null>(() => (model && stop >= 0 && stop < model.layers.length ? stop : null))
   if (!r) return null
   const title = tr("停站：{0}", routeTitle(r))
   const canEdit = v.data.canEdit
@@ -194,8 +198,9 @@ function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void
         : <>
           <p className="mb-3 mt-0 text-[12px] text-dim">{tr("点一股固定它，其他站自动换成走得通、改动最少的股道；淡的股道和其他站连不起来。再点一下取消固定。")}</p>
           {model.conflict && <p className="mb-2 mt-0 text-[13px] text-warn" role="alert">{model.conflict}</p>}
-          <Strip model={model} setModel={m => { setModel(m); setError("") }} original={original}
-            onStation={i => { onClose(); fn.oldStopsDialog(r, i) }} />
+          {station !== null
+            ? <StationTracks r={r} model={model} i={station} onPin={p => { setModel(pinTrack(model, station, p)); setError("") }} onStop={setStation} onBack={() => setStation(null)} />
+            : <Strip model={model} setModel={m => { setModel(m); setError("") }} original={original} onStation={setStation} />}
           <p className="mt-3 text-[12px] text-dim">{tr("改股道会清掉线路手画的路径，应用后要刷新车厂路径。")}</p>
         </>}
     </SidePanel>

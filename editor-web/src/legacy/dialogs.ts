@@ -9,6 +9,7 @@ import * as S from "../core/services"
 import * as X from "../core/settings"
 import * as D from "../core/duties"
 import { routeTitle, shortName, tableName } from "../core/format"
+import * as L from "../core/stationLayout"
 import type { AskTarget, PanelTarget } from "./engine"
 
 type Legacy = { fn: Record<string, any>; v: Record<string, any> }
@@ -222,6 +223,13 @@ export function dialogRules(get: () => Legacy, open: (target: PanelTarget) => vo
     ownersDialog: (index: number) => open({ kind: "owners", index }),
     lineTracksDialog: (lineKey: string) => open({ kind: "lineTracks", lineKey }),
     finishPicking: () => open({ kind: "finishPicking" }),
+    turnOf: (r: any, kind: L.TurnKind) => L.turnOf(get().v.draft, r, kind),
+    toggleTurnPlatform(r: any, kind: L.TurnKind, platformId: string) {
+      const { fn, v } = get()
+      L.toggleTurnPlatform(v.draft, r, kind, platformId)
+      T.tidyDraft(v.draft, r.id)
+      fn.saveDraft()
+    },
     /** A deadhead's menu on the running diagram: how early it leaves, which way and siding, back to the rules */
     deadheadMenu(e: MouseEvent, leg: any) {
       const { fn, v } = get()

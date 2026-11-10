@@ -172,6 +172,72 @@ describe("the old code in the new page", () => {
     expect(host.textContent).toContain("沿轨道走不通")
     await act(async () => ([...host.querySelectorAll("button")].find(b => b.textContent === "取消") as HTMLElement).click())
   })
+  it("shows a station's own track diagram in the stops editor, fixing tracks and ticking turn platforms there", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { StopsEditor } = await import("../src/views/StopsEditor")
+    const { stationLayout } = await import("../mock/track")
+    const { fn, v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    // api/layout answers "not ready" once, then the station's rails
+    const fetchBefore = globalThis.fetch
+    const asked: any[] = []
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (String(url).includes("api/layout")) {
+        const body = JSON.parse(String(init!.body))
+        asked.push(body)
+        const answer = asked.length === 1 ? { ready: false } : stationLayout(v.data.topology.platforms, body.station, body.margin)
+        return new Response(JSON.stringify(answer), { status: 200, headers: { "Content-Type": "application/json" } })
+      }
+      return new Response("", { status: 503 })
+    }) as typeof fetch
+    const r = v.data.routeById.get("101")
+    r.stops[5].candidates = [{ id: "1005", name: "1" }, { id: "1105", name: "2" }]
+    r.stops[2].throat = { entry: 2, exit: 1, zones: 0, crossings: [{ route: "102", entry: true, otherEntry: false, zone: false, x: 1080, z: 12 }] }
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(StopsEditor)))
+    // Opened at a stop by the old code's call: its diagram at once
+    await act(async () => fn.stopsDialog(r, 2))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 700)) })
+    const section = () => host.querySelector('section[aria-label$="配线图"]') as HTMLElement
+    expect(section().getAttribute("aria-label")).toBe("中央广场 配线图")
+    expect(asked.length).toBe(2)
+    expect(asked[1].tracks.sort()).toEqual(["1002", "1102", "1200"])
+    expect(section().querySelectorAll("polyline").length).toBeGreaterThan(2)
+    expect(section().textContent).toContain("咽喉：进站经过 2 组道岔")
+    // The passing track clicked on the diagram is fixed, as on the strip
+    const loop = section().querySelector('g[data-track="12"]') as SVGGElement
+    expect(loop).toBeTruthy()
+    await act(async () => { loop.dispatchEvent(new MouseEvent("click", { bubbles: true })) })
+    expect(loop.getAttribute("aria-pressed")).toBe("true")
+    // Zooming out asks for more around it
+    await act(async () => { (section().querySelector('button[aria-label="缩小"]') as HTMLElement).click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(asked[asked.length - 1].margin).toBe(77)
+    // The last stop: its other platform ticked to turn back at in turn, into the draft
+    await act(async () => { (section().querySelector('button[title="下一站"]') as HTMLElement).click() })
+    await act(async () => { (section().querySelector('button[title="下一站"]') as HTMLElement).click() })
+    await act(async () => { (section().querySelector('button[title="下一站"]') as HTMLElement).click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(section().getAttribute("aria-label")).toBe("北湖 配线图")
+    expect(section().textContent).toContain("站前折返")
+    const box = section().querySelector('input[type="checkbox"]') as HTMLInputElement
+    await act(async () => { box.click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(changes[changes.length - 1].routes["101"].terminalPlatforms).toEqual(["1105"])
+    expect(section().textContent).toContain("第 1 个")
+    // Back to the strip, then into the draft with the track fixed on the diagram
+    await act(async () => { ([...host.querySelectorAll("button")].find(b => b.textContent === "← 车站列表") as HTMLElement).click() })
+    expect(host.querySelector('li[data-stop="2"]')!.textContent).toContain("改了股道")
+    await act(async () => { ([...host.querySelectorAll("button")].find(b => b.textContent === "放进草稿") as HTMLElement).click(); engine.flushLegacy() })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(changes[changes.length - 1].routes["101"].platforms).toEqual(["1000", "1001", "1200", "1003", "1004", "1005"])
+    delete r.stops[5].candidates
+    delete r.stops[2].throat
+    globalThis.fetch = fetchBefore
+    engine.pushDraft({ routes: {} })
+  })
   it("makes a new line group both ways in the new line editor", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

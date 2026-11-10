@@ -99,3 +99,26 @@ export function exampleTrack() {
   }
   return { layout, network, console: consoleData }
 }
+
+/**
+ * The rails around a station, as api/layout (EditorLayout) answers: the box of the station's platforms and the margin,
+ * line 1's rails in world x, z with a point every few blocks, the turnouts, and every platform in the box.
+ */
+export function stationLayout(platforms: { id: string; name: string; station: string; stationName: string; line: number[]; passingTrack?: boolean }[], station: string, margin: number) {
+  const own = platforms.filter(p => p.station === station)
+  if (!own.length) return { ready: true, box: [0, 0, 0, 0], truncated: false, rails: [], turnouts: [], platforms: [] }
+  const xs = own.flatMap(p => [p.line[0], p.line[2]]), zs = own.flatMap(p => [p.line[1], p.line[3]])
+  const box = [Math.floor(Math.min(...xs)) - margin, Math.floor(Math.min(...zs)) - margin, Math.ceil(Math.max(...xs)) + margin, Math.ceil(Math.max(...zs)) + margin]
+  const inside = ([x, z]: number[]) => x >= box[0] && x <= box[2] && z >= box[1] && z <= box[3]
+  const { layout } = exampleTrack()
+  const rails = layout.rails.map(([d1, o1, , , d2, o2]) => {
+    const steps = Math.max(1, Math.round(Math.abs(d2 - d1) / 8))
+    const points: number[] = []
+    for (let k = 0; k <= steps; k++) points.push(...trackPosition(d1 + ((d2 - d1) * k) / steps, o1 + ((o2 - o1) * k) / steps))
+    return points
+  }).filter(points => { for (let k = 0; k + 1 < points.length; k += 2) if (inside([points[k], points[k + 1]])) return true; return false })
+  const turnouts = layout.turnouts.map(([d, o]) => trackPosition(d, o)).filter(inside)
+  const inBox = platforms.filter(p => inside([p.line[0], p.line[1]]) || inside([p.line[2], p.line[3]]))
+    .map(p => ({ id: p.id, name: p.name, station: p.station, stationName: p.stationName, passingTrack: Boolean(p.passingTrack), line: p.line }))
+  return { ready: true, box, truncated: false, rails, turnouts, platforms: inBox }
+}

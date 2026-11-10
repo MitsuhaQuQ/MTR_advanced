@@ -5,7 +5,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { mockData } from "./fixture.ts"
-import { exampleTrack } from "./track.ts"
+import { exampleTrack, stationLayout } from "./track.ts"
 
 export function createMockApi() {
   let draft: unknown = { routes: {} }
@@ -34,6 +34,11 @@ export function createMockApi() {
         return true
       case "/api/route-layout": await readBody(req); json(exampleTrack().layout); return true
       case "/api/network": await readBody(req); json(exampleTrack().network); return true
+      case "/api/layout": {
+        const { station, margin } = JSON.parse((await readBody(req)) || "{}")
+        json(stationLayout(data.topology.platforms, station, margin || 48))
+        return true
+      }
       case "/api/console": json(exampleTrack().console); return true
       case "/api/audio": {
         // The media library's list (EditorAudio): two recordings, one not on this computer yet

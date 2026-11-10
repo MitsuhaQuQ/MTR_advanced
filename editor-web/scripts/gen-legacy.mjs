@@ -54,12 +54,18 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
   "toggleConsole", "consoleTrains", "consoleTrainName", "consoleTrainState", "consoleCommand", "isLoop", "loopEntryStop", "loopRuns",
   // Step 8: the last small dialogs as side panels (src/views/AskPanels.tsx, through src/legacy/dialogs.ts)
   "generateDuties", "replanDialog", "placeTrainsDialog", "deleteTypeDialog", "stationWaitDialog", "logicalDraftDialog", "serviceOrderDialog",
-  "logicalLineDialog", "ownersDialog", "lineTracksDialog", "finishPicking", "deadheadMenu"]
+  "logicalLineDialog", "ownersDialog", "lineTracksDialog", "finishPicking", "deadheadMenu",
+  // The dialogs the new page has its own panels for (views/StopsEditor.tsx, LinePanels.tsx, DepotPanel.tsx, DepotExtras.tsx,
+  // StationTracks.tsx): nothing falls back on the old ones any more, so they are left out
+  "stopsDialog", "newLineDialog", "newTypeDialog", "speedLimitDialog", "throughDialog", "contingencyDialog", "tableDialog", "depotDialog",
+  "depotRulesDialog", "vehicleDialog", "dutyGroupsDialog", "releasePlanDialog",
+  // A station's turn platforms (src/core/stationLayout.ts)
+  "turnOf", "toggleTurnPlatform"]
 /**
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms
  */
-const WRAPPED = ["stopsDialog", "newLineDialog", "newTypeDialog", "speedLimitDialog", "throughDialog", "contingencyDialog", "tableDialog", "depotDialog", "depotRulesDialog", "vehicleDialog", "dutyGroupsDialog", "releasePlanDialog"]
+const WRAPPED = []
 const oldName = name => "old" + name[0].toUpperCase() + name.slice(1)
 /**
  * Run as before, then tell the page (env.render(name)): the old running diagram's draw(), which many old functions call

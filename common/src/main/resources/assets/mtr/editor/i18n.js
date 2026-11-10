@@ -778,6 +778,10 @@ const I18N = (() => {
 			"调整": "Space",
 			"调整间隔": "Space services",
 			"间隔": "Interval",
+			// A station's own track diagram in the stops editor (new page)
+			"← 车站列表": "← Stations",
+			"上一站": "Previous station",
+			"下一站": "Next station",
 			"新建时刻表": "New timetable",
 			"时刻表设置": "Timetable settings",
 			"复制“{0}”的班次": "Copy the services of “{0}”",

@@ -71,7 +71,7 @@ const env = {
   // The old code's track diagram dialogs: the new page's schematic instead
   routeDiagramDialog: (r: { id: string }) => diagramHost.current?.({ kind: "route", routeId: r.id }),
   lineDiagramDialog: (line: { key: string }) => diagramHost.current?.({ kind: "line", lineKey: line.key }),
-  // The old stops and new line dialogs: the new page's stops editor instead (the old ones stay as oldStopsDialog …)
+  // The old stops and new line dialogs: the new page's stops editor instead (a station's own diagram is views/StationTracks.tsx)
   stopsDialog: (r: { id: string }, stop?: number) => stopsHost.current?.({ kind: "route", routeId: r.id, stop: stop ?? -1 }),
   newLineDialog: () => stopsHost.current?.({ kind: "new" }),
   newTypeDialog: (lineKey: string, base?: { id: string }) => stopsHost.current?.({ kind: "type", lineKey, baseId: base ? base.id : "" }),
