@@ -3064,10 +3064,11 @@ public final class TickRunner<T extends RunTrack> {
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
 			waitingSinceMillis = 0;
-			// Back in the siding on its own path, the next stop is its start again: a stop of the duty's path further along than
-			// the siding's has rails would keep the train from ever leaving again (found by the end-to-end check, where a
-			// siding running by duties has itself alone as its path)
-			if (!onRoute && nextStoppingIndex >= path.size()) {
+			// The host can project this tick before motion runs again. Rebase the parked train along with its path.
+			if (tripPath == null && !onRoute) {
+				transitsim.run.RunMotion.parkAtSiding(this, this);
+				runSegment = null;
+			} else if (!onRoute && nextStoppingIndex >= path.size()) {
 				nextStoppingIndex = 0;
 				nextPlatformIndex = 0;
 			}

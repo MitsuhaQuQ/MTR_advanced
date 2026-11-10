@@ -515,6 +515,8 @@ sequenceDiagram
    - 否则发完整数据（`writePacket`，含路径），记下 sync key。
 3. 完整数据按 1 MB 一个包拼起来发 `PACKET_UPDATE_TRAINS`；单列车超过 1 MB 的不发，服务端日志写一次"is too big to send to players"（以前悄悄丢掉）。
 
+运用结束回库时，`TrainService` 通过 `followPath(null)` 切回存车线路径。模拟组件和 Minecraft 宿主都在同一次切换中调用 `RunMotion.parkAtSiding`，将车头里程置为存车线长与列车长度之和的一半。这样客户端拿到的里程和路径使用同一坐标系，车厢两端仍沿轨道取样。
+
 **长路径分轮发送（2026-11-09，`mtm_version` 0.62.13）**：按运用跑的列车，路径是一整天的运用（出库、各趟首尾相接、回库），Q 上一列车跑全天 229 班的环线运用有 7067 段，整条写进包约 1.16 MB，超过上限，玩家从来看不到这列车。现在：
 - `Train.writePath`/`readPath`：路径里每条轨道（`Rail`）只写一次，各段按编号引用，段的其余内容（`PathData.writePacketWithoutRail`）照写。
 - `Train.getSendWindow`：路径超过 `SEND_WINDOW_MIN`（2048 段）且不是首尾循环（`repeatIndex1/2` 为 0）时，只发车头所在的这一轮和下一轮，起点往前多带一节车长加 64 格（车尾要画）。一轮到路径掉头处为止（一段把前一段倒着走）；一直绕圈不掉头的，在停站处切，每轮不超过约 `SEND_BLOCK`（512）段（`getRounds`，按路径缓存）。发出去的部分从 0 编号：里程减去起点之前的长度，`nextStoppingIndex`/`nextPlatformIndex` 减去起点，走行段（`RunSegment.Spec`）的起点和目标位置同样平移；状态包（`writeStatePacket`）同样平移。

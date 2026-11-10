@@ -59,6 +59,17 @@ public final class RunMotion {
 		return state.getSpeed() <= 0 && Math.abs(track.getStopDistance(stop) - state.getRailProgress()) <= AT;
 	}
 
+	/** Puts a train on its siding path at the centered parking position. */
+	public static void parkAtSiding(MotionState state, MotionVehicle vehicle) {
+		state.setNextStoppingIndex(0);
+		state.setNextPlatformIndex(0);
+		state.setRailProgress((vehicle.getRailLength() + vehicle.getTrainCars() * vehicle.getSpacing()) / 2);
+		state.setReversed(false);
+		state.setSpeed(0);
+		state.setDoorTarget(false);
+		state.setDoorValue(0);
+	}
+
 	/**
 	 * Moves the train through one tick.
 	 *
@@ -76,13 +87,7 @@ public final class RunMotion {
 
 		if (!state.isOnRoute()) {
 			// In its siding, as before
-			state.setNextStoppingIndex(0);
-			state.setNextPlatformIndex(0);
-			state.setRailProgress((railLength + trainCars * spacing) / 2);
-			state.setReversed(false);
-			state.setSpeed(0);
-			state.setDoorTarget(false);
-			state.setDoorValue(0);
+			parkAtSiding(state, vehicle);
 			if (!state.isCurrentlyManual() && hooks.canDeploy() || state.isCurrentlyManual() && state.getManualNotch() > 0) {
 				hooks.startUp(track.size() > 1 && track.isOppositeRail(0, 1));
 				if (state.isOnRoute()) {

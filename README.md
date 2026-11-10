@@ -150,6 +150,7 @@ This is not an official release. In the mod list it shows as MTR-MTM_Enhanced, v
 - Fixes the precision problem that made trains and displays shake with the camera far from the world origin.
 - Resource packs can give a train two custom bogies (model, texture, position), as in MTR 4. Its cars are then placed on their bogies, and near the camera the bogies turn along the track. Built-in bogies turn along the track too, with a client setting that is on by default.
 - A siding given another vehicle no longer leaves a parked train drawn as the old vehicle until the server restarts, with its back cars stacked on one point and turned across the track: clients replace a train whose vehicle changed instead of copying its path into the old one.
+- Returning trains are centered as soon as they switch to the siding path. Clients receive the siding path and parking position together, keeping the cars aligned with the track.
 
 - A route map showing only a loop draws it as a closed ring: this station on the bottom row with the stations ahead along it, the rest coming back along the top row, and an arrow showing the direction. Maps with other routes too, and vertical maps, still draw the loop as a line half each way.
 

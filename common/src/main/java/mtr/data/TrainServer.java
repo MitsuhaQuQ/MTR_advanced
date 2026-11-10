@@ -1543,10 +1543,11 @@ public class TrainServer extends Train {
 			grantedRunEnd = -1;
 			requestedRunEnd = -1;
 			waitingSinceMillis = 0;
-			// Back in the siding on its own path, the next stop is its start again: a stop of the duty's path further along than
-			// the siding's has rails would keep the train from ever leaving again (found by the end-to-end check, where a
-			// siding running by duties has itself alone as its path)
-			if (!getIsOnRoute() && nextStoppingIndex >= path.size()) {
+			// The next packet can be sent before motion runs again. Rebase the parked train along with its path.
+			if (tripPath == null && !getIsOnRoute()) {
+				parkAtSiding();
+				runSegmentSpec = null;
+			} else if (!getIsOnRoute() && nextStoppingIndex >= path.size()) {
 				nextStoppingIndex = 0;
 				nextPlatformIndex = 0;
 			}

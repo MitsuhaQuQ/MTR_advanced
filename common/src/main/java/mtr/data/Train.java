@@ -1026,6 +1026,11 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		return motion;
 	}
 
+	protected final void parkAtSiding() {
+		transitsim.run.RunMotion.parkAtSiding(motion, motion);
+		runSegment = null;
+	}
+
 	protected final void simulateTrain(Level world, float ticksElapsed, Depot depot) {
 		if (world == null) {
 			return;
