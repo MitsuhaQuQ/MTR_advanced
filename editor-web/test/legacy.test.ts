@@ -479,6 +479,85 @@ describe("the old code in the new page", () => {
     expect(changes[changes.length - 1].networkSettings).toEqual({ ownerOverrides: { "2,3": ["TRAIN|1号线|Line 1"] } })
     engine.pushDraft({ routes: {} })
   })
+  it("asks in side panels instead of the old dialogs and prompts", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LinePanels } = await import("../src/views/LinePanels")
+    const { fn, v } = engine.legacy
+    engine.pushDraft({ routes: {} })
+    const changes: any[] = []
+    engine.onLegacyDraft(draft => changes.push(draft))
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    await act(async () => createRoot(host).render(createElement(LinePanels)))
+    const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent === text) as HTMLElement
+    const type = async (value: string) => {
+      const input = host.querySelector("input") as HTMLInputElement
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+      })
+    }
+    const settle = async () => act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); engine.flushLegacy() })
+    const r = v.data.routeById.get("101")
+    // Shifting this and the later services: a wrong answer is told in the panel, a right one goes into the draft
+    const s = r.services[3]
+    await act(async () => fn.shiftLaterDialog(s))
+    expect(host.textContent).toContain("平移多少")
+    await type("x")
+    await act(async () => button("平移").click())
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("写分钟")
+    await type("1:30")
+    await act(async () => button("平移").click())
+    await settle()
+    expect(host.textContent).not.toContain("平移多少")
+    const shifted = changes[changes.length - 1].routes["101"].timetable.tables[s.tableIndex].services
+    expect(shifted).toContain(s.service + 90000)
+    // Clearing a table asks first; cancelling leaves it
+    await act(async () => fn.clearTable(r, 0))
+    await act(async () => button("取消").click())
+    expect(host.textContent).not.toContain("清空“")
+    await act(async () => fn.clearTable(r, 0))
+    await act(async () => button("清空").click())
+    await settle()
+    expect(changes[changes.length - 1].routes["101"].timetable.tables[0].services).toEqual([])
+    // The depot a service's train comes out of
+    engine.pushDraft({ routes: {} })
+    await settle()
+    const t = v.data.routeById.get("102").services[2]
+    await act(async () => fn.serviceOrderDialog(t, "deploy", 1))
+    const select = host.querySelector("select") as HTMLSelectElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select, "9001")
+      select.dispatchEvent(new Event("change", { bubbles: true }))
+    })
+    await act(async () => button("确定").click())
+    await settle()
+    expect(changes[changes.length - 1].routes["102"].timetable.tables[t.tableIndex].orders).toEqual([{ service: t.service, kind: "deploy", stop: 1, depot: "9001" }])
+    // A new logical line, named; then a type deleted, with what it takes along listed
+    await act(async () => fn.logicalLineDialog(null))
+    await act(async () => button("新建").click())
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("写上名称")
+    await type("京广线")
+    await act(async () => button("新建").click())
+    await settle()
+    expect(Object.values(changes[changes.length - 1].networkSettings.logicalLines)).toEqual([{ name: "京广线", color: 0x3b82f6, connecting: false }])
+    await act(async () => fn.deleteTypeDialog(r))
+    expect(host.textContent).toContain("车厂 “北湖车厂” 跑这个种别")
+    await act(async () => button("删除").click())
+    await settle()
+    expect(changes[changes.length - 1].routes["101"].deleted).toBe(true)
+    // A station's wait, checked as typed
+    await act(async () => fn.stationWaitDialog({ id: "s3", name: "中央广场" }))
+    await type("5000")
+    await act(async () => button("放进草稿").click())
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("0 到 3600")
+    await type("240")
+    await act(async () => button("放进草稿").click())
+    await settle()
+    expect(changes[changes.length - 1].networkSettings.stationWaitThresholds).toEqual({ s3: 240000 })
+    engine.pushDraft({ routes: {} })
+  })
   it("draws the network schematic and shows a station's tracks", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")

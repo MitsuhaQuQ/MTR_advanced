@@ -51,7 +51,10 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
   "storeDepotEntry", "setBoundary",
   // Step 7: dispatch and simulation (src/core/dispatch.ts, through src/legacy/retired.ts)
   "setSimulation", "scheduleSimulation", "simulate", "pollSimulation", "setSimResult", "simFromNow", "simLate", "simTooltip", "dutyCheckText", "loadConsole",
-  "toggleConsole", "consoleTrains", "consoleTrainName", "consoleTrainState", "consoleCommand", "isLoop", "loopEntryStop", "loopRuns"]
+  "toggleConsole", "consoleTrains", "consoleTrainName", "consoleTrainState", "consoleCommand", "isLoop", "loopEntryStop", "loopRuns",
+  // Step 8: the last small dialogs as side panels (src/views/AskPanels.tsx, through src/legacy/dialogs.ts)
+  "generateDuties", "replanDialog", "placeTrainsDialog", "deleteTypeDialog", "stationWaitDialog", "logicalDraftDialog", "serviceOrderDialog",
+  "logicalLineDialog", "ownersDialog", "lineTracksDialog", "finishPicking", "deadheadMenu"]
 /**
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms

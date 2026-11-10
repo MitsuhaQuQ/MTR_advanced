@@ -14,6 +14,7 @@ import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { DepotPanel, DepotRules } from "./DepotPanel"
 import { DutyGroupsPanel, ReleasePlanPanel, VehiclePanel } from "./DepotExtras"
+import { AskPanel, FinishPickingPanel, LineTracksPanel, LogicalLinePanel, OwnersPanel, ServiceOrderPanel } from "./AskPanels"
 import { DAY, clock, colorOf, mod, parseClock, routeTitle, shortName, stopName, systemTitle, tableName, timesOf, trc, weekdayName, weekdaysShort } from "./now"
 
 export function LinePanels() {
@@ -24,6 +25,12 @@ export function LinePanels() {
   }, [])
   if (!target) return null
   const close = () => setTarget(null)
+  if (target.kind === "ask") return <AskPanel key={target.title + target.text.join()} target={target} onClose={close} />
+  if (target.kind === "serviceOrder") return <ServiceOrderPanel key={target.serviceId + target.order + target.stop} serviceId={target.serviceId} order={target.order} stop={target.stop} onClose={close} />
+  if (target.kind === "logicalLine") return <LogicalLinePanel key={target.lineId || "new"} lineId={target.lineId} then={target.then} onClose={close} />
+  if (target.kind === "owners") return <OwnersPanel key={target.index} index={target.index} onClose={close} />
+  if (target.kind === "lineTracks") return <LineTracksPanel key={target.lineKey} lineKey={target.lineKey} onClose={close} />
+  if (target.kind === "finishPicking") return <FinishPickingPanel onClose={close} />
   if (target.kind === "speed") return <SpeedLimits key={target.routeIds.join()} routeIds={target.routeIds} onClose={close} />
   if (target.kind === "vehicle") return <VehiclePanel key={target.depotId + "/" + target.poolKey} depotId={target.depotId} poolKey={target.poolKey} onClose={close} />
   if (target.kind === "groups") return <DutyGroupsPanel key={target.depotId} depotId={target.depotId} onClose={close} />

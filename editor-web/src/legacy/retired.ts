@@ -7,7 +7,7 @@
 import { tr } from "../i18n"
 import * as T from "../core/timetable"
 import * as S from "../core/services"
-import { clock, DAY, mod, routeTitle, shortName, tableName } from "../core/format"
+import { clock, DAY, mod, routeTitle, shortName } from "../core/format"
 import * as X from "../core/settings"
 import * as P from "../core/dispatch"
 import * as D from "../core/duties"
@@ -86,29 +86,7 @@ export function timetableRules(get: () => Legacy) {
         fn.renderAll()
       }
     },
-    shiftLaterDialog(s: any) {
-      const later = T.laterServices(s)
-      const shift = T.parseShift(prompt(tr("这一班和之后的 {0} 班平移多少？写分钟，或写秒：90s、1:30、-0:45；负数是提前", later.length), "5"))
-      if (!shift) return
-      editTimetable(s.route, T.shiftLaterEdit(s, shift))
-    },
-    respaceRange() {
-      const state = get().v.state
-      const run = T.rangeServices(state, find)
-      if (run.length < 2) return
-      const minutes = Number(prompt(tr("这 {0} 班相邻两班之间隔多少分钟？", run.length), String(Math.round((run[1].start - run[0].start) / 60000) || 5)))
-      if (!(minutes > 0)) return
-      editTimetable(run[0].route, T.respaceEdit(run, minutes, () => { state.range = null }))
-    },
     setLink: (s: any, fromStop: number, target: any, toStop: number) => editTimetable(s.route, T.setLinkEdit(s, fromStop, target, toStop)),
-    clearTable(r: any, index: number) {
-      const { v } = get()
-      const table = T.timetableOf(v.draft, r).tables[index]
-      if (!table || !table.services.length) return
-      if (!confirm(tr("清空“{0}”的 {1} 个班次？改动先放进草稿，应用前都可以放弃。", tableName(table, index), table.services.length))) return
-      v.state.range = null
-      editTimetable(r, T.clearTableEdit(index, tableName))
-    },
 
     inRange: (s: any) => T.inRange(get().v.state, s),
     rangeServices: () => T.rangeServices(get().v.state, find),
@@ -238,11 +216,6 @@ export function settingsRules(get: () => Legacy) {
       done(true)
     },
     newLogicalId: X.newLogicalId,
-    deleteLogicalLine(line: X.LogicalLine) {
-      if (!confirm(tr("删除逻辑线路“{0}”？它的轨道不再属于任何逻辑线路，运营线路对它的勾选也去掉。应用前都在草稿里。", line.name))) return
-      X.deleteLogicalLine(get().v.data, get().v.draft, line.id)
-      done(true)
-    },
     draftOwnerOverrides: () => X.draftOwnerOverrides(get().v.draft),
     savedOwnerOverrides: () => X.savedOwnerOverrides(get().v.data),
     railOwnersShown: (index: number) => { const { v } = get(); return X.sectionOwnersShown(v.data, v.draft, keysOf(index).section, v.net.ownerOf && v.net.ownerOf.get(index)) },

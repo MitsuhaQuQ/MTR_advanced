@@ -13,6 +13,7 @@ import { createLegacy } from "./engine.generated.js"
 import { normalizeDraft } from "../core/draft"
 import * as Services from "../core/services"
 import { dispatchRules, dutyRules, settingsRules, timetableRules } from "./retired"
+import { dialogRules } from "./dialogs"
 
 export type MenuItem = [label: string, action: (() => void) | MenuItem[] | null | undefined]
 
@@ -29,6 +30,15 @@ export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { 
 
 /** One of the line layer's other panels (views/LinePanels.tsx): speed limits, through services, contingency plans */
 export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string } | { kind: "rules"; depotId: string; editing: any; opened: number } | { kind: "vehicle"; depotId: string; poolKey: string } | { kind: "groups"; depotId: string } | { kind: "release"; depotId: string }
+  // The old page's last small dialogs (views/AskPanels.tsx, retiring the old code step 8)
+  | ({ kind: "ask" } & AskTarget) | { kind: "serviceOrder"; serviceId: string; order: "deploy" | "return"; stop: number } | { kind: "logicalLine"; lineId: string | null; then?: (id: string) => void }
+  | { kind: "owners"; index: number } | { kind: "lineTracks"; lineKey: string } | { kind: "finishPicking" }
+/** A question in a side panel: things to know, perhaps one value, and what the answer does (it may say what is wrong); without go, only told */
+export type AskTarget = {
+  title: string; text: string[]; list?: string[]; hints?: string[]; ok: string; danger?: boolean
+  input?: { label: string; value: string; unit?: string; placeholder?: string; numeric?: boolean }
+  go?: (value: string) => string | void
+}
 export const panelHost: { current: ((target: PanelTarget) => void) | null } = { current: null }
 
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
@@ -91,6 +101,7 @@ const env = {
   ...dutyRules(() => legacy),
   ...settingsRules(() => legacy),
   ...dispatchRules(() => legacy),
+  ...dialogRules(() => legacy, target => panelHost.current?.(target)),
   render: (name: string) => onRender(name),
 }
 

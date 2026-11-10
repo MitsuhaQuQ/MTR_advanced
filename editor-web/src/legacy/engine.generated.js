@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, draftSettings, savedSettings, compareRailKeys, logicalLinesShown, usesLogicalLines, railLinesShown, railLogicalLine, railLogicalDrafted, draftSettingsPart, setRailLogicalLine, newLogicalId, deleteLogicalLine, draftOwnerOverrides, savedOwnerOverrides, railOwnersShown, setOwnerOverride, waitThresholdMillis, platformSpeedItems, platformStopItems, platformStationItems, rulesOf, sameVehicle, depotEntryOf, storeDepotEntry, setBoundary, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, simFromNow, simLate, simTooltip, dutyCheckText, loadConsole, toggleConsole, consoleTrains, consoleTrainName, consoleTrainState, consoleCommand, isLoop, loopEntryStop, loopRuns, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, draftSettings, savedSettings, compareRailKeys, logicalLinesShown, usesLogicalLines, railLinesShown, railLogicalLine, railLogicalDrafted, draftSettingsPart, setRailLogicalLine, newLogicalId, deleteLogicalLine, draftOwnerOverrides, savedOwnerOverrides, railOwnersShown, setOwnerOverride, waitThresholdMillis, platformSpeedItems, platformStopItems, platformStationItems, rulesOf, sameVehicle, depotEntryOf, storeDepotEntry, setBoundary, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, simFromNow, simLate, simTooltip, dutyCheckText, loadConsole, toggleConsole, consoleTrains, consoleTrainName, consoleTrainState, consoleCommand, isLoop, loopEntryStop, loopRuns, generateDuties, replanDialog, placeTrainsDialog, deleteTypeDialog, stationWaitDialog, logicalDraftDialog, serviceOrderDialog, logicalLineDialog, ownersDialog, lineTracksDialog, finishPicking, deadheadMenu, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -266,20 +266,7 @@ export function createLegacy(env) {
 		return tr("运用是按原来的设置排的（{0}）。现在的运用照样接得上，所以没有自动重排；按新设置重排可能更省车，需要时在车厂右键菜单里选“重新排运用”。", parts.join("，"));
 	}
 
-	function replanDialog(depot) {
-		const hint = replanText(depot.shortfall);
-		openDialog(tr("重新排运用"), `<p>${tr("按现在的时刻表、存车线和设置，把“{0}”所在规划单元（同一运营线路上自动排运用的车厂）的运用全部重新排一遍。", escapeHtml(shortName(depot.name)))}</p>
-			${hint ? `<p>${escapeHtml(hint)}</p>` : ""}
-			<p class="hint">${tr("现有运用接得上时游戏不会自己重排，免得运用跟着用时的小变化换来换去。重排后哪份运用跑哪几班、车回哪条存车线都可能变。结果在服务端日志和这里的运用里。")}</p>`, tr("重新排"), () => {
-			sendJson("api/replan-duties", "POST", { depot: depot.id }).then(result => {
-				dutyNotice = result.ok ? tr("已请求重新排“{0}”的运用。", shortName(depot.name)) : tr("没有权限，或者游戏里没有这个车厂。");
-				renderBanner();
-			}).catch(() => {
-				dutyNotice = tr("发送失败，游戏可能已经关闭");
-				renderBanner();
-			});
-		});
-	}
+	/* replanDialog: from env */
 
 	/**
 	 * The duty groups of a depot's duties as the web works them out (duty groups, step 4): its duties of each vehicle on
@@ -806,19 +793,7 @@ export function createLegacy(env) {
 		return items;
 	}
 
-	function serviceOrderDialog(s, kind, stop) {
-		const lineRoutes = new Set((currentLine() ? currentLine().routes : [s.route]).map(r => r.id));
-		const depots = data.depots.filter(depot => !depot.transportMode || !s.route.transportMode || depot.transportMode === s.route.transportMode);
-		const near = depots.filter(depot => depot.routes.some(id => lineRoutes.has(id))), far = depots.filter(depot => !near.includes(depot));
-		const option = depot => `<option value="${depot.id}">${escapeHtml(shortName(depot.name))}</option>`;
-		const current = kind === "deploy" ? s.deployOrder : s.returnOrder;
-		const title = kind === "deploy" ? tr("{0} 班从{1}出车", clock(s.start), stopName(s.route, stop)) : tr("{0} 班在{1}转回送", clock(s.start), stopName(s.route, stop));
-		const hint = kind === "deploy" ? tr("这一班从这一站起载客：车厂出一列车空跑到这里接上，之前的站不停。") : tr("这一班到这一站为止载客：之后的站不停，车从这里空跑回所选车厂。");
-		openDialog(escapeHtml(title), `<p class="hint">${hint}</p><label>${tr("车厂")} <select name="depot"><option value="0">${tr("自动选的车厂")}</option>${near.length ? `<optgroup label="${tr("跑这条线路的")}">${near.map(option).join("")}</optgroup>` : ""}${far.length ? `<optgroup label="${tr("其他车厂")}">${far.map(option).join("")}</optgroup>` : ""}</select></label>`, tr("确定"), form => {
-			editTimetable(s.route, timetable => setServiceOrder(timetable.tables[s.tableIndex], s.service, kind, stop, form.depot.value));
-		});
-		if (current) dialog.querySelector("select").value = current.depot;
-	}
+	/* serviceOrderDialog: from env */
 
 	// Times are typed as 7:10, 07:10, 07:10:30, 0710 or 071030, with full-width digits and colons from an input method too
 	function parseClock(text) {
@@ -1674,18 +1649,7 @@ export function createLegacy(env) {
 	/* setOwnerOverride: from env */
 
 	/** Choosing the lines that own a rail's section, from the lines of the map's kind of transport. */
-	function ownersDialog(index) {
-		const shown = railOwnersShown(index);
-		const lines = data.lines.filter(line => line.key.startsWith((net.mode || "TRAIN") + "|"));
-		const boxes = lines.map(line => `<label class="owner-choice"><input type="checkbox" name="owner" value="${escapeHtml(line.key)}"${shown.owners.includes(line.key) ? " checked" : ""}><span class="swatch" style="background:${colorOf(line.color)}"></span>${escapeHtml(shortName(line.name))}</label>`).join("");
-		openDialog(tr("区段归属"), `<p>${tr("这一段轨道（到下一个道岔或边界为止的整个区段）只让勾选的线路走。联络线和没有站台的线路不受限制。")}</p>
-			<div class="owner-choices">${boxes || `<p class="hint">${tr("没有这种运输方式的线路")}</p>`}</div>
-			<p class="hint">${tr("改动先存为草稿，点“应用”后服务端重新算归属，走不了的线路会重新寻路。")}</p>`, tr("确定"), form => {
-			const ticked = [...form.querySelectorAll("input[name=owner]:checked")].map(input => input.value);
-			if (!ticked.length) return tr("至少勾一条线路；要让所有线路都能走，请用右键“对所有线路开放”");
-			setOwnerOverride(index, ticked);
-		});
-	}
+	/* ownersDialog: from env */
 
 	// ---------- Logical lines (2026-11-09) ----------
 	/*
@@ -1717,84 +1681,20 @@ export function createLegacy(env) {
 	/* newLogicalId: from env */
 
 	/** A new logical line, or one changed: name, colour, connecting line; then what is done with its ID. */
-	function logicalLineDialog(line, then) {
-		const isNew = !line;
-		openDialog(isNew ? tr("新建逻辑线路") : tr("逻辑线路：{0}", escapeHtml(line.name)), `
-			<label>${tr("名称")} <input name="name" maxlength="64" value="${escapeHtml(line ? line.name : "")}" placeholder="${tr("例如 京沪线")}" required></label>
-			<label>${tr("颜色")} <input type="color" name="color" value="${colorOf(line ? line.color : 0x3b82f6)}"></label>
-			<label><input type="checkbox" name="connecting"${line && line.connecting ? " checked" : ""}> ${tr("联络线：所有运营线路都能走")}</label>
-			<p class="hint">${tr("逻辑线路是轨道本身的线路，和运营线路分开：每段轨道最多属于一条；运营线路走它勾选的逻辑线路，没勾时走它停靠的站台所在的逻辑线路。")}</p>`, isNew ? tr("新建") : tr("确定"), form => {
-			const name = form.name.value.trim();
-			if (!name) return tr("写上名称");
-			const id = isNew ? newLogicalId() : line.id;
-			const value = { name, color: parseInt(form.color.value.slice(1), 16), connecting: form.connecting.checked };
-			draftSettingsPart("logicalLines", drafted => { drafted[id] = value; });
-			if (then) then(id);
-		});
-	}
+	/* logicalLineDialog: from env */
 
 	/** Takes a logical line away, with its sections and the operating lines' choices of it. */
 	/* deleteLogicalLine: from env */
 
 	/** The logical lines an operating line runs on: ticked, or none for those of its platforms. */
-	function lineTracksDialog(lineKey) {
-		const line = data.lines.find(each => each.key === lineKey);
-		const tracks = Object.assign({}, savedSettings().lineTracks || {}, draftSettings().lineTracks || {});
-		const chosen = tracks[lineKey] || [];
-		const boxes = [...logicalLinesShown().values()].filter(each => !each.connecting).map(each => `<label class="owner-choice"><input type="checkbox" name="logical" value="${each.id}"${chosen.includes(each.id) ? " checked" : ""}><span class="swatch" style="background:${colorOf(each.color)}"></span>${escapeHtml(each.name)}</label>`).join("");
-		openDialog(tr("能走的逻辑线路：{0}", escapeHtml(line ? shortName(line.name) : lineKey)), `
-			<p>${tr("这条运营线路的各种别只走勾选的逻辑线路（和联络线、不属于任何逻辑线路的轨道）。都不勾时，走它停靠的站台所在的逻辑线路。")}</p>
-			<div class="owner-choices">${boxes || `<p class="hint">${tr("还没有逻辑线路")}</p>`}</div>
-			<p class="hint">${tr("改动先存为草稿，点“应用”后服务端重新算，走不了的线路会重新寻路。")}</p>`, tr("确定"), form => {
-			const ticked = [...form.querySelectorAll("input[name=logical]:checked")].map(input => input.value);
-			draftSettingsPart("lineTracks", drafted => { drafted[lineKey] = ticked.length ? ticked : null; });
-		});
-	}
+	/* lineTracksDialog: from env */
 
 	/**
 	 * A first draft of logical lines from the owners worked out now: the sections owned by the same operating lines one
 	 * logical line, named after them, a connecting line's own sections a connecting logical line; each operating line given
 	 * the logical lines it owns, so it runs where it does now.
 	 */
-	function logicalDraftDialog() {
-		if (!net.data || !net.data.owners || !net.data.owners.ready || !net.sectionRails) {
-			ensureNetworkFor(net.mode || "TRAIN");
-			alert(tr("全网配线的归属还没从服务端读来，稍等几秒再试。"));
-			return;
-		}
-		const groups = new Map();
-		net.sectionRails.forEach(rails => {
-			const entry = net.ownerOf.get(rails[0]);
-			if (!entry || !entry.owners.length) return;
-			const key = entry.owners.slice().sort().join("\n");
-			if (!groups.has(key)) groups.set(key, { owners: entry.owners.slice().sort(), rails: [] });
-			groups.get(key).rails.push(rails[0]);
-		});
-		if (!groups.size) {
-			alert(tr("现在没有任何轨道有归属，没有可以生成的初稿。"));
-			return;
-		}
-		openDialog(tr("按现在的归属生成逻辑线路初稿"), `<p>${tr("按现在算出的归属，把归同一组运营线路的区段放进同一条逻辑线路（共 {0} 条），联络线自己的区段成为标了联络线的逻辑线路；每条运营线路勾上它现在归属的逻辑线路，寻路和现在一样。", groups.size)}</p>
-			<p class="hint">${tr("放进草稿，应用后改按逻辑线路寻路。之后可以改名、合并、重新划分。")}</p>`, tr("生成"), () => {
-			const lineIdsOf = new Map();
-			const created = {}, railLines = {};
-			let serial = 0;
-			groups.forEach(group => {
-				const id = String(Date.now() * 1000 + serial++);
-				const connecting = group.owners.length === 1 && group.owners[0].startsWith("connecting:");
-				const first = data.lines.find(each => each.key === group.owners[0]);
-				created[id] = { name: group.owners.map(ownerText).join(tr("、")), color: connecting ? 0xE8891A : first ? first.color & 0xFFFFFF : 0x888888, connecting };
-				group.rails.forEach(index => { railLines[netRailKey(index)] = id; });
-				if (!connecting) group.owners.forEach(owner => {
-					if (!lineIdsOf.has(owner)) lineIdsOf.set(owner, []);
-					lineIdsOf.get(owner).push(id);
-				});
-			});
-			draftSettingsPart("logicalLines", drafted => Object.assign(drafted, created));
-			draftSettingsPart("railLines", drafted => Object.assign(drafted, railLines));
-			draftSettingsPart("lineTracks", drafted => lineIdsOf.forEach((ids, lineKey) => { drafted[lineKey] = ids; }));
-		});
-	}
+	/* logicalDraftDialog: from env */
 
 	/** The menu of a rail on the ownership layer with logical lines: its section's logical line, and the connecting lines over it. */
 	function logicalMenu(e, index) {
@@ -2535,28 +2435,7 @@ export function createLegacy(env) {
 	}
 
 	/** The last step: the line's name, its type and colour, then the route goes into the draft as a new line. */
-	function finishPicking() {
-		const stops = picking.stops;
-		openDialog(tr("新建线路"), `
-			<label>${tr("线路组名")} <input name="line" placeholder="${tr("例如 1号线")}"></label>
-			<label>${tr("种别名")} <input name="type" placeholder="${tr("例如 普通")}"></label>
-			<label>${tr("颜色")} <input type="color" name="color" value="${picking.color}"></label>
-			<p class="hint">${escapeHtml(stops.map(stop => stop.name).join(" → "))}</p>`, tr("放进草稿"), form => {
-			const lineName = form.line.value.trim(), type = form.type.value.trim();
-			if (!lineName) return tr("写上线路组名，例如 1号线");
-			if (data.lines.some(l => l.key === picking.mode + "|" + lineName.toLowerCase())) return tr("已经有这个线路组了，请用“新建 ▾ → 种别…”");
-			if (!type) return tr("写上种别名，例如 普通");
-			draft.created.push({
-				key: "n" + Date.now().toString(36), source: "", mode: picking.mode, lineName, lineKey: picking.mode + "|" + lineName.toLowerCase(),
-				name: `${shortName(stops[0].name)} → ${shortName(stops[stops.length - 1].name)}`, serviceType: type, color: parseInt(form.color.value.slice(1), 16),
-				stops: stops.map((stop, k) => ({ platformId: stop.platformId, pass: stop.pass && k > 0 && k < stops.length - 1, waypoints: stop.waypoints.slice() })),
-				services: [], table: 0, depot: "",
-			});
-			picking = null;
-			saveDraft();
-			renderAll();
-		});
-	}
+	/* finishPicking: from env */
 
 	function onWayPickPanelClick(e) {
 		if (!wayPick) return false;
@@ -4486,22 +4365,7 @@ export function createLegacy(env) {
 	/* waitThresholdMillis: from env */
 
 	/** A station's own wait threshold, set or taken back to the network's, into the draft. */
-	function stationWaitDialog(station) {
-		const settings = data && data.networkSettings || {};
-		const drafted = draft.networkSettings && draft.networkSettings.stationWaitThresholds || {};
-		const current = station.id in drafted ? drafted[station.id] : (settings.stationWaitThresholds || {})[station.id];
-		openDialog(tr("等候分界：{0}", escapeHtml(shortName(station.name))), `
-			<label>${tr("秒（留空用全网的 {0} 秒）", Math.round(waitThresholdMillis() / 1000))} <input type="number" name="seconds" min="0" max="3600" value="${current === null || current === undefined ? "" : Math.round(current / 1000)}"></label>
-			<p class="hint">${tr("在这个车站两班之间等得比这长，列车就离开站台去折返线等。出入库规则里还可以按线路再改。")}</p>`, tr("放进草稿"), form => {
-			const text = form.seconds.value.trim();
-			if (text !== "" && !(Number(text) >= 0 && Number(text) <= 3600)) return tr("写 0 到 3600 秒，或者留空");
-			draft.networkSettings = draft.networkSettings || {};
-			draft.networkSettings.stationWaitThresholds = Object.assign({}, draft.networkSettings.stationWaitThresholds || {});
-			draft.networkSettings.stationWaitThresholds[station.id] = text === "" ? null : Math.round(Number(text)) * 1000;
-			saveDraft();
-			renderAll();
-		});
-	}
+	/* stationWaitDialog: from env */
 
 	/* minReverseMillis: from env */
 	/**
@@ -4744,60 +4608,7 @@ export function createLegacy(env) {
 	}
 
 	/** The menu of a duty's deadhead on the diagram: its time, path or siding, or back to the rules. */
-	function deadheadMenu(e, leg) {
-		const depot = depotById(leg.depot);
-		const siding = depot && depot.sidings.find(o => o.id === leg.siding);
-		const slot = siding && (dutiesOf(depot).sidings[siding.id] || [])[leg.index];
-		const day = slot && dutyOn(slot, state.weekday);
-		if (!day) {
-			openMenuAt(e, []);
-			return;
-		}
-		const canEdit = data.canEdit;
-		const paths = (rulesOf(depot).paths || []).filter(path => path.kind === (leg.kind === "out" ? "out" : "back"));
-		const pathItems = [[`${!day[leg.kind === "out" ? "outPath" : "backPath"] || day[leg.kind === "out" ? "outPath" : "backPath"] === "0" ? "✓ " : ""}${tr("最近车站后顺线路方向（默认）")}`, () => editDutyException(depot, siding.id, leg.index, edited => {
-			edited[leg.kind === "out" ? "outPath" : "backPath"] = "0";
-			edited.exceptions = (edited.exceptions || 0) | (leg.kind === "out" ? EXCEPTION.OUT_PATH : EXCEPTION.BACK_PATH);
-		})], ...paths.map(path => [`${day[leg.kind === "out" ? "outPath" : "backPath"] === path.id ? "✓ " : ""}${path.name || path.id}`, () => editDutyException(depot, siding.id, leg.index, edited => {
-			edited[leg.kind === "out" ? "outPath" : "backPath"] = path.id;
-			edited.exceptions = (edited.exceptions || 0) | (leg.kind === "out" ? EXCEPTION.OUT_PATH : EXCEPTION.BACK_PATH);
-		})])];
-		const items = [];
-		if (leg.kind === "out") {
-			items.push([tr("出库提前量…"), canEdit ? () => {
-				const times = deadheadTimes(siding, day).out;
-				const text = prompt(tr("比首班早多少出库（秒，不少于出库路线用时 {0} 秒）", Math.round(times.wayOut / 1000)), String(Math.round(times.lead / 1000)));
-				if (text === null) return;
-				const seconds = Math.round(Number(text));
-				if (!(seconds >= 0)) return;
-				editDutyException(depot, siding.id, leg.index, edited => {
-					edited.outLead = Math.max(times.wayOut, seconds * 1000);
-					edited.exceptions = (edited.exceptions || 0) | EXCEPTION.OUT_LEAD;
-					return tr("{0} 改为首班前 {1} 出库（这份运用的例外）", times.number, durationText(edited.outLead));
-				});
-			} : null]);
-			items.push([tr("出库路径"), canEdit ? pathItems : null]);
-			items.push([tr("按规则恢复"), canEdit && (day.exceptions & (EXCEPTION.OUT_LEAD | EXCEPTION.OUT_PATH | EXCEPTION.ENTRANCES)) ? () => editDutyException(depot, siding.id, leg.index, edited => {
-				edited.exceptions = (edited.exceptions || 0) & ~(EXCEPTION.OUT_LEAD | EXCEPTION.OUT_PATH | EXCEPTION.ENTRANCES);
-				return tr("出库按规则，重新排运用时按规则重算");
-			}) : null]);
-		} else {
-			items.push([tr("回库存车线"), canEdit ? poolSidings(depot, siding.id).map(other => [`${day.returnSiding === other.id ? "✓ " : ""}${shortName(other.name) || tr("存车线")}`, () => editDutyException(depot, siding.id, leg.index, edited => {
-				edited.returnSiding = other.id;
-				edited.exceptions = (edited.exceptions || 0) | EXCEPTION.BACK_SIDING;
-			})]) : null]);
-			items.push([tr("回库路径"), canEdit ? pathItems : null]);
-			items.push([tr("按规则恢复"), canEdit && (day.exceptions & (EXCEPTION.BACK_SIDING | EXCEPTION.BACK_PATH)) ? () => editDutyException(depot, siding.id, leg.index, edited => {
-				edited.exceptions = (edited.exceptions || 0) & ~(EXCEPTION.BACK_SIDING | EXCEPTION.BACK_PATH);
-				return tr("回库按规则，重新排运用时按规则重算");
-			}) : null]);
-		}
-		items.push([tr("选中这份运用"), () => {
-			state.slot = { depot: depot.id, siding: siding.id, index: leg.index };
-			renderAll();
-		}]);
-		openMenuAt(e, items);
-	}
+	/* deadheadMenu: from env */
 
 	function oldReleasePlanDialog(depot) {
 		const duties = dutiesOf(depot);
@@ -4832,18 +4643,7 @@ export function createLegacy(env) {
 	}
 
 	/** Has the game put the depot's trains where the timetable has them now, instead of sending them out one by one. */
-	function placeTrainsDialog(depot) {
-		openDialog(tr("按时刻表摆车"), `<p>${tr("把“{0}”的列车直接放到时刻表现在要求的位置：从今天运营日开始按游戏的规则算到现在，这时候应该在线上的车摆上去，已经发过的班次不再发；原来的车换成算出来的车，乘客和货物不保留，玩家驾驶中的车不动。", escapeHtml(shortName(depot.name)))}</p>
-			<p class="hint">${tr("只对开了速度曲线、由组件驱动的车厂有效。用的是游戏里已应用的时刻表，草稿要先应用。结果在游戏聊天栏。")}</p>`, tr("摆车"), () => {
-			sendJson("api/place-trains", "POST", { depot: depot.id }).then(result => {
-				dutyNotice = result.ok ? tr("已请求“{0}”按时刻表摆车，结果见游戏聊天栏。", shortName(depot.name)) : tr("没有权限，或者游戏里没有这个车厂。");
-				renderBanner();
-			}).catch(() => {
-				dutyNotice = tr("发送失败，游戏可能已经关闭");
-				renderBanner();
-			});
-		});
-	}
+	/* placeTrainsDialog: from env */
 
 	const isOrderIssue = issue => issue.startsWith("DEPLOY_DEPOT ") || issue.startsWith("RETURN_DEPOT ");
 	/**
@@ -5068,38 +4868,7 @@ export function createLegacy(env) {
 	 */
 	const plannedReturns = new Map();
 
-	async function generateDuties(depot) {
-		if (draft.duties[depot.id] && !confirm(`${tr("用自动生成的运用替换“{0}”草稿里的运用？", shortName(depot.name))}`)) return;
-		if (!draft.duties[depot.id] && Object.values((depot.duties || { sidings: {} }).sidings).some(slots => slots.length) && !confirm(`${tr("用自动生成的运用替换“{0}”现在的运用？应用前都还在草稿里。", shortName(depot.name))}`)) return;
-		dutyNotice = tr("正在生成运用…");
-		renderBanner();
-		try {
-			const result = await sendJson("api/plan-duties", "POST", { depot: depot.id });
-			if (result.noSidings) {
-				dutyNotice = tr("这个车厂没有存车线，生成不了运用。");
-			} else {
-				editDuties(depot, duties => {
-					duties.sidings = result.duties.sidings;
-				});
-				plannedReturns.set(depot.id, result.returns || {});
-				// The running kernel checks the duties in a simulated day with the draft (S6), if the server has it on
-				if (data.simulation) {
-					sim.checkDepot = depot.id;
-					if (sim.on) simulate(); else setSimulation(true);
-				}
-				// Planned with the depot's operating lines, as the game plans them; the draft is this depot's part
-				const byLine = result.byLine ? tr("按运营线路 {0} 和 {1} 个车厂一起排，这里是本车厂的部分；应用后线路上其他自动排的车厂会把剩下的班次重排。", result.lineNames, result.lineDepots) + (result.uncovered && result.needed > result.available ? tr("跑满需要 {0} 列，现有 {1} 列{2}。", result.needed, result.available, result.suggestedSiding ? tr("，加到 {0}", result.suggestedSiding) : "") : "") : "";
-				dutyNotice = byLine + `${tr("已生成：最多同时 {0} 列车在线上。", result.trains)}` + (result.uncovered ? `${tr("有 {0} 班没有车可派，存车线放的车不够。", result.uncovered)}` : "")
-					+ (result.missingTimes.length ? `${tr("{0} 还没有各站时刻，没有算进去，打开它的时刻表或刷新车厂路径后再生成。", result.missingTimes.join("、"))}` : "")
-					+ result.issues.filter(issue => issue.startsWith("SHORT_TURNAROUND ")).map(shortTurnaroundText).join("")
-					+ result.issues.filter(isOrderIssue).slice(0, 5).map(orderIssueText).join("")
-					+ (result.issues.some(issue => !issue.startsWith("SHORT_TURNAROUND ") && !isOrderIssue(issue)) ? `${tr("其他问题：{0}", result.issues.filter(issue => !issue.startsWith("SHORT_TURNAROUND ") && !isOrderIssue(issue)).slice(0, 3).join("；"))}` : "") + tr("先检查一遍，再按“应用”。");
-			}
-		} catch (e) {
-			dutyNotice = tr("生成失败：") + (e.message === "401" ? tr("页面的链接已经失效") : tr("游戏可能已经关闭"));
-		}
-		renderAll();
-	}
+	/* generateDuties: from env */
 
 	function setDutyMode(depot, mode) {
 		editDuties(depot, duties => {
@@ -6497,28 +6266,7 @@ export function createLegacy(env) {
 	 * Marks a type for deletion, after saying what still names it: those stay as they are, the same as deleting it on the
 	 * dashboard, and stop working.
 	 */
-	function deleteTypeDialog(r) {
-		const depots = data.depots.filter(depot => depot.routes.includes(r.id)).map(depot => "“" + shortName(depot.name) + "”");
-		let segments = 0;
-		data.depots.forEach(depot => Object.values(dutiesOf(depot).sidings).forEach(slots => slots.forEach(slot => slot.forEach(day => {
-			segments += day.segments.filter(segment => segment.route === r.id).length;
-		}))));
-		const links = data.routes.filter(other => other !== r).reduce((count, other) => count + other.services.filter(s => s.link && s.link.route === r.id).length, 0);
-		const notes = [];
-		if (depots.length) notes.push(`${tr("车厂 {0} 跑这个种别，删除后不再跑它，要刷新车厂路径", depots.map(escapeHtml).join("、"))}`);
-		if (segments) notes.push(`${tr("运用里有 {0} 班是它的，这些运用会走不通，要改运用", segments)}`);
-		if (links) notes.push(`${tr("别的种别有 {0} 班直通到它，这些直通会失效", links)}`);
-		openDialog(tr("删除种别"), `
-			<p>${tr("删除")} <b>${escapeHtml(routeTitle(r))}</b>${tr("：它的车站、停站设置和全部时刻表都从游戏里删掉，不能恢复。")}</p>
-			${notes.length ? `<ul class="warn">${notes.map(note => `<li>${note}</li>`).join("")}</ul>` : ""}
-			<p class="hint">${tr("先放在草稿里，按“应用”才删除。应用之前可以右键取消。这个种别别的没应用的改动也一起丢掉。")}</p>`, tr("删除"), () => {
-			const entry = draftEntry(r);
-			entry.deleted = true;
-			if (!entry.conflict) delete entry.error;
-			saveDraft();
-			renderAll();
-		});
-	}
+	/* deleteTypeDialog: from env */
 
 	function keepType(r) {
 		const entry = draftOf(r);
@@ -7628,7 +7376,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, ownerText, ownerColor, ownersDialog, logicalLineDialog, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, consoleRail, drawConsole, renderConsole, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, renderSimStatus, drawSimulated, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, stopPositionText, cellMenu, trackTitle, loopPanel, terminalText, coverageText, stationWaitDialog, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, poolFleetText, oldDepotDialog, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
+		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, railMenu, shortfallText, missingTrains, replanText, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, ownerText, ownerColor, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, consoleRail, drawConsole, renderConsole, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, onWayPickPanelClick, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, renderSimStatus, drawSimulated, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, stopPositionText, cellMenu, trackTitle, loopPanel, terminalText, coverageText, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, oldReleasePlanDialog, orderIssueText, shortTurnaroundText, poolFleetText, oldDepotDialog, vehicleSummary, oldVehicleDialog, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },
