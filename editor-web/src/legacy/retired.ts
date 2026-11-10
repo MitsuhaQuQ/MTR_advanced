@@ -7,7 +7,8 @@
 import { tr } from "../i18n"
 import * as T from "../core/timetable"
 import * as S from "../core/services"
-import { clock, DAY, mod, routeTitle, tableName } from "../core/format"
+import { clock, DAY, mod, routeTitle, shortName, tableName } from "../core/format"
+import * as X from "../core/settings"
 import * as D from "../core/duties"
 import { DraftTimes } from "../core/draftTimes"
 
@@ -196,6 +197,91 @@ export function dutyRules(get: () => Legacy) {
         fn.poll(true)
       })()
       return undefined
+    },
+  }
+}
+
+/** Step 6: the network settings (core/settings.ts); a rail's section is the old real map's (sectionOf, netRailKey) */
+export function settingsRules(get: () => Legacy) {
+  const keysOf = (index: number) => { const { v } = get(); return { key: v.netRailKey(index), section: v.sectionOf(index).map(v.netRailKey) as string[] } }
+  const done = (network = false) => {
+    const { fn } = get()
+    fn.saveDraft()
+    fn.renderAll()
+    if (network) { fn.renderNetworkTools(); fn.drawNetwork() }
+  }
+  /** A menu of a platform setting's choices, ticked where it is now */
+  const platformItems = (part: X.PlatformPart, choices: [number | string, string][]) => (platformId: string) => {
+    const { v } = get()
+    const p = v.platformById(platformId)
+    if (!p || !v.data.canEdit) return null
+    const current = X.platformSetting(v.draft, part, p)
+    return choices.map(([value, label]) => [`${current === value ? "✓ " : ""}${label}`, () => { X.setPlatformSetting(get().v.draft, part, p, value); done() }])
+  }
+  return {
+    draftSettings: () => X.draftSettings(get().v.draft),
+    savedSettings: () => X.savedSettings(get().v.data),
+    compareRailKeys: X.compareRailKeys,
+    logicalLinesShown: () => X.logicalLinesShown(get().v.data, get().v.draft),
+    usesLogicalLines: () => X.usesLogicalLines(get().v.data, get().v.draft),
+    railLinesShown: () => X.railLinesShown(get().v.data, get().v.draft),
+    railLogicalLine: (index: number) => X.sectionLogicalLine(get().v.data, get().v.draft, keysOf(index).section),
+    railLogicalDrafted: (index: number) => X.sectionLogicalDrafted(get().v.draft, keysOf(index).section),
+    draftSettingsPart(part: string, change: (drafted: Record<string, any>, saved: Record<string, any>) => void) {
+      X.setSettingsPart(get().v.data, get().v.draft, part, change)
+      done(true)
+    },
+    setRailLogicalLine(index: number, id: string | null) {
+      const { key, section } = keysOf(index)
+      X.setSectionLogicalLine(get().v.data, get().v.draft, key, section, id)
+      done(true)
+    },
+    newLogicalId: X.newLogicalId,
+    deleteLogicalLine(line: X.LogicalLine) {
+      if (!confirm(tr("删除逻辑线路“{0}”？它的轨道不再属于任何逻辑线路，运营线路对它的勾选也去掉。应用前都在草稿里。", line.name))) return
+      X.deleteLogicalLine(get().v.data, get().v.draft, line.id)
+      done(true)
+    },
+    draftOwnerOverrides: () => X.draftOwnerOverrides(get().v.draft),
+    savedOwnerOverrides: () => X.savedOwnerOverrides(get().v.data),
+    railOwnersShown: (index: number) => { const { v } = get(); return X.sectionOwnersShown(v.data, v.draft, keysOf(index).section, v.net.ownerOf && v.net.ownerOf.get(index)) },
+    setOwnerOverride(index: number, lines: string[] | null) {
+      const { key, section } = keysOf(index)
+      X.setSectionOwners(get().v.data, get().v.draft, key, section, lines)
+      done()
+      get().fn.drawNetwork()
+    },
+    waitThresholdMillis: () => X.waitThresholdMillis(get().v.data, get().v.draft),
+    platformSpeedItems: platformItems("platformSpeeds", X.PASS_SPEEDS.map(speed => [speed, `${speed} km/h`])),
+    platformStopItems: (platformId: string) => platformItems("platformStops", X.STOP_POSITIONS.map(position => [position, get().fn.stopPositionText(position)]))(platformId),
+    platformStationItems(platformId: string) {
+      const { v, fn } = get()
+      const p = v.platformById(platformId)
+      if (!p || !v.data.canEdit) return null
+      const current = X.platformSetting(v.draft, "platformStations", p)
+      const stations = v.topo ? v.topo.stations : []
+      // Automatic, by the areas and the nearest platform, or any of the nearest stations, wherever the platform is
+      const near = stations.slice().sort((a: any, b: any) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z)).slice(0, 8)
+      if (current !== "0" && !near.some((station: any) => station.id === current)) {
+        const set = stations.find((station: any) => station.id === current)
+        if (set) near.push(set)
+      }
+      const choose = (stationId: string) => () => { X.setPlatformSetting(get().v.draft, "platformStations", p, stationId); done() }
+      return [[`${current === "0" ? "✓ " : ""}${fn.stationNameOf("0")}`, choose("0")], ...near.map((station: any) => [`${current === station.id ? "✓ " : ""}${shortName(station.name) || tr("（未命名车站）")}`, choose(station.id)])]
+    },
+    rulesOf: (depot: any) => X.rulesOf(get().v.draft, depot),
+    sameVehicle: X.sameVehicle,
+    depotEntryOf: (depot: any) => X.depotEntryOf(get().v.draft, depot),
+    storeDepotEntry(depot: any, entry: any, sameAdded?: boolean) {
+      X.storeDepotEntry(get().v.draft, depot, entry, sameAdded)
+      done()
+    },
+    setBoundary(a: string, b: string, boundary: boolean, wasBoundary: boolean) {
+      const { v } = get()
+      const key = v.railKey(a, b)
+      X.setBoundary(v.draft, key, boundary, wasBoundary)
+      delete v.boundaryErrors[key]
+      done()
     },
   }
 }

@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 export function createLegacy(env) {
-	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
+	const { MTREditor, openMenu, openMenuAt, closeMenu, buildMenu, fetchJson, sendJson, setTreeOpen, routeDiagramDialog, lineDiagramDialog, buildStations, buildServices, plansFor, toPlans, gameSource, findService, timesOf, currentLine, draftOf, draftEntry, tidyDraft, gameTimetable, fromGame, normalize, timetableOf, editTimetable, setStopException, syncExceptions, retimeService, setSuspended, removeService, setServiceOrder, changeTime, laterServices, moveServices, shiftLaterDialog, parseShift, respaceRange, setLink, clearTable, servicesToAdd, renumberTimetable, renumberLinksInto, inRange, rangeServices, chooseRange, toggleChosen, chooseLater, servicesToMove, timesSource, sendTimes, draftTimes, requestedTimes, timesTimer, canonDuties, dutiesOf, routeIsLoop, dutyOn, segmentKey, startOf, newDutyId, dutyIdOf, findDutySlot, dutyNumber, relinkOvernight, poolSidings, editDuties, dayGroup, dutyForEditing, segmentService, lastStopOf, segmentStart, segmentEnd, coverageNow, hasNoTrain, terminalNow, dutyAssignments, dutyProblems, nextSlotOf, dutyEndPlatform, dutyStartPlatform, minReverseMillis, turnTimeOf, stopLabel, stopHangers, renumberDuties, sendStopList, draftSettings, savedSettings, compareRailKeys, logicalLinesShown, usesLogicalLines, railLinesShown, railLogicalLine, railLogicalDrafted, draftSettingsPart, setRailLogicalLine, newLogicalId, deleteLogicalLine, draftOwnerOverrides, savedOwnerOverrides, railOwnersShown, setOwnerOverride, waitThresholdMillis, platformSpeedItems, platformStopItems, platformStationItems, rulesOf, sameVehicle, depotEntryOf, storeDepotEntry, setBoundary, stopsDialog, newLineDialog, newTypeDialog, speedLimitDialog, throughDialog, contingencyDialog, tableDialog, depotDialog, depotRulesDialog, vehicleDialog, dutyGroupsDialog, releasePlanDialog } = env;
 	const DAY = 24 * 60 * 60 * 1000;
 	// Checked often, so changes made in the game show soon; less often while the page is hidden
 	const POLL_MILLIS = 1500, POLL_HIDDEN_MILLIS = 5000;
@@ -209,14 +209,7 @@ export function createLegacy(env) {
 	}
 
 	/** Sets or clears a pathfinding boundary on a rail in the draft, sent with the in-game boundary packet when applied. */
-	function setBoundary(a, b, boundary, wasBoundary) {
-		const key = railKey(a, b);
-		if (boundary === wasBoundary) delete draft.boundaries[key];
-		else draft.boundaries[key] = boundary;
-		delete boundaryErrors[key];
-		saveDraft();
-		renderAll();
-	}
+	/* setBoundary: from env */
 
 	/** The menu of a rail in a track diagram: a pathfinding boundary, which only narrows searches, or a connecting line's rail. */
 	function railMenu(e, r, rail, rerender, routesHere) {
@@ -1638,8 +1631,8 @@ export function createLegacy(env) {
 	const netWorldZ = pz => (pz - netWrap.clientHeight / 2) / net.scale + net.cz;
 
 	// ---------- Section owners (web layers step 2) ----------
-	const draftOwnerOverrides = () => draft.networkSettings && draft.networkSettings.ownerOverrides || {};
-	const savedOwnerOverrides = () => data && data.networkSettings && data.networkSettings.ownerOverrides || {};
+	/* draftOwnerOverrides: from env */
+	/* savedOwnerOverrides: from env */
 	const netRailKey = index => {
 		const d = net.data, rail = d.rails[index];
 		return railKey(d.nodes[rail[0]][2], d.nodes[rail[1]][2]);
@@ -1656,23 +1649,7 @@ export function createLegacy(env) {
 	 *
 	 * @return {owners: [owner], manual, drafted, auto} where auto is a section the draft gives back to being worked out
 	 */
-	function railOwnersShown(index) {
-		const entry = net.ownerOf && net.ownerOf.get(index);
-		const drafted = draftOwnerOverrides(), saved = savedOwnerOverrides();
-		const keys = sectionOf(index).map(netRailKey).filter(key => key in drafted);
-		if (!keys.length) return { owners: entry ? entry.owners : [], manual: Boolean(entry && entry.manual), drafted: false, auto: false };
-		// What the section will be: the drafted rails as drafted, its other rails set by hand as saved
-		const lines = new Set();
-		let anySet = false;
-		sectionOf(index).map(netRailKey).forEach(key => {
-			const value = key in drafted ? drafted[key] : saved[key];
-			if (value === undefined || value === null) return;
-			anySet = true;
-			value.forEach(line => lines.add(line));
-		});
-		if (!anySet) return { owners: [], manual: false, drafted: true, auto: true };
-		return { owners: [...lines], manual: true, drafted: true, auto: false };
-	}
+	/* railOwnersShown: from env */
 
 	/** An owner as a person reads it: a line's name, or a connecting line's. */
 	function ownerText(owner) {
@@ -1694,29 +1671,7 @@ export function createLegacy(env) {
 	 * Sets the owners of a rail's section by hand in the draft: the lines, none to open it to every line, or null to have
 	 * them worked out again. Kept on the rail chosen, and taken off the section's other rails.
 	 */
-	function setOwnerOverride(index, lines) {
-		const saved = savedOwnerOverrides();
-		const overrides = Object.assign({}, draftOwnerOverrides());
-		const key = netRailKey(index);
-		sectionOf(index).map(netRailKey).forEach(other => {
-			if (other === key && lines !== null) return;
-			if (other in saved) overrides[other] = null;
-			else delete overrides[other];
-		});
-		if (lines !== null) overrides[key] = lines;
-		// What only takes back a change not made yet is no change
-		Object.keys(overrides).forEach(other => {
-			if (overrides[other] === null && !(other in saved)) delete overrides[other];
-			else if (overrides[other] !== null && JSON.stringify(overrides[other]) === JSON.stringify(saved[other])) delete overrides[other];
-		});
-		const settings = Object.assign({}, draft.networkSettings || {});
-		if (Object.keys(overrides).length) settings.ownerOverrides = overrides;
-		else delete settings.ownerOverrides;
-		draft.networkSettings = Object.keys(settings).length ? settings : null;
-		saveDraft();
-		renderAll();
-		drawNetwork();
-	}
+	/* setOwnerOverride: from env */
 
 	/** Choosing the lines that own a rail's section, from the lines of the map's kind of transport. */
 	function ownersDialog(index) {
@@ -1738,67 +1693,28 @@ export function createLegacy(env) {
 	 * operating line runs on the logical lines chosen for it, or those of its platforms (transitsim LogicalLines). Once there
 	 * are any, they decide where operating lines may run instead of the owners worked out from boundaries and platforms.
 	 */
-	const draftSettings = () => draft.networkSettings || {};
-	const savedSettings = () => data && data.networkSettings || {};
-	const compareRailKeys = (a, b) => {
-		const [a1, a2] = a.split(",").map(BigInt), [b1, b2] = b.split(",").map(BigInt);
-		return a1 < b1 ? -1 : a1 > b1 ? 1 : a2 < b2 ? -1 : a2 > b2 ? 1 : 0;
-	};
+	/* draftSettings: from env */
+	/* savedSettings: from env */
+	/* compareRailKeys: from env */
 
 	/** The logical lines as the draft has them, by ID: {id, name, color, connecting}. */
-	function logicalLinesShown() {
-		const lines = new Map((savedSettings().logicalLines || []).map(line => [line.id, Object.assign({}, line)]));
-		Object.entries(draftSettings().logicalLines || {}).forEach(([id, line]) => {
-			if (line === null) lines.delete(id);
-			else lines.set(id, Object.assign({ id }, line));
-		});
-		return lines;
-	}
-	const usesLogicalLines = () => logicalLinesShown().size > 0;
+	/* logicalLinesShown: from env */
+	/* usesLogicalLines: from env */
 
 	/** Each section's logical line by a rail of it, as the draft has them. */
-	const railLinesShown = () => Object.assign({}, savedSettings().railLines || {}, draftSettings().railLines || {});
+	/* railLinesShown: from env */
 
 	/** The logical line of a rail's section as the draft has it, or null; of several rails set, the lowest key counts, as on the server. */
-	function railLogicalLine(index) {
-		const effective = railLinesShown(), lines = logicalLinesShown();
-		const keys = sectionOf(index).map(netRailKey).filter(key => effective[key] !== null && effective[key] !== undefined && lines.has(effective[key])).sort(compareRailKeys);
-		return keys.length ? lines.get(effective[keys[0]]) : null;
-	}
-	const railLogicalDrafted = index => sectionOf(index).map(netRailKey).some(key => key in (draftSettings().railLines || {}));
+	/* railLogicalLine: from env */
+	/* railLogicalDrafted: from env */
 
 	/** Changes one part of the drafted network settings, taking out what is as the game has it, and the settings when nothing is left. */
-	function draftSettingsPart(part, change) {
-		const saved = part === "logicalLines" ? Object.fromEntries((savedSettings().logicalLines || []).map(line => [line.id, { name: line.name, color: line.color, connecting: line.connecting }])) : savedSettings()[part] || {};
-		const drafted = Object.assign({}, draftSettings()[part] || {});
-		change(drafted, saved);
-		Object.keys(drafted).forEach(key => {
-			if (drafted[key] === null ? !(key in saved) : JSON.stringify(drafted[key]) === JSON.stringify(saved[key])) delete drafted[key];
-		});
-		const settings = Object.assign({}, draft.networkSettings || {});
-		if (Object.keys(drafted).length) settings[part] = drafted;
-		else delete settings[part];
-		draft.networkSettings = Object.keys(settings).length ? settings : null;
-		saveDraft();
-		renderAll();
-		renderNetworkTools();
-		drawNetwork();
-	}
+	/* draftSettingsPart: from env */
 
 	/** Puts a rail's section in a logical line, or out of any with null, by the rail chosen. */
-	function setRailLogicalLine(index, id) {
-		const key = netRailKey(index);
-		draftSettingsPart("railLines", (drafted, saved) => {
-			sectionOf(index).map(netRailKey).forEach(other => {
-				if (other === key && id !== null) return;
-				if (other in saved) drafted[other] = null;
-				else delete drafted[other];
-			});
-			if (id !== null) drafted[key] = id;
-		});
-	}
+	/* setRailLogicalLine: from env */
 
-	const newLogicalId = () => String(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+	/* newLogicalId: from env */
 
 	/** A new logical line, or one changed: name, colour, connecting line; then what is done with its ID. */
 	function logicalLineDialog(line, then) {
@@ -1818,22 +1734,7 @@ export function createLegacy(env) {
 	}
 
 	/** Takes a logical line away, with its sections and the operating lines' choices of it. */
-	function deleteLogicalLine(line) {
-		if (!confirm(tr("删除逻辑线路“{0}”？它的轨道不再属于任何逻辑线路，运营线路对它的勾选也去掉。应用前都在草稿里。", line.name))) return;
-		draftSettingsPart("railLines", (drafted, saved) => {
-			Object.entries(railLinesShown()).forEach(([key, id]) => {
-				if (id !== line.id) return;
-				if (key in saved) drafted[key] = null;
-				else delete drafted[key];
-			});
-		});
-		draftSettingsPart("lineTracks", (drafted, saved) => {
-			Object.entries(Object.assign({}, saved, drafted)).forEach(([lineKey, ids]) => {
-				if (ids && ids.includes(line.id)) drafted[lineKey] = ids.filter(id => id !== line.id);
-			});
-		});
-		draftSettingsPart("logicalLines", drafted => { drafted[line.id] = null; });
-	}
+	/* deleteLogicalLine: from env */
 
 	/** The logical lines an operating line runs on: ticked, or none for those of its platforms. */
 	function lineTracksDialog(lineKey) {
@@ -2770,11 +2671,7 @@ export function createLegacy(env) {
 	/**
 	 * A depot's rules and named deadhead paths as drafted, or as the game has them: {rules: [...], paths: [...]}.
 	 */
-	function rulesOf(depot) {
-		const drafted = draft.depotRules && draft.depotRules[depot.id];
-		const value = drafted ? drafted.rules : depot.rules;
-		return JSON.parse(JSON.stringify(value || { rules: [], paths: [] }));
-	}
+	/* rulesOf: from env */
 
 	/** The lines a depot runs, by key, with a name to show. */
 	function depotLines(depot) {
@@ -4438,18 +4335,7 @@ export function createLegacy(env) {
 	/**
 	 * The menu choosing how fast trains may pass over a platform (round 3b), into the draft.
 	 */
-	function platformSpeedItems(platformId) {
-		const p = platformById(platformId);
-		if (!p || !data.canEdit) return null;
-		const set = p.passSpeed || 80;
-		const current = draft.platformSpeeds && platformId in draft.platformSpeeds ? draft.platformSpeeds[platformId] : set;
-		return [80, 100, 120, 160, 200, 300].map(speed => [`${current === speed ? "✓ " : ""}${speed} km/h`, () => {
-			if (speed === set) delete draft.platformSpeeds[platformId];
-			else draft.platformSpeeds[platformId] = speed;
-			saveDraft();
-			renderAll();
-		}]);
-	}
+	/* platformSpeedItems: from env */
 
 	/** How a platform's stop position reads (round 4). */
 	function stopPositionText(position) {
@@ -4459,40 +4345,13 @@ export function createLegacy(env) {
 	/**
 	 * The menu choosing where trains stop on a platform (round 4), into the draft.
 	 */
-	function platformStopItems(platformId) {
-		const p = platformById(platformId);
-		if (!p || !data.canEdit) return null;
-		const set = p.stopPosition || 0;
-		const current = draft.platformStops && platformId in draft.platformStops ? draft.platformStops[platformId] : set;
-		return [0, -1, 2, 5, 10, 20].map(position => [`${current === position ? "✓ " : ""}${stopPositionText(position)}`, () => {
-			if (position === set) delete draft.platformStops[platformId];
-			else draft.platformStops[platformId] = position;
-			saveDraft();
-			renderAll();
-		}]);
-	}
+	/* platformStopItems: from env */
 
 	/**
 	 * The menu choosing the station a platform belongs to (R6): automatic, by the areas and the nearest platform, or any of
 	 * the nearest stations, wherever the platform is; into the draft.
 	 */
-	function platformStationItems(platformId) {
-		const p = platformById(platformId);
-		if (!p || !data.canEdit) return null;
-		const current = draft.platformStations && platformId in draft.platformStations ? draft.platformStations[platformId] : p.stationSet || "0";
-		const choose = stationId => () => {
-			if (stationId === (p.stationSet || "0")) delete draft.platformStations[platformId];
-			else draft.platformStations[platformId] = stationId;
-			saveDraft();
-			renderAll();
-		};
-		const near = (topo ? topo.stations : []).slice().sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z)).slice(0, 8);
-		if (current !== "0" && !near.some(station => station.id === current)) {
-			const set = (topo ? topo.stations : []).find(station => station.id === current);
-			if (set) near.push(set);
-		}
-		return [[`${current === "0" ? "✓ " : ""}${stationNameOf("0")}`, choose("0")], ...near.map(station => [`${current === station.id ? "✓ " : ""}${shortName(station.name) || tr("（未命名车站）")}`, choose(station.id)])];
-	}
+	/* platformStationItems: from env */
 
 	function cellMenu(e, cell) {
 		const s = findService(cell.dataset.svc), stop = +cell.dataset.stop;
@@ -4781,11 +4640,7 @@ export function createLegacy(env) {
 
 	/** The least time a train changes ends where it turns back, as the planner takes it: the network's setting (round 4). */
 	/** The network's wait threshold as drafted, or as the game has it (运用补完 step 2). */
-	function waitThresholdMillis() {
-		const pending = draft.networkSettings && Number.isFinite(draft.networkSettings.waitThresholdMillis) ? draft.networkSettings.waitThresholdMillis : undefined;
-		const settings = data && data.networkSettings || {};
-		return pending !== undefined ? pending : Number.isFinite(settings.waitThresholdMillis) ? settings.waitThresholdMillis : 300000;
-	}
+	/* waitThresholdMillis: from env */
 
 	/** A station's own wait threshold, set or taken back to the network's, into the draft. */
 	function stationWaitDialog(station) {
@@ -5173,11 +5028,7 @@ export function createLegacy(env) {
 	 * trains may wait on the line, and each siding's fleet and the routes its trains run (none ticked for all of them).
 	 */
 	/** Whether the settings drafted for a pool's vehicle are what the game has (null for none set). */
-	function sameVehicle(drafted, game) {
-		const set = game && game.set ? game : null;
-		if (!drafted || !set) return !drafted && !set;
-		return ["acceleration", "deceleration", "manual", "maxSpeed", "maxManualSpeed", "manualToAutomaticTime"].every(key => key === "manual" ? drafted.manual === set.manual : Math.abs((drafted[key] || 0) - (set[key] || 0)) < 1e-6);
-	}
+	/* sameVehicle: from env */
 
 	/** What a pool of a depot's sidings has: as given, or its sidings' fleets added up when not (null). */
 	function poolFleetText(fleet, sum) {
@@ -5302,41 +5153,10 @@ export function createLegacy(env) {
 	 * A depot's changes as the draft has them, or as the game has the depot when there are none, to change and store again
 	 * with {@link storeDepotEntry}: the depot dialog and the vehicle dialog change parts of the same entry.
 	 */
-	function depotEntryOf(depot) {
-		const drafted = (draft.depots || {})[depot.id];
-		if (drafted) {
-			const copy = JSON.parse(JSON.stringify(drafted));
-			copy.vehicleSettings = copy.vehicleSettings || {};
-			copy.serviceTypes = copy.serviceTypes || {};
-			copy.poolFleets = copy.poolFleets || {};
-			(depot.pools || []).forEach(pool => {
-				if (!(pool.key in copy.vehicleSettings)) copy.vehicleSettings[pool.key] = pool.vehicleSettings && pool.vehicleSettings.set ? Object.assign({}, pool.vehicleSettings) : null;
-				if (!(pool.key in copy.poolFleets)) copy.poolFleets[pool.key] = pool.fleet;
-			});
-			return copy;
-		}
-		const sidings = {};
-		depot.sidings.forEach(siding => sidings[siding.id] = { fleet: siding.fleet, routes: (siding.routes || []).slice() });
-		const poolFleets = {}, vehicleSettings = {};
-		(depot.pools || []).forEach(pool => {
-			poolFleets[pool.key] = pool.fleet;
-			vehicleSettings[pool.key] = pool.vehicleSettings && pool.vehicleSettings.set ? Object.assign({}, pool.vehicleSettings) : null;
-		});
-		return { base: depot.revision, routes: depot.routes.slice(), cycleRoutes: depot.cycleRoutes, sidings, poolFleets, vehicleSettings, serviceTypes: {}, clearBuffers: false, addedBuffers: null };
-	}
+	/* depotEntryOf: from env */
 
 	/** Puts a depot's changes in the draft, or takes them out when they change nothing. */
-	function storeDepotEntry(depot, entry, sameAdded) {
-		const sorted = list => JSON.stringify(list.slice().sort());
-		const sidings = entry.sidings || {};
-		const same = sorted(entry.routes) === sorted(depot.routes) && entry.cycleRoutes === depot.cycleRoutes
-			&& depot.sidings.every(siding => sidings[siding.id] && sidings[siding.id].fleet === siding.fleet && sorted(sidings[siding.id].routes) === sorted(siding.routes || []))
-			&& (depot.pools || []).every(pool => entry.poolFleets[pool.key] === pool.fleet && sameVehicle(entry.vehicleSettings[pool.key], pool.vehicleSettings)) && !Object.keys(entry.serviceTypes || {}).length && !entry.clearBuffers && (sameAdded === undefined ? !entry.addedBuffers : sameAdded);
-		if (same) delete draft.depots[depot.id];
-		else draft.depots[depot.id] = entry;
-		saveDraft();
-		renderAll();
-	}
+	/* storeDepotEntry: from env */
 
 	/** A vehicle's settings in a line: as set for its pool, or as its first siding has them, and the types it runs. */
 	function vehicleSummary(pool, settings, serviceTypes) {
@@ -7965,7 +7785,7 @@ export function createLegacy(env) {
 	const nowDay = () => data ? Math.floor((Date.now() - data.dayStartMillis) / DAY) : Math.floor(Date.now() / DAY);
 
 	return {
-		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, setBoundary, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, railOwnersShown, ownerText, ownerColor, setOwnerOverride, ownersDialog, logicalLinesShown, railLogicalLine, draftSettingsPart, setRailLogicalLine, logicalLineDialog, deleteLogicalLine, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, rulesOf, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, platformSpeedItems, stopPositionText, platformStopItems, platformStationItems, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, terminalText, coverageText, waitThresholdMillis, stationWaitDialog, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, sameVehicle, poolFleetText, oldDepotDialog, depotEntryOf, storeDepotEntry, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
+		fn: { loadDraft, clearDraft, saveDraft, toggleTurnPlatform, toggleReleased, railMarker, railMenu, shortfallText, missingTrains, replanText, replanDialog, dutyGroupsOf, oldDutyGroupsDialog, applyDutyGroup, shortfallsOf, setSpeedLimit, oldSpeedLimitDialog, setConnecting, setManaged, draftOperations, applyDraft, resolveConflict, renderDraftState, poll, setData, revisits, orderDepotItems, serviceOrderDialog, parseClock, typedTime, parsePattern, openDialog, oldTableDialog, setWeekday, routeChanges, draftChangesDialog, renderTree, onTreeClick, openView, renderViews, setNetLayer, loadNetwork, watchNetwork, indexNetwork, netChains, chainShape, simplifyPoints, octilinear, cutSteps, fitNetwork, ownerText, ownerColor, ownersDialog, logicalLineDialog, lineTracksDialog, logicalDraftDialog, logicalMenu, ownersMenu, netStatus, drawNetwork, netRailAt, netSegmentDistance, netRailText, loadConsole, toggleConsole, consoleTrains, consoleRail, drawConsole, consoleTrainState, renderConsole, consoleCommand, renderNetworkTools, startPicking, stopPicking, addPickedStop, refreshPreview, netStationAt, netNodeAt, pickAt, drawPicking, pickingPanel, finishPicking, onWayPickPanelClick, depotLines, oldDepotRulesDialog, readRulesForm, rulePlatform, ruleTargets, startWayPick, refreshWayPick, wayPickAt, toggleWayRail, drawWayPick, wayPickPanel, finishWayPick, ensureNetworkFor, accessLegs, findAccessLegs, drawAccess, hitAccess, computeLayout, axisSteps, resizeCanvas, clampView, draw, polyline, fitText, drawTerminalLinks, drawDepotLegs, hitDepotLeg, hitService, segmentDistance, stopsHtml, renderInspector, showTooltip, showDragTip, centerOn, zoom, setSimulation, scheduleSimulation, simulate, pollSimulation, setSimResult, renderSimStatus, drawSimulated, simTooltip, dutyCheckText, simPanel, deadheadsByService, deadheadNotes, serviceHead, timeCell, terminalCell, renderLineTable, renderTable, editCell, durationText, addBeside, nextServiceItems, stationNameOf, stopPositionText, cellMenu, trackTitle, loopEntryStop, loopRuns, loopPanel, terminalText, coverageText, stationWaitDialog, selectSlot, chainBetween, addRangeToSlot, toggleInSlot, plannedReturnText, dutyPanel, legTimes, deadheadTimes, editDutyException, deadheadMenu, oldReleasePlanDialog, placeTrainsDialog, orderIssueText, shortTurnaroundText, poolFleetText, oldDepotDialog, vehicleSummary, oldVehicleDialog, generateDuties, setDutyMode, changeSlots, problemDot, buildTopology, trackInfo, trackLabel, trackShort, stationTracks, reachFrom, legCost, solveStops, findCorridor, routeProblems, topologyHtml, foldOf, loadDiagram, lockOffText, throatHtml, turnHtml, stationDiagramHtml, enableDiagramPanning, topologyClick, topologyModel, orderByLayout, stopsSummaryOf, counterpartOf, typedName, oldNewTypeDialog, oldNewLineDialog, oldStopsDialog, stopListDialog, linePieces, lineDiagramHtml, routeDiagramHtml, deleteTypeDialog, keepType, removeCreated, oldThroughDialog, addServices, selectService, renderBanner, syncProblems, renderSyncButton, turnPairsOf, syncDialog, alarmReasonText, systemTitle, contingencyMeasureFields, readMeasureFields, oldContingencyDialog, adhocDialog, renderStatus, renderAll, perfText, dragDwell, moveShift },
 		v: {
 		get DAY() { return DAY },
 		get POLL_MILLIS() { return POLL_MILLIS },
@@ -8055,17 +7875,8 @@ export function createLegacy(env) {
 		get netZ() { return netZ },
 		get netWorldX() { return netWorldX },
 		get netWorldZ() { return netWorldZ },
-		get draftOwnerOverrides() { return draftOwnerOverrides },
-		get savedOwnerOverrides() { return savedOwnerOverrides },
 		get netRailKey() { return netRailKey },
 		get sectionOf() { return sectionOf },
-		get draftSettings() { return draftSettings },
-		get savedSettings() { return savedSettings },
-		get compareRailKeys() { return compareRailKeys },
-		get usesLogicalLines() { return usesLogicalLines },
-		get railLinesShown() { return railLinesShown },
-		get railLogicalDrafted() { return railLogicalDrafted },
-		get newLogicalId() { return newLogicalId },
 		get consoleState() { return consoleState },
 		get CONSOLE_POLL_MS() { return CONSOLE_POLL_MS },
 		get consoleTrainName() { return consoleTrainName },

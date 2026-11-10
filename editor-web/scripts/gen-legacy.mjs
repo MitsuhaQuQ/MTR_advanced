@@ -43,7 +43,12 @@ const FROM_ENV = ["openMenu", "openMenuAt", "closeMenu", "buildMenu", "fetchJson
   "canonDuties", "dutiesOf", "routeIsLoop", "dutyOn", "segmentKey", "startOf", "newDutyId", "dutyIdOf", "findDutySlot", "dutyNumber", "relinkOvernight",
   "poolSidings", "editDuties", "dayGroup", "dutyForEditing", "segmentService", "lastStopOf", "segmentStart", "segmentEnd", "coverageNow", "hasNoTrain",
   "terminalNow", "dutyAssignments", "dutyProblems", "nextSlotOf", "dutyEndPlatform", "dutyStartPlatform", "minReverseMillis", "turnTimeOf", "stopLabel",
-  "stopHangers", "renumberDuties", "sendStopList"]
+  "stopHangers", "renumberDuties", "sendStopList",
+  // Step 6: the network settings (src/core/settings.ts, through src/legacy/retired.ts)
+  "draftSettings", "savedSettings", "compareRailKeys", "logicalLinesShown", "usesLogicalLines", "railLinesShown", "railLogicalLine", "railLogicalDrafted",
+  "draftSettingsPart", "setRailLogicalLine", "newLogicalId", "deleteLogicalLine", "draftOwnerOverrides", "savedOwnerOverrides", "railOwnersShown",
+  "setOwnerOverride", "waitThresholdMillis", "platformSpeedItems", "platformStopItems", "platformStationItems", "rulesOf", "sameVehicle", "depotEntryOf",
+  "storeDepotEntry", "setBoundary"]
 /**
  * Called as env's, but the old function stays as old<Name> for the new page to fall back on: the stops editor and the new
  * line editor (views/StopsEditor.tsx) open the old stops dialog for a station's own track diagram and turn platforms
