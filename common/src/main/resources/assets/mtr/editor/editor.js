@@ -26,7 +26,8 @@
 	// The same as RouteTimetable.MAX_SERVICES and MAX_TABLES in the game
 	const MAX_SERVICES = 4096, MAX_TABLES = 16;
 	// RouteTimetable.MAX_LAYOVER_MILLIS and MAX_STAY_MILLIS: how long a train waits for its next lap before going back to the depot
-	const MAX_LAYOVER_MILLIS = 30 * 60000, MAX_STAY_MILLIS = 8 * DAY;
+	const MAX_LAYOVER_MILLIS = 30 * 60000;
+	const MAX_STAY_MILLIS = 8 * DAY;
 	// 1 January 1970, the first day of the epoch, was a Thursday
 	const FIRST_DAY_WEEKDAY = 3;
 
@@ -3963,8 +3964,6 @@
 		drawAccess(line, yOf, w);
 		const services = line.routes.flatMap(r => r.services);
 		const selectedRoute = state.route;
-		const loopNext = new Map();
-		line.routes.filter(isLoop).forEach(r => loopRuns(r).next.forEach((following, id) => loopNext.set(id, following)));
 		services.sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
 		// Services of the selected train, and services nobody runs in depots that run by their duties
 		const assigned = dutyAssignments();
@@ -4007,7 +4006,7 @@
 				ctx.globalAlpha = 0.3;
 				polyline(points);
 				ctx.globalAlpha = dim ? 0.25 : 1;
-				slotPoints.push({ start: points[0], end: points[points.length - 1], time: timesOf(s)[0][0] });
+				slotPoints.push({ id: s.id, start: points[0], end: points[points.length - 1], time: timesOf(s)[0][0] });
 			}
 			// A service no train of the depots running it by duties runs: thin and grey, or red when those are picked out;
 			// one with a train in the route's colour, a little wider. Colour, not dashes, so dense diagrams still show it
@@ -4047,7 +4046,7 @@
 			});
 			// Where the train carries on onto another route, or goes back to the depot
 			const [ex, ey] = points[points.length - 1];
-			if (!s.returnOrder && (s.link || s.returns && !loopNext.has(s.id))) {
+			if (!s.returnOrder && (s.link || s.returns)) {
 				const next = s.link && data.routeById.get(s.link.route);
 				ctx.fillStyle = s.link ? c.ink : c.muted;
 				ctx.font = `11px ${css("--font-ui")}`;
@@ -4055,27 +4054,6 @@
 				ctx.fillText(s.link ? "→ " + (next ? shortName(next.name) : "?") : tr("回库"), ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4));
 			}
 			ctx.globalAlpha = 1;
-			// On a loop, the wait at the first stop for the next lap, along the bottom row where the lap ends
-			const nextLap = loopNext.get(s.id);
-			if (nextLap) {
-				const endX = points[points.length - 1][0], endY = points[points.length - 1][1], startX = xOf(timesOf(nextLap)[0][1]);
-				ctx.globalAlpha = dim ? 0.25 : 0.8;
-				ctx.strokeStyle = colorOf(s.route.color);
-				ctx.lineWidth = isSelected ? 2 : 1;
-				ctx.setLineDash([3, 3]);
-				ctx.beginPath();
-				ctx.moveTo(endX, endY);
-				ctx.lineTo(startX, endY);
-				ctx.stroke();
-				ctx.setLineDash([]);
-				if (state.pxPerMin >= 4) {
-					ctx.fillStyle = c.muted;
-					ctx.font = `10px ${css("--font-num")}`;
-					ctx.textAlign = "left";
-					ctx.fillText("↻" + clock(nextLap.start), startX + 2, endY - 3);
-				}
-				ctx.globalAlpha = 1;
-			}
 			// A square at the end of each stop of a selected service, dragged to change how long it stops there
 			if (isSelected) {
 				timesOf(s).forEach((t, i) => {
@@ -4093,18 +4071,21 @@
 			}
 		});
 		// The selected train's moves between its services
+		const pairs = terminalNow();
 		slotPoints.sort((a, b) => a.time - b.time);
 		ctx.strokeStyle = c.duty;
 		ctx.lineWidth = 1;
 		ctx.setLineDash([3, 3]);
 		for (let i = 1; i < slotPoints.length; i++) {
+			const pairing = pairs.next.get(slotPoints[i - 1].id);
+			if (pairing?.loop && pairing.to.id === slotPoints[i].id) continue;
 			ctx.beginPath();
 			ctx.moveTo(...slotPoints[i - 1].end);
 			ctx.lineTo(...slotPoints[i].start);
 			ctx.stroke();
 		}
 		ctx.setLineDash([]);
-		drawTerminalLinks(line, yOf, c, w);
+		drawTerminalLinks(line, pairs, yOf, c, w);
 		// The depots' rows and the deadheads out and back, unless hidden (2026-11-09)
 		if (showDepots) drawDepotLegs(line, yOf, c, w, layout.ys.length > 1 ? layout.ys[1] - layout.ys[0] : MIN_ROW_GAP);
 		else legsDrawn = [];
@@ -4194,29 +4175,32 @@
 	 * to another platform it changes to, or out to a turn back rail beside the row and back while it waits there; the
 	 * player's choice thicker, the nearest (inferred) fainter, red where the platform is taken.
 	 */
-	function drawTerminalLinks(line, yOf, c, w) {
-		const pairs = terminalNow(), inLine = new Set(line.routes.map(r => r.id));
+	function drawTerminalLinks(line, pairs, yOf, c, w) {
+		const inLine = new Set(line.routes.map(r => r.id));
 		ctx.save();
 		pairs.next.forEach(pairing => {
 			const from = findService(pairing.from.id), to = findService(pairing.to.id);
 			if (!from || !to || !inLine.has(from.route.id) || from.suspended) return;
 			const fromRow = from.route.rows[pairing.from.last], toRow = inLine.has(to.route.id) ? to.route.rows[0] : fromRow;
 			const arrive = pairing.from.times[pairing.from.last][0], leave = pairing.to.times[0][1];
-			if (xOf(leave) < LABEL_W || xOf(arrive) > w) return;
+			if (xOf(Math.max(arrive, leave)) < LABEL_W || xOf(Math.min(arrive, leave)) > w) return;
 			const y1 = yOf(fromRow), y2 = yOf(toRow);
 			ctx.globalAlpha = pairing.source === "nearest" ? 0.45 : 1;
 			ctx.strokeStyle = pairing.conflict ? c.warn : colorOf(from.route.color);
 			ctx.lineWidth = pairing.source === "manual" ? 3 : 2;
 			ctx.beginPath();
 			if (pairing.kind === "same" && pairing.loop && inLine.has(to.route.id)) {
-				// A loop going round again (2026-11-09): its reference station is a row at either end of the diagram, the train
-				// standing at the last row and going on from the first, so the stand is drawn on both, as one line wrapping round
-				const yFirst = yOf(to.route.rows[0]);
-				ctx.moveTo(xOf(arrive), y1);
-				ctx.lineTo(xOf(leave), y1);
-				ctx.moveTo(xOf(arrive), yFirst);
-				ctx.lineTo(xOf(leave), yFirst);
-				ctx.stroke();
+				if (state.move?.ids.includes(from.id) || state.move?.ids.includes(to.id)) return;
+				const lastY = yOf(from.route.leaveRows[pairing.from.last]);
+				if (pairing.overlap) {
+					ctx.fillStyle = c.warn;
+					ctx.font = `10px ${css("--font-num")}`;
+					ctx.textAlign = "left";
+					ctx.fillText(tr("下一圈已发车"), xOf(arrive) + 2, lastY - 3);
+					return;
+				}
+				const connection = TerminalPairs.loopConnection(xOf(arrive), xOf(leave), lastY, yOf(to.route.leaveRows[0]));
+				if (connection) polyline([connection[0], connection[1], [...connection[2], true]]);
 			} else if (pairing.kind === "same") {
 				ctx.moveTo(xOf(arrive), y1);
 				ctx.lineTo(xOf(leave), y1);
@@ -5255,6 +5239,7 @@
 
 	// ---------- Loops ----------
 	const isLoop = r => r.stops.length > 2 && r.stops[0].platformId === r.stops[r.stops.length - 1].platformId;
+	const loopWaitMillis = r => data.depots.some(depot => depot.cycleRoutes && depot.routes.includes(r.id)) ? MAX_STAY_MILLIS : MAX_LAYOVER_MILLIS;
 
 	/** The platform a stop uses and the other tracks of its station on the same rails. */
 	function trackTitle(stop) {
@@ -5271,31 +5256,23 @@
 	}
 
 	/**
-	 * How the trains of a loop go round on the chosen day, the way the game runs them: when a lap ends at the first stop,
-	 * the train takes the first free service from then, waiting at most the layover (longer when its depot keeps trains on
-	 * the line), and otherwise goes back to the depot. A service no lap ends in time for takes a train from the depot.
-	 * Services running through to another route or going back to the depot end the train's laps.
-	 *
-	 * @return the service each lap carries on into, and the trains as lists of services
+	 * The running diagram's valid continuations, grouped into each train's laps.
 	 */
 	function loopRuns(r) {
-		const n = r.stops.length, services = r.services;
-		const keepsOnLine = data.depots.some(depot => depot.cycleRoutes && depot.routes.includes(r.id));
-		const maxWait = keepsOnLine ? MAX_STAY_MILLIS : MAX_LAYOVER_MILLIS;
-		const next = new Map(), taken = new Set();
-		services.filter(s => !s.link && !s.returns).map(s => ({ s, end: timesOf(s)[n - 1][0] })).sort((a, b) => a.end - b.end).forEach(({ s, end }) => {
-			const following = services.find(o => o !== s && !taken.has(o.id) && o.start >= end && o.start - end <= maxWait);
-			if (following) {
-				taken.add(following.id);
-				next.set(s.id, following);
-			}
+		const services = r.services.filter(s => !s.suspended), byId = new Map(services.map(s => [s.id, s]));
+		const next = new Map(), taken = new Set(), pairs = terminalNow().next;
+		byId.forEach((s, id) => {
+			const pairing = pairs.get(id), following = pairing?.loop && !pairing.overlap && byId.get(pairing.to.id);
+			if (!following) return;
+			taken.add(following.id);
+			next.set(s.id, following);
 		});
 		const trains = services.filter(s => !taken.has(s.id)).map(first => {
 			const laps = [first];
 			while (next.has(laps[laps.length - 1].id)) laps.push(next.get(laps[laps.length - 1].id));
 			return laps;
 		});
-		return { next, trains, maxWait };
+		return { next, trains, maxWait: loopWaitMillis(r) };
 	}
 
 	function loopPanel(r) {
@@ -5303,10 +5280,10 @@
 		const ending = s => s.link ? `→ ${escapeHtml(routeTitle(data.routeById.get(s.link.route) || r))}` : runs.maxWait > MAX_LAYOVER_MILLIS ? tr("留在线上") : tr("回库");
 		const lines = runs.trains.slice(0, 40).map((laps, i) => `<div><span class="train">${tr("车 {0}：", i + 1)}</span>${laps.map(s => clock(s.start)).join(" → ")} <span class="end">${ending(laps[laps.length - 1])}</span></div>`).join("");
 		return `<h2>${tr("环线运行（{0}）", WEEKDAY_NAMES[state.weekday])}</h2><div class="card"><div class="title">${escapeHtml(routeTitle(r))}</div>
-			<dl class="kv"><dt>${tr("列车")}</dt><dd>${tr("{0} 列跑 {1} 班", runs.trains.length, r.services.length)}</dd><dt>${tr("出库接入")}</dt><dd>${escapeHtml(stopName(r, entry))}${entry ? "" : tr("（首站）")}</dd>
+			<dl class="kv"><dt>${tr("列车")}</dt><dd>${tr("{0} 列跑 {1} 班", runs.trains.length, r.services.filter(s => !s.suspended).length)}</dd><dt>${tr("出库接入")}</dt><dd>${escapeHtml(stopName(r, entry))}${entry ? "" : tr("（首站）")}</dd>
 			<dt>${tr("等下一圈")}</dt><dd>${tr("最多 {0}", runs.maxWait > MAX_LAYOVER_MILLIS ? tr("8 天（车厂不回库）") : tr("30 分钟"))}</dd></dl>
 			<div class="laps">${lines}${runs.trains.length > 40 ? "<div>…</div>" : ""}</div>
-			<p class="hint">${tr("每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。")}</p></div>`;
+			<p class="hint">${tr("同方向续跑时，水平线表示等候，垂直虚线表示在下一圈发车时刻接回首站。")}</p></div>`;
 	}
 
 	/** @return true if a service can leave this route here, or join it, apart from the last and first stops */
@@ -5492,17 +5469,19 @@
 		if (terminal && terminal.weekday === state.weekday) return terminal;
 		const runs = [], manual = {}, turnTimes = {}, holdIns = {}, holdCounts = {}, duties = [];
 		if (data) {
-			data.routes.forEach(r => (r.services || []).forEach(s => {
+			data.routes.forEach(r => {
 				if (!r.hasTimes) return;
-				const [first, last] = servedStops(s);
-				runs.push({
-					id: s.id, platforms: r.stops.map(stop => stop.platformId), stations: r.stops.map(stop => stop.station || "p" + stop.platformId),
-					times: timesOf(s), first, last, suspended: !!s.suspended, returns: !!(s.returns || s.returnOrder), terminalPlatforms: r.terminalPlatforms || [],
-					// Marked clockwise or anticlockwise: a loop, whose trains go round again (2026-11-09)
-					circular: Boolean(r.circular),
+				const loopWait = isLoop(r) ? loopWaitMillis(r) : undefined;
+				(r.services || []).forEach(s => {
+					const [first, last] = servedStops(s);
+					runs.push({
+						id: s.id, routeId: r.id, platforms: r.stops.map(stop => stop.platformId), stations: r.stops.map(stop => stop.station || "p" + stop.platformId),
+						times: timesOf(s), first, last, suspended: !!s.suspended, returns: !!(s.returns || s.returnOrder), terminalPlatforms: r.terminalPlatforms || [],
+						deploy: !!s.deployOrder, through: !!s.link, loopWait,
+					});
+					if (s.link && s.link.fromStop < 0 && s.link.toStop === 0) manual[s.id] = s.link.route + "@" + s.link.toService;
 				});
-				if (s.link && s.link.fromStop < 0 && s.link.toStop === 0) manual[s.id] = s.link.route + "@" + s.link.toService;
-			}));
+			});
 			data.depots.forEach(depot => {
 				Object.entries((depot.path || {}).turnTimes || {}).forEach(([from, times]) => { turnTimes[from] = Object.assign(turnTimes[from] || {}, times); });
 				Object.assign(holdIns, (depot.path || {}).holdIns || {});
@@ -5524,6 +5503,7 @@
 	};
 	/** How a train goes on at the end of a route, as a short sentence. */
 	function terminalText(pairing) {
+		if (pairing.overlap) return tr("下一圈已发车");
 		const wait = Math.max(0, pairing.to.times[0][1] - pairing.from.times[pairing.from.last][0]);
 		const where = pairing.kind === "hold" ? tr("停在 {0} 后面的折返线上等 {1}", platformText(pairing.platform), formatDuration(pairing.railEnd - pairing.railStart))
 			: pairing.kind === "change" ? tr("换到 {0}，共 {1}", platformText(pairing.to.platforms[0]), formatDuration(wait))
@@ -5584,13 +5564,14 @@
 			if ((assigned.get(segmentKey(segment)) || []).length > 1) problems.push({ i, text: tr("这一班也分给了别的车") });
 			const before = day.segments[i - 1], beforeService = before && segmentService(before);
 			if (beforeService) {
-				const endStop = beforeService.route.stops[lastStopOf(before, beforeService.route)], startStop = s.route.stops[segment.from];
-				const gap = segmentStart(segment) - segmentEnd(before);
+				const last = lastStopOf(before, beforeService.route);
+				const endStop = beforeService.route.stops[last], startStop = s.route.stops[segment.from];
+				const goesRound = beforeService.route.id === s.route.id && isLoop(s.route) && last === beforeService.route.stops.length - 1 && segment.from === 0;
+				const gap = goesRound ? timesOf(s)[0][1] - timesOf(beforeService)[last][0] : segmentStart(segment) - segmentEnd(before);
 				if (gap < 0) problems.push({ i, text: tr("衔接时间不够，上一班还没到") });
 				else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` });
 				else if (endStop && startStop && endStop.platformId === startStop.platformId) {
 					// A loop going round again from where it came round doesn't change ends (2026-11-09)
-					const goesRound = routeIsLoop(beforeService.route) && routeIsLoop(s.route) && lastStopOf(before, beforeService.route) === beforeService.route.stops.length - 1 && segment.from === 0;
 					if (!goesRound && gap < minReverseMillis()) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(minReverseMillis()), formatDuration(gap)) });
 				} else if (endStop && startStop) {
 					// A change of platform takes as long as the server measured on the rails, or has no way at all
@@ -8284,7 +8265,8 @@
 		terminalNow().warnings.slice(0, 12).forEach(warning => {
 			const from = findService(warning.from);
 			const at = clock(warning.at), where = platformText(warning.platform);
-			if (warning.type === "HOLDS_PLATFORM") problems.push({ level: "warn", text: tr("{0}：{1} 到的车在 {2} 一直停到 {3}，{4} 列车改用别的站台或折返线", from ? routeTitle(from.route) : "?", at, where, clock(warning.until), warning.count), route: from && from.route.id });
+			if (warning.type === "LOOP_OVERLAP") problems.push({ level: "err", text: tr("{0}：环线上一圈 {1} 到达，下一圈 {2} 已发车", from ? routeTitle(from.route) : "?", at, clock(warning.until)), route: from && from.route.id });
+			else if (warning.type === "HOLDS_PLATFORM") problems.push({ level: "warn", text: tr("{0}：{1} 到的车在 {2} 一直停到 {3}，{4} 列车改用别的站台或折返线", from ? routeTitle(from.route) : "?", at, where, clock(warning.until), warning.count), route: from && from.route.id });
 			else problems.push({ level: "err", text: tr("{0}：{1} 到 {2} 的车没有空站台可停，也没有空的折返线，要等前面的车开走", from ? routeTitle(from.route) : "?", at, where), route: from && from.route.id });
 		});
 		data.routes.filter(r => r.timetable && !r.hasTimes).forEach(r => problems.push({ level: "warn", text: r.pathFailure ? tr("{0}：找不到路，{1}", routeTitle(r), r.pathFailure) : tr("{0}：还没有各站时刻", routeTitle(r)), route: r.id }));

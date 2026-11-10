@@ -6,7 +6,6 @@
  */
 import { tr, trc } from "../i18n"
 import { DAY, formatDuration, mod, shortName } from "./format"
-import { timesOf } from "./services"
 import { timetableOf } from "./timetable"
 
 type Data = any
@@ -186,6 +185,7 @@ export const dispatchOperation = (operation: Record<string, unknown>) => ({ oper
 export const MAX_LAYOVER_MILLIS = 30 * 60000, MAX_STAY_MILLIS = 8 * DAY
 /** Ending at the platform it starts from */
 export const isLoop = (r: any) => r.stops.length > 2 && r.stops[0].platformId === r.stops[r.stops.length - 1].platformId
+export const loopWaitMillis = (data: Data, r: any) => data.depots.some((depot: any) => depot.cycleRoutes && depot.routes.includes(r.id)) ? MAX_STAY_MILLIS : MAX_LAYOVER_MILLIS
 
 /** The stop where trains from the depot join a loop, which is its first stop unless another is set */
 export function loopEntryStop(draft: any, r: any) {
@@ -196,29 +196,23 @@ export function loopEntryStop(draft: any, r: any) {
 }
 
 /**
- * How the trains of a loop go round on the day built, the way the game runs them: when a lap ends at the first stop, the
- * train takes the first free service from then, waiting at most the layover (longer when its depot keeps trains on the
- * line), and otherwise goes back to the depot. A service no lap ends in time for takes a train from the depot. Services
- * running through to another route or going back to the depot end the train's laps.
- *
- * @return the service each lap carries on into, and the trains as lists of services
+ * List the same valid continuations as the running diagram, grouped into each train's laps.
  */
-export function loopRuns(data: Data, r: any) {
-  const n = r.stops.length, services: any[] = r.services
-  const keepsOnLine = data.depots.some((depot: any) => depot.cycleRoutes && depot.routes.includes(r.id))
-  const maxWait = keepsOnLine ? MAX_STAY_MILLIS : MAX_LAYOVER_MILLIS
+export function loopRuns(data: Data, r: any, pairs: Map<string, any>) {
+  const services: any[] = r.services.filter((s: any) => !s.suspended)
+  const byId = new Map<string, any>(services.map((s: any) => [s.id, s]))
   const next = new Map<string, any>(), taken = new Set<string>()
-  services.filter(s => !s.link && !s.returns).map(s => ({ s, end: timesOf(s)[n - 1][0] })).sort((a, b) => a.end - b.end).forEach(({ s, end }) => {
-    const following = services.find(o => o !== s && !taken.has(o.id) && o.start >= end && o.start - end <= maxWait)
-    if (following) {
-      taken.add(following.id)
-      next.set(s.id, following)
-    }
+  byId.forEach((s, id) => {
+    const pairing = pairs.get(id)
+    const following = pairing?.loop && !pairing.overlap && byId.get(pairing.to.id)
+    if (!following) return
+    taken.add(following.id)
+    next.set(s.id, following)
   })
   const trains = services.filter(s => !taken.has(s.id)).map(first => {
     const laps = [first]
     while (next.has(laps[laps.length - 1].id)) laps.push(next.get(laps[laps.length - 1].id))
     return laps
   })
-  return { next, trains, maxWait }
+  return { next, trains, maxWait: loopWaitMillis(data, r) }
 }

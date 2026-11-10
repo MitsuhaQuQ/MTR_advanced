@@ -108,15 +108,45 @@ const downB = (id, start, extra) => run(id, [11, 3, 4], [12, 3, 4], start, extra
 // A loop going round again (2026-11-09): no time to change ends, as its train only stands at the platform and goes on;
 // a line turning back at the same platform still needs it
 {
-	const lap = (id, start) => run(id, [20, 21, 22, 20], [30, 31, 32, 30], start);
+	const lap = (id, start) => run(id, [20, 21, 22, 20], [30, 31, 32, 30], start, { routeId: "clockwise" });
 	const loop = T.pair({ runs: [lap("l1", 6 * H), lap("l2", 6 * H + 6 * M + 30000)] });
 	assert.strictEqual(loop.next.get("l1").to.id, "l2");
 	assert.strictEqual(loop.next.get("l1").loop, true);
 	const back = T.pair({ runs: [run("u1", [40, 41, 42], [50, 51, 52], 6 * H), run("d1", [42, 41, 40], [52, 51, 50], 6 * H + 4 * M + 30000)] });
 	assert.strictEqual(back.next.size, 0, "30 s needed to change ends, 10 s had");
-	// Marked circular, a loop even where it is laid out to end at another platform of the station it starts from
-	const marked = (id, start) => run(id, [60, 61, 62, 60], [70, 71, 72, 70], start, { circular: true });
-	assert.strictEqual(T.pair({ runs: [marked("c1", 6 * H), marked("c2", 6 * H + 6 * M + 30000)] }).next.get("c1").loop, true);
+}
+
+// One direction can share a platform with the other. A suspended or depot-start service is not a continuation.
+{
+	const lap = (id, start, extra) => run(id, [20, 21, 22, 20], [30, 31, 32, 30], start, { routeId: "clockwise", ...extra });
+	const from = lap("a", 6 * H);
+	const end = from.times[3][0];
+	const reverse = lap("reverse", end - 20000, { routeId: "anticlockwise", platforms: [20, 22, 21, 20] });
+	const suspended = lap("off", end + 1000, { suspended: true });
+	const depot = lap("depot", end + 2000, { deploy: true });
+	const following = lap("b", end + M);
+	const next = T.pair({ runs: [from, reverse, suspended, depot, following], turnTimes: { 20: { 20: 0 } } }).next.get("a");
+	assert.strictEqual(next.to.id, "b");
+	assert.strictEqual(next.kind, "same");
+	assert.strictEqual(next.fromDeparture, following.times[0][1]);
+	assert.strictEqual(T.pair({ runs: [from, reverse] }).next.size, 0);
+	assert.strictEqual(T.pair({ runs: [from, reverse], manual: { a: "reverse" } }).next.get("a").loop, false);
+
+	const immediate = lap("immediate", end - 20000);
+	assert.strictEqual(T.pair({ runs: [from, immediate] }).next.get("a").fromDeparture, end);
+	assert.deepStrictEqual(T.loopConnection(20, 20, 100, 10), [[20, 100], [20, 100], [20, 10]]);
+	assert.deepStrictEqual(T.loopConnection(20, 24, 100, 10), [[20, 100], [24, 100], [24, 10]]);
+
+	const early = lap("early", end - M);
+	const overlap = T.pair({ runs: [from, early], duties: [["a", "early"]] });
+	assert.strictEqual(overlap.next.get("a").overlap, true);
+	assert.strictEqual(overlap.warnings[0].type, "LOOP_OVERLAP");
+	assert.strictEqual(T.loopConnection(24, 20, 100, 10), null);
+
+	const late = lap("late", end + 31 * M);
+	assert.strictEqual(T.pair({ runs: [from, late] }).next.size, 0);
+	const kept = T.pair({ runs: [{ ...from, loopWait: 8 * 24 * H }, late], turnTimes: { 20: { 20: 0 } } });
+	assert.strictEqual(kept.next.get("a").kind, "same");
 }
 
 console.log("terminal.js: all checks passed");

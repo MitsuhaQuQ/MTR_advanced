@@ -358,6 +358,6 @@ export function dispatchRules(get: () => Legacy) {
     },
     isLoop: P.isLoop,
     loopEntryStop: (r: any) => P.loopEntryStop(get().v.draft, r),
-    loopRuns: (r: any) => P.loopRuns(get().v.data, r),
+    loopRuns: (r: any) => P.loopRuns(get().v.data, r, get().fn.terminalNow().next),
   }
 }

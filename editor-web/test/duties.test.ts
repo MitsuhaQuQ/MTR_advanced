@@ -21,7 +21,8 @@ const OLD = ["sortedObject", "canonDuties", "dutiesOf", "routeIsLoop", "dutyOn",
   "poolSidings", "editDuties", "dayGroup", "dutyForEditing", "segmentService", "lastStopOf", "segmentStart", "segmentEnd", "coverageNow", "hasNoTrain", "terminalNow", "dutyAssignments",
   "dutyProblems", "nextSlotOf", "dutyEndPlatform", "dutyStartPlatform", "minReverseMillis", "turnTimeOf", "stopLabel", "stopHangers", "renumberDuties", "sendStopList",
   "renumberTimetable", "renumberLinksInto", "draftOf", "draftEntry", "gameTimetable", "fromGame", "normalize", "timetableOf", "servedStops", "orderDepotName",
-  "findService", "timesOf", "buildServices", "timesSource", "gameSource", "plansFor", "toPlans", "mod", "DAY", "clock", "durationText", "formatDuration", "routeTitle", "shortName", "WEEKDAY_NAMES", "WEEKDAY_SHORT"]
+  "findService", "timesOf", "buildServices", "timesSource", "gameSource", "plansFor", "toPlans", "mod", "DAY", "clock", "durationText", "formatDuration", "routeTitle", "shortName", "WEEKDAY_NAMES", "WEEKDAY_SHORT",
+  "isLoop", "loopWaitMillis", "MAX_LAYOVER_MILLIS", "MAX_STAY_MILLIS"]
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 type Side = { data: any; draft: any; state: any }

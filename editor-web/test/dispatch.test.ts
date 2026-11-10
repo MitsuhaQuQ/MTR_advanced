@@ -4,15 +4,17 @@
  * what is shown compared after each.
  */
 import { describe, expect, it } from "vitest"
+import { createRequire } from "node:module"
 import { loadOld } from "./old"
 import * as P from "../src/core/dispatch"
 import * as S from "../src/core/services"
 import * as T from "../src/core/timetable"
+import * as D from "../src/core/duties"
 import { mockData } from "../mock/fixture"
 
 const OLD = ["DAY", "sim", "SIM_LATE_MILLIS", "SIM_KINDS", "FIRST_DAY_WEEKDAY", "simFromNow", "nowDay", "simulate", "pollSimulation", "setSimResult", "simLate", "formatDuration",
   "simTooltip", "dutyCheckText", "simPanel", "consoleState", "consoleTrains", "consoleTrainName", "consoleTrainState", "consoleCommand", "systemByAnchor", "systemOfRoute",
-  "MAX_LAYOVER_MILLIS", "isLoop", "loopEntryStop", "loopRuns", "timetableOf", "draftOf", "gameTimetable", "fromGame", "normalize", "timesOf",
+  "MAX_LAYOVER_MILLIS", "MAX_STAY_MILLIS", "isLoop", "loopWaitMillis", "loopEntryStop", "loopRuns", "timetableOf", "draftOf", "gameTimetable", "fromGame", "normalize", "timesOf",
   "buildServices", "timesSource", "gameSource", "plansFor", "toPlans", "findService", "mod", "clock", "routeTitle", "shortName", "escapeHtml"]
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value, (_k, v) => (v instanceof Map ? [...v] : v instanceof Set ? [...v] : v)))
@@ -171,7 +173,10 @@ describe("loops", () => {
     }
     for (const [cycle, entry, passed] of [[false, null, false], [true, "1001", false], [false, "1002", false], [false, "1002", true]] as [boolean, string | null, boolean][]) {
       const { theirs, mine } = sides(data => { loop(data); data.depots[0].cycleRoutes = cycle })
-      const old = oldSide(theirs, { post: [], get: [] })
+      const terminalPairs = createRequire(import.meta.url)("../../common/src/main/resources/assets/mtr/editor/terminal.js")
+      ;(globalThis as any).TerminalPairs = terminalPairs
+      const pairs = () => D.terminalPairs(mine.data, mine.draft, 2)
+      const old = oldSide(theirs, { post: [], get: [] }, { terminalNow: pairs })
       old.buildServices()
       mine.data.routes.forEach((r: any) => { r.services = S.routeServices(r, T.timetableOf(mine.draft, r), S.gameSource(r), 2, mine.data.dayStartMillis) })
       if (entry) {
@@ -185,7 +190,7 @@ describe("loops", () => {
         expect(P.isLoop(b)).toBe(old.isLoop(a))
         expect(P.loopEntryStop(mine.draft, b)).toBe(old.loopEntryStop(a))
         const ids = (runs: any) => ({ next: [...runs.next].map(([id, s]: any) => [id, s.id]), trains: runs.trains.map((laps: any[]) => laps.map(s => s.id)), maxWait: runs.maxWait })
-        expect(ids(P.loopRuns(mine.data, b))).toEqual(ids(old.loopRuns(a)))
+        expect(ids(P.loopRuns(mine.data, b, pairs().next))).toEqual(ids(old.loopRuns(a)))
       }
     }
   })

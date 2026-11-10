@@ -416,8 +416,6 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   // The services, the selected one last so it's on top
   const services = line.routes.flatMap((r: any) => r.services)
   const selectedRoute = state.route
-  const loopNext = new Map<string, any>()
-  line.routes.filter(fn.isLoop).forEach((r: any) => fn.loopRuns(r).next.forEach((following: any, id: string) => loopNext.set(id, following)))
   services.sort((a: any, b: any) => Number(a.id === state.selected) - Number(b.id === state.selected))
   const assigned = fn.dutyAssignments()
   const slotDepot = state.slot && fn.depotById(state.slot.depot)
@@ -425,7 +423,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   const slotDay = slotDuty ? fn.dutyOn(slotDuty, state.weekday) : null
   const inSlot = new Set(slotDay ? slotDay.segments.map(fn.segmentKey) : [])
   const diagramRoutes = new Set(data.depots.filter((depot: any) => fn.dutiesOf(depot).mode === "diagram").flatMap((depot: any) => depot.routes))
-  const slotPoints: { start: D.Point; end: D.Point; time: number }[] = []
+  const slotPoints: { id: string; start: D.Point; end: D.Point; time: number }[] = []
   services.forEach((s: any) => {
     // Being dragged along the time axis: drawn where it would go
     const shift = moving && moving.ids.includes(s.id) ? moving.shift : 0
@@ -452,7 +450,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
       g.globalAlpha = 0.3
       polyline(points)
       g.globalAlpha = dim ? 0.25 : 1
-      slotPoints.push({ start: points[0], end: points[points.length - 1], time: plain[0][0] })
+      slotPoints.push({ id: s.id, start: points[0], end: points[points.length - 1], time: plain[0][0] })
     }
     const noTrain = !s.suspended && s.route.hasTimes && diagramRoutes.has(s.route.id) && !assigned.has(key)
     const covered = !s.suspended && !noTrain && s.route.hasTimes && diagramRoutes.has(s.route.id)
@@ -481,7 +479,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     })
     // Where the train carries on onto another route, or goes back to the depot
     const [ex, ey] = points[points.length - 1]
-    if (!s.returnOrder && (s.link || (s.returns && !loopNext.has(s.id)))) {
+    if (!s.returnOrder && (s.link || s.returns)) {
       const next = s.link && data.routeById.get(s.link.route)
       g.fillStyle = s.link ? c.ink : c.muted
       g.font = `11px ${uiFont}`
@@ -489,27 +487,6 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
       g.fillText(s.link ? "→ " + (next ? shortName(next.name) : "?") : tr("回库"), ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4))
     }
     g.globalAlpha = 1
-    // On a loop, the wait at the first stop for the next lap
-    const nextLap = loopNext.get(s.id)
-    if (nextLap) {
-      const startX = xOf(timesOf(nextLap)[0][1])
-      g.globalAlpha = dim ? 0.25 : 0.8
-      g.strokeStyle = colorOf(s.route.color)
-      g.lineWidth = isSelected ? 2 : 1
-      g.setLineDash([3, 3])
-      g.beginPath()
-      g.moveTo(ex, ey)
-      g.lineTo(startX, ey)
-      g.stroke()
-      g.setLineDash([])
-      if (state.pxPerMin >= 4) {
-        g.fillStyle = c.muted
-        g.font = `10px ${numFont}`
-        g.textAlign = "left"
-        g.fillText("↻" + clock(nextLap.start), startX + 2, ey - 3)
-      }
-      g.globalAlpha = 1
-    }
     // A square at the end of each stop of a selected service, dragged to change how long it stops there
     if (isSelected) {
       D.dwellHandles(s, plain, xOf, yOf).forEach(handle => {
@@ -525,18 +502,21 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     }
   })
   // The chosen train's moves between its services
+  const pairs = fn.terminalNow()
   slotPoints.sort((a, b) => a.time - b.time)
   g.strokeStyle = c.duty
   g.lineWidth = 1
   g.setLineDash([3, 3])
   for (let i = 1; i < slotPoints.length; i++) {
+    const pairing = pairs.next.get(slotPoints[i - 1].id)
+    if (pairing?.loop && pairing.to.id === slotPoints[i].id) continue
     g.beginPath()
     g.moveTo(slotPoints[i - 1].end[0], slotPoints[i - 1].end[1])
     g.lineTo(slotPoints[i].start[0], slotPoints[i].start[1])
     g.stroke()
   }
   g.setLineDash([])
-  drawTerminalLinks(g, line, xOf, yOf, c, w, numFont)
+  drawTerminalLinks(g, line, pairs, xOf, yOf, c, w, numFont, polyline, moving?.ids)
   if (v.showDepots) out.legs = drawDepotLegs(g, line, xOf, yOf, c, w, layout.ys.length > 1 ? layout.ys[1] - layout.ys[0] : D.MIN_ROW_GAP, numFont, dragging)
   drawSimulated(g, line, xOf, yOf, c, w)
   if (slotPoints.length) {
@@ -587,26 +567,33 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
 }
 
 /** Turn backs at terminals, and trains going on from one route to the next (old drawTerminalLinks) */
-function drawTerminalLinks(g: CanvasRenderingContext2D, line: any, xOf: (m: number) => number, yOf: (r: number) => number, c: Record<string, string>, w: number, numFont: string) {
+function drawTerminalLinks(g: CanvasRenderingContext2D, line: any, pairs: { next: Map<string, any> }, xOf: (m: number) => number, yOf: (r: number) => number, c: Record<string, string>, w: number, numFont: string, polyline: (points: D.Point[]) => void, moving?: string[]) {
   const { fn, v } = legacy
-  const pairs = fn.terminalNow(), inLine = new Set(line.routes.map((r: any) => r.id))
+  const inLine = new Set(line.routes.map((r: any) => r.id))
   g.save()
   pairs.next.forEach((pairing: any) => {
     const from = findService(pairing.from.id), to = findService(pairing.to.id)
     if (!from || !to || !inLine.has(from.route.id) || from.suspended) return
     const fromRow = from.route.rows[pairing.from.last], toRow = inLine.has(to.route.id) ? to.route.rows[0] : fromRow
     const arrive = pairing.from.times[pairing.from.last][0], leave = pairing.to.times[0][1]
-    if (xOf(leave) < D.LABEL_W || xOf(arrive) > w) return
+    if (xOf(Math.max(arrive, leave)) < D.LABEL_W || xOf(Math.min(arrive, leave)) > w) return
     const y1 = yOf(fromRow), y2 = yOf(toRow)
     g.globalAlpha = pairing.source === "nearest" ? 0.45 : 1
     g.strokeStyle = pairing.conflict ? c.warn : colorOf(from.route.color)
     g.lineWidth = pairing.source === "manual" ? 3 : 2
     g.beginPath()
     if (pairing.kind === "same" && pairing.loop && inLine.has(to.route.id)) {
-      const yFirst = yOf(to.route.rows[0])
-      g.moveTo(xOf(arrive), y1); g.lineTo(xOf(leave), y1)
-      g.moveTo(xOf(arrive), yFirst); g.lineTo(xOf(leave), yFirst)
-      g.stroke()
+      if (moving?.includes(from.id) || moving?.includes(to.id)) return
+      const lastY = yOf(from.route.leaveRows[pairing.from.last])
+      if (pairing.overlap) {
+        g.fillStyle = c.warn
+        g.font = `10px ${numFont}`
+        g.textAlign = "left"
+        g.fillText(tr("下一圈已发车"), xOf(arrive) + 2, lastY - 3)
+        return
+      }
+      const connection: [number, number][] | null = (globalThis as any).TerminalPairs.loopConnection(xOf(arrive), xOf(leave), lastY, yOf(to.route.leaveRows[0]))
+      if (connection) polyline([connection[0], connection[1], [...connection[2], true]])
     } else if (pairing.kind === "same") {
       g.moveTo(xOf(arrive), y1); g.lineTo(xOf(leave), y1)
       g.stroke()

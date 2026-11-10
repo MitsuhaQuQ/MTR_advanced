@@ -10,6 +10,7 @@ import { clock, DAY, formatDuration, mod, orderDepotName, routeTitle, shortName,
 import { servedStops } from "./diagram"
 import { timesOf } from "./services"
 import { dutiesOf, stopLabel, turnTimeOf } from "./depots"
+import { isLoop, loopWaitMillis } from "./dispatch"
 import { gameTimetable, renumberLinksInto, renumberTimetable, timetableOf } from "./timetable"
 
 export { dutiesOf, stopLabel, turnTimeOf }
@@ -187,17 +188,19 @@ export function minReverseMillis(data: Data, draft: Draft) {
 export function terminalPairs(data: Data, draft: Draft, weekday: number) {
   const runs: any[] = [], manual: Record<string, string> = {}, turnTimes: Record<string, any> = {}, holdIns = {}, holdCounts = {}, duties: string[][] = []
   if (data) {
-    data.routes.forEach((r: any) => (r.services || []).forEach((s: any) => {
+    data.routes.forEach((r: any) => {
       if (!r.hasTimes) return
-      const [first, last] = servedStops(s)
-      runs.push({
-        id: s.id, platforms: r.stops.map((stop: any) => stop.platformId), stations: r.stops.map((stop: any) => stop.station || "p" + stop.platformId),
-        times: timesOf(s), first, last, suspended: !!s.suspended, returns: !!(s.returns || s.returnOrder), terminalPlatforms: r.terminalPlatforms || [],
-        // Marked clockwise or anticlockwise: a loop, whose trains go round again
-        circular: Boolean(r.circular),
+      const loopWait = isLoop(r) ? loopWaitMillis(data, r) : undefined
+      ;(r.services || []).forEach((s: any) => {
+        const [first, last] = servedStops(s)
+        runs.push({
+          id: s.id, routeId: r.id, platforms: r.stops.map((stop: any) => stop.platformId), stations: r.stops.map((stop: any) => stop.station || "p" + stop.platformId),
+          times: timesOf(s), first, last, suspended: !!s.suspended, returns: !!(s.returns || s.returnOrder), terminalPlatforms: r.terminalPlatforms || [],
+          deploy: !!s.deployOrder, through: !!s.link, loopWait,
+        })
+        if (s.link && s.link.fromStop < 0 && s.link.toStop === 0) manual[s.id] = s.link.route + "@" + s.link.toService
       })
-      if (s.link && s.link.fromStop < 0 && s.link.toStop === 0) manual[s.id] = s.link.route + "@" + s.link.toService
-    }))
+    })
     data.depots.forEach((depot: any) => {
       Object.entries((depot.path || {}).turnTimes || {}).forEach(([from, times]) => { turnTimes[from] = Object.assign(turnTimes[from] || {}, times) })
       Object.assign(holdIns, (depot.path || {}).holdIns || {})
@@ -244,13 +247,14 @@ export function dutyProblems(data: Data, draft: Draft, depot: any, sidingId: str
     if ((assigned.get(segmentKey(segment)) || []).length > 1) problems.push({ i, text: tr("这一班也分给了别的车") })
     const before = day.segments[i - 1], beforeService = before && segmentService(data, before)
     if (beforeService) {
-      const endStop = beforeService.route.stops[lastStopOf(before, beforeService.route)], startStop = s.route.stops[segment.from]
-      const gap = segmentStart(data, segment) - segmentEnd(data, before)
+      const last = lastStopOf(before, beforeService.route)
+      const endStop = beforeService.route.stops[last], startStop = s.route.stops[segment.from]
+      const goesRound = beforeService.route.id === s.route.id && isLoop(s.route) && last === beforeService.route.stops.length - 1 && segment.from === 0
+      const gap = goesRound ? timesOf(s)[0][1] - timesOf(beforeService)[last][0] : segmentStart(data, segment) - segmentEnd(data, before)
       if (gap < 0) problems.push({ i, text: tr("衔接时间不够，上一班还没到") })
       else if (endStop && startStop && endStop.station !== startStop.station) problems.push({ i, text: `${tr("站台对不上：上一班在{0}结束", shortName(endStop.name))}` })
       else if (endStop && startStop && endStop.platformId === startStop.platformId) {
         // A loop going round again from where it came round doesn't change ends
-        const goesRound = routeIsLoop(beforeService.route) && routeIsLoop(s.route) && lastStopOf(before, beforeService.route) === beforeService.route.stops.length - 1 && segment.from === 0
         if (!goesRound && gap < minReverse) problems.push({ i, text: tr("折返时间不够：同一站台折返至少要 {0}，这里只有 {1}", formatDuration(minReverse), formatDuration(gap)) })
       } else if (endStop && startStop) {
         // A change of platform takes as long as the server measured on the rails, or has no way at all

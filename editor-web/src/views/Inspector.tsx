@@ -240,7 +240,7 @@ function LoopRuns({ r }: { r: any }) {
       <Card>
         <div className="flex items-center gap-2 text-[14px] font-semibold"><Swatch color={r.color} />{routeTitle(r)}</div>
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
-          <dt className="text-dim">{tr("列车")}</dt><dd className="m-0">{tr("{0} 列跑 {1} 班", runs.trains.length, r.services.length)}</dd>
+          <dt className="text-dim">{tr("列车")}</dt><dd className="m-0">{tr("{0} 列跑 {1} 班", runs.trains.length, r.services.filter((s: any) => !s.suspended).length)}</dd>
           <dt className="text-dim">{tr("出库接入")}</dt><dd className="m-0">{stopName(r, entry)}{entry ? "" : tr("（首站）")}</dd>
           <dt className="text-dim">{tr("等下一圈")}</dt><dd className="m-0">{tr("最多 {0}", runs.maxWait > v.MAX_LAYOVER_MILLIS ? tr("8 天（车厂不回库）") : tr("30 分钟"))}</dd>
         </dl>
@@ -250,7 +250,7 @@ function LoopRuns({ r }: { r: any }) {
           ))}
           {runs.trains.length > 40 && <li>…</li>}
         </ol>
-        <p className="m-0 text-[12px] text-dim">{tr("每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。")}</p>
+        <p className="m-0 text-[12px] text-dim">{tr("同方向续跑时，水平线表示等候，垂直虚线表示在下一圈发车时刻接回首站。")}</p>
       </Card>
     </Section>
   )

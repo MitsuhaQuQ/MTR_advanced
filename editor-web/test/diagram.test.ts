@@ -245,4 +245,48 @@ describe("the running diagram's geometry", () => {
     expect(diagram.serviceLook({ selected: false, dim: true, noTrain: true, covered: false, hasTimes: true, suspended: false, notRun: false, showNoTrain: false })).toEqual({ color: "muted", width: 1, alpha: 0.25 })
     expect(diagram.serviceLook({ selected: true, dim: false, noTrain: false, covered: false, hasTimes: false, suspended: true, notRun: false, showNoTrain: false })).toEqual({ color: "muted", width: 2.5, alpha: 0.45 })
   })
+  it("connects the last and first rows at the same departure coordinate for a loop", async () => {
+    const { draw } = await import("../src/views/RunningDiagram")
+    const data = mockData()
+    const route = data.routes[0]
+    route.circular = true
+    route.stops[route.stops.length - 1] = { ...route.stops[0] }
+    route.tables[0].services = [21600000, 22620000]
+    data.routes = [route]
+    const depot = data.depots[0]
+    depot.routes = [route.id]
+    depot.duties = { mode: "diagram", sidings: { "8001": [[{
+      days: 127, stay: false, next: -1, duty: "1", segments: route.tables[0].services.map(service => ({ route: route.id, service, from: 0, to: -1 })),
+    }]] } }
+    data.depots = [depot]
+    data.dayStartMillis = 0
+    const { v } = engine.legacy
+    v.state.weekday = 0
+    engine.pushData(data)
+    v.state.line = v.data.lines[0].key
+    v.state.viewStart = 21600000
+    v.state.pxPerMin = 8
+    v.state.scrollY = 0
+    v.state.slot = { depot: depot.id, siding: "8001", index: 0 }
+    v.showDepots = false
+    let dash: number[] = [], point: number[] = []
+    const strokes: { from: number[]; to: number[]; dash: number[] }[] = []
+    const calls: Record<string, (...args: any[]) => unknown> = {
+      moveTo: (x, y) => { point = [x, y] },
+      lineTo: (x, y) => { strokes.push({ from: point, to: [x, y], dash }); point = [x, y] },
+      setLineDash: value => { dash = value },
+      getLineDash: () => dash,
+      measureText: () => ({ width: 10 }),
+    }
+    const g = new Proxy({}, { get: (_, name) => calls[String(name)] || (() => {}) }) as CanvasRenderingContext2D
+    const result = draw(g, W, H, null, null)
+    const [firstLap, nextLap] = [...result.drawn].sort((a, b) => a.s.start - b.s.start)
+    const [lastX, lastY] = firstLap.points.at(-1)!
+    const [nextX, nextY] = nextLap.points[0]
+    expect(lastX).toBeLessThan(nextX)
+    expect(lastY).not.toBe(nextY)
+    expect(strokes).toContainEqual({ from: [lastX, lastY], to: [nextX, lastY], dash: [] })
+    expect(strokes).toContainEqual({ from: [nextX, lastY], to: [nextX, nextY], dash: [5, 4] })
+    expect(strokes).not.toContainEqual({ from: [lastX, lastY], to: [nextX, nextY], dash: [3, 3] })
+  })
 })

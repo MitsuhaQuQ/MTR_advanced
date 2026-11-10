@@ -40,14 +40,13 @@
 		const minTurn = Number.isFinite(input.minTurn) ? input.minTurn : MIN_TURN;
 		const next = new Map(), previous = new Map(), warnings = [];
 		const ends = run => run && !run.suspended && !run.returns && run.last === run.platforms.length - 1;
-		const starts = run => run && !run.suspended && run.first === 0;
+		const starts = run => run && !run.suspended && !run.deploy && run.first === 0;
 		const arrival = run => run.times[run.last][0], leaving = run => run.times[run.last][1];
 		const departure = run => run.times[0][1], firstArrival = run => run.times[0][0];
 		const turnTime = (from, to) => (turnTimes[from] || {})[to];
-		// A loop run in full ends where it starts: a train going round again doesn't change ends (2026-11-09)
-		// Marked circular, or ending at the platform it starts from
-		const isLoop = run => run.first === 0 && run.last === run.platforms.length - 1 && run.platforms.length > 2 && (run.circular || run.platforms[0] === run.platforms[run.platforms.length - 1]);
-		const goesRound = (from, to) => isLoop(from) && isLoop(to) && from.platforms[from.last] === to.platforms[0];
+		// As in Route.isLoop, automatic laps stay on the same closed route and direction.
+		const isLoop = run => run.platforms.length > 2 && run.platforms[0] === run.platforms[run.platforms.length - 1];
+		const goesRound = (from, to) => isLoop(from) && from.routeId != null && from.routeId === to.routeId;
 
 		const link = (from, to, source) => {
 			if (!ends(from) || !starts(to) || next.has(from.id) || previous.has(to.id) || from.id === to.id) return;
@@ -56,6 +55,11 @@
 			const pairing = { from, to, kind: fromPlatform === toPlatform ? "same" : "change", source, platform: fromPlatform, moved: false, loop: goesRound(from, to) };
 			next.set(from.id, pairing);
 			previous.set(to.id, pairing);
+			if (pairing.loop && (departure(to) < arrival(from) || departure(to) <= departure(from))) {
+				pairing.conflict = true;
+				pairing.overlap = true;
+				warnings.push({ type: "LOOP_OVERLAP", from: from.id, to: to.id, at: arrival(from), until: departure(to) });
+			}
 		};
 		// Set by the player, then one after the other in a duty
 		Object.entries(input.manual || {}).forEach(([from, to]) => link(runs.get(from), runs.get(to), "manual"));
@@ -63,14 +67,19 @@
 			for (let i = 0; i + 1 < ids.length; i++) link(runs.get(ids[i]), runs.get(ids[i + 1]), "duty");
 		});
 		// The nearest: from the same platform first, then another of the station the train can get to in time
-		[...runs.values()].filter(run => ends(run) && !next.has(run.id)).sort((a, b) => arrival(a) - arrival(b)).forEach(from => {
+		[...runs.values()].filter(run => ends(run) && !run.through && !next.has(run.id)).sort((a, b) => arrival(a) - arrival(b)).forEach(from => {
 			const station = from.stations[from.last], platform = from.platforms[from.last];
 			let best = null, bestSame = false;
 			runs.forEach(to => {
 				if (!starts(to) || previous.has(to.id) || to.id === from.id || to.stations[0] !== station) return;
 				const same = to.platforms[0] === platform;
-				const ready = leaving(from) + (same && goesRound(from, to) ? 0 : minTurn) + (same ? 0 : turnTime(platform, to.platforms[0]) === undefined ? Infinity : turnTime(platform, to.platforms[0]));
-				if (ready > firstArrival(to) || departure(to) - arrival(from) > MAX_WAIT) return;
+				if (isLoop(from) || isLoop(to)) {
+					if (!same || !goesRound(from, to) || departure(to) <= departure(from) || departure(to) < arrival(from)
+						|| departure(to) - arrival(from) > (from.loopWait ?? 30 * 60000)) return;
+				} else {
+					const ready = leaving(from) + minTurn + (same ? 0 : turnTime(platform, to.platforms[0]) ?? Infinity);
+					if (ready > firstArrival(to) || departure(to) - arrival(from) > MAX_WAIT) return;
+				}
 				if (!best || same && !bestSame || same === bestSame && departure(to) < departure(best)) {
 					best = to;
 					bestSame = same;
@@ -93,11 +102,12 @@
 		input.runs.forEach(run => {
 			if (run.suspended) return;
 			for (let i = run.first; i <= run.last; i++) {
-				const turning = i === run.last && next.has(run.id) && next.get(run.id).kind === "same" || i === run.first && previous.has(run.id) && previous.get(run.id).kind === "same";
+				const outgoing = i === run.last && next.get(run.id), incoming = i === run.first && previous.get(run.id);
+				const turning = outgoing && outgoing.kind === "same" && !outgoing.overlap || incoming && incoming.kind === "same" && !incoming.overlap;
 				if (!turning) add(taken, run.platforms[i], { start: run.times[i][0], end: run.times[i][1], id: run.id });
 			}
 		});
-		[...next.values()].filter(pairing => pairing.kind === "same").sort((a, b) => arrival(a.from) - arrival(b.from)).forEach(pairing => {
+		[...next.values()].filter(pairing => pairing.kind === "same" && !pairing.overlap).sort((a, b) => arrival(a.from) - arrival(b.from)).forEach(pairing => {
 			const { from, to } = pairing;
 			const start = arrival(from), end = departure(to);
 			// A loop's train going round again stays on its own platform
@@ -119,7 +129,7 @@
 				add(taken, own, { start: firstArrival(to), end, id: to.id });
 				return true;
 			};
-			if (end - start >= LONG_WAIT && onRail()) return;
+			if (!pairing.loop && end - start >= LONG_WAIT && onRail()) return;
 			const chosen = choices.find(platform => free(taken.get(platform), start, end));
 			if (chosen !== undefined) {
 				pairing.platform = chosen;
@@ -128,7 +138,7 @@
 				if (pairing.moved) blockedBy(taken.get(own), start, end, minTurn).forEach(other => other.pairing && (other.pairing.displaced = (other.pairing.displaced || 0) + 1));
 				return;
 			}
-			if (onRail()) {
+			if (!pairing.loop && onRail()) {
 				blockedBy(taken.get(own), start, end, minTurn).forEach(other => other.pairing && (other.pairing.displaced = (other.pairing.displaced || 0) + 1));
 				return;
 			}
@@ -142,10 +152,15 @@
 		});
 
 		next.forEach(pairing => {
-			pairing.fromDeparture = pairing.kind === "same" ? departure(pairing.to) : leaving(pairing.from);
-			pairing.toArrival = pairing.kind === "same" ? arrival(pairing.from) : firstArrival(pairing.to);
+			pairing.fromDeparture = pairing.kind === "same" && !pairing.overlap ? departure(pairing.to) : leaving(pairing.from);
+			pairing.toArrival = pairing.kind === "same" && !pairing.overlap ? arrival(pairing.from) : firstArrival(pairing.to);
 		});
 		return { next, previous, warnings };
+	}
+
+	/** Wait on the last row, then wrap to the first row at one time coordinate. */
+	function loopConnection(arriveX, leaveX, lastY, firstY) {
+		return leaveX < arriveX ? null : [[arriveX, lastY], [leaveX, lastY], [leaveX, firstY]];
 	}
 
 	function add(map, key, entry) {
@@ -157,7 +172,7 @@
 		return (list || []).filter(other => other.start < end + minTurn && start < other.end + minTurn);
 	}
 
-	const api = { MIN_TURN, LONG_WAIT, MAX_WAIT, pair };
+	const api = { MIN_TURN, LONG_WAIT, MAX_WAIT, pair, loopConnection };
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 	else root.TerminalPairs = api;
 })(typeof window !== "undefined" ? window : this);

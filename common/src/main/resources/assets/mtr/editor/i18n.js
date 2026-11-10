@@ -154,6 +154,8 @@ const I18N = (() => {
 			"停站没改成：{0}": "The stops weren't changed: {0}",
 			"“{0}”的停站已发给游戏，{1} 站。车厂路径刷新后各站时刻会更新。": "The stops of “{0}” were sent to the game, {1} stops. Times at each stop follow once the depots' paths are refreshed.",
 			"环线续跑，在 {0} 停 {1}": "goes round again, standing at {0} for {1}",
+			"下一圈已发车": "Next lap already departed",
+			"{0}：环线上一圈 {1} 到达，下一圈 {2} 已发车": "{0}: the previous lap arrives at {1}, after the next lap departs at {2}",
 			"游戏里的这一项在草稿之后改过（可能是自动排了新的运用），草稿没有写入；看一下游戏里现在的，不需要就放弃这项草稿": "This was changed in the game after the draft was made (new duties may have been planned), so the draft wasn't written; look at what the game has now, and drop this draft if it isn't needed",
 			"{0} 的车": "a train of {0}",
 			"不在运用中（没有运用，或者运用已经改了）": "on no duty (it has none, or its duty was changed)",
@@ -1136,7 +1138,7 @@ const I18N = (() => {
 			"出库接入": "Joins from the depot at",
 			"等下一圈": "Wait for the next lap",
 			"最多 {0}": "Up to {0}",
-			"每跑完一圈，列车接首站能赶上的第一个空班次；赶不上的班次由车厂出车。运行图上最下一行的虚线是在首站等下一圈。": "After each lap a train takes the first free service it can make at the first stop; services nobody can make get a train from the depot. Dashed lines on the bottom row of the diagram are waits at the first stop for the next lap.",
+			"同方向续跑时，水平线表示等候，垂直虚线表示在下一圈发车时刻接回首站。": "For laps in the same direction, the horizontal line shows the wait. The vertical dashed line returns to the first stop at the next lap's departure time.",
 
 			// Duties
 			"这一班当天不运行，可能时刻表改过": "This service doesn't run that day, the timetable may have changed",
