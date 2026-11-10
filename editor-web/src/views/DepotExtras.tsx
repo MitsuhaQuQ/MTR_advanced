@@ -9,6 +9,7 @@ import { useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
+import { clock, daysText, shortName, weekdayName, weekdaysShort } from "./now"
 
 const field = "h-7 rounded-md border border-ctl bg-panel px-2 text-[13px]"
 const label = "flex flex-col gap-0.5 text-[12px] text-dim"
@@ -56,7 +57,7 @@ export function VehiclePanel({ depotId, poolKey, onClose }: { depotId: string; p
   const off = !set
   return (
     <SidePanel open onClose={onClose} title={tr("车型设置：{0}", pool.vehicle || pool.key)} width={480}
-      hint={tr("车厂“{0}”里这种车型（{1}）的列车怎么跑。同车型的存车线共用这些设置；别的车厂的同车型在那个车厂下设。", fn.shortName(depot.name), pool.key || pool.vehicle)}
+      hint={tr("车厂“{0}”里这种车型（{1}）的列车怎么跑。同车型的存车线共用这些设置；别的车厂的同车型在那个车厂下设。", shortName(depot.name), pool.key || pool.vehicle)}
       footer={<>
         <button className="btn btn-primary" disabled={!v.data.canEdit || Boolean(problem)} onClick={save}>{tr("放进草稿")}</button>
         <button className="btn" onClick={onClose}>{tr("取消")}</button>
@@ -105,14 +106,14 @@ export function DutyGroupsPanel({ depotId, onClose }: { depotId: string; onClose
   const replan = async (group: any) => {
     try {
       const result = await fn.sendJson("api/replan-duties", "POST", { depot: depot.id, group: group.key })
-      setSent(result.ok ? tr("已请求只重排“{0}”{1} {2} 这一组运用。", fn.shortName(depot.name), group.label, fn.daysText(group.days)) : tr("没有权限，或者游戏里没有这个车厂。"))
+      setSent(result.ok ? tr("已请求只重排“{0}”{1} {2} 这一组运用。", shortName(depot.name), group.label, daysText(group.days)) : tr("没有权限，或者游戏里没有这个车厂。"))
     } catch {
       setSent(tr("发送失败，游戏可能已经关闭"))
     }
   }
   const cell = "border-t border-grid py-1.5 pr-2 align-top"
   return (
-    <SidePanel open onClose={onClose} title={tr("运用组：{0}", fn.shortName(depot.name))} width={620}
+    <SidePanel open onClose={onClose} title={tr("运用组：{0}", shortName(depot.name))} width={620}
       hint={tr("运用按“车型 × 时刻表的星期”分组排：每张时刻表的日子各排一组，只改一张表时只重排它那一组，其他组沿用。")}
       footer={<><button className="btn" onClick={onClose}>{tr("关闭")}</button>{sent && <span className="text-[12px] text-dim" role="status">{sent}</span>}</>}>
       <h3 className="label-sm m-0 mb-1">{tr("本规划单元的运用组")}</h3>
@@ -121,7 +122,7 @@ export function DutyGroupsPanel({ depotId, onClose }: { depotId: string; onClose
           {planned.map((group, index) => (
             <tr key={index}>
               <td className={cell + " font-medium"}>{group.label}</td>
-              <td className={cell}>{fn.daysText(group.days)}</td>
+              <td className={cell}>{daysText(group.days)}</td>
               <td className={cell}>{group.needed < 0 ? tr("最多同时 {0} 列，需要几列算不出", group.trains) : tr("最多同时 {0} 列，跑满需要 {1} 列", group.trains, group.needed)}
                 {group.uncovered ? <span className="text-warn">{tr("，每天 {0} 班没有车", group.uncovered)}</span> : null}</td>
               <td className={cell + " text-dim"}>{group.kept ? tr("沿用") : tr("这次排的")}</td>
@@ -136,9 +137,9 @@ export function DutyGroupsPanel({ depotId, onClose }: { depotId: string; onClose
         <table className="w-full border-collapse text-[12px]"><tbody>
           {others.map((entry, index) => (
             <tr key={index}>
-              <td className={cell}>{fn.shortName(entry.other.name)}</td>
+              <td className={cell}>{shortName(entry.other.name)}</td>
               <td className={cell}>{vehicleName(entry.vehicle)}</td>
-              <td className={cell}>{fn.daysText(entry.days)}</td>
+              <td className={cell}>{daysText(entry.days)}</td>
               <td className={cell}>{tr("{0} 份运用", entry.count)}</td>
               <td className={cell + " text-right"}>{data.canEdit && <button className="btn h-6 px-2 text-[12px]" onClick={() => { onClose(); fn.applyDutyGroup(depot, entry.other, entry.vehicle, entry.days) }}>{tr("套用到本车厂")}</button>}</td>
             </tr>
@@ -162,7 +163,7 @@ export function ReleasePlanPanel({ depotId, onClose }: { depotId: string; onClos
   const duties = fn.dutiesOf(depot)
   const rows: any[] = []
   let inDepot = 0
-  const placeOf = (r: any, stop: number) => (r ? `${fn.shortName(r.name)} ${fn.shortName(r.stops[stop] ? r.stops[stop].name : "?")}` : tr("已删除的线路"))
+  const placeOf = (r: any, stop: number) => (r ? `${shortName(r.name)} ${shortName(r.stops[stop] ? r.stops[stop].name : "?")}` : tr("已删除的线路"))
   depot.sidings.forEach((siding: any) => {
     const slots = duties.sidings[siding.id] || []
     let used = 0
@@ -176,18 +177,18 @@ export function ReleasePlanPanel({ depotId, onClose }: { depotId: string; onClos
       const lastStop = lastRoute ? fn.lastStopOf(last, lastRoute) : 0
       rows.push({
         start: fn.segmentStart(first), siding, index, stay: on.stay, count: on.segments.length, ...fn.legTimes(siding, on),
-        first: `${firstService ? fn.clock(fn.timesOf(firstService)[Math.min(first.from, firstService.plans.length - 1)][1]) : "--:--"} ${placeOf(firstRoute, first.from)}`,
-        last: `${lastService ? fn.clock(fn.timesOf(lastService)[fn.lastStopOf(last, lastService.route)][0]) : "--:--"} ${placeOf(lastRoute, lastStop)}`,
+        first: `${firstService ? clock(fn.timesOf(firstService)[Math.min(first.from, firstService.plans.length - 1)][1]) : "--:--"} ${placeOf(firstRoute, first.from)}`,
+        last: `${lastService ? clock(fn.timesOf(lastService)[fn.lastStopOf(last, lastService.route)][0]) : "--:--"} ${placeOf(lastRoute, lastStop)}`,
       })
     })
     if (siding.maxTrains >= 0) inDepot += Math.max(0, siding.maxTrains - used)
   })
   rows.sort((a, b) => a.start - b.start)
-  const days: string[] = v.WEEKDAY_SHORT
+  const days: string[] = weekdaysShort()
   const th = "border-b border-grid py-1 pr-2 text-left font-normal text-dim"
   const td = "border-b border-grid py-1 pr-2"
   return (
-    <SidePanel open onClose={onClose} title={tr("出入库计划：{0}（{1}）", fn.shortName(depot.name), v.WEEKDAY_NAMES[day])} width={760}
+    <SidePanel open onClose={onClose} title={tr("出入库计划：{0}（{1}）", shortName(depot.name), weekdayName(day))} width={760}
       hint={<>{duties.auto ? tr("这个车厂没设运用，按游戏根据时刻表自动生成的运用出车。") : ""}{tr("车厂在首班前按出库用时放车；出库太晚（超过 10 分钟）的车直接放到它的运用里还赶得上的第一站。放车前要先拿到出库线到首站的进路，正线的方向预约在内，拿不到就在库里等。")}</>}
       footer={<button className="btn" onClick={onClose}>{tr("关闭")}</button>}>
       <div className="mb-3 flex gap-1" role="group" aria-label={tr("星期")}>
@@ -206,7 +207,7 @@ export function ReleasePlanPanel({ depotId, onClose }: { depotId: string; onClos
             {rows.map((row, i) => (
               <tr key={i}>
                 <td className={td + " font-medium"}>{tr("车 {0}", fn.dutyNumber(depot, row.siding.id, row.index))}</td>
-                <td className={td}>{fn.shortName(row.siding.name) || tr("存车线")}</td>
+                <td className={td}>{shortName(row.siding.name) || tr("存车线")}</td>
                 <td className={td + " num"}>{row.out}</td><td className={td}>{row.first}</td><td className={td}>{row.last}</td>
                 <td className={td + " num"}>{row.home}</td><td className={td + " num"}>{row.count}</td>
                 <td className={td + (row.stay ? " text-caution" : "")}>{row.stay ? tr("留在线上过夜") : tr("回库")}</td>

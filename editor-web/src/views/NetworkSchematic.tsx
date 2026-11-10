@@ -14,6 +14,7 @@ import { legacy, useLegacy } from "../legacy/engine"
 import { abstractNetwork, type Corridor, type Place, type Schematic } from "../core/abstractNet"
 import { paint, useBrush } from "./OwnershipPanel"
 import { tr } from "../i18n"
+import { colorOf } from "./now"
 
 const GAP = 5, LANE = 7, BOX_W = 44
 
@@ -166,7 +167,7 @@ function railColors(rail: number): string[] {
   const { fn } = legacy
   if (fn.usesLogicalLines()) {
     const line = fn.railLogicalLine(rail)
-    return line ? [fn.colorOf(line.color)] : []
+    return line ? [colorOf(line.color)] : []
   }
   if (!legacy.v.net.ownerOf) return []
   return (fn.railOwnersShown(rail).owners as string[]).map(owner => fn.ownerColor(owner))

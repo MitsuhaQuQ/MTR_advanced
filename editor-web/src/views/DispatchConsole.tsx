@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { tr } from "../i18n"
+import { shortName, systemTitle } from "./now"
 
 export function DispatchConsole({ className, onChoose }: { className: string; onChoose: (id: string) => void }) {
   useLegacy()
@@ -30,7 +31,7 @@ export function DispatchConsole({ className, onChoose }: { className: string; on
           <select className="h-7 rounded-md border border-ctl bg-panel px-1 text-[13px]" value={consoleState.system} aria-label={tr("路网")}
             onChange={e => { consoleState.system = e.target.value; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }}>
             <option value="">{tr("全部路网")}</option>
-            {systems.map((system: any) => <option key={system.anchor} value={system.anchor}>{fn.systemTitle(system)}</option>)}
+            {systems.map((system: any) => <option key={system.anchor} value={system.anchor}>{systemTitle(system)}</option>)}
           </select>
           {d && d.available && <span className="text-[12px] text-dim">{tr("{0} 列车在线上{1}，{2} 秒前", trains.length, trains.some(t => t.noDuty) ? tr("（{0} 列不在运用中）", trains.filter(t => t.noDuty).length) : "", d.age || 0)}</span>}
         </div>
@@ -71,11 +72,11 @@ function TrainCard({ train, chosen, canEdit, onChoose }: { train: any; chosen: b
     <li className={"rounded-lg border p-2.5 " + (chosen ? "tint-sel border-sel" : "border-grid bg-panel")} onClick={onChoose} data-console-card={train.id}>
       <div className="flex items-center gap-2">
         <b className="text-[13px]">{fn.consoleTrainName(train)}</b>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-dim">{fn.shortName(train.routeName || "")}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] text-dim">{shortName(train.routeName || "")}</span>
         {late && <span className="tint-warn rounded-pill px-2 text-[11px] font-medium text-warn">{tr("晚点 {0} 分钟", Math.floor(train.late / 60))}</span>}
         {held && <span className="tint-caution rounded-pill px-2 text-[11px] font-medium text-caution">{tr("扣停")}</span>}
       </div>
-      <p className="m-0 mt-0.5 text-[12px] text-dim">{train.next ? tr("下一站 {0}", fn.shortName(train.next)) : ""}{train.block ? tr("，区段 {0}", train.block.slice(-4)) : ""}</p>
+      <p className="m-0 mt-0.5 text-[12px] text-dim">{train.next ? tr("下一站 {0}", shortName(train.next)) : ""}{train.block ? tr("，区段 {0}", train.block.slice(-4)) : ""}</p>
       {state && <p className="m-0 mt-0.5 text-[12px]">{state}</p>}
       {canEdit && !train.noDuty && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -104,7 +105,7 @@ function TrainCard({ train, chosen, canEdit, onChoose }: { train: any; chosen: b
       {open === "turn" && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]" onClick={e => e.stopPropagation()}>
           {tr("在")}<select className="h-6 rounded-md border border-ctl bg-panel px-1" value={station} onChange={e => setStation(e.target.value)}>
-            {stations.map(each => <option key={each.id} value={each.id}>{fn.shortName(each.name)}</option>)}
+            {stations.map(each => <option key={each.id} value={each.id}>{shortName(each.name)}</option>)}
           </select>{tr("折返")}
           <button type="button" className="btn btn-primary h-6 px-2 text-[12px]" onClick={() => {
             if (!station) { setError(tr("选一个车站")); return }

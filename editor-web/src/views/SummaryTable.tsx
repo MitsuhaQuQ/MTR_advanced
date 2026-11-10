@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { tr } from "../i18n"
+import { DAY, clock, colorOf, daysText, mod, orderDepotName, parseClock, routeTitle, shortName, tableName, trc, typedTime, weekdayName, weekdaysShort } from "./now"
 
 type Editing = { svc: string; stop: number; kind: string; value: string; old: number; bad: boolean }
 
@@ -40,12 +41,12 @@ export function SummaryTable({ className }: { className: string }) {
     const s = fn.findService(cell.dataset.svc), stop = Number(cell.dataset.stop), kind = cell.dataset.kind || ""
     if (!s || kind === "derived" || (kind === "pass" && cell.textContent === "レ")) return
     const t = fn.timesOf(s)[stop], old = kind === "dep" ? t[1] : t[0]
-    setEditing({ svc: s.id, stop, kind, value: fn.clock(old, true), old, bad: false })
+    setEditing({ svc: s.id, stop, kind, value: clock(old, true), old, bad: false })
   }
   const commit = (move: number, toLater: boolean) => {
     if (!editing) return
     const s = fn.findService(editing.svc)
-    const time = fn.typedTime(editing.value, editing.old)
+    const time = typedTime(editing.value, editing.old)
     if (time === null) { setEditing({ ...editing, bad: true }); return }
     const cells = [...(root.current?.querySelectorAll("td") || [])] as HTMLElement[]
     const index = cells.findIndex(c => c.dataset.svc === editing.svc && Number(c.dataset.stop) === editing.stop && c.dataset.kind === editing.kind)
@@ -81,13 +82,13 @@ export function SummaryTable({ className }: { className: string }) {
       const time = pairing ? (kind === "arr" ? pairing.toArrival : pairing.fromDeparture) : kind === "arr" ? t[0] : t[1]
       const title = pairing ? fn.terminalText(pairing) + "\n" + (kind === "arr" ? tr("跟着上一班，改那一班的时刻") : tr("跟着下一班，改那一班的时刻")) : tr("没有接续的班次：只算本班的停站时间")
       const classes = ["derived", selected ? "hl" : "", pairing && pairing.source === "nearest" ? "inferred" : "", pairing && pairing.conflict ? "fast" : "", pairing && pairing.kind !== "same" ? "out" : ""].filter(Boolean).join(" ")
-      return { className: classes, text: fn.clock(time, true), title, data: { svc: s.id, stop: i, kind: "derived" } }
+      return { className: classes, text: clock(time, true), title, data: { svc: s.id, stop: i, kind: "derived" } }
     }
     const plan = s.plans[i], exception = s.exceptions && s.exceptions.get(i)
     const [firstServed, lastServed] = fn.servedStops(s)
     if (i < firstServed || i > lastServed || (i === firstServed && kind === "arr" && i > 0) || (i === lastServed && kind === "dep" && i < s.route.stops.length - 1)) {
       const before = i < firstServed || (i === firstServed && kind === "arr")
-      return { className: ["pass", "unserved", selected ? "hl" : ""].filter(Boolean).join(" "), text: "—", title: before ? tr("出车 ← {0}", fn.orderDepotName(s.deployOrder)) : tr("回送 → {0}", fn.orderDepotName(s.returnOrder)), data: { svc: s.id, stop: i, kind } }
+      return { className: ["pass", "unserved", selected ? "hl" : ""].filter(Boolean).join(" "), text: "—", title: before ? tr("出车 ← {0}", orderDepotName(s.deployOrder)) : tr("回送 → {0}", orderDepotName(s.returnOrder)), data: { svc: s.id, stop: i, kind } }
     }
     const passes = kind !== "pass" && plan.passes
     const changed = (exception && (kind === "dep" ? exception.dwell >= 0 : exception.run >= 0)) || (exception && exception.pass >= 0)
@@ -95,7 +96,7 @@ export function SummaryTable({ className }: { className: string }) {
     const picked = state.pendingExit && state.pendingExit.id === s.id && state.pendingExit.index === i && kind !== "dep"
     const classes = [selected ? "hl" : "", kind === "pass" || passes ? "pass" : "", changed ? "exc" : "", kind !== "dep" && plan.tooFast ? "fast" : "", kind === "dep" && plan.overtake ? "wait" : "", exception && exception.pass >= 0 ? "pending-run" : "", leaves ? "out" : "", picked ? "pending" : ""].filter(Boolean).join(" ")
     const title = exception && exception.pass >= 0 ? tr("只改了这一班的时刻：列车实际仍按线路的停站运行，按班次生成路径后（E2）才真正通过或停车") : plan.tooFast && kind !== "dep" ? tr("快过最快时刻，列车跑不到") : undefined
-    const text = passes ? (kind === "arr" ? "↓ " + fn.clock(t[0], true) : "レ") : fn.clock(kind === "dep" ? t[1] : t[0], true)
+    const text = passes ? (kind === "arr" ? "↓ " + clock(t[0], true) : "レ") : clock(kind === "dep" ? t[1] : t[0], true)
     return { className: classes, text, title, data: { svc: s.id, stop: i, kind: passes ? "pass" : kind } }
   }
   // Plain functions, not components: a component made in here would be a new type each time, and every cell made again
@@ -107,17 +108,17 @@ export function SummaryTable({ className }: { className: string }) {
   const headOf = (s: any, selected: boolean, note: ReactNode) => {
     const noTrain = !s.suspended && fn.hasNoTrain(s)
     const deadheads = v.showDeadheads && v.deadheadIndex && v.deadheadIndex.get(s.id)
-    const time = editor({ svc: s.id, stop: 0, kind: "dep" }) || <>{fn.clock(s.start)}{s.exceptions && <span className="exc-mark" title={tr("有只改这一班的例外")}> *</span>}</>
+    const time = editor({ svc: s.id, stop: 0, kind: "dep" }) || <>{clock(s.start)}{s.exceptions && <span className="exc-mark" title={tr("有只改这一班的例外")}> *</span>}</>
     return (
       <th key={s.id} className={"svc-head" + (selected ? " hl" : "") + (noTrain ? " no-train" : "") + (s.suspended ? " suspended" : "")} data-svc={s.id} data-stop={0} data-kind="dep"
         title={(noTrain ? tr("没有车跑这一班") + "\n" : "") + (s.suspended ? tr("停运：留在表里，不出车、不排运用，右键恢复") + "\n" : "") + tr("点这里改班次时刻；右键更多")}>
         <span className="time">{time}</span>{note}
-        {deadheads && deadheads.out && <span className={"note" + (deadheads.out.exception ? " exception" : "")} title={tr("出库回送")}>{deadheads.out.number} {fn.clock(deadheads.out.leave, true)} ← {deadheads.depot}</span>}
-        {deadheads && deadheads.back && <span className={"note" + (deadheads.back.exception ? " exception" : "")} title={tr("回库回送")}>{deadheads.back.number} → {deadheads.depot} {fn.clock(deadheads.back.home, true)}</span>}
+        {deadheads && deadheads.out && <span className={"note" + (deadheads.out.exception ? " exception" : "")} title={tr("出库回送")}>{deadheads.out.number} {clock(deadheads.out.leave, true)} ← {deadheads.depot}</span>}
+        {deadheads && deadheads.back && <span className={"note" + (deadheads.back.exception ? " exception" : "")} title={tr("回库回送")}>{deadheads.back.number} → {deadheads.depot} {clock(deadheads.back.home, true)}</span>}
         {s.suspended && <span className="note suspended-note">{tr("停运")}</span>}
-        {s.deployOrder && <span className="note">{tr("出车 ← {0}", fn.orderDepotName(s.deployOrder))}</span>}
-        {s.returnOrder ? <span className="note">{tr("回送 → {0}", fn.orderDepotName(s.returnOrder))}</span>
-          : s.link && s.link.fromStop < 0 && s.link.toStop === 0 ? <span className="note">{tr("接 {0}", fn.clock(fn.mod(s.link.toService - data.dayStartMillis, v.DAY)))}</span>
+        {s.deployOrder && <span className="note">{tr("出车 ← {0}", orderDepotName(s.deployOrder))}</span>}
+        {s.returnOrder ? <span className="note">{tr("回送 → {0}", orderDepotName(s.returnOrder))}</span>
+          : s.link && s.link.fromStop < 0 && s.link.toStop === 0 ? <span className="note">{tr("接 {0}", clock(mod(s.link.toService - data.dayStartMillis, DAY)))}</span>
           : s.link ? <span className="note">{tr("直通")}</span> : s.returns ? <span className="note">{tr("回库")}</span> : null}
       </th>
     )
@@ -175,14 +176,14 @@ export function SummaryTable({ className }: { className: string }) {
     const order: number[] = line.rows.map((_: unknown, i: number) => i)
     if (way === 1) order.reverse()
     const position = new Map(order.map((row, t) => [row, t]))
-    const ends = (w: number) => [...new Set(ways[w].map((route: any) => fn.shortName(route.stops[route.stops.length - 1].name)))].join(tr("、"))
+    const ends = (w: number) => [...new Set(ways[w].map((route: any) => shortName(route.stops[route.stops.length - 1].name)))].join(tr("、"))
     const services = ways[way].flatMap((route: any) => route.services).sort((a: any, b: any) => a.start - b.start)
     const tools = <>
-      <div className="tt-tools"><b>{fn.shortName(line.name)}</b><span className="hint">{tr("{0} · {1} 班 · 在左边选一个种别可以改表和添加班次", v.WEEKDAY_NAMES[state.weekday], services.length)}</span>{showDeadheadsBox}</div>
+      <div className="tt-tools"><b>{shortName(line.name)}</b><span className="hint">{tr("{0} · {1} 班 · 在左边选一个种别可以改表和添加班次", weekdayName(state.weekday), services.length)}</span>{showDeadheadsBox}</div>
       <div className="tt-tools"><span className="hint" style={{ flex: "none" }}>{tr("方向")}</span>
         {[0, 1].filter(w => ways[w].length).map(w => <button key={w} className={"table-chip" + (w === way ? " on" : "")} onClick={() => { state.lineWay = w; fn.renderAll() }}>{tr("往{0}", ends(w))}</button>)}</div>
     </>
-    if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", v.WEEKDAY_NAMES[state.weekday])}</div></Frame>
+    if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
     const allTimes = services.map(fn.timesOf)
     const visits = services.map((s: any) => {
       const route = s.route, at = new Map<string, number>(), seen = new Set<number>()
@@ -204,8 +205,8 @@ export function SummaryTable({ className }: { className: string }) {
       kinds.forEach((kind, k) => {
         rows.push(
           <tr key={rowIndex + kind} className={[k === 0 ? "first-of-station" : "", k === 0 && sectionStart ? "section-start" : ""].filter(Boolean).join(" ")}>
-            {k === 0 && <th className={"st" + (row.repeat ? " repeat" : "")} rowSpan={kinds.length} title={row.name}>{row.repeat ? "↔ " : ""}{fn.shortName(row.name)}</th>}
-            <th className="kind">{kind === "dep" ? tr("发") : fn.trc ? fn.trc("arrival", "到") : tr("到")}</th>
+            {k === 0 && <th className={"st" + (row.repeat ? " repeat" : "")} rowSpan={kinds.length} title={row.name}>{row.repeat ? "↔ " : ""}{shortName(row.name)}</th>}
+            <th className="kind">{kind === "dep" ? tr("发") : trc("arrival", "到")}</th>
             {services.map((s: any, j: number) => {
               const vis = visits[j], i = vis.at.get(rowIndex + kind), selected = isSelected(s)
               if (i !== undefined) return cellOf(s, i, kind, allTimes[j][i], selected)
@@ -225,7 +226,7 @@ export function SummaryTable({ className }: { className: string }) {
       <Frame className={className} root={root} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
         {tools}
         <table className="tt">
-          <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), <span className="note" style={{ color: fn.colorOf(s.route.color) }}>{fn.shortName(s.route.name)}</span>))}</tr></thead>
+          <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), <span className="note" style={{ color: colorOf(s.route.color) }}>{shortName(s.route.name)}</span>))}</tr></thead>
           <tbody>{rows}</tbody>
         </table>
       </Frame>
@@ -243,7 +244,7 @@ export function SummaryTable({ className }: { className: string }) {
       [tr("改名和运行的星期…"), () => fn.tableDialog(r, index)],
       [tr("清空这张表的班次"), timetable.tables[index].services.length ? () => fn.clearTable(r, index) : null],
       [timetable.tables.length > 1 ? tr("删除这张表") : tr("删除这张表（至少要留一张）"), timetable.tables.length > 1 ? () => setAsking({
-        text: tr("删除“{0}”和它的 {1} 个班次？", fn.tableName(timetable.tables[index], index), timetable.tables[index].services.length),
+        text: tr("删除“{0}”和它的 {1} 个班次？", tableName(timetable.tables[index], index), timetable.tables[index].services.length),
         go: () => fn.editTimetable(r, (edited: any) => { edited.tables.splice(index, 1) }),
       }) : null],
     ])
@@ -260,8 +261,8 @@ export function SummaryTable({ className }: { className: string }) {
     })
   }
   const tools = <>
-    <div className="tt-tools"><b>{fn.routeTitle(r)}</b>
-      <span className="hint">{tr("{0} · {1} 班{2}{3}", v.WEEKDAY_NAMES[state.weekday], services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>
+    <div className="tt-tools"><b>{routeTitle(r)}</b>
+      <span className="hint">{tr("{0} · {1} 班{2}{3}", weekdayName(state.weekday), services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>
       {r.pathFailure && <span className="err">{r.pathFailure}</span>}
       {fn.shortfallsOf(r).map((text: string) => <span key={text} className="err">{text}</span>)}
       <span className={"pill" + (managed ? " managed" : "")} title={tr("由高级编辑器管理的线路，游戏里的时刻表和停站只能查看")}>{managed ? tr("由高级编辑器管理") : tr("游戏内可编辑")}{pending ? tr("（草稿）") : ""}</span>
@@ -271,8 +272,8 @@ export function SummaryTable({ className }: { className: string }) {
     <div className="tt-tools"><span className="hint" style={{ flex: "none" }}>{tr("表")}</span>
       {timetable.tables.map((table: any, i: number) => (
         <button key={i} className={"table-chip" + (i === today ? " on" : "")} title={tr("切到这张表运行的第一天；右键改名、改星期或删除")}
-          onClick={() => { const mask = table.weekdays; if (mask) fn.setWeekday(v.WEEKDAY_SHORT.findIndex((_: unknown, d: number) => (mask >> d) & 1)) }}
-          onContextMenu={e => tableMenu(e, i)}>{fn.tableName(table, i)} · {fn.daysText(table.weekdays)}</button>
+          onClick={() => { const mask = table.weekdays; if (mask) fn.setWeekday(weekdaysShort().findIndex((_: unknown, d: number) => (mask >> d) & 1)) }}
+          onContextMenu={e => tableMenu(e, i)}>{tableName(table, i)} · {daysText(table.weekdays)}</button>
       ))}
       <button className="table-chip" onClick={() => fn.tableDialog(r, -1)}>{tr("＋ 新建表")}</button>
       {today >= 0 && (
@@ -284,13 +285,13 @@ export function SummaryTable({ className }: { className: string }) {
     </div>
     {today >= 0
       ? <AddServices r={r} today={today} showDeadheadsBox={showDeadheadsBox} ask={setAsking} />
-      : <div className="tt-tools"><span className="err">{tr("{0}没有表，这一天不运行。{1}", v.WEEKDAY_NAMES[state.weekday], v.tableMessage)}</span></div>}
+      : <div className="tt-tools"><span className="err">{tr("{0}没有表，这一天不运行。{1}", weekdayName(state.weekday), v.tableMessage)}</span></div>}
     {asking && (
       <div className="tt-tools" role="alert"><span className="err">{asking.text}</span>
         <button onClick={() => { const go = asking.go; setAsking(null); go() }}>{tr("确定")}</button><button onClick={() => setAsking(null)}>{tr("取消")}</button></div>
     )}
   </>
-  if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", v.WEEKDAY_NAMES[state.weekday])}</div></Frame>
+  if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
   const multipleTables = timetable.tables.length > 1
   const allTimes = services.map(fn.timesOf)
   const rows: ReactNode[] = []
@@ -303,13 +304,13 @@ export function SummaryTable({ className }: { className: string }) {
         <tr key={i + kind} className={k === 0 ? "first-of-station" : ""}>
           {k === 0 && (
             <th className="st" rowSpan={kinds.length} title={stop.name + fn.trackTitle(stop) + (stop.boundary ? tr("（时刻边界，可以在这里接出或接入）") : "")}>
-              {fn.shortName(stop.name)}
+              {shortName(stop.name)}
               {stop.boundary && <span className="boundary"> {tr("界")}</span>}
               {stop.tooShort && <span className="err" title={tr("车比站台长（站台 {0} 格）", stop.platformLength)}> ⚠</span>}
               {fn.isLoop(r) && i > 0 && i < r.stops.length - 1 && fn.loopEntryStop(r) === i && <span className="entry" title={tr("车厂的列车从这里接入环线")}> {tr("入")}</span>}
             </th>
           )}
-          <th className="kind">{kind === "dep" ? tr("发") : kind === "pass" ? tr("通过") : fn.trc ? fn.trc("arrival", "到") : tr("到")}</th>
+          <th className="kind">{kind === "dep" ? tr("发") : kind === "pass" ? tr("通过") : trc("arrival", "到")}</th>
           {services.map((s: any, j: number) => cellOf(s, i, kind, allTimes[j][i], isSelected(s)))}
         </tr>,
       )
@@ -319,7 +320,7 @@ export function SummaryTable({ className }: { className: string }) {
     <Frame className={className} root={root} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
       {tools}
       <table className="tt">
-        <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), multipleTables ? <span className="note">{fn.tableName(s.table, s.tableIndex)}</span> : null))}</tr></thead>
+        <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), multipleTables ? <span className="note">{tableName(s.table, s.tableIndex)}</span> : null))}</tr></thead>
         <tbody>{rows}</tbody>
       </table>
     </Frame>
@@ -350,10 +351,10 @@ function AddServices({ r, today, showDeadheadsBox, ask }: { r: any; today: numbe
     try { localStorage.setItem("mtr-editor-add-services", JSON.stringify(inputs)) } catch { /* private window */ }
     const services = fn.servicesToAdd(start, end, count)
     if (!services) { v.tableMessage = v.PATTERN_HINT; fn.renderAll(); return }
-    const startTime = fn.parseClock(start.trim()), endTime = end.trim() ? fn.parseClock(end.trim()) : null
+    const startTime = parseClock(start.trim()), endTime = end.trim() ? parseClock(end.trim()) : null
     if (startTime !== null && endTime !== null && count.trim()) {
       const data = v.data
-      const from = fn.mod(startTime - data.offsetMillis, v.DAY), to = fn.mod(endTime - data.offsetMillis, v.DAY)
+      const from = mod(startTime - data.offsetMillis, DAY), to = mod(endTime - data.offsetMillis, DAY)
       const fit = (globalThis as any).Batch.fitSpan(fn.timetableOf(r).tables[today].services, from, to, services)
       const apply = () => fn.editTimetable(r, (timetable: any) => {
         const table = timetable.tables[today]

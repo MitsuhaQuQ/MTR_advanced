@@ -8,6 +8,7 @@
 import { useState, type ReactNode } from "react"
 import { legacy, menuHost, useLegacy, type MenuItem } from "../legacy/engine"
 import { tr } from "../i18n"
+import { clock, colorOf, daysText, routeTitle, shortName, weekdayName } from "./now"
 
 const HOUR = 3600000, LABEL = 148, ROW = 34
 
@@ -50,12 +51,12 @@ function Head({ depot, choose, pxPerHour, setPxPerHour }: { depot: any; choose: 
     <div className="flex shrink-0 flex-col gap-2 border-b border-grid bg-panel px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <select className="h-7 rounded-md border border-ctl bg-panel px-2 text-[14px] font-semibold" value={depot.id} onChange={e => choose(e.target.value)} aria-label={tr("车厂")}>
-          {data.depots.map((d: any) => <option key={d.id} value={d.id}>{fn.shortName(d.name)}</option>)}
+          {data.depots.map((d: any) => <option key={d.id} value={d.id}>{shortName(d.name)}</option>)}
         </select>
         <span className={"inline-flex h-5 items-center rounded-pill px-2 text-[12px] font-medium " + (duties.mode === "diagram" && !duties.auto ? "tint-accent text-brand" : "bg-panel2 text-dim")}>
           {duties.auto ? tr("自动运用") : duties.mode === "diagram" ? tr("按运用图") : tr("自动排班")}
         </span>
-        <span className="text-[12px] text-dim">{fn.WEEKDAY_NAMES[state.weekday]} · {fn.daysText(fn.dayGroup(depot, state.weekday))}</span>
+        <span className="text-[12px] text-dim">{weekdayName(state.weekday)} · {daysText(fn.dayGroup(depot, state.weekday))}</span>
         <span className="flex-1" />
         <div className="flex h-7 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("缩放")}>
           {[[70, tr("全天")], [110, tr("标准")], [200, tr("细看")]].map(([px, label], i) => (
@@ -137,7 +138,7 @@ function Board({ depot, pxPerHour }: { depot: any; pxPerHour: number }) {
     menuHost.current?.open(e.clientX, e.clientY, [
       [tr("清空这列车当天的运用"), canEdit && row.day ? () => fn.editDuties(depot, (all: any) => { if (fn.dutyOn(all.sidings[sid][idx], state.weekday)) fn.dutyForEditing(depot, all.sidings[sid][idx], state.weekday).segments = [] }) : null],
       [tr("删除这个库位"), canEdit ? () => fn.changeSlots(depot, sid, (slots: any[]) => slots.splice(idx, 1)) : null],
-      [tr("在 {0} 添加运用", fn.shortName(row.siding.name) || tr("存车线")), canEdit ? () => fn.changeSlots(depot, sid, (slots: any[]) => slots.push([])) : null],
+      [tr("在 {0} 添加运用", shortName(row.siding.name) || tr("存车线")), canEdit ? () => fn.changeSlots(depot, sid, (slots: any[]) => slots.push([])) : null],
     ])
   }
   const clickService = (s: any) => {
@@ -153,7 +154,7 @@ function Board({ depot, pxPerHour }: { depot: any; pxPerHour: number }) {
         <div className="sticky top-0 z-20 flex h-7 border-b border-gridstrong bg-panel">
           <div className="sticky left-0 z-10 flex w-[148px] shrink-0 items-center border-r border-gridstrong bg-bg px-3 text-[12px] text-dim">{tr("车 / 存车线")}</div>
           <div className="relative flex-1">
-            {hours.map(t => <span key={t} className="num absolute top-1.5 text-[11px] font-semibold" style={{ left: x(t) + 3 }}>{fn.clock(t)}</span>)}
+            {hours.map(t => <span key={t} className="num absolute top-1.5 text-[11px] font-semibold" style={{ left: x(t) + 3 }}>{clock(t)}</span>)}
           </div>
         </div>
         {rows.map(({ pool, list }: { pool: any; list: Row[] }) => (
@@ -185,9 +186,9 @@ function Board({ depot, pxPerHour }: { depot: any; pxPerHour: number }) {
                       const a = fn.segmentStart(seg), b = fn.segmentEnd(seg)
                       const chosen = s.id === state.selected
                       return (
-                        <Block key={i} left={x(a)} width={Math.max(4, x(b) - x(a))} color={fn.colorOf(s.route.color)} chosen={chosen}
-                          title={`${fn.clock(a)}–${fn.clock(b)} ${fn.routeTitle(s.route)}${on && canEdit ? "\n" + tr("点一下从这列车移出") : state.slot ? "\n" + tr("点一下移到选中的车") : ""}`}
-                          onClick={() => clickService(s)}>{fn.clock(a)}</Block>
+                        <Block key={i} left={x(a)} width={Math.max(4, x(b) - x(a))} color={colorOf(s.route.color)} chosen={chosen}
+                          title={`${clock(a)}–${clock(b)} ${routeTitle(s.route)}${on && canEdit ? "\n" + tr("点一下从这列车移出") : state.slot ? "\n" + tr("点一下移到选中的车") : ""}`}
+                          onClick={() => clickService(s)}>{clock(a)}</Block>
                       )
                     })}
                   </div>
@@ -206,7 +207,7 @@ function Board({ depot, pxPerHour }: { depot: any; pxPerHour: number }) {
           <div className="relative flex-1" style={{ height: Math.max(ROW, packed.lanes * 9 + 10) }}>
             {packed.items.map(({ s, a, b, lane }) => {
               return (
-                <button key={s.id} type="button" title={`${fn.clock(a)} ${fn.routeTitle(s.route)}\n${state.slot ? tr("点一下加进选中的车") : tr("先在左边选一列车")}`}
+                <button key={s.id} type="button" title={`${clock(a)} ${routeTitle(s.route)}\n${state.slot ? tr("点一下加进选中的车") : tr("先在左边选一列车")}`}
                   onClick={() => clickService(s)}
                   className={"absolute rounded-sm border border-warn " + (s.id === state.selected ? "bg-warn" : "bg-panel hover:bg-warn")}
                   style={{ left: x(a), width: Math.max(4, x(b) - x(a)), top: 5 + lane * 9, height: 7 }} />

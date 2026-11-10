@@ -16,6 +16,7 @@ import { diagramHost, legacy, stopsHost, useLegacy, type StopsTarget } from "../
 import { ConfirmButton, Pill, SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
+import { colorOf, parsePattern, routeTitle, shortName } from "./now"
 
 /** The game's platforms on the rails and the ways between them, as the data last read has them */
 const T = () => topologyOf(legacy.v.data?.topology)
@@ -141,7 +142,7 @@ function modelOf(r: any): StopsModel | null {
   const ids: string[] = fn.platformsOf(r), pass: boolean[] = fn.timetableOf(r).pass
   const tracks = ids.map(id => T().index.get(id) ?? -1)
   if (tracks.some(p => p < 0)) return null
-  return T().model(tracks, r.stops.map((_: unknown, i: number) => !pass[i]), fn.colorOf(r.color))
+  return T().model(tracks, r.stops.map((_: unknown, i: number) => !pass[i]), colorOf(r.color))
 }
 
 function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void }) {
@@ -152,7 +153,7 @@ function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void
   const [ordering, setOrdering] = useState(false)
   const [error, setError] = useState("")
   if (!r) return null
-  const title = tr("停站：{0}", fn.routeTitle(r))
+  const title = tr("停站：{0}", routeTitle(r))
   const canEdit = v.data.canEdit
   if (ordering) return <StopOrder r={r} onBack={() => setOrdering(false)} onClose={onClose} />
 
@@ -244,7 +245,7 @@ function StopOrder({ r, onBack, onClose }: { r: any; onBack: () => void; onClose
   }
   const unchanged = list.length === r.stops.length && list.every((stop: any, i: number) => stop.from === i)
   return (
-    <SidePanel open onClose={onClose} title={tr("增删和排序停站：{0}", fn.routeTitle(r))} width={600}
+    <SidePanel open onClose={onClose} title={tr("增删和排序停站：{0}", routeTitle(r))} width={600}
       hint={tr("改好后点“发给游戏”马上生效：时刻表、直通、出入库指令和运用按新的站序重新对应，草稿里的也一样。股道在“停站”里再挑。")}
       footer={<>
         <ConfirmButton className="btn btn-primary" disabled={unchanged || list.length < 2} confirm={tr("马上改游戏里的站序，不经过草稿")} onConfirm={send}>{tr("发给游戏")}</ConfirmButton>
@@ -271,7 +272,7 @@ function StopOrder({ r, onBack, onClose }: { r: any; onBack: () => void; onClose
             {inserting === i && (
               <div className="flex flex-wrap items-center gap-2 py-2 pl-8">
                 <label className="text-[12px]">{tr("车站")} <select className="h-7 rounded-md border border-ctl bg-panel px-1" value={stationNow} onChange={e => setStation(e.target.value)}>
-                  {stations.map(([id, name]) => <option key={id} value={id}>{fn.shortName(name) || id}</option>)}
+                  {stations.map(([id, name]) => <option key={id} value={id}>{shortName(name) || id}</option>)}
                 </select></label>
                 <label className="text-[12px]">{tr("站台")} <select className="h-7 rounded-md border border-ctl bg-panel px-1" value={platformNow} onChange={e => setPlatform(e.target.value)}>
                   {choices.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
@@ -292,11 +293,10 @@ type StationChoice = { key: string; station: string; network: number; track: num
 
 /** A station once for each rail network it has tracks on, named with the network when it has tracks on several */
 function stationsOf(mode: string): StationChoice[] {
-  const { fn } = legacy
   const seen = new Map<string, StationChoice>()
   T().platforms.forEach((p: any, i: number) => {
     const key = p.station + "|" + p.network
-    if (p.mode === mode && p.station && !seen.has(key)) seen.set(key, { key, station: p.station, network: p.network, track: i, name: fn.shortName(p.stationName) })
+    if (p.mode === mode && p.station && !seen.has(key)) seen.set(key, { key, station: p.station, network: p.network, track: i, name: shortName(p.stationName) })
   })
   const list = [...seen.values()]
   const names = new Map<string, number>()
@@ -491,7 +491,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
     if (first < 0) return []
     const network = topo.platforms[first].network, seen = new Map<string, number>()
     topo.platforms.forEach((p: any, i: number) => { if (p.network === network && p.station && !seen.has(p.station)) seen.set(p.station, i) })
-    return [...seen.entries()].map(([station, i]) => ({ station, track: i, name: fn.shortName(topo.platforms[i].stationName) as string })).sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"))
+    return [...seen.entries()].map(([station, i]) => ({ station, track: i, name: shortName(topo.platforms[i].stationName) as string })).sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"))
   }, [base?.id, topo]) // eslint-disable-line react-hooks/exhaustive-deps
   const has = (station: string) => stations.some(s => s.station === station)
   const [from, setFrom] = useState("")
@@ -563,7 +563,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
     if (!kind) { setError(tr("写上种别名，例如 急行")); return }
     if (!models.length) { setError(planned.error || tr("选好起点和终点")); return }
     if (models.some(m => m.conflict)) { setError(tr("有固定的股道连不起来")); return }
-    const times = pattern.trim() ? fn.parsePattern(pattern) : []
+    const times = pattern.trim() ? parsePattern(pattern) : []
     if (!times) { setError(v.PATTERN_HINT); return }
     const value = parseInt(color.slice(1), 16)
     models.forEach((model, i) => {
@@ -585,7 +585,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
   const label = "flex flex-col gap-0.5 text-[12px] text-dim"
   const options = stations.map(s => <option key={s.station} value={s.station}>{s.name}</option>)
   return (
-    <SidePanel open onClose={onClose} title={tr("新建种别：{0}", fn.shortName(line.name))} width={640}
+    <SidePanel open onClose={onClose} title={tr("新建种别：{0}", shortName(line.name))} width={640}
       hint={tr("线路组的这条线路给出颜色、时刻表和车厂。新种别先放在草稿里，按“应用”才在游戏里建出来，并由高级编辑器管理；加入车厂会刷新车厂路径，路径刷新后才有最快时刻。")}
       footer={<>
         <button className="btn btn-primary" disabled={!data.canEdit} onClick={create}>{tr("新建")}</button>
@@ -595,7 +595,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
       <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
         <label className={label + " col-span-2"}>{tr("照着")}
           <select className={field} value={base.id} onChange={e => { setBase(e.target.value); setVias([]); setFrom(""); setTo(""); setFromTrack("") }}>
-            {bases.map(r => <option key={r.id} value={r.id}>{fn.routeTitle(r)}</option>)}
+            {bases.map(r => <option key={r.id} value={r.id}>{routeTitle(r)}</option>)}
           </select></label>
         <label className={label}>{tr("种别")}<input className={field} value={type} maxLength={16} placeholder={tr("急行")} onChange={e => { setType(e.target.value); setError("") }} /></label>
         <label className={label}>{tr("颜色")}<input className="h-7 w-full rounded-md border border-ctl bg-panel" type="color" value={color} onChange={e => setColor(e.target.value)} /></label>
@@ -610,7 +610,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
         <label className={label + " col-span-2"}>{tr("线路名")}<input className={field} value={name} maxLength={128} placeholder={kind ? fn.typedName(base, kind) : tr("按线路组和种别自动起名")} onChange={e => setName(e.target.value)} /></label>
         <label className={label + " col-span-2"}>{tr("加入车厂")}
           <select className={field} value={depotNow} onChange={e => setDepot(e.target.value)}>
-            {depots.map(d => <option key={d.id} value={d.id}>{fn.shortName(d.name)}</option>)}
+            {depots.map(d => <option key={d.id} value={d.id}>{shortName(d.name)}</option>)}
             <option value="">{tr("不加入，之后在游戏里加")}</option>
           </select></label>
         <label className={label + " col-span-2 sm:col-span-4"}>{tr("班次")}<input className={field} value={pattern} placeholder={tr("可以留空，例如 08:05 + 12 * 00:30")} onChange={e => { setPattern(e.target.value); setError("") }} /></label>

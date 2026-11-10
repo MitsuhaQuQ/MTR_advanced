@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import * as D from "../core/diagram"
 import { tr } from "../i18n"
+import { clock, colorOf, durationText, mod, orderDepotName, shortName } from "./now"
 
 type Drawn = { s: any; points: D.Point[] }
 type Leg = { a: number[]; b: number[]; kind: "out" | "back"; depot: string; siding: string; index: number; text: string }
@@ -139,7 +140,7 @@ export function RunningDiagram() {
         setCursor("grabbing")
         d.deadhead.shift = moveShift(dx, e.altKey)
         const shift = d.deadhead.shift
-        fn.showDragTip(tr("出库 {0}{1}", shift >= 0 ? tr("晚 ") : tr("早 "), fn.durationText(Math.abs(shift))), e.clientX, e.clientY)
+        fn.showDragTip(tr("出库 {0}{1}", shift >= 0 ? tr("晚 ") : tr("早 "), durationText(Math.abs(shift))), e.clientX, e.clientY)
         paint()
       }
       return
@@ -151,7 +152,7 @@ export function RunningDiagram() {
         setCursor("grabbing")
         move.current = { ids: d.move, shift: moveShift(dx, e.altKey) }
         const shift = move.current.shift
-        fn.showDragTip(tr("{0} 班，{1}{2}", d.move.length, shift >= 0 ? "+" : "−", fn.durationText(Math.abs(shift))) + (d.kept ? tr("（{0} 班单独编辑过，不动）", d.kept) : ""), e.clientX, e.clientY)
+        fn.showDragTip(tr("{0} 班，{1}{2}", d.move.length, shift >= 0 ? "+" : "−", durationText(Math.abs(shift))) + (d.kept ? tr("（{0} 班单独编辑过，不动）", d.kept) : ""), e.clientX, e.clientY)
         paint()
       }
       return
@@ -190,7 +191,7 @@ export function RunningDiagram() {
           // Leaving later is a shorter lead, never shorter than the way out takes
           edited.outLead = Math.max(out.wayOut, out.lead - moved.shift)
           edited.exceptions = (edited.exceptions || 0) | v.EXCEPTION.OUT_LEAD
-          return tr("{0} 改为首班前 {1} 出库（这份运用的例外）", out.number, fn.durationText(edited.outLead))
+          return tr("{0} 改为首班前 {1} 出库（这份运用的例外）", out.number, durationText(edited.outLead))
         })
       } else paint()
       return
@@ -338,7 +339,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   // The time now, dashed, on the day shown when it is today
   const nowMillis = ((Date.now() - data.dayStartMillis) % D.DAY + D.DAY) % D.DAY
   const nowX = xOf(nowMillis)
-  if (state.weekday === fn.mod(fn.nowDay() + v.FIRST_DAY_WEEKDAY, 7) && nowX >= D.LABEL_W && nowX <= w) {
+  if (state.weekday === mod(fn.nowDay() + v.FIRST_DAY_WEEKDAY, 7) && nowX >= D.LABEL_W && nowX <= w) {
     g.strokeStyle = c.now
     g.lineWidth = 1.5
     g.setLineDash([6, 4])
@@ -349,7 +350,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     g.setLineDash([])
     g.fillStyle = c.now
     g.textAlign = "left"
-    g.fillText(tr("现在 {0}", fn.clock(nowMillis)), nowX + 4, D.AXIS_H + 12)
+    g.fillText(tr("现在 {0}", clock(nowMillis)), nowX + 4, D.AXIS_H + 12)
     g.textAlign = "center"
   }
 
@@ -383,7 +384,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   // Other lines' services on this line's track, under its own, dotted and read only
   if (v.showAccess) {
     fn.accessLegs(line).forEach(({ r, legs }: any) => {
-      g.strokeStyle = fn.colorOf(r.color)
+      g.strokeStyle = colorOf(r.color)
       g.lineWidth = 1.2
       g.setLineDash([1, 3])
       g.lineCap = "round"
@@ -456,7 +457,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     const noTrain = !s.suspended && s.route.hasTimes && diagramRoutes.has(s.route.id) && !assigned.has(key)
     const covered = !s.suspended && !noTrain && s.route.hasTimes && diagramRoutes.has(s.route.id)
     const look = D.serviceLook({ selected: isSelected, dim, noTrain, covered, hasTimes: s.route.hasTimes, suspended: s.suspended, notRun: Boolean(sim.on && sim.notRun.has(key)), showNoTrain: v.showNoTrain })
-    g.strokeStyle = look.color === "route" ? fn.colorOf(s.route.color) : look.color === "warn" ? c.warn : c.muted
+    g.strokeStyle = look.color === "route" ? colorOf(s.route.color) : look.color === "warn" ? c.warn : c.muted
     g.lineWidth = look.width
     g.globalAlpha = look.alpha
     g.setLineDash([])
@@ -465,7 +466,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     // Set on the running diagram: a short dashed run from or to the depot, with its name
     ;([[s.deployOrder, points[0], -1], [s.returnOrder, points[points.length - 1], 1]] as [any, D.Point, number][]).forEach(([order, [px, py], side]) => {
       if (!order) return
-      g.strokeStyle = fn.colorOf(s.route.color)
+      g.strokeStyle = colorOf(s.route.color)
       g.lineWidth = 1
       g.setLineDash([3, 3])
       g.beginPath()
@@ -476,7 +477,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
       g.fillStyle = c.muted
       g.font = `11px ${uiFont}`
       g.textAlign = side < 0 ? "right" : "left"
-      g.fillText(side < 0 ? fn.orderDepotName(order) + " →" : "→ " + fn.orderDepotName(order), px + side * 16, py + 20)
+      g.fillText(side < 0 ? orderDepotName(order) + " →" : "→ " + orderDepotName(order), px + side * 16, py + 20)
     })
     // Where the train carries on onto another route, or goes back to the depot
     const [ex, ey] = points[points.length - 1]
@@ -485,7 +486,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
       g.fillStyle = s.link ? c.ink : c.muted
       g.font = `11px ${uiFont}`
       g.textAlign = "left"
-      g.fillText(s.link ? "→ " + (next ? fn.shortName(next.name) : "?") : tr("回库"), ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4))
+      g.fillText(s.link ? "→ " + (next ? shortName(next.name) : "?") : tr("回库"), ex + 4, ey + (s.route.rows[0] < s.route.rows[s.route.rows.length - 1] ? 12 : -4))
     }
     g.globalAlpha = 1
     // On a loop, the wait at the first stop for the next lap
@@ -493,7 +494,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     if (nextLap) {
       const startX = xOf(fn.timesOf(nextLap)[0][1])
       g.globalAlpha = dim ? 0.25 : 0.8
-      g.strokeStyle = fn.colorOf(s.route.color)
+      g.strokeStyle = colorOf(s.route.color)
       g.lineWidth = isSelected ? 2 : 1
       g.setLineDash([3, 3])
       g.beginPath()
@@ -505,7 +506,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
         g.fillStyle = c.muted
         g.font = `10px ${numFont}`
         g.textAlign = "left"
-        g.fillText("↻" + fn.clock(nextLap.start), startX + 2, ey - 3)
+        g.fillText("↻" + clock(nextLap.start), startX + 2, ey - 3)
       }
       g.globalAlpha = 1
     }
@@ -572,7 +573,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     const y = yOf(i)
     if (y < D.AXIS_H + 4 || y > h) return
     g.fillStyle = row.repeat ? c.muted : c.ink
-    g.fillText(fit((row.repeat ? "↔ " : "") + fn.shortName(row.name), D.LABEL_W - 16), D.LABEL_W - 8, y)
+    g.fillText(fit((row.repeat ? "↔ " : "") + shortName(row.name), D.LABEL_W - 16), D.LABEL_W - 8, y)
   })
   g.textBaseline = "alphabetic"
   g.font = `11px ${numFont}`
@@ -580,7 +581,7 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   ticks.forEach(t => {
     if (!t.labelled) return
     g.fillStyle = t.hour ? c.ink : c.muted
-    g.fillText(fn.clock(t.millis, t.seconds), t.x, D.AXIS_H - 10)
+    g.fillText(clock(t.millis, t.seconds), t.x, D.AXIS_H - 10)
   })
   return out
 }
@@ -598,7 +599,7 @@ function drawTerminalLinks(g: CanvasRenderingContext2D, line: any, xOf: (m: numb
     if (xOf(leave) < D.LABEL_W || xOf(arrive) > w) return
     const y1 = yOf(fromRow), y2 = yOf(toRow)
     g.globalAlpha = pairing.source === "nearest" ? 0.45 : 1
-    g.strokeStyle = pairing.conflict ? c.warn : fn.colorOf(from.route.color)
+    g.strokeStyle = pairing.conflict ? c.warn : colorOf(from.route.color)
     g.lineWidth = pairing.source === "manual" ? 3 : 2
     g.beginPath()
     if (pairing.kind === "same" && pairing.loop && inLine.has(to.route.id)) {
@@ -668,9 +669,9 @@ function drawDepotLegs(g: CanvasRenderingContext2D, line: any, xOf: (m: number) 
         const side = baseRow < line.rows.length / 2 ? -1 : 1
         const depotY = Math.max(D.AXIS_H + 4, yOf(baseRow) + side * Math.min(D.DEPOT_ROW_ROOM - 8, Math.max(12, unit * 0.45)))
         const key = depot.id + ":" + baseRow
-        if (!depotRows.has(key)) depotRows.set(key, { y: depotY, name: fn.shortName(depot.name) || tr("车厂") })
+        if (!depotRows.has(key)) depotRows.set(key, { y: depotY, name: shortName(depot.name) || tr("车厂") })
         const active = state.slot && state.slot.depot === depot.id && state.slot.siding === siding.id && state.slot.index === index
-        const sidingName = fn.shortName(siding.name) || tr("存车线")
+        const sidingName = shortName(siding.name) || tr("存车线")
         const deadheads = fn.deadheadTimes(siding, day)
         const style = (exception: boolean) => {
           g.strokeStyle = active ? c.duty : exception ? c.sel : c.muted
@@ -683,15 +684,15 @@ function drawDepotLegs(g: CanvasRenderingContext2D, line: any, xOf: (m: number) 
           const a = [xOf(leave), depotY], b = [xOf(deadheads.out.arrive), yOf(deadheads.out.row)]
           style(deadheads.out.exception || dragged !== 0)
           g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke()
-          legs.push({ a, b, kind: "out", depot: depot.id, siding: siding.id, index, text: `${deadheads.out.number} ${tr("出库 {0} ← {1} {2}", fn.clock(leave, true), fn.shortName(depot.name), sidingName)}${deadheads.out.exception ? tr("（这份运用的例外）") : ""}` })
-          if (state.pxPerMin >= 3) { g.fillStyle = g.strokeStyle; g.textAlign = "right"; g.fillText(`${deadheads.out.number} ${fn.clock(leave)}`, a[0] - 2, depotY + (side < 0 ? -2 : 9)) }
+          legs.push({ a, b, kind: "out", depot: depot.id, siding: siding.id, index, text: `${deadheads.out.number} ${tr("出库 {0} ← {1} {2}", clock(leave, true), shortName(depot.name), sidingName)}${deadheads.out.exception ? tr("（这份运用的例外）") : ""}` })
+          if (state.pxPerMin >= 3) { g.fillStyle = g.strokeStyle; g.textAlign = "right"; g.fillText(`${deadheads.out.number} ${clock(leave)}`, a[0] - 2, depotY + (side < 0 ? -2 : 9)) }
         }
         if (deadheads.back && lineRoutes.has(lastService.route.id)) {
           const a = [xOf(deadheads.back.leave), yOf(deadheads.back.row)], b = [xOf(deadheads.back.home), depotY]
           style(deadheads.back.exception)
           g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke()
-          legs.push({ a, b, kind: "back", depot: depot.id, siding: siding.id, index, text: `${deadheads.back.number} ${tr("回库 {0} → {1} {2}", fn.clock(deadheads.back.home, true), fn.shortName(depot.name), sidingName)}${deadheads.back.exception ? tr("（这份运用的例外）") : ""}` })
-          if (state.pxPerMin >= 3) { g.fillStyle = g.strokeStyle; g.textAlign = "left"; g.fillText(`${deadheads.back.number} ${fn.clock(deadheads.back.home)}`, b[0] + 2, depotY + (side < 0 ? -2 : 9)) }
+          legs.push({ a, b, kind: "back", depot: depot.id, siding: siding.id, index, text: `${deadheads.back.number} ${tr("回库 {0} → {1} {2}", clock(deadheads.back.home, true), shortName(depot.name), sidingName)}${deadheads.back.exception ? tr("（这份运用的例外）") : ""}` })
+          if (state.pxPerMin >= 3) { g.fillStyle = g.strokeStyle; g.textAlign = "left"; g.fillText(`${deadheads.back.number} ${clock(deadheads.back.home)}`, b[0] + 2, depotY + (side < 0 ? -2 : 9)) }
         }
         g.setLineDash([])
       })

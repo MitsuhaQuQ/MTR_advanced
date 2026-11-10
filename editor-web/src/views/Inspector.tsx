@@ -13,6 +13,7 @@ import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
 import { DutyDetail } from "./DutyDetail"
+import { DAY, clock, colorOf, formatDuration, mod, routeTitle, shortName, stopName, weekdayName } from "./now"
 
 export function Inspector({ className }: { className: string }) {
   const element = legacyElement("inspector")!
@@ -37,7 +38,7 @@ const Section = ({ title, children, aside }: { title: string; children: ReactNod
 
 const Card = ({ children }: { children: ReactNode }) => <div className="flex flex-col gap-2 rounded-lg border border-grid bg-panel p-3">{children}</div>
 
-const Swatch = ({ color }: { color: number }) => <span className="inline-block h-1 w-3.5 shrink-0 rounded-[2px]" style={{ background: legacy.fn.colorOf(color) }} />
+const Swatch = ({ color }: { color: number }) => <span className="inline-block h-1 w-3.5 shrink-0 rounded-[2px]" style={{ background: colorOf(color) }} />
 
 function Content() {
   useLegacy()
@@ -75,15 +76,15 @@ function Selected({ s }: { s: any }) {
   const times = fn.timesOf(s)
   const noTrain = !s.suspended && fn.hasNoTrain(s)
   const facts: [string, ReactNode][] = [
-    [tr("班次"), <span className="num">{fn.clock(s.start)}</span>],
+    [tr("班次"), <span className="num">{clock(s.start)}</span>],
     [tr("表"), s.table.name || tr("表 ") + (s.tableIndex + 1)],
   ]
-  if (s.link) facts.push([tr("接续"), <>{next ? fn.routeTitle(next) : "?"} <span className="num">{fn.clock(fn.mod(s.link.toService - data.dayStartMillis, v.DAY))}</span></>])
+  if (s.link) facts.push([tr("接续"), <>{next ? routeTitle(next) : "?"} <span className="num">{clock(mod(s.link.toService - data.dayStartMillis, DAY))}</span></>])
   if (s.returns) facts.push([tr("之后"), tr("回库")])
   return (
     <Section title={tr("选中的班次")} aside={<button type="button" className="link text-[12px] text-sel hover:underline" onClick={() => { legacy.fn.openView("table", s.route.lineKey, s.route.id) }}>{tr("在时刻表里看")}</button>}>
       <Card>
-        <div className="flex items-center gap-2 text-[14px] font-semibold"><Swatch color={s.route.color} /><span className="min-w-0 truncate" title={fn.routeTitle(s.route)}>{fn.routeTitle(s.route)}</span></div>
+        <div className="flex items-center gap-2 text-[14px] font-semibold"><Swatch color={s.route.color} /><span className="min-w-0 truncate" title={routeTitle(s.route)}>{routeTitle(s.route)}</span></div>
         <div className="flex flex-wrap gap-1.5">
           {s.suspended && <Tag tone="plain">{tr("停运")}</Tag>}
           {noTrain && <Tag tone="warn">{tr("没有车跑这一班")}</Tag>}
@@ -96,14 +97,14 @@ function Selected({ s }: { s: any }) {
         <ol className="m-0 flex list-none flex-col p-0">
           {s.route.stops.map((stop: any, i: number) => {
             const pass = s.plans[i].passes, exception = s.exceptions && s.exceptions.get(i)
-            const arrival = i === 0 ? "" : fn.clock(times[i][0], true), departure = i === times.length - 1 ? "" : pass ? "↓" : fn.clock(times[i][1], true)
+            const arrival = i === 0 ? "" : clock(times[i][0], true), departure = i === times.length - 1 ? "" : pass ? "↓" : clock(times[i][1], true)
             return (
               <li key={i} className="grid grid-cols-[14px_1fr_auto_auto] items-center gap-x-2 py-0.5 text-[12px]">
                 <span className="relative flex h-5 justify-center">
-                  <span className="absolute w-0.5" style={{ background: legacy.fn.colorOf(s.route.color), top: i === 0 ? "50%" : 0, bottom: i === s.route.stops.length - 1 ? "50%" : 0 }} />
-                  <span className={"relative mt-[6px] h-2 w-2 rounded-full border-2 " + (pass ? "bg-panel" : "")} style={{ borderColor: legacy.fn.colorOf(s.route.color), background: pass ? undefined : legacy.fn.colorOf(s.route.color) }} />
+                  <span className="absolute w-0.5" style={{ background: colorOf(s.route.color), top: i === 0 ? "50%" : 0, bottom: i === s.route.stops.length - 1 ? "50%" : 0 }} />
+                  <span className={"relative mt-[6px] h-2 w-2 rounded-full border-2 " + (pass ? "bg-panel" : "")} style={{ borderColor: colorOf(s.route.color), background: pass ? undefined : colorOf(s.route.color) }} />
                 </span>
-                <span className={"min-w-0 truncate " + (pass ? "text-dim" : "")}>{fn.shortName(stop.name)}</span>
+                <span className={"min-w-0 truncate " + (pass ? "text-dim" : "")}>{shortName(stop.name)}</span>
                 <span className={"num " + (exception ? "text-sel" : pass ? "text-dim" : "")}>{arrival}</span>
                 <span className={"num " + (exception ? "text-sel" : pass ? "text-dim" : "")}>{departure}</span>
               </li>
@@ -130,7 +131,7 @@ function Line({ line }: { line: any }) {
     <>
       <Section title={tr("线路")}>
         <Card>
-          <div className="flex items-center gap-2 text-[14px] font-semibold"><span className="inline-block h-3 w-3 rounded-[2px]" style={{ background: fn.colorOf(line.color) }} />{fn.shortName(line.name)}</div>
+          <div className="flex items-center gap-2 text-[14px] font-semibold"><span className="inline-block h-3 w-3 rounded-[2px]" style={{ background: colorOf(line.color) }} />{shortName(line.name)}</div>
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {line.routes.map((r: any) => {
               const all = (r.services || []).filter((x: any) => (x.table.weekdays >> state.weekday) & 1), today = all.filter((x: any) => !x.suspended)
@@ -138,11 +139,11 @@ function Line({ line }: { line: any }) {
               const depots = data.depots.filter((depot: any) => (depot.routes || []).includes(r.id) && depot.shortfall && depot.shortfall.uncovered > 0)
               return (
                 <li key={r.id} className="flex flex-col gap-0.5">
-                  <span className="flex items-center gap-2 text-[13px]"><Swatch color={r.color} /><span className="min-w-0 truncate" title={fn.routeTitle(r)}>{fn.routeTitle(r)}</span><span className="num ml-auto shrink-0 text-[12px] text-dim">{tr("{0} 班", r.services.length)}</span></span>
+                  <span className="flex items-center gap-2 text-[13px]"><Swatch color={r.color} /><span className="min-w-0 truncate" title={routeTitle(r)}>{routeTitle(r)}</span><span className="num ml-auto shrink-0 text-[12px] text-dim">{tr("{0} 班", r.services.length)}</span></span>
                   <span className="flex flex-wrap gap-1 pl-5">
                     {!covered.has(r.id)
                       ? <Tag tone="plain" title={tr("这条线路还没有车厂的运用（车厂没选这条线路，或自动排班还没生成），看不出哪班有车")}>{tr("看不出哪班有车")}</Tag>
-                      : <Tag tone={without ? "warn" : "plain"} title={depots.map((depot: any) => fn.shortName(depot.name) + "：" + fn.shortfallText(depot.shortfall)).join("\n") || undefined}>{tr("有车 {0} · 没车 {1}", today.length - without, without)}</Tag>}
+                      : <Tag tone={without ? "warn" : "plain"} title={depots.map((depot: any) => shortName(depot.name) + "：" + fn.shortfallText(depot.shortfall)).join("\n") || undefined}>{tr("有车 {0} · 没车 {1}", today.length - without, without)}</Tag>}
                     {suspended > 0 && <Tag tone="plain">{tr("（停运 {0}）", suspended)}</Tag>}
                   </span>
                 </li>
@@ -156,7 +157,7 @@ function Line({ line }: { line: any }) {
           <Card>
             {troubled.map(([r, problems]: any) => (
               <div key={r.id} className="flex flex-col gap-1">
-                <span className="flex items-center gap-2 text-[13px] font-medium"><Swatch color={r.color} />{fn.routeTitle(r)}</span>
+                <span className="flex items-center gap-2 text-[13px] font-medium"><Swatch color={r.color} />{routeTitle(r)}</span>
                 <ul className="m-0 flex flex-col gap-0.5 pl-5 text-[12px] leading-[18px]">
                   {problems.map((p: any, i: number) => <li key={i} className={p.level === "error" ? "text-warn" : "text-caution"}>{p.text}</li>)}
                 </ul>
@@ -215,12 +216,12 @@ function SimProblems({ line }: { line: any }) {
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {problems.slice(0, v.SIM_MAX_LISTED).map((p, i) => {
               const r = routes.get(p.route)
-              const stop = r && p.stop >= 0 && p.stop < r.stops.length ? fn.shortName(r.stops[p.stop].name) : ""
+              const stop = r && p.stop >= 0 && p.stop < r.stops.length ? shortName(r.stops[p.stop].name) : ""
               return (
                 <li key={i}>
                   <button type="button" className="w-full rounded-md px-1.5 py-1 text-left text-[12px] hover:bg-panel2" onClick={() => choose(p)}>
-                    <span className="num">{fn.clock(p.time)}</span> <b className={p.kind === "DEADLOCK" ? "text-warn" : "text-caution"}>{tr(v.SIM_KINDS[p.kind] || p.kind)}</b>{" "}
-                    {r ? `${fn.routeTitle(r)} ${fn.clock(fn.mod(p.service - data.dayStartMillis, v.DAY))}` : p.detail}{stop ? " · " + stop : ""}{p.duration > 0 ? " · " + fn.formatDuration(p.duration) : ""}
+                    <span className="num">{clock(p.time)}</span> <b className={p.kind === "DEADLOCK" ? "text-warn" : "text-caution"}>{tr(v.SIM_KINDS[p.kind] || p.kind)}</b>{" "}
+                    {r ? `${routeTitle(r)} ${clock(mod(p.service - data.dayStartMillis, DAY))}` : p.detail}{stop ? " · " + stop : ""}{p.duration > 0 ? " · " + formatDuration(p.duration) : ""}
                   </button>
                 </li>
               )
@@ -229,7 +230,7 @@ function SimProblems({ line }: { line: any }) {
         ) : sim.result ? <p className="m-0 text-[12px] text-dim">{tr("这一天没有发现问题。")}</p> : null}
         {problems.length > v.SIM_MAX_LISTED && <p className="m-0 text-[12px] text-dim">{tr("只列出前 {0} 条。", v.SIM_MAX_LISTED)}</p>}
         {notes.map(note => <p key={note} className="m-0 text-[12px] text-dim">{note}</p>)}
-        <p className="m-0 text-[12px] text-dim">{sim.result && sim.result.from > 0 ? tr("从 {0} 起接着游戏里列车当时的位置模拟，之前的班次不计。", fn.clock(sim.result.from)) : tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p>
+        <p className="m-0 text-[12px] text-dim">{sim.result && sim.result.from > 0 ? tr("从 {0} 起接着游戏里列车当时的位置模拟，之前的班次不计。", clock(sim.result.from)) : tr("所有车从车厂出发；过夜留在线上的车按出库算。")}</p>
       </Card>
     </Section>
   )
@@ -240,19 +241,19 @@ function LoopRuns({ r }: { r: any }) {
   const { fn, v } = legacy
   const data = v.data
   const runs = fn.loopRuns(r), entry = fn.loopEntryStop(r)
-  const ending = (s: any) => (s.link ? "→ " + fn.routeTitle(data.routeById.get(s.link.route) || r) : runs.maxWait > v.MAX_LAYOVER_MILLIS ? tr("留在线上") : tr("回库"))
+  const ending = (s: any) => (s.link ? "→ " + routeTitle(data.routeById.get(s.link.route) || r) : runs.maxWait > v.MAX_LAYOVER_MILLIS ? tr("留在线上") : tr("回库"))
   return (
-    <Section title={tr("环线运行（{0}）", v.WEEKDAY_NAMES[v.state.weekday])}>
+    <Section title={tr("环线运行（{0}）", weekdayName(v.state.weekday))}>
       <Card>
-        <div className="flex items-center gap-2 text-[14px] font-semibold"><Swatch color={r.color} />{fn.routeTitle(r)}</div>
+        <div className="flex items-center gap-2 text-[14px] font-semibold"><Swatch color={r.color} />{routeTitle(r)}</div>
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
           <dt className="text-dim">{tr("列车")}</dt><dd className="m-0">{tr("{0} 列跑 {1} 班", runs.trains.length, r.services.length)}</dd>
-          <dt className="text-dim">{tr("出库接入")}</dt><dd className="m-0">{fn.stopName(r, entry)}{entry ? "" : tr("（首站）")}</dd>
+          <dt className="text-dim">{tr("出库接入")}</dt><dd className="m-0">{stopName(r, entry)}{entry ? "" : tr("（首站）")}</dd>
           <dt className="text-dim">{tr("等下一圈")}</dt><dd className="m-0">{tr("最多 {0}", runs.maxWait > v.MAX_LAYOVER_MILLIS ? tr("8 天（车厂不回库）") : tr("30 分钟"))}</dd>
         </dl>
         <ol className="m-0 flex list-none flex-col gap-0.5 p-0 text-[12px]">
           {runs.trains.slice(0, 40).map((laps: any[], i: number) => (
-            <li key={i}><b>{tr("车 {0}：", i + 1)}</b><span className="num">{laps.map(s => fn.clock(s.start)).join(" → ")}</span> <span className="text-dim">{ending(laps[laps.length - 1])}</span></li>
+            <li key={i}><b>{tr("车 {0}：", i + 1)}</b><span className="num">{laps.map(s => clock(s.start)).join(" → ")}</span> <span className="text-dim">{ending(laps[laps.length - 1])}</span></li>
           ))}
           {runs.trains.length > 40 && <li>…</li>}
         </ol>

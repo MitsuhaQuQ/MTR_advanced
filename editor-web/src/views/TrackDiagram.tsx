@@ -11,6 +11,7 @@ import { post } from "../api/client"
 import { buildSchematic, usageOf, type RouteLayout, type Schematic } from "../core/schematic"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
+import { colorOf, routeTitle, shortName } from "./now"
 
 const GAP = 26, TOP = 64, PAD = 32, BOTTOM = 28
 
@@ -87,7 +88,7 @@ function Dialog({ target, onClose }: { target: DiagramTarget; onClose: () => voi
     if (schematic && !zoom && box.current) setZoom(Math.max(0.3, Math.min(6, (box.current.clientWidth - PAD * 2) / Math.max(schematic.width, 1))))
   }, [schematic, zoom])
 
-  const title = target.kind === "line" ? tr("线路组配线图：{0}", fn.shortName(line?.name || "")) : tr("线路配线图：{0}", trunk ? fn.routeTitle(trunk) : "?")
+  const title = target.kind === "line" ? tr("线路组配线图：{0}", shortName(line?.name || "")) : tr("线路配线图：{0}", trunk ? routeTitle(trunk) : "?")
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0" style={{ background: "color-mix(in srgb, var(--ink) 30%, transparent)" }} onClick={onClose} />
@@ -125,7 +126,7 @@ function Drawing({ schematic, trunk, zoom, onChanged, onOpenStop }: { schematic:
   const height = TOP + (max - min) * GAP + BOTTOM + 24
   const x = (value: number) => PAD + value * zoom
   const y = (lane: number) => TOP + 12 + (max - lane) * GAP
-  const colour = (value: number) => fn.colorOf(value)
+  const colour = (value: number) => colorOf(value)
   const menu = useCallback((e: React.MouseEvent, a: string, b: string, status: number) => {
     e.preventDefault()
     if (!legacy.v.data.canEdit) { menuHost.current?.open(e.clientX, e.clientY, [[tr("没有编辑权限"), null]]); return }
@@ -137,9 +138,9 @@ function Drawing({ schematic, trunk, zoom, onChanged, onOpenStop }: { schematic:
       {schematic.stations.map((s, i) => (
         <g key={i} className={s.stop >= 0 ? "cursor-pointer" : ""} onClick={() => s.stop >= 0 && onOpenStop(s.stop)}>
           <line x1={x(s.x)} x2={x(s.x)} y1={TOP - 8} y2={height - BOTTOM} stroke="var(--grid)" strokeDasharray="6 4" />
-          <text x={x(s.x)} y={TOP - 30} textAnchor="middle" fontSize={13} fontWeight={600} fill="var(--ink)">{fn.shortName(s.name) || tr("（未命名车站）")}</text>
+          <text x={x(s.x)} y={TOP - 30} textAnchor="middle" fontSize={13} fontWeight={600} fill="var(--ink)">{shortName(s.name) || tr("（未命名车站）")}</text>
           {s.stop >= 0 && <text x={x(s.x)} y={TOP - 14} textAnchor="middle" fontSize={11} fill="var(--muted)">{tr("第 {0} 站", s.stop + 1)}</text>}
-          <title>{s.stop >= 0 ? tr("{0}，点一下打开这一站", fn.shortName(s.name)) : fn.shortName(s.name)}</title>
+          <title>{s.stop >= 0 ? tr("{0}，点一下打开这一站", shortName(s.name)) : shortName(s.name)}</title>
         </g>
       ))}
       {/* long runs shortened */}
@@ -166,7 +167,7 @@ function Drawing({ schematic, trunk, zoom, onChanged, onOpenStop }: { schematic:
             {status === 1 && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--connecting)" strokeWidth={2} strokeDasharray="6 3" />}
             {status === 2 && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--muted)" strokeWidth={2} strokeDasharray="6 3" />}
             <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={12} onContextMenu={e => menu(e, s.a, s.b, s.status)}>
-              <title>{[s.routes.length ? s.routes.map(r => legacy.v.data.routeById.get(r.route) ? fn.routeTitle(legacy.v.data.routeById.get(r.route)) : r.route).join("、") : tr("没有线路走这段轨道"),
+              <title>{[s.routes.length ? s.routes.map(r => legacy.v.data.routeById.get(r.route) ? routeTitle(legacy.v.data.routeById.get(r.route)) : r.route).join("、") : tr("没有线路走这段轨道"),
                 status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("已放行") : ""].filter(Boolean).join(" · ")}</title>
             </line>
           </g>
@@ -180,7 +181,7 @@ function Drawing({ schematic, trunk, zoom, onChanged, onOpenStop }: { schematic:
           <g key={p.id}>
             <rect x={x(p.x1)} y={top} width={w} height={6} rx={1.5} fill={p.ours ? colour(trunk.color) : "var(--panel-2)"} stroke={p.ours ? "none" : "var(--grid-strong)"} />
             <text x={x(p.x1) + w / 2} y={above ? top - 3 : top + 16} textAnchor="middle" fontSize={10} fill={p.ours ? "var(--ink)" : "var(--muted)"} className="num">{p.name || "?"}</text>
-            <title>{`${fn.shortName(p.stationName) || tr("不属于车站")} ${topologyOf(legacy.v.data?.topology).trackLabel(p.id, p.name, p.passingTrack)}`}</title>
+            <title>{`${shortName(p.stationName) || tr("不属于车站")} ${topologyOf(legacy.v.data?.topology).trackLabel(p.id, p.name, p.passingTrack)}`}</title>
           </g>
         )
       })}

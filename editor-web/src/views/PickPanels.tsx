@@ -6,6 +6,7 @@
  */
 import { legacy, useLegacy } from "../legacy/engine"
 import { tr } from "../i18n"
+import { clock, durationText, shortName } from "./now"
 
 export function PickPanel({ className }: { className: string }) {
   useLegacy()
@@ -77,7 +78,7 @@ function WayPick() {
   return (
     <div className="flex flex-col gap-2 p-3 text-[13px]">
       <h3 className="m-0 text-[14px] font-semibold">{choosingPath ? tr("画回送路径") : wayPick.out ? tr("选出口") : tr("选回口")}</h3>
-      <p className="m-0">{fn.shortName(depot ? depot.name : "")} · {tr("存车线")} {siding ? siding.name : ""}</p>
+      <p className="m-0">{shortName(depot ? depot.name : "")} · {tr("存车线")} {siding ? siding.name : ""}</p>
       <p className="m-0 text-[12px] text-dim">{tr("这条存车线的出入口")}：{entrances.length ? entrances.map(id => fn.stationNameOf(id)).join("、") : tr("（还没算出）")}</p>
       {choosingPath ? <p className="m-0 text-[12px]">{tr("途经 {0} 个点；点节点加入或去掉，点车站换终点。", wayPick.waypoints.length)}</p> : <>
         <p className="m-0 text-[12px] text-dim">{wayPick.out ? tr("运行图上从这些站发车（出库开到哪）") : tr("运行图上在这些站收车（从哪回库）")}：</p>
@@ -86,14 +87,14 @@ function WayPick() {
             <button key={each.platform} type="button" aria-pressed={each.platform === wayPick.platform}
               className={"btn h-auto min-h-6 px-2 py-0.5 text-left text-[12px] " + (each.platform === wayPick.platform ? "tint-accent border-brand text-brand" : "")}
               onClick={() => { wayPick.platform = each.platform; fn.refreshWayPick() }}>
-              {fn.shortName(each.name)} · {wayPick.out ? tr("最早 {0}", fn.clock(each.first)) : tr("最晚 {0}", fn.clock(each.last))} · {tr("{0} 班", each.count)}
+              {shortName(each.name)} · {wayPick.out ? tr("最早 {0}", clock(each.first)) : tr("最晚 {0}", clock(each.last))} · {tr("{0} 班", each.count)}
             </button>
           )) : <span className="text-[12px] text-dim">{tr("这天运行图上没有这些线路的班次")}</span>}
         </div>
         <p className="m-0 text-[12px]">{tr("经过的轨道：{0} 段（按点的顺序）", Math.floor(wayPick.waypoints.length / 2))}{" "}
           {wayPick.waypoints.length > 0 && <button type="button" className={link} onClick={() => { wayPick.waypoints = []; wayPick.turned = new Set(); fn.refreshWayPick() }}>{tr("清空")}</button>}</p>
       </>}
-      <p className={"m-0 font-medium " + (result && !found ? "text-warn" : "")}>{!result ? tr("正在计算…") : found ? tr("{0}用时 {1}", wayPick.out ? tr("出库") : tr("回库"), result.millis >= 0 ? fn.durationText(result.millis) : "") : tr("这样走不通")}</p>
+      <p className={"m-0 font-medium " + (result && !found ? "text-warn" : "")}>{!result ? tr("正在计算…") : found ? tr("{0}用时 {1}", wayPick.out ? tr("出库") : tr("回库"), result.millis >= 0 ? durationText(result.millis) : "") : tr("这样走不通")}</p>
       {wayPick.error && <p className="m-0 text-[12px] text-warn">{wayPick.error}</p>}
       <div className="flex gap-1.5">
         <button type="button" className="btn btn-primary" onClick={() => fn.finishWayPick(true)}>{tr("用这个")}</button>

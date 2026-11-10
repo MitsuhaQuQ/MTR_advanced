@@ -9,6 +9,7 @@
 import type { ReactNode } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { tr } from "../i18n"
+import { clock, colorOf, daysText, routeTitle, shortName } from "./now"
 
 const select = "h-7 w-full rounded-md border border-ctl bg-panel px-1 text-[13px]"
 
@@ -30,7 +31,7 @@ export function DutyDetail() {
   const pool: any[] = fn.poolSidings(depot, siding.id)
   const start = fn.startOf(slots[state.slot.index] || [])
   const waitOwn = Boolean((day && day.exceptions || 0) & v.EXCEPTION.WAITS)
-  const sidingName = (s: any) => fn.shortName(s.name) || tr("存车线")
+  const sidingName = (s: any) => shortName(s.name) || tr("存车线")
 
   const moveToSiding = (to: string) => {
     if (to === state.slot.siding) return
@@ -48,7 +49,7 @@ export function DutyDetail() {
       const target = all.sidings[to] || (all.sidings[to] = [])
       target.push(taken)
       moved = { depot: depot.id, siding: to, index: target.length - 1 }
-      return tr("运用移到了 {0}，编号不变", fn.shortName(other ? other.name : "") || tr("存车线"))
+      return tr("运用移到了 {0}，编号不变", shortName(other ? other.name : "") || tr("存车线"))
     })
     if (moved) { state.slot = moved; fn.renderAll() }
   }
@@ -75,10 +76,10 @@ export function DutyDetail() {
         <button type="button" className="text-[12px] text-sel hover:underline" onClick={() => { state.slot = null; fn.renderAll() }}>{tr("取消选择")}</button>
       </div>
       <div className="flex flex-col gap-2 rounded-lg border border-[var(--duty)] bg-panel p-3" style={{ boxShadow: "inset 3px 0 0 var(--duty)" }}>
-        <div className="text-[14px] font-semibold">{fn.shortName(depot.name)} · {sidingName(siding)}</div>
+        <div className="text-[14px] font-semibold">{shortName(depot.name)} · {sidingName(siding)}</div>
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
           <dt className="text-dim">{tr("运行日")}</dt>
-          <dd className="m-0">{fn.daysText(group)}{day && day.days !== group ? <span className="text-caution">{tr("（现在和 {0} 共用，改了会分开）", fn.daysText(day.days & ~group))}</span> : null}</dd>
+          <dd className="m-0">{daysText(group)}{day && day.days !== group ? <span className="text-caution">{tr("（现在和 {0} 共用，改了会分开）", daysText(day.days & ~group))}</span> : null}</dd>
           <dt className="text-dim">{tr("方式")}</dt>
           <dd className="m-0">{duties.mode === "diagram" ? tr("按运用图") : tr("自动排班（游戏按时刻表自动生成运用；这里设的运用先存着，改为按运用图才用）")}</dd>
         </dl>
@@ -103,9 +104,9 @@ export function DutyDetail() {
               return (
                 <li key={i} className="border-b border-grid py-1.5 last:border-b-0">
                   <div className="flex items-center gap-2 text-[13px]">
-                    <span className="h-3.5 w-1 shrink-0 rounded-pill" style={{ background: fn.colorOf(r.color) }} />
-                    <span className="num shrink-0">{s ? fn.clock(fn.segmentStart(segment)) + "–" + fn.clock(fn.segmentEnd(segment)) : "--:--"}</span>
-                    <span className="min-w-0 flex-1 truncate" title={fn.routeTitle(r)}>{fn.shortName(r.name)} <span className="text-dim">{fn.shortName(r.stops[segment.from] ? r.stops[segment.from].name : "?")} → {fn.shortName(r.stops[last] ? r.stops[last].name : "?")}</span></span>
+                    <span className="h-3.5 w-1 shrink-0 rounded-pill" style={{ background: colorOf(r.color) }} />
+                    <span className="num shrink-0">{s ? clock(fn.segmentStart(segment)) + "–" + clock(fn.segmentEnd(segment)) : "--:--"}</span>
+                    <span className="min-w-0 flex-1 truncate" title={routeTitle(r)}>{shortName(r.name)} <span className="text-dim">{shortName(r.stops[segment.from] ? r.stops[segment.from].name : "?")} → {shortName(r.stops[last] ? r.stops[last].name : "?")}</span></span>
                     {data.canEdit && <button type="button" className="btn btn-ghost h-6 px-1.5 text-[12px]" title={tr("移出这一班")} aria-label={tr("移出这一班")}
                       onClick={() => edit(d => { d.segments.splice(i, 1) })}>×</button>}
                   </div>
@@ -170,7 +171,7 @@ export function DutyDetail() {
           {start === "only" && siding.fleet === 0 && <p className="m-0 text-caution">{tr("只从这条存车线出车，但它最多停 0 列，这份运用不会有车")}</p>}
         </div>}
         <p className="m-0 text-[12px] text-dim">{tr("重新生成运用时，出车方式和出车存车线按生成结果重来。")}</p>
-        <p className="m-0 text-[12px] text-dim">{tr("选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 {0} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。", fn.daysText(group))}</p>
+        <p className="m-0 text-[12px] text-dim">{tr("选着这列车时，在运行图上点一班把它加进来，再点一次移出；别的车跑的班次会移过来。改的是 {0} 这几天（表的组合相同）。按 Esc 取消选择。按运用图的车厂按这里的运用出车，应用后要刷新车厂路径。", daysText(group))}</p>
       </div>
     </section>
   )

@@ -11,6 +11,7 @@ import { LegacySlot } from "../legacy/Slot"
 import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
 import { topologyOf } from "../core/topology"
+import { colorOf, routeTitle, shortName } from "./now"
 
 export type Part = 1 | 2 | 3 | 4 | 5
 
@@ -34,7 +35,7 @@ const Heading = ({ children, action }: { children: ReactNode; action?: ReactNode
 )
 
 const Swatch = ({ color, wide }: { color: number; wide?: boolean }) => (
-  <span className={"inline-block shrink-0 rounded-[2px] " + (wide ? "h-1 w-3.5" : "h-3 w-3")} style={{ background: legacy.fn.colorOf(color) }} />
+  <span className={"inline-block shrink-0 rounded-[2px] " + (wide ? "h-1 w-3.5" : "h-3 w-3")} style={{ background: colorOf(color) }} />
 )
 
 const Count = ({ children, title, tone }: { children: ReactNode; title?: string; tone?: "warn" | "caution" }) => (
@@ -83,7 +84,7 @@ function RouteLabel({ r }: { r: any }) {
   return (
     <>
       <Swatch color={r.color} wide />
-      <span title={fn.routeTitle(r)} className={"min-w-0 truncate " + (fn.isDeleted(r) ? "line-through opacity-60" : "")}>{fn.routeTitle(r)}</span>
+      <span title={routeTitle(r)} className={"min-w-0 truncate " + (fn.isDeleted(r) ? "line-through opacity-60" : "")}>{routeTitle(r)}</span>
       {fn.isDeleted(r) ? <Dot error={Boolean(draft.error)} title={draft.error || tr("将删除：按“应用”后从游戏里删掉，右键取消")} /> : draft ? <Dot title={tr("有没应用的草稿")} /> : null}
       <ProblemDot r={r} />
     </>
@@ -103,7 +104,7 @@ function Created({ made, title, depth }: { made: any; title: string; depth: numb
   return (
     <Row attrs={{ created: made.key }} depth={depth}>
       <Swatch color={made.color} wide />
-      <span className="min-w-0 truncate">＋ {legacy.fn.shortName(made.name)}</span>
+      <span className="min-w-0 truncate">＋ {shortName(made.name)}</span>
       <Dot error={Boolean(made.error)} title={made.error || title} />
     </Row>
   )
@@ -128,7 +129,7 @@ function Owners() {
   const data = v.data, state = v.state
   const lines = [...fn.logicalLinesShown().values()].sort((a: any, b: any) => a.name.localeCompare(b.name))
   const drafted = fn.draftSettings().logicalLines || {}
-  const connecting = data.routes.filter(fn.isConnecting).sort((a: any, b: any) => fn.routeTitle(a).localeCompare(fn.routeTitle(b)))
+  const connecting = data.routes.filter(fn.isConnecting).sort((a: any, b: any) => routeTitle(a).localeCompare(routeTitle(b)))
   return (
     <>
       <Heading action={data.canEdit && <Row attrs={{ "new-logical": "1" }}><span className="text-brand">{tr("＋ 新建逻辑线路…")}</span></Row>}>{tr("逻辑归属")}</Heading>
@@ -156,7 +157,7 @@ function Owners() {
 
 // ---------- 3. Operating lines ----------
 function OperatingLines() {
-  const { fn, v } = legacy
+  const { v } = legacy
   const data = v.data, state = v.state, draft = v.draft
   const draftLines = new Map<string, any[]>()
   draft.created.filter((made: any) => !made.source && !data.lines.some((l: any) => l.key === made.lineKey)).forEach((made: any) => {
@@ -173,7 +174,7 @@ function OperatingLines() {
           <div key={line.key}>
             <Row attrs={{ line: line.key, section: "lines" }} caret={open ? "open" : "closed"}>
               <Swatch color={line.color} />
-              <span className="min-w-0 truncate font-medium">{fn.shortName(line.name)}</span>
+              <span className="min-w-0 truncate font-medium">{shortName(line.name)}</span>
               <Count>{tr("{0} 个种别", line.routes.length)}</Count>
             </Row>
             {open && line.routes.map((r: any) => (
@@ -201,7 +202,7 @@ function OperatingLines() {
 
 // ---------- 4. Timetables and diagrams ----------
 function Timetables() {
-  const { fn, v } = legacy
+  const { v } = legacy
   const data = v.data, state = v.state
   return (
     <>
@@ -214,7 +215,7 @@ function Timetables() {
           <div key={line.key}>
             <Row attrs={{ line: line.key }} caret={open ? "open" : "closed"}>
               <Swatch color={line.color} />
-              <span className="min-w-0 truncate font-medium">{fn.shortName(line.name)}</span>
+              <span className="min-w-0 truncate font-medium">{shortName(line.name)}</span>
               <Count title={tr("这一天的班次")}>{count}</Count>
             </Row>
             {open && (
@@ -273,7 +274,7 @@ function Depots() {
         return (
           <div key={depot.id}>
             <Row attrs={{ depot: depot.id }} caret={open ? "open" : "closed"}>
-              <span className="min-w-0 truncate font-medium">{fn.shortName(depot.name)}</span>
+              <span className="min-w-0 truncate font-medium">{shortName(depot.name)}</span>
               <Raw html={fn.lockMark(depot)} />
               {dutyDraft && <Dot error={Boolean(dutyDraft.error)} title={dutyDraft.error || tr("运用有没应用的草稿")} />}
               <Count tone={short ? "warn" : undefined} title={short ? fn.shortfallText(depot.shortfall) : duties.auto && depot.shortfall && depot.shortfall.replan ? fn.replanText(depot.shortfall) : undefined}>
@@ -321,10 +322,10 @@ function Depots() {
                   const drafted = draft.depots?.[depot.id]?.sidings?.[siding.id]
                   const fleet = drafted ? drafted.fleet : siding.fleet
                   const given = drafted ? drafted.routes : siding.routes || []
-                  const givenText = given.length ? tr("只跑：{0}", given.map((id: string) => (data.routeById.get(id) ? fn.routeTitle(data.routeById.get(id)) : "?")).join("、")) : tr("跑车厂的全部线路")
+                  const givenText = given.length ? tr("只跑：{0}", given.map((id: string) => (data.routeById.get(id) ? routeTitle(data.routeById.get(id)) : "?")).join("、")) : tr("跑车厂的全部线路")
                   return (
                     <Row key={siding.id} attrs={{ siding: siding.id, "of-depot": depot.id }} depth={1}>
-                      <span className="min-w-0 truncate">{fn.shortName(siding.name) || tr("存车线")}</span>
+                      <span className="min-w-0 truncate">{shortName(siding.name) || tr("存车线")}</span>
                       <Count title={givenText}>{fleet < 0 ? tr("停车不限") : tr("最多停 {0} 列", fleet)}{given.length ? " · " + tr("{0} 条线路", given.length) : ""}</Count>
                     </Row>
                   )

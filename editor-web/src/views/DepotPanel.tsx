@@ -11,6 +11,7 @@ import { useEffect, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
+import { colorOf, routeTitle, shortName, weekdaysShort } from "./now"
 
 const field = "h-7 rounded-md border border-ctl bg-panel px-2 text-[13px]"
 const H = ({ children }: { children: string }) => <h3 className="label-sm m-0 mb-1.5 mt-4 first:mt-0">{children}</h3>
@@ -93,7 +94,7 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
   }
 
   return (
-    <SidePanel open onClose={onClose} title={tr("编辑车厂：{0}", fn.shortName(depot.name))} width={680}
+    <SidePanel open onClose={onClose} title={tr("编辑车厂：{0}", shortName(depot.name))} width={680}
       hint={tr("车厂负责的线路没有先后。哪列车跑哪班由运用决定；车按车型配属给车厂，同车型的存车线共用这些车，车回到哪条存车线都还是同一列。存车线可以只跑其中几条线路，最多停几列是它能停的车数。配属车数留空时按各存车线相加。")}
       footer={<>
         <button className="btn btn-primary" disabled={!data.canEdit} onClick={save}>{tr("放进草稿")}</button>
@@ -103,13 +104,13 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
       <H>{tr("负责的线路")}</H>
       {lines.length ? lines.map(line => (
         <div key={line.key} className="mb-1.5 flex flex-wrap items-center gap-1.5">
-          <span className="w-20 shrink-0 truncate text-[12px] text-dim">{fn.shortName(line.name)}</span>
+          <span className="w-20 shrink-0 truncate text-[12px] text-dim">{shortName(line.name)}</span>
           {line.routes.map((r: any) => {
             const on = routes.includes(r.id)
             return (
               <button key={r.id} type="button" aria-pressed={on} onClick={() => { setRoutes(toggle(routes, r.id)); setError("") }}
                 className={"inline-flex h-6 items-center gap-1.5 rounded-pill border px-2 text-[12px] " + (on ? "tint-accent border-brand text-brand" : "border-ctl bg-panel")}>
-                <span className="h-[3px] w-3 rounded-pill" style={{ background: fn.colorOf(r.color) }} />{fn.routeTitle(r)}
+                <span className="h-[3px] w-3 rounded-pill" style={{ background: colorOf(r.color) }} />{routeTitle(r)}
               </button>
             )
           })}
@@ -139,9 +140,9 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
                 <th className="sticky left-0 bg-panel" />
                 <th className="px-1 pb-1 text-left font-normal text-dim">{tr("最多停几列")}</th>
                 {chosen.map(r => (
-                  <th key={r.id} className="h-36 w-7 align-bottom font-normal" title={fn.routeTitle(r)}>
+                  <th key={r.id} className="h-36 w-7 align-bottom font-normal" title={routeTitle(r)}>
                     <span className="inline-block max-h-36 truncate whitespace-nowrap" style={{ writingMode: "vertical-rl" }}>
-                      <span className="mb-1 inline-block h-2 w-2 rounded-full" style={{ background: fn.colorOf(r.color) }} /> {fn.shortName(r.name)}
+                      <span className="mb-1 inline-block h-2 w-2 rounded-full" style={{ background: colorOf(r.color) }} /> {shortName(r.name)}
                     </span>
                   </th>
                 ))}
@@ -153,15 +154,15 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
                 return (
                   <tr key={s.id} className="border-t border-grid" data-siding={s.id}>
                     <th scope="row" className="sticky left-0 max-w-[140px] truncate bg-panel py-1 pr-2 text-left font-normal">
-                      {fn.shortName(s.name) || tr("存车线")}
+                      {shortName(s.name) || tr("存车线")}
                       {s.vehicle && <span className="ml-1 text-[11px] text-dim">{s.vehicle}</span>}
                       {!mine.length && chosen.length > 0 && <span className="ml-1 text-[11px] text-dim">{tr("全部")}</span>}
                     </th>
-                    <td className="px-1"><input className={field + " num w-16"} type="number" min={0} max={999} placeholder={tr("不限")} value={value.fleet} aria-label={tr("{0} 最多停几列", fn.shortName(s.name))}
+                    <td className="px-1"><input className={field + " num w-16"} type="number" min={0} max={999} placeholder={tr("不限")} value={value.fleet} aria-label={tr("{0} 最多停几列", shortName(s.name))}
                       onChange={e => setSidings({ ...sidings, [s.id]: { ...value, fleet: e.target.value } })} /></td>
                     {chosen.map(r => (
                       <td key={r.id} className="text-center">
-                        <input type="checkbox" checked={value.routes.includes(r.id)} aria-label={tr("{0} 跑 {1}", fn.shortName(s.name), fn.routeTitle(r))}
+                        <input type="checkbox" checked={value.routes.includes(r.id)} aria-label={tr("{0} 跑 {1}", shortName(s.name), routeTitle(r))}
                           onChange={() => setSidings({ ...sidings, [s.id]: { ...value, routes: toggle(value.routes, r.id) } })} />
                       </td>
                     ))}
@@ -232,7 +233,7 @@ export function DepotRules({ depotId, editing, onClose }: { depotId: string; edi
   const changed = () => setTick(t => t + 1)
   const lines: [string, string][] = fn.depotLines(depot)
   const unset: string[] = (depot.shortfall && depot.shortfall.entrancesUnset) || []
-  const days: string[] = v.WEEKDAY_SHORT
+  const days: string[] = weekdaysShort()
   const seconds = (millis: number) => (millis >= 0 ? String(Math.round(millis / 1000)) : "")
   const millisOf = (text: string, none: number) => (text.trim() === "" ? none : Math.max(0, Math.min(3600, Math.round(Number(text)) || 0)) * 1000)
   const wayText = (pathId: string, entrance: string) => {
@@ -257,7 +258,7 @@ export function DepotRules({ depotId, editing, onClose }: { depotId: string; edi
   const small = "flex items-center gap-1.5 text-[13px]"
   const chip = (on: boolean) => "inline-flex h-6 items-center rounded-pill border px-2 text-[12px] " + (on ? "tint-accent border-brand text-brand" : "border-ctl bg-panel")
   return (
-    <SidePanel open onClose={() => { v.rulesEditing = null; onClose() }} title={tr("出入库规则：{0}", fn.shortName(depot.name))} width={640}
+    <SidePanel open onClose={() => { v.rulesEditing = null; onClose() }} title={tr("出入库规则：{0}", shortName(depot.name))} width={640}
       hint={tr("按线路和星期定列车怎么出库、回库：从哪个车站出入（车厂接到线路上不止一个车站时必须指定）、比出库路线用时再早发多少、回哪条存车线、走哪条回送路径、两班之间等多久就离开站台去折返线。同一班次按“线路和星期都指定 > 只指定线路 > 只指定星期 > 都不指定”取一条规则。出口、回口和回送路径都在全网配线图上点选，点了就画出路线和用时。")}
       footer={<>
         <button className="btn btn-primary" disabled={!data.canEdit} onClick={save}>{tr("放进草稿")}</button>

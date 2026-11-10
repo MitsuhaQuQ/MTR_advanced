@@ -14,6 +14,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { ConfirmButton } from "../ui/bits"
 import { tr } from "../i18n"
+import { colorOf, shortName } from "./now"
 
 export type Brush = { kind: "logical"; id: string | null } | { kind: "owner"; lines: string[] | null; label: string }
 
@@ -135,7 +136,7 @@ export function OwnershipPanel({ className }: { className: string }) {
           </p>
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {logical ? <>
-              {logicalLines.map((line: any) => brushRow("l" + line.id, { kind: "logical", id: line.id }, fn.colorOf(line.color), line.name, (
+              {logicalLines.map((line: any) => brushRow("l" + line.id, { kind: "logical", id: line.id }, colorOf(line.color), line.name, (
                 <span className="flex shrink-0 items-center gap-1">
                   {line.id in drafted && <span className="h-1.5 w-1.5 rounded-full bg-caution" title={tr("有没应用的草稿")} />}
                   {line.connecting && <span className="text-[11px] text-caution">{tr("联络线")}</span>}
@@ -148,7 +149,7 @@ export function OwnershipPanel({ className }: { className: string }) {
               ), line.connecting))}
               {brushRow("erase", { kind: "logical", id: null }, null, tr("橡皮：移出逻辑线路"))}
             </> : <>
-              {operating.map((line: any) => brushRow("o" + line.key, { kind: "owner", lines: [line.key], label: line.key }, fn.colorOf(line.color), tr("只归 {0}", fn.shortName(line.name))))}
+              {operating.map((line: any) => brushRow("o" + line.key, { kind: "owner", lines: [line.key], label: line.key }, colorOf(line.color), tr("只归 {0}", shortName(line.name))))}
               {brushRow("open", { kind: "owner", lines: [], label: "open" }, null, tr("对所有线路开放"))}
               {brushRow("auto", { kind: "owner", lines: null, label: "auto" }, null, tr("恢复自动归属"))}
             </>}
@@ -186,7 +187,7 @@ function LineTracks({ operating, logicalLines, canEdit }: { operating: any[]; lo
             {logicalLines.map(line => (
               <th key={line.id} className="h-24 w-7 align-bottom font-normal" title={line.name}>
                 <span className="inline-block max-h-24 truncate whitespace-nowrap" style={{ writingMode: "vertical-rl" }}>
-                  <span className="mb-1 inline-block h-2 w-2 rounded-full" style={{ background: fn.colorOf(line.color) }} /> {line.name}
+                  <span className="mb-1 inline-block h-2 w-2 rounded-full" style={{ background: colorOf(line.color) }} /> {line.name}
                 </span>
               </th>
             ))}
@@ -198,14 +199,14 @@ function LineTracks({ operating, logicalLines, canEdit }: { operating: any[]; lo
             return (
               <tr key={line.key} className="border-t border-grid">
                 <th scope="row" className="sticky left-0 max-w-[120px] truncate bg-panel py-1 pr-2 text-left font-normal">
-                  <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: fn.colorOf(line.color) }} />
-                  {fn.shortName(line.name)}
+                  <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: colorOf(line.color) }} />
+                  {shortName(line.name)}
                   {line.key in draftedTracks && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-caution" title={tr("有没应用的草稿")} />}
                   {!chosen.length && <span className="ml-1 text-[11px] text-dim">{tr("按站台")}</span>}
                 </th>
                 {logicalLines.map(logicalLine => (
                   <td key={logicalLine.id} className="text-center">
-                    <input type="checkbox" disabled={!canEdit} checked={chosen.includes(logicalLine.id)} aria-label={tr("{0} 走 {1}", fn.shortName(line.name), logicalLine.name)}
+                    <input type="checkbox" disabled={!canEdit} checked={chosen.includes(logicalLine.id)} aria-label={tr("{0} 走 {1}", shortName(line.name), logicalLine.name)}
                       onChange={e => setLineTrack(line.key, logicalLine.id, e.target.checked)} />
                   </td>
                 ))}

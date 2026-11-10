@@ -14,6 +14,7 @@ import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { DepotPanel, DepotRules } from "./DepotPanel"
 import { DutyGroupsPanel, ReleasePlanPanel, VehiclePanel } from "./DepotExtras"
+import { DAY, clock, colorOf, mod, parseClock, routeTitle, shortName, stopName, systemTitle, tableName, trc, weekdayName, weekdaysShort } from "./now"
 
 export function LinePanels() {
   const [target, setTarget] = useState<PanelTarget | null>(null)
@@ -48,7 +49,7 @@ function SpeedLimits({ routeIds, onClose }: { routeIds: string[]; onClose: () =>
   const problemOf = (r: any) => {
     const text = (values[r.id] || "").trim(), value = text === "" ? 0 : Math.round(Number(text))
     if (!(value >= 0) || value > 300) return tr("限速要在 0 到 300 km/h 之间")
-    if (r.fastestRail && value > r.fastestRail) return tr("{0}：不能高于轨道限速 {1} km/h", fn.routeTitle(r), r.fastestRail)
+    if (r.fastestRail && value > r.fastestRail) return tr("{0}：不能高于轨道限速 {1} km/h", routeTitle(r), r.fastestRail)
     return ""
   }
   const save = () => {
@@ -69,11 +70,11 @@ function SpeedLimits({ routeIds, onClose }: { routeIds: string[]; onClose: () =>
           return (
             <li key={r.id} className="border-b border-grid py-2" data-speed-route={r.id}>
               <div className="flex items-center gap-2">
-                <span className="h-[4px] w-5 shrink-0 rounded-pill" style={{ background: fn.colorOf(r.color) }} />
-                <span className="min-w-0 flex-1 truncate text-[13px]">{fn.routeTitle(r)}</span>
+                <span className="h-[4px] w-5 shrink-0 rounded-pill" style={{ background: colorOf(r.color) }} />
+                <span className="min-w-0 flex-1 truncate text-[13px]">{routeTitle(r)}</span>
                 {drafted && <span className="h-1.5 w-1.5 rounded-full bg-caution" title={tr("有没应用的草稿")} />}
                 <input className={field + " num w-20 text-right"} type="number" min={0} max={r.fastestRail || 300} step={1} placeholder={tr("不限")} value={values[r.id]}
-                  aria-label={tr("{0} 的限速", fn.routeTitle(r))} aria-invalid={Boolean(problem)} style={problem ? { borderColor: "var(--warn)" } : undefined}
+                  aria-label={tr("{0} 的限速", routeTitle(r))} aria-invalid={Boolean(problem)} style={problem ? { borderColor: "var(--warn)" } : undefined}
                   onChange={e => { setValues({ ...values, [r.id]: e.target.value }); setError("") }} />
                 <span className="text-[12px] text-dim">km/h</span>
               </div>
@@ -118,11 +119,11 @@ function Through({ routeId, onClose }: { routeId: string; onClose: () => void })
   // The old rule: each service in the range to the first of the other's it can catch, none twice, none waiting too long
   const found = useMemo(() => {
     if (!a || !b) return null
-    const start = fn.parseClock(t1), end = fn.parseClock(t2)
+    const start = parseClock(t1), end = parseClock(t2)
     if (start === null || end === null) return null
     const exitIndex = fromStopNow < 0 ? a.stops.length - 1 : fromStopNow
     const gapMillis = Math.max(0, +gap || 0) * 60000, waitMillis = Math.max(+wait || 0, 0) * 60000 + gapMillis
-    const local = (s: any) => fn.mod(s.start + data.dayStartMillis + data.offsetMillis, v.DAY)
+    const local = (s: any) => mod(s.start + data.dayStartMillis + data.offsetMillis, DAY)
     const used = new Set(b.services.map((s: any) => s.service).filter((service: number) => a.services.some((s: any) => !replace && s.link && s.link.route === b.id && s.link.toService === service)))
     const result: { s: any; out: number; to: any; into: number }[] = []
     a.services.filter((s: any) => local(s) >= start && local(s) <= end && (replace || !s.link)).forEach((s: any) => {
@@ -156,24 +157,24 @@ function Through({ routeId, onClose }: { routeId: string; onClose: () => void })
       <div className="grid grid-cols-2 gap-x-3 gap-y-2">
         <label className={label}>{tr("从")}
           <select className={field} value={a.id} onChange={e => { setFromId(e.target.value); setFromStop(-1); setLeft(new Set()) }}>
-            {routes.map(r => <option key={r.id} value={r.id}>{fn.routeTitle(r)}</option>)}
+            {routes.map(r => <option key={r.id} value={r.id}>{routeTitle(r)}</option>)}
           </select></label>
         <label className={label}>{tr("接出")}
           <select className={field} value={fromStopNow} onChange={e => { setFromStop(+e.target.value); setLeft(new Set()) }}>
-            <option value={-1}>{tr("{0}（末站）", fn.stopName(a, a.stops.length - 1))}</option>
-            {boundaries(a).map((i: number) => <option key={i} value={i}>{tr("{0}（时刻边界）", fn.stopName(a, i))}</option>)}
+            <option value={-1}>{tr("{0}（末站）", stopName(a, a.stops.length - 1))}</option>
+            {boundaries(a).map((i: number) => <option key={i} value={i}>{tr("{0}（时刻边界）", stopName(a, i))}</option>)}
           </select></label>
-        <label className={label}>{fn.trc ? fn.trc("route", "到") : tr("到")}
+        <label className={label}>{trc("route", "到")}
           <select className={field} value={b.id} onChange={e => { setToId(e.target.value); setToStop(0); setLeft(new Set()) }}>
-            {others.map(r => <option key={r.id} value={r.id}>{fn.routeTitle(r)}</option>)}
+            {others.map(r => <option key={r.id} value={r.id}>{routeTitle(r)}</option>)}
           </select></label>
         <label className={label}>{tr("接入")}
           <select className={field} value={toStopNow} onChange={e => { setToStop(+e.target.value); setLeft(new Set()) }}>
-            <option value={0}>{tr("{0}（首站）", fn.stopName(b, 0))}</option>
-            {boundaries(b).filter((i: number) => i > 0).map((i: number) => <option key={i} value={i}>{tr("{0}（时刻边界）", fn.stopName(b, i))}</option>)}
+            <option value={0}>{tr("{0}（首站）", stopName(b, 0))}</option>
+            {boundaries(b).filter((i: number) => i > 0).map((i: number) => <option key={i} value={i}>{tr("{0}（时刻边界）", stopName(b, i))}</option>)}
           </select></label>
         <label className={label}>{tr("首站发车从")}<input className={field + " num"} value={t1} onChange={e => setT1(e.target.value)} /></label>
-        <label className={label}>{tr("到（{0}的表）", fn.WEEKDAY_NAMES[state.weekday])}<input className={field + " num"} value={t2} onChange={e => setT2(e.target.value)} /></label>
+        <label className={label}>{tr("到（{0}的表）", weekdayName(state.weekday))}<input className={field + " num"} value={t2} onChange={e => setT2(e.target.value)} /></label>
         <label className={label}>{tr("衔接至少（分钟）")}<input className={field + " num"} type="number" min={0} max={60} value={gap} onChange={e => setGap(e.target.value)} /></label>
         <label className={label}>{tr("最多再等（分钟）")}<input className={field + " num"} type="number" min={0} max={120} value={wait} onChange={e => setWait(e.target.value)} /></label>
       </div>
@@ -185,16 +186,16 @@ function Through({ routeId, onClose }: { routeId: string; onClose: () => void })
             <p className="m-0 mb-2 text-[12px] text-dim">{tr("能接上 {0} 对；取消勾选的不接。", found.result.length)}</p>
             <table className="w-full border-collapse text-[12px]">
               <thead><tr className="text-left text-dim">
-                <th className="w-6" /><th className="font-normal">{tr("班次")}</th><th className="font-normal">{fn.stopName(a, found.exitIndex)} {tr("到")}</th><th className="font-normal">{tr("接")}</th><th className="font-normal">{fn.stopName(b, toStopNow)} {tr("发")}</th><th className="font-normal">{tr("等")}</th>
+                <th className="w-6" /><th className="font-normal">{tr("班次")}</th><th className="font-normal">{stopName(a, found.exitIndex)} {tr("到")}</th><th className="font-normal">{tr("接")}</th><th className="font-normal">{stopName(b, toStopNow)} {tr("发")}</th><th className="font-normal">{tr("等")}</th>
               </tr></thead>
               <tbody>
                 {found.result.map(x => {
                   const on = !left.has(keyOf(x))
                   return (
                     <tr key={keyOf(x)} className={"num border-t border-grid " + (on ? "" : "text-dim")}>
-                      <td><input type="checkbox" checked={on} aria-label={tr("{0} 班接 {1} 班", fn.clock(x.s.start), fn.clock(x.to.start))}
+                      <td><input type="checkbox" checked={on} aria-label={tr("{0} 班接 {1} 班", clock(x.s.start), clock(x.to.start))}
                         onChange={() => { const next = new Set(left); if (on) next.add(keyOf(x)); else next.delete(keyOf(x)); setLeft(next) }} /></td>
-                      <td>{fn.clock(x.s.start)}</td><td>{fn.clock(x.out)}</td><td>{fn.clock(x.to.start)}</td><td>{fn.clock(x.into)}</td>
+                      <td>{clock(x.s.start)}</td><td>{clock(x.out)}</td><td>{clock(x.to.start)}</td><td>{clock(x.into)}</td>
                       <td>{tr("{0} 分", Math.round((x.into - x.out) / 60000))}</td>
                     </tr>
                   )
@@ -252,7 +253,7 @@ function Contingency({ anchor, onClose }: { anchor: string; onClose: () => void 
   }
   const small = "flex items-center gap-1.5 text-[13px]"
   return (
-    <SidePanel open onClose={onClose} title={tr("路网故障预案：{0}", fn.systemTitle(system))} width={620}
+    <SidePanel open onClose={onClose} title={tr("路网故障预案：{0}", systemTitle(system))} width={620}
       hint={tr("一片连通的轨道（路网）共用一套预案，管路网里所有线路的车，不管来自哪个车厂。列车晚点、等进路太久或锁死时按预案处理。没有预案的线路只报警，运行照常；几个预案都符合时取编号最小的。报警和启用在“同步状态”里。")}
       footer={<Footer error={error}>
         <button className="btn btn-primary" disabled={!data.canEdit} onClick={save}>{tr("放进草稿")}</button>
@@ -277,7 +278,7 @@ function Contingency({ anchor, onClose }: { anchor: string; onClose: () => void 
           </div>
           <div className="label-sm mb-1">{tr("适用线路（都不勾就是路网的全部线路）：")}</div>
           <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
-            {routes.map(r => <label key={r.id} className={small}><input type="checkbox" checked={p.routes.includes(r.id)} onChange={e => change(i, { routes: toggle(p.routes, r.id, e.target.checked) })} /> {fn.routeTitle(r)}</label>)}
+            {routes.map(r => <label key={r.id} className={small}><input type="checkbox" checked={p.routes.includes(r.id)} onChange={e => change(i, { routes: toggle(p.routes, r.id, e.target.checked) })} /> {routeTitle(r)}</label>)}
           </div>
           <div className="label-sm mb-1">{tr("满足任一条件的车受影响（填 0 不看这一条）：")}</div>
           <div className="mb-2 flex flex-wrap items-center gap-3">
@@ -296,7 +297,7 @@ function Contingency({ anchor, onClose }: { anchor: string; onClose: () => void 
               </select></label>
             {p.turn === "station" && <label className={small}>{tr("折返站")}
               <select className={field} value={p.turnStation} onChange={e => change(i, { turnStation: e.target.value })}>
-                <option value="0">—</option>{stations.map(s => <option key={s.id} value={s.id}>{fn.shortName(s.name)}</option>)}
+                <option value="0">—</option>{stations.map(s => <option key={s.id} value={s.id}>{shortName(s.name)}</option>)}
               </select></label>}
             {p.turn !== "none" && <label className={small}>{tr("折返以后")}
               <select className={field} value={p.afterTurn === "deadhead" ? "deadhead" : "resume"} onChange={e => change(i, { afterTurn: e.target.value })}>
@@ -306,7 +307,7 @@ function Contingency({ anchor, onClose }: { anchor: string; onClose: () => void 
           {p.turn !== "none" && <p className="my-1 text-[12px] text-dim">{tr("折返前都先在折返站清客。")}</p>}
           <div className="label-sm mb-1 mt-2">{tr("跳过这些站（通过不停）：")}</div>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {stations.length ? stations.map(s => <label key={s.id} className={small}><input type="checkbox" checked={p.skipStations.includes(s.id)} onChange={e => change(i, { skipStations: toggle(p.skipStations, s.id, e.target.checked) })} /> {fn.shortName(s.name)}</label>)
+            {stations.length ? stations.map(s => <label key={s.id} className={small}><input type="checkbox" checked={p.skipStations.includes(s.id)} onChange={e => change(i, { skipStations: toggle(p.skipStations, s.id, e.target.checked) })} /> {shortName(s.name)}</label>)
               : <span className="text-[12px] text-dim">{tr("路网的线路还没有车站")}</span>}
           </div>
           <label className={small + " mt-2"}><input type="checkbox" checked={p.takeover} onChange={e => change(i, { takeover: e.target.checked })} /> {tr("由备车接替余下的运用")}</label>
@@ -337,9 +338,9 @@ function TableDays({ routeId, index, onClose }: { routeId: string; index: number
   const [all, setAll] = useState(Boolean(line && line.routes.length > 1))
   const [error, setError] = useState("")
   if (!r || !timetable) return null
-  const days: string[] = v.WEEKDAY_SHORT
+  const days: string[] = weekdaysShort()
   const ownerOf = (day: number) => timetable.tables.findIndex((t: any) => (t.weekdays >> day) & 1)
-  const tableTitle = (t: any, i: number) => fn.tableName(t, i)
+  const tableTitle = (t: any, i: number) => tableName(t, i)
   // Every table's days once this is done; this table last when new
   const after = [...timetable.tables.map((t: any, i: number) => ({ name: i === index ? name || tableTitle(t, i) : tableTitle(t, i), mask: i === index ? mask : t.weekdays & ~mask, self: i === index })),
     ...(isNew ? [{ name: name || tr("新表"), mask, self: true }] : [])]
@@ -366,7 +367,7 @@ function TableDays({ routeId, index, onClose }: { routeId: string; index: number
     onClose()
   }
   return (
-    <SidePanel open onClose={onClose} title={(isNew ? tr("新建时刻表") : tr("时刻表设置")) + "：" + fn.routeTitle(r)} width={560}
+    <SidePanel open onClose={onClose} title={(isNew ? tr("新建时刻表") : tr("时刻表设置")) + "：" + routeTitle(r)} width={560}
       hint={tr("一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。")}
       footer={<Footer error={error}>
         <button className="btn btn-primary" disabled={!v.data.canEdit} onClick={save}>{isNew ? tr("新建") : tr("确定")}</button>
@@ -394,7 +395,7 @@ function TableDays({ routeId, index, onClose }: { routeId: string; index: number
             {timetable.tables.map((t: any, i: number) => <option key={i} value={i}>{tr("复制“{0}”的班次", tableTitle(t, i))}</option>)}
           </select></label>
         <label className="mt-2 flex items-center gap-1.5 text-[13px]">
-          <input type="checkbox" checked={all} disabled={!line || line.routes.length < 2} onChange={e => setAll(e.target.checked)} /> {tr("{0}的全部线路一起建", fn.shortName(r.line))}
+          <input type="checkbox" checked={all} disabled={!line || line.routes.length < 2} onChange={e => setAll(e.target.checked)} /> {tr("{0}的全部线路一起建", shortName(r.line))}
         </label>
       </>}
       <div className="label-sm mb-1 mt-4">{tr("改完以后")}</div>
