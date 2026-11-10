@@ -10,6 +10,7 @@ import { diagramHost, legacy, menuHost, useLegacy, type DiagramTarget } from "..
 import { post } from "../api/client"
 import { buildSchematic, usageOf, type RouteLayout, type Schematic } from "../core/schematic"
 import { tr } from "../i18n"
+import { topologyOf } from "../core/topology"
 
 const GAP = 26, TOP = 64, PAD = 32, BOTTOM = 28
 
@@ -179,7 +180,7 @@ function Drawing({ schematic, trunk, zoom, onChanged, onOpenStop }: { schematic:
           <g key={p.id}>
             <rect x={x(p.x1)} y={top} width={w} height={6} rx={1.5} fill={p.ours ? colour(trunk.color) : "var(--panel-2)"} stroke={p.ours ? "none" : "var(--grid-strong)"} />
             <text x={x(p.x1) + w / 2} y={above ? top - 3 : top + 16} textAnchor="middle" fontSize={10} fill={p.ours ? "var(--ink)" : "var(--muted)"} className="num">{p.name || "?"}</text>
-            <title>{`${fn.shortName(p.stationName) || tr("不属于车站")} ${fn.trackLabel ? fn.trackLabel(p.id, p.name, p.passingTrack) : p.name}`}</title>
+            <title>{`${fn.shortName(p.stationName) || tr("不属于车站")} ${topologyOf(legacy.v.data?.topology).trackLabel(p.id, p.name, p.passingTrack)}`}</title>
           </g>
         )
       })}

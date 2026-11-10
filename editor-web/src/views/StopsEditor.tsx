@@ -15,6 +15,10 @@ import { useEffect, useMemo, useState } from "react"
 import { diagramHost, legacy, stopsHost, useLegacy, type StopsTarget } from "../legacy/engine"
 import { ConfirmButton, Pill, SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
+import { topologyOf } from "../core/topology"
+
+/** The game's platforms on the rails and the ways between them, as the data last read has them */
+const T = () => topologyOf(legacy.v.data?.topology)
 
 /** The old code's picker model (topologyModel): each stop's tracks, the ones picked, stop or pass, fixed tracks */
 export type StopsModel = { layers: number[][]; picks: number[]; stop: boolean[]; pins: Map<number, number>; color: string; conflict: string }
@@ -37,28 +41,26 @@ export function StopsEditor() {
 
 /** Fixes a stop's track, or frees it if it was fixed there; the others move to the best tracks that still run. */
 export function pinTrack(model: StopsModel, i: number, p: number): StopsModel {
-  const { fn } = legacy
   const pins = new Map(model.pins)
   if (pins.get(i) === p) pins.delete(i)
   else pins.set(i, p)
-  const solution = fn.solveStops(model.layers, model.picks, pins)
+  const solution = T().solveStops(model.layers, model.picks, pins)
   if (solution.ok) return { ...model, pins, picks: solution.picks, conflict: "" }
   const picks = model.picks.slice()
   picks[i] = p
-  const names = [...pins.keys()].sort((a, b) => a - b).map(k => fn.stationLabel(model.layers[k][0]))
+  const names = [...pins.keys()].sort((a, b) => a - b).map(k => T().stationLabel(model.layers[k][0]))
   return { ...model, pins, picks, conflict: tr("固定的站台连不起来：{0}。取消其中一个再试。", names.join("、")) }
 }
 
 /** What the picks give: each leg's length (Infinity: no way), where it turns back, which tracks some way can use */
 function analyse(model: StopsModel) {
-  const { fn } = legacy
   const n = model.layers.length
-  const solution = n > 1 ? fn.solveStops(model.layers, model.picks, model.pins) : null
-  const settled = Boolean(solution && solution.ok && solution.picks.every((p: number, i: number) => p === model.picks[i]))
-  const legs = model.picks.slice(1).map((p, i) => fn.legCost(model.picks[i], p) as number)
+  const solution = n > 1 ? T().solveStops(model.layers, model.picks, model.pins) : null
+  const settled = solution && solution.ok && solution.picks.every((p: number, i: number) => p === model.picks[i]) ? solution : null
+  const legs = model.picks.slice(1).map((p, i) => T().legCost(model.picks[i], p) as number)
   return {
     legs,
-    reversals: new Set<number>(settled ? solution.reversals : []),
+    reversals: new Set<number>(settled ? settled.reversals : []),
     feasible: (solution ? solution.feasible : model.layers.map(layer => new Set(layer))) as Set<number>[],
   }
 }
@@ -72,8 +74,8 @@ function Strip({ model, setModel, original, onStation }: {
   /** A station's own diagram, when there is one to open */
   onStation?: (i: number) => void
 }) {
-  const { fn, v } = legacy
-  const topo = v.topo
+  
+  const topo = T()
   const { legs, reversals, feasible } = useMemo(() => analyse(model), [model])
   const n = model.layers.length
   return (
@@ -90,7 +92,7 @@ function Strip({ model, setModel, original, onStation }: {
             <div className="min-w-0 flex-1 pb-1">
               <div className="flex min-h-[20px] flex-wrap items-center gap-2">
                 <span className="num w-5 text-[12px] text-dim">{i + 1}</span>
-                <b className="text-[14px]">{fn.stationLabel(layer[0])}</b>
+                <b className="text-[14px]">{T().stationLabel(layer[0])}</b>
                 {changed && <Pill tone="accent">{tr("改了股道")}</Pill>}
                 {reversals.has(i) && <Pill tone="caution">{tr("掉头")}</Pill>}
                 {model.pins.has(i) && <Pill tone="sel">{tr("固定")}</Pill>}
@@ -102,19 +104,19 @@ function Strip({ model, setModel, original, onStation }: {
                   {stops ? tr("停车") : tr("通过")}
                 </button>
               </div>
-              <div className="mt-1 flex flex-wrap gap-1 pl-7" role="group" aria-label={tr("{0}的股道", fn.stationLabel(layer[0]))}>
+              <div className="mt-1 flex flex-wrap gap-1 pl-7" role="group" aria-label={tr("{0}的股道", T().stationLabel(layer[0]))}>
                 {layer.map(p => {
                   const platform = topo.platforms[p], on = p === picked, usable = feasible[i]?.has(p)
                   return (
                     <button key={p} className="num h-6 rounded-md border px-2 text-[12px]" aria-pressed={on}
-                      title={fn.trackLabel(platform.id, fn.platformLabel(p), platform.passingTrack) + (usable ? "" : tr("（和其他站连不起来）"))}
+                      title={T().trackLabel(platform.id, T().platformLabel(p), platform.passingTrack) + (usable ? "" : tr("（和其他站连不起来）"))}
                       style={{
                         borderColor: on ? model.color : "var(--control-line)", borderWidth: on ? 2 : 1, opacity: usable || on ? 1 : 0.45,
                         background: on ? `color-mix(in srgb, ${model.color} 16%, var(--panel))` : "var(--panel)",
                         boxShadow: model.pins.get(i) === p ? "0 0 0 2px var(--sel)" : undefined, fontWeight: on ? 600 : 400,
                       }}
                       onClick={() => setModel(pinTrack(model, i, p))}>
-                      {fn.trackShort(platform.id, fn.platformLabel(p), platform.passingTrack)}
+                      {T().trackShort(platform.id, T().platformLabel(p), platform.passingTrack)}
                     </button>
                   )
                 })}
@@ -135,18 +137,18 @@ function Strip({ model, setModel, original, onStation }: {
 // ---------- A route's stops ----------
 
 function modelOf(r: any): StopsModel | null {
-  const { fn, v } = legacy
+  const { fn } = legacy
   const ids: string[] = fn.platformsOf(r), pass: boolean[] = fn.timetableOf(r).pass
-  const tracks = ids.map(id => (v.topo.index.has(id) ? v.topo.index.get(id) : -1))
+  const tracks = ids.map(id => T().index.get(id) ?? -1)
   if (tracks.some(p => p < 0)) return null
-  return fn.topologyModel(tracks, r.stops.map((_: unknown, i: number) => !pass[i]), fn.colorOf(r.color))
+  return T().model(tracks, r.stops.map((_: unknown, i: number) => !pass[i]), fn.colorOf(r.color))
 }
 
 function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void }) {
   useLegacy()
   const { fn, v } = legacy
   const r = v.data?.routeById.get(routeId)
-  const [model, setModel] = useState<StopsModel | null>(() => (r && v.topo ? modelOf(r) : null))
+  const [model, setModel] = useState<StopsModel | null>(() => (r && T() ? modelOf(r) : null))
   const [ordering, setOrdering] = useState(false)
   const [error, setError] = useState("")
   if (!r) return null
@@ -156,12 +158,12 @@ function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void
 
   const gamePass: boolean[] = fn.gameTimetable(r).pass
   const original: string[] = r.stops.map((stop: any) => stop.platformId)
-  const changes = model ? model.picks.filter((p, i) => v.topo.platforms[p].id !== original[i]).length
+  const changes = model ? model.picks.filter((p, i) => T().platforms[p].id !== original[i]).length
     + model.stop.filter((s, i) => i > 0 && i < model.stop.length - 1 && !s !== Boolean(gamePass[i])).length : 0
   const save = () => {
     if (!model) return
     if (model.conflict) { setError(tr("有固定的股道连不起来")); return }
-    const newPlatforms = model.picks.map(p => v.topo.platforms[p].id)
+    const newPlatforms = model.picks.map(p => T().platforms[p].id)
     const entry = fn.draftEntry(r)
     if (newPlatforms.every((id, i) => id === original[i])) delete entry.platforms
     else entry.platforms = newPlatforms
@@ -173,7 +175,7 @@ function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void
   }
   return (
     <SidePanel open onClose={onClose} title={title} width={600}
-      hint={model ? fn.stopsSummaryOf(model) : undefined}
+      hint={model ? T().stopsSummary(model) : undefined}
       footer={<>
         <button className="btn btn-primary" disabled={!canEdit || !model} onClick={save}>{tr("放进草稿")}</button>
         <button className="btn" onClick={onClose}>{tr("取消")}</button>
@@ -201,14 +203,14 @@ function RouteStops({ routeId, onClose }: { routeId: string; onClose: () => void
 
 /** Adding, removing and reordering a route's stations: sent to the game at once, with everything hung on them renumbered */
 function StopOrder({ r, onBack, onClose }: { r: any; onBack: () => void; onClose: () => void }) {
-  const { fn, v } = legacy
+  const { fn } = legacy
   const [list, setList] = useState(() => {
     const pass: boolean[] = fn.timetableOf(r).pass
     return r.stops.map((stop: any, i: number) => ({ platformId: stop.platformId as string, from: i, pass: Boolean(pass[i]) }))
   })
   const [inserting, setInserting] = useState(-1)
   const [message, setMessage] = useState("")
-  const platforms: any[] = (v.topo ? v.topo.platforms : []).filter((p: any) => p.station)
+  const platforms: any[] = (T() ? T().platforms : []).filter((p: any) => p.station)
   const stations = useMemo(() => [...new Map(platforms.map(p => [p.station, p.stationName])).entries()]
     .sort((a, b) => String(a[1]).localeCompare(String(b[1]))), [platforms.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const [station, setStation] = useState("")
@@ -290,9 +292,9 @@ type StationChoice = { key: string; station: string; network: number; track: num
 
 /** A station once for each rail network it has tracks on, named with the network when it has tracks on several */
 function stationsOf(mode: string): StationChoice[] {
-  const { fn, v } = legacy
+  const { fn } = legacy
   const seen = new Map<string, StationChoice>()
-  v.topo.platforms.forEach((p: any, i: number) => {
+  T().platforms.forEach((p: any, i: number) => {
     const key = p.station + "|" + p.network
     if (p.mode === mode && p.station && !seen.has(key)) seen.set(key, { key, station: p.station, network: p.network, track: i, name: fn.shortName(p.stationName) })
   })
@@ -308,7 +310,7 @@ const MODE_NAMES: Record<string, string> = { TRAIN: "铁路", BOAT: "船", CABLE
 function NewLine({ onClose }: { onClose: () => void }) {
   useLegacy()
   const { fn, v } = legacy
-  const data = v.data, topo = v.topo
+  const data = v.data, topo = T()
   const modes = useMemo<string[]>(() => (topo ? [...new Set<string>(topo.platforms.filter((p: any) => p.station && p.mode).map((p: any) => p.mode))].sort() : []), [topo])
   const [mode, setMode] = useState(modes[0] || "")
   const [lineName, setLineName] = useState("")
@@ -330,7 +332,7 @@ function NewLine({ onClose }: { onClose: () => void }) {
   const others = sameNetwork.filter(s => s.key !== fromNow)
   const toNow = others.some(s => s.key === to) ? to : (others[others.length - 1]?.key ?? "")
   const viasNow = vias.filter(key => find(key)?.network === network && key !== fromNow && key !== toNow)
-  const tracksOf = (key: string): number[] => { const s = find(key); return s ? fn.stationTracks(s.track) : [] }
+  const tracksOf = (key: string): number[] => { const s = find(key); return s ? T().stationTracks(s.track) : [] }
   const startTracks = tracksOf(fromNow)
   const startTrack = startTracks.includes(Number(fromTrack)) && fromTrack !== "" ? Number(fromTrack) : -1
 
@@ -343,11 +345,11 @@ function NewLine({ onClose }: { onClose: () => void }) {
     if (!fromNow || !toNow || fromNow === toNow) routeError = tr("选好不同的起点站和终点站")
     else {
       const make = (start: number[], ends: number[], stops: string[], pinnedStart: number): StopsModel | null => {
-        const tracks = fn.findCorridor([start, ...stops.map(tracksOf), ends])
+        const tracks = T().findCorridor([start, ...stops.map(tracksOf), ends])
         if (!tracks || tracks.length < 2) return null
-        const model: StopsModel = fn.topologyModel(tracks, tracks.map(() => true), color)
+        const model: StopsModel = T().model(tracks, tracks.map(() => true), color)
         if (pinnedStart >= 0) model.pins.set(0, pinnedStart)
-        const solution = fn.solveStops(model.layers, model.picks, model.pins)
+        const solution = T().solveStops(model.layers, model.picks, model.pins)
         if (solution.ok) model.picks = solution.picks
         return model
       }
@@ -427,7 +429,7 @@ function NewLine({ onClose }: { onClose: () => void }) {
           <label className={label}>{tr("站台")}
             <select className={field} value={startTrack >= 0 ? String(startTrack) : ""} onChange={e => setFromTrack(e.target.value)}>
               <option value="">{tr("任一股")}</option>
-              {startTracks.map(p => <option key={p} value={p}>{fn.trackLabel(topo.platforms[p].id, fn.platformLabel(p), topo.platforms[p].passingTrack)}</option>)}
+              {startTracks.map(p => <option key={p} value={p}>{T().trackLabel(topo.platforms[p].id, T().platformLabel(p), topo.platforms[p].passingTrack)}</option>)}
             </select></label>
           <label className={label}>{tr("终点")}
             <select className={field} value={toNow} onChange={e => setTo(e.target.value)}>
@@ -449,7 +451,7 @@ function NewLine({ onClose }: { onClose: () => void }) {
           <b className="text-[14px]">{tr("车站和股道")}</b>
           {models.length > 1 && models.map((m, i) => (
             <button key={i} className={"btn h-6 px-2 text-[12px]" + (i === shown ? " tint-accent font-semibold text-brand" : "")} aria-pressed={i === shown} style={i === shown ? { borderColor: "var(--accent)" } : undefined} onClick={() => setDir(i)}>
-              {fn.stationLabel(m.picks[0])} → {fn.stationLabel(m.picks[m.picks.length - 1])}
+              {T().stationLabel(m.picks[0])} → {T().stationLabel(m.picks[m.picks.length - 1])}
             </button>
           ))}
         </div>
@@ -458,7 +460,7 @@ function NewLine({ onClose }: { onClose: () => void }) {
         {models[shown] && <>
           {models[shown].conflict && <p className="my-2 text-[13px] text-warn" role="alert">{models[shown].conflict}</p>}
           <Strip model={models[shown]} setModel={m => { setModel(m); setError("") }} />
-          <p className="mt-2 text-[12px] text-dim">{fn.stopsSummaryOf(models[shown])}</p>
+          <p className="mt-2 text-[12px] text-dim">{T().stopsSummary(models[shown])}</p>
         </>}
         {models.length > 0 && lineName.trim() && type.trim() && <p className="text-[12px] text-dim">{tr("建出：{0}", models.map(nameOf).join("、"))}</p>}
       </>}
@@ -476,12 +478,12 @@ function NewLine({ onClose }: { onClose: () => void }) {
 function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string; onClose: () => void }) {
   useLegacy()
   const { fn, v } = legacy
-  const data = v.data, topo = v.topo
+  const data = v.data, topo = T()
   const line = data?.lines.find((l: any) => l.key === lineKey) || fn.currentLine()
   const bases: any[] = line ? line.routes.filter((r: any) => r.stops.length > 1) : []
   const [baseChosen, setBase] = useState(baseId)
   const base = bases.find(r => r.id === baseChosen) || bases[0]
-  const trackOf = (id: string): number => (topo && topo.index.has(id) ? topo.index.get(id) : -1)
+  const trackOf = (id: string): number => (topo ? topo.index.get(id) ?? -1 : -1)
   // The stations on the same rails as the base route, by the first track of each
   const stations = useMemo(() => {
     if (!base || !topo) return [] as { station: string; track: number; name: string }[]
@@ -507,7 +509,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
   const fromNow = has(from) ? from : (base ? base.stops[0].station : "")
   const toNow = has(to) ? to : (base ? base.stops[base.stops.length - 1].station : "")
   const viasNow = vias.filter(has)
-  const tracksOf = (station: string): number[] => { const s = stations.find(o => o.station === station); return s ? fn.stationTracks(s.track) : [] }
+  const tracksOf = (station: string): number[] => { const s = stations.find(o => o.station === station); return s ? T().stationTracks(s.track) : [] }
   const startTracks = tracksOf(fromNow)
   const startTrack = fromTrack !== "" && startTracks.includes(Number(fromTrack)) ? Number(fromTrack) : -1
   const depots: any[] = base ? data.depots.filter((d: any) => d.routes.includes(base.id)) : []
@@ -523,13 +525,13 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
     else {
       // Ways along different tracks often cost the same: each station then takes the track the line's route that way uses
       const make = (start: number[], ends: number[], stops: string[], hint: any, pinnedStart: number): StopsModel | null => {
-        const tracks = fn.findCorridor([start, ...stops.map(tracksOf), ends])
+        const tracks = T().findCorridor([start, ...stops.map(tracksOf), ends])
         if (!tracks || tracks.length < 2) return null
-        const model: StopsModel = fn.topologyModel(tracks, tracks.map(() => true), color)
+        const model: StopsModel = T().model(tracks, tracks.map(() => true), color)
         if (pinnedStart >= 0) model.pins.set(0, pinnedStart)
         const hinted = new Map<string, number>((hint ? hint.stops : []).filter((stop: any) => topo.index.has(stop.platformId)).map((stop: any) => [stop.station, topo.index.get(stop.platformId)]))
         const preferred = model.layers.map((layer, i) => { const track = hinted.get(topo.platforms[layer[0]].station); return track !== undefined && layer.includes(track) ? track : model.picks[i] })
-        const solution = fn.solveStops(model.layers, preferred, model.pins)
+        const solution = T().solveStops(model.layers, preferred, model.pins)
         if (solution.ok) model.picks = solution.picks
         return model
       }
@@ -601,7 +603,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
         <label className={label}>{tr("站台")}
           <select className={field} value={startTrack >= 0 ? String(startTrack) : ""} onChange={e => setFromTrack(e.target.value)}>
             <option value="">{tr("任一股")}</option>
-            {startTracks.map(p => <option key={p} value={p}>{fn.trackLabel(topo.platforms[p].id, fn.platformLabel(p), topo.platforms[p].passingTrack)}</option>)}
+            {startTracks.map(p => <option key={p} value={p}>{T().trackLabel(topo.platforms[p].id, T().platformLabel(p), topo.platforms[p].passingTrack)}</option>)}
           </select></label>
         <label className={label}>{tr("终点")}<select className={field} value={toNow} onChange={e => setTo(e.target.value)}>{options}</select></label>
         <label className="flex items-end gap-1.5 pb-1 text-[13px]"><input type="checkbox" checked={both} onChange={e => setBoth(e.target.checked)} /> {tr("反方向一起建")}</label>
@@ -626,7 +628,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
         <b className="text-[14px]">{tr("车站和股道")}</b>
         {models.length > 1 && models.map((m, i) => (
           <button key={i} className={"btn h-6 px-2 text-[12px]" + (i === shown ? " tint-accent font-semibold text-brand" : "")} aria-pressed={i === shown} style={i === shown ? { borderColor: "var(--accent)" } : undefined} onClick={() => setDir(i)}>
-            {fn.stationLabel(m.picks[0])} → {fn.stationLabel(m.picks[m.picks.length - 1])}
+            {T().stationLabel(m.picks[0])} → {T().stationLabel(m.picks[m.picks.length - 1])}
           </button>
         ))}
       </div>
@@ -635,7 +637,7 @@ function NewType({ lineKey, baseId, onClose }: { lineKey: string; baseId: string
       {models[shown] && <>
         {models[shown].conflict && <p className="my-2 text-[13px] text-warn" role="alert">{models[shown].conflict}</p>}
         <Strip model={models[shown]} setModel={m => { setModel(m); setError("") }} />
-        <p className="mt-2 text-[12px] text-dim">{fn.stopsSummaryOf(models[shown])}</p>
+        <p className="mt-2 text-[12px] text-dim">{T().stopsSummary(models[shown])}</p>
       </>}
       {models.length > 0 && kind && <p className="text-[12px] text-dim">{tr("建出：{0}", models.map((_, i) => titleOf(i)).join("、"))}</p>}
     </SidePanel>

@@ -31,7 +31,7 @@ export function NetworkSchematic({ onShowReal, mode = "tracks", trains, onTrain 
     return () => clearInterval(timer)
   }, [])
   const data = v.net.data
-  const schematic = useMemo<Schematic | null>(() => (data && data.nodes && data.rails ? abstractNetwork(data, v.topo ? v.topo.platforms : []) : null), [data]) // eslint-disable-line react-hooks/exhaustive-deps
+  const schematic = useMemo<Schematic | null>(() => (data && data.nodes && data.rails ? abstractNetwork(data, v.data && v.data.topology ? v.data.topology.platforms : []) : null), [data]) // eslint-disable-line react-hooks/exhaustive-deps
   const box = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<{ x: number; y: number; k: number } | null>(null)
   const [chosen, setChosen] = useState<string | null>(null)

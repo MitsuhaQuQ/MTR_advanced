@@ -11,6 +11,7 @@ import { legacy, useLegacy } from "../legacy/engine"
 import { LegacySlot } from "../legacy/Slot"
 import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
+import { topologyOf } from "../core/topology"
 import { DutyDetail } from "./DutyDetail"
 
 export function Inspector({ className }: { className: string }) {
@@ -123,7 +124,8 @@ function Line({ line }: { line: any }) {
   const { fn, v } = legacy
   const data = v.data, state = v.state
   const covered = fn.coverageNow().routes
-  const troubled = line.routes.map((r: any) => [r, fn.routeProblems(r)]).filter(([, problems]: any) => problems.length)
+  const topology = topologyOf(data.topology)
+  const troubled = line.routes.map((r: any) => [r, topology.routeProblems(r, fn.platformsOf(r))]).filter(([, problems]: any) => problems.length)
   return (
     <>
       <Section title={tr("线路")}>

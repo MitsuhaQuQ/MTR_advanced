@@ -78,7 +78,7 @@
 - **合并构建**（2026-11-09 23:58，`mtm_version` 0.64.1，和逻辑线路 `d4d94ea`、站牌三语一起）：编译通过，transit-sim 541、common 389 全过，附加 mod 兼容扫描 0 缺失，Fabric、Forge 服务端都能启动；jar 里 `assets/mtr/editor/` 有 `shell.js`、`media.js`，没有 `audio.js`。还没进游戏（U366–U369）。
 - **已知风险**：别的会话若在 `editor.js` 新加读取 `location.hash` 的代码，会和路由冲突；浏览器缓存了旧 `media.js` 时要强制刷新一次（服务端是 no-cache，正常不会）。
 
-- **构建留存（2026-11-10，`898e3cb`）**：从本工作树构建 1.20.1 一轮通过：transit-sim 541 项、common 389 项测试全过，四个附属 mod 的接口扫描 0 缺失，Fabric、Forge 测试服务器都正常启动（无 mixin 失败、无崩溃）。jar 在 `P:/mtr-ante/test-jars/merged`，另存一份在 `P:/mtr-ante/test-jars/web-editor-next-898e3cb`。断点标签 `pre-legacy-retire`（清退旧逻辑前）。游戏内 U370–U404 还没测。
+- **构建留存（2026-11-10，`898e3cb`）**：从本工作树构建 1.20.1 一轮通过：transit-sim 541 项、common 389 项测试全过，四个附属 mod 的接口扫描 0 缺失，Fabric、Forge 测试服务器都正常启动（无 mixin 失败、无崩溃）。jar 在 `P:/mtr-ante/test-jars/merged`，另存一份在 `P:/mtr-ante/test-jars/web-editor-next-898e3cb`。断点标签 `pre-legacy-retire`（清退旧逻辑前）。之后按九步清退新页面对旧 `editor.js` 的依赖，第①步停站与股道求解已换成 `core/topology.ts`（对拍一致；游戏里看 U388、U391 的停站和新建种别照旧即可）。游戏内 U370–U404 还没测。
 
 ### 新版网页编辑器，迁移第 0、1 步（本会话，分支 claude/modern-web-editor-design-8ec467，2026-11-10）
 

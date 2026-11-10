@@ -10,6 +10,7 @@ import { legacy, useLegacy } from "../legacy/engine"
 import { LegacySlot } from "../legacy/Slot"
 import { legacyElement } from "../legacy/stage"
 import { tr } from "../i18n"
+import { topologyOf } from "../core/topology"
 
 export type Part = 1 | 2 | 3 | 4 | 5
 
@@ -84,9 +85,18 @@ function RouteLabel({ r }: { r: any }) {
       <Swatch color={r.color} wide />
       <span title={fn.routeTitle(r)} className={"min-w-0 truncate " + (fn.isDeleted(r) ? "line-through opacity-60" : "")}>{fn.routeTitle(r)}</span>
       {fn.isDeleted(r) ? <Dot error={Boolean(draft.error)} title={draft.error || tr("将删除：按“应用”后从游戏里删掉，右键取消")} /> : draft ? <Dot title={tr("有没应用的草稿")} /> : null}
-      <Raw html={fn.problemDot(r)} />
+      <ProblemDot r={r} />
     </>
   )
+}
+
+/** A mark for a route whose tracks don't run along the rails (old problemDot): red for errors, amber for warnings */
+function ProblemDot({ r }: { r: any }) {
+  const { fn, v } = legacy
+  const problems = topologyOf(v.data?.topology).routeProblems(r, fn.platformsOf(r))
+  if (!problems.length) return null
+  const level = problems.some(p => p.level === "error") ? "error" : "warn"
+  return <span className={"nav-raw shrink-0"}><span className={"problem-dot " + level} title={problems.map(p => p.text).join("；")}>!</span></span>
 }
 
 function Created({ made, title, depth }: { made: any; title: string; depth: number }) {
