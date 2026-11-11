@@ -1,5 +1,7 @@
 # MTR Advanced
 
+0.65.25 says why a route has no path: the two stops it cannot get between, and when a key node listed for that leg is off the way, that node. The server log names them too. The web running diagram no longer draws a route without stop times as vertical lines (zero running time); it lists such routes and the reason over the diagram. Update server and clients together.
+
 0.65.24 follow-up: appending a way out or back to a joined duty path keeps it as one piece instead of one piece per rail, and a siding whose saved duty ledger entry or train cannot be read now loads without that train instead of being skipped. No save or packet change.
 
 0.65.24 / Assets 1.0.5 fixes the low and high platform end gates so the leaf swings outward around the hinge opposite the handle.

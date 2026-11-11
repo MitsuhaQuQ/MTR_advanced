@@ -1,5 +1,7 @@
 # MTR 代码说明与主要流程
 
+0.65.25 路径失败提示：`RoutePaths.diagnose` 在笼统的走不通之前，先对走不通的那一段逐个加入该段的必经节点重试，不经过时能走通、经过某个节点就走不通，则给出 `PathFailure.Type.WAYPOINT_UNREACHABLE`（位置为该节点，`node1`/`node2` 为前后两站的站台）。`PathFailure.diagnose` 的 `DISCONNECTED`、`NO_ROUTE` 也带上前后两站站台。`PathFailureText` 用新文案写出站名和节点；服务端日志“found no path for route …”后附 `RoutePaths.describe` 的原因。网页运行图（`RunningDiagram.tsx`）不再画没有各站时刻的线路（原来按区间 0 秒画成竖线），改在图上方列出 `model.untimedNotes` 给出的线路和原因。
+
 0.65.24 补充修正：`PathFinder.appendPath` 改为整段 `addAll`，拼接到 `JoinedPath` 的出入库、回其他存车线路径保持为一个分段，不再按轨道逐条拆成单元素分段。`Siding` 读档时逐条读取 `duty_ledger`，逐列读取列车（`loadTrain`）：某条定义摘要不符，或列车引用的定义缺失，只跳过该条或该列车并写日志，存车线本身照常载入。
 
 0.65.24 站台端头门：模型导出器生成独立的开门模型，使门扇绕把手对侧门框旋转。上下两半使用同一旋转中心，门扇向站台外侧转开，碰撞箱随门扇延伸到方块外侧。

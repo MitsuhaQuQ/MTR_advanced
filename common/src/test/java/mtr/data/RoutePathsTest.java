@@ -328,6 +328,50 @@ class RoutePathsTest {
 		assertEquals(PathFailure.Type.OTHER_LINE, blocked.failure.type);
 	}
 
+	@Test
+	void aKeyNodeOffTheWayNamesItselfAndTheStopsAroundIt() {
+		// A to C in a row, with a dead end spur leaving at z 60 and a key node on it: through that node C can't be reached
+		final World world = new World();
+		final Platform a = world.platform(1, 0);
+		world.connect(20, 60);
+		world.connect(60, 100);
+		final Platform c = world.platform(2, 100);
+		final BlockPos fork = new BlockPos(0, 64, 60);
+		final BlockPos spurMiddle = new BlockPos(10, 64, 90);
+		addRail(world.rails, fork, spurMiddle, RailType.DIAMOND);
+		addRail(world.rails, spurMiddle, new BlockPos(20, 64, 120), RailType.DIAMOND);
+		final Route route = world.route(30, a, c);
+		route.platformIds.get(0).waypoints.add(spurMiddle);
+		world.refresh();
+
+		final RoutePaths.RoutePath blocked = world.get(route);
+		assertFalse(blocked.isFound());
+		assertEquals(PathFailure.Type.WAYPOINT_UNREACHABLE, blocked.failure.type, blocked.failure.type + " " + BlockPos.of(blocked.failure.pos));
+		assertEquals(spurMiddle.asLong(), blocked.failure.pos);
+		assertEquals(1, blocked.failure.node1);
+		assertEquals(2, blocked.failure.node2);
+		assertTrue(RoutePaths.describe(blocked.failure, world.dataCache).contains("key node 10, 64, 90"));
+
+		// Without the key node the route is found
+		route.platformIds.get(0).waypoints.clear();
+		world.refresh();
+		assertTrue(world.get(route).isFound());
+	}
+
+	@Test
+	void stopsThatCantBeReachedAreNamed() {
+		final World world = new World();
+		final Platform a = world.platform(1, 0);
+		final Platform c = world.platform(2, 100);
+		final Route route = world.route(31, a, c);
+		world.refresh();
+		final RoutePaths.RoutePath apart = world.get(route);
+		assertFalse(apart.isFound());
+		assertEquals(PathFailure.Type.DISCONNECTED, apart.failure.type);
+		assertEquals(1, apart.failure.node1);
+		assertEquals(2, apart.failure.node2);
+	}
+
 	/**
 	 * Rails, data, the track sections and the route paths of a test.
 	 */

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import * as D from "../core/diagram"
 import { tr } from "../i18n"
+import { untimedNotes } from "../core/model"
 import { clock, colorOf, currentLine, durationText, findService, mod, orderDepotName, shortName, timesOf } from "./now"
 
 type Drawn = { s: any; points: D.Point[] }
@@ -425,6 +426,8 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   const diagramRoutes = new Set(data.depots.filter((depot: any) => fn.dutiesOf(depot).mode === "diagram").flatMap((depot: any) => depot.routes))
   const slotPoints: { id: string; start: D.Point; end: D.Point; time: number }[] = []
   services.forEach((s: any) => {
+    // A route whose stop times the game doesn't know isn't drawn: its times would be made up (zero running time)
+    if (!s.route.hasTimes) return
     // Being dragged along the time axis: drawn where it would go
     const shift = moving && moving.ids.includes(s.id) ? moving.shift : 0
     const plain = timesOf(s)
@@ -563,7 +566,29 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
     g.fillStyle = t.hour ? c.ink : c.muted
     g.fillText(clock(t.millis, t.seconds), t.x, D.AXIS_H - 10)
   })
+  drawUntimed(g, line, w, c, uiFont)
   return out
+}
+
+/** The routes left out for want of stop times, each with why, over the top of the diagram */
+function drawUntimed(g: CanvasRenderingContext2D, line: any, w: number, c: Record<string, string>, uiFont: string) {
+  const notes = untimedNotes(line.routes)
+  if (!notes.length) return
+  g.font = `12px ${uiFont}`
+  g.textAlign = "left"
+  g.textBaseline = "middle"
+  const width = Math.min(w - D.LABEL_W - 16, Math.max(...notes.map(note => g.measureText(note).width)) + 16)
+  const x = D.LABEL_W + 8, y = D.AXIS_H + 8, lineH = 18
+  g.globalAlpha = 0.92
+  g.fillStyle = c.panel
+  g.fillRect(x, y, width, notes.length * lineH + 8)
+  g.globalAlpha = 1
+  g.strokeStyle = c.warn
+  g.lineWidth = 1
+  g.strokeRect(x + 0.5, y + 0.5, width - 1, notes.length * lineH + 7)
+  g.fillStyle = c.warn
+  notes.forEach((note, i) => g.fillText(note, x + 8, y + 4 + lineH / 2 + i * lineH, width - 16))
+  g.textBaseline = "alphabetic"
 }
 
 /** Turn backs at terminals, and trains going on from one route to the next (old drawTerminalLinks) */

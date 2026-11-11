@@ -587,7 +587,7 @@ public final class RoutePaths {
 		}
 		// The route's speed limit on its rails (line speed limits)
 		PathData.capSpeed(path, route.speedLimit);
-		System.out.println("Minecraft Transit Railway: " + (path.isEmpty() ? "found no path for" : "found the path of") + " route " + (route.name.isEmpty() ? String.valueOf(route.id) : route.name) + " (" + path.size() + " rails, " + plan.legs.size() + " legs) in " + (System.nanoTime() - startNanos) / 1000000 + " ms");
+		System.out.println("Minecraft Transit Railway: " + (path.isEmpty() ? "found no path for" : "found the path of") + " route " + (route.name.isEmpty() ? String.valueOf(route.id) : route.name) + " (" + path.size() + " rails, " + plan.legs.size() + " legs) in " + (System.nanoTime() - startNanos) / 1000000 + " ms" + (failure.type == PathFailure.Type.NONE ? "" : ": " + describe(failure, dataCache)));
 		return new RoutePath(route.id, key, path, failure, consulted);
 	}
 
@@ -620,7 +620,49 @@ public final class RoutePaths {
 				}
 			}
 		}
+		// A leg that can be run without the key nodes listed for it, but not through one of them: name that node
+		final int leg = Math.max(plan.reachedStops - 1, 0);
+		if (leg + 1 < platforms.size() && leg < waypoints.size() && waypoints.get(leg) != null && waypoints.get(leg).length > 0) {
+			final long[] listed = waypoints.get(leg);
+			for (int count = 0; count <= listed.length; count++) {
+				final List<long[]> trial = new ArrayList<>(waypoints);
+				trial.set(leg, Arrays.copyOf(listed, count));
+				final RouteLegs.Plan trialPlan = RouteLegs.plan(stopSections, trial, null, legs);
+				consulted.addAll(trialPlan.consulted);
+				if (trialPlan.reachedStops <= leg + 1) {
+					// Not even this many: the first key node that stops it is the one before, or none if it can't go at all
+					if (count > 0) {
+						return new PathFailure(PathFailure.Type.WAYPOINT_UNREACHABLE, listed[count - 1], platforms.get(leg).id, platforms.get(leg + 1).id);
+					}
+					break;
+				}
+			}
+		}
 		return PathFailure.diagnose(graph.get(), platforms, waypointPositions, plan.reachedStops);
+	}
+
+	/**
+	 * Why a route has no path, in a few words for the server log, naming the stops and the node where it's known.
+	 */
+	static String describe(PathFailure failure, DataCache dataCache) {
+		final java.util.function.LongFunction<String> platform = id -> {
+			final Platform found = dataCache.platformIdMap.get(id);
+			final Station station = found == null ? null : dataCache.platformIdToStation.get(id);
+			return found == null ? String.valueOf(id) : (station == null ? "" : station.name + " ") + found.name;
+		};
+		final String stops = failure.node1 == 0 ? "" : " between " + platform.apply(failure.node1) + " and " + platform.apply(failure.node2);
+		switch (failure.type) {
+			case WAYPOINT_UNREACHABLE:
+				return "can't get through key node " + BlockPos.of(failure.pos).toShortString() + stops;
+			case DISCONNECTED:
+			case NO_ROUTE:
+				return failure.type.name().toLowerCase(java.util.Locale.ROOT) + stops;
+			case MISSING_WAYPOINT:
+			case NOT_KEY_NODE:
+				return failure.type.name().toLowerCase(java.util.Locale.ROOT) + " " + BlockPos.of(failure.pos).toShortString();
+			default:
+				return failure.type.name().toLowerCase(java.util.Locale.ROOT);
+		}
 	}
 
 	/**

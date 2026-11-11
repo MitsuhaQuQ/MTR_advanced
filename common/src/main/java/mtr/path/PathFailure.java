@@ -19,7 +19,8 @@ public final class PathFailure {
 	public final long pos;
 	/**
 	 * The two nodes of the rail in the way, or 0: for {@link Type#CONNECTING_LINE}, the first rail of the connecting line
-	 * the route would have to run over.
+	 * the route would have to run over. For {@link Type#DISCONNECTED}, {@link Type#NO_ROUTE} and
+	 * {@link Type#WAYPOINT_UNREACHABLE}, the IDs of the platforms of the two stops it can't get between, or 0 if not known.
 	 */
 	public final long node1;
 	public final long node2;
@@ -77,11 +78,14 @@ public final class PathFailure {
 		final List<BlockPos> endPositions = savedRailBases.get(section + 1).getOrderedPositions(BlockPos.ZERO, false);
 		final long startPos = startPositions.get(0).asLong();
 		final long endPos = endPositions.get(0).asLong();
+		// The two stops it can't get between, so the message can name them
+		final long fromPlatform = savedRailBases.get(section).id;
+		final long toPlatform = savedRailBases.get(section + 1).id;
 		if (!graph.isConnected(startPos, endPos)) {
-			return new PathFailure(Type.DISCONNECTED, 0);
+			return new PathFailure(Type.DISCONNECTED, 0, fromPlatform, toPlatform);
 		}
 		// Pathfinding boundaries never stop a route that has a way (they only narrow the search), so they are no reason
-		return new PathFailure(Type.NO_ROUTE, 0);
+		return new PathFailure(Type.NO_ROUTE, 0, fromPlatform, toPlatform);
 	}
 
 	public enum Type {
@@ -119,6 +123,11 @@ public final class PathFailure {
 		 * The route can only be found over track another line owns (stages document round 2); {@link #node1} and
 		 * {@link #node2} are the ends of the first such track section.
 		 */
-		OTHER_LINE
+		OTHER_LINE,
+		/**
+		 * The route could get from one stop to the next, but not through a key node it lists for that leg: the position
+		 * is that node, {@link #node1} and {@link #node2} the platforms of the two stops.
+		 */
+		WAYPOINT_UNREACHABLE
 	}
 }

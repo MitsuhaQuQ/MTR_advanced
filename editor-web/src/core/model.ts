@@ -56,4 +56,8 @@ export const routeTitle = (r: Route) => {
   const last = r.stops.length ? shortName(r.stops[r.stops.length - 1].name) : ""
   return shortName(r.name) + (last ? " → " + last : "")
 }
+/** One line per route with a timetable but no stop times, whose services the running diagram leaves out: and why */
+export const untimedNotes = (routes: Route[]): string[] => routes.filter(r => r.timetable && !r.hasTimes).map(r => r.pathFailure
+  ? tr("{0}：没有各站时刻，运行线未画出。找不到路，{1}", routeTitle(r), r.pathFailure)
+  : tr("{0}：还没有各站时刻，运行线未画出（正在向服务端取）", routeTitle(r)))
 export const stopName = (r: Route, stop: number) => shortName(r.stops[stop].name)

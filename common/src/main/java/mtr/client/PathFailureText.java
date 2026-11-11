@@ -25,9 +25,11 @@ public final class PathFailureText {
 			case MISSING_WAYPOINT:
 				return Text.translatable("gui.mtr.path_failure_missing_waypoint", format(pos)).getString();
 			case DISCONNECTED:
-				return Text.translatable("gui.mtr.path_failure_disconnected").getString();
+				return failure.node1 == 0 ? Text.translatable("gui.mtr.path_failure_disconnected").getString() : Text.translatable("gui.mtr.path_failure_disconnected_between", platformName(failure.node1), platformName(failure.node2)).getString();
 			case NO_ROUTE:
-				return Text.translatable("gui.mtr.path_failure_no_route").getString();
+				return failure.node1 == 0 ? Text.translatable("gui.mtr.path_failure_no_route").getString() : Text.translatable("gui.mtr.path_failure_no_route_between", platformName(failure.node1), platformName(failure.node2)).getString();
+			case WAYPOINT_UNREACHABLE:
+				return Text.translatable("gui.mtr.path_failure_waypoint_unreachable", platformName(failure.node1), platformName(failure.node2), format(pos)).getString();
 			case TURN_BACK:
 				return Text.translatable("gui.mtr.path_failure_turn_back", format(pos)).getString();
 			case TURN_BACK_UNUSED:
