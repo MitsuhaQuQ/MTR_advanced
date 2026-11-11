@@ -107,6 +107,14 @@ public final class FareLevels {
 	}
 
 	/**
+	 * @return whether the fares depend on the longest distance worked out ({@link FareNetwork#getLongestBlocks}): only tiers
+	 * made from the formula with no longest distance set do, so it need not be worked out otherwise
+	 */
+	public boolean needsLongest() {
+		return !(manualTiers && prices.length == bounds.length + 1 && prices.length > 0) && maxBlocks <= 0;
+	}
+
+	/**
 	 * @return the tiers the formula makes up to that distance
 	 */
 	public Tiers formulaTiers(long longestBlocks) {

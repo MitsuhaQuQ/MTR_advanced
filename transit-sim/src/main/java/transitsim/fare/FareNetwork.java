@@ -1,10 +1,12 @@
 package transitsim.fare;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -25,6 +27,17 @@ public final class FareNetwork {
 
 	private final Map<Long, List<Join>> joins = new HashMap<>();
 	private final Map<String, Long> longest = new HashMap<>();
+	/**
+	 * Paths found, the most recently used kept (2026-11-12): trips between the same stations are charged again and again.
+	 */
+	private final Map<CacheKey, Path> cache = new LinkedHashMap<CacheKey, Path>(256, 0.75F, true) {
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<CacheKey, Path> eldest) {
+			return size() > MAX_CACHED_PATHS;
+		}
+	};
+	private static final int MAX_CACHED_PATHS = 8192;
+	private static final Path NO_PATH = new Path(Collections.emptyList(), -1);
 
 	/**
 	 * @param legs the track between two stops in a row of a route: its group, the two stations and its length in blocks
@@ -60,15 +73,14 @@ public final class FareNetwork {
 	/**
 	 * @return the longest fare distance between two stations of a group, along the group's own track
 	 */
-	public long getLongestBlocks(String group) {
+	public synchronized long getLongestBlocks(String group) {
 		return longest.computeIfAbsent(group, key -> {
 			long most = 0;
 			for (final long station : joins.keySet()) {
 				if (!getGroups(station).contains(key)) {
 					continue;
 				}
-				final Path path = find(station, -1, Collections.singleton(key), Collections.emptySet(), key);
-				most = Math.max(most, path == null ? 0 : path.farthestBlocks);
+				most = Math.max(most, farthest(station, key));
 			}
 			return most;
 		});
@@ -80,13 +92,54 @@ public final class FareNetwork {
 	 * @return the fare path, or null if the stations aren't joined
 	 */
 	public Path find(long fromStation, long toStation, Set<String> startGroups, Set<String> endGroups) {
-		return find(fromStation, toStation, startGroups, endGroups, null);
+		return find(fromStation, toStation, startGroups, Collections.singletonList(endGroups))[0];
 	}
 
 	/**
-	 * @param onlyGroup if not null, only that group's track is used; with a destination of -1, the farthest station
+	 * The fare paths to one station for several sets of end groups at once (2026-11-12): one search from the start serves
+	 * them all, as only what ending in a group costs differs, and it stops once nothing still to be reached can end better
+	 * for any of them. Each path is the one {@link #find(long, long, Set, Set)} gives for its set. Paths found are kept
+	 * for the network, which is made again when the routes change.
+	 *
+	 * @param startGroups  the groups the trip may start in, or empty for any
+	 * @param endGroupSets for each path wanted, the groups the trip should end in (empty for any)
+	 * @return the fare path for each set of end groups, or null where the stations aren't joined
 	 */
-	private Path find(long fromStation, long toStation, Set<String> startGroups, Set<String> endGroups, String onlyGroup) {
+	public Path[] find(long fromStation, long toStation, Set<String> startGroups, List<Set<String>> endGroupSets) {
+		final Path[] paths = new Path[endGroupSets.size()];
+		final List<Integer> missing = new ArrayList<>();
+		synchronized (cache) {
+			for (int i = 0; i < paths.length; i++) {
+				final Path cached = cache.get(new CacheKey(fromStation, toStation, startGroups, endGroupSets.get(i)));
+				if (cached == null) {
+					missing.add(i);
+				} else {
+					paths[i] = cached == NO_PATH ? null : cached;
+				}
+			}
+		}
+		if (missing.isEmpty()) {
+			return paths;
+		}
+		final List<Set<String>> searched = new ArrayList<>();
+		missing.forEach(i -> searched.add(endGroupSets.get(i)));
+		final Path[] found = search(fromStation, toStation, startGroups, searched);
+		synchronized (cache) {
+			for (int j = 0; j < found.length; j++) {
+				final int i = missing.get(j);
+				paths[i] = found[j];
+				cache.put(new CacheKey(fromStation, toStation, startGroups, endGroupSets.get(i)), found[j] == null ? NO_PATH : found[j]);
+			}
+		}
+		return paths;
+	}
+
+	/**
+	 * Dijkstra over (station, group last in), the cost being the crossings (each {@link #CROSSING_COST}) then the
+	 * distance; ending in a group not wanted is one more crossing. The search is the same whatever the end groups, so it
+	 * stops once the cost reached is no less than the best end of every set: nothing later can be strictly better.
+	 */
+	private Path[] search(long fromStation, long toStation, Set<String> startGroups, List<Set<String>> endGroupSets) {
 		final Map<State, double[]> best = new HashMap<>();
 		final Map<State, State> previous = new HashMap<>();
 		final Map<State, Long> previousBlocks = new HashMap<>();
@@ -102,10 +155,12 @@ public final class FareNetwork {
 				queue.add(new Object[]{start, 0D});
 			}
 		}
+		final int sets = endGroupSets.size();
+		final State[] bestEnd = new State[sets];
+		final double[] bestEndCost = new double[sets];
+		Arrays.fill(bestEndCost, Double.MAX_VALUE);
+		double worstBestEnd = Double.MAX_VALUE;
 		final Set<State> done = new HashSet<>();
-		State bestEnd = null;
-		double bestEndCost = Double.MAX_VALUE;
-		long farthest = 0;
 		while (!queue.isEmpty()) {
 			final Object[] item = queue.poll();
 			final State state = (State) item[0];
@@ -113,19 +168,29 @@ public final class FareNetwork {
 				continue;
 			}
 			final double[] cost = best.get(state);
-			if (toStation < 0) {
-				farthest = Math.max(farthest, (long) cost[1]);
-			} else if (state.station == toStation) {
-				final double endCost = cost[0] + (endGroups.isEmpty() || state.group == null || endGroups.contains(state.group) ? 0 : CROSSING_COST);
-				if (endCost < bestEndCost) {
-					bestEndCost = endCost;
-					bestEnd = state;
+			if (cost[0] >= worstBestEnd) {
+				break;
+			}
+			if (state.station == toStation) {
+				boolean changed = false;
+				for (int i = 0; i < sets; i++) {
+					final Set<String> endGroups = endGroupSets.get(i);
+					final double endCost = cost[0] + (endGroups.isEmpty() || state.group == null || endGroups.contains(state.group) ? 0 : CROSSING_COST);
+					if (endCost < bestEndCost[i]) {
+						bestEndCost[i] = endCost;
+						bestEnd[i] = state;
+						changed = true;
+					}
+				}
+				if (changed) {
+					double worst = 0;
+					for (final double endCost : bestEndCost) {
+						worst = Math.max(worst, endCost);
+					}
+					worstBestEnd = worst;
 				}
 			}
 			for (final Join join : joins.getOrDefault(state.station, Collections.emptyList())) {
-				if (onlyGroup != null && !onlyGroup.equals(join.group)) {
-					continue;
-				}
 				final boolean crossing = state.group != null && !state.group.equals(join.group);
 				final State next = new State(join.station, join.group);
 				final double nextCost = cost[0] + (crossing ? CROSSING_COST : 0) + join.blocks;
@@ -138,17 +203,23 @@ public final class FareNetwork {
 				}
 			}
 		}
-		if (toStation < 0) {
-			final Path path = new Path(Collections.emptyList(), 0);
-			path.farthestBlocks = farthest;
-			return path;
+		final Path[] paths = new Path[sets];
+		for (int i = 0; i < sets; i++) {
+			if (bestEnd[i] == null) {
+				paths[i] = fromStation == toStation ? new Path(Collections.emptyList(), 0) : null;
+			} else {
+				paths[i] = makePath(bestEnd[i], previous, previousBlocks, startGroups, endGroupSets.get(i));
+			}
 		}
-		if (bestEnd == null) {
-			return fromStation == toStation ? new Path(Collections.emptyList(), 0) : null;
-		}
-		// The parts in groups, from the end back
+		return paths;
+	}
+
+	/**
+	 * @return the path ending at a state, in parts by group, put together from the end back
+	 */
+	private static Path makePath(State end, Map<State, State> previous, Map<State, Long> previousBlocks, Set<String> startGroups, Set<String> endGroups) {
 		final List<Part> parts = new ArrayList<>();
-		State state = bestEnd;
+		State state = end;
 		while (previous.containsKey(state)) {
 			final long blocks = previousBlocks.get(state);
 			if (!parts.isEmpty() && parts.get(0).group.equals(state.group)) {
@@ -166,6 +237,35 @@ public final class FareNetwork {
 			crossings++;
 		}
 		return new Path(parts, crossings);
+	}
+
+	/**
+	 * @return how far the farthest station is from a station along one group's own track
+	 */
+	private long farthest(long fromStation, String onlyGroup) {
+		final Map<Long, Long> best = new HashMap<>();
+		final PriorityQueue<long[]> queue = new PriorityQueue<>((a, b) -> Long.compare(a[1], b[1]));
+		best.put(fromStation, 0L);
+		queue.add(new long[]{fromStation, 0});
+		long farthest = 0;
+		while (!queue.isEmpty()) {
+			final long[] item = queue.poll();
+			if (item[1] > best.get(item[0])) {
+				continue;
+			}
+			farthest = Math.max(farthest, item[1]);
+			for (final Join join : joins.getOrDefault(item[0], Collections.emptyList())) {
+				if (onlyGroup.equals(join.group)) {
+					final long next = item[1] + join.blocks;
+					final Long known = best.get(join.station);
+					if (known == null || next < known) {
+						best.put(join.station, next);
+						queue.add(new long[]{join.station, next});
+					}
+				}
+			}
+		}
+		return farthest;
 	}
 
 	public static final class Leg {
@@ -190,7 +290,6 @@ public final class FareNetwork {
 
 		public final List<Part> parts;
 		public final int crossings;
-		private long farthestBlocks;
 
 		Path(List<Part> parts, int crossings) {
 			this.parts = Collections.unmodifiableList(parts);
@@ -227,6 +326,35 @@ public final class FareNetwork {
 			this.station = station;
 			this.group = group;
 			this.blocks = blocks;
+		}
+	}
+
+	private static final class CacheKey {
+
+		private final long fromStation;
+		private final long toStation;
+		private final Set<String> startGroups;
+		private final Set<String> endGroups;
+
+		private CacheKey(long fromStation, long toStation, Set<String> startGroups, Set<String> endGroups) {
+			this.fromStation = fromStation;
+			this.toStation = toStation;
+			this.startGroups = new HashSet<>(startGroups);
+			this.endGroups = new HashSet<>(endGroups);
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (!(o instanceof CacheKey)) {
+				return false;
+			}
+			final CacheKey other = (CacheKey) o;
+			return other.fromStation == fromStation && other.toStation == toStation && other.startGroups.equals(startGroups) && other.endGroups.equals(endGroups);
+		}
+
+		@Override
+		public int hashCode() {
+			return ((Long.hashCode(fromStation) * 31 + Long.hashCode(toStation)) * 31 + startGroups.hashCode()) * 31 + endGroups.hashCode();
 		}
 	}
 

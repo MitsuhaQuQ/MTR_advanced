@@ -506,6 +506,34 @@ public final class RoutePaths {
 	 * @return whether the route's times come from its own path: it has no path drawn by hand, and isn't flown or moving
 	 * continuously, which are timed along their depots' paths as before
 	 */
+	/**
+	 * @param path a route's path, found or drawn by hand, its stops numbered from 1 ({@link PathData#stopIndex})
+	 * @return the length of track between two stops of the route (counted from 0), in blocks, or -1 if the path doesn't
+	 * have them; fares go by it (design document 6.13)
+	 */
+	public static double getBlocksBetweenStops(List<PathData> path, int firstStop, int lastStop) {
+		final int start = getStopRail(path, firstStop);
+		final int end = getStopRail(path, lastStop);
+		if (start < 0 || end < start) {
+			return -1;
+		}
+		double blocks = 0;
+		for (int i = start + 1; i <= end; i++) {
+			blocks += path.get(i).rail.getLength();
+		}
+		return blocks;
+	}
+
+	private static int getStopRail(List<PathData> path, int stop) {
+		for (int i = 0; i < path.size(); i++) {
+			final PathData pathData = path.get(i);
+			if (pathData.stopIndex == stop + 1 && pathData.savedRailBaseId != 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	public static boolean timesByPath(Route route) {
 		return route.transportMode != TransportMode.AIRPLANE && !route.transportMode.continuousMovement && route.getPathData().isEmpty();
 	}
@@ -1430,16 +1458,7 @@ public final class RoutePaths {
 		 * go by it (design document 6.13)
 		 */
 		public double getBlocksBetweenStops(int firstStop, int lastStop) {
-			final int start = getStopRail(firstStop);
-			final int end = getStopRail(lastStop);
-			if (start < 0 || end < start) {
-				return -1;
-			}
-			double blocks = 0;
-			for (int i = start + 1; i <= end; i++) {
-				blocks += rawPath.get(i).rail.getLength();
-			}
-			return blocks;
+			return RoutePaths.getBlocksBetweenStops(rawPath, firstStop, lastStop);
 		}
 
 		/**

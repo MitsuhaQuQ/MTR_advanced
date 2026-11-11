@@ -1,7 +1,9 @@
 package transitsim.fare;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -80,15 +82,23 @@ public final class FareTrip {
 		long bestBlocks = Long.MAX_VALUE;
 		final Set<String> entryGroups = entry.groups.isEmpty() ? Collections.singleton(null) : entry.groups;
 		final Set<String> exitGroups = exit.groups.isEmpty() ? Collections.singleton(null) : exit.groups;
+		// One search from each group entered in serves every group left by (2026-11-12)
+		final List<String> exitList = new ArrayList<>(exitGroups);
+		final List<Set<String>> endGroupSets = new ArrayList<>();
+		exitList.forEach(exitGroup -> endGroupSets.add(exitGroup == null ? Collections.emptySet() : Collections.singleton(exitGroup)));
 		for (final String entryGroup : entryGroups) {
-			for (final String exitGroup : exitGroups) {
-				final FareNetwork.Path path = network.find(entry.station, exit.station, entryGroup == null ? Collections.emptySet() : Collections.singleton(entryGroup), exitGroup == null ? Collections.emptySet() : Collections.singleton(exitGroup));
+			final FareNetwork.Path[] paths = network.find(entry.station, exit.station, entryGroup == null ? Collections.emptySet() : Collections.singleton(entryGroup), endGroupSets);
+			for (int exitIndex = 0; exitIndex < exitList.size(); exitIndex++) {
+				final String exitGroup = exitList.get(exitIndex);
+				final FareNetwork.Path path = paths[exitIndex];
 				if (path == null) {
 					continue;
 				}
 				int fare = 0;
 				for (final FareNetwork.Part part : path.parts) {
-					fare += levelsOf.apply(part.group).getFare(part.blocks, network.getLongestBlocks(part.group));
+					final FareLevels partLevels = levelsOf.apply(part.group);
+					// The longest distance is only worked out for tiers made from the formula up to it
+					fare += partLevels.getFare(part.blocks, partLevels.needsLongest() ? network.getLongestBlocks(part.group) : 0);
 				}
 				final String lastGroup = path.parts.isEmpty() ? exitGroup : path.parts.get(path.parts.size() - 1).group;
 				final long blocks = path.getBlocks();

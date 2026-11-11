@@ -1170,6 +1170,34 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		return new RoutePaths.Search(routePaths, DataCache.copyRails(rails), graph, pathBoundaries, Collections.emptyMap());
 	}
 
+	/**
+	 * Finds the paths of routes on a thread of its own, on a copy of the rails as they are now, as the dashboard's map
+	 * does (fares by distance, 2026-11-12: routes whose path nobody has needed yet are otherwise charged as the crow
+	 * flies). Each path found makes {@link RoutePaths#getTimingVersion} go up, so the fare network is made again.
+	 *
+	 * @param whenDone run on that thread once all are searched
+	 */
+	public void findRoutePathsInBackground(Collection<Route> routesToFind, Runnable whenDone) {
+		final RoutePaths.Search search = new RoutePaths.Search(routePaths, DataCache.copyRails(rails), null, pathBoundaries, Collections.emptyMap());
+		final DataCache searchData = dataCache.copyIdMaps();
+		final List<Route> copy = new ArrayList<>(routesToFind);
+		final Thread thread = new Thread(() -> {
+			try {
+				copy.forEach(route -> {
+					try {
+						search.get(route, searchData);
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+				});
+			} finally {
+				whenDone.run();
+			}
+		}, "MTR fare route paths");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
 	private static long[] ends(SavedRailBase savedRail) {
 		final List<BlockPos> positions = savedRail.getOrderedPositions(BlockPos.ZERO, false);
 		return new long[]{savedRail.id, positions.get(0).asLong(), positions.get(1).asLong()};

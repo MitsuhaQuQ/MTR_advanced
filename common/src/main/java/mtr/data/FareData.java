@@ -111,18 +111,52 @@ public final class FareData {
 			for (final Route.RoutePlatform routePlatform : route.platformIds) {
 				key = key * 31 + routePlatform.platformId;
 			}
+			// A path drawn by hand, drawn again
+			final List<mtr.path.PathData> drawn = route.getPathData();
+			key = key * 31 + drawn.size() + (drawn.isEmpty() ? 0 : System.identityHashCode(drawn.get(0)) * 7L + System.identityHashCode(drawn.get(drawn.size() - 1)));
 		}
 		if (network == null || key != networkKey) {
-			network = new FareNetwork(getLegs(railwayData, rails));
+			final List<Route> crowFlies = new ArrayList<>();
+			network = new FareNetwork(getLegs(railwayData, rails, crowFlies));
 			networkKey = key;
+			findPathsLater(railwayData, crowFlies);
 		}
 		return network;
 	}
 
 	/**
-	 * The track between the stops in a row of every route, along its path, or as the crow flies if it has none found.
+	 * How long before the path of a route charged as the crow flies is searched for again, if it wasn't found.
 	 */
-	private static List<FareNetwork.Leg> getLegs(RailwayData railwayData, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+	private static final long SEARCH_AGAIN_MILLIS = 60000;
+	private final Map<Long, Long> searchedMillis = new java.util.HashMap<>();
+	private final java.util.concurrent.atomic.AtomicBoolean searching = new java.util.concurrent.atomic.AtomicBoolean();
+
+	/**
+	 * Routes charged as the crow flies have their paths found in the background (2026-11-12), one search at a time and
+	 * each route at most once a minute; once found, the network is made again with their track.
+	 */
+	private void findPathsLater(RailwayData railwayData, List<Route> crowFlies) {
+		final long millis = System.currentTimeMillis();
+		final List<Route> toFind = new ArrayList<>();
+		crowFlies.forEach(route -> {
+			if (millis - searchedMillis.getOrDefault(route.id, Long.MIN_VALUE / 2) >= SEARCH_AGAIN_MILLIS) {
+				toFind.add(route);
+			}
+		});
+		if (toFind.isEmpty() || !searching.compareAndSet(false, true)) {
+			return;
+		}
+		toFind.forEach(route -> searchedMillis.put(route.id, millis));
+		railwayData.findRoutePathsInBackground(toFind, () -> searching.set(false));
+	}
+
+	/**
+	 * The track between the stops in a row of every route: along its path found or drawn by hand, or as the crow flies if
+	 * it has none (yet).
+	 *
+	 * @param crowFlies given the routes that could have a path found but have none yet
+	 */
+	private static List<FareNetwork.Leg> getLegs(RailwayData railwayData, Map<BlockPos, Map<BlockPos, Rail>> rails, List<Route> crowFlies) {
 		final DataCache dataCache = railwayData.dataCache;
 		final List<FareNetwork.Leg> legs = new ArrayList<>();
 		for (final Route route : dataCache.routeIdMap.values()) {
@@ -130,7 +164,11 @@ public final class FareData {
 				continue;
 			}
 			final String group = getGroupKey(route, dataCache.networkSettings);
-			final RoutePaths.RoutePath path = railwayData.routePaths.getFound(route, dataCache, rails);
+			final List<mtr.path.PathData> drawn = route.getPathData();
+			final RoutePaths.RoutePath path = drawn.isEmpty() ? railwayData.routePaths.getFound(route, dataCache, rails) : null;
+			if (drawn.isEmpty() && path == null && RoutePaths.timesByPath(route)) {
+				crowFlies.add(route);
+			}
 			for (int i = 0; i + 1 < route.platformIds.size(); i++) {
 				final Platform from = dataCache.platformIdMap.get(route.platformIds.get(i).platformId);
 				final Platform to = dataCache.platformIdMap.get(route.platformIds.get(i + 1).platformId);
@@ -139,7 +177,7 @@ public final class FareData {
 				if (fromStation == null || toStation == null) {
 					continue;
 				}
-				double blocks = path == null ? -1 : path.getBlocksBetweenStops(i, i + 1);
+				double blocks = !drawn.isEmpty() ? RoutePaths.getBlocksBetweenStops(drawn, i, i + 1) : path == null ? -1 : path.getBlocksBetweenStops(i, i + 1);
 				if (blocks < 0) {
 					blocks = Math.sqrt(from.getMidPos().distSqr(to.getMidPos()));
 				}
