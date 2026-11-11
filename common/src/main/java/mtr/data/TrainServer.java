@@ -74,6 +74,31 @@ public class TrainServer extends Train {
 	 */
 	private String holdReason = "";
 	private boolean railBlockedLast;
+	/**
+	 * When the doors were last told to open or close, the last minute of it (0.65.33): a train flapping its doors at a stop
+	 * sounds its closing chime again and again, which the debug display and the log show.
+	 */
+	private final ArrayDeque<Long> doorFlips = new ArrayDeque<>();
+	/**
+	 * When the train last left a stop, what was planned then and where (0.66.4), for the debug display.
+	 */
+	private long lastDepartureMillis;
+	private long lastPlannedDepartureMillis;
+	private long lastDepartureStopId;
+	/**
+	 * The first stops and times this train last told passenger displays (0.66.6), for the debug display: whether a display
+	 * missing a train is missing it here already.
+	 */
+	private final List<long[]> reportedSchedules = new ArrayList<>();
+	private long lastArrivalMillis;
+	private long lastPlannedArrivalMillis;
+	private String lastStopHolds = "";
+	private final List<String> stopHolds = new ArrayList<>();
+	private int reportedStartingIndex = -1;
+	private boolean reportedHidden;
+	private String reportedNone = "";
+	private long doorFlipsToldMillis;
+	private static final int DOOR_FLIPS_TO_TELL = 6;
 	private Level world;
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
@@ -284,7 +309,20 @@ public class TrainServer extends Train {
 	@Override
 	protected void onDwell(int rail, float departureTicks) {
 		final long platformId = rail >= 0 && path.get(rail).isPlatformTrack() && !service.isOutOfService() ? path.get(rail).getStopId() : 0;
-		platformDwell = PlatformDwell.update(platformDwell, platformId, System.currentTimeMillis(), departureTicks);
+		platformDwell = withKnownDeparture(PlatformDwell.update(platformDwell, platformId, System.currentTimeMillis(), departureTicks));
+	}
+
+	/**
+	 * A stop's departure is told by the motion only once the doors start to close, about four seconds before: a station
+	 * call triggered some seconds before departure went off then at the latest, never earlier (0.66.5). While the doors
+	 * are open and when they close is known (the stop time, a timetable's or duty's departure), the departure is that.
+	 */
+	private PlatformDwell withKnownDeparture(PlatformDwell dwell) {
+		if (dwell == null || dwell.departureMillis != 0 || speed != 0) {
+			return dwell;
+		}
+		final int doorsClose = TrainRules.getTicksUntilDoorsClose(rules);
+		return doorsClose < 0 ? dwell : PlatformDwell.update(dwell, dwell.platformId, System.currentTimeMillis(), doorsClose + transitsim.motion.MotionConstants.DOOR_MOVE_TIME + transitsim.motion.MotionConstants.DOOR_DELAY);
 	}
 
 	void forEachRider(Consumer<Player> consumer) {
@@ -502,6 +540,8 @@ public class TrainServer extends Train {
 				platformDwell = null;
 				return;
 			}
+			// The service read has the path's key only: it takes the path itself, so it knows its duty (0.66.1)
+			service.takeTripPath(tripPath);
 			if ((tripPath == null ? depotPath : tripPath.path) != path) {
 				new ServiceVehicle().followPath(tripPath);
 			}
@@ -512,7 +552,6 @@ public class TrainServer extends Train {
 		elapsedDwellTicks = train.getElapsedDwellTicks();
 		nextStoppingIndex = train.getNextStoppingIndex();
 		nextPlatformIndex = train.getNextPlatformIndex();
-		platformDwell = train.getPlatformDwell();
 		reversed = train.isReversed();
 		isOnRoute = train.isOnRoute();
 		doorTarget = train.getDoorTarget();
@@ -522,6 +561,7 @@ public class TrainServer extends Train {
 		holdReason = train.getHoldReason();
 		railBlockedLast = train.wasRailBlocked();
 		authorityEnd = train.getRecordAuthorityEnd();
+		platformDwell = withKnownDeparture(train.getPlatformDwell());
 		runSegmentSpec = train.getRecordSegment();
 		if (repeatIndex1 != train.getRepeatIndex1() || repeatIndex2 != train.getRepeatIndex2()) {
 			repeatIndex1 = train.getRepeatIndex1();
@@ -630,6 +670,10 @@ public class TrainServer extends Train {
 		final boolean oldIsCurrentlyManual = isCurrentlyManual;
 		final boolean oldStopped = speed == 0;
 		final boolean oldDoorOpen = doorTarget;
+		// The planned departure from where it stands, to tell how it left against it (0.66.4)
+		final long plannedBefore = isOnRoute && speed == 0 ? getPlannedDepartureHere() : 0;
+		final long plannedArrivalBefore = isOnRoute && speed == 0 ? service.getPlannedArrivalMillis(nextStoppingIndex) : 0;
+		final float dwellBefore = elapsedDwellTicks;
 		// Turned back early, it runs empty from where everyone got off to where it takes riders again (D4)
 		if (service.isOutOfService() && !ridingEntities.isEmpty()) {
 			ridingEntities.clear();
@@ -661,8 +705,19 @@ public class TrainServer extends Train {
 		final boolean standingForDuty = !isOnRoute && depot.getRunDuties() != null;
 		final long currentMillis = System.currentTimeMillis() - (long) (elapsedDwellTicks * Depot.MILLIS_PER_TICK) + (long) Math.max(0, nextDepartureTicks);
 
-		final int startingIndex = TimeSegment.indexAt(timeSegments, railProgress);
-		final double currentTime = startingIndex < 0 ? -1 : timeSegments.get(startingIndex).getTime(railProgress);
+		final int foundIndex = TimeSegment.indexAt(timeSegments, railProgress);
+		// Standing where the train turns back, between the segments of the way it came and the way it goes: it is at the
+		// end of the one it came by, at the stop that ends it. It told displays nothing there, so a train waiting at its
+		// first stop, as for its duty, or turning back at its last, was missing from them until it moved (0.66.7)
+		final int gapIndex = foundIndex >= 0 ? -1 : gapSegmentIndex(railProgress);
+		final int startingIndex = foundIndex >= 0 ? foundIndex : gapIndex;
+		reportedSchedules.clear();
+		reportedStartingIndex = startingIndex;
+		reportedHidden = standingForDuty;
+		reportedNone = startingIndex < 0 ? "#no_segment" : !isOnRoute && nextDepartureTicks < 0 ? "#no_departure" : "";
+		final double foundTime = startingIndex < 0 ? -1 : gapIndex >= 0 ? timeSegments.get(gapIndex).endTime : timeSegments.get(startingIndex).getTime(railProgress);
+		// At or past the end of its segment, as standing at the stop that ends it, the train is at that end (0.66.8)
+		final double currentTime = startingIndex >= 0 && (Double.isNaN(foundTime) || railProgress >= timeSegments.get(startingIndex).endRailProgress) ? timeSegments.get(startingIndex).endTime : foundTime;
 
 		if (currentTime >= 0) {
 			float offsetTime = 0;
@@ -698,8 +753,13 @@ public class TrainServer extends Train {
 					if (isOnRoute || nextDepartureTicks >= 0) {
 						final long estimatedMillis = currentMillis + (long) ((timeSegment.endTime + offsetTime - currentTime) * Depot.MILLIS_PER_TICK);
 						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getSegmentIndex(timeSegment)) : 0;
-						// The estimate doesn't know about waiting for the timetable at earlier stops
-						final long arrivalMillis = Math.max(estimatedMillis, scheduledMillis);
+						// The estimate doesn't know about waiting for the timetable at earlier stops. Standing at this stop already,
+						// it has come: arrived now at the latest, or as long before its expected departure as the platform's stop
+						// time, so displays counting down the platform's stop time end as it leaves (0.66.4; YJCM's departure
+						// timer showed nothing for a train waiting there for a later planned departure)
+						final boolean standingHere = isOnRoute && speed == 0 && elapsedDwellTicks > 0 && i == startingIndex && getSegmentIndex(timeSegment) == nextStoppingIndex;
+						final long standingDepartureMillis = standingHere ? standingDepartureMillis() : 0;
+						final long arrivalMillis = standingHere ? ScheduleEntry.standingArrivalMillis(System.currentTimeMillis(), standingDepartureMillis <= 0 ? Long.MAX_VALUE : standingDepartureMillis, platformStopMillis(platformId)) : Math.max(estimatedMillis, scheduledMillis);
 						if (railwayData != null && stationCall.dwell == null && stationCall.approachMillis == 0 && !timeSegment.pass
 								&& platformId == stationCall.platformId && i < timeSegments.size() && getSegmentIndex(timeSegment) == platformRail) {
 							stationCall.approachMillis = arrivalMillis;
@@ -707,7 +767,10 @@ public class TrainServer extends Train {
 							railwayData.addStationCall(stationCall);
 						}
 						addSchedule = () -> {
-							schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis, false, standingForDuty));
+							schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis, false, standingForDuty, standingDepartureMillis));
+							if (!timeSegment.pass && reportedSchedules.size() < 4) {
+								reportedSchedules.add(new long[]{platformId, arrivalMillis});
+							}
 							// With -Dmtr.debugSchedules=<platform ID>, what each train tells that platform, every 10 s
 							if (DEBUG_SCHEDULES != 0 && platformId == DEBUG_SCHEDULES && System.currentTimeMillis() / 50 % 200 == 0) {
 								System.out.println("Minecraft Transit Railway schedule at " + platformId + ": train " + id + " siding " + sidingId + (service.isOnDuty() ? " duty " + service.getDutySlot() : " no duty") + ", route " + timeSegment.routeId + " stop " + timeSegment.currentStationIndex + ", in " + (arrivalMillis - System.currentTimeMillis()) / 1000 + " s, trip routes " + tripRouteIds + ", path stop " + path.get(getSegmentIndex(timeSegment)).stopIndex);
@@ -757,6 +820,23 @@ public class TrainServer extends Train {
 			isCurrentlyManual = false;
 		}
 
+		if (oldDoorOpen != doorTarget) {
+			noteDoorFlip(oldStopped && speed == 0);
+		}
+		if (oldStopped && speed != 0 && isOnRoute) {
+			lastDepartureMillis = System.currentTimeMillis();
+			lastPlannedDepartureMillis = plannedBefore;
+			lastDepartureStopId = oldStoppingIndex >= 0 && oldStoppingIndex < path.size() ? path.get(oldStoppingIndex).savedRailBaseId : 0;
+			lastArrivalMillis = lastDepartureMillis - (long) (dwellBefore * Depot.MILLIS_PER_TICK);
+			lastPlannedArrivalMillis = plannedArrivalBefore;
+			lastStopHolds = String.join(" ", stopHolds);
+		}
+		// What held the train at the stop it stands at, in the order first seen (0.66.8)
+		if (!isOnRoute || speed != 0) {
+			stopHolds.clear();
+		} else if (!holdReason.isEmpty() && !stopHolds.contains("#hold_" + holdReason)) {
+			stopHolds.add("#hold_" + holdReason);
+		}
 		final boolean oldSyncRepeatIndices = syncRepeatIndices;
 		syncRepeatIndices = false;
 		// The clients follow each new run segment of a train the component's simulator runs (G2)
@@ -1072,6 +1152,78 @@ public class TrainServer extends Train {
 	}
 
 	/**
+	 * @return for a train standing at a platform, when displays are told it arrived: as long before its expected departure as
+	 * the platform's stop time, or now if that is later or the departure isn't known
+	 */
+	/**
+	 * @return when the train standing here leaves; held for something whose end isn't known, its planned departure still
+	 * to come as a negative number, shown on displays but not counted down to (0.67.1); or 0
+	 */
+	private long standingDepartureMillis() {
+		final long now = System.currentTimeMillis();
+		final int doorsClose = TrainRules.getTicksUntilDoorsClose(rules);
+		if (doorsClose >= 0) {
+			return now + (long) (doorsClose + transitsim.motion.MotionConstants.DOOR_MOVE_TIME + transitsim.motion.MotionConstants.DOOR_DELAY) * transitsim.motion.MotionConstants.MILLIS_PER_TICK;
+		}
+		final long planned = getPlannedDepartureHere();
+		return planned > now ? -planned : 0;
+	}
+
+	private long platformStopMillis(long platformId) {
+		final Platform platform = dataCache == null ? null : dataCache.platformIdMap.get(platformId);
+		return platform == null ? 0 : platform.getDwellTime() * 500L;
+	}
+
+	/**
+	 * @return in a gap between time segments, where the path turns back, the segment before it, or -1
+	 */
+	private int gapSegmentIndex(double position) {
+		int index = -1;
+		for (int i = 0; i < timeSegments.size(); i++) {
+			final TimeSegment segment = timeSegments.get(i);
+			if (segment.startRailProgress > position) {
+				break;
+			}
+			index = i;
+		}
+		return index >= 0 && index + 1 < timeSegments.size() && timeSegments.get(index).endRailProgress <= position ? index : -1;
+	}
+
+	/**
+	 * @return the departure planned from the stop the train stands at: its duty's or its timetable's, the later, or 0
+	 */
+	private long getPlannedDepartureHere() {
+		final transitsim.plan.RouteTimetable.StopPlan plan = service.getPlanAt(nextStoppingIndex);
+		return Math.max(service.getDutyDepartureMillis(), plan == null ? 0 : service.getPlannedMillis(plan.departureMillis));
+	}
+
+	/**
+	 * Counts a change of the doors' target, and tells the log once a minute if they keep changing while standing.
+	 */
+	private void noteDoorFlip(boolean standing) {
+		final long now = System.currentTimeMillis();
+		doorFlips.addLast(now);
+		while (!doorFlips.isEmpty() && doorFlips.peekFirst() < now - 60000) {
+			doorFlips.removeFirst();
+		}
+		if (standing && doorFlips.size() >= DOOR_FLIPS_TO_TELL && now - doorFlipsToldMillis > 60000) {
+			doorFlipsToldMillis = now;
+			System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " changed its doors " + doorFlips.size() + " times in a minute standing at rail " + nextStoppingIndex + " (moved by " + (simulated != null ? "the simulator" : "the game") + ", held for '" + holdReason + "', rail ahead taken " + railBlockedLast + ", stood " + elapsedDwellTicks + " of " + getTotalDwellTicks() + " ticks, on duty " + service.isOnDuty() + ", duty departure " + service.getDutyDepartureMillis() + ")");
+		}
+	}
+
+	private int getDoorFlipsLastMinute() {
+		final long now = System.currentTimeMillis();
+		int count = 0;
+		for (final long millis : doorFlips) {
+			if (millis >= now - 60000) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/**
 	 * What a player holding the brush sees of the train looked at (0.65.31): what it runs, its next stop and the times
 	 * planned there, how late it is, how long it has stood and how long until the doors close, why it is held, and how
 	 * fast it may go. Each line as {key, value}; a value starting with "#" names a text the client has for it.
@@ -1095,7 +1247,9 @@ public class TrainServer extends Train {
 		lines.add(new String[]{"route", route == null ? "-" : IGui.formatStationName(route.name)});
 		lines.add(new String[]{"duty", service.isOnDuty() ? String.valueOf(service.getDutySlot()) : "#none"});
 		lines.add(new String[]{"trip", time.apply(service.getTripMillis())});
-		lines.add(new String[]{"next_stop", platformName.apply(getNextStopId())});
+		// Standing at it, the next stop is the one it is at (0.66.3)
+		final boolean atStop = speed == 0 && isOnRoute && elapsedDwellTicks > 0;
+		lines.add(new String[]{atStop ? "this_stop" : "next_stop", platformName.apply(getNextStopId())});
 		final transitsim.plan.RouteTimetable.StopPlan plan = service.getPlanAt(nextStoppingIndex);
 		lines.add(new String[]{"planned_arrival", plan == null ? "-" : time.apply(service.getPlannedMillis(plan.arrivalMillis))});
 		lines.add(new String[]{"planned_departure", plan == null ? "-" : time.apply(service.getPlannedMillis(plan.departureMillis))});
@@ -1107,11 +1261,36 @@ public class TrainServer extends Train {
 		lines.add(new String[]{"doors_close", doorsClose < 0 ? "-" : String.format(java.util.Locale.ROOT, "%.1f s", doorsClose / 20F)});
 		// Asked only once the stop time is up, so before that the answer is the last stop's
 		final boolean atHoldPoint = standing && elapsedDwellTicks >= getTotalDwellTicks() - transitsim.motion.MotionConstants.DOOR_MOVE_TIME - transitsim.motion.MotionConstants.DOOR_DELAY - 1;
-		final String hold = !atHoldPoint ? "" : !holdReason.isEmpty() ? "#hold_" + holdReason : railBlockedLast ? "#hold_blocked" : "";
+		// Before then, a wait for a known time is shown already, read only: the duty's departure or the timetable's
+		final long holdUntil = Math.max(service.getDutyDepartureMillis(), plan != null && plan.isTimed ? service.getPlannedMillis(plan.departureMillis) : 0);
+		final long stopEndMillis = now + (long) Math.max(0, getTotalDwellTicks() - elapsedDwellTicks) * transitsim.motion.MotionConstants.MILLIS_PER_TICK;
+		final String knownHold = holdUntil <= stopEndMillis ? "" : service.getDutyDepartureMillis() >= holdUntil ? "#hold_duty_departure" : "#hold_timetable";
+		final String hold = !standing ? "" : atHoldPoint ? (!holdReason.isEmpty() ? "#hold_" + holdReason : railBlockedLast ? "#hold_blocked" : "") : knownHold;
 		lines.add(new String[]{"hold", hold.isEmpty() ? "-" : hold});
 		lines.add(new String[]{"speed", String.format(java.util.Locale.ROOT, "%.1f km/h", speed * 72)});
 		lines.add(new String[]{"cruise_cap", Float.isInfinite(cruiseCap) || cruiseCap <= 0 ? "-" : String.format(java.util.Locale.ROOT, "%.1f km/h", cruiseCap * 72)});
 		lines.add(new String[]{"state", (isOnRoute ? "#on_route" : "#in_siding") + (isCurrentlyManual ? " #manual" : "") + (doorTarget ? " #doors_open" : "")});
+		lines.add(new String[]{"driver", simulated != null ? "#simulator" : "#game"});
+		final StringBuilder reported = new StringBuilder();
+		for (final long[] each : reportedSchedules) {
+			reported.append(reported.length() == 0 ? "" : ", ").append(platformName.apply(each[0])).append(' ').append(time.apply(each[1]));
+		}
+		int platformsAhead = 0;
+		for (int i = Math.max(0, reportedStartingIndex); i < timeSegments.size(); i++) {
+			if (timeSegments.get(i).savedRailBaseId != 0) {
+				platformsAhead++;
+			}
+		}
+		// Where on its time segments the train is and how many of them ahead end at a platform, to tell why it tells none
+		lines.add(new String[]{"reported", (reported.length() == 0 ? (reportedNone.isEmpty() ? "-" : reportedNone) : reported.toString()) + (reportedHidden ? " #hidden_in_depot" : "") + " [" + reportedStartingIndex + "/" + timeSegments.size() + ", " + platformsAhead + "]"});
+		if (lastDepartureMillis > 0) {
+			final long difference = lastPlannedDepartureMillis <= 0 ? 0 : Math.round((lastDepartureMillis - lastPlannedDepartureMillis) / 1000D);
+			final long arrivalDifference = lastPlannedArrivalMillis <= 0 ? 0 : Math.round((lastArrivalMillis - lastPlannedArrivalMillis) / 1000D);
+			lines.add(new String[]{"last_arrival", time.apply(lastArrivalMillis) + " / " + time.apply(lastPlannedArrivalMillis) + (lastPlannedArrivalMillis <= 0 ? "" : arrivalDifference < 0 ? " #early " + -arrivalDifference + " s" : arrivalDifference > 0 ? " #late " + arrivalDifference + " s" : " #on_time")});
+			lines.add(new String[]{"last_holds", lastStopHolds.isEmpty() ? "-" : lastStopHolds});
+			lines.add(new String[]{"last_departure", platformName.apply(lastDepartureStopId) + " " + time.apply(lastDepartureMillis) + " / " + time.apply(lastPlannedDepartureMillis) + (lastPlannedDepartureMillis <= 0 ? "" : difference < 0 ? " #early " + -difference + " s" : difference > 0 ? " #late " + difference + " s" : " #on_time")});
+		}
+		lines.add(new String[]{"door_flips", String.valueOf(getDoorFlipsLastMinute())});
 		return lines;
 	}
 

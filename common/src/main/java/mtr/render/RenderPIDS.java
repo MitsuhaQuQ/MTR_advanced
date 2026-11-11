@@ -280,6 +280,9 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 						final boolean timeLine = (arrivalLine == 1 && renderVertical) || (arrivalLine == 0 && renderSingle) || renderClassic;
 						if (!timeLine) {
 							arrivalText = Text.literal("");
+						} else if (seconds <= 0 && currentSchedule.departureMillis != 0) {
+							// A train standing here shows when it leaves (0.67.0)
+							arrivalText = Text.translatable(isCJK ? "gui.mtr.departure_time_cjk" : "gui.mtr.departure_time", PLANNED_TIME.format(Instant.ofEpochMilli(Math.abs(currentSchedule.departureMillis)).atZone(OperatingDay.getTimeZone())));
 						} else if (currentSchedule.planned) {
 							final String time = PLANNED_TIME.format(Instant.ofEpochMilli(currentSchedule.arrivalMillis).atZone(OperatingDay.getTimeZone()));
 							arrivalText = Text.translatable("gui.mtr.arrival_planned", time);

@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static transitsim.sim.ScenarioLine.HOUR;
 import static transitsim.sim.ScenarioLine.MINUTE;
@@ -45,6 +46,64 @@ class RestoreTest {
 		assertTrue(restored.getRunner().hasTrain(parked.trainId));
 		assertEquals(0, restored.getRunner().getTrain(parked.trainId).getNextStoppingIndex());
 		assertEquals(parked.railProgress, restored.getRunner().getTrain(parked.trainId).getRailProgress());
+	}
+
+	/**
+	 * A train standing in its siding with the key of a path its siding no longer has is carried on, standing there with no
+	 * path, as the game has it (0.66.2): given up, the simulator left the siding to the game and started again every half
+	 * minute trying to take it back. One on the line still can't go on without its path.
+	 */
+	@Test
+	void aParkedTrainWithAPathThatIsGoneIsCarriedOn() {
+		final byte[] bytes = SimDatasetTest.lines(1, 400, 2, 4, 10).toBytes();
+		final EventSimulator<SimDataset.DataTrack> original = new EventSimulator<>(SimDataset.start(bytes, START));
+		original.advanceTo(START + SECOND);
+		final RunRecord record = original.getRunner().record();
+		final RunRecord.TrainRecord parked = record.trains.stream().filter(train -> !train.onRoute).findFirst().get();
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		try {
+			original.getRunner().getTrain(parked.trainId).service.write(values);
+		} catch (java.io.IOException e) {
+			throw new IllegalStateException(e);
+		}
+		values.writeString("trip_path", "duty|0|9999@0-1:00000000");
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		record.trains.remove(parked);
+		record.trains.add(new RunRecord.TrainRecord(parked.sidingId, parked.trainId, parked.speed, parked.railProgress, parked.elapsedDwellTicks, parked.nextStoppingIndex, parked.nextPlatformIndex, parked.reversed, false, writer.toBytes(), parked.cruiseCap));
+		final EventSimulator<SimDataset.DataTrack> restored = EventSimulator.resume(start -> SimDataset.start(bytes, start).get(), record, record.time);
+		assertTrue(restored.getRunner().hasTrain(parked.trainId), "the parked train is carried on");
+		assertEquals("", restored.getRunner().getTrain(parked.trainId).service.getTripPathKey());
+		// The same on the line can't go on
+		record.trains.removeIf(train -> train.trainId == parked.trainId);
+		record.trains.add(new RunRecord.TrainRecord(parked.sidingId, parked.trainId, parked.speed, parked.railProgress, parked.elapsedDwellTicks, parked.nextStoppingIndex, parked.nextPlatformIndex, parked.reversed, true, writer.toBytes(), parked.cruiseCap));
+		assertFalse(EventSimulator.resume(start -> SimDataset.start(bytes, start).get(), record, record.time).getRunner().hasTrain(parked.trainId));
+	}
+
+	/**
+	 * A train standing at a platform with its doors open still has them open, wide, once the simulator is started again
+	 * from its record (0.66.1): taken as closed, they opened again at once, and the game sounded the closing chime.
+	 */
+	@Test
+	void doorsOpenAtAStopStayOpenWhenStartedAgain() {
+		final byte[] bytes = SimDatasetTest.lines(1, 400, 2, 4, 10).toBytes();
+		final EventSimulator<SimDataset.DataTrack> original = new EventSimulator<>(SimDataset.start(bytes, START));
+		int checked = 0;
+		for (long time = START + 20 * MINUTE; time < START + 80 * MINUTE && checked < 3; time += 7 * SECOND) {
+			original.advanceTo(time);
+			for (final TickRunner<SimDataset.DataTrack>.HeadlessTrain train : original.getRunner().getTrains()) {
+				if (train.isOnRoute() && train.getSpeed() == 0 && train.getDoorTarget() && train.getDoorValue() == 1) {
+					final RunRecord record = RunRecord.fromBytes(original.getRunner().record().toBytes());
+					final EventSimulator<SimDataset.DataTrack> restored = EventSimulator.resume(start -> SimDataset.start(bytes, start).get(), record, record.time);
+					final TickRunner<SimDataset.DataTrack>.HeadlessTrain same = restored.getRunner().getTrain(train.id);
+					assertTrue(same.getDoorTarget(), "doors of train " + train.id + " open");
+					assertEquals(1, same.getDoorValue(), "doors of train " + train.id + " wide open");
+					checked++;
+					break;
+				}
+			}
+		}
+		assertTrue(checked > 0, "a train standing with its doors open was found");
 	}
 
 	@Test

@@ -1831,7 +1831,12 @@ public final class TickRunner<T extends RunTrack> {
 			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(trainRecord.service)));
 			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
 			service.setPathVariants(siding.pathVariants);
-			if (!service.restoreTripPath(siding.tripPaths)) return false;
+			if (!service.restoreTripPath(siding.tripPaths)) {
+				// A train on the line can't go on without its path; one standing in its siding needs none and keeps standing
+				// there, as the game has it (0.66.2)
+				if (onRoute) return false;
+				service.forgetTripPath();
+			}
 			if (nextStoppingIndex >= path.size()) {
 				if (onRoute) return false;
 				// Indices left over from a completed duty do not describe a parked train's siding path.
@@ -1846,7 +1851,30 @@ public final class TickRunner<T extends RunTrack> {
 				// Saved without it, a train on its way works it out again from where it is, which is close
 				cruiseCap = TrainRules.getCruiseCap(this);
 			}
+			restoreDoors();
 			return true;
+		}
+
+		/**
+		 * The doors of a train standing at a platform, as its time stood has them (0.66.1): a record has no doors, and taken
+		 * as closed they were opened again at once, which the game showed as closing and opening; started again every
+		 * half minute, the simulator sounded the closing chime of trains standing with their doors open each time.
+		 */
+		private void restoreDoors() {
+			doorTarget = false;
+			doorValue = 0;
+			if (!onRoute || speed > 0 || elapsedDwellTicks <= 0 || nextStoppingIndex < 0 || nextStoppingIndex >= path.size() || getStopId(nextStoppingIndex) == 0 || isContinuousMovement()) {
+				return;
+			}
+			final int totalDwellTicks = getTotalDwellTicks();
+			doorTarget = TrainRules.areDoorsOpen(elapsedDwellTicks, totalDwellTicks);
+			if (doorTarget) {
+				doorValue = MotionConstants.clamp((elapsedDwellTicks - MotionConstants.DOOR_DELAY) / MotionConstants.DOOR_MOVE_TIME, 0, 1);
+			} else if (elapsedDwellTicks > MotionConstants.DOOR_DELAY) {
+				// Closing after the stop: as far shut as the time since they started to
+				final float closeAt = totalDwellTicks - MotionConstants.DOOR_DELAY - Math.min(MotionConstants.DOOR_MOVE_TIME, totalDwellTicks / 2 - MotionConstants.DOOR_DELAY);
+				doorValue = MotionConstants.clamp(1 - (elapsedDwellTicks - closeAt) / MotionConstants.DOOR_MOVE_TIME, 0, 1);
+			}
 		}
 
 		/**

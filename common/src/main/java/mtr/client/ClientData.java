@@ -102,7 +102,33 @@ public final class ClientData {
 
 	private static final Map<UUID, Integer> PLAYER_RIDING_COOL_DOWN = new HashMap<>();
 
+	/**
+	 * The arrivals as last received, from which {@link #ALL_SCHEDULES_FOR_PLATFORM} and {@link #SCHEDULES_FOR_PLATFORM} are
+	 * made, and made again every tick at platforms where a train stands with a known departure (0.67.0).
+	 */
+	private static final Map<Long, Set<ScheduleEntry>> RECEIVED_SCHEDULES = new HashMap<>();
+
+	private static void updateSchedules(boolean received) {
+		final long now = System.currentTimeMillis();
+		RECEIVED_SCHEDULES.forEach((platformId, entries) -> {
+			if (!received && entries.stream().noneMatch(entry -> entry.departureMillis > 0)) {
+				return;
+			}
+			final Platform platform = DATA_CACHE.platformIdMap.get(platformId);
+			final long platformStopMillis = platform == null ? 0 : platform.getDwellTime() * 500L;
+			final Set<ScheduleEntry> timed = new HashSet<>();
+			entries.forEach(entry -> timed.add(entry.atTime(now, platformStopMillis)));
+			ALL_SCHEDULES_FOR_PLATFORM.put(platformId, timed);
+			SCHEDULES_FOR_PLATFORM.put(platformId, new HashSet<>(ScheduleEntry.forOtherMods(timed, now)));
+		});
+		if (received) {
+			ALL_SCHEDULES_FOR_PLATFORM.keySet().retainAll(RECEIVED_SCHEDULES.keySet());
+			SCHEDULES_FOR_PLATFORM.keySet().retainAll(RECEIVED_SCHEDULES.keySet());
+		}
+	}
+
 	public static void tick() {
+		updateSchedules(false);
 		final Set<UUID> playersToRemove = new HashSet<>();
 		PLAYER_RIDING_COOL_DOWN.forEach((uuid, coolDown) -> {
 			if (coolDown <= 0) {
@@ -345,11 +371,9 @@ public final class ClientData {
 		}
 
 		client.execute(() -> {
-			clearAndAddAll(ALL_SCHEDULES_FOR_PLATFORM, tempSchedulesForPlatform);
-			final long now = System.currentTimeMillis();
-			final Map<Long, Set<ScheduleEntry>> forOtherMods = new HashMap<>();
-			tempSchedulesForPlatform.forEach((platformId, entries) -> forOtherMods.put(platformId, new HashSet<>(ScheduleEntry.forOtherMods(entries, now))));
-			clearAndAddAll(SCHEDULES_FOR_PLATFORM, forOtherMods);
+			RECEIVED_SCHEDULES.clear();
+			RECEIVED_SCHEDULES.putAll(tempSchedulesForPlatform);
+			updateSchedules(true);
 			SIGNAL_BLOCKS.writeSignalBlockStatus(signalBlockStatus);
 			OCCUPIED_RAILS.clear();
 			OCCUPIED_RAILS.putAll(occupiedRails);

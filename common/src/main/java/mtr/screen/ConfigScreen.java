@@ -38,6 +38,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 	private final Button buttonHideSpecialRailColors;
 	private final Button buttonHideTranslucentParts;
 	private final Button buttonOptimizeTrainRendering;
+	private final Button buttonShowDebugInfo;
 	private final Button buttonShiftToToggleSitting;
 	private final Button buttonLanguageOptions;
 	private final Button buttonUseDynamicFPS;
@@ -47,6 +48,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 	private final Button buttonSupportPatreon;
 
 	private static final int BUTTON_WIDTH = 60;
+	private int buttonX;
 	private static final int BUTTON_HEIGHT = TEXT_HEIGHT + TEXT_PADDING;
 
 	public ConfigScreen() {
@@ -87,6 +89,8 @@ public class ConfigScreen extends ScreenBase implements IGui {
 		});
 		buttonOptimizeTrainRendering = UtilitiesClient.newButton(BUTTON_HEIGHT, Text.literal(""), button ->
 				setButtonText(button, Config.setOptimizeTrainRendering(!Config.optimizeTrainRendering())));
+		buttonShowDebugInfo = UtilitiesClient.newButton(BUTTON_HEIGHT, Text.literal(""), button ->
+				setButtonText(button, Config.setShowDebugInfo(!Config.showDebugInfo())));
 		buttonShiftToToggleSitting = UtilitiesClient.newButton(BUTTON_HEIGHT, Text.literal(""), button -> {
 			shiftToToggleSitting = Config.setShiftToToggleSitting(!shiftToToggleSitting);
 			setButtonText(button, shiftToToggleSitting);
@@ -128,28 +132,31 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			offsetY = 0;
 		}
 
+		buttonX = getButtonX();
 		int i = 1;
-		IDrawing.setPositionAndWidth(buttonUseMTRFont, width - SQUARE_SIZE - BUTTON_WIDTH, SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+		IDrawing.setPositionAndWidth(buttonUseMTRFont, buttonX, SQUARE_SIZE + offsetY, BUTTON_WIDTH);
 		if (!Keys.LIFTS_ONLY) {
-			IDrawing.setPositionAndWidth(buttonShowAnnouncementMessages, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonUseTTSAnnouncements, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonHideSpecialRailColors, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonHideTranslucentParts, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonOptimizeTrainRendering, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonShiftToToggleSitting, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonLanguageOptions, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(buttonUseDynamicFPS, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
-			IDrawing.setPositionAndWidth(sliderTrackTextureOffset, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH - TEXT_PADDING - font.width("100%"));
-			IDrawing.setPositionAndWidth(sliderDynamicTextureResolution, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH - TEXT_PADDING - font.width("100%"));
-			IDrawing.setPositionAndWidth(sliderTrainRenderDistanceRatio, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH - TEXT_PADDING - font.width("100%"));
+			IDrawing.setPositionAndWidth(buttonShowAnnouncementMessages, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonUseTTSAnnouncements, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonHideSpecialRailColors, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonHideTranslucentParts, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonOptimizeTrainRendering, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonShowDebugInfo, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonShiftToToggleSitting, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonLanguageOptions, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(buttonUseDynamicFPS, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+			IDrawing.setPositionAndWidth(sliderTrackTextureOffset, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH - TEXT_PADDING - font.width("100%"));
+			IDrawing.setPositionAndWidth(sliderDynamicTextureResolution, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH - TEXT_PADDING - font.width("100%"));
+			IDrawing.setPositionAndWidth(sliderTrainRenderDistanceRatio, buttonX, BUTTON_HEIGHT * (i++) + SQUARE_SIZE + offsetY, BUTTON_WIDTH - TEXT_PADDING - font.width("100%"));
 		}
-		IDrawing.setPositionAndWidth(buttonSupportPatreon, width - SQUARE_SIZE - BUTTON_WIDTH, BUTTON_HEIGHT * i + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
+		IDrawing.setPositionAndWidth(buttonSupportPatreon, buttonX, BUTTON_HEIGHT * i + SQUARE_SIZE + offsetY, BUTTON_WIDTH);
 		setButtonText(buttonUseMTRFont, useMTRFont);
 		setButtonText(buttonShowAnnouncementMessages, showAnnouncementMessages);
 		setButtonText(buttonUseTTSAnnouncements, useTTSAnnouncements);
 		setButtonText(buttonHideSpecialRailColors, hideSpecialRailColors);
 		setButtonText(buttonHideTranslucentParts, hideTranslucentParts);
 		setButtonText(buttonOptimizeTrainRendering, Config.optimizeTrainRendering());
+		setButtonText(buttonShowDebugInfo, Config.showDebugInfo());
 		setButtonText(buttonShiftToToggleSitting, shiftToToggleSitting);
 		buttonLanguageOptions.setMessage(Text.translatable("options.mtr.language_options_" + languageOptions));
 		setButtonText(buttonUseDynamicFPS, useDynamicFPS);
@@ -171,6 +178,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			addDrawableChild(buttonHideSpecialRailColors);
 			addDrawableChild(buttonHideTranslucentParts);
 			addDrawableChild(buttonOptimizeTrainRendering);
+			addDrawableChild(buttonShowDebugInfo);
 			addDrawableChild(buttonShiftToToggleSitting);
 			addDrawableChild(buttonLanguageOptions);
 			addDrawableChild(buttonUseDynamicFPS);
@@ -181,6 +189,18 @@ public class ConfigScreen extends ScreenBase implements IGui {
 		addDrawableChild(buttonSupportPatreon);
 	}
 
+	/**
+	 * @return where the buttons start: just after the longest option text, not at the right edge of a wide screen (0.66.4)
+	 */
+	private int getButtonX() {
+		final String[] keys = {"options.mtr.use_mtr_font", "options.mtr.show_announcement_messages", "options.mtr.use_tts_announcements", "options.mtr.hide_special_rail_colors", "options.mtr.hide_translucent_parts", "options.mtr.optimize_train_rendering", "options.mtr.show_debug_info", "options.mtr.language_options", "options.mtr.use_dynamic_fps", "options.mtr.track_texture_offset", "options.mtr.dynamic_texture_resolution", "options.mtr.vehicle_render_distance_ratio", "options.mtr.support_patreon"};
+		int textWidth = font.width(Text.translatable("options.mtr.shift_to_toggle_sitting", minecraft == null ? "" : minecraft.options.keyShift.getTranslatedKeyMessage()));
+		for (final String key : keys) {
+			textWidth = Math.max(textWidth, font.width(Text.translatable(key)));
+		}
+		return Math.max(SQUARE_SIZE, Math.min(width - SQUARE_SIZE - BUTTON_WIDTH, SQUARE_SIZE + textWidth + SQUARE_SIZE));
+	}
+
 	@Override
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		try {
@@ -188,6 +208,17 @@ public class ConfigScreen extends ScreenBase implements IGui {
 			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.mtr_options"), width / 2, TEXT_PADDING, ARGB_WHITE);
 
 			final int yStart1 = SQUARE_SIZE + TEXT_PADDING / 2 + (hasTimeAndWindControls ? SQUARE_SIZE : 0);
+			// Each option's row striped, and the one under the mouse lit, from its text to its button (0.66.4): with the
+			// buttons at the right edge, a text was easily read with the button of the next row
+			final int rowTop = SQUARE_SIZE + (hasTimeAndWindControls ? SQUARE_SIZE : 0);
+			final int rows = Keys.LIFTS_ONLY ? 2 : 14;
+			for (int row = 0; row < rows; row++) {
+				final int top = rowTop + BUTTON_HEIGHT * row;
+				final boolean hovered = mouseY >= top && mouseY < top + BUTTON_HEIGHT && mouseX >= SQUARE_SIZE - TEXT_PADDING && mouseX < buttonX + BUTTON_WIDTH + TEXT_PADDING;
+				if (hovered || row % 2 == 0) {
+					GuiCompat.fill(matrices, SQUARE_SIZE - TEXT_PADDING, top, buttonX + BUTTON_WIDTH + TEXT_PADDING, top + BUTTON_HEIGHT, hovered ? 0x40FFFFFF : 0x20FFFFFF);
+				}
+			}
 			int i = 1;
 			GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.use_mtr_font"), SQUARE_SIZE, yStart1, ARGB_WHITE);
 			if (!Keys.LIFTS_ONLY) {
@@ -196,6 +227,7 @@ public class ConfigScreen extends ScreenBase implements IGui {
 				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.hide_special_rail_colors"), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);
 				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.hide_translucent_parts"), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);
 				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.optimize_train_rendering"), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);
+				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.show_debug_info"), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);
 				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.shift_to_toggle_sitting", minecraft == null ? "" : minecraft.options.keyShift.getTranslatedKeyMessage()), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);
 				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.language_options"), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);
 				GuiCompat.drawString(matrices, font, Text.translatable("options.mtr.use_dynamic_fps"), SQUARE_SIZE, BUTTON_HEIGHT * (i++) + yStart1, ARGB_WHITE);

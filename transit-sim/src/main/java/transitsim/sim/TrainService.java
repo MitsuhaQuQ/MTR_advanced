@@ -2177,6 +2177,34 @@ public class TrainService<T extends PlanTrack> {
 		}
 	}
 
+	/**
+	 * For a copy of another service, read from what that one wrote (the game showing the simulator's train): takes the
+	 * path its key names, which reading leaves out as it is an object of the copy's own siding (0.66.1). Without it the
+	 * copy had no path and so no duty, and a train on a duty showed as on none, its planned departures unknown. The
+	 * train's own path is the host's to change, so it isn't changed here.
+	 *
+	 * @param newTripPath the path {@link #getTripPathKey} names, or null for none
+	 */
+	/**
+	 * Lets go of a path that is gone, for a train standing in its siding (0.66.2): it needs none there, and keeping the key
+	 * of one its siding no longer has made the simulator give the train up, then the whole simulator start again every
+	 * half minute trying to carry it on.
+	 */
+	public void forgetTripPath() {
+		turnBackStop = -1;
+		tripPath = null;
+		tripPathKey = "";
+		linkedService = -1;
+		linkedRouteId = 0;
+		tripRoutes.clear();
+		stopTimes = depotStopTimes;
+	}
+
+	public void takeTripPath(TripPath<T> newTripPath) {
+		tripPath = newTripPath;
+		stopTimes = newTripPath == null ? depotStopTimes : newTripPath.stopTimes;
+	}
+
 	private void useTripPath(TripPath<T> newTripPath) {
 		tripPath = newTripPath;
 		tripPathKey = newTripPath.key;

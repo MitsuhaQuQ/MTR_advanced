@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -137,6 +138,11 @@ public final class LiveSimulation {
 	private long failedMillis;
 	private long excludedRetryMillis;
 	/**
+	 * What the sidings left to the game were like when left ({@link Siding#getCarryOnKey}): tried again once it changes,
+	 * or every few minutes in any case (0.66.2).
+	 */
+	private String excludedKey = "";
+	/**
 	 * How long it stays off after failing before it starts again.
 	 */
 	private static final long FAILED_RETRY_MILLIS = 5 * 60 * 1000;
@@ -224,7 +230,7 @@ public final class LiveSimulation {
 		final long now = System.currentTimeMillis();
 		// Retrying must include excluded sidings: a digest filtered to managed sidings cannot
 		// notice that the path of an excluded one has become usable again.
-		if (!excludedSidings.isEmpty() && now >= excludedRetryMillis + RESTART_MILLIS) {
+		if (!excludedSidings.isEmpty() && (now >= excludedRetryMillis + CHANGE_CHECK_MILLIS || now >= excludedRetryMillis + RESTART_MILLIS && !getExcludedKey(railwayData).equals(excludedKey))) {
 			excludedRetryMillis = now;
 			excludedSidings.clear();
 			start(railwayData, now, drive, now);
@@ -378,6 +384,7 @@ public final class LiveSimulation {
 			simulator = null;
 			excludedSidings.addAll(lostSidings);
 			excludedRetryMillis = now;
+			excludedKey = getExcludedKey(railwayData);
 			start(railwayData, now, drive, recordMillis);
 			return;
 		}
@@ -698,6 +705,15 @@ public final class LiveSimulation {
 			e.printStackTrace();
 			return "";
 		}
+	}
+
+	/**
+	 * @return what the sidings left to the game are like now, by {@link Siding#getCarryOnKey}
+	 */
+	private String getExcludedKey(RailwayData railwayData) {
+		final StringBuilder builder = new StringBuilder();
+		railwayData.sidings.stream().filter(siding -> excludedSidings.contains(siding.id)).sorted(Comparator.comparingLong(siding -> siding.id)).forEach(siding -> builder.append(siding.getCarryOnKey()).append('|'));
+		return builder.toString();
 	}
 
 	/**

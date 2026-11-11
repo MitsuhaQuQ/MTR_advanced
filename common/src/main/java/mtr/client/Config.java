@@ -23,6 +23,11 @@ public class Config {
 	private static boolean hideSpecialRailColors;
 	private static boolean hideTranslucentParts;
 	private static boolean optimizeTrainRendering;
+	/**
+	 * Debug displays without the brush (0.66.4): the train looked at, and passenger displays, arrival projectors and
+	 * schedule sensors with the arrivals they read.
+	 */
+	private static boolean showDebugInfo;
 	private static boolean shiftToToggleSitting;
 	private static int languageOptions;
 	private static boolean useDynamicFPS = true;
@@ -47,6 +52,7 @@ public class Config {
 	private static final String HIDE_SPECIAL_RAIL_COLORS = "hide_special_rail_colors";
 	private static final String HIDE_TRANSLUCENT_PARTS = "hide_translucent_parts";
 	private static final String OPTIMIZE_TRAIN_RENDERING = "optimize_train_rendering";
+	private static final String SHOW_DEBUG_INFO = "show_debug_info";
 	private static final String SHIFT_TO_TOGGLE_SITTING = "shift_to_toggle_sitting";
 	private static final String LANGUAGE_OPTIONS = "language_options";
 	private static final String USE_TTS_ANNOUNCEMENTS = "use_tts_announcements";
@@ -76,6 +82,16 @@ public class Config {
 
 	public static boolean optimizeTrainRendering() {
 		return optimizeTrainRendering;
+	}
+
+	public static boolean showDebugInfo() {
+		return showDebugInfo;
+	}
+
+	public static boolean setShowDebugInfo(boolean value) {
+		showDebugInfo = value;
+		writeToFile();
+		return showDebugInfo;
 	}
 
 	public static boolean shiftToToggleSitting() {
@@ -224,6 +240,10 @@ public class Config {
 			} catch (Exception ignored) {
 			}
 			try {
+				showDebugInfo = jsonConfig.get(SHOW_DEBUG_INFO).getAsBoolean();
+			} catch (Exception ignored) {
+			}
+			try {
 				shiftToToggleSitting = jsonConfig.get(SHIFT_TO_TOGGLE_SITTING).getAsBoolean();
 			} catch (Exception ignored) {
 			}
@@ -281,6 +301,7 @@ public class Config {
 		jsonConfig.addProperty(HIDE_SPECIAL_RAIL_COLORS, hideSpecialRailColors);
 		jsonConfig.addProperty(HIDE_TRANSLUCENT_PARTS, hideTranslucentParts);
 		jsonConfig.addProperty(OPTIMIZE_TRAIN_RENDERING, optimizeTrainRendering);
+		jsonConfig.addProperty(SHOW_DEBUG_INFO, showDebugInfo);
 		jsonConfig.addProperty(SHIFT_TO_TOGGLE_SITTING, shiftToToggleSitting);
 		jsonConfig.addProperty(LANGUAGE_OPTIONS, languageOptions);
 		jsonConfig.addProperty(TRACK_TEXTURE_OFFSET, trackTextureOffset);

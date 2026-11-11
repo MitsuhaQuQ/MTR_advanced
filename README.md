@@ -1,5 +1,35 @@
 # MTR Advanced
 
+0.67.3 (client only): YJCM's departure timer stays blank while a standing train has more than the platform's stop time left (or is held without a known end), then counts down from the stop time, instead of standing at the full stop time (mixin `YjcmDepartureTimerMixin`).
+
+0.67.2 (client only): YJCM's RV and LCD passenger displays show a standing train's departure time instead of a blank (mixin `YjcmPidsMixin`, skipped without YJCM).
+
+0.67.1: a train standing at a platform held for something whose end isn't known shows its planned departure time on passenger displays (sent as a negative departure, not counted down to).
+
+0.67.0 (protocol): arrivals carry a standing train's expected departure; the client works its arrival out every tick, so YJCM's departure timer holds at the stop time and then counts down smoothly instead of jumping back every few seconds; passenger displays show a standing train's departure time.
+
+0.66.8 (fix): a train standing at a stop told passenger displays and departure timers nothing, as the time on a braking segment at its end was not a number (the acceleration kept rounded stops it short); displays skipped the train standing there.
+
+0.66.8: the train debug panel shows the last arrival against the plan and what held the train at that stop, and where on its time segments it is and how many platforms are ahead.
+
+0.66.7 (server only): a train standing where its path turns back, as at its first stop waiting for its duty or at its last stop turning back, is told to passenger displays, departure timers and station calls; it was missing from them until it moved.
+
+0.66.6: the train debug panel lists the first stops and times the train tells passenger displays, or why it tells none.
+
+0.66.5 (server only): a station call triggered before departure goes off that many seconds before a known departure (the stop time, a timetable or duty departure), not only once the doors start to close.
+
+0.66.4: a dashboard option shows debug info without the brush, and passenger displays, arrival projectors and schedule sensors get a floating debug panel with the arrivals they read; the option rows are striped with the buttons next to their text; a train standing early at a stop reports its arrival as now, so YJCM departure indicators and displays show it; the train panel shows its last departure against the plan. The day tool reports origin departures with `--origins`.
+
+0.66.3: the debug display calls the stop a train stands at "this stop", and shows a wait for a known departure time before the stop time is up.
+
+0.66.2 (server only): a siding the simulator can't carry on is tried again only once it changes (or every five minutes), not every half minute with the whole simulator started again; a train standing in its siding with a path that is gone is carried on.
+
+0.66.1 (server only): trains standing with their doors open keep them open when the simulator starts again, which it does every half minute while a siding can't be carried on, so their closing chime no longer sounds over and over; the game's copy of a train the simulator runs knows its duty again (debug display, dispatcher's console, delay alarms).
+
+0.66.0: client and server need the same first two version numbers only (the protocol); the third may differ. Packet or save changes raise the second number. Older 0.65.x builds don't connect to 0.66.
+
+0.65.33 adds to the debug display which side moves a train (the simulator or the game) and how often its doors changed in the last minute, and logs a train standing at a stop whose doors keep changing.
+
 0.65.32 fixes the door chime for trains held at a stop for a reason whose end isn't known (choosing where to turn back, the rail ahead taken, ...): the chime now waits until the doors start to close, and a chime shorter than the doors take plays at all. The debug display shows the actual reason a train is held.
 
 0.65.31 adds a debug display: holding the brush and looking at a train shows its planned and expected times, lateness, stop time, doors, why it is held and its speed cap. Other mods reading platform arrivals (YJCM PIDS and the like) now get only trains that stop there and haven't come already. Update server and clients together.

@@ -16,6 +16,22 @@ public interface IPacket {
 		return "MTM_Logic " + Keys.MTM_VERSION;
 	}
 
+	/**
+	 * What of a network version a client and its server must have the same of (0.66.0; user: the protocol is the first two
+	 * numbers): "MTM_Logic 0.66" of "MTM_Logic 0.66.3". The second number is raised whenever packets or saved data change,
+	 * the third for changes inside one side only, which a client and a server may differ in.
+	 *
+	 * @return the version up to its second number, or as it is if it has fewer
+	 */
+	static String getProtocol(String networkVersion) {
+		if (networkVersion == null) {
+			return "";
+		}
+		final int first = networkVersion.indexOf('.');
+		final int second = first < 0 ? -1 : networkVersion.indexOf('.', first + 1);
+		return second < 0 ? networkVersion : networkVersion.substring(0, second);
+	}
+
 	ResourceLocation PACKET_VERSION_CHECK = new ResourceLocation(MTR.MOD_ID, "packet_version_check");
 	ResourceLocation PACKET_LINE_WORDS = new ResourceLocation(MTR.MOD_ID, "packet_line_words");
 	ResourceLocation PACKET_TIMETABLE_CONFIG = new ResourceLocation(MTR.MOD_ID, "packet_timetable_config");

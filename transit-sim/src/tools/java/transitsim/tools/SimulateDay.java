@@ -44,7 +44,7 @@ public final class SimulateDay {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0) {
-			System.out.println("Usage: SimulateDay <mtr.db> [yyyy-mm-dd] [time zone] [day start hour] [--events] [--check]");
+			System.out.println("Usage: SimulateDay <mtr.db> [yyyy-mm-dd] [time zone] [day start hour] [--events] [--check] [--origins]");
 			return;
 		}
 		final List<String> flags = new ArrayList<>();
@@ -207,6 +207,27 @@ public final class SimulateDay {
 						train.id, head, path.size(), track.getTrackLength(), track.getMaxSpeed(), track.canAccelerate(), transitsim.network.BlockSections.getPieceCount(track.getTrackLength(), track.canAccelerate() ? track.getMaxSpeed() : -1), train.getRailProgress(),
 						train.getSectionBlockedPosition(head, train.getRailProgress()), next != null && train.isRailBlocked(head + 1), next == null ? 0 : next.getTrackLength(), next == null ? 0 : transitsim.network.BlockSections.getPieceCount(next.getTrackLength(), next.canAccelerate() ? next.getMaxSpeed() : -1), next != null && next.isPlatformTrack(), train.getBlockedRail(), train.getNextStoppingIndex());
 			}
+		}
+		// --origins: how each service left its first stop against its service time and its plan (0.66.4), to find trains
+		// leaving early
+		if (flags.contains("--origins")) {
+			final DayRun originRun = DayRun.run(dataset, dayStart, Collections.emptySet(), Collections.emptyList(), () -> false);
+			final Map<String, Integer> buckets = new TreeMap<>();
+			int listed = 0;
+			for (final DayRun.Trip trip : originRun.trips) {
+				if (trip.stops.isEmpty() || trip.stops.get(0).departureMillis < 0) {
+					continue;
+				}
+				final DayRun.Stop first = trip.stops.get(0);
+				final long againstService = (first.departureMillis - trip.serviceMillis) / 1000;
+				final long againstPlan = first.plannedDepartureMillis < 0 ? Long.MIN_VALUE : (first.departureMillis - first.plannedDepartureMillis) / 1000;
+				final String bucket = againstPlan == Long.MIN_VALUE ? "no plan" : againstPlan < -2 ? "early" : againstPlan > 30 ? "late" : "on time";
+				buckets.merge(bucket + (againstService < -2 ? ", before service" : ""), 1, Integer::sum);
+				if ((againstService < -2 || againstPlan != Long.MIN_VALUE && againstPlan < -2) && listed++ < 60) {
+					System.out.printf("ORIGIN route %d service %s train %d stop %d platform %d: arrived %s, left %s, planned %s (%+d s), service %+d s%n", trip.routeId, clock(trip.serviceMillis), trip.trainId, first.stopIndex, first.platformId, clock(first.arrivalMillis), clock(first.departureMillis), first.plannedDepartureMillis < 0 ? "-" : clock(first.plannedDepartureMillis), againstPlan == Long.MIN_VALUE ? 0 : againstPlan, againstService);
+				}
+			}
+			System.out.printf("ORIGINS %d trips: %s%n", originRun.trips.size(), buckets);
 		}
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
 		final long ticks = hours * HOUR / 50;

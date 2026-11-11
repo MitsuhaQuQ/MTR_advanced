@@ -34,7 +34,9 @@
     "CameraMixin",
     "RenderTrainsAccessor",
     "ItemRendererMixin",
-    "ModelBakeryMixin"
+    "ModelBakeryMixin",
+    "YjcmPidsMixin",
+    "YjcmDepartureTimerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

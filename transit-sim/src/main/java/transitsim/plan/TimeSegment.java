@@ -63,7 +63,10 @@ public class TimeSegment {
 			return startTime + distance / startSpeed;
 		} else {
 			final float acceleration = speedChange * accelerationConstant;
-			return startTime + (distance == 0 ? 0 : (Math.sqrt(2 * acceleration * distance + startSpeed * startSpeed) - startSpeed) / acceleration);
+			// Braking, the acceleration rounded to three places can stop the train a little short of where the segment ends,
+			// as the stop it was made for: there, the square root was of a number below zero, and the time not a number. A
+			// train standing at a stop was then on no time at all, and told passenger displays nothing (0.66.8)
+			return startTime + (distance == 0 ? 0 : (Math.sqrt(Math.max(0, 2 * acceleration * distance + startSpeed * startSpeed)) - startSpeed) / acceleration);
 		}
 	}
 

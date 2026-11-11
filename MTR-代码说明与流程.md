@@ -1,5 +1,35 @@
 # MTR 代码说明与主要流程
 
+0.67.3 YJCM 发车计时器：`ScheduleEntry.waitingToCountDown`（仅客户端，不进数据包）由 `atTime` 设为“现在 < 发车 − 站台停站”，发车时刻为负（原因不明的扣车）时恒为 true。`YjcmDepartureTimerMixin`（`@Pseudo`，目标 `fabric|forge.com.jsblock.render.RenderDepartureTimer`）按局部变量名 `scheduleList` 去掉这些条目，计时器在最后一段停站时间前保持空白，然后从站台停站时间倒数。
+
+0.67.2 YJCM 显示屏：`cn.zbx1425.mtrsteamloco.mixin.YjcmPidsMixin`（`@Pseudo`，目标 `fabric|forge.com.jsblock.render.RenderRVPIDS/RenderLCDPIDS`，`remap = false`，`require = 0`）按 YJCM 1.2.4 `render` 方法局部变量名挂钩：`currentSchedule` 存下当前条目，`arrivalText` 被设为 null（已到站）且条目有发车时刻时换成 `gui.mtr.departure_time`。登记在 `resources/common/ante/mtrsteamloco.mixins.json`（构建复制到 common 资源）。没装 YJCM 或其方法不同则不生效。
+
+0.67.1 `TrainServer.standingDepartureMillis`：关门时刻未知（等进路放行等）时，若时刻表/运用计划发车（`getPlannedDepartureHere`）未到，以负数发送；`ScheduleEntry.atTime` 只按正值重算到站，`RenderPIDS` 取绝对值显示“HH:mm 发车”。数据包格式不变。
+
+0.67.0 停站列车的发车时刻（协议变更）：`ScheduleEntry.departureMillis`（数据包末尾追加 long）由 `TrainServer.standingDepartureMillis` 给出（关门剩余 + 关门时间，未知为 0）。客户端 `ClientData` 收包后存 `RECEIVED_SCHEDULES`，`updateSchedules` 在收包时及每 tick（仅含停站条目的站台）以 `ScheduleEntry.atTime`（到站 = min(现在, 发车 − 站台停站)）重建 `ALL_SCHEDULES_FOR_PLATFORM` 与 `SCHEDULES_FOR_PLATFORM`；之前服务端每次把久停列车的到站报为“现在”，YJCM 计时器在 20、19、18 之间跳。`RenderPIDS` 对已到站且有发车时刻的条目显示“HH:mm 发车”。
+
+0.66.8 停站列车不报的根因：`TimeSegment.getTime` 刹车段的加速度被四舍五入到 3 位小数（如 0.0125→0.013），在段末（即停车点）根号内为负，时间为 NaN；`TrainServer` 生成到站信息要求 `currentTime >= 0`，停站列车因此一条都不报，PIDS 跳过本班、YJCM 发车计时器空白、站台调用缺失。修正：根号内取 `max(0, …)`（组件，`TimeSegmentTest`）；`TrainServer` 在段末或 NaN 时取该段 `endTime`。
+
+0.66.8 调试面板：离站时另记到达（`lastArrivalMillis` = 离站时刻 − 已停时间，`lastPlannedArrivalMillis`）与停站期间出现过的扣车原因（`stopHolds`，按首次出现顺序）；“报给显示屏”末尾加 `[所在区段/区段总数, 前方站台区段数]`，用于区分没找到区段与前方没有站台区段。
+
+0.66.7 折返空隙的到站信息：`TimeSegment.indexAt` 在路径调头处（前后两段之间的空隙）返回 -1，`TrainServer` 生成到站信息时整列车不报，停在起点站等运用、或在终点站折返的列车从 PIDS、YJCM 发车计时器、站台调用中消失，直到开动。现由 `gapSegmentIndex` 取空隙前一段（以停站结束的那段），当前时间取其 `endTime`，`standingHere` 照常按站台停站时间推到站。
+
+0.66.6 调试面板“报给显示屏”：`TrainServer` 生成到站信息时记下前 4 个停站站台与到站时刻（`reportedSchedules`）；不在任何区段（`#no_segment`）、不在线且未定出库时刻（`#no_departure`）时说明未报；在车厂等运用（`standingForDuty`）的列车条目会被 `PidsSchedules.forDisplay` 去掉，标“显示屏不显示”。YJCM 发车计时器（`RenderDepartureTimer`）取最近站台 `SCHEDULES_FOR_PLATFORM` 排序后第一条，只有其到站时刻 ≤ 现在才显示 |站台停站/2 − 已到秒数|。
+
+0.66.5 “发车前”触发：`PlatformDwell.departureMillis` 原来只在开始关门（约发车前 4.2 秒）才由运动规则给出，提前 N 秒的时刻表传感器最多提前 4 秒、实为关门时触发。`TrainServer.withKnownDeparture` 在列车停站、开门、已知何时关门（`TrainRules.getTicksUntilDoorsClose` ≥ 0：停站时间、时刻表或运用发车）时，用“关门剩余 + 关门时间”补上预计发车；游戏驱动（`onDwell`）与模拟组件驱动（`showSimulated`）两处都经过它。原因未知的扣车（等进路、调度扣车）仍为 0，不提前触发。
+
+0.66.4 调试显示扩展：`Config.showDebugInfo`（设置界面“显示调试信息”）不拿刷子也显示；`RenderTrainDebug.blockLines` 对 PIDS（`IPIDS.TileEntityPIDS`）、到站投影（`BlockArrivalProjectorBase`）、时刻表传感器（`BlockTrainScheduleSensor`）读 `ClientData.ALL_SCHEDULES_FOR_PLATFORM`，列出站台、前 8 条到站（通过/计划标记，显示屏会隐去的条目打 ×）及传感器设置与按当前列表是否触发；看着方块时优先显示方块（列车更近且方块在 4 格外时显示列车）。`ConfigScreen.getButtonX` 让按钮紧跟最长文字，`render` 画隔行底纹与悬停高亮。`TrainServer` 生成到站信息时，已停在站台的列车用 `standingArrivalMillis`（现在与“发车时刻 − 站台停站时间”取早）作为到站时刻，修正 YJCM 发车指示器与 PIDS 对提前到站列车不显示的问题；离站时记录 `lastDepartureMillis/lastPlannedDepartureMillis/lastDepartureStopId`（`getPlannedDepartureHere` 取运用发车与时刻表发车的较晚者），调试面板“上次发车（实际 / 计划）”给出早/晚秒数。`SimulateDay --origins` 用 `DayRun` 统计每个班次在首站的发车相对班次时刻与计划的偏差。
+
+0.66.3 调试面板措辞：列车停在站台时该行显示“本站”（`this_stop`），行驶中仍为“下一停车站”；停站时间未到点时，若已知要等运用发车或时刻表发车（发车时刻晚于停站结束），扣车原因提前显示，只读数据、不调用 `choose*`。
+
+0.66.2 组件每 30 秒重启：存车线 8431（田端高速 2）的列车接不上，组件把它交给游戏后每 30 秒清空排除名单整组重启再试，每次又失败。成因：0.66.1 之前游戏副本没有路径对象，`getActiveTripPath` 为空，路径重新生成时线上列车正在跑的路径没被保留，组件找不到它。改动：`TickRunner.restore` 中停放（不在线上）的列车路径失效时调用新的 `TrainService.forgetTripPath` 照常接管，线上列车仍判定接不上；`LiveSimulation` 排除时记下 `Siding.getCarryOnKey`（路径集合与各列车在线/路径键），只有它变化才在 30 秒后重试，否则 5 分钟兜底。
+
+0.66.1 组件重启时的门与游戏副本的运用：`TickRunner.HeadlessTrain.restoreDoors` 在 `restore` 末尾按停站计时推出门目标与开度（记录里没有门；按关门开始时门又立即打开，组件每 30 秒重启一次就让停站列车各响两次关门铃）。`TrainServer.showSimulated` 读入组件的运用状态后调用新的 `TrainService.takeTripPath` 接上行程路径对象（读入只带键），游戏副本的 `isOnDuty`、运用发车时刻等不再一律为“无”，调试面板、调度台、晚点报警随之正确。
+
+0.66.0 版本检查只比协议：服务端照旧发送完整版本 `MTM_Logic x.y.z`，客户端（`PacketTrainDataGuiClient.openVersionCheckS2C`）只比较 `IPacket.getProtocol` 取出的前两位；以后改数据包或存档升第二位，只改一侧内部逻辑升第三位，第三位不同仍可连接。因 0.65.30/0.65.31 改过数据包，本版起协议为 0.66。
+
+0.65.33 开关门反复切换的观测：`TrainServer.noteDoorFlip` 记录每列车最近一分钟开关门目标的切换，停站中一分钟内达 6 次时写服务端日志（驱动方、扣车原因、前方占用、停站计时、是否在运用、运用发车时刻），每分钟最多一次；调试面板新增“驱动”（模拟组件/游戏）与“一分钟内开关门切换”。
+
 0.65.32 关门时间与扣车原因：`TrainRules.getHoldReason` 取代 `isHeldAtStop` 的判断主体（顺序与调用不变，返回原因），游戏 `TrainServer.isHeldAtStop`/`isRailBlocked` 和组件 `TickRunner.HeadlessTrain` 记下最近一次的扣车原因与前方占用，游戏从组件同步时一并复制；调试面板只在停站时间到点后显示它（含选折返去向、前方占用等）。`getTicksUntilDoorsClose` 在停到该关门却仍未走、且没有已知结束时刻时返回 -1（调试面板预计发车显示“未知”，客户端关门声等门真正开始关闭再播）；`DwellTimeBveTrainSound` 修正提示音短于关门动作时永不播放的问题。删除 0.65.31 的 `describeHold`。
 
 0.65.31 刷子调试显示与附加包到站信息：手持刷子准星对着列车时，`RenderTrainDebug`（由 `RenderDrivingOverlay.render` 调用，两种加载器共用）找出最近的列车，经 `TrainDebugPackets`（`PACKET_TRAIN_DEBUG`，每秒最多一次）向服务端请求 `TrainServer.getDebugLines`：列车、车厂/存车线、线路、运用、班次、下一停车站、计划到发、预计发车、晚点、已停/停站时间、离关门、扣车原因（`TrainRules.describeHold`，不做选择、无副作用）、速度、控速上限、状态；以 `#` 开头的值由客户端翻译（`gui.mtr.train_debug_*`）。附加包：`RailwayData.getSchedulesAtPlatform` 与 `ClientData.SCHEDULES_FOR_PLATFORM` 只给停站且未过时的到站（`ScheduleEntry.shownToOtherMods`），本模组的 PIDS、车次传感器、路径查找改用 `getAllSchedulesAtPlatform`/`ALL_SCHEDULES_FOR_PLATFORM`。

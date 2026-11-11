@@ -19,6 +19,20 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 	 */
 	public final long scheduledMillis;
 	public final boolean planned;
+	/**
+	 * For a train standing at the platform, when it is expected to leave, or 0 (0.67.0). A train held there longer than
+	 * the platform's stop time was told as arriving now each time the arrivals were sent, so a display counting down the
+	 * stop time from the arrival jumped back every few seconds; the client works the arrival out from this every tick
+	 * instead ({@link #standingArrivalMillis}). Negative for a train held for something whose end isn't known: its planned
+	 * departure, for displays to show but not to count down to (0.67.1).
+	 */
+	public final long departureMillis;
+	/**
+	 * On the client, for a train standing at the platform: true while more than the platform's stop time is left before it
+	 * leaves, or when it is held for something whose end isn't known (0.67.3). A departure timer counting down the stop
+	 * time stays blank until then, rather than standing at the full stop time. Not sent.
+	 */
+	public final boolean waitingToCountDown;
 	// A depot estimate replaced by the duty plan on passenger displays only.
 	final boolean standingForDuty;
 
@@ -31,6 +45,16 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 	}
 
 	ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass, long scheduledMillis, boolean planned, boolean standingForDuty) {
+		this(arrivalMillis, trainCars, routeId, currentStationIndex, trainId, pass, scheduledMillis, planned, standingForDuty, 0);
+	}
+
+	ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass, long scheduledMillis, boolean planned, boolean standingForDuty, long departureMillis) {
+		this(arrivalMillis, trainCars, routeId, currentStationIndex, trainId, pass, scheduledMillis, planned, standingForDuty, departureMillis, departureMillis < 0);
+	}
+
+	private ScheduleEntry(long arrivalMillis, int trainCars, long routeId, int currentStationIndex, long trainId, boolean pass, long scheduledMillis, boolean planned, boolean standingForDuty, long departureMillis, boolean waitingToCountDown) {
+		this.departureMillis = departureMillis;
+		this.waitingToCountDown = waitingToCountDown;
 		this.arrivalMillis = arrivalMillis;
 		this.trainCars = trainCars;
 		this.routeId = routeId;
@@ -40,6 +64,23 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		this.scheduledMillis = scheduledMillis;
 		this.planned = planned;
 		this.standingForDuty = standingForDuty;
+	}
+
+	/**
+	 * @return this entry with the arrival a standing train is told by at this time: as long before its departure as the
+	 * platform's stop time, or now if that is later, so a stop time counted down from it ends as the train leaves
+	 */
+	public ScheduleEntry atTime(long now, long platformStopMillis) {
+		if (departureMillis <= 0) {
+			return this;
+		}
+		final long arrival = standingArrivalMillis(now, departureMillis, platformStopMillis);
+		final boolean waiting = now < departureMillis - platformStopMillis;
+		return arrival == arrivalMillis && waiting == waitingToCountDown ? this : new ScheduleEntry(arrival, trainCars, routeId, currentStationIndex, trainId, pass, scheduledMillis, planned, standingForDuty, departureMillis, waiting);
+	}
+
+	public static long standingArrivalMillis(long now, long departureMillis, long platformStopMillis) {
+		return Math.min(now, departureMillis - platformStopMillis);
 	}
 
 	/**
@@ -78,6 +119,8 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		scheduledMillis = packet.readLong();
 		planned = packet.readBoolean();
 		standingForDuty = false;
+		departureMillis = packet.readLong();
+		waitingToCountDown = departureMillis < 0;
 	}
 
 	public void writePacket(FriendlyByteBuf packet) {
@@ -89,6 +132,7 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		packet.writeBoolean(pass);
 		packet.writeLong(scheduledMillis);
 		packet.writeBoolean(planned);
+		packet.writeLong(departureMillis);
 	}
 
 	/**

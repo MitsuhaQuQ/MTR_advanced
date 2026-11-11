@@ -1974,6 +1974,17 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		trains.forEach(train -> train.setSimulated(null));
 	}
 
+	/**
+	 * What decides whether the component's simulator can carry on this siding's trains (0.66.2): its paths, and each train,
+	 * whether it is on the line and the path it is on. A siding left to the game is tried again only once this changes,
+	 * rather than the whole simulator started again every half minute for a train it still can't carry on.
+	 */
+	public String getCarryOnKey() {
+		final StringBuilder builder = new StringBuilder().append(id).append(':').append(new TreeSet<>(tripPaths.keySet()).hashCode());
+		forEachTrain(train -> builder.append(';').append(train.id).append(train.isOnRouteNow() ? 'L' : 'P').append(train.getService().getTripPathKey().hashCode()));
+		return builder.toString();
+	}
+
 	public void forEachTrain(Consumer<TrainServer> consumer) {
 		trains.stream().sorted(Comparator.comparingLong(train -> train.id)).forEach(consumer);
 	}

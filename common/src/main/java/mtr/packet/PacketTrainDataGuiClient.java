@@ -116,7 +116,8 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final String version = packet.readUtf();
 		minecraftClient.execute(() -> {
 			final String clientVersion = IPacket.getNetworkVersion();
-			if (!clientVersion.equals(version)) {
+			// Only the protocol, the first two numbers, has to be the same (0.66.0)
+			if (!IPacket.getProtocol(clientVersion).equals(IPacket.getProtocol(version))) {
 				final ClientPacketListener connection = minecraftClient.getConnection();
 				if (connection != null) {
 					final int widthDifference1 = minecraftClient.font.width(Text.translatable("gui.mtr.mismatched_versions_your_version")) - minecraftClient.font.width(Text.translatable("gui.mtr.mismatched_versions_server_version"));
