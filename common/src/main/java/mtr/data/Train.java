@@ -64,6 +64,12 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 */
 	protected float cruiseCap = Float.POSITIVE_INFINITY;
 	/**
+	 * On a client: how many ticks after {@link #doorsCloseReceivedMillis} the server said the doors start to close, or -1
+	 * if it didn't know (0.65.30), for door sounds and animations rather than the stop time of the platform's rail.
+	 */
+	protected int doorsCloseTicks = -1;
+	protected long doorsCloseReceivedMillis;
+	/**
 	 * Whether the component's simulator moves the train (G1): its state is then copied in each tick, and the train only
 	 * does what needs the world, such as its cars, riders and doors.
 	 */
@@ -346,6 +352,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		decelerationConstant = packet.readFloat();
 		cruiseCap = packet.readFloat();
 		segmentSpec = readSegmentSpec(packet);
+		doorsCloseTicks = packet.readInt();
+		doorsCloseReceivedMillis = System.currentTimeMillis();
 
 		inventory = null;
 	}
@@ -437,6 +445,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeFloat(decelerationConstant);
 		packet.writeFloat(cruiseCap);
 		writeSegmentSpec(packet, rebase(getSegmentSpecToSend(), base));
+		packet.writeInt(getTicksUntilDoorsClose());
 	}
 
 	/**
@@ -601,6 +610,7 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		packet.writeFloat(decelerationConstant);
 		packet.writeFloat(cruiseCap);
 		writeSegmentSpec(packet, rebase(getSegmentSpecToSend(), base));
+		packet.writeInt(getTicksUntilDoorsClose());
 	}
 
 	/**
@@ -1014,6 +1024,25 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 
 	public int getTotalDwellTicks() {
 		return path.get(nextStoppingIndex).dwellTime * 10;
+	}
+
+	/**
+	 * @return what is sent to the clients as how long until the doors start to close (0.65.30); -1 for not known
+	 */
+	protected int getTicksUntilDoorsClose() {
+		return -1;
+	}
+
+	/**
+	 * On a client, for door sounds and animations: the ticks left until the doors start to close, as the server last
+	 * said, counted down since; -1 if it didn't know, the doors not being open or the train held for something whose end
+	 * isn't known.
+	 */
+	public float getDoorsCloseTicksLeft() {
+		if (doorsCloseTicks < 0) {
+			return -1;
+		}
+		return Math.max(0, doorsCloseTicks - (System.currentTimeMillis() - doorsCloseReceivedMillis) / (float) MotionConstants.MILLIS_PER_TICK);
 	}
 
 	/**

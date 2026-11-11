@@ -453,6 +453,8 @@ public class TrainClient extends Train implements IGui {
 		useSpeedCurve = train.useSpeedCurve;
 		decelerationConstant = train.decelerationConstant;
 		cruiseCap = train.cruiseCap;
+		doorsCloseTicks = train.doorsCloseTicks;
+		doorsCloseReceivedMillis = train.doorsCloseReceivedMillis;
 		// The path is refilled in place, so the curves can't tell it changed
 		invalidateSpeedCurves();
 	}
@@ -483,6 +485,7 @@ public class TrainClient extends Train implements IGui {
 		private final float decelerationConstant;
 		private final float cruiseCap;
 		private final RunSegment.Spec segmentSpec;
+		private final int doorsCloseTicks;
 
 		public State(FriendlyByteBuf packet) {
 			id = packet.readLong();
@@ -509,6 +512,7 @@ public class TrainClient extends Train implements IGui {
 			decelerationConstant = packet.readFloat();
 			cruiseCap = packet.readFloat();
 			segmentSpec = readSegmentSpec(packet);
+			doorsCloseTicks = packet.readInt();
 		}
 	}
 
@@ -549,6 +553,8 @@ public class TrainClient extends Train implements IGui {
 		useSpeedCurve = state.useSpeedCurve;
 		decelerationConstant = state.decelerationConstant;
 		cruiseCap = state.cruiseCap;
+		doorsCloseTicks = state.doorsCloseTicks;
+		doorsCloseReceivedMillis = System.currentTimeMillis();
 		return true;
 	}
 

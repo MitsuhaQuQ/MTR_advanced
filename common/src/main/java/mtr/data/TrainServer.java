@@ -260,6 +260,11 @@ public class TrainServer extends Train {
 	}
 
 	@Override
+	protected int getTicksUntilDoorsClose() {
+		return TrainRules.getTicksUntilDoorsClose(rules);
+	}
+
+	@Override
 	protected void onLapComplete() {
 		service.onLapComplete();
 	}

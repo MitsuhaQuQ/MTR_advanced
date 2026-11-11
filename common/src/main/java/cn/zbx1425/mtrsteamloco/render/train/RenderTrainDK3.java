@@ -14,6 +14,7 @@ import cn.zbx1425.sowcerext.multipart.mi.MiScheduleHelper;
 import com.google.common.collect.ImmutableSet;
 import cn.zbx1425.sowcer.math.Vector3f;
 import mtr.MTRClient;
+import transitsim.motion.MotionConstants;
 import mtr.client.TrainClientRegistry;
 import mtr.client.TrainProperties;
 import mtr.data.TrainClient;
@@ -110,6 +111,14 @@ public class RenderTrainDK3 extends TrainRendererBase {
         if (train.justOpening()) {
             elapsedDwellTicks = 0;
             totalDwellTicks = train.getTotalDwellTicks();
+        }
+        // The stop ends when the server says the doors close (0.65.30), not by the platform rail's stop time, which a
+        // timetable's later departure makes too short; while that isn't known, the doors stay drawn open
+        final float doorsCloseLeft = train.getDoorsCloseTicksLeft();
+        if (doorsCloseLeft >= 0) {
+            totalDwellTicks = elapsedDwellTicks + 20 + doorsCloseLeft + MotionConstants.DOOR_MOVE_TIME;
+        } else if (train.getDoorValue() > 0) {
+            totalDwellTicks = Math.max(totalDwellTicks, elapsedDwellTicks + 20 + 12 * 20 + 1);
         }
 
         // Get door delay of the first sec off

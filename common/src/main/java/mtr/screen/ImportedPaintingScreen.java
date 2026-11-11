@@ -25,6 +25,13 @@ public final class ImportedPaintingScreen extends ScreenBase {
 	private Button choose;
 	private boolean dropdownOpen;
 	private int dropdownScroll, highlighted;
+	/**
+	 * Typed while the list is open (0.65.28): the list shows the images whose names have every word of it, and the
+	 * original painting only while it is blank. The rows shown, null for the original painting.
+	 */
+	private String search = "";
+	private final List<ImageDatabase.Entry> shown = new ArrayList<>();
+	private static final int SEARCH_HEIGHT = 14;
 	private int previousMouseX = Integer.MIN_VALUE, previousMouseY = Integer.MIN_VALUE;
 	public ImportedPaintingScreen(Painting painting) {
 		super(Text.translatable("gui.mtr.image_settings"));
@@ -51,9 +58,10 @@ public final class ImportedPaintingScreen extends ScreenBase {
 		dropdownOpen = false;
 		choose = UtilitiesClient.newButton(Text.literal(selectionName() + " ▾"), button -> {
 			images.clear(); images.addAll(ImportedImages.ENTRIES);
-			highlighted = 0;
-			for (int i = 0; i < images.size(); i++) if (images.get(i).name.equals(selectedImage)) highlighted = i + 1;
-			dropdownScroll = Math.max(0, Math.min(highlighted, images.size() + 1 - dropdownRows()));
+			search = "";
+			refilter();
+			for (int i = 0; i < shown.size(); i++) if (shown.get(i) != null && shown.get(i).name.equals(selectedImage)) highlighted = i;
+			dropdownScroll = Math.max(0, Math.min(highlighted, shown.size() - dropdownRows()));
 			for (WidgetBetterTextField field : fields) field.setFocused(false);
 			dropdownOpen = true;
 		});
@@ -72,33 +80,58 @@ public final class ImportedPaintingScreen extends ScreenBase {
 		}), left, top + 222, 147);
 		place(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_cancel"), button -> onClose()), left + 151, top + 222, 147);
 	}
-	private int dropdownRows() { return Math.min(images.size() + 1, Math.max(1, Math.min(6, (height - top - 32) / 32))); }
+	/** At least one row, for saying nothing matches */
+	private int dropdownRows() { return Math.max(1, Math.min(shown.size(), Math.max(1, Math.min(6, (height - top - 32 - SEARCH_HEIGHT) / 32)))); }
+	private int rowsTop() { return top + 22 + SEARCH_HEIGHT; }
+	/** The rows matching the search, the first one highlighted */
+	private void refilter() {
+		shown.clear();
+		if (search.trim().isEmpty() || ImageSearch.matches(Text.translatable("gui.mtr.image_vanilla").getString(), search)) shown.add(null);
+		final List<String> names = new ArrayList<>();
+		images.forEach(entry -> names.add(entry.name));
+		ImageSearch.filter(names, search).forEach(index -> shown.add(images.get(index)));
+		highlighted = 0;
+		dropdownScroll = 0;
+	}
 	private void selectImage(int index) {
-		selectedImage = index == 0 ? "" : images.get(index - 1).name;
+		if (index < 0 || index >= shown.size()) return;
+		selectedImage = shown.get(index) == null ? "" : shown.get(index).name;
 		choose.setMessage(Text.literal(selectionName() + " ▾")); dropdownOpen = false;
 	}
 	@Override public boolean mouseClicked(double x, double y, int button) {
 		if (!dropdownOpen) return super.mouseClicked(x,y,button);
-		if (button == 0 && x >= left && x < left + 298 && y >= top + 22 && y < top + 22 + dropdownRows() * 32) selectImage(dropdownScroll + (int)(y - top - 22) / 32);
+		final boolean inList = x >= left && x < left + 298;
+		if (button == 0 && inList && y >= top + 22 && y < rowsTop()) return true;
+		if (button == 0 && inList && y >= rowsTop() && y < rowsTop() + dropdownRows() * 32) selectImage(dropdownScroll + (int)(y - rowsTop()) / 32);
 		else dropdownOpen = false;
 		return true;
 	}
 	@Override public boolean mouseScrolled(double x, double y, double amount) {
 		if (!dropdownOpen) return super.mouseScrolled(x,y,amount);
-		dropdownScroll = Math.max(0, Math.min(images.size() + 1 - dropdownRows(), dropdownScroll - (int)Math.signum(amount)));
+		dropdownScroll = Math.max(0, Math.min(shown.size() - dropdownRows(), dropdownScroll - (int)Math.signum(amount)));
 		return true;
 	}
 	@Override public boolean keyPressed(int key, int scan, int modifiers) {
 		if (!dropdownOpen) return super.keyPressed(key,scan,modifiers);
-		if (key == 256) dropdownOpen = false;
-		else if (key == 257 || key == 335 || key == 32) selectImage(highlighted);
-		else if (key == 264 || key == 265) {
-			highlighted = Math.max(0, Math.min(images.size(), highlighted + (key == 264 ? 1 : -1)));
+		// Escape clears the search first, then closes the list; typing searches, so space is a letter of the search
+		if (key == 256) {
+			if (search.isEmpty()) dropdownOpen = false;
+			else { search = ""; refilter(); }
+		} else if (key == 259) {
+			if (!search.isEmpty()) { search = search.substring(0, search.offsetByCodePoints(search.length(), -1)); refilter(); }
+		} else if (key == 257 || key == 335) {
+			selectImage(highlighted);
+		} else if (key == 264 || key == 265) {
+			highlighted = Math.max(0, Math.min(shown.size() - 1, highlighted + (key == 264 ? 1 : -1)));
 			dropdownScroll = Math.max(0, Math.min(highlighted, Math.max(dropdownScroll, highlighted - dropdownRows() + 1)));
 		}
 		return true;
 	}
-	@Override public boolean charTyped(char character, int modifiers) { return dropdownOpen || super.charTyped(character,modifiers); }
+	@Override public boolean charTyped(char character, int modifiers) {
+		if (!dropdownOpen) return super.charTyped(character,modifiers);
+		if (!Character.isISOControl(character) && search.length() < 64) { search += character; refilter(); }
+		return true;
+	}
 	private String selectionName() { return selectedImage.isEmpty() ? Text.translatable("gui.mtr.image_vanilla").getString() : selectedImage; }
 	private void place(net.minecraft.client.gui.components.AbstractWidget widget, int x, int y, int width) {
 		UtilitiesClient.setWidgetX(widget, x); UtilitiesClient.setWidgetY(widget, y); widget.setWidth(width); addDrawableChild(widget);
@@ -131,16 +164,21 @@ public final class ImportedPaintingScreen extends ScreenBase {
 	private void renderDropdown(PoseStack matrices, int mouseX, int mouseY) {
 		matrices.pushPose(); matrices.translate(0,0,400);
 		GuiGraphics graphics = GuiCompat.graphics(matrices);
-		int rows = dropdownRows(), y = top + 22;
-		graphics.fill(left-1,y-1,left+299,y+rows*32+1,0xFFAAAAAA);
-		graphics.fill(left,y,left+298,y+rows*32,0xFF202020);
-		for (int row=0;row<rows;row++) {
+		int rows = dropdownRows(), searchY = top + 22, y = rowsTop();
+		graphics.fill(left-1,searchY-1,left+299,y+rows*32+1,0xFFAAAAAA);
+		graphics.fill(left,searchY,left+298,y+rows*32,0xFF202020);
+		// The search line: what was typed with a cursor, or how to search
+		graphics.fill(left,searchY,left+298,y-1,0xFF303030);
+		final String searchText = search.isEmpty() ? Text.translatable("gui.mtr.image_search_hint").getString() : search + ((System.currentTimeMillis() / 500) % 2 == 0 ? "_" : "");
+		graphics.drawString(font,font.plainSubstrByWidth(searchText,288),left+4,searchY+3,search.isEmpty() ? 0xFF888888 : 0xFFFFFFFF,false);
+		if (shown.isEmpty()) graphics.drawString(font,Text.translatable("gui.mtr.image_search_none").getString(),left+34,y+12,0xFF888888,false);
+		for (int row=0;row<rows && dropdownScroll+row<shown.size();row++) {
 			int index=dropdownScroll+row, rowY=y+row*32;
 			if ((mouseX!=previousMouseX || mouseY!=previousMouseY) && mouseX>=left && mouseX<left+298 && mouseY>=rowY && mouseY<rowY+32) highlighted=index;
 			if(index==highlighted) graphics.fill(left,rowY,left+298,rowY+32,0xFF445566);
-			String name = index==0 ? Text.translatable("gui.mtr.image_vanilla").getString() : images.get(index-1).name;
-			if(index>0) {
-				ImageDatabase.Entry entry=images.get(index-1);
+			String name = shown.get(index)==null ? Text.translatable("gui.mtr.image_vanilla").getString() : shown.get(index).name;
+			if(shown.get(index)!=null) {
+				ImageDatabase.Entry entry=shown.get(index);
 				ResourceLocation texture=ImportedImages.texture(entry.hash);
 				if(texture!=null) {
 					double scale=Math.min(26.0/entry.width,26.0/entry.height);
@@ -150,8 +188,8 @@ public final class ImportedPaintingScreen extends ScreenBase {
 			}
 			graphics.drawString(font,font.plainSubstrByWidth(name,256),left+34,rowY+12,0xFFFFFF,false);
 		}
-		if(images.size()+1>rows) {
-			int thumb=Math.max(8,rows*32*rows/(images.size()+1)), offset=(rows*32-thumb)*dropdownScroll/(images.size()+1-rows);
+		if(shown.size()>rows) {
+			int thumb=Math.max(8,rows*32*rows/shown.size()), offset=(rows*32-thumb)*dropdownScroll/(shown.size()-rows);
 			graphics.fill(left+294,y+offset,left+297,y+offset+thumb,0xFFBBBBBB);
 		}
 		graphics.flush(); matrices.popPose();

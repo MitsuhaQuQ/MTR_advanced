@@ -47,6 +47,8 @@
   "gui.mtr.image_offset_z": "Forward offset (blocks)",
   "gui.mtr.image_units": "Size: 0.0625–16; offsets: -16–16 blocks",
   "gui.mtr.image_vanilla": "Original painting (no imported image)",
+  "gui.mtr.image_search_hint": "Type to search images by name",
+  "gui.mtr.image_search_none": "No image matches",
   "gui.mtr.image_apply": "Apply",
   "gui.mtr.image_cancel": "Cancel",
   "gui.mtr.image_invalid": "Choose a valid PNG or GIF up to 5 MB",

@@ -69,6 +69,57 @@ public final class TrainRules {
 	/**
 	 * @return true while a stopped train keeps its doors open and doesn't leave
 	 */
+	/**
+	 * How long until the doors of a train standing at a stop start to close, for the clients' door sounds and animations
+	 * (0.65.30): they otherwise count from the stop time of the platform's rail, which a timetable's later departure
+	 * makes too short, so a closing chime sounded while the doors stayed open.
+	 *
+	 * @return ticks until the doors start to close, or -1 if the doors aren't open or the train is held for something
+	 * whose end isn't known (a dispatcher, an overtaking train, the run ahead not granted yet)
+	 */
+	public static int getTicksUntilDoorsClose(Train train) {
+		final MotionState state = train.getState();
+		if (state.isCurrentlyManual() || !state.getDoorTarget() || train.isContinuousMovement()) {
+			return -1;
+		}
+		final TrainService<?> service = train.getService();
+		if (service.isDispatchHeld() || service.isStayingOnLine()) {
+			return -1;
+		}
+		final long currentMillis = train.getMillis();
+		long holdUntil = 0;
+		final long dutyDepartureMillis = service.getDutyDepartureMillis();
+		if (dutyDepartureMillis > 0) {
+			holdUntil = dutyDepartureMillis - DOOR_CLOSE_MILLIS;
+		}
+		final int nextStoppingIndex = state.getNextStoppingIndex();
+		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
+		if (stopPlan != null && stopPlan.isTimed) {
+			final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
+			if (stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && train.isOvertakingTrainComing(train.getStopId(nextStoppingIndex), service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
+				return -1;
+			}
+			holdUntil = Math.max(holdUntil, departureMillis - DOOR_CLOSE_MILLIS);
+		}
+		if (service.isOnDuty() && !train.isRunGranted(nextStoppingIndex + 1) && currentMillis >= holdUntil) {
+			return -1;
+		}
+		return getTicksUntilDoorsClose(train.getTotalDwellTicks(), state.getElapsedDwellTicks(), holdUntil, currentMillis);
+	}
+
+	/**
+	 * {@link #getTicksUntilDoorsClose(Train)} from what it goes by: the doors close once the stop time less the time they
+	 * take to close is reached ({@link #areDoorsOpen}), which a hold until a known time puts off until then.
+	 *
+	 * @param holdUntilMillis until when the train is held with its doors open, or 0
+	 */
+	public static int getTicksUntilDoorsClose(int totalDwellTicks, float elapsedDwellTicks, long holdUntilMillis, long currentMillis) {
+		final float closeAt = totalDwellTicks - MotionConstants.DOOR_DELAY - Math.min(MotionConstants.DOOR_MOVE_TIME, totalDwellTicks / 2 - MotionConstants.DOOR_DELAY);
+		final int toClose = (int) Math.max(0, Math.ceil(closeAt - elapsedDwellTicks));
+		final int held = holdUntilMillis > currentMillis ? (int) ((holdUntilMillis - currentMillis + MotionConstants.MILLIS_PER_TICK - 1) / MotionConstants.MILLIS_PER_TICK) : 0;
+		return toClose + held;
+	}
+
 	public static boolean isHeldAtStop(Train train) {
 		final MotionState state = train.getState();
 		if (state.isCurrentlyManual()) {

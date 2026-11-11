@@ -1,5 +1,11 @@
 # MTR Advanced
 
+0.65.30 times door closing chimes and DK3 door animations by when the server will close the doors, not by the platform rail's stop time: a timetable departure later than that no longer sounds the chime while the doors stay open. Update server and clients together.
+
+0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
+
+0.65.28 adds a search to the image list of the painting screen: type while the list is open to keep the images whose names have every word.
+
 0.65.27 announces as the next station the next stop the train actually stops at, so a station a service passes by its own exception is no longer announced. Making a new timetable turns the stops every service passes into the route's own passes, so the new table passes them too.
 
 0.65.26 finds ways out of and back to a depot whose shortest way crosses over onto the other track and runs the line's platforms the wrong way: those platforms are left out and the way is found again. Where there is still no way, the web checks and the server log say why. Update server and clients together.

@@ -1,6 +1,7 @@
 package cn.zbx1425.mtrsteamloco.sound;
 
 import mtr.MTRClient;
+import transitsim.motion.MotionConstants;
 import mtr.data.TrainClient;
 import mtr.sound.TrainSoundBase;
 import mtr.sound.bve.BveTrainSound;
@@ -48,6 +49,7 @@ public class DwellTimeBveTrainSound extends TrainSoundBase {
     private float elapsedDwellTicks = 0;
     private float totalDwellTicks = 0;
     private float lastRenderedTick = 0;
+    private boolean closePlayed;
 
     @Override
     public void playAllCarsDoorOpening(Level world, BlockPos pos, int carIndex) {
@@ -62,24 +64,28 @@ public class DwellTimeBveTrainSound extends TrainSoundBase {
         if (train.justOpening()) {
             elapsedDwellTicks = 0;
             totalDwellTicks = train.getTotalDwellTicks();
+            closePlayed = false;
         }
 
-        // Get door delay of the first sec off
-        final int dwellTicks = (int) (totalDwellTicks - 20);
-        final float stopTicks = elapsedDwellTicks;
+        // The closing chime ends as the doors finish closing, which is when the server says (0.65.30), not by the
+        // platform rail's stop time, which a timetable's later departure makes too short: the chime sounded and the
+        // doors stayed open. While the server doesn't know (the train held by a dispatcher or for the run ahead), the
+        // chime waits until the doors start to close.
+        final float doorsCloseLeft = train.getDoorsCloseTicksLeft();
+        final float chimeTicks = bveTrainSound.config.soundCfg.doorCloseSoundLength * 20;
+        final boolean chimeNow = doorsCloseLeft >= 0 ? doorsCloseLeft + MotionConstants.DOOR_MOVE_TIME <= chimeTicks : train.justClosing(1);
 
         final SoundEvent soundEvent;
         if (train.justOpening() && bveTrainSound.config.soundCfg.doorOpen != null) {
             soundEvent = bveTrainSound.config.soundCfg.doorOpen;
-        } else if (bveTrainSound.config.soundCfg.doorClose != null
-            && oldStopTicks <= dwellTicks - bveTrainSound.config.soundCfg.doorCloseSoundLength * 20
-            && stopTicks > dwellTicks - bveTrainSound.config.soundCfg.doorCloseSoundLength * 20) {
+        } else if (bveTrainSound.config.soundCfg.doorClose != null && !closePlayed && chimeNow && train.getDoorValue() > 0) {
             soundEvent = bveTrainSound.config.soundCfg.doorClose;
+            closePlayed = true;
         } else {
             soundEvent = null;
         }
 
-        oldStopTicks = stopTicks;
+        oldStopTicks = elapsedDwellTicks;
 
         playLocalSound(world, soundEvent, pos);
     }

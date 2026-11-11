@@ -1,5 +1,11 @@
 # MTR 代码说明与主要流程
 
+0.65.30 关门声与停站时间：`TrainRules.getTicksUntilDoorsClose`（组件）按停站总时长、门动作时间以及已知的计划发车/运用发车扣车算出离开始关门还有多少 tick；调度扣车、待避、前方未放行等结束时间未知时为 -1。`TrainServer.getTicksUntilDoorsClose` 调用它，`Train.writePacket`/`writeStatePacket` 在包尾（ANTE 追加内容之前）写入，客户端 `Train`/`TrainClient.State` 读入并以接收时刻倒计时（`getDoorsCloseTicksLeft`）。ANTE 的 `DwellTimeBveTrainSound` 关门提示音与 `RenderTrainDK3` 门动画改按它计时，不再按站台轨道停站时间；未知时提示音在门开始关闭时播放、DK3 门保持打开。
+
+0.65.29 站台端门对齐：`models/export_platform_edge_doors.py` 把端门模型整体后移 `Z_OFFSET`=2 像素，门框落在 z 2..4，与屏蔽门/站台门玻璃（其模型 x 2..4 经方块状态旋转）同一面；开门模型按铰链 (15, 3) 计算平移。`BlockPlatformEndDoor` 新增方块属性 `inward`（开门方向）：放置时 `rowFacing` 沿用左右相邻屏蔽门/站台门的朝向，玩家站在另一侧时 `inward`=true，门扇仍在同一格同一面；空手潜行右键切换开门方向（并关门），普通右键开关。外开碰撞 z -12..4，内开 z 2..18；方块状态每种 32 个变体，内开模型 `*_open_in`。资源包 1.0.6。
+
+0.65.28 图片搜索：画框设置（`ImportedPaintingScreen`）的图片下拉列表打开时直接输入即搜索，列表顶部一行显示搜索词，按 `mtr.image.ImageSearch` 过滤（不分大小写，空格分开的每个词都要出现在名称中）；退格删字，Esc 先清空搜索再关闭，回车选中；搜索非空时原版画一行只在其名称匹配时出现。空格现在是搜索字符，不再用于选中。
+
 0.65.27 报站与新建时刻表：`TrainClient.simulateTrain` 的下一站改由 `AnnouncementStops.nextStop`（组件）按列车自己的路径找车头前方第一个有停站时间的站台，班次例外或调度跳停通过的站不再报为下一站；本站、线路仍由 `RailwayData.useRoutesAndStationsFromIndex` 给出。网页新建时刻表（`LinePanels.tsx` 的 `TableDays`）先调用 `core/timetable.ts` 的 `liftCommonPasses`：各表每一班都由例外通过的站改为线路级通过（`timetable.pass`），去掉这些例外里的通过及该站的设定时刻，新表和以后加的班次共用。汇总时刻表上方“最低性能”的三个输入框（`SummaryTable.tsx`）以线路、表和当前数值为 `key`，切换线路或表时重新显示该线路的数值，不保留上一条线路的输入。
 
 0.65.26 出入库遇交叉渡线：`LineDepotWays.Graph.freeLeg` 在车厂与车站之间的最短路线逆着本线其他站台走时（常见于经交叉渡线到了对向线），把这些站台按该方向加入 `LegRouter.Request.avoid` 重新找路，最多 4 轮，不再直接判为走不通；`throughDepotLeg` 保留 `avoid`。`RoutePaths.findDepotWay` 新增带 `why` 的重载，走不通时由 `diagnoseDepotWay` 给出原因（轨道不连通、只能逆着站台走并列出站台、多个出入口未设规则、规则指定的车站或路径走不通、只能反向到站且无处折返）。`Depot.measureDepotWays` 把原因存入 `DepotLegs.outReasons/backReasons`（存档列表和数据包在原字段之后追加），写服务端日志；`EditorData` 以 `noWayOutWhy/noWayBackWhy` 交给网页检查栏，文案在 `PathFailureText.depotWay`。

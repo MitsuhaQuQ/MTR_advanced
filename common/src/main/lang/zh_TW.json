@@ -46,6 +46,8 @@
   "gui.mtr.image_offset_z": "向前偏移（方块）",
   "gui.mtr.image_units": "尺寸 0.0625–16；偏移 -16–16 方块",
   "gui.mtr.image_vanilla": "原版画（不使用导入图片）",
+  "gui.mtr.image_search_hint": "輸入名稱搜尋圖片",
+  "gui.mtr.image_search_none": "沒有符合的圖片",
   "gui.mtr.image_apply": "应用",
   "gui.mtr.image_cancel": "取消",
   "gui.mtr.image_invalid": "请选择不超过 5 MB 的有效 PNG 或 GIF",
