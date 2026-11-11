@@ -143,8 +143,12 @@ public final class EditorSimulation implements IPacket {
 
 	static Route copyRoute(Route route) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
-		route.writePacket(packet);
-		return new Route(packet);
+		try {
+			route.writePacket(packet);
+			return new Route(packet);
+		} finally {
+			packet.release();
+		}
 	}
 
 	/**

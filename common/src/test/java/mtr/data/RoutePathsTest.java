@@ -30,6 +30,47 @@ class RoutePathsTest {
 	private static final PathTiming.Vehicle SLOW = new PathTiming.Vehicle(160, 8, 20, 0.002F, 0.002F, false, TransportMode.TRAIN);
 
 	@Test
+	void theFirstPassingStopTakesPositiveTimeInBothTimingModes() {
+		final Route route = route();
+		route.platformIds.get(1).pass = true;
+		final RoutePaths.RoutePath path = new RoutePaths.RoutePath(route.id, "", path(), PathFailure.NONE);
+		for (boolean curves : new boolean[]{false, true}) {
+			final PathTiming.Vehicle vehicle = new PathTiming.Vehicle(40, 1, 20, 0.002F, 0.002F, curves, TransportMode.TRAIN);
+			final long[][] times = path.getFastestTimes(route, Collections.singleton(vehicle));
+			assertTrue(times[1][0] > times[0][1], "Run to first passing stop, curves=" + curves);
+			assertEquals(times[1][0], times[1][1]);
+			assertTrue(times[2][0] > times[1][1]);
+			final List<transitsim.plan.StopRules.StopTime> plans = transitsim.plan.StopRules.times(route.platformIds, times, 0, 0, null);
+			assertTrue(plans.get(1).arrivalMillis > plans.get(0).departureMillis);
+			assertFalse(plans.get(1).tooFast);
+		}
+	}
+
+	@Test
+	void everyTableUsesItsOwnMinimumPerformance() {
+		final Route route = route();
+		route.timetable.minAcceleration = FAST.acceleration;
+		route.timetable.minDeceleration = FAST.deceleration;
+		final transitsim.plan.RouteTimetable second = new transitsim.plan.RouteTimetable();
+		second.minAcceleration = SLOW.acceleration;
+		second.minDeceleration = SLOW.deceleration;
+		route.timetable.addTable(second);
+		final RoutePaths.RoutePath routePath = new RoutePaths.RoutePath(route.id, "", path(), PathFailure.NONE);
+		final long[][] times = routePath.getTimetableTimes(route, Collections.singleton(FAST));
+		assertTrue(times[2][2] > times[2][0]);
+		assertEquals(times[2][0], routePath.getFastestTimes(route, Collections.singleton(FAST))[2][0]);
+		assertEquals(times[2][2], transitsim.plan.StopRules.times(route.platformIds, times, 0, 1, null).get(2).arrivalMillis);
+		second.minMaxSpeed = 0.1F;
+		final long[][] limited = routePath.getTimetableTimes(route, Collections.singleton(FAST));
+		assertEquals(times[2][0], limited[2][0]);
+		assertTrue(limited[2][2] > times[2][2]);
+		second.minAcceleration = 0;
+		second.minDeceleration = 0;
+		final long[][] unset = routePath.getTimetableTimes(route, Collections.singleton(FAST));
+		assertEquals(unset[2][0], unset[2][2]);
+	}
+
+	@Test
 	void theSlowerTimeOfEachStopIsKept() {
 		final long[][] slowest = RoutePaths.slowest(new long[][]{{0, 0}, {30, 50}, {90, 90}}, new long[][]{{0, 0}, {40, 45}, {-1, -1}});
 		assertArrayEquals(new long[][]{{0, 0}, {40, 50}, {-1, -1}}, slowest);

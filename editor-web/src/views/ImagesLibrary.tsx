@@ -4,7 +4,7 @@ import { tr } from "../i18n"
 import { ConfirmButton } from "../ui/bits"
 
 type Entry = { hash: string; name: string; width: number; height: number; size: number; canDelete: boolean; uploaderName: string; uploadedAt: number }
-type Library = { entries: Entry[]; canUpload: boolean; busy: boolean; message: string; maxBytes: number; maxDimension: number }
+type Library = { entries: Entry[]; canUpload: boolean; busy: boolean; message: string; maxBytes: number; maxDimension: number; maxTotalBytes?: number; totalBytes?: number }
 const headers = { "X-MTR-Editor-Key": key }
 const endpoint = (path: string) => new URL("/api/" + path, location.origin).toString()
 const base64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
@@ -18,7 +18,7 @@ export async function prepareImage(file: File, maxDimension: number, maxBytes: n
   if (!/\.(png|jpe?g|gif)$/i.test(file.name) || file.size > 16 * 1024 * 1024) throw new Error(tr("请选择不超过 16 MB 的 PNG、JPEG 或 GIF 图片。"))
   const baseName = file.name.replace(/\.(png|jpe?g|gif)$/i, "")
   if (/\.gif$/i.test(file.name)) {
-    if (file.size > maxBytes) throw new Error(tr("GIF 不能超过 2 MB。"))
+    if (file.size > maxBytes) throw new Error(tr("GIF 不能超过 5 MB。"))
     const header = new Uint8Array(await file.slice(0, 10).arrayBuffer())
     if (header.length < 10 || !/^GIF8[79]a$/.test(String.fromCharCode(...header.slice(0, 6)))) throw new Error(tr("无法读取图片。"))
     const width = header[6] | (header[7] << 8)
@@ -36,7 +36,7 @@ export async function prepareImage(file: File, maxDimension: number, maxBytes: n
     if (!context) throw new Error(tr("无法读取图片。"))
     context.drawImage(bitmap, 0, 0)
     const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error(tr("无法读取图片。"))), "image/png"))
-    if (blob.size > maxBytes) throw new Error(tr("转换后的图片不能超过 2 MB。"))
+    if (blob.size > maxBytes) throw new Error(tr("转换后的图片不能超过 5 MB。"))
     return { name: baseName + ".png", blob }
   } finally { bitmap.close() }
 }
@@ -129,7 +129,8 @@ export function ImagesLibrary() {
       <input type="file" ref={input} accept=".png,.jpg,.jpeg,.gif,image/png,image/jpeg,image/gif" multiple hidden onChange={event => { const files = [...event.target.files || []]; event.target.value = ""; upload(files) }} />
       <button className="btn btn-primary" disabled={!data?.canUpload || sending || data.busy} onClick={() => input.current?.click()}>{tr("导入图片")}</button>
     </div>
-    <p className="m-0 p-3 text-[12px] text-dim">{tr("导入 PNG、JPEG 或 GIF，宽高最多 2048 像素，上传内容不超过 2 MB。GIF 保留动画。用 MTR 刷子右键原版画选图和调整位置、尺寸。图片使用内部名称。")}</p>
+    <p className="m-0 p-3 text-[12px] text-dim">{tr("导入 PNG、JPEG 或 GIF，宽高最多 2048 像素，上传内容不超过 5 MB。GIF 保留动画。用 MTR 刷子右键原版画选图和调整位置、尺寸。图片使用内部名称。")}</p>
+    {data?.maxTotalBytes !== undefined && <p className="m-0 px-3 pb-2 text-[12px] text-dim">{tr("已用 {0} MB / 总容量 {1} MB", ((data.totalBytes || 0) / 1048576).toFixed(1), data.maxTotalBytes / 1048576)}</p>}
     <div className="flex min-h-0 flex-1 flex-col md:flex-row" onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = data?.canUpload && !sending && !data.busy ? "copy" : "none" }} onDrop={event => { event.preventDefault(); upload([...event.dataTransfer.files]) }}>
       <div className="scroll-thin min-h-0 flex-1 overflow-auto p-3">
         {data?.entries.filter(item => (!uploader || item.uploaderName === uploader) && item.name.toLowerCase().includes(search.toLowerCase())).map(item => <button key={item.name} className={"mb-1 flex w-full items-center justify-between rounded-md border p-2 text-left " + (selected === item.name ? "tint-sel" : "bg-panel")} onClick={() => setSelected(item.name)}><span className="truncate">{item.name}</span><span className="ml-2 whitespace-nowrap text-[12px] text-dim">{item.width} × {item.height}</span></button>)}

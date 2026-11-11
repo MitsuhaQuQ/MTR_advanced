@@ -184,15 +184,14 @@ public interface IDrawing {
 	}
 
 	static void drawTextureWorld(PoseStack matrices, VertexConsumer vertexConsumer, double x1, double y1, double z1, double x2, double y2, double z2, double x3, double y3, double z3, double x4, double y4, double z4, float u1, float v1, float u2, float v2, Direction facing, int color, int light) {
-		matrices.pushPose();
-		translateWorldOrigin(matrices, x1, y1, z1);
+		// Subtract in double precision before conversion, with no matrix push/copy/translate per quad.
+		final Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
 		drawTexture(matrices, vertexConsumer,
-				0, 0, 0,
-				(float) (x2 - x1), (float) (y2 - y1), (float) (z2 - z1),
-				(float) (x3 - x1), (float) (y3 - y1), (float) (z3 - z1),
-				(float) (x4 - x1), (float) (y4 - y1), (float) (z4 - z1),
+				(float) (x1 - camera.x), (float) (y1 - camera.y), (float) (z1 - camera.z),
+				(float) (x2 - camera.x), (float) (y2 - camera.y), (float) (z2 - camera.z),
+				(float) (x3 - camera.x), (float) (y3 - camera.y), (float) (z3 - camera.z),
+				(float) (x4 - camera.x), (float) (y4 - camera.y), (float) (z4 - camera.z),
 				u1, v1, u2, v2, facing, color, light);
-		matrices.popPose();
 	}
 
 	static void translateWorldOrigin(PoseStack matrices, double x, double y, double z) {

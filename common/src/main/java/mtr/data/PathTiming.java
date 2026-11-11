@@ -199,12 +199,12 @@ public final class PathTiming {
 				return false;
 			}
 			final Vehicle other = (Vehicle) object;
-			return railLength == other.railLength && trainCars == other.trainCars && spacing == other.spacing && acceleration == other.acceleration && deceleration == other.deceleration && useSpeedCurve == other.useSpeedCurve && transportMode == other.transportMode;
+			return railLength == other.railLength && trainCars == other.trainCars && spacing == other.spacing && acceleration == other.acceleration && deceleration == other.deceleration && useSpeedCurve == other.useSpeedCurve && transportMode == other.transportMode && maxSpeed == other.maxSpeed;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(railLength, trainCars, spacing, acceleration, deceleration, useSpeedCurve, transportMode);
+			return Objects.hash(railLength, trainCars, spacing, acceleration, deceleration, useSpeedCurve, transportMode, maxSpeed);
 		}
 	}
 }

@@ -732,7 +732,7 @@ public final class LineDuties {
 						if (result.uncovered > 0) {
 							// Services no number of trains could run, as no siding reaches them and no train can turn to them,
 							// aren't trains short: told apart, so the trains needed aren't all the trains there are (2026-11-09)
-							final int unrunnable = DutyGenerator.unrunnable(DutyGenerator.onDays(services, mask), groupSidings, stationOf, DutyGenerator.layoverOf(mask, maxLayover), inputs);
+							final int unrunnable = result.unrunnable >= 0 ? result.unrunnable : DutyGenerator.unrunnable(DutyGenerator.onDays(services, mask), groupSidings, stationOf, DutyGenerator.layoverOf(mask, maxLayover), inputs);
 							if (unrunnable > 0) {
 								part.issues.add(UNRUNNABLE + " " + unrunnable);
 							}
@@ -1041,8 +1041,9 @@ public final class LineDuties {
 
 		private int uncoveredWith(List<DutyGenerator.ServiceInput> services, int mask, List<DutyGenerator.SidingInput> sidings, DutyGenerator.SidingInput siding, int trains, long maxLayover, DutyGenerator.PlanInputs inputs) {
 			final List<DutyGenerator.SidingInput> changed = new ArrayList<>();
-			sidings.forEach(other -> changed.add(other == siding ? new DutyGenerator.SidingInput(other.sidingId, Math.min(trains, DepotDuties.MAX_SLOTS), other.links, other.depotId) : other));
-			return DutyGenerator.generateDayType(services, mask, changed, stationOf, maxLayover, inputs, false).uncovered;
+			sidings.forEach(other -> changed.add(other == siding ? other.withCapacity(Math.min(trains, DepotDuties.MAX_SLOTS)) : other));
+			final int added = Math.max(0, Math.min(trains, DepotDuties.MAX_SLOTS) - siding.maxTrains);
+			return DutyGenerator.uncoveredOnDayType(services, mask, changed, stationOf, maxLayover, inputs.withAdditionalPoolTrains(siding.poolKey, added));
 		}
 	}
 
@@ -1109,37 +1110,44 @@ public final class LineDuties {
 	public static final class PlanCache<T> {
 
 		private static final int MAX_PLANS = 64;
-		private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.FutureTask<T>> plans = new java.util.concurrent.ConcurrentHashMap<>();
+		private final Map<String, java.util.concurrent.FutureTask<T>> plans = new LinkedHashMap<>(16, 0.75F, true);
 
-		/**
-		 * @param key everything the plan is made from: the unit's key, the start of the operating day and the times
-		 *            between platforms
-		 */
-		public T get(String key, java.util.concurrent.Callable<T> planner) throws Exception {
-			final java.util.concurrent.FutureTask<T> task = new java.util.concurrent.FutureTask<>(planner);
-			final java.util.concurrent.FutureTask<T> existing = plans.putIfAbsent(key, task);
-			if (existing == null) {
-				if (plans.size() > MAX_PLANS) {
-					plans.keySet().removeIf(other -> !other.equals(key));
-				}
-				task.run();
+		/** Completed least-recently-used results are evicted; running work stays shared. */
+		private void trim() {
+			final java.util.Iterator<Map.Entry<String, java.util.concurrent.FutureTask<T>>> iterator = plans.entrySet().iterator();
+			while (plans.size() > MAX_PLANS && iterator.hasNext()) {
+				if (iterator.next().getValue().isDone()) iterator.remove();
 			}
+		}
+
+		public T get(String key, java.util.concurrent.Callable<T> planner) throws Exception {
+			final java.util.concurrent.FutureTask<T> task;
+			final boolean owner;
+			synchronized (plans) {
+				final java.util.concurrent.FutureTask<T> existing = plans.get(key);
+				owner = existing == null;
+				task = owner ? new java.util.concurrent.FutureTask<>(planner) : existing;
+				if (owner) plans.put(key, task);
+				trim();
+			}
+			if (owner) task.run();
 			try {
-				return (existing == null ? task : existing).get();
+				return task.get();
 			} catch (java.util.concurrent.ExecutionException e) {
-				// The thread planning it failed or was stopped for a newer request: this one plans for itself
-				plans.remove(key, existing == null ? task : existing);
+				synchronized (plans) { plans.remove(key, task); }
 				if (e.getCause() instanceof java.util.concurrent.CancellationException) {
-					if (existing == null) {
-						throw (java.util.concurrent.CancellationException) e.getCause();
-					}
-					return planner.call();
+					if (owner) throw (java.util.concurrent.CancellationException) e.getCause();
+					return get(key, planner);
 				}
 				throw e;
 			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 				throw new java.util.concurrent.CancellationException("Interrupted waiting for a plan");
+			} finally {
+				synchronized (plans) { trim(); }
 			}
 		}
+
 	}
 
 	/**

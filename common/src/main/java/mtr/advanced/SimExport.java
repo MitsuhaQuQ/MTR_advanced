@@ -49,7 +49,7 @@ public final class SimExport {
 			// The route's own fastest times, so the component plans with the same times as the game (L1)
 			final RoutePaths.RoutePath routePath = RoutePaths.timesByPath(route) ? railwayData.routePaths.getFound(route, railwayData.dataCache, rails) : null;
 			if (routePath != null) {
-				routeData.fastestTimes = routePath.getFastestTimes(route, RoutePaths.getVehicles(vehicles, route));
+				routeData.fastestTimes = routePath.getTimetableTimes(route, RoutePaths.getVehicles(vehicles, route));
 			}
 			dataset.routes.add(routeData);
 		});
@@ -94,7 +94,7 @@ public final class SimExport {
 	}
 
 	public static List<SimDataset.DataTrack> toTracks(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		return path.stream().map(pathData -> {
+		final java.util.function.Function<PathData, SimDataset.DataTrack> convert = pathData -> {
 			final RailType railType = pathData.rail.railType;
 			final Rail backwards = DataCache.tryGet(rails, pathData.getLastPos(), pathData.startingPos);
 			return new SimDataset.DataTrack(
@@ -102,7 +102,9 @@ public final class SimExport {
 					railType == RailType.PLATFORM, railType == RailType.SIDING, pathData.savedRailBaseId, pathData.dwellTime, pathData.stopIndex,
 					pathData.getMaxSpeed(), railType.canAccelerate, railType.hasSignal, backwards != null && backwards.railType != RailType.NONE
 			);
-		}).collect(Collectors.toList());
+		};
+		if (path instanceof transitsim.plan.IndexedPath) return ((transitsim.plan.IndexedPath<PathData>) path).map(convert, SimDataset.DataTrack::withStopIndexOffset, SimDataset::trackSignature);
+		return path.stream().map(convert).collect(Collectors.toList());
 	}
 
 	private static long[] toArray(List<Long> values) {

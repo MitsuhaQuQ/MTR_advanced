@@ -1311,12 +1311,16 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public void disconnectPlayer(Player player) {
+		updateNearbyTrains.forget(player);
+		updateNearbyLifts.forget(player);
 		final UUID uuid = player.getUUID();
 		sidings.forEach(siding -> siding.removeRider(uuid));
 		lifts.forEach(lift -> lift.ridingEntities.remove(uuid));
 		railwayDataCoolDownModule.onPlayerDisconnect(player);
 		playerLastUpdatedPositions.remove(player);
 	}
+
+	public void requestTrainSnapshot(ServerPlayer player) { updateNearbyTrains.requestFullSnapshot(player); }
 
 	public void getSchedulesForStation(Map<Long, List<ScheduleEntry>> schedulesForStation, long stationId) {
 		schedulesForPlatform.forEach((platformId, schedules) -> {
@@ -1548,6 +1552,21 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public static boolean useRoutesAndStationsFromIndex(int stopIndex, List<Long> routeIds, DataCache dataCache, RouteAndStationsCallback routeAndStationsCallback) {
+		return useRoutesAndStationsFromIndex(stopIndex, 0, routeIds, dataCache, routeAndStationsCallback);
+	}
+
+	public static boolean useRoutesAndStationsFromIndex(int stopIndex, long actualPlatform, List<Long> routeIds, DataCache dataCache, RouteAndStationsCallback routeAndStationsCallback) {
+		if (actualPlatform != 0) {
+			final List<long[]> stops = new ArrayList<>();
+			final boolean[] shared = new boolean[routeIds.size()];
+			for (int i=0;i<routeIds.size();i++) {
+				final Route route = dataCache.routeIdMap.get(routeIds.get(i));
+				final Route next = i+1<routeIds.size() ? dataCache.routeIdMap.get(routeIds.get(i+1)) : null;
+				stops.add(route == null ? new long[0] : route.platformIds.stream().mapToLong(p -> p.platformId).toArray());
+				shared[i] = route != null && !route.platformIds.isEmpty() && next != null && !next.isHidden && !next.platformIds.isEmpty() && route.getLastPlatformId() == next.getFirstPlatformId();
+			}
+			stopIndex = transitsim.plan.AnnouncementStops.nearest(stopIndex, actualPlatform, stops, shared);
+		}
 		if (stopIndex < 0) {
 			return false;
 		}
@@ -1555,7 +1574,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		int sum = 0;
 		for (int i = 0; i < routeIds.size(); i++) {
 			final Route thisRoute = dataCache.routeIdMap.get(routeIds.get(i));
-			final Route nextRoute = i < routeIds.size() - 1 && !dataCache.routeIdMap.get(routeIds.get(i + 1)).isHidden ? dataCache.routeIdMap.get(routeIds.get(i + 1)) : null;
+			final Route nextCandidate = i < routeIds.size() - 1 ? dataCache.routeIdMap.get(routeIds.get(i + 1)) : null;
+			final Route nextRoute = nextCandidate != null && !nextCandidate.isHidden ? nextCandidate : null;
 			if (thisRoute != null) {
 				final int difference = stopIndex - sum;
 				sum += thisRoute.platformIds.size();

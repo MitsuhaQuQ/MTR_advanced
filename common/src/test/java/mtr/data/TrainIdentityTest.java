@@ -32,6 +32,15 @@ class TrainIdentityTest {
 	}
 
 	@Test
+	void changingSidingLengthRequiresAReplacementEvenWhenCarCountAndModelMatch() {
+		TrainServer original=new TrainServer(1,2,60,"train","train_24_2",2,new ArrayList<>(),new ArrayList<>(),0,0,Train.ACCELERATION_DEFAULT,new ArrayList<>(),false,0,0);
+		TrainServer moved=new TrainServer(1,3,65,"train","train_24_2",2,new ArrayList<>(),new ArrayList<>(),0,0,Train.ACCELERATION_DEFAULT,new ArrayList<>(),false,0,0);
+		assertNotEquals(original.getSyncKey(),moved.getSyncKey());
+		assertFalse(original.isSameVehicle(moved),"A copied path cannot change the old instance's final siding length");
+		assertTrue(original.isSameVehicle(original));
+	}
+
+	@Test
 	void aSavedTrainIsAsLongAsItSaysWithWhatItIsToldToPass() throws IOException {
 		// A train saved one value short leaves its last one to be read as the next train of its siding (D3 found it)
 		final TrainServer train = train(5, 100);

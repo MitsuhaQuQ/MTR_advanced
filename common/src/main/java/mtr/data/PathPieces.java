@@ -46,6 +46,57 @@ public final class PathPieces {
 	private PathPieces() {
 	}
 
+	private static String signature(List<PathData> rails) {
+		try { return Base64.getEncoder().encodeToString(encode(rails, 0, rails.size(), 0)); }
+		catch (IOException e) { throw new IllegalStateException(e); }
+	}
+
+	private static PathData withStopOffset(PathData rail, int offset) {
+		final PathData copy = rail.copy(rail.savedRailBaseId, rail.dwellTime);
+		copy.stopIndex = rail.stopIndex + offset;
+		return copy;
+	}
+
+	/** Segment boundaries identify single trips and connections; repeated geometry is stored once. */
+	public static List<PathData> indexDuty(List<PathData> path, int[] starts) {
+		return indexDuty(path, starts, -1);
+	}
+
+	public static List<PathData> indexDuty(List<PathData> path, int[] starts, int firstServiceRail) {
+		if (path instanceof transitsim.plan.IndexedPath || path.isEmpty()) return path;
+		final SortedSet<Integer> boundaries = new TreeSet<>();
+		boundaries.add(0); boundaries.add(path.size());
+		if (starts != null) for (int start : starts) if (start > 0 && start < path.size()) boundaries.add(start);
+		final List<Integer> cuts = new ArrayList<>(boundaries);
+		final Map<String, List<PathData>> templates = new HashMap<>();
+		final List<transitsim.plan.IndexedPath.Segment<PathData>> parts = new ArrayList<>();
+		try {
+			int numbered = 0; long previousPlatform = 0;
+			for (int i = 1; i < cuts.size(); i++) {
+				final int from = cuts.get(i - 1), to = cuts.get(i);
+				final int stopBase = firstServiceRail < 0 ? path.get(from).stopIndex : numbered;
+				final List<PathData> local = new ArrayList<>();
+				for (int j = from; j < to; j++) {
+					PathData rail = path.get(j);
+					PathData copy = rail.copy(rail.savedRailBaseId, rail.dwellTime);
+					if (firstServiceRail >= 0) {
+						long platform = j >= firstServiceRail && rail.isPlatformTrack() ? rail.savedRailBaseId : 0;
+						if (platform != 0 && platform != previousPlatform) numbered++;
+						copy.stopIndex = numbered;
+						previousPlatform = platform;
+					}
+					local.add(copy);
+				}
+				final byte[] bytes = encode(local, 0, local.size(), stopBase);
+				final String key = Base64.getEncoder().encodeToString(bytes);
+				List<PathData> template = templates.get(key);
+				if (template == null) { template = decode(bytes); templates.put(key, template); }
+				parts.add(new transitsim.plan.IndexedPath.Segment<>(template, stopBase));
+			}
+			return new transitsim.plan.IndexedPath<>(parts, PathPieces::withStopOffset, PathPieces::signature);
+		} catch (IOException e) { throw new IllegalStateException("Cannot index duty path", e); }
+	}
+
 	/**
 	 * Writes a path under {@code key}, or as references to its pieces while a {@link Writer} is set for this thread.
 	 */
@@ -78,22 +129,17 @@ public final class PathPieces {
 		}
 		final List<Value> values = references.asArrayValue().list();
 		final long[] read = new long[values.size() - values.size() % 2];
+		final List<transitsim.plan.IndexedPath.Segment<PathData>> segments = new ArrayList<>();
 		for (int i = 0; i + 1 < values.size(); i += 2) {
 			read[i] = values.get(i).asIntegerValue().toLong();
 			read[i + 1] = values.get(i + 1).asIntegerValue().toLong();
-			final List<PathData> piece = reader.get(values.get(i).asIntegerValue().toLong());
-			if (piece == null) {
-				return null;
-			}
-			final int stopBase = (int) values.get(i + 1).asIntegerValue().toLong();
-			for (final PathData pathData : piece) {
-				final PathData copy = pathData.copy(pathData.savedRailBaseId, pathData.dwellTime);
-				copy.stopIndex = pathData.stopIndex + stopBase;
-				path.add(copy);
-			}
+			final List<PathData> piece = reader.get(read[i]);
+			if (piece == null) return null;
+			if (!piece.isEmpty()) segments.add(new transitsim.plan.IndexedPath.Segment<>(piece, (int) read[i + 1]));
 		}
-		reader.read.put(path, read);
-		return path;
+		final List<PathData> indexed = new transitsim.plan.IndexedPath<>(segments, PathPieces::withStopOffset, PathPieces::signature);
+		reader.read.put(indexed, read);
+		return indexed;
 	}
 
 	/**
@@ -114,7 +160,7 @@ public final class PathPieces {
 	public static void precut(Collection<? extends transitsim.plan.TripPath<PathData>> tripPaths) {
 		for (final transitsim.plan.TripPath<PathData> tripPath : tripPaths) {
 			try {
-				PRECUT.put(tripPath.path, new Cut(tripPath.path));
+				if (!(tripPath.path instanceof transitsim.plan.IndexedPath)) PRECUT.put(tripPath.path, new Cut(tripPath.path));
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -295,7 +341,7 @@ public final class PathPieces {
 				cut = cutPaths.get(path);
 			}
 			if (cut == null) {
-				cut = PRECUT.remove(path);
+				if (!(path instanceof transitsim.plan.IndexedPath)) cut = PRECUT.remove(path);
 			}
 			if (cut == null || cut.size != path.size()) {
 				cut = new Cut(path);
@@ -357,6 +403,19 @@ public final class PathPieces {
 
 		private Cut(List<PathData> path) throws IOException {
 			size = path.size();
+			if (path instanceof transitsim.plan.IndexedPath) {
+				final List<transitsim.plan.IndexedPath.Segment<PathData>> parts = ((transitsim.plan.IndexedPath<PathData>) path).segments();
+				keys = new long[parts.size()]; bytes = new byte[parts.size()][]; references = new long[parts.size() * 2];
+				final Map<List<PathData>, byte[]> encoded = new HashMap<>();
+				for (int i = 0; i < parts.size(); i++) {
+					final transitsim.plan.IndexedPath.Segment<PathData> part = parts.get(i);
+					byte[] data = encoded.get(part.template);
+					if (data == null) { data = encode(part.template, 0, part.template.size(), 0); encoded.put(part.template, data); }
+					bytes[i] = data; keys[i] = keyOf(data);
+					references[i * 2] = keys[i]; references[i * 2 + 1] = part.stopOffset;
+				}
+				return;
+			}
 			final List<Integer> cuts = cuts(path);
 			final int count = Math.max(0, cuts.size() - 1);
 			keys = new long[count];

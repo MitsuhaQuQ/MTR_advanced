@@ -24,7 +24,7 @@ export class DraftTimes {
   /** Where a route's times are taken from: the game's for its own timetable, or the game's answer for the draft */
   source(r: any): TimesSource {
     const timetable = this.draftTimetable(r)
-    if (!timetable) return gameSource(r)
+    if (!timetable) { this.requested.delete(r.id); return gameSource(r) }
     const key = JSON.stringify([timetable, r.hasTimes ? r.fastest : null])
     const cached = this.answered.get(r.id)
     if ((!cached || cached.key !== key) && this.requested.get(r.id) !== key) {
@@ -43,14 +43,20 @@ export class DraftTimes {
     if (!routes.length) return
     const keys = new Map(sent)
     try {
-      const result = await this.send(routes.map(r => ({ id: r.id, timetable: this.draftTimetable(r) })))
-      result.routes.forEach(route => this.answered.set(route.id, {
-        key: keys.get(route.id)!,
-        tables: route.tables.map(table => ({ times: table.times, exceptions: new Map(table.exceptions.map(e => [e.service, e.times])) })),
-      }))
+      const result = await this.send(routes.map(r => ({ id: r.id, timetable: JSON.parse(JSON.stringify(this.draftTimetable(r))) })))
+      result.routes.forEach(route => {
+        const current = this.routeById(route.id)
+        const draft = current && this.draftTimetable(current)
+        const key = draft && JSON.stringify([draft, current.hasTimes ? current.fastest : null])
+        if (!key || key !== keys.get(route.id) || this.requested.get(route.id) !== key) return
+        this.answered.set(route.id, {
+          key,
+          tables: route.tables.map(table => ({ times: table.times, exceptions: new Map(table.exceptions.map(e => [e.service, e.times])) })),
+        })
+      })
     } catch {
       // Asked again with the next change
-      sent.forEach(([id]) => this.requested.delete(id))
+      sent.forEach(([id, key]) => { if (this.requested.get(id) === key) this.requested.delete(id) })
       return
     }
     this.answeredNow()

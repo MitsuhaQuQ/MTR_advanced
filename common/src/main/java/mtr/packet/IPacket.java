@@ -86,6 +86,7 @@ public interface IPacket {
 	ResourceLocation PACKET_UPDATE_TRAINS = new ResourceLocation(MTR.MOD_ID, "update_trains");
 	ResourceLocation PACKET_DELETE_TRAINS = new ResourceLocation(MTR.MOD_ID, "delete_trains");
 	ResourceLocation PACKET_UPDATE_TRAIN_STATES = new ResourceLocation(MTR.MOD_ID, "update_train_states");
+	ResourceLocation PACKET_REQUEST_TRAIN_RESYNC = new ResourceLocation(MTR.MOD_ID, "request_train_resync");
 	ResourceLocation PACKET_EDIT = new ResourceLocation(MTR.MOD_ID, "packet_edit");
 	ResourceLocation PACKET_EDIT_BATCH = new ResourceLocation(MTR.MOD_ID, "packet_edit_batch");
 	ResourceLocation PACKET_EDITING = new ResourceLocation(MTR.MOD_ID, "packet_editing");
@@ -136,5 +137,6 @@ public interface IPacket {
 	ResourceLocation PACKET_AUDIO_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_audio_wanted");
 	ResourceLocation PACKET_AUDIO_SOUND_ID = new ResourceLocation(MTR.MOD_ID, "packet_audio_sound_id");
 
+	ResourceLocation PACKET_EDIT_FRAGMENT = new ResourceLocation(MTR.MOD_ID, "packet_edit_fragment");
 	int MAX_PACKET_BYTES = 1048576;
 }

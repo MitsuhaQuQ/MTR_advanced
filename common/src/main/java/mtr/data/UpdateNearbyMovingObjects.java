@@ -31,16 +31,33 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 	 */
 	private final Map<Player, Map<Long, Integer>> sentKeys = new HashMap<>();
 	private static final Set<Long> TOLD_TOO_BIG = Collections.synchronizedSet(new HashSet<>());
+	private final Set<Player> requestedSnapshots = new HashSet<>();
+	private final Map<Player, Long> snapshotTimes = new WeakHashMap<>();
+	private final Sender sender;
+	interface Sender { void send(ServerPlayer player, ResourceLocation id, FriendlyByteBuf packet); }
 
 	public UpdateNearbyMovingObjects(ResourceLocation deletePacketId, ResourceLocation updatePacketId) {
 		this(deletePacketId, updatePacketId, null);
 	}
 
 	public UpdateNearbyMovingObjects(ResourceLocation deletePacketId, ResourceLocation updatePacketId, ResourceLocation statePacketId) {
+		this(deletePacketId, updatePacketId, statePacketId, Registry::sendToPlayer);
+	}
+
+	UpdateNearbyMovingObjects(ResourceLocation deletePacketId, ResourceLocation updatePacketId, ResourceLocation statePacketId, Sender sender) {
 		this.deletePacketId = deletePacketId;
 		this.updatePacketId = updatePacketId;
 		this.statePacketId = statePacketId;
+		this.sender = sender;
 	}
+
+	public void requestFullSnapshot(Player player) { requestFullSnapshot(player, System.nanoTime() / 1000000); }
+	boolean requestFullSnapshot(Player player, long now) {
+		Long previous = snapshotTimes.get(player);
+		if (previous != null && now - previous < 2000) return false;
+		snapshotTimes.put(player, now); requestedSnapshots.add(player); return true;
+	}
+	public void forget(Player player) { requestedSnapshots.remove(player); snapshotTimes.remove(player); dataSetInPlayerRange.remove(player); sentKeys.remove(player); }
 
 	public void startTick() {
 		newDataSetInPlayerRange.clear();
@@ -48,6 +65,15 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 	}
 
 	public void tick() {
+		// Use this tick's complete visibility set for both deletion and full data, even for parked trains.
+		for (Player player : requestedSnapshots) {
+			Set<T> visible = newDataSetInPlayerRange.getOrDefault(player, Collections.emptySet());
+			FriendlyByteBuf keep = new FriendlyByteBuf(Unpooled.buffer());
+			keep.writeInt(visible.size()); visible.forEach(data -> keep.writeLong(data.id));
+			if (keep.readableBytes() <= MAX_PACKET_BYTES) sender.send((ServerPlayer)player, deletePacketId, keep);
+			dataSetInPlayerRange.remove(player); sentKeys.remove(player);
+		}
+		requestedSnapshots.clear();
 		dataSetInPlayerRange.forEach((player, dataSet) -> {
 			for (final T data : dataSet) {
 				if (!newDataSetInPlayerRange.containsKey(player) || !newDataSetInPlayerRange.get(player).contains(data)) {
@@ -61,7 +87,7 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 					}
 
 					if (packet.readableBytes() <= MAX_PACKET_BYTES) {
-						Registry.sendToPlayer((ServerPlayer) player, deletePacketId, packet);
+						sender.send((ServerPlayer) player, deletePacketId, packet);
 					}
 
 					break;
@@ -115,7 +141,7 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 					}
 				}
 
-				Registry.sendToPlayer((ServerPlayer) player, updatePacketId, packet);
+				sender.send((ServerPlayer) player, updatePacketId, packet);
 			}
 		});
 
@@ -126,13 +152,13 @@ public class UpdateNearbyMovingObjects<T extends NameColorDataBase> implements I
 	/**
 	 * Sends the packets together in as few as fit.
 	 */
-	private static void send(ServerPlayer player, ResourceLocation packetId, List<FriendlyByteBuf> packets) {
+	private void send(ServerPlayer player, ResourceLocation packetId, List<FriendlyByteBuf> packets) {
 		while (!packets.isEmpty()) {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 			while (!packets.isEmpty() && packet.readableBytes() + packets.get(0).readableBytes() < MAX_PACKET_BYTES) {
 				packet.writeBytes(packets.remove(0));
 			}
-			Registry.sendToPlayer(player, packetId, packet);
+			sender.send(player, packetId, packet);
 		}
 	}
 }

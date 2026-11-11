@@ -533,6 +533,12 @@ public final class AudioServer implements IPacket {
 		return entry == null || entry.getSoundLocation() == null ? null : entry.hash;
 	}
 
+	public static long getUploadedDurationTicks(String reference) {
+		final String[] name = AnnouncementSound.splitUploaded(reference);
+		final Entry entry = name == null ? null : ENTRIES.get(AnnouncementSound.getNameKey(name[0], name[1]));
+		return entry == null ? 0 : (entry.durationMillis + 49) / 50;
+	}
+
 	private static boolean hasHash(String hash) {
 		return ENTRIES.values().stream().anyMatch(entry -> entry.hash.equals(hash));
 	}

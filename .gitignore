@@ -30,3 +30,9 @@ common/src/main/resources/mtrsteamloco.mixins.json
 common/src/main/resources/mtrsteamloco_filtered.accesswidener
 common/src/main/java/cn/zbx1425/mtrsteamloco/BuildConfig.java
 fabric/src/main/resources/mtrsteamloco_fabric.mixins.json
+
+# Local run directories and logs
+logs/
+common/logs/
+fabric/run/
+forge/run/

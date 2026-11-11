@@ -70,7 +70,7 @@ public class BlockPSDTop extends BlockDirectionalMapper implements EntityBlockMa
 
 	private void setState(Level world, BlockPos pos, boolean shouldBePersistent) {
 		final Block blockBelow = world.getBlockState(pos.below()).getBlock();
-		if (blockBelow instanceof BlockPSDDoor || blockBelow instanceof BlockPSDGlass || blockBelow instanceof BlockPSDGlassEnd) {
+		if (blockBelow instanceof BlockPSDDoor || blockBelow instanceof BlockPSDGlass || blockBelow instanceof BlockPSDGlassEnd || blockBelow instanceof BlockPlatformEndDoor && !((BlockPlatformEndDoor) blockBelow).isAPG()) {
 			if (shouldBePersistent) {
 				world.setBlockAndUpdate(pos, world.getBlockState(pos).setValue(PERSISTENT, blockBelow instanceof BlockPSDDoor ? EnumPersistent.ARROW : blockBelow instanceof BlockPSDGlass ? EnumPersistent.ROUTE : EnumPersistent.BLANK));
 			} else {
@@ -146,7 +146,7 @@ public class BlockPSDTop extends BlockDirectionalMapper implements EntityBlockMa
 
 		final BlockState stateBelow = world.getBlockState(pos.below());
 		final Block blockBelow = stateBelow.getBlock();
-		if (blockBelow instanceof BlockPSDGlass || blockBelow instanceof BlockPSDDoor || blockBelow instanceof BlockPSDGlassEnd) {
+		if (blockBelow instanceof BlockPSDGlass || blockBelow instanceof BlockPSDDoor || blockBelow instanceof BlockPSDGlassEnd || blockBelow instanceof BlockPlatformEndDoor && !((BlockPlatformEndDoor) blockBelow).isAPG()) {
 			if (blockBelow instanceof BlockPSDDoor) {
 				side = IBlock.getStatePropertySafe(stateBelow, SIDE);
 			} else {

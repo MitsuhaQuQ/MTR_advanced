@@ -911,7 +911,7 @@
 	/** What a route's times are taken from: the game's for its own timetable, or the game's answer for the draft. */
 	function timesSource(r) {
 		const draftTimetable = draftOf(r) && draftOf(r).timetable;
-		if (!draftTimetable) return gameSource(r);
+		if (!draftTimetable) { requestedTimes.delete(r.id); return gameSource(r); }
 		const key = JSON.stringify([draftTimetable, r.hasTimes ? r.fastest : null]);
 		const cached = draftTimes.get(r.id);
 		if ((!cached || cached.key !== key) && requestedTimes.get(r.id) !== key) {
@@ -930,14 +930,17 @@
 		if (!routes.length) return;
 		const keys = new Map(sent);
 		try {
-			const result = await sendJson("api/times", "POST", { routes: routes.map(r => ({ id: r.id, timetable: draftOf(r).timetable })) });
-			result.routes.forEach(route => draftTimes.set(route.id, {
-				key: keys.get(route.id),
-				tables: route.tables.map(table => ({ times: table.times, exceptions: new Map(table.exceptions.map(e => [e.service, e.times])) })),
-			}));
+			const result = await sendJson("api/times", "POST", { routes: routes.map(r => ({ id: r.id, timetable: JSON.parse(JSON.stringify(draftOf(r).timetable)) })) });
+			result.routes.forEach(route => {
+				const current = data.routeById.get(route.id);
+				const draft = current && draftOf(current) && draftOf(current).timetable;
+				const key = draft && JSON.stringify([draft, current.hasTimes ? current.fastest : null]);
+				if (!key || key !== keys.get(route.id) || requestedTimes.get(route.id) !== key) return;
+				draftTimes.set(route.id, { key, tables: route.tables.map(table => ({ times: table.times, exceptions: new Map(table.exceptions.map(e => [e.service, e.times])) })) });
+			});
 		} catch (e) {
 			// Asked again with the next change
-			sent.forEach(([id]) => requestedTimes.delete(id));
+			sent.forEach(([id, key]) => { if (requestedTimes.get(id) === key) requestedTimes.delete(id); });
 			return;
 		}
 		buildServices();
@@ -1044,7 +1047,15 @@
 	function editTimetable(r, change) {
 		const entry = draftEntry(r);
 		if (!entry.timetable) entry.timetable = JSON.parse(JSON.stringify(gameTimetable(r)));
+		const previousPass = [...entry.timetable.pass];
 		const message = change(entry.timetable);
+		entry.timetable.pass.forEach((pass, i) => {
+			if (!pass || previousPass[i]) return;
+			entry.timetable.tables.forEach(table => {
+				table.stops[i] = { arrival: -1, departure: -1, overtake: false };
+				table.exceptions.forEach(exception => exception.stops.forEach(stop => { if (stop.stop === i) { stop.run = -1; stop.dwell = -1; stop.overtake = -1; } }));
+			});
+		});
 		normalize(entry.timetable);
 		if (JSON.stringify(entry.timetable) === JSON.stringify(gameTimetable(r))) delete entry.timetable;
 		if (!entry.conflict) delete entry.error;
@@ -1062,6 +1073,7 @@
 		if (!exception) table.exceptions.push(exception = { service, stops: [] });
 		let stopException = exception.stops.find(e => e.stop === stop);
 		if (!stopException) exception.stops.push(stopException = { stop, run: -1, dwell: -1, pass: -1, overtake: -1 });
+		if (changes.pass === 1 && stopException.pass !== 1 && changes.run === undefined) stopException.run = -1;
 		Object.assign(stopException, changes);
 		if (stopException.run < 0 && stopException.dwell < 0 && stopException.pass < 0 && stopException.overtake < 0) exception.stops.splice(exception.stops.indexOf(stopException), 1);
 		if (!exception.stops.length) table.exceptions.splice(table.exceptions.indexOf(exception), 1);
@@ -1873,6 +1885,81 @@
 	try { if (localStorage.getItem("mtr-editor-net-layer") === "owners") net.layer = "owners"; } catch (e) {}
 	const netCanvas = $("net-canvas"), netWrap = $("net-wrap"), netCtx = netCanvas.getContext("2d");
 
+	// Geometry belongs to immutable point arrays, so replacing network data naturally drops these caches.
+	const netGeometryCache = new WeakMap(), netDetailCache = new WeakMap(), netRouteCache = new WeakMap();
+	let netFramePending = false;
+	function netGeometry(points, withPath = false) {
+		let value = netGeometryCache.get(points);
+		if (!value) {
+			let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+			for (let i = 0; i + 1 < points.length; i += 2) {
+				minX = Math.min(minX, points[i]); maxX = Math.max(maxX, points[i]);
+				minZ = Math.min(minZ, points[i + 1]); maxZ = Math.max(maxZ, points[i + 1]);
+			}
+			value = { minX, minZ, maxX, maxZ, x: points[0], z: points[1], path: null };
+			netGeometryCache.set(points, value);
+		}
+		if (withPath && !value.path && typeof Path2D !== "undefined" && value.maxX - value.minX < 65536 && value.maxZ - value.minZ < 65536) {
+			const path = new Path2D();
+			path.moveTo(0, 0);
+			for (let i = 2; i + 1 < points.length; i += 2) path.lineTo(points[i] - value.x, points[i + 1] - value.z);
+			value.path = path;
+		}
+		return value;
+	}
+	function netDrawingPoints(points) {
+		if (points.length <= 12 || net.scale >= NET_EXACT_SCALE) return points;
+		let levels = netDetailCache.get(points);
+		if (!levels) { levels = new Map(); netDetailCache.set(points, levels); }
+		const level = netLevel();
+		if (!levels.has(level)) {
+			levels.set(level, simplifyPoints(points, 0.35 / Math.pow(2, level / 2)));
+			if (levels.size > 6) levels.delete(levels.keys().next().value);
+		}
+		return levels.get(level);
+	}
+	/** One snapshot per frame and one resolution per section, never a whole-section scan per rail. */
+	function netStyles() {
+		const lines = logicalLinesShown(), effective = railLinesShown(), draftedLines = draftSettings().railLines || {};
+		const draftedOwners = draftOwnerOverrides(), savedOwners = savedOwnerOverrides();
+		const hasDraftOwners = Object.keys(draftedOwners).length > 0;
+		const sections = new Map();
+		const section = index => {
+			const entry = net.ownerOf && net.ownerOf.get(index), id = entry ? "s:" + entry.section : "r:" + index;
+			if (sections.has(id)) return sections.get(id);
+			const keys = sectionOf(index).map(netRailKey);
+			let best = null, lineDraft = false;
+			if (lines.size) keys.forEach(key => {
+				if (key in draftedLines) lineDraft = true;
+				if (effective[key] != null && lines.has(effective[key]) && (best === null || compareRailKeys(key, best) < 0)) best = key;
+			});
+			let owners = null;
+			if (hasDraftOwners && keys.some(key => key in draftedOwners)) {
+				const selected = new Set();
+				let any = false;
+				keys.forEach(key => {
+					const value = key in draftedOwners ? draftedOwners[key] : savedOwners[key];
+					if (value == null) return;
+					any = true; value.forEach(owner => selected.add(owner));
+				});
+				owners = { owners: [...selected], manual: any, drafted: true, auto: !any };
+			}
+			const value = { line: best === null ? null : lines.get(effective[best]), drafted: lineDraft, owners };
+			sections.set(id, value);
+			return value;
+		};
+		return {
+			logical: lines.size > 0,
+			line: index => section(index),
+			owners: index => {
+				const entry = net.ownerOf && net.ownerOf.get(index);
+				const override = hasDraftOwners ? section(index).owners : null;
+				return override || { owners: entry ? entry.owners : [], manual: Boolean(entry && entry.manual), drafted: false, auto: false };
+			}
+		};
+	}
+
+
 	/** Shows the physical track or the owners of the sections on the whole network map, and remembers it. */
 	function setNetLayer(layer) {
 		net.layer = layer === "owners" ? "owners" : "physical";
@@ -2478,8 +2565,15 @@
 	}
 
 	function drawNetwork() {
+		if (netFramePending || state.view !== "network" || !inTimetable()) return;
+		netFramePending = true;
+		requestAnimationFrame(() => { netFramePending = false; drawNetworkFrame(); });
+	}
+
+	function drawNetworkFrame() {
 		if (state.view !== "network" || !inTimetable()) return;
 		const ratio = devicePixelRatio || 1, w = netWrap.clientWidth, h = netWrap.clientHeight;
+		if (!w || !h) return;
 		if (netCanvas.width !== Math.round(w * ratio) || netCanvas.height !== Math.round(h * ratio)) {
 			netCanvas.width = Math.round(w * ratio);
 			netCanvas.height = Math.round(h * ratio);
@@ -2499,26 +2593,39 @@
 		}
 		const left = netWorldX(-NET_HIT_PX), right = netWorldX(w + NET_HIT_PX), top = netWorldZ(-NET_HIT_PX), bottom = netWorldZ(h + NET_HIT_PX);
 		const visible = points => {
-			for (let k = 0; k < points.length; k += 2) if (points[k] >= left && points[k] <= right && points[k + 1] >= top && points[k + 1] <= bottom) return true;
-			// A long rail can cross the view with both ends outside it
-			return points.length >= 4 && !(Math.max(points[0], points[points.length - 2]) < left || Math.min(points[0], points[points.length - 2]) > right || Math.max(points[1], points[points.length - 1]) < top || Math.min(points[1], points[points.length - 1]) > bottom);
+			const box = netGeometry(points);
+			return !(box.maxX < left || box.minX > right || box.maxZ < top || box.minZ > bottom);
 		};
 		const pickedRoutes = pickingRouteIds();
 		const line = state.line, highlighted = (d.routes || []).filter(route => pickedRoutes ? pickedRoutes.has(route.id) : route.lineKey === line && (!state.route || state.route === route.id));
 		const faded = highlighted.length > 0;
 		const stroke = (points, color, width, dash) => {
-			g.beginPath();
-			g.moveTo(netX(points[0]), netZ(points[1]));
-			for (let k = 2; k + 1 < points.length; k += 2) g.lineTo(netX(points[k]), netZ(points[k + 1]));
+			if (!visible(points)) return;
+			points = netDrawingPoints(points);
+			const shape = netGeometry(points, true), scale = net.scale;
 			g.strokeStyle = color;
-			g.lineWidth = width;
-			g.setLineDash(dash || []);
-			g.stroke();
+			if (shape.path) {
+				const dashOffset = g.lineDashOffset;
+				g.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * ((shape.x - net.cx) * scale + w / 2), ratio * ((shape.z - net.cz) * scale + h / 2));
+				g.lineWidth = width / scale;
+				g.setLineDash((dash || []).map(value => value / scale));
+				g.lineDashOffset = dashOffset / scale;
+				g.stroke(shape.path);
+				g.setTransform(ratio, 0, 0, ratio, 0, 0);
+				g.lineDashOffset = dashOffset;
+			} else {
+				g.beginPath();
+				g.moveTo((points[0] - net.cx) * scale + w / 2, (points[1] - net.cz) * scale + h / 2);
+				for (let k = 2; k + 1 < points.length; k += 2) g.lineTo((points[k] - net.cx) * scale + w / 2, (points[k + 1] - net.cz) * scale + h / 2);
+				g.lineWidth = width; g.setLineDash(dash || []); g.stroke();
+			}
+			g.lineWidth = width; g.setLineDash(dash || []);
 		};
 		g.lineCap = "round";
 		g.lineJoin = "round";
 		g.globalAlpha = faded ? 0.45 : 1;
 		const plain = css("--grid-strong"), ink = css("--ink");
+		const styles = net.layer === "owners" ? netStyles() : null;
 		// Runs of track, each one kind and isolation, drawn exactly when zoomed in and as a schematic further out
 		const chains = netChains();
 		chains.forEach(chain => {
@@ -2530,13 +2637,13 @@
 		g.globalAlpha = 1;
 		// The ownership layer (web layers step 2): each rail in its owners' colours, striped where several lines own it;
 		// set by hand with a dark edge, dotted while only in the draft; open to every line by hand grey and dashed
-		if (net.layer === "owners" && usesLogicalLines()) {
+		if (net.layer === "owners" && styles.logical) {
 			// By logical line (2026-11-09): its colour, connecting lines dashed, drafted sections with a dark dotted edge, one
 			// logical line chosen in the tree drawn over the others faded
 			d.rails.forEach((rail, index) => {
 				const points = net.railPoints[index];
 				if (!visible(points)) return;
-				const line = railLogicalLine(index), drafted = railLogicalDrafted(index);
+				const { line, drafted } = styles.line(index);
 				if (!line && !drafted) return;
 				g.globalAlpha = net.focusLogical && (!line || line.id !== net.focusLogical) ? 0.25 : 1;
 				if (drafted) stroke(points, ink, 6.5, [3, 3]);
@@ -2549,7 +2656,7 @@
 			d.rails.forEach((rail, index) => {
 				const points = net.railPoints[index];
 				if (!visible(points)) return;
-				const shown = railOwnersShown(index);
+				const shown = styles.owners(index);
 				if (!shown.owners.length && !shown.manual && !shown.drafted) return;
 				if (shown.manual || shown.drafted) stroke(points, ink, 6.5, shown.drafted ? [3, 3] : []);
 				if (!shown.owners.length) {
@@ -2598,6 +2705,8 @@
 				runs.forEach(run => stroke(chainShape(chains[run]), colorOf(route.color), 4));
 			});
 		} else highlighted.forEach(route => {
+			const cached = netRouteCache.get(route);
+			if (cached && cached.network === d) { stroke(cached.points, colorOf(route.color), 4); return; }
 			const points = [];
 			for (let i = 0; i < route.nodes.length; i++) {
 				if (i > 0) {
@@ -2615,6 +2724,7 @@
 				const n = d.nodes[route.nodes[i]];
 				points.push(n[0], n[1]);
 			}
+			netRouteCache.set(route, { network: d, points });
 			stroke(points, colorOf(route.color), 4);
 		});
 		if (net.hover >= 0 && net.hover < d.rails.length) stroke(net.scale < NET_EXACT_SCALE ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
@@ -2643,7 +2753,8 @@
 		if (net.scale < NET_EXACT_SCALE) {
 			let bestChain = null, bestChainDistance = reach;
 			netChains().forEach(chain => {
-				const p = chainShape(chain);
+				const p = chainShape(chain), box = netGeometry(p);
+				if (x + reach < box.minX || x - reach > box.maxX || z + reach < box.minZ || z - reach > box.maxZ) return;
 				for (let k = 0; k + 3 < p.length; k += 2) {
 					const distance = netSegmentDistance(x, z, p[k], p[k + 1], p[k + 2], p[k + 3]);
 					if (distance < bestChainDistance) {
@@ -7430,11 +7541,15 @@
 		copy.pass = list.map(stop => stop.pass);
 		copy.allowLonger = list.map(stop => stop.from >= 0 ? Boolean((tt.allowLonger || [])[stop.from]) : false);
 		copy.tables.forEach(table => {
-			table.stops = list.map(stop => stop.from >= 0 && table.stops[stop.from] ? table.stops[stop.from] : { arrival: -1, departure: -1 });
+			table.stops = list.map(stop => stop.from >= 0 && !(stop.pass && !tt.pass[stop.from]) && table.stops[stop.from] ? table.stops[stop.from] : { arrival: -1, departure: -1 });
 			table.orders = (table.orders || []).map(order => Object.assign({}, order, { stop: newOf[order.stop] })).filter(order => order.stop >= 0);
 			table.links = table.links.map(link => Object.assign({}, link, { fromStop: link.fromStop < 0 ? link.fromStop : newOf[link.fromStop] }));
 			table.exceptions = table.exceptions.map(exception => ({ service: exception.service, stops: exception.stops.map(stop => Object.assign({}, stop, { stop: newOf[stop.stop] })).filter(stop => stop.stop >= 0) })).filter(exception => exception.stops.length);
 		});
+		copy.tables.forEach(table => table.exceptions.forEach(exception => exception.stops.forEach(stop => {
+			const changed = list[stop.stop];
+			if (changed && changed.pass && !tt.pass[changed.from]) { stop.run = -1; stop.dwell = -1; stop.overtake = -1; }
+		})));
 		return normalize(copy);
 	}
 

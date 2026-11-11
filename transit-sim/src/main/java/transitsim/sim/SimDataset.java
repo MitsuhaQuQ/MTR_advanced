@@ -46,7 +46,7 @@ public final class SimDataset {
 	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
 	 * highest speed of their vehicles; older data is read without them.
 	 */
-	public static final int VERSION = 17;
+	public static final int VERSION = 19;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -172,7 +172,7 @@ public final class SimDataset {
 			dataset.depots.add(DepotData.read(reader));
 		}
 		for (int i = reader.readVarInt(); i > 0; i--) {
-			dataset.sidings.add(SidingData.read(reader));
+			dataset.sidings.add(SidingData.read(reader, version));
 		}
 		if (version >= 2 && reader.readBoolean()) {
 			dataset.trains = RunRecord.fromBytes(readBytes(reader));
@@ -208,7 +208,7 @@ public final class SimDataset {
 		}
 		if (version >= 6) {
 			for (final RouteData route : dataset.routes) {
-				route.fastestTimes = readTimes(reader);
+				route.fastestTimes = readTimes(reader, version);
 			}
 		}
 		if (version >= 7) {
@@ -289,7 +289,11 @@ public final class SimDataset {
 	 * stops where its platform has it (round 4). Call it again after changing {@link #stopPositions}.
 	 */
 	public void applyStopPositions() {
-		final java.util.function.Consumer<List<DataTrack>> apply = tracks -> tracks.forEach(track -> track.stopPosition = track.platform ? stopPositions.getOrDefault(track.stopId, 0) : 0);
+		final java.util.function.Consumer<DataTrack> position = track -> track.stopPosition = track.platform ? stopPositions.getOrDefault(track.stopId, 0) : 0;
+		final java.util.function.Consumer<List<DataTrack>> apply = tracks -> {
+			if (tracks instanceof transitsim.plan.IndexedPath) ((transitsim.plan.IndexedPath<DataTrack>) tracks).updateTemplates(position);
+			else tracks.forEach(position);
+		};
 		sidings.forEach(siding -> {
 			apply.accept(siding.path);
 			siding.tripPaths.forEach(tripPath -> apply.accept(tripPath.path));
@@ -308,7 +312,8 @@ public final class SimDataset {
 		for (int i = 0; i < routes.size(); i++) {
 			if (routes.get(i).id == route.id) {
 				// A draft with the same stops keeps the times the game worked out for the route
-				if (route.fastestTimes == null && Arrays.equals(routes.get(i).platformIds, route.platformIds) && Arrays.equals(routes.get(i).passes, route.passes)) {
+				if (route.fastestTimes == null && Arrays.equals(routes.get(i).platformIds, route.platformIds) && Arrays.equals(routes.get(i).passes, route.passes)
+						&& transitsim.plan.TimetableTimes.samePerformance(TimetableBinary.read(new ByteArrayBinary.Reader(routes.get(i).timetable)), TimetableBinary.read(new ByteArrayBinary.Reader(route.timetable)))) {
 					route.fastestTimes = routes.get(i).fastestTimes;
 				}
 				routes.set(i, route);
@@ -533,20 +538,23 @@ public final class SimDataset {
 		writer.writeVarInt(times == null ? 0 : times.length + 1);
 		if (times != null) {
 			for (final long[] stopTime : times) {
-				writer.writeLong(stopTime[0]);
-				writer.writeLong(stopTime[1]);
+				writer.writeVarInt(stopTime.length);
+				for (long time : stopTime) writer.writeLong(time);
 			}
 		}
 	}
 
-	private static long[][] readTimes(BinaryReader reader) {
+	private static long[][] readTimes(BinaryReader reader, int version) {
 		final int count = reader.readVarInt();
 		if (count == 0) {
 			return null;
 		}
 		final long[][] times = new long[count - 1][];
 		for (int i = 0; i < times.length; i++) {
-			times[i] = new long[]{reader.readLong(), reader.readLong()};
+			int columns = version >= 18 ? reader.readVarInt() : 2;
+			if (columns < 2 || columns > RouteTimetable.MAX_TABLES * 2 || columns % 2 != 0) throw new IllegalArgumentException("Invalid timing columns");
+			times[i] = new long[columns];
+			for (int j = 0; j < columns; j++) times[i][j] = reader.readLong();
 		}
 		return times;
 	}
@@ -625,6 +633,12 @@ public final class SimDataset {
 		return list;
 	}
 
+	public static String trackSignature(List<DataTrack> tracks) {
+		ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
+		writeTracks(writer, tracks);
+		return java.util.Base64.getEncoder().encodeToString(writer.toBytes());
+	}
+
 	private static void writeTracks(BinaryWriter writer, List<DataTrack> tracks) {
 		writer.writeVarInt(tracks.size());
 		tracks.forEach(track -> track.write(writer));
@@ -678,16 +692,42 @@ public final class SimDataset {
 	}
 
 	private static void writePath(BinaryWriter writer, List<DataTrack> path) {
-		writer.writeVarInt(path.size());
-		path.forEach(track -> track.write(writer));
+		final boolean indexed = path instanceof transitsim.plan.IndexedPath;
+		if (!indexed) { writeTracks(writer, path); return; }
+		writer.writeVarInt(-1);
+		transitsim.plan.IndexedPath<DataTrack> view = (transitsim.plan.IndexedPath<DataTrack>) path;
+		Map<List<DataTrack>, Integer> templates = new java.util.LinkedHashMap<>();
+		for (transitsim.plan.IndexedPath.Segment<DataTrack> part : view.segments()) templates.computeIfAbsent(part.template, ignored -> templates.size());
+		writer.writeVarInt(templates.size());
+		templates.keySet().forEach(template -> writeTracks(writer, template));
+		writer.writeVarInt(view.segments().size());
+		for (transitsim.plan.IndexedPath.Segment<DataTrack> part : view.segments()) {
+			writer.writeVarInt(templates.get(part.template)); writer.writeInt(part.stopOffset);
+		}
 	}
 
-	private static List<DataTrack> readPath(BinaryReader reader) {
-		final List<DataTrack> path = new ArrayList<>();
-		for (int i = reader.readVarInt(); i > 0; i--) {
-			path.add(DataTrack.read(reader));
+	private static List<DataTrack> readPath(BinaryReader reader, int version) {
+		final int marker = reader.readVarInt();
+		if (marker >= 0) {
+			if (marker > 1000000) throw new IllegalArgumentException("Invalid path length");
+			List<DataTrack> result = new ArrayList<>();
+			for (int i = 0; i < marker; i++) result.add(DataTrack.read(reader));
+			return result;
 		}
-		return path;
+		if (version < 19 || marker != -1) throw new IllegalArgumentException("Invalid indexed path marker");
+		final int count = reader.readVarInt();
+		if (count < 0 || count > 1000000) throw new IllegalArgumentException("Invalid path template count");
+		final List<List<DataTrack>> templates = new ArrayList<>();
+		for (int i = 0; i < count; i++) templates.add(readTracks(reader));
+		final int size = reader.readVarInt();
+		if (size < 0 || size > 1000000) throw new IllegalArgumentException("Invalid path segment count");
+		final List<transitsim.plan.IndexedPath.Segment<DataTrack>> parts = new ArrayList<>();
+		for (int i = 0; i < size; i++) {
+			int index = reader.readVarInt(), offset = reader.readInt();
+			if (index < 0 || index >= count) throw new IllegalArgumentException("Unknown path template");
+			parts.add(new transitsim.plan.IndexedPath.Segment<>(templates.get(index), offset));
+		}
+		return new transitsim.plan.IndexedPath<>(parts, DataTrack::withStopIndexOffset, SimDataset::trackSignature);
 	}
 
 	/**
@@ -977,7 +1017,7 @@ public final class SimDataset {
 			writeBytes(writer, turnBacks);
 		}
 
-		private static SidingData read(BinaryReader reader) {
+		private static SidingData read(BinaryReader reader, int version) {
 			final long id = reader.readLong();
 			final long depotId = reader.readLong();
 			final long[] routeIds = readLongs(reader);
@@ -992,10 +1032,10 @@ public final class SimDataset {
 			final int repeatIndex1 = reader.readInt();
 			final int repeatIndex2 = reader.readInt();
 			final int loopJoinIndex = reader.readInt();
-			final List<DataTrack> path = readPath(reader);
+			final List<DataTrack> path = readPath(reader, version);
 			final List<TripPathData> tripPaths = new ArrayList<>();
 			for (int i = reader.readVarInt(); i > 0; i--) {
-				tripPaths.add(new TripPathData(readBytes(reader), readPath(reader)));
+				tripPaths.add(new TripPathData(readBytes(reader), readPath(reader, version)));
 			}
 			final SidingData siding = new SidingData(id, depotId, routeIds, trainCars, spacing, railLength, acceleration, deceleration, maxTrains, usesSpeedCurve, minSpeed, repeatIndex1, repeatIndex2, loopJoinIndex, path, readBytes(reader));
 			siding.tripPaths.addAll(tripPaths);
@@ -1059,6 +1099,12 @@ public final class SimDataset {
 		/**
 		 * @return the same track, which a train passes without stopping (D3)
 		 */
+		public DataTrack withStopIndexOffset(int offset) {
+			final DataTrack result = withStop(dwellTime, stopId);
+			result.stopIndex += offset;
+			return result;
+		}
+
 		public DataTrack passed() {
 			return withStop(0, stopId);
 		}
@@ -1198,7 +1244,10 @@ public final class SimDataset {
 		private final List<Long> terminalPlatforms = new ArrayList<>();
 		private final List<Long> startPlatforms = new ArrayList<>();
 
+		private final long[][] timingBaseline;
+
 		private DataRoute(RouteData data) {
+			timingBaseline = data.fastestTimes == null ? null : copyTimes(data.fastestTimes);
 			for (final long platformId : data.terminalPlatforms) {
 				terminalPlatforms.add(platformId);
 			}
@@ -1212,6 +1261,9 @@ public final class SimDataset {
 				stops.add(new DataStop(data, i));
 			}
 		}
+
+		@Override
+		public long[][] getTimingBaseline() { return timingBaseline; }
 
 		@Override
 		public long getRouteId() {

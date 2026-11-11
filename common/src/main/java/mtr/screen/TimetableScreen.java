@@ -702,13 +702,13 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	private boolean hasFastestTimes() {
-		final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
+		final long[][] times = mtr.client.editor.EditorTimes.getFastest(route);
 		return times != null && times.length == route.platformIds.size();
 	}
 
 	private List<RouteTimetable.StopPlan> getPlans() {
 		// The selected service's own times, where it runs differently from the table
-		return StopRules.plan(route.platformIds, hasFastestTimes() ? ClientData.TIMETABLE_TIMES.get(route.id) : null, parseMargin(), tableIndex, getTable().exceptions.get(baseMillis));
+		return StopRules.plan(route.platformIds, hasFastestTimes() ? mtr.client.editor.EditorTimes.getFastest(route) : null, parseMargin(), tableIndex, getTable().exceptions.get(baseMillis));
 	}
 
 	private void requestConflicts() {

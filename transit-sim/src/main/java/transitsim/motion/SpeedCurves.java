@@ -17,11 +17,13 @@ import java.util.TreeSet;
 public final class SpeedCurves {
 
 	public final List<Run> runs;
+	private final RunIndex index;
 	public final double acceleration;
 	public final double deceleration;
 	public final double minSpeed;
 
-	private SpeedCurves(List<Run> runs, double acceleration, double deceleration, double minSpeed) {
+	private SpeedCurves(RunIndex runs, double acceleration, double deceleration, double minSpeed) {
+		this.index = runs;
 		this.runs = Collections.unmodifiableList(runs);
 		this.acceleration = acceleration;
 		this.deceleration = deceleration;
@@ -33,6 +35,10 @@ public final class SpeedCurves {
 	 * @param trainLength   the length of the train, which is how far the head moves at a reversal
 	 */
 	public static SpeedCurves of(TrackView track, double startPosition, double trainLength, double acceleration, double deceleration) {
+		return track.curves(startPosition, trainLength, acceleration, deceleration, () -> build(track, startPosition, trainLength, acceleration, deceleration));
+	}
+
+	private static SpeedCurves build(TrackView track, double startPosition, double trainLength, double acceleration, double deceleration) {
 		final double minSpeed = track.minSpeed;
 		final int count = track.size();
 		final double[] ends = new double[count];
@@ -48,7 +54,7 @@ public final class SpeedCurves {
 			limits[i] = lastLimit;
 		}
 
-		final List<Run> runs = new ArrayList<>();
+		final List<double[]> specs = new ArrayList<>();
 		double runStart = startPosition;
 		for (int i = 0; i < count; i++) {
 			if (track.isStop(i) || i == count - 1) {
@@ -56,23 +62,51 @@ public final class SpeedCurves {
 				// tail was (round 4); with no offset these are the end of the rail and a train's length on
 				final double offset = track.isStop(i) ? track.getStopOffset(i) : 0;
 				final double stopAt = ends[i] - offset;
-				runs.add(new Run(runStart, Math.max(runStart, stopAt), i, ends, limits, trainLength, acceleration, deceleration));
+				specs.add(new double[]{runStart, Math.max(runStart, stopAt), i});
 				runStart = i + 1 < count && track.reversesAfter(i) ? ends[i] + offset + trainLength : stopAt;
 			}
 		}
-		return new SpeedCurves(runs, acceleration, deceleration, minSpeed);
+		return new SpeedCurves(new RunIndex(specs, ends, limits, trainLength, acceleration, deceleration), acceleration, deceleration, minSpeed);
+	}
+
+	/** Number of currently materialized intervals, independent of a duty's full-day length. */
+	public int getCachedRunCount() { synchronized (index) { return index.cache.size(); } }
+
+	private static final class RunIndex extends java.util.AbstractList<Run> implements java.util.RandomAccess {
+		private final List<double[]> specs;
+		private final double[] ends, limits;
+		private final double length, acceleration, deceleration;
+		private final java.util.Map<Integer, Run> cache = new java.util.LinkedHashMap<Integer, Run>(16, .75F, true) {
+			@Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Run> entry) { return size() > 8; }
+		};
+		private final java.util.Map<java.util.List<Long>, SpeedProfile> templates = new java.util.LinkedHashMap<java.util.List<Long>, SpeedProfile>(16, .75F, true) {
+			@Override protected boolean removeEldestEntry(java.util.Map.Entry<java.util.List<Long>, SpeedProfile> entry) { return size() > 1024; }
+		};
+		RunIndex(List<double[]> specs, double[] ends, double[] limits, double length, double acceleration, double deceleration) {
+			this.specs = specs; this.ends = ends; this.limits = limits; this.length = length; this.acceleration = acceleration; this.deceleration = deceleration;
+		}
+		@Override public int size() { return specs.size(); }
+		@Override public synchronized Run get(int i) {
+			Run run = cache.get(i);
+			if (run == null) {
+				double[] spec = specs.get(i);
+				run = new Run(spec[0], spec[1], (int) spec[2], ends, limits, length, acceleration, deceleration, templates);
+				cache.put(i, run);
+			}
+			return run;
+		}
 	}
 
 	/**
 	 * @return the run a head position belongs to: the one it is on, or the one it is about to start when standing at a stop
 	 */
 	public Run getRun(double position) {
-		for (final Run run : runs) {
-			if (position < run.fastest.endPosition - 1E-6) {
-				return run;
-			}
+		int low = 0, high = runs.size();
+		while (low < high) {
+			int middle = (low + high) >>> 1;
+			if (position < index.specs.get(middle)[1] - 1E-6) high = middle; else low = middle + 1;
 		}
-		return runs.isEmpty() ? null : runs.get(runs.size() - 1);
+		return runs.isEmpty() ? null : runs.get(Math.min(low, runs.size() - 1));
 	}
 
 	/**
@@ -110,7 +144,7 @@ public final class SpeedCurves {
 		private final double acceleration;
 		private final double deceleration;
 
-		private Run(double start, double end, int stopRailIndex, double[] railEnds, double[] railLimits, double trainLength, double acceleration, double deceleration) {
+		private Run(double start, double end, int stopRailIndex, double[] railEnds, double[] railLimits, double trainLength, double acceleration, double deceleration, java.util.Map<java.util.List<Long>, SpeedProfile> templates) {
 			this.stopRailIndex = stopRailIndex;
 			this.acceleration = acceleration;
 			this.deceleration = deceleration;
@@ -129,7 +163,21 @@ public final class SpeedCurves {
 				final double middle = (breaks[i] + breaks[i + 1]) / 2;
 				limits[i] = getLimit(railEnds, railLimits, middle - trainLength, middle);
 			}
-			fastest = breaks.length < 2 ? SpeedProfile.build(new double[]{start, start}, new double[]{railLimits.length == 0 ? 0 : railLimits[0]}, acceleration, deceleration, Double.POSITIVE_INFINITY) : SpeedProfile.build(breaks, limits, acceleration, deceleration, Double.POSITIVE_INFINITY);
+			if (breaks.length < 2) {
+				fastest = SpeedProfile.build(new double[]{start, start}, new double[]{railLimits.length == 0 ? 0 : railLimits[0]}, acceleration, deceleration, Double.POSITIVE_INFINITY);
+			} else {
+				final double[] local = breaks.clone();
+				final java.util.List<Long> key = new ArrayList<>();
+				key.add((long) local.length);
+				for (int i = 0; i < local.length; i++) { long coordinate = Math.round((local[i] - start) * 10000000); local[i] = coordinate / 10000000D; key.add(coordinate); }
+				for (double limit : limits) key.add(Double.doubleToLongBits(limit));
+				SpeedProfile template = templates.get(key);
+				if (template == null) {
+					template = SpeedProfile.build(local, limits, acceleration, deceleration, Double.POSITIVE_INFINITY);
+					templates.put(key, template);
+				}
+				fastest = template.translated(start);
+			}
 		}
 
 		/**

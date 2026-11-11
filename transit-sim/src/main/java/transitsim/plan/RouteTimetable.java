@@ -416,7 +416,7 @@ public class RouteTimetable {
 				// One service's own running time, which counts from leaving the stop before rather than from the route start
 				stop.arrivalMillis = lastDeparture + stop.exceptionRunMillis;
 			} else {
-				stop.arrivalMillis = i > 0 && stop.setArrivalSeconds >= 0 ? routeStart + stop.setArrivalSeconds * 1000L : automaticArrival;
+				stop.arrivalMillis = i > 0 && stop.exceptionPass != 1 && stop.setArrivalSeconds >= 0 ? routeStart + stop.setArrivalSeconds * 1000L : automaticArrival;
 			}
 			if (stop.startsRoute) {
 				// A route joined part of the way along started before this stop

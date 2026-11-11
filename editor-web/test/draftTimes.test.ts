@@ -34,3 +34,31 @@ describe("draft times", () => {
     vi.useRealTimers()
   })
 })
+
+it("keeps newer timing when responses arrive in reverse order or after applying", async () => {
+  vi.useFakeTimers()
+  const route: any = { id: "1", tables: [{ times: [[0, 0]], exceptions: [] }], hasTimes: false }
+  let draft: any = { dwell: 10 }
+  const replies: ((answer: any) => void)[] = []
+  const times = new DraftTimes(() => new Promise(resolve => replies.push(resolve)), () => draft, () => route, () => {})
+  const answer = (value: number) => ({ routes: [{ id: "1", tables: [{ times: [[0, value]], exceptions: [] }] }] })
+  times.source(route)
+  await vi.advanceTimersByTimeAsync(200)
+  draft = { dwell: 20 }
+  times.source(route)
+  await vi.advanceTimersByTimeAsync(200)
+  replies[1](answer(20))
+  await Promise.resolve()
+  replies[0](answer(10))
+  await Promise.resolve()
+  expect(times.source(route)[0].times).toEqual([[0, 20]])
+  draft = { dwell: 30 }
+  times.source(route)
+  await vi.advanceTimersByTimeAsync(200)
+  draft = null
+  times.source(route)
+  replies[2](answer(30))
+  await Promise.resolve()
+  expect(times.answered.get("1")!.tables[0].times).toEqual([[0, 20]])
+  vi.useRealTimers()
+})

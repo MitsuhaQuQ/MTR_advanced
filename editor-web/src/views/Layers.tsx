@@ -2,7 +2,7 @@
  * The layers' work areas. The views are still the old page's (borrowed with LegacySlot, run by the old code), each with
  * the new page's own tool bar; the tree on the left shows only the layer's own part of the old tree.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { legacy, renderLegacy, useLegacy, type MenuItem } from "../legacy/engine"
 import { LegacySlot } from "../legacy/Slot"
 import { menuHost } from "../legacy/engine"
@@ -166,9 +166,7 @@ function DispatchWork() {
           </div>
           <span className="text-[12px] text-dim">{tr("{0} 列车在线上；点列车在右边看它和下命令", trains.length)}</span>
         </div>
-        {view === "schematic"
-          ? <NetworkSchematic onShowReal={() => choose("real")} trains={trains} onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
-          : <LegacySlot id="view-network" className="flex min-h-0 min-w-0 flex-1 flex-col" onResize={() => fn.drawNetwork()} />}
+        <NetworkSchematic shape={view} onShowReal={() => choose("real")} trains={trains} onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
       </div>
       <DispatchConsole className="scroll-thin max-h-[45%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[340px] lg:border-l lg:border-t-0"
         onChoose={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
@@ -176,32 +174,44 @@ function DispatchWork() {
   )
 }
 
-/** The track layer: the schematic of the whole network (the default), or the real map where boundaries are edited. */
+/** Shared graph, actual curves or schematic wiring; the legacy editor retains track-edit operations. */
 function PhysicalWork() {
-  const [view, setView] = useState<"schematic" | "real">(() => { try { return localStorage.getItem("mtr-next-net-view") === "real" ? "real" : "schematic" } catch { return "schematic" } })
-  const choose = (next: "schematic" | "real") => {
+  const [view, setView] = useState<"schematic" | "real" | "editor">(() => { try { const saved = localStorage.getItem("mtr-next-net-view"); return saved === "real" || saved === "editor" ? saved : "schematic" } catch { return "schematic" } })
+  const choose = (next: "schematic" | "real" | "editor") => {
     setView(next)
     try { localStorage.setItem("mtr-next-net-view", next) } catch { /* private window */ }
-    if (next === "real") setTimeout(() => legacy.fn.drawNetwork())
+    if (next === "editor") setTimeout(() => legacy.fn.drawNetwork())
   }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
         <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
-          {([["schematic", tr("示意图")], ["real", tr("实际图")]] as const).map(([id, label], i) => (
+          {([["schematic", tr("示意图")], ["real", tr("实际图")], ["editor", tr("轨道编辑")]] as const).map(([id, label], i) => (
             <button key={id} type="button" aria-pressed={view === id} onClick={() => choose(id)}
               className={"px-2.5 text-[13px] " + (i ? "border-l border-gridstrong " : "") + (view === id ? "bg-brand font-medium text-brandink" : "bg-panel")}>{label}</button>
           ))}
         </div>
-        <span className="text-[12px] text-dim">{view === "schematic" ? tr("看配线：车站和区间几股道、谁在走") : tr("按游戏坐标画；右键轨道设寻路边界")}</span>
+        <span className="text-[12px] text-dim">{view === "editor" ? tr("按游戏坐标画；右键轨道设寻路边界") : view === "real" ? tr("保留轨道实际曲线与连接") : tr("简化区间曲线，保留车站与道岔连接")}</span>
       </div>
-      {view === "schematic" ? <NetworkSchematic onShowReal={() => choose("real")} /> : <NetworkWork owners={false} />}
+      {view === "editor" ? <NetworkWork owners={false} /> : <NetworkSchematic shape={view} onShowReal={() => choose("real")} />}
     </div>
   )
 }
 
 /** The depot layer: the duty board (the default), or the running diagram where duties can be edited too. */
 function DepotWork() {
+  // Leaving depot work also exits duty assignment mode before the next view is painted.
+  useLayoutEffect(() => () => {
+    const { v } = legacy
+    v.state.slot = null
+    v.state.selected = null
+    v.state.selectedRoute = null
+    v.state.range = null
+    v.lastSlotService = null
+    v.dutyNotice = ""
+    v.showDepots = false
+    try { localStorage.setItem("mtr-editor-show-depots", "false") } catch { /* private window */ }
+  }, [])
   const [view, setView] = useState<"board" | "diagram">(() => { try { return localStorage.getItem("mtr-next-depot-view") === "diagram" ? "diagram" : "board" } catch { return "board" } })
   const choose = (next: "board" | "diagram") => { setView(next); try { localStorage.setItem("mtr-next-depot-view", next) } catch { /* private window */ } }
   const tabs = (

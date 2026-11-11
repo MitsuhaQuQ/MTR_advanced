@@ -69,6 +69,11 @@
 .new-diagram .legacy-slot #canvas { visibility: hidden; }
 .legacy-slot > .inspector { border-left: 0; overflow: visible; }
 .legacy-slot > .table-view { display: block; overflow: visible; }
+.legacy-slot[data-summary-table] { overflow: hidden; }
+.legacy-slot[data-summary-table] > .table-view { display: flex; flex-direction: column; overflow: hidden; }
+.legacy-slot[data-summary-table] .summary-tools { flex: 0 0 auto; min-width: 0; }
+.legacy-slot[data-summary-table] .summary-tools .tt-tools { position: static; }
+.legacy-slot[data-summary-table] .summary-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; }
 .legacy-slot > #view-network { display: grid; grid-template-rows: auto 1fr; }
 .legacy-slot > #media-app { display: grid; }
 .legacy-slot > #media-upload, .legacy-slot > #media-usage { flex: none; }

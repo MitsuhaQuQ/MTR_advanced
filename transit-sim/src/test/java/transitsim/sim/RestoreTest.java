@@ -33,6 +33,21 @@ class RestoreTest {
 	}
 
 	@Test
+	void parkedTrainsDoNotDisappearWhenOldStopIndicesExceedTheNewPath() {
+		final byte[] bytes = SimDatasetTest.lines(1, 400, 2, 4, 10).toBytes();
+		final EventSimulator<SimDataset.DataTrack> original = new EventSimulator<>(SimDataset.start(bytes, START));
+		original.advanceTo(START + SECOND);
+		final RunRecord record = original.getRunner().record();
+		final RunRecord.TrainRecord parked = record.trains.stream().filter(train -> !train.onRoute).findFirst().get();
+		record.trains.remove(parked);
+		record.trains.add(new RunRecord.TrainRecord(parked.sidingId, parked.trainId, parked.speed, parked.railProgress, parked.elapsedDwellTicks, 9999, 9999, parked.reversed, false, parked.service, parked.cruiseCap));
+		final EventSimulator<SimDataset.DataTrack> restored = EventSimulator.resume(start -> SimDataset.start(bytes, start).get(), record, record.time);
+		assertTrue(restored.getRunner().hasTrain(parked.trainId));
+		assertEquals(0, restored.getRunner().getTrain(parked.trainId).getNextStoppingIndex());
+		assertEquals(parked.railProgress, restored.getRunner().getTrain(parked.trainId).getRailProgress());
+	}
+
+	@Test
 	void carryingOnFromARecordRunsAsRunningOnDoes() {
 		for (final SimDataset dataset : new SimDataset[]{SimDatasetTest.lines(1, 400, 2, 4, 10), SimDatasetTest.lines(3, 400, 2, 8, 3), byDuties(), FleetPoolTest.byDuties(3), SignalBlockTest.line(true), SimDatasetTest.lines(1, 2400, 2, 8, 1), StopPositionsTest.centred(SimDatasetTest.lines(1, 400, 2, 4, 10))}) {
 			assertCarriesOn(dataset.toBytes(), true);

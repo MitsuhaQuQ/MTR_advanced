@@ -18,7 +18,7 @@ public final class AudioFiles {
 	 * The most any server can allow for one file, whatever its settings, so that a file still fits in one request to the
 	 * advanced editor's page.
 	 */
-	public static final int MAX_FILE_BYTES = 2 * 1024 * 1024;
+	public static final int MAX_FILE_BYTES = 5 * 1024 * 1024;
 	public static final int CHUNK_BYTES = 32 * 1024;
 	/**
 	 * A chunk of an upload, from a client to the server: smaller, as a packet a client sends can be at most 32767 bytes, and

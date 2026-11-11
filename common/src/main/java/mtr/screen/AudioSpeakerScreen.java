@@ -10,6 +10,7 @@ import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
 import mtr.data.DataConverter;
+import mtr.data.NameColorDataBase;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
 import mtr.packet.IPacket;
@@ -30,6 +31,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public final class AudioSpeakerScreen extends ScreenBase {
@@ -44,12 +47,18 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	private ResourceLocation appearance;
 	private boolean invalid;
 	private int left, top, panelWidth;
+	private boolean finishBeforeRepeat;
+	private final WidgetBetterTextField interval;
+	private final Button repeatButton;
 
 	public AudioSpeakerScreen(BlockPos pos, SpeakerSettings settings) {
 		super(Text.translatable("block.mtr.audio_speaker"));
 		world = Minecraft.getInstance().level;
 		this.pos = pos;
 		initialSettings = settings;
+		finishBeforeRepeat = settings.finishBeforeRepeat;
+		interval = number(settings.intervalSeconds, "", 4);
+		repeatButton = UtilitiesClient.newButton(repeatLabel(), button -> { finishBeforeRepeat = !finishBeforeRepeat; button.setMessage(repeatLabel()); });
 		sound = settings.sound;
 		mode = settings.mode;
 		audienceMask = settings.audienceMask;
@@ -73,7 +82,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	protected void init() {
 		panelWidth = Math.min(width - 20, 320);
 		left = (width - panelWidth) / 2;
-		top = Math.max(18, (height - 222) / 2);
+		top = Math.max(18, (height - 266) / 2);
 		place(soundButton, left, top + 4, panelWidth);
 		place(modeButton, left, top + 26, panelWidth);
 		place(radius, left + panelWidth - 54, top + 48, 54);
@@ -84,8 +93,10 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		place(centerZ, left + 2 * (coordinateWidth + 4), top + 106, coordinateWidth);
 		place(triggerRadius, left + panelWidth - 54, top + 128, 54);
 		place(appearanceButton, left + 22, top + 150, panelWidth - 22);
-		place(UtilitiesClient.newButton(Text.translatable("gui.done"), button -> apply()), left, top + 172, panelWidth / 2 - 2);
-		place(UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose()), left + panelWidth / 2 + 2, top + 172, panelWidth / 2 - 2);
+		place(UtilitiesClient.newButton(Text.translatable("gui.done"), button -> apply()), left, top + 216, panelWidth / 2 - 2);
+		place(UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose()), left + panelWidth / 2 + 2, top + 216, panelWidth / 2 - 2);
+		place(repeatButton, left, top + 172, panelWidth);
+		place(interval, left + panelWidth - 54, top + 194, 54);
 		updateRegionFields();
 	}
 
@@ -98,10 +109,11 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_center"), left, top + 94, 0xFFFFFF);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_trigger_radius"), left, top + 134, 0xFFFFFF);
 		}
+		GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_interval"), left, top + 200, 0xFFFFFF);
 		final Block block = BuiltInRegistries.BLOCK.get(appearance);
 		GuiCompat.graphics(matrices).renderItem(new ItemStack(block), left + 2, top + 152);
 		if (invalid) {
-			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.audio_speaker_invalid"), width / 2, top + 196, 0xFF7777);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.audio_speaker_invalid"), width / 2, top + 240, 0xFF7777);
 		}
 		super.render(matrices, mouseX, mouseY, delta);
 	}
@@ -147,7 +159,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			final BlockPos center = region ? new BlockPos(value(centerX), value(centerY), value(centerZ)) : initialSettings.triggerCenter;
 			if (region && !world.isInWorldBounds(center)) throw new IllegalArgumentException();
 			final int regionRadius = region ? value(triggerRadius) : initialSettings.triggerRadius;
-			final SpeakerSettings settings = new SpeakerSettings(sound, mode, value(radius), center, regionRadius, appearance, audienceMask);
+			final SpeakerSettings settings = new SpeakerSettings(sound, mode, value(radius), center, regionRadius, appearance, audienceMask, finishBeforeRepeat, value(interval));
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 			packet.writeBlockPos(pos);
 			settings.write(packet);
@@ -156,6 +168,10 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		} catch (IllegalArgumentException e) {
 			invalid = true;
 		}
+	}
+
+	private Component repeatLabel() {
+		return Text.translatable(finishBeforeRepeat ? "gui.mtr.audio_speaker_finish" : "gui.mtr.audio_speaker_interrupt");
 	}
 
 	private Component soundLabel() {
@@ -195,11 +211,14 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	}
 
 	private void updateRegionFields() {
+		repeatButton.active = interval.active = mode != SpeakerSettings.Mode.LOOP;
 		centerX.visible = centerY.visible = centerZ.visible = triggerRadius.visible = mode == SpeakerSettings.Mode.REGION;
 	}
 
 	private void place(AbstractWidget widget, int x, int y, int width) {
 		IDrawing.setPositionAndWidth(widget, x, y, width);
+		// Values are assigned before layout, when EditBox has no visible text width yet.
+		if (widget instanceof WidgetBetterTextField) ((WidgetBetterTextField) widget).moveCursorToStart();
 		addDrawableChild(widget);
 	}
 
@@ -226,7 +245,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			final WidgetBetterCheckbox[] checkboxes = new WidgetBetterCheckbox[faces.length];
 			final int panel = Math.min(width - 20, 260);
 			final int left = (width - panel) / 2;
-			final int top = Math.max(22, (height - 114) / 2);
+			final int top = Math.max(44, (height - 114) / 2);
 			for (int i = 0; i < faces.length; i++) {
 				final Direction face = faces[i];
 				final int bit = SpeakerSettings.directionBit(face);
@@ -259,6 +278,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 			renderBackground(matrices);
 			GuiCompat.drawCenteredString(matrices, font, title, width / 2, 8, 0xFFFFFF);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.audio_speaker_direction_help"), width / 2, 22, 0xCCCCCC);
 			super.render(matrices, mouseX, mouseY, delta);
 		}
 
@@ -290,9 +310,16 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		private Picker(Component title, List<Choice> choices, Consumer<String> select) {
 			super(title);
 			list = new DashboardList(null, null, null, null, null, null, null, () -> search, value -> search = value, false);
-			for (int i = 0; i < choices.size(); i++) rows.add(new DataConverter(i, choices.get(i).label, 0xEEEEEE));
+			final Map<NameColorDataBase, String> values = new IdentityHashMap<>();
+			for (final Choice choice : choices) {
+				final DataConverter row = new DataConverter(choice.label, 0xEEEEEE);
+				rows.add(row);
+				values.put(row, choice.value);
+			}
 			list.setRowStyle(row -> row.name, row -> true, row -> row.color, row -> {
-				select.accept(choices.get((int) row.id).value);
+				// Database IDs are random (including a requested ID of zero), never list offsets.
+				if (!values.containsKey(row)) return;
+				select.accept(values.get(row));
 				onClose();
 			});
 		}

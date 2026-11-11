@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "mtr:block/tunnel_wall"
+    }
+  }
+}

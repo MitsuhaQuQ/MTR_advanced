@@ -74,11 +74,21 @@ public class ItemPSDAPGBase extends ItemWithCreativeTabBase implements IBlock {
 
 	@Override
 	public void appendHoverText(ItemStack itemStack, Level level, List<Component> tooltip, TooltipFlag tooltipFlag) {
+		if (type == EnumPSDAPGType.PLATFORM_END_APG || type == EnumPSDAPGType.PLATFORM_END_PSD_1 || type == EnumPSDAPGType.PLATFORM_END_PSD_2) {
+			tooltip.add(Text.translatable("tooltip.mtr.platform_end_door").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
+			return;
+		}
 		tooltip.add(Text.translatable(type.isLift ? type.isOdd ? "tooltip.mtr.railway_sign_odd" : "tooltip.mtr.railway_sign_even" : "tooltip.mtr." + item.getSerializedName()).setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
 	}
 
 	private BlockState getBlockStateFromItem() {
 		switch (type) {
+			case PLATFORM_END_APG:
+				return Blocks.PLATFORM_END_APG.get().defaultBlockState();
+			case PLATFORM_END_PSD_1:
+				return Blocks.PLATFORM_END_PSD_1.get().defaultBlockState();
+			case PLATFORM_END_PSD_2:
+				return Blocks.PLATFORM_END_PSD_2.get().defaultBlockState();
 			case PSD_1:
 				switch (item) {
 					case PSD_APG_DOOR:
@@ -146,7 +156,10 @@ public class ItemPSDAPGBase extends ItemWithCreativeTabBase implements IBlock {
 		PSD_2(true, false, false),
 		APG(false, false, false),
 		LIFT_DOOR_1(false, false, true),
-		LIFT_DOOR_ODD_1(false, true, true);
+		LIFT_DOOR_ODD_1(false, true, true),
+		PLATFORM_END_APG(false, false, false),
+		PLATFORM_END_PSD_1(true, false, false),
+		PLATFORM_END_PSD_2(true, false, false);
 
 		private final boolean isPSD;
 		private final boolean isOdd;

@@ -12,6 +12,35 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SpeakerSettingsTest {
 	@Test
+	void repeatPolicySurvivesSaveAndPacketAndOldSavesKeepRestartBehavior() {
+		final SpeakerSettings original = new SpeakerSettings("", SpeakerSettings.Mode.REGION, 24, BlockPos.ZERO, 4,
+				SpeakerSettings.DEFAULT_APPEARANCE, SpeakerSettings.ALL_DIRECTIONS, true, 12);
+		final CompoundTag tag = new CompoundTag();
+		original.write(tag);
+		assertTrue(SpeakerSettings.read(tag, BlockPos.ZERO).finishBeforeRepeat);
+		assertEquals(12, SpeakerSettings.read(tag, BlockPos.ZERO).intervalSeconds);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		try {
+			original.write(packet);
+			final SpeakerSettings copy = SpeakerSettings.read(packet);
+			assertTrue(copy.finishBeforeRepeat);
+			assertEquals(12, copy.intervalSeconds);
+			assertEquals(0, packet.readableBytes());
+		} finally { packet.release(); }
+		tag.remove("finish_before_repeat");
+		tag.remove("interval_seconds");
+		assertFalse(SpeakerSettings.read(tag, BlockPos.ZERO).finishBeforeRepeat);
+		assertEquals(0, SpeakerSettings.read(tag, BlockPos.ZERO).intervalSeconds);
+	}
+
+	@Test
+	void diagonalListeningUsesSelectedHalfSpacesIncludingHeightDifferences() {
+		final int east = SpeakerSettings.directionBit(Direction.EAST);
+		assertTrue(SpeakerSettings.audibleFrom(BlockPos.ZERO, 24, east, 1.5, 5.5, 8.5));
+		assertFalse(SpeakerSettings.audibleFrom(BlockPos.ZERO, 24, east, -1.5, 0.5, 8.5));
+		assertTrue(SpeakerSettings.audibleFrom(BlockPos.ZERO, 24, east | SpeakerSettings.directionBit(Direction.SOUTH), -1.5, 0.5, 8.5));
+	}
+	@Test
 	void savesAndSynchronizesTheTriggerAreaAndAppearance() {
 		final SpeakerSettings original = new SpeakerSettings("steve:站台.ogg", SpeakerSettings.Mode.REGION, 128,
 				new BlockPos(-200, 71, 400), 9, new ResourceLocation("minecraft:polished_andesite"),
@@ -79,7 +108,7 @@ class SpeakerSettingsTest {
 		}
 		final int east = SpeakerSettings.directionBit(Direction.EAST);
 		assertTrue(SpeakerSettings.audibleFrom(BlockPos.ZERO, 4, east, 2.5, 1.5, 0.5));
-		assertFalse(SpeakerSettings.audibleFrom(BlockPos.ZERO, 4, east, 1.5, 2.5, 0.5));
+		assertTrue(SpeakerSettings.audibleFrom(BlockPos.ZERO, 4, east, 1.5, 2.5, 0.5));
 		assertFalse(SpeakerSettings.audibleFrom(BlockPos.ZERO, 4, east, 5.5, 0.5, 0.5));
 	}
 
@@ -100,6 +129,16 @@ class SpeakerSettingsTest {
 		assertEquals(0.5F, SpeakerSettings.volumeAtDistance(16, 8));
 		assertEquals(0F, SpeakerSettings.volumeAtDistance(64, 8));
 		assertEquals(0F, SpeakerSettings.volumeAtDistance(81, 8));
+	}
+
+	@Test
+	void leavingTheAreaOrSectorOnlyMutesAndReturningRestoresGain() {
+		final int east = SpeakerSettings.directionBit(Direction.EAST);
+		assertEquals(0.5F, SpeakerSettings.volumeAt(BlockPos.ZERO, 8, east, 4.5, 0.5, 0.5));
+		assertEquals(0F, SpeakerSettings.volumeAt(BlockPos.ZERO, 8, east, 9.5, 0.5, 0.5));
+		assertEquals(0F, SpeakerSettings.volumeAt(BlockPos.ZERO, 8, east, -3.5, 0.5, 0.5));
+		assertEquals(0.5F, SpeakerSettings.volumeAt(BlockPos.ZERO, 8, east, 4.5, 0.5, 0.5));
+		assertEquals(0F, SpeakerSettings.volumeAt(BlockPos.ZERO, 8, 0, 0.5, 0.5, 0.5));
 	}
 
 	@Test

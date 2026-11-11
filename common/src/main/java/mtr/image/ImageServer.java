@@ -50,6 +50,7 @@ public final class ImageServer implements IPacket {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeByte(0); packet.writeUtf(session); packet.writeBoolean(database != null && canUpload(player)); packet.writeInt(ENTRIES.size());
 		for (ImageDatabase.Entry entry : ENTRIES) { packet.writeUtf(entry.hash); packet.writeUtf(entry.name); packet.writeInt(entry.width); packet.writeInt(entry.height); packet.writeInt(entry.size); packet.writeBoolean(canDelete(player, entry)); packet.writeUtf(entry.uploader); packet.writeUtf(entry.uploaderName); packet.writeLong(entry.uploadedAt); }
+		packet.writeLong(SecurityConfig.imageMaxTotalMegabytes * 1024L * 1024);
 		Registry.sendToPlayer(player, PACKET_IMAGE_DATA, packet);
 	}
 	private static void result(ServerPlayer player, boolean ok, String key) {
@@ -121,7 +122,7 @@ public final class ImageServer implements IPacket {
 			if (existing != null && !existing.uploader.equals(id.toString())) { result(player, false, "gui.mtr.image_no_permission"); return; }
 			final Map<String, Integer> sizes = new HashMap<>();
 			ENTRIES.stream().filter(entry -> entry != existing).forEach(entry -> sizes.put(entry.hash, entry.size)); sizes.put(ImageFiles.hash(upload.bytes), size);
-			if ((existing == null && ENTRIES.size() >= 256) || sizes.values().stream().mapToLong(Integer::longValue).sum() > 64L * 1024 * 1024) { result(player, false, "gui.mtr.image_full"); return; }
+			if ((existing == null && ENTRIES.size() >= 256) || sizes.values().stream().mapToLong(Integer::longValue).sum() > SecurityConfig.imageMaxTotalMegabytes * 1024L * 1024) { result(player, false, "gui.mtr.image_full"); return; }
 			database.add(namespace, existing == null ? fileName : existing.fileName, upload.bytes, id.toString(), player.getName().getString()); ENTRIES.clear(); ENTRIES.addAll(database.entries());
 			result(player, true, "gui.mtr.image_uploaded"); server.getPlayerList().getPlayers().forEach(ImageServer::sendList);
 		} catch (Exception e) {

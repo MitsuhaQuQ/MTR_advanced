@@ -1,3 +1,3 @@
 {
-	"parent": "minecraft:block/jukebox"
+	"parent": "mtr:block/audio_speaker_icon"
 }

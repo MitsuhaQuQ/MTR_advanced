@@ -20,6 +20,7 @@ public final class RunRecord {
 	 * When it was recorded.
 	 */
 	public final long time;
+	private final Map<String, Object> dutyLedger = new TreeMap<>();
 	public final List<TrainRecord> trains = new ArrayList<>();
 	/**
 	 * Each depot's last service sent out on each first route, and the days each slot's duty ran, by the depot's first siding.
@@ -45,7 +46,7 @@ public final class RunRecord {
 	 * Version 2 adds the depots sending trains out by frequency, version 3 the sidings' sheds, version 4 the duties taken
 	 * over by spares (D5); older records are read without them.
 	 */
-	private static final int VERSION = 5;
+	private static final int VERSION = 6;
 
 	public RunRecord(long time) {
 		this.time = time;
@@ -55,6 +56,13 @@ public final class RunRecord {
 		final ByteArrayBinary.Writer writer = new ByteArrayBinary.Writer();
 		writer.writeInt(VERSION);
 		writer.writeLong(time);
+		final Map<String, String> ledger = new TreeMap<>();
+		trains.forEach(train -> {
+			if (train.ledger != null) ledger.put(train.ledger.key, train.ledger.text);
+			if (train.pathReference != null) ledger.put(train.pathReference.key, train.pathReference.text);
+		});
+		writer.writeVarInt(ledger.size());
+		ledger.forEach((key, text) -> { writeString(writer, key); writeString(writer, text); });
 		writer.writeVarInt(trains.size());
 		trains.forEach(train -> train.write(writer));
 		writer.writeVarInt(lastDeployedTrips.size());
@@ -107,6 +115,14 @@ public final class RunRecord {
 			throw new IllegalArgumentException("Unknown run record version " + version);
 		}
 		final RunRecord record = new RunRecord(reader.readLong());
+		if (version >= 6) {
+			final int count = reader.readVarInt();
+			if (count < 0 || count > 1000000) throw new IllegalArgumentException("Invalid duty ledger count");
+			for (int i = 0; i < count; i++) {
+				final String key = readString(reader), text = readString(reader);
+				record.dutyLedger.put(key, key.startsWith(transitsim.plan.PathKeyIndex.PREFIX) ? transitsim.plan.PathKeyIndex.load(key, text) : transitsim.plan.DutyLedger.load(key, text));
+			}
+		}
 		for (int i = reader.readVarInt(); i > 0; i--) {
 			record.trains.add(TrainRecord.read(reader, version));
 		}
@@ -164,6 +180,8 @@ public final class RunRecord {
 		public final boolean reversed;
 		public final boolean onRoute;
 		public final byte[] service;
+		private final transitsim.plan.DutyLedger.Entry ledger;
+		private final transitsim.plan.PathKeyIndex.Entry pathReference;
 		/**
 		 * The cruising cap the train set off with (see {@link TrainRules#getCruiseCap}), which the game doesn't save yet,
 		 * or NaN if it wasn't saved. Worked out again from where the train is, it comes out different for a train stopping
@@ -196,6 +214,8 @@ public final class RunRecord {
 			this.reversed = reversed;
 			this.onRoute = onRoute;
 			this.service = service;
+			ledger = transitsim.plan.DutyLedger.capture(service);
+			pathReference = transitsim.plan.PathKeyIndex.capture(service);
 			this.cruiseCap = cruiseCap;
 		}
 

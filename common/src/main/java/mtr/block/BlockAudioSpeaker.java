@@ -3,6 +3,7 @@ package mtr.block;
 import mtr.BlockEntityTypes;
 import mtr.audio.AudioServer;
 import mtr.audio.SpeakerSettings;
+import mtr.audio.SpeakerListeners;
 import mtr.data.RailwayData;
 import mtr.mappings.BlockEntityClientSerializableMapper;
 import mtr.mappings.BlockEntityMapper;
@@ -88,9 +89,10 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 
 	public static final class TileEntityAudioSpeaker extends BlockEntityClientSerializableMapper {
 		private final SpeakerSettings.Trigger trigger = new SpeakerSettings.Trigger();
-		private final Set<UUID> listeners = new HashSet<>();
+		private final SpeakerListeners listeners = new SpeakerListeners();
 		private SpeakerSettings settings;
 		private int loopTicks;
+		private final transitsim.sim.PlaybackGate playbackGate = new transitsim.sim.PlaybackGate();
 
 		public TileEntityAudioSpeaker(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.AUDIO_SPEAKER_TILE_ENTITY.get(), pos, state);
@@ -102,6 +104,7 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			stopLoop();
 			settings = SpeakerSettings.read(tag, worldPosition);
 			trigger.reset();
+			playbackGate.reset();
 			loopTicks = 0;
 		}
 
@@ -114,6 +117,7 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			stopLoop();
 			this.settings = settings;
 			trigger.reset();
+			playbackGate.reset();
 			loopTicks = 0;
 			if (level instanceof ServerLevel) {
 				final ServerLevel world = (ServerLevel) level;
@@ -163,7 +167,7 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 
 		private void playOnce(ServerLevel world) {
 			final String hash = AudioServer.getUploadedHash(settings.sound);
-			if (hash == null) return;
+			if (hash == null || !playbackGate.accept(world.getGameTime(), AudioServer.getUploadedDurationTicks(settings.sound), settings.finishBeforeRepeat, settings.intervalSeconds * 20L)) return;
 			for (final ServerPlayer player : world.players()) {
 				if (canHear(player)) {
 					AudioSpeakerPackets.play(player, world, worldPosition, settings, hash, AudioSpeakerPackets.Action.ONCE);
@@ -172,30 +176,30 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 		}
 
 		private void updateLoop(ServerLevel world, String hash, boolean refresh) {
-			listeners.removeIf(id -> {
+			final Set<UUID> present = new HashSet<>();
+			final Set<UUID> audible = new HashSet<>();
+			for (final ServerPlayer player : world.players()) {
+				present.add(player.getUUID());
+				if (canHear(player)) audible.add(player.getUUID());
+			}
+			// Leaving the listening area mutes the client, but does not restart its stream on return.
+			for (final UUID id : listeners.update(present, audible, refresh)) {
 				final ServerPlayer player = world.getServer().getPlayerList().getPlayer(id);
 				if (player != null && player.serverLevel() == world) {
-					if (canHear(player)) return false;
-					AudioSpeakerPackets.stop(player, world, worldPosition);
-				}
-				return true;
-			});
-			for (final ServerPlayer player : world.players()) {
-				if (canHear(player) && (listeners.add(player.getUUID()) || refresh)) {
 					AudioSpeakerPackets.play(player, world, worldPosition, settings, hash, AudioSpeakerPackets.Action.LOOP);
 				}
 			}
 		}
 
 		private void stopLoop() {
+			final Set<UUID> previous = listeners.clear();
 			if (level instanceof ServerLevel) {
 				final ServerLevel world = (ServerLevel) level;
-				for (final UUID id : listeners) {
+				for (final UUID id : previous) {
 					final ServerPlayer player = world.getServer().getPlayerList().getPlayer(id);
 					if (player != null && player.serverLevel() == world) AudioSpeakerPackets.stop(player, world, worldPosition);
 				}
 			}
-			listeners.clear();
 		}
 
 		@Override

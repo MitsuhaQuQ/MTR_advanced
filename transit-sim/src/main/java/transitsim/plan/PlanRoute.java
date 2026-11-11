@@ -12,6 +12,9 @@ public interface PlanRoute {
 
 	RouteTimetable getTimetable();
 
+	/** Route-only timing pairs by table, shared with the editor; null when unavailable. */
+	default long[][] getTimingBaseline() { return null; }
+
 	/**
 	 * The stops of the route in order.
 	 */

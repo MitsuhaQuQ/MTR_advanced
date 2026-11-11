@@ -100,6 +100,9 @@ public class MTR implements IPacket {
 		registerEntityType.accept(EntityTypes.LiftType.SIZE_4_4_DOUBLE_SIDED.key, EntityTypes.LiftType.SIZE_4_4_DOUBLE_SIDED.registryObject);
 
 		if (!Keys.LIFTS_ONLY) {
+			registerItem.accept("platform_end_apg", Items.PLATFORM_END_APG);
+			registerItem.accept("platform_end_psd", Items.PLATFORM_END_PSD_1);
+			registerItem.accept("platform_end_psd_2", Items.PLATFORM_END_PSD_2);
 			registerItem.accept("apg_door", Items.APG_DOOR);
 			registerItem.accept("apg_glass", Items.APG_GLASS);
 			registerItem.accept("apg_glass_end", Items.APG_GLASS_END);
@@ -216,6 +219,9 @@ public class MTR implements IPacket {
 			registerBlockItem.accept("cable_car_node_upper", Blocks.CABLE_CAR_NODE_UPPER, CreativeModeTabs.CORE);
 			registerBlockItem.accept("cable_car_node_station", Blocks.CABLE_CAR_NODE_STATION, CreativeModeTabs.CORE);
 			registerBlockItem.accept("airplane_node", Blocks.AIRPLANE_NODE, CreativeModeTabs.CORE);
+			registerBlock.accept("platform_end_apg", Blocks.PLATFORM_END_APG);
+			registerBlock.accept("platform_end_psd", Blocks.PLATFORM_END_PSD_1);
+			registerBlock.accept("platform_end_psd_2", Blocks.PLATFORM_END_PSD_2);
 			registerBlock.accept("apg_door", Blocks.APG_DOOR);
 			registerBlock.accept("apg_glass", Blocks.APG_GLASS);
 			registerBlock.accept("apg_glass_end", Blocks.APG_GLASS_END);
@@ -307,6 +313,10 @@ public class MTR implements IPacket {
 			registerEnchantedBlockItem.accept("station_color_clay", Blocks.STATION_COLOR_CLAY, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerEnchantedBlockItem.accept("station_color_coal_ore", Blocks.STATION_COLOR_COAL_ORE, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerEnchantedBlockItem.accept("station_color_cobblestone", Blocks.STATION_COLOR_COBBLESTONE, CreativeModeTabs.STATION_BUILDING_BLOCKS);
+			registerBlockItem.accept("tunnel_wall", Blocks.TUNNEL_WALL, CreativeModeTabs.STATION_BUILDING_BLOCKS);
+			registerBlockItem.accept("tunnel_wall_cables", Blocks.TUNNEL_WALL_CABLES, CreativeModeTabs.STATION_BUILDING_BLOCKS);
+			registerBlockItem.accept("tunnel_wall_panel", Blocks.TUNNEL_WALL_PANEL, CreativeModeTabs.STATION_BUILDING_BLOCKS);
+			registerBlockItem.accept("tunnel_wall_cables_panel", Blocks.TUNNEL_WALL_CABLES_PANEL, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerEnchantedBlockItem.accept("station_color_concrete", Blocks.STATION_COLOR_CONCRETE, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerEnchantedBlockItem.accept("station_color_concrete_powder", Blocks.STATION_COLOR_CONCRETE_POWDER, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerEnchantedBlockItem.accept("station_color_cracked_stone_bricks", Blocks.STATION_COLOR_CRACKED_STONE_BRICKS, CreativeModeTabs.STATION_BUILDING_BLOCKS);
@@ -463,6 +473,10 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_NETWORK_SETTINGS, mtr.packet.NetworkSettingsPackets::receiveC2S);
 		PacketGuard.register(PACKET_CONSOLE, mtr.packet.DispatchConsole::receiveRequestC2S);
 		PacketGuard.register(PACKET_DISPATCH, mtr.packet.DispatchConsole::receiveCommandC2S);
+		PacketGuard.register(PACKET_REQUEST_TRAIN_RESYNC, (server, player, packet) -> PacketGuard.execute(server, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));
+			if (railwayData != null) railwayData.requestTrainSnapshot(player);
+		}));
 		PacketGuard.register(PACKET_PLACE_TRAINS, PacketTrainDataGuiServer::receivePlaceTrainsC2S);
 		PacketGuard.register(PACKET_REPLAN_DUTIES, PacketTrainDataGuiServer::receiveReplanDutiesC2S);
 		PacketGuard.register(PACKET_CLEAR_TRAINS, PacketTrainDataGuiServer::clearTrainsC2S);
@@ -549,6 +563,7 @@ public class MTR implements IPacket {
 				railwayData.disconnectPlayer(player);
 			}
 			PacketGuard.forget(player);
+			mtr.packet.EditTransferPackets.forget(player);
 			EditGuard.onPlayerQuit(player.getServer(), player);
 			AudioServer.forget(player);
 			mtr.image.ImageServer.forget(player);

@@ -162,3 +162,11 @@ describe("timetable rules", () => {
     }
   })
 })
+
+it("changing a stop to passing clears old service timing but later explicit timing is kept", () => {
+  const table = { exceptions: [{ service: 0, stops: [{ stop: 1, run: 0, dwell: 30, pass: -1, overtake: -1 }] }] }
+  T.setStopException(table, 0, 1, { pass: 1, dwell: -1 })
+  expect(table.exceptions[0].stops[0].run).toBe(-1)
+  T.setStopException(table, 0, 1, { run: 60 })
+  expect(table.exceptions[0].stops[0].run).toBe(60)
+})

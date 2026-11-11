@@ -14,6 +14,10 @@ public final class EditorImages {
 		ImportedImages.ensureConnection();
 		final JsonObject result = new JsonObject(); result.addProperty("canUpload", ImportedImages.canUpload); result.addProperty("busy", ImportedImages.busy()); result.addProperty("message", ImportedImages.message.isEmpty() ? "" : Text.translatable(ImportedImages.message).getString()); result.addProperty("maxBytes", ImageFiles.MAX_BYTES); result.addProperty("maxDimension", ImageFiles.MAX_DIMENSION);
 		final JsonArray entries = new JsonArray();
+		result.addProperty("maxTotalBytes", ImportedImages.maxTotalBytes);
+		final java.util.Map<String, Integer> unique = new java.util.HashMap<>();
+		ImportedImages.ENTRIES.forEach(entry -> unique.put(entry.hash, entry.size));
+		result.addProperty("totalBytes", unique.values().stream().mapToLong(Integer::longValue).sum());
 		ImportedImages.ENTRIES.forEach(entry -> { final JsonObject item = new JsonObject(); item.addProperty("hash", entry.hash); item.addProperty("name", entry.name); item.addProperty("width", entry.width); item.addProperty("height", entry.height); item.addProperty("size", entry.size); item.addProperty("uploaderName", entry.uploaderName); item.addProperty("uploadedAt", entry.uploadedAt); item.addProperty("canDelete", ImportedImages.DELETABLE.contains(entry.name)); entries.add(item); }); result.add("entries", entries); return result;
 	}
 	public static JsonObject upload(String name, String data) {

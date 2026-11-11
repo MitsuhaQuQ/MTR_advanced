@@ -22,7 +22,7 @@ public abstract class LevelRendererMixin {
 	private RenderBuffers renderBuffers;
 
 	@Inject(method = "renderLevel", at = @At(value = "CONSTANT", args = "stringValue=blockentities", ordinal = 0))
-	private void afterEntities(PoseStack matrices, float f, long l, boolean bl, Camera camera, GameRenderer gameRenderer, LightTexture lightTexture, com.mojang.math.Matrix4f matrix4f, CallbackInfo ci) {
+	private void afterEntities(PoseStack matrices, float f, long l, boolean bl, Camera camera, GameRenderer gameRenderer, LightTexture lightTexture, org.joml.Matrix4f matrix4f, CallbackInfo ci) {
 		matrices.pushPose();
 		RenderTrains.render(null, 0, matrices, renderBuffers.bufferSource());
 		matrices.popPose();

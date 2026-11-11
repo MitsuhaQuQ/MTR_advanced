@@ -38,6 +38,8 @@ public class StopTimes {
 	int tailJoinEnd;
 	int tailLapEnd;
 	final List<Stop> stops = new ArrayList<>();
+	/** Passing platforms before the first dwell, in absolute path time, for route-only timing. */
+	private final List<Stop> leadingPasses = new ArrayList<>();
 	/**
 	 * The stops on the way round a loop to its first stop, which are planned like the same stops of the lap.
 	 */
@@ -95,6 +97,7 @@ public class StopTimes {
 		joinIndex = 0;
 		joinArrival = 0;
 		stops.clear();
+		leadingPasses.clear();
 		joinStops.clear();
 		tailJoinStops.clear();
 		joinStopLaps.clear();
@@ -127,6 +130,7 @@ public class StopTimes {
 		tailJoinEnd = stopTimes.tailJoinEnd;
 		tailLapEnd = stopTimes.tailLapEnd;
 		stops.addAll(stopTimes.stops);
+		leadingPasses.addAll(stopTimes.leadingPasses);
 		tailJoinStops.addAll(stopTimes.tailJoinStops);
 		joinStops.addAll(stopTimes.joinStops);
 		joinStopLaps.putAll(stopTimes.joinStopLaps);
@@ -163,6 +167,9 @@ public class StopTimes {
 		if (firstIndex < 0 && isFirstStop) {
 			firstIndex = index;
 			firstArrival = arrival;
+		}
+		if (firstIndex < 0 && platformId != 0) {
+			leadingPasses.add(new Stop(index, platformId, null, (long) (arrival * MILLIS_PER_TICK), (long) (departure * MILLIS_PER_TICK)));
 		}
 		if (firstIndex >= 0) {
 			stops.add(new Stop(index, platformId, turnBackRail, (long) ((arrival - firstArrival) * MILLIS_PER_TICK), (long) ((departure - firstArrival) * MILLIS_PER_TICK)));
@@ -275,10 +282,7 @@ public class StopTimes {
 	 * @return the planned times of a stop on the path, or null if the path has no such stop
 	 */
 	public RouteTimetable.StopPlan getPlan(List<? extends PlanRoute> routes, RouteTimetable timetable, int index, long routeId, int table, int service) {
-		long newKey = 1;
-		for (final PlanRoute route : routes) {
-			newKey = newKey * 31 + route.getRouteId() + route.getTimetable().revision;
-		}
+		final long newKey = PlanVersions.keyOf(routes);
 		if (newKey != plannedKey) {
 			plannedKey = newKey;
 			plans.clear();
@@ -305,12 +309,29 @@ public class StopTimes {
 		final Map<Integer, RouteTimetable.StopPlan> newPlans = new HashMap<>();
 		final List<RouteTimetable.StopPlan> stopPlans = new ArrayList<>();
 		final List<Boolean> isTurnBacks = new ArrayList<>();
+		final Map<Integer, Long> timingOrigins = new HashMap<>();
+		final long[] timingShift = {0};
 		matchRouteStops(routes, (stop, routeStop) -> {
 			final PlanStop arrivalStop = routeStop == null ? null : routeStop.arrivalStop;
 			final PlanStop departureStop = routeStop == null ? null : routeStop.departureStop;
 			final int arrivalTable = routeStop != null && routeStop.arrivalRoute.getRouteId() == routeId ? table : 0;
 			final int departureTable = routeStop != null && routeStop.departureRoute.getRouteId() == routeId ? table : 0;
-			final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(stop.arrivalMillis, stop.departureMillis, arrivalStop == null ? -1 : arrivalStop.getArrival(arrivalTable), departureStop == null ? -1 : departureStop.getDeparture(departureTable), departureStop != null && departureStop.getOvertake(departureTable));
+			long arrival = stop.arrivalMillis + timingShift[0];
+			long departure = stop.departureMillis + timingShift[0];
+			final long[] arrivalBase = routeStop == null ? null : baselineAt(routeStop.arrivalRoute, routeStop.arrivalIndex, arrivalTable);
+			if (arrivalBase != null) {
+				if (!timingOrigins.containsKey(routeStop.arrivalSegment)) timingOrigins.put(routeStop.arrivalSegment, arrival - arrivalBase[0]);
+				arrival = timingOrigins.get(routeStop.arrivalSegment) + arrivalBase[0];
+			}
+			final long[] departureBase = routeStop == null ? null : baselineAt(routeStop.departureRoute, routeStop.departureIndex, departureTable);
+			if (departureBase != null) {
+				if (!timingOrigins.containsKey(routeStop.departureSegment)) timingOrigins.put(routeStop.departureSegment, arrival - departureBase[0]);
+				departure = timingOrigins.get(routeStop.departureSegment) + departureBase[1];
+			} else {
+				departure = arrival + stop.departureMillis - stop.arrivalMillis;
+			}
+			timingShift[0] = departure - stop.departureMillis;
+			final RouteTimetable.StopPlan stopPlan = new RouteTimetable.StopPlan(arrival, departure, arrivalStop == null ? -1 : arrivalStop.getArrival(arrivalTable), departureStop == null ? -1 : departureStop.getDeparture(departureTable), departureStop != null && departureStop.getOvertake(departureTable));
 			if (stopExceptions != null && routeStop != null) {
 				ServiceExceptions.applyTo(stopPlan, routeStop.arrivalRoute.getRouteId() == routeId ? stopExceptions.get(routeStop.arrivalIndex) : null, routeStop.departureRoute.getRouteId() == routeId ? stopExceptions.get(routeStop.departureIndex) : null);
 			}
@@ -331,6 +352,14 @@ public class StopTimes {
 		return newPlans;
 	}
 
+	private static long[] baselineAt(PlanRoute route, int stop, int table) {
+		final long[][] times = route.getTimingBaseline();
+		if (times == null || stop < 0 || stop >= times.length) return null;
+		final int column = TimetableTimes.column(times[stop], table);
+		if (column < 0 || column + 1 >= times[stop].length || times[stop][column] < 0) return null;
+		return new long[]{times[stop][column], times[stop][column + 1]};
+	}
+
 	/**
 	 * @return for a duty whose first segment joins its route part of the way along, the planned time from that route's first
 	 * stop to where the train joins it
@@ -346,6 +375,10 @@ public class StopTimes {
 	 * @return the planned time from the first stop of the route to the stop where the train joins it
 	 */
 	private long getEntryOffset(List<? extends PlanRoute> routes, PlanRoute route, int segment, int entryStop, int table, Map<Integer, ServiceExceptions.StopException> stopExceptions) {
+		final long[][] baseline = route.getTimingBaseline();
+		if (baseline != null && baseline.length == route.getStops().size() && entryStop >= 0 && entryStop < baseline.length) {
+			return StopRules.plan(route.getStops(), baseline, route.getTimetable().getTable(table).marginPercent, table, stopExceptions).get(entryStop).arrivalMillis;
+		}
 		final long[][] leadTimes = segmentsKnown ? getSegmentLead(segment, routes) : entryTimes.get(route.getRouteId());
 		if (leadTimes == null || entryStop >= route.getStops().size()) {
 			return 0;
@@ -381,6 +414,21 @@ public class StopTimes {
 	 * instead, the run to the second stop would be lost and every stop after the first would come too early.
 	 */
 	public long[][] getFastestTimesFromFirstStop(PlanRoute route) {
+		if (!leadingPasses.isEmpty()) {
+			// Route-only paths leave their first platform already standing. Passing the next platforms
+			// must not disappear just because the first subsequent dwell has not happened yet.
+			final StopTimes complete = new StopTimes();
+			complete.copyFrom(this);
+			complete.leadingPasses.clear();
+			complete.stops.clear();
+			complete.stops.addAll(leadingPasses);
+			final long offset = (long) (firstArrival * MILLIS_PER_TICK);
+			for (final Stop stop : stops) {
+				complete.stops.add(new Stop(stop.index, stop.platformId, stop.turnBackRail, stop.arrivalMillis + offset, stop.departureMillis + offset));
+			}
+			complete.firstArrival = 0;
+			return complete.getFastestTimesFromFirstStop(route);
+		}
 		final long[][] times = matchFastestTimes(route, Collections.singletonList(route));
 		if (times.length == 0 || times[0][0] >= 0) {
 			return getFastestTimes(route, Collections.singletonList(route));

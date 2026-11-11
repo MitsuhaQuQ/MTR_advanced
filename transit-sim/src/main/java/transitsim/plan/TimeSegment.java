@@ -7,6 +7,16 @@ import transitsim.motion.MotionConstants;
  */
 public class TimeSegment {
 
+	/** First interval containing the position, including its endpoints; -1 in a reversal gap. */
+	public static int indexAt(java.util.List<TimeSegment> segments, double position) {
+		int low = 0, high = segments.size();
+		while (low < high) {
+			int middle = (low + high) >>> 1;
+			if (segments.get(middle).endRailProgress < position) low = middle + 1; else high = middle;
+		}
+		return low < segments.size() && segments.get(low).startRailProgress <= position ? low : -1;
+	}
+
 	public double endRailProgress;
 	public long savedRailBaseId;
 	public boolean pass;

@@ -23,6 +23,8 @@ public final class SpeakerSettings {
 	public final int triggerRadius;
 	public final ResourceLocation appearance;
 	public final int audienceMask;
+	public final boolean finishBeforeRepeat;
+	public final int intervalSeconds;
 
 	public SpeakerSettings(String sound, Mode mode, int radius, BlockPos triggerCenter, int triggerRadius, ResourceLocation appearance) {
 		this(sound, mode, radius, triggerCenter, triggerRadius, appearance, ALL_DIRECTIONS);
@@ -30,9 +32,14 @@ public final class SpeakerSettings {
 
 	public SpeakerSettings(String sound, Mode mode, int radius, BlockPos triggerCenter, int triggerRadius,
 			ResourceLocation appearance, int audienceMask) {
+		this(sound, mode, radius, triggerCenter, triggerRadius, appearance, audienceMask, false, 0);
+	}
+
+	public SpeakerSettings(String sound, Mode mode, int radius, BlockPos triggerCenter, int triggerRadius,
+			ResourceLocation appearance, int audienceMask, boolean finishBeforeRepeat, int intervalSeconds) {
 		this.sound = AnnouncementSound.clean(sound);
 		if ((!this.sound.isEmpty() && AnnouncementSound.splitUploaded(this.sound) == null)
-				|| !validRadius(radius) || !validRadius(triggerRadius) || !validAudienceMask(audienceMask)) {
+				|| !validRadius(radius) || !validRadius(triggerRadius) || !validAudienceMask(audienceMask) || intervalSeconds < 0 || intervalSeconds > 3600) {
 			throw new IllegalArgumentException("Invalid speaker settings");
 		}
 		this.mode = mode;
@@ -41,6 +48,8 @@ public final class SpeakerSettings {
 		this.triggerRadius = triggerRadius;
 		this.appearance = appearance == null ? DEFAULT_APPEARANCE : appearance;
 		this.audienceMask = audienceMask;
+		this.finishBeforeRepeat = finishBeforeRepeat;
+		this.intervalSeconds = intervalSeconds;
 	}
 
 	public static SpeakerSettings defaults(BlockPos position) {
@@ -55,6 +64,8 @@ public final class SpeakerSettings {
 		tag.putInt("trigger_radius", triggerRadius);
 		tag.putString("appearance", appearance.toString());
 		tag.putInt("audience_mask", audienceMask);
+		tag.putBoolean("finish_before_repeat", finishBeforeRepeat);
+		tag.putInt("interval_seconds", intervalSeconds);
 	}
 
 	public static SpeakerSettings read(CompoundTag tag, BlockPos position) {
@@ -62,7 +73,7 @@ public final class SpeakerSettings {
 			return new SpeakerSettings(tag.getString("sound"), Mode.valueOf(tag.getString("mode")), tag.getInt("radius"),
 					BlockPos.of(tag.getLong("trigger_center")), tag.getInt("trigger_radius"),
 					tag.contains("appearance") ? ResourceLocation.tryParse(tag.getString("appearance")) : DEFAULT_APPEARANCE,
-					readAudienceMask(tag));
+					readAudienceMask(tag), tag.getBoolean("finish_before_repeat"), tag.getInt("interval_seconds"));
 		} catch (IllegalArgumentException e) {
 			return defaults(position);
 		}
@@ -85,12 +96,14 @@ public final class SpeakerSettings {
 		packet.writeVarInt(triggerRadius);
 		packet.writeResourceLocation(appearance);
 		packet.writeByte(audienceMask);
+		packet.writeBoolean(finishBeforeRepeat);
+		packet.writeVarInt(intervalSeconds);
 	}
 
 	public static SpeakerSettings read(FriendlyByteBuf packet) {
 		return new SpeakerSettings(packet.readUtf(AnnouncementSound.MAX_LENGTH), packet.readEnum(Mode.class),
 				packet.readVarInt(), packet.readBlockPos(), packet.readVarInt(), packet.readResourceLocation(),
-				packet.readUnsignedByte());
+				packet.readUnsignedByte(), packet.readBoolean(), packet.readVarInt());
 	}
 
 	public static boolean validRadius(int radius) {
@@ -115,17 +128,25 @@ public final class SpeakerSettings {
 		final double dz = z - center.getZ() - 0.5;
 		if (audienceMask == 0 || !(dx * dx + dy * dy + dz * dz <= radius * radius)) return false;
 		if (audienceMask == ALL_DIRECTIONS) return true;
-		final double dominantOffset = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
 		for (final Direction face : FACES) {
 			if ((audienceMask & directionBit(face)) == 0) continue;
 			final double forward = dx * face.getStepX() + dy * face.getStepY() + dz * face.getStepZ();
-			if (forward >= dominantOffset) return true;
+			if (forward > 0 || dx == 0 && dy == 0 && dz == 0) return true;
 		}
 		return false;
 	}
 
 	public static float volumeAtDistance(double distanceSquared, int radius) {
 		return (float) Math.max(0, 1 - Math.sqrt(distanceSquared) / radius);
+	}
+
+	/** Audibility changes the gain, not the lifetime or playback position of the sound. */
+	public static float volumeAt(BlockPos center, int radius, int audienceMask, double x, double y, double z) {
+		if (!audibleFrom(center, radius, audienceMask, x, y, z)) return 0;
+		final double dx = x - center.getX() - 0.5;
+		final double dy = y - center.getY() - 0.5;
+		final double dz = z - center.getZ() - 0.5;
+		return volumeAtDistance(dx * dx + dy * dy + dz * dz, radius);
 	}
 
 	public enum Mode {

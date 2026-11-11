@@ -58,8 +58,14 @@ class DutyBodyTest {
 		assertTrue(otherPath.get(8).isSameRail(P5));
 		assertArrayEquals(new int[]{1, 6}, other.getStarts(wayOut));
 		assertArrayEquals(new int[]{-1, -1, -1, 3}, other.getTurnBackStops(points, 4, wayOut));
-		// Every path has rails of its own, so numbering the stops of one doesn't change another
-		assertNotSame(usualPath.get(3), otherPath.get(3));
+		// Builders share templates; final indexed paths own their numbered rail views.
+		List<PathData> indexedUsual = PathPieces.indexDuty(usualPath, usual.getIndexBoundaries(wayOut), 1);
+		List<PathData> indexedOther = PathPieces.indexDuty(otherPath, other.getIndexBoundaries(wayOut), 1);
+		assertNotSame(indexedUsual.get(3), indexedOther.get(3));
+		int otherStop = indexedOther.get(3).stopIndex;
+		indexedUsual.get(3).stopIndex = 12345;
+		assertEquals(otherStop, indexedOther.get(3).stopIndex);
+		assertEquals(0, P3.stopIndex);
 	}
 
 	private static PathData rail(int startZ, int endZ, RailType railType, long savedRailBaseId, int dwellTime) {

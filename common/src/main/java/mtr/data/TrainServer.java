@@ -642,15 +642,8 @@ public class TrainServer extends Train {
 		final boolean standingForDuty = !isOnRoute && depot.getRunDuties() != null;
 		final long currentMillis = System.currentTimeMillis() - (long) (elapsedDwellTicks * Depot.MILLIS_PER_TICK) + (long) Math.max(0, nextDepartureTicks);
 
-		double currentTime = -1;
-		int startingIndex = 0;
-		for (final TimeSegment timeSegment : timeSegments) {
-			if (RailwayData.isBetween(railProgress, timeSegment.startRailProgress, timeSegment.endRailProgress)) {
-				currentTime = timeSegment.getTime(railProgress);
-				break;
-			}
-			startingIndex++;
-		}
+		final int startingIndex = TimeSegment.indexAt(timeSegments, railProgress);
+		final double currentTime = startingIndex < 0 ? -1 : timeSegments.get(startingIndex).getTime(railProgress);
 
 		if (currentTime >= 0) {
 			float offsetTime = 0;
@@ -820,6 +813,9 @@ public class TrainServer extends Train {
 	/**
 	 * @return the train as the component's simulator carries on from it (G0)
 	 */
+	public transitsim.plan.DutyLedger.Entry getDutyLedger() { return service.getDutyLedger(); }
+	public transitsim.plan.PathKeyIndex.Entry getDutyPathReference() { return transitsim.plan.PathKeyIndex.entry(service.getTripPathKey()); }
+
 	public RunRecord.TrainRecord toRecord() {
 		final BinaryKeyed.Writer values = new BinaryKeyed.Writer();
 		try {
@@ -1290,6 +1286,11 @@ public class TrainServer extends Train {
 	 */
 	public void setPathVariants(transitsim.plan.PathVariants<PathData> pathVariants) {
 		service.setPathVariants(pathVariants);
+	}
+
+	/** The live path must remain available while its train finishes the duty it started. */
+	public TripPath<PathData> getActiveTripPath() {
+		return isOnRoute ? service.getTripPath() : null;
 	}
 
 	public boolean restoreTripPath(Map<String, TripPath<PathData>> newTripPaths) {

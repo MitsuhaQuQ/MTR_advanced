@@ -1829,9 +1829,15 @@ public final class TickRunner<T extends RunTrack> {
 			service.read(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(trainRecord.service)));
 			service.setStopTimes(siding.stopTimes, siding.tripPaths, siding.turnBacks);
 			service.setPathVariants(siding.pathVariants);
-			if (!service.restoreTripPath(siding.tripPaths) || nextStoppingIndex >= path.size()) {
-				return false;
+			if (!service.restoreTripPath(siding.tripPaths)) return false;
+			if (nextStoppingIndex >= path.size()) {
+				if (onRoute) return false;
+				// Indices left over from a completed duty do not describe a parked train's siding path.
+				nextStoppingIndex = 0;
+				nextPlatformIndex = 0;
+				restoredSegment = null;
 			}
+
 			if (!Float.isNaN(trainRecord.cruiseCap)) {
 				cruiseCap = trainRecord.cruiseCap;
 			} else if (onRoute && speed > 0) {
@@ -2018,7 +2024,13 @@ public final class TickRunner<T extends RunTrack> {
 						throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
 					}
 				}
-				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, getStopDistance(targetStop), getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
+				final double target = onRoute && atStop && TrainRules.waitsBeforeRequestingRun(this, stop) ? head : getStopDistance(targetStop);
+				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, target, getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
+				if (atStop && target > head + 1E-6 && authorityEnd <= head + 1E-6) {
+					if (waitingSinceMillis == 0) waitingSinceMillis = millis;
+				} else {
+					waitingSinceMillis = 0;
+				}
 			} else {
 				authority.release();
 				authorityEnd = head;

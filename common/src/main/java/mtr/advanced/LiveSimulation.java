@@ -135,6 +135,7 @@ public final class LiveSimulation {
 	 * When the simulator last failed, or 0.
 	 */
 	private long failedMillis;
+	private long excludedRetryMillis;
 	/**
 	 * How long it stays off after failing before it starts again.
 	 */
@@ -221,6 +222,13 @@ public final class LiveSimulation {
 			return;
 		}
 		final long now = System.currentTimeMillis();
+		// Retrying must include excluded sidings: a digest filtered to managed sidings cannot
+		// notice that the path of an excluded one has become usable again.
+		if (!excludedSidings.isEmpty() && now >= excludedRetryMillis + RESTART_MILLIS) {
+			excludedRetryMillis = now;
+			excludedSidings.clear();
+			start(railwayData, now, drive, now);
+		}
 		if (simulator != null && drive) {
 			// A stop of more than a minute is recovered from (contracts document 6.3), and a change starts it again
 			final boolean stopped = now - lastMillis > EventSimulator.RECOVERY_MILLIS;
@@ -369,6 +377,7 @@ public final class LiveSimulation {
 			System.out.println("Minecraft Transit Railway: the component's simulator leaves sidings " + lostSidings + " to the game, as it couldn't carry on their trains " + lostTrains);
 			simulator = null;
 			excludedSidings.addAll(lostSidings);
+			excludedRetryMillis = now;
 			start(railwayData, now, drive, recordMillis);
 			return;
 		}
@@ -431,6 +440,16 @@ public final class LiveSimulation {
 	 * operating day is worked out away from the server thread, and the simulator starts from it at the next tick after.
 	 */
 	public void placeByTimetable(RailwayData railwayData, ServerPlayer player, long depotId) {
+		if (placement == null && (simulator == null || railwayData.sidings.stream().anyMatch(siding -> excludedSidings.contains(siding.id) && railwayData.dataCache.sidingIdToDepot.get(siding.id) != null && railwayData.dataCache.sidingIdToDepot.get(siding.id).id == depotId))) {
+			excludedSidings.clear();
+			try {
+				start(railwayData, System.currentTimeMillis(), true, System.currentTimeMillis());
+			} catch (Exception e) {
+				failedMillis = System.currentTimeMillis();
+				stop(railwayData);
+				e.printStackTrace();
+			}
+		}
 		final boolean runs = simulator != null && driving && railwayData.sidings.stream().anyMatch(siding -> sidingIds.contains(siding.id) && railwayData.dataCache.sidingIdToDepot.get(siding.id) != null && railwayData.dataCache.sidingIdToDepot.get(siding.id).id == depotId);
 		if (!runs) {
 			tell(player, Text.translatable("gui.mtr.place_trains_not_run"));
@@ -643,6 +662,7 @@ public final class LiveSimulation {
 			return false;
 		}
 		checkedMillis = now;
+		if (settled) excludedSidings.clear();
 		checkedVersion = version;
 		versionChangedMillis = 0;
 		if (!getRunSidingIds(railwayData).equals(sidingIds)) {
@@ -690,7 +710,7 @@ public final class LiveSimulation {
 	}
 
 	private static long getVersion(RailwayData railwayData) {
-		return (long) railwayData.dataCache.getVersion() << 32 | railwayData.getSignalBlocks().getVersion() & 0xFFFFFFFFL;
+		return (((long) railwayData.dataCache.getVersion() << 32 | railwayData.getSignalBlocks().getVersion() & 0xFFFFFFFFL) * 31) + railwayData.routePaths.getTimingVersion();
 	}
 
 	/**

@@ -327,6 +327,9 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void requestTimetableTimesC2S(long routeId) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(routeId);
+		final Route route = ClientData.DATA_CACHE.routeIdMap.get(routeId);
+		if (route == null) { packet.release(); return; }
+		packet.writeInt(mtr.client.editor.EditorTimes.SAVED_TIMES.request(route));
 		RegistryClient.sendToServer(PACKET_TIMETABLE_TIMES, packet);
 	}
 
@@ -338,7 +341,20 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 			times[i] = new long[]{packet.readLong(), packet.readLong()};
 		}
 		final PathFailure failure = PathFailure.readPacket(packet);
+		final int requestId = packet.isReadable() ? packet.readInt() : 0;
+		final int columns = packet.isReadable() ? packet.readVarInt() : 2;
+		if (columns < 2 || columns > transitsim.plan.RouteTimetable.MAX_TABLES * 2 || columns % 2 != 0) return;
+		for (int i = 0; i < times.length; i++) {
+			times[i] = java.util.Arrays.copyOf(times[i], columns);
+			for (int column = 2; column < columns; column++) times[i][column] = packet.readLong();
+		}
 		minecraftClient.execute(() -> {
+			if (requestId > 0) {
+				mtr.client.editor.EditorTimes.receiveDraft(requestId, routeId, times);
+				return;
+			}
+			final Route route = ClientData.DATA_CACHE.routeIdMap.get(routeId);
+			if (route == null || !mtr.client.editor.EditorTimes.SAVED_TIMES.accept(route, requestId)) return;
 			ClientData.TIMETABLE_TIMES.put(routeId, times);
 			if (failure.type == PathFailure.Type.NONE) {
 				ClientData.ROUTE_PATH_FAILURES.remove(routeId);

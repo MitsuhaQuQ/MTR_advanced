@@ -60,6 +60,17 @@ class MidLineDepotTest {
 	 * @param deadEndA whether A is a dead end, the line turning back on the west platform there, as the Q world
 	 */
 	private static Layout measure(boolean crossover, boolean deadEndA) {
+		return measure(crossover, deadEndA, false);
+	}
+
+	@Test
+	void aNamedDepotLegStillReachesBothEndsAlongTheLine() {
+		Layout layout = measure(true, true, true);
+		assertEquals(4, layout.ways.size());
+		layout.ways.forEach((name, way) -> assertTrue(way.isFound(), name + layout.text));
+	}
+
+	private static Layout measure(boolean crossover, boolean deadEndA, boolean named) {
 		final List<TrackSections.Rail> rails = new ArrayList<>();
 		final String[] names = {"A", "B", "C", "D"};
 		final Map<String, TrackSections.Rail> platforms = new LinkedHashMap<>();
@@ -133,12 +144,14 @@ class MidLineDepotTest {
 		}
 		platforms.values().forEach(platform -> layout.platformSections.add(sections.getSectionOf(platform.getKey())));
 		// The stations a train may go out and back by: all of them, the nearest found among them
-		final List<Long> stations = new ArrayList<>(layout.platformSections);
+		final List<Long> stations = named ? Collections.singletonList(sections.getSectionOf(platforms.get("C east").getKey())) : new ArrayList<>(layout.platformSections);
+		final RouteLegs.LegSource outSource = named ? LineDepotWays.throughDepotLeg(s, new long[]{pos(300, -80), pos(340, -40)}, snapshot, source) : source;
+		final RouteLegs.LegSource backSource = named ? LineDepotWays.throughDepotLeg(s, new long[]{pos(340, -40), pos(300, -80)}, snapshot, source) : source;
 		for (final RouteLegs.Plan route : layout.routes) {
 			final long[] first = route.steps.get(route.stopSteps[0]);
 			final long[] last = route.steps.get(route.stopSteps[route.stopSteps.length - 1]);
-			final RouteLegs.Plan out = LineDepotWays.planOut(s, first[0], first[1] == 1, stations, layout.routes, null, snapshot, source);
-			final RouteLegs.Plan back = LineDepotWays.planBack(last[0], last[1] == 1, s, stations, layout.routes, null, snapshot, source);
+			final RouteLegs.Plan out = LineDepotWays.planOut(s, first[0], first[1] == 1, stations, layout.routes, null, snapshot, outSource);
+			final RouteLegs.Plan back = LineDepotWays.planBack(last[0], last[1] == 1, s, stations, layout.routes, null, snapshot, backSource);
 			final String outName = "out to " + nameOf(platforms, sections, first[0]);
 			final String backName = "back from " + nameOf(platforms, sections, last[0]);
 			layout.ways.put(outName, out);

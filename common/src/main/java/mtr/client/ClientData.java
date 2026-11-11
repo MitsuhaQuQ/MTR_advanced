@@ -75,6 +75,18 @@ public final class ClientData {
 	public static Map<UUID, Set<Integer>> OCCUPIED_SECTIONS = null;
 	public static final Map<BlockPos, Map<BlockPos, Rail>> RAILS = new HashMap<>();
 	public static final Set<TrainClient> TRAINS = new HashSet<>();
+	private static long nextTrainSnapshot = Long.MIN_VALUE;
+	private static Object trainSnapshotConnection;
+
+	private static void requestTrainSnapshot(Minecraft client) {
+		Object connection = client.getConnection();
+		if (connection == null) return;
+		if (connection != trainSnapshotConnection) { trainSnapshotConnection = connection; nextTrainSnapshot = Long.MIN_VALUE; }
+		long now = System.nanoTime() / 1000000;
+		if (now < nextTrainSnapshot) return;
+		nextTrainSnapshot = now + 2000;
+		mtr.RegistryClient.sendToServer(mtr.packet.IPacket.PACKET_REQUEST_TRAIN_RESYNC, new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer()));
+	}
 	public static final List<DataConverter> RAIL_ACTIONS = new ArrayList<>();
 	public static final Map<Long, Set<ScheduleEntry>> SCHEDULES_FOR_PLATFORM = new HashMap<>();
 
@@ -168,9 +180,7 @@ public final class ClientData {
 
 		client.execute(() -> states.forEach(state -> {
 			final TrainClient existingTrain = getTrainById(state.id);
-			if (existingTrain != null) {
-				existingTrain.applyState(state);
-			}
+			if (existingTrain == null || !existingTrain.applyState(state)) requestTrainSnapshot(client);
 		}));
 	}
 
@@ -336,6 +346,7 @@ public final class ClientData {
 	}
 
 	public static void receivePacket(FriendlyByteBuf packet) {
+		mtr.client.editor.EditorTimes.beginConnection(Minecraft.getInstance().getConnection());
 		final FriendlyByteBuf packetCopy = new FriendlyByteBuf(packet.copy());
 		clearAndAddAll(STATIONS, deserializeData(packetCopy, Station::new));
 		clearAndAddAll(PLATFORMS, deserializeData(packetCopy, Platform::new));
@@ -352,6 +363,7 @@ public final class ClientData {
 
 		TRAINS.forEach(TrainClient::clearPlatformDoors);
 		TRAINS.clear();
+		requestTrainSnapshot(Minecraft.getInstance());
 		ClientData.DATA_CACHE.sync();
 		ClientData.DATA_CACHE.refreshDynamicResources();
 		SIGNAL_BLOCKS.writeCache();

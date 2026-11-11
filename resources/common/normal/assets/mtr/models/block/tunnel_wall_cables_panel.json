@@ -1,0 +1,54 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "#wall",
+    "wall": "mtr:block/tunnel_wall_cables",
+    "plain": "mtr:block/tunnel_wall"
+  },
+  "elements": [
+    {
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "to": [
+        16,
+        16,
+        1
+      ],
+      "faces": {
+        "up": {
+          "texture": "#plain"
+        },
+        "down": {
+          "texture": "#plain"
+        },
+        "east": {
+          "texture": "#plain"
+        },
+        "west": {
+          "texture": "#plain"
+        },
+        "north": {
+          "texture": "#wall",
+          "uv": [
+            0,
+            0,
+            16,
+            16
+          ]
+        },
+        "south": {
+          "texture": "#wall",
+          "uv": [
+            0,
+            0,
+            16,
+            16
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -121,6 +121,9 @@ public final class EditGuard implements IPacket {
 	}
 
 	public static void registerPackets() {
+		PacketGuard.register(PACKET_EDIT_FRAGMENT, (server, player, packet) -> EditTransferPackets.receive(server, player, packet, (batch, data) -> {
+			if (batch) receiveBatchC2S(server, player, data); else receiveEditC2S(server, player, data);
+		}));
 		PacketGuard.register(PACKET_EDIT, EditGuard::receiveEditC2S);
 		PacketGuard.register(PACKET_EDIT_BATCH, EditGuard::receiveBatchC2S);
 		PacketGuard.register(PACKET_EDITING, EditGuard::receiveEditingC2S);

@@ -87,7 +87,9 @@ public final class ClientEditing implements IPacket {
 		editPacket.writeUtf(packetId.toString());
 		editPacket.writeInt(base);
 		editPacket.writeBytes(bytes);
-		RegistryClient.sendToServer(PACKET_EDIT, editPacket);
+		final boolean fragmented = editPacket.readableBytes() > mtr.data.EditTransferAssembler.CHUNK_BYTES;
+		try { mtr.packet.EditTransferPackets.send(PACKET_EDIT, editPacket, RegistryClient::sendToServer); }
+		finally { if (fragmented) editPacket.release(); }
 		return true;
 	}
 
@@ -198,7 +200,10 @@ public final class ClientEditing implements IPacket {
 			packet.writeLong(routeId);
 			packet.writeUtf(base);
 		});
-		RegistryClient.sendToServer(PACKET_EDIT_BATCH, packet);
+		final boolean fragmented = packet.readableBytes() > mtr.data.EditTransferAssembler.CHUNK_BYTES;
+		try { mtr.packet.EditTransferPackets.send(PACKET_EDIT_BATCH, packet, RegistryClient::sendToServer); }
+		catch (RuntimeException e) { PENDING.remove(batchId); future.completeExceptionally(e); }
+		finally { if (fragmented) packet.release(); }
 		return future;
 	}
 

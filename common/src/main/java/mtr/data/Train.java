@@ -639,7 +639,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * @return whether the other train is the same vehicle: the same model and type, as many cars as far apart
 	 */
 	public final boolean isSameVehicle(Train other) {
-		return trainId.equals(other.trainId) && baseTrainType.equals(other.baseTrainType) && trainCars == other.trainCars && spacing == other.spacing;
+		return trainId.equals(other.trainId) && baseTrainType.equals(other.baseTrainType) && trainCars == other.trainCars && spacing == other.spacing
+				&& width == other.width && transportMode == other.transportMode && Float.compare(railLength, other.railLength) == 0;
 	}
 
 	/**

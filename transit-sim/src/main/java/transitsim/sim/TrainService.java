@@ -146,6 +146,7 @@ public class TrainService<T extends PlanTrack> {
 	 * (fix F2, R04 of the architecture review). It isn't saved: after a restart the duty is read again from the depot.
 	 */
 	private DepotDuties.DayDuty dutyDay;
+	private transitsim.plan.DutyLedger.Entry dutyLedger;
 	/**
 	 * Sent out for a duty but still in the siding, waiting for its run out of it to be granted. The train keeps its duty
 	 * meanwhile, unlike a train back in the depot, which ends it.
@@ -296,7 +297,7 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	public void read(KeyedReader reader) {
-		tripPathKey = reader.getString(KEY_TRIP_PATH, "");
+		tripPathKey = transitsim.plan.PathKeyIndex.resolve(reader.getString(KEY_TRIP_PATH, ""));
 		linkedService = reader.getInt(KEY_LINKED_SERVICE, -1);
 		linkedRouteId = reader.getLong(KEY_LINKED_ROUTE, 0);
 		tripMillis = reader.getLong(KEY_TRIP_MILLIS, 0);
@@ -334,7 +335,8 @@ public class TrainService<T extends PlanTrack> {
 		}
 		dispatchTurnPlatforms = newDispatchTurn.isEmpty() ? Collections.emptySet() : newDispatchTurn;
 		// Saved before trains kept their duty, it is read again from the depot when needed
-		dutyDay = dutySlot >= 0 ? DepotDuties.DayDuty.fromText(reader.getString(KEY_DUTY_DAY, "")) : null;
+		dutyLedger = dutySlot >= 0 ? transitsim.plan.DutyLedger.read(reader.getString(KEY_DUTY_DAY, "")) : null;
+		dutyDay = dutyLedger == null ? null : dutyLedger.day();
 		// A train back in the depot ends its duty at once, so one saved in the depot with a duty was waiting to leave
 		isLeavingForDuty = dutySlot >= 0;
 		needsAlignment = tripMillis != 0;
@@ -348,13 +350,16 @@ public class TrainService<T extends PlanTrack> {
 		writer.writeLong(KEY_TRIP_ROUTE_ID, tripRouteId);
 		writer.writeLong(KEY_ROUTE_START_MILLIS, routeStartMillis);
 		writer.writeBoolean(KEY_IS_JOINING_LOOP, isJoiningLoop);
-		writer.writeString(KEY_TRIP_PATH, tripPathKey);
+		transitsim.plan.PathKeyIndex.Entry pathReference = transitsim.plan.PathKeyIndex.entry(tripPathKey);
+		if (pathReference != null) tripPathKey = pathReference.text;
+		writer.writeString(KEY_TRIP_PATH, pathReference == null ? "" : pathReference.key);
 		writer.writeInt(KEY_LINKED_SERVICE, linkedService);
 		writer.writeLong(KEY_LINKED_ROUTE, linkedRouteId);
 		writer.writeInt(KEY_DUTY_SLOT, dutySlot);
 		writer.writeLong(KEY_DUTY_DAY_START, dutyDayStart);
 		writer.writeInt(KEY_DUTY_INDEX, dutyIndex);
-		writer.writeString(KEY_DUTY_DAY, dutySlot >= 0 && getDutyDay() != null ? getDutyDay().toText() : "");
+		final transitsim.plan.DutyLedger.Entry ledger = getDutyLedger();
+		writer.writeString(KEY_DUTY_DAY, ledger == null ? "" : ledger.key);
 		writer.writeLong(KEY_DUTY_SIDING, dutySidingId);
 		writer.writeLong(KEY_DUTY_ID, dutyId);
 		writer.writeLongs(KEY_SKIP_PLATFORMS, skipPlatforms.stream().mapToLong(Long::longValue).toArray());
@@ -1190,13 +1195,8 @@ public class TrainService<T extends PlanTrack> {
 		final long currentMillis = clock.getAsLong();
 		// A duty started part of the way through starts at that segment (D5)
 		final int firstSegment = Math.min(TripPath.getFromSegment(tripPathKey), segments.size() - 1);
-		int index = firstSegment;
-		for (int i = segments.size() - 1; i > firstSegment; i--) {
-			if (DutyShapes.getServiceMillis(dutyDayStart, segments.get(i).service) <= currentMillis) {
-				index = i;
-				break;
-			}
-		}
+		final transitsim.plan.DutyLedger.Entry ledger = getDutyLedger();
+		final int index = ledger == null ? firstSegment : ledger.segmentAt(dutyDayStart, currentMillis, firstSegment);
 		startDutySegment(index);
 
 		final List<T> path = vehicle.getPath();
@@ -1910,6 +1910,17 @@ public class TrainService<T extends PlanTrack> {
 	 * @return the duty the train took on, kept with it when saved, or for a train saved before that the one of its slot
 	 * read again from the depot
 	 */
+	public transitsim.plan.DutyLedger.Entry getDutyLedger() {
+		if (dutySlot < 0) { dutyLedger = null; return null; }
+		final DepotDuties.DayDuty day = getDutyDay();
+		if (day == null) return null;
+		if (dutyLedger == null || dutyLedger.day() != day) {
+			dutyLedger = transitsim.plan.DutyLedger.intern(day);
+			dutyDay = dutyLedger == null ? null : dutyLedger.day();
+		}
+		return dutyLedger;
+	}
+
 	private DepotDuties.DayDuty getDutyDay() {
 		if (dutyDay == null) {
 			dutyDay = readDutyDay();
@@ -2361,6 +2372,12 @@ public class TrainService<T extends PlanTrack> {
 		planTripPath = tripPath;
 		planStopTimes = stopTimes;
 		planDutyIndex = newDutyIndex;
+		// A refreshed route baseline changes cumulative offsets along a whole-day duty. Re-anchor
+		// the current service to its own segment rather than retaining an offset from the old save.
+		if (dutyRoute != null && dutyRoute.getTimingBaseline() != null && tripPath != null && tripPath.dutyStarts != null && newDutyIndex >= 0 && newDutyIndex < tripPath.dutyStarts.length) {
+			final RouteTimetable.StopPlan start = stopTimes.getPlan(planRoutes, planTimetable, tripPath.dutyStarts[newDutyIndex], tripRouteId, getTripTable(planRoutes), (int) Math.floorMod(tripMillis, (long) OperatingDay.MILLIS_PER_DAY));
+			if (start != null) routeStartMillis = start.routeStartMillis;
+		}
 	}
 
 	/**

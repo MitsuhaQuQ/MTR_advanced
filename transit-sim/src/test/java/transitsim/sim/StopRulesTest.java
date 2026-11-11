@@ -24,6 +24,22 @@ class StopRulesTest {
 	private static final int TICKS_PER_MINUTE = 1200;
 
 	@Test
+	void passingOverrideDoesNotReuseAStopsManualArrival() {
+		final RouteTimetable table = new RouteTimetable();
+		table.marginPercent = 0;
+		final RouteTimetable.StopPlan first = new RouteTimetable.StopPlan(0, 0, -1, -1, false);
+		final RouteTimetable.StopPlan pass = new RouteTimetable.StopPlan(60000, 90000, 0, 120, false);
+		pass.exceptionPass = 1;
+		final RouteTimetable.StopPlan last = new RouteTimetable.StopPlan(150000, 150000, -1, -1, false);
+		table.applyPlan(java.util.Arrays.asList(first, pass, last));
+		assertEquals(60000, pass.arrivalMillis);
+		assertEquals(pass.arrivalMillis, pass.departureMillis);
+		pass.exceptionRunMillis = 75000;
+		table.applyPlan(java.util.Arrays.asList(first, pass, last));
+		assertEquals(75000, pass.arrivalMillis);
+	}
+
+	@Test
 	void trainsAndThePageGetTheSameTimes() {
 		final TestRoute route = makeRoute();
 		final StopTimes stopTimes = makeStopTimes();

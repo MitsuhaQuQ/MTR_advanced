@@ -8,7 +8,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { beforeAll, describe, expect, it } from "vitest"
+import { beforeAll, describe, expect, it, vi } from "vitest"
 import { mockData } from "../mock/fixture"
 
 const EDITOR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../common/src/main/resources/assets/mtr/editor")
@@ -640,9 +640,34 @@ describe("the old code in the new page", () => {
     await act(async () => { central.dispatchEvent(new MouseEvent("click", { bubbles: true })) })
     expect(host.textContent).toContain("5 号站台")
     expect(host.textContent).toContain("在实际图上看")
-    // The tracks drawing: platforms beside their tracks, turnouts as diagonals in 中央广场
-    expect(central.querySelectorAll("rect title").length).toBe(3)
-    expect(central.querySelectorAll("g > line").length).toBeGreaterThan(3)
+    // Platforms decorate real rails; selecting a label opens the same station's card.
+    const platforms = host.querySelectorAll(`[data-platform-station="${central.getAttribute("data-station")}"]`)
+    expect(platforms.length).toBe(3)
+    expect([...platforms].every(p => p.querySelector("title") && p.querySelectorAll("line").length === 3)).toBe(true)
+    expect(host.querySelectorAll("polyline[data-rail]").length).toBe(v.net.data.rails.length)
+  })
+  it("leaving depot work clears duty selection and depot overlays without changing drafts", async () => {
+    const { act, createElement } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { LayerWork } = await import("../src/views/Layers")
+    const { v } = engine.legacy
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    await act(async () => root.render(createElement(LayerWork, { layer: "depots" })))
+    v.state.slot = { depot: "9001", siding: "8001", index: 1 }
+    v.showDepots = true
+    v.lastSlotService = "101@0"
+    v.dutyNotice = "selected duty"
+    const draft = JSON.stringify(v.draft)
+    await act(async () => root.render(createElement(LayerWork, { layer: "lines" })))
+    expect(v.state.slot).toBeNull()
+    expect(v.lastSlotService).toBeNull()
+    expect(v.dutyNotice).toBe("")
+    expect(v.showDepots).toBe(false)
+    expect(host.textContent).not.toContain("运用：车 2")
+    expect(JSON.stringify(v.draft)).toBe(draft)
+    await act(async () => root.unmount())
   })
   it("shows the console's trains on the schematic", async () => {
     const { act, createElement } = await import("react")
@@ -663,7 +688,10 @@ describe("the old code in the new page", () => {
     const marks = [...host.querySelectorAll("g[data-train]")]
     expect(marks.map(m => m.getAttribute("aria-label"))).toEqual(["1 道 车 1", "1 道 车 2"])
     // The late one in the late colour, and a click chooses it
-    expect(marks[1].querySelector("circle")!.getAttribute("fill")).toBe("var(--late)")
+    expect(marks[1].querySelector("circle")).toBeNull()
+    const segment = marks[1].querySelector('polyline[stroke="var(--late)"]')!
+    expect(segment.getAttribute("points")).toBe(host.querySelector(`polyline[data-rail="${trains[1].rail}"]`)!.getAttribute("points"))
+    expect(segment.getAttribute("vector-effect")).toBe("non-scaling-stroke")
     await act(async () => marks[1].dispatchEvent(new MouseEvent("click", { bubbles: true })))
     expect(chosen).toEqual(["t2"])
     v.consoleState.data = null
@@ -852,5 +880,62 @@ describe("the old code in the new page", () => {
     await act(async () => { button("确定").click(); await new Promise(resolve => setTimeout(resolve, 20)) })
     expect(posts[1]).toEqual({ action: "delete", key: "mitsuha:next_central.ogg" })
     globalThis.fetch = fetchBefore
+  })
+  it("resolves a large ownership section once per frame and observes the next draft", () => {
+    const { fn, v } = engine.legacy, savedNet = { ...v.net }, savedDraft = v.draft, savedSettings = v.data.networkSettings
+    const count = 5000
+    let reads = 0
+    try {
+      const nodes = Array.from({ length: count + 1 }, (_, i) => [i, 0, String(i + 1)])
+      v.net.data = { nodes: new Proxy(nodes, { get(target, key, receiver) { if (/^\d+$/.test(String(key))) reads++; return Reflect.get(target, key, receiver) } }), rails: Array.from({ length: count }, (_, i) => [i, i + 1, 0, 0]) }
+      v.net.sectionRails = new Map([["large", Array.from({ length: count }, (_, i) => i)]])
+      v.net.ownerOf = new Map(Array.from({ length: count }, (_, i) => [i, { section: "large", owners: ["saved"], manual: i === 0 }]))
+      v.data.networkSettings = {}
+      v.draft = { routes: {}, networkSettings: { ownerOverrides: { "1,2": ["chosen"] } } }
+      const styles = fn.netStyles(), first = styles.owners(0)
+      for (let i = 1; i < count; i++) expect(styles.owners(i)).toBe(first)
+      expect(first.owners).toEqual(["chosen"])
+      expect(reads).toBeLessThanOrEqual(count * 2)
+      v.draft = { routes: {} }
+      const next = fn.netStyles()
+      expect(next.owners(0)).toMatchObject({ owners: ["saved"], manual: true, drafted: false })
+      expect(next.owners(1).manual).toBe(false)
+      v.data.networkSettings = { logicalLines: [{ id: "line", name: "L", color: 1 }], railLines: { "1,2": "line" } }
+      expect(fn.netStyles().line(count - 1).line.id).toBe("line")
+    } finally { Object.assign(v.net, savedNet); v.draft = savedDraft; v.data.networkSettings = savedSettings }
+  })
+  it("reuses local-coordinate canvas paths and includes curved portions in bounds", () => {
+    const { fn } = engine.legacy
+    let constructions = 0
+    class Path {
+      points: number[][] = []
+      constructor() { constructions++ }
+      moveTo(x: number, y: number) { this.points.push([x, y]) }
+      lineTo(x: number, y: number) { this.points.push([x, y]) }
+    }
+    vi.stubGlobal("Path2D", Path)
+    try {
+      const points = [30000000, 10, 30000100, 90, 30000200, 10]
+      const geometry = fn.netGeometry(points, true)
+      expect(geometry.maxZ).toBe(90)
+      expect(geometry.path.points).toEqual([[0, 0], [100, 80], [200, 0]])
+      expect(fn.netGeometry(points, true)).toBe(geometry)
+      expect(constructions).toBe(1)
+    } finally { vi.unstubAllGlobals() }
+  })
+  it("coalesces rapid map redraw requests into one browser frame", () => {
+    const { fn, v } = engine.legacy, view = v.state.view
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return 1 })
+    try {
+      v.state.view = "network"; v.netFramePending = false
+      for (let i = 0; i < 100; i++) fn.drawNetwork()
+      expect(frames).toHaveLength(1)
+      // A hidden canvas has no dimensions and exits before rebuilding the large map.
+      frames[0](0)
+      fn.drawNetwork()
+      expect(frames).toHaveLength(2)
+      frames[1](0)
+    } finally { v.state.view = view; v.netFramePending = false; vi.unstubAllGlobals() }
   })
 })

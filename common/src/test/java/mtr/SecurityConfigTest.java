@@ -11,6 +11,19 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class SecurityConfigTest {
+	@Test
+	void mediaCapacityDefaultsTo256MiBAndExplicitLimitsArePreserved() throws Exception {
+		Path config=folder.resolve("media.json");
+		Files.write(config,"{}".getBytes(StandardCharsets.UTF_8));
+		SecurityConfig.load(config);
+		assertEquals(256,SecurityConfig.audioMaxTotalMegabytes);
+		assertEquals(256,SecurityConfig.imageMaxTotalMegabytes);
+		assertEquals(5120,SecurityConfig.audioMaxFileKilobytes);
+		Files.write(config,"{\"audioMaxTotalMegabytes\":128,\"imageMaxTotalMegabytes\":512}".getBytes(StandardCharsets.UTF_8));
+		SecurityConfig.load(config);
+		assertEquals(128,SecurityConfig.audioMaxTotalMegabytes);
+		assertEquals(512,SecurityConfig.imageMaxTotalMegabytes);
+	}
 
 	@TempDir
 	Path folder;
@@ -18,6 +31,8 @@ class SecurityConfigTest {
 	@AfterEach
 	void restoreDefaults() {
 		SecurityConfig.audioMaxSeconds = SecurityConfig.DEFAULT_AUDIO_MAX_SECONDS;
+		SecurityConfig.audioMaxTotalMegabytes = 256;
+		SecurityConfig.imageMaxTotalMegabytes = 256;
 	}
 
 	@Test

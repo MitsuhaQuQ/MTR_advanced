@@ -55,6 +55,17 @@ public final class TrainRules {
 		return currentMillis < departureMillis - DOOR_CLOSE_MILLIS;
 	}
 
+	/** Clock/dispatch holds are checked before reserving track beyond a platform. */
+	public static boolean waitsBeforeRequestingRun(Train train, int stop) {
+		final TrainService<?> service = train.getService();
+		if (service.isDispatchHeld() || service.isStayingOnLine()) return true;
+		final long now = train.getMillis();
+		if (service.getDutyDepartureMillis() > 0 && isWaitingForDeparture(service.getDutyDepartureMillis(), now)) return true;
+		if (service.getTurnBackLeaveMillis() > now) return true;
+		final RouteTimetable.StopPlan plan = service.getPlanAt(stop);
+		return plan != null && plan.isTimed && isWaitingForDeparture(service.getPlannedMillis(plan.departureMillis), now);
+	}
+
 	/**
 	 * @return true while a stopped train keeps its doors open and doesn't leave
 	 */

@@ -278,6 +278,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	private static final String KEY_LOOP_JOIN_INDEX = "loop_join_index";
 	private static final String KEY_TRAINS = "trains";
 	private static final String KEY_SHED = "shed";
+	private static final String KEY_DUTY_LEDGER = "duty_ledger";
 	private static final String KEY_ACCELERATION_CONSTANT = "acceleration_constant";
 	private static final String KEY_DECELERATION_CONSTANT = "deceleration_constant";
 	private static final String KEY_MAX_SPEED = "max_speed";
@@ -379,8 +380,12 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		loadedTripPaths.forEach(tripPath -> tripPaths.put(tripPath.key, tripPath));
 		tripTimesPending = !tripPaths.isEmpty();
 
+		final List<Object> ledgers = new ArrayList<>();
+		final Value savedLedger = map.get(KEY_DUTY_LEDGER);
+		if (savedLedger != null && savedLedger.isMapValue()) savedLedger.asMapValue().map().forEach((key, value) -> ledgers.add(key.asStringValue().asString().startsWith(transitsim.plan.PathKeyIndex.PREFIX) ? transitsim.plan.PathKeyIndex.load(key.asStringValue().asString(), value.asStringValue().asString()) : transitsim.plan.DutyLedger.load(key.asStringValue().asString(), value.asStringValue().asString())));
 		messagePackHelper.iterateArrayValue(KEY_TRAINS, value -> trains.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
 		messagePackHelper.iterateArrayValue(KEY_SHED, value -> shed.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
+		ledgers.clear();
 		generateDistances();
 		// A train on a path that no longer exists has nowhere to be, and starts again from the siding
 		trains.removeIf(train -> {
@@ -436,6 +441,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	@Override
 	public void toMessagePack(MessagePacker messagePacker) throws IOException {
 		toReducedMessagePack(messagePacker);
+		final Map<String, String> ledger = new TreeMap<>();
+		final List<TrainServer> allTrains = new ArrayList<>(trains); allTrains.addAll(shed); allTrains.addAll(arriving);
+		for (TrainServer train : allTrains) {
+			final transitsim.plan.DutyLedger.Entry entry = train.getDutyLedger(); if (entry != null) ledger.put(entry.key, entry.text);
+			final transitsim.plan.PathKeyIndex.Entry pathEntry = train.getDutyPathReference(); if (pathEntry != null) ledger.put(pathEntry.key, pathEntry.text);
+		}
+		messagePacker.packString(KEY_DUTY_LEDGER).packMapHeader(ledger.size());
+		for (Map.Entry<String, String> entry : ledger.entrySet()) messagePacker.packString(entry.getKey()).packString(entry.getValue());
 		RailwayData.writeMessagePackDataset(messagePacker, trains, KEY_TRAINS);
 		final List<TrainServer> kept = new ArrayList<>(shed);
 		kept.addAll(arriving);
@@ -501,7 +514,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 25;
+		return super.messagePackLength() + 26;
 	}
 
 	/**
@@ -573,7 +586,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 	@Override
 	public int reducedMessagePackLength() {
-		return messagePackLength() - 2;
+		return messagePackLength() - 3;
 	}
 
 	@Override
@@ -1196,6 +1209,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				repeatIndex1 = tempRepeatIndex1;
 				repeatIndex2 = tempRepeatIndex2;
 				loopJoinIndex = tempLoopJoinIndex;
+				transitsim.plan.ActiveTripPaths.retain(tempTripPaths, trains.stream().map(TrainServer::getActiveTripPath).collect(java.util.stream.Collectors.toList()), active -> !RoutePaths.isStale(active.path, rails));
 				tripPaths.clear();
 				tripPaths.putAll(tempTripPaths);
 				turnBacks = newTurnBacks;
@@ -1261,6 +1275,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				repeatIndex1 = 0;
 				repeatIndex2 = 0;
 				loopJoinIndex = 0;
+				transitsim.plan.ActiveTripPaths.retain(tempTripPaths, trains.stream().map(TrainServer::getActiveTripPath).collect(java.util.stream.Collectors.toList()), active -> !RoutePaths.isStale(active.path, rails));
 				tripPaths.clear();
 				tripPaths.putAll(tempTripPaths);
 				turnBacks = newTurnBacks;
@@ -1325,18 +1340,18 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		final List<PathData> dutyPath = usual.join(wayOut);
 		final int[] usualStops = usual.getTurnBackStops(points, pointCount, wayOut);
 		if (dutyPlan.staysOnLine) {
-			addDutyTripPath(tempTripPaths, dutyPlan, dutyPath, usual.getStarts(wayOut), dutyPlan.key, -1, -1, usualStops);
+			addDutyTripPath(tempTripPaths, dutyPlan, dutyPath, usual.getStarts(wayOut), usual.getIndexBoundaries(wayOut), dutyPlan.key, -1, -1, usualStops);
 		} else {
-			final List<PathData> ownPath = new ArrayList<>(dutyPath);
+			final List<PathData> ownPath = new transitsim.plan.JoinedPath<>(dutyPath);
 			PathFinder.appendPath(ownPath, pathToDepot);
-			addDutyTripPath(tempTripPaths, dutyPlan, ownPath, usual.getStarts(wayOut), dutyPlan.key, -1, -1, usualStops);
+			addDutyTripPath(tempTripPaths, dutyPlan, ownPath, usual.getStarts(wayOut), usual.getIndexBoundaries(wayOut), dutyPlan.key, -1, -1, usualStops);
 			// The same duty going back to each other siding of the pool, for a train going where a train is needed next
 			for (final Siding poolSiding : poolSidings) {
 				final List<PathData> pathToOther = poolSiding == this ? null : getReturnTail(dutyPlan, poolSiding, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
 				if (pathToOther != null) {
-					final List<PathData> otherPath = new ArrayList<>(dutyPath);
+					final List<PathData> otherPath = new transitsim.plan.JoinedPath<>(dutyPath);
 					PathFinder.appendPath(otherPath, pathToOther);
-					addDutyTripPath(tempTripPaths, dutyPlan, otherPath, usual.getStarts(wayOut), TripPath.getReturnKey(dutyPlan.key, poolSiding.id), -1, -1, usualStops);
+					addDutyTripPath(tempTripPaths, dutyPlan, otherPath, usual.getStarts(wayOut), usual.getIndexBoundaries(wayOut), TripPath.getReturnKey(dutyPlan.key, poolSiding.id), -1, -1, usualStops);
 				}
 			}
 		}
@@ -1354,7 +1369,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				if (!dutyPlan.staysOnLine) {
 					PathFinder.appendPath(otherPath, copyPath(pathToDepot));
 				}
-				addDutyTripPath(tempTripPaths, dutyPlan, otherPath, other.getStarts(wayOut), TripPath.getTurnBackKey(dutyPlan.key, points[i], way), points[i], way, other.getTurnBackStops(points, pointCount, wayOut));
+				addDutyTripPath(tempTripPaths, dutyPlan, otherPath, other.getStarts(wayOut), other.getIndexBoundaries(wayOut), TripPath.getTurnBackKey(dutyPlan.key, points[i], way), points[i], way, other.getTurnBackStops(points, pointCount, wayOut));
 			}
 		}
 		return true;
@@ -1365,8 +1380,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	static final class DutyBody {
 
-		private final List<PathData> body = new ArrayList<>();
+		private final List<PathData> body = new transitsim.plan.JoinedPath<>();
 		private final int[] segmentStarts;
+		private final int[] indexBoundaries;
 		/**
 		 * The rail of the body of the stop before each of the duty's turn back points.
 		 */
@@ -1390,18 +1406,26 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				final TurnBackSection<PathData> section = sections.get(changedSection);
 				final List<PathData> newWay = section.ways.get(way);
 				final int length = section.getLength();
-				planBody = new ArrayList<>(dutyPlan.body.subList(0, section.start + 1));
+				planBody = new transitsim.plan.JoinedPath<>(dutyPlan.body.subList(0, section.start + 1));
 				planBody.addAll(newWay.subList(1, newWay.size() - 1));
 				planBody.addAll(dutyPlan.body.subList(section.start + length - 1, dutyPlan.body.size()));
 				changedStart = section.start;
 				changedEnd = section.start + length - 1;
 				extraRails = newWay.size() - length;
 			}
-			planBody.forEach(pathData -> body.add(pathData.copy(pathData.savedRailBaseId, pathData.dwellTime)));
+			body.addAll(planBody);
 			segmentStarts = new int[dutyPlan.segmentStarts.length];
 			for (int i = 0; i < segmentStarts.length; i++) {
 				segmentStarts[i] = dutyPlan.segmentStarts[i] + (dutyPlan.segmentStarts[i] > changedStart ? extraRails : 0);
 			}
+			final Set<Integer> boundaries = new TreeSet<>();
+			for (int boundary : dutyPlan.indexBoundaries) {
+				if (boundary > changedStart && boundary < changedEnd) continue;
+				boundaries.add(boundary + (boundary > changedStart ? extraRails : 0));
+			}
+			for (int start : segmentStarts) boundaries.add(start);
+			boundaries.add(body.size());
+			indexBoundaries = boundaries.stream().mapToInt(Integer::intValue).toArray();
 			stopRails = new int[sections.size()];
 			for (int i = 0; i < stopRails.length; i++) {
 				final int start = sections.get(i).start;
@@ -1414,7 +1438,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		 * Puts the body after the way out of the siding, whose last rail, when it is the first stop, keeps the body's stop time.
 		 */
 		List<PathData> join(List<PathData> wayOut) {
-			final List<PathData> dutyPath = new ArrayList<>(wayOut);
+			final List<PathData> dutyPath = new transitsim.plan.JoinedPath<>(wayOut);
 			if (!dutyPath.isEmpty() && dutyPath.get(dutyPath.size() - 1).isSameRail(body.get(0))) {
 				dutyPath.set(dutyPath.size() - 1, body.get(0));
 				dutyPath.addAll(body.subList(1, body.size()));
@@ -1426,6 +1450,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		private int getBodyStart(List<PathData> wayOut) {
 			return !wayOut.isEmpty() && wayOut.get(wayOut.size() - 1).isSameRail(body.get(0)) ? wayOut.size() - 1 : wayOut.size();
+		}
+
+		int[] getIndexBoundaries(List<PathData> wayOut) {
+			final int offset = getBodyStart(wayOut);
+			return Arrays.stream(indexBoundaries).map(index -> index + offset).toArray();
 		}
 
 		int[] getStarts(List<PathData> wayOut) {
@@ -1494,16 +1523,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return copy;
 	}
 
-	private void addDutyTripPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, List<PathData> dutyPath, int[] dutyStarts, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
-		int stopIndex = 1;
-		for (int i = 1; i < dutyPath.size(); i++) {
-			final PathData pathData = dutyPath.get(i);
-			if (pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0 && dutyPath.get(i - 1).rail.railType != RailType.PLATFORM) {
-				stopIndex++;
-			}
-			pathData.stopIndex = stopIndex;
-		}
-		final TripPath<PathData> newTripPath = new TripPath<>(dutyPlan, dutyStarts, dutyPath, key, turnBackPoint, turnBackWay, turnBackStops);
+	private void addDutyTripPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, List<PathData> dutyPath, int[] dutyStarts, int[] indexBoundaries, String key, int turnBackPoint, int turnBackWay, int[] turnBackStops) {
+		final TripPath<PathData> newTripPath = new TripPath<>(dutyPlan, dutyStarts, PathPieces.indexDuty(dutyPath, indexBoundaries, dutyStarts.length == 0 ? 0 : dutyStarts[0]), key, turnBackPoint, turnBackWay, turnBackStops);
 		newTripPath.generateTimes(timeGenerator);
 		tempTripPaths.put(key, newTripPath);
 	}
@@ -1848,7 +1869,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		new TreeMap<>(turnReturns).forEach((platformId, returnPath) -> sidingData.turnReturns.put(platformId, toTracks.apply(returnPath)));
 		// The ways out for spares and late trains (SimDataset 14, D5)
 		new TreeMap<>(wayOuts).forEach((platformId, wayOut) -> sidingData.wayOuts.put(platformId, toTracks.apply(wayOut)));
-		tripPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
+		final Map<String, TripPath<PathData>> exportedPaths = new HashMap<>(tripPaths);
+		final RailwayData liveData = world == null ? null : RailwayData.getInstance(world);
+		transitsim.plan.ActiveTripPaths.retain(exportedPaths, trains.stream().map(TrainServer::getActiveTripPath).collect(java.util.stream.Collectors.toList()), active -> liveData == null || !RoutePaths.isStale(active.path, liveData.getRails()));
+		exportedPaths.values().stream().sorted(Comparator.comparing(tripPath -> tripPath.key)).forEach(tripPath -> sidingData.tripPaths.add(toSimulation(tripPath, toTracks)));
 		return sidingData;
 	}
 

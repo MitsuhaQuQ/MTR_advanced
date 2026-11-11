@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "side": "mtr:block/tunnel_wall_cables",
+    "end": "mtr:block/tunnel_wall"
+  }
+}

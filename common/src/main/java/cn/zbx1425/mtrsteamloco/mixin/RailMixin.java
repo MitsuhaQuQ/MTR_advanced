@@ -44,6 +44,7 @@ import net.minecraft.world.phys.Vec3;
 public abstract class RailMixin implements RailExtraSupplier {
 
     private static final double ACCEPT_THRESHOLD = 1E-4;
+    private final mtr.data.RailGeometryCache mtrGeometryCache = new mtr.data.RailGeometryCache();
     @Shadow(remap = false) @Final @Mutable private RailType railType;
 	@Shadow(remap = false) @Final @Mutable private TransportMode transportMode;
 	@Shadow(remap = false) @Final @Mutable private RailAngle facingStart;
@@ -438,25 +439,52 @@ public abstract class RailMixin implements RailExtraSupplier {
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true, remap = false)
     private void render(RenderRail callback, float offsetRadius1, float offsetRadius2, CallbackInfo ci) {
-        Rail rail = (Rail) (Object) this;
-		final double count = rail.getLength();
-		final double increment = count / Math.round(count);
-        final Vector3f a = new Vector3f(offsetRadius1, 0, 0);
-        final Vector3f b = new Vector3f(offsetRadius2, 0, 0);
-
-		for (double i = 0; i < count - 0.1; i += increment) {
-            Matrix4f mat0 = getLookAtMat(rail, i);
-            Matrix4f mat1 = getLookAtMat(rail, i + increment);
-            final Vector3f corner1 = mat0.transform(a);
-            final Vector3f corner2 = mat0.transform(b);
-            final Vector3f corner3 = mat1.transform(b);
-            final Vector3f corner4 = mat1.transform(a);
-
-			final float y1 = mat0.transform(Vector3f.ZERO).y();
-			final float y2 = mat1.transform(Vector3f.ZERO).y();
-
-			callback.renderRail(corner1.x(), corner1.z(), corner2.x(), corner2.z(), corner3.x(), corner3.z(), corner4.x(), corner4.z(), y1, y2);
-		}
+        final Rail rail = (Rail) (Object) this;
+        final double count = rail.getLength();
+        if (!(count > 0) || !Double.isFinite(count)) { ci.cancel(); return; }
+        if (count > 8192) {
+            final double increment = count / Math.round(count);
+            final Vector3f a = new Vector3f(offsetRadius1, 0, 0), b = new Vector3f(offsetRadius2, 0, 0);
+            Matrix4f mat0 = getLookAtMat(rail, 0);
+            for (double i = 0; i < count - 0.1; i += increment) {
+                final Matrix4f mat1 = getLookAtMat(rail, i + increment);
+                final Vector3f c1 = mat0.transform(a), c2 = mat0.transform(b), c3 = mat1.transform(b), c4 = mat1.transform(a);
+                callback.renderRail(c1.x(), c1.z(), c2.x(), c2.z(), c3.x(), c3.z(), c4.x(), c4.z(),
+                        mat0.transform(Vector3f.ZERO).y(), mat1.transform(Vector3f.ZERO).y());
+                mat0 = mat1;
+            }
+            ci.cancel();
+            return;
+        }
+        final double[] key = {h1, k1, r1, tStart1, tEnd1, h2, k2, r2, tStart2, tEnd2,
+                yStart, yEnd, reverseT1 ? 1 : 0, reverseT2 ? 1 : 0, isStraight1 ? 1 : 0, isStraight2 ? 1 : 0,
+                verticalCurveRadius, rollingOffset, isSecondaryDir ? 1 : 0, railType.ordinal(), count, offsetRadius1, offsetRadius2};
+        final float[] points = mtrGeometryCache.get(key, rollAngleMap, () -> {
+            final double increment = count / Math.round(count);
+            final int capacity = (int) Math.ceil(count) + 1;
+            final float[] data = new float[capacity * 10];
+            final Vector3f a = new Vector3f(offsetRadius1, 0, 0);
+            final Vector3f b = new Vector3f(offsetRadius2, 0, 0);
+            int index = 0;
+            Matrix4f mat0 = getLookAtMat(rail, 0);
+            for (double i = 0; i < count - 0.1; i += increment) {
+                final Matrix4f mat1 = getLookAtMat(rail, i + increment);
+                final Vector3f c1 = mat0.transform(a), c2 = mat0.transform(b);
+                final Vector3f c3 = mat1.transform(b), c4 = mat1.transform(a);
+                data[index++] = c1.x(); data[index++] = c1.z();
+                data[index++] = c2.x(); data[index++] = c2.z();
+                data[index++] = c3.x(); data[index++] = c3.z();
+                data[index++] = c4.x(); data[index++] = c4.z();
+                data[index++] = mat0.transform(Vector3f.ZERO).y();
+                data[index++] = mat1.transform(Vector3f.ZERO).y();
+                mat0 = mat1;
+            }
+            return Arrays.copyOf(data, index);
+        });
+        for (int i = 0; i < points.length; i += 10) {
+            callback.renderRail(points[i], points[i+1], points[i+2], points[i+3], points[i+4],
+                    points[i+5], points[i+6], points[i+7], points[i+8], points[i+9]);
+        }
         ci.cancel();
 	}
 

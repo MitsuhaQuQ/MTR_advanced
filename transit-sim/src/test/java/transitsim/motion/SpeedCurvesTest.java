@@ -14,6 +14,21 @@ class SpeedCurvesTest {
 	private static final double TOLERANCE = 1E-6;
 
 	@Test
+	void longDutiesOnlyBuildQueriedIntervals() {
+		int n = 2000;
+		double[] lengths = new double[n], limits = new double[n];
+		boolean[] stops = new boolean[n];
+		java.util.Arrays.fill(lengths, 100); java.util.Arrays.fill(limits, 1); java.util.Arrays.fill(stops, true);
+		SpeedCurves curves = SpeedCurves.of(new TrackView(lengths, limits, stops, new boolean[n], .1), 0, 20, .01, .02);
+		assertEquals(n, curves.runs.size());
+		assertEquals(0, curves.getCachedRunCount());
+		assertEquals(1500, curves.getRun(150050).stopRailIndex);
+		assertEquals(1, curves.getCachedRunCount());
+		for (int i = 0; i < n; i += 17) curves.getRun(i * 100 + 50);
+		assertTrue(curves.getCachedRunCount() <= 8);
+	}
+
+	@Test
 	void startsAgainATrainLengthOnAfterReversing() {
 		// A siding, a line, a platform where the train turns back, the same platform the other way, and a line on
 		final TrackView track = new TrackView(

@@ -42,7 +42,15 @@ export type Change = (timetable: any) => string | void | undefined
 export function applyEdit(draft: any, r: any, change: Change): string {
   const entry = draftEntry(draft, r)
   if (!entry.timetable) entry.timetable = JSON.parse(JSON.stringify(gameTimetable(r)))
+  const previousPass = [...entry.timetable.pass]
   const message = change(entry.timetable)
+  entry.timetable.pass.forEach((pass: boolean, i: number) => {
+    if (!pass || previousPass[i]) return
+    entry.timetable.tables.forEach((table: any) => {
+      table.stops[i] = { arrival: -1, departure: -1, overtake: false }
+      table.exceptions.forEach((exception: any) => exception.stops.forEach((stop: any) => { if (stop.stop === i) { stop.run = -1; stop.dwell = -1; stop.overtake = -1 } }))
+    })
+  })
   normalizeTimetable(entry.timetable)
   if (JSON.stringify(entry.timetable) === JSON.stringify(gameTimetable(r))) delete entry.timetable
   if (!entry.conflict) delete entry.error
@@ -58,6 +66,7 @@ export function setStopException(table: any, service: number, stop: number, chan
   if (!exception) table.exceptions.push((exception = { service, stops: [] }))
   let stopException = exception.stops.find((e: any) => e.stop === stop)
   if (!stopException) exception.stops.push((stopException = { stop, run: -1, dwell: -1, pass: -1, overtake: -1 }))
+  if (changes.pass === 1 && stopException.pass !== 1 && changes.run === undefined) stopException.run = -1
   Object.assign(stopException, changes)
   if (stopException.run < 0 && stopException.dwell < 0 && stopException.pass < 0 && stopException.overtake < 0) exception.stops.splice(exception.stops.indexOf(stopException), 1)
   if (!exception.stops.length) table.exceptions.splice(table.exceptions.indexOf(exception), 1)
@@ -255,11 +264,15 @@ export function renumberTimetable(tt: any, list: { from: number; pass: boolean }
   copy.pass = list.map(stop => stop.pass)
   copy.allowLonger = list.map(stop => (stop.from >= 0 ? Boolean((tt.allowLonger || [])[stop.from]) : false))
   copy.tables.forEach((table: any) => {
-    table.stops = list.map(stop => (stop.from >= 0 && table.stops[stop.from] ? table.stops[stop.from] : { arrival: -1, departure: -1 }))
+    table.stops = list.map(stop => (stop.from >= 0 && !(stop.pass && !tt.pass[stop.from]) && table.stops[stop.from] ? table.stops[stop.from] : { arrival: -1, departure: -1 }))
     table.orders = (table.orders || []).map((order: any) => Object.assign({}, order, { stop: newOf[order.stop] })).filter((order: any) => order.stop >= 0)
     table.links = table.links.map((link: any) => Object.assign({}, link, { fromStop: link.fromStop < 0 ? link.fromStop : newOf[link.fromStop] }))
     table.exceptions = table.exceptions.map((exception: any) => ({ service: exception.service, stops: exception.stops.map((stop: any) => Object.assign({}, stop, { stop: newOf[stop.stop] })).filter((stop: any) => stop.stop >= 0) })).filter((exception: any) => exception.stops.length)
   })
+  copy.tables.forEach((table: any) => table.exceptions.forEach((exception: any) => exception.stops.forEach((stop: any) => {
+    const changed = list[stop.stop]
+    if (changed?.pass && !tt.pass[changed.from]) { stop.run = -1; stop.dwell = -1; stop.overtake = -1 }
+  })))
   return normalizeTimetable(copy)
 }
 

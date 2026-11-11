@@ -31,7 +31,12 @@ public final class RunMotion {
 	 * @return the next stop of a train, or the end of the path
 	 */
 	public static int findNextStop(MotionTrack track, double position, boolean moving) {
-		for (int i = 0; i < track.size(); i++) {
+		int low = 0, high = Math.min(track.size(), track.getDistanceCount());
+		while (low < high) {
+			int middle = (low + high) >>> 1;
+			if (track.getDistance(middle) < position - AT) low = middle + 1; else high = middle;
+		}
+		for (int i = low; i < track.size(); i++) {
 			if (track.getDwellTime(i) > 0 && (moving ? track.getStopDistance(i) > position + AT : track.getStopDistance(i) >= position - AT)) {
 				return i;
 			}

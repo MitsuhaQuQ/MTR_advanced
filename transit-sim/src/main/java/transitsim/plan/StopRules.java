@@ -26,7 +26,7 @@ public final class StopRules {
 	 * before the stop was changed to passing, as they only change when the path is refreshed.
 	 *
 	 * @param stops          the stops of the route
-	 * @param fastest        the fastest arrival and departure at each stop, with -1 for stops not found, or null if there are none yet
+	 * @param fastest        the fastest pairs at each stop ({@link TimetableTimes}), with -1 for stops not found, or null if unknown
 	 * @param marginPercent  the extra time to plan for
 	 * @param table          the index of the table to take the times at each stop from
 	 * @param stopExceptions where one service runs differently, by stop, or null for the table's own times
@@ -36,10 +36,11 @@ public final class StopRules {
 		long lastTime = 0;
 		for (int i = 0; i < stops.size(); i++) {
 			final PlanStop stop = stops.get(i);
-			final boolean hasTime = fastest != null && fastest[i][0] >= 0;
+			final int column = fastest == null ? 0 : TimetableTimes.column(fastest[i], table);
+			final boolean hasTime = fastest != null && column >= 0 && column + 1 < fastest[i].length && fastest[i][column] >= 0;
 			final boolean isPass = stop.isPass() && i > 0 && i < stops.size() - 1;
-			final long arrival = hasTime ? fastest[i][0] : lastTime;
-			final long departure = !hasTime ? lastTime : isPass ? arrival : fastest[i][1];
+			final long arrival = hasTime ? fastest[i][column] : lastTime;
+			final long departure = !hasTime ? lastTime : isPass ? arrival : fastest[i][column + 1];
 			lastTime = departure;
 			plans.add(new RouteTimetable.StopPlan(arrival, departure, stop.getArrival(table), stop.getDeparture(table), stop.getOvertake(table)));
 		}

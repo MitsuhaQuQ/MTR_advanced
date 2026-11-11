@@ -1072,7 +1072,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		final RoutePaths.Search search = railwayData == null ? null : new RoutePaths.Search(railwayData.routePaths, liveRails, getPathGraph(liveRails, railwayData.pathBoundaries), railwayData.pathBoundaries, RoutePaths.getVehicles(railwayData));
 		final List<long[][]> routeTimes = new ArrayList<>();
-		routes.forEach(route -> routeTimes.add(search == null ? null : search.getFastestTimes(route, liveDataCache)));
+		routes.forEach(route -> routeTimes.add(search == null ? null : search.getTimetableTimes(route, liveDataCache)));
 		final List<List<Integer>> services = transitsim.planning.FrequencyTimetable.chain(departures, routeTimes);
 		for (int i = 0; i < services.size(); i++) {
 			final Route route = routes.get(i);
@@ -1199,7 +1199,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				final int dayStartMillis = TimetableConfig.getDayStartMillis();
 				final LineDuties.Plan linePlan = lineUnit == null || routeSearch == null || railwayData == null ? null : railwayData.linePlans.get(lineUnit.key + "|" + dayStartMillis + "|" + turnTimes + "|" + describeWays(measuredWays) + "|" + forcedGroups, () -> {
 					final java.util.function.Function<Route, long[][]> fastestTimes = route -> {
-						final long[][] times = routeSearch.getFastestTimes(route, dataCache);
+						final long[][] times = routeSearch.getTimetableTimes(route, dataCache);
 						return times == null || times.length == 0 ? null : times;
 					};
 					// Planned before from the same timetables and sidings: kept while every rule still holds with these times,
@@ -2773,7 +2773,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			for (int i = 0; i < mainRoutes.size(); i++) {
 				final List<PathData> routePath = pathsInRoute.get(i);
 				// The route's own times, the same as the editor's, for the slowest vehicle running it
-				final long[][] routeTimes = usesRoutePaths() ? routeSearch.getFastestTimes(mainRoutes.get(i), dataCache) : null;
+				final long[][] routeTimes = usesRoutePaths() ? routeSearch.getTimetableTimes(mainRoutes.get(i), dataCache) : null;
 				if (routeTimes != null) {
 					if (routeTimes.length > 0) {
 						fastestTimes.put(mainRoutes.get(i).id, routeTimes);
@@ -3128,7 +3128,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		 * @return the plan, or null if a part of it can't be found
 		 */
 		private DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-			final List<PathData> body = new ArrayList<>();
+			final List<PathData> body = new transitsim.plan.JoinedPath<>();
+			final Map<String, List<PathData>> segmentTemplates = new HashMap<>();
+			final Set<Integer> indexBoundaries = new TreeSet<>();
+			indexBoundaries.add(0);
 			final int[] segmentStarts = new int[segments.size()];
 			final List<Long> routeIds = new ArrayList<>();
 			final Map<Long, Integer> cutStops = new HashMap<>();
@@ -3171,20 +3174,19 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					stopSetting.dwellOverride = routePlatform.dwellOverride;
 					stopSettings.add(stopSetting);
 				}
-				final List<PathData> segmentPath = new ArrayList<>();
-				// Cut from the route's own path rather than searched again
 				final RoutePaths.RoutePath ownPath = usesRoutePaths() ? routeSearch.get(route, dataCache) : null;
-				if (ownPath != null) {
-					segmentPath.addAll(ownPath.getSlice(firstStop, lastStop));
-				} else {
-					PathFinder.findPath(segmentPath, rails, graph, platforms, waypoints, 1, cruisingAltitude, useFastSpeed);
+				final String templateKey = route.id + ":" + firstStop + ":" + lastStop + ":" + route.speedLimit + ":" + Arrays.toString(pass);
+				List<PathData> template = segmentTemplates.get(templateKey);
+				if (template == null) {
+					template = new ArrayList<>();
+					if (ownPath != null) template.addAll(ownPath.getSlice(firstStop, lastStop));
+					else PathFinder.findPath(template, rails, graph, platforms, waypoints, 1, cruisingAltitude, useFastSpeed);
+					if (template.size() < 2) return null;
+					PathFinder.applyStopSettings(template, stopSettings);
+					PathData.capSpeed(template, route.speedLimit);
+					segmentTemplates.put(templateKey, template);
 				}
-				if (segmentPath.size() < 2) {
-					return null;
-				}
-				PathFinder.applyStopSettings(segmentPath, stopSettings);
-				// The route's speed limit on its own rails, not on the ways between segments or in and out (line speed limits)
-				PathData.capSpeed(segmentPath, route.speedLimit);
+				final List<PathData> segmentPath = new transitsim.plan.JoinedPath<>(template);
 
 				if (lastPlatform != null && lastPlatform.id != platforms.get(0).id) {
 					final List<PathData> connectingPath = new ArrayList<>();
@@ -3203,10 +3205,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					if (turnBackSection != null && turnBackSection.ways.size() > 1 && !body.isEmpty() && body.get(body.size() - 1).isSameRail(connectingPath.get(0))) {
 						turnBackSections.add(new TurnBackSection<>(body.size() - 1, turnBackSection.ways, turnBackSection.defaultWay));
 					}
+					indexBoundaries.add(body.size());
 					PathFinder.appendPath(body, connectingPath);
+					indexBoundaries.add(Math.max(0, body.size() - 1));
 				}
 
-				final PathData first = segmentPath.get(0);
+				final PathData first = segmentPath.get(0).copy(segmentPath.get(0).savedRailBaseId, segmentPath.get(0).dwellTime);
+				segmentPath.set(0, first);
 				final PathData last = body.isEmpty() ? null : body.get(body.size() - 1);
 				if (last != null && first.isSameRail(last)) {
 					segmentStarts[k] = body.size() - 1;
@@ -3276,6 +3281,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				previousStart = segmentStarts[k];
 			}
 			final DutyPlan<PathData, SavedRailBase> dutyPlan = new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
+			for (int start : segmentStarts) indexBoundaries.add(start);
+			indexBoundaries.add(body.size());
+			dutyPlan.indexBoundaries = indexBoundaries.stream().mapToInt(Integer::intValue).toArray();
 			dutyPlan.turnBackSections.addAll(turnBackSections);
 			dutyPlan.segmentCuts.putAll(segmentCuts);
 			dutyPlan.segmentEntries.putAll(segmentEntries);

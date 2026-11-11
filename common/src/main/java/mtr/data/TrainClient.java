@@ -54,6 +54,9 @@ public class TrainClient extends Train implements IGui {
 	private AnnouncementCallback lightRailAnnouncementCallback;
 	private Depot depot;
 	private List<Long> routeIds = new ArrayList<>();
+	private int announcementHead = -1;
+	private mtr.path.PathData announcementRail;
+	private long announcementPlatform;
 
 	public final TrainRendererBase trainRenderer;
 	public final TrainSoundBase trainSound;
@@ -317,8 +320,13 @@ public class TrainClient extends Train implements IGui {
 		oldDoorValue = doorValue;
 
 		if (ticksElapsed != 0) {
-			final int stopIndex = path.get(getIndex(0, spacing, false)).stopIndex - 1;
-			if (!RailwayData.useRoutesAndStationsFromIndex(stopIndex, routeIds, ClientData.DATA_CACHE, (currentStationIndex, thisRoute1, nextRoute1, thisStation1, nextStation1, lastStation1) -> {
+			final int head = getIndex(0, spacing, false);
+			final int stopIndex = path.get(head).stopIndex - 1;
+			if (head != announcementHead || announcementRail != path.get(head)) {
+				announcementHead = head; announcementRail = path.get(head); announcementPlatform = 0;
+				for (int i=head;i>=0;i--) if (path.get(i).isPlatformTrack() && path.get(i).getStopId() != 0) { announcementPlatform = path.get(i).getStopId(); break; }
+			}
+			if (!RailwayData.useRoutesAndStationsFromIndex(stopIndex, announcementPlatform, routeIds, ClientData.DATA_CACHE, (currentStationIndex, thisRoute1, nextRoute1, thisStation1, nextStation1, lastStation1) -> {
 				this.currentStationIndex = currentStationIndex;
 				thisRoute = thisRoute1;
 				nextRoute = nextRoute1;

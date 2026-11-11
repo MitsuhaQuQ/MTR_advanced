@@ -175,6 +175,25 @@ public final class SandboxRuns implements IPacket {
 			try {
 				final SimDataset.RouteData draft = SimDataset.RouteData.fromBytes(bytes);
 				final Route route = railwayData.dataCache.routeIdMap.get(draft.id);
+				if (route != null && Arrays.equals(route.platformIds.stream().mapToLong(routePlatform -> routePlatform.platformId).toArray(), draft.platformIds)) {
+					final mtr.data.RoutePaths.RoutePath path = railwayData.routePaths.getFound(route, railwayData.dataCache, railwayData.getRails());
+					if (path != null) {
+						final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+						final Route copy;
+						try {
+							route.writePacket(packet);
+							copy = new Route(packet);
+						} finally {
+							packet.release();
+						}
+						for (int i = 0; i < draft.passes.length; i++) copy.platformIds.get(i).pass = draft.passes[i];
+						final transitsim.plan.RouteTimetable timetable = transitsim.plan.TimetableBinary.read(new transitsim.io.ByteArrayBinary.Reader(draft.timetable));
+						final java.util.Collection<mtr.data.PathTiming.Vehicle> vehicles = mtr.data.RoutePaths.getVehicles(mtr.data.RoutePaths.getVehicles(railwayData), route);
+						final List<long[][]> tables = new ArrayList<>();
+						for (transitsim.plan.RouteTimetable table : timetable.getTables()) tables.add(path.getFastestTimes(copy, vehicles, table));
+						draft.fastestTimes = transitsim.plan.TimetableTimes.pack(tables);
+					}
+				}
 				if (route == null || !Arrays.equals(route.platformIds.stream().mapToLong(routePlatform -> routePlatform.platformId).toArray(), draft.platformIds) || !dataset.replaceRoute(draft)) {
 					ignored++;
 				}

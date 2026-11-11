@@ -11,6 +11,18 @@ class SpeedProfileTest {
 	private static final double TOLERANCE = 1E-6;
 
 	@Test
+	void translatedProfilesKeepSpeedAndTimeAtLocalPositions() {
+		SpeedProfile base = SpeedProfile.build(new double[]{0, 100, 250}, new double[]{1, .5}, .01, .02, Double.POSITIVE_INFINITY);
+		SpeedProfile shifted = base.translated(900000);
+		for (int i = 0; i <= 250; i += 5) {
+			assertEquals(base.getSpeed(i), shifted.getSpeed(900000 + i), 1E-9);
+			assertEquals(base.getTime(i), shifted.getTime(900000 + i), 1E-9);
+		}
+		assertEquals(base.getPosition(50) + 900000, shifted.getPosition(50), 1E-8);
+		assertEquals(base.getDuration(), shifted.getDuration(), 0);
+	}
+
+	@Test
 	void speedsUpCruisesAndBrakes() {
 		final SpeedProfile profile = SpeedProfile.build(new double[]{0, 200}, new double[]{1}, ACCELERATION, DECELERATION, Double.POSITIVE_INFINITY);
 		// 50 blocks and 100 ticks to reach 1, 25 blocks and 50 ticks to stop, 125 blocks at 1 in between

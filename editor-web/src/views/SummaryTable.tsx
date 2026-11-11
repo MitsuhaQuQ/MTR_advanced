@@ -183,7 +183,7 @@ export function SummaryTable({ className }: { className: string }) {
       <div className="tt-tools"><span className="hint" style={{ flex: "none" }}>{tr("方向")}</span>
         {[0, 1].filter(w => ways[w].length).map(w => <button key={w} className={"table-chip" + (w === way ? " on" : "")} onClick={() => { state.lineWay = w; fn.renderAll() }}>{tr("往{0}", ends(w))}</button>)}</div>
     </>
-    if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
+    if (!services.length) return <Frame className={className} root={root} tools={tools}><div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
     const allTimes = services.map(timesOf)
     const visits = services.map((s: any) => {
       const route = s.route, at = new Map<string, number>(), seen = new Set<number>()
@@ -223,8 +223,7 @@ export function SummaryTable({ className }: { className: string }) {
       })
     })
     return (
-      <Frame className={className} root={root} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
-        {tools}
+      <Frame className={className} root={root} tools={tools} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
         <table className="tt">
           <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), <span className="note" style={{ color: colorOf(s.route.color) }}>{shortName(s.route.name)}</span>))}</tr></thead>
           <tbody>{rows}</tbody>
@@ -291,7 +290,7 @@ export function SummaryTable({ className }: { className: string }) {
         <button onClick={() => { const go = asking.go; setAsking(null); go() }}>{tr("确定")}</button><button onClick={() => setAsking(null)}>{tr("取消")}</button></div>
     )}
   </>
-  if (!services.length) return <Frame className={className} root={root}>{tools}<div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
+  if (!services.length) return <Frame className={className} root={root} tools={tools}><div className="table-empty">{tr("这条线路{0}没有班次", weekdayName(state.weekday))}</div></Frame>
   const multipleTables = timetable.tables.length > 1
   const allTimes = services.map(timesOf)
   const rows: ReactNode[] = []
@@ -317,8 +316,7 @@ export function SummaryTable({ className }: { className: string }) {
     })
   })
   return (
-    <Frame className={className} root={root} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
-      {tools}
+    <Frame className={className} root={root} tools={tools} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
       <table className="tt">
         <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), multipleTables ? <span className="note">{tableName(s.table, s.tableIndex)}</span> : null))}</tr></thead>
         <tbody>{rows}</tbody>
@@ -328,10 +326,13 @@ export function SummaryTable({ className }: { className: string }) {
 }
 
 /** The table in the old styles' box */
-function Frame({ className, root, children, ...events }: { className: string; root: React.RefObject<HTMLDivElement | null>; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+function Frame({ className, root, tools, children, ...events }: { className: string; root: React.RefObject<HTMLDivElement | null>; tools?: ReactNode; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={"legacy legacy-slot " + className} data-summary-table>
-      <div ref={root} className="table-view" {...events}>{children}</div>
+      <div ref={root} className="table-view" {...events}>
+        {tools && <div className="summary-tools">{tools}</div>}
+        <div className="summary-scroll scroll-thin">{children}</div>
+      </div>
     </div>
   )
 }

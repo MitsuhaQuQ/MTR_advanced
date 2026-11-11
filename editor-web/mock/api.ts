@@ -49,7 +49,7 @@ export function createMockApi() {
           }
           json({ ok: true }); return true
         }
-        json({ canUpload: true, busy: false, message: "", maxBytes: 2097152, maxDimension: 2048, entries: images.map(({ bytes, ...image }) => ({ ...image, size: bytes.length, canDelete: admin || image.name.startsWith("mitsuha:") })) }); return true
+        json({ canUpload: true, busy: false, message: "", maxBytes: 5242880, maxDimension: 2048, maxTotalBytes: 256 * 1024 * 1024, totalBytes: [...new Map(images.map(image => [image.hash, image.bytes.length] as const)).values()].reduce((sum, size) => sum + size, 0), entries: images.map(({ bytes, ...image }) => ({ ...image, size: bytes.length, canDelete: admin || image.name.startsWith("mitsuha:") })) }); return true
       }
       case "/api/image-file": {
         const hash = new URL(req.url || "", "http://localhost").searchParams.get("hash"), image = images.find(entry => entry.hash === hash)
@@ -76,7 +76,7 @@ export function createMockApi() {
           uploaderName: key.split(":")[0], size: 182400, durationMillis: 6200, uploadedAt: Date.now() - 3600000, cached, downloading: false, mine, canDelete: admin || mine,
         })
         json({
-          language: "zh_cn", canUpload: true, maxFileBytes: 2 * 1024 * 1024, maxTotalBytes: 50 * 1024 * 1024, totalBytes: 364800, maxSeconds: 300, requests: [],
+          language: "zh_cn", canUpload: true, maxFileBytes: 5 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024, totalBytes: 364800, maxSeconds: 300, requests: [],
           entries: [entry("mitsuha:next_central.ogg", "next_central.ogg", true, true), entry("rail_fan:transfer_l2.ogg", "transfer_l2.ogg", false, false)],
         })
         return true

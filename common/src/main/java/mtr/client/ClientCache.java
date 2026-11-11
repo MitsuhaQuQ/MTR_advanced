@@ -206,6 +206,10 @@ public class ClientCache extends DataCache implements IGui {
 	}
 
 	public String getFormattedRouteDestination(Route route, int currentStationIndex, String circularMarker) {
+		return getFormattedRouteDestination(route, currentStationIndex, circularMarker, false);
+	}
+
+	public String getFormattedRouteDestination(Route route, int currentStationIndex, String circularMarker, boolean routeMap) {
 		try {
 			final String customDestination = route.getDestination(currentStationIndex);
 			if (customDestination != null) {
@@ -223,6 +227,7 @@ public class ClientCache extends DataCache implements IGui {
 				final Station nextStation = next < size ? platformIdToStation.get(route.platformIds.get(next).platformId) : null;
 				final String text = nextStation == null ? platformIdToStation.get(route.getLastPlatformId()).name : nextStation.name;
 				final String kind = route.circularState == Route.CircularState.CLOCKWISE ? "clockwise" : route.circularState == Route.CircularState.ANTICLOCKWISE ? "anticlockwise" : "loop";
+				if (routeMap) return circularMarker + RouteMapText.loopNext(kind, text);
 				return circularMarker + IGui.insertTranslation("gui.mtr." + kind + "_next_cjk", "gui.mtr." + kind + "_next", 1, text);
 			}
 			if (route.circularState == Route.CircularState.NONE) {

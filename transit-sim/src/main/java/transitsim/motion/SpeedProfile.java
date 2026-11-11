@@ -21,11 +21,13 @@ public final class SpeedProfile {
 	private final double[] positions;
 	private final double[] speedsSquared;
 	private final double[] times;
+	private final double offset;
 
 	private static final double EPSILON = 1E-9;
 	private static final int CAP_SEARCH_STEPS = 40;
 
 	private SpeedProfile(double[] positions, double[] speedsSquared) {
+		this.offset = 0;
 		this.positions = positions;
 		this.speedsSquared = speedsSquared;
 		startPosition = positions[0];
@@ -35,6 +37,16 @@ public final class SpeedProfile {
 			times[i] = times[i - 1] + pieceTime(positions[i] - positions[i - 1], Math.sqrt(speedsSquared[i - 1]), Math.sqrt(speedsSquared[i]));
 		}
 	}
+
+	private SpeedProfile(SpeedProfile source, double shift) {
+		positions = source.positions; speedsSquared = source.speedsSquared; times = source.times;
+		offset = source.offset + shift;
+		startPosition = positions[0] + offset;
+		endPosition = positions[positions.length - 1] + offset;
+	}
+
+	/** An occurrence of the same immutable curve at another path offset. */
+	public SpeedProfile translated(double shift) { return shift == 0 ? this : new SpeedProfile(this, shift); }
 
 	/**
 	 * @param breaks       where the speed limit changes, from the start of the run to its end, at least two
@@ -167,6 +179,7 @@ public final class SpeedProfile {
 	}
 
 	public double getSpeed(double position) {
+		position -= offset;
 		final int index = findPiece(position);
 		final double length = positions[index + 1] - positions[index];
 		if (length <= EPSILON) {
@@ -180,9 +193,9 @@ public final class SpeedProfile {
 	 * @return ticks from leaving the start of the run to reaching a position
 	 */
 	public double getTime(double position) {
-		final double clamped = Math.max(startPosition, Math.min(endPosition, position));
+		final double clamped = Math.max(positions[0], Math.min(positions[positions.length - 1], position - offset));
 		final int index = findPiece(clamped);
-		return times[index] + pieceTime(clamped - positions[index], Math.sqrt(speedsSquared[index]), getSpeed(clamped));
+		return times[index] + pieceTime(clamped - positions[index], Math.sqrt(speedsSquared[index]), getSpeed(clamped + offset));
 	}
 
 	/**
@@ -209,7 +222,7 @@ public final class SpeedProfile {
 		final double startSpeed = Math.sqrt(speedsSquared[low]);
 		final double acceleration = length <= EPSILON ? 0 : (speedsSquared[low + 1] - speedsSquared[low]) / (2 * length);
 		final double elapsed = ticks - times[low];
-		return Math.min(positions[low + 1], positions[low] + startSpeed * elapsed + acceleration * elapsed * elapsed / 2);
+		return offset + Math.min(positions[low + 1], positions[low] + startSpeed * elapsed + acceleration * elapsed * elapsed / 2);
 	}
 
 	/**
@@ -230,7 +243,7 @@ public final class SpeedProfile {
 		for (int i = 0; i + 1 < positions.length; i++) {
 			final double length = positions[i + 1] - positions[i];
 			if (length > EPSILON) {
-				pieces.add(new double[]{positions[i], Math.sqrt(speedsSquared[i]), times[i], (speedsSquared[i + 1] - speedsSquared[i]) / (2 * length)});
+				pieces.add(new double[]{positions[i] + offset, Math.sqrt(speedsSquared[i]), times[i], (speedsSquared[i + 1] - speedsSquared[i]) / (2 * length)});
 			}
 		}
 		return pieces;

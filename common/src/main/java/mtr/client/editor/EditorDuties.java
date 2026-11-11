@@ -305,13 +305,17 @@ public final class EditorDuties implements IPacket {
 				routes.add(route);
 			}
 		});
-		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, route -> ClientData.TIMETABLE_TIMES.get(((Route) route).id), dayStartMillis, route -> missingTimes.add(((Route) route).name));
+		final List<DutyGenerator.ServiceInput> services = DutyGenerator.servicesOf(routes, route -> EditorTimes.getFastest((Route) route), dayStartMillis, route -> missingTimes.add(((Route) route).name));
 
 		// Planned with the depot's operating lines, as the game plans depots running by a timetable; the draft keeps the
 		// depot's own part, and the other depots of the lines plan what is left once it is applied
 		final LineDuties.Unit unit = LineDuties.of(depot, ClientData.DATA_CACHE, ClientData.SIDINGS, true);
 		if (unit != null) {
-			final Map<Long, long[][]> times = new HashMap<>(ClientData.TIMETABLE_TIMES);
+			final Map<Long, long[][]> times = new HashMap<>();
+			unit.getRoutes().forEach(route -> {
+				final long[][] current = EditorTimes.getFastest(route);
+				if (current != null) times.put(route.id, current);
+			});
 			final List<String> unitMissing = new ArrayList<>();
 			unit.getRoutes().forEach(route -> {
 				if (!times.containsKey(route.id)) {

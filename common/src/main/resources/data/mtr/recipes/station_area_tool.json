@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"ingredients": [
+		{
+			"item": "mtr:brush"
+		},
+		{
+			"item": "minecraft:paper"
+		}
+	],
+	"result": {
+		"item": "mtr:station_area_tool"
+	}
+}

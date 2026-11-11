@@ -23,6 +23,129 @@ import java.util.Map;
 public final class EditorTimes {
 
 	private static final int MAX_ROUTES = 256;
+	public static final TimingCache SAVED_TIMES = new TimingCache();
+	private static final Map<String, java.util.concurrent.CompletableFuture<long[][]>> calculations = new java.util.LinkedHashMap<>();
+
+	private static int nextRequestId;
+	private static Object timingConnection;
+	private static final Map<Integer, PendingDraft> pending = new HashMap<>();
+
+	private static final class PendingDraft {
+		final long routeId;
+		final long created = System.nanoTime();
+		final java.util.concurrent.CompletableFuture<long[][]> future = new java.util.concurrent.CompletableFuture<>();
+
+		PendingDraft(long routeId) {
+			this.routeId = routeId;
+		}
+	}
+
+	/** Called on the client thread; draft responses never replace saved timetable timings. */
+	public static void receiveDraft(int requestId, long routeId, long[][] times) {
+		final PendingDraft draft = pending.remove(requestId);
+		if (draft != null && draft.routeId == routeId) draft.future.complete(times);
+	}
+
+	/** Capture drafts on the client thread, then let the HTTP thread await server calculations. */
+	public static java.util.concurrent.CompletableFuture<JsonObject> fromDraftAsync(JsonObject request) {
+		pending.entrySet().removeIf(entry -> {
+			final PendingDraft draft = entry.getValue();
+			if (System.nanoTime() - draft.created > 30000000000L) draft.future.completeExceptionally(new java.util.concurrent.TimeoutException());
+			return draft.future.isDone();
+		});
+		final List<java.util.concurrent.CompletableFuture<JsonObject>> results = new ArrayList<>();
+		final JsonArray routes = request.getAsJsonArray("routes");
+		if (routes == null || routes.size() > MAX_ROUTES || pending.size() + routes.size() > MAX_ROUTES) {
+			throw new IllegalArgumentException("Too many timing requests");
+		}
+		for (JsonElement element : routes) {
+			final JsonObject object = element.getAsJsonObject();
+			final Route saved = ClientData.DATA_CACHE.routeIdMap.get(Long.parseLong(object.get("id").getAsString()));
+			if (saved == null) continue;
+			final Route route = EditorSimulation.copyRoute(saved);
+			final JsonObject timetable = object.getAsJsonObject("timetable");
+			final JsonArray tables = timetable.getAsJsonArray("tables");
+			final JsonArray passes = timetable.getAsJsonArray("pass");
+			if (tables.size() < 1 || tables.size() > RouteTimetable.MAX_TABLES || passes.size() != route.platformIds.size()) {
+				throw new IllegalArgumentException("Invalid timing draft");
+			}
+			final Route timingRoute = EditorSimulation.copyRoute(route);
+			while (timingRoute.timetable.getTableCount() > tables.size()) timingRoute.timetable.removeTable(timingRoute.timetable.getTableCount() - 1);
+			while (timingRoute.timetable.getTableCount() < tables.size()) timingRoute.timetable.addTable(new RouteTimetable());
+			for (int i = 0; i < tables.size(); i++) {
+				final JsonObject table = tables.get(i).getAsJsonObject();
+				final RouteTimetable target = timingRoute.timetable.getTable(i);
+				if (table.has("minAcceleration")) target.minAcceleration = table.get("minAcceleration").getAsFloat();
+				if (table.has("minDeceleration")) target.minDeceleration = table.get("minDeceleration").getAsFloat();
+				if (table.has("minMaxSpeed")) target.minMaxSpeed = table.get("minMaxSpeed").getAsFloat();
+			}
+			for (int i = 0; i < passes.size(); i++) timingRoute.platformIds.get(i).pass = passes.get(i).getAsBoolean();
+			final String timingKey = TimingCache.key(timingRoute);
+			final long[][] cached = timingKey.equals(TimingCache.key(saved)) ? getFastest(saved) : null;
+			final java.util.concurrent.CompletableFuture<long[][]> shared = cached != null ? java.util.concurrent.CompletableFuture.completedFuture(cached) : calculations.get(timingKey);
+			if (shared != null && !shared.isCompletedExceptionally()) {
+				results.add(shared.thenApply(times -> draftAnswer(route, timetable, times)));
+				continue;
+			}
+			final int requestId = ++nextRequestId == 0 ? ++nextRequestId : nextRequestId;
+			final PendingDraft draft = new PendingDraft(route.id);
+			pending.put(requestId, draft);
+			calculations.put(timingKey, draft.future);
+			while (calculations.size() > MAX_ROUTES) calculations.remove(calculations.keySet().iterator().next());
+			final net.minecraft.network.FriendlyByteBuf packet = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+			packet.writeLong(route.id);
+			packet.writeInt(requestId);
+			packet.writeVarInt(tables.size());
+			for (int i = 0; i < tables.size(); i++) {
+				final JsonObject table = tables.get(i).getAsJsonObject();
+				final RouteTimetable original = route.timetable.getTable(i);
+				packet.writeFloat(table.has("minAcceleration") ? table.get("minAcceleration").getAsFloat() : original.minAcceleration);
+				packet.writeFloat(table.has("minDeceleration") ? table.get("minDeceleration").getAsFloat() : original.minDeceleration);
+				packet.writeFloat(table.has("minMaxSpeed") ? table.get("minMaxSpeed").getAsFloat() : original.minMaxSpeed);
+			}
+			packet.writeVarInt(passes.size());
+			passes.forEach(pass -> packet.writeBoolean(pass.getAsBoolean()));
+			results.add(draft.future.thenApply(times -> {
+				final Route current = ClientData.DATA_CACHE.routeIdMap.get(route.id);
+				if (current != null && TimingCache.key(current).equals(timingKey) && times.length == current.platformIds.size()) {
+					ClientData.TIMETABLE_TIMES.put(route.id, times);
+					SAVED_TIMES.remember(current);
+				}
+				return draftAnswer(route, timetable, times);
+			}));
+			mtr.RegistryClient.sendToServer(mtr.packet.IPacket.PACKET_TIMETABLE_TIMES, packet);
+		}
+		return java.util.concurrent.CompletableFuture.allOf(results.toArray(new java.util.concurrent.CompletableFuture[0])).thenApply(ignored -> {
+			final JsonArray array = new JsonArray();
+			results.forEach(result -> array.add(result.join()));
+			final JsonObject answer = new JsonObject();
+			answer.add("routes", array);
+			return answer;
+		});
+	}
+
+	private static JsonObject draftAnswer(Route route, JsonObject timetable, long[][] times) {
+		final JsonObject result = new JsonObject();
+		result.addProperty("id", String.valueOf(route.id));
+		result.add("tables", forDraft(route, timetable, times.length == route.platformIds.size() ? times : null));
+		return result;
+	}
+
+	public static void beginConnection(Object connection) {
+		if (connection != timingConnection) {
+			timingConnection = connection;
+			clearTimingCache();
+		}
+	}
+
+	public static void clearTimingCache() {
+		EditorData.clearTimingRequests();
+		SAVED_TIMES.clear();
+		calculations.clear();
+		pending.values().forEach(value -> value.future.cancel(false));
+		pending.clear();
+		ClientData.TIMETABLE_TIMES.clear();
+	}
 
 	private EditorTimes() {
 	}
@@ -31,7 +154,15 @@ public final class EditorTimes {
 	 * @return the fastest arrival and departure at each stop of the route, or null if the game doesn't have them yet
 	 */
 	public static long[][] getFastest(Route route) {
-		final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
+		long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
+		if (!SAVED_TIMES.matches(route)) {
+			final java.util.concurrent.CompletableFuture<long[][]> calculated = calculations.get(TimingCache.key(route));
+			times = calculated != null && calculated.isDone() && !calculated.isCompletedExceptionally() ? calculated.getNow(null) : null;
+			if (times != null && times.length == route.platformIds.size()) {
+				ClientData.TIMETABLE_TIMES.put(route.id, times);
+				SAVED_TIMES.remember(route);
+			}
+		}
 		return times != null && times.length == route.platformIds.size() ? times : null;
 	}
 
@@ -76,7 +207,10 @@ public final class EditorTimes {
 	}
 
 	private static JsonArray forDraft(Route route, JsonObject timetableObject) {
-		final long[][] fastest = getFastest(route);
+		return forDraft(route, timetableObject, getFastest(route));
+	}
+
+	private static JsonArray forDraft(Route route, JsonObject timetableObject, long[][] fastest) {
 		final JsonArray passArray = timetableObject.getAsJsonArray("pass");
 		final JsonArray tablesArray = timetableObject.getAsJsonArray("tables");
 		final int tableCount = Math.min(tablesArray.size(), RouteTimetable.MAX_TABLES);

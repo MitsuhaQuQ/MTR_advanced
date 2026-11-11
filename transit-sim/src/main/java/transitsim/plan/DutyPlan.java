@@ -24,6 +24,8 @@ public class DutyPlan<T extends PlanTrack, P> {
 	 * The rail of {@link #body} at the first stop of each segment.
 	 */
 	public final int[] segmentStarts;
+	/** Template boundaries: service runs and their connecting movements. */
+	public int[] indexBoundaries;
 	public final P firstPlatform;
 	public final P lastPlatform;
 	public final boolean startsOnLine;
@@ -55,6 +57,7 @@ public class DutyPlan<T extends PlanTrack, P> {
 		this.entryLeads = entryLeads;
 		this.body = body;
 		this.segmentStarts = segmentStarts;
+		this.indexBoundaries = segmentStarts.clone();
 		this.firstPlatform = firstPlatform;
 		this.lastPlatform = lastPlatform;
 		this.startsOnLine = startsOnLine;

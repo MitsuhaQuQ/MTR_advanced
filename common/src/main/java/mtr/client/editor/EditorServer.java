@@ -185,12 +185,16 @@ public final class EditorServer {
 	 * @return the body as text, or null if it is too big
 	 */
 	private static String readBody(HttpServletRequest request) throws IOException {
+		return readBody(request, MAX_BODY_BYTES);
+	}
+
+	private static String readBody(HttpServletRequest request, int maximumBytes) throws IOException {
 		final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		final byte[] buffer = new byte[8192];
 		try (final InputStream inputStream = request.getInputStream()) {
 			int read;
 			while ((read = inputStream.read(buffer)) > 0) {
-				if (outputStream.size() + read > MAX_BODY_BYTES) {
+				if (outputStream.size() + read > maximumBytes) {
 					return null;
 				}
 				outputStream.write(buffer, 0, read);
@@ -382,7 +386,7 @@ public final class EditorServer {
 			}
 			final String content;
 			try {
-				content = onGameThread(() -> EditorTimes.fromDraft(requestObject).toString());
+				content = onGameThread(() -> EditorTimes.fromDraftAsync(requestObject)).get(35, java.util.concurrent.TimeUnit.SECONDS).toString();
 			} catch (Exception e) {
 				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
 				return;
@@ -769,7 +773,8 @@ public final class EditorServer {
 			catch (Exception e) { response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE); }
 		}
 		@Override protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-			final String body = readBody(request); if (body == null) { response.sendError(413); return; }
+			// A 5 MiB image expands to almost 7 MiB in the JSON base64 upload.
+			final String body = readBody(request, 8 * 1024 * 1024); if (body == null) { response.sendError(413); return; }
 			try { final JsonObject json = new JsonParser().parse(body).getAsJsonObject(); final String name = json.get("name").getAsString(); if (json.has("action") && "delete".equals(json.get("action").getAsString())) sendJson(response, onGameThread(() -> EditorImages.delete(name).toString())); else { final String data = json.get("data").getAsString(); sendJson(response, onGameThread(() -> EditorImages.upload(name, data).toString())); } }
 			catch (Exception e) { response.sendError(400); }
 		}
@@ -802,7 +807,7 @@ public final class EditorServer {
 
 		@Override
 		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-			final String body = readBody(request);
+			final String body = readBody(request, 8 * 1024 * 1024);
 			if (body == null) {
 				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
 				return;

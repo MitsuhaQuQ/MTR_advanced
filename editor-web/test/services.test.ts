@@ -71,7 +71,7 @@ describe("rows and services", () => {
     for (let weekday = 0; weekday < 7; weekday++) {
       const theirs = copy(data), mine = copy(data)
       ;[theirs, mine].forEach(d => { d.routeById = new Map(d.routes.map((each: any) => [each.id, each])) })
-      const old = loadOld<any>(["buildServices", "timesSource", "gameSource", "plansFor", "toPlans", "timetableOf", "gameTimetable", "fromGame", "normalize", "draftOf", "mod", "DAY"], { data: theirs, state: { weekday }, draft: { routes: {} } })
+      const old = loadOld<any>(["buildServices", "timesSource", "gameSource", "plansFor", "toPlans", "timetableOf", "gameTimetable", "fromGame", "normalize", "draftOf", "mod", "DAY"], { data: theirs, state: { weekday }, draft: { routes: {} }, requestedTimes: new Map() })
       old.buildServices()
       mine.routes.forEach((each: any) => { each.services = S.routeServices(each, old.gameTimetable(each), S.gameSource(each), weekday, mine.dayStartMillis) })
       mine.routes.forEach((each: any, i: number) => {

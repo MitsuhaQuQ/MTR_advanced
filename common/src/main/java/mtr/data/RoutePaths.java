@@ -51,6 +51,9 @@ public final class RoutePaths {
 	public static final int RAIL_BOUNDARY = 3;
 
 	private final Map<Long, RoutePath> paths = new ConcurrentHashMap<>();
+	private final java.util.concurrent.atomic.AtomicLong timingVersion = new java.util.concurrent.atomic.AtomicLong();
+
+	public long getTimingVersion() { return timingVersion.get(); }
 	private final Map<Long, Object> locks = new ConcurrentHashMap<>();
 	/**
 	 * The track sections, their owners and the legs found on them (stages document round 2).
@@ -151,6 +154,7 @@ public final class RoutePaths {
 			}
 			final RoutePath found = find(route, key, dataCache, rails, graph);
 			paths.put(route.id, found);
+			timingVersion.incrementAndGet();
 			return found;
 		}
 	}
@@ -362,14 +366,15 @@ public final class RoutePaths {
 	 * @return the vehicles running the route that are slower than its timetable's least performance, to point out
 	 */
 	public static List<PathTiming.Vehicle> getSlowerVehicles(Route route, Map<Long, Set<PathTiming.Vehicle>> vehicles) {
-		final transitsim.plan.RouteTimetable table = route.timetable;
 		final List<PathTiming.Vehicle> slower = new ArrayList<>();
-		if (table.hasMinPerformance()) {
-			vehicles.getOrDefault(route.id, Collections.emptySet()).forEach(vehicle -> {
-				if (vehicle.acceleration < table.minAcceleration - 1E-7 || vehicle.deceleration < table.minDeceleration - 1E-7 || table.minMaxSpeed > 0 && vehicle.maxSpeed > 0 && vehicle.maxSpeed < table.minMaxSpeed - 1E-6) {
-					slower.add(vehicle);
-				}
-			});
+		for (final transitsim.plan.RouteTimetable table : route.timetable.getTables()) {
+			if (table.hasMinPerformance()) {
+				vehicles.getOrDefault(route.id, Collections.emptySet()).forEach(vehicle -> {
+					if (vehicle.acceleration < table.minAcceleration - 1E-7 || vehicle.deceleration < table.minDeceleration - 1E-7 || table.minMaxSpeed > 0 && vehicle.maxSpeed > 0 && vehicle.maxSpeed < table.minMaxSpeed - 1E-6) {
+						if (!slower.contains(vehicle)) slower.add(vehicle);
+					}
+				});
+			}
 		}
 		return slower;
 	}
@@ -695,8 +700,15 @@ public final class RoutePaths {
 			stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
 			stations.subList(0, Math.min(NEARBY_STATIONS, stations.size())).forEach(station -> nearby.add(station.getKey()));
 		}
+		final Platform namedEntry = wayRule.entryPlatform == 0 || depotLine == null ? null : depotLine.dataCache.platformIdMap.get(wayRule.entryPlatform);
+		final transitsim.network.TrackSections.Section entrySection = namedEntry == null ? null : sectionOf(namedEntry, legs);
 		final RouteLegs.Plan plan;
-		if (wayRule.waypoints.length > 0) {
+		if (entrySection != null && linePlans != null && linePlans.stations.containsKey(entrySection.hash)) {
+			final long sidingSection = sections.get(out ? 0 : 1).hash;
+			final RouteLegs.LegSource depotSource = transitsim.network.LineDepotWays.throughDepotLeg(sidingSection, wayRule.waypoints, legs.snapshot, source);
+			plan = out ? transitsim.network.LineDepotWays.planOut(sidingSection, sections.get(1).hash, platformAlong, Collections.singleton(entrySection.hash), linePlans.plans, linePlans.lines, legs.snapshot, depotSource)
+					: transitsim.network.LineDepotWays.planBack(sections.get(0).hash, platformAlong, sidingSection, Collections.singleton(entrySection.hash), linePlans.plans, linePlans.lines, legs.snapshot, depotSource);
+		} else if (wayRule.waypoints.length > 0) {
 			// Through the path's nodes in order
 			// Rails clicked in the editor run their whole sections (2026-11-09)
 			final List<long[]> waypoints = Arrays.asList(RouteLegs.railWaypoints(wayRule.waypoints, legs.snapshot, sections.get(0).hash, sections.get(1).hash), new long[0]);
@@ -840,7 +852,7 @@ public final class RoutePaths {
 					final long entrance = out ? rule.outEntrance : rule.backEntrance;
 					final transitsim.plan.DepotRules.DeadheadPath path = rules.getPath(out ? rule.outPath : rule.backPath);
 					if (entrance != 0 || path != null) {
-						return new WayRule(entrance, path == null ? new long[0] : path.waypoints);
+						return new WayRule(entrance, path == null ? new long[0] : path.waypoints, path == null ? 0 : out ? path.to : path.from);
 					}
 				}
 			}
@@ -916,10 +928,14 @@ public final class RoutePaths {
 			static final WayRule NONE = new WayRule(0, new long[0]);
 			final long entrance;
 			final long[] waypoints;
+			final long entryPlatform;
 
-			WayRule(long entrance, long[] waypoints) {
+			WayRule(long entrance, long[] waypoints) { this(entrance, waypoints, 0); }
+
+			WayRule(long entrance, long[] waypoints, long entryPlatform) {
 				this.entrance = entrance;
 				this.waypoints = waypoints;
+				this.entryPlatform = entryPlatform;
 			}
 		}
 
@@ -1166,6 +1182,11 @@ public final class RoutePaths {
 		 * @return the route's fastest times ({@link RoutePath#getFastestTimes}), finding its path if needed; null if the
 		 * route has a path drawn by hand
 		 */
+		public long[][] getTimetableTimes(Route route, DataCache dataCache) {
+			final RoutePath routePath = get(route, dataCache);
+			return routePath == null ? null : routePath.getTimetableTimes(route, RoutePaths.getVehicles(vehicles, route));
+		}
+
 		public long[][] getFastestTimes(Route route, DataCache dataCache) {
 			final RoutePath routePath = get(route, dataCache);
 			return routePath == null ? null : routePath.getFastestTimes(route, RoutePaths.getVehicles(vehicles, route));
@@ -1320,12 +1341,27 @@ public final class RoutePaths {
 		 * @return the fastest arrival and departure at each stop counted from leaving the first, or -1 for stops not found,
 		 * as {@link StopTimes#getFastestTimesFromFirstStop}; empty if there is no path
 		 */
+		/** Every table's minimum performance, packed with {@link transitsim.plan.TimetableTimes}. */
+		public long[][] getTimetableTimes(Route route, Collection<PathTiming.Vehicle> vehicles) {
+			final List<long[][]> tables = new ArrayList<>();
+			for (final transitsim.plan.RouteTimetable table : route.timetable.getTables()) {
+				tables.add(getFastestTimes(route, vehicles, table));
+			}
+			final long[][] result = transitsim.plan.TimetableTimes.pack(tables);
+			route.setTimingBaseline(result);
+			return result;
+		}
+
 		public long[][] getFastestTimes(Route route, Collection<PathTiming.Vehicle> vehicles) {
+			return getFastestTimes(route, vehicles, route.timetable);
+		}
+
+		public long[][] getFastestTimes(Route route, Collection<PathTiming.Vehicle> vehicles, transitsim.plan.RouteTimetable table) {
 			if (!isFound()) {
 				return new long[0][];
 			}
 			long[][] slowest = null;
-			for (final PathTiming.Vehicle vehicle : withMinPerformance(route, vehicles)) {
+			for (final PathTiming.Vehicle vehicle : withMinPerformance(table, vehicles)) {
 				final long[][] times = getStopTimes(vehicle, route.platformIds).getFastestTimesFromFirstStop(route);
 				slowest = slowest == null ? times : slowest(slowest, times);
 			}
@@ -1337,7 +1373,10 @@ public final class RoutePaths {
 		 * (optimisation round 3), so the times don't change with the vehicles running it; as they are if it asks for none
 		 */
 		static Collection<PathTiming.Vehicle> withMinPerformance(Route route, Collection<PathTiming.Vehicle> vehicles) {
-			final transitsim.plan.RouteTimetable table = route.timetable;
+			return withMinPerformance(route.timetable, vehicles);
+		}
+
+		static Collection<PathTiming.Vehicle> withMinPerformance(transitsim.plan.RouteTimetable table, Collection<PathTiming.Vehicle> vehicles) {
 			if (!table.hasMinPerformance()) {
 				return vehicles;
 			}

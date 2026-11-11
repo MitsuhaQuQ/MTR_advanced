@@ -11,6 +11,17 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ImagesTest {
+	@Test void acceptsImagesLargerThanTwoMiBAndRejectsMoreThanFiveMiB() throws Exception {
+		BufferedImage image = new BufferedImage(1024,1024,BufferedImage.TYPE_INT_ARGB);
+		java.util.Random random = new java.util.Random(32);
+		for(int y=0;y<1024;y++) for(int x=0;x<1024;x++) image.setRGB(x,y,random.nextInt());
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		ImageIO.write(image,"png",bytes);
+		assertTrue(bytes.size()>2*1024*1024);
+		assertTrue(bytes.size()<=5*1024*1024);
+		assertArrayEquals(new int[]{1024,1024},ImageFiles.check(bytes.toByteArray()));
+		assertThrows(IllegalArgumentException.class,()->ImageFiles.check(new byte[5*1024*1024+1]));
+	}
 	@TempDir Path folder;
 	private byte[] png(int color) throws Exception {
 		final BufferedImage image = new BufferedImage(8, 4, BufferedImage.TYPE_INT_ARGB); image.setRGB(0, 0, color);

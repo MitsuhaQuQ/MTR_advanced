@@ -35,6 +35,26 @@ class SimDatasetTest {
 	}
 
 	@Test
+	void indexedDutyPathsRoundTripWithoutExpandingTheDay() {
+		SimDataset dataset = lines(1, 400, 2, 4, 10);
+		java.util.List<SimDataset.DataTrack> template = dataset.sidings.get(0).path;
+		java.util.List<transitsim.plan.IndexedPath.Segment<SimDataset.DataTrack>> parts = new java.util.ArrayList<>();
+		for (int i = 0; i < 100; i++) parts.add(new transitsim.plan.IndexedPath.Segment<>(template, i * 10));
+		transitsim.plan.IndexedPath<SimDataset.DataTrack> indexed = new transitsim.plan.IndexedPath<>(parts, SimDataset.DataTrack::withStopIndexOffset);
+		dataset.sidings.get(0).tripPaths.add(new SimDataset.TripPathData(new byte[0], indexed));
+		byte[] compact = dataset.toBytes();
+		SimDataset restored = SimDataset.fromBytes(compact);
+		java.util.List<SimDataset.DataTrack> result = restored.sidings.get(0).tripPaths.get(0).path;
+		assertTrue(result instanceof transitsim.plan.IndexedPath);
+		assertEquals(0, ((transitsim.plan.IndexedPath<?>) result).materializedSegments());
+		assertEquals(indexed.size(), result.size());
+		assertEquals(indexed.get(indexed.size() - 1).getStopIndex(), result.get(result.size() - 1).getStopIndex());
+		dataset.sidings.get(0).tripPaths.clear();
+		dataset.sidings.get(0).tripPaths.add(new SimDataset.TripPathData(new byte[0], new java.util.ArrayList<>(indexed)));
+		assertTrue(compact.length < dataset.toBytes().length / 3);
+	}
+
+	@Test
 	void theDataReadsBackAsItWasWritten() {
 		final byte[] bytes = lines(3, 400, 2, 4, 10).toBytes();
 		assertArrayEquals(bytes, SimDataset.fromBytes(bytes).toBytes());
@@ -68,7 +88,7 @@ class SimDatasetTest {
 	@Test
 	void routesKeepTheFastestTimesTheGameWorkedOut() {
 		final SimDataset dataset = lines(1, 400, 2, 4, 10);
-		final long[][] times = {{0, 0}, {30000, 50000}, {90000, 90000}};
+		final long[][] times = {{0, 0, 0, 0}, {30000, 50000, 60000, 80000}, {90000, 90000, 150000, 150000}};
 		dataset.routes.get(0).fastestTimes = times;
 		final SimDataset read = SimDataset.fromBytes(dataset.toBytes());
 		assertArrayEquals(times, read.routes.get(0).fastestTimes);

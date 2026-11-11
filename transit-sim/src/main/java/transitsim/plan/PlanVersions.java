@@ -30,7 +30,7 @@ public final class PlanVersions {
 			return route;
 		}
 		final FixedRoute fixedRoute = ROUTES.get(route);
-		if (fixedRoute != null && fixedRoute.revision == route.getTimetable().revision) {
+		if (fixedRoute != null && fixedRoute.revision == route.getTimetable().revision && fixedRoute.sourceTimingBaseline == route.getTimingBaseline()) {
 			return fixedRoute;
 		}
 		final FixedRoute newFixedRoute = new FixedRoute(route);
@@ -54,12 +54,32 @@ public final class PlanVersions {
 	public static List<PlanRoute> fix(List<? extends PlanRoute> routes) {
 		final List<PlanRoute> fixedRoutes = new ArrayList<>();
 		routes.forEach(route -> fixedRoutes.add(fix(route)));
-		return fixedRoutes;
+		return new FixedRoutes(fixedRoutes);
+	}
+
+	/** Fixed route sequences carry their revision key, so each stop query need not scan the whole duty. */
+	public static long keyOf(List<? extends PlanRoute> routes) {
+		if (routes instanceof FixedRoutes) return ((FixedRoutes) routes).key;
+		long key = 1;
+		for (PlanRoute route : routes) {
+			key = key * 31 + route.getRouteId() + route.getTimetable().revision;
+			key = key * 31 + System.identityHashCode(route.getTimingBaseline());
+		}
+		return key;
+	}
+	private static final class FixedRoutes extends java.util.AbstractList<PlanRoute> implements java.util.RandomAccess {
+		private final List<PlanRoute> routes;
+		private final long key;
+		FixedRoutes(List<PlanRoute> routes) { this.routes = Collections.unmodifiableList(routes); key = keyOf(routes); }
+		@Override public int size() { return routes.size(); }
+		@Override public PlanRoute get(int index) { return routes.get(index); }
 	}
 
 	private static class FixedRoute implements PlanRoute {
 
 		private final long routeId;
+		private final long[][] timingBaseline;
+		private final long[][] sourceTimingBaseline;
 		private final int revision;
 		private final RouteTimetable timetable;
 		private final List<FixedStop> stops = new ArrayList<>();
@@ -69,6 +89,10 @@ public final class PlanVersions {
 		private final List<Long> startPlatforms;
 
 		private FixedRoute(PlanRoute route) {
+			final long[][] source = route.getTimingBaseline();
+			sourceTimingBaseline = source;
+			timingBaseline = source == null ? null : new long[source.length][];
+			if (source != null) for (int i = 0; i < source.length; i++) timingBaseline[i] = source[i].clone();
 			terminalPlatforms = new ArrayList<>(route.getTerminalPlatforms());
 			startPlatforms = new ArrayList<>(route.getStartPlatforms());
 			routeId = route.getRouteId();
@@ -79,6 +103,9 @@ public final class PlanVersions {
 			isLoop = route.isLoop();
 			transportModeId = route.getTransportModeId();
 		}
+
+		@Override
+		public long[][] getTimingBaseline() { return timingBaseline; }
 
 		@Override
 		public long getRouteId() {

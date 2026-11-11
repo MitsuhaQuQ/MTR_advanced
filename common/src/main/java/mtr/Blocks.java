@@ -10,6 +10,9 @@ import mtr.compat.MaterialColor;
 
 
 public interface Blocks {
+	RegistryObject<Block> PLATFORM_END_PSD_2 = new RegistryObject<>(() -> new BlockPlatformEndDoor(2));
+	RegistryObject<Block> PLATFORM_END_PSD_1 = new RegistryObject<>(() -> new BlockPlatformEndDoor(1));
+	RegistryObject<Block> PLATFORM_END_APG = new RegistryObject<>(() -> new BlockPlatformEndDoor(0));
 
 	RegistryObject<Block> APG_DOOR = new RegistryObject<>(BlockAPGDoor::new);
 	RegistryObject<Block> APG_GLASS = new RegistryObject<>(BlockAPGGlass::new);
@@ -119,6 +122,10 @@ public interface Blocks {
 	RegistryObject<Block> STATION_COLOR_CLAY = new RegistryObject<>(() -> new BlockStationColor(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CLAY)));
 	RegistryObject<Block> STATION_COLOR_COAL_ORE = new RegistryObject<>(() -> new BlockStationColor(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.COAL_ORE)));
 	RegistryObject<Block> STATION_COLOR_COBBLESTONE = new RegistryObject<>(() -> new BlockStationColor(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.COBBLESTONE)));
+	RegistryObject<Block> TUNNEL_WALL = new RegistryObject<>(() -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE)));
+	RegistryObject<Block> TUNNEL_WALL_CABLES = new RegistryObject<>(() -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE)));
+	RegistryObject<Block> TUNNEL_WALL_PANEL = new RegistryObject<>(() -> new BlockTunnelWallPanel(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE)));
+	RegistryObject<Block> TUNNEL_WALL_CABLES_PANEL = new RegistryObject<>(() -> new BlockTunnelWallPanel(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE)));
 	RegistryObject<Block> STATION_COLOR_CONCRETE = new RegistryObject<>(() -> new BlockStationColor(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE)));
 	RegistryObject<Block> STATION_COLOR_CONCRETE_POWDER = new RegistryObject<>(() -> new BlockStationColor(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE_POWDER)));
 	RegistryObject<Block> STATION_COLOR_CRACKED_STONE_BRICKS = new RegistryObject<>(() -> new BlockStationColor(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRACKED_STONE_BRICKS)));

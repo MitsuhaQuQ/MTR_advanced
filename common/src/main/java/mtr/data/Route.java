@@ -73,6 +73,13 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 	 */
 	private List<PathData> pathData = new ArrayList<>();
 	public final RouteTimetable timetable = new RouteTimetable();
+	private volatile long[][] timingBaseline;
+
+	@Override public long[][] getTimingBaseline() { return timingBaseline; }
+
+	public void setTimingBaseline(long[][] times) {
+		if (!java.util.Arrays.deepEquals(timingBaseline, times)) timingBaseline = times;
+	}
 	/**
 	 * The line this route belongs to, or empty to work it out from the name.
 	 */
@@ -669,6 +676,7 @@ public final class Route extends NameColorDataBase implements IGui, PlanRoute {
 
 	@Override
 	public void update(String key, FriendlyByteBuf packet) {
+		timingBaseline = null;
 		switch (key) {
 			case KEY_PLATFORM_IDS:
 				final List<RoutePlatform> oldPlatforms = new ArrayList<>(platformIds);

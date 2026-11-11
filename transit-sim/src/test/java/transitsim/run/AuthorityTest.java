@@ -61,6 +61,21 @@ class AuthorityTest {
 	}
 
 	@Test
+	void aTrainWaitingAtItsPlatformReleasesReservationsBeyondItsBody() {
+		final PathClaims.Path<SimDataset.DataTrack> path = path(platform(1, 2, false), plain(2, 3, 400, false));
+		final RunReservations reservations = new RunReservations();
+		final Authority waiting = new Authority(1, reservations);
+		waiting.update(path, path, 0, 30, 430, null, 0);
+		assertTrue(waiting.isGrantedBeyond(30));
+		waiting.update(path, path, 0, 30, 30, null, 0);
+		assertFalse(waiting.isGrantedBeyond(30));
+		final Authority passing = new Authority(2, reservations);
+		final PathClaims.Path<SimDataset.DataTrack> other = path(platform(4, 2, false), plain(2, 3, 400, false));
+		for (int i = 0; i < 3; i++) tick(reservations, () -> waiting.update(path, path, 0, 30, 30, null, 0), () -> passing.update(other, other, 0, 30, 430, null, 0));
+		assertEquals(430, passing.getRecordEnd(), 1E-6);
+	}
+
+	@Test
 	void aTrainBehindIsLetOnUpToTheOneAhead() {
 		// Three sections of 400 and a platform
 		final PathClaims.Path<SimDataset.DataTrack> path = path(plain(1, 2, 1200, false), platform(2, 3, false));

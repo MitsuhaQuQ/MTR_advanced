@@ -33,8 +33,9 @@ public final class SecurityConfig {
 	public static volatile int audioManagePermissionLevel = 2;
 	public static volatile int imageUploadPermissionLevel = 2;
 	public static volatile int imageManagePermissionLevel = 2;
-	public static volatile int audioMaxFileKilobytes = 2048;
-	public static volatile int audioMaxTotalMegabytes = 64;
+	public static volatile int audioMaxFileKilobytes = 5120;
+	public static volatile int audioMaxTotalMegabytes = 256;
+	public static volatile int imageMaxTotalMegabytes = 256;
 	public static volatile int audioMaxSeconds = DEFAULT_AUDIO_MAX_SECONDS;
 	public static volatile int audioUploadsPerHour = 30;
 	/**
@@ -110,8 +111,9 @@ public final class SecurityConfig {
 				audioManagePermissionLevel = getInt(jsonObject, KEY_AUDIO_MANAGE_PERMISSION_LEVEL, 2, 0, 4);
 				imageUploadPermissionLevel = getInt(jsonObject, "imageUploadPermissionLevel", 2, 0, 4);
 				imageManagePermissionLevel = getInt(jsonObject, "imageManagePermissionLevel", 2, 0, 4);
-				audioMaxFileKilobytes = getInt(jsonObject, KEY_AUDIO_MAX_FILE_KILOBYTES, 2048, 0, AudioFiles.MAX_FILE_BYTES / 1024);
-				audioMaxTotalMegabytes = getInt(jsonObject, KEY_AUDIO_MAX_TOTAL_MEGABYTES, 64, 0, 4096);
+				audioMaxFileKilobytes = getInt(jsonObject, KEY_AUDIO_MAX_FILE_KILOBYTES, 5120, 0, AudioFiles.MAX_FILE_BYTES / 1024);
+				audioMaxTotalMegabytes = getInt(jsonObject, KEY_AUDIO_MAX_TOTAL_MEGABYTES, 256, 0, 4096);
+				imageMaxTotalMegabytes = getInt(jsonObject, "imageMaxTotalMegabytes", 256, 1, 4096);
 				audioMaxSeconds = getInt(jsonObject, KEY_AUDIO_MAX_SECONDS, DEFAULT_AUDIO_MAX_SECONDS, 1, 3600);
 				// Existing installations wrote the old default into the file, so migrate that value as well as missing keys.
 				if (audioMaxSeconds == LEGACY_AUDIO_MAX_SECONDS) {
@@ -182,6 +184,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_BLOCK_DECELERATION, blockDeceleration);
 		jsonObject.addProperty(KEY_BLOCK_MIN_LENGTH, blockMinLength);
 		jsonObject.addProperty(KEY_AUDIO_MAX_TOTAL_MEGABYTES, audioMaxTotalMegabytes);
+		jsonObject.addProperty("imageMaxTotalMegabytes", imageMaxTotalMegabytes);
 		jsonObject.addProperty(KEY_AUDIO_MAX_SECONDS, audioMaxSeconds);
 		jsonObject.addProperty(KEY_AUDIO_UPLOADS_PER_HOUR, audioUploadsPerHour);
 		Files.createDirectories(path.getParent());

@@ -85,7 +85,7 @@ public final class Authority {
 		}
 		asked.clear();
 		pending = null;
-		grantedEnd = Math.max(grantedEnd, head);
+		grantedEnd = target <= head + 1E-6 ? head : Math.max(grantedEnd, head);
 		final List<PathClaims.Group> keep = new ArrayList<>(PathClaims.between(path, tail, head, sections));
 		// What is attached behind the head and not left by the tail yet is held with the body
 		final List<PathClaims.Attached> aheadAttached = new ArrayList<>();
@@ -96,7 +96,7 @@ public final class Authority {
 				aheadAttached.add(each);
 			}
 		}
-		final List<PathClaims.Group> ahead = PathClaims.attach(PathClaims.between(path, head, Math.max(head, target), sections), aheadAttached);
+		final List<PathClaims.Group> ahead = target <= head + 1E-6 ? java.util.Collections.emptyList() : PathClaims.attach(PathClaims.between(path, head, target, sections), aheadAttached);
 		if (fresh) {
 			// Starting afresh, after a restart or onto another path, the train takes at once what it can of the way ahead, as
 			// it held it going on: so carrying on from a record runs as running on does

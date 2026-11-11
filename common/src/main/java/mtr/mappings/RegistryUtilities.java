@@ -1,14 +1,15 @@
 package mtr.mappings;
 
 import com.mojang.brigadier.CommandDispatcher;
-import me.shedaniel.architectury.event.events.CommandRegistrationEvent;
-import me.shedaniel.architectury.event.events.LifecycleEvent;
-import me.shedaniel.architectury.event.events.PlayerEvent;
-import me.shedaniel.architectury.event.events.TickEvent;
+import dev.architectury.event.events.common.CommandRegistrationEvent;
+import dev.architectury.event.events.common.LifecycleEvent;
+import dev.architectury.event.events.common.PlayerEvent;
+import dev.architectury.event.events.common.TickEvent;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.DefaultedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -26,11 +27,11 @@ import java.util.function.Supplier;
 public interface RegistryUtilities {
 
 	static <T extends BlockEntityMapper> BlockEntityType<T> getBlockEntityType(Utilities.TileEntitySupplier<T> supplier, Block block) {
-		return new BlockEntityType<>(() -> supplier.supplier(null, null), Collections.singleton(block), null);
+		return new BlockEntityType<>(supplier::supplier, Collections.singleton(block), null);
 	}
 
 	static void registerCommand(Consumer<CommandDispatcher<CommandSourceStack>> callback) {
-		CommandRegistrationEvent.EVENT.register((dispatcher, dedicated) -> callback.accept(dispatcher));
+		CommandRegistrationEvent.EVENT.register((dispatcher, dedicated, commandSelection) -> callback.accept(dispatcher));
 	}
 
 	static void registerPlayerJoinEvent(Consumer<ServerPlayer> consumer) {
@@ -58,34 +59,34 @@ public interface RegistryUtilities {
 	}
 
 	static SoundEvent createSoundEvent(ResourceLocation resourceLocation) {
-		return new SoundEvent(resourceLocation);
+		return SoundEvent.createVariableRangeEvent(resourceLocation);
 	}
 
 	static Item.Properties createItemProperties(Supplier<CreativeModeTab> creativeModeTab) {
-		return new Item.Properties().tab(creativeModeTab.get());
+		return new Item.Properties();
 	}
 
 	static DefaultedRegistry<Item> registryGetItem() {
-		return Registry.ITEM;
+		return BuiltInRegistries.ITEM;
 	}
 
 	static DefaultedRegistry<Block> registryGetBlock() {
-		return Registry.BLOCK;
+		return BuiltInRegistries.BLOCK;
 	}
 
 	static Registry<BlockEntityType<?>> registryGetBlockEntityType() {
-		return Registry.BLOCK_ENTITY_TYPE;
+		return BuiltInRegistries.BLOCK_ENTITY_TYPE;
 	}
 
 	static DefaultedRegistry<EntityType<?>> registryGetEntityType() {
-		return Registry.ENTITY_TYPE;
+		return BuiltInRegistries.ENTITY_TYPE;
 	}
 
 	static Registry<SoundEvent> registryGetSoundEvent() {
-		return Registry.SOUND_EVENT;
+		return BuiltInRegistries.SOUND_EVENT;
 	}
 
 	static Registry<ParticleType<?>> registryGetParticleType() {
-		return Registry.PARTICLE_TYPE;
+		return BuiltInRegistries.PARTICLE_TYPE;
 	}
 }

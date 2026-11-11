@@ -56,6 +56,11 @@ public interface RunTrack extends PlanTrack {
 	 *                    the end of every rail
 	 */
 	static TrackView toTrackView(List<? extends RunTrack> path, double minSpeed, double vehicleMaxSpeed, double trainLength) {
+		if (path instanceof transitsim.plan.IndexedPath) return ((transitsim.plan.IndexedPath<?>) path).compiled(java.util.Arrays.asList("physical-track", minSpeed, vehicleMaxSpeed, trainLength), () -> buildTrackView(path, minSpeed, vehicleMaxSpeed, trainLength));
+		return buildTrackView(path, minSpeed, vehicleMaxSpeed, trainLength);
+	}
+
+	static TrackView buildTrackView(List<? extends RunTrack> path, double minSpeed, double vehicleMaxSpeed, double trainLength) {
 		final int count = path.size();
 		final double[] stopOffsets = new double[count];
 		final double[] lengths = new double[count];

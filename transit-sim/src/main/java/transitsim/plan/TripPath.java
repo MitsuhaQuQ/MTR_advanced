@@ -43,8 +43,8 @@ public class TripPath<T extends PlanTrack> {
 
 	public final String key;
 	public final List<Long> routeIds = new ArrayList<>();
-	public final List<T> path = new ArrayList<>();
-	public final List<Double> distances = new ArrayList<>();
+	public final List<T> path;
+	public final List<Double> distances = new PathDistances();
 
 	/**
 	 * @return where the head of a train this long stands at the stop at the end of a rail: short of its end by the
@@ -177,7 +177,7 @@ public class TripPath<T extends PlanTrack> {
 		segmentsKnown = dutyPlan.segmentsKnown;
 		joinIndex = 0;
 		lapEnd = 0;
-		this.path.addAll(path);
+		this.path = IndexedPath.copyOf(path);
 		repeatIndex1 = 0;
 		repeatIndex2 = 0;
 		lapStop = 0;
@@ -205,7 +205,7 @@ public class TripPath<T extends PlanTrack> {
 		entryLeads.putAll(tripTail.entryLeads);
 		this.joinIndex = joinIndex;
 		this.lapEnd = lapEnd;
-		this.path.addAll(path);
+		this.path = IndexedPath.copyOf(path);
 		final boolean hasLap = tripTail.lapStart != TripTail.NO_RAIL;
 		lapStop = hasLap ? tripTail.lapStart + tailStart : 0;
 		repeatIndex1 = hasLap ? lapStop + (tripTail.isLapReversed ? 1 : 0) : 0;
@@ -229,7 +229,7 @@ public class TripPath<T extends PlanTrack> {
 		this.changeStop = changeStop;
 		this.joinIndex = joinIndex;
 		lapEnd = repeatIndex2;
-		this.path.addAll(path);
+		this.path = IndexedPath.copyOf(path);
 		this.repeatIndex1 = repeatIndex1;
 		this.repeatIndex2 = repeatIndex2;
 		lapStop = 0;
@@ -258,7 +258,7 @@ public class TripPath<T extends PlanTrack> {
 		segmentLeadSources.putAll(base.segmentLeadSources);
 		joinIndex = base.joinIndex;
 		lapEnd = base.lapEnd;
-		this.path.addAll(path);
+		this.path = base.path instanceof IndexedPath ? ((IndexedPath<T>) base.path).rebuild(path, base.dutyStarts) : IndexedPath.copyOf(path);
 		repeatIndex1 = base.repeatIndex1;
 		repeatIndex2 = base.repeatIndex2;
 		lapStop = base.lapStop;
@@ -373,7 +373,7 @@ public class TripPath<T extends PlanTrack> {
 		segmentsKnown = true;
 		joinIndex = 0;
 		lapEnd = 0;
-		this.path.addAll(path);
+		this.path = base.path instanceof IndexedPath ? ((IndexedPath<T>) base.path).rebuild(path, dutyStarts) : IndexedPath.copyOf(path);
 		repeatIndex1 = 0;
 		repeatIndex2 = 0;
 		lapStop = 0;
@@ -729,7 +729,7 @@ public class TripPath<T extends PlanTrack> {
 			entryTimes.put(routeId, times);
 			i += 3 + count * 2;
 		}
-		this.path.addAll(path);
+		this.path = IndexedPath.copyOf(path);
 		final long[] segmentCutValues = reader.getLongs(KEY_TRIP_SEGMENT_CUTS);
 		for (int i = 0; i + 1 < segmentCutValues.length; i += 2) {
 			segmentCuts.put((int) segmentCutValues[i], (int) segmentCutValues[i + 1]);
@@ -966,12 +966,7 @@ public class TripPath<T extends PlanTrack> {
 		stopTimes.tailJoinEnd = entryRail < 0 ? 0 : lapStop;
 		stopTimes.tailLapEnd = repeatIndex2;
 		generator.generateTimeSegments(path, timeSegments, stopTimes, joinIndex, lapEnd);
-		double distanceSum = 0;
-		distances.clear();
-		for (final T pathData : path) {
-			distanceSum += pathData.getTrackLength();
-			distances.add(distanceSum);
-		}
+		((PathDistances) distances).reset(path);
 	}
 
 	/**

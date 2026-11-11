@@ -5,6 +5,12 @@ package transitsim.motion;
  * one from its own path, and the motion rules only read this.
  */
 public final class TrackView {
+	private final java.util.Map<java.util.List<Double>, SpeedCurves> curves = new java.util.LinkedHashMap<java.util.List<Double>, SpeedCurves>(16, .75F, true) {
+		@Override protected boolean removeEldestEntry(java.util.Map.Entry<java.util.List<Double>, SpeedCurves> entry) { return size() > 16; }
+	};
+	synchronized SpeedCurves curves(double start, double length, double acceleration, double deceleration, java.util.function.Supplier<SpeedCurves> create) {
+		return curves.computeIfAbsent(java.util.Arrays.asList(start, length, acceleration, deceleration), ignored -> create.get());
+	}
 
 	private final double[] lengths;
 	private final double[] limits;

@@ -26,6 +26,7 @@ public final class ImportedImages implements IPacket {
 	private static Object connection;
 	private static String session = "";
 	public static boolean canUpload;
+	public static long maxTotalBytes = 256L * 1024 * 1024;
 	public static String message = "";
 	public static boolean ok;
 	private static long uploading;
@@ -54,7 +55,8 @@ public final class ImportedImages implements IPacket {
 				final String uploader = packet.readUtf(64), uploaderName = packet.readUtf(64); final long uploadedAt = packet.readLong();
 				if (ImageFiles.isHash(hash) && ImageFiles.isReference(name) && width > 0 && height > 0 && width <= ImageFiles.MAX_DIMENSION && height <= ImageFiles.MAX_DIMENSION && size > 0 && size <= ImageFiles.MAX_BYTES) { final int colon = name.indexOf(':'); entries.add(new ImageDatabase.Entry(name.substring(0, colon), name.substring(colon + 1), hash, width, height, size, uploader, uploaderName, uploadedAt)); }
 			}
-			Minecraft.getInstance().execute(() -> { ensureConnection(); if (!session.equals(nextSession)) clear(); session = nextSession; canUpload = permission; ENTRIES.clear(); ENTRIES.addAll(entries); DELETABLE.clear(); DELETABLE.addAll(deletable); });
+			final long totalLimit = packet.readableBytes() >= 8 ? packet.readLong() : 256L * 1024 * 1024;
+			Minecraft.getInstance().execute(() -> { ensureConnection(); if (!session.equals(nextSession)) clear(); session = nextSession; canUpload = permission; maxTotalBytes = Math.max(0, Math.min(4096L * 1024 * 1024, totalLimit)); ENTRIES.clear(); ENTRIES.addAll(entries); DELETABLE.clear(); DELETABLE.addAll(deletable); });
 		} else if (action == 1) {
 			final String hash = packet.readUtf(64); final int size = packet.readInt(), offset = packet.readInt(); final byte[] bytes = packet.readByteArray(ImageFiles.CHUNK);
 			Minecraft.getInstance().execute(() -> data(hash, size, offset, bytes));

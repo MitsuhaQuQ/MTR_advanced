@@ -11,6 +11,6 @@ public abstract class ScreenMapper extends Screen {
 	}
 
 	public <T extends AbstractWidget> void addDrawableChild(T child) {
-		addButton(child);
+		addRenderableWidget(child);
 	}
 }

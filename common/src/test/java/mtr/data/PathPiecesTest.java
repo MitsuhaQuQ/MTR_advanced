@@ -86,6 +86,28 @@ class PathPiecesTest {
 	}
 
 	@Test
+	void repeatedTripsAreStoredAsTemplateReferencesWithCorrectAnnouncementIndices() throws IOException {
+		List<PathData> joined = new transitsim.plan.JoinedPath<>();
+		int[] starts = new int[100];
+		for (int i = 0; i < starts.length; i++) { starts[i] = joined.size(); joined.addAll(path(100 + i * 3, 9)); }
+		List<PathData> expected = new ArrayList<>();
+		joined.forEach(rail -> expected.add(rail.copy(rail.savedRailBaseId, rail.dwellTime)));
+		transitsim.plan.AnnouncementStops.numberDuty(expected, 2);
+		List<PathData> indexed = PathPieces.indexDuty(joined, starts, 2);
+		assertSamePath(expected, indexed);
+		assertEquals(99, joined.get(0).stopIndex, "The template source is not renumbered in place");
+		PathPieces.Writer writer = new PathPieces.Writer(new HashSet<>()); writer.startOwner();
+		Map<String, Value> saved = written(indexed, writer); PathPieces.Owner owner = writer.endOwner();
+		assertEquals(1, owner.newPieces.size());
+		PathPieces.startReading(new PathPieces.Reader(owner.newPieces));
+		try {
+			List<PathData> restored = PathPieces.readPath(saved, "path");
+			assertTrue(restored instanceof transitsim.plan.IndexedPath);
+			assertSamePath(expected, restored);
+		} finally { PathPieces.stopReading(); }
+	}
+
+	@Test
 	void aPathIsCutAfterEachStopAndAfterManyRails() {
 		assertEquals(Arrays.asList(0, 3, 5, 8), PathPieces.cuts(path(1, 9)));
 		final List<PathData> longRun = new ArrayList<>();

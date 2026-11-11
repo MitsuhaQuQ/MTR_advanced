@@ -33,6 +33,42 @@ class DutyGeneratorTest {
 	}
 
 	@Test
+	void capacityChangesPreserveSharedPoolLimits() {
+		DutyGenerator.SidingInput original = new DutyGenerator.SidingInput(100, 1, Collections.singletonMap(11L, 60000L), 9);
+		original.poolKey = "shared";
+		DutyGenerator.SidingInput copy = original.withCapacity(8);
+		DutyGenerator.SidingInput other = new DutyGenerator.SidingInput(200, 8);
+		other.poolKey = "shared";
+		DutyGenerator.PlanInputs inputs = new DutyGenerator.PlanInputs(null, Collections.emptyMap(), Collections.singletonMap("shared", 3));
+		OperationNetwork network = DutyGenerator.networkOf(Collections.emptyList(), Arrays.asList(copy, other), stations(), inputs);
+		assertEquals(3, network.getStartingTrains().values().stream().mapToInt(Integer::intValue).sum());
+		DutyGenerator.PlanInputs added = inputs.withAdditionalPoolTrains(copy.poolKey, 2);
+		OperationNetwork increased = DutyGenerator.networkOf(Collections.emptyList(), Arrays.asList(copy, other), stations(), added);
+		assertEquals(5, increased.getStartingTrains().values().stream().mapToInt(Integer::intValue).sum());
+		assertEquals(3, inputs.poolFleets.get("shared").intValue());
+		assertEquals(1, original.maxTrains);
+		assertEquals(9, copy.depotId);
+		assertEquals(original.links, copy.links);
+	}
+
+	@Test
+	void capacityStatisticsMatchFullDutyGeneration() {
+		for (int fleet : new int[]{1, 2, 4}) for (int days : new int[]{1, 0x60, 0x7F}) {
+			List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, fleet));
+			int full = DutyGenerator.generateDayType(shuttle(), days, sidings, stations(), 30 * MINUTE, DutyGenerator.PlanInputs.NONE, false).uncovered;
+			assertEquals(full, DutyGenerator.uncoveredOnDayType(shuttle(), days, sidings, stations(), 30 * MINUTE, DutyGenerator.PlanInputs.NONE));
+		}
+	}
+
+	@Test
+	void spreadRetainsTheUnlimitedCapacityDiagnosis() {
+		List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 1, Collections.emptyMap()));
+		DutyGenerator.Result result = DutyGenerator.generateSpread(shuttle(), sidings, stations(), 30 * MINUTE);
+		assertEquals(12 * 7, result.uncovered);
+		assertEquals(result.uncovered, result.unrunnable);
+	}
+
+	@Test
 	void runsEveryServiceOnceWithTheFewestTrains() {
 		final List<DutyGenerator.ServiceInput> services = new ArrayList<>();
 		for (int i = 0; i < 6; i++) {

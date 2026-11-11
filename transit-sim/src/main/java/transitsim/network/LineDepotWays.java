@@ -29,6 +29,15 @@ public final class LineDepotWays {
 	private LineDepotWays() {
 	}
 
+	/** Apply a named depot leg only between the siding and its entry platform, not to line continuations. */
+	public static RouteLegs.LegSource throughDepotLeg(long siding, long[] waypoints, TrackSections.Snapshot snapshot, RouteLegs.LegSource source) {
+		return request -> {
+			if (request.fromSection != siding && request.toSection != siding) return source.get(request);
+			return source.get(new LegRouter.Request(request.fromSection, request.fromAlong, request.toSection,
+					RouteLegs.railWaypoints(waypoints, snapshot, request.fromSection, request.toSection), request.line, request.turnAtStart));
+		};
+	}
+
 	/**
 	 * A way out of a siding to a platform, standing there the way the line runs it.
 	 *

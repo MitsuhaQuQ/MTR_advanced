@@ -16,6 +16,25 @@ class FastestTimesTest {
 	private static final long MILLIS_PER_TICK = 50;
 
 	@Test
+	void leadingPassingPlatformsKeepTheirActualPathTimes() {
+		final StopTimes times = new StopTimes();
+		times.add(2, 2, null, 1200, 1200, false);
+		times.add(4, 3, null, 2400, 2400, false);
+		times.add(6, 4, null, 3600, 4000, true);
+		final TestRoute route = new TestRoute(1, 1, 2, 3, 4);
+		final long[][] expected = {{0, 0}, {60000, 60000}, {120000, 120000}, {180000, 200000}};
+		assertArrayEquals(expected, times.getFastestTimesFromFirstStop(route));
+		// Reading route timings must not change the depot's first revenue stop or its origin.
+		org.junit.jupiter.api.Assertions.assertEquals(6, times.getFirstIndex());
+		org.junit.jupiter.api.Assertions.assertEquals(180000, times.getLeadMillis());
+		final StopTimes copy = new StopTimes();
+		copy.copyFrom(times);
+		assertArrayEquals(expected, copy.getFastestTimesFromFirstStop(route));
+		copy.clear();
+		assertArrayEquals(new long[][]{{0, 0}, {-1, -1}, {-1, -1}, {-1, -1}}, copy.getFastestTimesFromFirstStop(route));
+	}
+
+	@Test
 	void aRoutesOwnPathCountsFromLeavingItsFirstStop() {
 		// The route's own path starts standing at platform 1, which isn't one of its stops; platform 2 is reached 2 minutes
 		// later and left after 30 seconds, platform 3 at 4 minutes 5 seconds

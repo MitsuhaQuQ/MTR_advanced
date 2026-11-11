@@ -77,12 +77,20 @@ public final class DutyGenerator {
 				if (days == 0) {
 					continue;
 				}
+				List<StopRules.StopTime> standardTimes = null;
 				for (final int service : table.services) {
 					// A service that doesn't run has nothing planned for it
 					if (table.suspended.contains(service)) {
 						continue;
 					}
-					final List<StopRules.StopTime> stopTimes = StopRules.times(route.getStops(), times, table.marginPercent, i, table.exceptions.get(service));
+					final Map<Integer, transitsim.plan.ServiceExceptions.StopException> exceptions = table.exceptions.get(service);
+					final List<StopRules.StopTime> stopTimes;
+					if (exceptions == null || exceptions.isEmpty()) {
+						if (standardTimes == null) standardTimes = StopRules.times(route.getStops(), times, table.marginPercent, i, null);
+						stopTimes = standardTimes;
+					} else {
+						stopTimes = StopRules.times(route.getStops(), times, table.marginPercent, i, exceptions);
+					}
 					final long[][] plans = new long[platformIds.length][];
 					final boolean[] pass = new boolean[platformIds.length];
 					for (int j = 0; j < plans.length; j++) {
@@ -185,12 +193,26 @@ public final class DutyGenerator {
 		/**
 		 * @return the same with no pool held to a number of trains, to plan as if trains were no limit
 		 */
+		/** A stock-increase probe retains the pool and raises only that pool's explicit fleet. */
+		public PlanInputs withAdditionalPoolTrains(String pool, int added) {
+			final Integer current = pool == null ? null : poolFleets.get(pool);
+			if (added <= 0 || current == null || current < 0) return this;
+			final Map<String, Integer> changed = new HashMap<>(poolFleets);
+			changed.put(pool, (int) Math.min(Integer.MAX_VALUE, (long) current + added));
+			return new PlanInputs(turnTimes, backLinks, changed, buffers, minReverseMillis, waitThresholds);
+		}
+
 		public PlanInputs withoutPoolFleets() {
 			return poolFleets.isEmpty() ? this : new PlanInputs(turnTimes, backLinks, Collections.emptyMap(), buffers, minReverseMillis, waitThresholds);
 		}
 	}
 
 	public static Result generate(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
+		return generate(services, sidings, stationOf, maxLayoverMillis, inputs, true);
+	}
+
+	/** Capacity probes use exactly the same solver, without materializing duty slots. */
+	private static Result generate(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs, boolean materialize) {
 		final Result result = new Result();
 		if (services.isEmpty() || sidings.isEmpty()) {
 			return result;
@@ -209,7 +231,7 @@ public final class DutyGenerator {
 			}
 		});
 		result.trains = plan.peakTrains;
-		assignSlots(plan, chains, sidings, result);
+		if (materialize) assignSlots(plan, chains, sidings, result);
 		return result;
 	}
 
@@ -676,6 +698,7 @@ public final class DutyGenerator {
 		// reaches and no train turns, isn't a matter of trains, and spreading for it left most services without a train on
 		// a player's line with 256 trains (2026-11-09)
 		final int unrunnable = unrunnable(services, sidings, stationOf, maxLayoverMillis, inputs);
+		all.unrunnable = unrunnable;
 		if (unrunnable >= all.uncovered) {
 			return all;
 		}
@@ -711,6 +734,7 @@ public final class DutyGenerator {
 				// No more without a train than no number of trains could run
 				if (result.uncovered <= unrunnable) {
 					result.uncovered += left;
+					result.unrunnable = unrunnable;
 					return result;
 				}
 			}
@@ -828,7 +852,7 @@ public final class DutyGenerator {
 	}
 
 	public static int neededTrains(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
-		return generate(services, unlimited(sidings), stationOf, maxLayoverMillis, inputs.withoutPoolFleets()).trains;
+		return generate(services, unlimited(sidings), stationOf, maxLayoverMillis, inputs.withoutPoolFleets(), false).trains;
 	}
 
 	/**
@@ -836,7 +860,7 @@ public final class DutyGenerator {
 	 * reaches and no train can turn to, which only a way out or round could change
 	 */
 	public static int unrunnable(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
-		return generate(services, unlimited(sidings), stationOf, maxLayoverMillis, inputs.withoutPoolFleets()).uncovered;
+		return generate(services, unlimited(sidings), stationOf, maxLayoverMillis, inputs.withoutPoolFleets(), false).uncovered;
 	}
 
 	/**
@@ -845,11 +869,13 @@ public final class DutyGenerator {
 	private static List<SidingInput> unlimited(List<SidingInput> sidings) {
 		final List<SidingInput> unlimited = new ArrayList<>();
 		sidings.forEach(siding -> {
-			final SidingInput copy = new SidingInput(siding.sidingId, -1, siding.links, siding.depotId);
-			copy.poolKey = siding.poolKey;
-			unlimited.add(copy);
+			unlimited.add(siding.withCapacity(-1));
 		});
 		return unlimited;
+	}
+
+	public static int uncoveredOnDayType(List<ServiceInput> services, int mask, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis, PlanInputs inputs) {
+		return generate(onDays(services, mask), sidings, stationOf, layoverOf(mask, maxLayoverMillis), inputs, false).uncovered;
 	}
 
 	public static final class SidingInput {
@@ -874,6 +900,13 @@ public final class DutyGenerator {
 		 * runtime (same planning unit and vehicle); null for a pool of its own.
 		 */
 		public String poolKey;
+
+		/** Change capacity without changing vehicle-pool membership or access rules. */
+		public SidingInput withCapacity(int capacity) {
+			final SidingInput copy = new SidingInput(sidingId, capacity, links, depotId);
+			copy.poolKey = poolKey;
+			return copy;
+		}
 
 		public SidingInput(long sidingId, int maxTrains) {
 			this(sidingId, maxTrains, null);
@@ -900,6 +933,8 @@ public final class DutyGenerator {
 		 * Trips no train was free for, which the sidings need more trains to run.
 		 */
 		public int uncovered;
+		/** Unlimited-capacity coverage already measured for these services; -1 when not evaluated. */
+		public int unrunnable = -1;
 		/**
 		 * Where a duty's train goes back as the runtime would send it, when not to its own siding: siding/slot/weekday
 		 * (0 Monday) of the duty's last day → the siding. Worked out, not kept; the runtime chooses as it runs.

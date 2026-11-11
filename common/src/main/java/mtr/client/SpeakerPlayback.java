@@ -48,6 +48,8 @@ public final class SpeakerPlayback {
 		final String hash = action == AudioSpeakerPackets.Action.STOP ? "" : packet.readUtf(64);
 		final int radius = action == AudioSpeakerPackets.Action.STOP ? 0 : packet.readVarInt();
 		final int audienceMask = action == AudioSpeakerPackets.Action.STOP ? 0 : packet.readUnsignedByte();
+		final boolean finish = action != AudioSpeakerPackets.Action.STOP && packet.readBoolean();
+		final int interval = action == AudioSpeakerPackets.Action.STOP ? 0 : packet.readVarInt();
 		final Minecraft client = Minecraft.getInstance();
 		client.execute(() -> {
 			checkWorld(client);
@@ -61,14 +63,36 @@ public final class SpeakerPlayback {
 			if (AnnouncementSound.splitUploaded(reference) == null || !AudioFiles.isHash(hash) || !SpeakerSettings.validRadius(radius)
 					|| !SpeakerSettings.validAudienceMask(audienceMask)) return;
 			final boolean loop = action == AudioSpeakerPackets.Action.LOOP;
+			if (!loop && finish && previous != null && !previous.loop && previous.reference.equals(reference) && previous.hash.equals(hash)) return;
 			if (loop && previous != null && previous.loop && previous.reference.equals(reference) && previous.radius == radius
 					&& previous.hash.equals(hash) && previous.audienceMask == audienceMask) {
 				previous.lease = LOOP_LEASE_TICKS;
-			} else if (previous != null || PLAYING.size() < MAX_SPEAKERS) {
+			} else if (previous != null || makeRoom(client, pos, radius, audienceMask)) {
 				if (previous != null) previous.stop(client.getSoundManager());
-				PLAYING.put(pos, new Playback(reference, hash, radius, loop, audienceMask));
+				PLAYING.put(pos, new Playback(reference, hash, radius, loop, audienceMask, finish ? interval : 0));
 			}
 		});
+	}
+
+	private static boolean makeRoom(Minecraft client, BlockPos pos, int radius, int audienceMask) {
+		if (PLAYING.size() < MAX_SPEAKERS) return true;
+		final LocalPlayer player = client.player;
+		if (player == null || !SpeakerSettings.audibleFrom(pos, radius, audienceMask, player.getX(), player.getY(), player.getZ())) return false;
+		BlockPos farthest = null;
+		double distance = -1;
+		for (final Map.Entry<BlockPos, Playback> entry : PLAYING.entrySet()) {
+			final BlockPos at = entry.getKey();
+			final Playback playback = entry.getValue();
+			final double candidate = player.distanceToSqr(at.getX() + 0.5, at.getY() + 0.5, at.getZ() + 0.5);
+			if (candidate > distance && !SpeakerSettings.audibleFrom(at, playback.radius, playback.audienceMask,
+					player.getX(), player.getY(), player.getZ())) {
+				farthest = at;
+				distance = candidate;
+			}
+		}
+		if (farthest == null) return false;
+		PLAYING.remove(farthest).stop(client.getSoundManager());
+		return true;
 	}
 
 	public static void tick(Minecraft client) {
@@ -78,8 +102,7 @@ public final class SpeakerPlayback {
 		PLAYING.entrySet().removeIf(entry -> {
 			final BlockPos pos = entry.getKey();
 			final Playback playback = entry.getValue();
-			if (client.player != null && SpeakerSettings.audibleFrom(pos, playback.radius, playback.audienceMask,
-					client.player.getX(), client.player.getY(), client.player.getZ())
+			if (client.player != null
 					&& (!world.hasChunkAt(pos) || world.getBlockState(pos).is(Blocks.AUDIO_SPEAKER.get()))
 					&& playback.tick(manager, pos)) return false;
 			playback.stop(manager);
@@ -104,11 +127,14 @@ public final class SpeakerPlayback {
 		private int waited;
 		private int pollDelay;
 		private int soundAge;
+		private int cooldown = -1;
+		private final int intervalTicks;
 		private final String hash;
 		private ResourceLocation soundId;
 		private SpeakerSound sound;
 
-		private Playback(String reference, String hash, int radius, boolean loop, int audienceMask) {
+		private Playback(String reference, String hash, int radius, boolean loop, int audienceMask, int intervalSeconds) {
+			intervalTicks = Math.max(0, Math.min(3600, intervalSeconds)) * 20;
 			this.reference = reference;
 			this.hash = hash;
 			this.radius = radius;
@@ -117,10 +143,15 @@ public final class SpeakerPlayback {
 		}
 
 		private boolean tick(SoundManager manager, BlockPos pos) {
+			if (cooldown >= 0) return --cooldown > 0;
 			if (loop && --lease <= 0) return false;
 			if (sound != null) {
 				soundAge++;
-				if (!loop) return soundAge <= 20 || manager.isActive(sound);
+				if (!loop) {
+					if (soundAge <= 20 || manager.isActive(sound)) return true;
+					cooldown = intervalTicks;
+					return cooldown > 0;
+				}
 			} else if (!loop && ++waited > DOWNLOAD_TIMEOUT_TICKS) {
 				return false;
 			}
@@ -135,7 +166,7 @@ public final class SpeakerPlayback {
 			if (AudioCache.isCached(hash)) {
 				soundId = currentId;
 				soundAge = 0;
-				sound = new SpeakerSound(currentId, pos, radius, loop);
+				sound = new SpeakerSound(currentId, pos, radius, loop, audienceMask);
 				manager.play(sound);
 			} else {
 				AudioCache.want(hash);
@@ -154,10 +185,14 @@ public final class SpeakerPlayback {
 
 	private static final class SpeakerSound extends TickableSoundInstanceMapper {
 		private final int radius;
+		private final BlockPos position;
+		private final int audienceMask;
 
-		private SpeakerSound(ResourceLocation id, BlockPos pos, int radius, boolean loop) {
+		private SpeakerSound(ResourceLocation id, BlockPos pos, int radius, boolean loop, int audienceMask) {
 			super(RegistryUtilities.createSoundEvent(id), SoundSource.BLOCKS);
 			this.radius = radius;
+			this.position = pos.immutable();
+			this.audienceMask = audienceMask;
 			x = pos.getX() + 0.5;
 			y = pos.getY() + 0.5;
 			z = pos.getZ() + 0.5;
@@ -174,7 +209,8 @@ public final class SpeakerPlayback {
 		@Override
 		public void tick() {
 			final LocalPlayer player = Minecraft.getInstance().player;
-			volume = player == null ? 0 : SpeakerSettings.volumeAtDistance(player.distanceToSqr(x, y, z), radius);
+			volume = player == null ? 0 : SpeakerSettings.volumeAt(position, radius, audienceMask,
+					player.getX(), player.getY(), player.getZ());
 		}
 
 		@Override

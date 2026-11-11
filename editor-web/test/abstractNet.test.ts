@@ -57,4 +57,41 @@ describe("abstractNetwork", () => {
       expect(Math.hypot(stations[i].px - stations[j].px, stations[i].py - stations[j].py)).toBeGreaterThan(55)
     }
   })
+
+  it("keeps the four real connections of a scissors crossover and a depot spur", () => {
+    const nodes: [number, number, string][] = []
+    const at = (x: number, z: number) => { nodes.push([x, z, String(nodes.length)]); return nodes.length - 1 }
+    const a0 = at(0, 0), a1 = at(40, 0), j00 = at(160, 0), j10 = at(200, 0), b0 = at(360, 0), b1 = at(400, 0)
+    const c0 = at(0, 10), c1 = at(40, 10), j01 = at(160, 10), j11 = at(200, 10), d0 = at(360, 10), d1 = at(400, 10)
+    const depot = at(260, 70)
+    const rails = [
+      [a0, a1, 1], [a1, j00, 0], [j00, j10, 0], [j10, b0, 0], [b0, b1, 1],
+      [c0, c1, 1], [c1, j01, 0], [j01, j11, 0], [j11, d0, 0], [d0, d1, 1],
+      [j00, j11, 0], [j01, j10, 0], [j11, depot, 2],
+    ]
+    const s = abstractNetwork({ nodes, rails, stations: [{ id: "a", name: "A", x: 20, z: 5 }, { id: "b", name: "B", x: 380, z: 5 }] })
+    const junctions = s.places.filter(p => p.kind === "junction")
+    expect(junctions).toHaveLength(2)
+    expect(junctions.map(p => p.ports)).toEqual([2, 2])
+    const crossing = s.corridors.find(c => c.a.startsWith("j:") && c.b.startsWith("j:"))!
+    expect(crossing.lines.map(t => `${t.aLane}-${t.bLane}`).sort()).toEqual(["0-0", "0-1", "1-0", "1-1"])
+    const spur = s.corridors.find(c => c.lines.some(t => t.kind === 2))!
+    expect(spur.tracks).toBe(1)
+    expect(s.places.some(p => p.kind === "end" && (p.id === spur.a || p.id === spur.b))).toBe(true)
+  })
+
+  it("does not invent a through track for a centre turn-back road", () => {
+    const nodes: [number, number, string][] = []
+    const at = (x: number, z: number) => { nodes.push([x, z, String(nodes.length)]); return nodes.length - 1 }
+    const lm = at(-150, 0), m0 = at(-40, 0), m1 = at(40, 0), turnout = at(70, 0), rm = at(150, 0)
+    const lt = at(-150, 10), t0 = at(-40, 10), t1 = at(40, 10)
+    const rails = [[lm, m0, 0], [m0, m1, 1], [m1, turnout, 0], [turnout, rm, 0], [lt, t0, 0], [t0, t1, 1], [t1, turnout, 0]]
+    const platforms = [{ id: "main", name: "1", station: "s", line: [-40, 0, 40, 0] }, { id: "turn", name: "2", station: "s", line: [-40, 10, 40, 10] }]
+    const s = abstractNetwork({ nodes, rails, stations: [{ id: "s", name: "Terminus", x: 0, z: 5 }] }, platforms)
+    const station = s.places.find(p => p.kind === "station")!
+    const main = station.lanes.find(l => l.name === "1")!, turn = station.lanes.find(l => l.name === "2")!
+    expect([main.negative, main.positive]).toEqual([true, true])
+    expect([turn.negative, turn.positive]).toEqual([true, false])
+    expect(station.turnouts).toContainEqual({ from: 1, to: 0, end: 1 })
+  })
 })

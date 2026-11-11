@@ -29,6 +29,7 @@ public final class EditorData {
 	 * When the fastest times of each route were last asked for, so a page polling for changes doesn't ask again every time.
 	 */
 	private static final Map<Long, Long> TIMES_REQUESTED = new HashMap<>();
+	private static final Map<Long, String> TIMES_KEYS = new HashMap<>();
 	private static final long TIMES_REQUEST_INTERVAL_MILLIS = 30000;
 
 	/**
@@ -533,7 +534,7 @@ public final class EditorData {
 		}
 		routeObject.add("stops", stopsArray);
 
-		final long[][] times = ClientData.TIMETABLE_TIMES.get(route.id);
+		final long[][] times = EditorTimes.getFastest(route);
 		final boolean hasTimes = times != null && times.length == route.platformIds.size();
 		routeObject.addProperty("hasTimes", hasTimes);
 		final mtr.path.PathFailure pathFailure = ClientData.ROUTE_PATH_FAILURES.get(route.id);
@@ -545,8 +546,7 @@ public final class EditorData {
 			final JsonArray fastestArray = new JsonArray();
 			for (final long[] stopTimes : times) {
 				final JsonArray stopArray = new JsonArray();
-				stopArray.add(stopTimes[0]);
-				stopArray.add(stopTimes[1]);
+				for (long time : stopTimes) stopArray.add(time);
 				fastestArray.add(stopArray);
 			}
 			routeObject.add("fastest", fastestArray);
@@ -782,10 +782,15 @@ public final class EditorData {
 		return Integer.toHexString(text.toString().hashCode());
 	}
 
+	public static void clearTimingRequests() { TIMES_REQUESTED.clear(); TIMES_KEYS.clear(); }
+
 	private static void requestTimes(long routeId) {
 		final long millis = System.currentTimeMillis();
 		final Long lastRequested = TIMES_REQUESTED.get(routeId);
-		if (lastRequested == null || millis - lastRequested >= TIMES_REQUEST_INTERVAL_MILLIS) {
+		final Route route = ClientData.DATA_CACHE.routeIdMap.get(routeId);
+		final String key = route == null ? "" : TimingCache.key(route);
+		if (!key.equals(TIMES_KEYS.get(routeId)) || lastRequested == null || millis - lastRequested >= TIMES_REQUEST_INTERVAL_MILLIS) {
+			TIMES_KEYS.put(routeId, key);
 			TIMES_REQUESTED.put(routeId, millis);
 			PacketTrainDataGuiClient.requestTimetableTimesC2S(routeId);
 		}

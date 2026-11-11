@@ -14,6 +14,7 @@ import java.util.List;
 class TestRoute implements PlanRoute {
 
 	final long id;
+	long[][] timingBaseline;
 	final RouteTimetable timetable = new RouteTimetable();
 	final List<Stop> platformIds = new ArrayList<>();
 	/**
@@ -27,6 +28,9 @@ class TestRoute implements PlanRoute {
 			this.platformIds.add(new Stop(platformId));
 		}
 	}
+
+	@Override
+	public long[][] getTimingBaseline() { return timingBaseline; }
 
 	@Override
 	public long getRouteId() {

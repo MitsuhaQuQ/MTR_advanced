@@ -9,7 +9,7 @@ import java.nio.ByteBuffer;
 /** Bounded validation for stored PNG and GIF images. */
 public final class ImageFiles {
 
-	public static final int MAX_BYTES = 2 * 1024 * 1024;
+	public static final int MAX_BYTES = 5 * 1024 * 1024;
 	public static final int MAX_DIMENSION = 2048;
 	public static final int CHUNK = 30 * 1024;
 

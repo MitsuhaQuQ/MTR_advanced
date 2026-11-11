@@ -7,54 +7,155 @@ import mtr.compat.ScreenBase;
 import mtr.image.*;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.decoration.Painting;
 import java.util.*;
 
-/** Brush configuration for a vanilla painting; offsets and display size are in blocks. */
+/** Draft values preview locally; only Apply sends settings to the server. */
 public final class ImportedPaintingScreen extends ScreenBase {
 	private final Painting painting;
 	private final List<ImageDatabase.Entry> images;
-	private final WidgetBetterTextField[] fields = new WidgetBetterTextField[5];
-	private final String[] labels = {"image_width", "image_height", "image_offset_x", "image_offset_y", "image_offset_z"};
-	private int selection;
-	private String error = "";
+	private final WidgetBetterTextField[] fields = new WidgetBetterTextField[8];
+	private final String[] labels = {"image_width", "image_height", "image_offset_x", "image_offset_y", "image_offset_z", "image_rotation_x", "image_rotation_y", "image_rotation_z"};
+	private String selectedImage, error = "";
+	private int left, top;
+	private Button choose;
+	private boolean dropdownOpen;
+	private int dropdownScroll, highlighted;
+	private int previousMouseX = Integer.MIN_VALUE, previousMouseY = Integer.MIN_VALUE;
 	public ImportedPaintingScreen(Painting painting) {
-		super(Text.translatable("gui.mtr.image_settings")); this.painting = painting; ImportedImages.ensureConnection(); images = new ArrayList<>(ImportedImages.ENTRIES);
+		super(Text.translatable("gui.mtr.image_settings"));
+		this.painting = painting;
+		ImportedImages.ensureConnection();
+		images = new ArrayList<>(ImportedImages.ENTRIES);
 		PaintingSettings settings;
-		try { settings = PaintingSettings.parse(((PaintingImage) painting).mtr$getImageSettings()); } catch (RuntimeException e) { settings = new PaintingSettings(); }
-		if (settings.image.isEmpty()) { settings.width = painting.getVariant().value().getWidth() / 16.0; settings.height = painting.getVariant().value().getHeight() / 16.0; }
-		for (int i = 0; i < images.size(); i++) if (images.get(i).name.equals(settings.image)) selection = i + 1;
-		final double[] values = {settings.width, settings.height, settings.x, settings.y, settings.z};
-		for (int i = 0; i < 5; i++) { fields[i] = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", 16); fields[i].setValue(Double.toString(values[i])); }
+		try { settings = PaintingSettings.parse(((PaintingImage) painting).mtr$getImageSettings()); }
+		catch (RuntimeException e) { settings = new PaintingSettings(); }
+		if (settings.image.isEmpty()) {
+			settings.width = painting.getVariant().value().getWidth() / 16.0;
+			settings.height = painting.getVariant().value().getHeight() / 16.0;
+		}
+		selectedImage = settings.image;
+		final double[] values = {settings.width, settings.height, settings.x, settings.y, settings.z, settings.rotationX, settings.rotationY, settings.rotationZ};
+		for (int i = 0; i < fields.length; i++) {
+			fields[i] = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", 16);
+			fields[i].setValue(Double.toString(values[i]));
+		}
 	}
 	@Override protected void init() {
-		final int x = Math.max(10, width / 2 - 230), top = Math.max(32, height / 2 - 125);
-		final Button choose = UtilitiesClient.newButton(Text.literal(selectionName()), button -> { selection = (selection + 1) % (images.size() + 1); button.setMessage(Text.literal(selectionName())); });
-		mtr$button(choose, x, top, 270);
-		mtr$button(UtilitiesClient.newButton(Text.literal("<"), button -> { selection = (selection + images.size()) % (images.size() + 1); choose.setMessage(Text.literal(selectionName())); }), x + 274, top, 24);
-		for (int i = 0; i < fields.length; i++) { fields[i].setMaxLength(16); mtr$position(fields[i], x + 154, top + 32 + i * 25, 110); addDrawableChild(fields[i]); }
-		mtr$button(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_apply"), button -> {
-			try { final PaintingSettings settings = new PaintingSettings(); settings.image = selection == 0 ? "" : images.get(selection - 1).name; settings.width = Double.parseDouble(fields[0].getValue()); settings.height = Double.parseDouble(fields[1].getValue()); settings.x = Double.parseDouble(fields[2].getValue()); settings.y = Double.parseDouble(fields[3].getValue()); settings.z = Double.parseDouble(fields[4].getValue()); settings.json(); ImportedImages.apply(painting.getId(), settings); onClose(); }
-			catch (RuntimeException e) { error = "gui.mtr.image_invalid_settings"; }
-		}), x, top + 170, 128);
-		mtr$button(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_cancel"), button -> onClose()), x + 136, top + 170, 128);
-	}
-	private String selectionName() { return selection == 0 ? Text.translatable("gui.mtr.image_vanilla").getString() : images.get(selection - 1).name; }
-	private void mtr$button(Button button, int x, int y, int width) { mtr$position(button, x,y,width); addDrawableChild(button); }
-	private void mtr$position(net.minecraft.client.gui.components.AbstractWidget widget, int x, int y, int width) { UtilitiesClient.setWidgetX(widget, x); UtilitiesClient.setWidgetY(widget, y); widget.setWidth(width); }
-	@Override public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
-		renderBackground(matrices); final int x = Math.max(10, width / 2 - 230), top = Math.max(32, height / 2 - 125);
-		GuiCompat.draw(matrices, font, title, x, top - 24, 0xFFFFFF);
-		for (int i = 0; i < labels.length; i++) GuiCompat.draw(matrices, font, Text.translatable("gui.mtr." + labels[i]), x, top + 37 + i * 25, 0xFFFFFF);
-		GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.image_units"), x, top + 200, 0xAAAAAA);
-		if (!error.isEmpty()) GuiCompat.draw(matrices, font, Text.translatable(error), x, top + 216, 0xFF5555);
-		if (selection > 0 && width >= 620) {
-			final ImageDatabase.Entry image = images.get(selection - 1); final ResourceLocation texture = ImportedImages.texture(image.hash);
-			if (texture != null) { final double scale = Math.min(150.0 / image.width, 150.0 / image.height); final int w = (int) (image.width * scale), h = (int) (image.height * scale); GuiCompat.graphics(matrices).blit(texture, x + 310, top + 35, w, h, 0, 0, image.width, image.height, image.width, image.height); }
+		left = Math.max(8, width / 2 - 150);
+		top = Math.max(22, (height - 258) / 2);
+		dropdownOpen = false;
+		choose = UtilitiesClient.newButton(Text.literal(selectionName() + " ▾"), button -> {
+			images.clear(); images.addAll(ImportedImages.ENTRIES);
+			highlighted = 0;
+			for (int i = 0; i < images.size(); i++) if (images.get(i).name.equals(selectedImage)) highlighted = i + 1;
+			dropdownScroll = Math.max(0, Math.min(highlighted, images.size() + 1 - dropdownRows()));
+			for (WidgetBetterTextField field : fields) field.setFocused(false);
+			dropdownOpen = true;
+		});
+		place(choose, left, top, 298);
+		for (int i = 0; i < fields.length; i++) {
+			place(fields[i], left + 182, top + 26 + i * 21, 110);
+			fields[i].moveCursorToStart();
 		}
+		place(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_gizmo"), button -> {
+			try { draft(); minecraft.setScreen(new PaintingRotationScreen(this)); }
+			catch (RuntimeException e) { error = "gui.mtr.image_invalid_settings"; }
+		}), left, top + 198, 298);
+		place(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_apply"), button -> {
+			try { ImportedImages.apply(painting.getId(), draft()); onClose(); }
+			catch (RuntimeException e) { error = "gui.mtr.image_invalid_settings"; }
+		}), left, top + 222, 147);
+		place(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_cancel"), button -> onClose()), left + 151, top + 222, 147);
+	}
+	private int dropdownRows() { return Math.min(images.size() + 1, Math.max(1, Math.min(6, (height - top - 32) / 32))); }
+	private void selectImage(int index) {
+		selectedImage = index == 0 ? "" : images.get(index - 1).name;
+		choose.setMessage(Text.literal(selectionName() + " ▾")); dropdownOpen = false;
+	}
+	@Override public boolean mouseClicked(double x, double y, int button) {
+		if (!dropdownOpen) return super.mouseClicked(x,y,button);
+		if (button == 0 && x >= left && x < left + 298 && y >= top + 22 && y < top + 22 + dropdownRows() * 32) selectImage(dropdownScroll + (int)(y - top - 22) / 32);
+		else dropdownOpen = false;
+		return true;
+	}
+	@Override public boolean mouseScrolled(double x, double y, double amount) {
+		if (!dropdownOpen) return super.mouseScrolled(x,y,amount);
+		dropdownScroll = Math.max(0, Math.min(images.size() + 1 - dropdownRows(), dropdownScroll - (int)Math.signum(amount)));
+		return true;
+	}
+	@Override public boolean keyPressed(int key, int scan, int modifiers) {
+		if (!dropdownOpen) return super.keyPressed(key,scan,modifiers);
+		if (key == 256) dropdownOpen = false;
+		else if (key == 257 || key == 335 || key == 32) selectImage(highlighted);
+		else if (key == 264 || key == 265) {
+			highlighted = Math.max(0, Math.min(images.size(), highlighted + (key == 264 ? 1 : -1)));
+			dropdownScroll = Math.max(0, Math.min(highlighted, Math.max(dropdownScroll, highlighted - dropdownRows() + 1)));
+		}
+		return true;
+	}
+	@Override public boolean charTyped(char character, int modifiers) { return dropdownOpen || super.charTyped(character,modifiers); }
+	private String selectionName() { return selectedImage.isEmpty() ? Text.translatable("gui.mtr.image_vanilla").getString() : selectedImage; }
+	private void place(net.minecraft.client.gui.components.AbstractWidget widget, int x, int y, int width) {
+		UtilitiesClient.setWidgetX(widget, x); UtilitiesClient.setWidgetY(widget, y); widget.setWidth(width); addDrawableChild(widget);
+	}
+	PaintingSettings draft() {
+		final PaintingSettings s = new PaintingSettings();
+		s.image = selectedImage;
+		s.width = Double.parseDouble(fields[0].getValue()); s.height = Double.parseDouble(fields[1].getValue());
+		s.x = Double.parseDouble(fields[2].getValue()); s.y = Double.parseDouble(fields[3].getValue()); s.z = Double.parseDouble(fields[4].getValue());
+		s.rotationX = Double.parseDouble(fields[5].getValue()); s.rotationY = Double.parseDouble(fields[6].getValue()); s.rotationZ = Double.parseDouble(fields[7].getValue());
+		s.json();
+		return s;
+	}
+	void setRotation(int axis, double angle) { fields[5 + axis].setValue(String.format(Locale.ROOT, "%.1f", PaintingTransform.wrap(angle))); }
+	public static PaintingSettings previewFor(Painting painting) {
+		final net.minecraft.client.gui.screens.Screen screen = Minecraft.getInstance().screen;
+		final ImportedPaintingScreen editor = screen instanceof ImportedPaintingScreen ? (ImportedPaintingScreen) screen :
+				screen instanceof PaintingRotationScreen ? ((PaintingRotationScreen) screen).editor : null;
+		if (editor == null || editor.painting != painting) return null;
+		try { return editor.draft(); } catch (RuntimeException e) { return null; }
+	}
+	@Override public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
+		renderBackground(matrices);
+		GuiCompat.draw(matrices, font, title, left, top - 16, 0xFFFFFF);
+		for (int i = 0; i < labels.length; i++) GuiCompat.draw(matrices, font, Text.translatable("gui.mtr." + labels[i]), left, top + 32 + i * 21, 0xFFFFFF);
+		if (!error.isEmpty()) GuiCompat.draw(matrices, font, Text.translatable(error), left, top + 247, 0xFF5555);
 		super.render(matrices, mouseX, mouseY, delta);
+		if (dropdownOpen) renderDropdown(matrices, mouseX, mouseY);
+	}
+	private void renderDropdown(PoseStack matrices, int mouseX, int mouseY) {
+		matrices.pushPose(); matrices.translate(0,0,400);
+		GuiGraphics graphics = GuiCompat.graphics(matrices);
+		int rows = dropdownRows(), y = top + 22;
+		graphics.fill(left-1,y-1,left+299,y+rows*32+1,0xFFAAAAAA);
+		graphics.fill(left,y,left+298,y+rows*32,0xFF202020);
+		for (int row=0;row<rows;row++) {
+			int index=dropdownScroll+row, rowY=y+row*32;
+			if ((mouseX!=previousMouseX || mouseY!=previousMouseY) && mouseX>=left && mouseX<left+298 && mouseY>=rowY && mouseY<rowY+32) highlighted=index;
+			if(index==highlighted) graphics.fill(left,rowY,left+298,rowY+32,0xFF445566);
+			String name = index==0 ? Text.translatable("gui.mtr.image_vanilla").getString() : images.get(index-1).name;
+			if(index>0) {
+				ImageDatabase.Entry entry=images.get(index-1);
+				ResourceLocation texture=ImportedImages.texture(entry.hash);
+				if(texture!=null) {
+					double scale=Math.min(26.0/entry.width,26.0/entry.height);
+					int w=Math.max(1,(int)(entry.width*scale)),h=Math.max(1,(int)(entry.height*scale));
+					graphics.blit(texture,left+3+(26-w)/2,rowY+(32-h)/2,w,h,0,0,entry.width,entry.height,entry.width,entry.height);
+				}
+			}
+			graphics.drawString(font,font.plainSubstrByWidth(name,256),left+34,rowY+12,0xFFFFFF,false);
+		}
+		if(images.size()+1>rows) {
+			int thumb=Math.max(8,rows*32*rows/(images.size()+1)), offset=(rows*32-thumb)*dropdownScroll/(images.size()+1-rows);
+			graphics.fill(left+294,y+offset,left+297,y+offset+thumb,0xFFBBBBBB);
+		}
+		graphics.flush(); matrices.popPose();
+		previousMouseX=mouseX; previousMouseY=mouseY;
 	}
 	@Override public boolean isPauseScreen() { return false; }
 }

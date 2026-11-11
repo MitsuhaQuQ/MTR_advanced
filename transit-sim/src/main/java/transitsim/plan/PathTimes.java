@@ -52,7 +52,9 @@ public final class PathTimes {
 		for (final SpeedCurves.Run run : curves.runs) {
 			// Segments end where the train stops or passes a platform, so arrivals can be read off them
 			final TreeMap<Double, Integer> ends = new TreeMap<>();
-			for (int i = 0; i <= run.stopRailIndex; i++) {
+			int first = java.util.Arrays.binarySearch(railEnds, run.fastest.startPosition);
+			first = first >= 0 ? first + 1 : -first - 1;
+			for (int i = first; i <= run.stopRailIndex; i++) {
 				// A stop ends where the train stands, which may be short of the end of its rail (round 4)
 				final double position = i == run.stopRailIndex ? run.fastest.endPosition : railEnds[i];
 				if (position > run.fastest.startPosition && position <= run.fastest.endPosition && (isPassingPlatform(path, i) || i == run.stopRailIndex)) {
