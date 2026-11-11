@@ -844,6 +844,14 @@ S07 的 MP3 拒绝指绕过网页转换、直接向服务端发送原 MP3 字节
 
 最终验证：`build/release-06523-verified.log` 构建成功；common 443 项全部通过，transit-sim 574 项中 570 项通过、4 项跳过，零失败。Fabric/Forge 客户端与服务端 0.65.23 发布包已生成，资源包沿用 1.0.4。
 
+## 0.65.27 通过站报站、新建时刻表同步停站
+
+自动测试：`AnnouncementStopsTest.theNextStopLeavesOutStopsThisTrainPasses`，`editor-web/test/liftPasses.test.ts`。
+
+- 游戏内：乘坐 Q 世界 S1 快速，离开犬宫后报站和车内显示的下一站应为第一个停车站，不是地税湖等通过站；通过时不报站。普通车、环线、直通到下一条线路时报站不变。
+- 网页：给 S1 快速新建一张周末表（空表），保存前审阅应显示“停站：地税湖改为通过……”；应用后两张表都通过这些站，原来每班的通过例外消失；在新表加班次，运行图上这些站是通过。
+- 网页：在汇总时刻表的“最低性能”加速框里输入数字但不离开，再点另一条线路，框里应显示那条线路自己的数值；回到原线路显示它保存后的数值。
+
 ## 0.65.26 出入库经交叉渡线
 
 自动测试：`MidLineDepotTest.aCrossoverOntoTheOtherTrackDoesntStopTheWayOut`、`RouteLegsTest`（`avoid` 的键与存取）、`DepotLegsTest.whyThereIsNoWayIsSavedAndSentAndOlderListsStillRead`、`editor-web/test/sync.test.ts`（检查栏带原因）。Q 世界快照：田端高速按出入库规则出库到犬宫 1、东北泽 1 由走不通变为 30、79 条轨道；田端普通不变。

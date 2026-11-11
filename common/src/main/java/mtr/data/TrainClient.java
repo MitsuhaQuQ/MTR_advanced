@@ -326,12 +326,16 @@ public class TrainClient extends Train implements IGui {
 				announcementHead = head; announcementRail = path.get(head); announcementPlatform = 0;
 				for (int i=head;i>=0;i--) if (path.get(i).isPlatformTrack() && path.get(i).getStopId() != 0) { announcementPlatform = path.get(i).getStopId(); break; }
 			}
+			// The next station is where this train stops next on its own path: a stop it passes, by its service's exception
+			// or a dispatcher's skip, isn't announced, which the route's own list of stops can't tell (0.65.27)
+			final long nextStopId = transitsim.plan.AnnouncementStops.nextStop(path, head);
+			final Station pathNextStation = nextStopId == 0 ? null : ClientData.DATA_CACHE.platformIdToStation.get(nextStopId);
 			if (!RailwayData.useRoutesAndStationsFromIndex(stopIndex, announcementPlatform, routeIds, ClientData.DATA_CACHE, (currentStationIndex, thisRoute1, nextRoute1, thisStation1, nextStation1, lastStation1) -> {
 				this.currentStationIndex = currentStationIndex;
 				thisRoute = thisRoute1;
 				nextRoute = nextRoute1;
 				thisStation = thisStation1;
-				nextStation = nextStation1;
+				nextStation = nextStation1 != null && pathNextStation != null ? pathNextStation : nextStation1;
 				lastStation = lastStation1;
 			})) {
 				currentStationIndex = 0;

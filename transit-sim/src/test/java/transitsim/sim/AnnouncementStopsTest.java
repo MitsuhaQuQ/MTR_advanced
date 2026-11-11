@@ -36,4 +36,19 @@ class AnnouncementStopsTest {
 		AnnouncementStops.numberDuty(path,0);
 		assertArrayEquals(new int[]{1,1,2},path.stream().mapToInt(TestTrack::getStopIndex).toArray());
 	}
+	@Test void theNextStopLeavesOutStopsThisTrainPasses() {
+		// Stops 10, 20 (passed: no stop time on this train's path), 30, then 10 again at the end of the lap
+		List<TestTrack> path=Arrays.asList(
+			new TestTrack(0,10,true,99,0,0),new TestTrack(10,20,false,0,0,0),
+			new TestTrack(20,30,false,10,40,0),new TestTrack(30,40,false,0,0,0),
+			new TestTrack(40,50,false,20,0,0),new TestTrack(50,60,false,0,0,0),
+			new TestTrack(60,70,false,30,40,0),new TestTrack(70,80,false,0,0,0),
+			new TestTrack(80,90,false,10,40,0));
+		assertEquals(10,AnnouncementStops.nextStop(path,0), "out of the siding");
+		assertEquals(30,AnnouncementStops.nextStop(path,2), "standing at 10, the passed 20 is left out");
+		assertEquals(30,AnnouncementStops.nextStop(path,4), "on the passed platform");
+		assertEquals(10,AnnouncementStops.nextStop(path,6), "the same platform again later counts");
+		assertEquals(0,AnnouncementStops.nextStop(path,8), "the last stop");
+		assertEquals(0,AnnouncementStops.nextStop(path,-1));
+	}
 }

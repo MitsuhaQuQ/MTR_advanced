@@ -1,5 +1,7 @@
 # MTR Advanced
 
+0.65.27 announces as the next station the next stop the train actually stops at, so a station a service passes by its own exception is no longer announced. Making a new timetable turns the stops every service passes into the route's own passes, so the new table passes them too.
+
 0.65.26 finds ways out of and back to a depot whose shortest way crosses over onto the other track and runs the line's platforms the wrong way: those platforms are left out and the way is found again. Where there is still no way, the web checks and the server log say why. Update server and clients together.
 
 0.65.25 says why a route has no path: the two stops it cannot get between, and when a key node listed for that leg is off the way, that node. The server log names them too. The web running diagram no longer draws a route without stop times as vertical lines (zero running time); it lists such routes and the reason over the diagram. Update server and clients together.

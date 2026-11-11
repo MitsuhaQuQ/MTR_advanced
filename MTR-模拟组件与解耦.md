@@ -1288,6 +1288,8 @@ PlanRoute 新增默认可选 getTimingBaseline（旧宿主返回 null 保持旧�
 
 DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_ledger 定义表；RunRecord 6 随快照携带当前列车所引用的定义，独立进程也能恢复。SimDataset 19 支持模板及索引编码，旧平铺路径及嵌入式接续记录继续可读。正在执行的旧计划由列车持有，不因新计划产生而被替换；无引用的内存版本可回收。原 path_pieces 格式保持不变。
 
+0.65.27：`AnnouncementStops.nextStop` 加在组件，按路径（`PlanTrack` 的停站时间）找下一停车站，测试 `AnnouncementStopsTest.theNextStopLeavesOutStopsThisTrainPasses`；游戏客户端只调用它。无存档与网络变化。
+
 0.65.26：出入库找路的组件改动在 `transit-sim`：`LegRouter.Request` 新增 `avoid`（{区段, 方向} 成对），搜索时不进入这些区段的该方向（首末站除外）；有 `avoid` 时请求键不同，`Leg.toBytes` 在末尾追加，旧的已存腿照常读取、键不变。`LineDepotWays` 用 `freeLeg` 代替一次性的 `freeCost` 判定。测试：`MidLineDepotTest.aCrossoverOntoTheOtherTrackDoesntStopTheWayOut`（关掉重找即失败），`RouteLegsTest` 的 `avoid` 存取。
 
 0.65.25：路径失败原因细化在游戏侧 `RoutePaths`，组件 `RouteLegs` 不变，只是诊断时多做几次 `RouteLegs.plan`（不计入线路自身路径）。`PathFailure` 新增 `WAYPOINT_UNREACHABLE` 排在最后，旧类型编号不变；旧客户端读到未知编号按 `NO_ROUTE` 显示。

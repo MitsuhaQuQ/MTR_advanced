@@ -258,6 +258,44 @@ export function servicesToAdd(day: Day, startText: string, endText: string, inte
   return (Batch().stepTimes(start, end, Math.round(step / 1000) * 1000) as number[]).map(time => mod(time - day.offsetMillis, DAY))
 }
 
+/**
+ * The stops every service of every table passes by its own exception become the route's passes (0.65.27; user: a new
+ * table takes the route's stops): set once on the route, all its tables share them, so a table made new and the services
+ * added to it pass them too. Those exceptions say nothing more then and go, and the times set at such a stop with them.
+ * The first and last stops are never passed; a table with no services says nothing either way.
+ *
+ * @return the stops made passes
+ */
+export function liftCommonPasses(tt: any): number[] {
+  const count = (tt.pass || []).length
+  const tables = tt.tables.filter((table: any) => table.services.length)
+  const lifted: number[] = []
+  if (!tables.length) return lifted
+  const passes = (table: any, service: number, stop: number) => {
+    const exception = table.exceptions.find((e: any) => e.service === service)
+    const stopException = exception && exception.stops.find((s: any) => s.stop === stop)
+    return Boolean(stopException && stopException.pass === 1)
+  }
+  for (let stop = 1; stop < count - 1; stop++) {
+    if (!tt.pass[stop] && tables.every((table: any) => table.services.every((service: number) => passes(table, service, stop)))) lifted.push(stop)
+  }
+  lifted.forEach(stop => {
+    tt.pass[stop] = true
+    tt.tables.forEach((table: any) => {
+      if (table.stops[stop]) table.stops[stop] = { ...table.stops[stop], arrival: -1, departure: -1 }
+      table.exceptions.forEach((exception: any) => exception.stops.forEach((s: any) => { if (s.stop === stop) s.pass = -1 }))
+    })
+  })
+  if (lifted.length) {
+    tt.tables.forEach((table: any) => {
+      table.exceptions = table.exceptions
+        .map((exception: any) => ({ ...exception, stops: exception.stops.filter((s: any) => !(s.run < 0 && s.dwell < 0 && s.pass < 0 && s.overtake < 0)) }))
+        .filter((exception: any) => exception.stops.length)
+    })
+  }
+  return lifted
+}
+
 /** A route's timetable renumbered to its new stops: newOf[old stop] is its new number, or -1 if it was taken away */
 export function renumberTimetable(tt: any, list: { from: number; pass: boolean }[], newOf: number[]) {
   const copy = JSON.parse(JSON.stringify(tt))

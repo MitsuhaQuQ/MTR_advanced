@@ -840,6 +840,7 @@ const I18N = (() => {
 			"休日": "Holiday",
 			"运行的星期": "Days it runs",
 			"一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。": "Each day uses one timetable, so the days ticked move from their old timetable to this one. Copied services keep their one-off exceptions.",
+			"一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。原有每一班都通过的站改为线路的通过站，新表和以后加的班次一样通过。": "One table runs each day; the days ticked move here from the table they were on. Copied services keep their one-off changes. Stops every service passes become the route's own passes, so the new table and services added later pass them too.",
 			"新建": "Create",
 			"确定": "OK",
 			"一条线路最多 {0} 张表": "A route can have at most {0} timetables",

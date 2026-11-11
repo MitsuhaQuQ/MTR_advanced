@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { legacy, panelHost, useLegacy, type PanelTarget } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
+import { liftCommonPasses } from "../core/timetable"
 import { tr } from "../i18n"
 import { DepotPanel, DepotRules } from "./DepotPanel"
 import { DutyGroupsPanel, ReleasePlanPanel, VehiclePanel } from "./DepotExtras"
@@ -357,6 +358,8 @@ function TableDays({ routeId, index, onClose }: { routeId: string; index: number
     routes.forEach((route: any) => fn.editTimetable(route, (edited: any) => {
       edited.tables.forEach((t: any, i: number) => { if (i !== index) t.weekdays &= ~mask })
       if (isNew) {
+        // The stops every service passes become the route's own, which the new table shares (0.65.27)
+        liftCommonPasses(edited)
         const copied = copy >= 0 && edited.tables[copy]
         edited.tables.push({
           name: name.trim(), weekdays: mask, marginPercent: copied ? copied.marginPercent : edited.tables[0].marginPercent,
@@ -375,7 +378,7 @@ function TableDays({ routeId, index, onClose }: { routeId: string; index: number
   }
   return (
     <SidePanel open onClose={onClose} title={(isNew ? tr("新建时刻表") : tr("时刻表设置")) + "：" + routeTitle(r)} width={560}
-      hint={tr("一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。")}
+      hint={isNew ? tr("一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。原有每一班都通过的站改为线路的通过站，新表和以后加的班次一样通过。") : tr("一天只用一张表，勾选的星期从原来的表移到这张表。复制的班次连同只改这一班的例外一起复制。")}
       footer={<Footer error={error}>
         <button className="btn btn-primary" disabled={!v.data.canEdit} onClick={save}>{isNew ? tr("新建") : tr("确定")}</button>
         <button className="btn" onClick={onClose}>{tr("取消")}</button>

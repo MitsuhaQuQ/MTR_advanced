@@ -259,6 +259,9 @@ export function SummaryTable({ className }: { className: string }) {
       else table.minMaxSpeed = number / 72
     })
   }
+  // The inputs start again from the shown route's and table's own value when either changes, or the value does: typed
+  // into and left alone, one route's number isn't kept over another's (0.65.27)
+  const perfKey = (key: string) => r.id + "/" + today + "/" + key + "/" + (today >= 0 ? fn.perfText(timetable.tables[today], key) : "")
   const tools = <>
     <div className="tt-tools"><b>{routeTitle(r)}</b>
       <span className="hint">{tr("{0} · {1} 班{2}{3}", weekdayName(state.weekday), services.length, r.hasTimes || r.pathFailure ? "" : tr(" · 正在向服务端取各站时刻"), drafted ? tr(" · 有没应用的草稿") : "")}</span>
@@ -277,9 +280,9 @@ export function SummaryTable({ className }: { className: string }) {
       <button className="table-chip" onClick={() => fn.tableDialog(r, -1)}>{tr("＋ 新建表")}</button>
       {today >= 0 && (
         <label className="hint" title={tr("运行时分按这组性能算，换车型时刻表不变；跑这条线的车比它慢时会提示")}>{tr("最低性能")} {tr("加速")}{" "}
-          <input className="perf" defaultValue={fn.perfText(timetable.tables[today], "a")} inputMode="decimal" style={{ width: "3.5em" }} onBlur={e => perf("a", e.target.value)} /> m/s² {tr("减速")}{" "}
-          <input className="perf" defaultValue={fn.perfText(timetable.tables[today], "d")} inputMode="decimal" style={{ width: "3.5em" }} onBlur={e => perf("d", e.target.value)} /> m/s² {tr("最高")}{" "}
-          <input className="perf" defaultValue={fn.perfText(timetable.tables[today], "v")} inputMode="numeric" style={{ width: "3.5em" }} onBlur={e => perf("v", e.target.value)} /> km/h</label>
+          <input className="perf" key={perfKey("a")} defaultValue={fn.perfText(timetable.tables[today], "a")} inputMode="decimal" style={{ width: "3.5em" }} onBlur={e => perf("a", e.target.value)} /> m/s² {tr("减速")}{" "}
+          <input className="perf" key={perfKey("d")} defaultValue={fn.perfText(timetable.tables[today], "d")} inputMode="decimal" style={{ width: "3.5em" }} onBlur={e => perf("d", e.target.value)} /> m/s² {tr("最高")}{" "}
+          <input className="perf" key={perfKey("v")} defaultValue={fn.perfText(timetable.tables[today], "v")} inputMode="numeric" style={{ width: "3.5em" }} onBlur={e => perf("v", e.target.value)} /> km/h</label>
       )}
     </div>
     {today >= 0
