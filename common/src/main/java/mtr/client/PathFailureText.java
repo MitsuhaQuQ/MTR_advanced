@@ -59,6 +59,34 @@ public final class PathFailureText {
 	}
 
 	/**
+	 * @param reason why a siding has no way out or back, as {@link mtr.data.DepotLegs#outReasons}
+	 * @return the reason in words, or empty if not known
+	 */
+	public static String depotWay(long[] reason) {
+		if (reason == null || reason.length == 0) {
+			return "";
+		}
+		switch ((int) reason[0]) {
+			case mtr.data.DepotLegs.REASON_NO_TRACK:
+				return Text.translatable("gui.mtr.depot_way_no_track").getString();
+			case mtr.data.DepotLegs.REASON_AGAINST:
+				final StringBuilder platforms = new StringBuilder();
+				for (int i = 1; i < reason.length; i++) {
+					platforms.append(i > 1 ? ", " : "").append(platformName(reason[i]));
+				}
+				return Text.translatable("gui.mtr.depot_way_against", platforms.toString()).getString();
+			case mtr.data.DepotLegs.REASON_ENTRANCE_UNSET:
+				return Text.translatable("gui.mtr.depot_way_entrance_unset").getString();
+			case mtr.data.DepotLegs.REASON_RULE:
+				return Text.translatable("gui.mtr.depot_way_rule").getString();
+			case mtr.data.DepotLegs.REASON_WRONG_WAY:
+				return Text.translatable("gui.mtr.depot_way_wrong_way").getString();
+			default:
+				return "";
+		}
+	}
+
+	/**
 	 * @return the platform as its station's name and its own, or its ID if it's gone
 	 */
 	private static String platformName(long platformId) {

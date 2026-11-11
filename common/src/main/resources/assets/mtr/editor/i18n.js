@@ -587,6 +587,7 @@ const I18N = (() => {
 			"车厂{0}的运用里有已经删除的线路的班次": "Depot {0}'s duties have services of deleted routes",
 			"车厂{0}：{1}": "Depot {0}: {1}",
 			"{0}：找不到路，{1}": "{0}: no path, {1}",
+			"（原因：{0}）": " (why: {0})",
 			"{0}：没有各站时刻，运行线未画出。找不到路，{1}": "{0}: no stop times, so its services are not drawn. No path: {1}",
 			"{0}：还没有各站时刻，运行线未画出（正在向服务端取）": "{0}: no stop times yet, so its services are not drawn (asking the server)",
 			"{0}：还没有各站时刻": "{0}: no stop times yet",

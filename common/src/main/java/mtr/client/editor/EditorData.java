@@ -265,6 +265,13 @@ public final class EditorData {
 				final JsonArray noWayBack = new JsonArray();
 				recorded.unreachableBack.forEach(platformId -> noWayBack.add(String.valueOf(platformId)));
 				sidingObject.add("noWayBack", noWayBack);
+				// And why, where the server worked it out (0.65.26)
+				final JsonObject noWayOutWhy = new JsonObject();
+				recorded.outReasons.forEach((platformId, reason) -> noWayOutWhy.addProperty(String.valueOf(platformId), mtr.client.PathFailureText.depotWay(reason)));
+				sidingObject.add("noWayOutWhy", noWayOutWhy);
+				final JsonObject noWayBackWhy = new JsonObject();
+				recorded.backReasons.forEach((platformId, reason) -> noWayBackWhy.addProperty(String.valueOf(platformId), mtr.client.PathFailureText.depotWay(reason)));
+				sidingObject.add("noWayBackWhy", noWayBackWhy);
 				final JsonArray measuredOut = new JsonArray();
 				final java.util.Set<Long> measuredOutIds = new java.util.TreeSet<>(recorded.outMillis.keySet());
 				measuredOutIds.addAll(legs.outMillis.keySet());

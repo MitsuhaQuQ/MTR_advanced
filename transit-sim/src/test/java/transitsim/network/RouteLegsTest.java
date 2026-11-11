@@ -205,6 +205,18 @@ class RouteLegsTest {
 		assertNotNull(read);
 		assertEquals(strict.request.key, read.request.key);
 		assertFalse(read.request.turnAtStart);
+		assertEquals(0, read.request.avoid.length);
+		// With sections left out (0.65.26): a key of its own, kept when saved and read back; the track between the stops run
+		// west left out, the terminus can't be reached
+		final long between = sections.getSectionOf(track(20, 0, 100, 0).getKey());
+		final LegRouter.Request avoiding = new LegRouter.Request(from, true, to, new long[0], null, false, new long[]{between, 1, between, 0});
+		assertNotEquals(strict.request.key, avoiding.key);
+		final LegRouter.Leg avoided = fresh(snapshot, 0, Collections.emptyMap()).get(avoiding);
+		assertTrue(Double.isInfinite(Math.min(avoided.getCost(true), avoided.getCost(false))));
+		final LegRouter.Leg avoidedRead = LegRouter.Leg.fromBytes(avoided.toBytes(), 0);
+		assertNotNull(avoidedRead);
+		assertEquals(avoiding.key, avoidedRead.request.key);
+		assertArrayEquals(avoiding.avoid, avoidedRead.request.avoid);
 	}
 
 	@Test

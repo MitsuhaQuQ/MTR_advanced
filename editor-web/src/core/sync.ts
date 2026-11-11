@@ -120,8 +120,9 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     // Ways out and back path generation found missing, which the planning keeps off; and those not measured yet
     depot.sidings.forEach((siding: any) => {
       const sidingName = shortName(siding.name) || tr("存车线")
-      ;(siding.noWayOut || []).forEach((platformId: string) => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 没有出库的路，这条存车线不从这里出车", name, sidingName, platformText(data, platformId)) }))
-      ;(siding.noWayBack || []).forEach((platformId: string) => problems.push({ level: "warn", text: tr("车厂{0}：从 {2} 回不到 {1}，车改回车池里别的存车线", name, sidingName, platformText(data, platformId)) }))
+      const why = (reasons: any, platformId: string) => (reasons && reasons[platformId] ? tr("（原因：{0}）", reasons[platformId]) : "")
+      ;(siding.noWayOut || []).forEach((platformId: string) => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 没有出库的路，这条存车线不从这里出车", name, sidingName, platformText(data, platformId)) + why(siding.noWayOutWhy, platformId) }))
+      ;(siding.noWayBack || []).forEach((platformId: string) => problems.push({ level: "warn", text: tr("车厂{0}：从 {2} 回不到 {1}，车改回车池里别的存车线", name, sidingName, platformText(data, platformId)) + why(siding.noWayBackWhy, platformId) }))
       const firsts = [...new Set((depot.routes || []).map((id: string) => data.routeById.get(id)).filter(Boolean).filter((r: any) => !(siding.routes || []).length || siding.routes.includes(r.id)).map((r: any) => r.stops[0] && r.stops[0].platformId).filter(Boolean))] as string[]
       const estimated = firsts.filter(platformId => !(siding.measuredOut || []).includes(platformId) && !(siding.noWayOut || []).includes(platformId))
       if (estimated.length && siding.measuredOut) problems.push({ level: "hint", text: tr("车厂{0}：{1} 到 {2} 的出库还没量过，按距离估计排，刷新车厂路径后按实测", name, sidingName, estimated.map(platformId => platformText(data, platformId)).join("、")) })

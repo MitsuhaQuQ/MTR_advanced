@@ -1307,6 +1307,26 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * @param self the depot measuring, whose rules a siding of no depot found goes by (a siding of the unit outside every
 	 *             depot's area is the measuring depot's, as path generation has it)
 	 */
+	/**
+	 * @return why a siding has no way out or back ({@link DepotLegs#outReasons}), in a few words for the server log
+	 */
+	static String describeWayReason(long[] reason) {
+		switch (reason.length == 0 ? 0 : (int) reason[0]) {
+			case DepotLegs.REASON_NO_TRACK:
+				return "the rails don't connect them";
+			case DepotLegs.REASON_AGAINST:
+				return "only by running the line's platforms " + Arrays.toString(Arrays.copyOfRange(reason, 1, reason.length)) + " against the line";
+			case DepotLegs.REASON_ENTRANCE_UNSET:
+				return "the siding reaches the line at more than one station and no rule says which to go by";
+			case DepotLegs.REASON_RULE:
+				return "the station or path the depot's rule gives leads nowhere";
+			case DepotLegs.REASON_WRONG_WAY:
+				return "only reached the wrong way round, with nowhere to turn back";
+			default:
+				return "not known";
+		}
+	}
+
 	private static Map<Long, DepotLegs> measureDepotWays(Depot self, Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		// Each siding's ways by its own depot's rules (运用补完 step 2)
 		final Map<Depot, RoutePaths.DepotLine> depotLines = new HashMap<>();
@@ -1351,14 +1371,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final Map<Long, Long> back = new TreeMap<>();
 			final Set<Long> noWayOut = new TreeSet<>();
 			final Set<Long> noWayBack = new TreeSet<>();
+			final Map<Long, long[]> outReasons = new TreeMap<>();
+			final Map<Long, long[]> backReasons = new TreeMap<>();
 			boolean any = false;
 			for (final long platformId : stops.get(0)) {
 				final Platform platform = dataCache.platformIdMap.get(platformId);
-				final List<PathData> way = platform == null || out.containsKey(platformId) ? null : routePaths.findDepotWay(siding, platform, rails, true, firstEnds.getOrDefault(platformId, 0L), depotLine);
+				final long[][] why = new long[1][];
+				final List<PathData> way = platform == null || out.containsKey(platformId) ? null : routePaths.findDepotWay(siding, platform, rails, true, firstEnds.getOrDefault(platformId, 0L), depotLine, why);
 				if (way != null) {
 					any = true;
 					if (way.isEmpty()) {
 						noWayOut.add(platformId);
+						if (why[0] != null) {
+							outReasons.put(platformId, why[0]);
+						}
 					} else {
 						out.put(platformId, RoutePaths.timeDepotWay(way, vehicle, true));
 					}
@@ -1372,11 +1398,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				long best = -1;
 				boolean measuredAny = false;
+				long[] backWhy = null;
 				for (final Siding target : dataCache.sidingIdMap.values()) {
 					if (target != siding && (depot == null || dataCache.sidingIdToDepot.get(target.id) != depot || !siding.getPoolKey().equals(target.getPoolKey()))) {
 						continue;
 					}
-					final List<PathData> way = routePaths.findDepotWay(platform, target, rails, false, lastEnds.getOrDefault(platformId, 0L), depotLine);
+					final long[][] why = new long[1][];
+					final List<PathData> way = routePaths.findDepotWay(platform, target, rails, false, lastEnds.getOrDefault(platformId, 0L), depotLine, why);
+					if (way != null && way.isEmpty() && backWhy == null) {
+						// Why for the siding itself, or the first of the pool tried
+						backWhy = why[0];
+					}
 					if (way != null) {
 						measuredAny = true;
 						final long millis = RoutePaths.timeDepotWay(way, vehicle, false);
@@ -1389,6 +1421,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					any = true;
 					if (best < 0) {
 						noWayBack.add(platformId);
+						if (backWhy != null) {
+							backReasons.put(platformId, backWhy);
+						}
 					} else {
 						// The depot's paths count the last stop's stop time in the way back
 						back.put(platformId, best + platform.getDwellTime() * 500L);
@@ -1396,14 +1431,29 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			}
 			if (any) {
-				measured.put(sidingId, new DepotLegs(siding.getDepotLegs().entrancePlatform, out, back).withUnreachable(noWayOut, noWayBack));
+				measured.put(sidingId, new DepotLegs(siding.getDepotLegs().entrancePlatform, out, back).withUnreachable(noWayOut, noWayBack).withReasons(outReasons, backReasons));
+				// Told in the log too, each platform with no way and why
+				outReasons.forEach((platformId, reason) -> System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way out to platform " + platformId + ": " + describeWayReason(reason)));
+				backReasons.forEach((platformId, reason) -> System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way back from platform " + platformId + ": " + describeWayReason(reason)));
 			}
 		});
 		return measured;
 	}
 
 	private static boolean sameWays(DepotLegs legs1, DepotLegs legs2) {
-		return legs1.outMillis.equals(legs2.outMillis) && legs1.backMillis.equals(legs2.backMillis) && legs1.unreachableOut.equals(legs2.unreachableOut) && legs1.unreachableBack.equals(legs2.unreachableBack);
+		return legs1.outMillis.equals(legs2.outMillis) && legs1.backMillis.equals(legs2.backMillis) && legs1.unreachableOut.equals(legs2.unreachableOut) && legs1.unreachableBack.equals(legs2.unreachableBack) && sameReasons(legs1.outReasons, legs2.outReasons) && sameReasons(legs1.backReasons, legs2.backReasons);
+	}
+
+	private static boolean sameReasons(Map<Long, long[]> reasons1, Map<Long, long[]> reasons2) {
+		if (!reasons1.keySet().equals(reasons2.keySet())) {
+			return false;
+		}
+		for (final Map.Entry<Long, long[]> entry : reasons1.entrySet()) {
+			if (!Arrays.equals(entry.getValue(), reasons2.get(entry.getKey()))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static String describeWays(Map<Long, DepotLegs> ways) {

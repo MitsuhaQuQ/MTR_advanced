@@ -24,6 +24,33 @@ public final class DepotLegs {
 	 * Last stop platforms they were found to have no way back from.
 	 */
 	public final Set<Long> unreachableBack;
+	/**
+	 * Why there is no way out to a platform, or back from one, as {type, platform IDs...} ({@link #REASON_NO_TRACK} and
+	 * the rest), by platform; empty where it isn't known (0.65.26).
+	 */
+	public final Map<Long, long[]> outReasons;
+	public final Map<Long, long[]> backReasons;
+	/**
+	 * The siding and the platform aren't connected by the rails at all.
+	 */
+	public static final int REASON_NO_TRACK = 1;
+	/**
+	 * Only a way running the line's platforms that follow against the line was found.
+	 */
+	public static final int REASON_AGAINST = 2;
+	/**
+	 * The siding reaches the line at more than one station and the depot's rules don't say which to go by.
+	 */
+	public static final int REASON_ENTRANCE_UNSET = 3;
+	/**
+	 * The station or named path the depot's rules give leads nowhere.
+	 */
+	public static final int REASON_RULE = 4;
+	/**
+	 * The platform is reached, but not the way the line runs it, and there is nowhere to turn back on the way.
+	 */
+	public static final int REASON_WRONG_WAY = 5;
+	private static final int MAX_REASON_PLATFORMS = 16;
 	private static final int MILLIS_PER_TICK = 50;
 	private static final int MAX_PLATFORMS = 256;
 
@@ -45,11 +72,37 @@ public final class DepotLegs {
 	}
 
 	public DepotLegs(long entrancePlatform, Map<Long, Long> outMillis, Map<Long, Long> backMillis, Set<Long> unreachableOut, Set<Long> unreachableBack) {
+		this(entrancePlatform, outMillis, backMillis, unreachableOut, unreachableBack, Collections.emptyMap(), Collections.emptyMap());
+	}
+
+	private DepotLegs(long entrancePlatform, Map<Long, Long> outMillis, Map<Long, Long> backMillis, Set<Long> unreachableOut, Set<Long> unreachableBack, Map<Long, long[]> outReasons, Map<Long, long[]> backReasons) {
 		this.entrancePlatform = entrancePlatform;
 		this.outMillis = Collections.unmodifiableMap(new TreeMap<>(outMillis));
 		this.backMillis = Collections.unmodifiableMap(new TreeMap<>(backMillis));
 		this.unreachableOut = Collections.unmodifiableSet(limit(unreachableOut, outMillis.keySet()));
 		this.unreachableBack = Collections.unmodifiableSet(limit(unreachableBack, backMillis.keySet()));
+		this.outReasons = Collections.unmodifiableMap(limitReasons(outReasons, this.unreachableOut));
+		this.backReasons = Collections.unmodifiableMap(limitReasons(backReasons, this.unreachableBack));
+	}
+
+	/**
+	 * @return the reasons of the platforms with no way, each well formed and not too long
+	 */
+	private static Map<Long, long[]> limitReasons(Map<Long, long[]> reasons, Set<Long> unreachable) {
+		final Map<Long, long[]> map = new TreeMap<>();
+		reasons.forEach((platformId, reason) -> {
+			if (unreachable.contains(platformId) && reason != null && reason.length >= 1 && reason[0] >= REASON_NO_TRACK && reason[0] <= REASON_WRONG_WAY) {
+				map.put(platformId, Arrays.copyOf(reason, Math.min(reason.length, MAX_REASON_PLATFORMS + 1)));
+			}
+		});
+		return map;
+	}
+
+	/**
+	 * @return these legs with why each platform has no way, as {@link #outReasons}
+	 */
+	public DepotLegs withReasons(Map<Long, long[]> out, Map<Long, long[]> back) {
+		return new DepotLegs(entrancePlatform, outMillis, backMillis, unreachableOut, unreachableBack, out, back);
 	}
 
 	/**
@@ -127,6 +180,17 @@ public final class DepotLegs {
 		list.addAll(unreachableOut);
 		list.add((long) unreachableBack.size());
 		list.addAll(unreachableBack);
+		// Why, after the rest, so lists saved before read the same
+		for (final Map<Long, long[]> reasons : Arrays.asList(outReasons, backReasons)) {
+			list.add((long) reasons.size());
+			reasons.forEach((platformId, reason) -> {
+				list.add(platformId);
+				list.add((long) reason.length);
+				for (final long value : reason) {
+					list.add(value);
+				}
+			});
+		}
 		return list;
 	}
 
@@ -158,7 +222,22 @@ public final class DepotLegs {
 					unreachableBack.add(list.get(index++));
 				}
 			}
-			return new DepotLegs(entrance, out, back, unreachableOut, unreachableBack);
+			final List<Map<Long, long[]>> reasons = new ArrayList<>();
+			for (int kind = 0; kind < 2; kind++) {
+				final Map<Long, long[]> map = new TreeMap<>();
+				if (index < list.size()) {
+					for (int i = Math.min(list.get(index++).intValue(), MAX_PLATFORMS); i > 0; i--) {
+						final long platformId = list.get(index++);
+						final long[] reason = new long[Math.max(0, Math.min(list.get(index++).intValue(), MAX_REASON_PLATFORMS + 1))];
+						for (int j = 0; j < reason.length; j++) {
+							reason[j] = list.get(index++);
+						}
+						map.put(platformId, reason);
+					}
+				}
+				reasons.add(map);
+			}
+			return new DepotLegs(entrance, out, back, unreachableOut, unreachableBack, reasons.get(0), reasons.get(1));
 		} catch (IndexOutOfBoundsException | NullPointerException e) {
 			return NONE;
 		}
@@ -170,6 +249,8 @@ public final class DepotLegs {
 		writeMap(packet, backMillis);
 		writeSet(packet, unreachableOut);
 		writeSet(packet, unreachableBack);
+		writeReasons(packet, outReasons);
+		writeReasons(packet, backReasons);
 	}
 
 	public static DepotLegs readPacket(FriendlyByteBuf packet) {
@@ -178,7 +259,41 @@ public final class DepotLegs {
 		final Map<Long, Long> back = readMap(packet);
 		final Set<Long> unreachableOut = readSet(packet);
 		final Set<Long> unreachableBack = readSet(packet);
-		return new DepotLegs(entrance, out, back, unreachableOut, unreachableBack);
+		final Map<Long, long[]> outReasons = readReasons(packet);
+		final Map<Long, long[]> backReasons = readReasons(packet);
+		return new DepotLegs(entrance, out, back, unreachableOut, unreachableBack, outReasons, backReasons);
+	}
+
+	private static void writeReasons(FriendlyByteBuf packet, Map<Long, long[]> reasons) {
+		packet.writeInt(reasons.size());
+		reasons.forEach((platformId, reason) -> {
+			packet.writeLong(platformId);
+			packet.writeInt(reason.length);
+			for (final long value : reason) {
+				packet.writeLong(value);
+			}
+		});
+	}
+
+	private static Map<Long, long[]> readReasons(FriendlyByteBuf packet) {
+		final int count = packet.readInt();
+		if (count < 0 || count > MAX_PLATFORMS) {
+			throw new IllegalArgumentException("Too many platforms: " + count);
+		}
+		final Map<Long, long[]> map = new TreeMap<>();
+		for (int i = 0; i < count; i++) {
+			final long platformId = packet.readLong();
+			final int length = packet.readInt();
+			if (length < 0 || length > MAX_REASON_PLATFORMS + 1) {
+				throw new IllegalArgumentException("Bad reason length: " + length);
+			}
+			final long[] reason = new long[length];
+			for (int j = 0; j < length; j++) {
+				reason[j] = packet.readLong();
+			}
+			map.put(platformId, reason);
+		}
+		return map;
 	}
 
 	private static void writeSet(FriendlyByteBuf packet, Set<Long> set) {

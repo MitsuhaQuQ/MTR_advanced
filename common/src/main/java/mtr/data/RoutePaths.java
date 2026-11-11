@@ -675,7 +675,7 @@ public final class RoutePaths {
 	 * @return the rails, empty with no way, or null before the track sections are there
 	 */
 	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd) {
-		return findDepotWay(from, to, rails, out, platformEnd, true, null);
+		return findDepotWay(from, to, rails, out, platformEnd, true, null, null);
 	}
 
 	/**
@@ -686,21 +686,28 @@ public final class RoutePaths {
 	 * @param depotLine the depot's routes, or null for the way straight between them
 	 */
 	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, DepotLine depotLine) {
-		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine);
+		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine, null);
+	}
+
+	/**
+	 * @param why where to put why there is no way, as {@link DepotLegs#outReasons} has it, when there is none
+	 */
+	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, DepotLine depotLine, long[][] why) {
+		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine, why);
 	}
 
 	/**
 	 * Through the nodes of a named deadhead path a duty takes on its own (运用补完 step 3), in place of the depot's rules.
 	 */
 	public List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, DepotLine depotLine, long[] waypoints) {
-		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine == null ? null : depotLine.through(waypoints));
+		return findDepotWay(from, to, rails, out, platformEnd, true, depotLine == null ? null : depotLine.through(waypoints), null);
 	}
 
 	/**
 	 * @param keep whether the legs found are kept for later and the save; not for a measurement only for the log, which
 	 *             would otherwise keep every way it tried (optimisation round 4, step 4)
 	 */
-	private List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, boolean keep, DepotLine depotLine) {
+	private List<PathData> findDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, long platformEnd, boolean keep, DepotLine depotLine, long[][] why) {
 		final mtr.advanced.GraphRecords.Legs legs = graphRecords.getLegs();
 		if (legs == null) {
 			return null;
@@ -733,10 +740,12 @@ public final class RoutePaths {
 			if (wayRule.entrance != 0) {
 				stations.removeIf(station -> depotLine.stationOf(station.getValue().id) != wayRule.entrance);
 				if (stations.isEmpty()) {
+					setWhy(why, DepotLegs.REASON_RULE);
 					return Collections.emptyList();
 				}
 			} else if (depotLine.entrancesOf(siding, legs, linePlans, source).size() > 1) {
 				depotLine.reportEntranceUnset(siding, platform);
+				setWhy(why, DepotLegs.REASON_ENTRANCE_UNSET);
 				return Collections.emptyList();
 			}
 			stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
@@ -767,6 +776,9 @@ public final class RoutePaths {
 			System.out.println("Minecraft Transit Railway depot way " + (out ? "out of " + from.id + " to " + to.id : "back from " + from.id + " to " + to.id) + " (platform " + (platformAlong == null ? "either way" : platformAlong ? "along" : "against") + "): nearby " + nearby.stream().map(section -> String.valueOf(linePlans.stations.get(section).id)).collect(java.util.stream.Collectors.joining(",")) + (plan.isFound() ? ", stops " + Arrays.stream(RouteLegs.getStopSections(plan)).mapToObj(section -> section == sections.get(0).hash ? "start" : section == sections.get(1).hash ? "end" : linePlans == null || !linePlans.stations.containsKey(section) ? "?" : String.valueOf(linePlans.stations.get(section).id)).collect(java.util.stream.Collectors.joining(" > ")) + ", " + plan.steps.size() + " sections, cost " + Math.round(plan.cost) : ", none"));
 		}
 		if (!plan.isFound()) {
+			if (why != null) {
+				why[0] = diagnoseDepotWay(sections.get(0).hash, sections.get(1).hash, out, platformAlong, linePlans, wayRule, source);
+			}
 			return Collections.emptyList();
 		}
 		// Each stop as what it is: the siding, a platform turned back at on the way, the platform
@@ -792,6 +804,59 @@ public final class RoutePaths {
 			}
 		}
 		return path;
+	}
+
+	private static void setWhy(long[][] why, int reason) {
+		if (why != null) {
+			why[0] = new long[]{reason};
+		}
+	}
+
+	/**
+	 * Why there is no way out or back (0.65.26): the rails don't connect them at all; only a way running the line's
+	 * platforms against it; the depot's rule leads nowhere; or the platform is only reached the wrong way round.
+	 *
+	 * @return as {@link DepotLegs#outReasons} has it
+	 */
+	private static long[] diagnoseDepotWay(long fromSection, long toSection, boolean out, Boolean platformAlong, DepotLine.Plans linePlans, DepotLine.WayRule wayRule, RouteLegs.LegSource source) {
+		final RouteLegs.Plan anyWay = RouteLegs.planBetween(fromSection, null, toSection, null, source);
+		if (!anyWay.isFound()) {
+			return new long[]{DepotLegs.REASON_NO_TRACK};
+		}
+		if (linePlans != null) {
+			// The ways the line runs each of its sections, and its stops
+			final Map<Long, Integer> lineWays = new HashMap<>();
+			final Set<Long> stopSections = new HashSet<>();
+			linePlans.plans.forEach(plan -> {
+				if (plan.isFound()) {
+					plan.steps.forEach(step -> lineWays.merge(step[0], 1 << step[1], (a, b) -> a | b));
+					for (final int stopStep : plan.stopSteps) {
+						stopSections.add(plan.steps.get(stopStep)[0]);
+					}
+				}
+			});
+			final RouteLegs.Plan directed = RouteLegs.planBetween(fromSection, out ? null : platformAlong, toSection, out ? platformAlong : null, source);
+			final List<Long> against = new ArrayList<>();
+			for (final long[] step : (directed.isFound() ? directed : anyWay).steps) {
+				final Integer ways = lineWays.get(step[0]);
+				final SavedRailBase station = linePlans.stations.get(step[0]);
+				if (step[0] != fromSection && step[0] != toSection && stopSections.contains(step[0]) && ways != null && (ways >> step[1] & 1) == 0 && station != null && !against.contains(station.id)) {
+					against.add(station.id);
+				}
+			}
+			if (!against.isEmpty()) {
+				final long[] reason = new long[against.size() + 1];
+				reason[0] = DepotLegs.REASON_AGAINST;
+				for (int i = 0; i < against.size(); i++) {
+					reason[i + 1] = against.get(i);
+				}
+				return reason;
+			}
+		}
+		if (wayRule != DepotLine.WayRule.NONE) {
+			return new long[]{DepotLegs.REASON_RULE};
+		}
+		return new long[]{DepotLegs.REASON_WRONG_WAY};
 	}
 
 	private static transitsim.network.TrackSections.Section sectionOf(SavedRailBase savedRailBase, mtr.advanced.GraphRecords.Legs legs) {
@@ -1032,7 +1097,7 @@ public final class RoutePaths {
 	 * as path generation finds it but kept for no one; null before the track sections are there
 	 */
 	public List<PathData> previewDepotWay(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, boolean out, DepotLine depotLine) {
-		return findDepotWay(from, to, rails, out, 0, false, depotLine);
+		return findDepotWay(from, to, rails, out, 0, false, depotLine, null);
 	}
 
 	/**
@@ -1083,7 +1148,7 @@ public final class RoutePaths {
 	 * kept
 	 */
 	public long measureDepotLeg(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, PathTiming.Vehicle vehicle, boolean out, long platformEnd) {
-		return timeDepotWay(findDepotWay(from, to, rails, out, platformEnd, false, null), vehicle, out);
+		return timeDepotWay(findDepotWay(from, to, rails, out, platformEnd, false, null, null), vehicle, out);
 	}
 
 	/**

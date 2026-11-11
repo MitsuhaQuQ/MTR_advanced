@@ -34,7 +34,7 @@ public final class LineDepotWays {
 		return request -> {
 			if (request.fromSection != siding && request.toSection != siding) return source.get(request);
 			return source.get(new LegRouter.Request(request.fromSection, request.fromAlong, request.toSection,
-					RouteLegs.railWaypoints(waypoints, snapshot, request.fromSection, request.toSection), request.line, request.turnAtStart));
+					RouteLegs.railWaypoints(waypoints, snapshot, request.fromSection, request.toSection), request.line, request.turnAtStart, request.avoid));
 		};
 	}
 
@@ -55,8 +55,10 @@ public final class LineDepotWays {
 		final Set<Long> nearest = nearest(stations, station -> {
 			double cost = Double.POSITIVE_INFINITY;
 			for (final int fromWay : new int[]{1, 0}) {
-				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(siding, fromWay == 1, station, new long[0], null, false));
-				cost = Math.min(cost, Math.min(graph.freeCost(leg, true, station), graph.freeCost(leg, false, station)));
+				final LegRouter.Request request = new LegRouter.Request(siding, fromWay == 1, station, new long[0], null, false);
+				for (final boolean toAlong : new boolean[]{true, false}) {
+					cost = Math.min(cost, graph.freeCost(graph.freeLeg(request, toAlong, station), toAlong, station));
+				}
 			}
 			return cost;
 		});
@@ -69,15 +71,17 @@ public final class LineDepotWays {
 			final int way = graph.arrivalWay(node);
 			Arrival arrival = null;
 			for (final int fromWay : new int[]{1, 0}) {
-				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(siding, fromWay == 1, section, new long[0], null, false));
-				final double straight = graph.freeCost(leg, way == 1, section);
+				final LegRouter.Request request = new LegRouter.Request(siding, fromWay == 1, section, new long[0], null, false);
+				final LegRouter.Leg straightLeg = graph.freeLeg(request, way == 1, section);
+				final double straight = graph.freeCost(straightLeg, way == 1, section);
 				if (straight < (arrival == null ? Double.POSITIVE_INFINITY : arrival.cost)) {
-					arrival = new Arrival(straight, fromWay, leg, way, false);
+					arrival = new Arrival(straight, fromWay, straightLeg, way, false);
 				}
 				// Entered against the line and turned back at
-				final double turned = graph.freeCost(leg, way != 1, section) + RailRouter.TURN_BACK_PENALTY;
+				final LegRouter.Leg turnedLeg = graph.freeLeg(request, way != 1, section);
+				final double turned = graph.freeCost(turnedLeg, way != 1, section) + RailRouter.TURN_BACK_PENALTY;
 				if (turned < (arrival == null ? Double.POSITIVE_INFINITY : arrival.cost)) {
-					arrival = new Arrival(turned, fromWay, leg, 1 - way, true);
+					arrival = new Arrival(turned, fromWay, turnedLeg, 1 - way, true);
 				}
 			}
 			if (arrival != null && Double.isFinite(arrival.cost)) {
@@ -126,8 +130,10 @@ public final class LineDepotWays {
 		final Set<Long> nearest = nearest(stations, station -> {
 			double cost = Double.POSITIVE_INFINITY;
 			for (final int leaveWay : new int[]{1, 0}) {
-				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(station, leaveWay == 1, siding, new long[0], null, false));
-				cost = Math.min(cost, Math.min(graph.freeCost(leg, true, station), graph.freeCost(leg, false, station)));
+				final LegRouter.Request request = new LegRouter.Request(station, leaveWay == 1, siding, new long[0], null, false);
+				for (final boolean toAlong : new boolean[]{true, false}) {
+					cost = Math.min(cost, graph.freeCost(graph.freeLeg(request, toAlong, station), toAlong, station));
+				}
 			}
 			return cost;
 		});
@@ -141,8 +147,9 @@ public final class LineDepotWays {
 			final int way = graph.arrivalWay(node);
 			Arrival leave = null;
 			for (final int leaveWay : new int[]{way, 1 - way}) {
-				final LegRouter.Leg leg = graph.leg(new LegRouter.Request(section, leaveWay == 1, siding, new long[0], null, false));
+				final LegRouter.Request request = new LegRouter.Request(section, leaveWay == 1, siding, new long[0], null, false);
 				for (final int toWay : new int[]{1, 0}) {
+					final LegRouter.Leg leg = graph.freeLeg(request, toWay == 1, section);
 					final double cost = graph.freeCost(leg, toWay == 1, section) + (leaveWay == way ? 0 : RailRouter.TURN_BACK_PENALTY);
 					if (cost < (leave == null ? Double.POSITIVE_INFINITY : leave.cost)) {
 						leave = new Arrival(cost, leaveWay, leg, toWay, leaveWay != way);
@@ -205,6 +212,11 @@ public final class LineDepotWays {
 	 * Into a station from the siding, or out of one to it: the leg, the way it leaves its start and arrives, and whether the
 	 * train turns back at the station.
 	 */
+	/**
+	 * How many times a leg is found again leaving out more of the line's stops it runs against ({@link Graph#freeLeg}).
+	 */
+	private static final int MAX_AVOID_ROUNDS = 4;
+
 	private static final class Arrival {
 
 		private final double cost;
@@ -287,6 +299,39 @@ public final class LineDepotWays {
 				}
 			}
 			return cost + AGAINST_WEIGHT * against;
+		}
+
+		/**
+		 * A leg between the siding and a station whose cheapest way runs against the line at another of the line's stops,
+		 * as through a crossover onto the other track (0.65.26), is found again with those stops run that way left out,
+		 * a few times at most, rather than given up: the train may keep to the track the line runs its way.
+		 *
+		 * @return the leg as found by the last request made, its way {@code toAlong} free of the line's stops run against
+		 * if there is one
+		 */
+		private LegRouter.Leg freeLeg(LegRouter.Request request, boolean toAlong, long station) {
+			LegRouter.Leg leg = leg(request);
+			for (int round = 0; round < MAX_AVOID_ROUNDS; round++) {
+				if (Double.isInfinite(leg.getCost(toAlong))) {
+					return leg;
+				}
+				final List<Long> against = new ArrayList<>();
+				for (final long[] step : leg.getSteps(toAlong)) {
+					if (step[0] != station && stopSections.contains(step[0]) && isAgainst(step)) {
+						against.add(step[0]);
+						against.add(step[1]);
+					}
+				}
+				if (against.isEmpty()) {
+					return leg;
+				}
+				final long[] avoid = Arrays.copyOf(leg.request.avoid, leg.request.avoid.length + against.size());
+				for (int i = 0; i < against.size(); i++) {
+					avoid[leg.request.avoid.length + i] = against.get(i);
+				}
+				leg = leg(new LegRouter.Request(request.fromSection, request.fromAlong, request.toSection, request.waypoints, request.line, request.turnAtStart, avoid));
+			}
+			return leg;
 		}
 
 		/**

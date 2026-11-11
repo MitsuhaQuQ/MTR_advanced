@@ -61,6 +61,14 @@ describe("syncProblems", () => {
       expect(JSON.parse(JSON.stringify(syncProblems(connection, model, draft)))).toEqual(expected)
     })
   }
+  it("adds why a siding has no way out or back, where the server knows (0.65.26)", () => {
+    const data = troubledData()
+    data.depots[0].sidings[0].noWayOutWhy = { "1000": "找到的路只能逆着本线站台 地税湖 3 走" }
+    const model = buildModel(data)
+    const texts = syncProblems("ok", model, fullDraft(model)).map(p => p.text)
+    expect(texts.some(text => text.includes("没有出库的路") && text.includes("（原因：找到的路只能逆着本线站台 地税湖 3 走）"))).toBe(true)
+    expect(texts.some(text => text.includes("回不到") && text.includes("原因"))).toBe(false)
+  })
   it("says only the connection without data", () => {
     expect(syncProblems("key", null, emptyDraft()).map(p => p.text)).toEqual(["页面的链接已经失效"])
   })

@@ -252,4 +252,100 @@ class MidLineDepotTest {
 			assertTrue(out.stopSteps.length >= 3, "the platform turned back at is a stop before the last");
 		}
 	}
+
+	/**
+	 * As the Q world's express depot (0.65.26): the way out goes in by the terminus A only, through the west platform of C
+	 * named on its path; the cheapest way from there to A crosses over between C and B onto the east track and runs B's east
+	 * platform against the line, as the west track there is slow. That way is left out and the train keeps to the west track,
+	 * rather than finding no way out at all.
+	 */
+	@Test
+	void aCrossoverOntoTheOtherTrackDoesntStopTheWayOut() {
+		final List<TrackSections.Rail> rails = new ArrayList<>();
+		final String[] names = {"A", "B", "C", "D"};
+		final Map<String, TrackSections.Rail> platforms = new LinkedHashMap<>();
+		for (int i = 0; i < 4; i++) {
+			final int x = i * 200;
+			final TrackSections.Rail east = rail(x, 0, x + 20, 0, SectionType.PLATFORM, 10 + i);
+			final TrackSections.Rail west = rail(x, 10, x + 20, 10, SectionType.PLATFORM, 20 + i);
+			platforms.put(names[i] + " east", east);
+			platforms.put(names[i] + " west", west);
+			rails.add(east);
+			rails.add(west);
+		}
+		rails.add(track(20, 0, 80, 0));
+		rails.add(track(80, 0, 200, 0));
+		rails.add(track(220, 0, 250, 0));
+		rails.add(track(250, 0, 290, 0));
+		rails.add(track(290, 0, 380, 0));
+		rails.add(track(380, 0, 400, 0));
+		rails.add(track(420, 0, 600, 0));
+		rails.add(track(20, 10, 40, 10));
+		// The west track between A and B is slow, so the cheapest way west from C is over on the east track
+		final TrackSections.Rail slow = track(40, 10, 200, 10);
+		rails.add(new TrackSections.Rail(slow.node1, slow.node2, 160, slow.shape, 10, true, SectionType.NORMAL, true, true, 0));
+		rails.add(track(220, 10, 250, 10));
+		rails.add(track(250, 10, 290, 10));
+		rails.add(track(290, 10, 400, 10));
+		rails.add(track(420, 10, 480, 10));
+		rails.add(track(480, 10, 600, 10));
+		// A a dead end of the west track, the east route crossing to the east track beyond it; turning back beyond D
+		rails.add(track(40, 10, 80, 0));
+		rails.add(track(620, 0, 660, 5));
+		rails.add(track(620, 10, 660, 5));
+		rails.add(rail(660, 5, 700, 5, SectionType.TURN_BACK, 0));
+		// The crossover between B and C, from the west track at 290 to the east track at 250
+		rails.add(track(250, 0, 290, 10));
+		// The depot, its lead joining the west track at 480 facing west, between C and D
+		final TrackSections.Rail siding = rail(500, 60, 540, 60, SectionType.SIDING, 99);
+		rails.add(siding);
+		rails.add(track(500, 60, 480, 10));
+		final Map<UUID, TrackSections.Rail> map = new HashMap<>();
+		rails.forEach(rail -> map.put(rail.getKey(), rail));
+		final TrackSections sections = new TrackSections();
+		sections.sync(map, Collections.emptyMap());
+		final TrackSections.Snapshot snapshot = sections.snapshot();
+		final double ratio = LegRouter.getMaxChordPerCost(snapshot, COORDINATES);
+		final RouteLegs.LegSource source = request -> LegRouter.find(snapshot, 0, Collections.emptyMap(), request, COORDINATES, ratio);
+		final long s = sections.getSectionOf(siding.getKey());
+		final List<RouteLegs.Plan> routes = new ArrayList<>();
+		final Set<Long> platformSections = new HashSet<>();
+		for (final List<String> stops : Arrays.asList(Arrays.asList("A west", "B east", "C east", "D east"), Arrays.asList("D west", "C west", "B west", "A west"))) {
+			final List<Long> stopSections = new ArrayList<>();
+			final List<long[]> waypoints = new ArrayList<>();
+			stops.forEach(stop -> {
+				stopSections.add(sections.getSectionOf(platforms.get(stop).getKey()));
+				waypoints.add(new long[0]);
+			});
+			final RouteLegs.Plan route = RouteLegs.plan(stopSections, waypoints, null, source);
+			assertTrue(route.isFound(), "route " + stops);
+			routes.add(route);
+		}
+		platforms.values().forEach(platform -> platformSections.add(sections.getSectionOf(platform.getKey())));
+		final long a = sections.getSectionOf(platforms.get("A west").getKey());
+		final long[] first = routes.get(0).steps.get(routes.get(0).stopSteps[0]);
+		// The cheapest way from the siding to A by itself runs B's east platform against the east route
+		final long bEast = sections.getSectionOf(platforms.get("B east").getKey());
+		boolean againstAtB = false;
+		for (final boolean fromAlong : new boolean[]{true, false}) {
+			final LegRouter.Leg cheapest = source.get(new LegRouter.Request(s, fromAlong, a, new long[0], null, false));
+			for (final boolean toAlong : new boolean[]{true, false}) {
+				if (cheapest.getSteps(toAlong) != null) {
+					for (final long[] step : cheapest.getSteps(toAlong)) {
+						againstAtB |= step[0] == bEast;
+					}
+				}
+			}
+		}
+		assertTrue(againstAtB, "the layout makes the cheapest way cross over to the east track");
+		// Out by A only, through C's west platform
+		final long[] cWest = {pos(400, 10), pos(420, 10)};
+		final RouteLegs.LegSource outSource = LineDepotWays.throughDepotLeg(s, cWest, snapshot, source);
+		final RouteLegs.Plan out = LineDepotWays.planOut(s, first[0], first[1] == 1, Collections.singleton(a), routes, null, snapshot, outSource);
+		assertTrue(out.isFound(), "out to A west: " + describe(out, platforms, sections));
+		for (final long[] step : out.steps) {
+			assertNotEquals(bEast, step[0], "kept to the west track: " + describe(out, platforms, sections));
+		}
+		assertEquals(1, out.steps.get(out.steps.size() - 1)[2], "turned back on A's platform");
+	}
 }

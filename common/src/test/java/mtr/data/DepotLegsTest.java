@@ -70,4 +70,39 @@ class DepotLegsTest {
 		assertEquals(Long.valueOf(100000), old.outMillis.get(11L));
 	}
 
+	@Test
+	void whyThereIsNoWayIsSavedAndSentAndOlderListsStillRead() {
+		final Map<Long, Long> out = new HashMap<>();
+		out.put(11L, 100000L);
+		final Map<Long, long[]> outReasons = new HashMap<>();
+		outReasons.put(12L, new long[]{DepotLegs.REASON_AGAINST, 31L, 32L});
+		// A platform with a way has no reason, and an unknown kind is dropped
+		outReasons.put(11L, new long[]{DepotLegs.REASON_NO_TRACK});
+		final Map<Long, long[]> backReasons = new HashMap<>();
+		backReasons.put(13L, new long[]{DepotLegs.REASON_ENTRANCE_UNSET});
+		backReasons.put(14L, new long[]{99});
+		final DepotLegs legs = new DepotLegs(10, out, Collections.emptyMap()).withUnreachable(new java.util.TreeSet<>(java.util.Arrays.asList(12L)), new java.util.TreeSet<>(java.util.Arrays.asList(13L, 14L))).withReasons(outReasons, backReasons);
+		assertEquals(1, legs.outReasons.size());
+		assertArrayEquals(new long[]{DepotLegs.REASON_AGAINST, 31L, 32L}, legs.outReasons.get(12L));
+		assertEquals(1, legs.backReasons.size());
+
+		final DepotLegs saved = DepotLegs.fromList(legs.toList());
+		assertArrayEquals(legs.outReasons.get(12L), saved.outReasons.get(12L));
+		assertArrayEquals(legs.backReasons.get(13L), saved.backReasons.get(13L));
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		legs.writePacket(packet);
+		final DepotLegs sent = DepotLegs.readPacket(packet);
+		assertArrayEquals(legs.outReasons.get(12L), sent.outReasons.get(12L));
+		assertArrayEquals(legs.backReasons.get(13L), sent.backReasons.get(13L));
+		assertEquals(0, packet.readableBytes());
+
+		// A list saved before reasons were kept: the same ways, no reasons
+		final java.util.List<Long> plain = legs.withReasons(Collections.emptyMap(), Collections.emptyMap()).toList();
+		final java.util.List<Long> older = plain.subList(0, plain.size() - 2);
+		final DepotLegs old = DepotLegs.fromList(older);
+		assertEquals(legs.unreachableOut, old.unreachableOut);
+		assertEquals(legs.unreachableBack, old.unreachableBack);
+		assertTrue(old.outReasons.isEmpty() && old.backReasons.isEmpty());
+	}
 }

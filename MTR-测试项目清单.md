@@ -844,6 +844,13 @@ S07 的 MP3 拒绝指绕过网页转换、直接向服务端发送原 MP3 字节
 
 最终验证：`build/release-06523-verified.log` 构建成功；common 443 项全部通过，transit-sim 574 项中 570 项通过、4 项跳过，零失败。Fabric/Forge 客户端与服务端 0.65.23 发布包已生成，资源包沿用 1.0.4。
 
+## 0.65.26 出入库经交叉渡线
+
+自动测试：`MidLineDepotTest.aCrossoverOntoTheOtherTrackDoesntStopTheWayOut`、`RouteLegsTest`（`avoid` 的键与存取）、`DepotLegsTest.whyThereIsNoWayIsSavedAndSentAndOlderListsStillRead`、`editor-web/test/sync.test.ts`（检查栏带原因）。Q 世界快照：田端高速按出入库规则出库到犬宫 1、东北泽 1 由走不通变为 30、79 条轨道；田端普通不变。
+
+- 游戏内：Q 世界换 0.65.26 客户端和服务端，刷新田端、田端高速路径并重新生成行路；日志里 S1 的 “no siding reaches them” 应消失，两座车厂按运用出车。
+- 检查栏：把某车厂出入库规则删掉后，应显示“没有出库的路（原因：存车线连到本线的车站不止一个……）”；恢复规则后提示消失。
+
 ## 0.65.25 路径失败提示
 
 自动测试：`RoutePathsTest.aKeyNodeOffTheWayNamesItselfAndTheStopsAroundIt`（支线上的必经节点给出 `WAYPOINT_UNREACHABLE`、节点和前后两站，去掉后能找到路），`RoutePathsTest.stopsThatCantBeReachedAreNamed`，`editor-web/test/untimed.test.ts`。Q 世界快照复现：S1 down快速 在田端 3 的必经节点 (-2200, 88, 2478) 不在去新郭德纲 3 的轨道上，原来只报“按行进方向走不通”。

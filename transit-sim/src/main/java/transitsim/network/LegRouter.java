@@ -54,6 +54,11 @@ public final class LegRouter {
 		 * which runs the way the line does (round 4, step 3).
 		 */
 		public final boolean turnAtStart;
+		/**
+		 * Sections the leg may not run a given way, as pairs of {section, 1 if along its order}: for a way out of or back
+		 * to a depot, the line's stops it would otherwise run against (0.65.26). The first and last stops are never left out.
+		 */
+		public final long[] avoid;
 		public final long key;
 
 		public Request(long fromSection, boolean fromAlong, long toSection, long[] waypoints, String line) {
@@ -61,12 +66,20 @@ public final class LegRouter {
 		}
 
 		public Request(long fromSection, boolean fromAlong, long toSection, long[] waypoints, String line, boolean turnAtStart) {
+			this(fromSection, fromAlong, toSection, waypoints, line, turnAtStart, new long[0]);
+		}
+
+		public Request(long fromSection, boolean fromAlong, long toSection, long[] waypoints, String line, boolean turnAtStart, long[] avoid) {
 			this.turnAtStart = turnAtStart;
+			this.avoid = avoid.clone();
 			this.fromSection = fromSection;
 			this.fromAlong = fromAlong;
 			this.toSection = toSection;
 			this.waypoints = waypoints.clone();
 			this.line = line;
+			if (avoid.length % 2 != 0) {
+				throw new IllegalArgumentException("Sections to avoid come in pairs");
+			}
 			long hash = mix(VERSION, fromSection);
 			hash = mix(hash, fromAlong ? 1 : 2);
 			hash = mix(hash, toSection);
@@ -76,7 +89,11 @@ public final class LegRouter {
 			}
 			hash = mix(hash, line == null ? 0 : line.hashCode() * 31L + line.length());
 			// Requests as before keep their keys
-			key = turnAtStart ? hash : mix(hash, 3);
+			hash = turnAtStart ? hash : mix(hash, 3);
+			for (final long value : avoid) {
+				hash = mix(hash, value);
+			}
+			key = avoid.length == 0 ? hash : mix(hash, avoid.length + 7);
 		}
 	}
 
@@ -143,6 +160,10 @@ public final class LegRouter {
 				writeLongs(output, domainSections);
 				writeLongs(output, domainNodes);
 				output.writeLong(badWaypoint);
+				// Last, so legs saved before are read the same
+				if (request.avoid.length > 0) {
+					writeLongs(output, request.avoid);
+				}
 				return bytes.toByteArray();
 			} catch (java.io.IOException e) {
 				throw new java.io.UncheckedIOException(e);
@@ -186,7 +207,11 @@ public final class LegRouter {
 			final long[] domainSections = readLongs(input);
 			final long[] domainNodes = readLongs(input);
 			final long badWaypoint = input.readLong();
-			return new Leg(new Request(fromSection, fromAlong, toSection, waypoints, line, turnAtStart), version, costs, steps, domainSections, domainNodes, badWaypoint);
+			final long[] avoid = input.available() > 0 ? readLongs(input) : new long[0];
+			if (avoid.length % 2 != 0) {
+				throw new java.io.IOException("Bad sections to avoid");
+			}
+			return new Leg(new Request(fromSection, fromAlong, toSection, waypoints, line, turnAtStart, avoid), version, costs, steps, domainSections, domainNodes, badWaypoint);
 		}
 
 		/**
@@ -454,6 +479,15 @@ public final class LegRouter {
 		/**
 		 * @param start a state the leg starts with, on its first stop, which needn't be the route's line's
 		 */
+		private boolean avoids(long section, boolean along) {
+			for (int i = 0; i < request.avoid.length; i += 2) {
+				if (request.avoid[i] == section && (request.avoid[i + 1] == 1) == along) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		private void push(State parent, TrackSections.Section section, boolean along, int stageBefore, double cost, boolean reversal, boolean start) {
 			domainSections.add(section.hash);
 			// The first stop is started on whichever way it is laid, as RailRouter starts on it
@@ -462,6 +496,9 @@ public final class LegRouter {
 			}
 			final boolean stop = section.hash == request.fromSection || section.hash == request.toSection;
 			if (!start && !stop && !TrackOwnership.mayRun(owners.get(section.hash), request.line)) {
+				return;
+			}
+			if (!start && !stop && avoids(section.hash, along)) {
 				return;
 			}
 			int stage = stageBefore;

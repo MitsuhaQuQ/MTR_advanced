@@ -1,5 +1,7 @@
 # MTR 代码说明与主要流程
 
+0.65.26 出入库遇交叉渡线：`LineDepotWays.Graph.freeLeg` 在车厂与车站之间的最短路线逆着本线其他站台走时（常见于经交叉渡线到了对向线），把这些站台按该方向加入 `LegRouter.Request.avoid` 重新找路，最多 4 轮，不再直接判为走不通；`throughDepotLeg` 保留 `avoid`。`RoutePaths.findDepotWay` 新增带 `why` 的重载，走不通时由 `diagnoseDepotWay` 给出原因（轨道不连通、只能逆着站台走并列出站台、多个出入口未设规则、规则指定的车站或路径走不通、只能反向到站且无处折返）。`Depot.measureDepotWays` 把原因存入 `DepotLegs.outReasons/backReasons`（存档列表和数据包在原字段之后追加），写服务端日志；`EditorData` 以 `noWayOutWhy/noWayBackWhy` 交给网页检查栏，文案在 `PathFailureText.depotWay`。
+
 0.65.25 路径失败提示：`RoutePaths.diagnose` 在笼统的走不通之前，先对走不通的那一段逐个加入该段的必经节点重试，不经过时能走通、经过某个节点就走不通，则给出 `PathFailure.Type.WAYPOINT_UNREACHABLE`（位置为该节点，`node1`/`node2` 为前后两站的站台）。`PathFailure.diagnose` 的 `DISCONNECTED`、`NO_ROUTE` 也带上前后两站站台。`PathFailureText` 用新文案写出站名和节点；服务端日志“found no path for route …”后附 `RoutePaths.describe` 的原因。网页运行图（`RunningDiagram.tsx`）不再画没有各站时刻的线路（原来按区间 0 秒画成竖线），改在图上方列出 `model.untimedNotes` 给出的线路和原因。
 
 0.65.24 补充修正：`PathFinder.appendPath` 改为整段 `addAll`，拼接到 `JoinedPath` 的出入库、回其他存车线路径保持为一个分段，不再按轨道逐条拆成单元素分段。`Siding` 读档时逐条读取 `duty_ledger`，逐列读取列车（`loadTrain`）：某条定义摘要不符，或列车引用的定义缺失，只跳过该条或该列车并写日志，存车线本身照常载入。
