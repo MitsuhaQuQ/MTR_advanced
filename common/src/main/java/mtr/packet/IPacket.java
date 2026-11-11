@@ -107,6 +107,10 @@ public interface IPacket {
 	 */
 	ResourceLocation PACKET_CONSOLE = new ResourceLocation(MTR.MOD_ID, "packet_console");
 	ResourceLocation PACKET_DISPATCH = new ResourceLocation(MTR.MOD_ID, "packet_dispatch");
+	/**
+	 * The debug display of the train a player holding the brush looks at (0.65.31): asked for and sent back.
+	 */
+	ResourceLocation PACKET_TRAIN_DEBUG = new ResourceLocation(MTR.MOD_ID, "packet_train_debug");
 	ResourceLocation PACKET_UPDATE_LIFTS = new ResourceLocation(MTR.MOD_ID, "update_lifts");
 	ResourceLocation PACKET_DELETE_LIFTS = new ResourceLocation(MTR.MOD_ID, "delete_lifts");
 	ResourceLocation PACKET_UPDATE_TRAIN_PASSENGERS = new ResourceLocation(MTR.MOD_ID, "update_train_passengers");

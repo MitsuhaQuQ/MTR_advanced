@@ -510,7 +510,7 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 		schedules = new HashSet<>();
 		platforms.values().forEach(platform -> {
 			if (platformIds.isEmpty() || platformIds.contains(platform.id)) {
-				final Set<ScheduleEntry> scheduleForPlatform = ClientData.SCHEDULES_FOR_PLATFORM.get(platform.id);
+				final Set<ScheduleEntry> scheduleForPlatform = ClientData.ALL_SCHEDULES_FOR_PLATFORM.get(platform.id);
 				if (scheduleForPlatform != null) {
 					scheduleForPlatform.forEach(scheduleEntry -> {
 						final Route route = ClientData.DATA_CACHE.routeIdMap.get(scheduleEntry.routeId);

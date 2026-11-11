@@ -189,7 +189,7 @@ public class RailwayDataRouteFinderModule extends RailwayDataModuleBase {
 			int waitingTime = 0;
 
 			if (connectionDetails != null && verifyTime(thisPosLong, elapsedTime + connectionDetails.shortestDuration)) {
-				final List<ScheduleEntry> scheduleEntries = railwayData.getSchedulesAtPlatform(connectionDetails.platformStart.id);
+				final List<ScheduleEntry> scheduleEntries = railwayData.getAllSchedulesAtPlatform(connectionDetails.platformStart.id);
 				if (scheduleEntries != null) {
 					int lastDeparture = Integer.MIN_VALUE;
 					for (final ScheduleEntry scheduleEntry : scheduleEntries) {

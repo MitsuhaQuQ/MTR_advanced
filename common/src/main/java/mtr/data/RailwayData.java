@@ -1331,7 +1331,18 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		});
 	}
 
+	/**
+	 * The arrivals at a platform as other mods are given them (0.65.31): only trains stopping there that haven't come
+	 * already ({@link ScheduleEntry#shownToOtherMods}). This mod's own code uses {@link #getAllSchedulesAtPlatform}.
+	 */
 	public List<ScheduleEntry> getSchedulesAtPlatform(long platformId) {
+		return ScheduleEntry.forOtherMods(schedulesForPlatform.get(platformId), System.currentTimeMillis());
+	}
+
+	/**
+	 * Every arrival at a platform, passing trains and planned ones too.
+	 */
+	public List<ScheduleEntry> getAllSchedulesAtPlatform(long platformId) {
 		return schedulesForPlatform.get(platformId);
 	}
 

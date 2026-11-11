@@ -1,5 +1,7 @@
 # MTR Advanced
 
+0.65.31 adds a debug display: holding the brush and looking at a train shows its planned and expected times, lateness, stop time, doors, why it is held and its speed cap. Other mods reading platform arrivals (YJCM PIDS and the like) now get only trains that stop there and haven't come already. Update server and clients together.
+
 0.65.30 times door closing chimes and DK3 door animations by when the server will close the doors, not by the platform rail's stop time: a timetable departure later than that no longer sounds the chime while the doors stay open. Update server and clients together.
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.

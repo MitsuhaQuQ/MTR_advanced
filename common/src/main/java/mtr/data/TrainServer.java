@@ -1058,6 +1058,48 @@ public class TrainServer extends Train {
 	}
 
 	/**
+	 * What a player holding the brush sees of the train looked at (0.65.31): what it runs, its next stop and the times
+	 * planned there, how late it is, how long it has stood and how long until the doors close, why it is held, and how
+	 * fast it may go. Each line as {key, value}; a value starting with "#" names a text the client has for it.
+	 */
+	public List<String[]> getDebugLines(DataCache dataCache) {
+		final List<String[]> lines = new ArrayList<>();
+		final java.text.SimpleDateFormat clock = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT);
+		clock.setTimeZone(TimetableConfig.getTimeZone());
+		final java.util.function.LongFunction<String> time = millis -> millis <= 0 ? "-" : clock.format(new java.util.Date(millis));
+		final java.util.function.LongFunction<String> platformName = platformId -> {
+			final Platform platform = dataCache.platformIdMap.get(platformId);
+			final Station station = dataCache.platformIdToStation.get(platformId);
+			return platform == null ? "-" : (station == null ? "" : IGui.formatStationName(station.name) + " ") + platform.name;
+		};
+		final long now = System.currentTimeMillis();
+		final Siding siding = dataCache.sidingIdMap.get(sidingId);
+		final Depot depot = siding == null ? null : dataCache.sidingIdToDepot.get(siding.id);
+		final Route route = dataCache.routeIdMap.get(service.getTripRouteId());
+		lines.add(new String[]{"train", id + " (" + trainId + ")"});
+		lines.add(new String[]{"siding", (depot == null ? "" : IGui.formatStationName(depot.name) + " ") + (siding == null ? String.valueOf(sidingId) : siding.name)});
+		lines.add(new String[]{"route", route == null ? "-" : IGui.formatStationName(route.name)});
+		lines.add(new String[]{"duty", service.isOnDuty() ? String.valueOf(service.getDutySlot()) : "#none"});
+		lines.add(new String[]{"trip", time.apply(service.getTripMillis())});
+		lines.add(new String[]{"next_stop", platformName.apply(getNextStopId())});
+		final transitsim.plan.RouteTimetable.StopPlan plan = service.getPlanAt(nextStoppingIndex);
+		lines.add(new String[]{"planned_arrival", plan == null ? "-" : time.apply(service.getPlannedMillis(plan.arrivalMillis))});
+		lines.add(new String[]{"planned_departure", plan == null ? "-" : time.apply(service.getPlannedMillis(plan.departureMillis))});
+		final int doorsClose = TrainRules.getTicksUntilDoorsClose(rules);
+		lines.add(new String[]{"expected_departure", doorsClose < 0 ? "#unknown" : time.apply(now + (long) (doorsClose + transitsim.motion.MotionConstants.DOOR_MOVE_TIME + transitsim.motion.MotionConstants.DOOR_DELAY) * transitsim.motion.MotionConstants.MILLIS_PER_TICK)});
+		lines.add(new String[]{"late", Math.round(service.getLateMillis() / 1000F) + " s"});
+		final boolean standing = speed == 0 && isOnRoute;
+		lines.add(new String[]{"dwell", standing ? String.format(java.util.Locale.ROOT, "%.1f / %.1f s", elapsedDwellTicks / 20F, getTotalDwellTicks() / 20F) : "-"});
+		lines.add(new String[]{"doors_close", doorsClose < 0 ? "-" : String.format(java.util.Locale.ROOT, "%.1f s", doorsClose / 20F)});
+		final String hold = standing ? TrainRules.describeHold(rules) : "";
+		lines.add(new String[]{"hold", hold.isEmpty() ? "-" : "#hold_" + hold});
+		lines.add(new String[]{"speed", String.format(java.util.Locale.ROOT, "%.1f km/h", speed * 72)});
+		lines.add(new String[]{"cruise_cap", Float.isInfinite(cruiseCap) || cruiseCap <= 0 ? "-" : String.format(java.util.Locale.ROOT, "%.1f km/h", cruiseCap * 72)});
+		lines.add(new String[]{"state", (isOnRoute ? "#on_route" : "#in_siding") + (isCurrentlyManual ? " #manual" : "") + (doorTarget ? " #doors_open" : "")});
+		return lines;
+	}
+
+	/**
 	 * @return the platform of its next stop, or 0
 	 */
 	public long getNextStopId() {

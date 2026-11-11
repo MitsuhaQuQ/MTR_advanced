@@ -88,7 +88,15 @@ public final class ClientData {
 		mtr.RegistryClient.sendToServer(mtr.packet.IPacket.PACKET_REQUEST_TRAIN_RESYNC, new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 	public static final List<DataConverter> RAIL_ACTIONS = new ArrayList<>();
+	/**
+	 * The arrivals at each platform as other mods read them (0.65.31): only trains stopping there that haven't come
+	 * already ({@link ScheduleEntry#shownToOtherMods}); this mod's displays use {@link #ALL_SCHEDULES_FOR_PLATFORM}.
+	 */
 	public static final Map<Long, Set<ScheduleEntry>> SCHEDULES_FOR_PLATFORM = new HashMap<>();
+	/**
+	 * Every arrival at each platform, passing trains and planned ones too, for this mod's own displays.
+	 */
+	public static final Map<Long, Set<ScheduleEntry>> ALL_SCHEDULES_FOR_PLATFORM = new HashMap<>();
 
 	public static final ClientCache DATA_CACHE = new ClientCache(STATIONS, PLATFORMS, SIDINGS, ROUTES, DEPOTS, LIFTS);
 
@@ -337,7 +345,11 @@ public final class ClientData {
 		}
 
 		client.execute(() -> {
-			clearAndAddAll(SCHEDULES_FOR_PLATFORM, tempSchedulesForPlatform);
+			clearAndAddAll(ALL_SCHEDULES_FOR_PLATFORM, tempSchedulesForPlatform);
+			final long now = System.currentTimeMillis();
+			final Map<Long, Set<ScheduleEntry>> forOtherMods = new HashMap<>();
+			tempSchedulesForPlatform.forEach((platformId, entries) -> forOtherMods.put(platformId, new HashSet<>(ScheduleEntry.forOtherMods(entries, now))));
+			clearAndAddAll(SCHEDULES_FOR_PLATFORM, forOtherMods);
 			SIGNAL_BLOCKS.writeSignalBlockStatus(signalBlockStatus);
 			OCCUPIED_RAILS.clear();
 			OCCUPIED_RAILS.putAll(occupiedRails);

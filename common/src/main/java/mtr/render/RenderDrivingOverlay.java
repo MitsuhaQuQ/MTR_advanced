@@ -30,6 +30,8 @@ public class RenderDrivingOverlay implements IGui {
 	}
 
 	public static void render(PoseStack matrices) {
+		// The brush's debug display of the train looked at (0.65.31), drawn here so both loaders draw it
+		RenderTrainDebug.render(matrices);
 		if (coolDown > 0) {
 			coolDown--;
 		} else {

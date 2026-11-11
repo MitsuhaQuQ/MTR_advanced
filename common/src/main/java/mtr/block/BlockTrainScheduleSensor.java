@@ -138,7 +138,7 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 					return;
 				}
 
-				final List<ScheduleEntry> schedules = railwayData.getSchedulesAtPlatform(platformId);
+				final List<ScheduleEntry> schedules = railwayData.getAllSchedulesAtPlatform(platformId);
 				if (schedules == null) {
 					return;
 				}

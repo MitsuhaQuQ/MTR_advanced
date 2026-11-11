@@ -120,6 +120,48 @@ public final class TrainRules {
 		return toClose + held;
 	}
 
+	/**
+	 * Why a train standing at a stop is held there, for the debug display (0.65.31), checked the way
+	 * {@link #isHeldAtStop} does but choosing nothing: the choices it makes there change the train.
+	 *
+	 * @return "dispatch", "staying", "duty_departure", "timetable", "overtake", "turn_back", "run" (the run ahead not
+	 * granted yet), or "" for none of these
+	 */
+	public static String describeHold(Train train) {
+		final MotionState state = train.getState();
+		if (state.isCurrentlyManual()) {
+			return "";
+		}
+		final TrainService<?> service = train.getService();
+		if (service.isDispatchHeld()) {
+			return "dispatch";
+		}
+		if (service.isStayingOnLine()) {
+			return "staying";
+		}
+		final long currentMillis = train.getMillis();
+		final long dutyDepartureMillis = service.getDutyDepartureMillis();
+		if (dutyDepartureMillis > 0 && currentMillis < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
+			return "duty_departure";
+		}
+		final long turnBackLeaveMillis = service.getTurnBackLeaveMillis();
+		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis) {
+			return "turn_back";
+		}
+		final int nextStoppingIndex = state.getNextStoppingIndex();
+		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
+		if (stopPlan != null && stopPlan.isTimed) {
+			final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
+			if (isWaitingForDeparture(departureMillis, currentMillis)) {
+				return "timetable";
+			}
+			if (stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && train.isOvertakingTrainComing(train.getStopId(nextStoppingIndex), service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
+				return "overtake";
+			}
+		}
+		return service.isOnDuty() && !train.isRunGranted(nextStoppingIndex + 1) ? "run" : "";
+	}
+
 	public static boolean isHeldAtStop(Train train) {
 		final MotionState state = train.getState();
 		if (state.isCurrentlyManual()) {

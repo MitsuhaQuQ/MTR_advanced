@@ -472,6 +472,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_CONTINGENCIES, mtr.packet.ContingencyPackets::receiveC2S);
 		PacketGuard.register(PACKET_NETWORK_SETTINGS, mtr.packet.NetworkSettingsPackets::receiveC2S);
 		PacketGuard.register(PACKET_CONSOLE, mtr.packet.DispatchConsole::receiveRequestC2S);
+		PacketGuard.register(PACKET_TRAIN_DEBUG, mtr.packet.TrainDebugPackets::receiveRequestC2S);
 		PacketGuard.register(PACKET_DISPATCH, mtr.packet.DispatchConsole::receiveCommandC2S);
 		PacketGuard.register(PACKET_REQUEST_TRAIN_RESYNC, (server, player, packet) -> PacketGuard.execute(server, () -> {
 			final RailwayData railwayData = RailwayData.getInstance(Compat.getLevel(player));

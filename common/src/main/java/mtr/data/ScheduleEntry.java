@@ -1,5 +1,9 @@
 package mtr.data;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
 import net.minecraft.network.FriendlyByteBuf;
 
 public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
@@ -36,6 +40,32 @@ public class ScheduleEntry implements Comparable<mtr.data.ScheduleEntry> {
 		this.scheduledMillis = scheduledMillis;
 		this.planned = planned;
 		this.standingForDuty = standingForDuty;
+	}
+
+	/**
+	 * Whether other mods reading the arrivals at a platform are given this one (0.65.31): only trains that stop there and
+	 * haven't come already. They don't know that a train passes, or that a planned arrival is only a plan, which this
+	 * mod's own displays tell apart, so a passing express would show as stopping and a past plan would stay on their
+	 * displays.
+	 */
+	public static boolean shownToOtherMods(ScheduleEntry entry, long now) {
+		return !entry.pass && (!entry.planned || entry.arrivalMillis > now);
+	}
+
+	/**
+	 * @return the arrivals other mods are given ({@link #shownToOtherMods}), or null for none
+	 */
+	public static List<ScheduleEntry> forOtherMods(Collection<ScheduleEntry> entries, long now) {
+		if (entries == null) {
+			return null;
+		}
+		final List<ScheduleEntry> shown = new ArrayList<>();
+		entries.forEach(entry -> {
+			if (shownToOtherMods(entry, now)) {
+				shown.add(entry);
+			}
+		});
+		return shown;
 	}
 
 	public ScheduleEntry(FriendlyByteBuf packet) {
