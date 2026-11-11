@@ -1,5 +1,7 @@
 # MTR Advanced
 
+0.65.23 shares indexed revenue, connection and depot-leg templates instead of expanding daily duty geometry. Live trains query segment indices and save compact references to archived connection ledgers and path keys. Geometry and speed-profile materialization are bounded; snapshot versions are SimDataset 19 and RunRecord 6, with older records still readable. Update server and clients together.
+
 An improved fork of [Minecraft Transit Railway](https://github.com/Minecraft-Transit-Railway/Minecraft-Transit-Railway) 3.x. It is based on `3.2.2-hotfix-1`, the current version is `3.2.2-hotfix-2`, and Minecraft 1.20.1 is the main target.
 
 The goal is to take MTR from running trains to operating a real network: routes you can control, timetables you can trust and trains that behave predictably.
