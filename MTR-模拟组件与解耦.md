@@ -1288,6 +1288,8 @@ PlanRoute 新增默认可选 getTimingBaseline（旧宿主返回 null 保持旧�
 
 DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_ledger 定义表；RunRecord 6 随快照携带当前列车所引用的定义，独立进程也能恢复。SimDataset 19 支持模板及索引编码，旧平铺路径及嵌入式接续记录继续可读。正在执行的旧计划由列车持有，不因新计划产生而被替换；无引用的内存版本可回收。原 path_pieces 格式保持不变。
 
+0.65.32：`TrainRules.getHoldReason`（`isHeldAtStop` 改为调用它），`HeadlessTrain.getHoldReason`/`wasRailBlocked`；`DoorCloseTimeTest` 增加停到点仍未走时为 -1 的情况。
+
 0.65.31：`TrainRules.describeHold` 加在组件，与 `isHeldAtStop` 同序检查但不调用任何 `choose*`，只供调试显示。
 
 0.65.30：`TrainRules.getTicksUntilDoorsClose` 加在组件，纯函数部分测试 `DoorCloseTimeTest`；游戏把结果随列车包发给客户端（网络包变化）。

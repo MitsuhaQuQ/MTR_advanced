@@ -75,7 +75,8 @@ public final class TrainRules {
 	 * makes too short, so a closing chime sounded while the doors stayed open.
 	 *
 	 * @return ticks until the doors start to close, or -1 if the doors aren't open or the train is held for something
-	 * whose end isn't known (a dispatcher, an overtaking train, the run ahead not granted yet)
+	 * whose end isn't known (a dispatcher, an overtaking train, the run ahead not granted yet, a way on to choose, the
+	 * rail ahead taken)
 	 */
 	public static int getTicksUntilDoorsClose(Train train) {
 		final MotionState state = train.getState();
@@ -114,28 +115,40 @@ public final class TrainRules {
 	 * @param holdUntilMillis until when the train is held with its doors open, or 0
 	 */
 	public static int getTicksUntilDoorsClose(int totalDwellTicks, float elapsedDwellTicks, long holdUntilMillis, long currentMillis) {
+		// Stood until the doors would start to close and still standing: held for something whose end isn't known here (a
+		// way on to choose, the rail ahead taken), so when the doors close isn't known either
+		if (holdUntilMillis <= currentMillis && elapsedDwellTicks >= totalDwellTicks - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1F) {
+			return -1;
+		}
 		final float closeAt = totalDwellTicks - MotionConstants.DOOR_DELAY - Math.min(MotionConstants.DOOR_MOVE_TIME, totalDwellTicks / 2 - MotionConstants.DOOR_DELAY);
 		final int toClose = (int) Math.max(0, Math.ceil(closeAt - elapsedDwellTicks));
 		final int held = holdUntilMillis > currentMillis ? (int) ((holdUntilMillis - currentMillis + MotionConstants.MILLIS_PER_TICK - 1) / MotionConstants.MILLIS_PER_TICK) : 0;
 		return toClose + held;
 	}
 
+	public static boolean isHeldAtStop(Train train) {
+		return !getHoldReason(train).isEmpty();
+	}
+
 	/**
-	 * Why a train standing at a stop is held there, for the debug display (0.65.31), checked the way
-	 * {@link #isHeldAtStop} does but choosing nothing: the choices it makes there change the train.
+	 * Whether a train standing at a stop is held there and why, deciding as {@link #isHeldAtStop} does, the choices of a
+	 * way on included (0.65.31): the train keeps the answer, which the debug display shows.
 	 *
-	 * @return "dispatch", "staying", "duty_departure", "timetable", "overtake", "turn_back", "run" (the run ahead not
-	 * granted yet), or "" for none of these
+	 * @return "" if it isn't held, or "dispatch", "staying", "duty_departure", "turn_back", "timetable", "overtake",
+	 * "depot_return", "duty_return", "turn_back_way", "dispatch_way", "hand_over", "early_turn", "skip" or "run"
 	 */
-	public static String describeHold(Train train) {
+	public static String getHoldReason(Train train) {
 		final MotionState state = train.getState();
 		if (state.isCurrentlyManual()) {
 			return "";
 		}
 		final TrainService<?> service = train.getService();
+		// Held or standing longer by a dispatcher (D6)
 		if (service.isDispatchHeld()) {
 			return "dispatch";
 		}
+		// A train on a duty stays overnight at its last stop, waits for each segment's planned departure, and doesn't leave
+		// onto rails another train of a duty has booked the other way
 		if (service.isStayingOnLine()) {
 			return "staying";
 		}
@@ -144,6 +157,7 @@ public final class TrainRules {
 		if (dutyDepartureMillis > 0 && currentMillis < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
 			return "duty_departure";
 		}
+		// On a turn back rail before its next service, it waits there until it's time to run to the platform
 		final long turnBackLeaveMillis = service.getTurnBackLeaveMillis();
 		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis) {
 			return "turn_back";
@@ -159,49 +173,19 @@ public final class TrainRules {
 				return "overtake";
 			}
 		}
-		return service.isOnDuty() && !train.isRunGranted(nextStoppingIndex + 1) ? "run" : "";
-	}
-
-	public static boolean isHeldAtStop(Train train) {
-		final MotionState state = train.getState();
-		if (state.isCurrentlyManual()) {
-			return false;
-		}
-		final TrainService<?> service = train.getService();
-		// Held or standing longer by a dispatcher (D6)
-		if (service.isDispatchHeld()) {
-			return true;
-		}
-		// A train on a duty stays overnight at its last stop, waits for each segment's planned departure, and doesn't leave
-		// onto rails another train of a duty has booked the other way
-		if (service.isStayingOnLine()) {
-			return true;
-		}
-		final long currentMillis = train.getMillis();
-		final long dutyDepartureMillis = service.getDutyDepartureMillis();
-		if (dutyDepartureMillis > 0 && currentMillis < dutyDepartureMillis - DOOR_CLOSE_MILLIS) {
-			return true;
-		}
-		// On a turn back rail before its next service, it waits there until it's time to run to the platform
-		final long turnBackLeaveMillis = service.getTurnBackLeaveMillis();
-		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis) {
-			return true;
-		}
-		final int nextStoppingIndex = state.getNextStoppingIndex();
-		final RouteTimetable.StopPlan stopPlan = service.getPlanAt(nextStoppingIndex);
-		if (stopPlan != null && stopPlan.isTimed) {
-			final long departureMillis = service.getPlannedMillis(stopPlan.departureMillis);
-			if (isWaitingForDeparture(departureMillis, currentMillis) || stopPlan.overtake && currentMillis < departureMillis + RouteTimetable.MAX_OVERTAKE_WAIT_MILLIS && train.isOvertakingTrainComing(train.getStopId(nextStoppingIndex), service.getPlannedMillis(stopPlan.arrivalMillis), departureMillis, currentMillis)) {
-				return true;
-			}
-		}
 		// The turn back rail is taken once the train is ready to go, so it isn't kept from other trains while this one waits
 		// Passing stops a plan or a dispatcher has it pass (D3) is chosen last, on the path the other choices left it on
-		if (!train.isContinuousMovement() && (service.chooseDepotReturn() || service.chooseDutyReturn() || service.chooseTurnBack() || service.chooseDispatch() || service.chooseHandOver() || service.chooseEarlyTurn() || service.chooseSkip())) {
-			return true;
+		if (!train.isContinuousMovement()) {
+			if (service.chooseDepotReturn()) return "depot_return";
+			if (service.chooseDutyReturn()) return "duty_return";
+			if (service.chooseTurnBack()) return "turn_back_way";
+			if (service.chooseDispatch()) return "dispatch_way";
+			if (service.chooseHandOver()) return "hand_over";
+			if (service.chooseEarlyTurn()) return "early_turn";
+			if (service.chooseSkip()) return "skip";
 		}
 		// The run is asked for last, on the path the train leaves by, so it isn't kept from other trains while this one waits
-		return service.isOnDuty() && !train.isRunGranted(nextStoppingIndex + 1);
+		return service.isOnDuty() && !train.isRunGranted(nextStoppingIndex + 1) ? "run" : "";
 	}
 
 	/**

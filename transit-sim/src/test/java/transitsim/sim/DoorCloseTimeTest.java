@@ -17,9 +17,12 @@ class DoorCloseTimeTest {
 		final int closeAt = total - MotionConstants.DOOR_DELAY - MotionConstants.DOOR_MOVE_TIME;
 		assertEquals(closeAt, TrainRules.getTicksUntilDoorsClose(total, 0, 0, 1000));
 		assertEquals(closeAt - 100, TrainRules.getTicksUntilDoorsClose(total, 100, 0, 1000));
-		assertEquals(0, TrainRules.getTicksUntilDoorsClose(total, closeAt + 5, 0, 1000));
-		// The doors open and close as they do when the stop is short (areDoorsOpen)
-		assertEquals(60 - MotionConstants.DOOR_DELAY - (30 - MotionConstants.DOOR_DELAY), TrainRules.getTicksUntilDoorsClose(60, 0, 0, 1000));
+		// Stood that long and still standing with nothing known to wait for: held for a way on or the rail ahead, so not known
+		assertEquals(-1, TrainRules.getTicksUntilDoorsClose(total, closeAt - 1, 0, 1000));
+		assertEquals(-1, TrainRules.getTicksUntilDoorsClose(total, closeAt + 5, 0, 1000));
+		// A stop shorter than the doors take: the train is asked whether it may go from the start, so when the doors close
+		// isn't known ahead, and the clients go by the doors themselves
+		assertEquals(-1, TrainRules.getTicksUntilDoorsClose(60, 0, 0, 1000));
 	}
 
 	@Test
@@ -28,7 +31,8 @@ class DoorCloseTimeTest {
 		final int total = 400;
 		final float frozen = total - MotionConstants.DOOR_MOVE_TIME - MotionConstants.DOOR_DELAY - 1;
 		assertEquals(1 + 30 * 20, TrainRules.getTicksUntilDoorsClose(total, frozen, 31000, 1000));
-		assertEquals(1, TrainRules.getTicksUntilDoorsClose(total, frozen, 500, 1000));
+		// The hold over and still standing: held for something else now
+		assertEquals(-1, TrainRules.getTicksUntilDoorsClose(total, frozen, 500, 1000));
 		// A part of a tick counts as a whole one
 		assertEquals(1 + 1, TrainRules.getTicksUntilDoorsClose(total, frozen, 1010, 1000));
 	}

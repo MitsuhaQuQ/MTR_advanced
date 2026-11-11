@@ -1,5 +1,7 @@
 # MTR 代码说明与主要流程
 
+0.65.32 关门时间与扣车原因：`TrainRules.getHoldReason` 取代 `isHeldAtStop` 的判断主体（顺序与调用不变，返回原因），游戏 `TrainServer.isHeldAtStop`/`isRailBlocked` 和组件 `TickRunner.HeadlessTrain` 记下最近一次的扣车原因与前方占用，游戏从组件同步时一并复制；调试面板只在停站时间到点后显示它（含选折返去向、前方占用等）。`getTicksUntilDoorsClose` 在停到该关门却仍未走、且没有已知结束时刻时返回 -1（调试面板预计发车显示“未知”，客户端关门声等门真正开始关闭再播）；`DwellTimeBveTrainSound` 修正提示音短于关门动作时永不播放的问题。删除 0.65.31 的 `describeHold`。
+
 0.65.31 刷子调试显示与附加包到站信息：手持刷子准星对着列车时，`RenderTrainDebug`（由 `RenderDrivingOverlay.render` 调用，两种加载器共用）找出最近的列车，经 `TrainDebugPackets`（`PACKET_TRAIN_DEBUG`，每秒最多一次）向服务端请求 `TrainServer.getDebugLines`：列车、车厂/存车线、线路、运用、班次、下一停车站、计划到发、预计发车、晚点、已停/停站时间、离关门、扣车原因（`TrainRules.describeHold`，不做选择、无副作用）、速度、控速上限、状态；以 `#` 开头的值由客户端翻译（`gui.mtr.train_debug_*`）。附加包：`RailwayData.getSchedulesAtPlatform` 与 `ClientData.SCHEDULES_FOR_PLATFORM` 只给停站且未过时的到站（`ScheduleEntry.shownToOtherMods`），本模组的 PIDS、车次传感器、路径查找改用 `getAllSchedulesAtPlatform`/`ALL_SCHEDULES_FOR_PLATFORM`。
 
 0.65.30 关门声与停站时间：`TrainRules.getTicksUntilDoorsClose`（组件）按停站总时长、门动作时间以及已知的计划发车/运用发车扣车算出离开始关门还有多少 tick；调度扣车、待避、前方未放行等结束时间未知时为 -1。`TrainServer.getTicksUntilDoorsClose` 调用它，`Train.writePacket`/`writeStatePacket` 在包尾（ANTE 追加内容之前）写入，客户端 `Train`/`TrainClient.State` 读入并以接收时刻倒计时（`getDoorsCloseTicksLeft`）。ANTE 的 `DwellTimeBveTrainSound` 关门提示音与 `RenderTrainDK3` 门动画改按它计时，不再按站台轨道停站时间；未知时提示音在门开始关闭时播放、DK3 门保持打开。

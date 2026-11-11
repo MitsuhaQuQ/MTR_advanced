@@ -73,7 +73,8 @@ public class DwellTimeBveTrainSound extends TrainSoundBase {
         // chime waits until the doors start to close.
         final float doorsCloseLeft = train.getDoorsCloseTicksLeft();
         final float chimeTicks = bveTrainSound.config.soundCfg.doorCloseSoundLength * 20;
-        final boolean chimeNow = doorsCloseLeft >= 0 ? doorsCloseLeft + MotionConstants.DOOR_MOVE_TIME <= chimeTicks : train.justClosing(1);
+        // The chime ends as the doors finish closing; one shorter than the doors take starts as they start to close
+        final boolean chimeNow = doorsCloseLeft >= 0 ? doorsCloseLeft <= Math.max(0, chimeTicks - MotionConstants.DOOR_MOVE_TIME) : train.justClosing(1);
 
         final SoundEvent soundEvent;
         if (train.justOpening() && bveTrainSound.config.soundCfg.doorOpen != null) {

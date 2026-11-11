@@ -1722,6 +1722,8 @@ public final class TickRunner<T extends RunTrack> {
 		 * Why the host holds the train at its stops, or null.
 		 */
 		private String hostHold;
+		private String holdReason = "";
+		private boolean railBlockedLast;
 		private SpeedCurves curves;
 		private List<T> curvesPath;
 		private SpeedCurves.Run cappedRun;
@@ -2949,7 +2951,22 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public boolean isHeldAtStop() {
-			return hostHold != null || TrainRules.isHeldAtStop(this);
+			holdReason = hostHold != null ? "host" : TrainRules.getHoldReason(this);
+			return !holdReason.isEmpty();
+		}
+
+		/**
+		 * @return why the train was held at its stop when last asked, "" for not held (0.65.31)
+		 */
+		public String getHoldReason() {
+			return holdReason;
+		}
+
+		/**
+		 * @return whether the rail ahead was taken when last asked (0.65.31)
+		 */
+		public boolean wasRailBlocked() {
+			return railBlockedLast;
 		}
 
 		@Override
@@ -2958,12 +2975,14 @@ public final class TickRunner<T extends RunTrack> {
 			final ThroatLocks locks = getThroatLocks();
 			if (locks != null && locks.isBlocked(rail, Math.max(MotionConstants.findIndex(this, railProgress, true), 0))) {
 				blockedRail = rail;
+				railBlockedLast = true;
 				return true;
 			}
 			final boolean blocked = isRailOccupied(rail);
 			if (blocked) {
 				blockedRail = rail;
 			}
+			railBlockedLast = blocked;
 			return blocked;
 		}
 

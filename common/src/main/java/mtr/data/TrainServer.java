@@ -68,6 +68,12 @@ public class TrainServer extends Train {
 	private DataCache dataCache;
 	private final TrainService<PathData> service;
 	private final TrainRules.Train rules = new RulesTrain();
+	/**
+	 * Why the train was held at its stop when last asked, and whether the rail ahead was taken, as the game or the
+	 * component's simulator moving it found (0.65.31), for the debug display.
+	 */
+	private String holdReason = "";
+	private boolean railBlockedLast;
 	private Level world;
 	private boolean syncRepeatIndices;
 	private int pathRepeatIndex1;
@@ -256,7 +262,8 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean isHeldAtStop() {
-		return TrainRules.isHeldAtStop(rules);
+		holdReason = TrainRules.getHoldReason(rules);
+		return !holdReason.isEmpty();
 	}
 
 	@Override
@@ -399,6 +406,11 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean isRailBlocked(int checkIndex) {
+		railBlockedLast = isRailBlockedNow(checkIndex);
+		return railBlockedLast;
+	}
+
+	private boolean isRailBlockedNow(int checkIndex) {
 		// The rail onto the next station's throat, until the train is given its way through (L2)
 		final ThroatLocks locks = getThroatLocks();
 		if (locks != null && locks.isBlocked(checkIndex, Math.max(getIndex(0, spacing, true), 0))) {
@@ -507,6 +519,8 @@ public class TrainServer extends Train {
 		doorValue = train.getDoorValue();
 		cruiseCap = (float) train.getCruiseCap();
 		cruiseCapMissing = false;
+		holdReason = train.getHoldReason();
+		railBlockedLast = train.wasRailBlocked();
 		authorityEnd = train.getRecordAuthorityEnd();
 		runSegmentSpec = train.getRecordSegment();
 		if (repeatIndex1 != train.getRepeatIndex1() || repeatIndex2 != train.getRepeatIndex2()) {
@@ -1091,8 +1105,10 @@ public class TrainServer extends Train {
 		final boolean standing = speed == 0 && isOnRoute;
 		lines.add(new String[]{"dwell", standing ? String.format(java.util.Locale.ROOT, "%.1f / %.1f s", elapsedDwellTicks / 20F, getTotalDwellTicks() / 20F) : "-"});
 		lines.add(new String[]{"doors_close", doorsClose < 0 ? "-" : String.format(java.util.Locale.ROOT, "%.1f s", doorsClose / 20F)});
-		final String hold = standing ? TrainRules.describeHold(rules) : "";
-		lines.add(new String[]{"hold", hold.isEmpty() ? "-" : "#hold_" + hold});
+		// Asked only once the stop time is up, so before that the answer is the last stop's
+		final boolean atHoldPoint = standing && elapsedDwellTicks >= getTotalDwellTicks() - transitsim.motion.MotionConstants.DOOR_MOVE_TIME - transitsim.motion.MotionConstants.DOOR_DELAY - 1;
+		final String hold = !atHoldPoint ? "" : !holdReason.isEmpty() ? "#hold_" + holdReason : railBlockedLast ? "#hold_blocked" : "";
+		lines.add(new String[]{"hold", hold.isEmpty() ? "-" : hold});
 		lines.add(new String[]{"speed", String.format(java.util.Locale.ROOT, "%.1f km/h", speed * 72)});
 		lines.add(new String[]{"cruise_cap", Float.isInfinite(cruiseCap) || cruiseCap <= 0 ? "-" : String.format(java.util.Locale.ROOT, "%.1f km/h", cruiseCap * 72)});
 		lines.add(new String[]{"state", (isOnRoute ? "#on_route" : "#in_siding") + (isCurrentlyManual ? " #manual" : "") + (doorTarget ? " #doors_open" : "")});

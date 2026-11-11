@@ -1,5 +1,7 @@
 # MTR Advanced
 
+0.65.32 fixes the door chime for trains held at a stop for a reason whose end isn't known (choosing where to turn back, the rail ahead taken, ...): the chime now waits until the doors start to close, and a chime shorter than the doors take plays at all. The debug display shows the actual reason a train is held.
+
 0.65.31 adds a debug display: holding the brush and looking at a train shows its planned and expected times, lateness, stop time, doors, why it is held and its speed cap. Other mods reading platform arrivals (YJCM PIDS and the like) now get only trains that stop there and haven't come already. Update server and clients together.
 
 0.65.30 times door closing chimes and DK3 door animations by when the server will close the doors, not by the platform rail's stop time: a timetable departure later than that no longer sounds the chime while the doors stay open. Update server and clients together.
