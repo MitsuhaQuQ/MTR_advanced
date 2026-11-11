@@ -471,6 +471,8 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_RECALL_TRAIN, mtr.packet.HeldTrains::receiveRecallC2S);
 		PacketGuard.register(PACKET_CONTINGENCIES, mtr.packet.ContingencyPackets::receiveC2S);
 		PacketGuard.register(PACKET_NETWORK_SETTINGS, mtr.packet.NetworkSettingsPackets::receiveC2S);
+		PacketGuard.register(PACKET_REQUEST_FARE_GROUPS, mtr.packet.FarePackets::receiveRequestGroupsC2S);
+		PacketGuard.register(PACKET_SET_FARES, mtr.packet.FarePackets::receiveSetC2S);
 		PacketGuard.register(PACKET_CONSOLE, mtr.packet.DispatchConsole::receiveRequestC2S);
 		PacketGuard.register(PACKET_TRAIN_DEBUG, mtr.packet.TrainDebugPackets::receiveRequestC2S);
 		PacketGuard.register(PACKET_DISPATCH, mtr.packet.DispatchConsole::receiveCommandC2S);

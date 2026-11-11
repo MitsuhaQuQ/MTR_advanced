@@ -50,6 +50,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	private final Button buttonZoomOut;
 	private final Button buttonRailActions;
 	private final Button buttonOptions;
+	private final Button buttonFares;
 	private final Button buttonAdvancedEditor;
 	private final Button buttonRegionFilter;
 	// The regions of the pathfinding boundaries the lists are cut down to, or null for everything
@@ -121,6 +122,12 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		buttonOptions = UtilitiesClient.newButton(Text.translatable("menu.options"), button -> {
 			if (minecraft != null) {
 				UtilitiesClient.setScreen(minecraft, new ConfigScreen(useTimeAndWindSync));
+			}
+		});
+
+		buttonFares = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_button"), button -> {
+			if (minecraft != null) {
+				UtilitiesClient.setScreen(minecraft, new FareScreen());
 			}
 		});
 
@@ -215,6 +222,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 		addDrawableChild(buttonAddStationArea);
 		addDrawableChild(buttonRemoveStationArea);
 		addDrawableChild(buttonOptions);
+		addDrawableChild(buttonFares);
 		addDrawableChild(buttonAdvancedEditor);
 		addDrawableChild(buttonRegionFilter);
 
@@ -349,26 +357,27 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 	}
 
 	/**
-	 * The map's buttons stay over the map, never over the panel on the left: from the right, zoom, options, rail actions, the
-	 * advanced editor and the region filter. Without room for all of them at full width they narrow, the region filter
+	 * The map's buttons stay over the map, never over the panel on the left: from the right, zoom, options, fares, rail
+	 * actions, the advanced editor and the region filter. Without room for all of them at full width they narrow, the region filter
 	 * first, and a button with no room at all is hidden.
 	 */
 	private void layoutMapButtons(int bottomRowY) {
-		final Button[] buttons = {buttonOptions, buttonRailActions, buttonAdvancedEditor, buttonRegionFilter};
-		final int[] widths = {SQUARE_SIZE * 3, SQUARE_SIZE * 5, SQUARE_SIZE * 5, SQUARE_SIZE * 7};
+		final Button[] buttons = {buttonOptions, buttonFares, buttonRailActions, buttonAdvancedEditor, buttonRegionFilter};
+		final int[] widths = {SQUARE_SIZE * 3, SQUARE_SIZE * 3, SQUARE_SIZE * 5, SQUARE_SIZE * 5, SQUARE_SIZE * 7};
+		final int filter = buttons.length - 1;
 		final int minWidth = SQUARE_SIZE * 2;
 		final int available = Math.max(width - PANEL_WIDTH - SQUARE_SIZE * 2, 0);
 		int excess = Arrays.stream(widths).sum() - available;
-		final int filterCut = Math.min(Math.max(excess, 0), widths[3] - minWidth);
-		widths[3] -= filterCut;
+		final int filterCut = Math.min(Math.max(excess, 0), widths[filter] - minWidth);
+		widths[filter] -= filterCut;
 		excess -= filterCut;
-		for (int i = 0; i < 3 && excess > 0; i++) {
+		for (int i = 0; i < filter && excess > 0; i++) {
 			final int cut = Math.min(excess, widths[i] - minWidth);
 			widths[i] -= cut;
 			excess -= cut;
 		}
 		// Still too narrow: the region filter goes first, then the others from the left
-		for (int i = 3; i >= 0 && excess > 0; i--) {
+		for (int i = filter; i >= 0 && excess > 0; i--) {
 			excess -= widths[i];
 			widths[i] = 0;
 		}
@@ -378,7 +387,7 @@ public class DashboardScreen extends ScreenBase implements IGui, IPacket {
 			IDrawing.setPositionAndWidth(buttons[i], x, bottomRowY, Math.max(widths[i], 1));
 			buttons[i].visible = widths[i] > 0;
 		}
-		compactRegionFilter = widths[3] < SQUARE_SIZE * 7;
+		compactRegionFilter = widths[filter] < SQUARE_SIZE * 7;
 		widgetMap.setBottomButtonsWidth(width - x);
 		updateRegionFilterButton();
 	}

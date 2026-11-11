@@ -1426,6 +1426,23 @@ public final class RoutePaths {
 		}
 
 		/**
+		 * @return the length of track between two stops of the route, in blocks, or -1 if the path doesn't have them; fares
+		 * go by it (design document 6.13)
+		 */
+		public double getBlocksBetweenStops(int firstStop, int lastStop) {
+			final int start = getStopRail(firstStop);
+			final int end = getStopRail(lastStop);
+			if (start < 0 || end < start) {
+				return -1;
+			}
+			double blocks = 0;
+			for (int i = start + 1; i <= end; i++) {
+				blocks += rawPath.get(i).rail.getLength();
+			}
+			return blocks;
+		}
+
+		/**
 		 * @return the rail of the path where a train reaches the route's stop, the first numbered for it (the first stop is
 		 * the first rail), or -1
 		 */

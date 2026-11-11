@@ -64,12 +64,64 @@ class NetworkSettingsTest {
 		packet.writeVarInt(0);
 		packet.writeVarInt(0);
 		packet.writeVarInt(0);
+		// No fares, no routes put in other fare groups, no stations given groups (0.68.0)
+		packet.writeVarInt(0);
+		packet.writeVarInt(0);
+		packet.writeVarInt(0);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
 		assertEquals(0, read.minReverseMillis);
 		assertEquals(NetworkSettings.MAX_MILLIS, read.earlyThresholdMillis);
 		assertEquals(NetworkSettings.MAX_WAIT_THRESHOLD_MILLIS, read.waitThresholdMillis);
 		assertEquals(0, read.getWaitThreshold(77));
+	}
+
+	@Test
+	void faresAreSavedSentAndCopied() throws IOException {
+		// Fares by distance (0.68.0): a group's fares with tiers set by hand, a route put in another group, a station's groups
+		final NetworkSettings settings = new NetworkSettings();
+		final transitsim.fare.FareLevels levels = new transitsim.fare.FareLevels();
+		levels.startFare = 3;
+		levels.initialBlocks = 6000;
+		levels.cap = 9;
+		levels.overtime = true;
+		levels.overtimeMinutes = 90;
+		levels.setTiers(new long[]{8000, 12000}, new int[]{3, 4, 6});
+		settings.fareLevels.put("line:TRAIN:line 1", levels);
+		settings.fareLevels.put("line:TRAIN:line 2", new transitsim.fare.FareLevels());
+		settings.fareRouteGroups.put(5L, "Company A");
+		settings.fareStationGroups.put(7L, new java.util.ArrayList<>(java.util.Arrays.asList("Company A", "line:TRAIN:line 1")));
+
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(settings.messagePackLength());
+		settings.toMessagePack(packer);
+		packer.close();
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
+		final NetworkSettings saved = new NetworkSettings(map);
+		assertEquals(settings, saved);
+		assertEquals(6, saved.fareLevels.get("line:TRAIN:line 1").getFare(20000, 0));
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		settings.writePacket(packet);
+		final NetworkSettings read = new NetworkSettings();
+		read.read(packet);
+		assertEquals(settings, read);
+		assertEquals(0, packet.readableBytes());
+
+		final NetworkSettings copy = new NetworkSettings();
+		copy.copyFrom(settings);
+		copy.fareLevels.get("line:TRAIN:line 1").startFare = 5;
+		copy.fareStationGroups.get(7L).clear();
+		assertEquals(3, settings.fareLevels.get("line:TRAIN:line 1").startFare);
+		assertEquals(2, settings.fareStationGroups.get(7L).size());
+
+		// A save from before has none
+		final Map<String, Value> old = new HashMap<>(map);
+		old.remove("fare_levels");
+		old.remove("fare_route_groups");
+		old.remove("fare_station_groups");
+		final NetworkSettings oldSettings = new NetworkSettings(old);
+		assertTrue(oldSettings.fareLevels.isEmpty() && oldSettings.fareRouteGroups.isEmpty() && oldSettings.fareStationGroups.isEmpty());
 	}
 
 	@Test

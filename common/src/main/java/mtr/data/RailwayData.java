@@ -225,6 +225,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * Each route's path, found once for the depots running it by a timetable (decoupling document 5.4, L1).
 	 */
 	public final RoutePaths routePaths = new RoutePaths(graphRecords);
+	/**
+	 * Fares by distance (0.68.0): the network fares are worked out on, made again when the routes change.
+	 */
+	private final FareData fareData = new FareData();
+
+	public transitsim.fare.FareNetwork getFareNetwork() {
+		return fareData.getNetwork(this, rails);
+	}
 	private static final int AUTO_DUTIES_CHECK_TICKS = 100;
 	private static final int TRACK_SECTIONS_CHECK_TICKS = 40;
 

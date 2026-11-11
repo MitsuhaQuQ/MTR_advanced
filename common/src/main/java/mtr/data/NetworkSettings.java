@@ -75,6 +75,25 @@ public final class NetworkSettings extends SerializedDataBase {
 	 */
 	public final Map<String, List<Long>> lineTracks = new java.util.TreeMap<>();
 
+	/**
+	 * Each route group's fares (design document 6.13, 0.68.0), by its group key ({@link FareData#getGroupKey}); a group not
+	 * here is charged by the defaults.
+	 */
+	public final Map<String, transitsim.fare.FareLevels> fareLevels = new java.util.TreeMap<>();
+	/**
+	 * Routes put in another fare group by hand, by route ID: the group's key, an automatic one ({@link FareData#getAutoGroupKey})
+	 * or a name of its own. A route not here is in the group of its line.
+	 */
+	public final Map<Long, String> fareRouteGroups = new java.util.TreeMap<>();
+	/**
+	 * The fare groups of stations set by hand, by station ID; with several, the station's gates are shared by them. A
+	 * station not here belongs to the groups of the routes calling at it. Its gates go by the station they are in.
+	 */
+	public final Map<Long, List<String>> fareStationGroups = new java.util.TreeMap<>();
+	public static final int MAX_FARE_GROUPS = 1024;
+	public static final int MAX_FARE_ASSIGNMENTS = 65536;
+	private static final int MAX_FARE_TIERS = transitsim.fare.FareLevels.MAX_TIERS;
+
 	public static final int MAX_LOGICAL_LINES = 1024;
 	public static final int MAX_RAIL_LINES = 65536;
 	public static final int MAX_LINE_TRACKS = 4096;
@@ -120,6 +139,9 @@ public final class NetworkSettings extends SerializedDataBase {
 	private static final String KEY_LOGICAL_LINES = "logical_lines";
 	private static final String KEY_RAIL_LINES = "rail_lines";
 	private static final String KEY_LINE_TRACKS = "line_tracks";
+	private static final String KEY_FARE_LEVELS = "fare_levels";
+	private static final String KEY_FARE_ROUTE_GROUPS = "fare_route_groups";
+	private static final String KEY_FARE_STATION_GROUPS = "fare_station_groups";
 
 	public NetworkSettings() {
 	}
@@ -173,6 +195,63 @@ public final class NetworkSettings extends SerializedDataBase {
 				lineTracks.put(entry.getKey().asStringValue().asString(), ids);
 			}
 		});
+		messagePackHelper.iterateMapValue(KEY_FARE_LEVELS, entry -> {
+			if (fareLevels.size() < MAX_FARE_GROUPS && entry.getValue().isMapValue()) {
+				fareLevels.put(entry.getKey().asStringValue().asString(), readFareLevels(new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(entry.getValue()))));
+			}
+		});
+		messagePackHelper.iterateMapValue(KEY_FARE_ROUTE_GROUPS, entry -> {
+			if (fareRouteGroups.size() < MAX_FARE_ASSIGNMENTS && entry.getValue().isStringValue()) {
+				try {
+					fareRouteGroups.put(Long.parseLong(entry.getKey().asStringValue().asString()), entry.getValue().asStringValue().asString());
+				} catch (NumberFormatException ignored) {
+				}
+			}
+		});
+		messagePackHelper.iterateMapValue(KEY_FARE_STATION_GROUPS, entry -> {
+			if (fareStationGroups.size() < MAX_FARE_ASSIGNMENTS && entry.getValue().isArrayValue()) {
+				final List<String> groups = new ArrayList<>();
+				entry.getValue().asArrayValue().forEach(group -> {
+					if (groups.size() < MAX_OVERRIDE_LINES && group.isStringValue()) {
+						groups.add(group.asStringValue().asString());
+					}
+				});
+				try {
+					fareStationGroups.put(Long.parseLong(entry.getKey().asStringValue().asString()), groups);
+				} catch (NumberFormatException ignored) {
+				}
+			}
+		});
+	}
+
+	private static transitsim.fare.FareLevels readFareLevels(MessagePackHelper helper) {
+		final transitsim.fare.FareLevels levels = new transitsim.fare.FareLevels();
+		levels.startFare = helper.getInt("start_fare", levels.startFare);
+		levels.initialBlocks = helper.getLong("initial_blocks", levels.initialBlocks);
+		levels.unitBlocks = Math.max(1, helper.getLong("unit_blocks", levels.unitBlocks));
+		levels.unitFare = helper.getInt("unit_fare", levels.unitFare);
+		levels.maxBlocks = helper.getLong("max_blocks", levels.maxBlocks);
+		levels.cap = helper.getInt("cap", levels.cap);
+		levels.overtime = helper.getBoolean("overtime", levels.overtime);
+		levels.overtimeMinutes = helper.getInt("overtime_minutes", levels.overtimeMinutes);
+		levels.overtimeFine = helper.getInt("overtime_fine", levels.overtimeFine);
+		final List<Long> bounds = new ArrayList<>();
+		final List<Integer> prices = new ArrayList<>();
+		helper.iterateArrayValue("bounds", value -> {
+			if (bounds.size() < MAX_FARE_TIERS && value.isIntegerValue()) {
+				bounds.add(value.asIntegerValue().asLong());
+			}
+		});
+		helper.iterateArrayValue("prices", value -> {
+			if (prices.size() < MAX_FARE_TIERS + 1 && value.isIntegerValue()) {
+				prices.add(value.asIntegerValue().asInt());
+			}
+		});
+		if (helper.getBoolean("manual_tiers", false) && prices.size() == bounds.size() + 1) {
+			levels.setTiers(bounds.stream().mapToLong(Long::longValue).toArray(), prices.stream().mapToInt(Integer::intValue).toArray());
+		}
+		// No negative fares from a save edited by hand
+		return levels.clamp();
 	}
 
 	/**
@@ -257,6 +336,52 @@ public final class NetworkSettings extends SerializedDataBase {
 			}
 			lineTracks.put(lineKey, ids);
 		}
+		fareLevels.clear();
+		final int groupCount = readCount(packet, MAX_FARE_GROUPS);
+		for (int i = 0; i < groupCount; i++) {
+			final String group = packet.readUtf(MAX_LINE_KEY_LENGTH);
+			final transitsim.fare.FareLevels levels = new transitsim.fare.FareLevels();
+			levels.startFare = packet.readVarInt();
+			levels.initialBlocks = packet.readVarLong();
+			levels.unitBlocks = Math.max(1, packet.readVarLong());
+			levels.unitFare = packet.readVarInt();
+			levels.maxBlocks = packet.readVarLong();
+			levels.cap = packet.readInt();
+			levels.overtime = packet.readBoolean();
+			levels.overtimeMinutes = packet.readVarInt();
+			levels.overtimeFine = packet.readVarInt();
+			final boolean manual = packet.readBoolean();
+			final int tierCount = readCount(packet, MAX_FARE_TIERS);
+			final long[] bounds = new long[tierCount];
+			for (int j = 0; j < tierCount; j++) {
+				bounds[j] = packet.readVarLong();
+			}
+			final int[] prices = new int[tierCount + 1];
+			for (int j = 0; j <= tierCount; j++) {
+				prices[j] = packet.readVarInt();
+			}
+			if (manual) {
+				levels.setTiers(bounds, prices);
+			}
+			// No negative fares from a player's packet (FarePackets.receiveSetC2S reads with this): they would pay for trips
+			fareLevels.put(group, levels.clamp());
+		}
+		fareRouteGroups.clear();
+		final int routeCount = readCount(packet, MAX_FARE_ASSIGNMENTS);
+		for (int i = 0; i < routeCount; i++) {
+			fareRouteGroups.put(packet.readLong(), packet.readUtf(MAX_LINE_KEY_LENGTH));
+		}
+		fareStationGroups.clear();
+		final int stationCount = readCount(packet, MAX_FARE_ASSIGNMENTS);
+		for (int i = 0; i < stationCount; i++) {
+			final long stationId = packet.readLong();
+			final int groupCount2 = readCount(packet, MAX_OVERRIDE_LINES);
+			final List<String> groups = new ArrayList<>();
+			for (int j = 0; j < groupCount2; j++) {
+				groups.add(packet.readUtf(MAX_LINE_KEY_LENGTH));
+			}
+			fareStationGroups.put(stationId, groups);
+		}
 	}
 
 	private static int readCount(FriendlyByteBuf packet, int max) {
@@ -281,6 +406,12 @@ public final class NetworkSettings extends SerializedDataBase {
 		railLines.putAll(other.railLines);
 		lineTracks.clear();
 		other.lineTracks.forEach((lineKey, ids) -> lineTracks.put(lineKey, new ArrayList<>(ids)));
+		fareLevels.clear();
+		other.fareLevels.forEach((group, levels) -> fareLevels.put(group, levels.copy()));
+		fareRouteGroups.clear();
+		fareRouteGroups.putAll(other.fareRouteGroups);
+		fareStationGroups.clear();
+		other.fareStationGroups.forEach((stationId, groups) -> fareStationGroups.put(stationId, new ArrayList<>(groups)));
 	}
 
 	@Override
@@ -317,11 +448,45 @@ public final class NetworkSettings extends SerializedDataBase {
 				messagePacker.packLong(id);
 			}
 		}
+		messagePacker.packString(KEY_FARE_LEVELS).packMapHeader(fareLevels.size());
+		for (final Map.Entry<String, transitsim.fare.FareLevels> entry : fareLevels.entrySet()) {
+			final transitsim.fare.FareLevels levels = entry.getValue();
+			messagePacker.packString(entry.getKey()).packMapHeader(12);
+			messagePacker.packString("start_fare").packInt(levels.startFare);
+			messagePacker.packString("initial_blocks").packLong(levels.initialBlocks);
+			messagePacker.packString("unit_blocks").packLong(levels.unitBlocks);
+			messagePacker.packString("unit_fare").packInt(levels.unitFare);
+			messagePacker.packString("max_blocks").packLong(levels.maxBlocks);
+			messagePacker.packString("cap").packInt(levels.cap);
+			messagePacker.packString("overtime").packBoolean(levels.overtime);
+			messagePacker.packString("overtime_minutes").packInt(levels.overtimeMinutes);
+			messagePacker.packString("overtime_fine").packInt(levels.overtimeFine);
+			messagePacker.packString("manual_tiers").packBoolean(levels.manualTiers);
+			messagePacker.packString("bounds").packArrayHeader(levels.bounds.length);
+			for (final long bound : levels.bounds) {
+				messagePacker.packLong(bound);
+			}
+			messagePacker.packString("prices").packArrayHeader(levels.prices.length);
+			for (final int price : levels.prices) {
+				messagePacker.packInt(price);
+			}
+		}
+		messagePacker.packString(KEY_FARE_ROUTE_GROUPS).packMapHeader(fareRouteGroups.size());
+		for (final Map.Entry<Long, String> entry : fareRouteGroups.entrySet()) {
+			messagePacker.packString(String.valueOf(entry.getKey())).packString(entry.getValue());
+		}
+		messagePacker.packString(KEY_FARE_STATION_GROUPS).packMapHeader(fareStationGroups.size());
+		for (final Map.Entry<Long, List<String>> entry : fareStationGroups.entrySet()) {
+			messagePacker.packString(String.valueOf(entry.getKey())).packArrayHeader(entry.getValue().size());
+			for (final String group : entry.getValue()) {
+				messagePacker.packString(group);
+			}
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 8;
+		return 11;
 	}
 
 	@Override
@@ -360,16 +525,51 @@ public final class NetworkSettings extends SerializedDataBase {
 			packet.writeVarInt(ids.size());
 			ids.forEach(packet::writeLong);
 		});
+		packet.writeVarInt(fareLevels.size());
+		fareLevels.forEach((group, levels) -> {
+			packet.writeUtf(group, MAX_LINE_KEY_LENGTH);
+			packet.writeVarInt(levels.startFare);
+			packet.writeVarLong(levels.initialBlocks);
+			packet.writeVarLong(levels.unitBlocks);
+			packet.writeVarInt(levels.unitFare);
+			packet.writeVarLong(levels.maxBlocks);
+			packet.writeInt(levels.cap);
+			packet.writeBoolean(levels.overtime);
+			packet.writeVarInt(levels.overtimeMinutes);
+			packet.writeVarInt(levels.overtimeFine);
+			final boolean manual = levels.manualTiers && levels.prices.length == levels.bounds.length + 1;
+			packet.writeBoolean(manual);
+			final long[] bounds = manual ? levels.bounds : new long[0];
+			packet.writeVarInt(bounds.length);
+			for (final long bound : bounds) {
+				packet.writeVarLong(bound);
+			}
+			final int[] prices = manual ? levels.prices : new int[]{levels.startFare};
+			for (final int price : prices) {
+				packet.writeVarInt(price);
+			}
+		});
+		packet.writeVarInt(fareRouteGroups.size());
+		fareRouteGroups.forEach((routeId, group) -> {
+			packet.writeLong(routeId);
+			packet.writeUtf(group, MAX_LINE_KEY_LENGTH);
+		});
+		packet.writeVarInt(fareStationGroups.size());
+		fareStationGroups.forEach((stationId, groups) -> {
+			packet.writeLong(stationId);
+			packet.writeVarInt(groups.size());
+			groups.forEach(group -> packet.writeUtf(group, MAX_LINE_KEY_LENGTH));
+		});
 	}
 
 	@Override
 	public boolean equals(Object object) {
-		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks);
+		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups);
 	}
 
 	@Override
 	public int hashCode() {
-		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode();
+		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode();
 	}
 
 	public static long clampWait(long millis) {
