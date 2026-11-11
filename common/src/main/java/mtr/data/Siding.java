@@ -382,9 +382,19 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 
 		final List<Object> ledgers = new ArrayList<>();
 		final Value savedLedger = map.get(KEY_DUTY_LEDGER);
-		if (savedLedger != null && savedLedger.isMapValue()) savedLedger.asMapValue().map().forEach((key, value) -> ledgers.add(key.asStringValue().asString().startsWith(transitsim.plan.PathKeyIndex.PREFIX) ? transitsim.plan.PathKeyIndex.load(key.asStringValue().asString(), value.asStringValue().asString()) : transitsim.plan.DutyLedger.load(key.asStringValue().asString(), value.asStringValue().asString())));
-		messagePackHelper.iterateArrayValue(KEY_TRAINS, value -> trains.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
-		messagePackHelper.iterateArrayValue(KEY_SHED, value -> shed.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value))));
+		// A damaged entry, or a train referring to one that is missing, loses only that train, never the whole siding: the
+		// siding's own position must survive, and run state may be reset
+		if (savedLedger != null && savedLedger.isMapValue()) savedLedger.asMapValue().map().forEach((key, value) -> {
+			try {
+				final String keyText = key.asStringValue().asString();
+				final String valueText = value.asStringValue().asString();
+				ledgers.add(keyText.startsWith(transitsim.plan.PathKeyIndex.PREFIX) ? transitsim.plan.PathKeyIndex.load(keyText, valueText) : transitsim.plan.DutyLedger.load(keyText, valueText));
+			} catch (Exception e) {
+				System.out.println("Minecraft Transit Railway siding " + id + ": skipping invalid duty ledger entry " + key + ": " + e);
+			}
+		});
+		messagePackHelper.iterateArrayValue(KEY_TRAINS, value -> loadTrain(trains, value));
+		messagePackHelper.iterateArrayValue(KEY_SHED, value -> loadTrain(shed, value));
 		ledgers.clear();
 		generateDistances();
 		// A train on a path that no longer exists has nowhere to be, and starts again from the siding
@@ -393,6 +403,18 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			train.setPathVariants(pathVariants);
 			return !train.restoreTripPath(tripPaths);
 		});
+	}
+
+	/**
+	 * Reads one saved train, or leaves it out with a log line when its state can't be read (for example a duty ledger
+	 * reference whose entry is missing), so that the siding itself still loads.
+	 */
+	private void loadTrain(Collection<TrainServer> list, Value value) {
+		try {
+			list.add(new TrainServer(id, railLength, timeSegments, path, distances, repeatIndex1, repeatIndex2, accelerationConstant, isManual, maxManualSpeed, dwellTime, RailwayData.castMessagePackValueToSKMap(value)));
+		} catch (Exception e) {
+			System.out.println("Minecraft Transit Railway siding " + id + ": skipping a train that could not be read: " + e);
+		}
 	}
 
 	@Deprecated

@@ -11,6 +11,8 @@ public final class JoinedPath<T> extends AbstractList<T> implements RandomAccess
 	public JoinedPath() { }
 	public JoinedPath(Collection<? extends T> source) { addAll(source); }
 	@Override public int size() { return count; }
+	/** The number of pieces the path refers to; each addAll adds at most one per piece of its source. */
+	public int pieceCount() { return parts.size(); }
 	private int part(int index) {
 		if (index < 0 || index >= count) throw new IndexOutOfBoundsException(String.valueOf(index));
 		int at = Collections.binarySearch(ends, index + 1);

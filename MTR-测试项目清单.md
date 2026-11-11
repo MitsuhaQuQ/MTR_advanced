@@ -844,6 +844,12 @@ S07 的 MP3 拒绝指绕过网页转换、直接向服务端发送原 MP3 字节
 
 最终验证：`build/release-06523-verified.log` 构建成功；common 443 项全部通过，transit-sim 574 项中 570 项通过、4 项跳过，零失败。Fabric/Forge 客户端与服务端 0.65.23 发布包已生成，资源包沿用 1.0.4。
 
+## 0.65.24 补充修正
+
+自动测试：`PathFinderTest.appendPathAddsTheWholePartialPathAtOnce`（普通列表与 `JoinedPath` 结果相同、共用首轨去重、整段只增加一个分段），`SidingOperationTest.aDamagedDutyLedgerOrTrainDoesNotLoseTheSiding`（坏定义、坏列车不影响存车线载入及其设置）。
+
+- 游戏内：用 0.65.23 以后的存档重启服务器，存车线、运用列车与报站和重启前一致；日志中没有 “skipping invalid duty ledger entry” 或 “skipping a train”。
+
 ## 0.65.24 站台端头门外开
 
 端头门碰撞箱回归通过。校验了三种门、四个朝向和上下两半的 24 组开关模型坐标，确认铰链固定且把手向外转。Fabric 与 Forge 1.20.1 构建成功，两份 1.0.5 资源包均包含新模型。游戏内交互待验证。

@@ -97,11 +97,8 @@ public class PathFinder {
 			path.clear();
 		} else {
 			final boolean sameFirstRail = !path.isEmpty() && path.get(path.size() - 1).isSameRail(partialPath.get(0));
-			for (int j = 0; j < partialPath.size(); j++) {
-				if (!(j == 0 && sameFirstRail)) {
-					path.add(partialPath.get(j));
-				}
-			}
+			// One addAll, so that a JoinedPath keeps the partial path as one piece instead of one piece per rail
+			path.addAll(sameFirstRail ? partialPath.subList(1, partialPath.size()) : partialPath);
 		}
 	}
 

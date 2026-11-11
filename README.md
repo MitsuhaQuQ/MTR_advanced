@@ -1,5 +1,7 @@
 # MTR Advanced
 
+0.65.24 follow-up: appending a way out or back to a joined duty path keeps it as one piece instead of one piece per rail, and a siding whose saved duty ledger entry or train cannot be read now loads without that train instead of being skipped. No save or packet change.
+
 0.65.24 / Assets 1.0.5 fixes the low and high platform end gates so the leaf swings outward around the hinge opposite the handle.
 
 0.65.23 shares indexed revenue, connection and depot-leg templates instead of expanding daily duty geometry. Live trains query segment indices and save compact references to archived connection ledgers and path keys. Geometry and speed-profile materialization are bounded; snapshot versions are SimDataset 19 and RunRecord 6, with older records still readable. Update server and clients together.

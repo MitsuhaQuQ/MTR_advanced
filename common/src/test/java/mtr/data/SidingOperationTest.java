@@ -137,4 +137,25 @@ class SidingOperationTest {
 		});
 		assertEquals(Collections.singletonList(11L), depot.getSidingRouteIds(siding, dataCache));
 	}
+
+	/**
+	 * A damaged duty ledger entry or a train that can't be read loses only itself: the siding still loads with its own
+	 * settings.
+	 */
+	@Test
+	void aDamagedDutyLedgerOrTrainDoesNotLoseTheSiding() throws IOException {
+		final Siding siding = siding();
+		siding.setOperation(Collections.singletonList(7L), 5, packet -> { });
+		final Map<String, Value> map = saved(siding);
+		final Map<Value, Value> ledger = new HashMap<>();
+		ledger.put(org.msgpack.value.ValueFactory.newString(transitsim.plan.DutyLedger.PREFIX + "00"), org.msgpack.value.ValueFactory.newString("not a duty"));
+		ledger.put(org.msgpack.value.ValueFactory.newString(transitsim.plan.PathKeyIndex.PREFIX + "00"), org.msgpack.value.ValueFactory.newString("not a path"));
+		map.put("duty_ledger", org.msgpack.value.ValueFactory.newMap(ledger));
+		map.put("trains", org.msgpack.value.ValueFactory.newArray(org.msgpack.value.ValueFactory.newString("not a train")));
+		map.put("shed", org.msgpack.value.ValueFactory.newArray(org.msgpack.value.ValueFactory.newInteger(1)));
+
+		final Siding read = assertDoesNotThrow(() -> new Siding(map));
+		assertEquals(siding.id, read.id);
+		assertEquals(5, read.getFleetSize());
+	}
 }
