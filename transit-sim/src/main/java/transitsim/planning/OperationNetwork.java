@@ -14,6 +14,22 @@ import java.util.TreeMap;
 public final class OperationNetwork {
 
 	private final java.util.Map<Long, long[]> turnBackHolds = new java.util.TreeMap<>();
+	private final java.util.Map<Long, Long> stations = new java.util.TreeMap<>();
+
+	/**
+	 * The station of a platform, for the platforms that turn round by the same tracks as it.
+	 */
+	public OperationNetwork setStation(long platformId, long stationId) {
+		stations.put(platformId, stationId);
+		return this;
+	}
+
+	/**
+	 * @return the station of the platform, or 0 if not known
+	 */
+	public long stationOf(long platformId) {
+		return stations.getOrDefault(platformId, 0L);
+	}
 
 	public static final long UNREACHABLE = -1;
 
@@ -35,8 +51,37 @@ public final class OperationNetwork {
 	 * back rail and each stabling block beyond the platform holds one), timed as the nearest.
 	 */
 	public OperationNetwork setTurnBackHold(long platformId, long inMillis, long outMillis, int count) {
-		turnBackHolds.put(platformId, new long[]{inMillis, outMillis, Math.max(1, count)});
+		return setTurnBackHold(platformId, inMillis, outMillis, count, 0);
+	}
+
+	/**
+	 * @param rail which turn back rail it is, the same for every platform turning round on it (8号线, 2026-11-12: both
+	 *             platforms of a station turning round on the one between them), or 0 if not known
+	 */
+	public OperationNetwork setTurnBackHold(long platformId, long inMillis, long outMillis, int count, long rail) {
+		turnBackHolds.put(platformId, new long[]{inMillis, outMillis, Math.max(1, count), rail});
 		return this;
+	}
+
+	/**
+	 * @return which turn back rail beyond the platform a train waits on, or 0 if none or not known
+	 */
+	public long turnBackRail(long platformId) {
+		final long[] hold = turnBackHolds.get(platformId);
+		return hold == null || hold.length < 4 ? 0 : hold[3];
+	}
+
+	/**
+	 * @return the platforms whose turn back rail it is
+	 */
+	public java.util.List<Long> platformsTurningOn(long rail) {
+		final java.util.List<Long> platforms = new java.util.ArrayList<>();
+		turnBackHolds.forEach((platformId, hold) -> {
+			if (rail != 0 && hold.length >= 4 && hold[3] == rail) {
+				platforms.add(platformId);
+			}
+		});
+		return platforms;
 	}
 
 	/**
@@ -122,6 +167,15 @@ public final class OperationNetwork {
 	}
 
 	/**
+	 * The depot's way out to a platform runs through another just before turning back into it, as at a terminus whose turn
+	 * back the depot is reached through.
+	 */
+	public OperationNetwork addDepotPassing(long depotId, long platformId, long passedPlatformId) {
+		depots.get(depotId).passes.put(platformId, passedPlatformId);
+		return this;
+	}
+
+	/**
 	 * How long a train takes from a platform back to the depot, as measured on the rails.
 	 */
 	public OperationNetwork addDepotBackLink(long depotId, long platformId, long millis) {
@@ -156,6 +210,11 @@ public final class OperationNetwork {
 		public final String poolKey;
 		private final Map<Long, Long> links = new TreeMap<>();
 		private final Map<Long, Long> backLinks = new TreeMap<>();
+		/**
+		 * First platform → the platform its way out runs through just before turning back into it (6号线, 2026-11-12): the
+		 * way out goes through that terminus's turn back, behind any train turning back there.
+		 */
+		private final Map<Long, Long> passes = new TreeMap<>();
 
 		private Depot(long id, int trainCount, String poolKey) {
 			this.poolKey = poolKey;
@@ -165,6 +224,13 @@ public final class OperationNetwork {
 
 		public long linkMillis(long platformId) {
 			return links.getOrDefault(platformId, UNREACHABLE);
+		}
+
+		/**
+		 * @return the platform the way out to this one runs through just before turning back into it, or 0
+		 */
+		public long passesBefore(long platformId) {
+			return passes.getOrDefault(platformId, 0L);
 		}
 
 		/**

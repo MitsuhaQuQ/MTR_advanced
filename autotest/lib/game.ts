@@ -94,8 +94,11 @@ export interface DashboardListState {
 	id: string, x: number, y: number, width: number, height: number, scroll: number, total: number, rowsShown: number, rows: ListRow[], error?: string
 }
 
+/** A text the font drew in the last frame, where (screen coordinates) and in what colour (#rrggbb) */
+export interface DrawnText {text: string, x: number, y: number, color: string}
+
 export interface ScreenState {
-	guiScale: number, guiWidth: number, guiHeight: number,
+	guiScale: number, guiWidth: number, guiHeight: number, texts: DrawnText[],
 	screen?: string | null, screenName?: string, title?: string, widgets: Widget[], lists: DashboardListState[]
 }
 
@@ -112,6 +115,11 @@ export async function waitScreen(name: string | null, timeout = 10_000): Promise
 		const current = await state();
 		return (name === null ? !current.screen : current.screenName === name) ? current : undefined;
 	}, timeout);
+}
+
+/** Waits until the font draws a text matching the pattern (text a screen draws itself, not a widget's) and returns it. */
+export async function waitText(pattern: RegExp, timeout = 10_000): Promise<DrawnText> {
+	return waitFor(`text ${pattern} on the screen`, async () => (await state()).texts.find(t => pattern.test(t.text)), timeout);
 }
 
 export async function widget(id: string): Promise<Widget> {
@@ -162,14 +170,28 @@ export async function switchTab(tab: "buttonTabStations" | "buttonTabRoutes" | "
 	await click(`DashboardScreen.${tab}`);
 	await waitFor(`the dashboard list to show ${TAB_TYPES[tab]}s`, async () => {
 		const rows = (await list("DashboardScreen.dashboardList")).rows;
-		return rows.length > 0 && rows.every(r => r.type === TAB_TYPES[tab]);
+		// The route list puts a heading row before each line's routes; those don't count
+		return rows.length > 0 && rows.every(r => r.type === TAB_TYPES[tab] || r.header);
 	});
 }
 
 /** Moves the mouse over the row whose label contains text, so the list puts its row buttons there; returns the row. */
 export async function hoverRow(listId: string, text: string): Promise<ListRow> {
-	const current = await list(listId);
-	const row = current.rows.find(r => r.label.includes(text) || r.name.includes(text));
+	let current = await list(listId);
+	const find = (state: DashboardListState) => state.rows.find(r => r.label.includes(text) || r.name.includes(text));
+	let row = find(current);
+	// Rows below the list's visible part: scroll it down with the mouse wheel, as a player does, until the row shows
+	if (!row && current.rows.length && current.total > current.rows.length) {
+		const anchor = current.rows[0];
+		for (let i = 0; i < 40 && !row; i++) {
+			const before = current.rows.map(r => r.label).join("\n");
+			await scroll(anchor.x + 10, anchor.y + anchor.height / 2, -1);
+			await sleep(50);
+			current = await list(listId);
+			row = find(current);
+			if (!row && current.rows.map(r => r.label).join("\n") === before) break;
+		}
+	}
 	if (!row) {
 		throw new Error(`no row ${text} in ${listId}: ${current.rows.map(r => r.label).join(", ")}`);
 	}

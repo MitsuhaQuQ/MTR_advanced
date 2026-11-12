@@ -27,6 +27,8 @@ class FastestTimesTest {
 		// Reading route timings must not change the depot's first revenue stop or its origin.
 		org.junit.jupiter.api.Assertions.assertEquals(6, times.getFirstIndex());
 		org.junit.jupiter.api.Assertions.assertEquals(180000, times.getLeadMillis());
+		// A duty's train is planned to leave the depot to leave its first stop on time: the way there and the 20 s stop (L05)
+		org.junit.jupiter.api.Assertions.assertEquals(200000, times.getDepartureLeadMillis());
 		final StopTimes copy = new StopTimes();
 		copy.copyFrom(times);
 		assertArrayEquals(expected, copy.getFastestTimesFromFirstStop(route));

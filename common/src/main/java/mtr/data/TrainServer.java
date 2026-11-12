@@ -130,6 +130,11 @@ public class TrainServer extends Train {
 	private List<TimeSegment> timeSegments;
 	private PlatformDwell platformDwell;
 	private StationCall stationCall;
+	/**
+	 * The platforms the train runs through without stopping before its next stop, each kept while it comes, so a timetable
+	 * sensor there is triggered once by it (2026-11-12).
+	 */
+	private final Map<Long, StationCall> passingCalls = new HashMap<>();
 	private final List<PathData> depotPath;
 	private final List<Double> depotDistances;
 	private final List<TimeSegment> depotTimeSegments;
@@ -701,6 +706,7 @@ public class TrainServer extends Train {
 
 		final int platformRail = platformDwell == null ? nextPlatformIndex : nextStoppingIndex;
 		final RailwayData railwayData = prepareStationCall(platformRail);
+		final Set<Long> passingSeen = new HashSet<>();
 		final int nextDepartureTicks = isOnRoute ? 0 : service.getStopTimes() == null ? depot.getNextDepartureMillis() : depot.getNextDepartureMillis(trainId, getLeadMillis());
 		final boolean standingForDuty = !isOnRoute && depot.getRunDuties() != null;
 		final long currentMillis = System.currentTimeMillis() - (long) (elapsedDwellTicks * Depot.MILLIS_PER_TICK) + (long) Math.max(0, nextDepartureTicks);
@@ -766,6 +772,14 @@ public class TrainServer extends Train {
 							stationCall.routeId = timeSegment.routeId;
 							railwayData.addStationCall(stationCall);
 						}
+						// A platform it runs through on its way to that stop: told too, as coming through then
+						if (railwayData != null && timeSegment.pass && isOnRoute && i < timeSegments.size() && getSegmentIndex(timeSegment) <= platformRail && !passingSeen.contains(platformId)) {
+							passingSeen.add(platformId);
+							final StationCall passingCall = passingCalls.computeIfAbsent(platformId, key -> new StationCall(key, this, true));
+							passingCall.approachMillis = arrivalMillis;
+							passingCall.routeId = timeSegment.routeId;
+							railwayData.addStationCall(passingCall);
+						}
 						addSchedule = () -> {
 							schedulesForPlatform.get(platformId).add(new ScheduleEntry(arrivalMillis, trainCars, timeSegment.routeId, timeSegment.currentStationIndex, id, timeSegment.pass, scheduledMillis, false, standingForDuty, standingDepartureMillis));
 							if (!timeSegment.pass && reportedSchedules.size() < 4) {
@@ -794,6 +808,8 @@ public class TrainServer extends Train {
 				}
 			}
 		}
+		// Platforms it has run through, or no longer comes through, are let go
+		passingCalls.keySet().retainAll(passingSeen);
 
 		updateRailProgressCounter++;
 		if (updateRailProgressCounter == TICKS_TO_SEND_RAIL_PROGRESS) {
@@ -1670,6 +1686,12 @@ public class TrainServer extends Train {
 		@Override
 		public long getMillis() {
 			return System.currentTimeMillis();
+		}
+
+		@Override
+		public boolean isBlockingOthers() {
+			final RunReservations reservations = getRunReservations();
+			return reservations != null && reservations.isBlockingOthers(id);
 		}
 
 		@Override

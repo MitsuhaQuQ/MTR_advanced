@@ -66,6 +66,17 @@ public final class DepotLegs {
 	 * Last stop platform → milliseconds from leaving it to reaching the siding.
 	 */
 	public final Map<Long, Long> backMillis;
+	/**
+	 * First platform → the platform the way out runs through just before turning back into it (6号线, 2026-11-12), for the
+	 * duty planner's first come, first out at such a terminus. Found with the paths, not saved or sent: empty until they are
+	 * found again after a restart, as the duties are planned again then.
+	 */
+	public final Map<Long, Long> outPasses = new TreeMap<>();
+	/**
+	 * As {@link #outPasses}, where the platform rail run through carries no platform (a way out runs through platforms
+	 * without stopping): a node of that rail ({@link net.minecraft.core.BlockPos#asLong}), for the platform there.
+	 */
+	public final Map<Long, Long> outPassNodes = new TreeMap<>();
 
 	public DepotLegs(long entrancePlatform, Map<Long, Long> outMillis, Map<Long, Long> backMillis) {
 		this(entrancePlatform, outMillis, backMillis, Collections.emptySet(), Collections.emptySet());
@@ -102,7 +113,10 @@ public final class DepotLegs {
 	 * @return these legs with why each platform has no way, as {@link #outReasons}
 	 */
 	public DepotLegs withReasons(Map<Long, long[]> out, Map<Long, long[]> back) {
-		return new DepotLegs(entrancePlatform, outMillis, backMillis, unreachableOut, unreachableBack, out, back);
+		final DepotLegs legs = new DepotLegs(entrancePlatform, outMillis, backMillis, unreachableOut, unreachableBack, out, back);
+		legs.outPasses.putAll(outPasses);
+		legs.outPassNodes.putAll(outPassNodes);
+		return legs;
 	}
 
 	/**
@@ -118,7 +132,10 @@ public final class DepotLegs {
 	 * @return these legs with the platforms the path generation found no way out to, or back from
 	 */
 	public DepotLegs withUnreachable(Set<Long> out, Set<Long> back) {
-		return new DepotLegs(entrancePlatform, outMillis, backMillis, out, back);
+		final DepotLegs legs = new DepotLegs(entrancePlatform, outMillis, backMillis, out, back);
+		legs.outPasses.putAll(outPasses);
+		legs.outPassNodes.putAll(outPassNodes);
+		return legs;
 	}
 
 	/**
@@ -129,6 +146,8 @@ public final class DepotLegs {
 		final Map<Long, Integer> entrances = new HashMap<>();
 		final Map<Long, Long> out = new TreeMap<>();
 		final Map<Long, Long> back = new TreeMap<>();
+		final Map<Long, Long> passes = new TreeMap<>();
+		final Map<Long, Long> passNodes = new TreeMap<>();
 		for (final TripPath<PathData> tripPath : tripPaths) {
 			if (!tripPath.isDuty() || tripPath.timeSegments.isEmpty()) {
 				continue;
@@ -147,7 +166,17 @@ public final class DepotLegs {
 				}
 			}
 			if (firstStop != null) {
-				out.merge(firstStop.savedRailBaseId, tripPath.stopTimes.getLeadMillis(), Math::min);
+				// Until the train can leave its first stop, the stop there included: duties are planned to leave the depot
+				// this long before their first service (L05)
+				out.merge(firstStop.savedRailBaseId, tripPath.stopTimes.getDepartureLeadMillis(), Math::min);
+				final PathData passed = passedBeforeTurning(tripPath.path, firstStop.savedRailBaseId);
+				if (passed != null) {
+					if (passed.savedRailBaseId != 0) {
+						passes.putIfAbsent(firstStop.savedRailBaseId, passed.savedRailBaseId);
+					} else {
+						passNodes.putIfAbsent(firstStop.savedRailBaseId, passed.startingPos.asLong());
+					}
+				}
 			}
 			if (lastStop != null && !tripPath.staysOnLine && lastStop != firstStop) {
 				final long millis = (long) ((segments.get(segments.size() - 1).endTime - lastStop.endTime) * MILLIS_PER_TICK);
@@ -157,7 +186,51 @@ public final class DepotLegs {
 			}
 		}
 		final long entrance = entrances.entrySet().stream().max(Map.Entry.<Long, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey(Comparator.reverseOrder()))).map(Map.Entry::getKey).orElse(0L);
-		return new DepotLegs(entrance, out, back);
+		final DepotLegs legs = new DepotLegs(entrance, out, back);
+		legs.outPasses.putAll(passes);
+		legs.outPassNodes.putAll(passNodes);
+		return legs;
+	}
+
+	/**
+	 * @return the platform rail a way out runs through after its last turn back but one, just before turning back into its
+	 * first stop, or null if it doesn't turn back on its way into it or runs through no platform first
+	 */
+	static PathData passedBeforeTurning(List<PathData> path, long firstStopId) {
+		int first = -1;
+		for (int i = 0; i < path.size(); i++) {
+			if (path.get(i).savedRailBaseId == firstStopId && path.get(i).dwellTime > 0) {
+				first = i;
+				break;
+			}
+		}
+		return passedBeforeTurning(path, first);
+	}
+
+	/**
+	 * As {@link #passedBeforeTurning(List, long)}, for a way out of a depot ending at its platform (the last rail)
+	 */
+	public static PathData passedBeforeTurningInto(List<PathData> way) {
+		return passedBeforeTurning(way, way.size() - 1);
+	}
+
+	private static PathData passedBeforeTurning(List<PathData> path, int first) {
+		for (int j = first - 1; j > 0; j--) {
+			if (path.get(j - 1).isOppositeRail(path.get(j))) {
+				// The turn back is between j - 1 and j: the platform last run through before it, back to the turn before
+				for (int k = j - 1; k >= 0; k--) {
+					if (k > 0 && path.get(k - 1).isOppositeRail(path.get(k))) {
+						return null;
+					}
+					final PathData pathData = path.get(k);
+					if (pathData.rail.railType == RailType.PLATFORM) {
+						return pathData;
+					}
+				}
+				return null;
+			}
+		}
+		return null;
 	}
 
 	/**

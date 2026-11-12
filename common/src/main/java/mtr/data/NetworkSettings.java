@@ -74,6 +74,15 @@ public final class NetworkSettings extends SerializedDataBase {
 	 * runs on those its platforms are on.
 	 */
 	public final Map<String, List<Long>> lineTracks = new java.util.TreeMap<>();
+	/**
+	 * The running side of double track (user, 2026-11-12, {@link transitsim.network.RunningDirections}): {@code 1} right
+	 * hand, {@code -1} left hand. By {@link #SIDE_NETWORK} for the network (right hand when not set), by {@code "L" + id}
+	 * for a logical line, by {@code "R" + key} for an operating line ({@link LineDuties#getLineKey}); a line takes its own,
+	 * else its logical lines' if they agree, else the network's.
+	 */
+	public final Map<String, Integer> runningSides = new java.util.TreeMap<>();
+	public static final String SIDE_NETWORK = "";
+	public static final int MAX_RUNNING_SIDES = 4096;
 
 	/**
 	 * Each route group's fares (design document 6.13, 0.68.0), by its group key ({@link FareData#getGroupKey}); a group not
@@ -142,6 +151,7 @@ public final class NetworkSettings extends SerializedDataBase {
 	private static final String KEY_FARE_LEVELS = "fare_levels";
 	private static final String KEY_FARE_ROUTE_GROUPS = "fare_route_groups";
 	private static final String KEY_FARE_STATION_GROUPS = "fare_station_groups";
+	private static final String KEY_RUNNING_SIDES = "running_sides";
 
 	public NetworkSettings() {
 	}
@@ -219,6 +229,14 @@ public final class NetworkSettings extends SerializedDataBase {
 				try {
 					fareStationGroups.put(Long.parseLong(entry.getKey().asStringValue().asString()), groups);
 				} catch (NumberFormatException ignored) {
+				}
+			}
+		});
+		messagePackHelper.iterateMapValue(KEY_RUNNING_SIDES, entry -> {
+			if (runningSides.size() < MAX_RUNNING_SIDES && entry.getValue().isIntegerValue()) {
+				final int side = entry.getValue().asIntegerValue().asInt();
+				if (side == 1 || side == -1) {
+					runningSides.put(entry.getKey().asStringValue().asString(), side);
 				}
 			}
 		});
@@ -382,6 +400,15 @@ public final class NetworkSettings extends SerializedDataBase {
 			}
 			fareStationGroups.put(stationId, groups);
 		}
+		runningSides.clear();
+		final int sideCount = readCount(packet, MAX_RUNNING_SIDES);
+		for (int i = 0; i < sideCount; i++) {
+			final String key = packet.readUtf(MAX_LINE_KEY_LENGTH + 1);
+			final int side = packet.readByte();
+			if (side == 1 || side == -1) {
+				runningSides.put(key, side);
+			}
+		}
 	}
 
 	private static int readCount(FriendlyByteBuf packet, int max) {
@@ -412,6 +439,8 @@ public final class NetworkSettings extends SerializedDataBase {
 		fareRouteGroups.putAll(other.fareRouteGroups);
 		fareStationGroups.clear();
 		other.fareStationGroups.forEach((stationId, groups) -> fareStationGroups.put(stationId, new ArrayList<>(groups)));
+		runningSides.clear();
+		runningSides.putAll(other.runningSides);
 	}
 
 	@Override
@@ -482,11 +511,15 @@ public final class NetworkSettings extends SerializedDataBase {
 				messagePacker.packString(group);
 			}
 		}
+		messagePacker.packString(KEY_RUNNING_SIDES).packMapHeader(runningSides.size());
+		for (final Map.Entry<String, Integer> entry : runningSides.entrySet()) {
+			messagePacker.packString(entry.getKey()).packInt(entry.getValue());
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 11;
+		return 12;
 	}
 
 	@Override
@@ -560,16 +593,43 @@ public final class NetworkSettings extends SerializedDataBase {
 			packet.writeVarInt(groups.size());
 			groups.forEach(group -> packet.writeUtf(group, MAX_LINE_KEY_LENGTH));
 		});
+		packet.writeVarInt(runningSides.size());
+		runningSides.forEach((key, side) -> {
+			packet.writeUtf(key, MAX_LINE_KEY_LENGTH + 1);
+			packet.writeByte(side);
+		});
 	}
 
 	@Override
 	public boolean equals(Object object) {
-		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups);
+		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups) && ((NetworkSettings) object).runningSides.equals(runningSides);
 	}
 
 	@Override
 	public int hashCode() {
-		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode();
+		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode() + 47 * runningSides.hashCode();
+	}
+
+	/**
+	 * @return the running side of an operating line ({@link #runningSides}): 1 right hand, -1 left hand
+	 */
+	public int getRunningSide(String lineKey) {
+		final Integer own = runningSides.get("R" + lineKey);
+		if (own != null) {
+			return own;
+		}
+		int logical = 0;
+		for (final long id : lineTracks.getOrDefault(lineKey, java.util.Collections.emptyList())) {
+			final Integer side = runningSides.get("L" + id);
+			if (side != null) {
+				if (logical != 0 && logical != side) {
+					logical = 0;
+					break;
+				}
+				logical = side;
+			}
+		}
+		return logical != 0 ? logical : runningSides.getOrDefault(SIDE_NETWORK, transitsim.network.RunningDirections.RIGHT);
 	}
 
 	public static long clampWait(long millis) {

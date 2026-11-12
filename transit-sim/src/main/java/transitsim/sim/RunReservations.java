@@ -40,6 +40,13 @@ public final class RunReservations {
 	/**
 	 * Sets what a train holds this tick, replacing what it held before.
 	 */
+	/**
+	 * @return whether the train kept another train from being given what it asked for, at the last resolve
+	 */
+	public boolean isBlockingOthers(long trainId) {
+		return arbiter.isBlocking(trainId);
+	}
+
 	public void hold(long trainId, List<Move> moves) {
 		arbiter.hold(trainId, toClaims(moves));
 	}

@@ -21,6 +21,7 @@ public final class TestKit implements ModInitializer {
 		LOGGER.warn("[MTM_TestKit] loaded: this is a debug-only mod for automated tests, never use it on a server people play on");
 		ServerLifecycleEvents.SERVER_STARTED.register(ServerDriver::start);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> ServerDriver.stop());
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(ServerDriver::tickSensors);
 	}
 
 	public static synchronized void installLogCapture() {

@@ -70,4 +70,8 @@ tasks.register("simulateDay", JavaExec) {
 	systemProperty "mtr.debugStuck", project.findProperty("mtr.debugStuck") ?: "false"
 	// -Pmtr.runLayer=false runs the day by the rules taken over from MTR instead of the run layer, to compare
 	systemProperty "mtr.runLayer", project.findProperty("mtr.runLayer") ?: "true"
+	// -Pmtr.runningSides=false runs the day booking double track as single track, as before 0.69.0, to compare
+	systemProperty "mtr.runningSides", project.findProperty("mtr.runningSides") ?: "true"
+	// -Pmtr.trainMargin=false runs the day with trains keeping no room to each other, as before, to compare
+	systemProperty "mtr.trainMargin", project.findProperty("mtr.trainMargin") ?: "true"
 }

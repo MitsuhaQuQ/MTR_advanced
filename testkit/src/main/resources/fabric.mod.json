@@ -11,6 +11,7 @@
 		"client": ["mtm.testkit.client.TestKitClient"]
 	},
 	"accessWidener": "mtm_testkit.accesswidener",
+	"mixins": ["mtm_testkit.mixins.json"],
 	"depends": {
 		"mtr": "*",
 		"fabric-api": "*"

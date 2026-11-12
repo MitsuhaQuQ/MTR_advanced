@@ -5,7 +5,9 @@ import {defineConfig} from "@playwright/test";
 const results = process.env.MTM_RESULTS || "test-results";
 
 export default defineConfig({
-	testDir: "cases",
+	// The basic fixture's tests, or those of the six track-layout lines (MTM_FIXTURE_NAME=lines)
+	// A copy of a player's world (MTM_FIXTURE_NAME=world, with MTM_WORLD): the checks in cases-world
+	testDir: process.env.MTM_FIXTURE_NAME === "lines" ? "cases-lines" : process.env.MTM_FIXTURE_NAME === "world" ? "cases-world" : "cases",
 	fullyParallel: false,
 	workers: 1,
 	timeout: 120_000,

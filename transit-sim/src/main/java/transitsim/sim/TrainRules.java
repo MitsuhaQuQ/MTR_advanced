@@ -61,7 +61,7 @@ public final class TrainRules {
 		if (service.isDispatchHeld() || service.isStayingOnLine()) return true;
 		final long now = train.getMillis();
 		if (service.getDutyDepartureMillis() > 0 && isWaitingForDeparture(service.getDutyDepartureMillis(), now)) return true;
-		if (service.getTurnBackLeaveMillis() > now) return true;
+		if (service.getTurnBackLeaveMillis() > now && !train.isBlockingOthers()) return true;
 		final RouteTimetable.StopPlan plan = service.getPlanAt(stop);
 		return plan != null && plan.isTimed && isWaitingForDeparture(service.getPlannedMillis(plan.departureMillis), now);
 	}
@@ -159,7 +159,9 @@ public final class TrainRules {
 		}
 		// On a turn back rail before its next service, it waits there until it's time to run to the platform
 		final long turnBackLeaveMillis = service.getTurnBackLeaveMillis();
-		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis) {
+		// unless another train is waiting for it: then it goes on to wait at the platform (6号线, 2026-11-12: one waited there 5
+		// minutes while the depot's trains due before it queued behind for its rail)
+		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis && !train.isBlockingOthers()) {
 			return "turn_back";
 		}
 		final int nextStoppingIndex = state.getNextStoppingIndex();
@@ -326,6 +328,13 @@ public final class TrainRules {
 		long getMillis();
 
 		TrainService<?> getService();
+
+		/**
+		 * @return whether the train keeps another train from what it asked for (its runs' bookings), as at the last resolve
+		 */
+		default boolean isBlockingOthers() {
+			return false;
+		}
 
 		MotionState getState();
 

@@ -34,6 +34,23 @@ public final class Authority {
 	 */
 	private double restoredEnd = Double.NaN;
 	private List<Arbiter.Claim<UUID>> held = new ArrayList<>();
+	/**
+	 * Room kept to other trains, front and back (user, 2026-11-12: about a car's length): the train holds this much behind
+	 * its tail as well, and stops this far short of a section it isn't granted, so two trains meeting where tracks join
+	 * don't stand nose to nose on the joint. 0 for none.
+	 */
+	private double margin;
+	/**
+	 * False (system property {@code mtr.trainMargin=false}) keeps no room, as before, to compare.
+	 */
+	public static final boolean MARGIN = !"false".equals(System.getProperty("mtr.trainMargin"));
+
+	/**
+	 * @param margin the room kept to other trains, front and back, in blocks (a car's length)
+	 */
+	public void setMargin(double margin) {
+		this.margin = MARGIN ? Math.max(0, margin) : 0;
+	}
 
 	public Authority(long holder, RunReservations reservations) {
 		this(holder, () -> reservations);
@@ -65,7 +82,9 @@ public final class Authority {
 	 * @param attached turnouts and zones of stations' throats along the path, held while the train needs them and asked
 	 *                 for with the group taking it past each
 	 */
-	public <T extends RunTrack> double update(PathClaims.Path<T> path, Object pathKey, double tail, double head, double target, BlockSections sections, long plannedMillis, List<PathClaims.Attached> attached) {
+	public <T extends RunTrack> double update(PathClaims.Path<T> path, Object pathKey, double bodyTail, double head, double target, BlockSections sections, long plannedMillis, List<PathClaims.Attached> attached) {
+		// What it holds reaches the room behind its tail too
+		final double tail = Math.max(0, bodyTail - margin);
 		boolean fresh = pathKey != this.pathKey || Double.isNaN(grantedEnd);
 		if (fresh) {
 			this.pathKey = pathKey;
@@ -136,7 +155,8 @@ public final class Authority {
 		}
 		// Up to where the next group starts: tracks that are not sections, as the siding, need nothing; with nothing more to
 		// ask for, all the way
-		final double reach = pending == null ? Math.max(head, target) : Math.max(grantedEnd, pending.start);
+		// Short of a group not granted by the room kept in front
+		final double reach = pending == null ? Math.max(head, target) : Math.max(head, Math.max(grantedEnd, pending.start) - margin);
 		grantedEnd = Math.max(grantedEnd, reach);
 		return Math.min(reach, Math.max(head, target));
 	}

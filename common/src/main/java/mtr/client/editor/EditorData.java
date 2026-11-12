@@ -94,6 +94,9 @@ public final class EditorData {
 			logicalLinesArray.add(lineObject);
 		});
 		networkSettingsObject.add("logicalLines", logicalLinesArray);
+		final JsonObject runningSidesObject = new JsonObject();
+		ClientData.DATA_CACHE.networkSettings.runningSides.forEach(runningSidesObject::addProperty);
+		networkSettingsObject.add("runningSides", runningSidesObject);
 		final JsonObject railLinesObject = new JsonObject();
 		ClientData.DATA_CACHE.networkSettings.railLines.forEach((railKey, id) -> railLinesObject.addProperty(mtr.data.NetworkSettings.railKeyText(railKey), String.valueOf(id)));
 		networkSettingsObject.add("railLines", railLinesObject);
@@ -322,6 +325,8 @@ public final class EditorData {
 						holdInsObject.addProperty(String.valueOf(from), millis);
 					} else if (to == transitsim.planning.DutyGenerator.HOLD_COUNT_KEY) {
 						holdCountsObject.addProperty(String.valueOf(from), millis);
+					} else if (to == transitsim.planning.DutyGenerator.HOLD_RAIL_KEY) {
+						// Which turn back rail: for the planner only
 					} else {
 						toObject.addProperty(String.valueOf(to), millis);
 					}

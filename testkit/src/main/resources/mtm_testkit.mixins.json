@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "mtm.testkit.mixin",
+	"compatibilityLevel": "JAVA_17",
+	"refmap": "mtm_testkit-refmap.json",
+	"client": [
+		"FontMixin",
+		"GameRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

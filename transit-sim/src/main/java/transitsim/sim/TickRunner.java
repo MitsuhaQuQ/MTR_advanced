@@ -2055,6 +2055,8 @@ public final class TickRunner<T extends RunTrack> {
 					}
 				}
 				final double target = onRoute && atStop && TrainRules.waitsBeforeRequestingRun(this, stop) ? head : getStopDistance(targetStop);
+				// A car's length of room to other trains, front and back (user, 2026-11-12)
+				authority.setMargin(siding.spacing);
 				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, target, getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
 				if (atStop && target > head + 1E-6 && authorityEnd <= head + 1E-6) {
 					if (waitingSinceMillis == 0) waitingSinceMillis = millis;
@@ -2575,6 +2577,11 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public long getMillis() {
 			return millis;
+		}
+
+		@Override
+		public boolean isBlockingOthers() {
+			return reservations.isBlockingOthers(id);
 		}
 
 		@Override

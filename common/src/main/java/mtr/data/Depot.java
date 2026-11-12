@@ -1373,6 +1373,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final Set<Long> noWayBack = new TreeSet<>();
 			final Map<Long, long[]> outReasons = new TreeMap<>();
 			final Map<Long, long[]> backReasons = new TreeMap<>();
+			// The platform each way out runs through just before turning back into its platform (first come, first out there)
+			final Map<Long, Long> passes = new TreeMap<>();
 			boolean any = false;
 			for (final long platformId : stops.get(0)) {
 				final Platform platform = dataCache.platformIdMap.get(platformId);
@@ -1387,6 +1389,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						}
 					} else {
 						out.put(platformId, RoutePaths.timeDepotWay(way, vehicle, true));
+						final PathData passed = DepotLegs.passedBeforeTurningInto(way);
+						if (passed != null) {
+							final long passedId = passed.savedRailBaseId != 0 ? passed.savedRailBaseId : dataCache.platformIdMap.values().stream().filter(each -> each.containsPos(passed.startingPos) || each.containsPos(passed.getLastPos())).mapToLong(each -> each.id).findFirst().orElse(0);
+							if (passedId != 0 && passedId != platformId) {
+								passes.put(platformId, passedId);
+							}
+						}
 					}
 				}
 			}
@@ -1431,7 +1440,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			}
 			if (any) {
-				measured.put(sidingId, new DepotLegs(siding.getDepotLegs().entrancePlatform, out, back).withUnreachable(noWayOut, noWayBack).withReasons(outReasons, backReasons));
+				final DepotLegs legs = new DepotLegs(siding.getDepotLegs().entrancePlatform, out, back).withUnreachable(noWayOut, noWayBack).withReasons(outReasons, backReasons);
+				legs.outPasses.putAll(passes);
+				measured.put(sidingId, legs);
 				// Told in the log too, each platform with no way and why
 				outReasons.forEach((platformId, reason) -> System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way out to platform " + platformId + ": " + describeWayReason(reason)));
 				backReasons.forEach((platformId, reason) -> System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way back from platform " + platformId + ": " + describeWayReason(reason)));
@@ -1441,7 +1452,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	}
 
 	private static boolean sameWays(DepotLegs legs1, DepotLegs legs2) {
-		return legs1.outMillis.equals(legs2.outMillis) && legs1.backMillis.equals(legs2.backMillis) && legs1.unreachableOut.equals(legs2.unreachableOut) && legs1.unreachableBack.equals(legs2.unreachableBack) && sameReasons(legs1.outReasons, legs2.outReasons) && sameReasons(legs1.backReasons, legs2.backReasons);
+		return legs1.outMillis.equals(legs2.outMillis) && legs1.backMillis.equals(legs2.backMillis) && legs1.unreachableOut.equals(legs2.unreachableOut) && legs1.unreachableBack.equals(legs2.unreachableBack) && sameReasons(legs1.outReasons, legs2.outReasons) && sameReasons(legs1.backReasons, legs2.backReasons) && legs1.outPasses.equals(legs2.outPasses);
 	}
 
 	private static boolean sameReasons(Map<Long, long[]> reasons1, Map<Long, long[]> reasons2) {
@@ -1458,7 +1469,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	private static String describeWays(Map<Long, DepotLegs> ways) {
 		final StringBuilder builder = new StringBuilder();
-		ways.forEach((sidingId, legs) -> builder.append(sidingId).append(legs.outMillis).append(legs.backMillis).append(legs.unreachableOut).append(legs.unreachableBack).append(';'));
+		ways.forEach((sidingId, legs) -> builder.append(sidingId).append(legs.outMillis).append(legs.backMillis).append(legs.unreachableOut).append(legs.unreachableBack).append(legs.outPasses).append(';'));
 		return builder.toString();
 	}
 
@@ -3229,7 +3240,15 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				List<PathData> template = segmentTemplates.get(templateKey);
 				if (template == null) {
 					template = new ArrayList<>();
-					if (ownPath != null) template.addAll(ownPath.getSlice(firstStop, lastStop));
+					if (ownPath != null) {
+						template.addAll(ownPath.getSlice(firstStop, lastStop));
+						// A slice starts standing; a duty's train comes to its first stop from the way out or the service
+						// before, so it stops there and waits for its departure, as the paths found stop by stop had it
+						// (without it trains ran through their first stop out of the depot, U-L05)
+						if (!template.isEmpty() && template.get(0).dwellTime <= 0) {
+							template.set(0, template.get(0).copy(template.get(0).savedRailBaseId, platforms.get(0).getDwellTime()));
+						}
+					}
 					else PathFinder.findPath(template, rails, graph, platforms, waypoints, 1, cruisingAltitude, useFastSpeed);
 					if (template.size() < 2) return null;
 					PathFinder.applyStopSettings(template, stopSettings);
@@ -3773,6 +3792,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						if (places > 1) {
 							fromHere.put(DutyGenerator.HOLD_COUNT_KEY, places);
 						}
+						// Which turn back rail: platforms turning round on the same one share it (8号线, 2026-11-12)
+						hold.getDefaultWay().stream().filter(pathData -> pathData.rail.railType == RailType.TURN_BACK).findFirst().ifPresent(pathData -> {
+							final long node1 = pathData.startingPos.asLong();
+							final long node2 = pathData.getLastPos().asLong();
+							final long rail = Math.min(node1, node2) * 0x9E3779B97F4A7C15L ^ Math.max(node1, node2);
+							fromHere.put(DutyGenerator.HOLD_RAIL_KEY, rail == 0 ? 1 : rail);
+						});
 						debugTurnTime(from, from, before, before, hold.getDefaultWay(), slowest);
 					}
 				}

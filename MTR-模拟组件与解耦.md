@@ -1141,6 +1141,11 @@ S0 之前，已经不依赖世界的部件：
 
 **网页分层第 2 步：手改区段归属（2026-11-09，0.63.0）**：组件 `TrackOwnership.compute` 加一个参数 `overrides`（按轨道键的线路列表），在按边界和站台算出的结果上按区段覆盖：一个区段里几条轨道手改了取并集，空列表表示对所有线路开放（去掉这个区段的归属），轨道不在了就不管。`getOverrides` 给出手改的区段。寻路和排运用照旧只看结果（`mayRun`），所以手改直接决定线路能走哪里。存放和同步在宿主（`NetworkSettings`、`TrackOwnersPackets`）。测试 `RouteLegsTest.ownersSetByHandAreLaidOverWhatIsWorkedOut`。
 
+
+**按行车侧办理复线（2026-11-12 用户定，0.69.0）**：游戏里普通轨道两个方向都能走（`twoWay`），以前 `PathClaims.between` 把连续的双向轨道当单线，所有闭塞区段并成一组整组办理，于是复线上后车要等前车走完整段才能进（7 号线长区间实测：30 s 间隔只出得来 4 列车）。现在 `transitsim.network.RunningDirections` 按线路的行车侧给复线每股定方向：同线、近乎平行、相距 1.5–12 格的轨道算并排，沿行车方向看在行车侧的那股就是该方向的（两股按左右，四股按方向别上上下下，奇数股中间那股和单独一股不定方向）；方向沿只连两根轨道的节点延续，上下线换位时各股保持自己的方向，一段里各部分不一致时按长的部分；道岔、平交（三根及以上）断开。游戏侧 `mtr.advanced.RunningSides` 收集各线路路径用到的轨道和线路，按 `NetworkSettings.runningSides`（全网 `""`、逻辑线路 `"L"+id`、运营线路 `"R"+线路键`，线路自己的优先，其次它的逻辑线路一致时的，再次全网，默认右侧）算出并缓存，`SimExport.toTracks` 给每段轨道 `RunTrack.getConvention()`（顺、逆、无）。`PathClaims`：顺行车侧时闭塞区段逐个成组，每段轨道的第一组带这段轨道的方向（`singleTrack`，同向共享），后车可以追踪；逆行车侧（反向运行）或无方向时照旧整段一组，等同向车全部走完才进，它占着时同向车也进不来。`DataTrack` 用标志位 32、64 存顺逆，旧记录没有即"无"，和以前一样。测试：`RunningDirectionsTest`（左右行、方向别四线、三线中间、单线、不同线路或行车侧不配对、换位沿轨道、道岔断开）、`PathClaimsTest`（顺行逐段、逆行和单线整段、顺逆是同一资源的两个方向）、`NetworkSettingsTest`（保存、网络包、复制、查找顺序）。
+
+**折返线让行、尽头站先进先出、折返能力（2026-11-12 用户定）**：`Arbiter` 记下每轮挡住别人请求的持有者，在折返线上等下一班的车挡住别人时改去站台等（`TrainRules`，两个宿主都实现 `Train.isBlockingOthers`）；规划器 `DutyPlanner` 对"车厂只能从终点站后折返线绕进来"的首站先进先出（`OperationNetwork.addDepotPassing`、`turningLate`、`isOnlyReachedBehind`），并对到达间隔短于折返用时的终点站台报 `TURN_BACK_CAPACITY`。运行层列车前后各留一个车厢长（`Authority.setMargin`）：持有范围包括车尾后一个车厢长，停在未批组前一个车厢长。
+
 ### 6.1 列车、线路、车厂的关系（2026-11-04，D 和出库逻辑之后）
 
 - **线路**：站台顺序加时刻表（按星期分表，每个班次有发车时刻和各站时间）。线路不属于哪个车厂；车厂列出它跑的线路，几个车厂可以跑同一条线路，共用这条线路的班次（`DepotDispatcher` 互为 peer，共享预约和 `getLastDeployedTrip`），一个班次只跑一次。

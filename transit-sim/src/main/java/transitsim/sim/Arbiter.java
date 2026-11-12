@@ -53,6 +53,10 @@ public final class Arbiter<K extends Comparable<K>> {
 	private final Map<Long, Long> firstRequestMillis = new HashMap<>();
 	private final Set<Long> grants = new HashSet<>();
 	/**
+	 * The holders that kept a request from being granted at the last resolve: what they hold or stand on was asked for.
+	 */
+	private final Set<Long> blocking = new HashSet<>();
+	/**
 	 * How many groups of each holder's last request of groups were granted.
 	 */
 	private final Map<Long, Integer> grantedGroups = new HashMap<>();
@@ -135,6 +139,13 @@ public final class Arbiter<K extends Comparable<K>> {
 		}
 		final Set<Long> resourceOccupants = occupants.get(resource);
 		return resourceOccupants != null && resourceOccupants.stream().anyMatch(other -> other != holder);
+	}
+
+	/**
+	 * @return whether what the holder holds or stands on kept another holder's request from being granted at the last resolve
+	 */
+	public boolean isBlocking(long holder) {
+		return blocking.contains(holder);
 	}
 
 	public Set<Long> getHolders() {
@@ -266,6 +277,7 @@ public final class Arbiter<K extends Comparable<K>> {
 		});
 		grants.clear();
 		grantedGroups.clear();
+		blocking.clear();
 		firstRequestMillis.keySet().retainAll(requests.keySet());
 		// A deadlock one of whose holders is gone, removed by the host, is over
 		knownDeadlocks.removeIf(deadlock -> deadlock.stream().anyMatch(holder -> !requests.containsKey(holder)));
@@ -317,6 +329,7 @@ public final class Arbiter<K extends Comparable<K>> {
 				firstRequestMillis.remove(request.holder);
 			} else {
 				notGranted.add(request);
+				request.claims.forEach(claim -> blocking.addAll(blockers(request.holder, claim)));
 				if (currentMillis - firstRequestMillis.get(request.holder) >= AGING_MILLIS) {
 					request.claims.forEach(claim -> waitedFor.putIfAbsent(claim.resource, claim));
 				}

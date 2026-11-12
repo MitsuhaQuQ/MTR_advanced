@@ -410,6 +410,16 @@ public final class LineDuties {
 					backLinks.put(siding.id, sidingBackLinks(siding, lastPlatforms, dataCache));
 					// Its fleet, however many trains its rails hold
 					final DutyGenerator.SidingInput sidingInput = new DutyGenerator.SidingInput(siding.id, siding.getFleetSize(), links, depot.id);
+					// Where its way out runs through a terminus's turn back behind trains turning there (first come, first out)
+					final Map<Long, Long> passes = new TreeMap<>(siding.getRecordedLegs().outPasses);
+					siding.getRecordedLegs().outPassNodes.forEach((platformId, node) -> {
+						final net.minecraft.core.BlockPos pos = net.minecraft.core.BlockPos.of(node);
+						dataCache.platformIdMap.values().stream().filter(platform -> platform.containsPos(pos)).findFirst().ifPresent(platform -> passes.putIfAbsent(platformId, platform.id));
+					});
+					sidingInput.passes = passes;
+					if (!passes.isEmpty()) {
+						System.out.println("Minecraft Transit Railway: siding " + siding.name + " reaches " + passes.keySet() + " only through " + passes.values() + " and its turn back (first come, first out there)");
+					}
 					// The runtime's pool: the unit's sidings of the same vehicle run each other's duties and take each other's trains
 					sidingInput.poolKey = siding.getPoolKey();
 					group.sidings.add(sidingInput);
@@ -553,7 +563,7 @@ public final class LineDuties {
 					}
 				}));
 			}
-			new TreeMap<>(measured).forEach((sidingId, legs) -> key.append('s').append(sidingId).append(new TreeSet<>(legs.outMillis.keySet())).append(new TreeSet<>(legs.unreachableOut)).append(new TreeSet<>(legs.backMillis.keySet())).append(new TreeSet<>(legs.unreachableBack)).append(';'));
+			new TreeMap<>(measured).forEach((sidingId, legs) -> key.append('s').append(sidingId).append(new TreeSet<>(legs.outMillis.keySet())).append(new TreeSet<>(legs.unreachableOut)).append(new TreeSet<>(legs.backMillis.keySet())).append(new TreeSet<>(legs.unreachableBack)).append(legs.outPasses).append(legs.outPassNodes).append(';'));
 			return digest(key.toString());
 		}
 
@@ -1451,6 +1461,13 @@ public final class LineDuties {
 				final String[] parts = issue.split(" ");
 				if (parts.length >= 4) {
 					text.append("; turnaround too short at platform ").append(parts[1]).append(": ").append(Long.parseLong(parts[2]) / 1000).append(" s, needs ").append(Long.parseLong(parts[3]) / 1000).append(" s");
+				}
+			});
+			// One way round taking longer than trains come in (7号线, 2026-11-12)
+			issues.stream().filter(issue -> issue.startsWith("TURN_BACK_CAPACITY ")).forEach(issue -> {
+				final String[] parts = issue.split(" ");
+				if (parts.length >= 4) {
+					text.append("; trains come in at platform ").append(parts[1]).append(" every ").append(Long.parseLong(parts[2]) / 1000).append(" s, but turning round takes ").append(Long.parseLong(parts[3]) / 1000).append(" s: its turn back can't keep up");
 				}
 			});
 			return text.toString();

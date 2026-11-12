@@ -519,10 +519,25 @@ public final class EditorActions implements IPacket {
 						}
 					}
 				}
+				// Running sides (user, 2026-11-12): "" the network's, "L" + id a logical line's, "R" + key an operating line's;
+				// 1 right hand, -1 left hand, null to take the next one up
+				if (operation.has("runningSides") && operation.get("runningSides").isJsonObject()) {
+					for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("runningSides").entrySet()) {
+						if (entry.getValue().isJsonNull()) {
+							settings.runningSides.remove(entry.getKey());
+						} else {
+							final int side = entry.getValue().getAsInt();
+							if (side != 1 && side != -1) {
+								return TranslatedMessage.get("gui.mtr.editor_bad_change");
+							}
+							settings.runningSides.put(entry.getKey(), side);
+						}
+					}
+				}
 			} catch (RuntimeException e) {
 				return TranslatedMessage.get("gui.mtr.editor_bad_change");
 			}
-			if (settings.logicalLines.size() > mtr.data.NetworkSettings.MAX_LOGICAL_LINES || settings.railLines.size() > mtr.data.NetworkSettings.MAX_RAIL_LINES || settings.lineTracks.size() > mtr.data.NetworkSettings.MAX_LINE_TRACKS) {
+			if (settings.logicalLines.size() > mtr.data.NetworkSettings.MAX_LOGICAL_LINES || settings.railLines.size() > mtr.data.NetworkSettings.MAX_RAIL_LINES || settings.lineTracks.size() > mtr.data.NetworkSettings.MAX_LINE_TRACKS || settings.runningSides.size() > mtr.data.NetworkSettings.MAX_RUNNING_SIDES) {
 				return TranslatedMessage.get("gui.mtr.editor_bad_change");
 			}
 			ClientData.DATA_CACHE.networkSettings.copyFrom(settings);

@@ -3,7 +3,7 @@
 // (2026-11-02 crash: DashboardList.mouseMoved out of bounds.) The fixture's station list is longer than a page, its
 // route and depot lists are two rows each.
 import {test, expect} from "../lib/test";
-import {list, move, openDashboard, scroll, state, switchTab, widget, ScreenState} from "../lib/game";
+import {list, move, openDashboard, scroll, state, switchTab, waitFor, widget, ScreenState} from "../lib/game";
 
 const LIST = "DashboardScreen.dashboardList";
 const ROW_BUTTONS = ["buttonFind", "buttonDrawArea", "buttonEdit", "buttonUp", "buttonDown", "buttonAdd", "buttonDelete"].map(name => `${LIST}.${name}`);
@@ -34,6 +34,8 @@ test("U24 切换仪表盘列表 @U24", async () => {
 	if ((await widget("DashboardScreen.buttonTabStations")).active) {
 		await switchTab("buttonTabStations");
 	}
+	// The list is filled on the screen's first frames
+	await waitFor("the station list", async () => (await list(LIST)).total > 0);
 
 	const stations = await list(LIST);
 	expect(stations.total, "the station list is longer than a page").toBeGreaterThan(stations.rowsShown);

@@ -99,6 +99,33 @@ class AuthorityTest {
 	}
 
 	@Test
+	void trainsKeepACarsLengthOfRoomFrontAndBack() {
+		// As above, with 20 blocks of room (user, 2026-11-12): the one behind stops 20 short of the section it isn't given
+		final PathClaims.Path<SimDataset.DataTrack> path = path(plain(1, 2, 1200, false), platform(2, 3, false));
+		final RunReservations reservations = new RunReservations();
+		final Authority ahead = new Authority(1, reservations);
+		final Authority behind = new Authority(2, reservations);
+		ahead.setMargin(20);
+		behind.setMargin(20);
+		final double[] ends = new double[2];
+		for (int i = 0; i < 6; i++) {
+			tick(reservations, () -> ends[0] = ahead.update(path, path, 900, 1000, 1230, null, 0), () -> ends[1] = behind.update(path, path, 0, 100, 1230, null, 0));
+		}
+		assertEquals(780, ends[1], 1E-6, "short of the third section by the room in front");
+		// With its tail 10 into the third section, the one ahead still holds the second, the room behind it reaching back
+		final Authority ahead2 = new Authority(3, reservations);
+		final Authority behind2 = new Authority(4, reservations);
+		ahead.release();
+		behind.release();
+		ahead2.setMargin(20);
+		behind2.setMargin(20);
+		for (int i = 0; i < 6; i++) {
+			tick(reservations, () -> ends[0] = ahead2.update(path, path, 810, 910, 1230, null, 0), () -> ends[1] = behind2.update(path, path, 0, 100, 1230, null, 0));
+		}
+		assertEquals(380, ends[1], 1E-6, "the second section is still held behind the one ahead");
+	}
+
+	@Test
 	void aTrainTurningBackKeepsTheOneBehindOutOfItsPlatform() {
 		final SimDataset.DataTrack terminal = platform(6, 7, true);
 		final SimDataset.DataTrack back = new SimDataset.DataTrack(7, 6, 30, true, false, 1, 0, 0, 1, false, true, true);

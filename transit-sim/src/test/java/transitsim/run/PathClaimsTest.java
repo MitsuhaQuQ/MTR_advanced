@@ -67,6 +67,44 @@ class PathClaimsTest {
 		groups.forEach(group -> assertEquals(1, count(group, Resource.Kind.TRACK)));
 	}
 
+	private static SimDataset.DataTrack runningSide(long from, long to, double length, int convention) {
+		return new SimDataset.DataTrack(from, to, length, false, false, 0, 0, 0, 1, true, true, true, convention);
+	}
+
+	@Test
+	void aDoubleTrackRunTheWayOfItsSideIsLetOnSectionBySection() {
+		// A 1200-block two way track of a double track line, run the way its running side has it: three sections, each a group
+		// of its own, so a train following another along it is let on as each clears; each with the track's direction
+		final PathClaims.Path<SimDataset.DataTrack> path = path(runningSide(1, 2, 1200, SimDataset.DataTrack.CONVENTION_WITH));
+		final List<PathClaims.Group> groups = PathClaims.between(path, 0, 1200, null);
+		assertEquals(3, groups.size(), groups.toString());
+		assertEquals(Arrays.asList(400.0, 800.0, 1200.0), Arrays.asList(groups.get(0).end, groups.get(1).end, groups.get(2).end));
+		assertEquals(1, count(groups.get(0), Resource.Kind.SINGLE_TRACK));
+		groups.forEach(group -> assertEquals(1, count(group, Resource.Kind.TRACK)));
+	}
+
+	@Test
+	void againstItsSideOrOnASingleTrackTheWholeStretchAtOnce() {
+		for (final int convention : new int[]{SimDataset.DataTrack.CONVENTION_AGAINST, SimDataset.DataTrack.CONVENTION_NONE}) {
+			final PathClaims.Path<SimDataset.DataTrack> path = path(runningSide(1, 2, 1200, convention));
+			final List<PathClaims.Group> groups = PathClaims.between(path, 0, 1200, null);
+			assertEquals(1, groups.size(), convention + ": " + groups);
+			assertEquals(3, count(groups.get(0), Resource.Kind.TRACK));
+			assertEquals(1, count(groups.get(0), Resource.Kind.SINGLE_TRACK));
+		}
+	}
+
+	@Test
+	void aTrainAgainstTheSideAndOneWithItShareNoDirection() {
+		// The way with the side and the way against it are the two ways of the same resource, so the arbiter never lets both on
+		final PathClaims.Path<SimDataset.DataTrack> with = path(runningSide(1, 2, 1200, SimDataset.DataTrack.CONVENTION_WITH));
+		final PathClaims.Path<SimDataset.DataTrack> against = path(runningSide(2, 1, 1200, SimDataset.DataTrack.CONVENTION_AGAINST));
+		final Arbiter.Claim<UUID> withWay = PathClaims.between(with, 0, 1200, null).get(0).claims.stream().filter(claim -> claim.kind == Resource.Kind.SINGLE_TRACK).findFirst().get();
+		final Arbiter.Claim<UUID> againstWay = PathClaims.between(against, 0, 1200, null).get(0).claims.stream().filter(claim -> claim.kind == Resource.Kind.SINGLE_TRACK).findFirst().get();
+		assertEquals(withWay.resource, againstWay.resource);
+		assertEquals(-withWay.way, againstWay.way);
+	}
+
 	@Test
 	void aLongTrackIsCutIntoSectionsLetOnOneByOne() {
 		final PathClaims.Path<SimDataset.DataTrack> path = path(plain(1, 2, 1200, false));

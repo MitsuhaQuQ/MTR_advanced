@@ -196,6 +196,8 @@ public final class SimulateDay {
 				// Where it stands and what is next, as block positions (x, y, z), to find the place in the game
 				System.out.printf("  at %s -> %s, next %s -> %s%n", pos(track.getStartNode()), pos(track.getEndNode()), next == null ? "-" : pos(next.getStartNode()), next == null ? "-" : pos(next.getEndNode()));
 				System.out.printf("  route %d, duty %d of siding %d%n", train.service.getTripRouteId(), train.service.getDutySlot(), train.getSidingId());
+				// What it waits for at a stop or a turn back rail: its duty's departure, when to leave the rail for its next segment
+				System.out.printf("  duty departure %s, leave turn back rail %s, now %s%n", clock(train.service.getDutyDepartureMillis()), clock(train.service.getTurnBackLeaveMillis()), clock(train.getMillis()));
 				// =all also gives the way it came and goes, a few rails each side, with the stops marked
 				if (stuckAll) {
 					for (int i = Math.max(0, head - 14); i <= Math.min(path.size() - 1, head + 6); i++) {

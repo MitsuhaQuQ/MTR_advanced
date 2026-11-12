@@ -184,6 +184,8 @@ public final class ClientDriver {
 		result.addProperty("guiScale", minecraft.getWindow().getGuiScale());
 		result.addProperty("guiWidth", minecraft.getWindow().getGuiScaledWidth());
 		result.addProperty("guiHeight", minecraft.getWindow().getGuiScaledHeight());
+		// The text drawn in the last frame, in the screen's (scaled) coordinates
+		result.add("texts", ScreenText.lastFrame());
 		final Screen screen = minecraft.screen;
 		if (screen == null) {
 			result.add("screen", null);

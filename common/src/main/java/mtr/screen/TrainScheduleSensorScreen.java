@@ -13,6 +13,7 @@ public class TrainScheduleSensorScreen extends TrainSensorScreenBase {
 
 	private final int seconds;
 	private StationCall.Trigger trigger = StationCall.Trigger.LEGACY;
+	private int trainKind = BlockTrainScheduleSensor.TileEntityTrainScheduleSensor.KIND_ALL;
 
 	private static final int MAX_SECONDS_LENGTH = 5;
 	private static final int DEFAULT_SECONDS = 10;
@@ -28,6 +29,7 @@ public class TrainScheduleSensorScreen extends TrainSensorScreenBase {
 			seconds = entity instanceof BlockTrainScheduleSensor.TileEntityTrainScheduleSensor ? ((BlockTrainScheduleSensor.TileEntityTrainScheduleSensor) entity).getSeconds() : DEFAULT_SECONDS;
 			if (entity instanceof BlockTrainScheduleSensor.TileEntityTrainScheduleSensor) {
 				trigger = ((BlockTrainScheduleSensor.TileEntityTrainScheduleSensor) entity).getTrigger();
+				trainKind = ((BlockTrainScheduleSensor.TileEntityTrainScheduleSensor) entity).getTrainKind();
 			}
 		}
 	}
@@ -37,6 +39,13 @@ public class TrainScheduleSensorScreen extends TrainSensorScreenBase {
 		super.init();
 		textFields[0].setValue(String.valueOf(seconds));
 		addTriggerButton(() -> trigger, value -> trigger = value, (width - SQUARE_SIZE * 3) / 2);
+		// Which trains: all, only those stopping, only those running through (2026-11-12)
+		buttonTrainKind = mtr.mappings.UtilitiesClient.newButton(kindText(), pressed -> {
+			trainKind = (trainKind + 1) % 3;
+			pressed.setMessage(kindText());
+		});
+		mtr.client.IDrawing.setPositionAndWidth(buttonTrainKind, SQUARE_SIZE * 2 + (width - SQUARE_SIZE * 3) / 2, optionsY, (width - SQUARE_SIZE * 3) / 2);
+		addDrawableChild(buttonTrainKind);
 	}
 
 	@Override
@@ -51,6 +60,12 @@ public class TrainScheduleSensorScreen extends TrainSensorScreenBase {
 
 	@Override
 	protected String[] getTimingSettings() {
-		return new String[]{trigger.name()};
+		return new String[]{trigger.name(), String.valueOf(trainKind)};
+	}
+
+	private net.minecraft.client.gui.components.Button buttonTrainKind;
+
+	private net.minecraft.network.chat.Component kindText() {
+		return Text.translatable(trainKind == BlockTrainScheduleSensor.TileEntityTrainScheduleSensor.KIND_STOPPING ? "gui.mtr.station_train_kind_stopping" : trainKind == BlockTrainScheduleSensor.TileEntityTrainScheduleSensor.KIND_PASSING ? "gui.mtr.station_train_kind_passing" : "gui.mtr.station_train_kind_all");
 	}
 }

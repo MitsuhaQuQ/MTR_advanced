@@ -53,6 +53,15 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 		private long lastArrivalMillis;
 		private static final long SAME_ARRIVAL_MILLIS = 30000;
 		private static final String KEY_SECONDS = "seconds";
+		private static final String KEY_TRAIN_KIND = "train_kind";
+		/**
+		 * Which trains trigger it (2026-11-12): {@link #KIND_ALL}, {@link #KIND_STOPPING} or {@link #KIND_PASSING}. A sensor
+		 * saved before has none and takes every train.
+		 */
+		private int trainKind = KIND_ALL;
+		public static final int KIND_ALL = 0;
+		public static final int KIND_STOPPING = 1;
+		public static final int KIND_PASSING = 2;
 		private static final String KEY_TRIGGER = "station_trigger";
 
 		public TileEntityTrainScheduleSensor(BlockPos pos, BlockState state) {
@@ -69,6 +78,7 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 		@Override
 		public void readCompoundTag(CompoundTag compoundTag) {
 			seconds = compoundTag.getInt(KEY_SECONDS);
+			trainKind = Math.max(KIND_ALL, Math.min(KIND_PASSING, compoundTag.getInt(KEY_TRAIN_KIND)));
 			trigger = StationCall.Trigger.read(compoundTag.getString(KEY_TRIGGER));
 			super.readCompoundTag(compoundTag);
 		}
@@ -76,6 +86,7 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 		@Override
 		public void writeCompoundTag(CompoundTag compoundTag) {
 			compoundTag.putInt(KEY_SECONDS, seconds);
+			compoundTag.putInt(KEY_TRAIN_KIND, trainKind);
 			compoundTag.putString(KEY_TRIGGER, trigger.name());
 			super.writeCompoundTag(compoundTag);
 		}
@@ -85,6 +96,12 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 			seconds = number;
 			if (strings.length >= 2) {
 				trigger = StationCall.Trigger.read(strings[1]);
+			}
+			if (strings.length >= 3) {
+				try {
+					trainKind = Math.max(KIND_ALL, Math.min(KIND_PASSING, Integer.parseInt(strings[2])));
+				} catch (NumberFormatException ignored) {
+				}
 			}
 			setData(filterRouteIds, stoppedOnly, movingOnly);
 		}
@@ -109,6 +126,21 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 			return trigger;
 		}
 
+		public int getTrainKind() {
+			return trainKind;
+		}
+
+		/**
+		 * @return whether a train running through the platform without stopping, or one stopping there, triggers it
+		 */
+		public boolean matchesKind(boolean passing) {
+			return matchesKind(trainKind, passing);
+		}
+
+		public static boolean matchesKind(int trainKind, boolean passing) {
+			return trainKind == KIND_ALL || (trainKind == KIND_PASSING) == passing;
+		}
+
 		public static <T extends BlockEntityMapper> void tick(Level world, BlockPos pos, T blockEntity) {
 			if (world != null && !world.isClientSide) {
 				final BlockState state = world.getBlockState(pos);
@@ -127,7 +159,7 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 				final TileEntityTrainScheduleSensor sensor = (TileEntityTrainScheduleSensor) blockEntity;
 				if (sensor.trigger != StationCall.Trigger.LEGACY) {
 					final long now = System.currentTimeMillis();
-					if (railwayData.getStationCalls(pos).stream().anyMatch(call -> sensor.matchesFilter(call.getRouteId(), -1) && call.trigger(pos, sensor.trigger, sensor.seconds, now))) {
+					if (railwayData.getStationCalls(pos).stream().anyMatch(call -> sensor.matchesFilter(call.getRouteId(), -1) && sensor.matchesKind(call.isPassing()) && call.trigger(pos, sensor.trigger, sensor.seconds, now))) {
 						((BlockTrainScheduleSensor) block).power(world, state, pos);
 					}
 					return;
@@ -145,7 +177,7 @@ public class BlockTrainScheduleSensor extends BlockTrainPoweredSensorBase {
 
 				final List<ScheduleEntry> scheduleList = new ArrayList<>();
 				schedules.forEach(scheduleEntry -> {
-					if (sensor.matchesFilter(scheduleEntry.routeId, -1)) {
+					if (sensor.matchesFilter(scheduleEntry.routeId, -1) && sensor.matchesKind(scheduleEntry.pass)) {
 						scheduleList.add(scheduleEntry);
 					}
 				});

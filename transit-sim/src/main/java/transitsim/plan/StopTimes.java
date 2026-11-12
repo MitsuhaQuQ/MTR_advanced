@@ -231,6 +231,23 @@ public class StopTimes {
 	}
 
 	/**
+	 * @return the time from leaving the siding to leaving the first platform: {@link #getLeadMillis()} and the stop there,
+	 * for planning when a duty's train leaves the depot, as its service is due to leave that platform at its time (L05:
+	 * with only the time to reach it, trains stood their whole stop there after the service was due). A joined loop is
+	 * timed by its join stop, as before.
+	 */
+	public long getDepartureLeadMillis() {
+		if (!hasJoinStops()) {
+			for (final Stop stop : stops) {
+				if (stop.index == firstIndex) {
+					return getLeadMillis() + Math.max(0, stop.departureMillis - stop.arrivalMillis);
+				}
+			}
+		}
+		return getLeadMillis();
+	}
+
+	/**
 	 * @return the fastest time from leaving one stop of the path to reaching a later one, by their rails, or -1 if either
 	 * isn't a stop of it
 	 */

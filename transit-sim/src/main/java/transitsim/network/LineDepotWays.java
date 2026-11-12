@@ -18,6 +18,11 @@ import java.util.*;
  * there would hold that while asking for the station, each waiting for the other for ever. Of the ways there are, those
  * running the line the way it runs are preferred (user: 有多路径时优先顺向): a section run against the line counts
  * {@link #AGAINST_WEIGHT} times more on top of its cost.
+ * <p>
+ * Where there is no other way, as for a depot right behind a terminus with only a crossover in front of it (user
+ * 2026-11-12: 放宽规则，但是需要在游戏内显式表示寻路路线), the way through the line's platforms against it is taken after
+ * all, counting {@link #AGAINST_STOP_PENALTY} more so that any other way is taken first; {@link #againstStops} says which
+ * platforms it runs against, for the game to show the way to players and to its depot checks.
  */
 public final class LineDepotWays {
 
@@ -25,6 +30,11 @@ public final class LineDepotWays {
 	 * How much more a section run against the line counts, on top of its cost, when ways are compared.
 	 */
 	public static final double AGAINST_WEIGHT = 2;
+	/**
+	 * How much more a way out or back counts for each of the line's platforms it runs against, so that it is only taken
+	 * where there is no other way: more than any way across a network costs.
+	 */
+	public static final double AGAINST_STOP_PENALTY = 1e9;
 
 	private LineDepotWays() {
 	}
@@ -187,6 +197,30 @@ public final class LineDepotWays {
 	}
 
 	/**
+	 * The line's platforms a way out or back runs against the line, other than at its own two ends (where a train may
+	 * enter against the line and turn back): empty for a way kept to the rule, and what to show players otherwise.
+	 *
+	 * @param way    a plan from {@link #planOut} or {@link #planBack}
+	 * @param routes the plans of the depot's routes, as given to them
+	 * @return the sections of those platforms, in the order the way runs them, each once
+	 */
+	public static List<Long> againstStops(RouteLegs.Plan way, List<RouteLegs.Plan> routes) {
+		final List<Long> against = new ArrayList<>();
+		if (way == null || !way.isFound() || way.steps.isEmpty()) {
+			return against;
+		}
+		final Graph graph = new Graph(routes, null, null, null);
+		final long first = way.steps.get(0)[0];
+		final long last = way.steps.get(way.steps.size() - 1)[0];
+		for (final long[] step : way.steps) {
+			if (step[0] != first && step[0] != last && graph.stopSections.contains(step[0]) && graph.isAgainst(step) && !against.contains(step[0])) {
+				against.add(step[0]);
+			}
+		}
+		return against;
+	}
+
+	/**
 	 * The station nearest the siding by the way between them, as its platforms: those no more than a turn back further than
 	 * the nearest, as the platforms of a station for each way are; any further, and a train would run the track between
 	 * them, maybe against the line, rather than along the line.
@@ -336,19 +370,20 @@ public final class LineDepotWays {
 
 		/**
 		 * @param station the station the leg goes out to or back from, which alone it may run against the line
-		 * @return the cost of a leg between the siding and a station, weighted as {@link #weighted}; infinite if it runs
-		 * through another of the line's platforms against the line
+		 * @return the cost of a leg between the siding and a station, weighted as {@link #weighted}, with
+		 * {@link #AGAINST_STOP_PENALTY} more for each other of the line's platforms it runs against the line
 		 */
 		private double freeCost(LegRouter.Leg leg, boolean toAlong, long station) {
 			if (Double.isInfinite(leg.getCost(toAlong))) {
 				return Double.POSITIVE_INFINITY;
 			}
+			int against = 0;
 			for (final long[] step : leg.getSteps(toAlong)) {
 				if (step[0] != station && stopSections.contains(step[0]) && isAgainst(step)) {
-					return Double.POSITIVE_INFINITY;
+					against++;
 				}
 			}
-			return weighted(leg, toAlong);
+			return weighted(leg, toAlong) + against * AGAINST_STOP_PENALTY;
 		}
 
 		private double[] newCosts() {

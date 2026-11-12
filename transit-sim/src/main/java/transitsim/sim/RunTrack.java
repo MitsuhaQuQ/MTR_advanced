@@ -31,6 +31,22 @@ public interface RunTrack extends PlanTrack {
 	 */
 	boolean isTwoWay();
 
+	/** Run along a two way track the way the line's running side has it (复线, {@link transitsim.network.RunningDirections}) */
+	int CONVENTION_WITH = 1;
+	/** Run along it against that way, as a train crossing over to the other track (反向运行) */
+	int CONVENTION_AGAINST = -1;
+	/** A track with no way of its own: a single track, a turn back rail, a siding, or one not known */
+	int CONVENTION_NONE = 0;
+
+	/**
+	 * How the path runs along this track as the running side of its line has it: with it, trains going the same way follow
+	 * each other section by section; against it, or on a track with no way of its own, a train takes the whole stretch at
+	 * once, as on a single track.
+	 */
+	default int getConvention() {
+		return CONVENTION_NONE;
+	}
+
 	long getStartNode();
 
 	long getEndNode();

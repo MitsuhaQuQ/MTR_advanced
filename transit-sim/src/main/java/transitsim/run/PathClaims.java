@@ -130,6 +130,12 @@ public final class PathClaims {
 	 *
 	 * @param sections the painted signal blocks, or null for none
 	 */
+	/**
+	 * False (system property {@code mtr.runningSides=false}) books two way tracks as single track whatever their line's running
+	 * side, as before 0.69.0, to compare.
+	 */
+	public static final boolean RUNNING_SIDES = !"false".equals(System.getProperty("mtr.runningSides"));
+
 	public static <T extends RunTrack> List<Group> between(Path<T> path, double from, double to, BlockSections sections) {
 		final List<T> tracks = path.getTracks();
 		final List<Group> groups = new ArrayList<>();
@@ -193,7 +199,15 @@ public final class PathClaims {
 				pieceEnds.add(Math.min(start + (pieceAlong + 1) * pieceLength, Math.max(to, start)));
 			}
 			final boolean turnsBack = i + 1 < tracks.size() && path.turnsBack(i, i + 1);
-			if (track.isTwoWay() || turnsBack) {
+			// A two way track run the way its line's running side has it (复线): trains going that way follow each other section
+			// by section, as on a one way track; each section carries the track's direction, which they share, so a train
+			// running it the other way (反向运行), which takes its whole stretch at once as on a single track, waits for them
+			// all to leave it, and they for it
+			final boolean withConvention = RUNNING_SIDES && track.isTwoWay() && !turnsBack && track.getConvention() == RunTrack.CONVENTION_WITH;
+			if (withConvention && !pieceClaims.isEmpty()) {
+				pieceClaims.get(0).add(Arbiter.Claim.singleTrack(directionOf(track.getTrackKey()), forwards));
+			}
+			if (track.isTwoWay() && !withConvention || turnsBack) {
 				// Single track, run one way, or both ways where the train turns back on it
 				if (singleTrack == null) {
 					singleTrack = new ArrayList<>();

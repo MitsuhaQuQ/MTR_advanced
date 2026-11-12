@@ -36,10 +36,15 @@ test("U22 节点角度：自由节点输入负角度 @U22", async ({marks}) => {
 	const {messages} = await chatSince(marks.chat);
 	expect(messages.filter(m => !m.overlay).map(m => m.text), "no error in the chat").toEqual([]);
 
-	// Opened again, the screen shows the angle that was set
-	await openNode(x, y, z);
-	expect(sameAngle(Number((await widget(ANGLE)).value), -135), `the field shows -135 or the same angle (${(await widget(ANGLE)).value})`).toBe(true);
-	await click("NodeAngleScreen.buttonCancel");
+	// Opened again, once the client has the new angle, the screen shows the angle that was set
+	const shown = await waitFor("the screen to show the angle set", async () => {
+		await openNode(x, y, z);
+		const value = Number((await widget(ANGLE)).value);
+		await click("NodeAngleScreen.buttonCancel");
+		await waitScreen(null);
+		return sameAngle(value, -135) ? String(value) : undefined;
+	}, 10_000, 500);
+	expect(sameAngle(Number(shown), -135)).toBe(true);
 	await serverCommand(`setblock ${x} ${y} ${z} minecraft:air`);
 });
 

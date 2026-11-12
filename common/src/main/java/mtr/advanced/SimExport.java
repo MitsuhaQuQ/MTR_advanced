@@ -42,6 +42,8 @@ public final class SimExport {
 	public static SimDataset toDataset(RailwayData railwayData) {
 		final SimDataset dataset = new SimDataset();
 		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		// The way each double track runs by its line's running side, for the paths below (user, 2026-11-12)
+		RunningSides.get(railwayData);
 		final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
 		railwayData.routes.stream().sorted(Comparator.comparingLong(route -> route.id)).forEach(route -> {
 			final SimDataset.RouteData routeData = new SimDataset.RouteData(route);
@@ -94,13 +96,15 @@ public final class SimExport {
 	}
 
 	public static List<SimDataset.DataTrack> toTracks(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		final Map<java.util.UUID, Integer> directions = RunningSides.get(rails);
 		final java.util.function.Function<PathData, SimDataset.DataTrack> convert = pathData -> {
 			final RailType railType = pathData.rail.railType;
 			final Rail backwards = DataCache.tryGet(rails, pathData.getLastPos(), pathData.startingPos);
 			return new SimDataset.DataTrack(
 					pathData.startingPos.asLong(), pathData.getLastPos().asLong(), pathData.rail.getLength(),
 					railType == RailType.PLATFORM, railType == RailType.SIDING, pathData.savedRailBaseId, pathData.dwellTime, pathData.stopIndex,
-					pathData.getMaxSpeed(), railType.canAccelerate, railType.hasSignal, backwards != null && backwards.railType != RailType.NONE
+					pathData.getMaxSpeed(), railType.canAccelerate, railType.hasSignal, backwards != null && backwards.railType != RailType.NONE,
+					RunningSides.getConvention(directions, pathData.startingPos, pathData.getLastPos())
 			);
 		};
 		if (path instanceof transitsim.plan.IndexedPath) return ((transitsim.plan.IndexedPath<PathData>) path).map(convert, SimDataset.DataTrack::withStopIndexOffset, SimDataset::trackSignature);

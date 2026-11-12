@@ -1074,6 +1074,10 @@ public final class SimDataset {
 		private final boolean canAccelerate;
 		private final boolean hasSignal;
 		private final boolean twoWay;
+		/**
+		 * See {@link RunTrack#getConvention()}.
+		 */
+		private final int convention;
 		private int stopIndex;
 		/**
 		 * Where trains stop on it, if it is a platform (round 4, {@link transitsim.plan.StopPositions}), set from the
@@ -1082,6 +1086,13 @@ public final class SimDataset {
 		private int stopPosition;
 
 		public DataTrack(long startNode, long endNode, double length, boolean platform, boolean siding, long stopId, int dwellTime, int stopIndex, float maxSpeed, boolean canAccelerate, boolean hasSignal, boolean twoWay) {
+			this(startNode, endNode, length, platform, siding, stopId, dwellTime, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay, CONVENTION_NONE);
+		}
+
+		/**
+		 * @param convention how the path runs along the track as its line's running side has it, see {@link RunTrack#getConvention()}
+		 */
+		public DataTrack(long startNode, long endNode, double length, boolean platform, boolean siding, long stopId, int dwellTime, int stopIndex, float maxSpeed, boolean canAccelerate, boolean hasSignal, boolean twoWay, int convention) {
 			this.startNode = startNode;
 			this.endNode = endNode;
 			this.length = length;
@@ -1094,6 +1105,7 @@ public final class SimDataset {
 			this.canAccelerate = canAccelerate;
 			this.hasSignal = hasSignal;
 			this.twoWay = twoWay;
+			this.convention = twoWay ? convention : CONVENTION_NONE;
 		}
 
 		/**
@@ -1113,7 +1125,7 @@ public final class SimDataset {
 		 * @return the same track, which a train stops at the end of for this long, at this platform (D5)
 		 */
 		public DataTrack withStop(int newDwellTime, long newStopId) {
-			final DataTrack track = new DataTrack(startNode, endNode, length, platform, siding, newStopId, newDwellTime, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay);
+			final DataTrack track = new DataTrack(startNode, endNode, length, platform, siding, newStopId, newDwellTime, stopIndex, maxSpeed, canAccelerate, hasSignal, twoWay, convention);
 			track.stopPosition = newStopId == stopId ? stopPosition : 0;
 			return track;
 		}
@@ -1136,7 +1148,7 @@ public final class SimDataset {
 			writer.writeLong(startNode);
 			writer.writeLong(endNode);
 			writer.writeLong(Double.doubleToLongBits(length));
-			writer.writeByte((platform ? 1 : 0) | (siding ? 2 : 0) | (canAccelerate ? 4 : 0) | (hasSignal ? 8 : 0) | (twoWay ? 16 : 0));
+			writer.writeByte((platform ? 1 : 0) | (siding ? 2 : 0) | (canAccelerate ? 4 : 0) | (hasSignal ? 8 : 0) | (twoWay ? 16 : 0) | (convention == CONVENTION_WITH ? 32 : 0) | (convention == CONVENTION_AGAINST ? 64 : 0));
 			writer.writeLong(stopId);
 			writer.writeInt(dwellTime);
 			writer.writeInt(stopIndex);
@@ -1152,7 +1164,9 @@ public final class SimDataset {
 			final int dwellTime = reader.readInt();
 			final int stopIndex = reader.readInt();
 			final float maxSpeed = readFloat(reader);
-			return new DataTrack(startNode, endNode, length, (flags & 1) != 0, (flags & 2) != 0, stopId, dwellTime, stopIndex, maxSpeed, (flags & 4) != 0, (flags & 8) != 0, (flags & 16) != 0);
+			// Older records have neither of the last two flags: no running side, as before
+			final int convention = (flags & 32) != 0 ? CONVENTION_WITH : (flags & 64) != 0 ? CONVENTION_AGAINST : CONVENTION_NONE;
+			return new DataTrack(startNode, endNode, length, (flags & 1) != 0, (flags & 2) != 0, stopId, dwellTime, stopIndex, maxSpeed, (flags & 4) != 0, (flags & 8) != 0, (flags & 16) != 0, convention);
 		}
 
 		@Override
@@ -1173,6 +1187,11 @@ public final class SimDataset {
 		@Override
 		public boolean isTwoWay() {
 			return twoWay;
+		}
+
+		@Override
+		public int getConvention() {
+			return convention;
 		}
 
 		@Override

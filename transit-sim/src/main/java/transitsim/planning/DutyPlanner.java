@@ -218,6 +218,19 @@ public final class DutyPlanner {
 				continue;
 			}
 			OpenDuty duty = startDepots == null ? findTrainInService(open, trip) : null;
+			// First come, first out at a terminus with one way round (6号线, 2026-11-12): a train turning back there that
+			// can't make the trip in time still takes it, a little late, rather than a train from a depot whose way out runs
+			// through the same turn back behind it and could only overtake it there
+			if (duty == null && startDepots == null && turningLate != null && isOnlyReachedBehind(turningLate.platformId, trip.firstPlatform())) {
+				duty = turningLate;
+				duty.waits.add(transitsim.plan.DepotDuties.DayDuty.WAIT_CHANGE_PLATFORM);
+				final long given = trip.startMillis() - duty.endMillis;
+				final long needed = duty.readyMillis + network.connectionMillis(duty.platformId, trip.firstPlatform()) - duty.endMillis;
+				final long[] worst = shortTurnarounds.get(trip.firstPlatform());
+				if (worst == null || given < worst[0]) {
+					shortTurnarounds.put(trip.firstPlatform(), new long[]{given, needed});
+				}
+			}
 			if (duty != null) {
 				duty.add(trip, network);
 				occupy(trip);
@@ -405,7 +418,37 @@ public final class DutyPlanner {
 				&& (depot.id == duty.depotId || depot.trainCount >= DepotDuties.MAX_SLOTS || depotReady.get(depot.id).size() < depot.trainCount);
 	}
 
+	/**
+	 * Of the last {@link #findTrainInService}, the train that came first to another platform the trip is reached from, but
+	 * too late to turn round for it, or null.
+	 */
+	private OpenDuty turningLate;
+	/**
+	 * How long after a trip is due a train coming in at the terminus it turns at can still take it, rather than a depot's
+	 * train coming in behind it.
+	 */
+	static final long TURNING_LATE_WINDOW_MILLIS = 3 * OperationTime.MINUTE_MILLIS;
+
+	/**
+	 * @return whether every depot that can send a train to the platform does it through the other platform just before
+	 * turning back into it, and one can
+	 */
+	private boolean isOnlyReachedBehind(long passedPlatformId, long platformId) {
+		boolean any = false;
+		for (final OperationNetwork.Depot depot : network.depots()) {
+			if (depot.linkMillis(platformId) == OperationNetwork.UNREACHABLE) {
+				continue;
+			}
+			if (depot.passesBefore(platformId) != passedPlatformId) {
+				return false;
+			}
+			any = true;
+		}
+		return any;
+	}
+
 	private OpenDuty findTrainInService(List<OpenDuty> open, Trip trip) {
+		turningLate = null;
 		OpenDuty best = null;
 		boolean bestHolds = false;
 		OpenDuty missed = null;
@@ -424,6 +467,14 @@ public final class DutyPlanner {
 			if (reachable && (platformFree || railFree) && (best == null || duty.readyMillis > best.readyMillis)) {
 				best = duty;
 				bestHolds = railFree;
+			}
+			// At another platform the trip is reached from, before the trip leaves, but too late to turn round for it: the one
+			// there first
+			// there first; or coming in a little after the trip is due, as a depot's train sent for it runs the same track behind
+			// it and comes in after it anyway (2号线, 2026-11-12: the express's train out of the depot ran the whole line behind a
+			// stopping train and waited 3 minutes for the platform it took)
+			if (!samePlatform && !overnightMove && connectionMillis != OperationNetwork.UNREACHABLE && duty.endMillis <= trip.startMillis() + TURNING_LATE_WINDOW_MILLIS && duty.readyMillis + connectionMillis > trip.startMillis() && (turningLate == null || duty.endMillis < turningLate.endMillis)) {
+				turningLate = duty;
 			}
 			// Arrived at the platform before the trip leaves, but too late to turn round for it
 			if (samePlatform && connectionMillis != OperationNetwork.UNREACHABLE && duty.endMillis <= trip.startMillis() && duty.readyMillis + connectionMillis > trip.startMillis() && (missed == null || duty.endMillis > missed.endMillis)) {
@@ -531,6 +582,7 @@ public final class DutyPlanner {
 		if (hold == null) {
 			return false;
 		}
+		final long rail = network.turnBackRail(duty.platformId);
 		final long outMillis = holdOutMillis(duty, trip, hold);
 		final long fromMillis = duty.endMillis + hold[0];
 		final long toMillis = trip.startMillis() - outMillis;
@@ -552,7 +604,43 @@ public final class DutyPlanner {
 				}
 			}
 		}
-		return true;
+		// Nor while another train is due to turn round on the same rail (8号线, 2026-11-12): one ending its trip at a platform
+		// that turns round there, whose way round it would stand in, and which would stand in the way it comes back out
+		return !isTurnedOnMeanwhile(rail, duty, fromMillis, toMillis);
+	}
+
+	/**
+	 * Each platform's trips ending there, by the time they arrive, the week round: the trains that turn round beyond it.
+	 */
+	private Map<Long, List<Long>> endingAt;
+
+	private boolean isTurnedOnMeanwhile(long rail, OpenDuty duty, long fromMillis, long toMillis) {
+		if (endingAt == null) {
+			endingAt = new TreeMap<>();
+			trips.forEach(each -> endingAt.computeIfAbsent(each.lastPlatform(), key -> new ArrayList<>()).add(each.endMillis()));
+		}
+		// The platforms turning round on that rail, and, as a train ending at a platform may reverse back into a turn back
+		// rail behind it, which isn't its own (8号线 三站's westbound platform and the rail east of it), every platform of
+		// the station
+		final Set<Long> platforms = new java.util.TreeSet<>(network.platformsTurningOn(rail));
+		final long station = network.stationOf(duty.platformId);
+		if (station != 0) {
+			endingAt.keySet().stream().filter(platformId -> network.stationOf(platformId) == station).forEach(platforms::add);
+		}
+		for (final long platformId : platforms) {
+			for (final long end : endingAt.getOrDefault(platformId, Collections.emptyList())) {
+				if (platformId == duty.platformId && end == duty.endMillis) {
+					continue;
+				}
+				for (int week = -1; week <= 1; week++) {
+					final long shifted = end + week * OperationTime.WEEK_MILLIS;
+					if (shifted > fromMillis && shifted < toMillis) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -596,6 +684,53 @@ public final class DutyPlanner {
 		return true;
 	}
 
+	/**
+	 * @return for each platform trains turn round at to another, where they come in closer together than one takes to turn:
+	 * the least time between two arrivals and the time to turn round
+	 */
+	private Map<Long, long[]> turnBackCapacity(WeekResult week) {
+		// Every train coming in at the last stop of a trip, whether it goes on to its next trip or back to a depot through
+		// the same turn back (7号线's go back each time); turning round there takes at least the quickest way to a platform
+		// trips start at
+		final List<OpenDuty> duties = new ArrayList<>(week.finished);
+		duties.addAll(week.carried);
+		final Set<Long> firstPlatforms = new java.util.TreeSet<>();
+		duties.forEach(duty -> duty.trips.forEach(trip -> firstPlatforms.add(trip.firstPlatform())));
+		final Map<Long, List<Long>> arrivals = new TreeMap<>();
+		final Map<Long, Long> turnMillis = new TreeMap<>();
+		for (final OpenDuty duty : duties) {
+			for (final Trip trip : duty.trips) {
+				final long from = trip.lastPlatform();
+				if (!turnMillis.containsKey(from)) {
+					long quickest = Long.MAX_VALUE;
+					for (final long to : firstPlatforms) {
+						final long connection = network.connectionMillis(from, to);
+						if (to != from && connection != OperationNetwork.UNREACHABLE && connection > 0) {
+							quickest = Math.min(quickest, connection);
+						}
+					}
+					turnMillis.put(from, quickest);
+				}
+				if (turnMillis.get(from) != Long.MAX_VALUE) {
+					arrivals.computeIfAbsent(from, key -> new ArrayList<>()).add(trip.endMillis());
+				}
+			}
+		}
+		final Map<Long, long[]> result = new TreeMap<>();
+		arrivals.forEach((platformId, times) -> {
+			Collections.sort(times);
+			long least = Long.MAX_VALUE;
+			for (int i = 1; i < times.size(); i++) {
+				least = Math.min(least, times.get(i) - times.get(i - 1));
+			}
+			final long needed = turnMillis.get(platformId);
+			if (least < needed) {
+				result.put(platformId, new long[]{least, needed});
+			}
+		});
+		return result;
+	}
+
 	private OperationPlan buildPlan(WeekResult week, WeekResult following, boolean settled) {
 		final List<Issue> planIssues = new ArrayList<>(issues);
 		if (!settled) {
@@ -604,6 +739,7 @@ public final class DutyPlanner {
 		week.uncovered.forEach(trip -> planIssues.add(new Issue(IssueType.NO_TRAIN, trip.key())));
 		// Detail: the platform, the time trains had there to turn round and the time they needed, in milliseconds
 		shortTurnarounds.forEach((platformId, times) -> planIssues.add(new Issue(IssueType.SHORT_TURNAROUND, platformId + " " + times[0] + " " + times[1])));
+		turnBackCapacity(week).forEach((platformId, times) -> planIssues.add(new Issue(IssueType.TURN_BACK_CAPACITY, platformId + " " + times[0] + " " + times[1])));
 
 		final List<OpenDuty> openDuties = new ArrayList<>(week.finished);
 		openDuties.addAll(week.carried);

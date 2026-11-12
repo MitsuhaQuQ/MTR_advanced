@@ -61,6 +61,12 @@ public final class OperationPlan {
 		THROUGH_CONFLICT,
 		PLATFORM_CONFLICT,
 		/**
+		 * Trains come in at a terminus platform, to turn round to another one, closer together than one takes to get there
+		 * (7号线, 2026-11-12: every 30 seconds, one turn back taking a minute): the one way round can't keep up and the trains
+		 * fall behind. Detail: the platform, the least time between two arrivals and the time to turn round, in milliseconds.
+		 */
+		TURN_BACK_CAPACITY,
+		/**
 		 * The depots lose trains from week to week, so the plan never settles into a repeating week.
 		 */
 		NOT_PERIODIC

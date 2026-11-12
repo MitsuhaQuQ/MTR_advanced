@@ -27,7 +27,11 @@ async function openSiding(depot: string) {
 async function chooseTrain(text: string): Promise<string> {
 	await click("SidingScreen.buttonSelectTrain");
 	await type(`${TRAINS}.textFieldSearch`, text, true);
-	const row = await waitFor(`a train named ${text}`, async () => (await list(TRAINS)).rows.find(r => r.label.includes(text)));
+	// The list is filtered on the next frame: wait until every row it shows matches, or a stale row would be clicked
+	const row = await waitFor(`the list filtered to ${text}`, async () => {
+		const rows = (await list(TRAINS)).rows;
+		return rows.length > 0 && rows.every(r => r.label.includes(text)) ? rows[0] : undefined;
+	});
 	await hoverRow(TRAINS, row.label);
 	await click(`${TRAINS}.buttonAdd`);
 	await waitFor("the train list to close", async () => (await widget("SidingScreen.buttonSelectTrain")).visible);

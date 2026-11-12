@@ -39,6 +39,10 @@ public final class DutyGenerator {
 	 * and stabling blocks (运用补完 step 4); one where not given.
 	 */
 	public static final long HOLD_COUNT_KEY = Long.MIN_VALUE + 1;
+	/**
+	 * In a platform's turn times, which turn back rail it waits on, as a number the same for every platform turning on it.
+	 */
+	public static final long HOLD_RAIL_KEY = Long.MIN_VALUE + 2;
 	private static final int MAX_LINKS = 8;
 	private static final int UNLIMITED_TRAINS = DepotDuties.MAX_SLOTS;
 	private static final int MAX_SPREAD_OFFSETS = 8;
@@ -285,6 +289,9 @@ public final class DutyGenerator {
 	 */
 	static OperationNetwork networkOf(List<TimetableService> timetableServices, List<SidingInput> sidings, Map<Long, Long> stationOf, PlanInputs inputs) {
 		final OperationNetwork network = new OperationNetwork();
+		if (stationOf != null) {
+			stationOf.forEach(network::setStation);
+		}
 		sidings.forEach(siding -> network.addDepot(siding.sidingId, siding.maxTrains < 0 ? UNLIMITED_TRAINS : Math.min(siding.maxTrains, UNLIMITED_TRAINS), siding.poolKey));
 		inputs.poolFleets.forEach(network::setPoolFleet);
 		inputs.waitThresholds.forEach(network::setWaitThreshold);
@@ -309,6 +316,10 @@ public final class DutyGenerator {
 				siding.links.forEach((platformId, millis) -> {
 					if (firstPlatforms.contains(platformId)) {
 						network.addDepotLink(siding.sidingId, platformId, millis + inputs.buffers.out(siding.sidingId, platformId));
+						final Long passed = siding.passes == null ? null : siding.passes.get(platformId);
+						if (passed != null) {
+							network.addDepotPassing(siding.sidingId, platformId, passed);
+						}
 					}
 				});
 			}
@@ -340,7 +351,8 @@ public final class DutyGenerator {
 				final Long inMillis = fromHere.get(HOLD_IN_KEY);
 				final long in = inMillis == null ? holdMillis / 2 : Math.min(inMillis, holdMillis);
 				final Long count = fromHere.get(HOLD_COUNT_KEY);
-				network.setTurnBackHold(lastPlatform, in, holdMillis - in, count == null ? 1 : (int) Math.min(count, Integer.MAX_VALUE));
+				final Long rail = fromHere.get(HOLD_RAIL_KEY);
+				network.setTurnBackHold(lastPlatform, in, holdMillis - in, count == null ? 1 : (int) Math.min(count, Integer.MAX_VALUE), rail == null ? 0 : rail);
 			}
 			final Long station = stationOf.get(lastPlatform);
 			firstPlatforms.forEach(firstPlatform -> {
@@ -900,11 +912,17 @@ public final class DutyGenerator {
 		 * runtime (same planning unit and vehicle); null for a pool of its own.
 		 */
 		public String poolKey;
+		/**
+		 * First platform → the platform its way out runs through just before turning back into it, or null for none
+		 * ({@link OperationNetwork#addDepotPassing}).
+		 */
+		public Map<Long, Long> passes;
 
 		/** Change capacity without changing vehicle-pool membership or access rules. */
 		public SidingInput withCapacity(int capacity) {
 			final SidingInput copy = new SidingInput(sidingId, capacity, links, depotId);
 			copy.poolKey = poolKey;
+			copy.passes = passes;
 			return copy;
 		}
 

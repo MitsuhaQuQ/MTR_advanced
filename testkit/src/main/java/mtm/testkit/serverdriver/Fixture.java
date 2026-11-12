@@ -62,7 +62,7 @@ public final class Fixture {
 			level.setBlockAndUpdate(new BlockPos(x, Y, 0), Blocks.RAIL_NODE.get().defaultBlockState().setValue(BlockNode.FACING, true));
 		}
 		for (int i = 0; i < types.length; i++) {
-			connect(level, railwayData, player, new BlockPos(xs[i], Y, 0), new BlockPos(xs[i + 1], Y, 0), types[i]);
+			connectRail(level, railwayData, player, new BlockPos(xs[i], Y, 0), new BlockPos(xs[i + 1], Y, 0), types[i]);
 		}
 
 		final Platform platformA = platformAt(railwayData.platforms, -90);
@@ -132,7 +132,7 @@ public final class Fixture {
 	/**
 	 * The rail connector's own steps (ItemNodeModifierBase.onEndClick and ItemRailModifier.onConnect) for a straight rail.
 	 */
-	private static void connect(ServerLevel level, RailwayData railwayData, FakePlayer player, BlockPos posStart, BlockPos posEnd, RailType railType) {
+	public static void connectRail(ServerLevel level, RailwayData railwayData, FakePlayer player, BlockPos posStart, BlockPos posEnd, RailType railType) {
 		final float angleDifference = (float) Math.toDegrees(Math.atan2(posEnd.getZ() - posStart.getZ(), posEnd.getX() - posStart.getX()));
 		final BlockState stateStart = level.getBlockState(posStart);
 		final BlockState stateEnd = level.getBlockState(posEnd);

@@ -6,6 +6,10 @@ architectury {
 
 loom {
 	accessWidenerPath = file("src/main/resources/mtm_testkit.accesswidener")
+	// Its own name: the root build gives every project MTR's "mtr-refmap.json", and two jars with that name would clash
+	mixin {
+		defaultRefmapName.set("mtm_testkit-refmap.json")
+	}
 }
 
 dependencies {

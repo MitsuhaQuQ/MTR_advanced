@@ -311,7 +311,22 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			});
 		}
 		delete.run();
-		if (route == null || railwayData.dataCache.routeIdMap.containsKey(routeId)) {
+		if (route == null) {
+			return;
+		}
+		// The delete is queued as the server thread's next task (PacketTrainDataBase.deleteData), so whether it went
+		// through is looked at in a task queued after it; looked at straight away, the route was still there and nothing
+		// was ever reported (U96)
+		final MinecraftServer server = player.getServer();
+		if (server == null) {
+			reportDeletedRoute(player, railwayData, routeId, route, depots, duties, links);
+		} else {
+			server.execute(() -> reportDeletedRoute(player, railwayData, routeId, route, depots, duties, links));
+		}
+	}
+
+	private static void reportDeletedRoute(ServerPlayer player, RailwayData railwayData, long routeId, Route route, List<String> depots, List<String> duties, List<String> links) {
+		if (railwayData.dataCache.routeIdMap.containsKey(routeId) || railwayData.routes.stream().anyMatch(each -> each.id == routeId)) {
 			return;
 		}
 		final String routeName = IGui.formatStationName(route.name);

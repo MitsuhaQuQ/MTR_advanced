@@ -68,6 +68,8 @@ class NetworkSettingsTest {
 		packet.writeVarInt(0);
 		packet.writeVarInt(0);
 		packet.writeVarInt(0);
+		// No running sides (0.69.0)
+		packet.writeVarInt(0);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
 		assertEquals(0, read.minReverseMillis);
@@ -122,6 +124,45 @@ class NetworkSettingsTest {
 		old.remove("fare_station_groups");
 		final NetworkSettings oldSettings = new NetworkSettings(old);
 		assertTrue(oldSettings.fareLevels.isEmpty() && oldSettings.fareRouteGroups.isEmpty() && oldSettings.fareStationGroups.isEmpty());
+	}
+
+	@Test
+	void runningSidesAreSavedSentCopiedAndLookedUpLineFirst() throws IOException {
+		// Running sides (0.69.0): the network's, a logical line's and an operating line's
+		final NetworkSettings settings = new NetworkSettings();
+		assertEquals(transitsim.network.RunningDirections.RIGHT, settings.getRunningSide("TRAIN|line 1"), "right hand when nothing is set");
+		settings.logicalLines.put(4L, new NetworkSettings.LogicalLine("Trunk", 0, false));
+		settings.lineTracks.put("TRAIN|line 2", new java.util.ArrayList<>(java.util.Collections.singletonList(4L)));
+		settings.runningSides.put("L4", -1);
+		settings.runningSides.put("RTRAIN|line 3", -1);
+		settings.runningSides.put("RTRAIN|line 2", 1);
+		settings.runningSides.put(NetworkSettings.SIDE_NETWORK, -1);
+		assertEquals(1, settings.getRunningSide("TRAIN|line 2"), "its own before its logical line's");
+		assertEquals(-1, settings.getRunningSide("TRAIN|line 3"));
+		assertEquals(-1, settings.getRunningSide("TRAIN|line 9"), "the network's");
+		settings.runningSides.remove("RTRAIN|line 2");
+		settings.runningSides.remove(NetworkSettings.SIDE_NETWORK);
+		assertEquals(-1, settings.getRunningSide("TRAIN|line 2"), "its logical line's");
+
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(settings.messagePackLength());
+		settings.toMessagePack(packer);
+		packer.close();
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
+		assertEquals(settings, new NetworkSettings(map));
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		settings.writePacket(packet);
+		final NetworkSettings read = new NetworkSettings();
+		read.read(packet);
+		assertEquals(settings, read);
+		assertEquals(0, packet.readableBytes());
+		final NetworkSettings copy = new NetworkSettings();
+		copy.copyFrom(settings);
+		assertEquals(settings, copy);
+		// A save from before has none
+		final Map<String, Value> old = new HashMap<>(map);
+		old.remove("running_sides");
+		assertTrue(new NetworkSettings(old).runningSides.isEmpty());
 	}
 
 	@Test
