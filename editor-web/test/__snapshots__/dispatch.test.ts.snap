@@ -1,0 +1,563 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`dispatcher's console > lists, names and tells trains and sends commands as the old page did 1`] = `
+[
+  {
+    "dispatch": 9,
+    "id": "a",
+    "late": 400,
+    "route": "101",
+    "sidingName": "1 道|Track 1",
+    "skipping": true,
+    "slot": 0,
+    "waiting": 90,
+  },
+  {
+    "dispatch": 22,
+    "id": "b",
+    "late": 30,
+    "outOfService": true,
+    "route": "201",
+    "sidingName": "",
+    "slot": -1,
+    "takeover": 2,
+    "turn": 2,
+    "waiting": 0,
+  },
+  {
+    "dispatch": 0,
+    "id": "c",
+    "late": 0,
+    "noDuty": true,
+    "route": "102",
+    "sidingName": "2 道",
+    "slot": 4,
+  },
+]
+`;
+
+exports[`dispatcher's console > lists, names and tells trains and sends commands as the old page did 2`] = `
+[
+  {
+    "dispatch": 9,
+    "id": "a",
+    "late": 400,
+    "route": "101",
+    "sidingName": "1 道|Track 1",
+    "skipping": true,
+    "slot": 0,
+    "waiting": 90,
+  },
+  {
+    "dispatch": 0,
+    "id": "c",
+    "late": 0,
+    "noDuty": true,
+    "route": "102",
+    "sidingName": "2 道",
+    "slot": 4,
+  },
+]
+`;
+
+exports[`dispatcher's console > lists, names and tells trains and sends commands as the old page did 3`] = `
+[
+  {
+    "dispatch": 9,
+    "id": "a",
+    "late": 400,
+    "route": "101",
+    "sidingName": "1 道|Track 1",
+    "skipping": true,
+    "slot": 0,
+    "waiting": 90,
+  },
+  {
+    "dispatch": 22,
+    "id": "b",
+    "late": 30,
+    "outOfService": true,
+    "route": "201",
+    "sidingName": "",
+    "slot": -1,
+    "takeover": 2,
+    "turn": 2,
+    "waiting": 0,
+  },
+  {
+    "dispatch": 0,
+    "id": "c",
+    "late": 0,
+    "noDuty": true,
+    "route": "102",
+    "sidingName": "2 道",
+    "slot": 4,
+  },
+]
+`;
+
+exports[`dispatcher's console > lists, names and tells trains and sends commands as the old page did 4`] = `
+[
+  [
+    "1 道 车 1",
+    "晚点 6 分钟，等进路已 1 分钟，扣停，延长停站，跳站中",
+  ],
+  [
+    "（未命名） 的车",
+    "将在指定站折返，下一站清客，本段跑完回库，已提前折返，已交给备车，不载客",
+  ],
+  [
+    "2 道 车 5",
+    "不在运用中（没有运用，或者运用已经改了）",
+  ],
+]
+`;
+
+exports[`dispatcher's console > lists, names and tells trains and sends commands as the old page did 5`] = `
+[
+  {
+    "operations": [
+      {
+        "command": "hold",
+        "train": "a",
+        "type": "dispatch",
+      },
+    ],
+  },
+  {
+    "operations": [
+      {
+        "command": "extend",
+        "seconds": 60,
+        "train": "b",
+        "type": "dispatch",
+      },
+    ],
+  },
+  {
+    "operations": [
+      {
+        "command": "turn",
+        "station": "s3",
+        "train": "c",
+        "type": "dispatch",
+      },
+    ],
+  },
+]
+`;
+
+exports[`loops > goes round as the old page did, with and without a depot keeping trains on the line, and with an entry stop 1`] = `
+[
+  [
+    false,
+    0,
+    {
+      "length": 2947,
+      "sha256": "9f6bb0b2ff73e99a8e7fe281f0f62563",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 2947,
+      "sha256": "5148ee0cfe4359ceeadb0f4c2184d3ee",
+    },
+  ],
+  [
+    true,
+    0,
+    {
+      "length": 3991,
+      "sha256": "da861846f240e950461eecf7c85e28c4",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "f04122410f4de44988d7e96e308e9755",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "7b5fc548911a50aaaa93f4415f45dc53",
+    },
+  ],
+]
+`;
+
+exports[`loops > goes round as the old page did, with and without a depot keeping trains on the line, and with an entry stop 2`] = `
+[
+  [
+    false,
+    0,
+    {
+      "length": 2949,
+      "sha256": "41298576418547e969aeb3945397a011",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 2949,
+      "sha256": "2bae6ee13508410a90655a0256c63be5",
+    },
+  ],
+  [
+    true,
+    1,
+    {
+      "length": 3993,
+      "sha256": "c053528c7d63d8cec32cfb795cafcaba",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "f04122410f4de44988d7e96e308e9755",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "7b5fc548911a50aaaa93f4415f45dc53",
+    },
+  ],
+]
+`;
+
+exports[`loops > goes round as the old page did, with and without a depot keeping trains on the line, and with an entry stop 3`] = `
+[
+  [
+    false,
+    0,
+    {
+      "length": 2947,
+      "sha256": "9f6bb0b2ff73e99a8e7fe281f0f62563",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 2947,
+      "sha256": "5148ee0cfe4359ceeadb0f4c2184d3ee",
+    },
+  ],
+  [
+    true,
+    2,
+    {
+      "length": 3991,
+      "sha256": "da861846f240e950461eecf7c85e28c4",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "f04122410f4de44988d7e96e308e9755",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "7b5fc548911a50aaaa93f4415f45dc53",
+    },
+  ],
+]
+`;
+
+exports[`loops > goes round as the old page did, with and without a depot keeping trains on the line, and with an entry stop 4`] = `
+[
+  [
+    false,
+    0,
+    {
+      "length": 2947,
+      "sha256": "9f6bb0b2ff73e99a8e7fe281f0f62563",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 2947,
+      "sha256": "5148ee0cfe4359ceeadb0f4c2184d3ee",
+    },
+  ],
+  [
+    true,
+    0,
+    {
+      "length": 3991,
+      "sha256": "da861846f240e950461eecf7c85e28c4",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "f04122410f4de44988d7e96e308e9755",
+    },
+  ],
+  [
+    false,
+    0,
+    {
+      "length": 1791,
+      "sha256": "7b5fc548911a50aaaa93f4415f45dc53",
+    },
+  ],
+]
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 1`] = `
+{
+  "checks": [
+    "",
+    "",
+  ],
+  "sent": [
+    {
+      "fromNow": false,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 1241,
+    "sha256": "57d7856b660c12b24e57f492c3883cd6",
+  },
+}
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 2`] = `
+{
+  "checks": [
+    "",
+    "",
+  ],
+  "sent": [
+    {
+      "fromNow": false,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 255,
+    "sha256": "bfee8f6ae1bc6302fe619dee7b6b5348",
+  },
+}
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 3`] = `
+{
+  "checks": [
+    "",
+    "",
+  ],
+  "sent": [
+    {
+      "fromNow": false,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 255,
+    "sha256": "e5ff1d5ec4bad639fcc62e7b96aeae8a",
+  },
+}
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 4`] = `
+{
+  "checks": [
+    "",
+    "",
+  ],
+  "sent": [
+    {
+      "fromNow": false,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 256,
+    "sha256": "1412c335a4d52eef80dc37cc89adc27a",
+  },
+}
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 5`] = `
+{
+  "checks": [
+    "",
+    "",
+  ],
+  "sent": [
+    {
+      "fromNow": false,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 256,
+    "sha256": "9c957f427286d59f8aec39f916b7626d",
+  },
+}
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 6`] = `
+{
+  "checks": [
+    "",
+    "",
+  ],
+  "sent": [
+    {
+      "fromNow": true,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 256,
+    "sha256": "4c0c16c7efb100f3939132a731edc72a",
+  },
+}
+`;
+
+exports[`simulated day > asks, waits and takes the answer as the old page did, through each way it can go 7`] = `
+{
+  "checks": [
+    "",
+    "内核验证：晚点 1 班、锁死 1 次，见右侧“模拟问题”。",
+  ],
+  "sent": [
+    {
+      "fromNow": false,
+      "operations": [
+        {
+          "type": "x",
+        },
+      ],
+      "routes": [
+        "101",
+        "102",
+        "103",
+        "201",
+        "202",
+      ],
+      "weekday": 2,
+    },
+  ],
+  "sim": {
+    "length": 1243,
+    "sha256": "dc7c80f77e8cdb49663eacc94aa68430",
+  },
+}
+`;
+
+exports[`simulated day > tells services, depots and problems from a result as the old page did 1`] = `
+{
+  "length": 2281,
+  "sha256": "6a66f37ed0d8258b2ea4cb2cb8e7d8be",
+}
+`;
+
+exports[`simulated day > tells services, depots and problems from a result as the old page did 2`] = `
+{
+  "length": 2331,
+  "sha256": "13bd6409959095eaa8b426a69dd88f62",
+}
+`;
+
+exports[`simulated day > tells services, depots and problems from a result as the old page did 3`] = `
+{
+  "length": 2414,
+  "sha256": "d79479bd2802e04b5b20b49890242f93",
+}
+`;
+
+exports[`simulated day > tells services, depots and problems from a result as the old page did 4`] = `
+[
+  0,
+  50,
+  100,
+  300,
+]
+`;

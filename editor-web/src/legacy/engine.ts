@@ -1,16 +1,17 @@
 /**
- * The old editor's code (engine.generated.js) running in the new page, and how the two are tied together:
+ * What is left of the old editor's code (oldEditor.js, source since the old page went in step 9 of retiring it) running
+ * in the new page, and how the two are tied together:
  * - the game's data goes in through setData, a copy of what the store read;
- * - the draft goes in whenever the store's changes (undo, the review panel, applying, the old page in another tab), and
+ * - the draft goes in whenever the store's changes (undo, the review panel, applying, the page in another tab), and
  *   comes back to the store as one step of undo whenever the old code changes it (it then calls renderDraftState);
- * - the old code's renderAll draws the old views it still owns and tells React to draw again;
+ * - the old code's renderAll draws the real network map it still owns and tells React to draw again;
  * - its menus are drawn by React (Menu.tsx) from its [label, action] items.
  */
 import "./stage"
 import { useSyncExternalStore } from "react"
 import { key } from "../api/client"
 import { tr } from "../i18n"
-import { createLegacy } from "./engine.generated.js"
+import { createLegacy } from "./oldEditor.js"
 import { normalizeDraft } from "../core/draft"
 import * as Services from "../core/services"
 import { dispatchRules, dutyRules, settingsRules, timetableRules } from "./retired"
@@ -132,9 +133,6 @@ export const legacy: { fn: Record<string, any>; v: Record<string, any> } = {
   v: created.v,
 }
 
-// The running diagram the old way (views/RunningDiagram.tsx draws it otherwise), as the viewer last chose
-try { legacy.v.oldDiagram = localStorage.getItem("mtr-next-old-diagram") === "1" } catch { /* private window */ }
-
 // ---------- Drawing again ----------
 let version = 0
 const listeners = new Set<() => void>()
@@ -158,7 +156,10 @@ export function flushLegacy() {
 /** Re-renders a component whenever the old code draws again. */
 export const useLegacy = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => version)
 
-/** The old views drawn in the old page's renderAll, other than those the new page draws itself. */
+/**
+ * What the old page's renderAll did that the new page doesn't do itself: the real network map, the running diagram's
+ * layout (draw only works it out now), the summary table's runs out and back (renderTable), the simulation's status.
+ */
 export function renderLegacy() {
   const { fn, v } = legacy
   const data = v.data, sim = v.sim, state = v.state

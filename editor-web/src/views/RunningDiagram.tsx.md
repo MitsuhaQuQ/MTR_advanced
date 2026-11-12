@@ -1,8 +1,8 @@
 # views/RunningDiagram.tsx
 
-由新页面绘制的运行图（重写第 2 步）：几何来自 `core/diagram.ts`（`test/diagram.test.ts` 与旧页面对照），在这里按旧 `draw()` 的层次画到 Canvas 上：时间轴与当前时刻、车站行、其他线路走本线轨道的车次、本线车次（选中、所选列车的、无车、停运、模拟）、出/回库指令、直通与回库、环线续圈、停站拖柄、所选列车的接续、终点折返、车厂行及出入库回送、模拟结果，最后是站名。
+由新页面绘制的运行图（重写第 2 步）：几何来自 `core/diagram.ts`（`test/diagram.test.ts`；到退役第 9 步为止与旧页面对照，快照取自仍一致时），在这里按旧 `draw()` 的层次画到 Canvas 上：时间轴与当前时刻、车站行、其他线路走本线轨道的车次、本线车次（选中、所选列车的、无车、停运、模拟）、出/回库指令、直通与回库、环线续圈、停站拖柄、所选列车的接续、终点折返、车厂行及出入库回送、模拟结果，最后是站名。
 
-指针操作与旧画布相同：拖停站拖柄、拖出库回送、沿时间轴拖车次、拖空白平移；点击选择（双击选整条路线、Shift 选一段、Ctrl 加入；选中一列车时点击把班次加入/移出它的运用）；右键车次（之后的班次）或回送线的菜单；滚轮缩放，Shift+滚轮上下滚动。修改都由旧函数完成（`moveServices`、`editTimetable`、`setStopException`、`editDutyException`、`toggleInSlot`…，多数已经 `legacy/retired.ts` 换成 `core` 实现）。旧画布的容器 `#canvas-wrap` 仍在布局中（画布隐藏）位于本组件下方，使测量它的旧函数（居中到某车次、工具栏缩放）继续工作。由 `views/Layers.tsx:253` 在新画法下显示。
+指针操作与旧画布相同：拖停站拖柄、拖出库回送、沿时间轴拖车次、拖空白平移；点击选择（双击选整条路线、Shift 选一段、Ctrl 加入；选中一列车时点击把班次加入/移出它的运用）；右键车次（之后的班次）或回送线的菜单；滚轮缩放，Shift+滚轮上下滚动。修改都由旧函数完成（`moveServices`、`editTimetable`、`setStopException`、`editDutyException`、`toggleInSlot`…，多数已经 `legacy/retired.ts` 换成 `core` 实现）。旧画布的容器 `#canvas-wrap` 仍在布局中（第 9 步起里面没有画布）位于本组件下方，使测量它的旧函数（居中到某车次、工具栏缩放）继续工作。由 `views/Layers.tsx:252` 显示。
 
 ## 类型（内部）
 - `Drawn`：画出的车次及其折线 `{ s, points }`。

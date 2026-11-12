@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 /**
- * Smoke test of the old code as the new page runs it (src/legacy/, generated from editor.js and media.js): the old
- * page's elements on the stage, the dictionary and helpers loaded, the example data given in. Run on every build, so a
- * change to editor.js the generator can't handle, or one the new page's bridge doesn't fit, shows here and not first in
- * the game.
+ * Smoke test of what is left of the old code as the new page runs it (src/legacy/oldEditor.js and its bridge): the old
+ * elements on the stage, the dictionary and helpers loaded, the example data given in. Run on every build, so a change
+ * the bridge doesn't fit shows here and not first in the game.
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -35,14 +34,17 @@ describe("the old code in the new page", () => {
     expect(v.data.routes.every((r: any) => Array.isArray(r.services))).toBe(true)
     expect(v.data.routes.some((r: any) => r.services.length > 0)).toBe(true)
   })
-  it("draws its tree, summary table and inspector into the old elements", () => {
+  it("works out what it still draws for, with nothing of the old running diagram or summary table left", () => {
     const { fn, v } = engine.legacy
     v.state.line = v.data.lines[0].key
     v.state.view = "table"
     v.state.split = false
-    engine.renderLegacy()
-    expect(document.getElementById("view-table")!.querySelectorAll("td").length).toBeGreaterThan(10)
+    expect(() => engine.renderLegacy()).not.toThrow()
+    expect(v.deadheadIndex).toBeInstanceOf(Map)
+    v.state.view = "diagram"
     expect(() => fn.draw()).not.toThrow()
+    expect(v.layout.line.key).toBe(v.data.lines[0].key)
+    for (const id of ["view-table", "canvas", "dialog", "net-console", "btn-apply"]) expect(document.getElementById(id), id).toBeNull()
   })
   it("hands its draft changes to the page as one step", async () => {
     const { fn, v } = engine.legacy

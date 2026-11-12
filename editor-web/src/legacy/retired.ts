@@ -331,8 +331,6 @@ export function dispatchRules(get: () => Legacy) {
       const consoleState: P.ConsoleState = v.consoleState
       consoleState.open = open
       document.getElementById("net-console-toggle")?.setAttribute("aria-pressed", String(open))
-      const panel = document.getElementById("net-console")
-      if (panel) panel.hidden = !open
       if (open && !consoleState.timer) {
         loadConsole()
         consoleState.timer = setInterval(() => { const { v } = get(); if (!document.hidden && v.state.view === "network" && v.inTimetable()) loadConsole() }, P.CONSOLE_POLL_MS)

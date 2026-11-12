@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
- * Parity of src/core/diagram.ts with the old page drawing the same running diagram (the old code run as the new page runs
- * it, its canvas calls doing nothing): the rows, every service's line, the axis, the dwell handles, hit testing and the
- * view's limits.
+ * src/core/diagram.ts and the new running diagram and summary table: the rows, every service's line, the axis, the dwell
+ * handles, hit testing, the view's limits, the table's cells. Until step 9 of retiring the old code each was compared
+ * with the old page drawing the same day; the snapshots were taken when they still matched.
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url"
 import { beforeAll, describe, expect, it } from "vitest"
 import { mockData } from "../mock/fixture"
 import * as diagram from "../src/core/diagram"
+import { fingerprint } from "./fingerprint"
 
 const EDITOR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../common/src/main/resources/assets/mtr/editor")
 const W = 1400, H = 640
@@ -36,32 +37,41 @@ beforeAll(async () => {
   v.state.selectedRoute = null
 })
 
-/** The old code draws the day; what it drew and the view it drew it at */
-function oldDraw(change: (state: any) => void = () => {}) {
+/**
+ * The day at a view: the layout the old code still works out (draw), and what the new running diagram draws there.
+ * Until step 9 of retiring the old code the old page's own drawing was compared too; the snapshots were taken when the
+ * two still matched.
+ */
+async function drawAt(change: (state: any) => void = () => {}) {
   const { fn, v } = engine.legacy
   change(v.state)
   fn.draw()
+  const { draw } = await import("../src/views/RunningDiagram")
+  const g = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D
   const view: diagram.View = { viewStart: v.state.viewStart, pxPerMin: v.state.pxPerMin, scrollY: v.state.scrollY, width: W, height: H }
-  return { view, layout: v.layout, drawn: v.drawn as { s: any; points: diagram.Point[] }[], handles: v.handles as any[] }
+  return { view, layout: v.layout, drawn: draw(g, W, H, null, null).drawn as { s: any; points: diagram.Point[] }[] }
 }
 
 describe("the running diagram's geometry", () => {
-  it("lays the rows out as the old page does", () => {
-    const { v } = engine.legacy
+  it("lays the rows out as the old page did", () => {
+    const { fn, v } = engine.legacy
+    const got: unknown[] = []
     for (const showDepots of [false, true]) {
       v.showDepots = showDepots
-      const { layout } = oldDraw()
+      fn.draw()
       const line = v.data.lines.find((l: any) => l.key === v.state.line)
-      const depotRoom = showDepots && v.data.depots.some((depot: any) => engine.legacy.fn.dutiesOf(depot).mode === "diagram" && depot.sidings.some((siding: any) => siding.legs)) ? diagram.DEPOT_ROW_ROOM : 0
+      const depotRoom = showDepots && v.data.depots.some((depot: any) => fn.dutiesOf(depot).mode === "diagram" && depot.sidings.some((siding: any) => siding.legs)) ? diagram.DEPOT_ROW_ROOM : 0
       const mine = diagram.layoutRows(line.rows.map((row: any) => row.gap), H, depotRoom)
-      expect(mine.ys).toEqual(layout.ys)
-      expect(mine.contentHeight).toBe(layout.contentHeight)
+      expect(mine.ys).toEqual(v.layout.ys)
+      expect(mine.contentHeight).toBe(v.layout.contentHeight)
+      got.push(mine)
     }
+    expect(got).toMatchSnapshot()
   })
-  it("draws every service through the same points, at several zooms and scrolls", () => {
+  it("draws every service through the points the old page did, at several zooms and scrolls", async () => {
     const { fn } = engine.legacy
     for (const [pxPerMin, viewStart, scrollY] of [[4, 2 * 3600000, 0], [12, 3 * 3600000, 0], [1.2, 0, 0], [30, 4 * 3600000 + 600000, 40]]) {
-      const { view, layout, drawn } = oldDraw(state => { state.pxPerMin = pxPerMin; state.viewStart = viewStart; state.scrollY = scrollY })
+      const { view, layout, drawn } = await drawAt(state => { state.pxPerMin = pxPerMin; state.viewStart = viewStart; state.scrollY = scrollY })
       expect(drawn.length).toBeGreaterThan(5)
       const x = (millis: number) => diagram.xOf(view, millis), y = (row: number) => layout.ys[row] - view.scrollY
       drawn.forEach(d => {
@@ -69,41 +79,35 @@ describe("the running diagram's geometry", () => {
         expect(diagram.inView(times, x, W)).toBe(true)
         expect(diagram.servicePath(d.s, times, x, y)).toEqual(d.points)
       })
-      // And none drawn that the new code would leave out, or the other way round
-      const all = engine.legacy.v.data.lines[0].routes.flatMap((r: any) => r.services)
-      expect(all.filter((s: any) => diagram.inView(fn.timesOf(s), x, W) && diagram.servicePath(s, fn.timesOf(s), x, y).length).length).toBe(drawn.length)
+      expect(fingerprint(drawn.map(d => [d.s.id, d.points]))).toMatchSnapshot()
     }
   })
-  it("steps the time axis as the old page does", () => {
-    const { fn, v } = engine.legacy
-    for (const pxPerMin of [0.3, 1, 2.5, 6, 20, 80, 300]) {
-      v.state.pxPerMin = pxPerMin
-      expect(diagram.axisSteps(pxPerMin)).toEqual(fn.axisSteps())
-    }
+  it("steps the time axis as the old page did", () => {
+    const { v } = engine.legacy
+    expect([0.3, 1, 2.5, 6, 20, 80, 300].map(pxPerMin => diagram.axisSteps(pxPerMin))).toMatchSnapshot()
     const view: diagram.View = { viewStart: 3600000, pxPerMin: 4, scrollY: 0, width: W, height: H }
     const ticks = diagram.axisTicks(view, v.data.dayStartMillis + v.data.offsetMillis)
     expect(ticks.filter(t => t.hour).length).toBeGreaterThan(3)
     expect(ticks.every(t => t.x >= diagram.LABEL_W && t.x < W)).toBe(true)
   })
-  it("finds the service under the mouse as the old page does", () => {
-    const { fn } = engine.legacy
-    const { drawn } = oldDraw(state => { state.pxPerMin = 8; state.viewStart = 2 * 3600000; state.scrollY = 0 })
-    let hits = 0
+  it("finds the service under the mouse as the old page did", async () => {
+    const { drawn } = await drawAt(state => { state.pxPerMin = 8; state.viewStart = 2 * 3600000; state.scrollY = 0 })
+    const found: unknown[] = []
     for (let x = diagram.LABEL_W; x < W; x += 37) {
       for (let y = diagram.AXIS_H; y < H; y += 11) {
-        const old = fn.hitService(x, y), mine = diagram.hitPath(drawn, x, y)
-        expect(mine && (mine as any).id).toBe(old && old.id)
-        if (old) hits++
+        const mine = diagram.hitPath(drawn, x, y) as any
+        if (mine) found.push([x, y, mine.id])
       }
     }
-    expect(hits).toBeGreaterThan(20)
+    expect(found.length).toBeGreaterThan(20)
+    expect(fingerprint(found)).toMatchSnapshot()
   })
-  it("puts a selected service's dwell handles where the old page does", () => {
+  it("puts a selected service's dwell handles where the old page did", async () => {
     const { fn, v } = engine.legacy
     const s = v.data.lines[0].routes[0].services.find((each: any) => each.start > 2 * 3600000 + 1800000)
-    const { view, layout, handles } = oldDraw(state => { state.pxPerMin = 8; state.viewStart = 2 * 3600000; state.selected = s.id })
+    const { view, layout } = await drawAt(state => { state.pxPerMin = 8; state.viewStart = 2 * 3600000; state.selected = s.id })
     const mine = diagram.dwellHandles(s, fn.timesOf(s), (millis: number) => diagram.xOf(view, millis), (row: number) => layout.ys[row] - view.scrollY)
-    expect(mine.map(h => [h.x, h.y, h.i])).toEqual(handles.map(h => [h.x, h.y, h.i]))
+    expect(mine.map(h => [h.x, h.y, h.i])).toMatchSnapshot()
     expect(mine.length).toBeGreaterThan(2)
     expect(diagram.hitHandle(mine, mine[1].x + 3, mine[1].y - 2)!.i).toBe(mine[1].i)
     v.state.selected = null
@@ -118,18 +122,16 @@ describe("the running diagram's geometry", () => {
       expect([mine.viewStart, mine.scrollY]).toEqual([v.state.viewStart, v.state.scrollY])
     }
   })
-  it("draws the whole day as the old page does: services, runs out and back, other lines on its track", async () => {
+  it("draws the whole day as the old page did: services, runs out and back, other lines on its track", async () => {
     const { draw } = await import("../src/views/RunningDiagram")
     const { v } = engine.legacy
     v.showDepots = true
     v.showAccess = true
-    const { drawn } = oldDraw(state => { state.pxPerMin = 4; state.viewStart = 2 * 3600000; state.scrollY = 0 })
+    const { drawn } = await drawAt(state => { state.pxPerMin = 4; state.viewStart = 2 * 3600000; state.scrollY = 0 })
     const g = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D
     const mine = draw(g, W, H, null, null)
-    expect(mine.drawn.map(d => [d.s.id, d.points])).toEqual(drawn.map(d => [d.s.id, d.points]))
-    expect(mine.legs.map(l => [l.kind, l.a, l.b, l.text])).toEqual(v.legsDrawn.map((l: any) => [l.kind, l.a, l.b, l.text]))
     expect(mine.legs.length).toBeGreaterThan(5)
-    expect(mine.access.map(d => [d.s.id, d.points])).toEqual(v.accessDrawn.map((d: any) => [d.s.id, d.points]))
+    expect(fingerprint({ drawn: mine.drawn.map(d => [d.s.id, d.points]), legs: mine.legs.map(l => [l.kind, l.a, l.b, l.text]), access: mine.access.map(d => [d.s.id, d.points]) })).toMatchSnapshot()
     // Services being dragged are drawn where they would go
     const moved = drawn[3].s
     const shifted = draw(g, W, H, { ids: [moved.id], shift: 600000 }, null)
@@ -178,7 +180,7 @@ describe("the running diagram's geometry", () => {
     engine.pushDraft({ routes: {} })
     v.state.selected = null
   })
-  it("lays out the summary timetable cell for cell as the old page does", async () => {
+  it("lays out the summary timetable cell for cell as the old page did", async () => {
     const { act, createElement } = await import("react")
     const { createRoot } = await import("react-dom/client")
     const { SummaryTable } = await import("../src/views/SummaryTable")
@@ -194,9 +196,9 @@ describe("the running diagram's geometry", () => {
       v.state.route = route
       fn.renderTable()
       await act(async () => { engine.flushLegacy() })
-      const old = cells(document.getElementById("view-table")!), mine = cells(host)
+      const mine = cells(host)
       expect(mine.length).toBeGreaterThan(50)
-      expect(mine).toEqual(old)
+      expect(fingerprint(mine)).toMatchSnapshot()
     }
     // Editing a time: typed, Enter, into the draft through the old changeTime
     v.state.route = "101"

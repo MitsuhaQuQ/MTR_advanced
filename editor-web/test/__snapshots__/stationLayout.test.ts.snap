@@ -1,0 +1,127 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a station's own track diagram > ticks the platforms to start from and turn back at in turn as the old dialog did 1`] = `
+[
+  {
+    "routes": {
+      "101": {
+        "base": 1,
+        "parts": {},
+        "terminalPlatforms": [
+          "3005",
+          "1200",
+        ],
+      },
+    },
+  },
+  [
+    "3005",
+    "1200",
+  ],
+]
+`;
+
+exports[`a station's own track diagram > ticks the platforms to start from and turn back at in turn as the old dialog did 2`] = `
+[
+  {
+    "routes": {
+      "101": {
+        "base": 1,
+        "parts": {},
+        "terminalPlatforms": [
+          "1200",
+        ],
+      },
+    },
+  },
+  [
+    "1200",
+  ],
+]
+`;
+
+exports[`a station's own track diagram > ticks the platforms to start from and turn back at in turn as the old dialog did 3`] = `
+[
+  {
+    "routes": {
+      "101": {
+        "base": 1,
+        "parts": {},
+        "startPlatforms": [
+          "1100",
+        ],
+        "terminalPlatforms": [
+          "1200",
+        ],
+      },
+    },
+  },
+  [
+    "1100",
+  ],
+]
+`;
+
+exports[`a station's own track diagram > ticks the platforms to start from and turn back at in turn as the old dialog did 4`] = `
+[
+  {
+    "routes": {
+      "101": {
+        "base": 1,
+        "parts": {},
+        "startPlatforms": [
+          "1100",
+        ],
+        "terminalPlatforms": [
+          "1200",
+          "3005",
+        ],
+      },
+    },
+  },
+  [
+    "1200",
+    "3005",
+  ],
+]
+`;
+
+exports[`a station's own track diagram > ticks the platforms to start from and turn back at in turn as the old dialog did 5`] = `
+[
+  {
+    "routes": {
+      "101": {
+        "base": 1,
+        "parts": {},
+        "startPlatforms": [
+          "1100",
+        ],
+      },
+    },
+  },
+  [
+    "3005",
+  ],
+]
+`;
+
+exports[`a station's own track diagram > ticks the platforms to start from and turn back at in turn as the old dialog did 6`] = `
+[
+  {
+    "routes": {
+      "101": {
+        "base": 1,
+        "parts": {},
+      },
+    },
+  },
+  [],
+]
+`;
+
+exports[`a station's own track diagram > turns, frames and draws the rails and platforms as the old dialog did 1`] = `
+{
+  "length": 473883,
+  "sha256": "afc5d6f27c430e459a742584c3ff6720",
+}
+`;

@@ -65,10 +65,7 @@
 .legacy-slot > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 .legacy-slot > .tree { border-right: 0; background: transparent; overflow: visible; }
 .legacy-slot > .canvas-wrap { display: block; }
-/* The new running diagram over the old one's box: the old canvas stays, measured, but unseen */
-.new-diagram .legacy-slot #canvas { visibility: hidden; }
 .legacy-slot > .inspector { border-left: 0; overflow: visible; }
-.legacy-slot > .table-view { display: block; overflow: visible; }
 .legacy-slot[data-summary-table] { overflow: hidden; }
 .legacy-slot[data-summary-table] > .table-view { display: flex; flex-direction: column; overflow: hidden; }
 .legacy-slot[data-summary-table] .summary-tools { flex: 0 0 auto; min-width: 0; }

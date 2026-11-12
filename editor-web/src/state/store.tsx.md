@@ -1,6 +1,6 @@
 # state/store.tsx
 
-新页面的全局状态（React Context）：游戏数据（像旧页面一样轮询）和草稿（带撤销/重做、自动保存、应用）。草稿通过 `api/draft` 与旧页面共享：本页改动在最后一次改动 400 ms 后保存；每 5 s 读一次服务器上的草稿，若别处（另一个标签页里的旧页面）改了且本页没有待保存的改动，就接管它并清空撤销栈（否则撤销会撤掉别处的工作）。还与 `legacy/engine.ts` 双向同步：游戏数据 `pushData`、草稿 `pushDraft`，旧代码改的草稿经 `onLegacyDraft` 作为一步编辑回来。由 `App.tsx` 用 `StoreProvider` 包住整个页面。
+新页面的全局状态（React Context）：游戏数据（像旧页面一样轮询）和草稿（带撤销/重做、自动保存、应用）。草稿保存在 `api/draft`：本页改动在最后一次改动 400 ms 后保存；每 5 s 读一次服务器上的草稿，若别处（另一个标签页里的本页面）改了且本页没有待保存的改动，就接管它并清空撤销栈（否则撤销会撤掉别处的工作）。还与 `legacy/engine.ts` 双向同步：游戏数据 `pushData`、草稿 `pushDraft`，旧代码改的草稿经 `onLegacyDraft` 作为一步编辑回来。由 `App.tsx` 用 `StoreProvider` 包住整个页面。`StoreContext` 也导出（0.69 退役第 9 步），供测试给组件一个自己的 store（`test/adhoc.test.tsx`）。
 
 ## 常量
 - `POLL_MILLIS = 1500`：页面可见时轮询 `api/revision` 的间隔（毫秒）；`POLL_HIDDEN_MILLIS = 5000`：页面隐藏时的间隔。

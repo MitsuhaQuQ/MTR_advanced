@@ -1,3 +1,6 @@
+/* The old page's styles (its editor.css until step 9 of retiring the old code, now kept here), only inside .legacy boxes:
+   the old elements the new page still borrows (src/legacy/markup.ts). */
+.legacy {
 /* A tool window: the tree on the left, a diagram or timetable on the right, a status bar along the bottom */
 :root {
 	--bg: #f3f6f5;
@@ -456,4 +459,6 @@ body .media-app main.media-main { grid-template-rows: auto auto auto minmax(0, 1
 @media (max-width: 860px) {
 	.media-app, body.media-side-closed .media-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 	.media-detail { border-left: 0; border-top: 1px solid var(--grid-strong); max-height: 38vh; }
+}
+
 }

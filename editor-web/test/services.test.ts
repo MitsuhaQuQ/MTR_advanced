@@ -1,13 +1,14 @@
 /**
- * Parity of src/core/services.ts with the old page's rows and services (retiring the old code, step 3): line shapes made
- * for it (a branch, another way between two stations, a loop, a Q back to the same platform and to another, routes both
- * ways, going back the way it came), and the mock's routes with exceptions, suspended services, orders and links added,
- * every weekday.
+ * src/core/services.ts, the rows and services: line shapes made for it (a branch, another way between two stations, a
+ * loop, a Q back to the same platform and to another, routes both ways, going back the way it came), and the mock's
+ * routes with exceptions, suspended services, orders and links added, every weekday. Until step 9 of retiring the old
+ * code they were compared with the old page's own; the snapshots were taken when they still matched.
  */
 import { describe, expect, it } from "vitest"
-import { loadOld } from "./old"
 import * as S from "../src/core/services"
+import { gameTimetable } from "../src/core/timetable"
 import { mockData } from "../mock/fixture"
+import { fingerprint } from "./fingerprint"
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
@@ -30,24 +31,22 @@ const SHAPES: Record<string, string[][]> = {
 }
 
 describe("rows and services", () => {
-  it("lays every line shape out in the same rows as the old page", () => {
-    const old = loadOld<any>(["buildStations", "revisits", "SECTION_GAP"])
+  it("lays every line shape out in the rows the old page did", () => {
+    const got: unknown[] = []
     for (const [name, routes] of Object.entries(SHAPES)) {
       const line: any = { key: name, routes: routes.map((stations, i) => route(name + i, stations)) }
-      const theirs = copy(line), mine = copy(line)
-      old.buildStations(theirs)
+      const mine = copy(line)
       S.buildStations(mine)
-      expect(mine.rows, name).toEqual(theirs.rows)
-      expect(mine.routes.map((r: any) => [r.rows, r.leaveRows]), name).toEqual(theirs.routes.map((r: any) => [r.rows, r.leaveRows]))
+      got.push([name, mine.rows, mine.routes.map((r: any) => [r.rows, r.leaveRows])])
     }
     // And the mock's lines
     const data = mockData()
     S.groupLines(copy(data.routes)).forEach(line => {
-      const theirs = copy(line), mine = copy(line)
-      old.buildStations(theirs)
+      const mine = copy(line)
       S.buildStations(mine)
-      expect(mine.rows).toEqual(theirs.rows)
+      got.push([line.key, mine.rows])
     })
+    expect(fingerprint(got)).toMatchSnapshot()
   })
 
   it("groups lines as the old page does", () => {
@@ -56,7 +55,7 @@ describe("rows and services", () => {
     expect(grouped.map(l => [l.key, l.name, l.routes.map((r: any) => r.id)])).toEqual([["TRAIN|1号线|Line 1", "1号线|Line 1", ["101", "102", "103"]], ["TRAIN|2号线|Line 2", "2号线|Line 2", ["201", "202"]]])
   })
 
-  it("makes the same services every weekday, exceptions, suspensions, orders and links included", () => {
+  it("makes the services the old page did every weekday, exceptions, suspensions, orders and links included", () => {
     const data: any = mockData()
     // Route 101: one service with times of its own, one suspended, an order from a depot, a link on to route 102
     const r = data.routes[0], table = r.tables[0], service = table.services[3]
@@ -68,20 +67,20 @@ describe("rows and services", () => {
     table.returns = [table.services[8]]
     data.routeById = new Map(data.routes.map((each: any) => [each.id, each]))
     const strip = (s: any) => ({ ...s, route: s.route.id, table: s.tableIndex, exceptions: s.exceptions ? [...s.exceptions.entries()] : null })
+    const got: unknown[] = []
     for (let weekday = 0; weekday < 7; weekday++) {
-      const theirs = copy(data), mine = copy(data)
-      ;[theirs, mine].forEach(d => { d.routeById = new Map(d.routes.map((each: any) => [each.id, each])) })
-      const old = loadOld<any>(["buildServices", "timesSource", "gameSource", "plansFor", "toPlans", "timetableOf", "gameTimetable", "fromGame", "normalize", "draftOf", "mod", "DAY"], { data: theirs, state: { weekday }, draft: { routes: {} }, requestedTimes: new Map() })
-      old.buildServices()
-      mine.routes.forEach((each: any) => { each.services = S.routeServices(each, old.gameTimetable(each), S.gameSource(each), weekday, mine.dayStartMillis) })
-      mine.routes.forEach((each: any, i: number) => {
-        expect(each.services.map(strip), `weekday ${weekday} route ${each.id}`).toEqual(theirs.routes[i].services.map(strip))
-        each.services.forEach((s: any) => expect(S.timesOf(s)).toEqual(old.sandbox.timesOf ? old.sandbox.timesOf(s) : s.plans.map((p: any) => [s.start + p.arrival, s.start + p.departure])))
+      const mine = copy(data)
+      mine.routeById = new Map(mine.routes.map((each: any) => [each.id, each]))
+      mine.routes.forEach((each: any) => { each.services = S.routeServices(each, gameTimetable(each), S.gameSource(each), weekday, mine.dayStartMillis) })
+      mine.routes.forEach((each: any) => {
+        got.push([weekday, each.id, each.services.map(strip)])
+        each.services.forEach((s: any) => expect(S.timesOf(s)).toEqual(s.plans.map((p: any) => [s.start + p.arrival, s.start + p.departure])))
       })
-      // Found by id as before
-      const found = theirs.routes[0].services[2]
+      // Found by id
+      const found = mine.routes[0].services[2]
       expect(S.findService(mine.routeById, found.id).id).toBe(found.id)
       expect(S.findService(mine.routeById, "101@1")).toBe(null)
     }
+    expect(fingerprint(got)).toMatchSnapshot()
   })
 })

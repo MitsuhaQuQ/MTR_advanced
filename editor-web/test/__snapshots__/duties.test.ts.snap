@@ -1,0 +1,1110 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 1`] = `
+{
+  "length": 62195,
+  "sha256": "25f554ae77002acb2685aedc737833af",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 2`] = `
+{
+  "length": 62195,
+  "sha256": "64c1fdfd37ddb88b08464f41b9cad117",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 3`] = `
+{
+  "length": 62195,
+  "sha256": "062b02c50833fe399f74a8cd1276782d",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 4`] = `
+{
+  "length": 62195,
+  "sha256": "f787f90033c57eaba018839da73a51c6",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 5`] = `
+{
+  "length": 62195,
+  "sha256": "ba23e2ce65116959f3dbe0348e6f3e5c",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 6`] = `
+{
+  "length": 33166,
+  "sha256": "65c02917c6e53fa39affecce5d27b907",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 7`] = `
+{
+  "length": 33166,
+  "sha256": "b51a28b6ffe8409430b107acab9aa245",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 8`] = `
+{
+  "length": 334378,
+  "sha256": "42d980435324fda6352a9ffe3cc50db9",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 9`] = `
+{
+  "length": 334378,
+  "sha256": "668563864d3c7224b8ea5d110391cf32",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 10`] = `
+{
+  "length": 334378,
+  "sha256": "8d4c27f38ef792ee20a1b6f37d09bfa0",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 11`] = `
+{
+  "length": 334378,
+  "sha256": "c0e26539c5c118b25d10582159bd227b",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 12`] = `
+{
+  "length": 334378,
+  "sha256": "8163d2f89f420fd1acb5509de16394e5",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 13`] = `
+{
+  "length": 164080,
+  "sha256": "e71fddcbedc1acdef235110b0ff4172c",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 14`] = `
+{
+  "length": 164080,
+  "sha256": "175621fa5ec620b7d522f3786079687b",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 15`] = `
+{
+  "length": 486600,
+  "sha256": "6a63bbb25483ff02a2bde8de82ee3a16",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 16`] = `
+{
+  "length": 486600,
+  "sha256": "2c3a178117b763153e865001a60e521a",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 17`] = `
+{
+  "length": 486600,
+  "sha256": "6d5e323d155c0f2713e393346d2cbca9",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 18`] = `
+{
+  "length": 486600,
+  "sha256": "0295ed46edd92ae59c107b04e9667fdf",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 19`] = `
+{
+  "length": 486600,
+  "sha256": "bcde718c6cd981788c84d3f39e4d3de9",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 20`] = `
+{
+  "length": 244718,
+  "sha256": "d0e7186a5dbee84be1bd82e39cb93e88",
+}
+`;
+
+exports[`duty rules > covers, pairs and finds problems as the old page did, every weekday, on the mock's duties and on wrong ones 21`] = `
+{
+  "length": 244718,
+  "sha256": "e6ca7d79bba35bf03175a1cc3d651835",
+}
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 1`] = `
+[
+  "去掉一班",
+  {
+    "length": 3253,
+    "sha256": "43e251f47d371d8d27a91b7bd98c7d4b",
+  },
+]
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 2`] = `
+[
+  "",
+  {
+    "length": 3735,
+    "sha256": "eb27d8881194698f4235b673f86f0ee9",
+  },
+]
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 3`] = `
+[
+  "",
+  {
+    "length": 4215,
+    "sha256": "f9e0c0023fe0f350fed1a37de49b21df",
+  },
+]
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 4`] = `
+[
+  "",
+  {
+    "length": 4403,
+    "sha256": "3c534b0c9f597319019a9c36049f6fa0",
+  },
+]
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 5`] = `
+[
+  "",
+  {
+    "length": 4217,
+    "sha256": "4cfa2d7e46416569f26a5910be498a4a",
+  },
+]
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 6`] = `
+{
+  "index": 2,
+  "siding": "8001",
+  "slot": [
+    {
+      "days": 127,
+      "duty": "3",
+      "exceptions": 1,
+      "fromOvernight": false,
+      "next": -1,
+      "outLead": -1,
+      "returnSiding": "0",
+      "segments": [
+        {
+          "from": 0,
+          "route": "101",
+          "service": 22320000,
+          "to": -1,
+        },
+        {
+          "from": 0,
+          "route": "102",
+          "service": 23760000,
+          "to": -1,
+        },
+        {
+          "from": 0,
+          "route": "101",
+          "service": 25200000,
+          "to": -1,
+        },
+        {
+          "from": 0,
+          "route": "102",
+          "service": 26640000,
+          "to": -1,
+        },
+        {
+          "from": 0,
+          "route": "101",
+          "service": 28080000,
+          "to": -1,
+        },
+        {
+          "from": 0,
+          "route": "102",
+          "service": 29520000,
+          "to": -1,
+        },
+      ],
+      "stay": false,
+      "waits": [],
+    },
+  ],
+}
+`;
+
+exports[`duty rules > edits duties as the old page did: split off a day group, remove and reorder segments, stay overnight, add a train, back again 7`] = `
+[
+  {
+    "fleet": 3,
+    "id": "8001",
+    "legs": {
+      "back": {
+        "1005": 200000,
+        "1100": 200000,
+      },
+      "entrance": "s1",
+      "out": {
+        "1000": 150000,
+        "1105": 150000,
+      },
+    },
+    "maxTrains": 3,
+    "name": "1 道",
+    "routes": [],
+  },
+  {
+    "fleet": 3,
+    "id": "8002",
+    "legs": {
+      "back": {
+        "1005": 200000,
+        "1100": 200000,
+      },
+      "entrance": "s1",
+      "out": {
+        "1000": 150000,
+        "1105": 150000,
+      },
+    },
+    "maxTrains": 3,
+    "name": "2 道",
+    "routes": [],
+  },
+  {
+    "fleet": 2,
+    "id": "8003",
+    "legs": {
+      "back": {
+        "1005": 200000,
+        "1100": 200000,
+      },
+      "entrance": "s1",
+      "out": {
+        "1000": 150000,
+        "1105": 150000,
+      },
+    },
+    "maxTrains": 2,
+    "name": "3 道",
+    "routes": [
+      "101",
+      "102",
+    ],
+  },
+]
+`;
+
+exports[`duty rules > finds what keeps a stop and renumbers to new stops as the old page did 1`] = `
+[
+  [],
+  [
+    "14:12 班出入库指令",
+    "车厂北湖车厂的运用起止",
+  ],
+  [
+    "14:06 班直通",
+  ],
+  [
+    "车厂北湖车厂的运用起止",
+  ],
+  [
+    "1号线 全程 北行 → 北湖 直通接入",
+  ],
+  [],
+]
+`;
+
+exports[`duty rules > finds what keeps a stop and renumbers to new stops as the old page did 2`] = `
+{
+  "operations": [
+    {
+      "force": true,
+      "route": "101",
+      "stops": [
+        {
+          "from": -1,
+          "pass": false,
+          "platformId": "n",
+        },
+        {
+          "from": 0,
+          "pass": false,
+          "platformId": "a",
+        },
+        {
+          "from": 2,
+          "pass": true,
+          "platformId": "b",
+        },
+        {
+          "from": -1,
+          "pass": false,
+          "platformId": "c",
+        },
+        {
+          "from": 3,
+          "pass": false,
+          "platformId": "d",
+        },
+        {
+          "from": 4,
+          "pass": false,
+          "platformId": "e",
+        },
+        {
+          "from": 5,
+          "pass": false,
+          "platformId": "f",
+        },
+      ],
+      "type": "stops",
+    },
+    {
+      "force": true,
+      "route": "101",
+      "timetable": {
+        "allowLonger": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+        ],
+        "enabled": true,
+        "entryPlatform": "0",
+        "pass": [
+          false,
+          false,
+          true,
+          false,
+          false,
+          false,
+          false,
+        ],
+        "tables": [
+          {
+            "exceptions": [],
+            "links": [
+              {
+                "fromStop": 4,
+                "route": "102",
+                "service": 21960000,
+                "toService": 1,
+                "toStop": 2,
+              },
+            ],
+            "marginPercent": 0,
+            "minAcceleration": 0,
+            "minDeceleration": 0,
+            "minMaxSpeed": 0,
+            "name": "平日",
+            "orders": [
+              {
+                "depot": "0",
+                "kind": "deploy",
+                "service": 22320000,
+                "stop": 2,
+              },
+            ],
+            "returns": [],
+            "services": [
+              21600000,
+              21960000,
+              22320000,
+              22680000,
+              23040000,
+              23400000,
+              23760000,
+              24120000,
+              24480000,
+              24840000,
+              25200000,
+              25560000,
+              25920000,
+              26280000,
+              26640000,
+              27000000,
+              27360000,
+              27720000,
+              28080000,
+              28440000,
+              28800000,
+              29160000,
+              29520000,
+              29880000,
+              30240000,
+              30600000,
+              30960000,
+              31320000,
+              31680000,
+              32040000,
+              32400000,
+              32760000,
+              33120000,
+              33480000,
+              33840000,
+              34200000,
+              34560000,
+              34920000,
+              35280000,
+              35640000,
+              36000000,
+              36360000,
+              36720000,
+              37080000,
+              37440000,
+              37800000,
+              38160000,
+              38520000,
+              38880000,
+              39240000,
+              39600000,
+              39960000,
+              40320000,
+              40680000,
+              41040000,
+              41400000,
+              41760000,
+              42120000,
+              42480000,
+              42840000,
+              43200000,
+              43560000,
+              43920000,
+              44280000,
+              44640000,
+              45000000,
+              45360000,
+              45720000,
+              46080000,
+              46440000,
+              46800000,
+              47160000,
+              47520000,
+              47880000,
+              48240000,
+              48600000,
+              48960000,
+              49320000,
+              49680000,
+              50040000,
+              50400000,
+              50760000,
+              51120000,
+              51480000,
+              51840000,
+              52200000,
+              52560000,
+              52920000,
+              53280000,
+              53640000,
+              54000000,
+              54360000,
+              54720000,
+              55080000,
+              55440000,
+              55800000,
+              56160000,
+              56520000,
+              56880000,
+              57240000,
+              57600000,
+              57960000,
+              58320000,
+              58680000,
+              59040000,
+              59400000,
+              59760000,
+              60120000,
+              60480000,
+              60840000,
+              61200000,
+              61560000,
+              61920000,
+              62280000,
+              62640000,
+              63000000,
+              63360000,
+              63720000,
+              64080000,
+              64440000,
+              64800000,
+              65160000,
+              65520000,
+              65880000,
+              66240000,
+              66600000,
+              66960000,
+              67320000,
+              67680000,
+              68040000,
+              68400000,
+              68760000,
+              69120000,
+              69480000,
+              69840000,
+              70200000,
+              70560000,
+              70920000,
+              71280000,
+              71640000,
+              72000000,
+              72360000,
+              72720000,
+              73080000,
+              73440000,
+              73800000,
+              74160000,
+              74520000,
+              74880000,
+              75240000,
+              75600000,
+              75960000,
+              76320000,
+              76680000,
+              77040000,
+              77400000,
+              77760000,
+              78120000,
+              78480000,
+              78840000,
+              79200000,
+              79560000,
+              79920000,
+              80280000,
+              80640000,
+              81000000,
+              81360000,
+              81720000,
+              82080000,
+              82440000,
+              82800000,
+            ],
+            "stops": [
+              {
+                "arrival": -1,
+                "departure": -1,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+            ],
+            "suspended": [],
+            "weekdays": 31,
+          },
+          {
+            "exceptions": [],
+            "links": [],
+            "marginPercent": 0,
+            "minAcceleration": 0,
+            "minDeceleration": 0,
+            "minMaxSpeed": 0,
+            "name": "周末",
+            "orders": [],
+            "returns": [],
+            "services": [
+              21600000,
+              22320000,
+              23040000,
+              23760000,
+              24480000,
+              25200000,
+              25920000,
+              26640000,
+              27360000,
+              28080000,
+              28800000,
+              29520000,
+              30240000,
+              30960000,
+              31680000,
+              32400000,
+              33120000,
+              33840000,
+              34560000,
+              35280000,
+              36000000,
+              36720000,
+              37440000,
+              38160000,
+              38880000,
+              39600000,
+              40320000,
+              41040000,
+              41760000,
+              42480000,
+              43200000,
+              43920000,
+              44640000,
+              45360000,
+              46080000,
+              46800000,
+              47520000,
+              48240000,
+              48960000,
+              49680000,
+              50400000,
+              51120000,
+              51840000,
+              52560000,
+              53280000,
+              54000000,
+              54720000,
+              55440000,
+              56160000,
+              56880000,
+              57600000,
+              58320000,
+              59040000,
+              59760000,
+              60480000,
+              61200000,
+              61920000,
+              62640000,
+              63360000,
+              64080000,
+              64800000,
+              65520000,
+              66240000,
+              66960000,
+              67680000,
+              68400000,
+              69120000,
+              69840000,
+              70560000,
+              71280000,
+              72000000,
+              72720000,
+              73440000,
+              74160000,
+              74880000,
+              75600000,
+              76320000,
+              77040000,
+              77760000,
+              78480000,
+              79200000,
+              79920000,
+              80640000,
+              81360000,
+              82080000,
+              82800000,
+            ],
+            "stops": [
+              {
+                "arrival": -1,
+                "departure": -1,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+              {
+                "arrival": -1,
+                "departure": -1,
+                "overtake": false,
+              },
+            ],
+            "suspended": [],
+            "weekdays": 96,
+          },
+        ],
+      },
+      "type": "timetable",
+    },
+    {
+      "depot": "9001",
+      "duties": {
+        "mode": "diagram",
+        "sidings": {
+          "8001": [
+            [
+              {
+                "days": 127,
+                "duty": "1",
+                "exceptions": 0,
+                "next": -1,
+                "outLead": -1,
+                "returnSiding": "0",
+                "segments": [
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 21600000,
+                    "to": 5,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 23040000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 24480000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 25920000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 27360000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 28800000,
+                    "to": -1,
+                  },
+                ],
+                "stay": false,
+                "waits": [],
+              },
+            ],
+            [
+              {
+                "days": 127,
+                "duty": "2",
+                "exceptions": 0,
+                "next": -1,
+                "outLead": -1,
+                "returnSiding": "0",
+                "segments": [
+                  {
+                    "from": 2,
+                    "route": "101",
+                    "service": 21960000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 23400000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 24840000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 26280000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 27720000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 29160000,
+                    "to": -1,
+                  },
+                ],
+                "stay": false,
+                "waits": [],
+              },
+            ],
+            [
+              {
+                "days": 127,
+                "duty": "3",
+                "exceptions": 1,
+                "next": -1,
+                "outLead": -1,
+                "returnSiding": "0",
+                "segments": [
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 22320000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 23760000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 25200000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 26640000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 28080000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 29520000,
+                    "to": -1,
+                  },
+                ],
+                "stay": false,
+                "waits": [],
+              },
+            ],
+          ],
+          "8002": [
+            [
+              {
+                "days": 127,
+                "duty": "4",
+                "exceptions": 0,
+                "next": -1,
+                "outLead": -1,
+                "returnSiding": "0",
+                "segments": [
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 22680000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 24120000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 25560000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 27000000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 28440000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 29880000,
+                    "to": -1,
+                  },
+                ],
+                "stay": false,
+                "waits": [],
+              },
+            ],
+            [
+              {
+                "days": 127,
+                "duty": "5",
+                "exceptions": 0,
+                "next": -1,
+                "outLead": -1,
+                "returnSiding": "0",
+                "segments": [
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 23040000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 24480000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 25920000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 27360000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 28800000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 30240000,
+                    "to": -1,
+                  },
+                ],
+                "stay": false,
+                "waits": [],
+              },
+            ],
+          ],
+          "8003": [
+            [
+              {
+                "days": 127,
+                "duty": "6",
+                "exceptions": 0,
+                "next": -1,
+                "outLead": -1,
+                "returnSiding": "0",
+                "segments": [
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 23400000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 24840000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 26280000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 27720000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "101",
+                    "service": 29160000,
+                    "to": -1,
+                  },
+                  {
+                    "from": 0,
+                    "route": "102",
+                    "service": 30600000,
+                    "to": -1,
+                  },
+                ],
+                "stay": true,
+                "waits": [],
+              },
+            ],
+          ],
+        },
+      },
+      "type": "duties",
+    },
+  ],
+}
+`;
+
+exports[`duty rules > finds what keeps a stop and renumbers to new stops as the old page did 3`] = `
+{
+  "length": 6267,
+  "sha256": "05f1d478c165c8331b4327f70e4cea9d",
+}
+`;
+
+exports[`duty rules > finds what keeps a stop and renumbers to new stops as the old page did 4`] = `"至少要两站"`;

@@ -1,6 +1,6 @@
 # EditorServer.java
 
-高级编辑器：本客户端为自己在系统浏览器中提供的网页（Jetty 嵌入式服务器）。它与服务器为所有人提供的地图网站是分开的：只监听本机 `127.0.0.1`、端口在启动时随机分配，只响应带本次会话密钥打开的页面。它读取本客户端已知的数据，所以单人和多人行为相同；修改仍走游戏的数据包，由服务器检查。由 `DashboardScreen`（`:100`、`:135`）调用 `open()`；`MTRClient`（`:379`、`:416`）在离开世界等时调用 `stop()`。静态页面资源在 `assets/mtr/editor/`（`editor.js` 等），API 处理委托给本包的其它类（`EditorData`、`EditorActions`、`EditorTimes`、`EditorSimulation`、`EditorDuties`、`EditorLayout`、`EditorNetwork`、`EditorConsole`、`EditorAudio`、`EditorImages`）和 `mtr.packet` 中的预览请求。
+高级编辑器：本客户端为自己在系统浏览器中提供的网页（Jetty 嵌入式服务器）。它与服务器为所有人提供的地图网站是分开的：只监听本机 `127.0.0.1`、端口在启动时随机分配，只响应带本次会话密钥打开的页面。它读取本客户端已知的数据，所以单人和多人行为相同；修改仍走游戏的数据包，由服务器检查。由 `DashboardScreen`（`:100`、`:135`）调用 `open()`；`MTRClient`（`:379`、`:416`）在离开世界等时调用 `stop()`。静态页面资源在 `assets/mtr/editor/`（`editor-web` 构建出的 `index.html`、`assets/`、`legacy.css`、`audio/`，加上普通脚本 `i18n.js`、`batch.js`、`terminal.js`；旧页面 `editor.js` 等已在退役第 9 步删除），API 处理委托给本包的其它类（`EditorData`、`EditorActions`、`EditorTimes`、`EditorSimulation`、`EditorDuties`、`EditorLayout`、`EditorNetwork`、`EditorConsole`、`EditorAudio`、`EditorImages`）和 `mtr.packet` 中的预览请求。
 
 ## final class EditorServer
 
@@ -21,7 +21,7 @@
 - 作用：停止服务器并清空密钥（如离开世界），使仍打开的页面失效。异常只打印。
 
 ### `private static void start()`
-- 作用：生成密钥；建立守护线程池（8 线程，名 `mtr-editor`，不会阻止游戏进程退出）；连接器绑定 127.0.0.1、端口 0；静态资源来自 jar 中 `/assets/mtr/editor/`（禁止目录列表、`no-cache`）；挂 `EditorFilter`；注册 API servlet：
+- 作用：生成密钥；建立守护线程池（8 线程，名 `mtr-editor`，不会阻止游戏进程退出）；连接器绑定 127.0.0.1、端口 0；静态资源来自 jar 中 `/assets/mtr/editor/`（禁止目录列表、`no-cache`）；挂 `EditorFilter`；`/next/*`（新页面原来的地址，UI 自动测试仍打开它）用 `RedirectServlet("/")`、`/audio.html`（旧报站音频页的地址）用 `RedirectServlet("/#/media")` 重定向；注册 API servlet：
   - `/api/data`、`/api/revision`（`DataServlet`）
   - `/api/apply`（`ApplyServlet`）、`/api/draft`（`DraftServlet`）
   - `/api/plan-duties`、`/api/place-trains`、`/api/replan-duties`
@@ -52,6 +52,10 @@
 ## private static class EditorFilter implements Filter
 - `init`/`destroy`：空。
 - `doFilter`：设置安全响应头（`nosniff`、`X-Frame-Options: DENY`、`no-referrer`、CSP）。拒绝规则：非 GET/HEAD 且不是 API 的 POST/PUT → 405；主机名不是 127.0.0.1/localhost → 403（防 DNS 重绑定）；API 请求密钥不符 → 401；写请求的 `Origin` 不是本页面或 Content-Type 不是 `application/json` → 403（防止别的网站通过浏览器发修改）。
+
+## `RedirectServlet`（私有静态内部类，2026-11-13）
+- 构造参数 `target`：要去的地址。
+- `doGet`：回 302、`Location: target`、`Cache-Control: no-store`。`target` 不带 `#…` 时浏览器保留请求地址里的 `#…`，所以 `/next/#/timetable` 打开的是 `/#/timetable`；密钥在会话存储里（`editor-web/src/api/client.ts`），重定向后仍能找到。HEAD 由 `HttpServlet` 默认交给 `doGet`。
 
 ## API servlet（均为私有静态内部类；处理异常时一般返回 503，请求解析失败 400，过大 413）
 - `DataServlet(boolean revisionOnly)`：GET。游戏线程上 `EditorData.build()`；`revisionOnly` 时只返回 `{"revision": <JSON 文本哈希>}`，供页面轮询变化。

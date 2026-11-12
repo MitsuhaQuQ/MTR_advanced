@@ -94,7 +94,6 @@ function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void
         <path d="M5 15 L9 7 L13 13 L17 6" fill="none" stroke="var(--accent-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       <h1 className="m-0 hidden truncate text-[15px] font-bold sm:block">{tr("MTR 高级编辑器")}</h1>
-      <span className="hidden shrink-0 rounded-pill px-2 text-[12px] font-medium leading-5 tint-accent text-brand sm:inline">{tr("新版预览")}</span>
       <span className="flex-1" />
       <Weekday />
       <button className={"btn btn-ghost " + (errors ? "text-warn" : problems.length ? "text-caution" : "text-dim")} onClick={onSync} title={tr("页面和游戏哪里不一致、游戏哪里没做成")}>
@@ -107,9 +106,6 @@ function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void
       </button>
       <button className="btn btn-primary" disabled={!canApply} onClick={onReview}
         title={conflicts ? tr("有 {0} 条线路在游戏里被改过，应用时先不发，处理后再应用", conflicts) : tr("把草稿发给游戏")}>{tr("应用")}</button>
-      <a className="btn btn-ghost" href="../#/timetable" title={tr("回到旧版编辑器，草稿和选择都在")}>
-        <Icon name="back" size={14} /><span className="hidden md:inline">{tr("回到旧版")}</span>
-      </a>
     </header>
   )
 }

@@ -1,13 +1,13 @@
 # legacy/Slot.tsx
 
-新页面借用旧页面元素、绘制旧代码菜单的 React 组件。旧元素在 [stage.ts](stage.ts.md) 的隐藏舞台上，`LegacySlot` 挂载时把它移进布局、卸载时放回；旧代码继续往里画并保留事件处理。`LegacyMenu` 接管 `legacy/engine.ts` 的 `menuHost`，把旧代码给出的 `[label, action]` 菜单项画成 React 菜单（支持二级菜单）。
+新页面借用剩余旧元素（[markup.ts](markup.ts.md)）、绘制旧代码菜单的 React 组件。旧元素在 [stage.ts](stage.ts.md) 的隐藏舞台上，`LegacySlot` 挂载时把它移进布局、卸载时放回；旧代码继续往里画并保留事件处理。`LegacyMenu` 接管 `legacy/engine.ts` 的 `menuHost`，把旧代码给出的 `[label, action]` 菜单项画成 React 菜单（支持二级菜单）。
 
 ## 导出
 ### `LegacySlot({ id, className, style, onResize })`（组件）
 - props：`id` 旧页面元素 ID；`className` 追加到外层 `div` 的类名（外层固定有 `legacy legacy-slot`）；`style` 外层样式；`onResize` 外层尺寸变化时回调（用 `ResizeObserver`，可选）。
 - 行为：`useLayoutEffect` 中取 `legacyElement(id)`，设 `hidden = false` 并 `appendChild` 进外层；清理时 `returnToStage`。
 - 返回：外层 `div`。
-- 调用者：`views/Inspector.tsx:23`（`inspector`）、`views/Layers.tsx:65`（`view-network`）、`views/Layers.tsx:252`（`canvas-wrap`）、`views/Navigator.tsx:24`（`tree`）。
+- 调用者：`views/Inspector.tsx:23`（`inspector`）、`views/Layers.tsx:65`（`view-network`）、`views/Layers.tsx:252`（`canvas-wrap`）、`views/Layers.tsx:325`（`sim-status`）、`views/Navigator.tsx:24`（`tree`）。（汇总表的 `view-table` 已在退役第 9 步删除。）
 
 ### `LegacyMenu()`（组件）
 - 无 props。状态：`menu`（`{x, y, items}`，视口像素）和 `sub`（展开的二级菜单：父项序号、位置、项）。

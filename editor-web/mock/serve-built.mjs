@@ -1,7 +1,6 @@
 // Serves the editor folder as the game's EditorServer does (same Content-Security-Policy, key checked on /api/), with
 // the fake endpoints of mock/api.ts, to check the built page before a mod build:
-//   node mock/serve-built.mjs [port]   then open http://localhost:<port>/next/#key=abc
-// The old page needs fuller data (api/times and more) than these fakes give, so it doesn't draw here.
+//   node mock/serve-built.mjs [port]   then open http://localhost:<port>/#key=abc
 import http from "node:http"
 import fs from "node:fs"
 import path from "node:path"
@@ -36,4 +35,4 @@ http.createServer(async (req, res) => {
   res.setHeader("Content-Type", TYPES[path.extname(file)] || "application/octet-stream")
   res.setHeader("Cache-Control", "no-cache")
   fs.createReadStream(file).pipe(res)
-}).listen(port, "127.0.0.1", () => console.log(`editor at http://localhost:${port}/next/#key=${KEY}`))
+}).listen(port, "127.0.0.1", () => console.log(`editor at http://localhost:${port}/#key=${KEY}`))

@@ -1,6 +1,6 @@
 # legacy/retired.ts
 
-"退役"的旧代码函数，现在由新页面的模块实现（退役旧代码第 4–7 步）。这些函数经 `scripts/gen-legacy.mjs` 的 `FROM_ENV` 交给旧引擎：旧代码里仍然存在的旧函数、以及新页面自己的调用（`legacy.fn` 找不到时回退到 `env`），全部走新规则。每个函数在规则本身之后保留旧函数原来做的事：保存草稿（`fn.saveDraft`）、重建车次（`fn.buildServices`）、重绘（`fn.renderAll` 等）、表下方的提示（`v.tableMessage`）、以及（第 8 步替换之前的）旧提示框。四个工厂函数都接收 `get: () => Legacy`（取得 `legacy` 的 `{fn, v}`），在 `legacy/engine.ts:118`–`legacy/engine.ts:121` 展开进 `env`。
+"退役"的旧代码函数，现在由新页面的模块实现（退役旧代码第 4–7 步）。这些函数经 `env` 交给旧引擎（原由生成器 `gen-legacy.mjs` 的 `FROM_ENV` 从旧代码里拿掉；第 9 步后旧代码已是源码 `oldEditor.js`，`env` 里的名字直接解构）：旧代码里仍然存在的旧函数、以及新页面自己的调用（`legacy.fn` 找不到时回退到 `env`），全部走新规则。每个函数在规则本身之后保留旧函数原来做的事：保存草稿（`fn.saveDraft`）、重建车次（`fn.buildServices`）、重绘（`fn.renderAll` 等）、表下方的提示（`v.tableMessage`）、以及（第 8 步替换之前的）旧提示框。四个工厂函数都接收 `get: () => Legacy`（取得 `legacy` 的 `{fn, v}`），在 `legacy/engine.ts:118`–`legacy/engine.ts:121` 展开进 `env`。
 
 内部类型 `Legacy = { fn, v }`。导入别名：`T` = `core/timetable.ts`，`S` = `core/services.ts`，`X` = `core/settings.ts`，`P` = `core/dispatch.ts`，`D` = `core/duties.ts`。
 
@@ -63,7 +63,7 @@
 - `scheduleSimulation`、`simulate`、`pollSimulation`、`loadConsole`。
 - `setSimResult`、`simFromNow`、`simLate`、`dutyCheckText`：绑定 `v.sim` 的 `P` 函数。
 - `simTooltip(s)`：模拟开着且有结果时返回 `<div class="hint">…</div>`（`P.simServiceText`），否则空串。
-- `toggleConsole(open)`：开关调度台：设置 `#net-console-toggle` 的 `aria-pressed` 和 `#net-console` 的显示；打开时立即加载并每 `CONSOLE_POLL_MS` 在页面可见且处于路网视图时刷新；关闭时停止。之后 `renderConsole`、`drawNetwork`。
+- `toggleConsole(open)`：开关调度台：设置 `#net-console-toggle` 的 `aria-pressed`（旧的 `#net-console` 面板已删，列车卡片由 `views/DispatchConsole.tsx` 画）；打开时立即加载并每 `CONSOLE_POLL_MS` 在页面可见且处于路网视图时刷新；关闭时停止。之后 `renderConsole`（只通知新页面重绘）、`drawNetwork`。
 - `consoleTrains`、`consoleTrainName`、`consoleTrainState`：`P` 同名函数。调用者：`views/DispatchConsole.tsx:25`、`views/Layers.tsx:154`（经 `fn`）。
 - `consoleCommand(button, operation)`：禁用按钮，POST `api/apply`（`P.dispatchOperation(operation)`）；成功按钮文字改"已发送"，0.6 秒后重新加载调度台；失败恢复按钮。
 - `isLoop`、`loopEntryStop`、`loopRuns`（`pairs` 用 `fn.terminalNow().next`）。

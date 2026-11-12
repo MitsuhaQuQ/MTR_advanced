@@ -3,13 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The new advanced web editor. Built into common/src/main/resources/assets/mtr/editor/next/ (committed), so the mod build needs no Node.",
+  "description": "The advanced web editor. Built into common/src/main/resources/assets/mtr/editor/ (committed), so the mod build needs no Node.",
   "scripts": {
     "dev": "vite",
-    "gen": "node scripts/gen-legacy.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "node scripts/gen-legacy.mjs && tsc --noEmit -p tsconfig.json && vitest run && vite build"
+    "build": "tsc --noEmit -p tsconfig.json && vitest run && vite build"
   },
   "dependencies": {
     "react": "19.3.1",

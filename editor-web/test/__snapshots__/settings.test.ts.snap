@@ -1,0 +1,4794 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 1`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": "L2",
+    "-90,7": "L1",
+    "3,17": "L1",
+  },
+  "sections": [
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 2`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "railLines": {
+      "-5,3": "L2",
+      "3,17": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 3`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": "L2",
+    "-5,3": "L2",
+    "-90,7": "L1",
+    "3,17": null,
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 4`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "3,17": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 5`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "3,17": null,
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 6`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "3,17": null,
+      "9007199254740993,1": "L1",
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 7`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "3,17": null,
+    "9007199254740993,1": "L1",
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      true,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 8`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "logicalLines": {
+      "L3": {
+        "color": 255,
+        "connecting": false,
+        "name": "新线",
+      },
+    },
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "3,17": null,
+      "9007199254740993,1": "L1",
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 9`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+    [
+      "L3",
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "3,17": null,
+    "9007199254740993,1": "L1",
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      true,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 10`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "logicalLines": {
+      "L3": {
+        "color": 255,
+        "connecting": false,
+        "name": "新线",
+      },
+    },
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "13,14": "L3",
+      "3,17": null,
+      "9007199254740993,1": "L1",
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 11`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+    [
+      "L3",
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "13,14": "L3",
+    "3,17": null,
+    "9007199254740993,1": "L1",
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      true,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 12`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "lineTracks": {
+      "TRAIN|1号线": [
+        "L1",
+        "L3",
+      ],
+    },
+    "logicalLines": {
+      "L3": {
+        "color": 255,
+        "connecting": false,
+        "name": "新线",
+      },
+    },
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "13,14": "L3",
+      "3,17": null,
+      "9007199254740993,1": "L1",
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 13`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+    [
+      "L3",
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "13,14": "L3",
+    "3,17": null,
+    "9007199254740993,1": "L1",
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+      true,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 14`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "lineTracks": {
+      "TRAIN|1号线": [
+        "L3",
+      ],
+      "TRAIN|2号线": [
+        "L2",
+      ],
+    },
+    "logicalLines": {
+      "L1": null,
+      "L3": {
+        "color": 255,
+        "connecting": false,
+        "name": "新线",
+      },
+    },
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "13,14": "L3",
+      "3,17": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 15`] = `
+{
+  "lines": [
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+    [
+      "L3",
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "13,14": "L3",
+    "3,17": null,
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 16`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "lineTracks": {
+      "TRAIN|1号线": [
+        "L3",
+      ],
+      "TRAIN|2号线": [
+        "L2",
+      ],
+    },
+    "logicalLines": {
+      "L3": {
+        "color": 255,
+        "connecting": false,
+        "name": "新线",
+      },
+    },
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "13,14": "L3",
+      "3,17": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 17`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+    [
+      "L3",
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "13,14": "L3",
+    "3,17": null,
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 255,
+        "connecting": false,
+        "id": "L3",
+        "name": "新线",
+      },
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 18`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "lineTracks": {
+      "TRAIN|1号线": [],
+      "TRAIN|2号线": [
+        "L2",
+      ],
+    },
+    "railLines": {
+      "-4,-90": null,
+      "-5,3": "L2",
+      "-90,7": null,
+      "3,17": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 19`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": null,
+    "-5,3": "L2",
+    "-90,7": null,
+    "3,17": null,
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 20`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "lineTracks": {
+      "TRAIN|1号线": [],
+      "TRAIN|2号线": [
+        "L2",
+      ],
+    },
+    "railLines": {
+      "-5,3": "L2",
+      "-90,7": null,
+      "3,17": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 21`] = `
+{
+  "lines": [
+    [
+      "L1",
+      {
+        "color": 16711680,
+        "connecting": false,
+        "id": "L1",
+        "name": "京沪线",
+      },
+    ],
+    [
+      "L2",
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+    ],
+  ],
+  "rails": {
+    "-4,-90": "L2",
+    "-5,3": "L2",
+    "-90,7": null,
+    "3,17": null,
+  },
+  "sections": [
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      {
+        "color": 65280,
+        "connecting": true,
+        "id": "L2",
+        "name": "联络",
+      },
+      true,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+    [
+      null,
+      false,
+    ],
+  ],
+  "uses": true,
+}
+`;
+
+exports[`network settings > edits logical lines and sections as the old page did, and shows them alike 22`] = `
+[
+  "-5,2",
+  "-5,3",
+  "3,17",
+  "9007199254740993,1",
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 1`] = `
+[
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 2`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "-5,3": null,
+      "3,17": [
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 3`] = `
+[
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 4`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "-5,3": null,
+      "100,-4": [],
+      "3,17": [
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 5`] = `
+[
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 6`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "-5,3": null,
+      "100,-4": [],
+      "13,14": null,
+      "3,17": [
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 7`] = `
+[
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 8`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "-5,3": null,
+      "100,-4": [],
+      "13,14": null,
+      "14,15": [
+        "TRAIN|1号线",
+        "TRAIN|2号线",
+      ],
+      "3,17": [
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 9`] = `
+[
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 10`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "-5,3": null,
+      "100,-4": [],
+      "13,14": null,
+      "14,15": [
+        "TRAIN|1号线",
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 11`] = `
+[
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 12`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "100,-4": [],
+      "13,14": null,
+      "14,15": [
+        "TRAIN|1号线",
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 13`] = `
+[
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 14`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "13,14": null,
+      "14,15": [
+        "TRAIN|1号线",
+        "TRAIN|2号线",
+      ],
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 15`] = `
+[
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": true,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 16`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "ownerOverrides": {
+      "13,14": null,
+    },
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 17`] = `
+[
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": true,
+    "owners": [
+      "TRAIN|1号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [
+      "TRAIN|2号线",
+    ],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": true,
+    "drafted": true,
+    "manual": false,
+    "owners": [],
+  },
+  {
+    "auto": false,
+    "drafted": false,
+    "manual": false,
+    "owners": [],
+  },
+]
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 18`] = `
+{
+  "13,14": null,
+}
+`;
+
+exports[`network settings > sets section owners by hand as the old page did 19`] = `
+{
+  "-5,3": [
+    "TRAIN|1号线",
+  ],
+  "13,14": [
+    "TRAIN|2号线",
+  ],
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 1`] = `240000`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 2`] = `90000`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 3`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 80,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 4`] = `
+[
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 5`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 100,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 6`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 7`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {},
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 8`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 9`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 160,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 10`] = `
+[
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 11`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 200,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 12`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 13`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 14`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 15`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 16`] = `
+[
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 17`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 100,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 18`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 19`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 120,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 20`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 21`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 160,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 22`] = `
+[
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 23`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 200,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 24`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 25`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 26`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 27`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 0,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 28`] = `
+[
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 29`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": -1,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 30`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 31`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 2,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 32`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 33`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 34`] = `
+[
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 35`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 10,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 36`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 37`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 38`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 39`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 40`] = `
+[
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 41`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": -1,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 42`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 43`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 2,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 44`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 45`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 5,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 46`] = `
+[
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 47`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 10,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 48`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 49`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 50`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 51`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "0",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 52`] = `
+[
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 53`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s0",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 54`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 55`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s1",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 56`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 57`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 58`] = `
+[
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 59`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s3",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 60`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 61`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s4",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 62`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 63`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s5",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 64`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 65`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s6",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 66`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 67`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 68`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 69`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 70`] = `
+[
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 71`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s4",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 72`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 73`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s5",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 74`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 75`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s3",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 76`] = `
+[
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 77`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s6",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 78`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 79`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s2",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 80`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 81`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s7",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 82`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 83`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s1",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 84`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 85`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 86`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 87`] = `
+{
+  "addedBuffers": null,
+  "base": undefined,
+  "clearBuffers": false,
+  "cycleRoutes": undefined,
+  "poolFleets": {
+    "a6": 9,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 88`] = `
+{
+  "addedBuffers": null,
+  "base": undefined,
+  "clearBuffers": false,
+  "cycleRoutes": undefined,
+  "poolFleets": {
+    "a6": 9,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 89`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 12,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": {
+          "acceleration": 0.01,
+          "deceleration": 0.012,
+          "manual": false,
+          "maxSpeed": 80,
+          "set": true,
+        },
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 90`] = `
+{
+  "addedBuffers": null,
+  "clearBuffers": false,
+  "poolFleets": {
+    "a6": 12,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 91`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 12,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [
+            "101",
+          ],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": {
+          "acceleration": 0.01,
+          "deceleration": 0.012,
+          "manual": false,
+          "maxSpeed": 100,
+          "set": true,
+        },
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 92`] = `
+{
+  "addedBuffers": null,
+  "clearBuffers": false,
+  "poolFleets": {
+    "a6": 12,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [
+        "101",
+      ],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 100,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 93`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 94`] = `
+{
+  "addedBuffers": null,
+  "base": undefined,
+  "clearBuffers": false,
+  "cycleRoutes": undefined,
+  "poolFleets": {
+    "a6": 9,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 95`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": true,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": {
+          "acceleration": 0.01,
+          "deceleration": 0.012,
+          "manual": false,
+          "maxSpeed": 80,
+          "set": true,
+        },
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 96`] = `
+{
+  "addedBuffers": null,
+  "clearBuffers": true,
+  "poolFleets": {
+    "a6": 9,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 97`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 98`] = `
+{
+  "addedBuffers": null,
+  "base": undefined,
+  "clearBuffers": false,
+  "cycleRoutes": undefined,
+  "poolFleets": {
+    "a6": 9,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 99`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 100`] = `
+{
+  "paths": [],
+  "rules": [
+    {
+      "line": "TRAIN|1号线",
+      "station": "s1",
+    },
+  ],
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 101`] = `
+{
+  "paths": [
+    {
+      "name": "p",
+    },
+  ],
+  "rules": [],
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 102`] = `
+{
+  "boundaries": {
+    "1,2": true,
+  },
+  "contingencies": {},
+  "created": [],
+  "depotRules": {
+    "9001": {
+      "rules": {
+        "paths": [
+          {
+            "name": "p",
+          },
+        ],
+        "rules": [],
+      },
+    },
+  },
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 103`] = `
+{
+  "boundaries": {
+    "1,2": true,
+    "3,4": false,
+  },
+  "contingencies": {},
+  "created": [],
+  "depotRules": {
+    "9001": {
+      "rules": {
+        "paths": [
+          {
+            "name": "p",
+          },
+        ],
+        "rules": [],
+      },
+    },
+  },
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 104`] = `
+{
+  "boundaries": {
+    "3,4": false,
+  },
+  "contingencies": {},
+  "created": [],
+  "depotRules": {
+    "9001": {
+      "rules": {
+        "paths": [
+          {
+            "name": "p",
+          },
+        ],
+        "rules": [],
+      },
+    },
+  },
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 105`] = `
+{
+  "boundaries": {
+    "3,4": false,
+  },
+  "contingencies": {},
+  "created": [],
+  "depotRules": {
+    "9001": {
+      "rules": {
+        "paths": [
+          {
+            "name": "p",
+          },
+        ],
+        "rules": [],
+      },
+    },
+  },
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;

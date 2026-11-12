@@ -1,6 +1,8 @@
-/** Parity of src/core/sync.ts with the old page's syncProblems, on data with every kind of problem in it. */
+/**
+ * src/core/sync.ts on data with every kind of problem in it. Until step 9 of retiring the old code the list was compared
+ * with the old page's syncProblems; the snapshots were taken when they still matched.
+ */
 import { describe, expect, it } from "vitest"
-import { loadOld } from "./old"
 import { fullDraft, testData } from "./fixtures"
 import { buildModel } from "../src/core/model"
 import { syncProblems } from "../src/core/sync"
@@ -39,26 +41,17 @@ function troubledData() {
 
 describe("syncProblems", () => {
   for (const connection of ["ok", "world", "offline"] as const) {
-    it(`lists what the old page lists (${connection})`, () => {
+    it(`lists what the old page listed (${connection})`, () => {
       const model = buildModel(troubledData())
       const draft = fullDraft(model)
       draft.routes["102"].error = "站台被占"
       draft.duties["9001"].error = "运用不对"
       draft.depots["9001"].error = "车厂不对"
       draft.created[1].error = "建不成"
-      const data = buildModel(troubledData())
-      const old = loadOld<{ syncProblems: () => any[] }>([
-        "syncProblems", "shortName", "routeTitle", "depotById", "systemTitle", "plansByAnchor", "alarmReasonText", "turnPairsOf", "turnTimeOf",
-        "stopLabel", "dutiesOf", "depotLines", "shortfallText", "replanText", "platformText", "platformById", "stationNameOf",
-      ], {
-        connection, data, draft: JSON.parse(JSON.stringify(draft)),
-        topo: { platforms: data.topology.platforms, index: new Map(data.topology.platforms.map((p: any, i: number) => [p.id, i])), stations: data.topology.stations, overlapping: data.topology.overlapping },
-        terminalNow: () => ({ warnings: [] }),
-      })
-      const expected = JSON.parse(JSON.stringify(old.syncProblems()))
-      // Every kind of problem in the data shows, so the comparison means something
-      expect(expected.length).toBeGreaterThan(25)
-      expect(JSON.parse(JSON.stringify(syncProblems(connection, model, draft)))).toEqual(expected)
+      const found = JSON.parse(JSON.stringify(syncProblems(connection, model, draft)))
+      // Every kind of problem in the data shows, so the snapshot means something
+      expect(found.length).toBeGreaterThan(25)
+      expect(found).toMatchSnapshot()
     })
   }
   it("adds why a siding has no way out or back, where the server knows (0.65.26)", () => {

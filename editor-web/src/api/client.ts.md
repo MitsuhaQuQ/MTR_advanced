@@ -1,9 +1,9 @@
 # api/client.ts
 
-新页面访问游戏内编辑器服务器（`EditorServer`，本机 HTTP）的客户端。负责取编辑器密钥、发 GET/POST/PUT 请求、把错误转成连接状态。端点在服务器根下 `/api/…`，页面本身在 `/next/`。被 `state/store.tsx`（读数据、存草稿、应用）、`legacy/engine.ts`（只取 `key`）、`views/TrackDiagram.tsx`（`post`）、媒体/图片库（`key`）使用。
+新页面访问游戏内编辑器服务器（`EditorServer`，本机 HTTP）的客户端。负责取编辑器密钥、发 GET/POST/PUT 请求、把错误转成连接状态。端点在服务器根下 `/api/…`，页面本身也在根下（退役第 9 步起；`/next/…` 由 `EditorServer` 重定向到根）。被 `state/store.tsx`（读数据、存草稿、应用）、`legacy/engine.ts`（只取 `key`）、`views/TrackDiagram.tsx`（`post`）、媒体/图片库（`key`）使用。
 
 ## 模块加载时
-- `KEY_STORAGE = "mtr-editor-key"`：会话存储键，与旧页面 `shell.js` 相同，两页互相打开时都能找到密钥。
+- `KEY_STORAGE = "mtr-editor-key"`：会话存储键（与已删除的旧页面 `shell.js` 用的相同）；从 `/next/` 重定向过来、地址里没有 `key=` 时从这里取回密钥。
 - `key`：立即求值。游戏以 `…#key=<十六进制>` 打开编辑器；地址里有就存进 `sessionStorage` 并使用，否则读 `sessionStorage`，都没有为空串；存储不可用时只用地址里的。
 - 若地址含 `key=`，立刻 `history.replaceState` 去掉 hash，使密钥不留在历史记录中、不显示。
 
