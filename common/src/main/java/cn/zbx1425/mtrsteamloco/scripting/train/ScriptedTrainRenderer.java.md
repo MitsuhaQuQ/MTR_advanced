@@ -26,7 +26,7 @@
   3. 写入脚本可读的 `TrainWrapper`：左右门开、世界位姿、位置、欧拉角、`shouldRender`、`isInDetailDistance = true`；
   4. 不可见时：若是最后一节，`extraFinished()` 并异步调用脚本 `render`，返回；
   5. 可见且需渲染时：用世界位姿再乘车厢变换得到 `basePose`，在同步块内 `trainScripting.commitCar(...)` 把脚本上次结果提交到 `MainClient.drawScheduler`（带方块/天空光照）；
-  6. `matrices.popPose()`（与 `applyAverageTransform` 中的 push 配对，推测）；
+  6. `matrices.popPose()`（与 `applyAverageTransform` 中可见时的 `pushPose` 配对，见 `common/src/main/java/mtr/render/TrainRendererBase.java:109`）；
   7. 最后一节时 `extraFinished()` 并 `tryCallRenderFunctionAsync`。
 - 参数：`carIndex` 车厢序号；`x,y,z` 车厢中心世界坐标；`yaw/pitch` 弧度；左右门是否开。
 

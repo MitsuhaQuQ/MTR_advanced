@@ -35,7 +35,7 @@
   5. 隐藏部件：人工驾驶时用中间车列表；否则末车/首车/中间车各用对应列表；
   6. 非 Mini 版本：沿车长平移 1 格，D51 牵引时再调整 −1.5 或 −0.5；
   7. 车头画 `MODEL_BODY_HEAD` + `MODEL_AUX_HEAD`，车尾画两个 TAIL 模型，提交到 `MainClient.drawScheduler`；非 Mini 画前后两个转向架（位置取列车属性 `bogiePosition × 16`）；
-  8. `scheduleHelper.elapse()`；弹出两层矩阵（其中一层由 `applyAverageTransform` 压入，推测）。
+  8. `scheduleHelper.elapse()`；弹出两层矩阵（其中一层由 `applyAverageTransform` 压入，见 `common/src/main/java/mtr/render/TrainRendererBase.java:109`）。
 
 ### `void renderConnection(...)` / `void renderBarrier(...)`（@Override）
 - 空实现（DK3 不画车厢连接和挡板）。
