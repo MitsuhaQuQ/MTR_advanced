@@ -32,8 +32,8 @@ public final class ImportedPaintingRenderer {
 		UtilitiesClient.rotateZDegrees(pose, (float) settings.rotationZ);
 		UtilitiesClient.rotateYDegrees(pose, (float) settings.rotationY);
 		UtilitiesClient.rotateXDegrees(pose, (float) settings.rotationX);
-		// Glowing: full brightness and no shading by the light's direction
-		final RenderType renderType = settings.emissive ? RenderType.entityTranslucentEmissive(texture) : RenderType.entityTranslucentCull(texture);
+		// Glowing only lights it fully: the emissive render type writes no depth and culls no faces, so the mirrored back and what is behind showed through (shader packs, 0.70.1)
+		final RenderType renderType = RenderType.entityTranslucentCull(texture);
 		final VertexConsumer front = buffers.getBuffer(renderType);
 		final int columns = (int) Math.ceil(settings.width), rows = (int) Math.ceil(settings.height);
 		final double angle = Math.toRadians(180 - yaw);
