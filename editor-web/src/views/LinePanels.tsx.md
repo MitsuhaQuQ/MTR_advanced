@@ -11,7 +11,7 @@
 ### `LinePanels()`（组件）
 - 挂载时把 `panelHost.current` 设为 `setTarget`（`legacy/engine.ts`），卸载时清空。
 - 按 `PanelTarget.kind` 渲染：`ask` → `AskPanel`；`serviceOrder` → `ServiceOrderPanel`；`logicalLine` → `LogicalLinePanel`；`owners` → `OwnersPanel`；`lineTracks` → `LineTracksPanel`；`finishPicking` → `FinishPickingPanel`（以上在 `views/AskPanels.tsx`）；`speed` → `SpeedLimits`；`vehicle` → `VehiclePanel`；`groups` → `DutyGroupsPanel`；`release` → `ReleasePlanPanel`（`views/DepotExtras.tsx`）；`moveLine` → `MoveLinePanel`；`rules` → `DepotRules`；`depot` → `DepotPanel`（`views/DepotPanel.tsx`）；`table` → `TableDays`；`through` → `Through`；其余（`contingency`）→ `Contingency`。每个面板用 `key` 保证目标变化时重建；关闭时清目标。
-- 调用者：`App.tsx:78`（`<LinePanels />`）。
+- 调用者：`App.tsx:79`（`<LinePanels />`）。
 
 ## 内部常量与组件
 - `field`：输入框样式。`Footer({ children, error })`：按钮加错误提示。
