@@ -1,6 +1,6 @@
 # legacy/dialogs.ts
 
-退役旧代码第 8 步：旧页面最后的一些小对话框和 `prompt`/`confirm` 改为新页面的侧面板（`views/AskPanels.tsx` 等，经 `panelHost`），通过 `gen-legacy` 的 `FROM_ENV` 交给旧引擎。每个回答做的事与以前一样；规则在 `src/core`。由 `legacy/engine.ts:122` 以 `dialogRules(() => legacy, target => panelHost.current?.(target))` 展开进 `env`。旧代码和新页面视图都以 `legacy.fn.<名字>` 调用这些函数。
+退役旧代码第 8 步：旧页面最后的一些小对话框和 `prompt`/`confirm` 改为新页面的侧面板（`views/AskPanels.tsx` 等，经 `panelHost`），经 `env` 交给旧引擎（当时由生成器 `gen-legacy` 的 `FROM_ENV` 从旧代码里拿掉，生成器已在第 9 步删除）。每个回答做的事与以前一样；规则在 `src/core`。由 `legacy/engine.ts:122` 以 `dialogRules(() => legacy, target => panelHost.current?.(target))` 展开进 `env`。旧代码和新页面视图都以 `legacy.fn.<名字>` 调用这些函数。
 
 导入别名：`T` = `core/timetable.ts`、`S` = `core/services.ts`、`X` = `core/settings.ts`、`D` = `core/duties.ts`、`L` = `core/stationLayout.ts`。内部类型 `Legacy = { fn, v }`。
 

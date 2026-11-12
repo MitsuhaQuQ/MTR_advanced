@@ -23,7 +23,7 @@ export class ApiError extends Error {
   constructor(status: number) { super(String(status)); this.status = status }
 }
 
-// Endpoints live at the server's root, the page in /next/
+// Endpoints live at the server's root, as the page does (/next/ only redirects there)
 const url = (path: string) => new URL("/api/" + path, location.origin).toString()
 
 async function getJson<T>(path: string): Promise<T> {

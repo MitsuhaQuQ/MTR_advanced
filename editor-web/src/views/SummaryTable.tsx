@@ -6,8 +6,8 @@
  * later ones, Tab: the next cell, Esc: leave it). The rules are the old functions: changeTime, typedTime, cellMenu,
  * toggleChosen, chooseRange, clearTable, editTimetable, setManaged, servicesToAdd and Batch.fitSpan.
  *
- * The old table still renders into its own hidden element: its deadheadIndex (the runs out and back shown in the heads)
- * is worked out there, and the "old drawing" switch shows it again.
+ * The runs out of and back to a depot shown in the heads (deadheadIndex) are worked out by the old code's renderTable,
+ * which draws nothing any more.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { legacy, useLegacy } from "../legacy/engine"

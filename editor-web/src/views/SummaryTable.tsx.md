@@ -1,6 +1,6 @@
 # views/SummaryTable.tsx
 
-由新页面绘制的汇总时刻表（重写第 3 步）：一条路线的表（当天的各时刻表、最低性能、添加班次，每班一列显示各站到发），或一个线路组的各路线按同一方向合在一起。单元格按旧的 `timeCell` / `terminalCell` / `serviceHead` 算出并保留它们的类名（所以样式相同）；单元格用页面自己的输入框就地编辑（Enter：只改这一班；Shift+Enter：这一班和之后各班；Tab：下一格；Esc：放弃）。规则都是旧函数：`changeTime`、`typedTime`、`cellMenu`、`toggleChosen`、`chooseRange`、`clearTable`、`editTimetable`、`setManaged`、`servicesToAdd` 和 `TimetableBatch.fitSpan`（多数已由 `legacy/retired.ts` 换成 `core/timetable.ts` 实现）。旧表仍渲染进它自己的隐藏元素：表头里的出入库回送（`v.deadheadIndex`）在那里算出，"旧版画法"开关会再次显示它。由 `views/Layers.tsx` 在新画法下显示。
+由新页面绘制的汇总时刻表（重写第 3 步）：一条路线的表（当天的各时刻表、最低性能、添加班次，每班一列显示各站到发），或一个线路组的各路线按同一方向合在一起。单元格按旧的 `timeCell` / `terminalCell` / `serviceHead` 算出并保留它们的类名（所以样式相同）；单元格用页面自己的输入框就地编辑（Enter：只改这一班；Shift+Enter：这一班和之后各班；Tab：下一格；Esc：放弃）。规则都是旧函数：`changeTime`、`typedTime`、`cellMenu`、`toggleChosen`、`chooseRange`、`clearTable`、`editTimetable`、`setManaged`、`servicesToAdd` 和 `TimetableBatch.fitSpan`（多数已由 `legacy/retired.ts` 换成 `core/timetable.ts` 实现）。表头里的出入库回送（`v.deadheadIndex`）由旧代码的 `renderTable` 算出（第 9 步起它只算这个，旧表和"旧版画法"开关已删）。由 `views/Layers.tsx` 显示。
 
 ## 类型
 - `Editing`（内部）：正在编辑的单元格 `{ svc（车次 ID）, stop, kind（arr/dep/pass/derived）, value（输入文本）, old（原时刻，运营日毫秒）, bad }`。
@@ -21,7 +21,7 @@
   - 表头：班次时刻（可编辑首站出发）、例外标记 `*`、无车/停运样式、显示回送时的出库/回库说明（`v.showDeadheads`、`v.deadheadIndex`）、出车/回送/接续/直通/回库注记。
 - `isSelected(s)`：选中车次、整条路线选中或在多选范围内（`fn.inRange`）。
 - `showDeadheadsBox`："显示回送"勾选（`v.showDeadheads`，记入 `localStorage` 的 `mtr-editor-show-deadheads`，然后 `fn.renderTable()`、`fn.renderAll()`）。
-- 指针和按键（原 `#view-table` 上的旧处理）：
+- 指针和按键（原旧表 `#view-table` 上的处理，旧表已删）：
   - `onClick`：表头 Ctrl 点击 `fn.toggleChosen(s, shift)`、Shift 点击 `fn.chooseRange(s)`（设 `v.tableMessage`）；否则清范围，选中该车次（`fn.centerOn(s)`、`fn.renderAll()`）并开始编辑。
   - `onContextMenu`：`fn.cellMenu(event, cell)`。
   - `onKeyDown`：在单元格上按 Enter 或数字开始编辑。

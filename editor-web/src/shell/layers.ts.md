@@ -4,7 +4,7 @@
 
 ## 类型
 - `LayerId`：`"physical" | "owners" | "lines" | "timetable" | "depots" | "dispatch" | "media"`。
-- `LayerInfo`：`id`；`name` 导轨上的短名（中文，经 `tr` 显示）；`hint` 层说明；`icon` 图标名（`shell/icons.tsx`）；`step?` 第几层（调度、媒体没有）；`movesIn` 迁移计划中该层移入新页面的步骤号；`old` 旧页面做同样工作的地址（迁移完成前）。`movesIn` 与 `old` 在 `src` 中未见读取处。
+- `LayerInfo`：`id`；`name` 导轨上的短名（中文，经 `tr` 显示）；`hint` 层说明；`icon` 图标名（`shell/icons.tsx`）；`step?` 第几层（调度、媒体没有）；`movesIn` 迁移计划中该层移入新页面的步骤号，在 `src` 中未见读取处。（原来的 `old`，即旧页面做同样工作的地址，已随旧页面删除。）
 
 ## 导出
 - `LAYERS: LayerInfo[]`：七层：配线（1）、归属（2）、线路（3）、时刻（4）、车厂（5）、调度、媒体（旧地址 `../#/media/audio`）。调用者：`App.tsx:58`、`App.tsx:136`。

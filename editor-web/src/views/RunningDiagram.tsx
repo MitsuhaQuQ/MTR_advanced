@@ -10,8 +10,8 @@
  * chosen); right-click for later services or a run's menu; the wheel zooms, Shift-wheel scrolls. What changes is done by
  * the old functions (moveServices, editTimetable, setStopException, editDutyException, toggleInSlot …).
  *
- * The old canvas's box (#canvas-wrap) stays in the layout under this one, its canvas hidden, so the old functions that
- * measure it (centring on a service, zooming from the tool bar) keep working.
+ * The old canvas's box (#canvas-wrap, without its canvas since step 9 of retiring the old code) stays in the layout under
+ * this one, so the old functions that measure it (centring on a service, zooming from the tool bar) keep working.
  */
 import { useCallback, useEffect, useRef } from "react"
 import { legacy, useLegacy } from "../legacy/engine"

@@ -127,6 +127,10 @@ public final class EditorServer {
 		servletHolder.setInitParameter("dirAllowed", "false");
 		servletHolder.setInitParameter("cacheControl", "no-cache");
 		context.addServlet(servletHolder, "/");
+		// The page is served at the root; the old page is gone (2026-11-13). Where the new one used to be, and the old media
+		// page's address, now lead there; the browser keeps the #… part across the redirect, so #/<layer> still opens it
+		context.addServlet(new ServletHolder(new RedirectServlet("/")), "/next/*");
+		context.addServlet(new ServletHolder(new RedirectServlet("/#/media")), "/audio.html");
 		context.addServlet(new ServletHolder(new DataServlet(false)), "/api/data");
 		context.addServlet(new ServletHolder(new DataServlet(true)), "/api/revision");
 		context.addServlet(new ServletHolder(new ApplyServlet()), "/api/apply");
@@ -868,6 +872,25 @@ public final class EditorServer {
 			response.setHeader("Cache-Control", "no-store");
 			response.setContentLength(bytes.length);
 			response.getOutputStream().write(bytes);
+		}
+	}
+
+	/**
+	 * Sends an old address on to where the page is now. A target without its own #… keeps the one asked for.
+	 */
+	private static class RedirectServlet extends HttpServlet {
+
+		private final String target;
+
+		private RedirectServlet(String target) {
+			this.target = target;
+		}
+
+		@Override
+		protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+			response.setStatus(HttpServletResponse.SC_FOUND);
+			response.setHeader("Location", target);
+			response.setHeader("Cache-Control", "no-store");
 		}
 	}
 

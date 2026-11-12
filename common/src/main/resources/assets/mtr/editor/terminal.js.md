@@ -1,11 +1,11 @@
 # terminal.js
 
-计算列车在路线终点之后接着跑哪一班、期间停在哪里，与页面分开以便单独检查；游戏的冲突检查以同样方式配对（`transitsim.plan.TerminalPairs`）。顺序：玩家设定的接续（一班从末站直通到另一班首站），然后是运用中前后相连的两班，最后是列车到达后从该站最早发车的一班（推断）。在到达站台原地折返的列车停在该站台直到下一班发车；有轮用折返站台（站前折返）时取第一个空闲的（同游戏中列车的选择）；都不空时用站台外可以等候的折返线（混合折返）。时刻为运营日毫秒。普通脚本（IIFE）：浏览器中为 `window.TerminalPairs`，Node 中为 `module.exports`。旧页面 `editor.js` 和新页面（`editor-web/src/core/duties.ts` 的 `terminalPairs`、`views/RunningDiagram.tsx`）都通过全局使用。
+计算列车在路线终点之后接着跑哪一班、期间停在哪里，与页面分开以便单独检查；游戏的冲突检查以同样方式配对（`transitsim.plan.TerminalPairs`）。顺序：玩家设定的接续（一班从末站直通到另一班首站），然后是运用中前后相连的两班，最后是列车到达后从该站最早发车的一班（推断）。在到达站台原地折返的列车停在该站台直到下一班发车；有轮用折返站台（站前折返）时取第一个空闲的（同游戏中列车的选择）；都不空时用站台外可以等候的折返线（混合折返）。时刻为运营日毫秒。普通脚本（IIFE）：浏览器中为 `window.TerminalPairs`，Node 中为 `module.exports`。编辑器页面（`editor-web/src/core/duties.ts` 的 `terminalPairs`、`views/RunningDiagram.tsx`）和剩余旧代码 `legacy/oldEditor.js`（`MAX_WAIT`）都通过全局使用。旧页面 `editor.js` 已在退役第 9 步删除。
 
 ## 常量
 - `MIN_TURN = 30000`：列车离开末站到下一班之间的最短时间（规划器的取值）。
 - `LONG_WAIT = 5 分钟`：等下一班不少于这么久时，改到空闲的折返线等（混合折返）。
-- `MAX_WAIT = 2 小时`：等下一班超过这么久就视为回库。使用者：`editor.js:5175`。
+- `MAX_WAIT = 2 小时`：等下一班超过这么久就视为回库。使用者：旧 `editor.js`（已删除）。
 
 ## 导出函数
 ### `pair(input)`
@@ -24,10 +24,10 @@
   4. 有 `displaced` 的配对记 `HOLDS_PLATFORM` 警告（长时间占用站台迫使别的车换站台或进折返线）。
   5. 为每个配对计算 `fromDeparture`、`toArrival`（同站台折返时为下一班发车/本班到达，否则为本班离开/下一班首站到达）。
 - 返回 `{ next: Map<车次 ID, 配对>, previous: Map<车次 ID, 配对>, warnings }`。
-- 调用者：`editor.js:5611`、`editor-web/src/core/duties.ts:214`。
+- 调用者：旧 `editor.js`（已删除）、`editor-web/src/core/duties.ts:214`。
 
 ### `loopConnection(arriveX, leaveX, lastY, firstY)`
-- 环线续圈的画线：在最后一行等候，再在同一横坐标跳回第一行。`leaveX < arriveX` 时返回 null，否则返回三点折线。调用者：`editor.js:4318`、`editor-web/src/views/RunningDiagram.tsx:620`。
+- 环线续圈的画线：在最后一行等候，再在同一横坐标跳回第一行。`leaveX < arriveX` 时返回 null，否则返回三点折线。调用者：旧 `editor.js`（已删除）、`editor-web/src/views/RunningDiagram.tsx:620`。
 
 ## 内部函数
 - `add(map, key, entry)`：向 Map 中的列表追加。

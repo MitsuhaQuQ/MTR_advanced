@@ -41,7 +41,8 @@ export type Store = {
   refresh: () => void
 }
 
-const StoreContext = createContext<Store | null>(null)
+/** Exported for tests, which give a component a store of their own */
+export const StoreContext = createContext<Store | null>(null)
 export const useStore = () => useContext(StoreContext)!
 
 export function StoreProvider({ children }: { children: ReactNode }) {

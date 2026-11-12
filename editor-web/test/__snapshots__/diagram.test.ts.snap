@@ -1,0 +1,149 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the running diagram's geometry > draws every service through the points the old page did, at several zooms and scrolls 1`] = `
+{
+  "length": 21206,
+  "sha256": "d5af694a4e6aca402ece52015b51dd79",
+}
+`;
+
+exports[`the running diagram's geometry > draws every service through the points the old page did, at several zooms and scrolls 2`] = `
+{
+  "length": 8292,
+  "sha256": "3e41f8bf3db999ae2d9bc260adb2553a",
+}
+`;
+
+exports[`the running diagram's geometry > draws every service through the points the old page did, at several zooms and scrolls 3`] = `
+{
+  "length": 77247,
+  "sha256": "379cfdef13cb35dbacd2d12f7d623312",
+}
+`;
+
+exports[`the running diagram's geometry > draws every service through the points the old page did, at several zooms and scrolls 4`] = `
+{
+  "length": 4107,
+  "sha256": "1d72d63d856a30b187bf2ae59e7e70ff",
+}
+`;
+
+exports[`the running diagram's geometry > draws the whole day as the old page did: services, runs out and back, other lines on its track 1`] = `
+{
+  "length": 21948,
+  "sha256": "384e86d0e14b7d0a42d0e0b633d6b9ba",
+}
+`;
+
+exports[`the running diagram's geometry > finds the service under the mouse as the old page did 1`] = `
+{
+  "length": 18431,
+  "sha256": "72b6b44725c9087561ee0685959f9d64",
+}
+`;
+
+exports[`the running diagram's geometry > lays out the summary timetable cell for cell as the old page did 1`] = `
+{
+  "length": 153985,
+  "sha256": "11ecd43a9568c22c8e993717cec8f8bc",
+}
+`;
+
+exports[`the running diagram's geometry > lays out the summary timetable cell for cell as the old page did 2`] = `
+{
+  "length": 105660,
+  "sha256": "a5dba4d4d25f55471107ab3991b7d759",
+}
+`;
+
+exports[`the running diagram's geometry > lays out the summary timetable cell for cell as the old page did 3`] = `
+{
+  "length": 37959,
+  "sha256": "f2a4968b7ee481b39288fc01763791eb",
+}
+`;
+
+exports[`the running diagram's geometry > lays the rows out as the old page did 1`] = `
+[
+  {
+    "contentHeight": 640,
+    "ys": [
+      40,
+      154,
+      268,
+      382,
+      496,
+      610,
+    ],
+  },
+  {
+    "contentHeight": 640,
+    "ys": [
+      66,
+      169.6,
+      273.2,
+      376.79999999999995,
+      480.4,
+      584,
+    ],
+  },
+]
+`;
+
+exports[`the running diagram's geometry > puts a selected service's dwell handles where the old page did 1`] = `
+[
+  [
+    436,
+    169.6,
+    1,
+  ],
+  [
+    460,
+    273.2,
+    2,
+  ],
+  [
+    484,
+    376.79999999999995,
+    3,
+  ],
+  [
+    508,
+    480.4,
+    4,
+  ],
+]
+`;
+
+exports[`the running diagram's geometry > steps the time axis as the old page did 1`] = `
+[
+  {
+    "grid": 3600000,
+    "label": 10800000,
+  },
+  {
+    "grid": 600000,
+    "label": 3600000,
+  },
+  {
+    "grid": 300000,
+    "label": 1800000,
+  },
+  {
+    "grid": 300000,
+    "label": 600000,
+  },
+  {
+    "grid": 30000,
+    "label": 300000,
+  },
+  {
+    "grid": 10000,
+    "label": 60000,
+  },
+  {
+    "grid": 10000,
+    "label": 10000,
+  },
+]
+`;

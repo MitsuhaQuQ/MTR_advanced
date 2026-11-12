@@ -18,7 +18,7 @@
 
 ### `TopBar({ onReview, onSync })`
 - props：`onReview` 打开审阅面板；`onSync` 打开同步面板。
-- 显示标志、标题、"新版预览"、`Weekday`、同步状态按钮（`useSyncProblems()` 中非 `hint` 的问题数；有 `err` 显示警告色）、草稿按钮（`draftCount(store.draft)` 项，应用中显示"正在应用…"）、"应用"按钮（可用条件：未在应用、草稿数大于冲突数 `conflictCount`、有编辑权限；点击也只是打开审阅面板）、"回到旧版"链接 `../#/timetable`。
+- 显示标志、标题、`Weekday`、同步状态按钮（`useSyncProblems()` 中非 `hint` 的问题数；有 `err` 显示警告色）、草稿按钮（`draftCount(store.draft)` 项，应用中显示"正在应用…"）、"应用"按钮（可用条件：未在应用、草稿数大于冲突数 `conflictCount`、有编辑权限；点击也只是打开审阅面板）。（"新版预览"标记和"回到旧版"链接已随旧页面在退役第 9 步删除。）
 
 ### `WEEKDAYS`
 - 常量：周一…周日的中文名，作为下拉项文本（经 `tr`）。

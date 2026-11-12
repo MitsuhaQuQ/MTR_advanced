@@ -1,0 +1,7811 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the track solver > finds the problems with a route's tracks the old page found 1`] = `
+[
+  [],
+  [
+    {
+      "level": "error",
+      "stop": 2,
+      "text": "站1到站2沿轨道走不通",
+    },
+  ],
+  [
+    {
+      "level": "error",
+      "stop": 2,
+      "text": "站1到站2沿轨道走不通",
+    },
+  ],
+  [
+    {
+      "level": "error",
+      "stop": 1,
+      "text": "站1的站台没有轨道",
+    },
+  ],
+  [
+    {
+      "level": "error",
+      "stop": 1,
+      "text": "站1的站台和首站不在同一个线网里（轨道没有连起来）",
+    },
+  ],
+  [
+    {
+      "level": "error",
+      "stop": 1,
+      "text": "站0到站1沿轨道走不通",
+    },
+  ],
+]
+`;
+
+exports[`the track solver > finds the same way and cost between every two tracks as the old page did 1`] = `
+[
+  [
+    Infinity,
+    200,
+    400,
+    600,
+    800,
+    1000,
+    Infinity,
+    220,
+    Infinity,
+    Infinity,
+    Infinity,
+    1020,
+    410,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      2,
+      200,
+    ],
+    [
+      15,
+      220,
+    ],
+    [
+      4,
+      400,
+    ],
+    [
+      24,
+      410,
+    ],
+    [
+      6,
+      600,
+    ],
+    [
+      8,
+      800,
+    ],
+    [
+      10,
+      1000,
+    ],
+    [
+      23,
+      1020,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    200,
+    400,
+    600,
+    800,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    820,
+    210,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      4,
+      200,
+    ],
+    [
+      24,
+      210,
+    ],
+    [
+      6,
+      400,
+    ],
+    [
+      8,
+      600,
+    ],
+    [
+      10,
+      800,
+    ],
+    [
+      23,
+      820,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    400,
+    600,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    620,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      6,
+      200,
+    ],
+    [
+      8,
+      400,
+    ],
+    [
+      10,
+      600,
+    ],
+    [
+      23,
+      620,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    400,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    420,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      8,
+      200,
+    ],
+    [
+      10,
+      400,
+    ],
+    [
+      23,
+      420,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    220,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      10,
+      200,
+    ],
+    [
+      23,
+      220,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [],
+  [],
+  [
+    220,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      12,
+      200,
+    ],
+    [
+      1,
+      220,
+    ],
+  ],
+  [],
+  [
+    420,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    400,
+    200,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      14,
+      200,
+    ],
+    [
+      12,
+      400,
+    ],
+    [
+      1,
+      420,
+    ],
+  ],
+  [],
+  [
+    620,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    600,
+    400,
+    200,
+    Infinity,
+    Infinity,
+    Infinity,
+    210,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      16,
+      200,
+    ],
+    [
+      25,
+      210,
+    ],
+    [
+      14,
+      400,
+    ],
+    [
+      12,
+      600,
+    ],
+    [
+      1,
+      620,
+    ],
+  ],
+  [],
+  [
+    820,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    800,
+    600,
+    400,
+    200,
+    Infinity,
+    Infinity,
+    410,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      18,
+      200,
+    ],
+    [
+      16,
+      400,
+    ],
+    [
+      25,
+      410,
+    ],
+    [
+      14,
+      600,
+    ],
+    [
+      12,
+      800,
+    ],
+    [
+      1,
+      820,
+    ],
+  ],
+  [],
+  [
+    1020,
+    Infinity,
+    Infinity,
+    Infinity,
+    220,
+    Infinity,
+    1000,
+    800,
+    600,
+    400,
+    200,
+    Infinity,
+    610,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      20,
+      200,
+    ],
+    [
+      9,
+      220,
+    ],
+    [
+      18,
+      400,
+    ],
+    [
+      16,
+      600,
+    ],
+    [
+      25,
+      610,
+    ],
+    [
+      14,
+      800,
+    ],
+    [
+      12,
+      1000,
+    ],
+    [
+      1,
+      1020,
+    ],
+  ],
+  [],
+  [
+    430,
+    Infinity,
+    Infinity,
+    210,
+    410,
+    610,
+    410,
+    210,
+    Infinity,
+    Infinity,
+    Infinity,
+    630,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      6,
+      210,
+    ],
+    [
+      8,
+      410,
+    ],
+    [
+      10,
+      610,
+    ],
+    [
+      23,
+      630,
+    ],
+  ],
+  [
+    [
+      14,
+      210,
+    ],
+    [
+      12,
+      410,
+    ],
+    [
+      1,
+      430,
+    ],
+  ],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    400,
+    600,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      28,
+      200,
+    ],
+    [
+      30,
+      400,
+    ],
+    [
+      32,
+      600,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    400,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      30,
+      200,
+    ],
+    [
+      32,
+      400,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      32,
+      200,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [
+    [
+      34,
+      200,
+    ],
+  ],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+  ],
+  [],
+  [],
+  [
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    Infinity,
+    200,
+    Infinity,
+  ],
+  [
+    [
+      38,
+      200,
+    ],
+  ],
+  [],
+]
+`;
+
+exports[`the track solver > lays out the stations between two ends, and the picker, as the old page did 1`] = `
+[
+  [
+    0,
+    1,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    0,
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：码头街",
+  null,
+  [
+    0,
+    1,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    0,
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：中央广场",
+  [
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    11,
+    10,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    11,
+    10,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    11,
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：西门",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    0,
+    1,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    0,
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    0,
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：码头街",
+  [
+    0,
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        0,
+        6,
+      ],
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      0,
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：中央广场",
+  [
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    1,
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：中央广场",
+  [
+    1,
+    2,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        1,
+        7,
+      ],
+      [
+        12,
+        2,
+        8,
+      ],
+    ],
+    "picks": [
+      1,
+      2,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    11,
+    10,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "6 站，停 5 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "5 站，停 4 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：西门",
+  [
+    11,
+    10,
+    9,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：西门",
+  [
+    11,
+    10,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    11,
+    10,
+    9,
+    8,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        11,
+        5,
+      ],
+      [
+        10,
+        4,
+      ],
+      [
+        9,
+        3,
+      ],
+      [
+        8,
+        2,
+        12,
+      ],
+    ],
+    "picks": [
+      11,
+      10,
+      9,
+      8,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：西门",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  [
+    8,
+    7,
+    6,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+      [
+        6,
+        0,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+      6,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：码头街",
+  [
+    8,
+    7,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        8,
+        2,
+        12,
+      ],
+      [
+        7,
+        1,
+      ],
+    ],
+    "picks": [
+      8,
+      7,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    2,
+    3,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    2,
+    3,
+    4,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：市政厅",
+  [
+    2,
+    3,
+    4,
+    5,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        12,
+        2,
+        8,
+      ],
+      [
+        3,
+        9,
+      ],
+      [
+        4,
+        10,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "picks": [
+      2,
+      3,
+      4,
+      5,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：市政厅",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    13,
+    14,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    13,
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：会展中心",
+  [
+    13,
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：会展中心",
+  null,
+  [
+    13,
+    14,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    13,
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：会展中心",
+  [
+    13,
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：会展中心",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    18,
+    17,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        14,
+        18,
+      ],
+      [
+        13,
+        17,
+      ],
+    ],
+    "picks": [
+      18,
+      17,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    18,
+    17,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        14,
+        18,
+      ],
+      [
+        13,
+        17,
+      ],
+    ],
+    "picks": [
+      18,
+      17,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  [
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    20,
+    19,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        16,
+        20,
+      ],
+      [
+        15,
+        19,
+      ],
+    ],
+    "picks": [
+      20,
+      19,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  [
+    20,
+    19,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        16,
+        20,
+      ],
+      [
+        15,
+        19,
+      ],
+    ],
+    "picks": [
+      20,
+      19,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    13,
+    14,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    13,
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：会展中心",
+  [
+    13,
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：会展中心",
+  [
+    13,
+    14,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    13,
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：会展中心",
+  [
+    13,
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        17,
+        13,
+      ],
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      13,
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+      true,
+    ],
+  },
+  "4 站，停 3 站，通过 1 站：会展中心",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    18,
+    17,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        14,
+        18,
+      ],
+      [
+        13,
+        17,
+      ],
+    ],
+    "picks": [
+      18,
+      17,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  [
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  [
+    18,
+    17,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        14,
+        18,
+      ],
+      [
+        13,
+        17,
+      ],
+    ],
+    "picks": [
+      18,
+      17,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    14,
+    15,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    14,
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        18,
+        14,
+      ],
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      14,
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+      true,
+    ],
+  },
+  "3 站，停 2 站，通过 1 站：中央广场",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  [
+    15,
+    16,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        19,
+        15,
+      ],
+      [
+        20,
+        16,
+      ],
+    ],
+    "picks": [
+      15,
+      16,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    20,
+    19,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        16,
+        20,
+      ],
+      [
+        15,
+        19,
+      ],
+    ],
+    "picks": [
+      20,
+      19,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  null,
+  null,
+  null,
+  [
+    20,
+    19,
+  ],
+  {
+    "color": "#123456",
+    "conflict": "",
+    "layers": [
+      [
+        16,
+        20,
+      ],
+      [
+        15,
+        19,
+      ],
+    ],
+    "picks": [
+      20,
+      19,
+    ],
+    "pins": [],
+    "stop": [
+      true,
+      true,
+    ],
+  },
+  "2 站，停 2 站，全部停车",
+  [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+  ],
+]
+`;
+
+exports[`the track solver > names and groups tracks as the old page did 1`] = `
+[
+  [
+    "1",
+    "港湾",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      0,
+      6,
+    ],
+  ],
+  [
+    "1",
+    "码头街",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      1,
+      7,
+    ],
+  ],
+  [
+    "1",
+    "中央广场",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      2,
+      8,
+      12,
+    ],
+  ],
+  [
+    "1",
+    "市政厅",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      3,
+      9,
+    ],
+  ],
+  [
+    "1",
+    "西门",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      4,
+      10,
+    ],
+  ],
+  [
+    "1",
+    "北湖",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      5,
+      11,
+    ],
+  ],
+  [
+    "2",
+    "港湾",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      0,
+      6,
+    ],
+  ],
+  [
+    "2",
+    "码头街",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      1,
+      7,
+    ],
+  ],
+  [
+    "2",
+    "中央广场",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      2,
+      8,
+      12,
+    ],
+  ],
+  [
+    "2",
+    "市政厅",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      3,
+      9,
+    ],
+  ],
+  [
+    "2",
+    "西门",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      4,
+      10,
+    ],
+  ],
+  [
+    "2",
+    "北湖",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      5,
+      11,
+    ],
+  ],
+  [
+    "5",
+    "中央广场",
+    "双向 5道 待避线",
+    "双 5 待避",
+    [
+      2,
+      8,
+      12,
+    ],
+  ],
+  [
+    "1",
+    "机场",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      13,
+      17,
+    ],
+  ],
+  [
+    "1",
+    "会展中心",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      14,
+      18,
+    ],
+  ],
+  [
+    "3",
+    "中央广场",
+    "上行 3道 正线",
+    "上 3 正",
+    [
+      15,
+      19,
+    ],
+  ],
+  [
+    "1",
+    "东站",
+    "上行 1道 正线",
+    "上 1 正",
+    [
+      16,
+      20,
+    ],
+  ],
+  [
+    "2",
+    "机场",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      13,
+      17,
+    ],
+  ],
+  [
+    "2",
+    "会展中心",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      14,
+      18,
+    ],
+  ],
+  [
+    "4",
+    "中央广场",
+    "下行 4道 正线",
+    "下 4 正",
+    [
+      15,
+      19,
+    ],
+  ],
+  [
+    "2",
+    "东站",
+    "下行 2道 正线",
+    "下 2 正",
+    [
+      16,
+      20,
+    ],
+  ],
+]
+`;
+
+exports[`the track solver > solves stops as the old page did, with and without fixed tracks 1`] = `
+[
+  [
+    [
+      0,
+      6,
+    ],
+    [
+      1,
+      7,
+    ],
+    [
+      12,
+      2,
+      8,
+    ],
+    [
+      3,
+      9,
+    ],
+    [
+      4,
+      10,
+    ],
+    [
+      5,
+      11,
+    ],
+  ],
+  {
+    "arrive": [
+      ,
+      2,
+      4,
+      6,
+      8,
+      10,
+    ],
+    "depart": [
+      0,
+      2,
+      4,
+      6,
+      8,
+      ,
+    ],
+    "feasible": [
+      [
+        0,
+      ],
+      [
+        1,
+      ],
+      [
+        2,
+        12,
+      ],
+      [
+        3,
+      ],
+      [
+        4,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "legs": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      0,
+    ],
+    "ok": true,
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "reversals": [],
+  },
+  {
+    "arrive": [
+      ,
+      2,
+      4,
+      6,
+      8,
+      10,
+    ],
+    "depart": [
+      0,
+      2,
+      4,
+      6,
+      8,
+      ,
+    ],
+    "feasible": [
+      [
+        0,
+      ],
+      [
+        1,
+      ],
+      [
+        2,
+        12,
+      ],
+      [
+        3,
+      ],
+      [
+        4,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "legs": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      0,
+    ],
+    "ok": true,
+    "picks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+    "reversals": [],
+  },
+  {
+    "arrive": [
+      ,
+      2,
+      24,
+      6,
+      8,
+      10,
+    ],
+    "depart": [
+      0,
+      2,
+      24,
+      6,
+      8,
+      ,
+    ],
+    "feasible": [
+      [
+        0,
+      ],
+      [
+        1,
+      ],
+      [
+        12,
+      ],
+      [
+        3,
+      ],
+      [
+        4,
+      ],
+      [
+        5,
+        11,
+      ],
+    ],
+    "legs": [
+      200,
+      210,
+      210,
+      200,
+      200,
+      0,
+    ],
+    "ok": true,
+    "picks": [
+      0,
+      1,
+      12,
+      3,
+      4,
+      5,
+    ],
+    "reversals": [],
+  },
+  {
+    "feasible": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ],
+    "ok": false,
+  },
+  {
+    "feasible": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ],
+    "ok": false,
+  },
+]
+`;

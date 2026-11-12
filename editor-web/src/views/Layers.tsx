@@ -1,6 +1,7 @@
 /**
- * The layers' work areas. The views are still the old page's (borrowed with LegacySlot, run by the old code), each with
- * the new page's own tool bar; the tree on the left shows only the layer's own part of the old tree.
+ * The layers' work areas, each with its own tool bar: the running diagram and the summary table (the new page's own,
+ * over the old #canvas-wrap box the old code still measures the diagram by), the schematics, and the real map, still the
+ * old code's (borrowed with LegacySlot, oldEditor.js). The navigator on the left shows the layer's own part of the tree.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { legacy, renderLegacy, useLegacy, type MenuItem } from "../legacy/engine"
@@ -133,7 +134,7 @@ function FloatingMap() {
 
 /**
  * The dispatch layer: the trains on the schematic (the default) or on the real map, with the dispatcher's console beside
- * both (the old #net-console, borrowed out of the map). Clicking a train on the schematic chooses it in the console.
+ * both (views/DispatchConsole.tsx). Clicking a train on the schematic chooses it in the console.
  */
 function DispatchWork() {
   useLegacy()
@@ -241,21 +242,18 @@ function DiagramWork({ extra }: { extra?: ReactNode }) {
   const state = v.state
   const showsDiagram = fn.showsDiagram(), showsTable = fn.showsTable()
   const redraw = useCallback(() => legacy.fn.draw(), [])
-  const oldDiagram = v.oldDiagram === true
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <DiagramTools extra={extra} />
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {showsDiagram && (
-            <div className={"relative flex min-h-0 " + (showsTable ? "basis-1/2" : "flex-1") + (oldDiagram ? "" : " new-diagram")} style={{ minHeight: 240 }}>
+            <div className={"relative flex min-h-0 " + (showsTable ? "basis-1/2" : "flex-1")} style={{ minHeight: 240 }}>
               <LegacySlot id="canvas-wrap" className="flex min-h-0 flex-1" onResize={redraw} />
-              {!oldDiagram && <RunningDiagram />}
+              <RunningDiagram />
             </div>
           )}
-          {showsTable && (oldDiagram
-            ? <LegacySlot id="view-table" className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />
-            : <SummaryTable className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />)}
+          {showsTable && <SummaryTable className={"scroll-thin min-h-0 overflow-auto border-t border-grid " + (showsDiagram ? "basis-1/2" : "flex-1")} />}
         </div>
         <Inspector className="scroll-thin max-h-[40%] shrink-0 overflow-y-auto border-t border-grid lg:max-h-none lg:w-[300px] lg:border-l lg:border-t-0" />
       </div>
@@ -317,7 +315,6 @@ function DiagramTools({ extra }: { extra?: ReactNode }) {
       <Group label={tr("显示")}>
         <Toggle on={v.showDepots} title={tr("车厂行和出入库回送")} onClick={() => { v.showDepots = !v.showDepots; remember("mtr-editor-show-depots", v.showDepots); fn.renderAll() }}>{tr("显示车厂")}</Toggle>
         <Toggle on={v.showAccess} title={tr("别的线路走同一段轨道的班次，只读")} onClick={() => { v.showAccess = !v.showAccess; remember("mtr-editor-show-access", v.showAccess); fn.renderAll() }}>{tr("显示接入")}</Toggle>
-        <Toggle on={v.oldDiagram === true} title={tr("用旧版的画法画运行图和汇总时刻表，对照新画法用；新画法有问题时也可以先切回去")} onClick={() => { v.oldDiagram = !(v.oldDiagram === true); remember("mtr-next-old-diagram", v.oldDiagram); fn.renderAll() }}>{tr("旧版画法")}</Toggle>
         <Toggle on={v.showNoTrain} title={tr("把没有车跑的班次标成红色，有车的变淡")} onClick={() => { v.showNoTrain = !v.showNoTrain; remember("mtr-editor-show-no-train", v.showNoTrain); fn.renderAll() }}>{tr("没车的班次")}</Toggle>
       </Group>
       {data && data.simulation && (

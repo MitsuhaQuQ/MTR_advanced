@@ -1,11 +1,11 @@
 # legacy/engine.ts
 
-新页面里运行旧编辑器代码的桥。`engine.generated.js`（由 `scripts/gen-legacy.mjs` 从旧页面 `editor.js` 生成）导出 `createLegacy(env)`；本文件构造 `env`（旧代码调用的外部函数：网络请求、菜单、各种对话框），把旧对话框改接到新页面的 React 面板（`diagramHost`/`stopsHost`/`panelHost`），把"退役"的旧规则换成新代码（`core/services.ts`、`legacy/retired.ts`、`legacy/dialogs.ts`），然后导出 `legacy = { fn, v }`：`fn` 按名字取旧函数（`function f` 和 `const f = () => …` 都有），`v` 是旧代码的变量，可实时读写。新页面各视图通过 `legacy.fn.xxx` / `legacy.v.xxx` 使用旧代码。
+新页面里运行剩余旧编辑器代码的桥。[`oldEditor.js`](oldEditor.js.md)（退役第 9 步、旧页面删除后由生成文件转成的源码）导出 `createLegacy(env)`；本文件构造 `env`（旧代码调用的外部函数：网络请求、菜单、各种对话框），把旧对话框改接到新页面的 React 面板（`diagramHost`/`stopsHost`/`panelHost`），把"退役"的旧规则换成新代码（`core/services.ts`、`legacy/retired.ts`、`legacy/dialogs.ts`），然后导出 `legacy = { fn, v }`：`fn` 按名字取旧函数（`function f` 和 `const f = () => …` 都有），`v` 是旧代码的变量，可实时读写。新页面各视图通过 `legacy.fn.xxx` / `legacy.v.xxx` 使用旧代码。
 
 数据流：
 - 游戏数据：store 读到的数据经 `pushData` 复制一份交给旧代码 `setData`；
-- 草稿：store 的草稿变化（撤销、审阅面板、应用、另一个标签页的旧页面）经 `pushDraft` 推给旧代码；旧代码改了草稿后调用 `renderDraftState`→`env.render`，`checkDraft` 发现变化就经 `onLegacyDraft` 注册的回调交回 store，作为一步撤销；
-- 旧代码的 `renderAll` 画它仍负责的旧视图（`renderLegacy`），并通知 React 重绘（`notify`/`useLegacy`）；
+- 草稿：store 的草稿变化（撤销、审阅面板、应用、另一个标签页）经 `pushDraft` 推给旧代码；旧代码改了草稿后调用 `renderDraftState`→`env.render`，`checkDraft` 发现变化就经 `onLegacyDraft` 注册的回调交回 store，作为一步撤销；
+- 旧代码的 `renderAll` 画它仍负责的全网实际图并算出运行图布局等（`renderLegacy`），并通知 React 重绘（`notify`/`useLegacy`）；
 - 旧代码的菜单由 React（`legacy/Slot.tsx` 里的菜单）按 `[label, action]` 项绘制。
 
 文件开头 `import "./stage"`：先建立旧代码需要的 DOM 舞台（见 [stage.ts](stage.ts.md)）。
@@ -45,10 +45,10 @@
 - `checkDraft()`：在旧代码当前动作结束后（下一轮）比较 `legacy.v.draft` 的 JSON 与上次推送/接收的 `pushedJson`；不同则记下并把副本交给 `draftListener`。一次改多条路线的动作因此只算一步撤销。
 
 ## 导出
-- `legacy`：`{ fn, v }`。`fn` 是 Proxy：按名字依次在旧函数表、旧变量表、`env` 中查找。`v` 即旧代码变量（`data`、`draft`、`state`、`sim`、`DAY`、`FIRST_DAY_WEEKDAY`…）。模块加载时还从 `localStorage` 读 `mtr-next-old-diagram` 设置 `legacy.v.oldDiagram`（是否按旧方式画运行图；隐私窗口下忽略错误）。几乎所有视图都用它。
+- `legacy`：`{ fn, v }`。`fn` 是 Proxy：按名字依次在旧函数表、旧变量表、`env` 中查找。`v` 即旧代码变量（`data`、`draft`、`state`、`sim`、`DAY`、`FIRST_DAY_WEEKDAY`…）。几乎所有视图都用它。（"旧版画法"开关 `mtr-next-old-diagram` 已在第 9 步删除。）
 - `flushLegacy()`：立即 `version++` 并通知订阅者，供测试在 `act` 中使用。`src` 中未见非测试调用。
 - `useLegacy()`：React Hook，基于 `useSyncExternalStore` 订阅旧代码的重绘版本号，使组件在旧代码每次绘制后重渲染。调用者：`App.tsx`、`views/DutyBoard.tsx`、`views/Layers.tsx` 等。
-- `renderLegacy()`：画旧页面 `renderAll` 中新页面尚未接管的旧视图：若数据不允许模拟而模拟开着则 `fn.setSimulation(false)`；模拟开着、没有计时器且线路或星期变了则 `fn.scheduleSimulation()`；然后依次 `watchNetwork`、`drawNetwork`、`draw`、`renderTable`、`renderSimStatus`。调用者：`views/Layers.tsx:39`、`views/Layers.tsx:46`、本文件 `pushDraft`/`pushData`/`onRender`。
+- `renderLegacy()`：做旧页面 `renderAll` 中新页面不自己做的事：若数据不允许模拟而模拟开着则 `fn.setSimulation(false)`；模拟开着、没有计时器且线路或星期变了则 `fn.scheduleSimulation()`；然后依次 `watchNetwork`、`drawNetwork`（全网实际图）、`draw`（只算运行图布局 `v.layout` 并通知重绘，旧画布已删）、`renderTable`（只算汇总表表头的回送 `v.deadheadIndex`）、`renderSimStatus`（`#sim-status` 文字）。调用者：`views/Layers.tsx:39`、`views/Layers.tsx:46`、本文件 `pushDraft`/`pushData`/`onRender`。
 - `onLegacyDraft(listener)`：注册旧代码改草稿时的回调（只保留一个）。调用者：`state/store.tsx:155`（`normalizeDraft` 后作为一步编辑）。
 - `pushDraft(given)`：把 store 的草稿交给旧代码。先 `normalizeDraft` 补全各部分；JSON 与上次相同则忽略；否则写入 `legacy.v.draft`（深拷贝），清 `v.coverage`、`v.terminal` 缓存；有数据时 `buildServices()`，若选中的车次已不存在就清空 `state.selected`，再 `renderLegacy()`；最后 `notify()`。调用者：`state/store.tsx:154`。
 - `pushData(data)`：把游戏数据深拷贝后交给 `fn.setData`（旧代码会往上加线路、行、车次）。首次调用时还按 `dayStartMillis` 和 `v.DAY` 算出运营日"今天"，设置 `state.weekday = mod(today + FIRST_DAY_WEEKDAY, 7)`，`buildServices()`，把 `state.viewStart` 设为最早车次前 30 分钟（不早于 -30 分钟；没有车次则 2:00），`renderLegacy()`。之后 `checkDraft()`、`notify()`。调用者：`state/store.tsx:77`。
