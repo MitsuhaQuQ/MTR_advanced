@@ -11,7 +11,7 @@
 ## 导出
 - `WEEKDAY_NAMES_ZH`（周一…周日）、`WEEKDAY_SHORT_ZH`（一…日）。
 - `weekdayName(day)`、`weekdayShort(day)`：按当前语言的星期名（`day` 0=周一），每次调用都重新翻译。调用者：`core/duties.ts:9`、`views/now.ts`。
-- `clock(day, millis, seconds = false)`：运营日内毫秒 → "07:05"，`seconds` 且有秒时 "07:05:30"。调用者：`views/now.ts:234`（行号指 `clock` 包装处，见该文件）、`core/duties.ts`。
+- `clock(day, millis, seconds = false)`：运营日内毫秒 → "07:05"，`seconds` 且有秒时 "07:05:30"。调用者：`views/now.ts:11`、`core/duties.ts`。
 - `durationText(millis)`："45 秒"、"3 分钟"、"3 分 20 秒"（四舍五入到秒）。调用者：`core/timetable.ts:177`、`core/timetable.ts:187`。
 - `formatDuration(millis)`：满一分钟"X 分 Y 秒"，否则"Y 秒"。调用者：`core/dispatch.ts:8`、`core/duties.ts:9`。
 - `parseClock(text)`：解析钟点输入（`07:10`、`7:10:30`、`0710`，支持全角数字和冒号、句点），返回自午夜起的毫秒；小时最大 29；非法返回 null。调用者：`core/timetable.ts:11`、`views/SummaryTable.tsx`（经 `now.ts`）。
