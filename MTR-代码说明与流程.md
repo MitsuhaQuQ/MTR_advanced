@@ -70,6 +70,8 @@
 
 0.65.12 站台屏蔽门端头门：新增 `psd_end_door` / `psd_end_door_2` 方块、物品及方块实体。`BlockPSDEndDoor` 继承屏蔽门以复用顶部识别、四部件放置/破坏/碰撞和 RenderPSDAPGDoor 两种样式；使用独立实体类型存取既有 open/temp NBT。右键从任意门页定位左下部件，仅同步本组四块的开启值，维持开关状态，计划关门 tick 不影响它。TrainServer 排除端头门自动开门扫描，列车门模型与逻辑未改。物品枚举新值追加到末尾以保留已有 ordinal。模型和图标 JSON 指向原屏蔽门资源，新增配方、掉落及镐标签，资源版本 1.0.2，逻辑版本 0.65.12。
 
+0.68.2 示意图照实际图抽象（2026-11-12，用户要求"按实际图抽象成直角加 45 度折线"）：`orthogonalTracks` 不再用 `schematicLayout` 的站间拉直，也不再把站端道岔对齐到站台（那两步把并排双线画成方框）；节点就在实际图（`trackSchematic`）的位置，只把站台拉直。区间仍由 `collectChain` 从锚点串成链，然后分两步：① 所有链的实际折线先用 Douglas-Peucker（容差 8）取折点，`sharedDirections` 给每一段定八个方向之一，取它和附近走向相近的别的股道（中点互在 28 以内、方向差 30° 以内，按轴向即倍角平均、按长度加权）的平均方向再取整，所以并排的股道方向一致；② `followTrack` 把同方向的连续段合成一段（run），每段朝实际折点走主方向，剩下的零头（和主方向差 45°）能接上前一段同向的放在前面、能接下一段同向的放在后面，下一段方向和它差 45° 时留给下一段吸收，否则就地画出；最后一段准确落在节点上。评测在 `editor-web/test/schematicQuality.ts`：实际图里并排的股道在示意图里是否被拉开、新增交叉、非 45° 线段、坐标是否有效、台阶数；样本是从游戏导出的真实线网（`test/fixtures/networks`，由 `autotest/tools/export-network.mjs` 导出），`SCHEMATIC_GALLERY=<目录>` 时输出两种图的 SVG。Q 世界今天的快照：方框（并排被拉开）11→13（剩下的是分岔处本来就渐渐分开的两股）、新增交叉 26→9、台阶 26→2。
+
 0.65.11 配线图：`trackSchematic` 保留原曲线作为实际图；`schematicLayout` 按站间主线共同移动附近双线，隔离不相连组件；`orthogonalTracks` 将没有道岔的二度节点串成连续区间，以横竖主段和 45° 斜接段布线，再按长度把原轨道 ID 分配回路径。站台保留尺寸并对齐，站前渡线节点按股道成组排列，旁路存车线和分支留出侧向间距。实际图数据不被修改，列车仍按原轨道索引定位；原地图编辑功能移到“轨道编辑”入口。
 
 0.65.11 编辑传输：`ClientEditing` 的 EDIT/EDIT_BATCH 大于 24 KiB 时由 `EditTransferPackets` 分片，`EditTransferAssembler` 校验传输号、类型、长度、偏移和 30 秒超时。单个逻辑请求仍限制 1 MiB，每玩家仅保留一个在途请求，退出或跨维度丢弃未完成内容；全部收齐后交回原 EditGuard 权限、修订及分组事务处理。没有扩大原版自定义包限制，也不会逐片应用半份时刻表；网络版本同步提升。
@@ -112,7 +114,7 @@
 | `autotest/` | 游戏内自动测试的运行器（Node，`@playwright/test`）：`lib/game.ts` 封装 TestKit 的接口，`lib/editor.ts` 打开网页编辑器，`cases/<清单编号>.spec.ts` 是测试；本机用 `bash C:/gtmp/fast/ui-test.sh` 运行 |
 
 **游戏内自动测试的调用顺序**（2026-11-12，设计见 `MTR-自动化游戏内测试设计.md`）：
-1. `ui-test.sh up` 把最近一次构建的 MTR、MTM_Assets 和 TestKit 复制进测试服（`C:/gtmp/ui/server`，端口 25590，`server.properties` 指定超平坦、固定种子）和测试客户端（MultiMC 实例 `MTM_AutoTest`），删掉旧世界后开服。
+1. `ui-test.sh up` 把最近一次构建的 MTR、MTM_Assets 和 TestKit 复制进测试服（`C:/gtmp/ui/server`，只监听 127.0.0.1、端口 47621（常用端口被转发到公网，脚本开服前检查 `server-ip`、端口和 rcon/query 都关着），`server.properties` 指定超平坦、固定种子）和测试客户端（MultiMC 实例 `MTM_AutoTest`），删掉旧世界后开服。
 2. 服务端启动完成时 `TestKit.onInitialize` 注册的 `SERVER_STARTED` 调 `ServerDriver.start`：在 127.0.0.1 随机端口开 HTTP（JDK `HttpServer`），端口、随机令牌和 PID 写进 `<服务端目录>/testkit/endpoint-server.json`；每个请求要带令牌头 `X-TestKit-Token`，带 `Origin` 的（浏览器页面发的）一律拒绝。处理都用 `Http.onThread` 放到服务端线程执行。
 3. 脚本调 `/fixture`：`Fixture.build` 在 y=-60、z=0 上照轨道连接器的步骤（`ItemNodeModifierBase.onEndClick` 算朝向、`RailwayData.addRail` 两个方向，玩家用 Fabric 的 `FakePlayer`，因为日志模块要玩家名）铺一条直线：西存车线、甲乙丙三个站台、东存车线；再建三个车站、30 个没有范围的填充站、两条线路（测试线、测试线回程）、两个车厂（西不限车数、东最多一列，存车线的私有字段用反射设），最后 `dataCache.sync()`。返回各对象的 id，脚本存为 `fixture.json`。
 4. 脚本用 `MultiMC -l MTM_AutoTest` 启动客户端；`TestKitClient` 在 `CLIENT_STARTED` 调 `ClientDriver.start`，同样写 `endpoint-client.json`；标题界面出现后脚本调 `/join` 连上测试服（MultiMC 的"启动时加入服务器"到不了 1.20.1），再在服务端 `op` 这个玩家。

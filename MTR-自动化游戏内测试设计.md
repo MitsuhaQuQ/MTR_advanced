@@ -152,13 +152,18 @@
 
 **已做**
 - `testkit/`（MTM_TestKit 0.1.0，只编 Fabric 1.20.1）：客户端和服务端驱动、控件树、`DashboardList` 行导出、截图、聊天记录、日志收集、两边数据快照、节点查询、夹具线网 `basic`。服务端包名是 `serverdriver`，因为本机构建镜像同步时会跳过名为 `server` 的目录。
-- `C:/gtmp/fast/ui-test.sh`（`up`、`test [过滤]`、`down`、`run [过滤]`）和 `C:/gtmp/fast/testkit-build.sh`（只重编 TestKit，约 20 秒）。测试服在 `C:/gtmp/ui/server`（端口 25590），测试客户端是 MultiMC 实例 `MTM_AutoTest`。从开服到客户端进服约 26 秒，第一批测试约 33 秒。
+- `C:/gtmp/fast/ui-test.sh`（`up`、`test [过滤]`、`down`、`run [过滤]`）和 `C:/gtmp/fast/testkit-build.sh`（只重编 TestKit，约 20 秒）。测试服在 `C:/gtmp/ui/server`（只监听 127.0.0.1，端口 47621；本机常用的 Minecraft 端口被路由器转发到公网，测试服一律不用，`ui-test.sh` 开服前会检查），测试客户端是 MultiMC 实例 `MTM_AutoTest`。从开服到客户端进服约 26 秒，第一批测试约 33 秒。
 - 和原设计不同的地方：客户端由驱动的 `/join` 连服务器（MultiMC 的"启动时加入服务器"对 1.20.1 不起作用）；不用 rcon，改用驱动的 `/command`；本机没有 Edge，网页测试用 Chrome；64 位 id 在 `game.ts` 的 `parseJson` 里按原文保留成字符串，比较时都用 `String(id)`。
 - 第一批测试：U22（2 个）、U24、U318（2 个）、U44、U45、U53、U96，共 9 个。除 U96 外都通过；多数只覆盖条目的一部分，覆盖范围写在测试文件开头和清单的状态里。
 - 验证：从新环境完整跑两轮，结果一致；在构建镜像里把存车线换车型改成不发包，U318 两项失败、其他照常通过，改回后恢复。
 
 **测出的问题**
 - U96：从仪表盘删一条车厂用到的线路，聊天栏没有残留引用提示，日志也没有那一行。`PacketTrainDataGuiServer.reportRouteReferences` 在 `delete.run()` 后立刻查 `routeIdMap`，但删除由 `PacketTrainDataBase.deleteData` 用 `execute` 排到服务端线程的下一个任务，查的时候线路还在，直接返回。未修，等用户决定。
+
+**示意图评测（2026-11-12）**
+- `autotest/tools/export-network.mjs`：从开着的测试客户端的编辑器导出线网几何（不含玩家、时刻表），存为编辑器测试样本。`ui-test.sh` 加了 `MTM_WORLD`（用现成世界的副本，不建夹具）、`MTM_EXTRA_MODS`（两边额外装的模组，`down` 时拿掉）和 `MTM_SERVER_DIR`（Q 盘世界要 worldgen 模组和 Fabric Loader 0.20.1，用 `C:/gtmp/ui/server-q`）。
+- 测试服一律只监听 127.0.0.1、端口 47621（rcon、query 关闭），`ui-test.sh` 开服前检查；本机常用的 Minecraft 端口被转发到公网。
+- `editor-web/test/schematicQuality.test.ts` 用导出的线网量示意图（见代码说明 0.68.2），改画法时先看数值和输出的对照图。
 
 **还没做**
 - 样板里的 T28、T55（游戏内时刻表界面）和 U68（网页草稿模拟）。
