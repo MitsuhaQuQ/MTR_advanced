@@ -72,7 +72,7 @@
 - `sendLiftTrackFloorC2S(BlockPos, String floorNumber, String floorDescription, boolean shouldDing)`。
 - `placeTrainsC2S(long depotId)`：按运用放置列车。调用者：`client/editor/EditorServer.java:426`。
 - `replanDutiesC2S(long depotId)` / `replanDutiesC2S(long depotId, String group)`：重新规划运用，`group` 为规划单元中某个运用组的键，空为全部（运用组第 4 步）。
-- `generatePathC2S(long sidingId)`：为停车轨生成路径。
+- `generatePathC2S(long sidingId)`：请求生成路径；参数名写作停车轨，实际调用者都传车厂 id（`common/src/main/java/mtr/screen/EditDepotScreen.java:90`），服务端也按车厂 id 处理。
 - `clearTrainsC2S(long depotId, Collection<Siding> sidings)`：`long 车厂`、`int 数`、各 `long 停车轨`。调用者：`common/src/main/java/mtr/screen/EditDepotScreen.java:138`。
 - `sendUpdateEntitySeatPassengerPosition(double x, double y, double z)`。
 - `sendSignIdsC2S(BlockPos, Set<Long> selectedIds, String[] signIds)`。
