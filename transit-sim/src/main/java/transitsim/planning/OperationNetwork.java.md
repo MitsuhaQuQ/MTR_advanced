@@ -38,7 +38,7 @@
 
 ### `public OperationNetwork setWaitThreshold(long platformId, long millis)` / `public long waitThreshold(long platformId)`
 - 作用：站台上等下一班的时间达到多久时改为到站台外折返线等待（运用补完第 2 步：车厂规则，否则车站的，否则线网的）。未设置时为 `transitsim.sim.TrainService.LONG_TURN_BACK_WAIT_MILLIS`。
-- 主要调用者：`waitThreshold` 见 `transitsim/planning/DutyPlanner.java:465`；`setWaitThreshold` main 代码中 grep 未见调用（未确定）。
+- 主要调用者：`waitThreshold` 见 `transitsim/planning/DutyPlanner.java:465`；`setWaitThreshold` 经方法引用在 `transitsim/planning/DutyGenerator.java:297` 调用。
 
 ### `public OperationNetwork addConnection(long fromPlatformId, long toPlatformId, long millis)`
 登记站台间空车连接时间。主要调用者：`transitsim/planning/DutyGenerator.java:363`、`DutyGenerator.java:368`。
