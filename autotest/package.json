@@ -1,0 +1,13 @@
+{
+	"name": "mtm-autotest",
+	"private": true,
+	"description": "In-game UI tests driven through MTM_TestKit; run with C:/gtmp/fast/ui-test.sh (see MTR-自动化游戏内测试设计.md)",
+	"scripts": {
+		"test": "playwright test"
+	},
+	"devDependencies": {
+		"@playwright/test": "1.49.1",
+		"@types/node": "22.10.2",
+		"typescript": "5.7.2"
+	}
+}

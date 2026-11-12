@@ -108,6 +108,17 @@
 | `resources/common/` | 共用资源：`normal`（MTR 本体，含网页 `website`）、`ante`、`lifts` |
 | `resources/fabric/`、`resources/forge/` | 加载器专用资源；`no-ante` 是不带 ANTE 的构建用的；`resources/fabric/mtm_logic` 是嵌在 Fabric jar 里的 MTM_Logic 小 jar（`fabric.mod.json` 和图标 `assets/mtm_logic/icon.png`），Forge 的 MTM_Logic 图标是 `resources/forge/normal/mtm_logic_icon.png`（`mods.toml` 第三个 `[[mods]]` 的 `logoFile`） |
 | `examples/` | 自定义资源包示例 |
+| `testkit/` | `MTM_TestKit`：只给游戏内自动测试用的独立 Fabric 模组（2026-11-12），不进发布包，只放进测试服和测试客户端；版本是 `gradle.properties` 的 `mtm_testkit_version`，不影响协议 |
+| `autotest/` | 游戏内自动测试的运行器（Node，`@playwright/test`）：`lib/game.ts` 封装 TestKit 的接口，`lib/editor.ts` 打开网页编辑器，`cases/<清单编号>.spec.ts` 是测试；本机用 `bash C:/gtmp/fast/ui-test.sh` 运行 |
+
+**游戏内自动测试的调用顺序**（2026-11-12，设计见 `MTR-自动化游戏内测试设计.md`）：
+1. `ui-test.sh up` 把最近一次构建的 MTR、MTM_Assets 和 TestKit 复制进测试服（`C:/gtmp/ui/server`，端口 25590，`server.properties` 指定超平坦、固定种子）和测试客户端（MultiMC 实例 `MTM_AutoTest`），删掉旧世界后开服。
+2. 服务端启动完成时 `TestKit.onInitialize` 注册的 `SERVER_STARTED` 调 `ServerDriver.start`：在 127.0.0.1 随机端口开 HTTP（JDK `HttpServer`），端口、随机令牌和 PID 写进 `<服务端目录>/testkit/endpoint-server.json`；每个请求要带令牌头 `X-TestKit-Token`，带 `Origin` 的（浏览器页面发的）一律拒绝。处理都用 `Http.onThread` 放到服务端线程执行。
+3. 脚本调 `/fixture`：`Fixture.build` 在 y=-60、z=0 上照轨道连接器的步骤（`ItemNodeModifierBase.onEndClick` 算朝向、`RailwayData.addRail` 两个方向，玩家用 Fabric 的 `FakePlayer`，因为日志模块要玩家名）铺一条直线：西存车线、甲乙丙三个站台、东存车线；再建三个车站、30 个没有范围的填充站、两条线路（测试线、测试线回程）、两个车厂（西不限车数、东最多一列，存车线的私有字段用反射设），最后 `dataCache.sync()`。返回各对象的 id，脚本存为 `fixture.json`。
+4. 脚本用 `MultiMC -l MTM_AutoTest` 启动客户端；`TestKitClient` 在 `CLIENT_STARTED` 调 `ClientDriver.start`，同样写 `endpoint-client.json`；标题界面出现后脚本调 `/join` 连上测试服（MultiMC 的"启动时加入服务器"到不了 1.20.1），再在服务端 `op` 这个玩家。
+5. `ui-test.sh test` 运行 `npx playwright test`。`lib/test.ts` 在每个测试前关掉界面、记下两边日志和聊天的序号，测试后两边日志里新增的错误或异常（`LogCapture` 收集的 WARN 以上、排除已知噪声）都算失败。
+6. 客户端接口：`/state` 由 `WidgetTree` 反射界面对象的字段给控件起 id（`界面类名.字段名`，`DashboardList` 里的是 `界面类名.列表字段.字段名`），并导出 `DashboardList` 当前显示的行和每行的位置；`/click`、`/move`、`/type`、`/key`、`/scroll` 调界面自己的 `mouseClicked`、`charTyped`、`keyPressed` 等，和玩家操作走同一条路；`/use`、`/use-item` 调 `MultiPlayerGameMode.useItemOn`/`useItem`；`/chat` 发聊天或命令，`/suggest` 取命令补全（需要服务端补全的会问服务端）；`/chat-log` 是 Fabric `ClientReceiveMessageEvents` 收到的消息；`/client-data` 和服务端 `/snapshot` 都用 `DataJson` 按各对象自己的 msgpack 存档格式转 JSON，两边可以逐字段比较；`/editor-url` 调 `EditorServer.open()` 取网页编辑器的带 key 地址。服务端另有 `/command`（以控制台身份执行命令并返回输出）和 `/node`（节点角度、是否关键节点、连着的轨道和两端朝向）。
+7. `ui-test.sh down` 先请两边自己退出（`/quit`、`/stop`），30 秒后还在才按 endpoint 里的 PID 结束这两个进程，不碰别的 java 进程。
 
 **主线程上每 tick 都会调到的地方不要每次重算**（2026-11-05、11-07 量过，见解耦文档 L3；11-07 的结果：平时每 tick 约 10 毫秒，三分之二在 `Siding.simulateTrain` 照组件结果更新列车；组件重建 `LiveSimulation.start` 一次约 0.5 秒、整段在主线程上，是下一个要移到后台的地方）：`SavedRailBase` 的端点和中点算一次就留着（`positionArray`、`midPos`，端点不会变）；列车写时刻时，时间段在路径上的位置留在 `TimeSegment` 上（`Train.getSegmentIndex`，路径的距离表换了或变长变短才重算）；按频率发车的车厂的存车线列表留着（`Depot.getSidingsInDepot`）；上游路线查找没有请求时十个 tick 才搜一次（`RailwayDataRouteFinderModule`，只供网站地图的连接密度）。
 

@@ -1,0 +1,27 @@
+// MTM_TestKit: a debug-only Fabric mod that lets scripts drive a test client and read a test server (see
+// MTR-自动化游戏内测试设计.md). It is a jar of its own, never part of a release: only the test instances load it.
+architectury {
+	fabric()
+}
+
+loom {
+	accessWidenerPath = file("src/main/resources/mtm_testkit.accesswidener")
+}
+
+dependencies {
+	modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version[1]}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_data[0]}"
+	compileOnly(project(path: ":common", configuration: "namedElements")) { transitive false }
+	compileOnly project(":transit-sim")
+}
+
+processResources {
+	inputs.property "version", rootProject.mtm_testkit_version
+	filesMatching("fabric.mod.json") {
+		expand "version": rootProject.mtm_testkit_version
+	}
+}
+
+remapJar {
+	archiveFileName = "MTM-TestKit-${rootProject.mtm_testkit_version}-fabric-${rootProject.minecraft_version}.jar"
+}

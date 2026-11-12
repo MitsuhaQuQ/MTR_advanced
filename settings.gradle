@@ -11,5 +11,6 @@ include("transit-sim")
 include("common")
 include("fabric")
 include("forge")
+include("testkit")
 
 rootProject.name = "Minecraft-Transit-Railway"

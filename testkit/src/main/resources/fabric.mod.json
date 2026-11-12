@@ -1,0 +1,18 @@
+{
+	"schemaVersion": 1,
+	"id": "mtm_testkit",
+	"version": "${version}",
+	"name": "MTM_TestKit",
+	"description": "Debug only: lets local test scripts drive this client or server over 127.0.0.1 with a token. Never install it on a server people play on.",
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": ["mtm.testkit.TestKit"],
+		"client": ["mtm.testkit.client.TestKitClient"]
+	},
+	"accessWidener": "mtm_testkit.accesswidener",
+	"depends": {
+		"mtr": "*",
+		"fabric-api": "*"
+	}
+}

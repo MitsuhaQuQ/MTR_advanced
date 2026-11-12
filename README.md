@@ -365,6 +365,10 @@ This project is developed with an AI coding assistant, Claude Code. For a person
 
 The project author decides the requirements, operating rules and final trade-offs, and does the in-game testing. The AI reads code, implements, builds and keeps records. AI output isn't automatically correct, so the documents separate what was tested in game, what only builds and what hasn't been verified, and anything not tested in game is clearly marked.
 
+## In-game UI tests
+
+Unit tests cover the rules; the path from a player's click through a packet to the server's data and back to the screen is tested in the game itself. `testkit/` builds MTM_TestKit, a debug-only Fabric mod that is never released: in a test client and a test server it opens a driver on 127.0.0.1 (with a random token) that reads the open screen as a tree of widgets named by the fields that hold them, clicks and types into it, uses items on blocks, runs commands, reads the chat and both sides' railway data, and takes screenshots. `autotest/` holds the tests, one file per item of the in-game test list (`MTR-测试项目清单.md`), run with Playwright, which also drives the web editor in a browser. A run makes a new flat world with a small fixed network, starts both sides, runs the tests and stops them; a new error in either log fails a test. The first tests found a real bug: deleting a route that a depot uses tells no one about the references it leaves (U96). See `MTR-自动化游戏内测试设计.md`.
+
 ## Building
 
 JDK 17 is required.
