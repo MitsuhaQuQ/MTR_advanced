@@ -74,6 +74,8 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.73.1 声音树状选择（用户 2026-11-13，只改客户端）：选声音的界面改为树，一次显示一层（`mtr/screen/SoundTree.java`，整屏版 `SoundPickerScreen.java`）。根节点依次是 minecraft、mtr、上传音频，再是其他模组的命名空间；游戏声音按 ID 里的点分文件夹，上传音频下一层是上传者，再下是文件。点文件夹进入，第一行回上一级，搜索时列出当前文件夹下的全部声音。广播器声音框旁的列表和"拼接…"里的选择都用它（含游戏声音，可试听）；音频方块的片段只列"上传音频"一支（它只能播上传文件，用户选的），打开时直接在这一层。
+
 0.73.0 票务规则（用户 2026-11-12，存档和网络包改动）：以前票价按"票价组"算，每条线自动一组，票价栏就是一条线一项，线路栏按种别（上下行、各停/快速）逐个列出。现在：
 
 - **票务规则**（`NetworkSettings.fareRules`：ID → `FareRule`，名字和参考线路；按顺序，第一条是默认规则，至少一条；存档键 `fare_rules`，网络包在车站票价组之后、行车侧之前）。规则的票价仍在 `fareLevels` 里，键改为规则 ID；线路（`fareRouteGroups`，按线路 ID）和车站（`fareStationGroups`）记规则 ID。`keepFareRulesKnown` 去掉不存在的规则的票价和归属。旧存档没有 `fare_rules`：读成一条"默认"规则，旧的分组票价和归属全部丢掉（用户选的）。

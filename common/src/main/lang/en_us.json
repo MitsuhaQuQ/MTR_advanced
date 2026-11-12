@@ -41,6 +41,8 @@
   "gui.mtr.audio_speaker_sound": "Sound: %s",
   "gui.mtr.audio_speaker_no_sound": "None",
   "gui.mtr.audio_speaker_choose_sound": "Choose uploaded audio",
+  "gui.mtr.sound_tree_uploaded": "Uploaded audio",
+  "gui.mtr.sound_tree_up": "Up",
   "gui.mtr.audio_speaker_appearance": "Appearance: %s",
   "gui.mtr.audio_speaker_choose_appearance": "Choose block appearance",
   "gui.mtr.audio_speaker_loop": "Loop while unpowered",

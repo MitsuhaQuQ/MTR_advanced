@@ -6,17 +6,13 @@
 
 ### 字段与常量
 - `initialMessage`：消息（打开子界面期间保存输入）。
-- `availableSoundsList`：声音下拉列表（点击行试听 `AnnouncementPlayer.play`，"添加"把引用填入声音框）。
-- `uploadedSounds`：列表显示文字 → 保存用的引用（`namespace:name`）。
-- `soundRows`：列表行——先是服务器上传文件（按引用排序，显示 `gui.mtr.uploaded_audio` 与其游戏声音位置 `mtr_audio:…`），再是游戏所有可用声音 id（排序）。
+- `soundTree`（0.73.1）：声音框旁的树状声音列表（`SoundTree`，含游戏声音）：根是 minecraft、mtr、上传音频（再按上传者分）及其他模组命名空间；试听按钮 `AnnouncementPlayer.play`，"添加"把值填入声音框并收起列表。
+- `availableSoundsList`：即 `soundTree.list`，用来定位、显示和隐藏。
 - `clips`：编辑中的声音列表（`EditedClip`：声音、间隔文本，秒）。
 - `MAX_MESSAGE_LENGTH = 256`。
 
 ### 构造函数 `TrainAnnouncerScreen(BlockPos pos)`
-- 基类：有速度复选框、无时间选项行；两个文本框：消息、声音（长度上限 `AnnouncementSound.MAX_LENGTH`）。从方块实体读取消息与片段（间隔用 `AudioSpeakerScreen.secondsText` 转为秒文本）；建列表。
-
-### `private String getSoundString(String label)`
-- 列表行文字 → 保存值（上传文件转为引用，其余原样）。
+- 基类：有速度复选框、无时间选项行；两个文本框：消息、声音（长度上限 `AnnouncementSound.MAX_LENGTH`）。从方块实体读取消息与片段（间隔用 `AudioSpeakerScreen.secondsText` 转为秒文本）；建 `soundTree`。
 
 ### `protected void init()`
 - 填入消息与第一个声音；"拼接（N）"按钮（在线路编辑按钮旁）打开 `ClipList`；声音列表初始隐藏在右侧屏外。
@@ -34,7 +30,7 @@
 - 列表 tick 与事件转发。
 
 ### `boolean mouseClicked(double, double, int)`
-- 点击声音文本框时显示列表；点击列表以外时隐藏。
+- 列表显示时先交给列表（点文件夹打开、点第一行回上一级）；点击声音文本框时显示列表；点击列表以外时隐藏。
 
 ### `protected void renderAdditional(PoseStack)`
 - 列表背景与列表。
@@ -46,8 +42,8 @@
 - `sound`、`gap`（输入的秒数文本）。
 
 ## 私有内部类 `ClipList`（extends `ScreenBase`）
-- 依次排列的声音（0.72.0）：每行声音文本框、"选择"（打开 `Picker`）、间隔文本框（最后一个没有）、上移、下移、删除；分页（每行 22 像素）；"添加片段"（上限 `AnnouncementClips.MAX_CLIPS`，打开 `Picker`）；"完成"前检查所有间隔可解析，否则显示 `gui.mtr.audio_speaker_invalid_gap`。
+- 依次排列的声音（0.72.0）：每行声音文本框、"选择"（打开 `picker`）、间隔文本框（最后一个没有）、上移、下移、删除；分页（每行 22 像素）；"添加片段"（上限 `AnnouncementClips.MAX_CLIPS`，打开 `picker`）；"完成"前检查所有间隔可解析，否则显示 `gui.mtr.audio_speaker_invalid_gap`。
 - `rowsPerPage()`、`init()`、`addSmall(Component, x, y, width, active, Runnable)`（按钮动作后重建界面）、`swap(a, b)`、`render(…)`（标题与帮助或"无片段"）、`onClose()`（去掉空声音后回到广播器界面）、`isPauseScreen()`（false）。
 
-## 私有内部类 `Picker`（extends `ScreenBase`）
-- 从上传文件与游戏声音中选一个：点击行试听，"添加"按钮选中并返回；`back` 为返回的界面。方法：`init`、`tick`、`mouseClicked`（先交给列表）、`mouseMoved`、`mouseScrolled`、`render`、`onClose`、`isPauseScreen`。
+### `private SoundPickerScreen picker(ScreenBase back, Consumer<String> chosen)`
+- 0.73.1：`ClipList` 的"选择"和"添加片段"打开的整屏树状选择（`SoundPickerScreen`，含游戏声音，试听用 `AnnouncementPlayer.play`），选中后回到 `back`。

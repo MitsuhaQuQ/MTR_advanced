@@ -1325,3 +1325,5 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 广播器（0.72.0）也用 `ClipSequence` 一段接一段地播声音：客户端 `AnnouncementPlayer` 的 `Sequence` 只负责判断这段是否还在播和真正放声音，顺序和空隙由组件决定。
 
 票务规则（0.73.0）：组件里的"组"（`FareNetwork` 的 group）就是游戏里的票务规则。`FareNetwork.setLongestBlocks` 让规则的最长距离取参考线路的长度，不再按规则内线路的最长行程算；线路长度由游戏侧 `FareData` 算出后传入。测试：`FareTest.aReferenceLineSetsTheLongestDistance`。
+
+声音树状选择（0.73.1）：只是客户端界面（`SoundTree`、`SoundPickerScreen`），不涉及组件；音频方块和广播器的播放规则仍是组件的 `ClipSequence`。

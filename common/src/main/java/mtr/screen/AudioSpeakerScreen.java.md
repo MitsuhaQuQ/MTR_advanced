@@ -23,7 +23,7 @@
 - false。
 
 ### `private void chooseSound(ScreenBase back, Consumer<String> chosen)`
-- 列出 `AudioCache.ENTRIES` 中有游戏声音位置（`getSoundLocation() != null`）的文件引用（不区分大小写排序），打开 `Picker`。
+- 0.73.1：打开 `SoundPickerScreen`（不含游戏声音，没有试听按钮，点击即选）：上传音频按上传者分文件夹，只列有游戏声音位置的文件；选中后交给 `chosen` 并回到 `back`。
 
 ### `private void chooseAppearance()`
 - 列出所有可作音箱外观的方块（`BlockAudioSpeaker.appearance(id) != null`），显示"名称 [id]"，打开 `Picker`。
@@ -68,4 +68,4 @@
 - `value`（保存值）、`label`（显示文字）。
 
 ## 私有内部类 `Picker`（extends `ScreenBase`）
-- 带搜索的选择列表：每行都设为"标题行"，点击即选择（用对象身份映射到值，不依赖 id 或下标）并返回 `back`。方法：`init`、`tick`、`mouseClicked`、`mouseScrolled`、`render`、`onClose`、`isPauseScreen`。
+- 带搜索的选择列表（现在只用于外观方块）：每行都设为"标题行"，点击即选择（用对象身份映射到值，不依赖 id 或下标）并返回 `back`。方法：`init`、`tick`、`mouseClicked`、`mouseScrolled`、`render`、`onClose`、`isPauseScreen`。

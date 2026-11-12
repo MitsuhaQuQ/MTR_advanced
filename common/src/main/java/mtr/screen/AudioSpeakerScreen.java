@@ -5,7 +5,6 @@ import io.netty.buffer.Unpooled;
 import mtr.RegistryClient;
 import mtr.audio.SpeakerSettings;
 import mtr.block.BlockAudioSpeaker;
-import mtr.client.AudioCache;
 import mtr.client.IDrawing;
 import mtr.compat.GuiCompat;
 import mtr.compat.ScreenBase;
@@ -129,12 +128,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		return false;
 	}
 
-	/** Opens the list of uploaded sounds to choose from, coming back to the screen given */
+	/** Opens the uploaded sounds by uploader to choose from (0.73.1, {@link SoundTree}), coming back to the screen given */
 	private void chooseSound(ScreenBase back, Consumer<String> chosen) {
-		final List<Choice> choices = new ArrayList<>();
-		AudioCache.ENTRIES.stream().filter(entry -> entry.getSoundLocation() != null).map(AudioCache.Entry::getReference)
-				.sorted(String.CASE_INSENSITIVE_ORDER).forEach(reference -> choices.add(new Choice(reference, reference)));
-		minecraft.setScreen(new Picker(Text.translatable("gui.mtr.audio_speaker_choose_sound"), choices, chosen, back));
+		minecraft.setScreen(new SoundPickerScreen(Text.translatable("gui.mtr.audio_speaker_choose_sound"), back, false, null, chosen));
 	}
 
 	private void chooseAppearance() {

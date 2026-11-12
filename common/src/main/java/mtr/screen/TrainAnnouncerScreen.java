@@ -7,9 +7,7 @@ import mtr.audio.AnnouncementClips;
 import mtr.audio.AnnouncementSound;
 import mtr.block.BlockTrainAnnouncer;
 import mtr.client.AnnouncementPlayer;
-import mtr.client.AudioCache;
 import mtr.client.IDrawing;
-import mtr.data.DataConverter;
 import mtr.data.RailwayData;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -22,12 +20,8 @@ import net.minecraft.util.Tuple;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 /**
  * An announcer's settings: its message and sounds, and the routes and speeds of the trains whose riders hear it. Since
@@ -38,9 +32,9 @@ import java.util.stream.Collectors;
 public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 
 	private String initialMessage;
+	/** The sounds beside the sound field, as a tree (0.73.1) */
+	private final SoundTree soundTree;
 	private final DashboardList availableSoundsList;
-	private final Map<String, String> uploadedSounds = new HashMap<>();
-	private final List<DataConverter> soundRows = new ArrayList<>();
 	/** The sounds being edited, in order: each one's sound and the gap after it as typed, in seconds */
 	private final List<EditedClip> clips = new ArrayList<>();
 
@@ -62,28 +56,14 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 			announcer.getClips().forEach(clip -> clips.add(new EditedClip(clip.sound, AudioSpeakerScreen.secondsText(clip.gapTenths))));
 		}
 
-		availableSoundsList = new DashboardList((data, color) -> {
-			if (world != null && minecraft.player != null) {
-				AnnouncementPlayer.play(getSoundString(data.name), pos);
-			}
-		}, null, null, null, (data, color) -> {
-			textFields[1].setValue(getSoundString(data.name));
+		// Clicking plays a sound, the add button puts it in the field
+		soundTree = new SoundTree(true, sound -> {
+			if (world != null && minecraft.player != null) AnnouncementPlayer.play(sound, pos);
+		}, sound -> {
+			textFields[1].setValue(sound);
 			setListVisibility(false);
-		}, null, null, () -> "", text -> {
-		}, false);
-		// The server's own files come first, by name; the field gets what to save
-		AudioCache.ENTRIES.stream().sorted(Comparator.comparing(AudioCache.Entry::getReference)).forEach(entry -> {
-			// With the sound the game plays it as, which /playsound can name too
-			final String label = Text.translatable("gui.mtr.uploaded_audio", entry.getReference()).getString() + (entry.getSoundLocation() == null ? "" : "  " + entry.getSoundLocation());
-			uploadedSounds.put(label, entry.getReference());
-			soundRows.add(new DataConverter(label, ARGB_BACKGROUND));
 		});
-		soundRows.addAll(Minecraft.getInstance().getSoundManager().getAvailableSounds().stream().map(soundId -> new DataConverter(soundId.toString(), ARGB_BACKGROUND)).sorted().collect(Collectors.toList()));
-		availableSoundsList.setData(soundRows, true, false, false, false, true, false);
-	}
-
-	private String getSoundString(String label) {
-		return uploadedSounds.getOrDefault(label, label);
+		availableSoundsList = soundTree.list;
 	}
 
 	@Override
@@ -146,12 +126,14 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 	@Override
 	public void tick() {
 		super.tick();
-		availableSoundsList.tick();
+		soundTree.tick();
 	}
 
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		if (button == 0) {
+			// A folder or the way back up in the open list
+			if (availableSoundsList.x < width && availableSoundsList.mouseClicked(mouseX, mouseY)) return true;
 			if (RailwayData.isBetween(mouseX, UtilitiesClient.getWidgetX(textFields[1]), UtilitiesClient.getWidgetX(textFields[1]) + textFields[1].getWidth()) && RailwayData.isBetween(mouseY, UtilitiesClient.getWidgetY(textFields[1]), UtilitiesClient.getWidgetY(textFields[1]) + textFields[1].getHeight())) {
 				setListVisibility(true);
 			} else if (!RailwayData.isBetween(mouseX, availableSoundsList.x, availableSoundsList.x + availableSoundsList.width) || !RailwayData.isBetween(mouseY, availableSoundsList.y, availableSoundsList.y + availableSoundsList.height)) {
@@ -228,7 +210,7 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 				IDrawing.setPositionAndWidth(sound, listLeft, y, panel - 206);
 				sound.moveCursorToStart();
 				addDrawableChild(sound);
-				addSmall(Text.translatable("gui.mtr.announcement_choose"), listLeft + panel - 202, y, 50, true, () -> minecraft.setScreen(new Picker(this, value -> clip.sound = value)));
+				addSmall(Text.translatable("gui.mtr.announcement_choose"), listLeft + panel - 202, y, 50, true, () -> minecraft.setScreen(picker(this, value -> clip.sound = value)));
 				if (index < clips.size() - 1) {
 					final WidgetBetterTextField gap = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "0", 6);
 					gap.setValue(clip.gap);
@@ -246,7 +228,7 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 				addSmall(Text.literal("<"), listLeft, bottom - 24, 26, page > 0, () -> page--);
 				addSmall(Text.literal(">"), listLeft + panel - 26, bottom - 24, 26, (page + 1) * perPage < clips.size(), () -> page++);
 			}
-			final Button add = UtilitiesClient.newButton(Text.translatable("gui.mtr.audio_speaker_add_clip"), button -> minecraft.setScreen(new Picker(this, value -> {
+			final Button add = UtilitiesClient.newButton(Text.translatable("gui.mtr.audio_speaker_add_clip"), button -> minecraft.setScreen(picker(this, value -> {
 				clips.add(new EditedClip(value, "0"));
 				page = (clips.size() - 1) / rowsPerPage();
 			})));
@@ -304,72 +286,8 @@ public class TrainAnnouncerScreen extends TrainSensorScreenBase {
 		}
 	}
 
-	/** The uploaded files and the game's sounds to choose one from; clicking plays it, the other button takes it */
-	private final class Picker extends ScreenBase {
-		private final ScreenBase back;
-		private final DashboardList list;
-
-		private Picker(ScreenBase back, Consumer<String> chosen) {
-			super(Text.translatable("gui.mtr.sound_file"));
-			this.back = back;
-			list = new DashboardList((data, color) -> AnnouncementPlayer.play(getSoundString(data.name), pos), null, null, null, (data, color) -> {
-				chosen.accept(getSoundString(data.name));
-				onClose();
-			}, null, null, () -> "", text -> {
-			}, false);
-		}
-
-		@Override
-		protected void init() {
-			list.x = Math.max(8, (width - 420) / 2);
-			list.y = 22;
-			list.width = width - list.x * 2;
-			list.height = height - 52;
-			list.init(this::addDrawableChild);
-			list.setData(soundRows, true, false, false, false, true, false);
-			final Button backButton = UtilitiesClient.newButton(Text.translatable("gui.back"), button -> onClose());
-			IDrawing.setPositionAndWidth(backButton, width / 2 - 50, height - 24, 100);
-			addDrawableChild(backButton);
-		}
-
-		@Override
-		public void tick() {
-			list.tick();
-		}
-
-		@Override
-		public boolean mouseClicked(double x, double y, int button) {
-			return button == 0 && list.mouseClicked(x, y) || super.mouseClicked(x, y, button);
-		}
-
-		@Override
-		public void mouseMoved(double x, double y) {
-			list.mouseMoved(x, y);
-		}
-
-		@Override
-		public boolean mouseScrolled(double x, double y, double amount) {
-			list.mouseScrolled(x, y, amount);
-			return true;
-		}
-
-		@Override
-		public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
-			renderBackground(matrices);
-			GuiCompat.drawCenteredString(matrices, font, title, width / 2, 8, 0xFFFFFF);
-			GuiCompat.fill(matrices, list.x, list.y, list.x + list.width, list.y + list.height, ARGB_BACKGROUND);
-			list.render(matrices, font);
-			super.render(matrices, mouseX, mouseY, delta);
-		}
-
-		@Override
-		public void onClose() {
-			minecraft.setScreen(back);
-		}
-
-		@Override
-		public boolean isPauseScreen() {
-			return false;
-		}
+	/** The game's sounds and the uploaded files as a tree (0.73.1); clicking plays one, the add button takes it */
+	private SoundPickerScreen picker(ScreenBase back, Consumer<String> chosen) {
+		return new SoundPickerScreen(Text.translatable("gui.mtr.sound_file"), back, true, sound -> AnnouncementPlayer.play(sound, pos), chosen);
 	}
 }

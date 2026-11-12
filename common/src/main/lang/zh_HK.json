@@ -40,6 +40,8 @@
   "gui.mtr.audio_speaker_sound": "音訊：%s",
   "gui.mtr.audio_speaker_no_sound": "未選擇音訊",
   "gui.mtr.audio_speaker_choose_sound": "選擇已上傳音訊",
+  "gui.mtr.sound_tree_uploaded": "上傳音訊",
+  "gui.mtr.sound_tree_up": "上一層",
   "gui.mtr.audio_speaker_appearance": "外觀：%s",
   "gui.mtr.audio_speaker_choose_appearance": "選擇方塊外觀",
   "gui.mtr.audio_speaker_loop": "循環播放（通電停止）",
