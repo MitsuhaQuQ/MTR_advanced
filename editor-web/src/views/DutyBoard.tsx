@@ -6,7 +6,7 @@
  * toggleInSlot, editDuties, changeSlots, deadheadTimes, dutyProblems, and the depot's dialogs for the rest.
  */
 import { useState, type ReactNode } from "react"
-import { legacy, menuHost, useLegacy, type MenuItem } from "../legacy/engine"
+import { legacy, menuHost, panelHost, useLegacy, type MenuItem } from "../legacy/engine"
 import { tr } from "../i18n"
 import { clock, colorOf, daysText, routeTitle, shortName, timesOf, weekdayName } from "./now"
 
@@ -42,6 +42,7 @@ function Head({ depot, choose, pxPerHour, setPxPerHour }: { depot: any; choose: 
       [tr("出入库规则…"), () => fn.depotRulesDialog(depot)],
       [tr("按时刻表把列车摆到现在的位置…"), canEdit ? () => fn.placeTrainsDialog(depot) : null],
       [tr("运用组…"), () => fn.dutyGroupsDialog(depot)],
+      [tr("线路换车厂…"), canEdit && v.data.depots.length > 1 ? () => panelHost.current?.({ kind: "moveLine", depotId: depot.id, lineKey: "" }) : null],
       [tr("出入库计划…"), () => fn.releasePlanDialog(depot)],
       [tr("丢掉运用的草稿"), v.draft.duties[depot.id] ? () => { delete v.draft.duties[depot.id]; fn.saveDraft(); fn.renderAll() } : null],
     ]

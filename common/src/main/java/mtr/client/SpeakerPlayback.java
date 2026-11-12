@@ -16,15 +16,24 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
+import transitsim.sim.ClipSequence;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-/** Owns the game's sound instances for the speakers addressed to this player. */
+/**
+ * Owns the game's sound instances for the speakers addressed to this player. Since 0.70.0 a speaker plays its clips one
+ * after another with the gaps set after them ({@link ClipSequence}); a loop of one clip with no interval stays the game's
+ * own looping sound, with no gap at all.
+ */
 public final class SpeakerPlayback {
 	private static final int LOOP_LEASE_TICKS = 80;
 	private static final int DOWNLOAD_TIMEOUT_TICKS = 600;
 	private static final int MAX_SPEAKERS = 32;
+	/** How long a clip just started counts as playing before the sound manager is asked */
+	private static final int START_TICKS = 2;
 	private static final Map<BlockPos, Playback> PLAYING = new HashMap<>();
 	private static ClientLevel world;
 
@@ -44,12 +53,22 @@ public final class SpeakerPlayback {
 		final ResourceLocation dimension = packet.readResourceLocation();
 		final BlockPos pos = packet.readBlockPos();
 		final AudioSpeakerPackets.Action action = packet.readEnum(AudioSpeakerPackets.Action.class);
-		final String reference = action == AudioSpeakerPackets.Action.STOP ? "" : packet.readUtf(AnnouncementSound.MAX_LENGTH);
-		final String hash = action == AudioSpeakerPackets.Action.STOP ? "" : packet.readUtf(64);
-		final int radius = action == AudioSpeakerPackets.Action.STOP ? 0 : packet.readVarInt();
-		final int audienceMask = action == AudioSpeakerPackets.Action.STOP ? 0 : packet.readUnsignedByte();
-		final boolean finish = action != AudioSpeakerPackets.Action.STOP && packet.readBoolean();
-		final int interval = action == AudioSpeakerPackets.Action.STOP ? 0 : packet.readVarInt();
+		final List<Clip> clips = new ArrayList<>();
+		int radius = 0, audienceMask = 0, interval = 0;
+		boolean finish = false;
+		if (action != AudioSpeakerPackets.Action.STOP) {
+			final int count = packet.readVarInt();
+			if (count < 1 || count > SpeakerSettings.MAX_CLIPS) return;
+			for (int i = 0; i < count; i++) {
+				clips.add(new Clip(packet.readUtf(AnnouncementSound.MAX_LENGTH), packet.readUtf(64), packet.readVarInt()));
+			}
+			radius = packet.readVarInt();
+			audienceMask = packet.readUnsignedByte();
+			finish = packet.readBoolean();
+			interval = packet.readVarInt();
+		}
+		final int finalRadius = radius, finalMask = audienceMask, finalInterval = interval;
+		final boolean finalFinish = finish;
 		final Minecraft client = Minecraft.getInstance();
 		client.execute(() -> {
 			checkWorld(client);
@@ -60,16 +79,16 @@ public final class SpeakerPlayback {
 				PLAYING.remove(pos);
 				return;
 			}
-			if (AnnouncementSound.splitUploaded(reference) == null || !AudioFiles.isHash(hash) || !SpeakerSettings.validRadius(radius)
-					|| !SpeakerSettings.validAudienceMask(audienceMask)) return;
+			if (clips.stream().anyMatch(clip -> !clip.valid()) || !SpeakerSettings.validRadius(finalRadius)
+					|| !SpeakerSettings.validAudienceMask(finalMask) || !SpeakerSettings.validTenths(finalInterval)) return;
 			final boolean loop = action == AudioSpeakerPackets.Action.LOOP;
-			if (!loop && finish && previous != null && !previous.loop && previous.reference.equals(reference) && previous.hash.equals(hash)) return;
-			if (loop && previous != null && previous.loop && previous.reference.equals(reference) && previous.radius == radius
-					&& previous.hash.equals(hash) && previous.audienceMask == audienceMask) {
+			if (!loop && finalFinish && previous != null && !previous.loop && previous.clips.equals(clips)) return;
+			if (loop && previous != null && previous.loop && previous.clips.equals(clips) && previous.radius == finalRadius
+					&& previous.audienceMask == finalMask && previous.intervalTenths == finalInterval) {
 				previous.lease = LOOP_LEASE_TICKS;
-			} else if (previous != null || makeRoom(client, pos, radius, audienceMask)) {
+			} else if (previous != null || makeRoom(client, pos, finalRadius, finalMask)) {
 				if (previous != null) previous.stop(client.getSoundManager());
-				PLAYING.put(pos, new Playback(reference, hash, radius, loop, audienceMask, finish ? interval : 0));
+				PLAYING.put(pos, new Playback(clips, finalRadius, loop, finalMask, finalInterval, finalFinish));
 			}
 		});
 	}
@@ -118,60 +137,108 @@ public final class SpeakerPlayback {
 		}
 	}
 
-	private static final class Playback {
+	/** A clip as the server sent it: the uploaded sound, its file's hash and the gap after it in tenths of a second */
+	private static final class Clip {
 		private final String reference;
+		private final String hash;
+		private final int gapTenths;
+
+		private Clip(String reference, String hash, int gapTenths) {
+			this.reference = reference;
+			this.hash = hash;
+			this.gapTenths = gapTenths;
+		}
+
+		private boolean valid() {
+			return AnnouncementSound.splitUploaded(reference) != null && AudioFiles.isHash(hash) && SpeakerSettings.validTenths(gapTenths);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof Clip && ((Clip) other).reference.equals(reference) && ((Clip) other).hash.equals(hash) && ((Clip) other).gapTenths == gapTenths;
+		}
+
+		@Override
+		public int hashCode() {
+			return (reference.hashCode() * 31 + hash.hashCode()) * 31 + gapTenths;
+		}
+	}
+
+	private static final class Playback {
+		private final List<Clip> clips;
 		private final int radius;
 		private final boolean loop;
+		private final boolean seamless;
 		private final int audienceMask;
+		private final int intervalTenths;
+		private final ClipSequence sequence;
 		private int lease = LOOP_LEASE_TICKS;
 		private int waited;
 		private int pollDelay;
 		private int soundAge;
 		private int cooldown = -1;
-		private final int intervalTicks;
-		private final String hash;
-		private ResourceLocation soundId;
+		private final int cooldownTicks;
+		/** Whether every clip's file is here; nothing plays before */
+		private boolean ready;
 		private SpeakerSound sound;
 
-		private Playback(String reference, String hash, int radius, boolean loop, int audienceMask, int intervalSeconds) {
-			intervalTicks = Math.max(0, Math.min(3600, intervalSeconds)) * 20;
-			this.reference = reference;
-			this.hash = hash;
+		private Playback(List<Clip> clips, int radius, boolean loop, int audienceMask, int intervalTenths, boolean finish) {
+			this.clips = clips;
 			this.radius = radius;
 			this.loop = loop;
 			this.audienceMask = audienceMask;
+			this.intervalTenths = intervalTenths;
+			seamless = loop && clips.size() == 1 && intervalTenths == 0;
+			final long[] gaps = new long[clips.size()];
+			for (int i = 0; i < gaps.length; i++) gaps[i] = SpeakerSettings.tenthsToTicks(clips.get(i).gapTenths);
+			sequence = new ClipSequence(gaps, loop, SpeakerSettings.tenthsToTicks(intervalTenths));
+			// After a single play, the interval before another is the server's; it is waited here only when finishing first
+			cooldownTicks = finish ? (int) Math.min(Integer.MAX_VALUE, SpeakerSettings.tenthsToTicks(intervalTenths)) : 0;
 		}
 
 		private boolean tick(SoundManager manager, BlockPos pos) {
 			if (cooldown >= 0) return --cooldown > 0;
 			if (loop && --lease <= 0) return false;
-			if (sound != null) {
-				soundAge++;
-				if (!loop) {
-					if (soundAge <= 20 || manager.isActive(sound)) return true;
-					cooldown = intervalTicks;
-					return cooldown > 0;
+			if (!ready) {
+				if (!loop && ++waited > DOWNLOAD_TIMEOUT_TICKS) return false;
+				if (pollDelay-- > 0) return true;
+				pollDelay = 9;
+				ready = true;
+				for (final Clip clip : clips) {
+					final String[] uploaded = AnnouncementSound.splitUploaded(clip.reference);
+					if (!clip.hash.equals(AudioCache.getHash(uploaded[0], uploaded[1])) || UploadedSounds.getLocation(uploaded[0], uploaded[1]) == null) {
+						ready = false;
+					} else if (!AudioCache.isCached(clip.hash)) {
+						AudioCache.want(clip.hash);
+						ready = false;
+					}
 				}
-			} else if (!loop && ++waited > DOWNLOAD_TIMEOUT_TICKS) {
-				return false;
+				if (!ready) return true;
 			}
-			if (pollDelay-- > 0) return true;
-			pollDelay = 9;
-			final String[] uploaded = AnnouncementSound.splitUploaded(reference);
-			final String currentHash = AudioCache.getHash(uploaded[0], uploaded[1]);
-			final ResourceLocation currentId = UploadedSounds.getLocation(uploaded[0], uploaded[1]);
-			if (sound != null && (!hash.equals(currentHash) || !soundId.equals(currentId)
-					|| (soundAge > 20 && !manager.isActive(sound)))) stop(manager);
-			if (sound != null || !hash.equals(currentHash) || currentId == null) return true;
-			if (AudioCache.isCached(hash)) {
-				soundId = currentId;
-				soundAge = 0;
-				sound = new SpeakerSound(currentId, pos, radius, loop, audienceMask);
-				manager.play(sound);
-			} else {
-				AudioCache.want(hash);
+			if (sound != null) soundAge++;
+			if (seamless) {
+				if (sound == null) start(manager, pos, 0);
+				return true;
+			}
+			final boolean playing = sound != null && (soundAge <= START_TICKS || manager.isActive(sound));
+			if (!playing && sound != null) stop(manager);
+			final int next = sequence.tick(playing);
+			if (next >= 0) start(manager, pos, next);
+			if (sequence.hasEnded()) {
+				cooldown = cooldownTicks;
+				return cooldown > 0;
 			}
 			return true;
+		}
+
+		private void start(SoundManager manager, BlockPos pos, int index) {
+			final String[] uploaded = AnnouncementSound.splitUploaded(clips.get(index).reference);
+			final ResourceLocation id = UploadedSounds.getLocation(uploaded[0], uploaded[1]);
+			stop(manager);
+			soundAge = 0;
+			if (id == null) return;
+			sound = new SpeakerSound(id, pos, radius, seamless, audienceMask);
+			manager.play(sound);
 		}
 
 		private void stop(SoundManager manager) {

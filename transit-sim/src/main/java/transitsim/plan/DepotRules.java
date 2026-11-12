@@ -42,7 +42,7 @@ public final class DepotRules {
 		Rule best = null;
 		int bestRank = -1;
 		for (final Rule rule : rules) {
-			if (!rule.lineKeys.isEmpty() && !rule.lineKeys.contains(lineKey) || rule.weekdays != 0 && (rule.weekdays >> weekday & 1) == 0) {
+			if (!rule.lineKeys.isEmpty() && !isForLine(rule, lineKey) || rule.weekdays != 0 && (rule.weekdays >> weekday & 1) == 0) {
 				continue;
 			}
 			final int rank = (rule.lineKeys.isEmpty() ? 0 : 2) + (rule.weekdays == 0 ? 0 : 1);
@@ -52,6 +52,49 @@ public final class DepotRules {
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * Whether a rule is for a line: one of its keys names the line, as {@link #sameLine} has it.
+	 */
+	public static boolean isForLine(Rule rule, String lineKey) {
+		if (rule.lineKeys.contains(lineKey)) {
+			return true;
+		}
+		for (final String key : rule.lineKeys) {
+			if (sameLine(key, lineKey)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether two line keys ({@code <transport mode>|<line name in each language>}) name the same line: the same mode and
+	 * the same name in at least one language. A line key follows the routes' names, so a rule set when the line was called
+	 * "S1" is still for it once its routes are "S1各停|S1 Local", whose key is "TRAIN|s1|s1" (Q world, 2026-11-12).
+	 */
+	public static boolean sameLine(String key1, String key2) {
+		if (key1.equals(key2)) {
+			return true;
+		}
+		final String[] parts1 = key1.split("\\|", -1);
+		final String[] parts2 = key2.split("\\|", -1);
+		if (parts1.length < 2 || parts2.length < 2 || !parts1[0].equals(parts2[0])) {
+			return false;
+		}
+		for (int i = 1; i < parts1.length; i++) {
+			final String name = parts1[i].trim();
+			if (name.isEmpty()) {
+				continue;
+			}
+			for (int j = 1; j < parts2.length; j++) {
+				if (name.equals(parts2[j].trim())) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	public DeadheadPath getPath(long id) {

@@ -40,6 +40,19 @@ class DepotRulesTest {
 	}
 
 	@Test
+	void aRuleIsStillForItsLineOnceTheLineIsNamedInMoreLanguages() {
+		// Set when the line was "S1"; its routes are "S1各停|S1 Local" now (Q world, 2026-11-12)
+		final DepotRules rules = new DepotRules();
+		rules.rules.add(rule(1, 0, "TRAIN|s1"));
+		assertNotNull(rules.match("TRAIN|s1|s1", 0));
+		assertTrue(DepotRules.sameLine("TRAIN|一号线|line 1", "TRAIN|1号线|line 1"));
+		// Not another line, nor the same name in another transport mode
+		assertNull(rules.match("TRAIN|s2|s2", 0));
+		assertNull(rules.match("BOAT|s1", 0));
+		assertFalse(DepotRules.sameLine("TRAIN||x", "TRAIN||y"), "an empty name is no name in common");
+	}
+
+	@Test
 	void rulesAndPathsReadBack() {
 		final DepotRules rules = new DepotRules();
 		final DepotRules.Rule rule = rule(7, 0b11111, "TRAIN|一号线", "TRAIN|二号线");

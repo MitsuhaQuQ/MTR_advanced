@@ -29,7 +29,9 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -137,12 +139,12 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			if (settings.sound.isEmpty()) return;
 			switch (settings.mode) {
 				case LOOP:
-					final String hash = AudioServer.getUploadedHash(settings.sound);
-					if (world.hasNeighborSignal(worldPosition) || hash == null) {
+					final List<String> hashes = hashes();
+					if (world.hasNeighborSignal(worldPosition) || hashes == null) {
 						stopLoop();
 						loopTicks = 0;
 					} else if (loopTicks++ % 5 == 0) {
-						updateLoop(world, hash, loopTicks % 20 == 1);
+						updateLoop(world, hashes, loopTicks % 20 == 1);
 					}
 					break;
 				case REDSTONE:
@@ -165,17 +167,35 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			return world.players().stream().anyMatch(player -> !player.isSpectator() && inside(player, settings.triggerCenter, settings.triggerRadius));
 		}
 
+		/**
+		 * @return the uploaded files' hashes of the clips in order, or null while one of them isn't uploaded
+		 */
+		private List<String> hashes() {
+			final List<String> hashes = new ArrayList<>();
+			for (final SpeakerSettings.Clip clip : settings.clips) {
+				final String hash = AudioServer.getUploadedHash(clip.sound);
+				if (hash == null) return null;
+				hashes.add(hash);
+			}
+			return hashes;
+		}
+
 		private void playOnce(ServerLevel world) {
-			final String hash = AudioServer.getUploadedHash(settings.sound);
-			if (hash == null || !playbackGate.accept(world.getGameTime(), AudioServer.getUploadedDurationTicks(settings.sound), settings.finishBeforeRepeat, settings.intervalSeconds * 20L)) return;
+			final List<String> hashes = hashes();
+			if (hashes == null) return;
+			// A play is all the clips with the gaps between them (0.70.0)
+			final long[] durations = new long[settings.clips.size()];
+			for (int i = 0; i < durations.length; i++) durations[i] = AudioServer.getUploadedDurationTicks(settings.clips.get(i).sound);
+			final long playTicks = transitsim.sim.ClipSequence.totalTicks(durations, settings.gapTicks());
+			if (!playbackGate.accept(world.getGameTime(), playTicks, settings.finishBeforeRepeat, SpeakerSettings.tenthsToTicks(settings.intervalTenths))) return;
 			for (final ServerPlayer player : world.players()) {
 				if (canHear(player)) {
-					AudioSpeakerPackets.play(player, world, worldPosition, settings, hash, AudioSpeakerPackets.Action.ONCE);
+					AudioSpeakerPackets.play(player, world, worldPosition, settings, hashes, AudioSpeakerPackets.Action.ONCE);
 				}
 			}
 		}
 
-		private void updateLoop(ServerLevel world, String hash, boolean refresh) {
+		private void updateLoop(ServerLevel world, List<String> hashes, boolean refresh) {
 			final Set<UUID> present = new HashSet<>();
 			final Set<UUID> audible = new HashSet<>();
 			for (final ServerPlayer player : world.players()) {
@@ -186,7 +206,7 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 			for (final UUID id : listeners.update(present, audible, refresh)) {
 				final ServerPlayer player = world.getServer().getPlayerList().getPlayer(id);
 				if (player != null && player.serverLevel() == world) {
-					AudioSpeakerPackets.play(player, world, worldPosition, settings, hash, AudioSpeakerPackets.Action.LOOP);
+					AudioSpeakerPackets.play(player, world, worldPosition, settings, hashes, AudioSpeakerPackets.Action.LOOP);
 				}
 			}
 		}

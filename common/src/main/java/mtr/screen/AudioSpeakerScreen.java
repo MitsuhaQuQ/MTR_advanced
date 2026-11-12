@@ -35,6 +35,11 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * A speaker's settings, opened with the brush. Since 0.70.0 the sound is a list of clips played one after another with a
+ * gap after each ({@link ClipList}), and the interval is in seconds to a tenth: in a loop the silence after the last clip,
+ * otherwise how soon the speaker may be set off again.
+ */
 public final class AudioSpeakerScreen extends ScreenBase {
 	private final ClientLevel world;
 	private final BlockPos pos;
@@ -43,7 +48,8 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	private final Button modeButton, soundButton, directionButton, appearanceButton;
 	private SpeakerSettings.Mode mode;
 	private int audienceMask;
-	private String sound;
+	/** The clips being edited, in order: each one's sound and the gap after it as typed, in seconds */
+	private final List<EditedClip> clips = new ArrayList<>();
 	private ResourceLocation appearance;
 	private boolean invalid;
 	private int left, top, panelWidth;
@@ -57,9 +63,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		this.pos = pos;
 		initialSettings = settings;
 		finishBeforeRepeat = settings.finishBeforeRepeat;
-		interval = number(settings.intervalSeconds, "", 4);
+		interval = seconds(settings.intervalTenths);
 		repeatButton = UtilitiesClient.newButton(repeatLabel(), button -> { finishBeforeRepeat = !finishBeforeRepeat; button.setMessage(repeatLabel()); });
-		sound = settings.sound;
+		settings.clips.forEach(clip -> clips.add(new EditedClip(clip.sound, secondsText(clip.gapTenths))));
 		mode = settings.mode;
 		audienceMask = settings.audienceMask;
 		appearance = settings.appearance;
@@ -73,7 +79,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			button.setMessage(modeLabel());
 			updateRegionFields();
 		});
-		soundButton = UtilitiesClient.newButton(soundLabel(), button -> chooseSound());
+		soundButton = UtilitiesClient.newButton(soundLabel(), button -> minecraft.setScreen(new ClipList()));
 		directionButton = UtilitiesClient.newButton(directionLabel(), button -> minecraft.setScreen(new DirectionPicker()));
 		appearanceButton = UtilitiesClient.newButton(appearanceLabel(), button -> chooseAppearance());
 	}
@@ -109,7 +115,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_center"), left, top + 94, 0xFFFFFF);
 			GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_trigger_radius"), left, top + 134, 0xFFFFFF);
 		}
-		GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.audio_speaker_interval"), left, top + 200, 0xFFFFFF);
+		GuiCompat.draw(matrices, font, Text.translatable(mode == SpeakerSettings.Mode.LOOP ? "gui.mtr.audio_speaker_loop_interval" : "gui.mtr.audio_speaker_interval"), left, top + 200, 0xFFFFFF);
 		final Block block = BuiltInRegistries.BLOCK.get(appearance);
 		GuiCompat.graphics(matrices).renderItem(new ItemStack(block), left + 2, top + 152);
 		if (invalid) {
@@ -123,15 +129,12 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		return false;
 	}
 
-	private void chooseSound() {
+	/** Opens the list of uploaded sounds to choose from, coming back to the screen given */
+	private void chooseSound(ScreenBase back, Consumer<String> chosen) {
 		final List<Choice> choices = new ArrayList<>();
-		choices.add(new Choice("", Text.translatable("gui.mtr.audio_speaker_no_sound").getString()));
 		AudioCache.ENTRIES.stream().filter(entry -> entry.getSoundLocation() != null).map(AudioCache.Entry::getReference)
 				.sorted(String.CASE_INSENSITIVE_ORDER).forEach(reference -> choices.add(new Choice(reference, reference)));
-		minecraft.setScreen(new Picker(Text.translatable("gui.mtr.audio_speaker_choose_sound"), choices, value -> {
-			sound = value;
-			soundButton.setMessage(soundLabel());
-		}));
+		minecraft.setScreen(new Picker(Text.translatable("gui.mtr.audio_speaker_choose_sound"), choices, chosen, back));
 	}
 
 	private void chooseAppearance() {
@@ -146,7 +149,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 		minecraft.setScreen(new Picker(Text.translatable("gui.mtr.audio_speaker_choose_appearance"), choices, value -> {
 			appearance = new ResourceLocation(value);
 			appearanceButton.setMessage(appearanceLabel());
-		}));
+		}, this));
 	}
 
 	private void apply() {
@@ -159,7 +162,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			final BlockPos center = region ? new BlockPos(value(centerX), value(centerY), value(centerZ)) : initialSettings.triggerCenter;
 			if (region && !world.isInWorldBounds(center)) throw new IllegalArgumentException();
 			final int regionRadius = region ? value(triggerRadius) : initialSettings.triggerRadius;
-			final SpeakerSettings settings = new SpeakerSettings(sound, mode, value(radius), center, regionRadius, appearance, audienceMask, finishBeforeRepeat, value(interval));
+			final List<SpeakerSettings.Clip> chosen = new ArrayList<>();
+			for (final EditedClip clip : clips) chosen.add(new SpeakerSettings.Clip(clip.sound, tenths(clip.gap)));
+			final SpeakerSettings settings = new SpeakerSettings(chosen, mode, value(radius), center, regionRadius, appearance, audienceMask, finishBeforeRepeat, tenths(interval.getValue()));
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 			packet.writeBlockPos(pos);
 			settings.write(packet);
@@ -175,7 +180,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	}
 
 	private Component soundLabel() {
-		return Text.translatable("gui.mtr.audio_speaker_sound", sound.isEmpty() ? Text.translatable("gui.mtr.audio_speaker_no_sound") : Text.literal(sound));
+		if (clips.isEmpty()) return Text.translatable("gui.mtr.audio_speaker_sound", Text.translatable("gui.mtr.audio_speaker_no_sound"));
+		if (clips.size() == 1) return Text.translatable("gui.mtr.audio_speaker_sound", Text.literal(clips.get(0).sound));
+		return Text.translatable("gui.mtr.audio_speaker_sounds", Text.literal(clips.get(0).sound), clips.size());
 	}
 
 	private Component appearanceLabel() {
@@ -211,7 +218,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	}
 
 	private void updateRegionFields() {
-		repeatButton.active = interval.active = mode != SpeakerSettings.Mode.LOOP;
+		// A loop's interval is the silence after its last clip, so it stays editable; repeating applies only to a play set
+		// off (before 0.70.0 the interval was locked in a loop)
+		repeatButton.active = mode != SpeakerSettings.Mode.LOOP;
 		centerX.visible = centerY.visible = centerZ.visible = triggerRadius.visible = mode == SpeakerSettings.Mode.REGION;
 	}
 
@@ -230,6 +239,152 @@ public final class AudioSpeakerScreen extends ScreenBase {
 
 	private static int value(WidgetBetterTextField field) {
 		return Integer.parseInt(field.getValue());
+	}
+
+	/** A field for seconds to a tenth */
+	private static WidgetBetterTextField seconds(int tenths) {
+		final WidgetBetterTextField field = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "0", 6);
+		field.setValue(secondsText(tenths));
+		return field;
+	}
+
+	public static String secondsText(int tenths) {
+		return tenths % 10 == 0 ? Integer.toString(tenths / 10) : String.format(Locale.ROOT, "%d.%d", tenths / 10, tenths % 10);
+	}
+
+	/**
+	 * @return seconds as typed, in tenths, rounded; empty is 0
+	 * @throws IllegalArgumentException when not a number or out of range
+	 */
+	public static int tenths(String text) {
+		if (text.trim().isEmpty()) return 0;
+		final double seconds;
+		try {
+			seconds = Double.parseDouble(text.trim());
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException(e);
+		}
+		final long tenths = Math.round(seconds * 10);
+		if (!(seconds >= 0) || tenths > SpeakerSettings.MAX_TENTHS) throw new IllegalArgumentException("Out of range");
+		return (int) tenths;
+	}
+
+	private static final class EditedClip {
+		private String sound;
+		private String gap;
+
+		private EditedClip(String sound, String gap) {
+			this.sound = sound;
+			this.gap = gap;
+		}
+	}
+
+	/**
+	 * The clips one after another (0.70.0): each one's sound and the gap after it in seconds (none after the last: that is
+	 * the interval), moved up or down or taken out; more added from the uploaded sounds. Changes stay with the speaker's
+	 * screen until it is done.
+	 */
+	private final class ClipList extends ScreenBase {
+		private static final int ROW = 22;
+		private int page;
+		private boolean invalidGap;
+
+		private ClipList() {
+			super(Text.translatable("gui.mtr.audio_speaker_clips"));
+		}
+
+		private int rowsPerPage() {
+			return Math.max(1, (height - 100) / ROW);
+		}
+
+		@Override
+		protected void init() {
+			final int panel = Math.min(width - 20, 360);
+			final int listLeft = (width - panel) / 2;
+			final int listTop = 36;
+			final int perPage = rowsPerPage();
+			page = Math.max(0, Math.min(page, Math.max(0, clips.size() - 1) / perPage));
+			for (int row = 0; row < perPage; row++) {
+				final int index = page * perPage + row;
+				if (index >= clips.size()) break;
+				final EditedClip clip = clips.get(index);
+				final int y = listTop + row * ROW;
+				final Button sound = UtilitiesClient.newButton(Text.literal((index + 1) + ". " + clip.sound), button -> chooseSound(this, value -> clip.sound = value));
+				IDrawing.setPositionAndWidth(sound, listLeft, y, panel - 150);
+				addDrawableChild(sound);
+				if (index < clips.size() - 1) {
+					final WidgetBetterTextField gap = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "0", 6);
+					gap.setValue(clip.gap);
+					gap.setResponder(text -> clip.gap = text);
+					IDrawing.setPositionAndWidth(gap, listLeft + panel - 146, y, 50);
+					gap.moveCursorToStart();
+					addDrawableChild(gap);
+				}
+				addSmall("↑", listLeft + panel - 92, y, index > 0, () -> swap(index, index - 1));
+				addSmall("↓", listLeft + panel - 62, y, index < clips.size() - 1, () -> swap(index, index + 1));
+				addSmall("×", listLeft + panel - 32, y, true, () -> clips.remove(index));
+			}
+			final int bottom = height - 30;
+			if (clips.size() > perPage) {
+				addSmall("<", listLeft, bottom - 24, page > 0, () -> page--);
+				addSmall(">", listLeft + panel - 26, bottom - 24, (page + 1) * perPage < clips.size(), () -> page++);
+			}
+			final Button add = UtilitiesClient.newButton(Text.translatable("gui.mtr.audio_speaker_add_clip"), button -> chooseSound(this, value -> {
+				clips.add(new EditedClip(value, "0"));
+				page = (clips.size() - 1) / rowsPerPage();
+			}));
+			add.active = clips.size() < SpeakerSettings.MAX_CLIPS;
+			IDrawing.setPositionAndWidth(add, listLeft + 30, bottom - 24, panel - 60);
+			addDrawableChild(add);
+			final Button done = UtilitiesClient.newButton(Text.translatable("gui.done"), button -> {
+				try {
+					clips.forEach(clip -> tenths(clip.gap));
+					onClose();
+				} catch (IllegalArgumentException e) {
+					invalidGap = true;
+				}
+			});
+			IDrawing.setPositionAndWidth(done, listLeft, bottom, panel);
+			addDrawableChild(done);
+		}
+
+		private void addSmall(String label, int x, int y, boolean active, Runnable action) {
+			final Button button = UtilitiesClient.newButton(Text.literal(label), pressed -> {
+				action.run();
+				init(minecraft, width, height);
+			});
+			button.active = active;
+			IDrawing.setPositionAndWidth(button, x, y, 26);
+			addDrawableChild(button);
+		}
+
+		private void swap(int a, int b) {
+			final EditedClip first = clips.get(a);
+			clips.set(a, clips.get(b));
+			clips.set(b, first);
+		}
+
+		@Override
+		public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
+			renderBackground(matrices);
+			GuiCompat.drawCenteredString(matrices, font, title, width / 2, 8, 0xFFFFFF);
+			GuiCompat.drawCenteredString(matrices, font, Text.translatable(clips.isEmpty() ? "gui.mtr.audio_speaker_no_clips" : "gui.mtr.audio_speaker_clips_help"), width / 2, 22, 0xCCCCCC);
+			if (invalidGap) {
+				GuiCompat.drawCenteredString(matrices, font, Text.translatable("gui.mtr.audio_speaker_invalid_gap"), width / 2, height - 42, 0xFF7777);
+			}
+			super.render(matrices, mouseX, mouseY, delta);
+		}
+
+		@Override
+		public void onClose() {
+			soundButton.setMessage(soundLabel());
+			minecraft.setScreen(AudioSpeakerScreen.this);
+		}
+
+		@Override
+		public boolean isPauseScreen() {
+			return false;
+		}
 	}
 
 	private final class DirectionPicker extends ScreenBase {
@@ -305,10 +460,12 @@ public final class AudioSpeakerScreen extends ScreenBase {
 	private final class Picker extends ScreenBase {
 		private final List<DataConverter> rows = new ArrayList<>();
 		private final DashboardList list;
+		private final ScreenBase back;
 		private String search = "";
 
-		private Picker(Component title, List<Choice> choices, Consumer<String> select) {
+		private Picker(Component title, List<Choice> choices, Consumer<String> select, ScreenBase back) {
 			super(title);
+			this.back = back;
 			list = new DashboardList(null, null, null, null, null, null, null, () -> search, value -> search = value, false);
 			final Map<NameColorDataBase, String> values = new IdentityHashMap<>();
 			for (final Choice choice : choices) {
@@ -332,9 +489,9 @@ public final class AudioSpeakerScreen extends ScreenBase {
 			list.height = height - 52;
 			list.init(this::addDrawableChild);
 			list.setData(rows, false, false, false, false, false, false);
-			final Button back = UtilitiesClient.newButton(Text.translatable("gui.back"), button -> onClose());
-			IDrawing.setPositionAndWidth(back, width / 2 - 50, height - 24, 100);
-			addDrawableChild(back);
+			final Button backButton = UtilitiesClient.newButton(Text.translatable("gui.back"), button -> onClose());
+			IDrawing.setPositionAndWidth(backButton, width / 2 - 50, height - 24, 100);
+			addDrawableChild(backButton);
 		}
 
 		@Override
@@ -363,7 +520,7 @@ public final class AudioSpeakerScreen extends ScreenBase {
 
 		@Override
 		public void onClose() {
-			minecraft.setScreen(AudioSpeakerScreen.this);
+			minecraft.setScreen(back);
 		}
 
 		@Override

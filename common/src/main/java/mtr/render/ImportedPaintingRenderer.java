@@ -32,7 +32,9 @@ public final class ImportedPaintingRenderer {
 		UtilitiesClient.rotateZDegrees(pose, (float) settings.rotationZ);
 		UtilitiesClient.rotateYDegrees(pose, (float) settings.rotationY);
 		UtilitiesClient.rotateXDegrees(pose, (float) settings.rotationX);
-		final VertexConsumer front = buffers.getBuffer(RenderType.entityTranslucentCull(texture));
+		// Glowing: full brightness and no shading by the light's direction
+		final RenderType renderType = settings.emissive ? RenderType.entityTranslucentEmissive(texture) : RenderType.entityTranslucentCull(texture);
+		final VertexConsumer front = buffers.getBuffer(renderType);
 		final int columns = (int) Math.ceil(settings.width), rows = (int) Math.ceil(settings.height);
 		final double angle = Math.toRadians(180 - yaw);
 		for (int col = 0; col < columns; col++) for (int row = 0; row < rows; row++) {
@@ -40,7 +42,7 @@ public final class ImportedPaintingRenderer {
 			final float y0 = (float) (-settings.height / 2 + row * settings.height / rows), y1 = (float) (-settings.height / 2 + (row + 1) * settings.height / rows);
 			final double[] rotated = PaintingTransform.rotate((x0 + x1) / 2, (y0 + y1) / 2, 0, settings.rotationX, settings.rotationY, settings.rotationZ);
 			final double localX = rotated[0] - settings.x, localZ = rotated[2] - settings.z - 1D / 32;
-			final int light = LevelRenderer.getLightColor(Compat.getLevel(painting), BlockPos.containing(painting.getX() + localX * Math.cos(angle) + localZ * Math.sin(angle), painting.getY() + settings.y + rotated[1], painting.getZ() - localX * Math.sin(angle) + localZ * Math.cos(angle)));
+			final int light = settings.emissive ? net.minecraft.client.renderer.LightTexture.FULL_BRIGHT : LevelRenderer.getLightColor(Compat.getLevel(painting), BlockPos.containing(painting.getX() + localX * Math.cos(angle) + localZ * Math.sin(angle), painting.getY() + settings.y + rotated[1], painting.getZ() - localX * Math.sin(angle) + localZ * Math.cos(angle)));
 			final float u0 = (float) (0.5 - x1 / settings.width), u1 = (float) (0.5 - x0 / settings.width), v0 = (float) (0.5 - y1 / settings.height), v1 = (float) (0.5 - y0 / settings.height);
 			quad(pose, front, new float[]{x1,y0,0, x0,y0,0, x0,y1,0, x1,y1,0}, u0,u1,v0,v1, 0,0,-1, light);
 			// Reverse winding and mirrored U make the image readable from the back as well.
@@ -48,7 +50,7 @@ public final class ImportedPaintingRenderer {
 		}
 		// A later painting may evict this texture from the bounded cache; submit its vertices before that happens.
 		if (buffers instanceof MultiBufferSource.BufferSource) {
-			((MultiBufferSource.BufferSource) buffers).endBatch(RenderType.entityTranslucentCull(texture));
+			((MultiBufferSource.BufferSource) buffers).endBatch(renderType);
 		}
 		pose.popPose();
 		drawEditAnchor(painting, yaw, settings, pose, buffers);

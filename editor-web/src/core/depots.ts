@@ -50,6 +50,19 @@ export function depotLines(model: Model, depot: any): [string, string][] {
   return [...lines.entries()]
 }
 
+/**
+ * Whether two line keys ("TRAIN|s1|s1") name the same line: the same transport mode and the same name in one language at
+ * least, as the server matches a depot rule's lines (DepotRules.sameLine). A rule ticked when the line was "S1" is still
+ * for it once its routes are "S1各停|S1 Local" (Q world, 2026-11-12).
+ */
+export function sameLine(key1: string, key2: string) {
+  if (key1 === key2) return true
+  const [mode1, ...names1] = key1.split("|")
+  const [mode2, ...names2] = key2.split("|")
+  if (!names1.length || !names2.length || mode1 !== mode2) return false
+  return names1.some(name => name.trim() !== "" && names2.some(other => other.trim() === name.trim()))
+}
+
 /** How long a change of platform within a station takes as measured: millis, null with no way, undefined if not measured. */
 export function turnTimeOf(depot: any, from: string, to: string) {
   const path = depot.path || {}

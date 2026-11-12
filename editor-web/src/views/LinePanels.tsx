@@ -8,6 +8,7 @@
  * - a route's timetable: a new one, or a table's name and days, the week shown as it will be.
  * Each puts its changes in the draft (through links as setLink does), as before.
  */
+import { MoveLinePanel } from "./MoveLinePanel"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { legacy, panelHost, useLegacy, type PanelTarget } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
@@ -35,6 +36,7 @@ export function LinePanels() {
   if (target.kind === "speed") return <SpeedLimits key={target.routeIds.join()} routeIds={target.routeIds} onClose={close} />
   if (target.kind === "vehicle") return <VehiclePanel key={target.depotId + "/" + target.poolKey} depotId={target.depotId} poolKey={target.poolKey} onClose={close} />
   if (target.kind === "groups") return <DutyGroupsPanel key={target.depotId} depotId={target.depotId} onClose={close} />
+  if (target.kind === "moveLine") return <MoveLinePanel key={target.depotId + "/" + target.lineKey} depotId={target.depotId} lineKey={target.lineKey} onClose={close} />
   if (target.kind === "release") return <ReleasePlanPanel key={target.depotId} depotId={target.depotId} onClose={close} />
   if (target.kind === "rules") return <DepotRules key={target.depotId + "/" + target.opened} depotId={target.depotId} editing={target.editing} onClose={close} />
   if (target.kind === "depot") return <DepotPanel key={target.depotId} depotId={target.depotId} onClose={close} />

@@ -11,6 +11,7 @@ import { useEffect, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
+import { sameLine } from "../core/depots"
 import { colorOf, routeTitle, shortName, weekdaysShort } from "./now"
 
 const field = "h-7 rounded-md border border-ctl bg-panel px-2 text-[13px]"
@@ -278,8 +279,15 @@ export function DepotRules({ depotId, editing, onClose }: { depotId: string; edi
           </div>
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             <span className="w-10 text-[12px] text-dim">{tr("线路")}</span>
-            {lines.map(([key, name]) => <button key={key} type="button" className={chip(rule.lines.includes(key))} aria-pressed={rule.lines.includes(key)}
-              onClick={() => { rule.lines = rule.lines.includes(key) ? rule.lines.filter(k => k !== key) : [...rule.lines, key]; changed() }}>{name}</button>)}
+            {lines.map(([key, name]) => {
+              // Ticked under the line's name as it was, too: clicking it then keeps the line under its key as it is now
+              const on = rule.lines.some(each => sameLine(each, key))
+              return <button key={key} type="button" className={chip(on)} aria-pressed={on}
+                onClick={() => { rule.lines = on ? rule.lines.filter(k => !sameLine(k, key)) : [...rule.lines, key]; changed() }}>{name}</button>
+            })}
+            {rule.lines.filter(each => !lines.some(([key]) => sameLine(each, key))).map(each => <button key={each} type="button" className={chip(true) + " line-through"} aria-pressed
+              title={tr("这个车厂没有这条线路（线路改了名或不再由这个车厂运营），规则对它不起作用；点一下去掉")}
+              onClick={() => { rule.lines = rule.lines.filter(k => k !== each); changed() }}>{tr("{0}（找不到）", each.split("|").slice(1).join("|") || each)}</button>)}
             {!rule.lines.length && <span className="text-[11px] text-dim">{tr("都不勾 = 全部线路")}</span>}
           </div>
           <div className="mb-2 flex flex-wrap items-center gap-1.5">

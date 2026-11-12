@@ -21,6 +21,7 @@ public final class ImportedPaintingScreen extends ScreenBase {
 	private final WidgetBetterTextField[] fields = new WidgetBetterTextField[8];
 	private final String[] labels = {"image_width", "image_height", "image_offset_x", "image_offset_y", "image_offset_z", "image_rotation_x", "image_rotation_y", "image_rotation_z"};
 	private String selectedImage, error = "";
+	private boolean emissive;
 	private int left, top;
 	private Button choose;
 	private boolean dropdownOpen;
@@ -46,6 +47,7 @@ public final class ImportedPaintingScreen extends ScreenBase {
 			settings.height = painting.getVariant().value().getHeight() / 16.0;
 		}
 		selectedImage = settings.image;
+		emissive = settings.emissive;
 		final double[] values = {settings.width, settings.height, settings.x, settings.y, settings.z, settings.rotationX, settings.rotationY, settings.rotationZ};
 		for (int i = 0; i < fields.length; i++) {
 			fields[i] = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", 16);
@@ -73,7 +75,8 @@ public final class ImportedPaintingScreen extends ScreenBase {
 		place(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_gizmo"), button -> {
 			try { draft(); minecraft.setScreen(new PaintingRotationScreen(this)); }
 			catch (RuntimeException e) { error = "gui.mtr.image_invalid_settings"; }
-		}), left, top + 198, 298);
+		}), left + 151, top + 198, 147);
+		place(UtilitiesClient.newButton(emissiveLabel(), button -> { emissive = !emissive; button.setMessage(emissiveLabel()); }), left, top + 198, 147);
 		place(UtilitiesClient.newButton(Text.translatable("gui.mtr.image_apply"), button -> {
 			try { ImportedImages.apply(painting.getId(), draft()); onClose(); }
 			catch (RuntimeException e) { error = "gui.mtr.image_invalid_settings"; }
@@ -132,6 +135,7 @@ public final class ImportedPaintingScreen extends ScreenBase {
 		if (!Character.isISOControl(character) && search.length() < 64) { search += character; refilter(); }
 		return true;
 	}
+	private net.minecraft.network.chat.Component emissiveLabel() { return Text.translatable(emissive ? "gui.mtr.image_emissive_on" : "gui.mtr.image_emissive_off"); }
 	private String selectionName() { return selectedImage.isEmpty() ? Text.translatable("gui.mtr.image_vanilla").getString() : selectedImage; }
 	private void place(net.minecraft.client.gui.components.AbstractWidget widget, int x, int y, int width) {
 		UtilitiesClient.setWidgetX(widget, x); UtilitiesClient.setWidgetY(widget, y); widget.setWidth(width); addDrawableChild(widget);
@@ -139,6 +143,7 @@ public final class ImportedPaintingScreen extends ScreenBase {
 	PaintingSettings draft() {
 		final PaintingSettings s = new PaintingSettings();
 		s.image = selectedImage;
+		s.emissive = emissive;
 		s.width = Double.parseDouble(fields[0].getValue()); s.height = Double.parseDouble(fields[1].getValue());
 		s.x = Double.parseDouble(fields[2].getValue()); s.y = Double.parseDouble(fields[3].getValue()); s.z = Double.parseDouble(fields[4].getValue());
 		s.rotationX = Double.parseDouble(fields[5].getValue()); s.rotationY = Double.parseDouble(fields[6].getValue()); s.rotationZ = Double.parseDouble(fields[7].getValue());

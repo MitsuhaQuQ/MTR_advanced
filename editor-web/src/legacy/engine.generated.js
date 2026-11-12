@@ -1192,6 +1192,11 @@ export function createLegacy(env) {
 	// Zoomed out further than this many pixels a block, the network is drawn as a schematic: each run of track between two
 	// junctions simplified to within a few pixels, with its straight runs set along the horizontal, vertical and 45°
 	const NET_EXACT_SCALE = 2, NET_SIMPLIFY_PX = 10, NET_ALIGNED = 0.12;
+	/**
+	 * Whether the map is drawn as the track lies, not as a schematic: zoomed in, or while a way out or back of a depot is
+	 * chosen on it, whose route is drawn as it runs and would otherwise leave the schematic's lines (user, 2026-11-12).
+	 */
+	const netExact = () => net.scale >= NET_EXACT_SCALE || Boolean(wayPick);
 	const net = { data: null, version: -1, mode: "", scale: 0, cx: 0, cz: 0, grid: null, hover: -1, error: "", timer: null, drag: null, layer: "physical", focusLogical: null };
 	// Which layer the map shows (web layers step 2): the physical track, or which lines own each section
 	try { if (localStorage.getItem("mtr-editor-net-layer") === "owners") net.layer = "owners"; } catch (e) {}
@@ -1220,7 +1225,7 @@ export function createLegacy(env) {
 		return value;
 	}
 	function netDrawingPoints(points) {
-		if (points.length <= 12 || net.scale >= NET_EXACT_SCALE) return points;
+		if (points.length <= 12 || netExact()) return points;
 		let levels = netDetailCache.get(points);
 		if (!levels) { levels = new Map(); netDetailCache.set(points, levels); }
 		const level = netLevel();
@@ -1447,7 +1452,7 @@ export function createLegacy(env) {
 
 	/** A run of track as drawn at the scale: exact when zoomed in, otherwise simplified and set along 0°, 45° and 90°. */
 	function chainShape(chain) {
-		if (net.scale >= NET_EXACT_SCALE) return chain.points;
+		if (netExact()) return chain.points;
 		const level = netLevel();
 		if (!chain.drawn.has(level)) chain.drawn.set(level, octilinear(simplifyPoints(chain.points, NET_SIMPLIFY_PX / Math.pow(2, level / 2))));
 		return chain.drawn.get(level);
@@ -1840,7 +1845,7 @@ export function createLegacy(env) {
 			g.fill();
 		});
 		// The chosen line's routes along their paths: zoomed out, the runs of track they use as drawn
-		if (net.scale < NET_EXACT_SCALE) {
+		if (!netExact()) {
 			highlighted.forEach(route => {
 				const runs = new Set();
 				for (let i = 1; i < route.nodes.length; i++) {
@@ -1872,7 +1877,7 @@ export function createLegacy(env) {
 			netRouteCache.set(route, { network: d, points });
 			stroke(points, colorOf(route.color), 4);
 		});
-		if (net.hover >= 0 && net.hover < d.rails.length) stroke(net.scale < NET_EXACT_SCALE ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
+		if (net.hover >= 0 && net.hover < d.rails.length) stroke(!netExact() ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
 		if (net.scale >= NET_STATION_SCALE) {
 			g.fillStyle = ink;
 			g.font = `12px ${css("--font-ui")}`;
@@ -1895,7 +1900,7 @@ export function createLegacy(env) {
 	function netRailAt(px, pz) {
 		if (!net.data || !net.grid) return -1;
 		const x = netWorldX(px), z = netWorldZ(pz), reach = NET_HIT_PX / net.scale;
-		if (net.scale < NET_EXACT_SCALE) {
+		if (!netExact()) {
 			let bestChain = null, bestChainDistance = reach;
 			netChains().forEach(chain => {
 				const p = chainShape(chain), box = netGeometry(p);
@@ -1954,7 +1959,7 @@ export function createLegacy(env) {
 		const a = d.nodes[rail[0]], b = d.nodes[rail[1]];
 		const kind = rail[2] === 1 ? tr("站台") : rail[2] === 2 ? tr("存车线") : rail[2] === 3 ? tr("留置位（一列车，在游戏里用留置色的信号闭塞分区标出）") : tr("轨道");
 		const isolation = status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("联络线已放行") : "";
-		const run = net.scale < NET_EXACT_SCALE && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
+		const run = !netExact() && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
 		let owners = "";
 		if (net.layer === "owners" && usesLogicalLines()) {
 			const line = railLogicalLine(index), entry = net.ownerOf && net.ownerOf.get(index);
@@ -1995,7 +2000,7 @@ export function createLegacy(env) {
 	function drawConsole(g, chains, stroke) {
 		if (!consoleState.open || !consoleState.data || !consoleState.data.available || !net.data) return;
 		g.globalAlpha = 1;
-		const shapeOf = index => net.scale < NET_EXACT_SCALE && chains ? chainShape(chains[net.railChain[index]]) : net.railPoints[index];
+		const shapeOf = index => !netExact() && chains ? chainShape(chains[net.railChain[index]]) : net.railPoints[index];
 		const trains = consoleTrains();
 		const trainBlocks = new Set(trains.map(train => train.block).filter(Boolean));
 		(consoleState.data.blocks || []).forEach(block => {
@@ -6666,6 +6671,7 @@ export function createLegacy(env) {
 		get NET_EXACT_SCALE() { return NET_EXACT_SCALE },
 		get NET_SIMPLIFY_PX() { return NET_SIMPLIFY_PX },
 		get NET_ALIGNED() { return NET_ALIGNED },
+		get netExact() { return netExact },
 		get net() { return net },
 		get netCanvas() { return netCanvas },
 		get netWrap() { return netWrap },

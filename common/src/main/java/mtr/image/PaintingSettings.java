@@ -8,6 +8,8 @@ public final class PaintingSettings {
 	public double x, y, z;
 	public double width = 1, height = 1;
 	public double rotationX, rotationY, rotationZ;
+	/** Drawn at full brightness whatever the light around it (0.70.0); absent in older saves, so off */
+	public boolean emissive;
 	private static final Gson GSON = new Gson();
 
 	public String json() { validate(); return GSON.toJson(this); }

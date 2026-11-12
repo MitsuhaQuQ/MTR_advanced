@@ -758,12 +758,17 @@ public class TrainServer extends Train {
 
 					if (isOnRoute || nextDepartureTicks >= 0) {
 						final long estimatedMillis = currentMillis + (long) ((timeSegment.endTime + offsetTime - currentTime) * Depot.MILLIS_PER_TICK);
-						final long scheduledMillis = i < timeSegments.size() ? service.getPlannedArrivalMillis(getSegmentIndex(timeSegment)) : 0;
+						// Standing at the platform the segment ends at: also where the way out of the depot ends at the first stop and the
+						// train turns back there for its trip, the segment ending on the way in and the stop being the trip's first, two
+						// indices of one platform (Q world, 2026-11-12: displays had it leave after the platform's stop time, minutes
+						// before its planned departure, with no planned time)
+						final boolean standingHere = isOnRoute && speed == 0 && elapsedDwellTicks > 0 && i == startingIndex
+								&& (getSegmentIndex(timeSegment) == nextStoppingIndex || nextStoppingIndex >= 0 && nextStoppingIndex < path.size() && path.get(nextStoppingIndex).savedRailBaseId == platformId);
+						final long scheduledMillis = i >= timeSegments.size() ? 0 : service.getPlannedArrivalMillis(standingHere ? nextStoppingIndex : getSegmentIndex(timeSegment));
 						// The estimate doesn't know about waiting for the timetable at earlier stops. Standing at this stop already,
 						// it has come: arrived now at the latest, or as long before its expected departure as the platform's stop
 						// time, so displays counting down the platform's stop time end as it leaves (0.66.4; YJCM's departure
 						// timer showed nothing for a train waiting there for a later planned departure)
-						final boolean standingHere = isOnRoute && speed == 0 && elapsedDwellTicks > 0 && i == startingIndex && getSegmentIndex(timeSegment) == nextStoppingIndex;
 						final long standingDepartureMillis = standingHere ? standingDepartureMillis() : 0;
 						final long arrivalMillis = standingHere ? ScheduleEntry.standingArrivalMillis(System.currentTimeMillis(), standingDepartureMillis <= 0 ? Long.MAX_VALUE : standingDepartureMillis, platformStopMillis(platformId)) : Math.max(estimatedMillis, scheduledMillis);
 						if (railwayData != null && stationCall.dwell == null && stationCall.approachMillis == 0 && !timeSegment.pass
@@ -1177,6 +1182,11 @@ public class TrainServer extends Train {
 	 */
 	private long standingDepartureMillis() {
 		final long now = System.currentTimeMillis();
+		// Held for something whose end isn't known here (the turn back, a way on, the run ahead): its doors would close the
+		// moment it is let go, which a departure timer showed as a few seconds, again and again (Q world, 2026-11-12)
+		if (!holdReason.isEmpty() && !"timetable".equals(holdReason) && !"duty_departure".equals(holdReason)) {
+			return -Math.max(getPlannedDepartureHere(), now);
+		}
 		final int doorsClose = TrainRules.getTicksUntilDoorsClose(rules);
 		if (doorsClose >= 0) {
 			return now + (long) (doorsClose + transitsim.motion.MotionConstants.DOOR_MOVE_TIME + transitsim.motion.MotionConstants.DOOR_DELAY) * transitsim.motion.MotionConstants.MILLIS_PER_TICK;

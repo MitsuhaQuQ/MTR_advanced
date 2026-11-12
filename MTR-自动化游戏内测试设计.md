@@ -184,3 +184,20 @@
 - 六线实测（`cases-lines/run.spec.ts`）每秒采样列车位置，按站台识别停站，与时刻表界面读出的到/发时刻逐站比对，并算折返时间。发现 L05：出库首班不在始发站停车，全程早约 12–13 s；0.68.4 修正。`run.spec.ts` 增加硬检查：每条线必须有始发站停站，且离开始发站不得早于计划 3 s 以上。
 - 任意世界（`MTM_FIXTURE_NAME=world` + `MTM_WORLD=<世界副本>`，`cases-world/world.spec.ts`）：通过车厂界面逐个刷新路径、收集服务端日志里的寻路失败、无出入库路径、排班无车等提示；对每条启用时刻表的线路做冲突检查并读"最快"列；再采样运行，按站台坐标（`lib/timing.ts` 的 `platformSpots`/`stopEventsAt`/`readRoutePlan`）比对到发时刻和折返。Q 盘世界需 `MTM_SERVER_DIR=C:/gtmp/ui/server-q`（Fabric loader 0.20.1）和 `MTM_EXTRA_MODS=<mtm_worldgen jar>`。只报告，不因设置问题判失败。
 - 线网夹具加 7–9 号线（用户 2026-11-12，间隔 30 s）：7 号线长区间（三站，二站→三站 2000 格一根轨道），检查同一股道长区间里同时有多列车、没有车停在区间入口外等前车；8 号线首尾直通（A 一站↔三站、B 三站↔五站，隔班直通）；9 号线中途接入与三段直通（A→B 在 B 的中间站三站接入，B→C 首尾，回程 B 在三站转出接 A；三站站台为时刻边界）。直通在时刻表界面用"下一段"、对方班次、"接入站"/"转出站"设置，设好的直通写进结果目录 `through-links.json`，`run.spec.ts` 按它检查同一列车跑下一段、在衔接站按前一段到达、按后一段发车。7–9 号线的停站按站台坐标识别。
+
+#### 运行记录：Q 盘世界（0.69.0，提交 fbf0c6de，2026-11-12，结果 `C:/gtmp/fast/ui-results/20261112-200635`）
+
+世界副本 `C:/gtmp/ui/worlds/q-20261112`，`server-q` + mtm_worldgen 0.7.4，采样 10 分钟。三项里 2 项通过、1 项失败，共 20.5 分钟。
+
+- **设置问题（失败，10.1 分钟超时）**：等寻路安静（日志 10 s 无新行）等了 600 s 也没等到。原因是服务端每 5 s 写一行"siding 1 reaches […] only through […] and its turn back (first come, first out there)"，25 分钟共 250 行。这条信息应该只在重排运用时写一次（`LineDuties`），现在每次检查运用都写。日志里的问题：
+  - S1 线排运用"needs 0 trains, has 512, 760 services a day with no train"。760 班都是"no siding reaches them and no train can turn to them"，重排后 28 条规则不满足（NO_WAY_OUT）。
+  - 存车线 4094825884180692368、6075386428207404833 各有 2 个站台"no way out / no way back"，原因是"the siding reaches the line at more than one station"，而车厂没有出入库规则指定从哪站出入。
+  - 读档时 5 列车的保存值不合理，已被重置为安全值。
+  - 车厂 2801415719501262516 的一列车反复报 LATE（5 次），另一车厂的一列报 1 次。
+- **时刻表：最快时刻与冲突（通过）**：S1各停（253 班）和 S1快速（127 班）各报冲突 256 处以上，例如田端、横滨咽喉的道岔和对方班次进路交叉。Local Up/Down 找不到，因为它们在 S1 线路组里，`screens.ts` 的 `openTimetable` 没有展开线路组（`lines.ts` 已有 `openGroupFor`，世界用例没用上）。环线的"编辑"按钮是隐藏的，点不到。
+- **实际运行（通过，只报告）**：线上 3 列车，在站台停了 26 次，匹配上计划的是 0 次。原因是线路组里的线路读不到计划（同上）；另外 S1 没有车可派。
+
+后续：
+1. 这条先进先出日志只在内容变化时写。
+2. 世界用例改用 `openGroupFor` 展开线路组，环线的隐藏编辑按钮也要处理。
+3. S1 的出入库规则和冲突属于存档设置问题，要交给玩家看。

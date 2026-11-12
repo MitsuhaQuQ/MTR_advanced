@@ -29,8 +29,52 @@ class SpeakerSettingsTest {
 		} finally { packet.release(); }
 		tag.remove("finish_before_repeat");
 		tag.remove("interval_seconds");
+		tag.remove("interval_tenths");
 		assertFalse(SpeakerSettings.read(tag, BlockPos.ZERO).finishBeforeRepeat);
 		assertEquals(0, SpeakerSettings.read(tag, BlockPos.ZERO).intervalSeconds);
+	}
+
+	@Test
+	void clipsAndTheirGapsSurviveSaveAndPacketAndOldSavesHaveOneClip() {
+		// 0.70.0: three clips, gaps of 1.5 s and 0 s, a loop interval of 2.3 s
+		final java.util.List<SpeakerSettings.Clip> clips = java.util.Arrays.asList(new SpeakerSettings.Clip("steve:ding.ogg", 15),
+				new SpeakerSettings.Clip("steve:站名.ogg", 0), new SpeakerSettings.Clip("", 7), new SpeakerSettings.Clip("steve:dong.ogg", 40));
+		final SpeakerSettings original = new SpeakerSettings(clips, SpeakerSettings.Mode.LOOP, 24, BlockPos.ZERO, 4,
+				SpeakerSettings.DEFAULT_APPEARANCE, SpeakerSettings.ALL_DIRECTIONS, false, 23);
+		// A clip with no sound is left out; the first is the speaker's sound as before
+		assertEquals(3, original.clips.size());
+		assertEquals("steve:ding.ogg", original.sound);
+		assertEquals(2, original.intervalSeconds);
+		assertArrayEquals(new long[]{30, 0, 80}, original.gapTicks());
+		assertFalse(original.seamlessLoop());
+
+		final CompoundTag tag = new CompoundTag();
+		original.write(tag);
+		final SpeakerSettings saved = SpeakerSettings.read(tag, BlockPos.ZERO);
+		assertEquals(original.clips, saved.clips);
+		assertEquals(23, saved.intervalTenths);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		try {
+			original.write(packet);
+			final SpeakerSettings copy = SpeakerSettings.read(packet);
+			assertEquals(original.clips, copy.clips);
+			assertEquals(23, copy.intervalTenths);
+			assertEquals(0, packet.readableBytes());
+		} finally { packet.release(); }
+
+		// A save before 0.70.0: one sound, the interval in whole seconds; a loop of it stays seamless
+		tag.remove("clips");
+		tag.remove("interval_tenths");
+		tag.putInt("interval_seconds", 0);
+		final SpeakerSettings old = SpeakerSettings.read(tag, BlockPos.ZERO);
+		assertEquals(java.util.Collections.singletonList(new SpeakerSettings.Clip("steve:ding.ogg", 0)), old.clips);
+		assertTrue(old.seamlessLoop());
+		tag.putString("sound", "");
+		assertTrue(SpeakerSettings.read(tag, BlockPos.ZERO).clips.isEmpty());
+
+		assertThrows(IllegalArgumentException.class, () -> new SpeakerSettings.Clip("steve:a.ogg", 36001));
+		assertThrows(IllegalArgumentException.class, () -> new SpeakerSettings(java.util.Collections.nCopies(17, clips.get(0)), SpeakerSettings.Mode.LOOP,
+				24, BlockPos.ZERO, 4, SpeakerSettings.DEFAULT_APPEARANCE, SpeakerSettings.ALL_DIRECTIONS, false, 0));
 	}
 
 	@Test

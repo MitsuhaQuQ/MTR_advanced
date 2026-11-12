@@ -174,7 +174,8 @@ public final class RenderTrainDebug {
 			// The times as sent, to set against the train's own debug panel: the arrival, the departure displays work out from
 			// it with the platform's stop time, the planned time and the train
 			final mtr.data.Platform platform = ClientData.DATA_CACHE.platformIdMap.get(entryPlatforms.getOrDefault(entry, 0L));
-			final long departure = entry.arrivalMillis + (platform == null ? 0 : platform.getDwellTime() * 500L);
+			// A train standing there tells when it leaves (negative: its planned departure, held for something else too)
+			final long departure = entry.departureMillis != 0 ? Math.abs(entry.departureMillis) : entry.arrivalMillis + (platform == null ? 0 : platform.getDwellTime() * 500L);
 			final String trainId = String.valueOf(entry.trainId);
 			texts.add("    " + Text.translatable("gui.mtr.block_debug_times", clock(entry.arrivalMillis), clock(departure), entry.scheduledMillis > 0 ? clock(entry.scheduledMillis) : "-", entry.trainId == 0 ? "-" : trainId.substring(Math.max(0, trainId.length() - 4))).getString());
 		}

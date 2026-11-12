@@ -10,6 +10,7 @@ import { legacy, useLegacy } from "../legacy/engine"
 import { SidePanel } from "../ui/bits"
 import { tr } from "../i18n"
 import { clock, daysText, shortName, timesOf, weekdayName, weekdaysShort } from "./now"
+import { applyDutyGroup, dutyGroupsOf, vehiclesOf } from "../core/depotMove"
 
 const field = "h-7 rounded-md border border-ctl bg-panel px-2 text-[13px]"
 const label = "flex flex-col gap-0.5 text-[12px] text-dim"
@@ -95,13 +96,25 @@ export function DutyGroupsPanel({ depotId, onClose }: { depotId: string; onClose
   if (!depot) return null
   const vehicleName = (vehicle: string) => String(vehicle || "").replace(/^mtr_custom_train_/, "") || tr("（无车型）")
   const planned: any[] = (depot.shortfall && depot.shortfall.groups) || []
+  // Any vehicle (0.69.2): one this depot has goes on its own sidings, another on the vehicle chosen in its row
+  const own: string[] = vehiclesOf(depot)
   const others: { other: any; vehicle: string; days: number; count: number }[] = []
   data.depots.filter((other: any) => other.id !== depot.id).forEach((other: any) => {
-    ;([...fn.dutyGroupsOf(other).entries()] as [string, number][]).sort().forEach(([key, count]) => {
+    ;([...dutyGroupsOf(other, fn.dutiesOf(other)).entries()] as [string, number][]).sort().forEach(([key, count]) => {
       const [vehicle, days] = key.split("|")
-      if ((depot.sidings || []).some((siding: any) => (siding.vehicle || "") === vehicle)) others.push({ other, vehicle, days: Number(days), count })
+      others.push({ other, vehicle, days: Number(days), count })
     })
   })
+  const [onto, setOnto] = useState<Record<number, string>>({})
+  const ontoOf = (index: number) => onto[index] ?? (own.includes(others[index].vehicle) ? others[index].vehicle : own[0] ?? "")
+  const apply = (entry: typeof others[number], targetVehicle: string) => {
+    onClose()
+    const source = fn.dutiesOf(entry.other)
+    fn.editDuties(depot, (duties: any) => {
+      const count = applyDutyGroup(duties, depot, entry.other, source, entry.vehicle, entry.days, targetVehicle)
+      return tr("已把“{0}”{1} {2} 的 {3} 份运用放进“{4}”{5} 的运用草稿（按运用图），检查后再应用；原车厂的运用没变。", shortName(entry.other.name), vehicleName(entry.vehicle), daysText(entry.days), Math.max(0, count), shortName(depot.name), vehicleName(targetVehicle))
+    })
+  }
   const canReplan = data.canEdit && fn.dutiesOf(depot).auto
   const replan = async (group: any) => {
     try {
@@ -141,12 +154,18 @@ export function DutyGroupsPanel({ depotId, onClose }: { depotId: string; onClose
               <td className={cell}>{vehicleName(entry.vehicle)}</td>
               <td className={cell}>{daysText(entry.days)}</td>
               <td className={cell}>{tr("{0} 份运用", entry.count)}</td>
-              <td className={cell + " text-right"}>{data.canEdit && <button className="btn h-6 px-2 text-[12px]" onClick={() => { onClose(); fn.applyDutyGroup(depot, entry.other, entry.vehicle, entry.days) }}>{tr("套用到本车厂")}</button>}</td>
+              <td className={cell}>{own.length > 1 || !own.includes(entry.vehicle)
+                ? <label className="inline-flex items-center gap-1 text-dim">{tr("放到")}
+                  <select className="h-6 rounded-md border border-ctl bg-panel px-1 text-[12px]" value={ontoOf(index)} aria-label={tr("放到本车厂的哪种车型")} onChange={e => setOnto({ ...onto, [index]: e.target.value })}>
+                    {own.map(vehicle => <option key={vehicle} value={vehicle}>{vehicleName(vehicle)}</option>)}
+                  </select></label>
+                : <span className="text-dim">{tr("同车型")}</span>}</td>
+              <td className={cell + " text-right"}>{data.canEdit && own.length > 0 && <button className="btn h-6 px-2 text-[12px]" onClick={() => apply(entry, ontoOf(index))}>{tr("套用到本车厂")}</button>}</td>
             </tr>
           ))}
         </tbody></table>
-        <p className="mt-1 text-[12px] text-dim">{tr("把那个车厂这组运用（同车型、同样的星期）按存车线顺序放进本车厂的运用草稿，本车厂改为按运用图；那几天本车厂原来的运用换掉。原车厂不变：两边排了同样的班次时，要改掉一边再应用。")}</p>
-      </> : <p className="text-[12px] text-dim">{tr("其他车厂没有同车型的运用")}</p>}
+        <p className="mt-1 text-[12px] text-dim">{tr("把那个车厂这组运用（同样的星期）按存车线顺序放进本车厂所选车型的运用草稿，本车厂改为按运用图；那几天本车厂这种车型原来的运用换掉。车型可以不同：时刻表不变，车比线路的最低性能慢时会提示。原车厂不变：两边排了同样的班次时，要改掉一边再应用；整条线换车厂用“线路换车厂…”。")}</p>
+      </> : <p className="text-[12px] text-dim">{tr("其他车厂还没有按运用图的运用（自动运用排出来后也会列在这里）")}</p>}
     </SidePanel>
   )
 }

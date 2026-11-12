@@ -9,6 +9,7 @@
 import "./stage"
 import { useSyncExternalStore } from "react"
 import { key } from "../api/client"
+import { tr } from "../i18n"
 import { createLegacy } from "./engine.generated.js"
 import { normalizeDraft } from "../core/draft"
 import * as Services from "../core/services"
@@ -29,7 +30,7 @@ export type StopsTarget = { kind: "route"; routeId: string; stop: number } | { k
 export const stopsHost: { current: ((target: StopsTarget) => void) | null } = { current: null }
 
 /** One of the line layer's other panels (views/LinePanels.tsx): speed limits, through services, contingency plans */
-export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string } | { kind: "rules"; depotId: string; editing: any; opened: number } | { kind: "vehicle"; depotId: string; poolKey: string } | { kind: "groups"; depotId: string } | { kind: "release"; depotId: string }
+export type PanelTarget = { kind: "speed"; routeIds: string[] } | { kind: "through"; routeId: string } | { kind: "contingency"; anchor: string } | { kind: "table"; routeId: string; index: number } | { kind: "depot"; depotId: string } | { kind: "rules"; depotId: string; editing: any; opened: number } | { kind: "vehicle"; depotId: string; poolKey: string } | { kind: "groups"; depotId: string } | { kind: "release"; depotId: string } | { kind: "moveLine"; depotId: string; lineKey: string }
   // The old page's last small dialogs (views/AskPanels.tsx, retiring the old code step 8)
   | ({ kind: "ask" } & AskTarget) | { kind: "serviceOrder"; serviceId: string; order: "deploy" | "return"; stop: number } | { kind: "logicalLine"; lineId: string | null; then?: (id: string) => void }
   | { kind: "owners"; index: number } | { kind: "lineTracks"; lineKey: string } | { kind: "finishPicking" }
@@ -41,12 +42,29 @@ export type AskTarget = {
 }
 export const panelHost: { current: ((target: PanelTarget) => void) | null } = { current: null }
 
+/**
+ * Items of the new page's own added to the old tree's right-click menus (the old code is frozen): "线路换车厂…" on a
+ * depot and on a line (0.69.2)
+ */
+function treeExtras(e: MouseEvent): MenuItem[] {
+  const el = (e.target as HTMLElement | null)?.closest?.("#tree .node") as HTMLElement | null
+  if (!el) return []
+  const { depot, line, siding, slot, pool, ofDepot } = el.dataset
+  const data = legacy.v.data
+  if (!data || siding || slot !== undefined || pool !== undefined || ofDepot) return []
+  const can = data.canEdit && data.depots.length > 1
+  if (depot) return [[tr("线路换车厂…"), can ? () => panelHost.current?.({ kind: "moveLine", depotId: depot, lineKey: "" }) : null]]
+  if (line) return [[tr("线路换车厂…"), can ? () => panelHost.current?.({ kind: "moveLine", depotId: "", lineKey: line }) : null]]
+  return []
+}
+
 const api = (path: string) => new URL("/" + path.replace(/^\/+/, ""), location.origin).toString()
 
 const env = {
   MTREditor: { key, ws: "timetable", part: "", open() {}, inTimetable: () => true },
   openMenu: (x: number, y: number, items: MenuItem[]) => menuHost.current?.open(x, y, items),
   openMenuAt: (e: MouseEvent, items: MenuItem[]) => {
+    items = items.concat(treeExtras(e))
     if (e.clientX || e.clientY) menuHost.current?.open(e.clientX, e.clientY, items)
     else {
       const box = (e.target as HTMLElement).getBoundingClientRect()

@@ -1313,3 +1313,11 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 0.65.25：路径失败原因细化在游戏侧 `RoutePaths`，组件 `RouteLegs` 不变，只是诊断时多做几次 `RouteLegs.plan`（不计入线路自身路径）。`PathFailure` 新增 `WAYPOINT_UNREACHABLE` 排在最后，旧类型编号不变；旧客户端读到未知编号按 `NO_ROUTE` 显示。
 
 0.65.24 补充：游戏侧 `PathFinder.appendPath` 用一次 `addAll` 追加，`JoinedPath` 新增 `pieceCount()` 供测试核对分段数。`Siding` 载入时对单条接续定义和单列车容错：坏条目或缺失引用只丢掉对应列车（运行状态允许重置），存车线位置与设置保留；组件侧 `RunRecord` 仍按原规则严格校验。存档与网络格式不变。
+
+## 规则线路按名字认（0.69.1，2026-11-12）
+
+`transitsim.plan.DepotRules.sameLine`：两个线路键运输方式相同，且任一语言的线路名相同，就算同一条线；`match` 经 `isForLine` 用它判断规则是否适用于某条线。线路键随线路名变，原先要求完全相等，线路名从"S1"改成"S1各停|S1 Local"后，规则就失效了（Q 盘世界）。网页规则面板用同一规则（`editor-web/src/core/depots.ts` 的 `sameLine`）。测试：`DepotRulesTest.aRuleIsStillForItsLineOnceTheLineIsNamedInMoreLanguages`、`editor-web/test/sameLine.test.ts`。游戏侧到站表的两处修正（始发站折返时的在站判断、扣车时发车时刻未知）只在 `TrainServer`，组件不变。
+
+## 音频的拼接播放（0.70.0，2026-11-12）
+
+`transitsim.sim.ClipSequence`：一个音频方块的几段音频一段接一段地播。播放端每 tick 告诉它刚开始的那段是否还在播，它回答现在开始哪一段：每段播完后空它设定的空隙，最后一段后循环就空循环间隔再从第一段开始，单次播放就结束；`totalTicks` 给出单次播放的总长（各段时长加中间空隙），服务端的 `PlaybackGate` 用它判断能否再触发。游戏侧只负责"这段还在播"（客户端 `SpeakerPlayback` 问声音管理器）和真正放声音。测试：`ClipSequenceTest`。跨车厂换线、跨车型套用运用组只在网页（`editor-web/src/core/depotMove.ts`），组件不变。
