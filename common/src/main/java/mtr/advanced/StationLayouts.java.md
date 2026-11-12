@@ -1,6 +1,6 @@
 # StationLayouts.java
 
-车站周围一个方框内轨道的真实形状，供高级编辑器的股道图使用（设计文档 6.12，D 块）。客户端只保存玩家附近的完整轨道，仪表盘地图上的轨道线是两端间的直线，会把弯曲的渡线画错，所以由服务器沿曲线取样每条轨道。请求与回应：客户端 `PacketTrainDataGuiClient`（`:294` 写种子、`:299` 读回应），服务端 `PacketTrainDataGuiServer`（`:588-610` 限流、裁剪方框、读种子、写回应）；`EditorLayout.java:163` 用 `clampBox`；`RouteLayouts` 复用 `connectedNodes` 与 `Layout`。
+车站周围一个方框内轨道的真实形状，供高级编辑器的股道图使用（设计文档 6.12，D 块）。客户端只保存玩家附近的完整轨道，仪表盘地图上的轨道线是两端间的直线，会把弯曲的渡线画错，所以由服务器沿曲线取样每条轨道。请求与回应：客户端 `PacketTrainDataGuiClient`（`:294` 写种子、`:299` 读回应），服务端 `PacketTrainDataGuiServer`（`:588-610` 限流、裁剪方框、读种子、写回应）；`EditorLayout.java:163` 用 `clampBox`；`RouteLayouts` 是线路级的对应物。
 
 ## final class StationLayouts
 
@@ -37,7 +37,7 @@
 
 ### `private static Set<Long> connectedNodes(Map<BlockPos, Map<BlockPos, Rail>> rails, long[] seeds)`
 - 作用：广度优先，从种子沿轨道两个方向（单向轨道在物理上仍相连）可达的节点集合（含种子本身）。
-- 主要调用者：本类 `write`；`RouteLayouts.java:89`（同名私有实现或复制，未确定）。
+- 主要调用者：本类 `write`。（`RouteLayouts` 有自己基于 `RailGraph` 的同名私有方法。）
 
 ### `public static int[] clampBox(int minX, int minZ, int maxX, int maxZ)`
 - 作用：把方框限制到最大 `MAX_SIZE`，以原中心为中心；负宽度视为 0。
@@ -46,4 +46,4 @@
 
 ## public static final class Layout
 - `box`、`mode`（交通方式序号）、`seeds`（请求时的站台端点，用于把回应对应到请求）、`truncated`、`lines`（每条轨道 `x, z, x, z, ...`）。
-- 构造函数私有，仅 `read` 创建（`RouteLayouts.java:196`、`:236` 的调用者为同名构造，未确定是否同一个类）。
+- 构造函数私有，仅 `read` 创建。（`RouteLayouts` 有自己的同名 `Layout` 类。）
