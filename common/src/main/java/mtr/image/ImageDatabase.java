@@ -28,7 +28,7 @@ public final class ImageDatabase implements AutoCloseable {
 	}
 	public void add(String namespace, String fileName, byte[] bytes, String uploader, String uploaderName) throws Exception {
 		final String reference = namespace + ":" + fileName;
-		if (!ImageFiles.isReference(reference) || fileName.endsWith(".gif") != ImageFiles.isGif(bytes)) {
+		if (!ImageFiles.isReference(reference) || !fileName.endsWith(ImageFiles.extensionOf(bytes))) {
 			throw new IllegalArgumentException("gui.mtr.image_invalid");
 		}
 		final int[] size = ImageFiles.check(bytes);

@@ -13,13 +13,15 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * Fares by distance in the game (design document 6.13, 0.68.0): the fare groups, which are the railway companies, the
- * network fares are worked out on, made from the routes' paths, and what a station's gates stand for.
+ * Fares by distance in the game (design document 6.13, 0.68.0): the fare rules (票务规则, 0.73.0; called groups in the
+ * fare component), the network fares are worked out on, made from the routes' paths, and what a station's gates stand
+ * for.
  * <p>
- * A route is in the group of its line unless it was put in another by hand ({@link NetworkSettings#fareRouteGroups}). A
- * station belongs to the groups of the routes calling at it unless set by hand ({@link NetworkSettings#fareStationGroups});
- * its gates, found by the station's area, which may be set by height, stand for its groups, shared if there are several.
- * The rules themselves are in {@link transitsim.fare}.
+ * The rules are made and removed by hand ({@link NetworkSettings#fareRules}); a line goes by the rule it was put in, set
+ * for all its routes ({@link NetworkSettings#fareRouteGroups}), else by the default rule. A station belongs to the rules
+ * of the routes calling at it unless set by hand ({@link NetworkSettings#fareStationGroups}); its gates, found by the
+ * station's area, which may be set by height, stand for its rules, shared if there are several. A rule's tiers go up to
+ * the length of its reference line if it has one. The fare rules themselves are in {@link transitsim.fare}.
  */
 public final class FareData {
 
@@ -29,47 +31,56 @@ public final class FareData {
 	private long networkKey = Long.MIN_VALUE;
 
 	/**
-	 * @return the group of a route's line, as routes are in unless put in another by hand
+	 * @return the key of a route's line, the same for all its directions and service types: what a fare rule is chosen
+	 * for and what a rule's reference line names
 	 */
 	public static String getAutoGroupKey(Route route) {
 		return AUTO_PREFIX + route.transportMode + ":" + route.getLineKey();
 	}
 
 	/**
-	 * @return the fare group a route is in
+	 * @return the fare rule a route goes by: its own, else that of another route of its line (one added to the line since
+	 * it was put in a rule), else the default
 	 */
-	public static String getGroupKey(Route route, NetworkSettings settings) {
-		final String set = settings.fareRouteGroups.get(route.id);
-		return set == null || set.isEmpty() ? getAutoGroupKey(route) : set;
+	public static String getGroupKey(Route route, DataCache dataCache, NetworkSettings settings) {
+		final String own = settings.fareRouteGroups.get(route.id);
+		if (own != null && settings.fareRules.containsKey(own)) {
+			return own;
+		}
+		final String line = getAutoGroupKey(route);
+		for (final Route other : dataCache.routeIdMap.values()) {
+			final String set = other.id == route.id ? null : settings.fareRouteGroups.get(other.id);
+			if (set != null && settings.fareRules.containsKey(set) && getAutoGroupKey(other).equals(line)) {
+				return set;
+			}
+		}
+		return settings.getDefaultFareRule();
 	}
 
 	/**
-	 * @return every fare group with its name: the line's name for a line's group, its own key for one named by hand
+	 * @return every fare rule with its name, in order, the default first
 	 */
 	public static Map<String, String> getAllGroups(DataCache dataCache) {
 		return getAllGroups(dataCache, dataCache.networkSettings);
 	}
 
-	/**
-	 * @return every fare group with its name, with the groups of routes and stations as in the settings given
-	 */
 	public static Map<String, String> getAllGroups(DataCache dataCache, NetworkSettings settings) {
-		final Map<String, String> groups = new TreeMap<>();
+		final Map<String, String> rules = new java.util.LinkedHashMap<>();
+		settings.fareRules.forEach((id, rule) -> rules.put(id, rule.name.isEmpty() ? id : rule.name));
+		return rules;
+	}
+
+	/**
+	 * @return the lines of the routes shown, by key ({@link #getAutoGroupKey}), with their names, by name
+	 */
+	public static Map<String, String> getLines(DataCache dataCache) {
+		final Map<String, String> lines = new TreeMap<>();
 		dataCache.routeIdMap.values().forEach(route -> {
 			if (!route.isHidden && route.platformIds.size() >= 2) {
-				groups.putIfAbsent(getAutoGroupKey(route), IGui.formatStationName(route.getLineName()));
+				lines.putIfAbsent(getAutoGroupKey(route), IGui.formatStationName(route.getLineName()));
 			}
 		});
-		final Map<String, String> used = new TreeMap<>();
-		dataCache.routeIdMap.values().forEach(route -> {
-			if (!route.isHidden && route.platformIds.size() >= 2) {
-				final String group = getGroupKey(route, settings);
-				used.put(group, groups.getOrDefault(group, group));
-			}
-		});
-		// Groups named by hand with no route in them yet, as given to stations
-		settings.fareStationGroups.values().forEach(stationGroups -> stationGroups.forEach(group -> used.putIfAbsent(group, groups.getOrDefault(group, group))));
-		return used;
+		return lines;
 	}
 
 	/**
@@ -86,7 +97,7 @@ public final class FareData {
 				final Station station = dataCache.platformIdToStation.get(routePlatform.platformId);
 				return station != null && station.id == stationId;
 			})) {
-				groups.add(getGroupKey(route, settings));
+				groups.add(getGroupKey(route, dataCache, settings));
 			}
 		});
 		return groups;
@@ -97,14 +108,18 @@ public final class FareData {
 	 */
 	public static Set<String> getStationGroups(DataCache dataCache, long stationId) {
 		final List<String> set = dataCache.networkSettings.fareStationGroups.get(stationId);
-		return set == null || set.isEmpty() ? getRouteGroups(dataCache, stationId) : new TreeSet<>(set);
+		final Set<String> known = new TreeSet<>();
+		if (set != null) {
+			set.stream().filter(dataCache.networkSettings.fareRules::containsKey).forEach(known::add);
+		}
+		return known.isEmpty() ? getRouteGroups(dataCache, stationId) : known;
 	}
 
 	/**
 	 * @return the network fares go by, made again once the routes, their groups or their paths change
 	 */
 	public FareNetwork getNetwork(RailwayData railwayData, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		long key = railwayData.routePaths.getTimingVersion() * 31 + railwayData.dataCache.networkSettings.fareRouteGroups.hashCode();
+		long key = (railwayData.routePaths.getTimingVersion() * 31 + railwayData.dataCache.networkSettings.fareRouteGroups.hashCode()) * 31 + railwayData.dataCache.networkSettings.fareRules.hashCode();
 		for (final Route route : railwayData.dataCache.routeIdMap.values()) {
 			key = key * 31 + route.id;
 			key = key * 31 + (route.isHidden ? 1 : 0) + route.getLineKey().hashCode();
@@ -117,7 +132,10 @@ public final class FareData {
 		}
 		if (network == null || key != networkKey) {
 			final List<Route> crowFlies = new ArrayList<>();
-			network = new FareNetwork(getLegs(railwayData, rails, crowFlies));
+			final Map<String, Long> lineLengths = new java.util.HashMap<>();
+			network = new FareNetwork(getLegs(railwayData, rails, crowFlies, lineLengths));
+			// A rule's tiers go up to its reference line's length (0.73.0)
+			railwayData.dataCache.networkSettings.fareRules.forEach((id, rule) -> network.setLongestBlocks(id, lineLengths.getOrDefault(rule.referenceLine, 0L)));
 			networkKey = key;
 			findPathsLater(railwayData, crowFlies);
 		}
@@ -154,16 +172,18 @@ public final class FareData {
 	 * The track between the stops in a row of every route: along its path found or drawn by hand, or as the crow flies if
 	 * it has none (yet).
 	 *
-	 * @param crowFlies given the routes that could have a path found but have none yet
+	 * @param crowFlies   given the routes that could have a path found but have none yet
+	 * @param lineLengths given each line's length: its longest route's, first stop to last
 	 */
-	private static List<FareNetwork.Leg> getLegs(RailwayData railwayData, Map<BlockPos, Map<BlockPos, Rail>> rails, List<Route> crowFlies) {
+	private static List<FareNetwork.Leg> getLegs(RailwayData railwayData, Map<BlockPos, Map<BlockPos, Rail>> rails, List<Route> crowFlies, Map<String, Long> lineLengths) {
 		final DataCache dataCache = railwayData.dataCache;
 		final List<FareNetwork.Leg> legs = new ArrayList<>();
 		for (final Route route : dataCache.routeIdMap.values()) {
 			if (route.isHidden || route.platformIds.size() < 2) {
 				continue;
 			}
-			final String group = getGroupKey(route, dataCache.networkSettings);
+			final String group = getGroupKey(route, dataCache, dataCache.networkSettings);
+			long routeBlocks = 0;
 			final List<mtr.path.PathData> drawn = route.getPathData();
 			final RoutePaths.RoutePath path = drawn.isEmpty() ? railwayData.routePaths.getFound(route, dataCache, rails) : null;
 			if (drawn.isEmpty() && path == null && RoutePaths.timesByPath(route)) {
@@ -182,7 +202,9 @@ public final class FareData {
 					blocks = Math.sqrt(from.getMidPos().distSqr(to.getMidPos()));
 				}
 				legs.add(new FareNetwork.Leg(group, fromStation.id, toStation.id, Math.round(blocks)));
+				routeBlocks += Math.round(blocks);
 			}
+			lineLengths.merge(getAutoGroupKey(route), routeBlocks, Math::max);
 		}
 		return legs;
 	}

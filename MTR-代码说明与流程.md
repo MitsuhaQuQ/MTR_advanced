@@ -74,6 +74,22 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.73.0 票务规则（用户 2026-11-12，存档和网络包改动）：以前票价按"票价组"算，每条线自动一组，票价栏就是一条线一项，线路栏按种别（上下行、各停/快速）逐个列出。现在：
+
+- **票务规则**（`NetworkSettings.fareRules`：ID → `FareRule`，名字和参考线路；按顺序，第一条是默认规则，至少一条；存档键 `fare_rules`，网络包在车站票价组之后、行车侧之前）。规则的票价仍在 `fareLevels` 里，键改为规则 ID；线路（`fareRouteGroups`，按线路 ID）和车站（`fareStationGroups`）记规则 ID。`keepFareRulesKnown` 去掉不存在的规则的票价和归属。旧存档没有 `fare_rules`：读成一条"默认"规则，旧的分组票价和归属全部丢掉（用户选的）。
+- **线路归属**（`FareData.getGroupKey(route, dataCache, settings)`）：自己的规则，否则同一条线其他种别的规则（线路后来新加的种别跟着这条线），否则默认规则。`getAutoGroupKey` 现在只当"线路键"用（同一条线的各方向、种别相同），`getLines` 列出全部线路。
+- **参考线路**：规则可以选一条线路，阶梯按这条线的长度（它最长的种别从头到尾的距离，`getLegs` 顺带算出 `lineLengths`）做到底；组件 `FareNetwork.setLongestBlocks` 设定这个"最长距离"，不再按规则内线路的最长行程算。最长距离手填时仍以手填的为准。
+- **界面**（`FareScreen`）：票价栏列规则，左下"新增票务规则"；选中规则后可改名、换参考线路（依次切换，第一项是"无"），"删除后线路和车站归：X"选好去向再"删除"，归它的线路改为 X，手动指定了它的车站改为 X。线路栏一条线一行（`LineItem`），不再按上下行、种别分开，点规则按钮把这条线的所有种别一起设过去。车站栏不变，列的是规则。`FarePackets` 带上规则，服务端检查后整体替换。
+- 测试：`FareTest.aReferenceLineSetsTheLongestDistance`、`NetworkSettingsTest`（存读、复制、旧存档迁移、删规则后清理）。
+
+0.72.0 广播器（用户 2026-11-12，网络包改动）：
+
+- **只保留原版用法**：广播器（`BlockTrainAnnouncer`）只在列车经过时向车上乘客播报（`TrainServer` 扫到它后调 `announce`，每位乘客 20 秒内一次），和 MTR 原版一样。本分支加过的到站触发（到站前、停站后、发车前 N 秒，`StationCall`）、触发秒数和"向站台广播"都删掉：方块不再 tick，设置界面去掉秒数输入框、触发方式和听众按钮。旧存档里的 `station_trigger`、`station_seconds`、`station_to_riders` 原样读进来再写回去（`retiredSettings`），不再起作用，所以这类广播器恢复为列车经过时向乘客播报。时刻表传感器的触发不受影响。
+- **多段拼接**：广播器存一张声音列表（`mtr.audio.AnnouncementClips`：每段一个声音和播完后的空隙，单位 0.1 秒，最多 16 段），可以是游戏的声音、上传的音频或网址，存成文本 `[["声音",空隙],…]`（存档键 `sound_clips`）。第一段仍写进 `sound_string`、`sound_id`，旧版本照样播第一段；旧存档没有 `sound_clips`，读成一段。设置包的字符串改为"文字、第一段声音、列表"（不再有触发设置）；播报包（`PacketTrainDataGuiServer.announceS2C`）在原来的文字和声音后面再带列表。客户端 `AnnouncementPlayer.play(clips, pos)` 按组件 `ClipSequence` 一段接一段播（`Sequence`，每个客户端 tick 由 `AnnouncementPlayer.tick` 推进）：游戏的声音和游戏已认识的上传音频用 `SimpleSoundInstance` 播，问声音管理器是否还在播；其余上传音频和网址照旧解码后直接输出，播放线程播完置标志（`decodeAndPlay` 的 `done`）。拿不到的声音（文件还没下载、网站不在允许名单）当作立即播完。新的播报照旧打断上一条。界面（`TrainAnnouncerScreen`）："音频文件"输入框是第一段，旁边的"拼接…（N 段）"打开列表：每段可输入或"选择"声音（选择列表里点一下试听），填播完后空几秒（最后一段没有），上下移动、删除、添加。
+- 测试：`AnnouncementClipsTest`。
+
+0.71.0 导入图片支持 JPEG（2026-11-12，存档里的图片名和网络包能带 `.jpg`，客户端和服务端要一起换）：用户上传 3.6 MB 的照片被提示"不能超过 5 MB"。原因是网页（`ImagesLibrary.tsx` 的 `prepareImage`）把所有图片在画布上重画成 PNG 再上传，照片的无损 PNG 通常是 JPEG 的 2–4 倍。PNG 并不是游戏的要求（1.20.1 的 `NativeImage.read` 用 stb_image，不校验 PNG 文件头），只是导入图片当初只认 PNG 和 GIF。现在：`ImageFiles.check` 认 JPEG（`isJpeg`：FF D8 FF），先用 `ImageReader` 读文件头里的宽高、超过 2048 先拒绝，再整张解码确认读得出（`checkJpeg`）；图片名允许 `.jpg`（`isReference`），扩展名和内容类型按内容取（`extensionOf`、`contentTypeOf`，`ImageServer`、`ImageDatabase.add`、`EditorServer` 用它们）。客户端（`ImportedImages.texture`）用 Java 的解码器（`decodeJpeg`）逐像素写进 `NativeImage`，不依赖游戏自己的解码（以后的游戏版本只读 PNG）。网页：PNG、JPEG 不超过 5 MB 原样上传；超过时按原格式重存（JPEG 质量 0.9），还超过就按比例缩小直到放得下，上传完成的提示里写缩到了多少像素。JPEG 没有透明。CMYK 等 Java 读不了的 JPEG 会被服务端拒绝（提示"请选择不超过 5 MB 的有效 PNG、JPEG 或 GIF"）。测试：`ImagesTest.acceptsJpegAsItIs`、`editor-web/test/images.test.tsx`。
+
 0.70.0 Q 盘世界的几项（2026-11-12）：
 
 - **跨车型套用运用组**（网页，`editor-web/src/core/depotMove.ts` 的 `applyDutyGroup`，`views/DepotExtras.tsx` 的运用组面板）：列出其他车厂所有按运用图的运用组（自动排的也算），不再只列同车型的；车型不同时在那一行选"放到"本车厂的哪种车型，放进那种车型的存车线。Q 盘每个车厂一种车型，以前列表总是空的。

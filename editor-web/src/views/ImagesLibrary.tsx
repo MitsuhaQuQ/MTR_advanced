@@ -14,7 +14,21 @@ const base64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
   reader.readAsDataURL(blob)
 })
 
-export async function prepareImage(file: File, maxDimension: number, maxBytes: number): Promise<{ name: string; blob: Blob }> {
+/** What a file is by its first bytes: "png", "jpeg" or "" */
+const kindOf = async (file: Blob) => {
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+  if (head.length === 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => head[i] === byte)) return "png"
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "jpeg"
+  return ""
+}
+
+/**
+ * The game stores PNG, JPEG (0.71.0) and GIF of at most maxBytes. A PNG or JPEG that fits goes as it is; one too big is
+ * saved again in its own kind (JPEG at quality 0.9) and, if still too big, scaled down until it fits. Before, every image
+ * was saved as PNG, often several times a photo's JPEG size, so a 3.6 MB photo was refused as "over 5 MB" (Q world,
+ * 2026-11-12). @return scaled: the size it was scaled to, if it was
+ */
+export async function prepareImage(file: File, maxDimension: number, maxBytes: number): Promise<{ name: string; blob: Blob; scaled?: [number, number] }> {
   if (!/\.(png|jpe?g|gif)$/i.test(file.name) || file.size > 16 * 1024 * 1024) throw new Error(tr("请选择不超过 16 MB 的 PNG、JPEG 或 GIF 图片。"))
   const baseName = file.name.replace(/\.(png|jpe?g|gif)$/i, "")
   if (/\.gif$/i.test(file.name)) {
@@ -29,15 +43,26 @@ export async function prepareImage(file: File, maxDimension: number, maxBytes: n
   const bitmap = await createImageBitmap(file)
   try {
     if (bitmap.width > maxDimension || bitmap.height > maxDimension) throw new Error(tr("图片宽高不能超过 {0} 像素。", maxDimension))
-    const canvas = document.createElement("canvas")
-    canvas.width = bitmap.width
-    canvas.height = bitmap.height
-    const context = canvas.getContext("2d")
-    if (!context) throw new Error(tr("无法读取图片。"))
-    context.drawImage(bitmap, 0, 0)
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error(tr("无法读取图片。"))), "image/png"))
-    if (blob.size > maxBytes) throw new Error(tr("转换后的图片不能超过 5 MB。"))
-    return { name: baseName + ".png", blob }
+    const kind = await kindOf(file)
+    const extension = kind === "jpeg" ? ".jpg" : ".png"
+    if (kind && file.size <= maxBytes) return { name: baseName + extension, blob: file }
+    const type = kind === "jpeg" ? "image/jpeg" : "image/png"
+    let scale = 1
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale))
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext("2d")
+      if (!context) throw new Error(tr("无法读取图片。"))
+      context.imageSmoothingQuality = "high"
+      context.drawImage(bitmap, 0, 0, width, height)
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error(tr("无法读取图片。"))), type, 0.9))
+      if (blob.size <= maxBytes) return scale === 1 ? { name: baseName + extension, blob } : { name: baseName + extension, blob, scaled: [width, height] }
+      // The size goes roughly with the pixels; a little under, so most images fit the next time
+      scale *= Math.min(0.9, Math.sqrt(maxBytes / blob.size) * 0.95)
+    }
+    throw new Error(tr("转换后的图片不能超过 5 MB。"))
   } finally { bitmap.close() }
 }
 
@@ -78,7 +103,7 @@ export function ImagesLibrary() {
         if (response.ok) {
           const blob = await response.blob()
           const encoded = await base64(blob)
-          const mime = blob.type === "image/gif" ? "image/gif" : "image/png"
+          const mime = /^image\/(gif|jpeg|png)$/.test(blob.type) ? blob.type : "image/png"
           if (!stopped) setPreview("data:" + mime + ";base64," + encoded)
           return
         }
@@ -101,7 +126,8 @@ export function ImagesLibrary() {
     try {
       // One transfer at a time, as the game keeps one upload per player.
       for (const file of files) {
-        const { name, blob } = await prepareImage(file, data.maxDimension, data.maxBytes)
+        const { name, blob, scaled } = await prepareImage(file, data.maxDimension, data.maxBytes)
+        const note = scaled ? " " + tr("（{0} 超过 5 MB，已缩小到 {1}×{2} 像素）", file.name, scaled[0], scaled[1]) : ""
         if (!alive.current) break
         await post({ name, data: await base64(blob) })
         setMessage(tr("正在上传图片，完成后会出现在图片库中。"))
@@ -113,7 +139,7 @@ export function ImagesLibrary() {
           const next: Library = await response.json()
           if (!alive.current) break
           setData(next)
-          if (!next.busy) { setMessage(next.message); break }
+          if (!next.busy) { setMessage(next.message + note); break }
           if (Date.now() - started > 65000) throw new Error(tr("图片上传超时，请重试。"))
           await new Promise(resolve => window.setTimeout(resolve, 500))
         }

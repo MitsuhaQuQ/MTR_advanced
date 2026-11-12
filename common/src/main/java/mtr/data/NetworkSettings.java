@@ -85,18 +85,62 @@ public final class NetworkSettings extends SerializedDataBase {
 	public static final int MAX_RUNNING_SIDES = 4096;
 
 	/**
-	 * Each route group's fares (design document 6.13, 0.68.0), by its group key ({@link FareData#getGroupKey}); a group not
-	 * here is charged by the defaults.
+	 * The fare rules (票务规则, 0.73.0), by ID, in the order shown; the first is the default, which a line not put in
+	 * another goes by. There is always one. A rule's fares are in {@link #fareLevels} under its ID. Saves before 0.73.0
+	 * had a fare group for each line: they are read as the one default rule, their groups' fares and assignments dropped
+	 * (user, 2026-11-12).
+	 */
+	public final Map<String, FareRule> fareRules = new java.util.LinkedHashMap<>();
+	public static final String DEFAULT_FARE_RULE = "default";
+
+	{
+		fareRules.put(DEFAULT_FARE_RULE, new FareRule("默认", ""));
+	}
+
+	/**
+	 * A fare rule's name, and the line whose length its tiers are made up to ({@link FareData#getAutoGroupKey}), or "" for
+	 * the longest trip on the rule's own lines.
+	 */
+	public static final class FareRule {
+
+		public final String name;
+		public final String referenceLine;
+
+		public FareRule(String name, String referenceLine) {
+			this.name = name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
+			this.referenceLine = referenceLine.length() > MAX_LINE_KEY_LENGTH ? "" : referenceLine;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return object instanceof FareRule && ((FareRule) object).name.equals(name) && ((FareRule) object).referenceLine.equals(referenceLine);
+		}
+
+		@Override
+		public int hashCode() {
+			return name.hashCode() * 31 + referenceLine.hashCode();
+		}
+	}
+
+	/**
+	 * @return the default fare rule's ID: the first
+	 */
+	public String getDefaultFareRule() {
+		return fareRules.isEmpty() ? DEFAULT_FARE_RULE : fareRules.keySet().iterator().next();
+	}
+
+	/**
+	 * Each fare rule's fares (design document 6.13, 0.68.0), by its ID; a rule not here is charged by the defaults.
 	 */
 	public final Map<String, transitsim.fare.FareLevels> fareLevels = new java.util.TreeMap<>();
 	/**
-	 * Routes put in another fare group by hand, by route ID: the group's key, an automatic one ({@link FareData#getAutoGroupKey})
-	 * or a name of its own. A route not here is in the group of its line.
+	 * The fare rule of routes, by route ID (0.73.0: set for all the routes of a line at once); a route not here goes by its
+	 * line's other routes, else by the default rule ({@link FareData#getGroupKey}).
 	 */
 	public final Map<Long, String> fareRouteGroups = new java.util.TreeMap<>();
 	/**
-	 * The fare groups of stations set by hand, by station ID; with several, the station's gates are shared by them. A
-	 * station not here belongs to the groups of the routes calling at it. Its gates go by the station they are in.
+	 * The fare rules of stations set by hand, by station ID; with several, the station's gates are shared by them. A
+	 * station not here belongs to the rules of the routes calling at it. Its gates go by the station they are in.
 	 */
 	public final Map<Long, List<String>> fareStationGroups = new java.util.TreeMap<>();
 	public static final int MAX_FARE_GROUPS = 1024;
@@ -151,6 +195,7 @@ public final class NetworkSettings extends SerializedDataBase {
 	private static final String KEY_FARE_LEVELS = "fare_levels";
 	private static final String KEY_FARE_ROUTE_GROUPS = "fare_route_groups";
 	private static final String KEY_FARE_STATION_GROUPS = "fare_station_groups";
+	private static final String KEY_FARE_RULES = "fare_rules";
 	private static final String KEY_RUNNING_SIDES = "running_sides";
 
 	public NetworkSettings() {
@@ -240,6 +285,34 @@ public final class NetworkSettings extends SerializedDataBase {
 				}
 			}
 		});
+		if (map.containsKey(KEY_FARE_RULES)) {
+			fareRules.clear();
+			messagePackHelper.iterateMapValue(KEY_FARE_RULES, entry -> {
+				if (fareRules.size() < MAX_FARE_GROUPS && entry.getValue().isMapValue()) {
+					final MessagePackHelper ruleHelper = new MessagePackHelper(RailwayData.castMessagePackValueToSKMap(entry.getValue()));
+					fareRules.put(entry.getKey().asStringValue().asString(), new FareRule(ruleHelper.getString("name", ""), ruleHelper.getString("reference_line", "")));
+				}
+			});
+			if (fareRules.isEmpty()) {
+				fareRules.put(DEFAULT_FARE_RULE, new FareRule("默认", ""));
+			}
+		} else {
+			// A save before 0.73.0: its groups by line all become the one default rule
+			fareLevels.clear();
+			fareRouteGroups.clear();
+			fareStationGroups.clear();
+		}
+		keepFareRulesKnown();
+	}
+
+	/**
+	 * Takes out fares and assignments of rules there are none of.
+	 */
+	public void keepFareRulesKnown() {
+		fareLevels.keySet().retainAll(fareRules.keySet());
+		fareRouteGroups.values().removeIf(rule -> !fareRules.containsKey(rule));
+		fareStationGroups.values().forEach(rules -> rules.removeIf(rule -> !fareRules.containsKey(rule)));
+		fareStationGroups.values().removeIf(List::isEmpty);
 	}
 
 	private static transitsim.fare.FareLevels readFareLevels(MessagePackHelper helper) {
@@ -400,6 +473,15 @@ public final class NetworkSettings extends SerializedDataBase {
 			}
 			fareStationGroups.put(stationId, groups);
 		}
+		fareRules.clear();
+		final int ruleCount = readCount(packet, MAX_FARE_GROUPS);
+		for (int i = 0; i < ruleCount; i++) {
+			final String id = packet.readUtf(MAX_LINE_KEY_LENGTH);
+			fareRules.put(id, new FareRule(packet.readUtf(MAX_NAME_LENGTH), packet.readUtf(MAX_LINE_KEY_LENGTH)));
+		}
+		if (fareRules.isEmpty()) {
+			fareRules.put(DEFAULT_FARE_RULE, new FareRule("默认", ""));
+		}
 		runningSides.clear();
 		final int sideCount = readCount(packet, MAX_RUNNING_SIDES);
 		for (int i = 0; i < sideCount; i++) {
@@ -441,6 +523,8 @@ public final class NetworkSettings extends SerializedDataBase {
 		other.fareStationGroups.forEach((stationId, groups) -> fareStationGroups.put(stationId, new ArrayList<>(groups)));
 		runningSides.clear();
 		runningSides.putAll(other.runningSides);
+		fareRules.clear();
+		fareRules.putAll(other.fareRules);
 	}
 
 	@Override
@@ -515,11 +599,17 @@ public final class NetworkSettings extends SerializedDataBase {
 		for (final Map.Entry<String, Integer> entry : runningSides.entrySet()) {
 			messagePacker.packString(entry.getKey()).packInt(entry.getValue());
 		}
+		messagePacker.packString(KEY_FARE_RULES).packMapHeader(fareRules.size());
+		for (final Map.Entry<String, FareRule> entry : fareRules.entrySet()) {
+			messagePacker.packString(entry.getKey()).packMapHeader(2);
+			messagePacker.packString("name").packString(entry.getValue().name);
+			messagePacker.packString("reference_line").packString(entry.getValue().referenceLine);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 12;
+		return 13;
 	}
 
 	@Override
@@ -593,6 +683,12 @@ public final class NetworkSettings extends SerializedDataBase {
 			packet.writeVarInt(groups.size());
 			groups.forEach(group -> packet.writeUtf(group, MAX_LINE_KEY_LENGTH));
 		});
+		packet.writeVarInt(fareRules.size());
+		fareRules.forEach((id, rule) -> {
+			packet.writeUtf(id, MAX_LINE_KEY_LENGTH);
+			packet.writeUtf(rule.name, MAX_NAME_LENGTH);
+			packet.writeUtf(rule.referenceLine, MAX_LINE_KEY_LENGTH);
+		});
 		packet.writeVarInt(runningSides.size());
 		runningSides.forEach((key, side) -> {
 			packet.writeUtf(key, MAX_LINE_KEY_LENGTH + 1);
@@ -602,12 +698,12 @@ public final class NetworkSettings extends SerializedDataBase {
 
 	@Override
 	public boolean equals(Object object) {
-		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups) && ((NetworkSettings) object).runningSides.equals(runningSides);
+		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups) && ((NetworkSettings) object).runningSides.equals(runningSides) && new ArrayList<>(((NetworkSettings) object).fareRules.entrySet()).equals(new ArrayList<>(fareRules.entrySet()));
 	}
 
 	@Override
 	public int hashCode() {
-		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode() + 47 * runningSides.hashCode();
+		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode() + 47 * runningSides.hashCode() + 53 * fareRules.hashCode();
 	}
 
 	/**

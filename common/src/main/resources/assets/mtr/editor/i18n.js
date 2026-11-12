@@ -728,6 +728,7 @@ const I18N = (() => {
 			"套用其他车厂的运用组": "Use another depot's duty group",
 			"把那个车厂这组运用（同车型、同样的星期）按存车线顺序放进本车厂的运用草稿，本车厂改为按运用图；那几天本车厂原来的运用换掉。原车厂不变：两边排了同样的班次时，要改掉一边再应用。": "Puts that depot's duties of the group (same vehicle, same weekdays) into this depot's draft, siding by siding in order, and has this depot run by its duties; its own duties on those days are replaced. The other depot stays as it is: where both now run the same services, change one before applying.",
 			"其他车厂没有同车型的运用": "No other depot has duties of these vehicles",
+			"（{0} 超过 5 MB，已缩小到 {1}×{2} 像素）": "({0} was over 5 MB and was scaled down to {1}\u00d7{2} pixels)",
 			"放到": "Onto",
 			"放到本车厂的哪种车型": "Onto which vehicle of this depot",
 			"同车型": "Same vehicle",

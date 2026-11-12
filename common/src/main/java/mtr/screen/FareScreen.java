@@ -32,10 +32,12 @@ import java.util.stream.Collectors;
 /**
  * Fares by distance (design document 6.13, 0.68.0), from the dashboard. Three tabs:
  * <ul>
- * <li>fares: each group's formula, longest distance, cap and overtime fine, and its tiers on a bar of distance, whose
- * bounds can be dragged, added and removed and whose fares can be set for each tier;</li>
- * <li>routes: the group a route is in, its line's or another, also one named here;</li>
- * <li>stations: the groups a station belongs to, whose gates are shared by them if there are several.</li>
+ * <li>fares: the fare rules (0.73.0), made, named and removed here (a removed rule's lines and stations go to the rule
+ * chosen), each with a reference line whose length its tiers go up to, its formula, longest distance, cap and overtime
+ * fine, and its tiers on a bar of distance, whose bounds can be dragged, added and removed and whose fares can be set for
+ * each tier;</li>
+ * <li>lines: the rule of each line, all its directions and service types together (0.73.0);</li>
+ * <li>stations: the rules a station belongs to, whose gates are shared by them if there are several.</li>
  * </ul>
  * Everything is edited on a copy and sent with "save"; the server checks the player may edit.
  */
@@ -78,8 +80,26 @@ public class FareScreen extends ScreenBase implements IGui {
 	private final WidgetBetterTextField fieldTierPrice = numberField();
 	private final Button buttonAddBound;
 	private final Button buttonRemoveBound;
-	private final WidgetBetterTextField fieldNewGroup = new WidgetBetterTextField("", 64);
-	private final Button buttonNewGroup;
+	private final WidgetBetterTextField fieldRuleName = new WidgetBetterTextField("", 64);
+	private final Button buttonNewRule;
+	private final Button buttonReference;
+	private final Button buttonDeleteTarget;
+	private final Button buttonDelete;
+	/** The rule a rule's lines and stations go to when it is removed */
+	private String deleteTarget;
+	/** The lines by key ({@link FareData#getAutoGroupKey}) with their names */
+	private final Map<String, String> lines = FareData.getLines(ClientData.DATA_CACHE);
+
+	/** A line in the lines tab: all its routes go by one rule */
+	private static final class LineItem {
+		private final String key;
+		private final String name;
+
+		private LineItem(String key, String name) {
+			this.key = key;
+			this.name = name;
+		}
+	}
 	private final List<AbstractWidget> dynamicWidgets = new ArrayList<>();
 
 	/**
@@ -114,13 +134,24 @@ public class FareScreen extends ScreenBase implements IGui {
 		buttonKeepTiers = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_keep_tiers"), button -> pendingChoice = false);
 		buttonAddBound = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_add_bound"), button -> addBound());
 		buttonRemoveBound = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_remove_bound"), button -> removeBound());
-		buttonNewGroup = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_new_group"), button -> {
-			final String name = fieldNewGroup.getValue().trim();
-			if (!name.isEmpty() && selected instanceof Route) {
-				edited.fareRouteGroups.put(((Route) selected).id, name);
-				groups.putIfAbsent(name, new Object[]{name, 0L});
-				fieldNewGroup.setValue("");
-				updateDynamicWidgets();
+		buttonNewRule = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_new_rule"), button -> newRule());
+		buttonReference = UtilitiesClient.newButton(Text.literal(""), button -> nextReference());
+		buttonDeleteTarget = UtilitiesClient.newButton(Text.literal(""), button -> {
+			final List<String> others = otherRules();
+			if (!others.isEmpty()) {
+				deleteTarget = others.get((others.indexOf(deleteTarget) + 1) % others.size());
+			}
+			loadFields();
+		});
+		buttonDelete = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_delete_rule"), button -> deleteRule());
+		fieldRuleName.setResponder(text -> {
+			if (!loadingFields && selected instanceof String && edited.fareRules.containsKey(selected)) {
+				final NetworkSettings.FareRule rule = edited.fareRules.get(selected);
+				edited.fareRules.put((String) selected, new NetworkSettings.FareRule(text.trim(), rule.referenceLine));
+				final Object[] value = groups.get(selected);
+				if (value != null) {
+					value[0] = text.trim().isEmpty() ? selected : text.trim();
+				}
 			}
 		});
 
@@ -152,7 +183,13 @@ public class FareScreen extends ScreenBase implements IGui {
 	 * The groups as the server has them, with the longest distance of each.
 	 */
 	public void setGroups(Map<String, Object[]> serverGroups) {
-		serverGroups.forEach((group, value) -> groups.put(group, value));
+		// Only the longest distances: the rules and their names are as edited here
+		serverGroups.forEach((group, value) -> {
+			final Object[] own = groups.get(group);
+			if (own != null) {
+				own[1] = value[1];
+			}
+		});
 		groupsReceived = true;
 		updateList();
 	}
@@ -183,10 +220,13 @@ public class FareScreen extends ScreenBase implements IGui {
 		placeField(fieldTierPrice, x0 + labelWidth, row(8));
 		IDrawing.setPositionAndWidth(buttonAddBound, x0 + half, row(8), half / 2);
 		IDrawing.setPositionAndWidth(buttonRemoveBound, x0 + half + half / 2, row(8), half / 2);
-		placeField(fieldNewGroup, x0, height - SQUARE_SIZE * 2, half);
-		IDrawing.setPositionAndWidth(buttonNewGroup, x0 + half + TEXT_FIELD_PADDING, height - SQUARE_SIZE * 2, half / 2);
+		placeField(fieldRuleName, x0 + labelWidth - FIELD_WIDTH, row(10), FIELD_WIDTH * 2);
+		IDrawing.setPositionAndWidth(buttonReference, x0 + half, row(10), half);
+		IDrawing.setPositionAndWidth(buttonDeleteTarget, x0, row(11), half + half / 2);
+		IDrawing.setPositionAndWidth(buttonDelete, x0 + half + half / 2, row(11), half / 2);
+		IDrawing.setPositionAndWidth(buttonNewRule, 0, height - SQUARE_SIZE * 2, LIST_WIDTH);
 
-		for (final AbstractWidget widget : new AbstractWidget[]{buttonTabFares, buttonTabRoutes, buttonTabStations, buttonSave, buttonCancel, fieldStartFare, fieldUnitFare, fieldInitial, fieldUnit, fieldMax, fieldCap, checkboxOvertime, fieldOvertimeHours, fieldOvertimeFine, buttonRecalculate, buttonKeepTiers, fieldTierPrice, buttonAddBound, buttonRemoveBound, fieldNewGroup, buttonNewGroup}) {
+		for (final AbstractWidget widget : new AbstractWidget[]{buttonTabFares, buttonTabRoutes, buttonTabStations, buttonSave, buttonCancel, fieldStartFare, fieldUnitFare, fieldInitial, fieldUnit, fieldMax, fieldCap, checkboxOvertime, fieldOvertimeHours, fieldOvertimeFine, buttonRecalculate, buttonKeepTiers, fieldTierPrice, buttonAddBound, buttonRemoveBound, fieldRuleName, buttonReference, buttonDeleteTarget, buttonDelete, buttonNewRule}) {
 			addDrawableChild(widget);
 		}
 		updateList();
@@ -218,7 +258,8 @@ public class FareScreen extends ScreenBase implements IGui {
 				listItems.addAll(groups.keySet());
 				break;
 			case ROUTES:
-				listItems.addAll(ClientData.DATA_CACHE.routeIdMap.values().stream().filter(route -> !route.isHidden && route.platformIds.size() >= 2).sorted(Comparator.comparing(route -> route.name)).collect(Collectors.toList()));
+				// A line once, not each of its directions and service types (0.73.0)
+				lines.entrySet().stream().sorted(Map.Entry.comparingByValue()).forEach(line -> listItems.add(new LineItem(line.getKey(), line.getValue())));
 				break;
 			case STATIONS:
 				listItems.addAll(ClientData.DATA_CACHE.stationIdMap.values().stream().sorted(Comparator.comparing(station -> station.name)).collect(Collectors.toList()));
@@ -237,8 +278,11 @@ public class FareScreen extends ScreenBase implements IGui {
 			widget.visible = fares;
 		}
 		buttonKeepTiers.visible = fares && pendingChoice;
-		fieldNewGroup.visible = tab == Tab.ROUTES && selected instanceof Route;
-		buttonNewGroup.visible = fieldNewGroup.visible;
+		for (final AbstractWidget widget : new AbstractWidget[]{fieldRuleName, buttonReference, buttonDeleteTarget, buttonDelete}) {
+			widget.visible = fares;
+		}
+		buttonNewRule.visible = tab == Tab.FARES;
+		buttonNewRule.active = edited.fareRules.size() < NetworkSettings.MAX_FARE_GROUPS;
 		buttonTabFares.active = tab != Tab.FARES;
 		buttonTabRoutes.active = tab != Tab.ROUTES;
 		buttonTabStations.active = tab != Tab.STATIONS;
@@ -256,6 +300,17 @@ public class FareScreen extends ScreenBase implements IGui {
 		checkboxOvertime.setChecked(levels.overtime);
 		fieldOvertimeHours.setValue(String.format(Locale.ENGLISH, "%.1f", levels.overtimeMinutes / 60D));
 		fieldOvertimeFine.setValue(String.valueOf(levels.overtimeFine));
+		final NetworkSettings.FareRule rule = edited.fareRules.get(selected);
+		fieldRuleName.setValue(rule == null ? "" : rule.name);
+		final String reference = rule == null ? "" : rule.referenceLine;
+		buttonReference.setMessage(Text.translatable("gui.mtr.fare_reference_line", reference.isEmpty() ? Text.translatable("gui.mtr.fare_reference_none").getString() : lines.getOrDefault(reference, reference)));
+		final List<String> others = otherRules();
+		if (!others.contains(deleteTarget)) {
+			deleteTarget = others.isEmpty() ? null : others.get(0);
+		}
+		buttonDeleteTarget.setMessage(Text.translatable("gui.mtr.fare_delete_into", deleteTarget == null ? "-" : groupName(deleteTarget)));
+		buttonDeleteTarget.active = others.size() > 1;
+		buttonDelete.active = deleteTarget != null;
 		loadTierPrice();
 		loadingFields = false;
 	}
@@ -281,28 +336,17 @@ public class FareScreen extends ScreenBase implements IGui {
 		final int columnWidth = (width - x0 - SQUARE_SIZE) / 2;
 		final List<String> groupKeys = new ArrayList<>(groups.keySet());
 		final int maxRows = Math.max(1, (height - SQUARE_SIZE * 5) / SQUARE_SIZE);
-		if (tab == Tab.ROUTES && selected instanceof Route) {
-			final Route route = (Route) selected;
-			final String current = edited.fareRouteGroups.get(route.id);
-			final Button auto = UtilitiesClient.newButton(Text.translatable("gui.mtr.fare_route_auto", groupName(FareData.getAutoGroupKey(route))), button -> {
-				edited.fareRouteGroups.remove(route.id);
-				updateDynamicWidgets();
-			});
-			auto.active = current != null;
-			IDrawing.setPositionAndWidth(auto, x0, row(2), columnWidth * 2);
-			dynamicWidgets.add(auto);
+		if (tab == Tab.ROUTES && selected instanceof LineItem) {
+			final LineItem line = (LineItem) selected;
+			final String current = lineRule(line.key);
 			for (int i = 0; i < groupKeys.size() && i < maxRows * 2; i++) {
 				final String group = groupKeys.get(i);
 				final Button button = UtilitiesClient.newButton(Text.literal(groupName(group)), clicked -> {
-					if (group.equals(FareData.getAutoGroupKey(route))) {
-						edited.fareRouteGroups.remove(route.id);
-					} else {
-						edited.fareRouteGroups.put(route.id, group);
-					}
+					routesOf(line.key).forEach(route -> edited.fareRouteGroups.put(route.id, group));
 					updateDynamicWidgets();
 				});
-				button.active = !group.equals(FareData.getGroupKey(route, edited));
-				IDrawing.setPositionAndWidth(button, x0 + (i % 2) * columnWidth, row(3 + i / 2), columnWidth);
+				button.active = !group.equals(current);
+				IDrawing.setPositionAndWidth(button, x0 + (i % 2) * columnWidth, row(2 + i / 2), columnWidth);
 				dynamicWidgets.add(button);
 			}
 		} else if (tab == Tab.STATIONS && selected instanceof Station) {
@@ -340,6 +384,84 @@ public class FareScreen extends ScreenBase implements IGui {
 		}
 		dynamicWidgets.forEach(this::addDrawableChild);
 		loadFields();
+	}
+
+	private static List<Route> routesOf(String lineKey) {
+		return ClientData.DATA_CACHE.routeIdMap.values().stream().filter(route -> !route.isHidden && route.platformIds.size() >= 2 && FareData.getAutoGroupKey(route).equals(lineKey)).collect(Collectors.toList());
+	}
+
+	/**
+	 * @return the rule a line goes by, as its first route does
+	 */
+	private String lineRule(String lineKey) {
+		final List<Route> routes = routesOf(lineKey);
+		return routes.isEmpty() ? edited.getDefaultFareRule() : FareData.getGroupKey(routes.get(0), ClientData.DATA_CACHE, edited);
+	}
+
+	private List<String> otherRules() {
+		return edited.fareRules.keySet().stream().filter(rule -> !rule.equals(selected)).collect(Collectors.toList());
+	}
+
+	/**
+	 * A new rule with the default fares, named "规则 N" to be renamed
+	 */
+	private void newRule() {
+		int number = edited.fareRules.size() + 1;
+		while (edited.fareRules.containsKey("rule:" + number)) {
+			number++;
+		}
+		final String id = "rule:" + number;
+		final String name = Text.translatable("gui.mtr.fare_rule_new_name", number).getString();
+		edited.fareRules.put(id, new NetworkSettings.FareRule(name, ""));
+		groups.put(id, new Object[]{name, 0L});
+		selected = id;
+		selectedTier = -1;
+		pendingChoice = false;
+		updateList();
+	}
+
+	/**
+	 * The next line as the chosen rule's reference, after the last none
+	 */
+	private void nextReference() {
+		if (!(selected instanceof String) || !edited.fareRules.containsKey(selected)) {
+			return;
+		}
+		final NetworkSettings.FareRule rule = edited.fareRules.get(selected);
+		final List<String> keys = new ArrayList<>();
+		keys.add("");
+		lines.entrySet().stream().sorted(Map.Entry.comparingByValue()).forEach(line -> keys.add(line.getKey()));
+		final String next = keys.get((keys.indexOf(rule.referenceLine) + 1) % keys.size());
+		edited.fareRules.put((String) selected, new NetworkSettings.FareRule(rule.name, next));
+		loadFields();
+	}
+
+	/**
+	 * Removes the chosen rule: the lines going by it and the stations set to it go by the rule chosen instead; there is
+	 * always one left
+	 */
+	private void deleteRule() {
+		if (!(selected instanceof String) || deleteTarget == null || edited.fareRules.size() < 2) {
+			return;
+		}
+		final String removed = (String) selected;
+		ClientData.DATA_CACHE.routeIdMap.values().forEach(route -> {
+			if (FareData.getGroupKey(route, ClientData.DATA_CACHE, edited).equals(removed)) {
+				edited.fareRouteGroups.put(route.id, deleteTarget);
+			}
+		});
+		edited.fareStationGroups.values().forEach(rules -> {
+			if (rules.remove(removed) && !rules.contains(deleteTarget)) {
+				rules.add(deleteTarget);
+			}
+		});
+		edited.fareRules.remove(removed);
+		edited.keepFareRulesKnown();
+		groups.remove(removed);
+		selected = deleteTarget;
+		selectedTier = -1;
+		pendingChoice = false;
+		updateList();
 	}
 
 	private String groupName(String group) {
@@ -467,10 +589,10 @@ public class FareScreen extends ScreenBase implements IGui {
 				}
 				drawTiers(matrices, x0, width - SQUARE_SIZE);
 				drawLabel(matrices, "gui.mtr.fare_tier_price", x0, row(8));
-			} else if (tab == Tab.ROUTES && selected instanceof Route) {
-				final Route route = (Route) selected;
-				GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.fare_route_title", IGui.formatStationName(route.name), groupName(FareData.getGroupKey(route, edited))), x0, TEXT_PADDING, ARGB_WHITE);
-				GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.fare_new_group_hint"), x0, height - SQUARE_SIZE * 2 - TEXT_HEIGHT - 2, ARGB_LIGHT_GRAY);
+				drawLabel(matrices, "gui.mtr.fare_rule_name", x0, row(10));
+			} else if (tab == Tab.ROUTES && selected instanceof LineItem) {
+				final LineItem line = (LineItem) selected;
+				GuiCompat.draw(matrices, font, Text.translatable("gui.mtr.fare_route_title", line.name, groupName(lineRule(line.key))), x0, TEXT_PADDING, ARGB_WHITE);
 			} else if (tab == Tab.STATIONS && selected instanceof Station) {
 				final Station station = (Station) selected;
 				final Set<String> stationGroups = new TreeSet<>(edited.fareStationGroups.containsKey(station.id) ? edited.fareStationGroups.get(station.id) : FareData.getRouteGroups(ClientData.DATA_CACHE, edited, station.id));
@@ -489,9 +611,8 @@ public class FareScreen extends ScreenBase implements IGui {
 	private String listText(Object item) {
 		if (item instanceof String) {
 			return groupName((String) item);
-		} else if (item instanceof Route) {
-			final Route route = (Route) item;
-			return IGui.formatStationName(route.name) + " → " + groupName(FareData.getGroupKey(route, edited));
+		} else if (item instanceof LineItem) {
+			return ((LineItem) item).name + " → " + groupName(lineRule(((LineItem) item).key));
 		} else if (item instanceof Station) {
 			return IGui.formatStationName(((Station) item).name);
 		}

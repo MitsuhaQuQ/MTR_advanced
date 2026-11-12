@@ -61,6 +61,18 @@ class FareTest {
 		assertEquals(50, levels.getSameStationFare(121));
 	}
 
+	@Test
+	void aReferenceLineSetsTheLongestDistance() {
+		// 0.73.0: a fare rule made up to its reference line's length rather than its own longest trip
+		final FareNetwork network = network();
+		assertEquals(15 * KM, network.getLongestBlocks("A"));
+		final FareNetwork referenced = network();
+		referenced.setLongestBlocks("A", 40 * KM);
+		referenced.setLongestBlocks("B", 0);
+		assertEquals(40 * KM, referenced.getLongestBlocks("A"));
+		assertEquals(5 * KM, referenced.getLongestBlocks("B"));
+	}
+
 	/**
 	 * Stations 1 to 4 along group A; group B joins 1 and 4 shorter.
 	 */

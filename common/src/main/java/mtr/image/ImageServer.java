@@ -115,7 +115,7 @@ public final class ImageServer implements IPacket {
 		if (upload.offset != size) return;
 		UPLOADS.remove(id);
 		try {
-			final String extension = ImageFiles.isGif(upload.bytes) ? ".gif" : ".png";
+			final String extension = ImageFiles.extensionOf(upload.bytes);
 			final String fileName = upload.name.replaceAll("(?i)\\.(png|jpe?g|gif)$", "") + extension;
 			final String namespace = namespace(player), reference = namespace + ":" + fileName;
 			final ImageDatabase.Entry existing = ENTRIES.stream().filter(entry -> entry.name.equalsIgnoreCase(reference)).findFirst().orElse(null);

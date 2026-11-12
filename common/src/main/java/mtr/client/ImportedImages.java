@@ -115,7 +115,16 @@ public final class ImportedImages implements IPacket {
 		try {
 			final AnimatedGif gif = ImageFiles.isGif(bytes) ? AnimatedGif.decode(bytes) : null;
 			final NativeImage pixels;
-			if (gif == null) {
+			if (ImageFiles.isJpeg(bytes)) {
+				// Java's decoder, pixel by pixel (NativeImage takes ABGR)
+				final java.awt.image.BufferedImage image = ImageFiles.decodeJpeg(bytes);
+				pixels = new NativeImage(image.getWidth(), image.getHeight(), false);
+				for (int y = 0; y < image.getHeight(); y++) for (int x = 0; x < image.getWidth(); x++) {
+					final int rgb = image.getRGB(x, y);
+					pixels.setPixelRGBA(x, y, 0xFF000000 | (rgb & 0xFF) << 16 | (rgb & 0xFF00) | (rgb >> 16 & 0xFF));
+				}
+				image.flush();
+			} else if (gif == null) {
 				ImageFiles.check(bytes);
 				pixels = NativeImage.read(new ByteArrayInputStream(bytes));
 			} else {

@@ -16,8 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Fares by distance (design document 6.13, 0.68.0), set from the dashboard: each fare group's fares, routes put in
- * another group and the groups of stations. Only players who may edit change them; the server keeps them in the
+ * Fares by distance (design document 6.13, 0.68.0), set from the dashboard: the fare rules (0.73.0) with their fares and
+ * reference lines, the rule of each line's routes and the rules of stations. Only players who may edit change them; the server keeps them in the
  * network's settings, which go to every player.
  */
 public final class FarePackets implements IPacket {
@@ -58,6 +58,8 @@ public final class FarePackets implements IPacket {
 	 */
 	public static void setC2S(NetworkSettings edited) {
 		final NetworkSettings settings = new NetworkSettings();
+		settings.fareRules.clear();
+		settings.fareRules.putAll(edited.fareRules);
 		settings.fareLevels.putAll(edited.fareLevels);
 		settings.fareRouteGroups.putAll(edited.fareRouteGroups);
 		settings.fareStationGroups.putAll(edited.fareStationGroups);
@@ -75,21 +77,22 @@ public final class FarePackets implements IPacket {
 				return;
 			}
 			final NetworkSettings settings = railwayData.dataCache.networkSettings;
-			// Routes and stations that are gone are left out
+			// Routes and stations that are gone are left out, and so are fares and assignments of rules there are none of
 			read.fareRouteGroups.keySet().retainAll(railwayData.dataCache.routeIdMap.keySet());
-			read.fareRouteGroups.values().removeIf(String::isEmpty);
 			read.fareStationGroups.keySet().retainAll(railwayData.dataCache.stationIdMap.keySet());
-			read.fareStationGroups.values().removeIf(java.util.List::isEmpty);
-			if (settings.fareLevels.equals(read.fareLevels) && settings.fareRouteGroups.equals(read.fareRouteGroups) && settings.fareStationGroups.equals(read.fareStationGroups)) {
+			read.keepFareRulesKnown();
+			if (new java.util.ArrayList<>(settings.fareRules.entrySet()).equals(new java.util.ArrayList<>(read.fareRules.entrySet())) && settings.fareLevels.equals(read.fareLevels) && settings.fareRouteGroups.equals(read.fareRouteGroups) && settings.fareStationGroups.equals(read.fareStationGroups)) {
 				return;
 			}
+			settings.fareRules.clear();
+			settings.fareRules.putAll(read.fareRules);
 			settings.fareLevels.clear();
 			settings.fareLevels.putAll(read.fareLevels);
 			settings.fareRouteGroups.clear();
 			settings.fareRouteGroups.putAll(read.fareRouteGroups);
 			settings.fareStationGroups.clear();
 			settings.fareStationGroups.putAll(read.fareStationGroups);
-			System.out.println("Minecraft Transit Railway: " + player.getGameProfile().getName() + " set the fares of " + read.fareLevels.size() + " groups, " + read.fareRouteGroups.size() + " routes put in other groups and the groups of " + read.fareStationGroups.size() + " stations");
+			System.out.println("Minecraft Transit Railway: " + player.getGameProfile().getName() + " set " + read.fareRules.size() + " fare rules, the fares of " + read.fareLevels.size() + ", the rules of " + read.fareRouteGroups.size() + " routes and the rules of " + read.fareStationGroups.size() + " stations");
 			railwayData.networkSettingsChanged = true;
 		});
 	}

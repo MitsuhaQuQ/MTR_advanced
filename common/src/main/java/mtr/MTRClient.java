@@ -291,6 +291,7 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_OPEN_AUDIO_SPEAKER, SpeakerPlayback::open);
 		RegistryClient.registerNetworkReceiver(PACKET_AUDIO_SPEAKER_PLAYBACK, SpeakerPlayback::receive);
 		RegistryClient.registerTickEvent(SpeakerPlayback::tick);
+		RegistryClient.registerTickEvent(mtr.client.AnnouncementPlayer::tick);
 		RegistryClient.registerNetworkReceiver(PACKET_GENERATE_PATH, packet -> PacketTrainDataGuiClient.generatePathS2C(Minecraft.getInstance(), packet));
 		RegistryClient.registerNetworkReceiver(PACKET_AUTO_DUTIES, packet -> {
 			final long depotId = packet.readLong();

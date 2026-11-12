@@ -22,6 +22,33 @@ class ImagesTest {
 		assertArrayEquals(new int[]{1024,1024},ImageFiles.check(bytes.toByteArray()));
 		assertThrows(IllegalArgumentException.class,()->ImageFiles.check(new byte[5*1024*1024+1]));
 	}
+	/** 0.71.0: a JPEG is kept as JPEG, its size checked from its header, its name ending in .jpg */
+	@Test void acceptsJpegAsItIs() throws Exception {
+		final BufferedImage image = new BufferedImage(300, 200, BufferedImage.TYPE_INT_RGB);
+		for (int y = 0; y < 200; y++) for (int x = 0; x < 300; x++) image.setRGB(x, y, x * 0x010203 + y);
+		final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		ImageIO.write(image, "jpg", bytes);
+		final byte[] jpeg = bytes.toByteArray();
+		assertTrue(ImageFiles.isJpeg(jpeg));
+		assertArrayEquals(new int[]{300, 200}, ImageFiles.check(jpeg));
+		assertEquals(".jpg", ImageFiles.extensionOf(jpeg));
+		assertEquals("image/jpeg", ImageFiles.contentTypeOf(jpeg));
+		assertEquals(300, ImageFiles.decodeJpeg(jpeg).getWidth());
+		assertTrue(ImageFiles.isReference("steve:photo.jpg"));
+		assertFalse(ImageFiles.isReference("steve:photo.jpeg"));
+		// Too wide is refused from the header, before decoding; a broken one doesn't read
+		final ByteArrayOutputStream wide = new ByteArrayOutputStream();
+		ImageIO.write(new BufferedImage(2049, 1, BufferedImage.TYPE_INT_RGB), "jpg", wide);
+		final IllegalArgumentException tooWide = assertThrows(IllegalArgumentException.class, () -> ImageFiles.check(wide.toByteArray()));
+		assertEquals("gui.mtr.image_dimensions", tooWide.getMessage());
+		assertThrows(IllegalArgumentException.class, () -> ImageFiles.check(java.util.Arrays.copyOf(jpeg, 40)));
+		// Stored under .jpg only
+		try (ImageDatabase database = new ImageDatabase(folder.resolve("jpeg.db"))) {
+			assertThrows(IllegalArgumentException.class, () -> database.add("steve", "photo.png", jpeg, "uuid-steve", "Steve"));
+			database.add("steve", "photo.jpg", jpeg, "uuid-steve", "Steve");
+			assertEquals("steve:photo.jpg", database.entries().get(0).name);
+		}
+	}
 	@TempDir Path folder;
 	private byte[] png(int color) throws Exception {
 		final BufferedImage image = new BufferedImage(8, 4, BufferedImage.TYPE_INT_ARGB); image.setRGB(0, 0, color);

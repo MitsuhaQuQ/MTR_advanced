@@ -453,11 +453,13 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	public static void announceS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final String message = packet.readUtf();
 		final String soundString = packet.readUtf();
+		// 0.72.0: the sounds one after another; a server without them sends the one sound
+		final java.util.List<mtr.audio.AnnouncementClips.Clip> clips = packet.isReadable() ? mtr.audio.AnnouncementClips.parse(packet.readUtf()) : mtr.audio.AnnouncementClips.single(soundString);
 		minecraftClient.execute(() -> {
 			IDrawing.narrateOrAnnounce(message);
 			final LocalPlayer player = minecraftClient.player;
 			if (player != null) {
-				AnnouncementPlayer.play(soundString, player.blockPosition());
+				AnnouncementPlayer.play(clips, player.blockPosition());
 			}
 		});
 	}

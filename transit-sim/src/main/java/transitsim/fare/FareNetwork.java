@@ -73,6 +73,16 @@ public final class FareNetwork {
 	/**
 	 * @return the longest fare distance between two stations of a group, along the group's own track
 	 */
+	/**
+	 * Sets the longest distance of a group as given rather than worked out (0.73.0): a fare rule's reference line, whose
+	 * length its tiers are made up to. 0 or less leaves it worked out.
+	 */
+	public synchronized void setLongestBlocks(String group, long blocks) {
+		if (blocks > 0) {
+			longest.put(group, blocks);
+		}
+	}
+
 	public synchronized long getLongestBlocks(String group) {
 		return longest.computeIfAbsent(group, key -> {
 			long most = 0;

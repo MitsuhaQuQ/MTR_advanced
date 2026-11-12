@@ -190,9 +190,18 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 * @param soundString what to play, as the announcer keeps it ({@link mtr.audio.AnnouncementSound})
 	 */
 	public static void announceS2C(ServerPlayer player, String message, String soundString) {
+		announceS2C(player, message, mtr.audio.AnnouncementClips.single(soundString));
+	}
+
+	/**
+	 * The message, the first sound (as before 0.72.0), then all the sounds with their gaps as text
+	 * ({@link mtr.audio.AnnouncementClips#toText}).
+	 */
+	public static void announceS2C(ServerPlayer player, String message, java.util.List<mtr.audio.AnnouncementClips.Clip> clips) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeUtf(message);
-		packet.writeUtf(soundString);
+		packet.writeUtf(clips.isEmpty() ? "" : clips.get(0).sound);
+		packet.writeUtf(mtr.audio.AnnouncementClips.toText(clips));
 		Registry.sendToPlayer(player, PACKET_ANNOUNCE, packet);
 	}
 

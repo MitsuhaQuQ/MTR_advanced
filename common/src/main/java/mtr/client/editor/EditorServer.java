@@ -785,7 +785,7 @@ public final class EditorServer {
 				final String hash = request.getParameter("hash");
 				final byte[] bytes = onGameThread(() -> mtr.client.ImportedImages.read(hash));
 				if (bytes == null) { response.sendError(404); return; }
-				response.setContentType(mtr.image.ImageFiles.isGif(bytes) ? "image/gif" : "image/png");
+				response.setContentType(mtr.image.ImageFiles.contentTypeOf(bytes));
 				response.setContentLength(bytes.length);
 				response.getOutputStream().write(bytes);
 			}

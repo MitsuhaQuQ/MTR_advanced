@@ -1,10 +1,13 @@
 package mtr.client;
 
+import mtr.audio.AnnouncementClips;
 import mtr.audio.AnnouncementSound;
 import mtr.audio.AudioFiles;
 import mtr.mappings.RegistryUtilities;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
@@ -31,17 +34,20 @@ import java.nio.ShortBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import transitsim.sim.ClipSequence;
 
 /**
  * Plays what an announcer names ({@link AnnouncementSound}). A sound of the game goes through the game as before. A file
  * added to the server and a web address are played straight to the computer's audio output, at the game's master and
  * block volume, as the game can only play sounds that a resource pack registers. One announcement plays at a time; a new
- * one cuts off the last. A file that isn't here yet is asked for and skipped this time.
+ * one cuts off the last. Since 0.72.0 an announcement is several sounds one after another with gaps between them. A file that isn't here yet is asked for and skipped this time.
  * <p>
  * A web address is only fetched if the player turned it on in {@code config/mtr.json} and listed the site, as otherwise
  * whoever edits an announcer could make every player nearby contact any site. Only WAV and Ogg Vorbis are played, and a
@@ -57,6 +63,10 @@ public final class AnnouncementPlayer {
 	private static final String USER_AGENT = "Minecraft-Transit-Railway";
 
 	private static final AtomicInteger GENERATION = new AtomicInteger();
+	/** How long a sound just started through the game counts as playing before its sound manager is asked */
+	private static final int START_TICKS = 2;
+	/** The announcement playing, on the game thread */
+	private static Sequence current;
 	private static final Map<String, byte[]> NETWORK_CACHE = Collections.synchronizedMap(new LinkedHashMap<String, byte[]>(MAX_NETWORK_CACHE, 0.75F, true) {
 		@Override
 		protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
@@ -76,11 +86,57 @@ public final class AnnouncementPlayer {
 	 * @param pos where a sound of the game is played
 	 */
 	public static void play(String soundString, BlockPos pos) {
+		play(AnnouncementClips.single(soundString), pos);
+	}
+
+	/**
+	 * Plays an announcer's sounds one after another with the gaps after them (0.72.0, as the audio speaker's clips,
+	 * {@link ClipSequence}), cutting off the announcement playing before. The first starts now; the rest as the client
+	 * ticks ({@link #tick}).
+	 */
+	public static void play(List<AnnouncementClips.Clip> clips, BlockPos pos) {
+		stop();
+		if (Minecraft.getInstance().level == null || clips.isEmpty()) {
+			return;
+		}
+		current = new Sequence(clips, pos, GENERATION.get());
+		if (!current.tick()) {
+			current = null;
+		}
+	}
+
+	public static void stop() {
+		GENERATION.incrementAndGet();
+		if (current != null) {
+			current.stopSound();
+			current = null;
+		}
+	}
+
+	/**
+	 * Called each client tick: starts an announcement's next sound once the last has ended and its gap has passed.
+	 */
+	public static void tick(Minecraft minecraft) {
+		if (current != null && (minecraft.level == null || !current.tick())) {
+			current.stopSound();
+			current = null;
+		}
+	}
+
+	/**
+	 * Starts one sound. A sound of the game, or an added file the game knows, plays through the game and is playing while
+	 * its sound manager says so; any other added file or a web address is decoded and played straight to the audio
+	 * output, playing until that ends. One that can't be played now ends at once.
+	 *
+	 * @return the sound started through the game, or null; {@code done} is set when one played otherwise ends
+	 */
+	private static SoundInstance start(String soundString, BlockPos pos, int generation, AtomicBoolean done) {
 		final Minecraft minecraft = Minecraft.getInstance();
 		final ClientLevel world = minecraft.level;
 		final String cleanSoundString = AnnouncementSound.clean(soundString);
 		if (world == null || cleanSoundString.isEmpty()) {
-			return;
+			done.set(true);
+			return null;
 		}
 
 		final float volume = minecraft.options.getSoundSourceVolume(SoundSource.MASTER) * minecraft.options.getSoundSourceVolume(SoundSource.BLOCKS);
@@ -89,39 +145,44 @@ public final class AnnouncementPlayer {
 		// An added file plays as the game's sound of it, like any other sound, when the game knows it (UploadedSounds)
 		final ResourceLocation uploadedSound = hash == null ? null : UploadedSounds.getLocation(uploaded[0], uploaded[1]);
 		if (uploadedSound != null) {
-			world.playLocalSound(pos, RegistryUtilities.createSoundEvent(uploadedSound), SoundSource.BLOCKS, 1000000, 1, false);
-			return;
+			return playThroughGame(minecraft, uploadedSound, pos);
 		}
 		if (hash != null) {
 			final byte[] bytes = AudioCache.read(hash);
-			if (bytes != null) {
-				final int generation = GENERATION.incrementAndGet();
-				LOADER.execute(() -> decodeAndPlay(bytes, volume, generation, cleanSoundString));
+			if (bytes == null) {
+				done.set(true);
+			} else {
+				LOADER.execute(() -> decodeAndPlay(bytes, volume, generation, cleanSoundString, done));
 			}
-			return;
+			return null;
 		}
 
 		final ResourceLocation soundId = AnnouncementSound.getSoundId(cleanSoundString);
 		if (soundId != null) {
-			world.playLocalSound(pos, RegistryUtilities.createSoundEvent(soundId), SoundSource.BLOCKS, 1000000, 1, false);
-		} else if (AnnouncementSound.isNetwork(cleanSoundString)) {
-			if (!isAllowed(cleanSoundString)) {
-				System.out.println("Not playing announcement audio from a site that isn't allowed in config/mtr.json: " + cleanSoundString);
-				return;
-			}
-			final int generation = GENERATION.incrementAndGet();
+			return playThroughGame(minecraft, soundId, pos);
+		} else if (AnnouncementSound.isNetwork(cleanSoundString) && isAllowed(cleanSoundString)) {
 			LOADER.execute(() -> {
 				try {
-					decodeAndPlay(download(cleanSoundString), volume, generation, cleanSoundString);
+					decodeAndPlay(download(cleanSoundString), volume, generation, cleanSoundString, done);
 				} catch (Exception e) {
 					System.out.println("Failed to fetch announcement audio " + cleanSoundString + ": " + e.getMessage());
+					done.set(true);
 				}
 			});
+		} else {
+			if (AnnouncementSound.isNetwork(cleanSoundString)) {
+				System.out.println("Not playing announcement audio from a site that isn't allowed in config/mtr.json: " + cleanSoundString);
+			}
+			done.set(true);
 		}
+		return null;
 	}
 
-	public static void stop() {
-		GENERATION.incrementAndGet();
+	/** As {@code ClientLevel.playLocalSound} played it before, kept to know when it ends */
+	private static SoundInstance playThroughGame(Minecraft minecraft, ResourceLocation id, BlockPos pos) {
+		final SoundInstance sound = new SimpleSoundInstance(RegistryUtilities.createSoundEvent(id), SoundSource.BLOCKS, 1000000, 1, SoundInstance.createUnseededRandom(), pos);
+		minecraft.getSoundManager().play(sound);
+		return sound;
 	}
 
 	/**
@@ -184,8 +245,12 @@ public final class AnnouncementPlayer {
 		}
 	}
 
-	private static void decodeAndPlay(byte[] bytes, float volume, int generation, String name) {
+	/**
+	 * @param done set once it has played, or won't play
+	 */
+	private static void decodeAndPlay(byte[] bytes, float volume, int generation, String name, AtomicBoolean done) {
 		if (generation != GENERATION.get()) {
+			done.set(true);
 			return;
 		}
 		final Pcm pcm;
@@ -193,9 +258,16 @@ public final class AnnouncementPlayer {
 			pcm = isWav(bytes) ? decodeWav(bytes) : decodeVorbis(bytes);
 		} catch (Exception | LinkageError e) {
 			System.out.println("Can't play announcement audio " + name + ": " + e.getMessage());
+			done.set(true);
 			return;
 		}
-		PLAYER.execute(() -> playPcm(pcm, volume, generation));
+		PLAYER.execute(() -> {
+			try {
+				playPcm(pcm, volume, generation);
+			} finally {
+				done.set(true);
+			}
+		});
 	}
 
 	/**
@@ -323,6 +395,53 @@ public final class AnnouncementPlayer {
 		final Thread thread = new Thread(runnable, name);
 		thread.setDaemon(true);
 		return thread;
+	}
+
+	/**
+	 * An announcement's sounds playing one after another: the sound playing now through the game, or the flag of one
+	 * played straight to the audio output, and what comes next ({@link ClipSequence}).
+	 */
+	private static final class Sequence {
+
+		private final List<AnnouncementClips.Clip> clips;
+		private final BlockPos pos;
+		private final int generation;
+		private final ClipSequence sequence;
+		private SoundInstance sound;
+		private AtomicBoolean done;
+		private int age;
+
+		private Sequence(List<AnnouncementClips.Clip> clips, BlockPos pos, int generation) {
+			this.clips = clips;
+			this.pos = pos.immutable();
+			this.generation = generation;
+			sequence = new ClipSequence(AnnouncementClips.gapTicks(clips), false, 0);
+		}
+
+		/**
+		 * @return whether it is still going
+		 */
+		private boolean tick() {
+			if (generation != GENERATION.get()) {
+				return false;
+			}
+			age++;
+			final boolean playing = sound != null ? age <= START_TICKS || Minecraft.getInstance().getSoundManager().isActive(sound) : done != null && !done.get();
+			final int next = sequence.tick(playing);
+			if (next >= 0) {
+				age = 0;
+				done = new AtomicBoolean();
+				sound = start(clips.get(next).sound, pos, generation, done);
+			}
+			return !sequence.hasEnded();
+		}
+
+		private void stopSound() {
+			if (sound != null) {
+				Minecraft.getInstance().getSoundManager().stop(sound);
+				sound = null;
+			}
+		}
 	}
 
 	private static final class Pcm {

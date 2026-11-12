@@ -1321,3 +1321,7 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 ## 音频的拼接播放（0.70.0，2026-11-12）
 
 `transitsim.sim.ClipSequence`：一个音频方块的几段音频一段接一段地播。播放端每 tick 告诉它刚开始的那段是否还在播，它回答现在开始哪一段：每段播完后空它设定的空隙，最后一段后循环就空循环间隔再从第一段开始，单次播放就结束；`totalTicks` 给出单次播放的总长（各段时长加中间空隙），服务端的 `PlaybackGate` 用它判断能否再触发。游戏侧只负责"这段还在播"（客户端 `SpeakerPlayback` 问声音管理器）和真正放声音。测试：`ClipSequenceTest`。跨车厂换线、跨车型套用运用组只在网页（`editor-web/src/core/depotMove.ts`），组件不变。
+
+广播器（0.72.0）也用 `ClipSequence` 一段接一段地播声音：客户端 `AnnouncementPlayer` 的 `Sequence` 只负责判断这段是否还在播和真正放声音，顺序和空隙由组件决定。
+
+票务规则（0.73.0）：组件里的"组"（`FareNetwork` 的 group）就是游戏里的票务规则。`FareNetwork.setLongestBlocks` 让规则的最长距离取参考线路的长度，不再按规则内线路的最长行程算；线路长度由游戏侧 `FareData` 算出后传入。测试：`FareTest.aReferenceLineSetsTheLongestDistance`。

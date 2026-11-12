@@ -68,10 +68,13 @@ class NetworkSettingsTest {
 		packet.writeVarInt(0);
 		packet.writeVarInt(0);
 		packet.writeVarInt(0);
+		// No fare rules (0.73.0): the default is kept
+		packet.writeVarInt(0);
 		// No running sides (0.69.0)
 		packet.writeVarInt(0);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
+		assertEquals(java.util.Collections.singleton(NetworkSettings.DEFAULT_FARE_RULE), read.fareRules.keySet());
 		assertEquals(0, read.minReverseMillis);
 		assertEquals(NetworkSettings.MAX_MILLIS, read.earlyThresholdMillis);
 		assertEquals(NetworkSettings.MAX_WAIT_THRESHOLD_MILLIS, read.waitThresholdMillis);
@@ -89,10 +92,12 @@ class NetworkSettingsTest {
 		levels.overtime = true;
 		levels.overtimeMinutes = 90;
 		levels.setTiers(new long[]{8000, 12000}, new int[]{3, 4, 6});
-		settings.fareLevels.put("line:TRAIN:line 1", levels);
-		settings.fareLevels.put("line:TRAIN:line 2", new transitsim.fare.FareLevels());
-		settings.fareRouteGroups.put(5L, "Company A");
-		settings.fareStationGroups.put(7L, new java.util.ArrayList<>(java.util.Arrays.asList("Company A", "line:TRAIN:line 1")));
+		// 0.73.0: fare rules made by hand, the default first, one with a reference line
+		settings.fareRules.put("rule:2", new NetworkSettings.FareRule("Company A", "line:TRAIN:line 1"));
+		settings.fareLevels.put("default", levels);
+		settings.fareLevels.put("rule:2", new transitsim.fare.FareLevels());
+		settings.fareRouteGroups.put(5L, "rule:2");
+		settings.fareStationGroups.put(7L, new java.util.ArrayList<>(java.util.Arrays.asList("rule:2", "default")));
 
 		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
 		packer.packMapHeader(settings.messagePackLength());
@@ -101,7 +106,9 @@ class NetworkSettingsTest {
 		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
 		final NetworkSettings saved = new NetworkSettings(map);
 		assertEquals(settings, saved);
-		assertEquals(6, saved.fareLevels.get("line:TRAIN:line 1").getFare(20000, 0));
+		assertEquals(6, saved.fareLevels.get("default").getFare(20000, 0));
+		assertEquals(java.util.Arrays.asList("default", "rule:2"), new java.util.ArrayList<>(saved.fareRules.keySet()));
+		assertEquals("line:TRAIN:line 1", saved.fareRules.get("rule:2").referenceLine);
 
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		settings.writePacket(packet);
@@ -112,18 +119,25 @@ class NetworkSettingsTest {
 
 		final NetworkSettings copy = new NetworkSettings();
 		copy.copyFrom(settings);
-		copy.fareLevels.get("line:TRAIN:line 1").startFare = 5;
+		copy.fareLevels.get("default").startFare = 5;
 		copy.fareStationGroups.get(7L).clear();
-		assertEquals(3, settings.fareLevels.get("line:TRAIN:line 1").startFare);
+		assertEquals(3, settings.fareLevels.get("default").startFare);
 		assertEquals(2, settings.fareStationGroups.get(7L).size());
 
-		// A save from before has none
+		// A save from before 0.73.0 has no rules: its groups by line all become the one default rule (user, 2026-11-12)
 		final Map<String, Value> old = new HashMap<>(map);
-		old.remove("fare_levels");
-		old.remove("fare_route_groups");
-		old.remove("fare_station_groups");
+		old.remove("fare_rules");
 		final NetworkSettings oldSettings = new NetworkSettings(old);
 		assertTrue(oldSettings.fareLevels.isEmpty() && oldSettings.fareRouteGroups.isEmpty() && oldSettings.fareStationGroups.isEmpty());
+		assertEquals(java.util.Collections.singletonList(NetworkSettings.DEFAULT_FARE_RULE), new java.util.ArrayList<>(oldSettings.fareRules.keySet()));
+		// Fares and assignments of a rule there is none of are dropped
+		final NetworkSettings removed = new NetworkSettings();
+		removed.copyFrom(settings);
+		removed.fareRules.remove("rule:2");
+		removed.keepFareRulesKnown();
+		assertEquals(java.util.Collections.singleton("default"), removed.fareLevels.keySet());
+		assertTrue(removed.fareRouteGroups.isEmpty());
+		assertEquals(java.util.Collections.singletonList("default"), removed.fareStationGroups.get(7L));
 	}
 
 	@Test

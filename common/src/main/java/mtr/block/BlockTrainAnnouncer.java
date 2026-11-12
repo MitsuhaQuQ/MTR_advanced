@@ -1,25 +1,28 @@
 package mtr.block;
 
 import mtr.BlockEntityTypes;
+import mtr.audio.AnnouncementClips;
 import mtr.audio.AnnouncementSound;
-import mtr.data.RailwayData;
-import mtr.data.StationCall;
 import mtr.mappings.BlockEntityMapper;
-import mtr.mappings.TickableMapper;
 import mtr.packet.PacketTrainDataGuiServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Announces to the riders of a train going over it, as in MTR: its message, and its sounds one after another with the
+ * gaps after them (0.72.0). Since 0.72.0 it does nothing else: the triggers at a station (before arrival, after
+ * stopping, before leaving) and announcing to a platform this fork had added are gone (user, 2026-11-12); their settings
+ * in older saves are kept as they were but not used, so such an announcer announces to riders going over it again.
+ */
 public class BlockTrainAnnouncer extends BlockTrainSensorBase {
 
 	@Override
@@ -27,38 +30,27 @@ public class BlockTrainAnnouncer extends BlockTrainSensorBase {
 		return new TileEntityTrainAnnouncer(pos, state);
 	}
 
-	@Override
-	public <T extends BlockEntityMapper> void tick(Level world, BlockPos pos, T blockEntity) {
-		if (blockEntity instanceof TileEntityTrainAnnouncer) {
-			((TileEntityTrainAnnouncer) blockEntity).tick();
-		}
-	}
-
-	@Override
-	public BlockEntityType<? extends BlockEntityMapper> getType() {
-		return BlockEntityTypes.TRAIN_ANNOUNCER_TILE_ENTITY.get();
-	}
-
-	public static class TileEntityTrainAnnouncer extends TileEntityTrainSensorBase implements TickableMapper {
+	public static class TileEntityTrainAnnouncer extends TileEntityTrainSensorBase {
 
 		private String message = "";
 		/**
-		 * A sound of the game, a file added to the server or a web address ({@link AnnouncementSound}).
+		 * The first sound: a sound of the game, a file added to the server or a web address ({@link AnnouncementSound}).
 		 */
 		private String soundString = "";
-		private StationCall.Trigger trigger = StationCall.Trigger.LEGACY;
-		private int seconds;
-		private boolean toRiders;
+		/**
+		 * The sounds played one after another with the gaps after them (0.72.0); the first is {@link #soundString}
+		 */
+		private List<AnnouncementClips.Clip> clips = AnnouncementClips.single("");
+		/** The station trigger settings of 0.6x saves, kept to be written back as they were, not used */
+		private final CompoundTag retiredSettings = new CompoundTag();
 		private final Map<Player, Long> lastAnnouncedMillis = new HashMap<>();
-		private static final int AUDIBLE_RADIUS = 24;
 		private static final int ANNOUNCE_COOL_DOWN_MILLIS = 20000;
 		private static final String KEY_MESSAGE = "message";
 		private static final String KEY_SOUND_ID = "sound_id";
 		// The same key as MTR 1.20.1-3.5.0, so its announcers keep their web addresses
 		private static final String KEY_SOUND_STRING = "sound_string";
-		private static final String KEY_TRIGGER = "station_trigger";
-		private static final String KEY_SECONDS = "station_seconds";
-		private static final String KEY_TO_RIDERS = "station_to_riders";
+		private static final String KEY_SOUND_CLIPS = "sound_clips";
+		private static final String[] RETIRED_KEYS = {"station_trigger", "station_seconds", "station_to_riders"};
 
 		public TileEntityTrainAnnouncer(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.TRAIN_ANNOUNCER_TILE_ENTITY.get(), pos, state);
@@ -67,10 +59,14 @@ public class BlockTrainAnnouncer extends BlockTrainSensorBase {
 		@Override
 		public void readCompoundTag(CompoundTag compoundTag) {
 			message = compoundTag.getString(KEY_MESSAGE);
-			trigger = StationCall.Trigger.read(compoundTag.getString(KEY_TRIGGER));
-			seconds = Math.max(0, compoundTag.getInt(KEY_SECONDS));
-			toRiders = compoundTag.getBoolean(KEY_TO_RIDERS);
 			soundString = AnnouncementSound.clean(compoundTag.contains(KEY_SOUND_STRING) ? compoundTag.getString(KEY_SOUND_STRING) : compoundTag.getString(KEY_SOUND_ID));
+			// Before 0.72.0 the one sound; a version without clips keeps playing the first
+			setClips(compoundTag.contains(KEY_SOUND_CLIPS) ? AnnouncementClips.parse(compoundTag.getString(KEY_SOUND_CLIPS)) : AnnouncementClips.single(soundString));
+			for (final String key : RETIRED_KEYS) {
+				if (compoundTag.contains(key)) {
+					retiredSettings.put(key, compoundTag.get(key).copy());
+				}
+			}
 			super.readCompoundTag(compoundTag);
 		}
 
@@ -80,25 +76,28 @@ public class BlockTrainAnnouncer extends BlockTrainSensorBase {
 		@Override
 		public void writeCompoundTag(CompoundTag compoundTag) {
 			compoundTag.putString(KEY_MESSAGE, message);
-			compoundTag.putString(KEY_TRIGGER, trigger.name());
-			compoundTag.putInt(KEY_SECONDS, seconds);
-			compoundTag.putBoolean(KEY_TO_RIDERS, toRiders);
 			final ResourceLocation soundId = AnnouncementSound.getSoundId(soundString);
 			compoundTag.putString(KEY_SOUND_ID, soundId == null ? "" : soundId.toString());
 			compoundTag.putString(KEY_SOUND_STRING, soundString);
+			compoundTag.putString(KEY_SOUND_CLIPS, AnnouncementClips.toText(clips));
+			for (final String key : retiredSettings.getAllKeys()) {
+				compoundTag.put(key, retiredSettings.get(key).copy());
+			}
 			super.writeCompoundTag(compoundTag);
 		}
 
+		/**
+		 * @param strings the message, the first sound, and (0.72.0) the sounds with their gaps
+		 *                ({@link AnnouncementClips#toText}); the field's sound is their first
+		 */
 		@Override
 		public void setData(Set<Long> filterRouteIds, boolean stoppedOnly, boolean movingOnly, int number, String... strings) {
 			if (strings.length >= 2) {
 				message = strings[0];
-				soundString = AnnouncementSound.clean(strings[1]);
+				setClips(AnnouncementClips.single(strings[1]));
 			}
-			if (strings.length >= 5) {
-				trigger = StationCall.Trigger.read(strings[3]);
-				seconds = Math.max(0, number);
-				toRiders = Boolean.parseBoolean(strings[4]);
+			if (strings.length >= 3) {
+				setClips(AnnouncementClips.parse(strings[2]));
 			}
 			setData(filterRouteIds, stoppedOnly, movingOnly);
 		}
@@ -111,57 +110,23 @@ public class BlockTrainAnnouncer extends BlockTrainSensorBase {
 			return soundString;
 		}
 
-		public StationCall.Trigger getTrigger() {
-			return trigger;
+		public List<AnnouncementClips.Clip> getClips() {
+			return clips;
 		}
 
-		public int getSeconds() {
-			return seconds;
+		private void setClips(List<AnnouncementClips.Clip> newClips) {
+			clips = newClips;
+			soundString = newClips.isEmpty() ? "" : newClips.get(0).sound;
 		}
 
-		public boolean getToRiders() {
-			return toRiders;
-		}
-
-		@Override
-		public void tick() {
-			if (level == null || level.isClientSide || trigger == StationCall.Trigger.LEGACY) {
-				return;
-			}
-			final RailwayData railwayData = RailwayData.getInstance(level);
-			if (railwayData == null) {
-				return;
-			}
-			final long now = System.currentTimeMillis();
-			for (final StationCall call : railwayData.getStationCalls(worldPosition)) {
-				if (matchesFilter(call.getRouteId(), -1) && call.trigger(worldPosition, trigger, seconds, now)) {
-					if (toRiders) {
-						call.forEachRider(this::sendAnnouncement);
-					} else {
-						level.players().forEach(player -> {
-							if (!call.isRider(player) && player.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= AUDIBLE_RADIUS * AUDIBLE_RADIUS) {
-								sendAnnouncement(player);
-							}
-						});
-					}
-				}
-			}
-		}
-
+		/**
+		 * A rider of a train going over it, at most once in {@link #ANNOUNCE_COOL_DOWN_MILLIS} each.
+		 */
 		public void announce(Player player) {
-			if (trigger != StationCall.Trigger.LEGACY) {
-				return;
-			}
 			final long currentMillis = System.currentTimeMillis();
-			if (player != null && (!lastAnnouncedMillis.containsKey(player) || currentMillis - lastAnnouncedMillis.get(player) >= ANNOUNCE_COOL_DOWN_MILLIS)) {
+			if (player instanceof ServerPlayer && (!lastAnnouncedMillis.containsKey(player) || currentMillis - lastAnnouncedMillis.get(player) >= ANNOUNCE_COOL_DOWN_MILLIS)) {
 				lastAnnouncedMillis.put(player, currentMillis);
-				sendAnnouncement(player);
-			}
-		}
-
-		private void sendAnnouncement(Player player) {
-			if (player instanceof ServerPlayer) {
-				PacketTrainDataGuiServer.announceS2C((ServerPlayer) player, message, soundString);
+				PacketTrainDataGuiServer.announceS2C((ServerPlayer) player, message, clips);
 			}
 		}
 	}
