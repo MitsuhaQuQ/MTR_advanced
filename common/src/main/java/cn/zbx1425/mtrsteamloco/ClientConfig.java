@@ -28,7 +28,10 @@ public class ClientConfig {
     private static Path path;
 
     public static boolean enableOptimization = true;
-    public static boolean enableBbModelPreload = false;
+    // On by default (siding FPS, 2026-11-13): without it a resource pack's bbmodel trains are drawn cube by cube every frame,
+    // 3 FPS for 20 parked trains against about 70 with it. Configs saved before turn it on once (PRELOAD_DEFAULT_KEY)
+    public static boolean enableBbModelPreload = true;
+    private static final String PRELOAD_DEFAULT_KEY = "bbModelPreloadDefaultOn";
     public static boolean translucentSort = true;
 
     public static boolean enableScriptDebugOverlay = false;
@@ -62,7 +65,8 @@ public class ClientConfig {
         try {
             JsonObject configObject = Main.JSON_PARSER.parse(Files.readString(path)).getAsJsonObject();
             enableOptimization = !getOrDefault(configObject, "shaderCompatMode", JsonElement::getAsBoolean, false);
-            enableBbModelPreload = getOrDefault(configObject, "enableBbModelPreload", JsonElement::getAsBoolean, false);
+            final boolean preloadDefaultApplied = configObject.has(PRELOAD_DEFAULT_KEY);
+            enableBbModelPreload = !preloadDefaultApplied || getOrDefault(configObject, "enableBbModelPreload", JsonElement::getAsBoolean, true);
             translucentSort = getOrDefault(configObject, "translucentSort", JsonElement::getAsBoolean, false);
             enableScriptDebugOverlay = getOrDefault(configObject, "enableScriptDebugOverlay", JsonElement::getAsBoolean, false);
             enableRailDeform = getOrDefault(configObject, "enableRailDeform", JsonElement::getAsBoolean, true);
@@ -82,6 +86,10 @@ public class ClientConfig {
             directNodeScreenGroup.init(configObject);
             rollAnglesListEntryGroup.init(configObject);
 
+            if (!preloadDefaultApplied) {
+                saveAfterLoad = true;
+            }
+
             customConfigs.clear();
             if (configObject.has("custom")) {
                 JsonObject customObject = configObject.getAsJsonObject("custom");
@@ -94,7 +102,13 @@ public class ClientConfig {
             Main.LOGGER.warn("Failed loading client config:", ex);
             save();
         }
+        if (saveAfterLoad) {
+            saveAfterLoad = false;
+            save();
+        }
     }
+
+    private static boolean saveAfterLoad;
 
     private static <T> T getOrDefault(JsonObject jsonObject, String key, Function<JsonElement, T> getter, T defaultValue) {
         if (jsonObject == null) return defaultValue;
@@ -124,6 +138,15 @@ public class ClientConfig {
         }
     }
 
+    /**
+     * With 3D rails off, MTR's flat rails are still drawn from chunk buffers built once (RailModelRegistry.FLAT_RAIL_KEY)
+     * instead of quad by quad every frame (siding FPS, 2026-11-13: 13-25% of a frame with 20 sidings in view); holding a
+     * rail tool still draws them MTR's way, coloured by type.
+     */
+    public static boolean useFlatRailChunks() {
+        return enableRailRender && !enableRail3D && useRenderOptimization();
+    }
+
     public static boolean useRenderOptimization() {
         return enableOptimization && ShadersModHandler.canDrawWithBuffer();
     }
@@ -134,6 +157,7 @@ public class ClientConfig {
             JsonObject configObject = new JsonObject();
             configObject.addProperty("shaderCompatMode", !enableOptimization);
             configObject.addProperty("enableBbModelPreload", enableBbModelPreload);
+            configObject.addProperty(PRELOAD_DEFAULT_KEY, true);
             configObject.addProperty("translucentSort", translucentSort);
             configObject.addProperty("enableScriptDebugOverlay", enableScriptDebugOverlay);
             configObject.addProperty("enableRailDeform", enableRailDeform);

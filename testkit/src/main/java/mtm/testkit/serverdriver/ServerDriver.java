@@ -94,6 +94,9 @@ public final class ServerDriver {
 		routes.put("/snapshot", (body, query) -> Http.onThread(server, () -> snapshot(level(server, query.get("dimension")))));
 		routes.put("/fixture", (body, query) -> Http.onThread(server, () -> {
 			final String name = body.has("name") ? body.get("name").getAsString() : "basic";
+			if ("sidings".equals(name)) {
+				return Sidings.build(level(server, null), body);
+			}
 			return "lines".equals(name) ? Lines.build(level(server, null)) : Fixture.build(level(server, null), name);
 		}));
 		routes.put("/node", (body, query) -> Http.onThread(server, () -> node(level(server, null), new BlockPos(body.get("x").getAsInt(), body.get("y").getAsInt(), body.get("z").getAsInt()))));

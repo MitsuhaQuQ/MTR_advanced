@@ -110,6 +110,61 @@ public final class ClientDriver {
 			result.addProperty("url", mtr.client.editor.EditorServer.open());
 			return result;
 		});
+		// Frame times over a while (FrameStats); optionally first sets MTR's "optimise train rendering", the frame cap and the
+		// player's position and view, so a measurement starts from a known state
+		routes.put("/frames", (body, query) -> {
+			Http.onThread(minecraft, () -> {
+				if (body.has("optimizeTrainRendering")) {
+					mtr.client.Config.setOptimizeTrainRendering(body.get("optimizeTrainRendering").getAsBoolean());
+				}
+				if (body.has("maxFps")) {
+					minecraft.options.framerateLimit().set(body.get("maxFps").getAsInt());
+					minecraft.options.enableVsync().set(false);
+					minecraft.getWindow().updateVsync(false);
+				}
+				if (body.has("x")) {
+					player(minecraft).moveTo(body.get("x").getAsDouble(), body.get("y").getAsDouble(), body.get("z").getAsDouble(), body.get("yaw").getAsFloat(), body.get("pitch").getAsFloat());
+					player(minecraft).getAbilities().flying = true;
+				}
+				return null;
+			});
+			if (body.has("settleMs")) {
+				Thread.sleep(body.get("settleMs").getAsLong());
+			}
+			return FrameStats.measure(body.has("ms") ? body.get("ms").getAsLong() : 10000);
+		});
+		// Resource packs: lists the ones found with their compatibility and which are selected; with "select" (pack IDs such
+		// as "file/shmetro") selects those, keeping the built-in ones, and reloads, waiting until the reload is done
+		routes.put("/packs", (body, query) -> {
+			final CompletableFuture<Void> reload = Http.onThread(minecraft, () -> {
+				final net.minecraft.server.packs.repository.PackRepository repository = minecraft.getResourcePackRepository();
+				repository.reload();
+				if (!body.has("select")) {
+					return CompletableFuture.completedFuture(null);
+				}
+				final List<String> selected = new java.util.ArrayList<>();
+				repository.getSelectedPacks().forEach(pack -> {
+					if (!pack.getId().startsWith("file/")) {
+						selected.add(pack.getId());
+					}
+				});
+				body.getAsJsonArray("select").forEach(element -> selected.add(element.getAsString()));
+				repository.setSelected(selected);
+				minecraft.options.updateResourcePacks(repository);
+				return minecraft.reloadResourcePacks();
+			});
+			reload.get(300, TimeUnit.SECONDS);
+			return Http.onThread(minecraft, () -> {
+				final JsonObject result = new JsonObject();
+				final JsonArray available = new JsonArray();
+				minecraft.getResourcePackRepository().getAvailablePacks().forEach(pack -> available.add(pack.getId() + " " + pack.getCompatibility()));
+				result.add("available", available);
+				final JsonArray selected = new JsonArray();
+				minecraft.getResourcePackRepository().getSelectedPacks().forEach(pack -> selected.add(pack.getId()));
+				result.add("selected", selected);
+				return result;
+			});
+		});
 		routes.put("/log", (body, query) -> LogCapture.since(query.containsKey("since") ? Long.parseLong(query.get("since")) : 0));
 		routes.put("/join", (body, query) -> Http.onThread(minecraft, () -> {
 			// As the multiplayer screen's direct connect does

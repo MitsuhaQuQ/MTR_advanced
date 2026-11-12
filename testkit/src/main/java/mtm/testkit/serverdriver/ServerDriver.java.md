@@ -25,7 +25,7 @@ MTM_TestKit 的服务端驱动（调试专用，仅 Fabric）：服务器启动�
   - `/ping` → `ping`；
   - `/command`（`command`）→ `command`；
   - `/snapshot?dimension=` → `snapshot`；
-  - `/fixture`（`name`，默认 `basic`）→ `name == "lines"` 时 `Lines.build`，否则 `Fixture.build`（主世界）；
+  - `/fixture`（`name`，默认 `basic`）→ `name == "sidings"` 时 `Sidings.build(主世界, 请求体)`，`name == "lines"` 时 `Lines.build`，否则 `Fixture.build`（主世界）；
   - `/node`（`x,y,z`）→ `node`；
   - `/trains?dimension=` → `trains`；
   - `/clock` → `clock`；`/sensors` → `sensors`；`/log?since=` → `LogCapture.since`；

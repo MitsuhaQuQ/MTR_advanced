@@ -45,6 +45,7 @@ public class RailRenderDispatcher {
     private boolean isInstanced;
 
     private final HashSet<Rail> currentFrameRails = new HashSet<>();
+    private int lastFlatState = -1;
 
     public static boolean isHoldingRailItem = false;
     public static boolean isHoldingBrush = false;
@@ -146,6 +147,12 @@ public class RailRenderDispatcher {
         boolean shouldBeInstanced = ClientConfig.getRailRenderLevel() == 3;
         if (isInstanced != shouldBeInstanced) clearRail();
         isInstanced = shouldBeInstanced;
+        // The model key and the flat rails' colours depend on these, and are worked out when a rail is added
+        final int flatState = (ClientConfig.useFlatRailChunks() ? 1 : 0) | (mtr.client.Config.hideSpecialRailColors() ? 2 : 0);
+        if (flatState != lastFlatState) {
+            clearRail();
+            lastFlatState = flatState;
+        }
 
         HashSet<Rail> railsToAdd = new HashSet<>(currentFrameRails);
         railsToAdd.removeAll(railRefMap.keySet());
@@ -229,6 +236,10 @@ public class RailRenderDispatcher {
 
     // "null": hidden, "": use MTR's default pipeline
     public static String getModelKeyForRender(Rail rail) {
+        if (ClientConfig.useFlatRailChunks()) {
+            // Only what MTR itself draws as a flat train rail; the rest stays MTR's way
+            return rail.transportMode == TransportMode.TRAIN && rail.railType != RailType.NONE && RailModelRegistry.ELEMENTS.containsKey(RailModelRegistry.FLAT_RAIL_KEY) ? RailModelRegistry.FLAT_RAIL_KEY : "";
+        }
         String customModelKey = ((RailExtraSupplier)rail).getModelKey();
         if (customModelKey.equals("") || !RailModelRegistry.ELEMENTS.containsKey(customModelKey)) {
             if (rail.transportMode == TransportMode.TRAIN) {

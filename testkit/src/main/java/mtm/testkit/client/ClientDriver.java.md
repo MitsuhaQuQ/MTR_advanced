@@ -21,6 +21,8 @@ MTM_TestKit 的客户端驱动：在客户端开 `Http` 服务（side = `client`
   - `/use`（`x,y,z`，`face`?，`slot`?）→ `use`；`/use-item` → 主手 `gameMode.useItem`，返回 `{"result":…}`；
   - `/chat`（`text`）→ `chat`；`/suggest`（`text`）→ `suggest`；`/chat-log?since=` → `chatLog`；
   - `/screenshot?id=` → `screenshot`（PNG）；
+  - `/frames`（`optimizeTrainRendering`?、`maxFps`?（同时关垂直同步）、`x,y,z,yaw,pitch`?、`settleMs`?、`ms`，默认 10000）→ 先在渲染线程设好，再在请求线程等待并 `FrameStats.measure(ms)`（帧率测量，0.73.4）；
+  - `/packs`（`select`?：资源包 ID 列表）→ 重新扫描资源包；有 `select` 时保留内置包、选上这些并 `reloadResourcePacks`，等重载完成（最多 300 s）；返回 `available`（ID 和兼容性）与 `selected`；
   - `/client-data` → `DataJson.snapshot(ClientData.STATIONS, PLATFORMS, SIDINGS, ROUTES, DEPOTS)`；
   - `/editor-url` → `{"url": EditorServer.open()}`（打开/取得网页编辑器地址）；
   - `/log?since=` → `LogCapture.since`；

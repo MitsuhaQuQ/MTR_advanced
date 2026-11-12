@@ -176,8 +176,10 @@ public class TrainClientRegistry {
 	}
 
 	public static TrainProperties getTrainProperties(String key) {
-		final String keyLower = key.toLowerCase(Locale.ENGLISH);
-		return REGISTRY.getOrDefault(keyLower, TrainProperties.getBlankProperties());
+		// Not getOrDefault: the blank properties (a new renderer and sound, whose paths are parsed) would be made on every
+		// call, which is several times a car each frame (siding FPS, 2026-11-13)
+		final TrainProperties properties = REGISTRY.get(key.toLowerCase(Locale.ENGLISH));
+		return properties == null ? TrainProperties.getBlankProperties() : properties;
 	}
 
 	public static TrainProperties getTrainProperties(TransportMode transportMode, int index) {

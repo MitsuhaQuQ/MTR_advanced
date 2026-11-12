@@ -177,7 +177,7 @@ public class RenderTrainsMixin extends EntityRendererMapper<EntitySeat> implemen
         Minecraft.getInstance().level.getProfiler().popPush("NTERailwayData");
         Matrix4f viewMatrix = new Matrix4f(matrices.last().pose());
         MainClient.railRenderDispatcher.prepareDraw();
-        if (ClientConfig.getRailRenderLevel() >= 2) {
+        if (ClientConfig.getRailRenderLevel() >= 2 || ClientConfig.useFlatRailChunks()) {
             GlStateTracker.capture();
             MainClient.railRenderDispatcher.drawRails(Minecraft.getInstance().level, MainClient.drawScheduler, viewMatrix);
             MainClient.drawScheduler.commitRaw(MainClient.drawContext);
@@ -187,7 +187,9 @@ public class RenderTrainsMixin extends EntityRendererMapper<EntitySeat> implemen
                 MainClient.railRenderDispatcher.drawBoundingBoxes(matrices, vertexConsumers.getBuffer(RenderType.lines()));
             }
 
-            MainClient.railRenderDispatcher.drawRailNodes(Minecraft.getInstance().level, MainClient.drawScheduler, viewMatrix);
+            if (ClientConfig.getRailRenderLevel() >= 2) {
+                MainClient.railRenderDispatcher.drawRailNodes(Minecraft.getInstance().level, MainClient.drawScheduler, viewMatrix);
+            }
         }
 
         // if (ShadersModHandler.isRenderingShadowPass()) {
@@ -226,6 +228,10 @@ public class RenderTrainsMixin extends EntityRendererMapper<EntitySeat> implemen
         if (ClientConfig.getRailRenderLevel() >= 2) {
             boolean railAccepted = MainClient.railRenderDispatcher.registerRail(rail);
             if (railAccepted) ci.cancel();
+        } else if (ClientConfig.useFlatRailChunks()) {
+            // Registered either way, so the chunks are kept while a rail tool is held and MTR draws the rails coloured
+            boolean railAccepted = MainClient.railRenderDispatcher.registerRail(rail);
+            if (railAccepted && !renderColors) ci.cancel();
         }
     }
 

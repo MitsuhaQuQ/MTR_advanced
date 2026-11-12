@@ -6,5 +6,5 @@ MTM_TestKit 客户端 mixin，注入原版 `GameRenderer.render(float, long, boo
 
 ### `private void mtmTestKit$nextFrame(float partialTicks, long nanoTime, boolean renderLevel, CallbackInfo callback)`
 - 注入点：`render(FJZ)V` 的 `HEAD`。
-- 作用：`ScreenText.nextFrame()`。
+- 作用：`ScreenText.nextFrame()`，以及 `FrameStats.nextFrame()`（帧时间测量用的打点）。
 - 参数：`partialTicks` 帧插值；`nanoTime` 帧开始纳秒时间；`renderLevel` 本帧是否渲染世界（均未使用）。

@@ -23,6 +23,14 @@ public class DrawScheduler {
     private final List<ClusterDrawCall> clusterDrawCalls = new LinkedList<>();
     private final List<BlazeDrawCall> blazeDrawCalls = new LinkedList<>();
 
+    /**
+     * How near the camera (squared, blocks) a model's translucent faces are still sorted (siding FPS, 2026-11-13): sorting
+     * writes every translucent face of every model to a buffer each frame, which for 20 parked bbmodel trains was 60% of
+     * the frame. Further away they are drawn from the uploaded buffers like with sorting off, where wrong order is hardly
+     * seen. The pose's translation is the model's place relative to the camera.
+     */
+    public static final float TRANSLUCENT_SORT_DISTANCE_SQ = 32 * 32;
+
     public void reloadShaders(ResourceManager resourceManager) throws IOException {
         shaderManager.reloadShaders(resourceManager);
     }
@@ -54,9 +62,17 @@ public class DrawScheduler {
                 drawCall.model.enqueueOpaqueGl(batchManager, drawCall.pose, drawCall.light, drawCall.overlay, drawContext);
             }
         }
-        if (drawContext.drawWithBlaze || drawContext.sortTranslucentFaces) {
+        if (drawContext.drawWithBlaze) {
             for (ClusterDrawCall drawCall : clusterDrawCalls)
                 drawCall.model.enqueueTranslucentBlaze(vertexConsumers, drawCall.pose, drawCall.light, drawCall.overlay, drawContext);
+        } else if (drawContext.sortTranslucentFaces) {
+            for (ClusterDrawCall drawCall : clusterDrawCalls) {
+                if (isNear(drawCall.pose)) {
+                    drawCall.model.enqueueTranslucentBlaze(vertexConsumers, drawCall.pose, drawCall.light, drawCall.overlay, drawContext);
+                } else {
+                    drawCall.model.enqueueTranslucentGl(batchManager, drawCall.pose, drawCall.light, drawCall.overlay, drawContext);
+                }
+            }
         } else {
             for (ClusterDrawCall drawCall : clusterDrawCalls) {
                 drawCall.model.enqueueTranslucentGl(batchManager, drawCall.pose, drawCall.light, drawCall.overlay, drawContext);
@@ -71,6 +87,10 @@ public class DrawScheduler {
             GlStateTracker.restore();
         }
         clusterDrawCalls.clear();
+    }
+
+    private static boolean isNear(Matrix4f pose) {
+        return pose.getTranslationPart().distanceSq(cn.zbx1425.sowcer.math.Vector3f.ZERO) <= TRANSLUCENT_SORT_DISTANCE_SQ;
     }
 
     public void commitRaw(DrawContext drawContext) {

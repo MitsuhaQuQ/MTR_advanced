@@ -1330,4 +1330,6 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站后双折返轮流用（0.73.2）：`TrainService.chooseTurnBack` 的尝试次序在同一类走法里按班次序号轮换（`RouteTimetable.getServiceOrdinal`、`TrainService.getWayOrder`），无新增状态，跳 tick 与读档等价不受影响；两个宿主都走这里。测试：`DoubleTurnBackTest`（`TickRunner` 场景：两股尽头折返线、短折返严格交替、长折返两股同时占用、无同股两车、无违例、下行准点）、`TrainServiceTest.consecutiveTrainsTurnBackOnTheRailsInTurn`。规划（`DutyGenerator`）不分股道，只看折返用时和可停车位数（`HOLD_COUNT_KEY`），股道是运行时选的。
 
+存车线帧率（0.73.4）：只改客户端渲染（`TrainClient` 屏蔽门扫描、`TrainClientRegistry`、ANTE 的 `DrawScheduler`/`FaceList`、平面轨道分块），不涉及组件；列车位置和门的规则不变。
+
 声音树状选择（0.73.1）：只是客户端界面（`SoundTree`、`SoundPickerScreen`），不涉及组件；音频方块和广播器的播放规则仍是组件的 `ClipSequence`。

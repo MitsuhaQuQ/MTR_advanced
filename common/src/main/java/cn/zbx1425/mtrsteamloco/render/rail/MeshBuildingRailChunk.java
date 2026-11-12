@@ -172,8 +172,11 @@ public class MeshBuildingRailChunk extends RailChunkBase {
 
         if (ClientConfig.enableRailDeform != deform) isDirty = true;
 
+        final boolean flat = modelKey.equals(RailModelRegistry.FLAT_RAIL_KEY);
+        if (flat && RailRenderDispatcher.isHoldingRailItem) return;
+
         VertAttrState attrState = new VertAttrState().setModelMatrix(shaderProp.viewMatrix).setOverlayUVNoOverlay();
-        if (!RailRenderDispatcher.isHoldingRailItem) attrState.setColor(-1);
+        if (!RailRenderDispatcher.isHoldingRailItem && !flat) attrState.setColor(-1);
         batchManager.enqueue(vertArrays, new EnqueueProp(attrState), ShaderProp.DEFAULT);
     }
 

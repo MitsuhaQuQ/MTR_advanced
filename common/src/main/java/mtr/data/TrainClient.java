@@ -241,7 +241,11 @@ public class TrainClient extends Train implements IGui {
 
 	@Override
 	protected boolean skipScanBlocks(Level world, double trainX, double trainY, double trainZ) {
-		if (!Config.optimizeTrainRendering() || shouldScanPlatformDoors()) {
+		// Doors shut and staying shut: what a scan finds only counts while they are open (calculateCar ands it with
+		// doorValue > 0) and the client opens nothing itself, so a parked train is not scanned every frame (siding FPS,
+		// 2026-11-13); screen doors it was syncing are let go as below
+		final boolean doorsShut = doorValue <= 0 && !doorTarget;
+		if (!doorsShut && (!Config.optimizeTrainRendering() || shouldScanPlatformDoors())) {
 			return false;
 		}
 		clearPlatformDoors();

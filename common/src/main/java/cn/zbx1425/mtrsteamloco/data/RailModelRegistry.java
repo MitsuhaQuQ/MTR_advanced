@@ -40,6 +40,10 @@ public class RailModelRegistry {
     public static Tree.Root<RailModelProperties> TREE = new Tree.Root<>("rail.mtrsteamloco.type");
 
     public static ModelCluster railNodeModel;
+
+    /** MTR's flat rail as a model (see ClientConfig.useFlatRailChunks); not in PATH_MAP, so no one picks it */
+    public static final String FLAT_RAIL_KEY = "mtm_flat_rail";
+    private static final float FLAT_RAIL_REPEAT = 4;
     
     public static void register(String key, RailModelProperties properties) {
         if (properties == null) return;
@@ -56,6 +60,11 @@ public class RailModelRegistry {
         register("", new RailModelProperties("", Text.translatable("rail.mtrsteamloco.default"), null, 1f, 0f, null, "group.mtrsteamloco.builtin"));
         // This is pulled from registry and shouldn't be shown
         register("null", new RailModelProperties("null", Text.translatable("rail.mtrsteamloco.hidden"), null, Float.MAX_VALUE, 0f, null, "group.mtrsteamloco.builtin"));
+        try {
+            ELEMENTS.put(FLAT_RAIL_KEY, new RailModelProperties(FLAT_RAIL_KEY, Text.literal(""), flatRailModel(), FLAT_RAIL_REPEAT, 0.0625F + mtr.data.IGui.SMALL_OFFSET, null, "group.mtrsteamloco.builtin"));
+        } catch (Exception ex) {
+            Main.LOGGER.error("Failed making the flat rail model", ex);
+        }
 
         try {
             RawModel railNodeRawModel = MainClient.modelManager.loadRawModel(resourceManager,
@@ -97,6 +106,49 @@ public class RailModelRegistry {
 
         MainClient.railRenderDispatcher.clearRail();
         TREE = Tree.loadTree("rail.mtrsteamloco.type", PATH_MAP, t -> t.name.getString());
+    }
+
+    /**
+     * The quads RenderTrains.renderRailStandard draws for a train rail, four blocks of them: two blocks wide, the texture
+     * across the width and a strip of it along each block, the strip moving on a quarter each block as MTR's does (which
+     * quarter MTR starts on depends on where the block is; here every four blocks start on the first). Both faces, as MTR
+     * draws both.
+     */
+    private static RawModel flatRailModel() {
+        final cn.zbx1425.sowcer.batch.MaterialProp material = new cn.zbx1425.sowcer.batch.MaterialProp("rendertype_entity_cutout");
+        material.texture = new ResourceLocation("textures/block/rail.png");
+        final cn.zbx1425.sowcerext.model.RawMesh mesh = new cn.zbx1425.sowcerext.model.RawMesh(material);
+        final float configOffset = (float) mtr.client.Config.trackTextureOffset() / mtr.client.Config.TRACK_OFFSET_COUNT;
+        for (int block = 0; block < FLAT_RAIL_REPEAT; block++) {
+            final float zStart = block - FLAT_RAIL_REPEAT / 2;
+            final float offset = block * 0.25F + configOffset;
+            for (int side = 0; side < 2; side++) {
+                final boolean up = side == 0;
+                final int first = mesh.vertices.size();
+                mesh.vertices.add(flatRailVertex(-1, zStart, 0, 0.3125F + offset, up));
+                mesh.vertices.add(flatRailVertex(1, zStart, 1, 0.3125F + offset, up));
+                mesh.vertices.add(flatRailVertex(1, zStart + 1, 1, 0.1875F + offset, up));
+                mesh.vertices.add(flatRailVertex(-1, zStart + 1, 0, 0.1875F + offset, up));
+                if (up) {
+                    mesh.faces.add(new cn.zbx1425.sowcerext.model.Face(new int[]{first, first + 2, first + 1}));
+                    mesh.faces.add(new cn.zbx1425.sowcerext.model.Face(new int[]{first, first + 3, first + 2}));
+                } else {
+                    mesh.faces.add(new cn.zbx1425.sowcerext.model.Face(new int[]{first, first + 1, first + 2}));
+                    mesh.faces.add(new cn.zbx1425.sowcerext.model.Face(new int[]{first, first + 2, first + 3}));
+                }
+            }
+        }
+        final RawModel model = new RawModel();
+        model.append(mesh);
+        model.sourceLocation = new ResourceLocation("mtrsteamloco", FLAT_RAIL_KEY);
+        return model;
+    }
+
+    private static cn.zbx1425.sowcerext.model.Vertex flatRailVertex(float x, float z, float u, float v, boolean up) {
+        final cn.zbx1425.sowcerext.model.Vertex vertex = new cn.zbx1425.sowcerext.model.Vertex(new Vector3f(x, 0, z), new Vector3f(0, up ? 1 : -1, 0));
+        vertex.u = u;
+        vertex.v = v;
+        return vertex;
     }
 
     private static final RailModelProperties EMPTY_PROPERTY = new RailModelProperties(

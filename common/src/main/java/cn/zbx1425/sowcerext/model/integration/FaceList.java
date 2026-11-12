@@ -28,9 +28,8 @@ public class FaceList {
     public void commit(MultiBufferSource bufferSource) {
         VertexConsumer vertexConsumer = bufferSource.getBuffer(renderType);
         if (needSorting) {
-            queuedFaces.sort((a, b) ->
-                    -Float.compare(a.sortingVector.distanceSq(Vector3f.ZERO), b.sortingVector.distanceSq(Vector3f.ZERO))
-            );
+            // Furthest first; the distance is worked out once per face, not in every comparison
+            queuedFaces.sort((a, b) -> Float.compare(b.sortingDistance, a.sortingDistance));
         }
         for (TransformedFace face : queuedFaces) {
             for (Vertex vertex : face.vertices) {
@@ -48,15 +47,16 @@ public class FaceList {
 
     private static class TransformedFace {
         private final Vertex[] vertices;
-        private final Vector3f sortingVector;
+        private final float sortingDistance;
         int color;
         int light;
         int overlay;
 
         public TransformedFace(Vertex[] vertices, int color, int light, int overlay) {
             this.vertices = vertices;
-            this.sortingVector = new Vector3f(0, 0, 0);
-            for (Vertex vertex : vertices) this.sortingVector.add(vertex.position);
+            final Vector3f sortingVector = new Vector3f(0, 0, 0);
+            for (Vertex vertex : vertices) sortingVector.add(vertex.position);
+            this.sortingDistance = sortingVector.distanceSq(Vector3f.ZERO);
             this.color = color;
             this.light = light;
             this.overlay = overlay;

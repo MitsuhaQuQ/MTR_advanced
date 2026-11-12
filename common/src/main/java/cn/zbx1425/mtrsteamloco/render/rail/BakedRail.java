@@ -34,6 +34,10 @@ public class BakedRail {
         modelKey = RailRenderDispatcher.getModelKeyForRender(rail);
         RailModelProperties prop = getProperties();
         color = AttrUtil.argbToBgr(rail.railType.color | 0xFF000000);
+        if (modelKey.equals(RailModelRegistry.FLAT_RAIL_KEY) && (mtr.client.Config.hideSpecialRailColors() || !rail.railType.hasSavedRail)) {
+            // As RenderTrains.renderRailStandard: only platform and siding rails keep their colour when no rail tool is held
+            color = AttrUtil.argbToBgr(0xFFFFFFFF);
+        }
 
         if (!modelKey.equals("null") && genChunkMap) {
             RailExtraSupplier supplier = (RailExtraSupplier) rail;

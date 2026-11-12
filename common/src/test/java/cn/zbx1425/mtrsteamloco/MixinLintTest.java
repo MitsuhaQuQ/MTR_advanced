@@ -39,6 +39,7 @@ class MixinLintTest {
 		ALLOWED.put("BlockEntityRenderDispatcherMixin.cullVanillaDecoration", "only skips confirmed off-screen vanilla decoration renderers in the experimental main view");
 		ALLOWED.put("RailwayDataMixin.simulateTrains", "ANTE's rails are found near players by their own shape and the view distance; then MTR's own tick runs");
 		ALLOWED.put("RenderTrainsMixin.getTextureLocation", "the seat entity's texture, which MTR leaves empty");
+		ALLOWED.put("RenderTrainsMixin.onRenderRailStandard", "rails ANTE draws from its chunk buffers (3D rails, or MTR's flat rails as a model) are not drawn again quad by quad; MTR's own drawing stays for the rest and while a rail tool is held");
 		ALLOWED.put("TrainClientMixin.handlePositions", "MTR's own with ANTE's roll of the cars and riders added");
 		ALLOWED.put("TrainClientMixin.simulateCar", "MTR's own with the roll of the cars where they join");
 		ALLOWED.put("CustomResourcesMixin.readResource", "ANTE's resource reading");

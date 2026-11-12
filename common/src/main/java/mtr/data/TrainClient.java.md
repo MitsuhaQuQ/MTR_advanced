@@ -44,7 +44,7 @@
 - 客户端不发车、不判断闭塞。
 
 ### `protected boolean skipScanBlocks(Level world, double trainX, double trainY, double trainZ)`
-- 作用：开启了 `Config.optimizeTrainRendering()` 且不需要扫描站台门时，清除已驱动的门并跳过扫描。
+- 作用：跳过扫描（并清除已驱动的门）的两种情形：门关着且不打算开门（门值 0、门目标关，0.73.4：扫描结果本来就和门开着相与，停着的车不再每帧扫描）；或开启了 `Config.optimizeTrainRendering()` 且不需要扫描站台门。
 - 返回：是否跳过。调用者：`Train.java:1236`、`TrainMixin.java:63`。
 
 ### `private boolean shouldScanPlatformDoors()`
