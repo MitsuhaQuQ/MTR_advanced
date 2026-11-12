@@ -57,7 +57,7 @@
 
 ### `public void toMessagePack(MessagePacker messagePacker) throws IOException`
 - 作用：写上述存档键；货物全空或无容器时写 nil。
-- 调用者：`TrainServer.java:275`（`super`）。
+- 调用者：`TrainServer.java:275`（`super`）；停车线经 `RailwayData.writeMessagePackDataset` 写出列车（`Siding.java:474`、`:477`）。
 
 ### `public int messagePackLength()`
 - 返回：父类长度 + 12。
