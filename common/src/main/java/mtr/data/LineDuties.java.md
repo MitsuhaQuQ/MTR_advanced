@@ -10,6 +10,7 @@
 - `MILLIS_PER_BLOCK = 50`：选最近停车线时假定列车每块 50 ms（每秒 20 块）。
 - `ESTIMATE_MARGIN_MILLIS = 30000`：按距离估计出库时间时另加的余量（离开停车线、弯道）。
 - `CUSTOM_TRAIN_PREFIX = "mtr_custom_train_"`：显示车辆名时去掉的前缀。
+- `LOGGED_PASSES`（0.73.2）：每条停车线上次打印的"先到先出"那行，只在内容变化时再打印（检查运用每几秒一次，Q 盘世界 25 分钟打了 250 行，L14）。
 - `UNRUNNABLE = "UNRUNNABLE"`（public）：计划问题类型：任何列车数都无法运行的班次数（按每周运行日计）。
 
 ### `private LineDuties()`
@@ -88,7 +89,7 @@
 - `sidingFirsts` / `sidingLasts`：每条停车线的首站（列车出到这里）与末站（从这里回）。
 
 ### `private Unit(Set<String> lines, Map<String, List<Route>> lineRoutes, Set<Long> depotIds, DataCache dataCache, Collection<Siding> sidings, long draftDepotId)`
-- 作用：收集线路与名称；记录手动运用占用的班次（草稿车厂除外）；对每个车厂按名称排序的本车厂停车线（按游戏分配，含高度区分，`isOwnSiding`）：按服务类型和指定线路分组（`Depot.getSidingGroupKey`），记录首/末站，出库链接（`sidingLinks`）与回库链接，`SidingInput`（车数、链接、车厂）；出库路在终点站折返前经过的站台（`outPasses`/`outPassNodes` 转为站台，供"先到先出"，有则打印）；车池键；车辆名；可用车数（车厂为池设定的数每车厂每池计一次，否则各停车线车数，无限按 `MAX_SLOTS`）。各组的线路按服务类型过滤（`Depot.filterRoutes`）并限于其指定线路。最后计算 `key` 与 `basis`。
+- 作用：收集线路与名称；记录手动运用占用的班次（草稿车厂除外）；对每个车厂按名称排序的本车厂停车线（按游戏分配，含高度区分，`isOwnSiding`）：按服务类型和指定线路分组（`Depot.getSidingGroupKey`），记录首/末站，出库链接（`sidingLinks`）与回库链接，`SidingInput`（车数、链接、车厂）；出库路在终点站折返前经过的站台（`outPasses`/`outPassNodes` 转为站台，供"先到先出"，有则打印，同一停车线内容不变时不重复打印）；车池键；车辆名；可用车数（车厂为池设定的数每车厂每池计一次，否则各停车线车数，无限按 `MAX_SLOTS`）。各组的线路按服务类型过滤（`Depot.filterRoutes`）并限于其指定线路。最后计算 `key` 与 `basis`。
 
 ### `Set<String> getTaken()` / `public List<Route> getRoutes()`
 - 只读视图。调用者：`EditorDuties.java:315`、`EditorData.java:287`（getRoutes）。

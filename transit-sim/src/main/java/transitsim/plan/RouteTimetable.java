@@ -345,6 +345,17 @@ public class RouteTimetable {
 		return Math.max(0, findTableIndex(serviceMillis));
 	}
 
+	/**
+	 * @param serviceMillis a service as a full timestamp, or a time of the day; a time between services (a train joining
+	 *                      the service part way) counts as the service before it
+	 * @return where the service comes in its table's day, from 0, so consecutive services alternate between odd and even
+	 */
+	public int getServiceOrdinal(long serviceMillis) {
+		final int service = (int) Math.floorMod(serviceMillis, (long) OperatingDay.MILLIS_PER_DAY);
+		final int index = Collections.binarySearch(getTable(getTableIndex(serviceMillis)).services, service);
+		return index >= 0 ? index : Math.max(0, -index - 2);
+	}
+
 	private int findTableIndex(long serviceMillis) {
 		if (otherTables.isEmpty() && weekdays == ALL_WEEKDAYS) {
 			return 0;

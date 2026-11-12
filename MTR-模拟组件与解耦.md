@@ -821,7 +821,7 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
    - 站前：线路终点可设轮用站台，按运用跑的车在前一站出发时选一个站台进站、在站台掉头；下一条线路可设首站的优先股道（种别优先）。
    - 站后：按运用跑的车也生成各股折返线的路径（以前只走第一股）。
    - 两者都有时站前在前。
-   - 选法两种折返共用，在组件 `TrainService.chooseTurnBack`：按次序取第一种赶得上下一班、走的轨道没被别的车占着或预约的；都不行取最早的。
+   - 选法两种折返共用，在组件 `TrainService.chooseTurnBack`：按次序取第一种赶得上下一班、走的轨道没被别的车占着或预约的；都不行取最早的。0.73.2 起同一类走法的次序按班次序号轮换（站后双折返轮流用）。
    - 计划按站台对位时认得轮用站台；时刻表冲突检查按轮用站台的个数算容量。
    - 没做：~~车厂主路径（按频率发车）的站前轮用~~（2026-11-07 复查：列车类已没有按频率发车的车厂主路径，不再需要）；直通尾部的多股折返；网页草稿的运用路径只有平常的走法；站前走法里的站序和站后平常走法差一站（站后走法到下一条线路的首站多一个停站）。
 2. **手工配置车站咽喉的联锁**（用户 2026-11-05 提出；2026-11-05 做完联锁区部分，MTM_Logic 0.10.0，代码说明 4.5 节）：
@@ -1325,5 +1325,7 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 广播器（0.72.0）也用 `ClipSequence` 一段接一段地播声音：客户端 `AnnouncementPlayer` 的 `Sequence` 只负责判断这段是否还在播和真正放声音，顺序和空隙由组件决定。
 
 票务规则（0.73.0）：组件里的"组"（`FareNetwork` 的 group）就是游戏里的票务规则。`FareNetwork.setLongestBlocks` 让规则的最长距离取参考线路的长度，不再按规则内线路的最长行程算；线路长度由游戏侧 `FareData` 算出后传入。测试：`FareTest.aReferenceLineSetsTheLongestDistance`。
+
+站后双折返轮流用（0.73.2）：`TrainService.chooseTurnBack` 的尝试次序在同一类走法里按班次序号轮换（`RouteTimetable.getServiceOrdinal`、`TrainService.getWayOrder`），无新增状态，跳 tick 与读档等价不受影响；两个宿主都走这里。测试：`DoubleTurnBackTest`（`TickRunner` 场景：两股尽头折返线、短折返严格交替、长折返两股同时占用、无同股两车、无违例、下行准点）、`TrainServiceTest.consecutiveTrainsTurnBackOnTheRailsInTurn`。规划（`DutyGenerator`）不分股道，只看折返用时和可停车位数（`HOLD_COUNT_KEY`），股道是运行时选的。
 
 声音树状选择（0.73.1）：只是客户端界面（`SoundTree`、`SoundPickerScreen`），不涉及组件；音频方块和广播器的播放规则仍是组件的 `ClipSequence`。

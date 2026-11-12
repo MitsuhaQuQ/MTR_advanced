@@ -6,6 +6,9 @@
 import {test, expect} from "../lib/test";
 import {click, serverData, sleep, state, waitFor} from "../lib/game";
 import {label, serverLog, trainsNow, TrainsAt} from "../lib/lines";
+
+/** Which of the routes named the same this one is, in the order the server lists them (the dashboard lists them so too) */
+const nthOfName = (routes: any[], route: any) => routes.filter(r => String(r.name) === String(route.name)).indexOf(route);
 import {closeAll, openTimetable, refreshDepotPath} from "../lib/screens";
 import {matchEvents, platformSpots, readRoutePlan, RoutePlan, stopEventsAt, turnBacks} from "../lib/timing";
 
@@ -52,7 +55,8 @@ test("时刻表：最快时刻与冲突 @world", async () => {
 	for (const route of data.routes.filter((r: any) => r.timetable_enabled && r.timetable_services?.length)) {
 		const name = label(String(route.name));
 		try {
-			await openTimetable(name);
+			// Routes in a line group open through it (lib/screens.ts openGroupFor); routes named the same by their order
+			await openTimetable(name, nthOfName(data.routes, route));
 			await click("TimetableScreen.buttonCheckConflicts");
 			const status = await waitFor("the check to finish", async () =>
 				(await state()).texts.find(t => t.y > 300 && /冲突|未检查/.test(t.text) && !/时刻已修改|正在检查/.test(t.text)), 60_000, 250);
@@ -76,7 +80,7 @@ test("实际运行：到发时刻与折返 @world @run", async ({}, testInfo) =>
 	const plans: RoutePlan[] = [];
 	for (const route of data.routes.filter((r: any) => r.timetable_enabled && r.timetable_services?.length)) {
 		try {
-			const plan = await readRoutePlan(route);
+			const plan = await readRoutePlan(route, nthOfName(data.routes, route));
 			if (plan) plans.push(plan);
 		} catch (e) {
 			console.log(`${route.name}: plan not read (${String(e).split("\n")[0]})`);

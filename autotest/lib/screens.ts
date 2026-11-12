@@ -1,36 +1,79 @@
 // Ways through MTR's own screens that several tests take, as a player would take them.
-import {click, closeAll, hoverRow, list, openDashboard, switchTab, type, waitFor, waitScreen, widget} from "./game";
+import {click, closeAll, hoverRow, list, openDashboard, scroll, sleep, switchTab, type, waitFor, waitScreen, widget} from "./game";
 
 const DASHBOARD_LIST = "DashboardScreen.dashboardList";
 
-/** Dashboard → routes → the route's edit button → EditRouteScreen */
-export async function openRouteEdit(routeLabel: string) {
+/**
+ * Opens the folded group ("[+] 9号线C Line 9 C (2)") a route's row is in, in a list that groups routes by line: the group
+ * whose line name the route's name starts with, or else, as a line's routes may be named anything ("Local Up" in line
+ * "S1"), each folded group in turn until the route shows.
+ */
+export async function openGroupFor(listId: string, routeLabel: string) {
+	const tried = new Set<string>();
+	for (let i = 0; i < 20; i++) {
+		const rows = (await list(listId)).rows;
+		if (rows.some(r => !r.header && r.label.includes(routeLabel))) return;
+		const folded = rows.filter(r => r.label.startsWith("[+]") && !tried.has(r.label))
+			.map(r => ({row: r, line: r.label.replace("[+] ", "").split(" ")[0]}));
+		const byName = folded.filter(g => routeLabel.startsWith(g.line)).sort((a, b) => b.line.length - a.line.length);
+		// The group named so may be further down than the list shows: scroll down to it before opening others
+		if (!byName.length && await scrollToGroup(listId, routeLabel, tried)) continue;
+		const group = byName[0] || folded[0];
+		if (!group) return;
+		tried.add(group.row.label);
+		await click({x: group.row.x + 10, y: group.row.y + group.row.height / 2});
+		await waitFor("the group opened", async () => !(await list(listId)).rows.some(r => r.label === group.row.label));
+	}
+}
+
+/**
+ * Scrolls a list down, as a player does with the wheel, until a folded group whose line name the route's name starts
+ * with shows.
+ *
+ * @return true if one shows
+ */
+async function scrollToGroup(listId: string, routeLabel: string, tried: Set<string>): Promise<boolean> {
+	let current = await list(listId);
+	if (!current.rows.length || current.total <= current.rows.length) return false;
+	const has = () => current.rows.some(r => r.label.startsWith("[+]") && !tried.has(r.label) && routeLabel.startsWith(r.label.replace("[+] ", "").split(" ")[0]));
+	const anchor = current.rows[0];
+	for (let i = 0; i < 40 && !has(); i++) {
+		const before = current.rows.map(r => r.label).join("|");
+		await scroll(anchor.x + 10, anchor.y + anchor.height / 2, -1);
+		await sleep(50);
+		current = await list(listId);
+		if (current.rows.map(r => r.label).join("|") === before) break;
+	}
+	return has();
+}
+
+/** Types into the dashboard's search box, which filters every tab's list and stays while the game runs */
+export async function setDashboardSearch(text: string) {
+	await type(`${DASHBOARD_LIST}.textFieldSearch`, text, true);
+}
+
+/**
+ * Dashboard → routes → the route's edit button → EditRouteScreen
+ *
+ * @param nth which of several routes with the same name, in the list's order
+ */
+export async function openRouteEdit(routeLabel: string, nth = 0) {
 	await openDashboard();
 	await switchTab("buttonTabRoutes");
-	// Routes are grouped by line, each group folded ("[+] 1号线 Line 1 (2)"): open the group the route is in
-	for (let i = 0; i < 10; i++) {
-		const rows = (await list(DASHBOARD_LIST)).rows;
-		if (rows.some(r => !r.header && (r.label === routeLabel || r.label.includes(routeLabel)))) {
-			break;
-		}
-		const groups = rows.filter(r => r.header && r.label.startsWith("[+]"))
-			.map(r => ({row: r, line: r.label.replace("[+] ", "").split(" ")[0]}))
-			.filter(g => routeLabel.startsWith(g.line))
-			.sort((a, b) => b.line.length - a.line.length);
-		if (!groups.length) {
-			break;
-		}
-		await click({x: groups[0].row.x + 10, y: groups[0].row.y + groups[0].row.height / 2});
-		await waitFor("the group opened", async () => !(await list(DASHBOARD_LIST)).rows.some(r => r.label === groups[0].row.label));
-	}
-	await hoverRow(DASHBOARD_LIST, routeLabel);
+	// Routes are grouped by line, each group folded ("[+] 1号线 Line 1 (2)"), except while searching, when the dashboard
+	// lists every route on its own (DashboardScreen.updateRouteRows): search for it, as a player finds a route in a long
+	// list whatever line it is in (Q-world run: "Local Up" in line S1, the two routes named 环线 Loop Line)
+	await setDashboardSearch(routeLabel);
+	await waitFor("the search to list the route", async () => (await list(DASHBOARD_LIST)).rows.some(r => !r.header && r.label.includes(routeLabel)), 5000)
+		.catch(() => openGroupFor(DASHBOARD_LIST, routeLabel));
+	await hoverRow(DASHBOARD_LIST, routeLabel, nth);
 	await click(`${DASHBOARD_LIST}.buttonEdit`);
 	return waitScreen("EditRouteScreen");
 }
 
 /** … → "时刻表" → TimetableScreen */
-export async function openTimetable(routeLabel: string) {
-	await openRouteEdit(routeLabel);
+export async function openTimetable(routeLabel: string, nth = 0) {
+	await openRouteEdit(routeLabel, nth);
 	await click("EditRouteScreen.buttonTimetable");
 	return waitScreen("TimetableScreen");
 }

@@ -2,11 +2,11 @@
 // in the timetables' time zone, timetables put in through the timetable screen, and the server's own log.
 import {readFileSync, existsSync} from "fs";
 import {click, fixture, hoverRow, list, server, type, waitFor, waitScreen, widget} from "./game";
-import {addService, closeAll, enableTimetable, openTimetable, refreshDepotPath, selectService} from "./screens";
+import {addService, closeAll, enableTimetable, openGroupFor, openTimetable, refreshDepotPath, selectService} from "./screens";
 
 export interface LineRoute {id: string, name: string}
 export interface Sensor {x: number, y: number, z: number, trigger: string, kind: number}
-export interface Line {layout: number, name: string, z: number, depot: string, depotName: string, routes: LineRoute[], stations: string[], sidings: string[], stationX: number[], sensors?: Sensor[], depotBox?: number[]}
+export interface Line {layout: number, name: string, z: number, depot: string, depotName: string, routes: LineRoute[], stations: string[], sidings: string[], stationX: number[], sensors?: Sensor[], depotBox?: number[], tails?: number[][]}
 
 export const lines: Line[] = fixture.lines || [];
 
@@ -36,7 +36,8 @@ const interval = (seconds: number) => [Math.floor(seconds / 3600), Math.floor(se
 /**
  * When a route's services leave (its first stop), as scheduleAll puts them in: lines 1–6 every 6 minutes from both ends,
  * the short routes of lines 5 and 6 between the long ones; line 7 every 30 seconds; lines 8 and 9 every 6 minutes, each
- * route a minute or so after the one it carries on from, so a train running through waits a little at the boundary.
+ * route a minute or so after the one it carries on from, so a train running through waits a little at the boundary;
+ * line 10 every 150 seconds.
  */
 export function serviceTimes(line: Line, route: LineRoute, start: string): {first: string, headway: number, count: number} {
 	const name = route.name.split("|")[0];
@@ -48,6 +49,8 @@ export function serviceTimes(line: Line, route: LineRoute, start: string): {firs
 		const key = Object.keys(offsets).find(k => name.endsWith(k))!;
 		return {first: later(start, offsets[key]), headway: 360, count: 7};
 	}
+	// Line 10 (站后双折返): every two and a half minutes, so trains come in at 五站 while the one before is still turning
+	if (line.layout === 10) return {first: later(start, name.includes("下行") ? 1 : 0), headway: 150, count: 24};
 	const short = name.includes("短");
 	const down = name.includes("下行");
 	// Line 2's express two minutes after 上行, so it comes through 三站 while the run test samples
@@ -158,17 +161,5 @@ export interface TrainSample {id: string, siding: string, depot: string, x: numb
 export interface TrainsAt {millis: number, tick: number, trains: TrainSample[]}
 export const trainsNow = (): Promise<TrainsAt> => server.call("/trains");
 
-/** Opens the folded group ("[+] 9号线C Line 9 C (2)") a route's row is in, in a list that groups routes by line */
-export async function openGroupFor(listId: string, routeLabel: string) {
-	for (let i = 0; i < 10; i++) {
-		const rows = (await list(listId)).rows;
-		if (rows.some(r => !r.header && r.label.includes(routeLabel))) return;
-		const groups = rows.filter(r => r.label.startsWith("[+]"))
-			.map(r => ({row: r, line: r.label.replace("[+] ", "").split(" ")[0]}))
-			.filter(g => routeLabel.startsWith(g.line))
-			.sort((a, b) => b.line.length - a.line.length);
-		if (!groups.length) return;
-		await click({x: groups[0].row.x + 10, y: groups[0].row.y + groups[0].row.height / 2});
-		await waitFor("the group opened", async () => !(await list(listId)).rows.some(r => r.label === groups[0].row.label));
-	}
-}
+/** Moved to screens.ts, where opening a route's screens uses it too */
+export {openGroupFor};

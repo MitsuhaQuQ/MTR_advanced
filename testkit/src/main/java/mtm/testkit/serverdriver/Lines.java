@@ -48,6 +48,13 @@ import java.util.TreeSet;
  * <li>through services over three routes: A 一站→三站 joins B (二站→四站) at its middle stop 三站, B runs on as C (四站→五站);
  * back C→B, and B leaves at 三站 for A; 三站's platforms are timetable boundaries</li>
  * </ol>
+ * and one for 站后双折返 (user, 2026-11-13):
+ * <ol start="10">
+ * <li>two dead-end turn-back tracks behind 五站, side by side, each reached from both main tracks over the throat's two
+ * crossovers; trains take them in turn. The depot joins the westbound track behind 五站 (a branch between the
+ * crossovers and the tails, as a depot behind a tail would leave that tail no longer a dead end, which is how the game
+ * finds the tails to choose from)</li>
+ * </ol>
  * Every line: eastbound main track at z = 0, westbound at z = 8 (relative), stations 一站…五站 with a 60-block platform on
  * each main track, a turn-back track behind 一站. Routes 上行 (一站→五站, track 0) and 下行 (五站→一站, track 8); lines 5 and 6
  * also 短上行/短下行 (一站↔三站), turning back at the middle station. Depot 1–4 is at the 五站 end, so 五站 is the near
@@ -64,10 +71,10 @@ public final class Lines {
 	private static final String[] STATION_NAMES = {"一站|Station 1", "二站|Station 2", "三站|Station 3", "四站|Station 4", "五站|Station 5"};
 	private static final String[] LAYOUT_NAMES = {
 			"站前折返+站后车库", "站后折返线后接车厂", "站后折返线前分叉接车厂", "站前折返+单独出库站台", "中间站折返线+车厂", "中间站折返线+车厂只接单边",
-			"长区间信号分段", "首尾直通", "中途接入与三段直通"
+			"长区间信号分段", "首尾直通", "中途接入与三段直通", "站后双折返"
 	};
-	private static final int[] COLORS = {0xE53935, 0x1E88E5, 0x43A047, 0x8E24AA, 0xFB8C00, 0x00897B, 0x6D4C41, 0x3949AB, 0xC0CA33};
-	public static final int LAYOUTS = 9;
+	private static final int[] COLORS = {0xE53935, 0x1E88E5, 0x43A047, 0x8E24AA, 0xFB8C00, 0x00897B, 0x6D4C41, 0x3949AB, 0xC0CA33, 0xD81B60};
+	public static final int LAYOUTS = 10;
 
 	private Lines() {
 	}
@@ -153,6 +160,9 @@ public final class Lines {
 					rearTurnBack(east);
 					depotBehindTurnBack(east, depotBoxes);
 					middleTurnBack(middle);
+					break;
+				case 10:
+					doubleRearTurnBack(east, depotBoxes);
 					break;
 				case 3:
 					// The depot branching off the eastbound track before the turn-back track
@@ -313,6 +323,18 @@ public final class Lines {
 			if (layout == 2) {
 				line.add("sensors", placeSensors(STATION_X[2]));
 			}
+			if (layout == 10) {
+				// The two tails behind 五站, as x from, x to and z (absolute), so tests can tell which one a train is on
+				final JsonArray tails = new JsonArray();
+				for (final int z : new int[]{0, 8}) {
+					final JsonArray tail = new JsonArray();
+					tail.add(east + 100);
+					tail.add(east + 160);
+					tail.add(z0 + z);
+					tails.add(tail);
+				}
+				line.add("tails", tails);
+			}
 			return line;
 		}
 
@@ -369,6 +391,29 @@ public final class Lines {
 			rail(east + 100, 0, east + 130, 0, RailType.IRON);
 			rail(east + 130, 0, east + 210, 0, RailType.SIDING);
 			depotBoxes.add(new int[]{east + 120, -6, east + 220, 6});
+		}
+
+		/**
+		 * Two dead-end turn-back tracks behind 五站 (站后双折返): T1 straight on from the eastbound track (z 0), T2 straight on
+		 * from the westbound one (z 8). Crossover A takes eastbound trains over to T2, crossover B takes trains out of T1 back
+		 * to the westbound track; trains going into T2 and out of T1 share the westbound track between the two crossovers,
+		 * against each other, which the throat has to keep apart. The depot branches off the westbound track between B and
+		 * T2, its trains leaving westwards.
+		 */
+		private void doubleRearTurnBack(int east, List<int[]> depotBoxes) {
+			mainNode(0, east + 10);
+			mainNode(0, east + 100);
+			mainNode(8, east + 50);
+			mainNode(8, east + 60);
+			mainNode(8, east + 80);
+			mainNode(8, east + 100);
+			rail(east + 100, 0, east + 160, 0, RailType.TURN_BACK);
+			rail(east + 100, 8, east + 160, 8, RailType.TURN_BACK);
+			rail(east + 10, 0, east + 50, 8, RailType.IRON);
+			rail(east + 100, 0, east + 60, 8, RailType.IRON);
+			rail(east + 80, 8, east + 120, 16, RailType.IRON);
+			rail(east + 120, 16, east + 200, 16, RailType.SIDING);
+			depotBoxes.add(new int[]{east + 115, 12, east + 210, 20});
 		}
 
 		/** A turn-back track behind 五站: eastbound trains run on into it and come back out onto the westbound track */

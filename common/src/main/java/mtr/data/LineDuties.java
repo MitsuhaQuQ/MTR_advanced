@@ -417,8 +417,14 @@ public final class LineDuties {
 						dataCache.platformIdMap.values().stream().filter(platform -> platform.containsPos(pos)).findFirst().ifPresent(platform -> passes.putIfAbsent(platformId, platform.id));
 					});
 					sidingInput.passes = passes;
-					if (!passes.isEmpty()) {
-						System.out.println("Minecraft Transit Railway: siding " + siding.name + " reaches " + passes.keySet() + " only through " + passes.values() + " and its turn back (first come, first out there)");
+					// Said once, and again only when it changes: the duties are checked every few seconds (Q-world run, L14)
+					if (passes.isEmpty()) {
+						LOGGED_PASSES.remove(siding.id);
+					} else {
+						final String message = "Minecraft Transit Railway: siding " + siding.name + " reaches " + passes.keySet() + " only through " + passes.values() + " and its turn back (first come, first out there)";
+						if (!message.equals(LOGGED_PASSES.put(siding.id, message))) {
+							System.out.println(message);
+						}
 					}
 					// The runtime's pool: the unit's sidings of the same vehicle run each other's duties and take each other's trains
 					sidingInput.poolKey = siding.getPoolKey();
@@ -1058,6 +1064,10 @@ public final class LineDuties {
 	}
 
 	private static final String CUSTOM_TRAIN_PREFIX = "mtr_custom_train_";
+	/**
+	 * The last first-come-first-out line printed for each siding, so it is printed only when it changes.
+	 */
+	private static final Map<Long, String> LOGGED_PASSES = new java.util.concurrent.ConcurrentHashMap<>();
 	/**
 	 * An issue of a plan: how many services, counted once for each day they run, no number of trains could run.
 	 */

@@ -5,7 +5,8 @@
 // Line 7 (a 2000-block section, services every 30 seconds): trains follow each other into the section by its signal
 // blocks, not waiting before it while one is in it. Lines 8 and 9 (through services): the train of a service running on
 // as another route's runs that one too, leaving the boundary stop on the other route's time, joining part of the way
-// along (line 9's B at 三站) on that route's time there.
+// along (line 9's B at 三站) on that route's time there. Line 10 (站后双折返, services every 150 s): both turn-back tracks
+// behind 五站 are used, consecutive trains take them in turn, and never two trains are on one at once.
 // Lines 1 and 4 get no trains (their depots have no way out that keeps off the line's platforms run against, see
 // MTR-测试项目清单.md); they are recorded, not failed.
 import {test, expect} from "../lib/test";
@@ -182,6 +183,59 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		report.push(`7号线 long section: at most ${most} trains in it on one track, closest ${closest === Infinity ? "-" : Math.round(closest)} blocks apart; ${waitedBefore} samples of a train standing at its entrance while another was in it (${blocked.size} trains)`);
 		if (most < 2) failures.push(`7号线: never two trains in the long section on one track (services every 30 s should put several in it)`);
 		if (waitedBefore > 0) failures.push(`7号线: trains stood at the long section's entrance while another train was in it (${blocked.size} trains)`);
+	}
+
+	// Line 10: the two tails behind 五站, by the trains' heads on them
+	const doubleTurn = lines.find(l => l.layout === 10);
+	if (doubleTurn?.tails) {
+		const tails = doubleTurn.tails;
+		const tailOf = (t: TrainSample) => tails.findIndex(([x1, x2, z]) => t.x >= x1 - 2 && t.x <= x2 + 2 && Math.abs(t.z - z - 0.5) < 1.5);
+		// Each visit of a train to a tail, in the order they began
+		const visits: {train: string, tail: number, from: number, to: number}[] = [];
+		const current = new Map<string, {train: string, tail: number, from: number, to: number}>();
+		const lastVisit = new Map<string, {train: string, tail: number, from: number, to: number}>();
+		let shared = 0;
+		for (const sample of samples) {
+			const byTail = new Map<number, string[]>();
+			for (const t of sample.trains.filter(t => t.onRoute && lineOf(t) === doubleTurn)) {
+				const tail = tailOf(t);
+				const open = current.get(t.id);
+				if (tail < 0) {
+					current.delete(t.id);
+					continue;
+				}
+				byTail.set(tail, [...(byTail.get(tail) || []), t.id]);
+				// The same train back on the same tail within two minutes is the same turn (its head changes ends as it reverses)
+				const previous = lastVisit.get(t.id);
+				if (open && open.tail === tail) {
+					open.to = sample.millis;
+				} else if (previous && previous.tail === tail && sample.millis - previous.to < 120_000) {
+					previous.to = sample.millis;
+					current.set(t.id, previous);
+				} else {
+					const visit = {train: t.id, tail, from: sample.millis, to: sample.millis};
+					visits.push(visit);
+					current.set(t.id, visit);
+					lastVisit.set(t.id, visit);
+				}
+			}
+			for (const [tail, ids] of byTail) {
+				if (ids.length > 1) {
+					shared++;
+					failures.push(`10号线: trains ${ids.map(id => id.slice(-4)).join(", ")} on tail ${tail + 1} at once at ${hhmmss(sample.millis)}`);
+				}
+			}
+			// Trains no longer seen at all leave their visit
+			for (const id of [...current.keys()]) if (!sample.trains.some(t => t.id === id)) current.delete(id);
+		}
+		visits.sort((a, b) => a.from - b.from);
+		const order = visits.map(v => `${v.tail + 1}(${v.train.slice(-4)} ${hhmmss(v.from)} ${Math.round((v.to - v.from) / 1000)} s)`);
+		const repeats = visits.filter((v, i) => i > 0 && visits[i - 1].tail === v.tail);
+		const both = new Set(visits.map(v => v.tail)).size;
+		report.push(`10号线 tails: ${visits.length} visits, tail 1 ${visits.filter(v => v.tail === 0).length}, tail 2 ${visits.filter(v => v.tail === 1).length}, ${repeats.length} times the same tail twice in a row, ${shared} samples with two trains on one tail; ${order.join(" ")}`);
+		if (visits.length >= 2 && both < 2) failures.push(`10号线: only tail ${visits[0].tail + 1} was used (${visits.length} visits)`);
+		if (repeats.length) failures.push(`10号线: consecutive trains took the same tail ${repeats.length} times: ${repeats.map(v => `${v.tail + 1} at ${hhmmss(v.from)}`).join(", ")}`);
+		if (visits.length < 2) failures.push(`10号线: ${visits.length} train(s) seen on the tails behind 五站`);
 	}
 
 	// Lines 8 and 9: the through links lines.spec.ts set

@@ -218,8 +218,8 @@ export function stopEventsAt(samples: TrainsAt[], spots: PlatformSpot[]): StopEv
 }
 
 /** A route's planned times off its timetable screen, its stops as its own platform list (any world) */
-export async function readRoutePlan(saved: any): Promise<RoutePlan | null> {
-	await openTimetable(label(String(saved.name)));
+export async function readRoutePlan(saved: any, nth = 0): Promise<RoutePlan | null> {
+	await openTimetable(label(String(saved.name)), nth);
 	const rows = (await list("TimetableScreen.servicesList")).rows;
 	if (!rows.length) {
 		await closeAll();

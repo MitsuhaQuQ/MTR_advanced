@@ -1,6 +1,6 @@
 # Lines.java
 
-MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 9 条（`LAYOUTS`）复线测试线，每条相距 300 格（z 方向），全部用轨道连接器同样的步骤（`Fixture.connectRail`）建成，覆盖车厂与折返规则必须处理的各种配线（用户 2026-11-12 提出）：
+MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 10 条（`LAYOUTS`）复线测试线，每条相距 300 格（z 方向），全部用轨道连接器同样的步骤（`Fixture.connectRail`）建成，覆盖车厂与折返规则必须处理的各种配线（用户 2026-11-12 提出）：
 
 1. 站前折返（终点站前渡线）+ 站后车库；
 2. 站后折返线，车厂接在折返线后；
@@ -11,6 +11,7 @@ MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 9 条
 7. 长区间：三站，最后一站在 2000 格外，中间一条长轨供信号分段，每 30 秒一班；
 8. 首尾直通：线路 A 一站↔三站、B 三站↔五站共用轨道，A 的部分班次续跑为 B；A 自己在三站折返线折返；
 9. 中途接入与三段直通：A 一站→三站在中间站三站并入 B（二站→四站），B 续跑为 C（四站→五站），回程反之；三站站台是时刻表边界（`timetableBoundary`）。
+10. 站后双折返（2026-11-13）：五站后两条并排的尽头折返线 T1（接上行 z 0）、T2（接下行 z 8），渡线 A 让上行车进 T2，渡线 B 让 T1 出来的车回下行；进 T2 和出 T1 的车在两渡线之间的下行正线上对向，靠咽喉进路分开。车厂从下行正线在 B 与 T2 之间分岔（z 16），车向西出库；不接在折返线尾部，因为那样折返线不再是尽头线，游戏就不把它当可选折返股道（`Depot.findNearbyTurnBackNodes` 只取尽头节点）。
 
 每条线：东行正线在相对 z = 0，西行正线在 z = 8；一站…五站各有 60 格站台；一站后方有折返线。线路"上行"（一站→五站，z 0）、"下行"（五站→一站，z 8），5、6 号线另有"短上行/短下行"（一站↔三站）。1–4 号线车厂在五站端。所有线路的行车方向设为左侧行车（`RunningDirections.LEFT`，因为东行在北、西行在南）。由 `ServerDriver` 的 `/fixture {"name":"lines"}` 调用（`testkit/src/main/java/mtm/testkit/serverdriver/ServerDriver.java:97`）。
 
@@ -23,12 +24,12 @@ MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 9 条
 - `LONG_STATION_X = {0, 200, 2200}`：7 号线三站的 x。
 - `PLATFORM = 60`：站台长度（格）。
 - `STATION_NAMES`：`一站|Station 1` … `五站|Station 5`。
-- `LAYOUT_NAMES`：9 种配线的中文名。
+- `LAYOUT_NAMES`：10 种配线的中文名。
 - `COLORS`：每条线颜色。
-- `LAYOUTS = 9`。
+- `LAYOUTS = 10`。
 
 ### `static JsonObject build(ServerLevel level)`
-- 作用：要求世界还没有车站和站台；对 layout 1…9 各建一个 `Builder(level, railwayData, layout, (layout-1)*SPACING)` 并 `build()`；最后 `dataCache.sync()`。
+- 作用：要求世界还没有车站和站台；对 layout 1…10 各建一个 `Builder(level, railwayData, layout, (layout-1)*SPACING)` 并 `build()`；最后 `dataCache.sync()`。
 - 返回：`{"y": Y, "lines": [每条线的描述]}`。
 - 异常：无铁路数据或世界已有数据抛 `IllegalStateException`。
 
@@ -48,13 +49,13 @@ MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 9 条
 - 作用：
   1. 每站在 z 0 和 z 8 两条正线上登记站台两端节点，区段类型为 PLATFORM；
   2. 一站后方：z 8 加节点 x = -40，连 `(0,0)→(-40,8)` IRON、`(-40,8)→(-100,8)` TURN_BACK；
-  3. 按 layout 加折返线、渡线、车厂停车轨，并记录车厂矩形（相对坐标）：1、4 用 `frontCrossover`；2、7、9 用 `rearTurnBack + depotBehindTurnBack`；8 再加 `middleTurnBack`；3 在折返线前分叉接车厂；4 在五站外侧加第三站台（z 16）作为出库站台，并给回库列车单独停车轨；5、6 用 `rearTurnBack + middleTurnBack`，5 车厂在两正线之间，6 车厂只接西行正线；
+  3. 按 layout 加折返线、渡线、车厂停车轨，并记录车厂矩形（相对坐标）：1、4 用 `frontCrossover`；2、7、9 用 `rearTurnBack + depotBehindTurnBack`；8 再加 `middleTurnBack`；3 在折返线前分叉接车厂；4 在五站外侧加第三站台（z 16）作为出库站台，并给回库列车单独停车轨；5、6 用 `rearTurnBack + middleTurnBack`，5 车厂在两正线之间，6 车厂只接西行正线；10 用 `doubleRearTurnBack`（两条尽头折返线、两组渡线、车厂从西行正线分岔）；
   4. 按 `mains` 把正线逐段连起来；
   5. 建车站（站台前后各扩 5 格，z ∈ [-4, 12]，4 号线五站扩到 18）、按 layout 建线路（8、9 号线为直通组合；2 号线另加三站通过不停的"快车"，用于三站的时刻表传感器）；1、4 号线上行可在五站西行站台终到（`terminalPlatforms`）；4 号线下行可从出库站台始发（`startPlatforms`）；5、6 号线加短交路；
   6. 每条线路在 `networkSettings.runningSides` 中以键 `"R" + LineDuties.getLineKey(route)` 设为左侧行车，并置 `networkSettingsChanged = true`；
   7. 建车厂（区域取第一个车厂矩形，关联本线所有线路）；
   8. 2 号线在三站放时刻表传感器（`placeSensors`）。
-- 返回：`{"layout","name","z","depot","depotName","depotBox"(相对坐标),"stationX","routes":[{id,name}],"stations":[id],"sidings":[车厂区域内停车轨 id],"sensors"?}`。
+- 返回：`{"layout","name","z","depot","depotName","depotBox"(相对坐标),"stationX","routes":[{id,name}],"stations":[id],"sidings":[车厂区域内停车轨 id],"sensors"?,"tails"?}`；10 号线的 `tails` 是两条折返线的 `[x 起, x 止, z]`（绝对坐标），测试据此判断列车在哪条折返线上。
 - 异常：未知 layout 抛 `IllegalArgumentException`；找不到站台抛 `IllegalStateException`。
 
 ### `private void frontCrossover()`

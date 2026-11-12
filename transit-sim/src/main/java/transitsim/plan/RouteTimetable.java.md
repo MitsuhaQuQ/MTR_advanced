@@ -107,6 +107,10 @@
 - 返回值：该班当天所属表的下标（多个时取第一个）；找不到时 0。
 - 主要调用者：`common/src/main/java/mtr/data/PidsSchedules.java:70`、`transitsim/sim/TrainService.java:1900`、`TrainService.java:2425`。
 
+### `public int getServiceOrdinal(long serviceMillis)`
+- 返回值：该班在其所属表当天班次中的序号（从 0 起，相邻两班奇偶不同）；时刻落在两班之间（中途接入的列车）时算前一班。
+- 主要调用者：`transitsim/sim/TrainService.java` 的 `getServiceOrdinal`（站后双折返轮流用折返轨）。
+
 ### `private int findTableIndex(long serviceMillis)`
 只有一张全周表时直接 0；否则按 `OperatingDay.getWeekday` 与二分查找找第一张当天运行且含该班的表；找不到 -1。
 

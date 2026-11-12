@@ -1388,7 +1388,11 @@ public class TrainService<T extends PlanTrack> {
 	 * until it is through. Each way round has a path of its own, which is the same as the one the train is on up to this
 	 * stop, so the train changes onto it here.
 	 * <p>
-	 * Of the ways whose turn back rails are free, it takes the first in order with which the train leaves the first stop of
+	 * Where the ways are all of one kind (all turn back rails, or all platforms), they take turns: the train tries first the
+	 * way after the one the route's service before took, counting by where its service comes in the day, so consecutive
+	 * trains use the rails alternately and the choice needs nothing kept (站后双折返, 2026-11-13).
+	 * <p>
+	 * Of the ways whose turn back rails are free, in that order, it takes the first with which the train leaves the first stop of
 	 * the next route by the time its next service is planned to, and whose rails no other train has or holds; if none
 	 * does, the one it can leave there soonest by. A train with no planned time for its next service takes the first free
 	 * way.
@@ -1423,6 +1427,8 @@ public class TrainService<T extends PlanTrack> {
 		// the platforms to others (混合折返), where both are ways round; the planner and the web editor take the same way
 		// (LONG_TURN_BACK_WAIT_MILLIS)
 		boolean hasPlatformWay = false;
+		boolean hasRailWay = false;
+		final List<Integer> usableWays = new ArrayList<>();
 		// Where the duty has the train wait after this segment, as planned (运用补完 step 1): only ways of that kind, waiting
 		// here while they are taken; the runtime's own choice where nothing is planned, as for duties planned before
 		final DepotDuties.DayDuty plannedDay = isOnDuty() ? getDutyDay() : null;
@@ -1430,11 +1436,20 @@ public class TrainService<T extends PlanTrack> {
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
-			if (turnBackPoint.getRails(way) != null && (newPath != null || isDefaultWay && tripKey.isEmpty()) && !isRailWay(newPath, turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point), turnBackPoint.getLength(way))) {
-				hasPlatformWay = true;
+			if (turnBackPoint.getRails(way) != null && (newPath != null || isDefaultWay && tripKey.isEmpty())) {
+				usableWays.add(way);
+				if (isRailWay(newPath, turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point), turnBackPoint.getLength(way))) {
+					hasRailWay = true;
+				} else {
+					hasPlatformWay = true;
+				}
 			}
 		}
-		for (int way = 0; hasPlatformWay && plannedWait != DepotDuties.DayDuty.WAIT_PLATFORM && way < turnBackPoint.getWayCount(); way++) {
+		// Ways of one kind take turns with the services of the route the train is on, so consecutive trains turn back on
+		// different rails (站后双折返, alternating, 2026-11-13); a way that is taken or late is passed over as before
+		final int[] wayOrder = getWayOrder(turnBackPoint.getWayCount(), usableWays, hasPlatformWay && hasRailWay ? 0 : getServiceOrdinal());
+		for (int wayIndex = 0; hasPlatformWay && plannedWait != DepotDuties.DayDuty.WAIT_PLATFORM && wayIndex < wayOrder.length; wayIndex++) {
+			final int way = wayOrder[wayIndex];
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
@@ -1457,7 +1472,8 @@ public class TrainService<T extends PlanTrack> {
 			}
 		}
 		final boolean railChosen = chosenWay >= 0;
-		for (int way = 0; !railChosen && way < turnBackPoint.getWayCount(); way++) {
+		for (int wayIndex = 0; !railChosen && wayIndex < wayOrder.length; wayIndex++) {
+			final int way = wayOrder[wayIndex];
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
 			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
@@ -1500,6 +1516,36 @@ public class TrainService<T extends PlanTrack> {
 		vehicle.changePath(chosenPath, chosenStopIndex);
 		setLastLap(isLastLap);
 		return true;
+	}
+
+	/**
+	 * @return every way round a turn back point in the order to try them: the usable ones starting with the one whose turn
+	 * it is, then the rest in order
+	 */
+	static int[] getWayOrder(int wayCount, List<Integer> usableWays, int turn) {
+		final int[] order = new int[wayCount];
+		int index = 0;
+		final int first = usableWays.isEmpty() ? 0 : Math.floorMod(turn, usableWays.size());
+		for (int i = 0; i < usableWays.size(); i++) {
+			order[index++] = usableWays.get((first + i) % usableWays.size());
+		}
+		for (int way = 0; way < wayCount; way++) {
+			if (!usableWays.contains(way)) {
+				order[index++] = way;
+			}
+		}
+		return order;
+	}
+
+	/**
+	 * @return where the service the train is on comes in its route's day, or 0 for a train with no service
+	 */
+	private int getServiceOrdinal() {
+		if (tripMillis == 0 || routes == null) {
+			return 0;
+		}
+		final PlanRoute route = routes.apply(tripRouteId);
+		return route == null ? 0 : route.getTimetable().getServiceOrdinal(tripMillis);
 	}
 
 	/**

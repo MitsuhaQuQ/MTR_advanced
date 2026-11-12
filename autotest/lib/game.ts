@@ -176,9 +176,15 @@ export async function switchTab(tab: "buttonTabStations" | "buttonTabRoutes" | "
 }
 
 /** Moves the mouse over the row whose label contains text, so the list puts its row buttons there; returns the row. */
-export async function hoverRow(listId: string, text: string): Promise<ListRow> {
+export async function hoverRow(listId: string, text: string, nth = 0): Promise<ListRow> {
 	let current = await list(listId);
-	const find = (state: DashboardListState) => state.rows.find(r => r.label.includes(text) || r.name.includes(text));
+	// A folded line's header ("[-] 环线 Loop Line (2)") holds its routes' name too, and has no buttons: rows that aren't
+	// headers first; of several rows with the name (routes named the same), the nth
+	const find = (state: DashboardListState) => {
+		const matching = state.rows.filter(r => r.label.includes(text) || r.name.includes(text));
+		const rows = matching.filter(r => !r.header);
+		return (rows.length ? rows : matching)[Math.min(nth, Math.max(0, rows.length - 1))];
+	};
 	let row = find(current);
 	// Rows below the list's visible part: scroll it down with the mouse wheel, as a player does, until the row shows
 	if (!row && current.rows.length && current.total > current.rows.length) {
@@ -235,7 +241,13 @@ export async function openDashboard(): Promise<ScreenState> {
 	await closeAll();
 	await giveOnly("mtr:dashboard");
 	await useItem();
-	return waitScreen("DashboardScreen");
+	const screen = await waitScreen("DashboardScreen");
+	// The search box keeps what was typed while the game runs (lib/screens.ts searches routes): start each time unfiltered
+	if ((await widget("DashboardScreen.dashboardList.textFieldSearch").catch(() => null))?.value) {
+		await type("DashboardScreen.dashboardList.textFieldSearch", "", true);
+		return waitScreen("DashboardScreen");
+	}
+	return screen;
 }
 
 // ---- Chat and logs ----

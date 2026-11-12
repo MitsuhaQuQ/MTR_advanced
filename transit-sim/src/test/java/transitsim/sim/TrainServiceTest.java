@@ -273,6 +273,34 @@ class TrainServiceTest {
 	}
 
 	@Test
+	void consecutiveTrainsTurnBackOnTheRailsInTurn() {
+		// 08:00 is the route's 13th service of the day (every 10 minutes from 06:00), so its train starts with the first
+		// rail, and the 08:10's with the second, though the first is free (站后双折返, alternating)
+		final TurnBackLine line = new TurnBackLine();
+		final FakeTrain first = line.deploy(MONDAY + 8 * HOUR);
+		first.nextStoppingIndex = 3;
+		assertFalse(first.service.chooseTurnBack());
+		assertEquals(FIRST_TURN_BACK, first.reserved);
+
+		final FakeTrain second = line.deploy(MONDAY + 8 * HOUR + 10 * MINUTE);
+		second.nextStoppingIndex = 3;
+		assertTrue(second.service.chooseTurnBack());
+		assertSame(line.secondWay, second.followed);
+		assertEquals(SECOND_TURN_BACK, second.reserved);
+
+		// The 08:20's turn is the first rail again; while another train has it, it takes the second
+		final FakeTrain third = line.deploy(MONDAY + 8 * HOUR + 20 * MINUTE);
+		third.nextStoppingIndex = 3;
+		third.takenRails.addAll(FIRST_TURN_BACK);
+		assertTrue(third.service.chooseTurnBack());
+		assertEquals(SECOND_TURN_BACK, third.reserved);
+
+		// Where its service comes in the day, counting a train joining part way as the service before
+		assertEquals(12, line.down.timetable.getServiceOrdinal(MONDAY + 8 * HOUR + 9 * MINUTE + 30000));
+		assertEquals(0, line.down.timetable.getServiceOrdinal(MONDAY + 5 * HOUR));
+	}
+
+	@Test
 	void aTrainTakesTheNextTurnBackRailWhenTheFirstIsTaken() {
 		final TurnBackLine line = new TurnBackLine();
 		final FakeTrain train = line.deploy(MONDAY + 8 * HOUR);

@@ -215,10 +215,17 @@
   - 提前折返路径（D4）上不选（保持常用走法）；同一站只选一次；本站不是折返点前站时不选。
   - 运用按计划规定的等待方式（运用补完第 1 步：`DayDuty.getWait`）只考虑该类走法，被占时在此等待；没有规定时由运行时自行选择。
   - 混合折返：存在站台走法时，下一服务等待很久（≥ `LONG_TURN_BACK_WAIT_MILLIS`）或计划要求在折返轨等待的列车，优先选空闲且畅通、能赶上下一分段服务的折返轨走法，把站台留给他车（规划器与网页编辑器同样处理）。
-  - 否则按顺序：折返轨空闲、无计划时刻或走法畅通且能按时离开下一线路首站的第一种；都不行时取畅通优先、再最早可离开的一种。
+  - 尝试的顺序（站后双折返，0.73.2）：可用走法都是同一类（都是折返轨或都是站台）时轮流，从 `getServiceOrdinal()`（列车当前班次在本线路当天的序号）对可用走法数取余的那一种开始（`getWayOrder`），所以相邻两班用不同的折返轨；不需要保存状态，跳 tick 和读档结果相同。两类混合时仍从第一种开始。
+  - 否则按上述顺序：折返轨空闲、无计划时刻或走法畅通且能按时离开下一线路首站的第一种；都不行时取畅通优先、再最早可离开的一种。
   - 选中后 `vehicle.reserveTurnBack` 预订其折返轨，若路径不同则换上并重设末圈状态。
 - 返回：所有走法都被占（需在站等待）或刚换了路径时 true。
 - 调用者：`TrainRules.java:183`（"turn_back_way"）。
+
+#### `static int[] getWayOrder(int wayCount, List<Integer> usableWays, int turn)`
+- 作用：折返点各走法的尝试顺序：可用走法从第 `turn % 可用数` 个起轮转，其后是不可用的。
+
+#### `private int getServiceOrdinal()`
+- 返回：列车当前班次（`tripRouteId`、`tripMillis`）在线路时刻表当天的序号（`RouteTimetable.getServiceOrdinal`）；没有班次时 0。
 
 #### `private long getNextSegmentServiceMillis()`
 运用列车下一分段服务的时刻，或 0。
