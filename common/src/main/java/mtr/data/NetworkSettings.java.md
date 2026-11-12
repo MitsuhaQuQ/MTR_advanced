@@ -64,7 +64,7 @@
 - 调用者：`EditorActions.java:454`、`:490`（parse）；`EditorData.java:83`、`:101`（text）。
 
 ### `public long getWaitThreshold(long stationId)`
-- 返回：车站自己的等候阈值，否则全网值。调用者：测试 `NetworkSettingsTest.java:31`（游戏代码中的调用未在脚本结果中出现，未确定）。
+- 返回：车站自己的等候阈值，否则全网值。调用者：`LineDuties.java:144`；测试 `NetworkSettingsTest.java:31`。
 
 ### `public void read(FriendlyByteBuf packet)` / `public void writePacket(FriendlyByteBuf packet)`
 - 包字段顺序：
