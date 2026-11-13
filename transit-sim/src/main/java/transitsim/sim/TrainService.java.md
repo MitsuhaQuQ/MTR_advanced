@@ -301,6 +301,9 @@
 
 ### 运用分段
 
+#### 调试 `-Dmtr.debugTurnBack=true`（0.79.3）
+- `chooseTurnBack` 选完后打印一行：每种走法（默认、轨道数、有无路径、TAKEN、WAY HELD、折返线/站台）和选中的走法。
+
 #### `private void rehookIfLate()`（0.78.0）
 - 作用：在第 k（≥1）段首站，若本段班次的本站计划发车已过去超过 `LATE_REHOOK_MILLIS`，或本班已被别的车接走，就向车厂 `takeFreeService` 要同线路、同起点站、比本班晚、本站发车还赶得上（1 小时内）、且没人准点跑的最早一班；要到就改挂（`tripMillis` 和 `rehook*`），在原地等，自己的班次 `giveUpService`（记为未运行）；要不到照旧晚点跑。后面的段不变。只在这里改挂，`alignDuty`/放置/接班不调用。
 

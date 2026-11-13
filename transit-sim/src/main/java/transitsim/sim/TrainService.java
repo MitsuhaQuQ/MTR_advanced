@@ -305,6 +305,7 @@ public class TrainService<T extends PlanTrack> {
 	 * runs on time, and how late it may be anywhere before its next segment's service counts as one (user 2026-11-14).
 	 */
 	public static final long LATE_REHOOK_MILLIS = 10 * 60 * 1000;
+	private static final boolean DEBUG_TURN_BACK = Boolean.getBoolean("mtr.debugTurnBack");
 	/**
 	 * How long at most a late train waits at the first stop of a segment for a service it takes over.
 	 */
@@ -1538,6 +1539,21 @@ public class TrainService<T extends PlanTrack> {
 				chosenClear = clear;
 				chosenReadyMillis = times[0];
 			}
+		}
+		// -Dmtr.debugTurnBack=true: each choice, with every way and whether it was free (2026-11-14, line 6 of the test
+		// lines never took its turn back rail in the game while the component's own runner did)
+		if (DEBUG_TURN_BACK) {
+			final StringBuilder ways = new StringBuilder();
+			for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
+				final List<UUID> rails = turnBackPoint.getRails(way);
+				final boolean isDefaultWay = way == turnBackPoint.defaultWay;
+				final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+				final List<UUID> wayRails = turnBackPoint.getWayRails(way);
+				ways.append(" [way ").append(way).append(isDefaultWay ? " default" : "").append(rails == null ? " no rails" : " rails " + rails.size()).append(newPath == null ? " no path" : "")
+						.append(rails != null && !vehicle.isTurnBackFree(rails) ? " TAKEN" : "").append(wayRails != null && !vehicle.isWayClear(wayRails) ? " WAY HELD" : "")
+						.append(isRailWay(newPath, turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point), turnBackPoint.getLength(way)) ? " rail" : " platform").append("]");
+			}
+			System.out.println("Turn back: train " + trainId + " at stop " + stopIndex + " point " + point + " planned wait " + plannedWait + " chose " + chosenWay + (chosenWay == turnBackPoint.defaultWay ? " (default)" : "") + ";" + ways + " trip " + tripKey);
 		}
 		if (chosenWay < 0) {
 			return true;

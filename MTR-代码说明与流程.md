@@ -74,6 +74,8 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.79.3 调试开关 `-Dmtr.debugTurnBack=true`（组件 `TrainService.chooseTurnBack`，两个宿主都走）：每次选折返方式打一行，列出每种走法是否可用、折返线是否被占（TAKEN）、去路是否被别车占着（WAY HELD）、是折返线还是站台走法，以及选了哪种。默认关，行为不变。为查六线图 6 号线游戏里从不用三站折返线而组件离线模拟会用（见 `MTR-待验证.md` 夜间测试记录第 13、17 条）；`SimulateDay` 同时加了 `-Pmtr.debugPaths=true` 打印每列车整条路径。
+
 0.79.2 刷新车厂路径时服务端崩溃（2026-11-14 夜间 yel 世界自动测试发现，0.77.0 也会）：组件模拟器在跑、某车厂路径重新找过之后，没有服务的车回到存车线自己的路径，而这条路径变短了（这次只剩 1 段），`TrainServer.showSimulated` 却照搬模拟器的停站下标（75、82……），`Train.getTotalDwellTicks` 取 `path.get(下标)` 越界，异常出了服务端 tick，整个服务器停掉。修：`showSimulated` 发现模拟器的停站下标超出这里的路径时，和「路径不在了」一样先不显示、等模拟器在新路径上重开（日志说一次 "its path here is shorter"）；`getTotalDwellTicks` 越界时返回 0。只改服务端，升第三位。
 
 0.79.1 网页编辑器不再请求 `/favicon.ico`（U427 自动测发现：浏览器每次打开都去要图标，编辑器服务没有这个文件，控制台总有一条 404 红字）：`editor-web/index.html` 声明一个空图标 `<link rel="icon" href="data:,">`（CSP 的 `img-src` 允许 `data:`）。只改客户端带的页面，升第三位。
