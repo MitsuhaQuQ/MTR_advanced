@@ -737,7 +737,8 @@ final class DutyPathBuilder {
 
 	/**
 	 * @return the way from a stop into a platform and back out of it to the next route's second stop, turning back on the
-	 * platform, or null if there is none that leaves and reaches the stops along the same rails as the usual way
+	 * platform, or null if there is none that leaves and reaches the stops along the same rails as the usual way (any
+	 * way, with no usual way given: for the turn times)
 	 */
 	List<PathData> findFrontWay(SavedRailBase from, Platform platform, SavedRailBase to, List<BlockPos> fromWaypoints, List<BlockPos> toWaypoints, int dwellTime, List<PathData> usualWay, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 		if (platform == null) {
@@ -761,7 +762,7 @@ final class DutyPathBuilder {
 		leaving.dwellTime = 0;
 		leaving.savedRailBaseId = 0;
 		wayIn.addAll(wayOut);
-		return wayIn.get(0).isSameRail(usualWay.get(0)) && wayIn.get(wayIn.size() - 1).isSameRail(usualWay.get(usualWay.size() - 1)) ? wayIn : null;
+		return usualWay == null || wayIn.get(0).isSameRail(usualWay.get(0)) && wayIn.get(wayIn.size() - 1).isSameRail(usualWay.get(usualWay.size() - 1)) ? wayIn : null;
 	}
 
 	/**
@@ -1096,8 +1097,27 @@ final class DutyPathBuilder {
 			}
 
 			@Override
+			public boolean turnsInto(Route before, Route after, long toId) {
+				// The way the duty path would add in front of the station ({@link #addFrontTurnBack})
+				final int count = before.platformIds.size();
+				if (graph == null || !before.terminalPlatforms.contains(toId) || count < 2 || after.platformIds.size() < 2) {
+					return false;
+				}
+				final Platform stopBefore = dataCache.platformIdMap.get(before.platformIds.get(count - 2).platformId);
+				final Platform to = dataCache.platformIdMap.get(toId);
+				final Platform second = dataCache.platformIdMap.get(after.platformIds.get(1).platformId);
+				return stopBefore != null && second != null && findFrontWay(stopBefore, to, second, before.platformIds.get(count - 2).waypoints, after.platformIds.get(0).waypoints, 1, null, rails, graph, useFastSpeed) != null;
+			}
+
+			@Override
 			public void kept(Route before, Route after, long from, long to, transitsim.planning.TurnTimes.Way<List<PathData>> way, long[] slowest) {
-				debugTurnTime(dataCache.platformIdMap.get(from), dataCache.platformIdMap.get(to), before, after, way.path, slowest);
+				if (way == null) {
+					if (Boolean.getBoolean("mtr.debugTurnTimes")) {
+						System.out.println("Minecraft Transit Railway turn time: " + dataCache.platformIdMap.get(from).name + " (" + from + ") to " + dataCache.platformIdMap.get(to).name + " (" + to + "): turns back in front of the station, ending at " + to);
+					}
+				} else {
+					debugTurnTime(dataCache.platformIdMap.get(from), dataCache.platformIdMap.get(to), before, after, way.path, slowest);
+				}
 			}
 
 			@Override

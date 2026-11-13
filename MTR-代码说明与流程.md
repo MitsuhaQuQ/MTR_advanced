@@ -74,6 +74,12 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.75.4 查六线图 1、4 号线（站前折返）排不出（拆分车厂第 2c 步前）：
+- 折返用时：`TurnTimes.Host.turnsInto`（游戏用 `DutyPathBuilder.findFrontWay`）判断线路列车能否经站前过渡线改停在下一条线路的首站台，能就记这对站台 0（只换端）。原来只有一条 970 格的绕行被判为"不算换站台"，规划认为没有车能折返到下行班次。
+- 回库：`Siding.addDutyPath` 在本停车线回不去时，通常路径改回同池第一条能回去的停车线；组件 `TrainService.chooseDutyReturn` 按运用路径实际结束的存车线判断能否回自己的（`getEndSiding`），回不去就换到回那条的路径。
+- 调试：`-Dmtr.debugDutyPaths=true` 打印运用路径失败原因。
+- 结果：规划上 1 号线 32 个班次都有车，4 号线余 1 个；运用路径仍因"分给了没有出库路的存车线"失败（4 号线收车线只能收车；1 号线测得的出库路与生成路径时找的不一致），下一步：车厂内调车（用户 2026-11-13 定方案 B）。
+
 0.75.3 拆分车厂第 2b 步：站内折返和换站台用时的规则（每站台一次的折返线等待及其三个键、跳过同站台/他站/已有的对、换站台离站台过远不算、取最慢车辆、在折返处把绕行切成进入/出来段）从 `DutyPathBuilder.turnTimesFor`/`legMillis` 原样搬进组件 `transitsim.planning.TurnTimes`；游戏只找路（`holdWay` 用 `findTurnBackSection`，`changeWay` 用 `findConnection`）并用 `PathTiming` 计时。组件测试 `TurnTimesTest`。
 
 0.75.2 拆分车厂第 2a 步：找站台附近折返轨和留置位的规则从 `DutyPathBuilder` 原样搬进组件 `transitsim.network.NearbyTurnBacks`（折返线两端、站台中心都按 Minecraft 方式打包成长整数；节点度数和留置区由宿主用函数给），宿主只列出折返线并把结果换回 `BlockPos`（`DutyPathBuilder.nearbyOf`）。组件测试 `NearbyTurnBacksTest`。

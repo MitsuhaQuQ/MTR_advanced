@@ -50,7 +50,7 @@
 - 参数：`previousStart` / `nextStart` 为主体中上一/下一线路开始的轨道。
 
 ### `List<PathData> findFrontWay(SavedRailBase from, Platform platform, SavedRailBase to, fromWaypoints, toWaypoints, int dwellTime, List<PathData> usualWay, rails, graph, boolean useFastSpeed)`
-- 返回：从一站进入该站台并在站台上折返出来到下一线路第二站的路（到达段带末站停站时间，反向段只作出站）；须与通常走法在相同轨道上离开与到达，否则 null。
+- 返回：从一站进入该站台并在站台上折返出来到下一线路第二站的路（到达段带末站停站时间，反向段只作出站）；须与通常走法在相同轨道上离开与到达，否则 null。`usualWay` 为 null 时不比较（0.75.4，折返用时的 `turnsInto` 用它判断能否站前折返）。
 
 ### `static int findStopRail(List<PathData> body, int from, long platformId)`
 - 从 `from` 起第一条为该站台的站台轨道，或 −1。
@@ -96,7 +96,7 @@
 
 ### `Map<Long, Map<Long, Long>> turnTimesFor(List<Route> routes, rails, graph, boolean useFastSpeed)`
 - 作用：站内每次换站台按运用所跑（`findConnection`）需要多久：从每条线路末站台到同站其他线路首站台；无路的对略去（规划视为无路）。另外每个站台一次：绕经站台外折返线再回到本站台（列车可在那里等下一班次而让出站台，混合折返），记 `from→from` 总时间、`HOLD_IN_KEY`（进入段）、`HOLD_COUNT_KEY`（可同时等待的列车数，每条可用走法一列，运用补完第 4 步）、`HOLD_RAIL_KEY`（哪条折返线，同一折返线的站台共用，8 号线 2026-11-12）。换站台离站台超过 `MAX_PLATFORM_CHANGE_REACH` 的不算（会沿线跑出又回来与对向列车迎面，2026-11-09）。时间为两条线路车辆中最慢者的进入段 + 出来段（不含在折返处停留，第 4 轮，由计划加上网络最短换端时间）。`-Dmtr.debugTurnTimes` 时打印。
-- 0.75.3 起（拆分车厂第 2a 步之后的 2b）：上面这些规则（每站台一次的折返线等待、跳过同站台/他站/已有的对、超出范围不算、取最慢车辆、三个键）在组件 `transitsim.planning.TurnTimes.of`，这里只是宿主：`holdWay` 找绕经折返线的走法（可等待数、折返轨两节点），`changeWay` 走 `findConnection`，两者都给每辆车的进入/出来段（`legsByVehicle`）和离站台最远距离；`kept`/`tooFar` 只用于 `-Dmtr.debugTurnTimes` 打印。
+- 0.75.3 起（拆分车厂第 2a 步之后的 2b）：上面这些规则（每站台一次的折返线等待、跳过同站台/他站/已有的对、超出范围不算、取最慢车辆、三个键）在组件 `transitsim.planning.TurnTimes.of`，这里只是宿主：`holdWay` 找绕经折返线的走法（可等待数、折返轨两节点），`changeWay` 走 `findConnection`，`turnsInto`（0.75.4）在线路列出该站台为可结束站台时用 `findFrontWay` 判断能否站前折返，两者都给每辆车的进入/出来段（`legsByVehicle`）和离站台最远距离；`kept`/`tooFar` 只用于 `-Dmtr.debugTurnTimes` 打印。
 - 返回：从站台 → 到站台 → 毫秒。调用者：`Depot.java（行号为移动前）:1181`、`:1581`。
 
 ### `List<long[]> legsByVehicle(Route before, Route after, List<PathData> way)`

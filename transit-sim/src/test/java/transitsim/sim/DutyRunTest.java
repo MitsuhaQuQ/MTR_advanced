@@ -579,6 +579,33 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aDutyWithNoWayBackToItsOwnSidingGoesBackWhereItsPathDoes() {
+		// The duty's path ends in the other siding of the pool, as the last stop has no way back to its own (2026-11-13)
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> ownKeyPath = twoRoutes(train);
+		final List<TestTrack> endingElsewhere = new ArrayList<>(ownKeyPath.path);
+		final TestTrack last = endingElsewhere.get(endingElsewhere.size() - 1);
+		endingElsewhere.set(endingElsewhere.size() - 1, new TestTrack((endingElsewhere.size() - 1) * 20L, endingElsewhere.size() * 20L, true, OTHER_SIDING_ID, last.getDwellTime(), last.getStopIndex()));
+		final DepotDuties.DayDuty day = depot.slots.get(0).getDuty(0);
+		final List<Long> routeIds = new ArrayList<>();
+		day.segments.forEach(segment -> routeIds.add(segment.routeId));
+		final DutyPlan<TestTrack, Object> dutyPlan = new DutyPlan<>(ownKeyPath.key, routeIds, new HashMap<>(), new HashMap<>(), new HashMap<>(), endingElsewhere, ownKeyPath.dutyStarts, null, null, false, false);
+		final TripPath<TestTrack> tripPath = new TripPath<>(dutyPlan, ownKeyPath.dutyStarts, endingElsewhere, ownKeyPath.key);
+		tripPaths.put(tripPath.key, tripPath);
+		final TripPath<TestTrack> returnPath = new TripPath<>(dutyPlan, ownKeyPath.dutyStarts, new ArrayList<>(endingElsewhere), TripPath.getReturnKey(ownKeyPath.key, OTHER_SIDING_ID));
+		tripPaths.put(returnPath.key, returnPath);
+		// The pool would rather have it back in its own siding
+		depot.returnTo = SIDING_ID;
+
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train[0].service.deployDuty(0, MONDAY, tripPath);
+		train[0].service.update(true);
+		train[0].nextStoppingIndex = 5;
+		assertTrue(train[0].service.chooseDutyReturn());
+		assertSame(returnPath, train[0].followed);
+	}
+
+	@Test
 	void goesBackToTheSidingOfItsPoolThatNeedsATrain() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final TripPath<TestTrack> tripPath = twoRoutes(train);

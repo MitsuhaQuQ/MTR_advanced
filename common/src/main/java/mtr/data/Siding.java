@@ -1334,6 +1334,9 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				PathFinder.findPath(wayOut, rails, graph, Arrays.asList(this, dutyPlan.firstPlatform), null, 0, cruisingAltitude, useFastSpeed);
 			}
 			if (wayOut.isEmpty()) {
+				if (Boolean.getBoolean("mtr.debugDutyPaths")) {
+					System.out.println("Minecraft Transit Railway: duty " + dutyPlan.key + " of siding " + id + ": no way out to " + (dutyPlan.firstPlatform == null ? 0 : dutyPlan.firstPlatform.id));
+				}
 				// No way out to the first stop (P2-A), told only by path generation itself, not a draft's
 				if (dutyPoints != null && dutyPlan.firstPlatform != null) {
 					foundNoWayOut.add(dutyPlan.firstPlatform.id);
@@ -1341,8 +1344,22 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				return false;
 			}
 		}
-		final List<PathData> pathToDepot = dutyPlan.staysOnLine ? null : getReturnTail(dutyPlan, this, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+		List<PathData> pathToDepot = dutyPlan.staysOnLine ? null : getReturnTail(dutyPlan, this, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+		// No way back here from the duty's last stop: back to the first siding of the pool there is one to, and the train
+		// changes to that siding's way back at its last stop (TrainService.chooseDutyReturn; 2026-11-13, the six-line test's
+		// front turn-back lines, whose trains leave from one siding and come back from the last stop into another)
 		if (!dutyPlan.staysOnLine && pathToDepot == null) {
+			for (final Siding poolSiding : poolSidings) {
+				pathToDepot = poolSiding == this ? null : getReturnTail(dutyPlan, poolSiding, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
+				if (pathToDepot != null) {
+					break;
+				}
+			}
+		}
+		if (!dutyPlan.staysOnLine && pathToDepot == null) {
+			if (Boolean.getBoolean("mtr.debugDutyPaths")) {
+				System.out.println("Minecraft Transit Railway: duty " + dutyPlan.key + " of siding " + id + ": no way back from " + (dutyPlan.lastPlatform == null ? 0 : dutyPlan.lastPlatform.id) + " to it or " + poolSidings.stream().map(siding -> String.valueOf(siding.id)).collect(java.util.stream.Collectors.joining(",")));
+			}
 			if (dutyPoints != null && dutyPlan.lastPlatform != null) {
 				foundNoWayBack.add(dutyPlan.lastPlatform.id);
 			}

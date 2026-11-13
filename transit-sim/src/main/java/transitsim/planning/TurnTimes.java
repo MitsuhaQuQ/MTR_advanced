@@ -51,7 +51,16 @@ public final class TurnTimes {
 		Way<P> changeWay(R before, R after, long from, long to);
 
 		/**
-		 * Told of each time kept, for logging.
+		 * @return whether a train of the route can end at the other platform instead, over a crossover before the station,
+		 * and leave it as the next route (站前折返): the route lists it as a platform it may end at, and there is a way in
+		 * from the stop before and out to the next route's second stop
+		 */
+		default boolean turnsInto(R before, R after, long platform) {
+			return false;
+		}
+
+		/**
+		 * Told of each time kept, for logging; the way is null for a turn in front of the station.
 		 */
 		default void kept(R before, R after, long from, long to, Way<P> way, long[] slowest) {
 		}
@@ -135,6 +144,14 @@ public final class TurnTimes {
 			for (final R after : routes) {
 				final long to = host.firstPlatform(after);
 				if (to == 0 || to == from || host.station(to) != station || has(turnTimes, from, to)) {
+					continue;
+				}
+				// Turning back in front of the station (站前折返) the train ends at the next route's first platform: no change of
+				// platform at all, only changing ends, which the plan adds (2026-11-13: the six-line test's lines 1 and 4 had
+				// a way round 970 blocks long as their only one, and no train could turn to their services)
+				if (host.turnsInto(before, after, to)) {
+					turnTimes.computeIfAbsent(from, key -> new TreeMap<>()).put(to, 0L);
+					host.kept(before, after, from, to, null, new long[]{0, 0});
 					continue;
 				}
 				final Way<P> change = host.changeWay(before, after, from, to);

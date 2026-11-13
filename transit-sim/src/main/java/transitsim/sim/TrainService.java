@@ -2044,14 +2044,21 @@ public class TrainService<T extends PlanTrack> {
 		final boolean otherWayRound = tripPath.turnBackPoint >= 0 || tripPath.turnRail >= 0 || TripPath.isFromKey(tripPathKey);
 		// Only a siding the duty has a way back to is chosen, rather than one it can't reach and then its own after all
 		final String returnFrom = tripPath.turnBackPoint >= 0 ? tripPath.tripKey : TripPath.getTurnBase(tripPathKey);
-		final java.util.function.LongPredicate canGoBack = otherSidingId -> otherSidingId == sidingId || tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null;
+		// Its own siding only when the duty's path goes back there: a duty whose last stop has no way back to it goes back to
+		// another siding of the pool (2026-11-13, the six-line test's front turn-back lines, where the siding trains leave
+		// from is not the one trains reach from the last stop)
+		final long endSidingId = getEndSiding(tripPaths.get(returnFrom));
+		final boolean ownReachable = endSidingId == 0 || endSidingId == sidingId;
+		final java.util.function.LongPredicate canGoBack = otherSidingId -> otherSidingId == sidingId ? ownReachable : tripPaths.get(TripPath.getReturnKey(returnFrom, otherSidingId)) != null;
 		// Set for the duty (A 出 B 入, P2-D): there if there is a way, otherwise told and as the pool would send it
 		final long setSidingId = dutyDay == null ? 0 : dutyDay.returnSidingId;
 		final boolean setReachable = setSidingId != 0 && canGoBack.test(setSidingId);
 		if (setSidingId != 0 && !setReachable) {
 			depot.noteReturnMissed(sidingId, setSidingId, "no way back to the siding set for the duty");
 		}
-		final long returnSidingId = setReachable ? setSidingId : depot.chooseReturnSiding(sidingId, orderDepotId, canGoBack);
+		final long chosenSidingId = setReachable ? setSidingId : depot.chooseReturnSiding(sidingId, orderDepotId, canGoBack);
+		// Its own chosen with no way back there: where the duty's path does go back to
+		final long returnSidingId = chosenSidingId == sidingId && !ownReachable ? endSidingId : chosenSidingId;
 		final TripPath<T> returnPath = returnSidingId == sidingId ? null : tripPaths.get(TripPath.getReturnKey(returnFrom, returnSidingId));
 		if (returnPath == null) {
 			return false;
@@ -2065,6 +2072,17 @@ public class TrainService<T extends PlanTrack> {
 		stopTimes = returnPath.stopTimes;
 		vehicle.changePath(returnPath, newStopIndex);
 		return true;
+	}
+
+	/**
+	 * @return the siding a duty's path ends in, or 0 if not known
+	 */
+	private static <T extends PlanTrack> long getEndSiding(TripPath<T> dutyPath) {
+		if (dutyPath == null || dutyPath.path.isEmpty()) {
+			return 0;
+		}
+		final T last = dutyPath.path.get(dutyPath.path.size() - 1);
+		return last.isSidingTrack() ? last.getStopId() : 0;
 	}
 
 	/**

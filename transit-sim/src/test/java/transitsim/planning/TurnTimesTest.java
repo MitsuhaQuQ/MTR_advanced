@@ -133,7 +133,7 @@ class TurnTimesTest {
 	/**
 	 * Routes as their first and last platforms; platforms 10.. at station 1, 20.. at station 2.
 	 */
-	private static final class Host implements TurnTimes.Host<long[], String> {
+	private static class Host implements TurnTimes.Host<long[], String> {
 		final Map<Long, TurnTimes.Way<String>> holds = new HashMap<>();
 		final Map<String, TurnTimes.Way<String>> changes = new HashMap<>();
 		final List<String> asked = new ArrayList<>();
@@ -208,5 +208,23 @@ class TurnTimesTest {
 		// Each platform's way round asked once, a pair kept never again, a pair with no way asked again by the next route
 		// ending there, never another station's platform nor the same platform
 		assertEquals(Arrays.asList("hold 11", "11>10", "11>12", "11>10", "hold 12", "12>10", "12>11", "hold 22", "22>21"), host.asked);
+	}
+
+	@Test
+	void aTrainTurningBackInFrontOfTheStationEndsAtTheNextRoutesFirstPlatform() {
+		// Route 10→11 may end at 12 over a crossover: 11→12 is no change of platform, only changing ends; without the way in,
+		// the way round is asked as before
+		final Host host = new Host() {
+			@Override
+			public boolean turnsInto(long[] before, long[] after, long platform) {
+				asked.add("front " + platform);
+				return before[1] == 11 && platform == 12;
+			}
+		};
+		host.changes.put("12>11", way(40, 1, null, new long[]{30000, 20000}));
+		final Map<Long, Map<Long, Long>> times = TurnTimes.of(Arrays.asList(new long[]{10, 11}, new long[]{12, 13}, new long[]{13, 12}, new long[]{11, 14}), host, 200);
+		assertEquals(0L, times.get(11L).get(12L));
+		assertEquals(50000L, times.get(12L).get(11L));
+		assertFalse(host.asked.contains("11>12"));
 	}
 }

@@ -1332,6 +1332,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 出入库方向和出库提前量（0.75.0）：新规则在组件里。`OutLeads`（按首站晚点校正出库余量，没用就退回）和 `BufferRecorder` 的按首站晚点量出库（`plannedArrivals`、`outListener`）、`DepotDispatcher.addedBuffers`/`wayOutMillis`（派车时加上采用的出库余量）两个宿主共用；组件数据 `SimDataset` 第 20 版带车厂的采用余量，`TickRunner.placeDutyTrains` 也用 `wayOutMillis`。游戏侧只做宿主的事：`Depot` 接记录器和 `OutLeads`、把结果写进 `addedBuffers` 并发给玩家；找出入库路的"没配规则走方便方向"和"逆向过站台没刷联锁区就提示"在 `RoutePaths`（游戏侧，用组件的 `LineDepotWays.againstStops`）。测试先在组件：`OutLeadsTest`、`BufferRecorderTest`、`DutyRunTest`。
 
+站前折返和回同池存车线（0.75.4）：组件 `TurnTimes` 的站前折返规则（`Host.turnsInto`，记 0）；组件 `TrainService.chooseDutyReturn` 按运用路径实际结束的存车线判断能否回自己的停车线。
+
 拆分车厂第 2b 步（0.75.3）：站内折返、换站台用时的规则搬进组件 `transitsim.planning.TurnTimes`（宿主接口给路和每辆车的进入/出来段），游戏的 `DutyPathBuilder` 只找路和计时。
 
 拆分车厂第 2a 步（0.75.2）：站台附近折返轨和留置位的查找搬进组件 `transitsim.network.NearbyTurnBacks`（纯计算，输入为打包坐标的折返线、节点度数、留置区），游戏的 `DutyPathBuilder` 只做转换。
