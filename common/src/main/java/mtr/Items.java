@@ -8,6 +8,7 @@ import net.minecraft.world.item.Item;
 
 public interface Items {
 	RegistryObject<Item> PLATFORM_END_PSD_2 = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS, ItemPSDAPGBase.EnumPSDAPGType.PLATFORM_END_PSD_2));
+	RegistryObject<Item> PLATFORM_END_APG_2 = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS, ItemPSDAPGBase.EnumPSDAPGType.PLATFORM_END_APG_2));
 	RegistryObject<Item> PLATFORM_END_PSD_1 = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS, ItemPSDAPGBase.EnumPSDAPGType.PLATFORM_END_PSD_1));
 	RegistryObject<Item> PLATFORM_END_APG = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS, ItemPSDAPGBase.EnumPSDAPGType.PLATFORM_END_APG));
 

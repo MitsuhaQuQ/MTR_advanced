@@ -1,0 +1,132 @@
+{
+  "variants": {
+    "facing=north,half=lower,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 0
+    },
+    "facing=north,half=lower,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 0
+    },
+    "facing=north,half=lower,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open",
+      "y": 90
+    },
+    "facing=north,half=lower,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open_in",
+      "y": 270
+    },
+    "facing=north,half=upper,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 0
+    },
+    "facing=north,half=upper,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 0
+    },
+    "facing=north,half=upper,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open",
+      "y": 90
+    },
+    "facing=north,half=upper,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open_in",
+      "y": 270
+    },
+    "facing=east,half=lower,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 90
+    },
+    "facing=east,half=lower,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 90
+    },
+    "facing=east,half=lower,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open",
+      "y": 180
+    },
+    "facing=east,half=lower,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open_in",
+      "y": 0
+    },
+    "facing=east,half=upper,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 90
+    },
+    "facing=east,half=upper,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 90
+    },
+    "facing=east,half=upper,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open",
+      "y": 180
+    },
+    "facing=east,half=upper,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open_in",
+      "y": 0
+    },
+    "facing=south,half=lower,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 180
+    },
+    "facing=south,half=lower,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 180
+    },
+    "facing=south,half=lower,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open",
+      "y": 270
+    },
+    "facing=south,half=lower,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open_in",
+      "y": 90
+    },
+    "facing=south,half=upper,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 180
+    },
+    "facing=south,half=upper,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 180
+    },
+    "facing=south,half=upper,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open",
+      "y": 270
+    },
+    "facing=south,half=upper,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open_in",
+      "y": 90
+    },
+    "facing=west,half=lower,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 270
+    },
+    "facing=west,half=lower,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower",
+      "y": 270
+    },
+    "facing=west,half=lower,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open",
+      "y": 0
+    },
+    "facing=west,half=lower,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_lower_open_in",
+      "y": 180
+    },
+    "facing=west,half=upper,inward=false,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 270
+    },
+    "facing=west,half=upper,inward=true,open=false": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper",
+      "y": 270
+    },
+    "facing=west,half=upper,inward=false,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open",
+      "y": 0
+    },
+    "facing=west,half=upper,inward=true,open=true": {
+      "model": "mtr:block/platform_edge_door_low_no_handle_upper_open_in",
+      "y": 180
+    }
+  }
+}

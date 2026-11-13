@@ -89,6 +89,8 @@ public class ItemPSDAPGBase extends ItemWithCreativeTabBase implements IBlock {
 				return Blocks.PLATFORM_END_PSD_1.get().defaultBlockState();
 			case PLATFORM_END_PSD_2:
 				return Blocks.PLATFORM_END_PSD_2.get().defaultBlockState();
+			case PLATFORM_END_APG_2:
+				return Blocks.PLATFORM_END_APG_2.get().defaultBlockState();
 			case PSD_1:
 				switch (item) {
 					case PSD_APG_DOOR:
@@ -159,7 +161,8 @@ public class ItemPSDAPGBase extends ItemWithCreativeTabBase implements IBlock {
 		LIFT_DOOR_ODD_1(false, true, true),
 		PLATFORM_END_APG(false, false, false),
 		PLATFORM_END_PSD_1(true, false, false),
-		PLATFORM_END_PSD_2(true, false, false);
+		PLATFORM_END_PSD_2(true, false, false),
+		PLATFORM_END_APG_2(false, false, false);
 
 		private final boolean isPSD;
 		private final boolean isOdd;

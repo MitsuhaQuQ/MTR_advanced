@@ -45,7 +45,7 @@ def write(relative, value):
     target.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-for name in ("platform_edge_door_low", "platform_edge_door"):
+for name in ("platform_edge_door_low", "platform_edge_door", "platform_edge_door_low_no_handle", "platform_edge_door_no_handle"):
     source = json.loads((ROOT / "models" / (name + ".bbmodel")).read_text(encoding="utf-8"))
     texture = source["textures"][0]
     (ASSETS / "textures/block" / (name + ".png")).write_bytes(base64.b64decode(texture["source"].split(",", 1)[1]))
@@ -121,7 +121,10 @@ for name in ("platform_edge_door_low", "platform_edge_door"):
         write("models/block/" + name + "_" + half + "_open_in.json", {**base, "elements": moved(elements, 16 - HINGE[0] - HINGE[1], Z_OFFSET + HINGE[0] - HINGE[1])})
     write("models/block/" + name + ".json", {**base, "elements": moved(complete, 0, Z_OFFSET), "display": source.get("display", {})})
 
-for block, name in (("platform_end_apg", "platform_edge_door_low"), ("platform_end_psd", "platform_edge_door"), ("platform_end_psd_2", "platform_edge_door")):
+# The gates without the handle outside (user, 2026-11-14): the second screen door style, which until then was the same
+# as the first, and a gate of its own for the half height one
+for block, name in (("platform_end_apg", "platform_edge_door_low"), ("platform_end_psd", "platform_edge_door"),
+                    ("platform_end_psd_2", "platform_edge_door_no_handle"), ("platform_end_apg_2", "platform_edge_door_low_no_handle")):
     variants = {}
     for facing, angle in (("north", 0), ("east", 90), ("south", 180), ("west", 270)):
         for half in ("lower", "upper"):

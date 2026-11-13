@@ -103,6 +103,7 @@ public class MTR implements IPacket {
 			registerItem.accept("platform_end_apg", Items.PLATFORM_END_APG);
 			registerItem.accept("platform_end_psd", Items.PLATFORM_END_PSD_1);
 			registerItem.accept("platform_end_psd_2", Items.PLATFORM_END_PSD_2);
+			registerItem.accept("platform_end_apg_2", Items.PLATFORM_END_APG_2);
 			registerItem.accept("apg_door", Items.APG_DOOR);
 			registerItem.accept("apg_glass", Items.APG_GLASS);
 			registerItem.accept("apg_glass_end", Items.APG_GLASS_END);
@@ -222,6 +223,7 @@ public class MTR implements IPacket {
 			registerBlock.accept("platform_end_apg", Blocks.PLATFORM_END_APG);
 			registerBlock.accept("platform_end_psd", Blocks.PLATFORM_END_PSD_1);
 			registerBlock.accept("platform_end_psd_2", Blocks.PLATFORM_END_PSD_2);
+			registerBlock.accept("platform_end_apg_2", Blocks.PLATFORM_END_APG_2);
 			registerBlock.accept("apg_door", Blocks.APG_DOOR);
 			registerBlock.accept("apg_glass", Blocks.APG_GLASS);
 			registerBlock.accept("apg_glass_end", Blocks.APG_GLASS_END);

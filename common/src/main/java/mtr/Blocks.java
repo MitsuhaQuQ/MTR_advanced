@@ -11,6 +11,7 @@ import mtr.compat.MaterialColor;
 
 public interface Blocks {
 	RegistryObject<Block> PLATFORM_END_PSD_2 = new RegistryObject<>(() -> new BlockPlatformEndDoor(2));
+	RegistryObject<Block> PLATFORM_END_APG_2 = new RegistryObject<>(() -> new BlockPlatformEndDoor(3));
 	RegistryObject<Block> PLATFORM_END_PSD_1 = new RegistryObject<>(() -> new BlockPlatformEndDoor(1));
 	RegistryObject<Block> PLATFORM_END_APG = new RegistryObject<>(() -> new BlockPlatformEndDoor(0));
 

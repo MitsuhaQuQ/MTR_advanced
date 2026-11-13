@@ -511,7 +511,9 @@
   "block.mtr.platform_end_apg": "Low Platform End Gate",
   "item.mtr.platform_end_psd": "High Platform End Gate",
   "block.mtr.platform_end_psd": "High Platform End Gate",
-  "item.mtr.platform_end_psd_2": "High Platform End Gate (Style 2)",
-  "block.mtr.platform_end_psd_2": "High Platform End Gate (Style 2)",
+  "item.mtr.platform_end_psd_2": "High Platform End Gate (No Outer Handle)",
+  "block.mtr.platform_end_psd_2": "High Platform End Gate (No Outer Handle)",
+  "item.mtr.platform_end_apg_2": "Low Platform End Gate (No Outer Handle)",
+  "block.mtr.platform_end_apg_2": "Low Platform End Gate (No Outer Handle)",
   "tooltip.mtr.platform_end_door": "Right-click to open or close this platform end gate independently."
 }

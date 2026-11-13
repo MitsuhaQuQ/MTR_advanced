@@ -607,7 +607,9 @@
   "block.mtr.platform_end_apg": "低月台端頭門",
   "item.mtr.platform_end_psd": "高月台端頭門",
   "block.mtr.platform_end_psd": "高月台端頭門",
-  "item.mtr.platform_end_psd_2": "高月台端頭門（款式 2）",
-  "block.mtr.platform_end_psd_2": "高月台端頭門（款式 2）",
+  "item.mtr.platform_end_psd_2": "高月台端頭門（無外側把手）",
+  "block.mtr.platform_end_psd_2": "高月台端頭門（無外側把手）",
+  "item.mtr.platform_end_apg_2": "低月台端頭門（無外側把手）",
+  "block.mtr.platform_end_apg_2": "低月台端頭門（無外側把手）",
   "tooltip.mtr.platform_end_door": "右鍵手動開關月台端頭門，不隨列車聯動。"
 }
