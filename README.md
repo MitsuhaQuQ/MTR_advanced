@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.77.0 turns a platform end gate left to right with the brush: its hinge goes to the other end and it still swings the same way (a new block state, so client and server both need 0.77.0; Assets 1.0.9). From 0.76.8 a new gate swings towards the platform without sneaking first, and there are gates without the handle outside in both heights. In the web editor the dispatcher's buttons come back as soon as the train's state changes (a train held, released and held again no longer needs the page loaded again), and the network schematic keeps its zoom when the network is read again.
+
 0.65.28 adds a search to the image list of the painting screen: type while the list is open to keep the images whose names have every word.
 
 0.65.27 announces as the next station the next stop the train actually stops at, so a station a service passes by its own exception is no longer announced. Making a new timetable turns the stops every service passes into the route's own passes, so the new table passes them too.

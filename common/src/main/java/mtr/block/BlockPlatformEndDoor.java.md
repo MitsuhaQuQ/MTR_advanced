@@ -8,6 +8,7 @@
 - 继承 `FACING`、`HALF`（上下半）、`SIDE_EXTENDED`（固定 `SINGLE`）；新增：
 - `OPEN`：是否打开。
 - `INWARD`：门扇是否向方块后方（朝北时为 +z）打开，而不是向前方。
+- `MIRRORED`（0.77.0）：整扇门是否左右镜像（铰链在 x 1 而不是 x 15）；刷子右键切换，开门方向不变，旧门读出为 false。
 
 ### 字段 `style`
 - 0 APG、1 PSD_1、2 PSD_2（无外侧把手的全高）、3 APG_2（无外侧把手的半高）。
@@ -17,7 +18,7 @@
 - 这个默认值就是实际放下的值：`ItemPSDAPGBase.useOn` 用 `defaultBlockState()` 直接 `setBlockAndUpdate`，不走下面的 `getStateForPlacement`（0.76.8）。
 
 ### `void createBlockStateDefinition(...)`
-- 登记 `FACING, HALF, SIDE_EXTENDED, OPEN, INWARD`。
+- 登记 `FACING, HALF, SIDE_EXTENDED, OPEN, INWARD, MIRRORED`。
 
 ### `BlockState getStateForPlacement(BlockPlaceContext ctx)`
 - 作用：朝向取 `rowFacing`；`INWARD` 一律为 true（朝站台开，不再看玩家站哪一侧）。
@@ -27,7 +28,14 @@
 - 作用：依次查看玩家视线的右、左、前、后四个相邻格，第一个"沿其自身一排"相邻（相邻方向与其朝向不同轴）的屏蔽门/安全门方块的朝向即为结果；没有则用玩家视线方向。
 
 ### `void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity, ItemStack)`
-- 服务端把上半方块的 `INWARD` 同步为下半的值。
+- 服务端把上半方块的 `INWARD`、`MIRRORED` 同步为下半的值。
+
+### `InteractionResult use(...)`
+- 手持刷子（`Items.BRUSH`）：上下两半一起切换 `MIRRORED`，开关状态不变（0.77.0）。
+- 否则潜行右键切换开门方向并关门，普通右键开关门。
+
+### `static VoxelShape outline(style, half, facing, open, inward, mirrored)`
+- 关门时 0..16 × 0..4；开门时门扇在铰链那一格：未镜像 x 14..16，镜像 x 0..2；向外 z -12..4，向内 z 2..18。
 
 ### `protected boolean isAPG()`
 - `style == 0 || style == 3`（两种半高安全门，上半块 9 格高）。

@@ -52,14 +52,23 @@ export function NetworkSchematic({ onShowReal, mode = "tracks", shape = "real", 
     const k = Math.max(0.05, Math.min(2.5, Math.min(w / bounds.width, h / bounds.height)))
     setView({ x: (w - bounds.width * k) / 2, y: (h - bounds.height * k) / 2, k })
   }
-  useEffect(fit, [schematic, trackMap, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Only when there is something new to look at: the first diagram, another layer, shape or kind of transport. The
+  // network and the topology are read again every few seconds as new objects, which until 0.77.0 fitted the diagram
+  // again each time and threw away the player's zoom.
+  const fitted = useRef("")
+  const fitKey = schematic ? [mode, shape, v.net.mode, mode === "tracks" && !trackMap ? "waiting" : ""].join("|") : ""
+  useEffect(() => {
+    if (!fitKey || fitted.current === fitKey) return
+    fitted.current = fitKey
+    fit()
+  }, [fitKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!box.current || typeof ResizeObserver === "undefined") return
     let seen = 0
     const observer = new ResizeObserver(() => { if (seen++ < 2) fit() })
     observer.observe(box.current)
     return () => observer.disconnect()
-  }, [schematic, trackMap, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fitKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const modes: string[] = data && data.modes ? data.modes : []
   const names: Record<string, string> = { TRAIN: "铁路", BOAT: "船", CABLE_CAR: "缆车", AIRPLANE: "飞机" }

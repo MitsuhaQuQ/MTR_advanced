@@ -80,6 +80,88 @@ class PlatformEndDoorTest {
 		}
 	}
 
+	/**
+	 * The brush turns a gate left to right (0.77.0): its hinge goes to the other end and it swings to the same side, so
+	 * open, every part stands where the part of the gate as drawn stands mirrored across the block's middle.
+	 */
+	@Test
+	void aGateTurnedLeftToRightIsTheMirrorImageOfTheOneAsDrawn() throws java.io.IOException {
+		for (int style = 0; style < 4; style++) {
+			for (final boolean inward : new boolean[]{false, true}) {
+				final net.minecraft.world.phys.AABB drawn = BlockPlatformEndDoor.outline(style, DoubleBlockHalf.LOWER, Direction.NORTH, true, inward, false).bounds();
+				final net.minecraft.world.phys.AABB turned = BlockPlatformEndDoor.outline(style, DoubleBlockHalf.LOWER, Direction.NORTH, true, inward, true).bounds();
+				assertEquals(1 - drawn.maxX, turned.minX, 1E-9);
+				assertEquals(1 - drawn.minX, turned.maxX, 1E-9);
+				assertEquals(drawn.minZ, turned.minZ, 1E-9);
+				assertEquals(drawn.maxZ, turned.maxZ, 1E-9);
+			}
+			assertEquals(BlockPlatformEndDoor.outline(style, DoubleBlockHalf.LOWER, Direction.NORTH, false, false, false).bounds(),
+					BlockPlatformEndDoor.outline(style, DoubleBlockHalf.LOWER, Direction.NORTH, false, false, true).bounds());
+		}
+		final com.google.gson.JsonObject variants = json("blockstates/platform_end_psd.json").getAsJsonObject("variants");
+		for (final String name : new String[]{"platform_edge_door", "platform_edge_door_low", "platform_edge_door_no_handle", "platform_edge_door_low_no_handle"}) {
+			for (final String half : new String[]{"lower", "upper"}) {
+				for (final String state : new String[]{"", "_open", "_open_in"}) {
+					final String key = "facing=north,half=" + half + ",inward=" + "_open_in".equals(state) + ",mirrored=%s,open=" + !state.isEmpty();
+					final int drawnTurn = variants.getAsJsonObject(String.format(key, false)).get("y").getAsInt();
+					final int turnedTurn = variants.getAsJsonObject(String.format(key, true)).get("y").getAsInt();
+					final java.util.List<String> drawn = new java.util.ArrayList<>();
+					for (final com.google.gson.JsonElement element : elements(name + "_" + half + state)) {
+						final double[] box = box(element.getAsJsonObject(), drawnTurn);
+						drawn.add(describe(16 - box[1], 16 - box[0], box[2], box[3], box[4], box[5]));
+					}
+					final java.util.List<String> turned = new java.util.ArrayList<>();
+					for (final com.google.gson.JsonElement element : elements(name + "_" + half + "_mirrored" + state)) {
+						final double[] box = box(element.getAsJsonObject(), turnedTurn);
+						turned.add(describe(box[0], box[1], box[2], box[3], box[4], box[5]));
+					}
+					java.util.Collections.sort(drawn);
+					java.util.Collections.sort(turned);
+					assertEquals(drawn, turned, name + " " + half + state);
+				}
+			}
+		}
+	}
+
+	/** The cube's x and z range after the blockstate's turn about (8, 8), and its y range */
+	private static double[] box(com.google.gson.JsonObject element, int turn) {
+		final com.google.gson.JsonArray from = element.getAsJsonArray("from");
+		final com.google.gson.JsonArray to = element.getAsJsonArray("to");
+		double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+		for (final double cornerX : new double[]{from.get(0).getAsDouble(), to.get(0).getAsDouble()}) {
+			for (final double cornerZ : new double[]{from.get(2).getAsDouble(), to.get(2).getAsDouble()}) {
+				double x = cornerX, z = cornerZ;
+				for (int i = 0; i < turn / 90; i++) {
+					final double turnedX = 16 - z;
+					z = x;
+					x = turnedX;
+				}
+				minX = Math.min(minX, x);
+				maxX = Math.max(maxX, x);
+				minZ = Math.min(minZ, z);
+				maxZ = Math.max(maxZ, z);
+			}
+		}
+		return new double[]{minX, maxX, minZ, maxZ, from.get(1).getAsDouble(), to.get(1).getAsDouble()};
+	}
+
+	private static String describe(double... values) {
+		final StringBuilder builder = new StringBuilder();
+		for (final double value : values) builder.append(String.format(java.util.Locale.ROOT, "%.4f ", value + 0.0));
+		return builder.toString();
+	}
+
+	private static com.google.gson.JsonObject json(String relative) throws java.io.IOException {
+		for (final String root : new String[]{"../resources/common/normal", "resources/common/normal"}) {
+			final java.nio.file.Path candidate = java.nio.file.Paths.get(root, "assets/mtr", relative);
+			if (java.nio.file.Files.exists(candidate)) {
+				return com.google.gson.JsonParser.parseString(new String(java.nio.file.Files.readAllBytes(candidate), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+			}
+		}
+		fail(relative);
+		return null;
+	}
+
 	private static com.google.gson.JsonArray elements(String model) throws java.io.IOException {
 		java.nio.file.Path path = null;
 		for (final String root : new String[]{"../resources/common/normal", "resources/common/normal"}) {

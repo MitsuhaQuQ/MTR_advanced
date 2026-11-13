@@ -14,8 +14,8 @@
 ## 内部组件
 ### `TrainCard({ train, chosen, canEdit, onChoose })`
 - props：`train`（调度台数据中的一列车：`id`、`route`、`routeName`、`next`、`block`、`late`（秒）、`dispatch` 位、`noDuty`…）；`chosen` 是否选中；`canEdit`；`onChoose`。
-- 状态：`sent`（已发送的命令键，按钮变"已发送"）、`open`（展开的输入：`extend` 或 `turn`）、`seconds`（多停秒数，默认 60）、`station`（折返车站）、`error`。
-- `send(key, ...operations)`：逐条 `fn.consoleCommand(null, {train: id, ...operation})`（POST `api/apply`），然后记为已发送。
+- 状态：`sent`（命令键 → 发送时列车的 `dispatch` 和时间；列车 `dispatch` 未变且不到 `SENT_MS` 10 秒时按钮显示"已发送"，否则恢复，0.77.0 起不再一直灰着）、`open`（展开的输入：`extend` 或 `turn`）、`seconds`（多停秒数，默认 60）、`station`（折返车站）、`error`。
+- `send(key, ...operations)`：逐条 `fn.consoleCommand(null, {train: id, ...operation})`（POST `api/apply`），全部成功才记为已发送，否则显示"发送失败"。
 - 折返可选车站：所属路网的车站（`fn.systemOfRoute`），否则本路线各停站。
 - 按钮（有权限且在运用中时）：扣停/放行（按 `dispatch & 1` 切换）、延长停站…（1–1800 秒，`{command:"extend", seconds}`）、提前折返…（`{command:"turn", station}`）、下一站清客（`clearOut`）、指定回库（`return`）、下一站清客后回库（两条一起）、有命令时"撤销"（`cancel`）。
 - 显示：车名、路线短名、晚点 ≥5 分钟标签、扣停标签、下一站与区段（后 4 位）、`fn.consoleTrainState` 文字。

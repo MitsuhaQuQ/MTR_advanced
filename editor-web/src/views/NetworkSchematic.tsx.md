@@ -15,7 +15,7 @@
 - props：`onShowReal()` 切换到实景地图；`mode` `"tracks"`/`"logical"`；`shape` `"real"`/`"schematic"`；`trains?` 要标的列车；`onTrain?(id)` 点列车。
 - 每 0.4 秒检查 `v.net.data` 是否换了（旧代码只重画它的画布，不通知 React）。
 - 计算（`useMemo`）：`realMap = trackSchematic(data, 拓扑站台)`、`trackMap`（示意形状时 `orthogonalTracks(realMap)`）、`schematic = abstractNetwork(data, 拓扑站台)`。
-- `fit()`：把整张图缩放居中放进容器（倍数 0.05–2.5）；首次加载、换模式/数据时和容器前两次尺寸变化时调用；"全图"按钮也调用。
+- `fit()`：把整张图缩放居中放进容器（倍数 0.05–2.5）；只在 `fitKey`（图层、形状、运输方式、股道图是否已出）变化时和随后容器前两次尺寸变化时调用——路网与拓扑定时重读成新对象不再触发，缩放不会跳回（0.77.0）；"全图"按钮也调用。
 - 头部：有多种运输方式时的下拉（改 `v.net.mode`、`v.net.version = -1`，`fn.loadNetwork(false)` 让旧代码重读）、车站与区间数、说明、"全图"。
 - 交互：滚轮以鼠标为中心缩放（0.05–8 倍）；拖动平移（移动超过 3 像素才算拖动，拖动后的点击不算选择）。
 - 绘制：`tracks` 模式交给 `TrackMapDrawing`（整体 `translate/scale`）；`logical` 模式画 `LogicalCorridor`、`StationGlyph`、道岔/尽头圆点（屏幕坐标，不随缩放变大）。

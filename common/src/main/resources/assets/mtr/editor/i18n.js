@@ -483,6 +483,7 @@ const I18N = (() => {
 			"临时处置": "a dispatcher's setting",
 			"预案「{0}」": "plan “{0}”",
 			"已发送": "Sent",
+			"发送失败": "Sending failed",
 			"和别的车互相等着走不了（锁死）": "stuck waiting on other trains (deadlock)",
 			"等进路已 {0} 分钟": "waiting for its way for {0} min",
 			"晚点 {0} 分钟": "{0} min late",

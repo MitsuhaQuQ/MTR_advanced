@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 Z_OFFSET = 2
 # The hinge the open leaf turns about, in the closed model as written: the jamb opposite the handle.
 HINGE = (15, 1 + Z_OFFSET)
+# The same hinge once the brush has turned the gate left to right (0.77.0)
+MIRRORED_HINGE = (16 - HINGE[0], HINGE[1])
+# The blockstate's turn of an open gate, after the gate's own facing, by whether it is turned left to right and whether
+# it swings back into the block: the hinge at the other end turns the other way to swing to the same side
+OPEN_TURN = {(False, False): 90, (False, True): 270, (True, False): 270, (True, True): 90}
 ASSETS = ROOT / "resources/common/normal/assets/mtr"
 
 
@@ -37,6 +42,37 @@ def mirrored(element):
             uv = faces[side]["uv"]
             uv[1], uv[3] = uv[3], uv[1]
     return element
+
+
+def mirrored_across(element):
+    """The cube flipped left to right about the block's middle (x 8), so the hinge goes to the other end (0.77.0): the
+    brush changes a gate to this, and it still swings the same way."""
+    low, high = element["from"][0], element["to"][0]
+    element["from"][0], element["to"][0] = 16 - high, 16 - low
+    faces = element["faces"]
+    east, west = faces.pop("east", None), faces.pop("west", None)
+    if east is not None:
+        faces["west"] = east
+    if west is not None:
+        faces["east"] = west
+    for side in ("north", "south", "up", "down"):
+        if side in faces:
+            uv = faces[side]["uv"]
+            uv[0], uv[2] = uv[2], uv[0]
+    if "rotation" in element:
+        rotation = element["rotation"]
+        rotation["origin"][0] = 16 - rotation["origin"][0]
+        # About x the angle is unchanged; about y or z it turns the other way
+        if rotation["axis"] != "x":
+            rotation["angle"] = -rotation["angle"]
+    return element
+
+
+def open_offsets(hinge):
+    """How far to move the leaf, as written before the gate's own z offset, so that the blockstate's turn keeps the hinge
+    where it is: by 90 degrees, (x, z) to (16 - z, x) about (8, 8), and by 270 degrees, (x, z) to (z, 16 - x)."""
+    x, z = hinge
+    return {90: (z - x, Z_OFFSET + 16 - x - z), 270: (16 - x - z, Z_OFFSET + x - z)}
 
 
 def write(relative, value):
@@ -111,14 +147,17 @@ for name in ("platform_edge_door_low", "platform_edge_door", "platform_edge_door
         return result
 
     for half, elements in zip(("lower", "upper"), halves):
-        write("models/block/" + name + "_" + half + ".json", {**base, "elements": moved(elements, 0, Z_OFFSET)})
-        # Blockstate rotation (90 degrees) takes (x, z) to (16 - z, x) about (8, 8). Offset the geometry so the open leaf
-        # turns about the hinge instead: (16 - (z + dz), x + dx) is the hinge itself for dz = 16 - hinge x - hinge z, with
-        # the closed leaf's own offset, and dx = hinge z - hinge x.
-        write("models/block/" + name + "_" + half + "_open.json", {**base, "elements": moved(elements, HINGE[1] - HINGE[0], Z_OFFSET + 16 - HINGE[0] - HINGE[1])})
-        # Swinging the other way, back into the block (0.65.29): turned 270 degrees, (x, z) to (z, 16 - x), which keeps
-        # the hinge for dz = hinge x - hinge z, with the closed leaf's own offset, and dx = 16 - hinge x - hinge z.
-        write("models/block/" + name + "_" + half + "_open_in.json", {**base, "elements": moved(elements, 16 - HINGE[0] - HINGE[1], Z_OFFSET + HINGE[0] - HINGE[1])})
+        # The gate as drawn, and the same gate turned left to right by the brush (0.77.0), whose hinge is at the other end
+        for suffix, parts, hinge, out, back in (("", elements, HINGE, 90, 270),
+                                                 ("_mirrored", [mirrored_across(copy.deepcopy(part)) for part in elements], MIRRORED_HINGE, 270, 90)):
+            prefix = "models/block/" + name + "_" + half + suffix
+            offsets = open_offsets(hinge)
+            write(prefix + ".json", {**base, "elements": moved(parts, 0, Z_OFFSET)})
+            # Swinging out in front of the block: the leaf runs from the hinge towards the other end, so the turn that
+            # takes it out in front is 90 degrees for the hinge at x 15 and 270 for the hinge at x 1
+            write(prefix + "_open.json", {**base, "elements": moved(parts, *offsets[out])})
+            # Swinging the other way, back into the block (0.65.29)
+            write(prefix + "_open_in.json", {**base, "elements": moved(parts, *offsets[back])})
     write("models/block/" + name + ".json", {**base, "elements": moved(complete, 0, Z_OFFSET), "display": source.get("display", {})})
 
 # The gates without the handle outside (user, 2026-11-14): the second screen door style, which until then was the same
@@ -130,12 +169,13 @@ for block, name in (("platform_end_apg", "platform_edge_door_low"), ("platform_e
         for half in ("lower", "upper"):
             for opened in (False, True):
                 for inward in (False, True):
-                    model = "mtr:block/" + name + "_" + half
-                    if opened:
-                        model += "_open_in" if inward else "_open"
-                    variants[f"facing={facing},half={half},inward={str(inward).lower()},open={str(opened).lower()}"] = {
-                        "model": model,
-                        "y": (angle + (270 if inward else 90) if opened else angle) % 360,
-                    }
+                    for across in (False, True):
+                        model = "mtr:block/" + name + "_" + half + ("_mirrored" if across else "")
+                        if opened:
+                            model += "_open_in" if inward else "_open"
+                        variants[f"facing={facing},half={half},inward={str(inward).lower()},mirrored={str(across).lower()},open={str(opened).lower()}"] = {
+                            "model": model,
+                            "y": (angle + OPEN_TURN[across, inward] if opened else angle) % 360,
+                        }
     write("blockstates/" + block + ".json", {"variants": variants})
     write("models/item/" + block + ".json", {"parent": "mtr:block/" + name})

@@ -10,6 +10,9 @@ import { legacy, useLegacy } from "../legacy/engine"
 import { tr } from "../i18n"
 import { shortName, systemTitle } from "./now"
 
+/** How long a sent command's button stays greyed out when the train's dispatch state doesn't change */
+const SENT_MS = 10000
+
 export function DispatchConsole({ className, onChoose }: { className: string; onChoose: (id: string) => void }) {
   useLegacy()
   const { fn, v } = legacy
@@ -49,15 +52,24 @@ export function DispatchConsole({ className, onChoose }: { className: string; on
 
 function TrainCard({ train, chosen, canEdit, onChoose }: { train: any; chosen: boolean; canEdit: boolean; onChoose: () => void }) {
   const { fn, v } = legacy
-  const [sent, setSent] = useState<string[]>([])
+  // A command shows as sent until the train's dispatch state changes, or for a while if it doesn't: a sent hold no
+  // longer stays sent once released, which until 0.77.0 left the button greyed out until the page was loaded again
+  const [sent, setSent] = useState<Record<string, { dispatch: number; at: number }>>({})
   const [open, setOpen] = useState<"" | "extend" | "turn">("")
   const [seconds, setSeconds] = useState("60")
   const [station, setStation] = useState("")
   const [error, setError] = useState("")
   const held = (train.dispatch & 1) !== 0
   const send = async (key: string, ...operations: any[]) => {
-    for (const operation of operations) await fn.consoleCommand(null, { train: train.id, ...operation })
-    setSent(list => [...list, key])
+    const dispatch = train.dispatch
+    let ok = true
+    for (const operation of operations) ok = (await fn.consoleCommand(null, { train: train.id, ...operation })) !== false && ok
+    if (ok) setSent(list => ({ ...list, [key]: { dispatch, at: Date.now() } }))
+    else setError(tr("发送失败"))
+  }
+  const isSent = (key: string) => {
+    const entry = sent[key]
+    return Boolean(entry) && entry.dispatch === train.dispatch && Date.now() - entry.at < SENT_MS
   }
   const state: string = fn.consoleTrainState(train)
   const late = train.late >= 300
@@ -66,7 +78,7 @@ function TrainCard({ train, chosen, canEdit, onChoose }: { train: any; chosen: b
   const system = r ? fn.systemOfRoute(r.id) : null
   const stations: any[] = (system ? system.stations || [] : r ? r.stops.map((stop: any) => ({ id: stop.station, name: stop.name })) : []).filter((each: any) => each.id)
   const button = (key: string, label: string, run: () => void) => (
-    <button key={key} type="button" className="btn h-6 px-2 text-[12px]" disabled={sent.includes(key)} onClick={e => { e.stopPropagation(); run() }}>{sent.includes(key) ? tr("已发送") : label}</button>
+    <button key={key} type="button" className="btn h-6 px-2 text-[12px]" disabled={isSent(key)} onClick={e => { e.stopPropagation(); setError(""); run() }}>{isSent(key) ? tr("已发送") : label}</button>
   )
   return (
     <li className={"rounded-lg border p-2.5 " + (chosen ? "tint-sel border-sel" : "border-grid bg-panel")} onClick={onChoose} data-console-card={train.id}>

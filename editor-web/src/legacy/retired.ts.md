@@ -65,5 +65,5 @@
 - `simTooltip(s)`：模拟开着且有结果时返回 `<div class="hint">…</div>`（`P.simServiceText`），否则空串。
 - `toggleConsole(open)`：开关调度台：设置 `#net-console-toggle` 的 `aria-pressed`（旧的 `#net-console` 面板已删，列车卡片由 `views/DispatchConsole.tsx` 画）；打开时立即加载并每 `CONSOLE_POLL_MS` 在页面可见且处于路网视图时刷新；关闭时停止。之后 `renderConsole`（只通知新页面重绘）、`drawNetwork`。
 - `consoleTrains`、`consoleTrainName`、`consoleTrainState`：`P` 同名函数。调用者：`views/DispatchConsole.tsx:25`、`views/Layers.tsx:154`（经 `fn`）。
-- `consoleCommand(button, operation)`：禁用按钮，POST `api/apply`（`P.dispatchOperation(operation)`）；成功按钮文字改"已发送"，0.6 秒后重新加载调度台；失败恢复按钮。
+- `consoleCommand(button, operation)`：禁用按钮，POST `api/apply`（`P.dispatchOperation(operation)`）；成功按钮文字改"已发送"，0.6 秒后重新加载调度台，返回 true；失败恢复按钮，返回 false（0.77.0）。
 - `isLoop`、`loopEntryStop`、`loopRuns`（`pairs` 用 `fn.terminalNow().next`）。

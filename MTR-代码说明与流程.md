@@ -74,6 +74,12 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.77.0 端门左右开（用户 2026-11-14）：手持刷子右键端门，整扇门左右镜像（铰链从 x 15 换到 x 1），开门方向不变。`BlockPlatformEndDoor` 新增方块属性 `MIRRORED`（默认 false，旧门不变；`use` 里判断手持 `Items.BRUSH`，上下两半一起切换，开关状态保持；`setPlacedBy` 同步上半；`outline(..., mirrored)` 开门时 x 范围 14..16 改为 0..2）。模型由 `models/export_platform_edge_doors.py` 的 `mirrored_across`（x 镜像：东西面互换，南北上下面 U 翻转，绕 y/z 的旋转角取反）生成 `*_mirrored`、`*_mirrored_open`、`*_mirrored_open_in` 共 24 个；`open_offsets(hinge)` 按铰链算两种转角的平移，镜像门向外开用 y+270、向内用 y+90（`OPEN_TURN`，和原门对调）。因为多了方块状态，客户端和服务端的状态编号必须一致，所以升协议号 0.77；资源升 `mtm_assets_version` 1.0.9。测试：`PlatformEndDoorTest.aGateTurnedLeftToRightIsTheMirrorImageOfTheOneAsDrawn`（按 blockstate 转角把镜像模型和原模型逐块比对）。
+
+0.77.0 网页调度台按钮（交接遗留 2）：`DispatchConsole.TrainCard` 的「已发送」原来是一个只增不减的键列表，扣停→放行之后 `hold` 键还在，按钮一直灰着要刷新页面。现在每条记录发送时列车的 `dispatch`，列车状态一变或 10 秒（`SENT_MS`）后按钮恢复；`retired.ts` 的 `consoleCommand` 返回是否成功，失败时卡片显示「发送失败」。
+
+0.77.0 网页路网示意图缩放跳回（交接遗留 3）：`NetworkSchematic` 的 `fit` 原本依赖 `schematic`/`trackMap`，而路网和拓扑每隔几秒重读成新对象，于是每次都重新适配、丢掉缩放。现在按 `fitKey`（图层、形状、运输方式、股道图是否已出）只在首次出图和切换时适配，「全图」按钮照旧。
+
 0.76.8 端门放下来还是朝轨道开（用户 2026-11-14，换了两版 jar 都没变）：`ItemPSDAPGBase.useOn` 是用 `defaultBlockState()` 直接 `setBlockAndUpdate` 放下端门的，**根本不走 `getStateForPlacement`**，所以 0.76.5 改在那个方法里的开门方向一直没生效，放下的门拿到的是默认状态里的 `INWARD`。`registerDefaultState` 和 `getStateForPlacement` 现在都设 `INWARD = true`（朝站台侧；放置时 `FACING` 取玩家视线，玩家站在站台上朝轨道看，所以朝向的背面就是站台）。这是**服务端**行为：方向在放置时就写进方块状态，客户端只按状态画，而版本检查只比前两位（0.76），所以只换客户端 jar 能连上但看不到修正（用户实测，服务端还是 0.76.6-server）。资源未动，`mtm_assets_version` 仍 1.0.8。
 
 0.76.6 端门开门方向与无把手样式（用户 2026-11-14）：端门放下时一律朝站台开（`getStateForPlacement` 不再按玩家站哪一侧算 `INWARD`，潜行右键仍可切换）；两个新的 Blockbench 源（去掉外侧把手）按同一套规则导出，全高无把手接替原本和样式 1 一模一样的 `platform_end_psd_2`，半高无把手是新方块 `platform_end_apg_2`（样式 3，`isAPG()` 和上半块 9 格高都认它）。四种语言的名称、渲染层、物品与方块注册都已补齐。`PlatformEndDoorTest` 覆盖四套模型和四种样式。资源改动所以 `mtm_assets_version` 升到 1.0.8。

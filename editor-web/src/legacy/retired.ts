@@ -350,8 +350,10 @@ export function dispatchRules(get: () => Legacy) {
         await get().fn.sendJson("api/apply", "POST", P.dispatchOperation(operation))
         if (button) button.textContent = tr("已发送")
         setTimeout(loadConsole, 600)
+        return true
       } catch {
         if (button) button.disabled = false
+        return false
       }
     },
     isLoop: P.isLoop,

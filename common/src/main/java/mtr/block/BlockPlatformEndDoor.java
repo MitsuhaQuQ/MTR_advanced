@@ -34,14 +34,19 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 	 * Whether the leaf swings open towards the back of the block (+z of a north facing gate) rather than out in front.
 	 */
 	public static final BooleanProperty INWARD = BooleanProperty.create("inward");
+	/**
+	 * Whether the gate is turned left to right, with its hinge at the other end (0.77.0): the brush changes it, and it
+	 * swings to the same side either way. Gates put down before have it false, as they were drawn.
+	 */
+	public static final BooleanProperty MIRRORED = BooleanProperty.create("mirrored");
 	private final int style;
 
 	public BlockPlatformEndDoor(int style) {
 		this.style = style;
-		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(HALF, DoubleBlockHalf.LOWER).setValue(SIDE_EXTENDED, EnumSide.SINGLE).setValue(OPEN, false).setValue(INWARD, true));
+		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(HALF, DoubleBlockHalf.LOWER).setValue(SIDE_EXTENDED, EnumSide.SINGLE).setValue(OPEN, false).setValue(INWARD, true).setValue(MIRRORED, false));
 	}
 
-	@Override protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) { builder.add(FACING, HALF, SIDE_EXTENDED, OPEN, INWARD); }
+	@Override protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) { builder.add(FACING, HALF, SIDE_EXTENDED, OPEN, INWARD, MIRRORED); }
 
 	/**
 	 * Beside a screen door or gate panel along its row, the gate faces the way it does, so its leaf is in line with the
@@ -79,24 +84,28 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 		super.setPlacedBy(world, pos, state, livingEntity, itemStack);
 		if (!world.isClientSide) {
 			final BlockState upper = world.getBlockState(pos.above());
-			if (upper.is(this)) world.setBlock(pos.above(), upper.setValue(INWARD, state.getValue(INWARD)), 3);
+			if (upper.is(this)) world.setBlock(pos.above(), upper.setValue(INWARD, state.getValue(INWARD)).setValue(MIRRORED, state.getValue(MIRRORED)), 3);
 		}
 	}
 	/** Styles: 0 the gate, 1 the screen door, 2 the screen door without the handle outside, 3 the gate without it */
 	@Override protected boolean isAPG() { return style == 0 || style == 3; }
 	@Override public Item asItem() { return style == 0 ? Items.PLATFORM_END_APG.get() : style == 1 ? Items.PLATFORM_END_PSD_1.get() : style == 2 ? Items.PLATFORM_END_PSD_2.get() : Items.PLATFORM_END_APG_2.get(); }
 	@Override public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
-		return outline(style, state.getValue(HALF), state.getValue(FACING), state.getValue(OPEN), state.getValue(INWARD));
+		return outline(style, state.getValue(HALF), state.getValue(FACING), state.getValue(OPEN), state.getValue(INWARD), state.getValue(MIRRORED));
 	}
 	static VoxelShape outline(int style, DoubleBlockHalf half, Direction facing, boolean open) {
-		return outline(style, half, facing, open, false);
+		return outline(style, half, facing, open, false, false);
 	}
 	static VoxelShape outline(int style, DoubleBlockHalf half, Direction facing, boolean open, boolean inward) {
+		return outline(style, half, facing, open, inward, false);
+	}
+	static VoxelShape outline(int style, DoubleBlockHalf half, Direction facing, boolean open, boolean inward, boolean mirrored) {
 		final int height = (style == 0 || style == 3) && half == DoubleBlockHalf.UPPER ? 9 : 16;
 		if (open) {
 			// The north-facing leaf swings around the jamb at (15, 3), in line with the screen door glass at z 2..4: out
-			// in front of the block, or back into it and the one behind
-			return inward ? IBlock.getVoxelShapeByDirection(14, 0, 2, 16, height, 18, facing) : IBlock.getVoxelShapeByDirection(14, 0, -12, 16, height, 4, facing);
+			// in front of the block, or back into it and the one behind. Turned left to right, the jamb is at (1, 3).
+			final int x1 = mirrored ? 0 : 14;
+			return inward ? IBlock.getVoxelShapeByDirection(x1, 0, 2, x1 + 2, height, 18, facing) : IBlock.getVoxelShapeByDirection(x1, 0, -12, x1 + 2, height, 4, facing);
 		}
 		return IBlock.getVoxelShapeByDirection(0, 0, 0, 16, height, 4, facing);
 	}
@@ -104,6 +113,16 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 	@Override public InteractionResult use(BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
 		if (world.isClientSide) return InteractionResult.SUCCESS;
 		final BlockPos base = state.getValue(HALF) == DoubleBlockHalf.UPPER ? pos.below() : pos;
+		if (player.getItemInHand(hand).is(Items.BRUSH.get())) {
+			// The brush turns the gate left to right, both halves, open or shut as it was (0.77.0)
+			final boolean mirrored = !state.getValue(MIRRORED);
+			for (int y = 0; y < 2; y++) {
+				final BlockPos part = base.above(y);
+				final BlockState other = world.getBlockState(part);
+				if (other.is(this)) world.setBlockAndUpdate(part, other.setValue(MIRRORED, mirrored));
+			}
+			return InteractionResult.SUCCESS;
+		}
 		// Sneaking, the way it swings is changed (closed first), not whether it is open
 		final boolean swing = player.isShiftKeyDown();
 		final boolean open = !swing && !state.getValue(OPEN);
