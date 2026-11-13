@@ -551,6 +551,19 @@ public class TrainServer extends Train {
 				new ServiceVehicle().followPath(tripPath);
 			}
 		}
+		// The simulator has the train further along than the path here reaches, as when the siding's paths were found again
+		// since and a train without a service went back to the siding's own path, now shorter (2026-11-14: refreshing a depot
+		// of the yel world in the web editor crashed the server here, in 0.77.0 already). It stays as it is until the
+		// simulator starts again on the new paths, as a train whose path is missing does.
+		if (train.getNextStoppingIndex() >= path.size()) {
+			if (!missingPathTold) {
+				missingPathTold = true;
+				System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " can't be shown where the simulator has it, as its path here is shorter (" + path.size() + " rails, the simulator's stop " + train.getNextStoppingIndex() + ")");
+			}
+			simulatedService = new byte[0];
+			platformDwell = null;
+			return;
+		}
 		final boolean wasOnRoute = isOnRoute;
 		speed = train.getSpeed();
 		railProgress = train.getRailProgress();

@@ -1023,7 +1023,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	}
 
 	public int getTotalDwellTicks() {
-		return path.get(nextStoppingIndex).dwellTime * 10;
+		// Never past the path's end, which a path found again shorter could leave it at for a moment (2026-11-14)
+		return nextStoppingIndex >= 0 && nextStoppingIndex < path.size() ? path.get(nextStoppingIndex).dwellTime * 10 : 0;
 	}
 
 	/**
