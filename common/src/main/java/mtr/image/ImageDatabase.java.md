@@ -39,3 +39,8 @@
 ## 内部类 `Entry`（final）
 - 字段：`namespace`、`fileName`、`hash`、`name`（`namespace:fileName`）、`uploader`、`uploaderName`、`width`、`height`（像素）、`size`（字节）、`uploadedAt`（毫秒）。
 - 调用者：`ImageServer`、`common/src/main/java/mtr/client/ImportedImages.java:20`。
+
+## 0.74.0 媒体文件夹
+
+- 新字段 `folders`（表 `picture_folders`，`picture_index` 加 `folder` 列）。`Entry.folder`（另有不带文件夹的构造函数，顶层）。
+- `add(…, folder)` 写明列名插入（以前按位置插入，加列后会错位），并保留文件夹；不带文件夹的 `add` 放顶层。`entries()` 读出文件夹。

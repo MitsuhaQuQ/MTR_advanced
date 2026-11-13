@@ -70,3 +70,9 @@
 
 ## 私有内部类 `Download`
 - `bytes`、`received`。
+
+## 0.74.0 媒体文件夹
+
+- `Entry.uploader`、`Entry.folder`（旧服务器没有时为空）；`FOLDERS`。`receiveListS2C` 读列表尾部的上传者、文件夹和文件夹列表。
+- `upload(name, soundId, bytes, folder)`：文件夹规整后写在上传包末尾（null 不写）。
+- `folderAction(action, owner, path, argument, keys)`：发 `PACKET_AUDIO_FOLDER`，返回请求 id。

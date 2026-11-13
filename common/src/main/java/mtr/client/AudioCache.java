@@ -41,6 +41,8 @@ public final class AudioCache implements IPacket {
 	public static long maxTotalBytes;
 	public static long totalBytes;
 	public static final List<Entry> ENTRIES = new ArrayList<>();
+	/** The kept folders, of every uploader (0.74.0) */
+	public static final List<mtr.media.MediaFolders.Folder> FOLDERS = new ArrayList<>();
 	/**
 	 * What became of the latest uploads and deletions, newest last, for the page to show.
 	 */
@@ -144,6 +146,19 @@ public final class AudioCache implements IPacket {
 	 * @throws AudioFiles.InvalidAudioException with the reason a file can't be sent
 	 */
 	public static int upload(String name, String soundId, byte[] bytes) throws AudioFiles.InvalidAudioException {
+		return upload(name, soundId, bytes, null);
+	}
+
+	/**
+	 * @param folder the folder to put it in, or null to leave a replaced file where it is and put a new one at the top
+	 */
+	public static int upload(String name, String soundId, byte[] bytes, String folder) throws AudioFiles.InvalidAudioException {
+		final String cleanFolder;
+		try {
+			cleanFolder = folder == null ? null : mtr.media.MediaFolders.normalize(folder);
+		} catch (IllegalArgumentException e) {
+			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode(mtr.media.MediaFolders.INVALID));
+		}
 		if (!canUpload) {
 			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_no_permission"));
 		}
@@ -179,6 +194,9 @@ public final class AudioCache implements IPacket {
 			packet.writeUtf(fileName);
 			packet.writeByteArray(chunk);
 			packet.writeUtf(cleanSoundId);
+			if (cleanFolder != null) {
+				packet.writeUtf(cleanFolder);
+			}
 			RegistryClient.sendToServer(PACKET_AUDIO_UPLOAD, packet);
 		}
 		// This client has the file already, so once the server takes it, it isn't sent back
@@ -217,6 +235,26 @@ public final class AudioCache implements IPacket {
 		return requestId;
 	}
 
+	/**
+	 * A folder action ({@link mtr.audio.AudioServer#receiveFolderC2S}).
+	 *
+	 * @param owner the uploader whose folders these are (UUID)
+	 * @param keys  for moving files: their name keys
+	 */
+	public static int folderAction(int action, String owner, String path, String argument, java.util.Collection<String> keys) {
+		final int requestId = addRequest(path.isEmpty() ? argument : path);
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeInt(requestId);
+		packet.writeByte(action);
+		packet.writeUtf(owner);
+		packet.writeUtf(path);
+		packet.writeUtf(argument);
+		packet.writeInt(keys.size());
+		keys.forEach(packet::writeUtf);
+		RegistryClient.sendToServer(PACKET_AUDIO_FOLDER, packet);
+		return requestId;
+	}
+
 	public static void receiveListS2C(Minecraft minecraftClient, FriendlyByteBuf packet) {
 		final boolean newCanUpload = packet.readBoolean();
 		final boolean newCanManage = packet.readBoolean();
@@ -239,14 +277,33 @@ public final class AudioCache implements IPacket {
 			rawEntries.add(new Object[]{hash, namespace, name, size, durationMillis, uploaderName, uploadedAt, mine});
 		}
 		// The sound IDs come after every entry, and not at all from a server from before them
+		final String[] soundIds = new String[count];
 		for (int i = 0; i < count; i++) {
-			final String soundId = packet.isReadable() ? packet.readUtf() : "";
+			soundIds[i] = packet.isReadable() ? packet.readUtf() : "";
+		}
+		// Then each file's uploader and folder, and the kept folders (0.74.0)
+		final String[] uploaders = new String[count];
+		final String[] folders = new String[count];
+		for (int i = 0; i < count; i++) {
+			uploaders[i] = packet.isReadable() ? packet.readUtf(64) : "";
+			folders[i] = packet.isReadable() ? packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4) : "";
+		}
+		final List<mtr.media.MediaFolders.Folder> newFolders = new ArrayList<>();
+		final int folderCount = packet.isReadable() ? packet.readInt() : 0;
+		for (int i = 0; i < folderCount; i++) {
+			newFolders.add(new mtr.media.MediaFolders.Folder(packet.readUtf(64), packet.readUtf(), packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4)));
+		}
+		for (int i = 0; i < count; i++) {
+			final String soundId = soundIds[i];
 			final Object[] raw = rawEntries.get(i);
 			final String hash = (String) raw[0];
 			final String namespace = (String) raw[1];
 			final int size = (Integer) raw[3];
 			if (AudioFiles.isHash(hash) && !namespace.isEmpty() && size > 0 && size <= AudioFiles.MAX_FILE_BYTES) {
-				entries.add(new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), (String) raw[2], size, (Long) raw[4], (String) raw[5], (Long) raw[6], (Boolean) raw[7], AnnouncementSound.isValidSoundId(soundId) ? soundId : ""));
+				final Entry entry = new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), (String) raw[2], size, (Long) raw[4], (String) raw[5], (Long) raw[6], (Boolean) raw[7], AnnouncementSound.isValidSoundId(soundId) ? soundId : "");
+				entry.uploader = uploaders[i];
+				entry.folder = folders[i];
+				entries.add(entry);
 			}
 		}
 		minecraftClient.execute(() -> {
@@ -269,6 +326,8 @@ public final class AudioCache implements IPacket {
 			});
 			ENTRIES.clear();
 			ENTRIES.addAll(entries);
+			FOLDERS.clear();
+			FOLDERS.addAll(newFolders);
 			// Pieces of files the server no longer has won't come
 			DOWNLOADS.keySet().removeIf(hash -> entries.stream().noneMatch(entry -> entry.hash.equals(hash)));
 			// Every file the server has up to the size the player set, unless the player chose to fetch a file only once
@@ -450,6 +509,10 @@ public final class AudioCache implements IPacket {
 		 * doesn't give one.
 		 */
 		public final String soundId;
+		/** Who uploaded it (UUID), empty from a server from before folders */
+		public String uploader = "";
+		/** The folder it is in under its uploader ({@link mtr.media.MediaFolders}), empty at the top */
+		public String folder = "";
 
 		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploaderName, long uploadedAt, boolean mine, String soundId) {
 			this.hash = hash;

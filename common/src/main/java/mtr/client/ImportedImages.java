@@ -19,6 +19,8 @@ import java.util.*;
 public final class ImportedImages implements IPacket {
 	public static final List<ImageDatabase.Entry> ENTRIES = new ArrayList<>();
 	public static final Set<String> DELETABLE = new HashSet<>();
+	/** The kept folders, of every uploader (0.74.0) */
+	public static final List<mtr.media.MediaFolders.Folder> FOLDERS = new ArrayList<>();
 	private static final Map<String, byte[]> RECEIVING = new HashMap<>();
 	private static final Map<String, Integer> OFFSETS = new HashMap<>();
 	private static final Map<String, Long> WANTED = new HashMap<>();
@@ -26,6 +28,8 @@ public final class ImportedImages implements IPacket {
 	private static Object connection;
 	private static String session = "";
 	public static boolean canUpload;
+	/** Whether this player organises and deletes everyone's pictures (0.74.0) */
+	public static boolean canManage;
 	public static long maxTotalBytes = 256L * 1024 * 1024;
 	public static String message = "";
 	public static boolean ok;
@@ -48,15 +52,25 @@ public final class ImportedImages implements IPacket {
 		if (action == 0) {
 			final String nextSession = packet.readUtf(64); final boolean permission = packet.readBoolean(); final int count = PacketGuard.readCount(packet, 20, 256);
 			final List<ImageDatabase.Entry> entries = new ArrayList<>();
+			final List<Integer> rows = new ArrayList<>();
 			final Set<String> deletable = new HashSet<>();
 			for (int i = 0; i < count; i++) {
 				final String hash = packet.readUtf(64), name = packet.readUtf(129); final int width = packet.readInt(), height = packet.readInt(), size = packet.readInt();
 				if (packet.readBoolean()) deletable.add(name);
 				final String uploader = packet.readUtf(64), uploaderName = packet.readUtf(64); final long uploadedAt = packet.readLong();
-				if (ImageFiles.isHash(hash) && ImageFiles.isReference(name) && width > 0 && height > 0 && width <= ImageFiles.MAX_DIMENSION && height <= ImageFiles.MAX_DIMENSION && size > 0 && size <= ImageFiles.MAX_BYTES) { final int colon = name.indexOf(':'); entries.add(new ImageDatabase.Entry(name.substring(0, colon), name.substring(colon + 1), hash, width, height, size, uploader, uploaderName, uploadedAt)); }
+				if (ImageFiles.isHash(hash) && ImageFiles.isReference(name) && width > 0 && height > 0 && width <= ImageFiles.MAX_DIMENSION && height <= ImageFiles.MAX_DIMENSION && size > 0 && size <= ImageFiles.MAX_BYTES) { final int colon = name.indexOf(':'); entries.add(new ImageDatabase.Entry(name.substring(0, colon), name.substring(colon + 1), hash, width, height, size, uploader, uploaderName, uploadedAt)); rows.add(i); }
 			}
 			final long totalLimit = packet.readableBytes() >= 8 ? packet.readLong() : 256L * 1024 * 1024;
-			Minecraft.getInstance().execute(() -> { ensureConnection(); if (!session.equals(nextSession)) clear(); session = nextSession; canUpload = permission; maxTotalBytes = Math.max(0, Math.min(4096L * 1024 * 1024, totalLimit)); ENTRIES.clear(); ENTRIES.addAll(entries); DELETABLE.clear(); DELETABLE.addAll(deletable); });
+			// Then each row's folder (for every row sent, taken or not) and the kept folders (0.74.0)
+			final List<String> folders = new ArrayList<>();
+			for (int i = 0; i < count && packet.isReadable(); i++) folders.add(packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4));
+			final List<mtr.media.MediaFolders.Folder> newFolders = new ArrayList<>();
+			final int folderCount = packet.isReadable() ? PacketGuard.readCount(packet, 12, 4096) : 0;
+			for (int i = 0; i < folderCount; i++) newFolders.add(new mtr.media.MediaFolders.Folder(packet.readUtf(64), packet.readUtf(64), packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4)));
+			final boolean manage = packet.isReadable() && packet.readBoolean();
+			final List<ImageDatabase.Entry> withFolders = new ArrayList<>();
+			for (int i = 0; i < entries.size(); i++) { final ImageDatabase.Entry entry = entries.get(i); final int row = rows.get(i); withFolders.add(new ImageDatabase.Entry(entry.namespace, entry.fileName, entry.hash, entry.width, entry.height, entry.size, entry.uploader, entry.uploaderName, entry.uploadedAt, row < folders.size() ? folders.get(row) : "")); }
+			Minecraft.getInstance().execute(() -> { ensureConnection(); if (!session.equals(nextSession)) clear(); session = nextSession; canUpload = permission; maxTotalBytes = Math.max(0, Math.min(4096L * 1024 * 1024, totalLimit)); ENTRIES.clear(); ENTRIES.addAll(withFolders); DELETABLE.clear(); DELETABLE.addAll(deletable); FOLDERS.clear(); FOLDERS.addAll(newFolders); canManage = manage; });
 		} else if (action == 1) {
 			final String hash = packet.readUtf(64); final int size = packet.readInt(), offset = packet.readInt(); final byte[] bytes = packet.readByteArray(ImageFiles.CHUNK);
 			Minecraft.getInstance().execute(() -> data(hash, size, offset, bytes));
@@ -85,11 +99,18 @@ public final class ImportedImages implements IPacket {
 		return uploading != 0;
 	}
 	public static void upload(String name, byte[] bytes) throws Exception {
+		upload(name, bytes, null);
+	}
+	/**
+	 * @param folder the folder to put it in, or null to leave a replaced picture where it is and put a new one at the top
+	 */
+	public static void upload(String name, byte[] bytes, String folder) throws Exception {
+		final String cleanFolder = folder == null ? null : mtr.media.MediaFolders.normalize(folder);
 		ensureConnection(); if (!canUpload) throw new IllegalArgumentException("gui.mtr.image_no_permission"); if (busy()) throw new IllegalArgumentException("gui.mtr.image_busy"); ImageFiles.check(bytes);
 		uploading = System.currentTimeMillis(); message = "gui.mtr.image_sending";
 		final String clean = AudioFiles.cleanName(name);
 		for (int offset = 0; offset < bytes.length; offset += ImageFiles.CHUNK) {
-			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(0); packet.writeUtf(clean); packet.writeInt(bytes.length); packet.writeInt(offset); packet.writeByteArray(Arrays.copyOfRange(bytes, offset, Math.min(bytes.length, offset + ImageFiles.CHUNK))); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(0); packet.writeUtf(clean); packet.writeInt(bytes.length); packet.writeInt(offset); packet.writeByteArray(Arrays.copyOfRange(bytes, offset, Math.min(bytes.length, offset + ImageFiles.CHUNK))); if (cleanFolder != null) packet.writeUtf(cleanFolder); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);
 		}
 	}
 	public static byte[] read(String hash) {
@@ -186,6 +207,15 @@ public final class ImportedImages implements IPacket {
 	}
 	public static void apply(int entityId, PaintingSettings settings) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(2); packet.writeInt(entityId); packet.writeUtf(settings.json()); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);
+	}
+	/**
+	 * A folder action ({@code ImageServer} action 4, {@link mtr.media.MediaFolders#apply}); the answer comes as a message.
+	 *
+	 * @param owner      the uploader whose folders these are (UUID)
+	 * @param references for moving pictures: their names
+	 */
+	public static void folderAction(int action, String owner, String path, String argument, java.util.Collection<String> references) {
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(4); packet.writeUtf(owner); packet.writeByte(action); packet.writeUtf(path); packet.writeUtf(argument); packet.writeInt(references.size()); references.forEach(packet::writeUtf); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);
 	}
 	public static void delete(String reference) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(3); packet.writeUtf(reference); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);

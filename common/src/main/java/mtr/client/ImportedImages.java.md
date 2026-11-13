@@ -52,3 +52,8 @@
 - `animatedPixels()`：GIF 像素总数，否则 0。
 - `release()`：从纹理管理器释放。
 - `static writeFrame(NativeImage, AnimatedGif, int frame)`：ARGB → ABGR 写入一帧。
+
+## 0.74.0 媒体文件夹
+
+- `FOLDERS`、`canManage`；列表读每行文件夹（按服务器发的行号对应，跳过的行不影响）、文件夹列表和"能否整理所有人的"。
+- `upload(name, bytes, folder)`；`folderAction(action, owner, path, argument, references)`（动作 4）。

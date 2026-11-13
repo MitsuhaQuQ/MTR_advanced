@@ -45,9 +45,13 @@ public final class EditorAudio {
 			entryObject.addProperty("mine", entry.mine);
 			entryObject.addProperty("cached", AudioCache.isCached(entry.hash));
 			entryObject.addProperty("downloading", AudioCache.isDownloading(entry.hash));
+			entryObject.addProperty("uploader", entry.uploader);
+			entryObject.addProperty("folder", entry.folder);
 			entries.add(entryObject);
 		});
 		jsonObject.add("entries", entries);
+		jsonObject.add("folders", folders(AudioCache.FOLDERS));
+		jsonObject.addProperty("self", self());
 
 		AudioCache.expireRequests();
 		final JsonArray requests = new JsonArray();
@@ -71,6 +75,13 @@ public final class EditorAudio {
 	 * @param soundId the sound ID to give it, or empty for the server to make one from the file name
 	 */
 	public static JsonObject upload(String name, String soundId, String data) {
+		return upload(name, soundId, data, null);
+	}
+
+	/**
+	 * @param folder the folder to put it in, or null to leave a replaced file where it is (new ones go to the top)
+	 */
+	public static JsonObject upload(String name, String soundId, String data, String folder) {
 		final JsonObject jsonObject = new JsonObject();
 		try {
 			final byte[] bytes;
@@ -79,7 +90,7 @@ public final class EditorAudio {
 			} catch (IllegalArgumentException e) {
 				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_read_failed"));
 			}
-			jsonObject.addProperty("id", AudioCache.upload(name, soundId, bytes));
+			jsonObject.addProperty("id", AudioCache.upload(name, soundId, bytes, folder));
 			jsonObject.addProperty("ok", true);
 		} catch (AudioFiles.InvalidAudioException e) {
 			jsonObject.addProperty("ok", false);
@@ -105,6 +116,70 @@ public final class EditorAudio {
 			jsonObject.addProperty("message", TranslatedMessage.decode(e.getMessage()));
 		}
 		return jsonObject;
+	}
+
+	/**
+	 * A folder action (0.74.0): {@code op} create, rename, delete or move; {@code owner} the uploader (UUID); {@code path}
+	 * the folder; {@code name} the new name (create, rename); {@code folder} and {@code keys} for moving files.
+	 */
+	public static JsonObject folder(JsonObject request) {
+		final JsonObject jsonObject = new JsonObject();
+		final int action = folderAction(request.get("op").getAsString());
+		final java.util.List<String> keys = new java.util.ArrayList<>();
+		if (request.has("keys")) {
+			request.getAsJsonArray("keys").forEach(element -> keys.add(element.getAsString()));
+		}
+		final String argument = action == mtr.media.MediaFolders.MOVE ? string(request, "folder") : string(request, "name");
+		if (action < 0) {
+			jsonObject.addProperty("ok", false);
+			jsonObject.addProperty("message", TranslatedMessage.get(mtr.media.MediaFolders.FAILED));
+		} else {
+			jsonObject.addProperty("id", AudioCache.folderAction(action, string(request, "owner"), string(request, "path"), argument, keys));
+			jsonObject.addProperty("ok", true);
+		}
+		return jsonObject;
+	}
+
+	static int folderAction(String op) {
+		switch (op) {
+			case "create":
+				return mtr.media.MediaFolders.CREATE;
+			case "rename":
+				return mtr.media.MediaFolders.RENAME;
+			case "delete":
+				return mtr.media.MediaFolders.DELETE;
+			case "move":
+				return mtr.media.MediaFolders.MOVE;
+			default:
+				return -1;
+		}
+	}
+
+	static String string(JsonObject request, String key) {
+		return request.has(key) && !request.get(key).isJsonNull() ? request.get(key).getAsString() : "";
+	}
+
+	/**
+	 * The kept folders, as the page builds its tree from them and the files' folders.
+	 */
+	static JsonArray folders(java.util.List<mtr.media.MediaFolders.Folder> folders) {
+		final JsonArray array = new JsonArray();
+		folders.forEach(folder -> {
+			final JsonObject folderObject = new JsonObject();
+			folderObject.addProperty("owner", folder.owner);
+			folderObject.addProperty("ownerName", folder.ownerName);
+			folderObject.addProperty("path", folder.path);
+			array.add(folderObject);
+		});
+		return array;
+	}
+
+	/**
+	 * This player's UUID, the owner of the folders they upload into.
+	 */
+	static String self() {
+		final net.minecraft.client.player.LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
+		return player == null ? "" : player.getUUID().toString();
 	}
 
 	/**

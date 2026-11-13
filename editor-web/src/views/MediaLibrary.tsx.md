@@ -31,3 +31,10 @@
   - `sendWaiting(index)`：校验声音 ID 后上传，不合法时标红。
 - 文件操作：`act(name, body)`（POST 后 `load()`）；`copy(text)` 复制到剪贴板；改声音 ID（`{action:"soundId", key, soundId}`）；两步确认删除（`{action:"delete", key}`，正在播放则先停）。
 - 界面：顶栏（空间占用条、上传按钮）、连接问题提示、可拖放的列表（表格，键盘上下移动选择）、右侧详情与"最近的操作"（本页消息加服务器 `requests`）、底部统计、隐藏的 `<audio>`。
+
+## 0.74.0 媒体文件夹
+
+- 左边是文件夹树（`views/MediaFolders.tsx` 的 `FolderTree`），`current` 为当前文件夹（null 为全部文件），列表只显示它的文件（搜索时含下面所有层，`filesIn`）。
+- 每行可勾选（`checked`），可拖动（`DRAG_TYPE`）：拖勾选的那些或这一行；拖到树上的文件夹发 `{action: "folder", op: "move", …}`。
+- 选文件或拖文件进来先 `askUpload`，出现 `UploadTarget` 选传到自己的哪个文件夹（默认当前打开的、是自己的那个），确认后 `uploadFiles(files, folder)`；上传请求带 `folder`，等声音 ID 的文件也记着文件夹。
+- 文件夹没了（删除、改名）时回到全部文件。

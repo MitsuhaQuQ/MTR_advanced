@@ -20,6 +20,8 @@ import java.util.*;
 public final class ImageServer implements IPacket {
 	private static ImageDatabase database;
 	private static final List<ImageDatabase.Entry> ENTRIES = new ArrayList<>();
+	/** The kept folders (0.74.0) */
+	private static final List<mtr.media.MediaFolders.Folder> FOLDERS = new ArrayList<>();
 	private static final Map<UUID, Upload> UPLOADS = new HashMap<>();
 	private static final Map<UUID, Deque<Download>> DOWNLOADS = new HashMap<>();
 	private static final Map<UUID, Deque<Long>> ATTEMPTS = new HashMap<>();
@@ -29,12 +31,12 @@ public final class ImageServer implements IPacket {
 	private ImageServer() { }
 	public static void open(MinecraftServer server) {
 		close();
-		try { database = new ImageDatabase(server.getWorldPath(LevelResource.ROOT).resolve("mtr/pictures.db")); ENTRIES.addAll(database.entries()); session = UUID.randomUUID().toString(); }
+		try { database = new ImageDatabase(server.getWorldPath(LevelResource.ROOT).resolve("mtr/pictures.db")); ENTRIES.addAll(database.entries()); FOLDERS.addAll(database.folders.folders()); session = UUID.randomUUID().toString(); }
 		catch (Exception e) { e.printStackTrace(); close(); }
 	}
 	public static void close() {
 		if (database != null) try { database.close(); } catch (Exception e) { e.printStackTrace(); }
-		database = null; ENTRIES.clear(); UPLOADS.clear(); DOWNLOADS.clear(); ATTEMPTS.clear(); PERMISSIONS.clear(); session = "";
+		database = null; ENTRIES.clear(); FOLDERS.clear(); UPLOADS.clear(); DOWNLOADS.clear(); ATTEMPTS.clear(); PERMISSIONS.clear(); session = "";
 	}
 	public static void forget(ServerPlayer player) { UPLOADS.remove(player.getUUID()); DOWNLOADS.remove(player.getUUID()); PERMISSIONS.remove(player.getUUID()); }
 	public static boolean canEdit(ServerPlayer player) { return !player.isSpectator() && player.hasPermissions(SecurityConfig.editPermissionLevel); }
@@ -51,6 +53,12 @@ public final class ImageServer implements IPacket {
 		packet.writeByte(0); packet.writeUtf(session); packet.writeBoolean(database != null && canUpload(player)); packet.writeInt(ENTRIES.size());
 		for (ImageDatabase.Entry entry : ENTRIES) { packet.writeUtf(entry.hash); packet.writeUtf(entry.name); packet.writeInt(entry.width); packet.writeInt(entry.height); packet.writeInt(entry.size); packet.writeBoolean(canDelete(player, entry)); packet.writeUtf(entry.uploader); packet.writeUtf(entry.uploaderName); packet.writeLong(entry.uploadedAt); }
 		packet.writeLong(SecurityConfig.imageMaxTotalMegabytes * 1024L * 1024);
+		// Then each picture's folder and the kept folders (0.74.0)
+		for (ImageDatabase.Entry entry : ENTRIES) packet.writeUtf(entry.folder);
+		packet.writeInt(FOLDERS.size());
+		for (mtr.media.MediaFolders.Folder folder : FOLDERS) { packet.writeUtf(folder.owner); packet.writeUtf(folder.ownerName); packet.writeUtf(folder.path); }
+		// Whether this player organises everyone's pictures, as with deleting them
+		packet.writeBoolean(owner(player) || player.hasPermissions(SecurityConfig.imageManagePermissionLevel));
 		Registry.sendToPlayer(player, PACKET_IMAGE_DATA, packet);
 	}
 	private static void result(ServerPlayer player, boolean ok, String key) {
@@ -66,7 +74,9 @@ public final class ImageServer implements IPacket {
 			final String name = AudioFiles.cleanName(packet.readUtf(64));
 			final int size = packet.readInt(), offset = packet.readInt();
 			final byte[] chunk = packet.readByteArray(ImageFiles.CHUNK);
-			PacketGuard.execute(server, () -> upload(server, player, name, size, offset, chunk));
+			// The folder to put it in (0.74.0), or none to keep a replaced picture where it is and put a new one at the top
+			final String folder = packet.isReadable() ? packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4) : null;
+			PacketGuard.execute(server, () -> upload(server, player, name, size, offset, chunk, folder));
 		} else if (action == 1) {
 			final String hash = packet.readUtf(64);
 			PacketGuard.execute(server, () -> {
@@ -95,9 +105,32 @@ public final class ImageServer implements IPacket {
 				try { database.delete(reference); ENTRIES.clear(); ENTRIES.addAll(database.entries()); result(player, true, "gui.mtr.image_deleted", false); server.getPlayerList().getPlayers().forEach(ImageServer::sendList); }
 				catch (Exception e) { e.printStackTrace(); result(player, false, "gui.mtr.image_invalid", false); }
 			});
+		} else if (action == 4) {
+			// A folder action (0.74.0, MediaFolders.apply): String owner (UUID), byte action, String path, String argument, int count, String reference...
+			final String folderOwner = packet.readUtf(64); final int folderAction = packet.readUnsignedByte();
+			final String path = packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4), argument = packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4);
+			final int count = PacketGuard.readCount(packet, 4, 256); final List<String> keys = new ArrayList<>();
+			for (int i = 0; i < count; i++) keys.add(packet.readUtf(129).toLowerCase(java.util.Locale.ROOT));
+			PacketGuard.execute(server, () -> {
+				final String key;
+				if (database == null) key = mtr.media.MediaFolders.FAILED;
+				else if (!mtr.media.MediaPermissions.canDelete(folderOwner, player.getUUID().toString(), owner(player) || player.hasPermissions(SecurityConfig.imageManagePermissionLevel))) key = mtr.media.MediaFolders.NO_PERMISSION;
+				else {
+					final List<String> ownerPaths = new ArrayList<>();
+					ENTRIES.stream().filter(entry -> entry.uploader.equals(folderOwner) && !entry.folder.isEmpty()).forEach(entry -> ownerPaths.add(entry.folder));
+					FOLDERS.stream().filter(folder -> folder.owner.equals(folderOwner)).forEach(folder -> ownerPaths.add(folder.path));
+					final String ownerName = folderOwner.equals(player.getUUID().toString()) ? player.getName().getString() : ENTRIES.stream().filter(entry -> entry.uploader.equals(folderOwner)).map(entry -> entry.uploaderName).findFirst().orElse(FOLDERS.stream().filter(folder -> folder.owner.equals(folderOwner)).map(folder -> folder.ownerName).findFirst().orElse(folderOwner));
+					key = mtr.media.MediaFolders.apply(database.folders, folderAction, folderOwner, ownerName, path, argument, keys, reference -> ENTRIES.stream().filter(entry -> entry.name.equalsIgnoreCase(reference)).map(entry -> entry.uploader).findFirst().orElse(null), mtr.media.MediaFolders.withParents(ownerPaths));
+					if (key.equals(mtr.media.MediaFolders.DONE)) {
+						try { ENTRIES.clear(); ENTRIES.addAll(database.entries()); FOLDERS.clear(); FOLDERS.addAll(database.folders.folders()); } catch (Exception e) { e.printStackTrace(); }
+						server.getPlayerList().getPlayers().forEach(ImageServer::sendList);
+					}
+				}
+				result(player, key.equals(mtr.media.MediaFolders.DONE), key, false);
+			});
 		} else throw new IllegalArgumentException("Unknown image action");
 	}
-	private static void upload(MinecraftServer server, ServerPlayer player, String name, int size, int offset, byte[] chunk) {
+	private static void upload(MinecraftServer server, ServerPlayer player, String name, int size, int offset, byte[] chunk, String folder) {
 		final UUID id = player.getUUID();
 		if (database == null || !canUpload(player)) { UPLOADS.remove(id); result(player, false, "gui.mtr.image_no_permission"); return; }
 		if (size < 1 || size > ImageFiles.MAX_BYTES || offset < 0 || chunk.length < 1 || (long) offset + chunk.length > size) { UPLOADS.remove(id); result(player, false, "gui.mtr.image_invalid"); return; }
@@ -106,7 +139,11 @@ public final class ImageServer implements IPacket {
 			final long now = System.currentTimeMillis();
 			while (!times.isEmpty() && now - times.peekFirst() > 3600000) times.removeFirst();
 			if (times.size() >= 30 || UPLOADS.containsKey(id)) { result(player, false, "gui.mtr.image_busy"); return; }
-			times.addLast(now); UPLOADS.put(id, new Upload(name, size));
+			String cleanFolder = null;
+			if (folder != null) {
+				try { cleanFolder = mtr.media.MediaFolders.normalize(folder); } catch (IllegalArgumentException e) { result(player, false, mtr.media.MediaFolders.INVALID); return; }
+			}
+			times.addLast(now); final Upload started = new Upload(name, size); started.folder = cleanFolder; UPLOADS.put(id, started);
 		}
 		final Upload upload = UPLOADS.get(id);
 		if (upload == null) return;
@@ -123,7 +160,9 @@ public final class ImageServer implements IPacket {
 			final Map<String, Integer> sizes = new HashMap<>();
 			ENTRIES.stream().filter(entry -> entry != existing).forEach(entry -> sizes.put(entry.hash, entry.size)); sizes.put(ImageFiles.hash(upload.bytes), size);
 			if ((existing == null && ENTRIES.size() >= 256) || sizes.values().stream().mapToLong(Integer::longValue).sum() > SecurityConfig.imageMaxTotalMegabytes * 1024L * 1024) { result(player, false, "gui.mtr.image_full"); return; }
-			database.add(namespace, existing == null ? fileName : existing.fileName, upload.bytes, id.toString(), player.getName().getString()); ENTRIES.clear(); ENTRIES.addAll(database.entries());
+			// The folder chosen, or where a replaced picture was
+			final String targetFolder = upload.folder != null ? upload.folder : existing != null ? existing.folder : "";
+			database.add(namespace, existing == null ? fileName : existing.fileName, upload.bytes, id.toString(), player.getName().getString(), targetFolder); ENTRIES.clear(); ENTRIES.addAll(database.entries()); FOLDERS.clear(); FOLDERS.addAll(database.folders.folders());
 			result(player, true, "gui.mtr.image_uploaded"); server.getPlayerList().getPlayers().forEach(ImageServer::sendList);
 		} catch (Exception e) {
 			final String key = e.getMessage();
@@ -153,7 +192,7 @@ public final class ImageServer implements IPacket {
 		});
 	}
 	private static final class Upload {
-		final String name; final byte[] bytes; int offset; long updated = System.currentTimeMillis();
+		final String name; final byte[] bytes; int offset; long updated = System.currentTimeMillis(); String folder;
 		Upload(String name, int size) { this.name = name; bytes = new byte[size]; }
 	}
 	private static final class Download {

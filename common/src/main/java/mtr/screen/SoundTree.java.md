@@ -44,3 +44,7 @@
 - `folder(String name)`：取或建子文件夹。
 - `count()`：递归统计 `total`。
 - `forEachSound(Consumer<Sound>)`：递归遍历（先子文件夹，再本层）。
+
+## 0.74.0 媒体文件夹
+
+- 上传音频的上传者下面按文件夹分层（`folderOf`），保留的空文件夹（`AudioCache.FOLDERS`）也列出。

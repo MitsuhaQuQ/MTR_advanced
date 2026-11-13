@@ -861,12 +861,16 @@ describe("the old code in the new page", () => {
     await act(async () => button("只看本机没有的").click())
     // Chosen: its names to copy
     await act(async () => (rows().find(r => r.getAttribute("data-entry") === "mitsuha:next_central.ogg") as HTMLElement).click())
-    expect(host.querySelector("aside")!.textContent).toContain("mtr_audio:mitsuha/next_central.ogg")
+    expect(host.querySelector("aside[aria-label='音频']")!.textContent).toContain("mtr_audio:mitsuha/next_central.ogg")
     // A file named in Chinese is asked for a sound ID in the page
     const file = new File([new Uint8Array([1, 2, 3])], "下一站.ogg", { type: "audio/ogg" })
     const input = host.querySelector("input[type=file]") as HTMLInputElement
     Object.defineProperty(input, "files", { value: [file], configurable: true })
     await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })) })
+    // Which folder it goes to is asked first (0.74.0): the top, as no folder is open
+    const target = host.querySelector("[data-upload-target]") as HTMLElement
+    expect((target.querySelector("select") as HTMLSelectElement).value).toBe("")
+    await act(async () => { ([...target.querySelectorAll("button")].find(b => b.textContent === "上传") as HTMLElement).click(); await new Promise(resolve => setTimeout(resolve, 20)) })
     const soundId = host.querySelector("input[aria-label='声音 ID']") as HTMLInputElement
     expect(soundId.value).toBe("")
     await set(soundId, "Bad ID")
@@ -875,7 +879,7 @@ describe("the old code in the new page", () => {
     expect(posts.length).toBe(0)
     await set(host.querySelector("input[aria-label='声音 ID']") as HTMLInputElement, "next_stop")
     await act(async () => { button("上传").click(); await new Promise(resolve => setTimeout(resolve, 30)) })
-    expect(posts[0]).toMatchObject({ action: "upload", name: "下一站.ogg", soundId: "next_stop" })
+    expect(posts[0]).toMatchObject({ action: "upload", name: "下一站.ogg", soundId: "next_stop", folder: "" })
     // Deleting asks first
     await act(async () => button("删除").click())
     expect(posts.length).toBe(1)

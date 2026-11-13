@@ -55,6 +55,8 @@ public final class AudioServer implements IPacket {
 	private static final Map<UUID, Deque<Sending>> SENDING = new HashMap<>();
 	private static final Set<String> MOD_NAMESPACES = new HashSet<>();
 	private static AudioDatabase database;
+	/** The kept folders (0.74.0) */
+	private static final List<mtr.media.MediaFolders.Folder> FOLDERS = new ArrayList<>();
 
 	private AudioServer() {
 	}
@@ -76,9 +78,10 @@ public final class AudioServer implements IPacket {
 		try {
 			database = new AudioDatabase(path);
 			final List<Entry> withoutSoundId = new ArrayList<>();
-			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> {
+			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> {
 				if (AudioFiles.isHash(hash) && !namespace.isEmpty()) {
 					final Entry entry = new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), AudioFiles.cleanName(fileName), size, durationMillis, uploader, uploaderName, uploadedAt, AnnouncementSound.isValidSoundId(soundId) ? soundId : "");
+					entry.folder = folder == null ? "" : folder;
 					ENTRIES.put(entry.getKey(), entry);
 					if (entry.soundId.isEmpty()) {
 						withoutSoundId.add(entry);
@@ -92,6 +95,7 @@ public final class AudioServer implements IPacket {
 				entry.soundId = AnnouncementSound.getDefaultSoundId(entry.name, entry.hash, soundId -> isSoundIdTaken(entry.namespace, soundId, entry.getKey()));
 				database.setSoundId(entry.getKey(), entry.soundId);
 			}
+			FOLDERS.addAll(database.folders.folders());
 		} catch (Exception | LinkageError e) {
 			System.out.println("Failed to open the announcement audio database " + path);
 			e.printStackTrace();
@@ -180,6 +184,17 @@ public final class AudioServer implements IPacket {
 		});
 		// After every entry, so a client from before sound IDs reads the list as it always did
 		ENTRIES.values().forEach(entry -> packet.writeUtf(entry.soundId));
+		// Then each file's uploader and folder, and the kept folders (0.74.0)
+		ENTRIES.values().forEach(entry -> {
+			packet.writeUtf(entry.uploader);
+			packet.writeUtf(entry.folder);
+		});
+		packet.writeInt(FOLDERS.size());
+		FOLDERS.forEach(folder -> {
+			packet.writeUtf(folder.owner);
+			packet.writeUtf(folder.ownerName);
+			packet.writeUtf(folder.path);
+		});
 		Registry.sendToPlayer(player, PACKET_AUDIO_LIST, packet);
 	}
 
@@ -191,6 +206,8 @@ public final class AudioServer implements IPacket {
 		final byte[] chunk = packet.readByteArray(AudioFiles.CHUNK_BYTES);
 		// Last, and missing from a client from before sound IDs, which leaves it to the server
 		final String soundId = packet.isReadable() ? packet.readUtf(AnnouncementSound.MAX_SOUND_ID_LENGTH * 4) : "";
+		// The folder to put it in (0.74.0), or none to keep a replaced file where it is and put a new one at the top
+		final String folder = packet.isReadable() ? packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4) : null;
 		PacketGuard.execute(minecraftServer, () -> {
 			if (database == null) {
 				// Answered, so the page doesn't wait for nothing
@@ -202,13 +219,22 @@ public final class AudioServer implements IPacket {
 			final UUID playerId = player.getUUID();
 			Upload upload = UPLOADS.get(playerId);
 			if (offset == 0) {
-				final String error = soundId.isEmpty() || AnnouncementSound.isValidSoundId(soundId) ? checkUploadStart(player, size) : TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH);
+				String cleanFolder = null;
+				String error = soundId.isEmpty() || AnnouncementSound.isValidSoundId(soundId) ? checkUploadStart(player, size) : TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH);
+				if (error == null && folder != null) {
+					try {
+						cleanFolder = mtr.media.MediaFolders.normalize(folder);
+					} catch (IllegalArgumentException e) {
+						error = TranslatedMessage.encode(mtr.media.MediaFolders.INVALID);
+					}
+				}
 				if (error != null) {
 					UPLOADS.remove(playerId);
 					sendResult(player, requestId, false, error);
 					return;
 				}
 				upload = new Upload(requestId, size, AudioFiles.cleanName(name), soundId);
+				upload.folder = cleanFolder;
 				UPLOADS.put(playerId, upload);
 			} else if (upload == null || upload.requestId != requestId || upload.received != offset) {
 				// Pieces of an upload that was turned down or replaced
@@ -276,6 +302,63 @@ public final class AudioServer implements IPacket {
 			}
 			sendResult(player, requestId, error == null, error == null ? TranslatedMessage.encode("gui.mtr.audio_sound_id_set", entry.getReference(), String.valueOf(entry.getSoundLocation())) : error);
 		});
+	}
+
+	/**
+	 * A folder action (0.74.0, {@link mtr.media.MediaFolders#apply}): {@code int request id, byte action, String owner (UUID),
+	 * String path, String argument, int count, String name key...}. Owners organise their own files; managers anyone's.
+	 */
+	public static void receiveFolderC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {
+		final int requestId = packet.readInt();
+		final int action = packet.readUnsignedByte();
+		final String owner = packet.readUtf(64);
+		final String path = packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4);
+		final String argument = packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4);
+		final int count = mtr.packet.PacketGuard.readCount(packet, 4, 1024);
+		final List<String> keys = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			keys.add(packet.readUtf(MAX_KEY_LENGTH));
+		}
+		PacketGuard.execute(minecraftServer, () -> {
+			final String key;
+			if (database == null) {
+				key = mtr.media.MediaFolders.FAILED;
+			} else if (!mtr.media.MediaPermissions.canDelete(owner, player.getUUID().toString(), canManage(player))) {
+				key = mtr.media.MediaFolders.NO_PERMISSION;
+			} else {
+				final List<String> ownerPaths = new ArrayList<>();
+				ENTRIES.values().stream().filter(entry -> entry.uploader.equals(owner) && !entry.folder.isEmpty()).forEach(entry -> ownerPaths.add(entry.folder));
+				FOLDERS.stream().filter(folder -> folder.owner.equals(owner)).forEach(folder -> ownerPaths.add(folder.path));
+				key = mtr.media.MediaFolders.apply(database.folders, action, owner, ownerName(owner, player), path, argument, keys, nameKey -> {
+					final Entry entry = ENTRIES.get(nameKey);
+					return entry == null ? null : entry.uploader;
+				}, mtr.media.MediaFolders.withParents(ownerPaths));
+				if (key.equals(mtr.media.MediaFolders.DONE)) {
+					reloadFolders();
+					System.out.printf("%s organised the folders of announcement audio (%s %s %s)%n", player.getName().getString(), action, path, argument);
+					sendListToAll(minecraftServer);
+				}
+			}
+			sendResult(player, requestId, key.equals(mtr.media.MediaFolders.DONE), TranslatedMessage.encode(key));
+		});
+	}
+
+	private static String ownerName(String owner, ServerPlayer player) {
+		if (owner.equals(player.getUUID().toString())) {
+			return player.getName().getString();
+		}
+		return ENTRIES.values().stream().filter(entry -> entry.uploader.equals(owner)).map(entry -> entry.uploaderName).findFirst().orElse(FOLDERS.stream().filter(folder -> folder.owner.equals(owner)).map(folder -> folder.ownerName).findFirst().orElse(owner));
+	}
+
+	private static void reloadFolders() {
+		try {
+			FOLDERS.clear();
+			FOLDERS.addAll(database.folders.folders());
+			final Map<String, String> fileFolders = database.folders.fileFolders();
+			ENTRIES.forEach((nameKey, entry) -> entry.folder = fileFolders.getOrDefault(nameKey, ""));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	/**
@@ -472,9 +555,13 @@ public final class AudioServer implements IPacket {
 		}
 		final String soundId = !upload.soundId.isEmpty() ? upload.soundId : existing != null ? existing.soundId : AnnouncementSound.getDefaultSoundId(name, hash, checkSoundId -> isSoundIdTaken(namespace, checkSoundId, nameKey));
 		final Entry entry = new Entry(hash, namespace, existing == null ? name : existing.name, upload.bytes.length, info.durationMillis, player.getUUID().toString(), player.getName().getString(), System.currentTimeMillis(), soundId);
+		// The folder chosen, or where a replaced file was
+		entry.folder = upload.folder != null ? upload.folder : existing != null ? existing.folder : "";
 		try {
-			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, upload.bytes, existing == null ? null : existing.hash);
+			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, entry.folder, upload.bytes, existing == null ? null : existing.hash);
 			ENTRIES.put(nameKey, entry);
+			FOLDERS.clear();
+			FOLDERS.addAll(database.folders.folders());
 		} catch (Exception e) {
 			e.printStackTrace();
 			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
@@ -558,6 +645,8 @@ public final class AudioServer implements IPacket {
 		 * added it.
 		 */
 		private String soundId;
+		/** The folder it is in under its uploader ({@link mtr.media.MediaFolders}), empty at the top */
+		private String folder = "";
 
 		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId) {
 			this.hash = hash;
@@ -591,6 +680,8 @@ public final class AudioServer implements IPacket {
 		private final String soundId;
 		private final byte[] bytes;
 		private int received;
+		/** The folder chosen, or null to keep a replaced file where it is */
+		private String folder;
 
 		private Upload(int requestId, int size, String name, String soundId) {
 			this.requestId = requestId;

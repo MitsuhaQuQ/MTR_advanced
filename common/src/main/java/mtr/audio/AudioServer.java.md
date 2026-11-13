@@ -117,3 +117,10 @@
 
 ## 私有内部类 `Sending`
 - `hash`、`bytes`（首次发送时读入）、`offset`。
+
+## 0.74.0 媒体文件夹
+
+- `Entry.folder`；`FOLDERS`（保留的文件夹），`open` 时读入，变动后 `reloadFolders` 重读。
+- 列表包：在 sound id 之后再按同顺序写每个文件的上传者 UUID 和文件夹，然后 `int 文件夹数`、每个 `String 所有者 UUID, String 所有者名, String 路径`。
+- 上传包末尾可带 `String 文件夹`（第一块时规整，非法则回 `gui.mtr.media_folder_invalid`）：指定了就放进去（同名替换也移过去），没指定则替换的留在原处、新的放顶层。
+- 新 C2S 包 `PACKET_AUDIO_FOLDER` → `receiveFolderC2S`：`int 请求 id, byte 动作, String 所有者, String 路径, String 参数, int 数量, String 名字键...`；所有者本人或能管理的玩家（`MediaPermissions.canDelete`），交给 `MediaFolders.apply`，成功后重读并发给所有人，结果按请求 id 回。

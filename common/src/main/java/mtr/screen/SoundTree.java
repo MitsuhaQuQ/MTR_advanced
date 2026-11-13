@@ -71,8 +71,10 @@ public final class SoundTree {
 		AudioCache.ENTRIES.stream().filter(entry -> withGameSounds || entry.getSoundLocation() != null).sorted(Comparator.comparing(AudioCache.Entry::getReference, String.CASE_INSENSITIVE_ORDER)).forEach(entry -> {
 			final ResourceLocation location = entry.getSoundLocation();
 			final String uploader = entry.uploaderName == null || entry.uploaderName.isEmpty() ? "?" : entry.uploaderName;
-			uploaded.folder(uploader).sounds.add(new Sound(entry.getReference(), entry.getReference() + (location == null ? "" : "  " + location)));
+			folderOf(uploaded.folder(uploader), entry.folder).sounds.add(new Sound(entry.getReference(), entry.getReference() + (location == null ? "" : "  " + location)));
 		});
+		// The kept folders, so empty ones show too (0.74.0)
+		AudioCache.FOLDERS.forEach(folder -> folderOf(uploaded.folder(folder.ownerName == null || folder.ownerName.isEmpty() ? "?" : folder.ownerName), folder.path));
 		if (withGameSounds) {
 			final List<ResourceLocation> ids = new ArrayList<>(Minecraft.getInstance().getSoundManager().getAvailableSounds());
 			ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -92,6 +94,21 @@ public final class SoundTree {
 		root.count();
 		current = withGameSounds ? root : uploaded;
 		refresh();
+	}
+
+	/**
+	 * The node of a folder path ({@link mtr.media.MediaFolders}) under an uploader's node.
+	 */
+	private static Node folderOf(Node uploaderNode, String path) {
+		Node node = uploaderNode;
+		if (path != null) {
+			for (final String name : path.split("/")) {
+				if (!name.isEmpty()) {
+					node = node.folder(name);
+				}
+			}
+		}
+		return node;
 	}
 
 	public void tick() {

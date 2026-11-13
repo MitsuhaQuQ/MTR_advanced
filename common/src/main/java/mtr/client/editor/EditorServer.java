@@ -779,7 +779,14 @@ public final class EditorServer {
 		@Override protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
 			// A 5 MiB image expands to almost 7 MiB in the JSON base64 upload.
 			final String body = readBody(request, 8 * 1024 * 1024); if (body == null) { response.sendError(413); return; }
-			try { final JsonObject json = new JsonParser().parse(body).getAsJsonObject(); final String name = json.get("name").getAsString(); if (json.has("action") && "delete".equals(json.get("action").getAsString())) sendJson(response, onGameThread(() -> EditorImages.delete(name).toString())); else { final String data = json.get("data").getAsString(); sendJson(response, onGameThread(() -> EditorImages.upload(name, data).toString())); } }
+			try {
+				final JsonObject json = new JsonParser().parse(body).getAsJsonObject();
+				// Folders (0.74.0): {action: "folder", op, owner, path, name | folder, keys}
+				if (json.has("action") && "folder".equals(json.get("action").getAsString())) { sendJson(response, onGameThread(() -> EditorImages.folder(json).toString())); return; }
+				final String name = json.get("name").getAsString();
+				if (json.has("action") && "delete".equals(json.get("action").getAsString())) sendJson(response, onGameThread(() -> EditorImages.delete(name).toString()));
+				else { final String data = json.get("data").getAsString(); final String folder = json.has("folder") && !json.get("folder").isJsonNull() ? json.get("folder").getAsString() : null; sendJson(response, onGameThread(() -> EditorImages.upload(name, data, folder).toString())); }
+			}
 			catch (Exception e) { response.sendError(400); }
 		}
 	}
@@ -820,9 +827,17 @@ public final class EditorServer {
 			final String name;
 			final String value;
 			final String soundId;
+			final String folder;
+			final JsonObject requestObject;
 			try {
-				final JsonObject requestObject = new JsonParser().parse(body).getAsJsonObject();
+				requestObject = new JsonParser().parse(body).getAsJsonObject();
 				action = requestObject.get("action").getAsString();
+				// Folders (0.74.0): {action: "folder", op, owner, path, name | folder, keys}
+				if ("folder".equals(action)) {
+					sendJson(response, onGameThread(() -> EditorAudio.folder(requestObject).toString()));
+					return;
+				}
+				folder = requestObject.has("folder") && !requestObject.get("folder").isJsonNull() ? requestObject.get("folder").getAsString() : null;
 				name = requestObject.has("name") ? requestObject.get("name").getAsString() : "";
 				value = requestObject.get("upload".equals(action) ? "data" : "key").getAsString();
 				soundId = requestObject.has("soundId") ? requestObject.get("soundId").getAsString() : "";
@@ -835,7 +850,7 @@ public final class EditorServer {
 				return;
 			}
 			try {
-				sendJson(response, onGameThread(() -> ("upload".equals(action) ? EditorAudio.upload(name, soundId, value) : "soundId".equals(action) ? EditorAudio.setSoundId(value, soundId) : EditorAudio.delete(value)).toString()));
+				sendJson(response, onGameThread(() -> ("upload".equals(action) ? EditorAudio.upload(name, soundId, value, folder) : "soundId".equals(action) ? EditorAudio.setSoundId(value, soundId) : EditorAudio.delete(value)).toString()));
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);

@@ -27,3 +27,7 @@
 
 ## 函数式接口 `RegisterBlockItem`
 - `void accept(String id, RegistryObject<Block> block, CreativeModeTabs.Wrapper tab)`：注册方块及其物品到某创造模式标签页。
+
+## 0.74.0 媒体文件夹
+
+- 注册 `PACKET_AUDIO_FOLDER → AudioServer::receiveFolderC2S`。

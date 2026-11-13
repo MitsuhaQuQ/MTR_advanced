@@ -5,7 +5,10 @@
  * one in the page (the old page asked with prompt(), which some browsers block), as deleting asks in the page.
  *
  * The same endpoints as before: GET api/audio (the list, read every two seconds while the library shows), POST api/audio
- * {action: upload | delete | soundId}, GET api/audio-file?hash= (a file to play, once this computer has it).
+ * {action: upload | delete | soundId | folder}, GET api/audio-file?hash= (a file to play, once this computer has it).
+ *
+ * Folders (0.74.0): the tree on the left (MediaFolders.tsx) shows a folder's files; files are dragged onto a folder to
+ * move them, several at once when ticked; before files go up the page asks which of the player's folders they go to.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { key } from "../api/client"
@@ -13,6 +16,8 @@ import { ConfirmButton } from "../ui/bits"
 import { tr } from "../i18n"
 import { convertAudio, isWav, isMp3 } from "../core/audioConversion"
 import { ImagesLibrary } from "./ImagesLibrary"
+import { FolderTree, UploadTarget, type FolderAction } from "./MediaFolders"
+import { buildTree, DRAG_TYPE, filesIn, findNode, uploadTargets, type FolderRef, type KeptFolder } from "../core/mediaFolders"
 
 const POLL_MILLIS = 2000, MAX_MESSAGES = 8, MAX_SOUND_ID = 64
 const SOUND_ID = /^[a-z0-9_.-]+(\/[a-z0-9_.-]+)*$/
@@ -25,11 +30,11 @@ const formatClock = (seconds: number) => Math.floor(seconds / 60) + ":" + String
 const formatTime = (millis: number) => { const d = new Date(millis), pad = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}` }
 const takes = (file: { name: string; type: string }) => /\.ogg$/i.test(file.name) || /ogg/.test(file.type) || isWav(file) || isMp3(file)
 
-type Entry = { key: string; name: string; reference: string; sound?: string; soundId: string; hash: string; uploaderName: string; size: number; durationMillis: number; uploadedAt: number; cached: boolean; downloading: boolean; mine: boolean; canDelete: boolean }
-type Library = { language?: string; canUpload: boolean; maxFileBytes: number; maxTotalBytes: number; totalBytes: number; maxSeconds: number; requests: { name: string; done: boolean; ok: boolean; message: string }[]; entries: Entry[] }
+type Entry = { key: string; name: string; reference: string; sound?: string; soundId: string; hash: string; uploader?: string; uploaderName: string; folder?: string; size: number; durationMillis: number; uploadedAt: number; cached: boolean; downloading: boolean; mine: boolean; canDelete: boolean }
+type Library = { language?: string; canUpload: boolean; canManage?: boolean; maxFileBytes: number; maxTotalBytes: number; totalBytes: number; maxSeconds: number; requests: { name: string; done: boolean; ok: boolean; message: string }[]; entries: Entry[]; folders?: KeptFolder[]; self?: string }
 type Message = { name: string; message: string; ok: boolean }
-/** A file waiting for its sound ID before it goes up */
-type Waiting = { file: File; soundId: string; bad: boolean }
+/** A file waiting for its sound ID before it goes up, and the folder it goes to */
+type Waiting = { file: File; soundId: string; bad: boolean; folder: string }
 
 const url = (path: string) => new URL("/" + path, location.origin).toString()
 async function fetchJson(path: string) {
@@ -71,6 +76,12 @@ function AudioLibrary() {
   const [messages, setMessages] = useState<Message[]>([])
   const [waiting, setWaiting] = useState<Waiting[]>([])
   const [drop, setDrop] = useState<{ refused: boolean; text: string } | null>(null)
+  // Folders: the one open (null: every file), the files ticked, the ones being dragged, and files waiting for a folder
+  const [current, setCurrent] = useState<FolderRef | null>(null)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [dragging, setDragging] = useState<Entry[] | null>(null)
+  const [pending, setPending] = useState<File[] | null>(null)
+  const [uploadFolder, setUploadFolder] = useState("")
   const fileInput = useRef<HTMLInputElement>(null)
   const [converting, setConverting] = useState<{ name: string; percent: number } | null>(null)
   const conversion = useRef<AbortController | null>(null)
@@ -99,15 +110,21 @@ function AudioLibrary() {
     return () => { stopped = true; clearTimeout(timer) }
   }, [load])
 
+  const tree = useMemo(() => (data ? buildTree(data.entries, data.folders || [], data.self || "") : []), [data])
+  // A folder that is gone (deleted, renamed elsewhere) shows every file again
+  useEffect(() => { if (data && current && !findNode(tree, current)) setCurrent(null) }, [tree])
+  const self = data?.self || ""
+  const canOrganise = (owner: string) => Boolean(data && owner && (owner === self || data.canManage))
   const entries = useMemo(() => {
     if (!data) return []
     const text = search.trim().toLowerCase()
-    return data.entries
+    // A folder's own files; searching, everything below it too
+    return filesIn(data.entries, current, Boolean(text))
       .filter(entry => !uploader || entry.uploaderName === uploader)
       .filter(entry => !missingOnly || !entry.cached)
       .filter(entry => !text || [entry.name, entry.reference, entry.sound || ""].some(value => value.toLowerCase().includes(text)))
       .sort((a, b) => b.uploadedAt - a.uploadedAt)
-  }, [data, search, uploader, missingOnly])
+  }, [data, search, uploader, missingOnly, current])
   const uploaders = data ? [...new Set(data.entries.map(entry => entry.uploaderName))].sort((a, b) => a.localeCompare(b)) : []
   const entry = data && data.entries.find(item => item.key === selected)
   const canUpload = Boolean(data && data.canUpload && data.maxFileBytes > 0)
@@ -143,16 +160,22 @@ function AudioLibrary() {
   }
 
   // ---------- Uploading ----------
-  const upload = async (file: File, soundId: string) => {
+  const upload = async (file: File, soundId: string, folder: string) => {
     try {
-      const result = await sendJson("api/audio", { action: "upload", name: file.name, soundId, data: await readBase64(file) })
+      const result = await sendJson("api/audio", { action: "upload", name: file.name, soundId, folder, data: await readBase64(file) })
       if (!result.ok) note(file.name, result.message)
     } catch (e) {
       note(file.name, failed(e))
     }
     load()
   }
-  const uploadFiles = async (files: File[]) => {
+  /** Files chosen or dropped: first asks which folder they go to (the one open, if it is the player's) */
+  const askUpload = (files: File[]) => {
+    if (!data || !canUpload || !files.length) return
+    setUploadFolder(current && current.owner === self ? current.path : "")
+    setPending(files)
+  }
+  const uploadFiles = async (files: File[], folder: string) => {
     if (!data || !canUpload || busy.current) return
     busy.current = true
     const controller = new AbortController()
@@ -176,8 +199,8 @@ function AudioLibrary() {
         if (file.size > data.maxFileBytes) { note(file.name, tr("文件不能超过 {0}", formatSize(data.maxFileBytes))); continue }
         // Match the converted name so updates keep an existing Ogg file's sound ID.
         const fileName = /\.ogg$/i.test(file.name) ? file.name : file.name + ".ogg"
-        if (data.entries.some(each => each.mine && each.name.toLowerCase() === fileName.toLowerCase())) upload(file, "")
-        else ask.push({ file, soundId: soundIdFromName(file.name), bad: false })
+        if (data.entries.some(each => each.mine && each.name.toLowerCase() === fileName.toLowerCase())) upload(file, "", folder)
+        else ask.push({ file, soundId: soundIdFromName(file.name), bad: false, folder })
       }
       if (!controller.signal.aborted && ask.length) setWaiting(list => [...list, ...ask])
     } finally { busy.current = false; conversion.current = null; setConverting(null) }
@@ -187,7 +210,7 @@ function AudioLibrary() {
     const id = item.soundId.trim()
     if (!isSoundId(id)) { setWaiting(list => list.map((each, i) => (i === index ? { ...each, bad: true } : each))); return }
     setWaiting(list => list.filter((_, i) => i !== index))
-    upload(item.file, id)
+    upload(item.file, id, item.folder)
   }
 
   // ---------- Acting on a file ----------
@@ -201,6 +224,7 @@ function AudioLibrary() {
     }
     load()
   }
+  const folderAction = (action: FolderAction, label: string) => { setChecked(new Set()); act(label, { action: "folder", ...action }) }
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -226,11 +250,15 @@ function AudioLibrary() {
             {tr("已用 {0} / {1}", formatSize(data.totalBytes), formatSize(data.maxTotalBytes))}
           </span>
         )}
-        <input ref={fileInput} type="file" accept=".ogg,.wav,.mp3,audio/ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3" multiple hidden onChange={e => { const files = [...(e.target.files || [])]; e.target.value = ""; uploadFiles(files) }} />
+        <input ref={fileInput} type="file" accept=".ogg,.wav,.mp3,audio/ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3" multiple hidden onChange={e => { const files = [...(e.target.files || [])]; e.target.value = ""; askUpload(files) }} />
         <button className="btn btn-primary" disabled={!canUpload || connection !== "ok" || !!converting} title={canUpload ? tr("选择 Ogg Vorbis、WAV 或 MP3 文件，也可以直接拖到列表上") : tr("没有上传音频的权限")} onClick={() => fileInput.current?.click()}>{tr("上传音频")}</button>
       </div>
       {problems[connection] && <div className="tint-warn shrink-0 px-3 py-1.5 text-[13px] text-warn" role="alert">{problems[connection]}</div>}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* The folders */}
+        <aside className="flex max-h-[30%] shrink-0 flex-col border-b border-grid p-2 lg:max-h-none lg:w-[220px] lg:border-b-0 lg:border-r">
+          <FolderTree roots={tree} current={current} onSelect={ref => { setCurrent(ref); setChecked(new Set()) }} canOrganise={canOrganise} dragging={dragging} onAction={folderAction} />
+        </aside>
         {/* The list */}
         <section className="relative flex min-h-0 min-w-0 flex-1 flex-col"
           onDragOver={e => {
@@ -247,7 +275,7 @@ function AudioLibrary() {
             if (![...e.dataTransfer.types].includes("Files")) return
             e.preventDefault()
             setDrop(null)
-            if (canUpload) uploadFiles([...e.dataTransfer.files])
+            if (canUpload) askUpload([...e.dataTransfer.files])
           }}>
           <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
             <input className="h-7 min-w-[160px] flex-1 rounded-md border border-ctl bg-panel px-2 text-[13px]" type="search" placeholder={tr("搜索名字、引用名或声音")} value={search} onChange={e => setSearch(e.target.value)} aria-label={tr("搜索")} />
@@ -258,6 +286,7 @@ function AudioLibrary() {
             <button className="btn" aria-pressed={missingOnly} style={missingOnly ? { borderColor: "var(--accent)" } : undefined} onClick={() => setMissingOnly(!missingOnly)}>{tr("只看本机没有的")}</button>
           </div>
           {data && <p className="m-0 px-3 pb-1 text-[12px] text-dim">{data.maxFileBytes > 0 ? tr("支持 Ogg Vorbis、WAV 和 MP3；WAV/MP3 在浏览器内转为单声道 Ogg（24 kHz）。上传文件不超过 {0}、{1} 秒。", formatSize(data.maxFileBytes), data.maxSeconds) + (data.canUpload ? "" : tr("你没有上传音频的权限。")) : tr("服务器没有开放上传音频。")} {tr("也可以把文件拖到列表上。")}</p>}
+          {pending && <UploadTarget files={pending} targets={uploadTargets(tree, self)} value={uploadFolder} onChange={setUploadFolder} onCancel={() => setPending(null)} onConfirm={() => { const files = pending; setPending(null); uploadFiles(files, uploadFolder) }} />}
           {converting && <div className="mx-3 mb-2 flex items-center gap-2 text-[12px]" role="status"><span>{tr("正在转换 {0}：{1}%", converting.name, converting.percent)}</span><button className="btn" onClick={() => conversion.current?.abort()}>{tr("取消转换")}</button></div>}
           {waiting.length > 0 && (
             <div className="mx-3 mb-2 flex flex-col gap-1.5 rounded-lg border border-brand p-2 text-[12px]">
@@ -278,13 +307,22 @@ function AudioLibrary() {
           <div className="scroll-thin min-h-0 flex-1 overflow-auto px-3">
             <table className="w-full border-collapse text-[13px]">
               <thead className="sticky top-0 bg-panel text-left text-[12px] text-dim">
-                <tr><th className="py-1 font-normal">{tr("名字")}</th><th className="font-normal">{tr("时长")}</th><th className="font-normal">{tr("大小")}</th><th className="font-normal">{tr("上传者")}</th><th className="font-normal">{tr("本机")}</th><th /></tr>
+                <tr><th className="w-6 font-normal" /><th className="py-1 font-normal">{tr("名字")}</th><th className="font-normal">{tr("时长")}</th><th className="font-normal">{tr("大小")}</th><th className="font-normal">{tr("上传者")}</th><th className="font-normal">{tr("本机")}</th><th /></tr>
               </thead>
               <tbody>
                 {entries.map((e, i) => (
                   <tr key={e.key} tabIndex={0} aria-selected={e.key === selected} data-entry={e.key}
                     className={"cursor-pointer border-t border-grid " + (e.key === selected ? "tint-sel" : "hover:bg-panel2")}
                     onClick={() => setSelected(e.key)}
+                    draggable={canOrganise(e.uploader || "")}
+                    onDragStart={event => {
+                      // The ticked files if this is one of them, else this one
+                      const moving = checked.has(e.key) ? entries.filter(each => checked.has(each.key)) : [e]
+                      event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(moving.map(each => each.key)))
+                      event.dataTransfer.effectAllowed = "move"
+                      setDragging(moving)
+                    }}
+                    onDragEnd={() => setDragging(null)}
                     onKeyDown={event => {
                       if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(e.key) }
                       else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -293,7 +331,8 @@ function AudioLibrary() {
                         if (next) { setSelected(next.key); (event.currentTarget.parentElement?.children[i + (event.key === "ArrowDown" ? 1 : -1)] as HTMLElement | undefined)?.focus() }
                       }
                     }}>
-                    <td className="py-1.5">{e.name}<div className="text-[11px] text-dim">{e.reference}</div></td>
+                    <td onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={tr("选中")} checked={checked.has(e.key)} onChange={event => setChecked(set => { const next = new Set(set); if (event.target.checked) next.add(e.key); else next.delete(e.key); return next })} /></td>
+                    <td className="py-1.5">{e.name}<div className="text-[11px] text-dim">{e.reference}{e.folder ? " · " + e.folder.split("/").join(" / ") : ""}</div></td>
                     <td className="num">{formatDuration(e.durationMillis)}</td>
                     <td className="num">{formatSize(e.size)}</td>
                     <td>{e.uploaderName}</td>
@@ -303,7 +342,7 @@ function AudioLibrary() {
                 ))}
               </tbody>
             </table>
-            {data && !entries.length && <p className="text-[13px] text-dim">{data.entries.length ? tr("没有符合条件的文件。") : tr("服务器上还没有报站音频。")}</p>}
+            {data && !entries.length && <p className="text-[13px] text-dim">{data.entries.length ? (current ? tr("这个文件夹里没有文件。") : tr("没有符合条件的文件。")) : tr("服务器上还没有报站音频。")}</p>}
             {!data && connection === "connecting" && <p className="text-[13px] text-dim">{tr("正在连接游戏…")}</p>}
           </div>
           {drop && <div className={"pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed text-[14px] font-medium " + (drop.refused ? "border-warn text-warn" : "border-brand text-brand")} style={{ background: "color-mix(in srgb, var(--panel) 85%, transparent)" }}>{drop.text}</div>}

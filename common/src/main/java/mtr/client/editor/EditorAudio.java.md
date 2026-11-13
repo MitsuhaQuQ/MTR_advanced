@@ -28,3 +28,8 @@
 - 参数：`key` 要删除条目的名字键。
 - 返回：找不到 `{ok: false, message: audio_missing 的翻译}`；否则 `{id: AudioCache.delete(entry), ok: true}`。
 - 主要调用者：`EditorServer.java:834`。
+
+## 0.74.0 媒体文件夹
+
+- 列表每条加 `uploader`、`folder`，另有 `folders`（`owner`、`ownerName`、`path`）和 `self`（本玩家 UUID）。
+- `upload(name, soundId, data, folder)`；`folder(request)`：`op` 为 create、rename、delete、move，`owner`、`path`，新建和改名用 `name`，移动用 `folder` 和 `keys`；返回请求 id。工具方法 `folderAction`、`string`、`folders`、`self` 也给 `EditorImages` 用。

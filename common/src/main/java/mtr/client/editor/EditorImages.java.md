@@ -25,3 +25,8 @@
 - 参数：`reference` 图片引用名。
 - 返回：若不是合法引用（`ImageFiles.isReference`）或不在可删集合中，返回 `{ok:false, message: gui.mtr.image_no_permission}`；否则调用 `ImportedImages.delete` 并返回 `{ok:true}`。
 - 主要调用者：`EditorServer.java:778`。
+
+## 0.74.0 媒体文件夹
+
+- 列表每条加 `uploader`、`folder`，另有 `folders`、`self`、`canManage`。
+- `upload(name, data, folder)`；`folder(request)` 同音频，结果由游戏以消息回（列表的 `message`）。

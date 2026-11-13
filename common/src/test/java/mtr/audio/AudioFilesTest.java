@@ -115,18 +115,18 @@ class AudioFilesTest {
 		final String alexKey = AnnouncementSound.getNameKey("mtr_player", "next.ogg");
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			// Two players add the same recording under their own names
-			database.write(steveKey, "steve", "下一站.ogg", hash, data.length, 1000, "uuid1", "Steve", 5, "next_station", data);
-			database.write(alexKey, "mtr_player", "next.ogg", hash, data.length, 1000, "uuid2", "MTR", 6, "next", data);
+			database.write(steveKey, "steve", "下一站.ogg", hash, data.length, 1000, "uuid1", "Steve", 5, "next_station", "", data);
+			database.write(alexKey, "mtr_player", "next.ogg", hash, data.length, 1000, "uuid2", "MTR", 6, "next", "", data);
 			// Audio without a name, as a client keeps it, isn't listed
 			database.writeData(AudioFiles.hash(new byte[]{9}), new byte[]{9});
 		}
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final List<String> names = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> names.add(AnnouncementSound.getUploadedString(namespace, fileName) + size + soundId));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> names.add(AnnouncementSound.getUploadedString(namespace, fileName) + size + soundId));
 			assertEquals(Arrays.asList("steve:下一站.ogg4next_station", "mtr_player:next.ogg4next"), names);
 			database.setSoundId(steveKey, "station/next");
 			final List<String> soundIds = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> soundIds.add(soundId));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> soundIds.add(soundId));
 			assertEquals(Arrays.asList("station/next", "next"), soundIds);
 			final List<String> hashes = new ArrayList<>();
 			database.readDataHashes(hashes::add);
@@ -151,18 +151,18 @@ class AudioFilesTest {
 		final String key = AnnouncementSound.getNameKey("steve", "next.ogg");
 		final String otherKey = AnnouncementSound.getNameKey("alex", "next.ogg");
 		try (final AudioDatabase database = new AudioDatabase(path)) {
-			database.write(key, "steve", "next.ogg", oldHash, 2, 100, "uuid1", "Steve", 1, "next", oldData);
-			database.replace(key, "steve", "next.ogg", newHash, 3, 150, "uuid1", "Steve", 2, "next", newData, oldHash);
+			database.write(key, "steve", "next.ogg", oldHash, 2, 100, "uuid1", "Steve", 1, "next", "", oldData);
+			database.replace(key, "steve", "next.ogg", newHash, 3, 150, "uuid1", "Steve", 2, "next", "", newData, oldHash);
 			assertNull(database.readData(oldHash));
 			assertArrayEquals(newData, database.readData(newHash));
 			final List<String> rows = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> rows.add(fileName + size + soundId + uploadedAt));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> rows.add(fileName + size + soundId + uploadedAt));
 			assertEquals(Arrays.asList("next.ogg3next2"), rows);
 
 			// A recording another name still uses stays
-			database.write(otherKey, "alex", "next.ogg", sharedHash, 2, 100, "uuid2", "Alex", 3, "next", sharedData);
-			database.replace(key, "steve", "next.ogg", sharedHash, 2, 100, "uuid1", "Steve", 4, "next", sharedData, newHash);
-			database.replace(otherKey, "alex", "next.ogg", newHash, 3, 150, "uuid2", "Alex", 5, "next", newData, sharedHash);
+			database.write(otherKey, "alex", "next.ogg", sharedHash, 2, 100, "uuid2", "Alex", 3, "next", "", sharedData);
+			database.replace(key, "steve", "next.ogg", sharedHash, 2, 100, "uuid1", "Steve", 4, "next", "", sharedData, newHash);
+			database.replace(otherKey, "alex", "next.ogg", newHash, 3, 150, "uuid2", "Alex", 5, "next", "", newData, sharedHash);
 			assertArrayEquals(sharedData, database.readData(sharedHash));
 			assertArrayEquals(newData, database.readData(newHash));
 		}
@@ -187,7 +187,7 @@ class AudioFilesTest {
 		}
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final List<String> rows = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId) -> rows.add(fileName + "|" + soundId + "|" + uploadedAt));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> rows.add(fileName + "|" + soundId + "|" + uploadedAt));
 			assertEquals(Arrays.asList("next.ogg||7"), rows);
 		}
 	}

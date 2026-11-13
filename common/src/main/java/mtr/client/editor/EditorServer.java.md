@@ -78,3 +78,7 @@
 - `DraftServlet`：GET 返回保存的草稿（无则 `{}`）；PUT 保存页面发来的草稿（必须是 JSON 对象，坏草稿不会妨碍打开编辑器），返回 `{"ok": true}`。
 
 调用者说明：servlet 方法由 Jetty 按路径调用，脚本找不到直接的 Java 调用者；页面端调用在 `assets/mtr/editor/*.js`（由另一会话记录）。
+
+## 0.74.0 媒体文件夹
+
+- `api/audio` 和 `api/images` 的 POST 多了 `{action: "folder", …}`（交给 `EditorAudio.folder` / `EditorImages.folder`），上传可带 `folder`。

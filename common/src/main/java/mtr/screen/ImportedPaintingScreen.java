@@ -31,7 +31,15 @@ public final class ImportedPaintingScreen extends ScreenBase {
 	 * original painting only while it is blank. The rows shown, null for the original painting.
 	 */
 	private String search = "";
-	private final List<ImageDatabase.Entry> shown = new ArrayList<>();
+	/**
+	 * The rows shown (0.74.0, a tree as the sound picker's): null for the original painting, {@link #UP} for going up a
+	 * level, a {@link MediaTree.Node} for a folder (an uploader at the top), or an image.
+	 */
+	private final List<Object> shown = new ArrayList<>();
+	private static final Object UP = new Object();
+	/** The images by who uploaded them and their folders, and the folder open */
+	private MediaTree<ImageDatabase.Entry> tree = new MediaTree<>();
+	private MediaTree.Node<ImageDatabase.Entry> current = tree.root;
 	private static final int SEARCH_HEIGHT = 14;
 	private int previousMouseX = Integer.MIN_VALUE, previousMouseY = Integer.MIN_VALUE;
 	public ImportedPaintingScreen(Painting painting) {
@@ -60,9 +68,17 @@ public final class ImportedPaintingScreen extends ScreenBase {
 		dropdownOpen = false;
 		choose = UtilitiesClient.newButton(Text.literal(selectionName() + " ▾"), button -> {
 			images.clear(); images.addAll(ImportedImages.ENTRIES);
+			tree = new MediaTree<>();
+			images.forEach(entry -> tree.add(entry.uploaderName, entry.folder, entry));
+			ImportedImages.FOLDERS.forEach(folder -> tree.addFolder(folder.ownerName, folder.path));
+			tree.count();
+			// Opens on the folder of the image chosen
+			final ImageDatabase.Entry chosen = images.stream().filter(entry -> entry.name.equals(selectedImage)).findFirst().orElse(null);
+			final MediaTree.Node<ImageDatabase.Entry> chosenFolder = chosen == null ? null : tree.root.find(chosen);
+			current = chosenFolder == null ? tree.root : chosenFolder;
 			search = "";
 			refilter();
-			for (int i = 0; i < shown.size(); i++) if (shown.get(i) != null && shown.get(i).name.equals(selectedImage)) highlighted = i;
+			for (int i = 0; i < shown.size(); i++) if (shown.get(i) == chosen) highlighted = i;
 			dropdownScroll = Math.max(0, Math.min(highlighted, shown.size() - dropdownRows()));
 			for (WidgetBetterTextField field : fields) field.setFocused(false);
 			dropdownOpen = true;
@@ -86,19 +102,40 @@ public final class ImportedPaintingScreen extends ScreenBase {
 	/** At least one row, for saying nothing matches */
 	private int dropdownRows() { return Math.max(1, Math.min(shown.size(), Math.max(1, Math.min(6, (height - top - 32 - SEARCH_HEIGHT) / 32)))); }
 	private int rowsTop() { return top + 22 + SEARCH_HEIGHT; }
-	/** The rows matching the search, the first one highlighted */
+	/**
+	 * The rows of the open folder, or, while searching, every image below it that matches; the first one highlighted. The
+	 * original painting is at the top level only.
+	 */
 	private void refilter() {
 		shown.clear();
-		if (search.trim().isEmpty() || ImageSearch.matches(Text.translatable("gui.mtr.image_vanilla").getString(), search)) shown.add(null);
-		final List<String> names = new ArrayList<>();
-		images.forEach(entry -> names.add(entry.name));
-		ImageSearch.filter(names, search).forEach(index -> shown.add(images.get(index)));
+		final boolean top = current.parent == null;
+		if (search.trim().isEmpty()) {
+			if (top) shown.add(null); else shown.add(UP);
+			shown.addAll(current.folders.values());
+			shown.addAll(current.items);
+		} else {
+			if (top && ImageSearch.matches(Text.translatable("gui.mtr.image_vanilla").getString(), search)) shown.add(null);
+			final List<ImageDatabase.Entry> below = new ArrayList<>();
+			current.forEachItem(below::add);
+			final List<String> names = new ArrayList<>();
+			below.forEach(entry -> names.add(entry.name));
+			ImageSearch.filter(names, search).forEach(index -> shown.add(below.get(index)));
+		}
 		highlighted = 0;
 		dropdownScroll = 0;
 	}
+	/** Opens a folder, goes up a level, or takes the original painting or an image */
+	@SuppressWarnings("unchecked")
 	private void selectImage(int index) {
 		if (index < 0 || index >= shown.size()) return;
-		selectedImage = shown.get(index) == null ? "" : shown.get(index).name;
+		final Object row = shown.get(index);
+		if (row == UP || row instanceof MediaTree.Node) {
+			current = row == UP ? (current.parent == null ? current : current.parent) : (MediaTree.Node<ImageDatabase.Entry>) row;
+			search = "";
+			refilter();
+			return;
+		}
+		selectedImage = row == null ? "" : ((ImageDatabase.Entry) row).name;
 		choose.setMessage(Text.literal(selectionName() + " ▾")); dropdownOpen = false;
 	}
 	@Override public boolean mouseClicked(double x, double y, int button) {
@@ -121,7 +158,9 @@ public final class ImportedPaintingScreen extends ScreenBase {
 			if (search.isEmpty()) dropdownOpen = false;
 			else { search = ""; refilter(); }
 		} else if (key == 259) {
+			// Backspace with nothing typed goes up a level
 			if (!search.isEmpty()) { search = search.substring(0, search.offsetByCodePoints(search.length(), -1)); refilter(); }
+			else if (current.parent != null) { current = current.parent; refilter(); }
 		} else if (key == 257 || key == 335) {
 			selectImage(highlighted);
 		} else if (key == 264 || key == 265) {
@@ -174,16 +213,24 @@ public final class ImportedPaintingScreen extends ScreenBase {
 		graphics.fill(left,searchY,left+298,y+rows*32,0xFF202020);
 		// The search line: what was typed with a cursor, or how to search
 		graphics.fill(left,searchY,left+298,y-1,0xFF303030);
-		final String searchText = search.isEmpty() ? Text.translatable("gui.mtr.image_search_hint").getString() : search + ((System.currentTimeMillis() / 500) % 2 == 0 ? "_" : "");
+		// With nothing typed: the open folder, such as "上传图片 / Steve / 站名", and how to search
+		final String folderPath = Text.translatable("gui.mtr.image_tree_uploaded").getString() + (current.parent == null ? "" : " / " + current.path());
+		final String searchText = search.isEmpty() ? folderPath + "  —  " + Text.translatable("gui.mtr.image_search_hint").getString() : search + ((System.currentTimeMillis() / 500) % 2 == 0 ? "_" : "");
 		graphics.drawString(font,font.plainSubstrByWidth(searchText,288),left+4,searchY+3,search.isEmpty() ? 0xFF888888 : 0xFFFFFFFF,false);
 		if (shown.isEmpty()) graphics.drawString(font,Text.translatable("gui.mtr.image_search_none").getString(),left+34,y+12,0xFF888888,false);
 		for (int row=0;row<rows && dropdownScroll+row<shown.size();row++) {
 			int index=dropdownScroll+row, rowY=y+row*32;
 			if ((mouseX!=previousMouseX || mouseY!=previousMouseY) && mouseX>=left && mouseX<left+298 && mouseY>=rowY && mouseY<rowY+32) highlighted=index;
 			if(index==highlighted) graphics.fill(left,rowY,left+298,rowY+32,0xFF445566);
-			String name = shown.get(index)==null ? Text.translatable("gui.mtr.image_vanilla").getString() : shown.get(index).name;
-			if(shown.get(index)!=null) {
-				ImageDatabase.Entry entry=shown.get(index);
+			final Object rowObject = shown.get(index);
+			final String name;
+			int color = 0xFFFFFF;
+			if (rowObject == null) name = Text.translatable("gui.mtr.image_vanilla").getString();
+			else if (rowObject == UP) { name = "< " + Text.translatable("gui.mtr.sound_tree_up").getString(); color = 0xFFFFAA; }
+			else if (rowObject instanceof MediaTree.Node) { final MediaTree.Node<?> folder = (MediaTree.Node<?>) rowObject; name = "> " + folder.name + "  (" + folder.total + ")"; color = 0xFFFFAA; }
+			else name = ((ImageDatabase.Entry) rowObject).name;
+			if(rowObject instanceof ImageDatabase.Entry) {
+				ImageDatabase.Entry entry=(ImageDatabase.Entry) rowObject;
 				ResourceLocation texture=ImportedImages.texture(entry.hash);
 				if(texture!=null) {
 					double scale=Math.min(26.0/entry.width,26.0/entry.height);
@@ -191,7 +238,7 @@ public final class ImportedPaintingScreen extends ScreenBase {
 					graphics.blit(texture,left+3+(26-w)/2,rowY+(32-h)/2,w,h,0,0,entry.width,entry.height,entry.width,entry.height);
 				}
 			}
-			graphics.drawString(font,font.plainSubstrByWidth(name,256),left+34,rowY+12,0xFFFFFF,false);
+			graphics.drawString(font,font.plainSubstrByWidth(name,256),left+34,rowY+12,color,false);
 		}
 		if(shown.size()>rows) {
 			int thumb=Math.max(8,rows*32*rows/shown.size()), offset=(rows*32-thumb)*dropdownScroll/(shown.size()-rows);

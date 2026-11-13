@@ -162,6 +162,7 @@ public interface IPacket {
 	ResourceLocation PACKET_AUDIO_DELETE = new ResourceLocation(MTR.MOD_ID, "packet_audio_delete");
 	ResourceLocation PACKET_AUDIO_WANTED = new ResourceLocation(MTR.MOD_ID, "packet_audio_wanted");
 	ResourceLocation PACKET_AUDIO_SOUND_ID = new ResourceLocation(MTR.MOD_ID, "packet_audio_sound_id");
+	ResourceLocation PACKET_AUDIO_FOLDER = new ResourceLocation(MTR.MOD_ID, "packet_audio_folder");
 
 	ResourceLocation PACKET_EDIT_FRAGMENT = new ResourceLocation(MTR.MOD_ID, "packet_edit_fragment");
 	int MAX_PACKET_BYTES = 1048576;

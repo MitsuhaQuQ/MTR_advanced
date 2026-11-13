@@ -43,3 +43,9 @@
 
 ## 函数式接口 `IndexConsumer`
 - `void accept(String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId)`：`soundId` 对 sound id 出现之前上传的文件为空串。
+
+## 0.74.0 媒体文件夹
+
+- 新字段 `folders`（`MediaFolders.Store`，表 `audio_folders`，`audio_index` 加 `folder` 列，旧库打开时补上）。
+- `write`/`replace` 多一个参数 `folder`（在 `soundId` 之后），写索引时一起写，并保留它和它的上级文件夹；以前 `INSERT OR REPLACE` 会把文件夹清掉。
+- `readIndex` 的回调多一个 `folder`（顶层为空串）。
