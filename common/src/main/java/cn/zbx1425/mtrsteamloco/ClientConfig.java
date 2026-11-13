@@ -33,6 +33,8 @@ public class ClientConfig {
     public static boolean enableBbModelPreload = true;
     private static final String PRELOAD_DEFAULT_KEY = "bbModelPreloadDefaultOn";
     public static boolean translucentSort = true;
+    /** MTR's own train models drawn from buffers built once (mtr.model.BakedTrainModels, 0.73.5); a way out if one looks wrong */
+    public static boolean bakeBuiltInTrains = true;
 
     public static boolean enableScriptDebugOverlay = false;
 
@@ -68,6 +70,7 @@ public class ClientConfig {
             final boolean preloadDefaultApplied = configObject.has(PRELOAD_DEFAULT_KEY);
             enableBbModelPreload = !preloadDefaultApplied || getOrDefault(configObject, "enableBbModelPreload", JsonElement::getAsBoolean, true);
             translucentSort = getOrDefault(configObject, "translucentSort", JsonElement::getAsBoolean, false);
+            bakeBuiltInTrains = getOrDefault(configObject, "bakeBuiltInTrains", JsonElement::getAsBoolean, true);
             enableScriptDebugOverlay = getOrDefault(configObject, "enableScriptDebugOverlay", JsonElement::getAsBoolean, false);
             enableRailDeform = getOrDefault(configObject, "enableRailDeform", JsonElement::getAsBoolean, true);
             enableRail3D = getOrDefault(configObject, "enableRail3D", JsonElement::getAsBoolean, true);
@@ -159,6 +162,7 @@ public class ClientConfig {
             configObject.addProperty("enableBbModelPreload", enableBbModelPreload);
             configObject.addProperty(PRELOAD_DEFAULT_KEY, true);
             configObject.addProperty("translucentSort", translucentSort);
+            configObject.addProperty("bakeBuiltInTrains", bakeBuiltInTrains);
             configObject.addProperty("enableScriptDebugOverlay", enableScriptDebugOverlay);
             configObject.addProperty("enableRailDeform", enableRailDeform);
             configObject.addProperty("enableRail3D", enableRail3D);

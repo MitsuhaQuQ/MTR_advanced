@@ -86,7 +86,12 @@ public class ModelMapper {
 	public void render(PoseStack matrices, VertexConsumer vertices, float x, float y, float z, float rotateY, int light, int overlay) {
 		modelPart.setPos(x, y, z);
 		modelPart.yRot = rotateY;
-		modelPart.render(matrices, vertices, light, overlay);
+		if (mtr.model.BakedTrainModels.capturing) {
+			// Cube by cube, as Sodium replaces ModelPart.render with a writer that only takes the game's own buffers
+			cn.zbx1425.mtrsteamloco.render.integration.CapturingVertexConsumer.dumpModelPartQuads(modelPart, matrices, vertices, light, overlay);
+		} else {
+			modelPart.render(matrices, vertices, light, overlay);
+		}
 	}
 
 	private static String getRandomPartName() {

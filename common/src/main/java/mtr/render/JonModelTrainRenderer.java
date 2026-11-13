@@ -155,7 +155,13 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 			model.renderToBuffer(matrices, vertexConsumer, light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
 		} else if (!textureId.isEmpty()) {
 			renderDetails = MTRClient.isReplayMod() || posAverage.distSqr(camera.getBlockPosition()) <= RenderTrains.DETAIL_RADIUS_SQUARED;
-			model.render(matrices, vertexConsumers, train, resolveTexture(textureId, textureId -> textureId + ".png"), light, doorLeftValue, doorRightValue, train.isDoorOpening(), carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+			// In the world, MTR's own models may come from buffers built once (BakedTrainModels)
+			mtr.model.BakedTrainModels.setInWorld(true);
+			try {
+				model.render(matrices, vertexConsumers, train, resolveTexture(textureId, textureId -> textureId + ".png"), light, doorLeftValue, doorRightValue, train.isDoorOpening(), carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+			} finally {
+				mtr.model.BakedTrainModels.setInWorld(false);
+			}
 
 			if (trainProperties.hasCustomBogies() && !trainProperties.isJacobsBogie) {
 				// Near cars turn their bogies along the track after the car is drawn; far ones keep them fixed to the body

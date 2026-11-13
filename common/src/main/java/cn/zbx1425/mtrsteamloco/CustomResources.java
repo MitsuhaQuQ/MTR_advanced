@@ -44,6 +44,8 @@ public class CustomResources {
             Main.LOGGER.error("Failed loading shader:", e);
         }
         MainClient.modelManager.clear();
+        // MTR's own train models captured into buffers: built again from the reloaded textures when next drawn
+        mtr.model.BakedTrainModels.clear();
         MainClient.atlasManager.clear();
     }
 
