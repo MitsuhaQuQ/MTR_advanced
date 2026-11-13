@@ -100,7 +100,8 @@ public final class ServerDriver {
 			return "lines".equals(name) ? Lines.build(level(server, null), body) : Fixture.build(level(server, null), name);
 		}));
 		routes.put("/node", (body, query) -> Http.onThread(server, () -> node(level(server, null), new BlockPos(body.get("x").getAsInt(), body.get("y").getAsInt(), body.get("z").getAsInt()))));
-		routes.put("/trains", (body, query) -> Http.onThread(server, () -> trains(level(server, query.get("dimension")))));
+		// ?pathZ=<z>: the whole path of each train within a line's band of z too (2026-11-14, line 6's turn back)
+		routes.put("/trains", (body, query) -> Http.onThread(server, () -> trains(level(server, query.get("dimension")), query.containsKey("pathZ") ? Double.parseDouble(query.get("pathZ")) : Double.NaN)));
 		routes.put("/clock", (body, query) -> clock());
 		routes.put("/sensors", (body, query) -> sensors());
 		routes.put("/log", (body, query) -> LogCapture.since(query.containsKey("since") ? Long.parseLong(query.get("since")) : 0));
@@ -237,6 +238,10 @@ public final class ServerDriver {
 	 */
 	@SuppressWarnings("unchecked")
 	private static JsonObject trains(ServerLevel level) {
+		return trains(level, Double.NaN);
+	}
+
+	private static JsonObject trains(ServerLevel level, double pathZ) {
 		final RailwayData railwayData = RailwayData.getInstance(level);
 		final JsonObject result = new JsonObject();
 		result.addProperty("millis", System.currentTimeMillis());
@@ -265,6 +270,17 @@ public final class ServerDriver {
 					// The route and service it runs now, for telling services every 30 seconds apart
 					entry.addProperty("route", String.valueOf(train.getService().getTripRouteId()));
 					entry.addProperty("trip", train.getService().getTripMillis());
+					if (!Double.isNaN(pathZ) && head != null && head.z > pathZ - 40 && head.z < pathZ + 60) {
+						final Field stopField = mtr.data.Train.class.getDeclaredField("nextStoppingIndex");
+						stopField.setAccessible(true);
+						entry.addProperty("nextStop", stopField.getInt(train));
+						entry.addProperty("tripPathKey", train.getService().getTripPathKey());
+						final JsonArray rails = new JsonArray();
+						for (final mtr.path.PathData pathData : train.path) {
+							rails.add(pathData.startingPos.getX() + "," + pathData.startingPos.getZ() + ">" + pathData.getLastPos().getX() + "," + pathData.getLastPos().getZ() + (pathData.savedRailBaseId != 0 ? " stop" : "") + (pathData.dwellTime > 0 ? " dwell " + pathData.dwellTime : ""));
+						}
+						entry.add("path", rails);
+					}
 					array.add(entry);
 				}
 			}
