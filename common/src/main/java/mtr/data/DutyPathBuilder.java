@@ -7,6 +7,7 @@ import transitsim.sim.TrainService;
 import transitsim.plan.PlanRoute;
 import transitsim.plan.DepotReturn;
 import transitsim.plan.DutyPlan;
+import transitsim.plan.DutyAssembly;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
 import transitsim.plan.FrontTurnBacks;
@@ -483,151 +484,105 @@ final class DutyPathBuilder {
 	 * @return the plan, or null if a part of it can't be found
 	 */
 	DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-		final List<PathData> body = new transitsim.plan.JoinedPath<>();
 		final Map<String, List<PathData>> segmentTemplates = new HashMap<>();
-		final Set<Integer> indexBoundaries = new TreeSet<>();
-		indexBoundaries.add(0);
-		final int[] segmentStarts = new int[segments.size()];
-		final List<Long> routeIds = new ArrayList<>();
-		final Map<Long, Integer> cutStops = new HashMap<>();
-		final Map<Long, Integer> entryStops = new HashMap<>();
-		final Map<Long, List<PathData>> entryLeads = new HashMap<>();
-		// Where each segment is cut and joined, by segment, as a route can be in several (D4)
-		final Map<Integer, Integer> segmentCuts = new HashMap<>();
-		final Map<Integer, Integer> segmentEntries = new HashMap<>();
-		SavedRailBase firstPlatform = null;
-		SavedRailBase lastPlatform = null;
-		Route previousRoute = null;
-		boolean previousRanToEnd = false;
-		final List<TurnBackSection<PathData>> turnBackSections = new ArrayList<>();
-		List<SavedRailBase> previousPlatforms = Collections.emptyList();
-		List<List<BlockPos>> previousWaypoints = Collections.emptyList();
-		int previousStart = 0;
-
-		for (int k = 0; k < segments.size(); k++) {
-			final DepotDuties.Segment segment = segments.get(k);
-			final Route route = dataCache.routeIdMap.get(segment.routeId);
-			if (route == null || route.transportMode != depot.transportMode || route.platformIds.size() < 2) {
-				return null;
-			}
-			final int firstStop = DutyShapes.getFirstStop(route, segment);
-			final int lastStop = DutyShapes.getLastStop(route, segment);
-			final boolean[] pass = DutyShapes.getPassFlags(route, segment, weekday);
-			final List<SavedRailBase> platforms = new ArrayList<>();
-			final List<List<BlockPos>> waypoints = new ArrayList<>();
-			final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
-			for (int i = firstStop; i <= lastStop; i++) {
-				final Route.RoutePlatform routePlatform = route.platformIds.get(i);
-				final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
-				if (platform == null) {
+		// What each segment's part was made from, for the ways after it and the lead to it (step 2d: the joining is in the
+		// component's DutyAssembly, the finding here)
+		final Map<DutyAssembly.Part<PathData, SavedRailBase>, SegmentSource> sources = new IdentityHashMap<>();
+		final DutyAssembly.Host<PathData, SavedRailBase> host = new DutyAssembly.Host<PathData, SavedRailBase>() {
+			@Override
+			public DutyAssembly.Part<PathData, SavedRailBase> part(int k) {
+				final DepotDuties.Segment segment = segments.get(k);
+				final Route route = dataCache.routeIdMap.get(segment.routeId);
+				if (route == null || route.transportMode != depot.transportMode || route.platformIds.size() < 2) {
 					return null;
 				}
-				platforms.add(platform);
-				waypoints.add(routePlatform.waypoints);
-				final Route.RoutePlatform stopSetting = new Route.RoutePlatform(routePlatform.platformId);
-				stopSetting.pass = pass[i - firstStop];
-				stopSetting.dwellOverride = routePlatform.dwellOverride;
-				stopSettings.add(stopSetting);
+				final int firstStop = DutyShapes.getFirstStop(route, segment);
+				final int lastStop = DutyShapes.getLastStop(route, segment);
+				final boolean[] pass = DutyShapes.getPassFlags(route, segment, weekday);
+				final List<SavedRailBase> platforms = new ArrayList<>();
+				final List<List<BlockPos>> waypoints = new ArrayList<>();
+				final List<Route.RoutePlatform> stopSettings = new ArrayList<>();
+				for (int i = firstStop; i <= lastStop; i++) {
+					final Route.RoutePlatform routePlatform = route.platformIds.get(i);
+					final Platform platform = dataCache.platformIdMap.get(routePlatform.platformId);
+					if (platform == null) {
+						return null;
+					}
+					platforms.add(platform);
+					waypoints.add(routePlatform.waypoints);
+					final Route.RoutePlatform stopSetting = new Route.RoutePlatform(routePlatform.platformId);
+					stopSetting.pass = pass[i - firstStop];
+					stopSetting.dwellOverride = routePlatform.dwellOverride;
+					stopSettings.add(stopSetting);
+				}
+				// Out of the depot, a train may start at another platform of the first stop's station that the route lists, where
+				// its siding has a way out only to that one (2026-11-13, 单独出库站台): the way from there to the second stop is found
+				// rather than the route's own
+				final Siding.DepotWays depotWays = Siding.DEPOT_WAYS.get();
+				final long startId = k == 0 && !startsOnLine && firstStop == 0 && siding != null && depotWays != null ? depotWays.startAt(siding, platforms.get(0).id) : platforms.get(0).id;
+				final Platform startPlatform = startId == platforms.get(0).id ? null : dataCache.platformIdMap.get(startId);
+				if (startPlatform != null) {
+					platforms.set(0, startPlatform);
+					waypoints.set(0, Collections.emptyList());
+					final Route.RoutePlatform startSetting = new Route.RoutePlatform(startId);
+					startSetting.pass = stopSettings.get(0).pass;
+					startSetting.dwellOverride = stopSettings.get(0).dwellOverride;
+					stopSettings.set(0, startSetting);
+				}
+				final RoutePaths.RoutePath ownPath = usesRoutePaths() && startPlatform == null ? routeSearch.get(route, dataCache) : null;
+				final String templateKey = route.id + ":" + firstStop + ":" + lastStop + ":" + route.speedLimit + ":" + Arrays.toString(pass) + (startPlatform == null ? "" : ":" + startId);
+				List<PathData> template = segmentTemplates.get(templateKey);
+				if (template == null) {
+					template = new ArrayList<>();
+					if (ownPath != null) {
+						template.addAll(ownPath.getSlice(firstStop, lastStop));
+						// A slice starts standing; a duty's train comes to its first stop from the way out or the service
+						// before, so it stops there and waits for its departure, as the paths found stop by stop had it
+						// (without it trains ran through their first stop out of the depot, U-L05)
+						if (!template.isEmpty() && template.get(0).dwellTime <= 0) {
+							template.set(0, template.get(0).copy(template.get(0).savedRailBaseId, platforms.get(0).getDwellTime()));
+						}
+					}
+					else PathFinder.findPath(template, rails, graph, platforms, waypoints, 1, depot.cruisingAltitude, useFastSpeed);
+					if (template.size() < 2) return null;
+					PathFinder.applyStopSettings(template, stopSettings);
+					PathData.capSpeed(template, route.speedLimit);
+					segmentTemplates.put(templateKey, template);
+				}
+				final SavedRailBase first = platforms.get(0);
+				final SavedRailBase last = platforms.get(platforms.size() - 1);
+				final DutyAssembly.Part<PathData, SavedRailBase> part = new DutyAssembly.Part<>(route.id, firstStop, lastStop, route.platformIds.size(), template, first, first.id, last, last.id, first.getDwellTime());
+				sources.put(part, new SegmentSource(route, platforms, waypoints, ownPath));
+				return part;
 			}
-			// Out of the depot, a train may start at another platform of the first stop's station that the route lists, where
-			// its siding has a way out only to that one (2026-11-13, 单独出库站台): the way from there to the second stop is found
-			// rather than the route's own
-			final Siding.DepotWays depotWays = Siding.DEPOT_WAYS.get();
-			final long startId = k == 0 && !startsOnLine && firstStop == 0 && siding != null && depotWays != null ? depotWays.startAt(siding, platforms.get(0).id) : platforms.get(0).id;
-			final Platform startPlatform = startId == platforms.get(0).id ? null : dataCache.platformIdMap.get(startId);
-			if (startPlatform != null) {
-				platforms.set(0, startPlatform);
-				waypoints.set(0, Collections.emptyList());
-				final Route.RoutePlatform startSetting = new Route.RoutePlatform(startId);
-				startSetting.pass = stopSettings.get(0).pass;
-				startSetting.dwellOverride = stopSettings.get(0).dwellOverride;
-				stopSettings.set(0, startSetting);
-			}
-			final RoutePaths.RoutePath ownPath = usesRoutePaths() && startPlatform == null ? routeSearch.get(route, dataCache) : null;
-			final String templateKey = route.id + ":" + firstStop + ":" + lastStop + ":" + route.speedLimit + ":" + Arrays.toString(pass) + (startPlatform == null ? "" : ":" + startId);
-			List<PathData> template = segmentTemplates.get(templateKey);
-			if (template == null) {
-				template = new ArrayList<>();
-				if (ownPath != null) {
-					template.addAll(ownPath.getSlice(firstStop, lastStop));
-					// A slice starts standing; a duty's train comes to its first stop from the way out or the service
-					// before, so it stops there and waits for its departure, as the paths found stop by stop had it
-					// (without it trains ran through their first stop out of the depot, U-L05)
-					if (!template.isEmpty() && template.get(0).dwellTime <= 0) {
-						template.set(0, template.get(0).copy(template.get(0).savedRailBaseId, platforms.get(0).getDwellTime()));
+
+			@Override
+			public TurnBackSection<PathData> connect(List<PathData> connectingPath, DutyAssembly.Part<PathData, SavedRailBase> before, DutyAssembly.Part<PathData, SavedRailBase> after, long routeBeforeId) {
+				final TurnBackSection<PathData> turnBackSection = findConnection(connectingPath, before.lastPlatform, after.firstPlatform, routeBeforeId == 0 ? null : sources.get(before).route, rails, graph, useFastSpeed);
+				if (!connectingPath.isEmpty()) {
+					// A way between two services far longer than the two platforms are apart is told of: the train runs a
+					// long way empty, as where no turn back rail is listed or near
+					final double connectingLength = depot.pathLength(connectingPath);
+					final double apart = Math.sqrt(before.lastPlatform.getMidPos().distSqr(after.firstPlatform.getMidPos()));
+					if (connectingLength > Math.max(depot.DETOUR_MIN_BLOCKS, apart * depot.DETOUR_FACTOR)) {
+						depot.pathDetours.add(before.lastPlatform.id + " " + after.firstPlatform.id + " " + Math.round(connectingLength) + " " + Math.round(apart));
 					}
 				}
-				else PathFinder.findPath(template, rails, graph, platforms, waypoints, 1, depot.cruisingAltitude, useFastSpeed);
-				if (template.size() < 2) return null;
-				PathFinder.applyStopSettings(template, stopSettings);
-				PathData.capSpeed(template, route.speedLimit);
-				segmentTemplates.put(templateKey, template);
-			}
-			final List<PathData> segmentPath = new transitsim.plan.JoinedPath<>(template);
-
-			if (lastPlatform != null && lastPlatform.id != platforms.get(0).id) {
-				final List<PathData> connectingPath = new ArrayList<>();
-				final TurnBackSection<PathData> turnBackSection = findConnection(connectingPath, lastPlatform, platforms.get(0), previousRanToEnd ? previousRoute : null, rails, graph, useFastSpeed);
-				if (connectingPath.isEmpty()) {
-					return null;
-				}
-				// A way between two services far longer than the two platforms are apart is told of: the train runs a
-				// long way empty, as where no turn back rail is listed or near
-				final double connectingLength = depot.pathLength(connectingPath);
-				final double apart = Math.sqrt(lastPlatform.getMidPos().distSqr(platforms.get(0).getMidPos()));
-				if (connectingLength > Math.max(depot.DETOUR_MIN_BLOCKS, apart * depot.DETOUR_FACTOR)) {
-					depot.pathDetours.add(lastPlatform.id + " " + platforms.get(0).id + " " + Math.round(connectingLength) + " " + Math.round(apart));
-				}
-				// More than one way round, each from the last stop, which is already the last rail of the body
-				if (turnBackSection != null && turnBackSection.ways.size() > 1 && !body.isEmpty() && body.get(body.size() - 1).isSameRail(connectingPath.get(0))) {
-					turnBackSections.add(new TurnBackSection<>(body.size() - 1, turnBackSection.ways, turnBackSection.defaultWay));
-				}
-				indexBoundaries.add(body.size());
-				PathFinder.appendPath(body, connectingPath);
-				indexBoundaries.add(Math.max(0, body.size() - 1));
+				return turnBackSection;
 			}
 
-			final PathData first = segmentPath.get(0).copy(segmentPath.get(0).savedRailBaseId, segmentPath.get(0).dwellTime);
-			segmentPath.set(0, first);
-			final PathData last = body.isEmpty() ? null : body.get(body.size() - 1);
-			if (last != null && first.isSameRail(last)) {
-				segmentStarts[k] = body.size() - 1;
-				// Come from another platform to this route's first stop, the train stops there for its departure: the first
-				// stop of a route's own path has no stop time, and without the way there's it would run straight through
-				final boolean arrivedHere = k > 0 && first.savedRailBaseId != 0 && first.dwellTime == 0 && last.savedRailBaseId == first.savedRailBaseId;
-				final int stopDwell = Math.max(last.dwellTime, platforms.get(0).getDwellTime());
-				body.set(body.size() - 1, arrivedHere && stopDwell > 0 ? first.copy(first.savedRailBaseId, stopDwell) : first);
-				body.addAll(segmentPath.subList(1, segmentPath.size()));
-			} else if (last != null && first.isOppositeRail(last)) {
-				// Turning back on the platform: the stop is the arrival there, and the platform reversed is only the way out
-				first.dwellTime = 0;
-				first.savedRailBaseId = 0;
-				segmentStarts[k] = body.size() - 1;
-				body.addAll(segmentPath);
-			} else {
-				segmentStarts[k] = body.size();
-				body.addAll(segmentPath);
+			@Override
+			public void frontTurnBack(List<PathData> body, DutyAssembly.Part<PathData, SavedRailBase> before, DutyAssembly.Part<PathData, SavedRailBase> after, int previousStart, int nextStart, List<TurnBackSection<PathData>> turnBackSections) {
+				final SegmentSource previous = sources.get(before);
+				final SegmentSource next = sources.get(after);
+				addFrontTurnBack(body, previous.route, previous.platforms, previous.waypoints, previousStart, next.route, next.platforms, next.waypoints, nextStart, turnBackSections, rails, graph, useFastSpeed);
 			}
 
-			// The route before may turn back at other platforms of its last station (站前折返)
-			if (k > 0 && previousRanToEnd && firstStop == 0) {
-				addFrontTurnBack(body, previousRoute, previousPlatforms, previousWaypoints, previousStart, route, platforms, waypoints, segmentStarts[k], turnBackSections, rails, graph, useFastSpeed);
-			}
-
-			if (firstPlatform == null) {
-				firstPlatform = platforms.get(0);
-			}
-			lastPlatform = platforms.get(platforms.size() - 1);
-			routeIds.add(route.id);
-			if (lastStop < route.platformIds.size() - 1) {
-				cutStops.putIfAbsent(route.id, lastStop);
-				segmentCuts.put(k, lastStop);
-			}
-			if (firstStop > 0) {
-				segmentEntries.put(k, firstStop);
-			}
-			if (firstStop > 0 && !entryStops.containsKey(route.id)) {
-				// The plan of a route joined part of the way along counts from its first stop, so the way there is timed too
+			@Override
+			public List<PathData> entryLead(DutyAssembly.Part<PathData, SavedRailBase> part) {
+				final SegmentSource source = sources.get(part);
+				final Route route = source.route;
+				final int firstStop = part.firstStop;
 				final List<SavedRailBase> leadPlatforms = new ArrayList<>();
 				final List<List<BlockPos>> leadWaypoints = new ArrayList<>();
 				final List<Route.RoutePlatform> leadSettings = new ArrayList<>();
@@ -640,32 +595,58 @@ final class DutyPathBuilder {
 					}
 				}
 				final List<PathData> leadPath = new ArrayList<>();
-				if (ownPath != null) {
-					leadPath.addAll(ownPath.getSlice(0, firstStop));
+				if (source.ownPath != null) {
+					leadPath.addAll(source.ownPath.getSlice(0, firstStop));
 				} else {
 					PathFinder.findPath(leadPath, rails, graph, leadPlatforms, leadWaypoints, 1, depot.cruisingAltitude, useFastSpeed);
 				}
 				if (leadPath.size() >= 2 && leadPlatforms.size() == firstStop + 1) {
 					PathFinder.applyStopSettings(leadPath, leadSettings);
-					entryStops.put(route.id, firstStop);
-					entryLeads.put(route.id, leadPath);
+					return leadPath;
 				}
+				return null;
 			}
-			previousRoute = route;
-			previousRanToEnd = lastStop == route.platformIds.size() - 1;
-			previousPlatforms = platforms;
-			previousWaypoints = waypoints;
-			previousStart = segmentStarts[k];
+		};
+		return DutyAssembly.assemble(key, segments.size(), startsOnLine, staysOnLine, host, PATH_TRACKS);
+	}
+
+	/**
+	 * How the game's path rails compare and change, for the component's {@link DutyAssembly}.
+	 */
+	private static final DutyAssembly.Tracks<PathData> PATH_TRACKS = new DutyAssembly.Tracks<PathData>() {
+		@Override
+		public boolean sameRail(PathData track, PathData other) {
+			return track.isSameRail(other);
 		}
-		final DutyPlan<PathData, SavedRailBase> dutyPlan = new DutyPlan<>(key, routeIds, cutStops, entryStops, entryLeads, body, segmentStarts, firstPlatform, lastPlatform, startsOnLine, staysOnLine);
-		for (int start : segmentStarts) indexBoundaries.add(start);
-		indexBoundaries.add(body.size());
-		dutyPlan.indexBoundaries = indexBoundaries.stream().mapToInt(Integer::intValue).toArray();
-		dutyPlan.turnBackSections.addAll(turnBackSections);
-		dutyPlan.segmentCuts.putAll(segmentCuts);
-		dutyPlan.segmentEntries.putAll(segmentEntries);
-		dutyPlan.segmentsKnown = true;
-		return dutyPlan;
+
+		@Override
+		public boolean oppositeRail(PathData track, PathData other) {
+			return track.isOppositeRail(other);
+		}
+
+		@Override
+		public PathData withStop(PathData track, long stopId, int dwellTime) {
+			return track.copy(stopId, dwellTime);
+		}
+	};
+
+	/**
+	 * What one segment of a duty was found from: its route, its platforms and waypoints as stopped at, and the route's own
+	 * path if the depot uses route paths.
+	 */
+	private static final class SegmentSource {
+
+		final Route route;
+		final List<SavedRailBase> platforms;
+		final List<List<BlockPos>> waypoints;
+		final RoutePaths.RoutePath ownPath;
+
+		SegmentSource(Route route, List<SavedRailBase> platforms, List<List<BlockPos>> waypoints, RoutePaths.RoutePath ownPath) {
+			this.route = route;
+			this.platforms = platforms;
+			this.waypoints = waypoints;
+			this.ownPath = ownPath;
+		}
 	}
 
 	/**

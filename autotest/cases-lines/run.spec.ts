@@ -229,7 +229,7 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 			for (const id of [...current.keys()]) if (!sample.trains.some(t => t.id === id)) current.delete(id);
 		}
 		visits.sort((a, b) => a.from - b.from);
-		const order = visits.map(v => `${v.tail + 1}(${v.train.slice(-4)} ${hhmmss(v.from)} ${Math.round((v.to - v.from) / 1000)} s)`);
+		const order = visits.map(v => `${v.tail + 1}(${String(v.train).slice(-4)} ${hhmmss(v.from)} ${Math.round((v.to - v.from) / 1000)} s)`);
 		const repeats = visits.filter((v, i) => i > 0 && visits[i - 1].tail === v.tail);
 		const both = new Set(visits.map(v => v.tail)).size;
 		report.push(`10号线 tails: ${visits.length} visits, tail 1 ${visits.filter(v => v.tail === 0).length}, tail 2 ${visits.filter(v => v.tail === 1).length}, ${repeats.length} times the same tail twice in a row, ${shared} samples with two trains on one tail; ${order.join(" ")}`);
@@ -316,10 +316,10 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 			for (const c of counted) {
 				const pulse = before(c);
 				if (takes(c.kind)) {
-					if (pulse === undefined) failures.push(`${name}: no pulse before the ${c.kind} train ${c.train.slice(-4)} at ${hhmmss(c.millis)}`);
+					if (pulse === undefined) failures.push(`${name}: no pulse before the ${c.kind} train ${String(c.train).slice(-4)} at ${hhmmss(c.millis)}`);
 					else offsets.push(`${c.kind} ${Math.round((c.millis - pulse) / 1000)} s`);
 				} else if (pulse !== undefined && !counted.some(other => other !== c && takes(other.kind) && before(other) === pulse)) {
-					failures.push(`${name}: pulsed for the ${c.kind} train ${c.train.slice(-4)} at ${hhmmss(c.millis)}, which it isn't set for`);
+					failures.push(`${name}: pulsed for the ${c.kind} train ${String(c.train).slice(-4)} at ${hhmmss(c.millis)}, which it isn't set for`);
 				}
 			}
 			report.push(`${name}: ${own.length} pulses; before ${offsets.join(", ") || "-"}`);

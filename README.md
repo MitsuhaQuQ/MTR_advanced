@@ -40,6 +40,10 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.78.2 keeps paintings showing an imported picture from /kill (so /kill @e no longer clears them); a plain painting, or one whose picture was cleared with the brush, goes as before, and a player can still break one by hand. New in-game tests cover the platform end doors and the brush, the paintings, the web drawing keeping its zoom and the dispatch console's buttons.
+
+0.78.1 moves the joining of a duty's segments into one path into the simulation component (step 2d of splitting the depot); the paths found are the same as before, byte for byte on a test world.
+
 0.78.0: a train on a duty more than 10 minutes late at the first stop of a segment takes over the earliest later service there that no train will run on time - one whose own train gave it up, or is itself more than 10 minutes late - and waits for it; its own service is then not run. With none it runs its own late, and the trains stay on the track they are on. Saves change (client and server both 0.78.0).
 
 0.77.0 turns a platform end gate left to right with the brush: its hinge goes to the other end and it still swings the same way (a new block state, so client and server both need 0.77.0; Assets 1.0.9). From 0.76.8 a new gate swings towards the platform without sneaking first, and there are gates without the handle outside in both heights. In the web editor the dispatcher's buttons come back as soon as the train's state changes (a train held, released and held again no longer needs the page loaded again), and the network schematic keeps its zoom when the network is read again.
