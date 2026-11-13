@@ -147,6 +147,12 @@
 - 截图受显卡驱动和字体影响，所以金样只在这台机器上有效。
 - 反射依赖字段名，MTR 重构界面时要同步改测试。这是有意的：界面改了，测试应该失败并提醒。
 - 第一阶段每次启动客户端要一分钟左右，所以一次启动里跑多项，项与项之间只重置数据，不重启。
+- **驱动起不来：`Unable to establish loopback connection`**（2026-11-13 遇到）。Java 在 Windows 上建管道（`Pipe.open`，`Selector.open` 要用）会在 `java.io.tmpdir` 里放一个 Unix 域套接字；这台机器的 `%TEMP%`（里面积了几千个文件）会让它失败，于是客户端的 `ClientDriver` 起不来，表现为 `CLIENT DID NOT JOIN`，而普通的本地回环连接一切正常，很容易误判成系统网络坏了。
+  - 查法：写个小程序连开十次 `Selector.open()`，全失败就是它；加 `-Djdk.net.unixdomain.tmpdir=C:/gtmp` 再试，全成功就确诊。
+  - 服务端早就有这个覆盖（`ui-test.sh` 导出 `JAVA_TOOL_OPTIONS`），客户端拿不到：MultiMC 会主动丢掉这个环境变量（它的日志里写 `Env: ignoring "JAVA_TOOL_OPTIONS"`）。所以要写在实例设置里：`MTM_AutoTest` 的 `instance.cfg` 设 `JvmArgs=-Djdk.net.unixdomain.tmpdir=C:/gtmp` 和 `OverrideJavaArgs=true`（原文件备份为 `instance.cfg.bak`）。
+  - **改 `instance.cfg` 必须在 MultiMC 没运行时**：它退出时会用内存里的设置覆写这个文件，运行中改的会丢。改完在 MultiMC 日志里搜 `unixdomain`，出现在启动参数（而不是 `Env: ignoring`）那行才算生效。
+  - 驱动没起来时 `ui-test.sh down` 没法通过驱动退出客户端，会留下 MultiMC 的实例窗口；它仍认为实例在运行，之后的 `-l MTM_AutoTest` 全被挡掉（既不报错也不启动）。`down` 现在额外结束 MTM_AutoTest 的 javaw 和 MultiMC 进程（只按这两个条件匹配，绝不是所有 java）。
+  - 清理 `%TEMP%` 大概也能好，但那是用户的目录，不要动。
 
 ## 9. 第一阶段进度（2026-11-12）
 

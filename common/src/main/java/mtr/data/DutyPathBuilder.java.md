@@ -49,6 +49,7 @@
 ### `void addFrontTurnBack(...)` / `void addFrontTurnBackTimed(...)`
 - 作用（站前折返）：线路在列出其他站台可供折返的车站结束、下一段线路从同一车站开始时，加入从倒数第二站经每个这样的站台到下一线路第二站的走法，按下一线路偏好的始发站台排序（种别优先）。列车通常在末站台折返时通常走法是其中之一；站后折返时通常走法排最后（先试站台，都不行才走站后）。找不到某站台的走法时记失败 `TURN_BACK_UNUSED`。至少两种可行走法时加入折返区段。`ConnectionStats.ON` 时计时。
 - 参数：`previousStart` / `nextStart` 为主体中上一/下一线路开始的轨道。
+- 0.76.1 起（拆分车厂第 2c 步，规则不变）：可折返站台的筛选与排序在组件 `transitsim.plan.FrontTurnBacks.order`，走法的组装与"至少两种才算一个区段"在 `FrontTurnBacks.section`；这里只判断前置条件（线路列出了可折返站台、两段都至少两站、同一车站）、找主体中的轨道下标、切出通常走法，并提供找路（`findFrontWay`）。
 
 ### `List<PathData> findFrontWay(SavedRailBase from, Platform platform, SavedRailBase to, fromWaypoints, toWaypoints, int dwellTime, List<PathData> usualWay, rails, graph, boolean useFastSpeed)`
 - 返回：从一站进入该站台并在站台上折返出来到下一线路第二站的路（到达段带末站停站时间，反向段只作出站）；须与通常走法在相同轨道上离开与到达，否则 null。`usualWay` 为 null 时不比较（0.75.4，折返用时的 `turnsInto` 用它判断能否站前折返）。
@@ -93,7 +94,10 @@
 - 返回：有折返线时其走法，否则 null。
 
 ### `TurnBackSection<PathData> findConnectionTimed(...)`
-- 上述逻辑本体（列出的折返线加留置线 → `findTurnBackSection`；否则直接搜索并与附近折返线走法比较长度）。
+- 上述逻辑本体。0.76.1 起规则在组件 `transitsim.plan.TurnBackWays.connection`（列出的折返线加留置线优先；否则直接搜索的路与绕经附近折返线的走法比长度，短的赢，一样长用直接搜索的），这里只列出节点并找路（`waysRound`）。
+
+### `TurnBackWays.Ways<BlockPos, PathData> waysRound(SavedRailBase from, SavedRailBase to, rails, graph, boolean useFastSpeed)`
+- 交给组件的找路：经某节点从一站到下一站的路（`PathFinder.findPath`）、两段是否同一轨道同方向（`isSameRail`）、不可用时记 `TURN_BACK_UNUSED` 失败。
 
 ### `Map<Long, Map<Long, Long>> turnTimesFor(List<Route> routes, rails, graph, boolean useFastSpeed)`
 - 作用：站内每次换站台按运用所跑（`findConnection`）需要多久：从每条线路末站台到同站其他线路首站台；无路的对略去（规划视为无路）。另外每个站台一次：绕经站台外折返线再回到本站台（列车可在那里等下一班次而让出站台，混合折返），记 `from→from` 总时间、`HOLD_IN_KEY`（进入段）、`HOLD_COUNT_KEY`（可同时等待的列车数，每条可用走法一列，运用补完第 4 步）、`HOLD_RAIL_KEY`（哪条折返线，同一折返线的站台共用，8 号线 2026-11-12）。换站台离站台超过 `MAX_PLATFORM_CHANGE_REACH` 的不算（会沿线跑出又回来与对向列车迎面，2026-11-09）。时间为两条线路车辆中最慢者的进入段 + 出来段（不含在折返处停留，第 4 轮，由计划加上网络最短换端时间）。`-Dmtr.debugTurnTimes` 时打印。
@@ -129,7 +133,7 @@
 - 线路列出的折返节点之后加上站台附近的留置区节点（`nearbyOf(...).stabling`，玩家把它们标为该处折返的任何线路都可用，运用补完第 4 步）。
 
 ### `TurnBackSection<PathData> findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, rails, graph, boolean useFastSpeed)`
-- 作用：经每个折返节点找从一站到下一站的路；每种走法都必须与第一条可用走法从同样的轨道离开第一站并到达下一站，使列车可从该站选任何一种。不可用的记 `TURN_BACK_UNUSED` 失败。
+- 作用：经每个折返节点找从一站到下一站的路。规则在组件 `transitsim.plan.TurnBackWays.section`（0.76.1，拆分车厂第 2c 步，规则不变）：每种走法都必须有轨道可走、且与第一条可用走法从同样的轨道离开第一站并到达下一站，使列车可从该站选任何一种；不可用的记 `TURN_BACK_UNUSED` 失败。
 - 参数：`start` 为走法在主路径上开始处。
 - 返回：走法（不可用为 null 项）与默认走法；都不可用为 null。
 

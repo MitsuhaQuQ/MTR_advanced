@@ -9,7 +9,9 @@ import transitsim.plan.DepotReturn;
 import transitsim.plan.DutyPlan;
 import transitsim.plan.TripPath;
 import transitsim.plan.TripTail;
+import transitsim.plan.FrontTurnBacks;
 import transitsim.plan.TurnBackSection;
+import transitsim.plan.TurnBackWays;
 import transitsim.plan.TimeSegment;
 import transitsim.plan.StopTimes;
 import mtr.advanced.PacketBinary;
@@ -703,49 +705,23 @@ final class DutyPathBuilder {
 			return;
 		}
 		final List<PathData> usualWay = new ArrayList<>(body.subList(stopRail, secondRail + 1));
-		final boolean usualAtPlatform = lastPlatformId == platforms.get(0).id;
+		// The rules are the component's (step 2c of splitting the depot); the ways are found here
+		final long nextFirstPlatformId = platforms.get(0).id;
+		final List<Long> ordered = FrontTurnBacks.order(lastPlatformId, nextFirstPlatformId, previousRoute.terminalPlatforms, route.startPlatforms,
+				platformId -> dataCache.platformIdToStation.get(platformId) == station && dataCache.platformIdMap.containsKey(platformId));
+		final TurnBackSection<PathData> section = FrontTurnBacks.section(stopRail, lastPlatformId, nextFirstPlatformId, ordered, usualWay, new FrontTurnBacks.Ways<PathData>() {
+			@Override
+			public List<PathData> find(long platformId) {
+				return findFrontWay(previousPlatforms.get(previousPlatforms.size() - 2), dataCache.platformIdMap.get(platformId), platforms.get(1), previousWaypoints.get(previousWaypoints.size() - 2), waypoints.get(0), body.get(lastRail).dwellTime, usualWay, rails, graph, useFastSpeed);
+			}
 
-		final List<Long> candidates = new ArrayList<>();
-		if (usualAtPlatform) {
-			candidates.add(lastPlatformId);
-		}
-		previousRoute.terminalPlatforms.forEach(platformId -> {
-			if (platformId != lastPlatformId && !candidates.contains(platformId) && dataCache.platformIdToStation.get(platformId) == station && dataCache.platformIdMap.containsKey(platformId)) {
-				candidates.add(platformId);
+			@Override
+			public void unusable(long platformId) {
+				failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, dataCache.platformIdMap.get(platformId).getMidPos().asLong());
 			}
 		});
-		final List<Long> ordered = new ArrayList<>();
-		route.startPlatforms.forEach(platformId -> {
-			if (candidates.contains(platformId) && !ordered.contains(platformId)) {
-				ordered.add(platformId);
-			}
-		});
-		candidates.forEach(platformId -> {
-			if (!ordered.contains(platformId)) {
-				ordered.add(platformId);
-			}
-		});
-
-		final List<List<PathData>> ways = new ArrayList<>();
-		int defaultWay = -1;
-		for (final long platformId : ordered) {
-			if (platformId == lastPlatformId) {
-				defaultWay = ways.size();
-				ways.add(usualWay);
-			} else {
-				final List<PathData> way = findFrontWay(previousPlatforms.get(previousPlatforms.size() - 2), dataCache.platformIdMap.get(platformId), platforms.get(1), previousWaypoints.get(previousWaypoints.size() - 2), waypoints.get(0), body.get(lastRail).dwellTime, usualWay, rails, graph, useFastSpeed);
-				ways.add(way);
-				if (way == null) {
-					failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, dataCache.platformIdMap.get(platformId).getMidPos().asLong());
-				}
-			}
-		}
-		if (!usualAtPlatform) {
-			defaultWay = ways.size();
-			ways.add(usualWay);
-		}
-		if (ways.stream().filter(Objects::nonNull).count() >= 2) {
-			turnBackSections.add(new TurnBackSection<>(stopRail, ways, defaultWay));
+		if (section != null) {
+			turnBackSections.add(section);
 		}
 	}
 
@@ -1035,26 +1011,38 @@ final class DutyPathBuilder {
 	}
 
 	TurnBackSection<PathData> findConnectionTimed(List<PathData> connectingPath, SavedRailBase from, SavedRailBase to, Route routeBefore, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		// The rules are the component's (step 2c of splitting the depot); the ways are found here
 		final List<BlockPos> listedNodes = routeBefore != null ? getTurnBackNodes(routeBefore, graph) : Collections.emptyList();
 		final List<BlockPos> turnBackNodes = listedNodes.isEmpty() ? listedNodes : withStabling(listedNodes, from, rails);
-		if (!turnBackNodes.isEmpty()) {
-			final TurnBackSection<PathData> listed = findTurnBackSection(from, to, turnBackNodes, 0, rails, graph, useFastSpeed);
-			if (listed != null) {
-				connectingPath.addAll(listed.getDefaultWay());
+		return TurnBackWays.connection(connectingPath, turnBackNodes, () -> {
+			final List<PathData> direct = new ArrayList<>();
+			PathFinder.findPath(direct, rails, graph, Arrays.asList(from, to), null, 1, depot.cruisingAltitude, useFastSpeed);
+			return direct;
+		}, () -> getNearbyTurnBackNodes(from, rails), waysRound(from, to, rails, graph, useFastSpeed));
+	}
+
+	/**
+	 * @return the ways round each turn back node from one stop to the next, as the component asks for them
+	 */
+	TurnBackWays.Ways<BlockPos, PathData> waysRound(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		return new TurnBackWays.Ways<BlockPos, PathData>() {
+			@Override
+			public List<PathData> find(BlockPos node) {
+				final List<PathData> way = new ArrayList<>();
+				PathFinder.findPath(way, rails, graph, Arrays.asList(from, to), Collections.singletonList(Collections.singletonList(node)), 1, depot.cruisingAltitude, useFastSpeed);
+				return way;
 			}
-			return listed;
-		}
-		PathFinder.findPath(connectingPath, rails, graph, Arrays.asList(from, to), null, 1, depot.cruisingAltitude, useFastSpeed);
-		final List<BlockPos> nearbyNodes = getNearbyTurnBackNodes(from, rails);
-		if (!nearbyNodes.isEmpty()) {
-			final TurnBackSection<PathData> nearby = findTurnBackSection(from, to, nearbyNodes, 0, rails, graph, useFastSpeed);
-			if (nearby != null && (connectingPath.isEmpty() || depot.pathLength(nearby.getDefaultWay()) < depot.pathLength(connectingPath))) {
-				connectingPath.clear();
-				connectingPath.addAll(nearby.getDefaultWay());
-				return nearby;
+
+			@Override
+			public boolean sameRail(PathData track, PathData other) {
+				return track.isSameRail(other);
 			}
-		}
-		return null;
+
+			@Override
+			public void unusable(BlockPos node) {
+				failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, node.asLong());
+			}
+		};
 	}
 
 	/**
@@ -1298,21 +1286,8 @@ final class DutyPathBuilder {
 	}
 
 	TurnBackSection<PathData> findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-		final List<List<PathData>> ways = new ArrayList<>();
-		int defaultWay = -1;
-		for (final BlockPos node : nodes) {
-			final List<PathData> way = new ArrayList<>();
-			PathFinder.findPath(way, rails, graph, Arrays.asList(from, to), Collections.singletonList(Collections.singletonList(node)), 1, depot.cruisingAltitude, useFastSpeed);
-			final List<PathData> firstWay = defaultWay < 0 ? null : ways.get(defaultWay);
-			final boolean canUse = way.size() >= 2 && (firstWay == null || way.get(0).isSameRail(firstWay.get(0)) && way.get(way.size() - 1).isSameRail(firstWay.get(firstWay.size() - 1)));
-			ways.add(canUse ? way : null);
-			if (!canUse) {
-				failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, node.asLong());
-			} else if (defaultWay < 0) {
-				defaultWay = ways.size() - 1;
-			}
-		}
-		return defaultWay < 0 ? null : new TurnBackSection<>(start, ways, defaultWay);
+		// The rules are the component's (step 2c of splitting the depot)
+		return TurnBackWays.section(nodes, start, waysRound(from, to, rails, graph, useFastSpeed));
 	}
 
 	/**

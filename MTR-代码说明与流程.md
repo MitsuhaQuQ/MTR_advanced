@@ -74,6 +74,11 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.76.1 拆分车厂第 2c 步：两班次之间走哪条路、站前折返选哪个站台的规则从 `DutyPathBuilder` 原样搬进组件：
+- `transitsim.plan.TurnBackWays`：`section`（经各折返节点的走法里哪些可用、哪条是默认）与 `connection`（线路列出的优先，否则直接搜索的路与绕经附近折返线的走法比长度）。游戏侧 `findTurnBackSection`、`findConnectionTimed` 只用 `waysRound` 提供找路。
+- `transitsim.plan.FrontTurnBacks`：`order`（可折返站台的筛选与排序，种别优先）与 `section`（走法组装，至少两条才算区段）。游戏侧 `addFrontTurnBackTimed` 只判断前置条件、找轨道下标、切出通常走法并找路。
+- 组件测试 `TurnBackWaysTest` 8 项、`FrontTurnBacksTest` 7 项。验收：yel 开服导出与 0.76.0 逐字节相同；六线图完整用例。
+
 0.76.0 车厂内调车和单独出库站台（用户 2026-11-13 定方案 B，并加做"出库车从可始发站台始发"）：
 - 调车不另立规则：现有出入库路查找本来就走车厂里的轨道，车从只能收车的存车线经调车线（尾端折返线）换端、经能出车的存车线出库。六线图 1、4 号线车厂加了调车线（TestKit `Lines.shuntingNeck`）后，1 号线排班和运用路径全部找到。
 - 提示：`Depot.measureDepotWays` 量完某存车线一个首站都出不去时打日志；网页车厂面板（`sync.ts`）对 `measuredOut` 为空、`noWayOut` 非空的存车线警告"收进这里的车出不去，加调车线或查出入库规则"。`Siding.addDutyPath` 回不了本停车线时先试能出车的同池停车线（`cannotLeave`）。
