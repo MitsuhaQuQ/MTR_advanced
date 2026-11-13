@@ -13,6 +13,32 @@ HINGE = (15, 1 + Z_OFFSET)
 ASSETS = ROOT / "resources/common/normal/assets/mtr"
 
 
+# The leaf's own plane in the Blockbench models, which the door is mirrored about: the handle belongs outside the
+# platform and the push bar inside, and every model had them the other way round (user, 2026-11-14).
+LEAF_PLANE = 1
+
+
+def mirrored(element):
+    """The cube flipped front to back about the leaf's plane, faces and all."""
+    low, high = element["from"][2], element["to"][2]
+    element["from"][2], element["to"][2] = 2 * LEAF_PLANE - high, 2 * LEAF_PLANE - low
+    faces = element["faces"]
+    north, south = faces.pop("north", None), faces.pop("south", None)
+    if north is not None:
+        faces["south"] = north
+    if south is not None:
+        faces["north"] = south
+    for side in ("east", "west"):
+        if side in faces:
+            uv = faces[side]["uv"]
+            uv[0], uv[2] = uv[2], uv[0]
+    for side in ("up", "down"):
+        if side in faces:
+            uv = faces[side]["uv"]
+            uv[1], uv[3] = uv[3], uv[1]
+    return element
+
+
 def write(relative, value):
     target = ASSETS / relative
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -34,12 +60,17 @@ for name in ("platform_edge_door_low", "platform_edge_door"):
             faces[side] = {"uv": [value * (scale_u if i % 2 == 0 else scale_v) for i, value in enumerate(face["uv"])], "texture": "#0"}
             if face.get("rotation"):
                 faces[side]["rotation"] = face["rotation"]
-        element = {"from": cube["from"], "to": cube["to"], "faces": faces}
+        element = mirrored({"from": list(cube["from"]), "to": list(cube["to"]), "faces": faces})
         angles = cube.get("rotation", [0, 0, 0])
         active = [i for i, angle in enumerate(angles) if angle]
         if active:
             assert len(active) == 1 and angles[active[0]] in (-45, -22.5, 22.5, 45)
-            element["rotation"] = {"origin": cube["origin"], "axis": "xyz"[active[0]], "angle": angles[active[0]], "rescale": cube.get("rescale", False)}
+            axis = "xyz"[active[0]]
+            # Mirrored with the cube: about x or y the angle turns the other way, the origin's z moves with it
+            origin = list(cube["origin"])
+            origin[2] = 2 * LEAF_PLANE - origin[2]
+            angle = angles[active[0]] if axis == "z" else -angles[active[0]]
+            element["rotation"] = {"origin": origin, "axis": axis, "angle": angle, "rescale": cube.get("rescale", False)}
         complete.append(element)
         if active:
             # Keep the angled supports intact; they extend less than a pixel across the split.

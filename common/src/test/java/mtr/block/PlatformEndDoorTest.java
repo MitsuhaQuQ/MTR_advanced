@@ -55,6 +55,16 @@ class PlatformEndDoorTest {
 					}
 				}
 				assertTrue(jamb, name + " " + half + " has its hinge jamb");
+				// The push bar and its brackets stand on the platform's side of the leaf, the handle on the other
+				// (2026-11-14: every model had the door the wrong way round)
+				double nearest = 16, furthest = 0;
+				for (final com.google.gson.JsonElement element : closed) {
+					nearest = Math.min(nearest, element.getAsJsonObject().getAsJsonArray("from").get(2).getAsDouble());
+					furthest = Math.max(furthest, element.getAsJsonObject().getAsJsonArray("to").get(2).getAsDouble());
+				}
+				// The bar is at the top of the lower half, so only that half has anything in front of the glass
+				assertTrue(nearest < 0 || !"lower".equals(half), name + " " + half + ": the bar stands in front of the glass, not behind it (" + nearest + ")");
+				assertTrue(furthest <= 6, name + " " + half + ": nothing reaches far past the glass (" + furthest + ")");
 				// The open model is the closed one moved so the blockstate's turn, (x, z) to (16 - z, x), keeps (15, 3)
 				for (int i = 0; i < closed.size(); i++) {
 					final com.google.gson.JsonArray closedFrom = closed.get(i).getAsJsonObject().getAsJsonArray("from");

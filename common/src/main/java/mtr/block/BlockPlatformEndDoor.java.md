@@ -1,6 +1,6 @@
 # BlockPlatformEndDoor.java（本分支新增）
 
-站台端门：用对应站台门玻璃面板做成的单扇手动门（两格高）。门扇位置与同朝向的屏蔽门/安全门玻璃一致，所以放在一排屏蔽门旁边时会沿用其朝向并与之对齐；开门方向是它自己的设置（0.65.29）：向背离朝向的一侧开，或向朝向一侧开。三种样式：0 安全门（APG，上半较矮）、1 / 2 两种屏蔽门（PSD）。注册于 `common/src/main/java/mtr/Blocks.java:13`–`:15`，物品由 `ItemPSDAPGBase` 的 `PLATFORM_END_*` 类型放置；`BlockPSDTop` 会把它当作屏蔽门下方方块（`common/src/main/java/mtr/block/BlockPSDTop.java:73`）。测试：`common/src/test/java/mtr/block/PlatformEndDoorTest.java`。
+站台端门：用对应站台门玻璃面板做成的单扇手动门（两格高）。门扇位置与同朝向的屏蔽门/安全门玻璃一致，所以放在一排屏蔽门旁边时会沿用其朝向并与之对齐；开门方向是它自己的设置（0.65.29）：向背离朝向的一侧开，或向朝向一侧开。三种样式：0 安全门（APG，上半较矮）、1 / 2 两种屏蔽门（PSD）。注册于 `common/src/main/java/mtr/Blocks.java:13`–`:15`，物品由 `ItemPSDAPGBase` 的 `PLATFORM_END_*` 类型放置；`BlockPSDTop` 会把它当作屏蔽门下方方块（`common/src/main/java/mtr/block/BlockPSDTop.java:73`）。测试：`common/src/test/java/mtr/block/PlatformEndDoorTest.java`。模型由 `models/export_platform_edge_doors.py` 从 Blockbench 源导出；0.76.3 起导出时把门整扇沿门扇平面做前后镜像（推杠在站台一侧、把手在另一侧，原先两种样式都装反了），门扇位置和铰链不变。
 
 ## 类 `BlockPlatformEndDoor`（final，extends `BlockPSDAPGBase`）
 
