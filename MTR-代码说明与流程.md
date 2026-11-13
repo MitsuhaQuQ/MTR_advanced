@@ -74,6 +74,8 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.76.8 端门放下来还是朝轨道开（用户 2026-11-14，换了两版 jar 都没变）：`ItemPSDAPGBase.useOn` 是用 `defaultBlockState()` 直接 `setBlockAndUpdate` 放下端门的，**根本不走 `getStateForPlacement`**，所以 0.76.5 改在那个方法里的开门方向一直没生效，放下的门拿到的是默认状态里的 `INWARD`。`registerDefaultState` 和 `getStateForPlacement` 现在都设 `INWARD = true`（朝站台侧；放置时 `FACING` 取玩家视线，玩家站在站台上朝轨道看，所以朝向的背面就是站台）。这是**服务端**行为：方向在放置时就写进方块状态，客户端只按状态画，而版本检查只比前两位（0.76），所以只换客户端 jar 能连上但看不到修正（用户实测，服务端还是 0.76.6-server）。资源未动，`mtm_assets_version` 仍 1.0.8。
+
 0.76.6 端门开门方向与无把手样式（用户 2026-11-14）：端门放下时一律朝站台开（`getStateForPlacement` 不再按玩家站哪一侧算 `INWARD`，潜行右键仍可切换）；两个新的 Blockbench 源（去掉外侧把手）按同一套规则导出，全高无把手接替原本和样式 1 一模一样的 `platform_end_psd_2`，半高无把手是新方块 `platform_end_apg_2`（样式 3，`isAPG()` 和上半块 9 格高都认它）。四种语言的名称、渲染层、物品与方块注册都已补齐。`PlatformEndDoorTest` 覆盖四套模型和四种样式。资源改动所以 `mtm_assets_version` 升到 1.0.8。
 
 0.76.4 过夜车堵住折返轨（用户 2026-11-14 在自己服务器上发现，那辆车还是站前折返、根本用不到折返轨）：折返轨的预约（`TrainServer.turnBackRails`）只在列车离开线路或车尾越过预约终点时释放，而在线过夜的车两个条件都不满足，于是整夜占着那条轨，别的车折返不了。`TrainService.update` 里，列车停在最后一站过夜（`isStayingOnLine()`）时放掉预约（`vehicle.reserveTurnBack` 传空）；它再次开行时会重新选折返方式并重新预约。组件测试 `DutyRunTest.aTrainStayingOvernightKeepsNoTurnBackRail`（在途中保留、到站过夜放掉）。

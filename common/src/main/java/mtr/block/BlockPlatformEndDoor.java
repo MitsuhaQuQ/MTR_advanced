@@ -38,7 +38,7 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 
 	public BlockPlatformEndDoor(int style) {
 		this.style = style;
-		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(HALF, DoubleBlockHalf.LOWER).setValue(SIDE_EXTENDED, EnumSide.SINGLE).setValue(OPEN, false).setValue(INWARD, false));
+		registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH).setValue(HALF, DoubleBlockHalf.LOWER).setValue(SIDE_EXTENDED, EnumSide.SINGLE).setValue(OPEN, false).setValue(INWARD, true));
 	}
 
 	@Override protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) { builder.add(FACING, HALF, SIDE_EXTENDED, OPEN, INWARD); }
@@ -46,7 +46,8 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 	/**
 	 * Beside a screen door or gate panel along its row, the gate faces the way it does, so its leaf is in line with the
 	 * glass. It swings towards the platform, whichever side it is put down from (user, 2026-11-14, who tried both ways
-	 * round in the game), which sneaking and right clicking turns round.
+	 * round in the game), which sneaking and right clicking turns round. {@link mtr.item.ItemPSDAPGBase} puts the block
+	 * down from its default state rather than through here, so that state carries the same side.
 	 */
 	@Override
 	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
@@ -54,7 +55,7 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 		if (state == null) return null;
 		final Direction looking = ctx.getHorizontalDirection();
 		final Direction facing = rowFacing(ctx.getLevel(), ctx.getClickedPos(), looking);
-		return state.setValue(FACING, facing).setValue(INWARD, false);
+		return state.setValue(FACING, facing).setValue(INWARD, true);
 	}
 
 	/**
