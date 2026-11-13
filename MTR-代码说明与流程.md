@@ -74,6 +74,10 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.76.3 站台端门装反了（用户 2026-11-14：推杠应在站台一侧、把手在另一侧，两种样式都反）：`models/export_platform_edge_doors.py` 在写出前把每个方块沿门扇平面（Blockbench 模型的 z = 1）做镜像（前后面互换、东西/上下面的 UV 对应翻转、绕 x 或 y 的旋转角取反、旋转原点随之移动），重新导出两套共 14 个模型。门扇仍在 z 2..4 与玻璃齐平，铰链在镜像面上所以开门几何和方块状态都不用动，Java 里的碰撞形状也不变。`PlatformEndDoorTest` 新增断言：下半块必须有伸到玻璃之前（z < 0）的部件，且任何部件都不得伸过 z 6。
+
+0.76.2 装了 Sodium 时不烘焙内置车型（用户 2026-11-13 在自己服务器上发现：车体整个不显示，只剩底架和转向架，上线运行的车才有，停在车厂的没有）：`BakedTrainModels.WITH_SODIUM` 为真时 `draw` 直接返回 false，照旧逐方块画。查证过程（每步都有日志）：采集的几何正确（每节 9528 顶点 / 4764 面）、VAO 和索引正常、每帧都进调度器、组成 4 批 14 次绘制、着色器和贴图都对、绘制确实下达；模型视图矩阵是单位阵但有无 Sodium 都一样；把绘制提前到装饰物之前、改用资源包模型的材质和上传（`setRenderType` + `ModelManager.uploadVertArrays`）都没有变化；同一帧里走同一条 GPU 路径的轨道正常显示。只装 Sodium 一个就能复现，Indium、Iris、Voxy 都无关。真正的原因（Sodium 留下的某个 GL 状态）待查，见测试清单 U454。TestKit 的六线地图新增 `train`/`baseType` 参数，可让各存车线跑指定车型（复现用 R211）。
+
 0.76.1 拆分车厂第 2c 步：两班次之间走哪条路、站前折返选哪个站台的规则从 `DutyPathBuilder` 原样搬进组件：
 - `transitsim.plan.TurnBackWays`：`section`（经各折返节点的走法里哪些可用、哪条是默认）与 `connection`（线路列出的优先，否则直接搜索的路与绕经附近折返线的走法比长度）。游戏侧 `findTurnBackSection`、`findConnectionTimed` 只用 `waysRound` 提供找路。
 - `transitsim.plan.FrontTurnBacks`：`order`（可折返站台的筛选与排序，种别优先）与 `section`（走法组装，至少两条才算区段）。游戏侧 `addFrontTurnBackTimed` 只判断前置条件、找轨道下标、切出通常走法并找路。

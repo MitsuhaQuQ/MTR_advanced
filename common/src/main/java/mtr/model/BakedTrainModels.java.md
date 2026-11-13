@@ -13,7 +13,7 @@ MTR 自带车型（`ModelSimpleTrainBase` 的子类）的烘焙缓冲（0.73.5�
 - `clear`：关闭所有缓冲并清空；ANTE `CustomResources.reset`（资源重载）调用。
 
 ### `static boolean draw(ModelTrainBase model, PoseStack matrices, ResourceLocation texture, int light, float doorLeftX, float doorRightX, float doorLeftZ, float doorRightZ, int car, int cars, boolean head1IsFront, boolean lightsOn, boolean isTranslucent, boolean renderDetails)`
-- 条件：`inWorld`、自带车型、四个门值都是 0、`ClientConfig.bakeBuiltInTrains`、`useRenderOptimization()`、着色器就绪；不满足返回 false（照旧画）。
+- 条件：`inWorld`、自带车型、四个门值都是 0、`ClientConfig.bakeBuiltInTrains`、`useRenderOptimization()`、着色器就绪、**没装 Sodium**（`WITH_SODIUM`，0.76.2：装了 Sodium 时这些缓冲画不出任何东西，原因未明，见代码注释与测试清单 U454）；不满足返回 false（照旧画）。
 - 半透明一遍：返回 true 不画（已在缓冲里）。
 - 否则按 `Key`（贴图、1 端是否车头、2 端是否车头、车头朝向、近处细节、车灯）取缓冲，没有就 `capture`；出错记 `FAILED` 并写日志。入队 `MainClient.drawScheduler.enqueue(缓冲, 当前姿态（`baseTransform` 之前）, 世界光照)`。
 - 返回：是否已处理（调用者据此跳过各阶段的逐个方块绘制）。

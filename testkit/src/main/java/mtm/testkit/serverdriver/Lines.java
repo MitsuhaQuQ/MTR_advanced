@@ -79,7 +79,11 @@ public final class Lines {
 	private Lines() {
 	}
 
-	public static JsonObject build(ServerLevel level) {
+	/**
+	 * @param body {@code train} and {@code baseType}: the vehicle every siding of the six lines runs, for looking at one
+	 *             kind of train in service (2026-11-13); by default each siding keeps the one it picks for its length
+	 */
+	public static JsonObject build(ServerLevel level, com.google.gson.JsonObject body) {
 		final RailwayData railwayData = RailwayData.getInstance(level);
 		if (railwayData == null) {
 			throw new IllegalStateException("no railway data");
@@ -94,6 +98,13 @@ public final class Lines {
 			lines.add(new Builder(level, railwayData, layout, (layout - 1) * SPACING).build());
 		}
 		result.add("lines", lines);
+		if (body != null && body.has("train")) {
+			final String train = body.get("train").getAsString();
+			final String baseType = body.has("baseType") ? body.get("baseType").getAsString() : "train_24_2";
+			railwayData.sidings.forEach(siding -> siding.setTrainIdAndBaseType(train, baseType, packet -> {
+			}));
+			result.addProperty("train", train);
+		}
 		railwayData.dataCache.sync();
 		return result;
 	}
