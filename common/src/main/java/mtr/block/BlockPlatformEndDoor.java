@@ -45,8 +45,8 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 
 	/**
 	 * Beside a screen door or gate panel along its row, the gate faces the way it does, so its leaf is in line with the
-	 * glass. It swings out towards the platform, whichever side it is put down from (user, 2026-11-14), which sneaking
-	 * and right clicking turns round.
+	 * glass. It swings towards the platform, whichever side it is put down from (user, 2026-11-14, who tried both ways
+	 * round in the game), which sneaking and right clicking turns round.
 	 */
 	@Override
 	public BlockState getStateForPlacement(BlockPlaceContext ctx) {

@@ -413,3 +413,50 @@
 - 改动：`RouteMapGenerator.generateLoopMap`。站台只停一条环线、线路牌不是竖排时画成闭合的环；`MapRoute.loopStationIds`；站名和换乘的画法提出到 `drawStationWithText`、`getInterchanges`（直线画法不变）。
 - 已验证：只带这次改动在 HEAD 上构建通过，transit-sim 528 项、common 368 项测试全过。
 - 未验证：没进游戏看过，见测试清单 U332。要和其他改动一起做合并构建、复制 jar。
+
+## 交接：端门刷子切换左右开（2026-11-14，未开始）
+
+这一条是给下一次会话的交接说明，做完后删掉本节。
+
+### 现在的状态
+
+- 已推送：`4b957214`（`mtm_version=0.76.6`、`mtm_assets_version=1.0.8`），`ante-merge` 和 `main` 同一提交。
+- 工作区未提交：`gradle.properties` 版本号已跳到 **0.76.8**（用户 2026-11-14 定：下次改动直接用这个号，0.76.7 作废），以及 `BlockPlatformEndDoor.java` 两行注释修正。两者跟着刷子功能一起提交即可。
+- 测试 jar 在 `P:/mtr-ante/test-jars/merged`（Logic 0.76.7 + Assets 1.0.8，是用户当前在玩的那版）。
+
+### 端门已经做完的部分（0.76.3–0.76.6）
+
+1. 模型沿门扇平面前后镜像，推杠在站台侧、把手在另一侧（`models/export_platform_edge_doors.py` 里的 `mirrored`）。
+2. 放下时开门方向一律朝站台（`getStateForPlacement` 设 `INWARD = false`），潜行右键切换。用户实测确认这个默认值是对的；之前看起来不对，是因为**旧门的方向在放置时就定死了**，换 jar 不会改已放的门。
+3. 原本和样式 1 完全相同的 `platform_end_psd_2` 改成「全高无把手」，新增 `platform_end_apg_2`（样式 3）作「半高无把手」，源模型是用户画的两个 bbmodel。
+4. `PlatformEndDoorTest` 覆盖四套模型、四种样式，并断言推杠在玻璃之前（`z < 0`）。
+
+### 要做的：刷子切换左右开
+
+用户要的是**整扇门左右镜像**（铰链换到另一端），**开门方向不变**。
+
+- Minecraft 的 blockstate 只能旋转、不能镜像，所以必须另出一组模型：四种样式 ×（关门 / 外开 / 内开）× 上下半块 = 24 个文件。
+- 在 `export_platform_edge_doors.py` 里加 x 镜像，和已有的 `mirrored`（z 镜像）同构：
+  - `from.x`/`to.x` 换成 `16 - to.x` / `16 - from.x`；
+  - `east` 与 `west` 面互换；`north`、`south`、`up`、`down` 面的 UV 水平翻转（交换 `uv[0]` 和 `uv[2]`）；
+  - 绕 **y 或 z** 轴的旋转角取反（绕 x 的不变，和 z 镜像时相反），旋转原点的 x 一起镜像。
+- **最容易出错的一步**：镜像后铰链从 x 15 变成 x 1，而 `_open` / `_open_in` 的平移量是按铰链算的（脚本里 `HINGE` 和那两条注释写了推导）。镜像门应当朝相反方向转，所以 blockstate 里那两个 y 角（90 / 270）大概率要对调。动手前先用数值断言验证：镜像门开门后，铰链那一格的位置应当和未镜像门的另一端对称。
+- 方块侧：`BlockPlatformEndDoor` 加一个布尔属性（例如 `MIRRORED`），`createBlockStateDefinition` 里登记，`outline(...)` 的 x 范围跟着镜像（现在写死 14..16，镜像后是 0..2）。
+- 刷子：照 `cn.zbx1425.mtrsteamloco.block.BlockEyeCandy.use` 的写法判断主手是不是 `mtr.Items.BRUSH`，是就切换 `MIRRORED` 并同步上下两半（`use` 里已有同步两半的现成代码）。
+- 存档：只是新增一个属性，旧门读出来是默认值，不影响。
+- 收尾：`PlatformEndDoorTest` 加镜像断言；升 `mtm_version` 和 `mtm_assets_version`（资源变了，必看 CLAUDE.md 那条规矩）；测试清单加一项游戏内测试。
+
+### 这次会话还欠的其它事（按用户给的顺序）
+
+1. **晚点管理**（方案已和用户定好，代码要重做）：车停在站台准备接下一段时，若该段计划发车已过去超过 10 分钟，就改挂同线路最近一班还赶得上的班次，**原地等**到那一班；被跳过的班次记为未运行。
+   - 已试过一版：在 `TrainService.startDutySegment` 里改写 `tripMillis`，但它同时影响了重启后的「对号入座」路径，`DutyPlacementTest` 和 `DutyRunTest.linesUpWithItsDutyAfterARestart` 挂掉，已撤回。
+   - 正确做法：给 `startDutySegment` 加一个「允许改挂」的开关，只在 `onStopReached` 那个调用点传 true，`alignDuty`/放置/接班那几处保持原样。
+   - 物理约束：列车不能瞬移，所以只能改「跑哪一班」，不能跳过轨道；后面的班次若从别处始发就没法改挂，照旧晚点跑完。
+2. **网页调度台「解除扣车」被已发送覆盖**，要刷新页面才生效（乐观更新被旧快照盖掉）。
+3. **网页示意图放大后自己跳回去**。
+4. **Sodium 下烘焙失效的真正原因**（U454）：0.76.2 已用「装了 Sodium 就不烘焙」兜住。已排除：几何采集、上传、VAO、入队、组批、绘制调用、绘制顺序、模型视图矩阵，且同帧的轨道走同一条路径正常。剩下是 Sodium 留下的某个 GL 状态，需要逐项对比或上 GL 调试回调。
+5. **拆分车厂第 2d 步**：把整份运用路径的组装搬进组件（2a–2c 已完成并推送）。
+
+### 待用户在游戏里确认的测试项
+
+U449–U459（开服运用稳定、站前折返排班、回不了自己的存车线、只能收车的存车线提示、单独出库站台始发、Sodium 下车辆正常、端门装向、端门朝站台开、四种端门样式、过夜车不占折返轨）。
