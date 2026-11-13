@@ -77,6 +77,12 @@ public final class DepotLegs {
 	 * without stopping): a node of that rail ({@link net.minecraft.core.BlockPos#asLong}), for the platform there.
 	 */
 	public final Map<Long, Long> outPassNodes = new TreeMap<>();
+	/**
+	 * First stop → the platform of the same station the route lists to start at instead, where the siding has a way out
+	 * to that one and none to the first stop (2026-11-13, 单独出库站台); the way out to the first stop is timed to it.
+	 * Measured with each path generation, neither saved nor sent.
+	 */
+	public final Map<Long, Long> startVia = new TreeMap<>();
 
 	public DepotLegs(long entrancePlatform, Map<Long, Long> outMillis, Map<Long, Long> backMillis) {
 		this(entrancePlatform, outMillis, backMillis, Collections.emptySet(), Collections.emptySet());

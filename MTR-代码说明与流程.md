@@ -74,6 +74,14 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.76.0 车厂内调车和单独出库站台（用户 2026-11-13 定方案 B，并加做"出库车从可始发站台始发"）：
+- 调车不另立规则：现有出入库路查找本来就走车厂里的轨道，车从只能收车的存车线经调车线（尾端折返线）换端、经能出车的存车线出库。六线图 1、4 号线车厂加了调车线（TestKit `Lines.shuntingNeck`）后，1 号线排班和运用路径全部找到。
+- 提示：`Depot.measureDepotWays` 量完某存车线一个首站都出不去时打日志；网页车厂面板（`sync.ts`）对 `measuredOut` 为空、`noWayOut` 非空的存车线警告"收进这里的车出不去，加调车线或查出入库规则"。`Siding.addDutyPath` 回不了本停车线时先试能出车的同池停车线（`cannotLeave`）。
+- 单独出库站台：`measureDepotWays` 到某首站没有出库路时，试从该首站开始的线路列出的同站可始发站台（`Route.startPlatforms`，`startPlatformsOf`），有路的记入 `DepotLegs.startVia`，首站出库时间按到它算（规划因此能派车）；`Siding.DepotWays.startAt` 交给找运用路径，`DutyPathBuilder.getDutyPlan` 让出库第一段从那个站台开始、在轨道上找到第二站；组件 `StopTimes.matchRouteStops` 把停在可始发站台的停站当作线路首站（设定时刻、乘客信息照首站）。
+- 版本 0.76.0：班次匹配规则在组件里变了（客户端和服务器都用）。
+- 导出工具修正：`Depot.dumpDutyPaths` 改在服务器线程上、存车线装上新路径后写。以前读到的可能是上一次找路的路径（黄线一个车厂在 0.75.4 起找路慢了约 50 ms，导出就变了）；修后同一版本两次开服导出逐字节相同，但不能和以前的导出比。三个版本（0.75.3、0.75.4、0.76.0）yel 的规划输入（`-Dmtr.debugPlanInputs`）排序后完全相同。
+- 验收：组件 639、common 476 项测试全过（新增 `DutyRunTest` 一项）；网页测试 144 项（新增一项）；六线图 1、4 号线车厂路径和排班、最快时刻和冲突检查四项通过。
+
 0.75.4 查六线图 1、4 号线（站前折返）排不出（拆分车厂第 2c 步前）：
 - 折返用时：`TurnTimes.Host.turnsInto`（游戏用 `DutyPathBuilder.findFrontWay`）判断线路列车能否经站前过渡线改停在下一条线路的首站台，能就记这对站台 0（只换端）。原来只有一条 970 格的绕行被判为"不算换站台"，规划认为没有车能折返到下行班次。
 - 回库：`Siding.addDutyPath` 在本停车线回不去时，通常路径改回同池第一条能回去的停车线；组件 `TrainService.chooseDutyReturn` 按运用路径实际结束的存车线判断能否回自己的（`getEndSiding`），回不去就换到回那条的路径。

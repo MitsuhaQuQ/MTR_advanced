@@ -128,6 +128,9 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     depot.sidings.forEach((siding: any) => {
       const sidingName = shortName(siding.name) || tr("存车线")
       const why = (reasons: any, platformId: string) => (reasons && reasons[platformId] ? tr("（原因：{0}）", reasons[platformId]) : "")
+      // No way out to any first stop: trains taken back into it can't leave (2026-11-13, 车厂内调车)
+      const cannotLeave = Array.isArray(siding.measuredOut) && !siding.measuredOut.length && (siding.noWayOut || []).length > 0
+      if (cannotLeave) problems.push({ level: "warn", text: tr("车厂{0}：{1} 到哪个首站都没有出库的路，收进这里的车出不去；在车厂里加一条通到能出车的存车线的轨道（调车线），或检查出入库规则", name, sidingName) })
       ;(siding.noWayOut || []).forEach((platformId: string) => problems.push({ level: "warn", text: tr("车厂{0}：{1} 到 {2} 没有出库的路，这条存车线不从这里出车", name, sidingName, platformText(data, platformId)) + why(siding.noWayOutWhy, platformId) }))
       ;(siding.noWayBack || []).forEach((platformId: string) => problems.push({ level: "warn", text: tr("车厂{0}：从 {2} 回不到 {1}，车改回车池里别的存车线", name, sidingName, platformText(data, platformId)) + why(siding.noWayBackWhy, platformId) }))
       const firsts = [...new Set((depot.routes || []).map((id: string) => data.routeById.get(id)).filter(Boolean).filter((r: any) => !(siding.routes || []).length || siding.routes.includes(r.id)).map((r: any) => r.stops[0] && r.stops[0].platformId).filter(Boolean))] as string[]

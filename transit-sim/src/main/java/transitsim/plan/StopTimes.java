@@ -618,6 +618,11 @@ public class StopTimes {
 						matchedStop = expected;
 						nextRouteStop++;
 					}
+				} else if (expected.platformId != stop.platformId && expected.departureIndex == 0 && expected.departureRoute.getStartPlatforms().contains(stop.platformId)) {
+					// A train out of the depot starting the route at another platform of its first stop's station that the
+					// route lists (2026-11-13, 单独出库站台) is at the route's first stop there
+					matchedStop = expected;
+					nextRouteStop++;
 				}
 			}
 			for (int i = nextRouteStop; matchedStop == null && stop.platformId != 0 && i < routeStops.size(); i++) {

@@ -174,6 +174,32 @@ class DutyRunTest {
 		assertEquals(MONDAY + 8 * HOUR + 22 * MINUTE, train.service.getPlannedArrivalMillis(5));
 	}
 
+	@Test
+	void aDutyOutOfTheDepotStartingAtAnotherPlatformOfTheFirstStationRunsTheRouteFromThere() {
+		// Route 1 starts at platform 1, and lists platform 8 of that station to start at: the siding's way out reaches only
+		// that one (2026-11-13, 单独出库站台)
+		final TestRoute route = routes.get(1L);
+		route.startPlatforms.add(8L);
+		// A set time at the first stop, to tell the stop there is the route's
+		route.platformIds.get(0).arrival = 5;
+		setSlots(day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)));
+		final List<TestTrack> path = makePath(0, 8, 2, 3, 0);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, path, stop(1, 8, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final FakeTrain train = newTrain(path);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+
+		// At platform 8 it is at route 1's first stop, which it leaves on time
+		train.nextStoppingIndex = 1;
+		now = MONDAY + 7 * HOUR + 59 * MINUTE;
+		train.service.onStopReached();
+		assertEquals(1, train.service.getTripRouteId());
+		assertEquals(MONDAY + 8 * HOUR + 10 * SECOND, train.service.getDutyDepartureMillis());
+		assertEquals(MONDAY + 8 * HOUR + 2 * MINUTE, train.service.getPlannedArrivalMillis(2));
+		// Its stop there is the route's first stop, with that stop's set times
+		assertEquals(5, tripPath.stopTimes.getPlan(Collections.singletonList(route), route.timetable, 1, 1, 0, -1).setArrivalSeconds);
+	}
+
 	/**
 	 * Route 1 to platform 3, then route 2 from 08:20 at platform 4, turning back either at platform 9 of the station (the
 	 * usual way, 站前) or on a turn back rail where the train stops (站后): both two rails from platform 3 to platform 4.

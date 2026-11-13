@@ -35,10 +35,14 @@
 - `MAX_ROUTE_IDS = 1024`、`MAX_TRAINS = 999`、`MAX_UNLIMITED_TRAINS = 4096`。
 - 键：`rail_length`、`trip_paths`、`turn_links`（每项 `from`、`to`、`path`）、`turn_returns`（`platform`、`path`）、`way_outs`（`platform`、`path`）、`train_type`、`train_custom_id`、`unlimited_trains`、`max_trains`、`route_ids`、`fleet_size`、`recorded_depot_legs`、`siding_operation`（只作 update 键：线路与车队一起设置）、`is_manual`、`max_manual_speed`、`path`、`repeat_index_1`、`repeat_index_2`、`loop_join_index`、`trains`、`shed`、`duty_ledger`、`acceleration_constant`、`deceleration_constant`、`max_speed`，以及 `TurnBacks` 自己的键。
 
+### `boolean cannotLeave()`（0.76.0）
+记录的出入库腿里一个首站都出不去（`outMillis` 空、`unreachableOut` 非空）。
+
 ## interface DepotWays
 按区段、按线路运行站台的方向找到的停车线到站台的出库与回库路（第 4 轮第 3 步）；未设时在轨道上照旧搜索（草稿、测试）。
 - `List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd)`：`platformEnd` 为线路运行该站台所朝的节点或 0。返回轨道（无路为空），null 表示改为在轨道上搜索。
 - `default find(..., long pathId)`：`pathId` 为运用所走的车厂命名回送路径（运用补完第 3 步），0 为按规则；默认忽略。
+- `default long startAt(Siding siding, long firstPlatformId)`（0.76.0）：该停车线的车出库后从哪个站台开始线路：线路首站，或停车线只能到达的、线路列出的同站可始发站台（单独出库站台，`DepotLegs.startVia`）；默认首站。
 - 实现/调用者：`Depot.java:1237`、`DepotWayPreview.java:100`。
 
 ### 构造函数
@@ -140,7 +144,7 @@
 ### `private boolean addDutyPath(Map<String, TripPath<PathData>> tempTripPaths, DutyPlan<PathData, SavedRailBase> dutyPlan, rails, graph, cruisingAltitude, useFastSpeed, List<Siding> poolSidings, Map<String, List<PathData>> returnTails, List<TurnBackPoint> dutyPoints, int firstDutyPoint)`
 - 作用：本停车线一个运用的路径（设计文档 6.12、E2）：出库到首站（除非在线过夜起步；优先 `DEPOT_WAYS`，按线路运行首站的方向与命名路径，第 4 轮；否则搜索）、各段、回停车线（除非留在线上）。每个可多路折返的地方成为停车线自己的折返点。生成通常路径、回同池其他停车线的路径（`TripPath.getReturnKey`）、以及每个折返点的其他走法（`TripPath.getTurnBackKey`，回本停车线）。
 - 参数：`dutyPoints` 为目前的运用折返点（追加），null 只给每处通常走法（草稿）；`firstDutyPoint` 为第一个运用折返点在停车线所有点中的编号。
-- 本停车线回不去时（0.75.4）：通常路径改为回同池第一条能回去的停车线（列车到末站时 `TrainService.chooseDutyReturn` 换到回那条的路径），不再整份失败；六线图 1、4 号线的车从一条存车线出、从末站只能回另一条。
+- 本停车线回不去时（0.75.4）：通常路径改为回同池第一条能回去的停车线（0.76.0 起先试能出车的，`cannotLeave`）（列车到末站时 `TrainService.chooseDutyReturn` 换到回那条的路径），不再整份失败；六线图 1、4 号线的车从一条存车线出、从末站只能回另一条。
 - `-Dmtr.debugDutyPaths=true` 时打印失败原因（没有出库路到哪个站台、从哪个站台回不到本停车线和同池哪些停车线）。
 - 返回：任一部分找不到为 false（并在非草稿时记入 `foundNoWayOut`/`foundNoWayBack`）。
 

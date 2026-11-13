@@ -21,6 +21,10 @@ class TestRoute implements PlanRoute {
 	 * See {@link PlanRoute#getTerminalPlatforms}.
 	 */
 	final List<Long> terminalPlatforms = new ArrayList<>();
+	/**
+	 * See {@link PlanRoute#getStartPlatforms}.
+	 */
+	final List<Long> startPlatforms = new ArrayList<>();
 
 	TestRoute(long id, long... platformIds) {
 		this.id = id;
@@ -60,6 +64,11 @@ class TestRoute implements PlanRoute {
 	@Override
 	public List<Long> getTerminalPlatforms() {
 		return terminalPlatforms;
+	}
+
+	@Override
+	public List<Long> getStartPlatforms() {
+		return startPlatforms;
 	}
 
 	static class Stop implements PlanStop {

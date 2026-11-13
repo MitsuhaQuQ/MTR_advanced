@@ -105,6 +105,15 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		default List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd, long pathId) {
 			return find(from, to, out, platformEnd);
 		}
+
+		/**
+		 * @return the platform a train of the siding starts a route at, out of the depot: the route's first stop, or another
+		 * platform of its station the route lists to start at, where the siding has a way out only to that one
+		 * (2026-11-13, 单独出库站台)
+		 */
+		default long startAt(Siding siding, long firstPlatformId) {
+			return firstPlatformId;
+		}
 	}
 
 	public static final ThreadLocal<DepotWays> DEPOT_WAYS = new ThreadLocal<>();
@@ -1349,7 +1358,10 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		// changes to that siding's way back at its last stop (TrainService.chooseDutyReturn; 2026-11-13, the six-line test's
 		// front turn-back lines, whose trains leave from one siding and come back from the last stop into another)
 		if (!dutyPlan.staysOnLine && pathToDepot == null) {
-			for (final Siding poolSiding : poolSidings) {
+			// A siding trains can leave from first, so they aren't taken where they can't get out again (2026-11-13)
+			final List<Siding> byLeaving = new ArrayList<>(poolSidings);
+			byLeaving.sort(Comparator.comparing(Siding::cannotLeave));
+			for (final Siding poolSiding : byLeaving) {
 				pathToDepot = poolSiding == this ? null : getReturnTail(dutyPlan, poolSiding, rails, graph, cruisingAltitude, useFastSpeed, returnTails);
 				if (pathToDepot != null) {
 					break;
@@ -1517,6 +1529,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 			return stops;
 		}
+	}
+
+	/**
+	 * @return whether the siding was measured to have no way out to any of its first stops
+	 */
+	boolean cannotLeave() {
+		final DepotLegs recorded = getRecordedLegs();
+		return recorded.outMillis.isEmpty() && !recorded.unreachableOut.isEmpty();
 	}
 
 	/**

@@ -62,6 +62,18 @@ describe("syncProblems", () => {
     expect(texts.some(text => text.includes("没有出库的路") && text.includes("（原因：找到的路只能逆着本线站台 地税湖 3 走）"))).toBe(true)
     expect(texts.some(text => text.includes("回不到") && text.includes("原因"))).toBe(false)
   })
+  it("says a siding no train can leave keeps the trains taken back into it (2026-11-13)", () => {
+    const data = troubledData()
+    const siding = data.depots[0].sidings[0]
+    siding.noWayOut = ["1000"]
+    siding.measuredOut = []
+    const model = buildModel(data)
+    const texts = syncProblems("ok", model, fullDraft(model)).map(p => p.text)
+    expect(texts.some(text => text.includes("到哪个首站都没有出库的路") && text.includes("调车线"))).toBe(true)
+    siding.measuredOut = ["1001"]
+    const measured = buildModel(data)
+    expect(syncProblems("ok", measured, fullDraft(measured)).some(p => p.text.includes("到哪个首站都没有出库的路"))).toBe(false)
+  })
   it("says only the connection without data", () => {
     expect(syncProblems("key", null, emptyDraft()).map(p => p.text)).toEqual(["页面的链接已经失效"])
   })

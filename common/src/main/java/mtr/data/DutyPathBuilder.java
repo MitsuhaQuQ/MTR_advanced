@@ -445,7 +445,7 @@ final class DutyPathBuilder {
 						continue;
 					}
 					final DepotDuties.DayDuty day = slots.get(i).getDuty(weekday);
-					final DutyPlan<PathData, SavedRailBase> dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, rails, graph, useFastSpeed);
+					final DutyPlan<PathData, SavedRailBase> dutyPlan = getDutyPlan(key, day.segments, weekday, DutyShapes.getOvernightSlot(slots, i, weekday) >= 0, day.stayOnLine, siding, rails, graph, useFastSpeed);
 					if (dutyPlan == null) {
 						failure = new PathFailure(PathFailure.Type.DUTY, 0);
 						failed.accept(key);
@@ -480,7 +480,7 @@ final class DutyPathBuilder {
 	 *
 	 * @return the plan, or null if a part of it can't be found
 	 */
-	DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+	DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Siding siding, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
 		final List<PathData> body = new transitsim.plan.JoinedPath<>();
 		final Map<String, List<PathData>> segmentTemplates = new HashMap<>();
 		final Set<Integer> indexBoundaries = new TreeSet<>();
@@ -527,8 +527,22 @@ final class DutyPathBuilder {
 				stopSetting.dwellOverride = routePlatform.dwellOverride;
 				stopSettings.add(stopSetting);
 			}
-			final RoutePaths.RoutePath ownPath = usesRoutePaths() ? routeSearch.get(route, dataCache) : null;
-			final String templateKey = route.id + ":" + firstStop + ":" + lastStop + ":" + route.speedLimit + ":" + Arrays.toString(pass);
+			// Out of the depot, a train may start at another platform of the first stop's station that the route lists, where
+			// its siding has a way out only to that one (2026-11-13, 单独出库站台): the way from there to the second stop is found
+			// rather than the route's own
+			final Siding.DepotWays depotWays = Siding.DEPOT_WAYS.get();
+			final long startId = k == 0 && !startsOnLine && firstStop == 0 && siding != null && depotWays != null ? depotWays.startAt(siding, platforms.get(0).id) : platforms.get(0).id;
+			final Platform startPlatform = startId == platforms.get(0).id ? null : dataCache.platformIdMap.get(startId);
+			if (startPlatform != null) {
+				platforms.set(0, startPlatform);
+				waypoints.set(0, Collections.emptyList());
+				final Route.RoutePlatform startSetting = new Route.RoutePlatform(startId);
+				startSetting.pass = stopSettings.get(0).pass;
+				startSetting.dwellOverride = stopSettings.get(0).dwellOverride;
+				stopSettings.set(0, startSetting);
+			}
+			final RoutePaths.RoutePath ownPath = usesRoutePaths() && startPlatform == null ? routeSearch.get(route, dataCache) : null;
+			final String templateKey = route.id + ":" + firstStop + ":" + lastStop + ":" + route.speedLimit + ":" + Arrays.toString(pass) + (startPlatform == null ? "" : ":" + startId);
 			List<PathData> template = segmentTemplates.get(templateKey);
 			if (template == null) {
 				template = new ArrayList<>();

@@ -140,8 +140,12 @@
 
 ### `private static Map<Long, DepotLegs> measureDepotWays(Depot self, Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails)`
 - 作用（第 4 轮第 3 步）：在区段上、按线路运行站台的方向找停车线到首站与从末站回来的路，并按停车线车辆计时。每条停车线按其所属车厂的规则（运用补完第 2 步；不在任何车厂区域内的单元停车线按测量的车厂）。回库到同车厂同池最近的停车线（2026-11-08 用户决定）；回库时间加上末站停站时间。记录无路的站台及原因（并打印），出库路在转入站台前经过的另一站台（`outPasses`）。区段未就绪而未测量的站台保留原值。
+- 0.76.0：到某首站没有出库路时，试从首站开始的线路列出的同站可始发站台（`startPlatformsOf`，按列出顺序），第一个有路的记入 `startVia`，首站出库时间按到它算；一个首站都出不去的停车线在日志说"has no way out to any first stop"（收进来的车出不去，要在车厂里加调车线）。
 - 参数：`self` 为进行测量的车厂。
 - 返回：按停车线的 `DepotLegs`。
+
+### `private static List<Long> startPlatformsOf(Collection<Route> routes, long firstPlatformId, DataCache dataCache)`（0.76.0）
+从该首站开始的线路列出的、同一车站的可始发站台，按列出顺序。
 
 ### `private static boolean sameWays(DepotLegs, DepotLegs)` / `sameReasons(...)` / `describeWays(...)`
 - 比较出/回库时间、不可达、原因、经过站台；`describeWays` 为计划缓存键的一部分。
@@ -298,4 +302,4 @@
 
 ## 寻路计时和路径导出（2026-11-13）
 - `generateMainRoute` 结束时的 `Finished path generation` 一行带上分段用时：总计、量折返用时、找出入库路、规划单元排运用（planned / partly planned / kept / shared）、拼运用路径及路径条数。yel 世界开服 13 个车厂：每个 3–912 毫秒，排运用最多 771 毫秒，拼运用路径最多 125 毫秒。
-- `private dumpDutyPaths(List<DutyPathBuilder>, turnTimes, measuredWays)`：`-Dmtr.dumpDutyPaths=<文件夹>` 时写 `depot-<id>.txt`（折返用时、出入库用时和不可达、每条存车线每条运用路径的键、分段起点、出库用时、总用时、轨道和停站），排好序，两次构建可逐行比较；拆分车厂每一步都用它验收。
+- `private dumpDutyPaths(List<DutyPathBuilder>, turnTimes, measuredWays)`：`-Dmtr.dumpDutyPaths=<文件夹>` 时写 `depot-<id>.txt`（折返用时、出入库用时和不可达、每条存车线每条运用路径的键、分段起点、出库用时、总用时、轨道和停站），排好序，两次构建可逐行比较；拆分车厂每一步都用它验收。0.76.0 起在服务器线程上、存车线装上新路径之后才写（以前在找路线程上写，读到的可能是上一次找路的路径，取决于这次找路花了多久；所以 0.76.0 之前的导出不能和之后的比）。

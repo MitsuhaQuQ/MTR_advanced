@@ -1,6 +1,6 @@
 # StopTimes.java
 
-一条路径上列车以最快速度到达/离开每个停站的时间，以及由此按路线时刻表算出的计划时间（`getPlan`）。宿主（或 `PathTimes.curveTimes`）在计时时用 `add` 逐站填入；之后由 `TripPath` 设置路线截断/加入信息（包内字段），列车运行时向它查询计划（`transitsim.sim.TrainService`、游戏侧 `PidsSchedules`），冲突检查从中取折返点（`getTurnBacks`），时刻表界面从中取最快时间（`getFastestTimes*`）。处理的特殊情况：环线中途加入（join）、行程末尾环线的中途加入（tail join）、中途加入/离开的路线（entry/cut）、运用路径按段（D4）的截断与加入、站前折返。
+一条路径上列车以最快速度到达/离开每个停站的时间，以及由此按路线时刻表算出的计划时间（`getPlan`）。宿主（或 `PathTimes.curveTimes`）在计时时用 `add` 逐站填入；之后由 `TripPath` 设置路线截断/加入信息（包内字段），列车运行时向它查询计划（`transitsim.sim.TrainService`、游戏侧 `PidsSchedules`），冲突检查从中取折返点（`getTurnBacks`），时刻表界面从中取最快时间（`getFastestTimes*`）。处理的特殊情况：环线中途加入（join）、行程末尾环线的中途加入（tail join）、中途加入/离开的路线（entry/cut）、运用路径按段（D4）的截断与加入、站前折返、从可始发站台出库始发（0.76.0）。
 
 ## 类 `StopTimes`
 
@@ -143,7 +143,7 @@
 - 主要调用者：`common/src/main/java/mtr/packet/PacketTrainDataGuiServer.java:905`。
 
 ### `private void matchRouteStops(List<? extends PlanRoute> routes, BiConsumer<Stop, RouteStop> consumer)`
-- 作用：把路径的停站按顺序与路线停站对应。先展开所有路线的停站为 `RouteStop` 序列：按 `segmentCuts`/`cutStops` 截断，按 `segmentEntries`/`entryStops` 从加入站开始（第一条路线只有 `firstRouteJoined` 时才可中途加入）；一条路线终点与下一条起点为同一站台时合并为一个 `RouteStop`（到达取前者、出发取后者）。然后遍历路径停站：若在期待的末站所在车站的其它站台折返（站前折返，`getTerminalPlatforms` 包含此站台），把它当作该末站（若下一路线也从这里开始则同时作为下一路线首站）；否则向后按站台 ID 匹配。折返线停点（站台 0）匹配为 null。
+- 作用：把路径的停站按顺序与路线停站对应。先展开所有路线的停站为 `RouteStop` 序列：按 `segmentCuts`/`cutStops` 截断，按 `segmentEntries`/`entryStops` 从加入站开始（第一条路线只有 `firstRouteJoined` 时才可中途加入）；一条路线终点与下一条起点为同一站台时合并为一个 `RouteStop`（到达取前者、出发取后者）。然后遍历路径停站：若在期待的末站所在车站的其它站台折返（站前折返，`getTerminalPlatforms` 包含此站台），把它当作该末站（若下一路线也从这里开始则同时作为下一路线首站）；期待的是路线首站而列车停在路线列出的可始发站台（`getStartPlatforms`，出库车从单独出库站台始发，0.76.0），把它当作该首站；否则向后按站台 ID 匹配。折返线停点（站台 0）匹配为 null。
 - 副作用：对每个路径停站调用 `consumer(stop, routeStop 或 null)`。
 
 ## 内部类 `Stop`（包内 static）

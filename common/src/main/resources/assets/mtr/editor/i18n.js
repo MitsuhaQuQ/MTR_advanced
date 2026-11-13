@@ -1280,6 +1280,7 @@ const I18N = (() => {
 			"移到存车线 ▸": "Move to siding ▸",
 			"运用移到了 {0}，编号不变": "Duty moved to {0}, keeping its number",
 			"车厂{0}：{1} 到 {2} 没有出库的路，这条存车线不从这里出车": "Depot {0}: no way out from {1} to {2}, so the siding sends no trains out there",
+			"车厂{0}：{1} 到哪个首站都没有出库的路，收进这里的车出不去；在车厂里加一条通到能出车的存车线的轨道（调车线），或检查出入库规则": "Depot {0}: {1} has no way out to any first stop, so trains taken back into it can't leave; add track in the depot from it to a siding trains can leave from (a shunting neck), or check the depot's way rules",
 			"车厂{0}：从 {2} 回不到 {1}，车改回车池里别的存车线": "Depot {0}: no way back from {2} to {1}, so trains go back to another siding of the pool",
 			"车厂{0}：{1} 到 {2} 的出库还没量过，按距离估计排，刷新车厂路径后按实测": "Depot {0}: the way out from {1} to {2} isn't measured yet and is planned by distance; it is measured once the depot's path is refreshed",
 			"接 {0}": "then {0}",

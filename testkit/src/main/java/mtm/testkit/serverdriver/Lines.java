@@ -148,7 +148,10 @@ public final class Lines {
 					mainNode(8, east + 30);
 					rail(east + 30, 0, east + 110, 0, RailType.SIDING);
 					rail(east + 30, 8, east + 110, 8, RailType.SIDING);
-					depotBoxes.add(new int[]{east + 20, -6, east + 120, 14});
+					// Trains come back into the eastbound track's siding and leave from the westbound one's: a shunting neck
+					// behind both joins them (2026-11-13, 车厂内调车)
+					shuntingNeck(east + 110, 0, 8);
+					depotBoxes.add(new int[]{east + 20, -6, east + 200, 14});
 					break;
 				case 2:
 				case 7:
@@ -186,7 +189,9 @@ public final class Lines {
 					// Trains back from service run on from the eastbound platform into a siding of their own
 					mainNode(0, east + 30);
 					rail(east + 30, 0, east + 110, 0, RailType.SIDING);
-					depotBoxes.add(new int[]{east + 20, -6, east + 120, 22});
+					// A shunting neck behind both sidings takes trains back in from service to the one they leave from
+					shuntingNeck(east + 110, 0, 16);
+					depotBoxes.add(new int[]{east + 20, -6, east + 200, 22});
 					break;
 				case 5:
 				case 6:
@@ -336,6 +341,17 @@ public final class Lines {
 				line.add("tails", tails);
 			}
 			return line;
+		}
+
+		/**
+		 * A shunting neck behind two sidings ending at x: both join a turn-back stub further east, so a train runs out of one,
+		 * changes ends on the stub and runs into the other
+		 */
+		private void shuntingNeck(int x, int z1, int z2) {
+			final int zMiddle = (z1 + z2) / 2;
+			rail(x, z1, x + 40, zMiddle, RailType.IRON);
+			rail(x, z2, x + 40, zMiddle, RailType.IRON);
+			rail(x + 40, zMiddle, x + 80, zMiddle, RailType.TURN_BACK);
 		}
 
 		/** A crossover before 五站 from the eastbound track to the westbound one, so trains turn back in front of it */

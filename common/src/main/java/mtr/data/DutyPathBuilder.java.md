@@ -41,7 +41,8 @@
 ### `List<Siding> getPoolSidings(Siding siding)`
 - 返回：自己在前，然后同组同车辆的停车线、编排单元其他车厂同车辆的停车线，再加车厂中同池的其他停车线（无论指定什么线路，因为计划把列车送回最近的，第 4 轮第 3 步），各按 ID。调用者：`Depot.java（行号为移动前）:1629`、`:3147`、`:4207`。
 
-### `DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, rails, graph, boolean useFastSpeed)`
+### `DutyPlan<PathData, SavedRailBase> getDutyPlan(String key, List<DepotDuties.Segment> segments, int weekday, boolean startsOnLine, boolean staysOnLine, Siding siding, rails, graph, boolean useFastSpeed)`
+- 0.76.0：从车厂出来的第一段（不在线上过夜、从首站开始），若 `Siding.DEPOT_WAYS.startAt(siding, 首站)` 给出别的站台（单独出库站台），该段从那个站台开始：首站换成它（停站设置随之），不用线路自己的路径而在轨道上找到第二站，模板键带上它。`siding` 为跑这些运用的停车线。
 - 作用：把运用各段连起来：每个班次从加入线路处到离开处，按该班次的通过/停站（单个班次的跳站由此成真），再按车厂路径的折返方式接到下一段。每段模板（线路、起止站、限速、通过标志）缓存：线路自己路径的切片（切片从停着开始，运用列车从出库路或上一班次来到首站，要在那里停车等发车，否则会直接通过首站出库，U-L05），或搜索；套停站设置并按线路限速封顶。段间站台不同时找连接（`findConnection`），记录绕远（长于 max(300, 距离×5)），多种折返方式时记折返区段；与上一段在同一轨道上衔接时合并（从另一站台来到本线路首站的列车在此停车等发车），在站台上反向折返时该段首段只作出站；站前折返（`addFrontTurnBack`）；记首末站台、线路、截断与加入站；中途加入时为计划计时取引导路径。
 - 返回：`DutyPlan`（含索引边界、折返区段、各段截断与加入），任何部分找不到为 null。
 

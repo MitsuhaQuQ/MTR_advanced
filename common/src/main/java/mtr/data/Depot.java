@@ -1321,6 +1321,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 						}
 
 						@Override
+						public long startAt(Siding siding, long firstPlatformId) {
+							final DepotLegs legs = measuredWays.get(siding.id);
+							return legs == null ? firstPlatformId : legs.startVia.getOrDefault(firstPlatformId, firstPlatformId);
+						}
+
+						@Override
 						public List<PathData> find(SavedRailBase from, SavedRailBase to, boolean out, long platformEnd, long pathId) {
 							final transitsim.plan.DepotRules.DeadheadPath path = pathId == 0 ? null : rules.getPath(pathId);
 							return path == null ? find(from, to, out, platformEnd) : railwayData.routePaths.findDepotWay(from, to, rails, out, platformEnd, depotLine, path.waypoints);
@@ -1353,7 +1359,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				if (ConnectionStats.ON) {
 					ConnectionStats.print();
 				}
-				dumpDutyPaths(mainPaths, turnTimes, measuredWays);
+				// On the server thread after the sidings' new paths, which are applied there: read before, a depot's dump could
+				// hold the paths of the generation before, depending on how long this one took (2026-11-13)
+				if (minecraftServer == null) {
+					dumpDutyPaths(mainPaths, turnTimes, measuredWays);
+				} else {
+					minecraftServer.execute(() -> dumpDutyPaths(mainPaths, turnTimes, measuredWays));
+				}
 			} catch (CancellationException e) {
 				// A newer request restarted path generation, and that thread reports the result
 				System.out.println("Stopped path generation" + (name.isEmpty() ? "" : " for " + name));
@@ -1459,6 +1471,24 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 	}
 
+	/**
+	 * @return the platforms of the first stop's station that the routes starting at it list to start at instead, in order
+	 */
+	private static List<Long> startPlatformsOf(Collection<Route> routes, long firstPlatformId, DataCache dataCache) {
+		final Station station = dataCache.platformIdToStation.get(firstPlatformId);
+		final List<Long> starts = new ArrayList<>();
+		routes.forEach(route -> {
+			if (!route.platformIds.isEmpty() && route.getFirstPlatformId() == firstPlatformId) {
+				route.startPlatforms.forEach(platformId -> {
+					if (platformId != firstPlatformId && !starts.contains(platformId) && station != null && dataCache.platformIdToStation.get(platformId) == station) {
+						starts.add(platformId);
+					}
+				});
+			}
+		});
+		return starts;
+	}
+
 	private static Map<Long, DepotLegs> measureDepotWays(Depot self, Map<Long, List<List<Long>>> sidingStops, RoutePaths routePaths, RoutePaths.Search routeSearch, Collection<Route> routes, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		// Each siding's ways by its own depot's rules (运用补完 step 2)
 		final Map<Depot, RoutePaths.DepotLine> depotLines = new HashMap<>();
@@ -1507,6 +1537,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			final Map<Long, long[]> backReasons = new TreeMap<>();
 			// The platform each way out runs through just before turning back into its platform (first come, first out there)
 			final Map<Long, Long> passes = new TreeMap<>();
+			final Map<Long, Long> startVia = new TreeMap<>();
 			boolean any = false;
 			for (final long platformId : stops.get(0)) {
 				final Platform platform = dataCache.platformIdMap.get(platformId);
@@ -1572,12 +1603,33 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 			}
 			if (any) {
+				// No way out to a first stop: to another platform of its station the routes starting there list to start at
+				// instead, the first with a way (2026-11-13, 单独出库站台)
+				for (final long platformId : new ArrayList<>(noWayOut)) {
+					for (final long startId : startPlatformsOf(routes, platformId, dataCache)) {
+						final Platform start = dataCache.platformIdMap.get(startId);
+						final List<PathData> way = start == null ? null : routePaths.findDepotWay(siding, start, rails, true, 0, depotLine, new long[1][]);
+						if (way != null && !way.isEmpty()) {
+							noWayOut.remove(platformId);
+							outReasons.remove(platformId);
+							out.put(platformId, RoutePaths.timeDepotWay(way, vehicle, true));
+							startVia.put(platformId, startId);
+							break;
+						}
+					}
+				}
 				final DepotLegs legs = new DepotLegs(siding.getDepotLegs().entrancePlatform, out, back).withUnreachable(noWayOut, noWayBack).withReasons(outReasons, backReasons);
 				legs.outPasses.putAll(passes);
+				legs.startVia.putAll(startVia);
 				measured.put(sidingId, legs);
 				// Told in the log too, each platform with no way and why
 				outReasons.forEach((platformId, reason) -> System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way out to platform " + platformId + ": " + describeWayReason(reason)));
 				backReasons.forEach((platformId, reason) -> System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way back from platform " + platformId + ": " + describeWayReason(reason)));
+				// A siding trains can't leave for any first stop: trains taken back into it stay there, unless the depot has track
+				// from it to a siding they can leave from (2026-11-13, 车厂内调车)
+				if (out.isEmpty() && !noWayOut.isEmpty()) {
+					System.out.println("Minecraft Transit Railway: siding " + sidingId + " has no way out to any first stop; trains taken back into it can't leave, add track in the depot from it to a siding they can leave from");
+				}
 			}
 		});
 		return measured;
