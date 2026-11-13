@@ -74,6 +74,8 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.76.6 端门开门方向与无把手样式（用户 2026-11-14）：端门放下时一律朝站台开（`getStateForPlacement` 不再按玩家站哪一侧算 `INWARD`，潜行右键仍可切换）；两个新的 Blockbench 源（去掉外侧把手）按同一套规则导出，全高无把手接替原本和样式 1 一模一样的 `platform_end_psd_2`，半高无把手是新方块 `platform_end_apg_2`（样式 3，`isAPG()` 和上半块 9 格高都认它）。四种语言的名称、渲染层、物品与方块注册都已补齐。`PlatformEndDoorTest` 覆盖四套模型和四种样式。资源改动所以 `mtm_assets_version` 升到 1.0.8。
+
 0.76.4 过夜车堵住折返轨（用户 2026-11-14 在自己服务器上发现，那辆车还是站前折返、根本用不到折返轨）：折返轨的预约（`TrainServer.turnBackRails`）只在列车离开线路或车尾越过预约终点时释放，而在线过夜的车两个条件都不满足，于是整夜占着那条轨，别的车折返不了。`TrainService.update` 里，列车停在最后一站过夜（`isStayingOnLine()`）时放掉预约（`vehicle.reserveTurnBack` 传空）；它再次开行时会重新选折返方式并重新预约。组件测试 `DutyRunTest.aTrainStayingOvernightKeepsNoTurnBackRail`（在途中保留、到站过夜放掉）。
 
 0.76.3 站台端门装反了（用户 2026-11-14：推杠应在站台一侧、把手在另一侧，两种样式都反）：`models/export_platform_edge_doors.py` 在写出前把每个方块沿门扇平面（Blockbench 模型的 z = 1）做镜像（前后面互换、东西/上下面的 UV 对应翻转、绕 x 或 y 的旋转角取反、旋转原点随之移动），重新导出两套共 14 个模型。门扇仍在 z 2..4 与玻璃齐平，铰链在镜像面上所以开门几何和方块状态都不用动，Java 里的碰撞形状也不变。`PlatformEndDoorTest` 新增断言：下半块必须有伸到玻璃之前（z < 0）的部件，且任何部件都不得伸过 z 6。

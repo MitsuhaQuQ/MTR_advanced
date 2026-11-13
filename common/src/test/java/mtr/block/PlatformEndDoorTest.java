@@ -17,10 +17,10 @@ class PlatformEndDoorTest {
 	@Test
 	void everyPlatformStyleUsesAManualPanelWithMatchingOpenCollision() {
 		assertFalse(BlockPSDAPGDoorBase.class.isAssignableFrom(BlockPlatformEndDoor.class));
-		for (int style = 0; style < 3; style++) {
-			assertEquals(style == 0 ? 9 / 16D : 1, BlockPlatformEndDoor.outline(style, DoubleBlockHalf.UPPER, Direction.NORTH, false).bounds().maxY);
+		for (int style = 0; style < 4; style++) {
+			assertEquals(style == 0 || style == 3 ? 9 / 16D : 1, BlockPlatformEndDoor.outline(style, DoubleBlockHalf.UPPER, Direction.NORTH, false).bounds().maxY);
 			for (Direction facing : Direction.Plane.HORIZONTAL) {
-				final int height = style == 0 ? 9 : 16;
+				final int height = style == 0 || style == 3 ? 9 : 16;
 				assertEquals(IBlock.getVoxelShapeByDirection(14, 0, -12, 16, height, 4, facing).bounds(),
 						BlockPlatformEndDoor.outline(style, DoubleBlockHalf.UPPER, facing, true).bounds());
 			}
@@ -39,7 +39,7 @@ class PlatformEndDoorTest {
 	 */
 	@Test
 	void theGateLinesUpWithTheGlassBesideIt() throws java.io.IOException {
-		for (final String name : new String[]{"platform_edge_door", "platform_edge_door_low"}) {
+		for (final String name : new String[]{"platform_edge_door", "platform_edge_door_low", "platform_edge_door_no_handle", "platform_edge_door_low_no_handle"}) {
 			for (final String half : new String[]{"lower", "upper"}) {
 				final com.google.gson.JsonArray closed = elements(name + "_" + half);
 				final com.google.gson.JsonArray open = elements(name + "_" + half + "_open");

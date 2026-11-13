@@ -45,7 +45,8 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 
 	/**
 	 * Beside a screen door or gate panel along its row, the gate faces the way it does, so its leaf is in line with the
-	 * glass; standing on the other side of that row, it swings the other way rather than turning round.
+	 * glass. It swings out towards the platform, whichever side it is put down from (user, 2026-11-14), which sneaking
+	 * and right clicking turns round.
 	 */
 	@Override
 	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
@@ -53,7 +54,7 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 		if (state == null) return null;
 		final Direction looking = ctx.getHorizontalDirection();
 		final Direction facing = rowFacing(ctx.getLevel(), ctx.getClickedPos(), looking);
-		return state.setValue(FACING, facing).setValue(INWARD, facing == looking.getOpposite());
+		return state.setValue(FACING, facing).setValue(INWARD, false);
 	}
 
 	/**
@@ -80,8 +81,9 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 			if (upper.is(this)) world.setBlock(pos.above(), upper.setValue(INWARD, state.getValue(INWARD)), 3);
 		}
 	}
-	@Override protected boolean isAPG() { return style == 0; }
-	@Override public Item asItem() { return style == 0 ? Items.PLATFORM_END_APG.get() : style == 1 ? Items.PLATFORM_END_PSD_1.get() : Items.PLATFORM_END_PSD_2.get(); }
+	/** Styles: 0 the gate, 1 the screen door, 2 the screen door without the handle outside, 3 the gate without it */
+	@Override protected boolean isAPG() { return style == 0 || style == 3; }
+	@Override public Item asItem() { return style == 0 ? Items.PLATFORM_END_APG.get() : style == 1 ? Items.PLATFORM_END_PSD_1.get() : style == 2 ? Items.PLATFORM_END_PSD_2.get() : Items.PLATFORM_END_APG_2.get(); }
 	@Override public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
 		return outline(style, state.getValue(HALF), state.getValue(FACING), state.getValue(OPEN), state.getValue(INWARD));
 	}
@@ -89,7 +91,7 @@ public final class BlockPlatformEndDoor extends BlockPSDAPGBase {
 		return outline(style, half, facing, open, false);
 	}
 	static VoxelShape outline(int style, DoubleBlockHalf half, Direction facing, boolean open, boolean inward) {
-		final int height = style == 0 && half == DoubleBlockHalf.UPPER ? 9 : 16;
+		final int height = (style == 0 || style == 3) && half == DoubleBlockHalf.UPPER ? 9 : 16;
 		if (open) {
 			// The north-facing leaf swings around the jamb at (15, 3), in line with the screen door glass at z 2..4: out
 			// in front of the block, or back into it and the one behind

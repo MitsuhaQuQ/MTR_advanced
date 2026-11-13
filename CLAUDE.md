@@ -38,6 +38,7 @@ Two hosts, one rule set: the game's `TrainServer`/`Siding`/`Depot` and the compo
 
 Cross-cutting invariants:
 - Data classes exist on both server and client and are written three ways: msgpack save, `FriendlyByteBuf` packet, and `update(key, packet)`. Change all three together; call `DataCache.sync()` after structural changes.
+- Anything the client reads from the assets mod — textures, models, blockstates, sounds, fonts, particles, scripts — ships in `MTM_Assets`, not `MTM_Logic`. On any such change raise `mtm_assets_version` in `gradle.properties`, or the file keeps its name and nobody replaces it (2026-11-14: a model fix looked like it had done nothing for an hour). Say in the report that both jars have to be swapped.
 - Saves may only gain content; existing fields keep their meaning. On any packet or save change raise the second number of `mtm_version` in `gradle.properties` (0.66.x → 0.67.0): the client/server version check compares only the first two numbers, the protocol. Changes inside one side only raise the third number, which client and server may differ in.
 - Component guarantees that tests rely on: skipping ticks gives the same result as not skipping, and resuming from a save equals running straight through.
 - Multi-version code uses Manifold preprocessor directives (`#if MC_VERSION >= "12000"`); prefer the wrappers in `mtr/mappings/`.
