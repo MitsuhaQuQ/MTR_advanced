@@ -115,8 +115,8 @@
 | U435 | 高 | 停站开门和屏蔽门 | 列车在站台停站：车门正常开关，屏蔽门、站台门（含 ANTE 装饰门）跟着开关，离站后关上；手动驾驶在非计划位置停车开门照旧；存车线上停着的车不开门 | 未测 |
 | U437 | 高 | 自带车型烘焙后外观 | 各种 MTR 自带车型（M-train、K-train、SP1900、轻铁、机场快线、C-train 等）停在存车线和在线路上跑：车身、车窗、车头车尾、车灯和以前一样；车头目的地文字、门上装饰照旧；白天、夜里、隧道里亮度和以前一样（线路上的车车内亮、车灯亮，存车线上的车跟环境光） | 自动截图比对（TestKit `/compare`，开/关烘焙）：20 列 sp1900 只差 31 个像素，bbmodel、OBJ 0 个，混合 10 列 2 个；仍请在游戏里看 |
 | U438 | 高 | 停站开门的过渡 | 自带车型的列车进站停车开门、关门出站：开门那一刻、关门之后没有闪烁、跳变或少一块；开着门时画面和以前一样 | 未测 |
-| U439 | 中 | 自带车型帧率 | 大车场停满 MTR 自带车型：帧率比 0.73.4 明显高（自测 20 列 sp1900：91→459）；`config/mtrsteamloco.json` 里把 `bakeBuiltInTrains` 改成 false 后重进，帧率回到以前、外观一样（备用开关） | 未测 |
-| U436 | 中 | bbmodel 预加载默认打开 | 删掉或保留旧的 `config/mtrsteamloco.json` 启动：ANTE 设置里"bbmodel 预加载"为开，文件里有 `bbModelPreloadDefaultOn`；手动关掉后重启仍是关 | 未测 |
+| U439 | 中 | 自带车型帧率 | 大车场停满 MTR 自带车型：帧率比 0.73.4 明显高（自测 20 列 sp1900：91→459）；`config/mtrsteamloco.json` 里把 `bakeBuiltInTrains` 改成 false 后重进，帧率回到以前、外观一样（备用开关） | **通过**（0.79.1，2026-11-14 夜间，不装 Sodium：20 列 SP1900 烘焙 458 FPS，`bakeBuiltInTrains=false` 93 FPS，外观截图只差十几个像素） |
+| U436 | 中 | bbmodel 预加载默认打开 | 删掉或保留旧的 `config/mtrsteamloco.json` 启动：ANTE 设置里"bbmodel 预加载"为开，文件里有 `bbModelPreloadDefaultOn`；手动关掉后重启仍是关 | 部分：测试客户端配置里 `enableBbModelPreload` 和 `bbModelPreloadDefaultOn` 都为 true（2026-11-14）；手动关掉后重启仍关未测 |
 
 ## 网页编辑器只剩新版（清退旧逻辑第⑨步，2026-11-13）
 
