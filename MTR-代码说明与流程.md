@@ -74,6 +74,11 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.75.1 拆分车厂第 1 步（用户 2026-11-13 定：按收益和工作量排序，先量后改）：
+- **先量**（第 0 步）：`Depot.generateMainRoute` 结束时的 `Finished path generation` 一行带上分段用时。yel 世界开服 13 个车厂寻路，每个 3–912 毫秒：排运用（`LineDuties`）最多 771 毫秒，拼运用路径（原 `MainPath`）最多 125 毫秒，量折返用时最多 20 毫秒，找出入库路最多 71 毫秒；每个规划单元开服时基本只排一次。所以拆分的收益是能在组件里测试，不是省时间；规划协调（第 3 步）暂时没有性能上的理由。
+- **`MainPath` 原样移成独立类 `DutyPathBuilder`**（同包，约 1550 行；`Depot.java` 4342 → 2847 行）：字段 `depot` 指向所属车厂，原来隐式用到的车厂成员加 `depot.` 前缀，只有它用的 `Connection` 一起移过去，车厂里它用到的几个成员由 private 改为包内可见。行为不变。
+- **验收工具**：`-Dmtr.dumpDutyPaths=<文件夹>` 时每个车厂寻路后写 `depot-<id>.txt`（折返用时、出入库用时和不可达、每条运用路径的键、分段、用时、轨道和停站，排好序）。移动前后各用 yel 世界开服导出一次逐行比较：开服时寻路的 4 个车厂（约 1.2 MB 路径）逐字节相同；六线图完整用例 19 过 3 不过，和移动前完全一样（1、4 号线排班、实际运行，原有问题）。注意 yel 有一个单元两次开服的路径条数不同（16 和 14），原因还没查（那次是同一单元的另一个车厂先排的运用，可能与此有关），和这次移动无关（移动前后两版各开服一次，都是 14 条）；以后比较也要用前后两版各自开服的结果。之后每一步（把纯计算部分逐块搬进组件）都这样验收。
+
 0.75.0 出入库方向和出库提前量（用户 2026-11-13，模拟数据格式改动）：
 - **没配规则时自动走方便的方向**：存车线从不止一个车站接入线路、车厂又没有出入库规则指定时，以前这条线不排运用（`REASON_ENTRANCE_UNSET`），现在 `RoutePaths.findDepotWay` 只记一笔（`DepotLine.reportEntranceAuto`，日志"they take the most convenient"）就照常找路：`LineDepotWays.planOut`/`planBack` 本来就给逆着线路方向跑加权（`AGAINST_WEIGHT`），逆着过本线站台的路只在没有别的路时才用（`AGAINST_STOP_PENALTY`），所以选出的就是顺方向、离首站近的那条。网页把这条从警告改成灰色说明（`sync.ts` 级别 `hint`，`DepotPanel` 顶部"已按方便的方向自动出入库（可在出入库规则里指定）"）。
 - **逆向过站台提示联锁区**：找出的路要逆着线路方向经过本线站台时（`LineDepotWays.againstStops`），`RoutePaths.unlockedAgainst` 检查站台轨道和路上与站台两端相接的轨道都在联锁区里（`interlockZones`，`RailwayData` 设为 `getSignalBlocks().getZones(SecurityConfig.interlockColor)`，联锁色默认品红）：联锁区让进路一次锁住整段，对向列车进不来。有不在的，`DepotLine.reportAgainstUnlocked` 写日志，并把 `"against:" + 站台 ID` 放进车厂的 `entrancesUnset`（随缺车说明 `Shortfall` 发出，包格式不变），网页问题列表警告"出入库要逆着线路方向经过 X，那里没刷联锁色……可能对头卡死；刷成联锁区就安全了"。路照常使用。起初做成没刷就不用，游戏内六线测试图对比时 1、3、4、5、6 号线全没了运用（3、5、6 号线 0.74.0 时能排），这些都是常见布局，用户改定"没刷照样走，只提示风险"。
