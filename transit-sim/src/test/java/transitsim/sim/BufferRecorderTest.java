@@ -86,6 +86,19 @@ class BufferRecorderTest {
 	}
 
 	@Test
+	void aWayOutWithAPlanIsMeasuredByHowLateItReachedTheFirstStop() {
+		final BufferRecorder recorder = new BufferRecorder();
+		final List<String> told = new ArrayList<>();
+		recorder.outListener = (key, lateness) -> told.add(key + "=" + lateness);
+		final TripPath<TestTrack> tripPath = duty();
+		// Due at platform 1 at 200 s: leaving at 0 and arriving at 290 s is 90 s late, however long it ran
+		recorder.onEvent(new MotionEvent(0, MotionEvent.Type.DEPARTED, 7, ++sequence, 0, 0), SIDING_ID, tripPath, rail -> rail == 1 ? 200 * SECOND : 0);
+		recorder.onEvent(new MotionEvent(290 * SECOND, MotionEvent.Type.STOPPED, 7, ++sequence, 1, 0), SIDING_ID, tripPath, rail -> rail == 1 ? 200 * SECOND : 0);
+		assertEquals(90 * SECOND, recorder.getBuffers().out(SIDING_ID, 1));
+		assertEquals(Collections.singletonList(Buffers.key(Buffers.OUT, SIDING_ID, 1) + "=" + 90 * SECOND), told);
+	}
+
+	@Test
 	void stoppingAtAnotherPlatformEndsTheLegUnmeasured() {
 		final BufferRecorder recorder = new BufferRecorder();
 		final TripPath<TestTrack> tripPath = duty();

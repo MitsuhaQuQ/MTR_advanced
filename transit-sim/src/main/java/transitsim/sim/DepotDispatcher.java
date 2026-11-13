@@ -64,6 +64,11 @@ public class DepotDispatcher {
 	 */
 	public final List<String> takeovers = new ArrayList<>();
 	/**
+	 * The time added to the ways out as adopted on the depot (D1, round 4 step 6), set by the host: a duty's train leaves
+	 * that much earlier at once, before the duties are planned again (user 2026-11-13: 出库提前量按实际跑的自动校正).
+	 */
+	public volatile transitsim.plan.Buffers addedBuffers = transitsim.plan.Buffers.NONE;
+	/**
 	 * For each of {@link #takeovers}, the rails the spare's way out mustn't run along, as when it was asked; not saved.
 	 */
 	private final Map<String, Set<java.util.UUID>> takeoverAffected = new HashMap<>();
@@ -314,7 +319,7 @@ public class DepotDispatcher {
 				if (dutyPath == null) {
 					continue;
 				}
-				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - outLeadMillis(duty, dutyPath.stopTimes.getLeadMillis());
+				final long departureMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - outLeadMillis(duty, wayOutMillis(sidingId, dutyPath));
 				// Missed by much, as when the depot had no train or the server stopped, the train joins its duty where it can
 				// still keep to it instead of the duty being left out, while the duty runs
 				final boolean late = currentMillis > departureMillis + RouteTimetable.MAX_DEPLOY_DELAY_MILLIS;
@@ -351,6 +356,25 @@ public class DepotDispatcher {
 	 * How long before its first service a duty's train leaves the siding: as planned (运用补完 step 1), though never less
 	 * than the way out takes; for a duty planned before, the way out and a margin.
 	 */
+	/**
+	 * @return the time the way out of a siding to a duty's first stop takes, with what was adopted for it
+	 */
+	public <T extends PlanTrack> long wayOutMillis(long sidingId, TripPath<T> dutyPath) {
+		final long planned = dutyPath.stopTimes.getLeadMillis();
+		final transitsim.plan.Buffers added = addedBuffers;
+		if (added.isEmpty()) {
+			return planned;
+		}
+		final List<T> path = dutyPath.path;
+		for (int i = 1; i < path.size(); i++) {
+			final T track = path.get(i);
+			if (track.getDwellTime() > 0 && track.getStopId() != 0 && !track.isSidingTrack()) {
+				return planned + added.out(sidingId, track.getStopId());
+			}
+		}
+		return planned;
+	}
+
 	public static long outLeadMillis(DepotDuties.DayDuty duty, long wayOutMillis) {
 		return duty.outLeadMillis >= 0 ? Math.max(duty.outLeadMillis, wayOutMillis) : wayOutMillis + DUTY_DEPLOY_MARGIN_MILLIS;
 	}

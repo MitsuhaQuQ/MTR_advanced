@@ -63,6 +63,7 @@ public final class SimExport {
 			depotData.dutiesOnly = Depot.supportsTimetable(depot.transportMode);
 			depotData.sidingOrder = railwayData.sidings.stream().filter(siding -> railwayData.dataCache.sidingIdToDepot.get(siding.id) == depot).sorted().mapToLong(siding -> siding.id).toArray();
 			depotData.releaseInterval = depot.releaseInterval;
+			depotData.addedBuffers = depot.getAddedBuffers();
 			dataset.depots.add(depotData);
 		});
 		final RunRecord trains = new RunRecord(System.currentTimeMillis());

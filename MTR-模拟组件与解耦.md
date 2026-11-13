@@ -1330,6 +1330,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站后双折返轮流用（0.73.2）：`TrainService.chooseTurnBack` 的尝试次序在同一类走法里按班次序号轮换（`RouteTimetable.getServiceOrdinal`、`TrainService.getWayOrder`），无新增状态，跳 tick 与读档等价不受影响；两个宿主都走这里。测试：`DoubleTurnBackTest`（`TickRunner` 场景：两股尽头折返线、短折返严格交替、长折返两股同时占用、无同股两车、无违例、下行准点）、`TrainServiceTest.consecutiveTrainsTurnBackOnTheRailsInTurn`。规划（`DutyGenerator`）不分股道，只看折返用时和可停车位数（`HOLD_COUNT_KEY`），股道是运行时选的。
 
+出入库方向和出库提前量（0.75.0）：新规则在组件里。`OutLeads`（按首站晚点校正出库余量，没用就退回）和 `BufferRecorder` 的按首站晚点量出库（`plannedArrivals`、`outListener`）、`DepotDispatcher.addedBuffers`/`wayOutMillis`（派车时加上采用的出库余量）两个宿主共用；组件数据 `SimDataset` 第 20 版带车厂的采用余量，`TickRunner.placeDutyTrains` 也用 `wayOutMillis`。游戏侧只做宿主的事：`Depot` 接记录器和 `OutLeads`、把结果写进 `addedBuffers` 并发给玩家；找出入库路的"没配规则走方便方向"和"逆向过站台没刷联锁区就提示"在 `RoutePaths`（游戏侧，用组件的 `LineDepotWays.againstStops`）。测试先在组件：`OutLeadsTest`、`BufferRecorderTest`、`DutyRunTest`。
+
 媒体文件夹（0.74.0）：只是游戏侧的上传文件整理（`mtr/media/MediaFolders`、两个媒体库和服务端、客户端界面），不涉及组件；引用名不变，播放规则（`ClipSequence`）不受影响。
 
 自带车型烘焙（0.73.5）：只改客户端渲染（`BakedTrainModels`），不涉及组件。

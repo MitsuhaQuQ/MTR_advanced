@@ -192,7 +192,7 @@
 再追加一个监听者（在上面那个之后通知）。
 
 #### `void recordBuffers(BufferRecorder recorder)`
-测量运用列车出库、折返、回库比计划多花的时间（D1）：添加一个把事件转给 `recorder.onEvent` 的监听者。
+测量运用列车出库、折返、回库比计划多花的时间（D1）：添加一个把事件转给 `recorder.onEvent` 的监听者，带 `BufferRecorder.plannedArrivals(train.service)`，出库按首站晚点算（2026-11-13）。
 
 #### `void setAfterTick(Runnable afterTick)`
 每个实际运行（未跳过）的 tick 结束时调用。调用者：`EventSimulator.java:69`、`RunInvariantsTest.java:38`。

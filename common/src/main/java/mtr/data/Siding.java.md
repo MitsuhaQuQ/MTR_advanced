@@ -187,7 +187,7 @@
 ### `public void simulateTrain(DataCache dataCache, RailwayDataDriveTrainModule railwayDataDriveTrainModule, List<Map<UUID, Long>> trainPositions, SignalBlocks signalBlocks, Map<Player, Set<TrainServer>> trainsInPlayerRange, Set<TrainServer> trainsToSync, Map<Long, List<ScheduleEntry>> schedulesForPlatform, Map<Long, Map<BlockPos, TrainDelay>> trainDelays)`
 - 作用：本停车线的一 tick（无车厂不做）：
   1. 重定位过则同步所有列车；加载后第 2 个 tick（非模拟器时）按进度从远到近把需要对齐的列车对齐时刻表。
-  2. 每列车：手动驾驶处理；设停站时间与行程路径、跳站方式、速度曲线、车池车辆（R1）、车辆最高速、上 tick 时刻；`TrainServer.simulateTrain`（需同步则加入）；运动事件交给车厂缓冲记录器（D1）并加入 `motionEvents`；回到同池另一停车线的列车从本处删除并 `adopt` 到目标的 `arriving`（P2-C）；模拟器运行时只写占用。
+  2. 每列车：手动驾驶处理；设停站时间与行程路径、跳站方式、速度曲线、车池车辆（R1）、车辆最高速、上 tick 时刻；`TrainServer.simulateTrain`（需同步则加入）；运动事件交给车厂缓冲记录器（D1，带 `BufferRecorder.plannedArrivals(train.getService())`，出库按首站晚点算，2026-11-13）并加入 `motionEvents`；回到同池另一停车线的列车从本处删除并 `adopt` 到目标的 `arriving`（P2-C）；模拟器运行时只写占用。
   3. 否则：靠近车厂的列车阻止出新车；停着的第二列及以后删除（按运用时入库，`FleetRules.keepsSecondStanding`）；同一进度的重复列车删除；写占用。
   4. 补车：按运用（或支持时刻表的非连续移动种类，R3）时按组件规则 `FleetRules.whatToMake`（S7）从库中取或新造（线路池车队、池列车、池槽位、容纳数、车队）；否则按旧上限新造。
 - 调用者：`RailwayData.java:599`。

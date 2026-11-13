@@ -21,7 +21,8 @@
 - 车厂的出入库规则与命名回送路径：每条规则一张卡片（线路和星期用按钮切换），每条路径一张卡片。规则按"线路和星期都指定 > 只指定线路 > 只指定星期 > 都不指定"选用。
 - props：`depotId`；`editing` 正在编辑的值（从地图选线回来时由旧代码传回，否则 null 用 `fn.rulesOf(depot)`）；`onClose`。
 - 值在原对象上就地编辑（与旧对话框相同），挂载时写入 `v.rulesEditing = { depot, value }`，使在地图上选好的路回到这里。
-- `lines = fn.depotLines(depot)`；`unset` 为缺出入口指定的线路（`depot.shortfall.entrancesUnset`），顶部警告。
+- `lines = fn.depotLines(depot)`；`unset` 为没指定出入口、按方便方向自动出入库的线路（`depot.shortfall.entrancesUnset`），0.75.0 起顶部是灰色说明“已按方便的方向自动出入库（可在出入库规则里指定）”，不再是警告。
+- “实测余量”说明（0.75.0）：出库按到首站晚了多少算、自动校正（每 3 班取中间值提前那么多，马上生效；提前后晚点没少一半就退回并标出），折返和回库只作建议。实测秒数为负的出库（服务端 `Depot.withIneffective`）显示警告色“提前出库没用：到首站仍晚 N 秒……”；勾“采用”时默认秒数不取负值。
 - 每条规则：删除；线路按钮（用 `sameLine` 匹配，改名前勾的线路仍算勾上；车厂已没有的线路以删除线显示，点一下去掉）；星期按钮；出库/回库方式说明（`wayText`：命名路径的段数和名称，或出入口车站名，或"自动"）与"在图上点轨道…"（`pick`：记 `v.rulesEditing`，关闭面板，`fn.startWayPick(depot, {rule, out})`）；出/回库路径下拉；回哪条存车线；早发秒数；等候分界秒数。
 - 回送路径卡片：名字、种类、途经点数、"在图上画…"（`pick({path, out})`）、删除（同时把引用它的规则改回默认）。
 - 底部：放进草稿（与游戏相同则删除 `draft.depotRules[depot]`，否则写入 `{rules: value}`；清 `v.rulesEditing`；`fn.saveDraft()`、`fn.renderAll()`）、新增规则、新增出库路径、新增回库路径。关闭时清 `v.rulesEditing`。

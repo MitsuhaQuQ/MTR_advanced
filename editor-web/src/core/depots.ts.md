@@ -4,7 +4,7 @@
 
 ## 导出函数
 - `dutiesOf(draft, depot)`：车厂的运用：草稿中有则用草稿的；否则用游戏设定的 `depot.duties`（缺省 `{mode:"online", sidings:{}}`）；若设定不是运用图模式而游戏自动排出的 `depot.autoDuties` 是运用图且非空，则返回自动的并加 `auto: true`。调用者：`core/sync.ts:99`（本文件导入处）、`legacy/retired.ts:124`。
-- `shortfallText(shortfall)`：缺车说明：多个车池且有缺口时按车池分别说明（需要几列、现有几列、每天几班没车；`needed < 0` 表示运用不按周重复、算不出）；否则整体说明。再附上无论多少车都跑不了的班次说明（区分"出入库规则未指定车站"和"出不去/折返不过去"），以及建议数量。调用者：`core/sync.ts:112`；视图里的 `fn.shortfallText`（`views/DutyBoard.tsx:74`、`views/Navigator.tsx:280`）调用的是旧代码的同名函数，是否已换成本函数未确定。
+- `shortfallText(shortfall)`：缺车说明：多个车池且有缺口时按车池分别说明（需要几列、现有几列、每天几班没车；`needed < 0` 表示运用不按周重复、算不出）；否则整体说明。再附上无论多少车都跑不了的班次说明（出不去/折返不过去；0.75.0 起不再说"出入库规则未指定车站"，没规则时按方便的方向自动出入库），以及建议数量。调用者：`core/sync.ts:112`；视图里的 `fn.shortfallText`（`views/DutyBoard.tsx:74`、`views/Navigator.tsx:280`）调用的是旧代码的同名函数，是否已换成本函数未确定。
 - `missingTrains(shortfall)`：缺几列：服务器给了 `missing` 就用它；否则 `needed < 0` 为 -1，其余 `max(0, needed - available)`。`src` 中直接调用未见；`views/Navigator.tsx:282` 用的是 `fn.missingTrains`（未确定来源）。
 - `replanText(shortfall)`：解释"运用按原设置排、未自动重排"：把 `shortfall.replan`（`名称:旧:新;…`）中的 `minReverse`（换端最短时间）、`buffers`（实测余量）、`ways`（轨道变了）译成文字。无 `replan` 返回空串。调用者：`core/sync.ts:119`。
 - `depotLines(model, depot)`：车厂负责的路线所属线路组 `[lineKey, 线路短名][]`（去重）。调用者：`core/sync.ts:116`；`views/DepotPanel.tsx:235` 的 `fn.depotLines` 来源未确定。

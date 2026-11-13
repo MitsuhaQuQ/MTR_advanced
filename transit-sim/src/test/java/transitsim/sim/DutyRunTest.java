@@ -813,6 +813,41 @@ class DutyRunTest {
 	}
 
 	@Test
+	void anAdoptedWayOutSendsTheTrainOutThatMuchEarlier() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = twoRoutes(train);
+		final DepotDuties duties = new DepotDuties();
+		duties.sidings.put(SIDING_ID, depot.slots);
+		final Map<Long, Map<String, TripPath<TestTrack>>> sidingPaths = new HashMap<>();
+		sidingPaths.put(SIDING_ID, tripPaths);
+		final long probe = MONDAY + 8 * HOUR;
+		final DepotDuties.DayDuty duty = depot.slots.get(0).getDuty(OperatingDay.getWeekday(probe));
+		final long dayStart = DutyShapes.getDayStart(probe);
+		final TripPath<TestTrack> dutyPath = tripPaths.get(DutyShapes.getSlotKey(depot.slots, 0, OperatingDay.getWeekday(probe), routes::get));
+		long firstStop = 0;
+		for (int i = 1; i < dutyPath.path.size() && firstStop == 0; i++) {
+			if (dutyPath.path.get(i).getDwellTime() > 0 && dutyPath.path.get(i).getStopId() != 0 && !dutyPath.path.get(i).isSidingTrack()) {
+				firstStop = dutyPath.path.get(i).getStopId();
+			}
+		}
+		final long leave = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - DepotDispatcher.outLeadMillis(duty, dutyPath.stopTimes.getLeadMillis());
+
+		// Without anything adopted the way out is as planned, and the train leaves no earlier than it says
+		final DepotDispatcher plain = new DepotDispatcher();
+		assertEquals(dutyPath.stopTimes.getLeadMillis(), plain.wayOutMillis(SIDING_ID, dutyPath));
+		assertNull(plain.findDutyDeploy(leave - 60 * SECOND, Collections.singletonList(SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> sidingId));
+
+		// Two minutes adopted for that way out (2026-11-13): it leaves a minute before, as two minutes more are allowed
+		final DepotDispatcher adopted = new DepotDispatcher();
+		final Map<String, Long> added = new TreeMap<>();
+		added.put(transitsim.plan.Buffers.key(transitsim.plan.Buffers.OUT, SIDING_ID, firstStop), 120 * SECOND);
+		added.put(transitsim.plan.Buffers.key(transitsim.plan.Buffers.OUT, OTHER_SIDING_ID, firstStop), 600 * SECOND);
+		adopted.addedBuffers = new transitsim.plan.Buffers(added);
+		assertEquals(dutyPath.stopTimes.getLeadMillis() + 120 * SECOND, adopted.wayOutMillis(SIDING_ID, dutyPath));
+		assertNotNull(adopted.findDutyDeploy(leave - 60 * SECOND, Collections.singletonList(SIDING_ID), duties, sidingPaths::get, routes::get, sidingId -> sidingId));
+	}
+
+	@Test
 	void aDutySetToLeaveFromItsSidingAloneWaitsForATrainThere() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final TripPath<TestTrack> tripPath = twoRoutes(train);

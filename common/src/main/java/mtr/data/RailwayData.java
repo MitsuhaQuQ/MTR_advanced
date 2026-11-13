@@ -225,6 +225,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * Each route's path, found once for the depots running it by a timetable (decoupling document 5.4, L1).
 	 */
 	public final RoutePaths routePaths = new RoutePaths(graphRecords);
+	{
+		// Ways out of depots running a line's platforms against it need them in an interlocking zone (2026-11-13)
+		routePaths.interlockZones = () -> getSignalBlocks().getZones(mtr.SecurityConfig.interlockColor);
+	}
 	/**
 	 * Fares by distance (0.68.0): the network fares are worked out on, made again when the routes change.
 	 */

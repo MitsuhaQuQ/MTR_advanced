@@ -37,12 +37,37 @@ public final class BufferRecorder {
 	private final Map<String, ArrayDeque<Long>> samples = new TreeMap<>();
 	private Buffers buffers = Buffers.NONE;
 	private boolean changed;
+	/**
+	 * Told each way out measured by how late the train reached its first stop: the way's {@link Buffers#key} and how late
+	 * (2026-11-13, for {@link OutLeads}); set by the host, or null.
+	 */
+	public volatile java.util.function.ObjLongConsumer<String> outListener;
+
+	/**
+	 * @return the planned arrival at a rail of the path a train's service is on, 0 where there is none, for
+	 * {@link #onEvent(MotionEvent, long, TripPath, java.util.function.IntToLongFunction)}
+	 */
+	public static java.util.function.IntToLongFunction plannedArrivals(TrainService<?> service) {
+		return rail -> {
+			final transitsim.plan.RouteTimetable.StopPlan plan = service.getPlanAt(rail);
+			return plan == null ? 0 : service.getPlannedMillis(plan.arrivalMillis);
+		};
+	}
 
 	/**
 	 * @param sidingId the siding the train belongs to
 	 * @param tripPath the path the train is on now, or null
 	 */
 	public <T extends PlanTrack> void onEvent(MotionEvent event, long sidingId, TripPath<T> tripPath) {
+		onEvent(event, sidingId, tripPath, null);
+	}
+
+	/**
+	 * @param plannedArrival the planned arrival at a rail of the path, 0 where there is none, or null: a way out is then
+	 *                       measured by how late the train reached its first stop (2026-11-13), not by how much longer it
+	 *                       ran, as a train leaving earlier for a stop it can't reach sooner runs longer but arrives as late
+	 */
+	public <T extends PlanTrack> void onEvent(MotionEvent event, long sidingId, TripPath<T> tripPath, java.util.function.IntToLongFunction plannedArrival) {
 		final Leg leg = legs.get(event.trainId);
 		switch (event.type) {
 			case DEPARTED:
@@ -54,7 +79,7 @@ public final class BufferRecorder {
 					return;
 				}
 				legs.remove(event.trainId);
-				startLeg(event, sidingId, tripPath);
+				startLeg(event, sidingId, tripPath, plannedArrival);
 				break;
 			case STOPPED:
 				if (leg == null) {
@@ -86,7 +111,7 @@ public final class BufferRecorder {
 		}
 	}
 
-	private <T extends PlanTrack> void startLeg(MotionEvent event, long sidingId, TripPath<T> tripPath) {
+	private <T extends PlanTrack> void startLeg(MotionEvent event, long sidingId, TripPath<T> tripPath, java.util.function.IntToLongFunction plannedArrival) {
 		if (tripPath == null || !tripPath.isDuty() || tripPath.dutyStarts == null) {
 			return;
 		}
@@ -95,7 +120,9 @@ public final class BufferRecorder {
 		if (rail == 0) {
 			final int first = nextPlatformStop(path, 0);
 			if (first > 0) {
-				legs.put(event.trainId, new Leg(Buffers.OUT, sidingId, path.get(first).getStopId(), rail, first, tripPath.stopTimes.getLeadMillis(), event.millis, path));
+				final Leg leg = new Leg(Buffers.OUT, sidingId, path.get(first).getStopId(), rail, first, tripPath.stopTimes.getLeadMillis(), event.millis, path);
+				leg.plannedArrival = plannedArrival == null ? 0 : plannedArrival.applyAsLong(first);
+				legs.put(event.trainId, leg);
 			}
 			return;
 		}
@@ -124,11 +151,17 @@ public final class BufferRecorder {
 	}
 
 	private void finish(Leg leg, long millis) {
-		final long excess = millis - leg.startMillis - leg.standingMillis - leg.plannedMillis;
+		final boolean byLateness = leg.kind == Buffers.OUT && leg.plannedArrival > 0;
+		final long excess = byLateness ? millis - leg.plannedArrival : millis - leg.startMillis - leg.standingMillis - leg.plannedMillis;
 		if (excess > MAX_EXCESS_MILLIS) {
 			return;
 		}
-		add(Buffers.key(leg.kind, leg.from, leg.to), excess);
+		final String key = Buffers.key(leg.kind, leg.from, leg.to);
+		add(key, excess);
+		final java.util.function.ObjLongConsumer<String> listener = outListener;
+		if (byLateness && listener != null) {
+			listener.accept(key, excess);
+		}
 	}
 
 	/**
@@ -280,6 +313,10 @@ public final class BufferRecorder {
 		private final List<? extends PlanTrack> path;
 		private long standingMillis;
 		private long standingSince = -1;
+		/**
+		 * For a way out, the planned arrival at its first stop, or 0 if not known.
+		 */
+		private long plannedArrival;
 
 		private Leg(int kind, long from, long to, int startRail, int endRail, long plannedMillis, long startMillis, List<? extends PlanTrack> path) {
 			this.kind = kind;

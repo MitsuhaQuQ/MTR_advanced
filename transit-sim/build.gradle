@@ -64,6 +64,8 @@ tasks.register("simulateDay", JavaExec) {
 	systemProperty "mtr.noLinePools", project.findProperty("mtr.noLinePools") ?: "false"
 	// -Pmtr.earlyThreshold=millis runs the day with another early threshold than the world's, to compare
 	systemProperty "mtr.earlyThreshold", project.findProperty("mtr.earlyThreshold") ?: ""
+	// -Pmtr.buffersFile=path adopts the ways out in it, and with --outs writes back what was measured longer
+	systemProperty "mtr.buffersFile", project.findProperty("mtr.buffersFile") ?: ""
 	// -Pmtr.blockMinLength=100000 runs without long track cut into block sections, to compare; -Pmtr.debugStuck=true lists
 	// the trains standing between stations at the end and what holds them up
 	systemProperty "mtr.blockMinLength", project.findProperty("mtr.blockMinLength") ?: "400"

@@ -104,6 +104,25 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public final transitsim.sim.BufferRecorder bufferRecorder = new transitsim.sim.BufferRecorder();
 	/**
+	 * On the server, the ways out corrected by how late their trains reach the first stop (user 2026-11-13), fed by
+	 * {@link #bufferRecorder}; the times it asks to adopt wait in {@link #pendingOutLeads} for the next tick. Not saved: after
+	 * a restart a way out found ineffective is tried once more.
+	 */
+	private final transitsim.sim.OutLeads outLeads = new transitsim.sim.OutLeads();
+	private final Map<String, Long> pendingOutLeads = new TreeMap<>();
+	private Map<String, Long> sentIneffective = Collections.emptyMap();
+
+	{
+		bufferRecorder.outListener = (key, lateness) -> {
+			final long adopt = outLeads.add(key, lateness, this.addedBuffers.getMillis().getOrDefault(key, 0L));
+			if (adopt >= 0) {
+				synchronized (pendingOutLeads) {
+					pendingOutLeads.put(key, adopt);
+				}
+			}
+		};
+	}
+	/**
 	 * On the clients, its trains reported late or stuck and those a contingency plan is on for
 	 * ({@link mtr.packet.DelayAlarms}); on the server, as last sent.
 	 */
@@ -421,6 +440,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final List<Long> added = new ArrayList<>();
 		messagePackHelper.iterateArrayValue(KEY_ADDED_BUFFERS, value -> added.add(value.asIntegerValue().asLong()));
 		addedBuffers = limitAdded(transitsim.plan.Buffers.fromList(added));
+		dispatcher.addedBuffers = addedBuffers;
 	}
 
 	@Deprecated
@@ -481,6 +501,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		readHeadways(packet);
 		readBuffers(packet);
 		addedBuffers = readBufferList(packet);
+		dispatcher.addedBuffers = addedBuffers;
 		rules.fromBytes(packet.readByteArray(1 << 20));
 		readAreaHeights(packet);
 	}
@@ -750,6 +771,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public void setAddedBuffers(transitsim.plan.Buffers newAddedBuffers, Consumer<FriendlyByteBuf> sendPacket) {
 		addedBuffers = limitAdded(newAddedBuffers);
+		dispatcher.addedBuffers = addedBuffers;
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(id);
 		packet.writeUtf(transportMode.toString());
@@ -763,11 +785,57 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Sends the players the buffers if they changed by more than a little since they were last sent (D1).
 	 */
 	public void sendBuffersIfChanged(Consumer<FriendlyByteBuf> sendPacket) {
-		if (bufferRecorder.takeChanged()) {
-			buffers = bufferRecorder.getBuffers();
+		adoptOutLeads(sendPacket);
+		final Map<String, Long> ineffective = outLeads.getIneffective();
+		if (bufferRecorder.takeChanged() || !ineffective.equals(sentIneffective)) {
+			buffers = withIneffective(bufferRecorder.getBuffers(), ineffective);
+			sentIneffective = ineffective;
 			sendBuffers(sendPacket);
 			isDirty = true;
 		}
+	}
+
+	/**
+	 * @return what was measured, with each way out that leaving earlier didn't help as how late its trains still were, made
+	 * negative so the web editor tells it apart (2026-11-13)
+	 */
+	private static transitsim.plan.Buffers withIneffective(transitsim.plan.Buffers measured, Map<String, Long> ineffective) {
+		if (ineffective.isEmpty()) {
+			return measured;
+		}
+		final Map<String, Long> millis = new TreeMap<>(measured.getMillis());
+		ineffective.forEach((key, lateness) -> millis.put(key, -Math.max(1, lateness)));
+		return new transitsim.plan.Buffers(millis);
+	}
+
+	/**
+	 * The ways out measured longer than adopted are adopted as measured (user 2026-11-13: 出库提前量按实际跑的记下来自动校正),
+	 * so the duties' trains leave the siding that much earlier from the next plan on; turning round and the ways back stay
+	 * suggestions (round 4, step 6). Only ever raised: lowering one is left to a player, in the web editor.
+	 */
+	private void adoptOutLeads(Consumer<FriendlyByteBuf> sendPacket) {
+		final Map<String, Long> pending;
+		synchronized (pendingOutLeads) {
+			if (pendingOutLeads.isEmpty()) {
+				return;
+			}
+			pending = new TreeMap<>(pendingOutLeads);
+			pendingOutLeads.clear();
+		}
+		final Map<String, Long> adopted = new TreeMap<>(addedBuffers.getMillis());
+		final Map<String, Long> ineffective = outLeads.getIneffective();
+		final List<String> changes = new ArrayList<>();
+		pending.forEach((key, millis) -> {
+			final long before = adopted.getOrDefault(key, 0L);
+			if (millis > 0) {
+				adopted.put(key, millis);
+			} else {
+				adopted.remove(key);
+			}
+			changes.add(key + " " + before / 1000 + "s -> " + millis / 1000 + "s" + (ineffective.containsKey(key) ? " (leaving earlier didn't help: still " + ineffective.get(key) / 1000 + "s late, waiting on the way for something on the clock, such as a service train on a turn back track; change the timetable or the way)" : ""));
+		});
+		setAddedBuffers(adopted.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(adopted), sendPacket);
+		System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " corrected the ways out by how late their trains reached the first stop (out:siding:platform): " + String.join("; ", changes));
 	}
 
 	/**
@@ -776,6 +844,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	public void clearBuffers(Consumer<FriendlyByteBuf> sendPacket) {
 		bufferRecorder.clear();
 		bufferRecorder.takeChanged();
+		outLeads.clear();
+		sentIneffective = Collections.emptyMap();
+		synchronized (pendingOutLeads) {
+			pendingOutLeads.clear();
+		}
 		buffers = transitsim.plan.Buffers.NONE;
 		sendBuffers(sendPacket);
 		isDirty = true;
@@ -897,11 +970,14 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 			if (buffers.isEmpty()) {
 				bufferRecorder.clear();
 				bufferRecorder.takeChanged();
+				outLeads.clear();
+				sentIneffective = Collections.emptyMap();
 			} else if (bufferRecorder.hasSamples()) {
-				buffers = bufferRecorder.getBuffers();
+				buffers = withIneffective(bufferRecorder.getBuffers(), sentIneffective);
 			}
 		} else if (KEY_ADDED_BUFFERS.equals(key)) {
 			addedBuffers = limitAdded(readBufferList(packet));
+			dispatcher.addedBuffers = addedBuffers;
 		} else if (KEY_VEHICLE_SETTINGS.equals(key)) {
 			readVehicleSettings(packet);
 		} else if (KEY_FREQUENCIES_MIGRATED.equals(key)) {
@@ -2822,8 +2898,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 					autoPlanRecord = record;
 					lineShortfall = new Shortfall(linePlan);
 					lineShortfall.entrancesUnset.addAll(new TreeSet<>(entrancesUnset));
-					if (!entrancesUnset.isEmpty()) {
-						System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " reaches the line at more than one station; lines with no rule saying which their trains go by, not planned: " + String.join(", ", new TreeSet<>(entrancesUnset)));
+					// The list also holds the platforms run against the line outside an interlocking zone, told on their own
+					final Set<String> unsetLines = new TreeSet<>(entrancesUnset);
+					unsetLines.removeIf(entry -> entry.startsWith(RoutePaths.DepotLine.AGAINST_UNLOCKED));
+					if (!unsetLines.isEmpty()) {
+						System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " reaches the line at more than one station; lines with no rule saying which their trains go by, going by the most convenient: " + String.join(", ", unsetLines));
 					}
 					sendAutoDuties(minecraftServer);
 				});

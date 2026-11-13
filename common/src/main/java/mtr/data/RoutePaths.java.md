@@ -133,7 +133,7 @@
 - 参数：`keep` 找到的腿是否保存（仅为日志测量时不保存，否则会保留它尝试过的每一条路，第 4 轮第 4 步）。
 - 作用：
   1. 两端的区段；站台按线路方向（`platformAlong`）。
-  2. 车厂规则（"运用补完"第 2 步，`wayRuleFor`）：命名回送路径，或出/回经过的车站（停车线在多个车站接入线路时必须设置）。没有路径节点时：规则指定车站则只保留该车站（无则 `REASON_RULE`）；未指定而停车线接入多于一个车站则报告并返回 `REASON_ENTRANCE_UNSET`；候选为离停车线直线距离最近的 `NEARBY_STATIONS` 个车站（检查全线所有站曾在大网络上占满内存）。
+  2. 车厂规则（"运用补完"第 2 步，`wayRuleFor`）：命名回送路径，或出/回经过的车站（停车线在多个车站接入线路时必须设置）。没有路径节点时：规则指定车站则只保留该车站（无则 `REASON_RULE`）；未指定而停车线接入多于一个车站时（0.75.0 起）只报告（`reportEntranceAuto`）并照常按最方便的方向找（线路方向优先、逆向过站台最后才用），不再返回 `REASON_ENTRANCE_UNSET`；候选为离停车线直线距离最近的 `NEARBY_STATIONS` 个车站（检查全线所有站曾在大网络上占满内存）。
   3. 规划：规则指定了入口站台且在线上 → `LineDepotWays.planOut/planBack` 经该站（停车线一侧经命名路径节点 `throughDepotLeg`）；有路径节点 → 按节点顺序（编辑器点选的轨道覆盖其整个区段，2026-11-09）`RouteLegs.plan`；无候选车站 → `RouteLegs.planBetween`；否则 `LineDepotWays.planOut/planBack` 经最近车站。
   4. `-Dmtr.debugDepotWays=true` 时打印每条出入库路及途中折返的站台。
   5. 没找到：`diagnoseDepotWay` 写原因，返回空。找到：每个停靠区段对应停车线、途中折返的站台、目标站台（无法对应则空），`expand` 展开；途中折返的站台不是停站：只换端（停站时间改为折返时间、站台 id 清零），否则回库列车会在那里等待一个没有计划的发车。
@@ -172,8 +172,16 @@
 ### `synchronized Set<Long> entrancesOf(SavedRailBase siding, GraphRecords.Legs legs, Plans linePlans, RouteLegs.LegSource source)`
 - 返回：停车线接入线路的车站（出入口）：对离停车线最近的 `2 × NEARBY_STATIONS` 个车站，停车线两种离开方向、到达两种方向的腿上遇到的第一个线路站台所属车站。按区段快照缓存；`-Dmtr.debugDepotWays` 时打印。
 
-### `synchronized void reportEntranceUnset(SavedRailBase siding, SavedRailBase platform)`
-- 作用：把以该站台为首/末站的线路键加入 `entrancesUnset`；每对停车线/站台只打印一次"停车线在多于一个车站接入线路，车厂没有规则说明该站台的列车经哪个车站；在设置之前不在那里编排"。
+### `synchronized void reportEntranceAuto(SavedRailBase siding, SavedRailBase platform)`
+- 作用（0.75.0 由 `reportEntranceUnset` 改名）：把以该站台为首/末站的线路键加入 `entrancesUnset`（网页只作灰色说明）；每对停车线/站台只打印一次"停车线在多于一个车站接入线路，车厂没有规则说明该站台的列车经哪个车站；按最方便的走"。
+
+### `synchronized void reportAgainstUnlocked(SavedRailBase siding, List<Long> platforms)`
+- 作用（0.75.0）：唯一的出入库路要逆着线路方向过本线站台、而这些站台不在联锁区时，把 `AGAINST_UNLOCKED`（`"against:"`）+ 站台 ID 加进 `entrancesUnset`（随缺车说明发给网页，网页单独警告），每对停车线/站台组只打印一次说明（照常使用，但刷联锁色之前可能对撞）。
+
+## 逆向过站台与联锁区（0.75.0，用户 2026-11-13）
+- 字段 `interlockZones`（`Supplier<Map<UUID, Long>>`，默认空表）：轨道 → 联锁区编号，由 `RailwayData` 设为 `getSignalBlocks().getZones(SecurityConfig.interlockColor)`（联锁色，默认品红）。
+- `findDepotWay` 在 `expand` 之后：`LineDepotWays.againstStops(plan, linePlans.plans)` 列出逆着线路方向经过的站台；非空时 `unlockedAgainst` 检查每个站台本身的轨道以及路径上和站台两端相接的轨道都在联锁区里；有不在的就 `reportAgainstUnlocked`，路照常使用。联锁区让进路一次锁住整段，对向列车进不来。起初定为没刷就不用，但六线测试图的 1、3、4、5、6 号线（站前折返+站后车库、车厂只接单边等常见布局）都因此没了运用，用户改定"没刷照样走，只提示风险"。
+- 常量 `DepotLine.AGAINST_UNLOCKED = "against:"`：`entrancesUnset` 里以它开头的是逆向未联锁的站台，其余是线路键；`Depot` 打日志时把它们滤掉。
 
 ## static final class WayRule
 - 出/回经过的车站（0 为最近的）、命名路径的节点、入口站台；`NONE` 为空规则。

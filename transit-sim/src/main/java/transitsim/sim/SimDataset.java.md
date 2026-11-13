@@ -7,7 +7,7 @@
 ## 类 SimDataset（final）
 
 ### 常量
-- `VERSION = 19`：数据格式版本。2 加入列车状态（G0），3 信号闭塞区（G1），4 车厂按频率发车与停车线顺序、手动驾驶的停车线（G1），5 发车间隔与停车线池，6 线路自身最快时间（L1），7 跨运营线路车厂的停车线池，8 线路的运营线路，9 线路的终点/起点站台，10 联锁区标志，11 池总车数，12 只按运用发车，13 提前折返路径（D4），14 去运用分段起点的出库路径（D5），15 车辆最高速度，16 站台停车位置，17 早到阈值，18 最快时间多列（每时刻表一对），19 分段索引路径（`IndexedPath`）；更旧的数据缺少这些读取。（javadoc 只列到 15，其余由代码推断。）
+- `VERSION = 19`：数据格式版本。2 加入列车状态（G0），3 信号闭塞区（G1），4 车厂按频率发车与停车线顺序、手动驾驶的停车线（G1），5 发车间隔与停车线池，6 线路自身最快时间（L1），7 跨运营线路车厂的停车线池，8 线路的运营线路，9 线路的终点/起点站台，10 联锁区标志，11 池总车数，12 只按运用发车，13 提前折返路径（D4），14 去运用分段起点的出库路径（D5），15 车辆最高速度，16 站台停车位置，17 早到阈值，18 最快时间多列（每时刻表一对），19 分段索引路径（`IndexedPath`），20 车厂采用的余量（0.75.0，`DepotData.addedBuffers`，`buildRunner` 交给 `DepotBoard.dispatcher.addedBuffers`，出库时按它提前发车）；更旧的数据缺少这些读取。（javadoc 只列到 15，其余由代码推断。）
 - `UNLIMITED_TRAINS = 256`：不限车数的停车线最多发出的列车数（与游戏一致）。
 
 ### 字段
@@ -117,6 +117,7 @@
 - `sidingOrder`（long[]）：游戏车厂轮流发车的停车线顺序。
 - `releaseInterval`（int）：按运用发车的最小间隔（秒），0 为无。
 - `dutiesOnly`（boolean）：只按运用发车（R2）。
+- `addedBuffers`（`Buffers`，默认 `NONE`）：车厂采用的余量（版本 20），游戏 `SimExport` 填 `Depot.getAddedBuffers()`；`replaceDuties` 照抄。
 - 构造函数 `DepotData(long id, long[] routeIds, boolean cycleRoutes, byte[] duties)`。调用者：`SimExport.java:59`。
 - `write`/`read`（private）：基本字段。
 

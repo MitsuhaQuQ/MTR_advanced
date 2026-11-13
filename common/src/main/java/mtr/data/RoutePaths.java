@@ -60,6 +60,11 @@ public final class RoutePaths {
 	 */
 	private final mtr.advanced.GraphRecords graphRecords;
 	/**
+	 * The interlocking zones of the rails ({@link SignalBlocks#getZones}, the interlocking colour), which a way out or back
+	 * running one of the line's platforms against the line has to be in (user 2026-11-13); set by {@link RailwayData}.
+	 */
+	public volatile java.util.function.Supplier<Map<UUID, Long>> interlockZones = Collections::emptyMap;
+	/**
 	 * What the owners were last worked out from.
 	 */
 	private long ownersFingerprint;
@@ -772,9 +777,9 @@ public final class RoutePaths {
 					return Collections.emptyList();
 				}
 			} else if (depotLine.entrancesOf(siding, legs, linePlans, source).size() > 1) {
-				depotLine.reportEntranceUnset(siding, platform);
-				setWhy(why, DepotLegs.REASON_ENTRANCE_UNSET);
-				return Collections.emptyList();
+				// No rule saying which station: the way most convenient is taken, the line's way first (user 2026-11-13: 不特别
+				// 配置路线的时候自动走方便的方向); before, no duties were planned for the line until a rule said which
+				depotLine.reportEntranceAuto(siding, platform);
 			}
 			stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
 			stations.subList(0, Math.min(NEARBY_STATIONS, stations.size())).forEach(station -> nearby.add(station.getKey()));
@@ -818,6 +823,21 @@ public final class RoutePaths {
 			return Collections.emptyList();
 		}
 		final List<PathData> path = expand(plan, legs.snapshot, stops, rails);
+		// Running one of the line's platforms against the line, which is only taken where there is no other way
+		// (LineDepotWays.AGAINST_STOP_PENALTY), is safe with that platform and the rails either side of it in an
+		// interlocking zone: the route through the throat then holds them all at once, so a train coming the line's way
+		// can't meet it head on. Without the zone the way is still used, as common layouts need it (a depot behind a
+		// terminus turning back before it, one joined to one track only), and the depot's hints warn which platforms to
+		// paint (user 2026-11-13, after the six-line tests lost their duties when it wasn't used)
+		if (linePlans != null && depotLine != null && path != null) {
+			final List<Long> against = transitsim.network.LineDepotWays.againstStops(plan, linePlans.plans);
+			if (!against.isEmpty()) {
+				final List<Long> unlocked = unlockedAgainst(against, linePlans, path);
+				if (!unlocked.isEmpty()) {
+					depotLine.reportAgainstUnlocked(siding, unlocked);
+				}
+			}
+		}
 		if (path != null && stops.size() > 2) {
 			// A platform turned back at on the way isn't a stop: the train only changes ends there, as on a turn back rail.
 			// A stop there had a train going back to its siding after its duty wait at it for a departure no plan has
@@ -832,6 +852,40 @@ public final class RoutePaths {
 			}
 		}
 		return path;
+	}
+
+	/**
+	 * @return the platforms a way runs against the line that aren't, with the rails the way takes into and out of them, in
+	 * an interlocking zone
+	 */
+	private List<Long> unlockedAgainst(List<Long> againstSections, DepotLine.Plans linePlans, List<PathData> path) {
+		final Map<UUID, Long> zones = interlockZones.get();
+		final List<Long> unlocked = new ArrayList<>();
+		for (final long section : againstSections) {
+			final SavedRailBase platform = linePlans.stations.get(section);
+			if (platform == null) {
+				continue;
+			}
+			final BlockPos mid = platform.getMidPos();
+			final List<BlockPos> ends = platform.getOrderedPositions(new BlockPos(mid.getX(), mid.getY(), mid.getZ()), false);
+			boolean locked = ends.size() == 2 && zones.containsKey(PathData.getRailProduct(ends.get(0), ends.get(1)));
+			// The rails the way takes onto the platform and off it: those meeting its ends along the way
+			for (final PathData pathData : path) {
+				if (!locked) {
+					break;
+				}
+				final BlockPos start = pathData.startingPos;
+				final BlockPos end = pathData.getLastPos();
+				final boolean platformRail = ends.contains(start) && ends.contains(end);
+				if (!platformRail && (ends.contains(start) || ends.contains(end)) && !zones.containsKey(PathData.getRailProduct(start, end))) {
+					locked = false;
+				}
+			}
+			if (!locked) {
+				unlocked.add(platform.id);
+			}
+		}
+		return unlocked;
 	}
 
 	private static void setWhy(long[][] why, int reason) {
@@ -910,6 +964,11 @@ public final class RoutePaths {
 		private transitsim.network.TrackSections.Snapshot entrancesSnapshot;
 		private final Set<String> reported = new HashSet<>();
 		private final Set<String> entrancesUnset;
+		/**
+		 * Marks a platform in {@link #entrancesUnset} that a way out or back runs against the line outside an interlocking
+		 * zone, for the depot's hints (2026-11-13); the rest are line keys.
+		 */
+		public static final String AGAINST_UNLOCKED = "against:";
 		private WayRule override;
 
 		/**
@@ -1040,9 +1099,23 @@ public final class RoutePaths {
 		}
 
 		/**
-		 * Tells once that a siding reaching the line at more than one station has no rule saying which a line goes by.
+		 * Tells once that a siding running a line's platforms against the line has no interlocking zone there, so that way
+		 * isn't used.
 		 */
-		synchronized void reportEntranceUnset(SavedRailBase siding, SavedRailBase platform) {
+		synchronized void reportAgainstUnlocked(SavedRailBase siding, List<Long> platforms) {
+			if (entrancesUnset != null) {
+				platforms.forEach(platformId -> entrancesUnset.add(AGAINST_UNLOCKED + platformId));
+			}
+			if (reported.add(siding.id + "/against/" + platforms)) {
+				System.out.println("Minecraft Transit Railway: the only way between siding " + siding.id + " and its line runs the line's platforms " + platforms + " against the line, which aren't in an interlocking zone; it is used, but trains could meet head on there until they are painted in the interlocking colour");
+			}
+		}
+
+		/**
+		 * Tells once that a siding reaching the line at more than one station has no rule saying which a line goes by, so the
+		 * most convenient is taken; the lines are listed for the depot's hints ({@code entrancesUnset}).
+		 */
+		synchronized void reportEntranceAuto(SavedRailBase siding, SavedRailBase platform) {
 			if (entrancesUnset != null) {
 				routes.forEach(route -> {
 					if (route.getFirstPlatformId() == platform.id || route.getLastPlatformId() == platform.id) {
@@ -1051,7 +1124,7 @@ public final class RoutePaths {
 				});
 			}
 			if (reported.add(siding.id + "/" + platform.id)) {
-				System.out.println("Minecraft Transit Railway: siding " + siding.id + " reaches the line at more than one station, and no rule of its depot says which the trains for platform " + platform.id + " go by; none are planned there until one does" + (Boolean.getBoolean("mtr.debugDepotWays") ? " (" + (rules == null ? "no" : rules.rules.size()) + " rules, lines " + routes.stream().filter(route -> route.getFirstPlatformId() == platform.id || route.getLastPlatformId() == platform.id).map(LineDuties::getLineKey).collect(java.util.stream.Collectors.toList()) + ")" : ""));
+				System.out.println("Minecraft Transit Railway: siding " + siding.id + " reaches the line at more than one station, and no rule of its depot says which the trains for platform " + platform.id + " go by; they take the most convenient" + (Boolean.getBoolean("mtr.debugDepotWays") ? " (" + (rules == null ? "no" : rules.rules.size()) + " rules, lines " + routes.stream().filter(route -> route.getFirstPlatformId() == platform.id || route.getLastPlatformId() == platform.id).map(LineDuties::getLineKey).collect(java.util.stream.Collectors.toList()) + ")" : ""));
 			}
 		}
 

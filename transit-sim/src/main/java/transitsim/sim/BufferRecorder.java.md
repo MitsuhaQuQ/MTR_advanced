@@ -21,25 +21,34 @@
 - `buffers`（Buffers）：当前余量。
 - `changed`（boolean）：自上次 `takeChanged` 以来余量是否变化。
 
+### `public volatile ObjLongConsumer<String> outListener`（2026-11-13）
+每测得一次按首站晚点算的出库，告诉它（出库的键、晚了多少毫秒）；宿主设置，给 `OutLeads` 用（游戏 `Depot`、日模拟工具）。
+
+### `public static IntToLongFunction plannedArrivals(TrainService<?> service)`（2026-11-13）
+返回：路径上某轨道的计划到达时刻（`service.getPlanAt(rail)` 的 `arrivalMillis` 经 `getPlannedMillis`），没有计划为 0。调用者：`TickRunner.recordBuffers`、`Siding`（游戏每 tick 喂事件处）。
+
 ### `<T extends PlanTrack> void onEvent(MotionEvent event, long sidingId, TripPath<T> tripPath)`
+等于 `onEvent(event, sidingId, tripPath, null)`。
+
+### `<T extends PlanTrack> void onEvent(MotionEvent event, long sidingId, TripPath<T> tripPath, IntToLongFunction plannedArrival)`
 - 作用：处理一个运动事件：
   - `DEPARTED`：若该车正在测量且出发轨道不是区间起点（途中停站后再出发），累计站立时间；否则丢弃旧区间并 `startLeg`。
   - `STOPPED`：非回库区间到达终点轨道 → `finish`；停在途中有停站时间的轨道：若是站台（说明换了路径）→ 丢弃，否则开始计站立时间。
   - `RETURNED`：回库区间 → `finish`；然后丢弃。
   - `LAP`：丢弃。
-- 参数：`event` 事件；`sidingId` 列车所属停车线；`tripPath` 列车当前路径（可 null）。
+- 参数：`event` 事件；`sidingId` 列车所属停车线；`tripPath` 列车当前路径（可 null）；`plannedArrival` 轨道 → 计划到达（可 null，见下）。
 - 副作用：修改 `legs`，可能新增测量。
 - 调用者：`Siding.java:1732`、`TickRunner.java:954`。
 
 ### `private <T extends PlanTrack> void startLeg(MotionEvent event, long sidingId, TripPath<T> tripPath)`
 - 作用：只对运用路径（`isDuty()` 且有 `dutyStarts`）开始测量：
-  - 出发轨道为 0（出库）：到第一个站台停站，计划用时 = `stopTimes.getLeadMillis()`，种类 `OUT`。
+  - 出发轨道为 0（出库）：到第一个站台停站，计划用时 = `stopTimes.getLeadMillis()`，种类 `OUT`；有 `plannedArrival` 时记下首站的计划到达（2026-11-13）。
   - 从站台出发且之后无站台：若不留在线上且回库时间 > 0，种类 `BACK`，终点为停车线（回送路径用 `TripPath.getReturnSidingId`）。
   - 下一个站台恰好是运用中下一段的起点：种类 `TURN`，计划用时 = `stopTimes.getMovingMillis(rail, next)`（≥ 0 时）。
 - 调用者：`onEvent`。
 
 ### `private void finish(Leg leg, long millis)`
-超出 = 到达 − 出发 − 站立 − 计划；超过 `MAX_EXCESS_MILLIS` 忽略，否则 `add`。
+超出 = 到达 − 出发 − 站立 − 计划；出库且知道首站计划到达时（2026-11-13）改为到达 − 计划到达，即到首站晚了多少：提前出库却在路上等按钟点走的东西（如折返线上的正线列车）时，跑得更久但到得一样晚，按用时算会越加越多（六线图日模拟三轮里一条出库从 80 秒涨到 932 秒）。超过 `MAX_EXCESS_MILLIS` 忽略，否则 `add`，按晚点算的出库再告诉 `outListener`。
 
 ### `void add(String key, long excessMillis)`
 - 作用：加入一个测量（比计划多的毫秒，提前为负）；键数达上限时忽略新键；保留最近 20 个；`update`。

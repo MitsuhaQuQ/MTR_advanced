@@ -18,9 +18,11 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -85,6 +87,31 @@ public final class SimulateDay {
 			data = dataset.toBytes();
 		}
 		System.out.printf("Early threshold %d ms%n", dataset.earlyThresholdMillis);
+		// -Dmtr.buffersFile=path: the ways out adopted as a depot does on its own (2026-11-13), read from the file before the
+		// day and, with --outs, written back with what was measured longer, so running again is the next day after adopting
+		final String buffersFile = System.getProperty("mtr.buffersFile", "");
+		final Map<String, Long> adoptedOuts = new TreeMap<>();
+		if (!buffersFile.isEmpty() && new java.io.File(buffersFile).isFile()) {
+			for (final String line : java.nio.file.Files.readAllLines(java.nio.file.Paths.get(buffersFile))) {
+				final String[] parts = line.trim().split("=");
+				if (parts.length == 2) {
+					adoptedOuts.put(parts[0], Long.parseLong(parts[1]));
+				}
+			}
+			final Map<Long, Long> sidingDepots = new HashMap<>();
+			dataset.sidings.forEach(siding -> sidingDepots.put(siding.id, siding.depotId));
+			for (final SimDataset.DepotData depot : dataset.depots) {
+				final Map<String, Long> millis = new TreeMap<>(depot.addedBuffers.getMillis());
+				adoptedOuts.forEach((key, value) -> {
+					if (Objects.equals(sidingDepots.get(transitsim.plan.Buffers.parse(key)[1]), depot.id)) {
+						millis.merge(key, value, Math::max);
+					}
+				});
+				depot.addedBuffers = millis.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(millis);
+			}
+			data = dataset.toBytes();
+			System.out.println("Adopted ways out: " + adoptedOuts);
+		}
 		// -Dmtr.simRoutes=id,id simulates only those routes' part of the world, as the editor does (SimScope);
 		// -Dmtr.simRoutes=scopes lists how big that part is for each depot's routes, without simulating
 		final String simRoutes = System.getProperty("mtr.simRoutes", "");
@@ -114,6 +141,39 @@ public final class SimulateDay {
 		final long runStart = System.nanoTime();
 		// -Dmtr.simHours=N simulates only the first N hours, to compare runs of a big world quickly
 		final long hours = Long.getLong("mtr.simHours", 24L);
+		// --outs: each way out of a depot, from leaving the siding to leaving the first stop, against the plan (2026-11-13)
+		final OutLegs outLegs = flags.contains("--outs") ? new OutLegs() : null;
+		// With --outs, what the depots' recorders measure too (D1), for comparing with the legs; with -Dmtr.buffersFile, the
+		// ways out also correct themselves as the day goes, as the game's depots do (OutLeads, 2026-11-13)
+		final transitsim.sim.BufferRecorder outBuffers = new transitsim.sim.BufferRecorder();
+		final transitsim.sim.OutLeads outLeads = new transitsim.sim.OutLeads();
+		final Map<Long, transitsim.sim.DepotBoard> sidingBoards = new HashMap<>();
+		final List<String> outChanges = new ArrayList<>();
+		if (outLegs != null) {
+			simulator.getRunner().setTrainListener(outLegs::onEvent);
+			simulator.getRunner().addTrainListener((event, train) -> sidingBoards.putIfAbsent(train.getSidingId(), train.getDepot()));
+			simulator.getRunner().recordBuffers(outBuffers);
+			if (!buffersFile.isEmpty()) {
+				outBuffers.outListener = (key, lateness) -> {
+					final transitsim.sim.DepotBoard board = sidingBoards.get(transitsim.plan.Buffers.parse(key)[1]);
+					if (board == null) {
+						return;
+					}
+					final Map<String, Long> millis = new TreeMap<>(board.dispatcher.addedBuffers.getMillis());
+					final long before = millis.getOrDefault(key, 0L);
+					final long adopt = outLeads.add(key, lateness, before);
+					if (adopt >= 0) {
+						if (adopt > 0) {
+							millis.put(key, adopt);
+						} else {
+							millis.remove(key);
+						}
+						board.dispatcher.addedBuffers = millis.isEmpty() ? transitsim.plan.Buffers.NONE : new transitsim.plan.Buffers(millis);
+						outChanges.add(clock(simulator.getRunner().getMillis()) + " " + key + " " + before / 1000 + "s -> " + adopt / 1000 + "s");
+					}
+				};
+			}
+		}
 		final RunInvariants<SimDataset.DataTrack> invariants = check ? new RunInvariants<>(simulator.getRunner()) : null;
 		if (invariants == null) {
 			simulator.advanceTo(dayStart + hours * HOUR);
@@ -208,6 +268,24 @@ public final class SimulateDay {
 				System.out.printf("stuck %d head rail %d/%d len %.0f speed %.2f accel %b pieces %d progress %.1f own %.1f nextBlocked %b nextLen %.0f nextPieces %d nextPlatform %b blockedRail %d nextStop %d%n",
 						train.id, head, path.size(), track.getTrackLength(), track.getMaxSpeed(), track.canAccelerate(), transitsim.network.BlockSections.getPieceCount(track.getTrackLength(), track.canAccelerate() ? track.getMaxSpeed() : -1), train.getRailProgress(),
 						train.getSectionBlockedPosition(head, train.getRailProgress()), next != null && train.isRailBlocked(head + 1), next == null ? 0 : next.getTrackLength(), next == null ? 0 : transitsim.network.BlockSections.getPieceCount(next.getTrackLength(), next.canAccelerate() ? next.getMaxSpeed() : -1), next != null && next.isPlatformTrack(), train.getBlockedRail(), train.getNextStoppingIndex());
+			}
+		}
+		if (outLegs != null) {
+			outLegs.print();
+			System.out.println("Measured buffers (D1, kind:from:to = ms): " + outBuffers.getBuffers().getMillis());
+			if (!buffersFile.isEmpty()) {
+				outChanges.forEach(change -> System.out.println("Way out corrected: " + change));
+				System.out.println("Ways out leaving earlier didn't help (key = still late ms): " + outLeads.getIneffective());
+				// What the depots ended the day with, for the next run
+				adoptedOuts.clear();
+				new HashSet<>(sidingBoards.values()).forEach(board -> board.dispatcher.addedBuffers.getMillis().forEach((key, millis) -> {
+					if (transitsim.plan.Buffers.parse(key)[0] == transitsim.plan.Buffers.OUT) {
+						adoptedOuts.put(key, millis);
+					}
+				}));
+				final StringBuilder text = new StringBuilder();
+				adoptedOuts.forEach((key, millis) -> text.append(key).append('=').append(millis).append(System.lineSeparator()));
+				java.nio.file.Files.write(java.nio.file.Paths.get(buffersFile), text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 			}
 		}
 		// --origins: how each service left its first stop against its service time and its plan (0.66.4), to find trains
@@ -305,5 +383,106 @@ public final class SimulateDay {
 
 	private static String clock(long millis) {
 		return java.time.Instant.ofEpochMilli(millis).atZone(OperatingDay.getTimeZone()).toLocalTime().toString();
+	}
+
+	/**
+	 * Ways out of depots as they ran: from the train leaving its siding to it leaving the first stop of its duty, the time
+	 * the duty allowed (its departure there less the time it left), how long it stood short of taken track on the way, and
+	 * how often it stopped to turn back. Grouped by siding, worst first.
+	 */
+	private static final class OutLegs {
+
+		private final java.util.Map<Long, Leg> open = new java.util.HashMap<>();
+		private final List<Leg> done = new java.util.ArrayList<>();
+
+		private void onEvent(transitsim.motion.MotionEvent event, transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train) {
+			final List<SimDataset.DataTrack> path = train.getPath();
+			final int rail = event.rail;
+			if (rail < 0 || rail >= path.size()) {
+				return;
+			}
+			final Leg leg = open.get(train.id);
+			switch (event.type) {
+				case DEPARTED:
+					if (rail == 0 && path.get(0).isSidingTrack()) {
+						final Leg started = new Leg(train.id, train.getSidingId(), event.millis, train.service.getLeadMillis());
+						open.put(train.id, started);
+					} else if (leg != null) {
+						if (leg.holdStart >= 0) {
+							leg.holdMillis += event.millis - leg.holdStart;
+							leg.holdStart = -1;
+						} else if (leg.arrived >= 0) {
+							leg.departed = event.millis;
+							open.remove(train.id);
+							done.add(leg);
+						}
+					}
+					break;
+				case STOPPED:
+					if (leg == null) {
+						break;
+					}
+					final SimDataset.DataTrack track = path.get(rail);
+					if (track.getDwellTime() <= 0) {
+						leg.holdStart = event.millis;
+						leg.holds++;
+					} else if (track.getStopId() == 0) {
+						leg.turns++;
+					} else if (leg.arrived < 0) {
+						leg.arrived = event.millis;
+						leg.stopRail = rail;
+						// The first stop's planned departure, as the trip's report takes it
+						final transitsim.plan.RouteTimetable.StopPlan plan = train.service.getPlanAt(rail);
+						leg.planned = plan == null ? 0 : train.service.getPlannedMillis(plan.departureMillis);
+						leg.routeId = train.service.getTripRouteId();
+					}
+					break;
+				case RETURNED:
+					open.remove(train.id);
+					break;
+				default:
+					break;
+			}
+		}
+
+		private void print() {
+			System.out.printf("OUTS %d ways out ran (%d not finished)%n", done.size(), open.size());
+			final java.util.Map<Long, List<Leg>> bySiding = new java.util.TreeMap<>();
+			done.forEach(leg -> bySiding.computeIfAbsent(leg.sidingId, key -> new java.util.ArrayList<>()).add(leg));
+			final List<java.util.Map.Entry<Long, List<Leg>>> entries = new java.util.ArrayList<>(bySiding.entrySet());
+			entries.sort((a, b) -> Long.compare(b.getValue().stream().mapToLong(Leg::late).max().orElse(0), a.getValue().stream().mapToLong(Leg::late).max().orElse(0)));
+			for (final java.util.Map.Entry<Long, List<Leg>> entry : entries) {
+				final List<Leg> legs = entry.getValue();
+				final java.util.LongSummaryStatistics late = legs.stream().mapToLong(Leg::late).summaryStatistics();
+				System.out.printf("OUTS siding %d (route %s): %d legs, late at first stop avg %+.0f s max %+.0f s; allowed avg %.0f s, planned lead to arrive %.0f s, ran avg %.0f s (to arrive %.0f s), held avg %.0f s in %.1f stops, turned back %.1f times%n",
+						entry.getKey(), legs.stream().map(leg -> String.valueOf(leg.routeId)).distinct().collect(java.util.stream.Collectors.joining(",")), legs.size(), late.getAverage() / 1000, late.getMax() / 1000.0,
+						legs.stream().mapToLong(Leg::allowed).average().orElse(0) / 1000, legs.stream().mapToLong(leg -> leg.lead).average().orElse(0) / 1000, legs.stream().mapToLong(leg -> leg.departed - leg.left).average().orElse(0) / 1000,
+						legs.stream().mapToLong(leg -> leg.arrived - leg.left).average().orElse(0) / 1000,
+						legs.stream().mapToLong(leg -> leg.holdMillis).average().orElse(0) / 1000, legs.stream().mapToInt(leg -> leg.holds).average().orElse(0), legs.stream().mapToInt(leg -> leg.turns).average().orElse(0));
+				legs.stream().filter(leg -> leg.late() > 30000).limit(5).forEach(leg -> System.out.printf("OUTS   train %d left %s, planned at first stop %s, arrived %s, left %s (%+d s), held %d s in %d stops, turned %d%n",
+						leg.trainId, clock(leg.left), clock(leg.planned), clock(leg.arrived), clock(leg.departed), leg.late() / 1000, leg.holdMillis / 1000, leg.holds, leg.turns));
+			}
+		}
+
+		private static final class Leg {
+			private final long trainId, sidingId, left, lead;
+			private long planned, routeId, arrived = -1, departed = -1, holdStart = -1, holdMillis;
+			private int holds, turns, stopRail;
+
+			private Leg(long trainId, long sidingId, long left, long lead) {
+				this.trainId = trainId;
+				this.sidingId = sidingId;
+				this.left = left;
+				this.lead = lead;
+			}
+
+			private long late() {
+				return planned <= 0 ? 0 : departed - planned;
+			}
+
+			private long allowed() {
+				return planned <= 0 ? 0 : planned - left;
+			}
+		}
 	}
 }

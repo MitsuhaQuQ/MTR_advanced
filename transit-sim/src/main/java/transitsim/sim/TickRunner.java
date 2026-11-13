@@ -730,7 +730,7 @@ public final class TickRunner<T extends RunTrack> {
 						continue;
 					}
 					// When the duty's train left, as planned (运用补完 step 1), or by the way out for a duty planned before
-					final long wayOut = dutyPath.stopTimes.getLeadMillis();
+					final long wayOut = depot.dispatcher.wayOutMillis(sidingRun.sidingId, dutyPath);
 					final long leaveMillis = DutyShapes.getServiceMillis(dayStart, duty.segments.get(0).service) - (duty.outLeadMillis >= 0 ? DepotDispatcher.outLeadMillis(duty, wayOut) : wayOut);
 					if (leaveMillis <= millis) {
 						due.add(new Object[]{leaveMillis, sidingRun, i, dutyPath, depot});
@@ -951,7 +951,7 @@ public final class TickRunner<T extends RunTrack> {
 	 * Measures how much longer than planned the trains of duties take out, round and back (D1).
 	 */
 	public void recordBuffers(BufferRecorder recorder) {
-		addTrainListener((event, train) -> recorder.onEvent(event, train.getSidingId(), train.service.getTripPath()));
+		addTrainListener((event, train) -> recorder.onEvent(event, train.getSidingId(), train.service.getTripPath(), BufferRecorder.plannedArrivals(train.service)));
 	}
 
 	/**

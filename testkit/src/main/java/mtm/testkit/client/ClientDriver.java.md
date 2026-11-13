@@ -16,9 +16,10 @@ MTM_TestKit 的客户端驱动：在客户端开 `Http` 服务（side = `client`
   - `/ping` → `ping`；`/state` → `state`；
   - `/click`（`id`|`text`|`x,y`，`button`，`force`）→ `click`；
   - `/move`（`x,y`）→ `screen.mouseMoved`；`/scroll`（`x,y,amount`）→ `screen.mouseScrolled`；
-  - `/type`（`id`?，`text`，`clear`?）→ `type`；`/key`（`key`，`ctrl/shift/alt`）→ `key`；
+  - `/type`（`id`?，`text`，`clear`?；或 `chars`）→ `type`；`/key`（`key`，`ctrl/shift/alt`）→ `key`；
   - `/close` → 当前界面 `onClose()`；`/slot`（`slot`）→ 切换快捷栏格；
-  - `/use`（`x,y,z`，`face`?，`slot`?）→ `use`；`/use-item` → 主手 `gameMode.useItem`，返回 `{"result":…}`；
+  - `/use`（`x,y,z`，`face`?，`slot`?）→ `use`；`/use-entity`（`type`，默认 `painting`，2026-11-13）→ 对 6 格内最近的该类实体 `gameMode.interact`（主手），返回 `{"result":…}`，没有时报错；
+  - `/compare`（`setting`：`bake`|`optimization`，`settleMs`?，`tolerance`?，`name`?，2026-11-13）→ `RenderCompare.compare`；`/use-item` → 主手 `gameMode.useItem`，返回 `{"result":…}`；
   - `/chat`（`text`）→ `chat`；`/suggest`（`text`）→ `suggest`；`/chat-log?since=` → `chatLog`；
   - `/screenshot?id=` → `screenshot`（PNG）；
   - `/frames`（`optimizeTrainRendering`?、`maxFps`?（同时关垂直同步）、`x,y,z,yaw,pitch`?、`settleMs`?、`ms`，默认 10000）→ 先在渲染线程设好，再在请求线程等待并 `FrameStats.measure(ms)`（帧率测量，0.73.4）；
@@ -54,7 +55,7 @@ MTM_TestKit 的客户端驱动：在客户端开 `Http` 服务（side = `client`
 - 返回：`{"id","x","y","handled"}`。
 
 ### `private static JsonElement type(Minecraft, JsonObject body)`
-- 作用：有目标控件则先设焦点（`EditBox` 且 `clear` 时清空），再逐字符 `charTyped`。返回 null。
+- 作用：有 `chars` 时不找控件，直接对当前界面逐字符 `charTyped`（如刷子选图片列表的搜索，2026-11-13）；否则有目标控件则先设焦点（`EditBox` 且 `clear` 时清空），再逐字符 `charTyped`。返回 null。
 
 ### `private static JsonElement key(Minecraft, JsonObject body)`
 - 作用：按键名或数字键码，组合 Ctrl/Shift/Alt 修饰，`keyPressed`，界面未变时再 `keyReleased`。

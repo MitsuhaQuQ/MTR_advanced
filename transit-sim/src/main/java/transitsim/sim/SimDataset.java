@@ -44,9 +44,9 @@ public final class SimDataset {
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; version 13 the sidings' ways for turning back early (D4);
 	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
-	 * highest speed of their vehicles; older data is read without them.
+	 * highest speed of their vehicles; version 20 the depots' adopted buffers; older data is read without them.
 	 */
-	public static final int VERSION = 19;
+	public static final int VERSION = 20;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -155,6 +155,11 @@ public final class SimDataset {
 			writer.writeInt(setting);
 		});
 		writer.writeLong(earlyThresholdMillis);
+		depots.forEach(depot -> {
+			final List<Long> added = depot.addedBuffers.toList();
+			writer.writeVarInt(added.size());
+			added.forEach(writer::writeLong);
+		});
 		return writer.toBytes();
 	}
 
@@ -281,6 +286,19 @@ public final class SimDataset {
 		if (version >= 17) {
 			dataset.earlyThresholdMillis = Math.max(0, reader.readLong());
 		}
+		if (version >= 20) {
+			for (final DepotData depot : dataset.depots) {
+				final int size = reader.readVarInt();
+				if (size < 0 || size > 1 << 16) {
+					throw new IllegalArgumentException("Invalid buffer count " + size);
+				}
+				final List<Long> added = new ArrayList<>();
+				for (int i = 0; i < size; i++) {
+					added.add(reader.readLong());
+				}
+				depot.addedBuffers = transitsim.plan.Buffers.fromList(added);
+			}
+		}
 		return dataset;
 	}
 
@@ -338,6 +356,7 @@ public final class SimDataset {
 				newDepot.sidingOrder = depot.sidingOrder;
 				newDepot.releaseInterval = depot.releaseInterval;
 				newDepot.dutiesOnly = depot.dutiesOnly;
+				newDepot.addedBuffers = depot.addedBuffers;
 				depots.set(i, newDepot);
 				return true;
 			}
@@ -371,6 +390,7 @@ public final class SimDataset {
 			board.cycleRoutes = depot.cycleRoutes;
 			board.dispatcher.releaseIntervalMillis = depot.releaseInterval * 1000;
 			board.dutiesOnly = depot.dutiesOnly;
+			board.dispatcher.addedBuffers = depot.addedBuffers;
 			for (final int departure : depot.departures) {
 				board.departures.add(departure);
 			}
@@ -875,6 +895,11 @@ public final class SimDataset {
 		 * frequency or by its timetable in turn.
 		 */
 		public boolean dutiesOnly;
+		/**
+		 * The time added to the ways out, round and back as adopted on the depot (version 20); the ways out are added when
+		 * its trains leave for their duties ({@link DepotDispatcher#wayOutMillis}), as in the game.
+		 */
+		public transitsim.plan.Buffers addedBuffers = transitsim.plan.Buffers.NONE;
 
 		public DepotData(long id, long[] routeIds, boolean cycleRoutes, byte[] duties) {
 			this.id = id;

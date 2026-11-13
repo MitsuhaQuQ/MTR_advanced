@@ -1729,7 +1729,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			if (!trainEvents.isEmpty()) {
 				if (depot != null) {
 					final transitsim.plan.TripPath<PathData> eventPath = train.getService().getTripPath();
-					trainEvents.forEach(event -> depot.bufferRecorder.onEvent(event, id, eventPath));
+					final java.util.function.IntToLongFunction plannedArrival = transitsim.sim.BufferRecorder.plannedArrivals(train.getService());
+					trainEvents.forEach(event -> depot.bufferRecorder.onEvent(event, id, eventPath, plannedArrival));
 				}
 				if (motionEvents != null) {
 					motionEvents.addAll(trainEvents);

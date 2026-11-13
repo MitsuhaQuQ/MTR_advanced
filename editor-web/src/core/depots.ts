@@ -17,12 +17,9 @@ export function shortfallText(shortfall: any) {
   const pools = (shortfall.pools || []).filter((pool: any) => pool.uncovered > 0)
   const main = (shortfall.pools || []).length > 1 && pools.length ? tr("{0}：", shortfall.lines) + pools.map((pool: any) => (pool.needed < 0 ? tr("{0} 算不出需要几列，现有 {1} 列，每天 {2} 班没有车", pool.label, pool.available, pool.uncovered) : tr("{0} 跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", pool.label, pool.needed, pool.available, pool.uncovered))).join(tr("；"))
     : shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered)
-  // Services no number of trains could run aren't trains short; a depot with no rule saying which station its trains go
-  // by plans no line, said as that
-  const unset = (shortfall.entrancesUnset || []).map((key: string) => key.split("|").slice(1).join("|") || key)
-  const unrunnable = !shortfall.unrunnable ? "" : unset.length
-    ? tr("（其中每天 {0} 班没排：车厂接到线路的车站不止一个，{1} 还没有出入库规则指定从哪站进出；在车厂右键「出入库规则…」里加一条）", shortfall.unrunnable, unset.join("、"))
-    : tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable)
+  // Services no number of trains could run aren't trains short. A depot with no rule saying which station its trains go
+  // by takes the most convenient since 0.75.0, so that is no longer a reason
+  const unrunnable = !shortfall.unrunnable ? "" : tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable)
   return main + unrunnable + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "")
 }
 

@@ -110,12 +110,19 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     const deleted = Object.values(duties.sidings).some((slots: any) => slots.some((slot: any) => slot.some((day: any) => day.segments.some((segment: any) => !data.routeById.get(segment.route)))))
     if (deleted) problems.push({ level: "warn", text: tr("车厂{0}的运用里有已经删除的线路的班次", name) })
     if (depot.shortfall && depot.shortfall.uncovered > 0) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, shortfallText(depot.shortfall)) })
-    // Lines not planned for want of a rule saying which station the depot's trains go by
-    const unsetLines = (depot.shortfall && depot.shortfall.entrancesUnset) || []
+    // Lines with no rule saying which station the depot's trains go by: they go by the most convenient (2026-11-13)
+    // The same list holds, as "against:<platform>", the platforms a way out or back runs against the line outside an
+    // interlocking zone: used, but trains could meet head on there (2026-11-13)
+    const unsetEntries: string[] = (depot.shortfall && depot.shortfall.entrancesUnset) || []
+    const againstPlatforms = unsetEntries.filter(entry => entry.startsWith("against:")).map(entry => entry.slice("against:".length))
+    const unsetLines = unsetEntries.filter(entry => !entry.startsWith("against:"))
+    if (againstPlatforms.length) problems.push({ level: "warn", text: tr("车厂{0}：出入库要逆着线路方向经过 {1}，那里（站台和两头的道岔）没刷联锁色，和正线列车可能对头卡死；把那一段刷成联锁区（默认品红）就安全了，或者在出入库规则里指定一条顺向的路", name, againstPlatforms.map(platformId => platformText(data, platformId)).join("、")) })
     if (unsetLines.length) {
       const lineName = (key: string) => { const found = depotLines(data, depot).find(([lineKey]) => lineKey === key); return found ? found[1] : key.split("|").slice(1).join("|") || key }
-      problems.push({ level: "err", text: tr("车厂{0}接到线路的车站不止一个，{1} 没有出入库规则指定从哪站进出，这些线路不排运用；在车厂右键「出入库规则…」里加一条", name, unsetLines.map(lineName).join("、")) })
+      problems.push({ level: "hint", text: tr("车厂{0}接到线路的车站不止一个，{1} 没有出入库规则，已按方便的方向自动出入库；要固定从哪站进出，在车厂右键「出入库规则…」里加一条", name, unsetLines.map(lineName).join("、")) })
     }
+    // Ways out leaving earlier didn't help (2026-11-13): the server sends them as measured buffers below zero
+    ;(depot.buffers || []).filter((b: any) => b.kind === "out" && b.seconds < 0).forEach((b: any) => problems.push({ level: "warn", text: tr("车厂{0}：{1} 的出库提前了也没用，到 {2} 仍晚 {3} 秒（在路上等正线列车之类按钟点走的东西），要改时刻表或出库路", name, b.from, b.to, -b.seconds) }))
     if (duties.auto && depot.shortfall && depot.shortfall.replan) problems.push({ level: "warn", text: tr("车厂{0}：{1}", name, replanText(depot.shortfall)) })
     // Ways out and back path generation found missing, which the planning keeps off; and those not measured yet
     depot.sidings.forEach((siding: any) => {

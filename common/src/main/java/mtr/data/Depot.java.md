@@ -88,7 +88,8 @@
 - `getBuffers()`：实测比计划多用的时间（建议，玩家可采用）。调用者：`EditorData.java:219`。
 - `getAddedBuffers()`：运用编排所用的、已采用的附加时间。调用者：`EditorData.java:220`、`EditorDuties.java:388`。
 - `setAddedBuffers(Buffers, Consumer)`：网页编辑器设置，限制后发送 `added_buffers`。调用者：`EditorActions.java:209`。
-- `sendBuffersIfChanged(Consumer)`：记录器有足够变化时取出并发送 `measured_buffers`。调用者：`RailwayData.java:614`。
+- `sendBuffersIfChanged(Consumer)`：先 `adoptOutLeads`，再在记录器有足够变化或没用的出库变了时取出并发送 `measured_buffers`（带 `withIneffective`）。
+- 出库提前量自动校正（0.75.0，用户 2026-11-13 定按实际跑的校正、按首站晚点算、没用就停）：字段 `outLeads`（组件 `OutLeads`，不存档：重启后被判为没用的出库会再试一次）、`pendingOutLeads`、`sentIneffective`；初始化块把 `bufferRecorder.outListener` 接到 `outLeads.add`，要采用的值先放进 `pendingOutLeads`。`sendBuffersIfChanged` 每 tick 先 `adoptOutLeads`（取出待采用的，改 `addedBuffers` 经 `setAddedBuffers` 发出，日志 `corrected the ways out by how late their trains reached the first stop`，被判没用的写明仍晚多少、要改时刻表或出库路），再在实测变了或“没用的出库”变了时发 `measured_buffers`：`withIneffective` 把没用的出库按仍晚的毫秒取负放进实测余量里，网页据此显示（`DepotPanel`、`sync.ts`）。网页清空实测（`clearBuffers`、`update` 收到空实测）时 `outLeads.clear()`。凡改 `addedBuffers` 处（读档、整包、`setAddedBuffers`、`update`）都同步 `dispatcher.addedBuffers`，派车时马上按它提前（`DepotDispatcher.wayOutMillis`）。
 - `clearBuffers(Consumer)`：网页编辑器清除实测并发送。调用者：`EditorActions.java:194`。
 - `private sendBuffers(Consumer)`。
 

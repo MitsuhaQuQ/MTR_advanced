@@ -100,6 +100,24 @@ public final class ClientDriver {
 			result.addProperty("result", minecraft.gameMode.useItem(player(minecraft), InteractionHand.MAIN_HAND).toString());
 			return result;
 		}));
+		// Uses the item in hand on the nearest entity of a type within reach, as right-clicking it ({type: "painting"})
+		routes.put("/use-entity", (body, query) -> Http.onThread(minecraft, () -> {
+			final net.minecraft.client.player.LocalPlayer player = player(minecraft);
+			final String type = body.has("type") ? body.get("type").getAsString() : "painting";
+			net.minecraft.world.entity.Entity nearest = null;
+			for (final net.minecraft.world.entity.Entity entity : minecraft.level.entitiesForRendering()) {
+				if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).getPath().equals(type) && entity.distanceToSqr(player) < 36 && (nearest == null || entity.distanceToSqr(player) < nearest.distanceToSqr(player))) {
+					nearest = entity;
+				}
+			}
+			if (nearest == null) {
+				throw new IllegalStateException("no " + type + " within 6 blocks");
+			}
+			final JsonObject result = new JsonObject();
+			result.addProperty("result", minecraft.gameMode.interact(player, nearest, InteractionHand.MAIN_HAND).toString());
+			result.addProperty("entity", nearest.getId());
+			return result;
+		}));
 		routes.put("/chat", (body, query) -> Http.onThread(minecraft, () -> chat(minecraft, body.get("text").getAsString())));
 		routes.put("/suggest", (body, query) -> suggest(minecraft, body.get("text").getAsString()));
 		routes.put("/chat-log", (body, query) -> chatLog(query.containsKey("since") ? Long.parseLong(query.get("since")) : 0));
@@ -165,6 +183,8 @@ public final class ClientDriver {
 				return result;
 			});
 		});
+		// The same view with a render setting on and off, compared pixel by pixel (RenderCompare)
+		routes.put("/compare", (body, query) -> RenderCompare.compare(minecraft, body));
 		routes.put("/log", (body, query) -> LogCapture.since(query.containsKey("since") ? Long.parseLong(query.get("since")) : 0));
 		routes.put("/join", (body, query) -> Http.onThread(minecraft, () -> {
 			// As the multiplayer screen's direct connect does
@@ -310,6 +330,14 @@ public final class ClientDriver {
 	 */
 	private static JsonElement type(Minecraft minecraft, JsonObject body) {
 		final Screen screen = screen(minecraft);
+		// "chars": typed into the screen as it is, without looking for a widget (a list's search, as in the painting screen)
+		if (body.has("chars")) {
+			final String chars = body.get("chars").getAsString();
+			for (int i = 0; i < chars.length(); i++) {
+				screen.charTyped(chars.charAt(i), 0);
+			}
+			return null;
+		}
 		final WidgetTree.Found found = find(screen, body);
 		if (found != null) {
 			screen.setFocused(found.widget);

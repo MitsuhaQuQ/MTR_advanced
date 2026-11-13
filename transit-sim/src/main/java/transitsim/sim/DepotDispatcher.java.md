@@ -75,11 +75,17 @@
   2. 先看接管（`findTakeoverDeploy`），有到期的备用车则发它。
   3. 遍历每个停车线的每个槽位：跳过今天无运用、已运行、由过夜车接管、或首服务距今超过 `MAX_LEAD_MILLIS` 的；求路径键（`getSlotKey`）。
   4. 选出发停车线（S8）：自己的停车线有车且不是 `START_ANY` 时优先；否则（非 `START_ONLY`）在同池其他有车的停车线中找有该路径的；`START_ANY` 时取出库最快的（同样快按 id）。
-  5. 发车时刻 = 首服务 − `outLeadMillis`。晚了超过 `MAX_DEPLOY_DELAY_MILLIS` 且运用仍在运行时：不让列车凭空出现在线上（D5），用 `findFrom` 找它出库后仍赶得上的第一段，找不到则标记今天不运行并打印日志；赶得上且已到期则候选。
+  5. 发车时刻 = 首服务 − `outLeadMillis(duty, wayOutMillis(停车线, 运用路径))`（0.75.0 起出库用时含车厂采用的出库余量）。晚了超过 `MAX_DEPLOY_DELAY_MILLIS` 且运用仍在运行时：不让列车凭空出现在线上（D5），用 `findFrom` 找它出库后仍赶得上的第一段，找不到则标记今天不运行并打印日志；赶得上且已到期则候选。
   6. 正常到期的候选中：不晚的优先于晚的，再取发车时刻更早的。
 - 参数：`sidingIds` 有车可发的停车线（有序）；`duties` 运用表；`tripPaths` 停车线 → 路径键 → 路径（停车线不存在为 null）；`routes` 线路查询；`pools` 停车线 → 池；`variants` 停车线按需生成路径的能力，null 为不能。
 - 返回：要发的 `DutyDeploy`，或 null。副作用：标记已运行、更新 `lastReleaseMillis`、可能打印日志。
 - 调用者：`Depot.java:1922`、`TickRunner.java:1303`。
+
+### `public volatile Buffers addedBuffers`（0.75.0）
+车厂采用的余量（D1、第 4 轮第 6 步），由宿主设置：游戏 `Depot` 每次改 `addedBuffers` 时同步，组件 `SimDataset.buildRunner` 从 `DepotData.addedBuffers`（数据第 20 版）设置。
+
+### `<T> long wayOutMillis(long sidingId, TripPath<T> dutyPath)`（0.75.0）
+出库用时：`dutyPath.stopTimes.getLeadMillis()` 加上 `addedBuffers.out(停车线, 路径上第一个站台停站的站台 ID)`；没有采用的余量时就是计划的。用户 2026-11-13 定"出库提前量按实际跑的记下来自动校正"：采用的出库余量当场让列车提前发车，不等重新排运用。调用者：本类 `findDutyDeploy`、`TickRunner.placeDutyTrains`、`DutyRunTest.anAdoptedWayOutSendsTheTrainOutThatMuchEarlier`。
 
 ### `static long outLeadMillis(DepotDuties.DayDuty duty, long wayOutMillis)`
 运用列车在首服务前多久离开停车线：按计划（运用补完第 1 步）但不少于出库用时；旧计划（`outLeadMillis < 0`）为出库用时 + 15 秒。调用者：`TickRunner.java:734`、`DutyItemsTest.java:80`。

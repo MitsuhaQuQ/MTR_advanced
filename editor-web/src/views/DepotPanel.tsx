@@ -36,7 +36,7 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
   const poolFleetOf = (pool: any) => (current?.poolFleets && current.poolFleets[pool.key] !== undefined ? current.poolFleets[pool.key] : pool.fleet)
   const [fleets, setFleets] = useState<Record<string, string>>(() => Object.fromEntries((depot?.pools || []).map((p: any) => { const f = poolFleetOf(p); return [p.key, f === null || f === undefined || f < 0 ? "" : String(f)] })))
   const addedOf = (b: any) => (current?.addedBuffers ? current.addedBuffers[b.key] : b.added)
-  const [buffers, setBuffers] = useState<Record<string, Buffer>>(() => Object.fromEntries((depot?.buffers || []).map((b: any) => [b.key, { adopt: Boolean(addedOf(b)), seconds: String(addedOf(b) || b.seconds || "") }])))
+  const [buffers, setBuffers] = useState<Record<string, Buffer>>(() => Object.fromEntries((depot?.buffers || []).map((b: any) => [b.key, { adopt: Boolean(addedOf(b)), seconds: String(addedOf(b) || (b.seconds > 0 ? b.seconds : "") || "") }])))
   const [clearBuffers, setClearBuffers] = useState(Boolean(current?.clearBuffers))
   const [minReverse, setMinReverse] = useState(() => String(Math.round(fn.minReverseMillis() / 1000)))
   const [waitThreshold, setWaitThreshold] = useState(() => String(Math.round(fn.waitThresholdMillis() / 1000)))
@@ -177,7 +177,7 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
       )}
 
       <H>{tr("实测余量")}</H>
-      <p className="m-0 mb-1.5 text-[12px] text-dim">{tr("列车实际比计划多用的时间（最近 20 次的 85% 分位，多 15 秒以上才记），只作建议。勾上“采用”的才加在出入库和折返上排运用，时刻表不变；采用的变了，现有运用接得上就不自动重排，在车厂右键菜单里“重新排运用”。")}</p>
+      <p className="m-0 mb-1.5 text-[12px] text-dim">{tr("列车实际比计划多用的时间（最近 20 次的 85% 分位，多 15 秒以上才记；出库按到首站晚了多少算）。出库的自动校正：每 3 班取中间值，晚了就把这条出库提前这么多，马上生效；提前后晚点没少一半，说明在路上等正线列车之类按钟点走的东西，提前没用，就退回并标出来。折返和回库只作建议，勾上“采用”的才加上。采用的加在出入库和折返上排运用，时刻表不变；采用的变了，现有运用接得上就不自动重排，在车厂右键菜单里“重新排运用”。")}</p>
       {(depot.buffers || []).length ? <>
         <table className="w-full border-collapse text-[12px]">
           <tbody>
@@ -187,7 +187,7 @@ export function DepotPanel({ depotId, onClose }: { depotId: string; onClose: () 
                 <tr key={b.key} className="border-t border-grid" data-buffer={b.key}>
                   <td className="py-1 pr-2">{bufferKinds[b.kind] || b.kind}</td>
                   <td className="pr-2">{b.from} → {b.to}</td>
-                  <td className="pr-2 text-dim">{b.seconds ? tr("实测 +{0} 秒", b.seconds) : tr("没有实测")}</td>
+                  <td className="pr-2 text-dim">{b.seconds < 0 ? <span className="text-warn">{tr("提前出库没用：到首站仍晚 {0} 秒，在路上等正线列车等按钟点走的东西，要改时刻表或出库路", -b.seconds)}</span> : b.seconds ? tr("实测 +{0} 秒", b.seconds) : tr("没有实测")}</td>
                   <td className="whitespace-nowrap">
                     <label className="mr-1 inline-flex items-center gap-1"><input type="checkbox" checked={value.adopt} onChange={e => setBuffers({ ...buffers, [b.key]: { ...value, adopt: e.target.checked } })} /> {tr("采用")}</label>
                     <input className={field + " num w-16"} type="number" min={1} max={1200} disabled={!value.adopt} value={value.seconds} onChange={e => setBuffers({ ...buffers, [b.key]: { ...value, seconds: e.target.value } })} /> {tr("秒")}
@@ -267,7 +267,7 @@ export function DepotRules({ depotId, editing, onClose }: { depotId: string; edi
         <button className="btn" onClick={() => { value.paths.push({ id: String(Date.now()), name: "", kind: "out", from: "0", to: "0", waypoints: [] }); changed() }}>{tr("新增出库路径")}</button>
         <button className="btn" onClick={() => { value.paths.push({ id: String(Date.now() + 1), name: "", kind: "back", from: "0", to: "0", waypoints: [] }); changed() }}>{tr("新增回库路径")}</button>
       </>}>
-      {unset.length > 0 && <p className="tint-warn m-0 mb-3 rounded-md p-2 text-[12px] text-warn">{tr("这个车厂接到线路上不止一个车站，这些线路还没指定出入口，不给排运用：{0}", unset.map(key => (lines.find(([k]) => k === key) || [key, key])[1]).join("、"))}</p>}
+      {unset.length > 0 && <p className="m-0 mb-3 rounded-md bg-panel2 p-2 text-[12px] text-dim">{tr("这个车厂接到线路上不止一个车站，这些线路没指定出入口，已按方便的方向自动出入库（可在出入库规则里指定）：{0}", unset.map(key => (lines.find(([k]) => k === key) || [key, key])[1]).join("、"))}</p>}
       <h3 className="label-sm m-0 mb-1.5">{tr("规则")}</h3>
       {!value.rules.length && <p className="text-[12px] text-dim">{tr("还没有规则：都按默认（最近车站后顺线路方向出入库）")}</p>}
       {value.rules.map((rule, i) => (
