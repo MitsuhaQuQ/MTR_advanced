@@ -1164,7 +1164,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		System.out.println("Minecraft Transit Railway: depot " + name + " sends its trains out by a timetable from now on, " + departures.size() + " services a day" + (departures.size() >= RouteTimetable.MAX_SERVICES ? " (as many as a timetable takes; the rest left out)" : "") + (services.size() < routes.size() ? ", only " + services.size() + " of its " + routes.size() + " routes as the others' times aren't known" : ""));
 	}
 
-	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, RailwayDataPathGenerationModule.Snapshot snapshot, Set<Siding> sidings, Consumer<java.util.concurrent.Future<?>> callback) {
+	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, RailwayDataPathGenerationModule.Snapshot snapshot, Set<Siding> unorderedSidings, Consumer<java.util.concurrent.Future<?>> callback) {
+		// By ID: the world's sidings are a hash set of objects hashed by identity, so taken as they come the sidings were
+		// grouped and given their duties in another order each time the server started, and the same plan gave a depot's
+		// sidings different duties (found 2026-11-13 comparing the yel world's duty paths across starts)
+		final Set<Siding> sidings = new LinkedHashSet<>();
+		unorderedSidings.stream().sorted(Comparator.comparingLong(siding -> siding.id)).forEach(sidings::add);
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		// By frequency or a list of departures, the depot runs by a timetable from now on (R2)
 		migrateFrequencies(world, liveDataCache, railwayData == null ? snapshot.rails : railwayData.getRails());

@@ -293,6 +293,9 @@
 ## 路径构建（已移出）
 `MainPath` 和它用的 `Connection` 在 2026-11-13（拆分车厂第 1 步）原样移成同包的独立类 `DutyPathBuilder`，见 `DutyPathBuilder.java.md`。`Depot` 在 `generateMainRoute`、`measureTurnTimes`、`findDutyPaths` 等处用 `new DutyPathBuilder(this, …)`；为此 `autoPlanRecord`、`pathDetours`、`pathLength`、`findTimetabledRoute`、`getActiveTimetable` 和几个常量（`NEARBY_TURN_BACK_BLOCKS`、`MAX_NEARBY_TURN_BACKS`、`DETOUR_MIN_BLOCKS`、`DETOUR_FACTOR`、`MAX_TURN_LINK_BLOCKS`、`MAX_PLATFORM_CHANGE_REACH`）由 private 改为包内可见。
 
+## 存车线顺序（0.75.2）
+- `generateMainRoute` 的存车线参数（世界的 `HashSet<Siding>`，按对象身份散列）在入口按 ID 排成 `LinkedHashSet` 再用；以前每次开服分组和分配运用的顺序不同，同一份规划让存车线拿到不同的运用。
+
 ## 寻路计时和路径导出（2026-11-13）
 - `generateMainRoute` 结束时的 `Finished path generation` 一行带上分段用时：总计、量折返用时、找出入库路、规划单元排运用（planned / partly planned / kept / shared）、拼运用路径及路径条数。yel 世界开服 13 个车厂：每个 3–912 毫秒，排运用最多 771 毫秒，拼运用路径最多 125 毫秒。
 - `private dumpDutyPaths(List<DutyPathBuilder>, turnTimes, measuredWays)`：`-Dmtr.dumpDutyPaths=<文件夹>` 时写 `depot-<id>.txt`（折返用时、出入库用时和不可达、每条存车线每条运用路径的键、分段起点、出库用时、总用时、轨道和停站），排好序，两次构建可逐行比较；拆分车厂每一步都用它验收。

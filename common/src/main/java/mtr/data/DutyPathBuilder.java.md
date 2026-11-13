@@ -1,6 +1,6 @@
 # DutyPathBuilder.java
 
-车厂的路径构建：把线路拼成各存车线运用的路径，找班次之间的连接和折返、附近的折返轨和留置位，量换站台和折返用时，车厂没设运用时从时刻表排运用。2026-11-13 从 `Depot` 的内部类 `MainPath` 原样移出（拆分车厂第 1 步，行为不变：yel 世界开服导出的全部运用路径和移动前逐行相同，见下）；字段 `depot` 指向所属车厂，原来隐式用到的车厂成员都改成 `depot.` 前缀。下一步是把其中纯计算的部分（附近折返轨和留置位、折返和换站台用时、连接段拼接、整份运用路径组装）逐块搬进组件。
+车厂的路径构建：把线路拼成各存车线运用的路径，找班次之间的连接和折返、附近的折返轨和留置位，量换站台和折返用时，车厂没设运用时从时刻表排运用。2026-11-13 从 `Depot` 的内部类 `MainPath` 原样移出（拆分车厂第 1 步，行为不变：yel 世界开服导出的全部运用路径和移动前逐行相同，见下）；字段 `depot` 指向所属车厂，原来隐式用到的车厂成员都改成 `depot.` 前缀。下一步是把其中纯计算的部分逐块搬进组件：附近折返轨和留置位已搬（0.75.2，`transitsim.network.NearbyTurnBacks`），接着是折返和换站台用时、连接段拼接、整份运用路径组装。
 
 ## private static final class Connection（原在 `Depot`，只有这里用）
 找到的两班次间连接，以拷贝发出，保留连接与其折返线绕行共用哪些轨道。
@@ -11,7 +11,7 @@
 ## final class DutyPathBuilder（原 `Depot.MainPath`）
 一组停车线（车辆运行同一组线路）共享的、经过车厂部分线路的路径，以及为其找运用路径、折返、连接所需的全部搜索。
 ### 字段
-- `turnBackRailsOf` / `turnBackRails` / `nearbyTurnBackNodes` / `nearbyStablingNodes`：所搜索轨道上的折返线（起止），由它们找到的各站台附近尽头节点，及其中留置线节点（运用补完第 4 步）。
+- `turnBackRailsOf` / `nearbyTurnBacks`：找附近折返轨时所搜的轨道，和组件里为每个站台找附近折返轨的 `transitsim.network.NearbyTurnBacks`（0.75.2 起，所搜轨道换了才重建）。
 - `connectionsOf` / `connections`：本次搜索中找到的班次间连接（按所搜轨道）。
 - `failure`、`sidings`、`lineSidings`（编排单元其他车厂的停车线）。
 - `repeatPath`、`closesPath`（从末条线路折返回第一条线路首站，列车不经车厂循环）、`dutiesOnly`（按运用运行：每条线路只检查，列车走运用路径，线路顺序无关、无需首尾相接）。
@@ -114,14 +114,14 @@
 ### `long connectionMillis(PathTiming.Vehicle vehicle, List<PathData> connectingPath)`
 - 从停在站台起走完整条路的毫秒（只在调试中使用）。
 
-### `List<BlockPos> getNearbyTurnBackNodes(SavedRailBase platform, rails)` / `getNearbyTurnBackNodesTimed(...)` / `findNearbyTurnBackNodes(...)`
-- 返回：站台可达范围（200 格）内折返线的尽头节点，最近的在前，最多 6 个（线路未列出时用于折返）；然后每个留置区（`dataCache.stablingRails`）一个节点，最近的在前，最多 6 个（运用补完第 4 步，同时记入 `nearbyStablingNodes`）。所搜轨道在找路期间不变，折返线只列一次、每个站台只查一次（第 5 轮第 3 步：原来每次读全世界轨道，大网络上约 13000 次）。`ConnectionStats.ON` 时计时。
+### `List<BlockPos> getNearbyTurnBackNodes(SavedRailBase platform, rails)` / `getNearbyTurnBackNodesTimed(...)`
+- 返回：站台附近的折返节点（线路未列出时用于折返），由组件 `NearbyTurnBacks` 找（0.75.2，拆分车厂第 2a 步，规则不变）：200 格内折返线的尽头，最近的在前，最多 6 个；然后每个留置区一个节点，最近的在前，最多 6 个。`ConnectionStats.ON` 时计时。
+
+### `NearbyTurnBacks.Result nearbyOf(SavedRailBase platform, rails)`
+- 所搜轨道换了（或第一次）时列出全部折返线（两端打包成长整数，`BlockPos.asLong`），建一个 `NearbyTurnBacks`：节点度数取 `rails.get(节点).size()`，留置区取 `dataCache.stablingRails` 按轨道（`PathData.getRailProduct`）；然后按站台 ID 查（站台中心 `getMidPos().asLong()`，范围 `Depot.NEARBY_TURN_BACK_BLOCKS`，上限 `Depot.MAX_NEARBY_TURN_BACKS`）。
 
 ### `List<BlockPos> withStabling(List<BlockPos> listed, SavedRailBase platform, rails)`
-- 线路列出的折返节点之后加上站台附近的留置区节点（玩家把它们标为该处折返的任何线路都可用，运用补完第 4 步）。
-
-### `BlockPos stablingNode(List<BlockPos[]> blockRails, BlockPos center, rails)` / `boolean isBefore(...)`
-- 留置区中列车折返处：其中折返线的尽头（最近的），否则离站台最远的折返线端点（列车从站台驶入）；距离相同按位置长整数。
+- 线路列出的折返节点之后加上站台附近的留置区节点（`nearbyOf(...).stabling`，玩家把它们标为该处折返的任何线路都可用，运用补完第 4 步）。
 
 ### `TurnBackSection<PathData> findTurnBackSection(SavedRailBase from, SavedRailBase to, List<BlockPos> nodes, int start, rails, graph, boolean useFastSpeed)`
 - 作用：经每个折返节点找从一站到下一站的路；每种走法都必须与第一条可用走法从同样的轨道离开第一站并到达下一站，使列车可从该站选任何一种。不可用的记 `TURN_BACK_UNUSED` 失败。

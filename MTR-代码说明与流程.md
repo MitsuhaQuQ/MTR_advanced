@@ -74,6 +74,10 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.75.2 拆分车厂第 2a 步：找站台附近折返轨和留置位的规则从 `DutyPathBuilder` 原样搬进组件 `transitsim.network.NearbyTurnBacks`（折返线两端、站台中心都按 Minecraft 方式打包成长整数；节点度数和留置区由宿主用函数给），宿主只列出折返线并把结果换回 `BlockPos`（`DutyPathBuilder.nearbyOf`）。组件测试 `NearbyTurnBacksTest`。
+- **修正：每次开服车厂存车线分到的运用不一样**。对比导出时发现 yel 同一车厂四次开服有三种结果（运用路径 14、16、11 条），规划摘要每次一样，变的是同一车池里两条存车线谁拿全天的长运用、谁拿短的。原因：世界的存车线是 `HashSet<Siding>`，`Siding` 没有重写 `hashCode`，按对象身份散列，每次开服迭代顺序不同，`generateMainRoute` 按这个顺序分组、交给规划和拼路径。现在入口处按 ID 排成 `LinkedHashSet` 再用。之后同一份代码开服两次结果相同；用 0.75.1 的路径构建加同样的排序开服一次，结果也和第 2a 步逐字节相同。
+- 验收：上面三次 yel 开服导出逐字节相同；组件 631、common 476 项测试全过；六线图完整用例 19 过 3 不过，和之前完全一样。
+
 0.75.1 拆分车厂第 1 步（用户 2026-11-13 定：按收益和工作量排序，先量后改）：
 - **先量**（第 0 步）：`Depot.generateMainRoute` 结束时的 `Finished path generation` 一行带上分段用时。yel 世界开服 13 个车厂寻路，每个 3–912 毫秒：排运用（`LineDuties`）最多 771 毫秒，拼运用路径（原 `MainPath`）最多 125 毫秒，量折返用时最多 20 毫秒，找出入库路最多 71 毫秒；每个规划单元开服时基本只排一次。所以拆分的收益是能在组件里测试，不是省时间；规划协调（第 3 步）暂时没有性能上的理由。
 - **`MainPath` 原样移成独立类 `DutyPathBuilder`**（同包，约 1550 行；`Depot.java` 4342 → 2847 行）：字段 `depot` 指向所属车厂，原来隐式用到的车厂成员加 `depot.` 前缀，只有它用的 `Connection` 一起移过去，车厂里它用到的几个成员由 private 改为包内可见。行为不变。
