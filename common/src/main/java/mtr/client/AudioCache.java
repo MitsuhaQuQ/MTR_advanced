@@ -127,7 +127,17 @@ public final class AudioCache implements IPacket {
 	 * @return the hash of the server's file with this name, ignoring case as the server does, or null if it has none
 	 */
 	public static String getHash(String namespace, String name) {
-		return ENTRIES.stream().filter(entry -> entry.namespace.equals(namespace) && entry.name.equalsIgnoreCase(name)).map(entry -> entry.hash).findFirst().orElse(null);
+		final Entry entry = find(namespace, name);
+		return entry == null ? null : entry.hash;
+	}
+
+	/**
+	 * @return the file with this name, or the one that had it before (0.79.0), or null
+	 */
+	public static Entry find(String namespace, String name) {
+		final Map<String, List<String>> oldNames = new HashMap<>();
+		ENTRIES.forEach(entry -> oldNames.put(entry.resourceId, entry.oldNames));
+		return mtr.media.MediaIds.resolve(AnnouncementSound.getUploadedString(namespace, name), ENTRIES, Entry::getReference, entry -> entry.resourceId, mtr.media.MediaIds.byOldName(oldNames));
 	}
 
 	public static boolean isCached(String hash) {
@@ -153,6 +163,13 @@ public final class AudioCache implements IPacket {
 	 * @param folder the folder to put it in, or null to leave a replaced file where it is and put a new one at the top
 	 */
 	public static int upload(String name, String soundId, byte[] bytes, String folder) throws AudioFiles.InvalidAudioException {
+		return upload(name, soundId, bytes, folder, null);
+	}
+
+	/**
+	 * @param replaceId the id of the file to put this in place of (0.79.0), keeping its id, folder and sound ID, or null
+	 */
+	public static int upload(String name, String soundId, byte[] bytes, String folder, String replaceId) throws AudioFiles.InvalidAudioException {
 		final String cleanFolder;
 		try {
 			cleanFolder = folder == null ? null : mtr.media.MediaFolders.normalize(folder);
@@ -174,7 +191,7 @@ public final class AudioCache implements IPacket {
 		if (!cleanSoundId.isEmpty() && !AnnouncementSound.isValidSoundId(cleanSoundId)) {
 			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_bad_sound_id", AnnouncementSound.MAX_SOUND_ID_LENGTH));
 		}
-		if (!cleanSoundId.isEmpty() && ENTRIES.stream().anyMatch(entry -> entry.mine && entry.soundId.equals(cleanSoundId) && !entry.name.equalsIgnoreCase(AudioFiles.withExtension(AudioFiles.cleanName(name))))) {
+		if (!cleanSoundId.isEmpty() && ENTRIES.stream().anyMatch(entry -> entry.mine && entry.soundId.equals(cleanSoundId) && !entry.name.equalsIgnoreCase(AudioFiles.withExtension(AudioFiles.cleanName(name))) && !entry.resourceId.equals(replaceId))) {
 			throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_same_sound_id", cleanSoundId));
 		}
 
@@ -194,8 +211,11 @@ public final class AudioCache implements IPacket {
 			packet.writeUtf(fileName);
 			packet.writeByteArray(chunk);
 			packet.writeUtf(cleanSoundId);
-			if (cleanFolder != null) {
-				packet.writeUtf(cleanFolder);
+			if (cleanFolder != null || replaceId != null) {
+				packet.writeUtf(cleanFolder == null ? "" : cleanFolder);
+			}
+			if (replaceId != null) {
+				packet.writeUtf(replaceId);
 			}
 			RegistryClient.sendToServer(PACKET_AUDIO_UPLOAD, packet);
 		}
@@ -293,6 +313,18 @@ public final class AudioCache implements IPacket {
 		for (int i = 0; i < folderCount; i++) {
 			newFolders.add(new mtr.media.MediaFolders.Folder(packet.readUtf(64), packet.readUtf(), packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4)));
 		}
+		// Then each file's id and the references it had before (0.79.0)
+		final String[] resourceIds = new String[count];
+		final List<List<String>> oldNameLists = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			resourceIds[i] = packet.isReadable() ? packet.readUtf(16) : "";
+			final List<String> names = new ArrayList<>();
+			final int oldCount = packet.isReadable() ? mtr.packet.PacketGuard.readCount(packet, 1, 4096) : 0;
+			for (int j = 0; j < oldCount; j++) {
+				names.add(packet.readUtf());
+			}
+			oldNameLists.add(names);
+		}
 		for (int i = 0; i < count; i++) {
 			final String soundId = soundIds[i];
 			final Object[] raw = rawEntries.get(i);
@@ -303,6 +335,8 @@ public final class AudioCache implements IPacket {
 				final Entry entry = new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), (String) raw[2], size, (Long) raw[4], (String) raw[5], (Long) raw[6], (Boolean) raw[7], AnnouncementSound.isValidSoundId(soundId) ? soundId : "");
 				entry.uploader = uploaders[i];
 				entry.folder = folders[i];
+				entry.resourceId = resourceIds[i];
+				entry.oldNames = oldNameLists.get(i);
 				entries.add(entry);
 			}
 		}
@@ -316,10 +350,16 @@ public final class AudioCache implements IPacket {
 			// A name now with another recording was updated: whoever had the old one gets the new one straight away,
 			// whatever the size, so announcers and /playsound play the update the first time
 			final Map<String, String> oldHashes = new HashMap<>();
-			ENTRIES.forEach(entry -> oldHashes.put(entry.getKey(), entry.hash));
+			// By id too, so a file replaced under another name counts as updated (0.79.0)
+			ENTRIES.forEach(entry -> {
+				oldHashes.put(entry.getKey(), entry.hash);
+				if (!entry.resourceId.isEmpty()) {
+					oldHashes.put("#" + entry.resourceId, entry.hash);
+				}
+			});
 			final List<String> updated = new ArrayList<>();
 			entries.forEach(entry -> {
-				final String oldHash = oldHashes.get(entry.getKey());
+				final String oldHash = oldHashes.getOrDefault(entry.getKey(), entry.resourceId.isEmpty() ? null : oldHashes.get("#" + entry.resourceId));
 				if (oldHash != null && !oldHash.equals(entry.hash) && isCached(oldHash) && !isCached(entry.hash)) {
 					updated.add(entry.hash);
 				}
@@ -513,6 +553,9 @@ public final class AudioCache implements IPacket {
 		public String uploader = "";
 		/** The folder it is in under its uploader ({@link mtr.media.MediaFolders}), empty at the top */
 		public String folder = "";
+		/** Its id, which stays when it is replaced, and the references it had before (0.79.0); empty from an older server */
+		public String resourceId = "";
+		public List<String> oldNames = Collections.emptyList();
 
 		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploaderName, long uploadedAt, boolean mine, String soundId) {
 			this.hash = hash;

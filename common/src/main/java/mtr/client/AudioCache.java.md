@@ -76,3 +76,9 @@
 - `Entry.uploader`、`Entry.folder`（旧服务器没有时为空）；`FOLDERS`。`receiveListS2C` 读列表尾部的上传者、文件夹和文件夹列表。
 - `upload(name, soundId, bytes, folder)`：文件夹规整后写在上传包末尾（null 不写）。
 - `folderAction(action, owner, path, argument, keys)`：发 `PACKET_AUDIO_FOLDER`，返回请求 id。
+
+## 资源 ID 与替换（0.79.0）
+- `Entry` 加 `resourceId`、`oldNames`，从列表包末尾读（旧服务端没有就为空）。
+- `find(namespace, name)`，`getHash` 经它按名字或曾用名找，所以报站器按旧名也播放新文件。
+- `upload(..., replaceId)`：带 ID 时按替换发送（文件夹位写空串，再写 ID）。
+- 列表更新时按 ID 也认出「换了内容」的文件，立即下载新内容。

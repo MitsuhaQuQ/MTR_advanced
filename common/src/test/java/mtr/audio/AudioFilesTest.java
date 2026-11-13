@@ -122,11 +122,11 @@ class AudioFilesTest {
 		}
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final List<String> names = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> names.add(AnnouncementSound.getUploadedString(namespace, fileName) + size + soundId));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder, resourceId, oldNames) -> names.add(AnnouncementSound.getUploadedString(namespace, fileName) + size + soundId));
 			assertEquals(Arrays.asList("steve:下一站.ogg4next_station", "mtr_player:next.ogg4next"), names);
 			database.setSoundId(steveKey, "station/next");
 			final List<String> soundIds = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> soundIds.add(soundId));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder, resourceId, oldNames) -> soundIds.add(soundId));
 			assertEquals(Arrays.asList("station/next", "next"), soundIds);
 			final List<String> hashes = new ArrayList<>();
 			database.readDataHashes(hashes::add);
@@ -156,7 +156,7 @@ class AudioFilesTest {
 			assertNull(database.readData(oldHash));
 			assertArrayEquals(newData, database.readData(newHash));
 			final List<String> rows = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> rows.add(fileName + size + soundId + uploadedAt));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder, resourceId, oldNames) -> rows.add(fileName + size + soundId + uploadedAt));
 			assertEquals(Arrays.asList("next.ogg3next2"), rows);
 
 			// A recording another name still uses stays
@@ -187,7 +187,7 @@ class AudioFilesTest {
 		}
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final List<String> rows = new ArrayList<>();
-			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> rows.add(fileName + "|" + soundId + "|" + uploadedAt));
+			database.readIndex((namespace, fileName, readHash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder, resourceId, oldNames) -> rows.add(fileName + "|" + soundId + "|" + uploadedAt));
 			assertEquals(Arrays.asList("next.ogg||7"), rows);
 		}
 	}

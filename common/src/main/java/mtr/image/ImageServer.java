@@ -48,6 +48,14 @@ public final class ImageServer implements IPacket {
 		if (player.getServer() != null) namespaces.addAll(player.getServer().getResourceManager().getNamespaces());
 		return mtr.audio.AnnouncementSound.getNamespace(player.getName().getString(), namespaces);
 	}
+	/**
+	 * @return the picture with this name, or the one that had it before (0.79.0), or null
+	 */
+	public static ImageDatabase.Entry find(String reference) {
+		final Map<String, List<String>> oldNames = new HashMap<>();
+		ENTRIES.forEach(entry -> oldNames.put(entry.resourceId, entry.oldNames));
+		return mtr.media.MediaIds.resolve(reference, ENTRIES, entry -> entry.name, entry -> entry.resourceId, mtr.media.MediaIds.byOldName(oldNames));
+	}
 	public static void sendList(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeByte(0); packet.writeUtf(session); packet.writeBoolean(database != null && canUpload(player)); packet.writeInt(ENTRIES.size());
@@ -59,6 +67,8 @@ public final class ImageServer implements IPacket {
 		for (mtr.media.MediaFolders.Folder folder : FOLDERS) { packet.writeUtf(folder.owner); packet.writeUtf(folder.ownerName); packet.writeUtf(folder.path); }
 		// Whether this player organises everyone's pictures, as with deleting them
 		packet.writeBoolean(owner(player) || player.hasPermissions(SecurityConfig.imageManagePermissionLevel));
+		// Then each picture's id and the names it had before (0.79.0)
+		for (ImageDatabase.Entry entry : ENTRIES) { packet.writeUtf(entry.resourceId); packet.writeInt(entry.oldNames.size()); entry.oldNames.forEach(packet::writeUtf); }
 		Registry.sendToPlayer(player, PACKET_IMAGE_DATA, packet);
 	}
 	private static void result(ServerPlayer player, boolean ok, String key) {
@@ -76,7 +86,14 @@ public final class ImageServer implements IPacket {
 			final byte[] chunk = packet.readByteArray(ImageFiles.CHUNK);
 			// The folder to put it in (0.74.0), or none to keep a replaced picture where it is and put a new one at the top
 			final String folder = packet.isReadable() ? packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4) : null;
-			PacketGuard.execute(server, () -> upload(server, player, name, size, offset, chunk, folder));
+			PacketGuard.execute(server, () -> upload(server, player, name, size, offset, chunk, folder, null));
+		} else if (action == 5) {
+			// Replacing a picture by its id (0.79.0): String id, then as an upload
+			final String replaceId = packet.readUtf(16);
+			final String name = AudioFiles.cleanName(packet.readUtf(64));
+			final int size = packet.readInt(), offset = packet.readInt();
+			final byte[] chunk = packet.readByteArray(ImageFiles.CHUNK);
+			PacketGuard.execute(server, () -> upload(server, player, name, size, offset, chunk, null, replaceId));
 		} else if (action == 1) {
 			final String hash = packet.readUtf(64);
 			PacketGuard.execute(server, () -> {
@@ -92,7 +109,7 @@ public final class ImageServer implements IPacket {
 				if (!(entity instanceof Painting) || !(entity instanceof PaintingImage) || !canEdit(player) || player.distanceToSqr(entity) > 64 || (!player.getMainHandItem().is(Items.BRUSH.get()) && !player.getOffhandItem().is(Items.BRUSH.get()))) { result(player, false, "gui.mtr.image_no_permission", false); return; }
 				try {
 					final PaintingSettings settings = PaintingSettings.parse(json);
-					if (!settings.image.isEmpty()) settings.image = ENTRIES.stream().filter(entry -> entry.name.equalsIgnoreCase(settings.image)).findFirst().orElseThrow(IllegalArgumentException::new).name;
+					if (!settings.image.isEmpty()) { final ImageDatabase.Entry found = find(settings.image); if (found == null) throw new IllegalArgumentException(); settings.image = found.name; }
 					((PaintingImage) entity).mtr$setImageSettings(settings.json());
 					result(player, true, "gui.mtr.image_saved", false);
 				} catch (RuntimeException e) { result(player, false, "gui.mtr.image_invalid_settings", false); }
@@ -130,7 +147,10 @@ public final class ImageServer implements IPacket {
 			});
 		} else throw new IllegalArgumentException("Unknown image action");
 	}
-	private static void upload(MinecraftServer server, ServerPlayer player, String name, int size, int offset, byte[] chunk, String folder) {
+	/**
+	 * @param replaceId the id of the picture to put this in place of (0.79.0), or null for an upload by name
+	 */
+	private static void upload(MinecraftServer server, ServerPlayer player, String name, int size, int offset, byte[] chunk, String folder, String replaceId) {
 		final UUID id = player.getUUID();
 		if (database == null || !canUpload(player)) { UPLOADS.remove(id); result(player, false, "gui.mtr.image_no_permission"); return; }
 		if (size < 1 || size > ImageFiles.MAX_BYTES || offset < 0 || chunk.length < 1 || (long) offset + chunk.length > size) { UPLOADS.remove(id); result(player, false, "gui.mtr.image_invalid"); return; }
@@ -143,17 +163,28 @@ public final class ImageServer implements IPacket {
 			if (folder != null) {
 				try { cleanFolder = mtr.media.MediaFolders.normalize(folder); } catch (IllegalArgumentException e) { result(player, false, mtr.media.MediaFolders.INVALID); return; }
 			}
-			times.addLast(now); final Upload started = new Upload(name, size); started.folder = cleanFolder; UPLOADS.put(id, started);
+			times.addLast(now); final Upload started = new Upload(name, size); started.folder = cleanFolder; started.replaceId = replaceId; UPLOADS.put(id, started);
 		}
 		final Upload upload = UPLOADS.get(id);
 		if (upload == null) return;
-		if (upload.bytes.length != size || upload.offset != offset || !upload.name.equals(name)) { UPLOADS.remove(id); result(player, false, "gui.mtr.image_invalid"); return; }
+		if (upload.bytes.length != size || upload.offset != offset || !upload.name.equals(name) || !java.util.Objects.equals(upload.replaceId, replaceId)) { UPLOADS.remove(id); result(player, false, "gui.mtr.image_invalid"); return; }
 		System.arraycopy(chunk, 0, upload.bytes, offset, chunk.length); upload.offset += chunk.length; upload.updated = System.currentTimeMillis();
 		if (upload.offset != size) return;
 		UPLOADS.remove(id);
 		try {
 			final String extension = ImageFiles.extensionOf(upload.bytes);
 			final String fileName = upload.name.replaceAll("(?i)\\.(png|jpe?g|gif)$", "") + extension;
+			if (upload.replaceId != null) {
+				// In place of a picture by its id, which its uploader or a manager may do; its namespace stays
+				final ImageDatabase.Entry target = ENTRIES.stream().filter(entry -> entry.resourceId.equals(upload.replaceId)).findFirst().orElse(null);
+				if (target == null || !canDelete(player, target)) { result(player, false, "gui.mtr.image_no_permission"); return; }
+				final Map<String, Integer> sizes = new HashMap<>();
+				ENTRIES.stream().filter(entry -> entry != target).forEach(entry -> sizes.put(entry.hash, entry.size)); sizes.put(ImageFiles.hash(upload.bytes), size);
+				if (sizes.values().stream().mapToLong(Integer::longValue).sum() > SecurityConfig.imageMaxTotalMegabytes * 1024L * 1024) { result(player, false, "gui.mtr.image_full"); return; }
+				database.replace(target.resourceId, fileName, upload.bytes); ENTRIES.clear(); ENTRIES.addAll(database.entries());
+				result(player, true, "gui.mtr.image_replaced"); server.getPlayerList().getPlayers().forEach(ImageServer::sendList);
+				return;
+			}
 			final String namespace = namespace(player), reference = namespace + ":" + fileName;
 			final ImageDatabase.Entry existing = ENTRIES.stream().filter(entry -> entry.name.equalsIgnoreCase(reference)).findFirst().orElse(null);
 			if (existing != null && !existing.uploader.equals(id.toString())) { result(player, false, "gui.mtr.image_no_permission"); return; }
@@ -166,7 +197,7 @@ public final class ImageServer implements IPacket {
 			result(player, true, "gui.mtr.image_uploaded"); server.getPlayerList().getPlayers().forEach(ImageServer::sendList);
 		} catch (Exception e) {
 			final String key = e.getMessage();
-			result(player, false, e instanceof IllegalArgumentException && key != null && key.startsWith("gui.mtr.image_") ? key : "gui.mtr.image_invalid");
+			result(player, false, e instanceof IllegalArgumentException && key != null && (key.startsWith("gui.mtr.image_") || key.equals(mtr.media.MediaIds.NAME_USED)) ? key : "gui.mtr.image_invalid");
 		}
 	}
 	public static void tick(MinecraftServer server) {
@@ -192,7 +223,7 @@ public final class ImageServer implements IPacket {
 		});
 	}
 	private static final class Upload {
-		final String name; final byte[] bytes; int offset; long updated = System.currentTimeMillis(); String folder;
+		final String name; final byte[] bytes; int offset; long updated = System.currentTimeMillis(); String folder; String replaceId;
 		Upload(String name, int size) { this.name = name; bytes = new byte[size]; }
 	}
 	private static final class Download {

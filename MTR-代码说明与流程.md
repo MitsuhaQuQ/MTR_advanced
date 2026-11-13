@@ -74,6 +74,8 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.79.0 媒体按资源 ID 热更新（用户 2026-11-14）：图片和音频各有稳定的资源 ID（`mtr.media.MediaIds`，索引表加 `resource_id` 列、旧库打开时补上），网页媒体库每个文件可「替换…」成另一个文件，文件名可以不同：ID、文件夹、上传者、音频的声音 ID 都不变，旧名记进曾用名表、仍属于这个文件，所以世界里按旧名引用的画、音箱、报站器不用改，显示或播放的就是新文件；别的文件不能再用这个名字，直到文件被删除。按同名上传原地更新的老办法照旧，且保留 ID。解析在服务端 `ImageServer.find`、`AudioServer.findEntry`，客户端 `ImportedImages.find`、`AudioCache.find`（都走 `MediaIds.resolve`：先现名、再曾用名）。网络包：图片列表、音频列表末尾追加 ID 和曾用名；图片新动作 5（按 ID 替换上传）；音频上传包末尾可带 `replaceId`。存档：两个 SQLite 库加列加表，只增不改。因此升协议号 0.79，客户端和服务端都要换。测试：common `MediaIdsTest`，游戏内 `autotest/cases/U468.spec.ts`（图片、音频各一例）。
+
 0.78.2 带图片的画不被 `/kill` 删（用户 2026-11-14）：Fabric/Forge 的 `KillCommandMixin` 在 `KillCommand.kill` 入口把目标换成 `mtr.image.PaintingProtection.withoutProtected(目标)`，去掉设置里 `image` 不为空的画（`PaintingImage`）；普通画、用刷子清掉图片的画照常删，提示的数量按去掉后的算。玩家手动打掉仍可以。只改服务端行为，升第三位。测试：common `PaintingProtectionTest`，游戏内 `autotest/cases/U467.spec.ts`。
 
 同时补的游戏内自动测试（TestKit，`C:/gtmp/fast/ui-test.sh`）：`cases/U460.spec.ts`（四种端门用物品放下 `inward=true`；刷子切换 `mirrored`，上下两半一起、开关状态不变；手开后再刷），`cases/U467.spec.ts`（上面的画保护），`cases/U463.spec.ts`（网页调度层实际图、物理层示意图滚轮放大后等 15 秒不跳回，「全图」才复原），`cases-lines/z-console.spec.ts`（U462：六线图车跑起来后，调度台对一列车扣停、放行、再扣停、再放行，按钮每次都恢复）。

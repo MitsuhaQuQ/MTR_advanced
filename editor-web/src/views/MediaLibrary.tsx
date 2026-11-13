@@ -30,7 +30,8 @@ const formatClock = (seconds: number) => Math.floor(seconds / 60) + ":" + String
 const formatTime = (millis: number) => { const d = new Date(millis), pad = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}` }
 const takes = (file: { name: string; type: string }) => /\.ogg$/i.test(file.name) || /ogg/.test(file.type) || isWav(file) || isMp3(file)
 
-type Entry = { key: string; name: string; reference: string; sound?: string; soundId: string; hash: string; uploader?: string; uploaderName: string; folder?: string; size: number; durationMillis: number; uploadedAt: number; cached: boolean; downloading: boolean; mine: boolean; canDelete: boolean }
+/** resourceId and oldNames (0.79.0): the file's id, which stays when it is replaced, and the references it had before */
+type Entry = { key: string; name: string; reference: string; sound?: string; soundId: string; hash: string; uploader?: string; uploaderName: string; folder?: string; size: number; durationMillis: number; uploadedAt: number; cached: boolean; downloading: boolean; mine: boolean; canDelete: boolean; resourceId?: string; oldNames?: string[] }
 type Library = { language?: string; canUpload: boolean; canManage?: boolean; maxFileBytes: number; maxTotalBytes: number; totalBytes: number; maxSeconds: number; requests: { name: string; done: boolean; ok: boolean; message: string }[]; entries: Entry[]; folders?: KeptFolder[]; self?: string }
 type Message = { name: string; message: string; ok: boolean }
 /** A file waiting for its sound ID before it goes up, and the folder it goes to */
@@ -126,7 +127,11 @@ function AudioLibrary() {
       .sort((a, b) => b.uploadedAt - a.uploadedAt)
   }, [data, search, uploader, missingOnly, current])
   const uploaders = data ? [...new Set(data.entries.map(entry => entry.uploaderName))].sort((a, b) => a.localeCompare(b)) : []
-  const entry = data && data.entries.find(item => item.key === selected)
+  // Found by its id too, as a file replaced under another name keeps it (0.79.0)
+  const [selectedId, setSelectedId] = useState("")
+  const entry = data && (data.entries.find(item => item.key === selected) || (selectedId ? data.entries.find(item => item.resourceId === selectedId) : undefined))
+  useEffect(() => { if (entry?.resourceId) setSelectedId(entry.resourceId) }, [entry?.resourceId])
+  const replaceInput = useRef<HTMLInputElement>(null)
   const canUpload = Boolean(data && data.canUpload && data.maxFileBytes > 0)
 
   // ---------- Playing ----------
@@ -163,6 +168,16 @@ function AudioLibrary() {
   const upload = async (file: File, soundId: string, folder: string) => {
     try {
       const result = await sendJson("api/audio", { action: "upload", name: file.name, soundId, folder, data: await readBase64(file) })
+      if (!result.ok) note(file.name, result.message)
+    } catch (e) {
+      note(file.name, failed(e))
+    }
+    load()
+  }
+  /** Another file in place of one by its id (0.79.0): its id, folder and sound ID stay, what refers to it plays the new one */
+  const replace = async (file: File, resourceId: string) => {
+    try {
+      const result = await sendJson("api/audio", { action: "replace", resourceId, name: file.name, data: await readBase64(file) })
       if (!result.ok) note(file.name, result.message)
     } catch (e) {
       note(file.name, failed(e))
@@ -365,6 +380,8 @@ function AudioLibrary() {
                 <dt className="text-dim">{tr("上传者")}</dt><dd className="m-0">{entry.uploaderName}</dd>
                 <dt className="text-dim">{tr("上传时间")}</dt><dd className="m-0 num">{formatTime(entry.uploadedAt)}</dd>
                 <dt className="text-dim">{tr("本机")}</dt><dd className="m-0">{localText(entry)}</dd>
+                {entry.resourceId && <><dt className="text-dim">{tr("资源 ID")}</dt><dd className="m-0"><code data-resource-id>{entry.resourceId}</code></dd></>}
+                {entry.oldNames && entry.oldNames.length > 0 && <><dt className="text-dim" title={tr("用这些名字的报站器和音箱仍然播放这个文件")}>{tr("曾用名")}</dt><dd className="m-0 break-all" data-old-names>{entry.oldNames.join("、")}</dd></>}
               </dl>
             </div>
             <div className="flex flex-col gap-2 rounded-lg border border-grid p-3 text-[12px]">
@@ -395,6 +412,8 @@ function AudioLibrary() {
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     <button className="btn" onClick={() => setRenaming({ key: entry.key, soundId: entry.soundId, bad: false })}>{tr("改声音 ID")}</button>
+                    {entry.resourceId && <button className="btn" title={tr("换成另一个文件，文件名可以不同；用它的报站器、音箱和 /playsound 都播放新文件")} onClick={() => replaceInput.current?.click()}>{tr("替换…")}</button>}
+                    <input ref={replaceInput} type="file" accept=".ogg,.wav,.mp3,audio/ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3" hidden data-replace-input onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file && entry.resourceId) { if (playing === entry.hash) stop(); replace(file, entry.resourceId) } }} />
                     <ConfirmButton confirm={tr("从服务器删除“{0}”？用这个名字的报站器都会不出声，不能撤销。", entry.reference)} onConfirm={() => { if (playing === entry.hash) stop(); act(entry.name, { action: "delete", key: entry.key }) }}>{tr("删除")}</ConfirmButton>
                   </div>
                 )}

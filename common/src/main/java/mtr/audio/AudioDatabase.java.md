@@ -49,3 +49,8 @@
 - 新字段 `folders`（`MediaFolders.Store`，表 `audio_folders`，`audio_index` 加 `folder` 列，旧库打开时补上）。
 - `write`/`replace` 多一个参数 `folder`（在 `soundId` 之后），写索引时一起写，并保留它和它的上级文件夹；以前 `INSERT OR REPLACE` 会把文件夹清掉。
 - `readIndex` 的回调多一个 `folder`（顶层为空串）。
+
+## 资源 ID 与替换（0.79.0）
+- 字段 `ids`（`MediaIds.Store`，表 `audio_old_names`）；`readIndex` 的回调多两个参数 `resourceId`、`oldNames`。
+- `replace(..., resourceId, oldName)`：`oldName` 不为 null 时先删掉这个 ID 的旧行，再按新名字写入，旧名记为曾用名；原来的 13 参数版本保留，按名字取或发 ID。
+- `delete` 同时删掉曾用名。

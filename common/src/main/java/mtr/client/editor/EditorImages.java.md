@@ -30,3 +30,7 @@
 
 - 列表每条加 `uploader`、`folder`，另有 `folders`、`self`、`canManage`。
 - `upload(name, data, folder)`；`folder(request)` 同音频，结果由游戏以消息回（列表的 `message`）。
+
+## 资源 ID 与替换（0.79.0）
+- 列表每项加 `resourceId`、`oldNames`。
+- `replace(resourceId, name, data)`：`POST api/images {action: "replace", resourceId, name, data}` 调它。

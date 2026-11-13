@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.79.0 gives every uploaded picture and audio file a resource id. In the web media library a file can be replaced by another, under any name: its id, folder, uploader and sound id stay, and its old name stays its own. Paintings, speakers and announcers set with the old name show or play the new file without being changed. No other file may take the old name until the file is deleted. Client and server both need 0.79.0.
+
 0.78.2 keeps paintings showing an imported picture from /kill (so /kill @e no longer clears them); a plain painting, or one whose picture was cleared with the brush, goes as before, and a player can still break one by hand. New in-game tests cover the platform end doors and the brush, the paintings, the web drawing keeping its zoom and the dispatch console's buttons.
 
 0.78.1 moves the joining of a duty's segments into one path into the simulation component (step 2d of splitting the depot); the paths found are the same as before, byte for byte on a test world.

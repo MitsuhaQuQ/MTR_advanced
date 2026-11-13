@@ -78,10 +78,12 @@ public final class AudioServer implements IPacket {
 		try {
 			database = new AudioDatabase(path);
 			final List<Entry> withoutSoundId = new ArrayList<>();
-			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder) -> {
+			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder, resourceId, oldNames) -> {
 				if (AudioFiles.isHash(hash) && !namespace.isEmpty()) {
 					final Entry entry = new Entry(hash, namespace.toLowerCase(Locale.ENGLISH), AudioFiles.cleanName(fileName), size, durationMillis, uploader, uploaderName, uploadedAt, AnnouncementSound.isValidSoundId(soundId) ? soundId : "");
 					entry.folder = folder == null ? "" : folder;
+					entry.resourceId = resourceId == null ? "" : resourceId;
+					entry.oldNames = oldNames;
 					ENTRIES.put(entry.getKey(), entry);
 					if (entry.soundId.isEmpty()) {
 						withoutSoundId.add(entry);
@@ -195,6 +197,12 @@ public final class AudioServer implements IPacket {
 			packet.writeUtf(folder.ownerName);
 			packet.writeUtf(folder.path);
 		});
+		// Then each file's id and the references it had before (0.79.0)
+		ENTRIES.values().forEach(entry -> {
+			packet.writeUtf(entry.resourceId);
+			packet.writeInt(entry.oldNames.size());
+			entry.oldNames.forEach(packet::writeUtf);
+		});
 		Registry.sendToPlayer(player, PACKET_AUDIO_LIST, packet);
 	}
 
@@ -208,6 +216,8 @@ public final class AudioServer implements IPacket {
 		final String soundId = packet.isReadable() ? packet.readUtf(AnnouncementSound.MAX_SOUND_ID_LENGTH * 4) : "";
 		// The folder to put it in (0.74.0), or none to keep a replaced file where it is and put a new one at the top
 		final String folder = packet.isReadable() ? packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4) : null;
+		// The id of the file to put this in place of (0.79.0), or none for an upload by name
+		final String replaceId = packet.isReadable() ? packet.readUtf(16) : null;
 		PacketGuard.execute(minecraftServer, () -> {
 			if (database == null) {
 				// Answered, so the page doesn't wait for nothing
@@ -234,7 +244,8 @@ public final class AudioServer implements IPacket {
 					return;
 				}
 				upload = new Upload(requestId, size, AudioFiles.cleanName(name), soundId);
-				upload.folder = cleanFolder;
+				upload.folder = replaceId == null ? cleanFolder : null;
+				upload.replaceId = replaceId;
 				UPLOADS.put(playerId, upload);
 			} else if (upload == null || upload.requestId != requestId || upload.received != offset) {
 				// Pieces of an upload that was turned down or replaced
@@ -535,9 +546,19 @@ public final class AudioServer implements IPacket {
 		final String hash = AudioFiles.hash(upload.bytes);
 		// Announcers name a file by who added it and its file name, so one player can't have two of the same name, whatever the case
 		final String name = AudioFiles.withExtension(upload.name.isEmpty() ? hash.substring(0, 8) : upload.name);
+		if (upload.replaceId != null) {
+			finishReplace(minecraftServer, player, upload, info, hash, name);
+			return;
+		}
 		final String namespace = getPlayerNamespace(player);
 		final String nameKey = AnnouncementSound.getNameKey(namespace, name);
 		final Entry existing = ENTRIES.get(nameKey);
+		// A name another file had before is still that one's (0.79.0)
+		final String oldNameOwner = existing == null ? oldNameOwner(nameKey) : null;
+		if (oldNameOwner != null) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode(mtr.media.MediaIds.NAME_USED));
+			return;
+		}
 		if (existing != null && existing.hash.equals(hash)) {
 			sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_already_uploaded", existing.name));
 			return;
@@ -558,7 +579,9 @@ public final class AudioServer implements IPacket {
 		// The folder chosen, or where a replaced file was
 		entry.folder = upload.folder != null ? upload.folder : existing != null ? existing.folder : "";
 		try {
-			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, entry.folder, upload.bytes, existing == null ? null : existing.hash);
+			entry.resourceId = existing != null && !existing.resourceId.isEmpty() ? existing.resourceId : database.ids.idFor(nameKey);
+			entry.oldNames = existing == null ? java.util.Collections.emptyList() : existing.oldNames;
+			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, entry.folder, upload.bytes, existing == null ? null : existing.hash, entry.resourceId, null);
 			ENTRIES.put(nameKey, entry);
 			FOLDERS.clear();
 			FOLDERS.addAll(database.folders.folders());
@@ -574,6 +597,90 @@ public final class AudioServer implements IPacket {
 		System.out.printf("%s %s announcement audio \"%s\" as %s (%s, %s bytes)%n", player.getName().getString(), existing == null ? "uploaded" : "updated", entry.name, entry.getSoundLocation(), hash, upload.bytes.length);
 		sendResult(player, upload.requestId, true, TranslatedMessage.encode(existing == null ? "gui.mtr.audio_uploaded" : "gui.mtr.audio_updated", entry.name));
 		sendListToAll(minecraftServer);
+	}
+
+	/**
+	 * Puts an upload in place of the file with its id (0.79.0), which its uploader or a manager may do: the id, uploader,
+	 * folder and sound ID stay (a sound ID given is taken instead), the file takes the new name, and its old name stays its
+	 * own, so announcers and speakers naming it play the new recording.
+	 */
+	private static void finishReplace(MinecraftServer minecraftServer, ServerPlayer player, Upload upload, AudioFiles.Info info, String hash, String name) {
+		final Entry target = ENTRIES.values().stream().filter(entry -> entry.resourceId.equals(upload.replaceId)).findFirst().orElse(null);
+		if (database == null || target == null) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_missing"));
+			return;
+		}
+		if (!mtr.media.MediaPermissions.canDelete(target.uploader, player.getUUID().toString(), canManage(player))) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_no_delete_permission"));
+			return;
+		}
+		final String oldKey = target.getKey();
+		final String nameKey = AnnouncementSound.getNameKey(target.namespace, name);
+		final boolean renamed = !nameKey.equals(oldKey);
+		if (renamed && (ENTRIES.containsKey(nameKey) || oldNameOwner(nameKey) != null && !oldNameOwner(nameKey).equals(target.resourceId))) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode(mtr.media.MediaIds.NAME_USED));
+			return;
+		}
+		if (!renamed && target.hash.equals(hash)) {
+			sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_already_uploaded", target.name));
+			return;
+		}
+		if (!upload.soundId.isEmpty() && isSoundIdTaken(target.namespace, upload.soundId, oldKey)) {
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_same_sound_id", upload.soundId));
+			return;
+		}
+		final Entry entry = new Entry(hash, target.namespace, renamed ? name : target.name, upload.bytes.length, info.durationMillis, target.uploader, target.uploaderName, System.currentTimeMillis(), upload.soundId.isEmpty() ? target.soundId : upload.soundId);
+		entry.folder = target.folder;
+		entry.resourceId = target.resourceId;
+		final List<String> oldNames = new ArrayList<>(target.oldNames);
+		if (renamed) {
+			oldNames.removeIf(oldName -> oldName.equalsIgnoreCase(entry.getReference()));
+			oldNames.add(target.getReference());
+		}
+		entry.oldNames = oldNames;
+		try {
+			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, entry.folder, upload.bytes, target.hash, entry.resourceId, renamed ? target.getReference() : null);
+			ENTRIES.remove(oldKey);
+			ENTRIES.put(nameKey, entry);
+		} catch (Exception e) {
+			e.printStackTrace();
+			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
+			return;
+		}
+		if (!hasHash(target.hash)) {
+			SENDING.values().forEach(queue -> queue.removeIf(sending -> sending.hash.equals(target.hash)));
+		}
+		System.out.printf("%s replaced announcement audio \"%s\" (%s) with \"%s\" (%s, %s bytes)%n", player.getName().getString(), target.getReference(), target.resourceId, entry.getReference(), hash, upload.bytes.length);
+		sendResult(player, upload.requestId, true, TranslatedMessage.encode("gui.mtr.audio_replaced", target.name, entry.name));
+		sendListToAll(minecraftServer);
+	}
+
+	/**
+	 * @return the id of the file that had this name before (0.79.0), or null
+	 */
+	private static String oldNameOwner(String nameKey) {
+		for (final Entry entry : ENTRIES.values()) {
+			for (final String oldName : entry.oldNames) {
+				final String[] split = AnnouncementSound.splitUploaded(oldName);
+				if (split != null && AnnouncementSound.getNameKey(split[0], split[1]).equals(nameKey)) {
+					return entry.resourceId;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * @return the file with this name, or the one that had it before (0.79.0), or null
+	 */
+	private static Entry findEntry(String namespace, String name) {
+		final String nameKey = AnnouncementSound.getNameKey(namespace, name);
+		final Entry entry = ENTRIES.get(nameKey);
+		if (entry != null) {
+			return entry;
+		}
+		final String owner = oldNameOwner(nameKey);
+		return owner == null ? null : ENTRIES.values().stream().filter(each -> each.resourceId.equals(owner)).findFirst().orElse(null);
 	}
 
 	private static void sendListToAll(MinecraftServer minecraftServer) {
@@ -616,13 +723,13 @@ public final class AudioServer implements IPacket {
 
 	public static String getUploadedHash(String reference) {
 		final String[] name = AnnouncementSound.splitUploaded(reference);
-		final Entry entry = name == null ? null : ENTRIES.get(AnnouncementSound.getNameKey(name[0], name[1]));
+		final Entry entry = name == null ? null : findEntry(name[0], name[1]);
 		return entry == null || entry.getSoundLocation() == null ? null : entry.hash;
 	}
 
 	public static long getUploadedDurationTicks(String reference) {
 		final String[] name = AnnouncementSound.splitUploaded(reference);
-		final Entry entry = name == null ? null : ENTRIES.get(AnnouncementSound.getNameKey(name[0], name[1]));
+		final Entry entry = name == null ? null : findEntry(name[0], name[1]);
 		return entry == null ? 0 : (entry.durationMillis + 49) / 50;
 	}
 
@@ -647,6 +754,9 @@ public final class AudioServer implements IPacket {
 		private String soundId;
 		/** The folder it is in under its uploader ({@link mtr.media.MediaFolders}), empty at the top */
 		private String folder = "";
+		/** Its id, which stays when it is replaced, and the references it had before, which still find it (0.79.0) */
+		private String resourceId = "";
+		private List<String> oldNames = java.util.Collections.emptyList();
 
 		private Entry(String hash, String namespace, String name, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId) {
 			this.hash = hash;
@@ -682,6 +792,8 @@ public final class AudioServer implements IPacket {
 		private int received;
 		/** The folder chosen, or null to keep a replaced file where it is */
 		private String folder;
+		/** The id of the file to put this in place of (0.79.0), or null */
+		private String replaceId;
 
 		private Upload(int requestId, int size, String name, String soundId) {
 			this.requestId = requestId;

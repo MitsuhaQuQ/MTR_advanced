@@ -33,3 +33,7 @@
 
 - 列表每条加 `uploader`、`folder`，另有 `folders`（`owner`、`ownerName`、`path`）和 `self`（本玩家 UUID）。
 - `upload(name, soundId, data, folder)`；`folder(request)`：`op` 为 create、rename、delete、move，`owner`、`path`，新建和改名用 `name`，移动用 `folder` 和 `keys`；返回请求 id。工具方法 `folderAction`、`string`、`folders`、`self` 也给 `EditorImages` 用。
+
+## 资源 ID 与替换（0.79.0）
+- 列表每项加 `resourceId`、`oldNames`。
+- `replace(resourceId, name, soundId, data)`：`POST api/audio {action: "replace", resourceId, name, soundId?, data}` 调它。

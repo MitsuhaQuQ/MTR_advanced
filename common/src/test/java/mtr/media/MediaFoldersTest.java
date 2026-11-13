@@ -104,7 +104,7 @@ class MediaFoldersTest {
 		// The folders are there after opening again, and a replaced file keeps the folder it is given
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final Map<String, String> folders = new HashMap<>();
-			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, fileFolder) -> folders.put(fileName, fileFolder));
+			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, fileFolder, resourceId, oldNames) -> folders.put(fileName, fileFolder));
 			assertEquals("下行", folders.get("two.ogg"));
 			database.replace(keyTwo, "steve", "two.ogg", AudioFiles.hash(one), 2, 100, "u1", "Steve", 4, "two", "下行", one, AudioFiles.hash(two));
 			assertEquals("下行", database.folders.fileFolders().get(keyTwo));
@@ -145,7 +145,7 @@ class MediaFoldersTest {
 		}
 		try (final AudioDatabase database = new AudioDatabase(path)) {
 			final Map<String, String> folders = new HashMap<>();
-			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, fileFolder) -> folders.put(fileName, fileFolder));
+			database.readIndex((namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, fileFolder, resourceId, oldNames) -> folders.put(fileName, fileFolder));
 			assertEquals("", folders.get("old.ogg"));
 			assertTrue(database.folders.folders().isEmpty());
 		}

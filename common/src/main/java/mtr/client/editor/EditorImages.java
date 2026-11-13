@@ -18,7 +18,7 @@ public final class EditorImages {
 		final java.util.Map<String, Integer> unique = new java.util.HashMap<>();
 		ImportedImages.ENTRIES.forEach(entry -> unique.put(entry.hash, entry.size));
 		result.addProperty("totalBytes", unique.values().stream().mapToLong(Integer::longValue).sum());
-		ImportedImages.ENTRIES.forEach(entry -> { final JsonObject item = new JsonObject(); item.addProperty("hash", entry.hash); item.addProperty("name", entry.name); item.addProperty("width", entry.width); item.addProperty("height", entry.height); item.addProperty("size", entry.size); item.addProperty("uploaderName", entry.uploaderName); item.addProperty("uploadedAt", entry.uploadedAt); item.addProperty("canDelete", ImportedImages.DELETABLE.contains(entry.name)); item.addProperty("uploader", entry.uploader); item.addProperty("folder", entry.folder); entries.add(item); }); result.add("entries", entries);
+		ImportedImages.ENTRIES.forEach(entry -> { final JsonObject item = new JsonObject(); item.addProperty("hash", entry.hash); item.addProperty("name", entry.name); item.addProperty("width", entry.width); item.addProperty("height", entry.height); item.addProperty("size", entry.size); item.addProperty("uploaderName", entry.uploaderName); item.addProperty("uploadedAt", entry.uploadedAt); item.addProperty("canDelete", ImportedImages.DELETABLE.contains(entry.name)); item.addProperty("uploader", entry.uploader); item.addProperty("folder", entry.folder); item.addProperty("resourceId", entry.resourceId); final JsonArray oldNames = new JsonArray(); entry.oldNames.forEach(oldNames::add); item.add("oldNames", oldNames); entries.add(item); }); result.add("entries", entries);
 		result.add("folders", EditorAudio.folders(ImportedImages.FOLDERS)); result.addProperty("self", EditorAudio.self()); result.addProperty("canManage", ImportedImages.canManage);
 		return result;
 	}
@@ -32,6 +32,16 @@ public final class EditorImages {
 		final JsonObject result = new JsonObject();
 		try { if (data.length() > ImageFiles.MAX_BYTES * 4L / 3 + 8) throw new IllegalArgumentException("gui.mtr.image_invalid"); ImportedImages.upload(name, Base64.getDecoder().decode(data), folder); result.addProperty("ok", true); }
 		catch (Exception e) { result.addProperty("ok", false); final String key = e.getMessage(); result.addProperty("message", Text.translatable(e instanceof IllegalArgumentException && key != null && (key.startsWith("gui.mtr.image_") || key.equals(mtr.media.MediaFolders.INVALID)) ? key : "gui.mtr.image_invalid").getString()); }
+		return result;
+	}
+	/**
+	 * Puts an uploaded file in place of the picture with this id (0.79.0), keeping its id; the game answers with a message
+	 * the list shows.
+	 */
+	public static JsonObject replace(String resourceId, String name, String data) {
+		final JsonObject result = new JsonObject();
+		try { if (data.length() > ImageFiles.MAX_BYTES * 4L / 3 + 8) throw new IllegalArgumentException("gui.mtr.image_invalid"); ImportedImages.replace(resourceId, name, Base64.getDecoder().decode(data)); result.addProperty("ok", true); }
+		catch (Exception e) { result.addProperty("ok", false); final String key = e.getMessage(); result.addProperty("message", Text.translatable(e instanceof IllegalArgumentException && key != null && key.startsWith("gui.mtr.image_") ? key : "gui.mtr.image_invalid").getString()); }
 		return result;
 	}
 	/**

@@ -34,6 +34,8 @@ public final class AudioDatabase implements AutoCloseable {
 	private final PreparedStatement setSoundIdStatement;
 	/** Folders of the uploaded files (0.74.0) */
 	public final mtr.media.MediaFolders.Store folders;
+	/** Each file's id and the names it had before (0.79.0) */
+	public final mtr.media.MediaIds.Store ids;
 
 	public AudioDatabase(Path path) throws Exception {
 		Files.createDirectories(path.getParent());
@@ -56,11 +58,12 @@ public final class AudioDatabase implements AutoCloseable {
 				statement.execute("ALTER TABLE audio_index ADD COLUMN sound_id TEXT NOT NULL DEFAULT ''");
 			}
 			folders = new mtr.media.MediaFolders.Store(connection, "audio_folders", "audio_index");
+			ids = new mtr.media.MediaIds.Store(connection, "audio_index", "audio_old_names");
 		} catch (SQLException e) {
 			connection.close();
 			throw e;
 		}
-		writeIndexStatement = connection.prepareStatement("INSERT OR REPLACE INTO audio_index (name_key, namespace, file_name, hash, size, duration_millis, uploader, uploader_name, uploaded_at, sound_id, folder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+		writeIndexStatement = connection.prepareStatement("INSERT OR REPLACE INTO audio_index (name_key, namespace, file_name, hash, size, duration_millis, uploader, uploader_name, uploaded_at, sound_id, folder, resource_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 		writeDataStatement = connection.prepareStatement("INSERT OR IGNORE INTO audio_data (hash, data) VALUES (?, ?)");
 		readDataStatement = connection.prepareStatement("SELECT data FROM audio_data WHERE hash = ?");
 		deleteIndexStatement = connection.prepareStatement("DELETE FROM audio_index WHERE name_key = ?");
@@ -72,9 +75,10 @@ public final class AudioDatabase implements AutoCloseable {
 	 * Names whose audio is missing or of a different size are left out, as clients check what they get anyway.
 	 */
 	public void readIndex(IndexConsumer consumer) throws SQLException {
-		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT i.namespace, i.file_name, i.hash, i.size, i.duration_millis, i.uploader, i.uploader_name, i.uploaded_at, i.sound_id, i.folder FROM audio_index i JOIN audio_data d ON d.hash = i.hash WHERE length(d.data) = i.size ORDER BY i.uploaded_at")) {
+		final java.util.Map<String, java.util.List<String>> oldNames = ids.oldNames();
+		try (final Statement statement = connection.createStatement(); final ResultSet resultSet = statement.executeQuery("SELECT i.namespace, i.file_name, i.hash, i.size, i.duration_millis, i.uploader, i.uploader_name, i.uploaded_at, i.sound_id, i.folder, i.resource_id FROM audio_index i JOIN audio_data d ON d.hash = i.hash WHERE length(d.data) = i.size ORDER BY i.uploaded_at")) {
 			while (resultSet.next()) {
-				consumer.accept(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getInt(4), resultSet.getLong(5), resultSet.getString(6), resultSet.getString(7), resultSet.getLong(8), resultSet.getString(9), resultSet.getString(10));
+				consumer.accept(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getInt(4), resultSet.getLong(5), resultSet.getString(6), resultSet.getString(7), resultSet.getLong(8), resultSet.getString(9), resultSet.getString(10), resultSet.getString(11), oldNames.getOrDefault(resultSet.getString(11), java.util.Collections.emptyList()));
 			}
 		}
 	}
@@ -112,16 +116,34 @@ public final class AudioDatabase implements AutoCloseable {
 	}
 
 	/**
+	 * As {@link #replace(String, String, String, String, int, long, String, String, long, String, String, byte[], String, String, String)}
+	 * under the same name, keeping the id the name has, or giving a new name a new one.
+	 */
+	public void replace(String nameKey, String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, String folder, byte[] data, String oldHash) throws SQLException {
+		replace(nameKey, namespace, fileName, hash, size, durationMillis, uploader, uploaderName, uploadedAt, soundId, folder, data, oldHash, ids.idFor(nameKey), null);
+	}
+
+	/**
 	 * Writes a name with other audio in place of what it had, and deletes the old audio once no other name uses it, all
 	 * together.
 	 *
-	 * @param folder  the folder it is in ({@link mtr.media.MediaFolders}), kept along with its parents
-	 * @param oldHash the audio the name had, or null for a new name
+	 * @param folder     the folder it is in ({@link mtr.media.MediaFolders}), kept along with its parents
+	 * @param oldHash    the audio the name had, or null for a new name
+	 * @param resourceId the file's id, which stays when it is replaced (0.79.0)
+	 * @param oldName    the reference the file had before, when it is replaced under another name (0.79.0), which stays
+	 *                   its own; else null
 	 */
-	public void replace(String nameKey, String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, String folder, byte[] data, String oldHash) throws SQLException {
+	public void replace(String nameKey, String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, String folder, byte[] data, String oldHash, String resourceId, String oldName) throws SQLException {
 		connection.setAutoCommit(false);
 		try {
 			writeData(hash, data);
+			if (oldName != null) {
+				try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM audio_index WHERE resource_id = ?")) {
+					statement.setString(1, resourceId);
+					statement.executeUpdate();
+				}
+				ids.rename(resourceId, oldName, AnnouncementSound.getUploadedString(namespace, fileName));
+			}
 			writeIndexStatement.setString(1, nameKey);
 			writeIndexStatement.setString(2, namespace);
 			writeIndexStatement.setString(3, fileName);
@@ -133,6 +155,7 @@ public final class AudioDatabase implements AutoCloseable {
 			writeIndexStatement.setLong(9, uploadedAt);
 			writeIndexStatement.setString(10, soundId);
 			writeIndexStatement.setString(11, folder);
+			writeIndexStatement.setString(12, resourceId);
 			writeIndexStatement.executeUpdate();
 			folders.insertWithParents(uploader, uploaderName, folder);
 			if (oldHash != null && !oldHash.equals(hash)) {
@@ -161,6 +184,11 @@ public final class AudioDatabase implements AutoCloseable {
 	public void delete(String nameKey, String hash) throws SQLException {
 		connection.setAutoCommit(false);
 		try {
+			// Its old names are free again (0.79.0)
+			try (final PreparedStatement statement = connection.prepareStatement("DELETE FROM audio_old_names WHERE resource_id IN (SELECT resource_id FROM audio_index WHERE name_key = ?)")) {
+				statement.setString(1, nameKey);
+				statement.executeUpdate();
+			}
 			deleteIndexStatement.setString(1, nameKey);
 			deleteIndexStatement.executeUpdate();
 			deleteUnusedDataStatement.setString(1, hash);
@@ -184,8 +212,10 @@ public final class AudioDatabase implements AutoCloseable {
 	public interface IndexConsumer {
 		/**
 		 * @param soundId empty for a file added before sound IDs
-		 * @param folder  empty for a file at its uploader's top, as every file from before folders is
+		 * @param folder     empty for a file at its uploader's top, as every file from before folders is
+		 * @param resourceId the file's id (0.79.0)
+		 * @param oldNames   the references it had before, which still find it
 		 */
-		void accept(String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, String folder);
+		void accept(String namespace, String fileName, String hash, int size, long durationMillis, String uploader, String uploaderName, long uploadedAt, String soundId, String folder, String resourceId, java.util.List<String> oldNames);
 	}
 }

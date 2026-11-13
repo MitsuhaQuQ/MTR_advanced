@@ -41,7 +41,7 @@ test("U441 U442 网页文件夹：拖动移动、上传选文件夹、删除上�
 	// An upload asks for its folder: the open one, 页面, unless another is chosen
 	const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "u441-")), "u441c.gif");
 	fs.writeFileSync(file, GIF);
-	await page.locator("[data-image-library] input[type=file]").setInputFiles(file);
+	await page.locator("[data-image-library] input[type=file]:not([data-replace-input])").setInputFiles(file);
 	const target = page.locator("[data-upload-target]");
 	await expect(target.getByRole("combobox")).toHaveValue("页面");
 	await target.getByRole("button", {name: "上传", exact: true}).click();

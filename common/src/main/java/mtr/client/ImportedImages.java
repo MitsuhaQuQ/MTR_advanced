@@ -68,8 +68,18 @@ public final class ImportedImages implements IPacket {
 			final int folderCount = packet.isReadable() ? PacketGuard.readCount(packet, 12, 4096) : 0;
 			for (int i = 0; i < folderCount; i++) newFolders.add(new mtr.media.MediaFolders.Folder(packet.readUtf(64), packet.readUtf(64), packet.readUtf(mtr.media.MediaFolders.MAX_PATH_LENGTH * 4)));
 			final boolean manage = packet.isReadable() && packet.readBoolean();
+			// Then each row's id and the names it had before (0.79.0)
+			final List<String> resourceIds = new ArrayList<>();
+			final List<List<String>> oldNames = new ArrayList<>();
+			for (int i = 0; i < count && packet.isReadable(); i++) {
+				resourceIds.add(packet.readUtf(16));
+				final int oldCount = PacketGuard.readCount(packet, 1, 4096);
+				final List<String> names = new ArrayList<>();
+				for (int j = 0; j < oldCount; j++) names.add(packet.readUtf(129));
+				oldNames.add(names);
+			}
 			final List<ImageDatabase.Entry> withFolders = new ArrayList<>();
-			for (int i = 0; i < entries.size(); i++) { final ImageDatabase.Entry entry = entries.get(i); final int row = rows.get(i); withFolders.add(new ImageDatabase.Entry(entry.namespace, entry.fileName, entry.hash, entry.width, entry.height, entry.size, entry.uploader, entry.uploaderName, entry.uploadedAt, row < folders.size() ? folders.get(row) : "")); }
+			for (int i = 0; i < entries.size(); i++) { final ImageDatabase.Entry entry = entries.get(i); final int row = rows.get(i); withFolders.add(new ImageDatabase.Entry(entry.namespace, entry.fileName, entry.hash, entry.width, entry.height, entry.size, entry.uploader, entry.uploaderName, entry.uploadedAt, row < folders.size() ? folders.get(row) : "", row < resourceIds.size() ? resourceIds.get(row) : "", row < oldNames.size() ? oldNames.get(row) : Collections.emptyList())); }
 			Minecraft.getInstance().execute(() -> { ensureConnection(); if (!session.equals(nextSession)) clear(); session = nextSession; canUpload = permission; maxTotalBytes = Math.max(0, Math.min(4096L * 1024 * 1024, totalLimit)); ENTRIES.clear(); ENTRIES.addAll(withFolders); DELETABLE.clear(); DELETABLE.addAll(deletable); FOLDERS.clear(); FOLDERS.addAll(newFolders); canManage = manage; });
 		} else if (action == 1) {
 			final String hash = packet.readUtf(64); final int size = packet.readInt(), offset = packet.readInt(); final byte[] bytes = packet.readByteArray(ImageFiles.CHUNK);
@@ -113,6 +123,26 @@ public final class ImportedImages implements IPacket {
 			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(0); packet.writeUtf(clean); packet.writeInt(bytes.length); packet.writeInt(offset); packet.writeByteArray(Arrays.copyOfRange(bytes, offset, Math.min(bytes.length, offset + ImageFiles.CHUNK))); if (cleanFolder != null) packet.writeUtf(cleanFolder); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);
 		}
 	}
+	/**
+	 * Puts a picture in place of the one with this id, under its own file name (0.79.0): the old one's id, folder and old
+	 * names stay, and what refers to it shows the new picture.
+	 */
+	public static void replace(String resourceId, String name, byte[] bytes) throws Exception {
+		ensureConnection(); if (!mtr.media.MediaIds.isId(resourceId) || ENTRIES.stream().noneMatch(entry -> entry.resourceId.equals(resourceId))) throw new IllegalArgumentException("gui.mtr.image_no_permission"); if (busy()) throw new IllegalArgumentException("gui.mtr.image_busy"); ImageFiles.check(bytes);
+		uploading = System.currentTimeMillis(); message = "gui.mtr.image_sending";
+		final String clean = AudioFiles.cleanName(name);
+		for (int offset = 0; offset < bytes.length; offset += ImageFiles.CHUNK) {
+			final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer()); packet.writeByte(5); packet.writeUtf(resourceId); packet.writeUtf(clean); packet.writeInt(bytes.length); packet.writeInt(offset); packet.writeByteArray(Arrays.copyOfRange(bytes, offset, Math.min(bytes.length, offset + ImageFiles.CHUNK))); RegistryClient.sendToServer(PACKET_IMAGE_ACTION, packet);
+		}
+	}
+	/**
+	 * @return the picture with this name, or the one that had it before (0.79.0), or null
+	 */
+	public static ImageDatabase.Entry find(String reference) {
+		final Map<String, List<String>> oldNames = new HashMap<>();
+		ENTRIES.forEach(entry -> oldNames.put(entry.resourceId, entry.oldNames));
+		return mtr.media.MediaIds.resolve(reference, ENTRIES, entry -> entry.name, entry -> entry.resourceId, mtr.media.MediaIds.byOldName(oldNames));
+	}
 	public static byte[] read(String hash) {
 		ensureConnection();
 		if (!ImageFiles.isHash(hash) || ENTRIES.stream().noneMatch(entry -> entry.hash.equals(hash))) return null;
@@ -128,7 +158,8 @@ public final class ImportedImages implements IPacket {
 	}
 	public static ResourceLocation texture(String reference) {
 		ensureConnection();
-		final String hash = ENTRIES.stream().filter(entry -> entry.name.equalsIgnoreCase(reference)).map(entry -> entry.hash).findFirst().orElse(reference);
+		final ImageDatabase.Entry found = find(reference);
+		final String hash = found == null ? reference : found.hash;
 		final PictureTexture cached = TEXTURES.get(hash);
 		if (cached != null) return cached.update();
 		final byte[] bytes = read(hash);

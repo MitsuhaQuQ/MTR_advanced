@@ -5,7 +5,8 @@ import { ConfirmButton } from "../ui/bits"
 import { FolderTree, UploadTarget, type FolderAction } from "./MediaFolders"
 import { buildTree, DRAG_TYPE, filesIn, findNode, uploadTargets, type FolderRef, type KeptFolder } from "../core/mediaFolders"
 
-type Entry = { hash: string; name: string; width: number; height: number; size: number; canDelete: boolean; uploader?: string; uploaderName: string; folder?: string; uploadedAt: number }
+/** resourceId and oldNames (0.79.0): the picture's id, which stays when it is replaced, and the names it had before */
+type Entry = { hash: string; name: string; width: number; height: number; size: number; canDelete: boolean; uploader?: string; uploaderName: string; folder?: string; uploadedAt: number; resourceId?: string; oldNames?: string[] }
 /** folders, self and canManage: folders of pictures (0.74.0) */
 type Library = { entries: Entry[]; canUpload: boolean; canManage?: boolean; busy: boolean; message: string; maxBytes: number; maxDimension: number; maxTotalBytes?: number; totalBytes?: number; folders?: KeptFolder[]; self?: string }
 const headers = { "X-MTR-Editor-Key": key }
@@ -101,7 +102,11 @@ export function ImagesLibrary() {
     poll()
     return () => { alive.current = false; clearTimeout(timer) }
   }, [])
-  const entry = data?.entries.find(item => item.name === selected)
+  // Found by its id too, as a picture replaced under another name keeps it (0.79.0)
+  const [selectedId, setSelectedId] = useState("")
+  const entry = data?.entries.find(item => item.name === selected) || (selectedId ? data?.entries.find(item => item.resourceId === selectedId) : undefined)
+  useEffect(() => { if (entry?.resourceId) setSelectedId(entry.resourceId) }, [entry?.resourceId])
+  const replaceInput = useRef<HTMLInputElement>(null)
   const tree = useMemo(() => (data ? buildTree(data.entries, data.folders || [], data.self || "") : []), [data])
   useEffect(() => { if (data && current && !findNode(tree, current)) setCurrent(null) }, [tree])
   const self = data?.self || ""
@@ -139,8 +144,11 @@ export function ImagesLibrary() {
     const result = await response.json()
     if (!result.ok) throw new Error(result.message)
   }
-  const upload = async (files: File[], folder: string) => {
-    if (!data?.canUpload || data.busy || busy.current) return
+  /**
+   * @param replaceId the id of the picture to put the file in place of (0.79.0): it keeps its id, folder and old names
+   */
+  const upload = async (files: File[], folder: string, replaceId?: string) => {
+    if (!data || (!data.canUpload && !replaceId) || data.busy || busy.current) return
     busy.current = true
     setSending(true)
     try {
@@ -149,7 +157,8 @@ export function ImagesLibrary() {
         const { name, blob, scaled } = await prepareImage(file, data.maxDimension, data.maxBytes)
         const note = scaled ? " " + tr("（{0} 超过 5 MB，已缩小到 {1}×{2} 像素）", file.name, scaled[0], scaled[1]) : ""
         if (!alive.current) break
-        await post({ name, data: await base64(blob), folder })
+        if (replaceId) await post({ action: "replace", resourceId: replaceId, name, data: await base64(blob) })
+        else await post({ name, data: await base64(blob), folder })
         setMessage(tr("正在上传图片，完成后会出现在图片库中。"))
         // Wait for the game's asynchronous upload result before starting another file.
         const started = Date.now()
@@ -174,6 +183,7 @@ export function ImagesLibrary() {
       <select className="h-7 rounded-md border bg-panel" aria-label={tr("上传者")} value={uploader} onChange={event => setUploader(event.target.value)}><option value="">{tr("所有上传者")}</option>{[...new Set(data?.entries.map(item => item.uploaderName) || [])].map(name => <option key={name}>{name}</option>)}</select>
       <input type="file" ref={input} accept=".png,.jpg,.jpeg,.gif,image/png,image/jpeg,image/gif" multiple hidden onChange={event => { const files = [...event.target.files || []]; event.target.value = ""; askUpload(files) }} />
       <button className="btn btn-primary" disabled={!data?.canUpload || sending || data.busy} onClick={() => input.current?.click()}>{tr("导入图片")}</button>
+      <input type="file" ref={replaceInput} accept=".png,.jpg,.jpeg,.gif,image/png,image/jpeg,image/gif" hidden data-replace-input onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file && entry?.resourceId) { setMessage(""); upload([file], "", entry.resourceId) } }} />
     </div>
     <p className="m-0 p-3 text-[12px] text-dim">{tr("导入 PNG、JPEG 或 GIF，宽高最多 2048 像素，上传内容不超过 5 MB。GIF 保留动画。用 MTR 刷子右键原版画选图和调整位置、尺寸。图片使用内部名称。")}</p>
     {data?.maxTotalBytes !== undefined && <p className="m-0 px-3 pb-2 text-[12px] text-dim">{tr("已用 {0} MB / 总容量 {1} MB", ((data.totalBytes || 0) / 1048576).toFixed(1), data.maxTotalBytes / 1048576)}</p>}
@@ -205,6 +215,9 @@ export function ImagesLibrary() {
           <span className="text-[12px] text-dim">{entry.width} × {entry.height} · {Math.ceil(entry.size / 1024)} KB</span>
           <span className="text-[12px] text-dim">{tr("上传者")}: {entry.uploaderName} · {new Date(entry.uploadedAt).toLocaleString()}</span>
           <code className="break-all text-[12px]">{entry.name}</code>
+          {entry.resourceId && <span className="text-[12px] text-dim">{tr("资源 ID")}: <code data-resource-id>{entry.resourceId}</code></span>}
+          {entry.oldNames && entry.oldNames.length > 0 && <span className="break-all text-[12px] text-dim" data-old-names>{tr("曾用名（仍指向这张图片）")}: {entry.oldNames.join("、")}</span>}
+          {entry.canDelete && entry.resourceId && <button className="btn" disabled={sending || data?.busy} title={tr("换成另一张图片，文件名可以不同；使用它的画都会显示新图片")} onClick={() => replaceInput.current?.click()}>{tr("替换…")}</button>}
           {entry.canDelete && <ConfirmButton confirm={tr("删除这张图片？使用它的画将恢复原版显示。")} onConfirm={() => { setMessage(""); post({ action: "delete", name: entry.name }).catch(error => setMessage(error.message)) }}>{tr("删除")}</ConfirmButton>}
         </>}
         {(message || data?.message) && <p className="text-[12px]" role="status">{message || data?.message}</p>}

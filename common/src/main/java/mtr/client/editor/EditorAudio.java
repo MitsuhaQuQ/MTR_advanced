@@ -35,6 +35,11 @@ public final class EditorAudio {
 			entryObject.addProperty("hash", entry.hash);
 			entryObject.addProperty("name", entry.name);
 			entryObject.addProperty("soundId", entry.soundId);
+			// Its id and the references it had before (0.79.0)
+			entryObject.addProperty("resourceId", entry.resourceId);
+			final JsonArray oldNames = new JsonArray();
+			entry.oldNames.forEach(oldNames::add);
+			entryObject.add("oldNames", oldNames);
 			final net.minecraft.resources.ResourceLocation soundLocation = entry.getSoundLocation();
 			entryObject.addProperty("sound", soundLocation == null ? "" : soundLocation.toString());
 			entryObject.addProperty("size", entry.size);
@@ -91,6 +96,31 @@ public final class EditorAudio {
 				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_read_failed"));
 			}
 			jsonObject.addProperty("id", AudioCache.upload(name, soundId, bytes, folder));
+			jsonObject.addProperty("ok", true);
+		} catch (AudioFiles.InvalidAudioException e) {
+			jsonObject.addProperty("ok", false);
+			jsonObject.addProperty("message", TranslatedMessage.decode(e.getMessage()));
+		}
+		return jsonObject;
+	}
+
+	/**
+	 * Puts an uploaded file in place of the one with this id (0.79.0), keeping its id, folder and sound ID unless another
+	 * sound ID is given.
+	 */
+	public static JsonObject replace(String resourceId, String name, String soundId, String data) {
+		final JsonObject jsonObject = new JsonObject();
+		try {
+			if (!mtr.media.MediaIds.isId(resourceId) || AudioCache.ENTRIES.stream().noneMatch(entry -> entry.resourceId.equals(resourceId))) {
+				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_missing"));
+			}
+			final byte[] bytes;
+			try {
+				bytes = Base64.getDecoder().decode(data);
+			} catch (IllegalArgumentException e) {
+				throw new AudioFiles.InvalidAudioException(TranslatedMessage.encode("gui.mtr.audio_read_failed"));
+			}
+			jsonObject.addProperty("id", AudioCache.upload(name, soundId, bytes, null, resourceId));
 			jsonObject.addProperty("ok", true);
 		} catch (AudioFiles.InvalidAudioException e) {
 			jsonObject.addProperty("ok", false);

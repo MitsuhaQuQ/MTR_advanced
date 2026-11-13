@@ -57,3 +57,8 @@
 
 - `FOLDERS`、`canManage`；列表读每行文件夹（按服务器发的行号对应，跳过的行不影响）、文件夹列表和"能否整理所有人的"。
 - `upload(name, bytes, folder)`；`folderAction(action, owner, path, argument, references)`（动作 4）。
+
+## 资源 ID 与替换（0.79.0）
+- 列表包末尾读每行的 ID 和曾用名，放进 `ImageDatabase.Entry`。
+- `find(reference)`：按名字或曾用名找；`texture` 用它，所以画按旧名也显示新图片。
+- `replace(resourceId, name, bytes)`：按动作 5 分块发送。

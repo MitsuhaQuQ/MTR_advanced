@@ -124,3 +124,9 @@
 - 列表包：在 sound id 之后再按同顺序写每个文件的上传者 UUID 和文件夹，然后 `int 文件夹数`、每个 `String 所有者 UUID, String 所有者名, String 路径`。
 - 上传包末尾可带 `String 文件夹`（第一块时规整，非法则回 `gui.mtr.media_folder_invalid`）：指定了就放进去（同名替换也移过去），没指定则替换的留在原处、新的放顶层。
 - 新 C2S 包 `PACKET_AUDIO_FOLDER` → `receiveFolderC2S`：`int 请求 id, byte 动作, String 所有者, String 路径, String 参数, int 数量, String 名字键...`；所有者本人或能管理的玩家（`MediaPermissions.canDelete`），交给 `MediaFolders.apply`，成功后重读并发给所有人，结果按请求 id 回。
+
+## 资源 ID 与替换（0.79.0）
+- `Entry` 加 `resourceId`、`oldNames`；列表包末尾追加每个文件的 ID 和曾用名。
+- 上传包在文件夹之后可再带一个 `replaceId`：有它就走 `finishReplace`，按 ID 替换（上传者或管理员）：ID、上传者、文件夹、声音 ID 不变（另给声音 ID 时用新的），文件可改名，旧名记为曾用名；新名被别的文件占用或用过时回 `NAME_USED`；成功提示 `gui.mtr.audio_replaced`。
+- 普通上传的新名字是别的文件的曾用名时拒绝。
+- `getUploadedHash`、`getUploadedDurationTicks` 经 `findEntry` 按名字或曾用名找，所以音箱按旧名也播放新文件。

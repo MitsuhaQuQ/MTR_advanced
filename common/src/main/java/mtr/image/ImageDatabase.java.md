@@ -44,3 +44,9 @@
 
 - 新字段 `folders`（表 `picture_folders`，`picture_index` 加 `folder` 列）。`Entry.folder`（另有不带文件夹的构造函数，顶层）。
 - `add(…, folder)` 写明列名插入（以前按位置插入，加列后会错位），并保留文件夹；不带文件夹的 `add` 放顶层。`entries()` 读出文件夹。
+
+## 资源 ID 与替换（0.79.0）
+- 字段 `ids`（`MediaIds.Store`，表 `picture_old_names`）；`Entry` 加 `resourceId`、`oldNames`。
+- `add` 同名上传原地更新时保留原 ID；新名字是别的文件的曾用名时抛 `MediaIds.NAME_USED`。
+- `replace(id, fileName, bytes)`：按 ID 换内容，可换文件名（命名空间、上传者、文件夹不变），旧名记为曾用名；新名是别的文件现在的名字或曾用名时抛 `NAME_USED`；清掉没人用的旧内容。
+- `delete` 同时删掉这个文件的曾用名。

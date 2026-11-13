@@ -783,6 +783,8 @@ public final class EditorServer {
 				final JsonObject json = new JsonParser().parse(body).getAsJsonObject();
 				// Folders (0.74.0): {action: "folder", op, owner, path, name | folder, keys}
 				if (json.has("action") && "folder".equals(json.get("action").getAsString())) { sendJson(response, onGameThread(() -> EditorImages.folder(json).toString())); return; }
+				// Replacing a picture by its id (0.79.0): {action: "replace", resourceId, name, data}
+				if (json.has("action") && "replace".equals(json.get("action").getAsString())) { final String resourceId = json.get("resourceId").getAsString(), replaceName = json.get("name").getAsString(), replaceData = json.get("data").getAsString(); sendJson(response, onGameThread(() -> EditorImages.replace(resourceId, replaceName, replaceData).toString())); return; }
 				final String name = json.get("name").getAsString();
 				if (json.has("action") && "delete".equals(json.get("action").getAsString())) sendJson(response, onGameThread(() -> EditorImages.delete(name).toString()));
 				else { final String data = json.get("data").getAsString(); final String folder = json.has("folder") && !json.get("folder").isJsonNull() ? json.get("folder").getAsString() : null; sendJson(response, onGameThread(() -> EditorImages.upload(name, data, folder).toString())); }
@@ -832,6 +834,15 @@ public final class EditorServer {
 			try {
 				requestObject = new JsonParser().parse(body).getAsJsonObject();
 				action = requestObject.get("action").getAsString();
+				// Replacing a file by its id (0.79.0): {action: "replace", resourceId, name, soundId?, data}
+				if ("replace".equals(action)) {
+					final String resourceId = requestObject.get("resourceId").getAsString();
+					final String replaceName = requestObject.get("name").getAsString();
+					final String replaceSoundId = requestObject.has("soundId") ? requestObject.get("soundId").getAsString() : "";
+					final String replaceData = requestObject.get("data").getAsString();
+					sendJson(response, onGameThread(() -> EditorAudio.replace(resourceId, replaceName, replaceSoundId, replaceData).toString()));
+					return;
+				}
 				// Folders (0.74.0): {action: "folder", op, owner, path, name | folder, keys}
 				if ("folder".equals(action)) {
 					sendJson(response, onGameThread(() -> EditorAudio.folder(requestObject).toString()));
