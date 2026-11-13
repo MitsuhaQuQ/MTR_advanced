@@ -147,6 +147,67 @@ public class DepotDispatcher {
 	}
 
 	/**
+	 * Services of this depot's duties no train will run on time, which a late train may take over (user 2026-11-14). The
+	 * host saves it as {@link LateServices#toList()}.
+	 */
+	public final LateServices lateServices = new LateServices();
+
+	/**
+	 * A late train gave up its service here, having taken another one, so it doesn't run.
+	 */
+	public void giveUpService(long routeId, int fromStop, long serviceMillis) {
+		lateServices.giveUp(routeId, fromStop, serviceMillis);
+	}
+
+	/**
+	 * @param serviceMillis the service a late train isn't expected to run any more, or 0 when it is again
+	 */
+	public void expectLate(String trainId, long routeId, int fromStop, long serviceMillis) {
+		lateServices.expect(trainId, routeId, fromStop, serviceMillis);
+	}
+
+	/**
+	 * @return whether a train of this depot, or one sharing its routes, took this service over
+	 */
+	public boolean isServiceTaken(long routeId, int fromStop, long serviceMillis) {
+		if (lateServices.isTaken(routeId, fromStop, serviceMillis)) {
+			return true;
+		}
+		for (final DepotDispatcher peer : peers) {
+			if (peer.lateServices.isTaken(routeId, fromStop, serviceMillis)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Finds the earliest service of this route starting at this stop that no train of this depot or one sharing its routes
+	 * runs on time, due after the late train's own and from {@code fromMillis} until {@code untilMillis}, and takes it.
+	 *
+	 * @return the service taken, or 0 if there is none
+	 */
+	public long takeFreeService(long routeId, int fromStop, long afterMillis, long fromMillis, long untilMillis, long currentMillis) {
+		lateServices.prune(currentMillis);
+		DepotDispatcher owner = null;
+		long best = 0;
+		final List<DepotDispatcher> all = new ArrayList<>();
+		all.add(this);
+		all.addAll(peers);
+		for (final DepotDispatcher dispatcher : all) {
+			final long found = dispatcher.lateServices.findFree(routeId, fromStop, afterMillis, fromMillis, untilMillis);
+			if (found != 0 && (best == 0 || found < best) && !isServiceTaken(routeId, fromStop, found)) {
+				best = found;
+				owner = dispatcher;
+			}
+		}
+		if (owner != null) {
+			owner.lateServices.take(routeId, fromStop, best);
+		}
+		return best;
+	}
+
+	/**
 	 * The two depots run a route in common, so each takes the services the other's trains have taken as taken.
 	 */
 	public void shareServicesWith(DepotDispatcher other) {

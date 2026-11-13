@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.78.0: a train on a duty more than 10 minutes late at the first stop of a segment takes over the earliest later service there that no train will run on time - one whose own train gave it up, or is itself more than 10 minutes late - and waits for it; its own service is then not run. With none it runs its own late, and the trains stay on the track they are on. Saves change (client and server both 0.78.0).
+
 0.77.0 turns a platform end gate left to right with the brush: its hinge goes to the other end and it still swings the same way (a new block state, so client and server both need 0.77.0; Assets 1.0.9). From 0.76.8 a new gate swings towards the platform without sneaking first, and there are gates without the handle outside in both heights. In the web editor the dispatcher's buttons come back as soon as the train's state changes (a train held, released and held again no longer needs the page loaded again), and the network schematic keeps its zoom when the network is read again.
 
 0.65.28 adds a search to the image list of the painting screen: type while the list is open to keep the images whose names have every word.

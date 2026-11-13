@@ -67,6 +67,9 @@
 ### `List<DepotDuties.Slot> getDutySlots(long sidingId)`（覆盖）
 该停车线的运用槽位（`duties.getSlots`）。
 
+### `giveUpService` / `expectLate` / `isServiceTaken` / `takeFreeService`（覆盖，0.78.0）
+- 转给 `dispatcher` 的同名方法（晚点改挂）。
+
 ### `boolean hasDutyRun(long sidingId, int slot, long day)` / `void markDutyRun(long sidingId, int slot, long day)`（覆盖）
 查询/标记某停车线某槽位在某天是否已运行，委托 dispatcher。调用者：`TickRunner.java:808`、`TrainService`。
 

@@ -10,6 +10,7 @@
 - `lastDeployedTrips`（Map<Long, Long>）：每条首线路最后发出的服务，下一列车取更晚的。
 - `dutyRunDays`（Map<String, Long>）：每个槽位的运用最后运行的运营日，键为 `"停车线:槽位"`（或按运用编号 `"#id"`，见 `runKey`）。
 - `releaseIntervalMillis`（int）：车厂按运用发车的最小间隔，0 = 无（由宿主设置；解耦文档 D 步"车厂发车 2"）。
+- `lateServices`（`LateServices`，0.78.0）：晚点车放弃的、预计赶不上的、已被接走的班次；宿主按 `toList()` 存。`giveUpService`、`expectLate`、`isServiceTaken`、`takeFreeService`（连同共用线路的 `peers` 一起找、认领后不再给别的车）。
 - `takeovers`（List<String>）：由备用车从某段起接管的运用（D5），每项 `"运用停车线 槽位 dayStart 起始段"`，按申请顺序。
 - `slotsOf`（`LongFunction<List<DepotDuties.Slot>>`）：停车线 → 槽位，用于按运用编号而非位置记录已运行（P2-D）；null 则按位置。
 

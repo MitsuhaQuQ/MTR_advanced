@@ -47,7 +47,9 @@
 - `COMMAND_HOLD = 1`、`COMMAND_RELEASE = 2`、`COMMAND_EXTEND_DWELL = 3`、`COMMAND_TURN_AT = 4`、`COMMAND_CLEAR_OUT = 5`、`COMMAND_RETURN = 6`、`COMMAND_CANCEL = 7`：`dispatch` 的命令。
 - `TAKEOVER_OK = 0`（备用车在路上，可以且已接管）、`TAKEOVER_NO_SPARE = 3`（没有能及时出发的备用车或车厂无车）、`TAKEOVER_CROSSES = 4`（备用车出库会经过晚点列车被拦或尚需运行的地方，D5）。
 - `KEY_*`（private）：存档键名：`trip_millis`、`next_trip_millis`、`is_last_lap`、`trip_route_id`、`route_start_millis`、`is_joining_loop`、`trip_path`、`linked_service`、`linked_route`、`duty_slot`、`duty_day_start`、`duty_index`、`duty_day`（运用拷贝，现为账本键）、`duty_siding`、`duty_id`、`skip_platforms`（D3）、`turn_back`（D4：模式、之后、站台）、`takeover`（D5）、`dispatch`（D6：标志、多停、扣到、站台）。
-- `SAVED_KEYS = 19`：`write` 写出的值个数，宿主据此计算存档大小（有测试检查，曾少写一个）。
+- `LATE_REHOOK_MILLIS`（10 分钟）、`REHOOK_WAIT_MILLIS`（1 小时）：晚点改挂的门槛和最长等待（0.78.0）。
+- 字段 `rehookSegment`/`rehookMillis`/`rehookDayStart`：晚点改挂的那一段、改挂到的班次（完整时间戳）和所属运用日，没有为 -1；存为 `rehook` 键。
+- `SAVED_KEYS = 20`（0.78.0 加 `rehook`）：`write` 写出的值个数，宿主据此计算存档大小（有测试检查，曾少写一个）。
 - `MILLIS_PER_TICK = 50`（private）。
 - `DEPLOY_MARGIN_MILLIS = 15000`（private）：列车力求提前这么多到达首站，使途中小延误不致晚点。
 
@@ -172,7 +174,7 @@
 - 调用者：`TrainServer.java:305`、`TickRunner.java:2968`；本类 `onStopReached`。
 
 #### `void onStopReached()`
-- 作用：列车刚到站时（`MotionHooks.onStopReached`）：运用列车若到达后续分段首站，依次 `startDutySegment`（服务已由运用规定）。非运用：中途加入环线的列车到达首站即结束所加入的服务（同一圈结束）；到达直通路径的入口轨道时 `joinLapRoute`；到达路径上下一线路的起点（或紧邻其前的折返轨）时换到该线路的下一服务（直通的用链接服务，否则向车厂 `findNextService`；不等服务的用计划时刻），在此等待（使有折返轨的列车不占站台），更新路径、线路开始时刻并预订下一个。没有服务则按已有时间继续。
+- 作用：列车刚到站时（`MotionHooks.onStopReached`）：运用列车若到达后续分段首站，依次 `startDutySegment`（服务已由运用规定），然后 `rehookIfLate`；每到一站都 `expectLateIfSo`（0.78.0）。非运用：中途加入环线的列车到达首站即结束所加入的服务（同一圈结束）；到达直通路径的入口轨道时 `joinLapRoute`；到达路径上下一线路的起点（或紧邻其前的折返轨）时换到该线路的下一服务（直通的用链接服务，否则向车厂 `findNextService`；不等服务的用计划时刻），在此等待（使有折返轨的列车不占站台），更新路径、线路开始时刻并预订下一个。没有服务则按已有时间继续。
 - 调用者：`TrainServer.java:310`、`TickRunner.java:2973`。
 
 #### `boolean needsAlignment()`
@@ -299,7 +301,14 @@
 
 ### 运用分段
 
+#### `private void rehookIfLate()`（0.78.0）
+- 作用：在第 k（≥1）段首站，若本段班次的本站计划发车已过去超过 `LATE_REHOOK_MILLIS`，或本班已被别的车接走，就向车厂 `takeFreeService` 要同线路、同起点站、比本班晚、本站发车还赶得上（1 小时内）、且没人准点跑的最早一班；要到就改挂（`tripMillis` 和 `rehook*`），在原地等，自己的班次 `giveUpService`（记为未运行）；要不到照旧晚点跑。后面的段不变。只在这里改挂，`alignDuty`/放置/接班不调用。
+
+#### `private void expectLateIfSo()`（0.78.0）
+- 作用：每到一站，晚点超过 `LATE_REHOOK_MILLIS` 就把下一段的班次报为「预计赶不上」（`Board.expectLate`），前面晚点的车可以接；追回到门槛以内就撤销。
+
 #### `private void startDutySegment(int index)`
+- 0.78.0：`index` 等于改挂的段且同一运用日时用改挂的班次，重启后对号入座也不会退回原班次。
 把列车移到运用的某分段：设线路、服务时刻（该运用日中的服务）；第 0 分段时线路开始时刻为 0，若从线路中途加入，服务时刻加上入口偏移（`getEntryOffsetMillis`）；其他分段取其首站计划中的线路开始时刻。
 
 #### `transitsim.plan.DutyLedger.Entry getDutyLedger()`

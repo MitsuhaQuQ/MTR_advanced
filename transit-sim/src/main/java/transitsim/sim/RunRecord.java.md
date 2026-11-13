@@ -14,10 +14,11 @@
 - `dutyRunDays`（Map<Long, Map<String, Long>>）：车厂 → 槽位键 → 最后运行的运营日。
 - `lastDeployedMillis`（Map<Long, Long>）、`deployIndices`（Map<Long, Integer>）：按频率发车的车厂上次发车时刻与下一个停车线下标（G1）。
 - `sheds`（Map<Long, List<Long>>）：每条停车线车库中存放的列车，最早的在前（P2-C）。
+- `lateServices`（Map<Long, List<String>>，版本 7）：每个车厂的晚点改挂登记，同 `LateServices.toList()`。
 - `takeovers`（Map<Long, List<String>>）：每个车厂由备用车接管的运用（D5），同 `DepotDispatcher.takeovers`。
 
 ### 常量
-- `VERSION = 6`（private）：版本 2 增加按频率发车的车厂，3 增加车库，4 增加备用车接管（D5），5 增加许可终点和运行段（见 `TrainRecord`），6 增加运用账本表；旧版本读时缺少这些部分。
+- `VERSION = 7`（private）：版本 2 增加按频率发车的车厂，3 增加车库，4 增加备用车接管（D5），5 增加许可终点和运行段（见 `TrainRecord`），6 增加运用账本表，7 增加晚点改挂登记；旧版本读时缺少这些部分。
 
 ### 构造函数 `RunRecord(long time)`
 调用者：`LiveSimulation.java:343`、`SimExport.java:68`、`TickRunner.java:605`。

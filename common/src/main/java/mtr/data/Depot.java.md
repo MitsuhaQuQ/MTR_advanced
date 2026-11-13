@@ -51,7 +51,7 @@
 - `MAX_PLATFORM_CHANGE_REACH = 300`：换站台离原站台最远多少格（2026-11-09）。
 
 ### 存档键
-`route_ids`、`use_real_time`、`frequencies`、`headway_minutes`、`departures`、`last_deployed`、`last_deployed_trips`、`vehicle_service_types`、`pool_fleets`、`measured_buffers`、`added_buffers`、`depot_rules`、`area_heights`、`auto_duties_basis`（自动运用的计划依据与结果，依然成立时保留，第 4 轮第 4 步）、`vehicle_settings`（每项 6 个值：加速度、减速度、手动、手动最高速、手动转自动时间、最高速——最高速自 0.34.0）、`frequencies_migrated`、`deploy_index`、`repeat_infinitely`、`cruising_altitude`、`use_deterministic_path`、`cycle_routes`、`speed_curves`、`release_interval`、`duties`（二进制）、`auto_duties`（二进制）、`duty_mode`（"diagram"/"online"）、`duty_slot`（仅 update 键）、`duty_run_days`、`duty_takeovers`（备车接替的运用，D5）。
+`route_ids`、`use_real_time`、`frequencies`、`headway_minutes`、`departures`、`last_deployed`、`last_deployed_trips`、`vehicle_service_types`、`pool_fleets`、`measured_buffers`、`added_buffers`、`depot_rules`、`area_heights`、`auto_duties_basis`（自动运用的计划依据与结果，依然成立时保留，第 4 轮第 4 步）、`vehicle_settings`（每项 6 个值：加速度、减速度、手动、手动最高速、手动转自动时间、最高速——最高速自 0.34.0）、`frequencies_migrated`、`deploy_index`、`repeat_infinitely`、`cruising_altitude`、`use_deterministic_path`、`cycle_routes`、`speed_curves`、`release_interval`、`duties`（二进制）、`auto_duties`（二进制）、`duty_mode`（"diagram"/"online"）、`duty_slot`（仅 update 键）、`duty_run_days`、`duty_takeovers`（备车接替的运用，D5）、`late_services`（晚点改挂登记，0.78.0）。
 
 ### `private static double pathLength(List<PathData> path)`
 - 各段轨道长度之和。
@@ -64,7 +64,7 @@
 - `Depot(FriendlyByteBuf packet)`：客户端与服务端接收编辑；字段顺序见 `writePacket`。调用者：`ClientEditing.java:327`、`ClientData.java:391`、`MTR.java:495`（`Depot::new`）。
 
 ### `public void toMessagePack(MessagePacker)`
-- 精简部分 + `deploy_index`、`last_deployed`（距现在的毫秒）、`last_deployed_trips`、`duty_run_days`、`duty_takeovers`。
+- 精简部分 + `deploy_index`、`last_deployed`（距现在的毫秒）、`last_deployed_trips`、`duty_run_days`、`duty_takeovers`、`late_services`（0.78.0；精简长度因此少 6 项）。
 
 ### `public void toReducedMessagePack(MessagePacker)`
 - 父类 + 设置、频率、发车列表、服务类型、池车队、迁移标志、发车间隔、车辆设置、运用、运用模式、自动运用、自动计划、规则、区域高度（无为空数组）、实测缓冲、采用的缓冲。调用者：`RailwayDataLoggingModule.java:114`。
@@ -206,6 +206,7 @@
 - `findDuty(long dutyId)`：`runDuties.findSlot`。调用者：`TrainService.java:1848`。
 - `noteReturnMissed(long sidingId, long targetSidingId, String reason)`。调用者：`TrainService.java:2006`。
 - `getDutySlots(long sidingId)`。调用者：`DepotBoard.java:176`、`TrainService.java:1850`。
+- `giveUpService` / `expectLate` / `isServiceTaken` / `takeFreeService`（0.78.0）：晚点改挂，转给 `dispatcher`。
 - `hasDutyRun` / `markDutyRun(long sidingId, int slot, long day)`：每个槽位当天是否已运行运用（"停车线:槽位"），使运用一天只运行一次。调用者：`PidsSchedules.java:44`。
 - `keepsTrainsOnLine()`：`cycleRoutes`。
 

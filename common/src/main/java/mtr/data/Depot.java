@@ -350,6 +350,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * The duties a spare takes over (D5), as {@link DepotDispatcher#takeovers}.
 	 */
 	private static final String KEY_DUTY_TAKEOVERS = "duty_takeovers";
+	/**
+	 * The services late trains gave up, are expected to miss, or took over (0.78.0), as {@link transitsim.sim.LateServices#toList()}.
+	 */
+	private static final String KEY_LATE_SERVICES = "late_services";
 	private static final String DUTY_MODE_DIAGRAM = "diagram";
 	private static final String DUTY_MODE_ONLINE = "online";
 
@@ -433,6 +437,9 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		}
 		messagePackHelper.iterateMapValue(KEY_DUTY_RUN_DAYS, entry -> dispatcher.dutyRunDays.put(entry.getKey().asStringValue().asString(), entry.getValue().asIntegerValue().asLong()));
 		messagePackHelper.iterateArrayValue(KEY_DUTY_TAKEOVERS, value -> dispatcher.takeovers.add(value.asStringValue().asString()));
+		final List<String> lateServices = new ArrayList<>();
+		messagePackHelper.iterateArrayValue(KEY_LATE_SERVICES, value -> lateServices.add(value.asStringValue().asString()));
+		dispatcher.lateServices.addAll(lateServices);
 		final List<Long> bufferSamples = new ArrayList<>();
 		messagePackHelper.iterateArrayValue(KEY_MEASURED_BUFFERS, value -> bufferSamples.add(value.asIntegerValue().asLong()));
 		bufferRecorder.readList(bufferSamples);
@@ -523,6 +530,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		for (final String takeover : dispatcher.takeovers) {
 			messagePacker.packString(takeover);
 		}
+		final List<String> lateServices = dispatcher.lateServices.toList();
+		messagePacker.packString(KEY_LATE_SERVICES).packArrayHeader(lateServices.size());
+		for (final String line : lateServices) {
+			messagePacker.packString(line);
+		}
 	}
 
 	@Override
@@ -605,17 +617,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 
 	@Override
 	public int messagePackLength() {
-		return super.messagePackLength() + 28;
+		return super.messagePackLength() + 29;
 	}
 
 	/**
-	 * Without the five entries only {@link #toMessagePack} writes: where it left off sending, when, the trips sent, the
-	 * duties run and the takeovers (the takeovers were left out of the count, so a save's header stopped short of them and
-	 * they were never read back, until 2026-11-09).
+	 * Without the six entries only {@link #toMessagePack} writes: where it left off sending, when, the trips sent, the
+	 * duties run, the takeovers (the takeovers were left out of the count, so a save's header stopped short of them and
+	 * they were never read back, until 2026-11-09) and the services late trains gave up or took over (0.78.0).
 	 */
 	@Override
 	public int reducedMessagePackLength() {
-		return messagePackLength() - 5;
+		return messagePackLength() - 6;
 	}
 
 	@Override
@@ -1723,6 +1735,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		dispatcher.dutyRunDays.putAll(simulated.dispatcher.dutyRunDays);
 		dispatcher.takeovers.clear();
 		dispatcher.takeovers.addAll(simulated.dispatcher.takeovers);
+		dispatcher.lateServices.clear();
+		dispatcher.lateServices.addAll(simulated.dispatcher.lateServices.toList());
 		lastDeployedMillis = simulated.lastDeployedMillis;
 		deployIndex = Math.max(0, simulated.deployIndex);
 	}
@@ -2282,6 +2296,26 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	@Override
 	public void markDutyRun(long sidingId, int slot, long day) {
 		dispatcher.markDutyRun(sidingId, slot, day);
+	}
+
+	@Override
+	public void giveUpService(long routeId, int fromStop, long serviceMillis) {
+		dispatcher.giveUpService(routeId, fromStop, serviceMillis);
+	}
+
+	@Override
+	public void expectLate(String trainId, long routeId, int fromStop, long serviceMillis) {
+		dispatcher.expectLate(trainId, routeId, fromStop, serviceMillis);
+	}
+
+	@Override
+	public boolean isServiceTaken(long routeId, int fromStop, long serviceMillis) {
+		return dispatcher.isServiceTaken(routeId, fromStop, serviceMillis);
+	}
+
+	@Override
+	public long takeFreeService(long routeId, int fromStop, long afterMillis, long fromMillis, long untilMillis, long currentMillis) {
+		return dispatcher.takeFreeService(routeId, fromStop, afterMillis, fromMillis, untilMillis, currentMillis);
 	}
 
 	/**

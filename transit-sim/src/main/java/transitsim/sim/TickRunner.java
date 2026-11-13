@@ -613,6 +613,9 @@ public final class TickRunner<T extends RunTrack> {
 				if (!sidingRun.depot.dispatcher.takeovers.isEmpty()) {
 					record.takeovers.put(sidingRun.sidingId, new ArrayList<>(sidingRun.depot.dispatcher.takeovers));
 				}
+				if (!sidingRun.depot.dispatcher.lateServices.isEmpty()) {
+					record.lateServices.put(sidingRun.sidingId, sidingRun.depot.dispatcher.lateServices.toList());
+				}
 			}
 			sidingRun.trains.forEach(train -> record.trains.add(train.toRecord()));
 			if (!sidingRun.shed.isEmpty() || !sidingRun.arriving.isEmpty()) {
@@ -646,6 +649,12 @@ public final class TickRunner<T extends RunTrack> {
 			final SidingRun sidingRun = sidings.get(sidingId);
 			if (sidingRun != null) {
 				sidingRun.depot.dispatcher.takeovers.addAll(takeovers);
+			}
+		});
+		record.lateServices.forEach((sidingId, lines) -> {
+			final SidingRun sidingRun = sidings.get(sidingId);
+			if (sidingRun != null) {
+				sidingRun.depot.dispatcher.lateServices.addAll(lines);
 			}
 		});
 		record.lastDeployedMillis.forEach((sidingId, lastDeployedMillis) -> {

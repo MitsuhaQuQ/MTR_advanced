@@ -188,6 +188,26 @@ public final class DepotBoard implements TrainService.Board {
 	}
 
 	@Override
+	public void giveUpService(long routeId, int fromStop, long serviceMillis) {
+		dispatcher.giveUpService(routeId, fromStop, serviceMillis);
+	}
+
+	@Override
+	public void expectLate(String trainId, long routeId, int fromStop, long serviceMillis) {
+		dispatcher.expectLate(trainId, routeId, fromStop, serviceMillis);
+	}
+
+	@Override
+	public boolean isServiceTaken(long routeId, int fromStop, long serviceMillis) {
+		return dispatcher.isServiceTaken(routeId, fromStop, serviceMillis);
+	}
+
+	@Override
+	public long takeFreeService(long routeId, int fromStop, long afterMillis, long fromMillis, long untilMillis, long currentMillis) {
+		return dispatcher.takeFreeService(routeId, fromStop, afterMillis, fromMillis, untilMillis, currentMillis);
+	}
+
+	@Override
 	public long[] findDuty(long dutyId) {
 		return duties.findSlot(dutyId);
 	}

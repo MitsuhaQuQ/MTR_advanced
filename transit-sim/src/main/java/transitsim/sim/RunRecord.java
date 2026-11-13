@@ -41,12 +41,17 @@ public final class RunRecord {
 	 * The duties each depot has a spare train take over (D5), as {@link DepotDispatcher#takeovers}, by its first siding.
 	 */
 	public final Map<Long, List<String>> takeovers = new TreeMap<>();
+	/**
+	 * The services each depot's late trains gave up, are expected to miss, or took over, as {@link LateServices#toList()},
+	 * by its first siding (version 7).
+	 */
+	public final Map<Long, List<String>> lateServices = new TreeMap<>();
 
 	/**
 	 * Version 2 adds the depots sending trains out by frequency, version 3 the sidings' sheds, version 4 the duties taken
-	 * over by spares (D5); older records are read without them.
+	 * over by spares (D5), version 7 the services late trains gave up or took over; older records are read without them.
 	 */
-	private static final int VERSION = 6;
+	private static final int VERSION = 7;
 
 	public RunRecord(long time) {
 		this.time = time;
@@ -105,6 +110,12 @@ public final class RunRecord {
 			writer.writeVarInt(list.size());
 			list.forEach(takeover -> writeString(writer, takeover));
 		});
+		writer.writeVarInt(lateServices.size());
+		lateServices.forEach((sidingId, list) -> {
+			writer.writeLong(sidingId);
+			writer.writeVarInt(list.size());
+			list.forEach(line -> writeString(writer, line));
+		});
 		return writer.toBytes();
 	}
 
@@ -157,6 +168,14 @@ public final class RunRecord {
 		if (version >= 4) {
 			for (int i = reader.readVarInt(); i > 0; i--) {
 				final List<String> list = record.takeovers.computeIfAbsent(reader.readLong(), key -> new ArrayList<>());
+				for (int j = reader.readVarInt(); j > 0; j--) {
+					list.add(readString(reader));
+				}
+			}
+		}
+		if (version >= 7) {
+			for (int i = reader.readVarInt(); i > 0; i--) {
+				final List<String> list = record.lateServices.computeIfAbsent(reader.readLong(), key -> new ArrayList<>());
 				for (int j = reader.readVarInt(); j > 0; j--) {
 					list.add(readString(reader));
 				}

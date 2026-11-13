@@ -75,6 +75,18 @@ class FleetPoolTest {
 	}
 
 	@Test
+	void theServicesLateTrainsGaveUpOrTookOverAreRecorded() {
+		final RunRecord record = new RunRecord(5);
+		final LateServices late = new LateServices();
+		late.giveUp(2, 0, 1000);
+		late.expect("train", 2, 1, 2000);
+		late.take(3, 0, 3000);
+		record.lateServices.put(100L, late.toList());
+		final RunRecord read = RunRecord.fromBytes(record.toBytes());
+		assertEquals(late.toList(), read.lateServices.get(100L));
+	}
+
+	@Test
 	void aPoolsFleetIsSavedWithTheDataset() {
 		final SimDataset dataset = SimDatasetTest.lines(1, 400, 2, 4, 10);
 		dataset.sidings.get(0).poolFleet = 6;

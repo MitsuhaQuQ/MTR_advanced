@@ -1463,6 +1463,131 @@ class DutyRunTest {
 		assertEquals(from.path.size(), restored.followed.path.size());
 	}
 
+	/**
+	 * Two duties of route 1 then route 2, the first at 08:00 and 08:20, the second at 08:10 and 08:40, on the same path:
+	 * route 2 starts at rail 4, its departure 10 seconds into its service.
+	 */
+	private FakeTrain[] twoLateDuties() {
+		setSlots(
+				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 20 * MINUTE), 0, -1)),
+				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR + 10 * MINUTE), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1))
+		);
+		final FakeTrain[] trains = new FakeTrain[2];
+		for (int slot = 0; slot < 2; slot++) {
+			final List<TestTrack> path = makePath(0, 1, 2, 3, 4, 5, 0);
+			final TripPath<TestTrack> tripPath = addPath(slot, 0, new int[]{1, 4}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 20), stop(5, 5, 22));
+			trains[slot] = new FakeTrain(path, "train" + slot);
+			trains[slot].service.setSiding(SIDING_ID);
+			trains[slot].service.setNetwork(depot, routes::get, null);
+			trains[slot].service.setStopTimes(new StopTimes(), tripPaths, TurnBacks.NONE);
+			now = MONDAY + 7 * HOUR + 58 * MINUTE + slot * 10 * MINUTE;
+			trains[slot].service.deployDuty(slot, MONDAY, tripPath);
+		}
+		return trains;
+	}
+
+	@Test
+	void aLateTrainWithNoFreeServiceRunsItsOwnLate() {
+		final FakeTrain[] trains = twoLateDuties();
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 35 * MINUTE;
+		trains[0].service.onStopReached();
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, trains[0].service.getTripMillis());
+		assertTrue(depot.dispatcher.lateServices.isEmpty());
+	}
+
+	@Test
+	void aLateTrainTakesOverTheServiceOfOneLaterStillAndGivesUpItsOwn() {
+		final FakeTrain[] trains = twoLateDuties();
+		// The second train is 20 minutes late two stops in, so it won't run its 08:40 service of route 2 on time
+		trains[1].nextStoppingIndex = 2;
+		now = MONDAY + 8 * HOUR + 32 * MINUTE;
+		trains[1].service.onStopReached();
+		assertEquals(Collections.singletonList("e 2:0:" + (MONDAY + 8 * HOUR + 40 * MINUTE) + " train1"), depot.dispatcher.lateServices.toList());
+
+		// The first gets to route 2 at 08:35, 15 minutes late for its 08:20, and takes the 08:40 over, waiting for it there
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 35 * MINUTE;
+		trains[0].service.onStopReached();
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, trains[0].service.getTripMillis());
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE + 10 * SECOND, trains[0].service.getDutyDepartureMillis());
+		assertTrue(depot.dispatcher.isServiceTaken(2, 0, MONDAY + 8 * HOUR + 40 * MINUTE));
+		// Its own 08:20 is given up: it doesn't run
+		assertTrue(depot.dispatcher.lateServices.toList().contains("g 2:0:" + (MONDAY + 8 * HOUR + 20 * MINUTE)));
+
+		// The second, getting there with its own service taken and none free, runs it all the same rather than not at all
+		trains[1].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 55 * MINUTE;
+		trains[1].service.onStopReached();
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, trains[1].service.getTripMillis());
+	}
+
+	@Test
+	void aTrainOnTimeAgainNoLongerGivesItsServiceAway() {
+		final FakeTrain[] trains = twoLateDuties();
+		trains[1].nextStoppingIndex = 2;
+		now = MONDAY + 8 * HOUR + 32 * MINUTE;
+		trains[1].service.onStopReached();
+		assertFalse(depot.dispatcher.lateServices.isEmpty());
+		trains[1].nextStoppingIndex = 3;
+		now = MONDAY + 8 * HOUR + 14 * MINUTE;
+		trains[1].service.onStopReached();
+		assertTrue(depot.dispatcher.lateServices.isEmpty());
+
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 35 * MINUTE;
+		trains[0].service.onStopReached();
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, trains[0].service.getTripMillis());
+	}
+
+	@Test
+	void aServiceTakenOverStaysTakenThroughARestart() throws Exception {
+		final FakeTrain[] trains = twoLateDuties();
+		trains[1].nextStoppingIndex = 2;
+		now = MONDAY + 8 * HOUR + 32 * MINUTE;
+		trains[1].service.onStopReached();
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 35 * MINUTE;
+		trains[0].service.onStopReached();
+
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		trains[0].service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		final FakeTrain restored = new FakeTrain(trains[0].path, "train0");
+		restored.service.setSiding(SIDING_ID);
+		restored.service.setNetwork(depot, routes::get, null);
+		restored.service.setStopTimes(new StopTimes(), tripPaths, TurnBacks.NONE);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		now = MONDAY + 8 * HOUR + 36 * MINUTE;
+		restored.service.alignToTimetable(true);
+		assertEquals(4, restored.movedTo);
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, restored.service.getTripMillis());
+
+		// The depot's record of it comes back the same way
+		final LateServices copy = new LateServices();
+		copy.addAll(depot.dispatcher.lateServices.toList());
+		assertEquals(depot.dispatcher.lateServices.toList(), copy.toList());
+	}
+
+	@Test
+	void aFreeServiceIsTakenOnceAndOnlyWhenItCanStillBeKeptTo() {
+		final DepotDispatcher dispatcher = new DepotDispatcher();
+		final DepotDispatcher peer = new DepotDispatcher();
+		dispatcher.shareServicesWith(peer);
+		peer.giveUpService(2, 0, MONDAY + 8 * HOUR + 30 * MINUTE);
+		peer.expectLate("other", 2, 0, MONDAY + 8 * HOUR + 50 * MINUTE);
+		final long current = MONDAY + 8 * HOUR + 35 * MINUTE;
+		// 08:30 is gone by 08:35; the 08:50 a train of the other depot won't make is the one
+		assertEquals(MONDAY + 8 * HOUR + 50 * MINUTE, dispatcher.takeFreeService(2, 0, MONDAY + 8 * HOUR + 20 * MINUTE, current, current + HOUR, current));
+		assertTrue(dispatcher.isServiceTaken(2, 0, MONDAY + 8 * HOUR + 50 * MINUTE));
+		assertEquals(0, dispatcher.takeFreeService(2, 0, MONDAY + 8 * HOUR + 20 * MINUTE, current, current + HOUR, current));
+		// Another stop of the route is another service
+		peer.expectLate("third", 2, 1, MONDAY + 8 * HOUR + 50 * MINUTE);
+		assertEquals(0, dispatcher.takeFreeService(2, 0, MONDAY + 8 * HOUR + 20 * MINUTE, current, current + HOUR, current));
+	}
+
 	@Test
 	void aLateTrainHandsItsDutyOverAndGoesBackEmpty() {
 		final FakeTrain[] train = new FakeTrain[1];
@@ -1704,8 +1829,12 @@ class DutyRunTest {
 		final Set<UUID> affected = new HashSet<>();
 
 		FakeTrain(List<TestTrack> path) {
+			this(path, "train");
+		}
+
+		FakeTrain(List<TestTrack> path, String trainId) {
 			this.path = path;
-			service = new TrainService<>("train", this, () -> now);
+			service = new TrainService<>(trainId, this, () -> now);
 		}
 
 		@Override
@@ -1889,6 +2018,26 @@ class DutyRunTest {
 		@Override
 		public void markDutyRun(long sidingId, int slot, long day) {
 			runDays.put(sidingId + ":" + slot, day);
+		}
+
+		@Override
+		public void giveUpService(long routeId, int fromStop, long serviceMillis) {
+			dispatcher.giveUpService(routeId, fromStop, serviceMillis);
+		}
+
+		@Override
+		public void expectLate(String trainId, long routeId, int fromStop, long serviceMillis) {
+			dispatcher.expectLate(trainId, routeId, fromStop, serviceMillis);
+		}
+
+		@Override
+		public boolean isServiceTaken(long routeId, int fromStop, long serviceMillis) {
+			return dispatcher.isServiceTaken(routeId, fromStop, serviceMillis);
+		}
+
+		@Override
+		public long takeFreeService(long routeId, int fromStop, long afterMillis, long fromMillis, long untilMillis, long currentMillis) {
+			return dispatcher.takeFreeService(routeId, fromStop, afterMillis, fromMillis, untilMillis, currentMillis);
 		}
 	}
 }

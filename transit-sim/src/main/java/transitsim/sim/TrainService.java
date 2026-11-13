@@ -153,6 +153,13 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private boolean isLeavingForDuty;
 	/**
+	 * A segment of the duty whose service the train, late, took over from another train, and that service as a full
+	 * timestamp, on the duty of {@link #rehookDayStart}; -1 for none (user 2026-11-14).
+	 */
+	private int rehookSegment = -1;
+	private long rehookMillis;
+	private long rehookDayStart;
+	/**
 	 * The platforms a plan or a dispatcher has the train pass without stopping for now, as the host tells it (D3).
 	 */
 	private Set<Long> skipPlatforms = Collections.emptySet();
@@ -280,15 +287,28 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_DISPATCH = "dispatch";
 	/**
+	 * The service a late train took over (0.78.0): the segment, the service, then the duty's day.
+	 */
+	private static final String KEY_REHOOK = "rehook";
+	/**
 	 * How many values {@link #write} writes, which hosts count into the size of what they save. Checked by a test, as it was
 	 * once left one short.
 	 */
-	public static final int SAVED_KEYS = 19;
+	public static final int SAVED_KEYS = 20;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
 	 */
 	private static final int DEPLOY_MARGIN_MILLIS = 15000;
+	/**
+	 * How late a train on a duty may be at the first stop of a segment before it takes another service there that no train
+	 * runs on time, and how late it may be anywhere before its next segment's service counts as one (user 2026-11-14).
+	 */
+	public static final long LATE_REHOOK_MILLIS = 10 * 60 * 1000;
+	/**
+	 * How long at most a late train waits at the first stop of a segment for a service it takes over.
+	 */
+	public static final long REHOOK_WAIT_MILLIS = 60 * 60 * 1000;
 
 	public TrainService(String trainId, Vehicle<T> vehicle, LongSupplier clock) {
 		this.trainId = trainId;
@@ -334,6 +354,10 @@ public class TrainService<T extends PlanTrack> {
 			newDispatchTurn.add(dispatchValues[i]);
 		}
 		dispatchTurnPlatforms = newDispatchTurn.isEmpty() ? Collections.emptySet() : newDispatchTurn;
+		final long[] rehook = reader.getLongs(KEY_REHOOK);
+		rehookSegment = rehook.length >= 3 ? (int) rehook[0] : -1;
+		rehookMillis = rehook.length >= 3 ? rehook[1] : 0;
+		rehookDayStart = rehook.length >= 3 ? rehook[2] : 0;
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyLedger = dutySlot >= 0 ? transitsim.plan.DutyLedger.read(reader.getString(KEY_DUTY_DAY, "")) : null;
 		dutyDay = dutyLedger == null ? null : dutyLedger.day();
@@ -385,6 +409,7 @@ public class TrainService<T extends PlanTrack> {
 			}
 		}
 		writer.writeLongs(KEY_DISPATCH, dispatchValues);
+		writer.writeLongs(KEY_REHOOK, rehookSegment < 0 ? new long[0] : new long[]{rehookSegment, rehookMillis, rehookDayStart});
 	}
 
 	/**
@@ -1078,9 +1103,15 @@ public class TrainService<T extends PlanTrack> {
 		turnBackStop = -1;
 		// On a duty the next segment's service is already chosen, and starts at that segment's first stop
 		if (isOnDuty()) {
+			boolean started = false;
 			while (dutyIndex + 1 < tripPath.dutyStarts.length && nextStoppingIndex >= tripPath.dutyStarts[dutyIndex + 1]) {
 				startDutySegment(dutyIndex + 1);
+				started = true;
 			}
+			if (started) {
+				rehookIfLate();
+			}
+			expectLateIfSo();
 			return;
 		}
 		// The first stop of a joined loop ends the service the train joined, like the end of any lap
@@ -1955,6 +1986,70 @@ public class TrainService<T extends PlanTrack> {
 			final RouteTimetable.StopPlan stopPlan = getStopPlan(tripPath.dutyStarts[index]);
 			final RouteTimetable.StopPlan startPlan = stopPlan == null || stopPlan.startsRoute ? stopPlan : stopPlan.nextRouteStart;
 			routeStartMillis = startPlan == null ? 0 : startPlan.routeStartMillis;
+			// A service taken over late stays taken, also when the train is lined up with its duty again after a restart
+			if (index == rehookSegment && dutyDayStart == rehookDayStart) {
+				tripMillis = rehookMillis;
+			}
+		}
+	}
+
+	/**
+	 * At the first stop of a duty segment, a train more than {@link #LATE_REHOOK_MILLIS} late for its service, or whose
+	 * service another train took over, takes the earliest later service of the same route from this stop that no train
+	 * runs on time and it can still keep to, and waits here for it; its own service is then given up and doesn't run
+	 * (user 2026-11-14). With none, it runs its own late. It can't skip track, so it only changes which service it runs;
+	 * the later segments keep theirs. Only here, not when the train is lined up or put on its duty (handover, 2026-11-14).
+	 */
+	private void rehookIfLate() {
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (depot == null || dutyIndex <= 0 || dutyIndex >= segments.size() || dutyIndex == rehookSegment && dutyDayStart == rehookDayStart) {
+			return;
+		}
+		depot.expectLate(trainId, 0, 0, 0);
+		final DepotDuties.Segment segment = segments.get(dutyIndex);
+		final RouteTimetable.StopPlan stopPlan = getStopPlan(tripPath.dutyStarts[dutyIndex]);
+		if (stopPlan == null || tripMillis == 0) {
+			return;
+		}
+		final long currentMillis = clock.getAsLong();
+		// When the train would leave here on a service: the service, then as far into it as this stop's departure is
+		final long offset = stopPlan.departureMillis - routeStartMillis;
+		final long own = tripMillis;
+		final boolean taken = depot.isServiceTaken(segment.routeId, segment.fromStop, own);
+		if (!taken && own + offset + LATE_REHOOK_MILLIS >= currentMillis) {
+			return;
+		}
+		final long found = depot.takeFreeService(segment.routeId, segment.fromStop, own, currentMillis - offset, currentMillis - offset + REHOOK_WAIT_MILLIS, currentMillis);
+		if (found == 0) {
+			return;
+		}
+		if (!taken) {
+			depot.giveUpService(segment.routeId, segment.fromStop, own);
+		}
+		tripMillis = found;
+		rehookSegment = dutyIndex;
+		rehookMillis = found;
+		rehookDayStart = dutyDayStart;
+	}
+
+	/**
+	 * At a stop on its duty, a train more than {@link #LATE_REHOOK_MILLIS} late tells the depot it isn't expected to run its
+	 * next segment's service on time, which a train ahead of it may then take over; on time again, it takes that back.
+	 */
+	private void expectLateIfSo() {
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (depot == null || tripPath == null) {
+			return;
+		}
+		final int next = dutyIndex + 1;
+		if (next >= segments.size() || next >= tripPath.dutyStarts.length || getLateMillis() <= LATE_REHOOK_MILLIS) {
+			depot.expectLate(trainId, 0, 0, 0);
+			return;
+		}
+		final DepotDuties.Segment segment = segments.get(next);
+		final long serviceMillis = next == rehookSegment && dutyDayStart == rehookDayStart ? rehookMillis : DutyShapes.getServiceMillis(dutyDayStart, segment.service);
+		if (!depot.isServiceTaken(segment.routeId, segment.fromStop, serviceMillis)) {
+			depot.expectLate(trainId, segment.routeId, segment.fromStop, serviceMillis);
 		}
 	}
 
@@ -2692,6 +2787,34 @@ public class TrainService<T extends PlanTrack> {
 		}
 
 		default void markDutyRun(long sidingId, int slot, long day) {
+		}
+
+		/**
+		 * A late train gave up this service of a duty segment starting at this stop, having taken another one.
+		 */
+		default void giveUpService(long routeId, int fromStop, long serviceMillis) {
+		}
+
+		/**
+		 * @param serviceMillis the service a late train isn't expected to run on time, or 0 when it is again
+		 */
+		default void expectLate(String trainId, long routeId, int fromStop, long serviceMillis) {
+		}
+
+		/**
+		 * @return whether another train took this service over
+		 */
+		default boolean isServiceTaken(long routeId, int fromStop, long serviceMillis) {
+			return false;
+		}
+
+		/**
+		 * @return the earliest service of this route starting at this stop that no train runs on time, due after
+		 * {@code afterMillis} and from {@code fromMillis} until {@code untilMillis}, which is then taken, or 0
+		 * @see LateServices
+		 */
+		default long takeFreeService(long routeId, int fromStop, long afterMillis, long fromMillis, long untilMillis, long currentMillis) {
+			return 0;
 		}
 
 		/**
