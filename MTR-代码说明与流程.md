@@ -74,6 +74,8 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.75.3 拆分车厂第 2b 步：站内折返和换站台用时的规则（每站台一次的折返线等待及其三个键、跳过同站台/他站/已有的对、换站台离站台过远不算、取最慢车辆、在折返处把绕行切成进入/出来段）从 `DutyPathBuilder.turnTimesFor`/`legMillis` 原样搬进组件 `transitsim.planning.TurnTimes`；游戏只找路（`holdWay` 用 `findTurnBackSection`，`changeWay` 用 `findConnection`）并用 `PathTiming` 计时。组件测试 `TurnTimesTest`。
+
 0.75.2 拆分车厂第 2a 步：找站台附近折返轨和留置位的规则从 `DutyPathBuilder` 原样搬进组件 `transitsim.network.NearbyTurnBacks`（折返线两端、站台中心都按 Minecraft 方式打包成长整数；节点度数和留置区由宿主用函数给），宿主只列出折返线并把结果换回 `BlockPos`（`DutyPathBuilder.nearbyOf`）。组件测试 `NearbyTurnBacksTest`。
 - **修正：每次开服车厂存车线分到的运用不一样**。对比导出时发现 yel 同一车厂四次开服有三种结果（运用路径 14、16、11 条），规划摘要每次一样，变的是同一车池里两条存车线谁拿全天的长运用、谁拿短的。原因：世界的存车线是 `HashSet<Siding>`，`Siding` 没有重写 `hashCode`，按对象身份散列，每次开服迭代顺序不同，`generateMainRoute` 按这个顺序分组、交给规划和拼路径。现在入口处按 ID 排成 `LinkedHashSet` 再用。之后同一份代码开服两次结果相同；用 0.75.1 的路径构建加同样的排序开服一次，结果也和第 2a 步逐字节相同。
 - 验收：上面三次 yel 开服导出逐字节相同；组件 631、common 476 项测试全过；六线图完整用例 19 过 3 不过，和之前完全一样。

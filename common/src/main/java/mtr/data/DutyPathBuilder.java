@@ -1051,86 +1051,75 @@ final class DutyPathBuilder {
 	 * @return from platform → to platform → milliseconds
 	 */
 	Map<Long, Map<Long, Long>> turnTimesFor(List<Route> routes, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
-		final Map<Long, Map<Long, Long>> turnTimes = new TreeMap<>();
-		for (final Route before : routes) {
-			if (before.platformIds.isEmpty()) {
-				continue;
+		// The rules are the component's (step 2b of splitting the depot); the ways are found and timed here
+		return transitsim.planning.TurnTimes.of(routes, new transitsim.planning.TurnTimes.Host<Route, List<PathData>>() {
+			@Override
+			public long lastPlatform(Route route) {
+				return route.platformIds.isEmpty() ? 0 : route.getLastPlatformId();
 			}
-			final Platform from = dataCache.platformIdMap.get(before.getLastPlatformId());
-			final Station station = from == null ? null : dataCache.platformIdToStation.get(from.id);
-			if (station == null) {
-				continue;
+
+			@Override
+			public long firstPlatform(Route route) {
+				return route.platformIds.isEmpty() ? 0 : route.getFirstPlatformId();
 			}
-			// Round a turn back rail beyond the platform and back to it, where a train can wait for its next service
-			// there while others use the platform (混合折返); only once for each platform
-			if (!turnTimes.getOrDefault(from.id, Collections.emptyMap()).containsKey(from.id)) {
+
+			@Override
+			public long station(long platform) {
+				final Station station = dataCache.platformIdMap.get(platform) == null ? null : dataCache.platformIdToStation.get(platform);
+				return station == null ? 0 : station.id;
+			}
+
+			@Override
+			public transitsim.planning.TurnTimes.Way<List<PathData>> holdWay(Route before, long platform) {
+				// Round a turn back rail beyond the platform and back to it, where a train can wait for its next service
+				// there while others use the platform (混合折返)
+				final Platform from = dataCache.platformIdMap.get(platform);
 				final List<BlockPos> listed = getTurnBackNodes(before, graph);
 				final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : withStabling(listed, from, rails);
 				final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : findTurnBackSection(from, from, nodes, 0, rails, graph, useFastSpeed);
-				if (hold != null && !hold.getDefaultWay().isEmpty()) {
-					// In to the turn back rail and back out, each leg as measured (round 4): the slowest vehicle's
-					long[] slowest = {0, 0};
-					for (final PathTiming.Vehicle vehicle : vehiclesOf(before, before)) {
-						final long[] legs = legMillis(vehicle, hold.getDefaultWay());
-						if (legs[0] + legs[1] > slowest[0] + slowest[1]) {
-							slowest = legs;
-						}
-					}
-					final Map<Long, Long> fromHere = turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>());
-					fromHere.put(from.id, slowest[0] + slowest[1]);
-					fromHere.put(DutyGenerator.HOLD_IN_KEY, slowest[0]);
-					// How many trains can wait there at once, one on each way round that can be used (运用补完 step 4)
-					final long places = hold.ways.stream().filter(Objects::nonNull).count();
-					if (places > 1) {
-						fromHere.put(DutyGenerator.HOLD_COUNT_KEY, places);
-					}
-					// Which turn back rail: platforms turning round on the same one share it (8号线, 2026-11-12)
-					hold.getDefaultWay().stream().filter(pathData -> pathData.rail.railType == RailType.TURN_BACK).findFirst().ifPresent(pathData -> {
-						final long node1 = pathData.startingPos.asLong();
-						final long node2 = pathData.getLastPos().asLong();
-						final long rail = Math.min(node1, node2) * 0x9E3779B97F4A7C15L ^ Math.max(node1, node2);
-						fromHere.put(DutyGenerator.HOLD_RAIL_KEY, rail == 0 ? 1 : rail);
-					});
-					debugTurnTime(from, from, before, before, hold.getDefaultWay(), slowest);
+				if (hold == null || hold.getDefaultWay().isEmpty()) {
+					return null;
+				}
+				final List<PathData> way = hold.getDefaultWay();
+				// One train can wait on each way round that can be used (运用补完 step 4)
+				final long places = hold.ways.stream().filter(Objects::nonNull).count();
+				final long[] turnBackRail = way.stream().filter(pathData -> pathData.rail.railType == RailType.TURN_BACK).findFirst().map(pathData -> new long[]{pathData.startingPos.asLong(), pathData.getLastPos().asLong()}).orElse(null);
+				return new transitsim.planning.TurnTimes.Way<>(way, legsByVehicle(before, before, way), farthestFrom(from, way), places, turnBackRail);
+			}
+
+			@Override
+			public transitsim.planning.TurnTimes.Way<List<PathData>> changeWay(Route before, Route after, long fromId, long toId) {
+				final Platform from = dataCache.platformIdMap.get(fromId);
+				final List<PathData> way = new ArrayList<>();
+				findConnection(way, from, dataCache.platformIdMap.get(toId), before, rails, graph, useFastSpeed);
+				return way.isEmpty() ? null : new transitsim.planning.TurnTimes.Way<>(way, legsByVehicle(before, after, way), farthestFrom(from, way), 1, null);
+			}
+
+			@Override
+			public void kept(Route before, Route after, long from, long to, transitsim.planning.TurnTimes.Way<List<PathData>> way, long[] slowest) {
+				debugTurnTime(dataCache.platformIdMap.get(from), dataCache.platformIdMap.get(to), before, after, way.path, slowest);
+			}
+
+			@Override
+			public void tooFar(long fromId, long toId, transitsim.planning.TurnTimes.Way<List<PathData>> way) {
+				if (Boolean.getBoolean("mtr.debugTurnTimes")) {
+					final Platform from = dataCache.platformIdMap.get(fromId);
+					final Platform to = dataCache.platformIdMap.get(toId);
+					System.out.println("Minecraft Transit Railway turn time: " + from.name + " (" + from.id + ") to " + to.name + " (" + to.id + "): turns back " + countReversals(way.path) + " times, " + Math.round(way.farthest) + " blocks off, not a change of platform");
 				}
 			}
-			for (final Route after : routes) {
-				if (after.platformIds.isEmpty()) {
-					continue;
-				}
-				final Platform to = dataCache.platformIdMap.get(after.getFirstPlatformId());
-				if (to == null || to.id == from.id || station != dataCache.platformIdToStation.get(to.id) || turnTimes.getOrDefault(from.id, Collections.emptyMap()).containsKey(to.id)) {
-					continue;
-				}
-				final List<PathData> connectingPath = new ArrayList<>();
-				findConnection(connectingPath, from, to, before, rails, graph, useFastSpeed);
-				// A change of platform stays by the station, as at a turn back rail or a crossover outside the platforms; going far
-				// off, it runs along the line and back on track other trains run the other way, and isn't one (2026-11-09: a
-				// loop's train sent to the other loop's platform at the same station went back towards the next station to turn,
-				// meeting the other loop's trains head on)
-				if (!connectingPath.isEmpty() && farthestFrom(from, connectingPath) > depot.MAX_PLATFORM_CHANGE_REACH) {
-					if (Boolean.getBoolean("mtr.debugTurnTimes")) {
-						System.out.println("Minecraft Transit Railway turn time: " + from.name + " (" + from.id + ") to " + to.name + " (" + to.id + "): turns back " + countReversals(connectingPath) + " times, " + Math.round(farthestFrom(from, connectingPath)) + " blocks off, not a change of platform");
-					}
-					connectingPath.clear();
-				}
-				if (!connectingPath.isEmpty()) {
-					// Timed for the slowest of the vehicles running either route
-					// The legs in and out, without standing where it turns back: changing ends there is the network's least time,
-					// which the plan adds (round 4)
-					long[] slowest = {0, 0};
-					for (final PathTiming.Vehicle vehicle : vehiclesOf(before, after)) {
-						final long[] legs = legMillis(vehicle, connectingPath);
-						if (legs[0] + legs[1] > slowest[0] + slowest[1]) {
-							slowest = legs;
-						}
-					}
-					turnTimes.computeIfAbsent(from.id, key -> new TreeMap<>()).put(to.id, slowest[0] + slowest[1]);
-					debugTurnTime(from, to, before, after, connectingPath, slowest);
-				}
-			}
+		}, depot.MAX_PLATFORM_CHANGE_REACH);
+	}
+
+	/**
+	 * @return the in and out legs along a way for each vehicle running either route ({@link #legMillis})
+	 */
+	List<long[]> legsByVehicle(Route before, Route after, List<PathData> way) {
+		final List<long[]> legs = new ArrayList<>();
+		for (final PathTiming.Vehicle vehicle : vehiclesOf(before, after)) {
+			legs.add(legMillis(vehicle, way));
 		}
-		return turnTimes;
+		return legs;
 	}
 
 	/**
@@ -1148,47 +1137,16 @@ final class DutyPathBuilder {
 	}
 
 	/**
-	 * @return how long the vehicle takes along a way between two services, starting with its head at the end of the
-	 * platform it stopped at, as a train stands there, rather than with its middle at the middle of a siding
-	 */
-	/**
-	 * The way round cut where the train turns back (optimisation round 4): how long it runs in, from setting off to
-	 * standing where it turns back, and out, from setting off again to arriving; standing there is left out. A way
-	 * with no turn back is all in.
-	 *
-	 * @return the in and out legs in milliseconds
+	 * @return the in and out legs in milliseconds of the vehicle along a way between two services, starting with its head
+	 * at the end of the platform it stopped at, as a train stands there, rather than with its middle at the middle of a
+	 * siding; cut where it turns back by the component ({@link transitsim.planning.TurnTimes#legs})
 	 */
 	long[] legMillis(PathTiming.Vehicle vehicle, List<PathData> connectingPath) {
 		final double headStart = connectingPath.get(0).rail.getLength();
 		final PathTiming.Vehicle standing = new PathTiming.Vehicle((float) (2 * headStart - vehicle.trainCars * vehicle.spacing), vehicle.trainCars, vehicle.spacing, vehicle.acceleration, vehicle.deceleration, vehicle.useSpeedCurve, vehicle.transportMode);
 		final List<TimeSegment> timeSegments = new ArrayList<>();
 		PathTiming.generateTimeSegments(standing, connectingPath, timeSegments, new HashMap<>(), new StopTimes(), 0, 0);
-		if (timeSegments.isEmpty()) {
-			return new long[]{0, 0};
-		}
-		final double endTicks = timeSegments.get(timeSegments.size() - 1).endTime;
-		double reversal = -1;
-		double distance = 0;
-		for (int i = 0; i + 1 < connectingPath.size(); i++) {
-			distance += connectingPath.get(i).rail.getLength();
-			if (connectingPath.get(i).isOppositeRail(connectingPath.get(i + 1))) {
-				reversal = distance - (connectingPath.get(i).dwellTime > 0 ? connectingPath.get(i).getStopOffset(vehicle.trainCars * vehicle.spacing) : 0);
-				break;
-			}
-		}
-		if (reversal < 0) {
-			return new long[]{(long) (endTicks * depot.MILLIS_PER_TICK), 0};
-		}
-		double inTicks = 0;
-		double outStartTicks = endTicks;
-		for (final TimeSegment timeSegment : timeSegments) {
-			if (timeSegment.endRailProgress <= reversal + 1E-6) {
-				inTicks = Math.max(inTicks, timeSegment.endTime);
-			} else if (timeSegment.startRailProgress > reversal + 1E-6) {
-				outStartTicks = Math.min(outStartTicks, timeSegment.getTime(timeSegment.startRailProgress));
-			}
-		}
-		return new long[]{(long) (inTicks * depot.MILLIS_PER_TICK), (long) (Math.max(0, endTicks - outStartTicks) * depot.MILLIS_PER_TICK)};
+		return transitsim.planning.TurnTimes.legs(connectingPath, timeSegments, vehicle.trainCars * vehicle.spacing, Depot.MILLIS_PER_TICK);
 	}
 
 	/**
