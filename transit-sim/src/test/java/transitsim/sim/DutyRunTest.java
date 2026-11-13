@@ -717,6 +717,27 @@ class DutyRunTest {
 	}
 
 	@Test
+	void aTrainStayingOvernightKeepsNoTurnBackRail() {
+		// 2026-11-14: a train waiting at its last stop for the night held the turn back rail it had chosen all night, so no
+		// other train could turn back there, even though this one turns back at the platform
+		setSlots(day(true, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1)));
+		final List<TestTrack> stayPath = makePath(0, 1, 2, 3);
+		final TripPath<TestTrack> tripPath = addPath(0, 0, new int[]{1}, stayPath, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4));
+		final FakeTrain train = newTrain(stayPath);
+		now = MONDAY + 7 * HOUR + 58 * MINUTE;
+		train.service.deployDuty(0, MONDAY, tripPath);
+		train.reserved = FIRST_TURN_BACK;
+		// Still on its way: what it keeps is its own business
+		train.nextStoppingIndex = 2;
+		train.service.update(true);
+		assertSame(FIRST_TURN_BACK, train.reserved);
+		// At its last stop for the night: the rail is let go
+		train.nextStoppingIndex = stayPath.size() - 1;
+		train.service.update(true);
+		assertTrue(train.reserved.isEmpty(), "the rail is let go for the night");
+	}
+
+	@Test
 	void aDutySetToGoBackToASidingGoesThereIfItCan() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final TripPath<TestTrack> tripPath = twoRoutes(train);

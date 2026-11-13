@@ -989,6 +989,12 @@ public class TrainService<T extends PlanTrack> {
 		} else if (isLeavingForDuty && isOnDuty()) {
 			return;
 		}
+		// Standing at its last stop for the night, the train keeps no turn back rail: it reaches the end of the way it
+		// chose only when it runs again, so the rail would be held all night and no other train could turn back there
+		// (2026-11-14, the user's own server; the train turns back at the platform and never needed the rail)
+		if (isStayingOnLine()) {
+			vehicle.reserveTurnBack(java.util.Collections.emptyList(), 0);
+		}
 		if (isOnRoute) {
 			// Duties say which train runs what, so nothing is reserved for others to see
 			if (isOnDuty()) {
