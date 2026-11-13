@@ -218,6 +218,18 @@ public final class SimulateDay {
 			}
 		}
 		System.out.printf("Between stops: %d runs, %.1f s on average; at stops: %d stops, %.1f s on average%n", runs, runs == 0 ? 0 : runMillis / 1000.0 / runs, stands, stands == 0 ? 0 : standMillis / 1000.0 / stands);
+		// -Pmtr.debugPaths=true lists every rail of each train's path at the end, with where it runs (2026-11-14, looking for
+		// where line 6's short routes of the test lines turn back)
+		if (Boolean.getBoolean("mtr.debugPaths")) {
+			for (final transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train : simulator.getRunner().getTrains()) {
+				final java.util.List<SimDataset.DataTrack> path = train.getPath();
+				System.out.printf("path of train %d: %d rails%n", train.id, path.size());
+				for (int i = 0; i < path.size(); i++) {
+					final SimDataset.DataTrack each = path.get(i);
+					System.out.printf("    %d %s -> %s%s%n", i, pos(each.getStartNode()), pos(each.getEndNode()), each.getStopId() != 0 ? " stop " + each.getStopId() + " dwell " + each.getDwellTime() : each.getDwellTime() > 0 ? " turn, dwell " + each.getDwellTime() : "");
+				}
+			}
+		}
 		// -Pmtr.debugStuck=true lists trains standing between stations at the end, and what is ahead of them
 		// =all lists those standing at platforms too, as a train waiting at one may hold up one between stations
 		final boolean stuckAll = "all".equals(System.getProperty("mtr.debugStuck"));

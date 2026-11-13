@@ -70,6 +70,8 @@ tasks.register("simulateDay", JavaExec) {
 	// the trains standing between stations at the end and what holds them up
 	systemProperty "mtr.blockMinLength", project.findProperty("mtr.blockMinLength") ?: "400"
 	systemProperty "mtr.debugStuck", project.findProperty("mtr.debugStuck") ?: "false"
+	// -Pmtr.debugPaths=true lists every rail of each train's path at the end
+	systemProperty "mtr.debugPaths", project.findProperty("mtr.debugPaths") ?: "false"
 	// -Pmtr.runLayer=false runs the day by the rules taken over from MTR instead of the run layer, to compare
 	systemProperty "mtr.runLayer", project.findProperty("mtr.runLayer") ?: "true"
 	// -Pmtr.runningSides=false runs the day booking double track as single track, as before 0.69.0, to compare
