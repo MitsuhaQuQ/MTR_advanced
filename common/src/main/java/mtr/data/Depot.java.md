@@ -304,3 +304,6 @@
 ## 寻路计时和路径导出（2026-11-13）
 - `generateMainRoute` 结束时的 `Finished path generation` 一行带上分段用时：总计、量折返用时、找出入库路、规划单元排运用（planned / partly planned / kept / shared）、拼运用路径及路径条数。yel 世界开服 13 个车厂：每个 3–912 毫秒，排运用最多 771 毫秒，拼运用路径最多 125 毫秒。
 - `private dumpDutyPaths(List<DutyPathBuilder>, turnTimes, measuredWays)`：`-Dmtr.dumpDutyPaths=<文件夹>` 时写 `depot-<id>.txt`（折返用时、出入库用时和不可达、每条存车线每条运用路径的键、分段起点、出库用时、总用时、轨道和停站），排好序，两次构建可逐行比较；拆分车厂每一步都用它验收。0.76.0 起在服务器线程上、存车线装上新路径之后才写（以前在找路线程上写，读到的可能是上一次找路的路径，取决于这次找路花了多久；所以 0.76.0 之前的导出不能和之后的比）。
+
+## 折返线比列车短的提示（0.79.4）
+- `tellShortTurnBacks(mainPaths)`：找完车厂路径后，对每条存车线的每条运用路径用组件 `TurnBackLengths.find`（折返线 = `RailType.TURN_BACK`，列车长 = `Siding.getTrainLength`），结果和上次不同才打一行日志：哪里（坐标）、折返线多长、车多长，提醒把折返线做得至少和车一样长。字段 `shortTurnBacks` 记上次的结果。

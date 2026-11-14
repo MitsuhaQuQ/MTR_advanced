@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.79.4 tells in the log where a depot's trains turn back on turn-back track shorter than them (they stand over the switch while they turn), and no longer loads the texture minecraft:.png for a train whose base texture has no name.
+
 0.79.3 adds the debug switch -Dmtr.debugTurnBack=true, logging every turn-back choice with each way and whether it was free.
 
 0.79.2 fixes a server crash when a depot's paths were found again while the simulator ran (a train without a service on its siding's path, now shorter, was read past its end).

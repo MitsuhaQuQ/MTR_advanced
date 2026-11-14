@@ -75,7 +75,7 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		const xs = onLine.map(train => train.x);
 		// On the turn-back track or the way into it: line 6's dead-end track (x 530–580) is shorter than its trains, which turn
 		// back with their heads at about x 518, still on the way in (2026-11-14)
-		const usedMiddleTurnBack = onLine.some(train => Math.abs(train.z - (line.z + 4)) < 1.5 && train.x > 490 && train.x < 595);
+		const usedMiddleTurnBack = onLine.some(train => Math.abs(train.z - (line.z + 4)) < 1.5 && train.x > 490 && train.x < 635);
 		const stats = `${line.layout}号线 ${line.name}: ${new Set(seen.map(t => t.id)).size} trains seen, ${new Set(onLine.map(t => t.id)).size} out on the line, x ${xs.length ? Math.round(Math.min(...xs)) : "-"}..${xs.length ? Math.round(Math.max(...xs)) : "-"}${line.layout === 5 || line.layout === 6 ? `, middle turn-back used: ${usedMiddleTurnBack}` : ""}`;
 		report.push(stats);
 		if (EXPECTED_WITHOUT_TRAINS.includes(line.layout)) {

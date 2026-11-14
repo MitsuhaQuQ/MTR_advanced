@@ -49,7 +49,7 @@ MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 10 �
 - 作用：
   1. 每站在 z 0 和 z 8 两条正线上登记站台两端节点，区段类型为 PLATFORM；
   2. 一站后方：z 8 加节点 x = -40，连 `(0,0)→(-40,8)` IRON、`(-40,8)→(-100,8)` TURN_BACK；
-  3. 按 layout 加折返线、渡线、车厂停车轨，并记录车厂矩形（相对坐标）：1、4 用 `frontCrossover`，车厂两条停车轨东端都接到一段尾端折返线（`shuntingNeck`，车厂内调车，2026-11-13，车厂矩形东延到 +200）；2、7、9 用 `rearTurnBack + depotBehindTurnBack`；8 再加 `middleTurnBack`；3 在折返线前分叉接车厂；4 在五站外侧加第三站台（z 16）作为出库站台，并给回库列车单独停车轨；5、6 用 `rearTurnBack + middleTurnBack`，5 车厂在两正线之间，6 车厂只接西行正线；10 用 `doubleRearTurnBack`（两条尽头折返线、两组渡线、车厂从西行正线分岔）；
+  3. 按 layout 加折返线、渡线、车厂停车轨，并记录车厂矩形（相对坐标）：1、4 用 `frontCrossover`，车厂两条停车轨东端都接到一段尾端折返线（`shuntingNeck`，车厂内调车，2026-11-13，车厂矩形东延到 +200）；2、7、9 用 `rearTurnBack + depotBehindTurnBack`；8 再加 `middleTurnBack`；3 在折返线前分叉接车厂；4 在五站外侧加第三站台（z 16）作为出库站台，并给回库列车单独停车轨；5、6 用 `rearTurnBack + middleTurnBack(middle, 长度)`，5 车厂在两正线之间（折返线 50 格，接着进车厂），6 车厂只接西行正线（两条线的折返线都是 50 格，比 75 格的车短，车身压着道岔掉头；加长到 90 格会让 8 号线撞上它在三站的死锁，等那个修好再加长）；10 用 `doubleRearTurnBack`（两条尽头折返线、两组渡线、车厂从西行正线分岔）；
   4. 按 `mains` 把正线逐段连起来；
   5. 建车站（站台前后各扩 5 格，z ∈ [-4, 12]，4 号线五站扩到 18）、按 layout 建线路（8、9 号线为直通组合；2 号线另加三站通过不停的"快车"，用于三站的时刻表传感器）；1、4 号线上行可在五站西行站台终到（`terminalPlatforms`）；4 号线下行可从出库站台始发（`startPlatforms`）；5、6 号线加短交路；
   6. 每条线路在 `networkSettings.runningSides` 中以键 `"R" + LineDuties.getLineKey(route)` 设为左侧行车，并置 `networkSettingsChanged = true`；

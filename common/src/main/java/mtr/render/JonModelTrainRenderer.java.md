@@ -62,3 +62,6 @@
 
 ## 私有内部类 `FakeBoat`（extends `Boat`）
 - 用于驱动原版船模型的划桨动画：`getRowingTime` 累加进度。
+
+## 贴图找不到时的备用（0.79.4）
+- `resolveTexture` 找不到贴图时改用基础车型的贴图；基础车型贴图名为空、和原来一样、或也不存在时改用透明贴图（`isTextureAvailable` 查一次后记住）。以前空名会拼成 `minecraft:.png`，游戏每次加载都报 `Failed to load texture`（yel 世界的资源包列车）。

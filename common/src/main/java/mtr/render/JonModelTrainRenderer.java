@@ -386,8 +386,36 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 			return id;
 		} else {
 			final TrainRendererBase baseRenderer = TrainClientRegistry.getTrainProperties(train.baseTrainType).renderer;
-			return new ResourceLocation((!(baseRenderer instanceof JonModelTrainRenderer) ? "mtr:textures/block/transparent.png" : formatter.apply(((JonModelTrainRenderer) baseRenderer).textureId)));
+			final String baseTextureId = baseRenderer instanceof JonModelTrainRenderer ? ((JonModelTrainRenderer) baseRenderer).textureId : null;
+			final String fallback = baseTextureId == null || baseTextureId.isEmpty() ? null : formatter.apply(baseTextureId);
+			// The base train's texture only if there is one: an empty name made "minecraft:.png", which the game failed to load
+			// and logged every time (0.79.4, 2026-11-14, a resource pack train of the yel world)
+			if (fallback == null || fallback.equals(textureString) || !isTextureAvailable(fallback)) {
+				return new ResourceLocation("mtr:textures/block/transparent.png");
+			}
+			return new ResourceLocation(fallback);
 		}
+	}
+
+	/**
+	 * @return whether a texture is in the resources, looked up once and remembered as {@link #resolveTexture} does
+	 */
+	private static boolean isTextureAvailable(String textureString) {
+		if (RenderTrains.AVAILABLE_TEXTURES.contains(textureString)) {
+			return true;
+		}
+		if (RenderTrains.UNAVAILABLE_TEXTURES.contains(textureString)) {
+			return false;
+		}
+		final boolean available;
+		try {
+			available = UtilitiesClient.hasResource(new ResourceLocation(textureString));
+		} catch (RuntimeException e) {
+			RenderTrains.UNAVAILABLE_TEXTURES.add(textureString);
+			return false;
+		}
+		(available ? RenderTrains.AVAILABLE_TEXTURES : RenderTrains.UNAVAILABLE_TEXTURES).add(textureString);
+		return available;
 	}
 
 	private ResourceLocation getConnectorTextureString(boolean isConnector, String partName) {

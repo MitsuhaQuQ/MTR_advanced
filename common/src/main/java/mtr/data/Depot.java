@@ -229,6 +229,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * The ways between services the last path generation found to be detours, as "from-platform to-platform length apart".
 	 */
 	final Set<String> pathDetours = Collections.synchronizedSet(new TreeSet<>());
+	/**
+	 * Where this depot's trains turn back on a turn-back track shorter than them, as last told (0.79.4), so each change is
+	 * told once.
+	 */
+	private Set<String> shortTurnBacks = Collections.emptySet();
 	public List<String> clientDetours = Collections.emptyList();
 	/**
 	 * How long each change of platform within a station of the depot's lines takes on the rails, from the last path
@@ -1375,8 +1380,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				// hold the paths of the generation before, depending on how long this one took (2026-11-13)
 				if (minecraftServer == null) {
 					dumpDutyPaths(mainPaths, turnTimes, measuredWays);
+					tellShortTurnBacks(mainPaths);
 				} else {
 					minecraftServer.execute(() -> dumpDutyPaths(mainPaths, turnTimes, measuredWays));
+					// Also on the server thread, where the sidings' paths are put in: read here it once broke path generation
+					minecraftServer.execute(() -> tellShortTurnBacks(mainPaths));
 				}
 			} catch (CancellationException e) {
 				// A newer request restarted path generation, and that thread reports the result
@@ -1724,6 +1732,37 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Adds the services the depot sent out last, and the days its duties ran, to a record of the trains (G0), under one of
 	 * its sidings.
 	 */
+	/**
+	 * Tells where the depot's trains turn back on a turn-back track shorter than them (0.79.4, 2026-11-14: line 6 of the test
+	 * lines turned 75-block trains on a 50-block dead end, each standing over the switch while it turned and holding up both
+	 * lines), once each time it changes. The rule is the component's {@link transitsim.plan.TurnBackLengths}.
+	 */
+	private void tellShortTurnBacks(List<DutyPathBuilder> mainPaths) {
+		try {
+			tellShortTurnBacksChecked(mainPaths);
+		} catch (RuntimeException e) {
+			// Only something told: never in the way of the depot's paths
+			e.printStackTrace();
+		}
+	}
+
+	private void tellShortTurnBacksChecked(List<DutyPathBuilder> mainPaths) {
+		final Set<String> found = new TreeSet<>();
+		mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> {
+			final double trainLength = siding.getTrainLength();
+			siding.getTripPaths().values().forEach(tripPath -> transitsim.plan.TurnBackLengths.find(tripPath.path, pathData -> pathData.rail != null && pathData.rail.railType == RailType.TURN_BACK, trainLength).forEach(shortTurnBack -> {
+				final mtr.path.PathData pathData = tripPath.path.get(shortTurnBack.rail);
+				found.add("(" + pathData.getLastPos().getX() + ", " + pathData.getLastPos().getY() + ", " + pathData.getLastPos().getZ() + ") " + Math.round(shortTurnBack.length) + " blocks for trains of " + Math.round(trainLength));
+			}));
+		}));
+		if (!found.equals(shortTurnBacks)) {
+			if (!found.isEmpty()) {
+				System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " has its trains turn back on turn-back track shorter than them, so they stand over the switch while they turn, holding up the lines it joins; make it at least as long as the trains: " + String.join("; ", found));
+			}
+			shortTurnBacks = found;
+		}
+	}
+
 	/**
 	 * Takes what the simulator's depot sent out last and the days its duties ran (G1), so they are saved, and carried on
 	 * from when the simulator starts again.

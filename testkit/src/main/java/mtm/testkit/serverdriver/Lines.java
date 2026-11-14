@@ -173,7 +173,7 @@ public final class Lines {
 				case 8:
 					rearTurnBack(east);
 					depotBehindTurnBack(east, depotBoxes);
-					middleTurnBack(middle);
+					middleTurnBack(middle, 50);
 					break;
 				case 10:
 					doubleRearTurnBack(east, depotBoxes);
@@ -207,7 +207,10 @@ public final class Lines {
 				case 5:
 				case 6:
 					rearTurnBack(east);
-					middleTurnBack(middle);
+					// Line 6's dead end is shorter than its 75-block trains, which turn standing over the switch (0.79.4 says so in
+					// the log). Lengthened to 90 it changed the timing enough for line 8 to run into its deadlock at 三站
+					// (MTR-待验证.md, 2026-11-14), so it stays at 50 until that is fixed
+					middleTurnBack(middle, 50);
 					if (layout == 5) {
 						// The depot behind the turn-back track, between the main tracks
 						rail(middle + 120, 4, middle + 130, 4, RailType.IRON);
@@ -405,12 +408,12 @@ public final class Lines {
 		}
 
 		/** A turn-back track between the main tracks after 三站, reached from both */
-		private void middleTurnBack(int middle) {
+		private void middleTurnBack(int middle, int length) {
 			mainNode(0, middle + 30);
 			mainNode(8, middle + 30);
 			rail(middle + 30, 0, middle + 70, 4, RailType.IRON);
 			rail(middle + 30, 8, middle + 70, 4, RailType.IRON);
-			rail(middle + 70, 4, middle + 120, 4, RailType.TURN_BACK);
+			rail(middle + 70, 4, middle + 70 + length, 4, RailType.TURN_BACK);
 		}
 
 		/** The depot behind the turn-back track behind the last station, as line 2's */
