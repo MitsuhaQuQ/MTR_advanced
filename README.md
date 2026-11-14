@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.80.2: the web editor says whose edits a route of the draft conflicts with when the game turns it down, and warns before sending when a route of the draft was changed in the game since (naming who is editing it); what others change shows on the page as the game syncs.
+
 0.80.1 warns when a depot's way out or back runs the line's track against the line for long (over 200 blocks) or across a whole stretch between two stations, suggesting a crossover at the station nearest the depot's entrance; trains going out pick their first station only among those the siding actually reaches the line at, so a depot beside a station it can't run into straight no longer sends them round the whole line. Server and client both need 0.80.1.
 
 0.80.0 makes a train go into a dead-end turn-back track only together with its way out to the next stop, so two trains swapping ends through one dead end no longer lock each other; depots tell of conflicting routes (trains turning back along the same rails the other way, or turning more than once between two stops) in the log and the web editor, with better layouts. Clicking a station on the web editor's whole-network map shows its track use: each line's trains flowing over its tracks in the line's colour, the duties' moves dotted, tracks run both ways marked. Network protocol changed: server and client both need 0.80.0.

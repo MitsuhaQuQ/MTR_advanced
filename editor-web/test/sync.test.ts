@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 import { fullDraft, testData } from "./fixtures"
 import { buildModel } from "../src/core/model"
 import { syncProblems } from "../src/core/sync"
-import { emptyDraft } from "../src/core/draft"
+import { emptyDraft, settleApply } from "../src/core/draft"
 
 function troubledData() {
   const data = testData()
@@ -73,6 +73,29 @@ describe("syncProblems", () => {
     siding.measuredOut = ["1001"]
     const measured = buildModel(data)
     expect(syncProblems("ok", measured, fullDraft(measured)).some(p => p.text.includes("到哪个首站都没有出库的路"))).toBe(false)
+  })
+  it("tells a route of the draft changed in the game since, and who is editing it (2026-11-14)", () => {
+    const data = troubledData()
+    const model = buildModel(data)
+    const draft = fullDraft(model)
+    const r: any = model.routeById.get("101")
+    expect(syncProblems("ok", model, draft).some(p => p.text.includes("在你的草稿之后改过"))).toBe(false)
+    // Someone changed its timetable in the game, and is still editing it
+    const changed = troubledData()
+    const route = changed.routes.find((each: any) => String(each.id) === "101")
+    route.parts = { ...r.parts, timetable_services: r.parts.timetable_services + 1 }
+    route.editors = "Steve"
+    const later = buildModel(changed)
+    const texts = syncProblems("ok", later, draft).map(p => p.text)
+    expect(texts.some(text => text.includes("在你的草稿之后改过") && text.includes("Steve 正在编辑"))).toBe(true)
+  })
+  it("says whose edits a route turned down by the game conflicts with (2026-11-14)", () => {
+    const model = buildModel(troubledData())
+    const draft = fullDraft(model)
+    const { draft: after } = settleApply(draft, ["101"], { ok: false, errors: [{ index: 0, route: "101", message: "CONFLICT:Alex" }], applied: [] })
+    expect(after.routes["101"].conflict).toBe(true)
+    expect(after.routes["101"].error).toContain("Alex")
+    expect(syncProblems("ok", model, after).some(p => p.text.includes("和 Alex 的修改冲突"))).toBe(true)
   })
   it("says only the connection without data", () => {
     expect(syncProblems("key", null, emptyDraft()).map(p => p.text)).toEqual(["页面的链接已经失效"])

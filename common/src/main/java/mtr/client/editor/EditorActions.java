@@ -343,7 +343,9 @@ public final class EditorActions implements IPacket {
 				if (rejected == null) {
 					addError(errors, index, getString(operation, "route"), general);
 				} else if (rejected.containsKey(groups.get(index))) {
-					addError(errors, index, getString(operation, "route"), "CONFLICT");
+					// With who changed it in the game, for the page to say whose edits it conflicts with (2026-11-14)
+					final String by = rejected.get(groups.get(index))[1];
+					addError(errors, index, getString(operation, "route"), by == null || by.isEmpty() ? "CONFLICT" : "CONFLICT:" + by);
 				} else {
 					applied.add(index);
 				}

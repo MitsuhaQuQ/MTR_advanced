@@ -6,7 +6,7 @@
 import type { Connection } from "../api/client"
 import { tr } from "../i18n"
 import { alarmReasonText, depotLines, dutiesOf, replanText, shortfallText, stopLabel, turnPairsOf } from "./depots"
-import { type Draft, platformText, stationNameOf } from "./draft"
+import { changedSince, type Draft, platformText, stationNameOf } from "./draft"
 import { type Model, routeTitle, shortName } from "./model"
 
 export type SyncProblem = {
@@ -41,8 +41,12 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
   const depotById = (id: string) => data.depotById(id) as any
   const routeName = (id: string) => (data.routeById.get(id) ? routeTitle(data.routeById.get(id)!) : tr("已删除的线路"))
   Object.entries(draft.routes).forEach(([id, entry]) => {
-    if (entry.conflict) problems.push({ level: "err", text: tr("{0}：游戏里在草稿之后改过，草稿先不发", routeName(id)), route: id })
+    const r: any = data.routeById.get(id)
+    if (entry.conflict) problems.push({ level: "err", text: entry.conflictBy ? tr("{0}：和 {1} 的修改冲突，游戏里在草稿之后被 {1} 改过，草稿先不发", routeName(id), entry.conflictBy) : tr("{0}：游戏里在草稿之后改过，草稿先不发", routeName(id)), route: id })
     else if (entry.error) problems.push({ level: "err", text: tr("{0}：没有应用，{1}", routeName(id), entry.error), route: id })
+    // Changed in the game since the draft, before it is sent (2026-11-14): what was changed shows on the page already
+    else if (changedSince(entry, r)) problems.push({ level: "warn", text: r && r.editors ? tr("{0}：游戏里在你的草稿之后改过（{1} 正在编辑它），现在写入会冲突；页面上已是游戏里的新内容，看一下再决定保留草稿还是放弃", routeName(id), r.editors) : tr("{0}：游戏里在你的草稿之后改过，现在写入会冲突；页面上已是游戏里的新内容，看一下再决定保留草稿还是放弃", routeName(id)), route: id })
+    else if (r && r.editors) problems.push({ level: "hint", text: tr("{0}：{1} 正在游戏里编辑这条线路，同时改可能冲突", routeName(id), r.editors), route: id })
   })
   Object.entries(draft.duties).forEach(([id, entry]) => {
     if (entry.error) problems.push({ level: "err", text: tr("车厂{0}的运用没有应用：{1}", shortName(depotById(id) ? depotById(id).name : "?"), entry.error) })

@@ -45,7 +45,7 @@
 
 ## public static final class Pending
 - 字段：`result`、`future`（`ClientEditing.BatchResult`）、`operations`、`groups`；`ANSWER_SECONDS = 10`。
-- `public JsonObject await()`：等服务器答复（最多 10 秒）。没有被拒绝的组时返回原结果。被拒（另一玩家同时改了该线路）的组中的操作不算已应用，改为 `CONFLICT` 错误留在草稿；新建线路只保留未被拒的。一般错误：对象已被删除（`editor_server_deleted`，含玩家名）、被玩家本人在游戏中改过（`editor_server_rejected_self`，2026-11-09）、被他人改过（`editor_server_rejected`）；无答复时所有操作都不算应用（`editor_no_answer`）。返回 `ok: false` 的新结果。
+- `public JsonObject await()`：等服务器答复（最多 10 秒）。没有被拒绝的组时返回原结果。被拒（另一玩家同时改了该线路）的组中的操作不算已应用，改为 `CONFLICT:<改它的玩家名>`（不知道是谁时 `CONFLICT`，0.80.2）错误留在草稿；新建线路只保留未被拒的。一般错误：对象已被删除（`editor_server_deleted`，含玩家名）、被玩家本人在游戏中改过（`editor_server_rejected_self`，2026-11-09）、被他人改过（`editor_server_rejected`）；无答复时所有操作都不算应用（`editor_no_answer`）。返回 `ok: false` 的新结果。
 - 调用者：`EditorServer.java:315`。
 
 ### `private static String applyOperation(JsonObject operation, int index, JsonArray created)`

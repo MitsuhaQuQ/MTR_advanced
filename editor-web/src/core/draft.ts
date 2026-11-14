@@ -60,7 +60,7 @@ export const conflictCount = (draft: Draft) => Object.values(draft.routes).filte
 /** A route's entry goes once nothing is left in it but where it came from (tidyDraft). */
 export function tidy(draft: Draft, id: string): Draft {
   const entry = draft.routes[id]
-  if (!entry || !Object.keys(entry).every(k => k === "base" || k === "force" || k === "error" || k === "conflict")) return draft
+  if (!entry || !Object.keys(entry).every(k => k === "base" || k === "force" || k === "error" || k === "conflict" || k === "conflictBy")) return draft
   const routes = { ...draft.routes }
   delete routes[id]
   return { ...draft, routes }
@@ -191,14 +191,15 @@ export function settleApply(draft: Draft, owners: Owner[], result: any): { draft
         boundaryErrors["station:" + id.platformStationOf] = error.message
       } else if (createdIndex.has(id)) {
         // Changed in the game since the draft was made: said as that, not as the server's code
-        next.created[createdIndex.get(id)!].error = error.message === "CONFLICT" ? tr("游戏里的这一项在草稿之后改过（可能是自动排了新的运用），草稿没有写入；看一下游戏里现在的，不需要就放弃这项草稿") : error.message
+        next.created[createdIndex.get(id)!].error = isConflict(error.message) ? tr("游戏里的这一项在草稿之后改过（可能是自动排了新的运用），草稿没有写入；看一下游戏里现在的，不需要就放弃这项草稿") : error.message
       }
       return
     }
     const entry = next.routes[id]
     if (!entry) return
-    entry.conflict = error.message === "CONFLICT"
-    entry.error = entry.conflict ? tr("游戏里的这条线路在草稿之后改过") : error.message
+    entry.conflict = isConflict(error.message)
+    if (conflictBy(error.message)) entry.conflictBy = conflictBy(error.message)
+    entry.error = entry.conflict ? (entry.conflictBy ? tr("游戏里的这条线路在草稿之后被 {0} 改过", entry.conflictBy) : tr("游戏里的这条线路在草稿之后改过")) : error.message
   })
   owners.forEach(id => { if (!failed.has(id) && typeof id === "string") delete next.routes[id] })
   next.created = next.created.filter((_, i) => failed.has(draft.created[i]))
@@ -224,6 +225,22 @@ export function settleApply(draft: Draft, owners: Owner[], result: any): { draft
   }
 }
 
+/** The game's answer for a change made in the game since the draft: "CONFLICT", or "CONFLICT:" and who made it (2026-11-14). */
+export const isConflict = (message: string) => message === "CONFLICT" || (typeof message === "string" && message.startsWith("CONFLICT:"))
+export const conflictBy = (message: string) => typeof message === "string" && message.startsWith("CONFLICT:") ? message.slice("CONFLICT:".length) : ""
+
+/** The parts of a route the game checks the draft's changes against (EditorActions.EDITOR_PARTS). */
+export const EDITOR_PARTS = ["timetable_services", "platform_ids", "is_light_rail_route"]
+
+/**
+ * Whether the game's route changed since the draft was made, in a part the game checks the draft's changes against: they
+ * would be turned down if sent now. Told on the sync panel before they are (2026-11-14: tell whose edits it conflicts with).
+ */
+export function changedSince(entry: { parts?: Record<string, number> }, r: { parts?: Record<string, number> } | undefined): boolean {
+  if (!r || !entry.parts || !r.parts) return false
+  return EDITOR_PARTS.some(part => part in entry.parts! && entry.parts![part] !== (r.parts![part] || 0))
+}
+
 /** Keeps the draft over what changed in the game, or drops the draft for the game's version (resolveConflict). */
 export function resolveConflict(model: Model | null, draft: Draft, id: string, keep: boolean): Draft {
   const entry = draft.routes[id], r = model && model.routeById.get(id)
@@ -236,6 +253,7 @@ export function resolveConflict(model: Model | null, draft: Draft, id: string, k
       kept.parts = Object.assign({}, r.parts || {})
     }
     delete kept.conflict
+    delete kept.conflictBy
     delete kept.error
     routes[id] = kept
   } else {

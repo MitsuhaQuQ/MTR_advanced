@@ -33,7 +33,7 @@
   3. `depotRules`（出入库规则，先于按其排的运用）；
   4. `duties`；5. `pathBoundary`（键拆成 `a`,`b`）；6. `contingencies`；7. `platformSpeed`；8. `platformStop`；9. `networkSettings`；10. `platformStation`；11. `newRoute`（新建项）。
   - 返回 `{ operations, owners }`。调用者：`state/store.tsx:161`；旧代码 `fn.draftOperations()`（`legacy/retired.ts:277`，旧代码版本，签名不同）。
-- `settleApply(draft, owners, result)`：游戏回答后结算（`applyDraft` 的后半）：按 `result.errors[].index` 找到失败的 owner：车厂/运用把错误写进条目，边界与站台归属的错误单独返回到 `boundaryErrors`（键为边界键或 `station:<站台>`），新建项的 `CONFLICT` 改写为可读说明，路线条目设置 `conflict`（错误为 `CONFLICT` 时）和 `error`。成功的路线、新建项、车厂各部分、全网设置、预案、边界从草稿中删去。返回 `{ draft, result: ApplyResult, boundaryErrors }`（`general` 为 `index < 0` 的错误）。调用者：`state/store.tsx:166`。
+- `settleApply(draft, owners, result)`：游戏回答后结算（`applyDraft` 的后半）：按 `result.errors[].index` 找到失败的 owner：车厂/运用把错误写进条目，边界与站台归属的错误单独返回到 `boundaryErrors`（键为边界键或 `station:<站台>`），新建项的 `CONFLICT` 改写为可读说明，路线条目设置 `conflict`（错误为 `CONFLICT` 或 `CONFLICT:<玩家>` 时，`isConflict`）、`conflictBy`（玩家名，0.80.2）和 `error`。成功的路线、新建项、车厂各部分、全网设置、预案、边界从草稿中删去。返回 `{ draft, result: ApplyResult, boundaryErrors }`（`general` 为 `index < 0` 的错误）。调用者：`state/store.tsx:166`。
 - `resolveConflict(model, draft, id, keep)`：处理冲突：`keep` 为真时保留草稿并 `force: true`，`base`/`parts` 更新为游戏当前版本，去掉 `conflict`、`error`；否则删除该路线条目。调用者：`shell/Banner.tsx:31`、`shell/Banner.tsx:32`、`shell/Review.tsx:47`。
 - `drop(draft, target)`：按 `DropTarget` 放弃一部分草稿，返回新草稿。调用者：`shell/Review.tsx:64`。
 - `normalizeTimetable(timetable)`：把时刻表整理成编辑器发送的形式（就地修改并返回）：各表的 `services`、`returns`、`suspended` 升序，`orders` 按车次和种类排序，`links`、`exceptions` 按车次排序，例外内 `stops` 按站序排序。调用者：`core/timetable.ts:54`、`core/timetable.ts:314`。
@@ -43,3 +43,5 @@
 - `stationNameOf(model, stationId)`：车站短名；`"0"` 或空为"自动（按车站范围和最近的站台）"；找不到为"已删除的车站"。调用者：`core/sync.ts:134`、旧代码 `fn.stationNameOf`（`legacy/retired.ts:244`，未确定是否为本函数）。
 - `ownerText(model, owner)`：区段归属者的名称：`connecting:<路线>` 为"联络线 X"，否则线路组名，找不到时取 `|` 后部分。调用者：本文件；旧代码 `fn.ownerText`（`legacy/dialogs.ts:208`，未确定是否为本函数）。
 - `changeSections(model, draft, boundaryErrors = {})`：审阅面板的各节：每条路线（已删除的路线只给放弃；有冲突的不给放弃，只能用冲突按钮）、每个新建项、各路网预案、各车厂设置（负责线路、是否允许线上久等、存车线、车型配属、车型种别）、各车厂运用（模式与运用数）、隔离（寻路边界设/取消段数，附第一个边界错误）、过站限速、全网设置（换端最短时间、等候分界、各站等候分界、逻辑线路增删改、轨道所属逻辑线路、线路组走哪些逻辑线路、区段归属覆盖）、停车位置、站台归属。调用者：`shell/Review.tsx:14`。
+- `isConflict(message)` / `conflictBy(message)`（0.80.2）：游戏回的冲突错误 `CONFLICT` 或 `CONFLICT:<玩家>`，后者带出改它的玩家。
+- `EDITOR_PARTS`、`changedSince(entry, r)`（0.80.2）：服务端检查的线路部分（时刻表、停站、轻轨设置）；草稿记下的这些部分里有和游戏现在不同的，就是现在写入会冲突。`sync.ts` 用它在写入前提示。

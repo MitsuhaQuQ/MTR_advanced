@@ -12,6 +12,11 @@ exports[`syncProblems > lists what the old page listed (offline) 1`] = `
     "text": "1号线 全程 南行 → 港湾：没有应用，站台被占",
   },
   {
+    "level": "hint",
+    "route": "103",
+    "text": "1号线 区间 北行 → 市政厅：rail_fan 正在游戏里编辑这条线路，同时改可能冲突",
+  },
+  {
     "level": "err",
     "route": "201",
     "text": "2号线 东行 → 东站：游戏里在草稿之后改过，草稿先不发",
@@ -223,6 +228,11 @@ exports[`syncProblems > lists what the old page listed (ok) 1`] = `
     "level": "err",
     "route": "102",
     "text": "1号线 全程 南行 → 港湾：没有应用，站台被占",
+  },
+  {
+    "level": "hint",
+    "route": "103",
+    "text": "1号线 区间 北行 → 市政厅：rail_fan 正在游戏里编辑这条线路，同时改可能冲突",
   },
   {
     "level": "err",
@@ -440,6 +450,11 @@ exports[`syncProblems > lists what the old page listed (world) 1`] = `
     "level": "err",
     "route": "102",
     "text": "1号线 全程 南行 → 港湾：没有应用，站台被占",
+  },
+  {
+    "level": "hint",
+    "route": "103",
+    "text": "1号线 区间 北行 → 市政厅：rail_fan 正在游戏里编辑这条线路，同时改可能冲突",
   },
   {
     "level": "err",
