@@ -202,4 +202,20 @@ class SpeakerSettingsTest {
 		assertEquals(expected.appearance, actual.appearance);
 		assertEquals(expected.audienceMask, actual.audienceMask);
 	}
+
+	@Test
+	void clipsTakeTheNewNamesOfFilesReplacedUnderAnotherName() {
+		final java.util.List<SpeakerSettings.Clip> clips = java.util.Arrays.asList(new SpeakerSettings.Clip("steve:a.ogg", 0), new SpeakerSettings.Clip("steve:b.ogg", 5));
+		final SpeakerSettings original = new SpeakerSettings(clips, SpeakerSettings.Mode.LOOP, 24, BlockPos.ZERO, 4, SpeakerSettings.DEFAULT_APPEARANCE, SpeakerSettings.ALL_DIRECTIONS, false, 0);
+		// Nothing renamed: the same settings
+		assertSame(original, original.withSounds(sound -> sound));
+		// a.ogg replaced by c.ogg: that clip takes the new name, the rest stays as it was
+		final SpeakerSettings renamed = original.withSounds(sound -> sound.equals("steve:a.ogg") ? "steve:c.ogg" : sound);
+		assertEquals("steve:c.ogg", renamed.clips.get(0).sound);
+		assertEquals("steve:c.ogg", renamed.sound);
+		assertEquals("steve:b.ogg", renamed.clips.get(1).sound);
+		assertEquals(5, renamed.clips.get(1).gapTenths);
+		assertEquals(original.mode, renamed.mode);
+		assertEquals(original.radius, renamed.radius);
+	}
 }

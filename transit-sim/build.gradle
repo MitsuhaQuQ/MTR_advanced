@@ -59,6 +59,8 @@ tasks.register("simulateDay", JavaExec) {
 	systemProperty "mtr.throatLocks", project.findProperty("mtr.throatLocks") ?: "true"
 	// -Pmtr.deadEndExits=false runs without a train taking its way out with a dead end (0.80.0), to compare
 	systemProperty "mtr.deadEndExits", project.findProperty("mtr.deadEndExits") ?: "true"
+	// -Pmtr.yieldToEarlier=false keeps a dead end's way out booked however long a train waits there (before 0.82.2), to compare
+	systemProperty "mtr.yieldToEarlier", project.findProperty("mtr.yieldToEarlier") ?: "true"
 	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
 	// -Pmtr.dutySwap=false runs without trains out of order swapping their duties (0.81.0), to compare
 	systemProperty "mtr.dutySwap", project.findProperty("mtr.dutySwap") ?: "true"

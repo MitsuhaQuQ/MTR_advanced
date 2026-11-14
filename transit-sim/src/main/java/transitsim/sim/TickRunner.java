@@ -224,6 +224,16 @@ public final class TickRunner<T extends RunTrack> {
 	 * {@code -Dmtr.deadEndExits=false} runs as before, to compare.
 	 */
 	public static volatile boolean DEAD_END_EXITS = !"false".equals(System.getProperty("mtr.deadEndExits"));
+	/**
+	 * False (system property {@code mtr.yieldToEarlier=false}) keeps a train's way out of a dead end booked however long it
+	 * waits there, as before 2026-11-15, to compare.
+	 */
+	public static volatile boolean YIELD_TO_EARLIER = !"false".equals(System.getProperty("mtr.yieldToEarlier"));
+	/**
+	 * How many rails of a train's path ahead are looked at for a dead end it comes into, before another train waiting in that
+	 * dead end lets its way out go for it.
+	 */
+	private static final int YIELD_LOOK_AHEAD_RAILS = 12;
 
 	/**
 	 * Sets the network's early threshold ({@link TrainRules#getCruiseCap}).
@@ -2063,7 +2073,11 @@ public final class TickRunner<T extends RunTrack> {
 				int targetStop = onRoute && atStop ? transitsim.run.RunMotion.findStopAfter(this, stop) : stop;
 				// Into a dead end only with the way out (item A): the request runs on to the stop after the turn as one, and a
 				// train standing in there keeps its way out however long it waits
-				final boolean inDeadEnd = DEAD_END_EXITS && onRoute && atStop && isDeadEndTurn(stop);
+				// unless, waiting there for its next service, its way out keeps a train due earlier from its way, one not coming into
+				// this dead end (2026-11-15: 6号线's short trains waited in 三站's turn back rail with 三站's platform booked, and the
+				// through train due there first stood outside each time): it lets the way out go, and asks again once that is by
+				final boolean yields = DEAD_END_EXITS && onRoute && atStop && isDeadEndTurn(stop) && yieldsToEarlier();
+				final boolean inDeadEnd = DEAD_END_EXITS && onRoute && atStop && isDeadEndTurn(stop) && !yields;
 				double wholeUntil = Double.NaN;
 				if (DEAD_END_EXITS && onRoute && isDeadEndTurn(targetStop)) {
 					targetStop = transitsim.run.RunMotion.findStopAfter(this, targetStop);
@@ -2097,7 +2111,7 @@ public final class TickRunner<T extends RunTrack> {
 						throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
 					}
 				}
-				final double target = onRoute && atStop && !inDeadEnd && TrainRules.waitsBeforeRequestingRun(this, stop) ? head : getStopDistance(targetStop);
+				final double target = onRoute && atStop && !inDeadEnd && (yields || TrainRules.waitsBeforeRequestingRun(this, stop)) ? head : getStopDistance(targetStop);
 				// A car's length of room to other trains, front and back (user, 2026-11-12)
 				authority.setMargin(siding.spacing);
 				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, target, getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats, wholeUntil);
@@ -2633,6 +2647,38 @@ public final class TickRunner<T extends RunTrack> {
 		@Override
 		public boolean isBlockingOthers() {
 			return reservations.isBlockingOthers(id);
+		}
+
+		@Override
+		public boolean yieldsToEarlier() {
+			final long leaveMillis = service.getTurnBackLeaveMillis();
+			final int stop = getNextStoppingIndex();
+			if (!YIELD_TO_EARLIER || leaveMillis <= millis || stop < 0 || stop >= path.size()) {
+				return false;
+			}
+			final UUID deadEnd = path.get(stop).getTrackKey();
+			final List<Long> earlier = reservations.getBlockedEarlier(id, leaveMillis, Collections.singletonList(deadEnd));
+			if (earlier.isEmpty()) {
+				return false;
+			}
+			// None of them coming soon after onto rails this train stands on, as one stopping at the platform first to turn back
+			// over the switch this train's tail is on: letting the way out go for it, each would wait for the other (line 11
+			// of the six test lines, item A, 2026-11-15)
+			final Set<UUID> standingOn = reservations.getOccupied(id);
+			for (final long trainId : earlier) {
+				final HeadlessTrain other = trainsById.get(trainId);
+				if (other == null) {
+					return false;
+				}
+				final int from = Math.max(0, other.getHeadRail());
+				for (int i = from; i < other.path.size() && i < from + YIELD_LOOK_AHEAD_RAILS; i++) {
+					final UUID rail = other.path.get(i).getTrackKey();
+					if (rail.equals(deadEnd) || standingOn.contains(rail)) {
+						return false;
+					}
+				}
+			}
+			return true;
 		}
 
 		@Override

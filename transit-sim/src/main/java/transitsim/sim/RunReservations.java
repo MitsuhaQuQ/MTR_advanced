@@ -47,6 +47,33 @@ public final class RunReservations {
 		return arbiter.isBlocking(trainId);
 	}
 
+	/**
+	 * @return whether the train kept from its run, at the last resolve, a train planned to leave before then that doesn't ask
+	 * for any of these rails, by their sections or directions ({@link Arbiter#isBlockingEarlier}, 2026-11-15)
+	 */
+	public boolean isBlockingEarlier(long trainId, long beforeMillis, Collection<UUID> rails) {
+		return !getBlockedEarlier(trainId, beforeMillis, rails).isEmpty();
+	}
+
+	/**
+	 * @return the units a train stands on, as last set ({@link #setOccupied})
+	 */
+	public Set<UUID> getOccupied(long trainId) {
+		return arbiter.getOccupied(trainId);
+	}
+
+	/**
+	 * @return the trains {@link #isBlockingEarlier} counts
+	 */
+	public List<Long> getBlockedEarlier(long trainId, long beforeMillis, Collection<UUID> rails) {
+		final Set<UUID> resources = new HashSet<>();
+		rails.forEach(rail -> {
+			resources.add(rail);
+			resources.add(transitsim.run.PathClaims.directionOf(rail));
+		});
+		return arbiter.getBlockedEarlier(trainId, beforeMillis, resources);
+	}
+
 	public void hold(long trainId, List<Move> moves) {
 		arbiter.hold(trainId, toClaims(moves));
 	}

@@ -2,7 +2,7 @@
 
 命令行工具（`src/tools` 源集，不随模组发布）：不启动游戏，用游戏写入数据库的数据（`SimDataset`）仿真一个已保存世界的一个运营日（S4e），并打印列车做了什么、耗时多少。
 
-参数：数据库，然后可选的日期（`yyyy-mm-dd`，缺省今天）、时区（缺省 `UTC`）、运营日开始小时（缺省 `OperatingDay.DEFAULT_DAY_START_HOUR`），以及标志 `--events`（打印每个事件）、`--check`（端到端检查：每秒检查一次不得违反的规则 `RunInvariants`，并用 `DayRun` 对照时刻表；有违规或死锁时以 1 退出）、`--origins`（各服务从首站出发相对服务时刻与计划的早晚）、`--outs`（2026-11-13：每次出库从离开存车线到离开首站，对照计划）、`--headways`（0.82.0：开始一秒后，对每条停车线最长的路径用 `Headways` 算每个分区两车最少要隔多久，列出最大的 6 个（超过 5 分钟的略去，那是终点长时间停留）及其所在轨道的单双向、限速、是否涂色、切成几片；跑完再列出每列车所在位置）、`--late`（0.81.0：每次从停站出发对照列车当时所跑班次的计划，跑完打印每条线路最大晚点和晚 60 秒以上的前 40 次）。
+参数：数据库，然后可选的日期（`yyyy-mm-dd`，缺省今天）、时区（缺省 `UTC`）、运营日开始小时（缺省 `OperatingDay.DEFAULT_DAY_START_HOUR`），以及标志 `--events`（打印每个事件）、`--check`（端到端检查：每秒检查一次不得违反的规则 `RunInvariants`，并用 `DayRun` 对照时刻表；有违规或死锁时以 1 退出）、`--origins`（各服务从首站出发相对服务时刻与计划的早晚）、`--outs`（2026-11-13：每次出库从离开存车线到离开首站，对照计划）、`--headways`（0.82.0：开始一秒后，对每条停车线最长的路径用 `Headways` 算每个分区两车最少要隔多久，列出最大的 6 个（超过 5 分钟的略去，那是终点长时间停留）及其所在轨道的单双向、限速、是否涂色、切成几片；跑完再列出每列车所在位置）、`--where`（2026-11-15：每个事件发生时打印轨道坐标和线路，列车换路径后也看得清）、`--holds@HH:MM:SS`（那一刻每列车被批准持有的东西，按轨道坐标）、`--resume`（从存档里的列车接着跑）、`--place@HH:MM:SS`（照游戏“按时刻表摆放列车”放好后接着跑）、`--restarts@N`（每 N 秒从当时位置重开一次模拟器跑 3 分钟，列出会死锁的时刻）、`--late`（0.81.0：每次从停站出发对照列车当时所跑班次的计划，跑完打印每条线路最大晚点和晚 60 秒以上的前 40 次）。
 
 运行方式：`./gradlew -p transit-sim simulateDay --args="…"`（`transit-sim/build.gradle:55`），或 `C:/gtmp/fast/simday.sh`；系统属性见下。使用 `SimDataset`、`SimScope`、`EventSimulator`、`DayRun`、`RunInvariants`、`SimEvent`、`OperatingDay`、`LockNetworks`、`BlockSections`、`TickRunner`。
 
@@ -15,7 +15,7 @@
 - 作用（按顺序）：
   1. 无参数时打印用法。分离 `--` 标志与位置参数，`OperatingDay.set(时区, 开始小时)`。
   2. `read` 读世界数据；没有则提示先用本版本保存世界；解析失败（旧版本保存）打印 "UNREADABLE …" 并返回。
-  3. 系统属性：`mtr.noLinePools=true` 清空所有停车线的线路池（不回本线其他车厂，用于对比）；`mtr.earlyThreshold=毫秒` 改用另一个提前阈值（第 4 轮第 5 步）；`mtr.buffersFile=路径`（0.75.0）先读文件里的出库余量（每行 `0:停车线:站台=毫秒`）合并（取大）进各车厂的采用余量再跑；带 `--outs` 时一天里像游戏车厂一样用 `OutLeads` 按首站晚点自动校正（直接改各车厂 `dispatcher.addedBuffers`，车厂由列车监听器按存车线记下），跑完打印每次校正（时刻、键、前后秒数）和提前没用的出库，并把各车厂最后的出库余量写回文件，再跑一次就是第二天；`mtr.simRoutes=scopes` 只打印各车厂线路的仿真范围（`printScopes`）后返回；`mtr.simRoutes=id,id` 只仿真这些线路的那部分世界（`SimScope.of`，与编辑器相同）；`mtr.dutySwap=false`（0.81.0）关掉顺序颠倒的车互换运用，对照用。
+  3. 系统属性：`mtr.noLinePools=true` 清空所有停车线的线路池（不回本线其他车厂，用于对比）；`mtr.earlyThreshold=毫秒` 改用另一个提前阈值（第 4 轮第 5 步）；`mtr.buffersFile=路径`（0.75.0）先读文件里的出库余量（每行 `0:停车线:站台=毫秒`）合并（取大）进各车厂的采用余量再跑；带 `--outs` 时一天里像游戏车厂一样用 `OutLeads` 按首站晚点自动校正（直接改各车厂 `dispatcher.addedBuffers`，车厂由列车监听器按存车线记下），跑完打印每次校正（时刻、键、前后秒数）和提前没用的出库，并把各车厂最后的出库余量写回文件，再跑一次就是第二天；`mtr.simRoutes=scopes` 只打印各车厂线路的仿真范围（`printScopes`）后返回；`mtr.simRoutes=id,id` 只仿真这些线路的那部分世界（`SimScope.of`，与编辑器相同）；`mtr.dutySwap=false`（0.81.0）关掉顺序颠倒的车互换运用，对照用；`mtr.yieldToEarlier=false`（0.82.2）关掉尽头折返线里的车给计划更早的车让出口。
   4. 计算运营日开始时刻，打印规模；打印咽喉锁网络统计（`dataset.getLockNetworks().result()`）。
   5. 用 `DayRun.startOfDay`（过夜留线列车停在原处，2026-11-09）建 `EventSimulator`；`mtr.simHours=N` 只仿真前 N 小时（默认 24）。`--check` 时每秒推进并 `invariants.check()`，否则一次推进到底。
   6. 统计事件种类与运行过的列车，可打印每个事件；统计站间平均运行时间与平均停站时间。

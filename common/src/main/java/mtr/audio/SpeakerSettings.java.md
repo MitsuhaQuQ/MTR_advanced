@@ -91,3 +91,4 @@
 - 上升沿检测；加载或编辑后的第一次采样只建立基准，不触发。
 - `boolean sample(boolean signal)`：已初始化且上次为假、本次为真时返回 true。
 - `void reset()`：回到未初始化。
+- `withSounds(UnaryOperator<String> rename)`（0.82.3）：各段声音换名后的设置，没有一段变化时返回自身。

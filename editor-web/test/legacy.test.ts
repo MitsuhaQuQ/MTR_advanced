@@ -28,6 +28,8 @@ beforeAll(async () => {
 describe("the old code in the new page", () => {
   it("takes the data and works out lines, rows and services", () => {
     engine.pushData(mockData())
+    // The day the snapshots were taken on, not today's: weekends run the fixture's other table (2026-11-15)
+    engine.legacy.v.state.weekday = 4; engine.legacy.fn.buildServices()
     const { v } = engine.legacy
     expect(v.data.lines.map((line: any) => line.key)).toEqual(["TRAIN|1号线|Line 1", "TRAIN|2号线|Line 2"])
     expect(v.data.lines[0].rows.length).toBeGreaterThan(3)
@@ -308,6 +310,8 @@ describe("the old code in the new page", () => {
     const { LinePanels } = await import("../src/views/LinePanels")
     const { fn, v } = engine.legacy
     engine.pushData(mockData())
+    // The day the snapshots were taken on, not today's: weekends run the fixture's other table (2026-11-15)
+    engine.legacy.v.state.weekday = 4; engine.legacy.fn.buildServices()
     engine.pushDraft({ routes: {} })
     const changes: any[] = []
     engine.onLegacyDraft(draft => changes.push(draft))
@@ -455,10 +459,14 @@ describe("the old code in the new page", () => {
     await act(async () => fn.finishWayPick(false))
     expect(v.wayPick).toBe(null)
     expect(host.querySelector("[data-rule='0']")).toBeTruthy()
+    // Off to the map again, choosing only the station to go out by: the rule keeps it (2026-11-15: it was dropped)
+    await act(async () => ([...host.querySelectorAll("[data-rule='0'] button")].find(b => b.textContent === "在图上点轨道…") as HTMLElement).click())
+    v.wayPick.entrance = "555"
+    await act(async () => fn.finishWayPick(true))
     await act(async () => { button("放进草稿").click(); engine.flushLegacy() })
     await new Promise(resolve => setTimeout(resolve, 10))
     const rule = changes[changes.length - 1].depotRules["9001"].rules.rules[0]
-    expect(rule).toMatchObject({ lines: ["TRAIN|1号线|Line 1"], weekdays: 32 })
+    expect(rule).toMatchObject({ lines: ["TRAIN|1号线|Line 1"], weekdays: 32, outEntrance: "555", outPath: "0" })
     v.state.view = "diagram"
     engine.pushDraft({ routes: {} })
   })

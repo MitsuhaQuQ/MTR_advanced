@@ -233,7 +233,8 @@ export function DepotRules({ depotId, editing, onClose }: { depotId: string; edi
   if (!depot) return null
   const changed = () => setTick(t => t + 1)
   const lines: [string, string][] = fn.depotLines(depot)
-  const unset: string[] = (depot.shortfall && depot.shortfall.entrancesUnset) || []
+  // Lines with no rule only: the list also holds the ways run against the line (0.80.1), told in the sync panel
+  const unset: string[] = ((depot.shortfall && depot.shortfall.entrancesUnset) || []).filter((key: string) => !/^against(long|span)?:/.test(key))
   const days: string[] = weekdaysShort()
   const seconds = (millis: number) => (millis >= 0 ? String(Math.round(millis / 1000)) : "")
   const millisOf = (text: string, none: number) => (text.trim() === "" ? none : Math.max(0, Math.min(3600, Math.round(Number(text)) || 0)) * 1000)

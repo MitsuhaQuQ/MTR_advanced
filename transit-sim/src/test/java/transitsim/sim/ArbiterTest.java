@@ -199,6 +199,26 @@ class ArbiterTest {
 		assertFalse(arbiter.isFrozen(10L));
 	}
 
+	@Test
+	void aHolderKeepingATrainDueEarlierFromALaterGroupIsBlockingIt() {
+		// 1 waits in a dead end with the platform (20) booked; 2, due earlier, gets the line (10) but not the platform
+		final Arbiter<Long> arbiter = new Arbiter<>();
+		arbiter.hold(1, claims(Arbiter.Claim.track(30L), Arbiter.Claim.track(20L)));
+		arbiter.requestGroups(2, Arrays.asList(claims(Arbiter.Claim.track(10L)), claims(Arbiter.Claim.track(20L))), NOW);
+		resolve(arbiter, NOW);
+		assertEquals(1, arbiter.takeGrantedGroups(2));
+		// Kept from its second group: due before 1 leaves, and not asking for the dead end
+		assertTrue(arbiter.isBlockingEarlier(1, NOW + 60000, Collections.singleton(30L)));
+		assertEquals(Collections.singletonList(2L), arbiter.getBlockedEarlier(1, NOW + 60000, Collections.singleton(30L)));
+		// Not if it is due after 1 leaves, or if it asks for the dead end too
+		assertFalse(arbiter.isBlockingEarlier(1, NOW, Collections.singleton(30L)));
+		assertFalse(arbiter.isBlockingEarlier(1, NOW + 60000, Collections.singleton(20L)));
+		// Each resolve tells it afresh
+		arbiter.hold(1, claims(Arbiter.Claim.track(30L)));
+		resolve(arbiter, NOW + 50);
+		assertFalse(arbiter.isBlockingEarlier(1, NOW + 60000, Collections.singleton(30L)));
+	}
+
 	private static void resolve(Arbiter<Long> arbiter, long millis) {
 		arbiter.resolve(millis);
 	}

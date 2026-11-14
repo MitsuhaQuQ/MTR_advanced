@@ -24,7 +24,7 @@
 - 调用者：`Depot.java:2537`、`RailwayData.java:648`、`RailwayDataPathGenerationModule.java:113`。
 
 ### `public DataCache copyIdMaps()`
-- 作用：当前按 id 映射与站台→车站的拷贝（对象本身不复制），供服务器线程外的工作（找路）使用，避免看到 `sync` 中途被清空的映射；拷贝从不 `sync`。也带上 `stablingRails`。
+- 作用：当前按 id 映射与站台→车站、存车线→车厂（`sidingIdToDepot`，0.82.4）的拷贝（对象本身不复制），供服务器线程外的工作（找路）使用，避免看到 `sync` 中途被清空的映射；拷贝从不 `sync`。也带上 `stablingRails`。0.82.4 前拷贝里没有 `sidingIdToDepot`，找路线程里每条存车线都被当成正在找路的车厂自己的（`Depot.measureDepotWays` 的 `getOrDefault(sidingId, self)`），几个车厂一起按线路排班时别的车厂的存车线按本车厂的出入库规则找路，多半找不到。
 - 调用者：`RailwayData.java:1063`、`:1138`、`SandboxRuns.java:272`。
 
 ### `public static Map<BlockPos, Map<BlockPos, Rail>> copyRails(Map<BlockPos, Map<BlockPos, Rail>> rails)`

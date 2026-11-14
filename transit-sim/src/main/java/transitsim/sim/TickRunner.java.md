@@ -44,7 +44,7 @@
 - `TICK = 50`（private）。
 - `MAX_STANDING_TICKS = 12000`（private）：静止列车最多被放置不管这么久（10 分钟）后重新计算。
 - `RUN_LAYER`（public static volatile boolean）：非缆车列车是否由运行层（解耦文档 5.5，`RunMotion` + `Authority`）而非沿用 MTR 的规则运行；系统属性 `mtr.runLayer=false` 关闭。
-- `DEAD_END_EXITS`（public static volatile boolean，0.80.0）：列车进站台以外的掉头处（尽头折返线）时，是否连同掉头后到下一停站的进路一起申请（整组批准）、并在里面等候时一直持有出来的进路（`MTR-待验证.md` 的 A：六线图 8 号线两车经同一条尽头折返线换端互等）。`runLayerTick` 里：下一个目标停站是 `isDeadEndTurn` 时目标延伸到其后一站并传 `wholeUntil`；停在这种掉头处时不因等发车而放掉前方。系统属性 `mtr.deadEndExits=false` 关闭，用于对比。
+- `DEAD_END_EXITS`（public static volatile boolean，0.80.0）：列车进站台以外的掉头处（尽头折返线）时，是否连同掉头后到下一停站的进路一起申请（整组批准）、并在里面等候时一直持有出来的进路（`MTR-待验证.md` 的 A：六线图 8 号线两车经同一条尽头折返线换端互等）。`runLayerTick` 里：下一个目标停站是 `isDeadEndTurn` 时目标延伸到其后一站并传 `wholeUntil`；停在这种掉头处时不因等发车而放掉前方。系统属性 `mtr.deadEndExits=false` 关闭，用于对比。0.82.2：在里面等的车 `yieldsToEarlier` 时不再持有出口（不算 `inDeadEnd`，目标退回车头），等那列计划更早的车过去再申请；`YIELD_TO_EARLIER`（系统属性 `mtr.yieldToEarlier=false` 关闭，对比用）。
 - `isDeadEndTurn(int stop)`（列车内部类，private）：路径在这个停站处掉头（下一轨道是它的反向）且这条轨道不是站台。
 
 ### `void setEarlyThresholdMillis(long earlyThresholdMillis)`
@@ -461,6 +461,7 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 ### `TrainRules.Train` 实现
 - `long getMillis()`：运行器时刻。
 - `boolean isBlockingOthers()`：`reservations.isBlockingOthers(id)`。
+- `boolean yieldsToEarlier()`（0.82.2）：`YIELD_TO_EARLIER` 开、在折返线上还没到离开时刻、`reservations.getBlockedEarlier(id, 离开时刻, {这条尽头线})` 非空，且其中每列车前方 `YIELD_LOOK_AHEAD_RAILS`（12）条轨道里都没有这条尽头线、也没有本车正压着的轨道（`reservations.getOccupied`；否则就是 A 的互等：六线图 11 号线车尾压着道岔，对方停完站台要从道岔回头）。
 - `long getEarlyThresholdMillis()`：运行器的早到阈值。
 - `TrainService<?> getService()`、`MotionState getState()`（自身）、`MotionTrack getTrack()`（自身）。
 - `long getStopId(int rail)`、`boolean isContinuousMovement()`（恒 false）、`boolean usesSpeedCurve()`。

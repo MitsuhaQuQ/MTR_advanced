@@ -95,6 +95,10 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 		private SpeakerSettings settings;
 		private int loopTicks;
 		private final transitsim.sim.PlaybackGate playbackGate = new transitsim.sim.PlaybackGate();
+		/**
+		 * The names version of the audio files this speaker's clips were last brought up to (0.82.3), -1 for none yet.
+		 */
+		private long namesSeen = -1;
 
 		public TileEntityAudioSpeaker(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.AUDIO_SPEAKER_TILE_ENTITY.get(), pos, state);
@@ -137,6 +141,7 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 
 		private void tickSpeaker(ServerLevel world) {
 			if (settings.sound.isEmpty()) return;
+			followRenames();
 			switch (settings.mode) {
 				case LOOP:
 					final List<String> hashes = hashes();
@@ -153,6 +158,23 @@ public final class BlockAudioSpeaker extends BlockMapper implements EntityBlockM
 				case REGION:
 					if (trigger.sample(regionOccupied(world))) playOnce(world);
 					break;
+			}
+		}
+
+		/**
+		 * A file one of the clips names replaced by one of another name: the clip takes the new name in place, kept with the
+		 * block and sent to the players, so the speaker plays the new recording and its screen shows its name (0.82.3, user
+		 * 2026-11-15). Done when the names change, or when the block is loaded after they did.
+		 */
+		private void followRenames() {
+			final long version = AudioServer.getNamesVersion();
+			if (version == namesSeen) return;
+			namesSeen = version;
+			final SpeakerSettings renamed = settings.withSounds(AudioServer::currentReference);
+			if (renamed != settings) {
+				settings = renamed;
+				setChanged();
+				syncData();
 			}
 		}
 

@@ -130,3 +130,4 @@
 - 上传包在文件夹之后可再带一个 `replaceId`：有它就走 `finishReplace`，按 ID 替换（上传者或管理员）：ID、上传者、文件夹、声音 ID 不变（另给声音 ID 时用新的），文件可改名，旧名记为曾用名；新名被别的文件占用或用过时回 `NAME_USED`；成功提示 `gui.mtr.audio_replaced`。
 - 普通上传的新名字是别的文件的曾用名时拒绝。
 - `getUploadedHash`、`getUploadedDurationTicks` 经 `findEntry` 按名字或曾用名找，所以音箱按旧名也播放新文件。
+- `namesVersion` / `getNamesVersion()`、`currentReference(String)`（0.82.3）：替换时文件名变了就加一；把文件的旧名字换成现在的名字（找不到文件时原样返回），给音频方块就地更新用。

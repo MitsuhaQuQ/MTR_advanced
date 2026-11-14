@@ -44,6 +44,20 @@ class DepotAreaHeightsTest {
 	}
 
 	@Test
+	void theCopyPathGenerationWorksOnKnowsWhichDepotEachSidingIsIn() {
+		final Depot lower = depot(1, 40, 60);
+		final Depot upper = depot(2, 90, 110);
+		final Siding below = siding(11, 50);
+		final Siding above = siding(12, 100);
+		final DataCache dataCache = new DataCache(new HashSet<>(), new HashSet<>(), new HashSet<>(Arrays.asList(below, above)), new HashSet<>(), new LinkedHashSet<>(Arrays.asList(lower, upper)), new HashSet<>());
+		dataCache.sync();
+		// 2026-11-15: the copy had none, so a depot planning with another took that one's sidings for its own
+		final DataCache copy = dataCache.copyIdMaps();
+		assertEquals(lower, copy.sidingIdToDepot.get(below.id));
+		assertEquals(upper, copy.sidingIdToDepot.get(above.id));
+	}
+
+	@Test
 	void theHeightsAreSavedSentAndUpdated() throws IOException {
 		final Depot depot = depot(1, 90, 110);
 		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();

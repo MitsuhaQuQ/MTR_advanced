@@ -13,6 +13,7 @@
 - 作用：清空两个表；没有 mixin（声音管理器未实现 `SoundManagerAccess`）时不改游戏列表（广播器自行播放文件）；否则移除注册表中所有 `mtr_audio` 命名空间的声音，再为 `AudioCache.ENTRIES` 中每个有有效声音位置的条目注册一个声音（音频按录音哈希命名，所以同名替换后播放的是新录音而不是游戏缓存的旧音频）。
 
 ### `static ResourceLocation getLocation(String namespace, String fileName)`
+- 0.82.3：先用 `AudioCache.find` 按服务端列表找到这个文件（也认替换前的旧名字），再取它的位置；以前只按现在的名字找，文件被换成别的名字后，记着旧名字的音频方块和报站器一直等不到位置、不出声（哈希那边 `getHash` 本来就认旧名字）。
 - 按上传者命名空间与文件名（不区分大小写）找声音 id，没有返回 null。调用者：`common/src/main/java/mtr/client/AnnouncementPlayer.java:146`、`common/src/main/java/mtr/client/SpeakerPlayback.java:209`。
 
 ### `static boolean isUploadedPath(ResourceLocation path)`

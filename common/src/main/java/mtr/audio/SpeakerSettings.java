@@ -84,6 +84,21 @@ public final class SpeakerSettings {
 		this.intervalSeconds = intervalTenths / 10;
 	}
 
+	/**
+	 * @return the same settings with each clip's sound named anew, or these if none changes (0.82.3: a file replaced by one of
+	 * another name)
+	 */
+	public SpeakerSettings withSounds(java.util.function.UnaryOperator<String> rename) {
+		final List<Clip> renamed = new ArrayList<>();
+		boolean changed = false;
+		for (final Clip clip : clips) {
+			final String sound = rename.apply(clip.sound);
+			changed |= !sound.equals(clip.sound);
+			renamed.add(sound.equals(clip.sound) ? clip : new Clip(sound, clip.gapTenths));
+		}
+		return changed ? new SpeakerSettings(renamed, mode, radius, triggerCenter, triggerRadius, appearance, audienceMask, finishBeforeRepeat, intervalTenths) : this;
+	}
+
 	public static SpeakerSettings defaults(BlockPos position) {
 		return new SpeakerSettings("", Mode.REDSTONE, 24, position, 4, DEFAULT_APPEARANCE);
 	}

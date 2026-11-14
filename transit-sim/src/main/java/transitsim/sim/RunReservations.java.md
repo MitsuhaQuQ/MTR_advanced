@@ -16,6 +16,9 @@
 - `arbiter`（private `Arbiter<UUID>`）。
 - `AGING_MILLIS`（= `Arbiter.AGING_MILLIS`，60 秒）：等待多久后优先于计划更早发车的列车。
 
+### `boolean isBlockingEarlier(long trainId, long beforeMillis, Collection<UUID> rails)` / `List<Long> getBlockedEarlier(...)` / `Set<UUID> getOccupied(long trainId)`（0.82.2）
+包装 `Arbiter` 的同名方法；`rails` 换成轨道键和其方向键（`PathClaims.directionOf`）。
+
 ### `boolean isBlockingOthers(long trainId)`
 上次 resolve 中该列车是否阻碍了别人的申请。调用者：`TrainServer.java:1702`、`TickRunner.java:2583`。
 （源码在此方法前有一段孤立 javadoc "设定列车本 tick 持有的内容，替换之前的"，描述的是 `hold`。）

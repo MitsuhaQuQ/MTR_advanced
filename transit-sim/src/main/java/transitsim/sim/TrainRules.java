@@ -61,7 +61,7 @@ public final class TrainRules {
 		if (service.isDispatchHeld() || service.isStayingOnLine()) return true;
 		final long now = train.getMillis();
 		if (service.getDutyDepartureMillis() > 0 && isWaitingForDeparture(service.getDutyDepartureMillis(), now)) return true;
-		if (service.getTurnBackLeaveMillis() > now && !train.isBlockingOthers()) return true;
+		if (service.getTurnBackLeaveMillis() > now && (!train.isBlockingOthers() || train.yieldsToEarlier())) return true;
 		final RouteTimetable.StopPlan plan = service.getPlanAt(stop);
 		return plan != null && plan.isTimed && isWaitingForDeparture(service.getPlannedMillis(plan.departureMillis), now);
 	}
@@ -161,7 +161,8 @@ public final class TrainRules {
 		final long turnBackLeaveMillis = service.getTurnBackLeaveMillis();
 		// unless another train is waiting for it: then it goes on to wait at the platform (6号线, 2026-11-12: one waited there 5
 		// minutes while the depot's trains due before it queued behind for its rail)
-		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis && !train.isBlockingOthers()) {
+		// but a train due earlier that it keeps from the platform it goes to is let by first (2026-11-15, 6号线 at 三站)
+		if (turnBackLeaveMillis > 0 && currentMillis < turnBackLeaveMillis && (!train.isBlockingOthers() || train.yieldsToEarlier())) {
 			return "turn_back";
 		}
 		final int nextStoppingIndex = state.getNextStoppingIndex();
@@ -333,6 +334,14 @@ public final class TrainRules {
 		 * @return whether the train keeps another train from what it asked for (its runs' bookings), as at the last resolve
 		 */
 		default boolean isBlockingOthers() {
+			return false;
+		}
+
+		/**
+		 * @return whether the train, waiting for its next service on a dead end turn back rail, keeps from its way a train due
+		 * to leave before it that doesn't come into this rail itself: then it lets its way out go and waits on (2026-11-15)
+		 */
+		default boolean yieldsToEarlier() {
 			return false;
 		}
 

@@ -79,6 +79,7 @@
 - `long getMillis()`：时刻表计时的当前时刻。
 - `TrainService<?> getService()`。
 - `default boolean isBlockingOthers()`：上次 resolve 时该列车是否挡住了别人的申请（其运行预订），默认 false。
+- `default boolean yieldsToEarlier()`（0.82.2）：在尽头折返线里等下一班、它订着的出口挡住了一列计划更早、又不会马上经过它所在轨道的车：先放掉出口继续等。默认 false（游戏自己驱动的列车没有这条，由模拟器驱动的列车走组件实现）。`waitsBeforeRequestingRun` 和 `getHoldReason` 的折返线等待（0.69.0 让行）改为：没挡别人、或 `yieldsToEarlier` 时继续在折返线等。
 - `MotionState getState()`、`MotionTrack getTrack()`。
 - `long getStopId(int rail)`：该路径轨道的站台或停车线 id，折返轨为 0。
 - `boolean isContinuousMovement()`、`boolean usesSpeedCurve()`、`SpeedCurves getSpeedCurves()`。

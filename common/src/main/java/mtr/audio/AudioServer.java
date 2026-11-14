@@ -50,6 +50,11 @@ public final class AudioServer implements IPacket {
 
 	// By name key ({@link AnnouncementSound#getNameKey})
 	private static final Map<String, Entry> ENTRIES = new LinkedHashMap<>();
+	/**
+	 * Goes up each time a file takes another name (replaced by one of another name), so speakers update the names they keep
+	 * to the new ones in place ({@link #currentReference}, 0.82.3).
+	 */
+	private static volatile long namesVersion;
 	private static final Map<UUID, Upload> UPLOADS = new HashMap<>();
 	private static final Map<UUID, Deque<Long>> UPLOAD_TIMES = new HashMap<>();
 	private static final Map<UUID, Deque<Sending>> SENDING = new HashMap<>();
@@ -642,6 +647,9 @@ public final class AudioServer implements IPacket {
 			database.replace(nameKey, entry.namespace, entry.name, entry.hash, entry.size, entry.durationMillis, entry.uploader, entry.uploaderName, entry.uploadedAt, entry.soundId, entry.folder, upload.bytes, target.hash, entry.resourceId, renamed ? target.getReference() : null);
 			ENTRIES.remove(oldKey);
 			ENTRIES.put(nameKey, entry);
+			if (renamed) {
+				namesVersion++;
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
 			sendResult(player, upload.requestId, false, TranslatedMessage.encode("gui.mtr.audio_save_failed"));
@@ -719,6 +727,23 @@ public final class AudioServer implements IPacket {
 		final Map<String, Integer> sizes = new HashMap<>();
 		ENTRIES.values().forEach(entry -> sizes.put(entry.hash, entry.size));
 		return sizes.values().stream().mapToLong(size -> size).sum();
+	}
+
+	/**
+	 * @return how many times files took other names since the server started (0.82.3)
+	 */
+	public static long getNamesVersion() {
+		return namesVersion;
+	}
+
+	/**
+	 * @return the name a file is known by now, for a name it has or had before it was replaced by one of another name
+	 * (0.82.3); the reference as it is if there is no such file
+	 */
+	public static String currentReference(String reference) {
+		final String[] name = AnnouncementSound.splitUploaded(reference);
+		final Entry entry = name == null ? null : findEntry(name[0], name[1]);
+		return entry == null ? reference : entry.getReference();
 	}
 
 	public static String getUploadedHash(String reference) {

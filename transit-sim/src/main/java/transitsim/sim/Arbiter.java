@@ -57,6 +57,11 @@ public final class Arbiter<K extends Comparable<K>> {
 	 */
 	private final Set<Long> blocking = new HashSet<>();
 	/**
+	 * The requests each holder kept from a group they asked for at the last resolve, the first group or a later one (2026-11-15,
+	 * {@link #isBlockingEarlier}).
+	 */
+	private final Map<Long, List<Request<K>>> blockedRequests = new HashMap<>();
+	/**
 	 * How many groups of each holder's last request of groups were granted.
 	 */
 	private final Map<Long, Integer> grantedGroups = new HashMap<>();
@@ -278,6 +283,7 @@ public final class Arbiter<K extends Comparable<K>> {
 		grants.clear();
 		grantedGroups.clear();
 		blocking.clear();
+		blockedRequests.clear();
 		firstRequestMillis.keySet().retainAll(requests.keySet());
 		// A deadlock one of whose holders is gone, removed by the host, is over
 		knownDeadlocks.removeIf(deadlock -> deadlock.stream().anyMatch(holder -> !requests.containsKey(holder)));
@@ -307,6 +313,7 @@ public final class Arbiter<K extends Comparable<K>> {
 				int count = 0;
 				for (final List<Claim<K>> group : request.groups) {
 					if (count > 0 && (!canHold(request.holder, group) || isAgainst(group, waitedFor) && !holdsAny(request.holder, waitedFor) || group.stream().anyMatch(claim -> frozen.containsKey(claim.resource) && !frozen.get(claim.resource).contains(request.holder)))) {
+						noteBlocked(request, group);
 						break;
 					}
 					final Map<K, Claim<K>> merged = new LinkedHashMap<>();
@@ -330,6 +337,7 @@ public final class Arbiter<K extends Comparable<K>> {
 			} else {
 				notGranted.add(request);
 				request.claims.forEach(claim -> blocking.addAll(blockers(request.holder, claim)));
+				noteBlocked(request, request.claims);
 				if (currentMillis - firstRequestMillis.get(request.holder) >= AGING_MILLIS) {
 					request.claims.forEach(claim -> waitedFor.putIfAbsent(claim.resource, claim));
 				}
@@ -339,6 +347,51 @@ public final class Arbiter<K extends Comparable<K>> {
 		requests.clear();
 		// Every holder renewing by tick says what it holds again next tick, including what was just granted
 		heldThisTick.clear();
+	}
+
+	private void noteBlocked(Request<K> request, List<Claim<K>> group) {
+		final Set<Long> by = new HashSet<>();
+		group.forEach(claim -> by.addAll(blockers(request.holder, claim)));
+		by.forEach(blocker -> blockedRequests.computeIfAbsent(blocker, key -> new ArrayList<>()).add(request));
+	}
+
+	/**
+	 * @param beforeMillis the time a request has to be planned before to count
+	 * @param unless       resources a request mustn't ask for to count
+	 * @return whether the holder kept from what it asked for, at the last resolve, a holder planned to leave before then
+	 * that doesn't ask for any of those resources (2026-11-15: a train waiting in a dead end with its way out booked lets that
+	 * go for a train due earlier, unless that train comes into the dead end itself)
+	 */
+	/**
+	 * @return the resources an occupant stands on, as the host last said, or none
+	 */
+	public Set<K> getOccupied(long occupant) {
+		final Set<K> resources = occupied.get(occupant);
+		return resources == null ? Collections.emptySet() : Collections.unmodifiableSet(resources);
+	}
+
+	public boolean isBlockingEarlier(long holder, long beforeMillis, Collection<K> unless) {
+		return !getBlockedEarlier(holder, beforeMillis, unless).isEmpty();
+	}
+
+	/**
+	 * @return the holders {@link #isBlockingEarlier} counts, in a fixed order
+	 */
+	public List<Long> getBlockedEarlier(long holder, long beforeMillis, Collection<K> unless) {
+		final Set<Long> holders = new java.util.TreeSet<>();
+		for (final Request<K> request : blockedRequests.getOrDefault(holder, Collections.emptyList())) {
+			if (request.plannedMillis < beforeMillis && !asksFor(request, unless)) {
+				holders.add(request.holder);
+			}
+		}
+		return new ArrayList<>(holders);
+	}
+
+	private static <K> boolean asksFor(Request<K> request, Collection<K> resources) {
+		if (request.claims.stream().anyMatch(claim -> resources.contains(claim.resource))) {
+			return true;
+		}
+		return request.groups != null && request.groups.stream().anyMatch(group -> group.stream().anyMatch(claim -> resources.contains(claim.resource)));
 	}
 
 	/**

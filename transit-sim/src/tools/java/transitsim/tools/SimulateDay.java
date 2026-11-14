@@ -237,6 +237,15 @@ public final class SimulateDay {
 				};
 			}
 		}
+		// --where: each motion event as it happens, with where the rail is (block positions), for following trains whose paths
+		// change on the way (2026-11-15)
+		if (flags.contains("--where")) {
+			simulator.getRunner().addTrainListener((event, train) -> {
+				final List<SimDataset.DataTrack> path = train.getPath();
+				final String where = event.rail >= 0 && event.rail < path.size() ? pos(path.get(event.rail).getStartNode()) + " -> " + pos(path.get(event.rail).getEndNode()) : "-";
+				System.out.println("WHERE " + clock(event.millis) + " " + event.type + " train " + train.id + " rail " + event.rail + " " + where + " route " + train.service.getTripRouteId());
+			});
+		}
 		// --late: each departure from a stop against the plan of the service the train is on then, and the latest ones (0.81.0)
 		final List<String> lateDepartures = new ArrayList<>();
 		final Map<Long, Long> latestByRoute = new TreeMap<>();
@@ -260,6 +269,36 @@ public final class SimulateDay {
 				}
 			});
 		}
+		// --holds@HH:MM:SS: at that time of the day, what the arbiter granted each train, by the rails of its path (2026-11-15)
+		flags.stream().filter(flag -> flag.startsWith("--holds@")).forEach(flag -> {
+			final long at = LocalDateTime.of(day, java.time.LocalTime.parse(flag.substring("--holds@".length()))).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
+			simulator.advanceTo(at);
+			System.out.println("HOLDS at " + clock(at));
+			for (final transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train : simulator.getRunner().getTrains()) {
+				if (!train.isOnRoute()) {
+					continue;
+				}
+				final List<SimDataset.DataTrack> path = train.getPath();
+				final StringBuilder held = new StringBuilder();
+				for (final transitsim.sim.Arbiter.Claim<java.util.UUID> claim : simulator.getRunner().getReservations().getHeldClaims(train.id)) {
+					String where = claim.kind + ":" + claim.resource;
+					for (int i = 0; i < path.size(); i++) {
+						final SimDataset.DataTrack each = path.get(i);
+						if (transitsim.run.PathClaims.directionOf(each.getTrackKey()).equals(claim.resource)) {
+							where = "dir " + pos(each.getStartNode()) + "->" + pos(each.getEndNode());
+							break;
+						}
+						if (transitsim.network.BlockSections.getPieces(each.getTrackKey(), each.getTrackLength(), each.canAccelerate() ? each.getMaxSpeed() : -1, each.getStartNode() < each.getEndNode(), 0, each.getTrackLength()).contains(claim.resource)) {
+							where = "rail " + pos(each.getStartNode()) + "->" + pos(each.getEndNode());
+							break;
+						}
+					}
+					held.append(" | ").append(where);
+				}
+				final int head = train.getHeadRail();
+				System.out.println("HOLDS train " + train.id + " at " + (head >= 0 && head < path.size() ? pos(path.get(head).getStartNode()) + "->" + pos(path.get(head).getEndNode()) : "-") + " speed " + train.getSpeed() + " blocking " + simulator.getRunner().getReservations().isBlockingOthers(train.id) + held);
+			}
+		});
 		final RunInvariants<SimDataset.DataTrack> invariants = check ? new RunInvariants<>(simulator.getRunner()) : null;
 		// --restarts@N: every N seconds of the day, starts a simulator again from where the trains are then, with nothing
 		// granted, as the game does when its paths change or trains are put by timetable, runs it 3 minutes and tells the

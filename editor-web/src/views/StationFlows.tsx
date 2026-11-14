@@ -3,9 +3,11 @@
  * around it in grey, and on each an arrow line flowing the way each line's trains run it, in the line's colour. Lines
  * sharing a track are drawn over each other, their dashes taking turns; the moves of the duties (turning back, changing
  * platforms, out and back) are dotted; a track run both ways has a red glow. For finding the conflicting flows of the
- * duties: click a line in the legend to show it alone.
+ * duties: click a line in the legend to show it alone. The wheel zooms in up to 40 times about the pointer, dragging moves
+ * the drawing, a double click or 复位 shows it whole again; lines and arrows keep their size on screen, so tracks close
+ * together (a turn back siding beside the platforms) come apart (user 2026-11-15).
  */
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { tr } from "../i18n"
 import { stationFlows, type Flow, type FlowNet, type Point } from "../core/stationFlows"
 import { railMidpoint } from "../core/trackSchematic"
@@ -15,6 +17,21 @@ export function StationFlows({ net, stationId, name, onClose, onShowReal }: { ne
   const [only, setOnly] = useState<string | null>(null)
   const [moves, setMoves] = useState(true)
   const view = useMemo(() => stationFlows(net, stationId, radius), [net, stationId, radius])
+  // Zoom and the drawing's point at the middle of the view, null for the middle of the drawing
+  const [zoom, setZoom] = useState(1)
+  const [centre, setCentre] = useState<[number, number] | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const drag = useRef<{ x: number; y: number; centre: [number, number] } | null>(null)
+  useEffect(() => { setZoom(1); setCentre(null) }, [stationId, radius])
+  // Not a React wheel handler: it must be able to stop the panel scrolling
+  const zoomRef = useRef<(factor: number, clientX: number, clientY: number) => void>(() => {})
+  useEffect(() => {
+    const element = svgRef.current
+    if (!element) return
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); zoomRef.current(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY) }
+    element.addEventListener("wheel", onWheel, { passive: false })
+    return () => element.removeEventListener("wheel", onWheel)
+  }, [view])
   const still = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
@@ -25,7 +42,31 @@ export function StationFlows({ net, stationId, name, onClose, onShowReal }: { ne
   const [x0, z0, x1, z1] = view.box
   const pad = 12, width = Math.max(x1 - x0, 20) + pad * 2, height = Math.max(z1 - z0, 20) + pad * 2
   // Sizes in blocks, from how big the drawing is, so lines look the same at any station size
-  const unit = Math.max(width, height) / 420
+  const unit = Math.max(width, height) / 420 / zoom
+  const viewW = width / zoom, viewH = height / zoom
+  const clampCentre = (c: [number, number]): [number, number] => [Math.min(Math.max(c[0], viewW / 2), width - viewW / 2), Math.min(Math.max(c[1], viewH / 2), height - viewH / 2)]
+  const [cx, cy] = clampCentre(centre ?? [width / 2, height / 2])
+  // Drawing units per screen pixel, as preserveAspectRatio meet fits the view in the box
+  const perPixel = () => {
+    const box = svgRef.current?.getBoundingClientRect()
+    return box && box.width > 0 && box.height > 0 ? Math.max(viewW / box.width, viewH / box.height) : 1
+  }
+  const toDrawing = (clientX: number, clientY: number): [number, number] => {
+    const box = svgRef.current?.getBoundingClientRect()
+    if (!box) return [cx, cy]
+    const k = perPixel()
+    return [cx + (clientX - box.left - box.width / 2) * k, cy + (clientY - box.top - box.height / 2) * k]
+  }
+  const zoomAt = (factor: number, clientX: number, clientY: number) => {
+    const next = Math.min(Math.max(zoom * factor, 1), 40)
+    if (next === zoom) return
+    const [px, py] = toDrawing(clientX, clientY)
+    // The point under the pointer stays under it
+    const ratio = zoom / next
+    setZoom(next)
+    setCentre([px - (px - cx) * ratio, py - (py - cy) * ratio])
+  }
+  zoomRef.current = zoomAt
   const shownFlows = view.flows.filter(f => (moves || !f.move) && (!only || f.lineKey === only))
   // The flows on each rail each way, so their dashes take turns
   const groups = new Map<string, Flow[]>()
@@ -44,11 +85,23 @@ export function StationFlows({ net, stationId, name, onClose, onShowReal }: { ne
           </select>
         </label>
         <label className="flex items-center gap-1"><input type="checkbox" checked={moves} onChange={e => setMoves(e.target.checked)} />{tr("运用走行")}</label>
+        <span className="text-dim tabular-nums">{Math.round(zoom * 10) / 10}×</span>
+        <button className="btn h-6" onClick={() => { setZoom(1); setCentre(null) }} disabled={zoom === 1}>{tr("复位")}</button>
         <button className="btn h-6" onClick={onShowReal}>{tr("在实际图上看")}</button>
         <button className="btn btn-ghost h-6 px-1.5" onClick={onClose} aria-label={tr("关闭")}>✕</button>
       </div>
       <div className="relative min-h-0 flex-1">
-        <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={tr("{0} 股道运用图", name)}>
+        <svg ref={svgRef} className={"absolute inset-0 h-full w-full touch-none select-none " + (zoom > 1 ? "cursor-grab active:cursor-grabbing" : "")}
+          viewBox={`${cx - viewW / 2} ${cy - viewH / 2} ${viewW} ${viewH}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={tr("{0} 股道运用图", name)}
+          onPointerDown={e => { if (e.button !== 0) return; drag.current = { x: e.clientX, y: e.clientY, centre: [cx, cy] }; e.currentTarget.setPointerCapture(e.pointerId) }}
+          onPointerMove={e => {
+            const start = drag.current
+            if (!start) return
+            const k = perPixel()
+            setCentre(clampCentre([start.centre[0] - (e.clientX - start.x) * k, start.centre[1] - (e.clientY - start.y) * k]))
+          }}
+          onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }}
+          onDoubleClick={() => { setZoom(1); setCentre(null) }}>
           {view.rails.filter(r => r.both).map(r => <polyline key={"b" + r.rail} points={path(r.points)} fill="none" stroke="#e53935" strokeOpacity={0.28} strokeWidth={unit * 9} strokeLinecap="round" strokeLinejoin="round"><title>{tr("两个方向都有车走")}</title></polyline>)}
           {view.rails.map(r => <polyline key={r.rail} points={path(r.points)} fill="none" stroke="var(--grid-strong)" strokeWidth={unit * (r.kind === 1 ? 5 : 2.5)} strokeLinecap="round" strokeLinejoin="round" />)}
           {[...groups.entries()].map(([key, group]) => {

@@ -1098,6 +1098,7 @@ const I18N = (() => {
 			"{0} 号站台": "Platform {0}",
 			"正线 / 存车线": "Track through / siding",
 			"在实际图上看": "Show on the real map",
+			"复位": "Reset view",
 			"示意图": "Schematic",
 			"实际图": "Real map",
 			"看配线：车站和区间几股道、谁在走": "Track layout: how many tracks at stations and between, and who runs on them",

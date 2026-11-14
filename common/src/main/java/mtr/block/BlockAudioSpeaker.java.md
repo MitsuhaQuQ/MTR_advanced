@@ -68,3 +68,4 @@
 
 ### `private static boolean inside(ServerPlayer, BlockPos center, int radius)` / `private boolean canHear(ServerPlayer)`
 - 区域判定（全方向）；可听判定（半径 + 听众方向掩码，`SpeakerSettings.audibleFrom`）。
+- `TileEntityAudioSpeaker.followRenames()`（0.82.3）：服务端 tick 时，音频文件名表版本（`AudioServer.getNamesVersion`）变了就用 `currentReference` 把各段声音换成新名字，变了才保存并同步（`setChanged`、`syncData`），不重置触发和循环。字段 `namesSeen`。

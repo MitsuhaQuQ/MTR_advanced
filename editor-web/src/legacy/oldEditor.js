@@ -150,13 +150,10 @@ export function createLegacy(env) {
 		const pools = (shortfall.pools || []).filter(pool => pool.uncovered > 0);
 		const main = (shortfall.pools || []).length > 1 && pools.length ? tr("{0}：", shortfall.lines) + pools.map(pool => pool.needed < 0 ? tr("{0} 算不出需要几列，现有 {1} 列，每天 {2} 班没有车", pool.label, pool.available, pool.uncovered) : tr("{0} 跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", pool.label, pool.needed, pool.available, pool.uncovered)).join(tr("；"))
 			: shortfall.needed < 0 ? tr("{0}：运用排不成每周一样，算不出需要几列；现有 {1} 列，每天 {2} 班没有车", shortfall.lines, shortfall.available, shortfall.uncovered) : tr("{0}：跑满需要 {1} 列，现有 {2} 列，每天 {3} 班没有车", shortfall.lines, shortfall.needed, shortfall.available, shortfall.uncovered);
-		// Services no number of trains could run aren't trains short: a way out of the sidings or a turn is missing
-		// A depot reaching the line at more than one station plans no line with no rule saying which station its trains go by
-		// (运用补完 step 2): said as that, not as a way missing
-		const unset = (shortfall.entrancesUnset || []).map(key => key.split("|").slice(1).join("|") || key);
-		const unrunnable = !shortfall.unrunnable ? "" : unset.length
-			? tr("（其中每天 {0} 班没排：车厂接到线路的车站不止一个，{1} 还没有出入库规则指定从哪站进出；在车厂右键「出入库规则…」里加一条）", shortfall.unrunnable, unset.join("、"))
-			: tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable);
+		// Services no number of trains could run aren't trains short: a way out of the sidings or a turn is missing. Lines with
+		// no rule saying which station a depot goes out by are no reason for it since 2026-11-13, as the most convenient is
+		// taken then (told on their own in the sync panel); said so here, they made a rule look not set (2026-11-15)
+		const unrunnable = !shortfall.unrunnable ? "" : tr("（其中每天 {0} 班加多少车都跑不了：存车线出不去、也没有车能折返过去，要查出入库路线或折返）", shortfall.unrunnable);
 		return main + unrunnable + (shortfall.suggested ? tr("，建议加到 {0}", shortfall.suggested) : "");
 	}
 
@@ -1921,7 +1918,12 @@ export function createLegacy(env) {
 					if (wayPick.out) rule.outEntrance = "0";
 					else rule.backEntrance = "0";
 				} else {
+					// No tracks clicked: the station chosen to go out or back by, or none (2026-11-15: the station chosen
+					// was never put in the rule, so a rule set by its station only said nothing)
 					rule[pathKey] = "0";
+					const entrance = wayPick.entrance && wayPick.entrance !== "0" ? wayPick.entrance : "0";
+					if (wayPick.out) rule.outEntrance = entrance;
+					else rule.backEntrance = entrance;
 				}
 			} else {
 				const path = value.paths[target.path];

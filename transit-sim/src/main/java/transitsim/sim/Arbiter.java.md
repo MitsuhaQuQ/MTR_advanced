@@ -51,6 +51,12 @@
 是否有其他持有者持有或有其他占用者站在该资源上。调用者：`RunReservations.java:104`、`:156`。
 （源码中其上方有一段孤立 javadoc "everybody granted something"，属于 `getHolders`。）
 
+### `boolean isBlockingEarlier(long holder, long beforeMillis, Collection<K> unless)` / `List<Long> getBlockedEarlier(...)`（0.82.2）
+上次 resolve 时该持有者挡住的申请里（首组没批，或分组申请中后面某组没批，`noteBlocked` 记在 `blockedRequests`），有没有计划时刻早于 `beforeMillis`、且不申请 `unless` 中任何资源的；`getBlockedEarlier` 列出这些持有者（按 id）。给在尽头折返线里等的车决定要不要先放掉出口（`TickRunner.HeadlessTrain.yieldsToEarlier`）。
+
+### `Set<K> getOccupied(long occupant)`（0.82.2）
+宿主最近一次给出的该占用者实际所在资源，没有为空集。
+
 ### `boolean isBlocking(long holder)`
 该持有者所持有或所在之处是否在上次 resolve 中阻碍了别人的请求。调用者：`RunReservations.java:47`。
 

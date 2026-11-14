@@ -103,6 +103,10 @@ public class DataCache {
 		copy.routeIdMap.putAll(routeIdMap);
 		copy.depotIdMap.putAll(depotIdMap);
 		copy.platformIdToStation.putAll(platformIdToStation);
+		// Which depot each siding is in: without it every siding looked like the depot working's own, so a planning unit of
+		// several depots found the others' sidings' ways out and back by this depot's rules, mostly none (2026-11-15, Q
+		// world: 田端 and 田端高速 both planned by line, and 田端高速's plan had 506 services a day no siding reached)
+		copy.sidingIdToDepot.putAll(sidingIdToDepot);
 		copy.stablingRails = stablingRails;
 		return copy;
 	}

@@ -25,6 +25,8 @@ beforeAll(async () => {
   globalThis.fetch = (async () => new Response("", { status: 503 })) as typeof fetch
   engine = await import("../src/legacy/engine")
   engine.pushData(mockData())
+  // The day the snapshots were taken on, not today's: weekends run the fixture's other table (2026-11-15)
+  engine.legacy.v.state.weekday = 4; engine.legacy.fn.buildServices()
   // The diagram's box at a size, as a browser would lay it out
   const wrap = document.getElementById("canvas-wrap")!
   Object.defineProperty(wrap, "clientWidth", { value: W, configurable: true })

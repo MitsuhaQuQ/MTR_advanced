@@ -40,6 +40,12 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.82.4: depots planning one line together find each other's sidings' ways out and back by the right depot's rules; before, each took the other's sidings for its own, found no way and counted their services as reached by no siding.
+
+0.82.3: the station track use drawing zooms in up to 40 times with the wheel and can be dragged, so turn back sidings beside the platforms can be told apart; 复位 or a double click shows it whole. A depot rule set by choosing only the station to go out or back by keeps that station (it was dropped); the depot hints no longer list internal markers as lines without a rule. Audio speakers and announcers naming an audio file by the name it had before it was replaced play the new file again.
+
+0.82.2: a train waiting in a dead end turn back rail with its way out booked lets it go for a train due earlier that doesn't need that dead end, and books it again once that one is by.
+
 0.82.1: replacing an audio file in the web media library converts WAV and MP3 to Ogg first and holds it to the same size limit as an upload.
 
 0.82.0: the timetable conflict check also tells of services running closer behind each other than trains can, by the block sections and the length and braking of the trains running them, in the timetable screen and on the web page; the times are left as they are.

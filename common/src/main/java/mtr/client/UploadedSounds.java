@@ -64,12 +64,19 @@ public final class UploadedSounds {
 	}
 
 	/**
-	 * @return the sound the game plays a file by, or null if the file has none in the game
+	 * @return the sound the game plays a file by, or null if the file has none in the game. The file is found as the
+	 * server's list has it, also by a name it had before it was replaced by one of another name (0.82.3, 2026-11-15: speakers
+	 * naming the old name stayed silent after their file was replaced, as only the new name was looked for here, while the
+	 * hash was found by the old one)
 	 */
 	public static ResourceLocation getLocation(String namespace, String fileName) {
+		final AudioCache.Entry found = AudioCache.find(namespace, fileName);
+		if (found == null) {
+			return null;
+		}
 		for (final Map.Entry<ResourceLocation, AudioCache.Entry> mapEntry : BY_LOCATION.entrySet()) {
 			final AudioCache.Entry entry = mapEntry.getValue();
-			if (entry.namespace.equals(namespace) && entry.name.equalsIgnoreCase(fileName)) {
+			if (entry == found || entry.namespace.equals(found.namespace) && entry.name.equalsIgnoreCase(found.name)) {
 				return mapEntry.getKey();
 			}
 		}
