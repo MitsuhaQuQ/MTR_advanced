@@ -193,6 +193,22 @@ public final class ClientDriver {
 			net.minecraft.client.gui.screens.ConnectScreen.startConnecting(parent, minecraft, net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), new net.minecraft.client.multiplayer.ServerData("MTM UI tests", address, false), false);
 			return null;
 		}));
+		// A single player world of the saves folder, by its folder name, as the world list's play button does (2026-11-14: a
+		// player's deadlock seen in single player only, whose server pauses)
+		routes.put("/open-world", (body, query) -> Http.onThread(minecraft, () -> {
+			final String world = body.get("world").getAsString();
+			minecraft.createWorldOpenFlows().loadLevel(new net.minecraft.client.gui.screens.TitleScreen(), world);
+			return null;
+		}));
+		// Pauses a single player game as the escape key does ({"pause": true}), or goes on ({"pause": false})
+		routes.put("/pause", (body, query) -> Http.onThread(minecraft, () -> {
+			if (body.get("pause").getAsBoolean()) {
+				minecraft.pauseGame(false);
+			} else {
+				minecraft.setScreen(null);
+			}
+			return minecraft.isPaused();
+		}));
 		routes.put("/quit", (body, query) -> {
 			minecraft.execute(minecraft::stop);
 			return null;

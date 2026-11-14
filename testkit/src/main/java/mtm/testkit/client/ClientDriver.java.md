@@ -78,3 +78,4 @@ MTM_TestKit 的客户端驱动：在客户端开 `Http` 服务（side = `client`
 ### `private static byte[] screenshot(Minecraft, String id)`
 - 作用：截主渲染目标为 PNG；给 `id` 时按 GUI 缩放把该控件矩形裁出来。
 - 异常：编码失败包装为 `IllegalStateException`。
+- `/open-world` `{world}`（2026-11-14）：按存档文件夹名直接打开单人世界（同世界列表的"开始"）。`/pause` `{pause}`：像按 Esc 一样暂停单人游戏，`false` 关掉界面继续；返回是否已暂停。用于复现只在单人模式出现的死锁（单人模式暂停时服务端不走 tick）。
