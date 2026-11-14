@@ -74,7 +74,13 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     else if (path.state === "stale") problems.push({ level: "warn", text: tr("车厂{0}的路径是旧的，线路或轨道改过，要刷新", name) })
     ;(path.detours || []).forEach((detour: any) => problems.push({ level: "warn", text: tr("车厂{0}：从 {1} 到 {2} 要空车走 {3} 格（两个站台只相距 {4} 格），绕远了。在 {1} 的线路上设站前或站后折返（折返线、多站台轮用），或者让下一班从同一个站台发车", name, shortName(detour.from), shortName(detour.to), detour.length, detour.apart) }))
     // Conflicting routes (0.80.0, item A): safe, a train going into a dead end only with its way out, but they hold each other up
-    const conflicts = path.conflicts || []
+    // Passing points with both tracks in one interlocking zone (2026-11-14, user feedback): the trains deadlock there
+    const zones = (path.conflicts || []).filter((conflict: any) => conflict.kind === "zone")
+    if (zones.length) {
+      const places = zones.slice(0, 4).map((zone: any) => `(${zone.x}, ${zone.y}, ${zone.z})`).join("、")
+      problems.push({ level: "err", text: tr("车厂{0}：会让处两股道都刷进了同一个联锁区（{1}）。联锁区要整块锁住，一列车停在一股上、车尾还在联锁区里，另一股也被占着，对向车过不去，两车会互相卡死。联锁色只刷道岔本身，不要刷到列车等着交会的那两股道和站台上", name, places) })
+    }
+    const conflicts = (path.conflicts || []).filter((conflict: any) => conflict.kind !== "zone")
     if (conflicts.length) {
       const lines = conflicts.slice(0, 4).map((conflict: any) => conflict.kind === "turns"
         ? tr("{0} 到 {1} 之间掉头 {2} 次", shortName(conflict.from), shortName(conflict.to), conflict.turns)

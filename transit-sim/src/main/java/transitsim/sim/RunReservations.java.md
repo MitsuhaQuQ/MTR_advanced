@@ -65,6 +65,9 @@
 ### `boolean isHeldByOther(long trainId, List<UUID> rails)`
 是否有其他列车以任意方向持有其中某条轨道，或持有位于这些轨道端点节点处的道岔（联锁区不计）。调用者：`TrainServer.java:1861`。
 
+### `List<Arbiter.Claim<UUID>> getHeldClaims(long trainId)`（2026-11-14）
+仲裁器批给列车的全部声明，查死锁用（`SimulateDay -Pmtr.debugStuck=all`）。
+
 ### `List<Move> getHeld(long trainId)`
 列车持有内容转回 `Move`：双向单线声明展开为两个方向；`TRACK` 声明视为联锁区；`TURNOUT` 为道岔；其他为单线方向。调用者：`TrainServer.java:1094`、`ThroatLocks.java:84`；本类 `isHeldByOther(long, List)`。
 

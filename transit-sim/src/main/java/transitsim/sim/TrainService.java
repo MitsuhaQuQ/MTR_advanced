@@ -160,6 +160,12 @@ public class TrainService<T extends PlanTrack> {
 	private long rehookMillis;
 	private long rehookDayStart;
 	/**
+	 * Out of order with a train standing at the first stop of its next segment, whose duty that train took over (0.81.0): the
+	 * duty this train takes over from it on reaching that stop, which is this rail of its own path; null for none.
+	 */
+	private DutyHandle swapDuty;
+	private int swapAtRail = -1;
+	/**
 	 * The platforms a plan or a dispatcher has the train pass without stopping for now, as the host tells it (D3).
 	 */
 	private Set<Long> skipPlatforms = Collections.emptySet();
@@ -291,10 +297,16 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private static final String KEY_REHOOK = "rehook";
 	/**
+	 * A duty swapped with a train out of order with this one, taken over on reaching a stop (0.81.0): the rail of that stop,
+	 * then the duty as {@link DutyHandle#toLongs}; and that duty's path key.
+	 */
+	private static final String KEY_SWAP = "swap";
+	private static final String KEY_SWAP_PATH = "swap_path";
+	/**
 	 * How many values {@link #write} writes, which hosts count into the size of what they save. Checked by a test, as it was
 	 * once left one short.
 	 */
-	public static final int SAVED_KEYS = 20;
+	public static final int SAVED_KEYS = 22;
 	private static final long MILLIS_PER_TICK = 50;
 	/**
 	 * How early a train aims to reach the first stop, so a small delay on the way doesn't make it late.
@@ -310,6 +322,15 @@ public class TrainService<T extends PlanTrack> {
 	 * How long at most a late train waits at the first stop of a segment for a service it takes over.
 	 */
 	public static final long REHOOK_WAIT_MILLIS = 60 * 60 * 1000;
+	/**
+	 * How much earlier the service of a train behind must be than the one of the train at the stop before they swap their
+	 * duties (0.81.0).
+	 */
+	public static final long SWAP_MIN_GAIN_MILLIS = 30000;
+	/**
+	 * -Dmtr.dutySwap=false runs without trains out of order swapping their duties, to compare (0.81.0).
+	 */
+	private static final boolean DUTY_SWAP = !"false".equals(System.getProperty("mtr.dutySwap"));
 
 	public TrainService(String trainId, Vehicle<T> vehicle, LongSupplier clock) {
 		this.trainId = trainId;
@@ -359,6 +380,9 @@ public class TrainService<T extends PlanTrack> {
 		rehookSegment = rehook.length >= 3 ? (int) rehook[0] : -1;
 		rehookMillis = rehook.length >= 3 ? rehook[1] : 0;
 		rehookDayStart = rehook.length >= 3 ? rehook[2] : 0;
+		final long[] swap = reader.getLongs(KEY_SWAP);
+		swapDuty = swap.length >= 1 + DutyHandle.LONGS ? DutyHandle.fromLongs(swap, 1, transitsim.plan.PathKeyIndex.resolve(reader.getString(KEY_SWAP_PATH, ""))) : null;
+		swapAtRail = swapDuty == null ? -1 : (int) swap[0];
 		// Saved before trains kept their duty, it is read again from the depot when needed
 		dutyLedger = dutySlot >= 0 ? transitsim.plan.DutyLedger.read(reader.getString(KEY_DUTY_DAY, "")) : null;
 		dutyDay = dutyLedger == null ? null : dutyLedger.day();
@@ -411,6 +435,8 @@ public class TrainService<T extends PlanTrack> {
 		}
 		writer.writeLongs(KEY_DISPATCH, dispatchValues);
 		writer.writeLongs(KEY_REHOOK, rehookSegment < 0 ? new long[0] : new long[]{rehookSegment, rehookMillis, rehookDayStart});
+		writer.writeLongs(KEY_SWAP, swapDuty == null ? new long[0] : swapDuty.toLongs(swapAtRail));
+		writer.writeString(KEY_SWAP_PATH, swapDuty == null ? "" : swapDuty.pathKey);
 	}
 
 	/**
@@ -1104,15 +1130,28 @@ public class TrainService<T extends PlanTrack> {
 		turnBackStop = -1;
 		// On a duty the next segment's service is already chosen, and starts at that segment's first stop
 		if (isOnDuty()) {
+			// At the stop where it takes over the duty of a train it was out of order with (0.81.0)
+			if (swapDuty != null && nextStoppingIndex >= swapAtRail) {
+				final DutyHandle handle = swapDuty;
+				swapDuty = null;
+				swapAtRail = -1;
+				if (!takeDuty(handle)) {
+					System.out.println("A train couldn't take over the duty it swapped, as its path is gone, and runs its own: " + trainId);
+				}
+				return;
+			}
 			boolean started = false;
 			while (dutyIndex + 1 < tripPath.dutyStarts.length && nextStoppingIndex >= tripPath.dutyStarts[dutyIndex + 1]) {
 				startDutySegment(dutyIndex + 1);
 				started = true;
 			}
-			if (started) {
-				rehookIfLate();
+			if (swapDuty == null) {
+				if (started) {
+					rehookIfLate();
+				}
+				expectLateIfSo();
+				swapIfOutOfOrder();
 			}
-			expectLateIfSo();
 			return;
 		}
 		// The first stop of a joined loop ends the service the train joined, like the end of any lap
@@ -2049,6 +2088,235 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
+	 * Two trains of a siding out of order for the first stop of their next segments (0.81.0, user 2026-11-14): one stands
+	 * there waiting for its service while one behind it, which can't get past, has an earlier service from there, so it
+	 * would be late by as much and stay late, as in 10号线 where an empty train from the depot followed a stopping one
+	 * (186 s all day) and 2号线's express (325 s). They swap the rest of their duties: the one at the stop takes the other's
+	 * on at once, from there, and the other takes over the first one's when it gets there. Both run on the track they are
+	 * on, so neither moves anywhere it isn't, and both keep to time. Checked when either stops, so it doesn't depend on
+	 * how often the hosts look.
+	 */
+	private void swapIfOutOfOrder() {
+		if (!DUTY_SWAP || depot == null || !canSwap()) {
+			return;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		final List<? extends TrainService<?>> others = depot.getDutyServices();
+		// Standing at the first stop of its segment: the train behind with the earliest service from here
+		if (stopIndex == tripPath.dutyStarts[dutyIndex]) {
+			TrainService<T> best = null;
+			int bestSegment = -1;
+			long bestMillis = 0;
+			for (final TrainService<?> each : others) {
+				@SuppressWarnings("unchecked") final TrainService<T> other = (TrainService<T>) each;
+				final int segment = other.getSegmentAhead();
+				if (segment >= 0 && isSwapPair(this, dutyIndex, other, segment)) {
+					final long millis = other.getSegmentServiceMillis(segment);
+					if (best == null || millis < bestMillis) {
+						best = other;
+						bestSegment = segment;
+						bestMillis = millis;
+					}
+				}
+			}
+			if (best != null) {
+				swap(this, dutyIndex, best, bestSegment);
+			}
+			return;
+		}
+		// On the way to the first stop of its next segment: a train standing there with a later service
+		final int segment = getSegmentAhead();
+		if (segment < 0) {
+			return;
+		}
+		for (final TrainService<?> each : others) {
+			@SuppressWarnings("unchecked") final TrainService<T> other = (TrainService<T>) each;
+			if (other != this && other.isOnDuty() && other.dutyIndex > 0 && other.vehicle.getNextStoppingIndex() == other.tripPath.dutyStarts[other.dutyIndex] && isSwapPair(other, other.dutyIndex, this, segment)) {
+				swap(other, other.dutyIndex, this, segment);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * @return the segment whose first stop the train is on its way to, or -1
+	 */
+	private int getSegmentAhead() {
+		if (!isOnDuty() || tripPath.dutyStarts == null) {
+			return -1;
+		}
+		final int stopIndex = vehicle.getNextStoppingIndex();
+		if (dutyIndex < tripPath.dutyStarts.length && stopIndex <= tripPath.dutyStarts[dutyIndex] && (dutyIndex == 0 || stopIndex < tripPath.dutyStarts[dutyIndex])) {
+			// Still on the way out to the first stop of the duty
+			return dutyIndex == 0 ? 0 : -1;
+		}
+		return dutyIndex + 1 < tripPath.dutyStarts.length ? dutyIndex + 1 : -1;
+	}
+
+	/**
+	 * @return when the service of a segment of the duty is due, as taken over late if it was
+	 */
+	private long getSegmentServiceMillis(int segment) {
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (segment == rehookSegment && dutyDayStart == rehookDayStart) {
+			return rehookMillis;
+		}
+		return segment < segments.size() ? DutyShapes.getServiceMillis(dutyDayStart, segments.get(segment).service) : 0;
+	}
+
+	/**
+	 * @return whether the train may swap its duty: on its usual path (paths are kept by the duty's shape, so another duty of the
+	 * same shape has the same key), not handing over, ordered about or swapping already
+	 */
+	private boolean canSwap() {
+		if (!isOnDuty() || swapDuty != null || takeover || hasDispatch() || tripPath.staysOnLine && isStayingOnLine() || tripPath.dutyStarts == null || tripPaths.get(tripPathKey) == null) {
+			return false;
+		}
+		return !TripPath.isChangedKey(tripPathKey) && !TripPath.isReturnKey(tripPathKey);
+	}
+
+	/**
+	 * @return whether a train standing at the first stop of its segment and one behind on the way to the same stop for its
+	 * segment are out of order and can swap: the same siding and day, both starting their routes there, the one behind due
+	 * at least {@link #SWAP_MIN_GAIN_MILLIS} earlier, and both coming to that stop along the same rail
+	 */
+	private static <T extends PlanTrack> boolean isSwapPair(TrainService<T> standing, int standingSegment, TrainService<T> behind, int behindSegment) {
+		if (standing == behind || standing.depot != behind.depot || standing.sidingId != behind.sidingId || standing.dutyDayStart != behind.dutyDayStart || !standing.canSwap() || !behind.canSwap()) {
+			return false;
+		}
+		final int standingRail = standing.tripPath.dutyStarts[standingSegment];
+		final int behindRail = behind.tripPath.dutyStarts[behindSegment];
+		if (behind.vehicle.getNextStoppingIndex() > behindRail || standingRail < 1 || behindRail < 1) {
+			return false;
+		}
+		final List<T> standingPath = standing.tripPath.path;
+		final List<T> behindPath = behind.tripPath.path;
+		if (standingPath.get(standingRail).getStopId() == 0 || standingPath.get(standingRail).getStopId() != behindPath.get(behindRail).getStopId() || !standingPath.get(standingRail).getTrackKey().equals(behindPath.get(behindRail).getTrackKey()) || !standingPath.get(standingRail - 1).getTrackKey().equals(behindPath.get(behindRail - 1).getTrackKey())) {
+			return false;
+		}
+		final List<DepotDuties.Segment> standingSegments = standing.getDutySegments();
+		final List<DepotDuties.Segment> behindSegments = behind.getDutySegments();
+		if (standingSegment >= standingSegments.size() || behindSegment >= behindSegments.size() || standingSegments.get(standingSegment).fromStop != 0 || behindSegments.get(behindSegment).fromStop != 0) {
+			return false;
+		}
+		if (behind.getSegmentServiceMillis(behindSegment) + SWAP_MIN_GAIN_MILLIS > standing.getSegmentServiceMillis(standingSegment)) {
+			return false;
+		}
+		// Each has the other's path to take over
+		return standing.tripPaths.get(behind.tripPathKey) != null && behind.tripPaths.get(standing.tripPathKey) != null;
+	}
+
+	private static <T extends PlanTrack> void swap(TrainService<T> standing, int standingSegment, TrainService<T> behind, int behindSegment) {
+		final DutyHandle standingDuty = standing.getDutyHandle(standingSegment);
+		final DutyHandle behindDuty = behind.getDutyHandle(behindSegment);
+		final int behindRail = behind.tripPath.dutyStarts[behindSegment];
+		System.out.println("Trains out of order for a stop swap the rest of their duties: " + standing.trainId + " (slot " + standingDuty.slot + ", rail " + standingDuty.rail + ", service " + standing.getSegmentServiceMillis(standingSegment) + ") takes on the duty of " + behind.trainId + " (slot " + behindDuty.slot + ", rail " + behindRail + " ahead of " + behind.vehicle.getNextStoppingIndex() + ", service " + behind.getSegmentServiceMillis(behindSegment) + ") from its segment " + behindSegment + " there now, and the other way round from segment " + standingSegment + " on getting there; now " + standing.clock.getAsLong());
+		standing.depot.expectLate(standing.trainId, 0, 0, 0);
+		behind.depot.expectLate(behind.trainId, 0, 0, 0);
+		if (!standing.takeDuty(behindDuty)) {
+			return;
+		}
+		behind.swapDuty = standingDuty;
+		behind.swapAtRail = behindRail;
+	}
+
+	private DutyHandle getDutyHandle(int segment) {
+		return new DutyHandle(dutySlot, dutySidingId, dutyId, dutyDayStart, getDutyDay(), getDutyLedger(), segment, tripPath.dutyStarts[segment], rehookSegment, rehookMillis, rehookDayStart, tripPathKey);
+	}
+
+	/**
+	 * Puts the train on another train's duty at the first stop of one of its segments, where the train is.
+	 *
+	 * @return false if its path isn't there any more, when nothing changes
+	 */
+	private boolean takeDuty(DutyHandle handle) {
+		final TripPath<T> path = tripPaths.get(handle.pathKey);
+		if (path == null || path.dutyStarts == null || handle.segment >= path.dutyStarts.length) {
+			return false;
+		}
+		dutySlot = handle.slot;
+		dutySidingId = handle.dutySidingId;
+		dutyId = handle.dutyId;
+		dutyDayStart = handle.dayStart;
+		dutyDay = handle.day;
+		dutyLedger = handle.ledger;
+		rehookSegment = handle.rehookSegment;
+		rehookMillis = handle.rehookMillis;
+		rehookDayStart = handle.rehookDayStart;
+		returnChosenStop = -1;
+		handOverChosenStop = -1;
+		skipChosenStop = -1;
+		turnChosenStop = -1;
+		isLeavingForDuty = false;
+		tripPath = path;
+		tripPathKey = path.key;
+		stopTimes = path.stopTimes;
+		tripRoutes.clear();
+		vehicle.changePath(path, handle.rail);
+		// The segment before it first, as when the train comes to that stop on the duty, so the stop's plan is read as then
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (handle.segment > 0 && handle.segment - 1 < segments.size()) {
+			final DepotDuties.Segment before = segments.get(handle.segment - 1);
+			dutyIndex = handle.segment - 1;
+			tripRouteId = before.routeId;
+			tripMillis = getSegmentServiceMillis(handle.segment - 1);
+		}
+		startDutySegment(handle.segment);
+		return true;
+	}
+
+	/**
+	 * A train's duty from one of its segments on, to hand to another train (0.81.0).
+	 */
+	private static final class DutyHandle {
+
+		private static final int LONGS = 9;
+
+		private final int slot;
+		private final long dutySidingId;
+		private final long dutyId;
+		private final long dayStart;
+		/**
+		 * The duty as the train had it, or null when read back from a save, when it is read again from the depot by its number.
+		 */
+		private final DepotDuties.DayDuty day;
+		private final transitsim.plan.DutyLedger.Entry ledger;
+		private final int segment;
+		private final int rail;
+		private final int rehookSegment;
+		private final long rehookMillis;
+		private final long rehookDayStart;
+		private final String pathKey;
+
+		private DutyHandle(int slot, long dutySidingId, long dutyId, long dayStart, DepotDuties.DayDuty day, transitsim.plan.DutyLedger.Entry ledger, int segment, int rail, int rehookSegment, long rehookMillis, long rehookDayStart, String pathKey) {
+			this.slot = slot;
+			this.dutySidingId = dutySidingId;
+			this.dutyId = dutyId;
+			this.dayStart = dayStart;
+			this.day = day;
+			this.ledger = ledger;
+			this.segment = segment;
+			this.rail = rail;
+			this.rehookSegment = rehookSegment;
+			this.rehookMillis = rehookMillis;
+			this.rehookDayStart = rehookDayStart;
+			this.pathKey = pathKey;
+		}
+
+		private long serviceMillis(TrainService<?> train) {
+			return train.getSegmentServiceMillis(segment);
+		}
+
+		private long[] toLongs(int atRail) {
+			return new long[]{atRail, slot, dutySidingId, dutyId, dayStart, segment, rail, rehookSegment, rehookMillis, rehookDayStart};
+		}
+
+		private static DutyHandle fromLongs(long[] values, int offset, String pathKey) {
+			return new DutyHandle((int) values[offset], values[offset + 1], values[offset + 2], values[offset + 3], null, null, (int) values[offset + 4], (int) values[offset + 5], (int) values[offset + 6], values[offset + 7], values[offset + 8], pathKey);
+		}
+	}
+
+	/**
 	 * At a stop on its duty, a train more than {@link #LATE_REHOOK_MILLIS} late tells the depot it isn't expected to run its
 	 * next segment's service on time, which a train ahead of it may then take over; on time again, it takes that back.
 	 */
@@ -2867,6 +3135,14 @@ public class TrainService<T extends PlanTrack> {
 		 */
 		default int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<java.util.UUID> affected) {
 			return TAKEOVER_NO_SPARE;
+		}
+
+		/**
+		 * @return the services of the depot's trains out on the line, in a fixed order, for trains out of order to swap their
+		 * duties (0.81.0)
+		 */
+		default List<? extends TrainService<?>> getDutyServices() {
+			return Collections.emptyList();
 		}
 	}
 }

@@ -313,7 +313,15 @@ public final class EditorData {
 			final JsonArray conflictsArray = new JsonArray();
 			depot.clientConflicts.forEach(conflict -> {
 				final String[] parts = conflict.split(" ");
-				if (parts.length >= 4) {
+				// A passing point with both tracks in one interlocking zone (2026-11-14): where the tracks part
+				if (parts.length >= 4 && parts[0].equals("zone")) {
+					final JsonObject conflictObject = new JsonObject();
+					conflictObject.addProperty("kind", "zone");
+					conflictObject.addProperty("x", Integer.parseInt(parts[1]));
+					conflictObject.addProperty("y", Integer.parseInt(parts[2]));
+					conflictObject.addProperty("z", Integer.parseInt(parts[3]));
+					conflictsArray.add(conflictObject);
+				} else if (parts.length >= 4) {
 					final JsonObject conflictObject = new JsonObject();
 					conflictObject.addProperty("kind", parts[0]);
 					conflictObject.addProperty("from", platformLabel(Long.parseLong(parts[1])));

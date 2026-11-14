@@ -75,6 +75,20 @@ public final class SimulateDay {
 			System.out.println("UNREADABLE simulation data, saved by another version: " + e);
 			return;
 		}
+		// --meetings lists the passing points of the sidings' paths with both tracks in one interlocking zone (2026-11-14)
+		if (flags.contains("--meetings")) {
+			final Map<java.util.UUID, Long> zones = new HashMap<>();
+			for (int i = 0; i < dataset.signalBlocks.size(); i++) {
+				if (i < dataset.interlockBlocks.size() && dataset.interlockBlocks.get(i)) {
+					final long zone = i + 1;
+					dataset.signalBlocks.get(i).forEach(rail -> zones.putIfAbsent(rail, zone));
+				}
+			}
+			final List<List<SimDataset.DataTrack>> paths = new ArrayList<>();
+			dataset.sidings.forEach(siding -> siding.tripPaths.forEach(tripPath -> paths.add(tripPath.path)));
+			transitsim.plan.MeetingZones.find(paths, zones::get).forEach(finding -> System.out.println("MEETING zone " + finding.zone + " where " + pos(finding.from.getEndNode()) + " parts: from " + pos(finding.from.getStartNode()) + ", to " + pos(finding.to.getEndNode())));
+			System.out.println("MEETING checked " + paths.size() + " paths, " + zones.size() + " rails in interlocking zones");
+		}
 		// -Dmtr.noLinePools=true runs without trains going back to other depots of their line, to compare
 		if (Boolean.getBoolean("mtr.noLinePools")) {
 			dataset.sidings.forEach(siding -> siding.linePool = "");
@@ -174,6 +188,29 @@ public final class SimulateDay {
 				};
 			}
 		}
+		// --late: each departure from a stop against the plan of the service the train is on then, and the latest ones (0.81.0)
+		final List<String> lateDepartures = new ArrayList<>();
+		final Map<Long, Long> latestByRoute = new TreeMap<>();
+		if (flags.contains("--late")) {
+			simulator.getRunner().addTrainListener((event, train) -> {
+				if (event.type != transitsim.motion.MotionEvent.Type.DEPARTED || event.rail < 0 || event.rail >= train.getPath().size()) {
+					return;
+				}
+				final SimDataset.DataTrack track = train.getPath().get(event.rail);
+				if (track.getStopId() == 0 || track.getDwellTime() <= 0 || track.isSidingTrack()) {
+					return;
+				}
+				final transitsim.plan.RouteTimetable.StopPlan plan = train.service.getPlanAt(event.rail);
+				if (plan == null) {
+					return;
+				}
+				final long late = event.millis - train.service.getPlannedMillis(plan.departureMillis);
+				latestByRoute.merge(train.service.getTripRouteId(), late, Math::max);
+				if (late > 60000) {
+					lateDepartures.add(clock(event.millis) + " train " + train.id + " route " + train.service.getTripRouteId() + " rail " + event.rail + " stop " + track.getStopId() + " +" + late / 1000 + " s");
+				}
+			});
+		}
 		final RunInvariants<SimDataset.DataTrack> invariants = check ? new RunInvariants<>(simulator.getRunner()) : null;
 		if (invariants == null) {
 			simulator.advanceTo(dayStart + hours * HOUR);
@@ -184,6 +221,10 @@ public final class SimulateDay {
 			}
 		}
 		final long runEnd = System.nanoTime();
+		if (flags.contains("--late")) {
+			latestByRoute.forEach((routeId, late) -> System.out.println("LATE route " + routeId + " at most +" + late / 1000 + " s"));
+			lateDepartures.stream().limit(40).forEach(line -> System.out.println("LATE " + line));
+		}
 
 		final List<SimEvent> events = simulator.events(0);
 		final Map<SimEvent.Kind, Integer> kinds = new TreeMap<>();
@@ -270,11 +311,33 @@ public final class SimulateDay {
 				System.out.printf("  route %d, duty %d of siding %d%n", train.service.getTripRouteId(), train.service.getDutySlot(), train.getSidingId());
 				// What it waits for at a stop or a turn back rail: its duty's departure, when to leave the rail for its next segment
 				System.out.printf("  duty departure %s, leave turn back rail %s, now %s%n", clock(train.service.getDutyDepartureMillis()), clock(train.service.getTurnBackLeaveMillis()), clock(train.getMillis()));
+				// =all also gives what the arbiter granted it, each by the rail of its path it is on, or the kind of resource
+				if (stuckAll) {
+					final StringBuilder held = new StringBuilder("  holds");
+					for (final transitsim.sim.Arbiter.Claim<java.util.UUID> claim : simulator.getRunner().getReservations().getHeldClaims(train.id)) {
+						String where = claim.kind + ":" + claim.resource + (claim.way != 0 ? "/" + claim.way : "");
+						for (int i = 0; i < path.size(); i++) {
+							final SimDataset.DataTrack each = path.get(i);
+							if (transitsim.run.PathClaims.directionOf(each.getTrackKey()).equals(claim.resource)) {
+								where = "dir@" + i + (claim.way > 0 ? "+" : claim.way < 0 ? "-" : "both");
+								break;
+							}
+							if (transitsim.network.BlockSections.getPieces(each.getTrackKey(), each.getTrackLength(), each.canAccelerate() ? each.getMaxSpeed() : -1, each.getStartNode() < each.getEndNode(), 0, each.getTrackLength()).contains(claim.resource)) {
+								where = "rail@" + i;
+								break;
+							}
+						}
+						held.append(' ').append(where);
+					}
+					System.out.println(held);
+				}
 				// =all also gives the way it came and goes, a few rails each side, with the stops marked
 				if (stuckAll) {
 					for (int i = Math.max(0, head - 14); i <= Math.min(path.size() - 1, head + 6); i++) {
 						final SimDataset.DataTrack each = path.get(i);
-						System.out.printf("    %s%d %s -> %s%s%n", i == head ? "*" : " ", i, pos(each.getStartNode()), pos(each.getEndNode()), each.getStopId() != 0 ? " stop " + each.getStopId() + " dwell " + each.getDwellTime() : each.getDwellTime() > 0 ? " turn, dwell " + each.getDwellTime() : "");
+						// The painted signal block the rail is in, by the first of its units, or - for none
+						final java.util.List<java.util.UUID> block = simulator.getRunner().getBlockSections().getSection(each.getTrackKey());
+						System.out.printf("    %s%d %s -> %s%s%s%s%n", i == head ? "*" : " ", i, pos(each.getStartNode()), pos(each.getEndNode()), each.getStopId() != 0 ? " stop " + each.getStopId() + " dwell " + each.getDwellTime() : each.getDwellTime() > 0 ? " turn, dwell " + each.getDwellTime() : "", block == null ? "" : " block " + block.get(0).toString().substring(0, 8) + "/" + block.size(), each.isTwoWay() ? " two-way " + each.getConvention() : " one-way");
 					}
 				}
 				System.out.printf("stuck %d head rail %d/%d len %.0f speed %.2f accel %b pieces %d progress %.1f own %.1f nextBlocked %b nextLen %.0f nextPieces %d nextPlatform %b blockedRail %d nextStop %d%n",

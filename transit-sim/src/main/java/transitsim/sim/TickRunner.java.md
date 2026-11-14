@@ -58,7 +58,7 @@
 当前时刻。调用者：`EventSimulator.java:112`、`RunInvariants`。
 
 ### `SidingRun addSiding(long sidingId, DepotBoard depot, Siding<T> siding)`
-- 作用：添加车厂的一条停车线（下一 tick 生成第一列车）；重置节点邻接与闭塞分区；重建车厂列表；给车厂设置回库选择（指定车厂时 `chooseOrderedReturnSiding`，否则 `chooseReturnSiding`）与交接回调（转给 `dispatcher.requestTakeover`）。
+- 作用：添加车厂的一条停车线（下一 tick 生成第一列车）；重置节点邻接与闭塞分区；重建车厂列表；给车厂设置回库选择（指定车厂时 `chooseOrderedReturnSiding`，否则 `chooseReturnSiding`）与交接回调（转给 `dispatcher.requestTakeover`），以及车厂在线上列车的列表（`getDutyServices`：该车厂各停车线上 `isOnRoute` 的列车按 id 排序后的服务，0.81.0 顺序颠倒的车互换运用用）。
 - 调用者：`SimDataset.java:461`、`ScenarioLine.java:67`。
 
 ### `private Map<String, TripPath<T>> getSidingPaths(long sidingId)` / `private PathVariants<T> getSidingVariants(long sidingId)` / `private Object getSidingPool(long sidingId)` / `private Object getPoolKey(SidingRun)`
@@ -88,7 +88,7 @@
 ### `RunReservations getReservations()`
 调用者：`EventSimulator.java:354`。
 
-### `private transitsim.network.BlockSections getBlockSections()`
+### `public transitsim.network.BlockSections getBlockSections()`（2026-11-14 起 public，`SimulateDay` 查死锁时标出每条轨道所在的涂色分区）
 懒计算闭塞分区：收集所有停车线常用路径与服务路径的轨道（长度与切分速度 `cutSpeed`），`new BlockSections(signalBlockList, …)`。（源码在其上方有一段孤立 javadoc，描述 `shareReservations`。）
 
 ### `private static float cutSpeed(RunTrack track)`

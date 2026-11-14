@@ -60,6 +60,8 @@ tasks.register("simulateDay", JavaExec) {
 	// -Pmtr.deadEndExits=false runs without a train taking its way out with a dead end (0.80.0), to compare
 	systemProperty "mtr.deadEndExits", project.findProperty("mtr.deadEndExits") ?: "true"
 	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
+	// -Pmtr.dutySwap=false runs without trains out of order swapping their duties (0.81.0), to compare
+	systemProperty "mtr.dutySwap", project.findProperty("mtr.dutySwap") ?: "true"
 	// -Pmtr.simRoutes=id,id simulates only those routes' part of the world; -Pmtr.simRoutes=scopes lists its sizes
 	systemProperty "mtr.simRoutes", project.findProperty("mtr.simRoutes") ?: ""
 	// -Pmtr.noLinePools=true runs without trains going back to other depots of their line

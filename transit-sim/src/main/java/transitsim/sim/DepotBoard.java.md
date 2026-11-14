@@ -24,6 +24,7 @@
 - `depotId`（long）：构造它的数据中的车厂 id，或 0。
 - `recorder`（private List<Long>）：列车本 tick 预订服务时同时写入的记录列表。
 - `takeoverRequests`（public `TakeoverRequests`）：处理列车请求备用车接管运用（D5）的回调，null 为无。
+- `dutyServices`（public `Supplier`，0.81.0）：车厂在线上列车的服务，由 `TickRunner` 设置，null 为无；`getDutyServices` 覆盖 `Board` 的默认实现委托它。
 
 ### `void shareServicesWith(DepotBoard other)`
 两车厂共同运行某线路，一方列车占用的服务另一方不再占用：互相加入 `peers` 并让 dispatcher 共享。对自身或已是同伴时不做事。调用者：`SimDataset.java:391`、`SharedServicesTest.java:49`。

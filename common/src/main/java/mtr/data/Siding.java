@@ -185,6 +185,14 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	public List<MotionEvent> motionEvents;
 	private final Map<Long, Map<Long, Float>> platformTimes = new HashMap<>();
 	private final Set<TrainServer> trains = new HashSet<>();
+
+	/**
+	 * Adds the services of the siding's trains out on the line, by train id, for trains out of order to swap their duties
+	 * (0.81.0).
+	 */
+	public void addServicesOnLine(List<transitsim.sim.TrainService<?>> services) {
+		trains.stream().filter(TrainServer::getIsOnRoute).sorted(java.util.Comparator.comparingLong(train -> train.id)).forEach(train -> services.add(train.getService()));
+	}
 	/**
 	 * The paths of services leaving the usual path for another route, by {@link TripTail#getKey()}.
 	 */

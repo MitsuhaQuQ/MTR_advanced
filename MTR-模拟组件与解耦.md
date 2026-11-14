@@ -1431,6 +1431,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 尽头折返线兜底（0.80.0）：规则在组件 `TickRunner.runLayerTick`（`DEAD_END_EXITS`、`isDeadEndTurn`）和 `run.Authority`（`wholeUntil` 整组申请），游戏里按运用跑的车由组件驱动，宿主不另写；冲突进路的判断在组件 `transitsim.plan.OpposingMoves`（纯计算），游戏 `Siding`/`Depot` 只取路径、汇总、发包和写日志，网页只显示。车站股道运用图（同版本）只在游戏侧和网页：存车线取运用路径走过的轨道，网页按线路路径分出载客运行和运用走行，不涉及组件规则。
 
+终点互换运用（0.81.0）在组件 `TrainService`（`swapIfOutOfOrder`、`takeDuty`、`DutyHandle`），两个宿主只给出车厂在线列车（`Board.getDutyServices`）；存档键 `swap`、`swap_path` 随服务字节走，游戏不另存。联锁区交会提示（0.81.0）的判定在组件 `transitsim.plan.MeetingZones`，游戏 `Depot` 只负责交给它路径和联锁区表、打日志、发给网页。
+
 网页编辑冲突提示（0.80.2）只在游戏客户端（`EditorActions`）和网页（`draft.ts`、`sync.ts`），不涉及组件。
 
 逆向出入库路的长度和跨站（0.80.1）：判定在组件 `LineDepotWays.againstLength` / `againstSpans`（只看出入库路的步骤和线路各路线的方向，不涉及运行规则），游戏 `RoutePaths` 只调用、打日志、把结果带给网页；出库候选车站限制为停车线的入口站是游戏侧 `RoutePaths` 的选择，组件 `planOut` / `planBack` 不变。

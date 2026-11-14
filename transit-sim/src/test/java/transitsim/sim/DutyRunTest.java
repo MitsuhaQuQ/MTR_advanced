@@ -1486,6 +1486,115 @@ class DutyRunTest {
 		return trains;
 	}
 
+	/**
+	 * Two duties both on route 1, then route 2 from rail 4: the first train runs route 1 first but route 2 later, so at
+	 * rail 4 it stands waiting while the second, behind it, is due there earlier (0.81.0).
+	 */
+	private FakeTrain[] twoOutOfOrderDuties(int secondRoute2Minutes) {
+		setSlots(
+				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + 40 * MINUTE), 0, -1)),
+				day(false, -1, new DepotDuties.Segment(1, (int) (8 * HOUR + 5 * MINUTE), 0, -1), new DepotDuties.Segment(2, (int) (8 * HOUR + secondRoute2Minutes * MINUTE), 0, -1))
+		);
+		final FakeTrain[] trains = new FakeTrain[2];
+		for (int slot = 0; slot < 2; slot++) {
+			final List<TestTrack> path = makePath(0, 1, 2, 3, 4, 5, 0);
+			final TripPath<TestTrack> tripPath = addPath(slot, 0, new int[]{1, 4}, path, stop(1, 1, 0), stop(2, 2, 2), stop(3, 3, 4), stop(4, 4, 20), stop(5, 5, 22));
+			trains[slot] = new FakeTrain(path, "train" + slot);
+			trains[slot].service.setSiding(SIDING_ID);
+			trains[slot].service.setNetwork(depot, routes::get, null);
+			trains[slot].service.setStopTimes(new StopTimes(), tripPaths, TurnBacks.NONE);
+			now = MONDAY + 7 * HOUR + 58 * MINUTE + slot * 5 * MINUTE;
+			trains[slot].service.deployDuty(slot, MONDAY, tripPath);
+			depot.onLine.add(trains[slot].service);
+		}
+		return trains;
+	}
+
+	@Test
+	void aTrainStandingForALaterServiceSwapsDutiesWithOneBehindDueEarlier() {
+		final FakeTrain[] trains = twoOutOfOrderDuties(20);
+		// The second is on its way along route 1, behind the first
+		trains[1].nextStoppingIndex = 2;
+		// The first gets to rail 4 at 08:12, where its route 2 service is at 08:40 and the second's at 08:20
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 12 * MINUTE;
+		trains[0].service.onStopReached();
+		assertEquals(1, trains[0].service.getDutySlot());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, trains[0].service.getTripMillis());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE + 10 * SECOND, trains[0].service.getDutyDepartureMillis());
+		assertEquals(4, trains[0].nextStoppingIndex);
+		// The second keeps its own until it gets there, then takes the first's 08:40 on
+		assertEquals(1, trains[1].service.getDutySlot());
+		trains[1].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 22 * MINUTE;
+		trains[1].service.onStopReached();
+		assertEquals(0, trains[1].service.getDutySlot());
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, trains[1].service.getTripMillis());
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE + 10 * SECOND, trains[1].service.getDutyDepartureMillis());
+	}
+
+	@Test
+	void aTrainOnItsWayFindsOneStandingForALaterServiceAndTheySwap() {
+		final FakeTrain[] trains = twoOutOfOrderDuties(20);
+		depot.onLine.remove(trains[1].service);
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 12 * MINUTE;
+		trains[0].service.onStopReached();
+		assertEquals(0, trains[0].service.getDutySlot());
+		// The second comes out and stops on its way: the first, still standing there, swaps with it
+		depot.onLine.add(trains[1].service);
+		trains[1].nextStoppingIndex = 2;
+		now = MONDAY + 8 * HOUR + 13 * MINUTE;
+		trains[1].service.onStopReached();
+		assertEquals(1, trains[0].service.getDutySlot());
+		assertEquals(MONDAY + 8 * HOUR + 20 * MINUTE, trains[0].service.getTripMillis());
+		trains[1].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 22 * MINUTE;
+		trains[1].service.onStopReached();
+		assertEquals(0, trains[1].service.getDutySlot());
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, trains[1].service.getTripMillis());
+	}
+
+	@Test
+	void trainsInOrderOrHardlySoKeepTheirDuties() {
+		// The one behind due later, then due only 20 s earlier: no swap
+		for (final int minutes : new int[]{50, 40}) {
+			depot.onLine.clear();
+			final FakeTrain[] trains = twoOutOfOrderDuties(minutes);
+			trains[1].nextStoppingIndex = 2;
+			trains[0].nextStoppingIndex = 4;
+			now = MONDAY + 8 * HOUR + 12 * MINUTE;
+			trains[0].service.onStopReached();
+			assertEquals(0, trains[0].service.getDutySlot());
+			assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, trains[0].service.getTripMillis());
+		}
+	}
+
+	@Test
+	void aSwapWaitingForTheTrainBehindIsKeptThroughARestart() throws Exception {
+		final FakeTrain[] trains = twoOutOfOrderDuties(20);
+		trains[1].nextStoppingIndex = 2;
+		trains[0].nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 12 * MINUTE;
+		trains[0].service.onStopReached();
+
+		final transitsim.io.BinaryKeyed.Writer values = new transitsim.io.BinaryKeyed.Writer();
+		trains[1].service.write(values);
+		final transitsim.io.ByteArrayBinary.Writer writer = new transitsim.io.ByteArrayBinary.Writer();
+		values.writeTo(writer);
+		final FakeTrain restored = new FakeTrain(trains[1].path, "train1");
+		restored.service.setSiding(SIDING_ID);
+		restored.service.setNetwork(depot, routes::get, null);
+		restored.service.setStopTimes(new StopTimes(), tripPaths, TurnBacks.NONE);
+		restored.service.read(new transitsim.io.BinaryKeyed.Reader(new transitsim.io.ByteArrayBinary.Reader(writer.toBytes())));
+		assertTrue(restored.service.restoreTripPath(tripPaths));
+		restored.nextStoppingIndex = 4;
+		now = MONDAY + 8 * HOUR + 22 * MINUTE;
+		restored.service.onStopReached();
+		assertEquals(0, restored.service.getDutySlot());
+		assertEquals(MONDAY + 8 * HOUR + 40 * MINUTE, restored.service.getTripMillis());
+	}
+
 	@Test
 	void aLateTrainWithNoFreeServiceRunsItsOwnLate() {
 		final FakeTrain[] trains = twoLateDuties();
@@ -1924,6 +2033,15 @@ class DutyRunTest {
 	private class DutyDepot implements TrainService.Board {
 
 		final DepotDispatcher dispatcher = new DepotDispatcher();
+		/**
+		 * The services of the trains on the line, for trains out of order to swap their duties (0.81.0).
+		 */
+		final List<TrainService<?>> onLine = new ArrayList<>();
+
+		@Override
+		public List<? extends TrainService<?>> getDutyServices() {
+			return onLine;
+		}
 
 		@Override
 		public int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<UUID> affected) {

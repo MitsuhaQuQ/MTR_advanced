@@ -176,6 +176,13 @@ public final class RunReservations {
 	/**
 	 * @return the rails a train holds, with their directions
 	 */
+	/**
+	 * @return what the arbiter has granted a train, for debugging deadlocks (simulateDay -Pmtr.debugStuck=all)
+	 */
+	public List<Arbiter.Claim<UUID>> getHeldClaims(long trainId) {
+		return arbiter.getHoldings(trainId);
+	}
+
 	public List<Move> getHeld(long trainId) {
 		final List<Move> moves = new ArrayList<>();
 		arbiter.getHoldings(trainId).forEach(claim -> {

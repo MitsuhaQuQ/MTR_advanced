@@ -227,6 +227,16 @@ public final class DepotBoard implements TrainService.Board {
 		return takeoverRequests == null ? TrainService.TAKEOVER_NO_SPARE : takeoverRequests.request(dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected);
 	}
 
+	/**
+	 * The services of the depot's trains on the line, from the runner, or null for none (0.81.0).
+	 */
+	public java.util.function.Supplier<List<? extends TrainService<?>>> dutyServices;
+
+	@Override
+	public List<? extends TrainService<?>> getDutyServices() {
+		return dutyServices == null ? java.util.Collections.emptyList() : dutyServices.get();
+	}
+
 	@FunctionalInterface
 	public interface TakeoverRequests {
 		int request(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, java.util.Set<java.util.UUID> affected);

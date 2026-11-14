@@ -24,6 +24,7 @@
 - `lastSchedulesForPlatform`（public）：上 tick 完整的时刻。
 - `motionEvents`（public）：运动事件去向，tick 末由世界收集；null 为丢弃。
 - `trains`、`shed`（按运用时停在库中的同池列车，最早的在前）、`arriving`（本 tick 回库的，下一 tick 起入库）。
+- `addServicesOnLine(List)`（0.81.0）：把在线（`getIsOnRoute`）列车的服务按列车 id 加进列表，供 `Depot.getDutyServices`。
 - `tripPaths`：离开通常路径去别的线路的班次路径，按 `TripTail#getKey()`。
 - `turnBacks`（`TurnBacks`）、`turnLinks`（"from>to" → 绕行路，D4）、`turnReturns`（站台 → 回本停车线路）、`wayOuts`（站台 → 出库路，D5）；`pendingTurnLinks`、`pendingTurnTargets`、`pendingWayOutTargets`：车厂为进行中的找路给的待用数据。
 - `pathVariants`（匿名 `PathVariants`）：生成跳站（D3）路径：`pass` 停站时间置 0、`withStop` 复制并设停站、`getTimeGenerator`、`getTurnTargets(platformId)`（以 "id>" 开头的绕行目标，排序）、`getTurnLink`、`getTurnReturn`、`getWayOut`。调用者：`TripPath.java:281`、`PathVariants.java:35`、`SimDataset.java:439`。

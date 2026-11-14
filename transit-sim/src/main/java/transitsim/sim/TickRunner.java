@@ -260,7 +260,26 @@ public final class TickRunner<T extends RunTrack> {
 		});
 		depot.returnChooser = (eachSidingId, depotId, canGoBack) -> depotId == 0 ? chooseReturnSiding(depot, eachSidingId, canGoBack) : chooseOrderedReturnSiding(depot, eachSidingId, depotId, canGoBack);
 		depot.takeoverRequests = (dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected) -> depot.dispatcher.requestTakeover(millis, dutySidingId, slot, dayStart, fromSegment, fromKey, serviceMillis, affected, this::getSidingPaths, this::getSidingVariants, this::getSidingPool);
+		depot.dutyServices = () -> getDutyServices(depot);
 		return sidingRun;
+	}
+
+	/**
+	 * @return the services of a depot's trains on the line, by train, for trains out of order to swap their duties (0.81.0)
+	 */
+	private List<TrainService<T>> getDutyServices(DepotBoard depot) {
+		final List<HeadlessTrain> onLine = new ArrayList<>();
+		for (final SidingRun sidingRun : depotSidings.getOrDefault(depot, java.util.Collections.emptyList())) {
+			for (final HeadlessTrain train : sidingRun.trains) {
+				if (train.isOnRoute()) {
+					onLine.add(train);
+				}
+			}
+		}
+		onLine.sort(java.util.Comparator.comparingLong(train -> train.id));
+		final List<TrainService<T>> services = new ArrayList<>();
+		onLine.forEach(train -> services.add(train.service));
+		return services;
 	}
 
 	private Map<String, TripPath<T>> getSidingPaths(long sidingId) {
@@ -399,7 +418,7 @@ public final class TickRunner<T extends RunTrack> {
 	 * The signal blocks cut into block sections ({@link transitsim.network.BlockSections}), with the lengths and speed limits
 	 * of the rails on the sidings' paths and their trips' paths.
 	 */
-	private transitsim.network.BlockSections getBlockSections() {
+	public transitsim.network.BlockSections getBlockSections() {
 		if (blockSections == null) {
 			final Map<UUID, RunTrack> tracks = new HashMap<>();
 			blockTracks = tracks;
