@@ -152,4 +152,19 @@ class PathClaimsTest {
 		assertEquals(0, claims.get(1).way);
 		assertNotEquals(new UUID(1, 2), direction);
 	}
+
+	@Test
+	void aZoneStartingWhereAGroupEndsGoesWithTheGroupGoingIntoIt() {
+		final PathClaims.Group before = new PathClaims.Group(Collections.singletonList(Arbiter.Claim.track(new UUID(1, 1))), 0, 40);
+		final PathClaims.Group into = new PathClaims.Group(Collections.singletonList(Arbiter.Claim.track(new UUID(1, 2))), 40, 80);
+		final Arbiter.Claim<UUID> zone = Arbiter.Claim.track(new UUID(9, 9));
+		final List<PathClaims.Group> groups = PathClaims.attach(Arrays.asList(before, into), Collections.singletonList(new PathClaims.Attached(40, 80, Collections.singletonList(zone))));
+		// The train may run up to the zone without it, and takes it with the track going in
+		assertFalse(groups.get(0).claims.contains(zone));
+		assertTrue(groups.get(1).claims.contains(zone));
+		// One starting along the first group goes with it
+		final List<PathClaims.Group> early = PathClaims.attach(Arrays.asList(before, into), Collections.singletonList(new PathClaims.Attached(0, 80, Collections.singletonList(zone))));
+		assertTrue(early.get(0).claims.contains(zone));
+		assertFalse(early.get(1).claims.contains(zone));
+	}
 }

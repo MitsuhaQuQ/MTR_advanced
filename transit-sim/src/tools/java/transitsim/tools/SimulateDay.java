@@ -75,20 +75,6 @@ public final class SimulateDay {
 			System.out.println("UNREADABLE simulation data, saved by another version: " + e);
 			return;
 		}
-		// --meetings lists the passing points of the sidings' paths with both tracks in one interlocking zone (2026-11-14)
-		if (flags.contains("--meetings")) {
-			final Map<java.util.UUID, Long> zones = new HashMap<>();
-			for (int i = 0; i < dataset.signalBlocks.size(); i++) {
-				if (i < dataset.interlockBlocks.size() && dataset.interlockBlocks.get(i)) {
-					final long zone = i + 1;
-					dataset.signalBlocks.get(i).forEach(rail -> zones.putIfAbsent(rail, zone));
-				}
-			}
-			final List<List<SimDataset.DataTrack>> paths = new ArrayList<>();
-			dataset.sidings.forEach(siding -> siding.tripPaths.forEach(tripPath -> paths.add(tripPath.path)));
-			transitsim.plan.MeetingZones.find(paths, zones::get).forEach(finding -> System.out.println("MEETING zone " + finding.zone + " where " + pos(finding.from.getEndNode()) + " parts: from " + pos(finding.from.getStartNode()) + ", to " + pos(finding.to.getEndNode())));
-			System.out.println("MEETING checked " + paths.size() + " paths, " + zones.size() + " rails in interlocking zones");
-		}
 		// -Dmtr.noLinePools=true runs without trains going back to other depots of their line, to compare
 		if (Boolean.getBoolean("mtr.noLinePools")) {
 			dataset.sidings.forEach(siding -> siding.linePool = "");

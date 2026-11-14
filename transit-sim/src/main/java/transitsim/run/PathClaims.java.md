@@ -16,7 +16,7 @@
 - `RUNNING_SIDES`（public static final boolean）：系统属性 `mtr.runningSides=false` 时为 false，此时双向轨道不论线路行车侧一律按单线预留（0.69.0 之前的行为，用于对比）。
 
 ### `static List<Group> attach(List<Group> groups, Collection<Attached> attached)`
-- 作用：把附加项（咽喉道岔、联锁区）附到带列车经过其位置的那一组：附加项起点在上一组终点之后、本组终点之内（含）。无附加项时原样返回。
+- 作用：把附加项（咽喉道岔、联锁区）附到带列车进入其位置的那一组：附加项起点不早于上一组终点、在本组终点之前（不含）。正好从某组终点开始的联锁区跟下一组一起申请，列车可以停在联锁区边上等它（0.81.1，用户反馈的会让线死锁：以前联锁区跟"终点在它边上"的那一组一起申请，列车要先拿到前方联锁区才能开上会让线，只好停在身后那个联锁区里等，两车各占一个）。无附加项时原样返回。
 - 返回：新列表（未变化的组复用原对象）。调用者：`Authority.java:118`。
 
 ### `static UUID directionOf(UUID trackKey)`

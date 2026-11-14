@@ -309,5 +309,4 @@
 ## 折返线比列车短的提示（0.79.4）
 - `trackUsesOf(mainPaths)`（0.80.0）：合并各存车线的 `getLastTrackUses()`（去重），随 `generatePathS2C` 发给客户端，客户端存在 `clientTrackUses` 并让 `clientTrackUsesVersion` 加一；网页车站股道运用图用。
 - `findConflicts(mainPaths)`（0.80.0）：寻路线程里、发寻路结果前，把各存车线 `getLastMoves()` 交给组件 `OpposingMoves.find`，得到冲突进路（两站间掉头两次以上的走法、和别的走法在同一段轨道上方向相反且至少一个掉头的走法对），转成字符串随 `generatePathS2C` 发给客户端；和上次（字段 `toldConflicts`）不同才打一行日志，并建议在折返线末端加道岔改单边站前折返，或各线各用一边站台站前折返。出错只打印，不影响寻路。客户端字段 `clientConflicts`。
-- `findMeetingZones(mainPaths, zones)`（2026-11-14，用户反馈的会让线死锁）：紧跟 `findConflicts`，把各存车线全部运用路径和联锁区表（`railwayData.routePaths.interlockZones`）交给组件 `MeetingZones.find`，每处交会写成 `"zone x y z"`（分岔处坐标）并进同一个冲突列表发给客户端；和上次（`toldMeetingZones`）不同才打一行日志，建议联锁色只刷道岔本身。出错只打印。
 - `tellShortTurnBacks(mainPaths)`：找完车厂路径后，对每条存车线的每条运用路径用组件 `TurnBackLengths.find`（折返线 = `RailType.TURN_BACK`，列车长 = `Siding.getTrainLength`），结果和上次不同才打一行日志：哪里（坐标）、折返线多长、车多长，提醒把折返线做得至少和车一样长。字段 `shortTurnBacks` 记上次的结果。

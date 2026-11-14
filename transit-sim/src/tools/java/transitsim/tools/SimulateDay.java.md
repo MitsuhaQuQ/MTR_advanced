@@ -2,7 +2,7 @@
 
 命令行工具（`src/tools` 源集，不随模组发布）：不启动游戏，用游戏写入数据库的数据（`SimDataset`）仿真一个已保存世界的一个运营日（S4e），并打印列车做了什么、耗时多少。
 
-参数：数据库，然后可选的日期（`yyyy-mm-dd`，缺省今天）、时区（缺省 `UTC`）、运营日开始小时（缺省 `OperatingDay.DEFAULT_DAY_START_HOUR`），以及标志 `--events`（打印每个事件）、`--check`（端到端检查：每秒检查一次不得违反的规则 `RunInvariants`，并用 `DayRun` 对照时刻表；有违规或死锁时以 1 退出）、`--origins`（各服务从首站出发相对服务时刻与计划的早晚）、`--outs`（2026-11-13：每次出库从离开存车线到离开首站，对照计划）、`--late`（0.81.0：每次从停站出发对照列车当时所跑班次的计划，跑完打印每条线路最大晚点和晚 60 秒以上的前 40 次）、`--meetings`（2026-11-14：列出各停车线路径里两股道都在同一个联锁区的交会处，`MeetingZones`，以及检查了多少条路径、多少条轨道在联锁区里）。
+参数：数据库，然后可选的日期（`yyyy-mm-dd`，缺省今天）、时区（缺省 `UTC`）、运营日开始小时（缺省 `OperatingDay.DEFAULT_DAY_START_HOUR`），以及标志 `--events`（打印每个事件）、`--check`（端到端检查：每秒检查一次不得违反的规则 `RunInvariants`，并用 `DayRun` 对照时刻表；有违规或死锁时以 1 退出）、`--origins`（各服务从首站出发相对服务时刻与计划的早晚）、`--outs`（2026-11-13：每次出库从离开存车线到离开首站，对照计划）、`--late`（0.81.0：每次从停站出发对照列车当时所跑班次的计划，跑完打印每条线路最大晚点和晚 60 秒以上的前 40 次）。
 
 运行方式：`./gradlew -p transit-sim simulateDay --args="…"`（`transit-sim/build.gradle:55`），或 `C:/gtmp/fast/simday.sh`；系统属性见下。使用 `SimDataset`、`SimScope`、`EventSimulator`、`DayRun`、`RunInvariants`、`SimEvent`、`OperatingDay`、`LockNetworks`、`BlockSections`、`TickRunner`。
 

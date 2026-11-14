@@ -77,8 +77,10 @@ public final class PathClaims {
 	}
 
 	/**
-	 * @return the groups, each with what is attached to a place it takes the train past: after the end of the group before,
-	 * up to and including its own end
+	 * @return the groups, each with what is attached to a place it takes the train into: from the end of the group before,
+	 * short of its own end. A zone starting where a group ends goes with the group after it, so a train may stand at the edge
+	 * of an interlocking zone waiting for it (2026-11-14, user feedback: a passing loop deadlocked, each train kept on the
+	 * track before its loop track, inside the other zone, as the loop track came with the zone at its far end)
 	 */
 	public static List<Group> attach(List<Group> groups, Collection<Attached> attached) {
 		if (attached.isEmpty()) {
@@ -89,7 +91,7 @@ public final class PathClaims {
 		for (final Group group : groups) {
 			final List<Arbiter.Claim<UUID>> claims = new ArrayList<>(group.claims);
 			for (final Attached each : attached) {
-				if (each.start > previousEnd + 1E-6 && each.start <= group.end + 1E-6) {
+				if (each.start >= previousEnd - 1E-6 && each.start < group.end - 1E-6) {
 					claims.addAll(each.claims);
 				}
 			}

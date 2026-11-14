@@ -249,7 +249,6 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * What was told of the conflicting routes last, so the log says it once each time it changes.
 	 */
 	private List<String> toldConflicts = Collections.emptyList();
-	private List<String> toldMeetingZones = Collections.emptyList();
 	/**
 	 * How long each change of platform within a station of the depot's lines takes on the rails, from the last path
 	 * generation: from platform → to platform → milliseconds; a pair left out has no way between. On the server for the
@@ -1384,8 +1383,7 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				if (Boolean.getBoolean("mtr.debugDepotLegs") && railwayData != null) {
 					mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> debugDepotLegs(siding, railwayData.routePaths, rails, dataCache)));
 				}
-				final List<String> conflicts = new ArrayList<>(findConflicts(mainPaths));
-				conflicts.addAll(findMeetingZones(mainPaths, railwayData == null ? Collections.emptyMap() : railwayData.routePaths.interlockZones.get()));
+				final List<String> conflicts = findConflicts(mainPaths);
 				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes, conflicts, trackUsesOf(mainPaths));
 				final long timeEnd = System.nanoTime();
 				final int pathCount = mainPaths.stream().mapToInt(mainPath -> mainPath.sidings.stream().mapToInt(siding -> siding.getTripPaths().size()).sum()).sum();
@@ -1788,39 +1786,6 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				toldConflicts = conflicts;
 			}
 			return conflicts;
-		} catch (RuntimeException e) {
-			// Only something told: never in the way of the depot's paths
-			e.printStackTrace();
-			return Collections.emptyList();
-		}
-	}
-
-	/**
-	 * Passing points of the depot's duties whose two tracks are in one interlocking zone (2026-11-14, user feedback: a single
-	 * line with a passing loop deadlocked at once): a zone is taken whole, so a train waiting on one track of the loop with its
-	 * tail in the zone holds the other track too, and trains the other way can't get past. Only told, the rules stay as they
-	 * are; the log tells once each time they change. See {@link transitsim.plan.MeetingZones}.
-	 *
-	 * @return each as "zone x y z": where the two tracks part
-	 */
-	private List<String> findMeetingZones(List<DutyPathBuilder> mainPaths, Map<UUID, Long> zones) {
-		try {
-			final List<List<mtr.path.PathData>> paths = new ArrayList<>();
-			mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> siding.getTripPaths().values().forEach(tripPath -> paths.add(tripPath.path))));
-			final List<String> found = new ArrayList<>();
-			if (!zones.isEmpty()) {
-				transitsim.plan.MeetingZones.find(paths, zones::get).forEach(finding -> {
-					final BlockPos pos = finding.from.getLastPos();
-					found.add("zone " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
-				});
-			}
-			if (!found.equals(toldMeetingZones)) {
-				if (!found.isEmpty()) {
-					System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " has trains running both ways pass each other where both tracks are in one interlocking zone, which a train takes as a whole: one waiting on one track with its tail in the zone holds the other, and they deadlock. Paint the interlocking colour over the switches only, not the tracks trains wait on to pass, nor platforms (where the tracks part): " + found.stream().map(each -> each.substring(5)).collect(Collectors.joining("; ")));
-				}
-				toldMeetingZones = found;
-			}
-			return found;
 		} catch (RuntimeException e) {
 			// Only something told: never in the way of the depot's paths
 			e.printStackTrace();

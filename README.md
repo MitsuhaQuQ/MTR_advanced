@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.81.1: a train takes an interlocking zone only with the track going into it, so it can wait at its edge; a passing loop with its switches painted in the interlocking colour no longer deadlocks. The passing point hint of 0.81.0 is gone, as it was wrong.
+
 0.81.0: two trains of a siding out of order for a stop (one waiting there for a later service, one behind due earlier) swap the rest of their duties, so neither stays late all day; depots tell, in the log and on the web page, where trains running both ways pass each other with both tracks in one interlocking zone, which deadlocks.
 
 0.80.2: the web editor says whose edits a route of the draft conflicts with when the game turns it down, and warns before sending when a route of the draft was changed in the game since (naming who is editing it); what others change shows on the page as the game syncs.

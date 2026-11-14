@@ -74,11 +74,17 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.81.1 联锁区在进入时才申请（用户反馈的会让线死锁，2026-11-14）：
+- 原因（离线 `dumps/loop`，`-Pmtr.debugStuck=all` 列出每列车批到的东西）：玩家只把会让线两端的道岔刷了联锁色（会让线中间两股没刷），可组件 `PathClaims.attach` 把联锁区附到"终点正好在它边上"的那一组：开上会让线某一股就要先拿到那一股尽头的联锁区。车 1 离开 v1 停在渡线上（南联锁区里），等北联锁区才能开上会让线；车 2 停在北联锁区里，等南联锁区才能开上另一股——各占一个，互相等。
+- 改法（用户定：只改申请时机，联锁区仍整块锁）：`attach` 改为附到"进入它"的那一组（起点不早于上一组终点、在本组终点之前），正好从一组终点开始的联锁区跟下一组一起申请，列车可以停在联锁区边上等。咽喉道岔同样处理。
+- 结果：反馈的存档离线整天不死锁（966 次停站，两车都回库）；六线图世界离线 2 小时和改前逐条相同（含一处原来就有的死锁，17:38 车 4、16，记入待验证）；组件测试 `PathClaimsTest.aZoneStartingWhereAGroupEndsGoesWithTheGroupGoingIntoIt`。
+- 0.81.0 加的"会让处两股道刷进同一个联锁区"提示是根据错误的判断加的（以为是涂色问题，用户指出会让线两股根本没刷），刷对了也会报，已整个删掉（组件 `MeetingZones`、`Depot.findMeetingZones`、网页提示和译文、`simulateDay --meetings`）。只改组件规则，存档和包都没变，升第三位。
+
 0.81.0 终点互换运用（B/C/D 中的 C、D，用户 2026-11-14 定：互换剩余运用）和联锁区交会提示：
 - 互换（组件 `TrainService.swapIfOutOfOrder`，两个宿主共用）：同一停车线的两列车在同一站顺序颠倒——一列停在本段首站等更晚的班次，后面一列开往同一站、下一段班次早至少 30 秒（`SWAP_MIN_GAIN_MILLIS`），又过不去——就互换剩下的运用：站着的车立刻接过后车从那一段起的运用（`takeDuty`：换槽位、运用号、运用日与账目、改挂记录，`changePath` 到对方路径的同一站，先按前一段设好线路班次再 `startDutySegment`），后车记下站着那辆的运用（`swapDuty`/`swapAtRail`），开到那一站时接过。只在到站（`onStopReached`）时判断，跳 tick 与逐 tick 一样；条件见 `isSwapPair`（同车厂同停车线同运用日、同一站台同一轨道且进站前一条轨道相同、两段都从线路首站开始、走通常路径、不在交接/调度指令/留线过夜）。车厂通过 `Board.getDutyServices` 给出在线列车（组件 `DepotBoard.dutyServices` ← `TickRunner.getDutyServices`；游戏 `Depot.getDutyServices` ← `Siding.addServicesOnLine`）。存档加 `swap`、`swap_path` 两个键（`SAVED_KEYS` 22），升协议 0.81。`simulateDay -Pmtr.dutySwap=false` 关掉对照。
 - C 查明（离线 `dumps/l6b`，`--outs`）：和 D 同一回事——2 号线快车的出库空车比一列同向站站停的班车晚 35 秒离开唯一的车厂出口，过不去，在一站后等它停满 3 分钟。互换后快车首班由先到的那列接走。
 - 结果：六线图整套（`ui-results/20261114-183642`，20 分钟）2 号线最大晚点 328→71 秒，10 号线 41 秒。5、6 号线这次 160–169 秒：离线（`--late`）查明是 6 号线下行在三站被短下行的车堵住——短下行在中间折返线掉头后提前开到三站西行站台等自己的发车，下行车计划更早却只能在后面等；关掉互换同样发生（最多 752 秒，开互换最多 212 秒），不是互换带来的，属于 D 的第二个原因（站台先到先得），记入待验证。「排班」一项因界面按钮被隐藏失败，与本版无关，待查。
-- 联锁区交会提示（用户反馈：单线加会让线，道岔区域整片刷了联锁色，开跑 2 分钟死锁；用户定：只提示，不改规则）：离线复现（`dumps/loop`），去掉联锁区就整天不死锁。组件 `transitsim.plan.MeetingZones` 找出两个方向的车在此交会、而两股道在同一个联锁区的地方；游戏 `Depot.findMeetingZones` 在寻路后打一行日志并以 `zone x y z` 并入冲突列表，`EditorData` 发 `{kind: zone, x, y, z}`，网页 `sync.ts` 出一条错误，说明联锁色只刷道岔本身。`simulateDay --meetings` 可离线检查。
+- 联锁区交会提示（0.81.1 已删除，判断有误，见 0.81.1）：当时以为是会让线两股都刷进了同一个联锁区，加了日志和网页提示。
 - 查死锁用的工具：`simulateDay -Pmtr.debugStuck=all` 多列出仲裁器批给每列车的东西（`RunReservations.getHeldClaims`）、每条轨道的涂色分区和单双向（`TickRunner.getBlockSections` 改为 public）；`--late` 对照计划列出晚点。
 
 0.80.2 网页提示和谁的编辑冲突（用户 2026-11-14：网页只要提示和谁的编辑冲突，或者即时把他人修改的内容同步过来预览）：
