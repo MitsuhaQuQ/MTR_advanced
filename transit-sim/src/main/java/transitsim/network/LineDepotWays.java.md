@@ -41,6 +41,14 @@
 - 参数与返回同 `planOut`（方向相反）。
 - 主要调用者：`RoutePaths.java:789`、`RoutePaths.java:800`、`MidLineDepotTest.java:154`。
 
+### `static double againstLength(RouteLegs.Plan way, List<RouteLegs.Plan> routes, TrackSections.Snapshot snapshot)`（0.80.1）
+- 作用：出入库路逆着线路方向跑本线轨道的长度（格）。只算线路各路线只按另一方向走的区段；路的两端和途中掉头的站台（`stopSteps`）、线路不走的区段（渡线、车厂轨道）、两个方向都走的区段（折返线）不算。超过常量 `LONG_AGAINST = 200` 时游戏提示。
+- 主要调用者：`RoutePaths.findDepotWay`、`LongAgainstWayTest`。
+
+### `static List<long[]> againstSpans(RouteLegs.Plan way, List<RouteLegs.Plan> routes)`（0.80.1）
+- 作用：出入库路逆着线路方向跑完的站间：线路某条路线相邻两个停站之间的所有区段，这条路都按相反方向走过（且没有按路线方向走）。返回每个站间两端的停站区段 `{from, to}`（路线顺序），去重。用户 2026-11-14：逆向跨站不论长短都提示。
+- 主要调用者：`RoutePaths.findDepotWay`、`LongAgainstWayTest`。
+
 ### `static List<Long> againstStops(RouteLegs.Plan way, List<RouteLegs.Plan> routes)`
 - 作用：出/回库路径中逆线路方向经过的本线站台（不含路径自身两端，那里允许逆向进入再折返）。合规路径返回空；否则按经过顺序、去重列出，用于显示给玩家。
 - 参数：`way` `planOut`/`planBack` 的结果（null 或未找到返回空）；`routes` 当时传入的路线计划。

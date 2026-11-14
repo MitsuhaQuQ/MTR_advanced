@@ -115,7 +115,7 @@ final class DutyPathBuilder {
 				depot.lineShortfall.entrancesUnset.addAll(new TreeSet<>(depot.entrancesUnset));
 				// The list also holds the platforms run against the line outside an interlocking zone, told on their own
 				final Set<String> unsetLines = new TreeSet<>(depot.entrancesUnset);
-				unsetLines.removeIf(entry -> entry.startsWith(RoutePaths.DepotLine.AGAINST_UNLOCKED));
+				unsetLines.removeIf(entry -> entry.startsWith(RoutePaths.DepotLine.AGAINST_UNLOCKED) || entry.startsWith(RoutePaths.DepotLine.AGAINST_LONG) || entry.startsWith(RoutePaths.DepotLine.AGAINST_SPAN));
 				if (!unsetLines.isEmpty()) {
 					System.out.println("Minecraft Transit Railway: depot " + (depot.name.isEmpty() ? String.valueOf(depot.id) : depot.name) + " reaches the line at more than one station; lines with no rule saying which their trains go by, going by the most convenient: " + String.join(", ", unsetLines));
 				}

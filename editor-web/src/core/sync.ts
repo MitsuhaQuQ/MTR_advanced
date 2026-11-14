@@ -123,8 +123,18 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     // interlocking zone: used, but trains could meet head on there (2026-11-13)
     const unsetEntries: string[] = (depot.shortfall && depot.shortfall.entrancesUnset) || []
     const againstPlatforms = unsetEntries.filter(entry => entry.startsWith("against:")).map(entry => entry.slice("against:".length))
-    const unsetLines = unsetEntries.filter(entry => !entry.startsWith("against:"))
-    if (againstPlatforms.length) problems.push({ level: "warn", text: tr("车厂{0}：出入库要逆着线路方向经过 {1}，那里（站台和两头的道岔）没刷联锁色，和正线列车可能对头卡死；把那一段刷成联锁区（默认品红）就安全了，或者在出入库规则里指定一条顺向的路", name, againstPlatforms.map(platformId => platformText(data, platformId)).join("、")) })
+    // And as "againstlong:<platform>:<blocks>", ways out or back running the line's track against it for long (2026-11-14)
+    const againstLong = new Map<string, number>()
+    unsetEntries.filter(entry => entry.startsWith("againstlong:")).forEach(entry => {
+      const [platformId, blocks] = entry.slice("againstlong:".length).split(":")
+      againstLong.set(platformId, Math.max(againstLong.get(platformId) || 0, Number(blocks) || 0))
+    })
+    // And as "againstspan:<platform>:<platform>", stretches between two stations run all the way against the line
+    const againstSpans = unsetEntries.filter(entry => entry.startsWith("againstspan:")).map(entry => entry.slice("againstspan:".length).split(":"))
+    const unsetLines = unsetEntries.filter(entry => !entry.startsWith("against:") && !entry.startsWith("againstlong:") && !entry.startsWith("againstspan:"))
+    if (againstPlatforms.length) problems.push({ level: "warn", text: tr("车厂{0}：出入库要逆着线路方向经过 {1}，那里（站台和两头的道岔）没刷联锁色，和正线列车可能对头卡死；把那一段刷成联锁区（默认品红）就安全了，或者在出入库规则里指定一条顺向的路，或者在离入库线最近的车站加一组渡线", name, againstPlatforms.map(platformId => platformText(data, platformId)).join("、")) })
+    if (againstSpans.length) problems.push({ level: "warn", text: tr("车厂{0}：出入库要逆着线路方向跑过整个站间（{1}），这段里的正线列车迎面过来时中间没有车站可避让，可能对头卡死；建议在离入库线最近的车站加一组渡线，不要逆向跨站", name, againstSpans.map(([from, to]) => tr("{0} 到 {1}", platformText(data, from), platformText(data, to))).join("、")) })
+    if (againstLong.size) problems.push({ level: "warn", text: tr("车厂{0}：出入库要逆着线路方向跑很长一段正线（{1}），后面的正线列车迎面过来时无处避让，可能对头卡死；建议在离入库线最近的车站加一组渡线，让逆向的一段尽量短", name, [...againstLong.entries()].map(([platformId, blocks]) => tr("经 {0} {1} 格", platformText(data, platformId), blocks)).join("、")) })
     if (unsetLines.length) {
       const lineName = (key: string) => { const found = depotLines(data, depot).find(([lineKey]) => lineKey === key); return found ? found[1] : key.split("|").slice(1).join("|") || key }
       problems.push({ level: "hint", text: tr("车厂{0}接到线路的车站不止一个，{1} 没有出入库规则，已按方便的方向自动出入库；要固定从哪站进出，在车厂右键「出入库规则…」里加一条", name, unsetLines.map(lineName).join("、")) })

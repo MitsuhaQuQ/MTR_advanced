@@ -218,18 +218,22 @@ public final class Lines {
 				case 5:
 				case 6:
 					rearTurnBack(east);
-					// Line 6's dead end is shorter than its 75-block trains, which turn standing over the switch (0.79.4 says so in
-					// the log). At 90 (0.80.0, with dead ends taken only with the way out) line 6 ran into another deadlock, at 一站,
-					// with the rule or without it (MTR-待验证.md E), so it stays at 50 until that is found
-					middleTurnBack(middle, 50);
+					// Line 5's dead end is shorter than its 75-block trains, which turn standing over the switch (0.79.4 says so in
+					// the log); line 6's is long enough for them (2026-11-14)
+					middleTurnBack(middle, layout == 6 ? 90 : 50);
 					if (layout == 5) {
 						// The depot behind the turn-back track, between the main tracks
 						rail(middle + 120, 4, middle + 130, 4, RailType.IRON);
 						rail(middle + 130, 4, middle + 190, 4, RailType.SIDING);
 						depotBoxes.add(new int[]{middle + 125, 2, middle + 200, 6});
 					} else {
-						// The depot joined to the westbound track only
+						// The depot joined to the westbound track only, facing east: trains leave it the line's way, and come back
+						// over a crossover at 三站 from the eastbound track, running only the stretch from there to the depot against
+						// the line. Without the crossover the only way back was turning at 一站 and running the whole westbound
+						// track against the line, and a train coming back met the next westbound train head on at 一站
+						// (2026-11-14, MTR-待验证.md E)
 						mainNode(8, middle + 150);
+						rail(middle, 0, middle + 30, 8, RailType.IRON);
 						rail(middle + 150, 8, middle + 190, 16, RailType.IRON);
 						rail(middle + 190, 16, middle + 270, 16, RailType.SIDING);
 						depotBoxes.add(new int[]{middle + 185, 13, middle + 280, 19});

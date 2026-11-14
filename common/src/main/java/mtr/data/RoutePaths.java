@@ -776,10 +776,24 @@ public final class RoutePaths {
 					setWhy(why, DepotLegs.REASON_RULE);
 					return Collections.emptyList();
 				}
-			} else if (depotLine.entrancesOf(siding, legs, linePlans, source).size() > 1) {
-				// No rule saying which station: the way most convenient is taken, the line's way first (user 2026-11-13: 不特别
-				// 配置路线的时候自动走方便的方向); before, no duties were planned for the line until a rule said which
-				depotLine.reportEntranceAuto(siding, platform);
+			} else {
+				final Set<Long> entrances = depotLine.entrancesOf(siding, legs, linePlans, source);
+				if (entrances.size() > 1) {
+					// No rule saying which station: the way most convenient is taken, the line's way first (user 2026-11-13: 不特别
+					// 配置路线的时候自动走方便的方向); before, no duties were planned for the line until a rule said which
+					depotLine.reportEntranceAuto(siding, platform);
+				}
+				// Only the stations the siding reaches the line at: the nearest as the crow flies may be ones a train gets to
+				// only round the whole line (2026-11-14: line 6 of the six test lines, its depot beside 四站 but leaving
+				// westwards, went out round the line to 四站 and 五站 before its first stop, instead of by 三站)
+				if (!entrances.isEmpty()) {
+					final List<Map.Entry<Long, SavedRailBase>> atEntrances = new ArrayList<>(stations);
+					atEntrances.removeIf(station -> !entrances.contains(depotLine.stationOf(station.getValue().id)));
+					if (!atEntrances.isEmpty()) {
+						stations.clear();
+						stations.addAll(atEntrances);
+					}
+				}
 			}
 			stations.sort(Comparator.comparingDouble(station -> station.getValue().getMidPos().distSqr(sidingPos)));
 			stations.subList(0, Math.min(NEARBY_STATIONS, stations.size())).forEach(station -> nearby.add(station.getKey()));
@@ -835,6 +849,20 @@ public final class RoutePaths {
 				final List<Long> unlocked = unlockedAgainst(against, linePlans, path);
 				if (!unlocked.isEmpty()) {
 					depotLine.reportAgainstUnlocked(siding, unlocked);
+				}
+			}
+			// A long stretch of the line's track run against it, platforms or not: a train coming the line's way meets it
+			// head on with nowhere to give way (2026-11-14, line 6 of the six test lines)
+			final double againstLength = transitsim.network.LineDepotWays.againstLength(plan, linePlans.plans, legs.snapshot);
+			if (againstLength > transitsim.network.LineDepotWays.LONG_AGAINST) {
+				depotLine.reportAgainstLong(siding, out ? to : from, againstLength);
+			}
+			// And all of the stretch between two stations, however short (2026-11-14)
+			for (final long[] span : transitsim.network.LineDepotWays.againstSpans(plan, linePlans.plans)) {
+				final SavedRailBase spanFrom = linePlans.stations.get(span[0]);
+				final SavedRailBase spanTo = linePlans.stations.get(span[1]);
+				if (spanFrom != null && spanTo != null) {
+					depotLine.reportAgainstSpan(siding, spanFrom, spanTo);
 				}
 			}
 		}
@@ -969,6 +997,16 @@ public final class RoutePaths {
 		 * zone, for the depot's hints (2026-11-13); the rest are line keys.
 		 */
 		public static final String AGAINST_UNLOCKED = "against:";
+		/**
+		 * Marks a way out or back running the line's track against it for long, as {@code againstlong:<platform>:<blocks>}
+		 * with the platform it leaves the line at or comes in by (2026-11-14), for the depot's hints.
+		 */
+		public static final String AGAINST_LONG = "againstlong:";
+		/**
+		 * Marks a stretch between two stations a way out or back runs all of against the line, as
+		 * {@code againstspan:<platform>:<platform>} in the line's order (2026-11-14), for the depot's hints.
+		 */
+		public static final String AGAINST_SPAN = "againstspan:";
 		private WayRule override;
 
 		/**
@@ -1108,6 +1146,34 @@ public final class RoutePaths {
 			}
 			if (reported.add(siding.id + "/against/" + platforms)) {
 				System.out.println("Minecraft Transit Railway: the only way between siding " + siding.id + " and its line runs the line's platforms " + platforms + " against the line, which aren't in an interlocking zone; it is used, but trains could meet head on there until they are painted in the interlocking colour");
+			}
+		}
+
+		/**
+		 * Tells once that a way between a siding and the line runs the line's track against it for longer than
+		 * {@link transitsim.network.LineDepotWays#LONG_AGAINST}.
+		 *
+		 * @param platform the platform the way leaves the line at or comes in by
+		 */
+		synchronized void reportAgainstLong(SavedRailBase siding, SavedRailBase platform, double length) {
+			final long blocks = Math.round(length);
+			if (entrancesUnset != null) {
+				entrancesUnset.add(AGAINST_LONG + platform.id + ":" + blocks);
+			}
+			if (reported.add(siding.id + "/againstlong/" + platform.id + "/" + blocks)) {
+				System.out.println("Minecraft Transit Railway: the way between siding " + siding.id + " and platform " + platform.id + " runs " + blocks + " blocks of the line's track against the line, where trains coming the line's way meet it head on; better a crossover at the station nearest the depot's entrance, keeping that stretch short");
+			}
+		}
+
+		/**
+		 * Tells once that a way between a siding and the line runs all of the stretch between two stations against the line.
+		 */
+		synchronized void reportAgainstSpan(SavedRailBase siding, SavedRailBase from, SavedRailBase to) {
+			if (entrancesUnset != null) {
+				entrancesUnset.add(AGAINST_SPAN + from.id + ":" + to.id);
+			}
+			if (reported.add(siding.id + "/againstspan/" + from.id + "/" + to.id)) {
+				System.out.println("Minecraft Transit Railway: the way between siding " + siding.id + " and its line runs all of the line's track between platforms " + from.id + " and " + to.id + " against the line, where a train of the line between them meets it head on with no station between to give way at; better a crossover at the station nearest the depot's entrance");
 			}
 		}
 

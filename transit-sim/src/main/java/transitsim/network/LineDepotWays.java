@@ -35,6 +35,14 @@ public final class LineDepotWays {
 	 * where there is no other way: more than any way across a network costs.
 	 */
 	public static final double AGAINST_STOP_PENALTY = 1e9;
+	/**
+	 * How far (blocks) a way out or back may run the line's track against it before the depot's hints tell of it (user
+	 * 2026-11-14: a depot's crossover usually lies at the station nearest its entrance, keeping that stretch short). Line 6
+	 * of the six test lines, its depot joined to the westbound track only and facing east, had its trains come back by
+	 * turning at the first station and running the whole westbound track against the line, and the next westbound train
+	 * met them head on.
+	 */
+	public static final double LONG_AGAINST = 200;
 
 	private LineDepotWays() {
 	}
@@ -218,6 +226,84 @@ public final class LineDepotWays {
 			}
 		}
 		return against;
+	}
+
+	/**
+	 * How far a way out or back runs the line's track against the line: the sections the line's routes run only the other
+	 * way, other than the platforms the way stops or turns back at (its two ends, where a train may enter against the line
+	 * and turn back, and those it turns at on the way: told of on their own by {@link #againstStops}; line 6 of the six
+	 * test lines coming back from 五站 turned at 三站's platform and ran 150 blocks on, counted as 210 with it). Sections
+	 * the line doesn't run, such as crossovers and the depot's own track, and those it runs both ways, such as turn back
+	 * rails, don't count.
+	 *
+	 * @param way      a plan from {@link #planOut}, {@link #planBack} or any other way between a siding and the line
+	 * @param routes   the plans of the depot's routes
+	 * @param snapshot the sections, for their lengths
+	 * @return in blocks, 0 for none or no way
+	 */
+	public static double againstLength(RouteLegs.Plan way, List<RouteLegs.Plan> routes, TrackSections.Snapshot snapshot) {
+		if (way == null || !way.isFound() || way.steps.size() < 3) {
+			return 0;
+		}
+		final Graph graph = new Graph(routes, null, null, null);
+		final Set<Long> stops = new HashSet<>();
+		for (final int stopStep : way.stopSteps) {
+			stops.add(way.steps.get(stopStep)[0]);
+		}
+		double length = 0;
+		for (int i = 1; i < way.steps.size() - 1; i++) {
+			final long[] step = way.steps.get(i);
+			if (!stops.contains(step[0]) && graph.isAgainst(step)) {
+				final TrackSections.Section section = snapshot.sections.get(step[0]);
+				length += section == null ? 0 : section.getLength();
+			}
+		}
+		return length;
+	}
+
+	/**
+	 * The stretches between two neighbouring stops of the line's routes that a way out or back runs all of against the
+	 * line (user 2026-11-14: tell of a way against the line going across from one station to the next, however short):
+	 * a train of the line between those stations meets it head on with no station between to give way at.
+	 *
+	 * @param way    a plan from {@link #planOut}, {@link #planBack} or any other way between a siding and the line
+	 * @param routes the plans of the depot's routes
+	 * @return the stop sections at the two ends of each stretch, {from, to} in the route's order, each stretch once
+	 */
+	public static List<long[]> againstSpans(RouteLegs.Plan way, List<RouteLegs.Plan> routes) {
+		final List<long[]> spans = new ArrayList<>();
+		if (way == null || !way.isFound()) {
+			return spans;
+		}
+		// How the way runs each section: bits, 2 along its order, 1 against
+		final Map<Long, Integer> wayRuns = new HashMap<>();
+		way.steps.forEach(step -> wayRuns.merge(step[0], 1 << step[1], (a, b) -> a | b));
+		final Set<List<Long>> seen = new HashSet<>();
+		for (final RouteLegs.Plan route : routes) {
+			if (!route.isFound()) {
+				continue;
+			}
+			for (int k = 0; k + 1 < route.stopSteps.length; k++) {
+				final int from = route.stopSteps[k];
+				final int to = route.stopSteps[k + 1];
+				if (to - from < 2) {
+					continue;
+				}
+				boolean all = true;
+				for (int i = from + 1; i < to && all; i++) {
+					final long[] step = route.steps.get(i);
+					final Integer runs = wayRuns.get(step[0]);
+					// Run the other way to the route's, and not its way too
+					all = runs != null && (runs >> (1 - step[1]) & 1) == 1 && (runs >> step[1] & 1) == 0;
+				}
+				final long fromSection = route.steps.get(from)[0];
+				final long toSection = route.steps.get(to)[0];
+				if (all && seen.add(Arrays.asList(fromSection, toSection))) {
+					spans.add(new long[]{fromSection, toSection});
+				}
+			}
+		}
+		return spans;
 	}
 
 	/**

@@ -1431,6 +1431,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 尽头折返线兜底（0.80.0）：规则在组件 `TickRunner.runLayerTick`（`DEAD_END_EXITS`、`isDeadEndTurn`）和 `run.Authority`（`wholeUntil` 整组申请），游戏里按运用跑的车由组件驱动，宿主不另写；冲突进路的判断在组件 `transitsim.plan.OpposingMoves`（纯计算），游戏 `Siding`/`Depot` 只取路径、汇总、发包和写日志，网页只显示。车站股道运用图（同版本）只在游戏侧和网页：存车线取运用路径走过的轨道，网页按线路路径分出载客运行和运用走行，不涉及组件规则。
 
+逆向出入库路的长度和跨站（0.80.1）：判定在组件 `LineDepotWays.againstLength` / `againstSpans`（只看出入库路的步骤和线路各路线的方向，不涉及运行规则），游戏 `RoutePaths` 只调用、打日志、把结果带给网页；出库候选车站限制为停车线的入口站是游戏侧 `RoutePaths` 的选择，组件 `planOut` / `planBack` 不变。
+
 拆分车厂第 2d 步（0.78.1）：整份运用路径的拼接搬进组件 `transitsim.plan.DutyAssembly`（宿主 `Host` 给每段的路径模板和站台、连接段、站前折返、引入段，`Tracks` 给轨道比较），游戏的 `DutyPathBuilder` 只找路、切片和转换。第 2 步（2a–2d）完成。
 
 拆分车厂第 2c 步（0.76.1）：两班次之间的连接段与站前折返的拼接规则搬进组件 `transitsim.plan.TurnBackWays`、`transitsim.plan.FrontTurnBacks`（纯规则，宿主用接口提供找路），游戏的 `DutyPathBuilder` 只找路和切片。
