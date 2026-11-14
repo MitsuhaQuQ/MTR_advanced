@@ -55,7 +55,7 @@ public final class EditorNetwork {
 		}
 		// The stabling blocks are drawn too, so a change to the signal blocks or their colour is a new map
 		final Map<UUID, Long> stablingRails = ClientData.SIGNAL_BLOCKS.getZones(ClientData.stablingColor);
-		final int version = ((MapDataCache.getVersion() * 31 + (mode == null ? 0 : mode.ordinal())) * 31 + ClientData.SIGNAL_BLOCKS.getVersion() * 17 + ClientData.stablingColor.ordinal()) * 31 + mtr.packet.TrackOwnersPackets.version;
+		final int version = (((MapDataCache.getVersion() * 31 + (mode == null ? 0 : mode.ordinal())) * 31 + ClientData.SIGNAL_BLOCKS.getVersion() * 17 + ClientData.stablingColor.ordinal()) * 31 + mtr.packet.TrackOwnersPackets.version) * 31 + mtr.data.Depot.clientTrackUsesVersion;
 		network.addProperty("version", version);
 		if (version == seenVersion && !fresh) {
 			network.addProperty("same", true);
@@ -203,6 +203,24 @@ public final class EditorNetwork {
 			routesArray.add(routeObject);
 		});
 		network.add("routes", routesArray);
+		// The rails the depots' duty paths run, each way, with a route (0.80.0): for the station track use, so the moves
+		// between services (turning back, changing platforms, out and back) show beside the routes' own paths
+		final JsonArray dutyUses = new JsonArray();
+		for (final mtr.data.Depot depot : ClientData.DEPOTS) {
+			if (depot.transportMode != shownMode) {
+				continue;
+			}
+			final long[] uses = depot.clientTrackUses;
+			for (int i = 0; i + 2 < uses.length; i += 3) {
+				final JsonArray use = new JsonArray();
+				use.add(nodeIndex(uses[i], nodeIndices, nodesArray));
+				use.add(nodeIndex(uses[i + 1], nodeIndices, nodesArray));
+				use.add(String.valueOf(uses[i + 2]));
+				use.add(String.valueOf(depot.id));
+				dutyUses.add(use);
+			}
+		}
+		network.add("dutyUses", dutyUses);
 		network.add("nodes", nodesArray);
 		return network;
 	}

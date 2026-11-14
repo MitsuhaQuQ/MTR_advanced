@@ -15,8 +15,9 @@ test("排班：六条线所有线路两端始发 @lines", async () => {
 	test.setTimeout(600_000);
 	const now = await clock();
 	console.log(`server clock ${now.time} (${now.zone}, day starts ${now.dayStartHour}:00)`);
-	// The first services five minutes from now: the depots plan their duties and the run test starts sampling before them
-	const start = later(now.time, 5);
+	// The first services nine minutes from now: putting in eleven lines' timetables takes a few, and the depots plan their
+	// duties after; at five the trains from a depot at the far end came out too late for their first service (MTR-待验证.md C)
+	const start = later(now.time, 9);
 	await scheduleAll(start);
 	// Lines 8 and 9: services running on as other routes' services, set as a player sets them
 	const links = throughLinks(start);

@@ -251,3 +251,8 @@
 
 ### `public static boolean isPassingPlatform(List<PathData> path, int index)`
 - 停站或折返之后的轨道也带该站台 id，只有第一条带此 id 的才算（`PathTimes.isPassingPlatform`）。调用者：`StopSettingsTest.java:60`。
+
+### 冲突进路的走法（0.80.0）
+- 字段 `lastMoves`（volatile）：上次寻路得到的运用路径里、两站之间掉头的走法（组件 `OpposingMoves.movesOf`），在两个 `generate…Route` 的寻路线程里随 `lastDepotLegs` 一起从新路径（`tempTripPaths`）算出，不读服务器线程上的路径。
+- `getLastMoves()`：供 `Depot.findConflicts` 汇总。
+- 字段 `lastTrackUses`（volatile，0.80.0）：上次寻路的运用路径走过的轨道，每个方向、每条线路一次，`{起点, 终点, 线路}` 展平（线路取每条运用路径的第一条，所以折返、换站台、出入库都按这条线路着色）；`trackUsesOf` 在寻路线程从新路径算出。`getLastTrackUses()` 供 `Depot` 汇总。

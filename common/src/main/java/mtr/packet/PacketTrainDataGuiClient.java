@@ -639,6 +639,15 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 			final long to = packet.readLong();
 			turnTimes.computeIfAbsent(from, key -> new TreeMap<>()).put(to, packet.readLong());
 		}
+		final List<String> conflicts = new ArrayList<>();
+		for (int i = Math.min(packet.readInt(), 64); i > 0; i--) {
+			conflicts.add(packet.readUtf(256));
+		}
+		final int useCount = Math.max(0, Math.min(packet.readInt(), PacketTrainDataGuiServer.MAX_TRACK_USES));
+		final long[] trackUses = new long[useCount * 3];
+		for (int i = 0; i < trackUses.length; i++) {
+			trackUses[i] = packet.readLong();
+		}
 		minecraftClient.execute(() -> {
 			final Depot depot = ClientData.DATA_CACHE.depotIdMap.get(depotId);
 			if (depot != null) {
@@ -647,6 +656,11 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 				depot.clientFailedDuties = failedDuties;
 				depot.clientFailedDutyCount = totalFailed;
 				depot.clientDetours = detours;
+				depot.clientConflicts = conflicts;
+				if (trackUses.length > 0 || successfulSegments > 0) {
+					depot.clientTrackUses = trackUses;
+					Depot.clientTrackUsesVersion++;
+				}
 				if (turnTimes != null) {
 					depot.clientTurnTimes = turnTimes;
 					depot.turnTimesMeasured = true;

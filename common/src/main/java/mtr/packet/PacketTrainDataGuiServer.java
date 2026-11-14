@@ -55,6 +55,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 
 	private static final int MAX_FAILED_DUTIES = 16;
 	private static final int MAX_TURN_TIMES = 4096;
+	/**
+	 * The most rails of a depot's paths sent for the web editor's station track use (0.80.0).
+	 */
+	public static final int MAX_TRACK_USES = 30000;
 
 	private static final int MAX_LIST_SIZE = 4096;
 	private static final int MAX_STRING_LIST_SIZE = 256;
@@ -444,6 +448,18 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 	 *                  measured none (generation starting or failed), which leaves the clients' as they were
 	 */
 	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours, Map<Long, Map<Long, Long>> turnTimes) {
+		generatePathS2C(world, depotId, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes, Collections.emptyList(), new long[0]);
+	}
+
+	/**
+	 * @param conflicts the conflicting routes of the depot's paths (0.80.0, item A of MTR-待验证.md), as
+	 *                  {@link transitsim.plan.OpposingMoves.Finding#toString()}
+	 */
+	/**
+	 * @param trackUses the rails the depot's paths run, each way, with a route, as {from, to, route} flattened (0.80.0,
+	 *                  the web editor's station track use), at most {@link #MAX_TRACK_USES} of them
+	 */
+	public static void generatePathS2C(Level world, long depotId, int successfulSegments, PathFailure failure, List<String> failedDuties, Map<Long, DepotLegs> depotLegs, List<String> detours, Map<Long, Map<Long, Long>> turnTimes, List<String> conflicts, long[] trackUses) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeLong(depotId);
 		packet.writeInt(successfulSegments);
@@ -471,6 +487,14 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			packet.writeLong(turn[1]);
 			packet.writeLong(turn[2]);
 		});
+		final List<String> sentConflicts = conflicts.subList(0, Math.min(conflicts.size(), MAX_FAILED_DUTIES));
+		packet.writeInt(sentConflicts.size());
+		sentConflicts.forEach(packet::writeUtf);
+		final int useCount = Math.min(trackUses.length / 3, MAX_TRACK_USES);
+		packet.writeInt(useCount);
+		for (int i = 0; i < useCount * 3; i++) {
+			packet.writeLong(trackUses[i]);
+		}
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
 	}
 

@@ -78,6 +78,16 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	 */
 	private volatile DepotLegs lastDepotLegs = DepotLegs.NONE;
 	/**
+	 * The moves of the last generated paths that turn back between two stops, for the depot's hint of conflicting routes
+	 * (item A of MTR-待验证.md); found with the paths, off the server thread.
+	 */
+	private volatile List<transitsim.plan.OpposingMoves.Move<PathData>> lastMoves = Collections.emptyList();
+	/**
+	 * The rails the last generated paths run, each way, with the route of the path they are on, as {from, to, route}
+	 * flattened: for the web editor's station track use (0.80.0). Found with the paths, off the server thread.
+	 */
+	private volatile long[] lastTrackUses = new long[0];
+	/**
 	 * The ways out and back the duties are planned by, as path generation found them on the track sections (optimisation
 	 * round 4, step 3; before, only where measuring found the estimate off): saved, sent to the clients, and kept across
 	 * path generations, unlike {@link #lastDepotLegs}.
@@ -748,6 +758,46 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		return lastDepotLegs;
 	}
 
+	public List<transitsim.plan.OpposingMoves.Move<PathData>> getLastMoves() {
+		return lastMoves;
+	}
+
+	public long[] getLastTrackUses() {
+		return lastTrackUses;
+	}
+
+	/**
+	 * @return each rail the paths run, each way it is run, once per route: the route of a path is its first one, so the
+	 * moves between services (turning back, changing platforms, out and back) show in its colour
+	 */
+	private static long[] trackUsesOf(Collection<TripPath<PathData>> tripPaths) {
+		final Set<List<Long>> uses = new LinkedHashSet<>();
+		for (final TripPath<PathData> tripPath : tripPaths) {
+			final long routeId = tripPath.routeIds.isEmpty() ? 0 : tripPath.routeIds.get(0);
+			for (final PathData pathData : tripPath.path) {
+				final long from = pathData.startingPos.asLong();
+				final long to = pathData.getLastPos().asLong();
+				if (from != to) {
+					uses.add(Arrays.asList(from, to, routeId));
+				}
+			}
+		}
+		final long[] flat = new long[uses.size() * 3];
+		int i = 0;
+		for (final List<Long> use : uses) {
+			flat[i++] = use.get(0);
+			flat[i++] = use.get(1);
+			flat[i++] = use.get(2);
+		}
+		return flat;
+	}
+
+	private static List<transitsim.plan.OpposingMoves.Move<PathData>> movesOf(Collection<TripPath<PathData>> tripPaths) {
+		final List<transitsim.plan.OpposingMoves.Move<PathData>> moves = new ArrayList<>();
+		tripPaths.forEach(tripPath -> moves.addAll(transitsim.plan.OpposingMoves.movesOf(tripPath.path)));
+		return Collections.unmodifiableList(moves);
+	}
+
 	public void setDepotLegs(DepotLegs depotLegs) {
 		lastDepotLegs = depotLegs;
 	}
@@ -1205,6 +1255,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
 		lastDepotLegs = DepotLegs.of(tempTripPaths.values()).withUnreachable(new TreeSet<>(foundNoWayOut), new TreeSet<>(foundNoWayBack));
+		lastMoves = movesOf(tempTripPaths.values());
+		lastTrackUses = trackUsesOf(tempTripPaths.values());
 		// Turning back early (D4): the ways round the depot found, and from where they lead back to this siding
 		final Map<String, List<PathData>> newTurnLinks = pendingTurnLinks;
 		final Map<Long, List<PathData>> newTurnReturns = findTurnReturns(rails, graph, cruisingAltitude, useFastSpeed, returnTails);
@@ -1287,6 +1339,8 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		failedDuties.forEach(key -> System.out.println("The path of a duty can't be found: " + key));
 		lastFailedDuties = Collections.unmodifiableList(new ArrayList<>(failedDuties));
 		lastDepotLegs = DepotLegs.of(tempTripPaths.values()).withUnreachable(new TreeSet<>(foundNoWayOut), new TreeSet<>(foundNoWayBack));
+		lastMoves = movesOf(tempTripPaths.values());
+		lastTrackUses = trackUsesOf(tempTripPaths.values());
 		// Turning back early (D4): the ways round the depot found, and from where they lead back to this siding
 		final Map<String, List<PathData>> newTurnLinks = pendingTurnLinks;
 		final Map<Long, List<PathData>> newTurnReturns = findTurnReturns(rails, graph, cruisingAltitude, useFastSpeed, returnTails);

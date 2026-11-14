@@ -306,4 +306,6 @@
 - `private dumpDutyPaths(List<DutyPathBuilder>, turnTimes, measuredWays)`：`-Dmtr.dumpDutyPaths=<文件夹>` 时写 `depot-<id>.txt`（折返用时、出入库用时和不可达、每条存车线每条运用路径的键、分段起点、出库用时、总用时、轨道和停站），排好序，两次构建可逐行比较；拆分车厂每一步都用它验收。0.76.0 起在服务器线程上、存车线装上新路径之后才写（以前在找路线程上写，读到的可能是上一次找路的路径，取决于这次找路花了多久；所以 0.76.0 之前的导出不能和之后的比）。
 
 ## 折返线比列车短的提示（0.79.4）
+- `trackUsesOf(mainPaths)`（0.80.0）：合并各存车线的 `getLastTrackUses()`（去重），随 `generatePathS2C` 发给客户端，客户端存在 `clientTrackUses` 并让 `clientTrackUsesVersion` 加一；网页车站股道运用图用。
+- `findConflicts(mainPaths)`（0.80.0）：寻路线程里、发寻路结果前，把各存车线 `getLastMoves()` 交给组件 `OpposingMoves.find`，得到冲突进路（两站间掉头两次以上的走法、和别的走法在同一段轨道上方向相反且至少一个掉头的走法对），转成字符串随 `generatePathS2C` 发给客户端；和上次（字段 `toldConflicts`）不同才打一行日志，并建议在折返线末端加道岔改单边站前折返，或各线各用一边站台站前折返。出错只打印，不影响寻路。客户端字段 `clientConflicts`。
 - `tellShortTurnBacks(mainPaths)`：找完车厂路径后，对每条存车线的每条运用路径用组件 `TurnBackLengths.find`（折返线 = `RailType.TURN_BACK`，列车长 = `Siding.getTrainLength`），结果和上次不同才打一行日志：哪里（坐标）、折返线多长、车多长，提醒把折返线做得至少和车一样长。字段 `shortTurnBacks` 记上次的结果。

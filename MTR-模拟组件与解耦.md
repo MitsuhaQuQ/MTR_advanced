@@ -1429,6 +1429,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 出入库方向和出库提前量（0.75.0）：新规则在组件里。`OutLeads`（按首站晚点校正出库余量，没用就退回）和 `BufferRecorder` 的按首站晚点量出库（`plannedArrivals`、`outListener`）、`DepotDispatcher.addedBuffers`/`wayOutMillis`（派车时加上采用的出库余量）两个宿主共用；组件数据 `SimDataset` 第 20 版带车厂的采用余量，`TickRunner.placeDutyTrains` 也用 `wayOutMillis`。游戏侧只做宿主的事：`Depot` 接记录器和 `OutLeads`、把结果写进 `addedBuffers` 并发给玩家；找出入库路的"没配规则走方便方向"和"逆向过站台没刷联锁区就提示"在 `RoutePaths`（游戏侧，用组件的 `LineDepotWays.againstStops`）。测试先在组件：`OutLeadsTest`、`BufferRecorderTest`、`DutyRunTest`。
 
+尽头折返线兜底（0.80.0）：规则在组件 `TickRunner.runLayerTick`（`DEAD_END_EXITS`、`isDeadEndTurn`）和 `run.Authority`（`wholeUntil` 整组申请），游戏里按运用跑的车由组件驱动，宿主不另写；冲突进路的判断在组件 `transitsim.plan.OpposingMoves`（纯计算），游戏 `Siding`/`Depot` 只取路径、汇总、发包和写日志，网页只显示。车站股道运用图（同版本）只在游戏侧和网页：存车线取运用路径走过的轨道，网页按线路路径分出载客运行和运用走行，不涉及组件规则。
+
 拆分车厂第 2d 步（0.78.1）：整份运用路径的拼接搬进组件 `transitsim.plan.DutyAssembly`（宿主 `Host` 给每段的路径模板和站台、连接段、站前折返、引入段，`Tracks` 给轨道比较），游戏的 `DutyPathBuilder` 只找路、切片和转换。第 2 步（2a–2d）完成。
 
 拆分车厂第 2c 步（0.76.1）：两班次之间的连接段与站前折返的拼接规则搬进组件 `transitsim.plan.TurnBackWays`、`transitsim.plan.FrontTurnBacks`（纯规则，宿主用接口提供找路），游戏的 `DutyPathBuilder` 只找路和切片。

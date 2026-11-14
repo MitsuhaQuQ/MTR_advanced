@@ -31,7 +31,7 @@
     - `buffers[]`：每处测得的额外时间建议与采用值（D1；第 4 轮第 6 步）`{key, kind (out/turn/back), from, to, seconds, added?}`；
     - `sidings[]`：`{id, name, maxTrains, fleet, routes[], vehicle, legs? {entrance (车站 id), out{}, back{}}, noWayOut[], noWayBack[], noWayOutWhy{}, noWayBackWhy{} (0.65.26), measuredOut[]}`（出入库，P2-A）；
     - `revision`（`getRevision(depot)`）、`byTimetable`；
-    - `path`：上次找路状态 `{state (generating/failed/stale/found), text, failedDuties, failedDutyKeys[], detours[] ({from, to, length, apart}，远长于站台间距的衔接), turnTimesMeasured, turnTimes{from: {to: ms}}, holdIns{} (折返线进入时长，第 4 轮), holdCounts{} (站台以外可同时等候的列车数，"运用补完"第 4 步)}`；
+    - `path`：上次找路状态 `{state (generating/failed/stale/found), text, failedDuties, failedDutyKeys[], detours[] ({from, to, length, apart}，远长于站台间距的衔接), conflicts[] ({kind: turns/against, from, to, turns, otherFrom, otherTo, otherTurns}，0.80.0 冲突进路，站台换成标签), turnTimesMeasured, turnTimes{from: {to: ms}}, holdIns{} (折返线进入时长，第 4 轮), holdCounts{} (站台以外可同时等候的列车数，"运用补完"第 4 步)}`；
     - `held[]`：在线上等待且没有运用的列车 `{siding, slot, platform, reason}`（P1-C）；
     - 晚点/受阻告警（`EditorContingencies.addToDepot`，D2）；
     - `returnMisses[]`：设置为回某车厂但列车回不去的班次 `{siding, depot, reason}`（P1-B）；

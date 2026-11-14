@@ -57,6 +57,8 @@ tasks.register("simulateDay", JavaExec) {
 	mainClass = "transitsim.tools.SimulateDay"
 	// -Pmtr.throatLocks=false runs the day without trains locking station throats, to compare
 	systemProperty "mtr.throatLocks", project.findProperty("mtr.throatLocks") ?: "true"
+	// -Pmtr.deadEndExits=false runs without a train taking its way out with a dead end (0.80.0), to compare
+	systemProperty "mtr.deadEndExits", project.findProperty("mtr.deadEndExits") ?: "true"
 	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
 	// -Pmtr.simRoutes=id,id simulates only those routes' part of the world; -Pmtr.simRoutes=scopes lists its sizes
 	systemProperty "mtr.simRoutes", project.findProperty("mtr.simRoutes") ?: ""

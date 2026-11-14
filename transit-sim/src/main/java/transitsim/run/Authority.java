@@ -83,6 +83,14 @@ public final class Authority {
 	 *                 for with the group taking it past each
 	 */
 	public <T extends RunTrack> double update(PathClaims.Path<T> path, Object pathKey, double bodyTail, double head, double target, BlockSections sections, long plannedMillis, List<PathClaims.Attached> attached) {
+		return update(path, pathKey, bodyTail, head, target, sections, plannedMillis, attached, Double.NaN);
+	}
+
+	/**
+	 * @param wholeUntil the groups ahead up to here are asked for as one, granted whole or not at all (a dead end with its
+	 *                   way out, item A of MTR-待验证.md), or NaN
+	 */
+	public <T extends RunTrack> double update(PathClaims.Path<T> path, Object pathKey, double bodyTail, double head, double target, BlockSections sections, long plannedMillis, List<PathClaims.Attached> attached, double wholeUntil) {
 		// What it holds reaches the room behind its tail too
 		final double tail = Math.max(0, bodyTail - margin);
 		boolean fresh = pathKey != this.pathKey || Double.isNaN(grantedEnd);
@@ -115,7 +123,7 @@ public final class Authority {
 				aheadAttached.add(each);
 			}
 		}
-		final List<PathClaims.Group> ahead = target <= head + 1E-6 ? java.util.Collections.emptyList() : PathClaims.attach(PathClaims.between(path, head, target, sections), aheadAttached);
+		final List<PathClaims.Group> ahead = target <= head + 1E-6 ? java.util.Collections.emptyList() : whole(PathClaims.attach(PathClaims.between(path, head, target, sections), aheadAttached), wholeUntil);
 		if (fresh) {
 			// Starting afresh, after a restart or onto another path, the train takes at once what it can of the way ahead, as
 			// it held it going on: so carrying on from a record runs as running on does
@@ -159,6 +167,26 @@ public final class Authority {
 		final double reach = pending == null ? Math.max(head, target) : Math.max(head, Math.max(grantedEnd, pending.start) - margin);
 		grantedEnd = Math.max(grantedEnd, reach);
 		return Math.min(reach, Math.max(head, target));
+	}
+
+	/**
+	 * @return the groups with those ending up to {@code until} made one
+	 */
+	private static List<PathClaims.Group> whole(List<PathClaims.Group> groups, double until) {
+		if (Double.isNaN(until)) {
+			return groups;
+		}
+		int count = 0;
+		while (count < groups.size() && groups.get(count).end <= until + 1E-6) {
+			count++;
+		}
+		if (count < 2) {
+			return groups;
+		}
+		final List<PathClaims.Group> result = new ArrayList<>(groups.size() - count + 1);
+		result.add(new PathClaims.Group(PathClaims.claimsOf(groups.subList(0, count)), groups.get(0).start, groups.get(count - 1).end));
+		result.addAll(groups.subList(count, groups.size()));
+		return result;
 	}
 
 	/**

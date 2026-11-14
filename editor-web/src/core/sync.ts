@@ -69,6 +69,14 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     else if (path.state === "generating") problems.push({ level: "warn", text: tr("车厂{0}正在生成路径", name) })
     else if (path.state === "stale") problems.push({ level: "warn", text: tr("车厂{0}的路径是旧的，线路或轨道改过，要刷新", name) })
     ;(path.detours || []).forEach((detour: any) => problems.push({ level: "warn", text: tr("车厂{0}：从 {1} 到 {2} 要空车走 {3} 格（两个站台只相距 {4} 格），绕远了。在 {1} 的线路上设站前或站后折返（折返线、多站台轮用），或者让下一班从同一个站台发车", name, shortName(detour.from), shortName(detour.to), detour.length, detour.apart) }))
+    // Conflicting routes (0.80.0, item A): safe, a train going into a dead end only with its way out, but they hold each other up
+    const conflicts = path.conflicts || []
+    if (conflicts.length) {
+      const lines = conflicts.slice(0, 4).map((conflict: any) => conflict.kind === "turns"
+        ? tr("{0} 到 {1} 之间掉头 {2} 次", shortName(conflict.from), shortName(conflict.to), conflict.turns)
+        : tr("{0} 到 {1} 和 {2} 到 {3} 在同一段轨道上方向相反", shortName(conflict.from), shortName(conflict.to), shortName(conflict.otherFrom), shortName(conflict.otherTo)))
+      problems.push({ level: "warn", text: tr("车厂{0}的运用里存在大量冲突进路（{1} 处）：{2}。列车进尽头折返线前会先拿到出来的进路，不会死锁，但会互相等。建议：在折返线末端再加一组道岔通往另一方向，改成单边站前折返；或者让每条线各用一边站台站前折返，进站保持正线方向，出站才过渡线到对向轨道", name, conflicts.length, lines.join("；")) })
+    }
     if (path.failedDuties > 0) problems.push({ level: "err", text: tr("车厂{0}有 {1} 份运用找不到路，这些车不会按运用出车：{2}", name, path.failedDuties, (path.failedDutyKeys || []).slice(0, 3).join("、")) })
     // Trains waiting on the line with no duty to go on with, which a click takes straight back
     ;(depot.held || []).forEach((held: any) => {

@@ -42,8 +42,8 @@ const interval = (seconds: number) => [Math.floor(seconds / 3600), Math.floor(se
 export function serviceTimes(line: Line, route: LineRoute, start: string): {first: string, headway: number, count: number} {
 	const name = route.name.split("|")[0];
 	if (line.layout === 7) return {first: later(start, name.includes("下行") ? 0 : 1), headway: 30, count: 20};
-	if (line.layout === 8 || line.layout === 9) {
-		const offsets: Record<string, number> = line.layout === 8
+	if (line.layout === 8 || line.layout === 9 || line.layout === 11) {
+		const offsets: Record<string, number> = line.layout !== 9
 			? {A上行: 0, B上行: 1, B下行: 1, A下行: 2}
 			: {A上行: 0, B上行: 1, C上行: 3, C下行: 1, B下行: 2, A下行: 3};
 		const key = Object.keys(offsets).find(k => name.endsWith(k))!;
@@ -85,16 +85,16 @@ export interface ThroughLink {from: string, fromName: string, fromService: strin
 /** Which services of lines 8 and 9 run through: line 8 every other one, line 9 all, A→B→C and back C→B→A */
 export function throughLinks(start: string): ThroughLink[] {
 	const links: ThroughLink[] = [];
-	for (const line of lines.filter(l => l.layout === 8 || l.layout === 9)) {
+	for (const line of lines.filter(l => l.layout === 8 || l.layout === 9 || l.layout === 11)) {
 		const route = (suffix: string) => line.routes.find(r => r.name.split("|")[0].endsWith(suffix))!;
-		const pairs: [string, string, number, number][] = line.layout === 8
+		const pairs: [string, string, number, number][] = line.layout !== 9
 			? [["A上行", "B上行", -1, 0], ["B下行", "A下行", -1, 0]]
 			: [["A上行", "B上行", -1, 1], ["B上行", "C上行", -1, 0], ["C下行", "B下行", -1, 0], ["B下行", "A下行", 1, 0]];
 		for (const [fromSuffix, toSuffix, leaveStop, joinStop] of pairs) {
 			const from = route(fromSuffix), to = route(toSuffix);
 			const fromTimes = serviceLabels(line, from, start), toTimes = serviceLabels(line, to, start);
 			fromTimes.forEach((time, k) => {
-				if (line.layout === 8 && k % 2) return;
+				if (line.layout !== 9 && k % 2) return;
 				links.push({from: String(from.id), fromName: from.name, fromService: time, to: String(to.id), toName: to.name, toService: toTimes[k], leaveStop, joinStop});
 			});
 		}

@@ -6,8 +6,8 @@
  * - "logical" (the ownership layer), stations as small boxes showing their tracks and the sections between them as
  *   parallel lines, each in the colour of its logical line (or of the lines owning it, without logical lines); with a
  *   brush in hand, a click on a section paints all of its rails.
- * Station labels keep their size at any zoom. Click a station for its tracks; "在实际图上看" shows the place on the real
- * map.
+ * Station labels keep their size at any zoom. Click a station for its track use (StationFlows: each line's trains
+ * flowing over its tracks, 0.80.0); "在实际图上看" shows the place on the real map.
  */
 import { useEffect, useMemo, useRef, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
@@ -18,6 +18,7 @@ import { colorOf } from "./now"
 import { trackSchematic } from "../core/trackSchematic"
 import { TrackMapDrawing } from "./TrackMapDrawing"
 import { orthogonalTracks } from "../core/orthogonalTracks"
+import { StationFlows } from "./StationFlows"
 
 const GAP = 5, LANE = 7, BOX_W = 44
 
@@ -89,6 +90,14 @@ export function NetworkSchematic({ onShowReal, mode = "tracks", shape = "real", 
   if (!schematic) return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{head}<p className="p-4 text-[13px] text-dim">{data ? tr("游戏里还没有这种运输方式的轨道") : tr("正在读取…")}</p></div>
   const at = new Map(schematic.places.map(p => [p.id, p]))
   const place = chosen ? at.get(chosen) : null
+  // A station clicked: its track use, each line's flows in its colour (0.80.0); the card of its tracks otherwise
+  const stationEntry = chosen && chosen.startsWith("s:") ? ((data.stations || []) as { id: string; name: string; x: number; z: number }[]).find(s => "s:" + s.id === chosen) : undefined
+  const showReal = (x: number, z: number) => {
+    v.net.cx = x
+    v.net.cz = z
+    v.net.scale = 2
+    onShowReal()
+  }
   const k = view?.k ?? 1
   // Glyphs keep their size on screen: drawn in screen units around each place's zoomed position
   const sx = (p: Place) => p.px * k + (view?.x ?? 0), sy = (p: Place) => p.py * k + (view?.y ?? 0)
@@ -122,12 +131,9 @@ export function NetworkSchematic({ onShowReal, mode = "tracks", shape = "real", 
                 : <circle key={p.id} cx={sx(p)} cy={sy(p)} r={p.kind === "junction" ? 3 : 2} fill="var(--ink)"><title>{p.kind === "junction" ? tr("道岔") : tr("尽头")}</title></circle>)}
             </>}
         </svg>
-        {place && <StationCard place={place} onClose={() => setChosen(null)} onShowReal={() => {
-          v.net.cx = place.x
-          v.net.cz = place.z
-          v.net.scale = 2
-          onShowReal()
-        }} />}
+        {stationEntry
+          ? <StationFlows net={data} stationId={stationEntry.id} name={stationEntry.name.split("|")[0]} onClose={() => setChosen(null)} onShowReal={() => showReal(stationEntry.x, stationEntry.z)} />
+          : place && <StationCard place={place} onClose={() => setChosen(null)} onShowReal={() => showReal(place.x, place.z)} />}
       </div>
     </div>
   )

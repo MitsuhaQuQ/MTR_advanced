@@ -61,3 +61,9 @@
 
 ### `List<Arbiter.Claim<UUID>> getHeld()`
 当前持有的声明。调用者：`TrainServer.java:1094`、`TickRunner.java:346`。
+
+### `<T extends RunTrack> double update(..., List<PathClaims.Attached> attached, double wholeUntil)`（0.80.0）
+同上，另加 `wholeUntil`：前方终点不超过它的那些组合成一组申请（`whole`，用 `PathClaims.claimsOf` 合并，同一方向资源两个方向都有时成为双向），要么全批、要么都不批；NaN 时不合并（原来的重载都传 NaN）。用于尽头折返线连同出来的进路一起申请（`MTR-待验证.md` 的 A）。调用者：`TickRunner.java` 的 `runLayerTick`。
+
+### `private static List<PathClaims.Group> whole(List<PathClaims.Group> groups, double until)`
+把终点不超过 `until` 的前几组合成一组（起点取第一组的、终点取最后一组的），其余照旧；少于两组时原样返回。

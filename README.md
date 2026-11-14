@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.80.0 makes a train go into a dead-end turn-back track only together with its way out to the next stop, so two trains swapping ends through one dead end no longer lock each other; depots tell of conflicting routes (trains turning back along the same rails the other way, or turning more than once between two stops) in the log and the web editor, with better layouts. Clicking a station on the web editor's whole-network map shows its track use: each line's trains flowing over its tracks in the line's colour, the duties' moves dotted, tracks run both ways marked. Network protocol changed: server and client both need 0.80.0.
+
 0.79.4 tells in the log where a depot's trains turn back on turn-back track shorter than them (they stand over the switch while they turn), and no longer loads the texture minecraft:.png for a train whose base texture has no name.
 
 0.79.3 adds the debug switch -Dmtr.debugTurnBack=true, logging every turn-back choice with each way and whether it was free.

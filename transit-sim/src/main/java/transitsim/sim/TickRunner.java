@@ -217,6 +217,13 @@ public final class TickRunner<T extends RunTrack> {
 	 * from MTR, while both are kept.
 	 */
 	public static volatile boolean RUN_LAYER = !"false".equals(System.getProperty("mtr.runLayer"));
+	/**
+	 * Whether a train goes into a turn back off the platforms (a dead end it can only leave by turning) only together with
+	 * its way out to the next stop, and keeps that way while it waits in there (item A of MTR-待验证.md, 2026-11-14): two
+	 * trains swapping ends through one dead end otherwise each held what the other needed (line 8 of the six test lines).
+	 * {@code -Dmtr.deadEndExits=false} runs as before, to compare.
+	 */
+	public static volatile boolean DEAD_END_EXITS = !"false".equals(System.getProperty("mtr.deadEndExits"));
 
 	/**
 	 * Sets the network's early threshold ({@link TrainRules#getCruiseCap}).
@@ -2034,7 +2041,15 @@ public final class TickRunner<T extends RunTrack> {
 			if (onRoute || service.isOnDuty()) {
 				final int stop = transitsim.run.RunMotion.findNextStop(this, head, onRoute && speed > 0);
 				final boolean atStop = !onRoute || speed <= 0 && Math.abs(getStopDistance(stop) - head) <= 1E-3;
-				final int targetStop = onRoute && atStop ? transitsim.run.RunMotion.findStopAfter(this, stop) : stop;
+				int targetStop = onRoute && atStop ? transitsim.run.RunMotion.findStopAfter(this, stop) : stop;
+				// Into a dead end only with the way out (item A): the request runs on to the stop after the turn as one, and a
+				// train standing in there keeps its way out however long it waits
+				final boolean inDeadEnd = DEAD_END_EXITS && onRoute && atStop && isDeadEndTurn(stop);
+				double wholeUntil = Double.NaN;
+				if (DEAD_END_EXITS && onRoute && isDeadEndTurn(targetStop)) {
+					targetStop = transitsim.run.RunMotion.findStopAfter(this, targetStop);
+					wholeUntil = getStopDistance(targetStop);
+				}
 				final List<T> claimTracks = path;
 				final List<Double> claimEnds = distances;
 				final transitsim.run.PathClaims.Path<T> claimPath = new transitsim.run.PathClaims.Path<T>() {
@@ -2063,10 +2078,10 @@ public final class TickRunner<T extends RunTrack> {
 						throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
 					}
 				}
-				final double target = onRoute && atStop && TrainRules.waitsBeforeRequestingRun(this, stop) ? head : getStopDistance(targetStop);
+				final double target = onRoute && atStop && !inDeadEnd && TrainRules.waitsBeforeRequestingRun(this, stop) ? head : getStopDistance(targetStop);
 				// A car's length of room to other trains, front and back (user, 2026-11-12)
 				authority.setMargin(siding.spacing);
-				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, target, getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats);
+				authorityEnd = authority.update(claimPath, path, Math.max(0, head - trainLength), head, target, getBlockSections(), TrainRules.getPlannedDepartureMillis(this), throats, wholeUntil);
 				if (atStop && target > head + 1E-6 && authorityEnd <= head + 1E-6) {
 					if (waitingSinceMillis == 0) waitingSinceMillis = millis;
 				} else {
@@ -2080,6 +2095,14 @@ public final class TickRunner<T extends RunTrack> {
 			if (!onRoute && !service.isOnDuty()) {
 				authority.release();
 			}
+		}
+
+		/**
+		 * @return whether the path turns back at this stop on a track that isn't a platform: a turn back rail, which the train
+		 * can only leave the way it came
+		 */
+		private boolean isDeadEndTurn(int stop) {
+			return stop >= 0 && stop + 1 < path.size() && path.get(stop).isOppositeOf(path.get(stop + 1)) && !path.get(stop).isPlatformTrack();
 		}
 
 		private void writePositions() {

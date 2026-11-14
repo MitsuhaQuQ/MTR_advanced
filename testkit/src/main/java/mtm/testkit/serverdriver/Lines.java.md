@@ -49,7 +49,7 @@ MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 10 �
 - 作用：
   1. 每站在 z 0 和 z 8 两条正线上登记站台两端节点，区段类型为 PLATFORM；
   2. 一站后方：z 8 加节点 x = -40，连 `(0,0)→(-40,8)` IRON、`(-40,8)→(-100,8)` TURN_BACK；
-  3. 按 layout 加折返线、渡线、车厂停车轨，并记录车厂矩形（相对坐标）：1、4 用 `frontCrossover`，车厂两条停车轨东端都接到一段尾端折返线（`shuntingNeck`，车厂内调车，2026-11-13，车厂矩形东延到 +200）；2、7、9 用 `rearTurnBack + depotBehindTurnBack`；8 再加 `middleTurnBack`；3 在折返线前分叉接车厂；4 在五站外侧加第三站台（z 16）作为出库站台，并给回库列车单独停车轨；5、6 用 `rearTurnBack + middleTurnBack(middle, 长度)`，5 车厂在两正线之间（折返线 50 格，接着进车厂），6 车厂只接西行正线（两条线的折返线都是 50 格，比 75 格的车短，车身压着道岔掉头；加长到 90 格会让 8 号线撞上它在三站的死锁，等那个修好再加长）；10 用 `doubleRearTurnBack`（两条尽头折返线、两组渡线、车厂从西行正线分岔）；
+  3. 按 layout 加折返线、渡线、车厂停车轨，并记录车厂矩形（相对坐标）：1、4 用 `frontCrossover`，车厂两条停车轨东端都接到一段尾端折返线（`shuntingNeck`，车厂内调车，2026-11-13，车厂矩形东延到 +200）；2、7、9 用 `rearTurnBack + depotBehindTurnBack`；8 再加 `middleFrontCrossovers`（0.80.0：三站两侧各一组渡线，A 在东行站台、B 在西行站台站前折返，进站保持正线方向、出站才过渡线到对向；A下行和 B上行各把三站另一侧站台加进 `startPlatforms`）；11（0.80.0 新加，"首尾直通冲突进路示例"）是原来的 8 号线：`rearTurnBack + depotBehindTurnBack + middleTurnBack(middle, 50)`，B 线车在三站经尽头折返线掉头三次、和 A 线对向，用来测冲突进路提示和尽头线兜底；3 在折返线前分叉接车厂；4 在五站外侧加第三站台（z 16）作为出库站台，并给回库列车单独停车轨；5、6 用 `rearTurnBack + middleTurnBack(middle, 长度)`，5 车厂在两正线之间（折返线 50 格，接着进车厂），6 车厂只接西行正线（两条线的折返线都是 50 格，比 75 格的车短；0.80.0 试过把 6 号线加长到 90 格，结果在一站碰上另一种死锁，规则开关都一样，见 `MTR-待验证.md` 的 E，所以仍是 50 格）；10 用 `doubleRearTurnBack`（两条尽头折返线、两组渡线、车厂从西行正线分岔）；
   4. 按 `mains` 把正线逐段连起来；
   5. 建车站（站台前后各扩 5 格，z ∈ [-4, 12]，4 号线五站扩到 18）、按 layout 建线路（8、9 号线为直通组合；2 号线另加三站通过不停的"快车"，用于三站的时刻表传感器）；1、4 号线上行可在五站西行站台终到（`terminalPlatforms`）；4 号线下行可从出库站台始发（`startPlatforms`）；5、6 号线加短交路；
   6. 每条线路在 `networkSettings.runningSides` 中以键 `"R" + LineDuties.getLineKey(route)` 设为左侧行车，并置 `networkSettingsChanged = true`；
@@ -67,8 +67,11 @@ MTM_TestKit 服务端测试线网 `lines`：在一个新世界里并排搭 10 �
 - 副作用：`setChunkForced`、放方块、改方块实体。
 - 异常：放置后没有对应方块实体抛 `IllegalStateException`。
 
-### `private void middleTurnBack(int middle)`
-- 三站后两正线之间的折返线：两正线 `middle+30` 处节点各接到 `(middle+70, 4)`，再 `(middle+70,4)→(middle+120,4)` TURN_BACK。
+### `private void middleTurnBack(int middle, int length)`
+- 三站后两正线之间的尽头折返线：两正线 `middle+30` 处节点各接到 `(middle+70, 4)`，再 `(middle+70,4)→(middle+70+length,4)` TURN_BACK（5、6、11 号线都是 50 格）。
+
+### `private void middleFrontCrossovers()`（0.80.0）
+- 8 号线三站两侧的渡线：西侧 `(STATION_X[2]-20, 0)→(STATION_X[2]-60, 8)`（A 线车从东行站台往西出站换到西行线），东侧 `(STATION_X[2]+PLATFORM+20, 8)→(+60, 0)`（B 线车从西行站台往东出站换到东行线）。
 
 ### `private void depotBehindTurnBack(int east, List<int[]> depotBoxes)`
 - 折返线后接车厂：`(east+100,0)→(east+130,0)` IRON、`→(east+210,0)` SIDING；车厂矩形 `{east+120,-6,east+220,6}`。

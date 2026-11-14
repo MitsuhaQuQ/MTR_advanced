@@ -236,6 +236,20 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	private Set<String> shortTurnBacks = Collections.emptySet();
 	public List<String> clientDetours = Collections.emptyList();
 	/**
+	 * Conflicting routes of the depot's paths, as {@link transitsim.plan.OpposingMoves.Finding#toString()} (item A).
+	 */
+	public List<String> clientConflicts = Collections.emptyList();
+	/**
+	 * The rails the depot's paths run, each way, with a route, as {from, to, route} flattened (0.80.0): the web editor's
+	 * station track use. {@link #clientTrackUsesVersion} counts the changes, for the editor's network.
+	 */
+	public long[] clientTrackUses = new long[0];
+	public static volatile int clientTrackUsesVersion;
+	/**
+	 * What was told of the conflicting routes last, so the log says it once each time it changes.
+	 */
+	private List<String> toldConflicts = Collections.emptyList();
+	/**
 	 * How long each change of platform within a station of the depot's lines takes on the rails, from the last path
 	 * generation: from platform → to platform → milliseconds; a pair left out has no way between. On the server for the
 	 * plan, on the clients as sent, for the advanced editor.
@@ -1369,7 +1383,8 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				if (Boolean.getBoolean("mtr.debugDepotLegs") && railwayData != null) {
 					mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> debugDepotLegs(siding, railwayData.routePaths, rails, dataCache)));
 				}
-				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes);
+				final List<String> conflicts = findConflicts(mainPaths);
+				PacketTrainDataGuiServer.generatePathS2C(world, id, successfulSegments, failure, failedDuties, depotLegs, detours, turnTimes, conflicts, trackUsesOf(mainPaths));
 				final long timeEnd = System.nanoTime();
 				final int pathCount = mainPaths.stream().mapToInt(mainPath -> mainPath.sidings.stream().mapToInt(siding -> siding.getTripPaths().size()).sum()).sum();
 				System.out.println("Finished path generation" + (name.isEmpty() ? "" : " for " + name) + String.format(" in %d ms: turn times %d, ways out and back %d, plan of the unit %d (%s), duties' paths %d (%d paths)", (timeEnd - timeStart) / 1000000, (timeTurns - timeStart) / 1000000, (timeWays - timeTurns) / 1000000, (timePlan - timeWays) / 1000000, linePlan == null ? "none" : planHow[0], (timeEnd - timePlan) / 1000000, pathCount));
@@ -1732,6 +1747,52 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 * Adds the services the depot sent out last, and the days its duties ran, to a record of the trains (G0), under one of
 	 * its sidings.
 	 */
+	/**
+	 * @return the rails all the depot's new paths run, each way, with a route, as {from, to, route} flattened, each once
+	 */
+	private static long[] trackUsesOf(List<DutyPathBuilder> mainPaths) {
+		final Set<List<Long>> uses = new LinkedHashSet<>();
+		mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> {
+			final long[] flat = siding.getLastTrackUses();
+			for (int i = 0; i + 2 < flat.length; i += 3) {
+				uses.add(Arrays.asList(flat[i], flat[i + 1], flat[i + 2]));
+			}
+		}));
+		final long[] flat = new long[uses.size() * 3];
+		int i = 0;
+		for (final List<Long> use : uses) {
+			flat[i++] = use.get(0);
+			flat[i++] = use.get(1);
+			flat[i++] = use.get(2);
+		}
+		return flat;
+	}
+
+	/**
+	 * The conflicting routes of the depot's new paths (item A of MTR-待验证.md, 2026-11-14): moves turning back twice or more
+	 * between two stops, and pairs of moves turning back along the same rails the other way. A train only goes into a dead
+	 * end with its way out, so they are safe, but they hold each other up; the log tells once each time they change.
+	 */
+	private List<String> findConflicts(List<DutyPathBuilder> mainPaths) {
+		try {
+			final List<transitsim.plan.OpposingMoves.Move<mtr.path.PathData>> moves = new ArrayList<>();
+			mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> moves.addAll(siding.getLastMoves())));
+			final List<String> conflicts = new ArrayList<>();
+			transitsim.plan.OpposingMoves.find(moves).forEach(finding -> conflicts.add(finding.toString()));
+			if (!conflicts.equals(toldConflicts)) {
+				if (!conflicts.isEmpty()) {
+					System.out.println("Minecraft Transit Railway: depot " + (name.isEmpty() ? String.valueOf(id) : name) + " has conflicting routes, trains turning back along the same rails the other way, or turning more than once between two stops; safe but they hold each other up. Better: a switch at the far end of the turn-back track towards the other direction for turning back in front of the platform, or each line turning back in front of a platform of its own (from platform, to platform, turns): " + String.join("; ", conflicts));
+				}
+				toldConflicts = conflicts;
+			}
+			return conflicts;
+		} catch (RuntimeException e) {
+			// Only something told: never in the way of the depot's paths
+			e.printStackTrace();
+			return Collections.emptyList();
+		}
+	}
+
 	/**
 	 * Tells where the depot's trains turn back on a turn-back track shorter than them (0.79.4, 2026-11-14: line 6 of the test
 	 * lines turned 75-block trains on a 50-block dead end, each standing over the switch while it turned and holding up both

@@ -22,6 +22,7 @@
   - `boundaryNodes[]`：寻路边界节点的下标（`ClientData.PATH_REGIONS.boundaries`）；
   - `stations[]`：有该交通方式站台的车站 `{id, name, x, z}`，位置为其站台中点的平均；
   - `routes[]`：未隐藏、路径至少 2 个节点的线路 `{id, name, color, lineKey ("模式|线路键"), nodes[] (节点下标), stopNodes[]}`，`stopNodes` 为每个停站其站台轨道终点在 `nodes` 中的下标或 −1（网页分层第 3 步，让页面知道线路在两站之间走哪些轨道）。
+  - `dutyUses[]`（0.80.0）：这种运输方式各车厂运用路径走过的轨道，`[节点下标, 节点下标（按走的方向）, 线路 id, 车厂 id]`，来自客户端车厂的 `clientTrackUses`；给车站股道运用图（`StationFlows`）区分折返、换站台、出入库这些运用走行。网络的 `version` 也算上 `Depot.clientTrackUsesVersion`，寻路结果一到就重发。
 - 副作用：`fresh` 时发请求包。
 - 主要调用者：`EditorServer.java:537`。
 

@@ -71,10 +71,10 @@ public final class Lines {
 	private static final String[] STATION_NAMES = {"一站|Station 1", "二站|Station 2", "三站|Station 3", "四站|Station 4", "五站|Station 5"};
 	private static final String[] LAYOUT_NAMES = {
 			"站前折返+站后车库", "站后折返线后接车厂", "站后折返线前分叉接车厂", "站前折返+单独出库站台", "中间站折返线+车厂", "中间站折返线+车厂只接单边",
-			"长区间信号分段", "首尾直通", "中途接入与三段直通", "站后双折返"
+			"长区间信号分段", "首尾直通", "中途接入与三段直通", "站后双折返", "首尾直通冲突进路示例"
 	};
-	private static final int[] COLORS = {0xE53935, 0x1E88E5, 0x43A047, 0x8E24AA, 0xFB8C00, 0x00897B, 0x6D4C41, 0x3949AB, 0xC0CA33, 0xD81B60};
-	public static final int LAYOUTS = 10;
+	private static final int[] COLORS = {0xE53935, 0x1E88E5, 0x43A047, 0x8E24AA, 0xFB8C00, 0x00897B, 0x6D4C41, 0x3949AB, 0xC0CA33, 0xD81B60, 0x546E7A};
+	public static final int LAYOUTS = 11;
 
 	private Lines() {
 	}
@@ -171,6 +171,17 @@ public final class Lines {
 					depotBehindTurnBack(east, depotBoxes);
 					break;
 				case 8:
+					// Each half turns back in front of a platform of its own at 三站 (user, 2026-11-14): trains come in the
+					// line's way and only cross to the other track leaving, A from 三站's eastbound platform west, B from its
+					// westbound one east
+					rearTurnBack(east);
+					depotBehindTurnBack(east, depotBoxes);
+					middleFrontCrossovers();
+					break;
+				case 11:
+					// Line 8 as it was: both halves turning back through one dead-end turn-back track east of 三站, B's trains
+					// turning three times along A's way the other way. Kept for the depot's hint of conflicting routes and the
+					// rule that a train goes into a dead end only with its way out (item A of MTR-待验证.md)
 					rearTurnBack(east);
 					depotBehindTurnBack(east, depotBoxes);
 					middleTurnBack(middle, 50);
@@ -208,8 +219,8 @@ public final class Lines {
 				case 6:
 					rearTurnBack(east);
 					// Line 6's dead end is shorter than its 75-block trains, which turn standing over the switch (0.79.4 says so in
-					// the log). Lengthened to 90 it changed the timing enough for line 8 to run into its deadlock at 三站
-					// (MTR-待验证.md, 2026-11-14), so it stays at 50 until that is fixed
+					// the log). At 90 (0.80.0, with dead ends taken only with the way out) line 6 ran into another deadlock, at 一站,
+					// with the rule or without it (MTR-待验证.md E), so it stays at 50 until that is found
 					middleTurnBack(middle, 50);
 					if (layout == 5) {
 						// The depot behind the turn-back track, between the main tracks
@@ -253,7 +264,7 @@ public final class Lines {
 			}
 			final List<Route> routes = new ArrayList<>();
 			final Platform[] downReversed = reversed(down);
-			if (layout == 8) {
+			if (layout == 8 || layout == 11) {
 				// A 一站↔三站, B 三站↔五站
 				routes.add(route(prefix + "A上行|Line " + layout + " A Up", up, 0, 2));
 				routes.add(route(prefix + "A下行|Line " + layout + " A Down", downReversed, 2, 4));
@@ -284,6 +295,12 @@ public final class Lines {
 			if (layout == 1 || layout == 4) {
 				// Front turn-back: trains of 上行 may end at the westbound platform of 五站, over the crossover
 				upRoute.terminalPlatforms.add(down[4].id);
+			}
+			if (layout == 8) {
+				// Turning back in front of the platform they came in at: A下行 from 三站's eastbound platform, B上行 from its
+				// westbound one
+				routes.get(1).startPlatforms.add(up[2].id);
+				routes.get(2).startPlatforms.add(down[2].id);
 			}
 			if (layout == 4) {
 				// Trains from the depot start 下行 at the separate platform
@@ -369,6 +386,22 @@ public final class Lines {
 		}
 
 		/** A crossover before 五站 from the eastbound track to the westbound one, so trains turn back in front of it */
+		/**
+		 * Line 8's crossovers at 三站 (2026-11-14): west of it from the eastbound track over to the westbound one, for A's
+		 * trains leaving 三站's eastbound platform westwards; east of it from the westbound track over to the eastbound one,
+		 * for B's leaving its westbound platform eastwards.
+		 */
+		private void middleFrontCrossovers() {
+			final int west = STATION_X[2] - 20;
+			mainNode(0, west);
+			mainNode(8, west - 40);
+			rail(west, 0, west - 40, 8, RailType.IRON);
+			final int east = STATION_X[2] + PLATFORM + 20;
+			mainNode(8, east);
+			mainNode(0, east + 40);
+			rail(east, 8, east + 40, 0, RailType.IRON);
+		}
+
 		private void frontCrossover() {
 			final int x = STATION_X[4];
 			mainNode(0, x - 50);

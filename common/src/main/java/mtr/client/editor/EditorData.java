@@ -309,6 +309,25 @@ public final class EditorData {
 				}
 			});
 			pathObject.add("detours", detoursArray);
+			// Conflicting routes (0.80.0, item A): a move turning twice or more, or two moves along the same rails the other way
+			final JsonArray conflictsArray = new JsonArray();
+			depot.clientConflicts.forEach(conflict -> {
+				final String[] parts = conflict.split(" ");
+				if (parts.length >= 4) {
+					final JsonObject conflictObject = new JsonObject();
+					conflictObject.addProperty("kind", parts[0]);
+					conflictObject.addProperty("from", platformLabel(Long.parseLong(parts[1])));
+					conflictObject.addProperty("to", platformLabel(Long.parseLong(parts[2])));
+					conflictObject.addProperty("turns", Integer.parseInt(parts[3]));
+					if (parts.length >= 7) {
+						conflictObject.addProperty("otherFrom", platformLabel(Long.parseLong(parts[4])));
+						conflictObject.addProperty("otherTo", platformLabel(Long.parseLong(parts[5])));
+						conflictObject.addProperty("otherTurns", Integer.parseInt(parts[6]));
+					}
+					conflictsArray.add(conflictObject);
+				}
+			});
+			pathObject.add("conflicts", conflictsArray);
 			// How long each change of platform within a station takes on the rails: from platform → to platform → millis,
 			// a pair left out having no way between once measured
 			pathObject.addProperty("turnTimesMeasured", depot.turnTimesMeasured);
