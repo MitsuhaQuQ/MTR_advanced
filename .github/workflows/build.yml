@@ -1,5 +1,14 @@
 name: Build
-on: [ pull_request, push ]
+# ante-merge is pushed as both itself and main, the same commit: built once, on main. Changes to the docs only aren't built.
+on:
+  pull_request:
+    paths-ignore: [ '**.md' ]
+  push:
+    branches: [ main ]
+    paths-ignore: [ '**.md' ]
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -9,7 +18,9 @@ jobs:
         # Only 1.20.1 is built for now (user 2026-11-08); the others are put back when they are worked on again:
         # [ 1.16.5, 1.17.1, 1.18.2, 1.19.4, 1.20.1 ]
         minecraft: [ 1.20.1 ]
-        variation: [ normal, server, lifts ]
+        # Only the normal jars: the server and lifts variations leave the merged ANTE code out, which this fork's MTR code
+        # needs, so they can't be built (2026-11-14)
+        variation: [ normal ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -64,31 +75,8 @@ jobs:
           remote_folder: ${{ secrets.FTP_PATH }}
           local_folder: build/latest
           include: '["latest.json"]'
-  server:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        # Only 1.20.1 is built for now (user 2026-11-08); the others are put back when they are worked on again:
-        # [ 1.16.5, 1.17.1, 1.18.2, 1.19.4, 1.20.1 ]
-        minecraft: [ 1.20.1 ]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@main
-      - name: Validate gradle wrapper
-        uses: gradle/wrapper-validation-action@main
-      - name: Setup JDK 17
-        uses: actions/setup-java@main
-        with:
-          java-version: 17
-          distribution: 'zulu'
-      - name: Make gradle wrapper executable
-        run: chmod +x ./gradlew
-      - name: Build ${{ matrix.minecraft }}
-        run: ./gradlew build -PbuildVersion="${{ matrix.minecraft }}" -PpatreonApiKey="${{ secrets.PATREON_API_KEY }}" -PtestServer="true" --continue
-      - name: Test ${{ matrix.minecraft }} Server
-        run: ./gradlew testServer -PbuildVersion="${{ matrix.minecraft }}" --continue
+  # The server test job of upstream MTR is left out (2026-11-14): it never got to run here, as it waited on the variations
+  # above, and starts its server the upstream way; the servers are tested locally instead (C:/gtmp/fast/round.sh)
   crowdin:
     runs-on: ubuntu-latest
     steps:
