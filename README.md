@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.82.5: a logical line can no longer be made a connecting line in the editor; a track is opened to every line on the ownership map instead (lines marked before keep the mark and can have it taken off).
+
 0.82.4: depots planning one line together find each other's sidings' ways out and back by the right depot's rules; before, each took the other's sidings for its own, found no way and counted their services as reached by no siding.
 
 0.82.3: the station track use drawing zooms in up to 40 times with the wheel and can be dragged, so turn back sidings beside the platforms can be told apart; 复位 or a double click shows it whole. A depot rule set by choosing only the station to go out or back by keeps that station (it was dropped); the depot hints no longer list internal markers as lines without a rule. Audio speakers and announcers naming an audio file by the name it had before it was replaced play the new file again.

@@ -25,7 +25,7 @@
 - 调用者：`views/LinePanels.tsx:31`。
 
 ### `LogicalLinePanel({ lineId, then, onClose })`
-- 新建（`lineId` 为 null）或修改逻辑线路：名称（必填，最多 64 字）、颜色（默认 `#3b82f6`）、是否联络线。
+- 新建（`lineId` 为 null）或修改逻辑线路：名称（必填，最多 64 字）、颜色（默认 `#3b82f6`）。0.82.5 起不再有「联络线」勾选（用户 2026-11-15：联络线应该是某段轨道而不是归属）：新建的写 `connecting: false`，修改时保留原来的值；提示改到归属图右键轨道「对所有线路开放」。
 - 确定：ID 用原 ID 或 `X.newLogicalId()`，`fn.draftSettingsPart("logicalLines", …)` 写入草稿，然后 `then?.(id)`。
 - 调用者：`views/LinePanels.tsx:32`。
 

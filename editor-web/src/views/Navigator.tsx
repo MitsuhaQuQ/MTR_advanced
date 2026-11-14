@@ -137,7 +137,7 @@ function Owners() {
         <span className="truncate">{tr("归属图")}</span>
       </Row>
       {lines.length ? lines.map((line: any) => (
-        <Row key={line.id} attrs={{ logical: line.id }} depth={1} active={onNetwork("owners") && v.net.focusLogical === line.id} title={tr("点开在归属图上看它；右键改名、改颜色、设为联络线或删除")}>
+        <Row key={line.id} attrs={{ logical: line.id }} depth={1} active={onNetwork("owners") && v.net.focusLogical === line.id} title={tr("点开在归属图上看它；右键改名、改颜色或删除")}>
           <Swatch color={line.color} />
           <span className="min-w-0 truncate">{line.name}</span>
           {line.id in drafted && <Dot title={tr("有没应用的草稿")} />}

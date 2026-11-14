@@ -2801,7 +2801,8 @@ export function createLegacy(env) {
 		const connectingRoute = connecting && data.routeById.get(connecting);
 		const logicalLine = el.dataset.logical && logicalLinesShown().get(el.dataset.logical);
 		const items = logicalLine ? [[tr("改名和颜色…"), data.canEdit ? () => logicalLineDialog(logicalLine) : null],
-			[logicalLine.connecting ? tr("改为普通逻辑线路") : tr("设为联络线（所有运营线路都能走）"), data.canEdit ? () => draftSettingsPart("logicalLines", drafted => { drafted[logicalLine.id] = { name: logicalLine.name, color: logicalLine.color, connecting: !logicalLine.connecting }; }) : null],
+			// A connecting line is set on the track (对所有线路开放), not on a logical line (user 2026-11-15): only an old mark is taken off
+			...(logicalLine.connecting ? [[tr("改为普通逻辑线路"), data.canEdit ? () => draftSettingsPart("logicalLines", drafted => { drafted[logicalLine.id] = { name: logicalLine.name, color: logicalLine.color, connecting: !logicalLine.connecting }; }) : null]] : []),
 			[tr("删除这条逻辑线路…"), data.canEdit ? () => deleteLogicalLine(logicalLine) : null]]
 			: vehiclePool ? [[tr("车型设置…"), data.canEdit ? () => vehicleDialog(depot, vehiclePool) : null]]
 			: connectingRoute ? [[tr("取消联络线：{0}", routeTitle(connectingRoute)), data.canEdit ? () => setConnecting(connectingRoute, false) : null]]

@@ -1431,7 +1431,7 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 尽头折返线兜底（0.80.0）：规则在组件 `TickRunner.runLayerTick`（`DEAD_END_EXITS`、`isDeadEndTurn`）和 `run.Authority`（`wholeUntil` 整组申请），游戏里按运用跑的车由组件驱动，宿主不另写；冲突进路的判断在组件 `transitsim.plan.OpposingMoves`（纯计算），游戏 `Siding`/`Depot` 只取路径、汇总、发包和写日志，网页只显示。车站股道运用图（同版本）只在游戏侧和网页：存车线取运用路径走过的轨道，网页按线路路径分出载客运行和运用走行，不涉及组件规则。
 
-终点互换运用（0.81.0）在组件 `TrainService`（`swapIfOutOfOrder`、`takeDuty`、`DutyHandle`），两个宿主只给出车厂在线列车（`Board.getDutyServices`）；存档键 `swap`、`swap_path` 随服务字节走，游戏不另存。车站股道运用图放大拖动（0.82.3）只改网页显示，不涉及组件。几个车厂一起排班时找错出入库规则（0.82.4）是游戏侧找路线程的数据拷贝缺了存车线→车厂，只改 `DataCache.copyIdMaps`，不涉及组件。
+终点互换运用（0.81.0）在组件 `TrainService`（`swapIfOutOfOrder`、`takeDuty`、`DutyHandle`），两个宿主只给出车厂在线列车（`Board.getDutyServices`）；存档键 `swap`、`swap_path` 随服务字节走，游戏不另存。车站股道运用图放大拖动（0.82.3）只改网页显示，不涉及组件。几个车厂一起排班时找错出入库规则（0.82.4）是游戏侧找路线程的数据拷贝缺了存车线→车厂，只改 `DataCache.copyIdMaps`，不涉及组件。逻辑线路去掉联络线选项（0.82.5）只改网页。
 
 尽头折返线里按计划先后让出口（0.82.2）全在组件：`Arbiter`（`blockedRequests`、`isBlockingEarlier`）、`RunReservations`、`TrainRules`、`TickRunner.HeadlessTrain.yieldsToEarlier`；游戏的列车由模拟器驱动时自动适用，游戏自己驱动的列车（`TrainServer.RulesTrain`）用默认的不让。
 

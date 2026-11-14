@@ -28,6 +28,7 @@
   - 没有逻辑线路：当前运输方式下每条运营线路"只归 X"、"对所有线路开放"、"恢复自动归属"。
 - 有编辑权限时："＋ 新建逻辑线路…"（`fn.logicalLineDialog(null, id => 选它为画笔)`）；没有逻辑线路时"按现在的归属生成初稿…"（`fn.logicalDraftDialog()`，归属未读到时禁用）。
 - 有逻辑线路时显示 `LineTracks`（不含联络线）。
+- 编辑按钮提示 0.82.5 起为「改名、改颜色」，逻辑线路面板不再设联络线。
 - 调用者：`views/Layers.tsx:95`。
 
 ### `LineTracks({ operating, logicalLines, canEdit })`（内部）

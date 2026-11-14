@@ -612,6 +612,8 @@ describe("the old code in the new page", () => {
     expect(changes[changes.length - 1].routes["102"].timetable.tables[t.tableIndex].orders).toEqual([{ service: t.service, kind: "deploy", stop: 1, depot: "9001" }])
     // A new logical line, named; then a type deleted, with what it takes along listed
     await act(async () => fn.logicalLineDialog(null))
+    // Connecting lines are set on the track, not on a logical line (2026-11-15)
+    expect(host.textContent).not.toContain("联络线：所有运营线路都能走")
     await act(async () => button("新建").click())
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("写上名称")
     await type("京广线")

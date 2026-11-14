@@ -89,19 +89,22 @@ export function ServiceOrderPanel({ serviceId, order, stop, onClose }: { service
 
 const hex = (color: number) => "#" + (color & 0xffffff).toString(16).padStart(6, "0")
 
-/** A new logical line, or one changed: name, colour, connecting line; then what is done with its ID */
+/**
+ * A new logical line, or one changed: name and colour; then what is done with its ID. Whether trains of every line may
+ * run somewhere is set on the track, not on a logical line (user 2026-11-15): the panel no longer offers it, and a line
+ * marked so before keeps the mark.
+ */
 export function LogicalLinePanel({ lineId, then, onClose }: { lineId: string | null; then?: (id: string) => void; onClose: () => void }) {
   useLegacy()
   const { fn, v } = legacy
   const line: X.LogicalLine | undefined = lineId ? X.logicalLinesShown(v.data, v.draft).get(lineId) : undefined
   const [name, setName] = useState(line ? line.name : "")
   const [color, setColor] = useState(hex(line ? line.color : 0x3b82f6))
-  const [connecting, setConnecting] = useState(Boolean(line && line.connecting))
   const [error, setError] = useState("")
   const save = () => {
     if (!name.trim()) { setError(tr("写上名称")); return }
     const id = line ? line.id : X.newLogicalId()
-    fn.draftSettingsPart("logicalLines", (drafted: Record<string, any>) => { drafted[id] = { name: name.trim(), color: parseInt(color.slice(1), 16), connecting } })
+    fn.draftSettingsPart("logicalLines", (drafted: Record<string, any>) => { drafted[id] = { name: name.trim(), color: parseInt(color.slice(1), 16), connecting: Boolean(line && line.connecting) } })
     then?.(id)
     onClose()
   }
@@ -111,8 +114,8 @@ export function LogicalLinePanel({ lineId, then, onClose }: { lineId: string | n
       <div className="flex flex-col gap-2 text-[13px]">
         <label className="flex items-center gap-2">{tr("名称")}<input className={field + " flex-1"} autoFocus maxLength={64} value={name} placeholder={tr("例如 京沪线")} onChange={e => setName(e.target.value)} /></label>
         <label className="flex items-center gap-2">{tr("颜色")}<input type="color" value={color} onChange={e => setColor(e.target.value)} /></label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={connecting} onChange={e => setConnecting(e.target.checked)} />{tr("联络线：所有运营线路都能走")}</label>
         <p className={hint}>{tr("逻辑线路是轨道本身的线路，和运营线路分开：每段轨道最多属于一条；运营线路走它勾选的逻辑线路，没勾时走它停靠的站台所在的逻辑线路。")}</p>
+        <p className={hint}>{tr("联络线不在这里设：在归属图上右键那段轨道，选「对所有线路开放」。")}</p>
       </div>
     </SidePanel>
   )

@@ -143,7 +143,7 @@ export function OwnershipPanel({ className }: { className: string }) {
                   <span className="num text-[11px] text-dim" title={tr("区段数")}>{counts.get(line.id) || 0}</span>
                   <button type="button" className="btn btn-ghost h-6 px-1 text-[12px]" aria-pressed={net.focusLogical === line.id} title={tr("只看这条")}
                     onClick={() => { net.focusLogical = net.focusLogical === line.id ? null : line.id; fn.drawNetwork(); fn.renderAll() }}>◎</button>
-                  <button type="button" className="btn btn-ghost h-6 px-1 text-[12px]" disabled={!canEdit} onClick={() => fn.logicalLineDialog(line)} title={tr("改名、改颜色、设为联络线")}>✎</button>
+                  <button type="button" className="btn btn-ghost h-6 px-1 text-[12px]" disabled={!canEdit} onClick={() => fn.logicalLineDialog(line)} title={tr("改名、改颜色")}>✎</button>
                   <ConfirmButton className="btn btn-ghost h-6 px-1 text-[12px]" disabled={!canEdit} confirm={tr("删除“{0}”？", line.name)} onConfirm={() => removeLogicalLine(line.id)}>✕</ConfirmButton>
                 </span>
               ), line.connecting))}

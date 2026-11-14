@@ -21,6 +21,7 @@
 - `ProblemDot({ r })`：股道问题标记（旧 `problemDot`）：`topologyOf(...).routeProblems(r, fn.platformsOf(r))`，有错误红色、只有警告琥珀色，提示列出问题。
 - `Created({ made, title, depth })`：草稿中新建的种别/线路一行（`data-created`），有错误时红点。
 - `Physical()`：第 1 部分："全网配线"一行（`data-layer="physical"`）及说明。
+- 逻辑线路行的提示（0.82.5）：右键改名、改颜色或删除（不再设联络线）。
 - `Owners()`：第 2 部分："新建逻辑线路"（`data-new-logical`）、"归属图"（`data-layer="owners"`）、各逻辑线路（`data-logical`，草稿标记、联络线标记，当前聚焦高亮 `v.net.focusLogical`）；没有逻辑线路时提示、"按现在的归属生成初稿…"（`data-generate-logical`）和联络线列表（`fn.isConnecting`，`data-connecting`）。
 - `OperatingLines()`：第 3 部分："＋ 新建线路"（`data-new-line`）、各线路组（`data-line`、`data-section="lines"`，展开状态来自 `state.openNodes` 的 `oline:<key>`）及其种别（`data-route`，站数）和草稿新建种别；最后是只在草稿中的新线路组。
 - `Timetables()`：第 4 部分：各线路组（展开 `line:<key>` 或为当前线路，显示当天班次数），展开后 `ViewChips`（运行图/汇总时刻表）和各路线（展开 `route:<id>`，可再显示 `ViewChips`）。
