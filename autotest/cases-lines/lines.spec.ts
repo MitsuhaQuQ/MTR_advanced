@@ -72,6 +72,10 @@ for (const line of lines) {
 			expect(fastest, `${route.name}: the server works out every stop's time`).not.toContain("-");
 			// T26: a route whose times can't be worked out is counted as not checked, never shown as "no conflict"
 			expect(status.text, `${route.name}: a real answer`).not.toMatch(/未检查/);
+			// Line 7 runs every 30 seconds, closer than its block sections let trains run (B, 2026-11-14): a headway conflict
+			if (line.layout === 7) {
+				expect(status.text, `${route.name}: services closer than trains can run`).toMatch(/冲突 \d/);
+			}
 			await closeAll();
 		}
 	});

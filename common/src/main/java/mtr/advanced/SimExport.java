@@ -97,7 +97,14 @@ public final class SimExport {
 	}
 
 	public static List<SimDataset.DataTrack> toTracks(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		final Map<java.util.UUID, Integer> directions = RunningSides.get(rails);
+		return toTracks(path, rails, RunningSides.get(rails));
+	}
+
+	/**
+	 * @param directions the running side of each track ({@link RunningSides#get(mtr.data.RailwayData)}), given where the
+	 *                   latest kept for the rails may not be there yet
+	 */
+	public static List<SimDataset.DataTrack> toTracks(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails, Map<java.util.UUID, Integer> directions) {
 		final java.util.function.Function<PathData, SimDataset.DataTrack> convert = pathData -> {
 			final RailType railType = pathData.rail.railType;
 			final Rail backwards = DataCache.tryGet(rails, pathData.getLastPos(), pathData.startingPos);

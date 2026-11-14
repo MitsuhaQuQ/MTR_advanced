@@ -28,5 +28,8 @@
 - 作用：把一条路径转为组件轨道段列表。每段：起点、终点、长度、是否站台、是否停车线、`savedRailBaseId`、停站时间、停站下标、最高速、能否加速、是否有信号、反向是否有可通行轨道（`backwards != NONE`）、行车方向约定（`RunningSides.getConvention`）。若路径是 `IndexedPath`，用其 `map`（带停站下标偏移与签名）缓存转换结果。
 - 主要调用者：`TrainServer.java:1471`、`SandboxRuns.java:242`；测试 `GameChainTest.java:132`。
 
+### `public static List<SimDataset.DataTrack> toTracks(List<PathData> path, Map<BlockPos, Map<BlockPos, Rail>> rails, Map<UUID, Integer> directions)`（0.82.0）
+同上，行车方向由调用者给（`RunningSides.get(railwayData)`）；两个参数的版本取按轨道表缓存的那份（`RunningSides.get(rails)`，模拟器还没导出时为空）。调用者：`RoutePaths.RoutePath.getHeadways`。
+
 ### `private static long[] toArray(List<Long> values)`
 - 作用：`List<Long>` → `long[]`。

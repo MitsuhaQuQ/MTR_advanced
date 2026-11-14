@@ -827,12 +827,39 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		// The turnouts of each route's throats, from its own path where it has been found
 		final Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
 		final Map<UUID, Long> zones = railwayData.getSignalBlocks().getZones(SecurityConfig.interlockColor);
+		final Map<Long, RoutePaths.RoutePath> routePaths = new HashMap<>();
 		routes.forEach(testRoute -> {
 			final RoutePaths.RoutePath routePath = RoutePaths.timesByPath(testRoute) ? railwayData.routePaths.getFound(testRoute, railwayData.dataCache, rails) : null;
 			if (routePath != null) {
 				throats.put(testRoute.id, routePath.getThroats(testRoute.platformIds.size(), rails, zones));
+				routePaths.put(testRoute.id, routePath);
 			}
 		});
+		// For the headways (B, 2026-11-14): the vehicles running each route by pool, and the pool of each service a duty runs
+		final Map<Long, Map<String, PathTiming.Vehicle>> routePools = new HashMap<>();
+		final Map<Long, Map<Integer, String>> servicePools = new HashMap<>();
+		railwayData.sidings.forEach(siding -> {
+			final Depot depot = railwayData.dataCache.sidingIdToDepot.get(siding.id);
+			if (depot != null) {
+				final PathTiming.Vehicle vehicle = siding.getTimingVehicle(depot.speedCurves);
+				depot.getRoutes(siding.getTrainId(), railwayData.dataCache).forEach(eachRoute -> routePools.computeIfAbsent(eachRoute.id, id -> new TreeMap<>()).put(siding.getPoolKey(), vehicle));
+			}
+		});
+		railwayData.depots.forEach(depot -> {
+			final transitsim.plan.DepotDuties runDuties = depot.getRunDuties();
+			if (runDuties != null) {
+				runDuties.sidings.forEach((sidingId, slots) -> {
+					final Siding siding = railwayData.dataCache.sidingIdMap.get(sidingId);
+					if (siding != null) {
+						slots.forEach(slot -> slot.days.forEach(day -> day.segments.forEach(segment -> servicePools.computeIfAbsent(segment.routeId, id -> new HashMap<>()).put(segment.service, siding.getPoolKey()))));
+					}
+				});
+			}
+		});
+		final transitsim.network.BlockSections blockSections = railwayData.getSignalBlocks().getBlockSections();
+		// The running side of each track (0.69.0), kept by rails map, worked out here as the simulator may not have yet: without
+		// it the route's track counts as single track, taken whole
+		final Map<UUID, Integer> directions = mtr.advanced.RunningSides.get(railwayData);
 		final Map<Route, long[][]> knownTimes = new HashMap<>();
 		final Map<Route, Supplier<long[][]>> timeFinders = new HashMap<>();
 		final Map<Long, Set<PathTiming.Vehicle>> vehicles = RoutePaths.getVehicles(railwayData);
@@ -883,6 +910,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 						newRouteTimes.fixedNext.putAll(fixedNext.getOrDefault(testRoute.id, Collections.emptyMap()));
 						newRouteTimes.terminalPlatforms.addAll(testRoute.terminalPlatforms);
 						newRouteTimes.setThroats(throats.getOrDefault(testRoute.id, Collections.emptyList()));
+						// Only the checked route's services against each other, so only its headways are worked out
+						final RoutePaths.RoutePath routePath = testRoute.id == routeId ? routePaths.get(testRoute.id) : null;
+						if (routePath != null) {
+							newRouteTimes.setHeadways(routePath.getHeadways(testRoute.platformIds, routePools.getOrDefault(testRoute.id, Collections.emptyMap()), rails, directions, blockSections, testRoute.transportMode), servicePools.getOrDefault(testRoute.id, Collections.emptyMap()));
+						}
 						turnBacks.getOrDefault(testRoute.id, Collections.emptySet()).forEach(newRouteTimes::addTurnBack);
 						routeTimes.add(newRouteTimes);
 					}
@@ -1087,6 +1119,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			response.writeInt(conflict.otherService);
 			response.writeLong(conflict.platformId);
 			response.writeLong(conflict.turnoutNode);
+			response.writeLong(conflict.headwayMillis);
+			response.writeLong(conflict.neededMillis);
 		});
 		Registry.sendToPlayer(player, PACKET_TIMETABLE_CONFLICTS, response);
 	}

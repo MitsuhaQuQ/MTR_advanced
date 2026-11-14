@@ -81,6 +81,28 @@ describe("folders in the media library", () => {
     expect(buttonNamed(host, "新建文件夹")).toBeUndefined()
   })
 
+  it("holds a file chosen to replace one to the same size limit as an upload (2026-11-14)", async () => {
+    const posts: any[] = []
+    const library = { canUpload: true, canManage: false, maxFileBytes: 100, maxTotalBytes: 1 << 26, totalBytes: 0, maxSeconds: 60, requests: [], self: "u1",
+      entries: [{ ...audio("steve:a.ogg", "u1", "Steve", "", true), resourceId: "abc" }], folders: [] }
+    const host = await show(MediaLibrary, library, posts)
+    await act(async () => (host.querySelector("tr[data-entry='steve:a.ogg']") as HTMLElement).click())
+    const choose = async (file: File) => {
+      const input = host.querySelector("input[data-replace-input]") as HTMLInputElement
+      Object.defineProperty(input, "files", { value: [file], configurable: true })
+      await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 20)) })
+    }
+    // Too big, and not audio the library takes: told here, nothing sent
+    await choose(new File([new Uint8Array(200)], "big.ogg", { type: "audio/ogg" }))
+    await choose(new File([new Uint8Array(10)], "notes.txt", { type: "text/plain" }))
+    expect(posts.filter(post => post.action === "replace")).toEqual([])
+    expect(host.textContent).toContain("文件不能超过")
+    expect(host.textContent).toContain("只收 Ogg Vorbis、WAV 或 MP3 文件")
+    // Within the limit: sent
+    await choose(new File([new Uint8Array(50)], "small.ogg", { type: "audio/ogg" }))
+    expect(posts.filter(post => post.action === "replace").map(post => post.name)).toEqual(["small.ogg"])
+  })
+
   it("uploads a picture into the folder chosen, the open one by default", async () => {
     const posts: any[] = []
     const library = { canUpload: true, canManage: false, busy: false, message: "", maxBytes: 5242880, maxDimension: 2048, self: "u1",

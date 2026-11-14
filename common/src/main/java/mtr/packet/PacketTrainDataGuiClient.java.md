@@ -49,7 +49,7 @@
 - `requestTimetableTimesC2S(long routeId)`：`long 线路`、`int 请求号`（`EditorTimes.SAVED_TIMES.request(route)`）；线路不存在不发。调用者：`common/src/main/java/mtr/screen/TimetableScreen.java:251`、`client/editor/EditorData.java:807`。
 - `receiveTimetableTimesS2C`：`long 线路`、`int 站数`、每站 `long 到, long 发`、`PathFailure`、可选 `int 请求号`、可选 `VarInt 列数`（默认 2，必须为 2 到 `RouteTimetable.MAX_TABLES×2` 的偶数，否则丢弃），每站补读其余列。主线程中：请求号 > 0 为草稿回答 → `EditorTimes.receiveDraft`；否则若 `SAVED_TIMES.accept` 则存入 `ClientData.TIMETABLE_TIMES` 并更新 `ROUTE_PATH_FAILURES`。
 - `requestTimetableConflictsC2S(long routeId)`：先清本地结果再请求。调用者：`TimetableScreen.java:716`。
-- `receiveTimetableConflictsS2C`：`long 线路`、`int 未检查线路数`、`int 冲突数`、每个 `int,int,int,long,int,long,long`（`TimetableConflicts.Conflict` 构造参数）→ `ClientData.TIMETABLE_CONFLICTS`。
+- `receiveTimetableConflictsS2C`：`long 线路`、`int 未检查线路数`、`int 冲突数`、每个 `int,int,int,long,int,long,long,long,long`（`TimetableConflicts.Conflict` 九个参数的构造，后两项为追踪间隔，0.82.0）→ `ClientData.TIMETABLE_CONFLICTS`。
 
 ### 节点
 - `sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell)`：节点角度（度）、是否关键节点、折返停留时间。调用者：`NodeAngleScreen.java:210`。

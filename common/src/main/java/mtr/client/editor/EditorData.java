@@ -496,6 +496,7 @@ public final class EditorData {
 		routeObject.addProperty("revision", getRevision(route));
 		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
 		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));
+		routeObject.add("headways", getHeadways(route));
 		// The revision of each part, which a draft keeps so the game checks only the parts it changes
 		final JsonObject parts = new JsonObject();
 		ClientEditing.getRevisions(route).forEach(parts::addProperty);
@@ -795,6 +796,50 @@ public final class EditorData {
 		}
 		final Station station = ClientData.DATA_CACHE.platformIdToStation.get(platformId);
 		return (station == null ? "" : station.name + " ") + platform.name;
+	}
+
+	/**
+	 * Of the route's last timetable check, the services running closer behind the one before than trains can (B,
+	 * 2026-11-14): from and to which stop, the service and the one before, how far apart they are and the least they need,
+	 * in seconds. A route not checked yet is asked for now and then, one at a time, so the page comes to show them all.
+	 */
+	private static JsonArray getHeadways(Route route) {
+		final JsonArray headways = new JsonArray();
+		final transitsim.plan.TimetableConflicts.Result result = ClientData.TIMETABLE_CONFLICTS.get(route.id);
+		if (result == null) {
+			requestHeadways(route);
+			return headways;
+		}
+		result.conflicts.stream().filter(transitsim.plan.TimetableConflicts.Conflict::isHeadway).forEach(conflict -> {
+			final JsonObject headway = new JsonObject();
+			headway.addProperty("from", stopName(route, conflict.stopIndex));
+			headway.addProperty("to", stopName(route, conflict.stopIndex + 1));
+			headway.addProperty("service", conflict.service);
+			headway.addProperty("before", conflict.otherService);
+			headway.addProperty("gap", Math.round(conflict.headwayMillis / 1000.0));
+			headway.addProperty("needed", (long) Math.ceil(conflict.neededMillis / 1000.0));
+			headways.add(headway);
+		});
+		return headways;
+	}
+
+	private static String stopName(Route route, int stopIndex) {
+		final Station station = stopIndex < route.platformIds.size() ? ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(stopIndex).platformId) : null;
+		return station == null ? "" : station.name;
+	}
+
+	private static long lastHeadwayRequest;
+	private static final Map<Long, Long> HEADWAY_REQUESTS = new HashMap<>();
+
+	private static void requestHeadways(Route route) {
+		final long now = System.currentTimeMillis();
+		// One route every ten seconds, each at most every five minutes: the server checks one at a time for each player
+		if (!route.timetable.isActive() || now - lastHeadwayRequest < 10000 || now - HEADWAY_REQUESTS.getOrDefault(route.id, 0L) < 300000) {
+			return;
+		}
+		lastHeadwayRequest = now;
+		HEADWAY_REQUESTS.put(route.id, now);
+		Minecraft.getInstance().execute(() -> PacketTrainDataGuiClient.requestTimetableConflictsC2S(route.id));
 	}
 
 	public static String getRevision(Route route) {

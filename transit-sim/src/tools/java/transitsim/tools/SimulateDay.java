@@ -137,7 +137,70 @@ public final class SimulateDay {
 		System.out.printf("%d track networks, %d shared with depots not running by duties: throat locks off for %d of %d depots%n", lockResult.networks, lockResult.mixed.size(), lockResult.offDepots.size(), dataset.depots.size());
 		final long buildStart = System.nanoTime();
 		// With the trains that stayed on the line overnight where they stood (2026-11-09)
-		final EventSimulator<SimDataset.DataTrack> simulator = new EventSimulator<>(transitsim.sim.DayRun.startOfDay(data, dayStart));
+		// --resume carries on from the trains as the world saved them (2026-11-14: a player's deadlock as it stood), for the hours
+		final byte[] startData = data;
+		final boolean resume = flags.contains("--resume") && dataset.trains != null;
+		// --place@HH:MM:SS puts the trains of depots running by duties where their duties have them at that time of the day, as
+		// the game's "put trains by timetable" does (LiveSimulation.takeInto), and carries on from there (2026-11-14: a player's
+		// deadlock a minute after doing so)
+		final String placeAt = flags.stream().filter(flag -> flag.startsWith("--place@")).map(flag -> flag.substring("--place@".length())).findFirst().orElse(null);
+		final long placeMillis = placeAt == null ? 0 : LocalDateTime.of(day, java.time.LocalTime.parse(placeAt)).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
+		final EventSimulator<SimDataset.DataTrack> simulator;
+		final long runFrom;
+		if (placeAt != null) {
+			final transitsim.sim.TickRunner<SimDataset.DataTrack> placing = SimDataset.start(startData, placeMillis).get();
+			System.out.println("Placed " + placing.placeDutyTrains() + " trains at " + clock(placeMillis));
+			final transitsim.sim.RunRecord placed = placing.record();
+			simulator = EventSimulator.resume(startMillis -> SimDataset.start(startData, startMillis).get(), placed, placeMillis);
+			runFrom = placeMillis;
+		} else {
+			simulator = resume ? EventSimulator.resume(startMillis -> SimDataset.start(startData, startMillis).get(), dataset.trains, dataset.trains.time) : new EventSimulator<>(transitsim.sim.DayRun.startOfDay(data, dayStart));
+			runFrom = resume ? dataset.trains.time : dayStart;
+		}
+		if (resume && placeAt == null) {
+			System.out.println("Resumed at " + clock(runFrom));
+		}
+		// --headways: for each siding, the least time between two of its trains through each block section of its longest
+		// path, as the timetable conflict check works it out (B, 2026-11-14), the closest ones listed
+		if (flags.contains("--headways")) {
+			// After a moment of the day, once the runner has its paths, as the sections are cut by the lengths on them
+			simulator.advanceTo(dayStart + 1000);
+			final transitsim.network.BlockSections blockSections = simulator.getRunner().getBlockSections();
+			for (final SimDataset.SidingData siding : dataset.sidings) {
+				List<SimDataset.DataTrack> path = siding.path;
+				for (final SimDataset.TripPathData tripPath : siding.tripPaths) {
+					if (tripPath.path.size() > path.size()) {
+						path = tripPath.path;
+					}
+				}
+				if (path.isEmpty()) {
+					continue;
+				}
+				final double length = siding.trainCars * siding.spacing;
+				final List<transitsim.plan.TimeSegment> times = new ArrayList<>();
+				final transitsim.motion.SpeedCurves curves = transitsim.motion.SpeedCurves.of(transitsim.sim.RunTrack.toTrackView(path, siding.minSpeed, 0, length), (siding.railLength + length) / 2, length, siding.acceleration, siding.deceleration);
+				transitsim.plan.PathTimes.curveTimes(path, curves, times, new HashMap<>(), new transitsim.plan.StopTimes());
+				final transitsim.run.Headways.Train train = new transitsim.run.Headways.Train(times, length, siding.spacing, siding.deceleration);
+				final List<transitsim.run.Headways.Gap> gaps = new ArrayList<>(transitsim.run.Headways.find(path, blockSections, train, train));
+				gaps.sort((a, b) -> Long.compare(b.millis, a.millis));
+				System.out.printf("HEADWAY siding %d routes %s: %d sections, train %.0f blocks%n", siding.id, java.util.Arrays.toString(siding.routeIds), gaps.size(), length);
+				final List<SimDataset.DataTrack> finalPath = path;
+				gaps.stream().filter(gap -> gap.millis < 300000).limit(6).forEach(gap -> {
+					// The rail the section starts on, two way or not and its running side
+					double end = 0;
+					String rail = "";
+					for (int i = 0; i < finalPath.size(); i++) {
+						end += finalPath.get(i).getTrackLength();
+						if (end > gap.start + 1E-6) {
+							final SimDataset.DataTrack track = finalPath.get(i);
+							rail = String.format(" rail %d %s -> %s %s signal %b", i, pos(track.getStartNode()), pos(track.getEndNode()), track.isTwoWay() ? "two-way " + track.getConvention() : "one-way", track.hasSignal()) + String.format(" accel %b speed %.2f painted %b pieces %d", track.canAccelerate(), track.getMaxSpeed(), blockSections != null && blockSections.getSection(track.getTrackKey()) != null, transitsim.network.BlockSections.getPieceCount(track.getTrackLength(), track.canAccelerate() ? track.getMaxSpeed() : -1));
+							break;
+						}
+					}
+					System.out.printf("HEADWAY   %.0f..%.0f %.1f s%s%s%n", gap.start, gap.end, gap.millis / 1000.0, gap.singleTrack ? " single track" : "", rail);
+				});
+			}
+		}
 		final long runStart = System.nanoTime();
 		// -Dmtr.simHours=N simulates only the first N hours, to compare runs of a big world quickly
 		final long hours = Long.getLong("mtr.simHours", 24L);
@@ -198,15 +261,51 @@ public final class SimulateDay {
 			});
 		}
 		final RunInvariants<SimDataset.DataTrack> invariants = check ? new RunInvariants<>(simulator.getRunner()) : null;
-		if (invariants == null) {
-			simulator.advanceTo(dayStart + hours * HOUR);
+		// --restarts@N: every N seconds of the day, starts a simulator again from where the trains are then, with nothing
+		// granted, as the game does when its paths change or trains are put by timetable, runs it 3 minutes and tells the
+		// times that deadlock (2026-11-14: a player's passing loop deadlocked a minute after each such restart)
+		final String restartsAt = flags.stream().filter(flag -> flag.startsWith("--restarts@")).map(flag -> flag.substring("--restarts@".length())).findFirst().orElse(null);
+		if (restartsAt != null) {
+			final long step = Long.parseLong(restartsAt) * 1000;
+			int tried = 0;
+			int stuck = 0;
+			for (long time = runFrom + step; time < runFrom + hours * HOUR; time += step) {
+				simulator.advanceTo(time);
+				final transitsim.sim.RunRecord record = simulator.getRunner().record();
+				if (simulator.getRunner().getTrains().stream().noneMatch(transitsim.sim.TickRunner.HeadlessTrain::isOnRoute)) {
+					continue;
+				}
+				tried++;
+				final EventSimulator<SimDataset.DataTrack> again = EventSimulator.resume(startMillis -> SimDataset.start(startData, startMillis).get(), record, time);
+				again.advanceTo(time + 180000);
+				final boolean deadlocked = again.events(0).stream().anyMatch(event -> event.kind == SimEvent.Kind.DEADLOCK);
+				if (deadlocked) {
+					stuck++;
+					if (stuck <= 20) {
+						System.out.println("RESTART at " + clock(time) + " deadlocks");
+					}
+				}
+			}
+			System.out.println("RESTART " + stuck + " of " + tried + " restarts deadlocked");
+		} else if (invariants == null) {
+			simulator.advanceTo(runFrom + hours * HOUR);
 		} else {
-			for (long time = dayStart; time < dayStart + hours * HOUR; time += 1000) {
+			for (long time = runFrom; time < runFrom + hours * HOUR; time += 1000) {
 				simulator.advanceTo(time);
 				invariants.check();
 			}
 		}
 		final long runEnd = System.nanoTime();
+		// --headways also lists where each train is at the end, to see how close they run
+		if (flags.contains("--headways")) {
+			for (final transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train : simulator.getRunner().getTrains()) {
+				final int head = train.getHeadRail();
+				if (head >= 0 && head < train.getPath().size()) {
+					final SimDataset.DataTrack track = train.getPath().get(head);
+					System.out.printf("HEADWAY train %d at %s -> %s progress %.0f speed %.2f%n", train.id, pos(track.getStartNode()), pos(track.getEndNode()), train.getRailProgress(), train.getSpeed());
+				}
+			}
+		}
 		if (flags.contains("--late")) {
 			latestByRoute.forEach((routeId, late) -> System.out.println("LATE route " + routeId + " at most +" + late / 1000 + " s"));
 			lateDepartures.stream().limit(40).forEach(line -> System.out.println("LATE " + line));

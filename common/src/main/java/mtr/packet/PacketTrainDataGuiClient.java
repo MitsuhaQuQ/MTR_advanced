@@ -378,7 +378,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		final int conflictCount = packet.readInt();
 		final List<TimetableConflicts.Conflict> conflicts = new ArrayList<>();
 		for (int i = 0; i < conflictCount; i++) {
-			conflicts.add(new TimetableConflicts.Conflict(packet.readInt(), packet.readInt(), packet.readInt(), packet.readLong(), packet.readInt(), packet.readLong(), packet.readLong()));
+			conflicts.add(new TimetableConflicts.Conflict(packet.readInt(), packet.readInt(), packet.readInt(), packet.readLong(), packet.readInt(), packet.readLong(), packet.readLong(), packet.readLong(), packet.readLong()));
 		}
 		minecraftClient.execute(() -> ClientData.TIMETABLE_CONFLICTS.put(routeId, new TimetableConflicts.Result(conflicts, uncheckedRoutes)));
 	}

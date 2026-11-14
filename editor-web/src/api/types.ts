@@ -39,6 +39,8 @@ export type Route = {
   revision: string | number
   parts?: Record<string, number>
   editors?: string
+  /** Of the game's last timetable check of the route, services closer behind the one before than trains can run (B, 2026-11-14), in seconds */
+  headways?: { from: string; to: string; service: number; before: number; gap: number; needed: number }[]
   stops: Stop[]
   hasTimes: boolean
   pathFailure?: string

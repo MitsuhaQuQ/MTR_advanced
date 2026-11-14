@@ -97,6 +97,14 @@ describe("syncProblems", () => {
     expect(after.routes["101"].error).toContain("Alex")
     expect(syncProblems("ok", model, after).some(p => p.text.includes("和 Alex 的修改冲突"))).toBe(true)
   })
+  it("warns of services closer behind each other than trains can run (B, 2026-11-14)", () => {
+    const data = troubledData()
+    const route = data.routes.find((each: any) => String(each.id) === "101")
+    route.headways = [{ from: "一站", to: "二站", service: 600000, before: 570000, gap: 30, needed: 41 }]
+    const texts = syncProblems("ok", buildModel(data), emptyDraft()).map(p => p.text)
+    expect(texts.some(text => text.includes("只隔 30 秒") && text.includes("至少要隔 41 秒"))).toBe(true)
+    expect(syncProblems("ok", buildModel(troubledData()), emptyDraft()).some(p => p.text.includes("至少要隔"))).toBe(false)
+  })
   it("says only the connection without data", () => {
     expect(syncProblems("key", null, emptyDraft()).map(p => p.text)).toEqual(["页面的链接已经失效"])
   })

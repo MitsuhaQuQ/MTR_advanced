@@ -74,6 +74,18 @@
 
 0.69.0 车间留一节车厢（用户 2026-11-12）：`transitsim.run.Authority.setMargin`（`TickRunner` 每 tick 设为存车线的车厢长度 `siding.spacing`；手动驾驶为 0），持有范围从车尾再往后一个车厢长，没批到的下一组前停在它起点前一个车厢长处；两车在汇合点不再车头顶着停在同一节点上（8 号线中间折返线出口实测）。`-Pmtr.trainMargin=false` 对照：两小时九线数据，有留距 999 次到站、没有 1035 次，死锁一样（17:02:39 的 [3, 16] 两边都有，待查）。测试：`AuthorityTest.trainsKeepACarsLengthOfRoomFrontAndBack`。
 
+0.82.1 网页媒体库「替换…」和上传一样先转码再查大小（用户 2026-11-14：替换音频提示不得超过 512 KB，要和上传限制统一）：`MediaLibrary.tsx` 的 `prepare` 先查格式，WAV/MP3 用 `convertAudio` 转成 Ogg，再按 `maxFileBytes` 查大小，上传和替换都用它；替换时同样显示转换进度、可取消。网页测试 `mediaLibraryFolders.test.tsx` 加一项。只改网页，升第三位。
+
+GitHub CI（2026-11-14，用户：天天发失败邮件）：最近 200 次全失败——`server`、`lifts` 两种变体按上游方式去掉合并进来的 ANTE 代码，而本分支的 MTR 代码要用它，编译不过；`server` 测试任务依赖它们，从没跑过。`.github/workflows/build.yml` 现在只构建 `normal`（一直能过），去掉服务端测试任务（服务器在本地 `round.sh` 里测），推送只在 `main` 上跑（`ante-merge` 和 `main` 推同一个提交，原来跑两遍），只改 `.md` 的提交不跑，同一分支新提交取消正在跑的。
+
+0.82.0 冲突检查加区间追踪间隔（B，用户 2026-11-14 定：按实际车型算，只提示不改时刻）：
+- 组件 `transitsim.run.Headways`：每个分区（列车申请的组，`PathClaims.between`）上前后两车最少要隔多久——前车车头到"分区终点 + 车长 + 间距"的时刻，减去后车到"为分区起点前同样间距处制动的那一点"的时刻（后车本来在分区前停站时取离站时刻），加 2 tick；时间用两车各自的计划时刻。同一条路径经过同一段轨道多次时分截求组。`byStop` 归到每一站到下一站。校准：六线图世界离线 7 号线算出最多 40.5 秒，实际最近 39.8 秒。
+- `TimetableConflicts.checkHeadways`：被检查线路前后相邻的两班，在任一站间隔不够就记一条冲突（`Conflict.headwayMillis`/`neededMillis`），只比同一线路。`RouteTimes.setHeadways` 收每对车型的所需间隔和每个班次的车池。
+- 游戏：`PacketTrainDataGuiServer.checkTimetableConflicts` 收集各线路的车池和车型、运用里每班的车池、涂色闭塞区，被检查的线路用 `RoutePaths.RoutePath.getHeadways` 算好交给检查；包里冲突多两个 long，升协议 0.82。时刻表界面写"这一班：X 到 Y 和前面 HH:MM 那班只隔 N 秒，至少要隔 M 秒"（`gui.mtr.timetable_conflicts_found_headway`，四种语言），"没有冲突"的文字改为包括区间追踪间隔。
+- 网页：`EditorData` 每条线路带 `headways`（上次时刻表检查里的追踪间隔冲突），没检查过的线路由客户端每 10 秒请一条；`sync.ts` 每条线一条警告。
+- 游戏里查出的两处：线路路径转成组件轨道时，按轨道表缓存的行车方向在模拟器还没导出时是空的，复线全被当成单线一整段、什么都算不出——现在由检查先 `RunningSides.get(railwayData)` 再显式传给 `SimExport.toTracks`；线路路径停在终点站，终点站前那一段前车出不去，原来被略过，而它正是最紧的一段——现在按前车在终点的离站时刻算。改后 7 号线一站到二站 26.2 秒、二站到三站 36.9 秒，30 秒一班报冲突。
+- 测试：组件 `HeadwaysTest` 3 项、`TimetableConflictsTest` 2 项、网页 `sync.test.ts` 1 项；六线图「排班」之后「7号线 最快时刻和冲突检查」断言有冲突，通过（`ui-results` 21:11，60 处冲突，含站台和追踪间隔）。`simulateDay --headways` 离线查看。
+
 0.81.1 联锁区在进入时才申请（用户反馈的会让线死锁，2026-11-14）：
 - 原因（离线 `dumps/loop`，`-Pmtr.debugStuck=all` 列出每列车批到的东西）：玩家只把会让线两端的道岔刷了联锁色（会让线中间两股没刷），可组件 `PathClaims.attach` 把联锁区附到"终点正好在它边上"的那一组：开上会让线某一股就要先拿到那一股尽头的联锁区。车 1 离开 v1 停在渡线上（南联锁区里），等北联锁区才能开上会让线；车 2 停在北联锁区里，等南联锁区才能开上另一股——各占一个，互相等。
 - 改法（用户定：只改申请时机，联锁区仍整块锁）：`attach` 改为附到"进入它"的那一组（起点不早于上一组终点、在本组终点之前），正好从一组终点开始的联锁区跟下一组一起申请，列车可以停在联锁区边上等。咽喉道岔同样处理。

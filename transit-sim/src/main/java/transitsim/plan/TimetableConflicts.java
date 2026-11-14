@@ -69,12 +69,66 @@ public final class TimetableConflicts {
 				checkDay(routeId, routes, routeMap, platformIds, day, conflicts);
 				checkTurnBacks(routeId, routes, routeMap, turnBackRails, day, conflicts);
 				checkThroats(routeId, routes, day, conflicts);
+				checkHeadways(routeMap.get(routeId), day, conflicts);
 			}
 		}
 
 		final List<Conflict> sortedConflicts = new ArrayList<>(conflicts);
 		sortedConflicts.sort(Comparator.<Conflict>comparingInt(conflict -> conflict.table).thenComparingInt(conflict -> conflict.service).thenComparingInt(conflict -> conflict.stopIndex));
 		return sortedConflicts;
+	}
+
+	/**
+	 * Services of the route running closer behind each other than trains can (B, 2026-11-14): each pair one after the other
+	 * from its first stop, against the least time between them from each stop to the next ({@link RouteTimes#setHeadways},
+	 * worked out by the host with {@code transitsim.run.Headways} for the vehicles running them). One conflict for each
+	 * pair, where it is shortest of what is needed; told only, the times stay as they are (user's choice).
+	 */
+	private static void checkHeadways(RouteTimes route, int weekday, Set<Conflict> conflicts) {
+		if (route == null || route.headways.isEmpty()) {
+			return;
+		}
+		final List<ServiceTimes> services = new ArrayList<>();
+		for (final ServiceTimes serviceTimes : route.getServices(weekday)) {
+			if (firstDeparture(serviceTimes) >= 0) {
+				services.add(serviceTimes);
+			}
+		}
+		services.sort(Comparator.comparingLong(serviceTimes -> serviceTimes.service + firstDeparture(serviceTimes)));
+		for (int i = 0; i + 1 < services.size(); i++) {
+			final ServiceTimes ahead = services.get(i);
+			final ServiceTimes behind = services.get(i + 1);
+			final long[] needed = route.getHeadways(ahead.service, behind.service);
+			if (needed == null) {
+				continue;
+			}
+			int worstStop = -1;
+			long worstShort = 0;
+			long worstGap = 0;
+			for (int stop = 0; stop < needed.length && stop < ahead.departures.length && stop < behind.departures.length; stop++) {
+				if (needed[stop] <= 0 || ahead.departures[stop] < 0 || behind.departures[stop] < 0) {
+					continue;
+				}
+				final long gap = behind.service + behind.departures[stop] - ahead.service - ahead.departures[stop];
+				if (needed[stop] - gap > worstShort) {
+					worstShort = needed[stop] - gap;
+					worstStop = stop;
+					worstGap = gap;
+				}
+			}
+			if (worstStop >= 0 && conflicts.size() < MAX_CONFLICTS) {
+				conflicts.add(new Conflict(behind.table, worstStop, behind.service, route.routeId, ahead.service, 0, 0, worstGap, needed[worstStop]));
+			}
+		}
+	}
+
+	private static long firstDeparture(ServiceTimes serviceTimes) {
+		for (final long departure : serviceTimes.departures) {
+			if (departure >= 0) {
+				return departure;
+			}
+		}
+		return -1;
 	}
 
 	private static void checkDay(long routeId, List<RouteTimes> routes, Map<Long, RouteTimes> routeMap, Set<Long> platformIds, int weekday, Set<Conflict> conflicts) {
@@ -468,6 +522,35 @@ public final class TimetableConflicts {
 		}
 
 		/**
+		 * For each pair of vehicles, ahead then behind as "pool>pool", the least time between two trains from each stop to the
+		 * next (B, 2026-11-14); empty for no check.
+		 */
+		private final Map<String, long[]> headways = new HashMap<>();
+		/**
+		 * The vehicle running each service (a time of the day), by its pool; those not here run the default one, "".
+		 */
+		private final Map<Integer, String> servicePools = new HashMap<>();
+
+		/**
+		 * @param headways for each pair of vehicles, ahead then behind as "pool>pool" ("" for the default vehicle), the least
+		 *                 time between two trains from each stop to the next
+		 * @param pools    the vehicle running each service, by its pool, where known
+		 */
+		public void setHeadways(Map<String, long[]> headways, Map<Integer, String> pools) {
+			this.headways.clear();
+			this.headways.putAll(headways);
+			servicePools.clear();
+			servicePools.putAll(pools);
+		}
+
+		private long[] getHeadways(int aheadService, int behindService) {
+			final String ahead = servicePools.getOrDefault(aheadService, "");
+			final String behind = servicePools.getOrDefault(behindService, "");
+			final long[] headway = headways.get(ahead + ">" + behind);
+			return headway != null ? headway : headways.get(">");
+		}
+
+		/**
 		 * @param throats for each stop, the turnouts its train passes coming in and going out ({@code ThroatRoutes})
 		 */
 		public void setThroats(List<transitsim.network.ThroatRoutes.StopThroat> throats) {
@@ -594,12 +677,22 @@ public final class TimetableConflicts {
 		 * The turnout of a station's throat both trains use by different ways, or 0.
 		 */
 		public final long turnoutNode;
+		/**
+		 * For a service running closer behind the one before than trains can (B, 2026-11-14), the time between them from the
+		 * stop, and the least it needs; both 0 otherwise.
+		 */
+		public final long headwayMillis;
+		public final long neededMillis;
 
 		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId) {
 			this(table, stopIndex, service, otherRouteId, otherService, platformId, 0);
 		}
 
 		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId, long turnoutNode) {
+			this(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode, 0, 0);
+		}
+
+		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId, long turnoutNode, long headwayMillis, long neededMillis) {
 			this.table = table;
 			this.stopIndex = stopIndex;
 			this.service = service;
@@ -607,6 +700,15 @@ public final class TimetableConflicts {
 			this.otherService = otherService;
 			this.platformId = platformId;
 			this.turnoutNode = turnoutNode;
+			this.headwayMillis = headwayMillis;
+			this.neededMillis = neededMillis;
+		}
+
+		/**
+		 * @return whether the service runs closer behind the one before than trains can
+		 */
+		public boolean isHeadway() {
+			return neededMillis > 0;
 		}
 
 		@Override
@@ -615,12 +717,12 @@ public final class TimetableConflicts {
 				return false;
 			}
 			final Conflict conflict = (Conflict) object;
-			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId && turnoutNode == conflict.turnoutNode;
+			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId && turnoutNode == conflict.turnoutNode && headwayMillis == conflict.headwayMillis && neededMillis == conflict.neededMillis;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode);
+			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode, headwayMillis, neededMillis);
 		}
 	}
 

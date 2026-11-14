@@ -42,6 +42,9 @@
 ### `private static void addTurnBack(RouteTimes route, TurnBack turnBack, RouteTimes nextRoute, int weekday, List<Occupation> occupations, Set<ServiceStop> linkedStops)`
 - 作用：对在 `turnBack.stopIndex` 有出发时间的各班（按到达折返线时刻排序）：到达 = `turnBack.getArrival`；最早可出发 = 到达 + 停留 + 驶出时间；找下一路线中最早未被占用的班次，若有则离开时间延至该班（加上等待），并把下一班首站记入 `linkedStops`。生成带候选轨的占用。
 
+### `private static void checkHeadways(RouteTimes route, int weekday, Set<Conflict> conflicts)`（B，0.82.0）
+- 作用：被检查线路的班次按首站发车排好，每对前后相邻的班次，在每一站比较实际间隔（后车发车 − 前车发车）和这一站到下一站所需的最短间隔（`RouteTimes.setHeadways`，宿主用 `transitsim.run.Headways` 按运行这两班的车型算出），不够的取差得最多的那一站记一条冲突（`headwayMillis`、`neededMillis`）。只提示，不改时刻（用户定）。只比同一线路的班次。`firstDeparture`：班次第一个有发车时刻的站。
+
 ### `private static void checkThroats(long routeId, List<RouteTimes> routes, int weekday, Set<Conflict> conflicts)`
 - 作用：站场咽喉检查（L2）：两列车不能同时以不同进路使用同一道岔。每站的进站进路在到达前 `THROAT_MILLIS` 内占用，出站进路在出发后同样长时间占用；被检查路线的每个使用与同一道岔（或联锁区，区的 key 与节点分开）上其它列车的使用比较，进路冲突（`item.conflicts`）且时间重叠（考虑前后一天）时记冲突，`turnoutNode` 为 `item.getPlace()`。同一班次自身的进、出不算冲突。
 
@@ -72,6 +75,7 @@
 - `addTable(…, exceptions, deployOrders, returnOrders)`：另外记录运行图上中途加入/离开的班次所用站区间（区间外的站视为未到达）。主要调用者：`common/src/main/java/mtr/packet/PacketTrainDataGuiServer.java:856`。
 - `private static long[][] getTimes(long[][] times, List<StopPlan> plans)`：取计划到达/出发，路径未到达的站为 -1。
 - `addTurnBack(TurnBack)`：主要调用者：`common/src/main/java/mtr/packet/PacketTrainDataGuiServer.java:862`。
+- `setHeadways(Map<String, long[]> headways, Map<Integer, String> pools)`（0.82.0）：每对车型（前车池键>后车池键，"" 为默认车型；">" 为所有组合的最大值，车型未知时用）每一站到下一站所需的最短间隔，以及每个班次由哪个车池的车跑（来自运用）。私有 `getHeadways(前班, 后班)` 按两班的车池取，没有这一对时用 ">"。
 - `setThroats(List<ThroatRoutes.StopThroat>)`：主要调用者：`common/src/main/java/mtr/packet/PacketTrainDataGuiServer.java:861`。
 - `private String getTableKey(int weekday)`：当天运行的表号组合。
 - `private List<ServiceTimes> getServices(int weekday)`：当天各班的时间，每班取第一张含它的当天表（与列车实际所跑一致），有例外用例外时间，中途加入/离开的班次把区间外的站置 -1。
@@ -91,6 +95,7 @@
 - `otherRouteId`、`otherService`：冲突的另一方。
 - `platformId`：发生地站台；折返线或咽喉为 0。
 - `turnoutNode`：两车以不同进路使用的咽喉道岔（或区），否则 0。
+- `headwayMillis`、`neededMillis`（0.82.0）：班次比前一班跟得比列车能跑的还近时，两班从该站起的实际间隔和最少要的间隔，否则都为 0；`isHeadway()` 判断。九个参数的构造函数带这两项，其余构造函数为 0。`equals`/`hashCode` 含这两项。
 - 两个构造函数（无 / 有 `turnoutNode`）；`equals`/`hashCode` 按全部字段。
 
 ## 内部类 `Result`（public static）

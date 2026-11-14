@@ -410,4 +410,43 @@ class TimetableConflictsTest {
 
 		assertEquals(TimetableConflicts.MAX_CONFLICTS, check(route).size());
 	}
+
+	/**
+	 * Two services two and a half minutes apart from the first stop (B, 2026-11-14).
+	 */
+	private static TimetableConflicts.RouteTimes headwayRoute() {
+		final List<Route.RoutePlatform> stops = Arrays.asList(new Route.RoutePlatform(PLATFORM_1), new Route.RoutePlatform(PLATFORM_2));
+		return new TimetableConflicts.RouteTimes(ROUTE_A, stops, Arrays.asList(10 * MINUTE, 12 * MINUTE + 30000), 0, times());
+	}
+
+	@Test
+	void servicesCloserThanTrainsCanRunAreAConflict() {
+		final TimetableConflicts.RouteTimes route = headwayRoute();
+		// Trains need three minutes between them from the first stop to the second
+		route.setHeadways(Collections.singletonMap(">", new long[]{3 * MINUTE, 0}), Collections.emptyMap());
+		final List<TimetableConflicts.Conflict> conflicts = check(route);
+		assertEquals(1, conflicts.size());
+		final TimetableConflicts.Conflict conflict = conflicts.get(0);
+		assertTrue(conflict.isHeadway());
+		assertEquals(0, conflict.stopIndex);
+		assertEquals(12 * MINUTE + 30000, conflict.service);
+		assertEquals(10 * MINUTE, conflict.otherService);
+		assertEquals(150000, conflict.headwayMillis);
+		assertEquals(3 * MINUTE, conflict.neededMillis);
+		// Without the headways worked out, nothing is told
+		assertTrue(check(headwayRoute()).isEmpty());
+	}
+
+	@Test
+	void theHeadwayIsTheOneOfTheVehiclesRunningTheServices() {
+		final TimetableConflicts.RouteTimes route = headwayRoute();
+		final java.util.Map<String, long[]> headways = new java.util.HashMap<>();
+		headways.put(">", new long[]{3 * MINUTE, 0});
+		headways.put("fast>fast", new long[]{100000, 0});
+		final java.util.Map<Integer, String> pools = new java.util.HashMap<>();
+		pools.put(10 * MINUTE, "fast");
+		pools.put(12 * MINUTE + 30000, "fast");
+		route.setHeadways(headways, pools);
+		assertTrue(check(route).isEmpty());
+	}
 }

@@ -40,6 +40,13 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
   const data = model
   const depotById = (id: string) => data.depotById(id) as any
   const routeName = (id: string) => (data.routeById.get(id) ? routeTitle(data.routeById.get(id)!) : tr("已删除的线路"))
+  // Services closer behind each other than trains can run (B, 2026-11-14), from the game's timetable check of each route
+  data.routes.forEach((r: any) => {
+    const headways = r.headways || []
+    if (!headways.length) return
+    const worst = headways.reduce((a: any, b: any) => (b.needed - b.gap > a.needed - a.gap ? b : a))
+    problems.push({ level: "warn", text: tr("{0}：有 {1} 班和前一班隔得比列车能跑的还近，比如 {2} 到 {3} 只隔 {4} 秒，按闭塞分区和车长至少要隔 {5} 秒，会越跑越晚。拉开间隔，或者把这段线路分成更短的闭塞分区", routeTitle(r), headways.length, shortName(worst.from), shortName(worst.to), worst.gap, worst.needed), route: String(r.id) })
+  })
   Object.entries(draft.routes).forEach(([id, entry]) => {
     const r: any = data.routeById.get(id)
     if (entry.conflict) problems.push({ level: "err", text: entry.conflictBy ? tr("{0}：和 {1} 的修改冲突，游戏里在草稿之后被 {1} 改过，草稿先不发", routeName(id), entry.conflictBy) : tr("{0}：游戏里在草稿之后改过，草稿先不发", routeName(id)), route: id })

@@ -238,6 +238,8 @@
 - `private synchronized RailGraph<Rail> getGraph()`：首次需要时 `DeterministicPathFinder.compile(rails, boundaries)`。
 
 ## public static final class RoutePath
+
+- `getHeadways(stopSettings, pools, rails, directions, sections, transportMode)`（B，0.82.0）：线路路径（`getPath`，`SimExport.toTracks(path, rails, directions)` 转成组件轨道，行车方向显式传入：按轨道表缓存的那份在模拟器还没导出时是空的，复线会被当成单线整段，7 号线一开始就是这样算成 0）上每对车型（池键>池键，没有车池时用默认车型 ""）每一站到下一站所需的最短间隔（组件 `Headways.find` 按各车型的计划时刻段 `PathTiming.generateTimeSegments`，再 `byStop`；站的位置取各站台轨道末端），外加所有组合的最大值 ">"。调用者：`PacketTrainDataGuiServer.checkTimetableConflicts`。
 找到的线路路径；创建后不变，并且只发出拷贝（使用者会修改自己那份的轨道段）。
 
 ### 字段

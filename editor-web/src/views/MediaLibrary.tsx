@@ -174,14 +174,41 @@ function AudioLibrary() {
     }
     load()
   }
+  /**
+   * A file chosen to upload or to replace one with, as the server takes it: Ogg as it is, WAV and MP3 turned into Ogg here
+   * first, then held to the size limit, the same both ways (2026-11-14: a WAV chosen to replace a file was sent as it was
+   * and turned down for its size, where uploading it would have converted it); null, with a note, if it can't be
+   */
+  const prepare = async (original: File, signal: AbortSignal): Promise<File | null> => {
+    if (!data) return null
+    let file = original
+    if (!takes(file)) { note(file.name, tr("只收 Ogg Vorbis、WAV 或 MP3 文件")); return null }
+    if (isWav(file) || isMp3(file)) {
+      try {
+        setConverting({ name: file.name, percent: 0 })
+        file = await convertAudio(file, data.maxSeconds, data.maxFileBytes, percent => setConverting({ name: original.name, percent }), signal)
+      } catch (e) {
+        if (!signal.aborted) note(original.name, (e as Error).message)
+        return null
+      } finally { setConverting(null) }
+    }
+    if (file.size > data.maxFileBytes) { note(file.name, tr("文件不能超过 {0}", formatSize(data.maxFileBytes))); return null }
+    return file
+  }
   /** Another file in place of one by its id (0.79.0): its id, folder and sound ID stay, what refers to it plays the new one */
-  const replace = async (file: File, resourceId: string) => {
+  const replace = async (original: File, resourceId: string) => {
+    if (!data || busy.current) return
+    busy.current = true
+    const controller = new AbortController()
+    conversion.current = controller
     try {
+      const file = await prepare(original, controller.signal)
+      if (!file) return
       const result = await sendJson("api/audio", { action: "replace", resourceId, name: file.name, data: await readBase64(file) })
       if (!result.ok) note(file.name, result.message)
     } catch (e) {
-      note(file.name, failed(e))
-    }
+      note(original.name, failed(e))
+    } finally { busy.current = false; conversion.current = null; setConverting(null) }
     load()
   }
   /** Files chosen or dropped: first asks which folder they go to (the one open, if it is the player's) */
@@ -199,19 +226,9 @@ function AudioLibrary() {
     try {
       for (const original of files) {
         if (controller.signal.aborted) break
-        let file = original
-        if (!takes(file)) { note(file.name, tr("只收 Ogg Vorbis、WAV 或 MP3 文件")); continue }
-        if (isWav(file) || isMp3(file)) {
-          try {
-            setConverting({ name: file.name, percent: 0 })
-            file = await convertAudio(file, data.maxSeconds, data.maxFileBytes, percent => setConverting({ name: original.name, percent }), controller.signal)
-          } catch (e) {
-            if (controller.signal.aborted) break
-            note(original.name, (e as Error).message)
-            continue
-          } finally { setConverting(null) }
-        }
-        if (file.size > data.maxFileBytes) { note(file.name, tr("文件不能超过 {0}", formatSize(data.maxFileBytes))); continue }
+        const file = await prepare(original, controller.signal)
+        if (controller.signal.aborted) break
+        if (!file) continue
         // Match the converted name so updates keep an existing Ogg file's sound ID.
         const fileName = /\.ogg$/i.test(file.name) ? file.name : file.name + ".ogg"
         if (data.entries.some(each => each.mine && each.name.toLowerCase() === fileName.toLowerCase())) upload(file, "", folder)

@@ -86,7 +86,7 @@
 - 与本班次相关的冲突；某站是否有冲突；冲突的班次时刻集合（用于列表着色）。
 
 ### `private void drawConflictText(PoseStack, int x, int y)` / `private Component getConflictSummary(Result)`
-- 状态：过期、检查中、无冲突（或有未检查的线路）、冲突摘要：咽喉道岔冲突（L2：两列车同时以不同进路过咽喉道岔）、折返冲突、站台冲突（站名、站台、对方线路与班次）；数量达上限显示 "N+"。
+- 状态：过期、检查中、无冲突（或有未检查的线路）、冲突摘要：追踪间隔冲突（0.82.0：这一站到下一站和前一班只隔几秒，至少要几秒，`gui.mtr.timetable_conflicts_found_headway`）、咽喉道岔冲突（L2：两列车同时以不同进路过咽喉道岔）、折返冲突、站台冲突（站名、站台、对方线路与班次）；数量达上限显示 "N+"。
 
 ### `private int parseMargin()`
 - 裕度（上限 `MAX_MARGIN_PERCENT`，无效用默认）。

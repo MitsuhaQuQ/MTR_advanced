@@ -40,6 +40,10 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.82.1: replacing an audio file in the web media library converts WAV and MP3 to Ogg first and holds it to the same size limit as an upload.
+
+0.82.0: the timetable conflict check also tells of services running closer behind each other than trains can, by the block sections and the length and braking of the trains running them, in the timetable screen and on the web page; the times are left as they are.
+
 0.81.1: a train takes an interlocking zone only with the track going into it, so it can wait at its edge; a passing loop with its switches painted in the interlocking colour no longer deadlocks. The passing point hint of 0.81.0 is gone, as it was wrong.
 
 0.81.0: two trains of a siding out of order for a stop (one waiting there for a later service, one behind due earlier) swap the rest of their duties, so neither stays late all day; depots tell, in the log and on the web page, where trains running both ways pass each other with both tracks in one interlocking zone, which deadlocks.

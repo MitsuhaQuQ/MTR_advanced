@@ -1667,6 +1667,55 @@ public final class RoutePaths {
 			return timed;
 		}
 
+		/**
+		 * The least time between two trains of the route from each stop to the next (B, 2026-11-14), for each pair of vehicles
+		 * ahead and behind as "pool>pool", and the most of them all as ">" for services whose vehicle isn't known. Worked
+		 * out by the component's {@link transitsim.run.Headways} on the route's path, cut into the sections trains claim, at
+		 * each vehicle's planned times.
+		 *
+		 * @param pools    the vehicles running the route, by pool; empty for the route's default vehicle
+		 * @param sections the painted signal blocks, or null for none
+		 */
+		public Map<String, long[]> getHeadways(List<Route.RoutePlatform> stopSettings, Map<String, PathTiming.Vehicle> pools, Map<BlockPos, Map<BlockPos, Rail>> rails, Map<UUID, Integer> directions, transitsim.network.BlockSections sections, TransportMode transportMode) {
+			final Map<String, long[]> headways = new HashMap<>();
+			final List<PathData> path = isFound() ? getPath(stopSettings) : Collections.emptyList();
+			if (path.isEmpty()) {
+				return headways;
+			}
+			final List<transitsim.sim.SimDataset.DataTrack> tracks = mtr.advanced.SimExport.toTracks(path, rails, directions);
+			// Where each stop is along the path: the end of its platform, in order
+			final double[] stopPositions = new double[stopSettings.size()];
+			Arrays.fill(stopPositions, Double.NaN);
+			double distance = 0;
+			int stop = 0;
+			for (int i = 0; i < path.size() && i < tracks.size(); i++) {
+				distance += tracks.get(i).getTrackLength();
+				if (stop < stopSettings.size() && path.get(i).savedRailBaseId == stopSettings.get(stop).platformId) {
+					stopPositions[stop++] = distance;
+				}
+			}
+			final Map<String, PathTiming.Vehicle> vehicles = new java.util.TreeMap<>(pools);
+			if (vehicles.isEmpty()) {
+				vehicles.put("", getDefaultVehicle(transportMode));
+			}
+			final Map<String, transitsim.run.Headways.Train> trains = new java.util.TreeMap<>();
+			vehicles.forEach((pool, vehicle) -> {
+				final List<transitsim.plan.TimeSegment> times = new ArrayList<>();
+				PathTiming.generateTimeSegments(vehicle, path, times, new HashMap<>(), new StopTimes(), 0, 0);
+				trains.put(pool, new transitsim.run.Headways.Train(times, vehicle.trainCars * vehicle.spacing, vehicle.spacing, vehicle.deceleration));
+			});
+			final long[] most = new long[stopSettings.size()];
+			trains.forEach((aheadPool, ahead) -> trains.forEach((behindPool, behind) -> {
+				final long[] byStop = transitsim.run.Headways.byStop(transitsim.run.Headways.find(tracks, sections, ahead, behind), stopPositions);
+				headways.put(aheadPool + ">" + behindPool, byStop);
+				for (int i = 0; i < most.length; i++) {
+					most[i] = Math.max(most[i], byStop[i]);
+				}
+			}));
+			headways.put(">", most);
+			return headways;
+		}
+
 		private StopTimes getStopTimes(PathTiming.Vehicle vehicle, List<Route.RoutePlatform> stopSettings) {
 			final List<Object> key = new ArrayList<>();
 			key.add(vehicle);

@@ -78,10 +78,10 @@
 
 ### 时刻冲突检查
 - `receiveTimetableConflictsC2S(...)` → `checkTimetableConflicts`。
-- `private static void checkTimetableConflicts(MinecraftServer, ServerPlayer, long routeId)`：一个玩家同时只能有一个检查，正在检查时记为等待，检查结束后再跑（时间可能已变）。参与比较的线路：本线路，加上共用同一折返线的线路（折返前的线路可能与本线没有共同站台），以及停靠相同站台或相同车站（共用咽喉，L2）且时刻表启用的线路。准备：下一线路（`getNextRouteIds`）、运用中确定的下一班（`TerminalPairs.fixedNext`）、各线路咽喉道岔（`routePath.getThroats`，联锁区按 `SecurityConfig.interlockColor`）、已知时间或时间求解器。然后在新线程中为每条线路构造 `TimetableConflicts.RouteTimes`（去掉停运班次；有站未到达的线路计为"部分未检查"），`TimetableConflicts.check`，回服务器线程 `sendTimetableConflicts`。
+- `private static void checkTimetableConflicts(MinecraftServer, ServerPlayer, long routeId)`：一个玩家同时只能有一个检查，正在检查时记为等待，检查结束后再跑（时间可能已变）。参与比较的线路：本线路，加上共用同一折返线的线路（折返前的线路可能与本线没有共同站台），以及停靠相同站台或相同车站（共用咽喉，L2）且时刻表启用的线路。准备：下一线路（`getNextRouteIds`）、运用中确定的下一班（`TerminalPairs.fixedNext`）、各线路咽喉道岔（`routePath.getThroats`，联锁区按 `SecurityConfig.interlockColor`）、已知时间或时间求解器。另外（B，0.82.0）：各线路由哪些车池的车跑（每条停车线 `getPoolKey` → `getTimingVehicle`）、运用里每个班次由哪个车池跑（各车厂 `getRunDuties` 的分段）、涂色闭塞区（`getSignalBlocks().getBlockSections()`）、各轨道的行车方向（`RunningSides.get(railwayData)`，交给 `getHeadways`）。然后在新线程中为每条线路构造 `TimetableConflicts.RouteTimes`（被检查的线路另 `setHeadways(routePath.getHeadways(...), 班次车池)`）（去掉停运班次；有站未到达的线路计为"部分未检查"），`TimetableConflicts.check`，回服务器线程 `sendTimetableConflicts`。
 - `private static Map<Long, Long> getNextRouteIds(RailwayData)`：列车按车厂线路顺序运行，末线终点与首线起点相同时回到首线。
 - `private static Map<Long, Set<TimetableConflicts.TurnBack>> getTurnBacks(RailwayData)`：各停车轨停站时间中的折返及其候选折返轨。
-- `private static void sendTimetableConflicts(ServerPlayer, long routeId, List<Conflict>, int uncheckedRoutes)`：`long 线路`、`int 未检查数`、`int 冲突数`，每个 `int 表, int 站序, int 班次, long 对方线路, int 对方班次, long 站台, long 道岔节点`。
+- `private static void sendTimetableConflicts(ServerPlayer, long routeId, List<Conflict>, int uncheckedRoutes)`：`long 线路`、`int 未检查数`、`int 冲突数`，每个 `int 表, int 站序, int 班次, long 对方线路, int 对方班次, long 站台, long 道岔节点, long 实际间隔, long 所需间隔`（后两项 0.82.0，非追踪间隔冲突为 0）。
 
 ### 节点与边界
 - `receiveNodeAngleC2S(...)`：`BlockPos`、`float 角度（度）`、`boolean 关键节点`、`int 折返停留`；可编辑、角度有限、方块为自由角度节点时：设关键节点；角度变化时 `rotateNodeRails` 旋转相连轨道（失败把错误发到聊天栏，因为节点渲染每帧覆盖动作栏），成功则设自定义角度并在动作栏显示；折返停留 ≥ 0 时设置（上限 `Rail.MAX_TURN_BACK_DWELL`）。
