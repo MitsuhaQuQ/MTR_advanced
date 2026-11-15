@@ -85,6 +85,11 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.3 显示屏不再列在本站终到的车（用户 2026-11-16 截图：犬宫 1 站台的显示屏列出“犬宫 16 分钟”，即终点就是本站的车）：
+- `RailwayData` 发给玩家的到站包（`PACKET_UPDATE_SCHEDULE`）里，`PidsSchedules.withoutTerminating` 去掉 `currentStationIndex` 是线路最后一站的条目（环线除外）。乘客在这里上不了这班车；车接着跑下一条线路时，下一条线路首站的条目照常在。本模组和其它模组（如 YJCM）的显示屏都读这个包，所以都不再列。
+- 服务端自己用的（传感器、到站触发、网页到站表）不变，仍有终到条目。
+- 包格式不变，只改服务端，升第三位。
+
 0.84.2 网页顶栏“同步到现在”（用户 2026-11-16：在网页端加一个一键刷新（同步到当前时刻）按钮）：
 - 网页 `App.tsx` `SyncNow`：顶栏按钮，先问一下（线上的车会被换掉），再 POST `api/sync-now`，结果写在横幅里。
 - 客户端 `EditorServer.SyncNowServlet`：在游戏线程里对每个有线路的车厂把 `clientPathGenerationSuccessfulSegments` 置 -1 并发 `generatePathC2S`（和车厂界面“刷新路线”同一个包）；另起一个线程每 250 ms 看一次，等这些车厂都收到服务器的寻路结果（最多 120 秒），再对按时刻表运行的车厂（`runsByDutiesWith`）逐个发 `placeTrainsC2S`（和“按时刻表摆车”同一个包）。立即回答刷新了几个车厂、要摆几个车厂。摆车结果照旧在聊天栏；运用缺路径时服务器拒绝摆车（0.83.13）。

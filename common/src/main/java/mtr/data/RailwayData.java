@@ -708,7 +708,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 				packet.writeInt(platformIds.size());
 				platformIds.forEach(platformId -> {
 					packet.writeLong(platformId);
-					final List<ScheduleEntry> scheduleEntries = PidsSchedules.forDisplay(schedulesForPlatform.get(platformId), pidsSchedules.getPlanned(platformId), now);
+					// The players' displays don't list trains ending their route here (user, 2026-11-16: 终到就是本站也写出来);
+					// the server's own uses (sensors, triggers, the web editor) still have them
+					final List<ScheduleEntry> scheduleEntries = PidsSchedules.withoutTerminating(PidsSchedules.forDisplay(schedulesForPlatform.get(platformId), pidsSchedules.getPlanned(platformId), now), dataCache);
 					packet.writeInt(scheduleEntries.size());
 					scheduleEntries.forEach(scheduleEntry -> scheduleEntry.writePacket(packet));
 				});

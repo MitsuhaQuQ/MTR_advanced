@@ -1465,6 +1465,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 时刻表右键过夜（0.83.11）：只在网页 `oldEditor.js`，改的是运用的 `stay`，组件不变。
 
+显示屏不列终到车（0.84.3）：只在游戏 `RailwayData` 发包时用 `PidsSchedules.withoutTerminating` 过滤，组件不变。
+
 网页“同步到现在”（0.84.2）：只在网页和客户端 `EditorServer`，复用已有的寻路和摆车包，组件不变。
 
 显示屏工作线程和服务器线程共用 StopTimes 缓存（0.84.1）：组件 `StopTimes` 的计划缓存加锁。

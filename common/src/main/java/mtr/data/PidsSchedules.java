@@ -346,4 +346,19 @@ final class PidsSchedules {
 			this.day = day;
 		}
 	}
+
+	/**
+	 * @return the entries without those of trains ending their route at that stop: a display lists the trains passengers
+	 * can board there, and a train ending its route here is the next route's first stop when it goes on (2026-11-16)
+	 */
+	static List<ScheduleEntry> withoutTerminating(List<ScheduleEntry> entries, DataCache dataCache) {
+		final List<ScheduleEntry> kept = new java.util.ArrayList<>(entries.size());
+		for (final ScheduleEntry entry : entries) {
+			final Route route = dataCache.routeIdMap.get(entry.routeId);
+			if (route == null || route.isLoop() || entry.currentStationIndex < route.platformIds.size() - 1) {
+				kept.add(entry);
+			}
+		}
+		return kept;
+	}
 }

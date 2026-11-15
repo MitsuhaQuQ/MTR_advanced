@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.3: passenger displays no longer list trains ending their route at that station.
+
 0.84.2: the web editor's top bar has 同步到现在 (sync to now): every depot's paths are found again, then the trains of the depots running by their timetables are put where the timetables have them now.
 
 0.84.1: fixes the server stopping a few seconds after starting: the passenger displays' worker and the server thread filled the same cache of planned stop times at once.
