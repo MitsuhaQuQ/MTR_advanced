@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
-import { abstractNetwork, type Corridor, type Place, type Schematic } from "../core/abstractNet"
+import { abstractNetwork, corridorPath, offsetPath, type Corridor, type Place, type Pt, type Schematic } from "../core/abstractNet"
 import { paint, useBrush } from "./OwnershipPanel"
 import { tr } from "../i18n"
 import { colorOf } from "./now"
@@ -208,16 +208,17 @@ function paintCorridor(c: Corridor, brush: Parameters<typeof paint>[1]) {
 }
 
 function LogicalCorridor({ corridor: c, a, b, sx, sy, onPaint }: { corridor: Corridor; a: Place; b: Place; sx: (p: Place) => number; sy: (p: Place) => number; onPaint?: () => void }) {
-  const x1 = sx(a), y1 = sy(a), x2 = sx(b), y2 = sy(b)
-  const length = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / length, ny = (x2 - x1) / length
+  // Level, upright and 45° pieces only, with a bend where the places don't line up (0.83.7)
+  const path = corridorPath([sx(a), sy(a)], [sx(b), sy(b)])
+  const points = (list: Pt[]) => list.map(p => p[0] + "," + p[1]).join(" ")
   const colors = [...new Set(c.rails.flatMap(railColors))]
   return (
     <g className={onPaint ? "cursor-crosshair" : undefined} onClick={onPaint}>
-      {onPaint && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={Math.max(14, c.tracks * GAP + 8)} />}
+      {onPaint && <polyline points={points(path)} fill="none" stroke="transparent" strokeWidth={Math.max(14, c.tracks * GAP + 8)} />}
       {Array.from({ length: c.tracks }, (_, t) => {
         const o = (t - (c.tracks - 1) / 2) * GAP
         const color = colors.length ? colors[t % colors.length] : "var(--grid-strong)"
-        return <line key={t} x1={x1 + nx * o} y1={y1 + ny * o} x2={x2 + nx * o} y2={y2 + ny * o} stroke={color} strokeWidth={colors.length ? 3 : 2} strokeLinecap="round" strokeDasharray={colors.length ? undefined : "5 4"} />
+        return <polyline key={t} points={points(offsetPath(path, o))} fill="none" stroke={color} strokeWidth={colors.length ? 3 : 2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={colors.length ? undefined : "5 4"} />
       })}
     </g>
   )

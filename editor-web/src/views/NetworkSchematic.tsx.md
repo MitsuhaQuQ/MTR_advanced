@@ -28,3 +28,4 @@
 - `railColors(rail)`：逻辑图上轨道的颜色：使用逻辑线路时为其逻辑线路颜色（`fn.railLogicalLine`），否则为各归属线路颜色（`fn.railOwnersShown`、`fn.ownerColor`）；归属未读到时为空。
 - `paintCorridor(c, brush)`：把走廊轨道所在的每个区段（`v.net.ownerOf` 的 `section`，没有则按轨道）各刷一次（`paint(rail, brush)`，改草稿）。
 - `LogicalCorridor({ corridor, a, b, sx, sy, onPaint })`：两地点之间按股数画平行线，颜色轮流取区段颜色（没有颜色时灰色虚线）；有画笔时加一条透明粗线作点击区域。
+- 0.83.7 `LogicalCorridor` 用 `corridorPath`/`offsetPath` 画折线（横、竖、45°），点击区域也是折线。

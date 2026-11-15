@@ -1,6 +1,6 @@
 /** The whole network folded into stations and corridors (src/core/abstractNet.ts), on the mock's network. */
 import { describe, expect, it } from "vitest"
-import { abstractNetwork } from "../src/core/abstractNet"
+import { abstractNetwork, corridorPath, offsetPath, type Pt } from "../src/core/abstractNet"
 import { exampleTrack } from "../mock/track"
 import { exampleTopology } from "../mock/fixture"
 
@@ -93,5 +93,72 @@ describe("abstractNetwork", () => {
     expect([main.negative, main.positive]).toEqual([true, true])
     expect([turn.negative, turn.positive]).toEqual([true, false])
     expect(station.turnouts).toContainEqual({ from: 1, to: 0, end: 1 })
+  })
+})
+
+/** A double-track ring of stations at odd angles, as a player builds them (0.83.7: drawn at any angle before) */
+function ring(count: number, radius: number, turn: number) {
+  const nodes: [number, number, string][] = []
+  const at = (x: number, z: number) => { nodes.push([x, z, String(nodes.length)]); return nodes.length - 1 }
+  const rails: any[] = [], stations: { id: string; name: string; x: number; z: number }[] = []
+  const ends: number[][][] = []
+  for (let i = 0; i < count; i++) {
+    const angle = turn + (i * 2 * Math.PI) / count + 0.3 * Math.sin(i * 1.7)
+    const r = radius * (1 + 0.25 * Math.cos(i * 2.3))
+    const cx = Math.cos(angle) * r, cz = Math.sin(angle) * r, ux = -Math.sin(angle), uz = Math.cos(angle)
+    stations.push({ id: "s" + i, name: "S" + i, x: cx, z: cz })
+    ends.push([-3, 3].map(side => {
+      const start = at(cx - ux * 40 + Math.cos(angle) * side, cz - uz * 40 + Math.sin(angle) * side)
+      const end = at(cx + ux * 40 + Math.cos(angle) * side, cz + uz * 40 + Math.sin(angle) * side)
+      rails.push([start, end, 1])
+      return [start, end]
+    }))
+  }
+  for (let i = 0; i < count; i++) for (let t = 0; t < 2; t++) rails.push([ends[i][t][1], ends[(i + 1) % count][t][0], 0])
+  return abstractNetwork({ nodes, rails, stations })
+}
+
+describe("abstractNetwork on a ring", () => {
+  it("draws every corridor level, upright or at 45°, with bends where needed", () => {
+    for (const [count, turn] of [[6, 0.17], [7, 0.4], [9, 1.1]]) {
+      const s = ring(count, 700, turn)
+      const at = new Map(s.places.map(p => [p.id, p]))
+      expect(s.corridors.length).toBe(count)
+      s.corridors.forEach(c => {
+        const a = at.get(c.a)!, b = at.get(c.b)!
+        const path = corridorPath([a.px, a.py], [b.px, b.py])
+        for (let i = 1; i < path.length; i++) {
+          const dx = path[i][0] - path[i - 1][0], dy = path[i][1] - path[i - 1][1]
+          if (Math.hypot(dx, dy) < 6) continue
+          const angle = Math.atan2(dy, dx) / (Math.PI / 4)
+          expect(Math.abs(angle - Math.round(angle)), `${c.a}-${c.b} piece ${i}`).toBeLessThan(0.03)
+        }
+        // Each double track one corridor of two tracks
+        expect(c.tracks).toBe(2)
+      })
+      const stations = s.places.filter(p => p.kind === "station")
+      for (let i = 0; i < stations.length; i++) for (let j = i + 1; j < stations.length; j++) {
+        expect(Math.hypot(stations[i].px - stations[j].px, stations[i].py - stations[j].py)).toBeGreaterThan(55)
+      }
+    }
+  })
+  it("keeps parallel tracks apart round a bend", () => {
+    const path: Pt[] = corridorPath([0, 0], [100, 40])
+    expect(path).toHaveLength(4)
+    const left = offsetPath(path, 5), right = offsetPath(path, -5)
+    // The same gap on every piece, corners included
+    for (let i = 0; i < path.length; i++) expect(Math.hypot(left[i][0] - right[i][0], left[i][1] - right[i][1])).toBeGreaterThanOrEqual(9.9)
+    expect(corridorPath([0, 0], [100, 99])).toHaveLength(2)
+    expect(corridorPath([0, 0], [0, 80])).toHaveLength(2)
+  })
+  it("makes one junction of a double track's two turnouts of a branch, not joined by a rail of their own", () => {
+    const nodes: [number, number, string][] = []
+    const at = (x: number, z: number) => { nodes.push([x, z, String(nodes.length)]); return nodes.length - 1 }
+    const a0 = at(0, 0), a1 = at(80, 0), c0 = at(0, 10), c1 = at(80, 10)
+    const t0 = at(300, 0), t1 = at(345, 10), b0 = at(600, 0), b1 = at(680, 0), d0 = at(600, 10), d1 = at(680, 10)
+    const e0 = at(500, 200), e1 = at(520, 210)
+    const rails = [[a0, a1, 1], [c0, c1, 1], [b0, b1, 1], [d0, d1, 1], [a1, t0, 0], [t0, b0, 0], [c1, t1, 0], [t1, d0, 0], [t0, e0, 0], [t1, e1, 0]]
+    const s = abstractNetwork({ nodes, rails, stations: [{ id: "a", name: "A", x: 40, z: 5 }, { id: "b", name: "B", x: 640, z: 5 }] })
+    expect(s.places.filter(p => p.kind === "junction")).toHaveLength(1)
   })
 })

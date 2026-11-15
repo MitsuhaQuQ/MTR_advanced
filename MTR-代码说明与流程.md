@@ -85,6 +85,14 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.7 归属图按线路图画（用户 2026-11-15 截图：归属图走向、画法形状奇怪）：
+- 原因：`editor-web/src/core/abstractNet.ts` `layout` 是弹簧模型，每条走廊希望方向取整到 45°，环形线网里这些希望互相冲突，折中后成了任意角度；走廊又画成两地点间一条直线。双线在两个相距 30 格以上的道岔分叉时成了两个道岔点、两条走廊。
+- `layout` 最后加一轮对齐：方向离横、竖、45° 不到 15° 的走廊拉成正好，道岔和尽头比车站动得多。
+- 新增 `corridorPath(a, b)`：对齐的直画，否则横或竖、45°、横或竖三段；`offsetPath(points, o)` 斜接偏移，平行线在拐角处间距不变。`views/NetworkSchematic.tsx` `LogicalCorridor` 改用折线（点击区域同）。
+- 道岔合并：30 格内照旧合成一个；30–60 格内只合并没有轨道直接相连的道岔（双线分叉合成一个，交叉渡线两端仍是两个）。
+- 测试 `editor-web/test/abstractNet.test.ts`：环形线网（6、7、9 站，斜着摆）每段都是 45° 的倍数、车站分开；拐角处平行线间距；双线分叉一个道岔。
+只改网页，升第三位。
+
 组件测试 `transit-sim/.../sim/TwoDaysTest`（2026-11-15，T04/T05，benchmark 才跑）：`WholeDayTest.dataset(shiftMillis)` 把班次平移后生成运用；连跑两个运营日，比第二天和第一天的事件、检查规则、夜间回库和 `RunReservations.getHolders()` 为空。
 
 0.83.6 网页编辑器三处修正（批次 B 网页测试 `ui-results/20261115-172620` 找到，用户 2026-11-15“修”）：

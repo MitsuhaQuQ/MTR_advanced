@@ -1447,6 +1447,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 网页编辑器三处修正（0.83.6）：都在客户端（网页、`ClientEditing`），组件不变。网页的批次只用页面的基准或现在的版本检查冲突，不再沿用游戏界面的快照。
 
+归属图按线路图画（0.83.7）：只在网页 `core/abstractNet.ts` 与 `views/NetworkSchematic.tsx`，组件和游戏不变。
+
 区间追踪间隔（0.82.0）的算法在组件 `transitsim.run.Headways`（用运行时同一套分区 `PathClaims.between`），检查在组件 `TimetableConflicts.checkHeadways`；游戏只负责准备路径、车型和运用里每班的车池（`RoutePaths.RoutePath.getHeadways`、`PacketTrainDataGuiServer`）。
 
 0.81.0 的联锁区交会提示已在 0.81.1 删除；0.81.1 改的是组件 `PathClaims.attach`（联锁区和咽喉道岔跟进入它的那一组申请），两个宿主共用。

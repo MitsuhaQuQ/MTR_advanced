@@ -10,7 +10,10 @@
  * 3. Chains between the same two places are one corridor. Each track remembers the exact station lane or junction port
  *    it meets, so crossovers, unequal merges and sidings keep their real connectivity.
  * 4. Layout: each corridor wants its geographic direction rounded to 45° and a length growing with the square root of its
- *    real length; places too close are pushed apart. The result is in pixels.
+ *    real length; places too close are pushed apart. Then the corridors nearly level, upright or at 45° are made exactly
+ *    so, and the rest are drawn with a 45° bend (corridorPath), so every line on the map runs one of the eight ways
+ *    (0.83.7: on a ring the wanted directions fight, and the straight lines between places came out at any angle).
+ *    The result is in pixels.
  * 5. The routes' paths colour the tracks they run on.
  */
 
@@ -37,6 +40,10 @@ const KIND_PLATFORM = 1
 /** How far beyond its platforms a station reaches along them: its throats, where turnouts are its own */
 const THROAT = 80
 const SNAP = Math.PI / 4
+/** Turnout nodes this close (blocks) are one junction: a double track's two turnouts of a crossover or a branch */
+const JUNCTION_JOIN = 60
+/** A corridor within this of level, upright or 45° is made exactly so; others get a bend */
+const ALIGN = Math.PI / 12
 const hex = (color: number) => "#" + (color & 0xffffff).toString(16).padStart(6, "0")
 
 export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): Schematic {
@@ -178,9 +185,15 @@ export function abstractNetwork(net: NetData, platforms: TopoPlatform[] = []): S
   junctionNodes.forEach(k => parent.set(k, k))
   junctionNodes.forEach(k => {
     const [x, z] = nodes[k]
-    for (let cx = Math.floor((x - 30) / CELL); cx <= Math.floor((x + 30) / CELL); cx++) {
-      for (let cz = Math.floor((z - 30) / CELL); cz <= Math.floor((z + 30) / CELL); cz++) {
-        (grid.get(cx + "," + cz) || []).forEach(j => { if (j !== k && parent.has(j) && Math.hypot(nodes[j][0] - x, nodes[j][1] - z) < 30) parent.set(find(j), find(k)) })
+    for (let cx = Math.floor((x - JUNCTION_JOIN) / CELL); cx <= Math.floor((x + JUNCTION_JOIN) / CELL); cx++) {
+      for (let cz = Math.floor((z - JUNCTION_JOIN) / CELL); cz <= Math.floor((z + JUNCTION_JOIN) / CELL); cz++) {
+        (grid.get(cx + "," + cz) || []).forEach(j => {
+          if (j === k || !parent.has(j)) return
+          const d = Math.hypot(nodes[j][0] - x, nodes[j][1] - z)
+          // Farther apart, only turnouts not joined by a rail of their own: a double track's two branches are one
+          // junction, a scissors crossover's two ends stay two (0.83.7)
+          if (d < 30 || d < JUNCTION_JOIN && !adjacent[k].some(rail => other(rail, k) === j)) parent.set(find(j), find(k))
+        })
       }
     }
   })
@@ -341,4 +354,52 @@ export function layout(places: Place[], corridors: Corridor[]) {
       }
     }
   }
+  // Corridors nearly level, upright or at 45° made exactly so, junctions and ends moving more than stations
+  const mobility = (p: Place) => (p.kind === "station" ? 1 : 3)
+  for (let pass = 0; pass < 120; pass++) {
+    wants.forEach(w => {
+      const a = places[w.a], b = places[w.b]
+      const dx = b.px - a.px, dy = b.py - a.py
+      if (Math.hypot(dx, dy) < 1) return
+      const direction = Math.round(Math.atan2(dy, dx) / SNAP) * SNAP
+      if (Math.abs(Math.atan2(dy, dx) - direction) > ALIGN) return
+      const ux = Math.cos(direction), uy = Math.sin(direction), along = dx * ux + dy * uy
+      const ex = ux * along - dx, ey = uy * along - dy
+      const share = mobility(b) / (mobility(a) + mobility(b))
+      b.px += ex * share * 0.5; b.py += ey * share * 0.5
+      a.px -= ex * (1 - share) * 0.5; a.py -= ey * (1 - share) * 0.5
+    })
+  }
+}
+
+export type Pt = [number, number]
+/** Within this (pixels) a corridor counts as level, upright or at 45° and is drawn straight */
+const STRAIGHT = 2
+
+/**
+ * How a corridor is drawn between its places' points: straight when level, upright or at 45°, else level or upright,
+ * a 45° stretch, and level or upright again, so every piece runs one of the eight ways (0.83.7).
+ */
+export function corridorPath(a: Pt, b: Pt): Pt[] {
+  const dx = b[0] - a[0], dy = b[1] - a[1], adx = Math.abs(dx), ady = Math.abs(dy)
+  if (adx < STRAIGHT || ady < STRAIGHT || Math.abs(adx - ady) < STRAIGHT) return [a, b]
+  const sx = Math.sign(dx), sy = Math.sign(dy)
+  if (adx > ady) {
+    const s = (adx - ady) / 2
+    return [a, [a[0] + sx * s, a[1]], [b[0] - sx * s, b[1]], b]
+  }
+  const s = (ady - adx) / 2
+  return [a, [a[0], a[1] + sy * s], [b[0], b[1] - sy * s], b]
+}
+
+/** A path moved sideways by o (to the left of its direction for o > 0), its corners mitred so parallel tracks stay apart */
+export function offsetPath(points: Pt[], o: number): Pt[] {
+  const normal = (p: Pt, q: Pt): Pt => { const l = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; return [-(q[1] - p[1]) / l, (q[0] - p[0]) / l] }
+  return points.map((p, i) => {
+    const before = i > 0 ? normal(points[i - 1], p) : null, after = i < points.length - 1 ? normal(p, points[i + 1]) : null
+    const n1 = before || after!, n2 = after || before!
+    const mx = n1[0] + n2[0], my = n1[1] + n2[1], ml = Math.hypot(mx, my) || 1
+    const scale = o / Math.max(0.5, (mx / ml) * n1[0] + (my / ml) * n1[1])
+    return [p[0] + (mx / ml) * scale, p[1] + (my / ml) * scale] as Pt
+  })
 }
