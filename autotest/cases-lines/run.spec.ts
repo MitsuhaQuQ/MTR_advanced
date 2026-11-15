@@ -39,7 +39,12 @@ const TOO_CLOSE_TIMETABLES = [7];
  * Filled from the server's snapshot once the trains have run (each depot's rehearsal warnings).
  */
 const warned = new Map<string, number>();
-const allowedLate = (routeId: string) => warned.has(routeId) ? Math.max(TOLERANCE, 2 * warned.get(routeId)! / 1000 + 60) : TOLERANCE;
+// A line any of whose routes was warned of: the others' lateness is that knocked on (a train late one way is late back; the
+// rehearsal warns only of more than 30 s), so they get the line's worst
+const warnedLine = new Map<number, number>();
+const routeLine = new Map<string, number>();
+const warnedMillis = (routeId: string) => warned.get(routeId) ?? warnedLine.get(routeLine.get(routeId) ?? -1);
+const allowedLate = (routeId: string) => warnedMillis(routeId) !== undefined ? Math.max(TOLERANCE, 2 * warnedMillis(routeId)! / 1000 + 60) : TOLERANCE;
 /** A train this late is told at once as an alarm (the default contingency's five minutes, DelayRules), with some slack */
 const ALARM_SECONDS = 5 * 60 + 30;
 
@@ -274,6 +279,8 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		if ((kind === "LATE" || kind === "HELD") && routeId !== "0") warned.set(routeId, Math.max(warned.get(routeId) || 0, Number(maxMillis)));
 		if (kind === "NOT_RUN") notRunWarned.add(routeId);
 	}
+	plans.forEach(plan => routeLine.set(plan.routeId, plan.line));
+	warned.forEach((millis, routeId) => { const line = routeLine.get(routeId); if (line !== undefined) warnedLine.set(line, Math.max(warnedLine.get(line) || 0, millis)); });
 	report.push(`rehearsals warned of ${warned.size} routes: ${[...warned].map(([id, millis]) => `${plans.find(p => p.routeId === id)?.name.split("|")[0] || id} ${Math.round(millis / 1000)} s`).join(", ")}`);
 	const serverText = serverLog();
 	const planLate: string[] = [];
@@ -319,7 +326,7 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		for (const m of here) {
 			const where = `${m.plan.name.split("|")[0]} 第${m.stop + 1}站 ${new Date(m.event.arrive).toISOString().slice(11, 19)}Z`;
 			const allowed = allowedLate(m.plan.routeId);
-			const why = warned.has(m.plan.routeId) ? `, more than the rehearsal's ${Math.round(warned.get(m.plan.routeId)! / 1000)} s explains` : ", and the rehearsal warned of nothing on this route";
+			const why = warnedMillis(m.plan.routeId) !== undefined ? `, more than the rehearsal's ${Math.round(warnedMillis(m.plan.routeId)! / 1000)} s on its line explains` : ", and the rehearsal warned of nothing on this route";
 			if (m.departLate !== null && m.departLate / 1000 < -TOLERANCE) failures.push(`${where}: departed ${Math.round(-m.departLate / 1000)} s early`);
 			if (m.departLate !== null && m.departLate / 1000 > allowed) failures.push(`${where}: departed ${Math.round(m.departLate / 1000)} s late${why}`);
 			if (m.arriveLate !== null && m.arriveLate / 1000 > allowed) failures.push(`${where}: arrived ${Math.round(m.arriveLate / 1000)} s late${why}`);
@@ -334,9 +341,14 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	// rehearsal said no train runs are the plan's, and line 7's stops can't be told apart from its next services'.
 	const sampledFrom = samples.length ? samples[0].millis : 0, sampledTo = samples.length ? samples[samples.length - 1].millis : 0;
 	const notRun: string[] = [];
+	// Services joined from another route's (lines 8, 9, 11): their train is matched to the service it came on as, and the
+	// through links are checked below on their own
+	const linksForRun: ThroughLink[] = existsSync(`${process.env.MTM_RESULTS || "."}/through-links.json`) ? JSON.parse(readFileSync(`${process.env.MTM_RESULTS || "."}/through-links.json`, "utf8")).links : [];
+	const joined = new Set(linksForRun.map(link => `${link.to}@${serviceIndex(link.toName, link.toService)}`));
 	for (const plan of plans) {
 		if (notRunWarned.has(plan.routeId) || TOO_CLOSE_TIMETABLES.includes(plan.line)) continue;
-		for (const service of plan.services) {
+		for (const [index, service] of plan.services.entries()) {
+			if (joined.has(`${plan.routeId}@${index}`)) continue;
 			// Its departure inside the sampled time, with a minute to come out at the start and five to be seen at the end
 			const offset = diff(ofDay(service), ofDay(sampledFrom));
 			if (offset < 60_000 || offset > sampledTo - sampledFrom - 300_000) continue;

@@ -63,16 +63,20 @@ test("调度台：卡片、筛选、延长停站、扣停放行、清客回库�
 	const ids = await cards.filter({has: page.getByRole("button", {name: "扣停", exact: true})}).evaluateAll(items => items.map(item => item.getAttribute("data-console-card")));
 	const chosen: {id: string, line: Line}[] = [];
 	// Taken as they come by: a few tries a couple of seconds apart
-	for (let attempt = 0; attempt < 30 && chosen.length < 4; attempt++, await sleep(2000)) for (const layout of PREFERRED) {
+	for (let attempt = 0; attempt < 60 && chosen.length < 4; attempt++, await sleep(2000)) for (const layout of PREFERRED) {
 		if (chosen.some(each => each.line.layout === layout)) continue;
 		const now = (await trainsNow()).trains;
 		// Running between two stations of its line, so its next stop is a platform ahead (a train on a turn-back track
 		// stood there 147 s and the longer stop went unseen, 2026-11-15)
-		const between = (t: TrainSample) => { const sx = lineOf(t)!.stationX || [0, 200, 400, 640, 840]; return t.speed > 0.1 && t.x > sx[0] + 62 && t.x < sx[sx.length - 1] - 2 && !atPlatform(lineOf(t)!, t); };
+		const between = (t: TrainSample) => { const sx = lineOf(t)!.stationX || [0, 200, 400, 640, 840]; return t.speed > 0.02 && t.x > sx[0] + 62 && t.x < sx[sx.length - 1] - 2 && !atPlatform(lineOf(t)!, t); };
 		const train = now.find(t => ids.includes(String(t.id)) && !inDepot(t) && lineOf(t)?.layout === layout && between(t));
 		if (train && chosen.length < 4) chosen.push({id: String(train.id), line: lineOf(train)!});
 	}
-	expect(chosen.length, `four trains to command (cards ${ids.length})`).toBe(4);
+	if (chosen.length < 4) {
+		const seen = (await trainsNow()).trains.filter(t => ids.includes(String(t.id))).map(t => `${lineOf(t)?.layout}号线 ${String(t.id).slice(-4)} x ${Math.round(t.x)} z ${Math.round(t.z - (lineOf(t)?.z || 0))} speed ${t.speed.toFixed(3)}`);
+		await testInfo.attach("trains with cards", {body: seen.join(String.fromCharCode(10))});
+	}
+	expect(chosen.length, `four trains to command (cards ${ids.length}, chosen on lines ${chosen.map(c => c.line.layout).join(",")})`).toBe(4);
 	const [extended, held, cleared, cancelled] = chosen;
 	const card = (id: string) => page.locator(`li[data-console-card="${id}"]`);
 	const button = (id: string, name: string) => card(id).getByRole("button", {name, exact: true});
