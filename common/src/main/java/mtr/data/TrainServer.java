@@ -688,6 +688,7 @@ public class TrainServer extends Train {
 		final boolean oldIsCurrentlyManual = isCurrentlyManual;
 		final boolean oldStopped = speed == 0;
 		final boolean oldDoorOpen = doorTarget;
+		final float oldDoorValue = doorValue;
 		// The planned departure from where it stands, to tell how it left against it (0.66.4)
 		final long plannedBefore = isOnRoute && speed == 0 ? getPlannedDepartureHere() : 0;
 		final long plannedArrivalBefore = isOnRoute && speed == 0 ? service.getPlannedArrivalMillis(nextStoppingIndex) : 0;
@@ -858,6 +859,10 @@ public class TrainServer extends Train {
 			noteDoorFlip(oldStopped && speed == 0);
 		}
 		if (oldStopped && speed != 0 && isOnRoute) {
+			// Its doors should be shut by now (0.83.8: the run layer waits for them); told if ever not
+			if (oldDoorValue > 0 && !isCurrentlyManual) {
+				System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " left stop " + oldStoppingIndex + " with its doors not shut (" + oldDoorValue + ")");
+			}
 			lastDepartureMillis = System.currentTimeMillis();
 			lastPlannedDepartureMillis = plannedBefore;
 			lastDepartureStopId = oldStoppingIndex >= 0 && oldStoppingIndex < path.size() ? path.get(oldStoppingIndex).savedRailBaseId : 0;

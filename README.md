@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.8: a train never leaves a stop with its doors not yet shut: when its planned departure moves earlier while it stands (a duty swapped or taken over), it shuts them first; the server log tells it if one ever does.
+
 0.83.7: the web editor's ownership map is drawn like a metro map: every line level, upright or at 45°, with a bend where stations don't line up, and a double track branching at two nearby turnouts drawn as one.
 
 0.83.6: in the web editor, switching a stop to passing alone can be sent to the game; the page's changes are no longer refused as a conflict with your own after a timetable screen had been open in the game; generating the logical lines' first draft is no longer left greyed out after the owners have been read.

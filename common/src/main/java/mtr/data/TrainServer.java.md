@@ -239,3 +239,4 @@
 - `moveToStop(int stopIndex)`：直接放到该停站（按途中折返设方向），速度 0、档位 −2、停站清零、清运行申请。调用者：`TrainService.java:1154`、`TickRunner.java:3207`。
 - `moveBetweenStops(int fromStop, int toStop, double newRailProgress, float newSpeed)`：放到两站之间（途中折返翻转方向），返回 true。调用者：`TrainService.java:1294`。
 - `returnToDepot()`：不在线、档位 −2、速度 0、清空乘客。调用者：`TrainService.java:1143`。
+- 0.83.8 起步时门值仍大于 0（非手动驾驶）打日志 “train … left stop … with its doors not shut (门值)”。

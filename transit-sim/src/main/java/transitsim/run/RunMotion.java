@@ -149,7 +149,13 @@ public final class RunMotion {
 				departureTicks = Math.max(0, totalDwellTicks - state.getElapsedDwellTicks());
 			}
 			doorsOpen = hooks.openDoors();
-			if (!hooks.isClientSide() && state.getElapsedDwellTicks() >= totalDwellTicks && wayClear && !hooks.isHeldAtStop()) {
+			// Never away with its doors not yet shut: a stop time that drops below the time stood (its planned departure moved
+			// earlier, a duty swapped or taken over) shuts them first (0.83.8, user: now and then a train left doors open)
+			final boolean doorsShut = !doorsOpen && state.getDoorValue() <= 0;
+			if (departureTicks >= 0 && !doorsShut) {
+				departureTicks = Math.max(departureTicks, (float) Math.ceil(state.getDoorValue() * MotionConstants.DOOR_MOVE_TIME));
+			}
+			if (!hooks.isClientSide() && state.getElapsedDwellTicks() >= totalDwellTicks && wayClear && !hooks.isHeldAtStop() && doorsShut) {
 				hooks.startUp(stop + 1 < track.size() && track.isOppositeRail(stop, stop + 1));
 				state.setNextStoppingIndex(findNextStop(track, state.getRailProgress() + AT * 2));
 				state.setNextPlatformIndex(state.getNextStoppingIndex());

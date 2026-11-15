@@ -28,6 +28,8 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 	// Path
 	private final List<Double> lengths = new ArrayList<>();
 	private final List<Integer> dwellTimes = new ArrayList<>();
+	/** When set, the stop time instead of the rail's, so a test can change it while the train stands (its planned departure moved) */
+	java.util.function.IntSupplier totalDwell;
 	private final List<Float> maxSpeeds = new ArrayList<>();
 	private final List<Boolean> accelerates = new ArrayList<>();
 	private final List<Boolean> reversesAfter = new ArrayList<>();
@@ -339,6 +341,9 @@ final class MotionFixture implements MotionState, MotionTrack, MotionVehicle, Mo
 
 	@Override
 	public int getTotalDwellTicks() {
+		if (totalDwell != null) {
+			return totalDwell.getAsInt();
+		}
 		return dwellTimes.get(nextStoppingIndex) * 10;
 	}
 

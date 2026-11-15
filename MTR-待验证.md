@@ -545,3 +545,4 @@ U449–U459（开服运用稳定、站前折返排班、回不了自己的存车
   - U344 ②：同一玩家先在游戏里开过时刻表界面（U27），之后网页发停站被拒 `CONFLICT:<自己>`，带 force 也拒。读代码推测：网页发停站不带基准版本，`ClientEditing.send` 退回 `getSnapshot`，`endEdit` 把关掉界面的快照留 30 分钟，快照只随自己的改动前移，于是旧快照当了基准。未在运行中跟踪确认。
   - U361：右边“按现在的归属生成初稿…”偶尔一直灰着（“全网配线的归属还没从服务端读来”），`/api/network` 已是 owners.ready。`oldEditor.js` loadNetwork 只调 renderNetworkTools/drawNetwork，不通知 React，`OwnershipPanel` 的 ready 停在旧值。
   - U360：页面接受 1.3 m/s² 加速度但存成 1.2（0.4 一档），没提示。
+- 2026-11-15 用户：极偶尔列车没关门就开车。0.83.8 改为门关好才开车（见 U494），并在服务端日志打 “with its doors not shut”。之后的六线图运行和你的世界里留意这行日志。
