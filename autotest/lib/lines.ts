@@ -161,5 +161,20 @@ export interface TrainSample {id: string, siding: string, depot: string, x: numb
 export interface TrainsAt {millis: number, tick: number, trains: TrainSample[]}
 export const trainsNow = (): Promise<TrainsAt> => server.call("/trains");
 
+/** When run.spec.ts stops sampling: the first services' departure lines.spec.ts wrote, and the minutes sampled from it */
+export function samplingEnd(): number {
+	const file = `${process.env.MTM_RESULTS || "."}/through-links.json`;
+	const first = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).startMillis : undefined;
+	return (first || Date.now()) + Number(process.env.MTM_RUN_MINUTES || 15) * 60_000;
+}
+
+/** Waits until run.spec.ts has sampled the trains, before a test that changes what they do (2026-11-15) */
+export async function samplingOver() {
+	// Nothing sampled in this run (only some tests run, with no timetables put in): no wait
+	if (!existsSync(`${process.env.MTM_RESULTS || "."}/through-links.json`)) return;
+	const wait = samplingEnd() + 10_000 - Date.now();
+	if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+}
+
 /** Moved to screens.ts, where opening a route's screens uses it too */
 export {openGroupFor};

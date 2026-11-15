@@ -14,7 +14,8 @@ export interface Marks {
 
 export const test = base.extend<{marks: Marks}>({
 	marks: [async ({}, use, testInfo) => {
-		const beside = testInfo.project.name === "observe";
+		// The six lines' stages after setup run beside run.spec.ts while it reads the timetable screens
+		const beside = process.env.MTM_FIXTURE_NAME === "lines" && testInfo.project.name !== "setup";
 		if (!beside) await closeAll();
 		const marks: Marks = {
 			chat: (await chatSince(Number.MAX_SAFE_INTEGER)).last,

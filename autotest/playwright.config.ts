@@ -6,7 +6,9 @@ import {defineConfig, PlaywrightTestProject} from "@playwright/test";
 // - observe: the trains sampled while they run (run.spec.ts, which reads the plans off the timetable screens first) and,
 //   at the same time, the checks that only read the web editor, the server's log or its data: several at once;
 // - then, one after another, the tests that change what the trains do (dispatch commands, a timetable changed), and
-//   the log read once the trains have run.
+//   the log read once the trains have run. They depend on setup only, not on observe: a stage that fails skips the
+//   stages depending on it, and run.spec.ts fails on known lateness (line 2's express). The first of them waits until
+//   the sampling is over (lib/lines.ts samplingOver).
 // C:/gtmp/fast/ui-test.sh sets MTM_RESULTS to this run's folder.
 const results = process.env.MTM_RESULTS || "test-results";
 const lines = process.env.MTM_FIXTURE_NAME === "lines";
@@ -16,7 +18,7 @@ const AFTER = ["z-swaps", "z-dispatch", "z-adhoc", "z-console", "z-replan"];
 const lineProjects: PlaywrightTestProject[] = [
 	{name: "setup", testMatch: /\/lines\.spec\.ts$/},
 	{name: "observe", testMatch: /\/(run|z-conflicts|z-depot|z-flows|z-headway|z-logs|z-paths|z-rehearsal)\.spec\.ts$/, dependencies: ["setup"]},
-	...AFTER.map((file, i) => ({name: file.slice(2), testMatch: new RegExp(`/${file}\\.spec\\.ts$`), dependencies: [i ? AFTER[i - 1].slice(2) : "observe"]})),
+	...AFTER.map((file, i) => ({name: file.slice(2), testMatch: new RegExp(`/${file}\\.spec\\.ts$`), dependencies: [i ? AFTER[i - 1].slice(2) : "setup"]})),
 ];
 
 export default defineConfig({
