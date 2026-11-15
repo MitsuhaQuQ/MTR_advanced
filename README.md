@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.18: villagers and other mobs take indented platforms as solid ground they can jump up onto, and glass fences and screen door and gate blocks as in their way, instead of open like air.
+
 0.83.17: a station sign with no station chosen shows the station it stands in instead of the untitled name; the Japanese for customer service centre is サービスセンター; the Japanese line of three-language signs is drawn smaller than the Chinese.
 
 0.83.16: passenger displays and arrival lists tell the services after each train's current one by the timetable, as the duties run them, so they come at the timetable's intervals and no longer jump every few seconds; a later service of a running train is later than planned only by that train's known lateness, carried on stop by stop (layovers take it up), never earlier than planned. Only services some train will run are told: not those of an overnight duty with no train placed, a duty without a path, or a duty no train of its depot can be there for in time. A train's estimate and the plan of the same service show once. The duties' planned stops are worked out off the server thread. Server only.

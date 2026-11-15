@@ -18,6 +18,15 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class BlockPlatform extends BlockDirectionalMapper {
 
+	/**
+	 * Never walked through, so mobs stand on it: its shape isn't a whole block when indented, which the game took as open like
+	 * air, and villagers on the track couldn't step up onto it (user, 2026-11-15), as for stairs and slabs
+	 */
+	@Override
+	public boolean isPathfindable(BlockState state, BlockGetter world, BlockPos pos, net.minecraft.world.level.pathfinder.PathComputationType type) {
+		return false;
+	}
+
 	private final boolean isIndented;
 
 	public static final EnumProperty<EnumDoorType> DOOR_TYPE = EnumProperty.create("door_type", EnumDoorType.class);

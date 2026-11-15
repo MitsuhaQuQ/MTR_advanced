@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.18 村民能跳上凹进去的站台（用户 2026-11-16：村民无法从轨道跳上凹进去的站台，玻璃围栏也一样）：
+- 原因：原版寻路（`WalkNodeEvaluator`）对没覆盖 `isPathfindable` 的方块，碰撞形状不是整格时一律当成“可穿过”（`BlockBehaviour.isPathfindable` LAND = 不是整格碰撞），路径类型是 OPEN，和空气一样。凹进去的站台（`BlockPlatform` isIndented，下部缩进）于是被当成空气：上面不算能站的地方，村民不往上跳；玻璃围栏、屏蔽门/安全门的门和玻璃（薄形状）也被当成能穿过，村民会往里撞。原版楼梯、台阶同样覆盖了它。
+- 修：`BlockPlatform`、`BlockGlassFence`、`BlockPSDAPGBase`（屏蔽门/安全门的门、玻璃、端玻璃）覆盖 `isPathfindable` 返回 false：寻路当成实心，站台顶上可站、围栏和门挡路。只改方块行为，不涉及资源包；服务端和客户端都在 MTM_Logic，升第三位。
+
 0.83.17 牌子：站名牌没选站时用所在车站、日语改サービスセンター、日语行字号缩小（用户 2026-11-15 截图：站名牌显示“未命名”、“客服中心日语应该是サービスセンター，日语字号要缩小”）：
 - 站名牌（`RenderRailwaySign`，`isStation`）原来只用玩家在牌子界面选的车站；一个都没选或选的站已不在，文字为空，`IGui.textOrUntitled` 画成“未命名”。现在这时用牌子所在的车站（`RailwayData.getStation`，和出口牌、站台牌一样）。
 - `SignTexts` 的客務中心日语从「お客さまセンター」改为「サービスセンター」。

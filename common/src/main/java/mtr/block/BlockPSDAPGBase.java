@@ -13,6 +13,14 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public abstract class BlockPSDAPGBase extends BlockDirectionalDoubleBlockBase {
 
+	/**
+	 * Screen doors and gates, their glass and ends, not walked through: thin shapes the game took as open (2026-11-15)
+	 */
+	@Override
+	public boolean isPathfindable(BlockState state, BlockGetter world, BlockPos pos, net.minecraft.world.level.pathfinder.PathComputationType type) {
+		return false;
+	}
+
 	public BlockPSDAPGBase() {
 		super(Material.properties(Material.METAL, MaterialColor.COLOR_GRAY).requiresCorrectToolForDrops().strength(2).noOcclusion());
 	}

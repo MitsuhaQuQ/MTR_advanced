@@ -24,6 +24,14 @@ import java.util.List;
 
 public class BlockGlassFence extends BlockDirectionalDoubleBlockBase {
 
+	/**
+	 * Not walked through: a thin shape the game took as open, so mobs tried to go through it (2026-11-15)
+	 */
+	@Override
+	public boolean isPathfindable(BlockState state, BlockGetter world, BlockPos pos, net.minecraft.world.level.pathfinder.PathComputationType type) {
+		return false;
+	}
+
 	public static final IntegerProperty NUMBER = IntegerProperty.create("number", 1, 7);
 
 	public BlockGlassFence() {
