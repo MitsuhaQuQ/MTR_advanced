@@ -163,6 +163,10 @@ public final class TickRunner<T extends RunTrack> {
 	private boolean skipping;
 	private Runnable afterTick = () -> {
 	};
+	/**
+	 * Told after each tick, after {@link #afterTick}, such as a {@link DayRun}'s recorder looking at who holds whom up.
+	 */
+	private final List<Runnable> tickListeners = new ArrayList<>();
 	private TrainListener<T> trainListener;
 	/**
 	 * Told about each event after {@link #trainListener}, such as a {@link BufferRecorder} (D1).
@@ -1113,6 +1117,14 @@ public final class TickRunner<T extends RunTrack> {
 		inTick = false;
 		lastTickMillis = millis;
 		afterTick.run();
+		tickListeners.forEach(Runnable::run);
+	}
+
+	/**
+	 * Adds something told after each tick the runner runs (not those it skips, in which no train is held up).
+	 */
+	public void addTickListener(Runnable listener) {
+		tickListeners.add(listener);
 	}
 
 	/**
@@ -1823,6 +1835,11 @@ public final class TickRunner<T extends RunTrack> {
 		private double authorityHead;
 		private double authorityEnd;
 		/**
+		 * Whether, at the last tick, the train was held back by what it asked for and wasn't given: its authority ends within
+		 * its braking distance short of where it wants to go, or it stood at a stop ready to leave and couldn't
+		 */
+		private boolean heldBack;
+		/**
 		 * The run segment of the record it carries on from, rebuilt in its first tick, when its speed curves are there.
 		 */
 		private RunSegment.Spec restoredSegment;
@@ -2137,9 +2154,12 @@ public final class TickRunner<T extends RunTrack> {
 				} else {
 					waitingSinceMillis = 0;
 				}
+				final double braking = speed * speed / (2 * Math.max(siding.deceleration, 1E-4)) + trainLength;
+				heldBack = atStop ? waitingSinceMillis != 0 : authorityEnd < target - 1E-6 && authorityEnd - head <= braking;
 			} else {
 				authority.release();
 				authorityEnd = head;
+				heldBack = false;
 			}
 			transitsim.run.RunMotion.tick(this, this, this, this, this, authorityEnd);
 			if (!onRoute && !service.isOnDuty()) {
@@ -3218,6 +3238,13 @@ public final class TickRunner<T extends RunTrack> {
 		/**
 		 * @return the rail of its path it last waited for, in the last tick it moved in, or -1, as the game marks a delay
 		 */
+		/**
+		 * @return whether at the last tick the train was held back by what it wasn't given ({@link #heldBack})
+		 */
+		public boolean isHeldBack() {
+			return heldBack;
+		}
+
 		public int getBlockedRail() {
 			return blockedRail;
 		}

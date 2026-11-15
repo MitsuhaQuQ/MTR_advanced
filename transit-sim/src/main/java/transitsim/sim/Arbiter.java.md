@@ -159,3 +159,7 @@ DFS 找环，找到时把环上持有者集合加入 `deadlocks`。
 ## 内部类 Request<K>（private static final）
 - `holder`；`claims`（首组声明，未获批时持有者等待的就是它）；`plannedMillis`；`groups`（按序尽量批准的各组，单组请求为 null）。
 - 两个私有构造函数。调用者：`request`、`requestGroups`。
+
+## 0.83.0 运行图预演
+
+- `waitingFor` / `getBlockers(long holder)`：上次 resolve 时每个没批到的持有者被谁挡、各自挡在所申请的哪一项（第一项），供 `DayRun` 记原因；每次 resolve 清空。

@@ -369,6 +369,34 @@ public final class EditorData {
 				}
 			});
 			depotObject.add("held", heldArray);
+			// The rehearsal of its plan (2026-11-15): late services, trains held, deadlocks and services not run, with causes
+			final JsonArray rehearsalArray = new JsonArray();
+			depot.rehearsal.forEach(line -> {
+				final transitsim.sim.Rehearsal.Warning warning = transitsim.sim.Rehearsal.Warning.decode(line);
+				if (warning != null) {
+					final JsonObject warningObject = new JsonObject();
+					warningObject.addProperty("kind", warning.kind.name());
+					warningObject.addProperty("route", String.valueOf(warning.routeId));
+					warningObject.addProperty("count", warning.count);
+					warningObject.addProperty("seconds", warning.maxMillis / 1000);
+					warningObject.addProperty("time", warning.timeOfDay / 1000);
+					warningObject.addProperty("service", warning.serviceOfDay < 0 ? -1 : warning.serviceOfDay / 1000);
+					warningObject.addProperty("stop", warning.stopIndex);
+					warningObject.addProperty("platform", warning.platformId == 0 ? "" : platformLabel(warning.platformId));
+					if (warning.causeKnown) {
+						final JsonObject causeObject = new JsonObject();
+						causeObject.addProperty("byTrain", warning.causeByTrain);
+						causeObject.addProperty("route", String.valueOf(warning.causeRouteId));
+						causeObject.addProperty("service", warning.causeServiceOfDay < 0 ? -1 : warning.causeServiceOfDay / 1000);
+						causeObject.addProperty("kind", warning.causeKind);
+						causeObject.addProperty("platform", warning.causePlatformId == 0 ? "" : platformLabel(warning.causePlatformId));
+						warningObject.add("cause", causeObject);
+					}
+					warningObject.addProperty("detail", warning.detail);
+					rehearsalArray.add(warningObject);
+				}
+			});
+			depotObject.add("rehearsal", rehearsalArray);
 			// Trains reported late or stuck and those a contingency plan is on for (D2)
 			EditorContingencies.addToDepot(depotObject, depot);
 			// Services set to go back to a depot whose trains couldn't: siding, depot, why (P1-B)

@@ -131,6 +131,31 @@ public final class SimulateDay {
 		}
 		final long dayStart = LocalDateTime.of(day, java.time.LocalTime.of(dayStartHour, 0)).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
 		System.out.printf("%d routes, %d depots, %d sidings, operating day of %s from %02d:00 %s%n", dataset.routes.size(), dataset.depots.size(), dataset.sidings.size(), day, dayStartHour, timeZone);
+		// --rehearse: the warnings the game's rehearsal gives for the routes (2026-11-15), and nothing else
+		if (flags.contains("--rehearse")) {
+			final Set<Long> rehearsed = new TreeSet<>();
+			if (simRoutes.isEmpty()) {
+				dataset.routes.forEach(route -> rehearsed.add(route.id));
+			} else {
+				for (final String id : simRoutes.split(",")) {
+					rehearsed.add(Long.parseLong(id.trim()));
+				}
+			}
+			final long rehearseStart = System.nanoTime();
+			final List<transitsim.sim.Rehearsal.Warning> warnings = transitsim.sim.Rehearsal.run(dataset, dayStart, rehearsed, () -> false);
+			System.out.printf("REHEARSAL %d warnings in %d ms%n", warnings == null ? 0 : warnings.size(), (System.nanoTime() - rehearseStart) / 1000000);
+			if (warnings != null) {
+				for (final transitsim.sim.Rehearsal.Warning warning : warnings) {
+					System.out.printf("REHEARSAL %s route %d x%d worst %d s at %s service %s stop %d platform %d; cause %s%n", warning.kind, warning.routeId, warning.count, warning.maxMillis / 1000, clock(dayStart + warning.timeOfDay),
+							warning.serviceOfDay < 0 ? "-" : clock(dayStart + warning.serviceOfDay), warning.stopIndex, warning.platformId,
+							warning.causeKnown ? (warning.causeByTrain ? "train of route " + warning.causeRouteId + " service " + (warning.causeServiceOfDay < 0 ? "-" : clock(dayStart + warning.causeServiceOfDay)) : "no train") + " holding " + warning.causeKind + " platform " + warning.causePlatformId : "-");
+					if (!warning.detail.isEmpty()) {
+						System.out.println("REHEARSAL   " + warning.detail);
+					}
+				}
+			}
+			return;
+		}
 
 		// Throat locks only where the depots sharing track all run by duties (LockNetworks)
 		final transitsim.network.LockNetworks.Result lockResult = dataset.getLockNetworks().result();

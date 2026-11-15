@@ -335,6 +335,7 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_ROUTE_PREVIEW, mtr.packet.RoutePreview::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_DEPOT_WAY_PREVIEW, mtr.packet.DepotWayPreview::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_HELD_TRAINS, mtr.packet.HeldTrains::receiveS2C);
+		RegistryClient.registerNetworkReceiver(PACKET_REHEARSAL, mtr.advanced.Rehearsals::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_DELAY_ALARMS, mtr.packet.DelayAlarms::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_CONTINGENCIES, mtr.packet.ContingencyPackets::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_NETWORK_SETTINGS, mtr.packet.NetworkSettingsPackets::receiveS2C);

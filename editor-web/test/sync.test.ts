@@ -105,6 +105,22 @@ describe("syncProblems", () => {
     expect(texts.some(text => text.includes("只隔 30 秒") && text.includes("至少要隔 41 秒"))).toBe(true)
     expect(syncProblems("ok", buildModel(troubledData()), emptyDraft()).some(p => p.text.includes("至少要隔"))).toBe(false)
   })
+  it("warns of what the rehearsal of a depot's plan found, with the cause (2026-11-15)", () => {
+    const data = troubledData()
+    const depot = data.depots[0]
+    depot.rehearsal = [
+      { kind: "LATE", route: "101", count: 16, seconds: 192, time: 3900, service: 3840, stop: 0, platform: "一站|1", cause: { byTrain: true, route: "102", service: 3780, kind: "TRACK", platform: "" }, detail: "" },
+      { kind: "DEADLOCK", route: "0", count: 1, seconds: 0, time: 4200, service: -1, stop: -1, platform: "", detail: "[1, 2]" },
+    ]
+    const found = syncProblems("ok", buildModel(data), emptyDraft()).filter(p => p.text.startsWith("预演"))
+    expect(found.length).toBe(2)
+    expect(found.every(p => p.level === "warn")).toBe(true)
+    expect(found[0].text).toContain("16 班晚点超过 30 秒")
+    expect(found[0].text).toContain("主要被")
+    expect(found[0].route).toBe("101")
+    expect(found[1].text).toContain("会互相卡死")
+    expect(syncProblems("ok", buildModel(troubledData()), emptyDraft()).some(p => p.text.startsWith("预演"))).toBe(false)
+  })
   it("says only the connection without data", () => {
     expect(syncProblems("key", null, emptyDraft()).map(p => p.text)).toEqual(["页面的链接已经失效"])
   })

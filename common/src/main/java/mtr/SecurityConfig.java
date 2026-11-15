@@ -48,6 +48,11 @@ public final class SecurityConfig {
 	 */
 	public static volatile boolean editorSimulation = false;
 	/**
+	 * The rehearsal of each depot's plan after it changes (2026-11-15, {@code mtr.advanced.Rehearsals}): a day of its routes
+	 * simulated in the background, its warnings shown in the advanced editor. Off, nothing is rehearsed.
+	 */
+	public static volatile boolean rehearsal = true;
+	/**
 	 * ANTE's mixins that change how trains run: opening doors at its eye candy and Metropolis's platforms, manual driving
 	 * speeds of its own rail types, and its own way of telling which rails are near a player. Off, as for now, MTR's own
 	 * rules run; ANTE's models, blocks, scripts and saved data are kept either way.
@@ -84,6 +89,7 @@ public final class SecurityConfig {
 	private static final String KEY_AUDIO_UPLOADS_PER_HOUR = "audioUploadsPerHour";
 	private static final String KEY_THROAT_LOCKS = "throatLocks";
 	private static final String KEY_EDITOR_SIMULATION = "editorSimulation";
+	private static final String KEY_REHEARSAL = "rehearsal";
 	private static final String KEY_ANTE_RUN_HOOKS = "anteRunHooks";
 	private static final String KEY_INTERLOCK_COLOR = "interlockColor";
 	private static final String KEY_STABLING_COLOR = "stablingColor";
@@ -122,6 +128,7 @@ public final class SecurityConfig {
 				audioUploadsPerHour = getInt(jsonObject, KEY_AUDIO_UPLOADS_PER_HOUR, 30, 0, 3600);
 				throatLocks = !jsonObject.has(KEY_THROAT_LOCKS) || jsonObject.get(KEY_THROAT_LOCKS).getAsBoolean();
 				editorSimulation = jsonObject.has(KEY_EDITOR_SIMULATION) && jsonObject.get(KEY_EDITOR_SIMULATION).getAsBoolean();
+				rehearsal = !jsonObject.has(KEY_REHEARSAL) || jsonObject.get(KEY_REHEARSAL).getAsBoolean();
 				anteRunHooks = jsonObject.has(KEY_ANTE_RUN_HOOKS) && jsonObject.get(KEY_ANTE_RUN_HOOKS).getAsBoolean();
 				interlockColor = parseColor(jsonObject.has(KEY_INTERLOCK_COLOR) ? jsonObject.get(KEY_INTERLOCK_COLOR).getAsString() : "");
 				stablingColor = parseColor(jsonObject.has(KEY_STABLING_COLOR) ? jsonObject.get(KEY_STABLING_COLOR).getAsString() : "", DyeColor.BROWN);
@@ -178,6 +185,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
+		jsonObject.addProperty(KEY_REHEARSAL, rehearsal);
 		jsonObject.addProperty(KEY_ANTE_RUN_HOOKS, anteRunHooks);
 		jsonObject.addProperty(KEY_INTERLOCK_COLOR, interlockColor.name().toLowerCase(Locale.ROOT));
 		jsonObject.addProperty(KEY_STABLING_COLOR, stablingColor.name().toLowerCase(Locale.ROOT));

@@ -128,6 +128,11 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public volatile List<String> clientAlarms = Collections.emptyList();
 	/**
+	 * The warnings of the last rehearsal of its plan ({@link mtr.advanced.Rehearsals}, {@code transitsim.sim.Rehearsal}), one
+	 * line each: on the server as last sent, on the clients as received. Not saved.
+	 */
+	public volatile List<String> rehearsal = Collections.emptyList();
+	/**
 	 * On the clients, the server's clock less theirs when the alarms came, to work out how late from the moments in them.
 	 */
 	public volatile long clientAlarmClockOffset;

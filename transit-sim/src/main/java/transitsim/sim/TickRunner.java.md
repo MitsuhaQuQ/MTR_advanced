@@ -527,3 +527,8 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 
 ### `private void joinDutyLate()`
 晚发列车放到仍能赶上的运用首站；没有空站则留在停车线；上线后写占用。调用者：`deploy`。
+
+## 0.83.0 运行图预演
+
+- `addTickListener(Runnable)`：每个实际运行的 tick 结束后（`afterTick` 之后）调用；跳过的 tick 不调（那时没有车被挡）。`DayRun` 用它采样原因。
+- `HeadlessTrain.heldBack` / `isHeldBack()`：上个 tick 是否被没批下来的申请挡住——停站时准备好走却没授权（`waitingSinceMillis != 0`），或行驶中授权终点不到想去的地方且在制动距离加一个车长之内。

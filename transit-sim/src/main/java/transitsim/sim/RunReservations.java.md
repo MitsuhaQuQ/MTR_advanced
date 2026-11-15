@@ -97,3 +97,7 @@
 - `private static Move zoneOf(UUID resource)`：由资源键构造联锁区。
 - `static Move turnout(long node, long side1, long side2)`：以两侧节点（顺序无关）确定进路的道岔；进路值为两侧节点哈希且最低位置 1。调用者：`ThroatLocks.java:193`、`ThroatLocksTest.java:38`。
 - `equals`/`hashCode`：按全部字段（hashCode 不含 turnout/zone 标志）。调用者：`LiveSimulation.java:233` 等比较运行变化。
+
+## 0.83.0
+
+- `getBlockers(long trainId)`：同 `Arbiter.getBlockers`。

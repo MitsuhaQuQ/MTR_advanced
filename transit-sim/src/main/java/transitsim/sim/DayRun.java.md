@@ -19,7 +19,7 @@
 - `REPORT_MILLIS = 30000`：晚点或比计划多站/多等超过此值才报告。
 - `OVERRUN_MILLIS = 1 小时`（private）：一天结束后继续仿真的时长，让最后的服务到站。
 - `STEP_MILLIS = 10 分钟`（private）：每仿真这么久询问一次是否停止。
-- `VERSION = 2`（private）：报告字节格式版本。
+- `VERSION = 3`（0.83.0 加问题的原因；仍能读 2）（private）：报告字节格式版本。
 
 ### 私有构造函数
 按字段赋值，列表包成不可修改。调用者：`run`、`fromBytes`。
@@ -94,3 +94,10 @@
 
 ## 内部类 Hold（private static final）
 中途停住：`startMillis`、`platformAhead`（前方是站台）、`trip`、`nextPlatformId`。
+
+## 原因（0.83.0，运行图预演）
+
+- 类 `Cause`（public static final）：挡住列车的车 `trainId`（0 为不是别的车挡的，如被占的轨道或咽喉）、它当时的线路 `routeId` 和班次 `serviceMillis`（它出库后还没在站台停过时为 0）、资源种类 `kind`、是站台时的 `platformId`、累计 `millis`。
+- `Problem.cause`：最主要的原因或 null；`toBytes`/`fromBytes` 在 detail 后读写。
+- `Recorder.sample`（`TickRunner.addTickListener` 每 tick 调）：对 `isHeldBack()` 的车，按 `RunReservations.getBlockers` 的每个挡它的车累计时长（没有则记为 0 号）；`arrive` 时取累计最久且至少 5 秒的记到该站并清零（`takeCause`）；`RETURNED` 清零。`inService`：出库后在站台停过的车，没停过的挡车不算班次。
+- `addLateness`：原因取到第一次晚点那站及其下一站之间累计最久的（晚在离站时，挡在该站，记在下一站）；`endHold` 取当时累计最久的。

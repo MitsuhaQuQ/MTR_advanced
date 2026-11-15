@@ -8,6 +8,7 @@ import { tr } from "../i18n"
 import { alarmReasonText, depotLines, dutiesOf, replanText, shortfallText, stopLabel, turnPairsOf } from "./depots"
 import { changedSince, type Draft, platformText, stationNameOf } from "./draft"
 import { type Model, routeTitle, shortName } from "./model"
+import { clock, durationText } from "./format"
 
 export type SyncProblem = {
   level: "err" | "warn" | "hint"
@@ -29,6 +30,32 @@ export function plansByAnchor(model: Model, anchor: string) {
     if (other) return { anchor, plans: other.plans, adhoc: other.adhoc, system }
   }
   return null
+}
+
+/**
+ * One warning of the rehearsal of a depot's plan (2026-11-15): a simulated day of its routes, with what held the trains up
+ * most. Only a warning: the plan is kept as it is.
+ */
+export function rehearsalText(model: Model, depotName: string, warning: any) {
+  const routeOf = (id: string) => (model.routeById.get(id) ? routeTitle(model.routeById.get(id)!) : tr("已删除的线路"))
+  const at = (seconds: number) => clock(model as any, seconds * 1000, true)
+  let cause = ""
+  if (warning.cause) {
+    const c = warning.cause
+    const what = c.platform ? tr("站台 {0}", shortName(c.platform)) : c.kind === "TURNOUT" ? tr("道岔") : c.kind === "ZONE" ? tr("咽喉") : c.kind ? tr("轨道") : tr("被占的轨道或咽喉")
+    cause = !c.byTrain ? tr("；主要卡在{0}", what) : c.route !== "0" ? tr("；主要被 {0} {1} 班的车挡在{2}", routeOf(c.route), c.service >= 0 ? at(c.service) : "", what) : tr("；主要被出入库的车挡在{0}", what)
+  }
+  const where = warning.platform ? tr("，{0}", shortName(warning.platform)) : ""
+  switch (warning.kind) {
+    case "DEADLOCK":
+      return tr("预演：车厂{0}的列车在 {1} 会互相卡死（列车 {2}）", depotName, at(warning.time), warning.detail)
+    case "NOT_RUN":
+      return tr("预演：车厂{0}：{1} 有 {2} 班没有车跑", depotName, routeOf(warning.route), warning.count)
+    case "HELD":
+      return tr("预演：{0} 有 {1} 次在途中被挡超过 30 秒，最长 {2}（{3}{4}）{5}", routeOf(warning.route), warning.count, durationText(warning.seconds * 1000), at(warning.time), where, cause)
+    default:
+      return tr("预演：{0} 有 {1} 班晚点超过 30 秒，最多晚 {2}（{3} 那班{4}）{5}", routeOf(warning.route), warning.count, durationText(warning.seconds * 1000), warning.service >= 0 ? at(warning.service) : at(warning.time), where, cause)
+  }
 }
 
 export type TerminalWarning = { type: string; from?: { route: any }; at: string; platform: string; until?: string; count?: number }
@@ -89,6 +116,8 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
       problems.push({ level: "warn", text: tr("车厂{0}的运用里存在大量冲突进路（{1} 处）：{2}。列车进尽头折返线前会先拿到出来的进路，不会死锁，但会互相等。建议：在折返线末端再加一组道岔通往另一方向，改成单边站前折返；或者让每条线各用一边站台站前折返，进站保持正线方向，出站才过渡线到对向轨道", name, conflicts.length, lines.join("；")) })
     }
     if (path.failedDuties > 0) problems.push({ level: "err", text: tr("车厂{0}有 {1} 份运用找不到路，这些车不会按运用出车：{2}", name, path.failedDuties, (path.failedDutyKeys || []).slice(0, 3).join("、")) })
+    // The rehearsal of its plan once it changed (2026-11-15): warnings only, the plan is kept as it is
+    ;(depot.rehearsal || []).forEach((warning: any) => problems.push({ level: "warn", text: rehearsalText(data, name, warning), route: warning.route && warning.route !== "0" ? warning.route : undefined }))
     // Trains waiting on the line with no duty to go on with, which a click takes straight back
     ;(depot.held || []).forEach((held: any) => {
       const siding = depot.sidings.find((other: any) => other.id === held.siding)

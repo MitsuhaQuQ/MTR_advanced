@@ -62,6 +62,11 @@ public final class Arbiter<K extends Comparable<K>> {
 	 */
 	private final Map<Long, List<Request<K>>> blockedRequests = new HashMap<>();
 	/**
+	 * For each holder kept from a group it asked for at the last resolve, who kept it, each with the first claim of the group
+	 * it held or stood on (2026-11-15, the rehearsal's causes of lateness).
+	 */
+	private final Map<Long, Map<Long, Claim<K>>> waitingFor = new HashMap<>();
+	/**
 	 * How many groups of each holder's last request of groups were granted.
 	 */
 	private final Map<Long, Integer> grantedGroups = new HashMap<>();
@@ -284,6 +289,7 @@ public final class Arbiter<K extends Comparable<K>> {
 		grantedGroups.clear();
 		blocking.clear();
 		blockedRequests.clear();
+		waitingFor.clear();
 		firstRequestMillis.keySet().retainAll(requests.keySet());
 		// A deadlock one of whose holders is gone, removed by the host, is over
 		knownDeadlocks.removeIf(deadlock -> deadlock.stream().anyMatch(holder -> !requests.containsKey(holder)));
@@ -351,8 +357,21 @@ public final class Arbiter<K extends Comparable<K>> {
 
 	private void noteBlocked(Request<K> request, List<Claim<K>> group) {
 		final Set<Long> by = new HashSet<>();
-		group.forEach(claim -> by.addAll(blockers(request.holder, claim)));
+		final Map<Long, Claim<K>> waiting = waitingFor.computeIfAbsent(request.holder, key -> new TreeMap<>());
+		group.forEach(claim -> blockers(request.holder, claim).forEach(blocker -> {
+			by.add(blocker);
+			waiting.putIfAbsent(blocker, claim);
+		}));
 		by.forEach(blocker -> blockedRequests.computeIfAbsent(blocker, key -> new ArrayList<>()).add(request));
+	}
+
+	/**
+	 * @return who kept the holder from what it asked for at the last resolve, each with the first claim it held or stood on
+	 * of what was asked for; none if it was given all it asked for
+	 */
+	public Map<Long, Claim<K>> getBlockers(long holder) {
+		final Map<Long, Claim<K>> blockers = waitingFor.get(holder);
+		return blockers == null ? Collections.emptyMap() : Collections.unmodifiableMap(blockers);
 	}
 
 	/**

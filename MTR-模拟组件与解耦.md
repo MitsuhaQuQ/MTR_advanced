@@ -1437,6 +1437,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 同一条尽头折返线两头都用（0.82.6）全在组件 `TickRunner`：`yieldsToEarlier` 查所有在线列车，`othersLeaveThrough` + `DEAD_END_PLATFORMS` 让去这种站台的车连同尽头线和出口整申请，`wayOutEnd` 把出口截到掉头后第一个站台；宿主不变。测试 `DeadEndBothWaysTest`。
 
+运行图预演（0.83.0）：预演本身全在组件——`Rehearsal`（汇总）、`DayRun` 的原因（`Cause`、`Recorder.sample`）、`Arbiter.getBlockers`、`TickRunner.addTickListener`/`HeadlessTrain.isHeldBack`；游戏 `mtr.advanced.Rehearsals` 只决定何时预演（签名、等稳定）、拷世界、在后台线程跑、发包，网页只显示。离线 `SimulateDay --rehearse` 用同一个 `Rehearsal.run`。
+
 区间追踪间隔（0.82.0）的算法在组件 `transitsim.run.Headways`（用运行时同一套分区 `PathClaims.between`），检查在组件 `TimetableConflicts.checkHeadways`；游戏只负责准备路径、车型和运用里每班的车池（`RoutePaths.RoutePath.getHeadways`、`PacketTrainDataGuiServer`）。
 
 0.81.0 的联锁区交会提示已在 0.81.1 删除；0.81.1 改的是组件 `PathClaims.attach`（联锁区和咽喉道岔跟进入它的那一组申请），两个宿主共用。

@@ -85,6 +85,15 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.0 运行图预演（用户 2026-11-15：想办法纳入运行图的可能性预演，编排时提示警告，不需要强行满足准点）：
+- 起因：六线图 2 号线快车每轮晚约 70 秒、11 号线晚到 750 秒，查明是配线加时刻表（出库路穿过快车停着的折返线、尽头线比车短），运行逻辑没错；规划只是不知道做不到。所以不改规划，而是把规划拿去预演一天，提示出来。
+- 组件：`Arbiter` 记下每个没批的申请被谁挡、挡在哪个资源（`waitingFor`、`getBlockers`，`RunReservations.getBlockers`）；`TickRunner.HeadlessTrain.heldBack`（在站台准备好走却没批，或在途中授权终点在制动距离内且不到想去的地方）、`isHeldBack`，`TickRunner.addTickListener`。`DayRun` 每 tick 采样（`Recorder.sample`）：被挡的车按挡它的车累计时长，到站时取最大的记为该站原因（`takeCause`，至少 5 秒）；挡它的车还没在站台停过（出库空车）时不算它的班次；`LATE` 取到第一次晚点那站及其下一站之间最大的原因，`WAITING_FOR_PLATFORM`/`HELD_ON_LINE` 取当时的；`Problem.cause`（`Cause`：挡的车、它的线路和班次、资源种类、是站台时的站台），报告字节 `VERSION` 3（仍能读 2）。新类 `Rehearsal`：`run`（`SimScope` 裁出这些线路的那部分世界，`DayRun` 一天）、`summarize`（按线路和种类合并：晚点、途中被挡、死锁、没车跑，每组最坏的那次和累计最久的原因；原因的班次只在它就是最坏那次的原因时给出；死锁、没车跑在前，最多 40 条）、`Warning.encode/decode`（一行，`|` 分隔）。
+- 游戏：`mtr.advanced.Rehearsals`：`RailwayData` 每 100 tick 的车厂循环里 `check`：每 15 秒算一次车厂的签名（运用字节 + 各线路站数和时刻表 `revision`），变了且 10 秒不再变、和上次预演的不同才预演；在服务器线程上 `SimExport.build` 拷一份世界，单线程最低优先级后台跑今天（`DutyShapes.getDayStart`），限时 120 秒（超时也记为已预演，不反复跑），结果放 `Depot.rehearsal`（不存档），变了就发 `PACKET_REHEARSAL` 给所有玩家，`resend` 时重发；客户端存 `Depot.rehearsal`。开关 `SecurityConfig.rehearsal`（`mtr_security.json` 的 `rehearsal`，默认开；关掉清空提示）。`EditorData` 车厂 JSON 加 `rehearsal`（种类、线路、次数、最多秒数、时刻、班次、站序、站台名、原因 {byTrain, route, service, kind, platform}、detail）。
+- 网页：`sync.ts` `rehearsalText`，同步面板黄色提示“预演：…”（晚点、途中被挡、互相卡死、没有车跑，带原因），点击跳到线路；`i18n.js` 加英文。网页测试 `sync.test.ts` 加一项。
+- 离线：`SimulateDay --rehearse` 打印预演警告（配 `-Pmtr.simRoutes` 只预演那些线路）。六线图世界 `l6d`：2 号线快车 16 班晚、最多 192 秒；11 号线四条线路晚到 400–800 秒，原因是另一半的车。
+- 测试：组件 `RehearsalTest`（准点没有警告；外部占用使车晚点并有原因、每条线路每种只一条；没车跑合并并排在前；编码解码；停止时没有结果）；六线图 `autotest/cases-lines/z-rehearsal.spec.ts`（U490）。
+- 新包、报告格式变了，升第二位：客户端和服务端都要 0.83。
+
 0.82.6 同一条尽头折返线两头都用时不再死锁（3d，用户 2026-11-15 定：按顺序先修 11 号线）：
 - 原因（六线图世界 `C:/gtmp/ui/simdb/l6d`，只跑 11 号线 `-Pmtr.simRoutes=…`，`--holds@`、`--where`）：三站东边一条尽头折返线 T，A 线车从西行站台 E 进 T 再出到东行站台 W，B 线车从 W 掉头进 T 再出到 E。三处漏洞：① 让行（0.82.2）只看计划更早的那列车会不会进 T，那列还在车厂；T 里的车让出出口后，另一列要进 T 的车拿走了 W，01:10:39 死锁；② 让行关着也会：A 停在 E 等进 T（出口经 W），B 停在 W 等进 T（出口经 E），01:36:46 互等；③ 修了前两处后 01:48:50：B 在 W 要去一站尾轨掉头，按尽头规则连同出口一起申请，而出口一直不停站跑回三站 E，被等着进 T 的 A 占着。
 - 改法（全在组件 `TickRunner`）：`yieldsToEarlier` 查所有在线列车（加上计划更早的那些）前方 12 条轨道是否进这条尽头线或压本车占的轨道，有就不让；`runLayerTick` 里下一站是站台、再下一站是尽头掉头，并且另一列要进这条尽头线的车出口经过本车到站台为止的轨道（`othersLeaveThrough`）时，站台、尽头线和它的出口作一组整申请（`DEAD_END_PLATFORMS`，系统属性 `mtr.deadEndPlatforms=false` 关闭对比）；尽头线连同出口整申请时，出口只到掉头后第一个站台为止（`wayOutEnd`），再往后照常分段申请。

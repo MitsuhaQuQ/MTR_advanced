@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.0: a rehearsal of each depot's plan. Once a depot's duties or its routes' timetables change and stay so for a few seconds, the server simulates its routes' day in the background and the web editor's sync panel warns of late services (with what held them up most: which route's train, on which platform, turnout or track), trains held on the way, trains that would lock each other and services no train runs. Only warnings: the plan isn't changed. Switched by `rehearsal` in `mtr_security.json` (on). Client and server both need 0.83.
+
 0.82.6: two trains using one dead end turn back rail from both platforms of a station no longer lock each other: a train goes onto such a platform only with the dead end and its way out when another train coming into the dead end leaves it over that platform; a train waiting in a dead end lets its way out go only when no train coming into it is near; and the way out asked for with a dead end reaches no further than the first platform after it.
 
 0.82.5: a logical line can no longer be made a connecting line in the editor; a track is opened to every line on the ownership map instead (lines marked before keep the mark and can have it taken off).

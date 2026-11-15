@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -53,6 +54,14 @@ public final class RunReservations {
 	 */
 	public boolean isBlockingEarlier(long trainId, long beforeMillis, Collection<UUID> rails) {
 		return !getBlockedEarlier(trainId, beforeMillis, rails).isEmpty();
+	}
+
+	/**
+	 * @return the trains that kept this one from what it asked for at the last resolve, each with the first claim it held
+	 * of what was asked for ({@link Arbiter#getBlockers})
+	 */
+	public Map<Long, Arbiter.Claim<UUID>> getBlockers(long trainId) {
+		return arbiter.getBlockers(trainId);
 	}
 
 	/**

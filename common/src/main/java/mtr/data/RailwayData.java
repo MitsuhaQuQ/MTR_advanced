@@ -879,6 +879,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					depot.clientHeldTrains = held;
 					mtr.packet.HeldTrains.sendS2C(world, depot.id, held, misses);
 				}
+				// The rehearsal of its plan once it changed and settled, and its warnings again now and then (2026-11-15)
+				mtr.advanced.Rehearsals.check(this, world, depot, resend);
 			}
 		}
 		// Nodes the world lost while their rails were kept, as when the server stopped before saving the world

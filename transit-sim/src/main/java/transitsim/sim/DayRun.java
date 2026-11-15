@@ -60,7 +60,7 @@ public final class DayRun {
 	 * How much it simulates between asking whether it should stop.
 	 */
 	private static final long STEP_MILLIS = 10 * 60 * 1000;
-	private static final int VERSION = 2;
+	private static final int VERSION = 3;
 
 	private DayRun(List<Trip> trips, List<Problem> problems, long dayStart, long fromMillis, boolean cancelled) {
 		this.trips = Collections.unmodifiableList(trips);
@@ -105,6 +105,7 @@ public final class DayRun {
 		final EventSimulator<SimDataset.DataTrack> simulator = fromTrains ? EventSimulator.resume(startMillis -> SimDataset.start(bytes, startMillis).get(), dataset.trains, fromMillis) : new EventSimulator<>(startOfDay(bytes, dayStart));
 		final long start = simulator.getTime();
 		simulator.getRunner().setTrainListener(recorder::onEvent);
+		simulator.getRunner().addTickListener(() -> recorder.sample(simulator.getRunner()));
 		inputs.forEach(simulator::submit);
 		final long end = dayStart + OperatingDay.MILLIS_PER_DAY + OVERRUN_MILLIS;
 		boolean wasCancelled = false;
@@ -165,10 +166,15 @@ public final class DayRun {
 			writer.writeLong(problem.trainId);
 			writer.writeInt(problem.stopIndex);
 			writer.writeLong(problem.platformId);
-			final byte[] detail = problem.detail.getBytes(StandardCharsets.UTF_8);
-			writer.writeVarInt(detail.length);
-			for (final byte value : detail) {
-				writer.writeByte(value);
+			writeString(writer, problem.detail);
+			writer.writeBoolean(problem.cause != null);
+			if (problem.cause != null) {
+				writer.writeLong(problem.cause.trainId);
+				writer.writeLong(problem.cause.routeId);
+				writer.writeLong(problem.cause.serviceMillis);
+				writer.writeLong(problem.cause.millis);
+				writeString(writer, problem.cause.kind);
+				writer.writeLong(problem.cause.platformId);
 			}
 		}
 		return writer.toBytes();
@@ -177,7 +183,7 @@ public final class DayRun {
 	public static DayRun fromBytes(byte[] bytes) {
 		final BinaryReader reader = new ByteArrayBinary.Reader(bytes);
 		final int version = reader.readInt();
-		if (version != VERSION) {
+		if (version != VERSION && version != 2) {
 			throw new IllegalArgumentException("Unknown day report version " + version);
 		}
 		final long dayStart = reader.readLong();
@@ -209,13 +215,35 @@ public final class DayRun {
 			final long trainId = reader.readLong();
 			final int stopIndex = reader.readInt();
 			final long platformId = reader.readLong();
-			final byte[] detail = new byte[reader.readVarInt()];
-			for (int j = 0; j < detail.length; j++) {
-				detail[j] = reader.readByte();
+			final Problem problem = new Problem(kind, time, durationMillis, routeId, serviceMillis, trainId, stopIndex, platformId, readString(reader));
+			if (version >= 3 && reader.readBoolean()) {
+				final long causeTrainId = reader.readLong();
+				final long causeRouteId = reader.readLong();
+				final long causeServiceMillis = reader.readLong();
+				final long causeMillis = reader.readLong();
+				final String causeKind = readString(reader);
+				problem.cause = new Cause(causeTrainId, causeRouteId, causeServiceMillis, causeKind, reader.readLong());
+				problem.cause.millis = causeMillis;
 			}
-			problems.add(new Problem(kind, time, durationMillis, routeId, serviceMillis, trainId, stopIndex, platformId, new String(detail, StandardCharsets.UTF_8)));
+			problems.add(problem);
 		}
 		return new DayRun(trips, problems, dayStart, fromMillis, cancelled);
+	}
+
+	private static void writeString(BinaryWriter writer, String text) {
+		final byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+		writer.writeVarInt(bytes.length);
+		for (final byte value : bytes) {
+			writer.writeByte(value);
+		}
+	}
+
+	private static String readString(BinaryReader reader) {
+		final byte[] bytes = new byte[reader.readVarInt()];
+		for (int j = 0; j < bytes.length; j++) {
+			bytes[j] = reader.readByte();
+		}
+		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
 	/**
@@ -294,6 +322,10 @@ public final class DayRun {
 		public long departureMillis = -1;
 		public final long plannedArrivalMillis;
 		public long plannedDepartureMillis;
+		/**
+		 * What held the train up most on its way here, or null; not sent.
+		 */
+		private Cause cause;
 
 		private Stop(int stopIndex, long platformId, boolean passed, long arrivalMillis, long plannedArrivalMillis, long plannedDepartureMillis) {
 			this.stopIndex = stopIndex;
@@ -328,6 +360,10 @@ public final class DayRun {
 		 * For a deadlock, the trains in it.
 		 */
 		public final String detail;
+		/**
+		 * What held the train up most on its way to where the problem showed, or null (2026-11-15, the rehearsal).
+		 */
+		public Cause cause;
 
 		private Problem(ProblemKind kind, long time, long durationMillis, long routeId, long serviceMillis, long trainId, int stopIndex, long platformId, String detail) {
 			this.kind = kind;
@@ -343,9 +379,50 @@ public final class DayRun {
 	}
 
 	/**
+	 * A train that kept another from what it asked for, and how long altogether (2026-11-15, the rehearsal's causes): the
+	 * holder's service then, the kind of thing it held ({@link transitsim.network.Resource.Kind}, empty when no train held
+	 * it, as a rail stood on or a station's throat), and the platform it is if it is one on the held train's way.
+	 */
+	public static final class Cause {
+
+		/**
+		 * The train holding, or 0 if what held the train up wasn't another train's.
+		 */
+		public final long trainId;
+		public final long routeId;
+		public final long serviceMillis;
+		public final String kind;
+		public final long platformId;
+		public long millis;
+
+		private Cause(long trainId, long routeId, long serviceMillis, String kind, long platformId) {
+			this.trainId = trainId;
+			this.routeId = routeId;
+			this.serviceMillis = serviceMillis;
+			this.kind = kind;
+			this.platformId = platformId;
+		}
+	}
+
+	/**
 	 * Writes down what trains do as they do it, reading each train only.
 	 */
 	private static final class Recorder {
+
+		/**
+		 * Held up for less than this between two stops, a train's lateness isn't put down to anyone.
+		 */
+		private static final long MIN_CAUSE_MILLIS = 5000;
+		/**
+		 * Each train's holders since its last stop, with how long each held it up.
+		 */
+		private final Map<Long, Map<Long, Cause>> heldBy = new HashMap<>();
+		private long lastSample = -1;
+		/**
+		 * Trains that stopped at a platform since they left their siding: the others run out of the depot empty, holding no
+		 * service yet whatever their duty's first is.
+		 */
+		private final Set<Long> inService = new HashSet<>();
 
 		private final Set<Long> reportRoutes;
 		private final Map<Long, long[]> routePlatforms = new HashMap<>();
@@ -394,6 +471,8 @@ public final class DayRun {
 					}
 					break;
 				case RETURNED:
+					heldBy.remove(train.id);
+					inService.remove(train.id);
 					standing.remove(train.id);
 					standingTrips.remove(train.id);
 					holds.remove(train.id);
@@ -404,12 +483,16 @@ public final class DayRun {
 		}
 
 		private void arrive(MotionEvent event, TickRunner<SimDataset.DataTrack>.HeadlessTrain train, long platformId, boolean passed) {
+			if (!passed && train.getPath().get(event.rail).isPlatformTrack()) {
+				inService.add(train.id);
+			}
 			final Trip trip = getTrip(train);
 			if (trip == null) {
 				return;
 			}
 			final RouteTimetable.StopPlan plan = train.service.getPlanAt(event.rail);
 			final Stop stop = new Stop(findStopIndex(trip, platformId, true), platformId, passed, event.millis, plan == null ? -1 : train.service.getPlannedMillis(plan.arrivalMillis), plan == null ? -1 : train.service.getPlannedMillis(plan.departureMillis));
+			stop.cause = takeCause(train.id, true);
 			trip.stops.add(stop);
 			standing.put(train.id, stop);
 			standingTrips.put(train.id, trip);
@@ -442,7 +525,9 @@ public final class DayRun {
 
 		private void endHold(Hold hold, long trainId, long endMillis) {
 			if (hold.trip != null && endMillis - hold.startMillis > REPORT_MILLIS) {
-				problems.add(new Problem(hold.platformAhead ? ProblemKind.WAITING_FOR_PLATFORM : ProblemKind.HELD_ON_LINE, hold.startMillis, endMillis - hold.startMillis, hold.trip.routeId, hold.trip.serviceMillis, trainId, findStopIndex(hold.trip, hold.nextPlatformId, false), hold.nextPlatformId, ""));
+				final Problem problem = new Problem(hold.platformAhead ? ProblemKind.WAITING_FOR_PLATFORM : ProblemKind.HELD_ON_LINE, hold.startMillis, endMillis - hold.startMillis, hold.trip.routeId, hold.trip.serviceMillis, trainId, findStopIndex(hold.trip, hold.nextPlatformId, false), hold.nextPlatformId, "");
+				problem.cause = takeCause(trainId, false);
+				problems.add(problem);
 			}
 		}
 
@@ -468,7 +553,20 @@ public final class DayRun {
 					}
 				}
 				if (firstLate != null) {
-					problems.add(new Problem(ProblemKind.LATE, firstLate.arrivalMillis, mostLate, trip.routeId, trip.serviceMillis, trip.trainId, firstLate.stopIndex, firstLate.platformId, ""));
+					final Problem problem = new Problem(ProblemKind.LATE, firstLate.arrivalMillis, mostLate, trip.routeId, trip.serviceMillis, trip.trainId, firstLate.stopIndex, firstLate.platformId, "");
+					// What held it up most up to the first stop it was late at, and on from it, as a train late leaving a stop
+					// was held there, which counts with the stop after
+					boolean after = false;
+					for (final Stop stop : trip.stops) {
+						if (stop.cause != null && (problem.cause == null || stop.cause.millis > problem.cause.millis)) {
+							problem.cause = stop.cause;
+						}
+						if (after) {
+							break;
+						}
+						after = stop == firstLate;
+					}
+					problems.add(problem);
 				}
 			});
 		}
@@ -491,6 +589,78 @@ public final class DayRun {
 		/**
 		 * @return the service the train runs now, or null if it runs none or not one of a route reported on
 		 */
+		/**
+		 * Each tick: for each train held back, who holds what it asked for, adding the time since the last tick to each.
+		 */
+		private void sample(TickRunner<SimDataset.DataTrack> runner) {
+			final long now = runner.getMillis();
+			final long delta = lastSample < 0 ? 0 : Math.min(now - lastSample, 10000);
+			lastSample = now;
+			if (delta <= 0) {
+				return;
+			}
+			Map<Long, TickRunner<SimDataset.DataTrack>.HeadlessTrain> byId = null;
+			for (final TickRunner<SimDataset.DataTrack>.HeadlessTrain train : runner.getTrains()) {
+				if (!train.isHeldBack()) {
+					continue;
+				}
+				final Map<Long, Cause> causes = heldBy.computeIfAbsent(train.id, key -> new HashMap<>());
+				final Map<Long, Arbiter.Claim<java.util.UUID>> blockers = runner.getReservations().getBlockers(train.id);
+				if (blockers.isEmpty()) {
+					causes.computeIfAbsent(0L, key -> new Cause(0, 0, 0, "", 0)).millis += delta;
+					continue;
+				}
+				if (byId == null) {
+					byId = new HashMap<>();
+					for (final TickRunner<SimDataset.DataTrack>.HeadlessTrain each : runner.getTrains()) {
+						byId.put(each.id, each);
+					}
+				}
+				for (final Map.Entry<Long, Arbiter.Claim<java.util.UUID>> entry : blockers.entrySet()) {
+					Cause cause = causes.get(entry.getKey());
+					if (cause == null) {
+						final TickRunner<SimDataset.DataTrack>.HeadlessTrain other = byId.get(entry.getKey());
+						final boolean running = other != null && inService.contains(other.id);
+						cause = new Cause(entry.getKey(), running ? other.service.getTripRouteId() : 0, running ? other.service.getTripMillis() : 0, entry.getValue().kind.name(), platformOf(train, entry.getValue().resource));
+						causes.put(entry.getKey(), cause);
+					}
+					cause.millis += delta;
+				}
+			}
+		}
+
+		/**
+		 * @return the platform on the train's way ahead that is this resource, its rail or its direction, or 0
+		 */
+		private static long platformOf(TickRunner<SimDataset.DataTrack>.HeadlessTrain train, java.util.UUID resource) {
+			final List<SimDataset.DataTrack> path = train.getPath();
+			for (int i = Math.max(0, train.getHeadRail()); i < path.size() && i < train.getHeadRail() + 20; i++) {
+				final java.util.UUID key = path.get(i).getTrackKey();
+				if (key.equals(resource) || transitsim.run.PathClaims.directionOf(key).equals(resource)) {
+					return path.get(i).isPlatformTrack() ? path.get(i).getStopId() : 0;
+				}
+			}
+			return 0;
+		}
+
+		/**
+		 * @param clear whether the train's holders are forgotten, as at a stop
+		 * @return what held the train up most since its last stop, if long enough to count
+		 */
+		private Cause takeCause(long trainId, boolean clear) {
+			final Map<Long, Cause> causes = clear ? heldBy.remove(trainId) : heldBy.get(trainId);
+			if (causes == null) {
+				return null;
+			}
+			Cause best = null;
+			for (final Cause cause : causes.values()) {
+				if (best == null || cause.millis > best.millis) {
+					best = cause;
+				}
+			}
+			return best != null && best.millis >= MIN_CAUSE_MILLIS ? best : null;
+		}
+
 		private Trip getTrip(TickRunner<SimDataset.DataTrack>.HeadlessTrain train) {
 			final long routeId = train.service.getTripRouteId();
 			final long serviceMillis = train.service.getTripMillis();

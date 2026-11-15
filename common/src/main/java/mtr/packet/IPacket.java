@@ -113,6 +113,7 @@ public interface IPacket {
 	ResourceLocation PACKET_ROUTE_PREVIEW = new ResourceLocation(MTR.MOD_ID, "packet_route_preview");
 	ResourceLocation PACKET_DEPOT_WAY_PREVIEW = new ResourceLocation(MTR.MOD_ID, "packet_depot_way_preview");
 	ResourceLocation PACKET_HELD_TRAINS = new ResourceLocation(MTR.MOD_ID, "packet_held_trains");
+	ResourceLocation PACKET_REHEARSAL = new ResourceLocation(MTR.MOD_ID, "packet_rehearsal");
 	ResourceLocation PACKET_RECALL_TRAIN = new ResourceLocation(MTR.MOD_ID, "packet_recall_train");
 	ResourceLocation PACKET_DELAY_ALARMS = new ResourceLocation(MTR.MOD_ID, "packet_delay_alarms");
 	ResourceLocation PACKET_CONTINGENCIES = new ResourceLocation(MTR.MOD_ID, "packet_contingencies");
