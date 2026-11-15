@@ -36,3 +36,4 @@
 - 添加班次（旧 `addServices`）：起始、结束、间隔三个输入（初值和保存在 `v.addInputs`，并写入 `localStorage` 的 `mtr-editor-add-services`）。
 - `add()`：`fn.servicesToAdd(start, end, count)` 得到时刻，非法时 `v.tableMessage = v.PATTERN_HINT`。起止和间隔都填时，用 `TimetableBatch.fitSpan(现有车次, from, to, 新时刻)` 求保留/挪动/新增/删除，再 `fn.editTimetable` 依次删除（`fn.removeService`）、挪动（`fn.retimeService`）、新增（不超过 `v.MAX_SERVICES`）；有要删除的先用 `ask` 页内确认。否则只追加不重复的时刻。
 - 还有"显示回送"勾选、"清空"（`fn.clearTable(r, today)`）和表提示 `v.tableMessage`。
+- 0.83.5 表格 `select-none`：拖动和 Shift+点击不选中文字（和 Shift 选班次冲突）；就地输入框 `select-text`。

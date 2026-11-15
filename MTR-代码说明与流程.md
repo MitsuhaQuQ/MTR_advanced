@@ -85,6 +85,8 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.5 时刻表不能拖选文字（用户 2026-11-15“停止时刻表选择的文字拖选能力，它总是和 shift 选择冲突”）：`editor-web/src/views/SummaryTable.tsx` 的表格加 `select-none`，Shift+点表头选一段班次时不再顺带选中文字；就地改时刻的输入框加 `select-text`，仍能选里面的字。只改客户端网页，升第三位。
+
 0.83.4 预演不往游戏日志里打、同步面板换了内容的提示按钮重来（2026-11-15 六线图游戏内 `ui-results/20261115-130033`）：
 - 服务端日志 185 行 "Trains out of order for a stop swap" 里 168 行出自 `MTR-Rehearsal` 线程，是预演里模拟列车的互换，把游戏真列车的 17 次淹没了（U479 也数错）。新增组件 `transitsim.sim.SimLog`：`say` 代替 `TrainService`、`DepotDispatcher` 的 `System.out.println`，线程内 `quietly(...)` 期间不打；`Rehearsal.run` 用 `quietly` 包住 `DayRun.run`。别的线程照打。测试 `SimLogTest`。
 - U431：同步面板“临时处置…”发送后，这一条变成“按临时处置处理”，但 `Problem` 按序号做 key，组件复用，发送状态还在，“解除”被显示成“已发送”。`editor-web/src/shell/Sync.tsx` 改为按级别+文字（加序号）做 key，内容一变就是新组件。

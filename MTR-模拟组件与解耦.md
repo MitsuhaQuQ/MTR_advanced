@@ -1443,6 +1443,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 组件的运行日志（0.83.4）：`SimLog.say` 统一组件运行中要告诉宿主日志的话，`SimLog.quietly` 让只是往前看的运行（预演）在本线程不打；宿主不用知道线程名。
 
+时刻表不能拖选文字（0.83.5）：只在网页 `SummaryTable`。
+
 区间追踪间隔（0.82.0）的算法在组件 `transitsim.run.Headways`（用运行时同一套分区 `PathClaims.between`），检查在组件 `TimetableConflicts.checkHeadways`；游戏只负责准备路径、车型和运用里每班的车池（`RoutePaths.RoutePath.getHeadways`、`PacketTrainDataGuiServer`）。
 
 0.81.0 的联锁区交会提示已在 0.81.1 删除；0.81.1 改的是组件 `PathClaims.attach`（联锁区和咽喉道岔跟进入它的那一组申请），两个宿主共用。

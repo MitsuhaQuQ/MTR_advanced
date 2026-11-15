@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.5: the web editor's timetable no longer selects its text when dragged across or Shift+clicked, which got in the way of choosing services with Shift.
+
 0.83.4: a rehearsal no longer prints what its simulated trains do (duties swapped and the like) into the server's log, where it buried what the game's own trains did; a train's alarm handled in the web editor's sync panel offers 解除 at once rather than showing the sent mark of the button before.
 
 0.83.3: the web editor's dispatch console can show one line's trains only, next to the choice of rail system.

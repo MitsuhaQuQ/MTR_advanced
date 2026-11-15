@@ -61,7 +61,7 @@ export function SummaryTable({ className }: { className: string }) {
     }
   }
   const editor = (cell: { svc: string; stop: number; kind: string }) => editing && editing.svc === cell.svc && editing.stop === cell.stop && editing.kind === cell.kind ? (
-    <input ref={input} value={editing.value} aria-label={tr("时刻")} title={tr("回车只改这一班，Shift+回车把同样的改动用到这一班和之后的全部班次")}
+    <input ref={input} className="select-text" value={editing.value} aria-label={tr("时刻")} title={tr("回车只改这一班，Shift+回车把同样的改动用到这一班和之后的全部班次")}
       style={editing.bad ? { borderColor: "var(--warn)" } : undefined}
       onChange={e => setEditing({ ...editing, value: e.target.value, bad: false })}
       onKeyDown={e => {
@@ -224,7 +224,8 @@ export function SummaryTable({ className }: { className: string }) {
     })
     return (
       <Frame className={className} root={root} tools={tools} onClick={onClick} onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
-        <table className="tt">
+        {/* No text selection by dragging or Shift+click (0.83.5, user): it took the clicks meant for choosing services */}
+        <table className="tt select-none">
           <thead><tr><th className="st">{tr("车站")}</th><th className="kind" />{services.map((s: any) => headOf(s, isSelected(s), <span className="note" style={{ color: colorOf(s.route.color) }}>{shortName(s.route.name)}</span>))}</tr></thead>
           <tbody>{rows}</tbody>
         </table>
