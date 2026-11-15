@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.12: the web dispatch console's cards say when no spare can take over a train's remaining duty.
+
 0.84.11: the dispatcher's "clear out at the next stop" clears the train at the stop the console shows as its next one, and it opens its doors at no stop after that on its way back empty (it used to stop with its doors open once more one station further). A train cleared out or sent back to the depot, or turned back to go back empty, now has a spare from the depot take over the rest of its duty, as a late train handing over does; with no spare that can get there in time, the services left are logged and the train shows it, rather than silently not running.
 
 0.84.10: running by duties, a train coming back into its siding no longer sends the train waiting there to leave for its duty into the shed with that duty (services silently never ran), and a train waiting for its run out is no longer given the next duty in place of its own.

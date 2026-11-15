@@ -29,7 +29,7 @@
 ## 调度台
 - `consoleTrains(data, consoleState)`：调度台数据中的列车，选了路网时只取该路网路线上的。调用者：`legacy/retired.ts:346`、`views/DispatchConsole.tsx:25`、`views/Layers.tsx:154`（后两者经 `fn`）。
 - `consoleTrainName(train)`：列车名："存车线 车 N"（`slot < 0` 时"存车线的车"）。调用者：`legacy/retired.ts:347`、`views/DispatchConsole.tsx:74`、`views/Layers.tsx:155`。
-- `consoleTrainState(train)`：列车状况：不在运用中、晚点、等进路、`dispatch` 位（1 扣停、8 延长停站、16 将在指定站折返、2 下一站清客、4 本段跑完回库）、跳站、已提前折返、已交给备车、不载客，用"，"连接。调用者：`legacy/retired.ts:348`、`views/DispatchConsole.tsx:62`。
+- `consoleTrainState(train)`：列车状况：不在运用中、晚点、等进路、`dispatch` 位（1 扣停、8 延长停站、16 将在指定站折返、2 下一站清客、4 本段跑完回库）、跳站、已提前折返、已交给备车、没有备车可接替（takeover 3）、备车出场要经过受影响区段（4）、不载客，用"，"连接。调用者：`legacy/retired.ts:348`、`views/DispatchConsole.tsx:62`。
 - `dispatchOperation(operation)`：包装成 `{ operations: [{ type: "dispatch", ...operation }] }`。调用者：`legacy/retired.ts:352`（发往 `api/apply`）。
 
 ## 环线

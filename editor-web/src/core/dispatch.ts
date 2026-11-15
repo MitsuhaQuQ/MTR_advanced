@@ -174,6 +174,9 @@ export function consoleTrainState(train: any) {
   if (train.skipping) parts.push(tr("跳站中"))
   if (train.turn === 2) parts.push(tr("已提前折返"))
   if (train.takeover === 2) parts.push(tr("已交给备车"))
+  // The rest of its duty no spare can take (0.84.11): those services don't run, said on the card too, not only in the alarms
+  if (train.takeover === 3) parts.push(tr("没有备车可接替"))
+  if (train.takeover === 4) parts.push(tr("备车出场要经过受影响区段"))
   if (train.outOfService) parts.push(tr("不载客"))
   return parts.join("，")
 }
