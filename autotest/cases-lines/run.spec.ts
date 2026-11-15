@@ -341,6 +341,11 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	// rehearsal said no train runs are the plan's, and line 7's stops can't be told apart from its next services'.
 	const sampledFrom = samples.length ? samples[0].millis : 0, sampledTo = samples.length ? samples[samples.length - 1].millis : 0;
 	const notRun: string[] = [], lateAtTheEnd: string[] = [];
+	// A service a train still holds at the end of the sampling, standing or on its way to it: only these may be excused as
+	// late (2026-11-15: line 8's train waiting with its service was put away in its siding's shed, and the service, never
+	// run, was reported as merely late)
+	const lastTrains = samples.length ? samples[samples.length - 1].trains : [];
+	const held = (routeId: string, service: number) => lastTrains.some(t => t.route === routeId && t.trip !== undefined && diff(ofDay(t.trip), ofDay(service)) === 0);
 	// Services joined from another route's (lines 8, 9, 11): their train is matched to the service it came on as, and the
 	// through links are checked below on their own
 	const linksForRun: ThroughLink[] = existsSync(`${process.env.MTM_RESULTS || "."}/through-links.json`) ? JSON.parse(readFileSync(`${process.env.MTM_RESULTS || "."}/through-links.json`, "utf8")).links : [];
@@ -355,12 +360,12 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 			if (matches.some(m => m.plan === plan && m.service === service)) continue;
 			// A route the rehearsal warned late may leave as late as it allows, which can be after the sampling (line 8's
 			// trains out of the depot against the line, 2026-11-15): reported, not failed
-			if (offset > sampledTo - sampledFrom - allowedLate(plan.routeId) * 1000) lateAtTheEnd.push(`${plan.name.split("|")[0]} ${hhmmss(service)}`);
+			if (offset > sampledTo - sampledFrom - allowedLate(plan.routeId) * 1000 && held(plan.routeId, service)) lateAtTheEnd.push(`${plan.name.split("|")[0]} ${hhmmss(service)}`);
 			else notRun.push(`${plan.name.split("|")[0]} ${hhmmss(service)}`);
 		}
 	}
 	report.push(`services due while sampled and not run: ${notRun.length ? notRun.join(", ") : "none"}`);
-	report.push(`services of routes warned late, due too near the end to be seen yet: ${lateAtTheEnd.length ? lateAtTheEnd.join(", ") : "none"}`);
+	report.push(`services of routes warned late, due too near the end to be seen yet and held by a train: ${lateAtTheEnd.length ? lateAtTheEnd.join(", ") : "none"}`);
 	if (notRun.length) failures.push(`services due to leave while sampled that no train ran: ${notRun.join(", ")}`);
 	report.push(`lateness the plan causes (the rehearsal warned of it; the player's): ${planLate.length} stops${planLate.length ? ": " + planLate.slice(0, 40).join("; ") : ""}`);
 	// Line 7: the long section between 二站 and 三站 (x 260..2200), each track on its own
@@ -463,7 +468,7 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		// Only links whose train should have left the boundary well inside the sampled time
 		if (diff(ofDay(plannedDepart), first) < 0 || diff(lastSample, ofDay(plannedDepart)) < 120_000) continue;
 		// Its first service may leave as late as the rehearsal's warning allows, then too late to be seen (line 8, 2026-11-15)
-		if (diff(lastSample, ofDay(fromService)) < allowedLate(link.from) * 1000 && !matches.some(m => m.plan === fromPlan && m.service === fromService)) {
+		if (diff(lastSample, ofDay(fromService)) < allowedLate(link.from) * 1000 && !matches.some(m => m.plan === fromPlan && m.service === fromService) && held(link.from, fromService)) {
 			report.push(`${link.fromName.split("|")[0]} ${link.fromService} → ${link.toName.split("|")[0]} ${link.toService}: its route warned late, not run yet at the end`);
 			continue;
 		}
