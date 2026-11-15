@@ -58,3 +58,4 @@ MTM_TestKit 的服务端驱动（调试专用，仅 Fabric）：服务器启动�
 
 ### `private static JsonObject snapshot(ServerLevel level)`
 - 作用：`DataJson.snapshot(车站, 站台, 停车轨, 线路, 车厂)` 加上 `dimension`。该维度没有 `RailwayData` 时抛 `IllegalStateException`。
+- 2026-11-15 `/snapshot` 多一个 `rehearsals`：车厂 id → 上次预演的警告（`Rehearsal.Warning.encode` 的行，`Depot.rehearsal`，不进存档所以消息包里没有）。`run.spec.ts` 用它分开运行图造成的晚点和系统造成的。

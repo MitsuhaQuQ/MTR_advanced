@@ -310,6 +310,14 @@ public final class ServerDriver {
 		}
 		final JsonObject result = DataJson.snapshot(railwayData.stations, railwayData.platforms, railwayData.sidings, railwayData.routes, railwayData.depots);
 		result.addProperty("dimension", level.dimension().location().toString());
+		// Each depot's last rehearsal (not saved, so not in its message pack): its warnings as Rehearsal.Warning.encode wrote them
+		final JsonObject rehearsals = new JsonObject();
+		railwayData.depots.forEach(depot -> {
+			final com.google.gson.JsonArray warnings = new com.google.gson.JsonArray();
+			depot.rehearsal.forEach(warnings::add);
+			rehearsals.add(String.valueOf(depot.id), warnings);
+		});
+		result.add("rehearsals", rehearsals);
 		return result;
 	}
 }

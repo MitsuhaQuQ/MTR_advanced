@@ -16,7 +16,7 @@
 import {test, expect} from "../lib/test";
 import {existsSync, readFileSync} from "fs";
 import {server, serverData, sleep} from "../lib/game";
-import {Line, lines, samplingEnd, serviceLabels, ThroughLink, trainsNow, TrainsAt, TrainSample} from "../lib/lines";
+import {Line, lines, samplingEnd, serverLog, serviceLabels, ThroughLink, trainsNow, TrainsAt, TrainSample} from "../lib/lines";
 import {matchEvents, platformSpots, readPlan, readRoutePlan, RoutePlan, stopEvents, stopEventsAt, turnBacks} from "../lib/timing";
 
 /** Minutes sampled from the first services' departure (lines.spec.ts writes when; before 2026-11-15 from the test's start) */
@@ -33,12 +33,15 @@ const EXPECTED_WITHOUT_TRAINS = [1, 4];
  */
 const TOO_CLOSE_TIMETABLES = [7];
 /**
- * Lateness known and explained, allowed up to a bound so that it getting worse still fails (2026-11-15): line 2's express
- * and line 10's first services (an empty train out of the depot behind a stopping one, the duties planned for a free
- * run), line 11 (its dead end shorter than its trains). By route name, the Chinese part's start.
+ * Lateness the plan causes is the player's to put right, not checked (user, 2026-11-15): a route the depot's rehearsal
+ * warned of (late, or held on the way) may run late, by up to twice what the rehearsal said plus a minute, as it needn't
+ * match it closely. Lateness on a route not warned of, or far beyond what was warned, fails: the system's, or not told.
+ * Filled from the server's snapshot once the trains have run (each depot's rehearsal warnings).
  */
-const KNOWN_LATE: [string, number][] = [["2号线快车", 90], ["10号线", 60], ["11号线", 400]];
-const allowedLate = (routeName: string) => (KNOWN_LATE.find(([prefix]) => routeName.split("|")[0].startsWith(prefix)) || ["", TOLERANCE])[1];
+const warned = new Map<string, number>();
+const allowedLate = (routeId: string) => warned.has(routeId) ? Math.max(TOLERANCE, 2 * warned.get(routeId)! / 1000 + 60) : TOLERANCE;
+/** A train this late is told at once as an alarm (the default contingency's five minutes, DelayRules), with some slack */
+const ALARM_SECONDS = 5 * 60 + 30;
 
 const lineOf = (train: TrainSample) => lines.find(line => train.z > line.z - 40 && train.z < line.z + 60);
 /** Lines whose stops are found by the platforms' own positions (the first six by their fixed layout) */
@@ -246,6 +249,15 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		}).filter(event => event.line > 0),
 	];
 	const matches = matchEvents(events, plans);
+	// The rehearsals' warnings: lateness a route's plan causes
+	const rehearsals: Record<string, string[]> = (await serverData()).rehearsals || {};
+	for (const encoded of Object.values(rehearsals).flat()) {
+		const [kind, routeId, , maxMillis] = encoded.split("|");
+		if ((kind === "LATE" || kind === "HELD") && routeId !== "0") warned.set(routeId, Math.max(warned.get(routeId) || 0, Number(maxMillis)));
+	}
+	report.push(`rehearsals warned of ${warned.size} routes: ${[...warned].map(([id, millis]) => `${plans.find(p => p.routeId === id)?.name.split("|")[0] || id} ${Math.round(millis / 1000)} s`).join(", ")}`);
+	const serverText = serverLog();
+	const planLate: string[] = [];
 	const turns = turnBacks(matches);
 	// U281: every service a train was seen running, its stops in a row with none passed (the ends of the sampled time aside)
 	const runs = new Map<string, number[]>();
@@ -287,11 +299,18 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 		}
 		for (const m of here) {
 			const where = `${m.plan.name.split("|")[0]} 第${m.stop + 1}站 ${new Date(m.event.arrive).toISOString().slice(11, 19)}Z`;
-			const allowed = allowedLate(m.plan.name);
-			if (m.departLate !== null && (m.departLate / 1000 > allowed || m.departLate / 1000 < -TOLERANCE)) failures.push(`${where}: departed ${Math.round(m.departLate / 1000)} s off plan`);
-			if (m.arriveLate !== null && m.arriveLate / 1000 > allowed) failures.push(`${where}: arrived ${Math.round(m.arriveLate / 1000)} s late`);
+			const allowed = allowedLate(m.plan.routeId);
+			const why = warned.has(m.plan.routeId) ? `, more than the rehearsal's ${Math.round(warned.get(m.plan.routeId)! / 1000)} s explains` : ", and the rehearsal warned of nothing on this route";
+			if (m.departLate !== null && m.departLate / 1000 < -TOLERANCE) failures.push(`${where}: departed ${Math.round(-m.departLate / 1000)} s early`);
+			if (m.departLate !== null && m.departLate / 1000 > allowed) failures.push(`${where}: departed ${Math.round(m.departLate / 1000)} s late${why}`);
+			if (m.arriveLate !== null && m.arriveLate / 1000 > allowed) failures.push(`${where}: arrived ${Math.round(m.arriveLate / 1000)} s late${why}`);
+			const late = Math.max(m.departLate ?? 0, m.arriveLate ?? 0) / 1000;
+			if (late > TOLERANCE && late <= allowed) planLate.push(`${where} ${Math.round(late)} s`);
+			// Late enough for an alarm: the server told it (DelayAlarms.log "depot … train … reported, LATE")
+			if (late > ALARM_SECONDS && !new RegExp(`train ${m.event.train} reported, LATE`).test(serverText)) failures.push(`${where}: ${Math.round(late)} s late and no alarm told for train ${m.event.train}`);
 		}
 	}
+	report.push(`lateness the plan causes (the rehearsal warned of it; the player's): ${planLate.length} stops${planLate.length ? ": " + planLate.slice(0, 40).join("; ") : ""}`);
 	// Line 7: the long section between 二站 and 三站 (x 260..2200), each track on its own
 	const long = lines.find(l => l.layout === 7);
 	if (long) {
@@ -464,7 +483,8 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 
 	for (const turn of turns) {
 		report.push(`${turn.line}号线 turn-back ${turn.from.split("|")[0]} → ${turn.to.split("|")[0]}: planned ${turn.plannedSeconds} s, took ${turn.actualSeconds} s, next departure ${turn.departLate} s off`);
-		const turnAllowed = TOO_CLOSE_TIMETABLES.includes(turn.line) ? Infinity : Math.max(allowedLate(turn.from), allowedLate(turn.to));
+		const routeIdOf = (name: string) => plans.find(p => p.name === name)?.routeId || "";
+		const turnAllowed = TOO_CLOSE_TIMETABLES.includes(turn.line) ? Infinity : Math.max(allowedLate(routeIdOf(turn.from)), allowedLate(routeIdOf(turn.to)));
 		if (turn.actualSeconds > turn.plannedSeconds + turnAllowed) failures.push(`${turn.line}号线 turn-back ${turn.from.split("|")[0]} → ${turn.to.split("|")[0]} took ${turn.actualSeconds} s, planned ${turn.plannedSeconds} s`);
 	}
 	await testInfo.attach("matches", {body: JSON.stringify(matches.map(m => ({train: m.event.train, route: m.plan.name, stop: m.stop, arrive: m.event.arrive, depart: m.event.depart, arriveLate: m.arriveLate, departLate: m.departLate}))), contentType: "application/json"});
