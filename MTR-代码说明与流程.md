@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.1 修服务器开服几秒后崩溃（用户 2026-11-16 日志：`ConcurrentModificationException`，`HashMap.computeIfAbsent` ← `StopTimes.getPlan` ← `TrainService.getStopPlan` ← `TrainServer.getPlannedDepartureHere`）：
+- 原因：0.83.16 显示屏的计划到站在工作线程（`PidsSchedules` → `WorkPool.submit` → `DisplayArrivals`）里调 `path.stopTimes.getPlan`，和服务器线程同时往同一个 `StopTimes.plans`（HashMap）里算缓存，服务器线程的 `computeIfAbsent` 检测到并发修改抛异常，整个服务器停了。
+- 修：`StopTimes.getPlan`、`setEntry`、`clear`、`copyFrom` 加 `synchronized`（其它被工作线程读的方法只读不写缓存）。工作线程那边本来就 catch 了异常。只改服务端，升第三位。
+
 0.84.0 站前折返的另一种走法按需拼接，不再每次折返存整条路径（用户批准，断点 `pre-turnback-ways`、基准包已留；Village 明珠线田端站台 6、5 交替站前折返）：
 - 原因：线路列了第二个终点站台后，`DutyAssembly` 每次折返都调 `frontTurnBack` → `DutyPathBuilder.addFrontTurnBackTimed`，一份运用全天约 160 个 `TurnBackSection`。`Siding.addDutyPath` 给每个点的每种非默认走法用 `DutyBody` 复制整份运用路径（只换那一处），`PathPieces.indexDuty`、`generateTimes` 后存成 `运用键|点:走法`：Village 一条存车线 323 条路径，寻路 50 ms → 6–8 s，存车线条目 0.11 → 9.3 MB，库 18 → 47 MB，graph_paths 1.2 → 21.7 MB。这个做法来自环线路径（`addTurnBackPaths`，点很少），用在全天运用路径上是 O(N²)。
 - 组件（先改、先测）：新 `plan.TurnBackWayStore`：每种不同的走法只存一次，按点记各走法是第几条、默认走法有几根轨道；`Builder` 按内容签名去重（Village 321 个点只有一种走法 1）。`PathVariants` 加 `getTurnBackWays()`（宿主的走法表）和 `indexDuty(path, dutyStarts, boundaries)`（宿主自己的停站编号与切块，默认不变）。`TripPath.withTurnBackWay(常规路径, 点, 走法, variants)` 把原 `Siding.DutyBody` 的拼接和停站轨道平移搬进组件：停站轨道到默认走法终点之间换成走法中间的轨道（首尾两根仍是常规路径自己的，停站设置不变；首尾对不上返回 null），之后的段起点、各点停站轨道、宿主切块按多出的轨道数后移，走法里面的点为 −1，再 `generateTimes`；结果与以前保存的整份路径逐项相同。`getTurnBackPointWay`/`getTurnBackBase` 解析 `键|p:w`。

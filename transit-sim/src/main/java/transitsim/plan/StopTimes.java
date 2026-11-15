@@ -84,13 +84,13 @@ public class StopTimes {
 	 *
 	 * @param times the fastest arrival and departure at each stop of the route up to that stop, from its first stop
 	 */
-	public void setEntry(long routeId, int stop, long[][] times) {
+	public synchronized void setEntry(long routeId, int stop, long[][] times) {
 		entryStops.put(routeId, stop);
 		entryTimes.put(routeId, times);
 		plans.clear();
 	}
 
-	public void clear() {
+	public synchronized void clear() {
 		firstIndex = -1;
 		firstArrival = 0;
 		plannedKey = 0;
@@ -104,7 +104,7 @@ public class StopTimes {
 		plans.clear();
 	}
 
-	public void copyFrom(StopTimes stopTimes) {
+	public synchronized void copyFrom(StopTimes stopTimes) {
 		clear();
 		firstIndex = stopTimes.firstIndex;
 		firstArrival = stopTimes.firstArrival;
@@ -298,7 +298,11 @@ public class StopTimes {
 	 * @param service the service of that route, for the stops where it runs differently from its table, or -1
 	 * @return the planned times of a stop on the path, or null if the path has no such stop
 	 */
-	public RouteTimetable.StopPlan getPlan(List<? extends PlanRoute> routes, RouteTimetable timetable, int index, long routeId, int table, int service) {
+	/**
+	 * Synchronized with the other methods changing its plans: the passenger displays' worker (DisplayArrivals, 0.83.16) reads
+	 * them while the server thread does, and the map's computeIfAbsent stopped the server (2026-11-16, user's world)
+	 */
+	public synchronized RouteTimetable.StopPlan getPlan(List<? extends PlanRoute> routes, RouteTimetable timetable, int index, long routeId, int table, int service) {
 		final long newKey = PlanVersions.keyOf(routes);
 		if (newKey != plannedKey) {
 			plannedKey = newKey;
