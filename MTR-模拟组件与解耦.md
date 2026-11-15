@@ -1473,6 +1473,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 显示屏不列终到车（0.84.3）：只在游戏 `RailwayData` 发包时用 `PidsSchedules.withoutTerminating` 过滤，组件不变。
 
+下一站清客和剩下运用交给备车（0.84.11）：组件 `TrainService.chooseDispatch`（清客站为调度台显示的下一站）、`handRestToSpare`/`tellRestUncovered`（复用 D5 的 `requestTakeover`），`Board.noteServicesUncovered`、`DepotBoard.uncoveredServices`；游戏和组件同一份代码，测试 `ClearOutTest`。
+
 回库车不收走等出库的车（0.84.10）：规则在组件 `FleetRules.givesUpEarlierStanding` 和 `TrainService.isLeavingForDuty`；组件 `TickRunner.SidingRun.tick`/`HeadlessTrain.canDeploy` 与游戏 `Siding.simulateTrain`/`TrainServer.canDeploy` 调同一函数（`ShedDutyTest`）。
 
 停车点移到停着的车下面（0.84.9）：组件 `TickRunner.standAtMovedStop`、`RunMotion` 不在站上先关门、`RunInvariants.checkDoors`；两个宿主都经 `RunMotion`。

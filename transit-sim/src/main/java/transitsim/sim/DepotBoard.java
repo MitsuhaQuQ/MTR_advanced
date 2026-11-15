@@ -70,6 +70,11 @@ public final class DepotBoard implements TrainService.Board {
 	 */
 	public final List<String> returnOrderMisses = new ArrayList<>();
 	/**
+	 * Segments of duties no train runs, as trains sent back early left them with no spare (0.84.11), as {@code <siding>
+	 * <slot> <day start> <from segment> <until segment> <reason>}: told rather than silently not run.
+	 */
+	public final List<String> uncoveredServices = new ArrayList<>();
+	/**
 	 * Whether its trains lock their way through station throats: off when its track is shared with a depot not running by
 	 * duties ({@link transitsim.network.LockNetworks}).
 	 */
@@ -215,6 +220,14 @@ public final class DepotBoard implements TrainService.Board {
 	@Override
 	public void noteReturnMissed(long sidingId, long targetSidingId, String reason) {
 		returnOrderMisses.add(sidingId + " " + targetSidingId);
+	}
+
+	@Override
+	public void noteServicesUncovered(long dutySidingId, int slot, long dayStart, int fromSegment, int untilSegment, String reason) {
+		uncoveredServices.add(dutySidingId + " " + slot + " " + dayStart + " " + fromSegment + " " + untilSegment + " " + reason);
+		while (uncoveredServices.size() > 64) {
+			uncoveredServices.remove(0);
+		}
 	}
 
 	/**

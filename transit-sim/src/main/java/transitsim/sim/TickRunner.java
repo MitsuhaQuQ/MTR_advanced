@@ -1260,6 +1260,13 @@ public final class TickRunner<T extends RunTrack> {
 	}
 
 	/**
+	 * @return the depots, for what they were told, such as the services no train runs (0.84.11)
+	 */
+	public List<DepotBoard> getDepots() {
+		return Collections.unmodifiableList(depots);
+	}
+
+	/**
 	 * @return the trains as they are now
 	 */
 	public List<HeadlessTrain> getTrains() {

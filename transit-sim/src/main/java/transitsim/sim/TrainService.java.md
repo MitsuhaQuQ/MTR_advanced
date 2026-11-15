@@ -91,12 +91,17 @@
 
 #### `boolean chooseDispatch()`
 - 作用：运用列车在站准备出发时执行清客或回库命令（每站一次）：
-  - 清客：若另有折返车站或折返预案，交给 `chooseEarlyTurn`；否则尝试在下一停站折返并空车回库（`turnAt(TURN_NEAREST, …, false, 下一停站, …)`）；不行则从下一停站起空车跑完本分段再回库。
+  - 清客：若另有折返车站或折返预案，交给 `chooseEarlyTurn`；否则尝试在清客站折返并空车回库（`turnAt(TURN_NEAREST, …, false, 清客站, …)`）；不行则从清客站起空车跑完本分段再回库。清客站是当前停站或其后的第一站（`time[2] >= stopIndex`，0.84.11），即下令时调度台显示的“下一站”；以前取当前停站之后的一站，途中下令的车在下一站、再下一站各开一次门。
   - 回库：跑完本分段到末站，全员下车，空车回停车线。
   - 已在回库或已折返的路径上则清除命令；本分段末站已过、或最后一个分段（且清客无意义）时清除命令不做事。
-  - 否则取 `TripPath.getEndKey(base, 分段, 末站轨道, 清客 ? 下一站 : 末站)` 路径，换上（`vehicle.changePath`）。
+  - 否则取 `TripPath.getEndKey(base, 分段, 末站轨道, 清客 ? 清客站 : 末站)` 路径，换上（`vehicle.changePath`）。
+  - 换了路径后 `handRestToSpare`（0.84.11）：运用后面的分段交给备用车。
 - 返回：刚换了路径（列车在站稍等）为 true。
 - 调用者：`TrainRules.java:184`（`getHoldReason` 的 "dispatch_way"）。
+
+#### `private void handRestToSpare(TripPath<T> base, String baseKey, int segment, int lastRail, int stopIndex)`（0.84.11）
+- 作用：列车离开运用空车回库（调度清客/指定回库，`chooseEarlyTurn` 折返后不续跑）时，从下一分段起逐段 `depot.requestTakeover`，第一段成功即止（受影响轨道为当前站到最后载客站，经 `vehicle.getAffectedRails`）；记 `restHandOver`（只供显示，不存档）。跳过的分段或全部失败时 `tellRestUncovered`：`SimLog` 一行并 `depot.noteServicesUncovered`。
+- 调用者：`chooseDispatch`、`chooseEarlyTurn`。
 
 ### 交接给备用车（D5）
 
@@ -104,7 +109,7 @@
 设置/读取是否把剩余运用交给车厂的备用车；改变时重置选择站与失败原因。调用者：`EventSimulator.apply`、`DelayAlarms.java:88`、`DelayRules.getTakeover` 的调用方。
 
 #### `int getTakeoverState()`
-0 未要求；1 等待选择在哪交接；2 已交接正回库（路径为 end 键）；`TAKEOVER_NO_SPARE`/`TAKEOVER_CROSSES` 上次尝试失败。调用者：`DelayAlarms.java:126`、`DispatchConsole.java:98`。
+0 未要求；1 等待选择在哪交接；2 已交接正回库（路径为 end 键，或清客/回库后备车已接上剩余运用）；`TAKEOVER_NO_SPARE`/`TAKEOVER_CROSSES` 上次尝试失败，或清客/回库后没有备车接上剩余运用（0.84.11，优先于 2）。调用者：`DelayAlarms.java:126`、`DispatchConsole.java:98`。
 
 #### `boolean chooseHandOver()`
 - 作用：被要求交接的运用列车在站准备出发时（每站一次），从当前分段起找一个分段，使备用车能及时出库到下一分段首站，且出库路径不经过本车被拦或仍需运行的地方（由 `vehicle.getAffectedRails` 从当前到该分段末站的轨道求得）。向车厂 `depot.requestTakeover` 申请；成功则本车改走 `TripPath.getEndKey(base, 分段, 末站)`：跑到该分段末站、清客、空车回库；失败记下原因（任一分段为 CROSSES 则为 CROSSES，否则 NO_SPARE）。
@@ -502,4 +507,5 @@
 - `default long[] findDuty(long dutyId)`：该运用编号所在的停车线与槽位下标，无为 null（P2-D）。
 - `default void noteReturnMissed(long sidingId, long targetSidingId, String reason)`：设定回某停车线的运用其列车未能回去时告知，而不是默默回别处。
 - `default int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<UUID> affected)`：请车厂派备用车从某分段起接管运用（D5），并及时派出；返回 `TAKEOVER_OK` 或失败原因。默认 `TAKEOVER_NO_SPARE`。
+- `default void noteServicesUncovered(long dutySidingId, int slot, long dayStart, int fromSegment, int untilSegment, String reason)`（0.84.11）：列车提前回库、没有备车接上时，告知运用的 `[fromSegment, untilSegment)` 分段没有车跑。默认什么也不做；实现 `DepotBoard`。
 - `default List<? extends TrainService<?>> getDutyServices()`（0.81.0）：车厂在线上的列车的服务，按列车排好，给顺序颠倒的车互换运用用。默认空列表。实现：`DepotBoard`（`TickRunner.getDutyServices`）、游戏 `Depot.getDutyServices`。

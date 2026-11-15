@@ -19,6 +19,7 @@
 - `changed`（包内 boolean）：本 tick 占用的服务是否变化，等待发车的列车据此重新计算何时能走（S4f）。
 - `peers`（包内 List<DepotBoard>）：与本车厂共用线路的车厂（见 `DepotDispatcher.shareServicesWith`），本车厂占用或释放服务时它们等待发车的列车也重看。
 - `returnChooser`（包内 `ReturnChooser`）：列车运用结束后回哪条停车线，由拥有停车线的运行器计算；null 回自己的停车线。
+- `uncoveredServices`（List<String>，0.84.11）：列车提前回库后没有备车接上、没有车跑的运用分段，见 `noteServicesUncovered`。
 - `returnOrderMisses`（List<String>）：被指定回某车厂但该车厂没有停车线可接收、改按常规选择回库的记录，格式 `"<停车线> <车厂>"`。
 - `throatLocksAllowed`（boolean，默认 true）：其列车是否锁咽喉进路；轨道与不按运用运行的车厂共用时关闭（`LockNetworks`）。
 - `depotId`（long）：构造它的数据中的车厂 id，或 0。
@@ -79,6 +80,9 @@
 
 ### `void noteReturnMissed(long sidingId, long targetSidingId, String reason)`（覆盖）
 记录 `"<sidingId> <targetSidingId>"` 到 `returnOrderMisses`（`reason` 未使用）。
+
+### `void noteServicesUncovered(long dutySidingId, int slot, long dayStart, int fromSegment, int untilSegment, String reason)`（覆盖，0.84.11）
+记录 `"<停车线> <槽位> <运营日> <起分段> <止分段> <原因>"` 到 `uncoveredServices`（最多 64 条）。
 
 ### `int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<UUID> affected)`（覆盖）
 委托 `takeoverRequests`；未设置时返回 `TrainService.TAKEOVER_NO_SPARE`。

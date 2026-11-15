@@ -85,6 +85,14 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.11 下一站清客改在调度台显示的那一站；清客、指定回库后运用剩下的车次由备车接上，没有备车就报出来（六线游戏内测试 2026-11-15，9 号线：“下一站清客后回库”的车在下一站之后又在再下一站开了一次门，之后线路因剩下的车次没有车跑而停运）：
+- 原因 ①：`TrainService.chooseDispatch` 只在列车停在站上、准备开车时才执行（`TrainRules.getHoldReason` 的 `dispatch_way`），而“下一站”取的是比当前停站更远的第一站（`time[2] > stopIndex`）。调度员在列车开往 B 站途中下令（调度台显示“下一站 B”），车到 B 正常开门停站后才选，选中的是 C：B 开一次门，C 又开一次门（清客），然后才空车回库。站在 B 开着门时下令也一样（调度台此时也显示“下一站 B”）。
+- 原因 ②：清客（折返回库 `turnAt(…, resume=false)` 或本段剩下的站不停、跑完回库 `TripPath.withEnd`）和“指定回库”都只把这列车的路径截短，运用后面几段没有交给任何车，一直没人跑；只有“晚点交给备车”（D5，`chooseHandOver`）才向车厂要备车。
+- 改法 ①：`chooseDispatch` 里清客站改为当前停站或其后的第一站（`time[2] >= stopIndex`），即下令时调度台显示的“下一站”。在这一站能折返的就在这一站折返回库，不能的就本段剩下的站全部不停（`withEnd` 的 `clearOutRail` 为这一站）。
+- 改法 ②：新增 `TrainService.handRestToSpare`：列车离开运用空车回库（调度清客、指定回库，以及预案折返后空车回库 `chooseEarlyTurn` 的 `AFTER_DEADHEAD`）时，像 D5 一样调 `depot.requestTakeover`，从下一段起、找第一段有备车能按时出库且出库路线不经过这列车还要载客跑的轨道的段，车厂按原有的接替机制（`DepotDispatcher.findTakeoverDeploy`）放备车出来。中间赶不上的段、或者一段都接不上时，`tellRestUncovered` 写日志（`SimLog`）并告诉车厂 `Board.noteServicesUncovered`（组件 `DepotBoard.uncoveredServices` 保留最近 64 条），列车的 `getTakeoverState` 显示 3（没有备车）或 4（备车出库要经过受影响区段），接上了显示 2；这个状态只供调度台和报警显示，和 `handOverFailure` 一样不存档。`TickRunner.getDepots()` 供测试读车厂。
+- 测试：`ClearOutTest`（组件模拟器：开往中间站途中下“下一站清客”+“指定回库”，只在中间站开一次门，备车从存车线开出跑下行；去掉出库路线后没有备车，列车状态 3、车厂记下第 1 段起没车跑；改前第一项在下一站和再下一站各开一次门）；组件测试全部 724 项通过（7 项基准跳过，`WholeDayTest` 用 `-Dbenchmark=true` 另跑通过，固定结果不变），common 490 项通过；`DutyRunTest` 清客两项改为列车停在下令时的下一站上选，新增清客/指定回库交给备车、预案折返空车回库交给备车，“指定回库”没有备车时报出来。
+- 日修模拟（`SimulateDay`）不支持调度命令，没有在真实世界上跑。游戏端没有另外的改动（游戏和组件用同一个 `TrainService`），网页调度台卡片还不显示状态 3/4（只在报警列表里显示），以后改网页时补。只改服务端规则，升第三位。
+
 0.84.10 回库车不再把等出库的车连同运用收进车库；等出库许可的车不再被换派下一班（原因：2026-11-15 六线测试 8 号线 20:33–20:43 的班次一班没开，用户同意改运行规则）：
 - 原因一：按运用运行的存车线只留一列停着的车，第二列收进车库（`FleetRules.keepsSecondStanding`）。存车线与正线之间只有一条双向使用的轨道时，下一班运用的车已派出（`deployDuty`，正等出库运行许可），前一列车正沿这条轨道回库；回库那一 tick 两列车都停在存车线里，列表顺序上等出库的车（后生成的）是第二列，于是它连同运用一起被收进车库：组件车库只存车号，运用丢失；游戏 `TrainServer` 带着过期运用进了车库。班次没人开，也没有任何提示。
 - 原因二：拿着到期运用、等出库运行许可的车，`canDeploy()` 仍向车厂报可出库，`DepotDispatcher.findDutyDeploy` 把下一班运用派给它，`TrainService.deployDuty` 覆盖 `dutySlot`，而前一个槽位已记为已开，悄悄丢掉。

@@ -255,6 +255,13 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private int handOverFailure;
 	/**
+	 * Sent back early by a dispatcher or turned back to go back empty, what became of the rest of its duty (0.84.11):
+	 * {@link #TAKEOVER_OK} a spare takes it over, {@link #TAKEOVER_NO_SPARE} or {@link #TAKEOVER_CROSSES} none could,
+	 * which was told; -1 nothing was left or it wasn't sent back. Only what the console and alarms show, so not saved, as
+	 * {@link #handOverFailure}: the depot keeps the spare's request itself.
+	 */
+	private int restHandOver = -1;
+	/**
 	 * A spare is on its way: it may take over, and has.
 	 */
 	public static final int TAKEOVER_OK = 0;
@@ -576,11 +583,15 @@ public class TrainService<T extends PlanTrack> {
 		}
 		final long[][] times = base.stopTimes.getSegmentTimes(segment, dutyRoutes);
 		int lastStopRail = -1;
+		// The stop the dispatcher saw as the train's next one (0.84.11): the one it stands at, the stop it was running to
+		// when told, as the console shows it. This is chosen only at a stop, ready to go, so the stop after that one would be
+		// a stop further: the train stopped with its doors open once more there before running empty (6-line test,
+		// 2026-11-15, line 9)
 		int nextStopRail = -1;
 		for (final long[] time : times) {
 			if (time[0] >= 0) {
 				lastStopRail = (int) time[2];
-				if (nextStopRail < 0 && time[2] > stopIndex) {
+				if (nextStopRail < 0 && time[2] >= stopIndex) {
 					nextStopRail = (int) time[2];
 				}
 			}
@@ -593,6 +604,7 @@ public class TrainService<T extends PlanTrack> {
 			}
 			if (nextStopRail >= 0 && turnAt(transitsim.plan.Contingency.TURN_NEAREST, Collections.emptySet(), false, nextStopRail, stopIndex)) {
 				dispatchFlags &= ~DISPATCH_CLEAR_OUT;
+				handRestToSpare(base, baseKey, segment, nextStopRail, stopIndex);
 				return true;
 			}
 		}
@@ -613,7 +625,60 @@ public class TrainService<T extends PlanTrack> {
 		tripPathKey = newPath.key;
 		stopTimes = newPath.stopTimes;
 		vehicle.changePath(newPath, stopIndex);
+		handRestToSpare(base, baseKey, segment, clearOut && nextStopRail >= 0 ? nextStopRail : lastStopRail, stopIndex);
 		return true;
+	}
+
+	/**
+	 * A train leaving its duty early to go back empty, sent back by a dispatcher or turned back to go back (D6, D4), asks
+	 * the depot for a spare to take the rest of its duty over, as a train told to hand over does (D5): from the next
+	 * segment, or the first later one a spare can get to in time by a way out that doesn't run along where this train still
+	 * runs with riders (0.84.11). No service of the duty may silently not run: the segments no spare takes are told, in the
+	 * log and to the depot, and the train shows it to the console and the alarms ({@link #getTakeoverState}).
+	 *
+	 * @param base      the duty's usual path
+	 * @param segment   the segment the train leaves the duty on
+	 * @param lastRail  the rail of the last stop it runs with riders
+	 * @param stopIndex the stop where it chose
+	 */
+	private void handRestToSpare(TripPath<T> base, String baseKey, int segment, int lastRail, int stopIndex) {
+		final List<DepotDuties.Segment> segments = getDutySegments();
+		if (segment + 1 >= segments.size() || segments.size() != base.dutyStarts.length) {
+			return;
+		}
+		final Set<java.util.UUID> affected = new HashSet<>();
+		final List<java.util.UUID> remaining = new ArrayList<>();
+		for (int i = Math.max(0, stopIndex - 1); i <= lastRail && i < base.path.size(); i++) {
+			remaining.add(base.path.get(i).getTrackKey());
+		}
+		affected.addAll(vehicle.getAffectedRails(remaining));
+		int failure = TAKEOVER_NO_SPARE;
+		for (int next = segment + 1; next < segments.size(); next++) {
+			final long serviceMillis = DutyShapes.getServiceMillis(dutyDayStart, segments.get(next).service);
+			final int result = depot == null ? TAKEOVER_NO_SPARE : depot.requestTakeover(getDutySidingId(), dutySlot, dutyDayStart, next, TripPath.getFromKey(baseKey, next), serviceMillis, affected);
+			if (result == TAKEOVER_OK) {
+				restHandOver = TAKEOVER_OK;
+				if (next > segment + 1) {
+					tellRestUncovered(segment + 1, next, "no spare can get to them in time");
+				}
+				return;
+			}
+			if (result == TAKEOVER_CROSSES) {
+				failure = TAKEOVER_CROSSES;
+			}
+		}
+		restHandOver = failure;
+		tellRestUncovered(segment + 1, segments.size(), failure == TAKEOVER_CROSSES ? "a spare's way out runs where the train still runs" : "no spare in the depot can get to them in time");
+	}
+
+	/**
+	 * Tells the segments of the duty from {@code from} until before {@code until} that no train runs (0.84.11).
+	 */
+	private void tellRestUncovered(int from, int until, String reason) {
+		SimLog.say("A train sent back early leaves services of its duty no train runs: train " + trainId + ", siding " + getDutySidingId() + ", slot " + dutySlot + ", segments " + from + " to " + (until - 1) + " (" + reason + ")");
+		if (depot != null) {
+			depot.noteServicesUncovered(getDutySidingId(), dutySlot, dutyDayStart, from, until, reason);
+		}
 	}
 
 	/**
@@ -637,7 +702,11 @@ public class TrainService<T extends PlanTrack> {
 	 * or {@link #TAKEOVER_CROSSES} if it couldn't when it last tried (D5)
 	 */
 	public int getTakeoverState() {
-		if (TripPath.isEndKey(tripPathKey)) {
+		// Sent back early with the rest of its duty left to a spare, or to none (0.84.11)
+		if (restHandOver == TAKEOVER_NO_SPARE || restHandOver == TAKEOVER_CROSSES) {
+			return restHandOver;
+		}
+		if (TripPath.isEndKey(tripPathKey) || restHandOver == TAKEOVER_OK) {
 			return 2;
 		}
 		return !takeover ? 0 : handOverFailure != 0 ? handOverFailure : 1;
@@ -809,8 +878,15 @@ public class TrainService<T extends PlanTrack> {
 			return false;
 		}
 		turnChosenStop = stopIndex;
+		final String baseKey = TripPath.getSkipBase(tripPathKey);
+		final int segment = dutyIndex;
 		if (turnAt(mode, platforms, resume, -1, stopIndex)) {
 			turnUnreachable = false;
+			// Going back empty after turning, it leaves the rest of its duty to a spare (0.84.11)
+			final TripPath<T> base = resume ? null : getPath(tripPaths, baseKey);
+			if (base != null && base.dutyStarts != null) {
+				handRestToSpare(base, baseKey, segment, tripPath.turnRail, stopIndex);
+			}
 			if (dispatched) {
 				dispatchTurnPlatforms = Collections.emptySet();
 				dispatchFlags &= ~DISPATCH_CLEAR_OUT;
@@ -1119,6 +1195,7 @@ public class TrainService<T extends PlanTrack> {
 			turnBackWayPaths.clear();
 			handOverChosenStop = -1;
 			handOverFailure = 0;
+			restHandOver = -1;
 			dispatchChosenStop = -1;
 			holdUntilMillis = 0;
 			extraDwellMillis = 0;
@@ -3201,6 +3278,16 @@ public class TrainService<T extends PlanTrack> {
 		 */
 		default int requestTakeover(long dutySidingId, int slot, long dayStart, int fromSegment, String fromKey, long serviceMillis, Set<java.util.UUID> affected) {
 			return TAKEOVER_NO_SPARE;
+		}
+
+		/**
+		 * Segments of a duty no train runs, as a train sent back early left them with no spare to take them over (0.84.11):
+		 * told rather than silently not run.
+		 *
+		 * @param fromSegment the first segment not run
+		 * @param untilSegment the segment after the last one not run
+		 */
+		default void noteServicesUncovered(long dutySidingId, int slot, long dayStart, int fromSegment, int untilSegment, String reason) {
 		}
 
 		/**

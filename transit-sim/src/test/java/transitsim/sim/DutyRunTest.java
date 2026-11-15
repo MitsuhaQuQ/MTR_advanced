@@ -1800,13 +1800,20 @@ class DutyRunTest {
 	void clearedOutAtItsNextStopItTurnsBackThereEmptyIfItCan() {
 		final FakeTrain[] train = new FakeTrain[1];
 		final TripPath<TestTrack> tripPath = outAndBack(train);
+		// Told on its way to platform 2, the next stop the console shows: it chooses there, ready to go (0.84.11)
 		train[0].service.dispatch(TrainService.COMMAND_CLEAR_OUT, 0, null);
+		train[0].nextStoppingIndex = 2;
 		assertTrue(train[0].service.chooseDispatch());
-		// At platform 1, its next stop platform 2 has a way round: back from there empty
+		// Platform 2 has a way round: everyone has got off there, and it goes back from there empty, not one stop further
 		assertEquals(TripPath.getTurnKey(tripPath.key, 0, 2, 1, 2, 0, false), train[0].service.getTripPathKey());
+		assertTrue(train[0].service.isClearingOut());
 		train[0].nextStoppingIndex = 3;
 		assertTrue(train[0].service.isOutOfService());
 		assertEquals(0, train[0].service.getDispatchState());
+		// No stop with riders after it: every platform it passes after platform 2 has no stop time
+		for (int i = 3; i < train[0].followed.path.size() - 1; i++) {
+			assertFalse(train[0].followed.path.get(i).getDwellTime() > 0 && train[0].followed.path.get(i).isPlatformTrack(), "a stop at rail " + i);
+		}
 	}
 
 	@Test
@@ -1814,8 +1821,9 @@ class DutyRunTest {
 		@SuppressWarnings("unchecked") final TripPath<TestTrack>[] tripPath = new TripPath[1];
 		final FakeTrain train = fourStops(tripPath);
 		train.service.setPathVariants(TURN_VARIANTS);
-		// At platform 6, the next stop platform 7 has no way round: everyone gets off at 7, then it runs empty past 8 and 9
+		// At platform 7, which has no way round: everyone gets off at 7, then it runs empty past 8 and 9
 		train.service.dispatch(TrainService.COMMAND_CLEAR_OUT, 0, null);
+		train.nextStoppingIndex = 2;
 		assertTrue(train.service.chooseDispatch());
 		assertEquals(TripPath.getEndKey(tripPath[0].key, 0, 4, 2), train.service.getTripPathKey());
 		assertEquals(0, train.followed.path.get(3).getDwellTime());
@@ -1834,8 +1842,45 @@ class DutyRunTest {
 		train[0].service.dispatch(TrainService.COMMAND_RETURN, 0, null);
 		assertTrue(train[0].service.chooseDispatch());
 		assertEquals(TripPath.getEndKey(tripPath.key, 0, 3), train[0].service.getTripPathKey());
-		// No spare is asked for
+		// No train is ready in the depot: route 3 at 08:20 is run by no train, which is told rather than silently left
+		// (0.84.11), and the train shows it
 		assertTrue(depot.dispatcher.takeovers.isEmpty());
+		assertEquals(Collections.singletonList(SIDING_ID + " 0 1 2"), depot.uncovered);
+		assertEquals(TrainService.TAKEOVER_NO_SPARE, train[0].service.getTakeoverState());
+	}
+
+	@Test
+	void sentBackOrClearedOutItLeavesTheRestOfItsDutyToASpare() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		depot.dispatcher.findDutyDeploy(MONDAY + 7 * HOUR, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		now = MONDAY + 8 * HOUR + 1 * MINUTE;
+		// Cleared out at platform 2, it turns back there empty; a spare takes route 3 at 08:20 over (0.84.11)
+		train[0].service.dispatch(TrainService.COMMAND_CLEAR_OUT, 0, null);
+		train[0].service.dispatch(TrainService.COMMAND_RETURN, 0, null);
+		train[0].nextStoppingIndex = 2;
+		assertTrue(train[0].service.chooseDispatch());
+		assertEquals(TripPath.getTurnKey(tripPath.key, 0, 2, 1, 2, 0, false), train[0].service.getTripPathKey());
+		assertEquals(Collections.singletonList(SIDING_ID + " 0 " + MONDAY + " 1"), depot.dispatcher.takeovers);
+		assertTrue(depot.uncovered.isEmpty());
+		assertEquals(2, train[0].service.getTakeoverState());
+		// The spare leaves the siding in time for it
+		final DepotDispatcher.DutyDeploy<TestTrack> deploy = depot.dispatcher.findDutyDeploy(MONDAY + 8 * HOUR + 16 * MINUTE, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		assertNotNull(deploy);
+		assertEquals(1, deploy.startSegment);
+		assertEquals(TripPath.getFromKey(tripPath.key, 1), deploy.path.key);
+	}
+
+	@Test
+	void turnedBackToGoBackEmptyItLeavesTheRestOfItsDutyToASpare() {
+		final FakeTrain[] train = new FakeTrain[1];
+		final TripPath<TestTrack> tripPath = outAndBack(train);
+		depot.dispatcher.findDutyDeploy(MONDAY + 7 * HOUR, Collections.singleton(SIDING_ID), dutiesOfSlots(), sidingId -> sidingId == SIDING_ID ? tripPaths : null, routes::get, sidingId -> sidingId, sidingId -> TURN_VARIANTS);
+		now = MONDAY + 8 * HOUR + 1 * MINUTE;
+		train[0].service.setTurnBack(transitsim.plan.Contingency.TURN_NEAREST, Collections.emptySet(), transitsim.plan.Contingency.AFTER_DEADHEAD);
+		assertTrue(train[0].service.chooseEarlyTurn());
+		assertEquals(TripPath.getTurnKey(tripPath.key, 0, 2, 1, 2, 0, false), train[0].service.getTripPathKey());
+		assertEquals(Collections.singletonList(SIDING_ID + " 0 " + MONDAY + " 1"), depot.dispatcher.takeovers);
 	}
 
 	@Test
@@ -2033,6 +2078,16 @@ class DutyRunTest {
 	private class DutyDepot implements TrainService.Board {
 
 		final DepotDispatcher dispatcher = new DepotDispatcher();
+		/**
+		 * The segments of duties no train runs, as told (0.84.11).
+		 */
+		final List<String> uncovered = new ArrayList<>();
+
+		@Override
+		public void noteServicesUncovered(long dutySidingId, int slot, long dayStart, int fromSegment, int untilSegment, String reason) {
+			uncovered.add(dutySidingId + " " + slot + " " + fromSegment + " " + untilSegment);
+		}
+
 		/**
 		 * The services of the trains on the line, for trains out of order to swap their duties (0.81.0).
 		 */
