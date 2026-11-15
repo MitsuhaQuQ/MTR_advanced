@@ -39,9 +39,12 @@ function turnOf(title: string): Turn {
 
 /** Opens the line's row in the timetable layer's tree, so its routes show */
 async function openLine(page: Page, layout: number) {
-	const row = page.locator("#tree .node[data-line]:not([data-view])").filter({hasText: new RegExp(`^\\W*${layout}号线`)}).first();
+	const rows = page.locator("#tree .node[data-line]:not([data-view])").filter({hasText: new RegExp(`^\\W*${layout}号线`)});
+	const row = rows.first();
 	await expect(row, `line ${layout} in the tree`).toBeVisible({timeout: 20_000});
-	if (await row.getAttribute("aria-expanded") !== "true") await row.click();
+	// Every line of the tree named so: the editor groups routes by name, so 5号线短上行 is under a line 5号线短 of its own
+	// (2026-11-15: only 5号线 opened, its short routes not found)
+	for (let i = 0; i < await rows.count(); i++) if (await rows.nth(i).getAttribute("aria-expanded") !== "true") await rows.nth(i).click();
 	return row;
 }
 

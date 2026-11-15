@@ -16,7 +16,7 @@ const lines = process.env.MTM_FIXTURE_NAME === "lines";
 export const AFTER = ["z-swaps", "z-dispatch", "z-adhoc", "z-console", "z-u429", "z-u224", "z-replan"];
 const lineProjects: PlaywrightTestProject[] = [
 	{name: "setup", testMatch: /\/lines\.spec\.ts$/},
-	{name: "observe", testMatch: /\/(run|z-conflicts|z-depot|z-flows|z-headway|z-logs|z-paths|z-rehearsal|z-terminals)\.spec\.ts$/, dependencies: ["setup"]},
+	{name: "observe", testMatch: /\/(run|z-conflicts|z-depot|z-flows|z-headway|z-logs|z-paths|z-rehearsal|z-terminals|z-u493)\.spec\.ts$/, dependencies: ["setup"]},
 	...AFTER.map(file => ({name: file.slice(2), testMatch: new RegExp(`/${file}\\.spec\\.ts$`), dependencies: ["setup"]})),
 ];
 
