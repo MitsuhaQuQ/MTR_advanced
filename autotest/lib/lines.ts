@@ -1,6 +1,6 @@
 // The six track-layout lines (TestKit's Lines.java, MTM_FIXTURE_NAME=lines): what the fixture built, the server's clock
 // in the timetables' time zone, timetables put in through the timetable screen, and the server's own log.
-import {readFileSync, existsSync} from "fs";
+import {readFileSync, existsSync, openSync, closeSync, unlinkSync} from "fs";
 import {click, fixture, hoverRow, list, server, type, waitFor, waitScreen, widget} from "./game";
 import {addService, closeAll, enableTimetable, openGroupFor, openTimetable, refreshDepotPath, selectService} from "./screens";
 
@@ -174,6 +174,26 @@ export async function samplingOver() {
 	if (!existsSync(`${process.env.MTM_RESULTS || "."}/through-links.json`)) return;
 	const wait = samplingEnd() + 10_000 - Date.now();
 	if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+}
+
+/**
+ * Waits until the sampling is over, then until no other test after it runs (a lock file in the results folder); the
+ * time waited is added to the test's timeout. Returns the release of the lock.
+ */
+export async function afterSampling(testInfo: {timeout: number, setTimeout: (timeout: number) => void}): Promise<() => void> {
+	const started = Date.now();
+	await samplingOver();
+	const lock = `${process.env.MTM_RESULTS || "."}/after-sampling.lock`;
+	for (;;) {
+		try {
+			closeSync(openSync(lock, "wx"));
+			break;
+		} catch {
+			await new Promise(resolve => setTimeout(resolve, 1000));
+		}
+	}
+	testInfo.setTimeout(testInfo.timeout + (Date.now() - started));
+	return () => { try { unlinkSync(lock); } catch { /* gone */ } };
 }
 
 /** Moved to screens.ts, where opening a route's screens uses it too */

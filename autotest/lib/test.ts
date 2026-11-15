@@ -4,6 +4,7 @@
 // and an error in the logs then fails whichever tests were running.
 import {test as base, expect} from "@playwright/test";
 import {client, server, closeAll, chatSince, logsSince, newProblems} from "./game";
+import {afterSampling} from "./lines";
 
 export interface Marks {
 	/** The chat message number before the test; chatSince(marks.chat) gives what the test caused */
@@ -16,13 +17,19 @@ export const test = base.extend<{marks: Marks}>({
 	marks: [async ({}, use, testInfo) => {
 		// The six lines' stages after setup run beside run.spec.ts while it reads the timetable screens
 		const beside = process.env.MTM_FIXTURE_NAME === "lines" && testInfo.project.name !== "setup";
+		// The six lines' tests after the sampling: wait for it, then take their turn (the waiting not counted against them)
+		const release = beside && testInfo.project.name !== "observe" ? await afterSampling(testInfo) : undefined;
 		if (!beside) await closeAll();
 		const marks: Marks = {
 			chat: (await chatSince(Number.MAX_SAFE_INTEGER)).last,
 			clientLog: (await logsSince(client, Number.MAX_SAFE_INTEGER)).last,
 			serverLog: (await logsSince(server, Number.MAX_SAFE_INTEGER)).last,
 		};
-		await use(marks);
+		try {
+			await use(marks);
+		} finally {
+			release?.();
+		}
 		const problems = [
 			...(await newProblems(client, marks.clientLog)).map(e => ({side: "client", ...e})),
 			...(await newProblems(server, marks.serverLog)).map(e => ({side: "server", ...e})),

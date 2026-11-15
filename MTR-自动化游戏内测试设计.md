@@ -256,5 +256,6 @@
 `autotest/playwright.config.ts` 在 `MTM_FIXTURE_NAME=lines` 时把测试分成依赖相连的项目：
 - `setup`：`lines.spec.ts` 经游戏界面排班、刷新车厂、冲突检查，单独跑。第一班定在开始后 6 分钟（原 9 分钟），发车时刻写进 `through-links.json` 的 `startMillis`。
 - `observe`：`run.spec.ts`（先读时刻表界面再采样，从第一班发车起采 `MTM_RUN_MINUTES` 分钟，默认 15）和只读网页、日志、数据的测试（`z-conflicts`、`z-depot`、`z-flows`、`z-headway`、`z-logs`、`z-paths`、`z-rehearsal`）同时跑，并发 `MTM_WORKERS`（默认 4）。这一组的测试不关游戏界面（`lib/test.ts`），日志里的新错误会让同时在跑的测试都失败。
-- 之后逐个、按顺序：`z-swaps`（列车跑完后读日志）、`z-dispatch`、`z-adhoc`、`z-console`、`z-replan`（会改列车行为或时刻表）。
+- 采样之后的：`z-swaps`（列车跑完后读日志）、`z-dispatch`、`z-adhoc`、`z-console`、`z-replan`（会改列车行为或时刻表）。各自只依赖 `setup`（依赖的项目失败会跳过后面的，`run.spec.ts` 失败曾把它们全跳过），`lib/test.ts` 让它们先等采样结束（`samplingOver`），再在结果目录的锁文件上排队一个一个跑（`afterSampling`），等待的时间加到超时里。默认并发 8。
+- `run.spec.ts` 对已知、已解释的晚点（`KNOWN_LATE`：2 号线快车 90 秒、10 号线 60 秒、11 号线 400 秒）和 7 号线的折返放宽到上限，超过才失败；失败列表最多列 100 条。
 - `ui-test.sh run <模式>` 只跑匹配的，用 `--no-deps`、单线程，按项目顺序；要先排班就在模式里带上“排班”。

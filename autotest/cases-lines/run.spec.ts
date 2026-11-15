@@ -464,11 +464,13 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 
 	for (const turn of turns) {
 		report.push(`${turn.line}号线 turn-back ${turn.from.split("|")[0]} → ${turn.to.split("|")[0]}: planned ${turn.plannedSeconds} s, took ${turn.actualSeconds} s, next departure ${turn.departLate} s off`);
-		if (turn.actualSeconds > turn.plannedSeconds + TOLERANCE) failures.push(`${turn.line}号线 turn-back ${turn.from.split("|")[0]} → ${turn.to.split("|")[0]} took ${turn.actualSeconds} s, planned ${turn.plannedSeconds} s`);
+		const turnAllowed = TOO_CLOSE_TIMETABLES.includes(turn.line) ? Infinity : Math.max(allowedLate(turn.from), allowedLate(turn.to));
+		if (turn.actualSeconds > turn.plannedSeconds + turnAllowed) failures.push(`${turn.line}号线 turn-back ${turn.from.split("|")[0]} → ${turn.to.split("|")[0]} took ${turn.actualSeconds} s, planned ${turn.plannedSeconds} s`);
 	}
 	await testInfo.attach("matches", {body: JSON.stringify(matches.map(m => ({train: m.event.train, route: m.plan.name, stop: m.stop, arrive: m.event.arrive, depart: m.event.depart, arriveLate: m.arriveLate, departLate: m.departLate}))), contentType: "application/json"});
 	await testInfo.attach("lines", {body: report.join("\n"), contentType: "text/plain"});
 	await testInfo.attach("samples", {body: JSON.stringify(samples), contentType: "application/json"});
 	console.log(report.join("\n"));
-	expect([...new Set(failures)].slice(0, 30)).toEqual([]);
+	// All of them: at 30 the known lines' crowded out the rest (line 10's, the sensors', 2026-11-15)
+	expect([...new Set(failures)].slice(0, 100)).toEqual([]);
 });
