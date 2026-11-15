@@ -62,6 +62,8 @@ tasks.register("simulateDay", JavaExec) {
 	// -Pmtr.yieldToEarlier=false keeps a dead end's way out booked however long a train waits there (before 0.82.2), to compare
 	systemProperty "mtr.yieldToEarlier", project.findProperty("mtr.yieldToEarlier") ?: "true"
 	systemProperty "mtr.simHours", project.findProperty("mtr.simHours") ?: "24"
+	// -Pmtr.deadEndPlatforms=false runs without a train taking a dead end and its way out with the platform before it, to compare
+	systemProperty "mtr.deadEndPlatforms", project.findProperty("mtr.deadEndPlatforms") ?: "true"
 	// -Pmtr.dutySwap=false runs without trains out of order swapping their duties (0.81.0), to compare
 	systemProperty "mtr.dutySwap", project.findProperty("mtr.dutySwap") ?: "true"
 	// -Pmtr.simRoutes=id,id simulates only those routes' part of the world; -Pmtr.simRoutes=scopes lists its sizes

@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.82.6: two trains using one dead end turn back rail from both platforms of a station no longer lock each other: a train goes onto such a platform only with the dead end and its way out when another train coming into the dead end leaves it over that platform; a train waiting in a dead end lets its way out go only when no train coming into it is near; and the way out asked for with a dead end reaches no further than the first platform after it.
+
 0.82.5: a logical line can no longer be made a connecting line in the editor; a track is opened to every line on the ownership map instead (lines marked before keep the mark and can have it taken off).
 
 0.82.4: depots planning one line together find each other's sidings' ways out and back by the right depot's rules; before, each took the other's sidings for its own, found no way and counted their services as reached by no siding.

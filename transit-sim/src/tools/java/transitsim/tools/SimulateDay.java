@@ -271,7 +271,9 @@ public final class SimulateDay {
 		}
 		// --holds@HH:MM:SS: at that time of the day, what the arbiter granted each train, by the rails of its path (2026-11-15)
 		flags.stream().filter(flag -> flag.startsWith("--holds@")).forEach(flag -> {
-			final long at = LocalDateTime.of(day, java.time.LocalTime.parse(flag.substring("--holds@".length()))).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
+			final long atOnDay = LocalDateTime.of(day, java.time.LocalTime.parse(flag.substring("--holds@".length()))).atZone(ZoneId.of(timeZone)).toInstant().toEpochMilli();
+			// A time before the day starts is the night after, still of this operating day
+			final long at = atOnDay < dayStart ? atOnDay + OperatingDay.MILLIS_PER_DAY : atOnDay;
 			simulator.advanceTo(at);
 			System.out.println("HOLDS at " + clock(at));
 			for (final transitsim.sim.TickRunner<SimDataset.DataTrack>.HeadlessTrain train : simulator.getRunner().getTrains()) {
@@ -296,6 +298,12 @@ public final class SimulateDay {
 					held.append(" | ").append(where);
 				}
 				final int head = train.getHeadRail();
+				final StringBuilder ahead = new StringBuilder();
+				for (int i = Math.max(0, head + 1); i < path.size() && i <= head + 12; i++) {
+					final SimDataset.DataTrack each = path.get(i);
+					ahead.append(" > ").append(pos(each.getStartNode())).append("->").append(pos(each.getEndNode())).append(each.getDwellTime() > 0 ? "*" : "");
+				}
+				System.out.println("HOLDS ahead of train " + train.id + ":" + ahead);
 				System.out.println("HOLDS train " + train.id + " at " + (head >= 0 && head < path.size() ? pos(path.get(head).getStartNode()) + "->" + pos(path.get(head).getEndNode()) : "-") + " speed " + train.getSpeed() + " blocking " + simulator.getRunner().getReservations().isBlockingOthers(train.id) + held);
 			}
 		});

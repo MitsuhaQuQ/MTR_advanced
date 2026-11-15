@@ -234,6 +234,12 @@ public final class TickRunner<T extends RunTrack> {
 	 * dead end lets its way out go for it.
 	 */
 	private static final int YIELD_LOOK_AHEAD_RAILS = 12;
+	/**
+	 * Whether a train goes onto a platform it leaves into a dead end only with the dead end and its way out, when another
+	 * train coming into that dead end leaves it through the platform (2026-11-15, line 11 of the six test lines).
+	 * {@code -Dmtr.deadEndPlatforms=false} runs as before, to compare.
+	 */
+	public static volatile boolean DEAD_END_PLATFORMS = !"false".equals(System.getProperty("mtr.deadEndPlatforms"));
 
 	/**
 	 * Sets the network's early threshold ({@link TrainRules#getCruiseCap}).
@@ -2080,8 +2086,19 @@ public final class TickRunner<T extends RunTrack> {
 				final boolean inDeadEnd = DEAD_END_EXITS && onRoute && atStop && isDeadEndTurn(stop) && !yields;
 				double wholeUntil = Double.NaN;
 				if (DEAD_END_EXITS && onRoute && isDeadEndTurn(targetStop)) {
+					final int deadEnd = targetStop;
 					targetStop = transitsim.run.RunMotion.findStopAfter(this, targetStop);
-					wholeUntil = getStopDistance(targetStop);
+					wholeUntil = wayOutEnd(deadEnd, targetStop);
+				} else if (DEAD_END_EXITS && DEAD_END_PLATFORMS && onRoute && targetStop >= 0 && !isDeadEndTurn(stop)) {
+					// Onto a platform it goes on from into a dead end only with that dead end and its way out, when another
+					// train coming into that dead end leaves it through this platform (2026-11-15, line 11 of the six test
+					// lines: A stood at the up platform for the dead end, its way out over the down platform, where B stood for
+					// the same dead end, its way out over the up platform)
+					final int deadEnd = transitsim.run.RunMotion.findStopAfter(this, targetStop);
+					if (deadEnd > targetStop && isDeadEndTurn(deadEnd) && othersLeaveThrough(path.get(deadEnd).getTrackKey(), head, targetStop)) {
+						targetStop = transitsim.run.RunMotion.findStopAfter(this, deadEnd);
+						wholeUntil = wayOutEnd(deadEnd, targetStop);
+					}
 				}
 				final List<T> claimTracks = path;
 				final List<Double> claimEnds = distances;
@@ -2136,6 +2153,54 @@ public final class TickRunner<T extends RunTrack> {
 		 */
 		private boolean isDeadEndTurn(int stop) {
 			return stop >= 0 && stop + 1 < path.size() && path.get(stop).isOppositeOf(path.get(stop + 1)) && !path.get(stop).isPlatformTrack();
+		}
+
+		/**
+		 * @return how far the way out of a dead end is asked for with it: to the next stop, though no further than the first
+		 * platform on the way, where the train stands clear of the dead end's switches (2026-11-15, line 11: a train turning
+		 * in 一站's tail ran on without stopping to 三站, and asking for all of that at once, it waited at 三站's other
+		 * platform for the one a train for the dead end there stood at, whose way out was its own platform)
+		 */
+		private double wayOutEnd(int deadEnd, int nextStop) {
+			final double stopDistance = getStopDistance(nextStop);
+			if (!DEAD_END_PLATFORMS) {
+				return stopDistance;
+			}
+			for (int i = deadEnd + 2; i < nextStop && i < distances.size(); i++) {
+				if (path.get(i).isPlatformTrack()) {
+					return Math.min(stopDistance, distances.get(i));
+				}
+			}
+			return stopDistance;
+		}
+
+		/**
+		 * @return whether another train coming into this dead end soon leaves it over a rail of this train's path from its
+		 * head to the stop before the dead end: each would stand where the other's way out goes (line 11, 2026-11-15)
+		 */
+		private boolean othersLeaveThrough(UUID deadEnd, double head, int platformStop) {
+			final Set<UUID> mine = new HashSet<>();
+			for (int i = Math.max(0, MotionConstants.findIndex(this, head, true)); i <= platformStop && i < path.size(); i++) {
+				mine.add(path.get(i).getTrackKey());
+			}
+			for (final HeadlessTrain other : trainsById.values()) {
+				if (other == this || !other.onRoute) {
+					continue;
+				}
+				final int from = Math.max(0, other.getHeadRail());
+				for (int i = from; i < other.path.size() && i < from + YIELD_LOOK_AHEAD_RAILS; i++) {
+					if (other.path.get(i).getTrackKey().equals(deadEnd) && other.isDeadEndTurn(i)) {
+						final int out = transitsim.run.RunMotion.findStopAfter(other, i);
+						for (int j = i + 1; j <= out && j < other.path.size(); j++) {
+							if (mine.contains(other.path.get(j).getTrackKey())) {
+								return true;
+							}
+						}
+						break;
+					}
+				}
+			}
+			return false;
 		}
 
 		private void writePositions() {
@@ -2663,12 +2728,18 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			// None of them coming soon after onto rails this train stands on, as one stopping at the platform first to turn back
 			// over the switch this train's tail is on: letting the way out go for it, each would wait for the other (line 11
-			// of the six test lines, item A, 2026-11-15)
+			// of the six test lines, item A, 2026-11-15). Nor any other train: the way out let go is free for any, and one
+			// coming into this dead end took it while this one waited for an earlier train still in the depot (line 11 again,
+			// later that day)
 			final Set<UUID> standingOn = reservations.getOccupied(id);
 			for (final long trainId : earlier) {
-				final HeadlessTrain other = trainsById.get(trainId);
-				if (other == null) {
+				if (trainsById.get(trainId) == null) {
 					return false;
+				}
+			}
+			for (final HeadlessTrain other : trainsById.values()) {
+				if (other == this || !other.onRoute && !earlier.contains(other.id)) {
+					continue;
 				}
 				final int from = Math.max(0, other.getHeadRail());
 				for (int i = from; i < other.path.size() && i < from + YIELD_LOOK_AHEAD_RAILS; i++) {

@@ -45,6 +45,9 @@
 - `MAX_STANDING_TICKS = 12000`（private）：静止列车最多被放置不管这么久（10 分钟）后重新计算。
 - `RUN_LAYER`（public static volatile boolean）：非缆车列车是否由运行层（解耦文档 5.5，`RunMotion` + `Authority`）而非沿用 MTR 的规则运行；系统属性 `mtr.runLayer=false` 关闭。
 - `DEAD_END_EXITS`（public static volatile boolean，0.80.0）：列车进站台以外的掉头处（尽头折返线）时，是否连同掉头后到下一停站的进路一起申请（整组批准）、并在里面等候时一直持有出来的进路（`MTR-待验证.md` 的 A：六线图 8 号线两车经同一条尽头折返线换端互等）。`runLayerTick` 里：下一个目标停站是 `isDeadEndTurn` 时目标延伸到其后一站并传 `wholeUntil`；停在这种掉头处时不因等发车而放掉前方。系统属性 `mtr.deadEndExits=false` 关闭，用于对比。0.82.2：在里面等的车 `yieldsToEarlier` 时不再持有出口（不算 `inDeadEnd`，目标退回车头），等那列计划更早的车过去再申请；`YIELD_TO_EARLIER`（系统属性 `mtr.yieldToEarlier=false` 关闭，对比用）。
+- `DEAD_END_PLATFORMS`（public static volatile boolean，0.82.6）：下一站是站台、再下一站是尽头掉头，且另一列要进这条尽头线的车出口经过本车到站台为止的轨道时，站台、尽头线和出口作一组整申请（六线图 11 号线：A 停在东行站台等进折返线、出口经西行站台，B 停在西行站台等进同一条折返线、出口经东行站台）；同时尽头线连同出口申请时出口只到掉头后第一个站台（`wayOutEnd`）。系统属性 `mtr.deadEndPlatforms=false` 关闭，用于对比。
+- `wayOutEnd(int deadEnd, int nextStop)`（列车内部类，private，0.82.6）：尽头线出口整申请到哪里——下一停站，但不超过掉头后第一个站台轨道的终点。
+- `othersLeaveThrough(UUID deadEnd, double head, int platformStop)`（列车内部类，private，0.82.6）：别的在线列车前方 12 条轨道里进这条尽头线（且在那里掉头），它从尽头线到下一停站的出口经过本车车头到站台为止的某条轨道。
 - `isDeadEndTurn(int stop)`（列车内部类，private）：路径在这个停站处掉头（下一轨道是它的反向）且这条轨道不是站台。
 
 ### `void setEarlyThresholdMillis(long earlyThresholdMillis)`
@@ -461,7 +464,7 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 ### `TrainRules.Train` 实现
 - `long getMillis()`：运行器时刻。
 - `boolean isBlockingOthers()`：`reservations.isBlockingOthers(id)`。
-- `boolean yieldsToEarlier()`（0.82.2）：`YIELD_TO_EARLIER` 开、在折返线上还没到离开时刻、`reservations.getBlockedEarlier(id, 离开时刻, {这条尽头线})` 非空，且其中每列车前方 `YIELD_LOOK_AHEAD_RAILS`（12）条轨道里都没有这条尽头线、也没有本车正压着的轨道（`reservations.getOccupied`；否则就是 A 的互等：六线图 11 号线车尾压着道岔，对方停完站台要从道岔回头）。
+- `boolean yieldsToEarlier()`（0.82.2）：`YIELD_TO_EARLIER` 开、在折返线上还没到离开时刻、`reservations.getBlockedEarlier(id, 离开时刻, {这条尽头线})` 非空，且其中每列车前方 `YIELD_LOOK_AHEAD_RAILS`（12）条轨道里都没有这条尽头线、也没有本车正压着的轨道（`reservations.getOccupied`；否则就是 A 的互等：六线图 11 号线车尾压着道岔，对方停完站台要从道岔回头）。0.82.6：不只看那些计划更早的车，所有在线列车（加上那些还在车厂的更早的车）前方 12 条轨道里有进这条尽头线或压着本车轨道的，都不让——让出的出口谁都能拿，11 号线另一列要进这条尽头线的车拿走了出口站台而死锁。
 - `long getEarlyThresholdMillis()`：运行器的早到阈值。
 - `TrainService<?> getService()`、`MotionState getState()`（自身）、`MotionTrack getTrack()`（自身）。
 - `long getStopId(int rail)`、`boolean isContinuousMovement()`（恒 false）、`boolean usesSpeedCurve()`。
