@@ -13,10 +13,10 @@ const results = process.env.MTM_RESULTS || "test-results";
 const lines = process.env.MTM_FIXTURE_NAME === "lines";
 
 /** The six lines' tests run after the sampling, one at a time (lib/test.ts) */
-export const AFTER = ["z-swaps", "z-dispatch", "z-adhoc", "z-console", "z-replan"];
+export const AFTER = ["z-swaps", "z-dispatch", "z-adhoc", "z-console", "z-u429", "z-u224", "z-replan"];
 const lineProjects: PlaywrightTestProject[] = [
 	{name: "setup", testMatch: /\/lines\.spec\.ts$/},
-	{name: "observe", testMatch: /\/(run|z-conflicts|z-depot|z-flows|z-headway|z-logs|z-paths|z-rehearsal)\.spec\.ts$/, dependencies: ["setup"]},
+	{name: "observe", testMatch: /\/(run|z-conflicts|z-depot|z-flows|z-headway|z-logs|z-paths|z-rehearsal|z-terminals)\.spec\.ts$/, dependencies: ["setup"]},
 	...AFTER.map(file => ({name: file.slice(2), testMatch: new RegExp(`/${file}\\.spec\\.ts$`), dependencies: ["setup"]})),
 ];
 
