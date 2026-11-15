@@ -10,7 +10,8 @@ import {clock, label, later, lines, serverLog} from "../lib/lines";
 import {addService, closeAll, openTimetable} from "../lib/screens";
 
 test("U82 U102 改时刻表后很快重排，不改时不重来 @lines @U82 @U102", async ({}, testInfo) => {
-	test.setTimeout(5 * 60_000);
+	// On top of the time waited for the sampling (lib/test.ts set the timeout to include it)
+	test.setTimeout(test.info().timeout + 3 * 60_000);
 	const quiet = serverLog().length;
 	await sleep(60_000);
 	const restarts = serverLog().slice(quiet).split("\n").filter(line => line.includes("starts again from the game's trains"));

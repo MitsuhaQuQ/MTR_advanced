@@ -18,7 +18,8 @@ const atPlatform = (line: Line, train: TrainSample) => (line.stationX || [0, 200
 const PREFERRED = [3, 5, 6, 10, 9, 8, 2];
 
 test("调度台：卡片、筛选、延长停站、扣停放行、清客回库、撤销 @lines @U270 @U491 @U271 @U272 @U402", async ({page}, testInfo) => {
-	test.setTimeout(15 * 60_000);
+	// On top of the time waited for the sampling (lib/test.ts set the timeout to include it)
+	test.setTimeout(test.info().timeout + 13 * 60_000);
 	const {errors} = await openNextEditor(page, "dispatch");
 	const cards = page.locator("li[data-console-card]");
 	await expect(cards.first(), "a card for a train").toBeVisible({timeout: 30_000});
