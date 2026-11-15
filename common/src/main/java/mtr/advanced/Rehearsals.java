@@ -87,7 +87,8 @@ public final class Rehearsals implements IPacket {
 			return;
 		}
 		final Set<Long> routes = new TreeSet<>(depot.routeIds);
-		if (depot.duties.isEmpty() || routes.isEmpty()) {
+		// Duties planned by the game from the timetables leave the depot's own list empty: those are rehearsed too
+		if (routes.isEmpty()) {
 			state.ranSignature = signature;
 			if (!depot.rehearsal.isEmpty()) {
 				depot.rehearsal = Collections.emptyList();
@@ -124,10 +125,10 @@ public final class Rehearsals implements IPacket {
 					System.out.println("Minecraft Transit Railway: the rehearsal of depot " + depot.id + " didn't finish in time");
 					return;
 				}
+				System.out.println("Minecraft Transit Railway: the rehearsal of depot " + depot.id + " gives " + result.size() + " warnings");
 				if (!result.equals(depot.rehearsal)) {
 					depot.rehearsal = result;
 					sendS2C(world, depot.id, result);
-					System.out.println("Minecraft Transit Railway: the rehearsal of depot " + depot.id + " gives " + result.size() + " warnings");
 				}
 			});
 		});

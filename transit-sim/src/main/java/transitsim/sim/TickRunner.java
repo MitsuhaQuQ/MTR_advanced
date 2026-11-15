@@ -2752,21 +2752,39 @@ public final class TickRunner<T extends RunTrack> {
 			// coming into this dead end took it while this one waited for an earlier train still in the depot (line 11 again,
 			// later that day)
 			final Set<UUID> standingOn = reservations.getOccupied(id);
-			for (final long trainId : earlier) {
-				if (trainsById.get(trainId) == null) {
-					return false;
-				}
+			// The rails of its way out, let go when it yields
+			final Set<UUID> wayOut = new HashSet<>();
+			for (int i = stop + 1; i <= transitsim.run.RunMotion.findStopAfter(this, stop) && i < path.size(); i++) {
+				wayOut.add(path.get(i).getTrackKey());
 			}
 			for (final HeadlessTrain other : trainsById.values()) {
-				if (other == this || !other.onRoute && !earlier.contains(other.id)) {
+				if (other == this) {
 					continue;
 				}
+				final boolean isEarlier = earlier.contains(other.id);
+				if (!isEarlier && !other.onRoute) {
+					continue;
+				}
+				boolean intoDeadEnd = false;
+				boolean ontoWayOut = false;
 				final int from = Math.max(0, other.getHeadRail());
 				for (int i = from; i < other.path.size() && i < from + YIELD_LOOK_AHEAD_RAILS; i++) {
 					final UUID rail = other.path.get(i).getTrackKey();
 					if (rail.equals(deadEnd) || standingOn.contains(rail)) {
-						return false;
+						intoDeadEnd = true;
+					} else if (!intoDeadEnd && wayOut.contains(rail)) {
+						ontoWayOut = true;
 					}
+				}
+				// An earlier train coming into this dead end, or any other coming in over the way out let go, which it would
+				// take and stand on (line 11); one coming in its own way waits as before (6号线's short trains, 2026-11-15)
+				if (isEarlier ? intoDeadEnd : intoDeadEnd && ontoWayOut) {
+					return false;
+				}
+			}
+			for (final long trainId : earlier) {
+				if (trainsById.get(trainId) == null) {
+					return false;
 				}
 			}
 			return true;
