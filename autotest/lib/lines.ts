@@ -181,7 +181,9 @@ export async function samplingOver() {
  * time waited is added to the test's timeout. Returns the release of the lock.
  */
 export async function afterSampling(testInfo: {timeout: number, setTimeout: (timeout: number) => void}): Promise<() => void> {
-	const started = Date.now();
+	const started = Date.now(), original = testInfo.timeout;
+	// No timeout while waiting (0 is none): the wait is set up in the fixture, inside the test's time
+	testInfo.setTimeout(0);
 	await samplingOver();
 	const lock = `${process.env.MTM_RESULTS || "."}/after-sampling.lock`;
 	for (;;) {
@@ -192,7 +194,7 @@ export async function afterSampling(testInfo: {timeout: number, setTimeout: (tim
 			await new Promise(resolve => setTimeout(resolve, 1000));
 		}
 	}
-	testInfo.setTimeout(testInfo.timeout + (Date.now() - started));
+	testInfo.setTimeout(original + (Date.now() - started));
 	return () => { try { unlinkSync(lock); } catch { /* gone */ } };
 }
 
