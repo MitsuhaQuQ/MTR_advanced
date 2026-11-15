@@ -516,7 +516,8 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 			for (const c of counted) {
 				const pulse = before(c);
 				if (takes(c.kind)) {
-					if (pulse === undefined) failures.push(`${name}: no pulse before the ${c.kind} train ${String(c.train).slice(-4)} at ${hhmmss(c.millis)}`);
+					// Reported only (user, 2026-11-15: the sensors fire every time in their own world; looked into if that changes)
+					if (pulse === undefined) report.push(`${name}: no pulse before the ${c.kind} train ${String(c.train).slice(-4)} at ${hhmmss(c.millis)}`);
 					else offsets.push(`${c.kind} ${Math.round((c.millis - pulse) / 1000)} s`);
 				} else if (pulse !== undefined && !counted.some(other => other !== c && takes(other.kind) && before(other) === pulse)) {
 					failures.push(`${name}: pulsed for the ${c.kind} train ${String(c.train).slice(-4)} at ${hhmmss(c.millis)}, which it isn't set for`);
