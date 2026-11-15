@@ -15,7 +15,7 @@
 - `isObject(value)`：非空对象判断。
 - `orderDepotName(model, order)`：出/回库指令的车厂名，`"0"` 或找不到时"自动选的车厂"。
 - `poolFleetText(fleet, sum)`：车辆池配属说明：`fleet` 为空时按存车线相加（`sum < 0` 为按需要），负数为按需要，否则 N 列。
-- `stopPositionText(position)`：停车位置：0 停在出站端，负数按车长居中，正数离出站端 N 格。
+- `stopPositionText(position)`：停车位置：0 停在出站端，-2 车尾对齐进站端（0.84.6），其它负数按车长居中，正数离出站端 N 格。
 - `topologyOf(model)`：`model.topology`，缺省 `{platforms:[], stations:[]}`。
 - `logicalLinesShown(model, draft)`：游戏中的逻辑线路叠加草稿中 `networkSettings.logicalLines` 的增删改后的 `Map<id, line>`。
 - `systemTitle(model, system)`：路网标题（同 `format.systemTitle`）。

@@ -37,7 +37,7 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	/**
 	 * The stop positions the button goes through (round 4): the exit end, centred, then blocks short of the exit end.
 	 */
-	private static final int[] STOP_POSITIONS = {transitsim.plan.StopPositions.EXIT_END, transitsim.plan.StopPositions.CENTRED, 2, 5, 10, 20};
+	private static final int[] STOP_POSITIONS = {transitsim.plan.StopPositions.EXIT_END, transitsim.plan.StopPositions.CENTRED, transitsim.plan.StopPositions.TAIL_AT_ENTRY_END, 2, 5, 10, 20};
 	private long selectedStationId;
 	private boolean timetableBoundary;
 	private boolean passingTrack;
@@ -149,7 +149,7 @@ public class PlatformScreen extends SavedRailScreenBase<Platform> {
 	}
 
 	private void updateStopPositionButton() {
-		buttonStopPosition.setMessage(stopPosition == transitsim.plan.StopPositions.EXIT_END ? Text.translatable("gui.mtr.platform_stop_exit_end") : stopPosition == transitsim.plan.StopPositions.CENTRED ? Text.translatable("gui.mtr.platform_stop_centred") : Text.translatable("gui.mtr.platform_stop_blocks", stopPosition));
+		buttonStopPosition.setMessage(stopPosition == transitsim.plan.StopPositions.EXIT_END ? Text.translatable("gui.mtr.platform_stop_exit_end") : stopPosition == transitsim.plan.StopPositions.CENTRED ? Text.translatable("gui.mtr.platform_stop_centred") : stopPosition == transitsim.plan.StopPositions.TAIL_AT_ENTRY_END ? Text.translatable("gui.mtr.platform_stop_tail_at_entry_end") : Text.translatable("gui.mtr.platform_stop_blocks", stopPosition));
 	}
 
 	private void updateStationButton() {

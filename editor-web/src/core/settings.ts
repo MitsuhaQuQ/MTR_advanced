@@ -169,7 +169,8 @@ export function setPlatformSetting(draft: Draft, part: PlatformPart, p: any, val
   else draft[part][p.id] = value
 }
 export const PASS_SPEEDS = [80, 100, 120, 160, 200, 300]
-export const STOP_POSITIONS = [0, -1, 2, 5, 10, 20]
+/** 0 the exit end, -1 centred, -2 the tail at the entry end (0.84.6), more blocks short of the exit end */
+export const STOP_POSITIONS = [0, -1, -2, 2, 5, 10, 20]
 
 /** A depot's rules and named deadhead paths as drafted, or as the game has them (a copy) */
 export function rulesOf(draft: Draft, depot: any) {

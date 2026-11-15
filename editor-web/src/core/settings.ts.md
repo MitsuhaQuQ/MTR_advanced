@@ -6,7 +6,7 @@
 - `LogicalLine`：`{ id, name, color（RGB 整数）, connecting?（联络线） }`。
 - `PLATFORM_PARTS`：站台三项设置及游戏中的值：`platformSpeeds`（`passSpeed`，缺省 80 km/h）、`platformStops`（`stopPosition`，缺省 0）、`platformStations`（`stationSet`，缺省 `"0"` 自动）。`PlatformPart` 为其键。
 - `PASS_SPEEDS = [80, 100, 120, 160, 200, 300]`：过站限速可选值（km/h）。调用者：`legacy/retired.ts:229`。
-- `STOP_POSITIONS = [0, -1, 2, 5, 10, 20]`：停车位置可选值（0 出站端、-1 按车长居中、正数离出站端格数）。调用者：`legacy/retired.ts:230`。
+- `STOP_POSITIONS = [0, -1, -2, 2, 5, 10, 20]`：停车位置可选值（0 出站端、-1 按车长居中、-2 车尾对齐进站端（0.84.6）、正数离出站端格数）。调用者：`legacy/retired.ts:230`。
 
 ## 函数
 - `draftSettings(draft)`：草稿全网设置或 `{}`。`savedSettings(data)`：游戏全网设置或 `{}`。调用者：`legacy/retired.ts:201`、`legacy/retired.ts:202`。

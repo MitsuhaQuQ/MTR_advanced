@@ -24,7 +24,14 @@
 - 作用：列车在停站点折返时车头前移的距离：车头移到原车尾位置、并在反向轨道上，等于车长加两倍该站停车偏移（优化第 4 轮）。
 - 参数：`track` 路径；`stop` 停站轨道下标（越界时偏移按 0）；`trainLength` 车长（方块）。
 - 返回：前移距离（方块）。副作用：无。
-- 主要调用者：`TrainServer.java:349`、`TickRunner.java:2943`。
+- 主要调用者：`getReversalProgress`。
+
+### `static double getReversalProgress(MotionTrack track, int stop, double railProgress, double trainLength)`（0.84.6）
+- 作用：折返后车头位置 = 进度 + `getReversalAdvance`；若此时已站在折返后那条轨道的停站点上（`standsAtStopAfterReversal`，站前折返原地停车），精确取 `getStopDistance(stop + 1)`，避免浮点误差。
+- 主要调用者：`TrainServer.startUp`、`TickRunner.HeadlessTrain.startUp`。
+
+### `static boolean standsAtStopAfterReversal(MotionTrack track, int stop, double railProgress)`（0.84.6）
+- 作用：在 `stop` 折返后，列车是否已站在下一条（反向）轨道的停站点：两条都有停站时间、互为反向、位置与停站点相差 ≤ 1E-6。两个宿主的 `startUp` 据此让列车速度为 0、下一停站为 `stop + 1`，原地再停一次。
 
 ### `static int findIndex(MotionTrack track, double tempRailProgress, boolean roundDown)`
 - 作用：二分查找第一条"终点距离 > 进度"的轨道（`roundDown` 为真时"≥"也算，即进度恰在轨道终点时归入该轨道）；路径上距离单调不减。找不到时返回最后一条轨道下标。

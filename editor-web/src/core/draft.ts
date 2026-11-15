@@ -432,7 +432,7 @@ const poolFleetText = (fleet: any, sum: number) => {
   if (fleet === null || fleet === undefined) return sum < 0 ? tr("配属按需要（存车线相加）") : tr("配属 {0} 列（存车线相加）", sum)
   return fleet < 0 ? tr("配属按需要") : tr("配属 {0} 列", fleet)
 }
-const stopPositionText = (position: number) => (position === 0 ? tr("停在出站端") : position < 0 ? tr("按车长居中停车") : tr("离出站端 {0} 格停车", position))
+const stopPositionText = (position: number) => (position === 0 ? tr("停在出站端") : position === -2 ? tr("车尾对齐进站端") : position < 0 ? tr("按车长居中停车") : tr("离出站端 {0} 格停车", position))
 
 const topologyOf = (model: Model) => model.topology || { platforms: [], stations: [] }
 export const platformText = (model: Model, platformId: string) => {

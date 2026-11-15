@@ -1196,6 +1196,7 @@ const I18N = (() => {
 			"站台 {0} 停车位置": "Where trains stop at platform {0}",
 			"停在出站端": "At the exit end",
 			"按车长居中停车": "Centred",
+			"车尾对齐进站端": "Tail at the entry end",
 			"离出站端 {0} 格停车": "{0} blocks short of the exit end",
 			"加速": "acceleration",
 			"减速": "deceleration",

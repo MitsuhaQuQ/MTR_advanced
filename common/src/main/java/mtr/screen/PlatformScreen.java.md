@@ -10,7 +10,7 @@
 - `buttonBoundary`、`timetableBoundary`：时刻表分界（服务可在线路中途加入或离开，见 `TimetableBoundaries`）。
 - `buttonTrackType`、`passingTrack`：正线/侧线；`workedOutTrack`：按线路推算出的方向与种类（`ClientStationTracks.compute()`，与网页编辑器显示一致）。
 - `buttonPassSpeed`、`passSpeed`（km/h），循环 `PASS_SPEEDS = {80, 100, 120, 160, 200, 300}`（第 3b 轮）。
-- `buttonStopPosition`、`stopPosition`，循环 `STOP_POSITIONS = {出口端 EXIT_END, 居中 CENTRED, 2, 5, 10, 20}`（数字为距出口端的方块数，第 4 轮）。
+- `buttonStopPosition`、`stopPosition`，循环 `STOP_POSITIONS = {出口端 EXIT_END, 居中 CENTRED, 车尾对齐进站端 TAIL_AT_ENTRY_END, 2, 5, 10, 20}`（数字为距出口端的方块数，第 4 轮；-2 为 0.84.6 新增，文字键 `gui.mtr.platform_stop_tail_at_entry_end`）。
 - `firstVisibleRow`、`rowRoutes`、`rowIndices`：线路一览（一条线路多次经过时有多行）及滚动位置。
 - `DWELL_TIME_TEXT`、`ROW_HEIGHT`。
 

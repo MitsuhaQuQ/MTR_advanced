@@ -36,7 +36,7 @@
 - `staysOnLine`：运用路径在末站结束、列车在线上过夜。
 
 ### `public double getStopDistance(int rail, double trainLength)`
-- 返回值：车头在该轨道末端停站时的位置 = 累计距离 − 停车偏移（有停站时，第 4 轮）。
+- 返回值：车头在该轨道末端停站时的位置 = 累计距离 − 停车偏移（有停站时，第 4 轮；偏移沿路径取 `StopPositions.getOffset(path, rail, trainLength)`，0.84.6）。
 - 主要调用者：main 代码中 grep 未见直接调用（同名的单参数版本是 `transitsim.motion.MotionTrack.getStopDistance(int)`，不是本方法）；是否仍在使用未确定。
 
 ### `public long getBackMillis()`

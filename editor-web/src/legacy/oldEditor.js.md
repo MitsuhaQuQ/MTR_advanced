@@ -221,7 +221,7 @@
 - `addBeside`（L2197，函数）：在某车次旁新建一班（时刻由 `TimetableBatch.besideTime` 算出）。
 - `nextServiceItems`（L2214，函数）：设定"接下一班"的菜单项：到达后从同站出发的车次（同站台优先，最近 8 个），已被别的车次接的注明。
 - `stationNameOf`（L2236，函数）：车站名，`"0"` 为自动选择说明。 新页面调用：`editor-web/src/legacy/retired.ts:244`、`editor-web/src/views/DepotPanel.tsx:243` 等 3 处（经 `legacy.fn`）。
-- `stopPositionText`（L2243，函数）：站台停车位置文字（第 4 轮）。 新页面调用：`editor-web/src/legacy/retired.ts:230`（经 `legacy.fn`）。
+- `stopPositionText`（L2243，函数）：站台停车位置文字（第 4 轮；-2 为“车尾对齐进站端”，0.84.6）。 新页面调用：`editor-web/src/legacy/retired.ts:230`（经 `legacy.fn`）。
 - `cellMenu`（L2247，函数）：汇总时刻表单元格/表头右键菜单：接下一班、调整/删除/停运/恢复选中班次、在左/右新建一列、删除这一班、清除例外、同步时刻改动到之后或选中的班次、清除直通、批量新建直通、把时刻改成整表的/恢复按表、出车车厂/取消出车/取消回送/出库改回首站接入、站台归属车站/过站限速/停车位置等。 新页面调用：`editor-web/src/views/SummaryTable.tsx:164`（经 `legacy.fn`）。
 
 ## Loops

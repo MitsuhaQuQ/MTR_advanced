@@ -62,6 +62,10 @@ public final class SpeedCurves {
 				// tail was (round 4); with no offset these are the end of the rail and a train's length on
 				final double offset = track.isStop(i) ? track.getStopOffset(i) : 0;
 				final double stopAt = ends[i] - offset;
+				// A train turning back on a platform stops again where it stands (0.84.6): a run of no length
+				if (Math.abs(runStart - stopAt) <= 1E-6) {
+					runStart = stopAt;
+				}
 				specs.add(new double[]{runStart, Math.max(runStart, stopAt), i});
 				runStart = i + 1 < count && track.reversesAfter(i) ? ends[i] + offset + trainLength : stopAt;
 			}

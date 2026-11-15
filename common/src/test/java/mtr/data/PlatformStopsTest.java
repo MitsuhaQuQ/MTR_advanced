@@ -128,6 +128,66 @@ class PlatformStopsTest {
 		}
 	}
 
+	@Test
+	void theTailAtTheEntryEndIsSavedSentAndUpdated() throws IOException {
+		final Platform platform = new Platform(7, TransportMode.TRAIN, pos(0), pos(200));
+		final List<FriendlyByteBuf> sent = new ArrayList<>();
+		platform.setStopPosition(StopPositions.TAIL_AT_ENTRY_END, sent::add);
+		assertEquals(StopPositions.TAIL_AT_ENTRY_END, platform.stopPosition);
+
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(platform.messagePackLength());
+		platform.toMessagePack(packer);
+		packer.close();
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
+		assertEquals(StopPositions.TAIL_AT_ENTRY_END, new Platform(map).stopPosition);
+
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		platform.writePacket(packet);
+		assertEquals(StopPositions.TAIL_AT_ENTRY_END, new Platform(packet).stopPosition);
+
+		final Platform updated = new Platform(7, TransportMode.TRAIN, pos(0), pos(200));
+		final FriendlyByteBuf update = sent.get(0);
+		update.readLong();
+		update.readUtf();
+		updated.update(update.readUtf(), update);
+		assertEquals(StopPositions.TAIL_AT_ENTRY_END, updated.stopPosition);
+
+		// The 60 long train with its tail at the entry end of the 200 long platform
+		setAll(StopPositions.TAIL_AT_ENTRY_END);
+		assertEquals(140, path().get(2).getStopOffset(60), 1E-9);
+	}
+
+	@Test
+	void aFrontTurnBackStopsAgainWhereTheTrainStands() {
+		// Stopping at the platform, then back along it with a stop again (front turn back, 0.84.6), then back along the
+		// track before it
+		final List<PathData> path = new ArrayList<>(path().subList(0, 3));
+		path.add(pathData(300, 100, RailType.PLATFORM, FIRST.id, 20));
+		path.add(pathData(100, 0, RailType.IRON, 0, 20));
+		for (final int setting : new int[]{StopPositions.EXIT_END, StopPositions.CENTRED, StopPositions.TAIL_AT_ENTRY_END, 10}) {
+			setAll(setting);
+			final double arriving = StopPositions.getOffset(setting, 200, 60);
+			// Coming in as the platform has it; going back, the head where the tail was
+			assertEquals(arriving, StopPositions.getOffset(path, 2, 60), 1E-9);
+			assertEquals(140 - arriving, StopPositions.getOffset(path, 3, 60), 1E-9);
+			for (final boolean useSpeedCurve : new boolean[]{true, false}) {
+				final PathTiming.Vehicle vehicle = new PathTiming.Vehicle(100, 6, 10, 0.01F, 0.02F, useSpeedCurve, TransportMode.TRAIN);
+				final List<transitsim.plan.TimeSegment> segments = new ArrayList<>();
+				final StopTimes stopTimes = new StopTimes();
+				PathTiming.generateTimeSegments(vehicle, path, segments, new HashMap<>(), stopTimes, 0, 0);
+				// The platform ends 400 along the path: the train stops short of it by the setting, turns back to where the
+				// tail was, and sets off from there, without moving in between
+				final String message = setting + " " + useSpeedCurve;
+				final double stoppedAt = segments.stream().mapToDouble(segment -> segment.endRailProgress).filter(end -> end <= 400).max().orElse(0);
+				final double setOff = segments.stream().mapToDouble(segment -> segment.startRailProgress).filter(start -> start > 400).min().orElse(0);
+				assertEquals(400 - arriving, stoppedAt, 1E-6, message);
+				assertEquals(400 + arriving + 60, setOff, 1E-6, message);
+				assertEquals(0, stopTimes.getRunMillis(2, 3), message);
+			}
+		}
+	}
+
 	private static void setAll(int setting) {
 		FIRST.stopPosition = setting;
 		SECOND.stopPosition = setting;

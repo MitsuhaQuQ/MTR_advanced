@@ -221,6 +221,7 @@
   "gui.mtr.platform_pass_speed": "过站限速 %s km/h",
   "gui.mtr.platform_stop_exit_end": "停在出站端",
   "gui.mtr.platform_stop_centred": "按车长居中停车",
+  "gui.mtr.platform_stop_tail_at_entry_end": "车尾对齐进站端",
   "gui.mtr.platform_stop_blocks": "离出站端 %s 格停车",
   "gui.mtr.path_failure_cycle_back": "刷新失败：列车不回车厂，要从最后一条线路的终点 %s 开回第一条线路的起点 %s，找不到路。用轨道把这两个站台接起来，或者让两条线路在同一个站台折返",
   "gui.mtr.path_failure_no_route": "刷新失败：按行进方向走不通",

@@ -35,11 +35,12 @@ public final class TrackViews {
 	}
 
 	/**
-	 * @param trainLength the length of the train, which platforms' stop positions depend on (round 4)
+	 * @param trainLength the length of the train, which platforms' stop positions depend on (round 4), taken along the
+	 *                    path so a train turning back on a platform stops where it stands (0.84.6)
 	 */
 	public static TrackView of(List<PathData> path, TransportMode transportMode, float maxSpeed, boolean plan, double trainLength) {
-		if (path instanceof transitsim.plan.IndexedPath) return ((transitsim.plan.IndexedPath<?>) path).compiled(java.util.Arrays.asList("host-track", transportMode, maxSpeed, plan, trainLength, mtr.data.PlatformStops.fingerprint()), () -> of(path, transportMode, maxSpeed, plan, rail -> path.get(rail).dwellTime > 0 ? path.get(rail).getStopOffset(trainLength) : 0));
-		return of(path, transportMode, maxSpeed, plan, rail -> path.get(rail).dwellTime > 0 ? path.get(rail).getStopOffset(trainLength) : 0);
+		if (path instanceof transitsim.plan.IndexedPath) return ((transitsim.plan.IndexedPath<?>) path).compiled(java.util.Arrays.asList("host-track", transportMode, maxSpeed, plan, trainLength, mtr.data.PlatformStops.fingerprint()), () -> of(path, transportMode, maxSpeed, plan, rail -> transitsim.plan.StopPositions.getOffset(path, rail, trainLength)));
+		return of(path, transportMode, maxSpeed, plan, rail -> transitsim.plan.StopPositions.getOffset(path, rail, trainLength));
 	}
 
 	/**

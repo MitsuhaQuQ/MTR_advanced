@@ -2745,6 +2745,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   false,
   false,
   false,
+  false,
 ]
 `;
 
@@ -2779,6 +2780,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   false,
   false,
   false,
+  false,
 ]
 `;
 
@@ -2799,7 +2801,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   },
   "platformStations": {},
   "platformStops": {
-    "1000": 2,
+    "1000": -2,
   },
   "routes": {},
 }
@@ -2810,6 +2812,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   false,
   false,
   true,
+  false,
   false,
   false,
   false,
@@ -2832,7 +2835,9 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
     "1001": 300,
   },
   "platformStations": {},
-  "platformStops": {},
+  "platformStops": {
+    "1000": 2,
+  },
   "routes": {},
 }
 `;
@@ -2845,10 +2850,44 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   true,
   false,
   false,
+  false,
 ]
 `;
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 35`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {},
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 36`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 37`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -2871,40 +2910,6 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 36`] = `
-[
-  false,
-  false,
-  false,
-  false,
-  true,
-  false,
-]
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 37`] = `
-{
-  "boundaries": {},
-  "contingencies": {},
-  "created": [],
-  "depotRules": {},
-  "depots": {},
-  "duties": {},
-  "networkSettings": {
-    "waitThresholdMillis": 90000,
-  },
-  "platformSpeeds": {
-    "1000": 300,
-    "1001": 300,
-  },
-  "platformStations": {},
-  "platformStops": {
-    "1000": 20,
-  },
-  "routes": {},
-}
-`;
-
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 38`] = `
 [
   false,
@@ -2913,6 +2918,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   false,
   false,
   true,
+  false,
 ]
 `;
 
@@ -2941,12 +2947,13 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 40`] = `
 [
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
   true,
-  false,
-  false,
-  false,
-  false,
-  false,
 ]
 `;
 
@@ -2968,7 +2975,6 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   "platformStations": {},
   "platformStops": {
     "1000": 20,
-    "1001": -1,
   },
   "routes": {},
 }
@@ -2976,8 +2982,9 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 42`] = `
 [
-  false,
   true,
+  false,
+  false,
   false,
   false,
   false,
@@ -3003,7 +3010,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   "platformStations": {},
   "platformStops": {
     "1000": 20,
-    "1001": 2,
+    "1001": -1,
   },
   "routes": {},
 }
@@ -3012,8 +3019,9 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 44`] = `
 [
   false,
-  false,
   true,
+  false,
+  false,
   false,
   false,
   false,
@@ -3038,7 +3046,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   "platformStations": {},
   "platformStops": {
     "1000": 20,
-    "1001": 5,
+    "1001": -2,
   },
   "routes": {},
 }
@@ -3048,8 +3056,9 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 [
   false,
   false,
-  false,
   true,
+  false,
+  false,
   false,
   false,
 ]
@@ -3073,7 +3082,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   "platformStations": {},
   "platformStops": {
     "1000": 20,
-    "1001": 10,
+    "1001": 2,
   },
   "routes": {},
 }
@@ -3084,13 +3093,86 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   false,
   false,
   false,
+  true,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 49`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 5,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 50`] = `
+[
+  false,
+  false,
+  false,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 51`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {},
+  "platformStops": {
+    "1000": 20,
+    "1001": 10,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 52`] = `
+[
+  false,
+  false,
+  false,
+  false,
   false,
   true,
   false,
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 49`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 53`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3114,8 +3196,9 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 50`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 54`] = `
 [
+  false,
   false,
   false,
   false,
@@ -3125,7 +3208,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 51`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 55`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3151,7 +3234,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 52`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 56`] = `
 [
   true,
   false,
@@ -3165,7 +3248,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 53`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 57`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3191,7 +3274,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 54`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 58`] = `
 [
   false,
   true,
@@ -3205,7 +3288,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 55`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 59`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3231,7 +3314,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 56`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 60`] = `
 [
   false,
   false,
@@ -3245,7 +3328,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 57`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 61`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3269,7 +3352,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 58`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 62`] = `
 [
   false,
   false,
@@ -3283,7 +3366,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 59`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 63`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3309,7 +3392,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 60`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 64`] = `
 [
   false,
   false,
@@ -3323,7 +3406,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 61`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 65`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3349,7 +3432,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 62`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 66`] = `
 [
   false,
   false,
@@ -3363,7 +3446,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 63`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 67`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3389,7 +3472,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 64`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 68`] = `
 [
   false,
   false,
@@ -3403,7 +3486,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 65`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 69`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3429,96 +3512,16 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 66`] = `
-[
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  true,
-  false,
-]
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 67`] = `
-{
-  "boundaries": {},
-  "contingencies": {},
-  "created": [],
-  "depotRules": {},
-  "depots": {},
-  "duties": {},
-  "networkSettings": {
-    "waitThresholdMillis": 90000,
-  },
-  "platformSpeeds": {
-    "1000": 300,
-    "1001": 300,
-  },
-  "platformStations": {
-    "1000": "s7",
-  },
-  "platformStops": {
-    "1000": 20,
-    "1001": 20,
-  },
-  "routes": {},
-}
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 68`] = `
-[
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  true,
-]
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 69`] = `
-{
-  "boundaries": {},
-  "contingencies": {},
-  "created": [],
-  "depotRules": {},
-  "depots": {},
-  "duties": {},
-  "networkSettings": {
-    "waitThresholdMillis": 90000,
-  },
-  "platformSpeeds": {
-    "1000": 300,
-    "1001": 300,
-  },
-  "platformStations": {
-    "1000": "s7",
-  },
-  "platformStops": {
-    "1000": 20,
-    "1001": 20,
-  },
-  "routes": {},
-}
-`;
-
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 70`] = `
 [
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
   true,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
   false,
 ]
 `;
@@ -3540,7 +3543,6 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   },
   "platformStations": {
     "1000": "s7",
-    "1001": "s4",
   },
   "platformStops": {
     "1000": 20,
@@ -3553,14 +3555,14 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 72`] = `
 [
   false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
   true,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
 ]
 `;
 
@@ -3581,7 +3583,6 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   },
   "platformStations": {
     "1000": "s7",
-    "1001": "s5",
   },
   "platformStops": {
     "1000": 20,
@@ -3593,9 +3594,9 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 74`] = `
 [
-  false,
-  false,
   true,
+  false,
+  false,
   false,
   false,
   false,
@@ -3622,7 +3623,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   },
   "platformStations": {
     "1000": "s7",
-    "1001": "s3",
+    "1001": "s4",
   },
   "platformStops": {
     "1000": 20,
@@ -3633,6 +3634,88 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 `;
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 76`] = `
+[
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 77`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s5",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 78`] = `
+[
+  false,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+]
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 79`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
+  "depots": {},
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s3",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 80`] = `
 [
   false,
   false,
@@ -3646,7 +3729,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 77`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 81`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3673,7 +3756,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 78`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 82`] = `
 [
   false,
   false,
@@ -3687,7 +3770,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 79`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 83`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3714,7 +3797,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 80`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 84`] = `
 [
   false,
   false,
@@ -3728,7 +3811,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 81`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 85`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3755,7 +3838,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 82`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 86`] = `
 [
   false,
   false,
@@ -3769,7 +3852,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 83`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 87`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3796,7 +3879,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 84`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 88`] = `
 [
   false,
   false,
@@ -3810,7 +3893,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 85`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 89`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -3837,7 +3920,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 86`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 90`] = `
 [
   false,
   false,
@@ -3851,7 +3934,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 ]
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 87`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 91`] = `
 {
   "addedBuffers": null,
   "base": undefined,
@@ -3895,7 +3978,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 88`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 92`] = `
 {
   "addedBuffers": null,
   "base": undefined,
@@ -3939,7 +4022,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 89`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 93`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -4006,7 +4089,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 90`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 94`] = `
 {
   "addedBuffers": null,
   "clearBuffers": false,
@@ -4048,7 +4131,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 91`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 95`] = `
 {
   "boundaries": {},
   "contingencies": {},
@@ -4117,7 +4200,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 92`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 96`] = `
 {
   "addedBuffers": null,
   "clearBuffers": false,
@@ -4155,186 +4238,6 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
       "deceleration": 0.012,
       "manual": false,
       "maxSpeed": 100,
-      "set": true,
-    },
-  },
-}
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 93`] = `
-{
-  "boundaries": {},
-  "contingencies": {},
-  "created": [],
-  "depotRules": {},
-  "depots": {},
-  "duties": {},
-  "networkSettings": {
-    "waitThresholdMillis": 90000,
-  },
-  "platformSpeeds": {
-    "1000": 300,
-    "1001": 300,
-  },
-  "platformStations": {
-    "1000": "s7",
-    "1001": "s8",
-  },
-  "platformStops": {
-    "1000": 20,
-    "1001": 20,
-  },
-  "routes": {},
-}
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 94`] = `
-{
-  "addedBuffers": null,
-  "base": undefined,
-  "clearBuffers": false,
-  "cycleRoutes": undefined,
-  "poolFleets": {
-    "a6": 9,
-  },
-  "routes": [
-    "101",
-    "102",
-    "103",
-  ],
-  "serviceTypes": {},
-  "sidings": {
-    "8001": {
-      "fleet": 3,
-      "routes": [],
-    },
-    "8002": {
-      "fleet": 3,
-      "routes": [],
-    },
-    "8003": {
-      "fleet": 2,
-      "routes": [
-        "101",
-        "102",
-      ],
-    },
-  },
-  "vehicleSettings": {
-    "a6": {
-      "acceleration": 0.01,
-      "deceleration": 0.012,
-      "manual": false,
-      "maxSpeed": 80,
-      "set": true,
-    },
-  },
-}
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 95`] = `
-{
-  "boundaries": {},
-  "contingencies": {},
-  "created": [],
-  "depotRules": {},
-  "depots": {
-    "9001": {
-      "addedBuffers": null,
-      "clearBuffers": true,
-      "poolFleets": {
-        "a6": 9,
-      },
-      "routes": [
-        "101",
-        "102",
-        "103",
-      ],
-      "serviceTypes": {},
-      "sidings": {
-        "8001": {
-          "fleet": 3,
-          "routes": [],
-        },
-        "8002": {
-          "fleet": 3,
-          "routes": [],
-        },
-        "8003": {
-          "fleet": 2,
-          "routes": [
-            "101",
-            "102",
-          ],
-        },
-      },
-      "vehicleSettings": {
-        "a6": {
-          "acceleration": 0.01,
-          "deceleration": 0.012,
-          "manual": false,
-          "maxSpeed": 80,
-          "set": true,
-        },
-      },
-    },
-  },
-  "duties": {},
-  "networkSettings": {
-    "waitThresholdMillis": 90000,
-  },
-  "platformSpeeds": {
-    "1000": 300,
-    "1001": 300,
-  },
-  "platformStations": {
-    "1000": "s7",
-    "1001": "s8",
-  },
-  "platformStops": {
-    "1000": 20,
-    "1001": 20,
-  },
-  "routes": {},
-}
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 96`] = `
-{
-  "addedBuffers": null,
-  "clearBuffers": true,
-  "poolFleets": {
-    "a6": 9,
-  },
-  "routes": [
-    "101",
-    "102",
-    "103",
-  ],
-  "serviceTypes": {},
-  "sidings": {
-    "8001": {
-      "fleet": 3,
-      "routes": [],
-    },
-    "8002": {
-      "fleet": 3,
-      "routes": [],
-    },
-    "8003": {
-      "fleet": 2,
-      "routes": [
-        "101",
-        "102",
-      ],
-    },
-  },
-  "vehicleSettings": {
-    "a6": {
-      "acceleration": 0.01,
-      "deceleration": 0.012,
-      "manual": false,
-      "maxSpeed": 80,
       "set": true,
     },
   },
@@ -4421,7 +4324,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
   "depots": {
     "9001": {
       "addedBuffers": null,
-      "clearBuffers": false,
+      "clearBuffers": true,
       "poolFleets": {
         "a6": 9,
       },
@@ -4449,7 +4352,13 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
         },
       },
       "vehicleSettings": {
-        "a6": null,
+        "a6": {
+          "acceleration": 0.01,
+          "deceleration": 0.012,
+          "manual": false,
+          "maxSpeed": 80,
+          "set": true,
+        },
       },
     },
   },
@@ -4475,81 +4384,53 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 100`] = `
 {
-  "paths": [],
-  "rules": [
-    {
-      "line": "TRAIN|1号线",
-      "station": "s1",
-    },
+  "addedBuffers": null,
+  "clearBuffers": true,
+  "poolFleets": {
+    "a6": 9,
+  },
+  "routes": [
+    "101",
+    "102",
+    "103",
   ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
+    },
+  },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
 }
 `;
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 101`] = `
 {
-  "paths": [
-    {
-      "name": "p",
-    },
-  ],
-  "rules": [],
-}
-`;
-
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 102`] = `
-{
-  "boundaries": {
-    "1,2": true,
-  },
+  "boundaries": {},
   "contingencies": {},
   "created": [],
-  "depotRules": {
-    "9001": {
-      "rules": {
-        "paths": [
-          {
-            "name": "p",
-          },
-        ],
-        "rules": [],
-      },
-    },
-  },
-  "depots": {
-    "9001": {
-      "addedBuffers": null,
-      "clearBuffers": false,
-      "poolFleets": {
-        "a6": 9,
-      },
-      "routes": [
-        "101",
-        "102",
-        "103",
-      ],
-      "serviceTypes": {},
-      "sidings": {
-        "8001": {
-          "fleet": 3,
-          "routes": [],
-        },
-        "8002": {
-          "fleet": 3,
-          "routes": [],
-        },
-        "8003": {
-          "fleet": 2,
-          "routes": [
-            "101",
-            "102",
-          ],
-        },
-      },
-      "vehicleSettings": {
-        "a6": null,
-      },
-    },
-  },
+  "depotRules": {},
+  "depots": {},
   "duties": {},
   "networkSettings": {
     "waitThresholdMillis": 90000,
@@ -4570,26 +4451,56 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 103`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 102`] = `
 {
-  "boundaries": {
-    "1,2": true,
-    "3,4": false,
+  "addedBuffers": null,
+  "base": undefined,
+  "clearBuffers": false,
+  "cycleRoutes": undefined,
+  "poolFleets": {
+    "a6": 9,
   },
-  "contingencies": {},
-  "created": [],
-  "depotRules": {
-    "9001": {
-      "rules": {
-        "paths": [
-          {
-            "name": "p",
-          },
-        ],
-        "rules": [],
-      },
+  "routes": [
+    "101",
+    "102",
+    "103",
+  ],
+  "serviceTypes": {},
+  "sidings": {
+    "8001": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8002": {
+      "fleet": 3,
+      "routes": [],
+    },
+    "8003": {
+      "fleet": 2,
+      "routes": [
+        "101",
+        "102",
+      ],
     },
   },
+  "vehicleSettings": {
+    "a6": {
+      "acceleration": 0.01,
+      "deceleration": 0.012,
+      "manual": false,
+      "maxSpeed": 80,
+      "set": true,
+    },
+  },
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 103`] = `
+{
+  "boundaries": {},
+  "contingencies": {},
+  "created": [],
+  "depotRules": {},
   "depots": {
     "9001": {
       "addedBuffers": null,
@@ -4647,6 +4558,178 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 
 exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 104`] = `
 {
+  "paths": [],
+  "rules": [
+    {
+      "line": "TRAIN|1号线",
+      "station": "s1",
+    },
+  ],
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 105`] = `
+{
+  "paths": [
+    {
+      "name": "p",
+    },
+  ],
+  "rules": [],
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 106`] = `
+{
+  "boundaries": {
+    "1,2": true,
+  },
+  "contingencies": {},
+  "created": [],
+  "depotRules": {
+    "9001": {
+      "rules": {
+        "paths": [
+          {
+            "name": "p",
+          },
+        ],
+        "rules": [],
+      },
+    },
+  },
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 107`] = `
+{
+  "boundaries": {
+    "1,2": true,
+    "3,4": false,
+  },
+  "contingencies": {},
+  "created": [],
+  "depotRules": {
+    "9001": {
+      "rules": {
+        "paths": [
+          {
+            "name": "p",
+          },
+        ],
+        "rules": [],
+      },
+    },
+  },
+  "depots": {
+    "9001": {
+      "addedBuffers": null,
+      "clearBuffers": false,
+      "poolFleets": {
+        "a6": 9,
+      },
+      "routes": [
+        "101",
+        "102",
+        "103",
+      ],
+      "serviceTypes": {},
+      "sidings": {
+        "8001": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8002": {
+          "fleet": 3,
+          "routes": [],
+        },
+        "8003": {
+          "fleet": 2,
+          "routes": [
+            "101",
+            "102",
+          ],
+        },
+      },
+      "vehicleSettings": {
+        "a6": null,
+      },
+    },
+  },
+  "duties": {},
+  "networkSettings": {
+    "waitThresholdMillis": 90000,
+  },
+  "platformSpeeds": {
+    "1000": 300,
+    "1001": 300,
+  },
+  "platformStations": {
+    "1000": "s7",
+    "1001": "s8",
+  },
+  "platformStops": {
+    "1000": 20,
+    "1001": 20,
+  },
+  "routes": {},
+}
+`;
+
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 108`] = `
+{
   "boundaries": {
     "3,4": false,
   },
@@ -4719,7 +4802,7 @@ exports[`network settings > sets waits, platforms, depot entries, rules and boun
 }
 `;
 
-exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 105`] = `
+exports[`network settings > sets waits, platforms, depot entries, rules and boundaries as the old page did 109`] = `
 {
   "boundaries": {
     "3,4": false,

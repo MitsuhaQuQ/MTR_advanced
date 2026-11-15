@@ -21,7 +21,7 @@
 
 ### `public static TrackView of(List<PathData> path, TransportMode transportMode, float maxSpeed, boolean plan, double trainLength)`
 - 参数：`trainLength` 列车长度（方块）；站台停车位置取决于它（第 4 轮）。
-- 作用：停站段的停车偏移取 `path.get(i).getStopOffset(trainLength)`。若 `path` 是组件的 `IndexedPath`，结果按键 `["host-track", transportMode, maxSpeed, plan, trainLength, PlatformStops.fingerprint()]` 缓存在路径对象上（`compiled`）。
+- 作用：停站段的停车偏移取 `StopPositions.getOffset(path, i, trainLength)`（站台设置；站前折返后的停站为站台余量减进站时偏移，0.84.6）。若 `path` 是组件的 `IndexedPath`，结果按键 `["host-track", transportMode, maxSpeed, plan, trainLength, PlatformStops.fingerprint()]` 缓存在路径对象上（`compiled`）。
 
 ### `public static TrackView of(List<PathData> path, TransportMode transportMode, float maxSpeed, boolean plan, IntToDoubleFunction stopOffsets)`
 - 作用：真正的构建。车速上限 `vehicleSpeed` = `SpeedRules.plan(...)` 或 `SpeedRules.run(...)`。逐段：

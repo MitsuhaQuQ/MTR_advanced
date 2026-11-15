@@ -85,6 +85,14 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.6 车尾对齐进站端、站前折返掉头后原地停车（用户 2026-11-16 同意的运行规则）：
+- 新设置 `StopPositions.TAIL_AT_ENTRY_END = -2`（“车尾对齐进站端”）：车头距出站端 = 余量 `max(0, 站台长 − 车长)`，车尾正好在进站端。`normalise` 保留 -2，其它负数仍为居中。站台的 `stopPosition` 在存档和数据包里都是普通 int，格式不变；旧版本读到 -2 当作居中。
+- 站前折返原地停车：路径上一条有停站的轨道与前一条互为反向、且前一条在同一站台停过站（`StopPositions.turnsBackOnPlatform`），这次停站的偏移 = 余量 − 进站那次的偏移（`StopPositions.afterReversal`）。折返时车头移到原车尾处（进度 + 车长 + 2×进站偏移），正好就是这个停站点，所以列车掉头后不再沿站台蠕行，直接开门。进站那次停站不变（出站端/居中/N 格/车尾对齐都照旧）。
+- 规则只在组件 `StopPositions.getOffset(path, rail, trainLength)` 里算，两个宿主所有逐轨道求停车偏移的地方都改用它：组件 `TickRunner.HeadlessTrain.getStopOffset`、`RunTrack.buildTrackView`、`TripPath.getStopDistance`、`TurnTimes.legs`；游戏 `PathTiming.generateTimeSegments`（逐 tick 计时，折返时对齐到停站点）、`Train.getStopOffset`、`TrackViews.of`。速度曲线 `SpeedCurves.build` 把这一段做成长度 0 的一段（起点与停车位置差 ≤ 1E-6 时取停车位置）。
+- 运动：`MotionConstants.getReversalProgress`（折返后位置，落在停站点时精确对齐）和 `standsAtStopAfterReversal`。`TrainServer.startUp`、`TickRunner.HeadlessTrain.startUp` 折返后若已站在返程停站点：速度 0、下一停站就是折返后那条轨道；`RunMotion.tick` 在 `startUp` 后速度为 0 时按静止求下一停站；`TrainMotion.tick` 同一 tick 补发 `STOPPED`。下一 tick 照常停站、开门、计时。
+- 界面：游戏站台界面 `PlatformScreen` 和网页（`core/settings.ts` `STOP_POSITIONS`、`core/draft.ts`、`legacy/oldEditor.js` 的 `stopPositionText`）多一个选项“车尾对齐进站端”（语言键 `gui.mtr.platform_stop_tail_at_entry_end`，网页 `i18n.js`）。
+- 测试：组件 `FrontTurnBackStopTest`（-2 的偏移与 normalise；四种设置下折返前后停站位置、两次停站之间不移动（离站与到站同一 tick）、跳 tick 与逐 tick 相同、在折返时刻存档续跑与一直跑相同）；游戏 `PlatformStopsTest` 加 -2 的存档/数据包/更新往返，和两种计时（速度曲线、逐 tick）下站前折返两次停站之间运行时间为 0。固定结果文件不变。只改运行规则和界面选项，不改存档/数据包格式，升第三位。
+
 0.84.5 只写方向的站台牌（用户 2026-11-16：“去掉站台号的版本”）：
 - 新牌子类型 `BlockRailwaySign.SignType.PLATFORM_DIRECTION`（和 `_FLIPPED`），图标沿用站台牌，名称“方向|Direction|方面”（`SignTexts`）。选站台和站台牌一样（`RailwaySignScreen`）；画的时候 `getDirectionArrow(..., showPlatformNumber=false)`：不画线路色圆圈和站台号，也不给它留位置，只写方向（终点）。`RouteMapGenerator.generateDirectionArrow` 和 `ClientCache.getDirectionArrow` 加了这个参数的重载，其它调用照旧。
 - 牌子按类型名存档，旧版本客户端不认识新类型，所以客户端都要换。只改客户端渲染和牌子类型，升第三位。

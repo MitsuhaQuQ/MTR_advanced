@@ -2287,7 +2287,7 @@ export function createLegacy(env) {
 
 	/** How a platform's stop position reads (round 4). */
 	function stopPositionText(position) {
-		return position === 0 ? tr("停在出站端") : position < 0 ? tr("按车长居中停车") : tr("离出站端 {0} 格停车", position);
+		return position === 0 ? tr("停在出站端") : position === -2 ? tr("车尾对齐进站端") : position < 0 ? tr("按车长居中停车") : tr("离出站端 {0} 格停车", position);
 	}
 
 	/**

@@ -218,7 +218,7 @@ public final class TurnTimes {
 		for (int i = 0; i + 1 < way.size(); i++) {
 			distance += way.get(i).getTrackLength();
 			if (way.get(i).isOppositeOf(way.get(i + 1))) {
-				reversal = distance - (way.get(i).getDwellTime() > 0 ? way.get(i).getStopOffset(trainLength) : 0);
+				reversal = distance - transitsim.plan.StopPositions.getOffset(way, i, trainLength);
 				break;
 			}
 		}

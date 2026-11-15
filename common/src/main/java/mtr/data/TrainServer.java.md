@@ -51,7 +51,7 @@
 - `getTicksUntilDoorsClose()`：`TrainRules.getTicksUntilDoorsClose(rules)`。
 - `onLapComplete()` / `onStopReached()`：交给服务。
 - `onDwell(int rail, float departureTicks)`：在站台轨道且非回空时更新 `platformDwell`（`PlatformDwell.update`），再经 `withKnownDeparture`。
-- `startUp(...)`：出发：`canDeploy = false`、`isOnRoute = true`、停站清零、速度设为 `ACCELERATION_DEFAULT`；反向时按 `MotionConstants.getReversalAdvance` 前移进度并翻转方向；重找下一停站、取巡航上限，再调父类。
+- `startUp(...)`：出发：`canDeploy = false`、`isOnRoute = true`、停站清零、速度设为 `ACCELERATION_DEFAULT`；反向时按 `MotionConstants.getReversalProgress` 前移进度（车长 + 2×停车偏移；站前折返落在折返后停站点上时精确对齐到该点，0.84.6）并翻转方向；若 `MotionConstants.standsAtStopAfterReversal` 为真（站台上折返、已站在返程停站点），速度设 0（非手动时手柄 −2），下一停站直接取折返后的那条轨道，原地开门停站，不再沿站台蠕行；否则重找下一停站；取巡航上限，再调父类。
 - `openDoors()`：手动时 `doorTarget`，否则 `TrainRules.openDoors(rules)`。
 - `keepsOnLineAtEnd()`：`service.endsOnLine()`。
 - `asin(double)`：`TrigCache.asin`。

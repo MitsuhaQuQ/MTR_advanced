@@ -1465,6 +1465,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 时刻表右键过夜（0.83.11）：只在网页 `oldEditor.js`，改的是运用的 `stay`，组件不变。
 
+车尾对齐进站端、站前折返原地停车（0.84.6）：规则在组件 `StopPositions`（`TAIL_AT_ENTRY_END`、`afterReversal`、沿路径的 `getOffset(path, rail, trainLength)`）和 `MotionConstants.getReversalProgress`/`standsAtStopAfterReversal`；游戏 `PathTiming`、`Train`、`TrackViews`、`TrainServer.startUp` 都调同一函数，两个宿主一致（`FrontTurnBackStopTest`）。
+
 只写方向的站台牌（0.84.5）：只在客户端牌子类型和渲染，组件不变。
 
 轮替站台的站台牌方向（0.84.4）：只在客户端 `RouteMapGenerator.getRouteStream`，组件不变。

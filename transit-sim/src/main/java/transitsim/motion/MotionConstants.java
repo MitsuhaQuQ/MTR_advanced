@@ -34,6 +34,25 @@ public final class MotionConstants {
 	}
 
 	/**
+	 * Where the head is once a train standing at this stop has turned back ({@link #getReversalAdvance}): exactly at the
+	 * stop on the rail running back when that is where the train stands (0.84.6, a front turn back on a platform stops
+	 * in place, {@link transitsim.plan.StopPositions#afterReversal}).
+	 */
+	public static double getReversalProgress(MotionTrack track, int stop, double railProgress, double trainLength) {
+		final double advanced = railProgress + getReversalAdvance(track, stop, trainLength);
+		return standsAtStopAfterReversal(track, stop, advanced) ? track.getStopDistance(stop + 1) : advanced;
+	}
+
+	/**
+	 * @param railProgress where the head is after turning back
+	 * @return whether a train that has turned back at this stop already stands at its stop on the rail running back, so
+	 * it stops there again without moving (0.84.6): the host's start up keeps it standing, with that stop as its next
+	 */
+	public static boolean standsAtStopAfterReversal(MotionTrack track, int stop, double railProgress) {
+		return stop >= 0 && stop + 1 < track.size() && track.getDwellTime(stop) > 0 && track.getDwellTime(stop + 1) > 0 && track.isOppositeRail(stop, stop + 1) && Math.abs(track.getStopDistance(stop + 1) - railProgress) <= 1E-6;
+	}
+
+	/**
 	 * @return the first rail ending after the progress, or the last rail. Distances never decrease along a path.
 	 */
 	public static int findIndex(MotionTrack track, double tempRailProgress, boolean roundDown) {

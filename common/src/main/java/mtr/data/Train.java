@@ -978,9 +978,9 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		final double length = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
 		if (stopOffsetsPath != path || stopOffsetsSize != path.size() || stopOffsetsLength != length) {
 			final double[] offsets = new double[path.size()];
+			// Along the path, so a train turning back on a platform stops where it stands (0.84.6)
 			for (int i = 0; i < offsets.length; i++) {
-				final PathData pathData = path.get(i);
-				offsets[i] = pathData.dwellTime > 0 ? pathData.getStopOffset(trainCars * spacing) : 0;
+				offsets[i] = transitsim.plan.StopPositions.getOffset(path, i, trainCars * spacing);
 			}
 			stopOffsets = offsets;
 			stopOffsetsPath = path;

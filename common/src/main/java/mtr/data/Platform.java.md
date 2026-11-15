@@ -9,7 +9,7 @@
 - `timetableBoundary`：班次可在此站中途离开或加入线路，与另一线路贯通运行（时刻表边界，见组件 `TimetableBoundaries` 与 `PlanAdapters.boundaryPlatforms`）。
 - `passingTrack`：是否为待避线（车站的侧线）而非正线。由玩家设置，从不猜测；编辑器的股道选择与股道图据此区分，只有有待避线的车站才能让列车被越行。
 - `passSpeed`：列车通过本站台的限速标签（km/h，优化第 3b 轮第 2 步），0 表示默认 `PlatformSpeeds.DEFAULT_KMH`。属于轨道的性质，类似长度。
-- `stopPosition`：列车在站台上停的位置（第 4 轮停车点）：`StopPositions.EXIT_END`（默认，出站端）、`StopPositions.CENTRED`（居中），或距出站端的方块数。经 `StopPositions.normalise` 规范化。
+- `stopPosition`：列车在站台上停的位置（第 4 轮停车点）：`StopPositions.EXIT_END`（默认，出站端）、`StopPositions.CENTRED`（居中）、`StopPositions.TAIL_AT_ENTRY_END`（-2，车尾对齐进站端，0.84.6；旧版读作居中），或距出站端的方块数。经 `StopPositions.normalise` 规范化。
 
 ### 存档键 / 增量更新键
 `dwell_time`（仅作增量键，见 `update`）、`pass_speed`、`stop_position`、`station_id`、`timetable_boundary`、`passing_track`。
