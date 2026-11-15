@@ -85,6 +85,12 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.6 网页编辑器三处修正（批次 B 网页测试 `ui-results/20261115-172620` 找到，用户 2026-11-15“修”）：
+- U344 ①：`editor-web/src/views/StopsEditor.tsx` `StopOrder` 记下打开时的各站通过，`unchanged` 也比通过，只改通过时“发给游戏”能点。
+- U344 ②：`common/.../client/ClientEditing.java` `send` 在网页的批次里（`batch != null`）不再用游戏界面的快照（`getSnapshot`）当基准，只用页面给的基准（`setBatchBases`）或客户端现在知道的版本。原来关掉的时刻表界面快照留 30 分钟，只随自己的改动前移，网页带 force 的停站也被拒成和自己冲突。
+- U361：`editor-web/src/legacy/oldEditor.js` `loadNetwork` 读到新的全网配线后 `env.render("loadNetwork")`，新页面的面板（`OwnershipPanel` 的归属已读来）跟着重画；原来要等别的事重画，“按现在的归属生成初稿…”可能一直灰着。
+只改客户端，升第三位。
+
 0.83.5 时刻表不能拖选文字（用户 2026-11-15“停止时刻表选择的文字拖选能力，它总是和 shift 选择冲突”）：`editor-web/src/views/SummaryTable.tsx` 的表格加 `select-none`，Shift+点表头选一段班次时不再顺带选中文字；就地改时刻的输入框加 `select-text`，仍能选里面的字。只改客户端网页，升第三位。
 
 0.83.4 预演不往游戏日志里打、同步面板换了内容的提示按钮重来（2026-11-15 六线图游戏内 `ui-results/20261115-130033`）：

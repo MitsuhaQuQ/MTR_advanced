@@ -71,7 +71,10 @@ public final class ClientEditing implements IPacket {
 		final String part = EditGuard.getPart(packetId, packet);
 		final String objectKey = kind + ":" + id;
 		final Map<String, Integer> batchBases = batch == null ? null : BATCH_BASES.get(objectKey);
-		final Map<String, Integer> snapshot = batchBases == null ? getSnapshot(objectKey) : null;
+		// The web editor's changes (a batch) don't come from a game screen: checked from the page's own bases, or from the
+		// revisions the client knows now, never from a screen's snapshot left from earlier (0.83.6, U344: refused as a
+		// conflict with the player's own changes after a timetable screen had been open)
+		final Map<String, Integer> snapshot = batch == null ? getSnapshot(objectKey) : null;
 		final int base = EditGuard.isDelete(packetId) ? EditRevisions.UNCHECKED : batchBases != null ? batchBases.getOrDefault(part, 0) : snapshot == null ? REVISIONS.getOrDefault(EditRevisions.getKey(kind, id, part), 0) : snapshot.getOrDefault(part, 0);
 		if (snapshot != null && base != EditRevisions.UNCHECKED) {
 			// The screen's next change of the same part goes on from this one

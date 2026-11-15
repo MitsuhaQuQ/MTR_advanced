@@ -632,6 +632,8 @@ export function createLegacy(env) {
 				net.mode = result.mode;
 				indexNetwork();
 				if (modeChanged || !net.scale) fitNetwork();
+				// The new page's panels reading the map data (the owners ready, U361) draw again too (0.83.6)
+				env.render("loadNetwork");
 			}
 		} catch (e) {
 			net.error = tr("读取全网配线失败");

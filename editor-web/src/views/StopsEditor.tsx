@@ -210,10 +210,11 @@ function RouteStops({ routeId, stop, onClose }: { routeId: string; stop: number;
 /** Adding, removing and reordering a route's stations: sent to the game at once, with everything hung on them renumbered */
 function StopOrder({ r, onBack, onClose }: { r: any; onBack: () => void; onClose: () => void }) {
   const { fn } = legacy
-  const [list, setList] = useState(() => {
+  const [initial] = useState(() => {
     const pass: boolean[] = fn.timetableOf(r).pass
     return r.stops.map((stop: any, i: number) => ({ platformId: stop.platformId as string, from: i, pass: Boolean(pass[i]) }))
   })
+  const [list, setList] = useState(initial)
   const [inserting, setInserting] = useState(-1)
   const [message, setMessage] = useState("")
   const platforms: any[] = (T() ? T().platforms : []).filter((p: any) => p.station)
@@ -248,7 +249,8 @@ function StopOrder({ r, onBack, onClose }: { r: any; onBack: () => void; onClose
     if (result) setMessage(result)
     else onClose()
   }
-  const unchanged = list.length === r.stops.length && list.every((stop: any, i: number) => stop.from === i)
+  // Passing switched alone is a change too (0.83.6, U344)
+  const unchanged = list.length === r.stops.length && list.every((stop: any, i: number) => stop.from === i && stop.pass === initial[i].pass)
   return (
     <SidePanel open onClose={onClose} title={tr("增删和排序停站：{0}", routeTitle(r))} width={600}
       hint={tr("改好后点“发给游戏”马上生效：时刻表、直通、出入库指令和运用按新的站序重新对应，草稿里的也一样。股道在“停站”里再挑。")}
