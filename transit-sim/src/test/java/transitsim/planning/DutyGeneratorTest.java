@@ -167,18 +167,15 @@ class DutyGeneratorTest {
 	}
 
 	@Test
-	void tooFewTrainsDontBunch() {
-		// Three trains taken greedily leave one after another and then run as a bunch; spread, they keep equal gaps
+	void tooFewTrainsRunAsManyAsTheyCanRatherThanSpreadThin() {
+		// Three trains every minute: spread evenly they ran every 41st service, under two fifths of what they run taken as they
+		// come. Running fewer to keep them apart is taken only within SPREAD_SHARE (user, 2026-11-15: the fewest services
+		// without a train; the Village depot ran one train of two)
 		final List<DutyGenerator.SidingInput> sidings = Collections.singletonList(new DutyGenerator.SidingInput(100, 3));
-		final List<Long> greedy = runMinutes(DutyGenerator.generate(everyMinute(), sidings, stations(), 30 * MINUTE)).get(ROUTE_UP);
-		final long closest = java.util.stream.IntStream.range(1, greedy.size()).mapToLong(i -> greedy.get(i) - greedy.get(i - 1)).min().orElse(0);
-		assertEquals(1, closest, "greedily, two trains run a minute apart");
-		final List<Long> spread = runMinutes(DutyGenerator.generateSpread(everyMinute(), sidings, stations(), 30 * MINUTE)).get(ROUTE_UP);
-		final long gap = spread.get(1) - spread.get(0);
-		assertTrue(gap > 1);
-		for (int i = 1; i < spread.size(); i++) {
-			assertEquals(gap, spread.get(i) - spread.get(i - 1));
-		}
+		final DutyGenerator.Result greedy = DutyGenerator.generate(everyMinute(), sidings, stations(), 30 * MINUTE);
+		final DutyGenerator.Result spread = DutyGenerator.generateSpread(everyMinute(), sidings, stations(), 30 * MINUTE);
+		assertEquals(greedy.uncovered, spread.uncovered);
+		assertEquals(runMinutes(greedy), runMinutes(spread));
 	}
 
 	@Test

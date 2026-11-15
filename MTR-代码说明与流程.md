@@ -85,6 +85,12 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.10 车不够时不再为均匀而少跑（用户 2026-11-15 截图：Village 配属 2 列只排出 1 份运用，每隔一个来回没车；用户定“取没车班次最少的方案”）：
+- 原因：`transitsim.planning.DutyGenerator.generateSpread` 车不够时从 k=2 起试“每条线路每 k 班留一班”，第一次留下的班次全都有车就采用，从不和完整生成比。Village（两条线路各 481 班/天，150 秒一班）：完整生成 2 列车跑约 66%；k=2 留下的有几十班没车被否；k=3 全有车被采用，只用 1 列、跑约 33%（每天约 321 班，截图 322 班）。
+- 修：抽班结果跑的班次不少于完整生成的 `SPREAD_SHARE`（90%）才采用，否则用完整生成。均匀抽班常常少跑很多（测试里 3 列车每分钟一班：抽班 497 班/周，完整生成 1315 班），所以车不够时现在多数会按先来先跑排、列车可能挨得很近；只在差不多时保留均匀。
+- 测试：`DutyGeneratorTest.tooFewTrainsRunAsManyAsTheyCanRatherThanSpreadThin` 换掉了原来的 `tooFewTrainsDontBunch`（它要求抽班，正是这个毛病）。断点 `pre-spread-pick`。只改规划，存档和包不变，升第三位。
+- 网页运用视图的提示“需要 N 列，有 2 列，每天约 X 班没有车”仍按没车班次算，现在和实际派出的车一致。
+
 0.83.9 后进服的玩家也收到车厂路径结果（用户 2026-11-15 截图：网页每次都报一堆“车厂…的路径没生成：原因不明”“还没有出入库时刻”，车实际跑得好好的）：
 - 原因：路径生成结果（`PacketTrainDataGuiServer.generatePathS2C`：成功段数、失败原因、找不到路的运用、出入库时刻 `DepotLegs`、折返时间、冲突进路、股道使用）只在生成那一刻发给在线的玩家。服务器开服就生成路径，玩家后进来从没收到；客户端 `Depot.clientPathGenerationSuccessfulSegments` 默认 0，`EditorData` 把 0 段当成“failed”，存车线也没有 `legs`，网页于是对每个车厂报错。
 - 修：`generatePathS2C` 发出时把整包按“维度/车厂”留一份（`LAST_PATH_RESULTS`）；`RailwayData.onPlayerJoin` 在发完全部数据后调用 `sendLastPathResults`，把各车厂上次的结果再发给这个玩家。包格式不变，只改服务端，升第三位。

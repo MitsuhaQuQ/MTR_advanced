@@ -725,6 +725,11 @@ public final class DutyGenerator {
 		// From every other service up: what's needed over what's held is only a guess, as trains running fewer services can
 		// often turn round for them where they couldn't for every one
 		final List<List<ServiceInput>> groupList = new ArrayList<>(groups.values());
+		// The first k whose kept services all have a train is taken only if it runs nearly as many services as all planned
+		// as they come (SPREAD_SHARE): it could run far fewer than the trains can (2026-11-15, the user's Village: one train
+		// of two running every third service, a third of them, where both ran two thirds), and a few fewer is worth trains
+		// not bunching
+		final int total = services.stream().mapToInt(service -> Integer.bitCount(service.weekdays & DepotDuties.ALL_WEEKDAYS)).sum();
 		for (int k = 2; k <= longest; k += k < 16 ? 1 : Math.max(1, k / 8)) {
 			// The other routes' kept services may fall better a service or two along: each offset is tried, the first
 			// route's staying put, so a train coming back can take the next one
@@ -747,13 +752,18 @@ public final class DutyGenerator {
 				if (result.uncovered <= unrunnable) {
 					result.uncovered += left;
 					result.unrunnable = unrunnable;
-					return result;
+					return total - result.uncovered >= SPREAD_SHARE * (total - all.uncovered) ? result : all;
 				}
 			}
 		}
 		// Not even one service a route has a train for every kept one: as many as the trains can take, early first
 		return all;
 	}
+
+	/**
+	 * How many of the services planned as they come a spread plan must run to be taken instead
+	 */
+	static final double SPREAD_SHARE = 0.9;
 
 	/**
 	 * The days that run the same services, as by one timetable of each route (duty groups, step 2), each as weekdays (bit 0

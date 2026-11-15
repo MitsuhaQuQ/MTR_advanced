@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.10: with too few trains for every service, the duties run every k-th service evenly only if that runs nearly as many services (90 %) as the trains can take one after another; before, a depot of two trains could be given one duty running a third of its services.
+
 0.83.9: a player who joins after the server generated the depots' paths is told the result too: the web editor no longer reports every depot's paths as not generated for no reason, and draws the ways out and back.
 
 0.83.8: a train never leaves a stop with its doors not yet shut: when its planned departure moves earlier while it stands (a duty swapped or taken over), it shuts them first; the server log tells it if one ever does. The summary timetable's worked-out arrivals and departures at the end stops are in italics again (lost with the page's new look).

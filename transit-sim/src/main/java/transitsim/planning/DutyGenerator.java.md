@@ -98,7 +98,8 @@
 - 构造（11 参数）：原样赋值，数组不复制。主要创建者：本类 `servicesOf`。
 
 ### `public static Result generateSpread(List<ServiceInput> services, List<SidingInput> sidings, Map<Long, Long> stationOf, long maxLayoverMillis)` / `generateSpread(…, PlanInputs inputs)`
-- 作用：与 `generate` 相同，但停车线列车不够跑全部班次时，让列车均匀地跑每条路线每第 k 个班次，而不是早上全跑、后面没车。先完整生成；若无未覆盖、或有停车线不限车、或总容量 ≤0，直接返回。再计算 `unrunnable`（列车无限也跑不了的班次，例如没有停车线能到、也没有列车能折返到的起点——这不是列车数问题，2026-11-09 某玩家 256 列车的线路曾因此几乎全部无车）；若未覆盖全部属于此类，直接返回。否则按 (路线, 星期) 分组、按出发排序，k 从 2 开始（<16 时每次 +1，之后每次 +k/8），每个 k 尝试最多 `MAX_SPREAD_OFFSETS` 个偏移（第一组不偏移，其它组偏移），保留 `i ≡ shift (mod k)` 的班次再生成；第一次使未覆盖数 ≤ `unrunnable` 的结果，把被略去的班次（按其运行星期数）加入 `uncovered` 后返回。都不行则返回完整生成的结果。
+- 作用：与 `generate` 相同，但停车线列车不够跑全部班次时，让列车均匀地跑每条路线每第 k 个班次，而不是早上全跑、后面没车。先完整生成；若无未覆盖、或有停车线不限车、或总容量 ≤0，直接返回。再计算 `unrunnable`（列车无限也跑不了的班次，例如没有停车线能到、也没有列车能折返到的起点——这不是列车数问题，2026-11-09 某玩家 256 列车的线路曾因此几乎全部无车）；若未覆盖全部属于此类，直接返回。否则按 (路线, 星期) 分组、按出发排序，k 从 2 开始（<16 时每次 +1，之后每次 +k/8），每个 k 尝试最多 `MAX_SPREAD_OFFSETS` 个偏移（第一组不偏移，其它组偏移），保留 `i ≡ shift (mod k)` 的班次再生成；第一次使未覆盖数 ≤ `unrunnable` 的结果，把被略去的班次（按其运行星期数）加入 `uncovered`；它跑的班次（总数 − `uncovered`）不少于完整生成的 `SPREAD_SHARE`（0.9）倍才返回它，否则返回完整生成的结果（2026-11-15 用户的 Village：2 列车均匀抽班只用 1 列、跑三分之一，完整生成两列跑三分之二）。都不行则返回完整生成的结果。
+- `SPREAD_SHARE = 0.9`（包内）：均匀抽班至少要跑完整生成的这么多班才采用。
 - 主要调用者：`transitsim/planning/AutoDuties.java:68`、`transitsim/planning/PlanCheck.java:87`、`PlanCheck.java:165`。
 
 ### `public static List<Integer> dayTypes(List<ServiceInput> services)`
