@@ -14,7 +14,7 @@ import { StopsEditor } from "./views/StopsEditor"
 import { LinePanels } from "./views/LinePanels"
 import { MediaLibrary } from "./views/MediaLibrary"
 import { LegacyMenu } from "./legacy/Slot"
-import { legacy, useLegacy } from "./legacy/engine"
+import { legacy, panelHost, useLegacy } from "./legacy/engine"
 
 export function App() {
   return <StoreProvider><Shell /></StoreProvider>
@@ -96,6 +96,7 @@ function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void
       <h1 className="m-0 hidden truncate text-[15px] font-bold sm:block">{tr("MTR 高级编辑器")}</h1>
       <span className="flex-1" />
       <Weekday />
+      <SyncNow />
       <button className={"btn btn-ghost " + (errors ? "text-warn" : problems.length ? "text-caution" : "text-dim")} onClick={onSync} title={tr("页面和游戏哪里不一致、游戏哪里没做成")}>
         <span className={"h-2 w-2 rounded-full " + (errors ? "bg-warn" : problems.length ? "bg-caution" : "bg-brand")} />
         {problems.length ? tr("同步状态 · {0}", problems.length) : tr("同步状态 · 正常")}
@@ -108,6 +109,30 @@ function TopBar({ onReview, onSync }: { onReview: () => void; onSync: () => void
         title={conflicts ? tr("有 {0} 条线路在游戏里被改过，应用时先不发，处理后再应用", conflicts) : tr("把草稿发给游戏")}>{tr("应用")}</button>
     </header>
   )
+}
+
+/**
+ * One click to put the game in step with now (user, 2026-11-16): every depot's paths found again, then every depot running
+ * by its timetables has its trains put where the timetables have them now (api/sync-now). Asked first, as the trains on the
+ * line are replaced.
+ */
+function SyncNow() {
+  useLegacy()
+  const { fn, v } = legacy
+  if (!v.data || !v.data.canEdit) return null
+  const notice = (text: string) => { v.dutyNotice = text; fn.renderBanner() }
+  const ask = () => panelHost.current?.({
+    kind: "ask", title: tr("同步到现在"),
+    text: [tr("刷新所有车厂的路径，等路径都生成完，再把按时刻表运行的车厂的列车摆到时刻表现在要求的位置。")],
+    hints: [tr("线上原来的车换成算出来的车，乘客和货物不保留，玩家驾驶中的车不动。用的是游戏里已应用的时刻表和运用，草稿要先应用。摆车结果在游戏聊天栏。")],
+    ok: tr("同步"),
+    go: () => {
+      fn.sendJson("api/sync-now", "POST", {})
+        .then((result: any) => notice(!result.ok ? tr("没有权限") : tr("已请求刷新 {0} 个车厂的路径，生成完后摆 {1} 个车厂的车，结果见游戏聊天栏。", result.depots, result.placed)))
+        .catch(() => notice(tr("发送失败，游戏可能已经关闭")))
+    },
+  })
+  return <button className="btn" onClick={ask} title={tr("刷新所有车厂的路径，再按时刻表把列车摆到现在的位置")}>{tr("同步到现在")}</button>
 }
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]

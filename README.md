@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.2: the web editor's top bar has 同步到现在 (sync to now): every depot's paths are found again, then the trains of the depots running by their timetables are put where the timetables have them now.
+
 0.84.1: fixes the server stopping a few seconds after starting: the passenger displays' worker and the server thread filled the same cache of planned stop times at once.
 
 0.84.0: a duty turning back in front of its terminus on one of two platforms (the second terminal platform a route lists) keeps that other way round once per siding, instead of a whole copy of the duty's day for every turn; a train taking it has its path made then from the duty's usual path, running exactly as before. A siding whose duty turns back 160 times a day finds its paths in milliseconds again instead of seconds, and its save shrinks from megabytes back to its usual size; saves gain the field turn_back_ways (older saves load, their whole copies are dropped except one a train stands on). Turn back rails found by themselves beyond a terminus no longer count rails reached by coming round to the platform's other end or through another platform of the station.

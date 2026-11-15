@@ -85,6 +85,11 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.2 网页顶栏“同步到现在”（用户 2026-11-16：在网页端加一个一键刷新（同步到当前时刻）按钮）：
+- 网页 `App.tsx` `SyncNow`：顶栏按钮，先问一下（线上的车会被换掉），再 POST `api/sync-now`，结果写在横幅里。
+- 客户端 `EditorServer.SyncNowServlet`：在游戏线程里对每个有线路的车厂把 `clientPathGenerationSuccessfulSegments` 置 -1 并发 `generatePathC2S`（和车厂界面“刷新路线”同一个包）；另起一个线程每 250 ms 看一次，等这些车厂都收到服务器的寻路结果（最多 120 秒），再对按时刻表运行的车厂（`runsByDutiesWith`）逐个发 `placeTrainsC2S`（和“按时刻表摆车”同一个包）。立即回答刷新了几个车厂、要摆几个车厂。摆车结果照旧在聊天栏；运用缺路径时服务器拒绝摆车（0.83.13）。
+- 不加新包，只改客户端，升第三位。
+
 0.84.1 修服务器开服几秒后崩溃（用户 2026-11-16 日志：`ConcurrentModificationException`，`HashMap.computeIfAbsent` ← `StopTimes.getPlan` ← `TrainService.getStopPlan` ← `TrainServer.getPlannedDepartureHere`）：
 - 原因：0.83.16 显示屏的计划到站在工作线程（`PidsSchedules` → `WorkPool.submit` → `DisplayArrivals`）里调 `path.stopTimes.getPlan`，和服务器线程同时往同一个 `StopTimes.plans`（HashMap）里算缓存，服务器线程的 `computeIfAbsent` 检测到并发修改抛异常，整个服务器停了。
 - 修：`StopTimes.getPlan`、`setEntry`、`clear`、`copyFrom` 加 `synchronized`（其它被工作线程读的方法只读不写缓存）。工作线程那边本来就 catch 了异常。只改服务端，升第三位。

@@ -1227,6 +1227,13 @@ const I18N = (() => {
 			// Context menus of services and cells
 			"删除这一班": "Delete this service",
 			"跑完这一班不回库": "Stay on the line after this service",
+			"同步到现在": "Sync to now",
+			"刷新所有车厂的路径，等路径都生成完，再把按时刻表运行的车厂的列车摆到时刻表现在要求的位置。": "Finds every depot's paths again and, once they are all found, puts the trains of the depots running by their timetables where the timetables have them now.",
+			"线上原来的车换成算出来的车，乘客和货物不保留，玩家驾驶中的车不动。用的是游戏里已应用的时刻表和运用，草稿要先应用。摆车结果在游戏聊天栏。": "The trains on the line are replaced by the ones worked out, without their passengers or cargo; trains players drive stay. It uses the timetables and duties applied in the game, so apply the draft first. How placing went is said in the game's chat.",
+			"同步": "Sync",
+			"没有权限": "No permission",
+			"已请求刷新 {0} 个车厂的路径，生成完后摆 {1} 个车厂的车，结果见游戏聊天栏。": "Asked for {0} depots' paths to be found again, then the trains of {1} depots to be placed; see the game's chat.",
+			"刷新所有车厂的路径，再按时刻表把列车摆到现在的位置": "Find every depot's paths again, then put the trains where the timetables have them now",
 			"跑完这一班留在线上过夜：没有车厂的运用跑这一班": "Stay overnight after this service: no depot's duty runs it",
 			"跑完这一班留在线上过夜（车 {0} 的运用）": "Stay on the line overnight after this service (train {0}'s duty)",
 			"跑完这一班留在线上过夜：车厂{0}自动排班，在“编辑车厂…”里勾“允许长时间停在线上”…": "Stay overnight after this service: depot {0} plans its duties from the timetables; tick \"may stay long on the line\" in Edit depot…",

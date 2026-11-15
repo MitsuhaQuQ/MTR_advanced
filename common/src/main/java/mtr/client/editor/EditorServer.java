@@ -137,6 +137,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
 		context.addServlet(new ServletHolder(new PlaceTrainsServlet()), "/api/place-trains");
+		context.addServlet(new ServletHolder(new SyncNowServlet()), "/api/sync-now");
 		context.addServlet(new ServletHolder(new ReplanDutiesServlet()), "/api/replan-duties");
 		context.addServlet(new ServletHolder(new TimesServlet()), "/api/times");
 		context.addServlet(new ServletHolder(new SimulateServlet()), "/api/simulate");
@@ -403,6 +404,68 @@ public final class EditorServer {
 	 * A first draft of a depot's duties. The data is copied on the game thread and the plan worked out here, so a big
 	 * timetable doesn't hold up the game. Nothing is changed; the page puts the result in its draft.
 	 */
+	/**
+	 * One click from the web editor's top bar (user, 2026-11-16: 一键刷新，同步到当前时刻): every depot's paths are found
+	 * again, and once the server has told them all, the trains of every depot running by its timetables are put where the
+	 * timetables have them now. Answers at once with how many depots; how placing went is said in the game's chat. Uses the
+	 * packets the depot screen and the place trains dialog already send, so nothing new goes over the network.
+	 */
+	private static class SyncNowServlet extends HttpServlet {
+
+		private static final long WAIT_MILLIS = 120_000;
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			try {
+				final List<Long> refreshed = new ArrayList<>();
+				final List<Long> placed = new ArrayList<>();
+				final boolean allowed = onGameThread(() -> {
+					if (!mtr.client.ClientData.hasPermission()) {
+						return false;
+					}
+					mtr.client.ClientData.DEPOTS.forEach(depot -> {
+						if (depot.getRoutes(mtr.client.ClientData.DATA_CACHE).isEmpty()) {
+							return;
+						}
+						depot.clientPathGenerationSuccessfulSegments = -1;
+						mtr.packet.PacketTrainDataGuiClient.generatePathC2S(depot.id);
+						refreshed.add(depot.id);
+						if (depot.runsByDutiesWith(depot.getRoutes(mtr.client.ClientData.DATA_CACHE))) {
+							placed.add(depot.id);
+						}
+					});
+					return true;
+				});
+				if (allowed && !placed.isEmpty()) {
+					final Thread waiter = new Thread(() -> {
+						final long until = System.currentTimeMillis() + WAIT_MILLIS;
+						try {
+							// Until every depot asked has its paths again (the server tells each, generating, then found or failed)
+							while (System.currentTimeMillis() < until && Boolean.FALSE.equals(onGameThread(() -> refreshed.stream().allMatch(id -> {
+								final mtr.data.Depot depot = mtr.client.ClientData.DATA_CACHE.depotIdMap.get(id);
+								return depot == null || depot.clientPathGenerationSuccessfulSegments >= 0;
+							})))) {
+								Thread.sleep(250);
+							}
+							onGameThread(() -> {
+								placed.forEach(mtr.packet.PacketTrainDataGuiClient::placeTrainsC2S);
+								return true;
+							});
+						} catch (Exception e) {
+							e.printStackTrace();
+						}
+					}, "MTR editor sync now");
+					waiter.setDaemon(true);
+					waiter.start();
+				}
+				sendJson(response, "{\"ok\":" + allowed + ",\"depots\":" + refreshed.size() + ",\"placed\":" + placed.size() + "}");
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+	}
+
 	/**
 	 * Asks the server to put a depot's trains where its timetable has them now; how it went is said in the game's chat.
 	 */
