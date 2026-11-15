@@ -168,7 +168,7 @@
 - 返回：该段的限速：不保持之前限速的轨道用其运行速度；站台/停车线/折返线等（`SpeedRules.keepsLimitBefore`）取前一段的运行速度（或默认最高速）与当前速度的较大值；再按车辆最高速限制。调用者：`TrainMotion.java:157`、`LegacyTrainMotion.java:116`。
 
 ### `protected final double getStopOffset(int rail)`
-- 返回（优化第 4 轮）：在该段停车时列车车头离段末多远；按路径从站台求出（`StopPositions.getOffset(path, i, trainCars * spacing)`，站前折返后的停站在原地，0.84.6），使运动与速度曲线一致；无停站为 0。调用者：`Depot.java:3883`、`TickRunner.java:2831`。
+- 返回（优化第 4 轮）：在该段停车时列车车头离段末多远；按路径从站台求出（`PathData.getStopOffset(trainCars * spacing)`），使运动与速度曲线一致；无停站为 0。调用者：`Depot.java:3883`、`TickRunner.java:2831`。
 
 ### `protected final float limitToVehicle(float speedLimit)`
 - 返回：不高于车辆最高速（按 `SpeedRules.run` 换成物理上限）的限速。

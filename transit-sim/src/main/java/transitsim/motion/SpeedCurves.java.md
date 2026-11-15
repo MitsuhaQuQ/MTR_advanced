@@ -24,7 +24,7 @@
 - 主要调用者：`Siding.java:1198`、`Train.java:801`、`PathTiming.java:46`。
 
 ### `private static SpeedCurves build(TrackView track, double startPosition, double trainLength, double acceleration, double deceleration)`
-- 作用：先累计每条轨道终点距离 `ends[]`，并算每条轨道的有效限速 `limits[]`（限速 < 0 的轨道沿用上一条，且不低于 minSpeed）。再在每个停站轨道或最后一条轨道处切出一段 spec `{runStart, max(runStart, 终点−停车偏移), 轨道下标}`；下一段起点：若该轨道后折返则为 `终点 + 偏移 + 车长`，否则为本段停车位置；起点与停车位置相差 ≤ 1E-6 时取停车位置（站前折返原地停车，长度为 0 的一段，0.84.6）。Run 对象不在此创建，交给 `RunIndex` 按需生成。
+- 作用：先累计每条轨道终点距离 `ends[]`，并算每条轨道的有效限速 `limits[]`（限速 < 0 的轨道沿用上一条，且不低于 minSpeed）。再在每个停站轨道或最后一条轨道处切出一段 spec `{runStart, max(runStart, 终点−停车偏移), 轨道下标}`；下一段起点：若该轨道后折返则为 `终点 + 偏移 + 车长`，否则为本段停车位置。Run 对象不在此创建，交给 `RunIndex` 按需生成。
 - 调用者：`of`（第 38 行，通过 Supplier）。
 
 ### `int getCachedRunCount()`

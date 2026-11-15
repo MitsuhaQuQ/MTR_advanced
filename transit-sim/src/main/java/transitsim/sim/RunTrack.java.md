@@ -31,7 +31,7 @@
 - 调用者：`SimDataset.java:617`、`TickRunner.java:2625`。
 
 ### `static TrackView buildTrackView(List<? extends RunTrack> path, double minSpeed, double vehicleMaxSpeed, double trainLength)`
-- 作用：每条轨道：长度；限速 = `runSpeed`（第 3b 轮起站台、停车线、折返轨也按自身限速）；有停站时间即为停站；与下一条反向则折返；停站且车长非 NaN 时停车偏移 = `StopPositions.getOffset(path, i, trainLength)`（站前折返后的停站在原地，0.84.6）。最低速度 = min(minSpeed, 车辆物理最高速度)。
+- 作用：每条轨道：长度；限速 = `runSpeed`（第 3b 轮起站台、停车线、折返轨也按自身限速）；有停站时间即为停站；与下一条反向则折返；停站且车长非 NaN 时停车偏移 = `getStopOffset(trainLength)`。最低速度 = min(minSpeed, 车辆物理最高速度)。
 - 调用者：`toTrackView`。
 
 ### `static float runSpeed(RunTrack track, double vehicleMaxSpeed)`

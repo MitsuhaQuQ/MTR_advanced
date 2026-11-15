@@ -91,8 +91,7 @@ public interface RunTrack extends PlanTrack {
 			limits[i] = runSpeed(track, vehicleMaxSpeed);
 			stops[i] = track.getDwellTime() > 0;
 			reversals[i] = i + 1 < count && track.isOppositeOf(path.get(i + 1));
-			// Along the path, so a train turning back on a platform stops where it stands (0.84.6)
-			stopOffsets[i] = stops[i] && !Double.isNaN(trainLength) ? transitsim.plan.StopPositions.getOffset(path, i, trainLength) : 0;
+			stopOffsets[i] = stops[i] && !Double.isNaN(trainLength) ? track.getStopOffset(trainLength) : 0;
 		}
 		// Where rails don't set the speed, the vehicle's lowest cruising speed, which its highest speed caps too
 		return new TrackView(lengths, limits, stops, reversals, stopOffsets, limit((float) minSpeed, transitsim.network.SpeedLimits.physicalBlocksPerTick((float) vehicleMaxSpeed)));

@@ -482,7 +482,7 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 
 ### `MotionTrack` 实现
 - `size()`、`getDistanceCount()`、`getDistance(int)`：路径轨道数与累计距离。
-- `getStopOffset(int rail)`：沿路径按车长求 `StopPositions.getOffset(path, rail, 车长)`（无停站为 0；站前折返后的停站在原地，0.84.6）；`getStopDistance(int)`：终点减偏移。
+- `getStopOffset(int rail)`：有停站时间的轨道按车长求 `track.getStopOffset`，否则 0；`getStopDistance(int)`：终点减偏移。
 - `getTrainLength()`：车厢数 × 车厢长。
 - `getDwellTime(int)`、`canAccelerate(int)`（恒 true：第 3b 轮起每条轨道都按自身限速，`canAccelerate` 只决定是否切分闭塞片）、`getMaxSpeed(int)`（`RunTrack.runSpeed`，含车辆最高速度）、`isOppositeRail(int, int)`、`getRepeatIndex1/2()`。
 
@@ -493,7 +493,7 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 - `isClientSide()`：false。
 - `getTotalDwellTicks()`：`TrainRules.getTotalDwellTicks(this, 停站秒 × 10)`。
 - `canDeploy()`：路径多于一条轨道时第二条未被占（单轨道路径则在按运用运行的车厂中）即请求出发（不能出发的列车跳过本次发车而不是排队，使时刻表不漂移；按运用时停车线本身就是路径，运用到期后沿运用路径出发——端到端检查发现这种列车从不请求出发）；运用列车还需出库运行获批（`isRunGranted(1)`）。
-- `startUp(boolean isOppositeRail)`：上线、清停站计时、给爬行速度；折返时车头移到 `MotionConstants.getReversalProgress` 并反向；若已站在返程停站点（`standsAtStopAfterReversal`，站前折返，0.84.6）则速度 0、手柄 −2、下一停站为折返后那条轨道（原地再停），否则求下一停站；求巡航上限，关门。
+- `startUp(boolean isOppositeRail)`：上线、清停站计时、给爬行速度；折返时车头前移 `getReversalAdvance` 并反向；求下一停站与巡航上限，关门。
 - `keepsOnLineAtEnd()`：`service.endsOnLine()`；`clearRiders()`：空实现（无乘客）；`isRepeat()`：当前循环下标都 > 0。
 - `onLapComplete()` / `onStopReached()`：转给服务。
 - `onDwell(int rail, float departureTicks)`：在站台（且不在空车运行中）时更新 `PlatformDwell`。

@@ -106,10 +106,6 @@ public final class TrainMotion {
 						final int stoppedAt = state.getNextStoppingIndex();
 						hooks.startUp(isOppositeRail);
 						emit(hooks, MotionEvent.Type.DEPARTED, stoppedAt);
-						// Turned back on a platform, it stands at its stop on the way back already (0.84.6)
-						if (isOppositeRail && state.isOnRoute() && state.getSpeed() <= 0) {
-							emit(hooks, MotionEvent.Type.STOPPED, state.getNextStoppingIndex());
-						}
 					}
 				} else {
 					if (!hooks.isClientSide()) {

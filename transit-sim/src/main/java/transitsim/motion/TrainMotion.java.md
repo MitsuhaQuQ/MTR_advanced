@@ -16,7 +16,7 @@
   1. 下一停站下标 ≥ 轨道数：报告不在站，返回 −1（无处可去）。
   2. **不在线路上（在停车线）**：车头放在停车线中央 `(railLength + 车长)/2`，取消反向、关门、速度 0、下一停站 0；自动列车 `canDeploy()` 或手动且手柄 > 0 时 `startUp`，成功上线则发 `DEPARTED`。
   3. **在线路上且已到路径末尾**（车头 ≥ 最后距离 − (停车线长 − 车长)/2）且终点不是线上停站：下线（onRoute=false，手柄 −2）、清乘客、发 `RETURNED`。
-  4. **停着（速度 ≤ 0）**：判断下一轨道（折返时为 +2）是否被占用（`isTakenAtStart`），或车头所在轨道前方紧邻分区被占用（`isSectionTakenJustAhead`）。有停站时间时：循环线到达一圈末尾时把位置跳回圈起点（折返圈还反转方向），`onLapComplete` 并发 `LAP`；首个停站 tick 调 `onStopReached`；停站计时在关门前一直累加，进入关门阶段后只有未扣车且前方未占用才继续累加并给出 `departureTicks`；`openDoors()` 决定门。服务器上停站结束（或手动驾驶）且前方未占用（手动时还需手柄 > 0）则 `startUp` 并发 `DEPARTED`；折返后宿主让列车仍静止（站前折返已站在返程停站点，0.84.6）时同一 tick 再发 `STOPPED`（到达返程停站）。
+  4. **停着（速度 ≤ 0）**：判断下一轨道（折返时为 +2）是否被占用（`isTakenAtStart`），或车头所在轨道前方紧邻分区被占用（`isSectionTakenJustAhead`）。有停站时间时：循环线到达一圈末尾时把位置跳回圈起点（折返圈还反转方向），`onLapComplete` 并发 `LAP`；首个停站 tick 调 `onStopReached`；停站计时在关门前一直累加，进入关门阶段后只有未扣车且前方未占用才继续累加并给出 `departureTicks`；`openDoors()` 决定门。服务器上停站结束（或手动驾驶）且前方未占用（手动时还需手柄 > 0）则 `startUp` 并发 `DEPARTED`。
   5. **行驶中**：服务器上按制动距离（`0.5v²/减速度 + v·t + BRAKING_MARGIN`）向前找被占用轨道/分区，相应把 `nextStoppingIndex` 移到被占轨道前、或记录分区内停车位置 `sectionStop`；没有阻挡时恢复为下一站台（并把 −3 手柄归 0）。然后：遵循速度曲线时客户端用 `followSpeedCurve`、服务器用 `followRunSegment`；非连续运动、来不及停且必须停时按需减速（手柄 −3）；手动驾驶按手柄加减速；否则向轨道限速（`getRailSpeed`）加/减速。
   6. 无折返循环线越过圈终点时整体平移进度回圈起点，发 `LAP`，`continueWithoutStopping`。
   7. 更新进度；段结束时精确对齐到段 `target`；越过 `sectionStop` 时停在那里；越过停站点：必须停则停在停车位置，否则发 `PASSED` 并继续；由动变静发 `STOPPED`。车门开度按 `DOOR_MOVE_TIME` 线性变化。

@@ -53,13 +53,11 @@ public final class PathTiming {
 		final double trainLength = vehicle.trainCars * vehicle.spacing;
 		double distanceSum1 = 0;
 		final List<Double> stoppingDistances = new ArrayList<>();
-		for (int i = 0; i < path.size(); i++) {
-			final PathData pathData = path.get(i);
+		for (final PathData pathData : path) {
 			distanceSum1 += pathData.rail.getLength();
 			if (pathData.dwellTime > 0) {
-				// Where the train stands, short of the end of a platform set to stop it elsewhere (round 4), or where it
-				// stands after turning back on the platform (0.84.6)
-				stoppingDistances.add(distanceSum1 - transitsim.plan.StopPositions.getOffset(path, i, trainLength));
+				// Where the train stands, short of the end of a platform set to stop it elsewhere (round 4)
+				stoppingDistances.add(distanceSum1 - pathData.getStopOffset(trainLength));
 			}
 		}
 
@@ -83,7 +81,7 @@ public final class PathTiming {
 			final PathData pathData = path.get(i);
 			final float railSpeed = vehicle.limit(!SpeedRules.keepsLimitBefore(pathData.rail.railType, vehicle.transportMode) ? pathData.getPlanSpeed() : Math.max(speed, RailType.getDefaultMaxBlocksPerTick(vehicle.transportMode)));
 			distanceSum2 += pathData.rail.getLength();
-			final double stopOffset = transitsim.plan.StopPositions.getOffset(path, i, trainLength);
+			final double stopOffset = pathData.dwellTime > 0 ? pathData.getStopOffset(trainLength) : 0;
 			// A train stopping here runs to where it stands, which may be short of the end of the rail
 			final double runEnd = distanceSum2 - stopOffset;
 
@@ -142,11 +140,8 @@ public final class PathTiming {
 			}
 
 			if (i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1))) {
-				// The head goes to where the tail was (round 4: past the train's length and the stop offset twice); turned back
-				// on a platform it stopped at, that is its stop on the way back, which it stands at exactly (0.84.6)
-				final double advanced = railProgress + trainLength + 2 * stopOffset;
-				final double nextStop = distanceSum2 + path.get(i + 1).rail.getLength() - transitsim.plan.StopPositions.getOffset(path, i + 1, trainLength);
-				railProgress = transitsim.plan.StopPositions.turnsBackOnPlatform(pathData, path.get(i + 1)) && Math.abs(advanced - nextStop) <= 1E-6 ? nextStop : advanced;
+				// The head goes to where the tail was (round 4: past the train's length and the stop offset twice)
+				railProgress += trainLength + 2 * stopOffset;
 			}
 		}
 

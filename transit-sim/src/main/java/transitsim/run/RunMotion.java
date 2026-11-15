@@ -157,8 +157,7 @@ public final class RunMotion {
 			}
 			if (!hooks.isClientSide() && state.getElapsedDwellTicks() >= totalDwellTicks && wayClear && !hooks.isHeldAtStop() && doorsShut) {
 				hooks.startUp(stop + 1 < track.size() && track.isOppositeRail(stop, stop + 1));
-				// Still standing after turning back on a platform, at its stop on the way back (0.84.6), it stops there next
-				state.setNextStoppingIndex(state.getSpeed() <= 0 ? findNextStop(track, state.getRailProgress()) : findNextStop(track, state.getRailProgress() + AT * 2));
+				state.setNextStoppingIndex(findNextStop(track, state.getRailProgress() + AT * 2));
 				state.setNextPlatformIndex(state.getNextStoppingIndex());
 				emit(hooks, MotionEvent.Type.DEPARTED, stop);
 			}

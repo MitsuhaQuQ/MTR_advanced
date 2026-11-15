@@ -48,10 +48,11 @@ public class TripPath<T extends PlanTrack> {
 
 	/**
 	 * @return where the head of a train this long stands at the stop at the end of a rail: short of its end by the
-	 * platform's stop offset (round 4), or where it stands after a front turn back there (0.84.6, {@link StopPositions})
+	 * platform's stop offset (round 4)
 	 */
 	public double getStopDistance(int rail, double trainLength) {
-		return distances.get(rail) - StopPositions.getOffset(path, rail, trainLength);
+		final T track = path.get(rail);
+		return distances.get(rail) - (track.getDwellTime() > 0 ? track.getStopOffset(trainLength) : 0);
 	}
 	public final List<TimeSegment> timeSegments = new ArrayList<>();
 	public final StopTimes stopTimes = new StopTimes();

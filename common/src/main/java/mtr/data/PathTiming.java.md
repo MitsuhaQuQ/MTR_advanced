@@ -16,13 +16,13 @@
 - 参数：`timeSegments` 输出的时间分段（先清空）；`platformTimes` 输出：前一站台 id → 下一站台 id → 两者之间的时间（tick）；`stopTimes` 输出（先清空，设置 `joinIndex`）；`joinIndex` 路径接入环线的位置，或 0；`lapEndIndex` 环线一圈结束的位置，或 0。
 - 速度曲线路径（`vehicle.useSpeedCurve`、非连续运动、路径非空）：用计划速度（低于列车可跑速度，给追赶留余地）构建 `TrackView`（含列车长度），`SpeedCurves.of(..., 起始位置 = (停车线长 + 车长)/2, 车长, 加速度, 减速度)`，`PathTimes.curveTimes` 填输出，`stopTimes.linkJoinStops(lapEndIndex)`。
 - 无速度曲线（旧规则，逐 tick）：
-  - 先算所有停站点距离（停站轨道末端减去停车偏移，第 4 轮；偏移沿路径取 `StopPositions.getOffset(path, i, 车长)`，站前折返后的停站在原地，0.84.6）；
+  - 先算所有停站点距离（停站轨道末端减去停车偏移，第 4 轮）；
   - 列车从 `(railLength + 车长)/2` 出发，每段限速 = `vehicle.limit(计划速度)`（若该轨道类型沿用前段限速则取 `max(当前速度, 默认限速)`）；
   - 每 tick：超速或需要为下一停车点制动（`剩余距离 + 1 < v²/(2a)`）则减速（不低于 a），低于限速则加速，否则匀速；速度变化方向改变（或强制）时开新分段；推进到本段运行终点（停站时为停车位置）；
   - 分段记录：结束进度/时间；在站台末端且该站台为通过时 `pass = true` 并强制下一段新开；停站或通过时记 `savedRailBaseId`；
   - 停站或通过站台：`stopTimes.add(下标, 站台 id 或 0, 非站台折返时的轨道积, 到达 time, 离开 time + dwellTime×10, 是否站台停站)`；
   - 时间加 `dwellTime×5`，记录站台间时间，再加 `dwellTime×5`（停站时间单位为 0.5 秒？即 dwellTime×10 tick，未确定原单位）；停站后速度归零；
-  - 与下一段反向（折返）时进度加 `车长 + 2×停车偏移`（车头到原车尾的位置）；站台上折返（`StopPositions.turnsBackOnPlatform`）且与下一停站点相差 ≤ 1E-6 时直接取该停站点（与该段的 `runEnd` 同一表达式），所以两次停站之间不再走动（0.84.6）。
+  - 与下一段反向（折返）时进度加 `车长 + 2×停车偏移`（车头到原车尾的位置）。
   - 最后 `stopTimes.linkJoinStops(lapEndIndex)`。
 - 副作用：只写输出参数。
 - 主要调用者：`Depot.java:3873`、`Depot.java:3944`、`RoutePaths.java:1164`。

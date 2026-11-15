@@ -345,22 +345,11 @@ public class TrainServer extends Train {
 		isOnRoute = true;
 		elapsedDwellTicks = 0;
 		speed = Train.ACCELERATION_DEFAULT;
-		final int stoppedAt = nextStoppingIndex;
-		boolean standing = false;
 		if (isOppositeRail) {
-			railProgress = transitsim.motion.MotionConstants.getReversalProgress(getMotionTrack(), stoppedAt, railProgress, trainCars * trainSpacing);
+			railProgress += transitsim.motion.MotionConstants.getReversalAdvance(getMotionTrack(), nextStoppingIndex, trainCars * trainSpacing);
 			reversed = !reversed;
-			standing = transitsim.motion.MotionConstants.standsAtStopAfterReversal(getMotionTrack(), stoppedAt, railProgress);
 		}
-		// Turned back on a platform, it already stands at its stop on the way back and stops there again (0.84.6), as the
-		// component's trains do
-		if (standing) {
-			speed = 0;
-			if (!isCurrentlyManual) {
-				manualNotch = -2;
-			}
-		}
-		nextStoppingIndex = standing ? stoppedAt + 1 : getNextStoppingIndex();
+		nextStoppingIndex = getNextStoppingIndex();
 		cruiseCap = getCruiseCap();
 		super.startUp(world, trainCars, trainSpacing, isOppositeRail);
 	}

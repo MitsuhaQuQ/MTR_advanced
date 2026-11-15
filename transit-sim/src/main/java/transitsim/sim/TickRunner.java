@@ -3067,8 +3067,8 @@ public final class TickRunner<T extends RunTrack> {
 
 		@Override
 		public double getStopOffset(int rail) {
-			// Along the path, so a train turning back on a platform stops where it stands (0.84.6)
-			return transitsim.plan.StopPositions.getOffset(path, rail, siding.trainCars * siding.spacing);
+			final T track = path.get(rail);
+			return track.getDwellTime() > 0 ? track.getStopOffset(siding.trainCars * siding.spacing) : 0;
 		}
 
 		@Override
@@ -3179,19 +3179,11 @@ public final class TickRunner<T extends RunTrack> {
 			onRoute = true;
 			elapsedDwellTicks = 0;
 			speed = MotionConstants.ACCELERATION_DEFAULT;
-			final int stoppedAt = nextStoppingIndex;
-			boolean standing = false;
 			if (isOppositeRail) {
-				railProgress = MotionConstants.getReversalProgress(this, stoppedAt, railProgress, siding.trainCars * siding.spacing);
+				railProgress += MotionConstants.getReversalAdvance(this, nextStoppingIndex, siding.trainCars * siding.spacing);
 				reversed = !reversed;
-				standing = MotionConstants.standsAtStopAfterReversal(this, stoppedAt, railProgress);
 			}
-			// Turned back on a platform, it already stands at its stop on the way back and stops there again (0.84.6)
-			if (standing) {
-				speed = 0;
-				manualNotch = -2;
-			}
-			nextStoppingIndex = standing ? stoppedAt + 1 : TrainRules.findNextStop(this, railProgress);
+			nextStoppingIndex = TrainRules.findNextStop(this, railProgress);
 			cruiseCap = TrainRules.getCruiseCap(this);
 			doorTarget = false;
 			doorValue = 0;
