@@ -909,6 +909,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		mtr.packet.ContingencyPackets.sendS2C(serverPlayer, this);
 		mtr.packet.NetworkSettingsPackets.sendS2C(serverPlayer, this);
 		railwayDataCoolDownModule.onPlayerJoin(serverPlayer);
+		// The depots' last path generations, which happened before this player was on
+		PacketTrainDataGuiServer.sendLastPathResults(world, serverPlayer, depots);
 	}
 
 	// writing data

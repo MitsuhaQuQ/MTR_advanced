@@ -495,7 +495,33 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		for (int i = 0; i < useCount * 3; i++) {
 			packet.writeLong(trackUses[i]);
 		}
+		// Kept for players joining later: paths are generated as the server starts, before anyone is on, and a client never
+		// told took its depots' paths as failed for no reason and had no ways out and back to draw (2026-11-15)
+		final byte[] bytes = new byte[packet.readableBytes()];
+		packet.getBytes(packet.readerIndex(), bytes);
+		LAST_PATH_RESULTS.put(pathResultKey(world, depotId), bytes);
 		world.players().forEach(player -> Registry.sendToPlayer((ServerPlayer) player, PACKET_GENERATE_PATH, packet));
+	}
+
+	/**
+	 * Each depot's last path generation as told to the players then, by dimension and depot
+	 */
+	private static final Map<String, byte[]> LAST_PATH_RESULTS = new ConcurrentHashMap<>();
+
+	private static String pathResultKey(Level world, long depotId) {
+		return world.dimension().location() + "/" + depotId;
+	}
+
+	/**
+	 * Tells a player who just joined the last path generation of each depot, as those who were on were told it
+	 */
+	public static void sendLastPathResults(Level world, ServerPlayer player, Collection<Depot> depots) {
+		depots.forEach(depot -> {
+			final byte[] bytes = LAST_PATH_RESULTS.get(pathResultKey(world, depot.id));
+			if (bytes != null) {
+				Registry.sendToPlayer(player, PACKET_GENERATE_PATH, new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes)));
+			}
+		});
 	}
 
 	public static void generatePathC2S(MinecraftServer minecraftServer, ServerPlayer player, FriendlyByteBuf packet) {

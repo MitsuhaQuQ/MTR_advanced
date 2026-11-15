@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.9 后进服的玩家也收到车厂路径结果（用户 2026-11-15 截图：网页每次都报一堆“车厂…的路径没生成：原因不明”“还没有出入库时刻”，车实际跑得好好的）：
+- 原因：路径生成结果（`PacketTrainDataGuiServer.generatePathS2C`：成功段数、失败原因、找不到路的运用、出入库时刻 `DepotLegs`、折返时间、冲突进路、股道使用）只在生成那一刻发给在线的玩家。服务器开服就生成路径，玩家后进来从没收到；客户端 `Depot.clientPathGenerationSuccessfulSegments` 默认 0，`EditorData` 把 0 段当成“failed”，存车线也没有 `legs`，网页于是对每个车厂报错。
+- 修：`generatePathS2C` 发出时把整包按“维度/车厂”留一份（`LAST_PATH_RESULTS`）；`RailwayData.onPlayerJoin` 在发完全部数据后调用 `sendLastPathResults`，把各车厂上次的结果再发给这个玩家。包格式不变，只改服务端，升第三位。
+
 0.83.8 列车不再不关门就开车（用户 2026-11-15“极偶尔会出现没有关门动车”）：
 - 原因：停站总时长每刻按计划发车时刻重算（`TrainRules.getTotalDwellTicks`）。停站中计划发车突然提前（互换运用、晚点改挂、运用重排、直通衔接改了），总时长掉到已停时间以下；`transitsim.run.RunMotion.tick` 的开车条件只看已停时间、进路和扣车，不看门，于是下一刻就开车，门开着（宿主 `startUp` 把门值直接置 0，看起来门没关就走）。
 - 修：`RunMotion.tick` 开车还要门已关好（`doorsShut`：这刻不开门且门值为 0）；总时长突然变短时先关门（最多 `DOOR_MOVE_TIME` 64 刻）再走，报给宿主的剩余发车时间也算上关门。正常停站门在总时长前 `DOOR_DELAY` 刻已关好，不受影响。
