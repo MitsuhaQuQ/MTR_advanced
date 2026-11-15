@@ -85,6 +85,13 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.13 线上过夜车起步瞬移、开服下一站被改成 0（Q 世界全天检查，2026-11-16）：
+- 瞬移：车次路径以停站开头（过夜留在线上的车）时，停站位置在“车在存车线起步的位置”（(存车线长+车长)/2）之前，`SpeedCurves.build` 第一段 run 退化成起点处的零长段；起步时 `getRun` 取到它，`RunMotion` 新段一走就结束，`setRailProgress(target)` 把车放到授权终点（S2 车辆段 773 格）。改法：`SpeedCurves.build` 这种停站的 run 放在停站本身（`from = min(runStart, stopAt)`），站着的车取下一段；`RunMotion` 段结束只停在段自己的终点（`segment.target`），与 `TrainMotion` 一样。测试 `SpeedCurvesTest.aPathStartingAtAStopShortOfTheSidingStartRunsOnFromThatStop`。
+- 开服下一站：`Siding.loadTrain` 用存车线自己的 path（1 条轨）构造 `TrainServer`，`Train.repairLoaded` 拿它检查 nextStoppingIndex/nextPlatformIndex，线上车全部被改成 0，再交给组件。改法：`Train.isPathToRestore()`（`TrainServer` 有车次路径 key 时为真）时 `repairLoaded` 跳过下标检查，`TrainServer.restoreTripPath` 装回车次路径后再用 `repairPathIndexes(true)` 检查。
+- 读档时车次路径没了被去掉的车打一行日志（`Siding` 读档 `removeIf`）。
+- 组件无人操作也每 5 分钟重启（“siding … changed”）原因未定：`LiveSimulation.whatDiffers` 在日志里写出存车线哪一部分不同，下次出现时据此查。
+只改服务端和组件，升第三位。
+
 0.84.12 调度台卡片也显示“没有备车可接替”：`editor-web/src/core/dispatch.ts` `consoleTrainState` 对 takeover 3、4 显示原因（0.84.11 清客、指定回库后剩下的运用没有备车时，原来只在报警列表里看得到）。只改网页，升第三位。
 
 0.84.11 下一站清客改在调度台显示的那一站；清客、指定回库后运用剩下的车次由备车接上，没有备车就报出来（六线游戏内测试 2026-11-15，9 号线：“下一站清客后回库”的车在下一站之后又在再下一站开了一次门，之后线路因剩下的车次没有车跑而停运）：

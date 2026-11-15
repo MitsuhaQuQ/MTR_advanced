@@ -1477,6 +1477,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 回库车不收走等出库的车（0.84.10）：规则在组件 `FleetRules.givesUpEarlierStanding` 和 `TrainService.isLeavingForDuty`；组件 `TickRunner.SidingRun.tick`/`HeadlessTrain.canDeploy` 与游戏 `Siding.simulateTrain`/`TrainServer.canDeploy` 调同一函数（`ShedDutyTest`）。
 
+起步瞬移与开服下标（0.84.13）：组件 `SpeedCurves.build`（以停站开头的路径）、`RunMotion`（段结束停在段终点）；游戏 `Train.repairLoaded`/`TrainServer.restoreTripPath`（下标对车次路径检查）、`LiveSimulation.whatDiffers`（重启原因）。
+
 调度台卡片显示没有备车（0.84.12）：只在网页。
 
 停车点移到停着的车下面（0.84.9）：组件 `TickRunner.standAtMovedStop`、`RunMotion` 不在站上先关门、`RunInvariants.checkDoors`；两个宿主都经 `RunMotion`。

@@ -181,7 +181,8 @@ public final class RunMotion {
 				state.setRailProgress(Math.min(state.getRailProgress() + advance, target));
 				final RunSegment segment = state.getRunSegment();
 				if (segment != null && segment.isFinished()) {
-					state.setRailProgress(target);
+					// At the end of its own segment, never further: the segment can end short of the target (the end of its run)
+					state.setRailProgress(Math.max(state.getRailProgress(), Math.min(target, segment.target)));
 					state.setSpeed(0);
 				}
 				if (state.getSpeed() <= 0 && Math.abs(state.getRailProgress() - stopPosition) <= AT) {

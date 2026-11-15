@@ -46,6 +46,25 @@ class SpeedCurvesTest {
 	}
 
 	@Test
+	void aPathStartingAtAStopShortOfTheSidingStartRunsOnFromThatStop() {
+		// A train that stayed on the line overnight: its path starts at a platform, whose stop (34) lies before where a
+		// train in a siding would start (66.5). Q: world 2026-11-16: the first run was empty and the train jumped 773 blocks
+		final TrackView track = new TrackView(
+				new double[]{40, 300, 40},
+				new double[]{-1, 0.5, -1},
+				new boolean[]{true, false, true},
+				new boolean[]{false, false, false},
+				new double[]{6, 0, 6},
+				0.1
+		);
+		final SpeedCurves curves = SpeedCurves.of(track, 66.5, 53, ACCELERATION, DECELERATION);
+		final SpeedCurves.Run run = curves.getRun(34);
+		assertEquals(34, run.fastest.startPosition, TOLERANCE);
+		assertEquals(374, run.fastest.endPosition, TOLERANCE);
+		assertTrue(run.fastest.getDuration() > 0);
+	}
+
+	@Test
 	void keepsTheLimitBeforeRailsATrainCantSpeedUpOn() {
 		// The platform keeps the slow limit of the rail before it, and the siding the lowest speed
 		final TrackView track = new TrackView(

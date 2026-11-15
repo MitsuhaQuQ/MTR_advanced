@@ -1589,7 +1589,16 @@ public class TrainServer extends Train {
 	}
 
 	public boolean restoreTripPath(Map<String, TripPath<PathData>> newTripPaths) {
-		return service.restoreTripPath(newTripPaths);
+		if (!service.restoreTripPath(newTripPaths)) {
+			return false;
+		}
+		repairPathIndexes(true);
+		return true;
+	}
+
+	@Override
+	protected boolean isPathToRestore() {
+		return service != null && !service.getTripPathKey().isEmpty();
 	}
 
 	/**

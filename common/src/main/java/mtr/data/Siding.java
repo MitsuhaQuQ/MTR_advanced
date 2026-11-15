@@ -465,7 +465,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 		messagePackHelper.iterateArrayValue(KEY_SHED, value -> loadTrain(shed, value));
 		ledgers.clear();
 		generateDistances();
-		// A train on a path that no longer exists has nowhere to be, and starts again from the siding
+		// A train on a path that no longer exists has nowhere to be and is left out, with a log line
 		trains.removeIf(train -> {
 			// One passing stops is put back on such a path, made again (D3), as is one taking another way round a turn
 			// back point (0.84.0)
@@ -474,12 +474,11 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 				return false;
 			}
 			// One on another way round from a save before 0.84.0, which has no ways to make it from, keeps the path saved
-			if (oldTurnBackPaths.isEmpty()) {
-				return true;
-			}
 			final Map<String, TripPath<PathData>> withOld = new HashMap<>(tripPaths);
 			withOld.putAll(oldTurnBackPaths);
-			if (!train.restoreTripPath(withOld)) {
+			if (oldTurnBackPaths.isEmpty() || !train.restoreTripPath(withOld)) {
+				// Never without a word (Q: world 2026-11-16: trains were gone after a start with nothing in the log)
+				System.out.println("Minecraft Transit Railway siding " + id + ": train " + train.id + " was left out, as the path of its service '" + train.getService().getTripPathKey() + "' is gone (" + tripPaths.size() + " paths now)");
 				return true;
 			}
 			final TripPath<PathData> kept = oldTurnBackPaths.get(TripPath.getTurnBase(train.getService().getTripPathKey()));

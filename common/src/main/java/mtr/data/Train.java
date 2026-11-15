@@ -678,6 +678,33 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			cruiseCap = Float.POSITIVE_INFINITY;
 			repaired = true;
 		}
+		// The stop indexes of a train out on a service count along its service's path, which its siding puts back after
+		// reading (Q: world 2026-11-16: checked against the siding's own path, every train on the line had its next stop
+		// put back to 0 at each start); they are checked then
+		if (!isPathToRestore()) {
+			repaired |= repairPathIndexes(false);
+		}
+		if (repaired) {
+			System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " had saved values that can't be right, which were put back to safe ones");
+		}
+		return repaired;
+	}
+
+	/**
+	 * @return whether the train's path is not yet the one its saved stop indexes count along, but will be put back
+	 */
+	protected boolean isPathToRestore() {
+		return false;
+	}
+
+	/**
+	 * Puts stop indexes past the end of the path back on it.
+	 *
+	 * @param log whether to say so, when not part of {@link #repairLoaded()}
+	 * @return whether anything was put right
+	 */
+	protected final boolean repairPathIndexes(boolean log) {
+		boolean repaired = false;
 		if (!path.isEmpty() && (nextStoppingIndex < 0 || nextStoppingIndex >= path.size())) {
 			nextStoppingIndex = path.size() - 1;
 			repaired = true;
@@ -686,8 +713,8 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 			nextPlatformIndex = nextStoppingIndex;
 			repaired = true;
 		}
-		if (repaired) {
-			System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " had saved values that can't be right, which were put back to safe ones");
+		if (repaired && log) {
+			System.out.println("Minecraft Transit Railway: train " + id + " of siding " + sidingId + " had saved stops past the end of its path, which were put back on it");
 		}
 		return repaired;
 	}

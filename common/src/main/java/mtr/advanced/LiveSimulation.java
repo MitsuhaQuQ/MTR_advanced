@@ -780,7 +780,9 @@ public final class LiveSimulation {
 					} else if (siding1.manual != siding2.manual || siding1.maxTrains != siding2.maxTrains || siding1.trainCars != siding2.trainCars || siding1.acceleration != siding2.acceleration || siding1.deceleration != siding2.deceleration || siding1.usesSpeedCurve != siding2.usesSpeedCurve) {
 						changed.add("settings of siding " + siding1.id);
 					} else if (!Arrays.equals(part(single(siding1), 2), part(single(siding2), 2))) {
-						changed.add("siding " + siding1.id);
+						// Which part, so a change no player made can be traced (Q: world 2026-11-16: a siding changed every
+						// five minutes with nobody at work)
+						changed.add("siding " + siding1.id + " (" + whatDiffers(siding1, siding2) + ")");
 					}
 				}
 			}
@@ -789,6 +791,28 @@ public final class LiveSimulation {
 			changed.add("signal blocks");
 		}
 		return changed.isEmpty() ? "something" : String.join(", ", changed);
+	}
+
+	/**
+	 * @return the first part of a siding's data found to differ, for the log
+	 */
+	static String whatDiffers(SimDataset.SidingData siding1, SimDataset.SidingData siding2) {
+		if (!Arrays.equals(siding1.routeIds, siding2.routeIds)) return "routes";
+		if (siding1.poolFleet != siding2.poolFleet) return "pool fleet " + siding1.poolFleet + " to " + siding2.poolFleet;
+		if (!siding1.poolKey.equals(siding2.poolKey) || !siding1.linePool.equals(siding2.linePool)) return "pool";
+		if (siding1.vehicleMaxSpeed != siding2.vehicleMaxSpeed || siding1.minSpeed != siding2.minSpeed) return "speeds";
+		if (siding1.repeatIndex1 != siding2.repeatIndex1 || siding1.repeatIndex2 != siding2.repeatIndex2 || siding1.loopJoinIndex != siding2.loopJoinIndex) return "repeat indexes";
+		for (int i = 0; i < siding1.tripPaths.size(); i++) {
+			final SimDataset.TripPathData tripPath1 = siding1.tripPaths.get(i);
+			final SimDataset.TripPathData tripPath2 = siding2.tripPaths.get(i);
+			if (!Arrays.equals(tripPath1.values, tripPath2.values)) return "service path " + i + " of " + siding1.tripPaths.size() + " values";
+			if (tripPath1.path.size() != tripPath2.path.size()) return "service path " + i + " of " + siding1.tripPaths.size() + " rails " + tripPath1.path.size() + " to " + tripPath2.path.size();
+		}
+		if (!siding1.turnLinks.keySet().stream().map(Arrays::toString).collect(java.util.stream.Collectors.toList()).equals(siding2.turnLinks.keySet().stream().map(Arrays::toString).collect(java.util.stream.Collectors.toList()))) return "turn links";
+		if (!siding1.turnReturns.keySet().equals(siding2.turnReturns.keySet())) return "turn returns";
+		if (!siding1.wayOuts.keySet().equals(siding2.wayOuts.keySet())) return "ways out";
+		if (siding1.turnBackWays.size() != siding2.turnBackWays.size() || siding1.turnBackWayPoints.size() != siding2.turnBackWayPoints.size()) return "turn back ways";
+		return "rails of a path or way";
 	}
 
 	private static SimDataset single(SimDataset.SidingData siding) {

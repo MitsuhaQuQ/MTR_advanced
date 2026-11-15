@@ -62,7 +62,11 @@ public final class SpeedCurves {
 				// tail was (round 4); with no offset these are the end of the rail and a train's length on
 				final double offset = track.isStop(i) ? track.getStopOffset(i) : 0;
 				final double stopAt = ends[i] - offset;
-				specs.add(new double[]{runStart, Math.max(runStart, stopAt), i});
+				// A stop short of where the run would start (a path starting at a platform, for a train that stayed on the
+				// line overnight) is an empty run at the stop itself, so a train standing there takes the next run (Q: world
+				// 2026-11-16: the empty run ended at once and the train jumped to the end of its authority)
+				final double from = Math.min(runStart, stopAt);
+				specs.add(new double[]{from, Math.max(from, stopAt), i});
 				runStart = i + 1 < count && track.reversesAfter(i) ? ends[i] + offset + trainLength : stopAt;
 			}
 		}
