@@ -94,6 +94,20 @@ public final class FleetRules {
 	}
 
 	/**
+	 * Of two trains standing in a siding that keeps one, which goes: by duties, the train sent out for a duty and still
+	 * waiting for its run out stays, wherever it is in the siding's list, so the duty isn't taken away with it (six-line test,
+	 * line 8, 2026-11-15: the train waiting with its duty was taken away the tick the one before came home, and the duty
+	 * never ran); otherwise, as the game always did, the one found later in the list goes.
+	 *
+	 * @param keptLeaving  whether the train kept so far, found earlier in the list, is leaving for a duty
+	 * @param laterLeaving whether the one found later is
+	 * @return true if the one kept so far goes and the later one stays
+	 */
+	public static boolean givesUpEarlierStanding(boolean byDuties, boolean keptLeaving, boolean laterLeaving) {
+		return byDuties && laterLeaving && !keptLeaving;
+	}
+
+	/**
 	 * @param own        the siding
 	 * @param candidates the sidings that could be in its pool, in a fixed order, such as by ID
 	 * @param depotOf    a siding's depot

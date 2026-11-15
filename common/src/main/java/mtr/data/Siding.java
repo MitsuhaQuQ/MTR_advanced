@@ -1897,7 +1897,7 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			trainsToSync.addAll(trains);
 		}
 
-		int trainsAtDepot = 0;
+		TrainServer keptStanding = null;
 		boolean spawnTrain = true;
 		// A depot running by duties has a train for each slot of the siding's pool, the sidings with the same vehicle,
 		// within each siding's limit
@@ -1959,13 +1959,32 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 			}
 
 			if (!train.getIsOnRoute()) {
-				trainsAtDepot++;
-				if (trainsAtDepot > 1) {
-					trainsToRemove.add(train);
+				if (keptStanding == null) {
+					keptStanding = train;
+				} else {
+					// One train stands here; by duties the one leaving for a duty stays, not whichever is later in the list
+					// (FleetRules, as the component's runner)
+					final TrainServer given;
+					if (transitsim.sim.FleetRules.givesUpEarlierStanding(runsByDuties, keptStanding.getService().isLeavingForDuty(), train.getService().isLeavingForDuty())) {
+						given = keptStanding;
+						keptStanding = train;
+						// The train kept stands where the one given up did
+						railProgressSet.remove(Math.round(given.getRailProgress() * 10));
+					} else {
+						given = train;
+					}
+					trainsToRemove.add(given);
+					// A train taken away doesn't leave
+					depot.cancelDeploy(id, given);
+					if (given.getService().isLeavingForDuty()) {
+						System.out.println("Minecraft Transit Railway: two trains of siding " + id + " standing with duties: train " + given.id + " is kept in the shed and its duty " + given.getService().getDutySlot() + " isn't run");
+					}
 					// By duties, a second train standing here is kept in the shed rather than taken away
 					if (transitsim.sim.FleetRules.keepsSecondStanding(runsByDuties)) {
-						arriving.add(train);
-						continue;
+						arriving.add(given);
+						if (given == train) {
+							continue;
+						}
 					}
 				}
 			}

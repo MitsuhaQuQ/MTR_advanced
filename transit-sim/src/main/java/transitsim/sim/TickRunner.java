@@ -1634,8 +1634,9 @@ public final class TickRunner<T extends RunTrack> {
 			tickMillis = millis;
 			waitingTrain = null;
 			readyCount = 0;
-			int trainsAtDepot = 0;
+			HeadlessTrain keptStanding = null;
 			boolean spawnTrain = true;
+			final boolean byDuties = depot.duties.diagramMode || depot.dutiesOnly;
 			final List<HeadlessTrain> trainsToRemove = new ArrayList<>();
 			for (final HeadlessTrain train : trains) {
 				tickPosition = train.occupant;
@@ -1662,12 +1663,27 @@ public final class TickRunner<T extends RunTrack> {
 						target.arriving.add(train.id);
 						shedIds.add(train.id);
 					}
-				} else if (!train.onRoute && ++trainsAtDepot > 1) {
-					trainsToRemove.add(train);
+				} else if (!train.onRoute) {
+					if (keptStanding == null) {
+						keptStanding = train;
+						continue;
+					}
+					// One train stands here; by duties the one leaving for a duty stays, not whichever is later in the list
+					final HeadlessTrain given;
+					if (FleetRules.givesUpEarlierStanding(byDuties, keptStanding.service.isLeavingForDuty(), train.service.isLeavingForDuty())) {
+						given = keptStanding;
+						keptStanding = train;
+					} else {
+						given = train;
+					}
+					trainsToRemove.add(given);
+					if (given.service.isLeavingForDuty()) {
+						SimLog.say("Two trains of siding " + sidingId + " standing with duties: train " + given.id + " is taken away and its duty " + given.service.getDutySlot() + " isn't run");
+					}
 					// By duties, a second train standing here is kept in the shed rather than taken away
-					if (FleetRules.keepsSecondStanding(depot.duties.diagramMode || depot.dutiesOnly)) {
-						arriving.add(train.id);
-						shedIds.add(train.id);
+					if (FleetRules.keepsSecondStanding(byDuties)) {
+						arriving.add(given.id);
+						shedIds.add(given.id);
 					}
 				}
 			}
@@ -1678,6 +1694,17 @@ public final class TickRunner<T extends RunTrack> {
 				train.removed = true;
 				removedTrains.add(train);
 				standingDrops.add(train);
+			}
+			// A train taken away doesn't leave: the depot sends out one still here, if one asked
+			if (waitingTrain != null && waitingTrain.removed) {
+				waitingTrain = null;
+				readyCount = 0;
+				for (final HeadlessTrain train : trains) {
+					if (train.requestedDeploy) {
+						waitingTrain = train;
+						readyCount++;
+					}
+				}
 			}
 			// By duties, the trains are the pool's, across the sidings of the other depots of its line too, as trains go back to
 			// those (P2-C): a siding with none standing takes the one kept longest in its shed, and a new train is made only
@@ -3185,8 +3212,10 @@ public final class TickRunner<T extends RunTrack> {
 		public boolean canDeploy() {
 			// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift. By duties the
 			// siding alone is its path, as the game makes it for a depot running by duties only, and the train leaves along its
-			// duty's path once the duty is due (found by the end-to-end check: such a train never asked to leave)
-			if (path.size() > 1 ? !isRailOccupied(1) : sidingRun.depot.duties.diagramMode) {
+			// duty's path once the duty is due (found by the end-to-end check: such a train never asked to leave). A train sent
+			// out for a duty and waiting for its run out doesn't ask again, or the depot gives it the next duty in place of its
+			// own, which then never runs (six-line test, line 8, 2026-11-15)
+			if (!service.isLeavingForDuty() && (path.size() > 1 ? !isRailOccupied(1) : sidingRun.depot.duties.diagramMode)) {
 				requestedDeploy = true;
 			}
 			// A train sent out for a duty also waits for the run out of the siding, like any other run

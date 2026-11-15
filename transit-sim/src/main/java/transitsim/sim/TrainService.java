@@ -1891,6 +1891,14 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
+	 * @return true while the train, sent out for a duty, still stands in the siding waiting for its run out: it is not ready
+	 * for another duty, and the siding keeps it rather than another train standing there
+	 */
+	public boolean isLeavingForDuty() {
+		return isLeavingForDuty && isOnDuty();
+	}
+
+	/**
 	 * @return true if the train runs a duty, which decides every service it runs
 	 */
 	public boolean isOnDuty() {

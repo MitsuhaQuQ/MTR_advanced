@@ -28,6 +28,9 @@
 ### `static boolean keepsSecondStanding(boolean byDuties)`
 按运用运行时停车线中的第二列停放车存入车库而不是被移走；否则（游戏一直以来的做法）移走。返回值即 `byDuties`。调用者：`Siding.java:1765`、`TickRunner.java:1571`。
 
+### `static boolean givesUpEarlierStanding(boolean byDuties, boolean keptLeaving, boolean laterLeaving)`
+两列车停在只留一列的停车线里时走哪列（0.84.10）：按运用运行时，已派出运用、等出库运行的那列留下，无论它在列表里的位置，运用不随它一起被收走（六线测试 8 号线 2026-11-15）；否则照旧走列表里后面那列。`keptLeaving`：先前留下（列表靠前）的那列是否在出库跑运用；`laterLeaving`：后面那列是否是。返回 true 表示收先前留下的、留后面的。调用者：`Siding.simulateTrain`、`TickRunner.SidingRun.tick`。
+
 ### `static <S> List<S> linePool(S own, Iterable<S> candidates, ToLongFunction<S> depotOf, Function<S, Object> poolKeyOf, Function<S, String> linePoolOf)`
 - 作用：停车线在其运营线路范围内的池：先是本车厂中池键相同的停车线（含自身），然后是同运营线路其他车厂中线路池名相同（非空）的停车线；各一次，按给定顺序；自身不在时放在最前。
 - 参数：`own` 停车线；`candidates` 可能在池中的停车线（固定顺序，如按 id）；`depotOf` 所属车厂；`poolKeyOf` 同车厂内可互相执行运用的停车线的共同键（不为 null）；`linePoolOf` 跨车厂的线路池名，或空。

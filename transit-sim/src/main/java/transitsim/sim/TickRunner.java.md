@@ -311,7 +311,7 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 下一 tick 到期。调用者：`addSiding`。
 
 ### `private void tick()`
-- 作用：对每列车：（未被接管且到期或不跳过时）`move`，请求出发则登记车厂就绪；统计等待车数；若有列车不在线或还没开出停车线一个车长 + 停车线长，则不生成新车。回到池中另一停车线的列车（`takeReturnedElsewhereSiding`）从本停车线移走、加入目标停车线的 `arriving`（同一列车存入那里的车库，P2-C）；停车线中第二列停着的车被移走，按运用运行时存入车库（`FleetRules.keepsSecondStanding`）。移走的列车登记为已移除，轨道在 tick 结束释放。然后补车：按运用运行或只按运用（R3，即使还没有运用）的车厂，列车属于跨本线路各车厂的池（P2-C）：无车停着时按 `FleetRules.whatToMake` 从车库取最久的或新建；其他车厂在没有列车或（可生成且未超最大车数）时新建一列停着的车。
+- 作用：对每列车：（未被接管且到期或不跳过时）`move`，请求出发则登记车厂就绪；统计等待车数；若有列车不在线或还没开出停车线一个车长 + 停车线长，则不生成新车。回到池中另一停车线的列车（`takeReturnedElsewhereSiding`）从本停车线移走、加入目标停车线的 `arriving`（同一列车存入那里的车库，P2-C）；停车线中第二列停着的车被移走，按运用运行时存入车库（`FleetRules.keepsSecondStanding`）；按运用时留下的是等出库跑运用的那列（`FleetRules.givesUpEarlierStanding`，0.84.10），被收走的若是本 tick 请求出库的 `waitingTrain`，从留下的车里重新找；两列都拿着运用时写 `SimLog`。移走的列车登记为已移除，轨道在 tick 结束释放。然后补车：按运用运行或只按运用（R3，即使还没有运用）的车厂，列车属于跨本线路各车厂的池（P2-C）：无车停着时按 `FleetRules.whatToMake` 从车库取最久的或新建；其他车厂在没有列车或（可生成且未超最大车数）时新建一列停着的车。
 
 ### `private void addStanding(long id)`
 新建一列停在停车线的 `HeadlessTrain`。
@@ -492,7 +492,7 @@ tick 结束时：各变化轨道的"现在"成为下一 tick 的"之前"；被�
 ### `MotionHooks` 实现
 - `isClientSide()`：false。
 - `getTotalDwellTicks()`：`TrainRules.getTotalDwellTicks(this, 停站秒 × 10)`。
-- `canDeploy()`：路径多于一条轨道时第二条未被占（单轨道路径则在按运用运行的车厂中）即请求出发（不能出发的列车跳过本次发车而不是排队，使时刻表不漂移；按运用时停车线本身就是路径，运用到期后沿运用路径出发——端到端检查发现这种列车从不请求出发）；运用列车还需出库运行获批（`isRunGranted(1)`）。
+- `canDeploy()`：路径多于一条轨道时第二条未被占（单轨道路径则在按运用运行的车厂中）即请求出发（不能出发的列车跳过本次发车而不是排队，使时刻表不漂移；按运用时停车线本身就是路径，运用到期后沿运用路径出发——端到端检查发现这种列车从不请求出发）；运用列车还需出库运行获批（`isRunGranted(1)`）。已派出运用、等出库运行的列车（`service.isLeavingForDuty()`）不再请求出库，否则车厂把下一班运用派给它、覆盖原槽位（0.84.10）。
 - `startUp(boolean isOppositeRail)`：上线、清停站计时、给爬行速度；折返时车头前移 `getReversalAdvance` 并反向；求下一停站与巡航上限，关门。
 - `keepsOnLineAtEnd()`：`service.endsOnLine()`；`clearRiders()`：空实现（无乘客）；`isRepeat()`：当前循环下标都 > 0。
 - `onLapComplete()` / `onStopReached()`：转给服务。

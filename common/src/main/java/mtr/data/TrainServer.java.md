@@ -76,7 +76,7 @@
 - 返回：是否有玩家在附近（决定是否算各车厢）。
 
 ### `protected boolean canDeploy(Depot depot)`
-- 作用：不能出发的列车跳过本次发车而不排队，使时刻表不漂移。路径不止一段且第 1 段未被占、或车厂按运用运行（此时停车线本身就是路径，运用到点后沿运用路径出发）时，向车厂 `requestDeploy`。
+- 作用：不能出发的列车跳过本次发车而不排队，使时刻表不漂移。路径不止一段且第 1 段未被占、或车厂按运用运行（此时停车线本身就是路径，运用到点后沿运用路径出发）时，向车厂 `requestDeploy`；已派出运用、等出库运行的列车（`service.isLeavingForDuty()`）不再请求，否则被换派下一班运用（0.84.10）。
 - 返回：已获准出库，且不在运用上或已获得出停车线的运行（`isRunGranted(1)`）。
 
 ### `protected boolean isRailBlocked(int checkIndex)` / `private boolean isRailBlockedNow(int checkIndex)`

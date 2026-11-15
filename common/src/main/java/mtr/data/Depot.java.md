@@ -214,6 +214,9 @@
 ### `public void requestDeploy(long sidingId, TrainServer train)`
 - 记下可出库的停车线及其列车。调用者：`TrainServer.java:444`。
 
+### `public void cancelDeploy(long sidingId, TrainServer train)`
+- 撤回该停车线这列车本 tick 的出库请求（列车已在同一 tick 被停车线收走，0.84.10）。调用者：`Siding.simulateTrain`。
+
 ### `public void deployTrain(RailwayData railwayData, Level world)`
 - 作用：每 tick：车厂变化时重算临时发车；模拟器发车时（G1）清空返回；`dispatcher.startTick()`；有运行运用时 `deployDutyTrain`；支持时刻表的运输方式只按运用（R2），未算出运用前不发车；否则（连续移动、飞机）从 `deployIndex` 轮流在可出库的停车线中找：无时刻表时到发车时刻（`getMillisUntilDeploy(1) == 0`）则 `train.deployTrain()`；有时刻表时找下一未被取的班次，记下、保留并 `deployTrain(tripMillis, routeId)`；每 tick 最多发一列。最后清零偏移与可出库列表。
 - 调用者：`RailwayData.java:626`。

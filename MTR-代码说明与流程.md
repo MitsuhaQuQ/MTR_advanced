@@ -85,6 +85,12 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.10 回库车不再把等出库的车连同运用收进车库；等出库许可的车不再被换派下一班（原因：2026-11-15 六线测试 8 号线 20:33–20:43 的班次一班没开，用户同意改运行规则）：
+- 原因一：按运用运行的存车线只留一列停着的车，第二列收进车库（`FleetRules.keepsSecondStanding`）。存车线与正线之间只有一条双向使用的轨道时，下一班运用的车已派出（`deployDuty`，正等出库运行许可），前一列车正沿这条轨道回库；回库那一 tick 两列车都停在存车线里，列表顺序上等出库的车（后生成的）是第二列，于是它连同运用一起被收进车库：组件车库只存车号，运用丢失；游戏 `TrainServer` 带着过期运用进了车库。班次没人开，也没有任何提示。
+- 原因二：拿着到期运用、等出库运行许可的车，`canDeploy()` 仍向车厂报可出库，`DepotDispatcher.findDutyDeploy` 把下一班运用派给它，`TrainService.deployDuty` 覆盖 `dutySlot`，而前一个槽位已记为已开，悄悄丢掉。
+- 改法：新增 `TrainService.isLeavingForDuty()`（已派出运用、仍停在存车线等出库）；两个宿主的 `canDeploy()`（组件 `TickRunner.HeadlessTrain.canDeploy`、游戏 `TrainServer.canDeploy`）对这种车不再请求出库。共用规则 `FleetRules.givesUpEarlierStanding(byDuties, keptLeaving, laterLeaving)`：按运用时留下要出库跑运用的那列，收另一列（通常是刚回来的）；否则照旧收列表里后面那列。组件 `SidingRun.tick` 以 `keptStanding` 比较，被收的若是本 tick 的 `waitingTrain`，重新从留下的车里找请求出库的车；游戏 `Siding.simulateTrain` 同样处理，换下的车从 `railProgressSet` 去掉位置，并用新增的 `Depot.cancelDeploy` 撤回它的出库请求。两列都拿着运用（修好后不应出现）时写日志（组件 `SimLog`，游戏服务端日志），不再悄悄丢一个。
+- 测试：组件 `ShedDutyTest`（两项：等出库的车不被收进车库且每个运用都开；等出库许可的车不被换派下一班）。只改服务端运行规则，存档和数据包不变，升第三位。
+
 0.84.9 停站中改了停车位置，列车不再开着门跑（用户 2026-11-16 游戏内“开着门往前跑然后折返出去”，查明不是 0.84.6 的原地停车造成，0.84.1 起就有）：
 - 原因：列车停在站台开着门时，玩家改了这个站台的停车位置（审计日志里 -2、2、5 来回改），游戏随即“从游戏的列车重新开始组件模拟器”。`TickRunner.HeadlessTrain.restore` 原样取回 `railProgress`、按已停时间把门恢复成开着，但新的停车点已经变了：`RunMotion.tick` 的 `findNextStop` 判断它不在站上，就进入行驶分支，门一 tick 一 tick 才关。停车点前移时开着门往前跑到新停车点再停；后移时车已越过停车点，直接取更远的下一站，开着门驶入反向轨道。
 - 修：① `TickRunner` 恢复时 `standAtMovedStop`：停站中途、车头还在停站那条轨道上、停车点却移动了的列车，直接放到新的停车点接着停站（最多挪站台余量那么几格，只在玩家改停车位置后的那次重启发生，是玩家操作的结果）；② `RunMotion.tick` 兜底：不在站上、静止、门没关的列车先关门，关好才起步。

@@ -268,6 +268,9 @@
 - 作用：为某槽位的运用派出本车（设计文档 6.12 E2）：设槽位、所属停车线（自己的记 0）、运用编号、运营日开始、运用拷贝；标记正出库；清直通链接；使用运用路径并开始 `startSegment`（备用车接管或晚发列车从后面的分段开始，D5，路径为 `TripPath.withFrom`）。
 - 调用者：`Depot.java:1925`、`TrainServer.java:1007`、`TickRunner`。
 
+#### `boolean isLeavingForDuty()`
+已派出运用、仍停在停车线等出库运行（0.84.10）：此时不再请求出库（否则被换派下一班运用），停车线两列车停着时留下它（`FleetRules.givesUpEarlierStanding`）。调用者：`TickRunner.HeadlessTrain.canDeploy`、`TickRunner.SidingRun.tick`、`TrainServer.canDeploy`、`Siding.simulateTrain`。
+
 #### `boolean isOnDuty()`
 有槽位且路径是运用路径。调用者：`TrainServer.java:447`、`TrainRules` 多处。
 

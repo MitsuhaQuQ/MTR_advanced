@@ -440,7 +440,9 @@ public class TrainServer extends Train {
 	protected boolean canDeploy(Depot depot) {
 		// A train that can't leave skips this departure instead of queueing, so the timetable doesn't drift. By duties the
 		// siding alone is its path, and the train leaves along its duty's path once the duty is due (end-to-end check)
-		if (depot != null && (path.size() > 1 ? !isRailOccupied(1) : depot.getRunDuties() != null)) {
+		// A train sent out for a duty and waiting for its run out doesn't ask again, or the depot gives it the next duty in
+		// place of its own, which then never runs (six-line test, line 8, 2026-11-15)
+		if (depot != null && !service.isLeavingForDuty() && (path.size() > 1 ? !isRailOccupied(1) : depot.getRunDuties() != null)) {
 			depot.requestDeploy(sidingId, this);
 		}
 		// A train sent out for a duty also waits for the run out of the siding, like any other run

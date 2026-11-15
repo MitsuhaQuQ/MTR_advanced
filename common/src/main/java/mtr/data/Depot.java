@@ -2198,6 +2198,13 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		deployableSidings.put(sidingId, train);
 	}
 
+	/**
+	 * Takes back a train's request to leave, as its siding has taken it away in the same tick.
+	 */
+	public void cancelDeploy(long sidingId, TrainServer train) {
+		deployableSidings.remove(sidingId, train);
+	}
+
 	public void deployTrain(RailwayData railwayData, Level world) {
 		if (isDirty) {
 			generateTempDepartures(world);
