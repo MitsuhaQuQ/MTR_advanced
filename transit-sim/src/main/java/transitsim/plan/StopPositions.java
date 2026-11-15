@@ -15,6 +15,11 @@ public final class StopPositions {
 	 * The train in the middle of the platform.
 	 */
 	public static final int CENTRED = -1;
+	/**
+	 * The tail at the entry end of the platform (0.84.6, 车尾对齐进站端): the head as far short of the exit end as the
+	 * platform has room for. Versions before it read the setting as centred.
+	 */
+	public static final int TAIL_AT_ENTRY_END = -2;
 
 	private StopPositions() {
 	}
@@ -31,6 +36,9 @@ public final class StopPositions {
 		if (setting == CENTRED) {
 			return room / 2;
 		}
+		if (setting == TAIL_AT_ENTRY_END) {
+			return room;
+		}
 		return setting > 0 ? Math.min(setting, room) : 0;
 	}
 
@@ -38,6 +46,6 @@ public final class StopPositions {
 	 * @return the setting as it is written down: exit end, centred, or a number of blocks
 	 */
 	public static int normalise(int setting) {
-		return setting < 0 ? CENTRED : setting;
+		return setting == TAIL_AT_ENTRY_END ? setting : setting < 0 ? CENTRED : setting;
 	}
 }
