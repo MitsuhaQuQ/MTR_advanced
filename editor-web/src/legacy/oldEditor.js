@@ -2248,6 +2248,34 @@ export function createLegacy(env) {
 		return position === 0 ? tr("停在出站端") : position < 0 ? tr("按车长居中停车") : tr("离出站端 {0} 格停车", position);
 	}
 
+	/**
+	 * The menu item that keeps the train on the line overnight after a service (user, 2026-11-15: 时刻表里的过夜设置): by
+	 * duties drawn by hand, the duty ending with it that day stays out (its day's stay, as 运用详情 sets it); a depot that
+	 * plans its duties from the timetables lets its trains stay out by its 允许长时间停在线上, so the item opens it.
+	 */
+	function overnightItem(s) {
+		let found = null, auto = null;
+		data.depots.forEach(depot => {
+			if (found || !depot.routes.includes(s.route.id)) return;
+			const duties = dutiesOf(depot);
+			if (duties.mode !== "diagram") {
+				auto = auto || depot;
+				return;
+			}
+			depot.sidings.forEach(siding => (duties.sidings[siding.id] || []).forEach((slot, index) => {
+				const day = dutyOn(slot, state.weekday);
+				if (found || !day || !day.segments.length) return;
+				const last = segmentService(day.segments[day.segments.length - 1]);
+				if (last && last.id === s.id) found = { depot, siding: siding.id, index, stay: Boolean(day.stay) };
+			}));
+		});
+		if (found) return [`${found.stay ? "✓ " : ""}${tr("跑完这一班留在线上过夜（车 {0} 的运用）", dutyNumber(found.depot, found.siding, found.index))}`, () => editDuties(found.depot, all => {
+			dutyForEditing(found.depot, all.sidings[found.siding][found.index], state.weekday).stay = !found.stay;
+		})];
+		if (auto) return [tr("跑完这一班留在线上过夜：车厂{0}自动排班，在“编辑车厂…”里勾“允许长时间停在线上”…", shortName(auto.name)), () => depotDialog(auto)];
+		return null;
+	}
+
 	function cellMenu(e, cell) {
 		const s = findService(cell.dataset.svc), stop = +cell.dataset.stop;
 		if (!s) {
@@ -2283,6 +2311,10 @@ export function createLegacy(env) {
 			items.push([s.suspended ? tr("恢复这一班") : tr("停运这一班"), () => edit(table => setSuspended(table, [s.service], !s.suspended))]);
 			if (!s.returnOrder && !s.returns) items.push([tr("接下一班"), nextServiceItems(s)]);
 			if (!s.link) items.push([s.returns ? tr("跑完这一班不回库") : tr("跑完这一班回库"), () => edit(table => { table.returns = s.returns ? table.returns.filter(x => x !== s.service) : [...table.returns, s.service]; })]);
+			if (!s.link && data.canEdit) {
+				const overnight = overnightItem(s);
+				if (overnight) items.push(overnight);
+			}
 			if (later.length) items.push([`${tr("这一班和之后的 {0} 班一起平移…", later.length)}`, () => shiftLaterDialog(s)]);
 			if (later.length) items.push([`${tr("选中这一班和之后的 {0} 班", later.length)}`, () => chooseLater(s)]);
 			if (s.exceptions) items.push([tr("清除这一班的全部例外"), () => edit(table => { table.exceptions = table.exceptions.filter(x => x.service !== s.service); })]);
@@ -2314,6 +2346,10 @@ export function createLegacy(env) {
 			if (s.deployOrder && s.deployOrder.stop === stop) items.push([tr("改出车的车厂…"), () => serviceOrderDialog(s, "deploy", stop)]);
 			if (s.deployOrder) items.push([tr("取消出车指令"), () => edit(table => setServiceOrder(table, s.service, "deploy", 0, null))]);
 			if (s.returnOrder) items.push([tr("取消回送"), () => edit(table => setServiceOrder(table, s.service, "return", 0, null))]);
+			if (stop === n - 1 && data.canEdit) {
+				const overnight = overnightItem(s);
+				if (overnight) items.push(overnight);
+			}
 			if (isLoop(s.route) && middle && !plan.passes && loopEntryStop(s.route) !== stop) items.push([`${tr("设为出库列车接入这条环线的站")}`, () => editTimetable(s.route, timetable => { timetable.entryPlatform = s.route.stops[stop].platformId; })]);
 			if (isLoop(s.route) && loopEntryStop(s.route) === stop && stop > 0) items.push([tr("出库列车改回从首站接入"), () => editTimetable(s.route, timetable => { timetable.entryPlatform = "0"; })]);
 			// Through running: leave at the last stop or a boundary, join at the first stop or a boundary
