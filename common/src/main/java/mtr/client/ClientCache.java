@@ -309,6 +309,14 @@ public class ClientCache extends DataCache implements IGui {
 	}
 
 	public byte[] getTextPixels(String text, int[] dimensions, int maxWidth, int maxHeight, int fontSizeCjk, int fontSize, int padding, IGui.HorizontalAlignment horizontalAlignment) {
+		return getTextPixels(text, dimensions, maxWidth, maxHeight, fontSizeCjk, fontSize, -1, padding, horizontalAlignment);
+	}
+
+	/**
+	 * @param fontSizeLaterCjk the size of a line in Chinese characters or kana after the first such line (the Japanese line
+	 *                         of a sign in three languages, SignTexts), or -1 for the same as the first
+	 */
+	public byte[] getTextPixels(String text, int[] dimensions, int maxWidth, int maxHeight, int fontSizeCjk, int fontSize, int fontSizeLaterCjk, int padding, IGui.HorizontalAlignment horizontalAlignment) {
 		if (maxWidth <= 0) {
 			dimensions[0] = 0;
 			dimensions[1] = 0;
@@ -331,8 +339,10 @@ public class ClientCache extends DataCache implements IGui {
 		int width = 0;
 		int height = 0;
 
+		int cjkLines = 0;
 		for (int index = 0; index < textSplit.length; index++) {
-			final int newFontSize = IGui.isCjk(textSplit[index]) || font.canDisplayUpTo(textSplit[index]) >= 0 ? fontSizeCjk : fontSize;
+			final boolean cjkLine = IGui.isCjk(textSplit[index]);
+			final int newFontSize = cjkLine && cjkLines++ > 0 && fontSizeLaterCjk > 0 ? fontSizeLaterCjk : cjkLine || font.canDisplayUpTo(textSplit[index]) >= 0 ? fontSizeCjk : fontSize;
 			attributedStrings[index] = new AttributedString(textSplit[index]);
 			fontSizes[index] = newFontSize;
 

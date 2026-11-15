@@ -185,7 +185,8 @@ public class RouteMapGenerator implements IGui {
 			final int tilePadding = tileSize / 4;
 
 			final int[] dimensions = new int[2];
-			final byte[] pixels = ClientData.DATA_CACHE.getTextPixels(text, dimensions, Integer.MAX_VALUE, (int) (tileSize * ClientCache.LINE_HEIGHT_MULTIPLIER), tileSize * 3 / 5, tileSize * 3 / 10, tilePadding, horizontalAlignment);
+			// The Japanese line, the second in Chinese characters or kana, smaller than the Chinese (user, 2026-11-15)
+			final byte[] pixels = ClientData.DATA_CACHE.getTextPixels(text, dimensions, Integer.MAX_VALUE, (int) (tileSize * ClientCache.LINE_HEIGHT_MULTIPLIER), tileSize * 3 / 5, tileSize * 3 / 10, tileSize * 2 / 5, tilePadding, horizontalAlignment);
 			final int width = dimensions[0] - tilePadding * 2;
 
 			if (width <= 0 || height <= 0) {

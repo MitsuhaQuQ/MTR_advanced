@@ -258,7 +258,10 @@ public class RenderRailwaySign<T extends BlockRailwaySign.TileEntityRailwaySign>
 					final String signText;
 					if (isStation) {
 						// In Traditional Chinese, English and Japanese (2026-11-09)
-						signText = mtr.data.SignTexts.ordered(IGui.mergeStations(selectedIds.stream().filter(ClientData.DATA_CACHE.stationIdMap::containsKey).sorted(Long::compareTo).map(stationId -> mtr.data.SignTexts.station(ClientData.DATA_CACHE.stationIdMap.get(stationId).name)).collect(Collectors.toList())));
+						final String chosen = IGui.mergeStations(selectedIds.stream().filter(ClientData.DATA_CACHE.stationIdMap::containsKey).sorted(Long::compareTo).map(stationId -> mtr.data.SignTexts.station(ClientData.DATA_CACHE.stationIdMap.get(stationId).name)).collect(Collectors.toList()));
+						// None chosen (or the one chosen is gone): the station the sign stands in, rather than 未命名 (user, 2026-11-15)
+						final Station here = chosen.isEmpty() ? RailwayData.getStation(ClientData.STATIONS, ClientData.DATA_CACHE, pos) : null;
+						signText = mtr.data.SignTexts.ordered(here == null ? chosen : mtr.data.SignTexts.station(here.name));
 					} else {
 						signText = sign.customText;
 					}

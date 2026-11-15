@@ -1463,6 +1463,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 时刻表右键过夜（0.83.11）：只在网页 `oldEditor.js`，改的是运用的 `stay`，组件不变。
 
+牌子文字（0.83.17）：只在客户端渲染 `RenderRailwaySign`、`ClientCache`、`RouteMapGenerator` 和 `SignTexts`，组件不变。
+
 车不够时的抽班（0.83.10）：只在组件 `DutyGenerator.generateSpread`，抽班要跑到完整生成的 90% 才采用；游戏、网页一键生成和组件的 `AutoDuties`/`PlanCheck` 都经它，一起变。
 
 后进服的玩家收到车厂路径结果（0.83.9）：只在游戏服务端 `PacketTrainDataGuiServer`/`RailwayData.onPlayerJoin`，与组件无关。

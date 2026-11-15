@@ -31,7 +31,7 @@ public final class SignTexts {
 		put("cable_car", "纜車", "Cable Cars", "ロープウェイ");
 		put("check_in_passengers", "登機乘客", "Check-in Passengers", "搭乗手続きのお客様");
 		put("cross", "不准進入", "No Entry", "進入禁止");
-		put("customer_service_centre", "客務中心", "Customer Service Centre", "お客さまセンター");
+		put("customer_service_centre", "客務中心", "Customer Service Centre", "サービスセンター");
 		put("emergency_exit", "緊急出口", "Emergency Exit", "非常口");
 		put("escalator_to_concourse_down", "直落大堂", "To Concourse Only", "コンコース直通");
 		put("escalator_to_concourse_up", "直上大堂", "To Concourse Only", "コンコース直通");
