@@ -430,7 +430,10 @@ public final class EditorServer {
 						depot.clientPathGenerationSuccessfulSegments = -1;
 						mtr.packet.PacketTrainDataGuiClient.generatePathC2S(depot.id);
 						refreshed.add(depot.id);
-						if (depot.runsByDutiesWith(depot.getRoutes(mtr.client.ClientData.DATA_CACHE))) {
+						// Every depot the component drives, as placing by the timetable is for those (the depot's own place trains
+						// dialog says so): the client doesn't know the duties the server works out itself, so asking whether it runs
+						// by duties left out S2车辆段 and its trains weren't placed (user, 2026-11-16)
+						if (depot.speedCurves) {
 							placed.add(depot.id);
 						}
 					});
