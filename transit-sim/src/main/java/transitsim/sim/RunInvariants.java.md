@@ -62,3 +62,4 @@
 - `millis`；`onRoute`；`atSiding`（车头在停车线轨道，或无路径）；`kept`（有被挡轨道或等待时间 > 0）；`headRail`；`headProgress`；`physical`；`nodes`（车头轨道两端节点）；`offset`（车头在该轨道上距较小节点的距离）；`length`（车长）；`stillSince`（开始静止的时刻，可变）。
 - 构造函数：从 `HeadlessTrain` 读取上述值；路径为空时视为在停车线。
 - `toString()`：`"on|off 轨道 at 偏移"`。
+- 2026-11-15 `Seen.leavingSiding`：车尾还在路径开头的存车线里时新上线不算“appeared on the line away from its siding”（隔几秒看一次时，车头可能已出存车线）。

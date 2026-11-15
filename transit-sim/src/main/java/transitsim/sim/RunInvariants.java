@@ -84,7 +84,7 @@ public final class RunInvariants<T extends RunTrack> {
 			} else if (state.onRoute) {
 				onLine.add(train);
 				if (before == null || !before.onRoute) {
-					if (!state.atSiding) {
+					if (!state.atSiding && !state.leavingSiding) {
 						add(millis, train.id, "appeared on the line away from its siding", before, state);
 					}
 				} else {
@@ -208,6 +208,11 @@ public final class RunInvariants<T extends RunTrack> {
 		private final boolean onRoute;
 		private final boolean atSiding;
 		/**
+		 * Its head past the siding its path starts in, its tail still in it: set off from there since the last look, which
+		 * every couple of seconds can be after the head has left (2026-11-15).
+		 */
+		private final boolean leavingSiding;
+		/**
 		 * It would go on but can't: a train is ahead, or it waits for its way.
 		 */
 		private final boolean kept;
@@ -230,6 +235,7 @@ public final class RunInvariants<T extends RunTrack> {
 			final List<T> path = train.getPath();
 			if (path.isEmpty()) {
 				atSiding = true;
+				leavingSiding = false;
 				kept = false;
 				headRail = 0;
 				headProgress = 0;
@@ -241,6 +247,11 @@ public final class RunInvariants<T extends RunTrack> {
 			headProgress = train.getRailProgress();
 			final T track = path.get(headRail);
 			atSiding = track.isSidingTrack();
+			int sidingRails = 0;
+			while (sidingRails < path.size() && path.get(sidingRails).isSidingTrack()) {
+				sidingRails++;
+			}
+			leavingSiding = sidingRails > 0 && headProgress - length <= train.getDistance(sidingRails - 1) + 0.01;
 			kept = train.getBlockedRail() >= 0 || train.getWaitingMillis() > 0;
 			physical = RunInvariants.physical(track);
 			nodes.add(track.getStartNode());

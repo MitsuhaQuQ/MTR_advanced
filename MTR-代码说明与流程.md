@@ -91,6 +91,7 @@
 - 服务端 `TrainServer` 在列车起步时门值仍大于 0 时打一行 “left stop … with its doors not shut”，以后出现可查。
 - 测试：`transit-sim` `PlatformDwellTest.aTrainWhoseStopTimeDropsShutsItsDoorsBeforeLeaving`（`MotionFixture.totalDwell` 可在停站中改总时长）；改前它在总时长变短后 1 刻就开车、门开着 0.8。
 只改服务端（组件、`TrainServer`），升第三位。
+- 同时查了全天测试 `WholeDayTest`（benchmark 才跑）报的“07:15 2 号车在存车线外出现在线上”：改前代码同样报。是检查的问题：`RunInvariants` 每 2 秒看一次，列车两次之间从存车线起步，车头已出存车线、车尾还在里面，被当成凭空出现。`Seen.leavingSiding`：车尾还在路径开头的存车线里算从存车线起步。测试 `RunInvariantsTest.aPlainMorningLookedAtNowAndThenBreaksNothing`（每 37/41/47 刻看一次，改前误报 4 次）。全天固定结果 `scenarios/whole-day.txt` 自 3830f331 后没跟着规则更新，按现在的结果重新固定（不违规、不死锁、全部回库）。
 
 0.83.7 归属图按线路图画（用户 2026-11-15 截图：归属图走向、画法形状奇怪）：
 - 原因：`editor-web/src/core/abstractNet.ts` `layout` 是弹簧模型，每条走廊希望方向取整到 45°，环形线网里这些希望互相冲突，折中后成了任意角度；走廊又画成两地点间一条直线。双线在两个相距 30 格以上的道岔分叉时成了两个道岔点、两条走廊。

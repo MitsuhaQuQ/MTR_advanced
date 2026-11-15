@@ -42,6 +42,26 @@ class RunInvariantsTest {
 		assertTrue(invariants.getStuck().isEmpty(), invariants.getStuck().toString());
 	}
 
+	/**
+	 * Looked at only every couple of seconds, as the whole day is (2026-11-15: a train setting off from its siding between
+	 * two looks had its head just past the siding with its tail still in it, and was taken as appearing on the line).
+	 */
+	@Test
+	void aPlainMorningLookedAtNowAndThenBreaksNothing() {
+		for (final int every : new int[]{37, 41, 47}) {
+			final ScenarioLine line = new ScenarioLine(400, 4, 4);
+			final RunInvariants<ScenarioTrack> invariants = new RunInvariants<>(line.runner);
+			final int[] ticks = {0};
+			line.runner.setAfterTick(() -> {
+				if (++ticks[0] % every == 0) {
+					invariants.check();
+				}
+			});
+			line.run(MONDAY + 8 * HOUR + 40 * MINUTE);
+			assertEquals(0, invariants.getViolations().size(), "every " + every + " ticks: " + String.join("; ", invariants.getViolations()));
+		}
+	}
+
 	@Test
 	void aJumpIsFound() {
 		final ScenarioLine line = new ScenarioLine(400, 4, 4);
